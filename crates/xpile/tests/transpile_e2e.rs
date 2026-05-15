@@ -99,3 +99,68 @@ fn info_lists_default_session_dispatch_tables() {
     assert!(stdout.contains("Proof lane"));
     assert!(stdout.contains("latex"));
 }
+
+// ─── rustc round-trip ─────────────────────────────────────────────
+//
+// The shape-matching tests above prove that the emitted Rust *looks*
+// right. These tests prove it *type-checks* — by piping the output
+// through `rustc --crate-type=lib --emit=metadata`. If the emitter
+// regresses to a syntactically-plausible-but-ill-typed form (e.g.,
+// wrong return type after some refactor), these tests catch it.
+//
+// Skipped if `rustc` is not on PATH (treated as test infrastructure
+// missing rather than a feature failure).
+
+fn rust_target_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join("xpile-e2e-rustc").join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    dir
+}
+
+fn assert_rustc_accepts(name: &str, source: &str) {
+    if Command::new("rustc").arg("--version").output().is_err() {
+        eprintln!("warning: rustc not on PATH; skipping round-trip check for {name}");
+        return;
+    }
+    let dir = rust_target_dir(name);
+    let file = dir.join(format!("{name}.rs"));
+    std::fs::write(&file, source).expect("write rust source");
+    let out = Command::new("rustc")
+        .arg("--edition=2021")
+        .arg("--crate-type=lib")
+        .arg("--emit=metadata")
+        .arg("--out-dir")
+        .arg(&dir)
+        .arg(&file)
+        .output()
+        .expect("spawn rustc");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "rustc rejected emitted Rust for {name}:\n=== source ===\n{source}\n=== rustc stderr ===\n{stderr}"
+    );
+}
+
+fn xpile_transpile_to_rust(fixture_name: &str) -> String {
+    let py = fixture(fixture_name);
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "xpile failed on {fixture_name}: stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).expect("stdout is UTF-8")
+}
+
+#[test]
+fn rust_emission_for_add_compiles_with_rustc() {
+    let rust = xpile_transpile_to_rust("add.py");
+    assert_rustc_accepts("add", &rust);
+}
+
+#[test]
+fn rust_emission_for_cmp_compiles_with_rustc() {
+    let rust = xpile_transpile_to_rust("cmp.py");
+    assert_rustc_accepts("cmp", &rust);
+}
