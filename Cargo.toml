@@ -51,10 +51,16 @@ sha2 = "0.10"
 hex = "0.4"
 anyhow = "1"
 
-# External: aprender's provable-contracts framework.
-# Path-dep until aprender-contracts has a stable crates.io release;
-# see docs/specifications/xpile-contract-driven-design-v1.md §Open questions.
-provable-contracts = { path = "../aprender/crates/aprender-contracts", package = "aprender-contracts" }
+# External: aprender's provable-contracts framework (`aprender-contracts`
+# on crates.io). Pinned to a fixed minor — bump when adopting new pv
+# features. Resolves on CI and crates.io without any sibling checkout.
+#
+# For local development against an in-progress aprender-contracts at
+# ../aprender, add to your personal config (not committed):
+#   # .cargo/config.toml
+#   [patch.crates-io]
+#   aprender-contracts = { path = "../aprender/crates/aprender-contracts" }
+provable-contracts = { version = "0.33", package = "aprender-contracts" }
 
 # Code lane: core
 xpile-agent          = { version = "0.1.0", path = "crates/xpile-agent" }

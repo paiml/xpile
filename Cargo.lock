@@ -20,6 +20,8 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 [[package]]
 name = "aprender-contracts"
 version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2b89cf226a109eb1b2942b93b5bf253f82f891c5e1b1b2566408c9acd089e13"
 dependencies = [
  "aprender-contracts-macros",
  "regex",
@@ -32,6 +34,8 @@ dependencies = [
 [[package]]
 name = "aprender-contracts-macros"
 version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b872c016e4d8b9651803b48f23e1cdefdca5524dde2a88bdaae5cfa370a75a14"
 dependencies = [
  "proc-macro2",
  "quote",
