@@ -1,0 +1,64 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Required check: ci / gate ─────────────────────────────────
+  # Runs the xpile pre-push checklist (CLAUDE.md):
+  #   cargo fmt --check, cargo check --workspace,
+  #   cargo clippy --workspace --all-targets -- -D warnings,
+  #   pv lint contracts/, cargo deny check advisories
+  gate:
+    name: gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo check --workspace
+        run: cargo check --workspace
+
+      - name: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Install pv (aprender-contracts-cli)
+        run: cargo install aprender-contracts-cli --locked
+
+      - name: pv lint contracts/
+        run: pv lint contracts/
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: cargo deny check advisories
+        run: cargo deny check advisories
+
+  # ── Required check: workspace-test ────────────────────────────
+  # Runs the test suite. Kept as a separate job so the failure
+  # mode is visible at a glance (gate vs tests).
+  workspace-test:
+    name: workspace-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo test --workspace
+        run: cargo test --workspace
