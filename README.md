@@ -1,6 +1,10 @@
+<p align="center">
+  <img src="docs/assets/hero.svg" alt="xpile architecture diagram: a code lane (Python, C, C++, Rust, Ruchy, Lean 4 → meta-HIR → Rust, Ruchy, PTX, WGSL, SPIR-V, Lean 4) and a proof lane (LaTeX, Lean theorems, mdBook ↔ contracts)" width="100%"/>
+</p>
+
 # xpile
 
-**A polyglot transpile workbench.** Pluggable language frontends (Python, C, Ruchy, and future C++, CUDA, ...) share one Rust codegen backend, one bounded agent repair loop, one oracle abstraction, one MCP server, and one provable-contracts framework. Built to solve **hybrid transpilation** — single artifacts that cross language boundaries (CPython + C extensions, Python + CUDA kernels) — which separate per-language repos cannot.
+**A polyglot transpile workbench with provable contracts at every layer.** Pluggable language frontends (Python, C, Rust, Ruchy, Lean 4, and future C++) share one canonical meta-HIR, plug into multiple backends (Rust, Ruchy, PTX, WGSL, SPIR-V, Lean 4), and ship alongside a proof lane that round-trips between LaTeX, Lean 4 theorems, and mdBook through a shared YAML contract substrate. Built to solve **hybrid transpilation** — single artifacts that cross language boundaries (CPython + C extensions, Python + CUDA kernels) — which separate per-language repos cannot.
 
 **Status:** Scaffold (v0.1.0). 14 workspace crates compile clean; `provable-contracts` (the `pv` framework) is wired; 4 example contracts pass `pv lint` 8/8 gates; no working transpilation logic yet.
 
