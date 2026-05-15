@@ -12,6 +12,7 @@ description = "Top-level session orchestration — wires frontends, oracle, agen
 # Code lane: core
 xpile-agent          = { workspace = true }
 xpile-backend        = { workspace = true }
+xpile-contracts      = { workspace = true }
 xpile-ffi-manifest   = { workspace = true }
 xpile-frontend       = { workspace = true }
 xpile-meta-hir       = { workspace = true }
