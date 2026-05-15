@@ -4,13 +4,83 @@
 
 # xpile
 
-**A polyglot transpile workbench with provable contracts at every layer.** Pluggable language frontends (Python, C, Rust, Ruchy, Lean 4, and future C++) share one canonical meta-HIR, plug into multiple backends (Rust, Ruchy, PTX, WGSL, SPIR-V, Lean 4), and ship alongside a proof lane that round-trips between LaTeX, Lean 4 theorems, and mdBook through a shared YAML contract substrate. Built to solve **hybrid transpilation** — single artifacts that cross language boundaries (CPython + C extensions, Python + CUDA kernels) — which separate per-language repos cannot.
+[![ci](https://github.com/paiml/xpile/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/xpile/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/xpile.svg)](https://crates.io/crates/xpile)
+[![license](https://img.shields.io/crates/l/xpile.svg)](#license)
 
-**Status:** Scaffold (v0.1.0). 14 workspace crates compile clean; `provable-contracts` (the `pv` framework) is wired; 4 example contracts pass `pv lint` 8/8 gates; no working transpilation logic yet.
+**A polyglot transpile workbench with provable contracts at every layer.** Six language frontends (Python, C, C++, Rust, Ruchy, Lean 4) share one canonical meta-HIR and dispatch through six backends (Rust, Ruchy, PTX, WGSL, SPIR-V, Lean 4), all alongside a **proof lane** that round-trips between LaTeX, Lean 4 theorems, and mdBook through a shared YAML contract substrate. Built to solve **hybrid transpilation** — single artifacts that cross language boundaries (CPython + C extensions, Python + CUDA kernels) — which separate per-language repos cannot.
 
-> **Canonical spec:** [`docs/specifications/xpile-spec.md`](docs/specifications/xpile-spec.md) — TOC + 23 sections, each linking to a `sub/<topic>.md`.
+## Status — v0.1.0
+
+**It transpiles.** A live Python → Rust pipeline ships today:
+
+```bash
+$ cargo install xpile  # v0.0.1 placeholder; v0.1.0 lands once published
+$ cat fixture.py
+def add(a, b):
+    return a + b
+
+$ xpile transpile fixture.py
+// xpile-generated from Python module fixture
+
+pub fn add(a: i64, b: i64) -> i64 {
+    (a + b)
+}
+```
+
+Same source, different target:
+
+```bash
+$ xpile transpile fixture.py --target ruchy
+// xpile-generated from Python module fixture
+
+fun add(a: i64, b: i64) -> i64 {
+    (a + b)
+}
+```
+
+**By the numbers (live, not aspirational):**
+
+- 24 workspace crates · all compile clean (`cargo check --workspace`)
+- 11 contracts · `pv lint` PASS with 0 errors
+- Python subset shipped: top-level `def name(p): return expr`, identifiers, int literals, `+ - * // %  ==  !=  <  <=  >  >=`, ternary `x if cond else y`. Type inference: comparisons → bool, else i64.
+- Rust target: real emission with Python-floor semantics (`div_euclid` / `rem_euclid` for `//` / `%`)
+- Ruchy target: real emission with `fun ... -> T { ... }` syntax
+- CI: `gate` + `workspace-test` required on every PR
+- Published: [`xpile 0.0.1`](https://crates.io/crates/xpile) (name reservation; v0.1.0+ is real)
+
+> **Canonical spec:** [`docs/specifications/xpile-spec.md`](docs/specifications/xpile-spec.md) — TOC + 25 sections, each linking to a `sub/<topic>.md`.
 >
-> **Current status:** [`docs/status/CURRENT.md`](docs/status/CURRENT.md) — future-session pickup point.
+> **Adversarial audit:** [`docs/specifications/audit-design.md`](docs/specifications/audit-design.md) — Popperian falsification record (4 hypotheses).
+
+## Two lanes, one substrate
+
+xpile has two parallel pipelines that share the YAML contract substrate. Trait-level detail in [`sub/frontend-trait.md`](docs/specifications/sub/frontend-trait.md), [`sub/backend-trait.md`](docs/specifications/sub/backend-trait.md), [`sub/contract-frontend-trait.md`](docs/specifications/sub/contract-frontend-trait.md), [`sub/contract-backend-trait.md`](docs/specifications/sub/contract-backend-trait.md).
+
+### Code lane (executable code)
+
+```
+Frontends                      Backends
+─────────                      ─────────
+Python   ─┐               ┌─→ Rust        ✅ real emission
+C        ─┤               ├─→ Ruchy       ✅ real emission
+C++      ─┼→ meta-HIR ─→ ─┼─→ PTX         🚧 scaffold + Layer-5 contract
+Rust     ─┤               ├─→ WGSL        🚧 scaffold
+Ruchy    ─┤               ├─→ SPIR-V      🚧 planned
+Lean 4   ─┘               └─→ Lean 4      🚧 scaffold
+```
+
+### Proof lane (notation + proofs)
+
+```
+ContractFrontends             ContractBackends
+─────────────────             ─────────────────
+LaTeX       ─┐                  ┌─→ LaTeX (papers)
+Lean 4 thm  ─┼─→ contracts ←──←─┼─→ Lean 4 theorems
+mdBook      ─┘                  └─→ mdBook
+```
+
+Lean 4 spans both lanes. LaTeX is proof-lane-only. Citation bridge uses **format-native structured constructs** (`@[xpile_contract "..."]` attribute in Lean, `\xpileContract{...}{...}` macro in LaTeX, structured comment in mdBook) — never regex over body text. Revised post-audit; see [`sub/contract-backend-trait.md`](docs/specifications/sub/contract-backend-trait.md) §"Citation bridge".
 
 ## Quick orientation
 
@@ -18,98 +88,91 @@
 |---|---|
 | What is xpile and why does it exist? | [§1 Vision and Architecture](docs/specifications/sub/vision.md) |
 | How do I add a new language? | [§17 Frontend Onboarding](docs/specifications/sub/frontend-onboarding.md) |
+| Lean 4 in both lanes? | [§24 Lean 4 Bidirectional](docs/specifications/sub/lean-bidirectional.md) |
+| LaTeX in the proof lane? | [§25 LaTeX Bidirectional](docs/specifications/sub/latex-bidirectional.md) |
 | What is hybrid transpilation? | [§16 Hybrid Transpile Flow](docs/specifications/sub/hybrid-transpile-flow.md) |
 | How does the agent loop work? | [§7 Bounded Agent Repair Loop](docs/specifications/sub/agent-loop.md) |
 | How are contracts validated? | [§11 Provable Contracts (`pv`)](docs/specifications/sub/pv-integration.md) |
-| What are the quality gates? | [§12 Quality Regime (`pmat`)](docs/specifications/sub/pmat-integration.md) + [§18 CI Pipeline](docs/specifications/sub/ci-gates.md) |
-| What's the rollout plan? | [§21 Phased Rollout](docs/specifications/sub/phased-rollout.md) |
-| Where are we now? | [docs/status/CURRENT.md](docs/status/CURRENT.md) |
+| What's the contract taxonomy? | [§13 Contract Taxonomy](docs/specifications/sub/contract-taxonomy.md) (5 layers × 2 lanes) |
+| What are the quality gates? | [§12 `pmat`](docs/specifications/sub/pmat-integration.md) + [§18 CI Pipeline](docs/specifications/sub/ci-gates.md) |
 
-## Architecture (one screen)
+## Contracts at v0.1.0 (11)
+
+| Contract | `pv` kind | Layer × Lane | What it pins down |
+|---|---|---|---|
+| `xpile-frontend-trait-v1.yaml` | pattern | 3 architectural / code | Frontend trait invariants |
+| `xpile-backend-trait-v1.yaml` | pattern | 3 / code | Backend trait + structural compile-contract citation |
+| `xpile-contract-frontend-trait-v1.yaml` | pattern | 3 / proof | ContractFrontend trait invariants |
+| `xpile-contract-backend-trait-v1.yaml` | pattern | 3 / proof | ContractBackend + citation bridge via structured attrs |
+| `py-int-arith-v1.yaml` | kernel | 1 semantics / code | Python `int` arithmetic with bigint promotion |
+| `xlate-py-list-to-vec-v1.yaml` | kernel | 2 translation / code | Python list → Rust Vec, alias-preserving |
+| `xlate-lean-to-rust-v1.yaml` | kernel | 2 / code | All Lean 4 constructs (def, partial, inductive, instance, axiom, ...) → Rust |
+| `xlate-rust-fn-to-lean-thm-v1.yaml` | kernel | 2 / proof | Rust fn + contract → Lean 4 theorem with `@[xpile_contract]` attr |
+| `notation-latex-math-to-equation-v1.yaml` | kernel | 2 / proof | LaTeX math + theorem envs → contract equations |
+| `ffi-cpython-ext-v1.yaml` | pattern | 4 hybrid / code | CPython C-extension boundary semantics |
+| `compile-rust-to-ptx-mma-v1.yaml` | pattern | **5 compile / code** | PTX emission: `mma.sync`, `cp.async` pipelining, SMEM budget |
+
+`pv lint contracts/` → PASS, 0 errors.
+
+## Workspace (24 crates)
 
 ```
 crates/
-├── xpile/                  # CLI binary
-├── xpile-core/             # session orchestration
-├── xpile-agent/            # bounded agent loop (from alchemize)
-├── xpile-oracle/           # Oracle trait — capture & compare execution
-├── xpile-llm/              # model invocation + content-addressed cache
-├── xpile-mcp/              # MCP server
-├── xpile-contracts/        # re-export of provable-contracts (pv)
-├── xpile-rust-codegen/     # shared Rust emission
-├── xpile-meta-hir/         # canonical IR
-├── xpile-ffi-manifest/     # cross-language boundary registry
-├── xpile-frontend/         # Frontend trait
+├── xpile/                           CLI binary
+├── xpile-core/                      session orchestration + default_session()
+├── xpile-agent/                     bounded agent loop (from alchemize)
+├── xpile-oracle/                    Oracle trait — capture & compare execution
+├── xpile-llm/                       model invocation + content-addressed cache
+├── xpile-mcp/                       MCP server
+├── xpile-contracts/                 re-export of provable-contracts (pv)
+├── xpile-meta-hir/                  canonical IR
+├── xpile-ffi-manifest/              cross-language boundary registry
 │
-├── depyler-frontend/       # Python (extensions: py, pyi)
-├── decy-frontend/          # C       (extensions: c, h)
-└── ruchy-frontend/         # Ruchy   (extensions: ruchy)
+├── xpile-frontend/                  Frontend trait (code lane)
+├── xpile-backend/                   Backend trait (code lane)
+├── xpile-contract-frontend/         ContractFrontend trait (proof lane)
+├── xpile-contract-backend/          ContractBackend trait (proof lane)
+│
+├── depyler-frontend/                Python   (.py, .pyi) — REAL parser
+├── decy-frontend/                   C        (.c, .h)    — scaffold
+├── ruchy-frontend/                  Ruchy    (.ruchy)    — scaffold
+│
+├── xpile-rust-codegen/              Rust    — REAL emission
+├── xpile-ruchy-codegen/             Ruchy   — REAL emission
+├── xpile-ptx-codegen/               PTX     — scaffold + Layer-5 contract
+├── xpile-wgsl-codegen/              WGSL    — scaffold
+├── xpile-lean-codegen/              Lean 4  — scaffold
+│
+├── latex-contract-frontend/         LaTeX   — scaffold
+├── xpile-lean-contract-backend/     Lean theorems — scaffold (attr citation)
+└── xpile-latex-contract-backend/    LaTeX papers  — scaffold (macro citation)
 ```
 
-Dependency direction is strictly downward. New frontends are added at the bottom; nothing above them changes.
+`depyler` / `decy` / `ruchy` are also exposed as workspace **aliases** so the original `cargo install depyler` / `cargo install decy` / `cargo install ruchy` consumers keep working when the merge plan in [`sub/migration.md`](docs/specifications/sub/migration.md) lands.
 
-## Quality regime
+## CI gates (live)
 
-xpile uses [`provable-contracts`](https://github.com/paiml/provable-contracts) (`pv` CLI) as the design controller and [`pmat`](https://github.com/paiml/paiml-mcp-agent-toolkit) as the work controller. YAML contracts under `contracts/` are canonical; Rust trait stubs, property tests, Kani harnesses, Lean 4 theorems, mdBook pages, and README claims are *generated from* them.
+Every PR runs:
 
-CI-enforced quality gates (see [§18 CI Pipeline](docs/specifications/sub/ci-gates.md)):
+| Step | Command |
+|---|---|
+| Formatting | `cargo fmt --all -- --check` |
+| Type check | `cargo check --workspace` |
+| Lint | `cargo clippy --workspace --all-targets -- -D warnings` |
+| Provable contracts | `pv lint contracts/` (via `aprender-contracts-cli`) |
+| Security advisories | `cargo deny check advisories` |
+| Tests | `cargo test --workspace` (incl. e2e rustc round-trip) |
 
-| Gate | Tool | Threshold |
-|---|---|---|
-| PMAT TDG grade | `pmat tdg` | ≥ A- |
-| Line coverage | `cargo llvm-cov` | ≥ 95% |
-| Mutation coverage | `cargo mutants` | ≥ 80% on changed code |
-| Provable-contracts | `pv lint` | 8/8 gates pass |
-| Contract score | `pv score` | no regression |
-| Clippy | `cargo clippy -- -D warnings` | zero warnings |
-| Security advisories | `cargo deny check` | zero unyanked |
-
-## Contracts at v0.1.0
-
-Four example contracts under `contracts/`, all passing `pv lint` 8/8:
-
-| Contract | `pv` kind | xpile layer | What it pins down |
-|---|---|---|---|
-| `xpile-frontend-trait-v1.yaml` | pattern | Layer 3 (architectural) | Frontend trait invariants |
-| `py-int-arith-v1.yaml` | kernel | Layer 1 (language semantics) | Python `int` arithmetic with bigint promotion |
-| `xlate-py-list-to-vec-v1.yaml` | kernel | Layer 2 (translation) | Python list → Rust Vec, alias-preserving |
-| `ffi-cpython-ext-v1.yaml` | pattern | Layer 4 (hybrid) | CPython C-extension boundary semantics |
-
-Current `pv lint` output:
-
-```
-  Gate 1: validate             ✓  (4 contracts, 0 errors, 2 warnings)
-  Gate 2: audit                ✓  (4 contracts, 0 findings)
-  Gate 3: score                ✓  (4 contracts, mean=0.58, threshold=0.00)
-  Gate 4: verify               ✓
-  Gate 5: enforce              ✓  (10 eqs, 4 pre, 0 post)
-  Gate 6: enforcement-level    ✓
-  Gate 7: reverse-coverage     ⏭  (no --binding provided yet)
-  Gate 8: composition          ✓
-Result: PASS
-```
-
-## Roadmap
-
-Seven phases (full detail in [§21 Phased Rollout](docs/specifications/sub/phased-rollout.md)):
-
-- [x] **Phase 0** — Scaffold + `pv` wiring
-- [ ] **Phase 1** — Architectural contracts (6 Layer-3 contracts enforced)
-- [ ] **Phase 2** — Python semantics starter set (5 Layer-1 kernel contracts)
-- [ ] **Phase 3** — Codegen replacement (≥3 Python constructs via generated codegen)
-- [ ] **Phase 4** — Kani equivalence proofs (all arithmetic Kani-green)
-- [ ] **Phase 5** — Hybrid pipeline demo (NumPy-using `.py` + companion `.c`)
-- [ ] **Phase 6** — Lean theorems (≥3 closed on math-dense contracts)
+Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Family
 
 | Repo | Role |
 |---|---|
 | `paiml/xpile` (this) | Polyglot transpile workbench |
-| `paiml/aprender` | ML framework; source of `provable-contracts` |
-| `paiml/provable-contracts` | Canonical `pv-spec.md` |
-| `paiml/depyler` | Python→Rust transpiler (→ folds into xpile per [§19](docs/specifications/sub/migration.md)) |
-| `paiml/decy` | C→Rust transpiler (→ folds in) |
+| `paiml/aprender` | ML framework; source of `aprender-contracts` (`pv`) |
+| `paiml/depyler` | Python→Rust transpiler — folds into xpile per [§19](docs/specifications/sub/migration.md) |
+| `paiml/decy` | C→Rust transpiler — folds in |
 | `paiml/ruchy` | Modern data science language; xpile's third frontend |
 | `paiml/paiml-mcp-agent-toolkit` | `pmat` |
 | `pymc-labs/alchemize` | Source of the four-tool agent loop pattern |
