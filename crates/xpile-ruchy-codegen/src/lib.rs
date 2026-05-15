@@ -12,7 +12,7 @@
 
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, Target};
-use xpile_meta_hir::{BinOp, Expr, Function, Item, Module, Param, Type};
+use xpile_meta_hir::{BinOp, Block, Expr, Function, Item, Module, Param, Stmt, Type};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuchyCodegenError {
@@ -50,11 +50,32 @@ fn emit_function(out: &mut String, f: &Function) -> Result<(), RuchyCodegenError
     write!(out, ") -> ")?;
     emit_type(out, f.return_type)?;
     writeln!(out, " {{")?;
-    write!(out, "    ")?;
-    emit_expr(out, &f.body)?;
-    writeln!(out)?;
+    emit_block(out, &f.body)?;
     writeln!(out, "}}")?;
     Ok(())
+}
+
+fn emit_block(out: &mut String, block: &Block) -> Result<(), RuchyCodegenError> {
+    for stmt in &block.stmts {
+        emit_stmt(out, stmt)?;
+    }
+    write!(out, "    ")?;
+    emit_expr(out, &block.trailing_return)?;
+    writeln!(out)?;
+    Ok(())
+}
+
+fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), RuchyCodegenError> {
+    match stmt {
+        Stmt::Let { name, ty, value } => {
+            write!(out, "    let {name}: ")?;
+            emit_type(out, *ty)?;
+            write!(out, " = ")?;
+            emit_expr(out, value)?;
+            writeln!(out, ";")?;
+            Ok(())
+        }
+    }
 }
 
 fn emit_param(out: &mut String, p: &Param) -> Result<(), RuchyCodegenError> {
@@ -198,10 +219,13 @@ mod tests {
                 },
             ],
             return_type: Type::I64,
-            body: Expr::BinOp {
-                op: BinOp::Add,
-                lhs: Box::new(Expr::Ident("a".into())),
-                rhs: Box::new(Expr::Ident("b".into())),
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::BinOp {
+                    op: BinOp::Add,
+                    lhs: Box::new(Expr::Ident("a".into())),
+                    rhs: Box::new(Expr::Ident("b".into())),
+                },
             },
         }
     }
@@ -237,10 +261,13 @@ mod tests {
                 },
             ],
             return_type: Type::I64,
-            body: Expr::BinOp {
-                op: BinOp::FloorDiv,
-                lhs: Box::new(Expr::Ident("a".into())),
-                rhs: Box::new(Expr::Ident("b".into())),
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::BinOp {
+                    op: BinOp::FloorDiv,
+                    lhs: Box::new(Expr::Ident("a".into())),
+                    rhs: Box::new(Expr::Ident("b".into())),
+                },
             },
         };
         let m = module_with("fixture", vec![Item::Function(f)]);

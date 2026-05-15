@@ -195,3 +195,26 @@ fn rust_emission_for_cmp_compiles_with_rustc() {
     let rust = xpile_transpile_to_rust("cmp.py");
     assert_rustc_accepts("cmp", &rust);
 }
+
+#[test]
+fn transpile_let_sum_py_emits_lets_and_trailing_return() {
+    let py = fixture("let_sum.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("pub fn let_sum(a: i64, b: i64) -> i64"));
+    assert!(stdout.contains("let s: i64 = (a + b);"));
+    assert!(stdout.contains("let t: i64 = (s * 2i64);"));
+    // Trailing return is just the ident — no `return` keyword in v0.1.0 emission.
+    assert!(stdout.contains("\n    t\n"));
+}
+
+#[test]
+fn rust_emission_for_let_sum_compiles_with_rustc() {
+    let rust = xpile_transpile_to_rust("let_sum.py");
+    assert_rustc_accepts("let_sum", &rust);
+}

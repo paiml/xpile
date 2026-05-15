@@ -1,23 +1,24 @@
 //! Python frontend for xpile.
 //!
-//! Parses `.py` source with `rustpython-parser` and lowers a tightly
-//! constrained subset (top-level `def` with a single `return expr` body,
-//! i64-typed params and return) into meta-HIR. Anything outside the
-//! subset returns `FrontendError::Lower` with a message naming the
-//! unsupported construct.
+//! Parses `.py` source with `rustpython-parser` and lowers a constrained
+//! subset into meta-HIR. Anything outside the subset returns
+//! `FrontendError::Lower` with a message naming the unsupported construct.
 //!
 //! Subset supported at v0.1.0:
-//!   - Top-level `def name(p1, p2, ...): return expr`
-//!   - Identifiers, integer literals
-//!   - Binary ops: + - * // %  ==  !=  <  <=  >  >=
-//!   - Everything is `i64` (typed as such on the Rust side).
+//!   - Top-level `def name(p1, p2, ...):` with a body of zero-or-more
+//!     `name = expr` assignments followed by a final `return expr`.
+//!   - Identifiers, integer literals.
+//!   - Binary ops: `+ - * // %  ==  !=  <  <=  >  >=`.
+//!   - Ternary `x if cond else y` (both branches must have the same type;
+//!     `cond` must be Bool — no int-truthiness coercion).
+//!   - Type inference: comparisons → `Bool`, otherwise `I64`.
 //!
-//! Extensions (later): type annotations, multi-statement bodies,
-//! conditionals, calls, the rest of [`xpile_meta_hir::BinOp`].
+//! Extensions (later): type annotations, `if/else` statements, loops,
+//! function calls, bigint promotion.
 
 use std::path::Path;
 use xpile_frontend::{Frontend, FrontendError};
-use xpile_meta_hir::{BinOp, Expr, Function, Item, Module, Param, SourceLang, Type};
+use xpile_meta_hir::{BinOp, Block, Expr, Function, Item, Module, Param, SourceLang, Stmt, Type};
 
 use rustpython_parser::ast;
 use rustpython_parser::Parse;
@@ -93,32 +94,42 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
         })
         .collect();
 
-    // Body must be exactly one `return expr`.
-    let mut body_iter = f.body.into_iter();
-    let first = body_iter
-        .next()
-        .ok_or_else(|| FrontendError::Lower(format!("function `{}` has an empty body", f.name)))?;
-    if body_iter.next().is_some() {
+    // Body: zero or more leading `let`s, then a final `return expr`.
+    if f.body.is_empty() {
         return Err(FrontendError::Lower(format!(
-            "function `{}` has multiple statements — only `return expr` is supported at v0.1.0",
+            "function `{}` has an empty body",
             f.name
         )));
     }
 
-    let return_expr = match first {
-        ast::Stmt::Return(ret) => ret.value.ok_or_else(|| {
-            FrontendError::Lower(format!("function `{}` returns nothing", f.name))
-        })?,
+    let body_stmts = f.body;
+    let (last, leading) = body_stmts.split_last().expect("checked non-empty above");
+
+    let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
+    for stmt in leading {
+        stmts.push(lower_block_stmt(&f.name, stmt.clone())?);
+    }
+
+    let trailing_return = match last {
+        ast::Stmt::Return(ret) => {
+            let value = ret.value.as_ref().ok_or_else(|| {
+                FrontendError::Lower(format!("function `{}` returns nothing", f.name))
+            })?;
+            lower_expr((**value).clone())?
+        }
         _ => {
             return Err(FrontendError::Lower(format!(
-                "function `{}` body is not `return expr`",
+                "function `{}` does not end with `return expr` — required at v0.1.0",
                 f.name
             )));
         }
     };
 
-    let body = lower_expr(*return_expr)?;
-    let return_type = infer_type(&body);
+    let return_type = infer_type(&trailing_return);
+    let body = Block {
+        stmts,
+        trailing_return,
+    };
 
     Ok(Function {
         name: f.name.to_string(),
@@ -126,6 +137,51 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
         return_type,
         body,
     })
+}
+
+/// Lower a single non-trailing statement (currently only assignment).
+fn lower_block_stmt(fn_name: &str, stmt: ast::Stmt) -> Result<Stmt, FrontendError> {
+    match stmt {
+        ast::Stmt::Assign(asn) => lower_assign(fn_name, asn),
+        ast::Stmt::Return(_) => Err(FrontendError::Lower(format!(
+            "function `{fn_name}` has an early `return` — only the last statement may be `return` at v0.1.0"
+        ))),
+        other => Err(FrontendError::Lower(format!(
+            "function `{fn_name}` contains unsupported statement: {:?} — supported: assignment, then a final `return`",
+            std::mem::discriminant(&other)
+        ))),
+    }
+}
+
+fn lower_assign(fn_name: &str, asn: ast::StmtAssign) -> Result<Stmt, FrontendError> {
+    if asn.targets.len() != 1 {
+        return Err(FrontendError::Lower(format!(
+            "function `{fn_name}` has chained assignment `a = b = ...` — not supported at v0.1.0"
+        )));
+    }
+    let target = asn.targets.into_iter().next().expect("len checked");
+    let name = match target {
+        ast::Expr::Name(n) => n.id.to_string(),
+        ast::Expr::Tuple(_) => {
+            return Err(FrontendError::Lower(format!(
+                "function `{fn_name}` uses tuple unpacking `a, b = ...` — not supported at v0.1.0"
+            )));
+        }
+        ast::Expr::Attribute(_) | ast::Expr::Subscript(_) => {
+            return Err(FrontendError::Lower(format!(
+                "function `{fn_name}` assigns to an attribute/subscript — not supported at v0.1.0"
+            )));
+        }
+        other => {
+            return Err(FrontendError::Lower(format!(
+                "function `{fn_name}` has unsupported assignment target: {:?}",
+                std::mem::discriminant(&other)
+            )));
+        }
+    };
+    let value = lower_expr(*asn.value)?;
+    let ty = infer_type(&value);
+    Ok(Stmt::Let { name, ty, value })
 }
 
 /// Trivial type inference for the v0.1.0 subset. Comparisons yield Bool,
@@ -284,14 +340,18 @@ mod tests {
         assert_eq!(f.params.len(), 2);
         assert_eq!(f.params[0].name, "a");
         assert_eq!(f.params[1].name, "b");
-        assert!(matches!(f.body, Expr::BinOp { op: BinOp::Add, .. }));
+        assert!(f.body.stmts.is_empty());
+        assert!(matches!(
+            f.body.trailing_return,
+            Expr::BinOp { op: BinOp::Add, .. }
+        ));
     }
 
     #[test]
     fn lowers_constant_in_body() {
         let m = parse("def f(a):\n    return a + 1\n");
         let f = function(&m, 0);
-        let Expr::BinOp { lhs, rhs, op } = &f.body else {
+        let Expr::BinOp { lhs, rhs, op } = &f.body.trailing_return else {
             panic!("expected BinOp");
         };
         assert_eq!(*op, BinOp::Add);
@@ -304,7 +364,7 @@ mod tests {
         let m = parse("def le(a, b):\n    return a <= b\n");
         let f = function(&m, 0);
         assert!(matches!(
-            f.body,
+            f.body.trailing_return,
             Expr::BinOp {
                 op: BinOp::LtEq,
                 ..
@@ -313,20 +373,48 @@ mod tests {
     }
 
     #[test]
-    fn rejects_multi_statement_body() {
+    fn lowers_assignment_then_return() {
+        let m = parse("def f(a, b):\n    s = a + b\n    return s\n");
+        let f = function(&m, 0);
+        assert_eq!(f.body.stmts.len(), 1);
+        let Stmt::Let { name, ty, value } = &f.body.stmts[0];
+        assert_eq!(name, "s");
+        assert_eq!(*ty, Type::I64);
+        assert!(matches!(value, Expr::BinOp { op: BinOp::Add, .. }));
+        assert!(matches!(f.body.trailing_return, Expr::Ident(ref n) if n == "s"));
+    }
+
+    #[test]
+    fn lowers_multiple_lets_then_return() {
+        let m = parse("def f(a, b):\n    x = a + 1\n    y = b * 2\n    return x + y\n");
+        let f = function(&m, 0);
+        assert_eq!(f.body.stmts.len(), 2);
+    }
+
+    #[test]
+    fn rejects_function_without_trailing_return() {
+        let err = PythonFrontend
+            .parse_and_lower(&PathBuf::from("fixture.py"), "def f(a):\n    x = a + 1\n")
+            .expect_err("missing trailing return should fail");
+        match err {
+            FrontendError::Lower(msg) => {
+                assert!(msg.contains("end with `return"), "unexpected msg: {}", msg);
+            }
+            _ => panic!("expected Lower error"),
+        }
+    }
+
+    #[test]
+    fn rejects_chained_assignment() {
         let err = PythonFrontend
             .parse_and_lower(
                 &PathBuf::from("fixture.py"),
-                "def f():\n    x = 1\n    return x\n",
+                "def f(a):\n    x = y = a\n    return x\n",
             )
-            .expect_err("multi-statement body should fail at v0.1.0");
+            .expect_err("chained assignment should fail");
         match err {
             FrontendError::Lower(msg) => {
-                assert!(
-                    msg.contains("multiple statements"),
-                    "unexpected msg: {}",
-                    msg
-                );
+                assert!(msg.contains("chained"), "unexpected msg: {}", msg);
             }
             _ => panic!("expected Lower error"),
         }
@@ -357,9 +445,9 @@ mod tests {
             cond,
             then_expr,
             else_expr,
-        } = &f.body
+        } = &f.body.trailing_return
         else {
-            panic!("expected IfExpr, got {:?}", f.body);
+            panic!("expected IfExpr, got {:?}", f.body.trailing_return);
         };
         assert!(matches!(
             **cond,
