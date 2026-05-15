@@ -239,3 +239,23 @@ fn rust_emission_for_call_chain_compiles_with_rustc() {
     let rust = xpile_transpile_to_rust("call_chain.py");
     assert_rustc_accepts("call_chain", &rust);
 }
+
+#[test]
+fn transpile_in_range_py_uses_logical_and() {
+    let py = fixture("in_range.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("pub fn in_range(x: i64, lo: i64, hi: i64) -> bool"));
+    assert!(stdout.contains("((lo <= x) && (x <= hi))"));
+}
+
+#[test]
+fn rust_emission_for_in_range_compiles_with_rustc() {
+    let rust = xpile_transpile_to_rust("in_range.py");
+    assert_rustc_accepts("in_range", &rust);
+}
