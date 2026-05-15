@@ -12,31 +12,36 @@
 
 ## Status — v0.1.0
 
-**It transpiles.** A live Python → Rust pipeline ships today:
+**It transpiles, semantic round-trip verified in CI.** A non-trivial recursive Python function transpiles to Rust that compiles _and computes the right values_:
+
+```python
+# factorial.py
+def factorial(n: int) -> int:
+    return 1 if n <= 1 else n * factorial(n - 1)
+```
 
 ```bash
-$ cargo install xpile  # v0.0.1 placeholder; v0.1.0 lands once published
-$ cat fixture.py
-def add(a, b):
-    return a + b
+$ xpile transpile factorial.py
+// xpile-generated from Python module factorial
 
-$ xpile transpile fixture.py
-// xpile-generated from Python module fixture
-
-pub fn add(a: i64, b: i64) -> i64 {
-    (a + b)
+pub fn factorial(n: i64) -> i64 {
+    if (n <= 1i64) { 1i64 } else { (n * factorial((n - 1i64))) }
 }
 ```
 
-Same source, different target:
+CI runs `rustc -O` on the output and asserts `factorial(10) == 3628800` — the test is `factorial_emitted_rust_computes_correct_values`.
+
+Same source, three different targets:
 
 ```bash
-$ xpile transpile fixture.py --target ruchy
-// xpile-generated from Python module fixture
-
-fun add(a: i64, b: i64) -> i64 {
-    (a + b)
+$ xpile transpile factorial.py --target ruchy
+fun factorial(n: i64) -> i64 {
+    if (n <= 1i64) { 1i64 } else { (n * factorial((n - 1i64))) }
 }
+
+$ xpile transpile factorial.py --target lean
+def factorial (n : Int) : Int :=
+  if (n <= (1: Int)) then (1: Int) else (n * (factorial (n - (1: Int))))
 ```
 
 **By the numbers (live, not aspirational):**
