@@ -1,0 +1,199 @@
+metadata:
+  id: C-PY-INT-ARITH
+  version: "1.0.0"
+  created: "2026-05-15"
+  author: PAIML Engineering
+  kind: kernel
+  status: draft
+  description: |
+    Operational semantics of Python `int` arithmetic, as observed
+    behaviorally in CPython 3.12+. Python's int is mathematically
+    unbounded; xpile must preserve that across the Rust output, with
+    a fast path through machine integers when the result fits.
+
+    Layer 1 of the xpile contract taxonomy (per-language semantics).
+    Paired with `C-XLATE-PY-LIST-TO-VEC-V1` and similar translation
+    contracts at Layer 2.
+  references:
+    - "Python Language Reference §6.7 (Binary arithmetic operations)"
+    - "CPython Objects/longobject.c"
+    - docs/specifications/xpile-contract-driven-design-v1.md
+  depends_on: []
+
+equations:
+  addition_no_overflow:
+    formula: |
+      python_int_add(a, b) == rust_i64::wrapping_add(a, b)  WHEN  fits_i64(a + b)
+    domain: |
+      a, b: Python int values whose mathematical sum fits in i64.
+    invariants:
+      - "no observable difference between CPython and Rust output when fits_i64(a+b)"
+      - "no allocation in the fits_i64 fast path"
+    preconditions:
+      - "a and b are both Python int (not float, not bool, not bigint-required)"
+
+  addition_overflow_promotion:
+    formula: |
+      python_int_add(a, b) == bigint::add(a, b)  WHEN  not fits_i64(a + b)
+    domain: |
+      a, b: Python ints whose mathematical sum does not fit in i64.
+    invariants:
+      - "the result equals the mathematically exact a + b"
+      - "no information loss compared to CPython"
+      - "exactly one heap allocation (the BigInt result)"
+    preconditions: []
+
+  multiplication_quadratic_promotion:
+    formula: |
+      python_int_mul(a, b) == if fits_i64(a * b) { rust_i64::wrapping_mul(a, b) } else { bigint::mul(a, b) }
+    domain: |
+      a, b: Python ints. Special case: i64::MIN * -1 always promotes.
+    invariants:
+      - "result matches CPython for all (a, b) including i64::MIN * -1 which CPython promotes to bigint"
+      - "i64::MIN.wrapping_mul(-1) == i64::MIN — Rust wraps; CPython promotes; we MUST follow CPython"
+    preconditions: []
+
+  division_floor_semantics:
+    formula: |
+      python_int_floordiv(a, b) == floor(a / b)  WHEN  b != 0
+    domain: |
+      a, b: Python ints with b != 0. Python `//` is FLOOR division;
+      Rust `/` is TRUNCATING.
+    invariants:
+      - "for mixed-sign operands Python and Rust diverge by one — must be corrected in translation"
+      - "div_euclid is closer to floor but still diverges when remainder is zero — handle that case"
+    preconditions:
+      - "b != 0 (else Python raises ZeroDivisionError — separate contract)"
+
+  bitwise_and_signed_semantics:
+    formula: |
+      python_int_and(a, b) == rust_i64::bitand(a, b)  WHEN  both_fit_i64(a, b)
+    domain: |
+      a, b: Python ints that fit in i64.
+    invariants:
+      - "Python ints have INFINITE-PRECISION two's complement representation"
+      - "for negative bigint operands, the Rust output must match this — separate bigint contract"
+    preconditions: []
+
+proof_obligations:
+  - type: precondition
+    property: operands are Python int (not int-subclass, not bool-as-int)
+    formal: "type(a) is int ∧ type(b) is int"
+    applies_to: all
+  - type: postcondition
+    property: result equals CPython's output bit-for-bit for the i64 domain
+    formal: "∀ a, b ∈ i64: a + b ∈ i64 ⟹ result == cpython_eval(f'{a}+{b}')"
+    applies_to: addition_no_overflow
+  - type: postcondition
+    property: result equals CPython's output mathematically for the promotion domain
+    formal: "∀ a, b: a + b ∉ i64 ⟹ bigint_eq(result, cpython_eval(f'{a}+{b}'))"
+    applies_to: addition_overflow_promotion
+  - type: invariant
+    property: no silent truncation
+    formal: "∀ a, b, op: emit(a op b) preserves the exact mathematical value"
+    applies_to: all
+  - type: bound
+    property: at most one heap allocation per arithmetic op
+    formal: "allocs(emit(op)) ∈ {0, 1}"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-PY-INT-ARITH-001
+    rule: |
+      i64::MAX + 1 must promote to bigint, not silently wrap.
+    prediction: |
+      python_int_add(i64::MAX, 1) returns BigInt(i64::MAX + 1), not i64::MIN.
+    test: |
+      cargo test -p depyler-frontend --test py_int_overflow_promotion
+    if_fails: |
+      The translation is doing wrapping_add without the fits_i64 guard.
+    ship_blocking: true
+    counter_example_classes:
+      - silent_wrap_on_overflow
+
+  - id: FALSIFY-PY-INT-ARITH-002
+    rule: |
+      i64::MIN * -1 must promote to bigint (Python doesn't wrap).
+    prediction: |
+      python_int_mul(i64::MIN, -1) returns BigInt(2^63), not i64::MIN.
+    test: |
+      cargo test -p depyler-frontend --test py_int_min_neg_one
+    if_fails: |
+      Multiplication translation forgot the i64::MIN * -1 special case.
+    ship_blocking: true
+    counter_example_classes:
+      - i64_min_times_neg_one
+
+  - id: FALSIFY-PY-INT-ARITH-003
+    rule: |
+      Floor division of -7 // 2 must equal -4 (Python floor), not -3 (Rust trunc).
+    prediction: |
+      python_int_floordiv(-7, 2) == -4.
+    test: |
+      cargo test -p depyler-frontend --test py_int_floordiv_mixed_sign
+    if_fails: |
+      The translation emitted `a / b` (Rust trunc) instead of correcting to floor.
+    ship_blocking: true
+    counter_example_classes:
+      - trunc_instead_of_floor
+
+  - id: FALSIFY-PY-INT-ARITH-004
+    rule: |
+      Bitwise AND on i64-fitting Python ints must match Rust i64 AND bit-for-bit.
+    prediction: |
+      For all (a, b) ∈ i64²: python_int_and(a, b) == a & b (Rust i64).
+    test: |
+      cargo test -p depyler-frontend --test py_int_bitand_i64
+    if_fails: |
+      Two's complement representation mismatch — likely sign-extension bug.
+    ship_blocking: true
+    counter_example_classes:
+      - sign_extension_bug
+
+  - id: FALSIFY-PY-INT-ARITH-005
+    rule: |
+      No arithmetic op allocates more than once.
+    prediction: |
+      For any single binary arithmetic op, the allocation counter
+      increments by at most 1 (the bigint result, if promoted).
+    test: |
+      cargo test -p depyler-frontend --test py_int_arith_alloc_budget
+    if_fails: |
+      Intermediate BigInt allocation in the fast path — wasted work.
+    ship_blocking: false
+    counter_example_classes:
+      - intermediate_alloc
+
+kani_harnesses:
+  - id: KANI-PY-INT-ARITH-001
+    obligation: addition_no_overflow
+    bound: 8
+    property: |
+      At i8 bit width (256² pairs, exhaustive), addition_no_overflow
+      holds: when (a + b) fits in i8, python_int_add(a, b) equals
+      wrapping_add(a, b). Lifts algebraically to i64 via Lean.
+    harness: |
+      #[kani::proof]
+      fn addition_no_overflow_i8() {
+          let a: i8 = kani::any();
+          let b: i8 = kani::any();
+          let fits = (a as i16).checked_add(b as i16)
+              .map(|s| s >= i8::MIN as i16 && s <= i8::MAX as i16)
+              .unwrap_or(false);
+          if fits {
+              assert_eq!(a.wrapping_add(b), python_int_add_i8(a, b));
+          }
+      }
+
+  - id: KANI-PY-INT-ARITH-002
+    obligation: multiplication_quadratic_promotion
+    bound: 8
+    property: |
+      i8::MIN * -1 must report "promotion required" (not wrap to i8::MIN).
+    harness: |
+      #[kani::proof]
+      fn mul_min_neg_one_promotes() {
+          let a: i8 = i8::MIN;
+          let b: i8 = -1;
+          assert!(needs_promotion_i8_mul(a, b));
+      }

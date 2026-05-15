@@ -1,0 +1,102 @@
+[workspace]
+resolver = "2"
+members = [
+    # ── code-lane core ─────────────────────────────────────────────
+    "crates/xpile",
+    "crates/xpile-agent",
+    "crates/xpile-contracts",
+    "crates/xpile-core",
+    "crates/xpile-ffi-manifest",
+    "crates/xpile-frontend",
+    "crates/xpile-backend",                   # added 2026-05-15
+    "crates/xpile-llm",
+    "crates/xpile-mcp",
+    "crates/xpile-meta-hir",
+    "crates/xpile-oracle",
+    # ── code-lane frontends ───────────────────────────────────────
+    "crates/depyler-frontend",
+    "crates/decy-frontend",
+    "crates/ruchy-frontend",
+    # ── code-lane backends ────────────────────────────────────────
+    "crates/xpile-rust-codegen",
+    "crates/xpile-ruchy-codegen",             # added 2026-05-15
+    "crates/xpile-ptx-codegen",               # added 2026-05-15
+    "crates/xpile-wgsl-codegen",              # added 2026-05-15
+    "crates/xpile-lean-codegen",              # added 2026-05-15
+    # ── proof-lane trait abstractions ─────────────────────────────
+    "crates/xpile-contract-frontend",         # added 2026-05-15
+    "crates/xpile-contract-backend",          # added 2026-05-15
+    # ── proof-lane frontends + backends ───────────────────────────
+    "crates/latex-contract-frontend",         # added 2026-05-15
+    "crates/xpile-lean-contract-backend",     # added 2026-05-15
+    "crates/xpile-latex-contract-backend",    # added 2026-05-15
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.93"
+license = "MIT OR Apache-2.0"
+authors = ["PAIML Engineering"]
+repository = "https://github.com/paiml/xpile"
+homepage = "https://github.com/paiml/xpile"
+readme = "README.md"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "1"
+sha2 = "0.10"
+hex = "0.4"
+anyhow = "1"
+
+# External: aprender's provable-contracts framework.
+# Path-dep until aprender-contracts has a stable crates.io release;
+# see docs/specifications/xpile-contract-driven-design-v1.md §Open questions.
+provable-contracts = { path = "../aprender/crates/aprender-contracts", package = "aprender-contracts" }
+
+# Code lane: core
+xpile-agent          = { version = "0.1.0", path = "crates/xpile-agent" }
+xpile-contracts      = { version = "0.1.0", path = "crates/xpile-contracts" }
+xpile-core           = { version = "0.1.0", path = "crates/xpile-core" }
+xpile-ffi-manifest   = { version = "0.1.0", path = "crates/xpile-ffi-manifest" }
+xpile-frontend       = { version = "0.1.0", path = "crates/xpile-frontend" }
+xpile-backend        = { version = "0.1.0", path = "crates/xpile-backend" }
+xpile-llm            = { version = "0.1.0", path = "crates/xpile-llm" }
+xpile-mcp            = { version = "0.1.0", path = "crates/xpile-mcp" }
+xpile-meta-hir       = { version = "0.1.0", path = "crates/xpile-meta-hir" }
+xpile-oracle         = { version = "0.1.0", path = "crates/xpile-oracle" }
+
+# Code lane: frontends
+depyler-frontend = { version = "0.1.0", path = "crates/depyler-frontend" }
+decy-frontend    = { version = "0.1.0", path = "crates/decy-frontend" }
+ruchy-frontend   = { version = "0.1.0", path = "crates/ruchy-frontend" }
+
+# Code lane: backends
+xpile-rust-codegen  = { version = "0.1.0", path = "crates/xpile-rust-codegen" }
+xpile-ruchy-codegen = { version = "0.1.0", path = "crates/xpile-ruchy-codegen" }
+xpile-ptx-codegen   = { version = "0.1.0", path = "crates/xpile-ptx-codegen" }
+xpile-wgsl-codegen  = { version = "0.1.0", path = "crates/xpile-wgsl-codegen" }
+xpile-lean-codegen  = { version = "0.1.0", path = "crates/xpile-lean-codegen" }
+
+# Proof lane
+xpile-contract-frontend     = { version = "0.1.0", path = "crates/xpile-contract-frontend" }
+xpile-contract-backend      = { version = "0.1.0", path = "crates/xpile-contract-backend" }
+latex-contract-frontend     = { version = "0.1.0", path = "crates/latex-contract-frontend" }
+xpile-lean-contract-backend = { version = "0.1.0", path = "crates/xpile-lean-contract-backend" }
+xpile-latex-contract-backend = { version = "0.1.0", path = "crates/xpile-latex-contract-backend" }
+
+# ── aprender-pattern aliases ──────────────────────────────────────
+# Preserve the historic crate names from sibling repos so that
+# `cargo install depyler` / `cargo install decy` / `cargo install ruchy`
+# (paiml/depyler etc. as ~50-line shim repos) keep importing under the
+# old names. Decision recorded 2026-05-15; see project-xpile-vision memory
+# and aprender's Cargo.toml lines 254-273 for the originating pattern.
+depyler = { version = "0.1.0", path = "crates/depyler-frontend", package = "depyler-frontend" }
+decy    = { version = "0.1.0", path = "crates/decy-frontend",    package = "decy-frontend" }
+ruchy   = { version = "0.1.0", path = "crates/ruchy-frontend",   package = "ruchy-frontend" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

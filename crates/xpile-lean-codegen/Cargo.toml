@@ -1,0 +1,13 @@
+[package]
+name = "xpile-lean-codegen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Lean 4 (executable) backend stub — code-lane sibling of xpile-rust-codegen. Lowers meta-HIR to .lean def/inductive/structure. Proof-lane Lean (theorems) goes through xpile-lean-contract-backend."
+
+[dependencies]
+xpile-backend = { workspace = true }
+xpile-meta-hir = { workspace = true }

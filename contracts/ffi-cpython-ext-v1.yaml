@@ -1,0 +1,251 @@
+metadata:
+  id: C-FFI-CPYTHON-EXT
+  version: "1.0.0"
+  created: "2026-05-15"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    End-to-end pattern for hybrid transpiles where a Python module
+    imports and calls into a CPython C extension (the most common
+    case for NumPy / SciPy / Pandas etc.). The boundary semantics
+    (refcounting, GIL, error propagation, buffer protocol) MUST be
+    preserved when both sides are translated to Rust.
+
+    Layer 4 of the xpile contract taxonomy (hybrid pipeline). This
+    contract's existence justifies the entire xpile monorepo — it is
+    impossible to discharge with depyler or decy alone.
+  references:
+    - "PEP 7 / PEP 384 (CPython C API stability)"
+    - "Python/C API Reference Manual: Reference counting"
+    - "Python/C API Reference Manual: Buffer Protocol"
+    - docs/specifications/xpile-architecture-v1.md
+    - docs/specifications/xpile-contract-driven-design-v1.md
+    - contracts/xpile-frontend-trait-v1.yaml
+    - contracts/xlate-py-list-to-vec-v1.yaml
+  depends_on:
+    - C-XPILE-FRONTEND-TRAIT
+
+equations:
+  manifest_completeness:
+    formula: |
+      forall call in python_module.calls_into(c_extension): exists entry in ffi_manifest: entry.symbol == call.symbol
+    domain: |
+      A hybrid session containing a parsed Python module and one or
+      more parsed C extension modules.
+    invariants:
+      - "no call site is omitted from the manifest"
+      - "manifest entries are deduplicated by (symbol, from_lang, to_lang)"
+    preconditions:
+      - "both Python and C frontends have run"
+
+  refcount_balance_on_success:
+    formula: |
+      pre_call_refcount(obj) == post_call_refcount(obj)  WHEN call returns non-error
+    domain: |
+      Any PyObject* passed across the FFI boundary by reference.
+    invariants:
+      - "CPython convention: borrowed references stay borrowed, new references decremented by caller"
+      - "Rust output preserves the same balance via explicit Drop / clone semantics"
+      - "no refcount leaks and no double-decrements"
+    preconditions:
+      - "C extension follows CPython refcounting conventions correctly in the original"
+
+  refcount_balance_on_error:
+    formula: |
+      pre_call_refcount(obj) == post_call_refcount(obj)  WHEN call returns error AND obj is borrowed
+    domain: |
+      Error path. Errors in CPython C API are signaled by returning NULL
+      and setting a Python exception.
+    invariants:
+      - "the most common CPython C extension bug — error-path refcount leak — must be detected by oracle"
+      - "Rust translation must use ? / Result idioms that auto-drop on error"
+    preconditions: []
+
+  gil_invariant:
+    formula: |
+      gil_held(t) for t in [enter_call, exit_call]
+    domain: |
+      Any FFI call that touches CPython API state.
+    invariants:
+      - "Rust output uses pyo3's GIL guards (or equivalent) to preserve this"
+      - "transpiled extensions that explicitly release the GIL must mark that in the manifest entry"
+    preconditions:
+      - "Python frontend identified the call site as Python→C"
+
+  buffer_protocol_zero_copy:
+    formula: |
+      ndarray_passthrough(a) implies same_pointer(a.data, rust_view.as_ptr())
+    domain: |
+      A NumPy ndarray (or similar buffer-protocol object) passed across
+      the boundary.
+    invariants:
+      - "performance contract: passing a 1GB ndarray must be O(1), not O(N)"
+      - "if a copy is forced, that's a manifest annotation that must be explicit"
+    preconditions:
+      - "object implements __buffer__ protocol"
+
+  oracle_endtoend_equivalence:
+    formula: |
+      forall input in fixture: hybrid_python_module(input) == transpiled_rust(input)
+    domain: |
+      The full fixture of inputs captured by xpile-oracle.
+    invariants:
+      - "this is the agent's exit condition"
+      - "equality propagates through alias chains, refcounts, AND ndarray views"
+    preconditions:
+      - "fixture is non-empty"
+      - "both sides built clean"
+
+proof_obligations:
+  - type: precondition
+    property: both Python and C frontends produced meta-HIR
+    formal: "python_module.is_some() ∧ c_module.is_some()"
+    applies_to: all
+  - type: precondition
+    property: FFI manifest reconciliation ran successfully
+    formal: "manifest_complete == true ∧ unresolved_symbols == ∅"
+    applies_to: manifest_completeness
+  - type: postcondition
+    property: end-to-end oracle pass on the fixture
+    formal: "∀ x ∈ fixture: equal(hybrid(x), transpiled(x))"
+    applies_to: oracle_endtoend_equivalence
+  - type: postcondition
+    property: no refcount leaks visible to a leak-tracker
+    formal: "leaks_after_run() == ∅"
+    applies_to: all
+  - type: frame
+    property: the original Python and C source files are not modified
+    formal: "modifies() ⊆ {generated_rust_files, manifest, cache}"
+    applies_to: all
+  - type: invariant
+    property: GIL is held wherever CPython API is touched
+    formal: "∀ call ∈ python_to_c: gil_held(call)"
+    applies_to: gil_invariant
+  - type: bound
+    property: ndarray passthrough is zero-copy
+    formal: "∀ a ∈ ndarray_passthrough: copies(transpile(a)) == 0"
+    applies_to: buffer_protocol_zero_copy
+
+falsification_tests:
+  - id: FALSIFY-FFI-CPY-001
+    rule: |
+      An error path that leaks refcount MUST be detected by the oracle.
+    prediction: |
+      A C extension whose error path forgets to DECREF an owned reference
+      causes the leak tracker to report a non-empty leak set.
+    test: |
+      cargo test -p xpile-oracle --test ffi_refcount_leak_detection
+    if_fails: |
+      Oracle is not instrumenting refcounts — the entire safety story
+      for hybrid transpile depends on this catching leaks.
+    ship_blocking: true
+    counter_example_classes:
+      - error_path_leak
+
+  - id: FALSIFY-FFI-CPY-002
+    rule: |
+      Transpilation that copies a 1GB ndarray MUST violate the zero-copy
+      contract and be rejected by CI.
+    prediction: |
+      copies(transpile(passthrough(ndarray_1GB))) == 0 must hold.
+    test: |
+      cargo test -p xpile-oracle --test ffi_ndarray_zero_copy
+    if_fails: |
+      The translation introduced a defensive clone. Performance contract
+      broken — this would make NumPy-heavy code unusably slow.
+    ship_blocking: true
+    counter_example_classes:
+      - defensive_clone
+
+  - id: FALSIFY-FFI-CPY-003
+    rule: |
+      Transpile missing a manifest entry for a Python→C call MUST fail
+      manifest completeness.
+    prediction: |
+      Running the agent with an incomplete manifest exits with
+      AgentError::ManifestIncomplete or budget-exhausted.
+    test: |
+      cargo test -p xpile-agent --test ffi_manifest_incomplete
+    if_fails: |
+      The reconciliation step missed a call site — silent miscompile risk.
+    ship_blocking: true
+    counter_example_classes:
+      - missed_call_site
+
+  - id: FALSIFY-FFI-CPY-004
+    rule: |
+      A call site missing the GIL guard MUST be rejected.
+    prediction: |
+      Translation emits a #[pyo3::pyfunction] or equivalent that holds
+      the GIL for the duration of the CPython API touch.
+    test: |
+      cargo test -p xpile-rust-codegen --test ffi_gil_held
+    if_fails: |
+      Some translation path emitted bare extern "C" without a GIL guard.
+    ship_blocking: true
+    counter_example_classes:
+      - missing_gil_guard
+
+  - id: FALSIFY-FFI-CPY-005
+    rule: |
+      End-to-end oracle MUST detect output divergence between hybrid and
+      transpiled.
+    prediction: |
+      For any input where hybrid(x) != transpiled(x), oracle returns
+      ComparisonResult::Divergence.
+    test: |
+      cargo test -p xpile-oracle --test ffi_endtoend_divergence
+    if_fails: |
+      Oracle equality is too loose (likely using == on float without
+      tolerance) — semantic divergence going undetected.
+    ship_blocking: true
+    counter_example_classes:
+      - oracle_too_loose
+
+  - id: FALSIFY-FFI-CPY-006
+    rule: |
+      No generated file outside {generated_rust_files, manifest, cache}
+      is modified by the transpile session.
+    prediction: |
+      stat(orig_python) and stat(orig_c) before == after the session.
+    test: |
+      cargo test -p xpile-core --test ffi_frame_invariant
+    if_fails: |
+      Transpile is touching the source — destructive, blocks user trust.
+    ship_blocking: true
+    counter_example_classes:
+      - source_mutation
+
+  - id: FALSIFY-FFI-CPY-007
+    rule: |
+      Total leak-tracker output after a successful run is empty.
+    prediction: |
+      leaks_after_run() == ∅ for every passing fixture.
+    test: |
+      cargo test -p xpile-oracle --test ffi_leak_tracker_clean
+    if_fails: |
+      A refcount or memory leak survived oracle exit — likely a borrowed-
+      vs-new-reference confusion in the translation.
+    ship_blocking: true
+    counter_example_classes:
+      - borrowed_new_ref_confusion
+
+kani_harnesses:
+  - id: KANI-FFI-CPY-001
+    obligation: manifest_completeness
+    bound: 3
+    property: |
+      For a hybrid session with up to 3 Python→C call sites, the FFI
+      manifest reconciliation routine registers all of them.
+    harness: |
+      #[kani::proof]
+      fn manifest_complete_bounded() {
+          let n: usize = kani::any();
+          kani::assume(n <= 3);
+          let calls: [&str; 3] = kani::any();
+          let manifest = reconcile(&calls[..n]);
+          for c in &calls[..n] {
+              assert!(manifest.contains_symbol(c));
+          }
+      }

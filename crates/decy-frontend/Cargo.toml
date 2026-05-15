@@ -1,0 +1,13 @@
+[package]
+name = "decy-frontend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "C frontend for xpile. Parses .c/.h and lowers to meta-HIR."
+
+[dependencies]
+xpile-frontend = { workspace = true }
+xpile-meta-hir = { workspace = true }

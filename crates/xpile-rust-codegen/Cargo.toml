@@ -1,0 +1,13 @@
+[package]
+name = "xpile-rust-codegen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Shared Rust emission — takes meta-HIR, produces idiomatic Rust."
+
+[dependencies]
+xpile-meta-hir = { workspace = true }
+thiserror = { workspace = true }

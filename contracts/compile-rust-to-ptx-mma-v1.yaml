@@ -1,0 +1,248 @@
+metadata:
+  id: C-COMPILE-RUST-TO-PTX-MMA
+  version: "1.0.0"
+  created: "2026-05-15"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Compile-time contract: how a Rust kernel annotated `#[gpu_kernel(mma)]`
+    lowers through xpile-ptx-codegen to PTX text targeting sm_80+ hardware.
+
+    Layer 5 of the xpile contract taxonomy (compile-time / IR). Adopted
+    from aprender's PerformanceContract pattern
+    (crates/aprender-compute/contracts/cgp/cgp-gpu-mma-64x128-pipeline-v1.yaml)
+    but kept under `kind: pattern` for vanilla `pv` compatibility; the
+    `xpile.layer: compile` marker carries the team-only Layer-5 distinction.
+
+    Asserts properties of the *emitted PTX text*, not just the Rust source
+    or the meta-HIR. Falsification tests grep / parse the PTX artifact
+    directly — if the emitted instructions don't match, the contract fails
+    regardless of whether the Rust input was well-typed.
+  xpile:
+    layer: compile
+  references:
+    - "PTX ISA 8.3 — §8.7 mma instructions"
+    - "PTX ISA 8.3 — §10.3 cp.async instructions"
+    - "CUDA Programming Guide §K.5 (sm_80 SMEM capacity)"
+    - contracts/xpile-backend-trait-v1.yaml
+    - docs/specifications/sub/backend-trait.md
+  depends_on:
+    - C-XPILE-BACKEND-TRAIT
+
+compile_targets:
+  - target: ptx
+    hardware:
+      compute_capability_min: "sm_80"
+      compute_capability_max: "sm_90"
+    via:
+      - rustc_codegen_nvvm
+      - rust-cuda
+    backend_crate: xpile-ptx-codegen
+
+equations:
+  mma_emission_for_gemm_kernel:
+    formula: |
+      lower(rust_fn marked #[gpu_kernel(mma)], BackendConfig{target: Ptx})
+        produces ptx_text containing mma.sync.aligned
+    domain: |
+      A Rust function annotated `#[gpu_kernel(mma)]` containing a
+      triple-nested loop over a tile shape supported by mma.sync
+      (16×8×16 or 16×8×8) with operand type fp16.
+    invariants:
+      - "emitted PTX contains at least one mma.sync.aligned.* instruction"
+      - "no emitted code path falls back to scalar mad.lo or fma.rn"
+    preconditions:
+      - "BackendConfig.target == Target::Ptx"
+      - "BackendConfig.hardware == Some(HwProfile::Ptx { compute_capability >= sm_80 })"
+
+  cp_async_pipeline_overlap:
+    formula: |
+      lower(rust_fn marked #[pipeline_depth=N], _) where N ∈ {2, 3}
+        produces ptx_text containing cp.async.wait_group N-1
+    domain: |
+      Same as mma_emission_for_gemm_kernel, plus the kernel attribute
+      `#[pipeline_depth=2]` or `#[pipeline_depth=3]`.
+    invariants:
+      - "wait_group operand in PTX equals (requested_pipeline_depth - 1)"
+      - "wait_group 0 does NOT appear (would fully serialize load/compute)"
+      - "number of distinct cp.async issue sites equals pipeline_depth"
+    preconditions:
+      - "mma_emission_for_gemm_kernel holds for this kernel"
+
+  shared_memory_budget:
+    formula: |
+      smem_static_bytes(emitted_ptx) ≤ 49152
+    domain: |
+      Any kernel emitted by xpile-ptx-codegen targeting sm_80–sm_90
+      that relies on static (compile-time-sized) shared memory.
+    invariants:
+      - "sum of `.shared .align N .b8 buf[K]` sizes ≤ 48 KiB"
+      - "dynamic shared memory (extern __shared__) is reported separately
+         and bounded by HwProfile::Ptx::dynamic_smem_max"
+    preconditions: []
+
+  output_equivalence_to_cublas:
+    formula: |
+      run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)
+        with max_abs_diff < 1e-2
+    domain: |
+      Inputs A, B square fp16 matrices of size 1024×1024 with values in
+      [-1, 1]; C accumulates fp32; reference is cuBLAS gemmEx on the
+      same hardware.
+    invariants:
+      - "numerical drift stays within fp16 epsilon for the fixture set"
+      - "no NaN or Inf in the output"
+    preconditions:
+      - "emitted PTX assembles via ptxas with no warnings at -O3"
+      - "kernel launches successfully (cuLaunchKernel returns CUDA_SUCCESS)"
+
+proof_obligations:
+  - type: postcondition
+    property: emitted PTX uses mma.sync, not scalar fallback
+    formal: "∃ instr ∈ tokens(emitted_ptx) : instr matches /mma\\.sync\\.aligned\\./"
+    applies_to: mma_emission_for_gemm_kernel
+
+  - type: postcondition
+    property: wait_group depth matches requested pipeline depth
+    formal: "∀ wg ∈ wait_groups(emitted_ptx) : wg.operand == pipeline_depth - 1"
+    applies_to: cp_async_pipeline_overlap
+
+  - type: invariant
+    property: wait_group 0 (full serialization) never appears
+    formal: "∀ wg ∈ wait_groups(emitted_ptx) : wg.operand > 0"
+    applies_to: cp_async_pipeline_overlap
+
+  - type: bound
+    property: static shared memory stays under sm_80 cap
+    formal: "smem_static(emitted_ptx) ≤ 48 * 1024"
+    applies_to: shared_memory_budget
+
+  - type: postcondition
+    property: output matches cuBLAS reference to fp16 precision
+    formal: "max_abs_diff(run(emitted, X), cublas(X)) < 1e-2 ∀ X ∈ fixtures"
+    applies_to: output_equivalence_to_cublas
+
+  - type: frame
+    property: lower() does not mutate the input meta-HIR module
+    formal: "modifies() == ∅"
+    applies_to: all
+
+  - type: precondition
+    property: backend citation is recorded
+    formal: "Artifact.citations contains C-COMPILE-RUST-TO-PTX-MMA"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-COMPILE-PTX-001
+    rule: |
+      Emitted PTX MUST contain at least one mma.sync.aligned instruction
+      for kernels annotated #[gpu_kernel(mma)].
+    prediction: |
+      `grep -c 'mma\.sync\.aligned' target/ptx/gemm.ptx` returns ≥ 1.
+    test: |
+      cargo test -p xpile-ptx-codegen --test ptx_emits_mma_sync
+    if_fails: |
+      Backend silently fell back to scalar mad.lo — defeats the
+      tensor-core contract. Likely cause: missing PTX feature gate or
+      compute-capability misconfiguration.
+    ship_blocking: true
+    counter_example_classes:
+      - scalar_mad_fallback
+      - mma_disabled_by_optimizer
+      - missing_feature_gate
+
+  - id: FALSIFY-COMPILE-PTX-002
+    rule: |
+      pipeline_depth=N MUST produce cp.async.wait_group (N-1), never 0.
+    prediction: |
+      For #[pipeline_depth=2]: PTX contains `cp.async.wait_group 1` and
+      contains zero occurrences of `cp.async.wait_group 0`.
+    test: |
+      cargo test -p xpile-ptx-codegen --test ptx_pipeline_depth_correct
+    if_fails: |
+      Pipeline did not unroll; load and compute are fully serialized.
+      Loses the entire point of software pipelining.
+    ship_blocking: true
+    counter_example_classes:
+      - wait_group_zero
+      - missing_pipeline_unroll
+
+  - id: FALSIFY-COMPILE-PTX-003
+    rule: |
+      Static SMEM in emitted PTX MUST NOT exceed 48 KiB on sm_80.
+    prediction: |
+      Sum of `.shared .align _ .b8 buf[K]` over the PTX ≤ 49152.
+    test: |
+      cargo test -p xpile-ptx-codegen --test ptx_smem_budget
+    if_fails: |
+      Kernel launch fails with CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES on
+      sm_80 hardware. Likely a tile-size or accumulator-buffer regression.
+    ship_blocking: true
+    counter_example_classes:
+      - smem_overflow
+      - oversized_accumulator
+
+  - id: FALSIFY-COMPILE-PTX-004
+    rule: |
+      Output of emitted kernel MUST match cuBLAS reference within 1e-2.
+    prediction: |
+      max_abs_diff(run(emitted_kernel, A, B), cublas_gemm(A, B)) < 0.01
+      for the 1024×1024 fp16 fixture.
+    test: |
+      cargo test -p xpile-ptx-codegen --test ptx_matches_cublas
+        -- --ignored  # requires GPU runner
+    if_fails: |
+      Numerical drift exceeds fp16 epsilon. Likely an fp16 accumulator
+      bug (should be fp32) or a row/column-major layout mismatch.
+    ship_blocking: true
+    counter_example_classes:
+      - fp16_accumulator
+      - layout_mismatch
+      - wrong_swizzle
+
+  - id: FALSIFY-COMPILE-PTX-005
+    rule: |
+      lower() MUST NOT mutate the input meta-HIR module.
+    prediction: |
+      hash(module) before == hash(module) after PtxBackend::lower().
+    test: |
+      cargo test -p xpile-ptx-codegen --test backend_no_mutation
+    if_fails: |
+      Backend has hidden side effects. Breaks the compile-cache
+      determinism invariant; cache key reuse may emit stale PTX.
+    ship_blocking: true
+    counter_example_classes:
+      - hidden_side_effect
+      - mutable_module_visitor
+
+  - id: FALSIFY-COMPILE-PTX-006
+    rule: |
+      Emitted Artifact.citations MUST list this contract.
+    prediction: |
+      Artifact.citations.contains(ContractId("C-COMPILE-RUST-TO-PTX-MMA")).
+    test: |
+      cargo test -p xpile-ptx-codegen --test backend_cites_compile_contract
+    if_fails: |
+      Backend emits MMA / cp.async without contractual sanction. Layer-5
+      provenance is broken; audit chain cannot tie hardware instructions
+      back to a reviewed contract.
+    ship_blocking: true
+    counter_example_classes:
+      - missing_citation
+      - silent_codegen
+
+# kani_harnesses: intentionally omitted.
+#
+# Layer-5 contracts assert properties of the emitted PTX *text*, which
+# is not amenable to Kani bounded model checking (Kani checks Rust, not
+# PTX). The falsification tests above are the runtime equivalent — they
+# inspect the artifact directly via grep / ptx-parser.
+#
+# A future Lean 4 theorem can encode the meta-relation:
+#   "if Rust HIR satisfies pattern P, then emitted PTX contains
+#    instruction I" — see docs/specifications/sub/pv-integration.md
+# for the planned Lean ↔ pv handoff.
+#
+# This omission is sanctioned by docs/specifications/sub/contract-taxonomy.md:
+#   "pattern contracts can omit kani harnesses".

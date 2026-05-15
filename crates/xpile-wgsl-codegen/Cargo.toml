@@ -1,0 +1,13 @@
+[package]
+name = "xpile-wgsl-codegen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "WGSL backend stub — lowers Rust meta-HIR to WebGPU Shading Language. Phase 6."
+
+[dependencies]
+xpile-backend = { workspace = true }
+xpile-meta-hir = { workspace = true }

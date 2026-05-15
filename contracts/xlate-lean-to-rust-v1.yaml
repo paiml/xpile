@@ -1,0 +1,423 @@
+metadata:
+  id: C-XLATE-LEAN-TO-RUST
+  version: "1.0.0"
+  created: "2026-05-15"
+  author: PAIML Engineering
+  kind: kernel
+  status: draft
+  description: |
+    Translation contract: how ALL Lean 4 constructs (`def`, `partial def`,
+    `theorem`, `lemma`, `inductive`, `structure`, `instance`, `axiom`,
+    `noncomputable def`) lower to Rust through xpile-lean-codegen (Backend).
+
+    Layer 2 of the xpile contract taxonomy (translation), code-lane.
+    Bidirectional partner is C-XLATE-RUST-FN-TO-LEAN-THM, which covers
+    the proof-lane direction (Rust + contract → Lean theorem).
+
+    Foundational design decision (2026-05-15 #3): ALL Lean functions are
+    in scope from the beginning, not just total `def`. `partial def` and
+    `noncomputable def` translate with explicit annotations; `theorem`
+    survives as a Lean sidecar (not converted to Rust); `axiom` becomes
+    `extern` with a banner comment.
+  xpile:
+    layer: translation
+    lane: code
+  references:
+    - "Lean 4 documentation §3 (declarations) and §6 (inductive types)"
+    - "Lean 4 Reference Manual, partial def section"
+    - "Mathlib4 instance / typeclass conventions"
+    - contracts/xpile-backend-trait-v1.yaml
+    - contracts/xpile-frontend-trait-v1.yaml
+    - docs/specifications/sub/backend-trait.md
+  depends_on:
+    - C-XPILE-FRONTEND-TRAIT
+    - C-XPILE-BACKEND-TRAIT
+
+equations:
+  def_to_rust_fn:
+    formula: |
+      xlate(def f (args : T1) ... : R := body) ==
+        fn f(args: T1_rust, ...) -> R_rust { body_rust }
+    domain: |
+      A total Lean `def` whose body uses only constructs with a Rust
+      counterpart (arithmetic, pattern matching, recursion on a
+      structurally-decreasing argument, calls to other lowered defs).
+    invariants:
+      - "Lean def name preserved in Rust (no mangling for simple identifiers)"
+      - "termination proof in Lean ⟹ Rust function is provably total (lowered as #[must_terminate])"
+      - "type parameters preserve order and bounds (Decidable, etc. become Rust trait bounds)"
+    preconditions:
+      - "def is total (Lean accepted it without `partial`)"
+      - "all referenced types have Rust counterparts"
+
+  partial_def_to_rust_fn:
+    formula: |
+      xlate(partial def f (args) : R := body) ==
+        #[partial_translation]
+        fn f(args) -> Result<R_rust, NonTermination> { body_rust }
+    domain: |
+      A Lean `partial def` — explicitly non-terminating or non-decidable
+      recursion. Lean does not prove termination; xpile cannot pretend
+      it does in Rust.
+    invariants:
+      - "the lowered Rust function returns Result<_, NonTermination> by default"
+      - "an iteration budget is wired through (configurable via #[partial_budget = N])"
+      - "the `#[partial_translation]` attribute is mandatory and not stripped at any optimizer level"
+    preconditions:
+      - "user has acknowledged the partiality (a Layer-4 contract review)"
+
+  theorem_carried_as_lean_sidecar:
+    formula: |
+      xlate(theorem t : P := proof) ==
+        // Rust file: empty (no lowering)
+        // Sidecar: t.lean preserved verbatim, citation comment added
+    domain: |
+      Any Lean `theorem` or `lemma` declaration. Theorems are not
+      executable — they have no runtime semantics. They lower to a Lean
+      sidecar artifact, NOT to a Rust function.
+    invariants:
+      - "no Rust output is emitted for theorem declarations"
+      - "the Lean sidecar carries a `-- cited by xpile contract C-X` comment"
+      - "if the theorem's name is referenced by an executable def, the Rust output emits a doc-comment referencing the Lean theorem's fully-qualified path"
+    preconditions: []
+
+  inductive_to_rust_enum:
+    formula: |
+      xlate(inductive T : Type | C1 (x : A) | C2 (x : B) (y : C)) ==
+        enum T { C1(A_rust), C2(B_rust, C_rust) }
+    domain: |
+      A Lean inductive type with constructors taking explicit arguments.
+      Constructor names map directly; argument names are dropped (Lean
+      keeps them; Rust enums are positional).
+    invariants:
+      - "constructor ordering preserved"
+      - "constructor arity preserved"
+      - "indexed inductives (those with type indices) lower to generic enums with PhantomData where needed"
+    preconditions:
+      - "no constructor has an implicit/instance argument that requires elaboration"
+
+  structure_to_rust_struct:
+    formula: |
+      xlate(structure S where (a : A) (b : B)) ==
+        struct S { a: A_rust, b: B_rust }
+    domain: |
+      A Lean structure with named fields. Anonymous structures (Lean
+      `⟨...⟩` literal syntax) become positional tuple structs.
+    invariants:
+      - "field name and order preserved"
+      - "structure extending (Lean `extends`) lowers to composition (field of struct type), NOT inheritance"
+      - "default field values (Lean := ...) lower to a Default impl"
+    preconditions: []
+
+  instance_to_rust_impl:
+    formula: |
+      xlate(instance : C T where method := body) ==
+        impl C for T { fn method() { body_rust } }
+    domain: |
+      A Lean typeclass instance whose typeclass has a Rust trait
+      counterpart (registered in the FFI manifest or built-in for
+      Eq/Ord/Hash/Default/etc.).
+    invariants:
+      - "method names preserved"
+      - "default methods in the typeclass map to default methods in the trait"
+      - "instance priority (Lean) does not lower; Rust uses orphan rules instead"
+    preconditions:
+      - "the Lean typeclass is registered as a Rust trait equivalence"
+
+  axiom_to_extern_fn:
+    formula: |
+      xlate(axiom name : T) ==
+        // WARNING comment block
+        unsafe extern "Rust" {
+            fn name() -> T_rust;
+        }
+    domain: |
+      A Lean `axiom` — an assumed-true declaration with no proof. These
+      are dangerous; xpile lowers them as `extern` declarations with a
+      MANDATORY warning comment.
+    invariants:
+      - "the emitted Rust has at least 5 lines of WARNING comment above the extern"
+      - "the extern is in an `unsafe extern` block"
+      - "the contract citing the axiom is named in the comment"
+    preconditions:
+      - "the user supplied a corresponding implementation in another crate, OR the contract explicitly notes the axiom is for-proof-only"
+
+  noncomputable_def_to_rust_panic:
+    formula: |
+      xlate(noncomputable def f := body) ==
+        fn f() -> R_rust { panic!("noncomputable Lean def has no runtime equivalent") }
+    domain: |
+      Lean `noncomputable def` — uses classical reasoning (choice, excluded
+      middle on uncountable sets). Has no executable semantics.
+    invariants:
+      - "Rust emission is a `panic!` with the source filename and Lean def name"
+      - "the function is marked `#[doc(hidden)]` to avoid accidental use"
+      - "a corresponding Layer-1 contract MUST exist documenting why the construct appears"
+    preconditions: []
+
+  citation_in_emitted_rust:
+    formula: |
+      xlate(any Lean decl D with contract C) emits Rust with
+        /// Contract: <C.id>
+        /// Lean source: <file>:<line>
+      doc-comment above the lowered Rust item.
+    domain: |
+      Every emitted Rust item produced by lowering a Lean declaration
+      cited in any xpile contract.
+    invariants:
+      - "doc-comment cites at least one contract ID"
+      - "doc-comment includes the Lean source location for audit"
+      - "if multiple contracts cite the same Lean decl, all are listed"
+    preconditions: []
+
+proof_obligations:
+  - type: postcondition
+    property: total def lowers to a panic-free Rust fn
+    formal: "xlate(def f) is panic-free under any valid input"
+    applies_to: def_to_rust_fn
+
+  - type: postcondition
+    property: partial def is annotated and returns Result
+    formal: "xlate(partial def f).attrs contains 'partial_translation' ∧
+             returns Result<_, NonTermination>"
+    applies_to: partial_def_to_rust_fn
+
+  - type: invariant
+    property: theorem declarations produce NO Rust output
+    formal: "∀ thm ∈ input.theorems : xlate(thm).rust == ∅"
+    applies_to: theorem_carried_as_lean_sidecar
+
+  - type: postcondition
+    property: inductive constructor arity is preserved
+    formal: "∀ ctor ∈ inductive : arity(rust_variant(ctor)) == arity(ctor)"
+    applies_to: inductive_to_rust_enum
+
+  - type: postcondition
+    property: instance methods map 1:1 to trait impl methods
+    formal: "methods(rust_impl) == methods(lean_instance)"
+    applies_to: instance_to_rust_impl
+
+  - type: invariant
+    property: axioms get a multi-line warning comment
+    formal: "line_count(comment_above(extern_block_for_axiom)) ≥ 5"
+    applies_to: axiom_to_extern_fn
+
+  - type: postcondition
+    property: noncomputable def lowers to panic, not silent stub
+    formal: "body(xlate(noncomputable def f)) contains 'panic!'"
+    applies_to: noncomputable_def_to_rust_panic
+
+  - type: invariant
+    property: emitted Rust cites at least one contract
+    formal: "∀ item ∈ emitted : doc_comments_of(item) cite ≥ 1 ContractId"
+    applies_to: citation_in_emitted_rust
+
+  - type: frame
+    property: lowering does not mutate input Lean AST
+    formal: "modifies() == ∅"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-XLATE-LEAN-001
+    rule: |
+      Total `def` emits a Rust fn returning the inner type R, NOT
+      Result<R, _> (which is reserved for partial def).
+    prediction: |
+      `def f : Nat := 42` → `fn f() -> u64 { 42 }` (not Result<_,_>).
+    test: |
+      cargo test -p xpile-lean-codegen --test total_def_returns_r
+    if_fails: |
+      Translation conflates totality with partiality; needless wrapper noise.
+    ship_blocking: true
+    counter_example_classes:
+      - all_returns_result
+      - missing_termination_recognition
+
+  - id: FALSIFY-XLATE-LEAN-002
+    rule: |
+      `partial def` MUST emit a function returning
+      Result<_, NonTermination> AND carry the #[partial_translation]
+      attribute.
+    prediction: |
+      `partial def loop : Unit := loop` → `#[partial_translation] fn loop()
+      -> Result<(), NonTermination> { ... }`.
+    test: |
+      cargo test -p xpile-lean-codegen --test partial_def_wraps_result
+    if_fails: |
+      Partial Lean def silently lowered as total Rust fn — non-termination
+      becomes UB-equivalent (infinite loop, no budget).
+    ship_blocking: true
+    counter_example_classes:
+      - silent_partial
+      - missing_attribute
+
+  - id: FALSIFY-XLATE-LEAN-003
+    rule: |
+      `theorem` declarations produce NO Rust output (zero items in
+      the emitted Rust file for theorems alone).
+    prediction: |
+      A Lean input containing only `theorem foo : 1 + 1 = 2 := rfl`
+      produces a Rust file with zero `fn`/`struct`/`impl`/`const` items.
+    test: |
+      cargo test -p xpile-lean-codegen --test theorem_emits_no_rust
+    if_fails: |
+      Theorems incorrectly treated as executable; bloat in emitted Rust.
+    ship_blocking: true
+    counter_example_classes:
+      - theorem_as_fn
+      - theorem_as_const
+
+  - id: FALSIFY-XLATE-LEAN-004
+    rule: |
+      Lean inductive constructor arity equals Rust enum variant arity.
+    prediction: |
+      `inductive T | A (x : Nat) (y : Nat) | B (z : String)` →
+      `enum T { A(u64, u64), B(String) }` with arities 2 and 1.
+    test: |
+      cargo test -p xpile-lean-codegen --test inductive_arity_preserved
+    if_fails: |
+      Pattern-match exhaustiveness checks misalign; data corruption.
+    ship_blocking: true
+    counter_example_classes:
+      - dropped_field
+      - extra_phantom_field
+
+  - id: FALSIFY-XLATE-LEAN-005
+    rule: |
+      `axiom` MUST be lowered with at least 5 lines of WARNING comment
+      above the resulting `unsafe extern` block.
+    prediction: |
+      `axiom choice : ∀ T, (T → Prop) → T` → emitted Rust file has
+      ≥ 5 lines of `///` or `//` comment containing the substring
+      "AXIOM" before the `unsafe extern` block.
+    test: |
+      cargo test -p xpile-lean-codegen --test axiom_has_warning
+    if_fails: |
+      Axioms slip into Rust as ordinary externs; reviewers miss them.
+    ship_blocking: true
+    counter_example_classes:
+      - silent_axiom
+      - missing_warning_block
+
+  - id: FALSIFY-XLATE-LEAN-006
+    rule: |
+      `noncomputable def` MUST lower to a function body containing
+      `panic!`, never to a silent stub or `unimplemented!`.
+    prediction: |
+      `noncomputable def f := Classical.choice ...` → fn body contains
+      `panic!("noncomputable ...")`.
+    test: |
+      cargo test -p xpile-lean-codegen --test noncomputable_panics
+    if_fails: |
+      Noncomputable def silently lowered as default value — wrong
+      runtime behavior on accidental call.
+    ship_blocking: true
+    counter_example_classes:
+      - default_value_stub
+      - unimplemented_macro
+
+  - id: FALSIFY-XLATE-LEAN-007
+    rule: |
+      Every emitted Rust item MUST have a doc-comment citing at least
+      one xpile contract ID.
+    prediction: |
+      grep -c '/// Contract: C-' target/rust/lean_out.rs >=
+      count of fn/struct/enum/impl items in the file.
+    test: |
+      cargo test -p xpile-lean-codegen --test every_item_cites_contract
+    if_fails: |
+      Citation bridge incomplete on code-lane side; reviewer cannot
+      trace emitted Rust back to a contract.
+    ship_blocking: true
+    counter_example_classes:
+      - missing_citation
+      - bare_item
+
+  - id: FALSIFY-XLATE-LEAN-008
+    rule: |
+      Translation MUST NOT mutate the input Lean AST.
+    prediction: |
+      hash(lean_ast) before == hash(lean_ast) after xlate().
+    test: |
+      cargo test -p xpile-lean-codegen --test xlate_no_mutation
+    if_fails: |
+      Hidden side effects; cache key invalidates spuriously.
+    ship_blocking: true
+    counter_example_classes:
+      - hidden_side_effect
+
+  - id: FALSIFY-XLATE-LEAN-009
+    rule: |
+      A Lean `instance` MUST produce a Rust `impl <Trait> for <Type>`
+      whose methods are in 1:1 correspondence with the instance's
+      methods, preserving names.
+    prediction: |
+      `instance : Ord Nat where compare := Nat.compare` →
+      `impl Ord for u64 { fn compare(...) { ... } }` — exactly one
+      `compare` method, no extras, no renames.
+    test: |
+      cargo test -p xpile-lean-codegen --test instance_method_1to1
+    if_fails: |
+      Methods dropped, renamed, or added — Rust impl doesn't satisfy
+      the trait contract that the Lean typeclass promised.
+    ship_blocking: true
+    counter_example_classes:
+      - dropped_method
+      - extra_method
+      - renamed_method
+
+kani_harnesses:
+  - id: KANI-XLATE-LEAN-001
+    obligation: frame
+    bound: 3
+    property: |
+      For a bounded Lean AST (up to 3 top-level declarations), xlate
+      does not mutate its input.
+    harness: |
+      #[kani::proof]
+      fn xlate_lean_is_frame_safe() {
+          let n: usize = kani::any();
+          kani::assume(n <= 3);
+          let decls: [LeanDecl; 3] = kani::any();
+          let module = LeanModule { decls: decls[..n].to_vec() };
+          let snapshot = module.clone();
+          let _ = xlate_lean_module(&module);
+          assert_eq!(module, snapshot);
+      }
+
+  - id: KANI-XLATE-LEAN-002
+    obligation: invariant
+    bound: 2
+    property: |
+      For a Lean module containing only `theorem` declarations (up to
+      2 of them), the emitted Rust has zero items.
+    harness: |
+      #[kani::proof]
+      fn theorems_emit_no_rust() {
+          let n: usize = kani::any();
+          kani::assume(n <= 2);
+          let thms: [LeanTheorem; 2] = kani::any();
+          let module = LeanModule::of_theorems(&thms[..n]);
+          let rust_out = xlate_lean_module(&module);
+          assert_eq!(rust_out.items.len(), 0);
+      }
+
+  - id: KANI-XLATE-LEAN-003
+    obligation: postcondition
+    bound: 4
+    property: |
+      For an inductive with up to 4 constructors, each with bounded
+      arity, the Rust enum has matching variant count and arity.
+    harness: |
+      #[kani::proof]
+      fn inductive_arity_matches() {
+          let n_ctors: usize = kani::any();
+          kani::assume(n_ctors <= 4);
+          let ctors: [LeanCtor; 4] = kani::any();
+          let ind = LeanInductive { ctors: ctors[..n_ctors].to_vec() };
+          let rust_enum = xlate_inductive(&ind);
+          assert_eq!(rust_enum.variants.len(), n_ctors);
+          for i in 0..n_ctors {
+              assert_eq!(rust_enum.variants[i].arity(), ctors[i].arity());
+          }
+      }

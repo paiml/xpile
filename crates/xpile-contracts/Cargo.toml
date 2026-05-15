@@ -1,0 +1,15 @@
+[package]
+name = "xpile-contracts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Provable-contracts integration for xpile — re-exports aprender-contracts (provable-contracts) and adds xpile-specific extensions."
+
+[dependencies]
+provable-contracts = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }

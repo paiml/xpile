@@ -1,0 +1,13 @@
+[package]
+name = "latex-contract-frontend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "LaTeX → contract equations parser. Handles math mode AND theorem-class environments. Phase 4."
+
+[dependencies]
+xpile-contract-frontend = { workspace = true }
+xpile-contracts = { workspace = true }

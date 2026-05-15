@@ -1,0 +1,20 @@
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Caches
+.cache/
+~/.cache/xpile/
+.pmat/
+.pv/
+
+# Local config
+.env
+.env.local

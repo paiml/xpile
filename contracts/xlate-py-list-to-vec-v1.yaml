@@ -1,0 +1,224 @@
+metadata:
+  id: C-XLATE-PY-LIST-TO-VEC
+  version: "1.0.0"
+  created: "2026-05-15"
+  author: PAIML Engineering
+  kind: kernel
+  status: draft
+  description: |
+    Translation contract: how Python `list` lowers to Rust `Vec<T>`.
+
+    The naïve "list → Vec" mapping breaks on two semantic boundaries:
+      1. Reference semantics — Python lists are reference types;
+         translation must insert clones at observation points where
+         CPython would observe alias-mediated mutation.
+      2. Heterogeneous element types — translation must reject (with
+         a typed error) lists that escape the homogeneous fast path.
+
+    Layer 2 of the xpile contract taxonomy (translation).
+  references:
+    - "Python Language Reference §3.3.7.1 (Sequence types)"
+    - contracts/py-int-arith-v1.yaml
+    - docs/specifications/xpile-contract-driven-design-v1.md
+  depends_on:
+    - C-PY-INT-ARITH
+
+equations:
+  homogeneous_list_to_vec:
+    formula: |
+      xlate(list[T] for T in {int, float, str, bool, bytes}) == Vec<T_rust>
+    domain: |
+      A Python list literal or comprehension whose elements all have
+      the same inferred Python type T with a canonical Rust counterpart.
+    invariants:
+      - "preserves element order"
+      - "preserves length exactly"
+      - "no implicit type coercion at element boundaries"
+    preconditions:
+      - "type inference succeeded with a single T for all elements"
+
+  heterogeneous_list_rejected:
+    formula: |
+      xlate(list[T1 | T2 | ...]) == TranslationError::Heterogeneous{found_types}
+    domain: |
+      A Python list whose elements have inferred types that don't unify
+      to a single Rust type.
+    invariants:
+      - "no silent fallback to Vec<Box<dyn Any>> — that would defeat the type contract"
+      - "the error includes the set of conflicting types for user repair"
+    preconditions: []
+
+  alias_observation_inserts_clone:
+    formula: |
+      observable_mutation_via_alias(a, b) WHEN b = a; mutate(b); observe(a)
+        ==> xlate emits explicit clone or shared-mutable reference
+    domain: |
+      A Python program fragment where two variables are bound to the
+      same list, one is mutated, and the other is observed afterward.
+    invariants:
+      - "CPython execution and Rust output produce identical observable mutations"
+      - "the alias-graph annotation produced by Python frontend is sufficient input"
+    preconditions:
+      - "Python frontend produced an alias-graph annotation in the meta-HIR"
+
+  iteration_order_preserved:
+    formula: |
+      for x in py_list: f(x)  ≡  for x in rust_vec.iter() { f(x) }
+    domain: |
+      Any iteration over a Python list, including comprehensions and
+      generator expressions.
+    invariants:
+      - "no reordering even when iteration order doesn't seem to matter"
+    preconditions: []
+
+  length_method:
+    formula: |
+      len(py_list) == rust_vec.len()
+    domain: |
+      Any `len()` call on a Python list.
+    invariants:
+      - "Python `len()` returns int; Rust `.len()` returns usize — cast must be explicit"
+    preconditions: []
+
+proof_obligations:
+  - type: precondition
+    property: meta-HIR carries a list type with inferred element type
+    formal: "item.type == List ∧ item.element_type ∈ SupportedTypes"
+    applies_to: homogeneous_list_to_vec
+  - type: postcondition
+    property: order and length are preserved
+    formal: "len(input) == len(output) ∧ ∀ i: input[i] ≡ output[i]"
+    applies_to: homogeneous_list_to_vec
+  - type: postcondition
+    property: aliasing is preserved per the alias graph
+    formal: "∀ aliasing pair (a, b) in alias_graph: rust_output preserves alias semantics"
+    applies_to: alias_observation_inserts_clone
+  - type: frame
+    property: no mutation of the meta-HIR module during translation
+    formal: "modifies() == ∅"
+    applies_to: all
+  - type: invariant
+    property: heterogeneous lists never silently lower to Box<dyn Any>
+    formal: "¬homogeneous(input) ⟹ result == TranslationError::Heterogeneous"
+    applies_to: heterogeneous_list_rejected
+  - type: bound
+    property: emitted Rust does not exceed 2× source line count for literals
+    formal: "lines(emit(list_literal)) ≤ 2 * lines(literal)"
+    applies_to: homogeneous_list_to_vec
+
+falsification_tests:
+  - id: FALSIFY-XLATE-LIST-001
+    rule: |
+      A heterogeneous list MUST yield TranslationError::Heterogeneous,
+      not Vec<Box<dyn Any>>.
+    prediction: |
+      xlate([1, "a"]) returns Err(Heterogeneous { found_types: {int, str} }).
+    test: |
+      cargo test -p depyler-frontend --test xlate_list_hetero_rejected
+    if_fails: |
+      Translation is silently boxing — defeats the type contract.
+    ship_blocking: true
+    counter_example_classes:
+      - silent_box_dyn_any
+
+  - id: FALSIFY-XLATE-LIST-002
+    rule: |
+      Aliased mutation observed via a second name MUST be preserved.
+    prediction: |
+      `b = a; b.append(x); a == b after mutation` translates to Rust where
+      the same observation holds (via clone-on-divergence or Rc<RefCell>).
+    test: |
+      cargo test -p depyler-frontend --test xlate_list_alias_mutation
+    if_fails: |
+      Rust output uses move semantics where Python uses reference semantics.
+    ship_blocking: true
+    counter_example_classes:
+      - move_instead_of_alias
+
+  - id: FALSIFY-XLATE-LIST-003
+    rule: |
+      Iteration order MUST be preserved.
+    prediction: |
+      Rust iteration over a translated list yields elements in the same
+      order as Python iteration over the original.
+    test: |
+      cargo test -p depyler-frontend --test xlate_list_iter_order
+    if_fails: |
+      Translation used a HashSet/HashMap as the intermediate, losing order.
+    ship_blocking: true
+    counter_example_classes:
+      - hashset_intermediate
+      - reverse_iter_bug
+
+  - id: FALSIFY-XLATE-LIST-004
+    rule: |
+      Length method must return identical values.
+    prediction: |
+      len(py_list) == rust_vec.len() as i64 for all inputs.
+    test: |
+      cargo test -p depyler-frontend --test xlate_list_len
+    if_fails: |
+      Likely cast bug: usize → i64 truncation on very long lists.
+    ship_blocking: false
+    counter_example_classes:
+      - usize_truncation
+
+  - id: FALSIFY-XLATE-LIST-005
+    rule: |
+      Translation MUST NOT mutate the meta-HIR module.
+    prediction: |
+      hash(module) before == hash(module) after xlate.
+    test: |
+      cargo test -p depyler-frontend --test xlate_no_mutation
+    if_fails: |
+      Translation has hidden side effects — breaks composability.
+    ship_blocking: true
+    counter_example_classes:
+      - hidden_side_effect
+
+  - id: FALSIFY-XLATE-LIST-006
+    rule: |
+      Emitted Rust for a list literal is within 2× source line count.
+    prediction: |
+      lines(emit) ≤ 2 * lines(literal).
+    test: |
+      cargo test -p depyler-frontend --test xlate_list_size_budget
+    if_fails: |
+      Generated code is bloated — likely macro-expansion regression.
+    ship_blocking: false
+    counter_example_classes:
+      - macro_expansion_bloat
+
+kani_harnesses:
+  - id: KANI-XLATE-LIST-001
+    obligation: iteration_order_preserved
+    bound: 5
+    property: |
+      For lists of length up to 5, the emitted Rust iteration produces
+      elements in the same order as the input list.
+    harness: |
+      #[kani::proof]
+      fn iteration_order_bounded() {
+          let len: usize = kani::any();
+          kani::assume(len <= 5);
+          let input: [i32; 5] = kani::any();
+          let translated = xlate_list_i32(&input[..len]);
+          for i in 0..len {
+              assert_eq!(input[i], translated[i]);
+          }
+      }
+
+  - id: KANI-XLATE-LIST-002
+    obligation: heterogeneous_list_rejected
+    bound: 3
+    property: |
+      Mixing an int and a str in a list of length 3 MUST yield
+      TranslationError::Heterogeneous (not a successful translation).
+    harness: |
+      #[kani::proof]
+      fn hetero_rejected() {
+          let positions: [bool; 3] = kani::any();
+          kani::assume(positions.iter().any(|p| *p) && positions.iter().any(|p| !*p));
+          let result = xlate_mixed_list(positions);
+          assert!(matches!(result, Err(TranslationError::Heterogeneous { .. })));
+      }

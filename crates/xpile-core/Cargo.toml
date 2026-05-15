@@ -1,0 +1,39 @@
+[package]
+name = "xpile-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Top-level session orchestration — wires frontends, oracle, agent, codegen."
+
+[dependencies]
+# Code lane: core
+xpile-agent          = { workspace = true }
+xpile-backend        = { workspace = true }
+xpile-ffi-manifest   = { workspace = true }
+xpile-frontend       = { workspace = true }
+xpile-meta-hir       = { workspace = true }
+xpile-oracle         = { workspace = true }
+xpile-rust-codegen   = { workspace = true }
+
+# Code lane: frontends (registered by default_session)
+depyler-frontend = { workspace = true }
+decy-frontend    = { workspace = true }
+ruchy-frontend   = { workspace = true }
+
+# Code lane: backend stubs (registered by default_session)
+xpile-ruchy-codegen = { workspace = true }
+xpile-ptx-codegen   = { workspace = true }
+xpile-wgsl-codegen  = { workspace = true }
+xpile-lean-codegen  = { workspace = true }
+
+# Proof lane (registered by default_session)
+xpile-contract-frontend      = { workspace = true }
+xpile-contract-backend       = { workspace = true }
+latex-contract-frontend      = { workspace = true }
+xpile-lean-contract-backend  = { workspace = true }
+xpile-latex-contract-backend = { workspace = true }
+
+anyhow = { workspace = true }

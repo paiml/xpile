@@ -1,0 +1,15 @@
+[package]
+name = "xpile-llm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "LLM invocation + content-addressed cache for the xpile agent loop."
+
+[dependencies]
+sha2 = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }

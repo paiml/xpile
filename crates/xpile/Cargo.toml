@@ -1,0 +1,17 @@
+[package]
+name = "xpile"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Polyglot transpile workbench — CLI."
+
+[[bin]]
+name = "xpile"
+path = "src/main.rs"
+
+[dependencies]
+xpile-core = { workspace = true }
+anyhow     = { workspace = true }

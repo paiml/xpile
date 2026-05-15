@@ -1,0 +1,311 @@
+metadata:
+  id: C-XPILE-BACKEND-TRAIT
+  version: "1.0.0"
+  created: "2026-05-15"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Invariants every implementation of the xpile Backend trait must
+    satisfy. The Backend trait is the code-lane's emission abstraction,
+    parallel to Frontend (C-XPILE-FRONTEND-TRAIT). Where Frontend lowers
+    source to meta-HIR, Backend lowers meta-HIR to a target artifact
+    (Rust, Ruchy, PTX, WGSL, SPIR-V, Lean executable). Each new target
+    is a new Backend impl — no architecture changes.
+
+    Layer 3 of the contract taxonomy (architectural / xpile-internal),
+    code-lane.
+
+    The `compile_contract_citation` invariant is load-bearing for the
+    audit chain established by Layer 5 compile contracts: a backend
+    cannot emit a hardware instruction (mma.sync, cp.async,
+    @workgroup_size, etc.) without naming a Layer-5 contract that
+    sanctions it. This closes the "Oracle blind spots" gap that
+    audit-design.md §4 flags — UB and hardware misuse now have a
+    contract chain rather than an Oracle hope.
+  references:
+    - docs/specifications/sub/backend-trait.md
+    - docs/specifications/sub/contract-taxonomy.md
+    - contracts/xpile-frontend-trait-v1.yaml
+    - contracts/compile-rust-to-ptx-mma-v1.yaml
+  depends_on:
+    - C-XPILE-FRONTEND-TRAIT
+
+equations:
+  target_ownership:
+    formula: |
+      forall t in registered_targets: exists exactly one b: t in b.targets()
+    domain: |
+      registered_targets is the union of targets() across all Backend
+      implementations registered with a TranspileSession.
+    invariants:
+      - "no two backends declare the same Target variant (else dispatch is ambiguous)"
+      - "every requested target reaches exactly one lower() call"
+    preconditions:
+      - "TranspileSession::register_backend has been called for every active backend"
+
+  lower_idempotency:
+    formula: |
+      forall (module, config): hash(b.lower(module, config).unwrap()) == hash(b.lower(module, config).unwrap())
+    domain: |
+      Two lowerings of the same (module, config) yield byte-identical
+      Artifact when run in the same process with no intervening mutation
+      of the backend.
+    invariants:
+      - "Backend impls hold no mutable state across lower calls"
+      - "Artifact.primary serialization is canonical (no timestamps, no random salts)"
+      - "Artifact.sidecars ordering is deterministic (BTreeMap, not HashMap)"
+    preconditions:
+      - "module is a well-formed meta-HIR Module"
+      - "config.target is in this backend's targets()"
+
+  target_consistency:
+    formula: |
+      forall b, (module, config): b.lower(module, config).unwrap().primary
+        parses or links cleanly under config.target's reference toolchain
+    domain: |
+      The reference toolchain per target:
+        - Target::Rust  → rustc --edition 2024 (parse only)
+        - Target::Ruchy → ruchy parse
+        - Target::Ptx   → ptxas --gpu-name <hw>
+        - Target::Wgsl  → naga validate
+        - Target::Spirv → spirv-val
+        - Target::Lean  → lake env lean --check
+    invariants:
+      - "emitted Artifact.primary is not just syntactically a String — it must validate as the declared target"
+      - "validation is a structural check (parse/link), not a regex pattern match"
+      - "validation failure is a hard backend bug, not advisory"
+    preconditions:
+      - "the reference toolchain for config.target is available in the test environment"
+
+  compile_contract_citation:
+    formula: |
+      forall b, (module, config), instr in ir_constructs(Artifact.primary):
+        exists C5 in Artifact.citations:
+          C5.xpile.layer == "compile" AND
+          C5.compile_targets covers config.target AND
+          instr is sanctioned by C5.equations
+    domain: |
+      Every IR-level construct in Artifact.primary that is target-specific
+      (e.g., mma.sync in PTX, @workgroup_size in WGSL, asm! in Rust)
+      must cite a Layer-5 compile contract that sanctions emitting it.
+      Pure language-level constructs (function definitions, structs,
+      arithmetic) do NOT require a citation — they fall under the source
+      language's Layer-1/2 contracts via meta-HIR.
+    invariants:
+      - "every target-specific IR construct has a Layer-5 citation"
+      - "the citation chain is structural (Artifact.citations: Vec<ContractId>) — NOT regex over Artifact.primary text"
+      - "no citation = no emission: if a backend wants to emit a new hardware instruction, it must add a Layer-5 contract first"
+      - "this invariant is what closes the Oracle blind spot for hardware misuse (per audit-design.md §3 'Formal Hardware Sanctioning')"
+    preconditions:
+      - "the Layer-5 contract corpus is loaded into the session"
+
+  frame_lower_is_pure:
+    formula: |
+      lower(module, config) does not mutate module or config or any
+      shared state reachable from the backend
+    domain: |
+      Any invocation of lower(). Backends must be functionally pure
+      with respect to their inputs.
+    invariants:
+      - "hash(module) before == hash(module) after"
+      - "hash(config) before == hash(config) after"
+      - "no backend-internal mutable cache is permitted to escape lower()"
+    preconditions: []
+
+proof_obligations:
+  - type: invariant
+    property: Every registered Target is owned by exactly one Backend
+    formal: "∀ t ∈ registered_targets: |{ b | t ∈ b.targets() }| == 1"
+    applies_to: target_ownership
+
+  - type: invariant
+    property: lower is deterministic per (module, config)
+    formal: "∀ m, cfg: hash(lower(m, cfg)) == hash(lower(m, cfg))"
+    applies_to: lower_idempotency
+
+  - type: postcondition
+    property: Emitted Artifact.primary validates under the declared target's reference toolchain
+    formal: "validates(Artifact.primary, config.target.reference_toolchain) == OK"
+    applies_to: target_consistency
+
+  - type: invariant
+    property: Every target-specific IR construct cites a Layer-5 compile contract
+    formal: "∀ instr ∈ ir_constructs(Artifact.primary): ∃ C5 ∈ Artifact.citations : C5.xpile.layer == 'compile' ∧ sanctions(C5, instr)"
+    applies_to: compile_contract_citation
+
+  - type: invariant
+    property: Citation chain is structural, not text-grep
+    formal: "Artifact.citations is of type Vec<ContractId>; recovery does NOT depend on regex over Artifact.primary"
+    applies_to: compile_contract_citation
+
+  - type: frame
+    property: lower does not mutate its inputs
+    formal: "hash(module) before == hash(module) after ∧ hash(config) before == hash(config) after"
+    applies_to: frame_lower_is_pure
+
+falsification_tests:
+  - id: FALSIFY-XPILE-BACKEND-001
+    rule: |
+      Two distinct backends MUST NOT both claim the same Target variant.
+    prediction: |
+      A TranspileSession that registers two backends with overlapping
+      targets() either rejects the second or panics in test.
+    test: |
+      cargo test -p xpile-core --test backend_dispatch -- duplicate_target
+    if_fails: |
+      Dispatch is ambiguous. The session cannot decide which backend
+      to invoke for Target::Ptx (or Target::Rust, etc.).
+    ship_blocking: true
+    counter_example_classes:
+      - duplicate_target
+      - aliased_target
+
+  - id: FALSIFY-XPILE-BACKEND-002
+    rule: |
+      lower MUST be deterministic for fixed (module, config).
+    prediction: |
+      Two consecutive lowerings of the same (module, config) hash equal.
+    test: |
+      cargo test -p xpile-backend --test idempotency
+    if_fails: |
+      A backend holds mutable state, uses non-canonical serialization
+      (HashMap iteration order), or embeds a timestamp. Cache hits
+      become false misses; reproducibility across the Kaizen fleet breaks.
+    ship_blocking: true
+    counter_example_classes:
+      - hashmap_iteration_order
+      - hidden_mutable_state
+      - embedded_timestamp
+      - random_label_salt
+
+  - id: FALSIFY-XPILE-BACKEND-003
+    rule: |
+      Emitted Artifact.primary MUST validate under the declared target's
+      reference toolchain (rustc parse, naga validate, ptxas assemble,
+      spirv-val, lake env lean --check, etc.).
+    prediction: |
+      For each Target variant, lowering a representative meta-HIR
+      module produces an Artifact.primary that the reference toolchain
+      accepts with exit status 0.
+    test: |
+      cargo test -p xpile-backend --test target_consistency_all
+    if_fails: |
+      Backend emits a String that LOOKS like Rust (or PTX, or WGSL)
+      but isn't parseable by the real tool. Downstream cargo build
+      / nvcc / naga / spirv-val will fail with confusing errors far
+      from the actual emission site.
+    ship_blocking: true
+    counter_example_classes:
+      - syntax_error_in_emission
+      - missing_imports
+      - wrong_dialect
+
+  - id: FALSIFY-XPILE-BACKEND-004
+    rule: |
+      Every target-specific IR construct in Artifact.primary MUST be
+      sanctioned by a Layer-5 compile contract referenced from
+      Artifact.citations. No citation, no emission.
+    prediction: |
+      For a backend that emits `mma.sync.aligned`, Artifact.citations
+      contains a ContractId pointing at a Layer-5 contract with
+      `xpile.layer: compile` and a `compile_targets:` block whose
+      `target` includes PTX, AND with at least one equation whose
+      invariants permit `mma.sync.aligned` emission for the declared
+      hardware (sm_80 or higher).
+    test: |
+      cargo test -p xpile-backend --test every_ir_construct_cites_contract
+    if_fails: |
+      Backend is emitting a hardware instruction without contractual
+      sanction. Audit chain broken at the load-bearing point — the
+      Oracle blind spots for hardware misuse re-emerge in full. This
+      is the failure mode that audit-design.md §3 "Formal Hardware
+      Sanctioning" relies on Layer 5 to prevent.
+    ship_blocking: true
+    counter_example_classes:
+      - bare_hardware_emission
+      - missing_layer5_citation
+      - silent_codegen
+      - citation_pointing_at_wrong_layer
+
+  - id: FALSIFY-XPILE-BACKEND-005
+    rule: |
+      Citation recovery from Artifact MUST be structural
+      (Artifact.citations: Vec<ContractId>), NOT regex over
+      Artifact.primary text. The audit (§4 "Citation Bridge Fragility")
+      established this principle for the proof lane; the code lane
+      inherits it for symmetry.
+    prediction: |
+      For a freshly-lowered Artifact, the call
+      `Artifact::citations(&artifact)` returns the same set as
+      `parse_citation_attributes_via_target_parser(&artifact.primary)`
+      — and neither relies on regex over the primary string.
+    test: |
+      cargo test -p xpile-backend --test citation_is_structural
+    if_fails: |
+      Citation recovery is regex-based; manual renames in emission
+      silently break the audit chain. This is the same failure mode
+      the audit identified for the proof lane.
+    ship_blocking: true
+    counter_example_classes:
+      - regex_based_citation_recovery
+      - missing_citations_field
+
+  - id: FALSIFY-XPILE-BACKEND-006
+    rule: |
+      lower MUST NOT mutate the input module or config.
+    prediction: |
+      hash(module, config) before == hash(module, config) after lower().
+    test: |
+      cargo test -p xpile-backend --test lower_no_mutation
+    if_fails: |
+      Hidden side effects break the cache-determinism invariant; cache
+      keys become stale; multi-backend pipelines see inconsistent state.
+    ship_blocking: true
+    counter_example_classes:
+      - hidden_side_effect
+      - in_place_normalization
+
+kani_harnesses:
+  - id: KANI-XPILE-BACKEND-001
+    obligation: target_ownership
+    bound: 5
+    property: |
+      For up to 5 registered backends with up to 3 targets each, no
+      Target variant appears in more than one backend's targets() list.
+    harness: |
+      #[kani::proof]
+      fn backend_target_ownership() {
+          let backends: [Vec<Target>; 5] = kani::any();
+          let union: Vec<Target> = backends.iter().flatten().copied().collect();
+          let mut seen = std::collections::BTreeSet::new();
+          for t in union {
+              kani::assume(seen.insert(t));
+          }
+      }
+
+  - id: KANI-XPILE-BACKEND-002
+    obligation: invariant
+    bound: 3
+    property: |
+      For a bounded Artifact with up to 3 IR-level target-specific
+      constructs and up to 3 citations, every construct has a matching
+      citation whose xpile.layer is "compile". Validates the structural
+      citation chain end-to-end without regex.
+    harness: |
+      #[kani::proof]
+      fn every_construct_has_compile_citation() {
+          let n_constructs: usize = kani::any();
+          kani::assume(n_constructs <= 3);
+          let n_cites: usize = kani::any();
+          kani::assume(n_cites <= 3 && n_cites >= n_constructs);
+          let artifact: Artifact = kani::any();
+          kani::assume(artifact.target_specific_constructs.len() == n_constructs);
+          kani::assume(artifact.citations.len() == n_cites);
+          for instr in &artifact.target_specific_constructs {
+              let cited = artifact.citations.iter()
+                  .any(|c| c.xpile_layer() == XpileContractLayer::CompileTime
+                       && c.sanctions(instr));
+              assert!(cited, "every target-specific construct must cite a Layer-5 contract");
+          }
+      }

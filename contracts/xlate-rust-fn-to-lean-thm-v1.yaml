@@ -1,0 +1,296 @@
+metadata:
+  id: C-XLATE-RUST-FN-TO-LEAN-THM
+  version: "1.0.0"
+  created: "2026-05-15"
+  author: PAIML Engineering
+  kind: kernel
+  status: draft
+  description: |
+    Translation contract: how a Rust function and its associated contract
+    obligations lift to a Lean 4 theorem statement, with the contract ID
+    embedded in the Lean namespace path (citation bridge per the 2026-05-15
+    foundational design decision #4).
+
+    Layer 2 of the xpile contract taxonomy (translation), proof-lane side.
+    Consumed by `xpile-lean-contract-backend`. Falsification asserts the
+    Lean output's syntactic shape — not just that *some* Lean was emitted,
+    but that the theorem is named, scoped, and proven about the right
+    Rust function.
+
+    Co-load with C-XLATE-LEAN-TO-RUST: that contract handles the
+    code-lane direction (Lean executable → Rust); this one handles the
+    proof-lane lifting (Rust + contract → Lean theorem).
+  xpile:
+    layer: translation
+    lane: proof
+  references:
+    - "Lean 4 documentation §3 (Definitions, theorems, namespaces)"
+    - "Mathlib4 naming conventions"
+    - contracts/xpile-contract-backend-trait-v1.yaml
+    - docs/specifications/sub/contract-backend-trait.md
+  depends_on:
+    - C-XPILE-CONTRACT-BACKEND-TRAIT
+
+equations:
+  rust_fn_to_lean_def:
+    formula: |
+      lift(rust_fn(args: T1, ...) -> R, contract_C) ==
+        def <fn_name> (args : T1_lean) ... : R_lean := <body_lean>
+    domain: |
+      A pure Rust function whose contract C declares only postconditions
+      reachable from the function's return value. Generic parameters lift
+      to Lean type-variable binders.
+    invariants:
+      - "Lean def name matches Rust fn name (no mangling)"
+      - "type parameter ordering preserved"
+      - "no side-effect declared in the Lean type — pure functions only"
+    preconditions:
+      - "rust_fn is marked `#[pure]` or contract C declares no side-effects"
+
+  rust_postcondition_to_lean_theorem:
+    formula: |
+      lift(contract_C.proof_obligations[i] of type postcondition)
+        produces a theorem carrying @[xpile_contract "<C.id>", xpile_equation "<applies_to>"]
+        with theorem name equal to the equation_name the obligation applies_to
+    domain: |
+      A postcondition proof obligation in contract C, citing an equation
+      by name via `applies_to:`.
+    invariants:
+      - "theorem's stated goal corresponds to the postcondition's `formal:` field"
+      - "all `applies_to: all` obligations produce one theorem per equation"
+      - "theorem carries an @[xpile_contract <C.id>, xpile_equation <eq_name>] attribute parseable by Lean's elaborator"
+    preconditions:
+      - "contract C is well-typed under `pv lint`"
+      - "the emitted Lean file imports XpileContracts.Attr"
+
+  rust_precondition_to_lean_hypothesis:
+    formula: |
+      lift(contract_C.proof_obligations[i] of type precondition)
+        produces a Lean ∀-binder or `(h : P)` hypothesis in the relevant
+        theorem(s)
+    domain: |
+      A precondition proof obligation in contract C citing an equation.
+    invariants:
+      - "preconditions appear in theorem goals BEFORE the postcondition"
+      - "multiple preconditions chain as conjunctions or sequential binders"
+      - "the equation's stated `preconditions:` array agrees with what's lifted"
+    preconditions: []
+
+  citation_bridge_via_attribute:
+    formula: |
+      ∀ theorem T emitted from contract C :
+        ∃ attr ∈ attributes_of(T) :
+          attr.name == "xpile_contract" ∧
+          attr.args[0] == C.metadata.id (verbatim — no dash->underscore mangling)
+    domain: |
+      Every Lean theorem rendered by xpile-lean-contract-backend.
+      Revised post-2026-05-15 audit (audit-design.md §4 "Citation Bridge
+      Fragility") to use Lean attributes parseable by the elaborator,
+      rather than namespace-string conventions parseable only by regex.
+    invariants:
+      - "the @[xpile_contract] attribute is parsed by Lean's elaborator at compile time — malformed citation fails the build, not silently"
+      - "contract ID is preserved VERBATIM (dashes intact); no dash-to-underscore mangling"
+      - "the attribute is recoverable via Lean.Meta API (`Lean.getDecl`, `Lean.Attribute.find?`) — no regex needed"
+      - "no two distinct contracts produce theorems whose attribute carries the same (contract_id, equation_name) tuple"
+    preconditions:
+      - "the emitted Lean file imports XpileContracts.Attr (vendored by xpile-lean-contract-backend)"
+      - "Contract.metadata.id matches /^C-[A-Z0-9-]+$/"
+
+  frame_translation_is_textual:
+    formula: |
+      lift(rust_fn, C) does not mutate rust_fn's meta-HIR or contract C
+    domain: |
+      Any input to lift().
+    invariants:
+      - "module hash before == module hash after"
+      - "contract YAML hash before == contract YAML hash after"
+    preconditions: []
+
+proof_obligations:
+  - type: postcondition
+    property: Lean def name equals Rust fn name
+    formal: "lean_def(lift(f, C)).name == f.name"
+    applies_to: rust_fn_to_lean_def
+
+  - type: postcondition
+    property: theorem carries @[xpile_contract] attribute with verbatim contract ID
+    formal: "∃ attr ∈ theorem.attributes : attr.name == 'xpile_contract' ∧ attr.args[0] == C.id"
+    applies_to: citation_bridge_via_attribute
+
+  - type: invariant
+    property: every contract obligation produces at least one Lean theorem
+    formal: "∀ obl ∈ C.proof_obligations : ∃ thm ∈ output : thm.lifts(obl)"
+    applies_to: rust_postcondition_to_lean_theorem
+
+  - type: precondition
+    property: contract is pv-valid before lifting
+    formal: "pv_lint(C) == OK"
+    applies_to: all
+
+  - type: frame
+    property: lifting does not mutate inputs
+    formal: "hash(module) before == hash(module) after ∧ hash(C) before == hash(C) after"
+    applies_to: frame_translation_is_textual
+
+  - type: postcondition
+    property: emitted Lean is well-formed
+    formal: "lean --check <output> exits 0"
+    applies_to: rust_postcondition_to_lean_theorem
+
+falsification_tests:
+  - id: FALSIFY-XLATE-RUST-LEAN-001
+    rule: |
+      Every emitted Lean theorem MUST carry an
+      `@[xpile_contract "<C.id>", xpile_equation "<eq_name>"]` attribute
+      with the contract ID preserved VERBATIM (no dash-to-underscore
+      mangling). The attribute MUST be parseable by Lean's elaborator,
+      not merely by regex. Revised post-2026-05-15 audit.
+    prediction: |
+      For contract C-XLATE-PY-LIST-TO-VEC, the emitted Lean file
+      contains `@[xpile_contract "C-XLATE-PY-LIST-TO-VEC", xpile_equation "..."]`
+      on the line preceding each emitted theorem; `lean --print-attributes
+      <file>` lists every theorem with the attribute.
+    test: |
+      cargo test -p xpile-lean-contract-backend --test theorem_xpile_contract_attribute
+    if_fails: |
+      Citation bridge broken at the structural level — auditor cannot
+      recover contract from theorem via Lean.Meta API. (Note: bare
+      string-grep recovery would still work, but that's what we're
+      moving AWAY from per the audit.)
+    ship_blocking: true
+    counter_example_classes:
+      - missing_attribute
+      - mangled_contract_id
+      - attribute_args_in_wrong_order
+      - attribute_unparseable_by_elaborator
+
+  - id: FALSIFY-XLATE-RUST-LEAN-002
+    rule: |
+      Each `applies_to:` value in proof_obligations MUST produce
+      a Lean theorem whose name matches the applies_to value.
+    prediction: |
+      Contract obligation `applies_to: homogeneous_list_to_vec` →
+      Lean output contains `theorem homogeneous_list_to_vec`.
+    test: |
+      cargo test -p xpile-lean-contract-backend --test theorem_name_matches_applies_to
+    if_fails: |
+      Theorem names disconnected from contract equations — provenance lost.
+    ship_blocking: true
+    counter_example_classes:
+      - mangled_theorem_name
+      - missing_theorem
+
+  - id: FALSIFY-XLATE-RUST-LEAN-003
+    rule: |
+      Preconditions MUST appear before the postcondition in the theorem
+      goal (Lean implication / ∀-chain ordering).
+    prediction: |
+      Contract with precondition P and postcondition Q produces
+      `theorem foo : P → Q := by ...`, not `theorem foo : Q := by assume P; ...`.
+    test: |
+      cargo test -p xpile-lean-contract-backend --test theorem_pre_before_post
+    if_fails: |
+      Lean type signature does not surface the precondition; proof
+      reviewers can't see what's assumed without reading the body.
+    ship_blocking: false
+    counter_example_classes:
+      - precondition_hidden_in_body
+      - swapped_implication
+
+  - id: FALSIFY-XLATE-RUST-LEAN-004
+    rule: |
+      Lifting MUST NOT mutate the input meta-HIR module or contract YAML.
+    prediction: |
+      hash(module, contract) before == hash(module, contract) after lift().
+    test: |
+      cargo test -p xpile-lean-contract-backend --test lift_no_mutation
+    if_fails: |
+      Lifting has hidden side effects; cache-determinism breaks.
+    ship_blocking: true
+    counter_example_classes:
+      - hidden_side_effect
+
+  - id: FALSIFY-XLATE-RUST-LEAN-005
+    rule: |
+      Emitted Lean MUST type-check under `lean --check` with no warnings
+      at the default elaborator level (empty proof bodies are sorry-marked).
+    prediction: |
+      `lean --check target/lean/contracts/C-XLATE-PY-LIST-TO-VEC.lean`
+      exits with status 0.
+    test: |
+      cargo test -p xpile-lean-contract-backend --test emitted_lean_checks
+    if_fails: |
+      Emitter produces ill-formed Lean — bigger problem than wrong theorem.
+    ship_blocking: true
+    counter_example_classes:
+      - syntax_error
+      - undefined_reference
+      - type_mismatch
+
+  - id: FALSIFY-XLATE-RUST-LEAN-006
+    rule: |
+      Every contract obligation MUST produce at least one theorem.
+      Empty obligations are not silently dropped.
+    prediction: |
+      Number of `theorem`/`lemma` declarations ≥ number of
+      proof_obligations entries (1:1 for typed obligations, 1:N for
+      `applies_to: all`).
+    test: |
+      cargo test -p xpile-lean-contract-backend --test obligation_to_theorem_coverage
+    if_fails: |
+      Obligations silently dropped — false sense of completeness.
+    ship_blocking: true
+    counter_example_classes:
+      - silent_skip
+      - merged_obligations
+
+kani_harnesses:
+  - id: KANI-XLATE-RUST-LEAN-001
+    obligation: frame_translation_is_textual
+    bound: 1
+    property: |
+      For a one-function meta-HIR module and a contract with at most
+      3 obligations, lift() produces output without modifying either
+      input. Verified by hashing before and after.
+    harness: |
+      #[kani::proof]
+      fn lift_is_frame_safe() {
+          let module: Module = kani::any();
+          kani::assume(module.items.len() <= 1);
+          let contract: Contract = kani::any();
+          kani::assume(contract.proof_obligations.len() <= 3);
+          let h_before_m = hash(&module);
+          let h_before_c = hash(&contract);
+          let _ = lift_rust_fn_to_lean(&module, &contract);
+          assert_eq!(hash(&module), h_before_m);
+          assert_eq!(hash(&contract), h_before_c);
+      }
+
+  - id: KANI-XLATE-RUST-LEAN-002
+    obligation: citation_bridge_via_attribute
+    bound: 1
+    property: |
+      For a contract whose id is a bounded uppercase-with-dash string,
+      every theorem in the rendered Lean output carries an
+      @[xpile_contract "<id>"] attribute whose first argument equals
+      the contract ID VERBATIM (no dash->underscore mangling).
+      Revised post-2026-05-15 audit to assert against parsed attribute
+      table, not string-matched namespace prefix.
+    harness: |
+      #[kani::proof]
+      fn xpile_contract_attribute_carries_verbatim_id() {
+          let id_bytes: [u8; 16] = kani::any();
+          kani::assume(id_bytes.iter().all(|c| c.is_ascii_uppercase() || *c == b'-'));
+          let id = std::str::from_utf8(&id_bytes).unwrap_or("");
+          let contract = Contract::stub_with_id(id);
+          let rendered = lift_to_lean_theorem(&contract);
+          // Extract via the Lean parser stub (NOT regex on rendered text).
+          let theorems = extract_theorems_via_lean_parser(&rendered);
+          assert!(!theorems.is_empty(), "lift must produce at least one theorem");
+          for thm in theorems {
+              let attr = thm.attribute("xpile_contract")
+                  .expect("every theorem must carry @[xpile_contract ...]");
+              assert_eq!(attr.args.get(0).map(|a| a.as_str()), Some(id),
+                         "contract ID must appear verbatim, no mangling");
+          }
+      }

@@ -1,0 +1,51 @@
+# Project Design Audit: xpile — Polyglot Transpile Workbench
+
+## 1. Research Methodology
+
+This audit was conducted via a systematic document analysis of the canonical specification (`docs/specifications/xpile-spec.md`) and its associated sub-specifications (e.g., `oracle.md`, `agent-loop.md`, `backend-trait.md`, `contract-frontend-trait.md`, `contract-backend-trait.md`). The evaluation adopted an adversarial, Popperian mindset—specifically looking for unverified assumptions, structural weaknesses in the hybrid translation boundaries, and the limits of the proposed contract-driven agent loop. The architectural decisions were measured against established academic research in program synthesis, execution-based evaluation, and compiler design.
+
+## 2. Relevant Academic Context (arXiv Citations)
+
+The `xpile` architecture bridges deterministic compilation and stochastic program synthesis. The design heavily leans on execution-based validation and iterative repair, which aligns with recent findings in the literature:
+
+*   **Execution-Based Validation:** The Oracle pattern heavily mirrors the principles outlined in *"Evaluating Large Language Models Trained on Code"* (Chen et al., 2021, [arXiv:2107.03374](https://arxiv.org/abs/2107.03374)), which established that static matching is insufficient for code generation and that execution-based evaluation (like `xpile`'s behavioral capture) is mandatory for correctness.
+*   **Bounded Agent Repair:** The iterative, compiler-guided LLM repair loop is supported by research such as *"Self-Refine: Iterative Refinement with Self-Feedback"* (Madaan et al., 2023, [arXiv:2303.17651](https://arxiv.org/abs/2303.17651)), demonstrating that LLMs can fix their own logic when provided with deterministic execution traces (e.g., `cargo build` and `oracle` mismatch errors).
+*   **Transcompilation via IR:** The use of a Meta-HIR to normalize semantics before generation echoes the approaches in *"Unsupervised Translation of Programming Languages"* (Roziere et al., 2020, [arXiv:2006.03511](https://arxiv.org/abs/2006.03511)), though `xpile` correctly identifies that purely unsupervised models fail on complex FFI boundaries without a strict structural contract.
+
+## 3. Positive Feedback
+
+*   **Two-Lane Symmetry (Code vs. Proof):** The strict architectural separation between executable transpilation (`Frontend`/`Backend`) and notation/proof rendering (`ContractFrontend`/`ContractBackend`) is a rigorous application of formal methods. It isolates metadata and formal proofs from polluting the executable `Meta-HIR`, allowing files like `.lean` to exist cleanly in both lanes.
+*   **Formal Hardware Sanctioning (Layer 5):** The invariant that every IR-level construct in `Artifact.primary` MUST cite a Layer-5 compile contract directly addresses the "Oracle blind spots" involving undefined behavior and hardware misuse. Hardware capabilities (e.g., PTX `sm_89` or WGSL `f16`) are formally bound by these contracts before emission.
+*   **Extreme Performance (Roofline & Zero-Copy):** The architecture treats performance as a formally trackable requirement rather than a byproduct. Cross-language translations between Python and C correctly rely on O(1) memory boundaries (e.g., ensuring `ndarray` passthroughs avoid `O(N)` defensive copies via `buffer_protocol_zero_copy` contracts). This is further backed by Roofline regression testing for theoretical hardware throughput via `pv roofline`.
+*   **Extreme Provability (Kani & Lean 4):** The project embeds strict formal proof constraints over the standard Rust test suite. Every foundational contract enforces Kani Bounded Model Checking harnesses to mathematically prove the absence of UB and overflows. Lean 4 theorem extraction allows mathematical logic statements (like `theorem` or `lemma`) to seamlessly bridge into the generated output or exist alongside it via the "proof lane."
+*   **Strict Epistemological Boundaries:** The explicit separation between the deterministic static path and the stochastic agent repair loop (`--repair` opt-in) is excellent. It prevents LLM hallucinations from contaminating the standard pipeline.
+*   **Behavioral Equivalence over Property Testing:** The Oracle pattern captures the *actual* execution behavior of the original CPython/C/Ruchy code and requires the Rust/target output to match it, grounding the LLM in empirical reality rather than subjective heuristics.
+*   **Fail-Closed Budget Discipline:** The strict resource bounding (iterations, tokens, wall-clock) that forces the system to return the *original static error* upon exhaustion guarantees that partially broken, speculative code is never shipped to the user.
+
+## 4. Negative Feedback & Vulnerabilities
+
+*   **Fixture Overfitting:** The Oracle validation is only as strong as its fixtures. Since the agent does not synthesize fixtures, if the provided inputs fail to cover critical edge cases (e.g., negative zero, extreme FFI pointer aliasing, unaligned memory), the agent loop may overfit to the happy path, resulting in target code that passes the Oracle but fails in production.
+*   **Federated HIR Myopia:** The "federated" approach to Meta-HIR assumes that cross-language semantics can be fully resolved at the `FfiBoundary` node. However, complex lifecycle and ownership interactions (e.g., a C pointer held by a Python object that is passed to another C extension) may require unified semantic analysis that a federated, localized HIR cannot provide.
+*   **Citation Bridge Fragility:** The "citation bridge" mapping Lean theorems or LaTeX math back to foundational YAML contracts heavily relies on string manipulation and regex (e.g., deriving namespace paths like `XpileContracts.C_XLATE_PY_LIST_TO_VEC`). This is structurally brittle; manual refactoring or renaming in the proof lane will silently break the `citation_round_trip` invariant, severing the audit chain.
+*   **Determinism Edge Cases:** The content-addressed cache relies on `sha256(source || ... || skills_hash)`. If the original source relies on non-deterministic features (e.g., Python's randomized hash seeds for dictionary iteration order), the Oracle will capture varying outputs across runs, causing the equivalence check to flap and the agent loop to thrash unproductively.
+*   **Oracle Hardware Blind Spots Re-emerge:** While Layer 5 contracts bound *which* hardware instructions can be emitted, the Oracle itself generally cannot observe deep hardware-level races or WGSL/PTX thread divergence unless they reliably mutate the captured output. The design shifts the burden of hardware safety entirely onto the correctness of the Layer 5 contracts, creating a single point of failure if the contract proves incomplete.
+
+## 5. Popperian Falsification of the Design
+
+To ensure this design is scientifically rigorous, it must be falsifiable. The following hypotheses are load-bearing to the `xpile` architecture. If any of these falsification conditions are met in practice, the architectural premise is invalid and requires a foundational pivot.
+
+### Hypothesis 1: The Federated Meta-HIR is Sufficient for Hybrid Transpilation
+*   **Claim:** Independent language-specific frontends lowering to a minimal shared Meta-HIR (with an FFI manifest) can safely translate multi-language artifacts into unified code.
+*   **Falsification Condition:** The design is falsified if there exists a common hybrid pattern (e.g., Python GIL state management intertwined with a C++ RAII lifecycle) that cannot be safely translated without the Meta-HIR forcing a unified, cross-language alias analysis pass.
+
+### Hypothesis 2: The Oracle Guarantees Semantic Equivalence
+*   **Claim:** If the transpiled program produces the same captured outputs as the original program on all given fixtures, the semantics are equivalent.
+*   **Falsification Condition:** The design is falsified if the LLM agent successfully bridges a compilation gap by synthesizing code that produces the correct output for the fixtures, but introduces a memory safety violation (e.g., use-after-free) that passes the Oracle but crashes in a production environment.
+
+### Hypothesis 3: Caching Solves the LLM Determinism Problem
+*   **Claim:** Hashing the inputs and state of the agent loop allows stochastic LLM generation to behave deterministically across the Kaizen fleet.
+*   **Falsification Condition:** The design is falsified if the underlying language runtime exhibits implicit non-determinism (e.g., OS thread scheduling affecting execution order, or address-space layout randomization bleeding into pointer comparisons) that causes the Oracle's reference capture to vary, rendering the cache key useless and the equivalence validation impossible.
+
+### Hypothesis 4: Layer 5 Contracts Sufficiently Bound Hardware Emission
+*   **Claim:** The requirement that every emitted IR construct cites a Layer-5 compile contract guarantees that backends (e.g., PTX, WGSL) will not emit undefined behavior or hardware-illegal instructions.
+*   **Falsification Condition:** The design is falsified if a Backend can emit a sequence of instructions that successfully cites valid Layer-5 contracts individually, but collectively results in a hardware fault (e.g., mismatched memory barriers across threads or invalid register accesses) that escapes both static validation and the Oracle.

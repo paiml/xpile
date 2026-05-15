@@ -1,0 +1,13 @@
+[package]
+name = "xpile-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "MCP server exposing xpile tools to IDE assistants (Claude Code, etc.)."
+
+[dependencies]
+xpile-agent = { workspace = true }
+anyhow = { workspace = true }

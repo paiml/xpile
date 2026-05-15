@@ -1,0 +1,15 @@
+[package]
+name = "xpile-backend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Backend trait — every target language (Rust, Ruchy, PTX, WGSL, SPIR-V, Lean) implements this."
+
+[dependencies]
+xpile-meta-hir = { workspace = true }
+xpile-contracts = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }

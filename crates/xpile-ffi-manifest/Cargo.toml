@@ -1,0 +1,13 @@
+[package]
+name = "xpile-ffi-manifest"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Cross-language FFI boundary registry — source of truth for hybrid transpile sessions."
+
+[dependencies]
+xpile-meta-hir = { workspace = true }
+serde = { workspace = true }

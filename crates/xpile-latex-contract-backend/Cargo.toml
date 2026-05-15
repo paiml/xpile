@@ -1,0 +1,13 @@
+[package]
+name = "xpile-latex-contract-backend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Renders contracts as publication-quality LaTeX with \\xpileContract{}{} macro carrying the verbatim contract ID. Phase 4."
+
+[dependencies]
+xpile-contract-backend = { workspace = true }
+xpile-contracts = { workspace = true }

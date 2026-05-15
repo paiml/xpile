@@ -1,0 +1,16 @@
+[package]
+name = "xpile-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Bounded agent loop for transpile repair. Adapted from the alchemize four-tool pattern."
+
+[dependencies]
+xpile-frontend = { workspace = true }
+xpile-oracle = { workspace = true }
+xpile-llm = { workspace = true }
+xpile-rust-codegen = { workspace = true }
+thiserror = { workspace = true }

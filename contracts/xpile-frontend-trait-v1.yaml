@@ -1,0 +1,160 @@
+metadata:
+  id: C-XPILE-FRONTEND-TRAIT
+  version: "1.0.0"
+  created: "2026-05-15"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Invariants every implementation of the xpile Frontend trait must
+    satisfy. The Frontend trait is the load-bearing abstraction of the
+    polyglot architecture (XPILE-ARCH-V1): every source language plugs
+    in by implementing exactly this trait.
+
+    Layer 3 of the contract taxonomy (architectural / xpile-internal).
+  references:
+    - docs/specifications/xpile-architecture-v1.md
+    - docs/specifications/xpile-contract-driven-design-v1.md
+    - crates/xpile-frontend/src/lib.rs
+  depends_on: []
+
+equations:
+  extension_ownership:
+    formula: |
+      forall ext in registered_extensions: exists exactly one frontend f: ext in f.extensions()
+    domain: |
+      registered_extensions is the union of extensions() across all
+      Frontend implementations registered with a TranspileSession.
+    invariants:
+      - "no two frontends declare the same extension (else dispatch is ambiguous)"
+      - "every dispatched extension reaches exactly one parse_and_lower call"
+    preconditions:
+      - "TranspileSession::register_frontend has been called for every active frontend"
+
+  parse_idempotency:
+    formula: |
+      forall (path, source): hash(f.parse_and_lower(path, source).unwrap()) == hash(f.parse_and_lower(path, source).unwrap())
+    domain: |
+      Two parses of the same (path, source) yield identical meta-HIR
+      when run in the same process with no intervening mutation of f.
+    invariants:
+      - "Frontend impls hold no mutable state across parse calls"
+      - "MetaHir Module serialization is canonical (BTreeMap-ordered, no HashMap)"
+    preconditions:
+      - "source is valid UTF-8"
+      - "path is canonicalized"
+
+  source_lang_consistency:
+    formula: |
+      forall f, (path, source): f.parse_and_lower(path, source).unwrap().source_lang == f.declared_lang()
+    domain: |
+      Every Frontend has an implicit declared_lang() returning its SourceLang variant.
+    invariants:
+      - "no frontend produces meta-HIR claiming a different source language"
+    preconditions: []
+
+  ffi_boundaries_are_outgoing_only:
+    formula: |
+      forall b in module.ffi_boundaries: b.from_lang == module.source_lang
+    domain: |
+      module: a parsed Module; b: an FfiBoundary recorded by the frontend.
+    invariants:
+      - "frontends record outgoing calls (Python module calling C) but not incoming ones"
+      - "incoming-call boundaries are reconciled by the FFI manifest, not by frontends"
+    preconditions: []
+
+proof_obligations:
+  - type: invariant
+    property: Every registered extension is owned by exactly one frontend
+    formal: "∀ ext ∈ registered_extensions: |{ f | ext ∈ f.extensions() }| == 1"
+    applies_to: dispatch
+  - type: invariant
+    property: parse_and_lower is deterministic per (path, source)
+    formal: "∀ p, s: hash(parse(p, s)) == hash(parse(p, s))"
+    applies_to: all
+  - type: invariant
+    property: Result module's source_lang matches the producing frontend
+    formal: "result.is_ok() ⟹ result.unwrap().source_lang == frontend.declared_lang()"
+    applies_to: all
+  - type: invariant
+    property: All recorded FFI boundaries are outgoing from the parsed language
+    formal: "∀ b ∈ module.ffi_boundaries: b.from_lang == module.source_lang"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-XPILE-FRONTEND-001
+    rule: |
+      Two distinct frontends MUST NOT both claim the same extension.
+    prediction: |
+      A TranspileSession that registers two frontends with overlapping
+      extensions() either rejects the second registration or panics in test.
+    test: |
+      cargo test -p xpile-core --test frontend_dispatch -- duplicate_extension
+    if_fails: |
+      Dispatch is ambiguous. Either reject overlap at register time or
+      enforce a single-frontend-per-extension invariant in TranspileSession.
+    ship_blocking: true
+    counter_example_classes:
+      - duplicate_extension
+      - aliased_extension
+
+  - id: FALSIFY-XPILE-FRONTEND-002
+    rule: |
+      parse_and_lower MUST be deterministic for fixed (path, source).
+    prediction: |
+      Hashing two consecutive results of parse_and_lower on the same
+      input yields identical hashes.
+    test: |
+      cargo test -p xpile-frontend --test idempotency
+    if_fails: |
+      Some frontend holds mutable state across calls or uses a
+      non-canonical serialization (HashMap iteration order).
+    ship_blocking: true
+    counter_example_classes:
+      - hashmap_iteration_order
+      - hidden_mutable_state
+
+  - id: FALSIFY-XPILE-FRONTEND-003
+    rule: |
+      A frontend MUST NOT emit meta-HIR claiming a language other than its declared one.
+    prediction: |
+      For all (frontend, path, source): result.source_lang == frontend.declared_lang().
+    test: |
+      cargo test -p xpile-frontend --test source_lang_consistency
+    if_fails: |
+      A frontend was copy-pasted without updating its SourceLang tag.
+    ship_blocking: true
+    counter_example_classes:
+      - copy_paste_bug
+
+  - id: FALSIFY-XPILE-FRONTEND-004
+    rule: |
+      Every recorded FFI boundary MUST originate from the parsed module's language.
+    prediction: |
+      For all parsed modules m, all b ∈ m.ffi_boundaries: b.from_lang == m.source_lang.
+    test: |
+      cargo test -p xpile-frontend --test outgoing_only_ffi
+    if_fails: |
+      Frontend is recording an incoming boundary, which should be the
+      job of the FFI manifest reconciliation step in xpile-core.
+    ship_blocking: true
+    counter_example_classes:
+      - incoming_boundary_in_frontend
+
+kani_harnesses:
+  - id: KANI-XPILE-FRONTEND-001
+    obligation: extension_ownership
+    bound: 4
+    property: |
+      For up to 4 registered frontends with up to 3 extensions each,
+      no extension appears in more than one frontend's extensions() list.
+    harness: |
+      #[kani::proof]
+      fn extension_ownership_harness() {
+          let frontends: [Vec<&'static str>; 4] = kani::any();
+          let union: Vec<&'static str> = frontends.iter().flatten().copied().collect();
+          let mut seen = std::collections::BTreeSet::new();
+          for ext in union {
+              kani::assume(seen.insert(ext));
+          }
+      }

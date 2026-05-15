@@ -1,0 +1,14 @@
+[package]
+name = "xpile-ptx-codegen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "PTX backend stub — lowers meta-HIR (Rust HIR with #[gpu_kernel]) to NVIDIA PTX text. Phase 5."
+
+[dependencies]
+xpile-backend = { workspace = true }
+xpile-contracts = { workspace = true }
+xpile-meta-hir = { workspace = true }
