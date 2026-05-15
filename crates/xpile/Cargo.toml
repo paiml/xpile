@@ -6,7 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Polyglot transpile workbench — CLI."
+homepage = "https://github.com/paiml/xpile"
+documentation = "https://docs.rs/xpile"
+readme = "README.md"
+description = "Polyglot transpile workbench (Python/C/C++/Rust/Ruchy/Lean ↔ Rust/Ruchy/PTX/WGSL/SPIR-V) with provable contracts at every layer."
+keywords = ["transpile", "polyglot", "compiler", "verification", "rust"]
+categories = ["development-tools", "command-line-utilities", "compilers"]
 
 [[bin]]
 name = "xpile"

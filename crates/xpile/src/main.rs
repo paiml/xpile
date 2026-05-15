@@ -3,6 +3,9 @@
 //! v0.1.0: prints what the default session has registered, exercising
 //! the trait dispatch tables end-to-end. Real CLI parsing (clap) lands
 //! in Phase 1 — see `docs/specifications/sub/cli.md`.
+//!
+//! Released to crates.io as a v0.0.1 name reservation; v0.1.0+ is the
+//! real binary tracked in this workspace.
 
 fn main() -> anyhow::Result<()> {
     println!("xpile — polyglot transpile workbench (scaffold)");
