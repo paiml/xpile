@@ -9,5 +9,6 @@ repository.workspace = true
 description = "Lean 4 (executable) backend stub — code-lane sibling of xpile-rust-codegen. Lowers meta-HIR to .lean def/inductive/structure. Proof-lane Lean (theorems) goes through xpile-lean-contract-backend."
 
 [dependencies]
-xpile-backend = { workspace = true }
+xpile-backend  = { workspace = true }
 xpile-meta-hir = { workspace = true }
+thiserror      = { workspace = true }
