@@ -372,6 +372,47 @@ fn main() {
     assert_rustc_runs("factorial", &rust, driver);
 }
 
+/// Binary recursion — fib makes two recursive calls per invocation
+/// (factorial makes one). Validates that `f(n-1) + f(n-2)` style
+/// patterns work, not just `n * f(n-1)`.
+#[test]
+fn fib_emitted_rust_computes_correct_values() {
+    let rust = xpile_transpile_to_rust("fib.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(fib(0), 0);
+    assert_eq!(fib(1), 1);
+    assert_eq!(fib(2), 1);
+    assert_eq!(fib(3), 2);
+    assert_eq!(fib(4), 3);
+    assert_eq!(fib(5), 5);
+    assert_eq!(fib(10), 55);
+    assert_eq!(fib(15), 610);
+}
+"#;
+    assert_rustc_runs("fib", &rust, driver);
+}
+
+/// Tail-recursive Euclidean GCD. Exercises:
+///   - Multiple-arg recursion (gcd(b, a % b))
+///   - Python `%` lowering to Rust `rem_euclid` (load-bearing: plain
+///     `%` would diverge from Python on negative operands)
+#[test]
+fn gcd_emitted_rust_computes_correct_values() {
+    let rust = xpile_transpile_to_rust("gcd.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(gcd(12, 18), 6);
+    assert_eq!(gcd(100, 75), 25);
+    assert_eq!(gcd(17, 13), 1);    // coprime
+    assert_eq!(gcd(48, 36), 12);
+    assert_eq!(gcd(0, 5), 5);
+    assert_eq!(gcd(5, 0), 5);
+}
+"#;
+    assert_rustc_runs("gcd", &rust, driver);
+}
+
 #[test]
 fn transpile_let_sum_py_to_lean_uses_multi_let_form() {
     let py = fixture("let_sum.py");
