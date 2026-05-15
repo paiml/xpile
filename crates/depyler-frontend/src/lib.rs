@@ -86,15 +86,17 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
         )));
     }
 
-    let params: Vec<Param> = f
-        .args
-        .args
-        .into_iter()
-        .map(|arg| Param {
-            name: arg.def.arg.to_string(),
-            ty: Type::I64,
-        })
-        .collect();
+    // Parse explicit param annotations (`a: int`). Default to I64 when
+    // unannotated — Python lets that mean "any int" so it's safe.
+    let mut params: Vec<Param> = Vec::with_capacity(f.args.args.len());
+    for arg in f.args.args {
+        let name = arg.def.arg.to_string();
+        let ty = match arg.def.annotation.as_ref() {
+            None => Type::I64,
+            Some(ann) => parse_type_annotation(&f.name, &name, ann)?,
+        };
+        params.push(Param { name, ty });
+    }
 
     // Body: zero or more leading `let`s, then a final `return expr`.
     if f.body.is_empty() {
@@ -127,7 +129,21 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
         }
     };
 
-    let return_type = infer_type(&trailing_return);
+    let inferred_return = infer_type(&trailing_return);
+    let return_type = match f.returns.as_ref() {
+        None => inferred_return,
+        Some(ann) => {
+            let declared = parse_type_annotation(&f.name, "<return>", ann)?;
+            if declared != inferred_return {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` declared return type {declared:?} but body produces {inferred_return:?}",
+                    f.name
+                )));
+            }
+            declared
+        }
+    };
+
     let body = Block {
         stmts,
         trailing_return,
@@ -139,6 +155,27 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
         return_type,
         body,
     })
+}
+
+/// Parse a Python type annotation expression to a meta-HIR [`Type`].
+/// At v0.1.0 only `int` and `bool` are recognized.
+fn parse_type_annotation(
+    fn_name: &str,
+    site: &str,
+    ann: &ast::Expr,
+) -> Result<Type, FrontendError> {
+    match ann {
+        ast::Expr::Name(n) => match n.id.as_str() {
+            "int" => Ok(Type::I64),
+            "bool" => Ok(Type::Bool),
+            other => Err(FrontendError::Lower(format!(
+                "function `{fn_name}` annotates `{site}` with unsupported type `{other}` — only `int` and `bool` at v0.1.0"
+            ))),
+        },
+        _ => Err(FrontendError::Lower(format!(
+            "function `{fn_name}` annotates `{site}` with a non-trivial type expression — not supported at v0.1.0"
+        ))),
+    }
 }
 
 /// Lower a single non-trailing statement (currently only assignment).

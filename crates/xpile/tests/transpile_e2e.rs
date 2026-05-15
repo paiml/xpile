@@ -280,6 +280,27 @@ fn transpile_add_py_to_lean_target() {
 }
 
 #[test]
+fn transpile_typed_py_honors_explicit_annotations() {
+    let py = fixture("typed.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // Annotated `n: int` and `-> bool` should flow through unchanged.
+    assert!(stdout.contains("pub fn is_even(n: i64) -> bool"));
+    assert!(stdout.contains("(n).rem_euclid(2i64)"));
+}
+
+#[test]
+fn rust_emission_for_typed_compiles_with_rustc() {
+    let rust = xpile_transpile_to_rust("typed.py");
+    assert_rustc_accepts("typed", &rust);
+}
+
+#[test]
 fn transpile_let_sum_py_to_lean_uses_multi_let_form() {
     let py = fixture("let_sum.py");
     let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "lean"]);
