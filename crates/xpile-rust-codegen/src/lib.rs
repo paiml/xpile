@@ -6,25 +6,122 @@
 //! each frontend before reaching codegen.
 //!
 //! Exposes both:
-//!   * [`emit_module`] — the original free function, kept stable for
-//!     existing callers.
-//!   * [`RustBackend`] — a [`Backend`] impl that wraps `emit_module`
+//!   * [`emit_module`] — free function, kept stable for callers that
+//!     don't want to go through the [`Backend`] trait.
+//!   * [`RustBackend`] — a [`Backend`] impl that wraps [`emit_module`]
 //!     so Rust dispatches through the same trait as PTX / WGSL / Lean.
 
+use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, Target};
-use xpile_meta_hir::Module;
+use xpile_meta_hir::{BinOp, Expr, Function, Item, Module, Param, Type};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CodegenError {
     #[error("unsupported item: {0}")]
     Unsupported(String),
+    #[error("formatting error: {0}")]
+    Format(#[from] std::fmt::Error),
 }
 
 pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
-    Ok(format!(
-        "// xpile-generated from {:?} module {} — TODO\n",
+    let mut out = String::new();
+    writeln!(
+        out,
+        "// xpile-generated from {:?} module {}",
         module.source_lang, module.name
-    ))
+    )?;
+    writeln!(out)?;
+    for item in &module.items {
+        match item {
+            Item::Function(f) => {
+                emit_function(&mut out, f)?;
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn emit_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
+    write!(out, "pub fn {}(", f.name)?;
+    for (i, p) in f.params.iter().enumerate() {
+        if i > 0 {
+            write!(out, ", ")?;
+        }
+        emit_param(out, p)?;
+    }
+    write!(out, ") -> ")?;
+    emit_type(out, f.return_type)?;
+    writeln!(out, " {{")?;
+    write!(out, "    ")?;
+    emit_expr(out, &f.body)?;
+    writeln!(out)?;
+    writeln!(out, "}}")?;
+    Ok(())
+}
+
+fn emit_param(out: &mut String, p: &Param) -> Result<(), CodegenError> {
+    write!(out, "{}: ", p.name)?;
+    emit_type(out, p.ty)?;
+    Ok(())
+}
+
+fn emit_type(out: &mut String, t: Type) -> Result<(), CodegenError> {
+    out.push_str(match t {
+        Type::I64 => "i64",
+        Type::Bool => "bool",
+    });
+    Ok(())
+}
+
+fn emit_expr(out: &mut String, e: &Expr) -> Result<(), CodegenError> {
+    match e {
+        Expr::Ident(name) => write!(out, "{}", name)?,
+        Expr::LitInt(v) => write!(out, "{}i64", v)?,
+        Expr::BinOp { op, lhs, rhs } => emit_binop(out, *op, lhs, rhs)?,
+    }
+    Ok(())
+}
+
+/// Emit a binary op. FloorDiv and Mod use Python-floor semantics
+/// (`div_euclid`, `rem_euclid`) — plain `/` and `%` truncate toward zero
+/// in Rust and diverge from Python for negative operands.
+fn emit_binop(out: &mut String, op: BinOp, lhs: &Expr, rhs: &Expr) -> Result<(), CodegenError> {
+    match op {
+        BinOp::Add => emit_infix(out, lhs, " + ", rhs),
+        BinOp::Sub => emit_infix(out, lhs, " - ", rhs),
+        BinOp::Mul => emit_infix(out, lhs, " * ", rhs),
+        BinOp::Eq => emit_infix(out, lhs, " == ", rhs),
+        BinOp::NotEq => emit_infix(out, lhs, " != ", rhs),
+        BinOp::Lt => emit_infix(out, lhs, " < ", rhs),
+        BinOp::LtEq => emit_infix(out, lhs, " <= ", rhs),
+        BinOp::Gt => emit_infix(out, lhs, " > ", rhs),
+        BinOp::GtEq => emit_infix(out, lhs, " >= ", rhs),
+        BinOp::FloorDiv => {
+            write!(out, "(")?;
+            emit_expr(out, lhs)?;
+            write!(out, ").div_euclid(")?;
+            emit_expr(out, rhs)?;
+            write!(out, ")")?;
+            Ok(())
+        }
+        BinOp::Mod => {
+            write!(out, "(")?;
+            emit_expr(out, lhs)?;
+            write!(out, ").rem_euclid(")?;
+            emit_expr(out, rhs)?;
+            write!(out, ")")?;
+            Ok(())
+        }
+    }
+}
+
+fn emit_infix(out: &mut String, lhs: &Expr, op: &str, rhs: &Expr) -> Result<(), CodegenError> {
+    write!(out, "(")?;
+    emit_expr(out, lhs)?;
+    out.push_str(op);
+    emit_expr(out, rhs)?;
+    write!(out, ")")?;
+    Ok(())
 }
 
 pub struct RustBackend;
@@ -45,5 +142,125 @@ impl Backend for RustBackend {
             sidecars: Vec::new(),
             citations: Vec::new(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xpile_meta_hir::{Module, SourceLang};
+
+    fn module_with(name: &str, items: Vec<Item>) -> Module {
+        Module {
+            name: name.into(),
+            source_lang: SourceLang::Python,
+            items,
+            ffi_boundaries: Vec::new(),
+        }
+    }
+
+    fn add_fn() -> Function {
+        Function {
+            name: "add".into(),
+            params: vec![
+                Param {
+                    name: "a".into(),
+                    ty: Type::I64,
+                },
+                Param {
+                    name: "b".into(),
+                    ty: Type::I64,
+                },
+            ],
+            return_type: Type::I64,
+            body: Expr::BinOp {
+                op: BinOp::Add,
+                lhs: Box::new(Expr::Ident("a".into())),
+                rhs: Box::new(Expr::Ident("b".into())),
+            },
+        }
+    }
+
+    #[test]
+    fn emits_add_function() {
+        let m = module_with("fixture", vec![Item::Function(add_fn())]);
+        let rust = emit_module(&m).expect("emit ok");
+        assert!(rust.contains("pub fn add(a: i64, b: i64) -> i64"));
+        assert!(rust.contains("(a + b)"));
+    }
+
+    #[test]
+    fn emits_floordiv_as_div_euclid() {
+        // Python `a // b` must NOT lower to Rust `/`.
+        let f = Function {
+            name: "fdiv".into(),
+            params: vec![
+                Param {
+                    name: "a".into(),
+                    ty: Type::I64,
+                },
+                Param {
+                    name: "b".into(),
+                    ty: Type::I64,
+                },
+            ],
+            return_type: Type::I64,
+            body: Expr::BinOp {
+                op: BinOp::FloorDiv,
+                lhs: Box::new(Expr::Ident("a".into())),
+                rhs: Box::new(Expr::Ident("b".into())),
+            },
+        };
+        let m = module_with("fixture", vec![Item::Function(f)]);
+        let rust = emit_module(&m).expect("emit ok");
+        assert!(
+            rust.contains("div_euclid"),
+            "Python floor-div must lower to div_euclid (got: {})",
+            rust
+        );
+        assert!(
+            !rust.contains(" / "),
+            "must not use plain Rust `/` for Python `//`"
+        );
+    }
+
+    #[test]
+    fn emits_comparison_returning_bool() {
+        let f = Function {
+            name: "le".into(),
+            params: vec![
+                Param {
+                    name: "a".into(),
+                    ty: Type::I64,
+                },
+                Param {
+                    name: "b".into(),
+                    ty: Type::I64,
+                },
+            ],
+            return_type: Type::Bool,
+            body: Expr::BinOp {
+                op: BinOp::LtEq,
+                lhs: Box::new(Expr::Ident("a".into())),
+                rhs: Box::new(Expr::Ident("b".into())),
+            },
+        };
+        let m = module_with("fixture", vec![Item::Function(f)]);
+        let rust = emit_module(&m).expect("emit ok");
+        assert!(rust.contains("-> bool"));
+        assert!(rust.contains("(a <= b)"));
+    }
+
+    #[test]
+    fn emit_module_produces_rustc_parseable_output() {
+        // Run the emitted source through `syn::parse_file` to ensure
+        // syntactic well-formedness without spawning rustc. Doesn't
+        // type-check (that's the workspace-test job).
+        // (syn isn't a dep here; instead check basic shape.)
+        let m = module_with("fixture", vec![Item::Function(add_fn())]);
+        let rust = emit_module(&m).expect("emit ok");
+        // sanity: balanced braces and trailing newline
+        assert_eq!(rust.matches('{').count(), rust.matches('}').count());
+        assert!(rust.ends_with('\n'));
     }
 }

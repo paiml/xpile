@@ -3,7 +3,19 @@ all-features = true
 
 [advisories]
 yanked = "warn"
-ignore = []
+# Unmaintained-but-not-vulnerable advisories pulled in via rustpython-parser
+# (depyler-frontend's parser). All are upstream ecosystem health warnings,
+# not security vulnerabilities. Revisit when rustpython-parser modernizes
+# its dep graph or when xpile switches to a different Python parser.
+ignore = [
+    "RUSTSEC-2024-0436",  # paste — unmaintained (via malachite-bigint)
+    "RUSTSEC-2025-0075",  # unmaintained ecosystem dep
+    "RUSTSEC-2025-0080",  # unmaintained ecosystem dep
+    "RUSTSEC-2025-0081",  # unic-char-property — unmaintained
+    "RUSTSEC-2025-0090",  # unmaintained ecosystem dep
+    "RUSTSEC-2025-0098",  # unmaintained ecosystem dep
+    "RUSTSEC-2025-0100",  # unmaintained ecosystem dep
+]
 
 [licenses]
 allow = [
