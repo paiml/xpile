@@ -149,6 +149,42 @@ fn rust_target_dir(name: &str) -> std::path::PathBuf {
     dir
 }
 
+/// Stronger than `assert_rustc_accepts`: actually compiles + runs the
+/// emitted Rust, with the supplied `driver_main` appended (which calls
+/// the transpiled functions and `assert!`s the expected results).
+/// Failure = the binary exiting non-zero (assertions tripped) or rustc
+/// rejecting the merged source.
+fn assert_rustc_runs(name: &str, transpiled: &str, driver_main: &str) {
+    if Command::new("rustc").arg("--version").output().is_err() {
+        eprintln!("warning: rustc not on PATH; skipping runtime check for {name}");
+        return;
+    }
+    let dir = rust_target_dir(name);
+    let file = dir.join(format!("{name}.rs"));
+    let merged = format!("{transpiled}\n\n{driver_main}\n");
+    std::fs::write(&file, &merged).expect("write merged rust");
+    let bin = dir.join(name);
+    let compile = Command::new("rustc")
+        .arg("--edition=2021")
+        .arg("-O")
+        .arg("-o")
+        .arg(&bin)
+        .arg(&file)
+        .output()
+        .expect("spawn rustc");
+    assert!(
+        compile.status.success(),
+        "rustc failed to build {name}:\n=== source ===\n{merged}\n=== stderr ===\n{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    let run = Command::new(&bin).output().expect("spawn binary");
+    assert!(
+        run.status.success(),
+        "binary {name} exited non-zero (assertion tripped?):\n=== source ===\n{merged}\n=== stderr ===\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+}
+
 fn assert_rustc_accepts(name: &str, source: &str) {
     if Command::new("rustc").arg("--version").output().is_err() {
         eprintln!("warning: rustc not on PATH; skipping round-trip check for {name}");
@@ -298,6 +334,42 @@ fn transpile_typed_py_honors_explicit_annotations() {
 fn rust_emission_for_typed_compiles_with_rustc() {
     let rust = xpile_transpile_to_rust("typed.py");
     assert_rustc_accepts("typed", &rust);
+}
+
+#[test]
+fn transpile_factorial_py_emits_recursive_rust() {
+    let py = fixture("factorial.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("pub fn factorial(n: i64) -> i64"));
+    assert!(stdout.contains("if (n <= 1i64) { 1i64 } else"));
+    // Recursive call back into factorial — proves Expr::Call works for self-reference.
+    assert!(stdout.contains("factorial("));
+}
+
+/// Semantic round-trip: emit factorial → compile → run → assert results.
+/// Proves not just that the output type-checks, but that it computes
+/// the right values (0!=1, 1!=1, 2!=2, 3!=6, 5!=120, 6!=720).
+#[test]
+fn factorial_emitted_rust_computes_correct_values() {
+    let rust = xpile_transpile_to_rust("factorial.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(factorial(0), 1);
+    assert_eq!(factorial(1), 1);
+    assert_eq!(factorial(2), 2);
+    assert_eq!(factorial(3), 6);
+    assert_eq!(factorial(5), 120);
+    assert_eq!(factorial(6), 720);
+    assert_eq!(factorial(10), 3628800);
+}
+"#;
+    assert_rustc_runs("factorial", &rust, driver);
 }
 
 #[test]
