@@ -1,9 +1,6 @@
 [package]
 name = "xpile"
-# Explicit (NOT workspace-inherited) because this 0.0.1 release is a
-# crates.io name reservation. Real releases land at 0.1.0+ once the
-# trait scaffolds have backing implementations.
-version = "0.0.1"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -12,7 +9,7 @@ repository.workspace = true
 homepage = "https://github.com/paiml/xpile"
 documentation = "https://docs.rs/xpile"
 readme = "README.md"
-description = "Polyglot transpile workbench (Python/C/C++/Rust/Ruchy/Lean ↔ Rust/Ruchy/PTX/WGSL/SPIR-V) with provable contracts at every layer. v0.0.1 is a name reservation; the real CLI lands in v0.1.0+ — see the GitHub repo."
+description = "Polyglot transpile workbench (Python/C/C++/Rust/Ruchy/Lean ↔ Rust/Ruchy/PTX/WGSL/SPIR-V) with provable contracts at every layer."
 keywords = ["transpile", "polyglot", "compiler", "verification", "rust"]
 categories = ["development-tools", "command-line-utilities", "compilers"]
 
@@ -21,4 +18,5 @@ name = "xpile"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = { workspace = true }
+xpile-core = { workspace = true }
+anyhow     = { workspace = true }
