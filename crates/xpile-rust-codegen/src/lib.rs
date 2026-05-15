@@ -78,7 +78,29 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), CodegenError> {
         Expr::Ident(name) => write!(out, "{}", name)?,
         Expr::LitInt(v) => write!(out, "{}i64", v)?,
         Expr::BinOp { op, lhs, rhs } => emit_binop(out, *op, lhs, rhs)?,
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => emit_if_expr(out, cond, then_expr, else_expr)?,
     }
+    Ok(())
+}
+
+/// Rust `if cond { then } else { else_ }` — usable as an expression.
+fn emit_if_expr(
+    out: &mut String,
+    cond: &Expr,
+    then_expr: &Expr,
+    else_expr: &Expr,
+) -> Result<(), CodegenError> {
+    write!(out, "if ")?;
+    emit_expr(out, cond)?;
+    write!(out, " {{ ")?;
+    emit_expr(out, then_expr)?;
+    write!(out, " }} else {{ ")?;
+    emit_expr(out, else_expr)?;
+    write!(out, " }}")?;
     Ok(())
 }
 
@@ -249,6 +271,37 @@ mod tests {
         let rust = emit_module(&m).expect("emit ok");
         assert!(rust.contains("-> bool"));
         assert!(rust.contains("(a <= b)"));
+    }
+
+    #[test]
+    fn emits_if_expression_for_ternary() {
+        let f = Function {
+            name: "pick".into(),
+            params: vec![
+                Param {
+                    name: "a".into(),
+                    ty: Type::I64,
+                },
+                Param {
+                    name: "b".into(),
+                    ty: Type::I64,
+                },
+            ],
+            return_type: Type::I64,
+            body: Expr::IfExpr {
+                cond: Box::new(Expr::BinOp {
+                    op: BinOp::LtEq,
+                    lhs: Box::new(Expr::Ident("a".into())),
+                    rhs: Box::new(Expr::Ident("b".into())),
+                }),
+                then_expr: Box::new(Expr::Ident("a".into())),
+                else_expr: Box::new(Expr::Ident("b".into())),
+            },
+        };
+        let m = module_with("fixture", vec![Item::Function(f)]);
+        let rust = emit_module(&m).expect("emit ok");
+        assert!(rust.contains("if (a <= b) { a } else { b }"));
+        assert!(rust.contains("pub fn pick(a: i64, b: i64) -> i64"));
     }
 
     #[test]

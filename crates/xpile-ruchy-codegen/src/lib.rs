@@ -76,7 +76,29 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), RuchyCodegenError> {
         Expr::Ident(name) => write!(out, "{}", name)?,
         Expr::LitInt(v) => write!(out, "{}i64", v)?,
         Expr::BinOp { op, lhs, rhs } => emit_binop(out, *op, lhs, rhs)?,
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => emit_if_expr(out, cond, then_expr, else_expr)?,
     }
+    Ok(())
+}
+
+/// Ruchy uses Rust-like `if cond { then } else { else_ }` as an expression.
+fn emit_if_expr(
+    out: &mut String,
+    cond: &Expr,
+    then_expr: &Expr,
+    else_expr: &Expr,
+) -> Result<(), RuchyCodegenError> {
+    write!(out, "if ")?;
+    emit_expr(out, cond)?;
+    write!(out, " {{ ")?;
+    emit_expr(out, then_expr)?;
+    write!(out, " }} else {{ ")?;
+    emit_expr(out, else_expr)?;
+    write!(out, " }}")?;
     Ok(())
 }
 
