@@ -259,3 +259,34 @@ fn rust_emission_for_in_range_compiles_with_rustc() {
     let rust = xpile_transpile_to_rust("in_range.py");
     assert_rustc_accepts("in_range", &rust);
 }
+
+#[test]
+fn transpile_add_py_to_lean_target() {
+    let py = fixture("add.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "lean"]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("def add (a : Int) (b : Int) : Int :="),
+        "expected Lean def signature in:\n{stdout}"
+    );
+    assert!(stdout.contains("(a + b)"));
+    assert!(!stdout.contains("pub fn"));
+    assert!(!stdout.contains("fun "));
+}
+
+#[test]
+fn transpile_let_sum_py_to_lean_uses_multi_let_form() {
+    let py = fixture("let_sum.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "lean"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("def let_sum (a : Int) (b : Int) : Int :="));
+    assert!(stdout.contains("let s := (a + b)"));
+    assert!(stdout.contains("let t := (s * (2: Int))"));
+    assert!(stdout.contains("\n  t\n"));
+}
