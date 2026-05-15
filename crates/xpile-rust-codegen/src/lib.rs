@@ -13,7 +13,7 @@
 
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, Target};
-use xpile_meta_hir::{BinOp, Block, Expr, Function, Item, Module, Param, Stmt, Type};
+use xpile_meta_hir::{BinOp, Block, Expr, Function, Item, Module, Param, Stmt, Type, UnOp};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CodegenError {
@@ -105,7 +105,19 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), CodegenError> {
             else_expr,
         } => emit_if_expr(out, cond, then_expr, else_expr)?,
         Expr::Call { callee, args } => emit_call(out, callee, args)?,
+        Expr::UnOp { op, operand } => emit_unop(out, *op, operand)?,
     }
+    Ok(())
+}
+
+fn emit_unop(out: &mut String, op: UnOp, operand: &Expr) -> Result<(), CodegenError> {
+    let sym = match op {
+        UnOp::Neg => "-",
+        UnOp::Not => "!",
+    };
+    write!(out, "({sym}")?;
+    emit_expr(out, operand)?;
+    write!(out, ")")?;
     Ok(())
 }
 
@@ -152,6 +164,8 @@ fn emit_binop(out: &mut String, op: BinOp, lhs: &Expr, rhs: &Expr) -> Result<(),
         BinOp::LtEq => emit_infix(out, lhs, " <= ", rhs),
         BinOp::Gt => emit_infix(out, lhs, " > ", rhs),
         BinOp::GtEq => emit_infix(out, lhs, " >= ", rhs),
+        BinOp::And => emit_infix(out, lhs, " && ", rhs),
+        BinOp::Or => emit_infix(out, lhs, " || ", rhs),
         BinOp::FloorDiv => {
             write!(out, "(")?;
             emit_expr(out, lhs)?;

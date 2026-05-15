@@ -120,6 +120,18 @@ pub enum Expr {
     /// lacks a cross-function signature table, so promote to proper
     /// inference when one lands.
     Call { callee: String, args: Vec<Expr> },
+    /// Unary operation — `not x` (logical, Bool → Bool) or `-x`
+    /// (numeric negate, I64 → I64).
+    UnOp { op: UnOp, operand: Box<Expr> },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UnOp {
+    /// Numeric negation: `-x`, I64 → I64. Note `i64::MIN`'s negation
+    /// overflows; frontends should warn but emit anyway.
+    Neg,
+    /// Logical not: `not x`, Bool → Bool.
+    Not,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,6 +153,10 @@ pub enum BinOp {
     LtEq,
     Gt,
     GtEq,
+    // Logical — both operands `Bool`, result `Bool`. Python's `and`/`or`
+    // are short-circuiting; the Rust/Ruchy `&&`/`||` emissions match.
+    And,
+    Or,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -18,7 +18,9 @@
 
 use std::path::Path;
 use xpile_frontend::{Frontend, FrontendError};
-use xpile_meta_hir::{BinOp, Block, Expr, Function, Item, Module, Param, SourceLang, Stmt, Type};
+use xpile_meta_hir::{
+    BinOp, Block, Expr, Function, Item, Module, Param, SourceLang, Stmt, Type, UnOp,
+};
 
 use rustpython_parser::ast;
 use rustpython_parser::Parse;
@@ -197,6 +199,7 @@ fn infer_type(e: &Expr) -> Type {
             BinOp::Eq | BinOp::NotEq | BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq => {
                 Type::Bool
             }
+            BinOp::And | BinOp::Or => Type::Bool,
         },
         Expr::IfExpr { then_expr, .. } => infer_type(then_expr),
         // Without a cross-function signature table, assume calls return I64
@@ -204,6 +207,10 @@ fn infer_type(e: &Expr) -> Type {
         // I64 or Bool, and only one of those is possible for an arithmetic
         // computation).
         Expr::Call { .. } => Type::I64,
+        Expr::UnOp { op, .. } => match op {
+            UnOp::Neg => Type::I64,
+            UnOp::Not => Type::Bool,
+        },
     }
 }
 
@@ -235,11 +242,85 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
         ast::Expr::Compare(c) => lower_compare(c),
         ast::Expr::IfExp(ie) => lower_if_exp(ie),
         ast::Expr::Call(c) => lower_call(c),
+        ast::Expr::BoolOp(b) => lower_bool_op(b),
+        ast::Expr::UnaryOp(u) => lower_unary_op(u),
         other => Err(FrontendError::Lower(format!(
             "unsupported expression: {:?}",
             std::mem::discriminant(&other)
         ))),
     }
+}
+
+/// Lower Python `a and b and c` / `a or b or c` to a left-folded chain
+/// of binary [`Expr::BinOp`] with [`BinOp::And`] / [`BinOp::Or`].
+fn lower_bool_op(b: ast::ExprBoolOp) -> Result<Expr, FrontendError> {
+    if b.values.len() < 2 {
+        return Err(FrontendError::Lower(
+            "boolean operator with fewer than 2 operands — unreachable Python AST".into(),
+        ));
+    }
+    let op = match b.op {
+        ast::BoolOp::And => BinOp::And,
+        ast::BoolOp::Or => BinOp::Or,
+    };
+    let mut iter = b.values.into_iter();
+    let first = lower_expr(iter.next().expect("len ≥ 2"))?;
+    if infer_type(&first) != Type::Bool {
+        return Err(FrontendError::Lower(
+            "operands of `and`/`or` must be Bool (no int-truthiness at v0.1.0)".into(),
+        ));
+    }
+    let mut acc = first;
+    for next in iter {
+        let rhs = lower_expr(next)?;
+        if infer_type(&rhs) != Type::Bool {
+            return Err(FrontendError::Lower(
+                "operands of `and`/`or` must be Bool (no int-truthiness at v0.1.0)".into(),
+            ));
+        }
+        acc = Expr::BinOp {
+            op,
+            lhs: Box::new(acc),
+            rhs: Box::new(rhs),
+        };
+    }
+    Ok(acc)
+}
+
+fn lower_unary_op(u: ast::ExprUnaryOp) -> Result<Expr, FrontendError> {
+    let operand = lower_expr(*u.operand)?;
+    let op = match u.op {
+        ast::UnaryOp::USub => {
+            if infer_type(&operand) != Type::I64 {
+                return Err(FrontendError::Lower(
+                    "unary `-` requires I64 operand".into(),
+                ));
+            }
+            UnOp::Neg
+        }
+        ast::UnaryOp::Not => {
+            if infer_type(&operand) != Type::Bool {
+                return Err(FrontendError::Lower(
+                    "`not` requires Bool operand (no int-truthiness at v0.1.0)".into(),
+                ));
+            }
+            UnOp::Not
+        }
+        ast::UnaryOp::UAdd => {
+            return Err(FrontendError::Lower(
+                "unary `+` not supported at v0.1.0 (it's a Python no-op; just remove it)".into(),
+            ));
+        }
+        ast::UnaryOp::Invert => {
+            return Err(FrontendError::Lower(
+                "bitwise `~` not supported at v0.1.0".into(),
+            ));
+        }
+    };
+    Ok(Expr::UnOp {
+        op,
+        operand: Box::new(operand),
+    })
 }
 
 fn lower_call(c: ast::ExprCall) -> Result<Expr, FrontendError> {
