@@ -54,6 +54,37 @@ fn transpile_cmp_py_emits_bool_return() {
 }
 
 #[test]
+fn transpile_pick_py_emits_ternary_if_expr() {
+    let py = fixture("pick.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("pub fn pick(a: i64, b: i64) -> i64"));
+    assert!(
+        stdout.contains("if (a <= b) { a } else { b }"),
+        "expected ternary as if-expr in:\n{stdout}"
+    );
+}
+
+#[test]
+fn transpile_pick_py_to_ruchy_emits_fun_with_if() {
+    let py = fixture("pick.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "ruchy"]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("fun pick(a: i64, b: i64) -> i64"));
+    assert!(stdout.contains("if (a <= b) { a } else { b }"));
+}
+
+#[test]
 fn transpile_add_py_to_ruchy_target() {
     // Same Python source through a different backend — proves the
     // dispatch architecture: one Frontend, multiple Backends.

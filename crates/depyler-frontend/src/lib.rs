@@ -129,8 +129,10 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
 }
 
 /// Trivial type inference for the v0.1.0 subset. Comparisons yield Bool,
-/// everything else yields I64. Will move into meta-HIR once a second
-/// frontend needs the same logic.
+/// everything else yields I64. Conditional expressions inherit the type
+/// of their `then` branch (the frontend validates that both branches
+/// agree). Will move into meta-HIR once a second frontend needs the
+/// same logic.
 fn infer_type(e: &Expr) -> Type {
     match e {
         Expr::Ident(_) | Expr::LitInt(_) => Type::I64,
@@ -140,6 +142,7 @@ fn infer_type(e: &Expr) -> Type {
                 Type::Bool
             }
         },
+        Expr::IfExpr { then_expr, .. } => infer_type(then_expr),
     }
 }
 
@@ -169,11 +172,41 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             })
         }
         ast::Expr::Compare(c) => lower_compare(c),
+        ast::Expr::IfExp(ie) => lower_if_exp(ie),
         other => Err(FrontendError::Lower(format!(
             "unsupported expression: {:?}",
             std::mem::discriminant(&other)
         ))),
     }
+}
+
+fn lower_if_exp(ie: ast::ExprIfExp) -> Result<Expr, FrontendError> {
+    // Python: `then if cond else else_` lowers to meta-HIR's IfExpr.
+    // Note Python AST order is (test, body, orelse) = (cond, then, else).
+    let cond = lower_expr(*ie.test)?;
+    let then_expr = lower_expr(*ie.body)?;
+    let else_expr = lower_expr(*ie.orelse)?;
+
+    let then_ty = infer_type(&then_expr);
+    let else_ty = infer_type(&else_expr);
+    if then_ty != else_ty {
+        return Err(FrontendError::Lower(format!(
+            "ternary branches have mismatched types ({then_ty:?} vs {else_ty:?}); both must agree at v0.1.0"
+        )));
+    }
+
+    // The condition must be Bool. v0.1.0 doesn't auto-coerce int truthiness.
+    if infer_type(&cond) != Type::Bool {
+        return Err(FrontendError::Lower(
+            "ternary condition must be a comparison (Bool); int-truthiness coercion not supported at v0.1.0".into(),
+        ));
+    }
+
+    Ok(Expr::IfExpr {
+        cond: Box::new(cond),
+        then_expr: Box::new(then_expr),
+        else_expr: Box::new(else_expr),
+    })
 }
 
 fn lower_binop(op: &ast::Operator) -> Result<BinOp, FrontendError> {
@@ -311,6 +344,65 @@ mod tests {
             FrontendError::Lower(msg) => {
                 assert!(msg.contains("decorator"), "unexpected msg: {}", msg);
             }
+            _ => panic!("expected Lower error"),
+        }
+    }
+
+    #[test]
+    fn lowers_ternary() {
+        let m = parse("def pick(a, b):\n    return a if a <= b else b\n");
+        let f = function(&m, 0);
+        assert_eq!(f.return_type, Type::I64);
+        let Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } = &f.body
+        else {
+            panic!("expected IfExpr, got {:?}", f.body);
+        };
+        assert!(matches!(
+            **cond,
+            Expr::BinOp {
+                op: BinOp::LtEq,
+                ..
+            }
+        ));
+        assert!(matches!(**then_expr, Expr::Ident(_)));
+        assert!(matches!(**else_expr, Expr::Ident(_)));
+    }
+
+    #[test]
+    fn rejects_ternary_with_mismatched_branch_types() {
+        // then-branch is i64, else-branch is bool — should fail.
+        let err = PythonFrontend
+            .parse_and_lower(
+                &PathBuf::from("fixture.py"),
+                "def f(a, b):\n    return a if a < b else (a < b)\n",
+            )
+            .expect_err("mismatched ternary branch types should fail");
+        match err {
+            FrontendError::Lower(msg) => assert!(
+                msg.contains("mismatched") || msg.contains("agree"),
+                "unexpected msg: {msg}"
+            ),
+            _ => panic!("expected Lower error"),
+        }
+    }
+
+    #[test]
+    fn rejects_ternary_with_non_bool_condition() {
+        let err = PythonFrontend
+            .parse_and_lower(
+                &PathBuf::from("fixture.py"),
+                "def f(a, b):\n    return a if a else b\n",
+            )
+            .expect_err("non-bool ternary cond should fail (no int-truthiness at v0.1.0)");
+        match err {
+            FrontendError::Lower(msg) => assert!(
+                msg.contains("Bool") || msg.contains("truthiness"),
+                "unexpected msg: {msg}"
+            ),
             _ => panic!("expected Lower error"),
         }
     }

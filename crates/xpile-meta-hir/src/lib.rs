@@ -77,6 +77,15 @@ pub enum Expr {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
+    /// Conditional expression — Python's `then if cond else else_`, lowered
+    /// from `ast::Expr::IfExp`. Both branches must produce the same type at
+    /// v0.1.0 (the frontend rejects branch-type-mismatch; future versions
+    /// may unify or pick a least upper bound).
+    IfExpr {
+        cond: Box<Expr>,
+        then_expr: Box<Expr>,
+        else_expr: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
