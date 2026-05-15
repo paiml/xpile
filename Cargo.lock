@@ -439,6 +439,7 @@ dependencies = [
  "xpile-backend",
  "xpile-contract-backend",
  "xpile-contract-frontend",
+ "xpile-contracts",
  "xpile-ffi-manifest",
  "xpile-frontend",
  "xpile-latex-contract-backend",
