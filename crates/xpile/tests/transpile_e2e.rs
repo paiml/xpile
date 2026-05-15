@@ -218,3 +218,24 @@ fn rust_emission_for_let_sum_compiles_with_rustc() {
     let rust = xpile_transpile_to_rust("let_sum.py");
     assert_rustc_accepts("let_sum", &rust);
 }
+
+#[test]
+fn transpile_call_chain_py_emits_two_fns_and_calls() {
+    let py = fixture("call_chain.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("pub fn add(a: i64, b: i64) -> i64"));
+    assert!(stdout.contains("pub fn quad_add(a: i64, b: i64, c: i64, d: i64) -> i64"));
+    assert!(stdout.contains("add(add(a, b), add(c, d))"));
+}
+
+#[test]
+fn rust_emission_for_call_chain_compiles_with_rustc() {
+    let rust = xpile_transpile_to_rust("call_chain.py");
+    assert_rustc_accepts("call_chain", &rust);
+}

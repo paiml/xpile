@@ -199,6 +199,11 @@ fn infer_type(e: &Expr) -> Type {
             }
         },
         Expr::IfExpr { then_expr, .. } => infer_type(then_expr),
+        // Without a cross-function signature table, assume calls return I64
+        // (matches the v0.1.0 invariant that every transpiled fn returns
+        // I64 or Bool, and only one of those is possible for an arithmetic
+        // computation).
+        Expr::Call { .. } => Type::I64,
     }
 }
 
@@ -229,11 +234,38 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
         }
         ast::Expr::Compare(c) => lower_compare(c),
         ast::Expr::IfExp(ie) => lower_if_exp(ie),
+        ast::Expr::Call(c) => lower_call(c),
         other => Err(FrontendError::Lower(format!(
             "unsupported expression: {:?}",
             std::mem::discriminant(&other)
         ))),
     }
+}
+
+fn lower_call(c: ast::ExprCall) -> Result<Expr, FrontendError> {
+    if !c.keywords.is_empty() {
+        return Err(FrontendError::Lower(
+            "keyword arguments in calls (`f(x=...)`) are not supported at v0.1.0".into(),
+        ));
+    }
+    let callee = match *c.func {
+        ast::Expr::Name(n) => n.id.to_string(),
+        ast::Expr::Attribute(_) => {
+            return Err(FrontendError::Lower(
+                "method calls (`obj.method(...)`) are not supported at v0.1.0".into(),
+            ));
+        }
+        _ => {
+            return Err(FrontendError::Lower(
+                "indirect calls (callable-valued expressions) are not supported at v0.1.0".into(),
+            ));
+        }
+    };
+    let args: Result<Vec<Expr>, _> = c.args.into_iter().map(lower_expr).collect();
+    Ok(Expr::Call {
+        callee,
+        args: args?,
+    })
 }
 
 fn lower_if_exp(ie: ast::ExprIfExp) -> Result<Expr, FrontendError> {

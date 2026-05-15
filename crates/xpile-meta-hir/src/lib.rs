@@ -114,6 +114,12 @@ pub enum Expr {
         then_expr: Box<Expr>,
         else_expr: Box<Expr>,
     },
+    /// Direct call by name: `callee(args...)`. The callee must be a
+    /// top-level identifier (no method calls, no first-class function
+    /// values at v0.1.0). Result type is inferred as I64 — the frontend
+    /// lacks a cross-function signature table, so promote to proper
+    /// inference when one lands.
+    Call { callee: String, args: Vec<Expr> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
