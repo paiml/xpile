@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" role="img" aria-labelledby="title desc">
+  <title id="title">xpile — polyglot transpile workbench</title>
+  <desc id="desc">Diagram of the xpile architecture: a code lane (Python, C, C++, Rust, Ruchy, Lean 4 → meta-HIR → Rust, Ruchy, PTX, WGSL, SPIR-V, Lean 4) and a proof lane (LaTeX, Lean theorems, mdBook ↔ contracts).</desc>
+
+  <defs>
+    <linearGradient id="codeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"  stop-color="#0EA5E9"/>
+      <stop offset="100%" stop-color="#0891B2"/>
+    </linearGradient>
+    <linearGradient id="proofGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"  stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+    <marker id="arrowCode" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0891B2"/>
+    </marker>
+    <marker id="arrowProof" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#D97706"/>
+    </marker>
+  </defs>
+
+  <style>
+    .sans { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+    .title { font-size: 84px; font-weight: 800; fill: #0F172A; letter-spacing: -2px; }
+    .tagline { font-size: 22px; fill: #475569; }
+    .laneLabel { font-size: 13px; font-weight: 800; letter-spacing: 3px; }
+    .lang { font-size: 17px; font-weight: 600; fill: #0F172A; }
+    .hub { font-size: 22px; font-weight: 700; fill: #FFFFFF; }
+    .hubSub { font-size: 12px; fill: #FFFFFF; opacity: 0.85; }
+    .footer { font-size: 14px; fill: #64748B; }
+    .footerKbd { font-size: 14px; fill: #0F172A; font-weight: 600; }
+    .divider { stroke: #E2E8F0; stroke-width: 1; }
+  </style>
+
+  <!-- background -->
+  <rect width="1200" height="640" fill="#FFFFFF"/>
+
+  <!-- title block -->
+  <text x="600" y="100" text-anchor="middle" class="sans title">xpile</text>
+  <text x="600" y="140" text-anchor="middle" class="sans tagline">polyglot transpile workbench · provable contracts at every layer</text>
+
+  <!-- ──────────────── CODE LANE ──────────────── -->
+  <text x="100" y="210" class="sans laneLabel" fill="#0891B2">CODE  LANE</text>
+
+  <!-- frontends column -->
+  <g class="mono lang">
+    <text x="100" y="250">Python</text>
+    <text x="100" y="278">C</text>
+    <text x="100" y="306">C++</text>
+    <text x="100" y="334">Rust</text>
+    <text x="100" y="362">Ruchy</text>
+    <text x="100" y="390">Lean 4</text>
+  </g>
+
+  <!-- fan-in arrow lines from frontends -->
+  <g stroke="#0891B2" stroke-width="1.2" fill="none" marker-end="url(#arrowCode)">
+    <path d="M 200 244 C 280 244, 320 312, 410 320"/>
+    <path d="M 200 272 C 280 272, 320 314, 410 322"/>
+    <path d="M 200 300 C 280 300, 320 318, 410 324"/>
+    <path d="M 200 328 C 280 328, 320 326, 410 326"/>
+    <path d="M 200 356 C 280 356, 320 330, 410 328"/>
+    <path d="M 200 384 C 280 384, 320 334, 410 330"/>
+  </g>
+
+  <!-- meta-HIR hub -->
+  <rect x="420" y="290" width="200" height="80" rx="14" fill="url(#codeGrad)"/>
+  <text x="520" y="328" text-anchor="middle" class="sans hub">meta-HIR</text>
+  <text x="520" y="350" text-anchor="middle" class="mono hubSub">canonical IR · 6 source langs</text>
+
+  <!-- fan-out arrow lines to backends -->
+  <g stroke="#0891B2" stroke-width="1.2" fill="none" marker-end="url(#arrowCode)">
+    <path d="M 630 320 C 720 312, 760 244, 840 244"/>
+    <path d="M 630 322 C 720 314, 760 272, 840 272"/>
+    <path d="M 630 324 C 720 318, 760 300, 840 300"/>
+    <path d="M 630 326 C 720 326, 760 328, 840 328"/>
+    <path d="M 630 328 C 720 330, 760 356, 840 356"/>
+    <path d="M 630 330 C 720 334, 760 384, 840 384"/>
+  </g>
+
+  <!-- backends column -->
+  <g class="mono lang">
+    <text x="850" y="250">Rust</text>
+    <text x="850" y="278">Ruchy</text>
+    <text x="850" y="306">PTX</text>
+    <text x="850" y="334">WGSL</text>
+    <text x="850" y="362">SPIR-V</text>
+    <text x="850" y="390">Lean 4</text>
+  </g>
+
+  <!-- divider between lanes -->
+  <line x1="80" y1="430" x2="1120" y2="430" class="divider"/>
+
+  <!-- ──────────────── PROOF LANE ──────────────── -->
+  <text x="100" y="475" class="sans laneLabel" fill="#D97706">PROOF  LANE</text>
+
+  <!-- proof-lane sources -->
+  <g class="mono lang">
+    <text x="100" y="515">LaTeX (math + thms)</text>
+    <text x="100" y="543">Lean 4 theorems</text>
+    <text x="100" y="571">mdBook</text>
+  </g>
+
+  <!-- bidirectional arrows to contracts hub -->
+  <g stroke="#D97706" stroke-width="1.2" fill="none" marker-end="url(#arrowProof)" marker-start="url(#arrowProof)">
+    <path d="M 320 510 L 460 538"/>
+    <path d="M 320 538 L 460 538"/>
+    <path d="M 320 566 L 460 538"/>
+  </g>
+
+  <!-- contracts hub -->
+  <rect x="470" y="510" width="260" height="60" rx="12" fill="url(#proofGrad)"/>
+  <text x="600" y="540" text-anchor="middle" class="sans hub">contracts (YAML)</text>
+  <text x="600" y="558" text-anchor="middle" class="mono hubSub">5 layers · pv-validated · structurally cited</text>
+
+  <!-- bidirectional arrows to proof outputs -->
+  <g stroke="#D97706" stroke-width="1.2" fill="none" marker-end="url(#arrowProof)" marker-start="url(#arrowProof)">
+    <path d="M 740 538 L 880 510"/>
+    <path d="M 740 538 L 880 538"/>
+    <path d="M 740 538 L 880 566"/>
+  </g>
+
+  <!-- proof-lane outputs -->
+  <g class="mono lang">
+    <text x="890" y="515">LaTeX (papers)</text>
+    <text x="890" y="543">Lean 4 theorems</text>
+    <text x="890" y="571">mdBook</text>
+  </g>
+
+  <!-- footer -->
+  <text x="600" y="615" text-anchor="middle" class="sans footer">
+    <tspan class="mono footerKbd">cargo install xpile</tspan>
+    <tspan>  ·  </tspan>
+    <tspan class="mono footerKbd">github.com/paiml/xpile</tspan>
+  </text>
+</svg>
