@@ -11,3 +11,5 @@ description = "Python frontend for xpile. Parses .py and lowers to meta-HIR."
 [dependencies]
 xpile-frontend = { workspace = true }
 xpile-meta-hir = { workspace = true }
+rustpython-parser = "0.4"
+thiserror = { workspace = true }

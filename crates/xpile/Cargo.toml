@@ -18,5 +18,7 @@ name = "xpile"
 path = "src/main.rs"
 
 [dependencies]
-xpile-core = { workspace = true }
-anyhow     = { workspace = true }
+xpile-core    = { workspace = true }
+xpile-backend = { workspace = true }
+anyhow        = { workspace = true }
+clap          = { version = "4", features = ["derive"] }
