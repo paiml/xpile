@@ -54,6 +54,29 @@ fn transpile_cmp_py_emits_bool_return() {
 }
 
 #[test]
+fn transpile_add_py_to_ruchy_target() {
+    // Same Python source through a different backend — proves the
+    // dispatch architecture: one Frontend, multiple Backends.
+    let py = fixture("add.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "ruchy"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("fun add(a: i64, b: i64) -> i64"),
+        "expected Ruchy `fun` signature in:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("pub fn"),
+        "Ruchy target must not emit Rust `pub fn`"
+    );
+    assert!(stdout.contains("(a + b)"));
+}
+
+#[test]
 fn unknown_extension_errors() {
     let unknown = fixture("../fixtures/add.unknownext");
     let out = run_xpile(&["transpile", unknown.to_str().unwrap()]);

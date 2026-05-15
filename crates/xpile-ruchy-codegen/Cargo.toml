@@ -9,5 +9,6 @@ repository.workspace = true
 description = "Ruchy backend stub — lowers meta-HIR to Ruchy source. The Profile::RuchyOut path reconstructs the pipeline operator at emission. Phase 4."
 
 [dependencies]
-xpile-backend = { workspace = true }
+xpile-backend  = { workspace = true }
 xpile-meta-hir = { workspace = true }
+thiserror      = { workspace = true }
