@@ -41,10 +41,38 @@ pub struct Function {
     pub name: String,
     pub params: Vec<Param>,
     pub return_type: Type,
-    /// Single-expression body for v0.1.0. Multi-statement bodies are a
-    /// later expansion of meta-HIR; for the arithmetic MVP one return
-    /// expression is enough.
-    pub body: Expr,
+    /// Function body. A sequence of zero or more [`Stmt`] followed by a
+    /// trailing return expression — the invariant that every function
+    /// terminates by yielding exactly one value, kept explicit.
+    pub body: Block,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Block {
+    /// Zero or more `let` bindings (and, in the future, control-flow
+    /// statements) executed before the trailing return.
+    pub stmts: Vec<Stmt>,
+    /// The expression whose value is the function's return value.
+    pub trailing_return: Expr,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Stmt {
+    /// `let name: ty = value;` — Python `name = value` lowered with
+    /// frontend-inferred `ty`. Shadowing is allowed (re-binding the same
+    /// name re-emits `let`), matching Python's assignment semantics.
+    Let { name: String, ty: Type, value: Expr },
+}
+
+/// Convenience: a single-expression body wraps as `Block { stmts: vec![], trailing_return: expr }`.
+/// Useful in tests and for tiny frontends that don't synthesize `let`s.
+impl From<Expr> for Block {
+    fn from(expr: Expr) -> Self {
+        Block {
+            stmts: Vec::new(),
+            trailing_return: expr,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
