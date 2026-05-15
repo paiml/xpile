@@ -48,6 +48,8 @@
 | 21 | [Phased Rollout](#21-phased-rollout) | [sub/phased-rollout.md](sub/phased-rollout.md) |
 | 22 | [Glossary](#22-glossary) | [sub/glossary.md](sub/glossary.md) |
 | 23 | [Status](#23-status) | [docs/status/CURRENT.md](../status/CURRENT.md) |
+| 24 | [Lean 4 Bidirectional Integration](#24-lean-4-bidirectional-integration) | [sub/lean-bidirectional.md](sub/lean-bidirectional.md) |
+| 25 | [LaTeX Bidirectional Integration](#25-latex-bidirectional-integration) | [sub/latex-bidirectional.md](sub/latex-bidirectional.md) |
 
 ---
 
@@ -371,6 +373,26 @@ v0.1.0 — scaffold complete:
 - ⏳ Phase 1 not yet started
 
 The next-session pickup point is `docs/status/CURRENT.md` and the open pmat work items it lists.
+
+---
+
+## 24. Lean 4 Bidirectional Integration
+
+**Sub-spec**: [sub/lean-bidirectional.md](sub/lean-bidirectional.md)
+
+Lean 4 is the only language that participates in both lanes. `.lean` files carry executable declarations (code lane via `lean-frontend` + `xpile-lean-codegen`) AND theorem declarations (proof lane via `lean-contract-frontend` + `xpile-lean-contract-backend`). `TranspileSession` orchestrates the merge — a single `.lean` output file can hold both halves separated by section markers. The citation bridge (`@[xpile_contract "C-X", xpile_equation "name"]`) is parsed by Lean's elaborator, not regex.
+
+Lean 4 only — Lean 3 is end-of-life. All Lean executable constructs in scope (`def`, `partial def`, `inductive`, `structure`, `instance`, `axiom`, `noncomputable def`), with translation rules codified in [`contracts/xlate-lean-to-rust-v1.yaml`](../../contracts/xlate-lean-to-rust-v1.yaml). Theorem rendering is governed by [`contracts/xlate-rust-fn-to-lean-thm-v1.yaml`](../../contracts/xlate-rust-fn-to-lean-thm-v1.yaml).
+
+---
+
+## 25. LaTeX Bidirectional Integration
+
+**Sub-spec**: [sub/latex-bidirectional.md](sub/latex-bidirectional.md)
+
+LaTeX is proof-lane-only — it has no executable semantics. `latex-contract-frontend` parses math mode AND theorem-class environments (`theorem`, `lemma`, `corollary`, `proposition`, `definition`, `remark`, `proof`) into `EquationsBlock`. `xpile-latex-contract-backend` renders contracts as publication-quality LaTeX, suitable as the formal section of an arXiv paper.
+
+Citation bridge: `\xpileContract{C-X}{equation_name}` macro expands to `\label{xpile:C-X:equation_name}` — indexed natively by `latexmk` / `biblatex`. The `xpile-contracts.sty` package is vendored as a sidecar artifact. Layer 2 contract: [`contracts/notation-latex-math-to-equation-v1.yaml`](../../contracts/notation-latex-math-to-equation-v1.yaml).
 
 ---
 

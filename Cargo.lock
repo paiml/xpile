@@ -548,6 +548,7 @@ name = "xpile-rust-codegen"
 version = "0.1.0"
 dependencies = [
  "thiserror 1.0.69",
+ "xpile-backend",
  "xpile-meta-hir",
 ]
 

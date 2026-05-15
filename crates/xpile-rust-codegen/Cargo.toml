@@ -9,5 +9,6 @@ repository.workspace = true
 description = "Shared Rust emission — takes meta-HIR, produces idiomatic Rust."
 
 [dependencies]
+xpile-backend  = { workspace = true }
 xpile-meta-hir = { workspace = true }
-thiserror = { workspace = true }
+thiserror      = { workspace = true }
