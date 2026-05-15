@@ -102,7 +102,20 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), RuchyCodegenError> {
             then_expr,
             else_expr,
         } => emit_if_expr(out, cond, then_expr, else_expr)?,
+        Expr::Call { callee, args } => emit_call(out, callee, args)?,
     }
+    Ok(())
+}
+
+fn emit_call(out: &mut String, callee: &str, args: &[Expr]) -> Result<(), RuchyCodegenError> {
+    write!(out, "{}(", callee)?;
+    for (i, a) in args.iter().enumerate() {
+        if i > 0 {
+            write!(out, ", ")?;
+        }
+        emit_expr(out, a)?;
+    }
+    write!(out, ")")?;
     Ok(())
 }
 
