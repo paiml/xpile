@@ -499,6 +499,42 @@ fn main() {
     assert_rustc_runs("gcd", &rust, driver);
 }
 
+/// PMAT-006: validates while-loops + mutable rebinding. `sum_to(n)` =
+/// 1 + 2 + ... + n via an iterative accumulator. Triggers Stmt::While,
+/// Stmt::Assign for the rebindings, and Stmt::Let { mutable: true } for
+/// the initial bindings (because the pre-walk sees them reassigned
+/// inside the loop body).
+#[test]
+fn sum_to_emitted_rust_computes_correct_values() {
+    let rust = xpile_transpile_to_rust("sum_to.py");
+    assert!(
+        rust.contains("let mut total: i64"),
+        "expected `let mut total` (mutable initial binding), got:\n{rust}"
+    );
+    assert!(
+        rust.contains("let mut i: i64"),
+        "expected `let mut i`, got:\n{rust}"
+    );
+    assert!(
+        rust.contains("while (i <= n)"),
+        "expected `while` loop emission, got:\n{rust}"
+    );
+    assert!(
+        rust.contains("i = (i).checked_add"),
+        "expected `i = i + 1` lowered to reassignment with checked_add, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sum_to(0), 0);
+    assert_eq!(sum_to(1), 1);
+    assert_eq!(sum_to(10), 55);
+    assert_eq!(sum_to(100), 5050);
+    assert_eq!(sum_to(1000), 500500);
+}
+"#;
+    assert_rustc_runs("sum_to", &rust, driver);
+}
+
 /// PMAT-005: validates multi-assignment if-branches lift to one `Let`
 /// per assigned name, each sharing the same condition.
 /// `range_size(a, b)` = |a - b| via min-max sorting in both branches.

@@ -66,13 +66,44 @@ fn emit_block(out: &mut String, block: &Block) -> Result<(), RuchyCodegenError> 
 }
 
 fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), RuchyCodegenError> {
+    emit_stmt_indented(out, stmt, "    ")
+}
+
+fn emit_stmt_indented(
+    out: &mut String,
+    stmt: &Stmt,
+    indent: &str,
+) -> Result<(), RuchyCodegenError> {
     match stmt {
-        Stmt::Let { name, ty, value } => {
-            write!(out, "    let {name}: ")?;
+        Stmt::Let {
+            name,
+            ty,
+            value,
+            mutable,
+        } => {
+            let kw = if *mutable { "let mut" } else { "let" };
+            write!(out, "{indent}{kw} {name}: ")?;
             emit_type(out, *ty)?;
             write!(out, " = ")?;
             emit_expr(out, value)?;
             writeln!(out, ";")?;
+            Ok(())
+        }
+        Stmt::Assign { name, value } => {
+            write!(out, "{indent}{name} = ")?;
+            emit_expr(out, value)?;
+            writeln!(out, ";")?;
+            Ok(())
+        }
+        Stmt::While { cond, body } => {
+            write!(out, "{indent}while ")?;
+            emit_expr(out, cond)?;
+            writeln!(out, " {{")?;
+            let inner = format!("{indent}    ");
+            for s in body {
+                emit_stmt_indented(out, s, &inner)?;
+            }
+            writeln!(out, "{indent}}}")?;
             Ok(())
         }
     }

@@ -46,6 +46,13 @@ subset, update this section first.
   `IfExpr`; pretty-printed as flat `else if` in Rust / Ruchy
 - Function calls: `f(args)` (including self-recursion — `factorial`,
   `fib`-style)
+- **`while` loops + mutable rebinding** (PMAT-006). A name that's
+  reassigned anywhere in the function (including inside a loop body)
+  gets `let mut`; subsequent assignments emit `name = value;`. The
+  frontend infers mutability via a pre-walk that takes the max of
+  if-branch counts (alternatives) and doubles inside loop bodies
+  (repetition). Lean is unsupported for `while` — a follow-up will
+  encode it as `partial def` with tail recursion.
 
 ### Backends (real emission)
 
@@ -67,7 +74,7 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 
 ### Verification milestones
 
-Eight runtime-verified semantic round-trip fixtures (emit → `rustc -O`
+Nine runtime-verified semantic round-trip fixtures (emit → `rustc -O`
 → execute → `assert_eq!`):
 
 - `factorial(n)` — recursive, `factorial(10) == 3628800`
@@ -78,8 +85,9 @@ Eight runtime-verified semantic round-trip fixtures (emit → `rustc -O`
 - `bits(a, b)` — pins `& | ^ << >>` semantics, `bits(5, 3) == 14`
 - `square_plus(a, b)` — pins `**` semantics, `square_plus(2, 3) == 10`
 - `range_size(a, b)` — multi-assignment if-branches, `range_size(3, 7) == 4`
+- `sum_to(n)` — while-loop accumulator, `sum_to(100) == 5050`
 
-28 e2e tests across `crates/xpile/tests/transpile_e2e.rs`; ~56
+29 e2e tests across `crates/xpile/tests/transpile_e2e.rs`; ~57
 workspace tests total.
 
 ## [0.0.1] - 2026-05-15
