@@ -100,3 +100,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-007
+  github_issue: null
+  item_type: task
+  title: 'Extend Python subset: for x in range(...) desugaring'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-16T13:23:56Z
+  updated: 2026-05-16T13:23:56Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

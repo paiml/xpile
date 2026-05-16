@@ -12,8 +12,9 @@
 //!
 //! Known limitations (future work, kept here only because they are
 //! load-bearing rejections in the lowering code):
-//!   - `for` loops — `while` works (PMAT-006); `for ... in range(...)`
-//!     desugaring is the natural follow-up.
+//!   - `for` over non-range iterables (lists, dicts, generators) — the
+//!     `for target in range(...)` shape desugars via PMAT-007; other
+//!     iterables wait on collection types.
 //!   - Bigint promotion — the `py-int-arith` Layer-1 contract's slow
 //!     path is unimplemented. The codegen backends emit
 //!     `.checked_*().expect(...)` so overflow panics with a message
@@ -111,6 +112,18 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                     // to the enclosing sequential total. A name assigned
                     // *only* once inside a loop still becomes mutable
                     // via that 2× bump.
+                    *counts.entry(name).or_insert(0) += c;
+                }
+            }
+            ast::Stmt::For(f) => {
+                // The for-target is bound at loop entry AND reassigned
+                // each iteration — count it as 2 even before the body
+                // is examined. Body counts use in_loop=true (same as while).
+                if let ast::Expr::Name(n) = &*f.target {
+                    *counts.entry(n.id.to_string()).or_insert(0) += 2;
+                }
+                let inner = walk_counts(&f.body, /*in_loop=*/ true);
+                for (name, c) in inner {
                     *counts.entry(name).or_insert(0) += c;
                 }
             }
@@ -325,16 +338,161 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         ast::Stmt::Assign(asn) => lower_assign(ctx, asn).map(|s| vec![s]),
         ast::Stmt::If(if_stmt) => lower_if_stmt_as_lets(ctx, if_stmt),
         ast::Stmt::While(w) => lower_while_stmt(ctx, w).map(|s| vec![s]),
+        ast::Stmt::For(f) => lower_for_stmt(ctx, f),
         ast::Stmt::Return(_) => Err(FrontendError::Lower(format!(
             "function `{}` has an early `return` — only the last statement may be `return` at v0.1.0",
             ctx.fn_name
         ))),
         other => Err(FrontendError::Lower(format!(
-            "function `{}` contains unsupported statement: {:?} — supported: assignment, if/elif/else, while, then a final `return`",
+            "function `{}` contains unsupported statement: {:?} — supported: assignment, if/elif/else, while, for-in-range, then a final `return`",
             ctx.fn_name,
             std::mem::discriminant(&other)
         ))),
     }
+}
+
+/// Lower `for target in range(...)` by desugaring to a `Stmt::Let`
+/// (the init binding for `target`) followed by a `Stmt::While` whose
+/// body is the for-body plus a `target = target + step;` tail.
+/// PMAT-007.
+///
+/// Supports `range(stop)`, `range(start, stop)`, and `range(start, stop, step)`.
+/// The step must be a positive integer literal at v0.1.0 — negative or
+/// zero steps would need `target > stop` and a different cond, which
+/// is deferred. Other iterables (lists, generators, dict.items, etc.)
+/// also error: v0.1.0 has no collection types yet.
+fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, FrontendError> {
+    if !f.orelse.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` has a `for ... else:` clause — Python's `else` on loops is not supported at v0.1.0",
+            ctx.fn_name
+        )));
+    }
+
+    let target_name = match &*f.target {
+        ast::Expr::Name(n) => n.id.to_string(),
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` uses a non-Name `for` target (tuple unpacking, attribute, subscript) — not supported at v0.1.0",
+                ctx.fn_name
+            )));
+        }
+    };
+
+    // Match range(...) call. Anything else (list/tuple/dict iteration)
+    // requires collection types and is out of scope at v0.1.0.
+    let call = match &*f.iter {
+        ast::Expr::Call(c) => c,
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` iterates a non-call expression — v0.1.0 supports only `for target in range(...)`",
+                ctx.fn_name
+            )));
+        }
+    };
+    let callee = match &*call.func {
+        ast::Expr::Name(n) if n.id.as_str() == "range" => "range",
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` iterates a non-`range(...)` call — v0.1.0 supports only `for target in range(...)`",
+                ctx.fn_name
+            )));
+        }
+    };
+    if !call.keywords.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` passes keyword args to `{callee}(...)` — v0.1.0 supports only positional args",
+            ctx.fn_name
+        )));
+    }
+    let (start_expr, stop_expr, step_expr) = match call.args.as_slice() {
+        [stop] => (Expr::LitInt(0), lower_expr(stop.clone())?, Expr::LitInt(1)),
+        [start, stop] => (
+            lower_expr(start.clone())?,
+            lower_expr(stop.clone())?,
+            Expr::LitInt(1),
+        ),
+        [start, stop, step] => {
+            // v0.1.0 only supports a positive *integer literal* step so
+            // we know the loop direction at lower time (cond is `i < stop`).
+            // A general step expression would require deciding direction
+            // dynamically — punt to a follow-up.
+            let step = match step {
+                ast::Expr::Constant(c) => match &c.value {
+                    ast::Constant::Int(n) if *n > 0.into() => {
+                        Expr::LitInt(n.to_string().parse::<i64>().unwrap_or(1))
+                    }
+                    _ => {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` uses `range(..., step)` with a non-positive-int-literal step — v0.1.0 requires a positive integer literal here",
+                            ctx.fn_name
+                        )));
+                    }
+                },
+                _ => {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` uses `range(..., step)` with a non-literal step — v0.1.0 requires a positive integer literal here",
+                        ctx.fn_name
+                    )));
+                }
+            };
+            (lower_expr(start.clone())?, lower_expr(stop.clone())?, step)
+        }
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `range(...)` with {} args — Python supports 1-3, v0.1.0 too",
+                ctx.fn_name,
+                call.args.len()
+            )));
+        }
+    };
+
+    // Emit:
+    //   let mut target: i64 = <start>;
+    //   while (target < <stop>) {
+    //       <body...>
+    //       target = (target).checked_add(<step>);
+    //   }
+    let init_stmt = if ctx.bound.contains(&target_name) {
+        Stmt::Assign {
+            name: target_name.clone(),
+            value: start_expr,
+        }
+    } else {
+        ctx.bound.insert(target_name.clone());
+        Stmt::Let {
+            name: target_name.clone(),
+            ty: Type::I64,
+            value: start_expr,
+            // for-target is by definition reassigned each iteration —
+            // mutable. The pre-walk also flags it, but we set explicitly
+            // for clarity.
+            mutable: true,
+        }
+    };
+
+    let cond = Expr::BinOp {
+        op: BinOp::Lt,
+        lhs: Box::new(Expr::Ident(target_name.clone())),
+        rhs: Box::new(stop_expr),
+    };
+
+    let mut body = Vec::with_capacity(f.body.len() + 1);
+    for stmt in f.body {
+        body.extend(lower_block_stmt(ctx, stmt)?);
+    }
+    // Tail: target = target + step
+    body.push(Stmt::Assign {
+        name: target_name.clone(),
+        value: Expr::BinOp {
+            op: BinOp::Add,
+            lhs: Box::new(Expr::Ident(target_name)),
+            rhs: Box::new(step_expr),
+        },
+    });
+
+    let while_stmt = Stmt::While { cond, body };
+    Ok(vec![init_stmt, while_stmt])
 }
 
 /// Lower a Python `while cond: body` into [`Stmt::While`]. Body
