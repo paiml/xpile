@@ -50,6 +50,7 @@
 | 23 | [Status](#23-status) | [docs/status/CURRENT.md](../status/CURRENT.md) |
 | 24 | [Lean 4 Bidirectional Integration](#24-lean-4-bidirectional-integration) | [sub/lean-bidirectional.md](sub/lean-bidirectional.md) |
 | 25 | [LaTeX Bidirectional Integration](#25-latex-bidirectional-integration) | [sub/latex-bidirectional.md](sub/latex-bidirectional.md) |
+| 26 | [Audit-acknowledged Caveats](#26-audit-acknowledged-caveats) | [audit-design.md](audit-design.md) |
 
 ---
 
@@ -59,7 +60,9 @@
 
 xpile is a polyglot transpile workbench. Every supported source language plugs in by implementing one `Frontend` trait; everything below it — meta-HIR, oracle protocol, agent loop, MCP, codegen, contracts — is shared. The load-bearing motivation is **hybrid transpilation**: single artifacts that cross language boundaries (CPython + C extensions, Python + CUDA kernels, Python + Ruchy data layer) that no per-language transpiler can handle alone.
 
-The repo is a Cargo workspace of 14 crates. Front-ends are language-specific leaves (`depyler-frontend`, `decy-frontend`, `ruchy-frontend`); shared crates (`xpile-core`, `xpile-agent`, `xpile-oracle`, `xpile-llm`, `xpile-mcp`, `xpile-contracts`, `xpile-rust-codegen`, `xpile-meta-hir`, `xpile-ffi-manifest`, `xpile-frontend`) cover the rest. Foundations: alchemize's four-tool agent loop, aprender's provable-contracts framework, depyler's repair-mode pattern, decy's HIR/ownership patterns.
+The repo is a Cargo workspace of 24 crates (as of v0.1.0). Front-ends are language-specific leaves (`depyler-frontend`, `decy-frontend`, `ruchy-frontend`, `lean-frontend`); shared crates (`xpile-core`, `xpile-agent`, `xpile-oracle`, `xpile-llm`, `xpile-mcp`, `xpile-contracts`, `xpile-rust-codegen`, `xpile-ruchy-codegen`, `xpile-lean-codegen`, `xpile-ptx-codegen`, `xpile-wgsl-codegen`, `xpile-meta-hir`, `xpile-ffi-manifest`, `xpile-frontend`, `xpile-backend`, and the proof-lane equivalents) cover the rest. Foundations: alchemize's four-tool agent loop, aprender's provable-contracts framework, depyler's repair-mode pattern, decy's HIR/ownership patterns.
+
+**Scope is deliberately scoped, not universal.** The supported language set (Python, C, C++, CUDA, Rust, Ruchy, Lean 4) is chosen to cover the seed hybrid-transpile cases that motivated the architecture (CPython↔C extensions, Python↔CUDA, Rust↔Ruchy). Languages outside that set — Julia, R, JNI (Java/Kotlin), JavaScript/TypeScript — are *not* on the roadmap. The adversarial audit ([§4 of `audit-design.md`](audit-design.md)) characterizes this as a "Sovereign AI" stance inherited from the broader `aprender` ecosystem; it is acknowledged as a tradeoff, not papered over. Wasm reaches the workbench indirectly via `ruchy`'s `WasmEmitter`, not via a native xpile Wasm backend.
 
 ---
 
@@ -99,7 +102,7 @@ Federated > unified because we don't yet have hybrid demos to validate the right
 
 `xpile-ffi-manifest` is the source of truth for cross-language calls in a hybrid transpile session. Each entry maps a source-language symbol to its target Rust shim: `(symbol, from_lang, to_lang, source_signature, rust_shim_signature, shim_id)`. The manifest is what makes Python+C, Python+CUDA, etc., tractable — both transpilers operate independently but agree on the boundary because both consume the same manifest.
 
-Contract: [`contracts/ffi-cpython-ext-v1.yaml`](../../contracts/ffi-cpython-ext-v1.yaml) governs the end-to-end behavior, including refcount balance, GIL invariance, and buffer-protocol zero-copy passthrough.
+Contract: [`contracts/ffi-cpython-ext-v1.yaml`](../../contracts/ffi-cpython-ext-v1.yaml) governs the end-to-end behavior, including refcount balance, GIL invariance, and buffer-protocol zero-copy passthrough. The refcount-balance equation `C-FFI-CPYTHON-REFCOUNT` was hardened via a five-whys analysis on a memory-leak incident — see [audit-design.md §6](audit-design.md) for the full root-cause walk and the Kani harness that now enforces refcount invariance on the error path.
 
 ---
 
@@ -140,6 +143,8 @@ A single `.lean` file may carry both lanes' output: code-lane Lean from `LeanBac
 `xpile-oracle` runs the *original* source (CPython, gcc-compiled C, the ruchy interpreter) on an input fixture, captures outputs, and compares them against the transpiled Rust output. This is the semantic gate the agent must pass to exit successfully.
 
 The pattern is borrowed from alchemize: extract reference values *before* the agent runs, then validate against them — stronger than property-based tests because the equivalence claim is over *the actual program's behavior*, not random inputs. Per-type equality predicates: bitwise for ints, exact for strings, configurable tolerance for floats, structural for collections, refcount-balance for FFI.
+
+**Known scope limits** (see [§26](#26-audit-acknowledged-caveats) for the full caveat list): the Oracle is only as strong as the *user-supplied* fixtures — the agent does not synthesize them — and it is structurally blind to internal memory state and hardware-level races that don't surface through STDOUT/STDERR or the return value. Those gaps are closed at the contract layer (refcount balance via `C-FFI-CPYTHON-REFCOUNT`, hardware semantics via Layer-5 compile contracts), not the Oracle.
 
 ---
 
@@ -215,6 +220,8 @@ xpile uses pv's existing taxonomy. Two real `kind` values are used; the four-lay
 | `pattern` | Architectural (Layer 3), Hybrid pipeline (Layer 4) | `xpile-frontend-trait-v1.yaml`, `ffi-cpython-ext-v1.yaml` |
 
 Kernel contracts MUST have non-empty `proof_obligations`, `falsification_tests`, AND `kani_harnesses`, with `falsification_tests.len() ≥ proof_obligations.len()`. Pattern contracts have lighter requirements.
+
+**How contracts get authored.** New contracts are not designed top-down; they arrive from the **five-whys → provable-contract** feedback loop. When the Oracle catches a divergence, or production surfaces a bug the agent loop missed (e.g., a memory leak that the Oracle's STDOUT/STDERR check can't see), the team walks the failure back to its root cause and codifies the missing guarantee as a contract YAML with `proof_obligations` + `kani_harnesses`. The [`C-FFI-CPYTHON-REFCOUNT`](../../contracts/ffi-cpython-ext-v1.yaml) case study in [audit-design.md §6](audit-design.md) is the canonical worked example of this cycle.
 
 ---
 
@@ -402,6 +409,26 @@ Lean 4 only — Lean 3 is end-of-life. All Lean executable constructs in scope (
 LaTeX is proof-lane-only — it has no executable semantics. `latex-contract-frontend` parses math mode AND theorem-class environments (`theorem`, `lemma`, `corollary`, `proposition`, `definition`, `remark`, `proof`) into `EquationsBlock`. `xpile-latex-contract-backend` renders contracts as publication-quality LaTeX, suitable as the formal section of an arXiv paper.
 
 Citation bridge: `\xpileContract{C-X}{equation_name}` macro expands to `\label{xpile:C-X:equation_name}` — indexed natively by `latexmk` / `biblatex`. The `xpile-contracts.sty` package is vendored as a sidecar artifact. Layer 2 contract: [`contracts/notation-latex-math-to-equation-v1.yaml`](../../contracts/notation-latex-math-to-equation-v1.yaml).
+
+---
+
+## 26. Audit-acknowledged Caveats
+
+**Sub-spec**: [audit-design.md](audit-design.md) (full adversarial review)
+
+xpile's design has been subjected to an adversarial Popperian audit (`audit-design.md`). The architecture survives the four core falsification hypotheses, but the audit also surfaces structural caveats that this spec acknowledges rather than papers over. Each item below points back to the audit for the full critique.
+
+| Caveat | One-line summary | Audit ref |
+|---|---|---|
+| **Deliberate ecosystem isolation** | No Julia / R / JNI / JS frontends; the xpile + aprender stack is intentionally "Sovereign AI" in pure Rust. Limits general-purpose polyglot ambition. | `audit-design.md §4` |
+| **WebAssembly via Ruchy proxy** | No native Wasm backend; Ruchy's `WasmEmitter` is the route to Wasm. Couples xpile's Wasm story to Ruchy's release cadence. | `audit-design.md §4` |
+| **Fixture overfitting** | The Oracle is only as strong as its fixtures — the agent does not synthesize them, so untested edge cases (negative zero, FFI aliasing, alignment) can pass the gate and fail in production. | `audit-design.md §4` |
+| **Federated HIR myopia** | The federated meta-HIR resolves cross-language semantics at the `FfiBoundary` node. Some hybrid lifecycle patterns (Python-held C pointer crossing into another C extension) may require unified semantic analysis the federated HIR can't provide. | `audit-design.md §4` |
+| **Citation-bridge fragility** | The Lean/LaTeX → contract citation pipeline previously relied on regex; reinforced by structured citation constructs post-audit (see [`sub/contract-frontend-trait.md`](sub/contract-frontend-trait.md)). Manual renaming in the proof lane can still break `citation_round_trip` unless mediated by structured tooling. | `audit-design.md §4` |
+| **Determinism edge cases** | The content-addressed cache assumes deterministic captures; non-deterministic source-language features (Python hash randomization, ASLR-affected pointer comparisons) can cause the Oracle to flap and the agent loop to thrash. | `audit-design.md §4` |
+| **Oracle hardware blind spots re-emerge** | Layer-5 contracts bound *which* hardware instructions can be emitted, but the Oracle generally cannot observe deep races / thread divergence. Hardware safety hinges on Layer-5 contract completeness — a single point of failure. | `audit-design.md §4` |
+
+These caveats are load-bearing: surface them in design conversations rather than discovering them at integration time. Each maps to a planned or open `pmat work` item for closing or constraining the gap.
 
 ---
 
