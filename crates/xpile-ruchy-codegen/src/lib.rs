@@ -201,7 +201,20 @@ fn emit_binop(
         BinOp::BitXor => emit_infix(out, lhs, " ^ ", rhs),
         BinOp::Shl => emit_checked_shift(out, lhs, "checked_shl", rhs, "left-shift"),
         BinOp::Shr => emit_checked_shift(out, lhs, "checked_shr", rhs, "right-shift"),
+        BinOp::Pow => emit_checked_pow(out, lhs, rhs),
     }
+}
+
+fn emit_checked_pow(out: &mut String, lhs: &Expr, rhs: &Expr) -> Result<(), RuchyCodegenError> {
+    write!(out, "(")?;
+    emit_expr(out, lhs)?;
+    write!(out, ").checked_pow(u32::try_from(")?;
+    emit_expr(out, rhs)?;
+    write!(
+        out,
+        ").expect(\"xpile: exponent out of range for u32 — Python returns Float for negative exponents which v0.1.0 cannot represent (contract C-PY-INT-ARITH)\")).expect(\"xpile: i64 power overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")"
+    )?;
+    Ok(())
 }
 
 fn emit_checked_shift(

@@ -29,6 +29,10 @@ subset, update this section first.
   with `u32::try_from(rhs)` so out-of-range shift amounts panic naming
   the same contract. Lean uses `Int.land` / `Int.lor` / `Int.xor` for
   `& | ^` and `<<<` / `>>>` with `.toNat` coercion for shifts.
+- Power: `**`. Rust/Ruchy emit `checked_pow(u32::try_from(rhs).expect(...))`;
+  negative exponents (which Python would promote to Float) panic naming
+  `C-PY-INT-ARITH`. Lean uses `^` with `.toNat` (same fidelity gap as
+  shifts on negative rhs).
 - Comparisons: `== != < <= > >=`
 - Logical: `and or` (short-circuit, Bool)
 - Unary: `-x` (checked_neg, same overflow contract), `not x`
@@ -60,7 +64,7 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 
 ### Verification milestones
 
-Six runtime-verified semantic round-trip fixtures (emit → `rustc -O`
+Seven runtime-verified semantic round-trip fixtures (emit → `rustc -O`
 → execute → `assert_eq!`):
 
 - `factorial(n)` — recursive, `factorial(10) == 3628800`
@@ -69,8 +73,9 @@ Six runtime-verified semantic round-trip fixtures (emit → `rustc -O`
 - `abs_val(x)` — statement-level if/else, `abs_val(-100) == 100`
 - `sign(x)` — if/elif/else chain, `sign(i64::MIN) == -1`
 - `bits(a, b)` — pins `& | ^ << >>` semantics, `bits(5, 3) == 14`
+- `square_plus(a, b)` — pins `**` semantics, `square_plus(2, 3) == 10`
 
-26 e2e tests across `crates/xpile/tests/transpile_e2e.rs`; ~54
+27 e2e tests across `crates/xpile/tests/transpile_e2e.rs`; ~55
 workspace tests total.
 
 ## [0.0.1] - 2026-05-15

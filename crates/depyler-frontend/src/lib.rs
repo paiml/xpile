@@ -404,7 +404,8 @@ fn infer_type(e: &Expr) -> Type {
             | BinOp::BitOr
             | BinOp::BitXor
             | BinOp::Shl
-            | BinOp::Shr => Type::I64,
+            | BinOp::Shr
+            | BinOp::Pow => Type::I64,
             BinOp::Eq | BinOp::NotEq | BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq => {
                 Type::Bool
             }
@@ -599,9 +600,10 @@ fn lower_binop(op: &ast::Operator) -> Result<BinOp, FrontendError> {
         ast::Operator::BitXor => BinOp::BitXor,
         ast::Operator::LShift => BinOp::Shl,
         ast::Operator::RShift => BinOp::Shr,
+        ast::Operator::Pow => BinOp::Pow,
         other => {
             return Err(FrontendError::Lower(format!(
-                "unsupported binary operator: {:?} — supported: + - * // % & | ^ << >>",
+                "unsupported binary operator: {:?} — supported: + - * // % & | ^ << >> **",
                 other
             )));
         }
@@ -824,12 +826,15 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_operator() {
+        // `@` (matrix multiplication, ast::Operator::MatMult) is still
+        // outside the v0.1.0 subset — `**`, `<<`, `>>`, etc. are now
+        // supported (PMAT-003 + PMAT-004), so this test moved to MatMult.
         let err = PythonFrontend
             .parse_and_lower(
                 &PathBuf::from("fixture.py"),
-                "def f(a, b):\n    return a ** b\n",
+                "def f(a, b):\n    return a @ b\n",
             )
-            .expect_err("** should fail");
+            .expect_err("@ should fail");
         match err {
             FrontendError::Lower(msg) => {
                 assert!(msg.contains("supported"), "unexpected msg: {}", msg);

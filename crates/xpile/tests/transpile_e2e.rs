@@ -499,6 +499,28 @@ fn main() {
     assert_rustc_runs("gcd", &rust, driver);
 }
 
+/// PMAT-004: validates power op (`**`) emits checked_pow with u32 cast
+/// of the exponent and matches CPython semantics on non-negative ints.
+/// `square_plus(a, b) == a**b + a**1 == a**b + a`.
+#[test]
+fn pow_emitted_rust_computes_correct_values() {
+    let rust = xpile_transpile_to_rust("pow.py");
+    assert!(
+        rust.contains("checked_pow"),
+        "expected checked_pow, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(square_plus(2, 3), 10);  // 8 + 2
+    assert_eq!(square_plus(3, 2), 12);  // 9 + 3
+    assert_eq!(square_plus(5, 0), 6);   // 1 + 5
+    assert_eq!(square_plus(1, 10), 2);  // 1 + 1
+    assert_eq!(square_plus(10, 4), 10010); // 10000 + 10
+}
+"#;
+    assert_rustc_runs("pow", &rust, driver);
+}
+
 /// PMAT-003: validates the bitwise BinOps (`&`, `|`, `^`, `<<`, `>>`)
 /// produce semantically correct Rust output that matches CPython on
 /// `bits(a, b) = ((a & b) | (a ^ b)) << 2 >> 1`.

@@ -169,6 +169,12 @@ pub enum BinOp {
     BitXor,
     Shl,
     Shr,
+    /// Python `**`. Both operands `I64`, result `I64` for non-negative
+    /// exponents that don't overflow. Lowers to `i64::checked_pow(u32)`
+    /// in Rust/Ruchy; negative exponents panic (Python returns Float,
+    /// which the v0.1.0 type system has no I64-compatible representation
+    /// for — surfacing as a `C-PY-INT-ARITH` slow-path panic for now).
+    Pow,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
