@@ -499,6 +499,33 @@ fn main() {
     assert_rustc_runs("gcd", &rust, driver);
 }
 
+/// PMAT-005: validates multi-assignment if-branches lift to one `Let`
+/// per assigned name, each sharing the same condition.
+/// `range_size(a, b)` = |a - b| via min-max sorting in both branches.
+#[test]
+fn multi_branch_emitted_rust_computes_correct_values() {
+    let rust = xpile_transpile_to_rust("multi_branch.py");
+    // Two `let` lifts, one for each assigned name.
+    assert!(
+        rust.contains("let lo: i64 = if "),
+        "expected `let lo` lift, got:\n{rust}"
+    );
+    assert!(
+        rust.contains("let hi: i64 = if "),
+        "expected `let hi` lift, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(range_size(3, 7), 4);   // hi=7, lo=3
+    assert_eq!(range_size(7, 3), 4);   // hi=7, lo=3
+    assert_eq!(range_size(5, 5), 0);
+    assert_eq!(range_size(-10, 10), 20);
+    assert_eq!(range_size(10, -10), 20);
+}
+"#;
+    assert_rustc_runs("multi_branch", &rust, driver);
+}
+
 /// PMAT-004: validates power op (`**`) emits checked_pow with u32 cast
 /// of the exponent and matches CPython semantics on non-negative ints.
 /// `square_plus(a, b) == a**b + a**1 == a**b + a`.
