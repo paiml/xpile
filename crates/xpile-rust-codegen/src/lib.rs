@@ -111,13 +111,25 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), CodegenError> {
 }
 
 fn emit_unop(out: &mut String, op: UnOp, operand: &Expr) -> Result<(), CodegenError> {
-    let sym = match op {
-        UnOp::Neg => "-",
-        UnOp::Not => "!",
-    };
-    write!(out, "({sym}")?;
-    emit_expr(out, operand)?;
-    write!(out, ")")?;
+    match op {
+        // Python: `-x` on int never overflows mathematically (int is unbounded).
+        // Rust: `i64::MIN.checked_neg() == None`. Use checked_neg + panic that
+        // points at the unimplemented bigint promotion slow path of
+        // contract C-PY-INT-ARITH. See py-int-arith-v1.yaml.
+        UnOp::Neg => {
+            write!(out, "(")?;
+            emit_expr(out, operand)?;
+            write!(
+                out,
+                ").checked_neg().expect(\"xpile: i64 negation overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")"
+            )?;
+        }
+        UnOp::Not => {
+            write!(out, "(!")?;
+            emit_expr(out, operand)?;
+            write!(out, ")")?;
+        }
+    }
     Ok(())
 }
 
@@ -165,14 +177,28 @@ fn emit_if_expr(
     Ok(())
 }
 
-/// Emit a binary op. FloorDiv and Mod use Python-floor semantics
-/// (`div_euclid`, `rem_euclid`) — plain `/` and `%` truncate toward zero
-/// in Rust and diverge from Python for negative operands.
+/// Emit a binary op.
+///
+/// Arithmetic (`+`, `-`, `*`, `//`, `%`) uses `checked_*` variants with
+/// `.expect("…")` rather than wrapping/truncating. Python `int` is
+/// mathematically unbounded — silently wrapping at i64 would violate
+/// the Layer-1 contract `C-PY-INT-ARITH`. Until the contract's bigint
+/// slow path is implemented, overflow panics with a message pointing
+/// at the contract.
+///
+/// FloorDiv / Mod additionally preserve Python-floor semantics via
+/// `checked_div_euclid` / `checked_rem_euclid` (plain `/` and `%` in
+/// Rust truncate toward zero, which diverges from Python on negative
+/// operands).
+///
+/// Comparisons and logical ops never overflow, so they remain infix.
 fn emit_binop(out: &mut String, op: BinOp, lhs: &Expr, rhs: &Expr) -> Result<(), CodegenError> {
     match op {
-        BinOp::Add => emit_infix(out, lhs, " + ", rhs),
-        BinOp::Sub => emit_infix(out, lhs, " - ", rhs),
-        BinOp::Mul => emit_infix(out, lhs, " * ", rhs),
+        BinOp::Add => emit_checked(out, lhs, "checked_add", rhs, "addition"),
+        BinOp::Sub => emit_checked(out, lhs, "checked_sub", rhs, "subtraction"),
+        BinOp::Mul => emit_checked(out, lhs, "checked_mul", rhs, "multiplication"),
+        BinOp::FloorDiv => emit_checked(out, lhs, "checked_div_euclid", rhs, "floor-div"),
+        BinOp::Mod => emit_checked(out, lhs, "checked_rem_euclid", rhs, "modulo"),
         BinOp::Eq => emit_infix(out, lhs, " == ", rhs),
         BinOp::NotEq => emit_infix(out, lhs, " != ", rhs),
         BinOp::Lt => emit_infix(out, lhs, " < ", rhs),
@@ -181,23 +207,27 @@ fn emit_binop(out: &mut String, op: BinOp, lhs: &Expr, rhs: &Expr) -> Result<(),
         BinOp::GtEq => emit_infix(out, lhs, " >= ", rhs),
         BinOp::And => emit_infix(out, lhs, " && ", rhs),
         BinOp::Or => emit_infix(out, lhs, " || ", rhs),
-        BinOp::FloorDiv => {
-            write!(out, "(")?;
-            emit_expr(out, lhs)?;
-            write!(out, ").div_euclid(")?;
-            emit_expr(out, rhs)?;
-            write!(out, ")")?;
-            Ok(())
-        }
-        BinOp::Mod => {
-            write!(out, "(")?;
-            emit_expr(out, lhs)?;
-            write!(out, ").rem_euclid(")?;
-            emit_expr(out, rhs)?;
-            write!(out, ")")?;
-            Ok(())
-        }
     }
+}
+
+/// Emit a checked binary op: `(<lhs>).<method>(<rhs>).expect("<msg> overflow ...")`.
+/// Returns `i64`, identical to infix on the no-overflow fast path.
+fn emit_checked(
+    out: &mut String,
+    lhs: &Expr,
+    method: &str,
+    rhs: &Expr,
+    op_name: &str,
+) -> Result<(), CodegenError> {
+    write!(out, "(")?;
+    emit_expr(out, lhs)?;
+    write!(out, ").{method}(")?;
+    emit_expr(out, rhs)?;
+    write!(
+        out,
+        ").expect(\"xpile: i64 {op_name} overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")"
+    )?;
+    Ok(())
 }
 
 fn emit_infix(out: &mut String, lhs: &Expr, op: &str, rhs: &Expr) -> Result<(), CodegenError> {
@@ -274,7 +304,15 @@ mod tests {
         let m = module_with("fixture", vec![Item::Function(add_fn())]);
         let rust = emit_module(&m).expect("emit ok");
         assert!(rust.contains("pub fn add(a: i64, b: i64) -> i64"));
-        assert!(rust.contains("(a + b)"));
+        // After contract C-PY-INT-ARITH was wired in (PMAT-002),
+        // addition emits `(a).checked_add(b).expect(...)`, not plain
+        // `(a + b)`. Assert on the load-bearing invariants rather
+        // than the exact shape.
+        assert!(rust.contains("checked_add"), "expected checked_add: {rust}");
+        assert!(
+            rust.contains("C-PY-INT-ARITH"),
+            "expected contract reference in panic msg: {rust}"
+        );
     }
 
     #[test]
