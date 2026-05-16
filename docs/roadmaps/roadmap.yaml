@@ -1,4 +1,21 @@
 roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
-roadmap: []
+roadmap:
+- id: PMAT-001
+  github_issue: null
+  item_type: task
+  title: 'Kaizen spec sweep: fix stale claims'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-16T03:19:19Z
+  updated: 2026-05-16T03:19:19Z
+  spec: null
+  acceptance_criteria:
+  - Sweep docs/specifications/ and root docs for stale numeric/feature claims; canonicalize Python subset in CHANGELOG.md; refresh xpile-spec.md Status section.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
