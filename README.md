@@ -48,10 +48,10 @@ def factorial (n : Int) : Int :=
 
 - 24 workspace crates · all compile clean (`cargo check --workspace`)
 - 11 contracts · `pv lint` PASS with 0 errors
-- Python subset shipped: top-level `def name(p): return expr`, identifiers, int literals, `+ - * // %  ==  !=  <  <=  >  >=`, ternary `x if cond else y`. Type inference: comparisons → bool, else i64.
-- Rust target: real emission with Python-floor semantics (`div_euclid` / `rem_euclid` for `//` / `%`)
-- Ruchy target: real emission with `fun ... -> T { ... }` syntax
-- CI: `gate` + `workspace-test` required on every PR
+- ~52 workspace tests · 5 fixtures runtime-verified via `rustc -O` + `assert_eq!`
+- Python subset shipped: see [`CHANGELOG.md`](CHANGELOG.md) §"Python subset (live, runtime-verified)" — typed `def`, multi-statement bodies, all binary + unary ops, ternary, if/else, elif chains, function calls including self-recursion (canonical source — this README intentionally does not duplicate the list to avoid the staleness it kept accumulating)
+- Three real backends: Rust (`pub fn`, Python-floor semantics via `div_euclid` / `rem_euclid`), Ruchy (`fun ... -> T`), Lean 4 (`def`, `Int.fdiv` / `Int.fmod`)
+- CI: `gate` + `workspace-test` required on every PR; branch protection active on `main`
 - Published: [`xpile 0.0.1`](https://crates.io/crates/xpile) (name reservation; v0.1.0+ is real)
 
 > **Canonical spec:** [`docs/specifications/xpile-spec.md`](docs/specifications/xpile-spec.md) — TOC + 25 sections, each linking to a `sub/<topic>.md`.
