@@ -134,6 +134,8 @@ fn emit_call(out: &mut String, callee: &str, args: &[Expr]) -> Result<(), Codege
 }
 
 /// Rust `if cond { then } else { else_ }` — usable as an expression.
+/// When the `else_` is itself another `IfExpr`, emit a flat
+/// `else if ...` form (no extra braces) for readability.
 fn emit_if_expr(
     out: &mut String,
     cond: &Expr,
@@ -144,9 +146,22 @@ fn emit_if_expr(
     emit_expr(out, cond)?;
     write!(out, " {{ ")?;
     emit_expr(out, then_expr)?;
-    write!(out, " }} else {{ ")?;
-    emit_expr(out, else_expr)?;
-    write!(out, " }}")?;
+    write!(out, " }} else ")?;
+    match else_expr {
+        Expr::IfExpr {
+            cond: c2,
+            then_expr: t2,
+            else_expr: e2,
+        } => {
+            emit_if_expr(out, c2, t2, e2)?;
+            return Ok(());
+        }
+        _ => {
+            write!(out, "{{ ")?;
+            emit_expr(out, else_expr)?;
+            write!(out, " }}")?;
+        }
+    }
     Ok(())
 }
 
