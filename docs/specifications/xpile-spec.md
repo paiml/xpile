@@ -4,7 +4,7 @@
 
 **Canonical spec.** This is the ONE spec. All other specs are sub-specs under `sub/`, linked from the table of contents. Anything in `legacy/` is archived and not authoritative. Drift between this spec and the code, contracts, or sub-specs is a contract defect — fail it in CI.
 
-**Status:** Scaffold (v0.1.0). 14 workspace crates compile clean; `provable-contracts` (the `pv` library) wired as a dep; 4 contracts pass `pv lint` 8/8 gates; no working transpilation logic yet. See [Section 23 — Status](#23-status).
+**Status:** v0.1.0 — **transpiles end-to-end with semantic round-trip verification**. 24 workspace crates compile clean; `aprender-contracts` (the `pv` library) wired from crates.io 0.33; 11 contracts pass `pv lint`; three real backends (Rust, Ruchy, Lean 4); recursive Python (`factorial(10) == 3628800`, etc.) runs correctly through CI. See [Section 23 — Status](#23-status) and `CHANGELOG.md`.
 
 **Foundations:**
 
@@ -361,18 +361,24 @@ Key terms: **meta-HIR**, **Frontend trait**, **FFI manifest**, **oracle**, **age
 
 ## 23. Status
 
-**Sub-spec**: [docs/status/CURRENT.md](../status/CURRENT.md)
+**Sub-spec**: [docs/status/CURRENT.md](../status/CURRENT.md). Live source of truth for the supported subset: `CHANGELOG.md`.
 
-v0.1.0 — scaffold complete:
+v0.1.0 — **end-to-end transpiler with semantic round-trip verification**:
 
-- ✅ 14 workspace crates compile clean (`cargo check`, `cargo clippy -- -D warnings`)
-- ✅ `provable-contracts` (`pv`) wired as workspace path-dep
-- ✅ 4 example contracts written, all pass `pv lint` 8/8 gates, mean score 0.58
-- ⏳ Pmat work items not yet filed (next session)
-- ⏳ Kaizen fleet registration pending (next session)
-- ⏳ Phase 1 not yet started
+- ✅ 24 workspace crates compile clean (`cargo check`, `cargo clippy -- -D warnings`)
+- ✅ `aprender-contracts` (`pv`) wired via crates.io 0.33 (path-dep removed in PR #3 fix)
+- ✅ 11 contracts pass `pv lint` (0 errors)
+- ✅ Three real backends (Rust, Ruchy, Lean 4); PTX/WGSL/SPIR-V still scaffolded
+- ✅ Python subset: typed `def`, multi-statement body, all binary + unary ops, ternary, if/elif/else, function calls including self-recursion
+- ✅ Semantic round-trip verified for 5 fixtures (factorial, fib, gcd, abs_val, sign)
+- ✅ CI gate enforced on PRs (fmt, check, clippy -D warnings, pv lint, cargo deny, workspace tests)
+- ✅ Branch protection on `main`; crates.io reservation at `xpile 0.0.1`
+- ⏳ Bigint promotion (`py-int-arith-v1.yaml` slow path)
+- ⏳ Loops, multi-assignment if-branches, types beyond int/bool
+- ⏳ Real C frontend (decy-frontend currently stub)
+- ⏳ Real PTX/WGSL emission (scaffolds in place)
 
-The next-session pickup point is `docs/status/CURRENT.md` and the open pmat work items it lists.
+The next-session pickup point is `docs/status/CURRENT.md` and any open pmat work items.
 
 ---
 

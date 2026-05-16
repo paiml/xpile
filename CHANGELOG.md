@@ -9,6 +9,10 @@ meta-HIR and the trait surfaces.
 
 ### Python subset (live, runtime-verified)
 
+This list is the **canonical source of truth** for the supported subset.
+The depyler-frontend module docstring points here. When extending the
+subset, update this section first.
+
 - Top-level `def name(p: int, q: int) -> int:` with optional type
   annotations for `int` and `bool`
 - Multi-statement body: zero or more `let` assignments + final `return`
@@ -20,6 +24,10 @@ meta-HIR and the trait surfaces.
 - Logical: `and or` (short-circuit, Bool)
 - Unary: `-x`, `not x`
 - Ternary: `x if cond else y`
+- **Statement-level `if/else`** with single-assignment branches lifted
+  to a `let = if cond { ... } else { ... }`
+- **`if / elif* / else` chains** recursively lowered to nested
+  `IfExpr`; pretty-printed as flat `else if` in Rust / Ruchy
 - Function calls: `f(args)` (including self-recursion — `factorial`,
   `fib`-style)
 
@@ -43,10 +51,17 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 
 ### Verification milestones
 
-- `factorial_emitted_rust_computes_correct_values` — semantic
-  round-trip: emit Python factorial → rustc -O → execute → assert
-  `factorial(10) == 3628800` and the rest of `n ∈ {0,1,2,3,5,6,10}`.
-- 21 e2e tests; 49 workspace tests total.
+Five runtime-verified semantic round-trip fixtures (emit → `rustc -O`
+→ execute → `assert_eq!`):
+
+- `factorial(n)` — recursive, `factorial(10) == 3628800`
+- `fib(n)` — binary recursion, `fib(15) == 610`
+- `gcd(a, b)` — tail recursion with `%`, `gcd(12, 18) == 6`
+- `abs_val(x)` — statement-level if/else, `abs_val(-100) == 100`
+- `sign(x)` — if/elif/else chain, `sign(i64::MIN) == -1`
+
+25 e2e tests across `crates/xpile/tests/transpile_e2e.rs`; ~52
+workspace tests total.
 
 ## [0.0.1] - 2026-05-15
 

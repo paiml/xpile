@@ -17,16 +17,27 @@
 
 ```rust
 pub fn emit_module(module: &Module) -> Result<String, CodegenError>;
+pub struct RustBackend; // implements xpile-backend::Backend
 ```
 
-Stub returns a single-line comment: `// xpile-generated from <SourceLang> module <name> — TODO`. Real emission is driven by per-construct translation contracts (Layer 2 in the [contract taxonomy](contract-taxonomy.md)).
+**Real emission shipped** (PR #6 MVP, expanded by #11/#12/#13/#15/#19/#20/#21). Emits idiomatic Rust for every meta-HIR construct in the v0.1.0 subset:
 
-## Contract-driven emission
+- `Function` → `pub fn name(params: T, ...) -> R { ... }`
+- `Block` → `{ stmts; trailing_return }` (no `return` keyword needed)
+- `Stmt::Let` → `let name: T = value;`
+- `Expr::BinOp` → infix (`a + b`, `a == b`, `a && b`) with Python-floor `.div_euclid` / `.rem_euclid` for `//` and `%`
+- `Expr::UnOp` → `(-x)` / `(!x)`
+- `Expr::IfExpr` → `if cond { a } else { b }`, flattened to `else if` for nested chains (PR #21)
+- `Expr::Call` → `callee(args, ...)`
 
-For each Layer-2 translation contract, `pv scaffold` generates an emit function:
+Verified by runtime-executed fixtures (`factorial`, `fib`, `gcd`, `abs_val`, `sign`): emit → `rustc -O` → run → `assert_eq!`. See `crates/xpile/tests/transpile_e2e.rs`.
+
+## Contract-driven emission (planned)
+
+The v0.1.0 emission is **hand-written**. The contract-driven flow (each Layer-2 translation contract scaffolds an emit function via `pv scaffold`) is the eventual target — see [phased-rollout.md](phased-rollout.md) Phase 3.
 
 ```rust
-// Generated from contracts/xlate-py-list-to-vec-v1.yaml
+// Generated from contracts/xlate-py-list-to-vec-v1.yaml (future)
 pub fn emit_py_list_literal(items: &[HirExpr]) -> EmittedCode { ... }
 ```
 

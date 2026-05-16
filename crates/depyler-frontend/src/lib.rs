@@ -2,19 +2,23 @@
 //!
 //! Parses `.py` source with `rustpython-parser` and lowers a constrained
 //! subset into meta-HIR. Anything outside the subset returns
-//! `FrontendError::Lower` with a message naming the unsupported construct.
+//! `FrontendError::Lower` with a message naming the unsupported
+//! construct.
 //!
-//! Subset supported at v0.1.0:
-//!   - Top-level `def name(p1, p2, ...):` with a body of zero-or-more
-//!     `name = expr` assignments followed by a final `return expr`.
-//!   - Identifiers, integer literals.
-//!   - Binary ops: `+ - * // %  ==  !=  <  <=  >  >=`.
-//!   - Ternary `x if cond else y` (both branches must have the same type;
-//!     `cond` must be Bool — no int-truthiness coercion).
-//!   - Type inference: comparisons → `Bool`, otherwise `I64`.
+//! **The canonical subset description lives in [`/CHANGELOG.md`].** Keep
+//! it in sync there; this docstring intentionally does not duplicate the
+//! list to avoid the staleness it accumulated through PRs #7 … #21
+//! (each subset extension updated lowering but not this comment).
 //!
-//! Extensions (later): type annotations, `if/else` statements, loops,
-//! function calls, bigint promotion.
+//! Known limitations (future work, kept here only because they are
+//! load-bearing rejections in the lowering code):
+//!   - Loops (`for`, `while`) — meta-HIR has no iteration / mutation yet.
+//!   - Bigint promotion — the `py-int-arith` Layer-1 contract's slow
+//!     path is unimplemented; overflow currently follows i64 semantics
+//!     (wrap in release, panic in debug).
+//!   - Multi-statement / multi-assignment if-branches — the if-as-let
+//!     recognizer requires exactly one assignment per branch.
+//!   - Type annotations beyond `int` / `bool`.
 
 use std::path::Path;
 use xpile_frontend::{Frontend, FrontendError};
