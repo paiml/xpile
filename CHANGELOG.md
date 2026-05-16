@@ -60,6 +60,9 @@ subset, update this section first.
   tail. Loop direction is decided at lower time from the literal's
   sign: positive step uses `<`, negative step uses `>`. Non-range
   iterables and non-literal / zero steps still error with a clear message.
+- **`assert cond`** (PMAT-009). No-message form only. Rust/Ruchy emit
+  `assert!(cond);`. Lean is skipped (requires Decidable instances +
+  a propositional formulation; deferred).
 
 ### Backends (real emission)
 
@@ -96,8 +99,9 @@ Ten runtime-verified semantic round-trip fixtures (emit → `rustc -O`
 - `for_sum(n)` / `range_with_start` / `range_with_step` — for-in-range
   desugaring, all three `range(...)` shapes
 - `factorial_iter(n)` — negative-step countdown, `factorial_iter(10) == 3628800`
+- `safe_div(a, b)` — assert-precondition fixture, `safe_div(10, 2) == 5`
 
-31 e2e tests across `crates/xpile/tests/transpile_e2e.rs`; ~59
+32 e2e tests across `crates/xpile/tests/transpile_e2e.rs`; ~60
 workspace tests total.
 
 ## [0.0.1] - 2026-05-15

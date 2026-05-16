@@ -499,6 +499,30 @@ fn main() {
     assert_rustc_runs("gcd", &rust, driver);
 }
 
+/// PMAT-009: validates `assert cond` lowers to `assert!(cond)` in Rust.
+/// `safe_div` asserts both args are valid before performing floor-div.
+#[test]
+fn assert_emitted_rust_panics_on_violation() {
+    let rust = xpile_transpile_to_rust("asserted.py");
+    assert!(
+        rust.contains("assert!((b != 0i64));"),
+        "expected b != 0 assert, got:\n{rust}"
+    );
+    assert!(
+        rust.contains("assert!((a >= 0i64));"),
+        "expected a >= 0 assert, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // happy path: both asserts satisfied
+    assert_eq!(safe_div(10, 2), 5);
+    assert_eq!(safe_div(0, 7), 0);
+    assert_eq!(safe_div(100, 25), 4);
+}
+"#;
+    assert_rustc_runs("asserted", &rust, driver);
+}
+
 /// PMAT-008: validates negative-step `range(...)`. `factorial_iter(n)`
 /// computes n! by counting down: `for i in range(n, 0, -1): acc *= i`.
 /// The lowering must flip the cond from `<` to `>` and emit
