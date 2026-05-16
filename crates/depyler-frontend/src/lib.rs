@@ -178,16 +178,119 @@ fn parse_type_annotation(
     }
 }
 
-/// Lower a single non-trailing statement (currently only assignment).
+/// Lower a single non-trailing statement.
+///
+/// At v0.1.0 we recognize:
+///   - `name = expr`          → [`Stmt::Let`]
+///   - `if cond: name = a; else: name = b`  → [`Stmt::Let`] with an
+///     [`Expr::IfExpr`] value. Both branches MUST be a single assignment
+///     to the SAME name with the SAME inferred type. Everything else
+///     (multi-statement branches, mismatched assignment targets, missing
+///     else, type-mismatched values) errors with a clear message.
 fn lower_block_stmt(fn_name: &str, stmt: ast::Stmt) -> Result<Stmt, FrontendError> {
     match stmt {
         ast::Stmt::Assign(asn) => lower_assign(fn_name, asn),
+        ast::Stmt::If(if_stmt) => lower_if_stmt_as_let(fn_name, if_stmt),
         ast::Stmt::Return(_) => Err(FrontendError::Lower(format!(
             "function `{fn_name}` has an early `return` — only the last statement may be `return` at v0.1.0"
         ))),
         other => Err(FrontendError::Lower(format!(
             "function `{fn_name}` contains unsupported statement: {:?} — supported: assignment, then a final `return`",
             std::mem::discriminant(&other)
+        ))),
+    }
+}
+
+/// Lower a Python `if/else` statement whose both branches are a single
+/// assignment to the same variable.
+///
+/// Lifts the branch values into the value side of a meta-HIR `Stmt::Let`,
+/// with an `Expr::IfExpr` capturing the conditional. The emitted Rust /
+/// Ruchy / Lean becomes `let name = if cond { a } else { b };` — a
+/// clean expression form that sidesteps the block-scoping mismatch
+/// between Python (assignments inside an if-block escape) and Rust
+/// (let bindings are block-scoped).
+fn lower_if_stmt_as_let(fn_name: &str, if_stmt: ast::StmtIf) -> Result<Stmt, FrontendError> {
+    if if_stmt.orelse.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{fn_name}` has `if` without `else` — at v0.1.0 both branches must assign the same variable (no use-before-init)"
+        )));
+    }
+    if if_stmt.body.len() != 1 || if_stmt.orelse.len() != 1 {
+        return Err(FrontendError::Lower(format!(
+            "function `{fn_name}` has an if-statement with multi-stmt branches — v0.1.0 supports only `if cond: x = a; else: x = b` (one assignment per branch); elif and bigger branches will land later"
+        )));
+    }
+
+    let then_asn = match &if_stmt.body[0] {
+        ast::Stmt::Assign(a) => a,
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{fn_name}` has an if-statement whose then-branch is not `name = expr`"
+            )));
+        }
+    };
+    let else_asn = match &if_stmt.orelse[0] {
+        ast::Stmt::Assign(a) => a,
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{fn_name}` has an if-statement whose else-branch is not `name = expr`"
+            )));
+        }
+    };
+
+    let then_name = single_name_target(fn_name, then_asn)?;
+    let else_name = single_name_target(fn_name, else_asn)?;
+    if then_name != else_name {
+        return Err(FrontendError::Lower(format!(
+            "function `{fn_name}` has if-branches that assign different names (`{then_name}` vs `{else_name}`) — v0.1.0 requires both branches assign the same variable"
+        )));
+    }
+
+    let cond = lower_expr((*if_stmt.test).clone())?;
+    if infer_type(&cond) != Type::Bool {
+        return Err(FrontendError::Lower(format!(
+            "function `{fn_name}` has an if-condition that is not Bool (no int-truthiness at v0.1.0)"
+        )));
+    }
+
+    let then_expr = lower_expr((*then_asn.value).clone())?;
+    let else_expr = lower_expr((*else_asn.value).clone())?;
+    let then_ty = infer_type(&then_expr);
+    let else_ty = infer_type(&else_expr);
+    if then_ty != else_ty {
+        return Err(FrontendError::Lower(format!(
+            "function `{fn_name}` if-branches assign mismatched types ({then_ty:?} vs {else_ty:?})"
+        )));
+    }
+
+    Ok(Stmt::Let {
+        name: then_name,
+        ty: then_ty,
+        value: Expr::IfExpr {
+            cond: Box::new(cond),
+            then_expr: Box::new(then_expr),
+            else_expr: Box::new(else_expr),
+        },
+    })
+}
+
+/// Extract the single Name target of an `Assign` statement, rejecting
+/// chained / tuple / attribute / subscript targets with messages
+/// consistent with [`lower_assign`].
+fn single_name_target(fn_name: &str, asn: &ast::StmtAssign) -> Result<String, FrontendError> {
+    if asn.targets.len() != 1 {
+        return Err(FrontendError::Lower(format!(
+            "function `{fn_name}` has chained assignment inside if-branch — not supported at v0.1.0"
+        )));
+    }
+    match &asn.targets[0] {
+        ast::Expr::Name(n) => Ok(n.id.to_string()),
+        ast::Expr::Tuple(_) => Err(FrontendError::Lower(format!(
+            "function `{fn_name}` uses tuple unpacking inside if-branch — not supported at v0.1.0"
+        ))),
+        _ => Err(FrontendError::Lower(format!(
+            "function `{fn_name}` has unsupported assignment target inside if-branch"
         ))),
     }
 }
