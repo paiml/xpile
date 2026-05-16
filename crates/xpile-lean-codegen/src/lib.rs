@@ -105,6 +105,13 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
             "`while` loops require partial def / tail-recursion in Lean — not yet implemented (PMAT-006 follow-up)"
                 .into(),
         )),
+        // `assert` in Lean requires Decidable instances and a propositional
+        // formulation; deferred. Programs with assertions skip the Lean
+        // backend at v0.1.0.
+        Stmt::Assert { .. } => Err(LeanCodegenError::Unsupported(
+            "`assert` in Lean requires Decidable cond + propositional formulation — not yet implemented (PMAT-009 follow-up)"
+                .into(),
+        )),
     }
 }
 

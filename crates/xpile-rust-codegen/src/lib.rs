@@ -104,6 +104,12 @@ fn emit_stmt_indented(out: &mut String, stmt: &Stmt, indent: &str) -> Result<(),
             writeln!(out, "{indent}}}")?;
             Ok(())
         }
+        Stmt::Assert { cond } => {
+            write!(out, "{indent}assert!(")?;
+            emit_expr(out, cond)?;
+            writeln!(out, ");")?;
+            Ok(())
+        }
     }
 }
 

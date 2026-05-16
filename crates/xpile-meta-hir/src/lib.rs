@@ -77,6 +77,10 @@ pub enum Stmt {
     /// a list of statements (no trailing return; the loop body is not
     /// an expression). PMAT-006.
     While { cond: Expr, body: Vec<Stmt> },
+    /// `assert cond` — Python `assert cond` (no message form at v0.1.0).
+    /// Lowers to `assert!(cond);` in Rust/Ruchy. Lean is skipped (Lean's
+    /// assertion machinery requires `Decidable` instances; deferred). PMAT-009.
+    Assert { cond: Expr },
 }
 
 /// Convenience: a single-expression body wraps as `Block { stmts: vec![], trailing_return: expr }`.

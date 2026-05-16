@@ -374,12 +374,13 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         ast::Stmt::If(if_stmt) => lower_if_stmt_as_lets(ctx, if_stmt),
         ast::Stmt::While(w) => lower_while_stmt(ctx, w).map(|s| vec![s]),
         ast::Stmt::For(f) => lower_for_stmt(ctx, f),
+        ast::Stmt::Assert(a) => lower_assert_stmt(ctx, a).map(|s| vec![s]),
         ast::Stmt::Return(_) => Err(FrontendError::Lower(format!(
             "function `{}` has an early `return` — only the last statement may be `return` at v0.1.0",
             ctx.fn_name
         ))),
         other => Err(FrontendError::Lower(format!(
-            "function `{}` contains unsupported statement: {:?} — supported: assignment, if/elif/else, while, for-in-range, then a final `return`",
+            "function `{}` contains unsupported statement: {:?} — supported: assignment, if/elif/else, while, for-in-range, assert, then a final `return`",
             ctx.fn_name,
             std::mem::discriminant(&other)
         ))),
@@ -543,6 +544,26 @@ fn lower_while_stmt(ctx: &mut LoweringCtx, w: ast::StmtWhile) -> Result<Stmt, Fr
         body.extend(lower_block_stmt(ctx, stmt)?);
     }
     Ok(Stmt::While { cond, body })
+}
+
+/// Lower `assert cond` (no message form at v0.1.0) to [`Stmt::Assert`].
+/// Python `assert cond, msg` requires the message at runtime and is
+/// deferred. PMAT-009.
+fn lower_assert_stmt(ctx: &mut LoweringCtx, a: ast::StmtAssert) -> Result<Stmt, FrontendError> {
+    if a.msg.is_some() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` uses `assert cond, msg` — message form not supported at v0.1.0",
+            ctx.fn_name
+        )));
+    }
+    let cond = lower_expr(*a.test)?;
+    if infer_type(&cond) != Type::Bool {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` has an `assert` whose expression is not Bool (no int-truthiness at v0.1.0)",
+            ctx.fn_name
+        )));
+    }
+    Ok(Stmt::Assert { cond })
 }
 
 /// Lower a Python `if/elif*/else` statement whose every branch is a

@@ -106,6 +106,12 @@ fn emit_stmt_indented(
             writeln!(out, "{indent}}}")?;
             Ok(())
         }
+        Stmt::Assert { cond } => {
+            write!(out, "{indent}assert!(")?;
+            emit_expr(out, cond)?;
+            writeln!(out, ");")?;
+            Ok(())
+        }
     }
 }
 
