@@ -196,7 +196,30 @@ fn emit_binop(
         BinOp::GtEq => emit_infix(out, lhs, " >= ", rhs),
         BinOp::And => emit_infix(out, lhs, " && ", rhs),
         BinOp::Or => emit_infix(out, lhs, " || ", rhs),
+        BinOp::BitAnd => emit_infix(out, lhs, " & ", rhs),
+        BinOp::BitOr => emit_infix(out, lhs, " | ", rhs),
+        BinOp::BitXor => emit_infix(out, lhs, " ^ ", rhs),
+        BinOp::Shl => emit_checked_shift(out, lhs, "checked_shl", rhs, "left-shift"),
+        BinOp::Shr => emit_checked_shift(out, lhs, "checked_shr", rhs, "right-shift"),
     }
+}
+
+fn emit_checked_shift(
+    out: &mut String,
+    lhs: &Expr,
+    method: &str,
+    rhs: &Expr,
+    op_name: &str,
+) -> Result<(), RuchyCodegenError> {
+    write!(out, "(")?;
+    emit_expr(out, lhs)?;
+    write!(out, ").{method}(u32::try_from(")?;
+    emit_expr(out, rhs)?;
+    write!(
+        out,
+        ").expect(\"xpile: shift amount out of range for u32 (contract C-PY-INT-ARITH)\")).expect(\"xpile: i64 {op_name} overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")"
+    )?;
+    Ok(())
 }
 
 fn emit_checked(

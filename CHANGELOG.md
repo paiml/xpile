@@ -24,6 +24,11 @@ subset, update this section first.
   pointing at the unimplemented bigint promotion slow path in contract
   `C-PY-INT-ARITH` (see `contracts/py-int-arith-v1.yaml`). Lean's `Int`
   is unbounded, so the same contract is satisfied by construction.
+- Bitwise: `& | ^ << >>`. `& | ^` lower to plain infix in Rust/Ruchy
+  (no overflow risk per-bit). Shifts use `checked_shl` / `checked_shr`
+  with `u32::try_from(rhs)` so out-of-range shift amounts panic naming
+  the same contract. Lean uses `Int.land` / `Int.lor` / `Int.xor` for
+  `& | ^` and `<<<` / `>>>` with `.toNat` coercion for shifts.
 - Comparisons: `== != < <= > >=`
 - Logical: `and or` (short-circuit, Bool)
 - Unary: `-x` (checked_neg, same overflow contract), `not x`
@@ -55,7 +60,7 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 
 ### Verification milestones
 
-Five runtime-verified semantic round-trip fixtures (emit → `rustc -O`
+Six runtime-verified semantic round-trip fixtures (emit → `rustc -O`
 → execute → `assert_eq!`):
 
 - `factorial(n)` — recursive, `factorial(10) == 3628800`
@@ -63,8 +68,9 @@ Five runtime-verified semantic round-trip fixtures (emit → `rustc -O`
 - `gcd(a, b)` — tail recursion with `%`, `gcd(12, 18) == 6`
 - `abs_val(x)` — statement-level if/else, `abs_val(-100) == 100`
 - `sign(x)` — if/elif/else chain, `sign(i64::MIN) == -1`
+- `bits(a, b)` — pins `& | ^ << >>` semantics, `bits(5, 3) == 14`
 
-25 e2e tests across `crates/xpile/tests/transpile_e2e.rs`; ~52
+26 e2e tests across `crates/xpile/tests/transpile_e2e.rs`; ~54
 workspace tests total.
 
 ## [0.0.1] - 2026-05-15

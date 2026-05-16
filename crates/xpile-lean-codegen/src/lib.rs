@@ -173,7 +173,29 @@ fn emit_binop(out: &mut String, op: BinOp, lhs: &Expr, rhs: &Expr) -> Result<(),
         BinOp::Or => emit_infix(out, lhs, " || ", rhs),
         BinOp::FloorDiv => emit_prefix2(out, "Int.fdiv", lhs, rhs),
         BinOp::Mod => emit_prefix2(out, "Int.fmod", lhs, rhs),
+        // Bitwise: Lean 4 core provides Int.land / Int.lor / Int.xor for
+        // the bool-ops and Int has HShiftLeft / HShiftRight instances
+        // taking Nat. We coerce rhs via `.toNat` for shifts (matches
+        // Python's "shift amount must be non-negative" check; if rhs is
+        // negative the resulting toNat is 0, which differs from Python's
+        // ValueError — leaving as a known Lean fidelity gap, callable
+        // from any equivalence theorem against the Rust emission via the
+        // `C-PY-INT-ARITH` contract).
+        BinOp::BitAnd => emit_prefix2(out, "Int.land", lhs, rhs),
+        BinOp::BitOr => emit_prefix2(out, "Int.lor", lhs, rhs),
+        BinOp::BitXor => emit_prefix2(out, "Int.xor", lhs, rhs),
+        BinOp::Shl => emit_shift(out, lhs, "<<<", rhs),
+        BinOp::Shr => emit_shift(out, lhs, ">>>", rhs),
     }
+}
+
+fn emit_shift(out: &mut String, lhs: &Expr, op: &str, rhs: &Expr) -> Result<(), LeanCodegenError> {
+    write!(out, "(")?;
+    emit_expr(out, lhs)?;
+    write!(out, " {op} (")?;
+    emit_expr(out, rhs)?;
+    write!(out, ").toNat)")?;
+    Ok(())
 }
 
 fn emit_infix(out: &mut String, lhs: &Expr, op: &str, rhs: &Expr) -> Result<(), LeanCodegenError> {
