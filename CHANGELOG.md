@@ -19,10 +19,14 @@ subset, update this section first.
 - Identifiers, integer literals
 - Binary arithmetic: `+ - * // %` (floor div / mod use Euclidean
   semantics, matching Python on negative operands — not Rust/Lean's
-  default truncate-toward-zero)
+  default truncate-toward-zero). Rust + Ruchy emission uses
+  `.checked_*().expect(...)` so i64 overflow panics with a message
+  pointing at the unimplemented bigint promotion slow path in contract
+  `C-PY-INT-ARITH` (see `contracts/py-int-arith-v1.yaml`). Lean's `Int`
+  is unbounded, so the same contract is satisfied by construction.
 - Comparisons: `== != < <= > >=`
 - Logical: `and or` (short-circuit, Bool)
-- Unary: `-x`, `not x`
+- Unary: `-x` (checked_neg, same overflow contract), `not x`
 - Ternary: `x if cond else y`
 - **Statement-level `if/else`** with single-assignment branches lifted
   to a `let = if cond { ... } else { ... }`

@@ -373,7 +373,10 @@ v0.1.0 — **end-to-end transpiler with semantic round-trip verification**:
 - ✅ Semantic round-trip verified for 5 fixtures (factorial, fib, gcd, abs_val, sign)
 - ✅ CI gate enforced on PRs (fmt, check, clippy -D warnings, pv lint, cargo deny, workspace tests)
 - ✅ Branch protection on `main`; crates.io reservation at `xpile 0.0.1`
-- ⏳ Bigint promotion (`py-int-arith-v1.yaml` slow path)
+- ⏳ Bigint promotion (`py-int-arith-v1.yaml` slow path) — fast-path
+  overflow is now load-bearing (Rust + Ruchy emit
+  `.checked_*().expect(...)`, contract name appears in the panic
+  message); the slow path itself is still unimplemented
 - ⏳ Loops, multi-assignment if-branches, types beyond int/bool
 - ⏳ Real C frontend (decy-frontend currently stub)
 - ⏳ Real PTX/WGSL emission (scaffolds in place)

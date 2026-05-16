@@ -14,8 +14,10 @@
 //! load-bearing rejections in the lowering code):
 //!   - Loops (`for`, `while`) — meta-HIR has no iteration / mutation yet.
 //!   - Bigint promotion — the `py-int-arith` Layer-1 contract's slow
-//!     path is unimplemented; overflow currently follows i64 semantics
-//!     (wrap in release, panic in debug).
+//!     path is unimplemented. The codegen backends emit
+//!     `.checked_*().expect(...)` so overflow panics with a message
+//!     naming the contract (in *both* release and debug), instead of
+//!     silently wrapping the way plain `+` / `*` / `-` would.
 //!   - Multi-statement / multi-assignment if-branches — the if-as-let
 //!     recognizer requires exactly one assignment per branch.
 //!   - Type annotations beyond `int` / `bool`.

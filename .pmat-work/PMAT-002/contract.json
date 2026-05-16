@@ -1,0 +1,852 @@
+{
+  "version": "5.0",
+  "work_item_id": "PMAT-002",
+  "created_at": "2026-05-16T06:44:54.142501870Z",
+  "baseline_commit": "b7d25450a9ba7af0e4a6e7561c858deb09a2436e",
+  "baseline_tdg": 0.0,
+  "baseline_coverage": 0.0,
+  "baseline_rust_score": 0.0,
+  "baseline_file_manifest": {
+    "files": {
+      "crates/xpile/tests/fixtures/abs_val.py": {
+        "content_hash": "0640217fbcd287853e3afa9d793281d0d3b801839f8cf2b0ba0e744b7d08ac74",
+        "lines": 6,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "PythonSource"
+      },
+      "crates/xpile-latex-contract-backend/src/lib.rs": {
+        "content_hash": "b2046bfaa06e7906745410aad226caa75edcd65f84ae8d03fcbc753d463fb6b2",
+        "lines": 56,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile-core/src/lib.rs": {
+        "content_hash": "8fbc8d1b5178c8f6609f1ff42fd28143a27ccb97228f6ad3f66bdca64bbfffd3",
+        "lines": 200,
+        "functions": 14,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile/tests/transpile_e2e.rs": {
+        "content_hash": "5ec21d32dd76dae8242d487f90fd6cf8b91adac63dd9015a8a52f5ee09b79963",
+        "lines": 512,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/xpile-backend/src/lib.rs": {
+        "content_hash": "efb0fd7f990279ed8678d939c757b81bd29e2a25ff7e662ca18d54611f5e2578",
+        "lines": 117,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile/tests/fixtures/typed.py": {
+        "content_hash": "a4fec89bac1536478f2580a5737f50cead6d144abbb26646d5edac0e799f0c45",
+        "lines": 2,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "PythonSource"
+      },
+      "crates/xpile-mcp/src/lib.rs": {
+        "content_hash": "10eaec0f6c28a2f9816b9adf78b2fde94262ed55f0e7ae115c5a44dc7c187962",
+        "lines": 19,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile/tests/fixtures/sign.py": {
+        "content_hash": "a449d763ad2deb67db92bf67866a188a6356167a202e591bb79c1b3386290820",
+        "lines": 8,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "PythonSource"
+      },
+      "crates/xpile-contract-backend/src/lib.rs": {
+        "content_hash": "413bda223d8ecc83ffda7312d816113bd69cb45ef7ec41c7aff85f94c325e351",
+        "lines": 79,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/latex-contract-frontend/src/lib.rs": {
+        "content_hash": "1be9875f2fc75df03aa1a17f03afa8fd83ae446919ec54ad7067d102c59f00cb",
+        "lines": 35,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile/tests/fixtures/in_range.py": {
+        "content_hash": "cb899a4427b0117206f4816cd381dd2f3a018eeec447353c307412db376917cd",
+        "lines": 2,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "PythonSource"
+      },
+      "crates/xpile-lean-codegen/src/lib.rs": {
+        "content_hash": "10308d4aa82bfd3d6b04ff71c9a5c5b64717cec8a147174b4669253b7dde6429",
+        "lines": 326,
+        "functions": 22,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile/tests/fixtures/fib.py": {
+        "content_hash": "8b12aea9cb7065166df517ecd3bfb89b0acfd846e6c756944fa98898e8d327b8",
+        "lines": 2,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "PythonSource"
+      },
+      "crates/xpile-contracts/src/lib.rs": {
+        "content_hash": "6bf51cf7a03cb1e810fc92e15013e06f875dff21447a83484a4bbe0bec1b4c65",
+        "lines": 118,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile-ruchy-codegen/src/lib.rs": {
+        "content_hash": "cd022144130afdf3e9631b083657269a10270bdf5d60b3e9636374fb656a4b7a",
+        "lines": 341,
+        "functions": 21,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile/tests/fixtures/factorial.py": {
+        "content_hash": "78f2d733690238c4a94ce20d51cec0c7655d7bc60748c95ce3d4863f444cfae8",
+        "lines": 2,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "PythonSource"
+      },
+      "crates/xpile-frontend/src/lib.rs": {
+        "content_hash": "6348fc3326afa175fc681377cb8ec21af21acf4eab76db1a6ad4dd111471468b",
+        "lines": 30,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile-ffi-manifest/src/lib.rs": {
+        "content_hash": "a4557bda6beade2e7707d440c7f2825ef097a70b93d074416a863cbf408f39f2",
+        "lines": 34,
+        "functions": 2,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile-agent/src/lib.rs": {
+        "content_hash": "02ea988d16dc4adc17157eaf9cae559f2a68a6a92c66768d43beff4d81e3679a",
+        "lines": 57,
+        "functions": 2,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile-lean-contract-backend/src/lib.rs": {
+        "content_hash": "47a0365c3f11feca8df1dd29fc3c41e337c3de044467fe73ca11ec793497eeab",
+        "lines": 56,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile-oracle/src/lib.rs": {
+        "content_hash": "f81f96224ee2795a70835bda7b7f3da631a0bd01c79bf369bb3737bada8c3bc8",
+        "lines": 48,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile-ptx-codegen/src/lib.rs": {
+        "content_hash": "7696dfebb144a5504a675c39e8208306ec7802ab5c66e46460ce73a83e43da6d",
+        "lines": 38,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile-meta-hir/src/lib.rs": {
+        "content_hash": "c74575e81ba5eaedf1d2f4aee316d73da51a890c581a7771fad14a6eb9d33b7c",
+        "lines": 168,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile/tests/fixtures/call_chain.py": {
+        "content_hash": "e6467a1bdadf6bb1775d5d7b350ebf928161075169e929443af1eb9a3a8627f8",
+        "lines": 5,
+        "functions": 2,
+        "max_complexity": 0,
+        "category": "PythonSource"
+      },
+      "crates/decy-frontend/src/lib.rs": {
+        "content_hash": "efec4325c594a701cfd49b74ba49079e7aab0b69617d36473e8c72067e1283b8",
+        "lines": 35,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile-wgsl-codegen/src/lib.rs": {
+        "content_hash": "c1f72ab142dacabd2036737e04f3e0876068ffb5a6d2a562ce29705a2c65a00d",
+        "lines": 36,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile-rust-codegen/src/lib.rs": {
+        "content_hash": "77c025f10af6dbd3462b031d9fee9711bddb04167c11447bf074ad7875e6adfe",
+        "lines": 432,
+        "functions": 26,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile/src/main.rs": {
+        "content_hash": "2c810eed49c8942e2e18fbc9768369ac758fdcb815b01ae4c9755fb7a38156f2",
+        "lines": 163,
+        "functions": 4,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/ruchy-frontend/src/lib.rs": {
+        "content_hash": "f3d62dd0be06ace3d73c821db4b481d103cb3061280213490558cc1b74327f8a",
+        "lines": 38,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile-contract-frontend/src/lib.rs": {
+        "content_hash": "a0f9844b172f457438b66bbcf5964cc6960654638cda85a5c603fca516b81fac",
+        "lines": 87,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/depyler-frontend/src/lib.rs": {
+        "content_hash": "f13487d80482e263c5bee00f7e4671426ff76796fe120eb02cc132fc7fd04fd7",
+        "lines": 824,
+        "functions": 34,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile/tests/fixtures/cmp.py": {
+        "content_hash": "2dcde4068f56138ad15d4624c1908ac927373c3f4c617a38a0737bf74fa2fe43",
+        "lines": 2,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "PythonSource"
+      },
+      "crates/xpile/tests/fixtures/gcd.py": {
+        "content_hash": "b9c21e382db456afcb0ca9f534956821908c2b1ceaa146f0a1a4fc612fe4e3fe",
+        "lines": 2,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "PythonSource"
+      },
+      "crates/xpile/tests/fixtures/let_sum.py": {
+        "content_hash": "c96d5a968ec74e922510faf20f40c8063714d60f7cb2d2126a46846c0f2aa5e9",
+        "lines": 4,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "PythonSource"
+      },
+      "crates/xpile-llm/src/lib.rs": {
+        "content_hash": "e2fa22a4fa371e6c991100eac0c07bfc3aaca126c137d7157f0011d10b481963",
+        "lines": 42,
+        "functions": 2,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/xpile/tests/fixtures/pick.py": {
+        "content_hash": "c010888ac8f7822fd1d38448a7ffdb5da3108b22c9a8734b475babb1b48d7b34",
+        "lines": 2,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "PythonSource"
+      },
+      "crates/xpile/tests/fixtures/add.py": {
+        "content_hash": "ba1a531f581d2e6094e978ed6f7aca7a8d92eeb62c6e7ad73ee692f7f18bc772",
+        "lines": 2,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "PythonSource"
+      }
+    },
+    "coverage_required": [
+      "crates/xpile-core/src/lib.rs",
+      "crates/xpile-ruchy-codegen/src/lib.rs",
+      "crates/xpile-contract-frontend/src/lib.rs",
+      "crates/xpile-latex-contract-backend/src/lib.rs",
+      "crates/ruchy-frontend/src/lib.rs",
+      "crates/latex-contract-frontend/src/lib.rs",
+      "crates/xpile-oracle/src/lib.rs",
+      "crates/xpile-backend/src/lib.rs",
+      "crates/xpile-contract-backend/src/lib.rs",
+      "crates/xpile-frontend/src/lib.rs",
+      "crates/xpile-llm/src/lib.rs",
+      "crates/xpile-meta-hir/src/lib.rs",
+      "crates/depyler-frontend/src/lib.rs",
+      "crates/xpile-contracts/src/lib.rs",
+      "crates/xpile-ptx-codegen/src/lib.rs",
+      "crates/xpile-lean-codegen/src/lib.rs",
+      "crates/xpile/src/main.rs",
+      "crates/xpile-mcp/src/lib.rs",
+      "crates/xpile-ffi-manifest/src/lib.rs",
+      "crates/xpile-agent/src/lib.rs",
+      "crates/decy-frontend/src/lib.rs",
+      "crates/xpile-rust-codegen/src/lib.rs",
+      "crates/xpile-lean-contract-backend/src/lib.rs",
+      "crates/xpile-wgsl-codegen/src/lib.rs"
+    ],
+    "manifest_hash": "b9765bd39126bc63bf7e70065423dc06f238e1117c41954d25537462d2f9cda6"
+  },
+  "thresholds": {
+    "min_coverage_pct": 95.0,
+    "min_per_file_coverage_pct": 95.0,
+    "max_tdg_regression": 0.0,
+    "max_function_complexity": 20,
+    "max_file_lines": 500,
+    "min_spec_score": 95,
+    "require_github_sync": true,
+    "require_spec_update": true,
+    "require_roadmap_update": true,
+    "block_on_new_satd": true,
+    "block_on_new_dead_code": true,
+    "require_lint_pass": true,
+    "max_fix_chain": 3,
+    "block_on_untested_variants": true,
+    "block_on_cross_crate_failure": false,
+    "block_on_regression": false,
+    "require_proof_verification": false,
+    "max_sorry_count": 0,
+    "min_theorem_coverage": 0.0,
+    "block_on_file_size": true
+  },
+  "claims": [
+    {
+      "hypothesis": "All baseline files still exist",
+      "falsification_method": "ManifestIntegrity",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "The falsifier is active and detecting (Meta-Check)",
+      "falsification_method": "MetaFalsification",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No coverage exclusion gaming",
+      "falsification_method": "CoverageGaming",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All changed lines are covered",
+      "falsification_method": "DifferentialCoverage",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 100.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "Total coverage >= 95%",
+      "falsification_method": "AbsoluteCoverage",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 95.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "TDG score >= baseline",
+      "falsification_method": "TdgRegression",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 0.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No function exceeds complexity 20",
+      "falsification_method": "ComplexityRegression",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 20.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No vulnerable dependencies added",
+      "falsification_method": "SupplyChainIntegrity",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No file exceeds 500 lines",
+      "falsification_method": "FileSizeRegression",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 500.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "Spec & Roadmap Quality",
+      "falsification_method": "SpecQuality",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 95.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All changes pushed",
+      "falsification_method": "GitHubSync",
+      "evidence_required": {
+        "GitState": {
+          "unpushed_commits": 0,
+          "dirty_files": 0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All examples compile and run",
+      "falsification_method": "ExamplesCompile",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "pmat-book validation passes",
+      "falsification_method": "BookValidation",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No new SATD markers (TODO/FIXME/HACK)",
+      "falsification_method": "SatdDetection",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No new dead code introduced",
+      "falsification_method": "DeadCodeDetection",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All files have >= 95% coverage",
+      "falsification_method": "PerFileCoverage",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "make lint passes",
+      "falsification_method": "LintPass",
+      "evidence_required": {
+        "BooleanCheck": false
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All match arm variants have test coverage",
+      "falsification_method": "VariantCoverage",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No fix-after-fix chains exceed limit",
+      "falsification_method": "FixChainLimit",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 3.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "Cross-crate integration tests pass",
+      "falsification_method": "CrossCrateParity",
+      "evidence_required": {
+        "BooleanCheck": false
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No performance regressions detected",
+      "falsification_method": "RegressionGate",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 0.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No incomplete proofs (sorry) introduced",
+      "falsification_method": "FormalProofVerification",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 0.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    }
+  ],
+  "profile": "Pmat",
+  "require": [
+    {
+      "id": "require.compiles",
+      "kind": "Require",
+      "description": "Project builds successfully",
+      "falsification_method": "ManifestIntegrity",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "require.tests_exist",
+      "kind": "Require",
+      "description": "At least one test exists",
+      "falsification_method": "MetaFalsification",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "require.manifest_integrity",
+      "kind": "Require",
+      "description": "FileManifest anti-gaming check",
+      "falsification_method": "ManifestIntegrity",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "require.meta_falsification",
+      "kind": "Require",
+      "description": "Falsifier self-check active",
+      "falsification_method": "MetaFalsification",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    }
+  ],
+  "ensure": [
+    {
+      "id": "ensure.tests_pass",
+      "kind": "Ensure",
+      "description": "All tests pass",
+      "falsification_method": "MetaFalsification",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.git_sync",
+      "kind": "Ensure",
+      "description": "All changes pushed to remote",
+      "falsification_method": "GitHubSync",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.no_regression",
+      "kind": "Ensure",
+      "description": "No previously-passing test now fails",
+      "falsification_method": "MetaFalsification",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.coverage",
+      "kind": "Ensure",
+      "description": "Coverage >= 95%",
+      "falsification_method": "AbsoluteCoverage",
+      "threshold": {
+        "Numeric": {
+          "metric": "coverage_pct",
+          "op": "Gte",
+          "value": 95.0
+        }
+      },
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.differential_coverage",
+      "kind": "Ensure",
+      "description": "Changed lines must be covered",
+      "falsification_method": "DifferentialCoverage",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.supply_chain",
+      "kind": "Ensure",
+      "description": "No vulnerable dependencies",
+      "falsification_method": "SupplyChainIntegrity",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.examples_compile",
+      "kind": "Ensure",
+      "description": "All examples compile and run",
+      "falsification_method": "ExamplesCompile",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.tdg_regression",
+      "kind": "Ensure",
+      "description": "TDG score >= baseline",
+      "falsification_method": "TdgRegression",
+      "threshold": {
+        "Delta": {
+          "metric": "tdg_score",
+          "op": "Gte",
+          "value": 0.0
+        }
+      },
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.coverage_gaming",
+      "kind": "Ensure",
+      "description": "No coverage exclusion gaming",
+      "falsification_method": "CoverageGaming",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.spec_quality",
+      "kind": "Ensure",
+      "description": "Spec score meets threshold",
+      "falsification_method": "SpecQuality",
+      "threshold": {
+        "Numeric": {
+          "metric": "spec_score",
+          "op": "Gte",
+          "value": 95.0
+        }
+      },
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.book_validation",
+      "kind": "Ensure",
+      "description": "pmat-book validation passes",
+      "falsification_method": "BookValidation",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.per_file_coverage",
+      "kind": "Ensure",
+      "description": "All files >= 95% coverage",
+      "falsification_method": "PerFileCoverage",
+      "threshold": {
+        "Numeric": {
+          "metric": "per_file_coverage_pct",
+          "op": "Gte",
+          "value": 95.0
+        }
+      },
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.variant_coverage",
+      "kind": "Ensure",
+      "description": "All match arm variants tested",
+      "falsification_method": "VariantCoverage",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.cross_crate_parity",
+      "kind": "Ensure",
+      "description": "Cross-crate integration tests pass",
+      "falsification_method": "CrossCrateParity",
+      "threshold": null,
+      "blocking": false,
+      "source": "Default"
+    }
+  ],
+  "invariant": [
+    {
+      "id": "invariant.compiles",
+      "kind": "Invariant",
+      "description": "Project compiles at every checkpoint",
+      "falsification_method": "ManifestIntegrity",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "invariant.file_size",
+      "kind": "Invariant",
+      "description": "No file exceeds 500 lines",
+      "falsification_method": "FileSizeRegression",
+      "threshold": {
+        "Numeric": {
+          "metric": "max_file_lines",
+          "op": "Lte",
+          "value": 500.0
+        }
+      },
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "invariant.lint",
+      "kind": "Invariant",
+      "description": "cargo clippy passes",
+      "falsification_method": "LintPass",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "invariant.complexity",
+      "kind": "Invariant",
+      "description": "No function exceeds complexity 20",
+      "falsification_method": "ComplexityRegression",
+      "threshold": {
+        "Numeric": {
+          "metric": "max_complexity",
+          "op": "Lte",
+          "value": 20.0
+        }
+      },
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "invariant.satd",
+      "kind": "Invariant",
+      "description": "No new SATD markers",
+      "falsification_method": "SatdDetection",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "invariant.dead_code",
+      "kind": "Invariant",
+      "description": "No new dead code introduced",
+      "falsification_method": "DeadCodeDetection",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "invariant.fix_chain",
+      "kind": "Invariant",
+      "description": "Fix-after-fix chains within limit",
+      "falsification_method": "FixChainLimit",
+      "threshold": {
+        "Numeric": {
+          "metric": "fix_chain_count",
+          "op": "Lte",
+          "value": 3.0
+        }
+      },
+      "blocking": true,
+      "source": "Default"
+    }
+  ],
+  "excluded_claims": [],
+  "iteration": 1,
+  "inherited_postconditions": [],
+  "contract_quality": {
+    "active_claims": 25,
+    "applicable_claims": 25,
+    "score": 1.0,
+    "rating": "Full"
+  },
+  "contract_score": null,
+  "verification_level": "L3",
+  "references": {
+    "arxiv": [],
+    "spec_sections": [],
+    "five_whys_id": null,
+    "oracle_context": null
+  },
+  "chain_of_thought": [],
+  "implements": []
+}
