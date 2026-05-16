@@ -148,3 +148,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-010
+  github_issue: null
+  item_type: task
+  title: 'Lean codegen: while via partial def + threaded state'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-16T13:43:05Z
+  updated: 2026-05-16T13:43:05Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -594,6 +594,71 @@ fn main() {
     assert_rustc_runs("for_sum", &rust, driver);
 }
 
+/// PMAT-010: validates that while-having functions transpile to Lean
+/// as `partial def` helpers with threaded state. The transformation:
+///   * loop_state names (assigned in body) → helper params
+///   * free vars (referenced but not assigned) → also helper params
+///   * recursive call with updated values
+///   * else-branch returns the variable named by the function's
+///     trailing return
+#[test]
+fn transpile_sum_to_py_to_lean_uses_partial_def_helper() {
+    let py = fixture("sum_to.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "lean"]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("partial def sum_to_loop_0 (total : Int) (i : Int) (n : Int) : Int :="),
+        "expected helper signature, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("if (i <= n) then"),
+        "expected lifted cond, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("sum_to_loop_0 total i n"),
+        "expected recursive call, got:\n{stdout}"
+    );
+    // Outer function body: pre-stmts then helper call.
+    assert!(
+        stdout.contains("def sum_to (n : Int) : Int :="),
+        "expected sum_to signature, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("let total := (0: Int)") && stdout.contains("let i := (1: Int)"),
+        "expected pre-stmt lets, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn transpile_countdown_py_to_lean_with_negative_step() {
+    let py = fixture("countdown.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "lean"]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // Free vars: only loop_state, since cond `i > 0` references only i.
+    assert!(
+        stdout.contains("partial def factorial_iter_loop_0 (acc : Int) (i : Int) : Int :="),
+        "expected helper signature (no free vars), got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("if (i > (0: Int)) then"),
+        "expected negative-step cond, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("let i := (i + (-1: Int))"),
+        "expected negative-step body update, got:\n{stdout}"
+    );
+}
+
 /// PMAT-006: validates while-loops + mutable rebinding. `sum_to(n)` =
 /// 1 + 2 + ... + n via an iterative accumulator. Triggers Stmt::While,
 /// Stmt::Assign for the rebindings, and Stmt::Let { mutable: true } for

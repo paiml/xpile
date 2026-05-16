@@ -69,7 +69,11 @@ subset, update this section first.
 - Rust target: `pub fn name(...) -> T { ... }`
 - Ruchy target: `fun name(...) -> T { ... }`
 - Lean 4 target: `def name (...) : T := ...` (uses `Int.fdiv` /
-  `Int.fmod` to preserve Python floor semantics)
+  `Int.fmod` to preserve Python floor semantics). Functions with a
+  `while` loop emit a companion `partial def <fn>_loop_0` helper that
+  threads loop-state variables as parameters and recurses with their
+  updated values (PMAT-010). For-in-range, while + mutable rebinding,
+  countdown loops — all transpile cleanly to Lean.
 
 Same Python source transpiles to all three via `xpile transpile <file.py> --target <t>`.
 
