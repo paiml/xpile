@@ -53,13 +53,14 @@ The fourth invariant is what makes Layer 5 load-bearing: a backend cannot emit a
 
 | Crate | Backend struct | Target | Status |
 |---|---|---|---|
-| `xpile-rust-codegen` | `RustBackend` | `Target::Rust` | Scaffolded (one-function stub) |
-| `xpile-ruchy-codegen` | `RuchyBackend` | `Target::Ruchy` | Planned (Phase 4) |
-| `xpile-ptx-codegen` | `PtxBackend` | `Target::Ptx` | Planned (Phase 5) |
-| `xpile-wgsl-codegen` | `WgslBackend` | `Target::Wgsl` | Planned (Phase 6) |
-| `xpile-spirv-codegen` | `SpirvBackend` | `Target::Spirv` | Future |
+| `xpile-rust-codegen` | `RustBackend` | `Target::Rust` | **Real** (PR #6 MVP; expanded #11/#12/#13/#15/#19/#20/#21) |
+| `xpile-ruchy-codegen` | `RuchyBackend` | `Target::Ruchy` | **Real** (PR #7); same Python subset emits `fun … -> T { … }` |
+| `xpile-lean-codegen` | `LeanBackend` | `Target::Lean` | **Real** (PR #14); emits `def name (…) : T :=` with `Int.fdiv` / `Int.fmod` |
+| `xpile-ptx-codegen` | `PtxBackend` | `Target::Ptx` | Scaffold + Layer-5 compile contract drafted |
+| `xpile-wgsl-codegen` | `WgslBackend` | `Target::Wgsl` | Scaffold |
+| `xpile-spirv-codegen` | `SpirvBackend` | `Target::Spirv` | Not yet scaffolded |
 
-The Rust backend is the only one shipping at v0.1.0; the rest are sub-specs to author and crates to scaffold. `lower()` for Rust today wraps the existing `xpile_rust_codegen::emit_module` function; future backends adopt the same signature without changing the trait.
+Three backends are real and share a common construct surface. Same Python source through three different `--target` values produces three different language outputs, all type-checked / runtime-verified for the recursive-fixture set. PTX / WGSL / SPIR-V remain scaffold; the Layer-5 compile contract for PTX (`contracts/compile-rust-to-ptx-mma-v1.yaml`) is drafted but the codegen is not wired up to it yet.
 
 ## Why object-safe
 

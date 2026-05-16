@@ -29,15 +29,16 @@ Encoded in [`contracts/xpile-frontend-trait-v1.yaml`](../../../contracts/xpile-f
 
 | Crate | Type | Extensions | Status |
 |---|---|---|---|
-| `depyler-frontend` | `PythonFrontend` | `py`, `pyi` | Scaffold (empty module) |
-| `decy-frontend` | `CFrontend` | `c`, `h` | Scaffold (empty module) |
-| `ruchy-frontend` | `RuchyFrontend` | `ruchy` | Scaffold (empty module) |
+| `depyler-frontend` | `PythonFrontend` | `py`, `pyi` | **Real** — parses via `rustpython-parser 0.4`; subset in `CHANGELOG.md` |
+| `decy-frontend` | `CFrontend` | `c`, `h` | Scaffold (returns empty Module) |
+| `ruchy-frontend` | `RuchyFrontend` | `ruchy` | Scaffold (returns empty Module) |
 
-Real parser integration is Phase 2 of the rollout:
+Phase-2 parser integration plan for the still-stub frontends:
 
-- `depyler-frontend` adopts rustpython-parser + the existing depyler-hir lowering
-- `decy-frontend` adopts the existing decy-parser (clang/tree-sitter based)
-- `ruchy-frontend` depends on the `ruchy` crate from crates.io and reuses its parser + AST
+- `decy-frontend` will adopt clang / tree-sitter parsing + the existing decy HIR-lowering
+- `ruchy-frontend` will depend on the `ruchy` crate from crates.io and reuse its parser + AST
+
+The Python frontend's real implementation shipped in PR #6 MVP and grew through PRs #11/#12/#13/#15/#19/#20 to cover the full v0.1.0 subset. Verified end-to-end by runtime-executed fixtures (factorial, fib, gcd, abs_val, sign).
 
 ## Why object-safe
 
