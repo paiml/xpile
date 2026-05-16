@@ -4,7 +4,7 @@
 
 **Canonical spec.** This is the ONE spec. All other specs are sub-specs under `sub/`, linked from the table of contents. Anything in `legacy/` is archived and not authoritative. Drift between this spec and the code, contracts, or sub-specs is a contract defect — fail it in CI.
 
-**Status:** v0.1.0 — **transpiles end-to-end with semantic round-trip verification**. 24 workspace crates compile clean; `aprender-contracts` (the `pv` library) wired from crates.io 0.33; 11 contracts pass `pv lint`; three real backends (Rust, Ruchy, Lean 4); recursive Python (`factorial(10) == 3628800`, etc.) runs correctly through CI. See [Section 23 — Status](#23-status) and `CHANGELOG.md`.
+**Status:** v0.1.0 — **transpiles end-to-end with semantic round-trip verification**. 24 workspace crates compile clean; `aprender-contracts` (the `pv` library) wired from crates.io 0.33; 11 contracts pass `pv lint`; three real backends (Rust, Ruchy, Lean 4); recursive Python (`factorial(10) == 3628800`, etc.) AND iterative Python (`sum_to(100) == 5050`, `factorial_iter(10) == 3628800`) both run correctly through CI. See [Section 23 — Status](#23-status) and `CHANGELOG.md`.
 
 **Foundations:**
 
@@ -72,7 +72,11 @@ The repo is a Cargo workspace of 24 crates (as of v0.1.0). Front-ends are langua
 
 The `Frontend` trait is the only language-specific abstraction in xpile's **code lane**. Three methods: `name()`, `extensions()`, `parse_and_lower()`. A new language is implemented by writing one type that implements this trait — no other architecture changes. Invariants codified in [`contracts/xpile-frontend-trait-v1.yaml`](../../contracts/xpile-frontend-trait-v1.yaml): extension ownership uniqueness, parse idempotency, source_lang consistency, outgoing-only FFI boundary recording.
 
-Implementations at v0.1.0: `PythonFrontend` (extensions: `py`, `pyi`), `CFrontend` (`c`, `h`), `RuchyFrontend` (`ruchy`). All are scaffold-stage placeholders that return empty modules; real parser integration is Phase 2 of the rollout. Lean 4 (`LeanFrontend`) is planned and spans both lanes — see §2b.
+Implementations at v0.1.0:
+
+- `PythonFrontend` (extensions: `py`, `pyi`) — **real implementation**. Parses with `rustpython-parser` and lowers the live subset described in [`/CHANGELOG.md`](../../CHANGELOG.md) (typed `def`, all binary + unary ops including bitwise + power, ternary, if/elif/else with single- *or multi-*assignment branches, function calls, while loops with mutable rebinding, `for target in range(...)` with positive *or negative* integer-literal step).
+- `CFrontend` (`c`, `h`), `RuchyFrontend` (`ruchy`) — scaffold-stage placeholders that return empty modules; real parser integration is Phase 2 of the rollout.
+- Lean 4 (`LeanFrontend`) — planned, spans both lanes — see §2b.
 
 ---
 
@@ -376,15 +380,17 @@ v0.1.0 — **end-to-end transpiler with semantic round-trip verification**:
 - ✅ `aprender-contracts` (`pv`) wired via crates.io 0.33 (path-dep removed in PR #3 fix)
 - ✅ 11 contracts pass `pv lint` (0 errors)
 - ✅ Three real backends (Rust, Ruchy, Lean 4); PTX/WGSL/SPIR-V still scaffolded
-- ✅ Python subset: typed `def`, multi-statement body, all binary + unary ops, ternary, if/elif/else, function calls including self-recursion
-- ✅ Semantic round-trip verified for 5 fixtures (factorial, fib, gcd, abs_val, sign)
+- ✅ Python subset (canonical: [`/CHANGELOG.md`](../../CHANGELOG.md)): typed `def`, multi-statement body, all binary + unary ops including bitwise / power, ternary, if/elif/else with single- *or multi-*assignment branches, function calls including self-recursion, **while loops with mutable rebinding** (PMAT-006), **for-in-range with positive *or negative* literal steps** (PMAT-007, PMAT-008)
+- ✅ Semantic round-trip verified for 11 fixtures (factorial, fib, gcd, abs_val, sign, bits, square_plus, range_size, sum_to, for_sum / range_with_start / range_with_step, factorial_iter)
 - ✅ CI gate enforced on PRs (fmt, check, clippy -D warnings, pv lint, cargo deny, workspace tests)
 - ✅ Branch protection on `main`; crates.io reservation at `xpile 0.0.1`
 - ⏳ Bigint promotion (`py-int-arith-v1.yaml` slow path) — fast-path
   overflow is now load-bearing (Rust + Ruchy emit
   `.checked_*().expect(...)`, contract name appears in the panic
   message); the slow path itself is still unimplemented
-- ⏳ Loops, multi-assignment if-branches, types beyond int/bool
+- ⏳ Types beyond int/bool (str, float, collections)
+- ⏳ Lean encoding for `while` (`partial def` tail-recursion follow-up)
+- ⏳ `for` over non-range iterables (blocked on collection types)
 - ⏳ Real C frontend (decy-frontend currently stub)
 - ⏳ Real PTX/WGSL emission (scaffolds in place)
 
