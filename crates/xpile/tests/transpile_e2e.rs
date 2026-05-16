@@ -40,7 +40,15 @@ fn transpile_add_py_emits_rust_fn() {
         stdout.contains("pub fn add(a: i64, b: i64) -> i64"),
         "missing fn signature in:\n{stdout}"
     );
-    assert!(stdout.contains("(a + b)"), "missing body in:\n{stdout}");
+    // Post PMAT-002: addition lowers to checked_add + .expect(...).
+    assert!(
+        stdout.contains("checked_add"),
+        "expected checked_add in body:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("C-PY-INT-ARITH"),
+        "expected contract reference:\n{stdout}"
+    );
 }
 
 #[test]
@@ -104,7 +112,11 @@ fn transpile_add_py_to_ruchy_target() {
         !stdout.contains("pub fn"),
         "Ruchy target must not emit Rust `pub fn`"
     );
-    assert!(stdout.contains("(a + b)"));
+    // Post PMAT-002: Ruchy compiles to Rust → shares checked semantics.
+    assert!(
+        stdout.contains("checked_add"),
+        "expected checked_add in Ruchy emission:\n{stdout}"
+    );
 }
 
 #[test]
@@ -243,8 +255,16 @@ fn transpile_let_sum_py_emits_lets_and_trailing_return() {
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("pub fn let_sum(a: i64, b: i64) -> i64"));
-    assert!(stdout.contains("let s: i64 = (a + b);"));
-    assert!(stdout.contains("let t: i64 = (s * 2i64);"));
+    // Post PMAT-002: arithmetic uses checked_*; the let bindings now
+    // wrap their values, but the let-with-`i64` annotation shape stays.
+    assert!(
+        stdout.contains("let s: i64 = ") && stdout.contains("checked_add"),
+        "expected `let s: i64 = ...checked_add...`:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("let t: i64 = ") && stdout.contains("checked_mul"),
+        "expected `let t: i64 = ...checked_mul...`:\n{stdout}"
+    );
     // Trailing return is just the ident — no `return` keyword in v0.1.0 emission.
     assert!(stdout.contains("\n    t\n"));
 }
@@ -327,7 +347,9 @@ fn transpile_typed_py_honors_explicit_annotations() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     // Annotated `n: int` and `-> bool` should flow through unchanged.
     assert!(stdout.contains("pub fn is_even(n: i64) -> bool"));
-    assert!(stdout.contains("(n).rem_euclid(2i64)"));
+    // Post PMAT-002: Python `%` lowers to checked_rem_euclid (Euclidean
+    // semantics matching Python, plus overflow check).
+    assert!(stdout.contains("(n).checked_rem_euclid(2i64)"));
 }
 
 #[test]
@@ -398,11 +420,20 @@ fn main() {
 #[test]
 fn sign_if_elif_else_chain_computes_correct_values() {
     let rust = xpile_transpile_to_rust("sign.py");
+    // Post PMAT-002: `-1` lowers to `(1i64).checked_neg().expect(...)`,
+    // so assert on the surrounding else-if chain shape without
+    // pinning the exact negation form.
     assert!(
-        rust.contains(
-            "let s: i64 = if (x > 0i64) { 1i64 } else if (x < 0i64) { (-1i64) } else { 0i64 };"
-        ),
+        rust.contains("let s: i64 = if (x > 0i64) { 1i64 } else if (x < 0i64) {"),
         "expected flattened else-if chain, got:\n{rust}"
+    );
+    assert!(
+        rust.contains("} else { 0i64 };"),
+        "expected terminal 0i64 branch, got:\n{rust}"
+    );
+    assert!(
+        rust.contains("checked_neg"),
+        "expected `-1` to lower to checked_neg, got:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -422,9 +453,20 @@ fn main() {
 #[test]
 fn abs_val_if_else_lifts_to_let_with_if_expr() {
     let rust = xpile_transpile_to_rust("abs_val.py");
+    // Post PMAT-002: `-x` lowers to `(x).checked_neg().expect(...)`.
+    // Assert on the let-with-if-expr lifting + presence of checked_neg
+    // without pinning the exact panic message.
     assert!(
-        rust.contains("let y: i64 = if (x < 0i64) { (-x) } else { x };"),
+        rust.contains("let y: i64 = if (x < 0i64) {"),
         "expected if-as-let lowering, got:\n{rust}"
+    );
+    assert!(
+        rust.contains("} else { x };"),
+        "expected terminal `x` branch, got:\n{rust}"
+    );
+    assert!(
+        rust.contains("checked_neg"),
+        "expected `-x` to lower to checked_neg, got:\n{rust}"
     );
     let driver = r#"
 fn main() {

@@ -109,13 +109,25 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), RuchyCodegenError> {
 }
 
 fn emit_unop(out: &mut String, op: UnOp, operand: &Expr) -> Result<(), RuchyCodegenError> {
-    let sym = match op {
-        UnOp::Neg => "-",
-        UnOp::Not => "!",
-    };
-    write!(out, "({sym}")?;
-    emit_expr(out, operand)?;
-    write!(out, ")")?;
+    match op {
+        // Python: `-x` on int never overflows. Ruchy compiles to Rust;
+        // `i64::MIN.checked_neg() == None`. Use checked_neg + panic
+        // pointing at contract C-PY-INT-ARITH slow path (matches Rust
+        // backend semantics).
+        UnOp::Neg => {
+            write!(out, "(")?;
+            emit_expr(out, operand)?;
+            write!(
+                out,
+                ").checked_neg().expect(\"xpile: i64 negation overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")"
+            )?;
+        }
+        UnOp::Not => {
+            write!(out, "(!")?;
+            emit_expr(out, operand)?;
+            write!(out, ")")?;
+        }
+    }
     Ok(())
 }
 
@@ -159,9 +171,11 @@ fn emit_if_expr(
     }
 }
 
-/// Same Euclidean semantics as the Rust backend — Python `//` and `%`
-/// must NOT lower to plain `/` and `%` in any target that compiles via
-/// Rust semantics (which Ruchy does).
+/// Arithmetic uses `checked_*` + `.expect(...)` to enforce the
+/// Layer-1 contract C-PY-INT-ARITH. Ruchy compiles to Rust, so the
+/// overflow semantics are identical. FloorDiv / Mod also preserve
+/// Python-floor semantics via the Euclidean variants. Comparisons
+/// and logical ops remain infix (no overflow risk).
 fn emit_binop(
     out: &mut String,
     op: BinOp,
@@ -169,9 +183,11 @@ fn emit_binop(
     rhs: &Expr,
 ) -> Result<(), RuchyCodegenError> {
     match op {
-        BinOp::Add => emit_infix(out, lhs, " + ", rhs),
-        BinOp::Sub => emit_infix(out, lhs, " - ", rhs),
-        BinOp::Mul => emit_infix(out, lhs, " * ", rhs),
+        BinOp::Add => emit_checked(out, lhs, "checked_add", rhs, "addition"),
+        BinOp::Sub => emit_checked(out, lhs, "checked_sub", rhs, "subtraction"),
+        BinOp::Mul => emit_checked(out, lhs, "checked_mul", rhs, "multiplication"),
+        BinOp::FloorDiv => emit_checked(out, lhs, "checked_div_euclid", rhs, "floor-div"),
+        BinOp::Mod => emit_checked(out, lhs, "checked_rem_euclid", rhs, "modulo"),
         BinOp::Eq => emit_infix(out, lhs, " == ", rhs),
         BinOp::NotEq => emit_infix(out, lhs, " != ", rhs),
         BinOp::Lt => emit_infix(out, lhs, " < ", rhs),
@@ -180,23 +196,25 @@ fn emit_binop(
         BinOp::GtEq => emit_infix(out, lhs, " >= ", rhs),
         BinOp::And => emit_infix(out, lhs, " && ", rhs),
         BinOp::Or => emit_infix(out, lhs, " || ", rhs),
-        BinOp::FloorDiv => {
-            write!(out, "(")?;
-            emit_expr(out, lhs)?;
-            write!(out, ").div_euclid(")?;
-            emit_expr(out, rhs)?;
-            write!(out, ")")?;
-            Ok(())
-        }
-        BinOp::Mod => {
-            write!(out, "(")?;
-            emit_expr(out, lhs)?;
-            write!(out, ").rem_euclid(")?;
-            emit_expr(out, rhs)?;
-            write!(out, ")")?;
-            Ok(())
-        }
     }
+}
+
+fn emit_checked(
+    out: &mut String,
+    lhs: &Expr,
+    method: &str,
+    rhs: &Expr,
+    op_name: &str,
+) -> Result<(), RuchyCodegenError> {
+    write!(out, "(")?;
+    emit_expr(out, lhs)?;
+    write!(out, ").{method}(")?;
+    emit_expr(out, rhs)?;
+    write!(
+        out,
+        ").expect(\"xpile: i64 {op_name} overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")"
+    )?;
+    Ok(())
 }
 
 fn emit_infix(out: &mut String, lhs: &Expr, op: &str, rhs: &Expr) -> Result<(), RuchyCodegenError> {
@@ -281,7 +299,14 @@ mod tests {
             !ruchy.contains("pub fn"),
             "Ruchy emission must not produce `pub fn` (that's Rust)"
         );
-        assert!(ruchy.contains("(a + b)"));
+        // Post PMAT-002: addition lowers to checked_add (Ruchy compiles
+        // to Rust, so it shares Rust's overflow semantics + contract
+        // C-PY-INT-ARITH).
+        assert!(
+            ruchy.contains("checked_add"),
+            "expected checked_add: {ruchy}"
+        );
+        assert!(ruchy.contains("C-PY-INT-ARITH"));
     }
 
     #[test]
