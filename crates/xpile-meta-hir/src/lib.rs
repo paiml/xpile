@@ -157,6 +157,18 @@ pub enum BinOp {
     // are short-circuiting; the Rust/Ruchy `&&`/`||` emissions match.
     And,
     Or,
+    // Bitwise — both operands `I64`, result `I64`.
+    // `&`, `|`, `^` lower to plain infix (no overflow risk on i64).
+    // Shifts use `checked_shl` / `checked_shr` so an out-of-range shift
+    // amount (>= 64) panics referencing the `C-PY-INT-ARITH` slow path,
+    // matching the arithmetic ops' overflow contract. Note: bit-truncation
+    // from a large left shift (e.g. `(1<<62) << 2`) is *not* detected by
+    // `checked_shl`; that's also part of the bigint slow path.
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

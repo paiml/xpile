@@ -499,6 +499,49 @@ fn main() {
     assert_rustc_runs("gcd", &rust, driver);
 }
 
+/// PMAT-003: validates the bitwise BinOps (`&`, `|`, `^`, `<<`, `>>`)
+/// produce semantically correct Rust output that matches CPython on
+/// `bits(a, b) = ((a & b) | (a ^ b)) << 2 >> 1`.
+///
+/// For `bits(5, 3)`:
+///   a & b = 1, a ^ b = 6, 1 | 6 = 7, 7 << 2 = 28, 28 >> 1 = 14
+/// For `bits(0, 0)`: all-zero short-circuit -> 0
+/// For `bits(255, 16)`: 255&16=16, 255^16=239, 16|239=255, 255<<2=1020,
+///                      1020>>1=510
+#[test]
+fn bits_emitted_rust_computes_correct_values() {
+    let rust = xpile_transpile_to_rust("bits.py");
+    assert!(
+        rust.contains("checked_shl"),
+        "expected checked_shl, got:\n{rust}"
+    );
+    assert!(
+        rust.contains("checked_shr"),
+        "expected checked_shr, got:\n{rust}"
+    );
+    assert!(
+        rust.contains(" & "),
+        "expected infix & for BitAnd, got:\n{rust}"
+    );
+    assert!(
+        rust.contains(" | "),
+        "expected infix | for BitOr, got:\n{rust}"
+    );
+    assert!(
+        rust.contains(" ^ "),
+        "expected infix ^ for BitXor, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(bits(5, 3), 14);
+    assert_eq!(bits(0, 0), 0);
+    assert_eq!(bits(255, 16), 510);
+    assert_eq!(bits(1, 2), 6);
+}
+"#;
+    assert_rustc_runs("bits", &rust, driver);
+}
+
 #[test]
 fn transpile_let_sum_py_to_lean_uses_multi_let_form() {
     let py = fixture("let_sum.py");

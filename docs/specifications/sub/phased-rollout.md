@@ -40,7 +40,7 @@ PR #4: Move contracts from draft → enforced
 
 | Contract | Construct | Kani strategy |
 |---|---|---|
-| `py-int-arith-v1.yaml` (fast path done, PR #23) | int `+`, `-`, `*`, `//`, `%`, unary `-` (i64 with `checked_*().expect()`; bitwise `& \| ^ << >>` and bigint slow path still TODO) | i8 exhaustive |
+| `py-int-arith-v1.yaml` (fast path done, PR #23 + PR for PMAT-003) | int `+`, `-`, `*`, `//`, `%`, unary `-` (i64 with `checked_*().expect()`); bitwise `& \| ^ << >>` (infix for `& \| ^`, `checked_shl` / `checked_shr` for shifts); bigint slow path still TODO | i8 exhaustive |
 | `py-list-index-v1.yaml` | list[i] including negative indices | bounded length 5 |
 | `py-dict-get-v1.yaml` | dict[k] vs dict.get(k, default) | bounded size 4 |
 | `py-function-call-v1.yaml` | positional / keyword / *args / **kwargs | bounded arity 4 |

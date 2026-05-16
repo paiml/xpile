@@ -395,7 +395,16 @@ fn infer_type(e: &Expr) -> Type {
     match e {
         Expr::Ident(_) | Expr::LitInt(_) => Type::I64,
         Expr::BinOp { op, .. } => match op {
-            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::FloorDiv | BinOp::Mod => Type::I64,
+            BinOp::Add
+            | BinOp::Sub
+            | BinOp::Mul
+            | BinOp::FloorDiv
+            | BinOp::Mod
+            | BinOp::BitAnd
+            | BinOp::BitOr
+            | BinOp::BitXor
+            | BinOp::Shl
+            | BinOp::Shr => Type::I64,
             BinOp::Eq | BinOp::NotEq | BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq => {
                 Type::Bool
             }
@@ -585,9 +594,14 @@ fn lower_binop(op: &ast::Operator) -> Result<BinOp, FrontendError> {
         ast::Operator::Mult => BinOp::Mul,
         ast::Operator::FloorDiv => BinOp::FloorDiv,
         ast::Operator::Mod => BinOp::Mod,
+        ast::Operator::BitAnd => BinOp::BitAnd,
+        ast::Operator::BitOr => BinOp::BitOr,
+        ast::Operator::BitXor => BinOp::BitXor,
+        ast::Operator::LShift => BinOp::Shl,
+        ast::Operator::RShift => BinOp::Shr,
         other => {
             return Err(FrontendError::Lower(format!(
-                "unsupported binary operator: {:?} — supported: + - * // %",
+                "unsupported binary operator: {:?} — supported: + - * // % & | ^ << >>",
                 other
             )));
         }
