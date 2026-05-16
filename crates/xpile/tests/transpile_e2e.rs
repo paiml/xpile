@@ -499,6 +499,51 @@ fn main() {
     assert_rustc_runs("gcd", &rust, driver);
 }
 
+/// PMAT-007: validates `for i in range(...)` desugaring. The three
+/// `range` shapes (stop, start+stop, start+stop+step) all lower to
+/// a `let mut i` + `while i < <stop>` + `i = i + <step>` tail.
+#[test]
+fn for_range_emitted_rust_computes_correct_values() {
+    let rust = xpile_transpile_to_rust("for_sum.py");
+    assert!(
+        rust.contains("let mut i: i64 = 0i64"),
+        "expected init at 0:\n{rust}"
+    );
+    assert!(
+        rust.contains("let mut i: i64 = a"),
+        "expected init at a:\n{rust}"
+    );
+    assert!(
+        rust.contains("i = (i).checked_add(2i64)"),
+        "expected step=2 tail:\n{rust}"
+    );
+    assert!(
+        rust.contains("while (i < n)"),
+        "expected while-cond:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // for_sum(n): 0 + 1 + ... + (n-1)
+    assert_eq!(for_sum(0), 0);
+    assert_eq!(for_sum(1), 0);  // i=0 only
+    assert_eq!(for_sum(5), 10); // 0+1+2+3+4
+    assert_eq!(for_sum(10), 45);
+
+    // range_with_start(a, b): a + (a+1) + ... + (b-1)
+    assert_eq!(range_with_start(3, 7), 18); // 3+4+5+6
+    assert_eq!(range_with_start(0, 4), 6);  // 0+1+2+3
+    assert_eq!(range_with_start(5, 5), 0);  // empty
+
+    // range_with_step(stop): 0 + 2 + 4 + ... < stop
+    assert_eq!(range_with_step(10), 20); // 0+2+4+6+8
+    assert_eq!(range_with_step(0), 0);
+    assert_eq!(range_with_step(1), 0);
+    assert_eq!(range_with_step(11), 30); // 0+2+4+6+8+10
+}
+"#;
+    assert_rustc_runs("for_sum", &rust, driver);
+}
+
 /// PMAT-006: validates while-loops + mutable rebinding. `sum_to(n)` =
 /// 1 + 2 + ... + n via an iterative accumulator. Triggers Stmt::While,
 /// Stmt::Assign for the rebindings, and Stmt::Let { mutable: true } for

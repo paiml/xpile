@@ -53,6 +53,12 @@ subset, update this section first.
   if-branch counts (alternatives) and doubles inside loop bodies
   (repetition). Lean is unsupported for `while` — a follow-up will
   encode it as `partial def` with tail recursion.
+- **`for target in range(...)`** desugaring (PMAT-007). Supports
+  `range(stop)`, `range(start, stop)`, and `range(start, stop, step)`
+  where `step` is a positive integer literal. Lowers to a `Let` init
+  + `While target < stop` + `target = target + step` tail. Non-range
+  iterables and negative/non-literal steps still error with a clear
+  message.
 
 ### Backends (real emission)
 
@@ -74,7 +80,7 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 
 ### Verification milestones
 
-Nine runtime-verified semantic round-trip fixtures (emit → `rustc -O`
+Ten runtime-verified semantic round-trip fixtures (emit → `rustc -O`
 → execute → `assert_eq!`):
 
 - `factorial(n)` — recursive, `factorial(10) == 3628800`
@@ -86,8 +92,10 @@ Nine runtime-verified semantic round-trip fixtures (emit → `rustc -O`
 - `square_plus(a, b)` — pins `**` semantics, `square_plus(2, 3) == 10`
 - `range_size(a, b)` — multi-assignment if-branches, `range_size(3, 7) == 4`
 - `sum_to(n)` — while-loop accumulator, `sum_to(100) == 5050`
+- `for_sum(n)` / `range_with_start` / `range_with_step` — for-in-range
+  desugaring, all three `range(...)` shapes
 
-29 e2e tests across `crates/xpile/tests/transpile_e2e.rs`; ~57
+30 e2e tests across `crates/xpile/tests/transpile_e2e.rs`; ~58
 workspace tests total.
 
 ## [0.0.1] - 2026-05-15
