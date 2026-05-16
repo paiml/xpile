@@ -37,8 +37,11 @@ subset, update this section first.
 - Logical: `and or` (short-circuit, Bool)
 - Unary: `-x` (checked_neg, same overflow contract), `not x`
 - Ternary: `x if cond else y`
-- **Statement-level `if/else`** with single-assignment branches lifted
-  to a `let = if cond { ... } else { ... }`
+- **Statement-level `if/else`** with single- *or multi-* assignment
+  branches. Each assigned name is lifted to its own
+  `let name: T = if cond { ... } else { ... }` (PMAT-005). Both
+  branches must assign the same *set* of names; assignments can be in
+  any order within each branch.
 - **`if / elif* / else` chains** recursively lowered to nested
   `IfExpr`; pretty-printed as flat `else if` in Rust / Ruchy
 - Function calls: `f(args)` (including self-recursion — `factorial`,
@@ -64,7 +67,7 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 
 ### Verification milestones
 
-Seven runtime-verified semantic round-trip fixtures (emit → `rustc -O`
+Eight runtime-verified semantic round-trip fixtures (emit → `rustc -O`
 → execute → `assert_eq!`):
 
 - `factorial(n)` — recursive, `factorial(10) == 3628800`
@@ -74,8 +77,9 @@ Seven runtime-verified semantic round-trip fixtures (emit → `rustc -O`
 - `sign(x)` — if/elif/else chain, `sign(i64::MIN) == -1`
 - `bits(a, b)` — pins `& | ^ << >>` semantics, `bits(5, 3) == 14`
 - `square_plus(a, b)` — pins `**` semantics, `square_plus(2, 3) == 10`
+- `range_size(a, b)` — multi-assignment if-branches, `range_size(3, 7) == 4`
 
-27 e2e tests across `crates/xpile/tests/transpile_e2e.rs`; ~55
+28 e2e tests across `crates/xpile/tests/transpile_e2e.rs`; ~56
 workspace tests total.
 
 ## [0.0.1] - 2026-05-15

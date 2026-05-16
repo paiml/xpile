@@ -18,8 +18,6 @@
 //!     `.checked_*().expect(...)` so overflow panics with a message
 //!     naming the contract (in *both* release and debug), instead of
 //!     silently wrapping the way plain `+` / `*` / `-` would.
-//!   - Multi-statement / multi-assignment if-branches — the if-as-let
-//!     recognizer requires exactly one assignment per branch.
 //!   - Type annotations beyond `int` / `bool`.
 
 use std::path::Path;
@@ -117,7 +115,11 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
 
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
     for stmt in leading {
-        stmts.push(lower_block_stmt(&f.name, stmt.clone())?);
+        // A single Python statement may lower to multiple meta-HIR
+        // statements — most notably a multi-assignment `if/else`, where
+        // each assigned name gets its own `Let` with an `IfExpr` value
+        // (PMAT-005).
+        stmts.extend(lower_block_stmt(&f.name, stmt.clone())?);
     }
 
     let trailing_return = match last {
@@ -187,16 +189,17 @@ fn parse_type_annotation(
 /// Lower a single non-trailing statement.
 ///
 /// At v0.1.0 we recognize:
-///   - `name = expr`          → [`Stmt::Let`]
-///   - `if cond: name = a; else: name = b`  → [`Stmt::Let`] with an
-///     [`Expr::IfExpr`] value. Both branches MUST be a single assignment
-///     to the SAME name with the SAME inferred type. Everything else
-///     (multi-statement branches, mismatched assignment targets, missing
-///     else, type-mismatched values) errors with a clear message.
-fn lower_block_stmt(fn_name: &str, stmt: ast::Stmt) -> Result<Stmt, FrontendError> {
+///   - `name = expr`          → one [`Stmt::Let`]
+///   - `if cond: ...; else: ...`  → one [`Stmt::Let`] per assigned name,
+///     each carrying an [`Expr::IfExpr`] over the same condition chain.
+///     Both branches MUST assign the *same set* of names with matching
+///     types per name. PMAT-005 lifted the previous single-target
+///     restriction; mismatched targets / missing-else / non-assignment
+///     statements still error with a clear message.
+fn lower_block_stmt(fn_name: &str, stmt: ast::Stmt) -> Result<Vec<Stmt>, FrontendError> {
     match stmt {
-        ast::Stmt::Assign(asn) => lower_assign(fn_name, asn),
-        ast::Stmt::If(if_stmt) => lower_if_stmt_as_let(fn_name, if_stmt),
+        ast::Stmt::Assign(asn) => lower_assign(fn_name, asn).map(|s| vec![s]),
+        ast::Stmt::If(if_stmt) => lower_if_stmt_as_lets(fn_name, if_stmt),
         ast::Stmt::Return(_) => Err(FrontendError::Lower(format!(
             "function `{fn_name}` has an early `return` — only the last statement may be `return` at v0.1.0"
         ))),
@@ -208,39 +211,122 @@ fn lower_block_stmt(fn_name: &str, stmt: ast::Stmt) -> Result<Stmt, FrontendErro
 }
 
 /// Lower a Python `if/elif*/else` statement whose every branch is a
-/// single assignment to the same variable. Lifts the whole chain into
-/// a meta-HIR `Stmt::Let { value: Expr::IfExpr { ... } }`. `elif`
-/// chains nest as `else_expr` of each outer `IfExpr`.
-fn lower_if_stmt_as_let(fn_name: &str, if_stmt: ast::StmtIf) -> Result<Stmt, FrontendError> {
-    // Determine the target name from the then-branch first; the recursive
-    // walk validates every other branch assigns to the same name.
-    if if_stmt.body.len() != 1 {
+/// list of single-name assignments. The set of assigned names must be
+/// the *same* across all branches (no use-before-init in subsequent
+/// stmts). Lifts to one `Stmt::Let { name, value: Expr::IfExpr { ... } }`
+/// per assigned name, all sharing the same condition chain. PMAT-005
+/// extended this from "exactly one assignment per branch" to "any
+/// number of single-name assignments, same set per branch".
+///
+/// Multiple Lets means the condition is evaluated once per assigned
+/// name in the generated Rust. v0.1.0 has no observable side effects
+/// (no mutation, no I/O, function calls are pure-from-codegen's-pov),
+/// so this is semantically equivalent to evaluating once.
+fn lower_if_stmt_as_lets(fn_name: &str, if_stmt: ast::StmtIf) -> Result<Vec<Stmt>, FrontendError> {
+    // Collect the target name *list* from the then-branch (preserves the
+    // assignment order from source). The order matters only insofar as
+    // it determines the emitted Let order; in the absence of side
+    // effects each ordering is observably equivalent.
+    let target_names = collect_branch_assignment_names(fn_name, &if_stmt.body)?;
+    if target_names.is_empty() {
         return Err(FrontendError::Lower(format!(
-            "function `{fn_name}` has an if-statement whose then-branch has multiple statements — v0.1.0 requires exactly one assignment per branch"
+            "function `{fn_name}` has an if-branch with no assignments — v0.1.0 if-as-let requires at least one assignment per branch"
         )));
     }
-    let target_name = match &if_stmt.body[0] {
-        ast::Stmt::Assign(a) => single_name_target(fn_name, a)?,
-        _ => {
+    // Validate every other branch (else, nested elif) carries exactly
+    // the same set of names. The lowering walk below revalidates per
+    // recursion, but a top-level set-equality check yields a more
+    // legible error than a deeply-nested one.
+    validate_branch_name_sets(fn_name, &if_stmt, &target_names)?;
+
+    let mut lets = Vec::with_capacity(target_names.len());
+    for name in &target_names {
+        let if_expr = lower_if_chain_to_expr(fn_name, &if_stmt, name)?;
+        let ty = match &if_expr {
+            Expr::IfExpr { then_expr, .. } => infer_type(then_expr),
+            other => infer_type(other),
+        };
+        lets.push(Stmt::Let {
+            name: name.clone(),
+            ty,
+            value: if_expr,
+        });
+    }
+    Ok(lets)
+}
+
+/// Inspect a branch body (a Vec<ast::Stmt>) and return the list of
+/// single-name targets in source order. Errors if any statement is not
+/// `name = expr` (the v0.1.0 shape for if-branches).
+fn collect_branch_assignment_names(
+    fn_name: &str,
+    body: &[ast::Stmt],
+) -> Result<Vec<String>, FrontendError> {
+    let mut names = Vec::with_capacity(body.len());
+    for stmt in body {
+        match stmt {
+            ast::Stmt::Assign(a) => names.push(single_name_target(fn_name, a)?),
+            _ => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{fn_name}` has an if-branch statement that is not `name = expr` — v0.1.0 if-as-let requires every statement in every branch to be a simple assignment"
+                )));
+            }
+        }
+    }
+    Ok(names)
+}
+
+/// Walk the `if/elif*/else` chain and verify every branch's
+/// assignment-name *set* matches `expected`. Order within a branch
+/// doesn't need to match — we sort+compare.
+fn validate_branch_name_sets(
+    fn_name: &str,
+    if_stmt: &ast::StmtIf,
+    expected: &[String],
+) -> Result<(), FrontendError> {
+    let mut expected_sorted: Vec<&str> = expected.iter().map(String::as_str).collect();
+    expected_sorted.sort_unstable();
+
+    // The then-branch is the source of truth (already covered by
+    // `expected`); validate the orelse chain.
+    if if_stmt.orelse.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{fn_name}` has `if` without `else` — at v0.1.0 every branch must assign the same names (no use-before-init)"
+        )));
+    }
+    let mut current: &[ast::Stmt] = &if_stmt.orelse;
+    loop {
+        if current.len() == 1 {
+            if let ast::Stmt::If(nested) = &current[0] {
+                let nested_names = collect_branch_assignment_names(fn_name, &nested.body)?;
+                let mut nested_sorted: Vec<&str> =
+                    nested_names.iter().map(String::as_str).collect();
+                nested_sorted.sort_unstable();
+                if nested_sorted != expected_sorted {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{fn_name}` has an elif-branch assigning {nested_sorted:?} but the then-branch assigns {expected_sorted:?} — every branch must assign the same names"
+                    )));
+                }
+                if nested.orelse.is_empty() {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{fn_name}` has elif without final else — every branch must assign the same names"
+                    )));
+                }
+                current = &nested.orelse;
+                continue;
+            }
+        }
+        // Terminal else: must be a list of assignments matching `expected`.
+        let else_names = collect_branch_assignment_names(fn_name, current)?;
+        let mut else_sorted: Vec<&str> = else_names.iter().map(String::as_str).collect();
+        else_sorted.sort_unstable();
+        if else_sorted != expected_sorted {
             return Err(FrontendError::Lower(format!(
-                "function `{fn_name}` has an if-statement whose then-branch is not `name = expr`"
+                "function `{fn_name}` has an else-branch assigning {else_sorted:?} but the then-branch assigns {expected_sorted:?} — every branch must assign the same names"
             )));
         }
-    };
-
-    let if_expr = lower_if_chain_to_expr(fn_name, &if_stmt, &target_name)?;
-    let ty = match &if_expr {
-        Expr::IfExpr { then_expr, .. } => infer_type(then_expr),
-        // The recursive lowering always produces an IfExpr — defensive
-        // fallback in case the shape changes.
-        other => infer_type(other),
-    };
-
-    Ok(Stmt::Let {
-        name: target_name,
-        ty,
-        value: if_expr,
-    })
+        return Ok(());
+    }
 }
 
 /// Recursively lower a chain of `if/elif*/else` into a single
@@ -261,28 +347,12 @@ fn lower_if_chain_to_expr(
     if_stmt: &ast::StmtIf,
     target_name: &str,
 ) -> Result<Expr, FrontendError> {
+    // Set-equality of branch names is already enforced upstream by
+    // `validate_branch_name_sets`. This function focuses on extracting
+    // *this* target's value from each branch and building the IfExpr.
     if if_stmt.orelse.is_empty() {
         return Err(FrontendError::Lower(format!(
             "function `{fn_name}` has `if` without `else` — at v0.1.0 every branch must assign `{target_name}` (no use-before-init)"
-        )));
-    }
-    if if_stmt.body.len() != 1 {
-        return Err(FrontendError::Lower(format!(
-            "function `{fn_name}` has an if-branch with multiple statements — v0.1.0 requires exactly one assignment per branch"
-        )));
-    }
-    let then_asn = match &if_stmt.body[0] {
-        ast::Stmt::Assign(a) => a,
-        _ => {
-            return Err(FrontendError::Lower(format!(
-                "function `{fn_name}` has an if-branch that is not `name = expr`"
-            )));
-        }
-    };
-    let then_name = single_name_target(fn_name, then_asn)?;
-    if then_name != target_name {
-        return Err(FrontendError::Lower(format!(
-            "function `{fn_name}` has if-branch assigning `{then_name}` but earlier branch assigns `{target_name}` — every branch must assign the same name"
         )));
     }
 
@@ -293,38 +363,25 @@ fn lower_if_chain_to_expr(
         )));
     }
 
-    let then_expr = lower_expr((*then_asn.value).clone())?;
+    let then_expr = find_assignment_value(fn_name, &if_stmt.body, target_name)?;
     let then_ty = infer_type(&then_expr);
 
     // Else branch is one of:
-    //   [Assign(target_name, expr)]   — terminal else
-    //   [StmtIf(nested)]              — elif (recurse)
-    if if_stmt.orelse.len() != 1 {
-        return Err(FrontendError::Lower(format!(
-            "function `{fn_name}` has an else-branch with multiple statements — v0.1.0 requires exactly one assignment or a single nested `if`"
-        )));
-    }
-    let else_expr = match &if_stmt.orelse[0] {
-        ast::Stmt::Assign(else_asn) => {
-            let else_name = single_name_target(fn_name, else_asn)?;
-            if else_name != target_name {
-                return Err(FrontendError::Lower(format!(
-                    "function `{fn_name}` has else-branch assigning `{else_name}` but earlier branches assign `{target_name}`"
-                )));
-            }
-            lower_expr((*else_asn.value).clone())?
+    //   nested StmtIf → recurse (handles elif)
+    //   any list of assignments → terminal else: find `target_name` here
+    let else_expr = if if_stmt.orelse.len() == 1 {
+        if let ast::Stmt::If(nested) = &if_stmt.orelse[0] {
+            lower_if_chain_to_expr(fn_name, nested, target_name)?
+        } else {
+            find_assignment_value(fn_name, &if_stmt.orelse, target_name)?
         }
-        ast::Stmt::If(nested) => lower_if_chain_to_expr(fn_name, nested, target_name)?,
-        _ => {
-            return Err(FrontendError::Lower(format!(
-                "function `{fn_name}` has else-branch that is neither `name = expr` nor a nested `if` (elif) — v0.1.0 supports only those shapes"
-            )));
-        }
+    } else {
+        find_assignment_value(fn_name, &if_stmt.orelse, target_name)?
     };
     let else_ty = infer_type(&else_expr);
     if then_ty != else_ty {
         return Err(FrontendError::Lower(format!(
-            "function `{fn_name}` if-branches assign mismatched types ({then_ty:?} vs {else_ty:?})"
+            "function `{fn_name}` if-branches assign `{target_name}` with mismatched types ({then_ty:?} vs {else_ty:?})"
         )));
     }
 
@@ -333,6 +390,27 @@ fn lower_if_chain_to_expr(
         then_expr: Box::new(then_expr),
         else_expr: Box::new(else_expr),
     })
+}
+
+/// Walk a branch body looking for `target_name = expr` and return the
+/// lowered RHS. Errors if `target_name` is not assigned in this branch
+/// (set-equality is checked upstream; this is the "extract" step).
+fn find_assignment_value(
+    fn_name: &str,
+    body: &[ast::Stmt],
+    target_name: &str,
+) -> Result<Expr, FrontendError> {
+    for stmt in body {
+        if let ast::Stmt::Assign(a) = stmt {
+            let name = single_name_target(fn_name, a)?;
+            if name == target_name {
+                return lower_expr((*a.value).clone());
+            }
+        }
+    }
+    Err(FrontendError::Lower(format!(
+        "function `{fn_name}` has a branch that does not assign `{target_name}` — every branch must assign every name (set-equality)"
+    )))
 }
 
 /// Extract the single Name target of an `Assign` statement, rejecting
