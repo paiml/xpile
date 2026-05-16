@@ -42,10 +42,20 @@ pub fn emit_module(module: &Module) -> Result<String, LeanCodegenError> {
     writeln!(out)?;
     for item in &module.items {
         match item {
-            Item::Function(f) => emit_function(&mut out, f)?,
+            Item::Function(f) => {
+                if function_has_while(f) {
+                    emit_function_with_while_helpers(&mut out, f)?;
+                } else {
+                    emit_function(&mut out, f)?;
+                }
+            }
         }
     }
     Ok(out)
+}
+
+fn function_has_while(f: &Function) -> bool {
+    f.body.stmts.iter().any(|s| matches!(s, Stmt::While { .. }))
 }
 
 fn emit_function(out: &mut String, f: &Function) -> Result<(), LeanCodegenError> {
@@ -60,6 +70,240 @@ fn emit_function(out: &mut String, f: &Function) -> Result<(), LeanCodegenError>
     writeln!(out, " :=")?;
     emit_block(out, &f.body)?;
     Ok(())
+}
+
+/// Lean has no mutation, so a Python `while` lowers to a `partial def`
+/// helper that threads loop-state variables as parameters and recurses
+/// with their updated values. PMAT-010.
+///
+/// Shape supported at v0.1.0:
+///   * Exactly one `Stmt::While` in the function body.
+///   * The while must be the *last* statement before `trailing_return`.
+///   * `trailing_return` must be `Expr::Ident(<name>)` where `<name>`
+///     is in the loop's mutated set (the variable the helper returns).
+///   * The while body must contain only `Stmt::Assign` (no nested Let /
+///     If / While). Reassignments produce the new value passed to the
+///     recursive call.
+///
+/// Anything outside this shape returns `LeanCodegenError::Unsupported`
+/// with a message naming what it tripped on, so a user reading the
+/// error knows whether to rewrite their Python or to wait for a
+/// follow-up that broadens the encoding.
+fn emit_function_with_while_helpers(
+    out: &mut String,
+    f: &Function,
+) -> Result<(), LeanCodegenError> {
+    let while_indices: Vec<usize> = f
+        .body
+        .stmts
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| {
+            if matches!(s, Stmt::While { .. }) {
+                Some(i)
+            } else {
+                None
+            }
+        })
+        .collect();
+    if while_indices.len() != 1 {
+        return Err(LeanCodegenError::Unsupported(format!(
+            "function `{}` has {} while-loops; Lean codegen supports exactly one per function at v0.1.0",
+            f.name,
+            while_indices.len()
+        )));
+    }
+    let while_idx = while_indices[0];
+    if while_idx != f.body.stmts.len() - 1 {
+        return Err(LeanCodegenError::Unsupported(format!(
+            "function `{}` has statements after its while loop; Lean codegen requires the while to be the last pre-return statement at v0.1.0",
+            f.name
+        )));
+    }
+    let return_var = match &f.body.trailing_return {
+        Expr::Ident(name) => name.clone(),
+        _ => {
+            return Err(LeanCodegenError::Unsupported(format!(
+                "function `{}` has a non-Ident trailing return after its while loop; Lean codegen supports `return <name>` only at v0.1.0",
+                f.name
+            )));
+        }
+    };
+
+    let pre_stmts = &f.body.stmts[..while_idx];
+    let (cond, while_body) = match &f.body.stmts[while_idx] {
+        Stmt::While { cond, body } => (cond, body),
+        _ => unreachable!(),
+    };
+
+    // Loop state — names assigned anywhere in the body. Source order
+    // preserves discovery order for predictable signatures.
+    let mut loop_state: Vec<String> = Vec::new();
+    for stmt in while_body {
+        match stmt {
+            Stmt::Assign { name, .. } => {
+                if !loop_state.contains(name) {
+                    loop_state.push(name.clone());
+                }
+            }
+            Stmt::Let { name, .. } => {
+                // v0.1.0 frontend produces only Assigns inside loop
+                // bodies; treat a Let as a fresh binding the loop
+                // re-initializes (also goes into loop_state).
+                if !loop_state.contains(name) {
+                    loop_state.push(name.clone());
+                }
+            }
+            Stmt::Assert { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has `assert` inside a while loop; Lean codegen at v0.1.0 doesn't translate assert through partial def",
+                    f.name
+                )));
+            }
+            Stmt::While { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has a nested while; Lean codegen at v0.1.0 doesn't translate nested loops",
+                    f.name
+                )));
+            }
+        }
+    }
+
+    if !loop_state.contains(&return_var) {
+        return Err(LeanCodegenError::Unsupported(format!(
+            "function `{}` returns `{}` which is not mutated by its while loop; Lean codegen requires the return value to be in the loop state at v0.1.0",
+            f.name, return_var
+        )));
+    }
+
+    // Free vars = names referenced in {cond, body assigns} but not in
+    // loop_state. Preserve discovery order.
+    let mut all_refs: Vec<String> = Vec::new();
+    collect_idents(cond, &mut all_refs);
+    for stmt in while_body {
+        if let Stmt::Assign { value, .. } = stmt {
+            collect_idents(value, &mut all_refs);
+        }
+        if let Stmt::Let { value, .. } = stmt {
+            collect_idents(value, &mut all_refs);
+        }
+    }
+    let mut free_vars: Vec<String> = Vec::new();
+    for r in &all_refs {
+        if !loop_state.contains(r) && !free_vars.contains(r) {
+            free_vars.push(r.clone());
+        }
+    }
+
+    // Emit the helper. v0.1.0's type lattice is I64 / Bool, and the
+    // loop state and free vars are I64 for every fixture we ship. Use
+    // I64 as the default; refine later if Bool-typed loop state appears.
+    let helper_name = format!("{}_loop_0", f.name);
+    write!(out, "partial def {} ", helper_name)?;
+    for name in &loop_state {
+        write!(out, "({} : ", name)?;
+        emit_type(out, Type::I64)?;
+        write!(out, ") ")?;
+    }
+    for name in &free_vars {
+        write!(out, "({} : ", name)?;
+        emit_type(out, lookup_var_type(name, &f.params))?;
+        write!(out, ") ")?;
+    }
+    write!(out, ": ")?;
+    emit_type(out, f.return_type)?;
+    writeln!(out, " :=")?;
+    write!(out, "  if ")?;
+    emit_expr(out, cond)?;
+    writeln!(out, " then")?;
+    // Body: each Assign / Let becomes a `let name := value` (Lean
+    // shadows, so reassigning the same name is fine).
+    for stmt in while_body {
+        match stmt {
+            Stmt::Assign { name, value } | Stmt::Let { name, value, .. } => {
+                write!(out, "    let {name} := ")?;
+                emit_expr(out, value)?;
+                writeln!(out)?;
+            }
+            _ => unreachable!("validated above"),
+        }
+    }
+    // Recursive call with current values of loop_state and free_vars.
+    write!(out, "    {helper_name}")?;
+    for name in loop_state.iter().chain(free_vars.iter()) {
+        write!(out, " {name}")?;
+    }
+    writeln!(out)?;
+    writeln!(out, "  else")?;
+    writeln!(out, "    {return_var}")?;
+    writeln!(out)?;
+
+    // Emit the outer function. Body: pre-stmts as Lean lets, then the
+    // helper call.
+    write!(out, "def {}", f.name)?;
+    for p in &f.params {
+        write!(out, " (")?;
+        emit_param(out, p)?;
+        write!(out, ")")?;
+    }
+    write!(out, " : ")?;
+    emit_type(out, f.return_type)?;
+    writeln!(out, " :=")?;
+    for stmt in pre_stmts {
+        emit_stmt(out, stmt)?;
+    }
+    write!(out, "  {helper_name}")?;
+    for name in loop_state.iter().chain(free_vars.iter()) {
+        write!(out, " {name}")?;
+    }
+    writeln!(out)?;
+    Ok(())
+}
+
+/// Look up a free var's type — params have explicit types; otherwise
+/// the v0.1.0 lattice defaults to I64 (the only numeric type yet, and
+/// pre-stmt Lets all infer I64 currently).
+fn lookup_var_type(name: &str, params: &[Param]) -> Type {
+    for p in params {
+        if p.name == name {
+            return p.ty;
+        }
+    }
+    Type::I64
+}
+
+/// Recursively collect identifier names from an expression. Used by
+/// the while-helper analyzer to find free vars referenced in the cond
+/// and body. Preserves insertion order so emitted helper signatures
+/// are deterministic.
+fn collect_idents(e: &Expr, out: &mut Vec<String>) {
+    match e {
+        Expr::Ident(n) => {
+            if !out.contains(n) {
+                out.push(n.clone());
+            }
+        }
+        Expr::LitInt(_) => {}
+        Expr::BinOp { lhs, rhs, .. } => {
+            collect_idents(lhs, out);
+            collect_idents(rhs, out);
+        }
+        Expr::UnOp { operand, .. } => collect_idents(operand, out),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            collect_idents(cond, out);
+            collect_idents(then_expr, out);
+            collect_idents(else_expr, out);
+        }
+        Expr::Call { args, .. } => {
+            for a in args {
+                collect_idents(a, out);
+            }
+        }
+    }
 }
 
 fn emit_param(out: &mut String, p: &Param) -> Result<(), LeanCodegenError> {

@@ -21,8 +21,9 @@
 //!     naming the contract (in *both* release and debug), instead of
 //!     silently wrapping the way plain `+` / `*` / `-` would.
 //!   - Type annotations beyond `int` / `bool`.
-//!   - Lean backend for `while` — Lean is functional; `while` would
-//!     need a `partial def` tail-recursion encoding.
+//!   - Lean backend for `assert` — needs Decidable instances + a
+//!     propositional formulation; the `while` encoding shipped in
+//!     PMAT-010 via `partial def` threaded-state recursion.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
