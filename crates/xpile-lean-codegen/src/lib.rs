@@ -186,6 +186,10 @@ fn emit_binop(out: &mut String, op: BinOp, lhs: &Expr, rhs: &Expr) -> Result<(),
         BinOp::BitXor => emit_prefix2(out, "Int.xor", lhs, rhs),
         BinOp::Shl => emit_shift(out, lhs, "<<<", rhs),
         BinOp::Shr => emit_shift(out, lhs, ">>>", rhs),
+        // Lean's `^` is `HPow.hPow`. For `Int`, the standard library
+        // resolves `(a : Int) ^ (n : Nat) : Int` — coerce rhs via .toNat,
+        // same trade-off as shifts (negative exponent silently → 0).
+        BinOp::Pow => emit_shift(out, lhs, "^", rhs),
     }
 }
 

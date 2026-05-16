@@ -52,3 +52,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-004
+  github_issue: null
+  item_type: task
+  title: 'Extend Python subset: power operator (**)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-16T06:57:00Z
+  updated: 2026-05-16T06:57:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
