@@ -132,6 +132,7 @@ fn emit_call(out: &mut String, callee: &str, args: &[Expr]) -> Result<(), RuchyC
 }
 
 /// Ruchy uses Rust-like `if cond { then } else { else_ }` as an expression.
+/// Flattens nested `else if` for readability (same pattern as the Rust backend).
 fn emit_if_expr(
     out: &mut String,
     cond: &Expr,
@@ -142,10 +143,20 @@ fn emit_if_expr(
     emit_expr(out, cond)?;
     write!(out, " {{ ")?;
     emit_expr(out, then_expr)?;
-    write!(out, " }} else {{ ")?;
-    emit_expr(out, else_expr)?;
-    write!(out, " }}")?;
-    Ok(())
+    write!(out, " }} else ")?;
+    match else_expr {
+        Expr::IfExpr {
+            cond: c2,
+            then_expr: t2,
+            else_expr: e2,
+        } => emit_if_expr(out, c2, t2, e2),
+        _ => {
+            write!(out, "{{ ")?;
+            emit_expr(out, else_expr)?;
+            write!(out, " }}")?;
+            Ok(())
+        }
+    }
 }
 
 /// Same Euclidean semantics as the Rust backend — Python `//` and `%`

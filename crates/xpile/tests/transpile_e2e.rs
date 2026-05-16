@@ -400,9 +400,9 @@ fn sign_if_elif_else_chain_computes_correct_values() {
     let rust = xpile_transpile_to_rust("sign.py");
     assert!(
         rust.contains(
-            "let s: i64 = if (x > 0i64) { 1i64 } else { if (x < 0i64) { (-1i64) } else { 0i64 } };"
+            "let s: i64 = if (x > 0i64) { 1i64 } else if (x < 0i64) { (-1i64) } else { 0i64 };"
         ),
-        "expected nested if-else lowering, got:\n{rust}"
+        "expected flattened else-if chain, got:\n{rust}"
     );
     let driver = r#"
 fn main() {
