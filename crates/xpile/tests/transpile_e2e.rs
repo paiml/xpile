@@ -393,6 +393,29 @@ fn main() {
     assert_rustc_runs("fib", &rust, driver);
 }
 
+/// `if / elif / else` chain — recursive lowering produces nested
+/// `IfExpr` in meta-HIR, semantically equivalent to Rust `else if`.
+#[test]
+fn sign_if_elif_else_chain_computes_correct_values() {
+    let rust = xpile_transpile_to_rust("sign.py");
+    assert!(
+        rust.contains(
+            "let s: i64 = if (x > 0i64) { 1i64 } else { if (x < 0i64) { (-1i64) } else { 0i64 } };"
+        ),
+        "expected nested if-else lowering, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sign(5), 1);
+    assert_eq!(sign(0), 0);
+    assert_eq!(sign(-5), -1);
+    assert_eq!(sign(i64::MAX), 1);
+    assert_eq!(sign(i64::MIN), -1);
+}
+"#;
+    assert_rustc_runs("sign", &rust, driver);
+}
+
 /// Statement-level `if/else` lifted to a `let = if cond { ... } else { ... }`
 /// expression. Validates the v0.1.0 lowering pattern for the most common
 /// if-statement shape (both branches: single assignment to same name).

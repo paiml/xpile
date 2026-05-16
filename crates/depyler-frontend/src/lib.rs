@@ -201,49 +201,82 @@ fn lower_block_stmt(fn_name: &str, stmt: ast::Stmt) -> Result<Stmt, FrontendErro
     }
 }
 
-/// Lower a Python `if/else` statement whose both branches are a single
-/// assignment to the same variable.
-///
-/// Lifts the branch values into the value side of a meta-HIR `Stmt::Let`,
-/// with an `Expr::IfExpr` capturing the conditional. The emitted Rust /
-/// Ruchy / Lean becomes `let name = if cond { a } else { b };` — a
-/// clean expression form that sidesteps the block-scoping mismatch
-/// between Python (assignments inside an if-block escape) and Rust
-/// (let bindings are block-scoped).
+/// Lower a Python `if/elif*/else` statement whose every branch is a
+/// single assignment to the same variable. Lifts the whole chain into
+/// a meta-HIR `Stmt::Let { value: Expr::IfExpr { ... } }`. `elif`
+/// chains nest as `else_expr` of each outer `IfExpr`.
 fn lower_if_stmt_as_let(fn_name: &str, if_stmt: ast::StmtIf) -> Result<Stmt, FrontendError> {
-    if if_stmt.orelse.is_empty() {
+    // Determine the target name from the then-branch first; the recursive
+    // walk validates every other branch assigns to the same name.
+    if if_stmt.body.len() != 1 {
         return Err(FrontendError::Lower(format!(
-            "function `{fn_name}` has `if` without `else` — at v0.1.0 both branches must assign the same variable (no use-before-init)"
+            "function `{fn_name}` has an if-statement whose then-branch has multiple statements — v0.1.0 requires exactly one assignment per branch"
         )));
     }
-    if if_stmt.body.len() != 1 || if_stmt.orelse.len() != 1 {
-        return Err(FrontendError::Lower(format!(
-            "function `{fn_name}` has an if-statement with multi-stmt branches — v0.1.0 supports only `if cond: x = a; else: x = b` (one assignment per branch); elif and bigger branches will land later"
-        )));
-    }
-
-    let then_asn = match &if_stmt.body[0] {
-        ast::Stmt::Assign(a) => a,
+    let target_name = match &if_stmt.body[0] {
+        ast::Stmt::Assign(a) => single_name_target(fn_name, a)?,
         _ => {
             return Err(FrontendError::Lower(format!(
                 "function `{fn_name}` has an if-statement whose then-branch is not `name = expr`"
             )));
         }
     };
-    let else_asn = match &if_stmt.orelse[0] {
+
+    let if_expr = lower_if_chain_to_expr(fn_name, &if_stmt, &target_name)?;
+    let ty = match &if_expr {
+        Expr::IfExpr { then_expr, .. } => infer_type(then_expr),
+        // The recursive lowering always produces an IfExpr — defensive
+        // fallback in case the shape changes.
+        other => infer_type(other),
+    };
+
+    Ok(Stmt::Let {
+        name: target_name,
+        ty,
+        value: if_expr,
+    })
+}
+
+/// Recursively lower a chain of `if/elif*/else` into a single
+/// [`Expr::IfExpr`] expression. Used by `lower_if_stmt_as_let` to
+/// support elif:
+///
+/// ```text
+/// if a: x = 1                            if a { 1 }
+/// elif b: x = 2          lowers to       else if b { 2 }
+/// else:    x = 3                         else { 3 }
+/// ```
+///
+/// Internally this becomes nested IfExpr nodes; the codegen pretty-print
+/// is `if a { 1 } else { if b { 2 } else { 3 } }` (semantically equivalent
+/// to `else if` — a future pretty-printer can flatten).
+fn lower_if_chain_to_expr(
+    fn_name: &str,
+    if_stmt: &ast::StmtIf,
+    target_name: &str,
+) -> Result<Expr, FrontendError> {
+    if if_stmt.orelse.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{fn_name}` has `if` without `else` — at v0.1.0 every branch must assign `{target_name}` (no use-before-init)"
+        )));
+    }
+    if if_stmt.body.len() != 1 {
+        return Err(FrontendError::Lower(format!(
+            "function `{fn_name}` has an if-branch with multiple statements — v0.1.0 requires exactly one assignment per branch"
+        )));
+    }
+    let then_asn = match &if_stmt.body[0] {
         ast::Stmt::Assign(a) => a,
         _ => {
             return Err(FrontendError::Lower(format!(
-                "function `{fn_name}` has an if-statement whose else-branch is not `name = expr`"
+                "function `{fn_name}` has an if-branch that is not `name = expr`"
             )));
         }
     };
-
     let then_name = single_name_target(fn_name, then_asn)?;
-    let else_name = single_name_target(fn_name, else_asn)?;
-    if then_name != else_name {
+    if then_name != target_name {
         return Err(FrontendError::Lower(format!(
-            "function `{fn_name}` has if-branches that assign different names (`{then_name}` vs `{else_name}`) — v0.1.0 requires both branches assign the same variable"
+            "function `{fn_name}` has if-branch assigning `{then_name}` but earlier branch assigns `{target_name}` — every branch must assign the same name"
         )));
     }
 
@@ -255,8 +288,33 @@ fn lower_if_stmt_as_let(fn_name: &str, if_stmt: ast::StmtIf) -> Result<Stmt, Fro
     }
 
     let then_expr = lower_expr((*then_asn.value).clone())?;
-    let else_expr = lower_expr((*else_asn.value).clone())?;
     let then_ty = infer_type(&then_expr);
+
+    // Else branch is one of:
+    //   [Assign(target_name, expr)]   — terminal else
+    //   [StmtIf(nested)]              — elif (recurse)
+    if if_stmt.orelse.len() != 1 {
+        return Err(FrontendError::Lower(format!(
+            "function `{fn_name}` has an else-branch with multiple statements — v0.1.0 requires exactly one assignment or a single nested `if`"
+        )));
+    }
+    let else_expr = match &if_stmt.orelse[0] {
+        ast::Stmt::Assign(else_asn) => {
+            let else_name = single_name_target(fn_name, else_asn)?;
+            if else_name != target_name {
+                return Err(FrontendError::Lower(format!(
+                    "function `{fn_name}` has else-branch assigning `{else_name}` but earlier branches assign `{target_name}`"
+                )));
+            }
+            lower_expr((*else_asn.value).clone())?
+        }
+        ast::Stmt::If(nested) => lower_if_chain_to_expr(fn_name, nested, target_name)?,
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{fn_name}` has else-branch that is neither `name = expr` nor a nested `if` (elif) — v0.1.0 supports only those shapes"
+            )));
+        }
+    };
     let else_ty = infer_type(&else_expr);
     if then_ty != else_ty {
         return Err(FrontendError::Lower(format!(
@@ -264,14 +322,10 @@ fn lower_if_stmt_as_let(fn_name: &str, if_stmt: ast::StmtIf) -> Result<Stmt, Fro
         )));
     }
 
-    Ok(Stmt::Let {
-        name: then_name,
-        ty: then_ty,
-        value: Expr::IfExpr {
-            cond: Box::new(cond),
-            then_expr: Box::new(then_expr),
-            else_expr: Box::new(else_expr),
-        },
+    Ok(Expr::IfExpr {
+        cond: Box::new(cond),
+        then_expr: Box::new(then_expr),
+        else_expr: Box::new(else_expr),
     })
 }
 
