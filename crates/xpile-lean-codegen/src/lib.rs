@@ -88,12 +88,23 @@ fn emit_block(out: &mut String, block: &Block) -> Result<(), LeanCodegenError> {
 
 fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
     match stmt {
-        Stmt::Let { name, value, .. } => {
+        // Lean has no `mut` — let-bindings are already immutable.
+        // Reassignment via `Stmt::Assign` works because Lean's `let`
+        // allows shadowing: emit it as another `let name := value`.
+        Stmt::Let { name, value, .. } | Stmt::Assign { name, value } => {
             write!(out, "  let {name} := ")?;
             emit_expr(out, value)?;
             writeln!(out)?;
             Ok(())
         }
+        // `while` requires mutation/iteration. The Lean encoding is a
+        // `partial def` with tail recursion; not implemented at v0.1.0.
+        // Layer-2 equivalence with the Rust/Ruchy emission would
+        // ultimately come from contracts/xlate-lean-to-rust-v1.yaml.
+        Stmt::While { .. } => Err(LeanCodegenError::Unsupported(
+            "`while` loops require partial def / tail-recursion in Lean — not yet implemented (PMAT-006 follow-up)"
+                .into(),
+        )),
     }
 }
 

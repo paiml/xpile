@@ -58,10 +58,25 @@ pub struct Block {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Stmt {
-    /// `let name: ty = value;` — Python `name = value` lowered with
-    /// frontend-inferred `ty`. Shadowing is allowed (re-binding the same
-    /// name re-emits `let`), matching Python's assignment semantics.
-    Let { name: String, ty: Type, value: Expr },
+    /// `let [mut] name: ty = value;` — first binding of `name` in this
+    /// scope. `mutable` is set by the frontend when the same name is
+    /// reassigned later in the function (including inside a [`While`]
+    /// loop body). Rust/Ruchy emission honors it (`let mut` vs `let`)
+    /// to keep `clippy -D unused_mut` happy. PMAT-006.
+    Let {
+        name: String,
+        ty: Type,
+        value: Expr,
+        #[serde(default)]
+        mutable: bool,
+    },
+    /// `name = value;` — reassignment of a name previously introduced
+    /// by [`Stmt::Let`]. PMAT-006.
+    Assign { name: String, value: Expr },
+    /// `while cond { body }` — Python `while cond: body`. The body is
+    /// a list of statements (no trailing return; the loop body is not
+    /// an expression). PMAT-006.
+    While { cond: Expr, body: Vec<Stmt> },
 }
 
 /// Convenience: a single-expression body wraps as `Block { stmts: vec![], trailing_return: expr }`.

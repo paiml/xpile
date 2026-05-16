@@ -12,14 +12,18 @@
 //!
 //! Known limitations (future work, kept here only because they are
 //! load-bearing rejections in the lowering code):
-//!   - Loops (`for`, `while`) — meta-HIR has no iteration / mutation yet.
+//!   - `for` loops — `while` works (PMAT-006); `for ... in range(...)`
+//!     desugaring is the natural follow-up.
 //!   - Bigint promotion — the `py-int-arith` Layer-1 contract's slow
 //!     path is unimplemented. The codegen backends emit
 //!     `.checked_*().expect(...)` so overflow panics with a message
 //!     naming the contract (in *both* release and debug), instead of
 //!     silently wrapping the way plain `+` / `*` / `-` would.
 //!   - Type annotations beyond `int` / `bool`.
+//!   - Lean backend for `while` — Lean is functional; `while` would
+//!     need a `partial def` tail-recursion encoding.
 
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
@@ -28,6 +32,125 @@ use xpile_meta_hir::{
 
 use rustpython_parser::ast;
 use rustpython_parser::Parse;
+
+/// State threaded through function-body lowering so the frontend can
+/// (a) decide whether `name = expr` is a first binding (`Let`) or a
+/// reassignment (`Assign`), and (b) know up-front which `Let`s must be
+/// emitted as `let mut` so the loop body can rewrite them (PMAT-006).
+struct LoweringCtx {
+    fn_name: String,
+    /// Names already bound in this scope — params, plus every `Let`
+    /// emitted so far during this function's lowering. New Assigns to a
+    /// name already in this set lower to `Stmt::Assign`.
+    bound: HashSet<String>,
+    /// Names that are reassigned somewhere in the function body (and so
+    /// must be emitted as `let mut`). Computed once via a pre-walk
+    /// before any statement is lowered. Names assigned inside a loop
+    /// body count as mutable even if the source has only one assign,
+    /// because the runtime executes that assign repeatedly.
+    mutable: HashSet<String>,
+}
+
+impl LoweringCtx {
+    fn new(fn_name: &str, params: &[Param], body: &[ast::Stmt]) -> Self {
+        let bound: HashSet<String> = params.iter().map(|p| p.name.clone()).collect();
+        let mutable = compute_mutable_names(params, body);
+        Self {
+            fn_name: fn_name.to_string(),
+            bound,
+            mutable,
+        }
+    }
+}
+
+/// Pre-walk: compute the per-name source-assignment count, treating
+/// `if`-branches as alternatives (the max of the two branches' counts
+/// for each name, not the sum — only one branch executes) and `while`
+/// bodies as repeated (everything inside counts as 2+ since the body
+/// executes more than once).
+///
+/// `mutable(name) = total_count(name) > 1`, after also counting the
+/// param binding as 1 for any param.
+fn compute_mutable_names(params: &[Param], body: &[ast::Stmt]) -> HashSet<String> {
+    let mut counts: HashMap<String, usize> = walk_counts(body, /*in_loop=*/ false);
+    for p in &params.iter().map(|p| p.name.clone()).collect::<Vec<_>>() {
+        *counts.entry(p.clone()).or_insert(0) += 1;
+    }
+    counts
+        .into_iter()
+        .filter_map(|(name, c)| if c > 1 { Some(name) } else { None })
+        .collect()
+}
+
+/// Recursive count: returns a fresh map of `name → count` produced by
+/// `stmts`. If-branches merge by taking the max per name (alternatives,
+/// not sequential). While bodies count assignments as 2× (executed
+/// repeatedly). Sequential statements add counts per name.
+fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for stmt in stmts {
+        match stmt {
+            ast::Stmt::Assign(a) => {
+                if let Some(name) = simple_assign_target_name(a) {
+                    let bump = if in_loop { 2 } else { 1 };
+                    *counts.entry(name).or_insert(0) += bump;
+                }
+            }
+            ast::Stmt::If(if_stmt) => {
+                let then_counts = walk_counts(&if_stmt.body, in_loop);
+                let else_counts = walk_counts(&if_stmt.orelse, in_loop);
+                let merged = merge_branch_counts(then_counts, else_counts);
+                for (name, c) in merged {
+                    *counts.entry(name).or_insert(0) += c;
+                }
+            }
+            ast::Stmt::While(w) => {
+                let inner = walk_counts(&w.body, /*in_loop=*/ true);
+                for (name, c) in inner {
+                    // `c` is already bumped 2× by in_loop=true; add it
+                    // to the enclosing sequential total. A name assigned
+                    // *only* once inside a loop still becomes mutable
+                    // via that 2× bump.
+                    *counts.entry(name).or_insert(0) += c;
+                }
+            }
+            _ => {}
+        }
+    }
+    counts
+}
+
+/// Merge two branch maps by taking the per-name max — only one branch
+/// runs, so the effective "this statement contributed N assigns to X"
+/// is the worse case of the two. A name in only one branch counts as
+/// max(N, 0) = N.
+fn merge_branch_counts(
+    then_counts: HashMap<String, usize>,
+    else_counts: HashMap<String, usize>,
+) -> HashMap<String, usize> {
+    let mut out = then_counts;
+    for (name, c) in else_counts {
+        let entry = out.entry(name).or_insert(0);
+        if c > *entry {
+            *entry = c;
+        }
+    }
+    out
+}
+
+/// Best-effort extract of a simple `name = ...` target, for the mutable
+/// pre-walk only. Returns None for tuple / attribute / subscript
+/// targets; those will produce a proper error later in `lower_assign`.
+fn simple_assign_target_name(a: &ast::StmtAssign) -> Option<String> {
+    if a.targets.len() != 1 {
+        return None;
+    }
+    if let ast::Expr::Name(n) = &a.targets[0] {
+        Some(n.id.to_string())
+    } else {
+        None
+    }
+}
 
 pub struct PythonFrontend;
 
@@ -113,13 +236,14 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
     let body_stmts = f.body;
     let (last, leading) = body_stmts.split_last().expect("checked non-empty above");
 
+    let mut ctx = LoweringCtx::new(&f.name, &params, &body_stmts);
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
     for stmt in leading {
         // A single Python statement may lower to multiple meta-HIR
         // statements — most notably a multi-assignment `if/else`, where
         // each assigned name gets its own `Let` with an `IfExpr` value
-        // (PMAT-005).
-        stmts.extend(lower_block_stmt(&f.name, stmt.clone())?);
+        // (PMAT-005), or a `while` whose body lowers to a nested vec.
+        stmts.extend(lower_block_stmt(&mut ctx, stmt.clone())?);
     }
 
     let trailing_return = match last {
@@ -196,18 +320,48 @@ fn parse_type_annotation(
 ///     types per name. PMAT-005 lifted the previous single-target
 ///     restriction; mismatched targets / missing-else / non-assignment
 ///     statements still error with a clear message.
-fn lower_block_stmt(fn_name: &str, stmt: ast::Stmt) -> Result<Vec<Stmt>, FrontendError> {
+fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>, FrontendError> {
     match stmt {
-        ast::Stmt::Assign(asn) => lower_assign(fn_name, asn).map(|s| vec![s]),
-        ast::Stmt::If(if_stmt) => lower_if_stmt_as_lets(fn_name, if_stmt),
+        ast::Stmt::Assign(asn) => lower_assign(ctx, asn).map(|s| vec![s]),
+        ast::Stmt::If(if_stmt) => lower_if_stmt_as_lets(ctx, if_stmt),
+        ast::Stmt::While(w) => lower_while_stmt(ctx, w).map(|s| vec![s]),
         ast::Stmt::Return(_) => Err(FrontendError::Lower(format!(
-            "function `{fn_name}` has an early `return` — only the last statement may be `return` at v0.1.0"
+            "function `{}` has an early `return` — only the last statement may be `return` at v0.1.0",
+            ctx.fn_name
         ))),
         other => Err(FrontendError::Lower(format!(
-            "function `{fn_name}` contains unsupported statement: {:?} — supported: assignment, then a final `return`",
+            "function `{}` contains unsupported statement: {:?} — supported: assignment, if/elif/else, while, then a final `return`",
+            ctx.fn_name,
             std::mem::discriminant(&other)
         ))),
     }
+}
+
+/// Lower a Python `while cond: body` into [`Stmt::While`]. Body
+/// statements are lowered via [`lower_block_stmt`] in order, so the
+/// inner Lets / Assigns share the same `bound` / `mutable` tracking
+/// as the enclosing function. Variables introduced inside a loop
+/// remain "bound" for subsequent loop iterations (that's how Python
+/// works); we don't pop them when leaving the body.
+fn lower_while_stmt(ctx: &mut LoweringCtx, w: ast::StmtWhile) -> Result<Stmt, FrontendError> {
+    if !w.orelse.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` has a `while ... else:` clause — Python's `else` on loops is not supported at v0.1.0",
+            ctx.fn_name
+        )));
+    }
+    let cond = lower_expr(*w.test)?;
+    if infer_type(&cond) != Type::Bool {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` has a while-condition that is not Bool (no int-truthiness at v0.1.0)",
+            ctx.fn_name
+        )));
+    }
+    let mut body = Vec::with_capacity(w.body.len());
+    for stmt in w.body {
+        body.extend(lower_block_stmt(ctx, stmt)?);
+    }
+    Ok(Stmt::While { cond, body })
 }
 
 /// Lower a Python `if/elif*/else` statement whose every branch is a
@@ -222,37 +376,45 @@ fn lower_block_stmt(fn_name: &str, stmt: ast::Stmt) -> Result<Vec<Stmt>, Fronten
 /// name in the generated Rust. v0.1.0 has no observable side effects
 /// (no mutation, no I/O, function calls are pure-from-codegen's-pov),
 /// so this is semantically equivalent to evaluating once.
-fn lower_if_stmt_as_lets(fn_name: &str, if_stmt: ast::StmtIf) -> Result<Vec<Stmt>, FrontendError> {
-    // Collect the target name *list* from the then-branch (preserves the
-    // assignment order from source). The order matters only insofar as
-    // it determines the emitted Let order; in the absence of side
-    // effects each ordering is observably equivalent.
-    let target_names = collect_branch_assignment_names(fn_name, &if_stmt.body)?;
+fn lower_if_stmt_as_lets(
+    ctx: &mut LoweringCtx,
+    if_stmt: ast::StmtIf,
+) -> Result<Vec<Stmt>, FrontendError> {
+    let target_names = collect_branch_assignment_names(&ctx.fn_name, &if_stmt.body)?;
     if target_names.is_empty() {
         return Err(FrontendError::Lower(format!(
-            "function `{fn_name}` has an if-branch with no assignments — v0.1.0 if-as-let requires at least one assignment per branch"
+            "function `{}` has an if-branch with no assignments — v0.1.0 if-as-let requires at least one assignment per branch",
+            ctx.fn_name
         )));
     }
-    // Validate every other branch (else, nested elif) carries exactly
-    // the same set of names. The lowering walk below revalidates per
-    // recursion, but a top-level set-equality check yields a more
-    // legible error than a deeply-nested one.
-    validate_branch_name_sets(fn_name, &if_stmt, &target_names)?;
+    validate_branch_name_sets(&ctx.fn_name, &if_stmt, &target_names)?;
 
-    let mut lets = Vec::with_capacity(target_names.len());
+    let mut stmts = Vec::with_capacity(target_names.len());
     for name in &target_names {
-        let if_expr = lower_if_chain_to_expr(fn_name, &if_stmt, name)?;
+        let if_expr = lower_if_chain_to_expr(&ctx.fn_name, &if_stmt, name)?;
         let ty = match &if_expr {
             Expr::IfExpr { then_expr, .. } => infer_type(then_expr),
             other => infer_type(other),
         };
-        lets.push(Stmt::Let {
-            name: name.clone(),
-            ty,
-            value: if_expr,
-        });
+        // If the name is already in scope, this if-as-let is actually
+        // a multi-branch reassignment — emit `Stmt::Assign`. Otherwise
+        // a fresh `Let` (with `mutable` computed up front).
+        if ctx.bound.contains(name) {
+            stmts.push(Stmt::Assign {
+                name: name.clone(),
+                value: if_expr,
+            });
+        } else {
+            stmts.push(Stmt::Let {
+                name: name.clone(),
+                ty,
+                value: if_expr,
+                mutable: ctx.mutable.contains(name),
+            });
+            ctx.bound.insert(name.clone());
+        }
     }
-    Ok(lets)
+    Ok(stmts)
 }
 
 /// Inspect a branch body (a Vec<ast::Stmt>) and return the list of
@@ -433,10 +595,11 @@ fn single_name_target(fn_name: &str, asn: &ast::StmtAssign) -> Result<String, Fr
     }
 }
 
-fn lower_assign(fn_name: &str, asn: ast::StmtAssign) -> Result<Stmt, FrontendError> {
+fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, FrontendError> {
     if asn.targets.len() != 1 {
         return Err(FrontendError::Lower(format!(
-            "function `{fn_name}` has chained assignment `a = b = ...` — not supported at v0.1.0"
+            "function `{}` has chained assignment `a = b = ...` — not supported at v0.1.0",
+            ctx.fn_name
         )));
     }
     let target = asn.targets.into_iter().next().expect("len checked");
@@ -444,24 +607,41 @@ fn lower_assign(fn_name: &str, asn: ast::StmtAssign) -> Result<Stmt, FrontendErr
         ast::Expr::Name(n) => n.id.to_string(),
         ast::Expr::Tuple(_) => {
             return Err(FrontendError::Lower(format!(
-                "function `{fn_name}` uses tuple unpacking `a, b = ...` — not supported at v0.1.0"
+                "function `{}` uses tuple unpacking `a, b = ...` — not supported at v0.1.0",
+                ctx.fn_name
             )));
         }
         ast::Expr::Attribute(_) | ast::Expr::Subscript(_) => {
             return Err(FrontendError::Lower(format!(
-                "function `{fn_name}` assigns to an attribute/subscript — not supported at v0.1.0"
+                "function `{}` assigns to an attribute/subscript — not supported at v0.1.0",
+                ctx.fn_name
             )));
         }
         other => {
             return Err(FrontendError::Lower(format!(
-                "function `{fn_name}` has unsupported assignment target: {:?}",
+                "function `{}` has unsupported assignment target: {:?}",
+                ctx.fn_name,
                 std::mem::discriminant(&other)
             )));
         }
     };
     let value = lower_expr(*asn.value)?;
     let ty = infer_type(&value);
-    Ok(Stmt::Let { name, ty, value })
+    // If the name is already bound, this is a reassignment — emit
+    // `Stmt::Assign` (the backend will write `name = value;` and the
+    // earlier `Let` will be `let mut`). Otherwise, fresh `Let`.
+    if ctx.bound.contains(&name) {
+        Ok(Stmt::Assign { name, value })
+    } else {
+        let mutable = ctx.mutable.contains(&name);
+        ctx.bound.insert(name.clone());
+        Ok(Stmt::Let {
+            name,
+            ty,
+            value,
+            mutable,
+        })
+    }
 }
 
 /// Trivial type inference for the v0.1.0 subset. Comparisons yield Bool,
@@ -784,7 +964,12 @@ mod tests {
         let m = parse("def f(a, b):\n    s = a + b\n    return s\n");
         let f = function(&m, 0);
         assert_eq!(f.body.stmts.len(), 1);
-        let Stmt::Let { name, ty, value } = &f.body.stmts[0];
+        let Stmt::Let {
+            name, ty, value, ..
+        } = &f.body.stmts[0]
+        else {
+            panic!("expected Let");
+        };
         assert_eq!(name, "s");
         assert_eq!(*ty, Type::I64);
         assert!(matches!(value, Expr::BinOp { op: BinOp::Add, .. }));
