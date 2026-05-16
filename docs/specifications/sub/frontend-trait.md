@@ -38,7 +38,7 @@ Phase-2 parser integration plan for the still-stub frontends:
 - `decy-frontend` will adopt clang / tree-sitter parsing + the existing decy HIR-lowering
 - `ruchy-frontend` will depend on the `ruchy` crate from crates.io and reuse its parser + AST
 
-The Python frontend's real implementation shipped in PR #6 MVP and grew through PRs #11/#12/#13/#15/#19/#20 to cover the full v0.1.0 subset. Verified end-to-end by runtime-executed fixtures (factorial, fib, gcd, abs_val, sign).
+The Python frontend's real implementation shipped in PR #6 MVP and grew through PRs #11/#12/#13/#15/#19/#20 and PMAT-002…PMAT-008 to cover the full v0.1.0 subset (all binary + unary ops including bitwise / power, multi-assignment if-branches, while loops with mutable rebinding, for-in-range with positive *or negative* literal steps, recursive function calls). Verified end-to-end by 11 runtime-executed fixtures — see [`CHANGELOG.md`](../../CHANGELOG.md) §"Python subset (live, runtime-verified)" for the canonical inventory.
 
 ## Why object-safe
 
