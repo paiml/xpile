@@ -116,3 +116,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-008
+  github_issue: null
+  item_type: task
+  title: 'Extend for-range: negative-step (count down)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-16T13:27:49Z
+  updated: 2026-05-16T13:27:49Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

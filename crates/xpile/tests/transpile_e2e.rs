@@ -499,6 +499,32 @@ fn main() {
     assert_rustc_runs("gcd", &rust, driver);
 }
 
+/// PMAT-008: validates negative-step `range(...)`. `factorial_iter(n)`
+/// computes n! by counting down: `for i in range(n, 0, -1): acc *= i`.
+/// The lowering must flip the cond from `<` to `>` and emit
+/// `checked_add(-1i64)` for the tail.
+#[test]
+fn for_range_negative_step_emitted_rust_computes_correct_values() {
+    let rust = xpile_transpile_to_rust("countdown.py");
+    assert!(
+        rust.contains("while (i > 0i64)"),
+        "expected `i > 0` cond for negative step, got:\n{rust}"
+    );
+    assert!(
+        rust.contains("i = (i).checked_add(-1i64)"),
+        "expected negative-step tail, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(factorial_iter(0), 1);  // empty product
+    assert_eq!(factorial_iter(1), 1);  // 1
+    assert_eq!(factorial_iter(5), 120);
+    assert_eq!(factorial_iter(10), 3628800);
+}
+"#;
+    assert_rustc_runs("countdown", &rust, driver);
+}
+
 /// PMAT-007: validates `for i in range(...)` desugaring. The three
 /// `range` shapes (stop, start+stop, start+stop+step) all lower to
 /// a `let mut i` + `while i < <stop>` + `i = i + <step>` tail.

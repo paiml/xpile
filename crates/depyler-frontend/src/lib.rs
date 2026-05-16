@@ -151,6 +151,41 @@ fn merge_branch_counts(
     out
 }
 
+/// Extract a non-zero integer literal step from a `range(start, stop, step)`
+/// argument. Python represents negative literals as `UnaryOp(USub,
+/// Constant(N))` rather than `Constant(-N)`, so we look through that
+/// case explicitly. Returns None for any other shape, or for step == 0
+/// (which Python itself raises ValueError on).
+fn extract_step_literal(e: &ast::Expr) -> Option<i64> {
+    fn as_positive_int_literal(e: &ast::Expr) -> Option<i64> {
+        match e {
+            ast::Expr::Constant(c) => match &c.value {
+                ast::Constant::Int(n) => n.to_string().parse::<i64>().ok(),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    match e {
+        ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::USub) => {
+            let v = as_positive_int_literal(&u.operand)?;
+            if v == 0 {
+                None
+            } else {
+                Some(-v)
+            }
+        }
+        _ => {
+            let v = as_positive_int_literal(e)?;
+            if v == 0 {
+                None
+            } else {
+                Some(v)
+            }
+        }
+    }
+}
+
 /// Best-effort extract of a simple `name = ...` target, for the mutable
 /// pre-walk only. Returns None for tuple / attribute / subscript
 /// targets; those will produce a proper error later in `lower_assign`.
@@ -405,37 +440,22 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
             ctx.fn_name
         )));
     }
-    let (start_expr, stop_expr, step_expr) = match call.args.as_slice() {
-        [stop] => (Expr::LitInt(0), lower_expr(stop.clone())?, Expr::LitInt(1)),
-        [start, stop] => (
-            lower_expr(start.clone())?,
-            lower_expr(stop.clone())?,
-            Expr::LitInt(1),
-        ),
+    let (start_expr, stop_expr, step_int) = match call.args.as_slice() {
+        [stop] => (Expr::LitInt(0), lower_expr(stop.clone())?, 1i64),
+        [start, stop] => (lower_expr(start.clone())?, lower_expr(stop.clone())?, 1i64),
         [start, stop, step] => {
-            // v0.1.0 only supports a positive *integer literal* step so
-            // we know the loop direction at lower time (cond is `i < stop`).
-            // A general step expression would require deciding direction
-            // dynamically — punt to a follow-up.
-            let step = match step {
-                ast::Expr::Constant(c) => match &c.value {
-                    ast::Constant::Int(n) if *n > 0.into() => {
-                        Expr::LitInt(n.to_string().parse::<i64>().unwrap_or(1))
-                    }
-                    _ => {
-                        return Err(FrontendError::Lower(format!(
-                            "function `{}` uses `range(..., step)` with a non-positive-int-literal step — v0.1.0 requires a positive integer literal here",
-                            ctx.fn_name
-                        )));
-                    }
-                },
-                _ => {
-                    return Err(FrontendError::Lower(format!(
-                        "function `{}` uses `range(..., step)` with a non-literal step — v0.1.0 requires a positive integer literal here",
-                        ctx.fn_name
-                    )));
-                }
-            };
+            // v0.1.0 requires a non-zero *integer literal* step so the
+            // loop direction (`i < stop` vs `i > stop`) is known at lower
+            // time. PMAT-008 added negative-literal support; non-literal
+            // / zero step still errors. Python's parser represents `-3`
+            // as UnaryOp(USub, Constant(3)) rather than Constant(-3),
+            // so we look through that.
+            let step = extract_step_literal(step).ok_or_else(|| {
+                FrontendError::Lower(format!(
+                    "function `{}` uses `range(..., step)` with a non-literal-int or zero step — v0.1.0 requires a non-zero integer literal here",
+                    ctx.fn_name
+                ))
+            })?;
             (lower_expr(start.clone())?, lower_expr(stop.clone())?, step)
         }
         _ => {
@@ -447,9 +467,11 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
         }
     };
 
+    let step_expr = Expr::LitInt(step_int);
+
     // Emit:
     //   let mut target: i64 = <start>;
-    //   while (target < <stop>) {
+    //   while (target <cmp> <stop>) {        // cmp = `<` (pos step) or `>` (neg step)
     //       <body...>
     //       target = (target).checked_add(<step>);
     //   }
@@ -471,8 +493,9 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
         }
     };
 
+    let cond_op = if step_int > 0 { BinOp::Lt } else { BinOp::Gt };
     let cond = Expr::BinOp {
-        op: BinOp::Lt,
+        op: cond_op,
         lhs: Box::new(Expr::Ident(target_name.clone())),
         rhs: Box::new(stop_expr),
     };
