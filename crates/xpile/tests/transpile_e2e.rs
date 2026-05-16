@@ -393,6 +393,27 @@ fn main() {
     assert_rustc_runs("fib", &rust, driver);
 }
 
+/// Statement-level `if/else` lifted to a `let = if cond { ... } else { ... }`
+/// expression. Validates the v0.1.0 lowering pattern for the most common
+/// if-statement shape (both branches: single assignment to same name).
+#[test]
+fn abs_val_if_else_lifts_to_let_with_if_expr() {
+    let rust = xpile_transpile_to_rust("abs_val.py");
+    assert!(
+        rust.contains("let y: i64 = if (x < 0i64) { (-x) } else { x };"),
+        "expected if-as-let lowering, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(abs_val(5), 5);
+    assert_eq!(abs_val(-5), 5);
+    assert_eq!(abs_val(0), 0);
+    assert_eq!(abs_val(-100), 100);
+}
+"#;
+    assert_rustc_runs("abs_val", &rust, driver);
+}
+
 /// Tail-recursive Euclidean GCD. Exercises:
 ///   - Multiple-arg recursion (gcd(b, a % b))
 ///   - Python `%` lowering to Rust `rem_euclid` (load-bearing: plain
