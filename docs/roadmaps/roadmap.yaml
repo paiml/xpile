@@ -23,11 +23,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Implement py-int-arith Layer-1 contract: checked arithmetic with bigint-pointer panic'
-  status: planned
+  status: inprogress
   priority: high
   assigned_to: null
   created: 2026-05-16T06:34:06Z
-  updated: 2026-05-16T06:34:06Z
+  updated: 2026-05-16T06:44:46.119153402+00:00
   spec: null
   acceptance_criteria:
   - Switch xpile-rust-codegen and xpile-ruchy-codegen arithmetic (+, -, *, //, %, unary -) from plain infix to checked_* methods with .expect() panic that references the unimplemented bigint promotion slow path of contract C-PY-INT-ARITH. Lean unchanged (Int is unbounded). Updates every shape-matching e2e test.
