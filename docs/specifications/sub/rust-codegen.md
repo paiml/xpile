@@ -25,8 +25,12 @@ pub struct RustBackend; // implements xpile-backend::Backend
 - `Function` → `pub fn name(params: T, ...) -> R { ... }`
 - `Block` → `{ stmts; trailing_return }` (no `return` keyword needed)
 - `Stmt::Let` → `let name: T = value;`
-- `Expr::BinOp` → infix (`a + b`, `a == b`, `a && b`) with Python-floor `.div_euclid` / `.rem_euclid` for `//` and `%`
-- `Expr::UnOp` → `(-x)` / `(!x)`
+- `Expr::BinOp`:
+  - Arithmetic (`+ - * // %`) → `.checked_*().expect("xpile: ... C-PY-INT-ARITH slow path ...")` so i64 overflow panics with a pointer to the unimplemented bigint promotion path (PR #23, contract `py-int-arith`). Floor-div and mod use the Euclidean variants (`checked_div_euclid` / `checked_rem_euclid`) to preserve Python-floor semantics on negative operands.
+  - Comparisons (`== != < <= > >=`) and logical (`&& ||`) → infix (no overflow risk).
+- `Expr::UnOp`:
+  - `-x` → `.checked_neg().expect(...)` (same contract — `i64::MIN.checked_neg() == None`).
+  - `not x` → `(!x)`.
 - `Expr::IfExpr` → `if cond { a } else { b }`, flattened to `else if` for nested chains (PR #21)
 - `Expr::Call` → `callee(args, ...)`
 

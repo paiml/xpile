@@ -25,9 +25,15 @@ $ xpile transpile factorial.py
 // xpile-generated from Python module factorial
 
 pub fn factorial(n: i64) -> i64 {
-    if (n <= 1i64) { 1i64 } else { (n * factorial((n - 1i64))) }
+    if (n <= 1i64) { 1i64 } else {
+        (n).checked_mul(factorial(
+            (n).checked_sub(1i64).expect("xpile: i64 subtraction overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented")
+        )).expect("xpile: i64 multiplication overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented")
+    }
 }
 ```
+
+Note the `.checked_*().expect(...)` wrappers — every arithmetic op enforces the Layer-1 contract [`py-int-arith-v1.yaml`](contracts/py-int-arith-v1.yaml): i64 overflow panics with a pointer to the unimplemented bigint slow path instead of silently wrapping. (Lean's `Int` is unbounded, so the same contract is satisfied by construction.)
 
 CI runs `rustc -O` on the output and asserts `factorial(10) == 3628800` — the test is `factorial_emitted_rust_computes_correct_values`.
 
@@ -36,7 +42,9 @@ Same source, three different targets:
 ```bash
 $ xpile transpile factorial.py --target ruchy
 fun factorial(n: i64) -> i64 {
-    if (n <= 1i64) { 1i64 } else { (n * factorial((n - 1i64))) }
+    if (n <= 1i64) { 1i64 } else {
+        (n).checked_mul(factorial((n).checked_sub(1i64).expect("..."))).expect("...")
+    }
 }
 
 $ xpile transpile factorial.py --target lean
@@ -50,7 +58,7 @@ def factorial (n : Int) : Int :=
 - 11 contracts · `pv lint` PASS with 0 errors
 - ~52 workspace tests · 5 fixtures runtime-verified via `rustc -O` + `assert_eq!`
 - Python subset shipped: see [`CHANGELOG.md`](CHANGELOG.md) §"Python subset (live, runtime-verified)" — typed `def`, multi-statement bodies, all binary + unary ops, ternary, if/else, elif chains, function calls including self-recursion (canonical source — this README intentionally does not duplicate the list to avoid the staleness it kept accumulating)
-- Three real backends: Rust (`pub fn`, Python-floor semantics via `div_euclid` / `rem_euclid`), Ruchy (`fun ... -> T`), Lean 4 (`def`, `Int.fdiv` / `Int.fmod`)
+- Three real backends: Rust (`pub fn`, Python-floor semantics via `checked_div_euclid` / `checked_rem_euclid`, all arithmetic checked for the `C-PY-INT-ARITH` contract), Ruchy (`fun ... -> T`, same overflow semantics — compiles to Rust), Lean 4 (`def`, `Int.fdiv` / `Int.fmod`; `Int` is unbounded so the contract holds by construction)
 - CI: `gate` + `workspace-test` required on every PR; branch protection active on `main`
 - Published: [`xpile 0.0.1`](https://crates.io/crates/xpile) (name reservation; v0.1.0+ is real)
 
