@@ -23,12 +23,14 @@ xpile-rust-codegen   = { workspace = true }
 depyler-frontend = { workspace = true }
 decy-frontend    = { workspace = true }
 ruchy-frontend   = { workspace = true }
+bashrs-frontend  = { workspace = true }
 
 # Code lane: backend stubs (registered by default_session)
 xpile-ruchy-codegen = { workspace = true }
 xpile-ptx-codegen   = { workspace = true }
 xpile-wgsl-codegen  = { workspace = true }
 xpile-lean-codegen  = { workspace = true }
+bashrs-backend      = { workspace = true }
 
 # Proof lane (registered by default_session)
 xpile-contract-frontend      = { workspace = true }

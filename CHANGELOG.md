@@ -110,6 +110,68 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### bashrs merger Layer A scaffold (PMAT-037 / XPILE-BASHRS-MERGER-001)
+
+First concrete step on the `sub/bashrs-merger.md` Layer A path:
+the shell domain is now a first-class registered transpile target.
+v0.1.0 scaffold-stage: no actual shell parsing or ShellIR yet — the
+real source folding from `paiml/bashrs` lands at v0.2.0 (the
+"weeks 1-6 extract" phase). What this PR delivers:
+
+- **Two new workspace crates**:
+  - `crates/bashrs-frontend/` — implements `Frontend`, recognises
+    `.sh` / `.bash` / `.zsh` / `.mk` extensions, `parse_and_lower`
+    returns a structurally empty `Module` tagged
+    `SourceLang::Shell`. Special-file matching (`Makefile`,
+    `Dockerfile`) is deferred to v0.2.0 with a richer matcher.
+  - `crates/bashrs-backend/` — implements `Backend`, targets
+    `Target::Shell`. `lower` emits a placeholder POSIX-shell
+    comment carrying the `C-BASHRS-POSIX-IDEMPOTENCE` citation, so
+    the citation pipeline is exercised end-to-end on day one.
+
+- **Two new enum variants** (the load-bearing IR change):
+  - `xpile_meta_hir::SourceLang::Shell`
+  - `xpile_backend::Target::Shell`
+  No `Stmt::Cmd` / `Stmt::Pipeline` / `ShellVar` etc. yet — those
+  ship with the v0.2.0 source folding per `bashrs-merger.md` Layer B.
+
+- **Dispatch wiring**: `xpile-core::default_session` now registers
+  bashrs-frontend + bashrs-backend. `xpile info` lists them as
+  the 4th frontend + 6th backend.
+
+- **CLI**: `xpile transpile foo.sh --target shell` works end-to-end
+  (returns the scaffold POSIX comment). `parse_target` accepts
+  `shell`, `sh`, `bash` as aliases.
+
+- **Contract**: new `contracts/bashrs-posix-idempotence-v1.yaml`
+  (`C-BASHRS-POSIX-IDEMPOTENCE`, kind: pattern). Pattern scope
+  rather than kernel while the equations / falsification_tests /
+  kani_harnesses sections are unpopulated — same posture as
+  `compile-rust-to-ptx-mma-v1.yaml`'s scaffold.
+
+- **Quorum reporter impact**: `xpile quorum` now walks 12 contracts
+  (was 11). C-BASHRS-POSIX-IDEMPOTENCE shows as UNVERIFIED, which
+  is the accurate scaffold-stage state. Promoting it to PARTIAL
+  or QUORUM is v0.2.0 work and beyond.
+
+- **Tests**: 5 new unit tests (3 on bashrs-frontend, 2 on
+  bashrs-backend). 2 new integration tests in `xpile-core` assert
+  the dispatch table includes bashrs's shell extensions and that
+  the backend emits the contract citation. Total workspace tests
+  pass: 0 failures across the workspace, including all existing
+  diff_exec / quorum / attestations gates.
+
+Architectural significance: this PR makes the bashrs merger no
+longer purely aspirational — every dispatch surface, contract
+substrate, audit pipeline, and quorum reporter now recognises the
+shell domain. The remaining v0.2.0 work (real ShellIR emit,
+17,882-pattern corpus integration, `paiml/bashrs` repo becoming a
+re-export shim) plugs into already-wired infrastructure rather
+than adding new lanes. Falsifier: the existing v0.3.0 check-back
+in `sub/bashrs-merger.md` ("at least one cross-domain consumer of
+shell variants must ship by v0.3.0 or `XPILE-UNMERGE-001` reverts
+the IR merge") is unchanged.
+
 ### BigInt auto-promotion closes DIFF-003 documented gaps (PMAT-036)
 
 Converts the 20 documented promotion gaps in the differential-exec

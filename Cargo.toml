@@ -18,12 +18,14 @@ members = [
     "crates/depyler-frontend",
     "crates/decy-frontend",
     "crates/ruchy-frontend",
+    "crates/bashrs-frontend",                 # added 2026-05-17 (PMAT-037 / XPILE-BASHRS-MERGER-001)
     # ── code-lane backends ────────────────────────────────────────
     "crates/xpile-rust-codegen",
     "crates/xpile-ruchy-codegen",             # added 2026-05-15
     "crates/xpile-ptx-codegen",               # added 2026-05-15
     "crates/xpile-wgsl-codegen",              # added 2026-05-15
     "crates/xpile-lean-codegen",              # added 2026-05-15
+    "crates/bashrs-backend",                  # added 2026-05-17 (PMAT-037 / XPILE-BASHRS-MERGER-001)
     # ── proof-lane trait abstractions ─────────────────────────────
     "crates/xpile-contract-frontend",         # added 2026-05-15
     "crates/xpile-contract-backend",          # added 2026-05-15
@@ -80,6 +82,7 @@ xpile-bigint         = { version = "0.1.0", path = "crates/xpile-bigint" }
 depyler-frontend = { version = "0.1.0", path = "crates/depyler-frontend" }
 decy-frontend    = { version = "0.1.0", path = "crates/decy-frontend" }
 ruchy-frontend   = { version = "0.1.0", path = "crates/ruchy-frontend" }
+bashrs-frontend  = { version = "0.1.0", path = "crates/bashrs-frontend" }
 
 # Code lane: backends
 xpile-rust-codegen  = { version = "0.1.0", path = "crates/xpile-rust-codegen" }
@@ -87,6 +90,7 @@ xpile-ruchy-codegen = { version = "0.1.0", path = "crates/xpile-ruchy-codegen" }
 xpile-ptx-codegen   = { version = "0.1.0", path = "crates/xpile-ptx-codegen" }
 xpile-wgsl-codegen  = { version = "0.1.0", path = "crates/xpile-wgsl-codegen" }
 xpile-lean-codegen  = { version = "0.1.0", path = "crates/xpile-lean-codegen" }
+bashrs-backend      = { version = "0.1.0", path = "crates/bashrs-backend" }
 
 # Proof lane
 xpile-contract-frontend     = { version = "0.1.0", path = "crates/xpile-contract-frontend" }
@@ -104,6 +108,7 @@ xpile-latex-contract-backend = { version = "0.1.0", path = "crates/xpile-latex-c
 depyler = { version = "0.1.0", path = "crates/depyler-frontend", package = "depyler-frontend" }
 decy    = { version = "0.1.0", path = "crates/decy-frontend",    package = "decy-frontend" }
 ruchy   = { version = "0.1.0", path = "crates/ruchy-frontend",   package = "ruchy-frontend" }
+bashrs  = { version = "0.1.0", path = "crates/bashrs-frontend",  package = "bashrs-frontend" }
 
 [profile.release]
 lto = "thin"

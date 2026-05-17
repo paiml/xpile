@@ -35,7 +35,7 @@ enum Cmd {
     Transpile {
         /// Path to the source file (e.g., `add.py`, `kernel.c`).
         input: PathBuf,
-        /// Target backend: rust | ruchy | ptx | wgsl | spirv | lean.
+        /// Target backend: rust | ruchy | ptx | wgsl | spirv | lean | shell.
         #[arg(long, default_value = "rust")]
         target: String,
         /// Output path. Defaults to stdout.
@@ -233,7 +233,12 @@ fn parse_target(s: &str) -> Result<Target> {
         "wgsl" => Target::Wgsl,
         "spirv" => Target::Spirv,
         "lean" => Target::Lean,
-        other => bail!("unknown target `{other}`; choose: rust, ruchy, ptx, wgsl, spirv, lean"),
+        // PMAT-037 / XPILE-BASHRS-MERGER-001: shell target accepted
+        // via the bashrs-backend scaffold.
+        "shell" | "sh" | "bash" => Target::Shell,
+        other => {
+            bail!("unknown target `{other}`; choose: rust, ruchy, ptx, wgsl, spirv, lean, shell")
+        }
     })
 }
 

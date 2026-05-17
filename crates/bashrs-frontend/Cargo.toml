@@ -1,0 +1,13 @@
+[package]
+name = "bashrs-frontend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "POSIX shell frontend (sh/bash/zsh + Makefile/Dockerfile) for xpile. Scaffold at v0.1.0 (PMAT-037 / XPILE-BASHRS-MERGER-001); full source fold from `paiml/bashrs` lands at v0.2.0."
+
+[dependencies]
+xpile-frontend = { workspace = true }
+xpile-meta-hir = { workspace = true }

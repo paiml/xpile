@@ -29,6 +29,16 @@ pub enum SourceLang {
     /// def, inductive, structure, instance, ...) lowers to Rust via the
     /// code lane. Theorem statements parse via the proof lane separately.
     Lean,
+    /// POSIX shell (bash / zsh / sh dialects + Makefile / Dockerfile) —
+    /// the bashrs merger domain. PMAT-037 / XPILE-BASHRS-MERGER-001
+    /// adds this variant as scaffold (`bashrs-frontend` produces it,
+    /// `bashrs-backend` consumes it, all other backends return
+    /// `Unsupported`). Per `sub/bashrs-merger.md` Layer B, meta-HIR
+    /// will grow shell-specific `Stmt::Cmd` / `Stmt::Pipeline` etc.
+    /// variants at v0.2.0 — at v0.1.0 a `SourceLang::Shell` `Module`
+    /// is structurally empty (no items / no boundaries), validating
+    /// only that the dispatch and SourceLang lane are wired.
+    Shell,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

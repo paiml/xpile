@@ -1,0 +1,14 @@
+[package]
+name = "bashrs-backend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "POSIX shell backend (sh/bash/zsh) for xpile. Scaffold at v0.1.0 (PMAT-037 / XPILE-BASHRS-MERGER-001); real emission inherits bashrs's ShellIR + quoting machinery at v0.2.0."
+
+[dependencies]
+xpile-backend = { workspace = true }
+xpile-contracts = { workspace = true }
+xpile-meta-hir = { workspace = true }
