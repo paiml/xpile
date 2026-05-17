@@ -1085,3 +1085,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-068
+  github_issue: null
+  item_type: task
+  title: 'PMAT-068: Lean refinement theorem for C-XPILE-CONTRACT-BACKEND-TRAIT — completes the 2×2 trait-determinism matrix'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T00:00:00Z
+  updated: 2026-05-18T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/lean/XpileContractBackendTrait.lean with render_idempotency + citation_round_trip theorems. Completes the 2×2 trait-determinism matrix with PMAT-062/064/066 — every trait method in xpile's {Frontend, Backend} × {code lane, proof lane} matrix now has a Bronze-tier Lean modelling commitment. Companion Kani harness ships as PMAT-069.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
