@@ -772,3 +772,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-049
+  github_issue: null
+  item_type: task
+  title: 'PMAT-049: bashrs-frontend tokenizer recognises ''single'' and "double" quoted strings — activates Expr::QuotedString end-to-end'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T17:11:55Z
+  updated: 2026-05-17T17:11:55Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

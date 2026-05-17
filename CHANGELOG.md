@@ -110,6 +110,65 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Quoting-aware tokenizer in bashrs-frontend (PMAT-049)
+
+**`Expr::QuotedString` is now produced end-to-end.** Before this PR
+the tokenizer was \`split_whitespace\`-based, so \`echo "hello world"\`
+parsed as three barewords (\`echo\`, \`"hello\`, \`world"\`). Post-this-
+PR it parses as two tokens: \`echo\` (bareword) + \`"hello world"\`
+(\`Expr::QuotedString { quoting: Double }\`).
+
+\`\`\`
+$ echo "echo 'single quotes here' and \"double\" yo" > /tmp/q2.sh
+$ xpile transpile /tmp/q2.sh --target shell
+#!/bin/sh
+# xpile-bashrs-backend (v0.1.0 PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B)
+# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE
+# module: q2
+echo 'single quotes here' and "double" yo
+\`\`\`
+
+Both single-quoted and double-quoted regions survive the round-trip
+with their quoting strategy intact.
+
+Implementation:
+- **bashrs-frontend** — new \`RawToken\` enum (\`Bare\` /
+  \`SingleQuoted\` / \`DoubleQuoted\`) + \`tokenize_line\` state-machine
+  tokenizer that recognises single and double quotes; bareword
+  regions split on whitespace.
+- New \`lower_raw_token\` helper dispatches \`RawToken\` to the right
+  \`Expr\` variant (Bare via existing \`lower_token\`, quoted regions
+  to \`Expr::QuotedString\` with the corresponding \`QuotingStrategy\`).
+- Both Cmd-construction sites (top-level + Pipeline stage) switch
+  from \`split_whitespace\` to the new tokenizer.
+
+Error cases caught:
+- Unterminated quotes (\`echo "hi\` / \`echo 'still hanging\`) reject
+  with a precise diagnostic.
+- Adjacent-to-bareword quotes (\`foo"bar"\`, \`foo'bar'\`) reject —
+  string concatenation isn't supported at v0.1.0 (POSIX sh would
+  treat this as one token).
+
+Test coverage:
+- 4 new bashrs-frontend tokenizer unit tests:
+  - \`tokenize_line_handles_quoted_strings\` — single / double /
+    mixed quoting cases
+  - \`tokenize_line_rejects_unterminated_quotes\` — three negative
+    cases
+  - \`tokenize_line_rejects_adjacent_quotes\` — string-concat
+    negative
+  - \`tokenize_line_plain_words_match_split_whitespace\` —
+    pre-PMAT-049 behaviour preserved on quote-free input
+- 1 new parse-side unit test \`parse_and_lower_with_quoted_string_arg\`
+  — end-to-end through \`parse_and_lower\`.
+
+What's still v0.2.0 (source fold):
+- Escape sequences (\`\\"\` / \`\\'\` / \`\\\\\` / \`\\$\`).
+- String concatenation (\`foo"bar"\` → \`foobar\` per POSIX).
+- Variable expansion inside double quotes (\`"hi \$USER"\` — content
+  is preserved at v0.1.0 but not yet typed as a template).
+- Inline \`#\` comments inside command lines.
+
 ### Layer B IR shape complete — `Stmt::ShellLoop` + `LoopKind` (PMAT-048)
 
 **Last variant from the `sub/bashrs-merger.md` Layer B table lands.**

@@ -20,7 +20,125 @@
 
 use std::path::Path;
 use xpile_frontend::{Frontend, FrontendError};
-use xpile_meta_hir::{Block, Expr, Function, Item, Module, SourceLang, Stmt, Type};
+use xpile_meta_hir::{
+    Block, Expr, Function, Item, Module, QuotingStrategy, SourceLang, Stmt, Type,
+};
+
+/// PMAT-049: raw token produced by the bashrs-frontend tokenizer.
+/// Distinguishes barewords from quoted strings so the downstream
+/// lowering can produce the right `Expr` variant (LitStr / ShellVar
+/// for barewords, QuotedString for quoted regions).
+#[derive(Debug, Clone, PartialEq)]
+enum RawToken {
+    /// Whitespace-separated bareword. Forwarded to `lower_token`
+    /// which further distinguishes `$NAME` (ShellVar) from
+    /// everything else (LitStr).
+    Bare(String),
+    /// `'...'` — single-quoted region. No expansion / no escapes
+    /// inside (POSIX semantics). Lowers to
+    /// `Expr::QuotedString { quoting: Single }`.
+    SingleQuoted(String),
+    /// `"..."` — double-quoted region. Variable expansion happens
+    /// at shell-execution time (preserved as-is in content at
+    /// v0.1.0; future PR adds an Expr-template variant). Lowers
+    /// to `Expr::QuotedString { quoting: Double }`.
+    DoubleQuoted(String),
+}
+
+/// PMAT-049: tokenize a non-empty trimmed shell line into raw
+/// tokens. Recognises single and double quotes; bareword regions
+/// are split on whitespace. Returns an error on unterminated
+/// quotes — POSIX sh rejects those too.
+///
+/// What's deliberately NOT here (v0.2.0 source fold delivers):
+///   * Escape sequences (`\"` / `\'` / `\\`) — quotes don't have
+///     escapes inside themselves at v0.1.0; double quotes don't
+///     interpret `\$` etc.
+///   * String concatenation (`foo"bar"` → one token `foobar`) —
+///     v0.1.0 requires quotes to appear at token boundaries.
+///   * Inline `#` comments — `echo hi # noisy` is treated as 3
+///     bareword tokens including the `#` (existing behaviour).
+fn tokenize_line(line: &str) -> Result<Vec<RawToken>, FrontendError> {
+    let mut tokens: Vec<RawToken> = Vec::new();
+    let mut current: String = String::new();
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            c if c.is_whitespace() => {
+                if !current.is_empty() {
+                    tokens.push(RawToken::Bare(std::mem::take(&mut current)));
+                }
+            }
+            '\'' => {
+                if !current.is_empty() {
+                    // String concatenation isn't supported at v0.1.0.
+                    return Err(FrontendError::Lower(format!(
+                        "shell line `{line}` has a single quote adjacent to a bareword \
+                         (e.g., `foo'bar'`); v0.1.0 requires quotes at token boundaries"
+                    )));
+                }
+                let mut content = String::new();
+                let mut closed = false;
+                for inner in chars.by_ref() {
+                    if inner == '\'' {
+                        closed = true;
+                        break;
+                    }
+                    content.push(inner);
+                }
+                if !closed {
+                    return Err(FrontendError::Lower(format!(
+                        "shell line `{line}` has an unterminated single quote"
+                    )));
+                }
+                tokens.push(RawToken::SingleQuoted(content));
+            }
+            '"' => {
+                if !current.is_empty() {
+                    return Err(FrontendError::Lower(format!(
+                        "shell line `{line}` has a double quote adjacent to a bareword \
+                         (e.g., `foo\"bar\"`); v0.1.0 requires quotes at token boundaries"
+                    )));
+                }
+                let mut content = String::new();
+                let mut closed = false;
+                for inner in chars.by_ref() {
+                    if inner == '"' {
+                        closed = true;
+                        break;
+                    }
+                    content.push(inner);
+                }
+                if !closed {
+                    return Err(FrontendError::Lower(format!(
+                        "shell line `{line}` has an unterminated double quote"
+                    )));
+                }
+                tokens.push(RawToken::DoubleQuoted(content));
+            }
+            other => current.push(other),
+        }
+    }
+    if !current.is_empty() {
+        tokens.push(RawToken::Bare(current));
+    }
+    Ok(tokens)
+}
+
+/// PMAT-049: convert a raw token to the appropriate Expr variant.
+fn lower_raw_token(t: &RawToken) -> Expr {
+    match t {
+        RawToken::Bare(s) => lower_token(s),
+        RawToken::SingleQuoted(s) => Expr::QuotedString {
+            content: s.clone(),
+            quoting: QuotingStrategy::Single,
+        },
+        RawToken::DoubleQuoted(s) => Expr::QuotedString {
+            content: s.clone(),
+            quoting: QuotingStrategy::Double,
+        },
+    }
+}
 
 /// PMAT-045: lower a single bashrs-frontend token to an `Expr`. The
 /// token is the substring between whitespace boundaries (the
@@ -162,22 +280,26 @@ impl Frontend for BashrsFrontend {
                              non-empty command"
                         )));
                     }
-                    let mut tokens = trimmed.split_whitespace();
-                    let Some(program) = tokens.next() else {
-                        // Defensive: split_whitespace on a non-empty
-                        // trimmed string always yields ≥1 token.
+                    // PMAT-049: quoting-aware tokenizer. The program
+                    // name must be a Bare token (a quoted program
+                    // name is unusual and unsupported at v0.1.0).
+                    let raw_tokens = tokenize_line(trimmed)?;
+                    let mut iter = raw_tokens.iter();
+                    let Some(first) = iter.next() else {
                         continue;
                     };
-                    // PMAT-042 + PMAT-045: each arg is lowered via
-                    // `lower_token`, which recognises `$NAME` / `${NAME}`
-                    // as `Expr::ShellVar` and everything else as
-                    // `Expr::LitStr`. Quoting metadata is still v0.2.0
-                    // (the source-fold's real bashrs parser).
-                    let args: Vec<Expr> = tokens.map(lower_token).collect();
-                    stages.push(Stmt::Cmd {
-                        program: program.to_string(),
-                        args,
-                    });
+                    let program = match first {
+                        RawToken::Bare(s) => s.clone(),
+                        _ => {
+                            return Err(FrontendError::Lower(format!(
+                                "shell pipeline stage `{trimmed}` starts with a quoted \
+                                 program name; v0.1.0 requires the program to be a \
+                                 bareword token"
+                            )));
+                        }
+                    };
+                    let args: Vec<Expr> = iter.map(lower_raw_token).collect();
+                    stages.push(Stmt::Cmd { program, args });
                 }
                 if stages.len() < 2 {
                     // Containing `|` but yielding fewer than 2 stages
@@ -196,16 +318,24 @@ impl Frontend for BashrsFrontend {
                 continue;
             }
 
-            let mut tokens = line.split_whitespace();
-            let Some(program) = tokens.next() else {
+            // PMAT-049: quoting-aware tokenizer. Same logic as the
+            // pipeline-stage version above.
+            let raw_tokens = tokenize_line(line)?;
+            let mut iter = raw_tokens.iter();
+            let Some(first) = iter.next() else {
                 continue;
             };
-            // PMAT-042 + PMAT-045: see pipeline-stage version above.
-            let args: Vec<Expr> = tokens.map(lower_token).collect();
-            stmts.push(Stmt::Cmd {
-                program: program.to_string(),
-                args,
-            });
+            let program = match first {
+                RawToken::Bare(s) => s.clone(),
+                _ => {
+                    return Err(FrontendError::Lower(format!(
+                        "shell line `{line}` starts with a quoted program name; \
+                         v0.1.0 requires the program to be a bareword token"
+                    )));
+                }
+            };
+            let args: Vec<Expr> = iter.map(lower_raw_token).collect();
+            stmts.push(Stmt::Cmd { program, args });
         }
 
         // Wrap the parsed command sequence in a synthetic `main`
@@ -568,6 +698,124 @@ pwd
         for plain in &["foo", "bar.baz", "-l", "/tmp/path", "0", "123abc"] {
             assert_eq!(lower_token(plain), Expr::LitStr(plain.to_string()));
         }
+    }
+
+    #[test]
+    fn tokenize_line_handles_quoted_strings() {
+        // PMAT-049 load-bearing: quoted regions become atomic
+        // tokens; embedded whitespace is preserved.
+        let toks = tokenize_line("echo \"hello world\" foo").expect("parse");
+        assert_eq!(
+            toks,
+            vec![
+                RawToken::Bare("echo".into()),
+                RawToken::DoubleQuoted("hello world".into()),
+                RawToken::Bare("foo".into()),
+            ]
+        );
+
+        let toks = tokenize_line("echo 'a b c' done").expect("parse");
+        assert_eq!(
+            toks,
+            vec![
+                RawToken::Bare("echo".into()),
+                RawToken::SingleQuoted("a b c".into()),
+                RawToken::Bare("done".into()),
+            ]
+        );
+
+        // Mixed quoting.
+        let toks = tokenize_line("echo 'sq' \"dq\"").expect("parse");
+        assert_eq!(
+            toks,
+            vec![
+                RawToken::Bare("echo".into()),
+                RawToken::SingleQuoted("sq".into()),
+                RawToken::DoubleQuoted("dq".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn tokenize_line_rejects_unterminated_quotes() {
+        // PMAT-049 negative: unterminated quotes are rejected with a
+        // precise diagnostic.
+        for bad in &[
+            "echo \"unterminated",
+            "echo 'still hanging",
+            "echo \"a\" 'b",
+        ] {
+            let err = tokenize_line(bad).expect_err(&format!("should reject `{bad}`"));
+            let msg = format!("{err}");
+            assert!(
+                msg.contains("unterminated"),
+                "error for `{bad}` should mention unterminated: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn tokenize_line_rejects_adjacent_quotes() {
+        // PMAT-049 negative: string concatenation isn't supported at
+        // v0.1.0. `foo"bar"` would produce one token in POSIX sh
+        // (`foobar`), but the v0.1.0 tokenizer requires quotes at
+        // token boundaries.
+        let err = tokenize_line("echo foo\"bar\"").expect_err("should reject adjacent");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("adjacent") || msg.contains("token boundaries"),
+            "error should mention token-boundary requirement: {msg}"
+        );
+    }
+
+    #[test]
+    fn tokenize_line_plain_words_match_split_whitespace() {
+        // PMAT-049 regression: pre-PMAT-049 behaviour on
+        // quote-free input must be preserved (just barewords).
+        let toks = tokenize_line("echo foo bar baz").expect("parse");
+        assert_eq!(
+            toks,
+            vec![
+                RawToken::Bare("echo".into()),
+                RawToken::Bare("foo".into()),
+                RawToken::Bare("bar".into()),
+                RawToken::Bare("baz".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_with_quoted_string_arg() {
+        // PMAT-049 end-to-end through parse_and_lower: a quoted-arg
+        // line produces a Stmt::Cmd with Expr::QuotedString args.
+        use xpile_meta_hir::{Expr, Item, QuotingStrategy, Stmt};
+        let module = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/q.sh"),
+                "echo \"hello world\" foo 'bar baz'\n",
+            )
+            .expect("parse");
+        let Item::Function(f) = &module.items[0];
+        let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
+            panic!("expected Cmd");
+        };
+        assert_eq!(program, "echo");
+        assert_eq!(args.len(), 3);
+        assert_eq!(
+            args[0],
+            Expr::QuotedString {
+                content: "hello world".into(),
+                quoting: QuotingStrategy::Double,
+            }
+        );
+        assert_eq!(args[1], Expr::LitStr("foo".into()));
+        assert_eq!(
+            args[2],
+            Expr::QuotedString {
+                content: "bar baz".into(),
+                quoting: QuotingStrategy::Single,
+            }
+        );
     }
 
     #[test]
