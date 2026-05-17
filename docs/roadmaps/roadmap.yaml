@@ -1136,3 +1136,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-071
+  github_issue: null
+  item_type: task
+  title: 'PMAT-071: Kani harness for C-XLATE-LEAN-TO-RUST — promotes Symbolic stratum, contract reaches QUORUM (75% of substrate)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T01:30:00Z
+  updated: 2026-05-18T01:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/kani/xlate_lean_to_rust.rs harness mirroring PMAT-070. Symbolic stratum vote — promotes PARTIAL → QUORUM. After landing, xpile quorum should show 9 QUORUM, 0 PARTIAL, 3 UNVERIFIED (75%). Three remaining UNVERIFIED contracts are highest-complexity domain contracts (PTX, FFI, Rust→Lean translation).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

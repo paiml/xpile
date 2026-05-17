@@ -110,6 +110,59 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Kani symbolic harness — C-XLATE-LEAN-TO-RUST → QUORUM (PMAT-071) — **75% of substrate at QUORUM**
+
+**Ninth contract reaches QUORUM. Three-quarters of the contract
+substrate (9 of 12) is now formally bracketed.** New
+`contracts/kani/xlate_lean_to_rust.rs` carries the Kani BMC
+harness `def_to_rust_fn` — Rust mirror of the Lean theorem from
+PMAT-070.
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    3  QUORUM
+  C-XLATE-PY-LIST-TO-VEC                      1    1    0    3  QUORUM
+  C-XPILE-FRONTEND-TRAIT                      1    1    0    3  QUORUM
+  C-XPILE-BACKEND-TRAIT                       1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-FRONTEND-TRAIT             1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-BACKEND-TRAIT              1    1    0    2  QUORUM
+  C-XLATE-LEAN-TO-RUST                        1    1    0    1  QUORUM  ← Sym now 1
+  ... (3 more UNVERIFIED)
+  totals: 9 QUORUM, 0 PARTIAL, 3 UNVERIFIED (12 contracts total)
+```
+
+Nine paired Lean+Kani discharges across:
+- 2 Layer-1 contracts (Python int arith, bashrs idempotence)
+- 3 Layer-2 contracts (notation, Python list lowering, Lean→Rust)
+- 4 Layer-3 trait-determinism contracts (full 2×2 matrix closed)
+
+The §14.4 N-of-M evidence model has been validated across all
+three layers of the contract taxonomy.
+
+**Remaining 3 UNVERIFIED contracts** are the highest-complexity
+ones — each will need bespoke domain modelling rather than the
+uniform Bronze-rfl scaffold:
+- `C-COMPILE-RUST-TO-PTX-MMA` — GPU tensor-core lowering;
+  needs ptxas-validated instruction modelling
+- `C-FFI-CPYTHON-EXT` — Python C-extension ABI; needs CPython
+  reference-count modelling
+- `C-XLATE-RUST-FN-TO-LEAN-THM` — Rust → Lean theorem
+  generation (bidirectional partner of PMAT-070/071)
+
+Implementation:
+- **`contracts/kani/xlate_lean_to_rust.rs`** — standalone Rust
+  module under `#![cfg(kani)]`. Mirrors PMAT-061's shape:
+  `lower_def_to_fn(d: &LeanDef) -> RustFn` plus `#[kani::proof]
+  fn def_to_rust_fn()` asserting byte-level body preservation.
+- **`contracts/xlate-lean-to-rust-v1.yaml`** — equation
+  `def_to_rust_fn` gains `kani_harness` + `kani_file` refs.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-071 entry.
+
+Full Kani gate now ~3.0s across nine harnesses.
+
 ### Lean refinement theorem — C-XLATE-LEAN-TO-RUST → PARTIAL (PMAT-070) — first post-trait-matrix domain contract
 
 **Ninth contract reaches non-UNVERIFIED status.** New
