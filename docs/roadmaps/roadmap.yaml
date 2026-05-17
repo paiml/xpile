@@ -1153,3 +1153,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-072
+  github_issue: null
+  item_type: task
+  title: 'PMAT-072: Lean refinement theorem for C-XLATE-RUST-FN-TO-LEAN-THM — bidirectional partner of PMAT-070, brackets full Rust ↔ Lean translation'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T02:00:00Z
+  updated: 2026-05-18T02:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/lean/XlateRustFnToLeanThm.lean with rust_fn_to_lean_def + citation_bridge_via_attribute theorems. Bidirectional partner of PMAT-070 — together they bracket the full Rust ↔ Lean translation at Bronze tier. Companion Kani harness ships as PMAT-073.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
