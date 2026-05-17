@@ -228,3 +228,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-015
+  github_issue: null
+  item_type: task
+  title: 'xpile audit subcommand: report F1 citation % (XPILE-FALSIFY-001)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T10:03:57Z
+  updated: 2026-05-17T10:03:57Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

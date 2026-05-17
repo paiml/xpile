@@ -24,6 +24,8 @@ smallest); items are independent, can be parallelised.
 
 ### 1.1 Pre-committed falsifier thresholds (`XPILE-FALSIFY-XXX`)
 
+**Status (XPILE-FALSIFY-001)**: ✅ shipped — PMAT-015. `xpile audit <path>` walks every source file the dispatch table recognises, transpiles it, parses the emitted output for `// xpile-contract: <ID>` citations adjacent to function declarations, reports F1 (% coverage). Text + `--json` output modes. Current baseline against `crates/xpile/tests/fixtures/`: F1 ≈ 83% — below the 95% target but above the 50% falsifier (status `WARN`). The gap is by design (comparison-only / logical-only functions correctly don't carry the citation under the data-driven `applicable_contracts` rule); refining F1 to "% of functions that *should* have a citation that *do*" is XPILE-FALSIFY-002. Lean's `@[xpile_contract "..."]` attribute uses a different parse and is also XPILE-FALSIFY-002.
+
 **Ruchy reference**: §14.5 (F1–F12 metrics with pre-committed
 falsifier thresholds).
 
