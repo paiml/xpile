@@ -1272,3 +1272,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-079
+  github_issue: null
+  item_type: task
+  title: 'PMAT-079: xpile-spec.md sweep — reflect 12-contract substrate, 27-crate workspace, 100% QUORUM milestone in canonical spec'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T05:30:00Z
+  updated: 2026-05-18T05:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Update docs/specifications/xpile-spec.md to reflect substrate state after PMAT-058..077 shipped. Update status banner (line 7), workspace crate listing (line 64), §23 Status section bullets (lines 388-404). Add bullet for 100% QUORUM coverage, four real backends (Shell included), Shell subset capabilities, Kani BMC CI step.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
