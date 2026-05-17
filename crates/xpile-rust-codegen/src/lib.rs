@@ -76,6 +76,12 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::Let { ty, .. } => *ty == Type::BigInt,
             Stmt::Assign { .. } | Stmt::Assert { .. } => false,
             Stmt::While { body, .. } => body.iter().any(stmt_has_bigint),
+            // PMAT-039: shell commands carry no BigInt operands. They
+            // also never reach this Rust-codegen scan in practice
+            // (bashrs-frontend produces Shell modules that the Rust
+            // backend declines at emit_stmt), but exhaustive match
+            // keeps the dispatch boundary explicit.
+            Stmt::Cmd { .. } => false,
         }
     }
     f.body.stmts.iter().any(stmt_has_bigint)
@@ -153,6 +159,22 @@ fn emit_stmt_indented(
             writeln!(out, ");")?;
             Ok(())
         }
+        // PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B: shell-command
+        // statements are produced exclusively by bashrs-frontend and
+        // consumed exclusively by bashrs-backend. The Rust backend
+        // refuses them — there is no meaningful Rust translation of an
+        // anonymous shell-line invocation that respects
+        // `C-BASHRS-POSIX-IDEMPOTENCE`. (A future cross-domain
+        // refinement of `subprocess.run([...])` into a typed
+        // `Stmt::Cmd` would still be lowered via Rust's
+        // `std::process::Command` API — that's separate machinery, not
+        // a generic Cmd-to-Rust translation.)
+        Stmt::Cmd { program, args } => Err(CodegenError::Unsupported(format!(
+            "Rust backend does not lower Stmt::Cmd (`{program}` with {} arg(s)) — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs this construct; \
+             use `--target shell` to emit POSIX sh via bashrs-backend",
+            args.len()
+        ))),
     }
 }
 

@@ -612,3 +612,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-039
+  github_issue: null
+  item_type: task
+  title: 'PMAT-039: Layer B minimum viable demo — Stmt::Cmd variant + bashrs-frontend line parser + bashrs-backend shell emit; other backends Unsupported (C-BASHRS-POSIX-IDEMPOTENCE)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T15:53:10Z
+  updated: 2026-05-17T15:53:10Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

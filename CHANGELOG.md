@@ -110,6 +110,108 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Layer B minimum viable demo — `Stmt::Cmd` end-to-end (PMAT-039)
+
+First meta-HIR shell variant lands. `bashrs-frontend` parses a real
+(if minimal) shell script and `bashrs-backend` emits real (if
+minimal) POSIX shell — proving the §27 Layer B architectural premise
+that the shared IR can carry shell semantics. Other backends
+(rust / ruchy / lean) refuse `Stmt::Cmd` via explicit `Unsupported`
+arms naming `C-BASHRS-POSIX-IDEMPOTENCE`.
+
+Before / after (`xpile transpile demo.sh --target shell`):
+
+\`\`\`
+# Before (PMAT-037/038 scaffold)
+#!/bin/sh
+# xpile-bashrs-backend scaffold (...)
+# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE
+# module: demo
+# source_lang: Shell
+# TODO: lower meta-HIR shell variants to ShellCheck-clean POSIX sh
+# via the bashrs runtime, landing at v0.2.0 with the source fold.
+
+# After (this PR)
+#!/bin/sh
+# xpile-bashrs-backend (v0.1.0 PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B)
+# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE
+# module: demo
+echo starting build
+ls /tmp
+pwd
+echo done
+\`\`\`
+
+And `xpile transpile demo.sh --target rust` now fails fast with:
+
+\`\`\`
+Error: backend `rust` failed
+Caused by:
+    lowering error: unsupported item: Rust backend does not lower
+    Stmt::Cmd (`echo` with 2 arg(s)) — contract
+    C-BASHRS-POSIX-IDEMPOTENCE governs this construct; use
+    `--target shell` to emit POSIX sh via bashrs-backend
+\`\`\`
+
+That refusal is the **load-bearing cross-domain dispatch boundary**
+the Layer B falsifier (`sub/bashrs-merger.md` v0.3.0 check-back)
+implicitly depends on: if any backend silently swallowed `Stmt::Cmd`
+the bashrs domain's contract wouldn't be enforceable.
+
+What ships (six small changes that compose):
+
+1. **`xpile-meta-hir`**: new `Stmt::Cmd { program: String, args: Vec<String> }`.
+   `Vec<String>` (not `Vec<Expr>`) for args because the hand-rolled
+   parser doesn't produce variables / substitution yet — the
+   expression-level shape (`Expr::ShellVar` / `Expr::QuotedString`
+   / `Expr::CommandSubstitution`) ships with the v0.2.0 source fold.
+   `stmt_has_int_arith` helper extended (returns false for Cmd —
+   different contract domain).
+
+2. **`xpile-rust-codegen`**: explicit `Stmt::Cmd` arm in
+   `emit_stmt_indented` returning `CodegenError::Unsupported`;
+   companion arm in `stmt_has_bigint`.
+
+3. **`xpile-ruchy-codegen`**: symmetric Unsupported arm (Ruchy
+   compiles to Rust, inherits the disposition).
+
+4. **`xpile-lean-codegen`**: two arms — one in the while-loop body
+   walker, one in `emit_stmt`. Both Unsupported, citing the bashrs
+   contract.
+
+5. **`bashrs-frontend`**: line-based parser. Each non-empty,
+   non-comment line → one `Stmt::Cmd`. Shebang and `#`-comment
+   lines stripped. The parsed command sequence is wrapped in a
+   synthesised `main` function (`return_type: I64`,
+   `trailing_return: LitInt(0)` — script exits 0 by default) so
+   shell scripts coexist with the existing function-centric Module
+   structure. If Layer B grows a richer `Item` taxonomy
+   (`Item::ShellScript`), the wrapper goes away.
+
+6. **`bashrs-backend`**: walks `module.items[].body.stmts`, emits
+   one shell-line per `Stmt::Cmd`. Header / shebang / citation
+   shape unchanged from PMAT-037 scaffold. Empty input still
+   produces a well-formed POSIX file with the
+   `# (no commands ...)` diagnostic comment.
+
+Test coverage:
+- 3 new `bashrs-frontend` parser unit tests (empty input, real
+  three-command script, comments-only input).
+- 1 new `bashrs-backend` test for synthesised-main emission;
+  1 updated test for empty-module emission.
+- 2 new `xpile-core` integration tests:
+  `layer_b_end_to_end_bashrs_frontend_to_bashrs_backend` — full
+  pipeline produces real shell; `layer_b_rust_backend_refuses_shell_module_with_cmd`
+  — locks in the cross-domain refusal with the contract citation
+  in the error message.
+
+What's deliberately NOT yet here (each is its own future PR):
+- Pipelines (`cmd1 | cmd2`) → `Stmt::Pipeline { stages: Vec<Stmt::Cmd> }`
+- Variables / quoting / substitution → Layer B Expr-side variants
+- Real ShellCheck-clean output → v0.2.0 source fold with the
+  bashrs corpus + verifier
+- Inline `# comment` token handling inside command lines
+
 ### Frontend::matches_path trait method (PMAT-038)
 
 Extends the `Frontend` trait with a `matches_path(path) -> bool`

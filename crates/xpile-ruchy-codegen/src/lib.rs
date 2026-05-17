@@ -75,6 +75,9 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::Let { ty, .. } => *ty == Type::BigInt,
             Stmt::Assign { .. } | Stmt::Assert { .. } => false,
             Stmt::While { body, .. } => body.iter().any(stmt_has_bigint),
+            // PMAT-039: see rust-codegen's twin arm — shell commands
+            // carry no BigInt operands.
+            Stmt::Cmd { .. } => false,
         }
     }
     f.body.stmts.iter().any(stmt_has_bigint)
@@ -147,6 +150,16 @@ fn emit_stmt_indented(
             writeln!(out, ");")?;
             Ok(())
         }
+        // PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B: see rust-codegen's
+        // matching arm. Ruchy compiles to Rust and inherits Rust's
+        // disposition — no Ruchy-level translation of `Stmt::Cmd`
+        // exists.
+        Stmt::Cmd { program, args } => Err(RuchyCodegenError::Unsupported(format!(
+            "Ruchy backend does not lower Stmt::Cmd (`{program}` with {} arg(s)) — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs this construct; \
+             use `--target shell` to emit POSIX sh via bashrs-backend",
+            args.len()
+        ))),
     }
 }
 

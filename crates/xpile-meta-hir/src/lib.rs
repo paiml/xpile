@@ -101,6 +101,10 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
             body.iter().any(stmt_has_int_arith)
         }
         Stmt::Assert { cond } => expr_has_int_arith(cond),
+        // PMAT-039: shell commands are governed by `C-BASHRS-POSIX-IDEMPOTENCE`,
+        // not `C-PY-INT-ARITH`. The args are `Vec<String>` (literal
+        // tokens) — no arithmetic operands.
+        Stmt::Cmd { .. } => false,
     }
 }
 
@@ -183,6 +187,27 @@ pub enum Stmt {
     /// Lowers to `assert!(cond);` in Rust/Ruchy. Lean is skipped (Lean's
     /// assertion machinery requires `Decidable` instances; deferred). PMAT-009.
     Assert { cond: Expr },
+    /// `program arg1 arg2 ...` — a single shell-command invocation.
+    /// PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B: the first shell
+    /// variant to land in meta-HIR.
+    ///
+    /// Produced exclusively by `bashrs-frontend`; consumed exclusively
+    /// by `bashrs-backend` at v0.1.0. Other backends (Rust / Ruchy /
+    /// Lean / PTX / WGSL) return `CodegenError::Unsupported` when they
+    /// encounter it — the explicit-arm dispatch makes the cross-domain
+    /// boundary load-bearing rather than implicit.
+    ///
+    /// Args are `Vec<String>` (not `Vec<Expr>`) at v0.1.0 — the
+    /// hand-rolled bashrs-frontend parser doesn't yet produce
+    /// substitution / variables / quotation, so primitive strings
+    /// suffice. The expression-level shape (`Vec<Expr>` with new
+    /// `Expr::ShellVar` / `Expr::QuotedString` / `Expr::CommandSubstitution`
+    /// variants per `sub/bashrs-merger.md` Layer B) ships with the
+    /// v0.2.0 bashrs source fold.
+    ///
+    /// `Stmt::Pipeline { stages: Vec<Stmt::Cmd> }` and `Stmt::ShellLoop`
+    /// from the merger spec are XPILE-BASHRS-MERGER-002+.
+    Cmd { program: String, args: Vec<String> },
 }
 
 /// Convenience: a single-expression body wraps as `Block { stmts: vec![], trailing_return: expr }`.
