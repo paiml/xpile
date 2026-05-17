@@ -54,13 +54,32 @@ def factorial (n : Int) : Int :=
 
 **By the numbers (live, not aspirational):**
 
-- 24 workspace crates · all compile clean (`cargo check --workspace`)
-- 11 contracts · `pv lint` PASS with 0 errors
+- 27 workspace crates · all compile clean (`cargo check --workspace`)
+- 12 contracts · `pv lint` PASS with 0 errors
+- **100% of contracts at §14.4 QUORUM** — every contract has paired Lean refinement theorem + Kani BMC harness at Bronze tier ([`xpile quorum`](crates/xpile/src/quorum.rs))
 - ~52 workspace tests · 5 fixtures runtime-verified via `rustc -O` + `assert_eq!`
 - Python subset shipped: see [`CHANGELOG.md`](CHANGELOG.md) §"Python subset (live, runtime-verified)" — typed `def`, multi-statement bodies, all binary + unary ops, ternary, if/else, elif chains, function calls including self-recursion (canonical source — this README intentionally does not duplicate the list to avoid the staleness it kept accumulating)
-- Three real backends: Rust (`pub fn`, Python-floor semantics via `checked_div_euclid` / `checked_rem_euclid`, all arithmetic checked for the `C-PY-INT-ARITH` contract), Ruchy (`fun ... -> T`, same overflow semantics — compiles to Rust), Lean 4 (`def`, `Int.fdiv` / `Int.fmod`; `Int` is unbounded so the contract holds by construction)
-- CI: `gate` + `workspace-test` required on every PR; branch protection active on `main`
+- Three real backends: Rust (`pub fn`, Python-floor semantics via `checked_div_euclid` / `checked_rem_euclid`, all arithmetic checked for the `C-PY-INT-ARITH` contract), Ruchy (`fun ... -> T`, same overflow semantics — compiles to Rust), Lean 4 (`def`, `Int.fdiv` / `Int.fmod`; `Int` is unbounded so the contract holds by construction), bashrs (POSIX shell — see [`sub/bashrs-merger.md`](docs/specifications/sub/bashrs-merger.md))
+- CI: `gate` + `kani` + `workspace-test` required on every PR; branch protection active on `main`
 - Published: [`xpile 0.0.1`](https://crates.io/crates/xpile) (name reservation; v0.1.0+ is real)
+
+### Contract substrate at QUORUM
+
+The ruchy 5.0 §14.4 N-of-M oracle quorum rule requires ≥1 vote in ≥3 strata
+(Semantic / Symbolic / Runtime / Extrinsic) for a contract to be considered
+discharged. As of v0.1.0, every contract clears this bar:
+
+```text
+$ xpile quorum
+  ... (12 contracts, all at QUORUM)
+  totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)
+```
+
+12 Lean refinement theorems ([`contracts/lean/*.lean`](contracts/lean/)) + 12
+Kani BMC harnesses ([`contracts/kani/*.rs`](contracts/kani/)) = 24 paired
+discharges, covering all 5 layers of the contract taxonomy. Bronze tier
+modelling commitments (`rfl` by construction) — Silver/Gold/Platinum
+refinement is incremental from here as concrete impl pressure arrives.
 
 > **Canonical spec:** [`docs/specifications/xpile-spec.md`](docs/specifications/xpile-spec.md) — TOC + 25 sections, each linking to a `sub/<topic>.md`.
 >
@@ -77,7 +96,8 @@ Frontends                      Backends
 ─────────                      ─────────
 Python   ─┐               ┌─→ Rust        ✅ real emission
 C        ─┤               ├─→ Ruchy       ✅ real emission
-C++      ─┼→ meta-HIR ─→ ─┼─→ PTX         🚧 scaffold + Layer-5 contract
+Shell    ─┤               ├─→ Shell       ✅ real emission (POSIX, PMAT-037..058)
+C++      ─┼→ meta-HIR ─→ ─┼─→ PTX         🚧 scaffold + Layer-5 contract (QUORUM)
 Rust     ─┤               ├─→ WGSL        🚧 scaffold
 Ruchy    ─┤               ├─→ SPIR-V      🚧 planned
 Lean 4   ─┘               └─→ Lean 4      🚧 scaffold
@@ -109,25 +129,26 @@ Lean 4 spans both lanes. LaTeX is proof-lane-only. Citation bridge uses **format
 | What's the contract taxonomy? | [§13 Contract Taxonomy](docs/specifications/sub/contract-taxonomy.md) (5 layers × 2 lanes) |
 | What are the quality gates? | [§12 `pmat`](docs/specifications/sub/pmat-integration.md) + [§18 CI Pipeline](docs/specifications/sub/ci-gates.md) |
 
-## Contracts at v0.1.0 (11)
+## Contracts at v0.1.0 (12, all at QUORUM)
 
-| Contract | `pv` kind | Layer × Lane | What it pins down |
-|---|---|---|---|
-| `xpile-frontend-trait-v1.yaml` | pattern | 3 architectural / code | Frontend trait invariants |
-| `xpile-backend-trait-v1.yaml` | pattern | 3 / code | Backend trait + structural compile-contract citation |
-| `xpile-contract-frontend-trait-v1.yaml` | pattern | 3 / proof | ContractFrontend trait invariants |
-| `xpile-contract-backend-trait-v1.yaml` | pattern | 3 / proof | ContractBackend + citation bridge via structured attrs |
-| `py-int-arith-v1.yaml` | kernel | 1 semantics / code | Python `int` arithmetic with bigint promotion |
-| `xlate-py-list-to-vec-v1.yaml` | kernel | 2 translation / code | Python list → Rust Vec, alias-preserving |
-| `xlate-lean-to-rust-v1.yaml` | kernel | 2 / code | All Lean 4 constructs (def, partial, inductive, instance, axiom, ...) → Rust |
-| `xlate-rust-fn-to-lean-thm-v1.yaml` | kernel | 2 / proof | Rust fn + contract → Lean 4 theorem with `@[xpile_contract]` attr |
-| `notation-latex-math-to-equation-v1.yaml` | kernel | 2 / proof | LaTeX math + theorem envs → contract equations |
-| `ffi-cpython-ext-v1.yaml` | pattern | 4 hybrid / code | CPython C-extension boundary semantics |
-| `compile-rust-to-ptx-mma-v1.yaml` | pattern | **5 compile / code** | PTX emission: `mma.sync`, `cp.async` pipelining, SMEM budget |
+| Contract | `pv` kind | Layer × Lane | What it pins down | Refinements |
+|---|---|---|---|---|
+| `xpile-frontend-trait-v1.yaml` | pattern | 3 architectural / code | Frontend trait invariants | [Lean](contracts/lean/XpileFrontendTrait.lean) · [Kani](contracts/kani/xpile_frontend_trait.rs) |
+| `xpile-backend-trait-v1.yaml` | pattern | 3 / code | Backend trait + structural compile-contract citation | [Lean](contracts/lean/XpileBackendTrait.lean) · [Kani](contracts/kani/xpile_backend_trait.rs) |
+| `xpile-contract-frontend-trait-v1.yaml` | pattern | 3 / proof | ContractFrontend trait invariants | [Lean](contracts/lean/XpileContractFrontendTrait.lean) · [Kani](contracts/kani/xpile_contract_frontend_trait.rs) |
+| `xpile-contract-backend-trait-v1.yaml` | pattern | 3 / proof | ContractBackend + citation bridge via structured attrs | [Lean](contracts/lean/XpileContractBackendTrait.lean) · [Kani](contracts/kani/xpile_contract_backend_trait.rs) |
+| `py-int-arith-v1.yaml` | kernel | 1 semantics / code | Python `int` arithmetic with bigint promotion | [Lean](contracts/lean/PyIntArith.lean) · [Kani](contracts/kani/py_int_arith.rs) |
+| `bashrs-posix-idempotence-v1.yaml` | pattern | 1 semantics / code | POSIX shell idempotence, Python↔bashrs cross-domain | [Lean](contracts/lean/Bashrs.lean) · [Kani](contracts/kani/bashrs.rs) |
+| `xlate-py-list-to-vec-v1.yaml` | kernel | 2 translation / code | Python list → Rust Vec, alias-preserving | [Lean](contracts/lean/XlatePyListToVec.lean) · [Kani](contracts/kani/xlate_py_list_to_vec.rs) |
+| `xlate-lean-to-rust-v1.yaml` | kernel | 2 / code | All Lean 4 constructs (def, partial, inductive, instance, axiom, ...) → Rust | [Lean](contracts/lean/XlateLeanToRust.lean) · [Kani](contracts/kani/xlate_lean_to_rust.rs) |
+| `xlate-rust-fn-to-lean-thm-v1.yaml` | kernel | 2 / proof | Rust fn + contract → Lean 4 theorem with `@[xpile_contract]` attr | [Lean](contracts/lean/XlateRustFnToLeanThm.lean) · [Kani](contracts/kani/xlate_rust_fn_to_lean_thm.rs) |
+| `notation-latex-math-to-equation-v1.yaml` | kernel | 2 / proof | LaTeX math + theorem envs → contract equations | [Lean](contracts/lean/Notation.lean) · [Kani](contracts/kani/notation.rs) |
+| `ffi-cpython-ext-v1.yaml` | pattern | 4 hybrid / code | CPython C-extension boundary semantics | [Lean](contracts/lean/FfiCpythonExt.lean) · [Kani](contracts/kani/ffi_cpython_ext.rs) |
+| `compile-rust-to-ptx-mma-v1.yaml` | pattern | **5 compile / code** | PTX emission: `mma.sync`, `cp.async` pipelining, SMEM budget | [Lean](contracts/lean/CompileRustToPtxMma.lean) · [Kani](contracts/kani/compile_rust_to_ptx_mma.rs) |
 
-`pv lint contracts/` → PASS, 0 errors.
+`pv lint contracts/` → PASS, 0 errors. `xpile quorum` → 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED.
 
-## Workspace (24 crates)
+## Workspace (27 crates)
 
 ```
 crates/
@@ -138,8 +159,9 @@ crates/
 ├── xpile-llm/                       model invocation + content-addressed cache
 ├── xpile-mcp/                       MCP server
 ├── xpile-contracts/                 re-export of provable-contracts (pv)
-├── xpile-meta-hir/                  canonical IR
+├── xpile-meta-hir/                  canonical IR (incl. Layer-B shell variants)
 ├── xpile-ffi-manifest/              cross-language boundary registry
+├── xpile-bigint/                    BigInt promotion lane (slow path)
 │
 ├── xpile-frontend/                  Frontend trait (code lane)
 ├── xpile-backend/                   Backend trait (code lane)
@@ -149,12 +171,14 @@ crates/
 ├── depyler-frontend/                Python   (.py, .pyi) — REAL parser
 ├── decy-frontend/                   C        (.c, .h)    — scaffold
 ├── ruchy-frontend/                  Ruchy    (.ruchy)    — scaffold
+├── bashrs-frontend/                 Shell    (.sh)       — REAL parser (POSIX subset)
 │
 ├── xpile-rust-codegen/              Rust    — REAL emission
 ├── xpile-ruchy-codegen/             Ruchy   — REAL emission
 ├── xpile-ptx-codegen/               PTX     — scaffold + Layer-5 contract
 ├── xpile-wgsl-codegen/              WGSL    — scaffold
 ├── xpile-lean-codegen/              Lean 4  — scaffold
+├── bashrs-backend/                  Shell   — REAL emission (POSIX subset)
 │
 ├── latex-contract-frontend/         LaTeX   — scaffold
 ├── xpile-lean-contract-backend/     Lean theorems — scaffold (attr citation)
@@ -174,7 +198,8 @@ Every PR runs:
 | Lint | `cargo clippy --workspace --all-targets -- -D warnings` |
 | Provable contracts | `pv lint contracts/` (via `aprender-contracts-cli`) |
 | Security advisories | `cargo deny check advisories` |
-| Tests | `cargo test --workspace` (incl. e2e rustc round-trip) |
+| Tests | `cargo test --workspace` (incl. e2e rustc round-trip and `every_kani_harness_discharges`) |
+| Kani BMC | dedicated `kani` job runs `cargo kani` over all 12 harnesses in `contracts/kani/` |
 
 Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
