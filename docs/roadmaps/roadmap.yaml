@@ -1680,3 +1680,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-103
+  github_issue: null
+  item_type: task
+  title: 'PMAT-103: sub/latex-bidirectional.md sweep — latex-contract-frontend and xpile-latex-contract-backend are workspace crates at v0.1.0 (were "planned crate")'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T17:30:00Z
+  updated: 2026-05-18T17:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Fix two "(planned crate)" parentheticals in latex-bidirectional.md. Both latex-contract-frontend and xpile-latex-contract-backend are workspace crates with trait conformance to ContractFrontend / ContractBackend respectively. The crate wiring is live; the body implementations are scaffold-stage at v0.1.0. Same pattern as PMAT-098/099.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

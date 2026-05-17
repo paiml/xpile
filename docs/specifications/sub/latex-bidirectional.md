@@ -67,7 +67,7 @@ Decision recorded 2026-05-15, revised post-audit (`docs/specifications/audit-des
 
 ### LaTeX → contract (`latex-contract-frontend`)
 
-`latex-contract-frontend` (planned crate) parses `.tex` source into `EquationsBlock`. Use cases:
+`latex-contract-frontend` is a workspace crate at v0.1.0 (scaffold-stage `parse_to_equations` body; the real LaTeX parsing is post-v0.1.0 future work). The crate wiring, dispatch, and trait conformance to `ContractFrontend` are live. Parses `.tex` source into `EquationsBlock`. Use cases:
 
 - **Bootstrap a contract from a paper.** Researcher hands xpile an arXiv paper; the frontend extracts equations and theorems into a draft contract YAML. The team reviews, fills in `formal:` fields where needed, and commits.
 - **Import equations from an existing publication.** A new transpilation kernel cites a published reference; xpile can ingest the LaTeX directly so the contract's equations match the paper verbatim.
@@ -76,7 +76,7 @@ The parser **must** use a real LaTeX parser (pulldown-latex, lalrpop-based, or p
 
 ### Contract → LaTeX (`xpile-latex-contract-backend`)
 
-`xpile-latex-contract-backend` (planned crate) renders any parsed `Contract` as publication-quality LaTeX. Use cases:
+`xpile-latex-contract-backend` is a workspace crate at v0.1.0 (scaffold-stage `render` body; the real LaTeX emission is post-v0.1.0 future work). Renders any parsed `Contract` as publication-quality LaTeX. Use cases:
 
 - **Generate the formal section of a paper directly from contracts.** Every equation becomes a numbered `\begin{equation}`; every proof obligation becomes a `\begin{theorem}` with `\xpileContract` cite.
 - **Render an mdBook / paper companion side-by-side.** The same contract corpus renders to mdBook (via `xpile-mdbook-contract-backend`) for the manual and to LaTeX for the paper.
