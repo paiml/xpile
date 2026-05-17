@@ -46,7 +46,7 @@ fn emit_function(out: &mut String, f: &Function) -> Result<(), RuchyCodegenError
     // wrong i64 emission for BigInt-typed sources.
     if f.return_type == Type::BigInt || f.params.iter().any(|p| p.ty == Type::BigInt) {
         return Err(RuchyCodegenError::Unsupported(format!(
-            "function `{}`: BigInt mode not yet implemented in Ruchy backend (PMAT-012 follow-up); use --target rust",
+            "function `{}`: BigInt mode not yet implemented in Ruchy backend; use --target rust [XPILE-PENDING-UNTIL: v0.2.0, ticket: PMAT-012-FOLLOWUP]",
             f.name
         )));
     }

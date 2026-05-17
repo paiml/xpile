@@ -376,7 +376,7 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         // formulation; deferred. Programs with assertions skip the Lean
         // backend at v0.1.0.
         Stmt::Assert { .. } => Err(LeanCodegenError::Unsupported(
-            "`assert` in Lean requires Decidable cond + propositional formulation — not yet implemented (PMAT-009 follow-up)"
+            "`assert` in Lean requires Decidable cond + propositional formulation — not yet implemented [XPILE-PENDING-UNTIL: v0.3.0, ticket: PMAT-009-FOLLOWUP]"
                 .into(),
         )),
     }

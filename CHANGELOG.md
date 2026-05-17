@@ -110,6 +110,22 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Time-bounded escape hatches (PMAT-014 / XPILE-EXEMPT-001)
+
+Every "not yet implemented" panic / `Unsupported(...)` error in the
+codegen carries an explicit `[XPILE-PENDING-UNTIL: v<semver>, ticket: <ID>]`
+marker. A workspace test (`crates/xpile/tests/exempt_deadlines.rs`)
+scans every `.rs` file under `crates/*/src/` for the marker and
+asserts the current workspace version is strictly less than every
+deadline. CI fails the moment a deadline is reached without the
+underlying feature shipping — closes the "unimplemented forever"
+hole. Adapted from ruchy 5.0 §14.7 (`#[contract_exempt(until)]`).
+Current live markers:
+
+- `Ruchy BigInt mode` — until v0.2.0, ticket PMAT-012-FOLLOWUP
+- `Rust BigInt bitwise/shift/power` — until v0.2.0, ticket PMAT-013-FOLLOWUP
+- `Lean assert` — until v0.3.0, ticket PMAT-009-FOLLOWUP
+
 ### Verification milestones
 
 Ten runtime-verified semantic round-trip fixtures (emit → `rustc -O`

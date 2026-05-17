@@ -45,6 +45,8 @@ companion `xpile audit` subcommand that scans + reports.
 
 ### 1.2 Time-bounded escape hatches (`XPILE-EXEMPT-XXX`)
 
+**Status (XPILE-EXEMPT-001)**: ✅ shipped — PMAT-014. Implementation: every "not yet implemented" `Unsupported(...)` error string in `xpile-rust-codegen`, `xpile-ruchy-codegen`, `xpile-lean-codegen` carries `[XPILE-PENDING-UNTIL: v<semver>, ticket: <ID>]`. Enforced by `crates/xpile/tests/exempt_deadlines.rs` which scans every `.rs` file in `crates/*/src/` and fails CI when current workspace version ≥ any deadline. Three live markers as of v0.1.0 (Ruchy BigInt mode → v0.2.0; Rust BigInt bitwise → v0.2.0; Lean assert → v0.3.0). Remaining work (XPILE-EXEMPT-002+): extend the marker pattern to `expect("...")` panic strings inside emitted Rust (the i64-overflow panics currently document a runtime tradeoff, not an unimplemented feature, so they don't carry deadlines yet — but the implicit-promotion case might want one once we commit to it).
+
 **Ruchy reference**: §14.7 (`#[contract_exempt(reason, until,
 ticket)]` with `build.rs` enforcement).
 
