@@ -110,6 +110,82 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### 🎯 Kani symbolic harness — C-FFI-CPYTHON-EXT → QUORUM (PMAT-077) — **xpile substrate reaches 100% QUORUM coverage (12 of 12 contracts)**
+
+**Final milestone: every contract in xpile's 12-contract
+substrate is now at full Lean + Kani Bronze-tier discharge
+coverage. The §14.4 N-of-M evidence model from ruchy 5.0 is
+validated across the entire substrate.**
+
+New `contracts/kani/ffi_cpython_ext.rs` carries the twelfth
+and final Kani BMC harness `manifest_completeness` — Rust
+mirror of the Lean theorem from PMAT-076. Proves byte-level
+payload preservation of the Python→C FFI manifest emission.
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-COMPILE-RUST-TO-PTX-MMA                   1    1    0    4  QUORUM
+  C-FFI-CPYTHON-EXT                           1    1    0    4  QUORUM  ← Sym now 1
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    3  QUORUM
+  C-XLATE-PY-LIST-TO-VEC                      1    1    0    3  QUORUM
+  C-XPILE-FRONTEND-TRAIT                      1    1    0    3  QUORUM
+  C-XLATE-LEAN-TO-RUST                        1    1    0    2  QUORUM
+  C-XLATE-RUST-FN-TO-LEAN-THM                 1    1    0    2  QUORUM
+  C-XPILE-BACKEND-TRAIT                       1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-BACKEND-TRAIT              1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-FRONTEND-TRAIT             1    1    0    2  QUORUM
+  totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)
+```
+
+**Substrate milestone summary:**
+- 12 contracts × 2 strata (Sem + Sym) = **24 paired Lean +
+  Kani Bronze-tier discharges**
+- **All 5 layers** of the contract taxonomy covered:
+  - Layer-1 (per-language semantics): 2 contracts
+  - Layer-2 (translation): 4 contracts
+  - Layer-3 (architectural traits): 4 contracts (full 2×2 matrix)
+  - Layer-4 (hybrid pipeline): 1 contract (C-FFI-CPYTHON-EXT)
+  - Layer-5 (compile-time / IR): 1 contract (C-COMPILE-RUST-TO-PTX-MMA)
+- **Zero UNVERIFIED, zero PARTIAL.** Every contract at full
+  paired-discharge coverage.
+- 12 Lean theorems + 12 Kani harnesses = **24 mechanical
+  modelling commitments**, each provable by `rfl` at v0.1.0
+  Bronze tier and ready for Silver-tier refinement when concrete
+  impl pressure arrives.
+
+The §14.4 N-of-M evidence model from ruchy 5.0 — every
+contract needs ≥1 vote in ≥3 strata to reach QUORUM — has
+been thoroughly stress-tested across 9 distinct domains:
+Python int arithmetic, shell idempotence, LaTeX rendering,
+Python list lowering, Lean→Rust translation, Rust→Lean
+translation, four trait determinism invariants, PTX kernel
+emission, and Python→C FFI manifest completeness. The
+modelling pattern (byte-array Bronze tier → typed AST Silver
+tier) generalises across the entire taxonomy.
+
+The remaining work to lift contracts to **Gold tier** (typed
+runtime witness + Silver-tier Lean proof) and **Platinum
+tier** (proven sound under a categorical interpretation) is
+tracked under each contract's `XPILE-REFINE-*-001+` follow-on
+tickets. Bronze coverage is the foundation; refinement is
+incremental from here.
+
+Implementation:
+- **`contracts/kani/ffi_cpython_ext.rs`** — final Kani
+  harness. Mirrors PMAT-076's shape:
+  `lower_call_to_manifest(c: &FfiCall) -> FfiManifestEntry`
+  plus `#[kani::proof] fn manifest_completeness()` asserting
+  byte-level payload preservation.
+- **`contracts/ffi-cpython-ext-v1.yaml`** — equation
+  `manifest_completeness` gains `kani_harness` + `kani_file`
+  refs.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-077 entry.
+
+Full Kani gate now ~3.7s across twelve harnesses.
+
 ### Lean refinement theorem — C-FFI-CPYTHON-EXT → PARTIAL (PMAT-076) — **TWELFTH and FINAL contract Lean theorem; substrate Semantic coverage complete**
 
 **Twelfth and FINAL contract reaches non-UNVERIFIED via the
