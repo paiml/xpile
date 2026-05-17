@@ -37,10 +37,17 @@ These are tailored to xpile. `certeza` (mentioned in the global CLAUDE.md) is ap
 
 xpile currently has zero `.sh` / `.bash` / `.zsh` / `Makefile` /
 `Dockerfile` files. **Don't introduce them without routing through
-bashrs** — that's the sibling Sovereign AI Stack transpiler that
-owns the shell domain (see [`docs/specifications/sub/bashrs-federation.md`](docs/specifications/sub/bashrs-federation.md)).
+bashrs**. As of the 2026-05-17 spec update, bashrs is now an
+in-tree workspace member (see
+[`docs/specifications/sub/bashrs-merger.md`](docs/specifications/sub/bashrs-merger.md))
+— after the v0.2.0 merger lands, the bashrs frontend/backend live
+at `crates/bashrs-frontend/` and `crates/bashrs-backend/` alongside
+`crates/depyler-frontend/` etc.
 
-Concrete workflow when shell artifacts become necessary:
+Until v0.2.0 (the merger has been *decided* but `crates/bashrs-*`
+crates don't exist yet), bashrs is consumed externally at
+`/home/noah/src/bashrs`. Concrete workflow when shell artifacts
+become necessary:
 
 1. **Prefer Rust → POSIX** — author the script as a small Rust file
    and run `bashrs transpile foo.rs -o foo.sh` for the deterministic
@@ -51,14 +58,17 @@ Concrete workflow when shell artifacts become necessary:
    *must* be authored directly (rare), run it through
    `bashrs purify <file>` before staging. Same for `Makefile` and
    `Dockerfile`: lint with bashrs.
-3. **No silent introduction** — adding shell-flavored CI logic,
+3. **Post-merger (v0.2.0+)**, the same workflow runs inside xpile:
+   `xpile transpile foo.ruchy --target shell -o foo.sh`,
+   `xpile purify <file>`, all under one CI gate.
+4. **No silent introduction** — adding shell-flavored CI logic,
    release scripts, dev-loop helpers, or Docker images is out of
    xpile's current scope (no native shell frontend at v0.1.0) and
    should be discussed before landing.
 
 The point: xpile's "quality regime" claim only holds if every
-language in the repo is under the regime. bashrs is what makes shell
-fall under that regime.
+language in the repo is under the regime. After the merger, shell
+domains are under the regime by construction.
 
 ## What still requires explicit user approval
 
