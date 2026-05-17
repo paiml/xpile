@@ -82,6 +82,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::Pipeline { .. } => false,
             // PMAT-048: see rust-codegen's twin arm.
             Stmt::ShellLoop { .. } => false,
+            // PMAT-051: see rust-codegen's twin arm.
+            Stmt::ShellAssign { .. } => false,
         }
     }
     f.body.stmts.iter().any(stmt_has_bigint)
@@ -178,6 +180,12 @@ fn emit_stmt_indented(
              use `--target shell`"
                 .into(),
         )),
+        // PMAT-051: same disposition.
+        Stmt::ShellAssign { name, .. } => Err(RuchyCodegenError::Unsupported(format!(
+            "Ruchy backend does not lower Stmt::ShellAssign (`{name}=…`) — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs shell variable assignment; \
+             use `--target shell`"
+        ))),
     }
 }
 

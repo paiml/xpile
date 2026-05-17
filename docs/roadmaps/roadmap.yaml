@@ -804,3 +804,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-051
+  github_issue: null
+  item_type: task
+  title: 'PMAT-051: Stmt::ShellAssign — bashrs-frontend recognises VAR=value, bashrs-backend emits it; other backends Unsupported'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T17:22:57Z
+  updated: 2026-05-17T17:22:57Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

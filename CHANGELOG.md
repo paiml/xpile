@@ -110,6 +110,68 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Shell variable assignment — `Stmt::ShellAssign` (PMAT-051)
+
+POSIX shell `VAR=value` is now a first-class IR construct. Real
+build scripts can be transpiled end-to-end:
+
+\`\`\`
+$ cat <<'EOF' > /tmp/build.sh
+LOG=/tmp/build.log
+TODAY=\$(date)
+NAME="Noah Gift"
+echo \$LOG and \$TODAY for \$NAME
+EOF
+
+$ xpile transpile /tmp/build.sh --target shell
+#!/bin/sh
+# xpile-bashrs-backend (...)
+# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE
+# module: build
+LOG=/tmp/build.log
+TODAY=\$(date)
+NAME="Noah Gift"
+echo \$LOG and \$TODAY for \$NAME
+\`\`\`
+
+**This is the first xpile demo of a complete realistic shell
+script transpiling round-trip end-to-end** — every line uses a
+different Layer B construct (LitStr / CommandSubstitution /
+QuotedString / ShellVar) and they all compose.
+
+Implementation:
+- **xpile-meta-hir** — new \`Stmt::ShellAssign { name: String, value: Expr }\`.
+  Same cross-cutting Unsupported arm pattern as every other
+  bashrs-domain variant.
+- **bashrs-frontend** — parser detects \`NAME=value\` at line start
+  when NAME is a POSIX-legal identifier. Uses the quoting-aware
+  tokenizer (PMAT-049/050) to parse the value, so RHS can be
+  \`LitStr\` / \`QuotedString\` / \`ShellVar\` / \`CommandSubstitution\`.
+  Multi-token RHS (POSIX's \`VAR=val cmd args\` export-for-next-cmd
+  form) explicitly rejected at v0.1.0.
+- **bashrs-backend** — emits \`NAME=value\` on its own line using
+  the existing \`render_arg\` helper for the value, so all four
+  Expr variants render correctly in the value position.
+
+What's NOT yet here:
+- POSIX \`VAR=val cmd args\` (temporary-export) form — rejected
+  explicitly. Modelling this requires the export-for-next-cmd
+  semantics which is a separate Stmt variant.
+- \`export VAR=value\` — semantically different (sets in the
+  environment, not just the shell). Separate variant.
+- \`unset VAR\` — separate variant.
+- Compound assignment (\`+=\`, \`-=\` etc.) — bash-only, not POSIX.
+
+Test coverage:
+- 4 new bashrs-frontend tests:
+  - \`parse_and_lower_simple_shell_assign\` — \`LOG=/tmp/foo\` →
+    ShellAssign with LitStr value
+  - \`parse_and_lower_shell_assign_with_command_substitution_value\` —
+    \`TODAY=\$(date)\` composes with CommandSubstitution
+  - \`parse_and_lower_shell_assign_with_quoted_value\` — \`NAME="Noah Gift"\`
+    composes with QuotedString
+  - \`parse_and_lower_rejects_var_eq_val_cmd_args_form\` — negative
+
 ### Command substitution `$(cmd)` parser (PMAT-050)
 
 **\`Expr::CommandSubstitution\` is now produced end-to-end.** Same
