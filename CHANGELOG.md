@@ -110,6 +110,58 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### POSIX arithmetic expansion `$((...))` round-trip + tokenizer bugfix (PMAT-090)
+
+**Fixes another v0.1.0 tokenizer bug AND locks in arithmetic
+expansion round-trip behavior.** Previously the tokenizer
+treated `$((` as `$(` followed by a nested `(` and rejected
+it with "nested `$(...)`" error. After this PR, `$((...))`
+is recognized as a syntactically distinct form and captured
+verbatim as a Bare → LitStr token.
+
+```bash
+echo $((1 + 2))
+# previously: error: "shell line has nested $(...) — v0.1.0
+#   supports only one level"
+# now parses to:
+#   Stmt::Cmd {
+#     program: "echo",
+#     args: [LitStr("$((1 + 2))")]
+#   }
+# round-trips to byte-identical shell; the shell at execution
+# time correctly evaluates `$((1 + 2))` to `3` and passes
+# that to echo.
+```
+
+Implementation:
+- **`crates/bashrs-frontend/src/lib.rs::tokenize_line`** — when
+  we see `$(`, peek the next char. If it's also `(`, we're
+  in arithmetic-expansion territory (`$((`). Read with paren-
+  depth tracking until the matching `))`. The captured token
+  is a `RawToken::Bare("$((...))")`. Otherwise (peek is not
+  `(`), continue with the existing command-substitution path.
+- **`tokenize_line_recognises_arith_expansion_as_bare`** —
+  unit test covering 4 patterns: simple `$((1 + 2))`, nested
+  parens `$(((1 + 2) * 3))`, mixed with other tokens, and a
+  regression guard ensuring single-paren `$(date)` still
+  parses as CommandSubst.
+- **`parse_and_lower_arith_expansion_round_trips_via_litstr`** —
+  end-to-end test asserting 4 arithmetic patterns parse to
+  the right Stmt variant (`Stmt::Cmd` for inline use,
+  `Stmt::ShellAssign` for `result=$((...))`).
+
+This is a real bug fix — prior tokenizer actively rejected
+valid POSIX arithmetic expansion. Structured representation
+(`Expr::ArithExpansion { expr }`) is
+XPILE-BASHRS-ARITH-EXPANSION-001 future work; at v0.1.0 the
+LitStr passthrough preserves shell semantics through the
+byte-level round-trip.
+
+Same v0.1.0 invariant pattern as PMAT-085 (param expansion),
+PMAT-086 (line continuation), PMAT-087 (redirection),
+PMAT-088 (short-circuit operators), and PMAT-089 (test
+brackets).
+
 ### POSIX test-bracket `[ ... ]` round-trip via LitStr passthrough (PMAT-089)
 
 **POSIX `test`-command synonym brackets round-trip end-to-end

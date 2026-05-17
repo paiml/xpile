@@ -126,6 +126,17 @@ fn tokenize_line(line: &str) -> Result<Vec<RawToken>, FrontendError> {
             // an atomic token; inner content is captured verbatim
             // and lowered into Stmt::Cmd by `lower_raw_token`.
             // Nested `$(...)` is rejected at v0.1.0.
+            //
+            // PMAT-090: `$((...))` arithmetic expansion is a
+            // syntactically distinct form. The current logic peeks
+            // PAST the first `(` to see if the second char is also
+            // `(`. If so, we capture the entire `$((...))` as a
+            // single Bare token (LitStr-passthrough at v0.1.0); the
+            // structured `Expr::ArithExpansion { expr }` variant is
+            // XPILE-BASHRS-ARITH-EXPANSION-001 future work. The
+            // shell at execution time correctly interprets the
+            // emitted `$((...))` as arithmetic — same byte-level
+            // round-trip preservation as PMAT-085..089.
             '$' if chars.peek() == Some(&'(') => {
                 if !current.is_empty() {
                     return Err(FrontendError::Lower(format!(
@@ -133,7 +144,44 @@ fn tokenize_line(line: &str) -> Result<Vec<RawToken>, FrontendError> {
                          (e.g., `foo$(bar)`); v0.1.0 requires `$(...)` at token boundaries"
                     )));
                 }
-                chars.next(); // consume the `(`
+                chars.next(); // consume the first `(`
+                              // PMAT-090: distinguish `$((` (arithmetic) from
+                              // `$(` (command substitution). The arithmetic form
+                              // is captured verbatim as a Bare token; the
+                              // command-substitution form continues into the
+                              // existing path.
+                if chars.peek() == Some(&'(') {
+                    // Arithmetic expansion. Consume the second `(`
+                    // and read until matching `))`. We track paren
+                    // depth so nested parens inside the arithmetic
+                    // expression (e.g., `$(((1 + 2) * 3))`) parse
+                    // correctly.
+                    chars.next(); // consume the second `(`
+                    let mut buf = String::from("$((");
+                    let mut depth: usize = 2; // we've opened two `(`
+                    for inner in chars.by_ref() {
+                        if inner == '(' {
+                            depth += 1;
+                            buf.push(inner);
+                        } else if inner == ')' {
+                            depth -= 1;
+                            buf.push(inner);
+                            if depth == 0 {
+                                // Closed the outer `))` — done.
+                                break;
+                            }
+                        } else {
+                            buf.push(inner);
+                        }
+                    }
+                    if !buf.ends_with("))") {
+                        return Err(FrontendError::Lower(format!(
+                            "shell line `{line}` has an unterminated `$((...))` arithmetic expansion"
+                        )));
+                    }
+                    tokens.push(RawToken::Bare(buf));
+                    continue;
+                }
                 let mut content = String::new();
                 let mut closed = false;
                 for inner in chars.by_ref() {
@@ -1553,6 +1601,103 @@ pwd
         // No pipes at all.
         assert!(!line_has_unambiguous_pipe("echo hi"));
         assert!(!line_has_unambiguous_pipe(""));
+    }
+
+    #[test]
+    fn tokenize_line_recognises_arith_expansion_as_bare() {
+        // PMAT-090: `$((...))` arithmetic expansion is tokenized
+        // as a single Bare token (LitStr-passthrough at v0.1.0).
+        // The tokenizer distinguishes `$((` from `$(` by peeking
+        // past the first `(`.
+        assert_eq!(
+            tokenize_line("$((1 + 2))").unwrap(),
+            vec![RawToken::Bare("$((1 + 2))".to_string())]
+        );
+        // Nested parens inside the arithmetic expression are
+        // preserved verbatim — paren depth tracking lets
+        // `$(((1 + 2) * 3))` parse correctly.
+        assert_eq!(
+            tokenize_line("$(((1 + 2) * 3))").unwrap(),
+            vec![RawToken::Bare("$(((1 + 2) * 3))".to_string())]
+        );
+        // Mixed with other tokens.
+        assert_eq!(
+            tokenize_line("echo $((x + 1))").unwrap(),
+            vec![
+                RawToken::Bare("echo".to_string()),
+                RawToken::Bare("$((x + 1))".to_string())
+            ]
+        );
+        // Command substitution `$(date)` still works (regression
+        // guard: the `$((` peek must not accidentally consume the
+        // single-paren path).
+        assert_eq!(
+            tokenize_line("$(date)").unwrap(),
+            vec![RawToken::CommandSubst("date".to_string())]
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_arith_expansion_round_trips_via_litstr() {
+        // PMAT-090: end-to-end — `$((...))` arithmetic expansion
+        // round-trips through the bashrs pipeline as an
+        // `Expr::LitStr` arg. The downstream shell at execution
+        // time re-interprets `$((...))` as arithmetic and
+        // substitutes the numeric result.
+        //
+        // The structured representation
+        // (`Expr::ArithExpansion { expr }`) is
+        // XPILE-BASHRS-ARITH-EXPANSION-001 future work. At v0.1.0
+        // the LitStr passthrough preserves shell semantics
+        // through the byte-level round-trip. Same v0.1.0 invariant
+        // pattern as PMAT-085/086/087/088/089.
+        use xpile_meta_hir::{Expr, Item, Stmt};
+        let cases: &[(&str, &str, &[&str])] = &[
+            ("echo $((1 + 2))\n", "echo", &["$((1 + 2))"]),
+            ("echo $((x + 1))\n", "echo", &["$((x + 1))"]),
+            ("echo $(((1 + 2) * 3))\n", "echo", &["$(((1 + 2) * 3))"]),
+            (
+                "result=$((x * y))\n",
+                // shell assignment: program="result=$((x * y))"
+                // parsed via Stmt::ShellAssign path, not Stmt::Cmd
+                "",
+                &[],
+            ),
+        ];
+        for (source, expected_program, expected_args) in &cases[..3] {
+            let module = BashrsFrontend
+                .parse_and_lower(&PathBuf::from("/tmp/arith.sh"), source)
+                .unwrap_or_else(|e| panic!("parse failed for `{source}`: {e:?}"));
+            let Item::Function(f) = &module.items[0];
+            let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
+                panic!(
+                    "expected Stmt::Cmd for `{source}`; got {:?}",
+                    f.body.stmts[0]
+                );
+            };
+            assert_eq!(program, expected_program);
+            let expected_exprs: Vec<Expr> = expected_args
+                .iter()
+                .map(|s| Expr::LitStr((*s).to_string()))
+                .collect();
+            assert_eq!(
+                args, &expected_exprs,
+                "arith-expansion round-trip for `{source}` failed"
+            );
+        }
+        // ShellAssign-shape case: result=$((x * y))
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/a.sh"), "result=$((x * y))\n")
+            .expect("parse");
+        let Item::Function(f) = &module.items[0];
+        let Stmt::ShellAssign { name, value } = &f.body.stmts[0] else {
+            panic!(
+                "expected Stmt::ShellAssign for `result=...`; got {:?}",
+                f.body.stmts[0]
+            );
+        };
+        assert_eq!(name, "result");
+        assert_eq!(value, &Expr::LitStr("$((x * y))".to_string()));
     }
 
     #[test]
