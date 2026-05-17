@@ -1221,3 +1221,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-076
+  github_issue: null
+  item_type: task
+  title: 'PMAT-076: Lean refinement theorem for C-FFI-CPYTHON-EXT — TWELFTH and FINAL contract Lean theorem, completes substrate Semantic coverage'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T04:00:00Z
+  updated: 2026-05-18T04:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/lean/FfiCpythonExt.lean with manifest_completeness + refcount_balance_on_success theorems. Bronze-tier modelling commitment for the Layer-4 hybrid pipeline contract (CPython C extension boundary). TWELFTH and FINAL contract Lean theorem in the project — completes the substrate. Companion Kani harness ships as PMAT-077, bringing the substrate to 100% QUORUM.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

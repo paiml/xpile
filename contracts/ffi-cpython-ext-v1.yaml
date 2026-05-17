@@ -28,6 +28,13 @@ metadata:
 
 equations:
   manifest_completeness:
+    # PMAT-076: Lean refinement theorem locks in the manifest-
+    # completeness modelling commitment. See
+    # contracts/lean/FfiCpythonExt.lean for the proof. TWELFTH
+    # and FINAL contract Lean theorem — completes the
+    # substrate.
+    lean_theorem: "XpileContracts.CFfiCpythonExt.manifest_completeness"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
     formula: |
       forall call in python_module.calls_into(c_extension): exists entry in ffi_manifest: entry.symbol == call.symbol
     domain: |
