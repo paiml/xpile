@@ -40,10 +40,36 @@ fn render_arg(e: &Expr) -> Result<String, BackendError> {
         // form) is the input-side parse; rendering as `$NAME` is the
         // canonical output form — same semantic, fewer chars.
         Expr::ShellVar(name) => Ok(format!("${name}")),
+        // PMAT-047: command substitution renders as `$(rendered-inner)`.
+        // At v0.1.0 the inner Stmt must be a `Stmt::Cmd` (the only
+        // stmt shape that has a renderable inline form); a future
+        // `Stmt::Pipeline` inside `$(...)` is plausible but the
+        // bashrs-frontend parser doesn't produce it yet.
+        Expr::CommandSubstitution(inner) => render_substituted_stmt(inner),
         other => Err(BackendError::Lower(format!(
             "bashrs-backend v0.1.0 cannot render non-string Expr as Stmt::Cmd arg \
-             (got {other:?}); only Expr::LitStr / Expr::QuotedString / Expr::ShellVar supported"
+             (got {other:?}); only Expr::LitStr / Expr::QuotedString / Expr::ShellVar / Expr::CommandSubstitution supported"
         ))),
+    }
+}
+
+/// PMAT-047: render the inner Stmt of a `$(cmd)` substitution into
+/// shell surface form, wrapped in `$(...)`. Only `Stmt::Cmd` is
+/// supported at v0.1.0 — nested pipelines / control flow inside a
+/// substitution are XPILE-BASHRS-MERGER-***+.
+fn render_substituted_stmt(s: &Stmt) -> Result<String, BackendError> {
+    let Stmt::Cmd { program, args } = s else {
+        return Err(BackendError::Lower(format!(
+            "bashrs-backend v0.1.0 only renders Stmt::Cmd inside \
+             Expr::CommandSubstitution(...) — got {s:?}; nested \
+             pipelines or control flow inside `$(...)` are future work"
+        )));
+    };
+    if args.is_empty() {
+        Ok(format!("$({program})"))
+    } else {
+        let rendered: Result<Vec<String>, BackendError> = args.iter().map(render_arg).collect();
+        Ok(format!("$({program} {})", rendered?.join(" ")))
     }
 }
 
@@ -452,6 +478,48 @@ mod tests {
             art.primary.contains("\necho 'hello world'\n"),
             "expected single-quoted arg in emit; got:\n{}",
             art.primary
+        );
+    }
+
+    #[test]
+    fn render_arg_command_substitution() {
+        // PMAT-047: $(cmd) renders with the inner program + args
+        // wrapped in `$(...)`.
+        use xpile_meta_hir::{Expr, Stmt};
+        let zero_arg = Expr::CommandSubstitution(Box::new(Stmt::Cmd {
+            program: "date".into(),
+            args: vec![],
+        }));
+        assert_eq!(render_arg(&zero_arg).unwrap(), "$(date)");
+
+        let one_arg = Expr::CommandSubstitution(Box::new(Stmt::Cmd {
+            program: "date".into(),
+            args: vec![Expr::LitStr("+%Y".into())],
+        }));
+        assert_eq!(render_arg(&one_arg).unwrap(), "$(date +%Y)");
+
+        // Mixed with ShellVar inside the substitution.
+        let mixed = Expr::CommandSubstitution(Box::new(Stmt::Cmd {
+            program: "echo".into(),
+            args: vec![Expr::ShellVar("HOME".into())],
+        }));
+        assert_eq!(render_arg(&mixed).unwrap(), "$(echo $HOME)");
+    }
+
+    #[test]
+    fn render_arg_command_substitution_with_non_cmd_inner_errors() {
+        // PMAT-047 defensive: only Stmt::Cmd is supported inside
+        // `$(...)` at v0.1.0. A future producer of nested Pipeline /
+        // ShellLoop / Assert inside `$(...)` would hit this error.
+        use xpile_meta_hir::{Expr, Stmt};
+        let bad = Expr::CommandSubstitution(Box::new(Stmt::Assert {
+            cond: Expr::LitInt(1),
+        }));
+        let err = render_arg(&bad).expect_err("non-Cmd inner must error");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("only renders Stmt::Cmd inside"),
+            "error should explain the v0.1.0 constraint: {msg}"
         );
     }
 

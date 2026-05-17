@@ -740,3 +740,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-047
+  github_issue: null
+  item_type: task
+  title: 'PMAT-047: Expr::CommandSubstitution Layer B variant — IR shape for shell command substitution; producer/consumer scaffolded at v0.2.0 source fold'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T16:59:00Z
+  updated: 2026-05-17T16:59:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -353,6 +353,11 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         // PMAT-045: shell-variable refs likewise carry no Rust-level
         // idents (the name is shell-side, not meta-HIR-bound).
         Expr::ShellVar(_) => {}
+        // PMAT-047: command substitution composes a Stmt; the
+        // while-loop analyzer never reaches here in practice (no
+        // shell-domain stmts inside while loops in current
+        // frontends), so no recursion needed at v0.1.0.
+        Expr::CommandSubstitution(_) => {}
     }
 }
 
@@ -514,6 +519,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
                 "Lean backend does not lower Expr::ShellVar (${name}) — \
                  contract C-BASHRS-POSIX-IDEMPOTENCE governs shell variable refs"
             )));
+        }
+        // PMAT-047: same disposition.
+        Expr::CommandSubstitution(_) => {
+            return Err(LeanCodegenError::Unsupported(
+                "Lean backend does not lower Expr::CommandSubstitution — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs shell substitution"
+                    .into(),
+            ));
         }
     }
     Ok(())
