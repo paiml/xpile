@@ -27,9 +27,10 @@ Encoded in [`contracts/xpile-frontend-trait-v1.yaml`](../../../contracts/xpile-f
 
 ## Implementations at v0.1.0
 
-| Crate | Type | Extensions | Status |
+| Crate | Type | Extensions (per `Frontend::extensions` + `matches_path`) | Status |
 |---|---|---|---|
-| `depyler-frontend` | `PythonFrontend` | `py`, `pyi` | **Real** — parses via `rustpython-parser 0.4`; subset in `CHANGELOG.md` |
+| `depyler-frontend` | `PythonFrontend` | `py`, `pyi` | **Real** — parses via `rustpython-parser 0.4`; subset in `CHANGELOG.md`; includes cross-domain `subprocess.run` → `Stmt::Cmd` lowering (PMAT-040) |
+| `bashrs-frontend` | `BashrsFrontend` | `sh`, `bash`, `zsh`, `mk` + canonical filenames `Makefile`, `Dockerfile` via `matches_path` | **Real** — tokenizer handles realistic POSIX shell (quoting, $NAME / ${NAME}, $(cmd), backtick, NAME=value, pipelines, ShellLoop, special params $1-9/$@/$#, escape sequences, line continuation, redirections, short-circuit `&&`/`||`, test brackets, arith expansion `$((...))`, subshells). 54 tests across PMAT-039..058 + PMAT-085..092. |
 | `decy-frontend` | `CFrontend` | `c`, `h` | Scaffold (returns empty Module) |
 | `ruchy-frontend` | `RuchyFrontend` | `ruchy` | Scaffold (returns empty Module) |
 
@@ -38,7 +39,9 @@ Phase-2 parser integration plan for the still-stub frontends:
 - `decy-frontend` will adopt clang / tree-sitter parsing + the existing decy HIR-lowering
 - `ruchy-frontend` will depend on the `ruchy` crate from crates.io and reuse its parser + AST
 
-The Python frontend's real implementation shipped in PR #6 MVP and grew through PRs #11/#12/#13/#15/#19/#20 and PMAT-002…PMAT-008 to cover the full v0.1.0 subset (all binary + unary ops including bitwise / power, multi-assignment if-branches, while loops with mutable rebinding, for-in-range with positive *or negative* literal steps, recursive function calls). Verified end-to-end by 11 runtime-executed fixtures — see [`CHANGELOG.md`](../../CHANGELOG.md) §"Python subset (live, runtime-verified)" for the canonical inventory.
+The Python frontend's real implementation shipped in PR #6 MVP and grew through PRs #11/#12/#13/#15/#19/#20 and PMAT-002…PMAT-008 to cover the full v0.1.0 subset (all binary + unary ops including bitwise / power, multi-assignment if-branches, while loops with mutable rebinding, for-in-range with positive *or negative* literal steps, recursive function calls). Verified end-to-end by 11+ runtime-executed fixtures — see [`CHANGELOG.md`](../../CHANGELOG.md) §"Python subset (live, runtime-verified)" for the canonical inventory.
+
+The bashrs frontend's real implementation arrived in the PMAT-037..058 substrate-completion run alongside its sibling crate `bashrs-backend`. Both halves of the bashrs round-trip are tested by `bashrs_realistic_demo.sh` (PMAT-052) which exercises every Layer B IR variant byte-identically through frontend → meta-HIR → backend. The PMAT-085..092 polish run added 7 invariant lock-in tests covering POSIX param expansion, line continuation, redirections, short-circuit operators, test brackets, arithmetic expansion, and subshells. The trait determinism invariant for both frontends is covered by `C-XPILE-FRONTEND-TRAIT` at full §14.4 QUORUM (PMAT-062/063).
 
 ## Why object-safe
 
