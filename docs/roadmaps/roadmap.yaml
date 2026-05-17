@@ -1459,3 +1459,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-090
+  github_issue: null
+  item_type: task
+  title: 'PMAT-090: bashrs arithmetic-expansion $((...)) round-trip + tokenizer bugfix — distinguish $(( from $( so arithmetic expressions are recognized as a single Bare token'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T11:00:00Z
+  updated: 2026-05-18T11:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Update tokenize_line in bashrs-frontend to peek past the first `(` after `$`. If the next char is also `(`, this is arithmetic expansion `$((...))` — read with paren-depth tracking until matching `))`, return as RawToken::Bare. Otherwise continue with existing command-substitution path. Real bug fix — prior tokenizer rejected valid POSIX arithmetic expansion with "nested $(...)" error. Plus tokenize_line_recognises_arith_expansion_as_bare and parse_and_lower_arith_expansion_round_trips_via_litstr tests. Sets up XPILE-BASHRS-ARITH-EXPANSION-001 (Silver-tier Expr::ArithExpansion variant).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
