@@ -1013,10 +1013,7 @@ pwd
         let toks = tokenize_line("echo a#b # but here it is").expect("parse");
         assert_eq!(
             toks,
-            vec![
-                RawToken::Bare("echo".into()),
-                RawToken::Bare("a#b".into()),
-            ],
+            vec![RawToken::Bare("echo".into()), RawToken::Bare("a#b".into()),],
             "expected `a#b` to stay one token; trailing `# but here` stripped"
         );
 
