@@ -112,6 +112,8 @@ add ≥1 Extrinsic.
 
 ### 1.4 Differential execution check (`XPILE-DIFF-XXX`)
 
+**Status (XPILE-DIFF-001)**: ✅ shipped — PMAT-018. `crates/xpile/tests/diff_exec.rs` runs 10 deterministic LCG-seeded i64 inputs per fixture across 7 single-arg fast-path fixtures (factorial, fib, abs_val, sign, sum_to, for_sum, countdown:factorial_iter); for each input it runs both CPython directly on the .py source and the rustc-compiled transpiled-Rust binary, asserts the stdout strings agree. 70 differential checks per CI run, all green at v0.1.0. Skip-gracefully if `python3` or `rustc` is missing from PATH. Each fixture's input range is hardcoded to stay inside the C-PY-INT-ARITH fast-path domain (no overflow panics); widening to overflow-prone ranges + interpreting `.checked_*().expect(...)` panic as "Python promoted to BigInt" is XPILE-DIFF-002. Multi-arg fixtures (gcd, range_size, bits, square_plus, safe_div) also XPILE-DIFF-002.
+
 **Ruchy reference**: §14.10.4 (interpreter vs transpiled binary
 on N probar-generated inputs per function).
 

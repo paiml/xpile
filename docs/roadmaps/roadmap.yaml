@@ -276,3 +276,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-018
+  github_issue: null
+  item_type: task
+  title: 'Differential execution check: CPython vs transpiled binary on generated inputs (XPILE-DIFF-001)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T11:27:34Z
+  updated: 2026-05-17T11:27:34Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
