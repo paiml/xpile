@@ -37,6 +37,11 @@ equations:
     # contracts/lean/XpileFrontendTrait.lean for the proof.
     lean_theorem: "XpileContracts.CXpileFrontendTrait.parse_idempotency"
     lean_file: "contracts/lean/XpileFrontendTrait.lean"
+    # PMAT-063: Kani harness completes the §14.4 quorum (Sem + Sym +
+    # Ext = ≥3 strata). Symbolic counterpart to the Lean theorem —
+    # proves determinism over all 4-byte (path, source) pairs.
+    kani_harness: "parse_idempotency"
+    kani_file: "contracts/kani/xpile_frontend_trait.rs"
     formula: |
       forall (path, source): hash(f.parse_and_lower(path, source).unwrap()) == hash(f.parse_and_lower(path, source).unwrap())
     domain: |
