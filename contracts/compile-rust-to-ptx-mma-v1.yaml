@@ -42,6 +42,13 @@ compile_targets:
 
 equations:
   mma_emission_for_gemm_kernel:
+    # PMAT-074: Lean refinement theorem locks in the marker-
+    # preservation modelling commitment. See
+    # contracts/lean/CompileRustToPtxMma.lean for the proof.
+    # FIRST Layer-5 (compile-time / IR) contract to receive a
+    # refinement theorem.
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.mma_emission_for_gemm_kernel"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
     formula: |
       lower(rust_fn marked #[gpu_kernel(mma)], BackendConfig{target: Ptx})
         produces ptx_text containing mma.sync.aligned
