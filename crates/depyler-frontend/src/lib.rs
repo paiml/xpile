@@ -15,12 +15,13 @@
 //!   - `for` over non-range iterables (lists, dicts, generators) — the
 //!     `for target in range(...)` shape desugars via PMAT-007; other
 //!     iterables wait on collection types.
-//!   - Bigint promotion — the `py-int-arith` Layer-1 contract's slow
-//!     path is unimplemented. The codegen backends emit
-//!     `.checked_*().expect(...)` so overflow panics with a message
-//!     naming the contract (in *both* release and debug), instead of
-//!     silently wrapping the way plain `+` / `*` / `-` would.
-//!   - Type annotations beyond `int` / `bool`.
+//!   - Implicit bigint promotion — explicit `BigInt` annotations work
+//!     (PMAT-012, the slow path of `C-PY-INT-ARITH`); promoting `int`
+//!     to `BigInt` automatically when overflow is provable is a
+//!     PMAT-013 follow-up. Without an explicit annotation, the i64
+//!     fast path still panics with a contract-naming message instead
+//!     of silently wrapping.
+//!   - Type annotations beyond `int` / `bool` / `BigInt`.
 //!   - Lean backend for `assert` — needs Decidable instances + a
 //!     propositional formulation; the `while` encoding shipped in
 //!     PMAT-010 via `partial def` threaded-state recursion.
@@ -37,14 +38,25 @@ use rustpython_parser::Parse;
 
 /// State threaded through function-body lowering so the frontend can
 /// (a) decide whether `name = expr` is a first binding (`Let`) or a
-/// reassignment (`Assign`), and (b) know up-front which `Let`s must be
-/// emitted as `let mut` so the loop body can rewrite them (PMAT-006).
+/// reassignment (`Assign`), (b) know up-front which `Let`s must be
+/// emitted as `let mut` so the loop body can rewrite them (PMAT-006),
+/// and (c) propagate `BigInt` typing through identifier references so
+/// the slow path of `C-PY-INT-ARITH` (PMAT-012) is taken when the user
+/// annotates any param as `BigInt`.
 struct LoweringCtx {
     fn_name: String,
+    /// The declared (or inferred-at-construction) return type of the
+    /// enclosing function. Used to type self-recursive calls without a
+    /// cross-function signature table.
+    fn_return_type: Type,
     /// Names already bound in this scope — params, plus every `Let`
     /// emitted so far during this function's lowering. New Assigns to a
     /// name already in this set lower to `Stmt::Assign`.
     bound: HashSet<String>,
+    /// `name → Type` for every bound name. Drives type inference
+    /// through `Ident` references so BigInt-mode functions correctly
+    /// propagate the slow-path type.
+    name_types: HashMap<String, Type>,
     /// Names that are reassigned somewhere in the function body (and so
     /// must be emitted as `let mut`). Computed once via a pre-walk
     /// before any statement is lowered. Names assigned inside a loop
@@ -54,12 +66,16 @@ struct LoweringCtx {
 }
 
 impl LoweringCtx {
-    fn new(fn_name: &str, params: &[Param], body: &[ast::Stmt]) -> Self {
+    fn new(fn_name: &str, fn_return_type: Type, params: &[Param], body: &[ast::Stmt]) -> Self {
         let bound: HashSet<String> = params.iter().map(|p| p.name.clone()).collect();
+        let name_types: HashMap<String, Type> =
+            params.iter().map(|p| (p.name.clone(), p.ty)).collect();
         let mutable = compute_mutable_names(params, body);
         Self {
             fn_name: fn_name.to_string(),
+            fn_return_type,
             bound,
+            name_types,
             mutable,
         }
     }
@@ -285,7 +301,16 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
     let body_stmts = f.body;
     let (last, leading) = body_stmts.split_last().expect("checked non-empty above");
 
-    let mut ctx = LoweringCtx::new(&f.name, &params, &body_stmts);
+    // Pre-parse the declared return type (if any) so the LoweringCtx can
+    // type self-recursive calls correctly. Defaults to I64 — same as
+    // unannotated functions.
+    let declared_return_type: Option<Type> = match f.returns.as_ref() {
+        None => None,
+        Some(ann) => Some(parse_type_annotation(&f.name, "<return>", ann)?),
+    };
+    let ctx_return_type = declared_return_type.unwrap_or(Type::I64);
+
+    let mut ctx = LoweringCtx::new(&f.name, ctx_return_type, &params, &body_stmts);
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
     for stmt in leading {
         // A single Python statement may lower to multiple meta-HIR
@@ -310,11 +335,10 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
         }
     };
 
-    let inferred_return = infer_type(&trailing_return);
-    let return_type = match f.returns.as_ref() {
+    let inferred_return = infer_type_in_ctx(&ctx, &trailing_return);
+    let return_type = match declared_return_type {
         None => inferred_return,
-        Some(ann) => {
-            let declared = parse_type_annotation(&f.name, "<return>", ann)?;
+        Some(declared) => {
             if declared != inferred_return {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` declared return type {declared:?} but body produces {inferred_return:?}",
@@ -339,7 +363,16 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
 }
 
 /// Parse a Python type annotation expression to a meta-HIR [`Type`].
-/// At v0.1.0 only `int` and `bool` are recognized.
+/// Recognized annotations:
+/// * `int` → `Type::I64` — the fast path (overflow-checked at runtime).
+/// * `bool` → `Type::Bool`.
+/// * `BigInt` → `Type::BigInt` — the slow path of `C-PY-INT-ARITH`
+///   (PMAT-012). User-supplied annotation that opts a function into
+///   the unbounded-int Rust/Ruchy emission.
+///
+/// `BigInt` is intentionally not a real Python type — this is xpile-specific
+/// nomenclature for the slow path. A future PR will infer it from `int`
+/// when the function can overflow.
 fn parse_type_annotation(
     fn_name: &str,
     site: &str,
@@ -349,8 +382,9 @@ fn parse_type_annotation(
         ast::Expr::Name(n) => match n.id.as_str() {
             "int" => Ok(Type::I64),
             "bool" => Ok(Type::Bool),
+            "BigInt" => Ok(Type::BigInt),
             other => Err(FrontendError::Lower(format!(
-                "function `{fn_name}` annotates `{site}` with unsupported type `{other}` — only `int` and `bool` at v0.1.0"
+                "function `{fn_name}` annotates `{site}` with unsupported type `{other}` — only `int`, `bool`, `BigInt` at v0.1.0"
             ))),
         },
         _ => Err(FrontendError::Lower(format!(
@@ -484,6 +518,7 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
         }
     } else {
         ctx.bound.insert(target_name.clone());
+        ctx.name_types.insert(target_name.clone(), Type::I64);
         Stmt::Let {
             name: target_name.clone(),
             ty: Type::I64,
@@ -596,8 +631,8 @@ fn lower_if_stmt_as_lets(
     for name in &target_names {
         let if_expr = lower_if_chain_to_expr(&ctx.fn_name, &if_stmt, name)?;
         let ty = match &if_expr {
-            Expr::IfExpr { then_expr, .. } => infer_type(then_expr),
-            other => infer_type(other),
+            Expr::IfExpr { then_expr, .. } => infer_type_in_ctx(ctx, then_expr),
+            other => infer_type_in_ctx(ctx, other),
         };
         // If the name is already in scope, this if-as-let is actually
         // a multi-branch reassignment — emit `Stmt::Assign`. Otherwise
@@ -615,6 +650,7 @@ fn lower_if_stmt_as_lets(
                 mutable: ctx.mutable.contains(name),
             });
             ctx.bound.insert(name.clone());
+            ctx.name_types.insert(name.clone(), ty);
         }
     }
     Ok(stmts)
@@ -829,7 +865,7 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
         }
     };
     let value = lower_expr(*asn.value)?;
-    let ty = infer_type(&value);
+    let ty = infer_type_in_ctx(ctx, &value);
     // If the name is already bound, this is a reassignment — emit
     // `Stmt::Assign` (the backend will write `name = value;` and the
     // earlier `Let` will be `let mut`). Otherwise, fresh `Let`.
@@ -838,6 +874,7 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
     } else {
         let mutable = ctx.mutable.contains(&name);
         ctx.bound.insert(name.clone());
+        ctx.name_types.insert(name.clone(), ty);
         Ok(Stmt::Let {
             name,
             ty,
@@ -847,11 +884,11 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
     }
 }
 
-/// Trivial type inference for the v0.1.0 subset. Comparisons yield Bool,
-/// everything else yields I64. Conditional expressions inherit the type
-/// of their `then` branch (the frontend validates that both branches
-/// agree). Will move into meta-HIR once a second frontend needs the
-/// same logic.
+/// Context-free type inference. Used in spots where ctx isn't readily
+/// available (e.g., cond-is-Bool checks where the Bool/I64 distinction
+/// is what matters and BigInt-vs-I64 doesn't). Idents default to I64.
+/// For BigInt-aware inference inside a function body, use
+/// [`infer_type_in_ctx`].
 fn infer_type(e: &Expr) -> Type {
     match e {
         Expr::Ident(_) | Expr::LitInt(_) => Type::I64,
@@ -880,6 +917,44 @@ fn infer_type(e: &Expr) -> Type {
         Expr::Call { .. } => Type::I64,
         Expr::UnOp { op, .. } => match op {
             UnOp::Neg => Type::I64,
+            UnOp::Not => Type::Bool,
+        },
+    }
+}
+
+/// Context-aware type inference. Looks Idents up in `ctx.name_types`,
+/// propagates BigInt through arithmetic operands (BigInt + anything
+/// → BigInt), and types self-recursive calls as the enclosing
+/// function's return type. PMAT-012.
+fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
+    match e {
+        Expr::Ident(n) => ctx.name_types.get(n).copied().unwrap_or(Type::I64),
+        Expr::LitInt(_) => Type::I64,
+        Expr::BinOp { op, lhs, rhs } => match op {
+            BinOp::Eq | BinOp::NotEq | BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq => {
+                Type::Bool
+            }
+            BinOp::And | BinOp::Or => Type::Bool,
+            _ => {
+                let lt = infer_type_in_ctx(ctx, lhs);
+                let rt = infer_type_in_ctx(ctx, rhs);
+                if lt == Type::BigInt || rt == Type::BigInt {
+                    Type::BigInt
+                } else {
+                    Type::I64
+                }
+            }
+        },
+        Expr::IfExpr { then_expr, .. } => infer_type_in_ctx(ctx, then_expr),
+        Expr::Call { callee, .. } => {
+            if callee == &ctx.fn_name {
+                ctx.fn_return_type
+            } else {
+                Type::I64
+            }
+        }
+        Expr::UnOp { op, operand } => match op {
+            UnOp::Neg => infer_type_in_ctx(ctx, operand),
             UnOp::Not => Type::Bool,
         },
     }

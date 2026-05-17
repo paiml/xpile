@@ -499,6 +499,93 @@ fn main() {
     assert_rustc_runs("gcd", &rust, driver);
 }
 
+/// PMAT-012: validates the BigInt slow path. `big_sum(a: BigInt, b: BigInt)
+/// -> BigInt: return a + b` emits with `xpile_bigint::BigInt` typing and
+/// plain infix `+` (no `.checked_add().expect()` — BigInt never overflows).
+///
+/// Runtime verification uses a minimal inline `xpile_bigint` shim with
+/// the same surface as the real crate (which depends on `num-bigint`).
+/// The shim is just `i64` underneath, so for small inputs it agrees;
+/// real BigInt behavior is covered by the bigint crate's own tests.
+#[test]
+fn bigint_function_emits_bigint_type_and_infix() {
+    let rust = xpile_transpile_to_rust("big_sum.py");
+    assert!(
+        rust.contains("// xpile-contract: C-PY-INT-ARITH"),
+        "expected contract citation (slow path is still under the contract):\n{rust}"
+    );
+    assert!(
+        rust.contains("pub fn big_sum(a: xpile_bigint::BigInt, b: xpile_bigint::BigInt) -> xpile_bigint::BigInt"),
+        "expected BigInt sig, got:\n{rust}"
+    );
+    assert!(
+        rust.contains("(a + b)"),
+        "expected plain infix + (no checked_add in BigInt mode), got:\n{rust}"
+    );
+    assert!(
+        !rust.contains("checked_add"),
+        "BigInt mode must not emit checked_add:\n{rust}"
+    );
+
+    // Inline shim so `rustc` doesn't need a num-bigint dependency.
+    let shim = r#"
+mod xpile_bigint {
+    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    pub struct BigInt(pub i64);
+    impl From<i64> for BigInt {
+        fn from(v: i64) -> Self { BigInt(v) }
+    }
+    impl std::ops::Add for BigInt {
+        type Output = BigInt;
+        fn add(self, other: BigInt) -> BigInt { BigInt(self.0 + other.0) }
+    }
+}
+"#;
+    let driver = r#"
+fn main() {
+    use xpile_bigint::BigInt;
+    assert_eq!(big_sum(BigInt::from(2), BigInt::from(3)), BigInt::from(5));
+    assert_eq!(big_sum(BigInt::from(100), BigInt::from(50)), BigInt::from(150));
+    assert_eq!(big_sum(BigInt::from(-7), BigInt::from(7)), BigInt::from(0));
+}
+"#;
+    assert_rustc_runs("big_sum", &format!("{shim}\n{rust}"), driver);
+}
+
+#[test]
+fn bigint_lean_uses_int_directly() {
+    let py = fixture("big_sum.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "lean"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // Lean's Int is unbounded — Type::BigInt maps to Int, identical
+    // to Type::I64. The same source produces the same Lean output
+    // regardless of which type annotation the Python source used.
+    assert!(
+        stdout.contains("def big_sum (a : Int) (b : Int) : Int :="),
+        "expected Lean Int sig, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("(a + b)"),
+        "expected plain infix +, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn bigint_ruchy_errors_with_pmat_012_message() {
+    // Ruchy backend defers BigInt mode to a follow-up PR. The
+    // intermediate failure must be loud and reference the contract,
+    // not a silent miscompile to i64.
+    let py = fixture("big_sum.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "ruchy"]);
+    assert!(!out.status.success(), "Ruchy + BigInt should error for now");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("BigInt mode") && stderr.contains("PMAT-012"),
+        "expected error to name BigInt + PMAT-012, got: {stderr}"
+    );
+}
+
 /// PMAT-011: validates contract citations are emitted next to functions
 /// whose body uses ops the contract governs, and *not* emitted next to
 /// pure comparison / logical functions.

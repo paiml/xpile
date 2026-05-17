@@ -39,6 +39,17 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
 }
 
 fn emit_function(out: &mut String, f: &Function) -> Result<(), RuchyCodegenError> {
+    // PMAT-012: BigInt mode hasn't been threaded through the Ruchy
+    // backend yet. The Rust backend supports it, and since Ruchy
+    // compiles to Rust, mirroring is mechanical — slated for a
+    // follow-up PR. For now, fail loudly so users don't get silently
+    // wrong i64 emission for BigInt-typed sources.
+    if f.return_type == Type::BigInt || f.params.iter().any(|p| p.ty == Type::BigInt) {
+        return Err(RuchyCodegenError::Unsupported(format!(
+            "function `{}`: BigInt mode not yet implemented in Ruchy backend (PMAT-012 follow-up); use --target rust",
+            f.name
+        )));
+    }
     emit_contract_citations(out, f)?;
     // Ruchy: `fun name(params) -> ret { body }`. No `pub`.
     write!(out, "fun {}(", f.name)?;
@@ -135,6 +146,8 @@ fn emit_type(out: &mut String, t: Type) -> Result<(), RuchyCodegenError> {
     out.push_str(match t {
         Type::I64 => "i64",
         Type::Bool => "bool",
+        // Ruchy compiles to Rust → same BigInt re-export. PMAT-012.
+        Type::BigInt => "xpile_bigint::BigInt",
     });
     Ok(())
 }

@@ -197,10 +197,16 @@ pub struct Param {
 /// promotion, C signed/unsigned, etc.) at the frontend boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Type {
-    /// 64-bit signed integer. The default-and-only numeric type at v0.1.0.
+    /// 64-bit signed integer. The fast path for Python `int` — covers
+    /// every case where the frontend can prove the value fits.
     I64,
     /// Boolean — produced by comparison ops in [`Expr::BinOp`].
     Bool,
+    /// Unbounded integer — Python `int`'s native shape. The slow path
+    /// of contract `C-PY-INT-ARITH`. Rust/Ruchy emit
+    /// `xpile_bigint::BigInt`; Lean emits `Int` (which is already
+    /// unbounded). PMAT-012.
+    BigInt,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
