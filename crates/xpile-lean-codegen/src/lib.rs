@@ -376,6 +376,9 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         // shell-domain stmts inside while loops in current
         // frontends), so no recursion needed at v0.1.0.
         Expr::CommandSubstitution(_) => {}
+        // PMAT-055: shell special params likewise carry no
+        // Rust-level idents.
+        Expr::ShellSpecial(_) => {}
     }
 }
 
@@ -558,6 +561,13 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
                  contract C-BASHRS-POSIX-IDEMPOTENCE governs shell substitution"
                     .into(),
             ));
+        }
+        // PMAT-055: same disposition.
+        Expr::ShellSpecial(name) => {
+            return Err(LeanCodegenError::Unsupported(format!(
+                "Lean backend does not lower Expr::ShellSpecial (${name}) — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs shell special params"
+            )));
         }
     }
     Ok(())

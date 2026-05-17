@@ -268,6 +268,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     .into(),
             ));
         }
+        // PMAT-055: see rust-codegen.
+        Expr::ShellSpecial(name) => {
+            return Err(RuchyCodegenError::Unsupported(format!(
+                "Ruchy backend does not lower Expr::ShellSpecial (${name}) — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs shell special params; \
+                 use `--target shell`"
+            )));
+        }
     }
     Ok(())
 }

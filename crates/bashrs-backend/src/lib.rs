@@ -40,6 +40,10 @@ fn render_arg(e: &Expr) -> Result<String, BackendError> {
         // form) is the input-side parse; rendering as `$NAME` is the
         // canonical output form — same semantic, fewer chars.
         Expr::ShellVar(name) => Ok(format!("${name}")),
+        // PMAT-055: shell special parameters render as `$<char>`.
+        // The frontend parser guarantees the name is one of POSIX's
+        // legal specials, so no further validation needed here.
+        Expr::ShellSpecial(name) => Ok(format!("${name}")),
         // PMAT-047: command substitution renders as `$(rendered-inner)`.
         // At v0.1.0 the inner Stmt must be a `Stmt::Cmd` (the only
         // stmt shape that has a renderable inline form); a future
@@ -620,6 +624,26 @@ mod tests {
             msg.contains("only renders Stmt::Cmd inside"),
             "error should explain the v0.1.0 constraint: {msg}"
         );
+    }
+
+    #[test]
+    fn render_arg_shell_special() {
+        // PMAT-055: ShellSpecial renders as `$<char>`.
+        use xpile_meta_hir::Expr;
+        for (name, expected) in &[
+            ("1", "$1"),
+            ("?", "$?"),
+            ("@", "$@"),
+            ("0", "$0"),
+            ("#", "$#"),
+            ("$", "$$"),
+        ] {
+            assert_eq!(
+                render_arg(&Expr::ShellSpecial(name.to_string())).unwrap(),
+                *expected,
+                "expected $`{name}` → `{expected}`"
+            );
+        }
     }
 
     #[test]
