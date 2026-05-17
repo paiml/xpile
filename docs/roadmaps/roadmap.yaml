@@ -1663,3 +1663,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-102
+  github_issue: null
+  item_type: task
+  title: 'PMAT-102: sub/pv-integration.md sweep — update pv lint gate example from 4 contracts/10 eqs to 12 contracts/35 eqs (live post-substrate-completion output)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T17:00:00Z
+  updated: 2026-05-18T17:00:00Z
+  spec: null
+  acceptance_criteria:
+  - sub/pv-integration.md showed pv lint output for 4 contracts (v0.0.1-era). Live output is 12 contracts / 35 equations / 19 preconditions. Update the example. Drop the "until Phase 3" phrasing for Gate 7 (since phased-rollout.md PMAT-096 reframed phases). Add a note that the §14.4 stratum gates ride inside cargo test --workspace, layered on top of pv lint.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

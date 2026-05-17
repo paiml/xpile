@@ -78,20 +78,20 @@ The contract YAML is the only thing checked into git for the "claim." Everything
 
 ## Lint passing as a hard CI gate
 
-Every PR must pass `pv lint` 8/8 gates on the full contracts directory. At v0.1.0:
+Every PR must pass `pv lint` 8/8 gates on the full contracts directory. At v0.1.0 (post-substrate-completion, PMAT-058..077):
 
 ```
-  Gate 1: validate             ✓  (4 contracts, 0 errors, 2 warnings) [0ms]
-  Gate 2: audit                ✓  (4 contracts, 0 findings) [0ms]
-  Gate 3: score                ✓  (4 contracts, mean=0.58, threshold=0.00) [0ms]
-  Gate 4: verify               ✓  (0 refs, 0 found, 0 missing) [0ms]
-  Gate 5: enforce              ✓  (10 eqs, 4 pre, 0 post) [0ms]
-  Gate 6: enforcement-level    ✓  (skipped: 4 contracts, 0 below level) [0ms]
+  Gate 1: validate             ✓  (12 contracts, 0 errors, 5 warnings) [0ms]
+  Gate 2: audit                ✓  (12 contracts, 0 findings) [0ms]
+  Gate 3: score                ✓  (12 contracts, mean=0.56, threshold=0.00) [0ms]
+  Gate 4: verify               ✓  (0 refs, 0 found, 0 missing) [2ms]
+  Gate 5: enforce              ✓  (35 eqs, 19 pre, 0 post) [0ms]
+  Gate 6: enforcement-level    ✓  (skipped: 12 contracts, 0 below level) [0ms]
   Gate 7: reverse-coverage     ⏭  (skipped: no --binding or --crate-dir provided) [0ms]
   Gate 8: composition          ✓  (0 edges, 0 satisfied, 0 broken) [0ms]
 ```
 
-Gate 7 (reverse-coverage) is skipped until Phase 3, when contracts get wired to actual code via `--binding` or `--crate-dir`.
+Gate 7 (reverse-coverage) is still skipped at v0.1.0 — `--binding` / `--crate-dir` integration is XPILE-PV-REVERSE-COVERAGE-001 future work. Note that the §14.4 stratum gates from substrate completion (`refinement_proofs`, `kani_harnesses`, `kani_verify`, `quorum`, `attestations`) are independent verifications layered on top of `pv lint` — they ride inside `cargo test --workspace` (see [ci-gates.md](ci-gates.md) for the full CI gate list).
 
 ## Future: full `pv` ownership
 
