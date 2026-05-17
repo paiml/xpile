@@ -293,6 +293,42 @@ fn lower_raw_token(t: &RawToken) -> Result<Expr, FrontendError> {
     }
 }
 
+/// PMAT-088: detect whether a shell line has an *unambiguous* pipe
+/// (single `|`) for `Stmt::Pipeline` parsing, distinguishing it from
+/// `||` (short-circuit OR). Returns `true` iff the line contains at
+/// least one `|` character that is NOT part of a `||` pair.
+///
+/// The check is a single linear scan: walk char-by-char, and for
+/// each `|` look at the immediate neighbours. A `|` is a real pipe
+/// iff neither the previous nor the next char is also `|`. A `|`
+/// that's part of `||` is logical-OR, not a pipe.
+///
+/// Edge case: `cmd1 ||| cmd2` (three pipes in a row) is invalid
+/// POSIX; our scan sees the middle `|` flanked by `||` on both
+/// sides which fails the unambiguous-pipe check, so the whole line
+/// falls through to LitStr-args. That's the right behavior since
+/// the input is ill-formed; the shell will reject it at execution
+/// time if executed.
+///
+/// What's deliberately NOT handled (v0.2.0 source fold):
+///   * Pipes inside quoted regions (`echo "a | b"` should NOT be
+///     a pipeline). Current behavior is a known v0.1.0 limitation
+///     called out in the PMAT-041 doc comment above.
+fn line_has_unambiguous_pipe(line: &str) -> bool {
+    let chars: Vec<char> = line.chars().collect();
+    for (i, &c) in chars.iter().enumerate() {
+        if c != '|' {
+            continue;
+        }
+        let prev_is_pipe = i > 0 && chars[i - 1] == '|';
+        let next_is_pipe = i + 1 < chars.len() && chars[i + 1] == '|';
+        if !prev_is_pipe && !next_is_pipe {
+            return true;
+        }
+    }
+    false
+}
+
 /// PMAT-086: splice POSIX backslash-newline line continuations.
 /// In POSIX shell, a `\` immediately followed by a newline (with
 /// no intervening characters) is removed entirely — both the
@@ -595,7 +631,16 @@ impl Frontend for BashrsFrontend {
             // — `echo "a | b" | cat` is parsed as three stages, not
             // two with embedded pipe; that improves at v0.2.0 with
             // the real bashrs parser.
-            if line.contains('|') {
+            //
+            // PMAT-088: distinguish single `|` (pipe) from `||`
+            // (short-circuit OR). A line that contains `||` but NOT
+            // a single `|` falls through to `Stmt::Cmd` so the
+            // `||` tokens survive as ordinary `LitStr` args. The
+            // shell at execution time re-interprets `||` as a
+            // short-circuit operator. The control-structure-faithful
+            // representation (`Stmt::ShortCircuit { lhs, op, rhs }`)
+            // is XPILE-BASHRS-LOGICAL-OPS-001 future work.
+            if line_has_unambiguous_pipe(line) {
                 let mut stages: Vec<Stmt> = Vec::new();
                 for segment in line.split('|') {
                     let trimmed = segment.trim();
@@ -1485,6 +1530,87 @@ pwd
             args,
             &vec![Expr::LitStr("hello".into()), Expr::LitStr("world".into()),]
         );
+    }
+
+    #[test]
+    fn line_has_unambiguous_pipe_distinguishes_pipe_from_or() {
+        // PMAT-088: helper that lets parse_and_lower distinguish a
+        // real pipeline (`cmd1 | cmd2`) from a short-circuit OR
+        // (`cmd1 || cmd2`).
+        assert!(line_has_unambiguous_pipe("cat foo | grep bar"));
+        assert!(line_has_unambiguous_pipe("a | b | c"));
+        assert!(!line_has_unambiguous_pipe("ls || exit 1"));
+        assert!(!line_has_unambiguous_pipe("true || false"));
+        assert!(!line_has_unambiguous_pipe("a || b || c"));
+        // Edge: ill-formed `|||` — no unambiguous single pipe.
+        assert!(!line_has_unambiguous_pipe("cmd1 ||| cmd2"));
+        // Mixed: contains both `||` AND `|`. The `|` is still
+        // unambiguous so we report true (the line is a pipeline
+        // *and* has logical-OR; v0.1.0 pipeline parser will then
+        // try to split it, which is an acceptable best-effort
+        // outcome).
+        assert!(line_has_unambiguous_pipe("a | b || c"));
+        // No pipes at all.
+        assert!(!line_has_unambiguous_pipe("echo hi"));
+        assert!(!line_has_unambiguous_pipe(""));
+    }
+
+    #[test]
+    fn parse_and_lower_and_or_short_circuit_round_trips_via_litstr() {
+        // PMAT-088: POSIX `&&` and `||` short-circuit operators
+        // round-trip end-to-end via LitStr passthrough at v0.1.0.
+        // Like redirections (PMAT-087), the tokens land as
+        // ordinary `Expr::LitStr` args; the downstream shell
+        // re-interprets the control flow at execution time.
+        //
+        // For a real shell line like `make && make install`,
+        // bashrs-frontend's whitespace tokenizer splits it into
+        // four tokens: ["make", "&&", "make", "install"], so it
+        // lowers to Stmt::Cmd { program: "make", args:
+        // [LitStr("&&"), LitStr("make"), LitStr("install")] }.
+        // When bashrs-backend renders this back to shell, the
+        // emitted line is `make && make install` again, and the
+        // shell at execution time correctly interprets `&&` as
+        // a short-circuit operator splitting two commands.
+        //
+        // The IR doesn't model the boolean control structure
+        // (that's XPILE-BASHRS-LOGICAL-OPS-001 future work),
+        // but the byte-level round-trip preserves shell
+        // semantics. This is the same v0.1.0 invariant pattern
+        // as PMAT-085 (param expansion), PMAT-086 (line
+        // continuation), and PMAT-087 (redirection).
+        use xpile_meta_hir::{Expr, Item, Stmt};
+        let cases: &[(&str, &str, &[&str])] = &[
+            ("make && make install\n", "make", &["&&", "make", "install"]),
+            ("ls || exit 1\n", "ls", &["||", "exit", "1"]),
+            (
+                "test -f foo && echo exists || echo missing\n",
+                "test",
+                &["-f", "foo", "&&", "echo", "exists", "||", "echo", "missing"],
+            ),
+            ("true && false\n", "true", &["&&", "false"]),
+        ];
+        for (source, expected_program, expected_args) in cases {
+            let module = BashrsFrontend
+                .parse_and_lower(&PathBuf::from("/tmp/ao.sh"), source)
+                .expect("parse");
+            let Item::Function(f) = &module.items[0];
+            let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
+                panic!(
+                    "expected Stmt::Cmd for `{source}`; got {:?}",
+                    f.body.stmts[0]
+                );
+            };
+            assert_eq!(program, expected_program);
+            let expected_exprs: Vec<Expr> = expected_args
+                .iter()
+                .map(|s| Expr::LitStr((*s).to_string()))
+                .collect();
+            assert_eq!(
+                args, &expected_exprs,
+                "short-circuit operator preservation for `{source}` failed"
+            );
+        }
     }
 
     #[test]

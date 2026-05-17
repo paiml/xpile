@@ -110,6 +110,48 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### POSIX `&&` / `||` short-circuit operator round-trip (PMAT-088)
+
+**Fixes a v0.1.0 parser bug AND locks in short-circuit
+round-trip behavior.** Previously a shell line containing `||`
+would be misinterpreted by the pipeline parser as `| |` (two
+empty pipe stages) and rejected with an "empty stage" error.
+After this PR, `||` and `&&` round-trip end-to-end via the
+same LitStr passthrough pattern as PMAT-087's redirections.
+
+```bash
+ls || exit 1
+# now parses to:
+#   Stmt::Cmd {
+#     program: "ls",
+#     args: [LitStr("||"), LitStr("exit"), LitStr("1")]
+#   }
+# instead of erroring with "shell pipeline has an empty stage"
+```
+
+Implementation:
+- **`crates/bashrs-frontend/src/lib.rs::line_has_unambiguous_pipe`** —
+  new helper that walks the line char-by-char and reports
+  whether there's at least one `|` that's NOT adjacent to
+  another `|`. Single `|` is a pipe; `||` is short-circuit OR.
+  Used by the pipeline-detection check in `parse_and_lower`
+  instead of the prior `line.contains('|')`.
+- **`line_has_unambiguous_pipe_distinguishes_pipe_from_or`** —
+  unit test covering 8 input patterns: real pipes, real OR
+  expressions, edge cases (`|||`), mixed (`a | b || c`), empty.
+- **`parse_and_lower_and_or_short_circuit_round_trips_via_litstr`** —
+  end-to-end test asserting 4 short-circuit patterns
+  (`&&`, `||`, mixed `&& ... || ...`, simple `true && false`)
+  parse to `Stmt::Cmd` with the operator tokens preserved as
+  LitStr args.
+
+This is a real bug fix (not just an invariant lock-in) — prior
+behavior actively rejected valid POSIX scripts containing `||`.
+Structured representation (`Stmt::ShortCircuit { lhs, op, rhs }`)
+is XPILE-BASHRS-LOGICAL-OPS-001 future work; at v0.1.0 the
+LitStr passthrough preserves shell semantics through the
+byte-level round-trip.
+
 ### POSIX redirection round-trip via LitStr passthrough (PMAT-087)
 
 **POSIX redirection tokens round-trip end-to-end at v0.1.0.**

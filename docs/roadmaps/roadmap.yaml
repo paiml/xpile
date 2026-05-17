@@ -1425,3 +1425,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-088
+  github_issue: null
+  item_type: task
+  title: 'PMAT-088: bashrs &&/|| short-circuit round-trip + bugfix — pipeline parser was treating `||` as `| |` (empty-stage error); add line_has_unambiguous_pipe helper to distinguish'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T10:00:00Z
+  updated: 2026-05-18T10:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add line_has_unambiguous_pipe() helper in bashrs-frontend that returns true only when the line contains a single `|` not adjacent to another `|`. Use it in parse_and_lower instead of the prior `line.contains('|')` check. Real bug fix — prior behavior rejected valid POSIX scripts like `ls || exit 1` with an "empty stage" error. Plus adds parse_and_lower_and_or_short_circuit_round_trips_via_litstr asserting 4 short-circuit patterns are preserved as LitStr args. Sets up XPILE-BASHRS-LOGICAL-OPS-001 (structured Stmt::ShortCircuit variant).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
