@@ -340,3 +340,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-022
+  github_issue: null
+  item_type: task
+  title: Extend XPILE-PENDING-UNTIL scan to contracts/ (XPILE-EXEMPT-002)
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T12:45:58Z
+  updated: 2026-05-17T12:45:58Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

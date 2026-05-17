@@ -94,37 +94,63 @@ fn workspace_version() -> SemVer {
     panic!("could not parse workspace.package.version from root Cargo.toml");
 }
 
-/// Walk every `.rs` source file under `crates/*/src/` and return every
-/// `XPILE-PENDING-UNTIL` marker it finds. Skips test files (which may
-/// legitimately mention the marker as documentation rather than as a
-/// live exemption).
+/// Walk every file the deadline scanner cares about and return every
+/// `XPILE-PENDING-UNTIL` marker. XPILE-EXEMPT-002 widened this from
+/// "Rust source under crates/*/src/" to also cover proof-lane and
+/// symbolic-stratum artefacts under `contracts/`:
+///   * `crates/*/src/**/*.rs` — Rust codegen / library source
+///   * `contracts/lean/*.lean` — Semantic stratum proof statements
+///   * `contracts/kani/*.rs`  — Symbolic stratum harnesses
+///
+/// Test fixture files and unit tests aren't walked because their
+/// markers are documentation, not live exemptions — same posture as
+/// before.
 fn parse_pending_markers(root: &Path) -> Vec<PendingMarker> {
     let mut out = Vec::new();
+
+    // (1) Rust codegen + library source under crates/*/src/
     let crates_dir = root.join("crates");
-    let entries = fs::read_dir(&crates_dir).expect("read crates dir");
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let src_dir = path.join("src");
-        if src_dir.is_dir() {
-            walk_dir(&src_dir, &mut out);
+    if let Ok(entries) = fs::read_dir(&crates_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let src_dir = path.join("src");
+            if src_dir.is_dir() {
+                walk_dir(&src_dir, &[".rs"], &mut out);
+            }
         }
     }
+
+    // (2) Lean refinement proofs under contracts/lean/
+    let lean_dir = root.join("contracts").join("lean");
+    if lean_dir.is_dir() {
+        walk_dir(&lean_dir, &[".lean"], &mut out);
+    }
+
+    // (3) Kani harnesses under contracts/kani/
+    let kani_dir = root.join("contracts").join("kani");
+    if kani_dir.is_dir() {
+        walk_dir(&kani_dir, &[".rs"], &mut out);
+    }
+
     out
 }
 
-fn walk_dir(dir: &Path, out: &mut Vec<PendingMarker>) {
+fn walk_dir(dir: &Path, exts: &[&str], out: &mut Vec<PendingMarker>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            walk_dir(&path, out);
-        } else if path.extension().and_then(|s| s.to_str()) == Some("rs") {
-            scan_file(&path, out);
+            walk_dir(&path, exts, out);
+        } else if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+            let dotted = format!(".{ext}");
+            if exts.contains(&dotted.as_str()) {
+                scan_file(&path, out);
+            }
         }
     }
 }
@@ -219,6 +245,33 @@ fn at_least_one_marker_exists() {
         "expected at least one XPILE-PENDING-UNTIL marker in workspace source — \
          if every previously-pending feature has shipped, great, but then this test \
          can be removed (or kept for future deadlines)."
+    );
+}
+
+/// XPILE-EXEMPT-002: assert the scanner actually picks up the proof-
+/// lane markers in `contracts/lean/PyIntArith.lean` (which were
+/// silently ignored before the scope widening). If a future refactor
+/// narrows the scan back to crates-only, this fires.
+#[test]
+fn scanner_picks_up_proof_lane_markers() {
+    let root = workspace_root();
+    let markers = parse_pending_markers(&root);
+    let has_lean_marker = markers.iter().any(|m| {
+        m.file
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|e| e == "lean")
+            .unwrap_or(false)
+    });
+    assert!(
+        has_lean_marker,
+        "expected at least one XPILE-PENDING-UNTIL marker in a `.lean` file under contracts/lean/; \
+         XPILE-EXEMPT-002 widened the scan to include the proof lane. Found markers in:\n{}",
+        markers
+            .iter()
+            .map(|m| format!("  - {} (line {})", m.file.display(), m.line))
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 }
 
