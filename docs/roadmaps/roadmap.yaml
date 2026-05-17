@@ -660,3 +660,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-042
+  github_issue: null
+  item_type: task
+  title: 'PMAT-042: Layer B Expr-side foundation — refactor Stmt::Cmd args to Vec<Expr>; add Expr::LitStr + Expr::QuotedString + QuotingStrategy'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T16:20:03Z
+  updated: 2026-05-17T16:20:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

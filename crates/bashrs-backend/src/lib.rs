@@ -15,7 +15,30 @@
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, Target};
 use xpile_contracts::ContractId;
-use xpile_meta_hir::{Item, Module, Stmt};
+use xpile_meta_hir::{Expr, Item, Module, QuotingStrategy, Stmt};
+
+/// PMAT-042: render a single `Stmt::Cmd` arg into its POSIX shell
+/// surface form, honouring the carried `QuotingStrategy` for
+/// `Expr::QuotedString`. Non-string `Expr` variants are refused
+/// (defensive — bashrs-frontend doesn't produce them inside a Cmd's
+/// args; a future producer that did would need to extend this).
+fn render_arg(e: &Expr) -> Result<String, BackendError> {
+    match e {
+        Expr::LitStr(s) => Ok(s.clone()),
+        Expr::QuotedString { content, quoting } => Ok(match quoting {
+            QuotingStrategy::Single => format!("'{content}'"),
+            QuotingStrategy::Double => format!("\"{content}\""),
+            QuotingStrategy::Backslash => content
+                .chars()
+                .map(|c| format!("\\{c}"))
+                .collect::<String>(),
+        }),
+        other => Err(BackendError::Lower(format!(
+            "bashrs-backend v0.1.0 cannot render non-string Expr as Stmt::Cmd arg \
+             (got {other:?}); only Expr::LitStr / Expr::QuotedString supported"
+        ))),
+    }
+}
 
 pub struct BashrsBackend;
 
@@ -101,7 +124,11 @@ impl Backend for BashrsBackend {
                             writeln!(primary, "{program}")
                                 .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
                         } else {
-                            writeln!(primary, "{program} {}", args.join(" "))
+                            // PMAT-042: render each arg through the
+                            // quoting-aware helper.
+                            let rendered: Result<Vec<String>, BackendError> =
+                                args.iter().map(render_arg).collect();
+                            writeln!(primary, "{program} {}", rendered?.join(" "))
                                 .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
                         }
                         emitted_commands += 1;
@@ -124,11 +151,14 @@ impl Backend for BashrsBackend {
                                      (got {stage:?})"
                                 )));
                             };
-                            rendered.push(if args.is_empty() {
-                                program.clone()
+                            // PMAT-042: same quoting-aware rendering.
+                            if args.is_empty() {
+                                rendered.push(program.clone());
                             } else {
-                                format!("{program} {}", args.join(" "))
-                            });
+                                let arg_strs: Result<Vec<String>, BackendError> =
+                                    args.iter().map(render_arg).collect();
+                                rendered.push(format!("{program} {}", arg_strs?.join(" ")));
+                            }
                         }
                         writeln!(primary, "{}", rendered.join(" | "))
                             .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
@@ -240,11 +270,11 @@ mod tests {
                     stmts: vec![
                         Stmt::Cmd {
                             program: "echo".into(),
-                            args: vec!["hello".into(), "world".into()],
+                            args: vec![Expr::LitStr("hello".into()), Expr::LitStr("world".into())],
                         },
                         Stmt::Cmd {
                             program: "ls".into(),
-                            args: vec!["/tmp".into()],
+                            args: vec![Expr::LitStr("/tmp".into())],
                         },
                         Stmt::Cmd {
                             program: "pwd".into(),
@@ -308,15 +338,15 @@ mod tests {
                         stages: vec![
                             Stmt::Cmd {
                                 program: "cat".into(),
-                                args: vec!["foo".into()],
+                                args: vec![Expr::LitStr("foo".into())],
                             },
                             Stmt::Cmd {
                                 program: "grep".into(),
-                                args: vec!["bar".into()],
+                                args: vec![Expr::LitStr("bar".into())],
                             },
                             Stmt::Cmd {
                                 program: "wc".into(),
-                                args: vec!["-l".into()],
+                                args: vec![Expr::LitStr("-l".into())],
                             },
                         ],
                     }],
@@ -334,6 +364,86 @@ mod tests {
         assert!(
             art.primary.contains("\ncat foo | grep bar | wc -l\n"),
             "expected pipeline line; got:\n{}",
+            art.primary
+        );
+    }
+
+    #[test]
+    fn render_arg_uses_quoting_strategy() {
+        // PMAT-042: each QuotingStrategy variant renders the wrapping
+        // characters bashrs-frontend / future producers expect. This
+        // locks in the rendering contract so a downstream consumer of
+        // the emitted shell knows exactly what to expect.
+        use xpile_meta_hir::{Expr, QuotingStrategy};
+        assert_eq!(
+            render_arg(&Expr::LitStr("foo".into())).unwrap(),
+            "foo",
+            "LitStr emits bareword"
+        );
+        assert_eq!(
+            render_arg(&Expr::QuotedString {
+                content: "hello world".into(),
+                quoting: QuotingStrategy::Single,
+            })
+            .unwrap(),
+            "'hello world'",
+            "Single-quoted strategy wraps in single quotes"
+        );
+        assert_eq!(
+            render_arg(&Expr::QuotedString {
+                content: "hi $USER".into(),
+                quoting: QuotingStrategy::Double,
+            })
+            .unwrap(),
+            "\"hi $USER\"",
+            "Double-quoted strategy wraps in double quotes"
+        );
+        assert_eq!(
+            render_arg(&Expr::QuotedString {
+                content: "abc".into(),
+                quoting: QuotingStrategy::Backslash,
+            })
+            .unwrap(),
+            "\\a\\b\\c",
+            "Backslash strategy escapes each character"
+        );
+    }
+
+    #[test]
+    fn lower_cmd_with_quoted_string_arg_renders_with_quotes() {
+        // PMAT-042 end-to-end: a Stmt::Cmd whose args contain an
+        // `Expr::QuotedString` renders with the right quoting in the
+        // emitted shell.
+        use xpile_meta_hir::{Block, Expr, Function, Item, QuotingStrategy, Stmt, Type};
+        let module = Module {
+            name: "demo".into(),
+            source_lang: xpile_meta_hir::SourceLang::Shell,
+            items: vec![Item::Function(Function {
+                name: "main".into(),
+                params: vec![],
+                return_type: Type::I64,
+                body: Block {
+                    stmts: vec![Stmt::Cmd {
+                        program: "echo".into(),
+                        args: vec![Expr::QuotedString {
+                            content: "hello world".into(),
+                            quoting: QuotingStrategy::Single,
+                        }],
+                    }],
+                    trailing_return: Expr::LitInt(0),
+                },
+            })],
+            ffi_boundaries: vec![],
+        };
+        let cfg = BackendConfig {
+            target: Target::Shell,
+            profile: Profile::RustOut,
+            hardware: None,
+        };
+        let art = BashrsBackend.lower(&module, &cfg).expect("lower");
+        assert!(
+            art.primary.contains("\necho 'hello world'\n"),
+            "expected single-quoted arg in emit; got:\n{}",
             art.primary
         );
     }

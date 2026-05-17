@@ -217,6 +217,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         } => emit_if_expr(out, cond, then_expr, else_expr, mode)?,
         Expr::Call { callee, args } => emit_call(out, callee, args, mode)?,
         Expr::UnOp { op, operand } => emit_unop(out, *op, operand, mode)?,
+        // PMAT-042: see rust-codegen's matching arm.
+        Expr::LitStr(_) | Expr::QuotedString { .. } => {
+            return Err(RuchyCodegenError::Unsupported(
+                "Ruchy backend does not lower Expr::LitStr / Expr::QuotedString — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs shell string literals; \
+                 use `--target shell`"
+                    .into(),
+            ));
+        }
     }
     Ok(())
 }

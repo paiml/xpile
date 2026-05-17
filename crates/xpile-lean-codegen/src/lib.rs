@@ -345,6 +345,11 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 collect_idents(a, out);
             }
         }
+        // PMAT-042: shell-string Expr variants carry no idents. The
+        // while-helper analyzer only walks the cond + assignments of
+        // a while loop body, none of which contain shell strings, so
+        // we never reach this in practice — defensive arm.
+        Expr::LitStr(_) | Expr::QuotedString { .. } => {}
     }
 }
 
@@ -480,6 +485,16 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         } => emit_if_expr(out, cond, then_expr, else_expr)?,
         Expr::Call { callee, args } => emit_call(out, callee, args)?,
         Expr::UnOp { op, operand } => emit_unop(out, *op, operand)?,
+        // PMAT-042: shell-string Expr variants belong to the bashrs
+        // domain. Lean refuses them.
+        Expr::LitStr(_) | Expr::QuotedString { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Lean backend does not lower Expr::LitStr / Expr::QuotedString — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs shell string literals; \
+                 use `--target shell`"
+                    .into(),
+            ));
+        }
     }
     Ok(())
 }
