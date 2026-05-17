@@ -1391,3 +1391,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-086
+  github_issue: null
+  item_type: task
+  title: 'PMAT-086: bashrs line-continuation support — splice POSIX backslash-newline sequences before tokenization'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T09:00:00Z
+  updated: 2026-05-18T09:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add splice_line_continuations() helper in bashrs-frontend implementing POSIX backslash-newline splicing rules (odd run = continuation marker, even run = literal backslash pairs). Wire into parse_and_lower before .lines() split. Add unit test covering 8 splice patterns + integration test verifying multi-line `echo \\\n  hello \\\n  world\n` parses to a single Stmt::Cmd with hello/world as args. Real shell scripts use line continuation heavily for long invocations (configure / cmake / apt-get install).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

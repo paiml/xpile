@@ -110,6 +110,51 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### POSIX backslash-newline line continuation in bashrs-frontend (PMAT-086)
+
+**Multi-line shell commands joined by `\<newline>` now parse as
+a single Stmt::Cmd.** Real shell scripts use line continuation
+heavily for long `configure` / `cmake` / `apt-get install`
+invocations:
+
+```bash
+echo \
+  hello \
+  world
+```
+
+now parses to `Stmt::Cmd { program: "echo", args: [LitStr("hello"),
+LitStr("world")] }`, where before each line was parsed
+separately and the bare `\` token would have leaked into args.
+
+Implementation:
+- **`crates/bashrs-frontend/src/lib.rs::splice_line_continuations`** —
+  new pre-tokenization step that walks the source counting
+  consecutive backslashes before each newline. POSIX rule: if
+  the run length is odd, the last backslash + newline are a
+  continuation marker (both dropped, joining surrounding text);
+  if even, all backslashes are literal pairs and the newline
+  is preserved. Called from `parse_and_lower` before
+  `.lines()` splitting.
+- **`splice_line_continuations_handles_pmat_086_cases`** —
+  unit test asserting 8 distinct splice patterns (single
+  continuation, indented continuation, multi-line chain,
+  literal-backslash before newline, escaped-backslash-plus-
+  continuation, mid-line backslash, trailing backslash, plain
+  input).
+- **`parse_and_lower_handles_pmat_086_line_continuation`** —
+  end-to-end test verifying the spliced source flows correctly
+  into Stmt::Cmd construction.
+
+What's deliberately not handled (v0.2.0 source fold):
+- Backslash-newline inside single quotes (POSIX preserves
+  these literally; v0.1.0 splice runs pre-tokenization so it
+  incorrectly joins quoted backslash-newlines too). Bounded
+  practical impact: real shell scripts rarely put literal
+  backslash-newlines inside single quotes.
+- Backslash-newline inside heredocs (also POSIX-preserved;
+  v0.1.0 has no heredoc support — XPILE-BASHRS-HEREDOC-001).
+
 ### POSIX parameter expansion LitStr passthrough lock-in (PMAT-085)
 
 **Documents and locks in the v0.1.0 LitStr-passthrough behavior
