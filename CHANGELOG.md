@@ -110,6 +110,17 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Kani job in CI (PMAT-021 / XPILE-QUORUM-003)
+
+New dedicated `kani` job in `.github/workflows/ci.yml` installs
+`kani-verifier`, runs `cargo kani-setup`, and runs the
+`kani_verify` workspace test against every harness on every PR.
+Kept as a separate job (not bundled with `workspace-test`) so the
+~5-minute cold-cache Kani install doesn't slow fast-feedback
+gates. Not a required status check yet — flip after Kani has
+bedded in for a release cycle. Symbolic stratum is now load-bearing
+on every PR, not just locally.
+
 ### Run Kani harnesses in workspace tests (PMAT-020 / XPILE-QUORUM-002)
 
 Converts the Symbolic stratum from claim to fact. New
