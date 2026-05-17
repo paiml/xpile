@@ -44,23 +44,95 @@ fn xpile_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_xpile"))
 }
 
-// Curated set of single-arg i64 fixtures + the entry function name +
-// the [min, max] input range that stays inside the C-PY-INT-ARITH
-// fast path (no overflow). These bounds are deliberately conservative
-// — wider ranges become available once XPILE-DIFF-002 lands the
-// "panic = BigInt promotion" comparison.
+// Curated set of fixtures + per-arg [min, max] input ranges that stay
+// inside the C-PY-INT-ARITH fast path (no overflow panics). Each entry
+// is (file, entry-function, per-arg-range[]) — the slice length is
+// the function's arity. XPILE-DIFF-002 extended this from single-arg
+// only to support 1- and 2-arg fixtures; the driver synthesis below
+// handles both arities. Higher arities are a follow-up.
 //
-// gcd / range_size / bits / square_plus / safe_div take 2+ args and
-// require a different runner; they live in XPILE-DIFF-002 too.
-const FIXTURES: &[(&str, &str, i64, i64)] = &[
-    // (fixture, entry_function, min_input, max_input)
-    ("factorial.py", "factorial", 0, 12), // 13! overflows i64
-    ("fib.py", "fib", 0, 30),             // F(30) = 832040, safe
-    ("abs_val.py", "abs_val", -1_000_000, 1_000_000),
-    ("sign.py", "sign", -1_000_000_000, 1_000_000_000),
-    ("sum_to.py", "sum_to", 0, 65_535), // sum(1..65535) ≈ 2.1e9, well under i64
-    ("for_sum.py", "for_sum", 0, 65_535),
-    ("countdown.py", "factorial_iter", 0, 12), // iterative factorial; n=13 overflows i64
+// Conservative input ranges below stay inside the fast path; ranges
+// that *include* overflow (where Python promotes to bigint but Rust
+// panics) need XPILE-DIFF-003 to interpret the panic as expected.
+struct FixtureCfg {
+    file: &'static str,
+    entry: &'static str,
+    // Per-arg `(min, max)` (inclusive). Slice length is the arity.
+    args: &'static [(i64, i64)],
+}
+
+const FIXTURES: &[FixtureCfg] = &[
+    // ── 1-arg fixtures (carried over from XPILE-DIFF-001) ────────
+    FixtureCfg {
+        file: "factorial.py",
+        entry: "factorial",
+        // 13! overflows i64
+        args: &[(0, 12)],
+    },
+    FixtureCfg {
+        file: "fib.py",
+        entry: "fib",
+        // F(30) = 832040, safe; F(94) is the i64 limit but tree-
+        // recursion makes large n painfully slow.
+        args: &[(0, 30)],
+    },
+    FixtureCfg {
+        file: "abs_val.py",
+        entry: "abs_val",
+        args: &[(-1_000_000, 1_000_000)],
+    },
+    FixtureCfg {
+        file: "sign.py",
+        entry: "sign",
+        args: &[(-1_000_000_000, 1_000_000_000)],
+    },
+    FixtureCfg {
+        file: "sum_to.py",
+        entry: "sum_to",
+        // sum(1..65535) ≈ 2.1e9, well under i64
+        args: &[(0, 65_535)],
+    },
+    FixtureCfg {
+        file: "for_sum.py",
+        entry: "for_sum",
+        args: &[(0, 65_535)],
+    },
+    FixtureCfg {
+        file: "countdown.py",
+        entry: "factorial_iter",
+        args: &[(0, 12)],
+    },
+    // ── 2-arg fixtures (added XPILE-DIFF-002) ────────────────────
+    FixtureCfg {
+        file: "gcd.py",
+        entry: "gcd",
+        // gcd handles 0 and 0 correctly (returns 0 in both Python
+        // and our emission). Negative inputs work but Python's
+        // math.gcd convention is non-negative result — easier to
+        // restrict to non-negative inputs and avoid that asymmetry.
+        args: &[(0, 1_000_000), (0, 1_000_000)],
+    },
+    FixtureCfg {
+        file: "multi_branch.py",
+        entry: "range_size",
+        // range_size = abs(a - b); inputs bounded so the difference
+        // can't overflow i64.
+        args: &[
+            (-1_000_000_000, 1_000_000_000),
+            (-1_000_000_000, 1_000_000_000),
+        ],
+    },
+    FixtureCfg {
+        file: "bits.py",
+        entry: "bits",
+        // bits.py: `((a & b) | (a ^ b)) << 2 >> 1`. The constant-shift-
+        // by-2 means inputs must stay in [-2^61, 2^61) to avoid
+        // overflow on the left-shift, and the inner ops don't widen.
+        args: &[
+            (-i64::pow(2, 61) + 1, i64::pow(2, 61) - 1),
+            (-i64::pow(2, 61) + 1, i64::pow(2, 61) - 1),
+        ],
+    },
 ];
 
 /// Deterministic LCG (numerical recipes constants). Seeded once per
@@ -94,10 +166,16 @@ fn have_python_and_rustc() -> bool {
     py && rs
 }
 
-/// Build the transpiled-Rust binary that accepts one i64 CLI arg,
-/// calls the fixture function, and prints the result. Returns the
-/// path to the built binary.
-fn build_rust_binary(fixture_path: &Path, entry: &str, out_dir: &Path) -> Result<PathBuf, String> {
+/// Build the transpiled-Rust binary for an N-arg fixture. The synth
+/// driver reads N i64s from CLI argv and calls `entry(a0, a1, ...)`.
+/// XPILE-DIFF-002 generalised this from 1-arg only to support any
+/// arity by generating the appropriate call expression.
+fn build_rust_binary(
+    fixture_path: &Path,
+    entry: &str,
+    arity: usize,
+    out_dir: &Path,
+) -> Result<PathBuf, String> {
     // Transpile via the xpile binary so we exercise the real CLI path,
     // not just the library — same coverage as transpile_e2e.rs uses.
     let out = Command::new(xpile_bin())
@@ -117,11 +195,18 @@ fn build_rust_binary(fixture_path: &Path, entry: &str, out_dir: &Path) -> Result
     }
     let transpiled = String::from_utf8(out.stdout).map_err(|e| format!("utf8: {e}"))?;
 
+    // Build `entry(argv[0], argv[1], ...)` for the given arity.
+    let call_args: Vec<String> = (0..arity).map(|i| format!("argv[{i}]")).collect();
+    let call = format!("{entry}({})", call_args.join(", "));
     let driver = format!(
         r#"
 fn main() {{
-    let arg: i64 = std::env::args().nth(1).expect("missing arg").parse().expect("parse i64");
-    println!("{{}}", {entry}(arg));
+    let argv: Vec<i64> = std::env::args()
+        .skip(1)
+        .map(|s| s.parse::<i64>().expect("parse i64"))
+        .collect();
+    assert_eq!(argv.len(), {arity}, "expected {arity} args");
+    println!("{{}}", {call});
 }}
 "#
     );
@@ -150,13 +235,14 @@ fn main() {{
     Ok(bin_path)
 }
 
-/// Run the compiled Rust binary with one i64 arg. Returns stdout
+/// Run the compiled Rust binary with N i64 args. Returns stdout
 /// trimmed.
-fn run_rust(bin: &Path, arg: i64) -> Result<String, String> {
-    let out = Command::new(bin)
-        .arg(arg.to_string())
-        .output()
-        .map_err(|e| format!("spawn rust bin: {e}"))?;
+fn run_rust(bin: &Path, args: &[i64]) -> Result<String, String> {
+    let mut cmd = Command::new(bin);
+    for a in args {
+        cmd.arg(a.to_string());
+    }
+    let out = cmd.output().map_err(|e| format!("spawn rust bin: {e}"))?;
     if !out.status.success() {
         return Err(format!(
             "rust bin exited non-zero (overflow? input out of declared range?):\n  stderr: {}",
@@ -166,12 +252,15 @@ fn run_rust(bin: &Path, arg: i64) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// Run the Python fixture directly via CPython with one i64 arg.
+/// Run the Python fixture directly via CPython with N i64 args.
 /// Returns stdout trimmed.
-fn run_python(fixture_path: &Path, entry: &str, arg: i64) -> Result<String, String> {
-    // Exec the .py file to load defs, then call the entry and print.
+fn run_python(fixture_path: &Path, entry: &str, args: &[i64]) -> Result<String, String> {
     let src_path = fixture_path.to_str().ok_or("non-utf8 fixture path")?;
-    let prog = format!("exec(open(r'{src_path}').read()); print({entry}({arg}))");
+    let call_args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+    let prog = format!(
+        "exec(open(r'{src_path}').read()); print({entry}({}))",
+        call_args.join(", ")
+    );
     let out = Command::new("python3")
         .args(["-c", &prog])
         .output()
@@ -208,49 +297,56 @@ fn differential_execution_cpython_vs_transpiled_rust() {
 
     let mut rng = Lcg::new(LCG_SEED);
     let mut total_checks = 0;
-    let mut mismatches: Vec<(String, i64, String, String)> = Vec::new();
+    let mut mismatches: Vec<(String, Vec<i64>, String, String)> = Vec::new();
 
-    for (fixture_name, entry, lo, hi) in FIXTURES {
-        let py_path = fixture(fixture_name);
-        let bin = match build_rust_binary(&py_path, entry, &out_dir) {
+    for cfg in FIXTURES {
+        let py_path = fixture(cfg.file);
+        let bin = match build_rust_binary(&py_path, cfg.entry, cfg.args.len(), &out_dir) {
             Ok(b) => b,
             Err(e) => {
-                panic!("build failed for fixture `{fixture_name}` entry `{entry}`:\n  {e}");
+                panic!(
+                    "build failed for fixture `{}` entry `{}`:\n  {e}",
+                    cfg.file, cfg.entry
+                );
             }
         };
 
         for _ in 0..INPUTS_PER_FIXTURE {
-            let arg = rng.next_i64_in(*lo, *hi);
-            let py = run_python(&py_path, entry, arg)
-                .unwrap_or_else(|e| panic!("python {fixture_name}({arg}): {e}"));
-            let rs =
-                run_rust(&bin, arg).unwrap_or_else(|e| panic!("rust {fixture_name}({arg}): {e}"));
+            let args: Vec<i64> = cfg
+                .args
+                .iter()
+                .map(|(lo, hi)| rng.next_i64_in(*lo, *hi))
+                .collect();
+            let py = run_python(&py_path, cfg.entry, &args)
+                .unwrap_or_else(|e| panic!("python {}({args:?}): {e}", cfg.file));
+            let rs = run_rust(&bin, &args)
+                .unwrap_or_else(|e| panic!("rust {}({args:?}): {e}", cfg.file));
             total_checks += 1;
             if py != rs {
-                mismatches.push((fixture_name.to_string(), arg, py, rs));
+                mismatches.push((cfg.file.to_string(), args, py, rs));
             }
         }
     }
 
     if !mismatches.is_empty() {
         let mut msg = format!(
-            "Differential execution disagreement (XPILE-DIFF-001):\n\
+            "Differential execution disagreement (XPILE-DIFF-001/002):\n\
              {} of {} input-comparisons diverged between CPython and the transpiled Rust binary.\n\
              Either the codegen miscompiles the construct OR the fixture's declared input range \n\
              needs tightening to stay inside the C-PY-INT-ARITH fast-path domain.\n\n",
             mismatches.len(),
             total_checks
         );
-        for (fx, arg, py, rs) in &mismatches {
+        for (fx, args, py, rs) in &mismatches {
             msg.push_str(&format!(
-                "  - {fx} arg={arg}\n      python: {py}\n      rust:   {rs}\n"
+                "  - {fx} args={args:?}\n      python: {py}\n      rust:   {rs}\n"
             ));
         }
         panic!("{msg}");
     }
 
     eprintln!(
-        "XPILE-DIFF-001: {} differential checks across {} fixtures — all green.",
+        "XPILE-DIFF-001/002: {} differential checks across {} fixtures — all green.",
         total_checks,
         FIXTURES.len()
     );
