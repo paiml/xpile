@@ -110,6 +110,47 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Kani symbolic harness — C-XPILE-CONTRACT-FRONTEND-TRAIT → QUORUM (PMAT-067) — **58% of substrate at QUORUM**
+
+**Seventh contract reaches QUORUM.** New
+`contracts/kani/xpile_contract_frontend_trait.rs` carries the Kani
+BMC harness `parse_idempotency` — Rust mirror of the Lean theorem
+from PMAT-066. Proves `parse_to_equations` is deterministic over
+all 4-byte symbolic sources.
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    3  QUORUM
+  C-XLATE-PY-LIST-TO-VEC                      1    1    0    3  QUORUM
+  C-XPILE-FRONTEND-TRAIT                      1    1    0    3  QUORUM
+  C-XPILE-BACKEND-TRAIT                       1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-FRONTEND-TRAIT             1    1    0    1  QUORUM  ← Sym now 1
+  ... (5 more UNVERIFIED)
+  totals: 7 QUORUM, 0 PARTIAL, 5 UNVERIFIED (12 contracts total)
+```
+
+**Seven paired discharges across six domains; the parse-side
+trait-determinism story is now closed.** Both code-lane Frontend
+(PMAT-062/063) and proof-lane ContractFrontend (PMAT-066/067)
+have Lean+Kani Bronze-tier discharges. Emit side is half done:
+Backend (PMAT-064/065) ✓; ContractBackend (future PMAT-068/069)
+will close the full 2×2 matrix.
+
+Implementation:
+- **`contracts/kani/xpile_contract_frontend_trait.rs`** —
+  standalone Rust module under `#![cfg(kani)]`. Mirrors
+  PMAT-063's shape: `parse_to_equations(source: [u8; 4]) ->
+  EquationsBlock` plus `#[kani::proof] fn parse_idempotency()`.
+- **`contracts/xpile-contract-frontend-trait-v1.yaml`** —
+  equation `parse_idempotency` gains `kani_harness` + `kani_file`
+  refs.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-067 entry.
+
+Full Kani gate now ~2.4s across seven harnesses.
+
 ### Lean refinement theorem — C-XPILE-CONTRACT-FRONTEND-TRAIT → PARTIAL (PMAT-066)
 
 **Seventh contract reaches non-UNVERIFIED status.** New

@@ -1068,3 +1068,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-067
+  github_issue: null
+  item_type: task
+  title: 'PMAT-067: Kani harness for C-XPILE-CONTRACT-FRONTEND-TRAIT — promotes Symbolic stratum, contract reaches QUORUM'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T23:30:00Z
+  updated: 2026-05-17T23:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/kani/xpile_contract_frontend_trait.rs harness mirroring the Lean theorem from PMAT-066. Symbolic stratum vote — promotes PARTIAL → QUORUM. After landing, xpile quorum should show 7 QUORUM, 0 PARTIAL, 5 UNVERIFIED (58% of substrate).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
