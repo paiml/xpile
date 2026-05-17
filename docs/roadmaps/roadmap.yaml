@@ -1561,3 +1561,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-096
+  github_issue: null
+  item_type: task
+  title: 'PMAT-096: sub/phased-rollout.md sweep — add historical banner + "What actually shipped" section; mark planned phases as superseded/overshipped/punted'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T14:00:00Z
+  updated: 2026-05-18T14:00:00Z
+  spec: null
+  acceptance_criteria:
+  - sub/phased-rollout.md was authored at v0.0.1 scaffold time and described 7 planned phases. Actual v0.1.0 path diverged substantially — substrate-first pivot. Add a "Historical context" banner pointing to CHANGELOG as canonical. Add a "What actually shipped" section documenting live state. Annotate each original phase with its actual outcome (DONE / superseded / partially shipped / overshipped / punted). Preserve original phase descriptions as Popperian falsification trace.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
