@@ -1374,3 +1374,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-085
+  github_issue: null
+  item_type: task
+  title: 'PMAT-085: bashrs param-expansion LitStr passthrough lock-in — document round-trip behavior for ${VAR:-default} and friends at v0.1.0 (sets up XPILE-BASHRS-PARAM-EXPANSION-001 Silver-tier refinement)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T08:30:00Z
+  updated: 2026-05-18T08:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add lower_token_param_expansion_falls_through_as_litstr test in bashrs-frontend asserting 12 POSIX param-expansion forms lower to Expr::LitStr. Add render_arg_litstr_preserves_param_expansion_verbatim test in bashrs-backend asserting the same forms render verbatim. Document the round-trip property as a v0.1.0 invariant; sets up XPILE-BASHRS-PARAM-EXPANSION-001 Silver-tier refinement (structured Expr::ParamExpansion variant).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

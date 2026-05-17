@@ -951,6 +951,51 @@ pwd
     }
 
     #[test]
+    fn lower_token_param_expansion_falls_through_as_litstr() {
+        // PMAT-085: POSIX parameter expansion forms (`${VAR:-default}`,
+        // `${VAR-default}`, `${VAR:=value}`, `${VAR:?error}`,
+        // `${VAR:+alt}`, `${#VAR}`, `${VAR#prefix}`, `${VAR%suffix}`)
+        // are preserved verbatim as `Expr::LitStr` at v0.1.0 — the
+        // structured `Expr::ParamExpansion { var, op, fallback }`
+        // variant is XPILE-BASHRS-PARAM-EXPANSION-001 (v0.2.0+ work).
+        //
+        // This test locks in the round-trip property: parsing →
+        // lowering → backend rendering produces byte-identical output
+        // because LitStr arms in render_arg just pass the bytes
+        // through unchanged. The substrate quality regime is preserved
+        // even at the Bronze-tier "opaque LitStr" representation —
+        // information loss is zero on the round trip.
+        //
+        // Why this matters: real shell idioms like
+        // `: "${PORT:=8080}"` (POSIX idempotent default-port pattern)
+        // would otherwise either fail or silently mangle. With this
+        // test in place, the LitStr passthrough is a documented
+        // invariant rather than an emergent behavior.
+        use xpile_meta_hir::Expr;
+        let param_expansions = &[
+            "${VAR:-default}", // use default if unset OR empty
+            "${VAR-default}",  // use default if unset (preserves empty)
+            "${VAR:=8080}",    // use AND assign default
+            "${VAR:?error}",   // error if unset
+            "${VAR:+alt}",     // use alt if SET (inverse default)
+            "${#VAR}",         // string length
+            "${VAR#prefix}",   // strip shortest prefix
+            "${VAR##prefix*}", // strip longest prefix
+            "${VAR%suffix}",   // strip shortest suffix
+            "${VAR%%*suffix}", // strip longest suffix
+            "${VAR/old/new}",  // POSIX-ish substitution (bash ext)
+            "${VAR:0:3}",      // substring (bash ext)
+        ];
+        for tok in param_expansions {
+            assert_eq!(
+                lower_token(tok),
+                Expr::LitStr(tok.to_string()),
+                "expected param-expansion `{tok}` to round-trip as LitStr at v0.1.0"
+            );
+        }
+    }
+
+    #[test]
     fn lower_token_plain_strings_pass_through_as_litstr() {
         // Regression: non-dollar tokens stay LitStr. Locks in that
         // PMAT-045 doesn't accidentally claim arbitrary input.
