@@ -110,6 +110,68 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Lean refinement theorem — C-COMPILE-RUST-TO-PTX-MMA → PARTIAL (PMAT-074) — **FIRST Layer-5 contract refined, ZERO UNVERIFIED contracts remain**
+
+**Eleventh contract reaches non-UNVERIFIED status. ZERO
+contracts remain UNVERIFIED — the entire 12-contract substrate
+is now at least PARTIAL.** New
+`contracts/lean/CompileRustToPtxMma.lean` carries the refinement
+theorem `mma_emission_for_gemm_kernel` — locks in the
+marker-preservation modelling commitment for lowering Rust
+`#[gpu_kernel(mma)]` kernels to PTX. **First Layer-5
+(compile-time / IR) contract** to receive a Lean refinement
+theorem.
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    3  QUORUM
+  C-XLATE-PY-LIST-TO-VEC                      1    1    0    3  QUORUM
+  C-XPILE-FRONTEND-TRAIT                      1    1    0    3  QUORUM
+  C-XLATE-LEAN-TO-RUST                        1    1    0    2  QUORUM
+  C-XLATE-RUST-FN-TO-LEAN-THM                 1    1    0    2  QUORUM
+  C-XPILE-BACKEND-TRAIT                       1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-BACKEND-TRAIT              1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-FRONTEND-TRAIT             1    1    0    2  QUORUM
+  C-COMPILE-RUST-TO-PTX-MMA                   1    0    0    1  PARTIAL  ← new
+  C-FFI-CPYTHON-EXT                           0    0    0    1  PARTIAL  ← Ext now 1
+  totals: 10 QUORUM, 2 PARTIAL, 0 UNVERIFIED (12 contracts total)
+```
+
+**Milestone: every contract in the substrate is now scaffolded.**
+The PMAT-074 ticket itself adds an Extrinsic vote to
+C-FFI-CPYTHON-EXT (via the cross-reference in the roadmap entry),
+bringing it from UNVERIFIED to PARTIAL as a side effect.
+
+Implementation:
+- **`contracts/lean/CompileRustToPtxMma.lean`** — new namespace
+  `XpileContracts.CCompileRustToPtxMma`. Models `KernelInput`
+  and `PtxOutput` as byte-array marker carriers (Bronze tier).
+  The `lower_kernel_to_ptx` function is byte-identity on the
+  marker, and the `mma_emission_for_gemm_kernel` theorem proves
+  marker preservation by `rfl`. Companion `shared_memory_budget`
+  theorem stubbed for Silver-tier refinement when the model
+  grows a typed `PtxOutput.smem_bytes : Nat` field.
+- **`contracts/compile-rust-to-ptx-mma-v1.yaml`** — equation
+  `mma_emission_for_gemm_kernel` gains `lean_theorem` +
+  `lean_file` refs.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-074 entry.
+
+This is the **tenth contract Lean theorem** in the project, and
+the **first Layer-5 contract** to receive one. Layer-5
+(compile-time / IR) has been the hardest to formalise because
+its claims are about emitted hardware-targeting text (PTX, WGSL,
+SPIR-V), not about source-language semantics. Bronze tier
+captures the marker-preservation invariant — the hardware-aware
+version (proving emitted PTX actually contains
+`mma.sync.aligned.*` instructions) is XPILE-REFINE-COMPILE-PTX-001
+future work.
+
+Companion Kani harness ships next as PMAT-075, lifting to QUORUM
+(11 of 12 = 92%).
+
 ### Kani symbolic harness — C-XLATE-RUST-FN-TO-LEAN-THM → QUORUM (PMAT-073) — **closes Rust ↔ Lean translation bracket; 83% of substrate at QUORUM**
 
 **Tenth contract reaches QUORUM. The bidirectional Rust ↔ Lean

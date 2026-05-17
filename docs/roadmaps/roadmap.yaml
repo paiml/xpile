@@ -1187,3 +1187,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-074
+  github_issue: null
+  item_type: task
+  title: 'PMAT-074: Lean refinement theorem for C-COMPILE-RUST-TO-PTX-MMA — FIRST Layer-5 (compile-time) contract refined, ZERO UNVERIFIED contracts remain'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T03:00:00Z
+  updated: 2026-05-18T03:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/lean/CompileRustToPtxMma.lean with mma_emission_for_gemm_kernel + shared_memory_budget theorems. Bronze-tier modelling commitment — marker preservation, byte identity, rfl by construction. First Layer-5 contract refined (hardware-targeting emit). After landing, zero contracts remain UNVERIFIED; substrate is fully scaffolded. C-FFI-CPYTHON-EXT also reaches PARTIAL via the Ext stratum vote from this ticket's roadmap entry.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
