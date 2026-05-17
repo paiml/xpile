@@ -156,6 +156,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::LitStr(_) | Expr::QuotedString { .. } => false,
         // PMAT-045: shell-variable references same disposition.
         Expr::ShellVar(_) => false,
+        // PMAT-055: shell special parameters same disposition.
+        Expr::ShellSpecial(_) => false,
         // PMAT-047: command substitution composes a Stmt; recurse
         // into the inner Stmt for completeness (currently every
         // such Stmt is a shell-domain Cmd, so this is always
@@ -442,6 +444,21 @@ pub enum Expr {
     /// by `bashrs-backend`; rust/ruchy/lean refuse via
     /// `Unsupported(...)` naming `C-BASHRS-POSIX-IDEMPOTENCE`.
     ShellVar(String),
+    /// POSIX shell special parameter (`$1`..`$9`, `$0`, `$@`, `$*`,
+    /// `$#`, `$?`, `$$`, `$!`, `$-`). PMAT-055.
+    ///
+    /// The carried `String` is the single-character name *without*
+    /// the leading `$`. Distinct from `Expr::ShellVar` because
+    /// special parameters are positional / runtime values set by
+    /// the shell, not user-named variables. The bashrs-frontend
+    /// parser tags them via this variant rather than ShellVar so
+    /// future Lean refinement (Silver tier) can model them
+    /// separately.
+    ///
+    /// bashrs-backend renders as `$<name>` (no braces — they're
+    /// single-char so braces add nothing). Other backends refuse
+    /// via `Unsupported(...)` naming `C-BASHRS-POSIX-IDEMPOTENCE`.
+    ShellSpecial(String),
     /// Shell command substitution (`$(cmd)`). PMAT-047 /
     /// XPILE-BASHRS-MERGER-001 Layer B (Expr-side, composes Stmt
     /// into Expr).

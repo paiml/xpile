@@ -277,6 +277,13 @@ fn lower_raw_token(t: &RawToken) -> Result<Expr, FrontendError> {
 ///   * Everything else → `Expr::LitStr(token)`.
 fn lower_token(tok: &str) -> Expr {
     if let Some(rest) = tok.strip_prefix('$') {
+        // PMAT-055: check for POSIX special parameters first (one
+        // char immediately after `$`). They take precedence over
+        // identifier matching because `$0` would otherwise fail
+        // the leading-digit check in is_posix_identifier.
+        if let Some(name) = recognise_shell_special(rest) {
+            return Expr::ShellSpecial(name);
+        }
         let name = if let Some(stripped) = rest.strip_prefix('{') {
             // `${NAME}` — accept iff the trailing char is `}` AND
             // the contents are a POSIX-legal identifier.
@@ -292,6 +299,23 @@ fn lower_token(tok: &str) -> Expr {
         Expr::ShellVar(name.to_string())
     } else {
         Expr::LitStr(tok.to_string())
+    }
+}
+
+/// PMAT-055: recognise a POSIX shell special parameter. Returns
+/// `Some(name)` for `$1`..`$9`, `$0`, `$@`, `$*`, `$#`, `$?`, `$$`,
+/// `$!`, `$-`. The accepted token must be EXACTLY `$<one-char>` —
+/// no trailing alphanumerics (those would conflict with shell var
+/// names like `$10` which POSIX treats as `${1}0`, requiring braces).
+fn recognise_shell_special(rest: &str) -> Option<String> {
+    if rest.len() != 1 {
+        return None;
+    }
+    let c = rest.chars().next()?;
+    if matches!(c, '0'..='9' | '@' | '*' | '#' | '?' | '$' | '!' | '-') {
+        Some(c.to_string())
+    } else {
+        None
     }
 }
 
@@ -847,19 +871,40 @@ pwd
     }
 
     #[test]
-    fn lower_token_rejects_special_params_as_litstr() {
-        // PMAT-045 negative: `$1`, `$@`, `$?`, etc. are POSIX special
-        // params, not user-named variables. At v0.1.0 we keep them
-        // as LitStr (bareword `$1` survives literal-through). A
-        // future PR may add Expr::ShellPosParam(u32) or similar.
+    fn lower_token_recognises_special_params() {
+        // PMAT-055 (replacing the older PMAT-045 negative): the
+        // POSIX special parameters now produce `Expr::ShellSpecial`,
+        // not `Expr::LitStr`. Each carries the one-char name
+        // without the leading `$`.
         use xpile_meta_hir::Expr;
-        for bad in &["$1", "$@", "$?", "$*", "$0", "$-"] {
+        for (tok, expected_name) in &[
+            ("$1", "1"),
+            ("$9", "9"),
+            ("$0", "0"),
+            ("$@", "@"),
+            ("$*", "*"),
+            ("$#", "#"),
+            ("$?", "?"),
+            ("$$", "$"),
+            ("$!", "!"),
+            ("$-", "-"),
+        ] {
             assert_eq!(
-                lower_token(bad),
-                Expr::LitStr(bad.to_string()),
-                "expected special-param `{bad}` to fall through as LitStr"
+                lower_token(tok),
+                Expr::ShellSpecial(expected_name.to_string()),
+                "expected `{tok}` to lower to ShellSpecial(`{expected_name}`)"
             );
         }
+    }
+
+    #[test]
+    fn lower_token_two_char_after_dollar_falls_through() {
+        // PMAT-055: `$10` is POSIX `${1}0` (the digit `1` is the
+        // special, `0` is a literal char) — needs braces to mean
+        // positional param 10. Without braces, we keep the prior
+        // PMAT-045 behaviour: fall through as LitStr.
+        use xpile_meta_hir::Expr;
+        assert_eq!(lower_token("$10"), Expr::LitStr("$10".to_string()));
     }
 
     #[test]

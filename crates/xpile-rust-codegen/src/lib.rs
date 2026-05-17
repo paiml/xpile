@@ -300,6 +300,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     .into(),
             ));
         }
+        // PMAT-055: shell special parameters — same disposition.
+        Expr::ShellSpecial(name) => {
+            return Err(CodegenError::Unsupported(format!(
+                "Rust backend does not lower Expr::ShellSpecial (${name}) — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs shell special params; \
+                 use `--target shell`"
+            )));
+        }
     }
     Ok(())
 }

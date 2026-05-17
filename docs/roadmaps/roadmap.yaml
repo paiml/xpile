@@ -868,3 +868,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-055
+  github_issue: null
+  item_type: task
+  title: 'PMAT-055: Expr::ShellSpecial — recognise POSIX special parameters (1-9, @, *, #, ?, 0, $, !, -)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T17:43:33Z
+  updated: 2026-05-17T17:43:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

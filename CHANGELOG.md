@@ -110,6 +110,56 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### POSIX special parameters — `Expr::ShellSpecial` (PMAT-055)
+
+\`\$1\`..\`\$9\`, \`\$0\`, \`\$@\`, \`\$*\`, \`\$#\`, \`\$?\`, \`\$\$\`, \`\$!\`, \`\$-\` are
+now recognised as distinct from user-named variables. New
+\`Expr::ShellSpecial(String)\` variant carries the one-char name.
+Pre-PMAT-055 these fell through as \`Expr::LitStr\` losing semantic
+meaning.
+
+\`\`\`
+$ echo 'echo first arg \$1 and last status \$?' > /tmp/sp.sh
+$ xpile transpile /tmp/sp.sh --target shell
+...
+echo first arg \$1 and last status \$?
+\`\`\`
+
+Why distinct from \`ShellVar\`: special parameters are positional /
+runtime values set by the shell, not user-named variables. The
+distinction matters for future Silver-tier Lean refinement of
+\`C-BASHRS-POSIX-IDEMPOTENCE\` — modelling \`\$?\` (last exit code)
+requires shell-state semantics that \`\$NAME\` doesn't have.
+
+Implementation:
+- **xpile-meta-hir** — new \`Expr::ShellSpecial(String)\` variant.
+  \`expr_has_int_arith\` extended (returns false).
+- **Codegens** — \`Expr::ShellSpecial(_)\` arms in rust / ruchy /
+  lean returning \`Unsupported(...)\` naming the bashrs contract.
+  depyler-frontend's type-inference + lean's \`collect_idents\` get
+  defensive arms.
+- **bashrs-frontend** — new \`recognise_shell_special\` predicate
+  accepts exactly one char immediately after \`\$\` from the POSIX
+  special set. Takes precedence over identifier matching (\`\$0\`
+  would otherwise fail the leading-digit check). \`\$10\` falls
+  through as \`LitStr\` since POSIX treats it as \`\${1}0\` (needs
+  braces).
+- **bashrs-backend** — \`render_arg\` extended; \`ShellSpecial(name)\`
+  renders as \`\$<name>\`.
+
+What's NOT yet here:
+- \`\${10}\` for positional param 10 (POSIX braced form for ≥10).
+- \`\${VAR:-default}\` parameter expansion forms.
+
+Test coverage:
+- 2 new bashrs-frontend unit tests:
+  - \`lower_token_recognises_special_params\` — all 10 POSIX
+    special params produce ShellSpecial with the right name
+  - \`lower_token_two_char_after_dollar_falls_through\` — \`\$10\`
+    stays as LitStr
+- 1 new bashrs-backend unit test \`render_arg_shell_special\` —
+  verifies each special renders correctly.
+
 ### Inline `#` comments stripped (PMAT-054)
 
 Tokenizer now strips POSIX inline comments — \`#\` at a word
