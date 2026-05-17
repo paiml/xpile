@@ -1289,3 +1289,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-080
+  github_issue: null
+  item_type: task
+  title: 'PMAT-080: audit-design.md sweep — reflect 12-of-12 contracts at QUORUM, supersede stale 1-of-11 claim from before substrate completion'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T06:00:00Z
+  updated: 2026-05-18T06:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Update docs/specifications/audit-design.md to supersede stale claims. Line 46 (Full Four-Stratum Quorum positive feedback) — rewrite from "1 of 12 contracts" to "12 of 12 contracts" and document the substrate-completion run. Line 62 (Fixture Overfitting negative feedback) — update QUORUM count from "1 of 11" to "12 of 12" and document the residual 3-stratum-vs-4-stratum distinction (only PyIntArith + Bashrs have Runtime votes; the other 10 reach QUORUM via Sem+Sym+Ext).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
