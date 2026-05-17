@@ -1442,3 +1442,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-089
+  github_issue: null
+  item_type: task
+  title: 'PMAT-089: bashrs test-bracket [ ... ] round-trip lock-in — document POSIX test-command synonym round-trip via LitStr/QuotedString/ShellVar passthrough'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T10:30:00Z
+  updated: 2026-05-18T10:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add parse_and_lower_test_bracket_round_trips_via_litstr in bashrs-frontend asserting 6 distinct test-bracket patterns (file tests, string comparisons, numeric checks, negation) parse with program="[" and the test predicates as args. POSIX `[` is literally an executable, so the IR is correct. Sets up XPILE-BASHRS-TEST-PREDICATE-001 (Silver-tier Stmt::TestPredicate variant covering both `[...]` and bash `[[...]]`).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
