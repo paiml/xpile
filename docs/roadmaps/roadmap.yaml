@@ -548,3 +548,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-035
+  github_issue: null
+  item_type: task
+  title: 'PMAT-035: refresh audit-design §3/§4 for shipped quorum infrastructure'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-17T14:49:07Z
+  updated: 2026-05-17T14:49:07Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
