@@ -1867,3 +1867,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-114
+  github_issue: null
+  item_type: task
+  title: 'PMAT-114: sub/pmat-integration.md TDG-minimum follow-up — annotate "xpile minimum: A-" as target, not enforced; update work-item-driven flow block to remove pmat tdg gate'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T23:00:00Z
+  updated: 2026-05-18T23:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Two more pmat tdg references that PMAT-113 didn't catch. Line 10 said "xpile minimum: A-" — annotate as target not enforced, cross-reference XPILE-CI-PMAT-TDG-001. Line 20 in the work-item-driven flow block said "Implement until: pmat tdg passes ≥ A- AND pv lint 8/8 AND cargo test green" — rewrite to list the actual live gates (pv lint + cargo test --workspace + fmt + clippy + cargo deny) and note pmat tdg as a v0.2.0+ target.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

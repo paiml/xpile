@@ -7,7 +7,7 @@
 [`pmat`](https://github.com/paiml/paiml-mcp-agent-toolkit) (Pragmatic Multi-language Agent Toolkit) owns:
 
 - **Work items.** Every phase of the xpile rollout is a pmat work item pointed at a spec in `docs/specifications/`.
-- **Quality grades.** `pmat tdg` produces an A+ → F technical-debt grade. xpile minimum: **A-**.
+- **Quality grades.** `pmat tdg` produces an A+ → F technical-debt grade. xpile target: **A-** (not yet a required CI gate — XPILE-CI-PMAT-TDG-001).
 - **Code search.** `pmat query` is the canonical search tool — semantic, quality-annotated, ranked.
 - **Context generation.** `pmat context` produces AI-ready briefs for any task.
 - **The kaizen loop.** The `kaizen-paiml` skill walks open work items and drives them to completion.
@@ -17,7 +17,10 @@
 ```
 1. Open work item:    pmat work create --spec docs/specifications/sub/foo.md
 2. Pick item up:      pmat work claim <id>
-3. Implement until:   pmat tdg passes ≥ A-  AND  pv lint 8/8  AND  cargo test green
+3. Implement until:   pv lint 8/8  AND  cargo test --workspace green
+                      AND  cargo fmt --check  AND  cargo clippy -D warnings
+                      AND  cargo deny check advisories
+                      (pmat tdg ≥ A- is the v0.2.0+ target — XPILE-CI-PMAT-TDG-001)
 4. Close work item:   pmat work complete <id>
 5. Next item:         pmat work list --open --sorted-by priority
 ```
