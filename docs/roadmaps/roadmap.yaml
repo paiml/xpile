@@ -1612,3 +1612,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-099
+  github_issue: null
+  item_type: task
+  title: 'PMAT-099: sub/contract-backend-trait.md sweep — xpile-latex-contract-backend and xpile-lean-contract-backend both ship as workspace crates at v0.1.0 (were "Planned Phase 4")'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T15:30:00Z
+  updated: 2026-05-18T15:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Same fix as PMAT-098 for backend side. Fix stale "No contract backends ship at v0.1.0" claim. xpile-latex-contract-backend and xpile-lean-contract-backend are workspace crates. Trait `C-XPILE-CONTRACT-BACKEND-TRAIT` is at full §14.4 QUORUM (Sem+Sym+Ext) via PMAT-068/069. Update implementations table accordingly.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

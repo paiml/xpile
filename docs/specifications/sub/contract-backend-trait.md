@@ -115,11 +115,11 @@ Comments use a fixed `key: value` grammar (not free text). The preprocessor pars
 
 | Crate | Struct | Format(s) | Status |
 |---|---|---|---|
-| `xpile-latex-contract-backend` | `LatexContractBackend` | `LatexMath` | Planned (Phase 4) — see [latex-bidirectional.md](latex-bidirectional.md) |
-| `xpile-lean-contract-backend` | `LeanContractBackend` | `LeanTheorem` | Planned (Phase 4) — supersedes `pv`'s implicit `lean_theorem:` rendering |
-| `xpile-mdbook-contract-backend` | `MdBookContractBackend` | `MdBook` | Inherited from `pv`; vendored at Phase 3 |
+| `xpile-latex-contract-backend` | `LatexContractBackend` | `LatexMath` | **shipped as a workspace crate** (scaffold-stage `render` body; real LaTeX rendering is post-v0.1.0). See [latex-bidirectional.md](latex-bidirectional.md). |
+| `xpile-lean-contract-backend` | `LeanContractBackend` | `LeanTheorem` | **shipped as a workspace crate** (scaffold-stage `render` body; the citation-bridge attribute `@[xpile_contract "C-..."]` is the load-bearing spec'd shape, real emission is post-v0.1.0). |
+| `xpile-mdbook-contract-backend` | `MdBookContractBackend` | `MdBook` | Inherited from `pv`; vendored wrapper post-v0.1.0. |
 
-No contract backends ship at v0.1.0. The trait stub lives in `xpile-contract-backend` (to scaffold).
+At v0.1.0 the `ContractBackend` trait lives in `xpile-contract-backend` (real trait, not a scaffold — the trait determinism invariant is covered by `C-XPILE-CONTRACT-BACKEND-TRAIT` at full §14.4 QUORUM via PMAT-068 / PMAT-069). Both `xpile-latex-contract-backend` and `xpile-lean-contract-backend` are workspace crates with the trait wired; the `render` method bodies are scaffold-stage at v0.1.0.
 
 ## Lean version (decision #1)
 
