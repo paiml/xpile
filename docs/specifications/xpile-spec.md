@@ -51,6 +51,7 @@
 | 24 | [Lean 4 Bidirectional Integration](#24-lean-4-bidirectional-integration) | [sub/lean-bidirectional.md](sub/lean-bidirectional.md) |
 | 25 | [LaTeX Bidirectional Integration](#25-latex-bidirectional-integration) | [sub/latex-bidirectional.md](sub/latex-bidirectional.md) |
 | 26 | [Audit-acknowledged Caveats](#26-audit-acknowledged-caveats) | [audit-design.md](audit-design.md) |
+| 27 | [Provability Roadmap — ruchy 5.0 alignment](#27-provability-roadmap--ruchy-50-alignment) | [sub/provability-roadmap.md](sub/provability-roadmap.md) |
 
 ---
 
@@ -442,6 +443,53 @@ xpile's design has been subjected to an adversarial Popperian audit (`audit-desi
 | **Oracle hardware blind spots re-emerge** | Layer-5 contracts bound *which* hardware instructions can be emitted, but the Oracle generally cannot observe deep races / thread divergence. Hardware safety hinges on Layer-5 contract completeness — a single point of failure. | `audit-design.md §4` |
 
 These caveats are load-bearing: surface them in design conversations rather than discovering them at integration time. Each maps to a planned or open `pmat work` item for closing or constraining the gap.
+
+---
+
+## 27. Provability Roadmap — ruchy 5.0 alignment
+
+**Sub-spec**: [sub/provability-roadmap.md](sub/provability-roadmap.md)
+
+Ruchy 5.0 ([`/home/noah/src/ruchy/docs/specifications/ruchy-5.0-sovereign-platform.md`](../../../ruchy/docs/specifications/ruchy-5.0-sovereign-platform.md), 1051 lines) ships a "provability mandate" (its §14) that publishes pre-committed falsifier thresholds, stratifies oracles by epistemic source, and gates escape hatches by deadline. Several of those mechanisms apply directly to xpile's correctness claim — and where they don't, the *reason* they don't is worth recording so future readers don't re-litigate the boundary.
+
+This section is the index. The full per-item disposition lives in [sub/provability-roadmap.md](sub/provability-roadmap.md).
+
+### Planned for adoption (each has a PMAT prefix)
+
+| # | Ruchy §14 mechanism | xpile-spec home | PMAT prefix |
+|---|---|---|---|
+| 1 | Pre-committed **falsifier thresholds** (analog of §14.5 F1–F12) — % of transpiled fns with at least one cited contract, panic-message coverage, oracle/transpile divergence rate, etc., each with a published "we're wrong if it falls below X" line | §6 Oracle + §26 caveats | `XPILE-FALSIFY-XXX` |
+| 2 | **Time-bounded escape hatches** (§14.7) — `unimplemented!()` / `expect("...slow path not yet implemented")` strings must carry `(reason, until = "vN.Y.Z", ticket)` and `build.rs` hard-fails when `CARGO_PKG_VERSION ≥ until`. Closes the "could rot forever" hole in our current panic messages | §11 pv integration | `XPILE-EXEMPT-XXX` |
+| 3 | **N-of-M stratified oracle quorum** (§14.4) — current Oracle is one stratum (behavioral capture). Adding Kani (symbolic) and probar / Lean (semantic) as parallel oracles, with the spec's pairwise-correlation guard, would let xpile claim more than empirical equivalence | §6 Oracle | `XPILE-QUORUM-XXX` |
+| 4 | **Differential execution check** (§14.10.4) — automatically run interpreter vs transpiled-binary on `N` probar-generated inputs per Layer-1-contract'd function; divergence = release block. Generalises our 11 hand-authored runtime-verified fixtures | §6 Oracle | `XPILE-DIFF-XXX` |
+| 5 | **Refinement proofs via Lean** (§14.10.5) — for `C-PY-INT-ARITH`, prove in Lean that the i64 fast path equals the BigInt slow path within range. We have the Lean target (§24); we just don't use it for the provability claim yet | §24 Lean | `XPILE-REFINE-XXX` |
+| 6 | **Quarterly SOTA-gap dossier** (§14.F-Audit-8 / F6) — audit-design.md is a single snapshot from 2026-05-15. A standing quarterly publication of "what beats xpile where" closes the procedural-stagnation falsifier | §26 caveats / audit-design.md | `XPILE-SOTA-XXX` |
+
+### In-spirit, scope-deferred
+
+Items where the *mechanism* is interesting but adopting it would require a meta-HIR change bigger than the value at v0.1.0. Captured for posterity in [sub/provability-roadmap.md](sub/provability-roadmap.md):
+
+- **`Secret<T>` / `Public<T>` information-flow types** (Ruchy §14.10.1) — useful if we ever transpile cryptographic Python; today meta-HIR has no info-flow story.
+- **Capability types for effects** (Ruchy §14.10.2) — closely related to FFI bound proofs (`C-FFI-CPYTHON-REFCOUNT` is exactly this domain), but our current contracts don't carry capability obligations.
+- **Totality markers (`@total` / `decreases`)** (Ruchy §14.10.3) — would let the Lean partial-def encoding (PMAT-010) emit `def` rather than `partial def` when termination is provable.
+
+### Explicitly NOT adopted
+
+Each is named here so the boundary is visible, not so it gets re-litigated:
+
+- **The 9 pillars themselves** (Correctness / Compute / Infra / Scripting / Learning / Visualization / Simulation / Testing / Embedding) — those are components of *ruchy-the-language*, not *xpile-the-transpiler*. xpile already federates with bashrs (Pillar 4) per §19, and `aprender` (Pillar 5) is xpile's contract-substrate provider. The other seven pillars are intentionally out of scope.
+- **Graduate workflow** (interpret → embed → compile, Ruchy §7) — xpile has no interpreter and no plans for one. Same-source-three-modes is a ruchy-language property; xpile's same-source claim is across *target languages*, not execution modes.
+- **Language-level new keywords** (`requires`, `ensures`, `invariant`, `decreases`, `infra`, `signal`, `yield` — Ruchy §4) — xpile transpiles existing languages; it does not invent syntax.
+
+### Honest reading
+
+Ruchy 5.0 is meaningfully ahead of xpile on **three** specific axes:
+
+1. **Commits to numbers** — published falsifier thresholds + quarterly dossiers + deadline-enforced exemptions.
+2. **Multiple independent oracles** — symbolic + semantic + extrinsic strata with anti-correlation guards.
+3. **Self-reflection tooling** — `ruchy tier` reports on Ruchy's own contract coverage with eight CI gates, regression baselines, TOML config, JSON / markdown output. xpile has nothing analogous.
+
+audit-design.md §6 already shows we know *how* the five-whys → provable-contract loop is supposed to work; this section commits to applying it to ourselves with the same rigor ruchy 5.0 commits to applying it to its own stdlib. Each "planned for adoption" row above is sized to be one PR; the implementation order follows [sub/provability-roadmap.md](sub/provability-roadmap.md).
 
 ---
 

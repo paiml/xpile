@@ -1,0 +1,267 @@
+# Provability Roadmap — ruchy 5.0 alignment
+
+**Section 27 of [xpile-spec.md](../xpile-spec.md).**
+
+**Source document**:
+[`/home/noah/src/ruchy/docs/specifications/ruchy-5.0-sovereign-platform.md`](../../../../ruchy/docs/specifications/ruchy-5.0-sovereign-platform.md)
+(1051 lines, dated 2026-04-03). The "provability mandate" lives in
+ruchy's §14; that section is the model this document tracks against.
+
+**Bounded claim** (ruchy §14.1 echoes this for xpile too): "becoming
+one of the most provable polyglot transpile workbenches" is a *niche*
+claim, not a universal one. We are not competing with Lean-mathlib on
+mathematical depth, CompCert on verified compilation, or seL4 on
+end-to-end refinement to assembly. We're competing within
+{contract-driven transpilers}, a smaller field. Within that niche the
+ruchy-5.0 §14 commitments are the bar; this document is xpile's plan
+to clear it.
+
+## 1. Planned for adoption
+
+Each row below is a one-PR-sized chunk that adopts a ruchy-§14
+mechanism into xpile. Ordering reflects shipping risk (top is
+smallest); items are independent, can be parallelised.
+
+### 1.1 Pre-committed falsifier thresholds (`XPILE-FALSIFY-XXX`)
+
+**Ruchy reference**: §14.5 (F1–F12 metrics with pre-committed
+falsifier thresholds).
+
+**xpile analog**: Each Layer-1 contract publishes a quantitative
+threshold below which the contract's enforcement claim is falsified.
+
+Initial proposed metrics:
+
+| # | Metric | Initial target | Falsified if... |
+|---|---|---|---|
+| F1 | % of transpiled functions carrying at least one `// xpile-contract: <ID>` citation | ≥ 95% on a fixed corpus | < 50% — the citation pipeline is performative |
+| F2 | Density of `expect("... not yet implemented ...")` panics per KLoC of emitted Rust | ≤ 1 / KLoC | > 5 / KLoC — the slow-path scaffold is the wrong default |
+| F3 | Oracle-vs-transpile divergence rate on the runtime-verified fixture set | 0 | ≥ 1 — semantic equivalence claim has a hole |
+| F4 | Count of Layer-1 contracts with zero `falsification_tests` | 0 | ≥ 1 — a contract that can't be falsified is a tautology |
+| F5 | Backends with `Unsupported` errors emitted on the runtime-verified fixture set | 0 (Rust), 0 (Lean) | ≥ 1 on a previously-passing fixture — regression |
+
+Implementation lands as new fields in `contracts/*.yaml` and a
+companion `xpile audit` subcommand that scans + reports.
+
+### 1.2 Time-bounded escape hatches (`XPILE-EXEMPT-XXX`)
+
+**Ruchy reference**: §14.7 (`#[contract_exempt(reason, until,
+ticket)]` with `build.rs` enforcement).
+
+**xpile analog**: every `expect("... slow path not yet
+implemented")` and every `LeanCodegenError::Unsupported(...)` /
+`RuchyCodegenError::Unsupported(...)` string carries a deadline.
+
+Proposed shape:
+
+```rust
+// In emitted Rust (extension of PMAT-002's panic strings):
+.expect(
+    "xpile: i64 addition overflow; \
+     bigint promotion (contract C-PY-INT-ARITH slow path) \
+     not yet implemented (until: v0.3.0, ticket: PMAT-014)"
+)
+```
+
+```rust
+// In codegen Unsupported errors:
+RuchyCodegenError::Unsupported {
+    msg: "BigInt mode not yet implemented in Ruchy backend",
+    until_version: "0.2.0",
+    ticket: "PMAT-015",
+}
+```
+
+`build.rs` (or `pv lint`) compares `CARGO_PKG_VERSION` against each
+`until` and hard-fails when current ≥ until. This closes the
+"unimplemented forever" hole — every promise of a slow-path has a
+date attached.
+
+Backwards-compat: existing PMAT-002 panic messages get re-emitted
+with `until` strings; old fixture-test assertions that match on
+fragments of the message still pass because the contract-ID prefix
+is unchanged.
+
+### 1.3 N-of-M stratified oracle quorum (`XPILE-QUORUM-XXX`)
+
+**Ruchy reference**: §14.4 (Symbolic + Semantic + Extrinsic
+oracle strata, ≥1 vote from each).
+
+**xpile analog**: today the Oracle is a single stratum (behavioral
+capture of CPython output). Adding parallel oracles per Layer-1
+contract:
+
+| Stratum | Oracle | Verdict |
+|---|---|---|
+| Symbolic | Kani BMC on the emitted Rust | no counter-example ≤ bound |
+| Semantic | probar (1000 fuzzed inputs) on the Python source vs the transpiled Rust | no falsifier found |
+| Semantic | Lean theorem on the Layer-1 contract's equation | `impl ≡ spec` proved |
+| Extrinsic | Human review (`pmat work complete` with `--note`) | LGTM with reason string |
+
+Anti-correlation guard (Ruchy §14.5 F3): pairwise verdict
+correlation tracked over a 100-fixture sample; any pair ≥ 0.95
+collapses to one vote (no triple-counting the same evidence).
+
+Discharge rule: Layer-1 contracts require ≥1 Symbolic + ≥1 Semantic
+vote; safety-critical contracts (e.g. `C-FFI-CPYTHON-REFCOUNT`)
+add ≥1 Extrinsic.
+
+### 1.4 Differential execution check (`XPILE-DIFF-XXX`)
+
+**Ruchy reference**: §14.10.4 (interpreter vs transpiled binary
+on N probar-generated inputs per function).
+
+**xpile analog**: today we have 11 hand-authored runtime-verified
+fixtures (`factorial`, `fib`, `gcd`, …). Each was hand-picked.
+Generalise:
+
+```
+D1. For every transpiled fn `f(args: T...)`:
+D2.   probar generates 100 inputs satisfying `requires` (from contract
+      YAML); or, lacking contracts, generates inputs sampling each
+      arg's type domain
+D3.   CPython-3.x evaluates f on each input → reference[i]
+D4.   rustc -O builds the emitted Rust + runs f on each input → observed[i]
+D5.   reference[i] == observed[i] for all i, OR the function ships
+      with a `#[xpile_diff_exempt(reason, until, ticket)]` (same
+      hatch surface as §1.2)
+```
+
+Closes the "fixture overfitting" caveat from `audit-design.md` §4
+quantitatively, not just by adding more fixtures.
+
+### 1.5 Refinement proofs via Lean (`XPILE-REFINE-XXX`)
+
+**Ruchy reference**: §14.10.5 (Platinum functions have `lean_theorem`
+fields proving `impl ≡ spec` within bound).
+
+**xpile analog**: contracts like `C-PY-INT-ARITH` already have a
+"fast path" and "slow path" equation. Today we enforce them
+operationally (panic on overflow). Refine to a Lean theorem:
+
+```lean
+-- contracts/lean/PyIntArith.lean (generated by pv)
+theorem fast_path_eq_slow_path
+    (a b : Int)
+    (h : (a + b) ≥ Int.neg (2^63) ∧ (a + b) < 2^63) :
+    i64_wrap_add a b = bigint_add a b := by
+  -- proof discharged by `pv` codegen + Lean's `decide` tactic
+  ...
+```
+
+`pv lint` Gate 5 checks that every Layer-1 contract with both fast
+and slow path has a non-`sorry` theorem file. We already emit
+`@[xpile_contract "C-PY-INT-ARITH"]` (PMAT-011); the proof file is
+the missing half.
+
+### 1.6 Quarterly SOTA-gap dossier (`XPILE-SOTA-XXX`)
+
+**Ruchy reference**: §14.F-Audit-8 + F6 (recurring "what beats us
+where" publication).
+
+**xpile analog**: `audit-design.md` is currently a single snapshot
+(2026-05-15). Convert it to a quarterly cadence:
+
+- 2026-Q2 audit (initial, already exists at `audit-design.md`)
+- 2026-Q3 dossier deadline: 2026-08-15
+- 2026-Q4 dossier deadline: 2026-11-15
+- 2027-Q1 dossier deadline: 2027-02-15
+
+Each dossier enumerates: (a) transpilers that beat xpile on at
+least one axis since the previous dossier, (b) which of xpile's
+hypotheses (audit §5) is newly stressed by external work, (c) any
+falsifier from §1.1 that has entered the falsified range.
+
+Missing dossier = falsifier F6 fires automatically.
+
+## 2. In-spirit, scope-deferred
+
+These are mechanisms whose value is real but whose meta-HIR cost is
+too large for v0.1.0. They are recorded so the boundary is explicit.
+
+### 2.1 `Secret<T>` / `Public<T>` information-flow types
+
+**Ruchy reference**: §14.10.1 (from HACL* / F* IntTypes).
+
+**Why deferred for xpile**: our current users (Python → Rust for
+numerical workloads) don't bring secret data through the
+transpiler. The day a cryptographic-Python user shows up, the
+absence of info-flow becomes a real gap; until then, adding
+`Type::Secret(Box<Type>)` to meta-HIR would create downstream
+work in every backend for zero observable benefit.
+
+**Re-evaluation trigger**: first time a fixture or contract asks
+"is this value safe to log / branch on".
+
+### 2.2 Capability types for effects
+
+**Ruchy reference**: §14.10.2 (from Austral).
+
+**Why deferred for xpile**: capabilities solve "ambient authority"
+in *runtimes*. xpile is a compile-time tool — the emitted Rust
+runs in some host's runtime, and that host (not xpile) is the
+right place to enforce capability constraints. We do, however,
+have one capability-shaped contract already: `C-FFI-CPYTHON-REFCOUNT`
+(refcount balance is *exactly* a linear-capability obligation).
+Future Layer-2 FFI contracts SHOULD carry capability annotations,
+even if the meta-HIR type lattice doesn't enforce them.
+
+**Re-evaluation trigger**: a second Layer-2 FFI contract that needs
+to express "this function consumes a resource that must be released".
+
+### 2.3 Totality markers (`@total` / `decreases`)
+
+**Ruchy reference**: §14.10.3 (from Idris / ATS).
+
+**Why deferred for xpile**: meta-HIR has no termination story.
+PMAT-010 (Lean while via `partial def`) sidesteps this by always
+emitting `partial def`. A future PMAT could:
+
+- Add `Function::is_total: Option<bool>` to meta-HIR
+- Lean backend emits `def` (not `partial def`) when `is_total = true`
+- Frontend infers totality from `decreases`-style annotations OR
+  from structural recursion shape
+
+**Re-evaluation trigger**: a Lean-using consumer complaining that
+they can't compose `partial def` outputs inside total proofs.
+
+## 3. Explicitly NOT adopted
+
+This subsection exists so future readers don't propose these items
+again. Each was considered and rejected for a load-bearing reason,
+not by oversight.
+
+### 3.1 The 9 pillars themselves
+
+Ruchy's §2 lists nine pillars (Correctness, Compute, Infrastructure,
+Scripting, Learning, Visualization, Simulation, Testing, Embedding).
+Each is a *component of ruchy-the-language*, not a transpiler
+feature. xpile:
+
+- Already federates with bashrs (Pillar 4) per §19.
+- Already consumes `aprender-contracts` (Pillar 5's substrate).
+- Other seven pillars are out of scope.
+
+### 3.2 Graduate workflow (interpret → embed → compile)
+
+xpile has no interpreter and does not aspire to be a runtime.
+ruchy's "three execution modes from one source" is a property of
+*ruchy-the-language*; xpile's "many target languages from one
+source" is a property of *xpile-the-transpiler*. They are
+orthogonal claims.
+
+### 3.3 Language-level new keywords
+
+ruchy §4 introduces 7 new reserved words. xpile transpiles
+*existing* languages; it does not invent syntax. Layer-1 contracts
+are how xpile expresses semantic constraints, not new keywords.
+
+## 4. Cross-references
+
+- `xpile-spec.md` §27 — index pointing at this document.
+- `xpile-spec.md` §26 — audit-acknowledged caveats this roadmap closes.
+- `audit-design.md` §4 — negative-feedback bullets that informed
+  this roadmap (fixture overfitting → §1.4, citation-bridge
+  fragility → §1.5, single-snapshot audit → §1.6).
+- ruchy §14 — the model we're tracking against.
+- ruchy §14.F-Audit-8 — niche-bounded claim framing.
