@@ -1,0 +1,16 @@
+[package]
+name = "xpile-bigint"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Bigint runtime for xpile-generated code — the slow-path side of the `C-PY-INT-ARITH` Layer-1 contract"
+
+[dependencies]
+num-bigint = "0.4"
+num-integer = "0.1"
+num-traits = "0.2"

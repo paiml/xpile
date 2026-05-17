@@ -13,6 +13,7 @@ members = [
     "crates/xpile-mcp",
     "crates/xpile-meta-hir",
     "crates/xpile-oracle",
+    "crates/xpile-bigint",                    # added 2026-05-17 (PMAT-012)
     # ── code-lane frontends ───────────────────────────────────────
     "crates/depyler-frontend",
     "crates/decy-frontend",
@@ -73,6 +74,7 @@ xpile-llm            = { version = "0.1.0", path = "crates/xpile-llm" }
 xpile-mcp            = { version = "0.1.0", path = "crates/xpile-mcp" }
 xpile-meta-hir       = { version = "0.1.0", path = "crates/xpile-meta-hir" }
 xpile-oracle         = { version = "0.1.0", path = "crates/xpile-oracle" }
+xpile-bigint         = { version = "0.1.0", path = "crates/xpile-bigint" }
 
 # Code lane: frontends
 depyler-frontend = { version = "0.1.0", path = "crates/depyler-frontend" }

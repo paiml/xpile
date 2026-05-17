@@ -335,6 +335,10 @@ fn emit_type(out: &mut String, t: Type) -> Result<(), LeanCodegenError> {
     out.push_str(match t {
         Type::I64 => "Int",
         Type::Bool => "Bool",
+        // Lean's Int is already unbounded — same shape as BigInt. The
+        // C-PY-INT-ARITH slow path is satisfied by construction in Lean
+        // regardless of which type the frontend chose. PMAT-012.
+        Type::BigInt => "Int",
     });
     Ok(())
 }

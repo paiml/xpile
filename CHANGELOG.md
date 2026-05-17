@@ -63,6 +63,16 @@ subset, update this section first.
 - **`assert cond`** (PMAT-009). No-message form only. Rust/Ruchy emit
   `assert!(cond);`. Lean is skipped (requires Decidable instances +
   a propositional formulation; deferred).
+- **`BigInt` slow-path scaffold** (PMAT-012). Annotate a function with
+  `BigInt` (`def big_sum(a: BigInt, b: BigInt) -> BigInt`) and the
+  Rust backend emits `xpile_bigint::BigInt` with plain infix arithmetic
+  (no `.checked_*().expect()` — BigInt never overflows). Lean's `Int`
+  is unbounded, so the same Python source produces the same Lean
+  output regardless of `int` vs `BigInt`. Ruchy defers — emits a
+  clear PMAT-012 error pointing at the Rust backend. Bitwise / shift
+  / power on BigInt are also a follow-up. Implicit promotion (frontend
+  inferring BigInt from `int` when overflow is provable) is the
+  PMAT-013 follow-up.
 
 ### Backends (real emission)
 
