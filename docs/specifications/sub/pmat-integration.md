@@ -24,21 +24,35 @@
 
 This is what the `kaizen-paiml` skill automates.
 
-## Quality gates (mandatory in CI)
+## Quality gates (mandatory in CI at v0.1.0)
+
+Live `.github/workflows/ci.yml` enforces these — see [ci-gates.md](ci-gates.md) for full per-gate detail:
 
 | Gate | Tool | Threshold |
 |---|---|---|
-| Technical-debt grade | `pmat tdg` | ≥ A- |
-| Line coverage | `cargo llvm-cov` (NOT tarpaulin) | ≥ 95% |
-| Mutation coverage | `cargo mutants` | ≥ 80% on changed code |
-| Provable-contracts | `pv lint` | 8/8 gates pass |
-| Contract score | `pv score` | no regression vs main |
-| Clippy | `cargo clippy -- -D warnings` | zero warnings |
-| Format | `cargo fmt --check` | clean |
-| Security advisories | `cargo deny check` | zero unyanked |
+| Format | `cargo fmt --all -- --check` | clean |
 | Type check | `cargo check --workspace` | clean |
+| Clippy | `cargo clippy --workspace --all-targets -- -D warnings` | zero warnings |
+| Provable-contracts | `pv lint contracts/` | 8/8 gates pass, 0 errors (12 contracts at v0.1.0) |
+| Security advisories | `cargo deny check advisories` | zero unyanked |
+| Tests | `cargo test --workspace` | all pass — including the §14.4 stratum gates `refinement_proofs`, `kani_harnesses`, `kani_verify`, `quorum`, `attestations` |
+| Kani BMC (optional `kani` job) | `cargo kani` over `contracts/kani/*.rs` | 12 harnesses must verify successfully (~3.7s total) |
 
-PRs that fail any gate are rejected. No `--no-verify`, no manual overrides.
+PRs that fail any required gate are rejected. No `--no-verify`, no manual overrides.
+
+### Gates planned but not yet wired (post-v0.1.0)
+
+These were in the original v0.0.1 plan but were sequenced behind the substrate-completion work that just shipped (PMAT-058..077). Each is a candidate post-v0.1.0 ticket:
+
+| Planned gate | Tool | Threshold | Tracking ticket |
+|---|---|---|---|
+| Technical-debt grade | `pmat tdg` | ≥ A- | XPILE-CI-PMAT-TDG-001 |
+| Line coverage | `cargo llvm-cov` (NOT tarpaulin) | ≥ 95% | XPILE-CI-COVERAGE-001 |
+| Mutation coverage | `cargo mutants` | ≥ 80% on changed code | XPILE-CI-MUTANTS-001 |
+| Contract score | `pv score` | no regression vs main | XPILE-CI-SCORE-001 |
+| Provenance check | `scripts/check_provenance.sh` | no orphan markers | XPILE-CI-PROVENANCE-001 |
+
+These weren't dropped — they're sequenced post-substrate-completion. With 12 contracts at QUORUM the substrate-side prerequisite is met; the v0.2.0+ work is wiring them into CI without slowing fast-feedback gates.
 
 ## Why `pmat tdg` over individual metrics
 
