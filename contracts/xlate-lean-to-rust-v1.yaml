@@ -35,6 +35,11 @@ metadata:
 
 equations:
   def_to_rust_fn:
+    # PMAT-070: Lean refinement theorem locks in the body-
+    # preservation modelling commitment for def_to_rust_fn. See
+    # contracts/lean/XlateLeanToRust.lean for the proof.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.def_to_rust_fn"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
     formula: |
       xlate(def f (args : T1) ... : R := body) ==
         fn f(args: T1_rust, ...) -> R_rust { body_rust }

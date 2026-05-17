@@ -110,6 +110,58 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Lean refinement theorem — C-XLATE-LEAN-TO-RUST → PARTIAL (PMAT-070) — first post-trait-matrix domain contract
+
+**Ninth contract reaches non-UNVERIFIED status.** New
+`contracts/lean/XlateLeanToRust.lean` carries the refinement
+theorem `def_to_rust_fn` — locks in the body-preservation
+modelling commitment for the `Lean def → Rust fn` lowering.
+First Layer-2 translation contract refined after the
+trait-determinism matrix closure.
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    3  QUORUM
+  C-XLATE-PY-LIST-TO-VEC                      1    1    0    3  QUORUM
+  C-XPILE-FRONTEND-TRAIT                      1    1    0    3  QUORUM
+  C-XPILE-BACKEND-TRAIT                       1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-BACKEND-TRAIT              1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-FRONTEND-TRAIT             1    1    0    2  QUORUM
+  C-XLATE-LEAN-TO-RUST                        1    0    0    0  PARTIAL  ← new
+  ... (3 more UNVERIFIED)
+  totals: 8 QUORUM, 1 PARTIAL, 3 UNVERIFIED (12 contracts total)
+```
+
+Implementation:
+- **`contracts/lean/XlateLeanToRust.lean`** — new namespace
+  `XpileContracts.CXlateLeanToRust`. Models `LeanDef` and
+  `RustFn` as byte-array body carriers (Bronze tier). The
+  `lower_def_to_fn` function is byte-identity, and the
+  `def_to_rust_fn` theorem proves body preservation by `rfl`.
+- **`contracts/xlate-lean-to-rust-v1.yaml`** — equation
+  `def_to_rust_fn` gains `lean_theorem` + `lean_file` refs.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-070 entry.
+
+This is the **eighth contract Lean theorem** in the project,
+and the **first of the post-trait-matrix domain contracts**.
+Where PMAT-062..068 covered uniform architectural invariants
+(parse/render determinism, identical across all four corners
+of the 2×2 matrix), this theorem starts the Layer-2 translation
+work — modelling commitments about specific Lean → Rust
+constructs.
+
+Companion to `XlatePyListToVec.lean` (PMAT-060): both are
+Layer-2 translation contracts at Bronze tier. Together they
+bracket two directions of the proof-↔-code lane bridge:
+- Python → Rust (PMAT-060)
+- Lean → Rust (this PR)
+
+Companion Kani harness ships next as PMAT-071, lifting to
+QUORUM (9 of 12 = 75%).
+
 ### Kani symbolic harness — C-XPILE-CONTRACT-BACKEND-TRAIT → QUORUM (PMAT-069) — **closes 2×2 trait-determinism matrix at full Lean+Kani QUORUM (67% of substrate)**
 
 **Eighth contract reaches QUORUM. The 2×2 trait-determinism
