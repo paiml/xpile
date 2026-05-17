@@ -1850,3 +1850,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-113
+  github_issue: null
+  item_type: task
+  title: 'PMAT-113: sub/pmat-integration.md sweep — Quality gates table claimed pmat tdg / llvm-cov / mutants are mandatory CI (they are not); same fix as PMAT-101'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T22:30:00Z
+  updated: 2026-05-18T22:30:00Z
+  spec: null
+  acceptance_criteria:
+  - sub/pmat-integration.md "Quality gates (mandatory in CI)" table claimed pmat tdg ≥ A-, cargo llvm-cov ≥ 95%, cargo mutants ≥ 80%, pv score no regression are mandatory CI gates. They are not (per PMAT-101 sweep of ci-gates.md). Rewrite to show actual live gates (fmt + check + clippy + pv lint + cargo deny + cargo test --workspace incl. stratum gates + optional kani job) and a separate "Gates planned but not yet wired (post-v0.1.0)" table with XPILE-CI-* tracking tickets for each deferred gate.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
