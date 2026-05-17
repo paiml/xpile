@@ -516,3 +516,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-033
+  github_issue: null
+  item_type: task
+  title: 'PMAT-033: unified xpile quorum reporter (§14.4 four-stratum view)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T14:27:18Z
+  updated: 2026-05-17T14:27:18Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
