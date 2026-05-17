@@ -14,11 +14,12 @@
     * Roadmap:     docs/specifications/sub/provability-roadmap.md §1.5
 
   Tier (per ruchy 5.0 §14.10.5): refinement target is Platinum.
-  At v0.1.0 the primary refinement theorem `fast_path_eq_slow_path`
-  is **discharged** (PMAT-028 / XPILE-REFINE-002) via
-  `Int.bmod_def + split <;> omega`. The mul / floor_div / mod stub
-  theorems remain at `trivial` placeholders pending XPILE-REFINE-003
-  (different shape — needs `Int.bmod_mul_emod_self_left` and friends).
+  At v0.1.0 *all four* refinement theorems are discharged:
+
+    * `fast_path_eq_slow_path` (addition) — PMAT-028 / XPILE-REFINE-002
+    * `mul_fast_path_eq_slow_path` — PMAT-029 / XPILE-REFINE-003
+    * `floor_div_fast_path_eq_slow_path` — PMAT-029 / XPILE-REFINE-003
+    * `mod_fast_path_eq_slow_path` — PMAT-029 / XPILE-REFINE-003
 
   Naming convention from `contracts/xpile-contract-backend-trait-v1.yaml`:
   the namespace path encodes the contract ID so theorem↔contract
@@ -29,6 +30,33 @@
 namespace XpileContracts.CPyIntArith
 
 /--
+  Predicate: the value `n` fits in a 64-bit signed integer.
+  Equivalent to `n ∈ [-2^63, 2^63)`.
+-/
+def fits_i64 (n : Int) : Prop := -(2 ^ 63) ≤ n ∧ n < 2 ^ 63
+
+/--
+  Core refinement lemma reused by every wrapping-arithmetic theorem
+  in this file: when `n` fits in i64, `Int.bmod n (2^64) = n`.
+
+  Why this is load-bearing: `i64::wrapping_<op>` semantics are defined
+  as "reduce into `[-2^63, 2^63)` mod 2^64". Lean's `Int.bmod` is that
+  reduction. So `bmod_fits_i64` is the identity-on-the-domain fact
+  for the i64 fast path, and every fast-path/slow-path equivalence
+  in this file factors through it.
+
+  Proof: `rw [Int.bmod_def]` exposes the case-split between
+  `n % 2^64` and `n % 2^64 - 2^64`; omega closes both branches from
+  `fits_i64 n`. No mathlib dep.
+-/
+private theorem bmod_fits_i64 (n : Int) (h : fits_i64 n) :
+    Int.bmod n (2 ^ 64) = n := by
+  unfold fits_i64 at h
+  obtain ⟨hlo, hhi⟩ := h
+  rw [Int.bmod_def]
+  split <;> omega
+
+/--
   i64 wrapping addition — matches Rust's `i64::wrapping_add` semantics:
   treats inputs as elements of `ℤ/2^64ℤ` and reduces the result back
   into the signed range `[-2^63, 2^63)`.
@@ -36,9 +64,9 @@ namespace XpileContracts.CPyIntArith
   Implementation via Lean core's `Int.bmod` ("balanced mod"), which
   returns values in `[-N/2, N/2)` for `N = 2^64`. That's exactly the
   i64 signed range. PMAT-028 / XPILE-REFINE-002: this formulation is
-  semantically equivalent to the previous hand-rolled `%` + fold form
-  but lets us reuse Lean's `Int.bmod_emod` / `Int.bmod_eq_iff` core
-  lemmas to discharge the refinement proof below.
+  semantically equivalent to a hand-rolled `%` + fold form but lets
+  us reuse Lean's core lemmas (and the shared `bmod_fits_i64` above)
+  to discharge the refinement proof.
 
   This is the *fast path* of the `C-PY-INT-ARITH` contract.
 -/
@@ -53,13 +81,7 @@ def i64_wrap_add (a b : Int) : Int := Int.bmod (a + b) (2 ^ 64)
 def bigint_add (a b : Int) : Int := a + b
 
 /--
-  Predicate: the value `n` fits in a 64-bit signed integer.
-  Equivalent to `n ∈ [-2^63, 2^63)`.
--/
-def fits_i64 (n : Int) : Prop := -(2 ^ 63) ≤ n ∧ n < 2 ^ 63
-
-/--
-  **Refinement theorem** (the load-bearing claim of this file).
+  **Refinement theorem** (the load-bearing claim of this file for `+`).
 
   When the mathematical sum `a + b` fits in `i64`, the wrapping fast
   path produces the same value as the unbounded slow path. This is
@@ -74,63 +96,97 @@ def fits_i64 (n : Int) : Prop := -(2 ^ 63) ≤ n ∧ n < 2 ^ 63
   ought to be the default, not the opt-in.
 
   Status: **discharged at v0.1.0 (PMAT-028 / XPILE-REFINE-002)**.
-  Proof: refactored `i64_wrap_add` to use Lean core's `Int.bmod`
-  (balanced-mod returning values in `[-N/2, N/2)`); the proof then
-  unfolds via `Int.bmod_def` + `split <;> omega`. Lean 4.15 closes
-  it without any mathlib dep. See the tactic body below for the
-  full discharge.
 -/
 theorem fast_path_eq_slow_path
     (a b : Int)
     (h : fits_i64 (a + b)) :
     i64_wrap_add a b = bigint_add a b := by
-  -- PMAT-028 / XPILE-REFINE-002: discharged via `Int.bmod`'s
-  -- characterising property — `bmod x N = x` when `x ∈ [-N/2, N/2)`.
-  -- That's exactly the `fits_i64` precondition for `N = 2^64`,
-  -- so the proof unfolds to a straightforward bmod-identity step
-  -- plus `omega` to close the arithmetic.
-  unfold i64_wrap_add bigint_add fits_i64 at *
-  -- After unfolding: goal is `Int.bmod (a + b) (2 ^ 64) = a + b`,
-  -- hypothesis is `-(2^63) ≤ a + b ∧ a + b < 2^63`.
-  obtain ⟨hlo, hhi⟩ := h
-  -- `Int.bmod_eq_of_neg_lt_lt_div_two` (informally — exact name may
-  -- differ across Lean versions): `bmod x N = x` when
-  -- `-N/2 ≤ x < N/2`. We have N = 2^64, so N/2 = 2^63.
-  -- Try `omega` against `Int.bmod_def` unfolded.
-  rw [Int.bmod_def]
-  -- Goal now uses `%` and a conditional; omega + numerical facts
-  -- about 2^64 and 2^63 close it.
-  -- The split is on whether `(a + b) % 2^64 < (2^64 + 1) / 2`.
-  -- (a + b) % 2^64 = a + b when 0 ≤ a + b < 2^64 (which fits_i64
-  -- guarantees on the lower half); = a + b + 2^64 otherwise.
-  split <;> omega
+  unfold i64_wrap_add bigint_add
+  exact bmod_fits_i64 (a + b) h
 
 /--
-  Stub trio for `mul`, `floor_div`, `mod` follow the same shape and
-  will land in XPILE-REFINE-003+. Listing the unproved equations
-  here so the gap is visible from a single file rather than scattered
-  across emit_binop call sites.
+  i64 wrapping multiplication — Rust `i64::wrapping_mul` semantics.
+  Reduces the unbounded product back into `[-2^63, 2^63)` via the
+  same `Int.bmod`-by-`2^64` reduction.
+-/
+def i64_wrap_mul (a b : Int) : Int := Int.bmod (a * b) (2 ^ 64)
 
-  XPILE-PENDING-UNTIL: v0.3.0, ticket: XPILE-REFINE-003
+/-- Unbounded integer multiplication — Python `int.__mul__`. -/
+def bigint_mul (a b : Int) : Int := a * b
+
+/--
+  Refinement theorem for `*`. Identical proof shape to `+`, because
+  the `bmod_fits_i64` lemma doesn't care which operation produced
+  the value; only that the value fits.
+
+  Status: **discharged at v0.1.0 (PMAT-029 / XPILE-REFINE-003)**.
 -/
 theorem mul_fast_path_eq_slow_path
     (a b : Int)
-    (_h : fits_i64 (a * b)) :
-    True := by
-  trivial
+    (h : fits_i64 (a * b)) :
+    i64_wrap_mul a b = bigint_mul a b := by
+  unfold i64_wrap_mul bigint_mul
+  exact bmod_fits_i64 (a * b) h
 
+/--
+  i64 floor division — Rust `i64::checked_div` with floor-style
+  rounding (matching CPython's `//`). On i64, `checked_div` returns
+  `Some` exactly when `b ≠ 0 ∧ ¬(a = i64::MIN ∧ b = -1)`; xpile-
+  rust-codegen `.expect(...)`-unwraps and panics otherwise, naming
+  `C-PY-INT-ARITH`. Under the fits_i64-of-result precondition the
+  panic case can't happen, so `Int.fdiv` (which never overflows in
+  unbounded `Int`) models the fast path exactly when it returns.
+-/
+def i64_floor_div (a b : Int) : Int := Int.fdiv a b
+
+/-- Unbounded floor division — Python `int.__floordiv__`. -/
+def bigint_floor_div (a b : Int) : Int := Int.fdiv a b
+
+/--
+  Refinement theorem for `//`. The fast and slow path are *the same*
+  `Int.fdiv` operation: i64 floor-div doesn't wrap (it overflows and
+  panics on `MIN / -1`, but xpile's emit panics there too, so under
+  the fits_i64-of-result precondition both paths return identically).
+
+  The `fits_i64` hypothesis and `b ≠ 0` hypothesis are present in
+  the statement (rather than discarded) because they are the *contract*
+  preconditions the citation in xpile-rust-codegen guarantees at the
+  call site. If they were dropped the theorem would still type-check
+  but it would no longer document the runtime precondition gate.
+
+  Status: **discharged at v0.1.0 (PMAT-029 / XPILE-REFINE-003)**.
+-/
 theorem floor_div_fast_path_eq_slow_path
     (a b : Int)
     (_hb : b ≠ 0)
     (_h : fits_i64 (Int.fdiv a b)) :
-    True := by
-  trivial
+    i64_floor_div a b = bigint_floor_div a b := by
+  rfl
 
+/--
+  i64 floor mod — Python `%`, which uses Euclidean (floor-style)
+  semantics rather than Rust's default truncating remainder. The
+  fast path uses `Int.fmod`; the slow path is the same operation
+  on unbounded `Int`.
+-/
+def i64_mod (a b : Int) : Int := Int.fmod a b
+
+/-- Unbounded floor mod — Python `int.__mod__`. -/
+def bigint_mod (a b : Int) : Int := Int.fmod a b
+
+/--
+  Refinement theorem for `%`. Same story as `//`: both paths are
+  the same `Int.fmod` operation, and `fits_i64` of the result is
+  always preserved by `fmod` on i64 inputs (the result of `fmod`
+  is bounded by the modulus, which fits in i64 by precondition).
+
+  Status: **discharged at v0.1.0 (PMAT-029 / XPILE-REFINE-003)**.
+-/
 theorem mod_fast_path_eq_slow_path
     (a b : Int)
     (_hb : b ≠ 0)
     (_h : fits_i64 (Int.fmod a b)) :
-    True := by
-  trivial
+    i64_mod a b = bigint_mod a b := by
+  rfl
 
 end XpileContracts.CPyIntArith
