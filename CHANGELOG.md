@@ -110,6 +110,61 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Kani symbolic harness — C-COMPILE-RUST-TO-PTX-MMA → QUORUM (PMAT-075) — **FIRST Layer-5 contract at QUORUM; 92% of substrate at QUORUM**
+
+**Eleventh contract reaches QUORUM. The first Layer-5
+(compile-time / IR) contract now has full Lean + Kani
+Bronze-tier coverage.** New
+`contracts/kani/compile_rust_to_ptx_mma.rs` carries the Kani
+BMC harness `mma_emission_for_gemm_kernel` — Rust mirror of
+the Lean theorem from PMAT-074.
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    3  QUORUM
+  C-XLATE-PY-LIST-TO-VEC                      1    1    0    3  QUORUM
+  C-XPILE-FRONTEND-TRAIT                      1    1    0    3  QUORUM
+  C-COMPILE-RUST-TO-PTX-MMA                   1    1    0    2  QUORUM  ← Sym now 1
+  C-XLATE-LEAN-TO-RUST                        1    1    0    2  QUORUM
+  C-XLATE-RUST-FN-TO-LEAN-THM                 1    1    0    2  QUORUM
+  C-XPILE-BACKEND-TRAIT                       1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-BACKEND-TRAIT              1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-FRONTEND-TRAIT             1    1    0    2  QUORUM
+  C-FFI-CPYTHON-EXT                           0    0    0    2  PARTIAL
+  totals: 11 QUORUM, 1 PARTIAL, 0 UNVERIFIED (12 contracts total)
+```
+
+**Eleven paired Lean+Kani discharges across ALL FIVE layers
+of the contract taxonomy:**
+- Layer-1 (per-language semantics): C-PY-INT-ARITH,
+  C-BASHRS-POSIX-IDEMPOTENCE
+- Layer-2 (translation): C-NOTATION, C-XLATE-PY-LIST,
+  C-XLATE-LEAN-TO-RUST, C-XLATE-RUST-FN-TO-LEAN-THM
+- Layer-3 (architectural traits): 4 contracts forming the 2×2
+  determinism matrix
+- Layer-5 (compile-time / IR): C-COMPILE-RUST-TO-PTX-MMA ← new
+
+Only one contract remains below QUORUM: **C-FFI-CPYTHON-EXT**
+at Sem=0/Sym=0/Run=0/Ext=2 (PARTIAL). It needs CPython ABI +
+GIL-state + refcount modelling work — the hardest single
+contract in the substrate.
+
+Implementation:
+- **`contracts/kani/compile_rust_to_ptx_mma.rs`** — first
+  Layer-5 Kani harness. Mirrors PMAT-071's shape:
+  `lower_kernel_to_ptx(k: &KernelInput) -> PtxOutput` plus
+  `#[kani::proof] fn mma_emission_for_gemm_kernel()` asserting
+  byte-level marker preservation.
+- **`contracts/compile-rust-to-ptx-mma-v1.yaml`** — equation
+  `mma_emission_for_gemm_kernel` gains `kani_harness` +
+  `kani_file` refs.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-075 entry.
+
+Full Kani gate now ~3.4s across eleven harnesses.
+
 ### Lean refinement theorem — C-COMPILE-RUST-TO-PTX-MMA → PARTIAL (PMAT-074) — **FIRST Layer-5 contract refined, ZERO UNVERIFIED contracts remain**
 
 **Eleventh contract reaches non-UNVERIFIED status. ZERO

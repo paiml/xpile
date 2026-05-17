@@ -49,6 +49,10 @@ equations:
     # refinement theorem.
     lean_theorem: "XpileContracts.CCompileRustToPtxMma.mma_emission_for_gemm_kernel"
     lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    # PMAT-075: Kani harness completes the §14.4 quorum and
+    # makes this the FIRST Layer-5 contract at QUORUM.
+    kani_harness: "mma_emission_for_gemm_kernel"
+    kani_file: "contracts/kani/compile_rust_to_ptx_mma.rs"
     formula: |
       lower(rust_fn marked #[gpu_kernel(mma)], BackendConfig{target: Ptx})
         produces ptx_text containing mma.sync.aligned
