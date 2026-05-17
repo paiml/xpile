@@ -334,6 +334,67 @@ impl Frontend for BashrsFrontend {
                 // Comment line.
                 continue;
             }
+            // PMAT-051: detect `NAME=value` variable assignment at
+            // the start of a line. Recognises the canonical POSIX
+            // form: one bareword token whose name part is a
+            // POSIX-legal identifier, immediately followed by `=`,
+            // immediately followed by the value (the rest of the
+            // first token; further whitespace-separated tokens on
+            // the line are NOT supported at v0.1.0 — that'd be the
+            // `VAR=val cmd args` "exported once for next command"
+            // POSIX form). Whitespace around `=` is disallowed by
+            // POSIX, and we follow.
+            if let Some(eq_idx) = line.find('=') {
+                let name_part = &line[..eq_idx];
+                let value_part = &line[eq_idx + 1..];
+                if is_posix_identifier(name_part) {
+                    // Tokenize the value_part so we can distinguish:
+                    //   - exactly one token → `Stmt::ShellAssign`
+                    //   - multiple tokens → POSIX's
+                    //     `VAR=val cmd args` "exported for next
+                    //     command" form (not supported at v0.1.0)
+                    // This is quoting-aware — `NAME="Noah Gift"` is
+                    // one (DoubleQuoted) token, not two barewords.
+                    let value_tokens = tokenize_line(value_part)?;
+                    match value_tokens.len() {
+                        0 => {
+                            // `NAME=` with empty value — POSIX-legal,
+                            // means unset / empty. We model as
+                            // LitStr("").
+                            stmts.push(Stmt::ShellAssign {
+                                name: name_part.to_string(),
+                                value: Expr::LitStr(String::new()),
+                            });
+                            continue;
+                        }
+                        1 => {
+                            let value_expr = lower_raw_token(&value_tokens[0])?;
+                            stmts.push(Stmt::ShellAssign {
+                                name: name_part.to_string(),
+                                value: value_expr,
+                            });
+                            continue;
+                        }
+                        _ => {
+                            // Multi-token RHS = the
+                            // `VAR=val cmd args` POSIX form.
+                            // Reject at v0.1.0 — it's a less-used
+                            // idiom and supporting it correctly
+                            // requires modelling temporary-export
+                            // semantics. Fall through is *not*
+                            // safe (the line doesn't pipe or
+                            // bareword-command cleanly); error
+                            // explicitly.
+                            return Err(FrontendError::Lower(format!(
+                                "shell line `{line}` has `VAR=val cmd args` shape — \
+                                 v0.1.0 supports only single-value assignments \
+                                 (`VAR=value` on its own line)"
+                            )));
+                        }
+                    }
+                }
+            }
+
             // PMAT-041: detect pipeline via `|` separator between
             // command stages. A line without `|` produces a single
             // `Stmt::Cmd`; a line with `|` produces a `Stmt::Pipeline`
@@ -927,6 +988,82 @@ pwd
         };
         assert_eq!(program, "date");
         assert_eq!(args, &vec![Expr::LitStr("+%Y".into())]);
+    }
+
+    #[test]
+    fn parse_and_lower_simple_shell_assign() {
+        // PMAT-051: `LOG=/tmp/foo` produces Stmt::ShellAssign with
+        // a LitStr value.
+        use xpile_meta_hir::{Expr, Item, Stmt};
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/a.sh"), "LOG=/tmp/build.log\n")
+            .expect("parse");
+        let Item::Function(f) = &module.items[0];
+        assert_eq!(f.body.stmts.len(), 1);
+        let Stmt::ShellAssign { name, value } = &f.body.stmts[0] else {
+            panic!("expected ShellAssign; got {:?}", f.body.stmts[0]);
+        };
+        assert_eq!(name, "LOG");
+        assert_eq!(value, &Expr::LitStr("/tmp/build.log".into()));
+    }
+
+    #[test]
+    fn parse_and_lower_shell_assign_with_command_substitution_value() {
+        // PMAT-051 + PMAT-050: `TODAY=$(date)` composes ShellAssign
+        // with CommandSubstitution.
+        use xpile_meta_hir::{Expr, Item, Stmt};
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/a.sh"), "TODAY=$(date)\n")
+            .expect("parse");
+        let Item::Function(f) = &module.items[0];
+        let Stmt::ShellAssign { name, value } = &f.body.stmts[0] else {
+            panic!("expected ShellAssign");
+        };
+        assert_eq!(name, "TODAY");
+        let Expr::CommandSubstitution(inner) = value else {
+            panic!("expected CommandSubstitution value");
+        };
+        let Stmt::Cmd { program, args } = inner.as_ref() else {
+            panic!("expected inner Cmd");
+        };
+        assert_eq!(program, "date");
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn parse_and_lower_shell_assign_with_quoted_value() {
+        // PMAT-051 + PMAT-049: `NAME="Noah Gift"` composes
+        // ShellAssign with QuotedString.
+        use xpile_meta_hir::{Expr, Item, QuotingStrategy, Stmt};
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/a.sh"), "NAME=\"Noah Gift\"\n")
+            .expect("parse");
+        let Item::Function(f) = &module.items[0];
+        let Stmt::ShellAssign { name, value } = &f.body.stmts[0] else {
+            panic!("expected ShellAssign");
+        };
+        assert_eq!(name, "NAME");
+        assert_eq!(
+            value,
+            &Expr::QuotedString {
+                content: "Noah Gift".into(),
+                quoting: QuotingStrategy::Double,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_rejects_var_eq_val_cmd_args_form() {
+        // PMAT-051 negative: POSIX's `VAR=val cmd args`
+        // (export-for-next-cmd) is rejected at v0.1.0.
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/bad.sh"), "FOO=bar echo hi\n")
+            .expect_err("should reject VAR=val cmd args");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("VAR=val cmd args"),
+            "error should explain the unsupported shape: {msg}"
+        );
     }
 
     #[test]

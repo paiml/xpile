@@ -211,6 +211,15 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-051: same disposition.
+            Stmt::ShellAssign { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has Stmt::ShellAssign inside a while loop; \
+                     C-BASHRS-POSIX-IDEMPOTENCE governs shell assignment — \
+                     Lean codegen does not lower it",
+                    f.name
+                )));
+            }
         }
     }
 
@@ -504,6 +513,12 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
              use `--target shell`"
                 .into(),
         )),
+        // PMAT-051: same disposition.
+        Stmt::ShellAssign { name, .. } => Err(LeanCodegenError::Unsupported(format!(
+            "Lean backend does not lower Stmt::ShellAssign (`{name}=…`) — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs shell assignment; \
+             use `--target shell`"
+        ))),
     }
 }
 

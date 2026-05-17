@@ -168,7 +168,10 @@ impl Backend for BashrsBackend {
                 .filter(|s| {
                     matches!(
                         s,
-                        Stmt::Cmd { .. } | Stmt::Pipeline { .. } | Stmt::ShellLoop { .. }
+                        Stmt::Cmd { .. }
+                            | Stmt::Pipeline { .. }
+                            | Stmt::ShellLoop { .. }
+                            | Stmt::ShellAssign { .. }
                     )
                 })
                 .collect();
@@ -233,6 +236,16 @@ impl Backend for BashrsBackend {
                     // PMAT-048: ShellLoop renders via the helper.
                     Stmt::ShellLoop { kind, body } => {
                         writeln!(primary, "{}", render_shell_loop(kind, body)?)
+                            .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
+                        emitted_commands += 1;
+                    }
+                    // PMAT-051: ShellAssign renders as `NAME=value`
+                    // on its own line. The value is rendered through
+                    // the existing render_arg helper, so quoted
+                    // strings / shell vars / command substitution
+                    // all work in the value position.
+                    Stmt::ShellAssign { name, value } => {
+                        writeln!(primary, "{name}={}", render_arg(value)?)
                             .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
                         emitted_commands += 1;
                     }

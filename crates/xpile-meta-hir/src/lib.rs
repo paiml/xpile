@@ -109,6 +109,10 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         // for completeness (currently every stage is a Cmd, so this is
         // always false in practice).
         Stmt::Pipeline { stages } => stages.iter().any(stmt_has_int_arith),
+        // PMAT-051: shell variable assignment carries a value Expr;
+        // recurse for completeness (currently the value is always
+        // a shell-domain Expr, so this is always false in practice).
+        Stmt::ShellAssign { value, .. } => expr_has_int_arith(value),
         // PMAT-048: shell loops compose statements; recurse into
         // body + (where applicable) cond / items.
         Stmt::ShellLoop { kind, body } => {
@@ -247,6 +251,21 @@ pub enum Stmt {
     /// by every other backend via `Unsupported(...)` arms naming
     /// `C-BASHRS-POSIX-IDEMPOTENCE`.
     Pipeline { stages: Vec<Stmt> },
+    /// `NAME=value` — POSIX shell variable assignment. PMAT-051 /
+    /// XPILE-BASHRS-MERGER-001 Layer B (assignment idiom).
+    ///
+    /// The `name` is a POSIX-legal identifier (alphanumeric +
+    /// underscore, no leading digit); the `value` is an `Expr` so
+    /// future Layer B Expr variants (`Expr::CommandSubstitution`
+    /// from PMAT-047/050, etc.) compose naturally — e.g.,
+    /// `TODAY=$(date)` → `Stmt::ShellAssign { name: "TODAY", value:
+    /// Expr::CommandSubstitution(Box::new(Stmt::Cmd { … })) }`.
+    ///
+    /// Same cross-domain disposition as the other bashrs variants:
+    /// produced only by bashrs-frontend, consumed only by
+    /// bashrs-backend, refused by other backends with
+    /// `Unsupported(...)` naming `C-BASHRS-POSIX-IDEMPOTENCE`.
+    ShellAssign { name: String, value: Expr },
     /// POSIX shell control-flow loop (`for x in …; do … done` /
     /// `while [ … ]; do … done` / `until [ … ]; do … done`). PMAT-048
     /// / XPILE-BASHRS-MERGER-001 Layer B (last variant from the

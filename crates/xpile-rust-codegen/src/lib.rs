@@ -88,6 +88,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             // PMAT-048: ShellLoop is bashrs-domain — no BigInt
             // operand reachable through it.
             Stmt::ShellLoop { .. } => false,
+            // PMAT-051: ShellAssign same disposition.
+            Stmt::ShellAssign { .. } => false,
         }
     }
     f.body.stmts.iter().any(stmt_has_bigint)
@@ -196,6 +198,12 @@ fn emit_stmt_indented(
              use `--target shell`"
                 .into(),
         )),
+        // PMAT-051: same disposition.
+        Stmt::ShellAssign { name, .. } => Err(CodegenError::Unsupported(format!(
+            "Rust backend does not lower Stmt::ShellAssign (`{name}=…`) — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs shell variable assignment; \
+             use `--target shell`"
+        ))),
     }
 }
 
