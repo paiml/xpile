@@ -110,6 +110,40 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Backtick substitution `` `cmd` `` (PMAT-053)
+
+Recognises POSIX's older command-substitution syntax. Semantically
+identical to \`\$(cmd)\`; reuses the existing
+\`RawToken::CommandSubst\` + \`Expr::CommandSubstitution\` so the
+lowering path is unchanged. **Backticks normalise to \`\$(...)\` on
+output** (modern POSIX canonical form):
+
+\`\`\`
+$ echo 'TODAY=\`date\`' > /tmp/bta.sh
+$ xpile transpile /tmp/bta.sh --target shell
+...
+TODAY=\$(date)
+\`\`\`
+
+Tokenizer extension only — zero cross-cutting impact (no new IR
+variant). Negative cases handled (unterminated backticks rejected
+with a precise diagnostic; backticks adjacent to a bareword
+rejected per the same boundary requirement as the other quoting
+forms).
+
+What's NOT yet here:
+- Nested backticks (POSIX allows via \`\\\\\`...\\\\\`\` but it's
+  pathological; v0.2.0 source fold handles).
+- Backticks inside double quotes (\`"a \`b\`"\` — content treated
+  as literal string at v0.1.0).
+
+Test coverage:
+- 3 new bashrs-frontend tokenizer unit tests:
+  - \`tokenize_line_recognises_backtick_substitution\` — single + multi-arg
+  - \`tokenize_line_rejects_unterminated_backtick_substitution\`
+  - \`parse_and_lower_with_backtick_substitution_normalises_to_dollar_paren\`
+    — end-to-end demonstrating the canonical-form normalisation.
+
 ### Realistic bashrs end-to-end demo + integration test (PMAT-052)
 
 **Comprehensive demo of every Layer B construct composed in a

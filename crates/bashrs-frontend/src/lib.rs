@@ -75,6 +75,36 @@ fn tokenize_line(line: &str) -> Result<Vec<RawToken>, FrontendError> {
                     tokens.push(RawToken::Bare(std::mem::take(&mut current)));
                 }
             }
+            // PMAT-053: backtick `` `cmd` `` command substitution.
+            // Semantically identical to `$(cmd)` (POSIX older
+            // syntax). Reuses `RawToken::CommandSubst` so the
+            // lowering path is unchanged. No nesting supported at
+            // v0.1.0 (POSIX backticks technically allow it via
+            // backslash-escaping but it's a horror-show; the v0.2.0
+            // bashrs source fold will handle the corner cases).
+            '`' => {
+                if !current.is_empty() {
+                    return Err(FrontendError::Lower(format!(
+                        "shell line `{line}` has a backtick adjacent to a bareword \
+                         (e.g., `foo`bar``); v0.1.0 requires backticks at token boundaries"
+                    )));
+                }
+                let mut content = String::new();
+                let mut closed = false;
+                for inner in chars.by_ref() {
+                    if inner == '`' {
+                        closed = true;
+                        break;
+                    }
+                    content.push(inner);
+                }
+                if !closed {
+                    return Err(FrontendError::Lower(format!(
+                        "shell line `{line}` has an unterminated backtick substitution"
+                    )));
+                }
+                tokens.push(RawToken::CommandSubst(content));
+            }
             // PMAT-050: `$(cmd)` command substitution. Recognised as
             // an atomic token; inner content is captured verbatim
             // and lowered into Stmt::Cmd by `lower_raw_token`.
@@ -948,6 +978,68 @@ pwd
                 RawToken::CommandSubst("uname -a".into()),
             ]
         );
+    }
+
+    #[test]
+    fn tokenize_line_recognises_backtick_substitution() {
+        // PMAT-053: `` `cmd` `` becomes a CommandSubst token —
+        // semantically identical to `$(cmd)`.
+        let toks = tokenize_line("echo today is `date`").expect("parse");
+        assert_eq!(
+            toks,
+            vec![
+                RawToken::Bare("echo".into()),
+                RawToken::Bare("today".into()),
+                RawToken::Bare("is".into()),
+                RawToken::CommandSubst("date".into()),
+            ]
+        );
+
+        // With args inside the substitution.
+        let toks = tokenize_line("echo `uname -a` end").expect("parse");
+        assert_eq!(
+            toks,
+            vec![
+                RawToken::Bare("echo".into()),
+                RawToken::CommandSubst("uname -a".into()),
+                RawToken::Bare("end".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn tokenize_line_rejects_unterminated_backtick_substitution() {
+        // PMAT-053 negative: `` `cmd `` without closing backtick.
+        let err = tokenize_line("echo `date").expect_err("should reject");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("unterminated") && msg.contains("backtick"),
+            "error should mention unterminated backtick: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_with_backtick_substitution_normalises_to_dollar_paren() {
+        // PMAT-053 end-to-end: backtick input lowers to
+        // Expr::CommandSubstitution, which renders as `$(cmd)` —
+        // the modern POSIX canonical form. So `echo `date`` round-
+        // trips as `echo $(date)`.
+        use xpile_meta_hir::{Expr, Item, Stmt};
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/bt.sh"), "echo `date`\n")
+            .expect("parse");
+        let Item::Function(f) = &module.items[0];
+        let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
+            panic!("expected Cmd");
+        };
+        assert_eq!(program, "echo");
+        assert_eq!(args.len(), 1);
+        let Expr::CommandSubstitution(_) = &args[0] else {
+            panic!(
+                "expected backticks to lower to CommandSubstitution; got {:?}",
+                args[0]
+            );
+        };
     }
 
     #[test]
