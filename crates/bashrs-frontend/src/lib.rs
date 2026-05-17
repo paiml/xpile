@@ -2111,4 +2111,60 @@ pwd
         assert_eq!(args[0], Expr::ShellVar("HOME".to_string()));
         assert_eq!(args[1], Expr::LitStr("end".to_string()));
     }
+
+    #[test]
+    fn parse_and_lower_composes_all_pmat_085_to_091_idioms() {
+        // PMAT-092: capstone — a single shell script exercising
+        // every round-trip invariant locked in across PMAT-085
+        // through PMAT-091:
+        //
+        //   * PMAT-085 — `${VAR:-default}` parameter expansion
+        //   * PMAT-086 — `\<newline>` line continuation
+        //   * PMAT-087 — `>` / `2>&1` redirection
+        //   * PMAT-088 — `||` short-circuit (no longer mis-parsed
+        //                as `| |`)
+        //   * PMAT-089 — `[ -f foo ]` test bracket
+        //   * PMAT-090 — `$((x + 1))` arithmetic expansion (no
+        //                longer rejected as "nested `$(...)`")
+        //   * PMAT-091 — `(cd /tmp && do_stuff)` subshell
+        //
+        // Why this test exists: each PMAT-085..091 ships its own
+        // narrow test, but real shell scripts compose these
+        // idioms — and historically composition exposes bugs
+        // that narrow tests miss. This composite test parses a
+        // 7-line shell input through bashrs-frontend without
+        // erroring, exercising every fix shipped in the v0.1.0
+        // round-trip lock-in run.
+        //
+        // Specifically guards against: a future refactor that
+        // regresses any one of PMAT-085..091 without tripping
+        // its own narrow test (e.g., by introducing a different
+        // failure mode that happens to satisfy the narrow
+        // assertions). If this composite test breaks, the
+        // refactor needs to be re-examined.
+        use xpile_meta_hir::Item;
+        let source = "\
+PORT=${PORT:-8080}\n\
+echo starting on port $PORT \\\n  with config /etc/foo\n\
+make > build.log 2>&1\n\
+test -f /tmp/lock || echo no_lock\n\
+[ -d /tmp ] && echo tmp_ok\n\
+N=$((counter + 1))\n\
+( cd /tmp && ls )\n\
+";
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/composite.sh"), source)
+            .expect("composite PMAT-085..091 script must parse");
+        let Item::Function(f) = &module.items[0];
+        // We expect exactly 7 statements — one per source line.
+        // The line-continuation splice (PMAT-086) collapses two
+        // physical lines into one logical line, leaving 7 total.
+        assert_eq!(
+            f.body.stmts.len(),
+            7,
+            "expected 7 statements after PMAT-086 line-continuation \
+             splice; got {} — composite parsing regressed",
+            f.body.stmts.len()
+        );
+    }
 }

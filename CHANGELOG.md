@@ -110,6 +110,47 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Capstone: composite round-trip test exercising all PMAT-085..091 idioms (PMAT-092)
+
+**Single test that parses a 7-line shell script using every
+v0.1.0 round-trip invariant simultaneously.** Each
+PMAT-085..091 ships its own narrow test, but real shell scripts
+compose these idioms — and historically composition exposes
+bugs that narrow tests miss.
+
+```bash
+PORT=${PORT:-8080}                    # PMAT-085 param expansion
+echo starting on port $PORT \         # PMAT-086 line continuation
+  with config /etc/foo
+make > build.log 2>&1                 # PMAT-087 redirection
+test -f /tmp/lock || echo no_lock     # PMAT-088 short-circuit ||
+[ -d /tmp ] && echo tmp_ok            # PMAT-089 test bracket
+N=$((counter + 1))                    # PMAT-090 arith expansion
+( cd /tmp && ls )                     # PMAT-091 subshell
+```
+
+The capstone test
+`parse_and_lower_composes_all_pmat_085_to_091_idioms`
+asserts the 7 physical input lines collapse via PMAT-086's
+backslash-newline splicing into 7 logical statements after
+parsing (the line continuation joins lines 2-3 into one
+logical statement, leaving 7 total: assign + echo + make +
+test/|| + [/&& + N=$(()) + subshell).
+
+Guards against future refactors that regress any one of
+PMAT-085..091 without tripping its own narrow test. With this
+test in place, any change touching the bashrs tokenizer or
+parser must keep all 7 idioms composing correctly.
+
+**Closes the PMAT-085..092 v0.1.0 bashrs round-trip
+invariant lock-in run** — 8 PRs, 2 real parser bug fixes
+(PMAT-088 short-circuit, PMAT-090 arith expansion), 5
+LitStr-passthrough invariants, 1 capstone composition test.
+The v0.1.0 bashrs-frontend handles a substantial fraction of
+real-world POSIX shell scripts; remaining work (heredocs,
+structured IR variants for each idiom) is v0.2.0+
+substrate-fold territory.
+
 ### POSIX subshell `(cmd)` round-trip via LitStr passthrough (PMAT-091)
 
 **POSIX subshells round-trip end-to-end at v0.1.0.** The
