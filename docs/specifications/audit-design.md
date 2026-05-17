@@ -1,5 +1,30 @@
 # Project Design Audit: xpile — Polyglot Transpile Workbench
 
+## 0. Cadence and Next Dossier (XPILE-SOTA-001 / PMAT-016)
+
+This document is a **quarterly publication**, not a one-time snapshot. Each quarter the maintainers republish a "state-of-the-art gap" dossier enumerating:
+
+1. Transpilers / verification systems that beat xpile on at least one axis since the previous dossier.
+2. Which of xpile's load-bearing hypotheses (§5) is newly stressed by external work.
+3. Any falsifier from [`sub/provability-roadmap.md`](sub/provability-roadmap.md) §1.1 that has entered the falsified range.
+
+Missing dossier ⇒ **falsifier F6 fires automatically** (see [`sub/provability-roadmap.md`](sub/provability-roadmap.md) §1.6).
+
+The deadline is enforced by a CI test (`crates/xpile/tests/sota_dossier_deadline.rs`) that parses the date from this section and fails the build the moment current time reaches it.
+
+| Quarter | Deadline | Status |
+|---|---|---|
+| 2026-Q2 (initial) | 2026-05-15 | ✅ shipped (§1–§6 below) |
+| 2026-Q3 | 2026-08-15 | ⏳ pending |
+| 2026-Q4 | 2026-11-15 | ⏳ pending |
+| 2027-Q1 | 2027-02-15 | ⏳ pending |
+
+**Next Dossier Deadline: 2026-08-15**
+
+(The deadline string above is parsed verbatim by the CI gate; do not reword without also updating the regex in the deadline test.)
+
+---
+
 ## 1. Research Methodology
 
 This audit was conducted via a systematic document analysis of the canonical specification (`docs/specifications/xpile-spec.md`) and its associated sub-specifications (e.g., `oracle.md`, `agent-loop.md`, `backend-trait.md`, `contract-frontend-trait.md`, `contract-backend-trait.md`). The evaluation adopted an adversarial, Popperian mindset—specifically looking for unverified assumptions, structural weaknesses in the hybrid translation boundaries, and the limits of the proposed contract-driven agent loop. The architectural decisions were measured against established academic research in program synthesis, execution-based evaluation, and compiler design. Furthermore, a cross-repository analysis was conducted against the `ruchy` and `aprender` specifications to evaluate ecosystem completeness.

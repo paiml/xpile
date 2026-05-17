@@ -110,6 +110,18 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Quarterly SOTA-gap dossier cadence (PMAT-016 / XPILE-SOTA-001)
+
+`audit-design.md` §0 publishes the quarterly cadence + the next
+dossier deadline. Enforcement test (`crates/xpile/tests/sota_dossier_deadline.rs`)
+parses the deadline string, compares against wall-clock time, fails
+CI when current ≥ deadline. Missing dossier ⇒ falsifier F6 fires
+automatically, no manual policing.
+
+Cadence as of v0.1.0: 2026-Q2 (initial — §1..§6 of audit-design.md);
+2026-Q3 deadline 2026-08-15; 2026-Q4 deadline 2026-11-15;
+2027-Q1 deadline 2027-02-15.
+
 ### `xpile audit` (PMAT-015 / XPILE-FALSIFY-001)
 
 New CLI subcommand reports F1 (Layer-1 contract citation coverage)

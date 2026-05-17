@@ -160,6 +160,8 @@ the missing half.
 
 ### 1.6 Quarterly SOTA-gap dossier (`XPILE-SOTA-XXX`)
 
+**Status (XPILE-SOTA-001)**: ✅ shipped — PMAT-016. `audit-design.md` §0 now publishes the quarterly cadence + the next-dossier deadline (2026-08-15). Enforcement: `crates/xpile/tests/sota_dossier_deadline.rs` parses the deadline string, compares against wall-clock time, fails CI when current ≥ deadline with an explicit "publish dossier + bump date" remediation message. Pure-Rust date arithmetic (no chrono dep). Three sub-tests: live gate, cadence-table integrity, date-arithmetic self-tests against known Unix epoch points.
+
 **Ruchy reference**: §14.F-Audit-8 + F6 (recurring "what beats us
 where" publication).
 
