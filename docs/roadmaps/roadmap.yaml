@@ -1901,3 +1901,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-116
+  github_issue: null
+  item_type: task
+  title: 'PMAT-116: sub/cli.md status sweep — replace "scaffold banner; none implemented; Phase 2-3" with the 5 actually-shipped subcommands (info, transpile, audit, attestations, quorum)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-19T00:00:00Z
+  updated: 2026-05-19T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - sub/cli.md "Status at v0.1.0" claimed "The xpile binary prints a scaffold banner. None of these commands are implemented yet. Full CLI lands in Phase 2-3." Reality — 5 subcommands ship at v0.1.0 (info / transpile / audit / attestations / quorum). Replace with shipped-subcommand table including PMAT-029/032/033 references. Add a "Post-v0.1.0" subsection listing genuinely-deferred CLI surface (contract / fleet / mcp / agent / cache).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
