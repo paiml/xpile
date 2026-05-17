@@ -114,4 +114,22 @@ Command-line flags override `xpile.toml`; `xpile.toml` overrides defaults.
 
 ## Status at v0.1.0
 
-The `xpile` binary prints a scaffold banner. None of these commands are implemented yet. Full CLI lands in Phase 2-3.
+The `xpile` binary ships with **5 implemented subcommands** as of v0.1.0:
+
+| Subcommand | Purpose | Status |
+|---|---|---|
+| `xpile info` | Show registered frontends and backends (default action when no subcommand given) | **shipped** |
+| `xpile transpile <file>` | Transpile a source file. Extension selects the frontend; `--target` selects the backend. Real emission for `--target {rust,ruchy,lean,shell}`. | **shipped** |
+| `xpile audit <path>` | Report falsifier F1 (Layer-1 contract citation coverage) over a corpus. Drives the XPILE-FALSIFY-001 metric. | **shipped** (PMAT-029) |
+| `xpile attestations` | Report Extrinsic-stratum per-contract attestation counts (XPILE-QUORUM-005). Scans `contracts/*.yaml` for IDs, counts mentions in `roadmap.yaml`. | **shipped** (PMAT-032) |
+| `xpile quorum` | Unified §14.4 N-of-M oracle quorum reporter. Walks every contract and tallies per-stratum votes (Semantic / Symbolic / Runtime / Extrinsic). | **shipped** (PMAT-033) |
+
+Run `xpile --help` to see the live list. Subcommands not yet shipped (post-v0.1.0):
+
+- `xpile contract` family (create / list / lint as a thin wrapper over `pv`)
+- `xpile fleet` (cross-repo coordination)
+- `xpile mcp serve` (MCP server mode — `xpile-mcp` crate is scaffold-stage)
+- `xpile agent --repair` (LLM-mediated repair — `xpile-agent` crate is scaffold-stage)
+- `xpile cache` (content-addressed-cache management)
+
+The originally-planned "Full CLI lands in Phase 2-3" framing has been superseded — the actual shipped CLI surface is anchored to what the substrate-completion run (PMAT-058..077) exposed: per-contract introspection via `quorum` / `attestations`, and the real `transpile` / `audit` paths over the 4 real backends + 2 real frontends + their cross-domain consumers.
