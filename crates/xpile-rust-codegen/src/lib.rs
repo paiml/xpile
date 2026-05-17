@@ -178,7 +178,19 @@ fn emit_type(out: &mut String, t: Type) -> Result<(), CodegenError> {
 
 fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError> {
     match e {
-        Expr::Ident(name) => write!(out, "{}", name)?,
+        Expr::Ident(name) => {
+            // PMAT-013: in BigInt mode, append `.clone()` to every
+            // Ident reference. BigInt isn't `Copy`, so an Ident used
+            // more than once in a function body (cond + branches,
+            // multiplication + recursive call, etc.) would move-on-
+            // first-use otherwise. Cloning unconditionally is mechanical
+            // and correct; LLVM elides unneeded clones at -O.
+            if mode {
+                write!(out, "{}.clone()", name)?;
+            } else {
+                write!(out, "{}", name)?;
+            }
+        }
         Expr::LitInt(v) => {
             if mode {
                 // PMAT-012: literal `n` in a BigInt-mode function is

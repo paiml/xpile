@@ -70,9 +70,14 @@ subset, update this section first.
   is unbounded, so the same Python source produces the same Lean
   output regardless of `int` vs `BigInt`. Ruchy defers — emits a
   clear PMAT-012 error pointing at the Rust backend. Bitwise / shift
-  / power on BigInt are also a follow-up. Implicit promotion (frontend
-  inferring BigInt from `int` when overflow is provable) is the
-  PMAT-013 follow-up.
+  / power on BigInt are still a follow-up.
+- **Implicit BigInt promotion via return type** (PMAT-013). Annotate
+  only the *return* as `BigInt` and the frontend auto-promotes every
+  `int`-typed param to BigInt: `def factorial(n: int) -> BigInt:` reads
+  naturally and produces a BigInt-mode function end-to-end. Codegen
+  appends `.clone()` to BigInt Ident references (BigInt isn't `Copy`)
+  so a name referenced in cond + branches + recursive call compiles
+  cleanly.
 
 ### Backends (real emission)
 
