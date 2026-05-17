@@ -136,6 +136,8 @@ quantitatively, not just by adding more fixtures.
 
 ### 1.5 Refinement proofs via Lean (`XPILE-REFINE-XXX`)
 
+**Status (XPILE-REFINE-001)**: ✅ shipped — PMAT-017. First Layer-1 contract (`C-PY-INT-ARITH`) gets a `lean_theorem:` + `lean_file:` field on its `addition_no_overflow` equation. The file `contracts/lean/PyIntArith.lean` carries the theorem statement `fast_path_eq_slow_path` (proves `i64_wrap_add a b = bigint_add a b` when `fits_i64 (a + b)`). The proof is currently `sorry` — discharging it is XPILE-REFINE-002 (under `XPILE-PENDING-UNTIL: v0.3.0` per PMAT-014). The *statement* IS the load-bearing artefact: it's what `@[xpile_contract "C-PY-INT-ARITH"]` citations point at. Enforcement: `crates/xpile/tests/refinement_proofs.rs` walks every contract YAML, validates every `lean_theorem:` field points at a real file with a real theorem-of-that-name (closes the citation-bridge fragility caveat for this contract). Three stub theorems for mul/floor_div/mod listed in the file too, also under XPILE-PENDING-UNTIL gates.
+
 **Ruchy reference**: §14.10.5 (Platinum functions have `lean_theorem`
 fields proving `impl ≡ spec` within bound).
 
