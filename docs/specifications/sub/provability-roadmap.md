@@ -88,6 +88,8 @@ is unchanged.
 
 ### 1.3 N-of-M stratified oracle quorum (`XPILE-QUORUM-XXX`)
 
+**Status (XPILE-QUORUM-001)**: ✅ shipped — PMAT-019. First **Symbolic stratum** harness lands in `contracts/kani/py_int_arith.rs`. The `addition_no_overflow` `#[kani::proof]` function discharges `C-PY-INT-ARITH`'s addition equation via Kani BMC (bit-blasted i64 arithmetic, ~27ms on Kani 0.67). YAML wiring: `py-int-arith-v1.yaml`'s `addition_no_overflow` equation now carries `kani_harness:` + `kani_file:` fields alongside the Lean theorem from PMAT-017. Together with PMAT-018's diff_exec runtime check (Semantic stratum) and PMAT-017's Lean theorem statement (Semantic stratum), the equation now has **≥1 Symbolic + ≥1 Semantic vote** per the ruchy 5.0 §14.4 quorum rule. Citation gate (`crates/xpile/tests/kani_harnesses.rs`) validates every `kani_harness:` field references a real file with a real `#[kani::proof] fn <name>(...)` — symmetric with the Lean gate in `refinement_proofs.rs`. **What XPILE-QUORUM-001 does NOT do**: run `cargo kani` in CI on every PR (Kani install is heavy), implement the §14.5 F3 pairwise-correlation guard, or add the Extrinsic (human review) stratum's verdict-recording machinery. Those are XPILE-QUORUM-002+.
+
 **Ruchy reference**: §14.4 (Symbolic + Semantic + Extrinsic
 oracle strata, ≥1 vote from each).
 
