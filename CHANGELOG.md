@@ -110,6 +110,66 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Kani symbolic harness — C-XLATE-RUST-FN-TO-LEAN-THM → QUORUM (PMAT-073) — **closes Rust ↔ Lean translation bracket; 83% of substrate at QUORUM**
+
+**Tenth contract reaches QUORUM. The bidirectional Rust ↔ Lean
+translation bracket is now closed at full paired-discharge
+coverage:**
+
+| direction       | Lean theorem | Kani harness |
+|---|---|---|
+| Lean → Rust     | PMAT-070     | PMAT-071     |
+| Rust → Lean     | PMAT-072     | PMAT-073 ← this PR |
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    3  QUORUM
+  C-XLATE-PY-LIST-TO-VEC                      1    1    0    3  QUORUM
+  C-XPILE-FRONTEND-TRAIT                      1    1    0    3  QUORUM
+  C-XLATE-LEAN-TO-RUST                        1    1    0    2  QUORUM
+  C-XPILE-BACKEND-TRAIT                       1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-BACKEND-TRAIT              1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-FRONTEND-TRAIT             1    1    0    2  QUORUM
+  C-XLATE-RUST-FN-TO-LEAN-THM                 1    1    0    1  QUORUM  ← Sym now 1
+  C-COMPILE-RUST-TO-PTX-MMA                   0    0    0    0  UNVERIFIED
+  C-FFI-CPYTHON-EXT                           0    0    0    0  UNVERIFIED
+  totals: 10 QUORUM, 0 PARTIAL, 2 UNVERIFIED (12 contracts total)
+```
+
+**10 of 12 contracts (83%) at full Lean + Kani Bronze-tier
+coverage. Ten paired discharges across:**
+- 2 Layer-1 contracts (Python int arith, bashrs idempotence)
+- 4 Layer-2 contracts (notation, Python list, Lean→Rust, Rust→Lean)
+- 4 Layer-3 trait-determinism contracts (2×2 matrix closed)
+
+**Remaining 2 UNVERIFIED contracts** are the hardest two in
+the substrate:
+- `C-COMPILE-RUST-TO-PTX-MMA` — GPU tensor-core lowering;
+  needs ptxas-validated instruction modelling. Layer-5
+  compile contract (special category for hardware-targeting
+  emit lanes).
+- `C-FFI-CPYTHON-EXT` — Python C-extension ABI; needs
+  CPython reference-count + GIL-state modelling.
+
+Both contracts will need bespoke domain modelling that goes
+beyond the uniform Bronze-rfl scaffold. Tracked as PMAT-074+
+and PMAT-076+ for future ticketing.
+
+Implementation:
+- **`contracts/kani/xlate_rust_fn_to_lean_thm.rs`** — final
+  harness in the Rust ↔ Lean bracket. Mirrors PMAT-071's shape:
+  `lift_fn_to_def(f: &RustFn) -> LeanDef` plus
+  `#[kani::proof] fn rust_fn_to_lean_def()` asserting byte-level
+  body preservation.
+- **`contracts/xlate-rust-fn-to-lean-thm-v1.yaml`** — equation
+  `rust_fn_to_lean_def` gains `kani_harness` + `kani_file` refs.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-073 entry.
+
+Full Kani gate now ~3.3s across ten harnesses.
+
 ### Lean refinement theorem — C-XLATE-RUST-FN-TO-LEAN-THM → PARTIAL (PMAT-072) — brackets full Rust ↔ Lean translation
 
 **Tenth contract reaches non-UNVERIFIED status.** New

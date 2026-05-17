@@ -1170,3 +1170,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-073
+  github_issue: null
+  item_type: task
+  title: 'PMAT-073: Kani harness for C-XLATE-RUST-FN-TO-LEAN-THM — closes Rust ↔ Lean translation bracket at full QUORUM (83% of substrate)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T02:30:00Z
+  updated: 2026-05-18T02:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/kani/xlate_rust_fn_to_lean_thm.rs harness mirroring PMAT-072. Symbolic stratum vote — promotes PARTIAL → QUORUM. Closes the Rust ↔ Lean translation bracket at full paired-discharge coverage (with PMAT-071 for Lean→Rust). After landing, xpile quorum should show 10 QUORUM, 0 PARTIAL, 2 UNVERIFIED (83%). Two remaining UNVERIFIED contracts (C-COMPILE-RUST-TO-PTX-MMA, C-FFI-CPYTHON-EXT) are the hardest in the substrate.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
