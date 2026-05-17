@@ -1119,3 +1119,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-070
+  github_issue: null
+  item_type: task
+  title: 'PMAT-070: Lean refinement theorem for C-XLATE-LEAN-TO-RUST — first post-trait-matrix domain contract, promotes Semantic stratum to PARTIAL'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T01:00:00Z
+  updated: 2026-05-18T01:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/lean/XlateLeanToRust.lean with def_to_rust_fn + name_preserved theorems modelling Lean def → Rust fn body preservation. First post-trait-matrix Layer-2 domain contract refined. Companion to XlatePyListToVec.lean (PMAT-060) — together they bracket two directions of the proof-↔-code lane bridge.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
