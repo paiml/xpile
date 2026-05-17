@@ -1034,3 +1034,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-065
+  github_issue: null
+  item_type: task
+  title: 'PMAT-065: Kani harness for C-XPILE-BACKEND-TRAIT — promotes Symbolic stratum, contract reaches QUORUM (50% of substrate)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T22:30:00Z
+  updated: 2026-05-17T22:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/kani/xpile_backend_trait.rs harness mirroring the Lean theorem from PMAT-064. Symbolic stratum vote — promotes PARTIAL → QUORUM. With this, 6 of 12 contracts (50%) reach QUORUM. Both Frontend and Backend trait determinism invariants are now bracketed by paired Lean + Kani discharges.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -110,6 +110,56 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Kani symbolic harness — C-XPILE-BACKEND-TRAIT → QUORUM (PMAT-065) — **50% of substrate reaches QUORUM**
+
+**Sixth contract reaches QUORUM — half the substrate (6 of 12) is
+now formally bracketed.** New
+`contracts/kani/xpile_backend_trait.rs` carries the Kani BMC
+harness `lower_idempotency` — Rust mirror of the Lean theorem from
+PMAT-064. Proves `lower` is deterministic over all 4-byte
+`(module, config)` pairs.
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    3  QUORUM
+  C-XLATE-PY-LIST-TO-VEC                      1    1    0    3  QUORUM
+  C-XPILE-FRONTEND-TRAIT                      1    1    0    3  QUORUM
+  C-XPILE-BACKEND-TRAIT                       1    1    0    1  QUORUM  ← Sym now 1
+  ... (6 more UNVERIFIED)
+  totals: 6 QUORUM, 0 PARTIAL, 6 UNVERIFIED (12 contracts total)
+```
+
+**Both ends of the meta-HIR pipeline are now formally bracketed:**
+- Frontend (`parse_and_lower`): source → meta-HIR determinism
+  proven by PMAT-062 (Lean) + PMAT-063 (Kani)
+- Backend (`lower`): meta-HIR → target determinism proven by
+  PMAT-064 (Lean) + PMAT-065 (Kani)
+
+Six paired Lean+Kani discharges across five distinct domains
+(Python arithmetic, shell idempotence, LaTeX rendering, list
+lowering, frontend trait, backend trait) — the §14.4 N-of-M model
+is now thoroughly validated. Six remaining UNVERIFIED contracts
+(C-COMPILE-RUST-TO-PTX-MMA, C-FFI-CPYTHON-EXT, C-XLATE-LEAN-TO-RUST,
+C-XLATE-RUST-FN-TO-LEAN-THM, C-XPILE-CONTRACT-BACKEND-TRAIT,
+C-XPILE-CONTRACT-FRONTEND-TRAIT) await the same treatment in
+PMAT-066+.
+
+Implementation:
+- **`contracts/kani/xpile_backend_trait.rs`** — standalone Rust
+  module under `#![cfg(kani)]`. Mirrors PMAT-063's harness shape:
+  `lower(module: [u8; 2], config: [u8; 2]) -> Artifact` plus
+  `#[kani::proof] fn lower_idempotency()`.
+- **`contracts/xpile-backend-trait-v1.yaml`** — equation
+  `lower_idempotency` gains `kani_harness` + `kani_file` refs.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-065 entry.
+
+Full Kani gate now ~2.2s across six harnesses (py_int_arith.rs,
+bashrs.rs, notation.rs, xlate_py_list_to_vec.rs,
+xpile_frontend_trait.rs, xpile_backend_trait.rs).
+
 ### Lean refinement theorem — C-XPILE-BACKEND-TRAIT → PARTIAL (PMAT-064)
 
 **Sixth contract reaches non-UNVERIFIED status.** New

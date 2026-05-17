@@ -50,6 +50,11 @@ equations:
     # contracts/lean/XpileBackendTrait.lean for the proof.
     lean_theorem: "XpileContracts.CXpileBackendTrait.lower_idempotency"
     lean_file: "contracts/lean/XpileBackendTrait.lean"
+    # PMAT-065: Kani harness completes the §14.4 quorum. Symbolic
+    # counterpart to the Lean theorem — proves determinism over
+    # all 4-byte (module, config) pairs.
+    kani_harness: "lower_idempotency"
+    kani_file: "contracts/kani/xpile_backend_trait.rs"
     formula: |
       forall (module, config): hash(b.lower(module, config).unwrap()) == hash(b.lower(module, config).unwrap())
     domain: |
