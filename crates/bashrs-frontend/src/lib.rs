@@ -70,6 +70,23 @@ fn tokenize_line(line: &str) -> Result<Vec<RawToken>, FrontendError> {
     let mut chars = line.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
+            // PMAT-054: inline `#` comment. POSIX shell strips
+            // `#` to end-of-line *when it appears at a word
+            // boundary* (i.e., not adjacent to a bareword). So
+            // `echo hi # noisy` strips ` # noisy`, but `echo a#b`
+            // keeps `a#b` as one token. Quoted regions are
+            // unaffected (the `#` inside `"..."` or `'...'` is
+            // literal — handled by the quote arms below before
+            // we ever reach this match).
+            //
+            // What we DON'T handle yet: `#` inside backslash escape
+            // (POSIX corner case; v0.2.0 source fold).
+            '#' if current.is_empty() => {
+                // Drain the rest of the input — everything after
+                // is comment.
+                for _ in chars.by_ref() {}
+                break;
+            }
             c if c.is_whitespace() => {
                 if !current.is_empty() {
                     tokens.push(RawToken::Bare(std::mem::take(&mut current)));
@@ -978,6 +995,52 @@ pwd
                 RawToken::CommandSubst("uname -a".into()),
             ]
         );
+    }
+
+    #[test]
+    fn tokenize_line_strips_inline_comments() {
+        // PMAT-054: `#` at a word boundary starts a comment that
+        // runs to end-of-line.
+        let toks = tokenize_line("echo hi # this is a comment").expect("parse");
+        assert_eq!(
+            toks,
+            vec![RawToken::Bare("echo".into()), RawToken::Bare("hi".into())],
+            "expected `# this is a comment` to be stripped"
+        );
+
+        // `#` mid-token is NOT a comment — POSIX requires word
+        // boundary.
+        let toks = tokenize_line("echo a#b # but here it is").expect("parse");
+        assert_eq!(
+            toks,
+            vec![
+                RawToken::Bare("echo".into()),
+                RawToken::Bare("a#b".into()),
+            ],
+            "expected `a#b` to stay one token; trailing `# but here` stripped"
+        );
+
+        // Comment-only line collapses to zero tokens.
+        let toks = tokenize_line("# pure comment line").expect("parse");
+        assert!(
+            toks.is_empty(),
+            "expected zero tokens from comment-only line; got {toks:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_line_preserves_hash_inside_quotes() {
+        // PMAT-054 negative: `#` inside `'...'` and `"..."` is
+        // literal content, not a comment-start.
+        use xpile_meta_hir::QuotingStrategy;
+        let toks = tokenize_line("echo 'hash # inside' end").expect("parse");
+        assert_eq!(toks.len(), 3, "expected 3 tokens; got {toks:?}");
+        match &toks[1] {
+            RawToken::SingleQuoted(s) if s == "hash # inside" => (),
+            other => panic!("expected SingleQuoted with `hash # inside`, got {other:?}"),
+        }
+        // Smoke-test it doesn't error on legal but tricky combos.
+        let _ = QuotingStrategy::Single; // keep the import used in case
     }
 
     #[test]

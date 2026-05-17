@@ -110,6 +110,38 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Inline `#` comments stripped (PMAT-054)
+
+Tokenizer now strips POSIX inline comments — \`#\` at a word
+boundary starts a comment that runs to end-of-line. Pre-PMAT-054
+\`echo hi # noisy\` parsed as four bareword tokens including the
+\`#\` and the comment words; post-this-PR it's two:
+\`echo\` + \`hi\`.
+
+\`\`\`
+$ echo 'echo hi # this is a comment' > /tmp/c.sh
+$ xpile transpile /tmp/c.sh --target shell
+...
+echo hi
+\`\`\`
+
+Key POSIX rule preserved: \`#\` must be at a *word boundary* (not
+adjacent to a bareword). So \`echo a#b\` keeps \`a#b\` as one token,
+but \`echo a#b # comment\` strips the trailing comment.
+
+Quoted regions unaffected — \`echo 'has # inside'\` keeps the \`#\`
+as literal content of the single-quoted string. (The quote-arm
+handling runs before the comment detection, so a \`#\` inside
+\`'...'\` or \`"..."\` is consumed as part of the quoted region.)
+
+Test coverage:
+- 2 new bashrs-frontend tokenizer unit tests:
+  - \`tokenize_line_strips_inline_comments\` — word-boundary
+    detection (\`echo hi # cmt\` strips; \`echo a#b # cmt\` keeps
+    \`a#b\`; comment-only line yields zero tokens).
+  - \`tokenize_line_preserves_hash_inside_quotes\` — \`#\` inside
+    \`'...'\` is literal.
+
 ### Backtick substitution `` `cmd` `` (PMAT-053)
 
 Recognises POSIX's older command-substitution syntax. Semantically
