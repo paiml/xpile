@@ -324,3 +324,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-021
+  github_issue: null
+  item_type: task
+  title: Install Kani in CI; flip kani_verify gate on every PR (XPILE-QUORUM-003)
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T12:40:07Z
+  updated: 2026-05-17T12:40:07Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

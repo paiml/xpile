@@ -62,3 +62,46 @@ jobs:
 
       - name: cargo test --workspace
         run: cargo test --workspace
+
+  # ── Optional check: kani (Symbolic stratum / XPILE-QUORUM-003)
+  # Runs `cargo kani` against every harness in contracts/kani/ via
+  # the `crates/xpile/tests/kani_verify.rs` gate (which materialises
+  # a temp crate per harness and parses the verifier output).
+  #
+  # Kept as a SEPARATE job (not bundled with workspace-test) because:
+  #   - Kani install is heavy (CBMC + solvers, ~5 minutes on cold
+  #     cache). Folding into workspace-test would slow the
+  #     fast-feedback gate.
+  #   - Kani failures should be diagnosable at a glance — surfacing
+  #     them as a distinct job rather than buried in test output is
+  #     the same posture as `gate` vs `workspace-test`.
+  # NOT marked as a required status check at the GitHub branch-
+  # protection layer (yet); flip required once Kani has bedded in.
+  # XPILE-QUORUM-003 / PMAT-021.
+  kani:
+    name: kani
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Distinct cache key from gate/workspace-test so the heavy
+          # Kani toolchain doesn't bloat their caches.
+          prefix-key: "kani-v0"
+
+      - name: Install kani-verifier
+        run: cargo install --locked kani-verifier
+
+      # Kani ≥ 0.67 auto-bootstraps its toolchain (CBMC + solvers)
+      # on the first `cargo kani` invocation rather than via a
+      # separate `kani-setup` step. We do a no-op invocation here
+      # to surface bootstrap errors before the verification step,
+      # since the bootstrap is the slowest part (~5 min cold cache).
+      - name: bootstrap kani toolchain
+        run: cargo kani --version
+
+      - name: cargo test -p xpile --test kani_verify
+        run: cargo test -p xpile --test kani_verify -- --nocapture
