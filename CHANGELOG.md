@@ -75,6 +75,15 @@ subset, update this section first.
   updated values (PMAT-010). For-in-range, while + mutable rebinding,
   countdown loops — all transpile cleanly to Lean.
 
+**Contract citations** (PMAT-011): every function whose body uses an
+op governed by a Layer-1 contract carries a citation in the emitted
+source — `// xpile-contract: C-PY-INT-ARITH` in Rust/Ruchy,
+`@[xpile_contract "C-PY-INT-ARITH"]` in Lean. The applicability is
+data-driven: comparison- or logical-only functions get no citation;
+arithmetic / bitwise / shift / power / unary-neg functions do. The
+Lean partial-def helper for a while-loop function carries the same
+citation as the outer function.
+
 Same Python source transpiles to all three via `xpile transpile <file.py> --target <t>`.
 
 ### Quality gates (on every PR via `.github/workflows/ci.yml`)

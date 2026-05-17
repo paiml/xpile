@@ -39,6 +39,7 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
 }
 
 fn emit_function(out: &mut String, f: &Function) -> Result<(), RuchyCodegenError> {
+    emit_contract_citations(out, f)?;
     // Ruchy: `fun name(params) -> ret { body }`. No `pub`.
     write!(out, "fun {}(", f.name)?;
     for (i, p) in f.params.iter().enumerate() {
@@ -52,6 +53,15 @@ fn emit_function(out: &mut String, f: &Function) -> Result<(), RuchyCodegenError
     writeln!(out, " {{")?;
     emit_block(out, &f.body)?;
     writeln!(out, "}}")?;
+    Ok(())
+}
+
+/// PMAT-011: same `// xpile-contract: <ID>` form as the Rust backend.
+/// Ruchy compiles to Rust, so it shares the comment-citation convention.
+fn emit_contract_citations(out: &mut String, f: &Function) -> Result<(), RuchyCodegenError> {
+    for id in f.applicable_contracts() {
+        writeln!(out, "// xpile-contract: {id}")?;
+    }
     Ok(())
 }
 

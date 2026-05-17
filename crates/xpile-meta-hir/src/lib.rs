@@ -47,6 +47,98 @@ pub struct Function {
     pub body: Block,
 }
 
+impl Function {
+    /// Returns the list of contract IDs that govern this function.
+    /// Drives codegen citation emission (PMAT-011): each ID returned
+    /// here will appear as `// xpile-contract: <ID>` (Rust/Ruchy) or
+    /// `@[xpile_contract "<ID>"]` (Lean) next to the emitted function.
+    ///
+    /// Per v0.1.0's single Layer-1 contract, this returns
+    /// `["C-PY-INT-ARITH"]` if and only if the function body uses any
+    /// i64 arithmetic / bitwise / shift / power / unary-neg operator —
+    /// the operations whose overflow / wrapping the contract bounds.
+    /// Comparisons (`==`, `<`, etc.), logicals (`&&`, `!`), and
+    /// constant-only / call-only bodies don't trigger the citation.
+    pub fn applicable_contracts(&self) -> Vec<&'static str> {
+        if self.uses_int_arithmetic() {
+            vec!["C-PY-INT-ARITH"]
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// True if any expression in the function body uses an op that
+    /// `C-PY-INT-ARITH` governs (overflow-prone arithmetic, bitwise,
+    /// shifts, power, or unary negation). Walks all Stmt + Expr
+    /// reachable from the body.
+    pub fn uses_int_arithmetic(&self) -> bool {
+        for stmt in &self.body.stmts {
+            if stmt_has_int_arith(stmt) {
+                return true;
+            }
+        }
+        expr_has_int_arith(&self.body.trailing_return)
+    }
+}
+
+fn stmt_has_int_arith(s: &Stmt) -> bool {
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } => expr_has_int_arith(value),
+        Stmt::While { cond, body } => {
+            if expr_has_int_arith(cond) {
+                return true;
+            }
+            body.iter().any(stmt_has_int_arith)
+        }
+        Stmt::Assert { cond } => expr_has_int_arith(cond),
+    }
+}
+
+fn expr_has_int_arith(e: &Expr) -> bool {
+    match e {
+        Expr::Ident(_) | Expr::LitInt(_) => false,
+        Expr::BinOp { op, lhs, rhs } => {
+            if binop_is_int_arith(*op) {
+                return true;
+            }
+            expr_has_int_arith(lhs) || expr_has_int_arith(rhs)
+        }
+        Expr::UnOp { op, operand } => {
+            if matches!(op, UnOp::Neg) {
+                return true;
+            }
+            expr_has_int_arith(operand)
+        }
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_has_int_arith(cond)
+                || expr_has_int_arith(then_expr)
+                || expr_has_int_arith(else_expr)
+        }
+        Expr::Call { args, .. } => args.iter().any(expr_has_int_arith),
+    }
+}
+
+fn binop_is_int_arith(op: BinOp) -> bool {
+    matches!(
+        op,
+        BinOp::Add
+            | BinOp::Sub
+            | BinOp::Mul
+            | BinOp::FloorDiv
+            | BinOp::Mod
+            | BinOp::BitAnd
+            | BinOp::BitOr
+            | BinOp::BitXor
+            | BinOp::Shl
+            | BinOp::Shr
+            | BinOp::Pow
+    )
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     /// Zero or more `let` bindings (and, in the future, control-flow

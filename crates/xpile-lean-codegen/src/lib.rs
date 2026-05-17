@@ -59,6 +59,7 @@ fn function_has_while(f: &Function) -> bool {
 }
 
 fn emit_function(out: &mut String, f: &Function) -> Result<(), LeanCodegenError> {
+    emit_contract_citations(out, f)?;
     write!(out, "def {}", f.name)?;
     for p in &f.params {
         write!(out, " (")?;
@@ -69,6 +70,18 @@ fn emit_function(out: &mut String, f: &Function) -> Result<(), LeanCodegenError>
     emit_type(out, f.return_type)?;
     writeln!(out, " :=")?;
     emit_block(out, &f.body)?;
+    Ok(())
+}
+
+/// PMAT-011: emit Lean structured attributes for each applicable
+/// contract. `@[xpile_contract "<ID>"]` is the form named in
+/// `sub/contract-frontend-trait.md`'s citation grid — Lean's elaborator
+/// parses it, so the citation bridge can use Lean's name resolution
+/// rather than regex over body text.
+fn emit_contract_citations(out: &mut String, f: &Function) -> Result<(), LeanCodegenError> {
+    for id in f.applicable_contracts() {
+        writeln!(out, "@[xpile_contract \"{id}\"]")?;
+    }
     Ok(())
 }
 
@@ -199,6 +212,9 @@ fn emit_function_with_while_helpers(
     // loop state and free vars are I64 for every fixture we ship. Use
     // I64 as the default; refine later if Bool-typed loop state appears.
     let helper_name = format!("{}_loop_0", f.name);
+    // The helper's body executes the same arithmetic constructs as
+    // the outer function, so it shares the contract citation.
+    emit_contract_citations(out, f)?;
     write!(out, "partial def {} ", helper_name)?;
     for name in &loop_state {
         write!(out, "({} : ", name)?;
@@ -239,7 +255,10 @@ fn emit_function_with_while_helpers(
     writeln!(out)?;
 
     // Emit the outer function. Body: pre-stmts as Lean lets, then the
-    // helper call.
+    // helper call. Citation appears here too — the outer function
+    // delegates to the helper but is still the user-facing site of
+    // the arithmetic claim.
+    emit_contract_citations(out, f)?;
     write!(out, "def {}", f.name)?;
     for p in &f.params {
         write!(out, " (")?;
