@@ -42,6 +42,7 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
 }
 
 fn emit_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
+    emit_contract_citations(out, f)?;
     write!(out, "pub fn {}(", f.name)?;
     for (i, p) in f.params.iter().enumerate() {
         if i > 0 {
@@ -54,6 +55,20 @@ fn emit_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
     writeln!(out, " {{")?;
     emit_block(out, &f.body)?;
     writeln!(out, "}}")?;
+    Ok(())
+}
+
+/// PMAT-011: emit one `// xpile-contract: <ID>` comment line per
+/// contract that governs this function. Matches the mdBook convention
+/// from `sub/contract-frontend-trait.md`'s citation grid — same prefix
+/// across all text-comment hosts, so a single regex finds them all.
+/// Lean uses `@[xpile_contract "<ID>"]` (proper structured attribute);
+/// LaTeX uses `\xpileContract{<ID>}{...}`; mdBook + Rust + Ruchy share
+/// the comment form.
+fn emit_contract_citations(out: &mut String, f: &Function) -> Result<(), CodegenError> {
+    for id in f.applicable_contracts() {
+        writeln!(out, "// xpile-contract: {id}")?;
+    }
     Ok(())
 }
 

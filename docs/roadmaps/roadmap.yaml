@@ -164,3 +164,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-011
+  github_issue: null
+  item_type: task
+  title: 'Codegen: contract citations in generated source (C-PY-INT-ARITH)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-16T20:48:13Z
+  updated: 2026-05-16T20:48:13Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

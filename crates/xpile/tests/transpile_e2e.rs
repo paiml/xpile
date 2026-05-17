@@ -499,6 +499,76 @@ fn main() {
     assert_rustc_runs("gcd", &rust, driver);
 }
 
+/// PMAT-011: validates contract citations are emitted next to functions
+/// whose body uses ops the contract governs, and *not* emitted next to
+/// pure comparison / logical functions.
+///
+/// Each host language uses the form named in
+/// `sub/contract-frontend-trait.md`'s citation grid:
+///   * Rust + Ruchy: `// xpile-contract: C-PY-INT-ARITH`
+///   * Lean: `@[xpile_contract "C-PY-INT-ARITH"]`
+#[test]
+fn arithmetic_function_emits_contract_citation_rust() {
+    let rust = xpile_transpile_to_rust("add.py");
+    assert!(
+        rust.contains("// xpile-contract: C-PY-INT-ARITH\npub fn add"),
+        "expected citation directly before fn signature, got:\n{rust}"
+    );
+}
+
+#[test]
+fn arithmetic_function_emits_contract_citation_ruchy() {
+    let py = fixture("add.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "ruchy"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("// xpile-contract: C-PY-INT-ARITH\nfun add"),
+        "expected citation directly before fun signature, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn arithmetic_function_emits_contract_citation_lean() {
+    let py = fixture("add.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "lean"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("@[xpile_contract \"C-PY-INT-ARITH\"]\ndef add"),
+        "expected Lean structured attribute before def, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn comparison_only_function_omits_contract_citation() {
+    // `le(a, b) -> bool` uses only BinOp::LtEq — a comparison, not under
+    // the C-PY-INT-ARITH contract — so codegen should NOT emit the
+    // citation. This is the negative test that proves
+    // `applicable_contracts()` is data-driven, not unconditional.
+    let rust = xpile_transpile_to_rust("cmp.py");
+    assert!(
+        !rust.contains("xpile-contract:"),
+        "comparison-only fn should have no citation, got:\n{rust}"
+    );
+}
+
+#[test]
+fn while_function_citation_appears_on_helper_too_lean() {
+    // The partial-def helper executes the same arithmetic constructs
+    // as its outer function, so it must carry the same citation.
+    let py = fixture("sum_to.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "lean"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let citation = "@[xpile_contract \"C-PY-INT-ARITH\"]";
+    let count = stdout.matches(citation).count();
+    assert_eq!(
+        count, 2,
+        "expected exactly 2 citations (helper + outer fn), got {count} in:\n{stdout}"
+    );
+}
+
 /// PMAT-009: validates `assert cond` lowers to `assert!(cond)` in Rust.
 /// `safe_div` asserts both args are valid before performing floor-div.
 #[test]
