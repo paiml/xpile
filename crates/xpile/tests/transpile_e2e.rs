@@ -842,6 +842,41 @@ fn audit_command_f1_is_100_percent_on_current_fixture_corpus_rust() {
     );
 }
 
+// PMAT-027 / PMAT-009-FOLLOWUP: Lean target now handles
+// `Stmt::Assert` via recursive `if cond then <rest> else panic!`
+// emission. The asserted.py fixture used to fail Lean lowering;
+// now it produces valid Lean syntax.
+#[test]
+fn assert_lean_emits_if_then_panic_chain() {
+    let py = fixture("asserted.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "lean"]);
+    assert!(
+        out.status.success(),
+        "Lean + assert should succeed (PMAT-027); stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // Two asserts → two nested `if (cond) then` openers + two
+    // closing `else panic!` tails, with the original body inside.
+    assert!(
+        stdout.contains("if ((b != (0: Int))) then"),
+        "expected outer `if b != 0 then`, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("if ((a >= (0: Int))) then"),
+        "expected nested `if a >= 0 then`, got:\n{stdout}"
+    );
+    let panic_count = stdout.matches("else panic!").count();
+    assert_eq!(
+        panic_count, 2,
+        "expected 2 `else panic!` tails (one per assert), got {panic_count} in:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("(Int.fdiv a b)"),
+        "expected the original trailing return to remain in the innermost then-branch, got:\n{stdout}"
+    );
+}
+
 #[test]
 fn audit_command_supports_lean_target() {
     // XPILE-FALSIFY-002 added Lean target support. Lean's citation

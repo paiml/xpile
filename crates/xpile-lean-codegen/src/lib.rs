@@ -344,13 +344,60 @@ fn emit_type(out: &mut String, t: Type) -> Result<(), LeanCodegenError> {
 }
 
 fn emit_block(out: &mut String, block: &Block) -> Result<(), LeanCodegenError> {
-    for stmt in &block.stmts {
-        emit_stmt(out, stmt)?;
+    emit_stmts_then_trailing(out, &block.stmts, &block.trailing_return)
+}
+
+/// Recursive emit (PMAT-027 / PMAT-009-FOLLOWUP). Each `Stmt::Assert`
+/// opens an `if cond then <rest of body> else panic!` form that
+/// contains *everything after the assert*, preserving Python's
+/// evaluation order. Without this, an assert between two Lets would
+/// reference a name not yet defined when checked.
+///
+/// Non-assert stmts (Let, Assign) emit linearly via `emit_stmt`;
+/// they fall through to the recursive tail.
+///
+/// Shape on `safe_div` (the asserted.py fixture):
+///
+/// ```lean
+/// def safe_div (a : Int) (b : Int) : Int :=
+///   if (b != (0: Int)) then
+///   if (a >= (0: Int)) then
+///   (Int.fdiv a b)
+///   else panic! "xpile: assertion failed (contract C-PY-INT-ARITH)"
+///   else panic! "xpile: assertion failed (contract C-PY-INT-ARITH)"
+/// ```
+///
+/// Lean accepts this with no closing brace because each `if-then-else`
+/// is a single term; the recursive emit just keeps appending the
+/// `else panic!` tails after the inner body completes.
+fn emit_stmts_then_trailing(
+    out: &mut String,
+    stmts: &[Stmt],
+    trailing: &Expr,
+) -> Result<(), LeanCodegenError> {
+    if stmts.is_empty() {
+        write!(out, "  ")?;
+        emit_expr(out, trailing)?;
+        writeln!(out)?;
+        return Ok(());
     }
-    write!(out, "  ")?;
-    emit_expr(out, &block.trailing_return)?;
-    writeln!(out)?;
-    Ok(())
+    match &stmts[0] {
+        Stmt::Assert { cond } => {
+            write!(out, "  if (")?;
+            emit_expr(out, cond)?;
+            writeln!(out, ") then")?;
+            emit_stmts_then_trailing(out, &stmts[1..], trailing)?;
+            writeln!(
+                out,
+                "  else panic! \"xpile: assertion failed (contract C-PY-INT-ARITH)\""
+            )?;
+            Ok(())
+        }
+        other => {
+            emit_stmt(out, other)?;
+            emit_stmts_then_trailing(out, &stmts[1..], trailing)
+        }
+    }
 }
 
 fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
@@ -372,13 +419,12 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
             "`while` loops require partial def / tail-recursion in Lean — not yet implemented (PMAT-006 follow-up)"
                 .into(),
         )),
-        // `assert` in Lean requires Decidable instances and a propositional
-        // formulation; deferred. Programs with assertions skip the Lean
-        // backend at v0.1.0.
-        Stmt::Assert { .. } => Err(LeanCodegenError::Unsupported(
-            "`assert` in Lean requires Decidable cond + propositional formulation — not yet implemented [XPILE-PENDING-UNTIL: v0.3.0, ticket: PMAT-009-FOLLOWUP]"
-                .into(),
-        )),
+        // Stmt::Assert is handled by emit_stmts_then_trailing — should
+        // never reach this match arm. The unreachable here catches a
+        // future refactor that bypasses the recursive emit.
+        Stmt::Assert { .. } => unreachable!(
+            "Stmt::Assert handled in emit_stmts_then_trailing — emit_stmt called directly"
+        ),
     }
 }
 

@@ -110,6 +110,33 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Lean `assert` via recursive if-then-panic encoding (PMAT-027 / PMAT-009-FOLLOWUP)
+
+Closes one of the two `XPILE-PENDING-UNTIL: v0.3.0` markers. The
+Lean codegen now lowers `Stmt::Assert` to a nested
+`if cond then <rest> else panic!` chain that preserves Python's
+evaluation order (innermost assert runs first because it's
+deepest in the AST). Required refactoring `emit_block` into a
+recursive `emit_stmts_then_trailing` that wraps each assert
+around everything after it.
+
+Sample (`safe_div` from `asserted.py`):
+
+```
+@[xpile_contract "C-PY-INT-ARITH"]
+def safe_div (a : Int) (b : Int) : Int :=
+  if ((b != (0: Int))) then
+  if ((a >= (0: Int))) then
+  (Int.fdiv a b)
+  else panic! "xpile: assertion failed (contract C-PY-INT-ARITH)"
+  else panic! "xpile: assertion failed (contract C-PY-INT-ARITH)"
+```
+
+Side effect: `xpile audit --target lean` jumps from F1=100% with
+1 error (asserted.py) to F1=100% with 0 errors. The full Lean
+corpus now compiles. Only one v0.3.0 marker remains (Lean
+refinement-proof `sorry` discharge).
+
 ### BigInt bitwise / shift / power in Rust + Ruchy backends (PMAT-026 / PMAT-013-FOLLOWUP)
 
 Closes the second of three `XPILE-PENDING-UNTIL: v0.2.0` markers.
