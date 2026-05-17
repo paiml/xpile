@@ -32,6 +32,11 @@ equations:
       - "TranspileSession::register_frontend has been called for every active frontend"
 
   parse_idempotency:
+    # PMAT-062: Lean refinement theorem locks in the determinism
+    # modelling commitment for parse_and_lower. See
+    # contracts/lean/XpileFrontendTrait.lean for the proof.
+    lean_theorem: "XpileContracts.CXpileFrontendTrait.parse_idempotency"
+    lean_file: "contracts/lean/XpileFrontendTrait.lean"
     formula: |
       forall (path, source): hash(f.parse_and_lower(path, source).unwrap()) == hash(f.parse_and_lower(path, source).unwrap())
     domain: |
