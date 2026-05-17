@@ -110,6 +110,37 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Ruchy BigInt mode (PMAT-025 / PMAT-012-FOLLOWUP)
+
+Closes one of the three live `XPILE-PENDING-UNTIL: v0.2.0` markers
+from PMAT-014. The Ruchy backend now supports BigInt-typed
+functions end-to-end, mirroring the Rust backend's PMAT-012/013
+emission. `xpile transpile foo.py --target ruchy` on a fixture
+with `BigInt` annotations now produces clean Ruchy source with
+`xpile_bigint::BigInt` typed signatures, `.clone()` on Ident
+references, plain infix arithmetic, and the contract citation.
+
+Sample:
+```
+$ xpile transpile crates/xpile/tests/fixtures/big_sum.py --target ruchy
+// xpile-contract: C-PY-INT-ARITH
+fun big_sum(a: xpile_bigint::BigInt, b: xpile_bigint::BigInt) -> xpile_bigint::BigInt {
+    (a.clone() + b.clone())
+}
+```
+
+Implementation: mechanical mirror of the Rust pattern — added
+`function_bigint_mode(f)` + threaded `mode: bool` through every
+`emit_*` function. Reused the same `xpile_bigint::div_floor` /
+`mod_floor` helpers and the same bitwise/shift/power deferral
+(now under a `[XPILE-PENDING-UNTIL: v0.2.0, ticket: PMAT-013-FOLLOWUP]`
+marker shared with Rust).
+
+Removed the previous `bigint_ruchy_errors_with_pmat_012_message`
+test (bait test that asserted the bail path); replaced with two
+positive tests asserting the Ruchy emission shape for explicit
+and implicit BigInt promotion.
+
 ### Multi-arg fixtures in differential exec gate (PMAT-024 / XPILE-DIFF-002)
 
 `crates/xpile/tests/diff_exec.rs` generalised from 1-arg-only to

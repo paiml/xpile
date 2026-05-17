@@ -39,17 +39,6 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
 }
 
 fn emit_function(out: &mut String, f: &Function) -> Result<(), RuchyCodegenError> {
-    // PMAT-012: BigInt mode hasn't been threaded through the Ruchy
-    // backend yet. The Rust backend supports it, and since Ruchy
-    // compiles to Rust, mirroring is mechanical — slated for a
-    // follow-up PR. For now, fail loudly so users don't get silently
-    // wrong i64 emission for BigInt-typed sources.
-    if f.return_type == Type::BigInt || f.params.iter().any(|p| p.ty == Type::BigInt) {
-        return Err(RuchyCodegenError::Unsupported(format!(
-            "function `{}`: BigInt mode not yet implemented in Ruchy backend; use --target rust [XPILE-PENDING-UNTIL: v0.2.0, ticket: PMAT-012-FOLLOWUP]",
-            f.name
-        )));
-    }
     emit_contract_citations(out, f)?;
     // Ruchy: `fun name(params) -> ret { body }`. No `pub`.
     write!(out, "fun {}(", f.name)?;
@@ -62,9 +51,33 @@ fn emit_function(out: &mut String, f: &Function) -> Result<(), RuchyCodegenError
     write!(out, ") -> ")?;
     emit_type(out, f.return_type)?;
     writeln!(out, " {{")?;
-    emit_block(out, &f.body)?;
+    let mode = function_bigint_mode(f);
+    emit_block(out, &f.body, mode)?;
     writeln!(out, "}}")?;
     Ok(())
+}
+
+/// PMAT-012-FOLLOWUP / PMAT-025: a function is in BigInt mode if any
+/// param is BigInt, the return type is BigInt, OR any pre-bound Let
+/// is BigInt. In BigInt mode, the Ruchy backend emits the same shape
+/// as the Rust backend (since Ruchy compiles to Rust):
+/// `xpile_bigint::BigInt::from(<n>i64)` literals + plain infix
+/// arithmetic + `.clone()` on Ident references (BigInt isn't `Copy`).
+fn function_bigint_mode(f: &Function) -> bool {
+    if f.return_type == Type::BigInt {
+        return true;
+    }
+    if f.params.iter().any(|p| p.ty == Type::BigInt) {
+        return true;
+    }
+    fn stmt_has_bigint(s: &Stmt) -> bool {
+        match s {
+            Stmt::Let { ty, .. } => *ty == Type::BigInt,
+            Stmt::Assign { .. } | Stmt::Assert { .. } => false,
+            Stmt::While { body, .. } => body.iter().any(stmt_has_bigint),
+        }
+    }
+    f.body.stmts.iter().any(stmt_has_bigint)
 }
 
 /// PMAT-011: same `// xpile-contract: <ID>` form as the Rust backend.
@@ -76,24 +89,25 @@ fn emit_contract_citations(out: &mut String, f: &Function) -> Result<(), RuchyCo
     Ok(())
 }
 
-fn emit_block(out: &mut String, block: &Block) -> Result<(), RuchyCodegenError> {
+fn emit_block(out: &mut String, block: &Block, mode: bool) -> Result<(), RuchyCodegenError> {
     for stmt in &block.stmts {
-        emit_stmt(out, stmt)?;
+        emit_stmt(out, stmt, mode)?;
     }
     write!(out, "    ")?;
-    emit_expr(out, &block.trailing_return)?;
+    emit_expr(out, &block.trailing_return, mode)?;
     writeln!(out)?;
     Ok(())
 }
 
-fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), RuchyCodegenError> {
-    emit_stmt_indented(out, stmt, "    ")
+fn emit_stmt(out: &mut String, stmt: &Stmt, mode: bool) -> Result<(), RuchyCodegenError> {
+    emit_stmt_indented(out, stmt, "    ", mode)
 }
 
 fn emit_stmt_indented(
     out: &mut String,
     stmt: &Stmt,
     indent: &str,
+    mode: bool,
 ) -> Result<(), RuchyCodegenError> {
     match stmt {
         Stmt::Let {
@@ -106,30 +120,30 @@ fn emit_stmt_indented(
             write!(out, "{indent}{kw} {name}: ")?;
             emit_type(out, *ty)?;
             write!(out, " = ")?;
-            emit_expr(out, value)?;
+            emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
             Ok(())
         }
         Stmt::Assign { name, value } => {
             write!(out, "{indent}{name} = ")?;
-            emit_expr(out, value)?;
+            emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
             Ok(())
         }
         Stmt::While { cond, body } => {
             write!(out, "{indent}while ")?;
-            emit_expr(out, cond)?;
+            emit_expr(out, cond, mode)?;
             writeln!(out, " {{")?;
             let inner = format!("{indent}    ");
             for s in body {
-                emit_stmt_indented(out, s, &inner)?;
+                emit_stmt_indented(out, s, &inner, mode)?;
             }
             writeln!(out, "{indent}}}")?;
             Ok(())
         }
         Stmt::Assert { cond } => {
             write!(out, "{indent}assert!(")?;
-            emit_expr(out, cond)?;
+            emit_expr(out, cond, mode)?;
             writeln!(out, ");")?;
             Ok(())
         }
@@ -152,52 +166,85 @@ fn emit_type(out: &mut String, t: Type) -> Result<(), RuchyCodegenError> {
     Ok(())
 }
 
-fn emit_expr(out: &mut String, e: &Expr) -> Result<(), RuchyCodegenError> {
+fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenError> {
     match e {
-        Expr::Ident(name) => write!(out, "{}", name)?,
-        Expr::LitInt(v) => write!(out, "{}i64", v)?,
-        Expr::BinOp { op, lhs, rhs } => emit_binop(out, *op, lhs, rhs)?,
+        Expr::Ident(name) => {
+            // PMAT-025: in BigInt mode, append `.clone()` to every
+            // Ident reference. BigInt isn't `Copy` (it's
+            // heap-allocated), so a name referenced in cond +
+            // branches + recursive call would move-on-first-use.
+            // Mirrors the Rust backend's PMAT-013 emission.
+            if mode {
+                write!(out, "{}.clone()", name)?;
+            } else {
+                write!(out, "{}", name)?;
+            }
+        }
+        Expr::LitInt(v) => {
+            if mode {
+                write!(out, "xpile_bigint::BigInt::from({}i64)", v)?;
+            } else {
+                write!(out, "{}i64", v)?;
+            }
+        }
+        Expr::BinOp { op, lhs, rhs } => emit_binop(out, *op, lhs, rhs, mode)?,
         Expr::IfExpr {
             cond,
             then_expr,
             else_expr,
-        } => emit_if_expr(out, cond, then_expr, else_expr)?,
-        Expr::Call { callee, args } => emit_call(out, callee, args)?,
-        Expr::UnOp { op, operand } => emit_unop(out, *op, operand)?,
+        } => emit_if_expr(out, cond, then_expr, else_expr, mode)?,
+        Expr::Call { callee, args } => emit_call(out, callee, args, mode)?,
+        Expr::UnOp { op, operand } => emit_unop(out, *op, operand, mode)?,
     }
     Ok(())
 }
 
-fn emit_unop(out: &mut String, op: UnOp, operand: &Expr) -> Result<(), RuchyCodegenError> {
+fn emit_unop(
+    out: &mut String,
+    op: UnOp,
+    operand: &Expr,
+    mode: bool,
+) -> Result<(), RuchyCodegenError> {
     match op {
-        // Python: `-x` on int never overflows. Ruchy compiles to Rust;
-        // `i64::MIN.checked_neg() == None`. Use checked_neg + panic
-        // pointing at contract C-PY-INT-ARITH slow path (matches Rust
-        // backend semantics).
         UnOp::Neg => {
-            write!(out, "(")?;
-            emit_expr(out, operand)?;
-            write!(
-                out,
-                ").checked_neg().expect(\"xpile: i64 negation overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")"
-            )?;
+            if mode {
+                // BigInt::neg is total — no overflow.
+                write!(out, "(-")?;
+                emit_expr(out, operand, mode)?;
+                write!(out, ")")?;
+            } else {
+                // Python: `-x` on int never overflows mathematically.
+                // Rust i64::MIN.checked_neg() == None — use checked_neg
+                // + panic pointing at C-PY-INT-ARITH slow path.
+                write!(out, "(")?;
+                emit_expr(out, operand, mode)?;
+                write!(
+                    out,
+                    ").checked_neg().expect(\"xpile: i64 negation overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")"
+                )?;
+            }
         }
         UnOp::Not => {
             write!(out, "(!")?;
-            emit_expr(out, operand)?;
+            emit_expr(out, operand, mode)?;
             write!(out, ")")?;
         }
     }
     Ok(())
 }
 
-fn emit_call(out: &mut String, callee: &str, args: &[Expr]) -> Result<(), RuchyCodegenError> {
+fn emit_call(
+    out: &mut String,
+    callee: &str,
+    args: &[Expr],
+    mode: bool,
+) -> Result<(), RuchyCodegenError> {
     write!(out, "{}(", callee)?;
     for (i, a) in args.iter().enumerate() {
         if i > 0 {
             write!(out, ", ")?;
         }
-        emit_expr(out, a)?;
+        emit_expr(out, a, mode)?;
     }
     write!(out, ")")?;
     Ok(())
@@ -210,66 +257,109 @@ fn emit_if_expr(
     cond: &Expr,
     then_expr: &Expr,
     else_expr: &Expr,
+    mode: bool,
 ) -> Result<(), RuchyCodegenError> {
     write!(out, "if ")?;
-    emit_expr(out, cond)?;
+    emit_expr(out, cond, mode)?;
     write!(out, " {{ ")?;
-    emit_expr(out, then_expr)?;
+    emit_expr(out, then_expr, mode)?;
     write!(out, " }} else ")?;
     match else_expr {
         Expr::IfExpr {
             cond: c2,
             then_expr: t2,
             else_expr: e2,
-        } => emit_if_expr(out, c2, t2, e2),
+        } => emit_if_expr(out, c2, t2, e2, mode),
         _ => {
             write!(out, "{{ ")?;
-            emit_expr(out, else_expr)?;
+            emit_expr(out, else_expr, mode)?;
             write!(out, " }}")?;
             Ok(())
         }
     }
 }
 
-/// Arithmetic uses `checked_*` + `.expect(...)` to enforce the
-/// Layer-1 contract C-PY-INT-ARITH. Ruchy compiles to Rust, so the
-/// overflow semantics are identical. FloorDiv / Mod also preserve
-/// Python-floor semantics via the Euclidean variants. Comparisons
-/// and logical ops remain infix (no overflow risk).
+/// Arithmetic emits two shapes per the C-PY-INT-ARITH contract:
+///
+/// * i64 fast path: `.checked_*().expect("...")` with the slow-path
+///   panic message (no overflow → no panic).
+/// * BigInt slow path (mode=true): plain infix on BigInt operands
+///   (BigInt overloads `+ - * <= ...`); FloorDiv / Mod use
+///   `xpile_bigint::div_floor / mod_floor`; bitwise / shift / pow
+///   deferred (same scope as the Rust backend).
+///
+/// Mirrors the Rust backend's emission shape — Ruchy compiles to Rust
+/// so they share semantics. PMAT-025.
 fn emit_binop(
     out: &mut String,
     op: BinOp,
     lhs: &Expr,
     rhs: &Expr,
+    mode: bool,
 ) -> Result<(), RuchyCodegenError> {
     match op {
-        BinOp::Add => emit_checked(out, lhs, "checked_add", rhs, "addition"),
-        BinOp::Sub => emit_checked(out, lhs, "checked_sub", rhs, "subtraction"),
-        BinOp::Mul => emit_checked(out, lhs, "checked_mul", rhs, "multiplication"),
-        BinOp::FloorDiv => emit_checked(out, lhs, "checked_div_euclid", rhs, "floor-div"),
-        BinOp::Mod => emit_checked(out, lhs, "checked_rem_euclid", rhs, "modulo"),
-        BinOp::Eq => emit_infix(out, lhs, " == ", rhs),
-        BinOp::NotEq => emit_infix(out, lhs, " != ", rhs),
-        BinOp::Lt => emit_infix(out, lhs, " < ", rhs),
-        BinOp::LtEq => emit_infix(out, lhs, " <= ", rhs),
-        BinOp::Gt => emit_infix(out, lhs, " > ", rhs),
-        BinOp::GtEq => emit_infix(out, lhs, " >= ", rhs),
-        BinOp::And => emit_infix(out, lhs, " && ", rhs),
-        BinOp::Or => emit_infix(out, lhs, " || ", rhs),
-        BinOp::BitAnd => emit_infix(out, lhs, " & ", rhs),
-        BinOp::BitOr => emit_infix(out, lhs, " | ", rhs),
-        BinOp::BitXor => emit_infix(out, lhs, " ^ ", rhs),
-        BinOp::Shl => emit_checked_shift(out, lhs, "checked_shl", rhs, "left-shift"),
-        BinOp::Shr => emit_checked_shift(out, lhs, "checked_shr", rhs, "right-shift"),
-        BinOp::Pow => emit_checked_pow(out, lhs, rhs),
+        BinOp::Add if mode => emit_infix(out, lhs, " + ", rhs, mode),
+        BinOp::Sub if mode => emit_infix(out, lhs, " - ", rhs, mode),
+        BinOp::Mul if mode => emit_infix(out, lhs, " * ", rhs, mode),
+        BinOp::FloorDiv if mode => emit_bigint_floor_call(out, "div_floor", lhs, rhs, mode),
+        BinOp::Mod if mode => emit_bigint_floor_call(out, "mod_floor", lhs, rhs, mode),
+        BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr | BinOp::Pow
+            if mode =>
+        {
+            Err(RuchyCodegenError::Unsupported(format!(
+                "BigInt mode: bitwise/shift/power ops not yet implemented; op = {op:?} [XPILE-PENDING-UNTIL: v0.2.0, ticket: PMAT-013-FOLLOWUP]"
+            )))
+        }
+        BinOp::Add => emit_checked(out, lhs, "checked_add", rhs, "addition", mode),
+        BinOp::Sub => emit_checked(out, lhs, "checked_sub", rhs, "subtraction", mode),
+        BinOp::Mul => emit_checked(out, lhs, "checked_mul", rhs, "multiplication", mode),
+        BinOp::FloorDiv => emit_checked(out, lhs, "checked_div_euclid", rhs, "floor-div", mode),
+        BinOp::Mod => emit_checked(out, lhs, "checked_rem_euclid", rhs, "modulo", mode),
+        BinOp::Eq => emit_infix(out, lhs, " == ", rhs, mode),
+        BinOp::NotEq => emit_infix(out, lhs, " != ", rhs, mode),
+        BinOp::Lt => emit_infix(out, lhs, " < ", rhs, mode),
+        BinOp::LtEq => emit_infix(out, lhs, " <= ", rhs, mode),
+        BinOp::Gt => emit_infix(out, lhs, " > ", rhs, mode),
+        BinOp::GtEq => emit_infix(out, lhs, " >= ", rhs, mode),
+        BinOp::And => emit_infix(out, lhs, " && ", rhs, mode),
+        BinOp::Or => emit_infix(out, lhs, " || ", rhs, mode),
+        BinOp::BitAnd => emit_infix(out, lhs, " & ", rhs, mode),
+        BinOp::BitOr => emit_infix(out, lhs, " | ", rhs, mode),
+        BinOp::BitXor => emit_infix(out, lhs, " ^ ", rhs, mode),
+        BinOp::Shl => emit_checked_shift(out, lhs, "checked_shl", rhs, "left-shift", mode),
+        BinOp::Shr => emit_checked_shift(out, lhs, "checked_shr", rhs, "right-shift", mode),
+        BinOp::Pow => emit_checked_pow(out, lhs, rhs, mode),
     }
 }
 
-fn emit_checked_pow(out: &mut String, lhs: &Expr, rhs: &Expr) -> Result<(), RuchyCodegenError> {
+/// BigInt-mode floor-div / mod via the helpers in xpile-bigint
+/// (num-bigint requires `Integer` trait + reference operands).
+/// PMAT-025; mirrors Rust backend.
+fn emit_bigint_floor_call(
+    out: &mut String,
+    method: &str,
+    lhs: &Expr,
+    rhs: &Expr,
+    mode: bool,
+) -> Result<(), RuchyCodegenError> {
+    write!(out, "xpile_bigint::{method}(&")?;
+    emit_expr(out, lhs, mode)?;
+    write!(out, ", &")?;
+    emit_expr(out, rhs, mode)?;
+    write!(out, ")")?;
+    Ok(())
+}
+
+fn emit_checked_pow(
+    out: &mut String,
+    lhs: &Expr,
+    rhs: &Expr,
+    mode: bool,
+) -> Result<(), RuchyCodegenError> {
     write!(out, "(")?;
-    emit_expr(out, lhs)?;
+    emit_expr(out, lhs, mode)?;
     write!(out, ").checked_pow(u32::try_from(")?;
-    emit_expr(out, rhs)?;
+    emit_expr(out, rhs, mode)?;
     write!(
         out,
         ").expect(\"xpile: exponent out of range for u32 — Python returns Float for negative exponents which v0.1.0 cannot represent (contract C-PY-INT-ARITH)\")).expect(\"xpile: i64 power overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")"
@@ -283,11 +373,12 @@ fn emit_checked_shift(
     method: &str,
     rhs: &Expr,
     op_name: &str,
+    mode: bool,
 ) -> Result<(), RuchyCodegenError> {
     write!(out, "(")?;
-    emit_expr(out, lhs)?;
+    emit_expr(out, lhs, mode)?;
     write!(out, ").{method}(u32::try_from(")?;
-    emit_expr(out, rhs)?;
+    emit_expr(out, rhs, mode)?;
     write!(
         out,
         ").expect(\"xpile: shift amount out of range for u32 (contract C-PY-INT-ARITH)\")).expect(\"xpile: i64 {op_name} overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")"
@@ -301,11 +392,12 @@ fn emit_checked(
     method: &str,
     rhs: &Expr,
     op_name: &str,
+    mode: bool,
 ) -> Result<(), RuchyCodegenError> {
     write!(out, "(")?;
-    emit_expr(out, lhs)?;
+    emit_expr(out, lhs, mode)?;
     write!(out, ").{method}(")?;
-    emit_expr(out, rhs)?;
+    emit_expr(out, rhs, mode)?;
     write!(
         out,
         ").expect(\"xpile: i64 {op_name} overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")"
@@ -313,11 +405,17 @@ fn emit_checked(
     Ok(())
 }
 
-fn emit_infix(out: &mut String, lhs: &Expr, op: &str, rhs: &Expr) -> Result<(), RuchyCodegenError> {
+fn emit_infix(
+    out: &mut String,
+    lhs: &Expr,
+    op: &str,
+    rhs: &Expr,
+    mode: bool,
+) -> Result<(), RuchyCodegenError> {
     write!(out, "(")?;
-    emit_expr(out, lhs)?;
+    emit_expr(out, lhs, mode)?;
     out.push_str(op);
-    emit_expr(out, rhs)?;
+    emit_expr(out, rhs, mode)?;
     write!(out, ")")?;
     Ok(())
 }

@@ -635,18 +635,65 @@ fn bigint_lean_uses_int_directly() {
     );
 }
 
+// PMAT-025 (PMAT-012-FOLLOWUP): Ruchy backend now supports BigInt
+// mode end-to-end, mirroring the Rust pattern from PMAT-012/013. The
+// emission shape is identical to Rust except for the `fun` vs
+// `pub fn` signature keyword. Replaces the previous bait test
+// `bigint_ruchy_errors_with_pmat_012_message` which asserted Ruchy
+// would error — it now succeeds.
 #[test]
-fn bigint_ruchy_errors_with_pmat_012_message() {
-    // Ruchy backend defers BigInt mode to a follow-up PR. The
-    // intermediate failure must be loud and reference the contract,
-    // not a silent miscompile to i64.
+fn bigint_ruchy_emits_bigint_type_and_clones() {
     let py = fixture("big_sum.py");
     let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "ruchy"]);
-    assert!(!out.status.success(), "Ruchy + BigInt should error for now");
-    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("BigInt mode") && stderr.contains("PMAT-012"),
-        "expected error to name BigInt + PMAT-012, got: {stderr}"
+        out.status.success(),
+        "Ruchy + BigInt should now succeed (PMAT-025)"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("// xpile-contract: C-PY-INT-ARITH"),
+        "expected citation, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "fun big_sum(a: xpile_bigint::BigInt, b: xpile_bigint::BigInt) -> xpile_bigint::BigInt"
+        ),
+        "expected Ruchy `fun` sig with BigInt params + return, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("(a.clone() + b.clone())"),
+        "expected infix + with .clone() (BigInt mode), got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("checked_add"),
+        "BigInt mode must NOT emit checked_add:\n{stdout}"
+    );
+}
+
+#[test]
+fn bigint_implicit_promotion_ruchy_emits_full_factorial() {
+    // Mirror of the PMAT-013 implicit-promotion test but on the Ruchy
+    // target. Same fixture, same param-promotion + .clone() emission,
+    // different signature keyword (`fun` vs `pub fn`).
+    let py = fixture("bigint_factorial.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "ruchy"]);
+    assert!(
+        out.status.success(),
+        "Ruchy + implicit BigInt promotion should succeed (PMAT-025); stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("fun factorial(n: xpile_bigint::BigInt) -> xpile_bigint::BigInt"),
+        "expected n implicitly promoted to BigInt in Ruchy sig, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("n.clone()"),
+        "expected .clone() on BigInt Ident references, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("checked_mul") && !stdout.contains("checked_sub"),
+        "BigInt mode must not emit checked_* arithmetic:\n{stdout}"
     );
 }
 
