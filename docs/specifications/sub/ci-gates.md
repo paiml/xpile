@@ -2,103 +2,103 @@
 
 **Section 18 of [xpile-spec.md](../xpile-spec.md).**
 
-## Every PR runs
+> **Status (2026-05-18 / PMAT-101 sweep):** This document was
+> authored at v0.0.1 scaffold time describing an aspirational
+> quality regime. Several originally-planned gates (llvm-cov,
+> cargo-mutants, pmat tdg, pv score, check_provenance.sh) did
+> NOT ship as required CI gates at v0.1.0; the actual workflow
+> in `.github/workflows/ci.yml` is leaner and gates only what
+> the substrate-completion run actually relies on. The "Gates
+> that hard-fail the PR" table below is now anchored to the
+> live workflow. Originally-planned gates that haven't shipped
+> are listed in "Gates planned but not yet wired" below for the
+> Popperian falsification trace.
+
+## Live workflow (`.github/workflows/ci.yml`)
 
 ```yaml
-# .github/workflows/ci.yml (sketch)
+# (sketch — see .github/workflows/ci.yml for the actual source)
 jobs:
-  gate:
-    steps:
-      - uses: dtolnay/rust-toolchain@1.93.0
+  gate:                  # required status check
+    - cargo fmt --all -- --check
+    - cargo check --workspace
+    - cargo clippy --workspace --all-targets -- -D warnings
+    - pv lint contracts/                          # via aprender-contracts-cli
+    - cargo deny check advisories
 
-      - run: cargo fmt --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo check --workspace
-      - run: cargo test --workspace
+  workspace-test:        # required status check
+    - cargo test --workspace                       # includes every_kani_harness_discharges
+                                                   # citation-gate, refinement_proofs, quorum,
+                                                   # attestations
 
-      - run: cargo install cargo-llvm-cov --locked
-      - run: cargo llvm-cov --workspace --fail-under-lines 95
-
-      - run: cargo install cargo-mutants --locked
-      - run: cargo mutants --baseline auto --in-diff origin/main
-
-      - run: cargo install cargo-deny --locked
-      - run: cargo deny check advisories licenses
-
-      - run: cargo install --path /home/noah/src/provable-contracts/crates/aprender-contracts-cli
-      - run: pv lint contracts/
-      - run: pv score contracts/ --threshold 0.5 --no-regression-vs main
-
-      - run: cargo install pmat --locked
-      - run: pmat tdg --min-grade A-
-
-      - run: bash scripts/check_provenance.sh   # custom — no repaired .rs without marker
+  kani:                  # optional check (not yet required)
+    - cargo install --locked kani-verifier
+    - cargo kani --version                         # bootstrap toolchain
+    - cargo test -p xpile --test kani_verify -- --nocapture
+                                                   # actually invokes `cargo kani` on every
+                                                   # contracts/kani/*.rs harness
 ```
 
-## Gates that hard-fail the PR
+## Gates that hard-fail the PR (live)
 
 | Gate | Command | Threshold |
 |---|---|---|
-| Format | `cargo fmt --check` | clean |
-| Clippy | `cargo clippy -- -D warnings` | zero warnings |
-| Check | `cargo check --workspace` | clean |
-| Tests | `cargo test --workspace` | all pass |
-| Line coverage | `cargo llvm-cov` | ≥ 95% |
-| Mutation coverage | `cargo mutants` | ≥ 80% on changed code |
+| Format | `cargo fmt --all -- --check` | clean |
+| Type check | `cargo check --workspace` | clean |
+| Clippy | `cargo clippy --workspace --all-targets -- -D warnings` | zero warnings |
+| Provable-contracts (lint) | `pv lint contracts/` | 0 errors |
 | Security advisories | `cargo deny check advisories` | zero unyanked |
-| License audit | `cargo deny check licenses` | allowed list only |
-| Provable-contracts | `pv lint` | 8/8 gates pass |
-| Contract score | `pv score --no-regression-vs main` | ≥ baseline |
-| Technical debt | `pmat tdg` | ≥ A- |
-| Provenance | `scripts/check_provenance.sh` | no orphan markers |
+| Tests | `cargo test --workspace` | all pass — includes the §14.4 stratum gates `refinement_proofs.rs` (Lean theorem citation gate), `kani_harnesses.rs` (Kani citation gate), `kani_verify.rs` (actual `cargo kani` verification on every harness), `quorum.rs` (C-PY-INT-ARITH full-stratum assertion), `attestations.rs` (Extrinsic-stratum scanner) |
+| Kani BMC | `cargo test -p xpile --test kani_verify` | 12 harnesses must all return `VERIFICATION:- SUCCESSFUL`; ~3.7s total |
 
-## Gates that hard-fail nightly (not on every PR)
+## Gates that are recommended at the local pre-push checklist
 
-| Gate | Command | Why nightly |
+Per `CLAUDE.md`, contributors run these locally before pushing:
+
+```bash
+cargo fmt --all -- --check
+cargo check --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+pv lint contracts/
+cargo deny check advisories
+```
+
+Plus, after substrate-completion work (PMAT-058..077):
+
+```bash
+cargo test --workspace            # exercises the stratum gates
+cargo test -p xpile --test kani_verify   # if `cargo-kani` is installed
+```
+
+## Gates planned but not yet wired (post-v0.1.0)
+
+These were in the original v0.0.1 ci-gates plan but did not ship as required CI status checks at v0.1.0. Each is a candidate post-v0.1.0 ticket:
+
+| Planned gate | Why deferred | Tracking ticket |
 |---|---|---|
-| Kani proofs | `cargo kani --workspace` | Slow (minutes per harness) |
-| Cross-contract obligation coverage | `pv coverage` | Computes a global matrix |
-| Audit chain | `pv audit` | Slow paper→proof traversal |
-| Mutation coverage (full) | `cargo mutants` | Full corpus, not just diff |
+| `cargo llvm-cov` ≥95% line coverage | Coverage tooling installation is heavy; baseline measurement needed before threshold enforcement | XPILE-CI-COVERAGE-001 |
+| `cargo mutants` ≥80% mutation coverage on changed code | Same; mutation testing is slow per-PR | XPILE-CI-MUTANTS-001 |
+| `pv score --no-regression-vs main` | Requires `pvscore` baseline maintenance | XPILE-CI-SCORE-001 |
+| `pmat tdg --min-grade A-` | Requires baseline grade calibration | XPILE-CI-PMAT-TDG-001 |
+| `scripts/check_provenance.sh` | Repair-mode output isn't generated at v0.1.0 (agent loop is scaffold-only) | XPILE-CI-PROVENANCE-001 |
+| `pv coverage` (cross-contract obligation matrix) | Computes a global matrix — designed for nightly | XPILE-CI-PV-COVERAGE-001 |
+| `pv audit` (paper→proof traversal) | Requires audit chain to be wired through paper/proof artifacts | XPILE-CI-PV-AUDIT-001 |
 
-A nightly failure opens an automated pmat work item; the PR that introduced it is blamed via `git bisect` if needed.
-
-## Repair-mode-specific gates
-
-If a PR introduces or modifies repair-pass files, additional checks:
-
-| Check | What it verifies |
-|---|---|
-| Provenance marker present | First line matches `// xpile-repaired: <hex> via <model> at <utc>` |
-| Cache key consistency | Marker hash equals recomputed cache key |
-| Model ID is fully-qualified | Not `claude-sonnet` (alias) but `claude-sonnet-4-6` |
-| Timestamp is RFC3339 UTC | Ends with `Z`, parses cleanly |
-| Cached replay is byte-identical | 10 consecutive `--repair=cached` runs produce identical sha256 |
-
-Implemented in `scripts/check_provenance.sh` (introduced in Phase 2).
-
-## Cost gates
-
-| Gate | Threshold | Action |
-|---|---|---|
-| Per-PR repair-token cost | ≤ 5M tokens | Hard fail |
-| Per-PR repair-wall-clock cost | ≤ 30 min total | Hard fail |
-| Per-PR estimated $ cost | ≤ $5 | Comment + soft warning |
-
-Comment on every PR with the breakdown so reviewers see cost impact.
+These weren't dropped — they're sequenced behind the substrate-completion work that just shipped. The substrate was the load-bearing prerequisite (you can't measure coverage of contracts that don't exist, or mutation-test invariants that haven't been formalized). With 12 contracts at QUORUM, several of these become tractable for v0.2.0+.
 
 ## No-skip rules
 
-- **No `--no-verify` on commits.** `pre-commit` hooks run all PR-level gates locally too.
+- **No `--no-verify` on commits.** `pre-commit` hooks run the local pre-push checklist.
 - **No bypassing `pv lint`.** Even draft PRs must lint clean. There is no `[skip-pv]` directive.
-- **No bypassing `pmat tdg`.** A PR that drops grade triggers a human review for the lowering, not an auto-merge.
+- **No bypassing the Kani gate** (once flipped to required). At v0.1.0 Kani is an optional check; the citation gate (`kani_harnesses.rs`) is required via the `workspace-test` job.
 
 ## Branch protection
 
-The `main` branch is protected:
+The `main` branch is protected (live as of v0.1.0):
 
-- Required status checks: all of the above gates
-- Required reviewers: 1 (or 2 if the change touches `contracts/` or `docs/specifications/`)
+- Required status checks: `gate` + `workspace-test`
+- `kani` is an optional check (run on every PR but not yet required by branch protection — flip after Kani has bedded in)
+- Required reviewers: not yet enforced (post-v0.1.0; for now the autonomous shipping model in this repo's `CLAUDE.md` covers the review function)
 - No direct pushes; PR only
 - Linear history (squash or rebase merge)
 
@@ -107,8 +107,18 @@ The `main` branch is protected:
 | Failure | What to do |
 |---|---|
 | Clippy warning | Fix the lint; don't `#[allow(...)]` without a justification comment |
-| Coverage drop | Add tests; don't lower the threshold |
-| Mutation kill drop | Strengthen assertions; don't add `#[mutants::skip]` |
 | `pv lint` fail | Fix the contract; don't edit `pv` |
-| `pmat tdg` regression | Refactor the hot file; don't suppress the metric |
-| Kani timeout | Lower the unwind in the contract; document the bound |
+| `cargo deny advisories` fail | Audit the advisory; update the dependency or add a justified `[advisories.ignore]` entry |
+| Kani timeout | The harness is too symbolic — switch to fixed-size byte-array modelling (see PMAT-058 for the canonical example: symbolic `String` timed out at 628s; `[u8; 4]` verified in 1s) |
+| Workspace test fail | Read the failure carefully; the `refinement_proofs` / `kani_harnesses` gates produce highly-specific error messages naming the contract YAML field that's misaligned |
+
+## CI cost (live, not projected)
+
+| Job | Wall-clock | Cost |
+|---|---|---|
+| `gate` | ~22-28s | minimal (GitHub-hosted runners) |
+| `workspace-test` | ~31-38s | minimal |
+| `kani` | ~33-42s | minimal (after Kani toolchain is cached) |
+| Total per-PR CI | ~1-2 min (parallel) | minimal |
+
+The originally-planned cost gates (per-PR repair-token cost, per-PR $ cost) were aspirational at v0.0.1 when the design assumed heavy LLM use. The substrate-completion run shipped without any LLM-mediated repair, so these gates are post-agent-loop work.
