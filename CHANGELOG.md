@@ -110,6 +110,17 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Multi-arg fixtures in differential exec gate (PMAT-024 / XPILE-DIFF-002)
+
+`crates/xpile/tests/diff_exec.rs` generalised from 1-arg-only to
+support 2-arg fixtures via per-arg input ranges. Three new 2-arg
+fixtures: `gcd`, `range_size`, `bits`. **Total: 100 differential
+checks across 10 fixtures per CI run** (up from 70 across 7),
+all green. Driver synthesis builds the right
+`entry(argv[0], argv[1], ...)` call expression at the configured
+arity. Still pending: overflow-prone ranges + panic-as-BigInt
+interpretation (XPILE-DIFF-003).
+
 ### Refine F1 to applicable-contracts denominator + Lean target (PMAT-023 / XPILE-FALSIFY-002)
 
 `xpile audit`'s F1 metric is now computed against only the
