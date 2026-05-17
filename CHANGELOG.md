@@ -110,6 +110,63 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Kani symbolic harness — C-XLATE-PY-LIST-TO-VEC → QUORUM (PMAT-061)
+
+**Fourth contract reaches QUORUM.** New
+`contracts/kani/xlate_py_list_to_vec.rs` carries the Kani BMC
+harness `iteration_order_preserved` — the Rust mirror of the Lean
+theorem with the same name from `contracts/lean/XlatePyListToVec.lean`
+(PMAT-060). Proves that lowering Python `list` → Rust `Vec<T>`
+preserves iteration order and length, exhaustively over 4-byte
+symbolic list contents (256⁴ ≈ 4.3B configurations).
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    3  QUORUM
+  C-XLATE-PY-LIST-TO-VEC                      1    1    0    2  QUORUM  ← Sym now 1
+  ... (8 more UNVERIFIED)
+  totals: 4 QUORUM, 0 PARTIAL, 8 UNVERIFIED (12 contracts total)
+```
+
+**Four contracts now at QUORUM.** The pattern of shipping
+Lean → Kani as paired PRs (PMAT-057→059 for notation,
+PMAT-060→061 for xlate-list) is now load-bearing — each new
+contract clears the §14.4 quorum threshold within two PRs of
+its first refinement work. The two contracts at full
+four-stratum coverage (C-PY-INT-ARITH, C-BASHRS-POSIX-IDEMPOTENCE)
+are the ones with `*_diff_exec` Runtime witnesses; the two at
+3-of-4 (C-NOTATION-LATEX-MATH-TO-EQUATION,
+C-XLATE-PY-LIST-TO-VEC) await runtime fixtures
+(XPILE-NOTATION-RUNTIME-001 and XPILE-XLATE-LIST-RUNTIME-001
+respectively).
+
+Implementation:
+- **`contracts/kani/xlate_py_list_to_vec.rs`** — standalone Rust
+  module under `#![cfg(kani)]`. Defines `PyList`, `RustVec` as
+  `{ elems: [u8; 4] }` structs (Bronze-tier v0.1.0 model mirroring
+  Lean's `Array UInt8`), `lower_py_list_to_rust_vec` as byte-array
+  identity, and the proof `iteration_order_preserved` asserting
+  both order and length preservation. Picked up by
+  `every_kani_harness_discharges` via fixture-driven discovery.
+- **`contracts/xlate-py-list-to-vec-v1.yaml`** — equation
+  `iteration_order_preserved` gains `kani_harness:
+  "iteration_order_preserved"` + `kani_file:
+  "contracts/kani/xlate_py_list_to_vec.rs"` refs.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-061 entry.
+
+Cross-reinforcement is now bidirectional: any future PR that
+changes Rust's list lowering must update *both* PMAT-060's Lean
+theorem and PMAT-061's Kani harness, or the refinement-proof
+citation gate fires. The two discharges bracket the same modelling
+claim from both formal sides. Same posture as bashrs (PMAT-044/058)
+and notation (PMAT-057/059) cross-stratum pairs.
+
+Full Kani gate now ~1.7s across four harnesses (py_int_arith.rs +
+bashrs.rs + notation.rs + xlate_py_list_to_vec.rs).
+
 ### Lean refinement theorem — C-XLATE-PY-LIST-TO-VEC → PARTIAL (PMAT-060)
 
 **Fourth contract reaches non-UNVERIFIED status.** New

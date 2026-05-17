@@ -966,3 +966,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-061
+  github_issue: null
+  item_type: task
+  title: 'PMAT-061: Kani harness for C-XLATE-PY-LIST-TO-VEC — promotes Symbolic stratum, contract reaches QUORUM'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T20:30:00Z
+  updated: 2026-05-17T20:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/kani/xlate_py_list_to_vec.rs harness mirroring the Lean theorem from PMAT-060. Symbolic stratum vote — promotes PARTIAL → QUORUM. Same [u8; 4] modelling pattern as PMAT-058/059. After landing, xpile quorum should show 4 QUORUM, 0 PARTIAL, 8 UNVERIFIED.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

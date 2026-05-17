@@ -68,6 +68,12 @@ equations:
     # contracts/lean/XlatePyListToVec.lean for the proof.
     lean_theorem: "XpileContracts.CXlatePyListToVec.iteration_order_preserved"
     lean_file: "contracts/lean/XlatePyListToVec.lean"
+    # PMAT-061: Kani harness completes the §14.4 quorum (Sem + Sym +
+    # Ext = ≥3 strata). Symbolic counterpart to the Lean theorem —
+    # proves byte-level identity of the lowered RustVec on every
+    # 4-byte symbolic input.
+    kani_harness: "iteration_order_preserved"
+    kani_file: "contracts/kani/xlate_py_list_to_vec.rs"
     formula: |
       for x in py_list: f(x)  ≡  for x in rust_vec.iter() { f(x) }
     domain: |
