@@ -1488,6 +1488,66 @@ pwd
     }
 
     #[test]
+    fn parse_and_lower_redirection_round_trips_via_litstr_args() {
+        // PMAT-087: POSIX redirection tokens (`>`, `>>`, `<`, `2>`,
+        // `2>>`, `2>&1`, `&>`) round-trip through the v0.1.0
+        // bashrs pipeline by virtue of LitStr passthrough — the
+        // tokens land as ordinary `Expr::LitStr` args, and the
+        // bashrs-backend emits them verbatim. The downstream shell
+        // re-parses the redirection at execution time, so semantics
+        // are preserved end-to-end *even though* the bashrs IR
+        // doesn't model redirection structurally at v0.1.0.
+        //
+        // Why this matters: real shell scripts use redirections
+        // pervasively (`> /dev/null 2>&1` is in basically every
+        // script). The IR-faithful structured representation
+        // (`Stmt::CmdWithRedirections { command, redirections:
+        // Vec<Redirect> }`) is XPILE-BASHRS-REDIRECT-001 future
+        // work; at v0.1.0 we lock in that the LitStr passthrough
+        // preserves shell semantics through the byte-level
+        // round-trip.
+        //
+        // Pairs with PMAT-085 (param-expansion LitStr passthrough)
+        // and PMAT-086 (line-continuation splicing) — together they
+        // establish the v0.1.0 "best-effort round-trip" invariant
+        // for shell idioms that don't yet have structured IR support.
+        use xpile_meta_hir::{Expr, Item, Stmt};
+        let cases: &[(&str, &str, &[&str])] = &[
+            ("echo hi > foo.txt\n", "echo", &["hi", ">", "foo.txt"]),
+            ("echo hi >> log\n", "echo", &["hi", ">>", "log"]),
+            ("cat < input.txt\n", "cat", &["<", "input.txt"]),
+            ("make 2> errors.log\n", "make", &["2>", "errors.log"]),
+            ("make 2>> errors.log\n", "make", &["2>>", "errors.log"]),
+            (
+                "command > /dev/null 2>&1\n",
+                "command",
+                &[">", "/dev/null", "2>&1"],
+            ),
+        ];
+        for (source, expected_program, expected_args) in cases {
+            let module = BashrsFrontend
+                .parse_and_lower(&PathBuf::from("/tmp/r.sh"), source)
+                .expect("parse");
+            let Item::Function(f) = &module.items[0];
+            let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
+                panic!(
+                    "expected Stmt::Cmd for `{source}`; got {:?}",
+                    f.body.stmts[0]
+                );
+            };
+            assert_eq!(program, expected_program);
+            let expected_exprs: Vec<Expr> = expected_args
+                .iter()
+                .map(|s| Expr::LitStr((*s).to_string()))
+                .collect();
+            assert_eq!(
+                args, &expected_exprs,
+                "redirection token preservation for `{source}` failed"
+            );
+        }
+    }
+
+    #[test]
     fn parse_and_lower_simple_shell_assign() {
         // PMAT-051: `LOG=/tmp/foo` produces Stmt::ShellAssign with
         // a LitStr value.

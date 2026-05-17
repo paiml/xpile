@@ -110,6 +110,40 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### POSIX redirection round-trip via LitStr passthrough (PMAT-087)
+
+**POSIX redirection tokens round-trip end-to-end at v0.1.0.**
+Tokens like `>`, `>>`, `<`, `2>`, `2>>`, `2>&1`, `&>` are
+preserved verbatim as `Expr::LitStr` args by the bashrs
+pipeline; the downstream shell re-parses redirections at
+execution time, so semantics are preserved even though the
+bashrs IR doesn't model redirection structurally at v0.1.0.
+
+```bash
+command > /dev/null 2>&1
+# parses to: Stmt::Cmd {
+#   program: "command",
+#   args: [LitStr(">"), LitStr("/dev/null"), LitStr("2>&1")]
+# }
+# round-trips to byte-identical shell output
+```
+
+Why this matters: real shell scripts use redirections
+pervasively. The structured IR representation
+(`Stmt::CmdWithRedirections { command, redirections:
+Vec<Redirect> }`) is XPILE-BASHRS-REDIRECT-001 future work; at
+v0.1.0 the LitStr passthrough preserves shell semantics
+through the byte-level round-trip.
+
+Implementation:
+- **`crates/bashrs-frontend/src/lib.rs::parse_and_lower_redirection_round_trips_via_litstr_args`** —
+  asserts 6 distinct redirection patterns parse to
+  `Stmt::Cmd` with the redirection tokens preserved as
+  ordinary `LitStr` args. Together with PMAT-085 (param
+  expansion) and PMAT-086 (line continuation), this completes
+  the v0.1.0 "best-effort round-trip" invariant for shell
+  idioms that don't yet have structured IR support.
+
 ### POSIX backslash-newline line continuation in bashrs-frontend (PMAT-086)
 
 **Multi-line shell commands joined by `\<newline>` now parse as
