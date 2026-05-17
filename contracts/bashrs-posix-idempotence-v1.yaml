@@ -79,3 +79,9 @@ equations:
       - "args are list of string literals (no variables / substitution / quoting metadata)"
     lean_theorem: "XpileContracts.CBashrsPosixIdempotence.subprocess_run_eq_shell_run"
     lean_file: "contracts/lean/Bashrs.lean"
+    # PMAT-058: Kani harness completes the four-stratum coverage.
+    # Proves `render_lit_str` (bashrs-backend's LitStr arg
+    # rendering) is identity on its input — load-bearing for the
+    # cross-domain equivalence claim.
+    kani_harness: "lit_str_render_is_identity"
+    kani_file: "contracts/kani/bashrs.rs"

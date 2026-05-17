@@ -916,3 +916,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-058
+  github_issue: null
+  item_type: task
+  title: 'PMAT-058: Kani harness for C-BASHRS-POSIX-IDEMPOTENCE — promotes Symbolic stratum, full four-stratum coverage'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T18:00:48Z
+  updated: 2026-05-17T18:00:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
