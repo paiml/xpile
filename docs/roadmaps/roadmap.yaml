@@ -1204,3 +1204,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-075
+  github_issue: null
+  item_type: task
+  title: 'PMAT-075: Kani harness for C-COMPILE-RUST-TO-PTX-MMA — first Layer-5 contract at QUORUM (92% of substrate)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T03:30:00Z
+  updated: 2026-05-18T03:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/kani/compile_rust_to_ptx_mma.rs harness mirroring PMAT-074. Symbolic stratum vote — promotes PARTIAL → QUORUM. Makes C-COMPILE-RUST-TO-PTX-MMA the FIRST Layer-5 contract at QUORUM. After landing, xpile quorum should show 11 QUORUM, 1 PARTIAL, 0 UNVERIFIED (92%). Only C-FFI-CPYTHON-EXT remains at PARTIAL.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
