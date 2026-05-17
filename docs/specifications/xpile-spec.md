@@ -43,7 +43,7 @@
 | 16 | [Hybrid Transpile Flow](#16-hybrid-transpile-flow) | [sub/hybrid-transpile-flow.md](sub/hybrid-transpile-flow.md) |
 | 17 | [Frontend Onboarding](#17-frontend-onboarding) | [sub/frontend-onboarding.md](sub/frontend-onboarding.md) |
 | 18 | [CI Pipeline and Gates](#18-ci-pipeline-and-gates) | [sub/ci-gates.md](sub/ci-gates.md) |
-| 19 | [Migration from depyler / decy](#19-migration-from-depyler--decy) | [sub/migration.md](sub/migration.md) |
+| 19 | [Migration from depyler / decy / bashrs](#19-migration-from-depyler--decy--bashrs) | [sub/migration.md](sub/migration.md), [sub/bashrs-federation.md](sub/bashrs-federation.md) |
 | 20 | [Kaizen Fleet Membership](#20-kaizen-fleet-membership) | [sub/kaizen-fleet.md](sub/kaizen-fleet.md) |
 | 21 | [Phased Rollout](#21-phased-rollout) | [sub/phased-rollout.md](sub/phased-rollout.md) |
 | 22 | [Glossary](#22-glossary) | [sub/glossary.md](sub/glossary.md) |
@@ -62,7 +62,12 @@ xpile is a polyglot transpile workbench. Every supported source language plugs i
 
 The repo is a Cargo workspace of 24 crates (as of v0.1.0). Front-ends are language-specific leaves (`depyler-frontend`, `decy-frontend`, `ruchy-frontend`, `lean-frontend`); shared crates (`xpile-core`, `xpile-agent`, `xpile-oracle`, `xpile-llm`, `xpile-mcp`, `xpile-contracts`, `xpile-rust-codegen`, `xpile-ruchy-codegen`, `xpile-lean-codegen`, `xpile-ptx-codegen`, `xpile-wgsl-codegen`, `xpile-meta-hir`, `xpile-ffi-manifest`, `xpile-frontend`, `xpile-backend`, and the proof-lane equivalents) cover the rest. Foundations: alchemize's four-tool agent loop, aprender's provable-contracts framework, depyler's repair-mode pattern, decy's HIR/ownership patterns.
 
-**Scope is deliberately scoped, not universal.** The supported language set (Python, C, C++, CUDA, Rust, Ruchy, Lean 4) is chosen to cover the seed hybrid-transpile cases that motivated the architecture (CPython↔C extensions, Python↔CUDA, Rust↔Ruchy). Languages outside that set — Julia, R, JNI (Java/Kotlin), JavaScript/TypeScript — are *not* on the roadmap. The adversarial audit ([§4 of `audit-design.md`](audit-design.md)) characterizes this as a "Sovereign AI" stance inherited from the broader `aprender` ecosystem; it is acknowledged as a tradeoff, not papered over. Wasm reaches the workbench indirectly via `ruchy`'s `WasmEmitter`, not via a native xpile Wasm backend.
+**Scope is deliberately scoped, not universal.** The supported language set falls into two tiers:
+
+- **Native frontends/backends inside xpile** — Python, C, C++, CUDA, Rust, Ruchy, Lean 4. These cover the seed hybrid-transpile cases that motivated the architecture (CPython↔C extensions, Python↔CUDA, Rust↔Ruchy) and require xpile's meta-HIR + FFI manifest to translate across them.
+- **Federated via the `bashrs` sibling** — bash, zsh, POSIX sh, Makefile, Dockerfile. These reach the workbench through `xpile transpile` dispatching to [`bashrs`](https://github.com/paiml/bashrs) (the third "preserved-shim sibling" alongside `depyler` and `decy` — see §19 and [sub/bashrs-federation.md](sub/bashrs-federation.md)). bashrs already handles Rust→POSIX-shell transpilation, AST-level bash purification, and Dockerfile + Makefile linting; xpile wraps it under the same Oracle + agent-loop + contract substrate as the native languages rather than re-implementing the domain.
+
+Languages outside both tiers — Julia, R, JNI (Java/Kotlin), JavaScript/TypeScript — are *not* on the roadmap. The adversarial audit ([§4 of `audit-design.md`](audit-design.md)) characterizes this as a "Sovereign AI" stance inherited from the broader `aprender` ecosystem; it is acknowledged as a tradeoff, not papered over. Wasm reaches the workbench indirectly via `ruchy`'s `WasmEmitter`, not via a native xpile Wasm backend.
 
 ---
 
@@ -94,7 +99,7 @@ Planned implementations: `LatexContractFrontend` (math mode + theorem/proof/lemm
 
 **Sub-spec**: [sub/meta-hir.md](sub/meta-hir.md)
 
-`xpile-meta-hir` is the shared intermediate representation every frontend lowers to. Intentionally minimal at v0.1.0: `Module`, `SourceLang` enum (Python, C, Cpp, Cuda, Ruchy), `Item::Function`, and `FfiBoundary`. The architecture is **federated**: each frontend keeps its own internal HIR (e.g., `depyler-hir`, `decy-hir`) and lowers to meta-HIR only when crossing into shared infrastructure (codegen, FFI manifest, oracle).
+`xpile-meta-hir` is the shared intermediate representation every native frontend lowers to. Intentionally minimal at v0.1.0: `Module`, `SourceLang` enum (Python, C, Cpp, Cuda, Ruchy, Rust, Lean), `Item::Function`, `FfiBoundary`, and a small `Type` lattice (`I64`, `Bool`, `BigInt`). The architecture is **federated**: each frontend keeps its own internal HIR (e.g., `depyler-hir`, `decy-hir`) and lowers to meta-HIR only when crossing into shared infrastructure (codegen, FFI manifest, oracle). Federated languages outside the meta-HIR (bash / zsh / Makefile / Dockerfile via bashrs — see §19) skip meta-HIR entirely and dispatch directly to their sibling transpiler.
 
 Federated > unified because we don't yet have hybrid demos to validate the right shape of a richer meta-IR; over-designing now would lock in mistakes. Meta-HIR grows as hybrid-transpile cases demand.
 
@@ -319,9 +324,9 @@ Hard-failures on any gate. No `--no-verify`, no manual overrides.
 
 ---
 
-## 19. Migration from depyler / decy
+## 19. Migration from depyler / decy / bashrs
 
-**Sub-spec**: [sub/migration.md](sub/migration.md)
+**Sub-spec**: [sub/migration.md](sub/migration.md). Federation detail for bashrs: [sub/bashrs-federation.md](sub/bashrs-federation.md).
 
 Two-step migration over ~8 weeks: **extract first, merge second.**
 
@@ -329,6 +334,8 @@ Two-step migration over ~8 weeks: **extract first, merge second.**
 2. **Merge (weeks 7-8):** `git filter-repo` + `git subtree add` to fold depyler and decy into xpile, preserving history. Per-language repos become thin shims that re-export from xpile.
 
 The merge is the *implementation* of the monorepo; the extract phase already gives 80% of the benefit by deduplicating crates.
+
+**bashrs is the third sibling.** It is structurally identical to depyler/decy — a PAIML Sovereign AI Stack transpiler that xpile dispatches to for its language domain (bash, zsh, POSIX sh, Makefile, Dockerfile). Unlike depyler/decy, bashrs's domain is *outside* the meta-HIR (shell semantics don't compose with C / Python / Rust types), so the integration is **federation**, not merge: xpile recognizes the extensions, forwards to bashrs, and wraps the result under its own Oracle + agent-loop + contract substrate. bashrs publishes to crates.io independently; xpile depends on it as a normal dependency. Detail: [sub/bashrs-federation.md](sub/bashrs-federation.md).
 
 ---
 

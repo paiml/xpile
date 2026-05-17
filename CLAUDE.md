@@ -33,6 +33,33 @@ cargo deny check advisories
 
 These are tailored to xpile. `certeza` (mentioned in the global CLAUDE.md) is aprender-specific and not required here.
 
+## Shell / Makefile / Dockerfile artifacts
+
+xpile currently has zero `.sh` / `.bash` / `.zsh` / `Makefile` /
+`Dockerfile` files. **Don't introduce them without routing through
+bashrs** — that's the sibling Sovereign AI Stack transpiler that
+owns the shell domain (see [`docs/specifications/sub/bashrs-federation.md`](docs/specifications/sub/bashrs-federation.md)).
+
+Concrete workflow when shell artifacts become necessary:
+
+1. **Prefer Rust → POSIX** — author the script as a small Rust file
+   and run `bashrs transpile foo.rs -o foo.sh` for the deterministic
+   shell output. The Rust source goes in `scripts/` (new directory)
+   and the emitted `.sh` is gitignored or committed as a build
+   artifact, never hand-edited.
+2. **Hand-written shell is purified before commit** — if a `.sh`
+   *must* be authored directly (rare), run it through
+   `bashrs purify <file>` before staging. Same for `Makefile` and
+   `Dockerfile`: lint with bashrs.
+3. **No silent introduction** — adding shell-flavored CI logic,
+   release scripts, dev-loop helpers, or Docker images is out of
+   xpile's current scope (no native shell frontend at v0.1.0) and
+   should be discussed before landing.
+
+The point: xpile's "quality regime" claim only holds if every
+language in the repo is under the regime. bashrs is what makes shell
+fall under that regime.
+
 ## What still requires explicit user approval
 
 - Creating or deleting a GitHub remote
