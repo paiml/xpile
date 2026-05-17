@@ -110,6 +110,49 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### POSIX subshell `(cmd)` round-trip via LitStr passthrough (PMAT-091)
+
+**POSIX subshells round-trip end-to-end at v0.1.0.** The
+pattern `(cd /tmp && do_stuff)` is common in build scripts
+and CI pipelines for isolating side effects (cd, umask,
+exports). At v0.1.0 the parentheses tokenize as standalone
+Bare tokens, lower as LitStr, and the resulting Stmt::Cmd
+has `program: "("` with the inner command + closing `)`
+as args. The downstream shell correctly creates a subshell
+at execution time, runs the inner command, and returns to
+the parent shell.
+
+```bash
+( cd /tmp && ls )
+# parses to: Stmt::Cmd {
+#   program: "(",
+#   args: [LitStr("cd"), LitStr("/tmp"), LitStr("&&"),
+#          LitStr("ls"), LitStr(")")]
+# }
+# round-trips to byte-identical shell output; subshell
+# semantics preserved at execution.
+```
+
+Implementation:
+- **`parse_and_lower_subshell_round_trips_via_litstr`** —
+  asserts 3 distinct subshell patterns (simple `cd`, `&&`
+  composition, `exit`) parse with program="(" and the
+  inner content preserved as LitStr args. Pairs with
+  PMAT-089 (test bracket `[`) — both are cases where a
+  POSIX special character is the program name.
+
+Distinct from:
+- `$(cmd)` command substitution (PMAT-050) — captures
+  stdout as a value
+- `$((expr))` arithmetic expansion (PMAT-090) — evaluates
+  expr arithmetically
+- Bash `((expr))` arithmetic command — NOT covered (bash
+  extension, not POSIX)
+
+Structured representation (`Stmt::Subshell { body }`) is
+XPILE-BASHRS-SUBSHELL-001 future work. Completes the
+PMAT-085..091 v0.1.0 round-trip invariant lock-in run.
+
 ### POSIX arithmetic expansion `$((...))` round-trip + tokenizer bugfix (PMAT-090)
 
 **Fixes another v0.1.0 tokenizer bug AND locks in arithmetic

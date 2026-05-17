@@ -1638,6 +1638,62 @@ pwd
     }
 
     #[test]
+    fn parse_and_lower_subshell_round_trips_via_litstr() {
+        // PMAT-091: POSIX subshell `(cmd)` round-trip via LitStr
+        // passthrough. The parentheses tokenize as standalone Bare
+        // tokens (since they're whitespace-separated from the
+        // inner command) and lower as LitStr. The result is
+        // Stmt::Cmd with program="(" and the inner command +
+        // closing `)` as args. The downstream shell at execution
+        // time correctly creates a subshell, runs the inner
+        // command, and returns to the parent shell.
+        //
+        // Why this matters: subshells are POSIX-standard for
+        // isolating side effects (cd, umask, exports) — the
+        // pattern `(cd /tmp && do_stuff)` is common in build
+        // scripts and CI pipelines.
+        //
+        // Distinct from:
+        // - PMAT-050 `$(cmd)` command substitution (captures
+        //   stdout as a value)
+        // - PMAT-090 `$((expr))` arithmetic expansion (evaluates
+        //   expr arithmetically)
+        // - Bash `((expr))` arithmetic command (NOT covered —
+        //   bash extension, not POSIX)
+        //
+        // Structured representation (`Stmt::Subshell { body }`) is
+        // XPILE-BASHRS-SUBSHELL-001 future work. Same v0.1.0
+        // invariant pattern as PMAT-085..090.
+        use xpile_meta_hir::{Expr, Item, Stmt};
+        let cases: &[(&str, &str, &[&str])] = &[
+            ("( cd /tmp )\n", "(", &["cd", "/tmp", ")"]),
+            ("( cd /tmp && ls )\n", "(", &["cd", "/tmp", "&&", "ls", ")"]),
+            ("( exit 1 )\n", "(", &["exit", "1", ")"]),
+        ];
+        for (source, expected_program, expected_args) in cases {
+            let module = BashrsFrontend
+                .parse_and_lower(&PathBuf::from("/tmp/sub.sh"), source)
+                .unwrap_or_else(|e| panic!("parse failed for `{source}`: {e:?}"));
+            let Item::Function(f) = &module.items[0];
+            let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
+                panic!(
+                    "expected Stmt::Cmd for `{source}`; got {:?}",
+                    f.body.stmts[0]
+                );
+            };
+            assert_eq!(program, expected_program);
+            let expected_exprs: Vec<Expr> = expected_args
+                .iter()
+                .map(|s| Expr::LitStr((*s).to_string()))
+                .collect();
+            assert_eq!(
+                args, &expected_exprs,
+                "subshell round-trip for `{source}` failed"
+            );
+        }
+    }
+
+    #[test]
     fn parse_and_lower_arith_expansion_round_trips_via_litstr() {
         // PMAT-090: end-to-end — `$((...))` arithmetic expansion
         // round-trips through the bashrs pipeline as an

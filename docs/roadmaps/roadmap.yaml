@@ -1476,3 +1476,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-091
+  github_issue: null
+  item_type: task
+  title: 'PMAT-091: bashrs subshell (cmd) round-trip lock-in — POSIX subshells round-trip via LitStr passthrough with program="(" and ")" as final arg'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T11:30:00Z
+  updated: 2026-05-18T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add parse_and_lower_subshell_round_trips_via_litstr in bashrs-frontend asserting 3 subshell patterns parse with program="(" and inner content + closing `)` as LitStr args. Common pattern (cd /tmp && ls) for side-effect isolation in build scripts. Completes PMAT-085..091 v0.1.0 round-trip invariant lock-in run. Sets up XPILE-BASHRS-SUBSHELL-001 (Silver-tier Stmt::Subshell variant).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
