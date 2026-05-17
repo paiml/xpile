@@ -110,6 +110,59 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Lean refinement theorem — C-XPILE-CONTRACT-BACKEND-TRAIT → PARTIAL (PMAT-068) — **closes the 2×2 trait-determinism matrix at the Semantic stratum**
+
+**Eighth contract reaches non-UNVERIFIED status.** New
+`contracts/lean/XpileContractBackendTrait.lean` carries the
+refinement theorem `render_idempotency` — the proof-lane-emit
+analog of PMAT-064's backend `lower_idempotency`. **All four
+corners of the 2×2 trait-determinism matrix now have Lean
+refinement theorems:**
+
+| stratum | code lane (HIR) | proof lane (contracts) |
+|---|---|---|
+| **parse** | PMAT-062 Frontend | PMAT-066 ContractFrontend |
+| **emit**  | PMAT-064 Backend  | PMAT-068 ContractBackend ← this PR |
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    3  QUORUM
+  C-XLATE-PY-LIST-TO-VEC                      1    1    0    3  QUORUM
+  C-XPILE-FRONTEND-TRAIT                      1    1    0    3  QUORUM
+  C-XPILE-BACKEND-TRAIT                       1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-FRONTEND-TRAIT             1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-BACKEND-TRAIT              1    0    0    0  PARTIAL  ← new
+  ... (4 more UNVERIFIED)
+  totals: 7 QUORUM, 1 PARTIAL, 4 UNVERIFIED (12 contracts total)
+```
+
+Implementation:
+- **`contracts/lean/XpileContractBackendTrait.lean`** — new
+  namespace `XpileContracts.CXpileContractBackendTrait`. Models
+  `render` as a pure byte-concatenation function from
+  `(contract, config)` to `RenderedDoc`. Companion
+  `citation_round_trip` theorem stubbed for Silver-tier
+  refinement (XPILE-REFINE-CONTRACT-BACKEND-TRAIT-001) when the
+  model grows typed `RenderedDoc.citations : List ContractId`.
+- **`contracts/xpile-contract-backend-trait-v1.yaml`** —
+  equation `render_idempotency` gains `lean_theorem` +
+  `lean_file` refs.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-068 entry.
+
+This is the **seventh contract Lean theorem** and the last of
+the trait-determinism scaffold. Beyond this, the remaining
+UNVERIFIED contracts (C-COMPILE-RUST-TO-PTX-MMA, C-FFI-CPYTHON-EXT,
+C-XLATE-LEAN-TO-RUST, C-XLATE-RUST-FN-TO-LEAN-THM) are
+Layer-1/Layer-2 with concrete equation domains, not architectural
+traits — they need domain-specific refinement work rather than the
+uniform Bronze-rfl scaffold this matrix used.
+
+Companion Kani harness ships next as PMAT-069, completing the
+2×2 matrix at QUORUM (8 of 12 contracts = 67%).
+
 ### Kani symbolic harness — C-XPILE-CONTRACT-FRONTEND-TRAIT → QUORUM (PMAT-067) — **58% of substrate at QUORUM**
 
 **Seventh contract reaches QUORUM.** New

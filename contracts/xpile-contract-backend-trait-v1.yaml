@@ -42,6 +42,13 @@ equations:
       - "TranspileSession::register_contract_backend has been called for every active impl"
 
   render_idempotency:
+    # PMAT-068: Lean refinement theorem locks in the determinism
+    # modelling commitment for ContractBackend::render. See
+    # contracts/lean/XpileContractBackendTrait.lean for the proof.
+    # Completes the 2×2 trait-determinism matrix with
+    # PMAT-062/064/066.
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.render_idempotency"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
     formula: |
       forall (contract, config): hash(cb.render(contract, config).unwrap()) == hash(cb.render(contract, config).unwrap())
     domain: |
