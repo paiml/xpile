@@ -1731,3 +1731,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-106
+  github_issue: null
+  item_type: task
+  title: 'PMAT-106: sub/vision.md architecture diagram — add bashrs-frontend + latex-contract-frontend (proof lane); drop "<future>" placeholder'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T19:00:00Z
+  updated: 2026-05-18T19:00:00Z
+  spec: null
+  acceptance_criteria:
+  - sub/vision.md architecture diagram listed depyler-frontend / decy-frontend / ruchy-frontend / <future>. Replace <future> with bashrs-frontend (real POSIX parser since PMAT-039..058) and latex-contract-frontend (proof-lane scaffold since PMAT-057+). The diagram is the canonical orientation for new readers — listing the actual frontends is high-leverage doc work.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

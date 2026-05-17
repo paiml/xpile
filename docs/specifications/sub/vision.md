@@ -28,7 +28,8 @@ xpile makes adding a new source language a *plug-in* operation: write one type i
 ├──────────────────────────────────────────────────────────────────────┤
 │  xpile-frontend (trait)         xpile-meta-hir (canonical IR)        │
 ├──────────────────────────────────────────────────────────────────────┤
-│  depyler-frontend   decy-frontend   ruchy-frontend   <future>        │
+│  depyler-frontend   decy-frontend   ruchy-frontend                   │
+│  bashrs-frontend    latex-contract-frontend (proof lane)             │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
