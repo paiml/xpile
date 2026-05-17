@@ -14,12 +14,26 @@
     * Roadmap:     docs/specifications/sub/provability-roadmap.md §1.5
 
   Tier (per ruchy 5.0 §14.10.5): refinement target is Platinum.
-  At v0.1.0 *all four* refinement theorems are discharged:
+  At v0.1.0 *all seven* refinement theorems for the in-domain
+  arithmetic + shift + power operations are discharged:
 
     * `fast_path_eq_slow_path` (addition) — PMAT-028 / XPILE-REFINE-002
     * `mul_fast_path_eq_slow_path` — PMAT-029 / XPILE-REFINE-003
     * `floor_div_fast_path_eq_slow_path` — PMAT-029 / XPILE-REFINE-003
     * `mod_fast_path_eq_slow_path` — PMAT-029 / XPILE-REFINE-003
+    * `shl_fast_path_eq_slow_path` — PMAT-030 / XPILE-REFINE-004
+    * `shr_fast_path_eq_slow_path` — PMAT-030 / XPILE-REFINE-004
+    * `pow_fast_path_eq_slow_path` — PMAT-030 / XPILE-REFINE-004
+
+  Not yet covered (separate roadmap items):
+
+    * Bitwise (`&` / `|` / `^`) — core Lean lacks `Int.land/lor/xor`,
+      so this needs either a mathlib dep or a hand-rolled
+      cast-through-Nat encoding. Tracked as XPILE-REFINE-005.
+    * Slow-path / promotion side (CPython == BigInt::add when
+      `¬fits_i64 (a + b)`) — needs a different proof shape since
+      it's a statement about the BigInt path's totality + fidelity
+      to CPython, not about wrapping. Tracked as XPILE-REFINE-006.
 
   Naming convention from `contracts/xpile-contract-backend-trait-v1.yaml`:
   the namespace path encodes the contract ID so theorem↔contract
@@ -188,5 +202,90 @@ theorem mod_fast_path_eq_slow_path
     (_h : fits_i64 (Int.fmod a b)) :
     i64_mod a b = bigint_mod a b := by
   rfl
+
+/--
+  i64 wrapping left-shift — Rust `(a as i64).checked_shl(b)` with
+  `b: u32` and the `b < 64` precondition (panic on out-of-range
+  shift amount). Models the shift as `a * 2^b` followed by the
+  same `Int.bmod`-by-`2^64` reduction used for `+`, `*`. PMAT-030 /
+  XPILE-REFINE-004.
+
+  Why `a * 2^b` and not a bit-twiddling primitive: core Lean's
+  `HShiftLeft Int Nat` instance isn't auto-synthesised, but the
+  semantics are exactly `a * 2^b` for non-negative shift amounts.
+  Using multiplication avoids a mathlib import while expressing the
+  same identity.
+-/
+def i64_wrap_shl (a : Int) (b : Nat) : Int := Int.bmod (a * (2 ^ b)) (2 ^ 64)
+
+/-- Unbounded left-shift — Python `<<` on unbounded ints, modelled
+  as `a * 2^b`. -/
+def bigint_shl (a : Int) (b : Nat) : Int := a * (2 ^ b)
+
+/--
+  Refinement theorem for `<<`. Same proof shape as `+` and `*`: the
+  shared `bmod_fits_i64` lemma closes it.
+
+  Status: **discharged at v0.1.0 (PMAT-030 / XPILE-REFINE-004)**.
+-/
+theorem shl_fast_path_eq_slow_path
+    (a : Int) (b : Nat)
+    (h : fits_i64 (a * (2 ^ b))) :
+    i64_wrap_shl a b = bigint_shl a b := by
+  unfold i64_wrap_shl bigint_shl
+  exact bmod_fits_i64 (a * (2 ^ b)) h
+
+/--
+  i64 right-shift — Rust `(a as i64).checked_shr(b)`, arithmetic
+  (sign-preserving) shift right. Models as `Int.fdiv a (2^b)`
+  (floor-style division by `2^b`); doesn't overflow when the
+  inputs fit (the result is always in i64 if `a` is).
+-/
+def i64_shr (a : Int) (b : Nat) : Int := Int.fdiv a (2 ^ b)
+
+/-- Unbounded right-shift — Python `>>` on unbounded ints,
+  modelled as `Int.fdiv a (2^b)`. -/
+def bigint_shr (a : Int) (b : Nat) : Int := Int.fdiv a (2 ^ b)
+
+/--
+  Refinement theorem for `>>`. Same story as `//` / `%`: fast and
+  slow path model the same `Int.fdiv` operation, so the theorem
+  reduces to `rfl`. Status: **discharged at v0.1.0 (PMAT-030 /
+  XPILE-REFINE-004)**.
+-/
+theorem shr_fast_path_eq_slow_path
+    (a : Int) (b : Nat)
+    (_h : fits_i64 (Int.fdiv a (2 ^ b))) :
+    i64_shr a b = bigint_shr a b := by
+  rfl
+
+/--
+  i64 wrapping power — Rust `(a as i64).checked_pow(b as u32)`,
+  with `b: Nat` matching Rust's `u32` exponent contract. Reduces
+  the unbounded `a^b` back into the signed range via `Int.bmod`.
+
+  Why `Nat` for the exponent: Rust's `checked_pow` only accepts
+  `u32`, and Python `**` with negative integer exponent always
+  promotes to float (separate contract). Modelling the exponent
+  as `Nat` matches the in-domain Rust API exactly.
+-/
+def i64_wrap_pow (a : Int) (b : Nat) : Int := Int.bmod (a ^ b) (2 ^ 64)
+
+/-- Unbounded power — Python `**` on int^Nat (the slow path). -/
+def bigint_pow (a : Int) (b : Nat) : Int := a ^ b
+
+/--
+  Refinement theorem for `**`. Same proof shape as `+`, `*`, `<<`:
+  the shared `bmod_fits_i64` lemma closes it. PMAT-030 /
+  XPILE-REFINE-004.
+
+  Status: **discharged at v0.1.0**.
+-/
+theorem pow_fast_path_eq_slow_path
+    (a : Int) (b : Nat)
+    (h : fits_i64 (a ^ b)) :
+    i64_wrap_pow a b = bigint_pow a b := by
+  unfold i64_wrap_pow bigint_pow
+  exact bmod_fits_i64 (a ^ b) h
 
 end XpileContracts.CPyIntArith

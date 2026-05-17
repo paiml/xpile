@@ -468,3 +468,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-030
+  github_issue: null
+  item_type: task
+  title: 'Complete C-PY-INT-ARITH refinement corpus: shift+pow theorems (XPILE-REFINE-004)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T14:05:01Z
+  updated: 2026-05-17T14:05:01Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

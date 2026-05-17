@@ -110,6 +110,36 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Complete C-PY-INT-ARITH refinement corpus: shift + power theorems (PMAT-030 / XPILE-REFINE-004)
+
+Three more theorems join the four already discharged for `+`, `*`,
+`//`, `%`. The full in-domain arithmetic + shift + power surface of
+`C-PY-INT-ARITH` is now machine-checked by Lean 4.15.
+
+| Theorem | Discharge technique |
+|---|---|
+| `shl_fast_path_eq_slow_path` (`<<`) | `bmod_fits_i64` lemma (modelled as `a * 2^b`) |
+| `shr_fast_path_eq_slow_path` (`>>`) | `rfl` (both paths are `Int.fdiv a (2^b)`) |
+| `pow_fast_path_eq_slow_path` (`**`) | `bmod_fits_i64` lemma |
+
+Why model shifts as multiplication / division rather than `<<<` /
+`>>>`: core Lean 4.15 doesn't auto-synthesise the
+`HShiftLeft Int Nat` instance, and `a * 2^b` is semantically
+identical to `a <<< b` for non-negative shift amounts (which is the
+only case Rust's `checked_shl(b: u32)` accepts). Using arithmetic
+operators avoids a mathlib import.
+
+Contract YAML now has three new equations:
+`shift_left_signed_semantics`, `shift_right_signed_semantics`,
+`power_signed_semantics`, each with `lean_theorem` + `lean_file`
+refs so `refinement_proofs.rs` validates the citation pipeline.
+
+`bitwise_and_signed_semantics` still has no `lean_theorem`: core
+Lean lacks `Int.land` / `Int.lor` / `Int.xor`. Tracked as
+XPILE-REFINE-005 (mathlib dep, or hand-rolled encoding via
+cast-through-Nat). The slow-path / promotion proofs (CPython ==
+BigInt::add when `¬fits_i64`) are XPILE-REFINE-006.
+
 ### Discharge mul/floor_div/mod stub theorems (PMAT-029 / XPILE-REFINE-003)
 
 Closes the *last* `XPILE-PENDING-UNTIL` marker anywhere in the

@@ -146,6 +146,10 @@ fn py_int_arith_lean_file_carries_required_landmarks() {
         "theorem mul_fast_path_eq_slow_path",
         "theorem floor_div_fast_path_eq_slow_path",
         "theorem mod_fast_path_eq_slow_path",
+        // PMAT-030 / XPILE-REFINE-004: shift + power theorems.
+        "theorem shl_fast_path_eq_slow_path",
+        "theorem shr_fast_path_eq_slow_path",
+        "theorem pow_fast_path_eq_slow_path",
         // Positive proof landmark — the discharge technique is
         // `Int.bmod_def` + `split <;> omega`, factored through the
         // shared `bmod_fits_i64` helper. If a future refactor

@@ -115,6 +115,55 @@ equations:
       - "Python ints have INFINITE-PRECISION two's complement representation"
       - "for negative bigint operands, the Rust output must match this — separate bigint contract"
     preconditions: []
+    # No `lean_theorem` yet: core Lean 4.15 doesn't ship
+    # `Int.land` / `Int.lor` / `Int.xor`; encoding requires either a
+    # mathlib dep or a hand-rolled cast-through-Nat. Tracked as
+    # XPILE-REFINE-005 (separate from XPILE-REFINE-004's shift/pow
+    # corpus completion).
+
+  shift_left_signed_semantics:
+    formula: |
+      python_int_shl(a, b) == rust_i64::wrapping_shl(a, b)  WHEN  0 <= b < 64 AND fits_i64(a * 2^b)
+    domain: |
+      a: Python int that fits in i64; b: Nat exponent.
+    invariants:
+      - "Python `<<` is mathematical: result = a * 2^b on unbounded ints"
+      - "Rust `(a as i64).checked_shl(b)` panics on b >= 64; we cite C-PY-INT-ARITH there"
+      - "in the fits_i64 domain both paths agree via `Int.bmod` reduction"
+    preconditions:
+      - "0 <= b < 64 (else Rust panics — separate contract slot)"
+    # XPILE-REFINE-004 / PMAT-030: shl reuses bmod_fits_i64.
+    lean_theorem: "XpileContracts.CPyIntArith.shl_fast_path_eq_slow_path"
+    lean_file: "contracts/lean/PyIntArith.lean"
+
+  shift_right_signed_semantics:
+    formula: |
+      python_int_shr(a, b) == rust_i64::checked_shr(a, b)  WHEN  0 <= b < 64
+    domain: |
+      a: Python int that fits in i64; b: Nat exponent in [0, 64).
+    invariants:
+      - "Python `>>` and Rust `>>` on signed i64 are both arithmetic (sign-preserving)"
+      - "both paths model the shift as `Int.fdiv a (2^b)` — pointwise equal under fits_i64 precondition"
+    preconditions:
+      - "0 <= b < 64 (else Rust panics)"
+    # XPILE-REFINE-004 / PMAT-030: shr is `rfl` (Int.fdiv on both sides).
+    lean_theorem: "XpileContracts.CPyIntArith.shr_fast_path_eq_slow_path"
+    lean_file: "contracts/lean/PyIntArith.lean"
+
+  power_signed_semantics:
+    formula: |
+      python_int_pow(a, b) == rust_i64::wrapping_pow(a, b)  WHEN  b >= 0 AND fits_i64(a^b)
+    domain: |
+      a: Python int that fits in i64; b: Nat (non-negative exponent).
+    invariants:
+      - "Python `**` with non-negative integer exponent stays in int domain"
+      - "Negative exponent always promotes to Float in Python — separate contract"
+      - "Rust `(a as i64).checked_pow(b as u32)` panics on overflow; cited as C-PY-INT-ARITH"
+    preconditions:
+      - "b >= 0 (else Python promotes to Float — out of scope)"
+    # XPILE-REFINE-004 / PMAT-030: pow reuses bmod_fits_i64.
+    lean_theorem: "XpileContracts.CPyIntArith.pow_fast_path_eq_slow_path"
+    lean_file: "contracts/lean/PyIntArith.lean"
 
 proof_obligations:
   - type: precondition
