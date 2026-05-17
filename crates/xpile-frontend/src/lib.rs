@@ -25,6 +25,21 @@ pub trait Frontend: Send + Sync {
     /// File extensions handled by this frontend, without leading dot.
     fn extensions(&self) -> &[&'static str];
 
+    /// True when this frontend should claim `path`. PMAT-038
+    /// (XPILE-BASHRS-MERGER-001 follow-up): default impl preserves
+    /// the pre-existing extension-only routing — everything that
+    /// matched via `extensions()` keeps matching here. Frontends with
+    /// extensionless-filename idioms (`bashrs-frontend` for
+    /// `Makefile` / `Dockerfile`) override this method to extend the
+    /// match. Centralising routing here means dispatch sites can call
+    /// one method instead of duplicating the extension-lookup logic.
+    fn matches_path(&self, path: &Path) -> bool {
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext_str| self.extensions().contains(&ext_str))
+            .unwrap_or(false)
+    }
+
     /// Parse source and lower to meta-HIR.
     fn parse_and_lower(&self, path: &Path, source: &str) -> Result<Module, FrontendError>;
 }

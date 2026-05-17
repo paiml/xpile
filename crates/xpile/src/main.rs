@@ -169,21 +169,32 @@ fn transpile(
     let source =
         std::fs::read_to_string(input).with_context(|| format!("reading {}", input.display()))?;
 
-    let ext = input
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or_default();
+    // PMAT-038: dispatch via `Frontend::matches_path` so bashrs-frontend
+    // catches extensionless `Makefile` / `Dockerfile`. Every other
+    // frontend's default impl still delegates to extension matching, so
+    // python / c / ruchy behaviour is unchanged.
     let frontend = session
         .frontends
         .iter()
-        .find(|f| f.extensions().contains(&ext))
+        .find(|f| f.matches_path(input))
         .with_context(|| {
+            let ext_label = input
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|e| format!("`.{e}`"))
+                .unwrap_or_else(|| {
+                    input
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| format!("filename `{n}`"))
+                        .unwrap_or_else(|| "(unknown)".to_string())
+                });
             let known: Vec<&'static str> = session
                 .frontends
                 .iter()
                 .flat_map(|f| f.extensions().iter().copied())
                 .collect();
-            format!("no frontend handles extension `.{ext}`; known: {known:?}")
+            format!("no frontend handles {ext_label}; known extensions: {known:?}")
         })?;
 
     let module = frontend
@@ -329,13 +340,12 @@ fn audit(session: &TranspileSession, path: &Path, target_str: &str, json: bool) 
                 continue;
             }
         };
-        let ext = src.extension().and_then(|s| s.to_str()).unwrap_or_default();
-        let Some(frontend) = session
-            .frontends
-            .iter()
-            .find(|f| f.extensions().contains(&ext))
-        else {
-            // Shouldn't happen — collect_source_files filters by registered extensions.
+        // PMAT-038: same `matches_path` dispatch as the transpile
+        // path. collect_source_files already filters by registered
+        // extensions, so this lookup is currently never `None` —
+        // but reaching for the trait method keeps the dispatch
+        // pattern uniform across the two CLI subcommands.
+        let Some(frontend) = session.frontends.iter().find(|f| f.matches_path(&src)) else {
             continue;
         };
         let module = match frontend.parse_and_lower(&src, &contents) {

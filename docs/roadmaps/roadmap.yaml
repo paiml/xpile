@@ -596,3 +596,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-038
+  github_issue: null
+  item_type: task
+  title: 'PMAT-038: Frontend::matches_path trait method enables Makefile/Dockerfile routing through bashrs-frontend'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T15:33:29Z
+  updated: 2026-05-17T15:33:29Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

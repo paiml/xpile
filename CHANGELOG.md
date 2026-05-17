@@ -110,6 +110,56 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Frontend::matches_path trait method (PMAT-038)
+
+Extends the `Frontend` trait with a `matches_path(path) -> bool`
+method, defaulting to extension-based matching so all existing
+frontends (python / c / ruchy) behave unchanged. `BashrsFrontend`
+overrides it to additionally claim the extensionless canonical
+filenames `Makefile` and `Dockerfile` — closing the second item
+on the `sub/bashrs-merger.md` Layer A backlog.
+
+End-to-end behaviour change:
+
+\`\`\`
+$ echo "all:" > /tmp/Makefile && echo -e "\techo hi" >> /tmp/Makefile
+$ xpile transpile /tmp/Makefile --target shell
+#!/bin/sh
+# xpile-bashrs-backend scaffold (...)
+# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE
+# module: Makefile
+# source_lang: Shell
+...
+
+$ xpile transpile /tmp/Dockerfile --target shell
+# ... same shape, module: Dockerfile
+\`\`\`
+
+Pre-PMAT-038 both invocations errored with "no frontend handles
+extension `.`" because the dispatch logic was a raw
+`extensions().contains()` check.
+
+Dispatch sites switched to `matches_path`:
+  - `xpile transpile` (main.rs `transpile` fn)
+  - `xpile audit` per-file lookup (main.rs `audit` fn)
+
+The audit walker (`collect_source_files` / `walk_dir`) stays
+extension-only at v0.1.0; expanding it to walk canonical-filename
+artifacts can land when the audit pipeline grows shell-target
+support (XPILE-FALSIFY-003+).
+
+Test coverage:
+  - 3 new bashrs-frontend unit tests:
+    `matches_path_accepts_dotted_extensions`,
+    `matches_path_accepts_extensionless_makefile_and_dockerfile`,
+    `matches_path_rejects_unrelated_files` (negative — must NOT
+    grab `.py` / `.c` / `Makefile.in` / `Dockerfile.dev`).
+  - 2 new xpile-core integration tests:
+    `matches_path_dispatch_is_unique_per_file` (asserts exactly
+    one frontend claims each known path),
+    `matches_path_default_impl_is_extension_only_for_non_overriding_frontends`
+    (catches regressions that widen the trait default).
+
 ### bashrs merger Layer A scaffold (PMAT-037 / XPILE-BASHRS-MERGER-001)
 
 First concrete step on the `sub/bashrs-merger.md` Layer A path:
