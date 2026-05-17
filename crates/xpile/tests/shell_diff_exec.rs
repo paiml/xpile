@@ -40,7 +40,11 @@ fn fixture(name: &str) -> PathBuf {
 
 fn have_python_and_sh() -> bool {
     let py = Command::new("python3").arg("--version").output().is_ok();
-    let sh = Command::new("/bin/sh").arg("-c").arg("true").output().is_ok();
+    let sh = Command::new("/bin/sh")
+        .arg("-c")
+        .arg("true")
+        .output()
+        .is_ok();
     py && sh
 }
 
@@ -72,9 +76,7 @@ fn run_cpython(fixture_path: &std::path::Path, entry: &str) -> Result<String, St
             String::from_utf8_lossy(&out.stderr)
         ));
     }
-    Ok(String::from_utf8_lossy(&out.stdout)
-        .trim_end()
-        .to_string())
+    Ok(String::from_utf8_lossy(&out.stdout).trim_end().to_string())
 }
 
 /// Transpile the Python source to shell and pipe through /bin/sh.
