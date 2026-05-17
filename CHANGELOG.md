@@ -110,6 +110,68 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Realistic bashrs end-to-end demo + integration test (PMAT-052)
+
+**Comprehensive demo of every Layer B construct composed in a
+single realistic script.** New fixture
+\`tests/fixtures/bashrs_realistic_demo.sh\` flows through
+\`bashrs-frontend → bashrs-backend → /bin/sh\` and produces
+deterministic stdout that the integration test verifies
+byte-for-byte.
+
+\`\`\`
+$ cat tests/fixtures/bashrs_realistic_demo.sh
+#!/bin/sh
+GREETING=hello
+EXCLAMATION="how are you"
+NAME='Noah Gift'
+ZERO=$(echo zero)
+echo $GREETING world
+echo ${EXCLAMATION}
+echo "Hi, $NAME"
+echo started $ZERO done
+
+$ xpile transpile bashrs_realistic_demo.sh --target shell | /bin/sh
+hello world
+how are you
+Hi, Noah Gift
+started zero done
+\`\`\`
+
+Constructs exercised (cross-reference to spec table in
+\`sub/bashrs-merger.md\` Layer B):
+
+| Construct | Where used in the fixture |
+|---|---|
+| \`Stmt::Cmd\` | every \`echo\` line |
+| \`Stmt::ShellAssign\` | \`GREETING=\` / \`EXCLAMATION=\` / \`NAME=\` / \`ZERO=\` |
+| \`Expr::LitStr\` | bareword args (\`hello\` / \`world\` / \`zero\` / …) |
+| \`Expr::QuotedString\` (Single) | \`'Noah Gift'\` |
+| \`Expr::QuotedString\` (Double) | \`"how are you"\` / \`"Hi, $NAME"\` |
+| \`Expr::ShellVar\` (\`\$NAME\`) | \`\$GREETING\` / \`\$NAME\` / \`\$ZERO\` |
+| \`Expr::ShellVar\` (\`\${NAME}\`) | \`\${EXCLAMATION}\` |
+| \`Expr::CommandSubstitution\` | \`\$(echo zero)\` |
+| \`QuotingStrategy::Single\` / \`::Double\` | both present |
+
+NOT exercised at v0.1.0 (documented in fixture header):
+- \`Stmt::Pipeline\` (no \`|\` in this fixture)
+- \`Stmt::ShellLoop\` (parser doesn't recognise multi-line loops)
+- Special params (\`\$1\` / \`\$@\` / \`\$?\`)
+- Backtick substitution (\`\`cmd\`\`)
+
+Test:
+- New \`shell_diff_demo_realistic_shell_input_round_trip\` in
+  \`tests/shell_diff_exec.rs\` — runs the transpiled shell via
+  \`/bin/sh\` and asserts stdout matches the deterministic
+  \`REALISTIC_DEMO_EXPECTED\` constant.
+
+This test is the **bashrs-side analogue** of the existing
+\`shell_diff_demo_cpython_vs_bashrs_emit_agree\` (which validates
+the CPython → bashrs cross-domain path). Together they cover
+both producers of \`Stmt::Cmd\` (PMAT-039's bashrs-frontend +
+PMAT-040's depyler-frontend \`subprocess.run\`) and both
+consumers (the bashrs-backend emit + the shell runtime).
+
 ### Shell variable assignment — `Stmt::ShellAssign` (PMAT-051)
 
 POSIX shell `VAR=value` is now a first-class IR construct. Real

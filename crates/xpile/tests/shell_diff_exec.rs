@@ -117,6 +117,40 @@ fn run_shell(fixture_path: &std::path::Path) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&run.stdout).trim_end().to_string())
 }
 
+/// PMAT-052 expected output of `bashrs_realistic_demo.sh` after
+/// transpilation + /bin/sh execution. Byte-for-byte deterministic.
+const REALISTIC_DEMO_EXPECTED: &str = "hello world\nhow are you\nHi, Noah Gift\nstarted zero done";
+
+#[test]
+fn shell_diff_demo_realistic_shell_input_round_trip() {
+    // PMAT-052: a `.sh` fixture that exercises every Layer B
+    // construct flows through bashrs-frontend → bashrs-backend →
+    // /bin/sh and produces the deterministic expected output.
+    //
+    // This is the bashrs-side analogue of
+    // `shell_diff_demo_cpython_vs_bashrs_emit_agree` — that test
+    // verifies CPython ≡ bashrs-emit on the Python fixture; this
+    // test verifies the bashrs lane works end-to-end without going
+    // through Python at all.
+    if !have_python_and_sh() {
+        eprintln!(
+            "warning: skipping PMAT-052 — /bin/sh not on PATH. CI environments \
+             with /bin/sh will still run this gate."
+        );
+        return;
+    }
+    let sh_path = fixture("bashrs_realistic_demo.sh");
+    let actual = run_shell(&sh_path).expect("shell run");
+    assert_eq!(
+        actual, REALISTIC_DEMO_EXPECTED,
+        "bashrs realistic demo output diverged. The transpiled .sh \
+         emit produced a different stdout than expected. Likely cause: \
+         one of the Layer B parser / renderer paths regressed.\n\
+         === expected ===\n{REALISTIC_DEMO_EXPECTED}\n\
+         === actual  ===\n{actual}"
+    );
+}
+
 #[test]
 fn shell_diff_demo_cpython_vs_bashrs_emit_agree() {
     if !have_python_and_sh() {
