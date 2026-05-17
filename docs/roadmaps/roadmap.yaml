@@ -949,3 +949,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-060
+  github_issue: null
+  item_type: task
+  title: 'PMAT-060: Lean refinement theorem for C-XLATE-PY-LIST-TO-VEC — promotes Semantic stratum, contract reaches PARTIAL'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T20:00:00Z
+  updated: 2026-05-17T20:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/lean/XlatePyListToVec.lean with `iteration_order_preserved` + `length_preserved` theorems. Bronze-tier modelling commitment (rfl by construction). Semantic stratum vote for C-XLATE-PY-LIST-TO-VEC — lifts UNVERIFIED → PARTIAL. Companion Kani harness ships as PMAT-061.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
