@@ -156,6 +156,70 @@ mod tests {
     }
 
     #[test]
+    fn matches_path_dispatch_is_unique_per_file() {
+        // PMAT-038: walking the dispatch table by `matches_path`
+        // must produce exactly one matching frontend per known
+        // input. Catches a regression where two frontends'
+        // overrides collide (e.g., a future yaml frontend claiming
+        // `Makefile`).
+        use std::path::Path;
+        let s = default_session();
+        let cases = &[
+            ("python", "/tmp/foo.py"),
+            ("c", "/tmp/foo.c"),
+            ("ruchy", "/tmp/foo.ruchy"),
+            ("bashrs", "/tmp/foo.sh"),
+            ("bashrs", "/tmp/foo.bash"),
+            ("bashrs", "/tmp/foo.zsh"),
+            ("bashrs", "/tmp/foo.mk"),
+            // The load-bearing PMAT-038 cases:
+            ("bashrs", "/tmp/Makefile"),
+            ("bashrs", "/tmp/Dockerfile"),
+        ];
+        for (expected_name, path) in cases {
+            let matches: Vec<&str> = s
+                .frontends
+                .iter()
+                .filter(|f| f.matches_path(Path::new(path)))
+                .map(|f| f.name())
+                .collect();
+            assert_eq!(
+                matches,
+                vec![*expected_name],
+                "path {path}: expected exactly [{expected_name}], got {matches:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn matches_path_default_impl_is_extension_only_for_non_overriding_frontends() {
+        // PMAT-038: assert the trait's default `matches_path` body
+        // behaves identically to the prior extension-only dispatch
+        // for every frontend that doesn't override. If someone
+        // accidentally widens the default body, this fires.
+        use std::path::Path;
+        let s = default_session();
+        // None of these filenames carry a dotted extension. The
+        // default impl should reject all of them. (`bashrs-frontend`
+        // is excluded — it intentionally overrides.)
+        let extensionless = ["Makefile", "Dockerfile", "README", "LICENSE"];
+        for f in &s.frontends {
+            if f.name() == "bashrs" {
+                continue;
+            }
+            for stem in &extensionless {
+                let path = format!("/tmp/{stem}");
+                assert!(
+                    !f.matches_path(Path::new(&path)),
+                    "{} should not claim {} via the default matches_path",
+                    f.name(),
+                    path
+                );
+            }
+        }
+    }
+
+    #[test]
     fn bashrs_backend_emits_scaffold_with_contract_citation() {
         // PMAT-037: scaffold contract. The Backend::lower for the
         // bashrs target must produce a non-empty artifact that names
