@@ -55,6 +55,14 @@ equations:
       - "no information loss compared to CPython"
       - "exactly one heap allocation (the BigInt result)"
     preconditions: []
+    # XPILE-REFINE-006 / PMAT-034: slow-path soundness theorem. Both
+    # CPython's `int.__add__` and our model of `xpile_bigint::BigInt::add`
+    # are unbounded mathematical addition; the theorem reduces to `rfl`
+    # by our definitional choice (`bigint_add a b := a + b`). The
+    # `¬ fits_i64` hypothesis is the operational trigger, not a math
+    # precondition — it documents which equation this theorem refines.
+    lean_theorem: "XpileContracts.CPyIntArith.add_slow_path_eq_python"
+    lean_file: "contracts/lean/PyIntArith.lean"
 
   multiplication_quadratic_promotion:
     formula: |

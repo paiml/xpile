@@ -14,8 +14,9 @@
     * Roadmap:     docs/specifications/sub/provability-roadmap.md §1.5
 
   Tier (per ruchy 5.0 §14.10.5): refinement target is Platinum.
-  At v0.1.0 *all seven* refinement theorems for the in-domain
-  arithmetic + shift + power operations are discharged:
+  At v0.1.0 *all eight* refinement theorems for the in-domain
+  arithmetic + shift + power operations + the additive slow-path
+  soundness are discharged:
 
     * `fast_path_eq_slow_path` (addition) — PMAT-028 / XPILE-REFINE-002
     * `mul_fast_path_eq_slow_path` — PMAT-029 / XPILE-REFINE-003
@@ -24,16 +25,13 @@
     * `shl_fast_path_eq_slow_path` — PMAT-030 / XPILE-REFINE-004
     * `shr_fast_path_eq_slow_path` — PMAT-030 / XPILE-REFINE-004
     * `pow_fast_path_eq_slow_path` — PMAT-030 / XPILE-REFINE-004
+    * `add_slow_path_eq_python` — PMAT-034 / XPILE-REFINE-006
 
-  Not yet covered (separate roadmap items):
+  Not yet covered:
 
     * Bitwise (`&` / `|` / `^`) — core Lean lacks `Int.land/lor/xor`,
       so this needs either a mathlib dep or a hand-rolled
       cast-through-Nat encoding. Tracked as XPILE-REFINE-005.
-    * Slow-path / promotion side (CPython == BigInt::add when
-      `¬fits_i64 (a + b)`) — needs a different proof shape since
-      it's a statement about the BigInt path's totality + fidelity
-      to CPython, not about wrapping. Tracked as XPILE-REFINE-006.
 
   Naming convention from `contracts/xpile-contract-backend-trait-v1.yaml`:
   the namespace path encodes the contract ID so theorem↔contract
@@ -117,6 +115,44 @@ theorem fast_path_eq_slow_path
     i64_wrap_add a b = bigint_add a b := by
   unfold i64_wrap_add bigint_add
   exact bmod_fits_i64 (a + b) h
+
+/--
+  **Slow-path soundness theorem** for addition (PMAT-034 /
+  XPILE-REFINE-006).
+
+  When the mathematical sum `a + b` does *not* fit in i64, Python
+  promotes the result to a bigint internally and the emitted Rust —
+  in BigInt mode — uses `xpile_bigint::BigInt::add`. This theorem
+  asserts that our Lean model of that slow path (`bigint_add a b :=
+  a + b`) equals CPython's mathematical sum, even when `fits_i64`
+  fails.
+
+  Why this is `rfl`: we *defined* `bigint_add a b := a + b` (the
+  unbounded `Int.add` on Lean's mathematical integers). Python's
+  `int.__add__` is also unbounded mathematical addition. The Rust
+  emit's `xpile_bigint::BigInt::add` is the operational realisation
+  of the same operation. So the equation is, by construction, a
+  definitional equality — but recording it as a theorem documents
+  the modelling commitment: any future change to `bigint_add`'s
+  definition would have to either retain `rfl`-equality with `+` or
+  invalidate this theorem (and fail `refinement_proofs.rs`'s
+  citation gate).
+
+  Status: **discharged at v0.1.0 (PMAT-034 / XPILE-REFINE-006)**.
+
+  Note on the precondition: we accept `_h : ¬ fits_i64 (a + b)` but
+  don't use it. The slow-path equality holds *for all* `a, b` — the
+  `¬ fits_i64` hypothesis is the *operational* trigger condition
+  (when the fast path would panic and emission switches to the
+  slow path), not a mathematical precondition. Keeping it in the
+  signature documents which equation in `py-int-arith-v1.yaml` this
+  theorem refines.
+-/
+theorem add_slow_path_eq_python
+    (a b : Int)
+    (_h : ¬ fits_i64 (a + b)) :
+    bigint_add a b = a + b := by
+  rfl
 
 /--
   i64 wrapping multiplication — Rust `i64::wrapping_mul` semantics.

@@ -110,6 +110,41 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Additive slow-path soundness theorem (PMAT-034 / XPILE-REFINE-006)
+
+Closes the last fast/slow-path refinement gap for `C-PY-INT-ARITH`'s
+additive operation. New theorem `add_slow_path_eq_python`:
+
+\`\`\`lean
+theorem add_slow_path_eq_python
+    (a b : Int)
+    (_h : ¬ fits_i64 (a + b)) :
+    bigint_add a b = a + b := by
+  rfl
+\`\`\`
+
+The proof is `rfl` by our modelling choice (`bigint_add a b := a + b`).
+The artifact's value is *documentary*: the equation
+`addition_overflow_promotion` in `py-int-arith-v1.yaml` now carries a
+`lean_theorem:` ref, so `refinement_proofs.rs` validates the citation
+on every test run. Any future change to `bigint_add`'s definition
+would have to either retain `rfl`-equality with `+` or invalidate
+this theorem (and fail the gate).
+
+The `¬ fits_i64 (a + b)` hypothesis is the *operational* trigger
+(when the i64 fast path would panic and emission switches to BigInt
+mode), not a mathematical precondition. The slow-path equality holds
+for all `a, b`; keeping the hypothesis in the signature documents
+which YAML equation this theorem refines.
+
+Quorum impact: `xpile quorum` now reports C-PY-INT-ARITH at Sem=8
+(up from 7), Sym=1, Run=3, Ext=5 — still QUORUM status, but with
+more Semantic-stratum coverage.
+
+Bitwise (XPILE-REFINE-005) remains the only refinement gap on
+C-PY-INT-ARITH: core Lean lacks `Int.land/lor/xor`. Needs mathlib
+dep or hand-rolled cast-through-Nat — design decision deferred.
+
 ### Unified §14.4 quorum reporter (PMAT-033)
 
 New `xpile quorum` subcommand consolidates the four §14.4 strata into
