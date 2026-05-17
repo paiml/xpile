@@ -95,8 +95,13 @@ jobs:
       - name: Install kani-verifier
         run: cargo install --locked kani-verifier
 
-      - name: cargo kani-setup
-        run: cargo kani-setup
+      # Kani ≥ 0.67 auto-bootstraps its toolchain (CBMC + solvers)
+      # on the first `cargo kani` invocation rather than via a
+      # separate `kani-setup` step. We do a no-op invocation here
+      # to surface bootstrap errors before the verification step,
+      # since the bootstrap is the slowest part (~5 min cold cache).
+      - name: bootstrap kani toolchain
+        run: cargo kani --version
 
-      - name: cargo test --workspace --test kani_verify
+      - name: cargo test -p xpile --test kani_verify
         run: cargo test -p xpile --test kani_verify -- --nocapture
