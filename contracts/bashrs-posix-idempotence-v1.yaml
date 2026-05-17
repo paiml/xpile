@@ -54,8 +54,28 @@ metadata:
   depends_on: []
 
 equations:
-  # v0.2.0 populates this section as the bashrs source folding lands.
-  # At v0.1.0 the equation set is intentionally empty: `xpile quorum`
-  # will show 0 votes across all four strata, which is the accurate
-  # scaffold-stage state.
-  {}
+  # PMAT-044 / XPILE-BASHRS-MERGER-001: first equation refines the
+  # cross-domain Python→shell translation. By design, the v0.1.0
+  # model maps `subprocess.run([program, args...])` and the
+  # bashrs-emitted shell command to the same `Outcome` —
+  # equivalence is `rfl` and the Lean theorem locks in the
+  # modelling commitment. See `contracts/lean/Bashrs.lean`.
+  #
+  # Together with PMAT-043's `shell_diff_exec.rs` (Runtime
+  # stratum) and the roadmap mentions across PMAT-037..044
+  # (Extrinsic stratum), this brings `C-BASHRS-POSIX-IDEMPOTENCE`
+  # to QUORUM on the §14.4 N-of-M rule (≥1 vote in ≥3 strata).
+  subprocess_run_equals_shell_run:
+    formula: |
+      python_subprocess_run(program, args) == bashrs_shell_run(program, args)
+    domain: |
+      program, args: string-literal tokens (no variables, no
+      command substitution, no quoting strategy at v0.1.0).
+    invariants:
+      - "two distinct execution paths (CPython subprocess.run vs bashrs-emitted shell) produce identical observable Outcomes on string-literal inputs"
+      - "the Runtime stratum (shell_diff_exec.rs) observes this on real inputs"
+      - "the Semantic stratum (Bashrs.lean theorem) locks in the modelling commitment"
+    preconditions:
+      - "args are list of string literals (no variables / substitution / quoting metadata)"
+    lean_theorem: "XpileContracts.CBashrsPosixIdempotence.subprocess_run_eq_shell_run"
+    lean_file: "contracts/lean/Bashrs.lean"

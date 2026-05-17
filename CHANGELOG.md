@@ -110,6 +110,59 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Lean refinement theorem — C-BASHRS-POSIX-IDEMPOTENCE reaches QUORUM (PMAT-044)
+
+**Second contract to reach full §14.4 N-of-M oracle quorum.** New
+\`contracts/lean/Bashrs.lean\` carries the refinement theorem
+\`subprocess_run_eq_shell_run\`, which proves that CPython's
+\`subprocess.run([program, args...])\` and bashrs-backend's emitted
+shell command produce identical observable Outcomes on string-
+literal inputs. Proof is \`rfl\` by our modelling choice (Bronze
+tier per ruchy 5.0 §14.10.5).
+
+\`\`\`
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    0    1    4  QUORUM   ← new
+  ... (10 more)
+  totals: 2 QUORUM, 0 PARTIAL, 10 UNVERIFIED (12 contracts total)
+\`\`\`
+
+Implementation:
+- **\`contracts/lean/Bashrs.lean\`** — new file with the
+  \`XpileContracts.CBashrsPosixIdempotence\` namespace.
+  \`subprocess_run_eq_shell_run\` is the load-bearing theorem.
+  \`Outcome\` is an abstract observable-equivalence wrapper —
+  v0.1.0's Bronze model; Silver/Gold/Platinum tiers refine it as
+  the spec's POSIX-sh semantic interpreter ships in future PRs.
+- **\`contracts/bashrs-posix-idempotence-v1.yaml\`** — equation
+  \`subprocess_run_equals_shell_run\` with \`lean_theorem\` +
+  \`lean_file\` refs so \`refinement_proofs.rs\` validates the
+  citation pipeline.
+- **Quorum test** \`c_bashrs_posix_idempotence_has_runtime_witness\`
+  tightened to require \`status == QUORUM\` (was
+  \`PARTIAL || QUORUM\`). Locks in the v0.1.0 milestone — second
+  contract at full QUORUM.
+
+Documentary value: any future change to bashrs-backend's emit that
+breaks the observable equivalence with CPython's subprocess.run
+must either (a) preserve \`rfl\`-equivalence in the Lean model
+(Semantic stratum keeps holding) OR (b) invalidate the theorem (the
+\`refinement_proofs.rs\` citation gate fires). The two strata
+(Semantic + Runtime) reinforce each other: a real-input divergence
+caught by \`shell_diff_exec.rs\` would not be silenced by Lean's
+\`rfl\`, and a model that drifts from the Lean theorem cannot
+quietly pass the citation gate.
+
+Tier roadmap for \`C-BASHRS-POSIX-IDEMPOTENCE\`:
+- v0.1.0: **Bronze** — model commitment, theorem reduces to \`rfl\`.
+- Future (Silver): typed POSIX-sh state (env vars, redirections,
+  exit codes) + refinement under it.
+- Future (Gold): adversarial verification by external semantic
+  model.
+- Future (Platinum): full shellcheck-equivalence proof.
+
 ### Shell-side diff_exec gate — C-BASHRS-POSIX-IDEMPOTENCE reaches PARTIAL (PMAT-043)
 
 **Second contract reaches non-UNVERIFIED quorum status.** New

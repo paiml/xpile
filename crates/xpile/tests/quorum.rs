@@ -80,13 +80,17 @@ fn c_py_int_arith_has_full_four_stratum_quorum() {
     );
 }
 
-/// PMAT-043 milestone: a *second* contract reaches non-UNVERIFIED.
-/// `C-BASHRS-POSIX-IDEMPOTENCE` has at least Runtime ≥1 (from
-/// `bashrs_diff_demo.py` referencing it AND `shell_diff_exec.rs`
-/// observing the cross-domain Python→shell behaviour match) and
-/// Extrinsic ≥1 (roadmap mentions). Status: PARTIAL or QUORUM.
-/// Locks in the v0.1.0 progress milestone that the bashrs lane is
-/// no longer purely paper-claimed.
+// PMAT-043 + PMAT-044 milestone: `C-BASHRS-POSIX-IDEMPOTENCE` is the
+// *second* contract to reach QUORUM status with ≥1 vote in ≥3 strata.
+// Composition:
+//   - Semantic   (PMAT-044): Lean theorem `subprocess_run_eq_shell_run`
+//     in `contracts/lean/Bashrs.lean`.
+//   - Runtime    (PMAT-043): `shell_diff_exec.rs` observes CPython vs
+//     bashrs-emit byte-identity; `bashrs_diff_demo.py` references the
+//     contract ID.
+//   - Extrinsic  (PMAT-037..044): roadmap work-item mentions.
+// Symbolic (Kani) is still 0 — a Kani harness for shell idempotence
+// ships in XPILE-BASHRS-MERGER-*** later.
 #[test]
 fn c_bashrs_posix_idempotence_has_runtime_witness() {
     let root = workspace_root();
@@ -118,8 +122,16 @@ fn c_bashrs_posix_idempotence_has_runtime_witness() {
         let end = after.find([',', '}']).expect("delimiter");
         after[..end].trim().trim_matches('"')
     };
+    let semantic: u64 = read_field("semantic").parse().unwrap();
     let runtime: u64 = read_field("runtime").parse().unwrap();
+    let extrinsic: u64 = read_field("extrinsic").parse().unwrap();
     let status = read_field("status");
+    assert!(
+        semantic >= 1,
+        "expected Semantic ≥1 for C-BASHRS-POSIX-IDEMPOTENCE \
+         (Bashrs.lean theorem `subprocess_run_eq_shell_run` should be \
+         referenced from the contract YAML); got semantic={semantic}"
+    );
     assert!(
         runtime >= 1,
         "expected Runtime ≥1 for C-BASHRS-POSIX-IDEMPOTENCE \
@@ -127,9 +139,14 @@ fn c_bashrs_posix_idempotence_has_runtime_witness() {
          got runtime={runtime}"
     );
     assert!(
-        status == "PARTIAL" || status == "QUORUM",
-        "expected PARTIAL or QUORUM for C-BASHRS-POSIX-IDEMPOTENCE at v0.1.0; \
-         got status={status}"
+        extrinsic >= 1,
+        "expected Extrinsic ≥1 (roadmap mentions); got extrinsic={extrinsic}"
+    );
+    assert_eq!(
+        status, "QUORUM",
+        "C-BASHRS-POSIX-IDEMPOTENCE should have QUORUM at v0.1.0 — \
+         second contract to reach full §14.4 N-of-M coverage \
+         (Sem={semantic}, Run={runtime}, Ext={extrinsic}); got status={status}"
     );
 }
 
