@@ -22,6 +22,50 @@ use std::path::Path;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{Block, Expr, Function, Item, Module, SourceLang, Stmt, Type};
 
+/// PMAT-045: lower a single bashrs-frontend token to an `Expr`. The
+/// token is the substring between whitespace boundaries (the
+/// parser is otherwise naive at v0.1.0 — no quoting awareness, no
+/// nested-substitution awareness; that's the v0.2.0 source fold).
+///
+/// Recognition table:
+///   * `$NAME` / `${NAME}` (where NAME is `[A-Za-z_][A-Za-z0-9_]*`)
+///     → `Expr::ShellVar(NAME)`. POSIX-legal identifier check is
+///     load-bearing — `$1`, `$@`, `$*`, `$?` are *not* recognised
+///     at v0.1.0 (positional/special params are XPILE-BASHRS-MERGER-***+).
+///   * Everything else → `Expr::LitStr(token)`.
+fn lower_token(tok: &str) -> Expr {
+    if let Some(rest) = tok.strip_prefix('$') {
+        let name = if let Some(stripped) = rest.strip_prefix('{') {
+            // `${NAME}` — accept iff the trailing char is `}` AND
+            // the contents are a POSIX-legal identifier.
+            match stripped.strip_suffix('}') {
+                Some(inner) if is_posix_identifier(inner) => inner,
+                _ => return Expr::LitStr(tok.to_string()),
+            }
+        } else if is_posix_identifier(rest) {
+            rest
+        } else {
+            return Expr::LitStr(tok.to_string());
+        };
+        Expr::ShellVar(name.to_string())
+    } else {
+        Expr::LitStr(tok.to_string())
+    }
+}
+
+/// True iff `s` is a POSIX-legal shell variable name (letter or
+/// underscore followed by zero or more alphanumerics or underscores).
+/// Rejects `$1`, `$@`, `$*`, `$?` etc. — special parameters are
+/// XPILE-BASHRS-MERGER-***+.
+fn is_posix_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 pub struct BashrsFrontend;
 
 impl Frontend for BashrsFrontend {
@@ -124,11 +168,12 @@ impl Frontend for BashrsFrontend {
                         // trimmed string always yields ≥1 token.
                         continue;
                     };
-                    // PMAT-042: each arg is an `Expr::LitStr`. The v0.1.0
-                    // hand-rolled parser produces no quoting metadata; the
-                    // v0.2.0 source fold's real bashrs parser will produce
-                    // `Expr::QuotedString` where appropriate.
-                    let args: Vec<Expr> = tokens.map(|t| Expr::LitStr(t.to_string())).collect();
+                    // PMAT-042 + PMAT-045: each arg is lowered via
+                    // `lower_token`, which recognises `$NAME` / `${NAME}`
+                    // as `Expr::ShellVar` and everything else as
+                    // `Expr::LitStr`. Quoting metadata is still v0.2.0
+                    // (the source-fold's real bashrs parser).
+                    let args: Vec<Expr> = tokens.map(lower_token).collect();
                     stages.push(Stmt::Cmd {
                         program: program.to_string(),
                         args,
@@ -155,9 +200,8 @@ impl Frontend for BashrsFrontend {
             let Some(program) = tokens.next() else {
                 continue;
             };
-            // PMAT-042: see pipeline-stage version above. Each arg
-            // is `Expr::LitStr` (raw, unquoted).
-            let args: Vec<Expr> = tokens.map(|t| Expr::LitStr(t.to_string())).collect();
+            // PMAT-042 + PMAT-045: see pipeline-stage version above.
+            let args: Vec<Expr> = tokens.map(lower_token).collect();
             stmts.push(Stmt::Cmd {
                 program: program.to_string(),
                 args,
@@ -460,5 +504,87 @@ pwd
             "single-token line must remain a Cmd, not a Pipeline: got {:?}",
             f.body.stmts[0]
         );
+    }
+
+    #[test]
+    fn lower_token_recognises_dollar_name() {
+        // PMAT-045 load-bearing: `$NAME` → Expr::ShellVar.
+        use xpile_meta_hir::Expr;
+        assert_eq!(lower_token("$HOME"), Expr::ShellVar("HOME".to_string()));
+        assert_eq!(lower_token("$USER"), Expr::ShellVar("USER".to_string()));
+        assert_eq!(lower_token("$_x"), Expr::ShellVar("_x".to_string()));
+        assert_eq!(
+            lower_token("$snake_case_var_2"),
+            Expr::ShellVar("snake_case_var_2".to_string())
+        );
+    }
+
+    #[test]
+    fn lower_token_recognises_dollar_brace_name() {
+        // PMAT-045: `${NAME}` form, same disposition.
+        use xpile_meta_hir::Expr;
+        assert_eq!(lower_token("${HOME}"), Expr::ShellVar("HOME".to_string()));
+        assert_eq!(
+            lower_token("${snake_case_var_2}"),
+            Expr::ShellVar("snake_case_var_2".to_string())
+        );
+    }
+
+    #[test]
+    fn lower_token_rejects_special_params_as_litstr() {
+        // PMAT-045 negative: `$1`, `$@`, `$?`, etc. are POSIX special
+        // params, not user-named variables. At v0.1.0 we keep them
+        // as LitStr (bareword `$1` survives literal-through). A
+        // future PR may add Expr::ShellPosParam(u32) or similar.
+        use xpile_meta_hir::Expr;
+        for bad in &["$1", "$@", "$?", "$*", "$0", "$-"] {
+            assert_eq!(
+                lower_token(bad),
+                Expr::LitStr(bad.to_string()),
+                "expected special-param `{bad}` to fall through as LitStr"
+            );
+        }
+    }
+
+    #[test]
+    fn lower_token_rejects_malformed_brace_as_litstr() {
+        // PMAT-045: `${` without a closing `}` falls through to LitStr.
+        // Same for `${INVALID-NAME}` (hyphens aren't POSIX-legal).
+        use xpile_meta_hir::Expr;
+        for bad in &["${HOME", "${1}", "${ALSO BAD}", "${has-hyphen}"] {
+            assert_eq!(
+                lower_token(bad),
+                Expr::LitStr(bad.to_string()),
+                "expected malformed `{bad}` to fall through as LitStr"
+            );
+        }
+    }
+
+    #[test]
+    fn lower_token_plain_strings_pass_through_as_litstr() {
+        // Regression: non-dollar tokens stay LitStr. Locks in that
+        // PMAT-045 doesn't accidentally claim arbitrary input.
+        use xpile_meta_hir::Expr;
+        for plain in &["foo", "bar.baz", "-l", "/tmp/path", "0", "123abc"] {
+            assert_eq!(lower_token(plain), Expr::LitStr(plain.to_string()));
+        }
+    }
+
+    #[test]
+    fn parse_and_lower_with_shell_var_arg() {
+        // PMAT-045 end-to-end: a Cmd line with `$NAME` produces a
+        // Cmd whose args include an Expr::ShellVar.
+        use xpile_meta_hir::{Expr, Item, Stmt};
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/v.sh"), "echo $HOME end\n")
+            .expect("parse");
+        let Item::Function(f) = &module.items[0];
+        let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
+            panic!("expected Cmd");
+        };
+        assert_eq!(program, "echo");
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0], Expr::ShellVar("HOME".to_string()));
+        assert_eq!(args[1], Expr::LitStr("end".to_string()));
     }
 }

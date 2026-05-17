@@ -350,6 +350,9 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         // a while loop body, none of which contain shell strings, so
         // we never reach this in practice — defensive arm.
         Expr::LitStr(_) | Expr::QuotedString { .. } => {}
+        // PMAT-045: shell-variable refs likewise carry no Rust-level
+        // idents (the name is shell-side, not meta-HIR-bound).
+        Expr::ShellVar(_) => {}
     }
 }
 
@@ -494,6 +497,13 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
                  use `--target shell`"
                     .into(),
             ));
+        }
+        // PMAT-045: see twin arm above.
+        Expr::ShellVar(name) => {
+            return Err(LeanCodegenError::Unsupported(format!(
+                "Lean backend does not lower Expr::ShellVar (${name}) — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs shell variable refs"
+            )));
         }
     }
     Ok(())

@@ -251,6 +251,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     .into(),
             ));
         }
+        // PMAT-045: shell-variable references — same disposition.
+        Expr::ShellVar(name) => {
+            return Err(CodegenError::Unsupported(format!(
+                "Rust backend does not lower Expr::ShellVar (${name}) — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs shell variable references; \
+                 use `--target shell`"
+            )));
+        }
     }
     Ok(())
 }

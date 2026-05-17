@@ -141,6 +141,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // operands; they're governed by C-BASHRS-POSIX-IDEMPOTENCE,
         // not C-PY-INT-ARITH.
         Expr::LitStr(_) | Expr::QuotedString { .. } => false,
+        // PMAT-045: shell-variable references same disposition.
+        Expr::ShellVar(_) => false,
     }
 }
 
@@ -321,6 +323,21 @@ pub enum Expr {
         content: String,
         quoting: QuotingStrategy,
     },
+    /// Shell variable reference (`$NAME` or `${NAME}`). PMAT-045 /
+    /// XPILE-BASHRS-MERGER-001 Layer B (Expr-side).
+    ///
+    /// The carried `String` is the variable name *without* the
+    /// leading `$` and *without* the optional braces. bashrs-backend
+    /// renders as `$NAME` by default. POSIX-legal name predicate
+    /// (alphanumeric + underscore, no leading digit) is enforced
+    /// at parse time, so a reachable `ShellVar` is always
+    /// renderable as bareword.
+    ///
+    /// Same cross-domain disposition as the other Layer B Expr
+    /// variants: produced only by `bashrs-frontend`, consumed only
+    /// by `bashrs-backend`; rust/ruchy/lean refuse via
+    /// `Unsupported(...)` naming `C-BASHRS-POSIX-IDEMPOTENCE`.
+    ShellVar(String),
 }
 
 /// Per-arg shell quoting choice. Carried by `Expr::QuotedString` so

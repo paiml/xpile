@@ -33,9 +33,16 @@ fn render_arg(e: &Expr) -> Result<String, BackendError> {
                 .map(|c| format!("\\{c}"))
                 .collect::<String>(),
         }),
+        // PMAT-045: shell-variable refs render as `$NAME` (bareword
+        // form). bashrs-frontend's parser validates the name is a
+        // POSIX-legal identifier before producing this variant, so
+        // the rendered shell is always well-formed. `${NAME}` (brace
+        // form) is the input-side parse; rendering as `$NAME` is the
+        // canonical output form — same semantic, fewer chars.
+        Expr::ShellVar(name) => Ok(format!("${name}")),
         other => Err(BackendError::Lower(format!(
             "bashrs-backend v0.1.0 cannot render non-string Expr as Stmt::Cmd arg \
-             (got {other:?}); only Expr::LitStr / Expr::QuotedString supported"
+             (got {other:?}); only Expr::LitStr / Expr::QuotedString / Expr::ShellVar supported"
         ))),
     }
 }
@@ -445,6 +452,17 @@ mod tests {
             art.primary.contains("\necho 'hello world'\n"),
             "expected single-quoted arg in emit; got:\n{}",
             art.primary
+        );
+    }
+
+    #[test]
+    fn render_arg_shell_var() {
+        // PMAT-045: ShellVar renders as `$NAME`.
+        use xpile_meta_hir::Expr;
+        assert_eq!(render_arg(&Expr::ShellVar("HOME".into())).unwrap(), "$HOME");
+        assert_eq!(
+            render_arg(&Expr::ShellVar("snake_case_2".into())).unwrap(),
+            "$snake_case_2"
         );
     }
 

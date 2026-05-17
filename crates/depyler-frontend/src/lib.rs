@@ -1092,13 +1092,13 @@ fn infer_type(e: &Expr) -> Type {
             UnOp::Neg => Type::I64,
             UnOp::Not => Type::Bool,
         },
-        // PMAT-042: shell-string Expr variants belong to the bashrs
-        // domain. They don't appear inside Python-frontend lowering
-        // (only inside `Stmt::Cmd::args` produced by PMAT-040's
-        // subprocess.run path), so `infer_type` is never called on
-        // one in practice. Default to I64 for safety so any future
-        // accidental call doesn't panic.
-        Expr::LitStr(_) | Expr::QuotedString { .. } => Type::I64,
+        // PMAT-042 + PMAT-045: shell-string Expr variants belong to
+        // the bashrs domain. They don't appear inside Python-frontend
+        // lowering (only inside `Stmt::Cmd::args` produced by
+        // PMAT-040's subprocess.run path), so `infer_type` is never
+        // called on one in practice. Default to I64 for safety so
+        // any future accidental call doesn't panic.
+        Expr::LitStr(_) | Expr::QuotedString { .. } | Expr::ShellVar(_) => Type::I64,
     }
 }
 
@@ -1146,8 +1146,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             UnOp::Neg => infer_type_in_ctx(ctx, operand),
             UnOp::Not => Type::Bool,
         },
-        // PMAT-042: see twin arm in `infer_type` above.
-        Expr::LitStr(_) | Expr::QuotedString { .. } => Type::I64,
+        // PMAT-042 + PMAT-045: see twin arm in `infer_type` above.
+        Expr::LitStr(_) | Expr::QuotedString { .. } | Expr::ShellVar(_) => Type::I64,
     }
 }
 

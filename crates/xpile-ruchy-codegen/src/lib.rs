@@ -226,6 +226,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     .into(),
             ));
         }
+        // PMAT-045: see rust-codegen's matching arm.
+        Expr::ShellVar(name) => {
+            return Err(RuchyCodegenError::Unsupported(format!(
+                "Ruchy backend does not lower Expr::ShellVar (${name}) — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs shell variable refs; \
+                 use `--target shell`"
+            )));
+        }
     }
     Ok(())
 }
