@@ -1629,3 +1629,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-100
+  github_issue: null
+  item_type: task
+  title: 'PMAT-100: sub/kaizen-fleet.md sweep — xpile transitions tool tier → kernel tier (Phase 4 overshipped); update fleet-contribution projections to reflect actual substrate state'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T16:00:00Z
+  updated: 2026-05-18T16:00:00Z
+  spec: null
+  acceptance_criteria:
+  - sub/kaizen-fleet.md said "xpile is tool tier at v0.1.0; once Phase 4 lands, xpile transitions to kernel tier". Phase 4 overshipped — every contract has a Kani harness on every PR (PMAT-021 / XPILE-QUORUM-003). xpile is kernel tier at v0.1.0 by the doc's own criterion. Update tier classification and fleet-contribution projection sections. Quote actual counts (12 contracts, 12 Lean theorems, 12 Kani harnesses) instead of speculative "After Phase X" estimates.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
