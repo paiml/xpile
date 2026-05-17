@@ -1918,3 +1918,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-117
+  github_issue: null
+  item_type: task
+  title: 'PMAT-117: branch-protection actual-state sweep — README/CURRENT.md/ci-gates.md claimed "gate + workspace-test required" but actual ruleset only requires `gate`; flip claims to match reality, verifiable via gh api'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-19T00:30:00Z
+  updated: 2026-05-19T00:30:00Z
+  spec: null
+  acceptance_criteria:
+  - README + docs/status/CURRENT.md + sub/ci-gates.md all claimed "gate + workspace-test required for PR merge". Reality (via `gh api repos/paiml/xpile/rules/branches/main`) — only `gate` is a required status check; `kani` and `workspace-test` both run on every PR but aren't yet flipped to required at the org-level ruleset layer. Update each claim to be precise, mention the gh api command for verification, and note flipping the additional checks to required is post-v0.1.0 work.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -94,13 +94,14 @@ These weren't dropped — they're sequenced behind the substrate-completion work
 
 ## Branch protection
 
-The `main` branch is protected (live as of v0.1.0):
+The `main` branch is protected via an **org-level ruleset rule** (live as of v0.1.0, verifiable with `gh api repos/paiml/xpile/rules/branches/main`):
 
-- Required status checks: `gate` + `workspace-test`
-- `kani` is an optional check (run on every PR but not yet required by branch protection — flip after Kani has bedded in)
-- Required reviewers: not yet enforced (post-v0.1.0; for now the autonomous shipping model in this repo's `CLAUDE.md` covers the review function)
-- No direct pushes; PR only
-- Linear history (squash or rebase merge)
+- Required status checks: `gate` only at v0.1.0 (the load-bearing fast-feedback gate; workspace-test and kani both run on every PR but aren't yet flipped to "required" at the ruleset layer — that's post-v0.1.0 work once Kani has bedded in)
+- Pull request required (zero approving reviews required at v0.1.0 — autonomous shipping per this repo's `CLAUDE.md`)
+- `non_fast_forward` enforced — no force pushes to main
+- Allowed merge methods: merge / squash / rebase
+
+The ruleset is enforced at the GitHub org level (paiml organization), not via the older `repos/owner/repo/branches/main/protection` API. The newer rulesets API is the canonical source.
 
 ## Failure-recovery patterns
 

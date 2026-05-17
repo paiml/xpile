@@ -60,7 +60,7 @@ def factorial (n : Int) : Int :=
 - ~195 workspace tests · 11+ Python fixtures runtime-verified via `rustc -O` + `assert_eq!` (canonical list in `CHANGELOG.md` §"Python subset"); plus 54 bashrs-frontend tests covering POSIX shell idioms
 - Python subset shipped: see [`CHANGELOG.md`](CHANGELOG.md) §"Python subset (live, runtime-verified)" — typed `def`, multi-statement bodies, all binary + unary ops, ternary, if/else, elif chains, function calls including self-recursion (canonical source — this README intentionally does not duplicate the list to avoid the staleness it kept accumulating)
 - Three real backends: Rust (`pub fn`, Python-floor semantics via `checked_div_euclid` / `checked_rem_euclid`, all arithmetic checked for the `C-PY-INT-ARITH` contract), Ruchy (`fun ... -> T`, same overflow semantics — compiles to Rust), Lean 4 (`def`, `Int.fdiv` / `Int.fmod`; `Int` is unbounded so the contract holds by construction), bashrs (POSIX shell — see [`sub/bashrs-merger.md`](docs/specifications/sub/bashrs-merger.md))
-- CI: `gate` + `kani` + `workspace-test` required on every PR; branch protection active on `main`
+- CI: `gate` + `kani` + `workspace-test` all run on every PR; `gate` is the load-bearing required status check (org-level ruleset rule); `kani` + `workspace-test` are not yet required but in practice green on every merged PR. Branch protection: `non_fast_forward` + PR required + `gate` status check (`gh api repos/paiml/xpile/rules/branches/main`).
 - Published: [`xpile 0.0.1`](https://crates.io/crates/xpile) (name reservation; v0.1.0+ is real)
 
 ### Contract substrate at QUORUM
