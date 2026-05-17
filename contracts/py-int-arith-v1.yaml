@@ -65,6 +65,11 @@ equations:
       - "result matches CPython for all (a, b) including i64::MIN * -1 which CPython promotes to bigint"
       - "i64::MIN.wrapping_mul(-1) == i64::MIN — Rust wraps; CPython promotes; we MUST follow CPython"
     preconditions: []
+    # XPILE-REFINE-003 / PMAT-029: refinement proof for the *fast path*
+    # half of the equation. The slow-path / promotion half is
+    # XPILE-REFINE-004+.
+    lean_theorem: "XpileContracts.CPyIntArith.mul_fast_path_eq_slow_path"
+    lean_file: "contracts/lean/PyIntArith.lean"
 
   division_floor_semantics:
     formula: |
@@ -77,6 +82,29 @@ equations:
       - "div_euclid is closer to floor but still diverges when remainder is zero — handle that case"
     preconditions:
       - "b != 0 (else Python raises ZeroDivisionError — separate contract)"
+    # XPILE-REFINE-003 / PMAT-029: refinement proof. Both fast and
+    # slow path model floor-div as `Int.fdiv`, so the theorem reduces
+    # to `rfl`; the load-bearing claim is that this *identity*
+    # observation is recorded next to the equation rather than
+    # implicit in the prose.
+    lean_theorem: "XpileContracts.CPyIntArith.floor_div_fast_path_eq_slow_path"
+    lean_file: "contracts/lean/PyIntArith.lean"
+
+  modulo_floor_semantics:
+    formula: |
+      python_int_mod(a, b) == floor_mod(a, b)  WHEN  b != 0
+    domain: |
+      a, b: Python ints with b != 0. Python `%` is FLOOR mod
+      (sign of result matches sign of divisor); Rust `%` is
+      TRUNCATING mod (sign matches sign of dividend).
+    invariants:
+      - "for mixed-sign operands Python and Rust diverge — must use rem_euclid or equivalent in translation"
+    preconditions:
+      - "b != 0 (else Python raises ZeroDivisionError — separate contract)"
+    # XPILE-REFINE-003 / PMAT-029: same `rfl` structure as floor div.
+    # Both paths model mod as `Int.fmod`.
+    lean_theorem: "XpileContracts.CPyIntArith.mod_fast_path_eq_slow_path"
+    lean_file: "contracts/lean/PyIntArith.lean"
 
   bitwise_and_signed_semantics:
     formula: |

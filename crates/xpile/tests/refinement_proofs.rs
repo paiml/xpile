@@ -123,14 +123,17 @@ fn extract_quoted_value(line: &str, key: &str) -> Option<String> {
 // removes the file without removing the YAML reference, the test
 // above fires first; this test guards the *content invariants*.
 //
-// PMAT-028: `sorry` is no longer a required landmark on this file —
-// the primary refinement theorem (`fast_path_eq_slow_path`) is now
-// discharged via `Int.bmod_def`. We assert the *positive* landmark
-// (`Int.bmod_def`) instead so an automated audit can confirm the
-// proof technique stayed in place rather than silently regressing
-// to `sorry`. The `XPILE-PENDING-UNTIL: v0.3.0` marker still has to
-// be present — it now flags the mul / floor_div / mod stub trio
-// (XPILE-REFINE-003), not the primary theorem.
+// PMAT-029 (XPILE-REFINE-003): all four `C-PY-INT-ARITH` theorems
+// are now discharged — `fast_path_eq_slow_path` (add) via
+// `Int.bmod_def` + `split <;> omega`; the mul / floor_div / mod
+// trio reuse the same shape (mul via `bmod_fits_i64`; floor_div
+// and mod via `rfl`). The `XPILE-PENDING-UNTIL: v0.3.0` landmark
+// is no longer required because no marker remains on this file.
+//
+// PMAT-028: `sorry` is also forbidden as a positive landmark. We
+// assert the discharge technique (`Int.bmod_def`) is present and
+// `sorry` is absent — so a regression that reintroduces `sorry`
+// fires loudly.
 #[test]
 fn py_int_arith_lean_file_carries_required_landmarks() {
     let root = workspace_root();
@@ -140,24 +143,24 @@ fn py_int_arith_lean_file_carries_required_landmarks() {
     for needle in &[
         "namespace XpileContracts.CPyIntArith",
         "theorem fast_path_eq_slow_path",
+        "theorem mul_fast_path_eq_slow_path",
+        "theorem floor_div_fast_path_eq_slow_path",
+        "theorem mod_fast_path_eq_slow_path",
         // Positive proof landmark — the discharge technique is
-        // `Int.bmod_def` + `split <;> omega`. If a future refactor
+        // `Int.bmod_def` + `split <;> omega`, factored through the
+        // shared `bmod_fits_i64` helper. If a future refactor
         // regresses to `sorry`, this fires.
         "Int.bmod_def",
-        // Time-bounded escape hatch for the remaining stub trio
-        // (XPILE-REFINE-003: mul / floor_div / mod). PMAT-014 gate
-        // ensures this date doesn't pass without a fix.
-        "XPILE-PENDING-UNTIL: v0.3.0",
     ] {
         assert!(
             src.contains(needle),
             "PyIntArith.lean must contain `{needle}` — see refinement_proofs.rs for context"
         );
     }
-    // Negative landmark: the primary theorem must NOT contain `sorry`
-    // anymore. If someone reintroduces it, this test fires loudly.
-    // (We scan the file to avoid false positives from the word
-    // appearing in a docstring or comment.)
+    // Negative landmark: no theorem must contain `sorry` anymore.
+    // If someone reintroduces it, this test fires loudly. We scan
+    // the file ignoring comment / docstring lines to avoid false
+    // positives from the word appearing in prose.
     let no_sorry_lines: Vec<&str> = src
         .lines()
         .filter(|l| {
@@ -168,8 +171,24 @@ fn py_int_arith_lean_file_carries_required_landmarks() {
         .collect();
     assert!(
         no_sorry_lines.is_empty(),
-        "PyIntArith.lean must not carry `sorry` in proof code (PMAT-028 discharged it); \
+        "PyIntArith.lean must not carry `sorry` in proof code (PMAT-028/029 discharged all four); \
          found on lines: {no_sorry_lines:?}"
+    );
+    // Negative landmark: the trivial-placeholder stubs are gone.
+    // PMAT-029 replaced `by trivial` with real proofs; if anyone
+    // re-stubs the theorems, this fires.
+    let trivial_lines: Vec<&str> = src
+        .lines()
+        .filter(|l| {
+            let trimmed = l.trim_start();
+            !trimmed.starts_with("--") && !trimmed.starts_with("/-")
+        })
+        .filter(|l| l.contains("by trivial") || l.contains(":= by trivial"))
+        .collect();
+    assert!(
+        trivial_lines.is_empty(),
+        "PyIntArith.lean must not carry `by trivial` placeholders (PMAT-029 discharged the stub trio); \
+         found on lines: {trivial_lines:?}"
     );
 }
 

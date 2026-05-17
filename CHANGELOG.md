@@ -110,6 +110,47 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Discharge mul/floor_div/mod stub theorems (PMAT-029 / XPILE-REFINE-003)
+
+Closes the *last* `XPILE-PENDING-UNTIL` marker anywhere in the
+workspace. All four `C-PY-INT-ARITH` refinement theorems are now
+machine-checked by Lean 4.15.
+
+Implementation:
+
+- Factored out a shared lemma `bmod_fits_i64 : Int.bmod n (2^64) = n
+  when fits_i64 n` (the proof technique PMAT-028 introduced for `+`).
+  The lemma's proof is `rw [Int.bmod_def] + split <;> omega`.
+- `mul_fast_path_eq_slow_path` (`*`) now reuses `bmod_fits_i64` via
+  `i64_wrap_mul a b := Int.bmod (a * b) (2 ^ 64)`. Proof reduces to
+  `exact bmod_fits_i64 (a * b) h`.
+- `floor_div_fast_path_eq_slow_path` (`//`): both fast and slow path
+  model floor-div as `Int.fdiv`, so the theorem reduces to `rfl`.
+  The `fits_i64`-of-result + `b ≠ 0` hypotheses stay in the statement
+  to document the runtime preconditions xpile-rust-codegen guarantees
+  via `.checked_div(...).expect(...)`.
+- `mod_fast_path_eq_slow_path` (`%`): same shape as floor-div, via
+  `Int.fmod`.
+
+Contract YAML now carries `lean_theorem` + `lean_file` refs on three
+more equations (`multiplication_quadratic_promotion`,
+`division_floor_semantics`, new `modulo_floor_semantics`), so the
+existing `refinement_proofs.rs` gate validates them on every test
+run. The landmark test was updated to assert all four theorems by
+name + the positive landmark `Int.bmod_def`, with negative landmarks
+for `sorry` and `by trivial` so a regression to either fires loudly.
+
+Side effect: with zero live `XPILE-PENDING-UNTIL` markers anywhere
+in the workspace, the prior live-state sanity tests
+`at_least_one_marker_exists` + `scanner_picks_up_proof_lane_markers`
+became contradictory (they required a marker to exist). Replaced
+both with a synthetic-fixture test
+`scanner_reaches_all_watched_directories` that builds a temp
+workspace-shaped tree, drops a marker into each watched location,
+and asserts the scanner finds them all. The new test is strictly
+stronger than what it replaces — it catches a future refactor that
+silently narrows the scan.
+
 ### Discharge `sorry` in `fast_path_eq_slow_path` Lean proof (PMAT-028 / XPILE-REFINE-002)
 
 Closes the second of the two `XPILE-PENDING-UNTIL: v0.3.0` markers

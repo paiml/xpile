@@ -452,3 +452,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-029
+  github_issue: null
+  item_type: task
+  title: Discharge mul/floor_div/mod stub theorems (XPILE-REFINE-003)
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T13:55:29Z
+  updated: 2026-05-17T13:55:29Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

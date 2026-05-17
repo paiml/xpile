@@ -22,10 +22,11 @@
 //! [XPILE-PENDING-UNTIL: v<MAJOR>.<MINOR>.<PATCH>, ticket: <TICKET-ID>]
 //! ```
 //!
-//! Examples (live in the codegen crates):
-//!   * Rust codegen, BigInt bitwise: `until = v0.2.0`, ticket = PMAT-013-FOLLOWUP
-//!   * Ruchy codegen, BigInt mode:   `until = v0.2.0`, ticket = PMAT-012-FOLLOWUP
-//!   * Lean codegen, assert:         `until = v0.3.0`, ticket = PMAT-009-FOLLOWUP
+//! Live markers are listed in the failure diagnostic of
+//! [`no_xpile_pending_until_has_expired`] when any deadline trips. As
+//! of PMAT-029 (XPILE-REFINE-003) the workspace has zero live markers;
+//! the scanner's reach is validated synthetically by
+//! [`scanner_reaches_all_watched_directories`].
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -232,47 +233,78 @@ fn no_xpile_pending_until_has_expired() {
     }
 }
 
-/// Sanity: the scan finds at least one marker. If this drops to zero,
-/// it means every emit_*.expect() / Unsupported(...) string is either
-/// fully implemented OR has lost its deadline annotation — we want to
-/// know about that.
+/// PMAT-029: synthetic-fixture replacement for the prior
+/// `at_least_one_marker_exists` + `scanner_picks_up_proof_lane_markers`
+/// tests. With XPILE-REFINE-003 closed, the workspace has zero live
+/// markers — the old tests required at least one to exist anywhere in
+/// real source, which made them go red after the last marker shipped.
+///
+/// The actually-load-bearing property of the scanner is "if a marker
+/// exists in any of the watched directories, the scanner finds it."
+/// We test that directly here: build a temp workspace-shaped tree,
+/// drop a marker into each watched location, and assert the scanner
+/// surfaces all of them with correct file paths + line numbers.
+///
+/// If a future refactor narrows the scan back to crates-only or drops
+/// `.lean` / `.kani` coverage, this fires. The live-state property is
+/// still implicitly checked by `no_xpile_pending_until_has_expired`,
+/// which scans the real workspace each run.
 #[test]
-fn at_least_one_marker_exists() {
-    let root = workspace_root();
-    let markers = parse_pending_markers(&root);
-    assert!(
-        !markers.is_empty(),
-        "expected at least one XPILE-PENDING-UNTIL marker in workspace source — \
-         if every previously-pending feature has shipped, great, but then this test \
-         can be removed (or kept for future deadlines)."
-    );
-}
+fn scanner_reaches_all_watched_directories() {
+    let tmp = std::env::temp_dir().join(format!(
+        "xpile-deadline-scan-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&tmp).expect("create temp root");
 
-/// XPILE-EXEMPT-002: assert the scanner actually picks up the proof-
-/// lane markers in `contracts/lean/PyIntArith.lean` (which were
-/// silently ignored before the scope widening). If a future refactor
-/// narrows the scan back to crates-only, this fires.
-#[test]
-fn scanner_picks_up_proof_lane_markers() {
-    let root = workspace_root();
-    let markers = parse_pending_markers(&root);
-    let has_lean_marker = markers.iter().any(|m| {
-        m.file
-            .extension()
-            .and_then(|s| s.to_str())
-            .map(|e| e == "lean")
-            .unwrap_or(false)
-    });
-    assert!(
-        has_lean_marker,
-        "expected at least one XPILE-PENDING-UNTIL marker in a `.lean` file under contracts/lean/; \
-         XPILE-EXEMPT-002 widened the scan to include the proof lane. Found markers in:\n{}",
-        markers
-            .iter()
-            .map(|m| format!("  - {} (line {})", m.file.display(), m.line))
-            .collect::<Vec<_>>()
-            .join("\n")
+    // Build:
+    //   <tmp>/crates/foo/src/lib.rs       <- marker R1
+    //   <tmp>/crates/bar/src/inner/x.rs   <- marker R2 (nested)
+    //   <tmp>/contracts/lean/Sample.lean  <- marker L1
+    //   <tmp>/contracts/kani/sample.rs    <- marker K1
+    let mk = |rel: &str, body: &str| {
+        let p = tmp.join(rel);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(&p, body).unwrap();
+    };
+    mk(
+        "crates/foo/src/lib.rs",
+        "// [XPILE-PENDING-UNTIL: v9.9.9, ticket: R1]\nfn main() {}\n",
     );
+    mk(
+        "crates/bar/src/inner/x.rs",
+        ".expect(\"err [XPILE-PENDING-UNTIL: v9.9.9, ticket: R2]\")\n",
+    );
+    mk(
+        "contracts/lean/Sample.lean",
+        "-- XPILE-PENDING-UNTIL: v9.9.9, ticket: L1\n",
+    );
+    mk(
+        "contracts/kani/sample.rs",
+        "// [XPILE-PENDING-UNTIL: v9.9.9, ticket: K1]\n",
+    );
+
+    let markers = parse_pending_markers(&tmp);
+    let tickets: std::collections::BTreeSet<_> =
+        markers.iter().map(|m| m.ticket.as_str()).collect();
+
+    // Clean up before assertions so a failure doesn't leak the dir.
+    let _ = fs::remove_dir_all(&tmp);
+
+    let want = ["R1", "R2", "L1", "K1"];
+    for t in want {
+        assert!(
+            tickets.contains(t),
+            "scanner missed marker `{t}`. Found: {tickets:?}. \
+             If the scanner stopped walking one of the four directories \
+             (crates/*/src/, contracts/lean/, contracts/kani/), this test \
+             pinpoints which one."
+        );
+    }
 }
 
 /// Parser self-test (RED → GREEN style): hand-write a sample line and
