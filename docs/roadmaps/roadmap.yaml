@@ -1935,3 +1935,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-118
+  github_issue: null
+  item_type: task
+  title: 'PMAT-118: sub/references.md sweep — xpile "(scaffold)" → real v0.1.0 state; depyler/decy/ruchy/bashrs frontends already in-tree (was "Will be folded")'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-19T01:00:00Z
+  updated: 2026-05-19T01:00:00Z
+  spec: null
+  acceptance_criteria:
+  - sub/references.md "Family repositories" table described xpile as "(scaffold)" and depyler/decy as "Will be folded in via migration.md". Reality at v0.1.0 — xpile is at 100% QUORUM with 27 crates, 4 real backends; depyler/decy/ruchy/bashrs frontends are all in-tree as workspace crates (PMAT-097 sweep of migration.md). Update with current state. Add bashrs row (was missing). Note legacy repos still exist as separate downstream consumers at v0.1.0.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
