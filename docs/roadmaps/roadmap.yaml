@@ -1408,3 +1408,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-087
+  github_issue: null
+  item_type: task
+  title: 'PMAT-087: bashrs redirection round-trip lock-in — document that POSIX redirection tokens (>, >>, <, 2>, 2>&1) survive v0.1.0 frontend→backend round-trip via LitStr passthrough'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T09:30:00Z
+  updated: 2026-05-18T09:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add parse_and_lower_redirection_round_trips_via_litstr_args test in bashrs-frontend asserting 6 distinct redirection patterns parse to Stmt::Cmd with the redirection tokens preserved as LitStr args. Documents the v0.1.0 invariant that LitStr passthrough preserves shell semantics through the byte-level round-trip even though the IR doesn't model redirection structurally. Sets up XPILE-BASHRS-REDIRECT-001 (Silver-tier structured Stmt::CmdWithRedirections variant).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
