@@ -306,6 +306,41 @@ mod tests {
     }
 
     #[test]
+    fn layer_b_shell_var_end_to_end() {
+        // PMAT-045: `echo $HOME` and `echo ${USER}` both flow
+        // through bashrs-frontend → Stmt::Cmd with Expr::ShellVar
+        // args → bashrs-backend → `echo $HOME` / `echo $USER` in
+        // the emitted shell. Both forms render as the bareword
+        // `$NAME` (canonical output).
+        use std::path::Path;
+        let s = default_session();
+        let bashrs_frontend = s
+            .frontends
+            .iter()
+            .find(|f| f.name() == "bashrs")
+            .expect("bashrs frontend registered");
+        let bashrs_backend = s
+            .backends
+            .iter()
+            .find(|b| b.name() == "bashrs")
+            .expect("bashrs backend registered");
+        let module = bashrs_frontend
+            .parse_and_lower(Path::new("/tmp/v.sh"), "echo $HOME and ${USER}\n")
+            .expect("parse shell var");
+        let cfg = BackendConfig {
+            target: Target::Shell,
+            profile: Profile::RustOut,
+            hardware: None,
+        };
+        let art = bashrs_backend.lower(&module, &cfg).expect("emit");
+        assert!(
+            art.primary.contains("\necho $HOME and $USER\n"),
+            "expected `echo $HOME and $USER` line; got:\n{}",
+            art.primary
+        );
+    }
+
+    #[test]
     fn layer_b_pipeline_end_to_end() {
         // PMAT-041: a shell input with `|` flows through
         // bashrs-frontend → Stmt::Pipeline → bashrs-backend → POSIX

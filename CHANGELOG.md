@@ -110,6 +110,62 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Layer B third Expr variant — `Expr::ShellVar` (PMAT-045)
+
+Shell variable references (`$NAME` / `${NAME}`) are now a
+first-class IR construct. Builds directly on PMAT-042's
+\`Vec<Expr>\` foundation — a pure additive variant, no refactor.
+
+\`\`\`
+$ echo 'echo $HOME and ${USER}' > /tmp/v.sh
+$ xpile transpile /tmp/v.sh --target shell
+#!/bin/sh
+# xpile-bashrs-backend (v0.1.0 PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B)
+# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE
+# module: v
+echo $HOME and $USER
+\`\`\`
+
+Implementation:
+1. **xpile-meta-hir** — new \`Expr::ShellVar(String)\`. The carried
+   name omits the leading \`$\` and any optional braces;
+   bashrs-frontend validates it's a POSIX-legal identifier before
+   constructing the variant. \`expr_has_int_arith\` extended (returns
+   false — different contract).
+2. **Codegens** — \`Expr::ShellVar\` arms in rust / ruchy / lean
+   \`emit_expr\` returning \`Unsupported(...)\` naming the bashrs
+   contract. depyler-frontend's \`infer_type\` / \`infer_type_in_ctx\`
+   and lean-codegen's \`collect_idents\` extended with defensive
+   arms.
+3. **bashrs-frontend** — new \`lower_token\` helper recognises
+   \`$NAME\` and \`${NAME}\` where NAME is POSIX-legal (letters /
+   digits / underscore, not starting with digit). Special params
+   like \`$1\`, \`$@\`, \`$?\` fall through to \`LitStr\` (deferred to
+   future Layer B PR).
+4. **bashrs-backend** — \`render_arg\` extended; \`ShellVar(name)\`
+   renders as bareword \`$NAME\` (canonical output form; brace form
+   is input-side only).
+
+Test coverage:
+- 6 new bashrs-frontend unit tests:
+  - \`lower_token_recognises_dollar_name\` — \`$HOME\` / \`$USER\` etc.
+  - \`lower_token_recognises_dollar_brace_name\` — \`${HOME}\` etc.
+  - \`lower_token_rejects_special_params_as_litstr\` — \`$1\`, \`$@\`, \`$?\`, \`$*\`, \`$0\`, \`$-\` fall through.
+  - \`lower_token_rejects_malformed_brace_as_litstr\` — \`${HOME\`, \`${1}\`, \`${has-hyphen}\` fall through.
+  - \`lower_token_plain_strings_pass_through_as_litstr\` — regression on PMAT-042.
+  - \`parse_and_lower_with_shell_var_arg\` — end-to-end through the frontend.
+- 1 new bashrs-backend unit test: \`render_arg_shell_var\` — verifies bareword output.
+- 1 new xpile-core integration test: \`layer_b_shell_var_end_to_end\` — full bashrs-frontend → bashrs-backend pipeline.
+
+What's NOT covered yet:
+- Special parameters (\`$1\`, \`$@\`, \`$*\`, \`$?\`, \`$0\`) — needs
+  \`Expr::ShellPosParam\` / \`Expr::ShellSpecial\` variants.
+- Variable interpolation inside QuotedString (\`"Hello, \$USER"\`)
+  — needs string-template AST.
+- Command substitution (\`$(date)\`) — needs
+  \`Expr::CommandSubstitution\`.
+- Variable assignment (\`VAR=value\`) — needs \`Stmt::ShellAssign\`.
+
 ### Lean refinement theorem — C-BASHRS-POSIX-IDEMPOTENCE reaches QUORUM (PMAT-044)
 
 **Second contract to reach full §14.4 N-of-M oracle quorum.** New
