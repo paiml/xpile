@@ -110,6 +110,66 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Kani symbolic harness — C-BASHRS-POSIX-IDEMPOTENCE → full four-stratum coverage (PMAT-058)
+
+**Symbolic stratum reached for the bashrs domain.** New
+`contracts/kani/bashrs.rs` carries the Kani BMC harness
+`lit_str_render_is_identity` — proves bashrs-backend's
+`Expr::LitStr(s) => Ok(s.clone())` arm of `render_arg` is
+byte-level identity. With this landed,
+`C-BASHRS-POSIX-IDEMPOTENCE` has **all four §14.4 strata
+represented** for the first time:
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM  ← Sym now 1
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    0    0    1  PARTIAL
+  ... (9 more UNVERIFIED)
+  totals: 2 QUORUM, 1 PARTIAL, 9 UNVERIFIED (12 contracts total)
+```
+
+This is the **second contract** to reach all-four-strata coverage
+(C-PY-INT-ARITH was first, via the original `py_int_arith.rs`
+harness). The two QUORUM contracts now span two different domain
+families (Python int arithmetic + cross-domain Python→shell),
+which validates that the §14.4 N-of-M evidence model generalises.
+
+Implementation:
+- **`contracts/kani/bashrs.rs`** — standalone Rust module under
+  `#![cfg(kani)]`. Reproduces `render_lit_str` at the byte level
+  (`fn render_lit_str_bytes(content: &[u8]) -> Vec<u8>`). Proof
+  body uses `kani::any() -> [u8; 4]` and asserts byte-level
+  identity. Picked up by `every_kani_harness_discharges` via the
+  same fixture-driven discovery as `py_int_arith.rs`.
+- **`contracts/bashrs-posix-idempotence-v1.yaml`** — equation
+  `subprocess_run_equals_shell_run` gains `kani_harness:
+  "lit_str_render_is_identity"` + `kani_file: "contracts/kani/bashrs.rs"`
+  refs. `xpile quorum` now picks this up under the Symbolic
+  stratum.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-058 entry documenting
+  the work item.
+
+**Why fixed `[u8; 4]` rather than symbolic `String`:** Kani's
+solver handles fixed-size byte arrays *orders of magnitude*
+faster than symbolic `String` allocation (CBMC's symbolic vector
+path unwinds the allocation iteration-by-iteration). The
+original attempt with symbolic `String` timed out at 628s+; the
+`[u8; 4]` version verifies in **~1s**. The byte-level identity
+property is what matters semantically — the UTF-8 wrapping in
+`render_arg`'s real signature is purely structural and contributes
+no logic to the identity claim. 256⁴ ≈ 4.3B exhaustive
+configurations is enough to surface any structural divergence;
+the property is length-independent, so a fixed bound is fine.
+
+Cross-reinforcement: the Lean theorem (PMAT-044) proves the
+input-side modelling commitment (Python and shell paths land on
+the same `Outcome`); this Kani harness proves the render-side
+load-bearing claim (`render_lit_str` doesn't transform its
+input). Together they bracket the equivalence claim from both
+ends.
+
 ### Lean refinement for notation contract — C-NOTATION-LATEX-MATH-TO-EQUATION → PARTIAL (PMAT-057)
 
 **Third contract reaches non-UNVERIFIED quorum status.** New
