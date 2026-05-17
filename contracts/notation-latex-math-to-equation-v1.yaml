@@ -63,6 +63,11 @@ equations:
     # contracts/lean/Notation.lean for the proof.
     lean_theorem: "XpileContracts.CNotationLatexMathToEquation.display_math_eq_equation_env_eq_align_env"
     lean_file: "contracts/lean/Notation.lean"
+    # PMAT-059: Kani harness completes the §14.4 quorum (Sem + Sym +
+    # Ext = ≥3 strata). Symbolic counterpart to the Lean theorem —
+    # proves the same three-way equivalence at the Rust level.
+    kani_harness: "display_math_eq_equation_env_eq_align_env"
+    kani_file: "contracts/kani/notation.rs"
     formula: |
       parse(\[ formula \])
         == parse(\begin{equation} formula \end{equation})

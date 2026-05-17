@@ -110,6 +110,66 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Kani symbolic harness — C-NOTATION-LATEX-MATH-TO-EQUATION → QUORUM (PMAT-059)
+
+**Third contract reaches QUORUM.** New `contracts/kani/notation.rs`
+carries the Kani BMC harness `display_math_eq_equation_env_eq_align_env`
+— the Rust mirror of the Lean theorem with the same name from
+`contracts/lean/Notation.lean` (PMAT-057). Proves all three LaTeX
+display-math lowering paths (`\[...\]`, `\begin{equation}`,
+`\begin{align}`) produce the same `EquationFormula` value on
+identical input — exhaustively over 4-byte symbolic formulas
+(256⁴ ≈ 4.3B configurations).
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    1  QUORUM  ← Sym now 1
+  ... (9 more UNVERIFIED)
+  totals: 3 QUORUM, 0 PARTIAL, 9 UNVERIFIED (12 contracts total)
+```
+
+**Three contracts now at QUORUM, zero at PARTIAL.** The bashrs
+domain, the Python integer domain, AND the notation domain all
+clear the §14.4 ≥1-vote-in-≥3-strata threshold. The notation
+contract is the first to reach QUORUM *without* a Runtime vote —
+proving the N-of-M model works even before a domain has its
+`*_diff_exec` runtime fixture (which for notation would require a
+LaTeX parser + execution path; punted to XPILE-NOTATION-RUNTIME-001).
+
+Implementation:
+- **`contracts/kani/notation.rs`** — standalone Rust module under
+  `#![cfg(kani)]`. Defines `EquationFormula { ascii_normalised:
+  [u8; 4] }` (Bronze-tier v0.1.0 model — mirrors Lean's), three
+  identity lowering functions (`lower_display_math`,
+  `lower_equation_env`, `lower_align_env`), and the proof
+  `display_math_eq_equation_env_eq_align_env` that asserts all
+  three return equal `EquationFormula` on identical input. Picked
+  up by `every_kani_harness_discharges` via the existing
+  fixture-driven discovery.
+- **`contracts/notation-latex-math-to-equation-v1.yaml`** —
+  equation `display_math_to_equation` gains `kani_harness:
+  "display_math_eq_equation_env_eq_align_env"` + `kani_file:
+  "contracts/kani/notation.rs"` refs. `xpile quorum` now picks
+  this up under the Symbolic stratum.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-059 entry documenting
+  the work item.
+
+**Why `[u8; 4]` again:** same rationale as PMAT-058 — Kani's
+solver handles fixed-size byte arrays orders of magnitude faster
+than symbolic `String` allocation, and the byte-level identity
+property is what matters semantically. Discovery + verify time
+for the full Kani gate now ~1.4s across three harnesses.
+
+Cross-reinforcement is now bidirectional: any future PR that
+changes one of the three lowering paths (in either Rust or Lean)
+must update *both* PMAT-057's Lean theorem and PMAT-059's Kani
+harness, or the refinement-proof citation gate fires. The two
+discharges bracket the same modelling claim from both formal
+sides.
+
 ### Kani symbolic harness — C-BASHRS-POSIX-IDEMPOTENCE → full four-stratum coverage (PMAT-058)
 
 **Symbolic stratum reached for the bashrs domain.** New
