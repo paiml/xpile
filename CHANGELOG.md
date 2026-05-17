@@ -110,6 +110,51 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Lean refinement theorem — C-XPILE-CONTRACT-FRONTEND-TRAIT → PARTIAL (PMAT-066)
+
+**Seventh contract reaches non-UNVERIFIED status.** New
+`contracts/lean/XpileContractFrontendTrait.lean` carries the
+refinement theorem `parse_idempotency` — the proof-lane analog
+of PMAT-062's frontend `parse_idempotency`. Together they close
+both code-lane and proof-lane parse-side determinism invariants.
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    3  QUORUM
+  C-XLATE-PY-LIST-TO-VEC                      1    1    0    3  QUORUM
+  C-XPILE-FRONTEND-TRAIT                      1    1    0    3  QUORUM
+  C-XPILE-BACKEND-TRAIT                       1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-FRONTEND-TRAIT             1    0    0    0  PARTIAL  ← new
+  ... (5 more UNVERIFIED)
+  totals: 6 QUORUM, 1 PARTIAL, 5 UNVERIFIED (12 contracts total)
+```
+
+Implementation:
+- **`contracts/lean/XpileContractFrontendTrait.lean`** — new
+  namespace `XpileContracts.CXpileContractFrontendTrait`. Models
+  `parse_to_equations` as a pure function from `source` to
+  `EquationsBlock` (identity on source bytes at Bronze tier).
+  Companion `equations_only` theorem stubbed for Silver-tier
+  refinement when the model grows a `TranspileSession` reference.
+- **`contracts/xpile-contract-frontend-trait-v1.yaml`** —
+  equation `parse_idempotency` gains `lean_theorem` + `lean_file`
+  refs.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-066 entry.
+
+This is the **sixth contract Lean theorem** (after Bashrs.lean,
+Notation.lean, XlatePyListToVec.lean, XpileFrontendTrait.lean,
+XpileBackendTrait.lean). The parse-side trait-determinism story
+is now complete from both lanes: code-lane Frontend (PMAT-062) +
+proof-lane ContractFrontend (this PR). Backend (PMAT-064) and
+the still-pending ContractBackend (future PMAT) complete the
+emit-side story.
+
+Companion Kani harness ships next as PMAT-067, lifting to
+QUORUM and mirroring the PMAT-062→063 paired-PR pattern.
+
 ### Kani symbolic harness — C-XPILE-BACKEND-TRAIT → QUORUM (PMAT-065) — **50% of substrate reaches QUORUM**
 
 **Sixth contract reaches QUORUM — half the substrate (6 of 12) is

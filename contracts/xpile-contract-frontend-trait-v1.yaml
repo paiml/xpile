@@ -35,6 +35,13 @@ equations:
       - "TranspileSession::register_contract_frontend has been called for every active impl"
 
   parse_idempotency:
+    # PMAT-066: Lean refinement theorem locks in the determinism
+    # modelling commitment for parse_to_equations. See
+    # contracts/lean/XpileContractFrontendTrait.lean for the
+    # proof. Pairs with PMAT-062 to close both code-lane and
+    # proof-lane parse determinism.
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.parse_idempotency"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
     formula: |
       forall source: hash(cf.parse_to_equations(source).unwrap()) == hash(cf.parse_to_equations(source).unwrap())
     domain: |
