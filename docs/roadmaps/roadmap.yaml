@@ -932,3 +932,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-059
+  github_issue: null
+  item_type: task
+  title: 'PMAT-059: Kani harness for C-NOTATION-LATEX-MATH-TO-EQUATION — promotes Symbolic stratum, contract reaches QUORUM'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T19:00:00Z
+  updated: 2026-05-17T19:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/kani/notation.rs harness mirroring the Lean theorem from contracts/lean/Notation.lean. Symbolic stratum vote for C-NOTATION-LATEX-MATH-TO-EQUATION — promotes PARTIAL → QUORUM. Same [u8; 4] modelling pattern as PMAT-058 to avoid Kani symbolic-String timeouts. After landing, xpile quorum should show 3 QUORUM, 0 PARTIAL, 9 UNVERIFIED.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
