@@ -1595,3 +1595,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-098
+  github_issue: null
+  item_type: task
+  title: 'PMAT-098: sub/contract-frontend-trait.md sweep — latex-contract-frontend crate ships at v0.1.0 (was "Planned Phase 4"), and ContractFrontend trait is at full §14.4 QUORUM via PMAT-066/067'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T15:00:00Z
+  updated: 2026-05-18T15:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Fix stale "No contract frontends ship at v0.1.0" claim. latex-contract-frontend is a workspace crate. Trait `C-XPILE-CONTRACT-FRONTEND-TRAIT` is at full §14.4 QUORUM (Sem+Sym+Ext) via PMAT-066/067. Update implementations table to mark latex-contract-frontend as "shipped as workspace crate, scaffold-stage parse_to_equations" and explain that the contract substrate already gates the trait's determinism invariant.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
