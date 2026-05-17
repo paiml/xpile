@@ -6,12 +6,13 @@
 
 | Repo | Role | Notes |
 |---|---|---|
-| [`paiml/xpile`](../../..) | This repo | Polyglot transpile workbench (scaffold) |
+| [`paiml/xpile`](../../..) | This repo | Polyglot transpile workbench — v0.1.0, 12 contracts at 100% §14.4 QUORUM, 27 workspace crates, 4 real backends (Rust/Ruchy/Lean/Shell) |
 | [`paiml/aprender`](../../../../aprender) | ML framework + provable-contracts source | `aprender-contracts` crate produces `pv` |
 | [`paiml/provable-contracts`](../../../../provable-contracts) | Canonical `pv-spec.md` and contract framework | The reference for this spec structure |
-| [`paiml/depyler`](../../../../depyler) | Python → Rust transpiler | Will be folded in via [migration.md](migration.md) |
-| [`paiml/decy`](../../../../decy) | C → Rust transpiler | Will be folded in via [migration.md](migration.md) |
-| [`paiml/ruchy`](../../../../ruchy) | Modern language for data science | xpile's third frontend |
+| [`paiml/depyler`](../../../../depyler) | Python → Rust transpiler | depyler-frontend in-tree as `crates/depyler-frontend/` (per [migration.md](migration.md) PMAT-097); legacy repo still exists as separate downstream consumer at v0.1.0 |
+| [`paiml/decy`](../../../../decy) | C → Rust transpiler | decy-frontend in-tree as `crates/decy-frontend/` (scaffold-stage); legacy repo still exists |
+| [`paiml/ruchy`](../../../../ruchy) | Modern language for data science | ruchy-frontend in-tree as `crates/ruchy-frontend/` (scaffold-stage) |
+| [`paiml/bashrs`](../../../../bashrs) | POSIX shell transpiler | bashrs-frontend + bashrs-backend in-tree as `crates/bashrs-{frontend,backend}/` (real emission, 54 tests, post PMAT-037..058 merger); legacy repo still exists |
 | [`paiml/paiml-mcp-agent-toolkit`](../../../../paiml-mcp-agent-toolkit) | `pmat` source | Work + quality controller |
 | [`pymc-labs/alchemize`](../../../../alchemize) | LLM transpile compiler for probabilistic models | Source of the four-tool agent loop pattern |
 
