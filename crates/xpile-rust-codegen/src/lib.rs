@@ -332,7 +332,7 @@ fn emit_binop(
             if mode =>
         {
             Err(CodegenError::Unsupported(format!(
-                "BigInt mode: bitwise/shift/power ops not yet implemented (PMAT-013 follow-up); op = {op:?}"
+                "BigInt mode: bitwise/shift/power ops not yet implemented; op = {op:?} [XPILE-PENDING-UNTIL: v0.2.0, ticket: PMAT-013-FOLLOWUP]"
             )))
         }
         BinOp::Add => emit_checked(out, lhs, "checked_add", rhs, "addition", mode),

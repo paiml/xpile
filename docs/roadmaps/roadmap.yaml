@@ -212,3 +212,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-014
+  github_issue: null
+  item_type: task
+  title: 'Time-bounded escape hatches: XPILE-PENDING-UNTIL markers + CI gate'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T09:54:53Z
+  updated: 2026-05-17T09:54:53Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
