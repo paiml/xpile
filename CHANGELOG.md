@@ -110,6 +110,18 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Run Kani harnesses in workspace tests (PMAT-020 / XPILE-QUORUM-002)
+
+Converts the Symbolic stratum from claim to fact. New
+`crates/xpile/tests/kani_verify.rs` walks every `contracts/kani/*.rs`
+file, materialises a temp Cargo crate per harness, runs `cargo kani`,
+asserts exit-0 AND stdout contains `VERIFICATION:- SUCCESSFUL`
+(grep guards against Kani's historical "exit 0 on swallowed solver
+error" failure mode). Skip-gracefully if `cargo-kani` is missing
+from PATH; local users with Kani installed get the gate
+automatically. Still remaining: install Kani in CI so the gate
+fires on every PR (XPILE-QUORUM-003).
+
 ### Symbolic stratum: Kani harness for C-PY-INT-ARITH (PMAT-019 / XPILE-QUORUM-001)
 
 First **Symbolic stratum** of the N-of-M oracle quorum lands.
