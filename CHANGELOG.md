@@ -110,6 +110,31 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### BigInt bitwise / shift / power in Rust + Ruchy backends (PMAT-026 / PMAT-013-FOLLOWUP)
+
+Closes the second of three `XPILE-PENDING-UNTIL: v0.2.0` markers.
+Both Rust and Ruchy backends now handle `& | ^ << >> **` on
+BigInt operands.
+
+Implementation:
+- `xpile-bigint` grows three helper functions: `shl(&BigInt, &BigInt)`,
+  `shr(&BigInt, &BigInt)`, `pow(&BigInt, &BigInt)` — each converts
+  the rhs from BigInt to the primitive type `num-bigint` wants
+  (`usize` for shifts, `u32` for pow) with a contract-named panic
+  on out-of-range / negative inputs.
+- Rust + Ruchy codegens replace the `Unsupported` deferral with:
+  * `& | ^` → plain infix (num-bigint impls these directly on
+    BigInt operands)
+  * `<< >> **` → calls to `xpile_bigint::{shl, shr, pow}`
+
+After this PR, exactly **two `XPILE-PENDING-UNTIL: v0.2.0` markers
+of three are closed** (Ruchy BigInt mode + Rust/Ruchy BigInt
+bitwise/shift/power). The Lean v0.3.0 markers (assert + refinement
+proofs) remain.
+
+New fixture `bigint_bits.py` exercises the full BigInt-mode
+bitwise+shift surface end-to-end.
+
 ### Ruchy BigInt mode (PMAT-025 / PMAT-012-FOLLOWUP)
 
 Closes one of the three live `XPILE-PENDING-UNTIL: v0.2.0` markers

@@ -404,3 +404,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-026
+  github_issue: null
+  item_type: task
+  title: Rust + Ruchy BigInt bitwise/shift/power (PMAT-013-FOLLOWUP)
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T13:33:11Z
+  updated: 2026-05-17T13:33:11Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

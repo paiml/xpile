@@ -325,16 +325,20 @@ fn emit_binop(
         BinOp::Mul if mode => emit_infix(out, lhs, " * ", rhs, mode),
         BinOp::FloorDiv if mode => emit_bigint_floor_call(out, "div_floor", lhs, rhs, mode),
         BinOp::Mod if mode => emit_bigint_floor_call(out, "mod_floor", lhs, rhs, mode),
-        // Bitwise ops on BigInt are NOT yet supported by xpile-bigint —
-        // num-bigint doesn't impl the operators directly on i64-style
-        // sugar. Defer to PMAT-013 follow-up.
-        BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr | BinOp::Pow
-            if mode =>
-        {
-            Err(CodegenError::Unsupported(format!(
-                "BigInt mode: bitwise/shift/power ops not yet implemented; op = {op:?} [XPILE-PENDING-UNTIL: v0.2.0, ticket: PMAT-013-FOLLOWUP]"
-            )))
-        }
+        // PMAT-026 / PMAT-013-FOLLOWUP: bitwise + shift + power on
+        // BigInt. num-bigint's `BitAnd / BitOr / BitXor` are direct
+        // infix operators on `BigInt`; `<< >>` and `**` take rhs as
+        // `usize` / `u32` (not BigInt), so we route through helpers
+        // in `xpile_bigint::{shl, shr, pow}` that handle the
+        // BigInt → primitive conversion (with a contract-named panic
+        // on out-of-range exponents — same posture as the i64 fast
+        // path's shift / pow handling).
+        BinOp::BitAnd if mode => emit_infix(out, lhs, " & ", rhs, mode),
+        BinOp::BitOr if mode => emit_infix(out, lhs, " | ", rhs, mode),
+        BinOp::BitXor if mode => emit_infix(out, lhs, " ^ ", rhs, mode),
+        BinOp::Shl if mode => emit_bigint_floor_call(out, "shl", lhs, rhs, mode),
+        BinOp::Shr if mode => emit_bigint_floor_call(out, "shr", lhs, rhs, mode),
+        BinOp::Pow if mode => emit_bigint_floor_call(out, "pow", lhs, rhs, mode),
         BinOp::Add => emit_checked(out, lhs, "checked_add", rhs, "addition", mode),
         BinOp::Sub => emit_checked(out, lhs, "checked_sub", rhs, "subtraction", mode),
         BinOp::Mul => emit_checked(out, lhs, "checked_mul", rhs, "multiplication", mode),

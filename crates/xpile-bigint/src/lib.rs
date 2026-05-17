@@ -40,3 +40,85 @@ pub fn mod_floor(a: &BigInt, b: &BigInt) -> BigInt {
     use num_integer::Integer;
     a.mod_floor(b)
 }
+
+/// Left shift `a << b` on `BigInt`. The exponent must be non-negative
+/// and fit in `usize` (per `num-bigint`'s `Shl<usize>` impl). PMAT-026.
+/// Matches Python `a << b` semantics: `b < 0` raises `ValueError`,
+/// which we surface here as a panic naming the contract.
+pub fn shl(a: &BigInt, b: &BigInt) -> BigInt {
+    use num_traits::ToPrimitive;
+    let n = b.to_usize().expect(
+        "xpile: BigInt shift amount must fit in usize and be non-negative \
+         (contract C-PY-INT-ARITH)",
+    );
+    a << n
+}
+
+/// Right shift `a >> b` on `BigInt`. Same constraints as [`shl`].
+/// PMAT-026.
+pub fn shr(a: &BigInt, b: &BigInt) -> BigInt {
+    use num_traits::ToPrimitive;
+    let n = b.to_usize().expect(
+        "xpile: BigInt shift amount must fit in usize and be non-negative \
+         (contract C-PY-INT-ARITH)",
+    );
+    a >> n
+}
+
+/// Power `a ** b` on `BigInt`. Exponent must fit in `u32` per
+/// `num-bigint`'s `Pow<u32>` impl. Python `a ** b` with `b < 0`
+/// returns `Float`, which v0.1.0's type lattice has no representation
+/// for — surfaces here as a panic naming the contract. PMAT-026.
+pub fn pow(a: &BigInt, b: &BigInt) -> BigInt {
+    use num_traits::{Pow, ToPrimitive};
+    let e: u32 = b.to_u32().expect(
+        "xpile: BigInt exponent must fit in u32 and be non-negative \
+         — Python returns Float for negative exponents which v0.1.0 \
+         cannot represent (contract C-PY-INT-ARITH)",
+    );
+    a.clone().pow(e)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shl_doubles_repeatedly() {
+        let a = BigInt::from(1);
+        let b = BigInt::from(10);
+        assert_eq!(shl(&a, &b), BigInt::from(1024));
+    }
+
+    #[test]
+    fn shr_halves_repeatedly() {
+        let a = BigInt::from(1024);
+        let b = BigInt::from(10);
+        assert_eq!(shr(&a, &b), BigInt::from(1));
+    }
+
+    #[test]
+    fn pow_squares_and_cubes() {
+        let two = BigInt::from(2);
+        let three = BigInt::from(3);
+        assert_eq!(pow(&two, &BigInt::from(10)), BigInt::from(1024));
+        assert_eq!(pow(&three, &BigInt::from(5)), BigInt::from(243));
+    }
+
+    #[test]
+    fn pow_handles_overflow_beyond_i64() {
+        // 2^100 doesn't fit in i64; BigInt handles it natively.
+        // 1267650600228229401496703205376 = 2^100
+        let two = BigInt::from(2);
+        let result = pow(&two, &BigInt::from(100));
+        assert_eq!(result.to_string(), "1267650600228229401496703205376");
+    }
+
+    #[test]
+    #[should_panic(expected = "xpile: BigInt shift amount")]
+    fn shl_panics_on_negative_amount() {
+        let a = BigInt::from(1);
+        let b = BigInt::from(-1);
+        let _ = shl(&a, &b);
+    }
+}
