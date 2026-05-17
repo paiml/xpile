@@ -1102,3 +1102,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-069
+  github_issue: null
+  item_type: task
+  title: 'PMAT-069: Kani harness for C-XPILE-CONTRACT-BACKEND-TRAIT — closes the 2×2 trait-determinism matrix at full Lean+Kani QUORUM coverage (67% of substrate)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T00:30:00Z
+  updated: 2026-05-18T00:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/kani/xpile_contract_backend_trait.rs harness mirroring PMAT-068. Symbolic stratum vote — promotes PARTIAL → QUORUM. Closes the 2×2 trait-determinism matrix at full paired-discharge coverage. After landing, xpile quorum should show 8 QUORUM, 0 PARTIAL, 4 UNVERIFIED (67%).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
