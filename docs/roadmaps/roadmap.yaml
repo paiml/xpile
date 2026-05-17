@@ -1017,3 +1017,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-064
+  github_issue: null
+  item_type: task
+  title: 'PMAT-064: Lean refinement theorem for C-XPILE-BACKEND-TRAIT — promotes Semantic stratum, contract reaches PARTIAL'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T22:00:00Z
+  updated: 2026-05-17T22:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/lean/XpileBackendTrait.lean with lower_idempotency + target_consistency theorems mirroring PMAT-062 for the Backend side. Closes both ends of the meta-HIR pipeline determinism story (source→meta-HIR + meta-HIR→target). Companion Kani harness ships as PMAT-065.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

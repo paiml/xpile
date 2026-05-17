@@ -110,6 +110,50 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Lean refinement theorem — C-XPILE-BACKEND-TRAIT → PARTIAL (PMAT-064)
+
+**Sixth contract reaches non-UNVERIFIED status.** New
+`contracts/lean/XpileBackendTrait.lean` carries the refinement
+theorem `lower_idempotency` — the Backend-side analog of
+PMAT-062's `parse_idempotency`. Together they close both ends of
+the meta-HIR pipeline: source-to-meta-HIR determinism (Frontend)
++ meta-HIR-to-target determinism (Backend). Bronze-tier rfl proof
+by pure-function modelling.
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    3  QUORUM
+  C-XLATE-PY-LIST-TO-VEC                      1    1    0    3  QUORUM
+  C-XPILE-FRONTEND-TRAIT                      1    1    0    3  QUORUM
+  C-XPILE-BACKEND-TRAIT                       1    0    0    0  PARTIAL  ← new
+  ... (6 more UNVERIFIED)
+  totals: 5 QUORUM, 1 PARTIAL, 6 UNVERIFIED (12 contracts total)
+```
+
+Implementation:
+- **`contracts/lean/XpileBackendTrait.lean`** — new namespace
+  `XpileContracts.CXpileBackendTrait`. Models `lower` as a pure
+  byte-concatenation function from `(module, config)` to
+  `Artifact`. Companion `target_consistency` theorem stubbed for
+  Silver-tier refinement when the model grows a `Target` field.
+- **`contracts/xpile-backend-trait-v1.yaml`** — equation
+  `lower_idempotency` gains `lean_theorem` + `lean_file` refs.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-064 entry.
+
+This is the **fifth contract Lean theorem** (after Bashrs.lean,
+Notation.lean, XlatePyListToVec.lean, XpileFrontendTrait.lean).
+The pairing with PMAT-062 establishes the same determinism
+modelling commitment from both ends of the pipeline — any
+Backend impl that embeds timestamps, includes random salts, or
+relies on HashMap iteration order in its emit path must fail
+this theorem (and the citation gate fires) before it can ship.
+
+Companion Kani harness ships next as PMAT-065, mirroring the
+PMAT-060→061 and PMAT-062→063 paired-PR pattern.
+
 ### Kani symbolic harness — C-XPILE-FRONTEND-TRAIT → QUORUM (PMAT-063)
 
 **Fifth contract reaches QUORUM.** New

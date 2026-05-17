@@ -45,6 +45,11 @@ equations:
       - "TranspileSession::register_backend has been called for every active backend"
 
   lower_idempotency:
+    # PMAT-064: Lean refinement theorem locks in the determinism
+    # modelling commitment for lower. See
+    # contracts/lean/XpileBackendTrait.lean for the proof.
+    lean_theorem: "XpileContracts.CXpileBackendTrait.lower_idempotency"
+    lean_file: "contracts/lean/XpileBackendTrait.lean"
     formula: |
       forall (module, config): hash(b.lower(module, config).unwrap()) == hash(b.lower(module, config).unwrap())
     domain: |
