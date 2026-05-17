@@ -193,6 +193,15 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-041: same disposition as Cmd.
+            Stmt::Pipeline { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has Stmt::Pipeline inside a while loop; \
+                     C-BASHRS-POSIX-IDEMPOTENCE governs shell pipelines — \
+                     Lean codegen does not lower them",
+                    f.name
+                )));
+            }
         }
     }
 
@@ -448,6 +457,13 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
              contract C-BASHRS-POSIX-IDEMPOTENCE governs shell commands; \
              use `--target shell` instead",
             args.len()
+        ))),
+        // PMAT-041: same disposition as Cmd.
+        Stmt::Pipeline { stages } => Err(LeanCodegenError::Unsupported(format!(
+            "Lean backend does not lower Stmt::Pipeline ({} stages) — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs shell pipelines; \
+             use `--target shell` instead",
+            stages.len()
         ))),
     }
 }

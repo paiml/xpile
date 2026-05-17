@@ -78,6 +78,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             // PMAT-039: see rust-codegen's twin arm — shell commands
             // carry no BigInt operands.
             Stmt::Cmd { .. } => false,
+            // PMAT-041: see rust-codegen's twin arm.
+            Stmt::Pipeline { .. } => false,
         }
     }
     f.body.stmts.iter().any(stmt_has_bigint)
@@ -159,6 +161,13 @@ fn emit_stmt_indented(
              contract C-BASHRS-POSIX-IDEMPOTENCE governs this construct; \
              use `--target shell` to emit POSIX sh via bashrs-backend",
             args.len()
+        ))),
+        // PMAT-041: same disposition as Cmd.
+        Stmt::Pipeline { stages } => Err(RuchyCodegenError::Unsupported(format!(
+            "Ruchy backend does not lower Stmt::Pipeline ({} stages) — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs shell pipelines; \
+             use `--target shell`",
+            stages.len()
         ))),
     }
 }

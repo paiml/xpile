@@ -105,6 +105,10 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         // not `C-PY-INT-ARITH`. The args are `Vec<String>` (literal
         // tokens) — no arithmetic operands.
         Stmt::Cmd { .. } => false,
+        // PMAT-041: pipelines compose Cmds — recurse into each stage
+        // for completeness (currently every stage is a Cmd, so this is
+        // always false in practice).
+        Stmt::Pipeline { stages } => stages.iter().any(stmt_has_int_arith),
     }
 }
 
@@ -206,8 +210,22 @@ pub enum Stmt {
     /// v0.2.0 bashrs source fold.
     ///
     /// `Stmt::Pipeline { stages: Vec<Stmt::Cmd> }` and `Stmt::ShellLoop`
-    /// from the merger spec are XPILE-BASHRS-MERGER-002+.
+    /// from the merger spec are XPILE-BASHRS-MERGER-002+ → Pipeline
+    /// shipped in PMAT-041 (the variant immediately below).
     Cmd { program: String, args: Vec<String> },
+    /// `cmd1 | cmd2 | cmd3 …` — POSIX pipeline composition. PMAT-041 /
+    /// XPILE-BASHRS-MERGER-001 Layer B (second variant). Each stage
+    /// is a `Stmt` so the variant composes (in principle) with the
+    /// future `Stmt::ShellLoop` etc. — at v0.1.0 every stage is a
+    /// `Stmt::Cmd` in practice; the bashrs-frontend parser rejects
+    /// nested-pipeline / control-flow stages with an explicit
+    /// diagnostic.
+    ///
+    /// Same cross-cutting posture as `Stmt::Cmd`: produced only by
+    /// `bashrs-frontend`, consumed only by `bashrs-backend`, refused
+    /// by every other backend via `Unsupported(...)` arms naming
+    /// `C-BASHRS-POSIX-IDEMPOTENCE`.
+    Pipeline { stages: Vec<Stmt> },
 }
 
 /// Convenience: a single-expression body wraps as `Block { stmts: vec![], trailing_return: expr }`.

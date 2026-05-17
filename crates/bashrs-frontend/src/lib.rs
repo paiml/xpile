@@ -95,6 +95,58 @@ impl Frontend for BashrsFrontend {
                 // Comment line.
                 continue;
             }
+            // PMAT-041: detect pipeline via `|` separator between
+            // command stages. A line without `|` produces a single
+            // `Stmt::Cmd`; a line with `|` produces a `Stmt::Pipeline`
+            // whose stages are each a Cmd built from that segment's
+            // tokens. The split is naive (no quoting awareness yet)
+            // — `echo "a | b" | cat` is parsed as three stages, not
+            // two with embedded pipe; that improves at v0.2.0 with
+            // the real bashrs parser.
+            if line.contains('|') {
+                let mut stages: Vec<Stmt> = Vec::new();
+                for segment in line.split('|') {
+                    let trimmed = segment.trim();
+                    if trimmed.is_empty() {
+                        // Reject `cmd | | cmd` and `| cmd` /
+                        // `cmd |` shapes — they're either empty
+                        // stages or trailing/leading pipes that
+                        // POSIX sh would reject too.
+                        return Err(FrontendError::Lower(format!(
+                            "shell pipeline at line `{line}` has an empty stage \
+                             (leading, trailing, or `| |`); each stage must be a \
+                             non-empty command"
+                        )));
+                    }
+                    let mut tokens = trimmed.split_whitespace();
+                    let Some(program) = tokens.next() else {
+                        // Defensive: split_whitespace on a non-empty
+                        // trimmed string always yields ≥1 token.
+                        continue;
+                    };
+                    let args: Vec<String> = tokens.map(|t| t.to_string()).collect();
+                    stages.push(Stmt::Cmd {
+                        program: program.to_string(),
+                        args,
+                    });
+                }
+                if stages.len() < 2 {
+                    // Containing `|` but yielding fewer than 2 stages
+                    // means the user wrote a degenerate pipeline
+                    // (e.g., `||` is shell-OR, which we don't support;
+                    // also rejected above as empty-stage). Defensive
+                    // belt-and-braces.
+                    return Err(FrontendError::Lower(format!(
+                        "shell pipeline at line `{line}` parses to {} stage(s); \
+                         need ≥2 (use a single command without `|` for one-stage \
+                         invocations)",
+                        stages.len()
+                    )));
+                }
+                stmts.push(Stmt::Pipeline { stages });
+                continue;
+            }
+
             let mut tokens = line.split_whitespace();
             let Some(program) = tokens.next() else {
                 continue;
@@ -312,5 +364,86 @@ pwd
                 "should NOT match {path}"
             );
         }
+    }
+
+    #[test]
+    fn parse_and_lower_two_stage_pipeline_produces_stmt_pipeline() {
+        // PMAT-041 load-bearing: `cmd1 | cmd2` lowers to Stmt::Pipeline
+        // with two Stmt::Cmd stages.
+        use xpile_meta_hir::{Item, Stmt};
+        let source = "ls /tmp | wc -l\n";
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/pipe.sh"), source)
+            .expect("parse pipeline");
+        assert_eq!(module.items.len(), 1);
+        let Item::Function(f) = &module.items[0];
+        assert_eq!(f.body.stmts.len(), 1);
+        let Stmt::Pipeline { stages } = &f.body.stmts[0] else {
+            panic!("expected Pipeline at [0], got {:?}", f.body.stmts[0]);
+        };
+        assert_eq!(stages.len(), 2);
+        if let Stmt::Cmd { program, args } = &stages[0] {
+            assert_eq!(program, "ls");
+            assert_eq!(args, &vec!["/tmp".to_string()]);
+        } else {
+            panic!("expected Cmd stage [0], got {:?}", stages[0]);
+        }
+        if let Stmt::Cmd { program, args } = &stages[1] {
+            assert_eq!(program, "wc");
+            assert_eq!(args, &vec!["-l".to_string()]);
+        } else {
+            panic!("expected Cmd stage [1], got {:?}", stages[1]);
+        }
+    }
+
+    #[test]
+    fn parse_and_lower_three_stage_pipeline() {
+        // PMAT-041: extends naturally past 2 stages.
+        use xpile_meta_hir::{Item, Stmt};
+        let module = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/three.sh"),
+                "cat foo | grep bar | wc -l\n",
+            )
+            .expect("parse 3-stage pipeline");
+        let Item::Function(f) = &module.items[0];
+        let Stmt::Pipeline { stages } = &f.body.stmts[0] else {
+            panic!("expected Pipeline");
+        };
+        assert_eq!(stages.len(), 3);
+    }
+
+    #[test]
+    fn parse_and_lower_rejects_empty_stage() {
+        // PMAT-041 negative: `cmd | | cmd`, `| cmd`, `cmd |` all
+        // produce empty stages that POSIX sh would reject — we
+        // reject them too with a clear diagnostic.
+        for source in &["| ls\n", "ls |\n", "ls | | wc\n"] {
+            let err = BashrsFrontend
+                .parse_and_lower(&PathBuf::from("/tmp/bad.sh"), source)
+                .expect_err(&format!("should reject empty stage in `{source}`"));
+            let msg = format!("{err}");
+            assert!(
+                msg.contains("empty stage"),
+                "error must mention empty stage for `{source}`: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_and_lower_single_stage_no_pipe_still_emits_cmd() {
+        // Regression guard for PMAT-041: a line WITHOUT `|` continues
+        // to produce a Stmt::Cmd (not a 1-stage Pipeline). The
+        // PMAT-039 behaviour is unchanged.
+        use xpile_meta_hir::{Item, Stmt};
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/plain.sh"), "echo hi\n")
+            .expect("parse plain cmd");
+        let Item::Function(f) = &module.items[0];
+        assert!(
+            matches!(&f.body.stmts[0], Stmt::Cmd { .. }),
+            "single-token line must remain a Cmd, not a Pipeline: got {:?}",
+            f.body.stmts[0]
+        );
     }
 }

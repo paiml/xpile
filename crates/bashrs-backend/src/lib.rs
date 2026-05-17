@@ -71,19 +71,19 @@ impl Backend for BashrsBackend {
             // refs *once* immediately before its Cmd block if the
             // function has any Cmds — keeps the citation:function
             // mapping legible when reading the emitted shell.
-            let cmds: Vec<(&String, &Vec<String>)> = f
+            // PMAT-041: extended emit walks Cmd AND Pipeline. Each
+            // top-level Stmt::Cmd renders as one POSIX line; each
+            // Stmt::Pipeline renders as `stage1 | stage2 | …` on a
+            // single line. Pipelines compose Cmd stages, so the
+            // per-stage rendering reuses the same `program args...`
+            // format used for top-level Cmd.
+            let emittable: Vec<&Stmt> = f
                 .body
                 .stmts
                 .iter()
-                .filter_map(|s| {
-                    if let Stmt::Cmd { program, args } = s {
-                        Some((program, args))
-                    } else {
-                        None
-                    }
-                })
+                .filter(|s| matches!(s, Stmt::Cmd { .. } | Stmt::Pipeline { .. }))
                 .collect();
-            if cmds.is_empty() {
+            if emittable.is_empty() {
                 continue;
             }
             // Optional per-function divider — only emit if the
@@ -94,15 +94,49 @@ impl Backend for BashrsBackend {
                 writeln!(primary, "# function: {}", f.name)
                     .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
             }
-            for (program, args) in cmds {
-                if args.is_empty() {
-                    writeln!(primary, "{program}")
-                        .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
-                } else {
-                    writeln!(primary, "{program} {}", args.join(" "))
-                        .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
+            for stmt in emittable {
+                match stmt {
+                    Stmt::Cmd { program, args } => {
+                        if args.is_empty() {
+                            writeln!(primary, "{program}")
+                                .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
+                        } else {
+                            writeln!(primary, "{program} {}", args.join(" "))
+                                .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
+                        }
+                        emitted_commands += 1;
+                    }
+                    Stmt::Pipeline { stages } => {
+                        // Render each stage as `program args...` and
+                        // join with ` | `. v0.1.0 invariant: every
+                        // stage is a Cmd (bashrs-frontend enforces).
+                        // Non-Cmd stages would arise only from a
+                        // future frontend producing nested pipelines
+                        // / control-flow inside a pipeline; rejected
+                        // here with a clear error so the boundary
+                        // stays explicit.
+                        let mut rendered: Vec<String> = Vec::with_capacity(stages.len());
+                        for stage in stages {
+                            let Stmt::Cmd { program, args } = stage else {
+                                return Err(BackendError::Lower(format!(
+                                    "Stmt::Pipeline stage is not a Stmt::Cmd; \
+                                     bashrs-backend v0.1.0 only renders Cmd stages \
+                                     (got {stage:?})"
+                                )));
+                            };
+                            rendered.push(if args.is_empty() {
+                                program.clone()
+                            } else {
+                                format!("{program} {}", args.join(" "))
+                            });
+                        }
+                        writeln!(primary, "{}", rendered.join(" | "))
+                            .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
+                        emitted_commands += 1;
+                    }
+                    // matches! above guards against everything else.
+                    _ => unreachable!(),
                 }
-                emitted_commands += 1;
             }
         }
         if emitted_commands == 0 {
@@ -253,5 +287,98 @@ mod tests {
         );
         // Citation invariant unchanged.
         assert_eq!(art.citations[0].as_str(), "C-BASHRS-POSIX-IDEMPOTENCE");
+    }
+
+    #[test]
+    fn lower_pipeline_emits_pipe_joined_stages() {
+        // PMAT-041 load-bearing emit test. A Module whose `main`
+        // body contains a Stmt::Pipeline with three Stmt::Cmd
+        // stages must produce a single shell line with the stages
+        // joined by ` | `.
+        use xpile_meta_hir::{Block, Expr, Function, Item, Stmt, Type};
+        let module = Module {
+            name: "demo".into(),
+            source_lang: xpile_meta_hir::SourceLang::Shell,
+            items: vec![Item::Function(Function {
+                name: "main".into(),
+                params: vec![],
+                return_type: Type::I64,
+                body: Block {
+                    stmts: vec![Stmt::Pipeline {
+                        stages: vec![
+                            Stmt::Cmd {
+                                program: "cat".into(),
+                                args: vec!["foo".into()],
+                            },
+                            Stmt::Cmd {
+                                program: "grep".into(),
+                                args: vec!["bar".into()],
+                            },
+                            Stmt::Cmd {
+                                program: "wc".into(),
+                                args: vec!["-l".into()],
+                            },
+                        ],
+                    }],
+                    trailing_return: Expr::LitInt(0),
+                },
+            })],
+            ffi_boundaries: vec![],
+        };
+        let config = BackendConfig {
+            target: Target::Shell,
+            profile: Profile::RustOut,
+            hardware: None,
+        };
+        let art = BashrsBackend.lower(&module, &config).expect("lower");
+        assert!(
+            art.primary.contains("\ncat foo | grep bar | wc -l\n"),
+            "expected pipeline line; got:\n{}",
+            art.primary
+        );
+    }
+
+    #[test]
+    fn lower_pipeline_with_non_cmd_stage_errors() {
+        // PMAT-041 defensive arm: bashrs-frontend won't produce
+        // non-Cmd stages at v0.1.0, but if a future frontend does,
+        // the backend refuses with a clear error rather than emit
+        // ill-formed shell.
+        use xpile_meta_hir::{Block, Expr, Function, Item, Stmt, Type};
+        let bogus_stage = Stmt::Let {
+            name: "x".into(),
+            ty: Type::I64,
+            value: Expr::LitInt(7),
+            mutable: false,
+        };
+        let module = Module {
+            name: "demo".into(),
+            source_lang: xpile_meta_hir::SourceLang::Shell,
+            items: vec![Item::Function(Function {
+                name: "main".into(),
+                params: vec![],
+                return_type: Type::I64,
+                body: Block {
+                    stmts: vec![Stmt::Pipeline {
+                        stages: vec![bogus_stage],
+                    }],
+                    trailing_return: Expr::LitInt(0),
+                },
+            })],
+            ffi_boundaries: vec![],
+        };
+        let config = BackendConfig {
+            target: Target::Shell,
+            profile: Profile::RustOut,
+            hardware: None,
+        };
+        let err = BashrsBackend
+            .lower(&module, &config)
+            .expect_err("non-Cmd stage must be refused");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("stage is not a Stmt::Cmd"),
+            "error should explain the v0.1.0 stage shape constraint: {msg}"
+        );
     }
 }

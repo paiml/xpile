@@ -306,6 +306,39 @@ mod tests {
     }
 
     #[test]
+    fn layer_b_pipeline_end_to_end() {
+        // PMAT-041: a shell input with `|` flows through
+        // bashrs-frontend → Stmt::Pipeline → bashrs-backend → POSIX
+        // pipeline. Locks in the multi-stage cross-domain path.
+        use std::path::Path;
+        let s = default_session();
+        let bashrs_frontend = s
+            .frontends
+            .iter()
+            .find(|f| f.name() == "bashrs")
+            .expect("bashrs frontend registered");
+        let bashrs_backend = s
+            .backends
+            .iter()
+            .find(|b| b.name() == "bashrs")
+            .expect("bashrs backend registered");
+        let module = bashrs_frontend
+            .parse_and_lower(Path::new("/tmp/p.sh"), "ls /tmp | wc -l\n")
+            .expect("parse pipeline");
+        let cfg = BackendConfig {
+            target: Target::Shell,
+            profile: Profile::RustOut,
+            hardware: None,
+        };
+        let art = bashrs_backend.lower(&module, &cfg).expect("emit");
+        assert!(
+            art.primary.contains("\nls /tmp | wc -l\n"),
+            "expected pipeline line; got:\n{}",
+            art.primary
+        );
+    }
+
+    #[test]
     fn layer_b_rust_backend_refuses_shell_module_with_cmd() {
         // PMAT-039: the explicit-Unsupported arm in rust-codegen's
         // `emit_stmt_indented` fires when a Shell module containing
