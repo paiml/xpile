@@ -748,7 +748,13 @@ fn audit_command_supports_lean_target() {
     // form is `@[xpile_contract "..."]` (structured attribute parsed
     // by Lean's elaborator); the audit recognises it alongside
     // Rust/Ruchy's `// xpile-contract:` comment form.
-    let out = run_xpile(&["audit", "crates/xpile/tests/fixtures", "--target", "lean", "--json"]);
+    let out = run_xpile(&[
+        "audit",
+        "crates/xpile/tests/fixtures",
+        "--target",
+        "lean",
+        "--json",
+    ]);
     assert!(
         out.status.success(),
         "Lean target now supported (XPILE-FALSIFY-002); stderr: {}",
