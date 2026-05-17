@@ -1357,3 +1357,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-084
+  github_issue: null
+  item_type: task
+  title: 'PMAT-084: contracts/README.md sweep — rewrite for actual substrate state (12 contracts, lean/ + kani/ dirs, CI gates wired, tier roadmap)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T08:00:00Z
+  updated: 2026-05-18T08:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Rewrite contracts/README.md. Was a 53-line scaffold-stage doc claiming "all TODO" contracts. Replace with comprehensive substrate-state doc covering directory layout (lean/ + kani/ subdirs), full per-contract table by layer × lane with links to all three artifacts (YAML + Lean + Kani), CI integration gate list (refinement_proofs, kani_harnesses, kani_verify, quorum, attestations), and tier roadmap (Bronze→Silver→Gold→Platinum per ruchy 5.0 §14.10.5).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
