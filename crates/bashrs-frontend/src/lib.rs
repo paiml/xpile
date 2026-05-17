@@ -1694,6 +1694,65 @@ pwd
     }
 
     #[test]
+    fn parse_and_lower_semicolon_separator_round_trips_via_litstr() {
+        // PMAT-119: POSIX `;` statement separator (between
+        // commands on the same line) round-trips via LitStr
+        // passthrough at v0.1.0. Like redirections, short-circuit
+        // operators, and test brackets, the tokens land as
+        // ordinary `Expr::LitStr` args; the downstream shell
+        // re-interprets `;` as a statement boundary at execution
+        // time.
+        //
+        // Without surrounding spaces (e.g., `cd /tmp;` followed
+        // by `ls`), the `;` attaches to the preceding bareword
+        // and the round-trip is still semantics-preserving
+        // because the downstream shell does its own
+        // re-tokenization. With spaces around `;`, the round-
+        // trip produces one Stmt::Cmd with `;` as a LitStr arg.
+        //
+        // Real shell scripts use `;` for compact multi-command
+        // lines (`cd /tmp; ls; cd -`). The IR doesn't model the
+        // statement-separator structure (that's
+        // XPILE-BASHRS-STMT-SEP-001 future work), but the
+        // byte-level round-trip preserves shell semantics.
+        //
+        // Completes the v0.1.0 LitStr-passthrough invariant
+        // lock-in series (PMAT-085..091, capstone PMAT-092 plus
+        // this one).
+        use xpile_meta_hir::{Expr, Item, Stmt};
+        let cases: &[(&str, &str, &[&str])] = &[
+            ("cd /tmp ; ls\n", "cd", &["/tmp", ";", "ls"]),
+            ("echo a ; echo b\n", "echo", &["a", ";", "echo", "b"]),
+            (
+                "cd / ; ls ; cd -\n",
+                "cd",
+                &["/", ";", "ls", ";", "cd", "-"],
+            ),
+        ];
+        for (source, expected_program, expected_args) in cases {
+            let module = BashrsFrontend
+                .parse_and_lower(&PathBuf::from("/tmp/semi.sh"), source)
+                .unwrap_or_else(|e| panic!("parse failed for `{source}`: {e:?}"));
+            let Item::Function(f) = &module.items[0];
+            let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
+                panic!(
+                    "expected Stmt::Cmd for `{source}`; got {:?}",
+                    f.body.stmts[0]
+                );
+            };
+            assert_eq!(program, expected_program);
+            let expected_exprs: Vec<Expr> = expected_args
+                .iter()
+                .map(|s| Expr::LitStr((*s).to_string()))
+                .collect();
+            assert_eq!(
+                args, &expected_exprs,
+                "semicolon-separator round-trip for `{source}` failed"
+            );
+        }
+    }
+
+    #[test]
     fn parse_and_lower_arith_expansion_round_trips_via_litstr() {
         // PMAT-090: end-to-end — `$((...))` arithmetic expansion
         // round-trips through the bashrs pipeline as an

@@ -1952,3 +1952,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-119
+  github_issue: null
+  item_type: task
+  title: 'PMAT-119: bashrs ; statement-separator round-trip lock-in — POSIX `;` between commands rounds-trip via LitStr passthrough, completing the v0.1.0 invariant lock-in series'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-19T01:30:00Z
+  updated: 2026-05-19T01:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add parse_and_lower_semicolon_separator_round_trips_via_litstr asserting 3 patterns parse with the `;` token preserved as LitStr arg between commands. Real shell idiom for compact multi-command lines (`cd /tmp; ls; cd -`). Closes the v0.1.0 bashrs round-trip invariant lock-in series (PMAT-085..092 + this one). Sets up XPILE-BASHRS-STMT-SEP-001 (Silver-tier Stmt::Block multi-statement variant).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

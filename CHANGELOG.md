@@ -110,6 +110,37 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### POSIX `;` statement separator round-trip via LitStr passthrough (PMAT-119)
+
+**POSIX `;` statement separator (between commands on the same
+line) round-trips end-to-end at v0.1.0.** Real shell scripts
+use `;` for compact multi-command lines like `cd /tmp; ls; cd -`.
+Like redirections, short-circuit operators, and test brackets,
+the tokens land as ordinary `Expr::LitStr` args; the downstream
+shell re-interprets `;` as a statement boundary at execution
+time.
+
+```bash
+cd /tmp ; ls
+# parses to: Stmt::Cmd {
+#   program: "cd",
+#   args: [LitStr("/tmp"), LitStr(";"), LitStr("ls")]
+# }
+# round-trips to byte-identical shell; statement-separator
+# semantics preserved at execution.
+```
+
+Test `parse_and_lower_semicolon_separator_round_trips_via_litstr`
+asserts 3 patterns: simple `cd /tmp ; ls`, dual-command
+`echo a ; echo b`, multi-command chain
+`cd / ; ls ; cd -`. Same v0.1.0 invariant pattern as
+PMAT-085..091.
+
+Structured representation (`Stmt::Block` containing multiple
+statements) is XPILE-BASHRS-STMT-SEP-001 future work. Closes
+the v0.1.0 bashrs round-trip invariant lock-in series with the
+final common POSIX idiom.
+
 ### Capstone: composite round-trip test exercising all PMAT-085..091 idioms (PMAT-092)
 
 **Single test that parses a 7-line shell script using every
