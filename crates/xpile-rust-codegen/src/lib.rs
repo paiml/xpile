@@ -273,6 +273,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                  use `--target shell`"
             )));
         }
+        // PMAT-047: command substitution — same disposition.
+        Expr::CommandSubstitution(_) => {
+            return Err(CodegenError::Unsupported(
+                "Rust backend does not lower Expr::CommandSubstitution — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs shell substitution; \
+                 use `--target shell`"
+                    .into(),
+            ));
+        }
     }
     Ok(())
 }

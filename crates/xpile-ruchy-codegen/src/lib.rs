@@ -242,6 +242,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                  use `--target shell`"
             )));
         }
+        // PMAT-047: see rust-codegen.
+        Expr::CommandSubstitution(_) => {
+            return Err(RuchyCodegenError::Unsupported(
+                "Ruchy backend does not lower Expr::CommandSubstitution — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs shell substitution; \
+                 use `--target shell`"
+                    .into(),
+            ));
+        }
     }
     Ok(())
 }

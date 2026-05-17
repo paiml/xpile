@@ -143,6 +143,11 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::LitStr(_) | Expr::QuotedString { .. } => false,
         // PMAT-045: shell-variable references same disposition.
         Expr::ShellVar(_) => false,
+        // PMAT-047: command substitution composes a Stmt; recurse
+        // into the inner Stmt for completeness (currently every
+        // such Stmt is a shell-domain Cmd, so this is always
+        // false in practice).
+        Expr::CommandSubstitution(inner) => stmt_has_int_arith(inner),
     }
 }
 
@@ -172,7 +177,11 @@ pub struct Block {
     pub trailing_return: Expr,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// PMAT-047: PartialEq needed so `Expr::CommandSubstitution(Box<Stmt>)`
+// participates in Expr's existing `PartialEq` derive. Every field
+// of every Stmt variant is itself PartialEq (String, Type, Expr,
+// Vec<Stmt>), so the derive is mechanical.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Stmt {
     /// `let [mut] name: ty = value;` — first binding of `name` in this
     /// scope. `mutable` is set by the frontend when the same name is
@@ -366,6 +375,25 @@ pub enum Expr {
     /// by `bashrs-backend`; rust/ruchy/lean refuse via
     /// `Unsupported(...)` naming `C-BASHRS-POSIX-IDEMPOTENCE`.
     ShellVar(String),
+    /// Shell command substitution (`$(cmd)`). PMAT-047 /
+    /// XPILE-BASHRS-MERGER-001 Layer B (Expr-side, composes Stmt
+    /// into Expr).
+    ///
+    /// The nested `Box<Stmt>` is typically a `Stmt::Cmd` (or future
+    /// `Stmt::Pipeline`). bashrs-backend renders by recursing into
+    /// the inner statement and wrapping with `$(...)`.
+    ///
+    /// IR-shape only at v0.1.0: bashrs-frontend's hand-rolled parser
+    /// doesn't recognise `$(...)` syntax yet (it'd require a real
+    /// tokenizer that respects nested grouping and quoting). The
+    /// v0.2.0 source fold's bashrs parser produces this variant
+    /// from real shell input. Until then this is a *capability
+    /// declaration* — the IR can carry it, the backend can render
+    /// it, only the parser side is missing.
+    ///
+    /// Same cross-domain disposition: bashrs-only; other backends
+    /// refuse with `Unsupported(...)` naming `C-BASHRS-POSIX-IDEMPOTENCE`.
+    CommandSubstitution(Box<Stmt>),
 }
 
 /// Per-arg shell quoting choice. Carried by `Expr::QuotedString` so

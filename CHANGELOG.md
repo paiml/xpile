@@ -110,6 +110,57 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Layer B variant — `Expr::CommandSubstitution(Box<Stmt>)` (PMAT-047)
+
+Shell command substitution (\`$(cmd)\`) is now a first-class IR
+variant. **Stmt nests inside Expr** — the first compositional
+Layer B variant that crosses the Stmt/Expr boundary.
+
+\`\`\`rust
+// IR shape:
+Stmt::Cmd {
+    program: "echo".into(),
+    args: vec![
+        Expr::LitStr("today is".into()),
+        Expr::CommandSubstitution(Box::new(Stmt::Cmd {
+            program: "date".into(),
+            args: vec![Expr::LitStr("+%Y".into())],
+        })),
+    ],
+}
+// renders as: echo today is $(date +%Y)
+\`\`\`
+
+Implementation:
+- **xpile-meta-hir** — new \`Expr::CommandSubstitution(Box<Stmt>)\`.
+  Stmt gained \`PartialEq\` derive so the recursive Expr can stay
+  \`PartialEq\`-able (every Stmt field is itself \`PartialEq\`, so the
+  derive is mechanical). \`expr_has_int_arith\` extended (recurses
+  into the inner Stmt).
+- **Codegens** — \`Expr::CommandSubstitution(_)\` arms in rust /
+  ruchy / lean \`emit_expr\` returning \`Unsupported(...)\` naming the
+  bashrs contract. depyler-frontend's type-inference helpers +
+  lean's \`collect_idents\` get defensive arms.
+- **bashrs-backend** — new \`render_substituted_stmt\` helper renders
+  \`$(program args)\`. Only \`Stmt::Cmd\` is supported inside \`$(...)\`
+  at v0.1.0; nested pipelines / control flow are XPILE-BASHRS-MERGER-***+.
+  \`render_arg\` recurses through the new variant via the helper.
+
+What's NOT yet here:
+- **Parser support** — bashrs-frontend's hand-rolled parser doesn't
+  recognise \`$(...)\` syntax yet. The variant is *IR-shape ready*;
+  the v0.2.0 source fold's real bashrs parser produces it from
+  real shell input. Same scaffold-only posture as PMAT-046's
+  \`Type::ShellString\` / \`Type::ExitCode\`.
+- Nested pipelines / control flow inside \`$(...)\` — defensive
+  arm in \`render_substituted_stmt\` covers the case explicitly.
+
+Test coverage:
+- 2 new bashrs-backend unit tests: \`render_arg_command_substitution\`
+  (zero-arg / one-arg / mixed-with-ShellVar) and
+  \`render_arg_command_substitution_with_non_cmd_inner_errors\`
+  (defensive).
+
 ### Layer B type variants — `Type::ShellString` + `Type::ExitCode` (PMAT-046)
 
 Two pure-additive type variants the spec calls out for the bashrs
