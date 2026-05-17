@@ -1527,3 +1527,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-094
+  github_issue: null
+  item_type: task
+  title: 'PMAT-094: README hero SVG alt text — add Shell to the alt text language list for accessibility'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T13:00:00Z
+  updated: 2026-05-18T13:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Update README hero SVG alt text to include Shell in both the code-lane frontends list and the backends list. PMAT-093 fixed the prose count; this PR fixes the alt text that screen readers and accessibility tools rely on.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
