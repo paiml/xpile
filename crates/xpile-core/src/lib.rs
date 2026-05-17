@@ -258,6 +258,94 @@ mod tests {
     }
 
     #[test]
+    fn layer_b_end_to_end_bashrs_frontend_to_bashrs_backend() {
+        // PMAT-039: a real shell input flows through bashrs-frontend
+        // → meta-HIR with `Stmt::Cmd` items → bashrs-backend → POSIX
+        // sh with one shell-line per command. End-to-end witness
+        // that the Layer B IR carries shell semantics and that the
+        // bashrs lane is operational rather than scaffold.
+        use std::path::Path;
+        let s = default_session();
+        let bashrs_frontend = s
+            .frontends
+            .iter()
+            .find(|f| f.name() == "bashrs")
+            .expect("bashrs frontend registered");
+        let bashrs_backend = s
+            .backends
+            .iter()
+            .find(|b| b.name() == "bashrs")
+            .expect("bashrs backend registered");
+        let module = bashrs_frontend
+            .parse_and_lower(Path::new("/tmp/build.sh"), "echo hi\nls /tmp\n")
+            .expect("parse");
+        assert_eq!(module.source_lang, SourceLang::Shell);
+        // The synthesised function shape: exactly one Item (the
+        // `main` Function) containing two Stmt::Cmds.
+        assert_eq!(module.items.len(), 1);
+        let xpile_meta_hir::Item::Function(f) = &module.items[0];
+        assert_eq!(f.name, "main");
+        assert_eq!(f.body.stmts.len(), 2);
+
+        let cfg = BackendConfig {
+            target: Target::Shell,
+            profile: Profile::RustOut,
+            hardware: None,
+        };
+        let art = bashrs_backend.lower(&module, &cfg).expect("emit");
+        assert!(
+            art.primary.contains("\necho hi\n"),
+            "expected echo line in emit: {}",
+            art.primary
+        );
+        assert!(
+            art.primary.contains("\nls /tmp\n"),
+            "expected ls line in emit: {}",
+            art.primary
+        );
+    }
+
+    #[test]
+    fn layer_b_rust_backend_refuses_shell_module_with_cmd() {
+        // PMAT-039: the explicit-Unsupported arm in rust-codegen's
+        // `emit_stmt_indented` fires when a Shell module containing
+        // Stmt::Cmd reaches the Rust backend. Locks in the
+        // cross-domain refusal as a load-bearing dispatch invariant.
+        use std::path::Path;
+        let s = default_session();
+        let bashrs_frontend = s
+            .frontends
+            .iter()
+            .find(|f| f.name() == "bashrs")
+            .expect("bashrs frontend registered");
+        let rust_backend = s
+            .backends
+            .iter()
+            .find(|b| b.name() == "rust")
+            .expect("rust backend registered");
+        let module = bashrs_frontend
+            .parse_and_lower(Path::new("/tmp/refuse.sh"), "echo hi\n")
+            .expect("parse");
+        let cfg = BackendConfig {
+            target: Target::Rust,
+            profile: Profile::RustOut,
+            hardware: None,
+        };
+        let err = rust_backend
+            .lower(&module, &cfg)
+            .expect_err("rust must refuse Shell+Cmd module");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("C-BASHRS-POSIX-IDEMPOTENCE"),
+            "rust-codegen's Unsupported(Cmd) must cite the bashrs contract: {msg}"
+        );
+        assert!(
+            msg.contains("--target shell"),
+            "error message should point users at the right target: {msg}"
+        );
+    }
+
+    #[test]
     fn default_session_registers_proof_lane_impls() {
         let s = default_session();
         assert!(s.contract_frontends.iter().any(|cf| cf.name() == "latex"));

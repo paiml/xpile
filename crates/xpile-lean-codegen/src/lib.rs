@@ -179,6 +179,20 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-039: shell commands aren't legal inside a typed
+            // Lean function — they belong to the bashrs domain. Reach
+            // here only if a Module was somehow constructed with a
+            // Function containing both a while loop AND a Cmd
+            // (impossible from bashrs-frontend, which produces flat
+            // command sequences without loops; defensive arm).
+            Stmt::Cmd { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has Stmt::Cmd inside a while loop; \
+                     C-BASHRS-POSIX-IDEMPOTENCE governs shell commands — \
+                     Lean codegen does not lower them",
+                    f.name
+                )));
+            }
         }
     }
 
@@ -425,6 +439,16 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         Stmt::Assert { .. } => unreachable!(
             "Stmt::Assert handled in emit_stmts_then_trailing — emit_stmt called directly"
         ),
+        // PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B: Lean has no
+        // notion of shell-command invocation. `C-BASHRS-POSIX-IDEMPOTENCE`
+        // governs `Stmt::Cmd`; any cross-domain refinement would lower
+        // via the bashrs domain, not the Lean one.
+        Stmt::Cmd { program, args } => Err(LeanCodegenError::Unsupported(format!(
+            "Lean backend does not lower Stmt::Cmd (`{program}` with {} arg(s)) — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs shell commands; \
+             use `--target shell` instead",
+            args.len()
+        ))),
     }
 }
 
