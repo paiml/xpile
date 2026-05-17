@@ -205,6 +205,20 @@ fn emit_type(out: &mut String, t: Type) -> Result<(), CodegenError> {
         // shape — except no `.checked_*().expect(...)` since BigInt
         // never overflows.
         Type::BigInt => "xpile_bigint::BigInt",
+        // PMAT-046: bashrs-domain types. Rust backend refuses — the
+        // analogous Rust type for ShellString would be the bashrs
+        // runtime's quoting-aware wrapper (not yet shipped); the
+        // analogous type for ExitCode is `std::process::ExitStatus`
+        // but lowering meta-HIR `Type::ExitCode` to that requires
+        // touching the broader `std::process` integration which is
+        // XPILE-BASHRS-MERGER-***+. Use `--target shell` instead.
+        Type::ShellString | Type::ExitCode => {
+            return Err(CodegenError::Unsupported(format!(
+                "Rust backend does not lower {t:?} — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs the bashrs type domain; \
+                 use `--target shell` for shell-typed signatures"
+            )));
+        }
     });
     Ok(())
 }

@@ -184,6 +184,14 @@ fn emit_type(out: &mut String, t: Type) -> Result<(), RuchyCodegenError> {
         Type::Bool => "bool",
         // Ruchy compiles to Rust → same BigInt re-export. PMAT-012.
         Type::BigInt => "xpile_bigint::BigInt",
+        // PMAT-046: same disposition as the Rust backend.
+        Type::ShellString | Type::ExitCode => {
+            return Err(RuchyCodegenError::Unsupported(format!(
+                "Ruchy backend does not lower {t:?} — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs the bashrs type domain; \
+                 use `--target shell`"
+            )));
+        }
     });
     Ok(())
 }
