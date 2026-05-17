@@ -1051,3 +1051,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-066
+  github_issue: null
+  item_type: task
+  title: 'PMAT-066: Lean refinement theorem for C-XPILE-CONTRACT-FRONTEND-TRAIT — promotes Semantic stratum, contract reaches PARTIAL'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T23:00:00Z
+  updated: 2026-05-17T23:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/lean/XpileContractFrontendTrait.lean with parse_idempotency + equations_only theorems mirroring PMAT-062 for the proof-lane parse side. Pairs with PMAT-062 to close both code-lane and proof-lane parse determinism invariants. Companion Kani harness ships as PMAT-067.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
