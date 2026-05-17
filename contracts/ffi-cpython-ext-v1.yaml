@@ -35,6 +35,12 @@ equations:
     # substrate.
     lean_theorem: "XpileContracts.CFfiCpythonExt.manifest_completeness"
     lean_file: "contracts/lean/FfiCpythonExt.lean"
+    # PMAT-077: Kani harness completes the §14.4 quorum and
+    # makes the ENTIRE xpile substrate (12 contracts) reach
+    # 100% QUORUM coverage — every contract has paired Lean +
+    # Kani Bronze-tier discharges.
+    kani_harness: "manifest_completeness"
+    kani_file: "contracts/kani/ffi_cpython_ext.rs"
     formula: |
       forall call in python_module.calls_into(c_extension): exists entry in ffi_manifest: entry.symbol == call.symbol
     domain: |

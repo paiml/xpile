@@ -1238,3 +1238,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-077
+  github_issue: null
+  item_type: task
+  title: 'PMAT-077: Kani harness for C-FFI-CPYTHON-EXT — TWELFTH and FINAL Kani harness, brings xpile substrate to 100% QUORUM coverage (12 of 12 contracts)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T04:30:00Z
+  updated: 2026-05-18T04:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/kani/ffi_cpython_ext.rs harness mirroring PMAT-076. TWELFTH and FINAL Kani harness — 12 contracts × 2 strata (Sem + Sym) = 24 paired discharges. Brings xpile substrate to 100% QUORUM coverage. After landing, xpile quorum should show 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (100%). §14.4 N-of-M evidence model from ruchy 5.0 fully validated.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
