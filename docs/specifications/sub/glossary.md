@@ -24,7 +24,11 @@
 
 **Frontend** — A type implementing `xpile-frontend::Frontend`. The only language-specific abstraction in xpile.
 
-**Hybrid transpile** — A session that crosses language boundaries (e.g., Python + C, Python + CUDA). The load-bearing motivation for xpile.
+**Hybrid transpile** — A session that crosses language boundaries (e.g., Python + C, Python + CUDA, Python + shell). The load-bearing motivation for xpile. First shipped hybrid example: `subprocess.run([...])` recognition lowering Python to shell via the meta-HIR `Stmt::Cmd` variant (PMAT-040).
+
+**Layer B variants** — The meta-HIR shell-domain variants added across PMAT-039..056: `Stmt::{Cmd, Pipeline, ShellLoop, ShellAssign}`, `Expr::{LitStr, QuotedString, ShellVar, CommandSubstitution, ShellSpecial}`, `Type::{ShellString, ExitCode}`, plus `QuotingStrategy` and `LoopKind` enums. Produced by `bashrs-frontend`, consumed by `bashrs-backend`; other backends return `Unsupported`.
+
+**bashrs domain** — The POSIX shell (sh / bash / zsh / Makefile / Dockerfile) family absorbed into xpile per the 2026-05-17 merger reversal (see [bashrs-merger.md](bashrs-merger.md)). `crates/bashrs-frontend` parses; `crates/bashrs-backend` emits. `C-BASHRS-POSIX-IDEMPOTENCE` is the Layer-1 semantic anchor.
 
 **Kaizen** — Continuous improvement. The `kaizen-paiml` skill drives the loop: open work item → implement → all gates pass → close → repeat.
 
@@ -46,7 +50,9 @@
 
 **`pmat`** — Pragmatic Multi-language Agent Toolkit. The work controller across the fleet.
 
-**PVScore** — `pv score`'s output: a numeric quality grade per contract. xpile's mean at v0.1.0 is 0.58.
+**PVScore** — `pv score`'s output: a numeric quality grade per contract. xpile's mean at v0.1.0 is 0.56 across 12 contracts (canonical value is whatever `pv lint contracts/` reports on the current `main` branch).
+
+**QUORUM** — A contract's §14.4 N-of-M oracle status. The ruchy 5.0 rule: ≥1 vote in ≥3 strata (Semantic / Symbolic / Runtime / Extrinsic) ⇒ QUORUM; 1-2 strata ⇒ PARTIAL; 0 strata ⇒ UNVERIFIED. At v0.1.0 (post PMAT-058..077 substrate completion) the entire 12-contract substrate is at 100% QUORUM. `xpile quorum` reports per-contract state.
 
 **Repair mode** — Opt-in via `--repair`. Invokes the agent loop on static-pass failure.
 

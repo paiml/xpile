@@ -1782,3 +1782,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-109
+  github_issue: null
+  item_type: task
+  title: 'PMAT-109: sub/glossary.md sweep — add QUORUM, Layer B variants, bashrs domain terms; fix PVScore mean drift (0.58 → 0.56)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T20:30:00Z
+  updated: 2026-05-18T20:30:00Z
+  spec: null
+  acceptance_criteria:
+  - sub/glossary.md missing core post-substrate-completion terminology. Add three new entries — QUORUM (§14.4 N-of-M oracle status), Layer B variants (meta-HIR shell additions PMAT-039..056), bashrs domain (POSIX shell merger). Update PVScore mean from "0.58" to "0.56 across 12 contracts" with canonical-pointer phrasing. Update "Hybrid transpile" entry to mention shipped Python+shell hybrid via PMAT-040 subprocess.run recognition.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
