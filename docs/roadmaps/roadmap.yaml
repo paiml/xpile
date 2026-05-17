@@ -1510,3 +1510,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-093
+  github_issue: null
+  item_type: task
+  title: 'PMAT-093: README frontend count fix — "Six language frontends" → "Seven" reflecting Shell/bashrs addition'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T12:30:00Z
+  updated: 2026-05-18T12:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Update README.md opening line to reflect 7 frontends and 7 backends now that Shell is in-tree (bashrs-frontend + bashrs-backend, real emission per PMAT-037..058). Updates "Six language frontends (Python, C, C++, Rust, Ruchy, Lean 4)" to "Seven language frontends (Python, C, C++, Rust, Ruchy, Lean 4, Shell)". Adds "Python + shell scripts" to the hybrid transpilation examples.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

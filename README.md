@@ -8,7 +8,7 @@
 [![crates.io](https://img.shields.io/crates/v/xpile.svg)](https://crates.io/crates/xpile)
 [![license](https://img.shields.io/crates/l/xpile.svg)](#license)
 
-**A polyglot transpile workbench with provable contracts at every layer.** Six language frontends (Python, C, C++, Rust, Ruchy, Lean 4) share one canonical meta-HIR and dispatch through six backends (Rust, Ruchy, PTX, WGSL, SPIR-V, Lean 4), all alongside a **proof lane** that round-trips between LaTeX, Lean 4 theorems, and mdBook through a shared YAML contract substrate. Built to solve **hybrid transpilation** — single artifacts that cross language boundaries (CPython + C extensions, Python + CUDA kernels) — which separate per-language repos cannot.
+**A polyglot transpile workbench with provable contracts at every layer.** Seven language frontends (Python, C, C++, Rust, Ruchy, Lean 4, Shell) share one canonical meta-HIR and dispatch through seven backends (Rust, Ruchy, PTX, WGSL, SPIR-V, Lean 4, Shell), all alongside a **proof lane** that round-trips between LaTeX, Lean 4 theorems, and mdBook through a shared YAML contract substrate. Built to solve **hybrid transpilation** — single artifacts that cross language boundaries (CPython + C extensions, Python + CUDA kernels, Python + shell scripts) — which separate per-language repos cannot.
 
 ## Status — v0.1.0
 
