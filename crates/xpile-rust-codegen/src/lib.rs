@@ -241,6 +241,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         } => emit_if_expr(out, cond, then_expr, else_expr, mode)?,
         Expr::Call { callee, args } => emit_call(out, callee, args, mode)?,
         Expr::UnOp { op, operand } => emit_unop(out, *op, operand, mode)?,
+        // PMAT-042: string-literal Expr variants belong to the
+        // bashrs domain. Other backends refuse them.
+        Expr::LitStr(_) | Expr::QuotedString { .. } => {
+            return Err(CodegenError::Unsupported(
+                "Rust backend does not lower Expr::LitStr / Expr::QuotedString — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs shell string literals; \
+                 use `--target shell`"
+                    .into(),
+            ));
+        }
     }
     Ok(())
 }

@@ -124,7 +124,11 @@ impl Frontend for BashrsFrontend {
                         // trimmed string always yields ≥1 token.
                         continue;
                     };
-                    let args: Vec<String> = tokens.map(|t| t.to_string()).collect();
+                    // PMAT-042: each arg is an `Expr::LitStr`. The v0.1.0
+                    // hand-rolled parser produces no quoting metadata; the
+                    // v0.2.0 source fold's real bashrs parser will produce
+                    // `Expr::QuotedString` where appropriate.
+                    let args: Vec<Expr> = tokens.map(|t| Expr::LitStr(t.to_string())).collect();
                     stages.push(Stmt::Cmd {
                         program: program.to_string(),
                         args,
@@ -151,7 +155,9 @@ impl Frontend for BashrsFrontend {
             let Some(program) = tokens.next() else {
                 continue;
             };
-            let args: Vec<String> = tokens.map(|t| t.to_string()).collect();
+            // PMAT-042: see pipeline-stage version above. Each arg
+            // is `Expr::LitStr` (raw, unquoted).
+            let args: Vec<Expr> = tokens.map(|t| Expr::LitStr(t.to_string())).collect();
             stmts.push(Stmt::Cmd {
                 program: program.to_string(),
                 args,
@@ -257,18 +263,26 @@ pwd
         assert_eq!(f.body.stmts.len(), 3, "expected 3 Stmt::Cmd entries");
 
         // Order matters.
+        // PMAT-042: each arg is now an `Expr::LitStr`.
+        use xpile_meta_hir::Expr;
         let stmt0 = &f.body.stmts[0];
         let stmt1 = &f.body.stmts[1];
         let stmt2 = &f.body.stmts[2];
         if let Stmt::Cmd { program, args } = stmt0 {
             assert_eq!(program, "echo");
-            assert_eq!(args, &vec!["hello".to_string(), "world".to_string()]);
+            assert_eq!(
+                args,
+                &vec![
+                    Expr::LitStr("hello".to_string()),
+                    Expr::LitStr("world".to_string()),
+                ]
+            );
         } else {
             panic!("expected Cmd at [0], got {stmt0:?}");
         }
         if let Stmt::Cmd { program, args } = stmt1 {
             assert_eq!(program, "ls");
-            assert_eq!(args, &vec!["/tmp".to_string()]);
+            assert_eq!(args, &vec![Expr::LitStr("/tmp".to_string())]);
         } else {
             panic!("expected Cmd at [1], got {stmt1:?}");
         }
@@ -370,7 +384,8 @@ pwd
     fn parse_and_lower_two_stage_pipeline_produces_stmt_pipeline() {
         // PMAT-041 load-bearing: `cmd1 | cmd2` lowers to Stmt::Pipeline
         // with two Stmt::Cmd stages.
-        use xpile_meta_hir::{Item, Stmt};
+        // PMAT-042: args are Vec<Expr::LitStr>.
+        use xpile_meta_hir::{Expr, Item, Stmt};
         let source = "ls /tmp | wc -l\n";
         let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/pipe.sh"), source)
@@ -384,13 +399,13 @@ pwd
         assert_eq!(stages.len(), 2);
         if let Stmt::Cmd { program, args } = &stages[0] {
             assert_eq!(program, "ls");
-            assert_eq!(args, &vec!["/tmp".to_string()]);
+            assert_eq!(args, &vec![Expr::LitStr("/tmp".to_string())]);
         } else {
             panic!("expected Cmd stage [0], got {:?}", stages[0]);
         }
         if let Stmt::Cmd { program, args } = &stages[1] {
             assert_eq!(program, "wc");
-            assert_eq!(args, &vec!["-l".to_string()]);
+            assert_eq!(args, &vec![Expr::LitStr("-l".to_string())]);
         } else {
             panic!("expected Cmd stage [1], got {:?}", stages[1]);
         }

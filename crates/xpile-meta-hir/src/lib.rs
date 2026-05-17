@@ -137,6 +137,10 @@ fn expr_has_int_arith(e: &Expr) -> bool {
                 || expr_has_int_arith(else_expr)
         }
         Expr::Call { args, .. } => args.iter().any(expr_has_int_arith),
+        // PMAT-042: string-literal Expr variants carry no arithmetic
+        // operands; they're governed by C-BASHRS-POSIX-IDEMPOTENCE,
+        // not C-PY-INT-ARITH.
+        Expr::LitStr(_) | Expr::QuotedString { .. } => false,
     }
 }
 
@@ -201,18 +205,15 @@ pub enum Stmt {
     /// encounter it — the explicit-arm dispatch makes the cross-domain
     /// boundary load-bearing rather than implicit.
     ///
-    /// Args are `Vec<String>` (not `Vec<Expr>`) at v0.1.0 — the
-    /// hand-rolled bashrs-frontend parser doesn't yet produce
-    /// substitution / variables / quotation, so primitive strings
-    /// suffice. The expression-level shape (`Vec<Expr>` with new
-    /// `Expr::ShellVar` / `Expr::QuotedString` / `Expr::CommandSubstitution`
-    /// variants per `sub/bashrs-merger.md` Layer B) ships with the
-    /// v0.2.0 bashrs source fold.
+    /// PMAT-042: args are `Vec<Expr>` — every arg is an `Expr::LitStr`
+    /// (the unquoted / raw form) at the bashrs-frontend output by
+    /// default. `Expr::QuotedString` carries an explicit
+    /// `QuotingStrategy` for args that need shell-level quoting.
+    /// Future Layer B variants (`Expr::ShellVar`, `Expr::CommandSubstitution`)
+    /// plug in here without further IR churn.
     ///
-    /// `Stmt::Pipeline { stages: Vec<Stmt::Cmd> }` and `Stmt::ShellLoop`
-    /// from the merger spec are XPILE-BASHRS-MERGER-002+ → Pipeline
-    /// shipped in PMAT-041 (the variant immediately below).
-    Cmd { program: String, args: Vec<String> },
+    /// `Stmt::Pipeline { stages: Vec<Stmt::Cmd> }` shipped in PMAT-041.
+    Cmd { program: String, args: Vec<Expr> },
     /// `cmd1 | cmd2 | cmd3 …` — POSIX pipeline composition. PMAT-041 /
     /// XPILE-BASHRS-MERGER-001 Layer B (second variant). Each stage
     /// is a `Stmt` so the variant composes (in principle) with the
@@ -293,6 +294,55 @@ pub enum Expr {
     /// Unary operation — `not x` (logical, Bool → Bool) or `-x`
     /// (numeric negate, I64 → I64).
     UnOp { op: UnOp, operand: Box<Expr> },
+    /// String literal — the unquoted / "raw token" form. PMAT-042 /
+    /// XPILE-BASHRS-MERGER-001 Layer B (Expr-side).
+    ///
+    /// Used exclusively in `Stmt::Cmd::args` and pipeline stages
+    /// (bashrs domain); the Python / C / Rust frontends don't
+    /// produce strings at v0.1.0 because their meta-HIR subset is
+    /// integer-arithmetic-only (`C-PY-INT-ARITH` territory). Other
+    /// backends (rust / ruchy / lean) refuse `Expr::LitStr` via
+    /// `Unsupported` arms naming `C-BASHRS-POSIX-IDEMPOTENCE`.
+    ///
+    /// `LitStr` renders as a bareword in POSIX sh (no quoting). For
+    /// args that contain whitespace / special chars, use
+    /// `Expr::QuotedString` instead so the rendered shell carries
+    /// the right quoting.
+    LitStr(String),
+    /// Quoted string literal carrying an explicit `QuotingStrategy`.
+    /// PMAT-042 — the typed counterpart to `LitStr` when shell-level
+    /// quoting matters (whitespace-containing args, vars-disabled
+    /// args, etc.).
+    ///
+    /// The `content` is the *unescaped* string; the backend is
+    /// responsible for emitting any escape sequences the chosen
+    /// quoting style requires.
+    QuotedString {
+        content: String,
+        quoting: QuotingStrategy,
+    },
+}
+
+/// Per-arg shell quoting choice. Carried by `Expr::QuotedString` so
+/// the bashrs-backend renders each arg in the strategy the source
+/// indicated. v0.1.0's bashrs-frontend doesn't have a real
+/// quoting-aware parser yet — it produces `Expr::LitStr` for every
+/// arg, and `QuotingStrategy::None` is implicit there. The full
+/// strategy set is wired so the v0.2.0 source fold's real bashrs
+/// parser can plug in without IR churn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum QuotingStrategy {
+    /// `'literal'` — single quotes. No variable expansion, no
+    /// command substitution. Most idempotence-friendly form.
+    Single,
+    /// `"literal"` — double quotes. Variable expansion + command
+    /// substitution still occur inside; only globbing/word-splitting
+    /// are suppressed.
+    Double,
+    /// `\literal` — backslash-escape individual characters. Useful
+    /// for short fragments where surrounding quotes would be
+    /// awkward.
+    Backslash,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -573,7 +573,12 @@ fn lower_expr_stmt_as_cmd(ctx: &LoweringCtx, e: ast::StmtExpr) -> Result<Stmt, F
     }
     // tokens.len() >= 1 by the empty-check above; safe to split.
     let program = tokens.remove(0);
-    let args = tokens;
+    // PMAT-042: args are `Vec<Expr>` of `Expr::LitStr`. Python
+    // string literals don't carry shell-quoting metadata, so we
+    // emit the unquoted form. A future enhancement could detect
+    // arg-containing-whitespace and promote to `Expr::QuotedString`
+    // with the right strategy, but that's outside the v0.1.0 scope.
+    let args: Vec<Expr> = tokens.into_iter().map(Expr::LitStr).collect();
     Ok(Stmt::Cmd { program, args })
 }
 
@@ -1087,6 +1092,13 @@ fn infer_type(e: &Expr) -> Type {
             UnOp::Neg => Type::I64,
             UnOp::Not => Type::Bool,
         },
+        // PMAT-042: shell-string Expr variants belong to the bashrs
+        // domain. They don't appear inside Python-frontend lowering
+        // (only inside `Stmt::Cmd::args` produced by PMAT-040's
+        // subprocess.run path), so `infer_type` is never called on
+        // one in practice. Default to I64 for safety so any future
+        // accidental call doesn't panic.
+        Expr::LitStr(_) | Expr::QuotedString { .. } => Type::I64,
     }
 }
 
@@ -1134,6 +1146,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             UnOp::Neg => infer_type_in_ctx(ctx, operand),
             UnOp::Not => Type::Bool,
         },
+        // PMAT-042: see twin arm in `infer_type` above.
+        Expr::LitStr(_) | Expr::QuotedString { .. } => Type::I64,
     }
 }
 

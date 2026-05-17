@@ -110,6 +110,90 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Layer B Expr-side foundation — quoting-aware string args (PMAT-042)
+
+Refactors `Stmt::Cmd::args` from `Vec<String>` to `Vec<Expr>` and
+introduces the Layer B Expr-side variants the rest of the merger
+spec layers on top of:
+
+- **`Expr::LitStr(String)`** — the unquoted / raw-token form. What
+  bashrs-frontend produces for every arg at v0.1.0; what
+  depyler-frontend's `subprocess.run` lowering produces.
+- **`Expr::QuotedString { content, quoting: QuotingStrategy }`** —
+  the typed counterpart for args that need shell-level quoting.
+- **`QuotingStrategy::{Single, Double, Backslash}`** — the three
+  POSIX-relevant quoting forms the spec calls out.
+
+\`\`\`rust
+// PMAT-042 in action: a hand-built Cmd with a single-quoted arg
+Stmt::Cmd {
+    program: "echo".into(),
+    args: vec![Expr::QuotedString {
+        content: "hello world".into(),
+        quoting: QuotingStrategy::Single,
+    }],
+}
+// emits:  echo 'hello world'
+\`\`\`
+
+Why now: the v0.1.0 hand-rolled bashrs-frontend doesn't produce
+quoting metadata yet (every arg is `Expr::LitStr`). But landing the
+`Vec<Expr>` shape now means every subsequent Layer B Expr-side
+variant (`ShellVar`, `CommandSubstitution`) is an additive
+pattern-match rather than a refactor of every Cmd-construction site.
+
+Implementation (cross-cutting, ~7 sites):
+
+1. **xpile-meta-hir** — new `Expr::LitStr` + `Expr::QuotedString` +
+   `QuotingStrategy`. `Stmt::Cmd::args` changed from `Vec<String>`
+   to `Vec<Expr>`. `expr_has_int_arith` extended (both new variants
+   return false — they're under `C-BASHRS-POSIX-IDEMPOTENCE`, not
+   `C-PY-INT-ARITH`).
+
+2. **xpile-rust-codegen, xpile-ruchy-codegen, xpile-lean-codegen** —
+   new `Expr::LitStr | Expr::QuotedString` arms in each emit_expr
+   that return `Unsupported(...)` naming the bashrs contract.
+   Symmetric with PMAT-039/041's Cmd/Pipeline disposition.
+
+3. **xpile-lean-codegen** — `collect_idents` extended (defensive
+   arm; never reached because Lean modules don't carry shell-string
+   exprs).
+
+4. **bashrs-frontend** — parser now produces `Vec<Expr::LitStr>`
+   for args (both top-level Cmd and Pipeline stages). Behaviour
+   unchanged at the surface — the change is purely IR-shape.
+
+5. **bashrs-backend** — new `render_arg(Expr) -> Result<String>`
+   helper renders each arg per its quoting strategy:
+   * `LitStr` → bareword
+   * `QuotedString::Single` → `'content'`
+   * `QuotedString::Double` → `"content"`
+   * `QuotedString::Backslash` → `\c1\c2\c3…`
+   Used by both Cmd and Pipeline emit sites. Non-string Expr args
+   refused with a clear error (defensive).
+
+6. **depyler-frontend** — `subprocess.run` lowering produces
+   `Vec<Expr::LitStr>` instead of `Vec<String>`. Behaviour
+   unchanged for Python sources. `infer_type` / `infer_type_in_ctx`
+   extended with defensive arms for the new variants (they're
+   never reached on Python-frontend inputs).
+
+7. **Tests** — bashrs-frontend / bashrs-backend / xpile-core tests
+   updated to construct args as `Vec<Expr>`. New tests:
+   `render_arg_uses_quoting_strategy` (3 strategies + LitStr) and
+   `lower_cmd_with_quoted_string_arg_renders_with_quotes` (full
+   end-to-end through bashrs-backend).
+
+What's NOT here yet (Layer B follow-ups):
+
+- `Expr::ShellVar(String)` — `$NAME` / `${NAME}` references.
+- `Expr::CommandSubstitution(Box<Stmt>)` — `$(cmd)` inline.
+- `Type::ShellString` / `Type::ExitCode` — typed shell-domain
+  values for Lean refinement proofs.
+- Quoting-detection in bashrs-frontend's parser (currently every
+  arg is `LitStr`; the v0.2.0 source fold's real bashrs parser
+  produces `QuotedString` where appropriate).
+
 ### Layer B second variant — `Stmt::Pipeline` end-to-end (PMAT-041)
 
 Multi-stage shell pipelines (`cmd1 | cmd2 | cmd3 …`) flow through
