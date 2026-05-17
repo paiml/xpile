@@ -1493,3 +1493,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-092
+  github_issue: null
+  item_type: task
+  title: 'PMAT-092: bashrs capstone composite round-trip test — single 7-line shell script exercising all PMAT-085..091 idioms simultaneously'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T12:00:00Z
+  updated: 2026-05-18T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add parse_and_lower_composes_all_pmat_085_to_091_idioms in bashrs-frontend asserting that a 7-line shell input using param expansion, line continuation, redirection, short-circuit `||`, test bracket `[`, arithmetic expansion `$((...))`, and subshell `( ... )` parses without errors and collapses to 7 logical statements via the line-continuation splice. Guards against future refactors that would regress any one PMAT-085..091 invariant without tripping its narrow test. Closes the v0.1.0 bashrs round-trip invariant lock-in run.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
