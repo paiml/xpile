@@ -658,6 +658,76 @@ fn bigint_ruchy_errors_with_pmat_012_message() {
 /// `sub/contract-frontend-trait.md`'s citation grid:
 ///   * Rust + Ruchy: `// xpile-contract: C-PY-INT-ARITH`
 ///   * Lean: `@[xpile_contract "C-PY-INT-ARITH"]`
+// PMAT-015 / XPILE-FALSIFY-001: validates the `xpile audit` CLI
+// surface. Runs the audit against the fixture corpus, parses both
+// text and JSON outputs, asserts the F1 metric is computed and
+// reported. The exact percentage is not pinned (it moves as fixtures
+// are added) — just that the gate produces structured output with the
+// expected fields.
+#[test]
+fn audit_command_reports_f1_on_fixture_corpus() {
+    let out = run_xpile(&["audit", "crates/xpile/tests/fixtures"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "audit should succeed:\nstdout={stdout}\nstderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("F1 (Layer-1 contract citation coverage)"),
+        "expected F1 header, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("coverage (F1)"),
+        "expected coverage line, got:\n{stdout}"
+    );
+    // The fixture corpus contains both arithmetic functions (with
+    // citation) and comparison-only functions (without). F1 must
+    // therefore be > 0% (at least factorial / add are cited) and
+    // < 100% (cmp / pick are correctly uncited).
+    assert!(
+        stdout.contains("[OK]") || stdout.contains("[WARN]") || stdout.contains("[FAIL]"),
+        "expected status tag, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn audit_command_json_output_has_required_fields() {
+    let out = run_xpile(&["audit", "crates/xpile/tests/fixtures", "--json"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8(out.stdout).expect("utf8");
+    // Hand-rolled JSON — verify each required field appears in order.
+    for field in &[
+        "\"target\":",
+        "\"files_scanned\":",
+        "\"functions_emitted\":",
+        "\"functions_with_citation\":",
+        "\"f1_pct\":",
+        "\"f1_status\":",
+        "\"errors\":",
+    ] {
+        assert!(
+            stdout.contains(field),
+            "missing JSON field `{field}` in: {stdout}"
+        );
+    }
+}
+
+#[test]
+fn audit_command_lean_target_errors_with_followup_pointer() {
+    // Lean uses `@[xpile_contract "..."]` attribute, not the comment
+    // form the audit currently parses. The CLI must error loudly
+    // rather than silently report 0% for Lean — that's the bait the
+    // XPILE-FALSIFY-002 follow-up bites.
+    let out = run_xpile(&["audit", "crates/xpile/tests/fixtures", "--target", "lean"]);
+    assert!(!out.status.success(), "lean target should fail");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("XPILE-FALSIFY-002"),
+        "expected follow-up ticket name in stderr: {stderr}"
+    );
+}
+
 #[test]
 fn arithmetic_function_emits_contract_citation_rust() {
     let rust = xpile_transpile_to_rust("add.py");

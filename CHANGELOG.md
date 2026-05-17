@@ -110,6 +110,18 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### `xpile audit` (PMAT-015 / XPILE-FALSIFY-001)
+
+New CLI subcommand reports F1 (Layer-1 contract citation coverage)
+on a corpus. Walks the given path, runs the transpile pipeline on
+every source file the dispatch table recognises, parses the emitted
+output for `// xpile-contract: <ID>` citations adjacent to function
+declarations, reports % coverage with the §27 roadmap's
+OK/WARN/FAIL thresholds (≥95% / ≥50% / <50%). Text + `--json`
+modes. Current baseline against `crates/xpile/tests/fixtures/`:
+F1 ≈ 83% (WARN — gap is by design; comparison-only functions
+correctly don't carry the citation). Lean target is XPILE-FALSIFY-002.
+
 ### Time-bounded escape hatches (PMAT-014 / XPILE-EXEMPT-001)
 
 Every "not yet implemented" panic / `Unsupported(...)` error in the
