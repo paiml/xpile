@@ -110,6 +110,52 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Lean refinement theorem — C-XLATE-PY-LIST-TO-VEC → PARTIAL (PMAT-060)
+
+**Fourth contract reaches non-UNVERIFIED status.** New
+`contracts/lean/XlatePyListToVec.lean` carries the refinement
+theorem `iteration_order_preserved` — locks in the modelling
+commitment that lowering Python `list` → Rust `Vec<T>` preserves
+iteration order (and length, separately). Bronze-tier `rfl` proof
+by our v0.1.0 modelling choice. Companion `length_preserved`
+theorem is also discharged.
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    3  QUORUM
+  C-XLATE-PY-LIST-TO-VEC                      1    0    0    0  PARTIAL  ← new
+  ... (8 more UNVERIFIED)
+  totals: 3 QUORUM, 1 PARTIAL, 8 UNVERIFIED (12 contracts total)
+```
+
+Implementation:
+- **`contracts/lean/XlatePyListToVec.lean`** — new namespace
+  `XpileContracts.CXlatePyListToVec`. Models both Python `list`
+  and Rust `Vec<T>` as `Array UInt8` at Bronze tier (sufficient
+  to capture iteration order + length); Silver-tier refinement
+  (XPILE-REFINE-XLATE-LIST-***+) replaces these with typed-element
+  arrays plus alias metadata.
+- **`contracts/xlate-py-list-to-vec-v1.yaml`** — equation
+  `iteration_order_preserved` gains `lean_theorem` + `lean_file`
+  refs. `xpile quorum` now picks this up under the Semantic
+  stratum.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-060 entry.
+
+This is the **third contract Lean theorem** the project has
+(after PMAT-044 Bashrs.lean and PMAT-057 Notation.lean). Same
+scaffold posture — documentary modelling commitment locked in by
+`rfl`. Cross-reinforces with the Kani harness companion shipping
+as PMAT-061 (which will mirror this theorem at the Rust byte
+level and lift the contract to QUORUM).
+
+Why PARTIAL not QUORUM (yet): only Semantic stratum is populated.
+PMAT-061 adds the Symbolic stratum, and a future
+XPILE-XLATE-LIST-RUNTIME-001 ticket will add a Runtime witness
+once depyler-frontend grows real list-lowering at v0.2.0+.
+
 ### Kani symbolic harness — C-NOTATION-LATEX-MATH-TO-EQUATION → QUORUM (PMAT-059)
 
 **Third contract reaches QUORUM.** New `contracts/kani/notation.rs`

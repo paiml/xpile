@@ -62,6 +62,12 @@ equations:
       - "Python frontend produced an alias-graph annotation in the meta-HIR"
 
   iteration_order_preserved:
+    # PMAT-060: Lean refinement theorem locks in the modelling
+    # commitment that lowering Python list → Rust Vec preserves
+    # iteration order (and length, separately). See
+    # contracts/lean/XlatePyListToVec.lean for the proof.
+    lean_theorem: "XpileContracts.CXlatePyListToVec.iteration_order_preserved"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
     formula: |
       for x in py_list: f(x)  ≡  for x in rust_vec.iter() { f(x) }
     domain: |
