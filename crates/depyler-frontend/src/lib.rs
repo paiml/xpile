@@ -464,12 +464,117 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
             "function `{}` has an early `return` — only the last statement may be `return` at v0.1.0",
             ctx.fn_name
         ))),
+        // PMAT-040 / XPILE-BASHRS-MERGER-001 v0.3.0 falsifier evidence:
+        // `subprocess.run([...])` is the first cross-domain producer
+        // of `Stmt::Cmd`. Recognising it in depyler-frontend means
+        // Python sources can be lowered into the bashrs domain (via
+        // `xpile transpile foo.py --target shell`). This satisfies
+        // the `sub/bashrs-merger.md` v0.3.0 check-back's "at least
+        // one cross-domain consumer of shell variants must ship by
+        // v0.3.0" precondition — and ships it at v0.1.0.
+        ast::Stmt::Expr(e) => lower_expr_stmt_as_cmd(ctx, e).map(|s| vec![s]),
         other => Err(FrontendError::Lower(format!(
-            "function `{}` contains unsupported statement: {:?} — supported: assignment, if/elif/else, while, for-in-range, assert, then a final `return`",
+            "function `{}` contains unsupported statement: {:?} — supported: assignment, if/elif/else, while, for-in-range, assert, subprocess.run([...]), then a final `return`",
             ctx.fn_name,
             std::mem::discriminant(&other)
         ))),
     }
+}
+
+/// PMAT-040: pattern-match `subprocess.run([str-literal, ...])` and
+/// lower to `Stmt::Cmd`. Returns a precise error for any other
+/// expression-statement shape — we don't generalise to all
+/// expression statements at v0.1.0 because the only such shape we
+/// currently understand is this exact call. The narrow match keeps
+/// the dispatch boundary explicit so future widening (e.g.
+/// `subprocess.check_call`, `os.system(...)`) is an additive
+/// pattern-match rather than a refactor of a generic-expr handler.
+///
+/// Accepted shapes:
+///   subprocess.run(["echo", "hi"])
+///   subprocess.run(["echo", "hi"], check=True)    # keywords ignored
+///   subprocess.run(["pwd"])                       # 1-element list
+///
+/// Rejected:
+///   subprocess.run(cmd)                           # non-list arg
+///   subprocess.run(["echo", 42])                  # non-string element
+///   subprocess.run([])                            # empty list (no program)
+///   subprocess.call([...])                        # different function name
+///   os.system("echo hi")                          # not subprocess.run
+///   foo()                                         # not subprocess.run
+fn lower_expr_stmt_as_cmd(ctx: &LoweringCtx, e: ast::StmtExpr) -> Result<Stmt, FrontendError> {
+    let ast::Expr::Call(call) = *e.value else {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` has a non-call expression statement — only `subprocess.run([...])` is recognised as an expression statement at v0.1.0",
+            ctx.fn_name
+        )));
+    };
+    // Callee must be `subprocess.run` (Attribute(Name("subprocess"), "run")).
+    let ast::Expr::Attribute(attr) = call.func.as_ref() else {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` has a non-`subprocess.run` call as expression statement — only `subprocess.run([...])` is recognised at v0.1.0",
+            ctx.fn_name
+        )));
+    };
+    let ast::Expr::Name(receiver) = attr.value.as_ref() else {
+        return Err(FrontendError::Lower(format!(
+            "function `{}`'s expression-statement call's receiver isn't a simple `subprocess` Name — only `subprocess.run([...])` shape is recognised",
+            ctx.fn_name
+        )));
+    };
+    if receiver.id.as_str() != "subprocess" || attr.attr.as_str() != "run" {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` calls `{}.{}` as expression statement — only `subprocess.run([...])` is recognised at v0.1.0",
+            ctx.fn_name,
+            receiver.id.as_str(),
+            attr.attr.as_str()
+        )));
+    }
+    // Exactly one positional argument: a list literal of string literals.
+    // Keyword args (e.g. `check=True`) are accepted but currently ignored
+    // — semantically permissive, and consistent with how Python's
+    // subprocess module treats them as runtime modifiers rather than
+    // command-content modifiers.
+    let positional: Vec<&ast::Expr> = call.args.iter().collect();
+    if positional.len() != 1 {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` calls `subprocess.run` with {} positional arg(s); v0.1.0 requires exactly 1 (a list literal of string literals)",
+            ctx.fn_name,
+            positional.len()
+        )));
+    }
+    let ast::Expr::List(list) = positional[0] else {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` calls `subprocess.run(<expr>)` with a non-list argument — v0.1.0 supports only a list literal of string literals (e.g. `subprocess.run([\"echo\", \"hi\"])`)",
+            ctx.fn_name
+        )));
+    };
+    if list.elts.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` calls `subprocess.run([])` with an empty list — at least one element is required (the program to run)",
+            ctx.fn_name
+        )));
+    }
+    let mut tokens: Vec<String> = Vec::with_capacity(list.elts.len());
+    for elt in &list.elts {
+        let ast::Expr::Constant(c) = elt else {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `subprocess.run([..., <expr>, ...])` with a non-literal element — v0.1.0 supports only string literals in the list",
+                ctx.fn_name
+            )));
+        };
+        let ast::Constant::Str(s) = &c.value else {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `subprocess.run([..., <non-string>, ...])` — v0.1.0 supports only string-literal elements",
+                ctx.fn_name
+            )));
+        };
+        tokens.push(s.to_string());
+    }
+    // tokens.len() >= 1 by the empty-check above; safe to split.
+    let program = tokens.remove(0);
+    let args = tokens;
+    Ok(Stmt::Cmd { program, args })
 }
 
 /// Lower `for target in range(...)` by desugaring to a `Stmt::Let`

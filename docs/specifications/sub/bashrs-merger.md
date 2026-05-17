@@ -62,13 +62,13 @@ The previous (federation-era) version of this document made claims that are now 
 
 The merge is worth doing only if real cross-domain consumers materialise. If shell variants in meta-HIR turn out to only ever be produced by `bashrs-frontend` and consumed by `bashrs-backend`, we've built a "shell ghetto" in the shared IR for no benefit.
 
-**Check-back at v0.3.0**: by then, at least one of the following must have shipped:
+**Check-back at v0.3.0** (status as of 2026-05-17): the acceptance set required at least one of the following to ship before v0.3.0. **(1) shipped at v0.1.0 (PMAT-040)**, ahead of schedule:
 
-1. A Python frontend lowering that *produces* a shell-variant `Stmt::Cmd` or `Stmt::Pipeline` (e.g., recognising `subprocess.run([...])` calls and refining them).
-2. A Rust frontend lowering that produces a shell variant (e.g., recognising `std::process::Command::new(...).args(...)`).
-3. A Lean theorem in `contracts/lean/` that depends on a meta-HIR shell variant (e.g., proving `subprocess invariants` for transpiled Python).
+1. ✅ A Python frontend lowering that *produces* a shell-variant `Stmt::Cmd` or `Stmt::Pipeline` (e.g., recognising `subprocess.run([...])` calls and refining them). **Shipped 2026-05-17 (PMAT-040)** — depyler-frontend's `lower_expr_stmt_as_cmd` recognises `subprocess.run([str-literal, ...])` and lowers to `Stmt::Cmd`. Fixture `tests/fixtures/subprocess_demo.py` + integration test `transpile_python_subprocess_run_to_shell_via_bashrs_backend` lock it in. **The IR merge is no longer load-bearing on a future hypothesis — it has shipped evidence.**
+2. A Rust frontend lowering that produces a shell variant (e.g., recognising `std::process::Command::new(...).args(...)`). Still future.
+3. A Lean theorem in `contracts/lean/` that depends on a meta-HIR shell variant (e.g., proving `subprocess invariants` for transpiled Python). Still future.
 
-If none of these three has landed by v0.3.0, the IR merge is reverted: shell variants move to a `bashrs-hir` crate, kept private to `bashrs-frontend` / `bashrs-backend`, and the dispatch surface gains a second lane (the very thing this merge eliminated). That reversal would be ticketed `XPILE-UNMERGE-001`.
+The reversal mechanism (`XPILE-UNMERGE-001`) is now dormant — its precondition was "*none* of the three has shipped by v0.3.0", and (1) is in tree. The architectural cost of the merger is now demonstrated to buy a concrete capability rather than a speculative one.
 
 This check-back is the falsifier for the IR merge decision. It is added to the §27 provability roadmap as a new falsifier metric (planned PMAT prefix: `XPILE-FALSIFY-SHELL-GHETTO`).
 

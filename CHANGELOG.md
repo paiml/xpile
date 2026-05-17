@@ -110,6 +110,87 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Cross-domain Python → bashrs via `subprocess.run` recognition (PMAT-040)
+
+**The v0.3.0 falsifier evidence ships at v0.1.0.** depyler-frontend
+now recognises `subprocess.run([str-literal, ...])` and lowers each
+call to a `Stmt::Cmd` in meta-HIR. bashrs-backend walks any function's
+Cmd statements (PMAT-039's `main`-only filter relaxed) and emits real
+POSIX shell.
+
+\`\`\`
+$ cat /tmp/build_script.py
+def build() -> int:
+    subprocess.run(["echo", "starting"])
+    subprocess.run(["ls", "/tmp"])
+    subprocess.run(["pwd"])
+    subprocess.run(["echo", "done"])
+    return 0
+
+$ xpile transpile /tmp/build_script.py --target shell
+#!/bin/sh
+# xpile-bashrs-backend (v0.1.0 PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B)
+# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE
+# module: build_script
+# function: build
+echo starting
+ls /tmp
+pwd
+echo done
+\`\`\`
+
+Architectural significance: `sub/bashrs-merger.md`'s v0.3.0
+check-back demanded that "at least one cross-domain consumer of
+shell variants ships by v0.3.0 or `XPILE-UNMERGE-001` reverts the
+IR merge." This PR satisfies that precondition at v0.1.0 — the IR
+merge is no longer load-bearing on a future hypothesis, it has
+shipped evidence. The acceptance set was:
+
+  (a) Python `subprocess.run` recognition  ← THIS PR
+  (b) Rust `Command::new` recognition       (still future)
+  (c) Lean theorem about shell composition  (still future)
+
+Implementation:
+
+1. **depyler-frontend** — new `lower_expr_stmt_as_cmd` recogniser.
+   Accepts `subprocess.run([str-lit, ...])` (positional arg = list
+   literal of string literals; keyword args like `check=True`
+   accepted-and-ignored). Rejects every other call shape with a
+   precise diagnostic. The narrow match keeps future widening
+   (e.g. `subprocess.check_call`, `os.system`) as additive
+   pattern-matches rather than a refactor of a general
+   expression-statement handler.
+
+2. **bashrs-backend** — emit loop's `f.name == "main"` filter
+   relaxed. Now walks every function's body for `Stmt::Cmd`. Emits
+   `# function: <name>` divider before each non-`main` function's
+   Cmd block so the source-to-shell mapping stays legible. The
+   PMAT-039 synthesised-`main` shape continues to work (no divider
+   emitted for it, since the name is structural rather than
+   semantic).
+
+3. **New fixture** `tests/fixtures/subprocess_demo.py` is the
+   load-bearing demonstration. It carries an in-file doc-comment
+   explaining its role as v0.3.0 falsifier evidence so future
+   contributors understand why removing it triggers
+   `XPILE-UNMERGE-001`.
+
+Test coverage:
+- 2 new transpile_e2e tests:
+  - \`transpile_python_subprocess_run_to_shell_via_bashrs_backend\`
+    — the load-bearing positive: Python → bashrs end-to-end.
+  - \`transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error\`
+    — negative; non-list arg yields an error mentioning both
+    "subprocess.run" and "list literal".
+
+What this PR explicitly does NOT cover (additive future work):
+- `subprocess.check_call`, `subprocess.check_output`, `os.system`
+  recognition.
+- `subprocess.run(...)` with non-literal args (variables, format
+  strings) — needs Layer B `Expr::ShellVar` / `Expr::QuotedString`.
+- Capturing `subprocess.run`'s return value into a Python variable
+  (needs `Expr::ExitCode` / sidecar handling for `CompletedProcess`).
+
 ### Layer B minimum viable demo — `Stmt::Cmd` end-to-end (PMAT-039)
 
 First meta-HIR shell variant lands. `bashrs-frontend` parses a real

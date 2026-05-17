@@ -56,31 +56,53 @@ impl Backend for BashrsBackend {
         let mut emitted_commands = 0usize;
         for item in &module.items {
             let Item::Function(f) = item;
-            // Only the `main` synthesised by bashrs-frontend
-            // participates in shell emit; other Functions (which
-            // should never appear in a Shell module today, but
-            // defensive code keeps the dispatch boundary explicit)
-            // are skipped.
-            if f.name != "main" {
+            // PMAT-040: walk every function's body for `Stmt::Cmd`.
+            // PMAT-039's bashrs-frontend produces a single
+            // synthesised `main`; PMAT-040's depyler-frontend
+            // produces user-named functions (e.g., `build`) whose
+            // bodies contain `subprocess.run(...)`-derived Cmds.
+            // Both shapes flow through this loop. If a multi-function
+            // module ships, each function's Cmds emit in source
+            // order — the v0.1.0 grouping shape is intentionally
+            // flat. Section headers / per-function shell-functions
+            // are XPILE-BASHRS-MERGER-002+.
+            //
+            // Per-function citation: emit each function's contract
+            // refs *once* immediately before its Cmd block if the
+            // function has any Cmds — keeps the citation:function
+            // mapping legible when reading the emitted shell.
+            let cmds: Vec<(&String, &Vec<String>)> = f
+                .body
+                .stmts
+                .iter()
+                .filter_map(|s| {
+                    if let Stmt::Cmd { program, args } = s {
+                        Some((program, args))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if cmds.is_empty() {
                 continue;
             }
-            for stmt in &f.body.stmts {
-                if let Stmt::Cmd { program, args } = stmt {
-                    if args.is_empty() {
-                        writeln!(primary, "{program}")
-                            .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
-                    } else {
-                        writeln!(primary, "{program} {}", args.join(" "))
-                            .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
-                    }
-                    emitted_commands += 1;
+            // Optional per-function divider — only emit if the
+            // function name carries information (i.e., not the
+            // synthesised `main` from bashrs-frontend, which is a
+            // structural placeholder).
+            if f.name != "main" {
+                writeln!(primary, "# function: {}", f.name)
+                    .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
+            }
+            for (program, args) in cmds {
+                if args.is_empty() {
+                    writeln!(primary, "{program}")
+                        .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
+                } else {
+                    writeln!(primary, "{program} {}", args.join(" "))
+                        .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
                 }
-                // Non-Cmd statements (Let / Assign / While / Assert)
-                // would only appear if a future frontend produced
-                // them inside a Shell module. Defer that case to
-                // when it actually arises — no need to emit shell
-                // shapes for variables / loops until the
-                // corresponding Layer B Expr-side variants land.
+                emitted_commands += 1;
             }
         }
         if emitted_commands == 0 {
