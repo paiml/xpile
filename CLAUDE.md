@@ -37,34 +37,38 @@ These are tailored to xpile. `certeza` (mentioned in the global CLAUDE.md) is ap
 
 xpile currently has zero `.sh` / `.bash` / `.zsh` / `Makefile` /
 `Dockerfile` files. **Don't introduce them without routing through
-bashrs**. As of the 2026-05-17 spec update, bashrs is now an
-in-tree workspace member (see
-[`docs/specifications/sub/bashrs-merger.md`](docs/specifications/sub/bashrs-merger.md))
-— after the v0.2.0 merger lands, the bashrs frontend/backend live
-at `crates/bashrs-frontend/` and `crates/bashrs-backend/` alongside
-`crates/depyler-frontend/` etc.
+bashrs**. The bashrs merger shipped early — `crates/bashrs-frontend/`
+and `crates/bashrs-backend/` exist as workspace members alongside
+`crates/depyler-frontend/` etc. as of v0.1.0 (PMAT-037..058 +
+PMAT-085..092 + PMAT-119 polish; see
+[`docs/specifications/sub/bashrs-merger.md`](docs/specifications/sub/bashrs-merger.md)).
+`C-BASHRS-POSIX-IDEMPOTENCE` is at full §14.4 four-stratum
+QUORUM; the bashrs frontend handles realistic POSIX shell idioms
+(see CHANGELOG PMAT-085..092 + PMAT-119 for the round-trip
+invariant lock-in series). The "v0.2.0 merger" framing was
+superseded — the merger is done at v0.1.0.
 
-Until v0.2.0 (the merger has been *decided* but `crates/bashrs-*`
-crates don't exist yet), bashrs is consumed externally at
-`/home/noah/src/bashrs`. Concrete workflow when shell artifacts
-become necessary:
+Concrete workflow when shell artifacts become necessary:
 
 1. **Prefer Rust → POSIX** — author the script as a small Rust file
-   and run `bashrs transpile foo.rs -o foo.sh` for the deterministic
-   shell output. The Rust source goes in `scripts/` (new directory)
-   and the emitted `.sh` is gitignored or committed as a build
-   artifact, never hand-edited.
-2. **Hand-written shell is purified before commit** — if a `.sh`
-   *must* be authored directly (rare), run it through
-   `bashrs purify <file>` before staging. Same for `Makefile` and
-   `Dockerfile`: lint with bashrs.
-3. **Post-merger (v0.2.0+)**, the same workflow runs inside xpile:
-   `xpile transpile foo.ruchy --target shell -o foo.sh`,
-   `xpile purify <file>`, all under one CI gate.
+   and run the in-tree transpile path. The Rust source goes in
+   `scripts/` (new directory) and the emitted `.sh` is gitignored
+   or committed as a build artifact, never hand-edited.
+2. **Hand-written shell is round-tripped through bashrs-frontend
+   before commit** — if a `.sh` *must* be authored directly
+   (rare), run it through the bashrs-frontend → bashrs-backend
+   round-trip (see `parse_and_lower_*` tests for the supported
+   POSIX subset). Same for `Makefile` and `Dockerfile`.
+3. **In-tree workflow (v0.1.0+)**: `xpile transpile foo.py
+   --target shell` is the cross-domain path (PMAT-040 recognizes
+   `subprocess.run([...])` and lowers via bashrs-backend).
+   Bashrs-backend round-trips through `bashrs_realistic_demo.sh`
+   (PMAT-052) on every CI cycle.
 4. **No silent introduction** — adding shell-flavored CI logic,
-   release scripts, dev-loop helpers, or Docker images is out of
-   xpile's current scope (no native shell frontend at v0.1.0) and
-   should be discussed before landing.
+   release scripts, dev-loop helpers, or Docker images outside
+   the substrate-quality path should be discussed before
+   landing. Shell is in scope at v0.1.0; ungated shell files
+   are not.
 
 The point: xpile's "quality regime" claim only holds if every
 language in the repo is under the regime. After the merger, shell
