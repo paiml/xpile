@@ -1340,3 +1340,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-083
+  github_issue: null
+  item_type: task
+  title: 'PMAT-083: docs/status/CURRENT.md sweep — refresh high-water mark to v0.1.0 substrate completion (113 PRs, 27 crates, 12 contracts at 100% QUORUM)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T07:30:00Z
+  updated: 2026-05-18T07:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Update docs/status/CURRENT.md high-water mark. "Last refreshed" date → 2026-05-18. Crates 24 → 27. Contracts 11 → 12. Backends three → four (Shell/bashrs added). Add 100% QUORUM bullet. Add Shell subset bullet (PMAT-037..058). Add Kani BMC verification bullet. CI gates "gate + workspace-test" → "gate + kani + workspace-test". PRs 21 → 113.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
