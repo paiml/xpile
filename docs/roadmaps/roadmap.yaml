@@ -900,3 +900,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-057
+  github_issue: null
+  item_type: task
+  title: 'PMAT-057: Lean refinement theorem for C-NOTATION-LATEX-MATH-TO-EQUATION — third contract to reach PARTIAL/QUORUM'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T17:56:20Z
+  updated: 2026-05-17T17:56:20Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
