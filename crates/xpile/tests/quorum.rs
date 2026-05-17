@@ -80,6 +80,59 @@ fn c_py_int_arith_has_full_four_stratum_quorum() {
     );
 }
 
+/// PMAT-043 milestone: a *second* contract reaches non-UNVERIFIED.
+/// `C-BASHRS-POSIX-IDEMPOTENCE` has at least Runtime ≥1 (from
+/// `bashrs_diff_demo.py` referencing it AND `shell_diff_exec.rs`
+/// observing the cross-domain Python→shell behaviour match) and
+/// Extrinsic ≥1 (roadmap mentions). Status: PARTIAL or QUORUM.
+/// Locks in the v0.1.0 progress milestone that the bashrs lane is
+/// no longer purely paper-claimed.
+#[test]
+fn c_bashrs_posix_idempotence_has_runtime_witness() {
+    let root = workspace_root();
+    let out = std::process::Command::new(xpile_bin())
+        .args([
+            "quorum",
+            "--json",
+            "--contracts-dir",
+            root.join("contracts").to_str().unwrap(),
+            "--fixtures-dir",
+            root.join("crates/xpile/tests/fixtures").to_str().unwrap(),
+            "--roadmap",
+            root.join("docs/roadmaps/roadmap.yaml").to_str().unwrap(),
+        ])
+        .output()
+        .expect("run xpile quorum");
+    assert!(out.status.success(), "xpile quorum failed");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // Hand-parse: locate C-BASHRS-POSIX-IDEMPOTENCE's status field.
+    let id_marker = "\"id\":\"C-BASHRS-POSIX-IDEMPOTENCE\"";
+    let idx = stdout
+        .find(id_marker)
+        .unwrap_or_else(|| panic!("expected C-BASHRS-POSIX-IDEMPOTENCE in quorum JSON:\n{stdout}"));
+    let tail = &stdout[idx..];
+    let read_field = |name: &str| -> &str {
+        let key = format!("\"{name}\":");
+        let kidx = tail.find(&key).expect("missing field");
+        let after = &tail[kidx + key.len()..];
+        let end = after.find([',', '}']).expect("delimiter");
+        after[..end].trim().trim_matches('"')
+    };
+    let runtime: u64 = read_field("runtime").parse().unwrap();
+    let status = read_field("status");
+    assert!(
+        runtime >= 1,
+        "expected Runtime ≥1 for C-BASHRS-POSIX-IDEMPOTENCE \
+         (bashrs_diff_demo.py fixture should reference the contract); \
+         got runtime={runtime}"
+    );
+    assert!(
+        status == "PARTIAL" || status == "QUORUM",
+        "expected PARTIAL or QUORUM for C-BASHRS-POSIX-IDEMPOTENCE at v0.1.0; \
+         got status={status}"
+    );
+}
+
 #[test]
 fn quorum_reporter_walks_all_contract_yamls() {
     // Counts the discovered contracts and asserts the number matches

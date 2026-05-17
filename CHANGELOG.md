@@ -110,6 +110,59 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Shell-side diff_exec gate — C-BASHRS-POSIX-IDEMPOTENCE reaches PARTIAL (PMAT-043)
+
+**Second contract reaches non-UNVERIFIED quorum status.** New
+\`tests/shell_diff_exec.rs\` runs each fixture two ways:
+
+1. CPython: \`exec(open(file).read()); demo()\` — the function's
+   \`subprocess.run(...)\` calls fire and their stdout flows.
+2. Shell: \`xpile transpile file --target shell | /bin/sh\` — the
+   bashrs-backend-emitted shell executes the equivalent commands.
+
+Both must produce **byte-identical stdout**. The test fails loudly
+if depyler-frontend's subprocess.run lowering or bashrs-backend's
+emit diverges from CPython observable behaviour.
+
+\`\`\`
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  0    0    1    3  PARTIAL   ← new
+  ... (10 more)
+  totals: 1 QUORUM, 1 PARTIAL, 10 UNVERIFIED (12 contracts total)
+\`\`\`
+
+Architectural significance: **pre-PMAT-043 nothing actually executed
+the bashrs-emitted shell**. PMAT-040's \`subprocess.run\` cross-
+domain test only verified the string output matches a pattern, not
+that the emitted shell would run successfully. This PR closes that
+gap — the v0.3.0 falsifier evidence (PMAT-040) is now backed by a
+Runtime stratum witness, not just static-string assertion.
+
+What ships:
+- New fixture \`tests/fixtures/bashrs_diff_demo.py\` — three
+  deterministic \`subprocess.run(["echo", ...])\` calls that
+  produce predictable stdout (no \`pwd\` etc. that varies by cwd).
+- New test file \`tests/shell_diff_exec.rs\` (replaces no existing
+  file) with one test that runs the diff and one helper trio
+  (have_python_and_sh / run_cpython / run_shell). Skip-gracefully
+  if \`python3\` or \`/bin/sh\` is missing from PATH.
+- New quorum-gate test in \`tests/quorum.rs\`:
+  \`c_bashrs_posix_idempotence_has_runtime_witness\` — asserts the
+  Runtime count for the contract is ≥1 and status is PARTIAL or
+  QUORUM. Locks in the v0.1.0 milestone.
+
+Quorum reporter impact: \`C-BASHRS-POSIX-IDEMPOTENCE\` jumps from
+\`0/0/0/0 UNVERIFIED\` to \`0/0/1/3 PARTIAL\` — Runtime stratum
+gains the new fixture witness, Extrinsic stratum reflects the
+PMAT-037 through 043 roadmap mentions.
+
+How \`C-BASHRS-POSIX-IDEMPOTENCE\` reaches QUORUM next: ship a Lean
+refinement theorem about shell idempotence (Sem ≥1, contract gains
+3rd stratum) or a Kani harness (Sym ≥1). Either takes it to QUORUM
+on the §14.4 N-of-M rule.
+
 ### Layer B Expr-side foundation — quoting-aware string args (PMAT-042)
 
 Refactors `Stmt::Cmd::args` from `Vec<String>` to `Vec<Expr>` and
