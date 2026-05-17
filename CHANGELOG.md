@@ -110,6 +110,58 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Layer B IR shape complete — `Stmt::ShellLoop` + `LoopKind` (PMAT-048)
+
+**Last variant from the `sub/bashrs-merger.md` Layer B table lands.**
+Shell control-flow loops (\`for x in …; do … done\`, \`while [ … ]\`,
+\`until [ … ]\`) are now first-class IR. The meta-HIR Layer B shape
+is **complete**:
+
+| Surface | Variant | PR |
+|---|---|---|
+| Stmt | Cmd | PMAT-039 |
+| Stmt | Pipeline | PMAT-041 |
+| Stmt | **ShellLoop** | **PMAT-048 (this PR)** |
+| Expr | LitStr | PMAT-042 |
+| Expr | QuotedString | PMAT-042 |
+| Expr | ShellVar | PMAT-045 |
+| Expr | CommandSubstitution | PMAT-047 |
+| Type | ShellString | PMAT-046 |
+| Type | ExitCode | PMAT-046 |
+| enum | QuotingStrategy | PMAT-042 |
+| enum | **LoopKind** | **PMAT-048 (this PR)** |
+
+Implementation:
+- **xpile-meta-hir** — new \`Stmt::ShellLoop { kind: LoopKind, body }\`
+  + new enum \`LoopKind { For { var, items }, While { cond }, Until { cond } }\`.
+  \`stmt_has_int_arith\` extended (recurses into items / cond / body).
+- **Codegens** — \`Stmt::ShellLoop\` arms in rust / ruchy / lean
+  emit + \`stmt_has_bigint\` helpers. lean has two sites (while-body
+  walker + emit_stmt). All Unsupported with the bashrs contract.
+- **bashrs-backend** — new \`render_shell_loop\` helper renders the
+  loop *header* (\`for var in items;\`, \`while cond;\`, \`until cond;\`)
+  with a placeholder body (\`do : # body: <pending v0.2.0 expansion>; done\`).
+  Multi-line body rendering needs a recursive Stmt renderer the
+  v0.1.0 backend doesn't carry; future PR plugs it in.
+
+What's NOT yet here (same posture as PMAT-046/047):
+- **Parser support** — bashrs-frontend's hand-rolled parser doesn't
+  recognise multi-line \`for / do / done\` syntax. v0.2.0 source
+  fold's real bashrs parser produces this variant.
+- **Body rendering** — placeholder \`do : # body: <pending>\` at v0.1.0;
+  full recursive body rendering is XPILE-BASHRS-MERGER-***+.
+
+Test coverage:
+- 2 new bashrs-backend unit tests: \`render_shell_loop_for_kind\`
+  (for-loop header) and \`render_shell_loop_while_and_until\`
+  (both predicate-driven dialects).
+
+**The Layer B IR is now structurally complete** per the spec
+table. The remaining bashrs merger work shifts from "add variants"
+to (a) bashrs source fold (v0.2.0), (b) producer-side parser
+extensions for the new variants, (c) refinement of the C-BASHRS-
+POSIX-IDEMPOTENCE contract from Bronze to Silver tier in Lean.
+
 ### Layer B variant — `Expr::CommandSubstitution(Box<Stmt>)` (PMAT-047)
 
 Shell command substitution (\`$(cmd)\`) is now a first-class IR

@@ -85,6 +85,9 @@ fn function_bigint_mode(f: &Function) -> bool {
             // PMAT-041: same disposition as Cmd — Pipeline composes
             // Cmd stages; no BigInt operand reachable.
             Stmt::Pipeline { .. } => false,
+            // PMAT-048: ShellLoop is bashrs-domain — no BigInt
+            // operand reachable through it.
+            Stmt::ShellLoop { .. } => false,
         }
     }
     f.body.stmts.iter().any(stmt_has_bigint)
@@ -186,6 +189,13 @@ fn emit_stmt_indented(
              use `--target shell` to emit POSIX sh via bashrs-backend",
             stages.len()
         ))),
+        // PMAT-048: same disposition as the rest of the shell domain.
+        Stmt::ShellLoop { .. } => Err(CodegenError::Unsupported(
+            "Rust backend does not lower Stmt::ShellLoop — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs shell loops; \
+             use `--target shell`"
+                .into(),
+        )),
     }
 }
 

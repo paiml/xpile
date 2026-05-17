@@ -109,6 +109,15 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         // for completeness (currently every stage is a Cmd, so this is
         // always false in practice).
         Stmt::Pipeline { stages } => stages.iter().any(stmt_has_int_arith),
+        // PMAT-048: shell loops compose statements; recurse into
+        // body + (where applicable) cond / items.
+        Stmt::ShellLoop { kind, body } => {
+            let kind_has = match kind {
+                LoopKind::For { items, .. } => items.iter().any(expr_has_int_arith),
+                LoopKind::While { cond } | LoopKind::Until { cond } => expr_has_int_arith(cond),
+            };
+            kind_has || body.iter().any(stmt_has_int_arith)
+        }
     }
 }
 
@@ -238,6 +247,45 @@ pub enum Stmt {
     /// by every other backend via `Unsupported(...)` arms naming
     /// `C-BASHRS-POSIX-IDEMPOTENCE`.
     Pipeline { stages: Vec<Stmt> },
+    /// POSIX shell control-flow loop (`for x in …; do … done` /
+    /// `while [ … ]; do … done` / `until [ … ]; do … done`). PMAT-048
+    /// / XPILE-BASHRS-MERGER-001 Layer B (last variant from the
+    /// spec table).
+    ///
+    /// IR-shape only at v0.1.0 — same scaffold posture as PMAT-046
+    /// (Type variants) and PMAT-047 (`Expr::CommandSubstitution`):
+    /// the variant is reachable through the IR, the bashrs-backend
+    /// can render it, but bashrs-frontend's hand-rolled parser
+    /// doesn't produce it yet. The v0.2.0 source fold's real bashrs
+    /// parser produces it from real shell input.
+    ///
+    /// Same cross-domain disposition: bashrs-only; other backends
+    /// refuse via `Unsupported(...)` naming `C-BASHRS-POSIX-IDEMPOTENCE`.
+    ShellLoop { kind: LoopKind, body: Vec<Stmt> },
+}
+
+/// POSIX shell loop dialects. PMAT-048 / XPILE-BASHRS-MERGER-001
+/// Layer B. Each variant carries the loop's control predicate /
+/// item list; the body lives in `Stmt::ShellLoop::body`.
+///
+/// Future variants the spec hints at: `Select { var, items }` for
+/// `select x in …;` interactive menus (rare; deferred).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum LoopKind {
+    /// `for VAR in item1 item2 …; do … done`. Each item is an
+    /// `Expr` so future Layer B variants
+    /// (`Expr::ShellVar` / `Expr::CommandSubstitution` / etc.)
+    /// compose here without IR churn.
+    For { var: String, items: Vec<Expr> },
+    /// `while [ cond ]; do … done`. The condition is an `Expr` —
+    /// typically a `Stmt::Cmd`-equivalent test expression, modelled
+    /// as `Expr` for uniformity with the rest of the IR. A future
+    /// `Expr::ShellTest` variant could carry POSIX `[ … ]` semantics
+    /// explicitly; at v0.1.0 the condition is opaque.
+    While { cond: Expr },
+    /// `until [ cond ]; do … done` — POSIX's inverted while
+    /// (continue while cond is *false*).
+    Until { cond: Expr },
 }
 
 /// Convenience: a single-expression body wraps as `Block { stmts: vec![], trailing_return: expr }`.

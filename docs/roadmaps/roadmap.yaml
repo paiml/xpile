@@ -756,3 +756,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-048
+  github_issue: null
+  item_type: task
+  title: 'PMAT-048: Stmt::ShellLoop + enum LoopKind — last Layer B IR variants per sub/bashrs-merger.md table'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T17:04:46Z
+  updated: 2026-05-17T17:04:46Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
