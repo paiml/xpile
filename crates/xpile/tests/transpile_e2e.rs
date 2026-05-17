@@ -368,30 +368,67 @@ fn transpile_factorial_py_emits_recursive_rust() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("pub fn factorial(n: i64) -> i64"));
-    assert!(stdout.contains("if (n <= 1i64) { 1i64 } else"));
-    // Recursive call back into factorial — proves Expr::Call works for self-reference.
+    // PMAT-036: factorial.py annotated `-> BigInt`. PMAT-013's
+    // implicit promotion lowers `n: int` to BigInt + all int literals
+    // in the body to `xpile_bigint::BigInt::from(<n>i64)`, so the
+    // emitted Rust uses BigInt end-to-end. This is also what closes
+    // the DIFF-003 documented promotion gaps for this fixture.
+    assert!(
+        stdout.contains("pub fn factorial(n: xpile_bigint::BigInt) -> xpile_bigint::BigInt"),
+        "expected BigInt signature, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("xpile_bigint::BigInt::from(1i64)"),
+        "expected BigInt-lifted integer literals, got:\n{stdout}"
+    );
+    // Recursive call back into factorial — proves Expr::Call works
+    // for self-reference, BigInt or otherwise.
     assert!(stdout.contains("factorial("));
 }
 
 /// Semantic round-trip: emit factorial → compile → run → assert results.
-/// Proves not just that the output type-checks, but that it computes
-/// the right values (0!=1, 1!=1, 2!=2, 3!=6, 5!=120, 6!=720).
+/// Post-PMAT-036 factorial.py is BigInt-mode; the driver uses BigInt
+/// constructors. Same expected values (0!=1, 1!=1, …, 10!=3628800).
+/// Uses an inline `xpile_bigint` shim so the driver compiles
+/// standalone via rustc — mirrors the existing
+/// `bigint_implicit_promotion_factorial_emits_bigint_mode` test.
 #[test]
 fn factorial_emitted_rust_computes_correct_values() {
     let rust = xpile_transpile_to_rust("factorial.py");
-    let driver = r#"
-fn main() {
-    assert_eq!(factorial(0), 1);
-    assert_eq!(factorial(1), 1);
-    assert_eq!(factorial(2), 2);
-    assert_eq!(factorial(3), 6);
-    assert_eq!(factorial(5), 120);
-    assert_eq!(factorial(6), 720);
-    assert_eq!(factorial(10), 3628800);
+    let shim = r#"
+mod xpile_bigint {
+    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    pub struct BigInt(pub i64);
+    impl From<i64> for BigInt {
+        fn from(v: i64) -> Self { BigInt(v) }
+    }
+    impl std::ops::Add for BigInt {
+        type Output = BigInt;
+        fn add(self, o: BigInt) -> BigInt { BigInt(self.0 + o.0) }
+    }
+    impl std::ops::Sub for BigInt {
+        type Output = BigInt;
+        fn sub(self, o: BigInt) -> BigInt { BigInt(self.0 - o.0) }
+    }
+    impl std::ops::Mul for BigInt {
+        type Output = BigInt;
+        fn mul(self, o: BigInt) -> BigInt { BigInt(self.0 * o.0) }
+    }
 }
 "#;
-    assert_rustc_runs("factorial", &rust, driver);
+    let driver = r#"
+fn main() {
+    use xpile_bigint::BigInt;
+    assert_eq!(factorial(BigInt::from(0i64)), BigInt::from(1i64));
+    assert_eq!(factorial(BigInt::from(1i64)), BigInt::from(1i64));
+    assert_eq!(factorial(BigInt::from(2i64)), BigInt::from(2i64));
+    assert_eq!(factorial(BigInt::from(3i64)), BigInt::from(6i64));
+    assert_eq!(factorial(BigInt::from(5i64)), BigInt::from(120i64));
+    assert_eq!(factorial(BigInt::from(6i64)), BigInt::from(720i64));
+    assert_eq!(factorial(BigInt::from(10i64)), BigInt::from(3628800i64));
+}
+"#;
+    assert_rustc_runs("factorial", &format!("{shim}\n{rust}"), driver);
 }
 
 /// Binary recursion — fib makes two recursive calls per invocation
@@ -992,30 +1029,57 @@ fn main() {
     assert_rustc_runs("asserted", &rust, driver);
 }
 
-/// PMAT-008: validates negative-step `range(...)`. `factorial_iter(n)`
-/// computes n! by counting down: `for i in range(n, 0, -1): acc *= i`.
-/// The lowering must flip the cond from `<` to `>` and emit
-/// `checked_add(-1i64)` for the tail.
+/// PMAT-008 + PMAT-036: validates negative-step `range(...)` under
+/// BigInt mode. `factorial_iter(n)` counts down via `for i in
+/// range(n, 0, -1): acc *= i`. The lowering must flip the cond from
+/// `<` to `>` AND emit the loop with BigInt-typed `i` (PMAT-036 fix
+/// — the for-target's binding type follows the enclosing function's
+/// return type now). Tail uses BigInt arithmetic.
 #[test]
 fn for_range_negative_step_emitted_rust_computes_correct_values() {
     let rust = xpile_transpile_to_rust("countdown.py");
     assert!(
-        rust.contains("while (i > 0i64)"),
-        "expected `i > 0` cond for negative step, got:\n{rust}"
+        rust.contains("let mut i: xpile_bigint::BigInt = n"),
+        "expected BigInt for-target init (PMAT-036), got:\n{rust}"
     );
     assert!(
-        rust.contains("i = (i).checked_add(-1i64)"),
-        "expected negative-step tail, got:\n{rust}"
+        rust.contains("while (i.clone() > xpile_bigint::BigInt::from(0i64))"),
+        "expected `i > 0` cond comparing BigInt operands, got:\n{rust}"
     );
-    let driver = r#"
-fn main() {
-    assert_eq!(factorial_iter(0), 1);  // empty product
-    assert_eq!(factorial_iter(1), 1);  // 1
-    assert_eq!(factorial_iter(5), 120);
-    assert_eq!(factorial_iter(10), 3628800);
+    assert!(
+        rust.contains("i = (i.clone() + xpile_bigint::BigInt::from(-1i64))"),
+        "expected BigInt-mode negative-step tail, got:\n{rust}"
+    );
+    // Inline xpile_bigint shim so the rustc-compiled driver doesn't
+    // need to link the real crate. Same pattern as the BigInt
+    // factorial test above. Adds `PartialOrd` (loop cond `> 0`).
+    let shim = r#"
+mod xpile_bigint {
+    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    pub struct BigInt(pub i64);
+    impl From<i64> for BigInt {
+        fn from(v: i64) -> Self { BigInt(v) }
+    }
+    impl std::ops::Add for BigInt {
+        type Output = BigInt;
+        fn add(self, o: BigInt) -> BigInt { BigInt(self.0 + o.0) }
+    }
+    impl std::ops::Mul for BigInt {
+        type Output = BigInt;
+        fn mul(self, o: BigInt) -> BigInt { BigInt(self.0 * o.0) }
+    }
 }
 "#;
-    assert_rustc_runs("countdown", &rust, driver);
+    let driver = r#"
+fn main() {
+    use xpile_bigint::BigInt;
+    assert_eq!(factorial_iter(BigInt::from(0i64)), BigInt::from(1i64));  // empty product
+    assert_eq!(factorial_iter(BigInt::from(1i64)), BigInt::from(1i64));  // 1
+    assert_eq!(factorial_iter(BigInt::from(5i64)), BigInt::from(120i64));
+    assert_eq!(factorial_iter(BigInt::from(10i64)), BigInt::from(3628800i64));
+}
+"#;
+    assert_rustc_runs("countdown", &format!("{shim}\n{rust}"), driver);
 }
 
 /// PMAT-007: validates `for i in range(...)` desugaring. The three

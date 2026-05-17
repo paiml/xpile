@@ -564,3 +564,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-036
+  github_issue: null
+  item_type: task
+  title: 'PMAT-036: BigInt auto-promotion for diff_exec overflow fixtures (close DIFF-003 gaps)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T14:58:51Z
+  updated: 2026-05-17T14:58:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
