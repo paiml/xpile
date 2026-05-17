@@ -40,6 +40,11 @@ equations:
     # contracts/lean/XlateLeanToRust.lean for the proof.
     lean_theorem: "XpileContracts.CXlateLeanToRust.def_to_rust_fn"
     lean_file: "contracts/lean/XlateLeanToRust.lean"
+    # PMAT-071: Kani harness completes the §14.4 quorum. Symbolic
+    # counterpart to the Lean theorem — proves body preservation
+    # at the byte level over all 4-byte symbolic inputs.
+    kani_harness: "def_to_rust_fn"
+    kani_file: "contracts/kani/xlate_lean_to_rust.rs"
     formula: |
       xlate(def f (args : T1) ... : R := body) ==
         fn f(args: T1_rust, ...) -> R_rust { body_rust }
