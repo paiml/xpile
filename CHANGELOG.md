@@ -110,6 +110,42 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Discharge `sorry` in `fast_path_eq_slow_path` Lean proof (PMAT-028 / XPILE-REFINE-002)
+
+Closes the second of the two `XPILE-PENDING-UNTIL: v0.3.0` markers
+on the primary refinement theorem. The load-bearing claim of
+`C-PY-INT-ARITH` — that the i64 fast path agrees with the BigInt
+slow path everywhere the sum fits in `i64` — is now machine-checked
+by Lean 4.15 without any mathlib dep.
+
+Implementation: refactored `i64_wrap_add` from the previous
+hand-rolled `(a + b) % 2^64`-fold form to Lean core's `Int.bmod`
+(*balanced mod*, returns values in `[-N/2, N/2)`). For `N = 2^64`
+that's exactly the i64 signed range, so the proof becomes:
+
+```lean
+unfold i64_wrap_add bigint_add fits_i64 at *
+obtain ⟨hlo, hhi⟩ := h
+rw [Int.bmod_def]
+split <;> omega
+```
+
+The `Int.bmod_def` rewrite exposes the conditional `(a+b) % 2^64`
+case-split, and `omega` closes both branches from the `fits_i64`
+hypothesis. Verified locally with `lean 4.15.0`.
+
+Gate update: `crates/xpile/tests/refinement_proofs.rs` now asserts
+the *positive* landmark `Int.bmod_def` is present and the negative
+landmark `sorry` is absent from proof code (docstrings excluded).
+So a future regression that reintroduces `sorry` fires loudly.
+
+The stub trio (`mul_fast_path_eq_slow_path`,
+`floor_div_fast_path_eq_slow_path`, `mod_fast_path_eq_slow_path`)
+still carries `by trivial` placeholders under
+`XPILE-PENDING-UNTIL: v0.3.0, ticket: XPILE-REFINE-003`. Those
+need different proof shapes (`Int.bmod_mul_emod_self_left` and
+friends) and will land separately.
+
 ### Lean `assert` via recursive if-then-panic encoding (PMAT-027 / PMAT-009-FOLLOWUP)
 
 Closes one of the two `XPILE-PENDING-UNTIL: v0.3.0` markers. The

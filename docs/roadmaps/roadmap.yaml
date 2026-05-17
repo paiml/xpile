@@ -436,3 +436,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-028
+  github_issue: null
+  item_type: task
+  title: Discharge sorry in PyIntArith.fast_path_eq_slow_path (XPILE-REFINE-002 / PMAT-009-FOLLOWUP-2)
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T13:43:54Z
+  updated: 2026-05-17T13:43:54Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
