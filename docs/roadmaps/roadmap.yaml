@@ -1765,3 +1765,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-108
+  github_issue: null
+  item_type: task
+  title: 'PMAT-108: sub/rust-codegen.md sweep — fixture list 5 → 11+ (factorial..factorial_iter + BigInt variants); point to CHANGELOG as canonical'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T20:00:00Z
+  updated: 2026-05-18T20:00:00Z
+  spec: null
+  acceptance_criteria:
+  - sub/rust-codegen.md listed only 5 runtime-executed fixtures (factorial, fib, gcd, abs_val, sign). Actual fixture set is 11+ including bits, square_plus, range_size, sum_to, for_sum, range_with_start, range_with_step, factorial_iter, bigint_factorial, bigint_bits. Update the list and add canonical-source pointer to CHANGELOG §"Python subset (live, runtime-verified)" to avoid future drift.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
