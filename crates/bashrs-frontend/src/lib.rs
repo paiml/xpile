@@ -43,6 +43,12 @@ enum RawToken {
     /// v0.1.0; future PR adds an Expr-template variant). Lowers
     /// to `Expr::QuotedString { quoting: Double }`.
     DoubleQuoted(String),
+    /// `$(cmd args...)` — command substitution. PMAT-050. Inner
+    /// content is the substring between the matching parentheses
+    /// (no nesting allowed at v0.1.0). Lowers to
+    /// `Expr::CommandSubstitution(Box<Stmt::Cmd>)` by recursively
+    /// tokenizing + parsing the inner content as a single Cmd.
+    CommandSubst(String),
 }
 
 /// PMAT-049: tokenize a non-empty trimmed shell line into raw
@@ -68,6 +74,39 @@ fn tokenize_line(line: &str) -> Result<Vec<RawToken>, FrontendError> {
                 if !current.is_empty() {
                     tokens.push(RawToken::Bare(std::mem::take(&mut current)));
                 }
+            }
+            // PMAT-050: `$(cmd)` command substitution. Recognised as
+            // an atomic token; inner content is captured verbatim
+            // and lowered into Stmt::Cmd by `lower_raw_token`.
+            // Nested `$(...)` is rejected at v0.1.0.
+            '$' if chars.peek() == Some(&'(') => {
+                if !current.is_empty() {
+                    return Err(FrontendError::Lower(format!(
+                        "shell line `{line}` has `$(` adjacent to a bareword \
+                         (e.g., `foo$(bar)`); v0.1.0 requires `$(...)` at token boundaries"
+                    )));
+                }
+                chars.next(); // consume the `(`
+                let mut content = String::new();
+                let mut closed = false;
+                for inner in chars.by_ref() {
+                    if inner == '(' {
+                        return Err(FrontendError::Lower(format!(
+                            "shell line `{line}` has nested `$(...)` — v0.1.0 supports only one level"
+                        )));
+                    }
+                    if inner == ')' {
+                        closed = true;
+                        break;
+                    }
+                    content.push(inner);
+                }
+                if !closed {
+                    return Err(FrontendError::Lower(format!(
+                        "shell line `{line}` has an unterminated `$(...)` substitution"
+                    )));
+                }
+                tokens.push(RawToken::CommandSubst(content));
             }
             '\'' => {
                 if !current.is_empty() {
@@ -125,18 +164,56 @@ fn tokenize_line(line: &str) -> Result<Vec<RawToken>, FrontendError> {
     Ok(tokens)
 }
 
-/// PMAT-049: convert a raw token to the appropriate Expr variant.
-fn lower_raw_token(t: &RawToken) -> Expr {
+/// PMAT-049 + PMAT-050: convert a raw token to the appropriate Expr
+/// variant. PMAT-050 adds `RawToken::CommandSubst` recursion —
+/// the inner content of `$(cmd args)` is re-tokenized and lowered
+/// into a `Stmt::Cmd` that becomes
+/// `Expr::CommandSubstitution(Box<Stmt::Cmd>)`.
+fn lower_raw_token(t: &RawToken) -> Result<Expr, FrontendError> {
     match t {
-        RawToken::Bare(s) => lower_token(s),
-        RawToken::SingleQuoted(s) => Expr::QuotedString {
+        RawToken::Bare(s) => Ok(lower_token(s)),
+        RawToken::SingleQuoted(s) => Ok(Expr::QuotedString {
             content: s.clone(),
             quoting: QuotingStrategy::Single,
-        },
-        RawToken::DoubleQuoted(s) => Expr::QuotedString {
+        }),
+        RawToken::DoubleQuoted(s) => Ok(Expr::QuotedString {
             content: s.clone(),
             quoting: QuotingStrategy::Double,
-        },
+        }),
+        RawToken::CommandSubst(inner) => {
+            // Recursively tokenize the inner content as a single Cmd.
+            // Empty `$()` is rejected since shell `$()` requires a
+            // command to substitute.
+            let trimmed = inner.trim();
+            if trimmed.is_empty() {
+                return Err(FrontendError::Lower(
+                    "command substitution `$()` is empty; v0.1.0 requires \
+                     `$(cmd ...)` with a non-empty inner command"
+                        .into(),
+                ));
+            }
+            let raw = tokenize_line(trimmed)?;
+            let mut iter = raw.iter();
+            let Some(first) = iter.next() else {
+                return Err(FrontendError::Lower(
+                    "command substitution inner tokenized to zero tokens".into(),
+                ));
+            };
+            let program = match first {
+                RawToken::Bare(s) => s.clone(),
+                _ => {
+                    return Err(FrontendError::Lower(format!(
+                        "command substitution `$({inner})` starts with a quoted / nested \
+                         token; v0.1.0 requires the inner program to be a bareword"
+                    )));
+                }
+            };
+            let args: Vec<Expr> = iter.map(lower_raw_token).collect::<Result<Vec<_>, _>>()?;
+            Ok(Expr::CommandSubstitution(Box::new(Stmt::Cmd {
+                program,
+                args,
+            })))
+        }
     }
 }
 
@@ -298,7 +375,8 @@ impl Frontend for BashrsFrontend {
                             )));
                         }
                     };
-                    let args: Vec<Expr> = iter.map(lower_raw_token).collect();
+                    let args: Vec<Expr> =
+                        iter.map(lower_raw_token).collect::<Result<Vec<_>, _>>()?;
                     stages.push(Stmt::Cmd { program, args });
                 }
                 if stages.len() < 2 {
@@ -334,7 +412,7 @@ impl Frontend for BashrsFrontend {
                     )));
                 }
             };
-            let args: Vec<Expr> = iter.map(lower_raw_token).collect();
+            let args: Vec<Expr> = iter.map(lower_raw_token).collect::<Result<Vec<_>, _>>()?;
             stmts.push(Stmt::Cmd { program, args });
         }
 
@@ -782,6 +860,103 @@ pwd
                 RawToken::Bare("baz".into()),
             ]
         );
+    }
+
+    #[test]
+    fn tokenize_line_recognises_command_substitution() {
+        // PMAT-050: `$(cmd)` becomes a CommandSubst token.
+        let toks = tokenize_line("echo today is $(date)").expect("parse");
+        assert_eq!(
+            toks,
+            vec![
+                RawToken::Bare("echo".into()),
+                RawToken::Bare("today".into()),
+                RawToken::Bare("is".into()),
+                RawToken::CommandSubst("date".into()),
+            ]
+        );
+
+        // Multiple substitutions in one line.
+        let toks = tokenize_line("echo $(date +%Y) and $(uname -a)").expect("parse");
+        assert_eq!(
+            toks,
+            vec![
+                RawToken::Bare("echo".into()),
+                RawToken::CommandSubst("date +%Y".into()),
+                RawToken::Bare("and".into()),
+                RawToken::CommandSubst("uname -a".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn tokenize_line_rejects_unterminated_command_substitution() {
+        // PMAT-050 negative: `$(cmd` without `)` errors.
+        let err = tokenize_line("echo $(date").expect_err("should reject");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("unterminated") && msg.contains("$("),
+            "error should mention unterminated $(...): {msg}"
+        );
+    }
+
+    #[test]
+    fn tokenize_line_rejects_nested_command_substitution() {
+        // PMAT-050 negative: `$($(cmd))` rejected at v0.1.0.
+        let err = tokenize_line("echo $($(date))").expect_err("should reject nested substitution");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("nested"),
+            "error should mention nesting: {msg}"
+        );
+    }
+
+    #[test]
+    fn lower_raw_token_command_substitution_produces_expr() {
+        // PMAT-050 load-bearing: a CommandSubst raw token lowers to
+        // Expr::CommandSubstitution(Box<Stmt::Cmd>) with the inner
+        // program + args correctly parsed.
+        use xpile_meta_hir::{Expr, Stmt};
+        let raw = RawToken::CommandSubst("date +%Y".into());
+        let expr = lower_raw_token(&raw).expect("lower");
+        let Expr::CommandSubstitution(inner) = expr else {
+            panic!("expected CommandSubstitution; got {expr:?}");
+        };
+        let Stmt::Cmd { program, args } = inner.as_ref() else {
+            panic!("expected inner Cmd; got {inner:?}");
+        };
+        assert_eq!(program, "date");
+        assert_eq!(args, &vec![Expr::LitStr("+%Y".into())]);
+    }
+
+    #[test]
+    fn parse_and_lower_with_command_substitution() {
+        // PMAT-050 end-to-end: shell input with `$(...)` produces
+        // Cmd with CommandSubstitution arg.
+        use xpile_meta_hir::{Expr, Item, Stmt};
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/cs.sh"), "echo today is $(date)\n")
+            .expect("parse");
+        let Item::Function(f) = &module.items[0];
+        let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
+            panic!("expected Cmd");
+        };
+        assert_eq!(program, "echo");
+        assert_eq!(args.len(), 3);
+        assert_eq!(args[0], Expr::LitStr("today".into()));
+        assert_eq!(args[1], Expr::LitStr("is".into()));
+        let Expr::CommandSubstitution(inner) = &args[2] else {
+            panic!("expected CommandSubstitution at args[2]; got {:?}", args[2]);
+        };
+        let Stmt::Cmd {
+            program: ip,
+            args: ia,
+        } = inner.as_ref()
+        else {
+            panic!("expected inner Cmd");
+        };
+        assert_eq!(ip, "date");
+        assert!(ia.is_empty());
     }
 
     #[test]

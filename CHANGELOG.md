@@ -110,6 +110,60 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Command substitution `$(cmd)` parser (PMAT-050)
+
+**\`Expr::CommandSubstitution\` is now produced end-to-end.** Same
+pattern as PMAT-049 (quoted strings): extends the tokenizer to
+recognise \`\$(cmd args)\` as an atomic token, then recursively
+lowers the inner content into \`Stmt::Cmd\`.
+
+\`\`\`
+$ echo 'echo today is \$(date)' > /tmp/cs.sh
+$ xpile transpile /tmp/cs.sh --target shell
+#!/bin/sh
+# xpile-bashrs-backend (...)
+# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE
+# module: cs
+echo today is \$(date)
+
+$ echo 'echo \$(date +%Y) and \$(uname -a) end' > /tmp/cs2.sh
+$ xpile transpile /tmp/cs2.sh --target shell
+...
+echo \$(date +%Y) and \$(uname -a) end
+\`\`\`
+
+Implementation:
+- **bashrs-frontend** — new \`RawToken::CommandSubst(String)\` variant
+  carrying the inner content. Tokenizer recognises \`\$(\` when not
+  adjacent to a bareword; reads until matching \`)\`; rejects
+  nested \`\$(\$(cmd))\` (v0.1.0 supports one level only); rejects
+  unterminated \`\$(\` with a precise diagnostic.
+- **\`lower_raw_token\`** — now returns \`Result<Expr, FrontendError>\`
+  (was \`Expr\`) since CommandSubst lowering can fail on malformed
+  inner content. Recursively tokenizes the inner content and lowers
+  to \`Expr::CommandSubstitution(Box<Stmt::Cmd>)\`.
+- Both Cmd-construction sites updated to use the fallible variant
+  via \`.collect::<Result<Vec<_>, _>>()?\`.
+
+What's NOT yet here:
+- **Nested substitution** (\`\$(\$(cmd))\`) — v0.1.0 explicitly rejects.
+- **Backtick substitution** (\`\`\`cmd\`\`\`) — POSIX's older syntax;
+  same semantic, but the v0.1.0 tokenizer doesn't recognise.
+- **Pipelines inside \`\$(...)\`** — bashrs-backend's
+  \`render_substituted_stmt\` rejects them defensively; the parser
+  doesn't produce them.
+- **Substitution inside double quotes** — \`"today is \$(date)"\` is
+  parsed as one DoubleQuoted token with literal \`\$(date)\` content;
+  variable / substitution expansion inside double quotes is v0.2.0.
+
+Test coverage:
+- 3 new bashrs-frontend tokenizer unit tests:
+  - \`tokenize_line_recognises_command_substitution\` — single + multi-substitution lines
+  - \`tokenize_line_rejects_unterminated_command_substitution\` — \`\$(cmd\` without \`)\`
+  - \`tokenize_line_rejects_nested_command_substitution\` — \`\$(\$(date))\`
+- 1 new lower-side unit test \`lower_raw_token_command_substitution_produces_expr\` — verifies the recursive Cmd construction.
+- 1 new parse-side end-to-end test \`parse_and_lower_with_command_substitution\`.
+
 ### Quoting-aware tokenizer in bashrs-frontend (PMAT-049)
 
 **`Expr::QuotedString` is now produced end-to-end.** Before this PR
