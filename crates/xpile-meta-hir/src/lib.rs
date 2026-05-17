@@ -263,6 +263,34 @@ pub enum Type {
     /// `xpile_bigint::BigInt`; Lean emits `Int` (which is already
     /// unbounded). PMAT-012.
     BigInt,
+    /// POSIX shell string — quoted-aware string type for the bashrs
+    /// domain. PMAT-046 / XPILE-BASHRS-MERGER-001 Layer B.
+    ///
+    /// Distinct from a generic `String` (which xpile doesn't have at
+    /// v0.1.0): a `ShellString` value semantically carries an
+    /// implicit `QuotingStrategy` and a shellcheck-equivalent
+    /// validity claim. The v0.1.0 type is *load-bearing for future
+    /// signatures* — when bashrs-frontend gains a real parser that
+    /// types shell variables, it'll annotate them as
+    /// `Type::ShellString`. Until then this variant is unused at the
+    /// surface but present in the IR for the Bronze→Silver
+    /// refinement of `C-BASHRS-POSIX-IDEMPOTENCE` (the typed POSIX
+    /// state needed in `contracts/lean/Bashrs.lean` to model
+    /// concrete shell semantics, not just abstract Outcomes).
+    ///
+    /// Other backends refuse `Type::ShellString` via `Unsupported`
+    /// arms naming the bashrs contract.
+    ShellString,
+    /// POSIX exit code (i32 range, conventionally 0..=255). PMAT-046
+    /// / XPILE-BASHRS-MERGER-001 Layer B.
+    ///
+    /// Same posture as `ShellString` — present for future signatures
+    /// where shell-domain functions need a typed exit status (the
+    /// Silver-tier Lean model's `Outcome` will carry an `ExitCode`
+    /// field rather than just an opaque `observable: String`).
+    ///
+    /// Other backends refuse `Type::ExitCode` via `Unsupported` arms.
+    ExitCode,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

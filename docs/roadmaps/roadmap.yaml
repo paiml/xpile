@@ -724,3 +724,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-046
+  github_issue: null
+  item_type: task
+  title: 'PMAT-046: Layer B Type::ShellString + Type::ExitCode variants for future bashrs Silver-tier refinement'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T16:54:39Z
+  updated: 2026-05-17T16:54:39Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

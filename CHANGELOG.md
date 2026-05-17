@@ -110,6 +110,47 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Layer B type variants — `Type::ShellString` + `Type::ExitCode` (PMAT-046)
+
+Two pure-additive type variants the spec calls out for the bashrs
+domain. Unused at the v0.1.0 surface but **load-bearing for the
+Bronze→Silver refinement of `C-BASHRS-POSIX-IDEMPOTENCE`** — the
+Silver-tier Lean model will type the POSIX shell state explicitly
+(env vars carry \`Type::ShellString\`, exit statuses carry
+\`Type::ExitCode\`) instead of the v0.1.0 Bronze model's abstract
+\`Outcome\` wrapper.
+
+Implementation:
+- **xpile-meta-hir** — new \`Type::ShellString\` + \`Type::ExitCode\`
+  variants. Both \`Copy\` (same as the existing \`I64\`/\`Bool\`/\`BigInt\`).
+- **xpile-rust-codegen** — \`Type::ShellString | Type::ExitCode\` arm
+  in \`emit_type\` returning \`Unsupported(...)\` naming the bashrs
+  contract. (No Rust mapping at v0.1.0; future bashrs runtime crate
+  will export the quoting-aware wrapper + \`std::process::ExitStatus\`
+  alias.)
+- **xpile-ruchy-codegen** — symmetric Unsupported arm.
+- **xpile-lean-codegen** — Unsupported arm in code-lane \`emit_type\`.
+  Silver-tier refinement of \`Bashrs.lean\` will model these
+  directly in the proof lane (typed POSIX shell state), not via the
+  code-lane emit.
+
+Why ship now even though no producer uses them: same rationale as
+PMAT-042 landed \`Vec<Expr>\` before any quoted-arg producer existed
+— the IR shape is the load-bearing change. Future Silver-tier
+refinement work plugs into the existing variants rather than
+needing a refactor.
+
+What's NOT here yet:
+- A frontend that types shell variables as \`ShellString\` —
+  bashrs-frontend treats all args as \`Expr::ShellVar(String)\` at
+  the IR level; the *type* of those refs is implicit.
+- A Lean refinement that uses these types — Silver-tier
+  \`Bashrs.lean\` is XPILE-BASHRS-MERGER-***+.
+- A meta-HIR function returning \`Type::ExitCode\` — the synthesised
+  bashrs-frontend \`main\` returns \`Type::I64\` today; flipping it to
+  \`ExitCode\` is a separate decision that affects how the audit
+  pipeline classifies shell-domain functions.
+
 ### Layer B third Expr variant — `Expr::ShellVar` (PMAT-045)
 
 Shell variable references (`$NAME` / `${NAME}`) are now a

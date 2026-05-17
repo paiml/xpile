@@ -370,6 +370,16 @@ fn emit_type(out: &mut String, t: Type) -> Result<(), LeanCodegenError> {
         // C-PY-INT-ARITH slow path is satisfied by construction in Lean
         // regardless of which type the frontend chose. PMAT-012.
         Type::BigInt => "Int",
+        // PMAT-046: bashrs-domain types refused. A future Silver-tier
+        // refinement of `C-BASHRS-POSIX-IDEMPOTENCE` will model these
+        // in `contracts/lean/Bashrs.lean` directly (typed POSIX shell
+        // state), not via the code-lane `emit_type`.
+        Type::ShellString | Type::ExitCode => {
+            return Err(LeanCodegenError::Unsupported(format!(
+                "Lean code backend does not lower {t:?} — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs the bashrs type domain"
+            )));
+        }
     });
     Ok(())
 }
