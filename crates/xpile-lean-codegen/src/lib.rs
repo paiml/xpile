@@ -202,6 +202,15 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-048: same disposition.
+            Stmt::ShellLoop { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has Stmt::ShellLoop inside a while loop; \
+                     C-BASHRS-POSIX-IDEMPOTENCE governs shell loops — \
+                     Lean codegen does not lower them",
+                    f.name
+                )));
+            }
         }
     }
 
@@ -488,6 +497,13 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
              use `--target shell` instead",
             stages.len()
         ))),
+        // PMAT-048: same disposition.
+        Stmt::ShellLoop { .. } => Err(LeanCodegenError::Unsupported(
+            "Lean backend does not lower Stmt::ShellLoop — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs shell loops; \
+             use `--target shell`"
+                .into(),
+        )),
     }
 }
 

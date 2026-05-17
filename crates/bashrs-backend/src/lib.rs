@@ -15,7 +15,7 @@
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, Target};
 use xpile_contracts::ContractId;
-use xpile_meta_hir::{Expr, Item, Module, QuotingStrategy, Stmt};
+use xpile_meta_hir::{Expr, Item, LoopKind, Module, QuotingStrategy, Stmt};
 
 /// PMAT-042: render a single `Stmt::Cmd` arg into its POSIX shell
 /// surface form, honouring the carried `QuotingStrategy` for
@@ -51,6 +51,34 @@ fn render_arg(e: &Expr) -> Result<String, BackendError> {
              (got {other:?}); only Expr::LitStr / Expr::QuotedString / Expr::ShellVar / Expr::CommandSubstitution supported"
         ))),
     }
+}
+
+/// PMAT-048: render a `Stmt::ShellLoop` to a single-line POSIX
+/// shell representation. Multi-line shell loops (with body
+/// statements) need a recursive Stmt renderer; at v0.1.0 the
+/// helper only handles the loop *header* + a `;` separator before
+/// a placeholder `# body …` comment, locking in the shape so a
+/// future PR can plug in body rendering.
+///
+/// Returns a complete shell line (no trailing newline).
+fn render_shell_loop(kind: &LoopKind, _body: &[Stmt]) -> Result<String, BackendError> {
+    let header = match kind {
+        LoopKind::For { var, items } => {
+            let rendered: Result<Vec<String>, BackendError> =
+                items.iter().map(render_arg).collect();
+            format!("for {var} in {}", rendered?.join(" "))
+        }
+        LoopKind::While { cond } => format!("while {}", render_arg(cond)?),
+        LoopKind::Until { cond } => format!("until {}", render_arg(cond)?),
+    };
+    // Body rendering is intentionally minimal at v0.1.0 — the body
+    // multi-line shape (cmd1\n  cmd2\n  …\n done) requires a
+    // recursive Stmt renderer the v0.1.0 backend doesn't carry
+    // beyond Cmd / Pipeline at the top level. A future PR
+    // (XPILE-BASHRS-MERGER-***+) will plug body rendering in here.
+    Ok(format!(
+        "{header}; do : # body: <pending v0.2.0 expansion>; done"
+    ))
 }
 
 /// PMAT-047: render the inner Stmt of a `$(cmd)` substitution into
@@ -137,7 +165,12 @@ impl Backend for BashrsBackend {
                 .body
                 .stmts
                 .iter()
-                .filter(|s| matches!(s, Stmt::Cmd { .. } | Stmt::Pipeline { .. }))
+                .filter(|s| {
+                    matches!(
+                        s,
+                        Stmt::Cmd { .. } | Stmt::Pipeline { .. } | Stmt::ShellLoop { .. }
+                    )
+                })
                 .collect();
             if emittable.is_empty() {
                 continue;
@@ -194,6 +227,12 @@ impl Backend for BashrsBackend {
                             }
                         }
                         writeln!(primary, "{}", rendered.join(" | "))
+                            .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
+                        emitted_commands += 1;
+                    }
+                    // PMAT-048: ShellLoop renders via the helper.
+                    Stmt::ShellLoop { kind, body } => {
+                        writeln!(primary, "{}", render_shell_loop(kind, body)?)
                             .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
                         emitted_commands += 1;
                     }
@@ -478,6 +517,53 @@ mod tests {
             art.primary.contains("\necho 'hello world'\n"),
             "expected single-quoted arg in emit; got:\n{}",
             art.primary
+        );
+    }
+
+    #[test]
+    fn render_shell_loop_for_kind() {
+        // PMAT-048: For-loop header renders correctly with the
+        // var, items, and the v0.1.0 body placeholder.
+        use xpile_meta_hir::{Expr, LoopKind};
+        let kind = LoopKind::For {
+            var: "x".into(),
+            items: vec![
+                Expr::LitStr("a".into()),
+                Expr::LitStr("b".into()),
+                Expr::LitStr("c".into()),
+            ],
+        };
+        let rendered = render_shell_loop(&kind, &[]).unwrap();
+        assert!(
+            rendered.starts_with("for x in a b c;"),
+            "header missing or wrong: {rendered}"
+        );
+        // Body placeholder shape is stable across v0.1.0 — locks it in.
+        assert!(
+            rendered.ends_with("done"),
+            "loop should end with `done`: {rendered}"
+        );
+    }
+
+    #[test]
+    fn render_shell_loop_while_and_until() {
+        // PMAT-048: while/until headers render with the cond Expr.
+        use xpile_meta_hir::{Expr, LoopKind};
+        let w = LoopKind::While {
+            cond: Expr::LitStr("[ -d /tmp ]".into()),
+        };
+        let rendered = render_shell_loop(&w, &[]).unwrap();
+        assert!(
+            rendered.starts_with("while [ -d /tmp ];"),
+            "while header wrong: {rendered}"
+        );
+        let u = LoopKind::Until {
+            cond: Expr::LitStr("[ ! -f /tmp/done ]".into()),
+        };
+        let rendered = render_shell_loop(&u, &[]).unwrap();
+        assert!(
+            rendered.starts_with("until [ ! -f /tmp/done ];"),
+            "until header wrong: {rendered}"
         );
     }
 

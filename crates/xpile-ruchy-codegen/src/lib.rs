@@ -80,6 +80,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::Cmd { .. } => false,
             // PMAT-041: see rust-codegen's twin arm.
             Stmt::Pipeline { .. } => false,
+            // PMAT-048: see rust-codegen's twin arm.
+            Stmt::ShellLoop { .. } => false,
         }
     }
     f.body.stmts.iter().any(stmt_has_bigint)
@@ -169,6 +171,13 @@ fn emit_stmt_indented(
              use `--target shell`",
             stages.len()
         ))),
+        // PMAT-048: same disposition.
+        Stmt::ShellLoop { .. } => Err(RuchyCodegenError::Unsupported(
+            "Ruchy backend does not lower Stmt::ShellLoop — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs shell loops; \
+             use `--target shell`"
+                .into(),
+        )),
     }
 }
 
