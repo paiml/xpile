@@ -644,3 +644,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-041
+  github_issue: null
+  item_type: task
+  title: 'PMAT-041: Stmt::Pipeline Layer B variant — bashrs-frontend parses ; bashrs-backend emits POSIX pipelines; other backends Unsupported'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T16:12:03Z
+  updated: 2026-05-17T16:12:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

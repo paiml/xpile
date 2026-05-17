@@ -82,6 +82,9 @@ fn function_bigint_mode(f: &Function) -> bool {
             // backend declines at emit_stmt), but exhaustive match
             // keeps the dispatch boundary explicit.
             Stmt::Cmd { .. } => false,
+            // PMAT-041: same disposition as Cmd — Pipeline composes
+            // Cmd stages; no BigInt operand reachable.
+            Stmt::Pipeline { .. } => false,
         }
     }
     f.body.stmts.iter().any(stmt_has_bigint)
@@ -174,6 +177,14 @@ fn emit_stmt_indented(
              contract C-BASHRS-POSIX-IDEMPOTENCE governs this construct; \
              use `--target shell` to emit POSIX sh via bashrs-backend",
             args.len()
+        ))),
+        // PMAT-041: see Cmd arm above. Pipelines have the same
+        // cross-domain disposition.
+        Stmt::Pipeline { stages } => Err(CodegenError::Unsupported(format!(
+            "Rust backend does not lower Stmt::Pipeline ({} stages) — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs shell pipelines; \
+             use `--target shell` to emit POSIX sh via bashrs-backend",
+            stages.len()
         ))),
     }
 }

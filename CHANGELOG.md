@@ -110,6 +110,71 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Layer B second variant — `Stmt::Pipeline` end-to-end (PMAT-041)
+
+Multi-stage shell pipelines (`cmd1 | cmd2 | cmd3 …`) flow through
+the bashrs lane end-to-end. Same compositional shape as PMAT-039's
+`Stmt::Cmd`: produced only by bashrs-frontend, consumed only by
+bashrs-backend, refused by every other backend via explicit
+`Unsupported` arms naming `C-BASHRS-POSIX-IDEMPOTENCE`.
+
+\`\`\`
+$ echo 'ls /tmp | wc -l' > /tmp/pipe.sh
+$ xpile transpile /tmp/pipe.sh --target shell
+#!/bin/sh
+# xpile-bashrs-backend (v0.1.0 PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B)
+# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE
+# module: pipe
+ls /tmp | wc -l
+\`\`\`
+
+Six small changes that compose:
+
+1. **xpile-meta-hir** — new `Stmt::Pipeline { stages: Vec<Stmt> }`.
+   Stages typed as `Stmt` for future composition with control-flow
+   variants; at v0.1.0 every stage is a `Stmt::Cmd` (enforced by
+   the frontend parser). `stmt_has_int_arith` recurses into stages
+   for symmetry with the other compound variants.
+
+2. **xpile-rust-codegen** — Pipeline arm in `emit_stmt_indented`
+   returning `Unsupported(...)` with the stage count; companion
+   arm in `stmt_has_bigint` (recurses).
+
+3. **xpile-ruchy-codegen** — symmetric Unsupported arms.
+
+4. **xpile-lean-codegen** — Pipeline arms in both match sites
+   (while-loop body walker + `emit_stmt`).
+
+5. **bashrs-frontend** — parser splits any line containing `|`
+   into N stages, each tokenised like a Cmd; wraps as
+   `Stmt::Pipeline`. Single-token lines (no `|`) continue producing
+   `Stmt::Cmd` (PMAT-039 unchanged). Rejects empty stages
+   (`cmd | | cmd`, `| cmd`, `cmd |`) with a clear diagnostic —
+   POSIX sh rejects them too.
+
+6. **bashrs-backend** — emit walks Cmd AND Pipeline. Each Pipeline
+   renders each stage as `program args…` and joins with ` | ` on
+   a single line. Non-Cmd stages are refused with an error
+   pointing at the v0.1.0 stage-shape constraint (defensive arm
+   for future frontends).
+
+Test coverage:
+- 4 new bashrs-frontend parser unit tests (2-stage / 3-stage /
+  empty-stage rejection / single-stage stays Cmd regression).
+- 2 new bashrs-backend emit tests (pipeline-renders / non-Cmd-
+  stage refuses).
+- 1 new xpile-core integration test
+  (`layer_b_pipeline_end_to_end`).
+
+What's NOT covered yet (each is its own additive PR):
+- Quoted args (`echo "hello world"`) — needs `Expr::QuotedString`.
+- Shell variables (`echo $HOME`) — needs `Expr::ShellVar`.
+- Command substitution (`x=$(date)`) — needs
+  `Expr::CommandSubstitution`.
+- Embedded `|` inside quoted strings (`echo "a|b" | cat`) —
+  v0.1.0 parser is naive; the v0.2.0 source fold's real bashrs
+  parser fixes it.
+
 ### Cross-domain Python → bashrs via `subprocess.run` recognition (PMAT-040)
 
 **The v0.3.0 falsifier evidence ships at v0.1.0.** depyler-frontend
