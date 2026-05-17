@@ -1748,3 +1748,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-107
+  github_issue: null
+  item_type: task
+  title: 'PMAT-107: sub/meta-hir.md substantive rewrite — show actual Stmt/Expr/Type variants (Layer B shell additions from PMAT-039..056), Rust/Lean/Shell in SourceLang, structured Function (no more signature: String), federated → unified narrative'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T19:30:00Z
+  updated: 2026-05-18T19:30:00Z
+  spec: null
+  acceptance_criteria:
+  - sub/meta-hir.md showed v0.0.1 shape — 5 SourceLang variants (missing Rust/Lean/Shell), Function with `signature: String` (replaced with structured params/return_type/body in PMAT-006), no Stmt/Expr/Type enums shown. Substantive rewrite to show actual shape post PMAT-058..092 — 8 SourceLang variants including Shell, structured Function, full Stmt/Expr/Type enums including Layer B shell variants (Cmd, Pipeline, ShellLoop, ShellAssign, LitStr, QuotedString, ShellVar, CommandSubstitution, ShellSpecial, ShellString, ExitCode), QuotingStrategy/LoopKind enums. Document the federated → unified reversal (2026-05-17) with cross-reference to bashrs-merger.md. Update growth trajectory to mark shipped vs post-v0.1.0 items.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
