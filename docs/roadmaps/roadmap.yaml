@@ -196,3 +196,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-013
+  github_issue: null
+  item_type: task
+  title: Implicit BigInt promotion via return-type propagation
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T09:00:19Z
+  updated: 2026-05-17T09:00:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

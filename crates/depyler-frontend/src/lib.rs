@@ -15,12 +15,12 @@
 //!   - `for` over non-range iterables (lists, dicts, generators) — the
 //!     `for target in range(...)` shape desugars via PMAT-007; other
 //!     iterables wait on collection types.
-//!   - Implicit bigint promotion — explicit `BigInt` annotations work
-//!     (PMAT-012, the slow path of `C-PY-INT-ARITH`); promoting `int`
-//!     to `BigInt` automatically when overflow is provable is a
-//!     PMAT-013 follow-up. Without an explicit annotation, the i64
-//!     fast path still panics with a contract-naming message instead
-//!     of silently wrapping.
+//!   - Statically-inferred BigInt promotion (analyzing operand bounds
+//!     to decide if i64 suffices) is still a follow-up. PMAT-013 shipped
+//!     *return-type-driven* promotion: annotate only `-> BigInt` and
+//!     `int` params lift automatically. Without an explicit annotation,
+//!     the i64 fast path still panics with a contract-naming message
+//!     instead of silently wrapping.
 //!   - Type annotations beyond `int` / `bool` / `BigInt`.
 //!   - Lean backend for `assert` — needs Decidable instances + a
 //!     propositional formulation; the `while` encoding shipped in
@@ -309,6 +309,23 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
         Some(ann) => Some(parse_type_annotation(&f.name, "<return>", ann)?),
     };
     let ctx_return_type = declared_return_type.unwrap_or(Type::I64);
+
+    // PMAT-013: implicit BigInt promotion. When the user declares the
+    // return type as BigInt, every `int`-typed param is promoted to
+    // BigInt automatically — the user opts in once at the return site
+    // instead of annotating every param. This is the most ergonomic
+    // form of the slow path: `def factorial(n: int) -> BigInt:` reads
+    // naturally and produces a BigInt-mode function end-to-end.
+    //
+    // Explicitly-annotated Bool params are left alone (Bool doesn't
+    // overflow). Explicit BigInt annotations are already BigInt.
+    if ctx_return_type == Type::BigInt {
+        for p in &mut params {
+            if p.ty == Type::I64 {
+                p.ty = Type::BigInt;
+            }
+        }
+    }
 
     let mut ctx = LoweringCtx::new(&f.name, ctx_return_type, &params, &body_stmts);
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
@@ -924,12 +941,21 @@ fn infer_type(e: &Expr) -> Type {
 
 /// Context-aware type inference. Looks Idents up in `ctx.name_types`,
 /// propagates BigInt through arithmetic operands (BigInt + anything
-/// → BigInt), and types self-recursive calls as the enclosing
-/// function's return type. PMAT-012.
+/// → BigInt), types self-recursive calls as the enclosing function's
+/// return type, and (PMAT-013) lifts integer literals to BigInt when
+/// the enclosing function is BigInt-typed — without this lift, a
+/// trailing `return 1 if n <= 1 else ...` would infer I64 for the
+/// `1` branch and fail the return-type check.
 fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
     match e {
         Expr::Ident(n) => ctx.name_types.get(n).copied().unwrap_or(Type::I64),
-        Expr::LitInt(_) => Type::I64,
+        Expr::LitInt(_) => {
+            if ctx.fn_return_type == Type::BigInt {
+                Type::BigInt
+            } else {
+                Type::I64
+            }
+        }
         Expr::BinOp { op, lhs, rhs } => match op {
             BinOp::Eq | BinOp::NotEq | BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq => {
                 Type::Bool

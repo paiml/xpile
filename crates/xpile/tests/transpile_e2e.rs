@@ -499,6 +499,68 @@ fn main() {
     assert_rustc_runs("gcd", &rust, driver);
 }
 
+/// PMAT-013: validates implicit BigInt promotion. The user annotates
+/// only the return type as `BigInt`; the frontend auto-promotes every
+/// `int`-typed param. `factorial(n: int) -> BigInt` emits the full
+/// BigInt-mode body, including `.clone()` on every Ident reference
+/// (since BigInt isn't `Copy`).
+///
+/// This is the canonical case the C-PY-INT-ARITH slow path was always
+/// pointing at via panic messages.
+#[test]
+fn bigint_implicit_promotion_factorial_emits_bigint_mode() {
+    let rust = xpile_transpile_to_rust("bigint_factorial.py");
+    // Param `n` was annotated as `int` but the return is BigInt, so
+    // implicit promotion lifts `n` to BigInt automatically.
+    assert!(
+        rust.contains("pub fn factorial(n: xpile_bigint::BigInt) -> xpile_bigint::BigInt"),
+        "expected param n implicitly promoted to BigInt, got:\n{rust}"
+    );
+    // Body uses `n.clone()` because BigInt isn't `Copy` and `n` is
+    // referenced in cond + multiplication + subtraction.
+    assert!(
+        rust.contains("n.clone()"),
+        "expected .clone() on BigInt Ident references, got:\n{rust}"
+    );
+    // Plain infix `*` and `-` — no checked_mul / checked_sub.
+    assert!(
+        !rust.contains("checked_mul") && !rust.contains("checked_sub"),
+        "BigInt mode must not emit checked_* arithmetic:\n{rust}"
+    );
+
+    let shim = r#"
+mod xpile_bigint {
+    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    pub struct BigInt(pub i64);
+    impl From<i64> for BigInt {
+        fn from(v: i64) -> Self { BigInt(v) }
+    }
+    impl std::ops::Add for BigInt {
+        type Output = BigInt;
+        fn add(self, o: BigInt) -> BigInt { BigInt(self.0 + o.0) }
+    }
+    impl std::ops::Sub for BigInt {
+        type Output = BigInt;
+        fn sub(self, o: BigInt) -> BigInt { BigInt(self.0 - o.0) }
+    }
+    impl std::ops::Mul for BigInt {
+        type Output = BigInt;
+        fn mul(self, o: BigInt) -> BigInt { BigInt(self.0 * o.0) }
+    }
+}
+"#;
+    let driver = r#"
+fn main() {
+    use xpile_bigint::BigInt;
+    assert_eq!(factorial(BigInt::from(0)), BigInt::from(1));
+    assert_eq!(factorial(BigInt::from(1)), BigInt::from(1));
+    assert_eq!(factorial(BigInt::from(5)), BigInt::from(120));
+    assert_eq!(factorial(BigInt::from(10)), BigInt::from(3628800));
+}
+"#;
+    assert_rustc_runs("bigint_factorial", &format!("{shim}\n{rust}"), driver);
+}
+
 /// PMAT-012: validates the BigInt slow path. `big_sum(a: BigInt, b: BigInt)
 /// -> BigInt: return a + b` emits with `xpile_bigint::BigInt` typing and
 /// plain infix `+` (no `.checked_add().expect()` — BigInt never overflows).
@@ -518,9 +580,11 @@ fn bigint_function_emits_bigint_type_and_infix() {
         rust.contains("pub fn big_sum(a: xpile_bigint::BigInt, b: xpile_bigint::BigInt) -> xpile_bigint::BigInt"),
         "expected BigInt sig, got:\n{rust}"
     );
+    // PMAT-013 added `.clone()` on BigInt Idents (since BigInt isn't
+    // `Copy`); the infix shape is preserved otherwise.
     assert!(
-        rust.contains("(a + b)"),
-        "expected plain infix + (no checked_add in BigInt mode), got:\n{rust}"
+        rust.contains("(a.clone() + b.clone())"),
+        "expected infix + with clones (BigInt mode), got:\n{rust}"
     );
     assert!(
         !rust.contains("checked_add"),
