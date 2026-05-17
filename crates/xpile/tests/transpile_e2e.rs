@@ -670,6 +670,59 @@ fn bigint_ruchy_emits_bigint_type_and_clones() {
     );
 }
 
+// PMAT-026 / PMAT-013-FOLLOWUP: BigInt bitwise + shift + power.
+// `bigint_bits.py` exercises `& | ^ << >>` in BigInt mode via the
+// implicit-promotion path. Emission uses `xpile_bigint::shl/shr`
+// helpers (num-bigint's shift takes usize rhs, so we route through
+// helpers that handle the BigInt→usize conversion) and infix `& | ^`
+// (num-bigint impls these directly on BigInt operands).
+#[test]
+fn bigint_bitwise_shifts_emit_helpers_and_infix() {
+    let py = fixture("bigint_bits.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("xpile_bigint::shl("),
+        "expected BigInt shl helper, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("xpile_bigint::shr("),
+        "expected BigInt shr helper, got:\n{stdout}"
+    );
+    // Infix bitwise (num-bigint impls these on BigInt operands).
+    for op in &[" & ", " | ", " ^ "] {
+        assert!(
+            stdout.contains(op),
+            "expected infix `{op}` in BigInt-mode emission, got:\n{stdout}"
+        );
+    }
+    assert!(
+        !stdout.contains("checked_shl") && !stdout.contains("checked_shr"),
+        "BigInt mode must not emit checked_shl/checked_shr:\n{stdout}"
+    );
+}
+
+#[test]
+fn bigint_bitwise_emits_via_ruchy_target_too() {
+    let py = fixture("bigint_bits.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "ruchy"]);
+    assert!(
+        out.status.success(),
+        "Ruchy + BigInt bitwise should succeed (PMAT-026); stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("xpile_bigint::shl(") && stdout.contains("xpile_bigint::shr("),
+        "Ruchy emission must mirror Rust's BigInt shift helpers, got:\n{stdout}"
+    );
+}
+
 #[test]
 fn bigint_implicit_promotion_ruchy_emits_full_factorial() {
     // Mirror of the PMAT-013 implicit-promotion test but on the Ruchy
