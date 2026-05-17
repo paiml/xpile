@@ -1306,3 +1306,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-081
+  github_issue: null
+  item_type: task
+  title: 'PMAT-081: sub/provability-roadmap.md sweep — reflect substrate completion in XPILE-QUORUM-005 and PMAT-033 status lines'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T06:30:00Z
+  updated: 2026-05-18T06:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Update docs/specifications/sub/provability-roadmap.md lines 101 and 103. Line 101 (XPILE-QUORUM-005 status) — "11 contracts scanned" → "12 contracts scanned"; "10 unattested contracts surfaced as zombie candidate list" → "all 12 reach ≥1 Extrinsic attestation". Line 103 (PMAT-033 status) — "v0.1.0 headline: 1 QUORUM / 0 PARTIAL / 10 UNVERIFIED" → "12 QUORUM / 0 PARTIAL / 0 UNVERIFIED"; "10 UNVERIFIED contracts are the actionable backlog" → next phase is Bronze→Silver/Gold tier refinement.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
