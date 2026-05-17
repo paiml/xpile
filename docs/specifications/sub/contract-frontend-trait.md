@@ -56,11 +56,11 @@ To be encoded in `contracts/xpile-contract-frontend-trait-v1.yaml` (Layer 3 arch
 
 | Crate | Struct | Format(s) | Status |
 |---|---|---|---|
-| `latex-contract-frontend` | `LatexContractFrontend` | `LatexMath` | Planned (Phase 4) — see [latex-bidirectional.md](latex-bidirectional.md) |
-| `lean-contract-frontend` | `LeanContractFrontend` | `LeanTheorem` | Planned (Phase 4) — read-only Lean theorem extraction |
-| `mdbook-contract-frontend` | `MdBookContractFrontend` | `MdBook` | Inherited from `pv`; vendored wrapper at Phase 3 |
+| `latex-contract-frontend` | `LatexContractFrontend` | `LatexMath` | **shipped as a workspace crate** (scaffold-stage `parse_to_equations`; real LaTeX parsing is post-v0.1.0). The trait + crate + dispatch wiring all exist. See [latex-bidirectional.md](latex-bidirectional.md). |
+| `lean-contract-frontend` | `LeanContractFrontend` | `LeanTheorem` | Planned — read-only Lean theorem extraction. The proof-lane direction (`xpile-lean-contract-backend`) is shipped as a scaffold crate; the contract-frontend direction is post-v0.1.0. |
+| `mdbook-contract-frontend` | `MdBookContractFrontend` | `MdBook` | Inherited from `pv`; vendored wrapper post-v0.1.0. |
 
-No contract frontends ship at v0.1.0. The trait exists in `xpile-contract-frontend` (to scaffold) and is consumed by `xpile-core::TranspileSession` when a `.tex` or `.lean` file is supplied alongside a contract directory.
+At v0.1.0 the `ContractFrontend` trait lives in `xpile-contract-frontend` (real trait, not a scaffold — the trait determinism invariant is covered by `C-XPILE-CONTRACT-FRONTEND-TRAIT` at full §14.4 QUORUM via PMAT-066 / PMAT-067). `latex-contract-frontend` is the only impl in tree; its `parse_to_equations` body is scaffold-stage but the dispatch + crate + workspace wiring all exist. `xpile-core::TranspileSession` consumes the trait when a `.tex` or `.lean` file is supplied alongside a contract directory.
 
 ## LaTeX scope — math + theorem
 
