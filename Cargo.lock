@@ -990,6 +990,7 @@ dependencies = [
  "clap",
  "xpile-backend",
  "xpile-core",
+ "xpile-meta-hir",
 ]
 
 [[package]]
