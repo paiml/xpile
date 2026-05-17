@@ -852,3 +852,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-054
+  github_issue: null
+  item_type: task
+  title: 'PMAT-054: bashrs-frontend tokenizer strips inline # comments'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T17:37:53Z
+  updated: 2026-05-17T17:37:53Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
