@@ -40,6 +40,12 @@ equations:
     # the full Rust ↔ Lean translation at Bronze tier.
     lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.rust_fn_to_lean_def"
     lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    # PMAT-073: Kani harness completes the §14.4 quorum and
+    # closes the Rust ↔ Lean translation bracket at full paired-
+    # discharge coverage (with PMAT-071 for the reverse
+    # direction).
+    kani_harness: "rust_fn_to_lean_def"
+    kani_file: "contracts/kani/xlate_rust_fn_to_lean_thm.rs"
     formula: |
       lift(rust_fn(args: T1, ...) -> R, contract_C) ==
         def <fn_name> (args : T1_lean) ... : R_lean := <body_lean>
