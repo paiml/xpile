@@ -1884,3 +1884,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-115
+  github_issue: null
+  item_type: task
+  title: 'PMAT-115: README fixture/test counts — "5 fixtures" → "11+ fixtures"; "~52 tests" → "~195 tests" + bashrs-frontend coverage'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T23:30:00Z
+  updated: 2026-05-18T23:30:00Z
+  spec: null
+  acceptance_criteria:
+  - README still said "~52 workspace tests · 5 fixtures runtime-verified". Actual counts: 195 workspace tests, 11+ Python fixtures, plus 54 bashrs-frontend tests. Update with canonical-source pointer to CHANGELOG §"Python subset" (same anti-drift pattern as PMAT-108 for sub/rust-codegen.md).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

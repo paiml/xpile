@@ -57,7 +57,7 @@ def factorial (n : Int) : Int :=
 - 27 workspace crates · all compile clean (`cargo check --workspace`)
 - 12 contracts · `pv lint` PASS with 0 errors
 - **100% of contracts at §14.4 QUORUM** — every contract has paired Lean refinement theorem + Kani BMC harness at Bronze tier ([`xpile quorum`](crates/xpile/src/quorum.rs))
-- ~52 workspace tests · 5 fixtures runtime-verified via `rustc -O` + `assert_eq!`
+- ~195 workspace tests · 11+ Python fixtures runtime-verified via `rustc -O` + `assert_eq!` (canonical list in `CHANGELOG.md` §"Python subset"); plus 54 bashrs-frontend tests covering POSIX shell idioms
 - Python subset shipped: see [`CHANGELOG.md`](CHANGELOG.md) §"Python subset (live, runtime-verified)" — typed `def`, multi-statement bodies, all binary + unary ops, ternary, if/else, elif chains, function calls including self-recursion (canonical source — this README intentionally does not duplicate the list to avoid the staleness it kept accumulating)
 - Three real backends: Rust (`pub fn`, Python-floor semantics via `checked_div_euclid` / `checked_rem_euclid`, all arithmetic checked for the `C-PY-INT-ARITH` contract), Ruchy (`fun ... -> T`, same overflow semantics — compiles to Rust), Lean 4 (`def`, `Int.fdiv` / `Int.fmod`; `Int` is unbounded so the contract holds by construction), bashrs (POSIX shell — see [`sub/bashrs-merger.md`](docs/specifications/sub/bashrs-merger.md))
 - CI: `gate` + `kani` + `workspace-test` required on every PR; branch protection active on `main`
