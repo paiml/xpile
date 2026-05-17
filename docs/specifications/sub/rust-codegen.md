@@ -34,7 +34,7 @@ pub struct RustBackend; // implements xpile-backend::Backend
 - `Expr::IfExpr` → `if cond { a } else { b }`, flattened to `else if` for nested chains (PR #21)
 - `Expr::Call` → `callee(args, ...)`
 
-Verified by runtime-executed fixtures (`factorial`, `fib`, `gcd`, `abs_val`, `sign`): emit → `rustc -O` → run → `assert_eq!`. See `crates/xpile/tests/transpile_e2e.rs`.
+Verified by 11+ runtime-executed fixtures: `factorial`, `fib`, `gcd`, `abs_val`, `sign`, `bits`, `square_plus`, `range_size`, `sum_to`, `for_sum` / `range_with_start` / `range_with_step`, `factorial_iter`, plus the BigInt-mode variants `bigint_factorial` / `bigint_bits`. Each fixture: emit → `rustc -O` → run → `assert_eq!`. See `crates/xpile/tests/transpile_e2e.rs`. The canonical fixture list lives in [`/CHANGELOG.md`](../../../CHANGELOG.md) under §"Python subset (live, runtime-verified)" to avoid drift.
 
 ## Contract-driven emission (planned)
 
