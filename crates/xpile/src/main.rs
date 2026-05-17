@@ -1,9 +1,10 @@
 //! xpile binary entry point.
 //!
 //! v0.1.0 CLI surface:
-//!   xpile transpile <input> [--target <t>] [--out <path>]
-//!   xpile audit    <path>  [--target <t>]
-//!   xpile info     (default if no subcommand)
+//!   xpile transpile    <input> [--target <t>] [--out <path>]
+//!   xpile audit        <path>  [--target <t>]
+//!   xpile attestations [--roadmap <path>] [--contracts-dir <path>]  (XPILE-QUORUM-005)
+//!   xpile info         (default if no subcommand)
 //!
 //! Dispatch goes through [`xpile_core::default_session`]: file extension
 //! selects the frontend; `--target` selects the backend.
@@ -60,6 +61,25 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Report the Extrinsic stratum's per-contract attestation counts
+    /// (XPILE-QUORUM-005). Walks `contracts/*.yaml` to discover the
+    /// contract ID universe, then scans the roadmap.yaml work-item
+    /// log for mentions of each ID; each occurrence is one human
+    /// attestation. Feeds the §14.4 quorum's Extrinsic-stratum vote
+    /// tally alongside Semantic (Lean), Symbolic (Kani), and
+    /// Runtime (diff_exec).
+    Attestations {
+        /// Path to the roadmap YAML (canonical attestation log).
+        #[arg(long, default_value = "docs/roadmaps/roadmap.yaml")]
+        roadmap: PathBuf,
+        /// Path to contracts dir; every `*.yaml` with a `metadata.id`
+        /// field contributes its ID to the universe being scanned.
+        #[arg(long, default_value = "contracts")]
+        contracts_dir: PathBuf,
+        /// Emit JSON instead of human-readable text.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -71,6 +91,11 @@ fn main() -> Result<()> {
             transpile(&session, &input, &target, out.as_deref())
         }
         Cmd::Audit { path, target, json } => audit(&session, &path, &target, json),
+        Cmd::Attestations {
+            roadmap,
+            contracts_dir,
+            json,
+        } => attestations(&roadmap, &contracts_dir, json),
     }
 }
 
@@ -498,4 +523,348 @@ fn print_audit_json(report: &AuditReport, target: Target) {
         report.f1_status(),
         report.parse_errors.len()
     );
+}
+
+// ─── attestations: Extrinsic-stratum vote tally (XPILE-QUORUM-005) ──
+//
+// Per `sub/provability-roadmap.md` §1.3 the §14.4 quorum needs four
+// strata: Semantic (Lean), Symbolic (Kani), Runtime (diff_exec), and
+// Extrinsic (humans). The first three are already gated in CI; this
+// CLI exposes the Extrinsic count by treating each work-item mention
+// of a contract ID in `roadmap.yaml` as one human attestation. The
+// roadmap is the canonical record of what humans/agents committed to
+// doing on the project — referencing a contract there is at minimum
+// a "this contract was load-bearing for some piece of work" vote.
+
+/// One contract's attestation tally — discovered IDs and the mentions
+/// found in the roadmap.
+#[derive(Debug)]
+struct ContractAttestation {
+    id: String,
+    // Every `(work_item_id, line_no, snippet)` mention. A single
+    // work item can contribute multiple mentions (title + description
+    // + acceptance criteria all count). The snippet is the trimmed
+    // line so the human reader can see the context.
+    mentions: Vec<AttestationMention>,
+}
+
+#[derive(Debug)]
+struct AttestationMention {
+    /// The `id:` of the enclosing work item — usually `PMAT-NNN`.
+    /// Empty string if the mention appears outside any work-item
+    /// block (rare; would mean a top-level YAML key).
+    work_item: String,
+    line: usize,
+    snippet: String,
+}
+
+#[derive(Debug)]
+struct AttestationReport {
+    contracts_scanned: usize,
+    roadmap_path: PathBuf,
+    contracts: Vec<ContractAttestation>,
+    /// Contracts found in `contracts/` whose ID was not referenced
+    /// anywhere in the roadmap. Surface so a future audit can spot
+    /// "zombie contracts" — defined but unworked.
+    unattested: Vec<String>,
+}
+
+fn attestations(roadmap_path: &Path, contracts_dir: &Path, json: bool) -> Result<()> {
+    let ids = collect_contract_ids(contracts_dir)
+        .with_context(|| format!("collect contract ids from {}", contracts_dir.display()))?;
+    if ids.is_empty() {
+        bail!(
+            "no contract IDs discovered under {} — expected at least one *.yaml file \
+             with a `metadata.id:` field",
+            contracts_dir.display()
+        );
+    }
+    let roadmap = std::fs::read_to_string(roadmap_path)
+        .with_context(|| format!("read roadmap {}", roadmap_path.display()))?;
+    let mut contracts: Vec<ContractAttestation> = Vec::new();
+    let mut unattested: Vec<String> = Vec::new();
+    for id in &ids {
+        let mentions = scan_roadmap_for_id(&roadmap, id);
+        if mentions.is_empty() {
+            unattested.push(id.clone());
+        } else {
+            contracts.push(ContractAttestation {
+                id: id.clone(),
+                mentions,
+            });
+        }
+    }
+    // Stable output: sort by ID (helps diffs and JSON tooling).
+    contracts.sort_by(|a, b| a.id.cmp(&b.id));
+    unattested.sort();
+    let report = AttestationReport {
+        contracts_scanned: ids.len(),
+        roadmap_path: roadmap_path.to_path_buf(),
+        contracts,
+        unattested,
+    };
+    if json {
+        print_attestations_json(&report);
+    } else {
+        print_attestations_text(&report);
+    }
+    Ok(())
+}
+
+/// Walk `contracts_dir` for `*.yaml` files and pull each one's
+/// `metadata.id:` value out. Uses a lightweight line scanner rather
+/// than serde_yaml to keep the xpile bin's dep graph small (same
+/// posture as `refinement_proofs.rs`'s `extract_quoted_value` helper).
+fn collect_contract_ids(contracts_dir: &Path) -> Result<Vec<String>> {
+    if !contracts_dir.is_dir() {
+        bail!("{} is not a directory", contracts_dir.display());
+    }
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(contracts_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        if path.extension().and_then(|s| s.to_str()) != Some("yaml") {
+            continue;
+        }
+        let Ok(contents) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if let Some(id) = extract_metadata_id(&contents) {
+            out.push(id);
+        }
+    }
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
+/// Extract a contract's `metadata.id:` value. Strategy: find the
+/// `metadata:` block (must be at column 0), then look for the first
+/// `  id:` line within it. Returns `None` if missing or malformed.
+fn extract_metadata_id(contents: &str) -> Option<String> {
+    let mut in_metadata = false;
+    for line in contents.lines() {
+        if line.starts_with("metadata:") {
+            in_metadata = true;
+            continue;
+        }
+        if in_metadata {
+            // End of metadata block when a new top-level key appears.
+            if !line.starts_with(' ') && !line.is_empty() && !line.starts_with('#') {
+                return None;
+            }
+            let trimmed = line.trim_start();
+            if let Some(rest) = trimmed.strip_prefix("id:") {
+                let raw = rest.trim().trim_matches('"').trim_matches('\'');
+                if !raw.is_empty() {
+                    return Some(raw.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Scan the roadmap text for occurrences of `id`. Each occurrence
+/// is paired with the enclosing work item's `id:` (e.g. `PMAT-029`)
+/// and the line number. The roadmap is a flat YAML list under
+/// `roadmap:`, with each item starting at column 2 (`- id: PMAT-...`).
+fn scan_roadmap_for_id(roadmap: &str, contract_id: &str) -> Vec<AttestationMention> {
+    let mut out = Vec::new();
+    let mut current_item: String = String::new();
+    for (idx, line) in roadmap.lines().enumerate() {
+        // Detect a new work item header: `- id: PMAT-NNN`.
+        if let Some(rest) = line.strip_prefix("- id: ") {
+            current_item = rest.trim().to_string();
+        }
+        if line.contains(contract_id) {
+            out.push(AttestationMention {
+                work_item: current_item.clone(),
+                line: idx + 1,
+                snippet: line.trim().to_string(),
+            });
+        }
+    }
+    out
+}
+
+fn print_attestations_text(report: &AttestationReport) {
+    println!("xpile attestations — Extrinsic stratum vote tally (XPILE-QUORUM-005)");
+    println!(
+        "scanned {} contract ID(s) from contracts/; mentions read from {}",
+        report.contracts_scanned,
+        report.roadmap_path.display()
+    );
+    println!();
+    if report.contracts.is_empty() {
+        println!("  (no attestations found)");
+    } else {
+        for c in &report.contracts {
+            let unique_items: std::collections::BTreeSet<&str> =
+                c.mentions.iter().map(|m| m.work_item.as_str()).collect();
+            println!(
+                "  {:<40}  {:>3} mentions across {:>2} work item(s)",
+                c.id,
+                c.mentions.len(),
+                unique_items.len()
+            );
+            for w in &unique_items {
+                println!("      - {w}");
+            }
+        }
+    }
+    if !report.unattested.is_empty() {
+        println!();
+        println!(
+            "  unattested contracts ({}) — defined under contracts/ but never \
+             referenced in roadmap.yaml:",
+            report.unattested.len()
+        );
+        for u in &report.unattested {
+            println!("    - {u}");
+        }
+    }
+    println!();
+    let total_mentions: usize = report.contracts.iter().map(|c| c.mentions.len()).sum();
+    let attested = report.contracts.len();
+    println!(
+        "totals: {attested}/{} contracts attested, {total_mentions} total mention(s)",
+        report.contracts_scanned
+    );
+    println!(
+        "stratum: Extrinsic — per ruchy 5.0 §14.4, this counts toward the N-of-M oracle quorum \
+         alongside Semantic (Lean), Symbolic (Kani), Runtime (diff_exec)."
+    );
+}
+
+fn print_attestations_json(report: &AttestationReport) {
+    // Hand-rolled JSON, same posture as `print_audit_json`. Schema:
+    //   {
+    //     "contracts_scanned": N,
+    //     "roadmap_path": "...",
+    //     "contracts": [{
+    //       "id": "...", "mention_count": N,
+    //       "work_items": [...],
+    //       "mentions": [{"work_item": "...", "line": N, "snippet": "..."}]
+    //     }],
+    //     "unattested": ["...", ...]
+    //   }
+    let mut first = true;
+    print!(
+        "{{\"contracts_scanned\":{},\"roadmap_path\":\"{}\",\"contracts\":[",
+        report.contracts_scanned,
+        report.roadmap_path.display()
+    );
+    for c in &report.contracts {
+        if !first {
+            print!(",");
+        }
+        first = false;
+        let unique_items: std::collections::BTreeSet<&str> =
+            c.mentions.iter().map(|m| m.work_item.as_str()).collect();
+        let items_json: Vec<String> = unique_items.iter().map(|w| format!("\"{w}\"")).collect();
+        let mention_json: Vec<String> = c
+            .mentions
+            .iter()
+            .map(|m| {
+                format!(
+                    "{{\"work_item\":\"{}\",\"line\":{},\"snippet\":\"{}\"}}",
+                    m.work_item,
+                    m.line,
+                    escape_json(&m.snippet)
+                )
+            })
+            .collect();
+        print!(
+            "{{\"id\":\"{}\",\"mention_count\":{},\"work_items\":[{}],\"mentions\":[{}]}}",
+            c.id,
+            c.mentions.len(),
+            items_json.join(","),
+            mention_json.join(",")
+        );
+    }
+    print!("],\"unattested\":[");
+    let unattested_json: Vec<String> = report
+        .unattested
+        .iter()
+        .map(|u| format!("\"{u}\""))
+        .collect();
+    print!("{}", unattested_json.join(","));
+    println!("]}}");
+}
+
+/// Minimal JSON-string escape. Handles backslash, double-quote, and
+/// control characters that would otherwise break a one-line JSON
+/// payload. Keeps the hand-rolled-JSON posture rather than pulling
+/// serde_json for one field.
+fn escape_json(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod attestation_tests {
+    use super::*;
+
+    #[test]
+    fn extract_metadata_id_finds_canonical_id() {
+        let src = "metadata:\n  id: C-FOO\n  version: \"1.0\"\n";
+        assert_eq!(extract_metadata_id(src), Some("C-FOO".to_string()));
+    }
+
+    #[test]
+    fn extract_metadata_id_unquoted_and_quoted() {
+        assert_eq!(
+            extract_metadata_id("metadata:\n  id: \"C-BAR\"\n"),
+            Some("C-BAR".to_string())
+        );
+        assert_eq!(
+            extract_metadata_id("metadata:\n  id: 'C-BAZ'\n"),
+            Some("C-BAZ".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_metadata_id_missing_returns_none() {
+        assert_eq!(extract_metadata_id("metadata:\n  version: \"1.0\"\n"), None);
+        assert_eq!(extract_metadata_id(""), None);
+    }
+
+    #[test]
+    fn scan_roadmap_attributes_mentions_to_enclosing_work_item() {
+        let yaml = "\
+roadmap:
+- id: PMAT-100
+  title: 'unrelated'
+- id: PMAT-200
+  title: 'Refers to C-FOO contract'
+  acceptance_criteria:
+  - mentions C-FOO again in the body
+- id: PMAT-300
+  title: 'plain'
+";
+        let mentions = scan_roadmap_for_id(yaml, "C-FOO");
+        assert_eq!(mentions.len(), 2);
+        assert!(mentions.iter().all(|m| m.work_item == "PMAT-200"));
+    }
+
+    #[test]
+    fn scan_roadmap_returns_empty_when_id_absent() {
+        let yaml = "- id: PMAT-1\n  title: 'foo'\n";
+        assert!(scan_roadmap_for_id(yaml, "C-NOT-PRESENT").is_empty());
+    }
 }

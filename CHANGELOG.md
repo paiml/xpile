@@ -110,6 +110,42 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Extrinsic-stratum attestations via pmat work items (PMAT-032 / XPILE-QUORUM-005)
+
+Closes the Extrinsic-stratum side of the ruchy 5.0 §14.4 N-of-M
+oracle quorum. The three formal strata (Semantic / Symbolic /
+Runtime) are CI-gated since QUORUM-001-003 + DIFF-001-003; the
+Extrinsic stratum (human review) is now sourced from `roadmap.yaml`
+work-item references to contract IDs.
+
+New CLI subcommand:
+
+\`\`\`
+xpile attestations [--roadmap <path>] [--contracts-dir <path>] [--json]
+\`\`\`
+
+Walks `contracts/*.yaml` for the contract ID universe (lightweight
+`metadata.id:` scan), then scans the roadmap log for occurrences of
+each ID. Each occurrence is one human attestation; attestations are
+attributed to the enclosing work item's `id:` (e.g. `PMAT-029`).
+
+v0.1.0 live state:
+- 11 contracts scanned.
+- **`C-PY-INT-ARITH`**: 5 attestations across 5 work items
+  (PMAT-002 / 011 / 017 / 019 / 030).
+- 10 unattested contracts (defined under contracts/ but never
+  referenced in any work-item): surfaced as a "zombie contract"
+  candidate list so a future audit can decide which to retire vs.
+  promote to first-class.
+
+Integration tests assert C-PY-INT-ARITH has ≥1 attestation in the
+live roadmap and that the text-mode output carries its landmarks
+(QUORUM ticket, stratum identifier). Unit tests cover the YAML
+`metadata.id` parser and the per-work-item attribution logic. JSON
+output is a single-line, hand-rolled payload (same posture as
+`xpile audit --json`) so CI dashboards can ingest it without
+serde_yaml/serde_json pulled into the xpile bin.
+
 ### Overflow-prone ranges + panic-as-BigInt interpretation (PMAT-031 / XPILE-DIFF-003)
 
 Extends `diff_exec.rs` from "only test fast-path inputs" to also
