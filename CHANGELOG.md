@@ -110,6 +110,21 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Lean refinement proof for C-PY-INT-ARITH (PMAT-017 / XPILE-REFINE-001)
+
+First contract YAML grows `lean_theorem:` + `lean_file:` fields on
+its equations. `contracts/py-int-arith-v1.yaml` points at
+`contracts/lean/PyIntArith.lean`'s `fast_path_eq_slow_path`
+theorem, which states `i64_wrap_add a b = bigint_add a b` when
+`fits_i64 (a + b)`. Proof is currently `sorry`-discharged
+(XPILE-REFINE-002 follows-up); the *statement* is what the citation
+pipeline points at via `@[xpile_contract "C-PY-INT-ARITH"]`.
+
+Enforcement test (`crates/xpile/tests/refinement_proofs.rs`) walks
+every contract YAML, asserts every `lean_theorem:` field references
+a real file with a real theorem of that name. Closes the
+citation-bridge-fragility audit caveat for this contract.
+
 ### Quarterly SOTA-gap dossier cadence (PMAT-016 / XPILE-SOTA-001)
 
 `audit-design.md` §0 publishes the quarterly cadence + the next
