@@ -1816,3 +1816,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-111
+  github_issue: null
+  item_type: task
+  title: 'PMAT-111: xpile-spec.md §11+§12 quality-regime sweep — "4 contracts mean=0.58" → "12 contracts mean=0.56"; remove stale claims that pmat tdg / llvm-cov / mutants are CI-enforced'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T21:30:00Z
+  updated: 2026-05-18T21:30:00Z
+  spec: null
+  acceptance_criteria:
+  - xpile-spec.md §11 said "all 4 xpile contracts pass pv lint 8/8 gates with mean=0.58 score" — update to 12 contracts mean=0.56. §12 claimed pmat tdg ≥ A- / llvm-cov ≥ 95% / cargo mutants ≥ 80% are enforced in CI — they aren't (per PMAT-101). Replace with actual live CI gate list (pv lint + clippy -D warnings + cargo deny + cargo test --workspace incl. stratum gates + Kani BMC). Cross-reference sub/ci-gates.md.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

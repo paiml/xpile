@@ -205,7 +205,7 @@ Per-file budgets prevent denial-of-wallet failure modes and bound CI cost. Aggre
 
 xpile delegates its entire contract framework to [`provable-contracts`](https://github.com/paiml/provable-contracts) — the upstream `pv` CLI and Rust library. YAML contracts under `contracts/` are canonical; Rust stubs, property tests, Kani harnesses, Lean theorems, mdBook pages, and README quality claims are *generated from* them via `pv scaffold`, `pv probar`, `pv kani`, `pv lean`, `pv book-gen`, `pv readme-gen`.
 
-The xpile-contracts crate is a thin re-export of `provable_contracts` plus an `XpileContractLayer` metadata enum tagging contracts by taxonomy layer ([Section 13](#13-contract-taxonomy)). At v0.1.0, all 4 xpile contracts pass `pv lint` 8/8 gates with `mean=0.58` score.
+The xpile-contracts crate is a thin re-export of `provable_contracts` plus an `XpileContractLayer` metadata enum tagging contracts by taxonomy layer ([Section 13](#13-contract-taxonomy)). At v0.1.0 (post-substrate-completion PMAT-058..077), all 12 xpile contracts pass `pv lint` 8/8 gates with `mean=0.56` score, and all 12 are at §14.4 N-of-M QUORUM via paired Lean refinement theorems + Kani BMC harnesses. The canonical mean is whatever `pv lint contracts/` reports on the current `main` branch.
 
 ---
 
@@ -213,7 +213,7 @@ The xpile-contracts crate is a thin re-export of `provable_contracts` plus an `X
 
 **Sub-spec**: [sub/pmat-integration.md](sub/pmat-integration.md)
 
-[`pmat`](https://github.com/paiml/paiml-mcp-agent-toolkit) is the work controller across the fleet. Every phase of the xpile rollout is a pmat work item with its spec in `docs/specifications/` (this directory). Quality gates enforced in CI: `pmat tdg` ≥ A-, `cargo llvm-cov` ≥ 95%, `cargo mutants` ≥ 80%, `pv lint` 8/8 gates, zero clippy warnings, `cargo deny check` clean.
+[`pmat`](https://github.com/paiml/paiml-mcp-agent-toolkit) is the work controller across the fleet. Every phase of the xpile rollout is a pmat work item with its spec in `docs/specifications/` (this directory). Live CI gates at v0.1.0 (per [sub/ci-gates.md](sub/ci-gates.md)): `pv lint` 8/8 gates with 0 errors, zero clippy warnings (`-D warnings`), `cargo deny check advisories` clean, `cargo test --workspace` green (includes `every_kani_harness_discharges` over all 12 BMC harnesses + the §14.4 stratum gates `refinement_proofs` / `kani_harnesses` / `kani_verify` / `quorum` / `attestations`), and the optional `kani` job verifying every harness symbolically. The originally-planned `pmat tdg ≥ A-`, `cargo llvm-cov ≥ 95%`, `cargo mutants ≥ 80%` gates are scheduled post-v0.1.0 under XPILE-CI-* tickets.
 
 The `kaizen-paiml` skill drives the continuous-improvement loop: pick a pmat work item, implement, run gates, mark done, move on. xpile is repo #41 in the fleet once we register per [Section 20](#20-kaizen-fleet-membership).
 
