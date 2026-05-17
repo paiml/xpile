@@ -1544,3 +1544,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-095
+  github_issue: null
+  item_type: task
+  title: 'PMAT-095: fix Ext numerics drift — C-BASHRS-POSIX-IDEMPOTENCE Ext=6 → Ext≥6/Ext=8 in audit-design.md and sub/bashrs-merger.md'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T13:30:00Z
+  updated: 2026-05-18T13:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Update two stale Ext=6 numerics. C-BASHRS-POSIX-IDEMPOTENCE was at Ext=6 when audit-design.md and bashrs-merger.md were last revised; PMAT-085..092 added more references and Ext is now 8. Switch to "Ext≥6 at substrate-completion; Ext=8 after PMAT-085..092 bashrs polish" phrasing so the docs don't go stale every time new tickets cite the contract.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
