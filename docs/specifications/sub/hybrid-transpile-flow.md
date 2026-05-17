@@ -60,7 +60,13 @@ foo_module/
   └──────────────────────────────────────────────────────────────────┘
 ```
 
-## First demo target: CPython C extension
+## First hybrid demo: Python → shell (shipped at v0.1.0)
+
+The first cross-domain hybrid that actually shipped is Python recognising `subprocess.run([...])` calls and lowering them through meta-HIR's `Stmt::Cmd` variant to POSIX shell via `bashrs-backend` — PMAT-040, integration test `transpile_python_subprocess_run_to_shell_via_bashrs_backend`. This wasn't the originally-planned first demo (Python+C / NumPy was — see below) but it shipped first because the bashrs merger (PMAT-037..058) produced the load-bearing cross-domain IR variants ahead of the Python+C / FFI manifest work.
+
+The Python→shell hybrid is the *simpler* shape (one frontend cross-recognising another domain's IR variants); the Python+C / NumPy demo described below is the *load-bearing* shape (two real frontends, FFI manifest linking, refcount-aware boundary). Both are now in scope at v0.1.0+ — see [bashrs-merger.md](bashrs-merger.md) for the Python→shell side.
+
+## Planned demo target: CPython C extension
 
 A NumPy-style module:
 
