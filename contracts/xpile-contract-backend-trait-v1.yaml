@@ -49,6 +49,11 @@ equations:
     # PMAT-062/064/066.
     lean_theorem: "XpileContracts.CXpileContractBackendTrait.render_idempotency"
     lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    # PMAT-069: Kani harness completes the §14.4 quorum. Final
+    # corner of the 2×2 trait-determinism matrix at QUORUM:
+    # paired Lean+Kani discharges for every trait method.
+    kani_harness: "render_idempotency"
+    kani_file: "contracts/kani/xpile_contract_backend_trait.rs"
     formula: |
       forall (contract, config): hash(cb.render(contract, config).unwrap()) == hash(cb.render(contract, config).unwrap())
     domain: |

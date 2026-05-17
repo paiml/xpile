@@ -110,6 +110,72 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Kani symbolic harness — C-XPILE-CONTRACT-BACKEND-TRAIT → QUORUM (PMAT-069) — **closes 2×2 trait-determinism matrix at full Lean+Kani QUORUM (67% of substrate)**
+
+**Eighth contract reaches QUORUM. The 2×2 trait-determinism
+matrix is now fully closed at QUORUM** — every architectural
+trait method in xpile has paired Lean + Kani Bronze-tier
+discharges:
+
+| stratum | code lane (HIR)            | proof lane (contracts)     |
+|---|---|---|
+| **parse** | PMAT-062 Lean + 063 Kani   | PMAT-066 Lean + 067 Kani   |
+| **emit**  | PMAT-064 Lean + 065 Kani   | PMAT-068 Lean + 069 Kani ← this PR |
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    3  QUORUM
+  C-XLATE-PY-LIST-TO-VEC                      1    1    0    3  QUORUM
+  C-XPILE-FRONTEND-TRAIT                      1    1    0    3  QUORUM
+  C-XPILE-BACKEND-TRAIT                       1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-FRONTEND-TRAIT             1    1    0    2  QUORUM
+  C-XPILE-CONTRACT-BACKEND-TRAIT              1    1    0    1  QUORUM  ← Sym now 1
+  C-COMPILE-RUST-TO-PTX-MMA                   0    0    0    0  UNVERIFIED
+  C-FFI-CPYTHON-EXT                           0    0    0    0  UNVERIFIED
+  C-XLATE-LEAN-TO-RUST                        0    0    0    0  UNVERIFIED
+  C-XLATE-RUST-FN-TO-LEAN-THM                 0    0    0    0  UNVERIFIED
+  totals: 8 QUORUM, 0 PARTIAL, 4 UNVERIFIED (12 contracts total)
+```
+
+**Milestone: 8 of 12 contracts (67%) at QUORUM, with all 4
+architectural trait contracts at paired Lean + Kani coverage.**
+The §14.4 N-of-M evidence model is now thoroughly stress-tested:
+seven distinct domains (Python arithmetic, shell idempotence,
+LaTeX rendering, list lowering, Frontend, Backend,
+ContractFrontend, ContractBackend determinism), all clearing
+quorum via the same Lean→Kani paired-PR pattern.
+
+**Remaining UNVERIFIED contracts are domain-specific, not
+architectural:**
+- `C-COMPILE-RUST-TO-PTX-MMA` — GPU compilation; needs real PTX-emit modelling
+- `C-FFI-CPYTHON-EXT` — Python C-extension FFI; needs ABI modelling
+- `C-XLATE-LEAN-TO-RUST` — Lean→Rust translation; needs syntax modelling
+- `C-XLATE-RUST-FN-TO-LEAN-THM` — Rust→Lean translation; needs HIR modelling
+
+These four contracts will require domain-specific refinement
+work rather than the uniform Bronze-rfl scaffold the previous 7
+contracts used. They're the natural next batch but each will
+take more design work per ticket.
+
+Implementation:
+- **`contracts/kani/xpile_contract_backend_trait.rs`** — final
+  harness in the 2×2 matrix. Mirrors PMAT-067's shape:
+  `render(contract: [u8; 2], config: [u8; 2]) -> RenderedDoc`
+  plus `#[kani::proof] fn render_idempotency()`.
+- **`contracts/xpile-contract-backend-trait-v1.yaml`** —
+  equation `render_idempotency` gains `kani_harness` +
+  `kani_file` refs.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-069 entry.
+
+Full Kani gate now ~2.8s across eight harnesses
+(py_int_arith.rs, bashrs.rs, notation.rs, xlate_py_list_to_vec.rs,
+xpile_frontend_trait.rs, xpile_backend_trait.rs,
+xpile_contract_frontend_trait.rs,
+xpile_contract_backend_trait.rs).
+
 ### Lean refinement theorem — C-XPILE-CONTRACT-BACKEND-TRAIT → PARTIAL (PMAT-068) — **closes the 2×2 trait-determinism matrix at the Semantic stratum**
 
 **Eighth contract reaches non-UNVERIFIED status.** New
