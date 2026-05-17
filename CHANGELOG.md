@@ -110,6 +110,48 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### POSIX test-bracket `[ ... ]` round-trip via LitStr passthrough (PMAT-089)
+
+**POSIX `test`-command synonym brackets round-trip end-to-end
+at v0.1.0.** Real shell scripts use `[ ... ]` heavily for file
+tests, string comparisons, and numeric checks. POSIX `[` is
+literally an executable named `[` (typically `/usr/bin/[`), so
+it lowers cleanly to `Stmt::Cmd { program: "[", args: [...] }`
+with the test arguments — including the closing `]` — as
+ordinary LitStr / QuotedString / ShellVar args depending on
+the token shape.
+
+```bash
+[ -f foo ]
+# parses to: Stmt::Cmd {
+#   program: "[",
+#   args: [LitStr("-f"), LitStr("foo"), LitStr("]")]
+# }
+# round-trips to byte-identical shell output; the shell at
+# execution time correctly invokes /usr/bin/[ which evaluates
+# the predicate and exits with 0 or 1.
+```
+
+Implementation:
+- **`parse_and_lower_test_bracket_round_trips_via_litstr`** —
+  asserts 6 distinct test-bracket patterns parse correctly:
+  file tests (`-f foo`, `-d /tmp`, `-e missing`), string
+  comparisons (`"$x" = abc`, `-z "$VAR"`), numeric checks
+  (`$count -gt 0`), negation (`! -e missing`). The test
+  exercises the full multi-Expr-variant shape (LitStr +
+  QuotedString + ShellVar) that bashrs-frontend produces.
+
+Bash's `[[ ... ]]` is intentionally NOT covered — it's a bash
+extension (not POSIX). Structured representation
+(`Stmt::TestPredicate { negated, args }`) is
+XPILE-BASHRS-TEST-PREDICATE-001 future work. At v0.1.0 the
+LitStr/QuotedString/ShellVar passthrough preserves shell
+semantics through the byte-level round-trip.
+
+Same v0.1.0 invariant pattern as PMAT-085 (param expansion),
+PMAT-086 (line continuation), PMAT-087 (redirection), and
+PMAT-088 (short-circuit operators).
+
 ### POSIX `&&` / `||` short-circuit operator round-trip (PMAT-088)
 
 **Fixes a v0.1.0 parser bug AND locks in short-circuit

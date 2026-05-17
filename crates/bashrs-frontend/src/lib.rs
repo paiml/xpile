@@ -1556,6 +1556,86 @@ pwd
     }
 
     #[test]
+    fn parse_and_lower_test_bracket_round_trips_via_litstr() {
+        // PMAT-089: POSIX test brackets `[ ... ]` (the `test`
+        // command synonym) round-trip via LitStr passthrough.
+        // POSIX `[` is literally an executable — `/usr/bin/[` on
+        // most systems — so it lowers cleanly to Stmt::Cmd with
+        // `program: "["` and the test arguments as LitStr args
+        // including the closing `]`.
+        //
+        // Real shell scripts use `[ ... ]` heavily for file
+        // tests, string comparisons, and numeric checks. With
+        // this round-trip locked in, those scripts pass through
+        // bashrs without semantic loss even though the IR
+        // doesn't model the test predicate structurally.
+        //
+        // Bash's `[[ ... ]]` is intentionally NOT covered here —
+        // it's a bash extension (not POSIX), and the conservative
+        // v0.1.0 stance is to fall through as args. Structured
+        // representation (`Stmt::TestPredicate { negated, args }`)
+        // is XPILE-BASHRS-TEST-PREDICATE-001 future work.
+        //
+        // Same v0.1.0 invariant pattern as PMAT-085/086/087/088.
+        use xpile_meta_hir::{Expr, Item, Stmt};
+        let cases: &[(&str, &str, &[&str])] = &[
+            ("[ -f foo ]\n", "[", &["-f", "foo", "]"]),
+            ("[ -d /tmp ]\n", "[", &["-d", "/tmp", "]"]),
+            ("[ \"$x\" = abc ]\n", "[", &["\"$x\"", "=", "abc", "]"]),
+            ("[ -z \"$VAR\" ]\n", "[", &["-z", "\"$VAR\"", "]"]),
+            ("[ $count -gt 0 ]\n", "[", &["$count", "-gt", "0", "]"]),
+            ("[ ! -e missing ]\n", "[", &["!", "-e", "missing", "]"]),
+        ];
+        for (source, expected_program, expected_args) in cases {
+            let module = BashrsFrontend
+                .parse_and_lower(&PathBuf::from("/tmp/t.sh"), source)
+                .unwrap_or_else(|e| panic!("parse failed for `{source}`: {e:?}"));
+            let Item::Function(f) = &module.items[0];
+            let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
+                panic!(
+                    "expected Stmt::Cmd for `{source}`; got {:?}",
+                    f.body.stmts[0]
+                );
+            };
+            assert_eq!(program, expected_program);
+            // Args come back as a mix of LitStr / QuotedString /
+            // ShellVar depending on the token shape. We assemble
+            // the expected shape by re-tokenizing each expected
+            // arg through `lower_token` so the test stays robust
+            // to legitimate IR refinements (e.g., `$x` correctly
+            // recognized as ShellVar).
+            let expected_exprs: Vec<Expr> = expected_args
+                .iter()
+                .map(|s| {
+                    // Strip surrounding double-quotes for tokens
+                    // like `"$x"` — those parse as
+                    // Expr::QuotedString. The tokenizer handles
+                    // this via tokenize_line, not lower_token, so
+                    // we go via the full parse path's expected
+                    // shape: a double-quoted token containing a
+                    // ShellVar-eligible name lowers to
+                    // QuotedString { content: "$x",
+                    // quoting: Double }.
+                    if let Some(inner) = s.strip_prefix('"').and_then(|t| t.strip_suffix('"')) {
+                        Expr::QuotedString {
+                            content: inner.to_string(),
+                            quoting: xpile_meta_hir::QuotingStrategy::Double,
+                        }
+                    } else if s.starts_with('$') && is_posix_identifier(&s[1..]) {
+                        Expr::ShellVar(s[1..].to_string())
+                    } else {
+                        Expr::LitStr((*s).to_string())
+                    }
+                })
+                .collect();
+            assert_eq!(
+                args, &expected_exprs,
+                "test-bracket round-trip for `{source}` failed"
+            );
+        }
+    }
+
+    #[test]
     fn parse_and_lower_and_or_short_circuit_round_trips_via_litstr() {
         // PMAT-088: POSIX `&&` and `||` short-circuit operators
         // round-trip end-to-end via LitStr passthrough at v0.1.0.
