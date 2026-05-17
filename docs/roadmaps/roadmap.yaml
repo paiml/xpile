@@ -676,3 +676,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-043
+  github_issue: null
+  item_type: task
+  title: 'PMAT-043: shell-side diff_exec gate — Python subprocess.run output vs bashrs-emitted shell output (promotes C-BASHRS-POSIX-IDEMPOTENCE to PARTIAL on the quorum)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T16:31:44Z
+  updated: 2026-05-17T16:31:44Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
