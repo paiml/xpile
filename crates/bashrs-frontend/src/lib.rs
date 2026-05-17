@@ -186,9 +186,38 @@ fn tokenize_line(line: &str) -> Result<Vec<RawToken>, FrontendError> {
                          (e.g., `foo\"bar\"`); v0.1.0 requires quotes at token boundaries"
                     )));
                 }
+                // PMAT-056: inside double quotes, POSIX recognises
+                // backslash as an escape for `$`, `` ` ``, `"`, `\`,
+                // and newline. We preserve escapes *verbatim* in the
+                // content (don't decode) so the round-trip stays
+                // information-lossless — this matters because `$`
+                // and `\$` mean different things at shell-execution
+                // time (the former triggers variable expansion; the
+                // latter is literal). If we decoded escapes here we
+                // couldn't distinguish them on the render side.
+                //
+                // The escape recognition is load-bearing for
+                // termination: `\"` must NOT close the string.
+                //
+                // Single quotes (the arm above) deliberately do NOT
+                // handle escapes — POSIX says single quotes are
+                // fully literal (no `\'` even allowed).
                 let mut content = String::new();
                 let mut closed = false;
-                for inner in chars.by_ref() {
+                while let Some(inner) = chars.next() {
+                    if inner == '\\' {
+                        // Push the backslash AND the next char
+                        // (whatever it is) verbatim. If next is one
+                        // of the POSIX double-quote escapes, this
+                        // means the inner `"` won't close the
+                        // string. Other backslashes are preserved
+                        // per POSIX rules.
+                        content.push('\\');
+                        if let Some(next) = chars.next() {
+                            content.push(next);
+                        }
+                        continue;
+                    }
                     if inner == '"' {
                         closed = true;
                         break;
@@ -1040,6 +1069,69 @@ pwd
                 RawToken::CommandSubst("uname -a".into()),
             ]
         );
+    }
+
+    #[test]
+    fn tokenize_line_double_quote_escapes_do_not_terminate_string() {
+        // PMAT-056 load-bearing: `\"` inside double quotes must NOT
+        // close the string. The escape is preserved verbatim in the
+        // content so the render round-trip emits a valid shell line.
+        let toks = tokenize_line("echo \"she said \\\"hi\\\"\"").expect("parse");
+        assert_eq!(toks.len(), 2, "expected 2 tokens: {toks:?}");
+        match &toks[1] {
+            RawToken::DoubleQuoted(s) => {
+                assert_eq!(s, "she said \\\"hi\\\"");
+            }
+            other => panic!("expected DoubleQuoted; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tokenize_line_double_quote_preserves_var_expansion() {
+        // PMAT-056 regression guard: `"Hi, $NAME"` content stays
+        // `Hi, $NAME` (unescaped) so the rendered shell still
+        // triggers variable expansion at runtime. If the tokenizer
+        // accidentally decoded all escapes, this would break.
+        let toks = tokenize_line("echo \"Hi, $NAME\"").expect("parse");
+        match &toks[1] {
+            RawToken::DoubleQuoted(s) => assert_eq!(s, "Hi, $NAME"),
+            other => panic!("expected DoubleQuoted; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tokenize_line_double_quote_preserves_escaped_dollar() {
+        // PMAT-056: `"\$NAME"` keeps the `\$` form (literal `$NAME`
+        // at runtime, no expansion).
+        let toks = tokenize_line("echo \"\\$NAME\"").expect("parse");
+        match &toks[1] {
+            RawToken::DoubleQuoted(s) => assert_eq!(s, "\\$NAME"),
+            other => panic!("expected DoubleQuoted; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tokenize_line_double_quote_preserves_escaped_backslash() {
+        // PMAT-056: `"\\"` content is `\\` (two chars) which renders
+        // back as `"\\"` and shell interprets as one `\`.
+        let toks = tokenize_line("echo \"a\\\\b\"").expect("parse");
+        match &toks[1] {
+            RawToken::DoubleQuoted(s) => assert_eq!(s, "a\\\\b"),
+            other => panic!("expected DoubleQuoted; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tokenize_line_single_quote_does_not_interpret_escapes() {
+        // PMAT-056: POSIX says single quotes are fully literal.
+        // `'a\b'` content is literally `a\b`. This is the existing
+        // single-quote behaviour unchanged — locking it in as a
+        // regression guard.
+        let toks = tokenize_line("echo 'a\\b\\\"c'").expect("parse");
+        match &toks[1] {
+            RawToken::SingleQuoted(s) => assert_eq!(s, "a\\b\\\"c"),
+            other => panic!("expected SingleQuoted; got {other:?}"),
+        }
     }
 
     #[test]

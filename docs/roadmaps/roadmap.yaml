@@ -884,3 +884,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-056
+  github_issue: null
+  item_type: task
+  title: 'PMAT-056: bashrs-frontend recognises escape sequences in double-quoted strings'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T17:49:38Z
+  updated: 2026-05-17T17:49:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
