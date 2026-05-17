@@ -1833,3 +1833,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-112
+  github_issue: null
+  item_type: task
+  title: 'PMAT-112: xpile-spec.md §18 CI Pipeline rewrite — replace aspirational 12-step gate list with actual gate / workspace-test / kani job layout (matches PMAT-101 ci-gates.md)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T22:00:00Z
+  updated: 2026-05-18T22:00:00Z
+  spec: null
+  acceptance_criteria:
+  - xpile-spec.md §18 listed an aspirational 12-step gate sequence with llvm-cov, mutants, pmat tdg, pv score, check_provenance.sh all marked as live CI gates. Reality (per PMAT-101 sweep of ci-gates.md) — only fmt, check, clippy, pv lint, cargo deny, cargo test, and the optional kani job are live. Restructure §18 to match the actual ci.yml job layout (gate / workspace-test / kani). Add "Originally-planned but not yet wired" block listing the 5 deferred gates with XPILE-CI-* tracking tickets. Same falsification-trace pattern as PMAT-101.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -305,24 +305,39 @@ Ruchy is the canary for this onboarding path at v0.1.0.
 
 **Sub-spec**: [sub/ci-gates.md](sub/ci-gates.md)
 
-Every PR runs:
+Every PR runs (live `.github/workflows/ci.yml` — see [sub/ci-gates.md](sub/ci-gates.md) for the full per-gate detail):
 
 ```text
-1. cargo fmt --check
-2. cargo clippy --workspace -- -D warnings
-3. cargo check --workspace
-4. cargo test --workspace
-5. cargo llvm-cov  (≥95% line coverage)
-6. cargo mutants   (≥80% mutation coverage on changed code)
-7. cargo deny check
-8. pv lint contracts/  (8/8 gates pass)
-9. pv score contracts/ (no score regression)
-10. pmat tdg ≥ A-
-11. Provenance check: no repaired .rs files in PR without provenance marker
-12. (optional) cargo kani --workspace  (gated; bounded model checks)
+gate job (required status check):
+  1. cargo fmt --all -- --check
+  2. cargo check --workspace
+  3. cargo clippy --workspace --all-targets -- -D warnings
+  4. pv lint contracts/                 (8/8 gates pass; 12 contracts, 0 errors)
+  5. cargo deny check advisories
+
+workspace-test job (required status check):
+  6. cargo test --workspace
+       — includes every_kani_harness_discharges (Kani BMC over all 12 harnesses)
+       — includes the §14.4 stratum gates: refinement_proofs, kani_harnesses,
+         kani_verify, quorum, attestations
+
+kani job (optional status check, scheduled to flip required):
+  7. cargo kani over each contracts/kani/*.rs harness
 ```
 
-Hard-failures on any gate. No `--no-verify`, no manual overrides.
+Hard-failures on any required gate. No `--no-verify`, no manual overrides.
+
+Originally-planned but not yet wired (post-v0.1.0):
+
+```text
+   cargo llvm-cov ≥ 95% line coverage     (XPILE-CI-COVERAGE-001)
+   cargo mutants ≥ 80% mutation coverage  (XPILE-CI-MUTANTS-001)
+   pv score contracts/ no regression       (XPILE-CI-SCORE-001)
+   pmat tdg ≥ A-                           (XPILE-CI-PMAT-TDG-001)
+   scripts/check_provenance.sh             (XPILE-CI-PROVENANCE-001)
+```
+
+These were in the original v0.0.1 CI plan but were sequenced behind the substrate-completion work that just shipped. With 12 contracts at QUORUM, several of these become tractable for v0.2.0+. See [sub/ci-gates.md](sub/ci-gates.md) "Gates planned but not yet wired" for the Popperian falsification trace.
 
 ---
 
