@@ -1578,3 +1578,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-097
+  github_issue: null
+  item_type: task
+  title: 'PMAT-097: sub/migration.md sweep — Phase A/B substantially shipped, in-tree skipping subtree path; mark per-crate status accurately and check off shipped Phase-B completion-gate items'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T14:30:00Z
+  updated: 2026-05-18T14:30:00Z
+  spec: null
+  acceptance_criteria:
+  - sub/migration.md described Phase A (extract) and Phase B (merge) as future plans. Reality at v0.1.0 — depyler / decy / ruchy / bashrs / latex-contract frontends all live in-tree as workspace crates (`crates/depyler-frontend/` etc.), the actual fold path didn't use `git subtree add` (frontends were re-implemented as new crates inside xpile). Update status banner, per-crate status table, "After Phase B" outcomes, and completion-gate checklist. Mark 3 of 5 completion-gate items as shipped.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
