@@ -1,0 +1,61 @@
+metadata:
+  id: C-BASHRS-POSIX-IDEMPOTENCE
+  version: "0.1.0"
+  created: "2026-05-17"
+  author: PAIML Engineering
+  # `kind: pattern` rather than `kernel` while the contract is at
+  # scaffold stage (no equations, no falsification_tests yet). Same
+  # rationale as `compile-rust-to-ptx-mma-v1.yaml` — registered with
+  # the contract substrate for citation + quorum tracking, full
+  # provability gates (kind: kernel) kick in once Layer A v0.2.0
+  # populates the equation / harness / falsification sections.
+  kind: pattern
+  status: draft
+  description: |
+    POSIX shell idempotence contract — the Layer-1 semantic anchor
+    for the bashrs merger domain (sh / bash / zsh / Makefile /
+    Dockerfile). Scaffold at v0.1.0 (PMAT-037 / XPILE-BASHRS-MERGER-001),
+    populated at v0.2.0 once the bashrs source folding lands.
+
+    Intent: every emitted shell snippet, when run twice with the
+    same inputs, produces the same observable side effects. This is
+    bashrs's load-bearing claim about its determinism regime — the
+    direct analog of `C-PY-INT-ARITH`'s claim that the Rust fast
+    path produces the same value as CPython on inputs in its
+    declared domain.
+
+    Layer 1 of the xpile contract taxonomy (per-language semantics).
+    Paired with composition contracts at Layer 2 once meta-HIR
+    grows the `Stmt::Cmd` / `Stmt::Pipeline` variants planned in
+    `sub/bashrs-merger.md` Layer B.
+
+    Until v0.2.0, this contract acts as a *citation anchor* so:
+      * `xpile quorum` shows the bashrs domain in its 12-contract
+        table (UNVERIFIED — accurate at scaffold stage).
+      * `xpile attestations` can track when work items reference it
+        (PMAT-037 itself produces the first attestation).
+      * `xpile audit` will later compute F1 over shell-emitting
+        functions once the bashrs-backend grows real ShellIR emit
+        with `# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE` citations.
+      * `bashrs-backend` already cites it in the v0.1.0 scaffold
+        emission (`Artifact::citations`), so the citation pipeline
+        is exercised end-to-end on day one.
+
+    Falsifier (planned, v0.2.0): if a future bashrs-backend emit
+    produces a snippet that mutates differently on second-run
+    inputs than on first-run, AND that mutation isn't gated behind
+    an explicit non-idempotent operation marker (e.g., `mkfifo` is
+    by spec non-idempotent), the contract is violated and the emit
+    is unsound. Tracked as future ticket `XPILE-FALSIFY-BASHRS-IDEMP`.
+  references:
+    - docs/specifications/sub/bashrs-merger.md
+    - "POSIX 1003.1-2017 Shell & Utilities (§2.7 Redirection, §2.10 Shell Grammar)"
+    - "ShellCheck wiki — SC2086 quoting, SC2129 redirection batching"
+  depends_on: []
+
+equations:
+  # v0.2.0 populates this section as the bashrs source folding lands.
+  # At v0.1.0 the equation set is intentionally empty: `xpile quorum`
+  # will show 0 votes across all four strata, which is the accurate
+  # scaffold-stage state.
+  {}

@@ -28,6 +28,11 @@ pub enum Target {
     /// Implemented by `xpile-lean-codegen`. The proof-lane Lean (theorems)
     /// goes through `xpile-lean-contract-backend` instead.
     Lean,
+    /// POSIX shell (sh / bash / zsh) — the bashrs merger domain.
+    /// Implemented by `bashrs-backend` (scaffold at v0.1.0; full emit
+    /// at v0.2.0 once the bashrs source folding lands). PMAT-037 /
+    /// XPILE-BASHRS-MERGER-001. See `sub/bashrs-merger.md` Layer A.
+    Shell,
 }
 
 /// Lowering profile — the two-mHIR asymmetric decision for Rust↔Ruchy.

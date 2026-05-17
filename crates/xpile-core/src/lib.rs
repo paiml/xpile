@@ -72,6 +72,11 @@ pub fn default_session() -> TranspileSession {
     s.register_frontend(Arc::new(depyler_frontend::PythonFrontend));
     s.register_frontend(Arc::new(decy_frontend::CFrontend));
     s.register_frontend(Arc::new(ruchy_frontend::RuchyFrontend));
+    // PMAT-037 / XPILE-BASHRS-MERGER-001: Layer A scaffold. Frontend
+    // is registered so the dispatch table recognises `.sh` / `.bash` /
+    // `.zsh` / `.mk` files; real lowering replaces the stub at v0.2.0
+    // when the bashrs source folding lands.
+    s.register_frontend(Arc::new(bashrs_frontend::BashrsFrontend));
 
     // Code lane: backends
     s.register_backend(Arc::new(xpile_rust_codegen::RustBackend));
@@ -79,6 +84,10 @@ pub fn default_session() -> TranspileSession {
     s.register_backend(Arc::new(xpile_ptx_codegen::PtxBackend));
     s.register_backend(Arc::new(xpile_wgsl_codegen::WgslBackend));
     s.register_backend(Arc::new(xpile_lean_codegen::LeanBackend));
+    // PMAT-037 / XPILE-BASHRS-MERGER-001: pairs with bashrs-frontend
+    // above. `--target shell` now resolves to a real Backend impl
+    // (scaffold emit at v0.1.0; ShellIR + quoting machinery at v0.2.0).
+    s.register_backend(Arc::new(bashrs_backend::BashrsBackend));
 
     // Proof lane
     s.register_contract_frontend(Arc::new(latex_contract_frontend::LatexContractFrontend));
@@ -108,7 +117,9 @@ mod tests {
     fn default_session_registers_v0_1_0_frontends() {
         let s = default_session();
         let names: Vec<&str> = s.frontends.iter().map(|f| f.name()).collect();
-        for expected in &["python", "c", "ruchy"] {
+        // PMAT-037: `bashrs` joins the v0.1.0 frontend roster as
+        // scaffold per the bashrs merger Layer A plan.
+        for expected in &["python", "c", "ruchy", "bashrs"] {
             assert!(names.contains(expected), "missing frontend: {}", expected);
         }
     }
@@ -117,9 +128,69 @@ mod tests {
     fn default_session_registers_v0_1_0_backends() {
         let s = default_session();
         let names: Vec<&str> = s.backends.iter().map(|b| b.name()).collect();
-        for expected in &["rust", "ruchy", "ptx", "wgsl", "lean"] {
+        // PMAT-037: `bashrs` joins the v0.1.0 backend roster as
+        // scaffold per the bashrs merger Layer A plan.
+        for expected in &["rust", "ruchy", "ptx", "wgsl", "lean", "bashrs"] {
             assert!(names.contains(expected), "missing backend: {}", expected);
         }
+    }
+
+    #[test]
+    fn bashrs_frontend_routes_shell_dialects() {
+        // PMAT-037: smoke test that the dispatch table recognises
+        // `.sh` / `.bash` / `.zsh` / `.mk`. Catches a regression that
+        // omits one of the extensions from `BashrsFrontend::extensions`.
+        let s = default_session();
+        let bashrs = s
+            .frontends
+            .iter()
+            .find(|f| f.name() == "bashrs")
+            .expect("bashrs frontend registered");
+        for ext in &["sh", "bash", "zsh", "mk"] {
+            assert!(
+                bashrs.extensions().contains(ext),
+                "bashrs-frontend should recognise `.{ext}`; got {:?}",
+                bashrs.extensions()
+            );
+        }
+    }
+
+    #[test]
+    fn bashrs_backend_emits_scaffold_with_contract_citation() {
+        // PMAT-037: scaffold contract. The Backend::lower for the
+        // bashrs target must produce a non-empty artifact that names
+        // the C-BASHRS-POSIX-IDEMPOTENCE contract — even at v0.1.0
+        // where real ShellIR emission isn't wired yet.
+        let s = default_session();
+        let bashrs = s
+            .backends
+            .iter()
+            .find(|b| b.name() == "bashrs")
+            .expect("bashrs backend registered");
+        let cfg = BackendConfig {
+            target: Target::Shell,
+            profile: Profile::RustOut,
+            hardware: None,
+        };
+        let module = Module {
+            name: "demo".into(),
+            source_lang: SourceLang::Shell,
+            items: vec![],
+            ffi_boundaries: vec![],
+        };
+        let art = bashrs.lower(&module, &cfg).expect("scaffold emit");
+        assert!(
+            art.primary.contains("C-BASHRS-POSIX-IDEMPOTENCE"),
+            "missing contract citation: {}",
+            art.primary
+        );
+        assert!(
+            art.citations
+                .iter()
+                .any(|c| c.as_str() == "C-BASHRS-POSIX-IDEMPOTENCE"),
+            "citation registry missing C-BASHRS-POSIX-IDEMPOTENCE: {:?}",
+            art.citations
+        );
     }
 
     #[test]
