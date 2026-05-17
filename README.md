@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/hero.svg" alt="xpile architecture diagram: a code lane (Python, C, C++, Rust, Ruchy, Lean 4 → meta-HIR → Rust, Ruchy, PTX, WGSL, SPIR-V, Lean 4) and a proof lane (LaTeX, Lean theorems, mdBook ↔ contracts)" width="100%"/>
+  <img src="docs/assets/hero.svg" alt="xpile architecture diagram: a code lane (Python, C, C++, Rust, Ruchy, Lean 4, Shell → meta-HIR → Rust, Ruchy, PTX, WGSL, SPIR-V, Lean 4, Shell) and a proof lane (LaTeX, Lean theorems, mdBook ↔ contracts)" width="100%"/>
 </p>
 
 # xpile
