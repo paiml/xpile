@@ -110,6 +110,20 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Differential execution check (PMAT-018 / XPILE-DIFF-001)
+
+New `crates/xpile/tests/diff_exec.rs` runs deterministic LCG-seeded
+i64 inputs through both CPython (on the original .py source) and
+the rustc-compiled transpiled-Rust binary, asserts their stdout
+strings agree. 10 inputs × 7 single-arg fast-path fixtures = 70
+differential checks per CI run. Skip-gracefully if `python3` or
+`rustc` is missing from PATH. Each fixture's input range is
+hardcoded to stay inside the C-PY-INT-ARITH fast-path domain;
+widening to overflow-prone ranges + multi-arg fixtures is
+XPILE-DIFF-002. Generalises the 11 hand-authored runtime-verified
+fixtures into a quantitative gate against fixture overfitting
+(audit-design.md §4 caveat).
+
 ### Lean refinement proof for C-PY-INT-ARITH (PMAT-017 / XPILE-REFINE-001)
 
 First contract YAML grows `lean_theorem:` + `lean_file:` fields on
