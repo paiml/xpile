@@ -110,6 +110,39 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### POSIX parameter expansion LitStr passthrough lock-in (PMAT-085)
+
+**Documents and locks in the v0.1.0 LitStr-passthrough behavior
+for POSIX parameter-expansion forms.** Real shell idioms like
+`${VAR:-default}`, `${VAR:=8080}`, `${#VAR}`, `${VAR#prefix}`,
+`${VAR%suffix}`, etc. are represented as `Expr::LitStr` at v0.1.0
+(Bronze tier); they round-trip byte-identically through
+frontend → meta-HIR → backend because the parsing arm in
+`lower_token` falls through to LitStr on non-identifier brace
+contents, and `render_arg` emits LitStr bytes unchanged.
+
+Implementation:
+- **`crates/bashrs-frontend/src/lib.rs::lower_token_param_expansion_falls_through_as_litstr`** —
+  asserts 12 distinct POSIX (and bash-ish) parameter-expansion
+  forms all lower to `Expr::LitStr`: `:-default`, `-default`,
+  `:=8080`, `:?error`, `:+alt`, `#VAR`, `VAR#prefix`,
+  `VAR##prefix*`, `VAR%suffix`, `VAR%%*suffix`, `VAR/old/new`,
+  `VAR:0:3`.
+- **`crates/bashrs-backend/src/lib.rs::render_arg_litstr_preserves_param_expansion_verbatim`** —
+  the output side: rendering each of those LitStr forms emits
+  the bytes unchanged. Together with the frontend test, the
+  round-trip property is now a documented substrate invariant.
+
+Why this matters: real shell scripts use param expansion
+heavily (POSIX idempotent default-port patterns, etc.). With
+these tests in place, the LitStr passthrough is no longer
+emergent behavior — it's a load-bearing v0.1.0 invariant.
+Future Silver-tier refinement (`XPILE-BASHRS-PARAM-EXPANSION-001`)
+will introduce structured `Expr::ParamExpansion { var, op,
+fallback }` for typed param-expansion modelling; until then,
+the opaque LitStr representation preserves information
+losslessly.
+
 ### 🎯 Kani symbolic harness — C-FFI-CPYTHON-EXT → QUORUM (PMAT-077) — **xpile substrate reaches 100% QUORUM coverage (12 of 12 contracts)**
 
 **Final milestone: every contract in xpile's 12-contract

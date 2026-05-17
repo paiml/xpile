@@ -506,6 +506,46 @@ mod tests {
     }
 
     #[test]
+    fn render_arg_litstr_preserves_param_expansion_verbatim() {
+        // PMAT-085: POSIX parameter-expansion forms
+        // (`${VAR:-default}`, `${VAR-default}`, `${VAR:=8080}`, etc.)
+        // are represented as `Expr::LitStr` at v0.1.0 (Bronze tier);
+        // bashrs-frontend's `lower_token_param_expansion_*` test
+        // documents the input side. This test documents the output
+        // side: rendering a `LitStr` whose contents are a
+        // parameter-expansion form emits the bytes unchanged.
+        //
+        // Together the two tests lock in the substrate-quality
+        // property: parameter-expansion forms survive the
+        // frontend → meta-HIR → backend round-trip byte-identically.
+        // Information loss is zero. The structured
+        // `Expr::ParamExpansion { var, op, fallback }` variant is
+        // XPILE-BASHRS-PARAM-EXPANSION-001 future work (v0.2.0+).
+        let param_expansions = &[
+            "${VAR:-default}",
+            "${VAR-default}",
+            "${VAR:=8080}",
+            "${VAR:?error}",
+            "${VAR:+alt}",
+            "${#VAR}",
+            "${VAR#prefix}",
+            "${VAR##prefix*}",
+            "${VAR%suffix}",
+            "${VAR%%*suffix}",
+            "${VAR/old/new}",
+            "${VAR:0:3}",
+        ];
+        for expansion in param_expansions {
+            let lit = xpile_meta_hir::Expr::LitStr((*expansion).to_string());
+            let rendered = render_arg(&lit).unwrap();
+            assert_eq!(
+                rendered, *expansion,
+                "expected LitStr param-expansion `{expansion}` to render verbatim"
+            );
+        }
+    }
+
+    #[test]
     fn lower_cmd_with_quoted_string_arg_renders_with_quotes() {
         // PMAT-042 end-to-end: a Stmt::Cmd whose args contain an
         // `Expr::QuotedString` renders with the right quoting in the
