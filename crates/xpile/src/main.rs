@@ -203,17 +203,34 @@ fn parse_target(s: &str) -> Result<Target> {
 #[derive(Debug, Default, Clone)]
 struct AuditReport {
     files_scanned: usize,
+    // Total functions emitted across the corpus.
     functions_emitted: usize,
+    // Subset of `functions_emitted` where `Function::applicable_contracts()`
+    // is non-empty — i.e. the citation pipeline is *supposed* to fire
+    // (function does arithmetic, bitwise, shift, etc.; not pure
+    // comparison / logical). This is the F1 *denominator* per
+    // XPILE-FALSIFY-002 — pre-002, the denominator was `functions_emitted`,
+    // which double-penalised comparison-only fixtures.
+    functions_requiring_citation: usize,
+    // Subset of `functions_requiring_citation` that actually got a
+    // citation in the emitted source.
     functions_with_citation: usize,
+    // Sanity: functions that have a citation but shouldn't (e.g., a
+    // future codegen bug that over-cites). Any non-zero value is a
+    // bug to investigate, even though it doesn't fail F1 today.
+    over_citations: usize,
     parse_errors: Vec<(PathBuf, String)>,
 }
 
 impl AuditReport {
     fn coverage_pct(&self) -> f64 {
-        if self.functions_emitted == 0 {
-            return 0.0;
+        if self.functions_requiring_citation == 0 {
+            // No applicable functions in the corpus → metric is
+            // vacuously satisfied. 100% by convention so that a
+            // small / empty corpus doesn't trip the falsifier.
+            return 100.0;
         }
-        (self.functions_with_citation as f64) / (self.functions_emitted as f64) * 100.0
+        (self.functions_with_citation as f64) / (self.functions_requiring_citation as f64) * 100.0
     }
 
     /// F1 status per the roadmap's targets:
@@ -234,13 +251,12 @@ impl AuditReport {
 
 fn audit(session: &TranspileSession, path: &Path, target_str: &str, json: bool) -> Result<()> {
     let target = parse_target(target_str)?;
-    // F1 is only meaningfully computable for backends that emit the
-    // `// xpile-contract: <ID>` comment form. Lean uses
-    // `@[xpile_contract "..."]`; reporting F1 for Lean is a follow-up.
-    if !matches!(target, Target::Rust | Target::Ruchy) {
+    // F1 now supports Rust, Ruchy, AND Lean — XPILE-FALSIFY-002 added
+    // Lean's `@[xpile_contract "..."]` attribute as a recognised
+    // citation form. PTX / WGSL / SPIR-V citations are XPILE-FALSIFY-003+.
+    if !matches!(target, Target::Rust | Target::Ruchy | Target::Lean) {
         bail!(
-            "`xpile audit` currently supports --target rust or ruchy (citation form: `// xpile-contract: <ID>`); \
-             {target:?} uses a different citation syntax (Lean: `@[xpile_contract ...]`) — follow-up XPILE-FALSIFY-002"
+            "`xpile audit` supports --target rust | ruchy | lean; {target:?} citation form not yet known — follow-up XPILE-FALSIFY-003"
         );
     }
 
@@ -292,9 +308,32 @@ fn audit(session: &TranspileSession, path: &Path, target_str: &str, json: bool) 
                 continue;
             }
         };
-        let (emitted, cited) = count_citations(&artifact.primary, target);
-        report.functions_emitted += emitted;
-        report.functions_with_citation += cited;
+        // Per-function audit: walk the Module's typed items, ask each
+        // function whether it requires a citation (via
+        // `Function::applicable_contracts()`), then check whether the
+        // emitted source actually has the citation immediately above
+        // the function's declaration. This is XPILE-FALSIFY-002's
+        // refinement — pre-002, the denominator was "every emitted
+        // function" which double-penalised comparison-only functions.
+        for item in &module.items {
+            let xpile_meta_hir::Item::Function(f) = item;
+            let requires_citation = !f.applicable_contracts().is_empty();
+            let cited = function_has_citation(&artifact.primary, &f.name, target);
+            report.functions_emitted += 1;
+            match (requires_citation, cited) {
+                (true, true) => {
+                    report.functions_requiring_citation += 1;
+                    report.functions_with_citation += 1;
+                }
+                (true, false) => {
+                    report.functions_requiring_citation += 1;
+                }
+                (false, true) => {
+                    report.over_citations += 1;
+                }
+                (false, false) => {}
+            }
+        }
     }
 
     if json {
@@ -350,45 +389,59 @@ fn walk_dir(dir: &Path, known_exts: &[&str], out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Count `(emitted_functions, cited_functions)` in a Rust- or Ruchy-
-/// emitted string. A function is "cited" when the line immediately
-/// preceding its declaration is `// xpile-contract: <ID>`. Robust to
-/// blank lines (the citation must be the *immediately* preceding
-/// non-blank line — matches the codegen's `emit_contract_citations` +
-/// `emit_function` sequence in `xpile-rust-codegen/src/lib.rs`).
-fn count_citations(source: &str, target: Target) -> (usize, usize) {
-    let prefix = match target {
-        Target::Rust => "pub fn ",
-        Target::Ruchy => "fun ",
-        _ => return (0, 0),
+/// True if `function_name` has a contract citation immediately
+/// preceding its declaration in `source`. Per-target signature shapes
+/// and citation forms (XPILE-FALSIFY-002 added Lean):
+///
+///   Rust:  `// xpile-contract: <ID>`   prefix `pub fn <name>(`
+///   Ruchy: `// xpile-contract: <ID>`   prefix `fun <name>(`
+///   Lean:  `@[xpile_contract "<ID>"]`  prefix `def <name> (` / `partial def <name> (`
+///
+/// Walks backward from the declaration through blank lines to allow
+/// for pretty-printer whitespace insertion. The walk stops at the
+/// first non-blank line: either it's a citation (cited) or it isn't
+/// (not cited).
+fn function_has_citation(source: &str, function_name: &str, target: Target) -> bool {
+    let prefixes: &[&str] = match target {
+        Target::Rust => &["pub fn "],
+        Target::Ruchy => &["fun "],
+        // Lean has two signature forms — plain `def` and `partial def`
+        // (PMAT-010's while-loop helper uses the latter).
+        Target::Lean => &["def ", "partial def "],
+        _ => return false,
     };
+    let citation_marker = match target {
+        Target::Rust | Target::Ruchy => "// xpile-contract:",
+        Target::Lean => "@[xpile_contract",
+        _ => return false,
+    };
+    let needle = format!("{function_name}(");
+    let needle_space = format!("{function_name} (");
+
     let lines: Vec<&str> = source.lines().collect();
-    let mut emitted = 0;
-    let mut cited = 0;
     for (i, line) in lines.iter().enumerate() {
-        if line.starts_with(prefix) {
-            emitted += 1;
-            // Walk backward through blank lines looking for the
-            // citation. The codegen emits the citation immediately
-            // before the signature with no blank in between (see
-            // emit_contract_citations + emit_function), but allow
-            // one blank line of grace for any pretty-printer that
-            // might be inserted later.
-            let mut j = i;
-            while j > 0 {
-                j -= 1;
-                let prev = lines[j].trim();
-                if prev.is_empty() {
-                    continue;
-                }
-                if prev.starts_with("// xpile-contract:") {
-                    cited += 1;
-                }
-                break;
-            }
+        let stripped = line.trim_start();
+        let is_decl = prefixes.iter().any(|p| {
+            stripped.starts_with(p)
+                && (stripped[p.len()..].starts_with(&needle)
+                    || stripped[p.len()..].starts_with(&needle_space))
+        });
+        if !is_decl {
+            continue;
         }
+        // Walk backward looking for the citation (or its absence).
+        let mut j = i;
+        while j > 0 {
+            j -= 1;
+            let prev = lines[j].trim();
+            if prev.is_empty() {
+                continue;
+            }
+            return prev.starts_with(citation_marker);
+        }
+        return false;
     }
-    (emitted, cited)
+    false
 }
 
 fn print_audit_text(report: &AuditReport, target: Target) {
@@ -397,12 +450,22 @@ fn print_audit_text(report: &AuditReport, target: Target) {
     println!();
     println!("  files scanned       : {}", report.files_scanned);
     println!("  functions emitted   : {}", report.functions_emitted);
+    println!(
+        "  require citation    : {}",
+        report.functions_requiring_citation
+    );
     println!("  with citation       : {}", report.functions_with_citation);
     println!(
         "  coverage (F1)       : {:.1}%   [{}]",
         report.coverage_pct(),
         report.f1_status()
     );
+    if report.over_citations > 0 {
+        println!(
+            "  over-citations      : {}  (codegen bug?)",
+            report.over_citations
+        );
+    }
     if !report.parse_errors.is_empty() {
         println!();
         println!("  errors ({}):", report.parse_errors.len());
@@ -420,14 +483,17 @@ fn print_audit_json(report: &AuditReport, target: Target) {
     // Hand-rolled JSON to avoid pulling serde_json into the xpile bin
     // for a one-line dashboard payload. The schema mirrors what
     // sub/provability-roadmap.md §1.1 says we report: F1 + scan
-    // metadata + parse-error count. Per-error file/message lives in
-    // text mode (`xpile audit ... | jq -R` is not the target here).
+    // metadata + parse-error count. XPILE-FALSIFY-002 added the
+    // `functions_requiring_citation` denominator and the
+    // `over_citations` sanity field.
     println!(
-        "{{\"target\":\"{:?}\",\"files_scanned\":{},\"functions_emitted\":{},\"functions_with_citation\":{},\"f1_pct\":{:.1},\"f1_status\":\"{}\",\"errors\":{}}}",
+        "{{\"target\":\"{:?}\",\"files_scanned\":{},\"functions_emitted\":{},\"functions_requiring_citation\":{},\"functions_with_citation\":{},\"over_citations\":{},\"f1_pct\":{:.1},\"f1_status\":\"{}\",\"errors\":{}}}",
         target,
         report.files_scanned,
         report.functions_emitted,
+        report.functions_requiring_citation,
         report.functions_with_citation,
+        report.over_citations,
         report.coverage_pct(),
         report.f1_status(),
         report.parse_errors.len()

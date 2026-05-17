@@ -697,11 +697,15 @@ fn audit_command_json_output_has_required_fields() {
     assert!(out.status.success());
     let stdout = String::from_utf8(out.stdout).expect("utf8");
     // Hand-rolled JSON — verify each required field appears in order.
+    // XPILE-FALSIFY-002 added `functions_requiring_citation` +
+    // `over_citations` to the schema.
     for field in &[
         "\"target\":",
         "\"files_scanned\":",
         "\"functions_emitted\":",
+        "\"functions_requiring_citation\":",
         "\"functions_with_citation\":",
+        "\"over_citations\":",
         "\"f1_pct\":",
         "\"f1_status\":",
         "\"errors\":",
@@ -713,18 +717,51 @@ fn audit_command_json_output_has_required_fields() {
     }
 }
 
+// XPILE-FALSIFY-002: F1 should now report 100% on the fixture corpus
+// because comparison-only functions are correctly excluded from the
+// denominator. The metric is the load-bearing claim of the audit; we
+// pin it to the exact expected value (with rounding tolerance) so a
+// regression that misses a citation OR mis-classifies a function shows
+// up as a numeric drop, not a vibes-based "looks worse".
 #[test]
-fn audit_command_lean_target_errors_with_followup_pointer() {
-    // Lean uses `@[xpile_contract "..."]` attribute, not the comment
-    // form the audit currently parses. The CLI must error loudly
-    // rather than silently report 0% for Lean — that's the bait the
-    // XPILE-FALSIFY-002 follow-up bites.
-    let out = run_xpile(&["audit", "crates/xpile/tests/fixtures", "--target", "lean"]);
-    assert!(!out.status.success(), "lean target should fail");
-    let stderr = String::from_utf8_lossy(&out.stderr);
+fn audit_command_f1_is_100_percent_on_current_fixture_corpus_rust() {
+    let out = run_xpile(&["audit", "crates/xpile/tests/fixtures", "--json"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8(out.stdout).expect("utf8");
     assert!(
-        stderr.contains("XPILE-FALSIFY-002"),
-        "expected follow-up ticket name in stderr: {stderr}"
+        stdout.contains("\"f1_pct\":100.0"),
+        "expected F1 = 100.0% on current corpus (PMAT-023 applicable-contracts denominator), got: {stdout}"
+    );
+    assert!(
+        stdout.contains("\"f1_status\":\"OK\""),
+        "expected F1 status OK, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("\"over_citations\":0"),
+        "expected zero over-citations (codegen would be wrongly citing a comparison-only fn), got: {stdout}"
+    );
+}
+
+#[test]
+fn audit_command_supports_lean_target() {
+    // XPILE-FALSIFY-002 added Lean target support. Lean's citation
+    // form is `@[xpile_contract "..."]` (structured attribute parsed
+    // by Lean's elaborator); the audit recognises it alongside
+    // Rust/Ruchy's `// xpile-contract:` comment form.
+    let out = run_xpile(&["audit", "crates/xpile/tests/fixtures", "--target", "lean", "--json"]);
+    assert!(
+        out.status.success(),
+        "Lean target now supported (XPILE-FALSIFY-002); stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf8");
+    assert!(
+        stdout.contains("\"target\":\"Lean\""),
+        "expected Lean target in JSON, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("\"f1_status\":\"OK\""),
+        "expected F1 OK for Lean (all arithmetic functions carry @[xpile_contract \"...\"]), got: {stdout}"
     );
 }
 

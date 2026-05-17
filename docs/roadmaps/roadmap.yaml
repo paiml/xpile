@@ -356,3 +356,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-023
+  github_issue: null
+  item_type: task
+  title: Refine F1 to applicable-contracts denominator; add Lean target (XPILE-FALSIFY-002)
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T12:49:29Z
+  updated: 2026-05-17T12:49:29Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

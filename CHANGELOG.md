@@ -110,6 +110,24 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Refine F1 to applicable-contracts denominator + Lean target (PMAT-023 / XPILE-FALSIFY-002)
+
+`xpile audit`'s F1 metric is now computed against only the
+functions where `Function::applicable_contracts()` is non-empty —
+the *applicable-contracts denominator*. Pre-002 the denominator was
+every emitted function, which double-penalised comparison-only
+and logical-only functions that correctly emit no citation by
+design. With the refinement, F1 on the current corpus jumps from
+83.3% [WARN] to 100.0% [OK].
+
+Also added `--target lean`: the audit now recognises Lean's
+`@[xpile_contract "..."]` attribute alongside Rust/Ruchy's
+`// xpile-contract:` comment form.
+
+New `over_citations` JSON field is a sanity check for the
+symmetric failure mode (codegen wrongly cites a comparison-only
+function); currently 0.
+
 ### Extend deadline scan to proof-lane + Kani harnesses (PMAT-022 / XPILE-EXEMPT-002)
 
 Widens `crates/xpile/tests/exempt_deadlines.rs` from "Rust source
