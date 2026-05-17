@@ -293,6 +293,90 @@ fn lower_raw_token(t: &RawToken) -> Result<Expr, FrontendError> {
     }
 }
 
+/// PMAT-086: splice POSIX backslash-newline line continuations.
+/// In POSIX shell, a `\` immediately followed by a newline (with
+/// no intervening characters) is removed entirely — both the
+/// backslash and the newline disappear, joining the surrounding
+/// text into a single logical line. Indentation on the next line
+/// is preserved as whitespace within the logical line (the shell
+/// then re-tokenizes on whitespace, so leading whitespace is
+/// equivalent to a token separator).
+///
+/// Semantics:
+///   `foo \` + `\nbar`   → `foo bar`   (POSIX: `\<newline>` removes both, indent is whitespace)
+///   `foo\\` + `\nbar`   → `foo\\` then `bar` on next line (escaped backslash, not continuation)
+///   `foo \ ` + `\nbar`  → `foo \ ` then `bar` (backslash followed by space, not newline)
+///
+/// What this DOESN'T handle (v0.2.0 source fold):
+///   * Backslash-newline inside single quotes: POSIX preserves
+///     these literally (single quotes don't interpret backslashes).
+///     At v0.1.0 our splice runs on the raw source before any
+///     quote-aware tokenization, so it incorrectly joins backslash-
+///     newline inside single quotes too. Real-world shell scripts
+///     rarely put literal backslash-newlines inside single quotes,
+///     so the cost is bounded.
+///   * Inside heredocs: heredoc bodies are also unaffected by
+///     line continuation in POSIX; v0.1.0 has no heredoc support
+///     yet (XPILE-BASHRS-HEREDOC-001), so this concern is moot.
+fn splice_line_continuations(source: &str) -> String {
+    // We walk the source char by char. When we see `\` followed
+    // by `\n`, we drop both. When we see `\\` followed by `\n`,
+    // we keep the first `\` (it's an escaped backslash) and drop
+    // the second `\` + `\n` only if there's a third `\`... actually
+    // POSIX is simpler: `\<newline>` always removes both, but
+    // `\\<newline>` means literal-backslash followed by newline-
+    // ending-the-line. So the rule is: count consecutive
+    // backslashes immediately before a newline; if odd, the last
+    // one is a continuation marker (drop it + the newline); if
+    // even, keep them all and keep the newline.
+    let mut out = String::with_capacity(source.len());
+    let chars: Vec<char> = source.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\\' {
+            // Count run of backslashes starting at i.
+            let mut run = 0;
+            while i + run < chars.len() && chars[i + run] == '\\' {
+                run += 1;
+            }
+            // After the run, do we have a newline?
+            let after = i + run;
+            if after < chars.len() && chars[after] == '\n' {
+                // Odd run → last backslash is a continuation.
+                // Emit (run - 1) backslashes, drop the last + newline.
+                // Even run → all backslashes are literal pairs;
+                // emit them all, keep the newline.
+                if run % 2 == 1 {
+                    for _ in 0..run - 1 {
+                        out.push('\\');
+                    }
+                    // Skip the trailing backslash + newline.
+                    i = after + 1;
+                    continue;
+                } else {
+                    for _ in 0..run {
+                        out.push('\\');
+                    }
+                    out.push('\n');
+                    i = after + 1;
+                    continue;
+                }
+            } else {
+                // No trailing newline — backslash run is literal.
+                for _ in 0..run {
+                    out.push('\\');
+                }
+                i = after;
+                continue;
+            }
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
+}
+
 /// PMAT-045: lower a single bashrs-frontend token to an `Expr`. The
 /// token is the substring between whitespace boundaries (the
 /// parser is otherwise naive at v0.1.0 — no quoting awareness, no
@@ -419,8 +503,16 @@ impl Frontend for BashrsFrontend {
         // shell statement to execute. Per-line `#` comments are also
         // skipped. Inline `#` comments (e.g., `echo hi  # noisy`) are
         // NOT supported yet — the args would include the `#` token.
+        //
+        // PMAT-086: POSIX backslash-newline line continuation is
+        // handled BEFORE `.lines()` splitting. The splicing happens
+        // at the source level, so a multi-line command like
+        //     echo \
+        //       foo bar
+        // is treated as a single logical line `echo foo bar`.
+        let spliced = splice_line_continuations(source);
         let mut stmts: Vec<Stmt> = Vec::new();
-        for raw_line in source.lines() {
+        for raw_line in spliced.lines() {
             let line = raw_line.trim();
             if line.is_empty() {
                 continue;
@@ -1322,6 +1414,77 @@ pwd
         };
         assert_eq!(program, "date");
         assert_eq!(args, &vec![Expr::LitStr("+%Y".into())]);
+    }
+
+    #[test]
+    fn splice_line_continuations_handles_pmat_086_cases() {
+        // PMAT-086: backslash-newline splicing semantics.
+        //
+        // Simple continuation: `\<newline>` removes both, joining
+        // the two physical lines into one logical line. Indentation
+        // on the next line becomes whitespace within the joined
+        // logical line (the bashrs tokenizer's whitespace-aware
+        // splitting then re-separates the tokens).
+        assert_eq!(splice_line_continuations("foo \\\nbar"), "foo bar");
+        assert_eq!(splice_line_continuations("foo \\\n  bar"), "foo   bar");
+        assert_eq!(
+            splice_line_continuations("echo \\\n  one \\\n  two\n"),
+            "echo   one   two\n"
+        );
+
+        // Even run of backslashes before newline = all literal, no
+        // continuation. `\\<newline>` = literal-backslash followed
+        // by newline-ending-the-line.
+        assert_eq!(
+            splice_line_continuations("printf foo\\\\\n"),
+            "printf foo\\\\\n"
+        );
+
+        // Odd run > 1: `\\\<newline>` = literal-backslash + line
+        // continuation. The first backslash is kept (it's an
+        // escaped-backslash literal); the second is the continuation
+        // marker (dropped along with the newline).
+        assert_eq!(splice_line_continuations("foo\\\\\\\nbar"), "foo\\\\bar");
+
+        // No newline after backslash = backslash is literal.
+        assert_eq!(splice_line_continuations("foo \\ bar"), "foo \\ bar");
+        assert_eq!(splice_line_continuations("trailing\\"), "trailing\\");
+
+        // No backslash = pass-through.
+        assert_eq!(splice_line_continuations(""), "");
+        assert_eq!(splice_line_continuations("plain text\n"), "plain text\n");
+        assert_eq!(
+            splice_line_continuations("multi\nline\nplain"),
+            "multi\nline\nplain"
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_handles_pmat_086_line_continuation() {
+        // PMAT-086: a multi-line shell command using `\<newline>`
+        // splicing is parsed as a single Stmt::Cmd. Real shell
+        // scripts use this heavily for long `configure` /
+        // `cmake` / `apt-get install` invocations.
+        use xpile_meta_hir::{Expr, Item, Stmt};
+        let source = "echo \\\n  hello \\\n  world\n";
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/cont.sh"), source)
+            .expect("parse");
+        let Item::Function(f) = &module.items[0];
+        assert_eq!(
+            f.body.stmts.len(),
+            1,
+            "expected one Stmt::Cmd after splicing; got {:?}",
+            f.body.stmts
+        );
+        let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
+            panic!("expected Stmt::Cmd; got {:?}", f.body.stmts[0]);
+        };
+        assert_eq!(program, "echo");
+        assert_eq!(
+            args,
+            &vec![Expr::LitStr("hello".into()), Expr::LitStr("world".into()),]
+        );
     }
 
     #[test]
