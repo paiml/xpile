@@ -4,7 +4,7 @@
 
 **Canonical spec.** This is the ONE spec. All other specs are sub-specs under `sub/`, linked from the table of contents. Anything in `legacy/` is archived and not authoritative. Drift between this spec and the code, contracts, or sub-specs is a contract defect — fail it in CI.
 
-**Status:** v0.1.0 — **transpiles end-to-end with semantic round-trip verification**. 24 workspace crates compile clean; `aprender-contracts` (the `pv` library) wired from crates.io 0.33; 11 contracts pass `pv lint`; three real backends (Rust, Ruchy, Lean 4); recursive Python (`factorial(10) == 3628800`, etc.) AND iterative Python (`sum_to(100) == 5050`, `factorial_iter(10) == 3628800`) both run correctly through CI. See [Section 23 — Status](#23-status) and `CHANGELOG.md`.
+**Status:** v0.1.0 — **transpiles end-to-end with semantic round-trip verification AND 100% §14.4 contract QUORUM coverage**. 27 workspace crates compile clean; `aprender-contracts` (the `pv` library) wired from crates.io 0.33; **12 contracts pass `pv lint` and all 12 reach §14.4 N-of-M QUORUM** via paired Lean refinement theorems + Kani BMC harnesses (Bronze tier); four real backends (Rust, Ruchy, Lean 4, Shell/bashrs); recursive Python (`factorial(10) == 3628800`, etc.) AND iterative Python (`sum_to(100) == 5050`, `factorial_iter(10) == 3628800`) both run correctly through CI. See [Section 23 — Status](#23-status) and `CHANGELOG.md`.
 
 **Foundations:**
 
@@ -61,7 +61,7 @@
 
 xpile is a polyglot transpile workbench. Every supported source language plugs in by implementing one `Frontend` trait; everything below it — meta-HIR, oracle protocol, agent loop, MCP, codegen, contracts — is shared. The load-bearing motivation is **hybrid transpilation**: single artifacts that cross language boundaries (CPython + C extensions, Python + CUDA kernels, Python + Ruchy data layer) that no per-language transpiler can handle alone.
 
-The repo is a Cargo workspace of 24 crates (as of v0.1.0). Front-ends are language-specific leaves (`depyler-frontend`, `decy-frontend`, `ruchy-frontend`, `lean-frontend`); shared crates (`xpile-core`, `xpile-agent`, `xpile-oracle`, `xpile-llm`, `xpile-mcp`, `xpile-contracts`, `xpile-rust-codegen`, `xpile-ruchy-codegen`, `xpile-lean-codegen`, `xpile-ptx-codegen`, `xpile-wgsl-codegen`, `xpile-meta-hir`, `xpile-ffi-manifest`, `xpile-frontend`, `xpile-backend`, and the proof-lane equivalents) cover the rest. Foundations: alchemize's four-tool agent loop, aprender's provable-contracts framework, depyler's repair-mode pattern, decy's HIR/ownership patterns.
+The repo is a Cargo workspace of 27 crates (as of v0.1.0). Front-ends are language-specific leaves (`depyler-frontend`, `decy-frontend`, `ruchy-frontend`, `bashrs-frontend`, `latex-contract-frontend`); shared crates (`xpile-core`, `xpile-agent`, `xpile-oracle`, `xpile-llm`, `xpile-mcp`, `xpile-contracts`, `xpile-rust-codegen`, `xpile-ruchy-codegen`, `xpile-lean-codegen`, `xpile-ptx-codegen`, `xpile-wgsl-codegen`, `bashrs-backend`, `xpile-meta-hir`, `xpile-ffi-manifest`, `xpile-bigint`, `xpile-frontend`, `xpile-backend`, and the proof-lane equivalents) cover the rest. Foundations: alchemize's four-tool agent loop, aprender's provable-contracts framework, depyler's repair-mode pattern, decy's HIR/ownership patterns, bashrs's POSIX-deterministic shell pattern.
 
 **Scope is deliberately scoped, not universal.** The supported language set is **one tier, not two** (the previous "native vs federated" split was reversed on 2026-05-17 — see [sub/bashrs-merger.md](sub/bashrs-merger.md)):
 
@@ -387,13 +387,15 @@ Key terms: **meta-HIR**, **Frontend trait**, **FFI manifest**, **oracle**, **age
 
 v0.1.0 — **end-to-end transpiler with semantic round-trip verification**:
 
-- ✅ 24 workspace crates compile clean (`cargo check`, `cargo clippy -- -D warnings`)
+- ✅ 27 workspace crates compile clean (`cargo check`, `cargo clippy -- -D warnings`)
 - ✅ `aprender-contracts` (`pv`) wired via crates.io 0.33 (path-dep removed in PR #3 fix)
-- ✅ 11 contracts pass `pv lint` (0 errors)
-- ✅ Three real backends (Rust, Ruchy, Lean 4); PTX/WGSL/SPIR-V still scaffolded
-- ✅ Python subset (canonical: [`/CHANGELOG.md`](../../CHANGELOG.md)): typed `def`, multi-statement body, all binary + unary ops including bitwise / power, ternary, if/elif/else with single- *or multi-*assignment branches, function calls including self-recursion, **while loops with mutable rebinding** (PMAT-006), **for-in-range with positive *or negative* literal steps** (PMAT-007, PMAT-008)
-- ✅ Semantic round-trip verified for 11 fixtures (factorial, fib, gcd, abs_val, sign, bits, square_plus, range_size, sum_to, for_sum / range_with_start / range_with_step, factorial_iter)
-- ✅ CI gate enforced on PRs (fmt, check, clippy -D warnings, pv lint, cargo deny, workspace tests)
+- ✅ 12 contracts pass `pv lint` (0 errors)
+- ✅ **100% §14.4 N-of-M QUORUM coverage** — all 12 contracts have paired Lean refinement theorems (`contracts/lean/*.lean`) AND Kani BMC harnesses (`contracts/kani/*.rs`) at Bronze tier. PMAT-058..077 shipped the substrate-completion run; see `xpile quorum` and CHANGELOG entries for each contract.
+- ✅ Four real backends (Rust, Ruchy, Lean 4, Shell/bashrs); PTX/WGSL/SPIR-V still scaffolded
+- ✅ Python subset (canonical: [`/CHANGELOG.md`](../../CHANGELOG.md)): typed `def`, multi-statement body, all binary + unary ops including bitwise / power, ternary, if/elif/else with single- *or multi-*assignment branches, function calls including self-recursion, **while loops with mutable rebinding** (PMAT-006), **for-in-range with positive *or negative* literal steps** (PMAT-007, PMAT-008), **`subprocess.run([...])` cross-domain to bashrs** (PMAT-040..058)
+- ✅ Shell subset (POSIX): quoted strings (single + double + escape sequences), `$NAME` / `${NAME}` variable expansion, `$(cmd)` and backtick command substitution, NAME=value assignment, pipelines, ShellLoop (for/while/until), POSIX special parameters ($1..9, $@, $#, etc.). See PMAT-037..058 entries.
+- ✅ Semantic round-trip verified for 11+ fixtures (factorial, fib, gcd, abs_val, sign, bits, square_plus, range_size, sum_to, for_sum / range_with_start / range_with_step, factorial_iter) plus shell `bashrs_realistic_demo.sh` (PMAT-052)
+- ✅ CI gate enforced on PRs (fmt, check, clippy -D warnings, pv lint, cargo deny, workspace tests including `every_kani_harness_discharges`, dedicated `kani` job runs all 12 BMC harnesses)
 - ✅ Branch protection on `main`; crates.io reservation at `xpile 0.0.1`
 - ⏳ Bigint promotion (`py-int-arith-v1.yaml` slow path) — fast-path
   overflow is now load-bearing (Rust + Ruchy emit
