@@ -110,6 +110,43 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Overflow-prone ranges + panic-as-BigInt interpretation (PMAT-031 / XPILE-DIFF-003)
+
+Extends `diff_exec.rs` from "only test fast-path inputs" to also
+exercise inputs that *must* overflow i64. New `overflow_args` field
+on `FixtureCfg` declares a per-fixture overflow domain. The runner:
+
+1. Runs CPython on the overflow inputs — always succeeds (Python
+   promotes to BigInt).
+2. Runs the transpiled Rust binary — expected to panic.
+3. Classifies the outcome:
+   - **`DocumentedGap`**: Rust panicked AND the panic message cites
+     `C-PY-INT-ARITH`. This is the *expected* behaviour per Layer-1
+     `C-PY-INT-ARITH` slow-path-not-yet-implemented. Counted under
+     `promotion_gaps`. NOT a test failure.
+   - **`Promoted`**: Rust exited zero with a value. Either the
+     function is in BigInt mode (a pleasant surprise — full
+     promotion is the long-term goal), or this specific input
+     didn't actually overflow. We compare against Python; agreement
+     counts under `overflow_promoted_ok`, divergence is a silent
+     miscompile and hard-fails.
+   - **`OffContractCrash`**: Rust panicked but the message did NOT
+     cite `C-PY-INT-ARITH`. Either codegen regressed (lost the
+     citation) or it's an unrelated crash. Hard-fails.
+
+Two fixtures now have overflow demos: `factorial.py` (n ≥ 21
+overflows recursively) and `countdown.py::factorial_iter` (same
+domain, iterative shape). At v0.1.0, all 20 overflow-phase
+checks land in `DocumentedGap` — the citation trail is intact, the
+gap is named, the test surfaces a number ("20 documented promotion
+gaps") that will drop to zero once XPILE-REFINE-006 ships BigInt
+mode for these signatures.
+
+Why the third outcome bucket is load-bearing: it catches the
+regression where someone removes `C-PY-INT-ARITH` from the panic
+literal in `emit_checked` / `emit_checked_pow` / `emit_checked_shift`.
+Pre-003 such a regression was invisible to the differential gate.
+
 ### Complete C-PY-INT-ARITH refinement corpus: shift + power theorems (PMAT-030 / XPILE-REFINE-004)
 
 Three more theorems join the four already discharged for `+`, `*`,

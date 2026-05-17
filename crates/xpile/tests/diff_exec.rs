@@ -1,7 +1,8 @@
-//! Differential execution check (PMAT-018 / XPILE-DIFF-001).
+//! Differential execution check (PMAT-018 / XPILE-DIFF-001 +
+//! XPILE-DIFF-002 + XPILE-DIFF-003).
 //!
-//! For each fixture in the curated single-arg i64 set, generate N
-//! deterministic inputs inside the fast-path domain, run both:
+//! For each fixture in the curated set, generate N deterministic
+//! inputs inside the fast-path domain, run both:
 //!   (a) CPython directly on the .py source
 //!   (b) The transpiled Rust binary compiled by rustc -O
 //! and assert the outputs agree.
@@ -13,18 +14,23 @@
 //! quantitatively rather than by adding more hand-authored cases.
 //!
 //! Scope at v0.1.0:
-//!   * Single-arg i64-returning fixtures only (1-arg Python int → int).
+//!   * 1-arg and 2-arg i64-returning fixtures (XPILE-DIFF-001/002).
 //!   * Hardcoded per-fixture input range so generated inputs stay
 //!     inside the C-PY-INT-ARITH fast-path domain (no i64 overflow
-//!     panics). Wider ranges become available once XPILE-DIFF-002
-//!     teaches the runner to interpret a `.checked_*().expect(...)`
-//!     panic as "Python promoted to BigInt" and compare against
-//!     CPython's int output as a BigInt.
-//!   * N = 10 inputs per fixture (10 fixtures × ~10 inputs each ≈
-//!     100 differential checks total). Modest by ruchy 5.0's spec
-//!     (which targets 100/function); tunable.
-//!   * Deterministic input generation via a fixed-seed LCG so the
-//!     test is reproducible.
+//!     panics).
+//!   * **XPILE-DIFF-003**: optional per-fixture `overflow_args` ranges
+//!     where the i64 fast path *must* overflow. CPython promotes to
+//!     BigInt and returns the mathematical result; xpile's emit (in
+//!     non-BigInt mode) `.checked_*().expect(...)`-panics with a
+//!     message citing `C-PY-INT-ARITH`. The gate interprets that
+//!     panic as a *documented promotion gap* and counts it under
+//!     `promotion_gaps`. Test failure modes (vs. the gap):
+//!       - Rust exits zero with a value that diverges from Python
+//!         → silent miscompile, hard fail.
+//!       - Rust panics without naming `C-PY-INT-ARITH` → off-contract
+//!         crash, hard fail.
+//!   * N = 10 inputs per fixture for both fast-path and overflow
+//!     phases. Deterministic via a fixed-seed LCG.
 //!
 //! Skip behaviour: if `python3` or `rustc` is missing from PATH, the
 //! test prints a warning and exits OK — same posture as the existing
@@ -46,19 +52,22 @@ fn xpile_bin() -> PathBuf {
 
 // Curated set of fixtures + per-arg [min, max] input ranges that stay
 // inside the C-PY-INT-ARITH fast path (no overflow panics). Each entry
-// is (file, entry-function, per-arg-range[]) — the slice length is
-// the function's arity. XPILE-DIFF-002 extended this from single-arg
-// only to support 1- and 2-arg fixtures; the driver synthesis below
-// handles both arities. Higher arities are a follow-up.
-//
-// Conservative input ranges below stay inside the fast path; ranges
-// that *include* overflow (where Python promotes to bigint but Rust
-// panics) need XPILE-DIFF-003 to interpret the panic as expected.
+// is (file, entry-function, fast-path-range[], overflow-range[]). The
+// slice length is the function's arity. XPILE-DIFF-002 extended from
+// single-arg to 2-arg; XPILE-DIFF-003 adds the optional `overflow_args`
+// slice for inputs that intentionally overflow the i64 fast path.
 struct FixtureCfg {
     file: &'static str,
     entry: &'static str,
     // Per-arg `(min, max)` (inclusive). Slice length is the arity.
     args: &'static [(i64, i64)],
+    // XPILE-DIFF-003: per-arg overflow range. If non-empty, the gate
+    // additionally runs INPUTS_PER_FIXTURE inputs from this domain
+    // and *expects* the Rust binary to panic citing C-PY-INT-ARITH
+    // (the documented promotion gap). If the slice is empty, the
+    // fixture has no overflow demo and only the fast-path phase
+    // runs. Slice length, when non-empty, must match `args.len()`.
+    overflow_args: &'static [(i64, i64)],
 }
 
 const FIXTURES: &[FixtureCfg] = &[
@@ -66,8 +75,13 @@ const FIXTURES: &[FixtureCfg] = &[
     FixtureCfg {
         file: "factorial.py",
         entry: "factorial",
-        // 13! overflows i64
+        // 13! overflows i64 if accumulated naively; 21! definitely
+        // overflows.
         args: &[(0, 12)],
+        // XPILE-DIFF-003: factorial(n) for n ≥ 21 always overflows
+        // i64. Python promotes; xpile's i64 emit panics with
+        // C-PY-INT-ARITH cited.
+        overflow_args: &[(21, 30)],
     },
     FixtureCfg {
         file: "fib.py",
@@ -75,32 +89,39 @@ const FIXTURES: &[FixtureCfg] = &[
         // F(30) = 832040, safe; F(94) is the i64 limit but tree-
         // recursion makes large n painfully slow.
         args: &[(0, 30)],
+        overflow_args: &[],
     },
     FixtureCfg {
         file: "abs_val.py",
         entry: "abs_val",
         args: &[(-1_000_000, 1_000_000)],
+        overflow_args: &[],
     },
     FixtureCfg {
         file: "sign.py",
         entry: "sign",
         args: &[(-1_000_000_000, 1_000_000_000)],
+        overflow_args: &[],
     },
     FixtureCfg {
         file: "sum_to.py",
         entry: "sum_to",
         // sum(1..65535) ≈ 2.1e9, well under i64
         args: &[(0, 65_535)],
+        overflow_args: &[],
     },
     FixtureCfg {
         file: "for_sum.py",
         entry: "for_sum",
         args: &[(0, 65_535)],
+        overflow_args: &[],
     },
     FixtureCfg {
         file: "countdown.py",
         entry: "factorial_iter",
         args: &[(0, 12)],
+        // XPILE-DIFF-003: same overflow story as recursive factorial.
+        overflow_args: &[(21, 30)],
     },
     // ── 2-arg fixtures (added XPILE-DIFF-002) ────────────────────
     FixtureCfg {
@@ -111,6 +132,9 @@ const FIXTURES: &[FixtureCfg] = &[
         // math.gcd convention is non-negative result — easier to
         // restrict to non-negative inputs and avoid that asymmetry.
         args: &[(0, 1_000_000), (0, 1_000_000)],
+        // gcd is non-expanding (output ≤ min(|a|, |b|)) so it never
+        // overflows. No overflow demo.
+        overflow_args: &[],
     },
     FixtureCfg {
         file: "multi_branch.py",
@@ -121,6 +145,7 @@ const FIXTURES: &[FixtureCfg] = &[
             (-1_000_000_000, 1_000_000_000),
             (-1_000_000_000, 1_000_000_000),
         ],
+        overflow_args: &[],
     },
     FixtureCfg {
         file: "bits.py",
@@ -132,6 +157,7 @@ const FIXTURES: &[FixtureCfg] = &[
             (-i64::pow(2, 61) + 1, i64::pow(2, 61) - 1),
             (-i64::pow(2, 61) + 1, i64::pow(2, 61) - 1),
         ],
+        overflow_args: &[],
     },
 ];
 
@@ -252,6 +278,58 @@ fn run_rust(bin: &Path, args: &[i64]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+/// XPILE-DIFF-003: outcome of running the Rust binary on an input
+/// from a fixture's `overflow_args` range. We classify each result
+/// into one of three buckets:
+///
+/// * `Promoted(value)` — Rust exited zero with a value. This means
+///   either the function is in BigInt mode (no overflow possible) or
+///   the overflow didn't actually trip for this specific input.
+///   `value` is the stdout trimmed; the caller compares it to
+///   CPython's output.
+/// * `DocumentedGap` — Rust panicked AND the panic message cites
+///   `C-PY-INT-ARITH`. This is the *expected* outcome: the i64 fast
+///   path overflowed and bailed out with the contract reference,
+///   exactly as Layer-1 `C-PY-INT-ARITH` requires. Not a test
+///   failure — counts under `promotion_gaps`.
+/// * `OffContractCrash(stderr)` — Rust exited non-zero but the
+///   stderr doesn't mention the contract. That's a bug: either an
+///   unrelated panic or a regression that lost the contract
+///   citation. Hard test failure.
+#[derive(Debug)]
+enum OverflowOutcome {
+    Promoted(String),
+    DocumentedGap,
+    OffContractCrash(String),
+}
+
+/// Run the compiled Rust binary the same way as `run_rust` but
+/// classify a non-zero exit by inspecting the panic message rather
+/// than treating it as a generic failure. See [`OverflowOutcome`].
+fn run_rust_expecting_overflow(bin: &Path, args: &[i64]) -> OverflowOutcome {
+    let mut cmd = Command::new(bin);
+    for a in args {
+        cmd.arg(a.to_string());
+    }
+    let out = match cmd.output() {
+        Ok(o) => o,
+        Err(e) => return OverflowOutcome::OffContractCrash(format!("spawn failed: {e}")),
+    };
+    if out.status.success() {
+        return OverflowOutcome::Promoted(String::from_utf8_lossy(&out.stdout).trim().to_string());
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // Rust panic format: stderr contains `panicked at ...` plus the
+    // panic message. We look for the contract citation anywhere in
+    // stderr — the `emit_checked*` codegen embeds it in the
+    // `.expect(...)` literal so it always appears on the panic line.
+    if stderr.contains("C-PY-INT-ARITH") {
+        OverflowOutcome::DocumentedGap
+    } else {
+        OverflowOutcome::OffContractCrash(stderr.to_string())
+    }
+}
+
 /// Run the Python fixture directly via CPython with N i64 args.
 /// Returns stdout trimmed.
 fn run_python(fixture_path: &Path, entry: &str, args: &[i64]) -> Result<String, String> {
@@ -298,6 +376,12 @@ fn differential_execution_cpython_vs_transpiled_rust() {
     let mut rng = Lcg::new(LCG_SEED);
     let mut total_checks = 0;
     let mut mismatches: Vec<(String, Vec<i64>, String, String)> = Vec::new();
+    // XPILE-DIFF-003 metrics + failure buckets.
+    let mut overflow_checks = 0;
+    let mut promotion_gaps = 0;
+    let mut overflow_promoted_ok = 0;
+    let mut overflow_promoted_mismatches: Vec<(String, Vec<i64>, String, String)> = Vec::new();
+    let mut off_contract_crashes: Vec<(String, Vec<i64>, String)> = Vec::new();
 
     for cfg in FIXTURES {
         let py_path = fixture(cfg.file);
@@ -311,6 +395,7 @@ fn differential_execution_cpython_vs_transpiled_rust() {
             }
         };
 
+        // ── Fast-path phase (XPILE-DIFF-001/002). ────────────────
         for _ in 0..INPUTS_PER_FIXTURE {
             let args: Vec<i64> = cfg
                 .args
@@ -326,30 +411,124 @@ fn differential_execution_cpython_vs_transpiled_rust() {
                 mismatches.push((cfg.file.to_string(), args, py, rs));
             }
         }
+
+        // ── Overflow phase (XPILE-DIFF-003). ─────────────────────
+        // Skip if the fixture declared no overflow domain.
+        if cfg.overflow_args.is_empty() {
+            continue;
+        }
+        assert_eq!(
+            cfg.overflow_args.len(),
+            cfg.args.len(),
+            "fixture `{}`: overflow_args length must match arity",
+            cfg.file
+        );
+        for _ in 0..INPUTS_PER_FIXTURE {
+            let args: Vec<i64> = cfg
+                .overflow_args
+                .iter()
+                .map(|(lo, hi)| rng.next_i64_in(*lo, *hi))
+                .collect();
+            // Python *always* produces a value here (it promotes).
+            let py = run_python(&py_path, cfg.entry, &args)
+                .unwrap_or_else(|e| panic!("python {}({args:?}): {e}", cfg.file));
+            overflow_checks += 1;
+            match run_rust_expecting_overflow(&bin, &args) {
+                OverflowOutcome::DocumentedGap => {
+                    // Expected: Rust panicked citing C-PY-INT-ARITH.
+                    promotion_gaps += 1;
+                }
+                OverflowOutcome::Promoted(rs) => {
+                    // Rust didn't panic — either the function is in
+                    // BigInt mode (which would be a pleasant
+                    // surprise here) or the specific input didn't
+                    // actually overflow. Compare against Python; if
+                    // they agree we count it as a success (BigInt
+                    // mode is *the* desired outcome long-term), if
+                    // they diverge it's a silent miscompile.
+                    if py == rs {
+                        overflow_promoted_ok += 1;
+                    } else {
+                        overflow_promoted_mismatches.push((cfg.file.to_string(), args, py, rs));
+                    }
+                }
+                OverflowOutcome::OffContractCrash(stderr) => {
+                    // Rust panicked but the message didn't cite the
+                    // contract. That's either an unrelated bug or a
+                    // regression that dropped the citation. Hard fail.
+                    off_contract_crashes.push((cfg.file.to_string(), args, stderr));
+                }
+            }
+        }
     }
 
+    let mut fatal = String::new();
     if !mismatches.is_empty() {
-        let mut msg = format!(
+        fatal.push_str(&format!(
             "Differential execution disagreement (XPILE-DIFF-001/002):\n\
-             {} of {} input-comparisons diverged between CPython and the transpiled Rust binary.\n\
-             Either the codegen miscompiles the construct OR the fixture's declared input range \n\
-             needs tightening to stay inside the C-PY-INT-ARITH fast-path domain.\n\n",
+             {} of {} fast-path input-comparisons diverged between CPython and the transpiled \
+             Rust binary. Either the codegen miscompiles the construct OR the fixture's \
+             declared input range needs tightening to stay inside the C-PY-INT-ARITH fast-path \
+             domain.\n\n",
             mismatches.len(),
             total_checks
-        );
+        ));
         for (fx, args, py, rs) in &mismatches {
-            msg.push_str(&format!(
+            fatal.push_str(&format!(
                 "  - {fx} args={args:?}\n      python: {py}\n      rust:   {rs}\n"
             ));
         }
-        panic!("{msg}");
+    }
+    if !overflow_promoted_mismatches.is_empty() {
+        fatal.push_str(&format!(
+            "\nOverflow-phase silent miscompile (XPILE-DIFF-003):\n\
+             {} input(s) where Rust returned a value that diverged from Python's BigInt-promoted \
+             result. This is worse than the documented promotion gap — Rust produced a *wrong* \
+             answer instead of panicking.\n\n",
+            overflow_promoted_mismatches.len(),
+        ));
+        for (fx, args, py, rs) in &overflow_promoted_mismatches {
+            fatal.push_str(&format!(
+                "  - {fx} args={args:?}\n      python: {py}\n      rust:   {rs}\n"
+            ));
+        }
+    }
+    if !off_contract_crashes.is_empty() {
+        fatal.push_str(&format!(
+            "\nOff-contract crashes (XPILE-DIFF-003):\n\
+             {} input(s) where Rust panicked but the panic message did NOT cite \
+             `C-PY-INT-ARITH`. Either codegen regressed (dropped the contract citation) or the \
+             panic comes from an unrelated path. Either way, the gate can't classify the \
+             outcome as a documented gap.\n\n",
+            off_contract_crashes.len(),
+        ));
+        for (fx, args, stderr) in &off_contract_crashes {
+            fatal.push_str(&format!(
+                "  - {fx} args={args:?}\n      stderr: {}\n",
+                stderr.trim().lines().next().unwrap_or("(no stderr line)")
+            ));
+        }
+    }
+    if !fatal.is_empty() {
+        panic!("{fatal}");
     }
 
     eprintln!(
-        "XPILE-DIFF-001/002: {} differential checks across {} fixtures — all green.",
-        total_checks,
+        "XPILE-DIFF-001/002: {total_checks} fast-path differential checks across {} fixtures — \
+         all green.",
         FIXTURES.len()
     );
+    if overflow_checks > 0 {
+        let n_overflow_fixtures = FIXTURES
+            .iter()
+            .filter(|c| !c.overflow_args.is_empty())
+            .count();
+        eprintln!(
+            "XPILE-DIFF-003: {overflow_checks} overflow-phase checks across {n_overflow_fixtures} \
+             fixture(s) — {promotion_gaps} documented promotion gaps, {overflow_promoted_ok} \
+             promoted-and-agreed (BigInt-mode would land here)."
+        );
+    }
 }
 
 // LCG self-test — guard against drift in the deterministic generator

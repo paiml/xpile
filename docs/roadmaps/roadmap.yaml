@@ -484,3 +484,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-031
+  github_issue: null
+  item_type: task
+  title: 'XPILE-DIFF-003: overflow-prone ranges + panic-as-BigInt interpretation in diff_exec'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T14:12:05Z
+  updated: 2026-05-17T14:12:05Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
