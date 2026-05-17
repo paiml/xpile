@@ -1969,3 +1969,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-120
+  github_issue: null
+  item_type: task
+  title: 'PMAT-120: CLAUDE.md bashrs state sweep — merger shipped at v0.1.0 not v0.2.0; remove "crates/bashrs-* don''t exist yet" claim'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-19T02:00:00Z
+  updated: 2026-05-19T02:00:00Z
+  spec: null
+  acceptance_criteria:
+  - The project CLAUDE.md (autonomous-shipping instructions) said "Until v0.2.0 (the merger has been decided but crates/bashrs-* crates don't exist yet), bashrs is consumed externally at /home/noah/src/bashrs". Reality at v0.1.0 — bashrs-frontend and bashrs-backend are in-tree workspace members (PMAT-037..058 + PMAT-085..092 polish, C-BASHRS-POSIX-IDEMPOTENCE at full 4-stratum QUORUM). Rewrite the Shell / Makefile / Dockerfile section to reflect actual state.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
