@@ -1799,3 +1799,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-110
+  github_issue: null
+  item_type: task
+  title: 'PMAT-110: sub/hybrid-transpile-flow.md sweep — Python→shell hybrid shipped first at v0.1.0; rename "First demo target" to "Planned demo target" and add shipped-demo section'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T21:00:00Z
+  updated: 2026-05-18T21:00:00Z
+  spec: null
+  acceptance_criteria:
+  - sub/hybrid-transpile-flow.md called the CPython+NumPy demo "First demo target". The first hybrid that actually shipped is Python→shell via PMAT-040 (subprocess.run recognition lowering to Stmt::Cmd → bashrs-backend → POSIX shell). Rename "First demo target" to "Planned demo target" and add a "First hybrid demo: Python → shell" section above it documenting the actually-shipped path with cross-reference to bashrs-merger.md.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
