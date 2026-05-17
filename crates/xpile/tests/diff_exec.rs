@@ -194,16 +194,23 @@ fn have_python_and_rustc() -> bool {
 
 /// Build the transpiled-Rust binary for an N-arg fixture. The synth
 /// driver reads N i64s from CLI argv and calls `entry(a0, a1, ...)`.
-/// XPILE-DIFF-002 generalised this from 1-arg only to support any
-/// arity by generating the appropriate call expression.
+///
+/// XPILE-DIFF-002 generalised this from 1-arg only.
+/// PMAT-036 (XPILE-DIFF-003 follow-up): when the transpile output
+/// references `xpile_bigint::BigInt` (PMAT-013 implicit-promotion
+/// path), we build via a tiny temp Cargo project that depends on the
+/// workspace's `xpile-bigint` crate. Otherwise we keep the fast
+/// standalone-rustc path. This is the architectural payoff for
+/// closing the DIFF-003 documented gaps: the runner can now
+/// validate BigInt-mode emit end-to-end against CPython on
+/// overflow inputs without a hand-rolled shim.
 fn build_rust_binary(
     fixture_path: &Path,
     entry: &str,
     arity: usize,
     out_dir: &Path,
 ) -> Result<PathBuf, String> {
-    // Transpile via the xpile binary so we exercise the real CLI path,
-    // not just the library — same coverage as transpile_e2e.rs uses.
+    // Transpile via the xpile binary so we exercise the real CLI path.
     let out = Command::new(xpile_bin())
         .args([
             "transpile",
@@ -220,8 +227,22 @@ fn build_rust_binary(
         ));
     }
     let transpiled = String::from_utf8(out.stdout).map_err(|e| format!("utf8: {e}"))?;
+    let uses_bigint = transpiled.contains("xpile_bigint::BigInt");
 
-    // Build `entry(argv[0], argv[1], ...)` for the given arity.
+    if uses_bigint {
+        build_rust_binary_bigint(&transpiled, entry, arity, out_dir)
+    } else {
+        build_rust_binary_i64(&transpiled, entry, arity, out_dir)
+    }
+}
+
+/// Standalone-rustc fast path for fixtures that don't use BigInt.
+fn build_rust_binary_i64(
+    transpiled: &str,
+    entry: &str,
+    arity: usize,
+    out_dir: &Path,
+) -> Result<PathBuf, String> {
     let call_args: Vec<String> = (0..arity).map(|i| format!("argv[{i}]")).collect();
     let call = format!("{entry}({})", call_args.join(", "));
     let driver = format!(
@@ -259,6 +280,99 @@ fn main() {{
         ));
     }
     Ok(bin_path)
+}
+
+/// Cargo-based build path for fixtures whose transpile output uses
+/// `xpile_bigint::BigInt`. Materialises a one-shot Cargo project that
+/// depends on the in-workspace `xpile-bigint` crate (path dep), so
+/// the produced binary has access to the real `num_bigint::BigInt`
+/// via the re-export — including `Display` for the driver's
+/// `println!("{{}}", entry(...))`, which is what gets compared to
+/// CPython's stdout.
+fn build_rust_binary_bigint(
+    transpiled: &str,
+    entry: &str,
+    arity: usize,
+    out_dir: &Path,
+) -> Result<PathBuf, String> {
+    // Argv parses i64 strings (the gate's input domain is i64); each
+    // is lifted into `xpile_bigint::BigInt`. Then the entry call sites
+    // need `.clone()`-friendly inputs since BigInt isn't Copy.
+    let call_args: Vec<String> = (0..arity).map(|i| format!("argv[{i}].clone()")).collect();
+    let call = format!("{entry}({})", call_args.join(", "));
+    let driver = format!(
+        r#"
+fn main() {{
+    let argv: Vec<xpile_bigint::BigInt> = std::env::args()
+        .skip(1)
+        .map(|s| {{
+            let n: i64 = s.parse().expect("parse i64");
+            xpile_bigint::BigInt::from(n)
+        }})
+        .collect();
+    assert_eq!(argv.len(), {arity}, "expected {arity} args");
+    println!("{{}}", {call});
+}}
+"#
+    );
+    let merged = format!("{transpiled}\n{driver}\n");
+
+    // Resolve the path to the in-workspace xpile-bigint crate. The
+    // test crate's CARGO_MANIFEST_DIR is `<workspace>/crates/xpile`;
+    // xpile-bigint is at `<workspace>/crates/xpile-bigint`.
+    let xpile_bigint_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates/")
+        .join("xpile-bigint");
+
+    let pkg_dir = out_dir.join(format!("{entry}-cargo"));
+    let src_dir = pkg_dir.join("src");
+    std::fs::create_dir_all(&src_dir).map_err(|e| format!("create dir: {e}"))?;
+
+    // The crate name uses underscores; Cargo's [package].name uses
+    // hyphens. The binary on disk will end up as `<entry>`.
+    let cargo_toml = format!(
+        r#"[package]
+name = "{entry}-bin"
+version = "0.0.0"
+edition = "2021"
+
+[[bin]]
+name = "{entry}"
+path = "src/main.rs"
+
+[dependencies]
+xpile-bigint = {{ path = "{}" }}
+"#,
+        xpile_bigint_dir.display()
+    );
+    std::fs::write(pkg_dir.join("Cargo.toml"), &cargo_toml)
+        .map_err(|e| format!("write Cargo.toml: {e}"))?;
+    std::fs::write(src_dir.join("main.rs"), &merged).map_err(|e| format!("write main.rs: {e}"))?;
+
+    // Pin --target-dir to the temp package's own subdir so the build
+    // output is at a path we control, regardless of any global
+    // `CARGO_TARGET_DIR` env or `.cargo/config.toml` setting.
+    let target_dir = pkg_dir.join("target");
+    let build = Command::new("cargo")
+        .args([
+            "build",
+            "--release",
+            "--quiet",
+            "--manifest-path",
+            pkg_dir.join("Cargo.toml").to_str().unwrap(),
+            "--target-dir",
+            target_dir.to_str().unwrap(),
+        ])
+        .output()
+        .map_err(|e| format!("spawn cargo: {e}"))?;
+    if !build.status.success() {
+        return Err(format!(
+            "cargo build (BigInt path) failed:\n=== source ===\n{merged}\n=== stderr ===\n{}",
+            String::from_utf8_lossy(&build.stderr)
+        ));
+    }
+    Ok(target_dir.join("release").join(entry))
 }
 
 /// Run the compiled Rust binary with N i64 args. Returns stdout

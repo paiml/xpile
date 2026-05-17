@@ -110,6 +110,60 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### BigInt auto-promotion closes DIFF-003 documented gaps (PMAT-036)
+
+Converts the 20 documented promotion gaps in the differential-exec
+gate from panics into successful BigInt-equivalent outputs. Headline:
+
+\`\`\`
+XPILE-DIFF-001/002: 100 fast-path differential checks across 10 fixtures — all green.
+XPILE-DIFF-003: 20 overflow-phase checks across 2 fixture(s) — 0 documented promotion gaps, 20 promoted-and-agreed.
+\`\`\`
+
+Mechanism (no new codegen — just exercising existing PMAT-013 / -025
+infrastructure on the overflow-prone fixtures):
+
+1. **`factorial.py` and `countdown.py` annotated `-> BigInt`.** PMAT-013's
+   implicit promotion lifts `n: int` → BigInt and every int literal
+   in the body → `xpile_bigint::BigInt::from(...)`, so the whole
+   function runs in BigInt mode end-to-end. Recursive multiplication
+   for n=21..30 now never overflows.
+
+2. **`depyler-frontend` extends BigInt propagation to for-range loop
+   targets.** Before this PR, `for i in range(n, 0, -1)` lowered to
+   `let mut i: i64 = n` even when `n` was BigInt — a type error
+   under PMAT-013. Now the for-target's binding type follows
+   `ctx.fn_return_type`: BigInt-mode functions get BigInt loop
+   variables, so countdown.py compiles cleanly.
+
+3. **`depyler-frontend` accepts `from __future__ import annotations`
+   as a no-op preamble.** Required for CPython to `exec` the fixture
+   without `NameError: BigInt` (xpile's metadata-only type alias for
+   Python's unbounded int).
+
+4. **`diff_exec.rs` dual-mode build pipeline.** When the transpile
+   output uses `xpile_bigint::BigInt`, the runner materialises a
+   one-shot Cargo project that depends on the in-workspace
+   `xpile-bigint` crate (path dep) so the produced binary has the
+   real `num_bigint::BigInt` + `Display` available. Non-BigInt
+   fixtures keep the existing standalone-rustc fast path.
+
+5. **`--target-dir` pinning** so the binary lands at a predictable
+   path regardless of any global `CARGO_TARGET_DIR` env or
+   workspace `.cargo/config.toml` setting (the local dev env sets
+   `target-dir` globally; CI doesn't).
+
+E2E test updates: 3 transpile_e2e tests that hard-asserted i64
+emission for factorial/countdown were updated to assert BigInt
+emission. Drivers now use inline `mod xpile_bigint { ... }` shims
+matching the existing PMAT-013 BigInt fixture tests.
+
+Architectural payoff: this PR proves the §27 type lattice handles
+dynamic size escalation through a complete fixture lifecycle —
+frontend lowering, codegen, and the differential-exec gate all
+participate in the BigInt-mode path. The 20-gaps-to-20-successes
+flip in the gate output is the user-visible metric.
+
 ### Additive slow-path soundness theorem (PMAT-034 / XPILE-REFINE-006)
 
 Closes the last fast/slow-path refinement gap for `C-PY-INT-ARITH`'s

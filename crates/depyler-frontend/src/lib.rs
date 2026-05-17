@@ -241,6 +241,16 @@ impl Frontend for PythonFrontend {
 
         let mut items = Vec::new();
         for stmt in suite {
+            // PMAT-036: `from __future__ import annotations` is the
+            // canonical Python preamble that defers annotation
+            // evaluation. xpile fixtures with `-> BigInt` (PMAT-013
+            // implicit-promotion) need this so CPython can `exec` the
+            // file without `NameError: BigInt`. The frontend skips it
+            // (no Meta-HIR representation needed — annotations are
+            // already treated as Type tokens at lower time).
+            if is_future_annotations_import(&stmt) {
+                continue;
+            }
             let fn_item = lower_top_level_stmt(stmt)?;
             items.push(Item::Function(fn_item));
         }
@@ -252,6 +262,29 @@ impl Frontend for PythonFrontend {
             ffi_boundaries: Vec::new(),
         })
     }
+}
+
+/// True iff `stmt` is exactly `from __future__ import annotations`.
+/// PMAT-036 — see the call site for the rationale on why this is the
+/// only preamble form we currently tolerate.
+fn is_future_annotations_import(stmt: &ast::Stmt) -> bool {
+    let ast::Stmt::ImportFrom(imp) = stmt else {
+        return false;
+    };
+    // `module` is `Option<Identifier>`. The form `from . import x`
+    // has `module: None`; `from foo import x` has `module: Some("foo")`.
+    let Some(mod_id) = imp.module.as_ref() else {
+        return false;
+    };
+    if mod_id.as_str() != "__future__" {
+        return false;
+    }
+    // The import list is `[Alias { name: Identifier, asname: ... }]`.
+    // Accept any single-alias import where name == "annotations" and
+    // there's no rename.
+    imp.names
+        .iter()
+        .any(|alias| alias.name.as_str() == "annotations" && alias.asname.is_none())
 }
 
 fn lower_top_level_stmt(stmt: ast::Stmt) -> Result<Function, FrontendError> {
@@ -528,6 +561,19 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
     //       <body...>
     //       target = (target).checked_add(<step>);
     //   }
+    // PMAT-036: when the enclosing function is BigInt-mode (return
+    // type is BigInt → all `int` params auto-promoted, all int literals
+    // lifted in the body), the for-target's binding type must also be
+    // BigInt — otherwise the emitted `let mut i: i64 = n.clone()` is a
+    // type error against the BigInt `n` and the BigInt step literal in
+    // the tail. The choice of I64 vs BigInt is purely determined by the
+    // function's return type; no other inference is needed because the
+    // for-range desugaring rebinds `i` each iteration from the step
+    // expression which already carries the right type.
+    let target_ty = match ctx.fn_return_type {
+        Type::BigInt => Type::BigInt,
+        _ => Type::I64,
+    };
     let init_stmt = if ctx.bound.contains(&target_name) {
         Stmt::Assign {
             name: target_name.clone(),
@@ -535,10 +581,10 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
         }
     } else {
         ctx.bound.insert(target_name.clone());
-        ctx.name_types.insert(target_name.clone(), Type::I64);
+        ctx.name_types.insert(target_name.clone(), target_ty);
         Stmt::Let {
             name: target_name.clone(),
-            ty: Type::I64,
+            ty: target_ty,
             value: start_expr,
             // for-target is by definition reassigned each iteration —
             // mutable. The pre-walk also flags it, but we set explicitly
