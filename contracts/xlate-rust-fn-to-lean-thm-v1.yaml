@@ -33,6 +33,13 @@ metadata:
 
 equations:
   rust_fn_to_lean_def:
+    # PMAT-072: Lean refinement theorem locks in the body-
+    # preservation modelling commitment for rust_fn_to_lean_def.
+    # See contracts/lean/XlateRustFnToLeanThm.lean for the proof.
+    # Bidirectional partner of PMAT-070 — together they bracket
+    # the full Rust ↔ Lean translation at Bronze tier.
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.rust_fn_to_lean_def"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
     formula: |
       lift(rust_fn(args: T1, ...) -> R, contract_C) ==
         def <fn_name> (args : T1_lean) ... : R_lean := <body_lean>

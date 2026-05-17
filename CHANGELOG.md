@@ -110,6 +110,53 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Lean refinement theorem — C-XLATE-RUST-FN-TO-LEAN-THM → PARTIAL (PMAT-072) — brackets full Rust ↔ Lean translation
+
+**Tenth contract reaches non-UNVERIFIED status.** New
+`contracts/lean/XlateRustFnToLeanThm.lean` carries the
+refinement theorem `rust_fn_to_lean_def` — the bidirectional
+partner of PMAT-070's `def_to_rust_fn`. Together they bracket
+the full Rust ↔ Lean translation at Bronze tier:
+
+| direction       | contract                       | Lean theorem | Kani harness |
+|---|---|---|---|
+| Lean → Rust     | `C-XLATE-LEAN-TO-RUST`         | PMAT-070     | PMAT-071     |
+| Rust → Lean     | `C-XLATE-RUST-FN-TO-LEAN-THM`  | PMAT-072 ← new | PMAT-073 next |
+
+```
+$ xpile quorum
+  ...
+  C-XLATE-RUST-FN-TO-LEAN-THM                 1    0    0    0  PARTIAL  ← new
+  totals: 9 QUORUM, 1 PARTIAL, 2 UNVERIFIED (12 contracts total)
+```
+
+Implementation:
+- **`contracts/lean/XlateRustFnToLeanThm.lean`** — new namespace
+  `XpileContracts.CXlateRustFnToLeanThm`. Models `RustFn` and
+  `LeanDef` as byte-array body carriers (Bronze tier). The
+  `lift_fn_to_def` function is byte-identity, and the
+  `rust_fn_to_lean_def` theorem proves body preservation by
+  `rfl`. Companion `citation_bridge_via_attribute` theorem
+  stubbed for Silver-tier refinement when the model grows a
+  typed `LeanDef.attrs : List Attribute` field.
+- **`contracts/xlate-rust-fn-to-lean-thm-v1.yaml`** — equation
+  `rust_fn_to_lean_def` gains `lean_theorem` + `lean_file` refs.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-072 entry.
+
+This is the **ninth contract Lean theorem** in the project, and
+completes the **bidirectional Rust ↔ Lean translation bracket**
+(PMAT-070 covered Lean → Rust; this covers Rust → Lean). After
+the companion Kani harness lands as PMAT-073, the bracket will
+be fully closed at QUORUM on both ends.
+
+Cross-reinforcement: any future PR that changes the Rust ↔ Lean
+lowering in either direction must update both Lean theorems
+*and* both Kani harnesses, or the refinement-proof citation
+gate fires.
+
+Companion Kani harness ships next as PMAT-073, lifting to QUORUM
+(10 of 12 = 83%).
+
 ### Kani symbolic harness — C-XLATE-LEAN-TO-RUST → QUORUM (PMAT-071) — **75% of substrate at QUORUM**
 
 **Ninth contract reaches QUORUM. Three-quarters of the contract
