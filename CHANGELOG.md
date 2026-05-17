@@ -110,6 +110,51 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Lean refinement for notation contract — C-NOTATION-LATEX-MATH-TO-EQUATION → PARTIAL (PMAT-057)
+
+**Third contract reaches non-UNVERIFIED quorum status.** New
+\`contracts/lean/Notation.lean\` carries the refinement theorem
+\`display_math_eq_equation_env_eq_align_env\` — locks in the
+modelling commitment that all three LaTeX display-math forms
+(\`\\[ ... \\]\`, \`\\begin{equation}\`, \`\\begin{align}\`) lower to the
+same xpile \`equations:\` entry on the same formula input. Proof
+is \`rfl\` by our modelling choice (Bronze tier per ruchy 5.0
+§14.10.5).
+
+\`\`\`
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    0    1    5  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    0    0    1  PARTIAL  ← new
+  ... (9 more UNVERIFIED)
+  totals: 2 QUORUM, 1 PARTIAL, 9 UNVERIFIED (12 contracts total)
+\`\`\`
+
+Implementation:
+- **\`contracts/lean/Notation.lean\`** — new namespace
+  \`XpileContracts.CNotationLatexMathToEquation\`. Abstract
+  \`EquationFormula\` wrapper (v0.1.0 Bronze model carrying just
+  the ASCII-normalised content; Silver-tier refinement at
+  v0.3.0+ replaces it with a typed AST that distinguishes the
+  three LaTeX environments).
+- **\`contracts/notation-latex-math-to-equation-v1.yaml\`** —
+  \`display_math_to_equation\` equation gets \`lean_theorem\` +
+  \`lean_file\` refs.
+
+This is the **second contract Lean theorem** the project has
+(PMAT-044's Bashrs.lean was the first). Same scaffold posture —
+documentary modelling commitment locked in by \`rfl\`. Cross-
+reinforces: any future change to the three lowering paths must
+either preserve \`rfl\`-equivalence OR fire the
+\`refinement_proofs.rs\` citation gate.
+
+Why PARTIAL not QUORUM (yet): the latex-contract-frontend doesn't
+have a Runtime witness fixture exercising the contract. Adding one
+(a \`.tex\` fixture + a \`latex_diff_exec\` integration test
+analogous to PMAT-043's shell version) would promote it to
+QUORUM. That's XPILE-NOTATION-RUNTIME-001 future work.
+
 ### Escape sequences in double-quoted strings (PMAT-056)
 
 Tokenizer recognises POSIX escape sequences inside \`"..."\`

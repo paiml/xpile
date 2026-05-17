@@ -57,6 +57,12 @@ equations:
       - "math span is well-formed (matching delimiters)"
 
   display_math_to_equation:
+    # PMAT-057: Lean refinement theorem locks in the modelling
+    # commitment that all three display-math forms produce the
+    # same EquationFormula on the same input. See
+    # contracts/lean/Notation.lean for the proof.
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.display_math_eq_equation_env_eq_align_env"
+    lean_file: "contracts/lean/Notation.lean"
     formula: |
       parse(\[ formula \])
         == parse(\begin{equation} formula \end{equation})
