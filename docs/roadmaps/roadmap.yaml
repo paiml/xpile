@@ -1697,3 +1697,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-104
+  github_issue: null
+  item_type: task
+  title: 'PMAT-104: sub/backend-trait.md sweep — add bashrs-backend to implementations table, "three backends real" → "four backends real"'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T18:00:00Z
+  updated: 2026-05-18T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - sub/backend-trait.md implementations table missed bashrs-backend (Target::Shell) which is real emission as of PMAT-039..058 + PMAT-085..092 polish. Add the row. Update "three backends are real" prose to "four backends". Note that the Layer-5 PTX compile contract is at full §14.4 QUORUM (PMAT-074/075) even though the codegen body is still scaffold.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

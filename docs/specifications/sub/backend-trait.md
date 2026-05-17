@@ -56,11 +56,12 @@ The fourth invariant is what makes Layer 5 load-bearing: a backend cannot emit a
 | `xpile-rust-codegen` | `RustBackend` | `Target::Rust` | **Real** (PR #6 MVP; expanded #11/#12/#13/#15/#19/#20/#21) |
 | `xpile-ruchy-codegen` | `RuchyBackend` | `Target::Ruchy` | **Real** (PR #7); same Python subset emits `fun … -> T { … }` |
 | `xpile-lean-codegen` | `LeanBackend` | `Target::Lean` | **Real** (PR #14); emits `def name (…) : T :=` with `Int.fdiv` / `Int.fmod` |
-| `xpile-ptx-codegen` | `PtxBackend` | `Target::Ptx` | Scaffold + Layer-5 compile contract drafted |
+| `bashrs-backend` | `BashrsBackend` | `Target::Shell` | **Real** (PMAT-039 MVP; expanded across PMAT-039..058 + PMAT-085..092 polish); emits POSIX `sh` for every Layer B IR variant |
+| `xpile-ptx-codegen` | `PtxBackend` | `Target::Ptx` | Scaffold + Layer-5 compile contract at full §14.4 QUORUM (PMAT-074/075) |
 | `xpile-wgsl-codegen` | `WgslBackend` | `Target::Wgsl` | Scaffold |
 | `xpile-spirv-codegen` | `SpirvBackend` | `Target::Spirv` | Not yet scaffolded |
 
-Three backends are real and share a common construct surface. Same Python source through three different `--target` values produces three different language outputs, all type-checked / runtime-verified for the recursive-fixture set. PTX / WGSL / SPIR-V remain scaffold; the Layer-5 compile contract for PTX (`contracts/compile-rust-to-ptx-mma-v1.yaml`) is drafted but the codegen is not wired up to it yet.
+Four backends are real and share a common construct surface. Same Python source through four different `--target` values produces four different language outputs (Rust / Ruchy / Lean for the code-lane fixtures; Shell via the cross-domain `subprocess.run` recognition path in PMAT-040). PTX / WGSL / SPIR-V remain scaffold; the Layer-5 compile contract for PTX (`contracts/compile-rust-to-ptx-mma-v1.yaml`) is at full §14.4 QUORUM with paired Lean theorem + Kani harness (PMAT-074/075), but the codegen body is not wired up to it yet — that's XPILE-COMPILE-PTX-RUNTIME-001 future work.
 
 ## Why object-safe
 
