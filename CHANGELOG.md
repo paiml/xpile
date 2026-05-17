@@ -110,6 +110,16 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Extend deadline scan to proof-lane + Kani harnesses (PMAT-022 / XPILE-EXEMPT-002)
+
+Widens `crates/xpile/tests/exempt_deadlines.rs` from "Rust source
+under `crates/*/src/`" to also cover `contracts/lean/*.lean` and
+`contracts/kani/*.rs`. The `XPILE-PENDING-UNTIL: v0.3.0` marker
+inside `PyIntArith.lean`'s `sorry` proof was effectively
+decorative before; now it's gated alongside the codegen markers.
+New `scanner_picks_up_proof_lane_markers` test asserts the
+widening worked.
+
 ### Kani job in CI (PMAT-021 / XPILE-QUORUM-003)
 
 New dedicated `kani` job in `.github/workflows/ci.yml` installs
