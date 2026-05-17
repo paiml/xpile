@@ -1646,3 +1646,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-101
+  github_issue: null
+  item_type: task
+  title: 'PMAT-101: sub/ci-gates.md substantive rewrite — align with actual .github/workflows/ci.yml (Kani is per-PR not nightly; llvm-cov / mutants / pmat-tdg / check_provenance NOT wired yet)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T16:30:00Z
+  updated: 2026-05-18T16:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Rewrite sub/ci-gates.md to match actual ci.yml. The aspirational gates from v0.0.1 (llvm-cov 95%, mutants 80%, pmat tdg ≥A-, pv score, check_provenance.sh) did NOT ship as required CI status checks at v0.1.0. Kani moves from "nightly" to "per-PR optional check" (PMAT-021 / XPILE-QUORUM-003). Status banner explains the falsification trace; live "Gates that hard-fail the PR" table anchors to actual workflow; "Gates planned but not yet wired" lists deferred items with XPILE-CI-* tracking tickets. Substrate-completion exposes stratum gates (refinement_proofs, kani_harnesses, kani_verify, quorum, attestations) inside cargo test --workspace.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
