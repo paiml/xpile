@@ -42,6 +42,11 @@ equations:
     # proof-lane parse determinism.
     lean_theorem: "XpileContracts.CXpileContractFrontendTrait.parse_idempotency"
     lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    # PMAT-067: Kani harness completes the §14.4 quorum. Symbolic
+    # counterpart to the Lean theorem — proves determinism over
+    # all 4-byte symbolic sources.
+    kani_harness: "parse_idempotency"
+    kani_file: "contracts/kani/xpile_contract_frontend_trait.rs"
     formula: |
       forall source: hash(cf.parse_to_equations(source).unwrap()) == hash(cf.parse_to_equations(source).unwrap())
     domain: |
