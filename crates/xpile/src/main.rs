@@ -4,6 +4,7 @@
 //!   xpile transpile    <input> [--target <t>] [--out <path>]
 //!   xpile audit        <path>  [--target <t>]
 //!   xpile attestations [--roadmap <path>] [--contracts-dir <path>]  (XPILE-QUORUM-005)
+//!   xpile quorum       [--contracts-dir <path>] [--fixtures-dir <path>]  (PMAT-033)
 //!   xpile info         (default if no subcommand)
 //!
 //! Dispatch goes through [`xpile_core::default_session`]: file extension
@@ -80,6 +81,27 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Unified §14.4 N-of-M oracle quorum reporter (PMAT-033). Walks
+    /// every contract and tallies per-stratum votes:
+    ///   Semantic   = `lean_theorem:` refs in the contract's own YAML
+    ///   Symbolic   = `kani_harness:` refs in the contract's own YAML
+    ///   Runtime    = fixture files under tests/fixtures/ that name
+    ///                the contract ID in a comment / docstring
+    ///   Extrinsic  = roadmap.yaml work-item mentions (PMAT-032)
+    /// Reports per-contract counts + a quorum status:
+    ///   QUORUM     (≥1 vote in ≥3 strata)
+    ///   PARTIAL    (≥1 vote in 1-2 strata)
+    ///   UNVERIFIED (0 strata represented)
+    Quorum {
+        #[arg(long, default_value = "contracts")]
+        contracts_dir: PathBuf,
+        #[arg(long, default_value = "crates/xpile/tests/fixtures")]
+        fixtures_dir: PathBuf,
+        #[arg(long, default_value = "docs/roadmaps/roadmap.yaml")]
+        roadmap: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -96,6 +118,12 @@ fn main() -> Result<()> {
             contracts_dir,
             json,
         } => attestations(&roadmap, &contracts_dir, json),
+        Cmd::Quorum {
+            contracts_dir,
+            fixtures_dir,
+            roadmap,
+            json,
+        } => quorum(&contracts_dir, &fixtures_dir, &roadmap, json),
     }
 }
 
@@ -866,5 +894,264 @@ roadmap:
     fn scan_roadmap_returns_empty_when_id_absent() {
         let yaml = "- id: PMAT-1\n  title: 'foo'\n";
         assert!(scan_roadmap_for_id(yaml, "C-NOT-PRESENT").is_empty());
+    }
+}
+
+// ─── quorum: unified §14.4 four-stratum view (PMAT-033) ─────────────
+//
+// Per ruchy 5.0 §14.4 a contract reaches QUORUM when ≥1 oracle in ≥3
+// strata votes for it. xpile's strata at v0.1.0:
+//
+//   Semantic    Lean refinement theorems (XPILE-REFINE-XXX)
+//   Symbolic    Kani BMC harnesses (XPILE-QUORUM-001..003)
+//   Runtime     diff_exec fixtures + transpile_e2e (XPILE-DIFF-XXX)
+//   Extrinsic   roadmap.yaml work-item mentions (XPILE-QUORUM-005)
+//
+// This subcommand is a *reporter*, not a gate: it consolidates counts
+// from sources the project already maintains and renders a per-contract
+// table. The constituent CI gates remain authoritative for their own
+// stratum.
+
+#[derive(Debug, Clone)]
+struct QuorumRow {
+    id: String,
+    semantic: usize,
+    symbolic: usize,
+    runtime: usize,
+    extrinsic: usize,
+}
+
+impl QuorumRow {
+    fn strata_represented(&self) -> usize {
+        [self.semantic, self.symbolic, self.runtime, self.extrinsic]
+            .iter()
+            .filter(|&&n| n >= 1)
+            .count()
+    }
+    fn status(&self) -> &'static str {
+        match self.strata_represented() {
+            0 => "UNVERIFIED",
+            1 | 2 => "PARTIAL",
+            _ => "QUORUM",
+        }
+    }
+    fn total(&self) -> usize {
+        self.semantic + self.symbolic + self.runtime + self.extrinsic
+    }
+}
+
+fn quorum(
+    contracts_dir: &Path,
+    fixtures_dir: &Path,
+    roadmap_path: &Path,
+    json: bool,
+) -> Result<()> {
+    // Build a map of {id -> own-yaml-text} so we can count lean/kani
+    // refs in each contract's OWN file (votes for a contract come from
+    // that contract's YAML, not from neighbours mentioning it).
+    if !contracts_dir.is_dir() {
+        bail!("{} is not a directory", contracts_dir.display());
+    }
+    let mut rows: Vec<QuorumRow> = Vec::new();
+    for entry in std::fs::read_dir(contracts_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() || path.extension().and_then(|s| s.to_str()) != Some("yaml") {
+            continue;
+        }
+        let Ok(contents) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Some(id) = extract_metadata_id(&contents) else {
+            continue;
+        };
+        rows.push(QuorumRow {
+            semantic: count_field_occurrences(&contents, "lean_theorem:"),
+            symbolic: count_field_occurrences(&contents, "kani_harness:"),
+            runtime: count_runtime_witnesses(&id, fixtures_dir),
+            extrinsic: 0, // filled below
+            id,
+        });
+    }
+    // Fill Extrinsic via the same scanner attestations() uses.
+    let roadmap = std::fs::read_to_string(roadmap_path).unwrap_or_default();
+    for row in rows.iter_mut() {
+        row.extrinsic = scan_roadmap_for_id(&roadmap, &row.id).len();
+    }
+    rows.sort_by(|a, b| {
+        // Sort by descending total, then by ID for stable output.
+        b.total().cmp(&a.total()).then_with(|| a.id.cmp(&b.id))
+    });
+    if json {
+        print_quorum_json(&rows);
+    } else {
+        print_quorum_text(&rows);
+    }
+    Ok(())
+}
+
+/// Count occurrences of `field_prefix` (e.g. `"lean_theorem:"`) as a
+/// YAML key at any indentation. We require either the start of line or
+/// whitespace-only before, then the prefix, then non-newline content.
+/// Comments (`# ...`) are skipped.
+fn count_field_occurrences(contents: &str, field_prefix: &str) -> usize {
+    contents
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            !trimmed.starts_with('#') && trimmed.starts_with(field_prefix)
+        })
+        .count()
+}
+
+/// Count fixture files that mention `contract_id` somewhere in their
+/// text. Per-fixture mentions are treated as a single vote (multiple
+/// comment lines inside one fixture still count as 1, mirroring how
+/// `xpile audit` treats one emitted function as one citation). Walks
+/// `*.py` plus any other text files the directory contains.
+fn count_runtime_witnesses(contract_id: &str, fixtures_dir: &Path) -> usize {
+    if !fixtures_dir.is_dir() {
+        return 0;
+    }
+    let mut hits = 0usize;
+    if let Ok(entries) = std::fs::read_dir(fixtures_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if text.contains(contract_id) {
+                hits += 1;
+            }
+        }
+    }
+    hits
+}
+
+fn print_quorum_text(rows: &[QuorumRow]) {
+    println!("xpile quorum — §14.4 N-of-M oracle quorum (PMAT-033)");
+    println!(
+        "strata: Semantic (Lean) | Symbolic (Kani) | Runtime (fixtures) | Extrinsic (roadmap)"
+    );
+    println!();
+    println!(
+        "  {:<40} {:>4} {:>4} {:>4} {:>4}  {:<10}",
+        "contract", "Sem", "Sym", "Run", "Ext", "status"
+    );
+    println!("  {}", "-".repeat(72));
+    for r in rows {
+        println!(
+            "  {:<40} {:>4} {:>4} {:>4} {:>4}  {:<10}",
+            r.id,
+            r.semantic,
+            r.symbolic,
+            r.runtime,
+            r.extrinsic,
+            r.status(),
+        );
+    }
+    println!();
+    let quorum_count = rows.iter().filter(|r| r.status() == "QUORUM").count();
+    let partial_count = rows.iter().filter(|r| r.status() == "PARTIAL").count();
+    let unverified_count = rows.iter().filter(|r| r.status() == "UNVERIFIED").count();
+    println!(
+        "totals: {quorum_count} QUORUM, {partial_count} PARTIAL, {unverified_count} UNVERIFIED \
+         ({} contracts total)",
+        rows.len()
+    );
+    println!(
+        "rule (ruchy 5.0 §14.4): QUORUM = ≥1 vote in ≥3 strata; PARTIAL = ≥1 vote in 1-2 strata."
+    );
+}
+
+fn print_quorum_json(rows: &[QuorumRow]) {
+    print!("{{\"contracts\":[");
+    let mut first = true;
+    for r in rows {
+        if !first {
+            print!(",");
+        }
+        first = false;
+        print!(
+            "{{\"id\":\"{}\",\"semantic\":{},\"symbolic\":{},\"runtime\":{},\"extrinsic\":{},\
+             \"strata_represented\":{},\"status\":\"{}\"}}",
+            r.id,
+            r.semantic,
+            r.symbolic,
+            r.runtime,
+            r.extrinsic,
+            r.strata_represented(),
+            r.status(),
+        );
+    }
+    println!("]}}");
+}
+
+#[cfg(test)]
+mod quorum_tests {
+    use super::*;
+
+    #[test]
+    fn quorum_row_status_thresholds() {
+        let r0 = QuorumRow {
+            id: "X".into(),
+            semantic: 0,
+            symbolic: 0,
+            runtime: 0,
+            extrinsic: 0,
+        };
+        assert_eq!(r0.status(), "UNVERIFIED");
+        let r1 = QuorumRow {
+            id: "X".into(),
+            semantic: 1,
+            symbolic: 0,
+            runtime: 0,
+            extrinsic: 0,
+        };
+        assert_eq!(r1.status(), "PARTIAL");
+        let r2 = QuorumRow {
+            id: "X".into(),
+            semantic: 1,
+            symbolic: 1,
+            runtime: 0,
+            extrinsic: 0,
+        };
+        assert_eq!(r2.status(), "PARTIAL");
+        let r3 = QuorumRow {
+            id: "X".into(),
+            semantic: 1,
+            symbolic: 1,
+            runtime: 1,
+            extrinsic: 0,
+        };
+        assert_eq!(r3.status(), "QUORUM");
+        let r4 = QuorumRow {
+            id: "X".into(),
+            semantic: 7,
+            symbolic: 1,
+            runtime: 3,
+            extrinsic: 5,
+        };
+        assert_eq!(r4.status(), "QUORUM");
+        assert_eq!(r4.total(), 16);
+        assert_eq!(r4.strata_represented(), 4);
+    }
+
+    #[test]
+    fn count_field_occurrences_skips_comments_and_unrelated_lines() {
+        let yaml = "\
+foo:
+  lean_theorem: \"A\"
+  # lean_theorem: \"commented out\"
+  other: blah
+  lean_theorem: \"B\"
+bar:
+  lean_theorem: \"C\"
+";
+        assert_eq!(count_field_occurrences(yaml, "lean_theorem:"), 3);
+        assert_eq!(count_field_occurrences(yaml, "kani_harness:"), 0);
     }
 }

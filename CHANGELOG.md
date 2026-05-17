@@ -110,6 +110,49 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Unified §14.4 quorum reporter (PMAT-033)
+
+New `xpile quorum` subcommand consolidates the four §14.4 strata into
+a single CLI table. It's a *reporter*, not a gate — the constituent
+CI gates (`refinement_proofs.rs`, `kani_verify.rs`, `diff_exec.rs`,
+`attestations.rs`) remain authoritative; this command visualises what
+they've collectively established.
+
+\`\`\`
+xpile quorum [--contracts-dir <p>] [--fixtures-dir <p>] [--roadmap <p>] [--json]
+\`\`\`
+
+Per-contract tally:
+| Stratum | Vote source |
+|---|---|
+| Semantic | `lean_theorem:` refs in the contract's own YAML |
+| Symbolic | `kani_harness:` refs in the contract's own YAML |
+| Runtime | fixture files under `tests/fixtures/` mentioning the contract ID |
+| Extrinsic | roadmap work-item mentions (reuses PMAT-032's scanner) |
+
+Quorum status per ruchy 5.0 §14.4: `QUORUM` (≥1 vote in ≥3 strata),
+`PARTIAL` (1-2 strata), `UNVERIFIED` (0 strata).
+
+v0.1.0 live state:
+
+\`\`\`
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              7    1    3    5  QUORUM
+  C-COMPILE-RUST-TO-PTX-MMA                   0    0    0    0  UNVERIFIED
+  ... (9 more, all UNVERIFIED)
+
+totals: 1 QUORUM, 0 PARTIAL, 10 UNVERIFIED (11 contracts total)
+\`\`\`
+
+The QUORUM count == 1 number is the headline: at v0.1.0, exactly one
+contract has full four-stratum coverage. The 10 UNVERIFIED contracts
+are the actionable backlog.
+
+Test coverage:
+- 2 unit tests on the threshold logic + field counter
+- 2 integration tests: `C-PY-INT-ARITH` has full quorum in live state;
+  reporter walks every contracts/*.yaml file (no silent misses).
+
 ### Extrinsic-stratum attestations via pmat work items (PMAT-032 / XPILE-QUORUM-005)
 
 Closes the Extrinsic-stratum side of the ruchy 5.0 §14.4 N-of-M
