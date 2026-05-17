@@ -1331,3 +1331,80 @@ fn transpile_let_sum_py_to_lean_uses_multi_let_form() {
     assert!(stdout.contains("let t := (s * (2: Int))"));
     assert!(stdout.contains("\n  t\n"));
 }
+
+/// PMAT-040 / XPILE-BASHRS-MERGER-001 v0.3.0 falsifier evidence:
+/// Python `subprocess.run([str, ...])` lowers to meta-HIR `Stmt::Cmd`
+/// via depyler-frontend, then bashrs-backend emits real POSIX shell.
+/// This is the LOAD-BEARING cross-domain test — without it, the
+/// `sub/bashrs-merger.md` v0.3.0 check-back's "at least one
+/// cross-domain consumer must ship" precondition isn't satisfied
+/// and XPILE-UNMERGE-001 would eventually trigger.
+#[test]
+fn transpile_python_subprocess_run_to_shell_via_bashrs_backend() {
+    let py = fixture("subprocess_demo.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "shell"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "xpile failed: stderr={stderr} stdout={stdout}"
+    );
+    // Header invariants: POSIX shebang + bashrs contract citation +
+    // module name from the .py file stem.
+    assert!(
+        stdout.starts_with("#!/bin/sh\n"),
+        "expected POSIX shebang at line 1:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE"),
+        "missing bashrs contract citation:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("# module: subprocess_demo"),
+        "missing module name:\n{stdout}"
+    );
+    // The 4 subprocess.run([...]) calls lower to 4 shell command lines,
+    // emitted in source order. Each line is exactly the args joined
+    // by spaces (no quoting yet — XPILE-BASHRS-MERGER-003+).
+    for needle in &[
+        "\necho starting\n",
+        "\nls /tmp\n",
+        "\npwd\n",
+        "\necho done\n",
+    ] {
+        assert!(
+            stdout.contains(needle),
+            "missing emitted command line `{}`:\n{stdout}",
+            needle.trim()
+        );
+    }
+    // Per-function divider — emitted because the source function
+    // (`build`) is NOT named `main` (the synthesised name reserved
+    // for bashrs-frontend's flat-script case).
+    assert!(
+        stdout.contains("# function: build"),
+        "expected per-function divider for `build`:\n{stdout}"
+    );
+}
+
+/// PMAT-040 negative: subprocess.run shapes that aren't the canonical
+/// list-of-string-literals form fail with a precise error so users
+/// understand what's supported.
+#[test]
+fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
+    // Build a fixture in /tmp to keep the test self-contained.
+    let tmp = std::env::temp_dir().join("xpile-pmat-040-bad.py");
+    std::fs::write(
+        &tmp,
+        "def f() -> int:\n    subprocess.run(cmd)\n    return 0\n",
+    )
+    .unwrap();
+    let out = run_xpile(&["transpile", tmp.to_str().unwrap(), "--target", "shell"]);
+    let _ = std::fs::remove_file(&tmp);
+    assert!(!out.status.success(), "expected failure for non-list arg");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("subprocess.run") && stderr.contains("list literal"),
+        "error should explain the supported shape; got: {stderr}"
+    );
+}

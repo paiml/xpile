@@ -628,3 +628,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-040
+  github_issue: null
+  item_type: task
+  title: 'PMAT-040: depyler-frontend recognises subprocess.run([...]) and lowers to Stmt::Cmd — cross-domain consumer for the v0.3.0 falsifier (C-BASHRS-POSIX-IDEMPOTENCE)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T16:04:47Z
+  updated: 2026-05-17T16:04:47Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
