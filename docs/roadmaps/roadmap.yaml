@@ -1323,3 +1323,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-082
+  github_issue: null
+  item_type: task
+  title: 'PMAT-082: sub/bashrs-merger.md sweep — reflect PMAT-037..058 substrate completion (Layer B IR shape complete; C-BASHRS-POSIX-IDEMPOTENCE at full 4-stratum QUORUM)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T07:00:00Z
+  updated: 2026-05-18T07:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Update docs/specifications/sub/bashrs-merger.md "Implementation status" section. Line 107 (v0.1.0 current) — was "first Layer B variant"; rewrite to document that ALL Layer B IR variants (Stmt/Expr/Type) shipped across PMAT-039..056, plus C-BASHRS-POSIX-IDEMPOTENCE reaching full 4-stratum QUORUM (Sem+Sym+Run+Ext) via PMAT-044/058 + PMAT-043 + PMAT-037..058 roadmap entries. Line 108 (v0.2.0 target) — clarify that Layer B IR shape is essentially complete; v0.2.0 work is corpus coverage, not new variants. Line 109 (v0.3.0 target) — mark as already satisfied via PMAT-040 (subprocess.run cross-domain consumer).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
