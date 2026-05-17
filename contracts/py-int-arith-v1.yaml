@@ -31,11 +31,19 @@ equations:
       - "no allocation in the fits_i64 fast path"
     preconditions:
       - "a and b are both Python int (not float, not bool, not bigint-required)"
-    # XPILE-REFINE-001 / PMAT-017: refinement proof in Lean. The
-    # theorem statement IS the equation, formalised. v0.1.0 ships the
-    # claim with `sorry`; XPILE-REFINE-002 discharges.
+    # XPILE-REFINE-001 / PMAT-017: refinement proof in Lean (Semantic
+    # stratum). Statement IS the equation, formalised. v0.1.0 ships
+    # the claim with `sorry`; XPILE-REFINE-002 discharges.
     lean_theorem: "XpileContracts.CPyIntArith.fast_path_eq_slow_path"
     lean_file: "contracts/lean/PyIntArith.lean"
+    # XPILE-QUORUM-001 / PMAT-019: Kani BMC harness (Symbolic stratum).
+    # `addition_no_overflow` function in the harness file; Kani
+    # discharges this automatically via bit-blasted i64 arithmetic.
+    # Together with the Lean theorem above and the diff_exec runtime
+    # check (PMAT-018), this equation now has ≥1 Symbolic + ≥1
+    # Semantic vote per the ruchy 5.0 §14.4 quorum rule.
+    kani_harness: "addition_no_overflow"
+    kani_file: "contracts/kani/py_int_arith.rs"
 
   addition_overflow_promotion:
     formula: |

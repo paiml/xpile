@@ -110,6 +110,26 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Symbolic stratum: Kani harness for C-PY-INT-ARITH (PMAT-019 / XPILE-QUORUM-001)
+
+First **Symbolic stratum** of the N-of-M oracle quorum lands.
+`contracts/kani/py_int_arith.rs` carries `#[kani::proof]` functions
+for `addition_no_overflow` (and a stub `subtraction_no_overflow`);
+Kani 0.67 discharges both via bit-blasted i64 arithmetic in ~27ms.
+`contracts/py-int-arith-v1.yaml` grows `kani_harness:` + `kani_file:`
+fields wiring the citation; the new
+`crates/xpile/tests/kani_harnesses.rs` validates every cited harness
+exists in its file with a real `#[kani::proof] fn <name>(...)`.
+
+Combined with PMAT-017's Lean theorem (Semantic stratum) and
+PMAT-018's diff_exec runtime check (Semantic stratum), the
+`addition_no_overflow` equation now has ≥1 Symbolic + ≥1 Semantic
+vote per ruchy 5.0 §14.4 quorum rule.
+
+What this does NOT include yet (XPILE-QUORUM-002+): running
+`cargo kani` in CI on every PR; the §14.5 F3 pairwise-correlation
+guard; Extrinsic (human review) verdict-recording.
+
 ### Differential execution check (PMAT-018 / XPILE-DIFF-001)
 
 New `crates/xpile/tests/diff_exec.rs` runs deterministic LCG-seeded

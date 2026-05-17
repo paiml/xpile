@@ -292,3 +292,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-019
+  github_issue: null
+  item_type: task
+  title: 'Symbolic stratum first cut: Kani harness for C-PY-INT-ARITH (XPILE-QUORUM-001)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T11:33:44Z
+  updated: 2026-05-17T11:33:44Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
