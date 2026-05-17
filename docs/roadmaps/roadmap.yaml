@@ -1714,3 +1714,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-105
+  github_issue: null
+  item_type: task
+  title: 'PMAT-105: sub/frontend-trait.md sweep — add bashrs-frontend to implementations table (Real, 54 tests across PMAT-039..058 + PMAT-085..092)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T18:30:00Z
+  updated: 2026-05-18T18:30:00Z
+  spec: null
+  acceptance_criteria:
+  - sub/frontend-trait.md implementations table missed bashrs-frontend which is real parsing as of PMAT-039..058 + PMAT-085..092 polish (54 tests covering quoting, var expansion, command substitution, special params, line continuation, redirections, short-circuit ||, test brackets, arith expansion, subshells). Add the row with extensions sh/bash/zsh/mk + canonical Makefile/Dockerfile via Frontend::matches_path. Add explanatory paragraph linking to PMAT-052 round-trip demo and PMAT-062/063 trait QUORUM. Also note depyler-frontend's PMAT-040 cross-domain subprocess.run lowering.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
