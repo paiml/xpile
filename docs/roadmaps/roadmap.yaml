@@ -1255,3 +1255,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-078
+  github_issue: null
+  item_type: task
+  title: 'PMAT-078: README sweep — reflect 12-contract substrate, 27-crate workspace, 100% QUORUM milestone'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T05:00:00Z
+  updated: 2026-05-18T05:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Update README.md to reflect substrate state after PMAT-058..077 shipped — 12 contracts (was 11), 27 workspace crates (was 24), 100% QUORUM coverage milestone, Lean+Kani refinement column in contracts table, Shell frontend+backend in code-lane diagram, Kani BMC step in CI gates table.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
