@@ -983,3 +983,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-062
+  github_issue: null
+  item_type: task
+  title: 'PMAT-062: Lean refinement theorem for C-XPILE-FRONTEND-TRAIT — promotes Semantic stratum, contract reaches PARTIAL'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-17T21:00:00Z
+  updated: 2026-05-17T21:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add contracts/lean/XpileFrontendTrait.lean with `parse_idempotency` + `source_lang_consistency` theorems. Bronze-tier modelling commitment (pure-function determinism, rfl by construction). Semantic stratum vote for C-XPILE-FRONTEND-TRAIT — lifts UNVERIFIED → PARTIAL. Companion Kani harness ships as PMAT-063.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

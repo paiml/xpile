@@ -110,6 +110,57 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Lean refinement theorem — C-XPILE-FRONTEND-TRAIT → PARTIAL (PMAT-062)
+
+**Fifth contract reaches non-UNVERIFIED status.** New
+`contracts/lean/XpileFrontendTrait.lean` carries the refinement
+theorem `parse_idempotency` — locks in the determinism modelling
+commitment for `Frontend::parse_and_lower`. Pure-function model
+at Bronze tier means `rfl`-by-construction (same `(path, source)`
+always lowers to identical `MetaHirModule`). Companion
+`source_lang_consistency` theorem is stubbed for Silver-tier
+refinement when the model grows a `SourceLang` tag.
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1    6  QUORUM
+  C-NOTATION-LATEX-MATH-TO-EQUATION           1    1    0    3  QUORUM
+  C-XLATE-PY-LIST-TO-VEC                      1    1    0    3  QUORUM
+  C-XPILE-FRONTEND-TRAIT                      1    0    0    0  PARTIAL  ← new
+  ... (7 more UNVERIFIED)
+  totals: 4 QUORUM, 1 PARTIAL, 7 UNVERIFIED (12 contracts total)
+```
+
+This is the **first Layer-3 (architectural) contract** to receive
+a Lean refinement theorem. Prior theorems covered Layer-1 (Python
+arithmetic, bashrs idempotence) and Layer-2 (LaTeX→equation,
+Python list→Rust Vec). The Frontend-trait determinism property
+is structurally analogous to other Bronze-tier commitments:
+modelling commitment first, structural refinement after the trait
+gets concrete impl pressure at v0.3.0+.
+
+Implementation:
+- **`contracts/lean/XpileFrontendTrait.lean`** — new namespace
+  `XpileContracts.CXpileFrontendTrait`. Models `parse_and_lower`
+  as a pure byte-concatenation function (Bronze placeholder);
+  Silver-tier refinement (XPILE-REFINE-FRONTEND-TRAIT-001)
+  introduces a `SourceLang` tag and a canonical-ordering
+  invariant that survives the BTreeMap-vs-HashMap concern called
+  out in the contract YAML.
+- **`contracts/xpile-frontend-trait-v1.yaml`** — equation
+  `parse_idempotency` gains `lean_theorem` + `lean_file` refs.
+- **`docs/roadmaps/roadmap.yaml`** — PMAT-062 entry.
+
+Why PARTIAL not QUORUM (yet): only Semantic stratum is populated.
+PMAT-063 adds the Symbolic stratum companion Kani harness, mirroring
+the PMAT-060→061 pattern. Runtime witness for trait contracts is
+deferred to the `make ci` trait-impl audit (which would check that
+every registered Frontend impl actually satisfies the determinism
+invariant on real fixtures); tracked as
+XPILE-FRONTEND-TRAIT-RUNTIME-001 future work.
+
 ### Kani symbolic harness — C-XLATE-PY-LIST-TO-VEC → QUORUM (PMAT-061)
 
 **Fourth contract reaches QUORUM.** New
