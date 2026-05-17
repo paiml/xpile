@@ -110,6 +110,55 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Escape sequences in double-quoted strings (PMAT-056)
+
+Tokenizer recognises POSIX escape sequences inside \`"..."\`
+(\`\\"\`, \`\\\\\`, \`\\\$\`, \`\\\`\`) and **preserves them verbatim** so
+the round-trip stays information-lossless.
+
+\`\`\`
+$ cat <<'EOF' > /tmp/esc.sh
+echo "she said \"hi\""
+echo "back\\slash and \$literal"
+echo "Hi, \$NAME"
+EOF
+
+$ xpile transpile /tmp/esc.sh --target shell
+...
+echo "she said \"hi\""
+echo "back\\slash and \$literal"
+echo "Hi, \$NAME"
+\`\`\`
+
+Why verbatim preservation rather than decode-and-re-escape: \`\$\`
+and \`\\\$\` mean different things at shell-execution time (the
+former triggers variable expansion, the latter is literal). If we
+decoded escapes during tokenization we'd lose the distinction and
+the rendered shell would silently change semantics. Preserving
+escapes keeps the IR information-complete.
+
+Single quotes are unaffected — POSIX says they're fully literal
+and don't interpret \`\\'\` (you have to close-and-reopen to embed
+a single quote).
+
+Test coverage:
+- 5 new bashrs-frontend tokenizer unit tests:
+  - \`tokenize_line_double_quote_escapes_do_not_terminate_string\` —
+    \`\\"\` inside doesn't close the string
+  - \`tokenize_line_double_quote_preserves_var_expansion\` —
+    \`"Hi, \$NAME"\` keeps \`\$\` unescaped (regression guard)
+  - \`tokenize_line_double_quote_preserves_escaped_dollar\` —
+    \`"\\\$NAME"\` keeps \`\\\$\` escaped (literal at runtime)
+  - \`tokenize_line_double_quote_preserves_escaped_backslash\` —
+    \`"a\\\\b"\` keeps \`\\\\\` (renders to single \`\\\` at shell)
+  - \`tokenize_line_single_quote_does_not_interpret_escapes\` —
+    POSIX rule preserved (single quotes literal)
+
+What's NOT yet here:
+- \`\\\n\` (escaped newline = line continuation in POSIX) — v0.2.0.
+- \`\\\` followed by non-escape char preserved literally per POSIX,
+  which the current code handles correctly.
+
 ### POSIX special parameters — `Expr::ShellSpecial` (PMAT-055)
 
 \`\$1\`..\`\$9\`, \`\$0\`, \`\$@\`, \`\$*\`, \`\$#\`, \`\$?\`, \`\$\$\`, \`\$!\`, \`\$-\` are

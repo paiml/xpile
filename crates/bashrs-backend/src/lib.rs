@@ -26,6 +26,13 @@ fn render_arg(e: &Expr) -> Result<String, BackendError> {
     match e {
         Expr::LitStr(s) => Ok(s.clone()),
         Expr::QuotedString { content, quoting } => Ok(match quoting {
+            // PMAT-056: bashrs-frontend preserves escapes verbatim
+            // in the content (the tokenizer's quote arms read `\"`
+            // as two chars in the content), so rendering just
+            // wraps in the appropriate quotes — no re-escape
+            // needed. The round-trip stays information-lossless:
+            // `"$NAME"` keeps the unescaped `$` (variable
+            // expansion), `"\$NAME"` keeps the escaped form (literal).
             QuotingStrategy::Single => format!("'{content}'"),
             QuotingStrategy::Double => format!("\"{content}\""),
             QuotingStrategy::Backslash => content
