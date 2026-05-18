@@ -49,7 +49,7 @@ jobs:
 | Provable-contracts (lint) | `pv lint contracts/` | 0 errors |
 | Security advisories | `cargo deny check advisories` | zero unyanked |
 | Tests | `cargo test --workspace` | all pass — includes the §14.4 stratum gates `refinement_proofs.rs` (Lean theorem citation gate), `kani_harnesses.rs` (Kani citation gate), `kani_verify.rs` (actual `cargo kani` verification on every harness), `quorum.rs` (C-PY-INT-ARITH full-stratum assertion), `attestations.rs` (Extrinsic-stratum scanner) |
-| Kani BMC | `cargo test -p xpile --test kani_verify` | 12 harnesses must all return `VERIFICATION:- SUCCESSFUL`; ~3.7s total |
+| Kani BMC | `cargo test -p xpile --test kani_verify` | 43 harnesses must all return `VERIFICATION:- SUCCESSFUL` (post-XPILE-QUORUM-006 / PMAT-147..151) |
 
 ## Gates that are recommended at the local pre-push checklist
 

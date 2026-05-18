@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-152
+  github_issue: null
+  item_type: task
+  title: 'PMAT-152: docs sweep — post-XPILE-QUORUM-006 Kani counts (12 → 43 BMC harnesses) across spec/audit/status'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T16:00:00Z
+  updated: 2026-05-18T16:00:00Z
+  spec: null
+  acceptance_criteria:
+  - README, xpile-spec.md, CURRENT.md, audit-design.md, sub/kaizen-fleet.md, sub/ci-gates.md, sub/pmat-integration.md, sub/phased-rollout.md, INDEX.md, substrate-completion.md all updated to reflect 43 Kani BMC harnesses (was 12) post-XPILE-QUORUM-006 / PMAT-147..151. "62 paired discharges" → "93 stratum-vote artifacts" (50 Lean + 43 Kani). CI gate counts, INDEX session-log row, substrate-completion Numbers section all corrected. XPILE-QUORUM-006 explicitly attributed.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-001
   github_issue: null
   item_type: task

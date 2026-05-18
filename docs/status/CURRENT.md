@@ -14,7 +14,7 @@ This file used to enumerate every implemented crate / contract / construct, and 
 - Python subset supported: see [`CHANGELOG.md`](../../CHANGELOG.md) §"Python subset (live, runtime-verified)"
 - Shell subset supported: POSIX tokenizing (quoted strings, $NAME/${NAME}, $(cmd), backtick subst, NAME=value, pipelines, ShellLoop, special parameters); see CHANGELOG PMAT-037..058
 - Multiple runtime-verified semantic fixtures: factorial, fib, gcd, abs_val, sign, bits, square_plus, range_size, sum_to, for_sum / range_with_start / range_with_step, factorial_iter, bigint_factorial — plus shell `bashrs_realistic_demo.sh` round-tripping byte-identically
-- 12 Kani BMC harnesses verify in ~3.7s on every CI run via dedicated `kani` job + `every_kani_harness_discharges` workspace test
+- **43 Kani BMC harnesses** verify on every CI run via dedicated `kani` job + `every_kani_harness_discharges` workspace test (XPILE-QUORUM-006 series PMAT-147..151 added per-equation symbolic coverage for the 5 multi-equation contracts)
 - CI: `gate` + `kani` + `workspace-test` all run on every PR; `gate` is the load-bearing required status check via the org-level ruleset rule (verifiable with `gh api repos/paiml/xpile/rules/branches/main`). `kani` and `workspace-test` are not yet required-status-checks but in practice green on every merged PR — flipping them required is post-v0.1.0 work.
 - crates.io: `xpile 0.0.1` published as a name reservation; v0.1.0+ unreleased
 - 113 PRs merged on `main`
