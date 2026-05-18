@@ -134,6 +134,32 @@ equations:
     kani_harness: "multiplication_quadratic_promotion"
     kani_file: "contracts/kani/py_int_arith.rs"
 
+  mul_dispatch_correct_on_fits_silver:
+    # PMAT-175 / XPILE-REFINE-PY-INT-ARITH-002: Silver-tier
+    # dispatcher for multiplication. Replicates the PMAT-169
+    # pattern (typed PyIntPath { FastPath | SlowPath } +
+    # mul_dispatch_silver). Captures the path-selection decision
+    # xpile-rust-codegen makes per `*` call site. Composes with
+    # the Bronze mul_fast_path_eq_slow_path at the dispatcher
+    # level. Companion theorems mul_dispatch_slow_path_eq_python_
+    # silver and mul_dispatch_total_silver in same file.
+    lean_theorem: "XpileContracts.CPyIntArith.mul_dispatch_correct_on_fits_silver"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      mul_dispatch(FastPath, a, b) == mul_dispatch(SlowPath, a, b)  WHEN  fits_i64(a * b)
+    domain: |
+      Same as multiplication_quadratic_promotion — a, b Python int values whose
+      mathematical product fits in i64. The Silver upgrade lifts
+      the Bronze pairwise-equality claim into a typed dispatcher.
+    invariants:
+      - "fast and slow multiplication paths agree on the fits_i64-of-product domain"
+      - "the slow path returns the mathematical product on EVERY input (companion theorem)"
+      - "the multiplication dispatcher is total (companion theorem)"
+    preconditions:
+      - "fits_i64(a * b) — the contract precondition for emitting i64_wrap_mul"
+    postconditions:
+      - "an emitter that selects FastPath when fits_i64(a*b) fails would falsify the dispatch claim — captures the i64::MIN * -1 silent-wrap bug class"
+
   division_floor_semantics:
     formula: |
       python_int_floordiv(a, b) == floor(a / b)  WHEN  b != 0
@@ -160,6 +186,29 @@ equations:
     kani_harness: "division_floor_semantics"
     kani_file: "contracts/kani/py_int_arith.rs"
 
+  floor_div_dispatch_correct_on_fits_silver:
+    # PMAT-175: Silver-tier dispatcher for floor-division.
+    # Replicates PMAT-169's pattern. Even though fast and slow
+    # paths reduce to the same Int.fdiv operation, the SELECTION
+    # decision is what the Silver theorem captures (Bronze
+    # couldn't model the dispatcher itself).
+    lean_theorem: "XpileContracts.CPyIntArith.floor_div_dispatch_correct_on_fits_silver"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      floor_div_dispatch(FastPath, a, b) == floor_div_dispatch(SlowPath, a, b)
+        WHEN b != 0 AND fits_i64(Int.fdiv a b)
+    domain: |
+      Same as division_floor_semantics — a, b Python ints with b != 0.
+    invariants:
+      - "fast and slow floor-div paths agree on the fits_i64-of-quotient domain with b != 0"
+      - "the slow path returns Int.fdiv on every input (b != 0) — companion theorem"
+      - "the floor-div dispatcher is total (companion theorem)"
+    preconditions:
+      - "b != 0 (else Python raises ZeroDivisionError — separate contract)"
+      - "fits_i64(Int.fdiv a b) for the fast-path agreement claim"
+    postconditions:
+      - "an emitter that uses Rust's truncating `/` instead of checked_div_euclid would diverge from CPython on mixed-sign operands — caught by the dispatcher's slow-path soundness claim"
+
   modulo_floor_semantics:
     formula: |
       python_int_mod(a, b) == floor_mod(a, b)  WHEN  b != 0
@@ -181,6 +230,29 @@ equations:
     lean_file: "contracts/lean/PyIntArith.lean"
     # PMAT-151: Kani harness mirrors the Lean theorem.
     kani_harness: "modulo_floor_semantics"
+    kani_file: "contracts/kani/py_int_arith.rs"
+
+  mod_dispatch_correct_on_fits_silver:
+    # PMAT-175: Silver-tier dispatcher for modulo. Replicates
+    # PMAT-169's pattern. Same domain story as floor-division —
+    # both paths reduce to Int.fmod; the Silver claim is on the
+    # path-selection decision.
+    lean_theorem: "XpileContracts.CPyIntArith.mod_dispatch_correct_on_fits_silver"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      mod_dispatch(FastPath, a, b) == mod_dispatch(SlowPath, a, b)
+        WHEN b != 0 AND fits_i64(Int.fmod a b)
+    domain: |
+      Same as modulo_floor_semantics — a, b Python ints with b != 0.
+    invariants:
+      - "fast and slow modulo paths agree on the fits_i64-of-remainder domain with b != 0"
+      - "the slow path returns Int.fmod on every input (b != 0) — companion theorem"
+      - "the modulo dispatcher is total (companion theorem)"
+    preconditions:
+      - "b != 0 (else Python raises ZeroDivisionError)"
+      - "fits_i64(Int.fmod a b) for the fast-path agreement claim"
+    postconditions:
+      - "an emitter that uses Rust's truncating `%` instead of checked_rem_euclid would diverge from CPython on mixed-sign operands"
     kani_file: "contracts/kani/py_int_arith.rs"
 
   bitwise_and_signed_semantics:
