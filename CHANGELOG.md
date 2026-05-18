@@ -110,6 +110,30 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### bashrs-backend capstone emit test (PMAT-121)
+
+**Emission-side capstone test** mirroring PMAT-092's frontend
+capstone. Constructs a `Module` exercising every Layer B IR
+variant currently produced by bashrs-frontend
+(`Stmt::Cmd` + `Stmt::Pipeline` + `Stmt::ShellAssign` +
+`Expr::LitStr` + `Expr::QuotedString` + `Expr::ShellVar` +
+`Expr::CommandSubstitution` + `Expr::ShellSpecial`) and asserts
+that bashrs-backend emits the expected shell line for each
+construct.
+
+Why this matters: each Layer B variant has a narrow per-variant
+emit test (`lower_pipeline_emits_pipe_joined_stages`,
+`lower_cmd_with_quoted_string_arg_renders_with_quotes`, etc.),
+but composition exposes regressions that the narrow tests miss
+— e.g., a refactor that breaks the interaction between
+`ShellAssign` and `CommandSubstitution` would still pass each
+narrow test in isolation.
+
+bashrs-backend now has 16 tests (up from 15). Together with the
+55 bashrs-frontend tests and the integration-test surface
+(`shell_diff_exec.rs`, `bashrs_realistic_demo.sh` PMAT-052), the
+bashrs round-trip is comprehensively gated.
+
 ### POSIX `;` statement separator round-trip via LitStr passthrough (PMAT-119)
 
 **POSIX `;` statement separator (between commands on the same
