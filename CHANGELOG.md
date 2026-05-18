@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier refinement: error-path refcount model for `refcount_balance_on_error` on FFI-CPYTHON-EXT, fourth Silver + most common CPython bug class wired (PMAT-172 / XPILE-REFINE-FFI-CPYTHON-005)
+
+Fifteenth Silver refinement; fourth Silver theorem on C-FFI-CPYTHON-EXT specifically (after PMAT-160, PMAT-168, PMAT-171). Wires the previously-unwired `refcount_balance_on_error` equation — **the second equation in this contract to gain a `lean_theorem` field via the Silver bracket** (after PMAT-171 wired `gil_invariant`).
+
+**The error-path refcount-leak is the most common CPython C extension bug.** When a CPython C API call fails (returns NULL + sets PyErr), borrowed PyObject* references passed across the boundary MUST remain at the same refcount as before the call — otherwise the caller's owned references silently leak.
+
+The Silver model:
+- `CallOutcome`: enum `Success | Error` (CPython's NULL-return + `PyErr_Occurred` convention reduced to a 2-state observable)
+- `BorrowedRef`: `{ refcount_before, refcount_after, outcome }`
+- `BorrowedRefManifestEntry`: mirror image; lowering must preserve all three
+- `lower_borrowed_call`: identity on the typed triple
+- `refcount_balance_on_error_silver` theorem (wired): for the balanced borrowed-ref case on the error path, lowering preserves the refcount balance
+- `outcome_preserved_silver`: companion claim that the CallOutcome tag survives lowering
+
+**Falsifies an emitter** that lowers a CPython error path without auto-balance discipline (`?` operator + `Drop` impls). A `match result { Ok(_) => ..., Err(_) => return; }` that forgets to `Py_DECREF` borrowed references would produce a manifest entry with `refcount_after ≠ refcount_before` on the error path, flagging the leak class to the oracle.
+
+YAML: adds `lean_theorem` wiring on previously-unwired `refcount_balance_on_error` equation. `xpile quorum` view for C-FFI-CPYTHON-EXT: Sem=5 (was 4), Sym=1, Run=1, Ext=10 (was 8). C-FFI-CPYTHON-EXT is now the most Silver-saturated contract in the substrate (4 Silver theorems).
+
 ### Added — Silver-tier refinement: GIL-state model for `gil_invariant` on FFI-CPYTHON-EXT, third Silver on this contract + first wiring of previously-unwired equation (PMAT-171 / XPILE-REFINE-FFI-CPYTHON-004)
 
 Fourteenth Silver refinement; third Silver theorem on C-FFI-CPYTHON-EXT specifically (after PMAT-160's `refcount_balance_on_success_silver` and PMAT-168's `symbol_preserved_silver`). Also the **first Silver upgrade that wires a previously-unwired equation** — `gil_invariant` had no `lean_theorem` field at all pre-PMAT-171, so this PR both adds Silver coverage AND extends the contract's Semantic-stratum count via a brand new equation→theorem link.

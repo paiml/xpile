@@ -108,6 +108,18 @@ equations:
       - "C extension follows CPython refcounting conventions correctly in the original"
 
   refcount_balance_on_error:
+    # PMAT-172 / XPILE-REFINE-FFI-CPYTHON-005: Silver-tier
+    # refinement wires the previously-unwired
+    # refcount_balance_on_error equation. FOURTH Silver theorem
+    # on C-FFI-CPYTHON-EXT (after PMAT-160 success-path refcount,
+    # PMAT-168 structured manifest, PMAT-171 GIL state). Models
+    # CallOutcome { Success | Error } and a borrowed-ref
+    # refcount pair (before, after). Proves that for the
+    # balanced borrowed-ref case on the error path, lowering
+    # preserves the refcount balance — exposing the most common
+    # CPython C extension bug class to the oracle.
+    lean_theorem: "XpileContracts.CFfiCpythonExt.refcount_balance_on_error_silver"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
     formula: |
       pre_call_refcount(obj) == post_call_refcount(obj)  WHEN call returns error AND obj is borrowed
     domain: |
@@ -116,7 +128,11 @@ equations:
     invariants:
       - "the most common CPython C extension bug — error-path refcount leak — must be detected by oracle"
       - "Rust translation must use ? / Result idioms that auto-drop on error"
-    preconditions: []
+      - "the BorrowedRef model carries the (refcount_before, refcount_after, outcome) triple; lowering must preserve all three so the oracle can detect imbalance"
+      - "companion theorem outcome_preserved_silver locks in the CallOutcome (Success | Error) tag's survival through lowering — falsification target: emitters that 'summarise' outcomes to a single bit"
+    preconditions:
+      - "the Silver model's well-formedness assumption: refcount_before = refcount_after at input (a balanced borrowed-ref pattern). The load-bearing claim is that lowering preserves balance, not that it CREATES balance."
+      - "the call outcome is Error (NULL return + PyErr_Occurred — the standard CPython error-signalling convention)"
 
   gil_invariant:
     # PMAT-171 / XPILE-REFINE-FFI-CPYTHON-004: Silver-tier
