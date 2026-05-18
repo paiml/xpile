@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — `qa_gate` enforcer test binds `required_tests` to real Rust test fns (PMAT-146)
+
+New `crates/xpile/tests/qa_gate.rs` test gate. Walks every contract
+YAML, extracts the `qa_gate.required_tests` list, and asserts every
+named test is a real `#[test]`-annotated function in
+`crates/*/tests/*.rs` or `crates/*/src/**/*.rs`. Companion to
+`refinement_proofs.rs` (which binds `lean_theorem:` claims to real
+Lean theorems) — same shape, same philosophy: make stale claims
+fail loudly rather than silently.
+
+The PMAT-137 qa_gate blocks declared 6 distinct test functions
+across the 5 contracts; all 6 are now provably linked to real
+test fns. Future qa_gate edits that name a non-existent test
+function (typo, rename, or stale claim) fire CI loudly.
+
+What this test does NOT enforce: that `min_coverage` is actually
+met — that requires `cargo llvm-cov` output and is tracked
+separately as XPILE-CI-COVERAGE-001+.
+
 ### Docs — status history reflects post-quality-sweep state (PMAT-145)
 
 `docs/status/2026-05-18-substrate-completion.md` and `docs/status/INDEX.md` extended to incorporate the post-PMAT-127..144 quality-sweep work in the 2026-05-18 session record. The session-log header now lists "Quality Sweep" as a fourth track; the Numbers section corrects "24 paired discharges" → "62 paired discharges", "3-stratum minimum" → "4-stratum minimum (single demo Runtime fixture each)", and notes the zero-warnings substrate state. INDEX.md row 19 extended from "PMAT-058..122" to "PMAT-058..145" with the same numeric corrections.
