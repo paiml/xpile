@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-144
+  github_issue: null
+  item_type: task
+  title: 'PMAT-144: sub-spec theorem counts — kaizen-fleet.md + provability-roadmap.md (50 not 12, all 12 at 4-stratum)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T12:15:00Z
+  updated: 2026-05-18T12:15:00Z
+  spec: null
+  acceptance_criteria:
+  - kaizen-fleet.md (theorem count 12 → 50, Phase-6 projection row + Fleet contribution lines + 4-stratum noting) and provability-roadmap.md (XPILE-QUORUM-005 status block — 3-stratum → 4-stratum minimum, source-diversity claim corrected) updated to reflect the post-PMAT-127..138 + post-substrate-completion state.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-143
   github_issue: null
   item_type: task

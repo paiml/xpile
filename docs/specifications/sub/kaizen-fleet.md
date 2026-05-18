@@ -53,23 +53,23 @@ The fleet has two tiers:
 - **Kernel tier** (E2 quality): repos that produce verifiable kernels — aprender, trueno, realizar, entrenar. Graded on postcondition density + Kani proof coverage.
 - **Tool tier** (penetration): repos that USE kernels — pmat, depyler, decy, etc. Graded on call-site coverage (% of operations that bind to a contract).
 
-xpile is **kernel tier** at v0.1.0. Phase 4 (Kani equivalence proofs on Layer-1/Layer-2 contracts) was the planned trigger for this transition; that phase shipped early and overshipped — every contract in the substrate (12 of 12) has a Kani BMC harness on every PR via the dedicated `kani` CI job (PMAT-021 / XPILE-QUORUM-003). The translation contracts produce verifiable kernels by construction: 12 Lean refinement theorems in `contracts/lean/` × 12 Kani harnesses in `contracts/kani/` = 24 paired discharges. See [phased-rollout.md](phased-rollout.md) "What actually shipped" for the comparison of planned vs. shipped phases.
+xpile is **kernel tier** at v0.1.0. Phase 4 (Kani equivalence proofs on Layer-1/Layer-2 contracts) was the planned trigger for this transition; that phase shipped early and overshipped — every contract in the substrate (12 of 12) has a Kani BMC harness on every PR via the dedicated `kani` CI job (PMAT-021 / XPILE-QUORUM-003). The translation contracts produce verifiable kernels by construction: **50 Lean refinement theorems** in `contracts/lean/` × 12 Kani harnesses in `contracts/kani/` = **62 paired discharges** (post-PMAT-127..138 the Lean side grew from 12 to 50 as every equation gained its own Bronze-tier theorem). See [phased-rollout.md](phased-rollout.md) "What actually shipped" for the comparison of planned vs. shipped phases.
 
 ## Fleet grade contribution
 
 xpile's grade contributes to the fleet rollup weighted by call-site count. At v0.1.0:
 
-- **Contract count:** 12 (Sem + Sym votes in each; 2 contracts at full four-stratum)
-- **Lean theorem count:** 12 (one per contract)
-- **Kani harness count:** 12 (one per contract)
-- **Fleet contribution:** to be measured by `pv kaizen` rollup after registration; the substrate now meets the **Kernel Grade A** prerequisites (≥10 contracts proven, ≥1 four-stratum contract)
+- **Contract count:** 12 (Sem + Sym + Run + Ext votes in each; all 12 at 4-stratum minimum)
+- **Lean theorem count:** 50 (one per equation across the 12 contracts, post-PMAT-127..138)
+- **Kani harness count:** 12 (one per contract — additional per-equation harnesses are XPILE-QUORUM-006 follow-on)
+- **Fleet contribution:** to be measured by `pv kaizen` rollup after registration; the substrate now meets the **Kernel Grade A** prerequisites (≥10 contracts proven, ≥1 four-stratum contract — now ≥12)
 
 Originally projected after Phase 3 / Phase 6:
 
 | Phase | Projected | Actual at v0.1.0 |
 |---|---|---|
 | After Phase 3 | ~50 call sites, ~5% fleet contribution | Codegen still hand-written; generator path is XPILE-PV-CODEGEN-001+ future work. Call sites bound via contract `binding:` fields are tracked separately. |
-| After Phase 6 | ~300 call sites, ~25% fleet contribution | 12 Lean theorems shipped (overshipped from the ≥3 target); fleet contribution awaits `pv kaizen` rollup recomputation. |
+| After Phase 6 | ~300 call sites, ~25% fleet contribution | 50 Lean theorems shipped (overshipped from the ≥3 target — every equation in every contract gained its own Bronze-tier theorem in PMAT-127..138); fleet contribution awaits `pv kaizen` rollup recomputation. |
 
 The goal of being one of the top-5 fleet contributors within 12 months remains live, with the substrate-completion run (PMAT-058..077) moving the load-bearing prerequisites forward by months relative to the original plan.
 

@@ -7,6 +7,13 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — sub-spec theorem counts refresh (PMAT-144)
+
+`docs/specifications/sub/kaizen-fleet.md` and `docs/specifications/sub/provability-roadmap.md` updated to reflect the post-PMAT-127..138 + post-substrate-completion state:
+
+- kaizen-fleet.md: "12 Lean theorems × 12 Kani harnesses = 24 paired discharges" → **50 × 12 = 62**. The Phase-6 row in the projection table corrected (12 → 50). §Fleet grade contribution updated: Lean theorem count 12 → 50; contract-count line now notes all 12 at 4-stratum minimum (was "Sem + Sym votes, 2 at full four-stratum").
+- provability-roadmap.md (XPILE-QUORUM-005 status block): "the remaining 10 reach 3-stratum QUORUM via Sem+Sym+Ext" → "all 12 at 4-stratum minimum (Sem + Sym + Run + Ext)" — they have ≥1 Runtime fixture each. XPILE-QUORUM-004 source-diversity claim corrected to note all 12 substrate contracts now provide 4 distinct stratum sources each (single-vote demo fixtures count toward source diversity).
+
 ### Docs — README §Contract-substrate-at-QUORUM: 50 theorems, not 12 (PMAT-143)
 
 Stale claim corrected. README's §Contract-substrate-at-QUORUM
