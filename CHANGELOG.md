@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Wire `parse_preserves_equivalence_class_diamond` on C-XPILE-CONTRACT-FRONTEND-TRAIT — closes TRUE UNIVERSAL Diamond depth-2 (PMAT-250 / XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-005)
+
+Closes the audit finding from PMAT-249's `xpile diamond` reporter: `C-XPILE-CONTRACT-FRONTEND-TRAIT` had its companion theorem `parse_preserves_equivalence_class_diamond` already defined in Lean (PMAT-217) but not separately wired as a YAML equation. This PR wires it.
+
+With this PR, the substrate now has **TRUE UNIVERSAL Diamond depth-2** at the YAML-equation level — every one of the 12 contracts has at least 2 wired Diamond equations:
+
+```
+depth-2+: 12 contracts (was 11)
+```
+
+The companion theorem captures FUNCTORIAL preservation of the equivalence relation: `s1 ≡_modules s2 ⇒ parse(s1).equations ≡ parse(s2).equations`. Distinct algebraic category from PMAT-217's equivalence-relation Diamond (relational vs functorial-preservation).
+
 ### Added — `xpile diamond` reporter subcommand for Diamond-tier coverage tracking (PMAT-249)
 
 Adds the `xpile diamond` CLI subcommand, mirroring `xpile quorum`. Walks every contract YAML in `contracts/` and tallies the number of `_diamond` `lean_theorem:` references — the substrate's wired Diamond-tier coverage per contract.
