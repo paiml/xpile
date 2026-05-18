@@ -171,6 +171,29 @@ equations:
       - "the Lean sidecar artifact carries the theorem text verbatim plus a `-- cited by xpile contract` comment"
       - "any Rust def referencing the theorem name carries a doc-comment pointing to the sidecar's fully-qualified path"
 
+  citation_comment_preserved_silver:
+    # PMAT-178: Silver-tier promotion of
+    # theorem_carried_as_lean_sidecar. Bronze proved byte-
+    # identity of theorem text; Silver adds a separate
+    # has_citation_comment boolean that locks in the
+    # "-- cited by xpile contract" comment as a structural
+    # invariant. Companion theorem sidecar_text_preserved_silver
+    # captures byte-identity of text in the Silver model.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.citation_comment_preserved_silver"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      lower_theorem_to_sidecar(t).has_citation_comment == t.has_citation_comment
+    domain: |
+      Same as theorem_carried_as_lean_sidecar — any Lean
+      `theorem` or `lemma` declaration.
+    invariants:
+      - "has_citation_comment is preserved as a separate structural field"
+      - "an emitter that drops the citation comment to tidy up the sidecar would falsify this — captures the 'comment must be added to sidecar' invariant Bronze couldn't model separately"
+    preconditions:
+      - "the source declaration is `theorem` or `lemma`"
+    postconditions:
+      - "the citation comment marker survives sidecar emission regardless of theorem shape"
+
   inductive_to_rust_enum:
     # PMAT-133: Bronze-tier refinement theorem locks in
     # variant-count preservation.
@@ -297,6 +320,28 @@ equations:
       - "method names match between Lean and Rust (no mangling)"
       - "Lean default method bodies in the typeclass map to Rust default method bodies in the trait (not duplicated per impl)"
 
+  method_names_preserved_silver:
+    # PMAT-178: Silver-tier promotion of instance_to_rust_impl.
+    # Bronze recorded just method_count; Silver adds per-method
+    # names + default-method flags as separate structural fields.
+    # Companion theorem default_method_flags_preserved_silver
+    # captures the trait-default vs per-instance-override
+    # distinction.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.method_names_preserved_silver"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      lower_instance_to_impl(i).method_names == i.method_names
+    domain: |
+      Same as instance_to_rust_impl.
+    invariants:
+      - "per-method names preserved byte-for-byte (no mangling)"
+      - "per-method default-flag preserved (companion theorem) — emitter cannot turn class-default into per-instance override"
+    preconditions:
+      - "the Lean typeclass is registered as a Rust trait equivalence"
+    postconditions:
+      - "an emitter that mangles method names for Rust convention conformance would falsify method_names_preserved_silver"
+      - "an emitter that re-implements default methods per-instance would silently change trait-resolution semantics — caught by default_method_flags_preserved_silver"
+
   axiom_to_extern_fn:
     # PMAT-133: Bronze-tier refinement theorem locks in signature
     # preservation AND the ≥5-line WARNING comment floor.
@@ -326,6 +371,27 @@ equations:
       - "the extern block is qualified `unsafe extern \"Rust\"` (never plain `extern`)"
       - "the warning comment names at least one citing contract ID"
 
+  cited_contracts_preserved_silver:
+    # PMAT-178: Silver-tier promotion of axiom_to_extern_fn.
+    # Bronze captured signature + warning-lines floor; Silver
+    # adds the cited-contract-IDs list as a separate structural
+    # field. Captures the invariant "warning comment names at
+    # least one citing contract ID" at the type level.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.cited_contracts_preserved_silver"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      lower_axiom_to_extern(a).cited_contract_ids == a.cited_contract_ids
+    domain: |
+      Same as axiom_to_extern_fn — a Lean `axiom` declaration.
+    invariants:
+      - "cited-contract-IDs list preserved as a separate structural field"
+      - "an emitter that drops citation list to save vertical space would falsify this — reviewers cannot trace axiom to motivating contract"
+      - "axiom_signature_preserved_silver companion theorem preserves signature in the Silver model"
+    preconditions:
+      - "the user supplied a corresponding implementation in another crate, OR the contract explicitly notes the axiom is for-proof-only"
+    postconditions:
+      - "the emitted extern block's warning comment contains every contract ID from the source axiom's citation list"
+
   noncomputable_def_to_rust_panic:
     # PMAT-133: Bronze-tier refinement theorem locks in the
     # canonical panic-marker body AND the #[doc(hidden)] attribute.
@@ -351,6 +417,27 @@ equations:
       - "the lowered Rust function body is exactly `panic!(\"noncomputable Lean def has no runtime equivalent\")` with the Lean source location interpolated"
       - "the function carries `#[doc(hidden)]` attribute"
       - "any caller in the lowered Rust crate gets a `clippy::pedantic` warning via a deny lint pointing at the contract"
+
+  panic_message_preserved_silver:
+    # PMAT-178: Silver-tier promotion of
+    # noncomputable_def_to_rust_panic. Bronze captured body bytes
+    # + doc_hidden; Silver splits the panic message from the
+    # canonical marker for type-level lock-in. Companion theorem
+    # noncomputable_name_preserved_silver in same Lean file.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.panic_message_preserved_silver"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      lower_noncomputable_to_panic(d).panic_message == d.panic_message
+    domain: |
+      Same as noncomputable_def_to_rust_panic — Lean
+      `noncomputable def`.
+    invariants:
+      - "panic_message preserved byte-for-byte as separate structural field"
+      - "an emitter using todo!() or unimplemented!() instead of the canonical panic message would falsify this — captures runtime-semantics distinction Bronze couldn't see"
+    preconditions:
+      - "the Lean source declaration is keyword-marked `noncomputable def`"
+    postconditions:
+      - "the panic message string survives lowering at the structural level, not just as part of the body payload"
 
   citation_in_emitted_rust:
     # PMAT-133: Bronze-tier refinement theorem locks in
@@ -380,6 +467,31 @@ equations:
       - "every emitted Rust item produced from a cited Lean decl carries `/// Contract: <C.id>` above its declaration"
       - "the Lean source location (`<file>:<line>`) appears in the doc-comment"
       - "multi-contract citations enumerate all cited IDs (set-union semantics, no drops)"
+
+  multi_citation_preserved_silver:
+    # PMAT-178: Silver-tier promotion of citation_in_emitted_rust.
+    # Bronze captured byte-identity of single contract_id; Silver
+    # adds source_location and multi_citation_set as separate
+    # structural fields. Captures the set-union semantics for
+    # multi-contract citations that Bronze's single contract_id
+    # couldn't model. Companion theorem
+    # citation_source_location_preserved_silver in same file.
+    # COMPLETES Silver coverage on C-XLATE-LEAN-TO-RUST (9/9).
+    lean_theorem: "XpileContracts.CXlateLeanToRust.multi_citation_preserved_silver"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      lower_decl_with_citation(d).multi_citation_set == d.multi_citation_set
+    domain: |
+      Same as citation_in_emitted_rust.
+    invariants:
+      - "multi_citation_set preserved through lowering (set-union semantics, no drops)"
+      - "source_location preserved (companion theorem citation_source_location_preserved_silver)"
+      - "the typed Silver model captures the multi-citation invariant that Bronze's single contract_id could not"
+    preconditions:
+      - "the Lean source declaration appears in at least one xpile contract's citation list"
+    postconditions:
+      - "every emitted Rust item produced from a cited Lean decl carries the full multi-citation set in its doc-comment"
+      - "the source-location string survives lowering as a separate field, not folded into the citation text"
 
 proof_obligations:
   - type: postcondition

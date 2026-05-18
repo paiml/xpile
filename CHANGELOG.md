@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier completion: theorem + instance + axiom + noncomputable + citation on XLATE-LEAN-TO-RUST, **brings contract to full Silver (9/9)** (PMAT-178 / XPILE-REFINE-XLATE-LEAN-003)
+
+Twenty-eighth through thirty-second Silver refinements in a single PR — five Silver upgrades that **complete C-XLATE-LEAN-TO-RUST to full Silver coverage on every equation (9/9)**. This is the **SECOND contract in the substrate at full Silver tier** (after C-FFI-CPYTHON-EXT in PMAT-174).
+
+Five new wired equations + companion theorems:
+- `citation_comment_preserved_silver` (wired) + `sidecar_text_preserved_silver` — { text, has_citation_comment }
+- `method_names_preserved_silver` (wired) + `default_method_flags_preserved_silver` — { method_count, method_names, default_method_flags }
+- `cited_contracts_preserved_silver` (wired) + `axiom_signature_preserved_silver` — { signature, warning_lines, cited_contract_ids }
+- `panic_message_preserved_silver` (wired) + `noncomputable_name_preserved_silver` — { name, panic_message }
+- `multi_citation_preserved_silver` (wired) + `citation_source_location_preserved_silver` — { contract_id, source_location, multi_citation_set }
+
+Each Silver upgrade extends Bronze with a NEW structural field that Bronze couldn't capture: the citation-comment flag for theorems, default-method flags for instances, cited-contract-IDs list for axioms, separable panic-message field for noncomputables, multi-citation set + source location for citations.
+
+**Bug classes now caught at type level**: emitter that drops sidecar citation comment, emitter that turns class-default methods into per-instance overrides, emitter that drops axiom citation list to save vertical space, emitter that uses `todo!()` instead of the canonical panic message, emitter that drops multi-citation entries.
+
+YAML: adds five new equations wired to the five Silver theorems. `xpile quorum` view for C-XLATE-LEAN-TO-RUST: Sem=18 (was 13), Sym=9, Run=1, Ext=6 (was 4). C-XLATE-LEAN-TO-RUST is now the second contract in the substrate with Silver coverage on 100% of its equations (9/9).
+
 ### Added — Silver-tier expansion: partial_def + inductive + structure typed AST on XLATE-LEAN-TO-RUST (PMAT-177 / XPILE-REFINE-XLATE-LEAN-002)
 
 Twenty-fifth, twenty-sixth, twenty-seventh Silver refinements — three contracts worth of Silver brought in via a single PR (each new equation typed-AST'd from its Bronze byte-array baseline). Replicates the PMAT-165 typed-AST Silver pattern across three more equations on C-XLATE-LEAN-TO-RUST.

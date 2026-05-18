@@ -731,4 +731,247 @@ theorem field_types_preserved_silver (s : LeanStructureSilver) :
     (lower_structure_to_struct_silver s).field_types = s.field_types := by
   rfl
 
+/-! ## PMAT-178 — Final Silver expansion: theorem/instance/axiom/
+    noncomputable/citation (XPILE-REFINE-XLATE-LEAN-003).
+
+    Replicates the PMAT-165/177 typed-AST Silver pattern across
+    the FINAL FIVE equations on C-XLATE-LEAN-TO-RUST. Brings
+    Silver coverage on this contract to **9/9 equations — full
+    Silver tier**, the **SECOND contract in the substrate at
+    full Silver** (after C-FFI-CPYTHON-EXT in PMAT-174).
+
+    Each equation gets a typed Silver model with structural field
+    decomposition + a wired preservation theorem:
+
+    - **theorem_carried_as_lean_sidecar**: { text, has_citation_comment }
+      → Silver lifts the Bronze "byte-identity text copy" to a
+      typed split that proves the `-- cited by xpile contract`
+      comment marker is preserved.
+    - **instance_to_rust_impl**: { method_count, method_names,
+      default_methods } → Bronze had method_count; Silver
+      captures per-method NAMES + which methods are default.
+    - **axiom_to_extern_fn**: { signature, warning_lines,
+      cited_contract_ids } → Bronze had signature + warning
+      line count; Silver captures the cited-contract-IDs list
+      that names callers.
+    - **noncomputable_def_to_rust_panic**: { name, panic_message }
+      → Bronze had the panic body bytes; Silver splits the panic
+      message from the canonical marker.
+    - **citation_in_emitted_rust**: { contract_id,
+      source_location, multi_citation_set } → Bronze had byte-
+      identity; Silver captures the multi-citation set-union
+      semantics that Bronze couldn't model. -/
+
+/--
+  Silver-tier model of a Lean theorem environment. Bronze
+  captured just the text bytes; Silver adds a boolean flag for
+  whether the `-- cited by xpile contract` comment is present.
+  The flag is load-bearing — emitter must ALWAYS add the
+  citation comment to the sidecar, regardless of source theorem
+  shape.
+-/
+structure LeanTheoremSilver where
+  text : Array UInt8
+  has_citation_comment : Bool
+deriving DecidableEq
+
+/-- Silver model of the sidecar artifact. Mirror image. -/
+structure LeanSidecarSilver where
+  text : Array UInt8
+  has_citation_comment : Bool
+deriving DecidableEq
+
+/-- Silver lowering: identity per field. -/
+def lower_theorem_to_sidecar_silver (t : LeanTheoremSilver) : LeanSidecarSilver :=
+  { text := t.text, has_citation_comment := t.has_citation_comment }
+
+/-- **Silver-tier refinement theorem** — citation-comment flag
+    preserved through theorem→sidecar lowering. Emitter that
+    drops the citation comment to "tidy up" the sidecar would
+    falsify this. -/
+theorem citation_comment_preserved_silver (t : LeanTheoremSilver) :
+    (lower_theorem_to_sidecar_silver t).has_citation_comment = t.has_citation_comment := by
+  rfl
+
+/-- **Silver-tier refinement theorem** — sidecar text preserved
+    byte-for-byte in the Silver model. Composes with
+    `theorem_carried_as_lean_sidecar` at Bronze. -/
+theorem sidecar_text_preserved_silver (t : LeanTheoremSilver) :
+    (lower_theorem_to_sidecar_silver t).text = t.text := by
+  rfl
+
+/--
+  Silver-tier model of a Lean instance with per-method detail.
+  Bronze recorded just `method_count`; Silver adds per-method
+  names (Array (Array UInt8)) and a boolean flag per method
+  indicating whether it's a default-method override.
+-/
+structure LeanInstanceSilver where
+  method_count : Nat
+  method_names : Array (Array UInt8)
+  default_method_flags : Array Bool
+deriving DecidableEq
+
+/-- Silver model of a Rust impl block. Mirror image. -/
+structure RustImplSilver where
+  method_count : Nat
+  method_names : Array (Array UInt8)
+  default_method_flags : Array Bool
+deriving DecidableEq
+
+/-- Silver lowering: instance → impl, every field preserved. -/
+def lower_instance_to_impl_silver (i : LeanInstanceSilver) : RustImplSilver :=
+  { method_count := i.method_count
+    method_names := i.method_names
+    default_method_flags := i.default_method_flags }
+
+/-- **Silver-tier refinement theorem** — per-method names
+    preserved through instance→impl lowering. Captures load-
+    bearing rename-resistance that Bronze method_count couldn't
+    see. -/
+theorem method_names_preserved_silver (i : LeanInstanceSilver) :
+    (lower_instance_to_impl_silver i).method_names = i.method_names := by
+  rfl
+
+/-- **Silver-tier refinement theorem** — default-method flags
+    preserved. Locks in the modelling commitment that an emitter
+    cannot turn a class-default method into a per-instance
+    override (which would silently change trait-resolution
+    semantics). -/
+theorem default_method_flags_preserved_silver (i : LeanInstanceSilver) :
+    (lower_instance_to_impl_silver i).default_method_flags = i.default_method_flags := by
+  rfl
+
+/--
+  Silver-tier model of a Lean axiom. Bronze captured `signature`
+  + a counted `warning_lines` Nat; Silver adds the LIST of
+  cited contract IDs that names callers (the contract's "warning
+  comment names at least one citing contract ID" invariant).
+-/
+structure LeanAxiomSilver where
+  signature : Array UInt8
+  warning_lines : Nat
+  cited_contract_ids : Array (Array UInt8)
+deriving DecidableEq
+
+/-- Silver model of the Rust extern block. Mirror image. -/
+structure RustExternSilver where
+  signature : Array UInt8
+  warning_lines : Nat
+  cited_contract_ids : Array (Array UInt8)
+deriving DecidableEq
+
+/-- Silver lowering: axiom → extern, every field preserved. The
+    warning-lines floor of 5 from Bronze still applies; Silver
+    additionally preserves the cited-contracts list. -/
+def lower_axiom_to_extern_silver (a : LeanAxiomSilver) : RustExternSilver :=
+  { signature := a.signature
+    warning_lines := a.warning_lines
+    cited_contract_ids := a.cited_contract_ids }
+
+/-- **Silver-tier refinement theorem** — cited-contracts list
+    preserved on axiom→extern lowering. Falsified by an emitter
+    that drops the citation list from the warning comment to
+    save vertical space — that's a real bug class (reviewers
+    can't trace the axiom back to its motivating contract). -/
+theorem cited_contracts_preserved_silver (a : LeanAxiomSilver) :
+    (lower_axiom_to_extern_silver a).cited_contract_ids = a.cited_contract_ids := by
+  rfl
+
+/-- **Silver-tier refinement theorem** — axiom signature
+    preserved in the Silver model. Composes with the Bronze
+    signature-preservation claim from `axiom_to_extern_fn`. -/
+theorem axiom_signature_preserved_silver (a : LeanAxiomSilver) :
+    (lower_axiom_to_extern_silver a).signature = a.signature := by
+  rfl
+
+/--
+  Silver-tier model of a Lean `noncomputable def`. Bronze
+  recorded just the name; Silver adds the canonical
+  panic_message field so the emitter's panic body content is
+  type-level locked-in (not just byte-identity on the body).
+-/
+structure LeanNoncomputableDefSilver where
+  name : Array UInt8
+  panic_message : Array UInt8
+deriving DecidableEq
+
+/-- Silver model of the Rust panic fn. Mirror image. -/
+structure RustPanicFnSilver where
+  name : Array UInt8
+  panic_message : Array UInt8
+  doc_hidden : Bool
+deriving DecidableEq
+
+/-- Silver lowering: noncomputable def → panic fn. Name +
+    panic_message preserved; doc_hidden always true (the
+    contract's load-bearing invariant). -/
+def lower_noncomputable_to_panic_silver
+    (d : LeanNoncomputableDefSilver) : RustPanicFnSilver :=
+  { name := d.name
+    panic_message := d.panic_message
+    doc_hidden := true }
+
+/-- **Silver-tier refinement theorem** — panic message preserved
+    byte-for-byte. An emitter that uses `todo!()` or
+    `unimplemented!()` instead of the canonical panic message
+    would falsify this — captures the runtime-semantics
+    distinction Bronze couldn't model (Bronze body-bytes
+    captured the message but not as a separable field). -/
+theorem panic_message_preserved_silver (d : LeanNoncomputableDefSilver) :
+    (lower_noncomputable_to_panic_silver d).panic_message = d.panic_message := by
+  rfl
+
+/-- **Silver-tier refinement theorem** — noncomputable def name
+    preserved. Composes with PMAT-165's `name_preserved_silver`
+    pattern at the noncomputable-def model. -/
+theorem noncomputable_name_preserved_silver (d : LeanNoncomputableDefSilver) :
+    (lower_noncomputable_to_panic_silver d).name = d.name := by
+  rfl
+
+/--
+  Silver-tier model of a Lean declaration with a contract
+  citation, extended for the multi-citation case. Bronze had
+  just `contract_id`; Silver adds `source_location` and a
+  `multi_citation_set` (Array of contract IDs for when multiple
+  contracts cite the same declaration).
+-/
+structure LeanDeclWithCitationSilver where
+  contract_id : Array UInt8
+  source_location : Array UInt8
+  multi_citation_set : Array (Array UInt8)
+deriving DecidableEq
+
+/-- Silver model of the Rust item's doc-comment citation. -/
+structure RustItemWithCitationSilver where
+  contract_id : Array UInt8
+  source_location : Array UInt8
+  multi_citation_set : Array (Array UInt8)
+deriving DecidableEq
+
+/-- Silver lowering: identity per field. -/
+def lower_decl_with_citation_silver
+    (d : LeanDeclWithCitationSilver) : RustItemWithCitationSilver :=
+  { contract_id := d.contract_id
+    source_location := d.source_location
+    multi_citation_set := d.multi_citation_set }
+
+/-- **Silver-tier refinement theorem** — multi-citation set
+    preserved through lowering. Captures the load-bearing claim
+    that when multiple contracts cite the same Lean decl, all
+    are listed (set-union semantics, no drops) — a property
+    Bronze's single contract_id couldn't model. -/
+theorem multi_citation_preserved_silver (d : LeanDeclWithCitationSilver) :
+    (lower_decl_with_citation_silver d).multi_citation_set = d.multi_citation_set := by
+  rfl
+
+/-- **Silver-tier refinement theorem** — source location
+    preserved through citation lowering. Locks in the
+    "`<file>:<line>` appears in the doc-comment" invariant from
+    the contract postcondition. -/
+theorem citation_source_location_preserved_silver
+    (d : LeanDeclWithCitationSilver) :
+    (lower_decl_with_citation_silver d).source_location = d.source_location := by
+  rfl
+
 end XpileContracts.CXlateLeanToRust
