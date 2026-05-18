@@ -83,6 +83,40 @@ equations:
       - "an emitter that uses a non-commutative representation (e.g., string concatenation before parsing) would falsify the commutativity claim — a real semantic bug class Bronze/Silver/Gold couldn't catch"
       - "Platinum tier captures algebraic STRUCTURE that prior tiers couldn't model"
 
+  add_dispatch_slow_path_associative_platinum:
+    # PMAT-200 / XPILE-REFINE-PY-INT-ARITH-007: SECOND Platinum-tier
+    # refinement in the substrate. Demonstrates that the Platinum
+    # pattern captures TERNARY compositional properties
+    # (associativity), not just binary ones (commutativity from
+    # PMAT-199). Slow-path-only because bigint_add (unbounded Int)
+    # is genuinely associative, while i64_wrap_add (FastPath) is
+    # NOT associative under wrap-around — that asymmetry is itself
+    # a Platinum-level observation. Companion theorems
+    # mul_dispatch_slow_path_associative_platinum (Int.mul_assoc)
+    # and mul_distributes_over_add_slow_path_platinum
+    # (Int.mul_add, the first cross-operation distributivity
+    # theorem in the substrate).
+    lean_theorem: "XpileContracts.CPyIntArith.add_dispatch_slow_path_associative_platinum"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      add_dispatch(SlowPath, add_dispatch(SlowPath, a, b), c)
+        == add_dispatch(SlowPath, a, add_dispatch(SlowPath, b, c))
+    domain: |
+      Any Int operands a, b, c on the SlowPath. The FastPath is
+      NOT associative under wrapping arithmetic — this theorem
+      claims the property ONLY for SlowPath / BigInt mode.
+    invariants:
+      - "ternary compositional property: associativity on the unbounded BigInt path"
+      - "fast-path is NOT associative — asymmetry is itself a Platinum-level observation about dispatch"
+      - "companion theorem mul_dispatch_slow_path_associative_platinum extends the pattern to multiplication"
+      - "companion theorem mul_distributes_over_add_slow_path_platinum is the FIRST cross-operation distributivity theorem in the substrate — ties together additive and multiplicative algebraic structures"
+    preconditions:
+      - "the dispatcher path is SlowPath (BigInt mode) — associativity does NOT hold on FastPath"
+      - "operands are unbounded Int (no fits_i64 constraints needed for SlowPath)"
+    postconditions:
+      - "an emitter that produces a non-associative slow-path implementation (e.g., truncating at intermediate steps) would falsify this theorem"
+      - "monoid/ring algebraic axioms are now structurally captured at the dispatcher level"
+
   pyint_fast_add_returns_fast_gold:
     # PMAT-185 / XPILE-REFINE-PY-INT-ARITH-005: FIRST Gold-tier
     # refinement in the entire substrate. Promotes Silver's

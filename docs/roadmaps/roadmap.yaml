@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-200
+  github_issue: null
+  item_type: task
+  title: 'PMAT-200: SECOND Platinum-tier refinement — slow-path associativity + distributivity on C-PY-INT-ARITH (XPILE-REFINE-PY-INT-ARITH-007)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T16:00:00Z
+  updated: 2026-05-19T16:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Second Platinum-tier theorem in the substrate. Demonstrates Platinum captures TERNARY compositional properties (associativity) and CROSS-OPERATION axioms (distributivity), not just binary commutativity from PMAT-199. add_dispatch_slow_path_associative_platinum (wired) via Int.add_assoc. Companion theorems mul_dispatch_slow_path_associative_platinum (Int.mul_assoc) and mul_distributes_over_add_slow_path_platinum (Int.mul_add — FIRST cross-operation distributivity theorem in the substrate). Slow-path-only because FastPath is NOT associative under wrap-around — that asymmetry is itself a Platinum-level observation. C-PY-INT-ARITH Sem 20 → 21.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-199
   github_issue: null
   item_type: task
