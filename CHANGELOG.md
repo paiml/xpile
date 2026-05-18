@@ -110,6 +110,40 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Asserting trait-determinism Runtime test (PMAT-125)
+
+**Closes XPILE-TRAIT-DETERMINISM-RUNTIME-001** (the follow-on
+ticket from PMAT-123's fixture). Three integration tests in
+`crates/xpile/tests/trait_determinism.rs` run
+`xpile transpile trait_determinism_demo.py --target T` twice
+for each of T in {rust, ruchy, lean} and assert byte-identical
+stdout. This is the combined property of
+`Frontend::parse_and_lower` determinism + `Backend::lower`
+determinism for the `C-XPILE-FRONTEND-TRAIT` and
+`C-XPILE-BACKEND-TRAIT` contracts.
+
+The test uses the subprocess pattern from `transpile_e2e.rs`
+(spawn the `xpile` binary, compare stdout) so no
+dev-dependencies needed to be added to the xpile crate.
+
+Combined with:
+- PMAT-062's Lean refinement theorem (Semantic stratum)
+- PMAT-063's Kani BMC harness (Symbolic stratum, ~256⁴
+  configurations)
+- PMAT-064 + PMAT-065 (Backend trait equivalents)
+- PMAT-123's Runtime fixture (the input file)
+
+This PR adds the *asserting* test that closes the loop on the
+fixture's purpose. The two trait contracts now have:
+- Symbolic verification over all 4-byte inputs (Kani)
+- Observed verification on a concrete Python source (this test)
+- Semantic locking (Lean rfl proof)
+- Extrinsic attestation (roadmap)
+
+Future autonomous shipping can use this pattern (subprocess +
+fixture + byte-equality assertion) to close the
+`XPILE-*-RUNTIME-001` tickets for the other 10 contracts.
+
 ### 🎯 All 12 contracts reach full §14.4 4-stratum coverage (PMAT-124)
 
 **The substrate hits the §14.4 N-of-M ceiling.** Adds 8 fixture
