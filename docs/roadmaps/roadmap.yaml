@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-214
+  github_issue: null
+  item_type: task
+  title: 'PMAT-214: FIRST Diamond-tier refinement — commutative monoid axioms on C-PY-INT-ARITH (XPILE-REFINE-PY-INT-ARITH-008); opens Diamond tier'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T23:00:00Z
+  updated: 2026-05-19T23:00:00Z
+  spec: null
+  acceptance_criteria:
+  - First Diamond-tier theorem in the entire substrate. Opens the next tier beyond Platinum per ruchy 5.0 §14.10.5. Diamond captures COMBINED algebraic axiomatizations (monoids, groups, rings, semirings) by combining multiple Platinum theorems. add_dispatch_commutative_monoid_diamond (wired) combines PMAT-199 commutativity + PMAT-200 associativity + identity into commutative-monoid axiomatization. Companion theorems mul_dispatch_commutative_monoid_diamond (multiplication monoid) and slow_path_semiring_diamond (full SEMIRING with distributivity). C-PY-INT-ARITH Sem 21 → 22.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-213
   github_issue: null
   item_type: task
