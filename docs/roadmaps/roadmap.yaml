@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-141
+  github_issue: null
+  item_type: task
+  title: 'PMAT-141: audit-design.md — refresh theorem count and Sem vote numbers post-PMAT-127..138'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T11:30:00Z
+  updated: 2026-05-18T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - audit-design.md §3 (Positive Feedback) and §4 (Negative Feedback) refreshed to reflect the post-quality-sweep substrate state. Theorem count 12 → 50 (every equation now under its own Bronze-tier theorem). Paired discharges 24 → 62. C-PY-INT-ARITH Sem 8 → 9 (PMAT-138 bitwise_and). C-BASHRS-POSIX-IDEMPOTENCE Ext 8 → 11. PMAT-127..138 explicitly recorded as warning-elimination sequence (79 → 0). XPILE-REFINE-005 noted as discharged via PMAT-138 cast-through-Nat encoding.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-140
   github_issue: null
   item_type: task

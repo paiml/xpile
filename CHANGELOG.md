@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — `audit-design.md` refresh: 50 Lean theorems, post-PMAT-127..138 numbers (PMAT-141)
+
+`docs/specifications/audit-design.md` §3 (Positive Feedback) and
+§4 (Negative Feedback) refreshed to reflect the post-quality-sweep
+substrate state:
+
+- **Theorem count**: 12 → 50 (every equation in every contract now
+  has its own Bronze-tier theorem capturing a distinct load-bearing
+  modelling commitment).
+- **Paired discharges**: 24 → 62.
+- **Sem vote counts**: C-PY-INT-ARITH 8 → 9 (PMAT-138 bitwise_and);
+  C-BASHRS-POSIX-IDEMPOTENCE Ext 8 → 11.
+- **Quality sweep history**: PMAT-127..138 explicitly recorded as
+  the warning-elimination sequence (79 → 0 substrate warnings).
+- **XPILE-REFINE-005** noted as discharged via the PMAT-138
+  hand-rolled cast-through-Nat encoding.
+
 ### Docs — README "by the numbers" reflects zero-warnings substrate (PMAT-140)
 
 README.md's "by the numbers" header and §Contracts summary now state explicitly that `pv lint contracts/` reports **0 errors and 0 warnings** — the substrate has been at full-clean state since PMAT-138 closed XPILE-REFINE-005. The §Contracts summary line also notes that every equation carries domain-grounded pre/postconditions, is anchored to a Lean refinement theorem, and every contract declares a `qa_gate`.
