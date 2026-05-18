@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-249
+  github_issue: null
+  item_type: task
+  title: 'PMAT-249: Add `xpile diamond` reporter subcommand for Diamond-tier coverage tracking'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T16:30:00Z
+  updated: 2026-05-20T16:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add `xpile diamond` CLI subcommand mirroring `xpile quorum`. Walks contracts/ and tallies `_diamond` lean_theorem references per contract. Reports raw count + depth classification (depth-1, depth-2, depth-3, depth-4+). Both human-readable and JSON output (--json flag). Unit tests for depth-label classifier and _diamond counter. Reveals baseline 30 Diamond theorems across 12 contracts.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-248
   github_issue: null
   item_type: task

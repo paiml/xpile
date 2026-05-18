@@ -5,6 +5,7 @@
 //!   xpile audit        <path>  [--target <t>]
 //!   xpile attestations [--roadmap <path>] [--contracts-dir <path>]  (XPILE-QUORUM-005)
 //!   xpile quorum       [--contracts-dir <path>] [--fixtures-dir <path>]  (PMAT-033)
+//!   xpile diamond      [--contracts-dir <path>]  (PMAT-249 — Diamond-tier coverage)
 //!   xpile info         (default if no subcommand)
 //!
 //! Dispatch goes through [`xpile_core::default_session`]: file extension
@@ -102,6 +103,22 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Diamond-tier coverage reporter (PMAT-249). Walks every
+    /// contract YAML and tallies the number of `_diamond` lean_theorem
+    /// references — the substrate's Diamond-tier coverage per contract.
+    /// Reports raw count + classification:
+    ///   `none` (0 Diamonds), `depth-1` (1 Diamond category),
+    ///   `depth-2` (2 Diamonds), `depth-3+` (3+ Diamonds).
+    ///
+    /// Useful for tracking Diamond depth over time and identifying
+    /// contracts that could benefit from additional algebraic
+    /// axiomatizations.
+    Diamond {
+        #[arg(long, default_value = "contracts")]
+        contracts_dir: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -124,6 +141,10 @@ fn main() -> Result<()> {
             roadmap,
             json,
         } => quorum(&contracts_dir, &fixtures_dir, &roadmap, json),
+        Cmd::Diamond {
+            contracts_dir,
+            json,
+        } => diamond(&contracts_dir, json),
     }
 }
 
@@ -1168,5 +1189,189 @@ bar:
 ";
         assert_eq!(count_field_occurrences(yaml, "lean_theorem:"), 3);
         assert_eq!(count_field_occurrences(yaml, "kani_harness:"), 0);
+    }
+}
+
+// ─── diamond: Diamond-tier coverage reporter (PMAT-249) ──────────────
+//
+// Per ruchy 5.0 §14.10.5 the Diamond refinement tier captures COMBINED
+// algebraic axiomatizations (monoids, groups, rings, semirings,
+// equivalence relations, etc.). This subcommand walks every contract
+// YAML and tallies `_diamond` lean_theorem references — each represents
+// one wired Diamond theorem.
+//
+// The substrate's Diamond program at v0.1.0:
+//   - Depth-1 UNIVERSAL: 12/12 contracts (each has at least 1 Diamond)
+//   - Depth-2 UNIVERSAL: 12/12 contracts (each has at least 2 Diamonds)
+//   - Depth-3 UNIVERSAL across layers: 5/5 layers (each has at least
+//     one contract with at least 3 Diamonds)
+//   - Depth-4 opened on 2 contracts (PyIntArith L1, CompileRustToPtxMma L5)
+//
+// This subcommand is a *reporter*, not a gate.
+
+#[derive(Debug, Clone)]
+struct DiamondRow {
+    id: String,
+    diamond_count: usize,
+}
+
+impl DiamondRow {
+    fn depth_label(&self) -> &'static str {
+        match self.diamond_count {
+            0 => "none",
+            1 => "depth-1",
+            2 => "depth-2",
+            3 => "depth-3",
+            _ => "depth-4+",
+        }
+    }
+}
+
+fn diamond(contracts_dir: &Path, json: bool) -> Result<()> {
+    if !contracts_dir.is_dir() {
+        bail!("{} is not a directory", contracts_dir.display());
+    }
+    let mut rows: Vec<DiamondRow> = Vec::new();
+    for entry in std::fs::read_dir(contracts_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() || path.extension().and_then(|s| s.to_str()) != Some("yaml") {
+            continue;
+        }
+        let Ok(contents) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Some(id) = extract_metadata_id(&contents) else {
+            continue;
+        };
+        rows.push(DiamondRow {
+            id,
+            diamond_count: count_diamond_theorems(&contents),
+        });
+    }
+    rows.sort_by(|a, b| {
+        b.diamond_count
+            .cmp(&a.diamond_count)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    if json {
+        print_diamond_json(&rows);
+    } else {
+        print_diamond_text(&rows);
+    }
+    Ok(())
+}
+
+/// Count `_diamond` references in the `lean_theorem:` field values of a
+/// contract YAML. Each represents one wired Diamond theorem.
+fn count_diamond_theorems(contents: &str) -> usize {
+    contents
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            !trimmed.starts_with('#')
+                && trimmed.starts_with("lean_theorem:")
+                && trimmed.contains("_diamond")
+        })
+        .count()
+}
+
+fn print_diamond_text(rows: &[DiamondRow]) {
+    println!("xpile diamond — Diamond-tier coverage (PMAT-249)");
+    println!(
+        "depth: 0 = none, 1 = depth-1 (1 Diamond), 2 = depth-2 (2 Diamonds), 3+ = depth-3+ (3+)"
+    );
+    println!();
+    println!("  {:<40} {:>7}  {:<10}", "contract", "diamond", "depth");
+    println!("  {}", "-".repeat(60));
+    for r in rows {
+        println!(
+            "  {:<40} {:>7}  {:<10}",
+            r.id,
+            r.diamond_count,
+            r.depth_label(),
+        );
+    }
+    println!();
+    let total_diamonds: usize = rows.iter().map(|r| r.diamond_count).sum();
+    let depth_1_plus = rows.iter().filter(|r| r.diamond_count >= 1).count();
+    let depth_2_plus = rows.iter().filter(|r| r.diamond_count >= 2).count();
+    let depth_3_plus = rows.iter().filter(|r| r.diamond_count >= 3).count();
+    let depth_4_plus = rows.iter().filter(|r| r.diamond_count >= 4).count();
+    println!(
+        "totals: {total_diamonds} Diamond theorems across {} contracts",
+        rows.len()
+    );
+    println!(
+        "  depth-1+: {depth_1_plus} contracts, depth-2+: {depth_2_plus} contracts, \
+         depth-3+: {depth_3_plus} contracts, depth-4+: {depth_4_plus} contracts"
+    );
+}
+
+fn print_diamond_json(rows: &[DiamondRow]) {
+    print!("{{\"contracts\":[");
+    let mut first = true;
+    for r in rows {
+        if !first {
+            print!(",");
+        }
+        first = false;
+        print!(
+            "{{\"id\":\"{}\",\"diamond_count\":{},\"depth\":\"{}\"}}",
+            r.id,
+            r.diamond_count,
+            r.depth_label(),
+        );
+    }
+    let total_diamonds: usize = rows.iter().map(|r| r.diamond_count).sum();
+    let depth_1_plus = rows.iter().filter(|r| r.diamond_count >= 1).count();
+    let depth_2_plus = rows.iter().filter(|r| r.diamond_count >= 2).count();
+    let depth_3_plus = rows.iter().filter(|r| r.diamond_count >= 3).count();
+    let depth_4_plus = rows.iter().filter(|r| r.diamond_count >= 4).count();
+    println!(
+        "],\"total_diamonds\":{total_diamonds},\"contracts_total\":{},\
+         \"depth_1_plus\":{depth_1_plus},\"depth_2_plus\":{depth_2_plus},\
+         \"depth_3_plus\":{depth_3_plus},\"depth_4_plus\":{depth_4_plus}}}",
+        rows.len()
+    );
+}
+
+#[cfg(test)]
+mod diamond_tests {
+    use super::*;
+
+    #[test]
+    fn diamond_row_depth_label() {
+        let r0 = DiamondRow {
+            id: "X".into(),
+            diamond_count: 0,
+        };
+        assert_eq!(r0.depth_label(), "none");
+        let r1 = DiamondRow {
+            id: "X".into(),
+            diamond_count: 1,
+        };
+        assert_eq!(r1.depth_label(), "depth-1");
+        let r4 = DiamondRow {
+            id: "X".into(),
+            diamond_count: 4,
+        };
+        assert_eq!(r4.depth_label(), "depth-4+");
+    }
+
+    #[test]
+    fn count_diamond_theorems_only_counts_diamond_refs() {
+        let yaml = "\
+foo:
+  lean_theorem: \"a.b.add_dispatch_commutative_monoid_diamond\"
+  # lean_theorem: \"a.b.commented_diamond\"
+bar:
+  lean_theorem: \"a.b.something_silver\"
+baz:
+  lean_theorem: \"a.b.division_algorithm_diamond\"
+qux:
+  lean_theorem: \"a.b.shift_monoid_diamond\"
+";
+        assert_eq!(count_diamond_theorems(yaml), 3);
     }
 }
