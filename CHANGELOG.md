@@ -7,6 +7,36 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — TWELFTH Diamond-tier refinement: citation render-monoid on C-XPILE-CONTRACT-BACKEND-TRAIT — UNIVERSAL DIAMOND MILESTONE (PMAT-226 / XPILE-REFINE-CONTRACT-BACKEND-TRAIT-004)
+
+**Twelfth and FINAL Diamond-tier theorem for substrate-wide Diamond universality.** This closes the 5-tier refinement ladder universally — **every one of the 12 contracts** in the substrate now has at least one theorem at every tier: Bronze, Silver, Gold, Platinum, and Diamond. The progression that began with PMAT-203 (the first Diamond on PyIntArith) now spans the entire substrate.
+
+The new Diamond axiomatizes citation rendering on C-XPILE-CONTRACT-BACKEND-TRAIT as a full MONOID, combining four properties:
+- PMAT-212 Platinum render homomorphism (citations distribute over composition)
+- PMAT-212 Platinum companion associativity (compose_contract is associative)
+- Left identity (empty contract on `depends_on`)
+- Right identity (empty contract on `depends_on`)
+
+`citation_render_monoid_diamond` (wired): 4-conjunction proving the four citation-render-monoid axioms.
+
+YAML: adds new equation `citation_render_monoid_diamond` wired to the Diamond theorem. `xpile quorum` view for C-XPILE-CONTRACT-BACKEND-TRAIT: Sem=4 (was 3), Sym=1, Run=1, Ext=2.
+
+**Substrate-wide Diamond axiomatization census after PMAT-226 (12 categories on 12 contracts = UNIVERSAL):**
+1. Commutative-monoid (PMAT-214 on PyIntArith — `add_dispatch_commutative_monoid_diamond`)
+2. Pure-function (PMAT-215 on Bashrs — `bashrs_pure_function_diamond`)
+3. Abelian-group (PMAT-216 on FfiCpythonExt — `refcount_abelian_group_diamond`)
+4. Equivalence-relation (PMAT-217 on XpileContractFrontendTrait — `modules_equivalence_relation_diamond`)
+5. Bounded-monoid (PMAT-218 on CompileRustToPtxMma — `bounded_smem_monoid_diamond`)
+6. String-monoid (PMAT-219 on Notation — `citation_string_monoid_diamond`)
+7. Free list-monoid (PMAT-221 on XlatePyListToVec — `list_free_monoid_diamond`)
+8. Inductive-monoid (PMAT-222 on XlateLeanToRust — `inductive_monoid_diamond`)
+9. Precondition-list-monoid (PMAT-223 on XlateRustFnToLeanThm — `precondition_list_monoid_diamond`)
+10. Frontend equivalence-class (PMAT-224 on XpileFrontendTrait — `frontend_equivalence_class_diamond`)
+11. Backend equivalence-class (PMAT-225 on XpileBackendTrait — `backend_equivalence_class_diamond`)
+12. Citation render-monoid (**PMAT-226 — this entry**)
+
+The substrate is now Diamond-universal. Combined with universal Bronze (12/12), Silver (12/12), Gold (12/12), and Platinum (12/12) coverage, this completes UNIVERSAL 5-TIER REFINEMENT COVERAGE across the entire contract substrate.
+
 ### Added — ELEVENTH Diamond-tier refinement: target equivalence-class on C-XPILE-BACKEND-TRAIT (PMAT-225 / XPILE-REFINE-BACKEND-TRAIT-004)
 
 Eleventh Diamond-tier theorem. **Mirror of PMAT-224 on the Backend side** — together they close the 2×2 trait matrix at Diamond tier for equivalence-class structure on the typed-tag discriminator field (source_lang for frontends, target for backends). Diamond coverage now spans **11 of 12 contracts**.

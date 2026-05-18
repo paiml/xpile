@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-226
+  github_issue: null
+  item_type: task
+  title: 'PMAT-226: TWELFTH Diamond-tier refinement — citation render-monoid on C-XPILE-CONTRACT-BACKEND-TRAIT — UNIVERSAL DIAMOND MILESTONE (XPILE-REFINE-CONTRACT-BACKEND-TRAIT-004)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T05:00:00Z
+  updated: 2026-05-20T05:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Twelfth and FINAL Diamond-tier theorem for substrate-wide Diamond universality. Combines PMAT-212 homomorphism + associativity + left/right identity into citation render-monoid axiomatization. citation_render_monoid_diamond (wired). C-XPILE-CONTRACT-BACKEND-TRAIT Sem 3 → 4. Completes UNIVERSAL 5-tier refinement (Bronze/Silver/Gold/Platinum/Diamond) across all 12 contracts.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-225
   github_issue: null
   item_type: task

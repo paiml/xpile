@@ -333,4 +333,64 @@ theorem contract_composition_associative_platinum
   unfold compose_contract
   simp [Array.append_assoc]
 
+/-! ## PMAT-226 — TWELFTH Diamond-tier refinement: citation
+    render-monoid axioms (XPILE-REFINE-CONTRACT-BACKEND-TRAIT-004).
+
+    **TWELFTH Diamond-tier theorem — Diamond coverage UNIVERSAL.**
+    Combines four properties into the CITATION RENDER MONOID
+    axiomatization:
+    - PMAT-212 Platinum render homomorphism (closure)
+    - Associativity (PMAT-212 companion)
+    - Left identity (empty contract is identity for depends_on)
+    - Right identity
+
+    With this PR landed, EVERY one of the 12 contracts in the
+    xpile substrate has at least one Diamond-tier theorem.
+    The tier progression Bronze → Silver → Gold → Platinum →
+    Diamond is now UNIVERSAL across the substrate.
+
+    Status: discharged at v0.1.0 (PMAT-226). Tier: DIAMOND.
+    Twelfth Diamond theorem in the substrate — completes
+    Diamond-universal coverage. -/
+
+/--
+  **Diamond-tier refinement theorem** — citation rendering
+  forms a MONOID under contract composition.
+
+  Combines four monoid axioms:
+  - Render homomorphism (PMAT-212 lifted)
+  - Associativity (PMAT-212 companion)
+  - Left identity (empty contract = additive identity for depends_on)
+  - Right identity
+
+  This is the substrate's TWELFTH Diamond — completing the
+  Diamond-tier coverage universally across all 12 contracts.
+
+  Status: **discharged at v0.1.0 (PMAT-226)**. Tier: DIAMOND.
+-/
+theorem citation_render_monoid_diamond
+    (c1 c2 c3 : Contract) :
+    -- Render homomorphism (PMAT-212 lifted)
+    (render_silver (compose_contract c1 c2)).citations
+      = (c1.depends_on ++ c2.depends_on)
+          ++ (c1.references ++ c2.references)
+    -- Associativity (PMAT-212 companion lifted)
+    ∧ (compose_contract (compose_contract c1 c2) c3).depends_on
+      = (compose_contract c1 (compose_contract c2 c3)).depends_on
+    -- Left identity: empty contract on depends_on
+    ∧ (compose_contract
+        { depends_on := #[], references := #[] } c1).depends_on
+      = c1.depends_on
+    -- Right identity
+    ∧ (compose_contract c1
+        { depends_on := #[], references := #[] }).depends_on
+      = c1.depends_on := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · exact contract_composition_associative_platinum c1 c2 c3
+  · unfold compose_contract
+    simp
+  · unfold compose_contract
+    simp
+
 end XpileContracts.CXpileContractBackendTrait
