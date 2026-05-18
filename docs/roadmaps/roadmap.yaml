@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-145
+  github_issue: null
+  item_type: task
+  title: 'PMAT-145: status-history sweep — INDEX + 2026-05-18 substrate-completion doc'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-05-18T12:30:00Z
+  updated: 2026-05-18T12:30:00Z
+  spec: null
+  acceptance_criteria:
+  - INDEX.md row 19 and 2026-05-18-substrate-completion.md updated to reflect the post-PMAT-127..144 quality-sweep state. Session header gains "Quality Sweep" as 4th track. Numbers section corrects 24 paired discharges → 62; 3-stratum minimum → 4-stratum minimum (single demo Runtime fixture each); notes zero-warnings substrate state. INDEX.md row extended from PMAT-058..122 → PMAT-058..145.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-144
   github_issue: null
   item_type: task

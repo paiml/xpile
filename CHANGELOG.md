@@ -7,6 +7,10 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — status history reflects post-quality-sweep state (PMAT-145)
+
+`docs/status/2026-05-18-substrate-completion.md` and `docs/status/INDEX.md` extended to incorporate the post-PMAT-127..144 quality-sweep work in the 2026-05-18 session record. The session-log header now lists "Quality Sweep" as a fourth track; the Numbers section corrects "24 paired discharges" → "62 paired discharges", "3-stratum minimum" → "4-stratum minimum (single demo Runtime fixture each)", and notes the zero-warnings substrate state. INDEX.md row 19 extended from "PMAT-058..122" to "PMAT-058..145" with the same numeric corrections.
+
 ### Docs — sub-spec theorem counts refresh (PMAT-144)
 
 `docs/specifications/sub/kaizen-fleet.md` and `docs/specifications/sub/provability-roadmap.md` updated to reflect the post-PMAT-127..138 + post-substrate-completion state:
