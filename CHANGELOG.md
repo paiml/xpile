@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Gold-tier refinement: `PyIntFast` subtype on C-PY-INT-ARITH `addition_no_overflow` (PMAT-185 / XPILE-REFINE-PY-INT-ARITH-005)
+
+**First Gold-tier theorem in the entire xpile substrate.** Opens the next tier of refinement after the Silver-completion milestone at PMAT-183.
+
+Per ruchy 5.0 §14.10.5, the Gold tier is defined by:
+1. Typed structural model (already at Silver)
+2. **Subtype-encoded preconditions** (NEW at Gold) — preconditions move from hypotheses to refinement subtypes
+
+The Gold model:
+- `PyIntFast := { n : Int // fits_i64 n }` — refinement subtype carrying its own `fits_i64` witness
+- `PyIntFast.add_with_fits_proof`: addition with explicit carry-out check
+- `pyint_fast_add_returns_fast_gold` (wired): proves `(add a b h_sum).val = a.val + b.val`
+- `pyint_fast_witness_gold`: the underlying value's fits_i64 witness is preserved by construction
+- `gold_subtype_agrees_with_silver_dispatch`: bridges the Gold subtype to the Silver dispatcher — both agree on the fits domain
+
+**What Gold captures that Silver couldn't**:
+- Silver: "IF `fits_i64 (a + b)`, THEN the result matches" — fits_i64 is a hypothesis at every call site
+- Gold: "the result IS a PyIntFast" — the fits_i64 proof TRAVELS WITH the value through all subsequent calls; downstream code chains PyIntFast additions without re-proving fits_i64
+
+The type system rules out invalid inputs at CONSTRUCTION time: a caller without a fits_i64 proof cannot create the PyIntFast. An emitter accepting raw Int values is upgradeable to PyIntFast by inserting witness-construction at the boundary — once inside the typed region, no precondition propagation needed.
+
+YAML: adds new equation `pyint_fast_add_returns_fast_gold` wired to the Gold theorem. `xpile quorum` view for C-PY-INT-ARITH: Sem=19 (was 18), Sym=9, Run=4, Ext=17 (was 15).
+
 ### Docs — Silver-completion milestone reflected across README/spec/audit/status (PMAT-184)
 
 Doc sweep recording the Silver-completion milestone landed at PMAT-183. Every equation in every contract in the substrate now has Silver-tier typed-AST refinement (42/42 equations).

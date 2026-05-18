@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-185
+  github_issue: null
+  item_type: task
+  title: 'PMAT-185: FIRST Gold-tier refinement — PyIntFast subtype on C-PY-INT-ARITH addition_no_overflow (XPILE-REFINE-PY-INT-ARITH-005)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T08:30:00Z
+  updated: 2026-05-19T08:30:00Z
+  spec: null
+  acceptance_criteria:
+  - First Gold-tier theorem in the substrate. PyIntFast := { n : Int // fits_i64 n } refinement subtype encodes fits_i64 precondition at type level. pyint_fast_add_returns_fast_gold (wired) + pyint_fast_witness_gold + gold_subtype_agrees_with_silver_dispatch companions. Captures what Silver couldn't model — fits_i64 proof travels with the value through subsequent calls. Downstream code chains PyIntFast additions without re-proving. Per ruchy 5.0 §14.10.5 Gold tier = typed structural model + subtype-encoded preconditions. C-PY-INT-ARITH Sem 18 → 19, Ext 15 → 17.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-184
   github_issue: null
   item_type: task
