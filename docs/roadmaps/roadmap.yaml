@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-220
+  github_issue: null
+  item_type: task
+  title: 'PMAT-220: Doc sweep — Diamond-tier kickoff (PMAT-214..219) reflected across docs'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T02:00:00Z
+  updated: 2026-05-20T02:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Aggregate refresh: 224 Lean / 267 stratum-vote artifacts → 236 Lean (53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 12 Diamond) / 279 stratum-vote artifacts. README/spec/audit/status all updated with Diamond-tier kickoff framing. All 6 Diamond theorems enumerated by PMAT and algebraic category. PMAT range extended PMAT-058..220.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-219
   github_issue: null
   item_type: task
