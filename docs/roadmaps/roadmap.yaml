@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-253
+  github_issue: null
+  item_type: task
+  title: 'PMAT-253: Write docs/specifications/sub/diamond-taxonomy.md cataloging all 31+ Diamond categories'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T18:30:00Z
+  updated: 2026-05-20T18:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Comprehensive reference doc systematically cataloging every Diamond category in the substrate by algebraic structure family (monoid, group, lattice, functor, relation, subtype, pure-function). Includes tier-progression table, coverage milestones, 4 proof-pattern recipes, "when to add a new Diamond" decision rubric (4 criteria), CI-enforcement summary, and cross-references. Canonical reference for future contributors.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-252
   github_issue: null
   item_type: task
