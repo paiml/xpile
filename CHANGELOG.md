@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — NINTH Platinum-tier refinement: citation composition homomorphism on C-NOTATION-LATEX-MATH-TO-EQUATION (PMAT-208 / XPILE-REFINE-NOTATION-005)
+
+Ninth Platinum-tier theorem in the substrate. **Extends Platinum to C-NOTATION-LATEX-MATH-TO-EQUATION** — Platinum coverage now spans **7 of 12 contracts across all 5 layers**.
+
+**Third demonstration of the functoriality / monoid-homomorphism pattern** (after PMAT-202 Python lists and PMAT-207 Lean inductives). Citation lowering preserves the per-component string-concatenation monoid: `lower(compose(c1, c2)).contract_id = lower(c1).contract_id ++ lower(c2).contract_id`.
+
+The Platinum theorems:
+- `citation_composition_homomorphism_platinum` (wired): contract_id field homomorphism
+- `bib_key_composition_homomorphism_platinum`: companion — bib_key also forms a homomorphism (per-component preservation)
+- `citation_composition_associative_platinum`: composition is associative via `String.append_assoc`
+
+**Cross-domain consistency demonstrated across THREE distinct algebraic structures**:
+- List α (PMAT-202): Python list lowering
+- Inductive types (PMAT-207): Lean inductive → enum  
+- **String pairs (PMAT-208): LaTeX citation set**
+
+The substrate has now demonstrated functoriality on three distinct lowerings, confirming the pattern is universal across Layer-2 contract domains.
+
+YAML: adds new equation `citation_composition_homomorphism_platinum` wired to the Platinum theorem. `xpile quorum` view for C-NOTATION-LATEX-MATH-TO-EQUATION: Sem=16 (was 15), Sym=7, Run=1, Ext=11.
+
 ### Added — EIGHTH Platinum-tier refinement: variant arity homomorphism on C-XLATE-LEAN-TO-RUST (PMAT-207 / XPILE-REFINE-XLATE-LEAN-005)
 
 Eighth Platinum-tier theorem in the substrate. **Extends Platinum to C-XLATE-LEAN-TO-RUST** — the first Layer-2 forward-translation contract to receive Platinum coverage. Second demonstration of the functoriality/homomorphism pattern (PMAT-202 was the first on Python list lowering), this time on Lean inductive lowering.

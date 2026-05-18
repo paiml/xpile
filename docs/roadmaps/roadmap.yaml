@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-208
+  github_issue: null
+  item_type: task
+  title: 'PMAT-208: NINTH Platinum-tier refinement — citation composition homomorphism on C-NOTATION-LATEX-MATH-TO-EQUATION (XPILE-REFINE-NOTATION-005)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T20:00:00Z
+  updated: 2026-05-19T20:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Ninth Platinum-tier theorem. Extends Platinum to seventh contract (C-NOTATION-LATEX-MATH-TO-EQUATION). Third demonstration of functoriality / monoid-homomorphism pattern (after PMAT-202 Python lists and PMAT-207 Lean inductives), now over the (String, ++, "") monoid. citation_composition_homomorphism_platinum (wired) + bib_key_composition_homomorphism_platinum + citation_composition_associative_platinum (String.append_assoc) companions. Functoriality pattern now demonstrated on THREE distinct algebraic structures across Layer-2 contracts. C-NOTATION-LATEX-MATH-TO-EQUATION Sem 15 → 16.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-207
   github_issue: null
   item_type: task

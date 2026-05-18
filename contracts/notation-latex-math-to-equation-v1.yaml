@@ -451,6 +451,41 @@ equations:
     postconditions:
       - "an emitter that drops bib_key during YAML emission would orphan the citation from LaTeX's \\cite resolution — caught at the structural field level"
 
+  citation_composition_homomorphism_platinum:
+    # PMAT-208 / XPILE-REFINE-NOTATION-005: NINTH Platinum-tier
+    # refinement in the substrate. Extends Platinum to
+    # C-NOTATION-LATEX-MATH-TO-EQUATION. Third demonstration of
+    # the functoriality / monoid-homomorphism Platinum pattern
+    # (after PMAT-202 Python lists and PMAT-207 Lean inductives).
+    # Citation lowering is a STRICT MONOID HOMOMORPHISM:
+    # preserves the operation, associativity, and per-component
+    # composition. Companion theorems
+    # bib_key_composition_homomorphism_platinum and
+    # citation_composition_associative_platinum (String.append_assoc).
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.citation_composition_homomorphism_platinum"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      lower(compose(c1, c2)).contract_id
+        == lower(c1).contract_id ++ lower(c2).contract_id
+      (functoriality / monoid homomorphism)
+    domain: |
+      Any two LatexCitationSilver values composed via per-
+      component string concatenation. The Platinum upgrade
+      captures the homomorphism property over the (String, ++,
+      "") monoid.
+    invariants:
+      - "NINTH Platinum theorem; THIRD demonstration of functoriality / monoid-homomorphism pattern (after PMAT-202 list, PMAT-207 inductive)"
+      - "citation lowering preserves the per-component string-concatenation monoid"
+      - "bib_key also forms a homomorphism (companion theorem)"
+      - "associativity holds via String.append_assoc (companion theorem)"
+      - "cross-domain consistency: same algebraic property across three contract taxonomies (Python lists, Lean inductives, LaTeX citations)"
+    preconditions:
+      - "two well-formed LatexCitationSilver values"
+      - "no special preconditions — homomorphism is universal over String concatenation"
+    postconditions:
+      - "an emitter that processes citations piecewise produces the same observable result as monolithic emission — Platinum guarantees the strategies are EQUIVALENT"
+      - "substrate has now demonstrated functoriality on THREE distinct lowerings, confirming the pattern is portable across Layer-2 contract domains"
+
 proof_obligations:
   - type: postcondition
     property: math-mode round-trips through render() losslessly
