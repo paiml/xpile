@@ -546,4 +546,101 @@ theorem silver_length_preserved (vec_len : Nat) (target : CastTarget) :
     (lower_length_method_silver vec_len target).raw_usize_len = vec_len := by
   rfl
 
+/-! ## PMAT-192 — SEVENTH Gold-tier refinement: NonEmptyHomogeneousList
+    polymorphic subtype (XPILE-REFINE-XLATE-PY-LIST-003).
+
+    Seventh Gold-tier theorem in the substrate. **Extends Gold
+    to a seventh contract** (C-XLATE-PY-LIST-TO-VEC, Layer-2).
+
+    Third demonstration of the collection-cardinality subtype
+    pattern (after PMAT-189 NonEmptyDefinition on
+    NOTATION-LATEX-MATH-TO-EQUATION and PMAT-191
+    NonEmptyPreconditionList on C-XLATE-RUST-FN-TO-LEAN-THM).
+
+    **First Gold refinement applied to a POLYMORPHIC Silver
+    model**: HomogeneousListSilver is parameterised over
+    element type α. The Gold subtype must thread the polymorphic
+    parameter — `NonEmptyHomogeneousList α := { l :
+    HomogeneousListSilver α // l.elements ≠ [] }` — demonstrating
+    that refinement subtypes compose cleanly with polymorphism.
+
+    Captures what Silver couldn't model:
+    - Silver: "elements preserved IF list has at least one
+      element" (precondition as a separate obligation, regardless
+      of element type)
+    - Gold: "input IS a NonEmptyHomogeneousList α" (non-emptiness
+      witness travels with the value through α-polymorphic
+      lowering)
+
+    Cross-pattern composition: this PR demonstrates that the
+    Gold-tier subtype pattern works uniformly with Silver-tier
+    polymorphism. The two compose orthogonally — Silver
+    introduces the type parameter, Gold adds the refinement
+    invariant.
+
+    Status: discharged at v0.1.0 (PMAT-192). Tier: GOLD.
+    Seventh Gold theorem in the substrate, first to apply Gold
+    over polymorphic Silver. -/
+
+/-- Gold-tier polymorphic refinement subtype: a homogeneous list
+    proven to have at least one element. The α parameter is
+    inherited from the Silver model; the non-emptiness witness
+    travels with the value. -/
+def NonEmptyHomogeneousList (α : Type) :=
+  { l : HomogeneousListSilver α // l.elements ≠ [] }
+
+/-- Extract the underlying Silver homogeneous list. -/
+def NonEmptyHomogeneousList.val {α : Type} (n : NonEmptyHomogeneousList α) :
+    HomogeneousListSilver α :=
+  n.val
+
+/-- Gold-tier lowering: extracts the structural data; the
+    non-emptiness witness is carried into the typed output. -/
+def lower_non_empty_homogeneous_gold {α : Type}
+    (n : NonEmptyHomogeneousList α) : TypedRustVecSilver α :=
+  lower_homogeneous_list_silver n.val
+
+/--
+  **Gold-tier refinement theorem** — lowering a polymorphic
+  NonEmptyHomogeneousList preserves the elements list AND the
+  non-emptiness witness travels with the value at the type
+  level. Holds for any element type α.
+
+  This is the seventh Gold theorem in the substrate, and the
+  first to apply the refinement-subtype pattern OVER a polymorphic
+  Silver model. Captures what Silver couldn't model:
+  - Silver: "elements preserved" (no constraint on emptiness)
+  - Gold: "input IS a NonEmptyHomogeneousList α — non-emptiness
+    witness travels with the value polymorphically"
+
+  Status: **discharged at v0.1.0 (PMAT-192)**. Tier: GOLD.
+-/
+theorem non_empty_homogeneous_preserves_elements_gold {α : Type}
+    (n : NonEmptyHomogeneousList α) :
+    (lower_non_empty_homogeneous_gold n).elements = n.val.elements := by
+  rfl
+
+/--
+  **Gold-tier refinement theorem** — the non-emptiness witness
+  is preserved through polymorphic lowering. The output's
+  elements is non-empty BY TYPE for any α.
+-/
+theorem non_empty_homogeneous_witness_gold {α : Type}
+    (n : NonEmptyHomogeneousList α) :
+    (lower_non_empty_homogeneous_gold n).elements ≠ [] := by
+  unfold lower_non_empty_homogeneous_gold lower_homogeneous_list_silver
+  exact n.property
+
+/--
+  **Gold-tier refinement theorem** — bridges Gold to Silver: the
+  underlying elements agrees with what Silver's
+  `homogeneous_elements_preserved_silver` produces. Gold simply
+  carries the non-emptiness witness in addition, polymorphically.
+-/
+theorem gold_non_empty_homogeneous_agrees_with_silver {α : Type}
+    (n : NonEmptyHomogeneousList α) :
+    (lower_non_empty_homogeneous_gold n).elements
+      = (lower_homogeneous_list_silver n.val).elements := by
+  rfl
+
 end XpileContracts.CXlatePyListToVec
