@@ -1032,4 +1032,83 @@ theorem citation_string_monoid_diamond
   · unfold compose_latex_citation_silver
     simp
 
+/-! ## PMAT-234 — SECOND Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION
+    (XPILE-REFINE-NOTATION-007): citation-product-monoid axioms.
+
+    **Sixth depth-2 Diamond in the substrate** (after PMAT-228
+    L1, PMAT-229 L2, PMAT-230 L4, PMAT-231 L5, PMAT-232 L3 — that
+    completed UNIVERSAL depth-2 across all 5 layers). PMAT-234
+    extends depth-2 coverage to a SECOND Layer-4 contract
+    (Notation joins FfiCpython as the second Layer-4 contract
+    with two Diamonds).
+
+    Notation already has the citation-STRING-MONOID Diamond at
+    PMAT-219 covering ONLY the contract_id field. PMAT-234 adds
+    the CITATION-PRODUCT-MONOID Diamond — a fundamentally
+    distinct algebraic category covering BOTH fields
+    simultaneously as a free product of two string monoids:
+
+    - PMAT-219: (String_contract_id, ++, "") string-monoid on
+      just one field
+    - PMAT-234: (String × String, ++_componentwise, ("", ""))
+      product-monoid on the FULL Citation value
+
+    The categorical distinction: string-monoid is on a single
+    string component; product-monoid captures the algebraic
+    PRODUCT of two independent string-monoids. The latter is
+    strictly stronger — knowing each component is a monoid does
+    NOT imply they form a product-monoid; the product structure
+    requires that operations are component-wise (no cross-field
+    interference).
+
+    Status: discharged at v0.1.0 (PMAT-234). Tier: DIAMOND.
+    SECOND Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION. -/
+
+/--
+  **Diamond-tier refinement theorem** — citation values form a
+  PRODUCT MONOID under the (contract_id, bib_key) field pair.
+
+  Combines four properties into the PRODUCT-MONOID
+  axiomatization on `(LatexCitationSilver, compose, empty)`:
+  (a) contract_id homomorphism (PMAT-208a lifted)
+  (b) bib_key homomorphism (PMAT-208b lifted)
+  (c) Left identity on contract_id (empty composes to identity)
+  (d) Left identity on bib_key (empty composes to identity)
+
+  An emitter that lowers contract_id correctly but introduces
+  hidden coupling between contract_id and bib_key (e.g., always
+  setting bib_key = contract_id without honoring the source
+  value) would falsify (b) — the bib_key homomorphism would fail
+  on inputs where the source bib_key differs from contract_id.
+
+  Status: **discharged at v0.1.0 (PMAT-234)**. Tier: DIAMOND.
+-/
+theorem citation_product_monoid_diamond
+    (c1 c2 : LatexCitationSilver) :
+    -- (a) contract_id homomorphism (PMAT-208a lifted)
+    (lower_citation_silver
+      (compose_latex_citation_silver c1 c2)).contract_id
+      = (lower_citation_silver c1).contract_id
+          ++ (lower_citation_silver c2).contract_id
+    -- (b) bib_key homomorphism (PMAT-208b lifted)
+    ∧ (lower_citation_silver
+        (compose_latex_citation_silver c1 c2)).bib_key
+      = (lower_citation_silver c1).bib_key
+          ++ (lower_citation_silver c2).bib_key
+    -- (c) Left identity on contract_id (empty is identity)
+    ∧ (compose_latex_citation_silver
+        { contract_id := "", bib_key := "" } c1).contract_id
+      = c1.contract_id
+    -- (d) Left identity on bib_key (empty is identity)
+    ∧ (compose_latex_citation_silver
+        { contract_id := "", bib_key := "" } c1).bib_key
+      = c1.bib_key := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact citation_composition_homomorphism_platinum c1 c2
+  · exact bib_key_composition_homomorphism_platinum c1 c2
+  · unfold compose_latex_citation_silver
+    simp
+  · unfold compose_latex_citation_silver
+    simp
+
 end XpileContracts.CNotationLatexMathToEquation
