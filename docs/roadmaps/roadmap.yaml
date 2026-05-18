@@ -1986,3 +1986,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-121
+  github_issue: null
+  item_type: task
+  title: 'PMAT-121: bashrs-backend capstone emit test — multi-variant Module renders all Layer B variants byte-correctly (PMAT-092 mirror on emission side)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-19T02:30:00Z
+  updated: 2026-05-19T02:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add lower_capstone_module_emits_all_layer_b_variants in bashrs-backend asserting a Module with Stmt::{Cmd, Pipeline, ShellAssign} + Expr::{LitStr, QuotedString, ShellVar, CommandSubstitution, ShellSpecial} emits the expected shell lines. Mirror of PMAT-092 on the emission side. Guards composition refactors that pass the narrow per-variant tests but break inter-variant interactions. bashrs-backend now has 16 tests (up from 15).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

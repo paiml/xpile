@@ -747,4 +747,118 @@ mod tests {
             "error should explain the v0.1.0 stage shape constraint: {msg}"
         );
     }
+
+    #[test]
+    fn lower_capstone_module_emits_all_layer_b_variants() {
+        // PMAT-121: emission-side capstone — mirror of PMAT-092's
+        // frontend capstone. Construct a Module that uses every
+        // Layer B IR variant currently produced by bashrs-frontend
+        // (Stmt::Cmd + Stmt::Pipeline + Stmt::ShellAssign +
+        // Expr::LitStr + Expr::QuotedString + Expr::ShellVar +
+        // Expr::CommandSubstitution + Expr::ShellSpecial) and
+        // verify bashrs-backend emits the expected shell line for
+        // each. This guards against a future emission refactor
+        // that would regress any one variant's rendering without
+        // tripping the narrow per-variant tests.
+        //
+        // We don't include Stmt::ShellLoop here — the v0.1.0
+        // emission carries a body placeholder rather than fully
+        // rendering nested statements, so it has its own narrow
+        // test (`render_shell_loop_for_kind`).
+        use xpile_meta_hir::{
+            Block, Expr, Function, Item, QuotingStrategy, SourceLang, Stmt, Type,
+        };
+        let module = Module {
+            name: "capstone".into(),
+            source_lang: SourceLang::Shell,
+            items: vec![Item::Function(Function {
+                name: "main".into(),
+                params: vec![],
+                return_type: Type::I64,
+                body: Block {
+                    stmts: vec![
+                        // 1. ShellAssign with LitStr value
+                        Stmt::ShellAssign {
+                            name: "PORT".into(),
+                            value: Expr::LitStr("8080".into()),
+                        },
+                        // 2. ShellAssign with CommandSubstitution
+                        //    value (today's date)
+                        Stmt::ShellAssign {
+                            name: "TODAY".into(),
+                            value: Expr::CommandSubstitution(Box::new(Stmt::Cmd {
+                                program: "date".into(),
+                                args: vec![Expr::LitStr("+%Y".into())],
+                            })),
+                        },
+                        // 3. Cmd with mixed args:
+                        //    LitStr + ShellVar + ShellSpecial +
+                        //    QuotedString (Double)
+                        Stmt::Cmd {
+                            program: "echo".into(),
+                            args: vec![
+                                Expr::LitStr("port=".into()),
+                                Expr::ShellVar("PORT".into()),
+                                Expr::ShellSpecial("@".into()),
+                                Expr::QuotedString {
+                                    content: "hi $TODAY".into(),
+                                    quoting: QuotingStrategy::Double,
+                                },
+                            ],
+                        },
+                        // 4. Pipeline with three stages
+                        Stmt::Pipeline {
+                            stages: vec![
+                                Stmt::Cmd {
+                                    program: "cat".into(),
+                                    args: vec![Expr::LitStr("foo".into())],
+                                },
+                                Stmt::Cmd {
+                                    program: "grep".into(),
+                                    args: vec![Expr::LitStr("bar".into())],
+                                },
+                                Stmt::Cmd {
+                                    program: "wc".into(),
+                                    args: vec![Expr::LitStr("-l".into())],
+                                },
+                            ],
+                        },
+                    ],
+                    trailing_return: Expr::LitInt(0),
+                },
+            })],
+            ffi_boundaries: vec![],
+        };
+        let cfg = BackendConfig {
+            target: Target::Shell,
+            profile: Profile::RustOut,
+            hardware: None,
+        };
+        let art = BashrsBackend.lower(&module, &cfg).expect("lower");
+        // ShellAssign with LitStr
+        assert!(
+            art.primary.contains("\nPORT=8080\n"),
+            "expected `PORT=8080` ShellAssign emit; got:\n{}",
+            art.primary
+        );
+        // ShellAssign with CommandSubstitution
+        assert!(
+            art.primary.contains("\nTODAY=$(date +%Y)\n"),
+            "expected `TODAY=$(date +%Y)` ShellAssign emit; got:\n{}",
+            art.primary
+        );
+        // Cmd with mixed-variant args
+        assert!(
+            art.primary
+                .contains("\necho port= $PORT $@ \"hi $TODAY\"\n"),
+            "expected mixed-variant echo emit; got:\n{}",
+            art.primary
+        );
+        // Pipeline
+        assert!(
+            art.primary.contains("\ncat foo | grep bar | wc -l\n"),
+            "expected three-stage pipeline emit; got:\n{}",
+            art.primary
+        );
+    }
 }
