@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-171
+  github_issue: null
+  item_type: task
+  title: 'PMAT-171: Silver-tier — GIL-state model for gil_invariant on C-FFI-CPYTHON-EXT (XPILE-REFINE-FFI-CPYTHON-004), third Silver + first wiring of previously-unwired equation'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T01:00:00Z
+  updated: 2026-05-19T01:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Silver-tier refinement for gil_invariant_silver on C-FFI-CPYTHON-EXT (third Silver theorem on this contract after PMAT-160 and PMAT-168, and the first Silver upgrade that wires a previously-unwired equation — gil_invariant had no lean_theorem field at all pre-PMAT-171). Introduces GilState enum (Held | Released) and FfiCallWithGilSilver { payload, gil_at_enter, gil_at_exit }. Theorem proves the (enter, exit) GIL pair is preserved by lowering for balanced inputs; specialization gil_held_implies_held_silver locks in the default-case. YAML adds new lean_theorem wiring to gil_invariant equation. C-FFI-CPYTHON-EXT Sem 3 → 4, Ext 6 → 8 via the new wiring.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-170
   github_issue: null
   item_type: task
