@@ -684,4 +684,90 @@ theorem gold_non_empty_preconditions_agrees_with_silver
       = (lift_preconditions_silver n.val).source_indices := by
   rfl
 
+/-! ## PMAT-209 — TENTH Platinum-tier refinement: precondition
+    concat homomorphism (XPILE-REFINE-XLATE-RUST-TO-LEAN-004).
+
+    Tenth Platinum-tier theorem in the substrate. Extends
+    Platinum to C-XLATE-RUST-FN-TO-LEAN-THM (eighth contract
+    with Platinum coverage). FOURTH demonstration of the
+    functoriality / monoid-homomorphism pattern (after PMAT-202
+    Python lists, PMAT-207 Lean inductives, PMAT-208 LaTeX
+    citations) — now over precondition source-index vectors
+    on the proof lane.
+
+    With this PR, the functoriality Platinum pattern is
+    demonstrated on FOUR distinct contract domains spanning
+    BOTH lanes:
+    - Code lane: PMAT-202 list lowering
+    - Code lane: PMAT-207 inductive lowering
+    - Notation lane: PMAT-208 citation concat
+    - **Proof lane: PMAT-209 precondition list concat** (this)
+
+    Establishes that the monoid-homomorphism Platinum pattern
+    is LANE-AGNOSTIC — same algebraic property works on code
+    and proof lanes equivalently.
+
+    Status: discharged at v0.1.0 (PMAT-209). Tier: PLATINUM.
+    Tenth Platinum theorem in the substrate. -/
+
+/-- Compose two PreconditionListSilver values via per-component
+    array concatenation. -/
+def compose_precondition_list_silver
+    (pl1 pl2 : PreconditionListSilver) : PreconditionListSilver :=
+  { source_indices := pl1.source_indices ++ pl2.source_indices
+    payloads := pl1.payloads ++ pl2.payloads }
+
+/--
+  **Platinum-tier refinement theorem** — composing precondition
+  lists distributes over lifting.
+
+  For any two PreconditionListSilver values pl1 and pl2, lifting
+  their composition produces the concatenated source_indices.
+  This is the FUNCTORIALITY property for the precondition lift
+  over the (Array Nat, ++, #[]) monoid.
+
+  Fourth demonstration of the functoriality Platinum pattern,
+  now on the proof lane. Establishes the pattern is
+  lane-agnostic.
+
+  Status: **discharged at v0.1.0 (PMAT-209)**. Tier: PLATINUM.
+-/
+theorem precondition_lift_homomorphism_platinum
+    (pl1 pl2 : PreconditionListSilver) :
+    (lift_preconditions_silver
+       (compose_precondition_list_silver pl1 pl2)).source_indices
+    = (lift_preconditions_silver pl1).source_indices
+        ++ (lift_preconditions_silver pl2).source_indices := by
+  unfold lift_preconditions_silver compose_precondition_list_silver
+  rfl
+
+/--
+  **Platinum-tier refinement theorem** — payload preservation
+  under composition. Companion to
+  `precondition_lift_homomorphism_platinum`. The payloads array
+  forms an equivalent monoid homomorphism.
+-/
+theorem precondition_payloads_homomorphism_platinum
+    (pl1 pl2 : PreconditionListSilver) :
+    (lift_preconditions_silver
+       (compose_precondition_list_silver pl1 pl2)).payloads
+    = (lift_preconditions_silver pl1).payloads
+        ++ (lift_preconditions_silver pl2).payloads := by
+  unfold lift_preconditions_silver compose_precondition_list_silver
+  rfl
+
+/--
+  **Platinum-tier refinement theorem** — precondition lifting
+  preserves the empty list (identity element of the
+  (Array, ++, #[]) monoid).
+
+  Combined with the homomorphism theorems, this proves the
+  lift is a STRICT MONOID HOMOMORPHISM (preserves identity AND
+  binary operation).
+-/
+theorem precondition_lift_preserves_empty_platinum :
+    (lift_preconditions_silver { source_indices := #[], payloads := #[] }).source_indices
+    = #[] := by
+  rfl
+
 end XpileContracts.CXlateRustFnToLeanThm

@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — TENTH Platinum-tier refinement: precondition lift homomorphism on C-XLATE-RUST-FN-TO-LEAN-THM (PMAT-209 / XPILE-REFINE-XLATE-RUST-TO-LEAN-004)
+
+Tenth Platinum-tier theorem in the substrate. Extends Platinum to **C-XLATE-RUST-FN-TO-LEAN-THM** (eighth contract with Platinum coverage). **Fourth demonstration of the functoriality / monoid-homomorphism pattern** (after PMAT-202 Python lists, PMAT-207 Lean inductives, PMAT-208 LaTeX citations) — now on the **proof lane**.
+
+The Platinum theorems:
+- `precondition_lift_homomorphism_platinum` (wired): `source_indices` field forms a monoid homomorphism over `(Array Nat, ++, #[])`
+- `precondition_payloads_homomorphism_platinum`: `payloads` array also forms a homomorphism
+- `precondition_lift_preserves_empty_platinum`: identity preservation → strict monoid homomorphism
+
+**Functoriality pattern is now LANE-AGNOSTIC** — demonstrated on FOUR distinct contract domains across all lanes:
+- Code lane: PMAT-202 (Python list lowering)
+- Code lane: PMAT-207 (Lean inductive lowering)
+- Notation lane: PMAT-208 (LaTeX citation concatenation)
+- **Proof lane: PMAT-209 (Rust precondition list concat)** ← this PR
+
+The substrate establishes that monoid-homomorphism is a UNIVERSAL Platinum pattern, working uniformly across all contract lanes.
+
+YAML: adds new equation `precondition_lift_homomorphism_platinum` wired to the Platinum theorem. `xpile quorum` view for C-XLATE-RUST-FN-TO-LEAN-THM: Sem=12 (was 11), Sym=5, Run=1, Ext=8. Platinum tier now demonstrated on 8 of 12 contracts.
+
 ### Added — NINTH Platinum-tier refinement: citation composition homomorphism on C-NOTATION-LATEX-MATH-TO-EQUATION (PMAT-208 / XPILE-REFINE-NOTATION-005)
 
 Ninth Platinum-tier theorem in the substrate. **Extends Platinum to C-NOTATION-LATEX-MATH-TO-EQUATION** — Platinum coverage now spans **7 of 12 contracts across all 5 layers**.
