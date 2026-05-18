@@ -205,6 +205,38 @@ equations:
     postconditions:
       - "an emitter using HashSet (or any unordered IR) for preconditions would falsify source_indices_preserved_silver — caught at the typed-vector level"
 
+  non_empty_preconditions_preserves_indices_gold:
+    # PMAT-191 / XPILE-REFINE-XLATE-RUST-TO-LEAN-003: SIXTH
+    # Gold-tier refinement in the substrate. Extends Gold to
+    # the Layer-2 reverse-translation direction (after PMAT-185
+    # Layer-1, PMAT-186 Layer-4, PMAT-187 Layer-5, PMAT-188
+    # Layer-2 forward direction, PMAT-189 Layer-2 notation).
+    # Second demonstration of the collection-cardinality
+    # subtype pattern (after PMAT-189 NonEmptyDefinition).
+    # NonEmptyPreconditionList := { pl : PreconditionListSilver
+    # // pl.source_indices.size > 0 } encodes precondition list
+    # non-emptiness at type level. Companion theorems
+    # non_empty_preconditions_witness_gold and
+    # gold_non_empty_preconditions_agrees_with_silver.
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.non_empty_preconditions_preserves_indices_gold"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    formula: |
+      lower_non_empty_preconditions(n).source_indices == n.val.source_indices
+      WITH n.val.source_indices.size > 0
+    domain: |
+      Same as rust_precondition_to_lean_hypothesis — but narrowed
+      to non-empty precondition lists at the type level.
+    invariants:
+      - "non-emptiness witness travels with the value through lowering"
+      - "downstream can iterate the source_indices without an empty-check"
+      - "the NonEmptyPreconditionList subtype rules out empty-list inputs at CONSTRUCTION time"
+      - "second demonstration of the collection-cardinality Gold pattern (after PMAT-189) — confirms the pattern is portable across contract domains"
+    preconditions:
+      - "the precondition list has at least one entry — encoded as a refinement subtype, not as an external proof obligation"
+    postconditions:
+      - "an emitter that constructs a PreconditionListSilver from a zero-entry list would not type-check against lower_non_empty_preconditions_gold"
+      - "cross-contract pattern reuse confirms non-empty-list refinement is a portable Gold-tier idiom"
+
   citation_bridge_via_attribute:
     # PMAT-136: Bronze-tier refinement theorem locks in byte-for-byte
     # contract_id + equation_name preservation in @[xpile_contract,

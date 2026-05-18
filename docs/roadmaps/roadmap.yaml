@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-191
+  github_issue: null
+  item_type: task
+  title: 'PMAT-191: SIXTH Gold-tier refinement — NonEmptyPreconditionList subtype on C-XLATE-RUST-FN-TO-LEAN-THM (XPILE-REFINE-XLATE-RUST-TO-LEAN-003)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T11:30:00Z
+  updated: 2026-05-19T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Sixth Gold-tier theorem in the substrate. Extends Gold to Layer-2 reverse-translation direction. NonEmptyPreconditionList := { pl : PreconditionListSilver // pl.source_indices.size > 0 } encodes precondition list non-emptiness at type level. non_empty_preconditions_preserves_indices_gold (wired) + non_empty_preconditions_witness_gold + gold_non_empty_preconditions_agrees_with_silver companions. Second demonstration of collection-cardinality Gold pattern (after PMAT-189) — confirms portability across contract domains (LaTeX definitions vs Rust precondition lists). C-XLATE-RUST-FN-TO-LEAN-THM Sem 10 → 11.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-190
   github_issue: null
   item_type: task
