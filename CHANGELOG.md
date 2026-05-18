@@ -7,6 +7,15 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Refresh README workspace-test count: 204 → 211 (PMAT-255)
+
+The Diamond program shipped over PMAT-249..251 added 7 new tests:
+
+- 2 `xpile diamond` reporter unit tests (PMAT-249, `diamond_tests` module in `crates/xpile/src/main.rs`)
+- 5 `diamond_coverage.rs` CI-gate integration tests (PMAT-251, `crates/xpile/tests/diamond_coverage.rs`)
+
+Workspace-test count: 204 → 211. README updated to reflect the new total + cite the two PMATs that added them.
+
 ### Added — Section 28 (Diamond-Tier Refinement Taxonomy) to xpile-spec.md (PMAT-254)
 
 Wires the new `sub/diamond-taxonomy.md` reference doc into the canonical spec:
