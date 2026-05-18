@@ -2156,3 +2156,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-131
+  github_issue: null
+  item_type: task
+  title: 'PMAT-131: xlate-py-list-to-vec contract — pre/postconditions for all 5 equations (warnings 13 → 5)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T07:00:00Z
+  updated: 2026-05-18T07:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Batch-add genuine domain-design pre/postconditions for all 5 equations in xlate-py-list-to-vec-v1.yaml (homogeneous_list_to_vec, heterogeneous_list_rejected, alias_observation_inserts_clone, iteration_order_preserved, length_method). Each statement grounded in CPython reference-semantics, alias-graph observability, byte-identity of the lowered RustVec, and explicit usize↔i64 cast safety. Contract warnings 13 → 5 (remaining 5 are PV-ENF-002 for the 4 equations not yet behind Lean theorems plus PV-VAL-001 qa_gate). Total substrate warnings 43 → 35.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

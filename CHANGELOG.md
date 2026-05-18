@@ -7,6 +7,39 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — `xlate-py-list-to-vec` contract gains domain-grounded pre/postconditions (PMAT-131)
+
+All 5 equations now carry equation-specific preconditions and
+postconditions. Each statement is a domain-design judgment call
+grounded in CPython reference-semantics, alias-graph observability,
+byte-identity of the lowered RustVec, and explicit usize↔i64 cast
+safety — not a blanket template.
+
+- `homogeneous_list_to_vec`: T must be one of the canonical
+  {int, float, str, bool, bytes}; emitted Vec must preserve length,
+  ordering, and reject implicit coercion at element boundaries.
+- `heterogeneous_list_rejected`: inferred elements must yield ≥2
+  distinct types; the result must be
+  `Err(TranslationError::Heterogeneous { found_types })` with the
+  full type set, and no Rust code is emitted for the offending list.
+- `alias_observation_inserts_clone`: the alias graph must identify
+  at least one (binder, observer) pair where mutation crosses the
+  boundary; emission inserts explicit `.clone()` or
+  `Rc<RefCell<...>>`; runtime observable mutation must match
+  CPython bit-for-bit.
+- `iteration_order_preserved`: source uses the standard list-iteration
+  protocol and is not interleaved with mutation; emitted iteration
+  is source-order position-by-position with no reordering even when
+  the body is order-independent.
+- `length_method`: `len(py_list)` where py_list is a translated
+  `Vec<T_rust>`; emission uses `rust_vec.len()` (returns usize) and
+  inserts an explicit `as i64` / `i64::try_from(...).expect(...)`
+  cast when the consumer expects i64, never silent truncation.
+
+Contract warnings 13 → 5 (the remaining 5 are PV-ENF-002 for the 4
+equations not yet behind Lean theorems plus PV-VAL-001 qa_gate).
+Total substrate warnings 43 → 35.
+
 ### Python subset (live, runtime-verified)
 
 This list is the **canonical source of truth** for the supported subset.
