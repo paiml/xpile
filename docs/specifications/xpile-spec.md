@@ -52,6 +52,7 @@
 | 25 | [LaTeX Bidirectional Integration](#25-latex-bidirectional-integration) | [sub/latex-bidirectional.md](sub/latex-bidirectional.md) |
 | 26 | [Audit-acknowledged Caveats](#26-audit-acknowledged-caveats) | [audit-design.md](audit-design.md) |
 | 27 | [Provability Roadmap — ruchy 5.0 alignment](#27-provability-roadmap--ruchy-50-alignment) | [sub/provability-roadmap.md](sub/provability-roadmap.md) |
+| 28 | [Diamond-Tier Refinement Taxonomy](#28-diamond-tier-refinement-taxonomy) | [sub/diamond-taxonomy.md](sub/diamond-taxonomy.md) |
 
 ---
 
@@ -510,6 +511,36 @@ Ruchy 5.0 is meaningfully ahead of xpile on **three** specific axes:
 3. **Self-reflection tooling** — `ruchy tier` reports on Ruchy's own contract coverage with eight CI gates, regression baselines, TOML config, JSON / markdown output. xpile has nothing analogous.
 
 audit-design.md §6 already shows we know *how* the five-whys → provable-contract loop is supposed to work; this section commits to applying it to ourselves with the same rigor ruchy 5.0 commits to applying it to its own stdlib. Each "planned for adoption" row above is sized to be one PR; the implementation order follows [sub/provability-roadmap.md](sub/provability-roadmap.md).
+
+---
+
+## 28. Diamond-Tier Refinement Taxonomy
+
+**Sub-spec**: [sub/diamond-taxonomy.md](sub/diamond-taxonomy.md)
+
+The substrate's Diamond-tier program (PMAT-214..253) ships 31 wired Diamond equations across 12 contracts, demonstrating 30+ distinct algebraic categories grouped into 7 families (monoid, group, lattice, functor, relation, subtype, pure-function).
+
+### Coverage state (v0.1.0)
+
+| Depth | Coverage | Mechanism |
+|---|---|---|
+| Diamond depth-1 | 12/12 contracts (UNIVERSAL) | PMAT-214..226 |
+| Diamond depth-2 | 12/12 contracts (UNIVERSAL, CI-enforced) | PMAT-228..250, CI gate via PMAT-251 |
+| Diamond depth-3 | 5/5 layers (UNIVERSAL across layers) | PMAT-241..245 |
+| Diamond depth-4 | 2 contracts opened | PMAT-247 (PyIntArith L1), PMAT-248 (CompileRustToPtxMma L5) |
+
+### Tooling
+
+- `xpile diamond` (PMAT-249): live per-contract Diamond count + depth classification, with `--json` output for CI dashboards.
+- `crates/xpile/tests/diamond_coverage.rs` (PMAT-251): CI gate — 5 integration tests enforce depth-1/2/3/4 invariants; substrate-wide Diamond coverage cannot regress.
+
+### Canonical reference
+
+Per-category catalog, proof-pattern recipes, and "when to add a new Diamond" decision rubric live in [sub/diamond-taxonomy.md](sub/diamond-taxonomy.md). Every new Diamond PR should cross-reference its algebraic family there.
+
+### Falsification posture
+
+If a future PR weakens Diamond coverage — removes a `_diamond` equation, breaks a contract's depth-2 invariant, etc. — the `diamond_coverage.rs` gate fails the build. This is the **enforcement** counterpart to the **reporter** posture of `xpile quorum`.
 
 ---
 

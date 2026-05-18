@@ -7,6 +7,15 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Section 28 (Diamond-Tier Refinement Taxonomy) to xpile-spec.md (PMAT-254)
+
+Wires the new `sub/diamond-taxonomy.md` reference doc into the canonical spec:
+
+- **TOC entry**: row 28 linking to sub/diamond-taxonomy.md
+- **Body section**: §28 covers (a) coverage state across depth-1..4, (b) tooling (`xpile diamond`, `diamond_coverage.rs` gate), (c) pointer to the canonical taxonomy doc, (d) falsification posture for Diamond regressions
+
+The Diamond program now has a stable home in the spec for future contributors to reference.
+
 ### Added — `docs/specifications/sub/diamond-taxonomy.md` cataloging all 31+ Diamond categories (PMAT-253)
 
 Comprehensive reference doc systematically cataloging every Diamond category in the substrate by algebraic structure family:

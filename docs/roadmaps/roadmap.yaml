@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-254
+  github_issue: null
+  item_type: task
+  title: 'PMAT-254: Add Section 28 (Diamond Taxonomy) to xpile-spec.md TOC + body'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T19:00:00Z
+  updated: 2026-05-20T19:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Wire the new sub/diamond-taxonomy.md reference doc into xpile-spec.md as Section 28. TOC entry + body section covering coverage state, tooling (xpile diamond + diamond_coverage.rs gate), canonical reference pointer, and falsification posture.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-253
   github_issue: null
   item_type: task
