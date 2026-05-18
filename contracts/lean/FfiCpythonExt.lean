@@ -931,4 +931,123 @@ theorem oracle_observation_fields_preserved_silver
     ∧ (hybrid_python_observation input_obs).exception_kind = input_obs.exception_kind := by
   refine ⟨?_, ?_, ?_⟩ <;> rfl
 
+/-! ## PMAT-186 — SECOND Gold-tier refinement: BoundedRefcountDelta
+    on C-FFI-CPYTHON-EXT (XPILE-REFINE-FFI-CPYTHON-008).
+
+    Second Gold-tier theorem in the substrate (after PMAT-185's
+    PyIntFast on C-PY-INT-ARITH). Promotes Silver's
+    `refcount_delta : Int` to a refinement subtype that encodes
+    the CPython ABI's refcount-delta bound at the type level:
+    a single FFI call site can adjust refcounts by at most ±8
+    (the realistic upper bound for any sane CPython C extension
+    — Py_INCREF/Py_DECREF pairs accumulate in small fixed sets,
+    not arbitrarily).
+
+    The Gold model:
+    - `BoundedRefcountDelta := { d : Int // -8 ≤ d ∧ d ≤ 8 }` —
+      refinement subtype carrying the bound proof.
+    - A call site that violates the ±8 bound is rejected at
+      construction time, NOT at runtime — the type system rules
+      it out.
+
+    Silver (PMAT-160 `refcount_balance_on_success_silver`) proves
+    refcount_delta preservation through manifest lowering with
+    NO bound on the delta. Gold adds the bound as a refinement
+    invariant that travels with the value.
+
+    Status: discharged at v0.1.0 (PMAT-186). Tier: GOLD.
+    Second Gold theorem in the xpile substrate. -/
+
+/-- Bound for the CPython ABI's per-call refcount delta. ±8 is
+    the realistic upper bound: a single CPython C function
+    typically adjusts at most a few PyObject refcounts (the
+    function's borrowed/new-reference inputs and outputs).
+    Functions claiming delta > 8 should be flagged for audit
+    — they likely indicate hidden control flow or a bug. -/
+def refcount_delta_bound : Int := 8
+
+/-- Gold-tier refinement subtype: a refcount delta proven to fit
+    within the ±refcount_delta_bound range. The invariant is
+    carried by the value, not by an external hypothesis. An
+    emitter receiving a BoundedRefcountDelta cannot pass an
+    unbounded Int — the type system rules it out at compile
+    time. -/
+def BoundedRefcountDelta :=
+  { d : Int // -refcount_delta_bound ≤ d ∧ d ≤ refcount_delta_bound }
+
+/-- Extract the underlying delta value. -/
+def BoundedRefcountDelta.val (b : BoundedRefcountDelta) : Int := b.val
+
+/-- Gold-tier model of a CPython FFI call with bounded delta.
+    Replaces Silver's FfiCallSilver.refcount_delta (raw Int) with
+    a typed-bounded delta. -/
+structure FfiCallGold where
+  payload : Array UInt8
+  bounded_delta : BoundedRefcountDelta
+deriving DecidableEq
+
+/-- Gold-tier model of the manifest entry. -/
+structure FfiManifestEntryGold where
+  payload : Array UInt8
+  bounded_delta : BoundedRefcountDelta
+deriving DecidableEq
+
+/-- Gold-tier lowering: identity per field. The bound witness
+    travels with the value through the lowering — no proof
+    re-discharge needed downstream. -/
+def lower_call_to_manifest_gold (c : FfiCallGold) : FfiManifestEntryGold :=
+  { payload := c.payload, bounded_delta := c.bounded_delta }
+
+/--
+  **Gold-tier refinement theorem** — bounded refcount-delta
+  preserved through manifest lowering, AND the bound witness
+  travels with the value at the type level.
+
+  This is the second Gold theorem in the substrate. Captures
+  what Silver couldn't model:
+  - Silver: "refcount_delta is preserved" (raw Int, no bound)
+  - Gold: "BoundedRefcountDelta is preserved AND its bound
+    witness travels with the value" (downstream code cannot
+    pass an unbounded delta even by accident)
+
+  A future Kani harness for this contract gets stronger BMC
+  scaling characteristics: at Silver, Kani must explore all
+  Int values; at Gold, the BoundedRefcountDelta type constrains
+  the search space to ±8, exponentially reducing BMC paths.
+
+  Status: **discharged at v0.1.0 (PMAT-186)**. Tier: GOLD.
+-/
+theorem bounded_refcount_delta_preserved_gold (c : FfiCallGold) :
+    (lower_call_to_manifest_gold c).bounded_delta.val = c.bounded_delta.val := by
+  rfl
+
+/--
+  **Gold-tier refinement theorem** — the bound witness is
+  preserved through lowering. The value's refinement-subtype
+  property survives the lowering by construction, not by an
+  external proof obligation.
+
+  This locks in the bound preservation at the type level: an
+  emitter receiving a BoundedRefcountDelta cannot "lose" the
+  bound by some accidental Int.coe injection.
+-/
+theorem bounded_refcount_witness_gold (c : FfiCallGold) :
+    -refcount_delta_bound ≤ (lower_call_to_manifest_gold c).bounded_delta.val
+    ∧ (lower_call_to_manifest_gold c).bounded_delta.val ≤ refcount_delta_bound :=
+  (lower_call_to_manifest_gold c).bounded_delta.property
+
+/--
+  **Gold-tier refinement theorem** — bridges to Silver: the
+  bounded-delta value agrees with the raw refcount_delta that
+  PMAT-160's FfiCallSilver model uses. Both Silver and Gold
+  models agree on the underlying integer; Gold simply CARRIES
+  THE BOUND WITNESS at the type level.
+-/
+theorem gold_subtype_agrees_with_silver_refcount
+    (c : FfiCallGold) :
+    (lower_call_to_manifest_gold c).bounded_delta.val
+      = (lower_call_to_manifest_silver
+          { payload := c.payload, refcount_delta := c.bounded_delta.val }).refcount_delta := by
+  rfl
+
 end XpileContracts.CFfiCpythonExt

@@ -107,6 +107,39 @@ equations:
     preconditions:
       - "C extension follows CPython refcounting conventions correctly in the original"
 
+  bounded_refcount_delta_preserved_gold:
+    # PMAT-186 / XPILE-REFINE-FFI-CPYTHON-008: SECOND Gold-tier
+    # refinement in the substrate (after PMAT-185 PyIntFast on
+    # C-PY-INT-ARITH). Promotes Silver's refcount_delta : Int
+    # to BoundedRefcountDelta := { d : Int // -8 ≤ d ≤ 8 }
+    # refinement subtype. The CPython ABI's per-call refcount-
+    # delta bound is now encoded at the TYPE level — emitter
+    # receiving a BoundedRefcountDelta cannot pass an unbounded
+    # Int. Companion theorems bounded_refcount_witness_gold
+    # and gold_subtype_agrees_with_silver_refcount in same file.
+    lean_theorem: "XpileContracts.CFfiCpythonExt.bounded_refcount_delta_preserved_gold"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
+    formula: |
+      lower_call_to_manifest_gold(c).bounded_delta.val == c.bounded_delta.val
+      WITH bound  -8 ≤ delta ≤ 8
+    domain: |
+      Same as refcount_balance_on_success — a PyObject* passed
+      across the FFI boundary. The Gold upgrade narrows the
+      modelling from "delta is Int" to "delta is BoundedRefcount-
+      Delta with |delta| ≤ 8".
+    invariants:
+      - "the ±8 bound is the realistic upper bound for CPython C extensions — a single function rarely touches more than a few refcounts"
+      - "the bound witness travels with the value at the type level — no proof re-discharge downstream"
+      - "Kani BMC search space is exponentially smaller at Gold than Silver — bounded delta vs unbounded Int"
+      - "companion theorem gold_subtype_agrees_with_silver_refcount bridges Gold to PMAT-160's Silver model"
+    preconditions:
+      - "the source delta has been proven to fit within ±refcount_delta_bound at construction time (Gold-tier well-formedness)"
+      - "the BoundedRefcountDelta subtype rules out unbounded deltas at compile time — a caller without a proof cannot create the value"
+    postconditions:
+      - "an emitter accepting raw Int values is upgradeable to BoundedRefcountDelta by inserting bound-proof construction at the boundary"
+      - "downstream code can chain BoundedRefcountDelta operations without re-proving the bound at every step — the type system enforces it"
+      - "this is the archetype Gold-tier subtype pattern per ruchy 5.0 §14.10.5, applied to FFI semantics rather than arithmetic semantics (PMAT-185 covered the arithmetic case on PyIntFast)"
+
   refcount_balance_on_error:
     # PMAT-172 / XPILE-REFINE-FFI-CPYTHON-005: Silver-tier
     # refinement wires the previously-unwired

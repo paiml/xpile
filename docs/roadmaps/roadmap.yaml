@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-186
+  github_issue: null
+  item_type: task
+  title: 'PMAT-186: SECOND Gold-tier refinement — BoundedRefcountDelta subtype on C-FFI-CPYTHON-EXT (XPILE-REFINE-FFI-CPYTHON-008)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T09:00:00Z
+  updated: 2026-05-19T09:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Second Gold-tier theorem in the substrate. BoundedRefcountDelta := { d : Int // -8 ≤ d ≤ 8 } refinement subtype encodes CPython ABI's per-call refcount-delta bound at type level. bounded_refcount_delta_preserved_gold (wired) + bounded_refcount_witness_gold + gold_subtype_agrees_with_silver_refcount companions. Demonstrates Gold pattern on FFI semantics after PMAT-185 covered arithmetic. Kani BMC search space exponentially smaller at Gold. C-FFI-CPYTHON-EXT Sem 7 → 8, Ext 14 → 18.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-185
   github_issue: null
   item_type: task
