@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-197
+  github_issue: null
+  item_type: task
+  title: 'PMAT-197: TWELFTH Gold-tier refinement — CitationCompleteContract on C-XPILE-CONTRACT-BACKEND-TRAIT; Gold-tier coverage now UNIVERSAL (12/12 contracts) (XPILE-REFINE-CONTRACT-BACKEND-TRAIT-002)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T14:30:00Z
+  updated: 2026-05-19T14:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Twelfth Gold-tier theorem. MILESTONE - completes Gold-tier coverage across all 12 contracts in the substrate (Gold is now universal). Also closes the 2×2 trait matrix at Gold (PMAT-194/195/196/197). CitationCompleteContract := { p : Contract × RenderedDocSilver // p.snd.citations = p.fst.depends_on ++ p.fst.references } pairs Contract with rendered doc under type-level citation-completeness proof. citation_complete_contract_gold (wired) + citation_completeness_witness_gold + gold_contract_backend_agrees_with_silver companions. C-XPILE-CONTRACT-BACKEND-TRAIT Sem 2 → 3. Gold-tier UNIVERSAL across the substrate.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-196
   github_issue: null
   item_type: task
