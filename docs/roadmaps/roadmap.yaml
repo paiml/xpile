@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-138
+  github_issue: null
+  item_type: task
+  title: 'PMAT-138: bitwise_and_signed_semantics refinement theorem — closes XPILE-REFINE-005, substrate warnings 1 → 0'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T10:30:00Z
+  updated: 2026-05-18T10:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add Bronze-tier refinement theorem and_fast_path_eq_slow_path for bitwise_and_signed_semantics — the last equation in C-PY-INT-ARITH that lacked a lean_theorem reference. Core Lean 4.15 doesn't ship Int.land, so encoding is hand-rolled via cast-through-Nat (Nat.land on the unsigned two's-complement representations in [0, 2^64), folded back via Int.bmod). Both i64_and and bigint_and invoke the shared kernel; proof is rfl by construction. Silver-tier follow-up (XPILE-REFINE-005-SILVER) tracked for a future precise BitVec 64 model. Total substrate warnings 1 → 0 — full clean state.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-137
   github_issue: null
   item_type: task

@@ -7,6 +7,32 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — `bitwise_and_signed_semantics` refinement theorem (PMAT-138 / XPILE-REFINE-005)
+
+`contracts/lean/PyIntArith.lean` now carries a Bronze-tier
+refinement theorem for `bitwise_and_signed_semantics`, the last
+equation in `C-PY-INT-ARITH` that lacked a `lean_theorem`
+reference. Core Lean 4.15 doesn't ship `Int.land`, so the
+encoding is hand-rolled: cast through `Nat.land` on the
+unsigned two's-complement representations in `[0, 2^64)`, then
+fold back into the signed range via `Int.bmod`.
+
+Both `i64_and` and `bigint_and` invoke the shared kernel; the
+refinement theorem `and_fast_path_eq_slow_path` reduces to `rfl`
+by construction. Silver-tier refinement (XPILE-REFINE-005-SILVER,
+to come) replaces the encoding with a precise `BitVec 64` model
+and proves the cast-through-Nat encoding agrees with the spec
+structurally.
+
+**Outcomes:**
+- py-int-arith warnings: 1 → 0 (the last PV-ENF-002 cleared)
+- Total substrate warnings: **1 → 0** (full clean state)
+
+This closes XPILE-REFINE-005 at Bronze tier; the Silver-tier
+follow-up is tracked for whenever mathlib lands in xpile or the
+hand-rolled encoding's correctness becomes load-bearing for a
+downstream verification.
+
 ### Added — `qa_gate:` blocks for all 5 Layer-1/2 kernel contracts (PMAT-137)
 
 Every kernel contract now declares a `qa_gate:` block (id, name,

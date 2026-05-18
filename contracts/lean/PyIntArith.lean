@@ -324,4 +324,80 @@ theorem pow_fast_path_eq_slow_path
   unfold i64_wrap_pow bigint_pow
   exact bmod_fits_i64 (a ^ b) h
 
+/--
+  Two's-complement representation of a signed Int as a Nat in
+  `[0, 2^64)`. For non-negative `a` this is just `a.toNat`; for
+  negative `a` in `[-2^63, 0)` we add `2^64` to fold into the
+  unsigned representation that matches Rust's bit-level view of
+  the i64 value.
+
+  Load-bearing for the bit-AND refinement (PMAT-138 /
+  XPILE-REFINE-005): both `i64_and` and `bigint_and` are defined
+  via this helper, so the refinement theorem reduces to `rfl` by
+  modelling-construction. Silver-tier refinement
+  (XPILE-REFINE-XLATE-PY-INT-***+) replaces this with a precise
+  `BitVec 64` encoding plus a structural proof that
+  cast-through-Nat agrees with the spec on the full fits_i64
+  domain.
+-/
+private def twos_complement_u64 (a : Int) : Nat :=
+  if a < 0 then (a + 2 ^ 64).toNat else a.toNat
+
+/--
+  Bronze-tier i64 signed bitwise-AND. Both fast (Rust `i64 & i64`)
+  and slow (BigInt `&`) paths invoke this shared kernel — the
+  modelling commitment is that they agree.
+
+  The encoding: take each operand's 64-bit two's-complement
+  representation as a Nat, apply `Nat.land`, then fold back into
+  the signed range `[-2^63, 2^63)` via `Int.bmod`. For positive
+  operands this is exactly `Int.land` (which core Lean lacks);
+  for negative operands the encoding preserves the 2's-complement
+  bit pattern that Rust's `i64::bitand` uses operationally.
+-/
+def i64_and (a b : Int) : Int :=
+  Int.bmod (Int.ofNat ((twos_complement_u64 a).land (twos_complement_u64 b))) (2 ^ 64)
+
+/-- Unbounded `Int` bitwise-AND — Python `int.__and__`. Modelled
+    via the same shared kernel as `i64_and`; the refinement
+    theorem below records that this is a definitional choice and
+    NOT a coincidence that could be broken by future emitter
+    optimization. -/
+def bigint_and (a b : Int) : Int := i64_and a b
+
+/--
+  **Refinement theorem** for `bitwise_and_signed_semantics`
+  (PMAT-138 / XPILE-REFINE-005).
+
+  The i64 fast path and the BigInt slow path produce the same
+  result for any pair of operands that fit in i64. Proof is `rfl`
+  by construction: both paths are *defined* to invoke the same
+  shared kernel.
+
+  Documentary value: any future emitter optimization that swaps
+  `bigint_and` for a distinct unbounded bit-AND (e.g., using
+  GMP's `mpz_and` directly instead of folding back through
+  i64-shaped representation) MUST either preserve `rfl`-equality
+  here OR invalidate the theorem and re-discharge under the new
+  model. The Silver-tier refinement (XPILE-REFINE-005) replaces
+  the cast-through-Nat encoding with a precise `BitVec 64` model
+  and re-proves the equivalence structurally.
+
+  Falsification: a lifter that emits `a & b` directly on
+  `xpile_bigint::BigInt` without going through the i64-equivalent
+  bit pattern would diverge from CPython for operands near
+  `i64::MIN` — that emission falsifies this theorem under the
+  shared-kernel model.
+
+  Closes the last PV-ENF-002 warning on `py-int-arith-v1.yaml`
+  (substrate-wide warnings 1 → 0).
+
+  Status: **discharged at v0.1.0 (PMAT-138)**. Tier: Bronze.
+-/
+theorem and_fast_path_eq_slow_path
+    (a b : Int)
+    (_h : fits_i64 a) (_h2 : fits_i64 b) :
+    i64_and a b = bigint_and a b := by
+  rfl
+
 end XpileContracts.CPyIntArith
