@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-246
+  github_issue: null
+  item_type: task
+  title: 'PMAT-246: Doc sweep — UNIVERSAL Diamond depth-3 across all 5 layers milestone (PMAT-241..245) reflected across README, status, audit, kaizen-fleet'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T15:00:00Z
+  updated: 2026-05-20T15:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Comprehensive doc sweep declaring substrate now has UNIVERSAL Diamond depth-3 across all 5 layers. Refresh aggregate 253 → 258 Lean theorems (+5 Diamond from PMAT-241..245), 296 → 301 stratum-vote artifacts. README, CURRENT.md, INDEX.md, substrate-completion, audit-design §3, kaizen-fleet "Tier classification" all consistent. Three orthogonal Diamond depth claims now hold universally (depth-1 every contract, depth-2 every contract, depth-3 every layer).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-245
   github_issue: null
   item_type: task
