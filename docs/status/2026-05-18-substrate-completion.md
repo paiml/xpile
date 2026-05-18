@@ -102,7 +102,7 @@ Real bug-class find during sweep: **branch-protection ruleset** only requires `g
 totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)
 ```
 
-- **50 Lean theorems × 12 Kani harnesses = 62 paired Lean+Kani Bronze-tier discharges** (post-PMAT-127..138; substrate-completion run shipped 12+12=24, then the quality sweep grew the Lean side from 12 to 50 by adding per-equation theorems)
+- **50 Lean theorems + 43 Kani BMC harnesses = 93 stratum-vote artifacts** (post-PMAT-127..138 the Lean side grew from 12 to 50; post-PMAT-147..151 / XPILE-QUORUM-006 the Kani side grew from 12 to 43; substrate-completion run shipped 12+12=24)
 - 2 contracts at rich 4-stratum coverage with multi-vote Runtime witnesses (C-PY-INT-ARITH, C-BASHRS-POSIX-IDEMPOTENCE)
 - 10 contracts at 4-stratum minimum with a single demo Runtime fixture each (single-vote demo); deeper Runtime witnesses (Gold tier) replace with property-specific diff_exec fixtures
 - All 5 layers of the contract taxonomy covered (Layer 1, 2, 3, 4, 5)
@@ -112,7 +112,7 @@ totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)
 
 - 27 workspace crates
 - `cargo check --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check`, `cargo deny check advisories`, `pv lint contracts/` all green
-- 195 workspace tests + 12 Kani harnesses verified in ~3.7s on every CI cycle
+- 195 workspace tests + 43 Kani harnesses verified on every CI cycle (post-XPILE-QUORUM-006 / PMAT-147..151 per-equation fan-out)
 - 4 real backends: Rust, Ruchy, Lean 4, Shell/bashrs
 - 5 frontends in tree: depyler-frontend (Python, real), decy-frontend (C, scaffold), ruchy-frontend (scaffold), bashrs-frontend (POSIX shell, real with 55 tests), latex-contract-frontend (proof lane, scaffold)
 

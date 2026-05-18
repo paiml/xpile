@@ -76,11 +76,12 @@ $ xpile quorum
 ```
 
 **50 Lean refinement theorems** ([`contracts/lean/*.lean`](contracts/lean/)) +
-12 Kani BMC harnesses ([`contracts/kani/*.rs`](contracts/kani/)) = **62 paired
-discharges**, covering all 5 layers of the contract taxonomy. Every equation
-in every contract has its own Bronze-tier theorem (`rfl` by construction)
-capturing a distinct load-bearing modelling commitment — Silver/Gold/Platinum
-refinement is incremental from here as concrete impl pressure arrives.
+**43 Kani BMC harnesses** ([`contracts/kani/*.rs`](contracts/kani/)) —
+**93 stratum-vote artifacts** across all 5 layers of the contract taxonomy.
+Every equation in every contract has both its own Bronze-tier Lean theorem
+(`rfl` by construction) AND its own Kani symbolic harness exploring 256^4 ≈
+4.3B configurations per harness. Silver/Gold/Platinum refinement is
+incremental from here as concrete impl pressure arrives.
 
 > **Canonical spec:** [`docs/specifications/xpile-spec.md`](docs/specifications/xpile-spec.md) — TOC + 25 sections, each linking to a `sub/<topic>.md`.
 >
@@ -200,7 +201,7 @@ Every PR runs:
 | Provable contracts | `pv lint contracts/` (via `aprender-contracts-cli`) |
 | Security advisories | `cargo deny check advisories` |
 | Tests | `cargo test --workspace` (incl. e2e rustc round-trip and `every_kani_harness_discharges`) |
-| Kani BMC | dedicated `kani` job runs `cargo kani` over all 12 harnesses in `contracts/kani/` |
+| Kani BMC | dedicated `kani` job runs `cargo kani` over all 43 harnesses in `contracts/kani/` |
 
 Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 

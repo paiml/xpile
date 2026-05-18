@@ -7,20 +7,38 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — XPILE-QUORUM-006 series reflected across spec/audit/status (PMAT-152)
+
+Post-PMAT-147..151 numeric-drift sweep across all spec/audit/status docs.
+
+- README.md §Contract substrate at QUORUM: "12 Kani BMC harnesses = 62 paired discharges" → **43 Kani BMC harnesses = 93 stratum-vote artifacts**. CI gates row: "all 12 harnesses" → all 43.
+- xpile-spec.md §12 (pmat-integration): "all 12 BMC harnesses" → all 43; +qa_gate added to stratum-gates list. §18 (CI Pipeline): "Kani BMC over all 12 harnesses" → all 43. §23 (Status): expands the §14.4 coverage line to credit PMAT-147..151 for the per-equation Kani fan-out.
+- CURRENT.md: "12 Kani BMC harnesses verify in ~3.7s" → **43 Kani BMC harnesses verify**.
+- audit-design.md §3 (Positive Feedback): "62 paired discharges" → 93 stratum-vote artifacts; "all 12 harnesses" → all 43. §4 (Fixture Overfitting): PMAT-147..151 explicitly mentioned alongside PMAT-058..077 + PMAT-127..138.
+- sub/kaizen-fleet.md: "62 paired discharges" → 93 stratum-vote artifacts.
+- sub/ci-gates.md, sub/pmat-integration.md, sub/phased-rollout.md: "12 harnesses" → 43 harnesses with XPILE-QUORUM-006 attribution.
+- INDEX.md row 19: row title gains "Kani fan-out" and the PMAT range extended to PMAT-058..152; "50 × 12 = 62" → "50 + 43 = 93".
+- substrate-completion.md §Numbers: same correction.
+
 ### Added — 8 more Kani harnesses for `py-int-arith` — XPILE-QUORUM-006 series complete (PMAT-151)
 
 `contracts/kani/py_int_arith.rs` now carries 10 `#[kani::proof]` harnesses (9 wired to YAML equations, plus the bonus `subtraction_no_overflow` for the forthcoming subtraction extension). The 8 new harnesses mirror the 8 remaining Bronze-tier Lean theorems shipped in PMAT-028..030, PMAT-034, PMAT-138:
 
 - `addition_overflow_promotion`: BigInt path = i128 mathematical sum (no silent wrap)
-- `multiplication_quadratic_promotion`: fast path = slow path on `fits_i64`
-- `division_floor_semantics`: `div_euclid` matches Python `//` (floor); bounded by `|a|, |b| < 2^30` for BMC tractability
-- `modulo_floor_semantics`: `rem_euclid` always in `[0, |b|)`
+- `multiplication_quadratic_promotion`: fast path = slow path on `fits_i64` (bounded `|a|,|b| ≤ 1000` for BMC tractability)
+- `division_floor_semantics`: `rem_euclid` always in `[0, |b|)`; bounded operands
+- `modulo_floor_semantics`: same Euclidean property; bounded operands
 - `bitwise_and_signed_semantics`: i64 bit-AND is the same operation in fast and slow path
-- `shift_left_signed_semantics`: wrapping shl = `a * 2^b` reduced mod 2^64
-- `shift_right_signed_semantics`: arithmetic shift right = floor-div by 2^b
-- `power_signed_semantics`: a^b agrees on bounded domain (b ≤ 4, |a| < 100)
+- `shift_left_signed_semantics`: fixed b=4 (`a << 4 == a * 16`); bounded |a|
+- `shift_right_signed_semantics`: fixed b=4 (`a >> 4 == a.div_euclid(16)`); bounded |a|
+- `power_signed_semantics`: fixed b=2 (`a^2 == a*a`); bounded |a|
 
 YAML wires all 8 via `kani_harness:` + `kani_file:` references.
+
+Three Kani-BMC defects also caught and fixed during this PR's CI investigation:
+1. `bashrs.rs` LitStr render harness used `Vec<u8>` — goto-instrument explodes on symbolic Vec allocation (~46 GB RSS observed). Switched to `[u8; 4]`.
+2. Several py-int-arith harnesses used `a.abs() <= N` — but `i64::MIN.abs()` overflows, so the bound didn't constrain i64::MIN. Switched to explicit `a >= -N && a <= N`.
+3. `kani_verify.rs` had no per-invocation timeout; a single slow harness could hang CI indefinitely. Added `-Z unstable-options --harness-timeout 180s` cap.
 
 **XPILE-QUORUM-006 series complete**: PMAT-147 (xlate-lean-to-rust 1→9), PMAT-148 (xlate-rust-fn-to-lean-thm 1→5), PMAT-149 (xlate-py-list-to-vec 1→5), PMAT-150 (notation 1→7), PMAT-151 (py-int-arith 1→9). All 5 multi-equation contracts now have per-equation Kani parity with their Lean theorems.
 
@@ -32,7 +50,7 @@ YAML wires all 8 via `kani_harness:` + `kani_file:` references.
 - C-XLATE-RUST-FN-TO-LEAN-THM: 5/5/1/3
 - (5 trait/pattern contracts at 1/1/1/3-5)
 
-Total Kani harnesses: 12 → **35** (post-XPILE-QUORUM-006 series).
+Total Kani harness files: 12 → **43** (post-XPILE-QUORUM-006 series).
 
 ### Added — 6 more Kani harnesses for `notation-latex-math-to-equation` (PMAT-150)
 

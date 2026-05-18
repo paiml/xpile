@@ -39,7 +39,7 @@ Live `.github/workflows/ci.yml` enforces these — see [ci-gates.md](ci-gates.md
 | Provable-contracts | `pv lint contracts/` | 8/8 gates pass, 0 errors (12 contracts at v0.1.0) |
 | Security advisories | `cargo deny check advisories` | zero unyanked |
 | Tests | `cargo test --workspace` | all pass — including the §14.4 stratum gates `refinement_proofs`, `kani_harnesses`, `kani_verify`, `quorum`, `attestations` |
-| Kani BMC (optional `kani` job) | `cargo kani` over `contracts/kani/*.rs` | 12 harnesses must verify successfully (~3.7s total) |
+| Kani BMC (optional `kani` job) | `cargo kani` over `contracts/kani/*.rs` | 43 harnesses must verify successfully (post-XPILE-QUORUM-006 / PMAT-147..151) |
 
 PRs that fail any required gate are rejected. No `--no-verify`, no manual overrides.
 

@@ -44,7 +44,7 @@ Live substrate state at v0.1.0:
   subshells).
 - **CI gates**: `gate` + `kani` + `workspace-test` required on
   every PR. Branch protection on `main`.
-- **Kani BMC**: 12 harnesses verify in ~3.7s on every CI run.
+- **Kani BMC**: 43 harnesses verify on every CI run (post-XPILE-QUORUM-006 / PMAT-147..151 per-equation fan-out).
 
 How the actual path differs from the planned one:
 
