@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — NINTH Gold-tier refinement: `ConsistentFrontendOutput` subtype on C-XPILE-FRONTEND-TRAIT (PMAT-194 / XPILE-REFINE-FRONTEND-TRAIT-002)
+
+Ninth Gold-tier theorem in the substrate. **Extends Gold to a Layer-3 trait contract** (C-XPILE-FRONTEND-TRAIT) — first Gold on the 2×2 trait matrix. Gold coverage now spans **8 of 12 contracts across all 5 layers** (Layer-1 PMAT-185/193, Layer-2 PMAT-188/189/191/192, Layer-3 PMAT-194, Layer-4 PMAT-186, Layer-5 PMAT-187).
+
+`ConsistentFrontendOutput := { p : Frontend × MetaHirModuleSilver // p.snd.source_lang = p.fst.declared_lang }` — pairs a frontend with its lowered module under a type-level proof of consistency.
+
+**Fourth Gold pattern variant unlocked**: cross-field equality refinement (`a.field = b.field`), distinct from:
+- Bounded-numeric (PMAT-185..188): `{ x : Nat // x ≥/≤ N }`
+- Collection-cardinality (PMAT-189/191/192): `{ c // c.size > 0 }`
+- Equality to constant (PMAT-193): `{ o // o.field = const }`
+- **Cross-field equality (PMAT-194)**: `{ (a, b) // a.field = b.field }` ← NEW
+
+This pattern is load-bearing for paired-value consistency invariants: lifter/lowerer pairs, before/after states, request/response pairs. The Silver theorem `source_lang_consistency_silver` IS the witness proof in the Gold subtype's construction.
+
+The Gold model:
+- `ConsistentFrontendOutput := { p : Frontend × MetaHirModuleSilver // p.snd.source_lang = p.fst.declared_lang }`
+- `parse_and_lower_gold`: constructs the pair with the Silver theorem as the witness
+- `consistent_frontend_output_gold` (wired): components agree on source_lang BY TYPE
+- `consistent_output_witness_gold`: extraction preserves the consistency witness
+- `gold_frontend_agrees_with_silver`: bridges Gold to PMAT-156's Silver model
+
+YAML: adds new equation `consistent_frontend_output_gold` wired to the Gold theorem. `xpile quorum` view for C-XPILE-FRONTEND-TRAIT: Sem=3 (was 2), Sym=1, Run=1, Ext=6. Gold-tier pattern now demonstrated across **4 subtype shapes × 8 contracts × 5 layers**.
+
 ### Added — EIGHTH Gold-tier refinement: `SuccessfulOutcome` subtype on C-BASHRS-POSIX-IDEMPOTENCE (PMAT-193 / XPILE-REFINE-BASHRS-002)
 
 Eighth Gold-tier theorem in the substrate. Extends Gold to a seventh contract (C-BASHRS-POSIX-IDEMPOTENCE, cross-domain Layer-1/4). Gold coverage now spans **7 of 12 contracts**.

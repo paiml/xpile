@@ -72,6 +72,42 @@ equations:
       - "no frontend produces meta-HIR claiming a different source language"
     preconditions: []
 
+  consistent_frontend_output_gold:
+    # PMAT-194 / XPILE-REFINE-FRONTEND-TRAIT-002: NINTH Gold-tier
+    # refinement in the substrate. First Gold theorem on a
+    # Layer-3 trait contract. ConsistentFrontendOutput :=
+    # { p : Frontend × MetaHirModuleSilver
+    #   // p.snd.source_lang = p.fst.declared_lang } pairs a
+    # frontend with its lowered module under a type-level proof
+    # of consistency. Fourth Gold pattern variant unlocked —
+    # cross-field equality refinement (x.fst.field = y.snd.field),
+    # distinct from bounded-numeric (PMAT-185..188),
+    # collection-cardinality (PMAT-189/191/192), and equality
+    # to constant (PMAT-193). Companion theorems
+    # consistent_output_witness_gold and gold_frontend_agrees_
+    # with_silver.
+    lean_theorem: "XpileContracts.CXpileFrontendTrait.consistent_frontend_output_gold"
+    lean_file: "contracts/lean/XpileFrontendTrait.lean"
+    formula: |
+      parse_and_lower_gold(f, p, s).module.source_lang
+        == parse_and_lower_gold(f, p, s).frontend.declared_lang
+      BY TYPE  (witness travels with the pair)
+    domain: |
+      Same as source_lang_consistency — every Frontend impl. The
+      Gold upgrade encodes the consistency invariant at the type
+      level via a pair-with-witness refinement subtype.
+    invariants:
+      - "ConsistentFrontendOutput pairs a Frontend with its lowered MetaHirModuleSilver under a TYPE-LEVEL proof that source_lang = declared_lang"
+      - "consistency witness travels with the pair through extraction — no per-call-site re-proof needed"
+      - "fourth Gold pattern variant unlocked: cross-field equality refinement (x.fst.field = y.snd.field)"
+      - "this pattern is load-bearing for paired-value consistency invariants: lifter/lowerer pairs, before/after states, request/response pairs"
+    preconditions:
+      - "the Frontend impl is well-formed (Silver model preconditions inherited)"
+      - "the Gold subtype carries the proof obligation by construction — caller cannot create a ConsistentFrontendOutput with mismatched fields"
+    postconditions:
+      - "an emitter returning a (frontend, module) pair where source_lang ≠ declared_lang would not type-check against parse_and_lower_gold"
+      - "downstream consumers receiving a ConsistentFrontendOutput can rely on field consistency without runtime checks"
+
   ffi_boundaries_are_outgoing_only:
     formula: |
       forall b in module.ffi_boundaries: b.from_lang == module.source_lang

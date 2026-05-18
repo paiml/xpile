@@ -184,4 +184,74 @@ theorem source_lang_consistency_silver
     (parse_and_lower_silver f path source).source_lang = f.declared_lang := by
   rfl
 
+/-! ## PMAT-194 — NINTH Gold-tier refinement: ConsistentFrontendOutput
+    (XPILE-REFINE-FRONTEND-TRAIT-002).
+
+    Ninth Gold-tier theorem in the substrate. **Extends Gold to a
+    Layer-3 trait contract** (C-XPILE-FRONTEND-TRAIT) — first
+    Gold on Layer-3 contracts (the 2×2 trait matrix).
+
+    Silver (PMAT-156's `source_lang_consistency_silver`) proves
+    that the lowered module's source_lang equals the frontend's
+    declared_lang. Gold tier promotes to a refinement subtype
+    encoding the consistency at the type level.
+
+    **Fourth Gold pattern variant unlocked**: cross-field equality
+    refinement (`x.fst.field = y.snd.field`), distinct from:
+    - Bounded-numeric (PMAT-185..188): `{ x : Nat // x ≥/≤ N }`
+    - Collection-cardinality (PMAT-189/191/192): `{ c // c.size > 0 }`
+    - Equality to constant (PMAT-193): `{ o // o.field = const }`
+    - **Cross-field equality (PMAT-194)**: `{ (a, b) // a.field = b.field }` ← NEW
+
+    This pattern is load-bearing for paired-value consistency
+    invariants: lifter/lowerer call sites, before/after states,
+    request/response pairs.
+
+    Status: discharged at v0.1.0 (PMAT-194). Tier: GOLD. -/
+
+/-- Gold-tier refinement subtype: a (Frontend, MetaHirModuleSilver)
+    pair proven to have consistent source_lang. -/
+def ConsistentFrontendOutput :=
+  { p : Frontend × MetaHirModuleSilver // p.snd.source_lang = p.fst.declared_lang }
+
+/-- Extract the frontend half. -/
+def ConsistentFrontendOutput.frontend (c : ConsistentFrontendOutput) : Frontend :=
+  c.val.fst
+
+/-- Extract the module half. -/
+def ConsistentFrontendOutput.module (c : ConsistentFrontendOutput) :
+    MetaHirModuleSilver :=
+  c.val.snd
+
+/-- Gold-tier `parse_and_lower` constructing a
+    ConsistentFrontendOutput by construction. The Silver theorem
+    IS the witness proof. -/
+def parse_and_lower_gold (f : Frontend) (path source : Array UInt8) :
+    ConsistentFrontendOutput :=
+  ⟨(f, parse_and_lower_silver f path source),
+   source_lang_consistency_silver f path source⟩
+
+/-- **Gold-tier refinement theorem** — the Gold-tier
+    parse_and_lower_gold produces a ConsistentFrontendOutput
+    whose components agree on source_lang by construction. -/
+theorem consistent_frontend_output_gold
+    (f : Frontend) (path source : Array UInt8) :
+    (parse_and_lower_gold f path source).module.source_lang
+      = (parse_and_lower_gold f path source).frontend.declared_lang :=
+  (parse_and_lower_gold f path source).property
+
+/-- **Gold-tier refinement theorem** — consistency witness
+    preserved through extraction. For any ConsistentFrontendOutput,
+    the module's source_lang matches the frontend's declared_lang
+    BY TYPE — no proof obligation at the call site. -/
+theorem consistent_output_witness_gold (c : ConsistentFrontendOutput) :
+    c.module.source_lang = c.frontend.declared_lang := c.property
+
+/-- **Gold-tier refinement theorem** — bridges Gold to Silver. -/
+theorem gold_frontend_agrees_with_silver
+    (f : Frontend) (path source : Array UInt8) :
+    (parse_and_lower_gold f path source).module
+      = parse_and_lower_silver f path source := by
+  rfl
+
 end XpileContracts.CXpileFrontendTrait
