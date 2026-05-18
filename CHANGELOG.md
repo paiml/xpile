@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — NINTH Diamond-tier refinement: precondition-list-monoid axioms on C-XLATE-RUST-FN-TO-LEAN-THM (PMAT-223 / XPILE-REFINE-XLATE-RUST-TO-LEAN-005)
+
+Ninth Diamond-tier theorem. Combines four properties into the PRECONDITION LIST MONOID axiomatization on the proof lane direction:
+- PMAT-209 Platinum functoriality (source_indices homomorphism)
+- PMAT-209 Platinum payloads homomorphism (companion)
+- Empty preservation (identity)
+- Associativity (`Array.append_assoc`)
+
+**Completes monoid Diamond demonstration across both lanes**:
+- Code lane: PMAT-221 free list-monoid (Python list lowering)
+- Proof lane: **PMAT-223 precondition list-monoid (Rust precondition lifting)** ← NEW
+
+Captures the substrate's commitment to algebraic structure parity across code and proof lanes — both directions of the translation taxonomy preserve monoidal composition at the Diamond level.
+
+`precondition_list_monoid_diamond` (wired): 4-conjunction proving source_indices homomorphism + payloads homomorphism + identity + associativity.
+
+YAML: adds new equation `precondition_list_monoid_diamond` wired to the Diamond theorem. `xpile quorum` view for C-XLATE-RUST-FN-TO-LEAN-THM: Sem=13 (was 12), Sym=5, Run=1, Ext=10. Nine Diamond axiomatizations now in substrate across 9 contracts.
+
 ### Added — EIGHTH Diamond-tier refinement: inductive-monoid axioms on C-XLATE-LEAN-TO-RUST (PMAT-222 / XPILE-REFINE-XLATE-LEAN-006)
 
 Eighth Diamond-tier theorem. Combines four properties into the INDUCTIVE MONOID axiomatization:

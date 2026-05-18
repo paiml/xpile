@@ -270,6 +270,35 @@ equations:
       - "an emitter that processes preconditions piecewise produces the same observable result as monolithic emission"
       - "substrate has now demonstrated functoriality on FOUR distinct contract domains across all lanes — confirming the pattern is universal"
 
+  precondition_list_monoid_diamond:
+    # PMAT-223 / XPILE-REFINE-XLATE-RUST-TO-LEAN-005: NINTH
+    # Diamond-tier refinement. Combines PMAT-209 functoriality
+    # + payloads homomorphism + identity + associativity into
+    # the PRECONDITION LIST MONOID axiomatization on the proof
+    # lane direction.
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.precondition_list_monoid_diamond"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    formula: |
+      precondition list lift forms a MONOID:
+        (a) source_indices homomorphism (PMAT-209 lifted)
+        (b) payloads homomorphism (PMAT-209 companion lifted)
+        (c) empty preservation (identity)
+        (d) associativity (Array.append_assoc)
+    domain: |
+      Any three PreconditionListSilver values composed via
+      array concatenation. The Diamond upgrade captures the
+      FULL precondition-list-monoid axiomatization on the
+      proof lane.
+    invariants:
+      - "NINTH Diamond-tier theorem; combines PMAT-209 + payloads + identity + associativity"
+      - "PRECONDITION LIST MONOID — proof-lane equivalent of free list-monoid"
+      - "completes monoid demonstration across both lanes (PMAT-221 list/code, PMAT-223 precondition/proof)"
+    preconditions:
+      - "three well-formed PreconditionListSilver values"
+    postconditions:
+      - "precondition lifting respects monoid structure — emitter pipelines that concat preconditions piecewise produce the same observable result as monolithic emission"
+      - "proof-lane and code-lane both demonstrate monoid Diamond at the algebraic level"
+
   citation_bridge_via_attribute:
     # PMAT-136: Bronze-tier refinement theorem locks in byte-for-byte
     # contract_id + equation_name preservation in @[xpile_contract,
