@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — Gold-universal milestone (PMAT-191..197) reflected across README/spec/audit/status (PMAT-198)
+
+Doc sweep recording the **Gold-universal milestone** landed at PMAT-197. Every one of the 12 contracts in the xpile substrate now has at least one Gold-tier refinement-subtype theorem. The Silver→Gold transition pattern has been empirically demonstrated as universal across the contract taxonomy.
+
+Aggregate refresh: 165 Lean (58 Bronze + 97 Silver + 10 Gold) / 208 stratum-vote artifacts → **185 Lean (53 Bronze + 108 Silver + 24 Gold) / 228 stratum-vote artifacts**. The +20 Lean theorems split: -5 Bronze (some "auxiliary" theorems reclassified after rigorous Silver/Gold tagging), +11 Silver, +14 Gold.
+
+Files updated:
+- **README.md**: QUORUM line shifted to "100% QUORUM + 100% Silver + 100% Gold"; by-the-numbers footer refreshed
+- **docs/specifications/audit-design.md §3**: full Gold-tier enumeration; 5 subtype patterns listed; per-contract Gold theorem named
+- **docs/specifications/sub/kaizen-fleet.md**: kernel-tier paragraph refresh with universal-Gold attribution
+- **docs/status/CURRENT.md**: §quorum-line shifted to universal-Gold framing
+- **docs/status/INDEX.md**: session-log row title gains "+ Gold-universal milestone"; all 12 Gold theorems enumerated
+- **docs/status/2026-05-18-substrate-completion.md**: §Numbers refreshed
+- **CHANGELOG.md + docs/roadmaps/roadmap.yaml**: entries for PMAT-198
+
 ### Added — TWELFTH Gold-tier refinement: `CitationCompleteContract` subtype on C-XPILE-CONTRACT-BACKEND-TRAIT — **Gold-tier coverage universal (12/12)** (PMAT-197 / XPILE-REFINE-CONTRACT-BACKEND-TRAIT-002)
 
 🎯 **MILESTONE: Gold-tier coverage is now universal — every contract in the xpile substrate has at least one Gold-tier refinement theorem.** The Silver→Gold transition pattern has been demonstrated across all 12 contracts and all 5 layers.

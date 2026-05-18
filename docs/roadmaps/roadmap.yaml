@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-198
+  github_issue: null
+  item_type: task
+  title: 'PMAT-198: Doc sweep — Gold-universal milestone (PMAT-191..197) reflected across README/spec/audit/status'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T15:00:00Z
+  updated: 2026-05-19T15:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Aggregate refresh: 165 Lean / 208 stratum-vote artifacts → 185 Lean (53 Bronze + 108 Silver + 24 Gold) / 228 stratum-vote artifacts. README/spec/audit/status all updated with Gold-universal framing. All 12 Gold theorems enumerated by PMAT and contract layer. Five Gold subtype patterns enumerated (bounded-numeric, collection-cardinality, equality-to-constant, cross-field equality, frame-safety). PMAT range extended PMAT-058..198.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-197
   github_issue: null
   item_type: task
