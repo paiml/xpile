@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-221
+  github_issue: null
+  item_type: task
+  title: 'PMAT-221: SEVENTH Diamond-tier refinement — free list-monoid axioms on C-XLATE-PY-LIST-TO-VEC (XPILE-REFINE-XLATE-PY-LIST-005)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T02:30:00Z
+  updated: 2026-05-20T02:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Seventh Diamond-tier theorem. Combines PMAT-202 functoriality + associativity + identity + length-additivity into the FREE LIST MONOID axiomatization. Seventh distinct Diamond category - free polymorphic list-monoid. Distinct from PMAT-219's string-monoid (lists have length, strings don't). list_free_monoid_diamond (wired) — 4-conjunction polymorphic over α. C-XLATE-PY-LIST-TO-VEC Sem 12 → 13.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-220
   github_issue: null
   item_type: task

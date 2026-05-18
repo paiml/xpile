@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SEVENTH Diamond-tier refinement: free list-monoid axioms on C-XLATE-PY-LIST-TO-VEC (PMAT-221 / XPILE-REFINE-XLATE-PY-LIST-005)
+
+Seventh Diamond-tier theorem. Combines four properties into the FREE LIST MONOID axiomatization for polymorphic Python list lowering:
+- PMAT-202 Platinum functoriality (the homomorphism)
+- Associativity (`List.append_assoc`)
+- Left identity (`[] ++ l = l`)
+- Length-additivity (length is a monoid homomorphism)
+
+**Seven distinct Diamond categories now demonstrated**:
+1. PMAT-214: commutative-monoid / semiring
+2. PMAT-215: pure-function
+3. PMAT-216: abelian-group
+4. PMAT-217: equivalence-relation
+5. PMAT-218: bounded-monoid
+6. PMAT-219: string-monoid
+7. **PMAT-221: free list-monoid** ← NEW
+
+**Free** means no additional relations — every monoid law that holds must follow from the three axioms. Distinct from PMAT-219's string-monoid because lists have length (a homomorphism to Nat) while strings compose elementwise differently.
+
+`list_free_monoid_diamond` (wired): 4-conjunction proving closure + associativity + identity + length-additivity, polymorphic over α.
+
+YAML: adds new equation `list_free_monoid_diamond` wired to the Diamond theorem. `xpile quorum` view for C-XLATE-PY-LIST-TO-VEC: Sem=13 (was 12), Sym=5, Run=1, Ext=12. Seven Diamond axiomatizations now in substrate across 7 contracts.
+
 ### Docs — Diamond-tier kickoff (PMAT-214..219) reflected across docs (PMAT-220)
 
 Doc sweep recording the Diamond-tier kickoff. Six wired Diamond theorems demonstrating six distinct algebraic categories across six contracts.
