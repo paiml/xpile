@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-207
+  github_issue: null
+  item_type: task
+  title: 'PMAT-207: EIGHTH Platinum-tier refinement — variant arity homomorphism on C-XLATE-LEAN-TO-RUST (XPILE-REFINE-XLATE-LEAN-005)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T19:30:00Z
+  updated: 2026-05-19T19:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Eighth Platinum-tier theorem. Extends Platinum to first Layer-2 forward-translation contract. Second demonstration of functoriality / homomorphism pattern (PMAT-202 was first on Python list lowering), now on Lean inductive lowering. variant_count_additive_platinum (wired) + variant_arities_homomorphism_platinum + inductive_lowering_homomorphism_platinum. Cross-layer consistency demonstrated. C-XLATE-LEAN-TO-RUST Sem 19 → 20. Platinum now on 6 contracts across Layers 1/2/3/4/5.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-206
   github_issue: null
   item_type: task

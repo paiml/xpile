@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — EIGHTH Platinum-tier refinement: variant arity homomorphism on C-XLATE-LEAN-TO-RUST (PMAT-207 / XPILE-REFINE-XLATE-LEAN-005)
+
+Eighth Platinum-tier theorem in the substrate. **Extends Platinum to C-XLATE-LEAN-TO-RUST** — the first Layer-2 forward-translation contract to receive Platinum coverage. Second demonstration of the functoriality/homomorphism pattern (PMAT-202 was the first on Python list lowering), this time on Lean inductive lowering.
+
+The Platinum theorems:
+- `variant_count_additive_platinum` (wired): `compose(i1, i2).variant_count = i1.variant_count + i2.variant_count` — variant_count is a monoid homomorphism into `(Nat, +, 0)`
+- `variant_arities_homomorphism_platinum`: variant_arities is a monoid homomorphism into `(Array Nat, ++, #[])`
+- `inductive_lowering_homomorphism_platinum`: the lowering ITSELF is functorial — `lower(i1 + i2) = lower(i1) + lower(i2)`
+
+**Cross-layer consistency demonstrated**: PMAT-202 proved functoriality for Python list lowering; PMAT-207 proves it for Lean inductive lowering. The pattern is now demonstrated on TWO Layer-2 contract domains, confirming portability across the translation taxonomy.
+
+YAML: adds new equation `variant_count_additive_platinum` wired to the Platinum theorem. `xpile quorum` view for C-XLATE-LEAN-TO-RUST: Sem=20 (was 19), Sym=9, Run=1, Ext=11. Platinum tier now demonstrated on 6 contracts across Layers 1/2/3/4/5.
+
 ### Added — SEVENTH Platinum-tier refinement: bounded smem sum on C-COMPILE-RUST-TO-PTX-MMA — first PATTERN-COMPOSITION Platinum (PMAT-206 / XPILE-REFINE-COMPILE-PTX-004)
 
 Seventh Platinum-tier theorem in the substrate. **First Platinum theorem demonstrating COMPOSITION of prior tier patterns** — Gold's `BoundedSmem` subtype (PMAT-187) + Platinum's additivity (PMAT-204 pattern) combined into a bounded-monoid-homomorphism.
