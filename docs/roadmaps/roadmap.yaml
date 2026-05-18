@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-230
+  github_issue: null
+  item_type: task
+  title: 'PMAT-230: SECOND Diamond on C-FFI-CPYTHON-EXT (DIAMOND BREADTH on Layer 4) — GIL-invariant preservation axioms (XPILE-REFINE-FFI-CPYTHON-011)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T07:00:00Z
+  updated: 2026-05-20T07:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Third depth-2 Diamond in substrate (first on Layer 4). GIL-INVARIANT-PRESERVATION Diamond, distinct algebraic category from PMAT-216 refcount-abelian-group. Combines PMAT-171a + PMAT-171b + released-state preservation + identity-on-GIL. gil_invariant_preservation_diamond (wired).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-229
   github_issue: null
   item_type: task

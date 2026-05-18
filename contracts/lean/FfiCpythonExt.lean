@@ -1237,4 +1237,84 @@ theorem refcount_inverse_diamond (c : FfiCallSilver) :
   unfold compose_ffi_calls_silver
   exact Int.add_right_neg c.refcount_delta
 
+/-! ## PMAT-230 — SECOND Diamond on C-FFI-CPYTHON-EXT (Layer 4
+    depth-2): GIL-INVARIANT-PRESERVATION axioms
+    (XPILE-REFINE-FFI-CPYTHON-011).
+
+    **Third depth-2 Diamond in the substrate, first on Layer 4.**
+    Following PMAT-228 (depth-2 on Layer 1 PyIntArith — semiring +
+    Euclidean-domain) and PMAT-229 (depth-2 on Layer 2 XlatePyList
+    — free monoid + section-retraction), PMAT-230 extends Diamond
+    breadth to Layer 4 C-FFI-CPYTHON-EXT.
+
+    FfiCpythonExt already had the abelian-group Diamond at
+    PMAT-216 on refcount-delta. PMAT-230 adds the GIL-INVARIANT-
+    PRESERVATION Diamond — a fundamentally distinct algebraic
+    category covering CPython's reentrant lock semantics at the
+    FFI call boundary.
+
+    - PMAT-216: refcount abelian-group (Py_INCREF/Py_DECREF pairing)
+    - PMAT-230: GIL-invariant preservation (GIL state preserved
+      across CPython API boundary)
+
+    The categorical distinction: abelian-group captures HOW
+    refcount changes compose under +; GIL-invariant captures HOW
+    the (held, released) state pair is PRESERVED through the
+    CPython ABI boundary. They model orthogonal CPython
+    invariants — refcount safety vs lock-state safety.
+
+    Status: discharged at v0.1.0 (PMAT-230). Tier: DIAMOND.
+    SECOND Diamond category on C-FFI-CPYTHON-EXT. -/
+
+/--
+  **Diamond-tier refinement theorem** — GIL state is preserved
+  across the FFI call boundary as an INVARIANT.
+
+  Combines four properties into the GIL-INVARIANT-PRESERVATION
+  axiomatization:
+  (a) Invariance under balanced input (PMAT-171a lifted): if
+      enter == exit on input, then enter == exit on output
+  (b) Held-state preservation (PMAT-171b lifted): held in →
+      held out
+  (c) Released-state preservation (Diamond-original): released
+      in → released out
+  (d) Lowering is identity on GIL state (the strongest claim):
+      both enter and exit are pointwise preserved
+
+  An emitter that drops the `Py_BEGIN_ALLOW_THREADS` /
+  `Py_END_ALLOW_THREADS` pair around a long C call would falsify
+  (d): the output GIL state would not match the input state.
+  pyo3's `Python<'_>` static guard encodes the same invariant in
+  Rust — this Diamond is the formal-semantics counterpart.
+
+  Status: **discharged at v0.1.0 (PMAT-230)**. Tier: DIAMOND.
+-/
+theorem gil_invariant_preservation_diamond
+    (c : FfiCallWithGilSilver) :
+    -- (a) Invariance under balanced input (PMAT-171a lifted)
+    (c.gil_at_enter = c.gil_at_exit →
+       (lower_call_preserving_gil c).gil_at_enter
+         = (lower_call_preserving_gil c).gil_at_exit)
+    -- (b) Held-state preserved (PMAT-171b lifted)
+    ∧ (c.gil_at_enter = GilState.held → c.gil_at_exit = GilState.held →
+       (lower_call_preserving_gil c).gil_at_exit = GilState.held)
+    -- (c) Released-state also preserved (new at Diamond)
+    ∧ (c.gil_at_enter = GilState.released → c.gil_at_exit = GilState.released →
+       (lower_call_preserving_gil c).gil_at_exit = GilState.released)
+    -- (d) Identity on GIL state at both endpoints (strongest)
+    ∧ ((lower_call_preserving_gil c).gil_at_enter = c.gil_at_enter
+        ∧ (lower_call_preserving_gil c).gil_at_exit = c.gil_at_exit) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    exact gil_invariant_silver c h
+  · intros _ hx
+    unfold lower_call_preserving_gil
+    exact hx
+  · intros _ hx
+    unfold lower_call_preserving_gil
+    exact hx
+  · constructor
+    · rfl
+    · rfl
+
 end XpileContracts.CFfiCpythonExt
