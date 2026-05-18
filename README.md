@@ -55,7 +55,7 @@ def factorial (n : Int) : Int :=
 **By the numbers (live, not aspirational):**
 
 - 27 workspace crates · all compile clean (`cargo check --workspace`)
-- 12 contracts · `pv lint` PASS with 0 errors
+- 12 contracts · `pv lint` PASS with **0 errors and 0 warnings** (full-clean substrate since PMAT-138)
 - **100% of contracts at §14.4 QUORUM** — every contract has paired Lean refinement theorem + Kani BMC harness at Bronze tier ([`xpile quorum`](crates/xpile/src/quorum.rs))
 - ~195 workspace tests · 11+ Python fixtures runtime-verified via `rustc -O` + `assert_eq!` (canonical list in `CHANGELOG.md` §"Python subset"); plus 54 bashrs-frontend tests covering POSIX shell idioms
 - Python subset shipped: see [`CHANGELOG.md`](CHANGELOG.md) §"Python subset (live, runtime-verified)" — typed `def`, multi-statement bodies, all binary + unary ops, ternary, if/else, elif chains, function calls including self-recursion (canonical source — this README intentionally does not duplicate the list to avoid the staleness it kept accumulating)
@@ -146,7 +146,7 @@ Lean 4 spans both lanes. LaTeX is proof-lane-only. Citation bridge uses **format
 | `ffi-cpython-ext-v1.yaml` | pattern | 4 hybrid / code | CPython C-extension boundary semantics | [Lean](contracts/lean/FfiCpythonExt.lean) · [Kani](contracts/kani/ffi_cpython_ext.rs) |
 | `compile-rust-to-ptx-mma-v1.yaml` | pattern | **5 compile / code** | PTX emission: `mma.sync`, `cp.async` pipelining, SMEM budget | [Lean](contracts/lean/CompileRustToPtxMma.lean) · [Kani](contracts/kani/compile_rust_to_ptx_mma.rs) |
 
-`pv lint contracts/` → PASS, 0 errors. `xpile quorum` → 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED.
+`pv lint contracts/` → PASS, **0 errors and 0 warnings**. `xpile quorum` → 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED. Every equation carries domain-grounded pre/postconditions; every equation is anchored to a Lean refinement theorem; every contract declares a `qa_gate`.
 
 ## Workspace (27 crates)
 

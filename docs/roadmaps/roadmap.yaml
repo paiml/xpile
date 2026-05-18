@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-140
+  github_issue: null
+  item_type: task
+  title: 'PMAT-140: README "by the numbers" — reflect zero-warnings substrate after PMAT-138'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-05-18T11:15:00Z
+  updated: 2026-05-18T11:15:00Z
+  spec: null
+  acceptance_criteria:
+  - README.md "by the numbers" and §Contracts summary updated to state pv lint contracts/ reports 0 errors AND 0 warnings (post-PMAT-138 full clean state). §Contracts summary notes every equation carries domain-grounded pre/postconditions, is anchored to a Lean refinement theorem, and every contract declares a qa_gate.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-139
   github_issue: null
   item_type: task
