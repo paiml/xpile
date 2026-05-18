@@ -7,6 +7,28 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — ELEVENTH Platinum-tier refinement: source-lang determinism on C-XPILE-FRONTEND-TRAIT — FIRST Platinum on Layer-3 + SEVENTH algebraic shape (PMAT-210 / XPILE-REFINE-FRONTEND-TRAIT-003)
+
+Eleventh Platinum-tier theorem in the substrate. **Extends Platinum to C-XPILE-FRONTEND-TRAIT** — first Platinum theorem on a Layer-3 trait contract. Platinum coverage now spans **9 of 12 contracts across all 5 layers**.
+
+**Demonstrates a SEVENTH distinct Platinum algebraic shape**: input-determinism / output-independence — `f(x) = f(y)` on the discriminator field. Distinct from prior 6 patterns:
+1. Commutativity (PMAT-199)
+2. Associativity (PMAT-200)
+3. Idempotence (PMAT-201)
+4. Functoriality (PMAT-202/207/208/209)
+5. Transitivity (PMAT-203)
+6. Additivity (PMAT-204)
+7. **Determinism (PMAT-210)** ← NEW
+
+The Platinum theorems:
+- `source_lang_deterministic_platinum` (wired): for fixed Frontend, source_lang is independent of path/source content
+- `source_lang_class_congruent_platinum`: equivalence-class structure via declared_lang
+- `consistency_universal_platinum`: universal-quantifier closure of PMAT-156
+
+**Captures Hoare-style "result depends only on fixed parameters" determinism**. Load-bearing for any contract where output structure should be invariant under content variation — for example, ruling out emitters that auto-detect language from source content (changing source_lang accordingly).
+
+YAML: adds new equation `source_lang_deterministic_platinum` wired to the Platinum theorem. `xpile quorum` view for C-XPILE-FRONTEND-TRAIT: Sem=4 (was 3), Sym=1, Run=1, Ext=8.
+
 ### Added — TENTH Platinum-tier refinement: precondition lift homomorphism on C-XLATE-RUST-FN-TO-LEAN-THM (PMAT-209 / XPILE-REFINE-XLATE-RUST-TO-LEAN-004)
 
 Tenth Platinum-tier theorem in the substrate. Extends Platinum to **C-XLATE-RUST-FN-TO-LEAN-THM** (eighth contract with Platinum coverage). **Fourth demonstration of the functoriality / monoid-homomorphism pattern** (after PMAT-202 Python lists, PMAT-207 Lean inductives, PMAT-208 LaTeX citations) — now on the **proof lane**.
