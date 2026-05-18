@@ -1345,4 +1345,71 @@ theorem division_algorithm_diamond
     show Int.fmod a b + b * Int.fdiv a b = a
     exact Int.fmod_add_fdiv a b
 
+/-! ## PMAT-241 — THIRD Diamond on C-PY-INT-ARITH (DEPTH-3
+    MILESTONE): left-shift monoid via exponentiation
+    (XPILE-REFINE-PY-INT-ARITH-010).
+
+    **First DEPTH-3 Diamond in the substrate.** Opens Diamond
+    depth-3 — three distinct algebraic categories on a single
+    contract. PyIntArith already has TWO Diamond categories
+    (semiring at PMAT-214, Euclidean-domain at PMAT-228); PMAT-241
+    adds the SHIFT-MONOID Diamond as the third orthogonal
+    category.
+
+    - PMAT-214: (Int, +, 0, *, 1) as SEMIRING (additive/multiplicative)
+    - PMAT-228: (Int, fdiv, fmod) as EUCLIDEAN DOMAIN (division)
+    - PMAT-241: (Int × Nat, shl, 0) as SHIFT-MONOID (multiplicative
+      by powers of 2)
+
+    The categorical distinction: shift-monoid captures the
+    `shl(a, b) = a * 2^b` semantics as an EXPONENT-INDEXED
+    MULTIPLICATIVE STRUCTURE. The composition law
+    `shl(shl(a, b1), b2) = shl(a, b1 + b2)` is a homomorphism
+    from (Nat, +, 0) into the shift-action on Int. Distinct from
+    the semiring (which is on Int×Int operations) and Euclidean-
+    domain (which is on division semantics).
+
+    Status: discharged at v0.1.0 (PMAT-241). Tier: DIAMOND.
+    First DEPTH-3 Diamond in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — left-shift on the slow
+  path forms a MONOID action of (Nat, +, 0) on Int via powers
+  of 2.
+
+  Combines four properties into the SHIFT-MONOID axiomatization:
+  (a) Slow-path semantics: shl(a, b) = a * 2^b (PMAT-176 lifted)
+  (b) Composition (exponent additivity): shl(shl(a, b1), b2)
+      = shl(a, b1 + b2)
+  (c) Identity: shl(a, 0) = a
+  (d) Zero shift on zero input: shl(0, b) = 0
+
+  An emitter that breaks the exponent-additivity composition
+  law (e.g., by using a wrap-around shift on the slow path)
+  would falsify (b) and break the shift-monoid structure.
+
+  Status: **discharged at v0.1.0 (PMAT-241)**. Tier: DIAMOND.
+-/
+theorem shift_monoid_diamond
+    (a : Int) (b1 b2 : Nat) :
+    -- (a) Slow-path semantics: shl(a, b) = a * 2^b
+    shl_dispatch_silver PyIntPath.SlowPath a b1 = a * (2 ^ b1)
+    -- (b) Exponent additivity: shl(shl(a, b1), b2) = shl(a, b1 + b2)
+    ∧ shl_dispatch_silver PyIntPath.SlowPath
+        (shl_dispatch_silver PyIntPath.SlowPath a b1) b2
+      = shl_dispatch_silver PyIntPath.SlowPath a (b1 + b2)
+    -- (c) Identity: shl(a, 0) = a
+    ∧ shl_dispatch_silver PyIntPath.SlowPath a 0 = a
+    -- (d) Zero shift on zero input: shl(0, b) = 0
+    ∧ shl_dispatch_silver PyIntPath.SlowPath 0 b1 = 0 := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · unfold shl_dispatch_silver bigint_shl
+    rw [pow_add]
+    ring
+  · unfold shl_dispatch_silver bigint_shl
+    simp
+  · unfold shl_dispatch_silver bigint_shl
+    simp
+
 end XpileContracts.CPyIntArith

@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-241
+  github_issue: null
+  item_type: task
+  title: 'PMAT-241: THIRD Diamond on C-PY-INT-ARITH (FIRST DEPTH-3 Diamond in substrate) — shift-monoid via exponentiation (XPILE-REFINE-PY-INT-ARITH-010)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T12:30:00Z
+  updated: 2026-05-20T12:30:00Z
+  spec: null
+  acceptance_criteria:
+  - First DEPTH-3 Diamond in substrate. Opens Diamond depth-3 — three distinct algebraic categories on the same contract. SHIFT-MONOID Diamond on (Int × Nat, shl, 0), distinct algebraic category from PMAT-214 semiring and PMAT-228 Euclidean-domain. Combines PMAT-176 slow-path semantics + exponent-additivity composition + identity + zero-on-zero. shift_monoid_diamond (wired).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-240
   github_issue: null
   item_type: task
