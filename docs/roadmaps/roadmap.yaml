@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-189
+  github_issue: null
+  item_type: task
+  title: 'PMAT-189: FIFTH Gold-tier refinement — NonEmptyDefinition subtype on C-NOTATION-LATEX-MATH-TO-EQUATION; first Gold using non-empty-list / collection-cardinality subtype pattern (XPILE-REFINE-NOTATION-004)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T10:30:00Z
+  updated: 2026-05-19T10:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Fifth Gold-tier theorem in the substrate. First Gold theorem using non-empty-list / collection-cardinality subtype shape (distinct from PMAT-185..188 bounded-Nat pattern). NonEmptyDefinition := { d : DefinitionEnvSilver // d.all_math_spans.size > 0 } encodes definition body non-emptiness at type level. non_empty_definition_preserves_spans_gold (wired) + non_empty_witness_gold + gold_non_empty_agrees_with_silver_spans companions. Demonstrates Gold-tier refinement works for collection-cardinality preconditions, not just numeric bounds. Applicable to precondition lists, equation lists, citation sets. C-NOTATION-LATEX-MATH-TO-EQUATION Sem 14 → 15.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-188
   github_issue: null
   item_type: task

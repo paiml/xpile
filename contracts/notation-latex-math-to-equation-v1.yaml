@@ -313,6 +313,37 @@ equations:
     postconditions:
       - "an emitter that drops 2nd-N math spans from a multi-span definition would falsify additional_spans_preserved_silver — caught at the structural level"
 
+  non_empty_definition_preserves_spans_gold:
+    # PMAT-189 / XPILE-REFINE-NOTATION-004: FIFTH Gold-tier
+    # refinement in the substrate. First Gold theorem using a
+    # NEW subtype shape — non-empty-list refinement, distinct
+    # from the bounded-Nat pattern used in PMAT-185..188.
+    # NonEmptyDefinition := { d : DefinitionEnvSilver //
+    # d.all_math_spans.size > 0 } encodes the "definition body
+    # contains at least one math span" precondition at the
+    # type level. Companion theorems non_empty_witness_gold
+    # and gold_non_empty_agrees_with_silver_spans.
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.non_empty_definition_preserves_spans_gold"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      lower_non_empty_definition(d).additional_spans == d.val.all_math_spans
+      WITH d.val.all_math_spans.size > 0
+    domain: |
+      Same as definition_env_to_equation — a Lean definition
+      environment. The Gold upgrade narrows the modelling to
+      definitions with at least one math span, encoded at the
+      type level.
+    invariants:
+      - "non-emptiness witness travels with the value through lowering — downstream can iterate the additional_spans without empty-check"
+      - "the NonEmptyDefinition subtype rules out empty-body definitions at CONSTRUCTION time"
+      - "this is a NEW subtype pattern (non-empty-list / collection-cardinality) distinct from the bounded-Nat pattern of PMAT-185..188"
+      - "applicable to any collection-cardinality precondition (precondition lists, equation lists, citation sets, etc.)"
+    preconditions:
+      - "the definition body contains at least one math span — encoded as a refinement subtype, not as an external proof obligation"
+    postconditions:
+      - "an emitter that constructs a DefinitionEnvSilver from a zero-span body would not type-check against lower_non_empty_definition_gold"
+      - "establishes that Gold-tier refinement works for collection-cardinality preconditions, not just numeric bounds"
+
   remark_env_to_falsification:
     # PMAT-134: Bronze-tier refinement theorem locks in the
     # RFC-2119 keyword → ship_blocking decision table
