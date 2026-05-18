@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SECOND Diamond on C-XLATE-RUST-FN-TO-LEAN-THM (proof-lane depth-2) — NonEmpty section-retraction axioms (PMAT-236 / XPILE-REFINE-XLATE-RUST-TO-LEAN-006)
+
+**Eighth depth-2 Diamond in the substrate.** Proof-lane mirror of PMAT-229's NonEmpty section-retraction Diamond. Adds a SECOND Layer-2 contract with depth-2 Diamond coverage (XlateRustFnToLeanThm joins XlatePyListToVec at Layer 2).
+
+C-XLATE-RUST-FN-TO-LEAN-THM already had the precondition-list-monoid Diamond at PMAT-223. PMAT-236 adds the **NonEmpty SECTION-RETRACTION Diamond** — fundamentally distinct algebraic category covering SUBTYPE PRESERVATION across Gold-tier non-empty lifting on the proof lane:
+
+- **PMAT-223**: free precondition-list-monoid (append-composition algebra)
+- **PMAT-236**: NonEmpty section-retraction (subtype refinement preservation on the proof lane)
+
+Combines four properties on `NonEmptyPreconditionList → EmittedLeanHypothesesSilver`:
+(a) `source_indices` preservation (PMAT-191 lifted)
+(b) Non-emptiness witness preserved
+(c) Gold-Silver bridge: agrees with Silver lift
+(d) Injectivity on content: same `source_indices` ⇒ same output
+
+`nonempty_preconditions_section_retraction_diamond` (wired): 4-conjunction proving the section-retraction axiomatization on the proof lane. The substrate now demonstrates the same depth-2 pattern on BOTH lanes (code lane PMAT-229 + proof lane PMAT-236).
+
+YAML: adds new equation `nonempty_preconditions_section_retraction_diamond` wired to the Diamond theorem.
+
 ### Added — SECOND Diamond on C-XPILE-BACKEND-TRAIT (Layer 3 depth-2) — target constant-projection; closes 2x2 trait matrix at depth-2 (PMAT-235 / XPILE-REFINE-BACKEND-TRAIT-005)
 
 **Seventh depth-2 Diamond in the substrate, second on Layer 3.** Mirror of PMAT-232 (`source_lang_constant_projection_diamond`) on the Backend side. Together with PMAT-232, this CLOSES the 2x2 trait matrix at depth-2 for the constant-projection pattern.

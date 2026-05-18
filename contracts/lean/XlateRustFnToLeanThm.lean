@@ -824,4 +824,65 @@ theorem precondition_list_monoid_diamond
   · rfl
   · exact Array.append_assoc pl1.source_indices pl2.source_indices pl3.source_indices
 
+/-! ## PMAT-236 — SECOND Diamond on C-XLATE-RUST-FN-TO-LEAN-THM
+    (Layer 2 depth-2 alt): NonEmpty section-retraction axioms
+    (XPILE-REFINE-XLATE-RUST-TO-LEAN-006).
+
+    **Eighth depth-2 Diamond in the substrate.** Mirror of
+    PMAT-229's NonEmpty section-retraction Diamond pattern,
+    applied to the proof lane (precondition lists) rather than
+    the code lane (Python lists). Adds a SECOND depth-2 Diamond
+    contract within Layer 2.
+
+    C-XLATE-RUST-FN-TO-LEAN-THM already has the precondition-
+    list-monoid Diamond (PMAT-223). PMAT-236 adds the NonEmpty
+    SECTION-RETRACTION Diamond — fundamentally distinct
+    algebraic category covering SUBTYPE PRESERVATION across
+    Gold-tier non-empty lowering:
+
+    - PMAT-223: free precondition-list-monoid (append-composition)
+    - PMAT-236: NonEmpty section-retraction (subtype refinement
+      preservation on the proof lane)
+
+    Status: discharged at v0.1.0 (PMAT-236). Tier: DIAMOND.
+    SECOND Diamond category on C-XLATE-RUST-FN-TO-LEAN-THM. -/
+
+/--
+  **Diamond-tier refinement theorem** — NonEmpty section-
+  retraction structure on Gold-tier precondition-list lifting.
+
+  Combines four properties into the SECTION-RETRACTION
+  axiomatization on the pair
+    `NonEmptyPreconditionList → EmittedLeanHypothesesSilver`:
+
+  (a) source_indices preservation (PMAT-191 lifted)
+  (b) Non-emptiness witness preservation (PMAT-191 companion)
+  (c) Gold-Silver bridge: agrees with Silver lift
+  (d) Injectivity on content: same source_indices ⇒ same output
+      source_indices
+
+  Status: **discharged at v0.1.0 (PMAT-236)**. Tier: DIAMOND.
+-/
+theorem nonempty_preconditions_section_retraction_diamond
+    (n : NonEmptyPreconditionList) :
+    -- (a) source_indices preservation (PMAT-191 lifted)
+    (lower_non_empty_preconditions_gold n).source_indices = n.val.source_indices
+    -- (b) Non-emptiness witness preserved (PMAT-191 companion)
+    ∧ (lower_non_empty_preconditions_gold n).source_indices.size > 0
+    -- (c) Gold-Silver bridge: same as Silver lift on underlying value
+    ∧ (lower_non_empty_preconditions_gold n).source_indices
+        = (lift_preconditions_silver n.val).source_indices
+    -- (d) Injectivity on content: same source_indices ⇒ same output
+    ∧ ∀ (n' : NonEmptyPreconditionList),
+        n.val.source_indices = n'.val.source_indices →
+        (lower_non_empty_preconditions_gold n).source_indices
+          = (lower_non_empty_preconditions_gold n').source_indices := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · exact non_empty_preconditions_witness_gold n
+  · rfl
+  · intros n' h
+    unfold lower_non_empty_preconditions_gold lift_preconditions_silver
+    exact h
+
 end XpileContracts.CXlateRustFnToLeanThm

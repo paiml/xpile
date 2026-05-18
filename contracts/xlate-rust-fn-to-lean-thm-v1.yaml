@@ -299,6 +299,37 @@ equations:
       - "precondition lifting respects monoid structure — emitter pipelines that concat preconditions piecewise produce the same observable result as monolithic emission"
       - "proof-lane and code-lane both demonstrate monoid Diamond at the algebraic level"
 
+  nonempty_preconditions_section_retraction_diamond:
+    # PMAT-236 / XPILE-REFINE-XLATE-RUST-TO-LEAN-006: SECOND
+    # Diamond on this contract — depth-2. Mirror of PMAT-229's
+    # NonEmpty section-retraction Diamond pattern, applied to
+    # the PROOF LANE (precondition lists). Fundamentally distinct
+    # algebraic category from PMAT-223's free precondition-list-
+    # monoid: monoid (composition) vs section-retraction (subtype
+    # refinement preservation).
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.nonempty_preconditions_section_retraction_diamond"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    formula: |
+      NonEmpty precondition list lifting forms a SECTION
+      with retraction structure:
+        (a) source_indices preservation (PMAT-191 lifted)
+        (b) non-emptiness preserved: size > 0 ⇒ size > 0 after lift
+        (c) Gold-Silver bridge: agrees with Silver lift
+        (d) injectivity-on-content: same source_indices ⇒ same output
+    domain: |
+      Any NonEmptyPreconditionList value. The Diamond upgrade
+      captures the FULL subtype-preservation axiomatization on
+      the proof lane.
+    invariants:
+      - "SECOND Diamond category on C-XLATE-RUST-FN-TO-LEAN-THM — proof-lane depth-2"
+      - "distinct algebraic category from PMAT-223 precondition-list-monoid"
+      - "mirror of PMAT-229's NonEmpty section-retraction pattern on the proof lane"
+    preconditions:
+      - "a NonEmptyPreconditionList value (non-empty source_indices array)"
+    postconditions:
+      - "an emitter that constructs a proof-lane lift from a zero-entry NonEmpty witness would not type-check"
+      - "Diamond depth-2 extends to proof-lane contracts — substrate now has TWO Layer-2 contracts with depth-2 (XlatePyListToVec PMAT-229, this PR)"
+
   citation_bridge_via_attribute:
     # PMAT-136: Bronze-tier refinement theorem locks in byte-for-byte
     # contract_id + equation_name preservation in @[xpile_contract,
