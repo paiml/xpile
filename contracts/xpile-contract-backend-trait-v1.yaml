@@ -155,6 +155,34 @@ equations:
       - "an emitter that does citation deduplication during contract composition would falsify the homomorphism — caught at the Platinum theorem level"
       - "the substrate has now demonstrated functoriality on FIVE distinct contract domains, confirming the pattern's universality"
 
+  citation_render_monoid_diamond:
+    # PMAT-226 / XPILE-REFINE-CONTRACT-BACKEND-TRAIT-004: TWELFTH
+    # Diamond-tier refinement. UNIVERSAL Diamond milestone — all
+    # 12 contracts now have Diamond coverage. Combines PMAT-212
+    # render homomorphism + associativity + left/right identity
+    # into the CITATION RENDER MONOID axiomatization.
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.citation_render_monoid_diamond"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    formula: |
+      citation rendering forms a MONOID:
+        (a) homomorphism (PMAT-212 lifted)
+        (b) associativity (PMAT-212 companion)
+        (c) left identity (empty contract on depends_on)
+        (d) right identity
+    domain: |
+      Any three Contract values composed via per-component array
+      concatenation. The Diamond upgrade captures the FULL
+      citation-render-monoid axiomatization.
+    invariants:
+      - "TWELFTH Diamond-tier theorem — UNIVERSAL Diamond milestone"
+      - "every one of the 12 contracts in the substrate now has at least one Diamond theorem"
+      - "tier progression Bronze → Silver → Gold → Platinum → Diamond is now UNIVERSAL across the substrate"
+    preconditions:
+      - "three well-formed Contract values"
+    postconditions:
+      - "citation render monoid structure is captured fully at the Diamond level"
+      - "the substrate has achieved UNIVERSAL refinement-tier coverage at all 5 tiers"
+
   citation_via_structured_attribute:
     formula: |
       forall theorem T in rendered.primary when config.format == LeanTheorem:
