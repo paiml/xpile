@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-236
+  github_issue: null
+  item_type: task
+  title: 'PMAT-236: SECOND Diamond on C-XLATE-RUST-FN-TO-LEAN-THM (proof-lane depth-2) — NonEmpty section-retraction axioms (XPILE-REFINE-XLATE-RUST-TO-LEAN-006)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T10:00:00Z
+  updated: 2026-05-20T10:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Eighth depth-2 Diamond in substrate. Proof-lane mirror of PMAT-229's NonEmpty section-retraction Diamond. NonEmpty SECTION-RETRACTION Diamond on NonEmptyPreconditionList → EmittedLeanHypothesesSilver, distinct algebraic category from PMAT-223 precondition-list-monoid. Combines PMAT-191 + non-emptiness witness + Gold-Silver bridge + injectivity. nonempty_preconditions_section_retraction_diamond (wired). Second Layer-2 contract with depth-2.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-235
   github_issue: null
   item_type: task
