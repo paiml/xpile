@@ -2122,3 +2122,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-129
+  github_issue: null
+  item_type: task
+  title: 'PMAT-129: xlate-lean-to-rust contract — pre/postconditions for all 9 equations (warnings 22 → 9)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-19T06:30:00Z
+  updated: 2026-05-19T06:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Batch-add genuine pre/postconditions for all 9 equations in xlate-lean-to-rust-v1.yaml (def_to_rust_fn, partial_def_to_rust_fn, theorem_carried_as_lean_sidecar, inductive_to_rust_enum, structure_to_rust_struct, instance_to_rust_impl, axiom_to_extern_fn, noncomputable_def_to_rust_panic, citation_in_emitted_rust). Each statement is a domain-design judgment call grounded in the Lean→Rust translation invariants. Contract warnings 22 → 9 (the remaining 9 are PV-ENF-002 missing-lean_theorem on equations other than def_to_rust_fn — those need actual Lean proofs, deferred). Total substrate warnings 68 → 55.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

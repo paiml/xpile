@@ -59,6 +59,10 @@ equations:
     preconditions:
       - "def is total (Lean accepted it without `partial`)"
       - "all referenced types have Rust counterparts"
+    postconditions:
+      - "Rust function name equals the source Lean def name byte-for-byte"
+      - "Rust parameter list preserves source parameter order"
+      - "the lowered Rust body is panic-free for all inputs in the declared `domain` (load-bearing for the Bronze-tier body-preservation theorem PMAT-070)"
 
   partial_def_to_rust_fn:
     formula: |
@@ -75,6 +79,10 @@ equations:
       - "the `#[partial_translation]` attribute is mandatory and not stripped at any optimizer level"
     preconditions:
       - "user has acknowledged the partiality (a Layer-4 contract review)"
+    postconditions:
+      - "the emitted Rust function returns `Result<R_rust, NonTermination>` (never plain `R_rust`)"
+      - "the `#[partial_translation]` attribute appears on the lowered function"
+      - "any call site of the partial function in lowered Rust uses `?` or explicit `Err` handling (never `.unwrap()` without a justification comment)"
 
   theorem_carried_as_lean_sidecar:
     formula: |
@@ -89,7 +97,13 @@ equations:
       - "no Rust output is emitted for theorem declarations"
       - "the Lean sidecar carries a `-- cited by xpile contract C-X` comment"
       - "if the theorem's name is referenced by an executable def, the Rust output emits a doc-comment referencing the Lean theorem's fully-qualified path"
-    preconditions: []
+    preconditions:
+      - "the source declaration is `theorem` or `lemma` (not `def` or `partial def`)"
+      - "the theorem's proof body is well-formed Lean 4 (not just a `sorry`)"
+    postconditions:
+      - "the Rust output contains no function corresponding to the theorem"
+      - "the Lean sidecar artifact carries the theorem text verbatim plus a `-- cited by xpile contract` comment"
+      - "any Rust def referencing the theorem name carries a doc-comment pointing to the sidecar's fully-qualified path"
 
   inductive_to_rust_enum:
     formula: |
@@ -105,6 +119,10 @@ equations:
       - "indexed inductives (those with type indices) lower to generic enums with PhantomData where needed"
     preconditions:
       - "no constructor has an implicit/instance argument that requires elaboration"
+    postconditions:
+      - "the emitted Rust `enum` has exactly the same number of variants as the source inductive"
+      - "variant ordering matches source-declaration order"
+      - "every variant's positional fields preserve source argument order (Lean argument names are dropped)"
 
   structure_to_rust_struct:
     formula: |
@@ -117,7 +135,13 @@ equations:
       - "field name and order preserved"
       - "structure extending (Lean `extends`) lowers to composition (field of struct type), NOT inheritance"
       - "default field values (Lean := ...) lower to a Default impl"
-    preconditions: []
+    preconditions:
+      - "every field type has a Rust counterpart (no `Type` / `Sort u` fields)"
+      - "the structure is not parameterized over a Lean universe variable that has no Rust equivalent"
+    postconditions:
+      - "the emitted Rust struct has the same field names and order as the source"
+      - "Lean `extends`-derived fields appear as composition (a typed field), never as inheritance"
+      - "Lean default values (`field := value`) produce a `Default` impl with the same default expression"
 
   instance_to_rust_impl:
     formula: |
@@ -133,6 +157,10 @@ equations:
       - "instance priority (Lean) does not lower; Rust uses orphan rules instead"
     preconditions:
       - "the Lean typeclass is registered as a Rust trait equivalence"
+    postconditions:
+      - "the emitted Rust `impl` provides every method declared in the trait"
+      - "method names match between Lean and Rust (no mangling)"
+      - "Lean default method bodies in the typeclass map to Rust default method bodies in the trait (not duplicated per impl)"
 
   axiom_to_extern_fn:
     formula: |
@@ -151,6 +179,10 @@ equations:
       - "the contract citing the axiom is named in the comment"
     preconditions:
       - "the user supplied a corresponding implementation in another crate, OR the contract explicitly notes the axiom is for-proof-only"
+    postconditions:
+      - "the emitted Rust block contains at least 5 lines of `// WARNING:` comment above the extern declaration"
+      - "the extern block is qualified `unsafe extern \"Rust\"` (never plain `extern`)"
+      - "the warning comment names at least one citing contract ID"
 
   noncomputable_def_to_rust_panic:
     formula: |
@@ -163,7 +195,13 @@ equations:
       - "Rust emission is a `panic!` with the source filename and Lean def name"
       - "the function is marked `#[doc(hidden)]` to avoid accidental use"
       - "a corresponding Layer-1 contract MUST exist documenting why the construct appears"
-    preconditions: []
+    preconditions:
+      - "the Lean source declaration is keyword-marked `noncomputable def`"
+      - "a Layer-1 contract documenting the construct exists in `contracts/`"
+    postconditions:
+      - "the lowered Rust function body is exactly `panic!(\"noncomputable Lean def has no runtime equivalent\")` with the Lean source location interpolated"
+      - "the function carries `#[doc(hidden)]` attribute"
+      - "any caller in the lowered Rust crate gets a `clippy::pedantic` warning via a deny lint pointing at the contract"
 
   citation_in_emitted_rust:
     formula: |
@@ -178,7 +216,13 @@ equations:
       - "doc-comment cites at least one contract ID"
       - "doc-comment includes the Lean source location for audit"
       - "if multiple contracts cite the same Lean decl, all are listed"
-    preconditions: []
+    preconditions:
+      - "the Lean source declaration appears in at least one xpile contract's citation list"
+      - "the Rust emission target supports doc-comments (every codegen does)"
+    postconditions:
+      - "every emitted Rust item produced from a cited Lean decl carries `/// Contract: <C.id>` above its declaration"
+      - "the Lean source location (`<file>:<line>`) appears in the doc-comment"
+      - "multi-contract citations enumerate all cited IDs (set-union semantics, no drops)"
 
 proof_obligations:
   - type: postcondition
