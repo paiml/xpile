@@ -7,6 +7,44 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SECOND Diamond on C-XPILE-CONTRACT-BACKEND-TRAIT — contract product-monoid; **completes UNIVERSAL Diamond depth-2 across ALL 12 CONTRACTS** (PMAT-239 / XPILE-REFINE-CONTRACT-BACKEND-TRAIT-005)
+
+**Eleventh depth-2 Diamond in the substrate — UNIVERSAL Diamond depth-2 milestone.** Every contract in the substrate (12/12) now has at least TWO distinct Diamond categories. The Diamond depth-2 progression that began with PMAT-228 on PyIntArith now spans the entire substrate.
+
+XpileContractBackendTrait already had the citation render-monoid Diamond at PMAT-226 on JUST the `depends_on` field. PMAT-239 adds the CONTRACT PRODUCT-MONOID Diamond — fundamentally distinct algebraic category covering BOTH `depends_on` AND `references` fields as a free product of two array-monoids:
+
+- **PMAT-226**: render-monoid on JUST `depends_on`
+- **PMAT-239**: product-monoid on `(depends_on × references)`
+
+The categorical distinction: PMAT-226 captures the algebra of one field; PMAT-239 captures the PRODUCT of two independent array-monoids. Product is strictly stronger — knowing each component is a monoid does NOT imply they form a product-monoid; the product structure requires component-wise operations with no cross-field interference.
+
+Combines four properties:
+(a) `depends_on` homomorphism (PMAT-212 lifted)
+(b) `references` homomorphism (companion)
+(c) Left identity on `depends_on` (empty contract)
+(d) Left identity on `references` (empty contract)
+
+`contract_product_monoid_diamond` (wired): 4-conjunction proving the product-monoid axiomatization.
+
+YAML: adds new equation `contract_product_monoid_diamond`.
+
+**UNIVERSAL Diamond depth-2 census after this PR** — every contract has 2+ Diamond categories:
+
+| Layer | Contract | Diamond 1 | Diamond 2 |
+|---|---|---|---|
+| 1 | C-PY-INT-ARITH | semiring (214) | Euclidean-domain (228) |
+| 1/4 | C-BASHRS-POSIX-IDEMPOTENCE | pure-function (215) | exit-code projection (238) |
+| 2 | C-XLATE-PY-LIST-TO-VEC | free list-monoid (221) | NonEmpty section-retraction (229) |
+| 2 | C-XLATE-LEAN-TO-RUST | inductive-monoid (222) | cardinality functor (237) |
+| 2 | C-XLATE-RUST-FN-TO-LEAN-THM | precondition-list-monoid (223) | NonEmpty section-retraction (236) |
+| 3 | C-XPILE-FRONTEND-TRAIT | equivalence-relation (224) | constant-projection (232) |
+| 3 | C-XPILE-BACKEND-TRAIT | equivalence-relation (225) | constant-projection (235) |
+| 3 | C-XPILE-CONTRACT-FRONTEND-TRAIT | modules-equiv-relation (217a) | parse-preserves-equiv (217b) |
+| 3 | **C-XPILE-CONTRACT-BACKEND-TRAIT** | **render-monoid (226)** | **product-monoid (239, this PR)** |
+| 4 | C-FFI-CPYTHON-EXT | abelian-group (216) | GIL-invariant preservation (230) |
+| 4 | C-NOTATION-LATEX-MATH-TO-EQUATION | string-monoid (219) | product-monoid (234) |
+| 5 | C-COMPILE-RUST-TO-PTX-MMA | bounded-monoid (218) | join-semilattice (231) |
+
 ### Added — SECOND Diamond on C-BASHRS-POSIX-IDEMPOTENCE (Layer 1/4 depth-2) — exit-code constant-projection axioms (PMAT-238 / XPILE-REFINE-BASHRS-005)
 
 **Tenth depth-2 Diamond in the substrate.** Bashrs already had the pure-function Diamond at PMAT-215 (combining idempotence + cross-domain equivalence + determinism on the full OutcomeSilver). PMAT-238 adds the EXIT-CODE CONSTANT-PROJECTION Diamond — fundamentally distinct algebraic category covering a sub-field invariant:

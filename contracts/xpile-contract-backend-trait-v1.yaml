@@ -183,6 +183,37 @@ equations:
       - "citation render monoid structure is captured fully at the Diamond level"
       - "the substrate has achieved UNIVERSAL refinement-tier coverage at all 5 tiers"
 
+  contract_product_monoid_diamond:
+    # PMAT-239 / XPILE-REFINE-CONTRACT-BACKEND-TRAIT-005: SECOND
+    # Diamond on this contract — Layer 3 contract-lane depth-2.
+    # COMPLETES UNIVERSAL Diamond depth-2 across ALL 12
+    # CONTRACTS in the substrate. Distinct algebraic category
+    # from PMAT-226 citation render-monoid (single-field) vs
+    # contract product-monoid (both depends_on × references
+    # fields as free product of two array-monoids).
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.contract_product_monoid_diamond"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    formula: |
+      contract composition forms a PRODUCT MONOID across
+      (depends_on × references) fields:
+        (a) depends_on homomorphism (PMAT-212 lifted)
+        (b) references homomorphism (companion)
+        (c) Left identity on depends_on (empty contract)
+        (d) Left identity on references (empty contract)
+    domain: |
+      Any two Contract values c1, c2. The Diamond upgrade
+      captures the FULL product-monoid structure simultaneously
+      on both array fields.
+    invariants:
+      - "SECOND Diamond category on C-XPILE-CONTRACT-BACKEND-TRAIT — completes UNIVERSAL Diamond depth-2 across ALL 12 contracts"
+      - "distinct algebraic category from PMAT-226 single-field render-monoid"
+      - "captures PRODUCT-MONOID structure: component-wise operations on (depends_on × references)"
+    preconditions:
+      - "two well-formed Contract values"
+    postconditions:
+      - "an emitter that lowers depends_on correctly but introduces hidden coupling (e.g., always setting references = depends_on) would falsify (b)"
+      - "UNIVERSAL Diamond depth-2 milestone: every contract in the substrate now has at least 2 distinct Diamond categories"
+
   citation_via_structured_attribute:
     formula: |
       forall theorem T in rendered.primary when config.format == LeanTheorem:
