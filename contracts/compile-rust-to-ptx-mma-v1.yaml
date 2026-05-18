@@ -200,6 +200,40 @@ equations:
       - "an emitter satisfying individual Platinum + Gold theorems but breaking joint structure (non-commutative representation, off-by-one in zero-handling) would falsify this Diamond"
       - "the bounded-monoid structure is the algebraic foundation for compositional sm_80 budget analysis"
 
+  bounded_smem_join_semilattice_diamond:
+    # PMAT-231 / XPILE-REFINE-COMPILE-PTX-006: SECOND Diamond on
+    # this contract — Layer 5 depth-2 Diamond. Following
+    # PMAT-228 (Layer 1), PMAT-229 (Layer 2), PMAT-230 (Layer 4),
+    # this extends Diamond breadth to Layer 5. The JOIN-
+    # SEMILATTICE Diamond is a fundamentally distinct algebraic
+    # category from PMAT-218 bounded-monoid: monoid (additive)
+    # vs semilattice (max-based, idempotent). The semilattice
+    # captures WORST-CASE-RESERVATION semantics — parallel
+    # kernels reserve max-of-requested, not sum-of-requested.
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_join_semilattice_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      (BoundedSmem, max, 0) forms a JOIN-SEMILATTICE:
+        (a) commutativity: max(a, b) = max(b, a)
+        (b) associativity: max(max(a, b), c) = max(a, max(b, c))
+        (c) bottom: max(0, a) = a
+        (d) idempotence: max(a, a) = a (lattice-defining axiom)
+    domain: |
+      Any three BoundedSmem values. The Diamond upgrade captures
+      the join-semilattice structure (max + identity + idempotence)
+      that is fundamentally distinct from the additive monoid
+      captured at PMAT-218.
+    invariants:
+      - "SECOND Diamond category on C-COMPILE-RUST-TO-PTX-MMA — Diamond breadth on Layer 5"
+      - "distinct algebraic category from PMAT-218 bounded-monoid (monoid vs semilattice)"
+      - "captures WORST-CASE-RESERVATION semantics for parallel kernel composition"
+      - "idempotence is the semilattice-defining axiom — distinguishes from monoid"
+    preconditions:
+      - "three BoundedSmem values (Gold-tier well-formedness)"
+    postconditions:
+      - "an emitter that uses sum-based reservation for parallel kernels would over-reserve unnecessarily"
+      - "Diamond depth-2 demonstrated on Layer 5 — substrate now has FOUR depth-2 Diamond contracts (Layers 1, 2, 4, 5)"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)

@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SECOND Diamond on C-COMPILE-RUST-TO-PTX-MMA (Diamond depth-2 on Layer 5) — join-semilattice via max (PMAT-231 / XPILE-REFINE-COMPILE-PTX-006)
+
+**Fourth depth-2 Diamond in the substrate, first on Layer 5.** Following PMAT-228 (Layer 1), PMAT-229 (Layer 2), PMAT-230 (Layer 4), PMAT-231 extends Diamond breadth to Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The substrate now has depth-2 Diamonds across **FOUR distinct layers**: 1, 2, 4, 5.
+
+CompileRustToPtxMma already had the bounded-monoid Diamond at PMAT-218 on (BoundedSmem, +, 0). PMAT-231 adds the **JOIN-SEMILATTICE Diamond via max** — a fundamentally distinct algebraic category covering the LATTICE structure of BoundedSmem:
+
+- **PMAT-218** axiomatizes (BoundedSmem, +, 0) as a BOUNDED COMMUTATIVE MONOID (additive)
+- **PMAT-231** axiomatizes (BoundedSmem, max, 0) as a JOIN-SEMILATTICE (idempotent commutative monoid with bottom)
+
+Combines four properties:
+(a) Commutativity: `max(a, b) = max(b, a)`
+(b) Associativity: `max(max(a, b), c) = max(a, max(b, c))`
+(c) Bottom element: `max(0, a) = a`
+(d) **Idempotence**: `max(a, a) = a` — the semilattice-defining axiom that distinguishes lattices from monoids
+
+`bounded_smem_join_semilattice_diamond` (wired): 4-conjunction proving the join-semilattice axiomatization. Captures WORST-CASE-RESERVATION semantics: parallel composition of kernels reserves max-of-requested smem, not sum-of-requested (the latter is for sequential composition, captured at PMAT-218). An emitter that uses sum-based reservation for parallel kernels would over-reserve and potentially exceed budget unnecessarily.
+
+YAML: adds new equation `bounded_smem_join_semilattice_diamond` wired to the Diamond theorem.
+
+**Depth-2 census after this PR**: 4 contracts at depth-2 across 4 layers (Layer 1 PyIntArith, Layer 2 XlatePyList, Layer 4 FfiCpython, Layer 5 CompileRustToPtx).
+
 ### Added — SECOND Diamond on C-FFI-CPYTHON-EXT (Diamond depth-2 on Layer 4) — GIL-invariant preservation axioms (PMAT-230 / XPILE-REFINE-FFI-CPYTHON-011)
 
 **Third depth-2 Diamond in the substrate, first on Layer 4.** Following PMAT-228 (depth-2 on Layer 1 PyIntArith — semiring + Euclidean-domain) and PMAT-229 (depth-2 on Layer 2 XlatePyListToVec — free monoid + section-retraction), PMAT-230 extends Diamond breadth to Layer 4 C-FFI-CPYTHON-EXT.
