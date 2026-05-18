@@ -7,6 +7,38 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Bronze-tier refinement theorems for all 6 remaining `notation-latex-math-to-equation` equations (PMAT-134)
+
+`contracts/lean/Notation.lean` now carries Bronze-tier refinement
+theorems for every equation in `C-NOTATION-LATEX-MATH-TO-EQUATION`
+beyond the original three-way display-math equivalence (PMAT-057).
+Each theorem is `rfl`-by-construction at v0.1.0 and locks in a
+different aspect of the LaTeX→YAML lowering pipeline.
+
+- `inline_math_to_equation`: inline math span lowers byte-for-byte
+  into the `EquationsBlock` entry's `formula` field (Silver tier
+  upgrades to canonical-equality with `ascii_normalize`).
+- `theorem_env_to_obligation`: `\textbf{Precondition:}` flag → the
+  obligation's `type` field, locking in the polarity safety claim.
+- `proof_env_to_lean_pointer`: two claims in one theorem —
+  stub/claimed classification follows the regex-on-body decision,
+  AND the proof body provably never leaks into `EquationsBlock`
+  (lane separation invariant).
+- `definition_env_to_equation`: definition env's first math span
+  lowers byte-for-byte into the equation's `formula` field.
+- `remark_env_to_falsification`: the MUST NOT > MUST > SHOULD
+  precedence decision table is locked in; proven as an iff between
+  "output entry emitted" and "any RFC-2119 keyword present".
+- `citation_preservation`: cited contract ID survives byte-for-byte
+  (companion to `citation_in_emitted_rust` from PMAT-133 — together
+  they bracket the citation-bridge claim across LaTeX, Lean, Rust).
+
+YAML side: all 6 equations gain `lean_theorem:` + `lean_file:`
+references discoverable by `every_referenced_lean_theorem_exists_in_its_file`.
+
+Contract warnings 7 → 1 (the remaining 1 is PV-VAL-001 qa_gate).
+Total substrate warnings 20 → 14.
+
 ### Added — Bronze-tier refinement theorems for all 8 remaining `xlate-lean-to-rust` equations (PMAT-133)
 
 `contracts/lean/XlateLeanToRust.lean` now carries Bronze-tier

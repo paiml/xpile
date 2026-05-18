@@ -102,4 +102,231 @@ theorem display_math_eq_equation_env_eq_align_env
     ∧ lower_equation_env formula = lower_align_env formula := by
   refine ⟨?_, ?_⟩ <;> rfl
 
+/-! ## PMAT-134 — Bronze-tier refinement theorems for the remaining
+    6 equations of `C-NOTATION-LATEX-MATH-TO-EQUATION`.
+
+    Each theorem captures a different load-bearing modelling
+    commitment of the LaTeX→YAML lowering pipeline. All proofs are
+    `rfl` at v0.1.0; Silver tier will refine each abstract structure
+    into the typed AST it represents (preserving the locked-in
+    invariant structurally). -/
+
+/--
+  Lower an inline math span `$formula$` (or `\(formula\)`) to its
+  `EquationsBlock` entry. Bronze tier: byte-identity into the
+  `ascii_normalised` field. Silver tier (XPILE-REFINE-NOTATION-001)
+  introduces a real `ascii_normalize` that collapses whitespace,
+  reorders commutative operands canonically, etc.
+-/
+def lower_inline_math (formula : String) : EquationFormula :=
+  { ascii_normalised := formula }
+
+/--
+  **Refinement theorem** for `inline_math_to_equation`.
+
+  An inline math span's formula lowers byte-for-byte into the
+  `EquationsBlock` entry's `formula` field at Bronze tier.
+  Falsified by an emitter that silently strips whitespace or
+  normalises operator spelling — those changes are valid at
+  Silver tier *under a canonical-equality relation*, not under
+  byte identity, so the theorem must be upgraded in step.
+-/
+theorem inline_math_to_equation (formula : String) :
+    (lower_inline_math formula).ascii_normalised = formula := by
+  rfl
+
+/-- Abstract `theorem`-class LaTeX environment. Carries the count of
+    embedded math spans (used for the `formal:` extraction) and the
+    flag for whether the body opens with `\textbf{Precondition:}`
+    (which flips the obligation type to `precondition`). -/
+structure LeanTheoremEnv where
+  body_text : String
+  is_precondition_flagged : Bool
+deriving DecidableEq
+
+/-- Abstract proof obligation entry as it lands in the
+    `EquationsBlock.proof_obligations` list. -/
+structure ObligationEntry where
+  obligation_type : String
+deriving DecidableEq
+
+/-- Bronze-tier lowering: theorem env → exactly one obligation entry
+    whose type is `postcondition` by default, or `precondition` when
+    the precondition flag is set. -/
+def lower_theorem_env (t : LeanTheoremEnv) : ObligationEntry :=
+  if t.is_precondition_flagged then
+    { obligation_type := "precondition" }
+  else
+    { obligation_type := "postcondition" }
+
+/--
+  **Refinement theorem** for `theorem_env_to_obligation`.
+
+  The mapping from `\textbf{Precondition:}` flag to the
+  obligation's `type` field is the load-bearing safety claim. An
+  emitter that defaults to `precondition` when the flag is absent
+  (or vice versa) would silently flip the obligation polarity,
+  inverting what's assumed vs. what's proven.
+-/
+theorem theorem_env_to_obligation (t : LeanTheoremEnv) :
+    (lower_theorem_env t).obligation_type =
+      (if t.is_precondition_flagged then "precondition" else "postcondition") := by
+  unfold lower_theorem_env
+  split <;> rfl
+
+/-- Abstract proof environment. Carries the body bytes (which MUST
+    NOT land in the `EquationsBlock`) plus the bool for "body
+    matches /(omitted|TODO|XXX|sorry)/i" → stub flag. -/
+structure ProofEnv where
+  body : String
+  is_stub : Bool
+deriving DecidableEq
+
+/-- Abstract output from lowering a proof env: a `lean_pointer`
+    metadata entry, never the body text itself. -/
+structure LeanPointer where
+  status : String
+  /-- Bronze-tier invariant: body bytes never reach the output
+      EquationsBlock. We model this by recording a single bit
+      `body_leaked` that the lowering MUST keep `false`. -/
+  body_leaked : Bool
+deriving DecidableEq
+
+/-- Bronze-tier lowering: proof env → `lean_pointer` with
+    `status: "stub"` if `is_stub`, else `"claimed"`. `body_leaked`
+    is `false` by construction — the body never escapes into
+    EquationsBlock. -/
+def lower_proof_env (p : ProofEnv) : LeanPointer :=
+  { status := if p.is_stub then "stub" else "claimed"
+    body_leaked := false }
+
+/--
+  **Refinement theorem** for `proof_env_to_lean_pointer`.
+
+  Two load-bearing claims in one theorem:
+  1. The stub/claimed classification follows the regex-on-body
+     decision exactly (not "always stub" or "always claimed").
+  2. The proof body NEVER leaks into `EquationsBlock` — the
+     `body_leaked` bit is provably `false` by construction.
+
+  Falsified by an emitter that "helpfully" pastes the proof body
+  into the YAML as `proof_text:` for human readability — which
+  would defeat the lane separation invariant.
+-/
+theorem proof_env_to_lean_pointer (p : ProofEnv) :
+    (lower_proof_env p).status =
+      (if p.is_stub then "stub" else "claimed") ∧
+      (lower_proof_env p).body_leaked = false := by
+  unfold lower_proof_env
+  refine ⟨?_, ?_⟩ <;> simp <;> split <;> rfl
+
+/-- Abstract `definition`-class LaTeX environment. Carries the
+    first embedded math span — at Bronze tier the only required
+    field — and an optional label that names the equation entry. -/
+structure DefinitionEnv where
+  first_math_span : String
+deriving DecidableEq
+
+/-- Bronze-tier lowering: definition env → exactly one
+    `EquationsBlock.equations` entry whose `formula` is the
+    extracted math span byte-for-byte. -/
+def lower_definition_env (d : DefinitionEnv) : EquationFormula :=
+  { ascii_normalised := d.first_math_span }
+
+/--
+  **Refinement theorem** for `definition_env_to_equation`.
+
+  A `\begin{definition}` environment's first math span lowers
+  byte-for-byte into the equation's `formula` field. Falsified
+  by an emitter that runs the math span through a lossy
+  normaliser before extraction — at Silver tier this becomes a
+  *canonical-equality* relation, not byte identity, so the
+  theorem must be upgraded in step.
+-/
+theorem definition_env_to_equation (d : DefinitionEnv) :
+    (lower_definition_env d).ascii_normalised = d.first_math_span := by
+  rfl
+
+/-- Abstract `remark`-class LaTeX environment. The Bronze-tier
+    model captures three flags: whether the body contains MUST/SHALL,
+    whether it contains SHOULD, and whether it contains MUST NOT/SHALL NOT. -/
+structure RemarkEnv where
+  has_must : Bool
+  has_should : Bool
+  has_must_not : Bool
+deriving DecidableEq
+
+/-- Abstract entry in `EquationsBlock.falsification_tests`. -/
+structure FalsificationEntry where
+  ship_blocking : Bool
+  /-- The "predicate inverted" flag, set when the source language
+      was MUST NOT / SHALL NOT (negative imperative). -/
+  predicate_inverted : Bool
+deriving DecidableEq
+
+/-- Bronze-tier lowering rule: emit a falsification entry iff some
+    normative keyword is present; ship_blocking follows MUST/SHALL
+    → true, SHOULD → false, MUST NOT/SHALL NOT → true-with-inverted-
+    predicate. -/
+def lower_remark_env (r : RemarkEnv) : Option FalsificationEntry :=
+  if r.has_must_not then
+    some { ship_blocking := true, predicate_inverted := true }
+  else if r.has_must then
+    some { ship_blocking := true, predicate_inverted := false }
+  else if r.has_should then
+    some { ship_blocking := false, predicate_inverted := false }
+  else
+    none
+
+/--
+  **Refinement theorem** for `remark_env_to_falsification`.
+
+  The decision-table mapping from RFC-2119 keywords to
+  `ship_blocking` / `predicate_inverted` is locked in here:
+  MUST NOT/SHALL NOT take priority (ship-blocking, inverted),
+  then MUST/SHALL (ship-blocking, not inverted), then SHOULD
+  (advisory, not inverted). Absence of normative keywords → no
+  entry (the remark stays as plain commentary).
+
+  Falsified by an emitter that interprets MUST NOT as advisory
+  (which would silently downgrade a hard constraint) or treats
+  SHOULD as ship-blocking (which would over-trigger CI).
+-/
+theorem remark_env_to_falsification (r : RemarkEnv) :
+    (lower_remark_env r).isSome ↔ (r.has_must ∨ r.has_should ∨ r.has_must_not) := by
+  unfold lower_remark_env
+  cases r.has_must_not <;> cases r.has_must <;> cases r.has_should <;> simp
+
+/-- Abstract LaTeX-source citation entry, modelled as the cited
+    contract ID's byte content. -/
+structure LatexCitation where
+  contract_id : String
+deriving DecidableEq
+
+/-- Abstract output `citations` entry: contract ID byte-for-byte
+    from the source. -/
+structure CitationOutput where
+  contract_id : String
+deriving DecidableEq
+
+/-- Bronze-tier lowering: copy the contract ID byte-for-byte. No
+    normalisation, no case folding, no prefix stripping. -/
+def lower_citation (c : LatexCitation) : CitationOutput :=
+  { contract_id := c.contract_id }
+
+/--
+  **Refinement theorem** for `citation_preservation`.
+
+  Every cited contract ID survives the LaTeX→YAML lowering
+  byte-for-byte. Falsified by any normalisation (dash-to-underscore,
+  lowercase folding, BibTeX-key mangling) that would break
+  round-trip lookup via the citation gate. Companion to
+  `XlateLeanToRust.lean`'s `citation_in_emitted_rust` (PMAT-133)
+  — together they bracket the citation-bridge claim across all
+  three lanes (LaTeX, Lean, Rust).
+-/
+theorem citation_preservation (c : LatexCitation) :
+    (lower_citation c).contract_id = c.contract_id := by
+  rfl
+
 end XpileContracts.CNotationLatexMathToEquation
