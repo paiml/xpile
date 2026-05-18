@@ -486,6 +486,37 @@ equations:
       - "an emitter that processes citations piecewise produces the same observable result as monolithic emission — Platinum guarantees the strategies are EQUIVALENT"
       - "substrate has now demonstrated functoriality on THREE distinct lowerings, confirming the pattern is portable across Layer-2 contract domains"
 
+  citation_string_monoid_diamond:
+    # PMAT-219 / XPILE-REFINE-NOTATION-006: SIXTH Diamond-tier
+    # refinement. Combines PMAT-208 functoriality + associativity
+    # + left/right identity into the STRING MONOID
+    # axiomatization for citation composition. Sixth distinct
+    # Diamond category — textual algebraic structure (NOT
+    # commutative, distinct from PMAT-214's commutative-monoid).
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.citation_string_monoid_diamond"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      citation composition forms a STRING MONOID under (String, ++, ""):
+        (a) closure: lower(compose(c1, c2)).contract_id = lower(c1).contract_id ++ lower(c2).contract_id
+        (b) associativity: (c1 ++ c2) ++ c3 = c1 ++ (c2 ++ c3)
+        (c) left identity: "" ++ c = c
+        (d) right identity: c ++ "" = c
+    domain: |
+      Any LatexCitationSilver values composed via per-component
+      string concatenation. The Diamond upgrade captures the
+      FULL string-monoid axiomatization.
+    invariants:
+      - "SIXTH Diamond-tier theorem; combines PMAT-208 + associativity + identity"
+      - "STRING MONOID — NOT commutative (distinct from PMAT-214's commutative-monoid)"
+      - "captures (String, ++, '') monoid structure for citation composition"
+      - "textual algebraic structure — sixth distinct Diamond category"
+    preconditions:
+      - "three well-formed LatexCitationSilver values"
+      - "no special preconditions — string-monoid axioms hold universally"
+    postconditions:
+      - "an emitter that introduces non-empty noise into '' or breaks associativity would falsify this Diamond"
+      - "captures the fundamental algebraic structure for compositional citation analysis"
+
 proof_obligations:
   - type: postcondition
     property: math-mode round-trips through render() losslessly

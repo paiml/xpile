@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SIXTH Diamond-tier refinement: string-monoid axioms on C-NOTATION-LATEX-MATH-TO-EQUATION (PMAT-219 / XPILE-REFINE-NOTATION-006)
+
+Sixth Diamond-tier theorem. Combines four monoid properties into the STRING MONOID axiomatization for citation composition:
+- PMAT-208 Platinum functoriality (the homomorphism)
+- Associativity (PMAT-208 companion)
+- Left identity (`"" ++ c = c`)
+- Right identity (`c ++ "" = c`)
+
+**Six distinct Diamond categories now in the substrate**:
+1. PMAT-214: commutative-monoid / semiring (algebraic)
+2. PMAT-215: pure-function (functional)
+3. PMAT-216: abelian-group (algebraic with inverses)
+4. PMAT-217: equivalence-relation (relational)
+5. PMAT-218: bounded-monoid (bounded algebraic)
+6. **PMAT-219: string-monoid (textual algebraic)** ← NEW
+
+**NOT commutative** — string concat is order-sensitive, distinguishing the string-monoid from PMAT-214's commutative-monoid. This captures the fundamental algebraic structure for compositional citation analysis: the `(String, ++, "")` monoid.
+
+YAML: adds new equation `citation_string_monoid_diamond` wired to the Diamond theorem. `xpile quorum` view for C-NOTATION-LATEX-MATH-TO-EQUATION: Sem=17 (was 16), Sym=7, Run=1, Ext=13. Six distinct Diamond axiomatizations now in substrate covering algebraic categories from commutative to non-commutative, monoidal to group-theoretic, relational to bounded.
+
 ### Added — FIFTH Diamond-tier refinement: bounded-monoid axioms on C-COMPILE-RUST-TO-PTX-MMA (PMAT-218 / XPILE-REFINE-COMPILE-PTX-005)
 
 Fifth Diamond-tier theorem. Combines four properties into the BOUNDED MONOID axiomatization for BoundedSmem under sum within sm_80 budget:
