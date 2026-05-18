@@ -102,6 +102,38 @@ equations:
          and bounded by HwProfile::Ptx::dynamic_smem_max"
     preconditions: []
 
+  bounded_smem_preserved_gold:
+    # PMAT-187 / XPILE-REFINE-COMPILE-PTX-003: THIRD Gold-tier
+    # refinement in the substrate (after PMAT-185 PyIntFast
+    # and PMAT-186 BoundedRefcountDelta). Promotes Silver's
+    # smem_bytes : Nat (with runtime min clamp) to
+    # BoundedSmem := { s : Nat // s ≤ 48*1024 } refinement
+    # subtype. The sm_80 hardware budget is encoded at the
+    # TYPE level — over-budget kernel requests can't even be
+    # constructed. Demonstrates Gold pattern on Layer-5
+    # compile-time emission (PMAT-185 covered Layer-1
+    # arithmetic, PMAT-186 covered Layer-4 FFI).
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_preserved_gold"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      lower_kernel_to_ptx_gold(k).smem_bytes.val ≤ 49152  BY TYPE
+    domain: |
+      Same as shared_memory_budget — any kernel emitted by
+      xpile-ptx-codegen targeting sm_80–sm_90. The Gold upgrade
+      removes the runtime clamp by encoding the budget at type
+      level.
+    invariants:
+      - "the BoundedSmem subtype rules out over-budget kernel requests at CONSTRUCTION time"
+      - "the bound witness travels with the value through lowering — no runtime check needed"
+      - "no `min` clamp at lowering time (Silver's clamp was a runtime workaround for untyped Nat input)"
+      - "companion theorem gold_subtype_agrees_with_silver_clamp bridges Gold to PMAT-161's Silver model"
+    preconditions:
+      - "kernel requested_smem is constructed with a proof that smem ≤ 48*1024 (the Gold-tier well-formedness obligation)"
+      - "an emitter that accepts raw Nat requests would not type-check against lower_kernel_to_ptx_gold"
+    postconditions:
+      - "emitted PTX never exceeds the sm_80 shared-memory budget — ptxas would reject otherwise, but the type system catches it before emission"
+      - "this is the archetype Gold-tier pattern applied to Layer-5 compile-time contracts (after PMAT-185 on Layer-1 arithmetic and PMAT-186 on Layer-4 FFI)"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)
