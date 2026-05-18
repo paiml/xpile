@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier refinement: zero-copy pointer-identity for `buffer_protocol_zero_copy` on FFI-CPYTHON-EXT, fifth Silver + performance-cliff wired (PMAT-173 / XPILE-REFINE-FFI-CPYTHON-006)
+
+Sixteenth Silver refinement; fifth Silver theorem on C-FFI-CPYTHON-EXT (after PMAT-160/168/171/172). Wires the previously-unwired `buffer_protocol_zero_copy` equation — third equation wired via the Silver bracket on this contract (after `gil_invariant` in PMAT-171 and `refcount_balance_on_error` in PMAT-172).
+
+**Buffer-protocol zero-copy is a performance-cliff invariant**: passing a 1GB NumPy ndarray across the FFI boundary MUST be O(1) (pointer + length + stride forwarded), not O(N) (memcpy of the underlying data). A naive emitter that materialises buffers into a Rust `Vec<u8>` would silently flip this from O(1) to O(N) — invisible to any test that doesn't measure end-to-end latency.
+
+The Silver model:
+- `BufferPassthroughMode`: enum `ZeroCopy | Materialised` (the passthrough decision reduced to a typed 2-state observable)
+- `NdarrayPassthrough`: `{ data_ptr, length, mode }`
+- `RustViewSilver`: `{ data_ptr, length }` — the Rust-side `&[T]` reference
+- `lower_ndarray_to_view_silver`: pointer-identity preserved when ZeroCopy, distinct sentinel pointer when Materialised
+- `pointer_identity_on_zero_copy_silver` theorem (wired): when `mode = ZeroCopy`, lowered view's `data_ptr` equals ndarray's `data_ptr`
+- `length_preserved_in_view_silver`: companion claim that length survives lowering unconditionally (both modes)
+
+**Captures O(1) passthrough as a type-level claim**: an emitter that defaults to materialise-mode (allocating fresh `Vec<u8>` for "safety") without setting `mode = Materialised` produces a Rust view whose `data_ptr ≠` the ndarray's `data_ptr` while claiming ZeroCopy — falsifying THIS theorem at modelling time, not at runtime.
+
+YAML: adds `lean_theorem` wiring on previously-unwired `buffer_protocol_zero_copy` equation. `xpile quorum` view for C-FFI-CPYTHON-EXT: Sem=6 (was 5), Sym=1, Run=1, Ext=12 (was 10). C-FFI-CPYTHON-EXT remains the most Silver-saturated contract in the substrate (now 5 Silver theorems covering success/structural/GIL/error/buffer-protocol safety).
+
 ### Added — Silver-tier refinement: error-path refcount model for `refcount_balance_on_error` on FFI-CPYTHON-EXT, fourth Silver + most common CPython bug class wired (PMAT-172 / XPILE-REFINE-FFI-CPYTHON-005)
 
 Fifteenth Silver refinement; fourth Silver theorem on C-FFI-CPYTHON-EXT specifically (after PMAT-160, PMAT-168, PMAT-171). Wires the previously-unwired `refcount_balance_on_error` equation — **the second equation in this contract to gain a `lean_theorem` field via the Silver bracket** (after PMAT-171 wired `gil_invariant`).

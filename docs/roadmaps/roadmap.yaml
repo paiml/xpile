@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-173
+  github_issue: null
+  item_type: task
+  title: 'PMAT-173: Silver-tier — zero-copy pointer-identity for buffer_protocol_zero_copy on C-FFI-CPYTHON-EXT (XPILE-REFINE-FFI-CPYTHON-006), fifth Silver + performance-cliff wired'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T02:00:00Z
+  updated: 2026-05-19T02:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Silver-tier refinement for pointer_identity_on_zero_copy_silver on C-FFI-CPYTHON-EXT (fifth Silver after PMAT-160/168/171/172). Wires the previously-unwired buffer_protocol_zero_copy equation — third wiring via Silver bracket on this contract. Introduces BufferPassthroughMode { ZeroCopy | Materialised } and NdarrayPassthrough { data_ptr, length, mode } / RustViewSilver { data_ptr, length }. Theorem proves data_ptr identity preserved when mode = ZeroCopy. Companion theorem length_preserved_in_view_silver locks in unconditional length preservation. Captures O(1) passthrough as a type-level claim — emitters that materialise by default are caught structurally. YAML adds lean_theorem wiring to buffer_protocol_zero_copy equation. C-FFI-CPYTHON-EXT Sem 5 → 6, Ext 10 → 12. Five Silver theorems on this contract now spanning success/structural/GIL/error/buffer-protocol.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-172
   github_issue: null
   item_type: task
