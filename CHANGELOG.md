@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier completion: postcondition + precondition + citation + frame on XLATE-RUST-FN-TO-LEAN-THM, **brings contract to full Silver (5/5)** — THIRD contract at full Silver (PMAT-179 / XPILE-REFINE-XLATE-RUST-TO-LEAN-002)
+
+Thirty-third through thirty-sixth Silver refinements — four Silver upgrades that **complete C-XLATE-RUST-FN-TO-LEAN-THM to full Silver coverage on every equation (5/5)**. This is the **THIRD contract in the substrate at full Silver tier** (after C-FFI-CPYTHON-EXT in PMAT-174 and C-XLATE-LEAN-TO-RUST in PMAT-178).
+
+Four new wired equations + companions:
+- `expansion_count_preserved_silver` (wired) + `applies_to_all_preserved_silver` — `ContractObligationSilver { applies_to_all, source_index, expansion_count }`
+- `source_indices_preserved_silver` (wired) + `hypothesis_payloads_preserved_silver` — `PreconditionListSilver { source_indices, payloads }`
+- `attribute_source_location_preserved_silver` (wired) — `XpileContractAttributeSilver { contract_id, equation_name, source_location }`
+- `produced_lean_source_preserved_silver` (wired) + `silver_module_hash_preserved` — `LiftInputsSilver { module_hash, contract_hash, produced_lean_source }`
+
+Each Silver upgrade adds a NEW structural field beyond Bronze: explicit `expansion_count` instead of a branch-on-flag computation, explicit `source_indices` vector instead of just a count + identity claim, `source_location` for attribute audit traceability, `produced_lean_source` flag for observable determinism on lift's side-output.
+
+**Bug classes now caught at type level**: emitter that merges N obligations into a single theorem (losing provenance), emitter using HashSet for preconditions (losing source order), emitter that drops source_location from attribute payload to save bytes, emitter that silently elides the produced-source flag.
+
+YAML: adds four new equations wired to the four Silver theorems. `xpile quorum` view for C-XLATE-RUST-FN-TO-LEAN-THM: Sem=10 (was 6), Sym=5, Run=1, Ext=4 (was 3). C-XLATE-RUST-FN-TO-LEAN-THM is now the third contract in the substrate with Silver coverage on 100% of its equations (5/5).
+
 ### Added — Silver-tier completion: theorem + instance + axiom + noncomputable + citation on XLATE-LEAN-TO-RUST, **brings contract to full Silver (9/9)** (PMAT-178 / XPILE-REFINE-XLATE-LEAN-003)
 
 Twenty-eighth through thirty-second Silver refinements in a single PR — five Silver upgrades that **complete C-XLATE-LEAN-TO-RUST to full Silver coverage on every equation (9/9)**. This is the **SECOND contract in the substrate at full Silver tier** (after C-FFI-CPYTHON-EXT in PMAT-174).
