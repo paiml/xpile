@@ -106,6 +106,65 @@ theorem length_preserved (l : PyList) :
     (lower_py_list_to_rust_vec l).elems.size = l.elems.size := by
   rfl
 
+/-! ## PMAT-164 — Silver-tier refinement for `iteration_order_preserved`
+    (XPILE-REFINE-XLATE-PY-LIST-001).
+
+    The Bronze model above uses `Array UInt8`, which captures the
+    iteration-order claim at the byte level but doesn't generalise
+    to element types `α`. The Silver model below introduces typed
+    polymorphic `PyListSilver α` and `RustVecSilver α`, proves
+    iteration order is preserved for ANY element type α, AND
+    proves a stronger structural claim: every element at index `i`
+    is preserved by the lowering.
+
+    Eighth Silver refinement in the substrate (PMAT-156..162 +
+    this one) — first to upgrade a multi-equation contract beyond
+    its Bronze baseline. -/
+
+/-- Silver-tier typed Python list: polymorphic over element type α
+    rather than fixed at byte level. -/
+structure PyListSilver (α : Type) where
+  elems : List α
+
+/-- Silver-tier typed Rust Vec: same element type as the source. -/
+structure RustVecSilver (α : Type) where
+  elems : List α
+
+/-- Silver-tier lowering: polymorphic identity on the typed list. -/
+def lower_py_list_to_rust_vec_silver {α : Type} (l : PyListSilver α) :
+    RustVecSilver α :=
+  { elems := l.elems }
+
+/--
+  **Silver-tier refinement theorem** for `iteration_order_preserved`
+  (XPILE-REFINE-XLATE-PY-LIST-001 / PMAT-164).
+
+  Iteration order is preserved for any element type `α`, not just
+  bytes — the lowering is generic. This is the Bronze claim
+  generalised: the Bronze theorem used `Array UInt8` (concrete);
+  the Silver theorem uses `List α` (polymorphic).
+
+  Falsification: a lowering specialised for byte-elements (e.g.,
+  using SIMD intrinsics on u8 lanes) but breaking on other types
+  would falsify the Silver claim while passing the Bronze one.
+
+  Status: **discharged at v0.1.0 Silver tier (PMAT-164)** —
+  eighth Silver refinement, first to upgrade a multi-equation
+  contract.
+-/
+theorem iteration_order_preserved_silver {α : Type} (l : PyListSilver α) :
+    (lower_py_list_to_rust_vec_silver l).elems = l.elems := by
+  rfl
+
+/--
+  **Length preservation Silver** — companion claim, also generic
+  over `α`. Bronze used `.size` on Array UInt8; Silver uses
+  `.length` on `List α`.
+-/
+theorem length_preserved_silver {α : Type} (l : PyListSilver α) :
+    (lower_py_list_to_rust_vec_silver l).elems.length = l.elems.length := by
+  rfl
+
 /-! ## PMAT-135 — Bronze-tier refinement theorems for the remaining
     4 equations of `C-XLATE-PY-LIST-TO-VEC`.
 

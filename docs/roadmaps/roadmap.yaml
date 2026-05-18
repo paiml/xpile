@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-164
+  github_issue: null
+  item_type: task
+  title: 'PMAT-164: Silver-tier — iteration_order_preserved polymorphic for XLATE-PY-LIST-TO-VEC (XPILE-REFINE-XLATE-PY-LIST-001), first multi-eq contract Silver upgrade'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T21:00:00Z
+  updated: 2026-05-18T21:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Silver-tier refinement for iteration_order_preserved_silver on C-XLATE-PY-LIST-TO-VEC. Introduces polymorphic PyListSilver α / RustVecSilver α. Theorem proves order preservation for any element type α (subsumes the Bronze byte-level claim). YAML adds new equation iteration_order_preserved_polymorphic wired to Silver theorem. C-XLATE-PY-LIST-TO-VEC Sem 5 → 6. First multi-eq contract Silver upgrade (PMAT-156..162 covered single-eq contracts).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-163
   github_issue: null
   item_type: task
