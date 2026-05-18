@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-248
+  github_issue: null
+  item_type: task
+  title: 'PMAT-248: FOURTH Diamond on C-COMPILE-RUST-TO-PTX-MMA (Layer 5 DEPTH-4) — lattice absorption laws (XPILE-REFINE-COMPILE-PTX-008)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T16:00:00Z
+  updated: 2026-05-20T16:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Second DEPTH-4 Diamond in substrate. LATTICE ABSORPTION Diamond combining PMAT-231 max + PMAT-242 min into single lattice structure. Combines max-absorbs-min + min-absorbs-max + max-idempotent + min-idempotent. bounded_smem_lattice_absorption_diamond (wired). Depth-4 now opened on 2 contracts (PyIntArith L1, CompileRustToPtxMma L5).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-247
   github_issue: null
   item_type: task
