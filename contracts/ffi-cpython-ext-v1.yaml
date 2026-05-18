@@ -52,6 +52,42 @@ equations:
     preconditions:
       - "both Python and C frontends have run"
 
+  symbol_preserved_silver:
+    # PMAT-168: Silver-tier refinement theorem promotes the
+    # Bronze byte-array payload model of manifest_completeness
+    # to a structured FFI-call AST. The Bronze model smushed
+    # symbol + langs + args + return + refcount into one
+    # payload; Silver splits them into 6 named fields. This
+    # wired theorem proves the SYMBOL field (primary lookup
+    # key) is preserved byte-for-byte; companion theorems
+    # language_tags_preserved_silver, signature_preserved_silver,
+    # refcount_delta_preserved_in_structured_silver live in the
+    # same Lean file. SECOND Silver theorem on this contract
+    # (after PMAT-160's refcount_balance_on_success_silver) —
+    # broadens Silver coverage within a single multi-eq contract.
+    # Fifth multi-eq contract Silver upgrade overall (after
+    # PMAT-164/165/166/167).
+    lean_theorem: "XpileContracts.CFfiCpythonExt.symbol_preserved_silver"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
+    formula: |
+      lower(call).symbol == call.symbol
+    domain: |
+      Same as `manifest_completeness` — a hybrid session with
+      parsed Python and C modules. The Silver upgrade narrows the
+      modelling from "payload preserved" to "every CPython-ABI
+      field (symbol, from_lang, to_lang, args, return_type,
+      refcount_delta) preserved as a separate structural field".
+    invariants:
+      - "the symbol field is preserved byte-for-byte (no CPython name-mangling rewriting, no source-module prefixing)"
+      - "from_lang, to_lang, args, return_type, refcount_delta are preserved as separate fields (companion theorems language_tags_preserved_silver, signature_preserved_silver, refcount_delta_preserved_in_structured_silver in the same Lean file)"
+      - "the structured Silver model composes with PMAT-160's FfiCallSilver — both Silver theorems are load-bearing for full ABI safety"
+    preconditions:
+      - "the Silver model assumes the symbol fits in an opaque byte payload (Gold tier introduces validated CPython symbol-name regex matching)"
+      - "the hybrid session has run both Python and C frontends to populate the structured fields"
+    postconditions:
+      - "the manifest entry's symbol field equals the source call's symbol field byte-for-byte"
+      - "the structured model rules out an emitter that records calls without symbol provenance (a deduplication failure at Bronze, since payload encoded everything together)"
+
   refcount_balance_on_success:
     # PMAT-160 / XPILE-REFINE-FFI-CPYTHON-002: Silver-tier
     # refinement theorem. Introduces typed FfiCallSilver and
