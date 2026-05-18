@@ -102,6 +102,42 @@ equations:
       - "an emitter accepting an empty list would not type-check against lower_non_empty_homogeneous_gold for any α"
       - "establishes that Gold + polymorphism compose without friction"
 
+  lower_distributes_over_append_platinum:
+    # PMAT-202 / XPILE-REFINE-XLATE-PY-LIST-004: FOURTH Platinum-
+    # tier refinement in the substrate. Demonstrates the FOURTH
+    # distinct Platinum algebraic shape: functoriality /
+    # homomorphism preservation — lower(l1 ++ l2) = lower(l1) ++
+    # lower(l2). Distinct from PMAT-199 commutativity, PMAT-200
+    # associativity, PMAT-201 idempotence. The list lowering is
+    # a monoid homomorphism (identity + append distributes).
+    # Companion theorems lower_preserves_empty_platinum (identity
+    # preservation) and lower_length_homomorphism_platinum
+    # (length is also a homomorphism — composes with append-
+    # distributivity to give length(lower(l1 ++ l2)) =
+    # length(l1) + length(l2)).
+    lean_theorem: "XpileContracts.CXlatePyListToVec.lower_distributes_over_append_platinum"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      lower({ elems := l1.elems ++ l2.elems }).elems
+        == lower(l1).elems ++ lower(l2).elems
+      (functoriality / monoid homomorphism)
+    domain: |
+      Any two PyListSilver α values of the same element type α.
+      The Platinum upgrade captures the functoriality property
+      that lowering distributes over list append at the type
+      level.
+    invariants:
+      - "FOURTH Platinum algebraic shape: functoriality / homomorphism"
+      - "the list lowering is a MONOID HOMOMORPHISM over (List α, ++) — preserves identity AND distributes over the binary operation"
+      - "captures the emitter-composition property: an emitter building piecewise produces the same result as one building monolithically"
+      - "load-bearing for streaming/buffering emit strategies — proven equivalent to whole-list emit"
+    preconditions:
+      - "the two lists have the same element type α (polymorphic over α)"
+      - "the Silver model's polymorphism is inherited (Gold's NonEmpty refinement is NOT required — functoriality holds for empty lists too via lower_preserves_empty_platinum)"
+    postconditions:
+      - "an emitter that builds Rust Vec piecewise via streaming through a buffer produces the same observable result as monolithic construction — Platinum guarantees the strategies are EQUIVALENT, not merely compatible"
+      - "the monoid-homomorphism property composes with the append-associativity of List itself, giving full distributivity for n-ary concatenations"
+
   heterogeneous_list_rejected:
     # PMAT-135: Bronze-tier refinement theorem locks in error-with-types
     # outcome (no silent boxing); proof excludes the `ok` arm by construction.

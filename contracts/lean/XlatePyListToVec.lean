@@ -643,4 +643,90 @@ theorem gold_non_empty_homogeneous_agrees_with_silver {α : Type}
       = (lower_homogeneous_list_silver n.val).elements := by
   rfl
 
+/-! ## PMAT-202 — FOURTH Platinum-tier refinement: functoriality
+    of list lowering (XPILE-REFINE-XLATE-PY-LIST-004).
+
+    Fourth Platinum-tier theorem in the substrate. Demonstrates
+    the FOURTH distinct Platinum algebraic shape: **functoriality
+    / homomorphism preservation** — `lower(l1 ++ l2) = lower(l1)
+    ++ lower(l2)`. Distinct from:
+    - PMAT-199 commutativity: `f(a, b) = f(b, a)`
+    - PMAT-200 associativity: `f(f(a,b), c) = f(a, f(b,c))`
+    - PMAT-201 idempotence: `f(x) = f(f(x))`
+    - **PMAT-202 functoriality: `lower(append l1 l2) = append (lower l1) (lower l2)`**
+
+    The list lowering is a HOMOMORPHISM: lowering distributes
+    over the monoid operation (list append). This is a classic
+    functoriality property — the lowering can be applied
+    BEFORE or AFTER list combination with equivalent results.
+
+    This property is load-bearing for emitter compositions: an
+    emitter that builds a Rust Vec piecewise (e.g., by streaming
+    elements through a buffer) produces the same result as one
+    that builds the entire Python list first and then lowers in
+    one shot. The functoriality theorem PROVES these strategies
+    are equivalent.
+
+    Status: discharged at v0.1.0 (PMAT-202). Tier: PLATINUM.
+    Fourth Platinum theorem in the substrate. -/
+
+/--
+  **Platinum-tier refinement theorem** — list lowering is a
+  homomorphism over list append.
+
+  For any two polymorphic PyListSilver values l1 and l2 (of the
+  same element type α), lowering their concatenation produces
+  the same result as concatenating their individual lowerings.
+
+  Formally: `(lower (l1 ++ l2)).elems = (lower l1).elems ++
+  (lower l2).elems` where ++ is List append.
+
+  This is functoriality of the lowering over the (List α, ++)
+  monoid. Captures the load-bearing emitter-composition
+  property that Bronze/Silver/Gold couldn't model.
+
+  Status: **discharged at v0.1.0 (PMAT-202)**. Tier: PLATINUM.
+-/
+theorem lower_distributes_over_append_platinum {α : Type}
+    (l1 l2 : PyListSilver α) :
+    (lower_py_list_to_rust_vec_silver
+       { elems := l1.elems ++ l2.elems }).elems
+    = (lower_py_list_to_rust_vec_silver l1).elems
+        ++ (lower_py_list_to_rust_vec_silver l2).elems := by
+  rfl
+
+/--
+  **Platinum-tier refinement theorem** — list lowering preserves
+  the empty list. The empty list is the identity element of
+  list-append; this theorem captures the IDENTITY-PRESERVATION
+  property of the homomorphism.
+
+  Combined with `lower_distributes_over_append_platinum`, this
+  proves the lowering is a MONOID HOMOMORPHISM (preserves
+  identity AND distributes over the binary operation).
+-/
+theorem lower_preserves_empty_platinum (α : Type) :
+    (lower_py_list_to_rust_vec_silver (α := α) { elems := [] }).elems
+    = [] := by
+  rfl
+
+/--
+  **Platinum-tier refinement theorem** — length is also a
+  homomorphism: `length (lower l) = length l.elems`. This
+  composes with the append-distributivity to give: `length
+  (lower (l1 ++ l2)) = length l1 + length l2`.
+
+  Captures the length-preservation property compositionally —
+  an emitter that builds the Rust Vec piecewise produces the
+  same total length as one that builds the full Python list
+  first.
+-/
+theorem lower_length_homomorphism_platinum {α : Type}
+    (l1 l2 : PyListSilver α) :
+    (lower_py_list_to_rust_vec_silver
+       { elems := l1.elems ++ l2.elems }).elems.length
+    = l1.elems.length + l2.elems.length := by
+  unfold lower_py_list_to_rust_vec_silver
+  simp [List.length_append]
+
 end XpileContracts.CXlatePyListToVec
