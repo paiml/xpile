@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-251
+  github_issue: null
+  item_type: task
+  title: 'PMAT-251: Diamond CI gate test — assert UNIVERSAL depth-2 across 12 contracts'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T17:30:00Z
+  updated: 2026-05-20T17:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add crates/xpile/tests/diamond_coverage.rs integration test running `xpile diamond --json` and asserting substrate-wide Diamond invariants. 5 assertions covering depth-1 UNIVERSAL, depth-2 UNIVERSAL, depth-3 across-layers (≥5), depth-4 (≥2), aggregate total (≥30). Reporter → Gate transition. All tests pass at PMAT-251 baseline (31 Diamonds across 12 contracts).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-250
   github_issue: null
   item_type: task
