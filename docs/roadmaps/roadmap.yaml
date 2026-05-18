@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-142
+  github_issue: null
+  item_type: task
+  title: 'PMAT-142: audit-design.md — correct stale "3-stratum minimum" claim (all 12 are 4-stratum)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T11:45:00Z
+  updated: 2026-05-18T11:45:00Z
+  spec: null
+  acceptance_criteria:
+  - audit-design.md §3 + §4 corrected to state that all 12 contracts reach 4-stratum QUORUM (Sem + Sym + Run + Ext), not 3-stratum as previously claimed. The §4 residual-concern line rewritten to reflect the accurate concern (10 contracts have single demo Runtime fixtures, not zero Runtime votes). Silver/Gold-tier follow-on path described accurately (deeper Runtime fixtures, not adding Runtime votes from scratch).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-141
   github_issue: null
   item_type: task

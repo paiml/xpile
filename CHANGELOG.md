@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — `audit-design.md` correction: substrate is at 4-stratum minimum, not 3-stratum (PMAT-142)
+
+Two stale claims in `audit-design.md` corrected:
+
+1. §3 line: "remaining 10 contracts each shipped paired Lean
+   refinement theorems + Kani BMC harnesses at Bronze tier,
+   bringing each to a 3-stratum QUORUM (Sem + Sym + Ext)" — wrong
+   since substrate completion. All 12 contracts have at least one
+   Runtime fixture in `crates/xpile/tests/fixtures/`. Corrected
+   to **4-stratum QUORUM** (Sem + Sym + Run + Ext).
+2. §4 Fixture Overfitting line: "Residual concern: 10 of those 12
+   contracts reach QUORUM at the 3-stratum minimum (Sem+Sym+Ext)
+   without a Runtime vote" — wrong. Rewritten to reflect the
+   accurate residual concern: those 10 contracts reach QUORUM with
+   the minimum-viable single demo Runtime fixture rather than
+   property-specific differential-execution comparisons.
+
+The Silver/Gold-tier follow-on path is now described accurately
+(deeper Runtime fixtures for the 10 contracts at 4-stratum
+minimum, not adding Runtime votes from scratch).
+
 ### Docs — `audit-design.md` refresh: 50 Lean theorems, post-PMAT-127..138 numbers (PMAT-141)
 
 `docs/specifications/audit-design.md` §3 (Positive Feedback) and
