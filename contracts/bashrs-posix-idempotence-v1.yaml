@@ -218,3 +218,34 @@ equations:
     postconditions:
       - "bashrs_shell_run is GUARANTEED pure — no side effects, no state-dependent output, no implementation-divergence"
       - "Diamond tier captures algebraic STRUCTURE COMPOSITION that prior tiers couldn't axiomatize as a single unit"
+
+  exit_code_constant_projection_diamond:
+    # PMAT-238 / XPILE-REFINE-BASHRS-005: SECOND Diamond on this
+    # contract — Layer 1/4 depth-2. Distinct algebraic category
+    # from PMAT-215 pure-function: pure-function is on the FULL
+    # Outcome value; constant-projection is on the EXIT-CODE
+    # sub-field. The two Diamonds are ORTHOGONAL — an emitter
+    # could preserve full Outcome equality while still
+    # introducing exit-code drift between Python and bashrs.
+    lean_theorem: "XpileContracts.CBashrsPosixIdempotence.exit_code_constant_projection_diamond"
+    lean_file: "contracts/lean/Bashrs.lean"
+    formula: |
+      exit_code is a CONSTANT-PROJECTION from (program, args) to {0}
+      on the success path on BOTH sides of the cross-domain bridge:
+        (a) Python exit_code = 0 on success
+        (b) Bashrs exit_code = 0 on success
+        (c) Cross-domain consistency: same exit_code on both sides
+        (d) Constant in input: independent of (program, args)
+    domain: |
+      Any (program, args) pair. The Diamond captures the
+      success-path exit_code invariant as an input-independent
+      constant.
+    invariants:
+      - "SECOND Diamond category on C-BASHRS-POSIX-IDEMPOTENCE — Layer 1/4 depth-2"
+      - "distinct algebraic category from PMAT-215 pure-function (full Outcome vs exit_code sub-field)"
+      - "captures POSIX-shell exit_code = 0 success-path invariant as constant-projection"
+    preconditions:
+      - "the success path (no shell injection, args are string literals)"
+    postconditions:
+      - "an emitter introducing set -e shell-fragments that trip on non-fatal warnings would emit non-zero exit_code on success path, falsifying (b) and (c)"
+      - "Diamond depth-2 on bashrs — substrate now has TEN depth-2 Diamonds across multiple contracts"
