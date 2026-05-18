@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-135
+  github_issue: null
+  item_type: task
+  title: 'PMAT-135: xlate-py-list-to-vec — Bronze-tier refinement theorems for the 4 remaining equations (warnings 5 → 1)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T09:00:00Z
+  updated: 2026-05-18T09:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add Bronze-tier refinement theorems to contracts/lean/XlatePyListToVec.lean for the 4 remaining equations (homogeneous_list_to_vec, heterogeneous_list_rejected, alias_observation_inserts_clone, length_method). Each theorem captures a different load-bearing aspect of the Python-list → Rust-Vec lowering (element-type-tag preservation, never-ok-on-hetero result via case exclusion, never-move-semantics-when-alias-flagged via case exclusion, and usize-result + consumer-driven-cast-decision). Wire lean_theorem + lean_file references in xlate-py-list-to-vec-v1.yaml. Contract warnings 5 → 1. Total substrate warnings 14 → 10.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-134
   github_issue: null
   item_type: task

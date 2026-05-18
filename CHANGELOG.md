@@ -7,6 +7,36 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Bronze-tier refinement theorems for 4 remaining `xlate-py-list-to-vec` equations (PMAT-135)
+
+`contracts/lean/XlatePyListToVec.lean` now carries Bronze-tier
+refinement theorems for every equation in `C-XLATE-PY-LIST-TO-VEC`
+beyond the original `iteration_order_preserved` /
+`length_preserved` pair (PMAT-060). Each theorem locks in a
+different aspect of the Python-list → Rust-Vec lowering:
+
+- `homogeneous_list_to_vec`: element bytes preserved AND element-
+  type tag preserved (load-bearing: no implicit type coercion at
+  element boundaries — falsified by silent int→float promotion).
+- `heterogeneous_list_rejected`: lowering of a heterogeneous list
+  NEVER produces an `ok` Vec — always an `error` carrying the full
+  `found_types` list (proof excludes the `ok` arm by construction;
+  silent `Vec<Box<dyn Any>>` falsifies the theorem).
+- `alias_observation_inserts_clone`: when the alias graph flags
+  an observable alias, the emitted Rust is NEVER `none_emitted`
+  (proof excludes the move-semantics arm; reference semantics
+  always survive lowering).
+- `length_method`: usize result equals source `vec.len()` byte-
+  identically AND the `i64` cast flag follows consumer expectation
+  exactly (no silent `usize → i64` truncation; no useless cast
+  insertion).
+
+YAML side: all 4 equations gain `lean_theorem:` + `lean_file:`
+references discoverable by `every_referenced_lean_theorem_exists_in_its_file`.
+
+Contract warnings 5 → 1 (the remaining 1 is PV-VAL-001 qa_gate).
+Total substrate warnings 14 → 10.
+
 ### Added — Bronze-tier refinement theorems for all 6 remaining `notation-latex-math-to-equation` equations (PMAT-134)
 
 `contracts/lean/Notation.lean` now carries Bronze-tier refinement
