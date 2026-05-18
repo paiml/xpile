@@ -7,6 +7,32 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FOURTH Diamond on C-COMPILE-RUST-TO-PTX-MMA (Layer 5 DEPTH-4) — lattice absorption laws (PMAT-248 / XPILE-REFINE-COMPILE-PTX-008)
+
+**Second DEPTH-4 Diamond in the substrate.** Following PMAT-247 (PyIntArith depth-4 on Layer 1), PMAT-248 extends Diamond depth-4 to Layer 5 C-COMPILE-RUST-TO-PTX-MMA.
+
+CompileRustToPtxMma now has FOUR Diamond categories:
+- **PMAT-218**: `(BoundedSmem, +, 0)` BOUNDED MONOID (additive)
+- **PMAT-231**: `(BoundedSmem, max)` JOIN-SEMILATTICE
+- **PMAT-242**: `(BoundedSmem, min)` MEET-SEMILATTICE
+- **PMAT-248**: LATTICE ABSORPTION (max ↔ min interaction)
+
+The absorption laws turn PMAT-231 and PMAT-242 (two independent semilattices) into a single LATTICE structure — the strongest algebraic structure derivable from pairwise-orderable values.
+
+Combines four LATTICE-DEFINING properties:
+(a) Max-absorbs-min: `max(a, min(a, b)) = a`
+(b) Min-absorbs-max: `min(a, max(a, b)) = a`
+(c) Max-idempotent (PMAT-231 lifted)
+(d) Min-idempotent (PMAT-242 lifted)
+
+`bounded_smem_lattice_absorption_diamond` (wired): 4-conjunction proving the lattice axiomatization via Lean stdlib `Nat.max_min_self`, `Nat.min_max_self`, `Nat.max_self`, `Nat.min_self`.
+
+**Diamond depth census after this PR:**
+- Depth-1 UNIVERSAL: 12/12 contracts
+- Depth-2 UNIVERSAL: 12/12 contracts
+- Depth-3 UNIVERSAL across layers: 5/5 layers
+- **Depth-4**: 2 contracts (PyIntArith on Layer 1, CompileRustToPtxMma on Layer 5)
+
 ### Added — FOURTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-4 Diamond in substrate) — power-monoid via Nat-action exponentiation (PMAT-247 / XPILE-REFINE-PY-INT-ARITH-011)
 
 **First DEPTH-4 Diamond in the substrate.** Opens Diamond depth-4 — FOUR distinct algebraic categories on a single contract. PyIntArith already had THREE Diamond categories (semiring at PMAT-214, Euclidean-domain at PMAT-228, shift-monoid at PMAT-241); PMAT-247 adds the POWER-MONOID Diamond as the fourth orthogonal category.

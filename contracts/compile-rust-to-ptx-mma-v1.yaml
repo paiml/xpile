@@ -265,6 +265,36 @@ equations:
       - "lattice operations enable both worst-case (max via PMAT-231) and safe-floor (min via this PR) reservation analysis"
       - "Diamond DEPTH-3 universal-across-layers: now opened on Layer 1 (PMAT-241) and Layer 5 (this PR)"
 
+  bounded_smem_lattice_absorption_diamond:
+    # PMAT-248 / XPILE-REFINE-COMPILE-PTX-008: FOURTH Diamond on
+    # this contract — Layer 5 DEPTH-4. Second DEPTH-4 Diamond in
+    # substrate (after PMAT-247 on PyIntArith). The LATTICE
+    # ABSORPTION LAWS turn PMAT-231 join-semilattice (max) and
+    # PMAT-242 meet-semilattice (min) into a single LATTICE
+    # structure — the strongest algebraic structure derivable
+    # from pairwise-orderable values.
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_lattice_absorption_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      (BoundedSmem, max, min) forms a LATTICE via absorption:
+        (a) max-absorbs-min: max(a, min(a, b)) = a
+        (b) min-absorbs-max: min(a, max(a, b)) = a
+        (c) max idempotent (PMAT-231 lifted)
+        (d) min idempotent (PMAT-242 lifted)
+    domain: |
+      Any two BoundedSmem values. The Diamond captures the
+      lattice absorption laws binding max and min into a single
+      lattice structure.
+    invariants:
+      - "SECOND DEPTH-4 Diamond in substrate; FOURTH category on CompileRustToPtxMma"
+      - "distinct from PMAT-218 bounded-monoid, PMAT-231 join-semilattice, AND PMAT-242 meet-semilattice"
+      - "absorption laws are the categorical hallmark of a LATTICE"
+    preconditions:
+      - "two BoundedSmem values"
+    postconditions:
+      - "lattice structure now fully axiomatized"
+      - "Diamond depth-4 opened on TWO contracts (PMAT-247 PyIntArith L1, this PR CompileRustToPtxMma L5)"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)
