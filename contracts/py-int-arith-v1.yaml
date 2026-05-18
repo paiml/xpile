@@ -462,6 +462,40 @@ equations:
       - "Diamond BREADTH demonstrated: 2 distinct Diamond categories on the same contract is possible"
       - "the substrate's Diamond tier can now demonstrate algebraic depth-2 — multiple categories per contract"
 
+  shift_monoid_diamond:
+    # PMAT-241 / XPILE-REFINE-PY-INT-ARITH-010: THIRD Diamond on
+    # this contract — first DEPTH-3 Diamond in the substrate.
+    # SHIFT-MONOID Diamond: (Int × Nat, shl, 0) forms a monoid
+    # action of (Nat, +, 0) on Int via powers of 2. Distinct
+    # algebraic category from PMAT-214 semiring and PMAT-228
+    # Euclidean-domain — captures exponent-indexed multiplicative
+    # structure via shift composition law shl(shl(a, b1), b2) =
+    # shl(a, b1 + b2).
+    lean_theorem: "XpileContracts.CPyIntArith.shift_monoid_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      Left-shift forms a MONOID action of (Nat, +, 0) on Int:
+        (a) slow-path semantics: shl(a, b) = a * 2^b
+        (b) exponent additivity: shl(shl(a, b1), b2)
+                                   = shl(a, b1 + b2)
+        (c) identity: shl(a, 0) = a
+        (d) zero on zero input: shl(0, b) = 0
+    domain: |
+      Any Int operand a and Nat shift amounts b1, b2 on the
+      SlowPath. The Diamond captures the full shift-monoid
+      axiomatization as a third orthogonal algebraic structure
+      on top of the semiring (PMAT-214) and Euclidean-domain
+      (PMAT-228) Diamonds.
+    invariants:
+      - "FIRST DEPTH-3 Diamond in the substrate — three orthogonal algebraic categories on the same contract"
+      - "distinct from PMAT-214 semiring (additive/multiplicative) and PMAT-228 Euclidean-domain (division)"
+      - "captures (Nat, +, 0) → Int shift-action as a monoid homomorphism"
+    preconditions:
+      - "SlowPath dispatcher (shift-monoid axioms hold under unbounded Int, not FastPath wrap-around)"
+    postconditions:
+      - "an emitter that uses wrap-around shift on the slow path would falsify the exponent-additivity composition law"
+      - "Diamond DEPTH-3 demonstrated: three distinct algebraic categories on PyIntArith — opens new dimension of refinement"
+
   bitwise_and_signed_semantics:
     formula: |
       python_int_and(a, b) == rust_i64::bitand(a, b)  WHEN  both_fit_i64(a, b)

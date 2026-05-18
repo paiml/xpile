@@ -7,6 +7,31 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — THIRD Diamond on C-PY-INT-ARITH (FIRST DEPTH-3 DIAMOND IN SUBSTRATE) — shift-monoid via exponentiation (PMAT-241 / XPILE-REFINE-PY-INT-ARITH-010)
+
+**First DEPTH-3 Diamond in the substrate.** Opens Diamond depth-3 — three distinct algebraic categories on the same contract. PyIntArith already had TWO Diamond categories (semiring at PMAT-214, Euclidean-domain at PMAT-228); PMAT-241 adds the SHIFT-MONOID Diamond as the third orthogonal category.
+
+- **PMAT-214**: `(Int, +, 0, *, 1)` as SEMIRING (additive/multiplicative)
+- **PMAT-228**: `(Int, fdiv, fmod)` as EUCLIDEAN DOMAIN (division)
+- **PMAT-241**: `(Int × Nat, shl, 0)` as SHIFT-MONOID (multiplicative by powers of 2) — **NEW depth-3**
+
+The categorical distinction: shift-monoid captures the `shl(a, b) = a * 2^b` semantics as an EXPONENT-INDEXED MULTIPLICATIVE STRUCTURE. The composition law `shl(shl(a, b1), b2) = shl(a, b1 + b2)` is a homomorphism from `(Nat, +, 0)` into the shift-action on Int. This is fundamentally distinct from the semiring (which is on Int×Int binary operations) and Euclidean-domain (which is on division semantics) — neither prior Diamond captures the shift-composition law.
+
+Combines four properties:
+(a) Slow-path semantics: `shl(a, b) = a * 2^b` (PMAT-176 lifted)
+(b) Composition (exponent additivity): `shl(shl(a, b1), b2) = shl(a, b1 + b2)`
+(c) Identity: `shl(a, 0) = a`
+(d) Zero shift on zero input: `shl(0, b) = 0`
+
+`shift_monoid_diamond` (wired): 4-conjunction proving the shift-monoid axiomatization. Falsification: an emitter that uses wrap-around shift on the slow path (instead of unbounded `Int`) would falsify the exponent-additivity composition law.
+
+YAML: adds new equation `shift_monoid_diamond`.
+
+**Diamond depth census after this PR:**
+- Depth-1 UNIVERSAL: 12/12 contracts (12 categories)
+- Depth-2 UNIVERSAL: 12/12 contracts (24+ categories)
+- **Depth-3 OPENED**: 1 contract at depth-3 (PyIntArith — semiring + Euclidean + shift-monoid)
+
 ### Changed — Doc sweep: UNIVERSAL Diamond depth-2 across ALL 12 CONTRACTS milestone reflected across README, status, audit, kaizen-fleet (PMAT-240)
 
 Doc sweep across `README.md`, `docs/status/CURRENT.md`, `docs/status/INDEX.md`, `docs/status/2026-05-18-substrate-completion.md`, `docs/specifications/audit-design.md`, and `docs/specifications/sub/kaizen-fleet.md` to reflect the UNIVERSAL Diamond depth-2 milestone landed via PMAT-228..239.
