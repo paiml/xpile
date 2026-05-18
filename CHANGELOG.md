@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SIXTH Platinum-tier refinement: refcount additivity on C-FFI-CPYTHON-EXT (PMAT-204 / XPILE-REFINE-FFI-CPYTHON-009)
+
+Sixth Platinum-tier theorem in the substrate. Demonstrates the **SIXTH distinct Platinum algebraic shape**: additivity / linearity — `delta(c1; c2) = c1.delta + c2.delta`. Distinct from prior Platinum patterns.
+
+The Platinum theorems:
+- `refcount_delta_additive_platinum` (wired): linear composition law for refcount accounting
+- `refcount_composition_associative_platinum`: proves the `(FfiCallSilver, compose, zero)` monoid is associative
+- `balanced_calls_zero_delta_platinum`: captures the load-bearing BALANCED-REFERENCES invariant — sequences summing to zero have zero cumulative delta
+
+**Six distinct Platinum algebraic shapes now demonstrated**:
+1. Commutativity (PMAT-199): binary `f(a, b) = f(b, a)`
+2. Associativity + Distributivity (PMAT-200): ternary + cross-op
+3. Idempotence (PMAT-201): fixed-point `f(x) = f(f(x))`
+4. Functoriality / Monoid Homomorphism (PMAT-202): `lower(l1 ++ l2) = lower(l1) ++ lower(l2)`
+5. Transitivity / Chain-rule (PMAT-203): `safe(a,b) ∧ safe(b,c) ⟹ safe(a,c)`
+6. **Additivity / Linearity (PMAT-204): `delta(c1; c2) = c1.delta + c2.delta`**
+
+**Load-bearing for compositional refcount safety**: refcount-delta is a MONOID HOMOMORPHISM into `(Int, +, 0)` — capturing the linear composition law. This enables refcount safety analysis to be DECOMPOSED into per-call analyses + summing, rather than requiring whole-sequence analysis.
+
+YAML: adds new equation `refcount_delta_additive_platinum` wired to the Platinum theorem. `xpile quorum` view for C-FFI-CPYTHON-EXT: Sem=9 (was 8), Sym=1, Run=1, Ext=20. Platinum tier now established with 6 distinct algebraic-property shapes across 5 contracts.
+
 ### Added — FIFTH Platinum-tier refinement: frame-safety transitivity on C-XPILE-CONTRACT-FRONTEND-TRAIT (PMAT-203 / XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-003)
 
 Fifth Platinum-tier theorem in the substrate. Demonstrates the **FIFTH distinct Platinum algebraic shape**: transitivity / chain-rule — `safe(a,b) ∧ safe(b,c) ⟹ safe(a,c)`. Distinct from PMAT-199 commutativity, PMAT-200 associativity, PMAT-201 idempotence, PMAT-202 functoriality.
