@@ -338,3 +338,16 @@ kani_harnesses:
           let b: i8 = -1;
           assert!(needs_promotion_i8_mul(a, b));
       }
+
+qa_gate:
+  id: QA-PY-INT-ARITH
+  name: "Python int arithmetic semantics contract"
+  min_coverage: 0.85
+  max_complexity: 20
+  required_tests:
+    - transpile_add_py_emits_rust_fn
+    - rust_emission_for_add_compiles_with_rustc
+    - py_int_arith_lean_file_carries_required_landmarks
+    - py_int_arith_kani_file_carries_required_landmarks
+    - every_referenced_lean_theorem_exists_in_its_file
+    - every_referenced_kani_harness_exists_in_its_file

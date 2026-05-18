@@ -278,3 +278,12 @@ kani_harnesses:
           let result = xlate_mixed_list(positions);
           assert!(matches!(result, Err(TranslationError::Heterogeneous { .. })));
       }
+
+qa_gate:
+  id: QA-XLATE-PY-LIST-TO-VEC
+  name: "Python list → Rust Vec translation contract"
+  min_coverage: 0.50
+  max_complexity: 20
+  required_tests:
+    - every_referenced_lean_theorem_exists_in_its_file
+    - every_referenced_kani_harness_exists_in_its_file
