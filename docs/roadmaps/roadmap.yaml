@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-243
+  github_issue: null
+  item_type: task
+  title: 'PMAT-243: THIRD Diamond on C-FFI-CPYTHON-EXT (Layer 4 DEPTH-3) — zero-copy pointer-identity functor (XPILE-REFINE-FFI-CPYTHON-012)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T13:30:00Z
+  updated: 2026-05-20T13:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Third DEPTH-3 Diamond in substrate. ZERO-COPY-POINTER-IDENTITY FUNCTOR Diamond on buffer protocol passthrough, distinct algebraic category from PMAT-216 abelian-group AND PMAT-230 GIL-invariant. Combines PMAT-173 + length-preservation + Materialised-sentinel + mode-independent-length. zero_copy_pointer_functor_diamond (wired). Three orthogonal CPython safety invariants now axiomatized: refcount + locks + memory ownership.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-242
   github_issue: null
   item_type: task
