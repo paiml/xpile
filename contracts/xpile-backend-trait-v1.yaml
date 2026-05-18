@@ -160,6 +160,29 @@ equations:
       - "a Backend that auto-selects target via IR introspection (e.g., emitting PTX when GPU-intrinsics appear) would falsify this theorem"
       - "the contract's modelling commitment is that target comes from declared_target, NOT from module introspection"
 
+  backend_equivalence_class_diamond:
+    # PMAT-225 / XPILE-REFINE-BACKEND-TRAIT-004: ELEVENTH
+    # Diamond-tier refinement. Mirror of PMAT-224 on Backend
+    # side. Together PMAT-224 + PMAT-225 close the 2×2 trait
+    # matrix at Diamond tier for equivalence-class structure.
+    lean_theorem: "XpileContracts.CXpileBackendTrait.backend_equivalence_class_diamond"
+    lean_file: "contracts/lean/XpileBackendTrait.lean"
+    formula: |
+      target_equiv forms an EQUIVALENCE RELATION on Backend +
+      PMAT-211 determinism preservation
+    domain: |
+      Any Backend values under target_equiv. The Diamond upgrade
+      captures the equivalence-class structure on declared_target.
+    invariants:
+      - "ELEVENTH Diamond-tier theorem; mirror of PMAT-224 on Backend side"
+      - "BACKEND EQUIVALENCE CLASS — algebraic classification by declared_target"
+      - "together PMAT-224 + PMAT-225 close the 2×2 trait matrix at Diamond tier"
+    preconditions:
+      - "three well-formed Backend values"
+    postconditions:
+      - "Backend impls are classifiable by their declared_target"
+      - "an emitter that auto-selects target would break BOTH PMAT-211 determinism AND the Diamond equivalence-class structure"
+
   compile_contract_citation:
     formula: |
       forall b, (module, config), instr in ir_constructs(Artifact.primary):

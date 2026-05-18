@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-225
+  github_issue: null
+  item_type: task
+  title: 'PMAT-225: ELEVENTH Diamond-tier refinement — target equivalence-class on C-XPILE-BACKEND-TRAIT (XPILE-REFINE-BACKEND-TRAIT-004)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T04:30:00Z
+  updated: 2026-05-20T04:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Eleventh Diamond-tier theorem. Mirror of PMAT-224 on Backend side. Together they close the 2×2 trait matrix at Diamond tier for equivalence-class structure. backend_equivalence_class_diamond (wired). C-XPILE-BACKEND-TRAIT Sem 4 → 5.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-224
   github_issue: null
   item_type: task

@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — ELEVENTH Diamond-tier refinement: target equivalence-class on C-XPILE-BACKEND-TRAIT (PMAT-225 / XPILE-REFINE-BACKEND-TRAIT-004)
+
+Eleventh Diamond-tier theorem. **Mirror of PMAT-224 on the Backend side** — together they close the 2×2 trait matrix at Diamond tier for equivalence-class structure on the typed-tag discriminator field (source_lang for frontends, target for backends). Diamond coverage now spans **11 of 12 contracts**.
+
+Combines four properties:
+- PMAT-211 Platinum target determinism
+- Reflexivity, symmetry, transitivity
+
+`backend_equivalence_class_diamond` (wired): 4-conjunction proving equivalence-relation axioms + PMAT-211 determinism preservation.
+
+YAML: adds new equation `backend_equivalence_class_diamond` wired to the Diamond theorem. `xpile quorum` view for C-XPILE-BACKEND-TRAIT: Sem=5 (was 4), Sym=1, Run=1, Ext=9. Eleven Diamond axiomatizations now in substrate across 11 contracts.
+
 ### Added — TENTH Diamond-tier refinement: source-lang equivalence-class axioms on C-XPILE-FRONTEND-TRAIT (PMAT-224 / XPILE-REFINE-FRONTEND-TRAIT-004)
 
 Tenth Diamond-tier theorem. Combines four properties into the FRONTEND EQUIVALENCE CLASS axiomatization on declared_lang:
