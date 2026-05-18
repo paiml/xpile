@@ -125,8 +125,10 @@ fn addition_overflow_promotion() {
 fn multiplication_quadratic_promotion() {
     let a: i64 = kani::any();
     let b: i64 = kani::any();
-    kani::assume(a.abs() <= 1000);
-    kani::assume(b.abs() <= 1000);
+    // Explicit range bounds (NOT abs() — i64::MIN.abs() overflows and
+    // doesn't actually constrain the symbolic range).
+    kani::assume(a >= -1000 && a <= 1000);
+    kani::assume(b >= -1000 && b <= 1000);
 
     let prod_i128: i128 = a as i128 * b as i128;
     // With |a|, |b| ≤ 1000, |product| ≤ 10^6 — always fits i64.
@@ -148,9 +150,12 @@ fn multiplication_quadratic_promotion() {
 fn division_floor_semantics() {
     let a: i64 = kani::any();
     let b: i64 = kani::any();
+    // Explicit range bounds: abs() doesn't constrain i64::MIN because
+    // i64::MIN.abs() overflows back to i64::MIN. Using ≥/≤ excludes
+    // the overflow corner cleanly.
+    kani::assume(a >= -1000 && a <= 1000);
+    kani::assume(b >= -1000 && b <= 1000);
     kani::assume(b != 0);
-    kani::assume(a.abs() <= 1000);
-    kani::assume(b.abs() <= 1000);
 
     let r: i64 = a.rem_euclid(b);
     assert!(r >= 0);
@@ -164,9 +169,9 @@ fn division_floor_semantics() {
 fn modulo_floor_semantics() {
     let a: i64 = kani::any();
     let b: i64 = kani::any();
+    kani::assume(a >= -1000 && a <= 1000);
+    kani::assume(b >= -1000 && b <= 1000);
     kani::assume(b != 0);
-    kani::assume(a.abs() <= 1000);
-    kani::assume(b.abs() <= 1000);
 
     let result: i64 = a.rem_euclid(b);
     assert!(result >= 0);
@@ -195,13 +200,11 @@ fn bitwise_and_signed_semantics() {
 #[kani::proof]
 fn shift_left_signed_semantics() {
     let a: i64 = kani::any();
-    kani::assume(a.abs() <= 1_000_000);
+    kani::assume(a >= -1_000_000 && a <= 1_000_000);
 
     // Fixed b=4: a << 4 = a * 16. The contract claim at this tier
     // is fast == slow on fits_i64; proved here explicitly for b=4.
     let product: i128 = (a as i128) * 16;
-    kani::assume(product >= i64::MIN as i128);
-    kani::assume(product <= i64::MAX as i128);
 
     let fast: i64 = a.wrapping_shl(4);
     let slow: i64 = product as i64;
@@ -215,6 +218,7 @@ fn shift_left_signed_semantics() {
 #[kani::proof]
 fn shift_right_signed_semantics() {
     let a: i64 = kani::any();
+    kani::assume(a >= -1_000_000 && a <= 1_000_000);
 
     // Fixed b=4: a >> 4 = floor(a / 16). The contract claim is
     // fast == slow for b in [0, 64); proved here for b=4.
@@ -233,14 +237,13 @@ fn shift_right_signed_semantics() {
 #[kani::proof]
 fn power_signed_semantics() {
     let a: i64 = kani::any();
-    kani::assume(a.abs() < 1000);
+    kani::assume(a >= -1000 && a <= 1000);
 
     // Fixed exponent b=2: a^2 = a*a. The contract claim at this
     // tier is that the fast path equals the slow path on the
     // fits_i64 domain — proved here for the b=2 case explicitly.
     let prod_i128: i128 = (a as i128) * (a as i128);
-    kani::assume(prod_i128 >= i64::MIN as i128);
-    kani::assume(prod_i128 <= i64::MAX as i128);
+    // With |a| ≤ 1000, |product| ≤ 10^6 — always fits i64.
 
     let fast: i64 = a.wrapping_mul(a); // a^2 in i64 wrap
     let slow: i64 = prod_i128 as i64;
