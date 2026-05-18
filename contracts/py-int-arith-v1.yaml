@@ -31,6 +31,10 @@ equations:
       - "no allocation in the fits_i64 fast path"
     preconditions:
       - "a and b are both Python int (not float, not bool, not bigint-required)"
+    postconditions:
+      - "the result is bit-identical to CPython `int.__add__(a, b)` evaluated on the same operands"
+      - "no heap allocation occurs (the i64 result lives on the stack)"
+      - "the emitted Rust uses `.wrapping_add` or equivalent — never `.unchecked_add` or raw `+` that could be optimized to silent UB"
     # XPILE-REFINE-001 / PMAT-017: refinement proof in Lean (Semantic
     # stratum). Statement IS the equation, formalised. v0.1.0 ships
     # the claim with `sorry`; XPILE-REFINE-002 discharges.
@@ -54,7 +58,13 @@ equations:
       - "the result equals the mathematically exact a + b"
       - "no information loss compared to CPython"
       - "exactly one heap allocation (the BigInt result)"
-    preconditions: []
+    preconditions:
+      - "a and b are both Python int (BigInt-eligible)"
+      - "the function is lowered in BigInt mode (return-type annotation `-> BigInt`, per PMAT-013)"
+    postconditions:
+      - "the result equals the mathematically exact `a + b` (no truncation, no wrapping)"
+      - "the result equals CPython `int.__add__(a, b)` evaluated on the same operands (bit-identical via the value's BigInt encoding)"
+      - "the BigInt allocation uses `xpile_bigint::BigInt` (the canonical runtime, not a hand-rolled type)"
     # XPILE-REFINE-006 / PMAT-034: slow-path soundness theorem. Both
     # CPython's `int.__add__` and our model of `xpile_bigint::BigInt::add`
     # are unbounded mathematical addition; the theorem reduces to `rfl`
@@ -72,7 +82,12 @@ equations:
     invariants:
       - "result matches CPython for all (a, b) including i64::MIN * -1 which CPython promotes to bigint"
       - "i64::MIN.wrapping_mul(-1) == i64::MIN — Rust wraps; CPython promotes; we MUST follow CPython"
-    preconditions: []
+    preconditions:
+      - "a and b are both Python int"
+    postconditions:
+      - "the result equals CPython `int.__mul__(a, b)` evaluated on the same operands"
+      - "the i64::MIN * -1 case is handled via promotion to BigInt (not a silent wrap)"
+      - "the dispatch between fast (i64) and slow (BigInt) path is deterministic on (a, b) — no run-to-run variance"
     # XPILE-REFINE-003 / PMAT-029: refinement proof for the *fast path*
     # half of the equation. The slow-path / promotion half is
     # XPILE-REFINE-004+.
@@ -90,6 +105,10 @@ equations:
       - "div_euclid is closer to floor but still diverges when remainder is zero — handle that case"
     preconditions:
       - "b != 0 (else Python raises ZeroDivisionError — separate contract)"
+    postconditions:
+      - "the result equals `Int.fdiv a b` (floor division) for all (a, b) with b != 0"
+      - "for mixed-sign operands, the result diverges from Rust's truncating `/` — the emitted code uses `checked_div_euclid` or the BigInt equivalent"
+      - "the result equals CPython `int.__floordiv__(a, b)` bit-for-bit"
     # XPILE-REFINE-003 / PMAT-029: refinement proof. Both fast and
     # slow path model floor-div as `Int.fdiv`, so the theorem reduces
     # to `rfl`; the load-bearing claim is that this *identity*
@@ -109,6 +128,10 @@ equations:
       - "for mixed-sign operands Python and Rust diverge — must use rem_euclid or equivalent in translation"
     preconditions:
       - "b != 0 (else Python raises ZeroDivisionError — separate contract)"
+    postconditions:
+      - "the result equals `Int.fmod a b` (sign matches divisor) for all (a, b) with b != 0"
+      - "for mixed-sign operands the result diverges from Rust's truncating `%` — the emitted code uses `checked_rem_euclid` or the BigInt equivalent"
+      - "the result equals CPython `int.__mod__(a, b)` bit-for-bit"
     # XPILE-REFINE-003 / PMAT-029: same `rfl` structure as floor div.
     # Both paths model mod as `Int.fmod`.
     lean_theorem: "XpileContracts.CPyIntArith.mod_fast_path_eq_slow_path"
@@ -122,7 +145,13 @@ equations:
     invariants:
       - "Python ints have INFINITE-PRECISION two's complement representation"
       - "for negative bigint operands, the Rust output must match this — separate bigint contract"
-    preconditions: []
+    preconditions:
+      - "both operands fit in i64 (the BigInt extension is the separate-contract follow-on)"
+      - "a and b are both Python int (not float, not bool)"
+    postconditions:
+      - "the result equals `Int.land a b` over the two's-complement i64 representation"
+      - "the result equals CPython `int.__and__(a, b)` bit-for-bit in the i64 domain"
+      - "no heap allocation in the fits_i64 fast path"
     # No `lean_theorem` yet: core Lean 4.15 doesn't ship
     # `Int.land` / `Int.lor` / `Int.xor`; encoding requires either a
     # mathlib dep or a hand-rolled cast-through-Nat. Tracked as
@@ -140,6 +169,11 @@ equations:
       - "in the fits_i64 domain both paths agree via `Int.bmod` reduction"
     preconditions:
       - "0 <= b < 64 (else Rust panics — separate contract slot)"
+      - "the mathematical product `a * 2^b` fits in i64 (else BigInt promotion required — separate contract)"
+    postconditions:
+      - "the result equals `Int.shiftLeft a b` reduced mod 2^64 in the fits_i64 domain"
+      - "the result equals CPython `int.__lshift__(a, b)` bit-for-bit when both preconditions hold"
+      - "the emission uses `checked_shl` so out-of-domain inputs panic with the contract-ID citation"
     # XPILE-REFINE-004 / PMAT-030: shl reuses bmod_fits_i64.
     lean_theorem: "XpileContracts.CPyIntArith.shl_fast_path_eq_slow_path"
     lean_file: "contracts/lean/PyIntArith.lean"
@@ -154,6 +188,10 @@ equations:
       - "both paths model the shift as `Int.fdiv a (2^b)` — pointwise equal under fits_i64 precondition"
     preconditions:
       - "0 <= b < 64 (else Rust panics)"
+    postconditions:
+      - "the result equals `Int.fdiv a (2^b)` (arithmetic shift, sign-preserving)"
+      - "the result equals CPython `int.__rshift__(a, b)` bit-for-bit"
+      - "the emission uses `checked_shr` so out-of-domain inputs panic with the contract-ID citation"
     # XPILE-REFINE-004 / PMAT-030: shr is `rfl` (Int.fdiv on both sides).
     lean_theorem: "XpileContracts.CPyIntArith.shr_fast_path_eq_slow_path"
     lean_file: "contracts/lean/PyIntArith.lean"
@@ -169,6 +207,11 @@ equations:
       - "Rust `(a as i64).checked_pow(b as u32)` panics on overflow; cited as C-PY-INT-ARITH"
     preconditions:
       - "b >= 0 (else Python promotes to Float — out of scope)"
+      - "the mathematical result `a^b` fits in i64 (else BigInt promotion required)"
+    postconditions:
+      - "the result equals `Int.pow a b` reduced mod 2^64 in the fits_i64 domain"
+      - "the result equals CPython `int.__pow__(a, b)` bit-for-bit when both preconditions hold"
+      - "the emission uses `checked_pow(u32::try_from(rhs).expect(...))` so overflow panics with the contract-ID citation"
     # XPILE-REFINE-004 / PMAT-030: pow reuses bmod_fits_i64.
     lean_theorem: "XpileContracts.CPyIntArith.pow_fast_path_eq_slow_path"
     lean_file: "contracts/lean/PyIntArith.lean"

@@ -2139,3 +2139,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-130
+  github_issue: null
+  item_type: task
+  title: 'PMAT-130: py-int-arith contract — pre/postconditions for all 9 equations (warnings 14 → 2)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-19T07:00:00Z
+  updated: 2026-05-19T07:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Batch-add genuine pre/postconditions for all 9 equations in py-int-arith-v1.yaml (addition_no_overflow, addition_overflow_promotion, multiplication_quadratic_promotion, division_floor_semantics, modulo_floor_semantics, bitwise_and_signed_semantics, shift_left_signed_semantics, shift_right_signed_semantics, power_signed_semantics). Each statement is grounded in CPython bit-identity, Int.fdiv/fmod modelling, BigInt promotion rules, and Rust-codegen safety invariants. Contract warnings 14 → 2 (the remaining 2 are PV-ENF-002 — bitwise_and's missing lean_theorem is documented in-place pending XPILE-REFINE-005 which needs mathlib's Int.land). Total substrate warnings 55 → 43.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
