@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — `xpile diamond` reporter subcommand for Diamond-tier coverage tracking (PMAT-249)
+
+Adds the `xpile diamond` CLI subcommand, mirroring `xpile quorum`. Walks every contract YAML in `contracts/` and tallies the number of `_diamond` `lean_theorem:` references — the substrate's wired Diamond-tier coverage per contract.
+
+Per-contract output:
+- Raw count: number of wired Diamond equations
+- Depth label: `none` (0), `depth-1` (1), `depth-2` (2), `depth-3` (3), `depth-4+` (≥4)
+
+Aggregate output:
+- Total Diamond theorems across the substrate
+- Count of contracts at depth-1+, depth-2+, depth-3+, depth-4+
+
+Live output at PMAT-249 baseline:
+```
+totals: 30 Diamond theorems across 12 contracts
+  depth-1+: 12 contracts, depth-2+: 11 contracts, depth-3+: 5 contracts, depth-4+: 2 contracts
+```
+
+Both human-readable and JSON formats (`--json` flag). Includes unit tests covering the depth-label classifier and the `_diamond` reference-counting parser. Pattern follows the established `xpile quorum` reporter style — reporter, not gate.
+
 ### Added — FOURTH Diamond on C-COMPILE-RUST-TO-PTX-MMA (Layer 5 DEPTH-4) — lattice absorption laws (PMAT-248 / XPILE-REFINE-COMPILE-PTX-008)
 
 **Second DEPTH-4 Diamond in the substrate.** Following PMAT-247 (PyIntArith depth-4 on Layer 1), PMAT-248 extends Diamond depth-4 to Layer 5 C-COMPILE-RUST-TO-PTX-MMA.
