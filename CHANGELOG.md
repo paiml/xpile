@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — Silver-completion milestone reflected across README/spec/audit/status (PMAT-184)
+
+Doc sweep recording the Silver-completion milestone landed at PMAT-183. Every equation in every contract in the substrate now has Silver-tier typed-AST refinement (42/42 equations).
+
+Aggregate refresh: 76 Lean (50 Bronze + 26 Silver) / 119 stratum-vote artifacts → **150 Lean (53 Bronze + 97 Silver) / 193 stratum-vote artifacts**. PMAT-171..183 added 71 Silver theorems + 3 Bronze (companion claims that turned out to support the Silver structural models).
+
+Files updated:
+- **README.md** "by the numbers" QUORUM line: 76/119 → 150/193, framing shifted from "100% QUORUM" to "100% QUORUM AND 100% Silver coverage on every equation"; bullet expanded with the 42/42 equations breakdown
+- **README.md** §By the numbers footer: same numeric refresh; added Silver-completion milestone callout
+- **substrate-completion.md** §Numbers: same refresh with PMAT-171..183 attribution (+71 Silver across multi-eq contracts)
+- **INDEX.md** session-log row: title expanded to "+ full Silver completion across every equation"; PMAT range extended PMAT-058..184; multi-eq contracts at full Silver enumerated with PMAT refs
+- **CURRENT.md** §quorum-line: framing shifted to "100% §14.4 QUORUM AND 100% Silver tier (42/42)"; aggregate counts refreshed; per-contract Silver coverage stated
+- **audit-design.md** §3: rewritten with the Silver-completion milestone framing; per-contract Silver-coverage breakdown; PMAT-183 noted as the closing event
+- **sub/kaizen-fleet.md** kernel-tier paragraph: 71-new-Silver-theorems attribution
+
 ### Added — Silver-tier completion: heap-allocation model for `addition_overflow_promotion` on PY-INT-ARITH, **brings contract to full Silver (9/9)** — SIXTH and FINAL multi-eq contract at full Silver (PMAT-183 / XPILE-REFINE-PY-INT-ARITH-004)
 
 Forty-seventh Silver refinement. Wires the slow-path-only companion of `addition_no_overflow` with a Silver-tier `Allocation { Stack | Heap }` model. **MILESTONE: with this PR landed, every equation in every contract in the substrate has Silver coverage.** All 6 multi-equation contracts at full Silver:

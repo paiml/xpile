@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-184
+  github_issue: null
+  item_type: task
+  title: 'PMAT-184: Doc sweep — Silver-completion milestone (42/42 equations) reflected across README/spec/audit/status'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T08:00:00Z
+  updated: 2026-05-19T08:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Aggregate refresh: 76 Lean (50 Bronze + 26 Silver) / 119 stratum-vote artifacts → 150 Lean (53 Bronze + 97 Silver) / 193 stratum-vote artifacts. README/spec/audit/status all updated with Silver-completion framing (42/42 equations at Silver tier). Per-contract Silver-coverage breakdown enumerated with PMAT refs (PMAT-174/178/179/181/182/183 for the six multi-eq contracts at full Silver). PMAT range extended PMAT-058..184.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-183
   github_issue: null
   item_type: task
