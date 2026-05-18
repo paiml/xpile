@@ -56,7 +56,7 @@ def factorial (n : Int) : Int :=
 
 - 27 workspace crates · all compile clean (`cargo check --workspace`)
 - 12 contracts · `pv lint` PASS with **0 errors and 0 warnings** (full-clean substrate since PMAT-138)
-- **100% QUORUM + 100% Silver + 100% Gold + 100% Platinum + 100% Diamond — UNIVERSAL 5-TIER COVERAGE** — every contract has paired Lean refinement theorem + Kani BMC harness ([`xpile quorum`](crates/xpile/src/quorum.rs)); **242 Lean theorems (53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 18 Diamond) + 43 Kani harnesses = 285 stratum-vote artifacts** post-PMAT-156..226. 42/42 equations at Silver; **12/12 contracts at Gold** (5 subtype patterns); **12/12 contracts at Platinum** (7 algebraic shapes); **12/12 contracts at Diamond** (PMAT-214..226) — **12 distinct algebraic categories** (commutative-monoid, pure-function, abelian-group, equivalence-relation, bounded-monoid, string-monoid, free list-monoid, inductive-monoid, precondition-list-monoid, frontend equivalence-class, backend equivalence-class, citation render-monoid)
+- **100% QUORUM + 100% Silver + 100% Gold + 100% Platinum + 100% Diamond — UNIVERSAL 5-TIER + UNIVERSAL DEPTH-2** — every contract has paired Lean refinement theorem + Kani BMC harness ([`xpile quorum`](crates/xpile/src/quorum.rs)); **247 Lean theorems (53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 23 Diamond) + 43 Kani harnesses = 290 stratum-vote artifacts** post-PMAT-156..232. 42/42 equations at Silver; **12/12 contracts at Gold** (5 subtype patterns); **12/12 contracts at Platinum** (7 algebraic shapes); **12/12 contracts at Diamond depth-1** (PMAT-214..226) — **12 distinct algebraic categories**; **5/5 layers at Diamond depth-2** (PMAT-228..232) — Euclidean-domain (Layer 1), NonEmpty section-retraction (Layer 2), constant-projection (Layer 3), GIL-invariant preservation (Layer 4), join-semilattice (Layer 5)
 - **204 workspace tests** · 11+ Python fixtures runtime-verified via `rustc -O` + `assert_eq!` (canonical list in `CHANGELOG.md` §"Python subset"); plus 54 bashrs-frontend tests covering POSIX shell idioms
 - **`pmat tdg .` score 95.7 / 100 (Grade A-)** — meets the originally-planned XPILE-CI-PMAT-TDG-001 ≥ A- threshold without explicit CI enforcement
 - Python subset shipped: see [`CHANGELOG.md`](CHANGELOG.md) §"Python subset (live, runtime-verified)" — typed `def`, multi-statement bodies, all binary + unary ops, ternary, if/else, elif chains, function calls including self-recursion (canonical source — this README intentionally does not duplicate the list to avoid the staleness it kept accumulating)
@@ -76,9 +76,9 @@ $ xpile quorum
   totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)
 ```
 
-**242 Lean refinement theorems** ([`contracts/lean/*.lean`](contracts/lean/), 53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 18 Diamond) +
+**247 Lean refinement theorems** ([`contracts/lean/*.lean`](contracts/lean/), 53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 23 Diamond) +
 **43 Kani BMC harnesses** ([`contracts/kani/*.rs`](contracts/kani/)) —
-**285 stratum-vote artifacts** across all 5 layers of the contract taxonomy. **42/42 equations at Silver** (PMAT-183) + **12/12 contracts at Gold** (PMAT-185..197) + **12/12 contracts at Platinum** (PMAT-199..212) + **12/12 contracts at Diamond** (PMAT-214..226) with **12 distinct algebraic categories** (Diamond-tier coverage UNIVERSAL).
+**290 stratum-vote artifacts** across all 5 layers of the contract taxonomy. **42/42 equations at Silver** (PMAT-183) + **12/12 contracts at Gold** (PMAT-185..197) + **12/12 contracts at Platinum** (PMAT-199..212) + **12/12 contracts at Diamond depth-1** (PMAT-214..226) with **12 distinct algebraic categories** + **5/5 layers at Diamond depth-2** (PMAT-228..232) demonstrating multi-Diamond depth across the contract taxonomy.
 Every equation in every contract has both its own Bronze-tier Lean theorem
 (`rfl` by construction) AND its own Kani symbolic harness exploring 256^4 ≈
 4.3B configurations per harness. Silver/Gold/Platinum refinement is
