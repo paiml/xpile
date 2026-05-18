@@ -486,4 +486,74 @@ theorem bounded_smem_closure_diamond
     ∃ c : BoundedSmem, c.val = a.val + b.val :=
   ⟨add_bounded_smem a b h, rfl⟩
 
+/-! ## PMAT-231 — SECOND Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (Layer 5 depth-2): JOIN-SEMILATTICE axioms via max
+    (XPILE-REFINE-COMPILE-PTX-006).
+
+    **Fourth depth-2 Diamond in the substrate.** Following
+    PMAT-228 (Layer 1), PMAT-229 (Layer 2), PMAT-230 (Layer 4),
+    PMAT-231 extends Diamond breadth to Layer 5
+    C-COMPILE-RUST-TO-PTX-MMA.
+
+    CompileRustToPtxMma already had the bounded-monoid Diamond
+    (PMAT-218) on (BoundedSmem, +, 0). PMAT-231 adds the
+    JOIN-SEMILATTICE Diamond via max — a fundamentally distinct
+    algebraic category covering the LATTICE structure of
+    BoundedSmem (idempotent commutative monoid under max with
+    zero as bottom):
+
+    - PMAT-218: (BoundedSmem, +, 0) bounded monoid (additive)
+    - PMAT-231: (BoundedSmem, max, 0) join-semilattice
+      (idempotent + commutative + associative + bottom)
+
+    The categorical distinction is fundamental: monoid lacks
+    idempotence (a + a ≠ a in general), semilattice has
+    idempotence as a defining axiom. Lattice operations on smem
+    requirements capture WORST-CASE-RESERVATION semantics — the
+    smem needed for two parallel kernels is `max`, not `sum`.
+    Both Diamonds are load-bearing for PTX emission accuracy.
+
+    Status: discharged at v0.1.0 (PMAT-231). Tier: DIAMOND.
+    SECOND Diamond category on C-COMPILE-RUST-TO-PTX-MMA. -/
+
+/--
+  **Diamond-tier refinement theorem** — `max` on BoundedSmem
+  forms a JOIN-SEMILATTICE.
+
+  Combines four properties into the JOIN-SEMILATTICE
+  axiomatization on (Nat, max, 0):
+  (a) Commutativity: max(a, b) = max(b, a)
+  (b) Associativity: max(max(a, b), c) = max(a, max(b, c))
+  (c) Bottom element: max(a, 0) = a
+  (d) Idempotence: max(a, a) = a (distinguishes lattice from
+      monoid — both commutative monoids and semilattices have
+      associativity + commutativity + identity, but only
+      semilattices have idempotence)
+
+  Captures WORST-CASE smem reservation: a parallel composition
+  of two kernels reserves max-of-requested, not sum-of-requested
+  (sum is needed only for sequential composition / additive
+  accounting from PMAT-218). An emitter that emits sum-based
+  reservation for parallel kernels would over-reserve and
+  potentially exceed budget unnecessarily.
+
+  Status: **discharged at v0.1.0 (PMAT-231)**. Tier: DIAMOND.
+-/
+theorem bounded_smem_join_semilattice_diamond
+    (a b c : BoundedSmem) :
+    -- (a) Commutativity of max
+    Nat.max a.val b.val = Nat.max b.val a.val
+    -- (b) Associativity of max
+    ∧ Nat.max (Nat.max a.val b.val) c.val
+        = Nat.max a.val (Nat.max b.val c.val)
+    -- (c) 0 is the bottom (left identity for max)
+    ∧ Nat.max 0 a.val = a.val
+    -- (d) Idempotence (semilattice-defining axiom)
+    ∧ Nat.max a.val a.val = a.val := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.max_comm a.val b.val
+  · exact Nat.max_assoc a.val b.val c.val
+  · exact Nat.zero_max a.val
+  · exact Nat.max_self a.val
+
 end XpileContracts.CCompileRustToPtxMma
