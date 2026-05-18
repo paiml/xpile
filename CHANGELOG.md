@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SEVENTH Platinum-tier refinement: bounded smem sum on C-COMPILE-RUST-TO-PTX-MMA — first PATTERN-COMPOSITION Platinum (PMAT-206 / XPILE-REFINE-COMPILE-PTX-004)
+
+Seventh Platinum-tier theorem in the substrate. **First Platinum theorem demonstrating COMPOSITION of prior tier patterns** — Gold's `BoundedSmem` subtype (PMAT-187) + Platinum's additivity (PMAT-204 pattern) combined into a bounded-monoid-homomorphism.
+
+The Platinum theorems:
+- `bounded_smem_sum_within_budget_platinum` (wired): summing two BoundedSmems with a sum-bound precondition produces a BoundedSmem
+- `bounded_smem_add_commutative_platinum`: **first Platinum theorem combining THREE prior patterns** — PMAT-187 Gold subtype + PMAT-199 Platinum commutativity + PMAT-204 Platinum additivity
+- `zero_is_bounded_smem_platinum`: captures the monoid identity element
+
+**Architectural significance**: Platinum patterns COMPOSE. The substrate now demonstrates that:
+- Gold's refinement subtypes (bound preservation per-value)
+- Plus Platinum's compositional algebra (additivity, commutativity)
+- Compose orthogonally to give bounded-composition theorems
+
+This is the categorical "lift along a monoid homomorphism" pattern — when a sub-property holds at the base level (Nat addition is commutative), it lifts to the refinement subtype via the additivity homomorphism. Future Platinum theorems can combine more patterns: bounded transitivity, bounded functoriality, etc.
+
+YAML: adds new equation `bounded_smem_sum_within_budget_platinum` wired to the Platinum theorem. `xpile quorum` view for C-COMPILE-RUST-TO-PTX-MMA: Sem=4 (was 3), Sym=1, Run=1, Ext=7.
+
 ### Docs — Platinum-tier kickoff (PMAT-199..204) reflected across README/spec/audit/status (PMAT-205)
 
 Doc sweep recording the Platinum-tier kickoff. PMAT-199..204 added 6 wired Platinum theorems demonstrating 6 distinct compositional algebraic shapes across 5 contracts.

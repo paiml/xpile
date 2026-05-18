@@ -134,6 +134,40 @@ equations:
       - "emitted PTX never exceeds the sm_80 shared-memory budget — ptxas would reject otherwise, but the type system catches it before emission"
       - "this is the archetype Gold-tier pattern applied to Layer-5 compile-time contracts (after PMAT-185 on Layer-1 arithmetic and PMAT-186 on Layer-4 FFI)"
 
+  bounded_smem_sum_within_budget_platinum:
+    # PMAT-206 / XPILE-REFINE-COMPILE-PTX-004: SEVENTH Platinum-
+    # tier refinement in the substrate. First Platinum theorem
+    # demonstrating COMPOSITION of prior tier patterns —
+    # PMAT-187's Gold BoundedSmem subtype + PMAT-204's Platinum
+    # additivity combined into bounded-monoid-homomorphism.
+    # Companion theorems bounded_smem_add_commutative_platinum
+    # (combines PMAT-199 commutativity + PMAT-187 Gold subtype +
+    # PMAT-204 additivity) and zero_is_bounded_smem_platinum
+    # (monoid identity).
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_sum_within_budget_platinum"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      add_bounded_smem(a, b, h).val == a.val + b.val
+      WHERE h : a.val + b.val ≤ smem_budget_sm80
+      (bounded-monoid-homomorphism)
+    domain: |
+      Any two BoundedSmem values a, b with a sum bound proof.
+      The Platinum upgrade captures composition of Gold-tier
+      bounded subtypes with Platinum-tier additivity.
+    invariants:
+      - "FIRST Platinum theorem demonstrating COMPOSITION of prior tier patterns"
+      - "combines PMAT-187 Gold BoundedSmem subtype + PMAT-204 Platinum additivity"
+      - "the bounded-smem (Nat, +, 0) monoid is preserved under the bound — bounded-monoid-homomorphism property"
+      - "companion theorem bounded_smem_add_commutative_platinum further combines PMAT-199 commutativity with the bounded subtype"
+      - "companion theorem zero_is_bounded_smem_platinum captures the monoid identity element"
+    preconditions:
+      - "the sum bound a.val + b.val ≤ smem_budget_sm80 must be proven at construction time"
+      - "this is the Gold-subtype well-formedness obligation lifted to the binary-composition case"
+    postconditions:
+      - "the result is itself a BoundedSmem — the bound witness travels with the sum"
+      - "Platinum patterns COMPOSE — building richer compositional properties from prior tier components"
+      - "an emitter that sums two BoundedSmems without checking the cumulative bound would not produce a valid BoundedSmem — caught at composition time by the type system"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)
