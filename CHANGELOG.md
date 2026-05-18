@@ -7,6 +7,14 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Fixed — Quote acceptance_criteria with embedded colons in roadmap.yaml — unblocks `pmat work list` (PMAT-257)
+
+`pmat work list` was failing with `Parse error: roadmap[N].acceptance_criteria[0]: invalid type: map, expected a string`. Root cause: many roadmap entries (predating this session and added during it) had acceptance_criteria list items containing colons (e.g., `"axiomatized: refcount + locks"`, `"{ p : Contract × ...}"`, `"Sem N → M"`). pmat's strict YAML parser interpreted the colon as a mapping separator.
+
+Fix: defensively quote every list item under `acceptance_criteria:` that contains a `:` character. 34 lines quoted. `python3 -c "import yaml; yaml.safe_load(...)"` and `pmat work list` both now succeed.
+
+Real engineering bug — this had been silently broken for a long time but only manifested in developer-convenience tooling, not CI gates.
+
 ### Changed — Refresh `pmat tdg .` score: 95.7 → 95.1 (PMAT-256)
 
 Live re-run of `pmat tdg .` reports 95.1 / 100 (Grade A-) — slight dip from the previously-recorded 95.7 reflecting the +600 lines of Diamond-program documentation shipped in this session (`sub/diamond-taxonomy.md`, README updates, status/CURRENT.md headlines, audit-design §3 refresh, Section 28 of xpile-spec.md).

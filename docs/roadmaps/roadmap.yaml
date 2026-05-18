@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-257
+  github_issue: null
+  item_type: task
+  title: 'PMAT-257: Quote acceptance_criteria with embedded colons to fix roadmap.yaml YAML parse error — unblocks pmat work list'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T20:30:00Z
+  updated: 2026-05-20T20:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Defensively quote every list item under acceptance_criteria with embedded colons. 34 lines quoted. pmat work list now works."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-256
   github_issue: null
   item_type: task
@@ -234,7 +251,7 @@ roadmap:
   updated: 2026-05-20T13:30:00Z
   spec: null
   acceptance_criteria:
-  - Third DEPTH-3 Diamond in substrate. ZERO-COPY-POINTER-IDENTITY FUNCTOR Diamond on buffer protocol passthrough, distinct algebraic category from PMAT-216 abelian-group AND PMAT-230 GIL-invariant. Combines PMAT-173 + length-preservation + Materialised-sentinel + mode-independent-length. zero_copy_pointer_functor_diamond (wired). Three orthogonal CPython safety invariants now axiomatized: refcount + locks + memory ownership.
+  - "Third DEPTH-3 Diamond in substrate. ZERO-COPY-POINTER-IDENTITY FUNCTOR Diamond on buffer protocol passthrough, distinct algebraic category from PMAT-216 abelian-group AND PMAT-230 GIL-invariant. Combines PMAT-173 + length-preservation + Materialised-sentinel + mode-independent-length. zero_copy_pointer_functor_diamond (wired). Three orthogonal CPython safety invariants now axiomatized: refcount + locks + memory ownership."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -1016,7 +1033,7 @@ roadmap:
   updated: 2026-05-19T14:30:00Z
   spec: null
   acceptance_criteria:
-  - Twelfth Gold-tier theorem. MILESTONE - completes Gold-tier coverage across all 12 contracts in the substrate (Gold is now universal). Also closes the 2×2 trait matrix at Gold (PMAT-194/195/196/197). CitationCompleteContract := { p : Contract × RenderedDocSilver // p.snd.citations = p.fst.depends_on ++ p.fst.references } pairs Contract with rendered doc under type-level citation-completeness proof. citation_complete_contract_gold (wired) + citation_completeness_witness_gold + gold_contract_backend_agrees_with_silver companions. C-XPILE-CONTRACT-BACKEND-TRAIT Sem 2 → 3. Gold-tier UNIVERSAL across the substrate.
+  - "Twelfth Gold-tier theorem. MILESTONE - completes Gold-tier coverage across all 12 contracts in the substrate (Gold is now universal). Also closes the 2×2 trait matrix at Gold (PMAT-194/195/196/197). CitationCompleteContract := { p : Contract × RenderedDocSilver // p.snd.citations = p.fst.depends_on ++ p.fst.references } pairs Contract with rendered doc under type-level citation-completeness proof. citation_complete_contract_gold (wired) + citation_completeness_witness_gold + gold_contract_backend_agrees_with_silver companions. C-XPILE-CONTRACT-BACKEND-TRAIT Sem 2 → 3. Gold-tier UNIVERSAL across the substrate."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -1033,7 +1050,7 @@ roadmap:
   updated: 2026-05-19T14:00:00Z
   spec: null
   acceptance_criteria:
-  - Eleventh Gold-tier theorem. FrameSafeTransition := { p : Session × Session // p.fst.modules = p.snd.modules } encodes frame-preservation at type level. frame_safe_transition_gold (wired) + frame_safety_witness_gold + gold_contract_frontend_agrees_with_silver companions. FIFTH Gold pattern variant unlocked — frame-safety refinement (same-type before/after sides). Distinct from cross-field equality (PMAT-194/195) which uses different-type sides. Load-bearing for modifies()/frame invariants. C-XPILE-CONTRACT-FRONTEND-TRAIT Sem 2 → 3. Gold-tier now spans 5 subtype shapes × 10 contracts × 5 layers.
+  - "Eleventh Gold-tier theorem. FrameSafeTransition := { p : Session × Session // p.fst.modules = p.snd.modules } encodes frame-preservation at type level. frame_safe_transition_gold (wired) + frame_safety_witness_gold + gold_contract_frontend_agrees_with_silver companions. FIFTH Gold pattern variant unlocked — frame-safety refinement (same-type before/after sides). Distinct from cross-field equality (PMAT-194/195) which uses different-type sides. Load-bearing for modifies()/frame invariants. C-XPILE-CONTRACT-FRONTEND-TRAIT Sem 2 → 3. Gold-tier now spans 5 subtype shapes × 10 contracts × 5 layers."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -1050,7 +1067,7 @@ roadmap:
   updated: 2026-05-19T13:30:00Z
   spec: null
   acceptance_criteria:
-  - Tenth Gold-tier theorem. Mirror of PMAT-194 on backend side. ConsistentBackendInput := { p : Backend × ArtifactSilver // p.snd.target = p.fst.declared_target } pairs Backend with ArtifactSilver under type-level consistency proof. consistent_backend_input_gold (wired) + consistent_input_witness_gold + gold_backend_agrees_with_silver companions. Together PMAT-194+195 close 2x2 trait matrix at Gold tier. Establishes cross-field equality Gold pattern is portable across both forward (frontend) and reverse (backend) trait directions. C-XPILE-BACKEND-TRAIT Sem 2 → 3.
+  - "Tenth Gold-tier theorem. Mirror of PMAT-194 on backend side. ConsistentBackendInput := { p : Backend × ArtifactSilver // p.snd.target = p.fst.declared_target } pairs Backend with ArtifactSilver under type-level consistency proof. consistent_backend_input_gold (wired) + consistent_input_witness_gold + gold_backend_agrees_with_silver companions. Together PMAT-194+195 close 2x2 trait matrix at Gold tier. Establishes cross-field equality Gold pattern is portable across both forward (frontend) and reverse (backend) trait directions. C-XPILE-BACKEND-TRAIT Sem 2 → 3."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -1067,7 +1084,7 @@ roadmap:
   updated: 2026-05-19T13:00:00Z
   spec: null
   acceptance_criteria:
-  - Ninth Gold-tier theorem. First Gold on Layer-3 trait contracts. ConsistentFrontendOutput := { p : Frontend × MetaHirModuleSilver // p.snd.source_lang = p.fst.declared_lang } pairs a Frontend with its lowered module under type-level consistency proof. Fourth Gold pattern variant unlocked - cross-field equality refinement (x.fst.field = y.snd.field). consistent_frontend_output_gold (wired) + consistent_output_witness_gold + gold_frontend_agrees_with_silver companions. C-XPILE-FRONTEND-TRAIT Sem 2 → 3. Gold-tier pattern now spans 4 subtype shapes × 8 contracts × 5 layers.
+  - "Ninth Gold-tier theorem. First Gold on Layer-3 trait contracts. ConsistentFrontendOutput := { p : Frontend × MetaHirModuleSilver // p.snd.source_lang = p.fst.declared_lang } pairs a Frontend with its lowered module under type-level consistency proof. Fourth Gold pattern variant unlocked - cross-field equality refinement (x.fst.field = y.snd.field). consistent_frontend_output_gold (wired) + consistent_output_witness_gold + gold_frontend_agrees_with_silver companions. C-XPILE-FRONTEND-TRAIT Sem 2 → 3. Gold-tier pattern now spans 4 subtype shapes × 8 contracts × 5 layers."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -1084,7 +1101,7 @@ roadmap:
   updated: 2026-05-19T12:30:00Z
   spec: null
   acceptance_criteria:
-  - Eighth Gold-tier theorem. Extends Gold to seventh contract (C-BASHRS-POSIX-IDEMPOTENCE, cross-domain Layer-1/4). SuccessfulOutcome := { o : OutcomeSilver // o.exit_code = 0 } refinement subtype encodes POSIX success path at type level. Third Gold pattern variant unlocked - equality refinement (x = const), distinct from bounded-numeric (PMAT-185..188) and collection-cardinality (PMAT-189/191/192). subprocess_run_eq_shell_run_gold (wired) + successful_outcome_witness_gold companion. C-BASHRS-POSIX-IDEMPOTENCE Sem 2 → 3. Gold-tier pattern now demonstrated across 3 subtype shapes × 7 contracts × 4 layers.
+  - "Eighth Gold-tier theorem. Extends Gold to seventh contract (C-BASHRS-POSIX-IDEMPOTENCE, cross-domain Layer-1/4). SuccessfulOutcome := { o : OutcomeSilver // o.exit_code = 0 } refinement subtype encodes POSIX success path at type level. Third Gold pattern variant unlocked - equality refinement (x = const), distinct from bounded-numeric (PMAT-185..188) and collection-cardinality (PMAT-189/191/192). subprocess_run_eq_shell_run_gold (wired) + successful_outcome_witness_gold companion. C-BASHRS-POSIX-IDEMPOTENCE Sem 2 → 3. Gold-tier pattern now demonstrated across 3 subtype shapes × 7 contracts × 4 layers."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -1101,7 +1118,7 @@ roadmap:
   updated: 2026-05-19T12:00:00Z
   spec: null
   acceptance_criteria:
-  - Seventh Gold-tier theorem in the substrate. First Gold refinement applied to a POLYMORPHIC Silver model — threading α through the refinement subtype. NonEmptyHomogeneousList α := { l : HomogeneousListSilver α // l.elements ≠ [] }. non_empty_homogeneous_preserves_elements_gold (wired) + non_empty_homogeneous_witness_gold + gold_non_empty_homogeneous_agrees_with_silver companions. Demonstrates Gold + polymorphism compose orthogonally — two independent concerns that stack cleanly. Third demonstration of collection-cardinality Gold pattern (after PMAT-189, PMAT-191) — confirms portability across LaTeX, Rust preconditions, and polymorphic Python lists. C-XLATE-PY-LIST-TO-VEC Sem 10 → 11.
+  - "Seventh Gold-tier theorem in the substrate. First Gold refinement applied to a POLYMORPHIC Silver model — threading α through the refinement subtype. NonEmptyHomogeneousList α := { l : HomogeneousListSilver α // l.elements ≠ [] }. non_empty_homogeneous_preserves_elements_gold (wired) + non_empty_homogeneous_witness_gold + gold_non_empty_homogeneous_agrees_with_silver companions. Demonstrates Gold + polymorphism compose orthogonally — two independent concerns that stack cleanly. Third demonstration of collection-cardinality Gold pattern (after PMAT-189, PMAT-191) — confirms portability across LaTeX, Rust preconditions, and polymorphic Python lists. C-XLATE-PY-LIST-TO-VEC Sem 10 → 11."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -1118,7 +1135,7 @@ roadmap:
   updated: 2026-05-19T11:30:00Z
   spec: null
   acceptance_criteria:
-  - Sixth Gold-tier theorem in the substrate. Extends Gold to Layer-2 reverse-translation direction. NonEmptyPreconditionList := { pl : PreconditionListSilver // pl.source_indices.size > 0 } encodes precondition list non-emptiness at type level. non_empty_preconditions_preserves_indices_gold (wired) + non_empty_preconditions_witness_gold + gold_non_empty_preconditions_agrees_with_silver companions. Second demonstration of collection-cardinality Gold pattern (after PMAT-189) — confirms portability across contract domains (LaTeX definitions vs Rust precondition lists). C-XLATE-RUST-FN-TO-LEAN-THM Sem 10 → 11.
+  - "Sixth Gold-tier theorem in the substrate. Extends Gold to Layer-2 reverse-translation direction. NonEmptyPreconditionList := { pl : PreconditionListSilver // pl.source_indices.size > 0 } encodes precondition list non-emptiness at type level. non_empty_preconditions_preserves_indices_gold (wired) + non_empty_preconditions_witness_gold + gold_non_empty_preconditions_agrees_with_silver companions. Second demonstration of collection-cardinality Gold pattern (after PMAT-189) — confirms portability across contract domains (LaTeX definitions vs Rust precondition lists). C-XLATE-RUST-FN-TO-LEAN-THM Sem 10 → 11."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -1152,7 +1169,7 @@ roadmap:
   updated: 2026-05-19T10:30:00Z
   spec: null
   acceptance_criteria:
-  - Fifth Gold-tier theorem in the substrate. First Gold theorem using non-empty-list / collection-cardinality subtype shape (distinct from PMAT-185..188 bounded-Nat pattern). NonEmptyDefinition := { d : DefinitionEnvSilver // d.all_math_spans.size > 0 } encodes definition body non-emptiness at type level. non_empty_definition_preserves_spans_gold (wired) + non_empty_witness_gold + gold_non_empty_agrees_with_silver_spans companions. Demonstrates Gold-tier refinement works for collection-cardinality preconditions, not just numeric bounds. Applicable to precondition lists, equation lists, citation sets. C-NOTATION-LATEX-MATH-TO-EQUATION Sem 14 → 15.
+  - "Fifth Gold-tier theorem in the substrate. First Gold theorem using non-empty-list / collection-cardinality subtype shape (distinct from PMAT-185..188 bounded-Nat pattern). NonEmptyDefinition := { d : DefinitionEnvSilver // d.all_math_spans.size > 0 } encodes definition body non-emptiness at type level. non_empty_definition_preserves_spans_gold (wired) + non_empty_witness_gold + gold_non_empty_agrees_with_silver_spans companions. Demonstrates Gold-tier refinement works for collection-cardinality preconditions, not just numeric bounds. Applicable to precondition lists, equation lists, citation sets. C-NOTATION-LATEX-MATH-TO-EQUATION Sem 14 → 15."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -1169,7 +1186,7 @@ roadmap:
   updated: 2026-05-19T10:00:00Z
   spec: null
   acceptance_criteria:
-  - Fourth Gold-tier theorem in the substrate, on Layer-2 translation contract. WarningLineCount := { n : Nat // n ≥ 5 } refinement subtype encodes the warning-lines floor at type level. warning_lines_preserved_gold (wired) + warning_lines_witness_gold + gold_warning_lines_agrees_with_silver_floor companions. Together with PMAT-185 (Layer-1), PMAT-186 (Layer-4), PMAT-187 (Layer-5), establishes Gold-tier subtype refinement as a universal pattern across the contract taxonomy. C-XLATE-LEAN-TO-RUST Sem 18 → 19, Ext 7 → 9.
+  - "Fourth Gold-tier theorem in the substrate, on Layer-2 translation contract. WarningLineCount := { n : Nat // n ≥ 5 } refinement subtype encodes the warning-lines floor at type level. warning_lines_preserved_gold (wired) + warning_lines_witness_gold + gold_warning_lines_agrees_with_silver_floor companions. Together with PMAT-185 (Layer-1), PMAT-186 (Layer-4), PMAT-187 (Layer-5), establishes Gold-tier subtype refinement as a universal pattern across the contract taxonomy. C-XLATE-LEAN-TO-RUST Sem 18 → 19, Ext 7 → 9."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -1186,7 +1203,7 @@ roadmap:
   updated: 2026-05-19T09:30:00Z
   spec: null
   acceptance_criteria:
-  - Third Gold-tier theorem in the substrate. BoundedSmem := { s : Nat // s ≤ smem_budget_sm80 } refinement subtype encodes sm_80 hardware budget at type level. bounded_smem_preserved_gold (wired) + bounded_smem_value_preserved_gold + gold_subtype_agrees_with_silver_clamp companions. Demonstrates Gold pattern on Layer-5 compile-time (after PMAT-185 Layer-1 arithmetic, PMAT-186 Layer-4 FFI). Establishes universal Gold pattern across 3 layers. C-COMPILE-RUST-TO-PTX-MMA Sem 2 → 3.
+  - "Third Gold-tier theorem in the substrate. BoundedSmem := { s : Nat // s ≤ smem_budget_sm80 } refinement subtype encodes sm_80 hardware budget at type level. bounded_smem_preserved_gold (wired) + bounded_smem_value_preserved_gold + gold_subtype_agrees_with_silver_clamp companions. Demonstrates Gold pattern on Layer-5 compile-time (after PMAT-185 Layer-1 arithmetic, PMAT-186 Layer-4 FFI). Establishes universal Gold pattern across 3 layers. C-COMPILE-RUST-TO-PTX-MMA Sem 2 → 3."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -1203,7 +1220,7 @@ roadmap:
   updated: 2026-05-19T09:00:00Z
   spec: null
   acceptance_criteria:
-  - Second Gold-tier theorem in the substrate. BoundedRefcountDelta := { d : Int // -8 ≤ d ≤ 8 } refinement subtype encodes CPython ABI's per-call refcount-delta bound at type level. bounded_refcount_delta_preserved_gold (wired) + bounded_refcount_witness_gold + gold_subtype_agrees_with_silver_refcount companions. Demonstrates Gold pattern on FFI semantics after PMAT-185 covered arithmetic. Kani BMC search space exponentially smaller at Gold. C-FFI-CPYTHON-EXT Sem 7 → 8, Ext 14 → 18.
+  - "Second Gold-tier theorem in the substrate. BoundedRefcountDelta := { d : Int // -8 ≤ d ≤ 8 } refinement subtype encodes CPython ABI's per-call refcount-delta bound at type level. bounded_refcount_delta_preserved_gold (wired) + bounded_refcount_witness_gold + gold_subtype_agrees_with_silver_refcount companions. Demonstrates Gold pattern on FFI semantics after PMAT-185 covered arithmetic. Kani BMC search space exponentially smaller at Gold. C-FFI-CPYTHON-EXT Sem 7 → 8, Ext 14 → 18."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -1220,7 +1237,7 @@ roadmap:
   updated: 2026-05-19T08:30:00Z
   spec: null
   acceptance_criteria:
-  - First Gold-tier theorem in the substrate. PyIntFast := { n : Int // fits_i64 n } refinement subtype encodes fits_i64 precondition at type level. pyint_fast_add_returns_fast_gold (wired) + pyint_fast_witness_gold + gold_subtype_agrees_with_silver_dispatch companions. Captures what Silver couldn't model — fits_i64 proof travels with the value through subsequent calls. Downstream code chains PyIntFast additions without re-proving. Per ruchy 5.0 §14.10.5 Gold tier = typed structural model + subtype-encoded preconditions. C-PY-INT-ARITH Sem 18 → 19, Ext 15 → 17.
+  - "First Gold-tier theorem in the substrate. PyIntFast := { n : Int // fits_i64 n } refinement subtype encodes fits_i64 precondition at type level. pyint_fast_add_returns_fast_gold (wired) + pyint_fast_witness_gold + gold_subtype_agrees_with_silver_dispatch companions. Captures what Silver couldn't model — fits_i64 proof travels with the value through subsequent calls. Downstream code chains PyIntFast additions without re-proving. Per ruchy 5.0 §14.10.5 Gold tier = typed structural model + subtype-encoded preconditions. C-PY-INT-ARITH Sem 18 → 19, Ext 15 → 17."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -1390,7 +1407,7 @@ roadmap:
   updated: 2026-05-19T03:00:00Z
   spec: null
   acceptance_criteria:
-  - Three new Silver theorems on C-PY-INT-ARITH replicating the PMAT-169 typed-dispatcher pattern for multiplication, floor-division, modulo. Each provides path-correctness on fits_i64 domain, slow-path soundness, and dispatcher totality. New wired equations mul_dispatch_correct_on_fits_silver, floor_div_dispatch_correct_on_fits_silver, mod_dispatch_correct_on_fits_silver. Captures the i64::MIN * -1 bug class at the type level (was runtime-only at Bronze). C-PY-INT-ARITH Sem 10 → 13, Ext 8 → 11. Silver coverage on this contract now 4/9 equations.
+  - "Three new Silver theorems on C-PY-INT-ARITH replicating the PMAT-169 typed-dispatcher pattern for multiplication, floor-division, modulo. Each provides path-correctness on fits_i64 domain, slow-path soundness, and dispatcher totality. New wired equations mul_dispatch_correct_on_fits_silver, floor_div_dispatch_correct_on_fits_silver, mod_dispatch_correct_on_fits_silver. Captures the i64::MIN * -1 bug class at the type level (was runtime-only at Bronze). C-PY-INT-ARITH Sem 10 → 13, Ext 8 → 11. Silver coverage on this contract now 4/9 equations."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -1645,7 +1662,7 @@ roadmap:
   updated: 2026-05-18T19:00:00Z
   spec: null
   acceptance_criteria:
-  - Silver-tier refinement for refcount_balance_on_success_silver on C-FFI-CPYTHON-EXT. Introduces typed FfiCallSilver + FfiManifestEntrySilver carrying refcount_delta : Int. Theorem proves manifest.refcount_delta = call.refcount_delta. C-FFI-CPYTHON-EXT Sem 1 → 2.
+  - "Silver-tier refinement for refcount_balance_on_success_silver on C-FFI-CPYTHON-EXT. Introduces typed FfiCallSilver + FfiManifestEntrySilver carrying refcount_delta : Int. Theorem proves manifest.refcount_delta = call.refcount_delta. C-FFI-CPYTHON-EXT Sem 1 → 2."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3102,7 +3119,7 @@ roadmap:
   updated: 2026-05-18T06:30:00Z
   spec: null
   acceptance_criteria:
-  - Update docs/specifications/sub/provability-roadmap.md lines 101 and 103. Line 101 (XPILE-QUORUM-005 status) — "11 contracts scanned" → "12 contracts scanned"; "10 unattested contracts surfaced as zombie candidate list" → "all 12 reach ≥1 Extrinsic attestation". Line 103 (PMAT-033 status) — "v0.1.0 headline: 1 QUORUM / 0 PARTIAL / 10 UNVERIFIED" → "12 QUORUM / 0 PARTIAL / 0 UNVERIFIED"; "10 UNVERIFIED contracts are the actionable backlog" → next phase is Bronze→Silver/Gold tier refinement.
+  - "Update docs/specifications/sub/provability-roadmap.md lines 101 and 103. Line 101 (XPILE-QUORUM-005 status) — \"11 contracts scanned\" → \"12 contracts scanned\"; \"10 unattested contracts surfaced as zombie candidate list\" → \"all 12 reach ≥1 Extrinsic attestation\". Line 103 (PMAT-033 status) — \"v0.1.0 headline: 1 QUORUM / 0 PARTIAL / 10 UNVERIFIED\" → \"12 QUORUM / 0 PARTIAL / 0 UNVERIFIED\"; \"10 UNVERIFIED contracts are the actionable backlog\" → next phase is Bronze→Silver/Gold tier refinement."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3170,7 +3187,7 @@ roadmap:
   updated: 2026-05-18T08:30:00Z
   spec: null
   acceptance_criteria:
-  - Add lower_token_param_expansion_falls_through_as_litstr test in bashrs-frontend asserting 12 POSIX param-expansion forms lower to Expr::LitStr. Add render_arg_litstr_preserves_param_expansion_verbatim test in bashrs-backend asserting the same forms render verbatim. Document the round-trip property as a v0.1.0 invariant; sets up XPILE-BASHRS-PARAM-EXPANSION-001 Silver-tier refinement (structured Expr::ParamExpansion variant).
+  - "Add lower_token_param_expansion_falls_through_as_litstr test in bashrs-frontend asserting 12 POSIX param-expansion forms lower to Expr::LitStr. Add render_arg_litstr_preserves_param_expansion_verbatim test in bashrs-backend asserting the same forms render verbatim. Document the round-trip property as a v0.1.0 invariant; sets up XPILE-BASHRS-PARAM-EXPANSION-001 Silver-tier refinement (structured Expr::ParamExpansion variant)."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3187,7 +3204,7 @@ roadmap:
   updated: 2026-05-18T09:00:00Z
   spec: null
   acceptance_criteria:
-  - Add splice_line_continuations() helper in bashrs-frontend implementing POSIX backslash-newline splicing rules (odd run = continuation marker, even run = literal backslash pairs). Wire into parse_and_lower before .lines() split. Add unit test covering 8 splice patterns + integration test verifying multi-line `echo \\\n  hello \\\n  world\n` parses to a single Stmt::Cmd with hello/world as args. Real shell scripts use line continuation heavily for long invocations (configure / cmake / apt-get install).
+  - "Add splice_line_continuations() helper in bashrs-frontend implementing POSIX backslash-newline splicing rules (odd run = continuation marker, even run = literal backslash pairs). Wire into parse_and_lower before .lines() split. Add unit test covering 8 splice patterns + integration test verifying multi-line `echo \\\\\\n  hello \\\\\\n  world\\n` parses to a single Stmt::Cmd with hello/world as args. Real shell scripts use line continuation heavily for long invocations (configure / cmake / apt-get install)."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3204,7 +3221,7 @@ roadmap:
   updated: 2026-05-18T09:30:00Z
   spec: null
   acceptance_criteria:
-  - Add parse_and_lower_redirection_round_trips_via_litstr_args test in bashrs-frontend asserting 6 distinct redirection patterns parse to Stmt::Cmd with the redirection tokens preserved as LitStr args. Documents the v0.1.0 invariant that LitStr passthrough preserves shell semantics through the byte-level round-trip even though the IR doesn't model redirection structurally. Sets up XPILE-BASHRS-REDIRECT-001 (Silver-tier structured Stmt::CmdWithRedirections variant).
+  - "Add parse_and_lower_redirection_round_trips_via_litstr_args test in bashrs-frontend asserting 6 distinct redirection patterns parse to Stmt::Cmd with the redirection tokens preserved as LitStr args. Documents the v0.1.0 invariant that LitStr passthrough preserves shell semantics through the byte-level round-trip even though the IR doesn't model redirection structurally. Sets up XPILE-BASHRS-REDIRECT-001 (Silver-tier structured Stmt::CmdWithRedirections variant)."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3221,7 +3238,7 @@ roadmap:
   updated: 2026-05-18T10:00:00Z
   spec: null
   acceptance_criteria:
-  - Add line_has_unambiguous_pipe() helper in bashrs-frontend that returns true only when the line contains a single `|` not adjacent to another `|`. Use it in parse_and_lower instead of the prior `line.contains('|')` check. Real bug fix — prior behavior rejected valid POSIX scripts like `ls || exit 1` with an "empty stage" error. Plus adds parse_and_lower_and_or_short_circuit_round_trips_via_litstr asserting 4 short-circuit patterns are preserved as LitStr args. Sets up XPILE-BASHRS-LOGICAL-OPS-001 (structured Stmt::ShortCircuit variant).
+  - "Add line_has_unambiguous_pipe() helper in bashrs-frontend that returns true only when the line contains a single `|` not adjacent to another `|`. Use it in parse_and_lower instead of the prior `line.contains('|')` check. Real bug fix — prior behavior rejected valid POSIX scripts like `ls || exit 1` with an \"empty stage\" error. Plus adds parse_and_lower_and_or_short_circuit_round_trips_via_litstr asserting 4 short-circuit patterns are preserved as LitStr args. Sets up XPILE-BASHRS-LOGICAL-OPS-001 (structured Stmt::ShortCircuit variant)."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3238,7 +3255,7 @@ roadmap:
   updated: 2026-05-18T10:30:00Z
   spec: null
   acceptance_criteria:
-  - Add parse_and_lower_test_bracket_round_trips_via_litstr in bashrs-frontend asserting 6 distinct test-bracket patterns (file tests, string comparisons, numeric checks, negation) parse with program="[" and the test predicates as args. POSIX `[` is literally an executable, so the IR is correct. Sets up XPILE-BASHRS-TEST-PREDICATE-001 (Silver-tier Stmt::TestPredicate variant covering both `[...]` and bash `[[...]]`).
+  - "Add parse_and_lower_test_bracket_round_trips_via_litstr in bashrs-frontend asserting 6 distinct test-bracket patterns (file tests, string comparisons, numeric checks, negation) parse with program=\"[\" and the test predicates as args. POSIX `[` is literally an executable, so the IR is correct. Sets up XPILE-BASHRS-TEST-PREDICATE-001 (Silver-tier Stmt::TestPredicate variant covering both `[...]` and bash `[[...]]`)."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3255,7 +3272,7 @@ roadmap:
   updated: 2026-05-18T11:00:00Z
   spec: null
   acceptance_criteria:
-  - Update tokenize_line in bashrs-frontend to peek past the first `(` after `$`. If the next char is also `(`, this is arithmetic expansion `$((...))` — read with paren-depth tracking until matching `))`, return as RawToken::Bare. Otherwise continue with existing command-substitution path. Real bug fix — prior tokenizer rejected valid POSIX arithmetic expansion with "nested $(...)" error. Plus tokenize_line_recognises_arith_expansion_as_bare and parse_and_lower_arith_expansion_round_trips_via_litstr tests. Sets up XPILE-BASHRS-ARITH-EXPANSION-001 (Silver-tier Expr::ArithExpansion variant).
+  - "Update tokenize_line in bashrs-frontend to peek past the first `(` after `$`. If the next char is also `(`, this is arithmetic expansion `$((...))` — read with paren-depth tracking until matching `))`, return as RawToken::Bare. Otherwise continue with existing command-substitution path. Real bug fix — prior tokenizer rejected valid POSIX arithmetic expansion with \"nested $(...)\" error. Plus tokenize_line_recognises_arith_expansion_as_bare and parse_and_lower_arith_expansion_round_trips_via_litstr tests. Sets up XPILE-BASHRS-ARITH-EXPANSION-001 (Silver-tier Expr::ArithExpansion variant)."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3272,7 +3289,7 @@ roadmap:
   updated: 2026-05-18T11:30:00Z
   spec: null
   acceptance_criteria:
-  - Add parse_and_lower_subshell_round_trips_via_litstr in bashrs-frontend asserting 3 subshell patterns parse with program="(" and inner content + closing `)` as LitStr args. Common pattern (cd /tmp && ls) for side-effect isolation in build scripts. Completes PMAT-085..091 v0.1.0 round-trip invariant lock-in run. Sets up XPILE-BASHRS-SUBSHELL-001 (Silver-tier Stmt::Subshell variant).
+  - "Add parse_and_lower_subshell_round_trips_via_litstr in bashrs-frontend asserting 3 subshell patterns parse with program=\"(\" and inner content + closing `)` as LitStr args. Common pattern (cd /tmp && ls) for side-effect isolation in build scripts. Completes PMAT-085..091 v0.1.0 round-trip invariant lock-in run. Sets up XPILE-BASHRS-SUBSHELL-001 (Silver-tier Stmt::Subshell variant)."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3493,7 +3510,7 @@ roadmap:
   updated: 2026-05-18T18:00:00Z
   spec: null
   acceptance_criteria:
-  - sub/backend-trait.md implementations table missed bashrs-backend (Target::Shell) which is real emission as of PMAT-039..058 + PMAT-085..092 polish. Add the row. Update "three backends are real" prose to "four backends". Note that the Layer-5 PTX compile contract is at full §14.4 QUORUM (PMAT-074/075) even though the codegen body is still scaffold.
+  - "sub/backend-trait.md implementations table missed bashrs-backend (Target::Shell) which is real emission as of PMAT-039..058 + PMAT-085..092 polish. Add the row. Update \"three backends are real\" prose to \"four backends\". Note that the Layer-5 PTX compile contract is at full §14.4 QUORUM (PMAT-074/075) even though the codegen body is still scaffold."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3510,7 +3527,7 @@ roadmap:
   updated: 2026-05-18T18:30:00Z
   spec: null
   acceptance_criteria:
-  - sub/frontend-trait.md implementations table missed bashrs-frontend which is real parsing as of PMAT-039..058 + PMAT-085..092 polish (54 tests covering quoting, var expansion, command substitution, special params, line continuation, redirections, short-circuit ||, test brackets, arith expansion, subshells). Add the row with extensions sh/bash/zsh/mk + canonical Makefile/Dockerfile via Frontend::matches_path. Add explanatory paragraph linking to PMAT-052 round-trip demo and PMAT-062/063 trait QUORUM. Also note depyler-frontend's PMAT-040 cross-domain subprocess.run lowering.
+  - "sub/frontend-trait.md implementations table missed bashrs-frontend which is real parsing as of PMAT-039..058 + PMAT-085..092 polish (54 tests covering quoting, var expansion, command substitution, special params, line continuation, redirections, short-circuit ||, test brackets, arith expansion, subshells). Add the row with extensions sh/bash/zsh/mk + canonical Makefile/Dockerfile via Frontend::matches_path. Add explanatory paragraph linking to PMAT-052 round-trip demo and PMAT-062/063 trait QUORUM. Also note depyler-frontend's PMAT-040 cross-domain subprocess.run lowering."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3544,7 +3561,7 @@ roadmap:
   updated: 2026-05-18T19:30:00Z
   spec: null
   acceptance_criteria:
-  - sub/meta-hir.md showed v0.0.1 shape — 5 SourceLang variants (missing Rust/Lean/Shell), Function with `signature: String` (replaced with structured params/return_type/body in PMAT-006), no Stmt/Expr/Type enums shown. Substantive rewrite to show actual shape post PMAT-058..092 — 8 SourceLang variants including Shell, structured Function, full Stmt/Expr/Type enums including Layer B shell variants (Cmd, Pipeline, ShellLoop, ShellAssign, LitStr, QuotedString, ShellVar, CommandSubstitution, ShellSpecial, ShellString, ExitCode), QuotingStrategy/LoopKind enums. Document the federated → unified reversal (2026-05-17) with cross-reference to bashrs-merger.md. Update growth trajectory to mark shipped vs post-v0.1.0 items.
+  - "sub/meta-hir.md showed v0.0.1 shape — 5 SourceLang variants (missing Rust/Lean/Shell), Function with `signature: String` (replaced with structured params/return_type/body in PMAT-006), no Stmt/Expr/Type enums shown. Substantive rewrite to show actual shape post PMAT-058..092 — 8 SourceLang variants including Shell, structured Function, full Stmt/Expr/Type enums including Layer B shell variants (Cmd, Pipeline, ShellLoop, ShellAssign, LitStr, QuotedString, ShellVar, CommandSubstitution, ShellSpecial, ShellString, ExitCode), QuotingStrategy/LoopKind enums. Document the federated → unified reversal (2026-05-17) with cross-reference to bashrs-merger.md. Update growth trajectory to mark shipped vs post-v0.1.0 items."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3595,7 +3612,7 @@ roadmap:
   updated: 2026-05-18T21:00:00Z
   spec: null
   acceptance_criteria:
-  - sub/hybrid-transpile-flow.md called the CPython+NumPy demo "First demo target". The first hybrid that actually shipped is Python→shell via PMAT-040 (subprocess.run recognition lowering to Stmt::Cmd → bashrs-backend → POSIX shell). Rename "First demo target" to "Planned demo target" and add a "First hybrid demo: Python → shell" section above it documenting the actually-shipped path with cross-reference to bashrs-merger.md.
+  - "sub/hybrid-transpile-flow.md called the CPython+NumPy demo \"First demo target\". The first hybrid that actually shipped is Python→shell via PMAT-040 (subprocess.run recognition lowering to Stmt::Cmd → bashrs-backend → POSIX shell). Rename \"First demo target\" to \"Planned demo target\" and add a \"First hybrid demo: Python → shell\" section above it documenting the actually-shipped path with cross-reference to bashrs-merger.md."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3663,7 +3680,7 @@ roadmap:
   updated: 2026-05-18T23:00:00Z
   spec: null
   acceptance_criteria:
-  - Two more pmat tdg references that PMAT-113 didn't catch. Line 10 said "xpile minimum: A-" — annotate as target not enforced, cross-reference XPILE-CI-PMAT-TDG-001. Line 20 in the work-item-driven flow block said "Implement until: pmat tdg passes ≥ A- AND pv lint 8/8 AND cargo test green" — rewrite to list the actual live gates (pv lint + cargo test --workspace + fmt + clippy + cargo deny) and note pmat tdg as a v0.2.0+ target.
+  - "Two more pmat tdg references that PMAT-113 didn't catch. Line 10 said \"xpile minimum: A-\" — annotate as target not enforced, cross-reference XPILE-CI-PMAT-TDG-001. Line 20 in the work-item-driven flow block said \"Implement until: pmat tdg passes ≥ A- AND pv lint 8/8 AND cargo test green\" — rewrite to list the actual live gates (pv lint + cargo test --workspace + fmt + clippy + cargo deny) and note pmat tdg as a v0.2.0+ target."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3680,7 +3697,7 @@ roadmap:
   updated: 2026-05-18T23:30:00Z
   spec: null
   acceptance_criteria:
-  - README still said "~52 workspace tests · 5 fixtures runtime-verified". Actual counts: 195 workspace tests, 11+ Python fixtures, plus 54 bashrs-frontend tests. Update with canonical-source pointer to CHANGELOG §"Python subset" (same anti-drift pattern as PMAT-108 for sub/rust-codegen.md).
+  - "README still said \"~52 workspace tests · 5 fixtures runtime-verified\". Actual counts: 195 workspace tests, 11+ Python fixtures, plus 54 bashrs-frontend tests. Update with canonical-source pointer to CHANGELOG §\"Python subset\" (same anti-drift pattern as PMAT-108 for sub/rust-codegen.md)."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3748,7 +3765,7 @@ roadmap:
   updated: 2026-05-19T01:30:00Z
   spec: null
   acceptance_criteria:
-  - Add parse_and_lower_semicolon_separator_round_trips_via_litstr asserting 3 patterns parse with the `;` token preserved as LitStr arg between commands. Real shell idiom for compact multi-command lines (`cd /tmp; ls; cd -`). Closes the v0.1.0 bashrs round-trip invariant lock-in series (PMAT-085..092 + this one). Sets up XPILE-BASHRS-STMT-SEP-001 (Silver-tier Stmt::Block multi-statement variant).
+  - "Add parse_and_lower_semicolon_separator_round_trips_via_litstr asserting 3 patterns parse with the `;` token preserved as LitStr arg between commands. Real shell idiom for compact multi-command lines (`cd /tmp; ls; cd -`). Closes the v0.1.0 bashrs round-trip invariant lock-in series (PMAT-085..092 + this one). Sets up XPILE-BASHRS-STMT-SEP-001 (Silver-tier Stmt::Block multi-statement variant)."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3782,7 +3799,7 @@ roadmap:
   updated: 2026-05-19T02:30:00Z
   spec: null
   acceptance_criteria:
-  - Add lower_capstone_module_emits_all_layer_b_variants in bashrs-backend asserting a Module with Stmt::{Cmd, Pipeline, ShellAssign} + Expr::{LitStr, QuotedString, ShellVar, CommandSubstitution, ShellSpecial} emits the expected shell lines. Mirror of PMAT-092 on the emission side. Guards composition refactors that pass the narrow per-variant tests but break inter-variant interactions. bashrs-backend now has 16 tests (up from 15).
+  - "Add lower_capstone_module_emits_all_layer_b_variants in bashrs-backend asserting a Module with Stmt::{Cmd, Pipeline, ShellAssign} + Expr::{LitStr, QuotedString, ShellVar, CommandSubstitution, ShellSpecial} emits the expected shell lines. Mirror of PMAT-092 on the emission side. Guards composition refactors that pass the narrow per-variant tests but break inter-variant interactions. bashrs-backend now has 16 tests (up from 15)."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -4003,7 +4020,7 @@ roadmap:
   updated: 2026-05-18T14:00:00Z
   spec: null
   acceptance_criteria:
-  - contracts/kani/xlate_rust_fn_to_lean_thm.rs grows from 1 to 5 Kani harnesses, mirroring all 5 Bronze-tier Lean theorems from PMAT-136. Each harness captures the same load-bearing aspect (1:1/1:N expansion rule, count+source-order preservation, byte-for-byte contract_id+equation_name in attribute payload, input hash bit-identity). YAML wires each via kani_harness + kani_file refs. xpile quorum view for C-XLATE-RUST-FN-TO-LEAN-THM gains Sym=5 (was 1). Continues the XPILE-QUORUM-006 per-equation Kani fan-out series (PMAT-147 for xlate-lean-to-rust).
+  - "contracts/kani/xlate_rust_fn_to_lean_thm.rs grows from 1 to 5 Kani harnesses, mirroring all 5 Bronze-tier Lean theorems from PMAT-136. Each harness captures the same load-bearing aspect (1:1/1:N expansion rule, count+source-order preservation, byte-for-byte contract_id+equation_name in attribute payload, input hash bit-identity). YAML wires each via kani_harness + kani_file refs. xpile quorum view for C-XLATE-RUST-FN-TO-LEAN-THM gains Sym=5 (was 1). Continues the XPILE-QUORUM-006 per-equation Kani fan-out series (PMAT-147 for xlate-lean-to-rust)."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -4020,7 +4037,7 @@ roadmap:
   updated: 2026-05-18T13:30:00Z
   spec: null
   acceptance_criteria:
-  - contracts/kani/xlate_lean_to_rust.rs grows from 1 to 9 #[kani::proof] harnesses, mirroring the 9 Bronze-tier Lean theorems from PMAT-133. Each harness explores 256^4 ≈ 4.3B symbolic 4-byte configurations. YAML wires each via kani_harness + kani_file refs. xpile quorum view for C-XLATE-LEAN-TO-RUST gains Sym=9 (was 1) — vote distribution balanced. First per-equation Kani fan-out (XPILE-QUORUM-006); the pattern extends to the other multi-equation contracts as follow-on PRs.
+  - "contracts/kani/xlate_lean_to_rust.rs grows from 1 to 9 #[kani::proof] harnesses, mirroring the 9 Bronze-tier Lean theorems from PMAT-133. Each harness explores 256^4 ≈ 4.3B symbolic 4-byte configurations. YAML wires each via kani_harness + kani_file refs. xpile quorum view for C-XLATE-LEAN-TO-RUST gains Sym=9 (was 1) — vote distribution balanced. First per-equation Kani fan-out (XPILE-QUORUM-006); the pattern extends to the other multi-equation contracts as follow-on PRs."
   phases: []
   subtasks: []
   estimated_effort: null
@@ -4207,7 +4224,7 @@ roadmap:
   updated: 2026-05-18T09:30:00Z
   spec: null
   acceptance_criteria:
-  - Add Bronze-tier refinement theorems to contracts/lean/XlateRustFnToLeanThm.lean for the 4 remaining equations (rust_postcondition_to_lean_theorem, rust_precondition_to_lean_hypothesis, citation_bridge_via_attribute REWRITTEN to capture load-bearing attribute payload invariant, frame_translation_is_textual). Each theorem captures a different load-bearing aspect (1:1/1:N expansion rule, count+source-order preservation, byte-for-byte contract_id+equation_name in the emitted attribute, input-hash bit-identity for cache-determinism). Wire lean_theorem + lean_file references in xlate-rust-fn-to-lean-thm-v1.yaml. Contract warnings 5 → 1. Total substrate warnings 10 → 6.
+  - "Add Bronze-tier refinement theorems to contracts/lean/XlateRustFnToLeanThm.lean for the 4 remaining equations (rust_postcondition_to_lean_theorem, rust_precondition_to_lean_hypothesis, citation_bridge_via_attribute REWRITTEN to capture load-bearing attribute payload invariant, frame_translation_is_textual). Each theorem captures a different load-bearing aspect (1:1/1:N expansion rule, count+source-order preservation, byte-for-byte contract_id+equation_name in the emitted attribute, input-hash bit-identity for cache-determinism). Wire lean_theorem + lean_file references in xlate-rust-fn-to-lean-thm-v1.yaml. Contract warnings 5 → 1. Total substrate warnings 10 → 6."
   phases: []
   subtasks: []
   estimated_effort: null
