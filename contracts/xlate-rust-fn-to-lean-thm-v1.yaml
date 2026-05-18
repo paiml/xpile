@@ -59,6 +59,12 @@ equations:
       - "no side-effect declared in the Lean type — pure functions only"
     preconditions:
       - "rust_fn is marked `#[pure]` or contract C declares no side-effects"
+      - "every Rust type T1..Tn appearing in rust_fn's signature has a canonical Lean lift (T_lean) defined by xpile-lean-contract-backend"
+    postconditions:
+      - "the emitted Lean def's name equals rust_fn's name byte-for-byte (no mangling, no namespace prefixing of the def itself)"
+      - "the generic parameter list, in source order, lifts to Lean type-variable binders in the same order"
+      - "the def's Lean type signature contains no `IO`, `StateM`, or other monadic wrapper — pure Rust → pure Lean"
+      - "lean --check succeeds on the emitted def in isolation (no dangling references to un-lifted helpers)"
 
   rust_postcondition_to_lean_theorem:
     formula: |
@@ -75,6 +81,13 @@ equations:
     preconditions:
       - "contract C is well-typed under `pv lint`"
       - "the emitted Lean file imports XpileContracts.Attr"
+      - "the postcondition obligation's `applies_to:` field names an equation that exists in C.equations (otherwise the obligation has no anchor)"
+    postconditions:
+      - "exactly one Lean theorem is emitted per postcondition obligation when `applies_to:` names a single equation (1:1 ratio)"
+      - "exactly N Lean theorems are emitted per postcondition obligation when `applies_to: all` and C has N equations (1:N ratio)"
+      - "each emitted theorem's name equals the `applies_to:` equation name (no mangling, no compound naming like `theorem_for_<eq>`)"
+      - "each emitted theorem carries `@[xpile_contract \"<C.id>\", xpile_equation \"<eq_name>\"]` parseable by Lean's elaborator (see citation_bridge_via_attribute)"
+      - "the theorem's stated goal corresponds 1:1 with the obligation's `formal:` field — no weakening, no strengthening"
 
   rust_precondition_to_lean_hypothesis:
     formula: |
@@ -87,7 +100,14 @@ equations:
       - "preconditions appear in theorem goals BEFORE the postcondition"
       - "multiple preconditions chain as conjunctions or sequential binders"
       - "the equation's stated `preconditions:` array agrees with what's lifted"
-    preconditions: []
+    preconditions:
+      - "the equation referenced by the precondition obligation has at least one entry in its `preconditions:` field"
+      - "every Rust predicate in the precondition has a Lean-expressible counterpart (predicates over translated types lift via `Lift.lift`)"
+    postconditions:
+      - "the precondition is emitted as a Lean `∀`-binder or hypothesis `(h : P_lean)` in the relevant theorem's signature"
+      - "the precondition appears BEFORE the postcondition in the implication chain (`P → Q`, not `Q` with `P` assumed in tactic body)"
+      - "multiple preconditions chain as left-associated implications or conjunctions, preserving source order"
+      - "no precondition is silently dropped — the count of lifted hypotheses matches the count of `preconditions:` entries"
 
   citation_bridge_via_attribute:
     formula: |
@@ -108,6 +128,13 @@ equations:
     preconditions:
       - "the emitted Lean file imports XpileContracts.Attr (vendored by xpile-lean-contract-backend)"
       - "Contract.metadata.id matches /^C-[A-Z0-9-]+$/"
+      - "the backend was invoked with a contract whose equations have unique names (the (contract_id, equation_name) tuple is the citation key)"
+    postconditions:
+      - "every emitted theorem carries `@[xpile_contract \"<C.id>\", xpile_equation \"<eq_name>\"]` immediately preceding the `theorem` keyword"
+      - "the contract ID is preserved VERBATIM in attribute arg 0: dashes intact, no dash-to-underscore mangling, no case folding"
+      - "the attribute is recoverable via `Lean.Meta.getAttribute? declName \"xpile_contract\"` — auditor uses the Lean API, not regex"
+      - "no two distinct contracts produce theorems whose (xpile_contract, xpile_equation) attribute tuple collides (citation key is globally unique)"
+      - "if Contract.metadata.id violates `^C-[A-Z0-9-]+$/`, lifting fails with a structured error before any Lean is written"
 
   frame_translation_is_textual:
     formula: |
@@ -117,7 +144,14 @@ equations:
     invariants:
       - "module hash before == module hash after"
       - "contract YAML hash before == contract YAML hash after"
-    preconditions: []
+    preconditions:
+      - "the lift() entry point receives `&Module` and `&Contract` (read-only borrows), not owned values"
+      - "any internal buffers (Lean source string, attribute table) are allocated fresh per call — no caller-shared mutable state"
+    postconditions:
+      - "blake3-hash(module) before == blake3-hash(module) after lift() — bit-identical"
+      - "blake3-hash(contract) before == blake3-hash(contract) after lift() — bit-identical"
+      - "the same (module, contract) input pair produces byte-identical Lean output across calls (deterministic, no nondet-iteration over HashMap)"
+      - "if lift() fails (e.g., malformed contract ID), neither input is mutated and no partial Lean file is left behind"
 
 proof_obligations:
   - type: postcondition
