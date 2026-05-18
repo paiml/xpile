@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SECOND Diamond-tier refinement on C-PY-INT-ARITH (Diamond BREADTH) — Euclidean-division axioms (PMAT-228 / XPILE-REFINE-PY-INT-ARITH-009)
+
+**First DEPTH-2 Diamond in the entire substrate.** Diamond-universal coverage was achieved at PMAT-226 — every contract had at most ONE Diamond category. PMAT-228 opens **Diamond breadth**: proving multiple distinct algebraic categories on the SAME contract.
+
+PyIntArith already has the commutative-monoid / semiring Diamond at PMAT-214 (add/mul axioms, Int-as-semiring). PMAT-228 adds the EUCLIDEAN-DOMAIN Diamond — fundamentally distinct algebraic category covering integer-division semantics:
+
+- **PMAT-214** axiomatizes (Int, +, 0, *, 1) as a SEMIRING
+- **PMAT-228** axiomatizes (Int, fdiv, fmod) as a EUCLIDEAN DOMAIN — the canonical division algorithm + slow-path soundness
+
+Combines four properties:
+(a) Division algorithm: `Int.fmod a b + b * Int.fdiv a b = a` (Lean stdlib's `Int.fmod_add_fdiv`)
+(b) Slow-path soundness for floor-div (PMAT-175 lifted)
+(c) Slow-path soundness for modulus (PMAT-175 lifted)
+(d) Composed: the division algorithm holds when both dispatchers are read on the slow path
+
+`division_algorithm_diamond` (wired): 4-conjunction proving the Euclidean-domain axiomatization.
+
+YAML: adds new equation `division_algorithm_diamond` wired to the Diamond theorem. `xpile quorum` view for C-PY-INT-ARITH: Sem=14 (was 13).
+
+This is the substrate's first demonstration that Diamond can DEEPEN within a single contract — algebraic depth-2. Together with the 12 Diamond-tier categories spanning 12 contracts (PMAT-214..226), the substrate now has BOTH breadth (12 categories) AND first-depth-2 (2 categories on PyIntArith).
+
 ### Changed — Doc sweep: UNIVERSAL Diamond milestone — substrate now at 100% coverage at all 5 refinement tiers (PMAT-227)
 
 Doc sweep across `README.md`, `docs/status/CURRENT.md`, `docs/status/INDEX.md`, `docs/status/2026-05-18-substrate-completion.md`, `docs/specifications/audit-design.md`, and `docs/specifications/sub/kaizen-fleet.md` to reflect the Diamond-UNIVERSAL milestone that landed via PMAT-214..226.
