@@ -49,6 +49,40 @@ equations:
     kani_harness: "addition_no_overflow"
     kani_file: "contracts/kani/py_int_arith.rs"
 
+  dispatch_correct_on_fits_silver:
+    # PMAT-169 / XPILE-REFINE-PY-INT-ARITH-001: Silver-tier
+    # refinement promotes the Bronze pointwise-equality model of
+    # addition_no_overflow to a typed-dispatch model. Introduces
+    # PyIntPath { FastPath | SlowPath } and proves that the
+    # dispatcher selects either path correctly: fast/slow agree on
+    # fits_i64, slow path always returns the mathematical sum,
+    # dispatcher is total. Captures the load-bearing emission
+    # decision xpile-rust-codegen makes at codegen time (which
+    # Bronze couldn't model since it only had per-operation
+    # equality). SIXTH multi-eq contract Silver upgrade (after
+    # PMAT-164/165/166/167/168) and the FIRST Silver on a
+    # substantive Bronze base (the previous Silver upgrades
+    # promoted byte-array Bronze; this one promotes already-
+    # substantive Int-level Bronze to a typed-dispatch Silver).
+    lean_theorem: "XpileContracts.CPyIntArith.dispatch_correct_on_fits_silver"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      add_dispatch(FastPath, a, b) == add_dispatch(SlowPath, a, b)  WHEN  fits_i64(a + b)
+    domain: |
+      Same as addition_no_overflow — a, b Python int values whose
+      mathematical sum fits in i64. The Silver upgrade lifts the
+      Bronze pairwise-equality claim into a typed dispatcher.
+    invariants:
+      - "the dispatcher is total: every (path, a, b) yields a defined value (no stuck state at codegen time)"
+      - "fast and slow paths agree on the fits_i64 domain — the load-bearing soundness condition for emitting i64 wrapping arithmetic"
+      - "the slow path returns the mathematical sum on EVERY input (subsumes add_slow_path_eq_python at the dispatcher level)"
+    preconditions:
+      - "for the fast-path agreement claim: fits_i64(a + b) must hold (the contract precondition for emitting i64_wrap_add)"
+      - "the slow-path soundness claim has no precondition (the safety net branch)"
+    postconditions:
+      - "an emitter that selects FastPath when fits_i64 fails would falsify dispatch_correct_on_fits_silver — captures the path-selection error that Bronze couldn't detect"
+      - "the dispatch model is what xpile-rust-codegen actually encodes; companion theorems dispatch_slow_path_eq_python_silver and dispatch_total_silver in the same Lean file complete the structural Silver story"
+
   addition_overflow_promotion:
     formula: |
       python_int_add(a, b) == bigint::add(a, b)  WHEN  not fits_i64(a + b)

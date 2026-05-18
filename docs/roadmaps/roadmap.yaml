@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-169
+  github_issue: null
+  item_type: task
+  title: 'PMAT-169: Silver-tier — typed-dispatch model for addition_no_overflow on C-PY-INT-ARITH (XPILE-REFINE-PY-INT-ARITH-001), first Silver on substantive Bronze base'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T00:00:00Z
+  updated: 2026-05-19T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Silver-tier refinement for dispatch_correct_on_fits_silver on C-PY-INT-ARITH. First Silver upgrade on a contract whose Bronze theorems were already substantive (Int.bmod-based with real lemmas, not just rfl). Introduces PyIntPath { FastPath | SlowPath } and add_dispatch_silver mirroring the actual emission-time decision xpile-rust-codegen makes. Theorem proves fast and slow paths agree on the fits_i64 domain. Companion theorems dispatch_slow_path_eq_python_silver and dispatch_total_silver complete the structural Silver story. YAML adds new equation wired to Silver theorem. C-PY-INT-ARITH Sem 9 → 10. Sixth multi-eq contract Silver upgrade (after PMAT-164/165/166/167/168). Captures the path-SELECTION decision Bronze couldn't model.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-168
   github_issue: null
   item_type: task
