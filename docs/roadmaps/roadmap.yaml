@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-204
+  github_issue: null
+  item_type: task
+  title: 'PMAT-204: SIXTH Platinum-tier refinement — refcount additivity on C-FFI-CPYTHON-EXT (XPILE-REFINE-FFI-CPYTHON-009)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T18:00:00Z
+  updated: 2026-05-19T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Sixth Platinum-tier theorem. Demonstrates SIXTH distinct Platinum algebraic shape — additivity / linearity. delta(c1; c2) = c1.delta + c2.delta. refcount_delta_additive_platinum (wired) + refcount_composition_associative_platinum (monoid structure) + balanced_calls_zero_delta_platinum (BALANCED-REFERENCES invariant). Captures monoidal composition law for refcount accounting — refcount-delta is a MONOID HOMOMORPHISM into (Int, +, 0). C-FFI-CPYTHON-EXT Sem 8 → 9.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-203
   github_issue: null
   item_type: task

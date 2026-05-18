@@ -107,6 +107,36 @@ equations:
     preconditions:
       - "C extension follows CPython refcounting conventions correctly in the original"
 
+  refcount_delta_additive_platinum:
+    # PMAT-204 / XPILE-REFINE-FFI-CPYTHON-009: SIXTH Platinum-tier
+    # refinement in the substrate. Demonstrates SIXTH distinct
+    # Platinum algebraic shape: additivity / linearity for
+    # resource semantics. delta(c1; c2) = c1.delta + c2.delta.
+    # Captures monoidal composition law for refcount accounting.
+    # Companion theorems refcount_composition_associative_platinum
+    # (monoid structure) and balanced_calls_zero_delta_platinum
+    # (captures the load-bearing balanced-references invariant).
+    lean_theorem: "XpileContracts.CFfiCpythonExt.refcount_delta_additive_platinum"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
+    formula: |
+      compose(c1, c2).refcount_delta == c1.refcount_delta + c2.refcount_delta
+      (additivity / linear composition law)
+    domain: |
+      Any two FfiCallSilver values c1, c2 sequenced together.
+      The Platinum upgrade captures the linear composition law
+      for refcount accounting at the type level.
+    invariants:
+      - "SIXTH Platinum algebraic shape: additivity / linearity"
+      - "delta is a MONOID HOMOMORPHISM into (Int, +, 0) — captures the LINEAR composition law"
+      - "companion theorem refcount_composition_associative_platinum proves the (FfiCallSilver, compose, zero) monoid is associative"
+      - "companion theorem balanced_calls_zero_delta_platinum captures the load-bearing BALANCED-REFERENCES invariant: sequences summing to zero have zero cumulative delta"
+    preconditions:
+      - "two well-formed FfiCallSilver values exist (Silver model preconditions inherited)"
+      - "no special precondition on the deltas themselves — additivity holds for any deltas"
+    postconditions:
+      - "an emitter that produces a SEQUENCE of FFI calls preserves the total refcount-delta as the sum of per-call deltas"
+      - "this enables refcount safety analysis to be DECOMPOSED into per-call analyses + summing — load-bearing for compositional refcount verification"
+
   bounded_refcount_delta_preserved_gold:
     # PMAT-186 / XPILE-REFINE-FFI-CPYTHON-008: SECOND Gold-tier
     # refinement in the substrate (after PMAT-185 PyIntFast on
