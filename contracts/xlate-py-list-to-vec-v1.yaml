@@ -203,6 +203,38 @@ equations:
       - "an emitter adding hidden state to the Rust Vec (e.g., a cache pointer) would falsify the injectivity claim"
       - "Diamond depth-2 demonstrated on Layer 2 — substrate now has TWO Layer-1 + ONE Layer-2 depth-2 Diamonds"
 
+  length_monoid_homomorphism_diamond:
+    # PMAT-244 / XPILE-REFINE-XLATE-PY-LIST-007: THIRD Diamond
+    # on this contract — Layer 2 DEPTH-3. XlatePyListToVec joins
+    # PyIntArith (L1), CompileRustToPtxMma (L5), and FfiCpython
+    # (L4) as a depth-3 contract. The LENGTH-MONOID-HOMOMORPHISM
+    # Diamond captures the cardinality projection into (Nat, +, 0)
+    # as a third orthogonal algebraic category, distinct from
+    # PMAT-221 free list-monoid (structural append) and PMAT-229
+    # NonEmpty section-retraction (subtype preservation).
+    lean_theorem: "XpileContracts.CXlatePyListToVec.length_monoid_homomorphism_diamond"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      length is a MONOID HOMOMORPHISM
+      (PyListSilver α, ++, []) → (Nat, +, 0):
+        (a) additivity: length(lower(l1 ++ l2)) = length(l1) + length(l2)
+        (b) identity: length(lower([])) = 0
+        (c) length preservation: length(lower(l)) = length(l)
+        (d) non-negativity: length(lower(l)) ≥ 0
+    domain: |
+      Any two PyListSilver α values polymorphic over α. The
+      Diamond captures the FUNCTORIAL projection from the
+      structural list-monoid into the additive Nat-monoid.
+    invariants:
+      - "FOURTH DEPTH-3 Diamond in substrate; Layer 2 joins L1/L4/L5"
+      - "distinct algebraic category from PMAT-221 free list-monoid AND PMAT-229 section-retraction"
+      - "captures FUNCTORIAL cardinality projection into (Nat, +, 0)"
+    preconditions:
+      - "two polymorphic PyListSilver α values"
+    postconditions:
+      - "an emitter that lazy-allocates Rust Vec (reporting capacity instead of length) would falsify (c)"
+      - "an emitter that doubles length during composition via duplication would falsify (a)"
+
   heterogeneous_list_rejected:
     # PMAT-135: Bronze-tier refinement theorem locks in error-with-types
     # outcome (no silent boxing); proof excludes the `ok` arm by construction.

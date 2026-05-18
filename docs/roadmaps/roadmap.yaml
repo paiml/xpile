@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-244
+  github_issue: null
+  item_type: task
+  title: 'PMAT-244: THIRD Diamond on C-XLATE-PY-LIST-TO-VEC (Layer 2 DEPTH-3) — length monoid homomorphism (XPILE-REFINE-XLATE-PY-LIST-007)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T14:00:00Z
+  updated: 2026-05-20T14:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Fourth DEPTH-3 Diamond in substrate. LENGTH-MONOID-HOMOMORPHISM Diamond into (Nat, +, 0), distinct algebraic category from PMAT-221 free list-monoid AND PMAT-229 NonEmpty section-retraction. Combines PMAT-202 length-companion lifted + identity + length-preservation + non-negativity. length_monoid_homomorphism_diamond (wired). Depth-3 now spans Layers 1, 2, 4, 5.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-243
   github_issue: null
   item_type: task

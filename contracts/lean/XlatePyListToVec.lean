@@ -865,4 +865,59 @@ theorem nonempty_section_retraction_diamond {α : Type}
     unfold lower_non_empty_homogeneous_gold lower_homogeneous_list_silver
     rw [he, ht]
 
+/-! ## PMAT-244 — THIRD Diamond on C-XLATE-PY-LIST-TO-VEC
+    (Layer 2 DEPTH-3): length monoid homomorphism
+    (XPILE-REFINE-XLATE-PY-LIST-007).
+
+    **Fourth DEPTH-3 Diamond in the substrate.** Following
+    PMAT-241/242/243 (depth-3 on L1, L5, L4), PMAT-244 extends
+    Diamond depth-3 to Layer 2 C-XLATE-PY-LIST-TO-VEC. Four
+    depth-3 contracts now span four distinct layers.
+
+    XlatePyListToVec now has THREE Diamond categories:
+    - PMAT-221: free list-monoid (append-composition algebra)
+    - PMAT-229: NonEmpty section-retraction (subtype preservation)
+    - **PMAT-244: length monoid homomorphism (cardinality
+      projection into (Nat, +, 0))**
+
+    The categorical distinction: free list-monoid is on the
+    structural append; section-retraction is on the subtype
+    refinement; length-homomorphism is the FUNCTORIAL projection
+    into Nat — a different categorical pattern (functor) from
+    the structural and subtype Diamonds.
+
+    Status: discharged at v0.1.0 (PMAT-244). Tier: DIAMOND.
+    FOURTH DEPTH-3 Diamond in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — length is a MONOID
+  HOMOMORPHISM from `(PyListSilver α, ++, [])` to `(Nat, +, 0)`.
+
+  Combines four properties:
+  (a) Additivity: length(lower(l1 ++ l2)) = length(l1) + length(l2)
+      (PMAT-202 length companion lifted)
+  (b) Identity preservation: length(lower([])) = 0
+  (c) Length preservation: length(lower(l)) = length(l)
+  (d) Non-negativity: length(lower(l)) ≥ 0
+
+  Status: **discharged at v0.1.0 (PMAT-244)**. Tier: DIAMOND.
+-/
+theorem length_monoid_homomorphism_diamond {α : Type}
+    (l1 l2 : PyListSilver α) :
+    -- (a) Additivity
+    (lower_py_list_to_rust_vec_silver
+        { elems := l1.elems ++ l2.elems }).elems.length
+      = l1.elems.length + l2.elems.length
+    -- (b) Identity preservation
+    ∧ (lower_py_list_to_rust_vec_silver (α := α) { elems := [] }).elems.length = 0
+    -- (c) Length preservation
+    ∧ (lower_py_list_to_rust_vec_silver l1).elems.length = l1.elems.length
+    -- (d) Non-negativity (Nat)
+    ∧ (lower_py_list_to_rust_vec_silver l1).elems.length ≥ 0 := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact lower_length_homomorphism_platinum l1 l2
+  · rfl
+  · rfl
+  · exact Nat.zero_le _
+
 end XpileContracts.CXlatePyListToVec

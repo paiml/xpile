@@ -7,6 +7,32 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — THIRD Diamond on C-XLATE-PY-LIST-TO-VEC (Layer 2 DEPTH-3) — length monoid homomorphism (PMAT-244 / XPILE-REFINE-XLATE-PY-LIST-007)
+
+**Fourth DEPTH-3 Diamond in the substrate.** Following PMAT-241/242/243 (depth-3 on L1/L5/L4), PMAT-244 extends Diamond depth-3 to Layer 2 C-XLATE-PY-LIST-TO-VEC. Four depth-3 contracts now span four distinct layers.
+
+XlatePyListToVec now has THREE Diamond categories:
+- **PMAT-221**: free list-monoid (append-composition algebra)
+- **PMAT-229**: NonEmpty section-retraction (subtype preservation)
+- **PMAT-244**: length monoid homomorphism (cardinality projection into `(Nat, +, 0)`)
+
+The categorical distinction: free list-monoid is on the structural append; section-retraction is on the subtype refinement; length-homomorphism is the FUNCTORIAL projection into Nat — a different categorical pattern (functor) from the structural and subtype Diamonds.
+
+Combines four properties on `(PyListSilver α, ++, []) → (Nat, +, 0)`:
+(a) Additivity: `length(lower(l1 ++ l2)) = length(l1) + length(l2)` (PMAT-202 length companion lifted)
+(b) Identity preservation: `length(lower([])) = 0`
+(c) Length preservation: `length(lower(l)) = length(l)`
+(d) Non-negativity: `length(lower(l)) ≥ 0`
+
+`length_monoid_homomorphism_diamond` (wired): 4-conjunction proving the cardinality-functor axiomatization.
+
+YAML: adds new equation `length_monoid_homomorphism_diamond`.
+
+**Diamond depth census after this PR:**
+- Depth-1 UNIVERSAL: 12/12 contracts
+- Depth-2 UNIVERSAL: 12/12 contracts
+- **Depth-3**: 4 contracts on 4 distinct layers (L1 PyIntArith, L2 XlatePyList, L4 FfiCpython, L5 CompileRustToPtx)
+
 ### Added — THIRD Diamond on C-FFI-CPYTHON-EXT (Layer 4 DEPTH-3) — zero-copy pointer-identity functor (PMAT-243 / XPILE-REFINE-FFI-CPYTHON-012)
 
 **Third DEPTH-3 Diamond in the substrate.** Following PMAT-241 on PyIntArith (Layer 1) and PMAT-242 on CompileRustToPtxMma (Layer 5), PMAT-243 extends Diamond depth-3 to Layer 4 C-FFI-CPYTHON-EXT. The substrate now has depth-3 on THREE contracts spanning Layers 1, 4, and 5.
