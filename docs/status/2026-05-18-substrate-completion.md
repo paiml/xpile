@@ -112,7 +112,8 @@ totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)
 
 - 27 workspace crates
 - `cargo check --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check`, `cargo deny check advisories`, `pv lint contracts/` all green
-- 195 workspace tests + 43 Kani harnesses verified on every CI cycle (post-XPILE-QUORUM-006 / PMAT-147..151 per-equation fan-out)
+- 204 workspace tests + 43 Kani harnesses verified on every CI cycle (post-XPILE-QUORUM-006 / PMAT-147..151 per-equation fan-out; +9 tests this session from PMAT-146 qa_gate enforcer + assorted adds)
+- `pmat tdg .` reports score 95.7 / 100 (Grade **A-**) — meeting the originally-planned XPILE-CI-PMAT-TDG-001 ≥ A- threshold without explicit CI enforcement (post-v0.1.0 tracking ticket; recorded as a substrate-health milestone)
 - 4 real backends: Rust, Ruchy, Lean 4, Shell/bashrs
 - 5 frontends in tree: depyler-frontend (Python, real), decy-frontend (C, scaffold), ruchy-frontend (scaffold), bashrs-frontend (POSIX shell, real with 55 tests), latex-contract-frontend (proof lane, scaffold)
 
