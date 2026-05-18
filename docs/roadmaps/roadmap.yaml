@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-177
+  github_issue: null
+  item_type: task
+  title: 'PMAT-177: Silver-tier — partial_def + inductive + structure typed-AST upgrades on C-XLATE-LEAN-TO-RUST (XPILE-REFINE-XLATE-LEAN-002)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T04:00:00Z
+  updated: 2026-05-19T04:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Three new Silver theorems on C-XLATE-LEAN-TO-RUST replicating PMAT-165 typed-AST pattern. partial_marker_preserved_silver (5-field model with partial_marker as separate field), variant_names_preserved_silver (per-variant names+arities), field_names_preserved_silver (per-field names+types). Each comes with companion theorems for the other structural fields. Captures per-variant name preservation, per-field name/type preservation that Bronze scalar counts couldn't see. C-XLATE-LEAN-TO-RUST Sem 10 → 13. Silver coverage 1/9 → 4/9 on this contract.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-176
   github_issue: null
   item_type: task

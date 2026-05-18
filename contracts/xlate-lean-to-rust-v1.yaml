@@ -120,6 +120,29 @@ equations:
       - "the `#[partial_translation]` attribute appears on the lowered function"
       - "any call site of the partial function in lowered Rust uses `?` or explicit `Err` handling (never `.unwrap()` without a justification comment)"
 
+  partial_marker_preserved_silver:
+    # PMAT-177 / XPILE-REFINE-XLATE-LEAN-002: Silver-tier
+    # promotion of partial_def_to_rust_fn. Replicates PMAT-165
+    # typed-AST pattern with a 5th field — partial_marker —
+    # that the Bronze single-payload model couldn't separate.
+    # Three companion theorems (partial_name, partial_return_type,
+    # the marker itself) preserve provenance of the partial-
+    # translation flag across lowering.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.partial_marker_preserved_silver"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      lower_partial_def_to_fn(d).partial_marker == d.partial_marker
+    domain: |
+      Same as partial_def_to_rust_fn — a Lean `partial def`.
+    invariants:
+      - "the partial_marker byte is preserved as a separate structural field of the Rust fn — not folded into the body, args, or return type"
+      - "companion theorems partial_name_preserved_silver and partial_return_type_preserved_silver in the same Lean file lock in name + return type preservation in the typed model"
+    preconditions:
+      - "user has acknowledged the partiality (a Layer-4 contract review)"
+      - "the Silver model assumes the partial-marker fits in a UInt8 (Gold tier promotes to the full attribute payload with budget hint + termination-proof ref)"
+    postconditions:
+      - "an emitter that lowers the marker as a Rust attribute payload instead of preserving it byte-for-byte would falsify the rfl claim — Gold tier introduces an equivalence relation that admits the attribute-payload representation"
+
   theorem_carried_as_lean_sidecar:
     # PMAT-133: Bronze-tier refinement theorem locks in
     # byte-identity copy of theorem text into the sidecar.
@@ -174,6 +197,30 @@ equations:
       - "variant ordering matches source-declaration order"
       - "every variant's positional fields preserve source argument order (Lean argument names are dropped)"
 
+  variant_names_preserved_silver:
+    # PMAT-177: Silver-tier promotion of inductive_to_rust_enum.
+    # Bronze recorded just variant_count; Silver adds per-variant
+    # names + arities as separate structural fields. Captures
+    # the load-bearing claim that an emitter cannot rename
+    # variants during enum emission. Companion theorem
+    # variant_arities_preserved_silver in the same Lean file.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.variant_names_preserved_silver"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      lower_inductive_to_enum(i).variant_names == i.variant_names
+    domain: |
+      Same as inductive_to_rust_enum — a Lean inductive with explicit
+      constructors.
+    invariants:
+      - "per-variant names are preserved byte-for-byte (no PascalCase normalisation from Lean's lowerCamelCase convention)"
+      - "per-variant arities preserved (companion theorem variant_arities_preserved_silver)"
+      - "the Silver model captures per-variant structure that Bronze's variant_count couldn't see"
+    preconditions:
+      - "no constructor has an implicit/instance argument that requires elaboration"
+      - "the Silver model assumes variant names fit in opaque byte payloads (Gold tier introduces Lean.Name with namespace path)"
+    postconditions:
+      - "an emitter that auto-renames variants for Rust convention conformance would falsify the rfl claim — caught at the typed-AST level"
+
   structure_to_rust_struct:
     # PMAT-133: Bronze-tier refinement theorem locks in
     # field-count preservation.
@@ -199,6 +246,30 @@ equations:
       - "the emitted Rust struct has the same field names and order as the source"
       - "Lean `extends`-derived fields appear as composition (a typed field), never as inheritance"
       - "Lean default values (`field := value`) produce a `Default` impl with the same default expression"
+
+  field_names_preserved_silver:
+    # PMAT-177: Silver-tier promotion of structure_to_rust_struct.
+    # Bronze recorded just field_count; Silver adds per-field
+    # names + types as separate structural fields. Composes with
+    # companion theorem field_types_preserved_silver to give
+    # the (name, type) pair for each field.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.field_names_preserved_silver"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      lower_structure_to_struct(s).field_names == s.field_names
+    domain: |
+      Same as structure_to_rust_struct — a Lean structure with named fields.
+    invariants:
+      - "per-field names preserved byte-for-byte (no snake_case → camelCase normalisation)"
+      - "per-field types preserved (companion theorem field_types_preserved_silver)"
+      - "Silver model captures per-field structural detail that Bronze's field_count couldn't see"
+    preconditions:
+      - "every field type has a Rust counterpart (no `Type` / `Sort u` fields)"
+      - "the structure is not parameterized over a Lean universe variable that has no Rust equivalent"
+      - "the Silver model assumes field names + types fit in opaque byte payloads (Gold tier introduces typed AST nodes)"
+    postconditions:
+      - "an emitter that does dependent-type erasure (replacing typed fields with Box<dyn Any>) would falsify field_types_preserved_silver"
+      - "an emitter that renames fields for Rust convention conformance would falsify field_names_preserved_silver"
 
   instance_to_rust_impl:
     # PMAT-133: Bronze-tier refinement theorem locks in

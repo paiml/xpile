@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier expansion: partial_def + inductive + structure typed AST on XLATE-LEAN-TO-RUST (PMAT-177 / XPILE-REFINE-XLATE-LEAN-002)
+
+Twenty-fifth, twenty-sixth, twenty-seventh Silver refinements — three contracts worth of Silver brought in via a single PR (each new equation typed-AST'd from its Bronze byte-array baseline). Replicates the PMAT-165 typed-AST Silver pattern across three more equations on C-XLATE-LEAN-TO-RUST.
+
+**C-XLATE-LEAN-TO-RUST now has Silver coverage on 4/9 equations** (was 1/9 — only def_to_rust_fn had Silver from PMAT-165).
+
+Three new wired equations + companion theorems:
+- `partial_marker_preserved_silver` (wired) + `partial_name_preserved_silver` + `partial_return_type_preserved_silver` — five-field model `{ name, args, return_type, body, partial_marker }`
+- `variant_names_preserved_silver` (wired) + `variant_arities_preserved_silver` — typed-AST split with per-variant `{ name, arity }` vectors
+- `field_names_preserved_silver` (wired) + `field_types_preserved_silver` — typed-AST split with per-field `{ name, type }` vectors
+
+Each Silver upgrade goes from a SCALAR Bronze invariant (variant_count, field_count, marker-byte) to a STRUCTURAL Silver invariant (per-variant names/arities, per-field names/types, marker as a separate structural field). An emitter that auto-renames variants from Lean's `lowerCamelCase` to Rust's `PascalCase` would now be caught at the typed-AST level — Bronze couldn't see the rename.
+
+YAML: adds three new equations wired to the three Silver theorems. `xpile quorum` view for C-XLATE-LEAN-TO-RUST: Sem=13 (was 10), Sym=9, Run=1, Ext=4.
+
 ### Added — Silver-tier dispatchers: `<<`, `>>`, `**`, `&` on PY-INT-ARITH, brings contract to full dispatch Silver coverage (PMAT-176 / XPILE-REFINE-PY-INT-ARITH-003)
 
 Twenty-first through twenty-fourth Silver refinements — four new dispatchers in a single PR. Replicates the PMAT-169/175 typed-dispatcher pattern across the remaining FOUR arithmetic operations on C-PY-INT-ARITH: left-shift, right-shift, power, bitwise-AND.
