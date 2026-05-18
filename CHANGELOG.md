@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier refinement: `name_preserved` typed AST on XLATE-RUST-FN-TO-LEAN-THM, closes bidirectional Silver bracket (PMAT-166 / XPILE-REFINE-XLATE-RUST-TO-LEAN-001)
+
+Tenth Silver refinement; third multi-equation contract Silver upgrade. Symmetric counterpart of PMAT-165 — together with that PR's Lean→Rust Silver, **PMAT-166 closes the bidirectional Rust ↔ Lean Silver bracket**: both directions of the Layer-2 translation are now at typed-AST Silver, not just byte-array Bronze.
+
+The Silver model (asymmetric to account for Lean's dependent-binder syntax):
+- `RustFnSilver`: `{ name, generics, args, return_type, body }` — 5 fields (Rust's syntactic split)
+- `LeanDefSilver`: `{ name, binders, return_type, body }` — 4 fields (Lean unifies generics + args)
+- `lift_fn_to_def_silver`: concats `generics ++ args` into the Lean `binders` payload (generics first — load-bearing for dependent-binder elaboration)
+- `name_preserved_silver` theorem (the wired equation): rfl on `.name`
+- `body_preserved_silver`, `return_type_preserved_silver`, `binders_concat_generics_args_silver`: companion claims (same Lean file)
+
+**The asymmetry is a Silver-tier modelling commitment**: Bronze byte-equality couldn't see the structural difference between Rust's 5 fields and Lean's 4. At Silver, an emitter that interleaves generics with args (instead of concat-with-generics-first) is caught by `binders_concat_generics_args_silver`.
+
+YAML: adds a new equation `name_preserved_silver` wired to the Silver theorem. `xpile quorum` view for C-XLATE-RUST-FN-TO-LEAN-THM: Sem=6 (was 5), Sym=5, Run=1, Ext=3.
+
 ### Added — Silver-tier refinement: `name_preserved` typed AST on XLATE-LEAN-TO-RUST (PMAT-165 / XPILE-REFINE-XLATE-LEAN-001)
 
 Ninth Silver refinement — and the **second multi-equation contract Silver upgrade** (after PMAT-164's polymorphic refinement on C-XLATE-PY-LIST-TO-VEC). The Bronze `def_to_rust_fn` theorem smushed Lean→Rust lowering into a single `body : Array UInt8` payload; Silver splits the declaration into separate typed AST fields and proves preservation of each one.

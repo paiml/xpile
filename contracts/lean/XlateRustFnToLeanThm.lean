@@ -263,4 +263,136 @@ theorem frame_translation_is_textual (inputs : LiftInputs) :
       (lift_frame_preserving inputs).contract_hash = inputs.contract_hash := by
   exact ⟨rfl, rfl⟩
 
+/-! ## PMAT-166 — Silver-tier refinement for `rust_fn_to_lean_def`.
+
+    Symmetric counterpart of PMAT-165 (`name_preserved_silver` on
+    C-XLATE-LEAN-TO-RUST). Together they close the **bidirectional
+    Rust ↔ Lean Silver bracket** for Layer-2 translation: both
+    directions now have typed-AST refinement, not just byte-array
+    Bronze.
+
+    Bronze `rust_fn_to_lean_def` smushed everything into a single
+    `body : Array UInt8`. Silver splits the Rust side into
+    `{ name, generics, args, return_type, body }` and the Lean side
+    into `{ name, binders, return_type, body }`. Note the
+    asymmetry: Rust's separate `generics` + `args` lifts to Lean's
+    unified `binders` (Lean uses dependent binders, so generics
+    and term-level args are syntactically uniform). This asymmetry
+    is itself a Silver-tier modelling commitment — at Bronze the
+    distinction was invisible.
+
+    Silver tier per ruchy 5.0 §14.10.5: typed structural model
+    + real proof (rfl-by-construction at v0.1.0). Gold tier
+    introduces (a) per-field equivalence relations (e.g., binders
+    modulo de-Bruijn / named indexing), (b) the side-output
+    Lean-source-string modelling.
+
+    This is the **third multi-equation contract Silver upgrade**
+    (after PMAT-164 on C-XLATE-PY-LIST-TO-VEC and PMAT-165 on
+    C-XLATE-LEAN-TO-RUST). It completes the Layer-2 translation
+    Silver bracket for the Rust ↔ Lean pair.
+-/
+
+/--
+  Silver-tier model of a Rust `fn` declaration. Five named fields
+  reflect the syntactic split that Rust enforces between generics
+  (compile-time type parameters), args (run-time value parameters),
+  return type, and body. Each field is an opaque byte payload at
+  this tier — Gold tier replaces them with the Rust HIR types
+  (`HirGenerics`, `HirFnSig`, `HirBody`).
+-/
+structure RustFnSilver where
+  name : Array UInt8
+  generics : Array UInt8
+  args : Array UInt8
+  return_type : Array UInt8
+  body : Array UInt8
+deriving DecidableEq
+
+/--
+  Silver-tier model of a Lean `def` declaration as emitted by
+  xpile-lean-contract-backend. Four named fields — note `binders`
+  unifies what Rust splits into `generics + args` (Lean's
+  dependent-binder syntax makes the distinction syntactically
+  invisible). The lifting MUST merge `generics ++ args` into a
+  single `binders` payload in order, preserving relative position.
+-/
+structure LeanDefSilver where
+  name : Array UInt8
+  binders : Array UInt8
+  return_type : Array UInt8
+  body : Array UInt8
+deriving DecidableEq
+
+/--
+  Silver-tier lifting: structural copy where Rust's `generics`
+  and `args` are concatenated (generics first, in source order)
+  into Lean's `binders` payload. All other fields copy
+  byte-for-byte. The concat order is load-bearing — generics
+  bind first in Lean's dependent-type discipline, so type-binder
+  references in `args` resolve correctly only if generics precede.
+-/
+def lift_fn_to_def_silver (f : RustFnSilver) : LeanDefSilver :=
+  { name := f.name
+    binders := f.generics ++ f.args
+    return_type := f.return_type
+    body := f.body }
+
+/--
+  **Silver-tier refinement theorem** for `rust_fn_to_lean_def`.
+
+  Lifting preserves the function name as a separate structural
+  field. At Bronze (PMAT-072) this was implicit in the
+  single-payload model; at Silver it is provable. Symmetric to
+  PMAT-165's `name_preserved_silver` on the Lean→Rust direction.
+
+  An emitter that mangles the name during lift (snake_case
+  normalisation toward Lean's `lowerCamelCase` convention, or
+  Mathlib-style namespacing) would falsify this theorem — Bronze
+  byte-equality could only catch joint corruption.
+
+  Status: discharged at v0.1.0 (PMAT-166). Tier: Silver.
+  Bidirectional with PMAT-165.
+-/
+theorem name_preserved_silver (f : RustFnSilver) :
+    (lift_fn_to_def_silver f).name = f.name := by
+  rfl
+
+/--
+  **Silver-tier refinement theorem** — body preserved as a
+  structural field. Companion to `name_preserved_silver`. The
+  body lifts byte-for-byte; semantic translation (Rust `match`
+  → Lean `match`, `Result<T, E>` → `Except T E`) is modelled
+  outside this Silver tier (deferred to Gold).
+-/
+theorem body_preserved_silver (f : RustFnSilver) :
+    (lift_fn_to_def_silver f).body = f.body := by
+  rfl
+
+/--
+  **Silver-tier refinement theorem** — return type preserved.
+  An emitter that lifts `Result<T, E>` to `Except T E` (a sound
+  semantic translation) would violate THIS theorem because it
+  changes the return-type bytes; the canonical Gold-tier
+  refinement introduces a `↦` equivalence relation that admits
+  the Result↔Except correspondence while still ruling out
+  arbitrary mangling.
+-/
+theorem return_type_preserved_silver (f : RustFnSilver) :
+    (lift_fn_to_def_silver f).return_type = f.return_type := by
+  rfl
+
+/--
+  **Silver-tier refinement theorem** — binders are the concat
+  of generics and args, in that order. This locks in the
+  load-bearing rule that generics bind first (required for
+  Lean's dependent-binder elaboration to resolve type references
+  in subsequent args). An emitter that interleaves generics and
+  args, or that puts args before generics, would falsify this
+  theorem and break elaboration of the emitted Lean.
+-/
+theorem binders_concat_generics_args_silver (f : RustFnSilver) :
+    (lift_fn_to_def_silver f).binders = f.generics ++ f.args := by
+  rfl
+
 end XpileContracts.CXlateRustFnToLeanThm

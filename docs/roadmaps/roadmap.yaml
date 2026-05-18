@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-166
+  github_issue: null
+  item_type: task
+  title: 'PMAT-166: Silver-tier — name_preserved typed AST for XLATE-RUST-FN-TO-LEAN-THM (XPILE-REFINE-XLATE-RUST-TO-LEAN-001), closes bidirectional Rust ↔ Lean Silver bracket'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T22:30:00Z
+  updated: 2026-05-18T22:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Silver-tier refinement for name_preserved_silver on C-XLATE-RUST-FN-TO-LEAN-THM. Symmetric counterpart of PMAT-165 — together they close the bidirectional Rust ↔ Lean Silver bracket. RustFnSilver { name, generics, args, return_type, body } lifts to LeanDefSilver { name, binders, return_type, body } via concat (generics ++ args → binders, generics first for dependent-binder elaboration). Companion theorems body_preserved_silver, return_type_preserved_silver, binders_concat_generics_args_silver in same file. YAML adds new equation name_preserved_silver wired to Silver theorem. C-XLATE-RUST-FN-TO-LEAN-THM Sem 5 → 6. Third multi-eq contract Silver upgrade (after PMAT-164, PMAT-165).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-165
   github_issue: null
   item_type: task

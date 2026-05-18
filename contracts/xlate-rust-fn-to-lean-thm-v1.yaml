@@ -66,6 +66,40 @@ equations:
       - "the def's Lean type signature contains no `IO`, `StateM`, or other monadic wrapper — pure Rust → pure Lean"
       - "lean --check succeeds on the emitted def in isolation (no dangling references to un-lifted helpers)"
 
+  name_preserved_silver:
+    # PMAT-166: Silver-tier refinement — symmetric counterpart to
+    # PMAT-165 on C-XLATE-LEAN-TO-RUST. Together they close the
+    # bidirectional Rust ↔ Lean Silver bracket. Bronze rust_fn_to_lean_def
+    # smushed name/generics/args/return_type/body into a single
+    # byte-array payload; Silver splits Rust → 5 fields, Lean → 4
+    # fields (Lean unifies generics+args into a single `binders`
+    # payload via concat). This wired theorem proves the name
+    # field is preserved byte-for-byte; companion theorems
+    # body_preserved_silver, return_type_preserved_silver,
+    # binders_concat_generics_args_silver live in the same Lean
+    # file. Third multi-eq contract Silver upgrade (after PMAT-164
+    # and PMAT-165).
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.name_preserved_silver"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    formula: |
+      lift(rust_fn(name := n, ...), C).name == n
+    domain: |
+      Same as `rust_fn_to_lean_def` — a pure Rust function with a
+      contract-declared no-side-effect property. The Silver upgrade
+      narrows the modelling from "body bytes preserved" to "name
+      AND generics AND args AND return type AND body each preserved
+      as a separate structural field".
+    invariants:
+      - "Rust fn name preserved byte-for-byte as a separate field of the Lean def (no snake_case → lowerCamelCase normalisation, no Mathlib-style namespace prefixing of the def itself)"
+      - "generics, args, return_type, and body are preserved as separate structural fields (companion theorems body_preserved_silver, return_type_preserved_silver, binders_concat_generics_args_silver in the same Lean file)"
+      - "Lean's binders payload equals `generics ++ args` (generics first — required for dependent-binder elaboration)"
+    preconditions:
+      - "rust_fn is marked `#[pure]` or contract C declares no side-effects"
+      - "the Silver model assumes the source name fits in an opaque byte payload (Gold tier replaces this with Lean.Name with universe levels and Mathlib namespacing rules)"
+    postconditions:
+      - "the emitted Lean def's name field equals the source Rust fn's name field byte-for-byte"
+      - "no other Rust field is silently merged into the Lean def's name (the only allowed merge is generics ++ args → binders)"
+
   rust_postcondition_to_lean_theorem:
     # PMAT-136: Bronze-tier refinement theorem locks in 1:1 / 1:N
     # obligation → theorem expansion rule.
