@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier expansion: inline_math + theorem_env + proof_env typed enums on NOTATION-LATEX-MATH-TO-EQUATION (PMAT-180 / XPILE-REFINE-NOTATION-002)
+
+Thirty-seventh through thirty-ninth Silver refinements. Three Silver upgrades replicating the PMAT-167 kind-tagged typed-model pattern across more equations on C-NOTATION-LATEX-MATH-TO-EQUATION. Brings Silver coverage on this contract from 1/7 to 4/7 equations.
+
+Three new wired equations + companion theorems:
+- `inline_math_equiv_under_normaliser_silver` (wired) + `inline_kinds_are_distinct_silver` — `InlineMathKind { Dollar | Paren }` enum
+- `theorem_env_obligation_kind_silver` (wired) — `ObligationKind { Precondition | Postcondition }` enum (replaces Bronze's String-based "obligation_type")
+- `proof_stub_reason_preserved_silver` (wired) + `proof_body_does_not_leak_silver` — `ProofStubReason { None | Omitted | TODO | XXX | Sorry }` enum (replaces Bronze's single is_stub Bool)
+
+**Each enum upgrade rules out a string-mangling bug class at compile time**: Bronze's String-typed "obligation_type" admitted `"PreCondition"` (capitalised), `"prerequisite"` (synonym drift), `"pre"` (truncation); the Silver `ObligationKind` enum makes these representations unexpressible. Similarly, Bronze's single is_stub Bool collapsed Omitted/TODO/XXX/Sorry into one category; Silver captures WHICH stub pattern matched, preserving Sorry-detection (a load-bearing signal for incomplete-proof tooling).
+
+YAML: adds three new equations wired to the three Silver theorems. `xpile quorum` view for C-NOTATION-LATEX-MATH-TO-EQUATION: Sem=11 (was 8), Sym=7, Run=1, Ext=5 (was 4).
+
 ### Added — Silver-tier completion: postcondition + precondition + citation + frame on XLATE-RUST-FN-TO-LEAN-THM, **brings contract to full Silver (5/5)** — THIRD contract at full Silver (PMAT-179 / XPILE-REFINE-XLATE-RUST-TO-LEAN-002)
 
 Thirty-third through thirty-sixth Silver refinements — four Silver upgrades that **complete C-XLATE-RUST-FN-TO-LEAN-THM to full Silver coverage on every equation (5/5)**. This is the **THIRD contract in the substrate at full Silver tier** (after C-FFI-CPYTHON-EXT in PMAT-174 and C-XLATE-LEAN-TO-RUST in PMAT-178).

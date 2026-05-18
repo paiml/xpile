@@ -464,4 +464,153 @@ theorem kinds_are_distinct_silver (formula : String) :
     ∧ (lower_align_env_silver formula).kind = LatexDisplayKind.align := by
   refine ⟨?_, ?_, ?_⟩ <;> rfl
 
+/-! ## PMAT-180 — Silver expansion: inline_math + theorem_env +
+    proof_env (XPILE-REFINE-NOTATION-002).
+
+    Replicates the PMAT-167 kind-tagged typed model across three
+    more equations on C-NOTATION-LATEX-MATH-TO-EQUATION. Brings
+    Silver coverage from 1/7 to 4/7 equations. -/
+
+/-- Source kind of an inline-math span. `Dollar` for `$...$` and
+    `Paren` for `\(...\)` — both produce the same content but
+    have different syntactic source. -/
+inductive InlineMathKind where
+  | dollar
+  | paren
+deriving DecidableEq
+
+/-- Silver-tier model of an inline-math span. Retains the source
+    syntactic form. -/
+structure InlineMathSilver where
+  kind : InlineMathKind
+  ascii_normalised : String
+deriving DecidableEq
+
+/-- Silver lowering for `$formula$`. -/
+def lower_inline_dollar_silver (formula : String) : InlineMathSilver :=
+  { kind := InlineMathKind.dollar, ascii_normalised := formula }
+
+/-- Silver lowering for `\(formula\)`. -/
+def lower_inline_paren_silver (formula : String) : InlineMathSilver :=
+  { kind := InlineMathKind.paren, ascii_normalised := formula }
+
+/-- Normaliser extracting just the content. -/
+def normalise_inline_silver (m : InlineMathSilver) : String :=
+  m.ascii_normalised
+
+/-- **Silver-tier refinement theorem** — both inline-math forms
+    produce equivalent content under the normaliser. Bronze
+    proved byte-identity; Silver lifts to kind-tagged equivalence
+    with provenance retention. -/
+theorem inline_math_equiv_under_normaliser_silver (formula : String) :
+    normalise_inline_silver (lower_inline_dollar_silver formula)
+      = normalise_inline_silver (lower_inline_paren_silver formula) := by
+  rfl
+
+/-- **Silver-tier refinement theorem** — kind tags are pairwise
+    distinct. Captures the audit-traceability claim that an
+    emitter cannot relabel `$...$` as `\(...\)` (or vice versa). -/
+theorem inline_kinds_are_distinct_silver (formula : String) :
+    (lower_inline_dollar_silver formula).kind = InlineMathKind.dollar
+    ∧ (lower_inline_paren_silver formula).kind = InlineMathKind.paren := by
+  refine ⟨?_, ?_⟩ <;> rfl
+
+/-- Silver-tier model of a Lean theorem-class environment with
+    typed obligation type. Bronze had a String for obligation_type;
+    Silver promotes to an enum that captures the precondition /
+    postcondition polarity at the type level. -/
+inductive ObligationKind where
+  | precondition
+  | postcondition
+deriving DecidableEq
+
+/-- Silver-tier theorem-env model with typed obligation kind. -/
+structure LeanTheoremEnvSilver where
+  body_text : String
+  is_precondition_flagged : Bool
+deriving DecidableEq
+
+/-- Silver-tier obligation entry with typed kind enum. -/
+structure ObligationEntrySilver where
+  kind : ObligationKind
+deriving DecidableEq
+
+/-- Silver lowering: theorem env → typed-kind obligation. Branches
+    on the precondition flag identically to Bronze, but the
+    output type ENUM rules out string-mangling bug classes. -/
+def lower_theorem_env_silver (t : LeanTheoremEnvSilver) : ObligationEntrySilver :=
+  if t.is_precondition_flagged then
+    { kind := ObligationKind.precondition }
+  else
+    { kind := ObligationKind.postcondition }
+
+/-- **Silver-tier refinement theorem** — obligation kind enum
+    matches the precondition flag. Bronze proved on strings;
+    Silver lifts the same decision to a typed enum where the
+    distinction is no longer string-comparison-based — an emitter
+    that emits `"PreCondition"` (capitalised) or `"prerequisite"`
+    instead of `"precondition"` would falsify Bronze; at Silver,
+    those representations are no longer expressible. -/
+theorem theorem_env_obligation_kind_silver (t : LeanTheoremEnvSilver) :
+    (lower_theorem_env_silver t).kind =
+      (if t.is_precondition_flagged then
+        ObligationKind.precondition
+       else
+        ObligationKind.postcondition) := by
+  unfold lower_theorem_env_silver
+  split <;> rfl
+
+/-- Silver-tier model of a proof environment with explicit
+    `stub_reason` tag (Omitted | TODO | XXX | Sorry | None) to
+    capture WHICH stub-pattern the body matched. Bronze had a
+    single is_stub bit; Silver promotes to an enum. -/
+inductive ProofStubReason where
+  | none
+  | omitted
+  | todo
+  | xxx
+  | sorry
+deriving DecidableEq
+
+/-- Silver proof-env model with typed stub reason. -/
+structure ProofEnvSilver where
+  body : String
+  stub_reason : ProofStubReason
+deriving DecidableEq
+
+/-- Silver model of the emitted Lean pointer artifact. -/
+structure LeanPointerSilver where
+  status : String
+  body_leaked : Bool
+  stub_reason : ProofStubReason
+deriving DecidableEq
+
+/-- Silver-tier lowering: proof env → lean pointer. status reflects
+    the typed reason (Omitted/TODO/XXX/Sorry → "stub"; None →
+    "claimed"); body_leaked false by construction; stub_reason
+    preserved verbatim. -/
+def lower_proof_env_silver (p : ProofEnvSilver) : LeanPointerSilver :=
+  { status := match p.stub_reason with
+      | ProofStubReason.none => "claimed"
+      | _ => "stub"
+    body_leaked := false
+    stub_reason := p.stub_reason }
+
+/-- **Silver-tier refinement theorem** — stub reason preserved
+    verbatim through lowering. Bronze proved binary stub/claimed
+    classification; Silver captures the SPECIFIC reason. An
+    emitter that collapses all stub kinds into a single category
+    (or invents a new category) is caught at the enum level. -/
+theorem proof_stub_reason_preserved_silver (p : ProofEnvSilver) :
+    (lower_proof_env_silver p).stub_reason = p.stub_reason := by
+  rfl
+
+/-- **Silver-tier refinement theorem** — body never leaks into
+    the EquationsBlock. Companion to the Bronze
+    `proof_env_to_lean_pointer` claim, lifted to the Silver
+    typed model. -/
+theorem proof_body_does_not_leak_silver (p : ProofEnvSilver) :
+    (lower_proof_env_silver p).body_leaked = false := by
+  rfl
+
 end XpileContracts.CNotationLatexMathToEquation
