@@ -301,4 +301,55 @@ theorem target_consistency_universal_platinum (b : Backend) :
   intros m c
   exact target_consistency_silver b m c
 
+/-! ## PMAT-225 — ELEVENTH Diamond-tier refinement: target
+    equivalence-class axioms (XPILE-REFINE-BACKEND-TRAIT-004).
+
+    Eleventh Diamond-tier theorem in the substrate. Mirror of
+    PMAT-224 on the Backend side. Combines four properties into
+    the BACKEND EQUIVALENCE CLASS axiomatization on declared_target:
+    - PMAT-211 Platinum target determinism
+    - Reflexivity (every backend ~ itself)
+    - Symmetry (same-target backends form equivalence classes)
+    - Transitivity (chain of same-target backends)
+
+    Together PMAT-224 + PMAT-225 close the 2×2 trait matrix at
+    Diamond tier for equivalence-class structure on the typed-tag
+    discriminator field (source_lang for frontends, target for
+    backends).
+
+    Status: discharged at v0.1.0 (PMAT-225). Tier: DIAMOND.
+    Eleventh Diamond theorem in the substrate. -/
+
+/-- The "declared-target-equivalent" relation on Backend. -/
+def target_equiv (b1 b2 : Backend) : Prop :=
+  b1.declared_target = b2.declared_target
+
+/--
+  **Diamond-tier refinement theorem** — target_equiv forms an
+  EQUIVALENCE RELATION on Backend, AND lower PRESERVES the
+  equivalence class.
+
+  Combines four properties:
+  - Reflexivity, symmetry, transitivity
+  - Determinism (PMAT-211 lifted): same-target backends produce
+    artifacts with the same target regardless of inputs
+
+  Status: **discharged at v0.1.0 (PMAT-225)**. Tier: DIAMOND.
+-/
+theorem backend_equivalence_class_diamond
+    (b1 b2 b3 : Backend) (m c : Array UInt8) :
+    target_equiv b1 b1
+    ∧ (target_equiv b1 b2 → target_equiv b2 b1)
+    ∧ (target_equiv b1 b2 → target_equiv b2 b3 → target_equiv b1 b3)
+    ∧ (target_equiv b1 b2 →
+        (lower_silver b1 m c).target = (lower_silver b2 m c).target) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · intro h
+    exact h.symm
+  · intros h1 h2
+    exact h1.trans h2
+  · intro h
+    exact target_class_congruent_platinum b1 b2 m c h
+
 end XpileContracts.CXpileBackendTrait
