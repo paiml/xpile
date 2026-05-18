@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-213
+  github_issue: null
+  item_type: task
+  title: 'PMAT-213: Doc sweep — Platinum-universal milestone (PMAT-199..212) reflected across docs'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T22:30:00Z
+  updated: 2026-05-19T22:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'MILESTONE: Platinum-tier coverage is now UNIVERSAL across the substrate. All 12 contracts have at least one Platinum compositional theorem. Aggregate refresh: 203 Lean / 246 stratum-vote → 224 Lean (53 Bronze + 108 Silver + 24 Gold + 39 Platinum) / 267 stratum-vote artifacts. Per-contract Platinum theorem mapping enumerated. Seven distinct Platinum algebraic shapes (commutativity, associativity/distributivity, idempotence, functoriality, transitivity, additivity, input-determinism). PMAT range extended PMAT-058..213.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-212
   github_issue: null
   item_type: task

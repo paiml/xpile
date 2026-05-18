@@ -7,6 +7,30 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — Platinum-universal milestone (PMAT-199..212) reflected across docs (PMAT-213)
+
+🏆 **Platinum-tier coverage is now UNIVERSAL across the substrate.** All 12 contracts now have at least one Platinum-tier compositional theorem. The Silver→Gold→Platinum tier progression is empirically complete.
+
+Aggregate refresh: 203 Lean (53 Bronze + 108 Silver + 24 Gold + 18 Platinum) / 246 stratum-vote artifacts → **224 Lean (53 Bronze + 108 Silver + 24 Gold + 39 Platinum) / 267 stratum-vote artifacts**. +21 Lean theorems from PMAT-206..212.
+
+**All 13 wired Platinum theorems** across all 12 contracts:
+- C-PY-INT-ARITH: PMAT-199 commutativity + PMAT-200 associativity/distributivity
+- C-BASHRS-POSIX-IDEMPOTENCE: PMAT-201 idempotence
+- C-XLATE-PY-LIST-TO-VEC: PMAT-202 functoriality
+- C-XPILE-CONTRACT-FRONTEND-TRAIT: PMAT-203 transitivity
+- C-FFI-CPYTHON-EXT: PMAT-204 additivity
+- C-COMPILE-RUST-TO-PTX-MMA: PMAT-206 bounded composition
+- C-XLATE-LEAN-TO-RUST: PMAT-207 functoriality (inductive)
+- C-NOTATION-LATEX-MATH-TO-EQUATION: PMAT-208 functoriality (citation)
+- C-XLATE-RUST-FN-TO-LEAN-THM: PMAT-209 functoriality (precondition)
+- C-XPILE-FRONTEND-TRAIT: PMAT-210 input-determinism
+- C-XPILE-BACKEND-TRAIT: PMAT-211 input-determinism
+- C-XPILE-CONTRACT-BACKEND-TRAIT: PMAT-212 render homomorphism
+
+**Seven distinct Platinum algebraic shapes**: commutativity, associativity/distributivity, idempotence, functoriality, transitivity, additivity, input-determinism. The Silver→Gold→Platinum transition pattern is universal — every Bronze invariant has been promoted to a Platinum compositional theorem.
+
+Files updated: README, audit-design §3, sub/kaizen-fleet, CURRENT, INDEX, substrate-completion, CHANGELOG, roadmap.yaml.
+
 ### Added — THIRTEENTH Platinum-tier refinement: citation render homomorphism on C-XPILE-CONTRACT-BACKEND-TRAIT (PMAT-212 / XPILE-REFINE-CONTRACT-BACKEND-TRAIT-003)
 
 Thirteenth Platinum-tier theorem in the substrate. Extends Platinum to **11 of 12 contracts**.
