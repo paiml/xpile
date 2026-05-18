@@ -2088,3 +2088,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-127
+  github_issue: null
+  item_type: task
+  title: 'PMAT-127: notation contract — add real preconditions + postconditions for display_math_to_equation (addresses PV-ENF-001 warnings)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-19T05:30:00Z
+  updated: 2026-05-19T05:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add genuine preconditions (well-formed delimiters, not embedded in comment/verbatim) and postconditions (output has ≥1 equation entry per non-empty span, formula field is ASCII-normalized, three display-math forms produce structurally-equal EquationFormula values) to display_math_to_equation equation in notation-latex-math-to-equation-v1.yaml. Drops the contract's warning count from 18 to 16. Total pv lint warnings 79 → 77. Pattern establishes how to address the remaining PV-ENF-001 warnings across the substrate; each one is a per-equation domain-design judgment call.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
