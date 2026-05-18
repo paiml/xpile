@@ -75,10 +75,11 @@ $ xpile quorum
   totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)
 ```
 
-12 Lean refinement theorems ([`contracts/lean/*.lean`](contracts/lean/)) + 12
-Kani BMC harnesses ([`contracts/kani/*.rs`](contracts/kani/)) = 24 paired
-discharges, covering all 5 layers of the contract taxonomy. Bronze tier
-modelling commitments (`rfl` by construction) — Silver/Gold/Platinum
+**50 Lean refinement theorems** ([`contracts/lean/*.lean`](contracts/lean/)) +
+12 Kani BMC harnesses ([`contracts/kani/*.rs`](contracts/kani/)) = **62 paired
+discharges**, covering all 5 layers of the contract taxonomy. Every equation
+in every contract has its own Bronze-tier theorem (`rfl` by construction)
+capturing a distinct load-bearing modelling commitment — Silver/Gold/Platinum
 refinement is incremental from here as concrete impl pressure arrives.
 
 > **Canonical spec:** [`docs/specifications/xpile-spec.md`](docs/specifications/xpile-spec.md) — TOC + 25 sections, each linking to a `sub/<topic>.md`.

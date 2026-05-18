@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-143
+  github_issue: null
+  item_type: task
+  title: 'PMAT-143: README §Contract-substrate-at-QUORUM — 50 theorems, not 12'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-05-18T12:00:00Z
+  updated: 2026-05-18T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - README §Contract substrate at QUORUM updated to state 50 Lean refinement theorems × 12 Kani harnesses = 62 paired discharges (post-PMAT-127..138), mirroring the PMAT-141 correction in audit-design.md.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-142
   github_issue: null
   item_type: task

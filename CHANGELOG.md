@@ -7,6 +7,16 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — README §Contract-substrate-at-QUORUM: 50 theorems, not 12 (PMAT-143)
+
+Stale claim corrected. README's §Contract-substrate-at-QUORUM
+previously said "12 Lean refinement theorems × 12 Kani harnesses
+= 24 paired discharges." Post-PMAT-127..138 the count is **50
+Lean theorems × 12 Kani harnesses = 62 paired discharges** (every
+equation in every contract now has its own Bronze-tier theorem
+capturing a distinct load-bearing modelling commitment). Mirrors
+the audit-design.md correction in PMAT-141.
+
 ### Docs — `audit-design.md` correction: substrate is at 4-stratum minimum, not 3-stratum (PMAT-142)
 
 Two stale claims in `audit-design.md` corrected:
