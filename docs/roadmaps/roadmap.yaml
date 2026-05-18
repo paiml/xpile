@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-175
+  github_issue: null
+  item_type: task
+  title: 'PMAT-175: Silver-tier — mul + floor_div + mod dispatchers on C-PY-INT-ARITH (XPILE-REFINE-PY-INT-ARITH-002), replicates PMAT-169 pattern across 3 more ops'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T03:00:00Z
+  updated: 2026-05-19T03:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Three new Silver theorems on C-PY-INT-ARITH replicating the PMAT-169 typed-dispatcher pattern for multiplication, floor-division, modulo. Each provides path-correctness on fits_i64 domain, slow-path soundness, and dispatcher totality. New wired equations mul_dispatch_correct_on_fits_silver, floor_div_dispatch_correct_on_fits_silver, mod_dispatch_correct_on_fits_silver. Captures the i64::MIN * -1 bug class at the type level (was runtime-only at Bronze). C-PY-INT-ARITH Sem 10 → 13, Ext 8 → 11. Silver coverage on this contract now 4/9 equations.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-174
   github_issue: null
   item_type: task

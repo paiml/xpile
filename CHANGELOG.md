@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier dispatchers: `*`, `//`, `%` on PY-INT-ARITH, replicates PMAT-169 pattern (PMAT-175 / XPILE-REFINE-PY-INT-ARITH-002)
+
+Eighteenth, nineteenth, twentieth Silver refinements in a single PR — replicates the PMAT-169 typed-dispatcher pattern across three more arithmetic operations: multiplication, floor-division, modulo. Brings Silver coverage on C-PY-INT-ARITH from 1 equation to 4 equations (out of 9).
+
+Each new Silver theorem follows the identical PMAT-169 structure:
+- `<op>_dispatch_silver`: typed dispatcher mirroring xpile-rust-codegen's runtime selection
+- `<op>_dispatch_correct_on_fits_silver`: fast and slow paths agree on the fits_i64 domain
+- `<op>_dispatch_slow_path_eq_python_silver`: slow path returns the mathematical result unconditionally
+- `<op>_dispatch_total_silver`: dispatcher is total
+
+**Three new wired equations**: `mul_dispatch_correct_on_fits_silver`, `floor_div_dispatch_correct_on_fits_silver`, `mod_dispatch_correct_on_fits_silver`. Each captures the path-SELECTION decision that Bronze couldn't model (Bronze only had per-operation equality).
+
+**i64::MIN * -1 bug class is now type-level rather than runtime-only**: an emitter that picks FastPath for multiplication when `fits_i64(a * b)` fails would emit `i64::MIN.wrapping_mul(-1)` returning `i64::MIN` while CPython promotes to BigInt — caught by `mul_dispatch_correct_on_fits_silver`.
+
+YAML: adds three new equations wired to the three Silver theorems. `xpile quorum` view for C-PY-INT-ARITH: Sem=13 (was 10), Sym=9, Run=4, Ext=11 (was 8). C-PY-INT-ARITH now has Silver coverage on 4/9 equations — the most after C-FFI-CPYTHON-EXT (6/6) and tied with the others' single-equation Silver.
+
 ### Added — Silver-tier refinement: `oracle_endtoend_equivalence` on FFI-CPYTHON-EXT, sixth and FINAL Silver — completes full Silver coverage on this contract (PMAT-174 / XPILE-REFINE-FFI-CPYTHON-007)
 
 Seventeenth Silver refinement; sixth Silver theorem on C-FFI-CPYTHON-EXT specifically. Wires the last previously-unwired equation on this contract. **With this landed, every equation in C-FFI-CPYTHON-EXT has Silver-tier coverage** — making it the first contract in the substrate at FULL Silver tier.

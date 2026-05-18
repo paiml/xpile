@@ -516,4 +516,126 @@ theorem dispatch_total_silver (path : PyIntPath) (a b : Int) :
     ∃ n : Int, add_dispatch_silver path a b = n := by
   exact ⟨_, rfl⟩
 
+/-! ## PMAT-175 — Silver-tier dispatchers for `*`, `//`, `%`
+    (XPILE-REFINE-PY-INT-ARITH-002).
+
+    Replicates the PMAT-169 typed-dispatch pattern for three more
+    arithmetic operations: multiplication, floor-division, modulo.
+    Each replicates the same triple of structural Silver claims:
+    1. Path-correct on the precondition domain (fast/slow agree).
+    2. Slow path returns the mathematical result unconditionally.
+    3. Dispatcher is total.
+
+    This brings Silver coverage on C-PY-INT-ARITH from 1 to 4
+    equations (out of 9). The pattern is identical across all
+    four arithmetic ops because the dispatch-correctness story is
+    the same one xpile-rust-codegen encodes per op: select
+    FastPath when fits_i64 can be proven of the result, else
+    SlowPath.
+
+    Each dispatcher composes with its Bronze counterpart
+    (`mul_fast_path_eq_slow_path` for `*`,
+    `floor_div_fast_path_eq_slow_path` for `//`,
+    `mod_fast_path_eq_slow_path` for `%`) — Bronze captured the
+    per-operation equality; Silver captures the path-selection
+    decision itself. -/
+
+/--
+  Silver-tier dispatcher for multiplication. Mirrors xpile-rust-
+  codegen's runtime decision per call site.
+-/
+def mul_dispatch_silver (path : PyIntPath) (a b : Int) : Int :=
+  match path with
+  | PyIntPath.FastPath => i64_wrap_mul a b
+  | PyIntPath.SlowPath => bigint_mul a b
+
+/--
+  **Silver-tier refinement theorem** — multiplication dispatch is
+  path-correct on the fits_i64 domain. Composes with the Bronze
+  `mul_fast_path_eq_slow_path` theorem at the dispatcher level.
+-/
+theorem mul_dispatch_correct_on_fits_silver
+    (a b : Int) (h : fits_i64 (a * b)) :
+    mul_dispatch_silver PyIntPath.FastPath a b
+      = mul_dispatch_silver PyIntPath.SlowPath a b := by
+  unfold mul_dispatch_silver
+  exact mul_fast_path_eq_slow_path a b h
+
+/-- Slow-path soundness for multiplication dispatch (rfl). -/
+theorem mul_dispatch_slow_path_eq_python_silver (a b : Int) :
+    mul_dispatch_silver PyIntPath.SlowPath a b = a * b := by
+  rfl
+
+/-- Multiplication dispatcher totality. -/
+theorem mul_dispatch_total_silver (path : PyIntPath) (a b : Int) :
+    ∃ n : Int, mul_dispatch_silver path a b = n := by
+  exact ⟨_, rfl⟩
+
+/--
+  Silver-tier dispatcher for floor-division. Note: at the fits-
+  i64-result domain, fast and slow paths are definitionally the
+  same `Int.fdiv` operation (i64 floor-div doesn't wrap; it
+  panics on MIN / -1, but the codegen panics there too). The
+  Silver dispatcher still captures the SELECTION decision which
+  Bronze couldn't model.
+-/
+def floor_div_dispatch_silver (path : PyIntPath) (a b : Int) : Int :=
+  match path with
+  | PyIntPath.FastPath => i64_floor_div a b
+  | PyIntPath.SlowPath => bigint_floor_div a b
+
+/--
+  **Silver-tier refinement theorem** — floor-division dispatch
+  is path-correct on the fits-i64-result domain with b ≠ 0.
+  Composes with the Bronze `floor_div_fast_path_eq_slow_path`
+  theorem.
+-/
+theorem floor_div_dispatch_correct_on_fits_silver
+    (a b : Int) (hb : b ≠ 0) (h : fits_i64 (Int.fdiv a b)) :
+    floor_div_dispatch_silver PyIntPath.FastPath a b
+      = floor_div_dispatch_silver PyIntPath.SlowPath a b := by
+  unfold floor_div_dispatch_silver
+  exact floor_div_fast_path_eq_slow_path a b hb h
+
+/-- Slow-path soundness for floor-div dispatch (rfl). -/
+theorem floor_div_dispatch_slow_path_eq_python_silver (a b : Int) :
+    floor_div_dispatch_silver PyIntPath.SlowPath a b = Int.fdiv a b := by
+  rfl
+
+/-- Floor-division dispatcher totality. -/
+theorem floor_div_dispatch_total_silver (path : PyIntPath) (a b : Int) :
+    ∃ n : Int, floor_div_dispatch_silver path a b = n := by
+  exact ⟨_, rfl⟩
+
+/--
+  Silver-tier dispatcher for modulo. Same domain story as
+  floor-division — both paths reduce to `Int.fmod`.
+-/
+def mod_dispatch_silver (path : PyIntPath) (a b : Int) : Int :=
+  match path with
+  | PyIntPath.FastPath => i64_mod a b
+  | PyIntPath.SlowPath => bigint_mod a b
+
+/--
+  **Silver-tier refinement theorem** — modulo dispatch is
+  path-correct on the fits-i64-result domain with b ≠ 0.
+  Composes with the Bronze `mod_fast_path_eq_slow_path` theorem.
+-/
+theorem mod_dispatch_correct_on_fits_silver
+    (a b : Int) (hb : b ≠ 0) (h : fits_i64 (Int.fmod a b)) :
+    mod_dispatch_silver PyIntPath.FastPath a b
+      = mod_dispatch_silver PyIntPath.SlowPath a b := by
+  unfold mod_dispatch_silver
+  exact mod_fast_path_eq_slow_path a b hb h
+
+/-- Slow-path soundness for modulo dispatch (rfl). -/
+theorem mod_dispatch_slow_path_eq_python_silver (a b : Int) :
+    mod_dispatch_silver PyIntPath.SlowPath a b = Int.fmod a b := by
+  rfl
+
+/-- Modulo dispatcher totality. -/
+theorem mod_dispatch_total_silver (path : PyIntPath) (a b : Int) :
+    ∃ n : Int, mod_dispatch_silver path a b = n := by
+  exact ⟨_, rfl⟩
+
 end XpileContracts.CPyIntArith
