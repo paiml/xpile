@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-178
+  github_issue: null
+  item_type: task
+  title: 'PMAT-178: Silver-tier — complete C-XLATE-LEAN-TO-RUST Silver (theorem/instance/axiom/noncomputable/citation), SECOND contract at full Silver (9/9)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T04:30:00Z
+  updated: 2026-05-19T04:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Five new Silver theorems on C-XLATE-LEAN-TO-RUST completing full Silver coverage (9/9). citation_comment_preserved_silver, method_names_preserved_silver, cited_contracts_preserved_silver, panic_message_preserved_silver, multi_citation_preserved_silver. Each comes with companion theorems for additional structural fields. Captures bug classes at type level - dropped sidecar citation, class-default → per-instance method conversion, dropped axiom citation list, todo!()/unimplemented!() substitution, dropped multi-citation entries. C-XLATE-LEAN-TO-RUST Sem 13 → 18, Ext 4 → 6. Silver coverage 4/9 → 9/9. SECOND contract in substrate at full Silver tier after C-FFI-CPYTHON-EXT.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-177
   github_issue: null
   item_type: task
