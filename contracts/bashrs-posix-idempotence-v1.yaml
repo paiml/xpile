@@ -183,3 +183,38 @@ equations:
     postconditions:
       - "an emitter introducing side effects (e.g., temp-file writes on first run) on the bashrs side would have non-idempotent shell observations — falsifying the idempotence_congruent_across_bridge_platinum claim"
       - "the substrate now demonstrates 3 distinct compositional algebraic shapes at Platinum tier (commutativity, associativity/distributivity, idempotence)"
+
+  bashrs_pure_function_diamond:
+    # PMAT-215 / XPILE-REFINE-BASHRS-004: SECOND Diamond-tier
+    # refinement in the substrate. Combines three prior tier
+    # theorems into the PURE-FUNCTION axiomatization:
+    #   - PMAT-162 Silver cross-domain equivalence
+    #   - PMAT-201 Platinum idempotence
+    #   - Determinism (proved here)
+    # Diamond captures the FULL pure-function characterization.
+    # Companion theorem python_pure_function_diamond mirrors on
+    # the Python side — proves the cross-domain bridge preserves
+    # purity on BOTH sides.
+    lean_theorem: "XpileContracts.CBashrsPosixIdempotence.bashrs_pure_function_diamond"
+    lean_file: "contracts/lean/Bashrs.lean"
+    formula: |
+      bashrs_shell_run(p, a) is PURE:
+        (a) idempotent — f(x) = f(f(x))
+        (b) cross-domain equal to python_subprocess_run
+        (c) deterministic — same input → same output
+    domain: |
+      Any (program, args) pair. The Diamond upgrade combines
+      three prior tier theorems (idempotence, cross-domain
+      equivalence, determinism) into the FULL pure-function
+      axiomatization.
+    invariants:
+      - "SECOND Diamond-tier theorem; combines PMAT-162 + PMAT-201 + determinism"
+      - "Diamond axiomatizes the pure-function characterization in the cross-domain bashrs/python setting"
+      - "companion theorem python_pure_function_diamond proves the same axioms hold on Python side"
+      - "an emitter satisfying individual prior theorems but breaking joint purity (e.g., hidden cache that causes consecutive calls to diverge despite each agreeing with Python) would falsify the Diamond"
+    preconditions:
+      - "args are string literals (no shell injection)"
+      - "the Diamond combines theorems whose preconditions are already minimal"
+    postconditions:
+      - "bashrs_shell_run is GUARANTEED pure — no side effects, no state-dependent output, no implementation-divergence"
+      - "Diamond tier captures algebraic STRUCTURE COMPOSITION that prior tiers couldn't axiomatize as a single unit"

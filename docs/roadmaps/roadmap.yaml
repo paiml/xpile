@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-215
+  github_issue: null
+  item_type: task
+  title: 'PMAT-215: SECOND Diamond-tier refinement — pure-function axioms on C-BASHRS-POSIX-IDEMPOTENCE (XPILE-REFINE-BASHRS-004)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T23:30:00Z
+  updated: 2026-05-19T23:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Second Diamond-tier theorem. Combines PMAT-162 cross-domain equivalence + PMAT-201 idempotence + determinism into the PURE-FUNCTION axiomatization. bashrs_pure_function_diamond (wired) + python_pure_function_diamond mirror. Diamond captures FULL pure-function characterization in the cross-domain bashrs/python setting. C-BASHRS-POSIX-IDEMPOTENCE Sem 4 → 5.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-214
   github_issue: null
   item_type: task
