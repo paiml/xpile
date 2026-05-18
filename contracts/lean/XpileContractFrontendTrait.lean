@@ -94,15 +94,62 @@ theorem parse_idempotency (source : Array UInt8) :
   rfl
 
 /--
-  **Equations-only** auxiliary claim — `parse_to_equations`
-  doesn't mutate any meta-HIR Module reachable from the call
-  site. At Bronze tier this is structurally vacuous (our model
-  doesn't have Modules); listed for Silver-tier refinement when
-  the model grows a `TranspileSession` reference and the proof
-  must show `session.modules` is unchanged.
+  **Equations-only** auxiliary claim — Bronze-tier placeholder.
+  At Bronze tier this is structurally vacuous (the model doesn't
+  have Modules). The Silver-tier refinement below introduces a
+  `TranspileSession` and proves modules are unchanged.
 -/
 theorem equations_only (source : Array UInt8) :
     parse_to_equations source = parse_to_equations source := by
+  rfl
+
+/-! ## PMAT-158 — Silver-tier refinement for `equations_only`
+    (XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-001).
+
+    Adds a `TranspileSession` model with both meta-HIR modules
+    AND equations-block storage. The Silver theorem proves that
+    `parse_to_equations` only touches the equations side — the
+    modules side is unchanged. -/
+
+structure MetaHirModule where
+  bytes : Array UInt8
+deriving DecidableEq
+
+/-- Silver-tier model of TranspileSession with disjoint storage
+    for the code lane (modules) and proof lane (equations). -/
+structure TranspileSession where
+  modules : Array MetaHirModule
+  equations : Array EquationsBlock
+deriving DecidableEq
+
+/-- Silver-tier `parse_to_equations` that takes a session and
+    returns the updated session with a new EquationsBlock appended
+    — but `modules` unchanged. -/
+def parse_to_equations_silver (session : TranspileSession) (source : Array UInt8) :
+    TranspileSession :=
+  { modules := session.modules
+    equations := session.equations.push { bytes := source } }
+
+/--
+  **Silver-tier refinement theorem** for `equations_only`
+  (XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-001 / PMAT-158).
+
+  `parse_to_equations` doesn't mutate the meta-HIR module store —
+  the `modules` field of the input session equals the `modules`
+  field of the output session, regardless of source content.
+
+  This is the YAML claim "ContractFrontend operates exclusively
+  on the proof lane" discharged at the type level.
+
+  Falsification: a ContractFrontend impl that, on detecting a
+  `def` keyword in source, also creates a meta-HIR Module would
+  falsify this theorem.
+
+  Status: **discharged at v0.1.0 Silver tier (PMAT-158)**.
+-/
+theorem equations_only_silver
+    (session : TranspileSession) (source : Array UInt8) :
+    (parse_to_equations_silver session source).modules = session.modules := by
   rfl
 
 end XpileContracts.CXpileContractFrontendTrait

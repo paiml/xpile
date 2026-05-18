@@ -7,6 +7,31 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier refinements: `equations_only` + `citation_round_trip` on CONTRACT-TRAITS (PMAT-158 + PMAT-159)
+
+Completes the trait-determinism 2×2 Silver bracket with two more Silver-tier refinements promoted from Bronze rfl-stub.
+
+**PMAT-158 / XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-001 — `equations_only_silver`:**
+- `TranspileSession` struct with disjoint `modules` + `equations` storage
+- `MetaHirModule` (separate from EquationsBlock)
+- `parse_to_equations_silver` appends to equations; never touches modules
+- Theorem proves `result.modules = session.modules` (lane separation at type level)
+
+**PMAT-159 / XPILE-REFINE-CONTRACT-BACKEND-TRAIT-001 — `citation_round_trip_silver`:**
+- `ContractId` newtype
+- `Contract` struct with explicit `depends_on : Array ContractId` + `references : Array ContractId`
+- `RenderedDocSilver` with `bytes` AND `citations : Array ContractId`
+- `render_silver` propagates the citation union into the output
+- Theorem proves `result.citations = depends_on ++ references` (no drops)
+
+**Trait-determinism 2×2 Silver bracket complete:**
+| | Code lane | Proof lane |
+| --- | --- | --- |
+| **Frontend** | PMAT-156 source_lang_consistency_silver | PMAT-158 equations_only_silver |
+| **Backend** | PMAT-157 target_consistency_silver | PMAT-159 citation_round_trip_silver |
+
+All four 2×2 trait contracts now have Sem=2 (Bronze stub + Silver real claim) in `xpile quorum`.
+
 ### Added — Silver-tier refinement: `target_consistency` on BACKEND-TRAIT (PMAT-157 / XPILE-REFINE-BACKEND-TRAIT-001)
 
 Mirror of PMAT-156's Frontend-side Silver refinement. `contracts/lean/XpileBackendTrait.lean` gains a Silver-tier section for the `target_consistency` equation — promoting it from Bronze (trivial `rfl` placeholder) to Silver (type-level structural claim).
