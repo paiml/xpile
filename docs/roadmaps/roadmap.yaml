@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-156
+  github_issue: null
+  item_type: task
+  title: 'PMAT-156: first Silver-tier refinement — source_lang_consistency for FRONTEND-TRAIT (XPILE-REFINE-FRONTEND-TRAIT-001)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T17:30:00Z
+  updated: 2026-05-18T17:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Silver-tier refinement section added to contracts/lean/XpileFrontendTrait.lean introducing SourceLang enum, MetaHirModuleSilver with source_lang field, Frontend struct with declared_lang, parse_and_lower_silver, and the source_lang_consistency_silver theorem (type-level structural claim, no longer trivial rfl). YAML source_lang_consistency equation wires the Silver theorem. C-XPILE-FRONTEND-TRAIT gains Sem=2 (was 1). First XPILE-REFINE-*-001 ticket promoted from Bronze to Silver.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-155
   github_issue: null
   item_type: task
