@@ -7,6 +7,28 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — `docs/specifications/sub/diamond-taxonomy.md` cataloging all 31+ Diamond categories (PMAT-253)
+
+Comprehensive reference doc systematically cataloging every Diamond category in the substrate by algebraic structure family:
+
+- **Monoid family** (13 Diamonds): commutative monoid, semiring, bounded monoid, string monoid, free list-monoid, inductive monoid, precondition-list monoid, citation render-monoid, citation product-monoid, contract product-monoid, shift-monoid, length-monoid homomorphism, power-monoid
+- **Group family** (1 Diamond): abelian group (refcount)
+- **Lattice family** (3 Diamonds): join-semilattice (max), meet-semilattice (min), bounded lattice (absorption)
+- **Functor family** (6 Diamonds): cardinality functor, constant-projection ×2, exit-code projection, zero-copy pointer-identity, function-axiom
+- **Relation family** (4 Diamonds): equivalence relation, equivalence-class congruence, frontend equivalence-class, backend equivalence-class
+- **Subtype / section-retraction family** (2 Diamonds): NonEmpty section-retraction (code lane + proof lane)
+- **Pure-function family** (2 Diamonds): pure function, GIL-invariant preservation
+
+Includes:
+- Tier-progression table (Bronze → Diamond)
+- Coverage milestones (depth-1/2/3/4 UNIVERSAL claims)
+- **4 proof-pattern recipes** (monoid, semilattice, equivalence-relation, constant-projection)
+- "When to add a new Diamond" decision rubric (4 criteria)
+- CI-enforcement summary (PMAT-251 gate)
+- Cross-references to source files
+
+This is the canonical reference for future contributors adding Diamond theorems — answer "what algebraic categories already exist" and "how do I prove a new one" in one place. Becomes Section 28 of `xpile-spec.md`.
+
 ### Changed — Doc sweep: Diamond program completion (depth-3 UNIVERSAL + depth-4 opened + CI gate + reporter) reflected across README, status, audit, kaizen-fleet (PMAT-252)
 
 Comprehensive final doc sweep for the Diamond program completion. Aggregate refresh: **258 Lean (53+108+24+39+34) / 301 stratum-vote → 260 Lean (53+108+24+39+36) / 303 stratum-vote artifacts**. +2 Diamond theorems from PMAT-247 (power-monoid on PyIntArith) + PMAT-248 (lattice absorption on CompileRustToPtxMma).
