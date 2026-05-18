@@ -2,6 +2,40 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-161
+  github_issue: null
+  item_type: task
+  title: 'PMAT-161: Silver-tier — shared_memory_budget for COMPILE-RUST-TO-PTX-MMA (XPILE-REFINE-COMPILE-PTX-002), first non-rfl Silver proof'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T19:30:00Z
+  updated: 2026-05-18T19:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Silver-tier refinement for shared_memory_budget_silver on C-COMPILE-RUST-TO-PTX-MMA. First Silver proof in substrate that's NOT trivial rfl — uses Nat.min_le_right. Introduces smem_budget_sm80 constant + typed KernelInputSilver/PtxOutputSilver with smem_bytes field; clamps to 48 KiB. Theorem proves emitted.smem_bytes ≤ smem_budget_sm80. C-COMPILE-RUST-TO-PTX-MMA Sem 1 → 2.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-160
+  github_issue: null
+  item_type: task
+  title: 'PMAT-160: Silver-tier — refcount_balance_on_success for FFI-CPYTHON-EXT (XPILE-REFINE-FFI-CPYTHON-002)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T19:00:00Z
+  updated: 2026-05-18T19:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Silver-tier refinement for refcount_balance_on_success_silver on C-FFI-CPYTHON-EXT. Introduces typed FfiCallSilver + FfiManifestEntrySilver carrying refcount_delta : Int. Theorem proves manifest.refcount_delta = call.refcount_delta. C-FFI-CPYTHON-EXT Sem 1 → 2.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-159
   github_issue: null
   item_type: task

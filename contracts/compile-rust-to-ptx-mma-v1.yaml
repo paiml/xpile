@@ -82,6 +82,15 @@ equations:
       - "mma_emission_for_gemm_kernel holds for this kernel"
 
   shared_memory_budget:
+    # PMAT-161 / XPILE-REFINE-COMPILE-PTX-002: Silver-tier
+    # refinement theorem. First Silver proof in the substrate
+    # that's NOT trivial rfl — uses Nat.min_le_right. Introduces
+    # typed KernelInputSilver + PtxOutputSilver with smem_bytes
+    # field; clamps to the sm_80 48 KiB hardware budget via
+    # `min k.requested_smem 49152`. Theorem proves
+    # `emitted.smem_bytes ≤ 49152` structurally.
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.shared_memory_budget_silver"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
     formula: |
       smem_static_bytes(emitted_ptx) ≤ 49152
     domain: |

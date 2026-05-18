@@ -7,6 +7,33 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier refinement: `shared_memory_budget` on COMPILE-RUST-TO-PTX-MMA (PMAT-161 / XPILE-REFINE-COMPILE-PTX-002)
+
+Sixth Silver refinement, and the **first Silver proof in the substrate that's NOT trivial `rfl`** — uses `Nat.min_le_right`. Promotes the byte-array model in `CompileRustToPtxMma.lean` to a typed `PtxOutputSilver` with an explicit `smem_bytes : Nat` field bounded by the sm_80 hardware budget.
+
+The Silver model:
+- `smem_budget_sm80 : Nat := 48 * 1024` (48 KiB hardware ceiling)
+- `KernelInputSilver`: marker + `requested_smem : Nat`
+- `PtxOutputSilver`: emitted bytes + `smem_bytes : Nat`
+- `lower_kernel_to_ptx_silver` clamps via `min k.requested_smem smem_budget_sm80`
+- `shared_memory_budget_silver` theorem proves `emitted.smem_bytes ≤ smem_budget_sm80` structurally
+
+Load-bearing for sm_80 ptxas acceptance — over-budget kernels would be rejected at PTX-assembler time. Falsification: an emitter that propagates user-requested shared memory verbatim (without clamping) would emit PTX that ptxas rejects.
+
+`xpile quorum` view for C-COMPILE-RUST-TO-PTX-MMA: Sem=2 (was 1), Sym=1, Run=1, Ext=4.
+
+### Added — Silver-tier refinement: `refcount_balance_on_success` on FFI-CPYTHON-EXT (PMAT-160 / XPILE-REFINE-FFI-CPYTHON-002)
+
+Fifth Silver refinement (after PMAT-156..159). Promotes the byte-array model in `FfiCpythonExt.lean` to a typed pair carrying both payload bytes AND an explicit `refcount_delta : Int`.
+
+The Silver model:
+- `FfiCallSilver`: payload + `refcount_delta : Int` (0 = balanced, +N = leaks N, -N = consumes N references)
+- `FfiManifestEntrySilver`: same shape — manifest preserves the annotation
+- `lower_call_to_manifest_silver` propagates both fields
+- `refcount_balance_on_success_silver` theorem proves `manifest.refcount_delta = call.refcount_delta` at the type level
+
+Load-bearing for CPython ABI safety — any drift becomes a memory leak in emitted Rust. `xpile quorum` view for C-FFI-CPYTHON-EXT: Sem=2 (was 1), Sym=1, Run=1, Ext=5.
+
 ### Added — Silver-tier refinements: `equations_only` + `citation_round_trip` on CONTRACT-TRAITS (PMAT-158 + PMAT-159)
 
 Completes the trait-determinism 2×2 Silver bracket with two more Silver-tier refinements promoted from Bronze rfl-stub.
