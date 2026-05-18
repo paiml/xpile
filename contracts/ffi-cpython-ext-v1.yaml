@@ -53,6 +53,13 @@ equations:
       - "both Python and C frontends have run"
 
   refcount_balance_on_success:
+    # PMAT-160 / XPILE-REFINE-FFI-CPYTHON-002: Silver-tier
+    # refinement theorem. Introduces typed FfiCallSilver and
+    # FfiManifestEntrySilver with explicit refcount_delta : Int
+    # field. Proves `manifest.refcount_delta = call.refcount_delta`
+    # at the type level (no silent drift across the FFI boundary).
+    lean_theorem: "XpileContracts.CFfiCpythonExt.refcount_balance_on_success_silver"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
     formula: |
       pre_call_refcount(obj) == post_call_refcount(obj)  WHEN call returns non-error
     domain: |
