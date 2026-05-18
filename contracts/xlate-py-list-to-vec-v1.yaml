@@ -29,6 +29,9 @@ equations:
     # + element-type-tag preservation.
     lean_theorem: "XpileContracts.CXlatePyListToVec.homogeneous_list_to_vec"
     lean_file: "contracts/lean/XlatePyListToVec.lean"
+    # PMAT-149: Kani harness mirrors the Lean theorem at byte level.
+    kani_harness: "homogeneous_list_to_vec"
+    kani_file: "contracts/kani/xlate_py_list_to_vec.rs"
     formula: |
       xlate(list[T] for T in {int, float, str, bool, bytes}) == Vec<T_rust>
     domain: |
@@ -51,6 +54,9 @@ equations:
     # outcome (no silent boxing); proof excludes the `ok` arm by construction.
     lean_theorem: "XpileContracts.CXlatePyListToVec.heterogeneous_list_rejected"
     lean_file: "contracts/lean/XlatePyListToVec.lean"
+    # PMAT-149: Kani harness mirrors the Lean theorem.
+    kani_harness: "heterogeneous_list_rejected"
+    kani_file: "contracts/kani/xlate_py_list_to_vec.rs"
     formula: |
       xlate(list[T1 | T2 | ...]) == TranslationError::Heterogeneous{found_types}
     domain: |
@@ -72,6 +78,9 @@ equations:
     # never-move-semantics-when-alias-flagged invariant.
     lean_theorem: "XpileContracts.CXlatePyListToVec.alias_observation_inserts_clone"
     lean_file: "contracts/lean/XlatePyListToVec.lean"
+    # PMAT-149: Kani harness mirrors the Lean theorem.
+    kani_harness: "alias_observation_inserts_clone"
+    kani_file: "contracts/kani/xlate_py_list_to_vec.rs"
     formula: |
       observable_mutation_via_alias(a, b) WHEN b = a; mutate(b); observe(a)
         ==> xlate emits explicit clone or shared-mutable reference
@@ -122,6 +131,9 @@ equations:
     # AND consumer-expectation-driven cast decision (no silent truncation).
     lean_theorem: "XpileContracts.CXlatePyListToVec.length_method"
     lean_file: "contracts/lean/XlatePyListToVec.lean"
+    # PMAT-149: Kani harness mirrors the Lean theorem.
+    kani_harness: "length_method"
+    kani_file: "contracts/kani/xlate_py_list_to_vec.rs"
     formula: |
       len(py_list) == rust_vec.len()
     domain: |

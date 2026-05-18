@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-149
+  github_issue: null
+  item_type: task
+  title: 'PMAT-149: xlate-py-list-to-vec Kani harnesses — 4 more for per-equation Sym coverage'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T14:30:00Z
+  updated: 2026-05-18T14:30:00Z
+  spec: null
+  acceptance_criteria:
+  - contracts/kani/xlate_py_list_to_vec.rs grows from 1 to 5 Kani harnesses, mirroring the 5 Bronze-tier Lean theorems from PMAT-135 (element-bytes+tag preservation, never-ok-on-hetero, never-move-semantics-when-aliased, usize+cast). YAML wires each via kani_harness+kani_file refs. xpile quorum view for C-XLATE-PY-LIST-TO-VEC gains Sym=5 (was 1). Continues the XPILE-QUORUM-006 per-equation Kani fan-out series.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-148
   github_issue: null
   item_type: task
