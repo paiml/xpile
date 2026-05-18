@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-134
+  github_issue: null
+  item_type: task
+  title: 'PMAT-134: notation-latex-math-to-equation — Bronze-tier refinement theorems for the 6 remaining equations (warnings 7 → 1)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T08:30:00Z
+  updated: 2026-05-18T08:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add Bronze-tier refinement theorems to contracts/lean/Notation.lean for all 6 remaining equations (inline_math_to_equation, theorem_env_to_obligation, proof_env_to_lean_pointer, definition_env_to_equation, remark_env_to_falsification, citation_preservation). Each theorem locks in a different load-bearing aspect of the LaTeX→YAML lowering (byte-identity ascii-normalization, precondition-flag polarity, stub/claimed classification + body-never-leaks lane separation, byte-identity definition-math extraction, MUST NOT > MUST > SHOULD precedence iff, and byte-for-byte citation preservation companion to PMAT-133). Wire lean_theorem + lean_file references in notation-latex-math-to-equation-v1.yaml. Contract warnings 7 → 1. Total substrate warnings 20 → 14.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-133
   github_issue: null
   item_type: task
