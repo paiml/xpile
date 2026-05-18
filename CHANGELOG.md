@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SECOND Diamond on C-XLATE-PY-LIST-TO-VEC (Diamond depth-2 on Layer 2) — NonEmpty section-retraction axioms (PMAT-229 / XPILE-REFINE-XLATE-PY-LIST-006)
+
+Second-Diamond-on-same-contract pattern extended from Layer 1 (PMAT-228) to **Layer 2**. The substrate now has **TWO depth-2 contracts** at the Diamond tier: C-PY-INT-ARITH (semiring + Euclidean-domain) and C-XLATE-PY-LIST-TO-VEC (free list-monoid + NonEmpty section-retraction).
+
+XlatePyListToVec already had the free list-monoid Diamond at PMAT-221 (closure + associativity + identity + length-additivity). PMAT-229 adds the **NonEmpty section-retraction Diamond** — fundamentally distinct algebraic category covering SUBTYPE PRESERVATION across polymorphic Gold-tier lowering:
+
+- **PMAT-221**: free list-monoid covering append-composition algebra
+- **PMAT-229**: NonEmpty section-retraction covering subtype refinement preservation
+
+Combines four properties on `NonEmptyHomogeneousList α → TypedRustVecSilver α`:
+(a) Element-list preservation (PMAT-192a lifted)
+(b) Non-emptiness witness preservation (PMAT-192b lifted)
+(c) Element-type-tag preservation (PMAT-182 lifted, polymorphic)
+(d) Injectivity-on-content: same elements + tag ⇒ same output
+
+`nonempty_section_retraction_diamond` (wired): 4-conjunction proving the section-retraction axiomatization, polymorphic over α.
+
+YAML: adds new equation `nonempty_section_retraction_diamond` wired to the Diamond theorem. `xpile quorum` view for C-XLATE-PY-LIST-TO-VEC: Sem incremented.
+
+Falsification: an emitter that adds hidden state to the Rust Vec (e.g., a cache pointer) would break injectivity — two NonEmpty inputs with identical content would lower to distinct Rust Vecs, falsifying the Diamond at the conjunction level.
+
 ### Added — SECOND Diamond-tier refinement on C-PY-INT-ARITH (Diamond BREADTH) — Euclidean-division axioms (PMAT-228 / XPILE-REFINE-PY-INT-ARITH-009)
 
 **First DEPTH-2 Diamond in the entire substrate.** Diamond-universal coverage was achieved at PMAT-226 — every contract had at most ONE Diamond category. PMAT-228 opens **Diamond breadth**: proving multiple distinct algebraic categories on the SAME contract.
