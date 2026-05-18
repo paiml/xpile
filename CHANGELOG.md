@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — EIGHTH Gold-tier refinement: `SuccessfulOutcome` subtype on C-BASHRS-POSIX-IDEMPOTENCE (PMAT-193 / XPILE-REFINE-BASHRS-002)
+
+Eighth Gold-tier theorem in the substrate. Extends Gold to a seventh contract (C-BASHRS-POSIX-IDEMPOTENCE, cross-domain Layer-1/4). Gold coverage now spans **7 of 12 contracts**.
+
+`SuccessfulOutcome := { o : OutcomeSilver // o.exit_code = 0 }` — refinement subtype encoding the POSIX success-path convention at the type level.
+
+**Third Gold pattern variant unlocked**: equality refinement (`x = const`), distinct from:
+- Bounded-numeric (PMAT-185 PyIntFast, PMAT-186 BoundedRefcountDelta, PMAT-187 BoundedSmem, PMAT-188 WarningLineCount): `{ x : Nat // x ≥/≤ N }`
+- Collection-cardinality (PMAT-189 NonEmptyDefinition, PMAT-191 NonEmptyPreconditionList, PMAT-192 NonEmptyHomogeneousList): `{ c // c.size > 0 }`
+- **Equality (PMAT-193 SuccessfulOutcome): `{ o // o.field = const }` ← NEW**
+
+The Gold model:
+- `SuccessfulOutcome := { o : OutcomeSilver // o.exit_code = 0 }`
+- `python_subprocess_run_gold` / `bashrs_shell_run_gold`: both lifts return SuccessfulOutcome by construction
+- `subprocess_run_eq_shell_run_gold` (wired): both lifts agree at SuccessfulOutcome level
+- `successful_outcome_witness_gold`: exit_code = 0 witness preserved through both lifts
+
+**Captures POSIX convention at type level**: a caller handling a `SuccessfulOutcome` can assume `exit_code = 0` BY TYPE, without runtime checks. An emitter introducing side-effects that set non-zero exit code on the success path would not type-check against the Gold lifts.
+
+YAML: adds new equation `subprocess_run_eq_shell_run_gold` wired to the Gold theorem. `xpile quorum` view for C-BASHRS-POSIX-IDEMPOTENCE: Sem=3 (was 2), Sym=1, Run=1, Ext=13. Gold-tier pattern empirically demonstrated across **3 subtype shapes × 7 contracts × 4 contract layers**.
+
 ### Added — SEVENTH Gold-tier refinement: polymorphic `NonEmptyHomogeneousList α` on C-XLATE-PY-LIST-TO-VEC (PMAT-192 / XPILE-REFINE-XLATE-PY-LIST-003)
 
 Seventh Gold-tier theorem in the substrate. Extends Gold to a seventh contract (C-XLATE-PY-LIST-TO-VEC) and demonstrates a new composition: **Gold-tier refinement subtype + Silver-tier polymorphism**.

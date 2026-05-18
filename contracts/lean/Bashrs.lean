@@ -177,4 +177,70 @@ theorem subprocess_run_eq_shell_run_silver
       bashrs_shell_run_silver program args := by
   rfl
 
+/-! ## PMAT-193 — EIGHTH Gold-tier refinement: SuccessfulOutcome
+    (XPILE-REFINE-BASHRS-002).
+
+    Eighth Gold-tier theorem in the substrate. **Extends Gold
+    to a seventh contract** (C-BASHRS-POSIX-IDEMPOTENCE,
+    cross-domain Layer-1/4). Gold coverage now spans 7 of 12
+    contracts.
+
+    Silver (PMAT-162's `subprocess_run_eq_shell_run_silver`)
+    proved Python subprocess and bashrs-emitted shell agree on
+    the typed Outcome (observable + exit_code). The exit_code = 0
+    invariant was a definitional property of the model, not
+    encoded at the type level.
+
+    Gold tier promotes: `SuccessfulOutcome := { o : OutcomeSilver
+    // o.exit_code = 0 }` — the success-path witness is carried
+    by the value. A caller that handles a `SuccessfulOutcome`
+    can assume exit_code = 0 BY TYPE, without re-deriving it
+    from runtime checks.
+
+    This is the third Gold pattern variant: **equality
+    refinement** (`x = const`), distinct from the bounded-numeric
+    pattern of PMAT-185..188 and the collection-cardinality
+    pattern of PMAT-189/191/192. The Silver→Gold transition
+    pattern now empirically extends across THREE subtype shapes.
+
+    Status: discharged at v0.1.0 (PMAT-193). Tier: GOLD. -/
+
+/-- Gold-tier refinement subtype: a Silver Outcome proven to be
+    on the success path (exit_code = 0). -/
+def SuccessfulOutcome := { o : OutcomeSilver // o.exit_code = 0 }
+
+/-- Extract the underlying Silver outcome. -/
+def SuccessfulOutcome.val (s : SuccessfulOutcome) : OutcomeSilver := s.val
+
+/-- Gold-tier Python-subprocess lift on the success path. -/
+def python_subprocess_run_gold (program : String) (args : List String) :
+    SuccessfulOutcome :=
+  ⟨python_subprocess_run_silver program args, rfl⟩
+
+/-- Gold-tier bashrs-shell lift on the success path. -/
+def bashrs_shell_run_gold (program : String) (args : List String) :
+    SuccessfulOutcome :=
+  ⟨bashrs_shell_run_silver program args, rfl⟩
+
+/-- **Gold-tier refinement theorem** — both lifts agree at the
+    SuccessfulOutcome level. The exit_code = 0 witness travels
+    with the value through both lifts. -/
+theorem subprocess_run_eq_shell_run_gold
+    (program : String) (args : List String) :
+    (python_subprocess_run_gold program args).val =
+      (bashrs_shell_run_gold program args).val := by
+  unfold python_subprocess_run_gold bashrs_shell_run_gold
+  exact subprocess_run_eq_shell_run_silver program args
+
+/-- **Gold-tier refinement theorem** — success witness preserved
+    through both lifts. The exit_code = 0 witness is carried by
+    construction on BOTH sides, no runtime check needed. -/
+theorem successful_outcome_witness_gold
+    (program : String) (args : List String) :
+    (python_subprocess_run_gold program args).val.exit_code = 0
+    ∧ (bashrs_shell_run_gold program args).val.exit_code = 0 := by
+  refine ⟨?_, ?_⟩
+  · exact (python_subprocess_run_gold program args).property
+  · exact (bashrs_shell_run_gold program args).property
+
 end XpileContracts.CBashrsPosixIdempotence
