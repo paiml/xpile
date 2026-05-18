@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier refinement: typed-dispatch model for `addition_no_overflow` on PY-INT-ARITH, first Silver on substantive Bronze base (PMAT-169 / XPILE-REFINE-PY-INT-ARITH-001)
+
+Thirteenth Silver refinement; sixth multi-equation contract Silver upgrade. **First Silver upgrade on a contract whose Bronze theorems were already substantive** — previous Silver upgrades (PMAT-164..168) promoted byte-array Bronze to typed-AST Silver; this one promotes already-Int-level Bronze (`Int.bmod`, `bmod_fits_i64` lemma) to a typed-DISPATCH Silver.
+
+Bronze proved pointwise equality of `i64_wrap_add` and `bigint_add` on the `fits_i64` domain. Silver lifts this into the actual emission-time decision xpile-rust-codegen makes:
+
+The Silver model:
+- `PyIntPath`: enum `FastPath | SlowPath`
+- `add_dispatch_silver`: dispatcher mirroring the codegen's runtime selection
+- `dispatch_correct_on_fits_silver` theorem (wired): fast and slow agree on the fits_i64 domain
+- `dispatch_slow_path_eq_python_silver`: slow path returns mathematical sum on every input
+- `dispatch_total_silver`: dispatcher is total (no stuck states)
+
+**Captures what Bronze couldn't**: the path-SELECTION decision itself. An emitter that picks FastPath when fits_i64 fails (a real bug class — naive constant folding could compute `2^62 + 2^62` and emit wrapping_add) falsifies `dispatch_correct_on_fits_silver` without touching the underlying operation equality.
+
+YAML: adds new equation `dispatch_correct_on_fits_silver` wired to the Silver theorem. `xpile quorum` view for C-PY-INT-ARITH: Sem=10 (was 9), Sym=9, Run=4, Ext=8.
+
 ### Added — Silver-tier refinement: structured FFI-call AST for `manifest_completeness` on FFI-CPYTHON-EXT, second Silver theorem on a multi-eq contract that already had one (PMAT-168 / XPILE-REFINE-FFI-CPYTHON-003)
 
 Twelfth Silver refinement; fifth multi-equation contract Silver upgrade. **Second Silver theorem on a contract that already had Silver coverage** (after PMAT-160's `refcount_balance_on_success_silver` on the same contract) — broadens Silver coverage within a single multi-eq contract rather than starting a new one.
