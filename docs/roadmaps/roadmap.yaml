@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-196
+  github_issue: null
+  item_type: task
+  title: 'PMAT-196: ELEVENTH Gold-tier refinement — FrameSafeTransition subtype on C-XPILE-CONTRACT-FRONTEND-TRAIT (XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-002); fifth Gold pattern variant (frame-safety)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T14:00:00Z
+  updated: 2026-05-19T14:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Eleventh Gold-tier theorem. FrameSafeTransition := { p : Session × Session // p.fst.modules = p.snd.modules } encodes frame-preservation at type level. frame_safe_transition_gold (wired) + frame_safety_witness_gold + gold_contract_frontend_agrees_with_silver companions. FIFTH Gold pattern variant unlocked — frame-safety refinement (same-type before/after sides). Distinct from cross-field equality (PMAT-194/195) which uses different-type sides. Load-bearing for modifies()/frame invariants. C-XPILE-CONTRACT-FRONTEND-TRAIT Sem 2 → 3. Gold-tier now spans 5 subtype shapes × 10 contracts × 5 layers.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-195
   github_issue: null
   item_type: task

@@ -78,6 +78,40 @@ equations:
       - "a single source file (e.g., .lean) may be parsed by BOTH a Frontend and a ContractFrontend; both must succeed independently"
     preconditions: []
 
+  frame_safe_transition_gold:
+    # PMAT-196 / XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-002: ELEVENTH
+    # Gold-tier refinement in the substrate. Demonstrates FIFTH
+    # Gold pattern variant: frame-safe transition refinement —
+    # FrameSafeTransition := { p : Session × Session //
+    # p.fst.modules = p.snd.modules } — encodes frame-preservation
+    # at the type level. Distinct from cross-field equality
+    # (PMAT-194/195) because both sides are the SAME type and
+    # the preserved field has the SAME name (before/after
+    # invariant rather than across-domain). Load-bearing for
+    # modifies()/frame invariants in separation-logic style.
+    # Companion theorems frame_safety_witness_gold and
+    # gold_contract_frontend_agrees_with_silver.
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.frame_safe_transition_gold"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    formula: |
+      parse_to_equations_gold(session, source).before.modules
+        == parse_to_equations_gold(session, source).after.modules
+      BY TYPE  (frame witness travels with the pair)
+    domain: |
+      Same as equations_only — every ContractFrontend impl. The
+      Gold upgrade encodes the frame-preservation invariant at
+      the type level via a before/after-pair refinement subtype.
+    invariants:
+      - "FrameSafeTransition pairs before/after TranspileSession under a TYPE-LEVEL proof that modules is preserved"
+      - "frame-safety witness travels with the pair through extraction — no per-call-site re-proof needed"
+      - "fifth Gold pattern variant: frame-safety refinement (before.field = after.field for same-type sides)"
+      - "distinct from cross-field equality (PMAT-194/195) — here both sides are the SAME type, the field name is SAME, and the proof is a frame invariant rather than an across-domain consistency claim"
+    preconditions:
+      - "the ContractFrontend impl is well-formed (Silver model preconditions inherited)"
+    postconditions:
+      - "an emitter returning a (before, after) pair where modules differ would not type-check against parse_to_equations_gold"
+      - "this pattern is the building block for `modifies()` frame conditions throughout the codebase"
+
   citation_preservation:
     formula: |
       forall cf, source: contract_ids_textually_in(source) subset EquationsBlock.citations
