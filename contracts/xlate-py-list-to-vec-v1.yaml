@@ -36,6 +36,11 @@ equations:
       - "no implicit type coercion at element boundaries"
     preconditions:
       - "type inference succeeded with a single T for all elements"
+      - "T is one of {int, float, str, bool, bytes} with a canonical Rust counterpart"
+    postconditions:
+      - "the emitted Rust `Vec<T_rust>` has exactly the same length as the source Python list"
+      - "element ordering is preserved index-by-index"
+      - "no implicit type coercion occurs at element boundaries (homogeneous source → homogeneous Vec)"
 
   heterogeneous_list_rejected:
     formula: |
@@ -46,7 +51,13 @@ equations:
     invariants:
       - "no silent fallback to Vec<Box<dyn Any>> — that would defeat the type contract"
       - "the error includes the set of conflicting types for user repair"
-    preconditions: []
+    preconditions:
+      - "the Python source contains a list whose inferred element types do not unify"
+      - "the meta-HIR's type-inference pass produced ≥2 distinct types for the list's elements"
+    postconditions:
+      - "translation returns `Err(TranslationError::Heterogeneous { found_types })` (never `Ok(Vec<...>)`)"
+      - "the `found_types` set contains every distinct type observed (no drops)"
+      - "no Rust code is emitted for the offending list — the error short-circuits emission"
 
   alias_observation_inserts_clone:
     formula: |
@@ -60,6 +71,11 @@ equations:
       - "the alias-graph annotation produced by Python frontend is sufficient input"
     preconditions:
       - "Python frontend produced an alias-graph annotation in the meta-HIR"
+      - "the alias graph identifies at least one (binder, observer) pair where mutation crosses the boundary"
+    postconditions:
+      - "the emitted Rust inserts an explicit `.clone()` or wraps the list in `Rc<RefCell<...>>` (per the alias-graph annotation)"
+      - "the runtime mutation observed via the second binding matches the CPython behavior bit-for-bit"
+      - "no move-semantics are used where Python uses reference-semantics (which would change observable behavior)"
 
   iteration_order_preserved:
     # PMAT-060: Lean refinement theorem locks in the modelling
@@ -81,7 +97,13 @@ equations:
       generator expressions.
     invariants:
       - "no reordering even when iteration order doesn't seem to matter"
-    preconditions: []
+    preconditions:
+      - "the source Python iteration uses the standard list-iteration protocol (`for x in py_list`, list comprehension, or generator over a list)"
+      - "the iteration is not interleaved with mutation of the same list (that would be an alias_observation case)"
+    postconditions:
+      - "the emitted Rust iteration yields elements in source-order, position-by-position"
+      - "no reordering is introduced even when the iteration body appears to be order-independent (the contract is conservative)"
+      - "byte-level identity of the lowered RustVec holds (locked in by `iteration_order_preserved` in contracts/lean/XlatePyListToVec.lean and contracts/kani/xlate_py_list_to_vec.rs)"
 
   length_method:
     formula: |
@@ -90,7 +112,13 @@ equations:
       Any `len()` call on a Python list.
     invariants:
       - "Python `len()` returns int; Rust `.len()` returns usize — cast must be explicit"
-    preconditions: []
+    preconditions:
+      - "the source code calls `len(py_list)` where py_list is a translated `Vec<T_rust>`"
+      - "the surrounding Rust code expects a usize or has an explicit cast to i64/u64"
+    postconditions:
+      - "the emitted Rust evaluates `rust_vec.len()` which returns usize"
+      - "if the consumer expects i64 (Python-int compatibility), the codegen inserts an explicit `as i64` or `i64::try_from(...).expect(...)` cast"
+      - "no silent usize → i64 truncation; on platforms where usize > i64 the cast must be checked"
 
 proof_obligations:
   - type: precondition
