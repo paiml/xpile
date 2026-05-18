@@ -1049,4 +1049,95 @@ theorem and_dispatch_commutative_platinum
       unfold and_dispatch_silver bigint_and i64_and
       rw [Nat.land_comm]
 
+/-! ## PMAT-200 — SECOND Platinum-tier refinement: slow-path
+    associativity (XPILE-REFINE-PY-INT-ARITH-007).
+
+    Second Platinum-tier theorem in the substrate. Demonstrates
+    that the Platinum-tier pattern captures TERNARY compositional
+    properties (associativity), not just binary ones
+    (commutativity from PMAT-199).
+
+    Associativity on the SlowPath: `bigint_add` is unbounded
+    Int addition, which is genuinely associative. The FastPath
+    (`i64_wrap_add`) is NOT associative — wrapping arithmetic
+    breaks the property at the boundary. This asymmetry is itself
+    a Platinum-level observation: the dispatcher's algebraic
+    structure depends on the path.
+
+    This theorem captures what Bronze/Silver/Gold couldn't:
+    - Bronze: per-call equality
+    - Silver: per-call dispatch correctness
+    - Gold: per-call subtype refinement
+    - **Platinum: ternary algebraic structure across calls**
+
+    The PMAT-199/200 pair demonstrates the Platinum pattern across
+    BOTH binary (commutativity) and ternary (associativity)
+    algebraic properties. Future Platinum theorems can capture
+    distributivity, identity laws, monoid/ring/field axioms.
+
+    Status: discharged at v0.1.0 (PMAT-200). Tier: PLATINUM.
+    Second Platinum theorem in the substrate. -/
+
+/--
+  **Platinum-tier refinement theorem** — slow-path addition is
+  associative.
+
+  For SlowPath inputs, `bigint_add` is Int addition which is
+  genuinely associative: `(a + b) + c = a + (b + c)`. This is
+  proved using `Int.add_assoc`.
+
+  Why slow-path only: the FastPath's `i64_wrap_add` uses
+  `Int.bmod` which is NOT associative under wrap-around. An
+  emitter that conflates the two paths' algebraic properties
+  would be wrong; this theorem locks in the correct asymmetry.
+
+  Status: **discharged at v0.1.0 (PMAT-200)**. Tier: PLATINUM.
+-/
+theorem add_dispatch_slow_path_associative_platinum
+    (a b c : Int) :
+    add_dispatch_silver PyIntPath.SlowPath
+      (add_dispatch_silver PyIntPath.SlowPath a b) c
+    = add_dispatch_silver PyIntPath.SlowPath a
+      (add_dispatch_silver PyIntPath.SlowPath b c) := by
+  unfold add_dispatch_silver bigint_add
+  exact Int.add_assoc a b c
+
+/--
+  **Platinum-tier refinement theorem** — slow-path multiplication
+  is associative. Uses `Int.mul_assoc`. Same pattern as addition:
+  the SlowPath uses unbounded Int, where mul is genuinely
+  associative. The FastPath wraps and is NOT associative at the
+  i64 boundary.
+-/
+theorem mul_dispatch_slow_path_associative_platinum
+    (a b c : Int) :
+    mul_dispatch_silver PyIntPath.SlowPath
+      (mul_dispatch_silver PyIntPath.SlowPath a b) c
+    = mul_dispatch_silver PyIntPath.SlowPath a
+      (mul_dispatch_silver PyIntPath.SlowPath b c) := by
+  unfold mul_dispatch_silver bigint_mul
+  exact Int.mul_assoc a b c
+
+/--
+  **Platinum-tier refinement theorem** — slow-path distributivity
+  of multiplication over addition. Uses `Int.mul_add`. Captures
+  the FIRST cross-operation algebraic property in the substrate
+  — distributivity ties together the multiplicative and additive
+  structures.
+
+  This theorem is genuinely outside the reach of any prior tier
+  (Bronze/Silver/Gold) because it relates TWO different
+  operations across THREE call sites. It captures monoid/ring
+  axioms structurally.
+-/
+theorem mul_distributes_over_add_slow_path_platinum
+    (a b c : Int) :
+    mul_dispatch_silver PyIntPath.SlowPath a
+      (add_dispatch_silver PyIntPath.SlowPath b c)
+    = add_dispatch_silver PyIntPath.SlowPath
+        (mul_dispatch_silver PyIntPath.SlowPath a b)
+        (mul_dispatch_silver PyIntPath.SlowPath a c) := by
+  unfold mul_dispatch_silver bigint_mul add_dispatch_silver bigint_add
+  exact Int.mul_add a b c
+
 end XpileContracts.CPyIntArith

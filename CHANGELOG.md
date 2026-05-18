@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SECOND Platinum-tier refinement: slow-path associativity + distributivity on C-PY-INT-ARITH (PMAT-200 / XPILE-REFINE-PY-INT-ARITH-007)
+
+Second Platinum-tier theorem in the substrate. Demonstrates the Platinum pattern captures **TERNARY compositional properties** (associativity) and **cross-operation algebraic axioms** (distributivity), not just the binary commutativity from PMAT-199.
+
+The Platinum theorems:
+- `add_dispatch_slow_path_associative_platinum` (wired): `(a + b) + c = a + (b + c)` on SlowPath via `Int.add_assoc`
+- `mul_dispatch_slow_path_associative_platinum`: multiplication associativity via `Int.mul_assoc`
+- `mul_distributes_over_add_slow_path_platinum`: `a * (b + c) = a*b + a*c` — **first cross-operation distributivity theorem in the substrate**, tying together additive and multiplicative algebraic structures
+
+**Slow-path-only asymmetry**: `bigint_add` (unbounded Int) is genuinely associative; `i64_wrap_add` (FastPath) is NOT — wrapping arithmetic breaks the property at the boundary. This asymmetry is itself a Platinum-level observation about dispatch: the algebraic structure depends on the path.
+
+**What this PR captures that PMAT-199 didn't**:
+- PMAT-199: BINARY compositional property (commutativity)
+- PMAT-200: TERNARY compositional property (associativity) + CROSS-OPERATION property (distributivity)
+
+Monoid/ring algebraic axioms are now structurally captured at the dispatcher level. Future Platinum theorems can capture identity laws, inverse laws, and full field/ring axioms compositionally.
+
+YAML: adds new equation `add_dispatch_slow_path_associative_platinum` wired to the Platinum theorem. `xpile quorum` view for C-PY-INT-ARITH: Sem=21 (was 20), Sym=9, Run=4, Ext=21. Two Platinum theorems now in the substrate; C-PY-INT-ARITH leads the Platinum tier with the richest algebraic-axiom coverage.
+
 ### Added — FIRST Platinum-tier refinement: dispatcher commutativity on C-PY-INT-ARITH (PMAT-199 / XPILE-REFINE-PY-INT-ARITH-006)
 
 🏆 **First Platinum-tier theorem in the entire xpile substrate.** Opens the next tier beyond Gold per ruchy 5.0 §14.10.5.
