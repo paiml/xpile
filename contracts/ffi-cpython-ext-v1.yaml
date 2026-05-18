@@ -169,6 +169,40 @@ equations:
       - "Diamond axiomatizes refcount-delta as forming a mathematically PROPER algebraic group (not just a monoid)"
       - "load-bearing for compositional refcount safety: every modifying call has a CANCELING counterpart"
 
+  gil_invariant_preservation_diamond:
+    # PMAT-230 / XPILE-REFINE-FFI-CPYTHON-011: SECOND Diamond on
+    # this contract — Layer 4 depth-2 Diamond. Following
+    # PMAT-228 (depth-2 on Layer 1) and PMAT-229 (depth-2 on
+    # Layer 2), this extends Diamond breadth to Layer 4. The
+    # GIL-INVARIANT-PRESERVATION Diamond is a fundamentally
+    # distinct algebraic category from PMAT-216 abelian-group:
+    # abelian-group captures HOW refcount-deltas compose under
+    # +; GIL-invariant captures HOW the (held, released) state
+    # pair is PRESERVED through the CPython ABI boundary.
+    lean_theorem: "XpileContracts.CFfiCpythonExt.gil_invariant_preservation_diamond"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
+    formula: |
+      GIL-state preservation across the CPython ABI boundary:
+        (a) c.enter = c.exit ⇒ lower(c).enter = lower(c).exit
+        (b) Held in ⇒ Held out
+        (c) Released in ⇒ Released out
+        (d) lower(c).enter = c.enter ∧ lower(c).exit = c.exit
+            (identity on GIL state pointwise)
+    domain: |
+      Any FfiCallWithGilSilver values under the
+      lower_call_preserving_gil lowering. The Diamond upgrade
+      captures the FULL GIL-state-preservation axiomatization.
+    invariants:
+      - "SECOND Diamond category on C-FFI-CPYTHON-EXT — Diamond breadth on Layer 4"
+      - "distinct algebraic category from PMAT-216 abelian-group (refcount-delta composition)"
+      - "captures GIL-state preservation across CPython ABI boundary"
+      - "pyo3's Python<'_> guard encodes the same invariant in Rust — this Diamond is the formal-semantics counterpart"
+    preconditions:
+      - "an FfiCallWithGilSilver value with well-formed GIL state pair"
+    postconditions:
+      - "an emitter that drops Py_BEGIN_ALLOW_THREADS / Py_END_ALLOW_THREADS pairing would falsify (d) at compile time"
+      - "Diamond depth-2 demonstrated on Layer 4 — substrate now has THREE depth-2 Diamond contracts (Layers 1, 2, 4)"
+
   bounded_refcount_delta_preserved_gold:
     # PMAT-186 / XPILE-REFINE-FFI-CPYTHON-008: SECOND Gold-tier
     # refinement in the substrate (after PMAT-185 PyIntFast on

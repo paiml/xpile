@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SECOND Diamond on C-FFI-CPYTHON-EXT (Diamond depth-2 on Layer 4) — GIL-invariant preservation axioms (PMAT-230 / XPILE-REFINE-FFI-CPYTHON-011)
+
+**Third depth-2 Diamond in the substrate, first on Layer 4.** Following PMAT-228 (depth-2 on Layer 1 PyIntArith — semiring + Euclidean-domain) and PMAT-229 (depth-2 on Layer 2 XlatePyListToVec — free monoid + section-retraction), PMAT-230 extends Diamond breadth to Layer 4 C-FFI-CPYTHON-EXT.
+
+FfiCpythonExt already had the abelian-group Diamond at PMAT-216 on refcount-delta semantics. PMAT-230 adds the **GIL-INVARIANT-PRESERVATION Diamond** — a fundamentally distinct algebraic category covering CPython's reentrant lock semantics at the FFI call boundary:
+
+- **PMAT-216** axiomatizes refcount-delta as an ABELIAN GROUP (Py_INCREF/Py_DECREF pairing)
+- **PMAT-230** axiomatizes GIL state pair as an INVARIANT-PRESERVED-IDENTITY across CPython ABI
+
+Combines four properties on `FfiCallWithGilSilver → FfiManifestEntryWithGilSilver`:
+(a) Invariance under balanced input (PMAT-171a lifted)
+(b) Held-state preservation (PMAT-171b lifted)
+(c) Released-state preservation (new at Diamond)
+(d) Identity on GIL state at both endpoints (the strongest claim)
+
+`gil_invariant_preservation_diamond` (wired): 4-conjunction proving the GIL-invariant-preservation axiomatization. Falsification: an emitter that drops `Py_BEGIN_ALLOW_THREADS` / `Py_END_ALLOW_THREADS` pairing would break (d). pyo3's `Python<'_>` static guard encodes the same invariant in Rust — this Diamond is the formal-semantics counterpart.
+
+YAML: adds new equation `gil_invariant_preservation_diamond` wired to the Diamond theorem.
+
+**Depth-2 census after this PR**: 3 contracts at depth-2 across 3 layers (Layer 1 PyIntArith, Layer 2 XlatePyList, Layer 4 FfiCpython).
+
 ### Added — SECOND Diamond on C-XLATE-PY-LIST-TO-VEC (Diamond depth-2 on Layer 2) — NonEmpty section-retraction axioms (PMAT-229 / XPILE-REFINE-XLATE-PY-LIST-006)
 
 Second-Diamond-on-same-contract pattern extended from Layer 1 (PMAT-228) to **Layer 2**. The substrate now has **TWO depth-2 contracts** at the Diamond tier: C-PY-INT-ARITH (semiring + Euclidean-domain) and C-XLATE-PY-LIST-TO-VEC (free list-monoid + NonEmpty section-retraction).
