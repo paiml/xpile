@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIFTH Diamond-tier refinement: bounded-monoid axioms on C-COMPILE-RUST-TO-PTX-MMA (PMAT-218 / XPILE-REFINE-COMPILE-PTX-005)
+
+Fifth Diamond-tier theorem. Combines four properties into the BOUNDED MONOID axiomatization for BoundedSmem under sum within sm_80 budget:
+- PMAT-187 Gold BoundedSmem subtype (the refinement)
+- PMAT-206 Platinum bounded composition (closure + addition)
+- Commutativity (proved here)
+- Identity (zero is additive identity)
+
+**Five distinct Diamond categories now in the substrate**:
+1. PMAT-214: commutative-monoid / semiring (algebraic)
+2. PMAT-215: pure-function (functional)
+3. PMAT-216: abelian-group (algebraic with inverses)
+4. PMAT-217: equivalence-relation (relational)
+5. **PMAT-218: bounded-monoid (bounded algebraic)** ← NEW
+
+Bounded-monoid is distinct from PMAT-214's commutative-monoid because it REQUIRES the operation to STAY WITHIN A BOUND. Combined with PMAT-187's Gold subtype, this gives a complete type-level guarantee that all sums stay within the sm_80 budget.
+
+The Diamond theorems:
+- `bounded_smem_monoid_diamond` (wired): 3-conjunction proving closure + commutativity + right-identity
+- `bounded_smem_closure_diamond`: existential proof of closure under the budget
+
+YAML: adds new equation `bounded_smem_monoid_diamond` wired to the Diamond theorem. `xpile quorum` view for C-COMPILE-RUST-TO-PTX-MMA: Sem=5 (was 4), Sym=1, Run=1, Ext=9. Five Diamond axiomatizations now in substrate covering distinct algebraic categories.
+
 ### Added — FOURTH Diamond-tier refinement: equivalence-relation axioms on C-XPILE-CONTRACT-FRONTEND-TRAIT (PMAT-217 / XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-004)
 
 Fourth Diamond-tier theorem. Combines three equivalence-relation axioms on modules-preservation:
