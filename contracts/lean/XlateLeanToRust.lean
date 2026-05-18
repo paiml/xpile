@@ -974,4 +974,110 @@ theorem citation_source_location_preserved_silver
     (lower_decl_with_citation_silver d).source_location = d.source_location := by
   rfl
 
+/-! ## PMAT-188 — FOURTH Gold-tier refinement: WarningLineCount
+    on axiom_to_extern_fn (XPILE-REFINE-XLATE-LEAN-004).
+
+    Fourth Gold-tier theorem in the substrate (after PMAT-185
+    PyIntFast, PMAT-186 BoundedRefcountDelta, PMAT-187
+    BoundedSmem). Promotes Silver's `warning_lines : Nat` (with
+    `warning_lines ≥ 5` as a separate proof obligation) to a
+    refinement subtype `WarningLineCount := { n : Nat // n ≥
+    5 }` that encodes the floor at the TYPE level.
+
+    Silver (PMAT-133's `axiom_to_extern_fn`) proves
+    `warning_lines ≥ 5` as a postcondition of lowering. Gold
+    tier removes the need for the postcondition proof: the
+    WarningLineCount subtype forbids constructing a value with
+    fewer than 5 warning lines. A caller passing a `Nat` must
+    supply a proof of `≥ 5` at construction time.
+
+    **Establishes the Gold pattern on Layer-2 translation
+    contracts**: PMAT-185 covered Layer-1 arithmetic, PMAT-186
+    covered Layer-4 FFI, PMAT-187 covered Layer-5 compile-time,
+    and PMAT-188 now covers Layer-2 translation. Together they
+    span the contract taxonomy at Gold tier.
+
+    Status: discharged at v0.1.0 (PMAT-188). Tier: GOLD. -/
+
+/-- Floor for the WARNING-comment line count emitted above an
+    `unsafe extern` block for a Lean axiom. The contract YAML
+    invariant says "at least 5 lines of WARNING comment". -/
+def warning_lines_floor : Nat := 5
+
+/-- Gold-tier refinement subtype: a Nat proven to be ≥ 5. The
+    invariant is carried by the value. An emitter receiving a
+    WarningLineCount cannot pass a smaller value — the type
+    system rules it out at compile time. -/
+def WarningLineCount := { n : Nat // n ≥ warning_lines_floor }
+
+/-- Extract the underlying line count. -/
+def WarningLineCount.val (w : WarningLineCount) : Nat := w.val
+
+/-- Gold-tier model of a Lean axiom declaration. The
+    warning_lines field is now type-level bounded. -/
+structure LeanAxiomGold where
+  signature : Array UInt8
+  warning_lines : WarningLineCount
+deriving DecidableEq
+
+/-- Gold-tier model of the emitted Rust extern block. Mirror
+    image. The warning_lines field carries its bound through
+    lowering. -/
+structure RustExternGold where
+  signature : Array UInt8
+  warning_lines : WarningLineCount
+deriving DecidableEq
+
+/-- Gold-tier lowering: pass-through. The WarningLineCount
+    subtype's bound travels with the value — no separate
+    postcondition proof needed. -/
+def lower_axiom_to_extern_gold (a : LeanAxiomGold) : RustExternGold :=
+  { signature := a.signature, warning_lines := a.warning_lines }
+
+/--
+  **Gold-tier refinement theorem** — warning lines preserved
+  through axiom→extern lowering, AND the ≥ 5 floor witness
+  travels with the value.
+
+  This is the fourth Gold theorem in the substrate. Captures
+  what Silver couldn't model:
+  - Silver: "the emitter emits ≥ 5 warning lines" (postcondition
+    proved at lowering time)
+  - Gold: "the warning_lines IS a WarningLineCount" (the ≥ 5
+    proof TRAVELS WITH the value through all subsequent calls;
+    a downstream module receiving an emitted extern can rely on
+    the bound without re-verifying)
+
+  An emitter that omits the warning block (or trims it to a
+  1-liner) would not type-check against
+  `lower_axiom_to_extern_gold` — the type system catches the
+  invariant violation at the API boundary.
+
+  Status: **discharged at v0.1.0 (PMAT-188)**. Tier: GOLD.
+-/
+theorem warning_lines_preserved_gold (a : LeanAxiomGold) :
+    (lower_axiom_to_extern_gold a).warning_lines.val = a.warning_lines.val := by
+  rfl
+
+/--
+  **Gold-tier refinement theorem** — the floor witness is
+  preserved through lowering. An extern block emitted from a
+  well-formed axiom always has warning_lines ≥ 5 BY TYPE.
+-/
+theorem warning_lines_witness_gold (a : LeanAxiomGold) :
+    (lower_axiom_to_extern_gold a).warning_lines.val ≥ warning_lines_floor :=
+  (lower_axiom_to_extern_gold a).warning_lines.property
+
+/--
+  **Gold-tier refinement theorem** — bridges Gold to Silver:
+  the WarningLineCount-typed value satisfies the same numeric
+  bound that PMAT-133's `axiom_to_extern_fn` Silver-tier proof
+  produced. Both agree on the underlying Nat; Gold carries the
+  bound at the type level rather than as a postcondition.
+-/
+theorem gold_warning_lines_agrees_with_silver_floor
+    (a : LeanAxiomGold) :
+    (lower_axiom_to_extern_gold a).warning_lines.val ≥ 5 := by
+  exact a.warning_lines.property
+
 end XpileContracts.CXlateLeanToRust

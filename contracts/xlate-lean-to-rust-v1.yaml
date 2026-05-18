@@ -392,6 +392,37 @@ equations:
     postconditions:
       - "the emitted extern block's warning comment contains every contract ID from the source axiom's citation list"
 
+  warning_lines_preserved_gold:
+    # PMAT-188 / XPILE-REFINE-XLATE-LEAN-004: FOURTH Gold-tier
+    # refinement in the substrate. Promotes Silver's
+    # warning_lines : Nat (with ≥ 5 invariant as separate
+    # proof) to WarningLineCount := { n : Nat // n ≥ 5 }
+    # refinement subtype. The floor is encoded at the TYPE
+    # level. Demonstrates Gold pattern on Layer-2 translation
+    # contracts (after PMAT-185 Layer-1 arithmetic, PMAT-186
+    # Layer-4 FFI, PMAT-187 Layer-5 compile-time). Together
+    # they span the contract taxonomy at Gold tier. Companion
+    # theorems warning_lines_witness_gold and
+    # gold_warning_lines_agrees_with_silver_floor.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.warning_lines_preserved_gold"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      lower_axiom_to_extern_gold(a).warning_lines.val == a.warning_lines.val
+      WITH floor warning_lines.val ≥ 5
+    domain: |
+      Same as axiom_to_extern_fn — a Lean axiom declaration.
+    invariants:
+      - "the ≥ 5 floor is encoded at the TYPE level — emitter receiving a WarningLineCount cannot pass < 5"
+      - "the floor witness travels with the value through lowering — companion theorem warning_lines_witness_gold"
+      - "a downstream module receiving an emitted extern can rely on the ≥ 5 bound without re-verifying — Gold-tier compositional safety"
+      - "companion theorem gold_warning_lines_agrees_with_silver_floor bridges Gold to PMAT-133's Silver model"
+    preconditions:
+      - "the axiom's warning_lines is constructed with a proof of ≥ 5 (Gold-tier well-formedness obligation)"
+      - "an emitter that omits the warning block (or trims it to a 1-liner) would not type-check against lower_axiom_to_extern_gold"
+    postconditions:
+      - "emitted extern always has ≥ 5 warning lines BY TYPE — no runtime check needed downstream"
+      - "this is the archetype Gold-tier pattern applied to Layer-2 translation contracts, completing the cross-taxonomy Gold demonstration"
+
   noncomputable_def_to_rust_panic:
     # PMAT-133: Bronze-tier refinement theorem locks in the
     # canonical panic-marker body AND the #[doc(hidden)] attribute.

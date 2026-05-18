@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-188
+  github_issue: null
+  item_type: task
+  title: 'PMAT-188: FOURTH Gold-tier refinement — WarningLineCount subtype on C-XLATE-LEAN-TO-RUST axiom_to_extern_fn (XPILE-REFINE-XLATE-LEAN-004); completes Gold demonstration across Layers 1/2/4/5'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T10:00:00Z
+  updated: 2026-05-19T10:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Fourth Gold-tier theorem in the substrate, on Layer-2 translation contract. WarningLineCount := { n : Nat // n ≥ 5 } refinement subtype encodes the warning-lines floor at type level. warning_lines_preserved_gold (wired) + warning_lines_witness_gold + gold_warning_lines_agrees_with_silver_floor companions. Together with PMAT-185 (Layer-1), PMAT-186 (Layer-4), PMAT-187 (Layer-5), establishes Gold-tier subtype refinement as a universal pattern across the contract taxonomy. C-XLATE-LEAN-TO-RUST Sem 18 → 19, Ext 7 → 9.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-187
   github_issue: null
   item_type: task
