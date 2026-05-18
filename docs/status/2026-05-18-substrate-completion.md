@@ -1,8 +1,8 @@
-# Session Log — 2026-05-18 — Substrate Completion + bashrs Polish + Docs Sweep
+# Session Log — 2026-05-18 — Substrate Completion + bashrs Polish + Docs Sweep + Quality Sweep
 
 **Duration:** Single extended session
-**Outcome:** 100% §14.4 QUORUM across all 12 contracts; bashrs frontend hardened with 55 tests and 8 round-trip invariants; comprehensive documentation sweep across 24+ files
-**Next:** Silver-tier Lean refinement (per-contract XPILE-REFINE-*-001+), Runtime witnesses for the 10 contracts at 3-stratum QUORUM, real PTX/WGSL emission, v0.2.0 bashrs source-corpus fold
+**Outcome:** 100% §14.4 QUORUM across all 12 contracts (all at 4-stratum); bashrs frontend hardened with 55 tests and 8 round-trip invariants; comprehensive documentation sweep across 24+ files; **PMAT-127..145 quality-sweep follow-up brought substrate warnings 79 → 0 and every equation under its own Bronze-tier refinement theorem (50 theorems total)**
+**Next:** Silver-tier Lean refinement (per-contract XPILE-REFINE-*-001+, beyond the Bronze tier shipped this session), deeper Runtime witnesses for the 10 contracts at 4-stratum minimum (one demo fixture each — Gold tier replaces with property-specific diff_exec fixtures), real PTX/WGSL emission, v0.2.0 bashrs source-corpus fold
 
 Per the [INDEX.md](INDEX.md) convention. The session is "extended" because it ran as a single autonomous-shipping loop driven by the project's `CLAUDE.md` "Speed over ceremony" / "commit autonomously and frequently" directives.
 
@@ -102,10 +102,11 @@ Real bug-class find during sweep: **branch-protection ruleset** only requires `g
 totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)
 ```
 
-- 12 contracts × 2 strata (Sem + Sym) = 24 paired Lean+Kani Bronze-tier discharges
-- 2 contracts at full 4-stratum coverage (C-PY-INT-ARITH, C-BASHRS-POSIX-IDEMPOTENCE)
-- 10 contracts at 3-stratum (Sem+Sym+Ext); Runtime witnesses pending Bronze→Gold refinement
+- **50 Lean theorems × 12 Kani harnesses = 62 paired Lean+Kani Bronze-tier discharges** (post-PMAT-127..138; substrate-completion run shipped 12+12=24, then the quality sweep grew the Lean side from 12 to 50 by adding per-equation theorems)
+- 2 contracts at rich 4-stratum coverage with multi-vote Runtime witnesses (C-PY-INT-ARITH, C-BASHRS-POSIX-IDEMPOTENCE)
+- 10 contracts at 4-stratum minimum with a single demo Runtime fixture each (single-vote demo); deeper Runtime witnesses (Gold tier) replace with property-specific diff_exec fixtures
 - All 5 layers of the contract taxonomy covered (Layer 1, 2, 3, 4, 5)
+- **`pv lint contracts/` reports 0 errors and 0 warnings** (substrate at full-clean state since PMAT-138 closed XPILE-REFINE-005 with a hand-rolled cast-through-Nat bit-AND theorem)
 
 **Workspace state:**
 
