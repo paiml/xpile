@@ -7,6 +7,33 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FOURTH Gold-tier refinement: `WarningLineCount` subtype on C-XLATE-LEAN-TO-RUST `axiom_to_extern_fn` (PMAT-188 / XPILE-REFINE-XLATE-LEAN-004)
+
+Fourth Gold-tier theorem in the substrate. **Completes Gold-tier demonstration across all four major contract layers**:
+- Layer-1 (per-language semantics): PMAT-185 `PyIntFast` on C-PY-INT-ARITH
+- **Layer-2 (translation): PMAT-188 `WarningLineCount` on C-XLATE-LEAN-TO-RUST** (this PR)
+- Layer-4 (hybrid pipeline / FFI): PMAT-186 `BoundedRefcountDelta` on C-FFI-CPYTHON-EXT
+- Layer-5 (compile-time IR): PMAT-187 `BoundedSmem` on C-COMPILE-RUST-TO-PTX-MMA
+
+The Gold model:
+- `warning_lines_floor : Nat := 5` — load-bearing floor from contract YAML
+- `WarningLineCount := { n : Nat // n ≥ 5 }` — refinement subtype encoding the floor
+- `LeanAxiomGold { signature, warning_lines : WarningLineCount }` — axiom can't even *carry* fewer than 5 warning lines
+- `lower_axiom_to_extern_gold`: pass-through with the floor witness traveling
+- `warning_lines_preserved_gold` (wired): warning_lines preserved through lowering
+- `warning_lines_witness_gold`: floor proof preserved by construction
+- `gold_warning_lines_agrees_with_silver_floor`: bridges Gold to PMAT-133's Silver model
+
+**What Gold captures that Silver couldn't**:
+- Silver: "the emitter emits ≥ 5 warning lines" (postcondition proved AT lowering time, per call site)
+- Gold: "the warning_lines IS a WarningLineCount" (≥ 5 proof TRAVELS WITH the value; downstream modules receive an emitted extern and can rely on the bound without re-verifying)
+
+An emitter that omits the warning block (or trims it to a 1-liner) would not type-check against `lower_axiom_to_extern_gold` — the type system catches the invariant violation at the API boundary.
+
+**Cross-taxonomy Gold demonstration**: With Layer-1, Layer-2, Layer-4, Layer-5 all now showing the same Silver→Gold transition pattern (precondition-as-hypothesis → precondition-as-subtype), the substrate has empirically established that Gold-tier subtype refinement is a *universal* technique across the contract taxonomy.
+
+YAML: adds new equation `warning_lines_preserved_gold` wired to the Gold theorem. `xpile quorum` view for C-XLATE-LEAN-TO-RUST: Sem=19 (was 18), Sym=9, Run=1, Ext=9.
+
 ### Added — THIRD Gold-tier refinement: `BoundedSmem` subtype on C-COMPILE-RUST-TO-PTX-MMA (PMAT-187 / XPILE-REFINE-COMPILE-PTX-003)
 
 Third Gold-tier theorem in the substrate (after PMAT-185 PyIntFast on C-PY-INT-ARITH and PMAT-186 BoundedRefcountDelta on C-FFI-CPYTHON-EXT). Promotes Silver's `smem_bytes : Nat` (with runtime `min` clamp) to refinement subtype `BoundedSmem := { s : Nat // s ≤ smem_budget_sm80 }`. The sm_80 hardware shared-memory budget is now encoded at the **type level**.
