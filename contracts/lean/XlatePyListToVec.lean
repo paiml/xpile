@@ -795,4 +795,74 @@ theorem list_free_monoid_diamond {α : Type}
   · rfl
   · simp [List.length_append]
 
+/-! ## PMAT-229 — SECOND Diamond on C-XLATE-PY-LIST-TO-VEC
+    (XPILE-REFINE-XLATE-PY-LIST-006): NonEmpty section-retraction
+    axioms.
+
+    **SECOND Diamond on this contract — Diamond breadth on Layer 2.**
+    Following PMAT-228 (first depth-2 Diamond on Layer 1
+    C-PY-INT-ARITH), PMAT-229 extends Diamond breadth to Layer 2.
+    XlatePyListToVec already has the free list-monoid Diamond
+    (PMAT-221); PMAT-229 captures NonEmpty SECTION-RETRACTION
+    structure — a fundamentally distinct algebraic category from
+    free list-monoid.
+
+    - PMAT-221: free list-monoid (Int) covering closure +
+      associativity + identity + length-additivity
+    - PMAT-229: NonEmpty section-retraction (this) covering
+      element preservation + non-emptiness witness preservation
+      + tag preservation + injectivity-on-content
+
+    The categorical distinction: free list-monoid is about HOW
+    list-append composes; NonEmpty section-retraction is about
+    HOW subtype refinements are PRESERVED across lowering. They
+    capture orthogonal algebraic properties of the same contract.
+
+    Status: discharged at v0.1.0 (PMAT-229). Tier: DIAMOND.
+    SECOND Diamond category on C-XLATE-PY-LIST-TO-VEC. -/
+
+/--
+  **Diamond-tier refinement theorem** — NonEmpty section-
+  retraction structure on polymorphic homogeneous lowering.
+
+  Combines four properties into the SECTION-RETRACTION
+  axiomatization on the pair
+    `NonEmptyHomogeneousList α → TypedRustVecSilver α`:
+
+  (a) Element-list preservation (PMAT-192a lifted)
+  (b) Non-emptiness witness preservation (PMAT-192b lifted)
+  (c) Element-type-tag preservation (PMAT-182 lifted, polymorphic)
+  (d) Injectivity on content: same elements + same tag ⇒
+      same output (no hidden side-channel state)
+
+  An emitter that adds hidden state to the Rust Vec (e.g., a
+  cache pointer field) would falsify the injectivity claim — two
+  NonEmpty inputs with identical elements + tag would produce
+  different Rust Vecs.
+
+  Status: **discharged at v0.1.0 (PMAT-229)**. Tier: DIAMOND.
+-/
+theorem nonempty_section_retraction_diamond {α : Type}
+    (n : NonEmptyHomogeneousList α) :
+    -- (a) Element list preservation (PMAT-192a lifted)
+    (lower_non_empty_homogeneous_gold n).elements = n.val.elements
+    -- (b) Non-emptiness witness preserved (PMAT-192b lifted)
+    ∧ (lower_non_empty_homogeneous_gold n).elements ≠ []
+    -- (c) Element-type-tag preserved (PMAT-182 lifted, polymorphic)
+    ∧ (lower_non_empty_homogeneous_gold n).element_type_tag
+        = n.val.element_type_tag
+    -- (d) Injectivity on content: same content ⇒ same output
+    ∧ ∀ (n' : NonEmptyHomogeneousList α),
+        n.val.elements = n'.val.elements →
+        n.val.element_type_tag = n'.val.element_type_tag →
+        lower_non_empty_homogeneous_gold n
+          = lower_non_empty_homogeneous_gold n' := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · exact non_empty_homogeneous_witness_gold n
+  · rfl
+  · intros n' he ht
+    unfold lower_non_empty_homogeneous_gold lower_homogeneous_list_silver
+    rw [he, ht]
+
 end XpileContracts.CXlatePyListToVec

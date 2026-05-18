@@ -169,6 +169,40 @@ equations:
       - "free-monoid structure makes the list lowering universal: every other algebraic property derives from the three axioms"
       - "an emitter that adds hidden semantic relations (e.g., reordering invariants, deduplication) would falsify the freeness claim"
 
+  nonempty_section_retraction_diamond:
+    # PMAT-229 / XPILE-REFINE-XLATE-PY-LIST-006: SECOND Diamond
+    # on this contract — Diamond breadth on Layer 2. Following
+    # PMAT-228 (first depth-2 Diamond on Layer 1 C-PY-INT-ARITH),
+    # PMAT-229 extends Diamond breadth to Layer 2. The
+    # NonEmpty-SECTION-RETRACTION Diamond is a fundamentally
+    # distinct algebraic category from PMAT-221's free list-
+    # monoid Diamond. Free-monoid is about HOW append composes;
+    # section-retraction is about HOW subtype refinements are
+    # PRESERVED across lowering.
+    lean_theorem: "XpileContracts.CXlatePyListToVec.nonempty_section_retraction_diamond"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      polymorphic NonEmpty homogeneous list → typed Rust Vec
+      is a SECTION pair with retraction structure:
+        (a) element preservation: lower(n).elements = n.elements
+        (b) non-emptiness preserved: lower(n).elements ≠ []
+        (c) tag preservation: lower(n).tag = n.tag (polymorphic)
+        (d) injectivity-on-content: same content ⇒ same output
+    domain: |
+      Any NonEmptyHomogeneousList α value polymorphic over α.
+      The Diamond upgrade captures the FULL subtype-preservation
+      axiomatization on Gold-tier homogeneous lowering.
+    invariants:
+      - "SECOND Diamond category on C-XLATE-PY-LIST-TO-VEC — Diamond breadth on Layer 2"
+      - "distinct algebraic category from PMAT-221 free list-monoid"
+      - "captures section-retraction structure: refinement subtypes preserved across lowering"
+      - "polymorphic — holds for any element type α"
+    preconditions:
+      - "a polymorphic NonEmptyHomogeneousList α value"
+    postconditions:
+      - "an emitter adding hidden state to the Rust Vec (e.g., a cache pointer) would falsify the injectivity claim"
+      - "Diamond depth-2 demonstrated on Layer 2 — substrate now has TWO Layer-1 + ONE Layer-2 depth-2 Diamonds"
+
   heterogeneous_list_rejected:
     # PMAT-135: Bronze-tier refinement theorem locks in error-with-types
     # outcome (no silent boxing); proof excludes the `ok` arm by construction.
