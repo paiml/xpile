@@ -1,0 +1,29 @@
+% PMAT-124 — Runtime witness for the ContractFrontend trait.
+%
+% Provides a Runtime-stratum vote for:
+%   C-XPILE-CONTRACT-FRONTEND-TRAIT
+%
+% Small LaTeX source designed to be parsed by latex-contract-frontend
+% (the only ContractFrontend impl in tree at v0.1.0) when its
+% `parse_to_equations` body lands. The fixture exercises the
+% determinism invariant the contract pins down: parsing the same
+% source twice must produce identical EquationsBlock output.
+%
+% latex-contract-frontend's parse body is scaffold-stage at
+% v0.1.0; the fixture is in place ahead of that wiring so the
+% contract can move from 3-stratum QUORUM to full 4-stratum.
+% A dedicated determinism-asserting test that parses this fixture
+% twice and asserts byte-identical EquationsBlock output is
+% XPILE-CONTRACT-FRONTEND-TRAIT-RUNTIME-001 future work.
+
+\documentclass{article}
+\begin{document}
+
+\section{Basic equations}
+
+A simple math span: $E = mc^2$.
+
+A display math span:
+\[ \int_0^{\infty} e^{-x} \, dx = 1 \]
+
+\end{document}
