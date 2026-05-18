@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-133
+  github_issue: null
+  item_type: task
+  title: 'PMAT-133: xlate-lean-to-rust — Bronze-tier refinement theorems for the 8 remaining equations (warnings 9 → 1)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T08:00:00Z
+  updated: 2026-05-18T08:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add Bronze-tier refinement theorems to contracts/lean/XlateLeanToRust.lean for all 8 remaining equations (partial_def_to_rust_fn, theorem_carried_as_lean_sidecar, inductive_to_rust_enum, structure_to_rust_struct, instance_to_rust_impl, axiom_to_extern_fn, noncomputable_def_to_rust_panic, citation_in_emitted_rust). Each theorem is rfl-by-construction at v0.1.0 but locks in a different load-bearing aspect of the lowering (body preservation, partial-marker survival, variant/field/method count preservation, WARNING-comment floor ≥5 lines, panic-marker invariant, byte-identity citation copy). Wire lean_theorem + lean_file references in xlate-lean-to-rust-v1.yaml. lean XlateLeanToRust.lean compiles clean. refinement_proofs.rs test discovers all 8 new theorems. Contract warnings 9 → 1. Total substrate warnings 28 → 20.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-132
   github_issue: null
   item_type: task

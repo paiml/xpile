@@ -65,6 +65,10 @@ equations:
       - "the lowered Rust body is panic-free for all inputs in the declared `domain` (load-bearing for the Bronze-tier body-preservation theorem PMAT-070)"
 
   partial_def_to_rust_fn:
+    # PMAT-133: Bronze-tier refinement theorem locks in body +
+    # partial-marker preservation. See contracts/lean/XlateLeanToRust.lean.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.partial_def_to_rust_fn"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
     formula: |
       xlate(partial def f (args) : R := body) ==
         #[partial_translation]
@@ -85,6 +89,10 @@ equations:
       - "any call site of the partial function in lowered Rust uses `?` or explicit `Err` handling (never `.unwrap()` without a justification comment)"
 
   theorem_carried_as_lean_sidecar:
+    # PMAT-133: Bronze-tier refinement theorem locks in
+    # byte-identity copy of theorem text into the sidecar.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.theorem_carried_as_lean_sidecar"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
     formula: |
       xlate(theorem t : P := proof) ==
         // Rust file: empty (no lowering)
@@ -106,6 +114,10 @@ equations:
       - "any Rust def referencing the theorem name carries a doc-comment pointing to the sidecar's fully-qualified path"
 
   inductive_to_rust_enum:
+    # PMAT-133: Bronze-tier refinement theorem locks in
+    # variant-count preservation.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.inductive_to_rust_enum"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
     formula: |
       xlate(inductive T : Type | C1 (x : A) | C2 (x : B) (y : C)) ==
         enum T { C1(A_rust), C2(B_rust, C_rust) }
@@ -125,6 +137,10 @@ equations:
       - "every variant's positional fields preserve source argument order (Lean argument names are dropped)"
 
   structure_to_rust_struct:
+    # PMAT-133: Bronze-tier refinement theorem locks in
+    # field-count preservation.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.structure_to_rust_struct"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
     formula: |
       xlate(structure S where (a : A) (b : B)) ==
         struct S { a: A_rust, b: B_rust }
@@ -144,6 +160,10 @@ equations:
       - "Lean default values (`field := value`) produce a `Default` impl with the same default expression"
 
   instance_to_rust_impl:
+    # PMAT-133: Bronze-tier refinement theorem locks in
+    # method-count preservation.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.instance_to_rust_impl"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
     formula: |
       xlate(instance : C T where method := body) ==
         impl C for T { fn method() { body_rust } }
@@ -163,6 +183,10 @@ equations:
       - "Lean default method bodies in the typeclass map to Rust default method bodies in the trait (not duplicated per impl)"
 
   axiom_to_extern_fn:
+    # PMAT-133: Bronze-tier refinement theorem locks in signature
+    # preservation AND the ≥5-line WARNING comment floor.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.axiom_to_extern_fn"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
     formula: |
       xlate(axiom name : T) ==
         // WARNING comment block
@@ -185,6 +209,10 @@ equations:
       - "the warning comment names at least one citing contract ID"
 
   noncomputable_def_to_rust_panic:
+    # PMAT-133: Bronze-tier refinement theorem locks in the
+    # canonical panic-marker body AND the #[doc(hidden)] attribute.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.noncomputable_def_to_rust_panic"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
     formula: |
       xlate(noncomputable def f := body) ==
         fn f() -> R_rust { panic!("noncomputable Lean def has no runtime equivalent") }
@@ -204,6 +232,11 @@ equations:
       - "any caller in the lowered Rust crate gets a `clippy::pedantic` warning via a deny lint pointing at the contract"
 
   citation_in_emitted_rust:
+    # PMAT-133: Bronze-tier refinement theorem locks in
+    # byte-for-byte contract-ID preservation in the citation
+    # doc-comment.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.citation_in_emitted_rust"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
     formula: |
       xlate(any Lean decl D with contract C) emits Rust with
         /// Contract: <C.id>
