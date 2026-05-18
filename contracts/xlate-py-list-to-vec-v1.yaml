@@ -49,6 +49,27 @@ equations:
       - "element ordering is preserved index-by-index"
       - "no implicit type coercion occurs at element boundaries (homogeneous source → homogeneous Vec)"
 
+  homogeneous_element_type_preserved_silver:
+    # PMAT-182 / XPILE-REFINE-XLATE-PY-LIST-002: Silver-tier
+    # promotion of homogeneous_list_to_vec. Adds polymorphic
+    # HomogeneousListSilver α / TypedRustVecSilver α with
+    # element_type_tag preserved as separate structural field.
+    # Companion theorem homogeneous_elements_preserved_silver
+    # captures the polymorphic element-list preservation claim.
+    lean_theorem: "XpileContracts.CXlatePyListToVec.homogeneous_element_type_preserved_silver"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      lower_homogeneous_list(l).element_type_tag == l.element_type_tag
+    domain: |
+      Same as homogeneous_list_to_vec — a homogeneous Python list.
+    invariants:
+      - "element_type_tag preserved byte-for-byte as separate structural field"
+      - "polymorphic element list preserved (companion theorem)"
+    preconditions:
+      - "type inference succeeded with a single T for all elements"
+    postconditions:
+      - "an emitter that uses Box<dyn Any> erasure for homogeneous lists would falsify element_type_tag_preserved_silver"
+
   heterogeneous_list_rejected:
     # PMAT-135: Bronze-tier refinement theorem locks in error-with-types
     # outcome (no silent boxing); proof excludes the `ok` arm by construction.
@@ -72,6 +93,29 @@ equations:
       - "translation returns `Err(TranslationError::Heterogeneous { found_types })` (never `Ok(Vec<...>)`)"
       - "the `found_types` set contains every distinct type observed (no drops)"
       - "no Rust code is emitted for the offending list — the error short-circuits emission"
+
+  heterogeneous_rejection_reason_preserved_silver:
+    # PMAT-182: Silver-tier promotion of heterogeneous_list_rejected.
+    # Bronze captured binary rejected/accepted; Silver adds typed
+    # RejectionReason enum { MixedNumericNonNumeric |
+    # MixedSignedUnsigned | UnknownDynamicType |
+    # MultipleTypesAtSameDepth } explaining WHY the rejection.
+    # Companion theorem heterogeneous_always_rejected_silver
+    # locks in totality (never silently accepted with implicit
+    # casts).
+    lean_theorem: "XpileContracts.CXlatePyListToVec.heterogeneous_rejection_reason_preserved_silver"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      lower_heterogeneous_list(l).reason == some l.reason
+    domain: |
+      Same as heterogeneous_list_rejected.
+    invariants:
+      - "rejection reason preserved as typed enum (not collapsed to single category)"
+      - "rejection is total — companion theorem heterogeneous_always_rejected_silver"
+    preconditions:
+      - "the list has multiple distinct types"
+    postconditions:
+      - "an emitter that collapses all rejection reasons into a single category would lose diagnostic information — caught at the enum level"
 
   alias_observation_inserts_clone:
     # PMAT-135: Bronze-tier refinement theorem locks in
@@ -97,6 +141,30 @@ equations:
       - "the emitted Rust inserts an explicit `.clone()` or wraps the list in `Rc<RefCell<...>>` (per the alias-graph annotation)"
       - "the runtime mutation observed via the second binding matches the CPython behavior bit-for-bit"
       - "no move-semantics are used where Python uses reference-semantics (which would change observable behavior)"
+
+  in_function_alias_emits_clone_silver:
+    # PMAT-182: Silver-tier promotion of
+    # alias_observation_inserts_clone. Bronze used a single Bool
+    # has_observable_alias; Silver promotes to AliasKind enum
+    # { InFunctionLocal | CrossFunction | CrossModule } that
+    # determines the dispatch (Clone vs Rc<RefCell>). Companion
+    # theorem no_alias_emits_none_silver distinguishes the
+    # no-alias case from Bronze's collapsed "no special wrapping"
+    # category.
+    lean_theorem: "XpileContracts.CXlatePyListToVec.in_function_alias_emits_clone_silver"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      lower_alias_observation(a) WHEN a.kind = InFunctionLocal == CloneEmitted
+    domain: |
+      Same as alias_observation_inserts_clone.
+    invariants:
+      - "alias scope is a typed enum (InFunctionLocal | CrossFunction | CrossModule)"
+      - "the dispatch picks Clone for in-function aliases (no shared mutable state) — load-bearing for emitting cheap Clone instead of Rc<RefCell> in the common case"
+      - "no_alias_emits_none_silver distinguishes none-alias from in-function alias (Bronze collapsed both into a single 'no wrapping' category)"
+    preconditions:
+      - "the alias-graph annotation has determined the alias scope"
+    postconditions:
+      - "an emitter that defaults to Rc<RefCell> for in-function aliases would emit unnecessary heap allocations — caught by the dispatch theorem"
 
   iteration_order_preserved:
     # PMAT-060: Lean refinement theorem locks in the modelling
@@ -147,6 +215,28 @@ equations:
       - "the emitted Rust evaluates `rust_vec.len()` which returns usize"
       - "if the consumer expects i64 (Python-int compatibility), the codegen inserts an explicit `as i64` or `i64::try_from(...).expect(...)` cast"
       - "no silent usize → i64 truncation; on platforms where usize > i64 the cast must be checked"
+
+  cast_target_preserved_silver:
+    # PMAT-182: Silver-tier promotion of length_method. Bronze
+    # used a single Bool i64_cast_inserted; Silver promotes to
+    # CastTarget enum { None | I64 | Usize } that captures WHICH
+    # platform target the cast was inserted for. Companion theorem
+    # silver_length_preserved keeps the usize-length claim in the
+    # typed model. COMPLETES Silver coverage on C-XLATE-PY-LIST-
+    # TO-VEC (6/6) — FIFTH contract at full Silver.
+    lean_theorem: "XpileContracts.CXlatePyListToVec.cast_target_preserved_silver"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      lower_length_method(vec_len, target).cast_target == target
+    domain: |
+      Same as length_method.
+    invariants:
+      - "cast target is a typed enum (None | I64 | Usize) — captures which target type was requested"
+      - "usize length preserved in the typed model (companion theorem)"
+    preconditions:
+      - "the consumer expects either usize, i64, or no cast (the three valid target states)"
+    postconditions:
+      - "an emitter that defaults to usize cast when i64 is requested would silently truncate on 32-bit platforms — caught at the typed-enum level"
 
   # PMAT-164 / XPILE-REFINE-XLATE-PY-LIST-001: Silver-tier equation
   # extending `iteration_order_preserved` to polymorphic element
