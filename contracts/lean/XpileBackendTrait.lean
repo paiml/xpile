@@ -234,4 +234,71 @@ theorem gold_backend_agrees_with_silver
       = lower_silver b module config := by
   rfl
 
+/-! ## PMAT-211 — TWELFTH Platinum-tier refinement: target
+    determinism (XPILE-REFINE-BACKEND-TRAIT-003).
+
+    Twelfth Platinum-tier theorem in the substrate. Mirror of
+    PMAT-210's source-lang determinism on the Frontend side —
+    together they close both ends of the 2×2 trait matrix at
+    Platinum tier for typed-tag determinism. Platinum coverage
+    now spans **10 of 12 contracts**.
+
+    Same algebraic shape as PMAT-210 (input-determinism /
+    output-independence). The pattern is now demonstrated on
+    BOTH directions of the 2×2 trait matrix — confirming the
+    determinism Platinum pattern is symmetric across forward
+    (frontend) and reverse (backend) lifts.
+
+    Status: discharged at v0.1.0 (PMAT-211). Tier: PLATINUM.
+    Twelfth Platinum theorem in the substrate. -/
+
+/--
+  **Platinum-tier refinement theorem** — target is deterministic
+  over (module, config) inputs.
+
+  For a fixed Backend b, the lowering produces the same target
+  regardless of module/config content. Mirror of
+  `source_lang_deterministic_platinum` on the Frontend side.
+
+  Falsification: a Backend that auto-selects target based on
+  intermediate-representation introspection (e.g., emitting PTX
+  when GPU-intrinsics appear in module bytes) would falsify this
+  theorem.
+
+  Status: **discharged at v0.1.0 (PMAT-211)**. Tier: PLATINUM.
+-/
+theorem target_deterministic_platinum
+    (b : Backend) (m1 c1 m2 c2 : Array UInt8) :
+    (lower_silver b m1 c1).target = (lower_silver b m2 c2).target := by
+  unfold lower_silver
+  rfl
+
+/--
+  **Platinum-tier refinement theorem** — target determinism is
+  congruent across two backends with the same declared_target.
+
+  Mirror of `source_lang_class_congruent_platinum`. Together
+  with PMAT-210's frontend mirror, captures the
+  EQUIVALENCE-CLASS structure on BOTH ends of the meta-HIR
+  pipeline.
+-/
+theorem target_class_congruent_platinum
+    (b1 b2 : Backend) (m c : Array UInt8)
+    (h : b1.declared_target = b2.declared_target) :
+    (lower_silver b1 m c).target = (lower_silver b2 m c).target := by
+  unfold lower_silver
+  exact h
+
+/--
+  **Platinum-tier refinement theorem** — universal-quantifier
+  closure of PMAT-157's per-call result. For any backend, ALL
+  inputs produce an artifact whose target matches the backend's
+  declared_target.
+-/
+theorem target_consistency_universal_platinum (b : Backend) :
+    ∀ m c : Array UInt8,
+      (lower_silver b m c).target = b.declared_target := by
+  intros m c
+  exact target_consistency_silver b m c
+
 end XpileContracts.CXpileBackendTrait

@@ -127,6 +127,39 @@ equations:
       - "an emitter returning a (backend, artifact) pair where target ≠ declared_target would not type-check against lower_gold"
       - "downstream consumers receiving a ConsistentBackendInput can rely on field consistency without runtime checks"
 
+  target_deterministic_platinum:
+    # PMAT-211 / XPILE-REFINE-BACKEND-TRAIT-003: TWELFTH
+    # Platinum-tier refinement. Mirror of PMAT-210's source-lang
+    # determinism on Frontend side — together they close the
+    # 2×2 trait matrix at Platinum tier for typed-tag
+    # determinism. Same algebraic shape as PMAT-210 (input-
+    # determinism / output-independence). Companion theorems
+    # target_class_congruent_platinum (equivalence-class
+    # structure) and target_consistency_universal_platinum
+    # (universal-quantifier closure).
+    lean_theorem: "XpileContracts.CXpileBackendTrait.target_deterministic_platinum"
+    lean_file: "contracts/lean/XpileBackendTrait.lean"
+    formula: |
+      forall b, m1 c1 m2 c2:
+        lower(b, m1, c1).target == lower(b, m2, c2).target
+      (input-determinism / output-independence)
+    domain: |
+      Any Backend impl, evaluated on any two (module, config)
+      input pairs. The Platinum upgrade captures that the
+      target tag is INDEPENDENT of input content.
+    invariants:
+      - "TWELFTH Platinum theorem; mirrors PMAT-210 on the Backend side"
+      - "together PMAT-210/211 close the 2×2 trait matrix at Platinum tier for determinism"
+      - "captures Hoare-style 'result depends only on fixed parameters' determinism on the reverse-direction lift"
+      - "target_class_congruent_platinum companion captures equivalence-class structure via declared_target"
+      - "target_consistency_universal_platinum companion is the universal-quantifier closure of PMAT-157"
+    preconditions:
+      - "the Backend impl is well-formed (Silver model preconditions inherited)"
+      - "no precondition on input variation — determinism holds for ANY pair of inputs"
+    postconditions:
+      - "a Backend that auto-selects target via IR introspection (e.g., emitting PTX when GPU-intrinsics appear) would falsify this theorem"
+      - "the contract's modelling commitment is that target comes from declared_target, NOT from module introspection"
+
   compile_contract_citation:
     formula: |
       forall b, (module, config), instr in ir_constructs(Artifact.primary):

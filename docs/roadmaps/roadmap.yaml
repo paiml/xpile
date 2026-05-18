@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-211
+  github_issue: null
+  item_type: task
+  title: 'PMAT-211: TWELFTH Platinum-tier refinement — target determinism on C-XPILE-BACKEND-TRAIT (XPILE-REFINE-BACKEND-TRAIT-003); closes 2×2 trait matrix at Platinum'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T21:30:00Z
+  updated: 2026-05-19T21:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Twelfth Platinum-tier theorem. Mirror of PMAT-210 on Backend side. Together PMAT-210/211 close the 2×2 trait matrix at Platinum tier for typed-tag determinism. Same algebraic shape as PMAT-210. target_deterministic_platinum (wired) + target_class_congruent_platinum + target_consistency_universal_platinum companions. C-XPILE-BACKEND-TRAIT Sem 3 → 4. Platinum coverage now 10 of 12 contracts.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-210
   github_issue: null
   item_type: task

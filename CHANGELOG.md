@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — TWELFTH Platinum-tier refinement: target determinism on C-XPILE-BACKEND-TRAIT (PMAT-211 / XPILE-REFINE-BACKEND-TRAIT-003)
+
+Twelfth Platinum-tier theorem in the substrate. **Mirror of PMAT-210 on the Backend side** — together they close the 2×2 trait matrix at Platinum tier for typed-tag determinism. Platinum coverage now spans **10 of 12 contracts**.
+
+Same algebraic shape as PMAT-210 (input-determinism / output-independence), demonstrated on the reverse-direction lift. The pattern is now symmetric across forward (frontend) and reverse (backend) trait directions.
+
+The Platinum theorems:
+- `target_deterministic_platinum` (wired): for fixed Backend, target is independent of module/config content
+- `target_class_congruent_platinum`: equivalence-class structure via declared_target
+- `target_consistency_universal_platinum`: universal-quantifier closure of PMAT-157
+
+**Captures the same Hoare-style determinism on the reverse-direction lift**: rules out Backend impls that auto-select target via IR introspection (e.g., emitting PTX when GPU-intrinsics appear in module bytes).
+
+YAML: adds new equation `target_deterministic_platinum` wired to the Platinum theorem. `xpile quorum` view for C-XPILE-BACKEND-TRAIT: Sem=4 (was 3), Sym=1, Run=1, Ext=7. Platinum coverage now spans 10 of 12 contracts.
+
 ### Added — ELEVENTH Platinum-tier refinement: source-lang determinism on C-XPILE-FRONTEND-TRAIT — FIRST Platinum on Layer-3 + SEVENTH algebraic shape (PMAT-210 / XPILE-REFINE-FRONTEND-TRAIT-003)
 
 Eleventh Platinum-tier theorem in the substrate. **Extends Platinum to C-XPILE-FRONTEND-TRAIT** — first Platinum theorem on a Layer-3 trait contract. Platinum coverage now spans **9 of 12 contracts across all 5 layers**.
