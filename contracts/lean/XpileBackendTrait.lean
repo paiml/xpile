@@ -173,4 +173,65 @@ theorem target_consistency_silver
     (lower_silver b module config).target = b.declared_target := by
   rfl
 
+/-! ## PMAT-195 — TENTH Gold-tier refinement: ConsistentBackendInput
+    (XPILE-REFINE-BACKEND-TRAIT-002).
+
+    Tenth Gold-tier theorem in the substrate. **Mirror of PMAT-194's
+    Frontend trait Gold** on the Backend side. Together they
+    close both ends of the 2×2 trait matrix at Gold tier for the
+    typed-target/source_lang consistency invariants.
+
+    Uses the same Gold pattern variant introduced in PMAT-194:
+    cross-field equality refinement (`a.field = b.field`).
+    Together PMAT-194/195 establish that this Gold pattern is a
+    portable approach for trait-level consistency invariants
+    across both directions of the meta-HIR pipeline.
+
+    Status: discharged at v0.1.0 (PMAT-195). Tier: GOLD. -/
+
+/-- Gold-tier refinement subtype: a (Backend, ArtifactSilver)
+    pair proven to have consistent target. -/
+def ConsistentBackendInput :=
+  { p : Backend × ArtifactSilver // p.snd.target = p.fst.declared_target }
+
+/-- Extract the backend half. -/
+def ConsistentBackendInput.backend (c : ConsistentBackendInput) : Backend :=
+  c.val.fst
+
+/-- Extract the artifact half. -/
+def ConsistentBackendInput.artifact (c : ConsistentBackendInput) :
+    ArtifactSilver :=
+  c.val.snd
+
+/-- Gold-tier `lower` constructing a ConsistentBackendInput by
+    construction. The Silver theorem IS the witness proof. -/
+def lower_gold (b : Backend) (module config : Array UInt8) :
+    ConsistentBackendInput :=
+  ⟨(b, lower_silver b module config),
+   target_consistency_silver b module config⟩
+
+/-- **Gold-tier refinement theorem** — Gold-tier lower_gold
+    produces a ConsistentBackendInput whose components agree on
+    target by construction. Mirror of PMAT-194 on the backend
+    side. -/
+theorem consistent_backend_input_gold
+    (b : Backend) (module config : Array UInt8) :
+    (lower_gold b module config).artifact.target
+      = (lower_gold b module config).backend.declared_target :=
+  (lower_gold b module config).property
+
+/-- **Gold-tier refinement theorem** — consistency witness
+    preserved through extraction. For any ConsistentBackendInput,
+    the artifact's target matches the backend's declared_target
+    BY TYPE. -/
+theorem consistent_input_witness_gold (c : ConsistentBackendInput) :
+    c.artifact.target = c.backend.declared_target := c.property
+
+/-- **Gold-tier refinement theorem** — bridges Gold to Silver. -/
+theorem gold_backend_agrees_with_silver
+    (b : Backend) (module config : Array UInt8) :
+    (lower_gold b module config).artifact
+      = lower_silver b module config := by
+  rfl
+
 end XpileContracts.CXpileBackendTrait

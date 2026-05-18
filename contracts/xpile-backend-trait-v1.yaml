@@ -96,6 +96,37 @@ equations:
     preconditions:
       - "the reference toolchain for config.target is available in the test environment"
 
+  consistent_backend_input_gold:
+    # PMAT-195 / XPILE-REFINE-BACKEND-TRAIT-002: TENTH Gold-tier
+    # refinement in the substrate. Mirror of PMAT-194's
+    # ConsistentFrontendOutput on the Backend side. Together
+    # they close both ends of the 2×2 trait matrix at Gold tier
+    # for typed-target/source_lang consistency. Uses the same
+    # cross-field equality pattern (a.field = b.field) introduced
+    # in PMAT-194. Companion theorems consistent_input_witness_gold
+    # and gold_backend_agrees_with_silver.
+    lean_theorem: "XpileContracts.CXpileBackendTrait.consistent_backend_input_gold"
+    lean_file: "contracts/lean/XpileBackendTrait.lean"
+    formula: |
+      lower_gold(b, m, c).artifact.target
+        == lower_gold(b, m, c).backend.declared_target
+      BY TYPE  (witness travels with the pair)
+    domain: |
+      Same as target_consistency — every Backend impl. The Gold
+      upgrade encodes the consistency invariant at the type
+      level via a pair-with-witness refinement subtype.
+    invariants:
+      - "ConsistentBackendInput pairs a Backend with its lowered ArtifactSilver under a TYPE-LEVEL proof that target = declared_target"
+      - "consistency witness travels with the pair through extraction — no per-call-site re-proof needed"
+      - "mirror of PMAT-194's frontend Gold — together they close both ends of the 2×2 trait matrix at Gold tier"
+      - "demonstrates cross-field equality Gold pattern is portable across both forward (frontend) and reverse (backend) trait directions"
+    preconditions:
+      - "the Backend impl is well-formed (Silver model preconditions inherited)"
+      - "the Gold subtype carries the proof obligation by construction"
+    postconditions:
+      - "an emitter returning a (backend, artifact) pair where target ≠ declared_target would not type-check against lower_gold"
+      - "downstream consumers receiving a ConsistentBackendInput can rely on field consistency without runtime checks"
+
   compile_contract_citation:
     formula: |
       forall b, (module, config), instr in ir_constructs(Artifact.primary):

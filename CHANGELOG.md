@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — TENTH Gold-tier refinement: `ConsistentBackendInput` subtype on C-XPILE-BACKEND-TRAIT — closes 2×2 trait matrix at Gold (PMAT-195 / XPILE-REFINE-BACKEND-TRAIT-002)
+
+Tenth Gold-tier theorem in the substrate. **Mirror of PMAT-194's Frontend trait Gold on the Backend side** — together they close both ends of the 2×2 trait matrix at Gold tier for typed-target/source_lang consistency invariants. Gold coverage now spans **9 of 12 contracts**.
+
+`ConsistentBackendInput := { p : Backend × ArtifactSilver // p.snd.target = p.fst.declared_target }` — pairs a backend with its lowered artifact under a type-level proof of consistency, mirroring the cross-field equality pattern from PMAT-194.
+
+The Gold model:
+- `ConsistentBackendInput := { p : Backend × ArtifactSilver // p.snd.target = p.fst.declared_target }`
+- `lower_gold`: constructs the pair with the Silver theorem `target_consistency_silver` as the witness
+- `consistent_backend_input_gold` (wired): components agree on target BY TYPE
+- `consistent_input_witness_gold`: extraction preserves consistency
+- `gold_backend_agrees_with_silver`: bridges Gold to PMAT-157's Silver model
+
+**Together PMAT-194 + PMAT-195 establish that cross-field equality is a portable Gold pattern**: it works on both forward (frontend) and reverse (backend) trait directions, on the meta-HIR ingress and egress sides, on Silver→Gold transitions of the 2×2 trait matrix. The pattern is demonstrably symmetric.
+
+YAML: adds new equation `consistent_backend_input_gold` wired to the Gold theorem. `xpile quorum` view for C-XPILE-BACKEND-TRAIT: Sem=3 (was 2), Sym=1, Run=1, Ext=5.
+
 ### Added — NINTH Gold-tier refinement: `ConsistentFrontendOutput` subtype on C-XPILE-FRONTEND-TRAIT (PMAT-194 / XPILE-REFINE-FRONTEND-TRAIT-002)
 
 Ninth Gold-tier theorem in the substrate. **Extends Gold to a Layer-3 trait contract** (C-XPILE-FRONTEND-TRAIT) — first Gold on the 2×2 trait matrix. Gold coverage now spans **8 of 12 contracts across all 5 layers** (Layer-1 PMAT-185/193, Layer-2 PMAT-188/189/191/192, Layer-3 PMAT-194, Layer-4 PMAT-186, Layer-5 PMAT-187).

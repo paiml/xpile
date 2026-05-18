@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-195
+  github_issue: null
+  item_type: task
+  title: 'PMAT-195: TENTH Gold-tier refinement — ConsistentBackendInput subtype on C-XPILE-BACKEND-TRAIT (XPILE-REFINE-BACKEND-TRAIT-002); closes 2×2 trait matrix at Gold'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T13:30:00Z
+  updated: 2026-05-19T13:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Tenth Gold-tier theorem. Mirror of PMAT-194 on backend side. ConsistentBackendInput := { p : Backend × ArtifactSilver // p.snd.target = p.fst.declared_target } pairs Backend with ArtifactSilver under type-level consistency proof. consistent_backend_input_gold (wired) + consistent_input_witness_gold + gold_backend_agrees_with_silver companions. Together PMAT-194+195 close 2x2 trait matrix at Gold tier. Establishes cross-field equality Gold pattern is portable across both forward (frontend) and reverse (backend) trait directions. C-XPILE-BACKEND-TRAIT Sem 2 → 3.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-194
   github_issue: null
   item_type: task
