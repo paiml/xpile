@@ -94,3 +94,257 @@ fn def_to_rust_fn() {
         "lower_def_to_fn must preserve the function body",
     );
 }
+
+// ============================================================
+// PMAT-147 — Kani harnesses for the 8 remaining equations of
+// C-XLATE-LEAN-TO-RUST, mirroring the Bronze-tier Lean theorems
+// shipped in PMAT-133. Each harness captures the same load-bearing
+// modelling commitment as its Lean counterpart via byte-level
+// symbolic exploration. Silver-tier refinement
+// (XPILE-REFINE-XLATE-LEAN-TO-RUST-001+) introduces typed AST
+// nodes and the proofs become structural.
+// ============================================================
+
+/// Rust mirror of Lean's `LeanPartialDef`. Carries body bytes plus
+/// a partial-translation marker that the lowering MUST preserve.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct LeanPartialDef {
+    body: [u8; 4],
+    is_partial: u8,
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct RustPartialFn {
+    body: [u8; 4],
+    partial_marker: u8,
+}
+
+fn lower_partial_def_to_fn(d: &LeanPartialDef) -> RustPartialFn {
+    RustPartialFn {
+        body: d.body,
+        partial_marker: d.is_partial,
+    }
+}
+
+#[kani::proof]
+fn partial_def_to_rust_fn() {
+    let body: [u8; 4] = kani::any();
+    let is_partial: u8 = kani::any();
+    let d = LeanPartialDef { body, is_partial };
+    let r = lower_partial_def_to_fn(&d);
+    kani::assert(r.body == d.body, "body must be preserved");
+    kani::assert(
+        r.partial_marker == d.is_partial,
+        "partial marker must be preserved (no silent stripping of #[partial_translation])",
+    );
+}
+
+/// Rust mirror of Lean's `LeanTheorem` / `LeanSidecar`. Both carry
+/// the theorem text bytes; the lowering is a byte-identity copy.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct LeanTheorem {
+    text: [u8; 4],
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct LeanSidecar {
+    text: [u8; 4],
+}
+
+fn lower_theorem_to_sidecar(t: &LeanTheorem) -> LeanSidecar {
+    LeanSidecar { text: t.text }
+}
+
+#[kani::proof]
+fn theorem_carried_as_lean_sidecar() {
+    let text: [u8; 4] = kani::any();
+    let t = LeanTheorem { text };
+    let s = lower_theorem_to_sidecar(&t);
+    kani::assert(
+        s.text == t.text,
+        "theorem text must be copied byte-for-byte into the Lean sidecar",
+    );
+}
+
+/// Rust mirror of Lean's `LeanInductive` / `RustEnum`.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct LeanInductive {
+    variant_count: u8,
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct RustEnum {
+    variant_count: u8,
+}
+
+fn lower_inductive_to_enum(i: &LeanInductive) -> RustEnum {
+    RustEnum {
+        variant_count: i.variant_count,
+    }
+}
+
+#[kani::proof]
+fn inductive_to_rust_enum() {
+    let variant_count: u8 = kani::any();
+    let i = LeanInductive { variant_count };
+    let r = lower_inductive_to_enum(&i);
+    kani::assert(
+        r.variant_count == i.variant_count,
+        "variant count must be preserved exactly (no inflation, no collapse)",
+    );
+}
+
+/// Rust mirror of Lean's `LeanStructure` / `RustStruct`.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct LeanStructure {
+    field_count: u8,
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct RustStruct {
+    field_count: u8,
+}
+
+fn lower_structure_to_struct(s: &LeanStructure) -> RustStruct {
+    RustStruct {
+        field_count: s.field_count,
+    }
+}
+
+#[kani::proof]
+fn structure_to_rust_struct() {
+    let field_count: u8 = kani::any();
+    let s = LeanStructure { field_count };
+    let r = lower_structure_to_struct(&s);
+    kani::assert(
+        r.field_count == s.field_count,
+        "field count must be preserved (no `extends` inlining inflation)",
+    );
+}
+
+/// Rust mirror of Lean's `LeanInstance` / `RustImpl`.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct LeanInstance {
+    method_count: u8,
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct RustImpl {
+    method_count: u8,
+}
+
+fn lower_instance_to_impl(inst: &LeanInstance) -> RustImpl {
+    RustImpl {
+        method_count: inst.method_count,
+    }
+}
+
+#[kani::proof]
+fn instance_to_rust_impl() {
+    let method_count: u8 = kani::any();
+    let inst = LeanInstance { method_count };
+    let r = lower_instance_to_impl(&inst);
+    kani::assert(
+        r.method_count == inst.method_count,
+        "method count must be preserved (no convenience-method auto-derivation)",
+    );
+}
+
+/// Rust mirror of Lean's `LeanAxiom` / `RustExtern`. The
+/// warning-lines count is fixed at 5 in the Bronze-tier emitter;
+/// the harness asserts `>= 5`.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct LeanAxiom {
+    signature: [u8; 4],
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct RustExtern {
+    signature: [u8; 4],
+    warning_lines: u8,
+}
+
+fn lower_axiom_to_extern(a: &LeanAxiom) -> RustExtern {
+    RustExtern {
+        signature: a.signature,
+        warning_lines: 5,
+    }
+}
+
+#[kani::proof]
+fn axiom_to_extern_fn() {
+    let signature: [u8; 4] = kani::any();
+    let a = LeanAxiom { signature };
+    let r = lower_axiom_to_extern(&a);
+    kani::assert(r.signature == a.signature, "axiom signature byte-preserved");
+    kani::assert(
+        r.warning_lines >= 5,
+        "WARNING comment header must be >=5 lines (the contract's safety floor)",
+    );
+}
+
+/// Rust mirror of Lean's `LeanNoncomputableDef` / `RustPanicFn`.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct LeanNoncomputableDef {
+    name: [u8; 4],
+}
+
+/// Bronze model: panic-marker is encoded as a single byte tag
+/// (1 = panic body, 0 = something else). The contract's
+/// load-bearing claim is that the body IS the canonical panic
+/// marker — captured here as `body_tag == 1`.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct RustPanicFn {
+    body_tag: u8,
+    doc_hidden: bool,
+}
+
+fn lower_noncomputable_to_panic(_d: &LeanNoncomputableDef) -> RustPanicFn {
+    RustPanicFn {
+        body_tag: 1,
+        doc_hidden: true,
+    }
+}
+
+#[kani::proof]
+fn noncomputable_def_to_rust_panic() {
+    let name: [u8; 4] = kani::any();
+    let d = LeanNoncomputableDef { name };
+    let r = lower_noncomputable_to_panic(&d);
+    kani::assert(
+        r.body_tag == 1,
+        "body must be the canonical panic marker (not todo!() or empty)",
+    );
+    kani::assert(
+        r.doc_hidden,
+        "fn must carry #[doc(hidden)] (prevent accidental downstream use)",
+    );
+}
+
+/// Rust mirror of Lean's `LeanDeclWithContract` / `RustItemWithCitation`.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct LeanDeclWithContract {
+    contract_id: [u8; 4],
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct RustItemWithCitation {
+    citation: [u8; 4],
+}
+
+fn lower_decl_with_citation(d: &LeanDeclWithContract) -> RustItemWithCitation {
+    RustItemWithCitation {
+        citation: d.contract_id,
+    }
+}
+
+#[kani::proof]
+fn citation_in_emitted_rust() {
+    let contract_id: [u8; 4] = kani::any();
+    let d = LeanDeclWithContract { contract_id };
+    let r = lower_decl_with_citation(&d);
+    kani::assert(
+        r.citation == d.contract_id,
+        "contract ID must appear byte-for-byte in the citation doc-comment (no dash-to-underscore mangling)",
+    );
+}

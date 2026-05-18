@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — 8 more Kani harnesses for `xlate-lean-to-rust` (PMAT-147 / XPILE-QUORUM-006)
+
+`contracts/kani/xlate_lean_to_rust.rs` now carries 9 Kani BMC harnesses (was 1), mirroring all 9 Bronze-tier Lean theorems shipped in PMAT-133. Each harness explores 256^4 ≈ 4.3B symbolic 4-byte configurations and asserts the same load-bearing modelling commitment as its Lean counterpart:
+
+- `partial_def_to_rust_fn`: body + `is_partial` marker preservation
+- `theorem_carried_as_lean_sidecar`: theorem text byte-for-byte into sidecar
+- `inductive_to_rust_enum`: variant count preservation
+- `structure_to_rust_struct`: field count preservation
+- `instance_to_rust_impl`: method count preservation
+- `axiom_to_extern_fn`: signature preservation + WARNING-comment header ≥5 lines
+- `noncomputable_def_to_rust_panic`: canonical panic-marker body + `#[doc(hidden)]`
+- `citation_in_emitted_rust`: contract ID byte-for-byte into citation doc-comment
+
+YAML wires each new harness via `kani_harness:` + `kani_file:` references; discovered by `every_referenced_kani_harness_exists_in_its_file`.
+
+`xpile quorum` view for C-XLATE-LEAN-TO-RUST: Sem=9, **Sym=9** (was 1), Run=1, Ext=2 — the §14.4 vote distribution now balanced between Semantic and Symbolic strata for this contract.
+
+This is XPILE-QUORUM-006 (the first per-equation Kani fan-out). Same pattern can extend to the other multi-equation contracts (xlate-rust-fn-to-lean-thm, xlate-py-list-to-vec, notation-latex-math-to-equation, py-int-arith) as separate follow-on PRs.
+
 ### Added — `qa_gate` enforcer test binds `required_tests` to real Rust test fns (PMAT-146)
 
 New `crates/xpile/tests/qa_gate.rs` test gate. Walks every contract

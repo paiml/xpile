@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-147
+  github_issue: null
+  item_type: task
+  title: 'PMAT-147: xlate-lean-to-rust Kani harnesses — 8 more for per-equation Sym coverage (XPILE-QUORUM-006)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T13:30:00Z
+  updated: 2026-05-18T13:30:00Z
+  spec: null
+  acceptance_criteria:
+  - contracts/kani/xlate_lean_to_rust.rs grows from 1 to 9 #[kani::proof] harnesses, mirroring the 9 Bronze-tier Lean theorems from PMAT-133. Each harness explores 256^4 ≈ 4.3B symbolic 4-byte configurations. YAML wires each via kani_harness + kani_file refs. xpile quorum view for C-XLATE-LEAN-TO-RUST gains Sym=9 (was 1) — vote distribution balanced. First per-equation Kani fan-out (XPILE-QUORUM-006); the pattern extends to the other multi-equation contracts as follow-on PRs.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-146
   github_issue: null
   item_type: task

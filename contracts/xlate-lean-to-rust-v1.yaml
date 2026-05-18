@@ -69,6 +69,9 @@ equations:
     # partial-marker preservation. See contracts/lean/XlateLeanToRust.lean.
     lean_theorem: "XpileContracts.CXlateLeanToRust.partial_def_to_rust_fn"
     lean_file: "contracts/lean/XlateLeanToRust.lean"
+    # PMAT-147: Kani harness mirrors the Lean theorem at byte level.
+    kani_harness: "partial_def_to_rust_fn"
+    kani_file: "contracts/kani/xlate_lean_to_rust.rs"
     formula: |
       xlate(partial def f (args) : R := body) ==
         #[partial_translation]
@@ -93,6 +96,9 @@ equations:
     # byte-identity copy of theorem text into the sidecar.
     lean_theorem: "XpileContracts.CXlateLeanToRust.theorem_carried_as_lean_sidecar"
     lean_file: "contracts/lean/XlateLeanToRust.lean"
+    # PMAT-147: Kani harness mirrors the Lean theorem at byte level.
+    kani_harness: "theorem_carried_as_lean_sidecar"
+    kani_file: "contracts/kani/xlate_lean_to_rust.rs"
     formula: |
       xlate(theorem t : P := proof) ==
         // Rust file: empty (no lowering)
@@ -118,6 +124,9 @@ equations:
     # variant-count preservation.
     lean_theorem: "XpileContracts.CXlateLeanToRust.inductive_to_rust_enum"
     lean_file: "contracts/lean/XlateLeanToRust.lean"
+    # PMAT-147: Kani harness mirrors the Lean theorem.
+    kani_harness: "inductive_to_rust_enum"
+    kani_file: "contracts/kani/xlate_lean_to_rust.rs"
     formula: |
       xlate(inductive T : Type | C1 (x : A) | C2 (x : B) (y : C)) ==
         enum T { C1(A_rust), C2(B_rust, C_rust) }
@@ -141,6 +150,9 @@ equations:
     # field-count preservation.
     lean_theorem: "XpileContracts.CXlateLeanToRust.structure_to_rust_struct"
     lean_file: "contracts/lean/XlateLeanToRust.lean"
+    # PMAT-147: Kani harness mirrors the Lean theorem.
+    kani_harness: "structure_to_rust_struct"
+    kani_file: "contracts/kani/xlate_lean_to_rust.rs"
     formula: |
       xlate(structure S where (a : A) (b : B)) ==
         struct S { a: A_rust, b: B_rust }
@@ -164,6 +176,9 @@ equations:
     # method-count preservation.
     lean_theorem: "XpileContracts.CXlateLeanToRust.instance_to_rust_impl"
     lean_file: "contracts/lean/XlateLeanToRust.lean"
+    # PMAT-147: Kani harness mirrors the Lean theorem.
+    kani_harness: "instance_to_rust_impl"
+    kani_file: "contracts/kani/xlate_lean_to_rust.rs"
     formula: |
       xlate(instance : C T where method := body) ==
         impl C for T { fn method() { body_rust } }
@@ -187,6 +202,9 @@ equations:
     # preservation AND the ≥5-line WARNING comment floor.
     lean_theorem: "XpileContracts.CXlateLeanToRust.axiom_to_extern_fn"
     lean_file: "contracts/lean/XlateLeanToRust.lean"
+    # PMAT-147: Kani harness mirrors the Lean theorem.
+    kani_harness: "axiom_to_extern_fn"
+    kani_file: "contracts/kani/xlate_lean_to_rust.rs"
     formula: |
       xlate(axiom name : T) ==
         // WARNING comment block
@@ -213,6 +231,9 @@ equations:
     # canonical panic-marker body AND the #[doc(hidden)] attribute.
     lean_theorem: "XpileContracts.CXlateLeanToRust.noncomputable_def_to_rust_panic"
     lean_file: "contracts/lean/XlateLeanToRust.lean"
+    # PMAT-147: Kani harness mirrors the Lean theorem.
+    kani_harness: "noncomputable_def_to_rust_panic"
+    kani_file: "contracts/kani/xlate_lean_to_rust.rs"
     formula: |
       xlate(noncomputable def f := body) ==
         fn f() -> R_rust { panic!("noncomputable Lean def has no runtime equivalent") }
@@ -237,6 +258,9 @@ equations:
     # doc-comment.
     lean_theorem: "XpileContracts.CXlateLeanToRust.citation_in_emitted_rust"
     lean_file: "contracts/lean/XlateLeanToRust.lean"
+    # PMAT-147: Kani harness mirrors the Lean theorem.
+    kani_harness: "citation_in_emitted_rust"
+    kani_file: "contracts/kani/xlate_lean_to_rust.rs"
     formula: |
       xlate(any Lean decl D with contract C) emits Rust with
         /// Contract: <C.id>
