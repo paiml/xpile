@@ -52,7 +52,10 @@ fn extract_required_tests(contents: &str) -> Vec<String> {
         }
         // We left the qa_gate block when we hit another top-level
         // key (no leading whitespace).
-        if !line.starts_with(char::is_whitespace) && in_qa_gate && !trimmed_start.starts_with("qa_gate:") {
+        if !line.starts_with(char::is_whitespace)
+            && in_qa_gate
+            && !trimmed_start.starts_with("qa_gate:")
+        {
             in_qa_gate = false;
             in_required_tests = false;
             continue;
@@ -77,10 +80,7 @@ fn extract_required_tests(contents: &str) -> Vec<String> {
                 let name = name.trim();
                 // Strip optional surrounding quotes (single or
                 // double — pv accepts both).
-                let name = name
-                    .trim_matches('"')
-                    .trim_matches('\'')
-                    .to_string();
+                let name = name.trim_matches('"').trim_matches('\'').to_string();
                 if !name.is_empty() {
                     out.push(name);
                 }
