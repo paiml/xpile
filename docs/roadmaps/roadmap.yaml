@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-212
+  github_issue: null
+  item_type: task
+  title: 'PMAT-212: THIRTEENTH Platinum-tier refinement — citation render homomorphism on C-XPILE-CONTRACT-BACKEND-TRAIT (XPILE-REFINE-CONTRACT-BACKEND-TRAIT-003); completes functoriality demonstration'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T22:00:00Z
+  updated: 2026-05-19T22:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Thirteenth Platinum-tier theorem. Extends Platinum coverage to 11 of 12 contracts. FIFTH demonstration of functoriality / monoid-homomorphism pattern. Completes the pattern across all four contract-lane types (code, notation, proof, Layer-3 trait). render_homomorphism_platinum (wired) + render_preserves_empty_platinum + contract_composition_associative_platinum companions. render is a STRICT MONOID HOMOMORPHISM. C-XPILE-CONTRACT-BACKEND-TRAIT Sem 3 → 4.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-211
   github_issue: null
   item_type: task

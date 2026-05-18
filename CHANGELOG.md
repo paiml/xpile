@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — THIRTEENTH Platinum-tier refinement: citation render homomorphism on C-XPILE-CONTRACT-BACKEND-TRAIT (PMAT-212 / XPILE-REFINE-CONTRACT-BACKEND-TRAIT-003)
+
+Thirteenth Platinum-tier theorem in the substrate. Extends Platinum to **11 of 12 contracts**.
+
+**Fifth demonstration of the functoriality / monoid-homomorphism pattern** (after PMAT-202/207/208/209). Establishes the pattern is COMPLETE across all four contract-lane types:
+- Code lane: PMAT-202 (Python lists) + PMAT-207 (Lean inductives)
+- Notation lane: PMAT-208 (LaTeX citations)
+- Proof lane: PMAT-209 (Rust precondition lists)
+- **Layer-3 trait: PMAT-212 (Contract render)** ← NEW
+
+`render(compose(c1, c2)).citations = (c1.depends_on ++ c2.depends_on) ++ (c1.references ++ c2.references)` — render is a STRICT MONOID HOMOMORPHISM over the `(Array ContractId, ++, #[])` composition.
+
+The Platinum theorems:
+- `render_homomorphism_platinum` (wired): monoid homomorphism for the render function
+- `render_preserves_empty_platinum`: identity preservation → strict monoid homomorphism
+- `contract_composition_associative_platinum`: associativity via `Array.append_assoc`
+
+The substrate has now demonstrated functoriality on FIVE distinct contract domains, confirming this Platinum pattern is universal across the contract taxonomy.
+
+YAML: adds new equation `render_homomorphism_platinum` wired to the Platinum theorem. `xpile quorum` view for C-XPILE-CONTRACT-BACKEND-TRAIT: Sem=4 (was 3), Sym=1, Run=1, Ext=6. Platinum coverage now spans 11 of 12 contracts.
+
 ### Added — TWELFTH Platinum-tier refinement: target determinism on C-XPILE-BACKEND-TRAIT (PMAT-211 / XPILE-REFINE-BACKEND-TRAIT-003)
 
 Twelfth Platinum-tier theorem in the substrate. **Mirror of PMAT-210 on the Backend side** — together they close the 2×2 trait matrix at Platinum tier for typed-tag determinism. Platinum coverage now spans **10 of 12 contracts**.
