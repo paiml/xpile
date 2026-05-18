@@ -49,6 +49,40 @@ equations:
     kani_harness: "addition_no_overflow"
     kani_file: "contracts/kani/py_int_arith.rs"
 
+  add_dispatch_commutative_platinum:
+    # PMAT-199 / XPILE-REFINE-PY-INT-ARITH-006: FIRST Platinum-tier
+    # refinement in the entire xpile substrate. Opens the next
+    # tier beyond Gold per ruchy 5.0 §14.10.5. Platinum captures
+    # COMPOSITIONAL ALGEBRAIC PROPERTIES (commutativity,
+    # associativity, distributivity, identity) — properties that
+    # Bronze/Silver/Gold couldn't express because they're about
+    # how multiple call sites COMPOSE, not single-call correctness.
+    # Real proof using Int.add_comm — not provable by rfl. Companion
+    # theorems mul_dispatch_commutative_platinum and
+    # and_dispatch_commutative_platinum extend the pattern across
+    # multiplication and bitwise-AND.
+    lean_theorem: "XpileContracts.CPyIntArith.add_dispatch_commutative_platinum"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      forall path, a, b: add_dispatch(path, a, b) == add_dispatch(path, b, a)
+    domain: |
+      Any path (FastPath | SlowPath) and any Int operands a, b.
+      The Platinum upgrade captures the algebraic property that
+      addition is commutative — which holds uniformly across the
+      dispatch decision.
+    invariants:
+      - "compositional algebraic property: dispatcher commutes with operand swap"
+      - "holds for FastPath (i64 wrapping arithmetic) via Int.add_comm and Int.bmod"
+      - "holds for SlowPath (BigInt arithmetic) via Int.add_comm directly"
+      - "not provable by rfl — requires the Int.add_comm structural lemma"
+      - "first compositional property in the substrate — beyond pointwise (Bronze), structural (Silver), subtype (Gold)"
+    preconditions:
+      - "no operand-shape preconditions — commutativity is a universal algebraic property of Int addition"
+      - "the dispatcher is well-formed (Silver model preconditions inherited via the dispatcher's definition)"
+    postconditions:
+      - "an emitter that uses a non-commutative representation (e.g., string concatenation before parsing) would falsify the commutativity claim — a real semantic bug class Bronze/Silver/Gold couldn't catch"
+      - "Platinum tier captures algebraic STRUCTURE that prior tiers couldn't model"
+
   pyint_fast_add_returns_fast_gold:
     # PMAT-185 / XPILE-REFINE-PY-INT-ARITH-005: FIRST Gold-tier
     # refinement in the entire substrate. Promotes Silver's

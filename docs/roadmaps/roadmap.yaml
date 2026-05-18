@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-199
+  github_issue: null
+  item_type: task
+  title: 'PMAT-199: FIRST Platinum-tier refinement — dispatcher commutativity on C-PY-INT-ARITH (XPILE-REFINE-PY-INT-ARITH-006); opens Platinum tier'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T15:30:00Z
+  updated: 2026-05-19T15:30:00Z
+  spec: null
+  acceptance_criteria:
+  - First Platinum-tier theorem in the entire substrate. Opens the next tier beyond Gold per ruchy 5.0 §14.10.5. Platinum captures compositional algebraic properties (commutativity, associativity, distributivity, identity) — properties that Bronze/Silver/Gold couldn't express because they're about how multiple call sites COMPOSE. add_dispatch_commutative_platinum (wired) using Int.add_comm. Companion theorems mul_dispatch_commutative_platinum (Int.mul_comm) and and_dispatch_commutative_platinum (Nat.land_comm). Real proofs — not provable by rfl. C-PY-INT-ARITH Sem 19 → 20.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-198
   github_issue: null
   item_type: task

@@ -7,6 +7,33 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Platinum-tier refinement: dispatcher commutativity on C-PY-INT-ARITH (PMAT-199 / XPILE-REFINE-PY-INT-ARITH-006)
+
+🏆 **First Platinum-tier theorem in the entire xpile substrate.** Opens the next tier beyond Gold per ruchy 5.0 §14.10.5.
+
+The tier progression so far:
+- **Bronze** (PMAT-070+): pointwise equality (`x_op = y_op`)
+- **Silver** (PMAT-156+): typed structural model with real proofs
+- **Gold** (PMAT-185+): refinement subtypes encoding preconditions at the type level
+- **Platinum (PMAT-199, NEW)**: compositional algebraic properties
+
+Platinum captures **how multiple call sites COMPOSE**, not single-call correctness. Bronze/Silver/Gold all reason about ONE call site at a time; Platinum reasons about the ALGEBRAIC STRUCTURE of the operation.
+
+The Platinum model:
+- `add_dispatch_commutative_platinum` (wired): `add_dispatch_silver p a b = add_dispatch_silver p b a` for any path and operands. Real proof using `Int.add_comm` (NOT provable by `rfl` — Int addition is not definitionally commutative).
+- `mul_dispatch_commutative_platinum`: multiplication dispatcher commutativity via `Int.mul_comm`
+- `and_dispatch_commutative_platinum`: bitwise-AND dispatcher commutativity via `Nat.land_comm`
+
+**What Platinum captures that Bronze/Silver/Gold missed**:
+- Bronze couldn't see commutativity (it only proved single-call equality)
+- Silver couldn't see it (only per-call dispatch correctness)
+- Gold couldn't see it (only encoded the precondition at value level)
+- **Platinum captures the ALGEBRAIC STRUCTURE of the operation across multiple call composition**
+
+Falsification target: an emitter that uses a non-commutative representation (e.g., concatenating operands as strings before parsing) would falsify this theorem — a real semantic bug class that Bronze/Silver/Gold couldn't catch.
+
+YAML: adds new equation `add_dispatch_commutative_platinum` wired to the Platinum theorem. `xpile quorum` view for C-PY-INT-ARITH: Sem=20 (was 19), Sym=9, Run=4, Ext=19.
+
 ### Docs — Gold-universal milestone (PMAT-191..197) reflected across README/spec/audit/status (PMAT-198)
 
 Doc sweep recording the **Gold-universal milestone** landed at PMAT-197. Every one of the 12 contracts in the xpile substrate now has at least one Gold-tier refinement-subtype theorem. The Silver→Gold transition pattern has been empirically demonstrated as universal across the contract taxonomy.
