@@ -7,6 +7,37 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SECOND Diamond on C-XPILE-FRONTEND-TRAIT (Diamond depth-2 on Layer 3) — source-lang constant-projection axioms; completes UNIVERSAL Diamond depth-2 milestone (PMAT-232 / XPILE-REFINE-FRONTEND-TRAIT-005)
+
+**Fifth depth-2 Diamond in the substrate — completes Diamond depth-2 UNIVERSAL across ALL FIVE LAYERS.** Following PMAT-228 (Layer 1), PMAT-229 (Layer 2), PMAT-230 (Layer 4), PMAT-231 (Layer 5), PMAT-232 extends Diamond breadth to Layer 3 C-XPILE-FRONTEND-TRAIT. The substrate now has depth-2 Diamonds spanning every layer of the contract taxonomy.
+
+XpileFrontendTrait already had the equivalence-class Diamond at PMAT-224 on lang_equiv. PMAT-232 adds the **SOURCE-LANG CONSTANT-PROJECTION Diamond** — a fundamentally distinct algebraic category covering the FUNCTORIAL projection from `(Frontend, inputs)` onto `declared_lang`:
+
+- **PMAT-224** axiomatizes the lang_equiv relation as an EQUIVALENCE RELATION on Frontend (relational)
+- **PMAT-232** axiomatizes source_lang as a CONSTANT-PROJECTION from Frontend onto declared_lang (functorial / kernel structure)
+
+Combines four properties:
+(a) Constant in path: `source_lang(p, s) = source_lang(p', s)`
+(b) Constant in source: `source_lang(p, s) = source_lang(p, s')`
+(c) Projection: `source_lang = f.declared_lang`
+(d) Jointly constant: `source_lang(p, s) = source_lang(p', s')`
+
+`source_lang_constant_projection_diamond` (wired): 4-conjunction proving the constant-projection axiomatization. Falsification: an emitter that introspects source content and re-tags `source_lang` based on heuristic detection (e.g., shebang lines, hashbang detection, BOM analysis) would falsify this Diamond.
+
+YAML: adds new equation `source_lang_constant_projection_diamond` wired to the Diamond theorem.
+
+**Diamond depth-2 census after this PR (UNIVERSAL across all 5 layers)**:
+
+| Layer | Contract | Diamond 1 | Diamond 2 (depth-2) |
+|---|---|---|---|
+| 1 | C-PY-INT-ARITH | semiring (PMAT-214) | Euclidean-domain (PMAT-228) |
+| 2 | C-XLATE-PY-LIST-TO-VEC | free list-monoid (PMAT-221) | NonEmpty section-retraction (PMAT-229) |
+| 3 | C-XPILE-FRONTEND-TRAIT | equivalence-relation (PMAT-224) | constant-projection (PMAT-232) |
+| 4 | C-FFI-CPYTHON-EXT | abelian-group (PMAT-216) | GIL-invariant preservation (PMAT-230) |
+| 5 | C-COMPILE-RUST-TO-PTX-MMA | bounded-monoid (PMAT-218) | join-semilattice (PMAT-231) |
+
+The substrate now demonstrates Diamond DEPTH-2 across all 5 layers (one representative contract per layer), in addition to Diamond UNIVERSAL coverage (12/12 contracts at depth-1).
+
 ### Added — SECOND Diamond on C-COMPILE-RUST-TO-PTX-MMA (Diamond depth-2 on Layer 5) — join-semilattice via max (PMAT-231 / XPILE-REFINE-COMPILE-PTX-006)
 
 **Fourth depth-2 Diamond in the substrate, first on Layer 5.** Following PMAT-228 (Layer 1), PMAT-229 (Layer 2), PMAT-230 (Layer 4), PMAT-231 extends Diamond breadth to Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The substrate now has depth-2 Diamonds across **FOUR distinct layers**: 1, 2, 4, 5.
