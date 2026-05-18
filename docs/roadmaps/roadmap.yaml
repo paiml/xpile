@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-240
+  github_issue: null
+  item_type: task
+  title: 'PMAT-240: Doc sweep — UNIVERSAL Diamond depth-2 across ALL 12 CONTRACTS milestone (PMAT-228..239) reflected across README, status, audit, kaizen-fleet'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T12:00:00Z
+  updated: 2026-05-20T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Comprehensive doc sweep declaring substrate now has UNIVERSAL Diamond depth-2 across ALL 12 contracts. Refresh aggregate 247 → 253 Lean theorems (+6 Diamond from PMAT-234..239), 290 → 296 stratum-vote artifacts. README, CURRENT.md, INDEX.md, substrate-completion, audit-design §3, kaizen-fleet "Tier classification" all consistent. Marks end of v0.1.0 Diamond program — every contract has TWO distinct Diamond categories.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-239
   github_issue: null
   item_type: task

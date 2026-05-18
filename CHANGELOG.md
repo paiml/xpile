@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Doc sweep: UNIVERSAL Diamond depth-2 across ALL 12 CONTRACTS milestone reflected across README, status, audit, kaizen-fleet (PMAT-240)
+
+Doc sweep across `README.md`, `docs/status/CURRENT.md`, `docs/status/INDEX.md`, `docs/status/2026-05-18-substrate-completion.md`, `docs/specifications/audit-design.md`, and `docs/specifications/sub/kaizen-fleet.md` to reflect the UNIVERSAL Diamond depth-2 milestone landed via PMAT-228..239.
+
+Aggregate refresh: **247 Lean (53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 23 Diamond) / 290 stratum-vote artifacts → 253 Lean (53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 29 Diamond) / 296 stratum-vote artifacts**. +6 Diamond theorems from PMAT-234..239 since the previous sweep at PMAT-233.
+
+**Headline post-PMAT-240:** Every contract in the substrate (12/12) now has at least TWO distinct Diamond categories. The substrate demonstrates Diamond at BOTH:
+- **Depth-1 UNIVERSAL**: 12 distinct algebraic categories across 12 contracts
+- **Depth-2 UNIVERSAL**: every contract has at least 2 distinct Diamond categories, totaling 24+ algebraic-category proofs across the substrate
+
+Together these milestones close the v0.1.0 Diamond program. Each contract domain now has TWO orthogonal algebraic axiomatizations proven, demonstrating that the substrate's contract algebra is rich enough to admit multiple natural categorical perspectives per domain.
+
 ### Added — SECOND Diamond on C-XPILE-CONTRACT-BACKEND-TRAIT — contract product-monoid; **completes UNIVERSAL Diamond depth-2 across ALL 12 CONTRACTS** (PMAT-239 / XPILE-REFINE-CONTRACT-BACKEND-TRAIT-005)
 
 **Eleventh depth-2 Diamond in the substrate — UNIVERSAL Diamond depth-2 milestone.** Every contract in the substrate (12/12) now has at least TWO distinct Diamond categories. The Diamond depth-2 progression that began with PMAT-228 on PyIntArith now spans the entire substrate.
