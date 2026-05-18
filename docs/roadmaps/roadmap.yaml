@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-146
+  github_issue: null
+  item_type: task
+  title: 'PMAT-146: qa_gate enforcer test — required_tests must reference real #[test] fns'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T13:00:00Z
+  updated: 2026-05-18T13:00:00Z
+  spec: null
+  acceptance_criteria:
+  - New crates/xpile/tests/qa_gate.rs walks contract YAMLs, extracts qa_gate.required_tests, asserts every named test is a real #[test]-annotated fn in crates/*/tests or src. Companion to refinement_proofs.rs. PMAT-137's 6 declared tests all linked to real fns. Future qa_gate edits that name a non-existent test (typo / rename / stale claim) fire CI loudly. min_coverage enforcement is XPILE-CI-COVERAGE-001+ follow-on.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-145
   github_issue: null
   item_type: task
