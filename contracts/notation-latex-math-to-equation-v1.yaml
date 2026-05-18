@@ -100,6 +100,40 @@ equations:
       - "every output `formula` field is the ASCII-normalized form of the source's inner content (per the Bronze-tier model in PMAT-057 / PMAT-059)"
       - "all three display-math forms (`\\[ ... \\]`, `equation`, `align`) produce structurally-equal `EquationFormula` values on the same `formula` input (locked in by `display_math_eq_equation_env_eq_align_env` in contracts/lean/Notation.lean)"
 
+  display_math_equiv_under_normaliser_silver:
+    # PMAT-167: Silver-tier refinement upgrade. The Bronze theorem
+    # display_math_eq_equation_env_eq_align_env above proves all
+    # three display-math forms produce STRUCTURALLY-EQUAL
+    # EquationFormula values by *anonymising* the source kind. The
+    # Silver model retains the source kind as a discriminator
+    # (LatexDisplayKind: displayMath | equation | align) and proves
+    # equivalence under a normaliser instead. Strictly stronger:
+    # catches emitters that silently relabel one form as another.
+    # Fourth multi-eq contract Silver upgrade (after PMAT-164,
+    # PMAT-165, PMAT-166) and the first on the notation lane.
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.display_math_equiv_under_normaliser_silver"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      normalise(lower_display_math_silver f)
+        == normalise(lower_equation_env_silver f)
+        == normalise(lower_align_env_silver f)
+      ∧ kinds(displayMath, equation, align) are distinct
+    domain: |
+      Same as `display_math_to_equation` — any well-formed
+      display-math environment. The Silver upgrade narrows the
+      modelling from "structural anonymisation" to "kind-tagged
+      retention with normaliser-mediated equivalence".
+    invariants:
+      - "the source environment kind is recorded as a discriminator field in the emitted EquationFormulaSilver value (DisplayMath | Equation | Align)"
+      - "the three kinds are pairwise distinct in the typed model (a downstream tool seeing `display_kind: align` can trust the source was \\begin{align})"
+      - "normalised content of the three forms is equal on the same formula input — equivalence is recovered under the normaliser, not at the structural level"
+    preconditions:
+      - "same as `display_math_to_equation` — well-formed delimiters, not inside a LaTeX comment"
+      - "the Silver model assumes the formula content fits in a single normalised string at this tier (Gold tier introduces a typed math-expression AST)"
+    postconditions:
+      - "every emitted EquationFormulaSilver carries an audit-traceable kind field matching its source environment"
+      - "kind retention enables falsification of an emitter that quietly relabels `\\[ ... \\]` as `align` (or vice versa) — a transformation Bronze could not detect"
+
   theorem_env_to_obligation:
     # PMAT-134: Bronze-tier refinement theorem locks in the
     # precondition-flag → obligation-type polarity mapping.

@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-167
+  github_issue: null
+  item_type: task
+  title: 'PMAT-167: Silver-tier — kind-tagged normaliser equivalence for NOTATION-LATEX-MATH-TO-EQUATION (XPILE-REFINE-NOTATION-001), first notation-lane Silver'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T23:00:00Z
+  updated: 2026-05-18T23:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Silver-tier refinement for display_math_equiv_under_normaliser_silver on C-NOTATION-LATEX-MATH-TO-EQUATION. Bronze anonymised the LaTeX display-math triumvirate (\\[\\], equation, align) into structurally-equal EquationFormula values. Silver retains source kind as LatexDisplayKind discriminator and proves equivalence under a normaliser instead. Companion theorem kinds_are_distinct_silver proves the three kind tags are pairwise distinct. YAML adds new equation wired to Silver theorem. C-NOTATION-LATEX-MATH-TO-EQUATION Sem 7 → 8. Fourth multi-eq contract Silver upgrade and the first on the notation lane (after PMAT-164, PMAT-165, PMAT-166 all on translation lanes).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-166
   github_issue: null
   item_type: task
