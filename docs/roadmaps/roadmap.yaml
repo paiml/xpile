@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-190
+  github_issue: null
+  item_type: task
+  title: 'PMAT-190: Doc sweep — Gold-tier kickoff (PMAT-185..189) reflected across README/spec/audit/status'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T11:00:00Z
+  updated: 2026-05-19T11:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Aggregate refresh: 150 Lean (53 Bronze + 97 Silver) / 193 stratum-vote artifacts → 165 Lean (58 Bronze + 97 Silver + 10 Gold) / 208 stratum-vote artifacts. README/spec/audit/status all updated with Gold-tier kickoff framing. 5 wired Gold theorems enumerated by PMAT and contract layer (PMAT-185 Layer-1, PMAT-186 Layer-4, PMAT-187 Layer-5, PMAT-188+189 Layer-2). Subtype-pattern enumeration (bounded-numeric vs collection-cardinality). PMAT range extended PMAT-058..190.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-189
   github_issue: null
   item_type: task
