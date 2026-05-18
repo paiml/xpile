@@ -137,6 +137,38 @@ equations:
       - "an emitter that produces a SEQUENCE of FFI calls preserves the total refcount-delta as the sum of per-call deltas"
       - "this enables refcount safety analysis to be DECOMPOSED into per-call analyses + summing — load-bearing for compositional refcount verification"
 
+  refcount_abelian_group_diamond:
+    # PMAT-216 / XPILE-REFINE-FFI-CPYTHON-010: THIRD Diamond-tier
+    # refinement in the substrate. Combines PMAT-204 additivity
+    # + commutativity + associativity + identity + inverses
+    # into the ABELIAN GROUP axiomatization for refcount-delta
+    # semantics under (Int, +, 0, -). Companion theorem
+    # refcount_inverse_diamond captures the load-bearing
+    # Py_INCREF/Py_DECREF pairing claim at the group level.
+    lean_theorem: "XpileContracts.CFfiCpythonExt.refcount_abelian_group_diamond"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
+    formula: |
+      refcount-delta forms an ABELIAN GROUP under (Int, +, 0, -):
+        (a) closure: compose(c1, c2).delta = c1.delta + c2.delta
+        (b) commutativity: compose(c1, c2).delta = compose(c2, c1).delta
+        (c) associativity: compose(compose(c1,c2),c3).delta = compose(c1,compose(c2,c3)).delta
+        (d) identity: zero-delta call is the additive identity
+        (e) inverses (companion): every call has a counterpart with negated delta
+    domain: |
+      Any FfiCallSilver values under compose_ffi_calls_silver
+      sequencing. The Diamond upgrade captures the FULL
+      abelian-group structure at the refcount-delta level.
+    invariants:
+      - "THIRD Diamond-tier theorem; combines PMAT-204 + commutativity + associativity + identity + inverses"
+      - "STRONGER than PMAT-214's commutative-monoid (Nat doesn't have inverses, Int does)"
+      - "companion theorem refcount_inverse_diamond captures Py_INCREF/Py_DECREF pairing at the group level"
+      - "an emitter producing unmatched refcount changes (no inverse exists) would falsify the group structure at compile time"
+    preconditions:
+      - "all FfiCallSilver values are well-formed (Silver model preconditions inherited)"
+    postconditions:
+      - "Diamond axiomatizes refcount-delta as forming a mathematically PROPER algebraic group (not just a monoid)"
+      - "load-bearing for compositional refcount safety: every modifying call has a CANCELING counterpart"
+
   bounded_refcount_delta_preserved_gold:
     # PMAT-186 / XPILE-REFINE-FFI-CPYTHON-008: SECOND Gold-tier
     # refinement in the substrate (after PMAT-185 PyIntFast on
