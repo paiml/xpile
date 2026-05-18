@@ -237,6 +237,39 @@ equations:
       - "an emitter that constructs a PreconditionListSilver from a zero-entry list would not type-check against lower_non_empty_preconditions_gold"
       - "cross-contract pattern reuse confirms non-empty-list refinement is a portable Gold-tier idiom"
 
+  precondition_lift_homomorphism_platinum:
+    # PMAT-209 / XPILE-REFINE-XLATE-RUST-TO-LEAN-004: TENTH
+    # Platinum-tier refinement in the substrate. Extends
+    # Platinum to C-XLATE-RUST-FN-TO-LEAN-THM (eighth contract).
+    # FOURTH demonstration of functoriality / monoid-
+    # homomorphism pattern (after PMAT-202 list, PMAT-207
+    # inductive, PMAT-208 citation). Establishes pattern is
+    # LANE-AGNOSTIC — works on code lane AND proof lane.
+    # Companion theorems precondition_payloads_homomorphism_platinum
+    # and precondition_lift_preserves_empty_platinum.
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.precondition_lift_homomorphism_platinum"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    formula: |
+      lift(compose(pl1, pl2)).source_indices
+        == lift(pl1).source_indices ++ lift(pl2).source_indices
+      (functoriality / monoid homomorphism over (Array Nat, ++, #[]))
+    domain: |
+      Any two PreconditionListSilver values composed via per-
+      component array concatenation. The Platinum upgrade
+      captures the homomorphism property over the (Array Nat,
+      ++, #[]) and (Array (Array UInt8), ++, #[]) monoids.
+    invariants:
+      - "TENTH Platinum theorem; FOURTH demonstration of functoriality / monoid-homomorphism pattern"
+      - "establishes the functoriality pattern is LANE-AGNOSTIC: works on code (PMAT-202/207), notation (PMAT-208), and proof (PMAT-209) lanes"
+      - "payloads array also forms a homomorphism (companion theorem)"
+      - "empty list is preserved (companion theorem) → strict monoid homomorphism"
+    preconditions:
+      - "two well-formed PreconditionListSilver values"
+      - "no special preconditions — Array concatenation is universal"
+    postconditions:
+      - "an emitter that processes preconditions piecewise produces the same observable result as monolithic emission"
+      - "substrate has now demonstrated functoriality on FOUR distinct contract domains across all lanes — confirming the pattern is universal"
+
   citation_bridge_via_attribute:
     # PMAT-136: Bronze-tier refinement theorem locks in byte-for-byte
     # contract_id + equation_name preservation in @[xpile_contract,

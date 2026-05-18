@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-209
+  github_issue: null
+  item_type: task
+  title: 'PMAT-209: TENTH Platinum-tier refinement — precondition lift homomorphism on C-XLATE-RUST-FN-TO-LEAN-THM (XPILE-REFINE-XLATE-RUST-TO-LEAN-004); pattern now LANE-AGNOSTIC'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T20:30:00Z
+  updated: 2026-05-19T20:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Tenth Platinum-tier theorem. Extends Platinum to eighth contract (C-XLATE-RUST-FN-TO-LEAN-THM). FOURTH demonstration of functoriality / monoid-homomorphism pattern after PMAT-202/207/208. Establishes pattern is LANE-AGNOSTIC — works on code lane (202/207), notation lane (208), and now proof lane (209). precondition_lift_homomorphism_platinum (wired) + precondition_payloads_homomorphism_platinum + precondition_lift_preserves_empty_platinum companions. C-XLATE-RUST-FN-TO-LEAN-THM Sem 11 → 12. Platinum coverage now spans 8 of 12 contracts.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-208
   github_issue: null
   item_type: task
