@@ -162,6 +162,19 @@ equations:
       - "the gil_invariant_silver theorem assumes balanced GIL state at input (gil_at_enter = gil_at_exit) — an unbalanced input represents an already-broken caller and is out of domain"
 
   buffer_protocol_zero_copy:
+    # PMAT-173 / XPILE-REFINE-FFI-CPYTHON-006: Silver-tier
+    # refinement wires the previously-unwired
+    # buffer_protocol_zero_copy equation. FIFTH Silver theorem on
+    # C-FFI-CPYTHON-EXT (after PMAT-160/168/171/172). Models the
+    # NumPy/buffer-protocol zero-copy invariant as typed pointer-
+    # identity preservation: when mode = ZeroCopy, the lowered
+    # Rust view's data_ptr equals the ndarray's data_ptr.
+    # Captures the performance-safety claim that O(1)
+    # passthrough is provable at the type level — emitters that
+    # default to materialise-mode (allocating fresh Vec<u8>) are
+    # caught structurally.
+    lean_theorem: "XpileContracts.CFfiCpythonExt.pointer_identity_on_zero_copy_silver"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
     formula: |
       ndarray_passthrough(a) implies same_pointer(a.data, rust_view.as_ptr())
     domain: |
@@ -170,8 +183,11 @@ equations:
     invariants:
       - "performance contract: passing a 1GB ndarray must be O(1), not O(N)"
       - "if a copy is forced, that's a manifest annotation that must be explicit"
+      - "the typed Silver model BufferPassthroughMode { ZeroCopy | Materialised } makes the passthrough decision auditable — Bronze couldn't distinguish the two modes"
+      - "companion theorem length_preserved_in_view_silver locks in unconditional length preservation (both modes); an emitter that drops length falsifies this regardless of mode"
     preconditions:
       - "object implements __buffer__ protocol"
+      - "the pointer_identity_on_zero_copy_silver theorem assumes mode = ZeroCopy at input — the Materialised case is out of domain (pointer divergence is permitted but must be flagged in manifest per the contract invariant)"
 
   oracle_endtoend_equivalence:
     formula: |
