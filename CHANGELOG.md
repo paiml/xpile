@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SECOND Gold-tier refinement: `BoundedRefcountDelta` subtype on C-FFI-CPYTHON-EXT (PMAT-186 / XPILE-REFINE-FFI-CPYTHON-008)
+
+Second Gold-tier theorem in the substrate (after PMAT-185's PyIntFast on C-PY-INT-ARITH). Promotes Silver's `refcount_delta : Int` to a refinement subtype `BoundedRefcountDelta := { d : Int // -8 ≤ d ∧ d ≤ 8 }`. The CPython ABI's per-call refcount-delta bound is now encoded at the **type level**.
+
+The Gold model:
+- `refcount_delta_bound : Int := 8` — realistic upper bound for CPython C extensions (single function rarely touches more than a few refcounts)
+- `BoundedRefcountDelta := { d : Int // -8 ≤ d ∧ d ≤ 8 }` — refinement subtype carrying the bound proof
+- `FfiCallGold` / `FfiManifestEntryGold`: typed payloads using the bounded delta
+- `bounded_refcount_delta_preserved_gold` (wired): bounded delta preserved through manifest lowering
+- `bounded_refcount_witness_gold`: bound witness travels with the value at the type level
+- `gold_subtype_agrees_with_silver_refcount`: bridges Gold to PMAT-160's Silver model
+
+**Architectural payoff**: Kani BMC search space is **exponentially smaller** at Gold than Silver — bounded delta vs unbounded Int. A future Kani harness gets better scaling characteristics by construction, because the type constrains the symbolic search to ±8 instead of all Int values.
+
+**Demonstrates the Gold-tier pattern on a second domain** (FFI semantics) after PMAT-185 covered the arithmetic case. Together, PMAT-185 and PMAT-186 establish the archetype: a Silver theorem proves preservation through some lowering, then a Gold theorem promotes the value to a refinement subtype so the precondition/bound travels with the value through subsequent calls.
+
+YAML: adds new equation `bounded_refcount_delta_preserved_gold` wired to the Gold theorem. `xpile quorum` view for C-FFI-CPYTHON-EXT: Sem=8 (was 7), Sym=1, Run=1, Ext=18 (was 14).
+
 ### Added — FIRST Gold-tier refinement: `PyIntFast` subtype on C-PY-INT-ARITH `addition_no_overflow` (PMAT-185 / XPILE-REFINE-PY-INT-ARITH-005)
 
 **First Gold-tier theorem in the entire xpile substrate.** Opens the next tier of refinement after the Silver-completion milestone at PMAT-183.
