@@ -184,6 +184,38 @@ equations:
       - "an emitter satisfying transitivity (PMAT-203) but failing symmetry (e.g., directional refinement rather than true equivalence) would falsify this Diamond"
       - "Diamond axiomatizes modules-preservation as a proper algebraic equivalence on sessions — load-bearing for quotient-based reasoning about session state"
 
+  parse_preserves_equivalence_class_diamond:
+    # PMAT-250 / XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-005: SECOND
+    # Diamond wired equation on this contract — closes the
+    # depth-2 gap the PMAT-249 `xpile diamond` reporter revealed.
+    # The companion theorem was already defined in Lean at
+    # PMAT-217 but had not been wired as a separate YAML
+    # equation. This PR completes UNIVERSAL Diamond depth-2
+    # across ALL 12 contracts at the YAML-equation level.
+    # Captures the FUNCTORIAL preservation of equivalence
+    # classes under parse_to_equations — distinct algebraic
+    # category from PMAT-217's equivalence-relation Diamond.
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.parse_preserves_equivalence_class_diamond"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    formula: |
+      parse_to_equations is INVARIANT-PRESERVING under
+      modules_equiv:
+        s1 ≡_modules s2 ⇒ parse(s1).equations ≡ parse(s2).equations
+      (functorial preservation of equivalence classes)
+    domain: |
+      TranspileSession pairs related by modules_equiv. The
+      Diamond captures FUNCTORIAL preservation of the
+      equivalence relation through parse_to_equations.
+    invariants:
+      - "SECOND wired Diamond on C-XPILE-CONTRACT-FRONTEND-TRAIT — closes UNIVERSAL Diamond depth-2 gap"
+      - "distinct algebraic category from PMAT-217 equivalence-relation (RELATIONAL vs FUNCTORIAL preservation)"
+      - "captures the functor parse_to_equations preserving the modules_equiv equivalence relation"
+    preconditions:
+      - "two well-formed TranspileSession values related by modules_equiv"
+    postconditions:
+      - "an emitter that introduces session-instance-specific differences during parse would falsify this Diamond"
+      - "closes UNIVERSAL Diamond depth-2 to TRUE 12/12 contracts at the YAML-equation level"
+
   citation_preservation:
     formula: |
       forall cf, source: contract_ids_textually_in(source) subset EquationsBlock.citations
