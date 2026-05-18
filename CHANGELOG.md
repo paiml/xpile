@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SECOND Diamond on C-XPILE-BACKEND-TRAIT (Layer 3 depth-2) — target constant-projection; closes 2x2 trait matrix at depth-2 (PMAT-235 / XPILE-REFINE-BACKEND-TRAIT-005)
+
+**Seventh depth-2 Diamond in the substrate, second on Layer 3.** Mirror of PMAT-232 (`source_lang_constant_projection_diamond`) on the Backend side. Together with PMAT-232, this CLOSES the 2x2 trait matrix at depth-2 for the constant-projection pattern.
+
+The 2x2 depth-2 trait matrix is now COMPLETE:
+
+| Trait | Diamond 1 | Diamond 2 |
+|---|---|---|
+| Frontend | equivalence-relation (PMAT-224) | constant-projection (PMAT-232) |
+| Backend | equivalence-relation (PMAT-225) | constant-projection (PMAT-235, this PR) |
+
+C-XPILE-BACKEND-TRAIT already had the equivalence-class Diamond at PMAT-225. PMAT-235 adds the TARGET-CONSTANT-PROJECTION Diamond — fundamentally distinct algebraic category covering the FUNCTORIAL projection from `(Backend, inputs)` onto `declared_target`.
+
+Combines four properties:
+(a) Constant in module: `target(m, c) = target(m', c)`
+(b) Constant in config: `target(m, c) = target(m, c')`
+(c) Projection: `target = b.declared_target`
+(d) Jointly constant: `target(m, c) = target(m', c')`
+
+Falsification: an emitter that introspects module bytes and re-tags target based on heuristic detection (e.g., emitting PTX when CUDA intrinsics appear in the module IR) would falsify this Diamond.
+
+YAML: adds new equation `target_constant_projection_diamond` wired to the Diamond theorem.
+
 ### Added — SECOND Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION — citation product-monoid axioms (PMAT-234 / XPILE-REFINE-NOTATION-007)
 
 **Sixth depth-2 Diamond in the substrate.** Following the UNIVERSAL Diamond depth-2 milestone (PMAT-228..232 — one rep per layer), PMAT-234 begins extending depth-2 coverage to a SECOND contract within Layer 4. C-NOTATION-LATEX-MATH-TO-EQUATION joins C-FFI-CPYTHON-EXT as the second Layer-4 contract with two Diamonds.

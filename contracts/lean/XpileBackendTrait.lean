@@ -352,4 +352,60 @@ theorem backend_equivalence_class_diamond
   · intro h
     exact target_class_congruent_platinum b1 b2 m c h
 
+/-! ## PMAT-235 — SECOND Diamond on C-XPILE-BACKEND-TRAIT (Layer 3
+    depth-2): target-lang constant-projection axioms
+    (XPILE-REFINE-BACKEND-TRAIT-005).
+
+    **Seventh depth-2 Diamond in the substrate, second on Layer 3.**
+    Mirror of PMAT-232 (source_lang_constant_projection_diamond)
+    on the Backend side. Together with PMAT-232, this CLOSES THE
+    2x2 trait matrix at depth-2 for the constant-projection
+    pattern — both Frontend (source_lang) and Backend (target)
+    have constant-projection Diamonds in addition to their
+    respective equivalence-class Diamonds (PMAT-224/PMAT-225).
+
+    The 2x2 depth-2 matrix is now complete:
+    | Trait         | Diamond 1                   | Diamond 2                |
+    |---------------|----------------------------|--------------------------|
+    | Frontend      | equivalence-relation (224) | constant-projection (232)|
+    | Backend       | equivalence-relation (225) | constant-projection (this)|
+
+    Status: discharged at v0.1.0 (PMAT-235). Tier: DIAMOND.
+    SECOND Diamond category on C-XPILE-BACKEND-TRAIT. -/
+
+/--
+  **Diamond-tier refinement theorem** — the `target` field of
+  the emitted artifact is a CONSTANT-PROJECTION from the
+  backend's `declared_target`, independent of (module, config)
+  input.
+
+  Mirror of PMAT-232's `source_lang_constant_projection_diamond`
+  on the Frontend side. Combines four properties:
+  (a) Constant in module: target doesn't depend on module bytes
+  (b) Constant in config: target doesn't depend on config bytes
+  (c) Equals declared_target: target = b.declared_target
+  (d) Jointly constant: target stays fixed across all input pairs
+
+  An emitter that introspects module bytes and re-tags target
+  based on heuristic detection (e.g., emitting PTX when CUDA
+  intrinsics appear) would falsify this Diamond.
+
+  Status: **discharged at v0.1.0 (PMAT-235)**. Tier: DIAMOND.
+-/
+theorem target_constant_projection_diamond
+    (b : Backend) (m c m' c' : Array UInt8) :
+    -- (a) Constant in module
+    (lower_silver b m c).target = (lower_silver b m' c).target
+    -- (b) Constant in config
+    ∧ (lower_silver b m c).target = (lower_silver b m c').target
+    -- (c) Projection equals declared_target
+    ∧ (lower_silver b m c).target = b.declared_target
+    -- (d) Jointly constant across all input pairs
+    ∧ (lower_silver b m c).target = (lower_silver b m' c').target := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact target_deterministic_platinum b m c m' c
+  · exact target_deterministic_platinum b m c m c'
+  · exact target_consistency_silver b m c
+  · exact target_deterministic_platinum b m c m' c'
+
 end XpileContracts.CXpileBackendTrait

@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-235
+  github_issue: null
+  item_type: task
+  title: 'PMAT-235: SECOND Diamond on C-XPILE-BACKEND-TRAIT (Layer 3 depth-2) — target constant-projection; closes 2x2 trait matrix at depth-2 (XPILE-REFINE-BACKEND-TRAIT-005)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T09:30:00Z
+  updated: 2026-05-20T09:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Seventh depth-2 Diamond in substrate (second on Layer 3). Mirror of PMAT-232 on Backend side. TARGET-CONSTANT-PROJECTION Diamond, distinct algebraic category from PMAT-225 equivalence-relation. Combines PMAT-211 + PMAT-157 + joint determinism. target_constant_projection_diamond (wired). Closes 2x2 trait matrix at depth-2 for constant-projection pattern.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-234
   github_issue: null
   item_type: task
