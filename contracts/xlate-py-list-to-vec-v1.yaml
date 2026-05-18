@@ -148,6 +148,32 @@ equations:
       - "if the consumer expects i64 (Python-int compatibility), the codegen inserts an explicit `as i64` or `i64::try_from(...).expect(...)` cast"
       - "no silent usize → i64 truncation; on platforms where usize > i64 the cast must be checked"
 
+  # PMAT-164 / XPILE-REFINE-XLATE-PY-LIST-001: Silver-tier equation
+  # extending `iteration_order_preserved` to polymorphic element
+  # types. The Bronze theorem fixed elements at Array UInt8;
+  # Silver uses PyListSilver α / RustVecSilver α (polymorphic) and
+  # proves order preservation generically — a stronger structural
+  # claim that catches lowerings specialised to bytes (e.g., SIMD
+  # u8-lane shortcuts) that would silently break on other types.
+  iteration_order_preserved_polymorphic:
+    formula: |
+      forall (α : Type), forall (l : PyListSilver α):
+        (lower_py_list_to_rust_vec_silver l).elems == l.elems
+    domain: |
+      Same as iteration_order_preserved, but generic over the
+      element type α (any supported element type, not just bytes).
+    invariants:
+      - "order preservation holds for any element type, not just u8"
+      - "lowerings specialised for byte-elements (e.g., SIMD u8 lanes) cannot satisfy this if they break on other types"
+    preconditions:
+      - "the source list's element type has a canonical Rust counterpart"
+    postconditions:
+      - "the emitted Rust Vec preserves element ordering for any α"
+      - "the Silver claim subsumes the Bronze byte-level claim (specialising α := UInt8 recovers the original)"
+    # PMAT-164: Silver-tier refinement theorem.
+    lean_theorem: "XpileContracts.CXlatePyListToVec.iteration_order_preserved_silver"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+
 proof_obligations:
   - type: precondition
     property: meta-HIR carries a list type with inferred element type

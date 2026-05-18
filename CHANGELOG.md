@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier refinement: `iteration_order_preserved` polymorphic on XLATE-PY-LIST-TO-VEC (PMAT-164 / XPILE-REFINE-XLATE-PY-LIST-001)
+
+Eighth Silver refinement — and the **first to upgrade a multi-equation contract beyond its Bronze baseline**. The PMAT-156..162 Silver bracket covered single-equation contracts; PMAT-164 starts the next-tier work of bringing multi-equation contracts to Silver.
+
+The Bronze model uses `Array UInt8` (fixed at byte level). The Silver model generalizes to polymorphic `List α`:
+
+- `PyListSilver α`: polymorphic over element type α
+- `RustVecSilver α`: same element type as source
+- `lower_py_list_to_rust_vec_silver`: generic identity on the typed list
+- `iteration_order_preserved_silver`: proves `result.elems = l.elems` for any α
+- `length_preserved_silver`: companion claim for any α
+
+**Subsumes Bronze**: specialising `α := UInt8` recovers the original byte-level claim. **Stronger than Bronze**: catches lowerings specialised for byte-elements (e.g., SIMD u8-lane shortcuts) that would silently break on other types.
+
+YAML: adds a new equation `iteration_order_preserved_polymorphic` wired to the Silver theorem. `xpile quorum` view for C-XLATE-PY-LIST-TO-VEC: Sem=6 (was 5), Sym=5, Run=1, Ext=4.
+
 ### Docs — Silver-bracket completion reflected across spec/audit/status/README (PMAT-163)
 
 Doc sweep recording the Silver-tier refinement bracket completion (PMAT-156..162).
