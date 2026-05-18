@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — Diamond-tier kickoff (PMAT-214..219) reflected across docs (PMAT-220)
+
+Doc sweep recording the Diamond-tier kickoff. Six wired Diamond theorems demonstrating six distinct algebraic categories across six contracts.
+
+Aggregate refresh: 224 Lean (53 Bronze + 108 Silver + 24 Gold + 39 Platinum) / 267 stratum-vote artifacts → **236 Lean (53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 12 Diamond) / 279 stratum-vote artifacts**. +12 Diamond theorems from PMAT-214..219 (6 wired + 6 companions).
+
+**Six distinct Diamond algebraic categories**:
+1. PMAT-214: commutative-monoid / semiring (Layer-1 arithmetic)
+2. PMAT-215: pure-function (cross-domain)
+3. PMAT-216: abelian-group (Layer-4 FFI)
+4. PMAT-217: equivalence-relation (Layer-3 contract frontend)
+5. PMAT-218: bounded-monoid (Layer-5 PTX)
+6. PMAT-219: string-monoid (Layer-2 notation)
+
+Files updated: README, audit-design §3, sub/kaizen-fleet, CURRENT, INDEX, substrate-completion, CHANGELOG, roadmap.yaml.
+
 ### Added — SIXTH Diamond-tier refinement: string-monoid axioms on C-NOTATION-LATEX-MATH-TO-EQUATION (PMAT-219 / XPILE-REFINE-NOTATION-006)
 
 Sixth Diamond-tier theorem. Combines four monoid properties into the STRING MONOID axiomatization for citation composition:
