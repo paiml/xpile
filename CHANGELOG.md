@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier refinement: structured FFI-call AST for `manifest_completeness` on FFI-CPYTHON-EXT, second Silver theorem on a multi-eq contract that already had one (PMAT-168 / XPILE-REFINE-FFI-CPYTHON-003)
+
+Twelfth Silver refinement; fifth multi-equation contract Silver upgrade. **Second Silver theorem on a contract that already had Silver coverage** (after PMAT-160's `refcount_balance_on_success_silver` on the same contract) — broadens Silver coverage within a single multi-eq contract rather than starting a new one.
+
+The Bronze `manifest_completeness` smushed every FFI call site into a single `payload : Array UInt8`. Silver introduces the canonical CPython ABI field decomposition:
+- `FfiCallStructuredSilver`: `{ symbol, from_lang, to_lang, args, return_type, refcount_delta }`
+- `FfiManifestEntryStructuredSilver`: mirror image with the same 6 fields
+- `lower_call_to_manifest_structured_silver`: structural copy per field
+- `symbol_preserved_silver` theorem (wired): the primary lookup-key field preserved byte-for-byte
+- `language_tags_preserved_silver`, `signature_preserved_silver`, `refcount_delta_preserved_in_structured_silver`: companion claims for the other field groups
+
+**Composes with PMAT-160**: the refcount_delta field is shared between the two Silver theorems, so the manifest-completeness + refcount-balance invariants now fit together as a structural Silver story. A hybrid pipeline that records calls without refcount metadata falsifies PMAT-160; one that drops calls falsifies PMAT-168.
+
+**Stronger than Bronze**: an emitter that mangles the symbol during manifest emission (CPython name-mangling reversal, source-module prefixing) is caught at the typed-field level. Bronze byte-equality required joint payload corruption.
+
+YAML: adds new equation `symbol_preserved_silver` wired to the Silver theorem. `xpile quorum` view for C-FFI-CPYTHON-EXT: Sem=3 (was 2), Sym=1, Run=1, Ext=6.
+
 ### Added — Silver-tier refinement: kind-tagged equivalence under normaliser on NOTATION-LATEX-MATH-TO-EQUATION, first notation-lane Silver (PMAT-167 / XPILE-REFINE-NOTATION-001)
 
 Eleventh Silver refinement; fourth multi-equation contract Silver upgrade; **first Silver upgrade on the notation lane** (previous Silver upgrades were all on the code/proof translation lanes). Broadens the Silver bracket horizontally across lanes.

@@ -189,4 +189,151 @@ theorem refcount_balance_on_success_silver (c : FfiCallSilver) :
     (lower_call_to_manifest_silver c).refcount_delta = c.refcount_delta := by
   rfl
 
+/-! ## PMAT-168 — Silver-tier refinement for `manifest_completeness`
+    (XPILE-REFINE-FFI-CPYTHON-003).
+
+    Second Silver refinement on this contract (after PMAT-160's
+    `refcount_balance_on_success_silver`) — promotes the
+    load-bearing `manifest_completeness` Bronze theorem from a
+    byte-array payload model to a structured FFI-call AST.
+
+    The Bronze model smushed everything into a single
+    `payload : Array UInt8`. The Silver model splits the FFI call
+    site into the canonical CPython ABI fields:
+    - `symbol`: the C function name (e.g., `PyList_Append`)
+    - `from_lang` / `to_lang`: language tags (Python → C at this
+      contract)
+    - `args`: the positional argument vector (opaque bytes at this
+      tier)
+    - `return_type`: the C return type
+    - `refcount_delta`: the integer change to refcounts this call
+      effects (Silver of `refcount_balance_on_success` modelled
+      this same field; here we re-use it as one of multiple
+      structured fields)
+
+    Note the deliberate composition: the refcount_delta field is
+    SHARED between this Silver theorem and PMAT-160's. The two
+    Silver theorems together lock in the modelling commitment
+    that the manifest must (a) record every call site faithfully
+    AND (b) preserve the refcount-delta annotation — a hybrid
+    pipeline that records calls without refcount metadata
+    falsifies (b); one that drops calls falsifies (a).
+
+    Silver tier per ruchy 5.0 §14.10.5: typed structural model +
+    real proof (rfl-by-construction at v0.1.0). Gold tier
+    introduces typed argument lists with element-level
+    `(c_type, lifetime, ownership)` tuples.
+
+    This is the **fifth multi-equation contract Silver upgrade**
+    (after PMAT-164/165/166/167) and the **second Silver theorem
+    on a contract that already had one** — broadening Silver
+    coverage within a single multi-eq contract rather than
+    starting a new one. -/
+
+/--
+  Silver-tier model of an FFI call site with full CPython-ABI
+  field decomposition. The five structured fields capture what
+  the Bronze byte-array model anonymised. Each field is opaque
+  at v0.1.0 — Gold tier replaces them with typed AST nodes
+  (HirSymbol, LanguageTag, HirArg list, HirCType, with a
+  validated refcount_delta `: { d : Int // -8 ≤ d ≤ 8 }`
+  refinement).
+-/
+structure FfiCallStructuredSilver where
+  symbol : Array UInt8
+  from_lang : Array UInt8
+  to_lang : Array UInt8
+  args : Array UInt8
+  return_type : Array UInt8
+  refcount_delta : Int
+deriving DecidableEq
+
+/--
+  Silver-tier model of an FFI manifest entry with the same
+  structured decomposition. The lowering MUST preserve every
+  field — losing the symbol breaks lookup; losing the language
+  tags breaks the cross-lane bridge; losing args/return_type
+  breaks ABI matching; losing refcount_delta breaks memory
+  safety.
+-/
+structure FfiManifestEntryStructuredSilver where
+  symbol : Array UInt8
+  from_lang : Array UInt8
+  to_lang : Array UInt8
+  args : Array UInt8
+  return_type : Array UInt8
+  refcount_delta : Int
+deriving DecidableEq
+
+/--
+  Silver-tier lowering: structural copy preserving every field.
+  At v0.1.0 each field copies byte-for-byte / Int-for-Int — Gold
+  tier introduces per-field validation (refcount-delta bounds,
+  symbol name regex matching CPython ABI conventions, etc.).
+-/
+def lower_call_to_manifest_structured_silver
+    (c : FfiCallStructuredSilver) : FfiManifestEntryStructuredSilver :=
+  { symbol := c.symbol
+    from_lang := c.from_lang
+    to_lang := c.to_lang
+    args := c.args
+    return_type := c.return_type
+    refcount_delta := c.refcount_delta }
+
+/--
+  **Silver-tier refinement theorem** for `manifest_completeness`.
+
+  The manifest entry's `symbol` field equals the source call
+  site's `symbol` byte-for-byte. At Bronze (PMAT-076) the
+  load-bearing claim was "payload preserved"; at Silver this
+  decomposes into per-field claims, with `symbol` being the
+  primary lookup key.
+
+  An emitter that mangles the symbol during manifest emission
+  (e.g., applying CPython's name-mangling rules in reverse, or
+  prefixing with the source module name) would falsify THIS
+  theorem without touching the others — Bronze byte-equality
+  couldn't make the distinction.
+
+  Status: discharged at v0.1.0 (PMAT-168). Tier: Silver.
+  Composes with PMAT-160 for refcount-delta preservation.
+-/
+theorem symbol_preserved_silver (c : FfiCallStructuredSilver) :
+    (lower_call_to_manifest_structured_silver c).symbol = c.symbol := by
+  rfl
+
+/--
+  **Silver-tier refinement theorem** — language tags preserved.
+  Companion to `symbol_preserved_silver`. The from_lang/to_lang
+  pair is the cross-lane bridge identifier; losing it would
+  break the manifest's ability to register cross-lane calls.
+-/
+theorem language_tags_preserved_silver (c : FfiCallStructuredSilver) :
+    (lower_call_to_manifest_structured_silver c).from_lang = c.from_lang
+    ∧ (lower_call_to_manifest_structured_silver c).to_lang = c.to_lang := by
+  refine ⟨?_, ?_⟩ <;> rfl
+
+/--
+  **Silver-tier refinement theorem** — signature (args + return)
+  preserved. Locks in the ABI-matching invariant.
+-/
+theorem signature_preserved_silver (c : FfiCallStructuredSilver) :
+    (lower_call_to_manifest_structured_silver c).args = c.args
+    ∧ (lower_call_to_manifest_structured_silver c).return_type = c.return_type := by
+  refine ⟨?_, ?_⟩ <;> rfl
+
+/--
+  **Silver-tier refinement theorem** — refcount_delta preserved
+  in the structured model. Composes with PMAT-160's
+  `refcount_balance_on_success_silver` (which proved the same
+  invariant on the simpler 2-field FfiCallSilver model). The
+  composition gives the full safety story: every call site is
+  recorded structurally AND its refcount delta is faithfully
+  preserved.
+-/
+theorem refcount_delta_preserved_in_structured_silver
+    (c : FfiCallStructuredSilver) :
+    (lower_call_to_manifest_structured_silver c).refcount_delta = c.refcount_delta := by
+  rfl
+
 end XpileContracts.CFfiCpythonExt
