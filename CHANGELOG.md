@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Doc sweep: UNIVERSAL Diamond depth-2 milestone reflected across README, status, audit, kaizen-fleet (PMAT-233)
+
+Doc sweep across `README.md`, `docs/status/CURRENT.md`, `docs/status/INDEX.md`, `docs/status/2026-05-18-substrate-completion.md`, `docs/specifications/audit-design.md`, and `docs/specifications/sub/kaizen-fleet.md` to reflect the UNIVERSAL Diamond depth-2 milestone landed via PMAT-228..232.
+
+Aggregate refresh: **242 Lean (53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 18 Diamond) / 285 stratum-vote artifacts → 247 Lean (53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 23 Diamond) / 290 stratum-vote artifacts**. +5 Diamond theorems from PMAT-228..232.
+
+**Headline post-PMAT-233:** Every layer of the 5-layer contract taxonomy now has at least one contract with TWO distinct Diamond categories. The substrate now has BOTH:
+- **Diamond depth-1**: UNIVERSAL (12/12 contracts) at 12 distinct algebraic categories
+- **Diamond depth-2**: UNIVERSAL across layers (5/5 layers) at 5 distinct depth-2 categories — Euclidean-domain (L1), NonEmpty section-retraction (L2), constant-projection (L3), GIL-invariant preservation (L4), join-semilattice (L5)
+
+Together these milestones demonstrate that xpile's substrate captures algebraic structure at multiple orthogonal depths per contract domain — not just one canonical "main theorem" per contract, but TWO independent algebraic-category proofs at every layer.
+
 ### Added — SECOND Diamond on C-XPILE-FRONTEND-TRAIT (Diamond depth-2 on Layer 3) — source-lang constant-projection axioms; completes UNIVERSAL Diamond depth-2 milestone (PMAT-232 / XPILE-REFINE-FRONTEND-TRAIT-005)
 
 **Fifth depth-2 Diamond in the substrate — completes Diamond depth-2 UNIVERSAL across ALL FIVE LAYERS.** Following PMAT-228 (Layer 1), PMAT-229 (Layer 2), PMAT-230 (Layer 4), PMAT-231 (Layer 5), PMAT-232 extends Diamond breadth to Layer 3 C-XPILE-FRONTEND-TRAIT. The substrate now has depth-2 Diamonds spanning every layer of the contract taxonomy.

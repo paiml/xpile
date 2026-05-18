@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-233
+  github_issue: null
+  item_type: task
+  title: 'PMAT-233: Doc sweep — UNIVERSAL Diamond depth-2 milestone (PMAT-228..232) reflected across README, status, audit, kaizen-fleet'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T08:30:00Z
+  updated: 2026-05-20T08:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Doc sweep recording the UNIVERSAL Diamond depth-2 milestone. Refresh aggregate 242 → 247 Lean (+5 Diamond from PMAT-228..232), 285 → 290 stratum-vote artifacts. Enumerate the 5 distinct depth-2 Diamond categories (one per layer). README, CURRENT.md, INDEX.md, substrate-completion, audit-design §3, kaizen-fleet "Tier classification" all consistent.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-232
   github_issue: null
   item_type: task
