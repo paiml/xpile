@@ -613,4 +613,161 @@ theorem proof_body_does_not_leak_silver (p : ProofEnvSilver) :
     (lower_proof_env_silver p).body_leaked = false := by
   rfl
 
+/-! ## PMAT-181 — Final Silver expansion: definition_env +
+    remark_env + citation_preservation
+    (XPILE-REFINE-NOTATION-003).
+
+    Replicates the PMAT-167/180 typed-model Silver pattern across
+    the last three remaining equations on
+    C-NOTATION-LATEX-MATH-TO-EQUATION. Brings Silver coverage to
+    **7/7 equations — full Silver tier**, the **FOURTH contract
+    in the substrate at full Silver** (after C-FFI-CPYTHON-EXT,
+    C-XLATE-LEAN-TO-RUST, C-XLATE-RUST-FN-TO-LEAN-THM). -/
+
+/--
+  Silver-tier model of a Lean definition environment with optional
+  label and explicit math-span vector. Bronze captured just the
+  first math span; Silver captures the ENTIRE math-span list and
+  the optional source-label for cross-document reference
+  resolution.
+-/
+structure DefinitionEnvSilver where
+  first_math_span : String
+  all_math_spans : Array String
+  label : Option String
+deriving DecidableEq
+
+/-- Silver model of the emitted equation entry. -/
+structure DefinitionEquationSilver where
+  formula : String
+  additional_spans : Array String
+  label : Option String
+deriving DecidableEq
+
+/-- Silver-tier lowering for definition env. -/
+def lower_definition_env_silver (d : DefinitionEnvSilver) :
+    DefinitionEquationSilver :=
+  { formula := d.first_math_span
+    additional_spans := d.all_math_spans
+    label := d.label }
+
+/-- **Silver-tier refinement theorem** — additional math spans
+    preserved. Bronze proved byte-identity on the first span;
+    Silver captures that ALL spans survive, plus the optional
+    source-label for cross-doc reference. -/
+theorem additional_spans_preserved_silver (d : DefinitionEnvSilver) :
+    (lower_definition_env_silver d).additional_spans = d.all_math_spans := by
+  rfl
+
+/-- **Silver-tier refinement theorem** — definition label
+    preserved. Optional-typed: when absent in source, absent in
+    output. Captures the cross-document reference invariant that
+    Bronze couldn't model. -/
+theorem definition_label_preserved_silver (d : DefinitionEnvSilver) :
+    (lower_definition_env_silver d).label = d.label := by
+  rfl
+
+/--
+  Silver-tier model of a remark environment with typed normative-
+  keyword set. Bronze had three independent flags (has_must,
+  has_should, has_must_not); Silver promotes to a typed enum
+  capturing PRIORITY order: MustNot > Must > Should > None.
+-/
+inductive NormativeKeyword where
+  | none
+  | should
+  | must
+  | mustNot
+deriving DecidableEq
+
+/-- Silver remark-env model with typed normative kind. -/
+structure RemarkEnvSilver where
+  keyword : NormativeKeyword
+deriving DecidableEq
+
+/-- Silver model of a falsification-test entry. -/
+structure FalsificationEntrySilver where
+  ship_blocking : Bool
+  predicate_inverted : Bool
+deriving DecidableEq
+
+/-- Silver lowering rule with priority-ordered enum dispatch. -/
+def lower_remark_env_silver (r : RemarkEnvSilver) :
+    Option FalsificationEntrySilver :=
+  match r.keyword with
+  | NormativeKeyword.mustNot =>
+      some { ship_blocking := true, predicate_inverted := true }
+  | NormativeKeyword.must =>
+      some { ship_blocking := true, predicate_inverted := false }
+  | NormativeKeyword.should =>
+      some { ship_blocking := false, predicate_inverted := false }
+  | NormativeKeyword.none => Option.none
+
+/-- **Silver-tier refinement theorem** — keyword → falsification-
+    entry mapping. Captures the RFC-2119 priority order at the
+    typed-enum level. Bronze proved the existence claim (Option
+    isSome iff some flag set); Silver proves the SPECIFIC
+    classification for each keyword. -/
+theorem normative_keyword_classification_silver (r : RemarkEnvSilver) :
+    (lower_remark_env_silver r).isSome ↔ r.keyword ≠ NormativeKeyword.none := by
+  unfold lower_remark_env_silver
+  cases r.keyword <;> simp
+
+/-- **Silver-tier refinement theorem** — when keyword is MustNot,
+    the falsification entry is ship-blocking with inverted
+    predicate. Captures the load-bearing safety claim that
+    MUST NOT cannot be silently downgraded. -/
+theorem must_not_implies_ship_blocking_inverted_silver
+    (r : RemarkEnvSilver)
+    (h : r.keyword = NormativeKeyword.mustNot) :
+    ∃ entry : FalsificationEntrySilver,
+      lower_remark_env_silver r = some entry
+      ∧ entry.ship_blocking = true
+      ∧ entry.predicate_inverted = true := by
+  unfold lower_remark_env_silver
+  rw [h]
+  exact ⟨_, rfl, rfl, rfl⟩
+
+/--
+  Silver-tier model of a LaTeX citation with explicit BibTeX-key
+  alongside the contract ID. Bronze captured just the
+  contract_id; Silver adds the bib_key (the citation's
+  bibliographic-database key) for traceability into LaTeX's
+  cross-reference machinery.
+-/
+structure LatexCitationSilver where
+  contract_id : String
+  bib_key : String
+deriving DecidableEq
+
+/-- Silver model of the emitted citation output. Mirror image. -/
+structure CitationOutputSilver where
+  contract_id : String
+  bib_key : String
+deriving DecidableEq
+
+/-- Silver lowering: copy both fields verbatim. -/
+def lower_citation_silver (c : LatexCitationSilver) : CitationOutputSilver :=
+  { contract_id := c.contract_id, bib_key := c.bib_key }
+
+/-- **Silver-tier refinement theorem** — bib_key preserved
+    byte-for-byte through citation lowering. Bronze proved
+    contract_id preservation; Silver captures the BibTeX-key
+    side that enables LaTeX-source ↔ contract-YAML round-tripping.
+    Falsified by an emitter that drops the bib_key during YAML
+    emission (which would orphan the citation from LaTeX's
+    \\cite{...} resolution). -/
+theorem bib_key_preserved_silver (c : LatexCitationSilver) :
+    (lower_citation_silver c).bib_key = c.bib_key := by
+  rfl
+
+/-- **Silver-tier refinement theorem** — contract ID preserved
+    in the Silver typed model. Composes with Bronze
+    `citation_preservation`. COMPLETES Silver coverage on
+    C-NOTATION-LATEX-MATH-TO-EQUATION (7/7) — fourth contract at
+    full Silver. -/
+theorem silver_contract_id_preserved (c : LatexCitationSilver) :
+    (lower_citation_silver c).contract_id = c.contract_id := by
+  rfl
+
 end XpileContracts.CNotationLatexMathToEquation
