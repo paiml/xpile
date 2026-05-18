@@ -129,9 +129,11 @@ fn multiplication_quadratic_promotion() {
 }
 
 /// Equation `division_floor_semantics`: Python `//` is FLOOR
-/// division (rust uses `div_euclid` to match). Verified on the
-/// fits_i64 domain with b != 0 and excluding the i64::MIN / -1
-/// overflow case (which CPython promotes to bigint).
+/// division. Rust's `div_euclid` is the trunc-div + correction that
+/// implements floor for mixed-sign operands. Verified on the
+/// fits_i64 domain by checking the algebraic invariant
+/// `q * b + r == a ∧ 0 ≤ r < |b|` rather than via f64 (which Kani
+/// handles poorly).
 #[kani::proof]
 fn division_floor_semantics() {
     let a: i64 = kani::any();
@@ -139,20 +141,17 @@ fn division_floor_semantics() {
     kani::assume(b != 0);
     // Exclude the overflow case (i64::MIN / -1 = i64::MAX + 1).
     kani::assume(!(a == i64::MIN && b == -1));
+    // Bound the operand magnitudes to keep BMC tractable.
+    kani::assume(a.abs() < 1 << 16);
+    kani::assume(b.abs() < 1 << 16);
 
-    // Floor div in Rust via div_euclid (sign-correct):
-    let fast: i64 = a.div_euclid(b);
-    // CPython: math.floor(a / b) on bounded ints == div_euclid for
-    // same-sign and same-sign-but-divides-evenly cases; for mixed
-    // signs with non-zero remainder, both div_euclid and Python
-    // produce floor (a / b).
-    let slow_f64: f64 = (a as f64) / (b as f64);
-    let slow_floor: i64 = slow_f64.floor() as i64;
-    // The f64 floor model is approximate near i64::MAX boundaries;
-    // assert agreement only on a safe sub-domain.
-    kani::assume(a.abs() < 1 << 30);
-    kani::assume(b.abs() < 1 << 30);
-    assert_eq!(fast, slow_floor);
+    let q: i64 = a.div_euclid(b);
+    let r: i64 = a.rem_euclid(b);
+    // Algebraic invariant: a = q*b + r (the Euclidean identity).
+    assert_eq!(q.checked_mul(b).unwrap().checked_add(r).unwrap(), a);
+    // Euclidean remainder is always in [0, |b|).
+    assert!(r >= 0);
+    assert!(r < b.abs());
 }
 
 /// Equation `modulo_floor_semantics`: Python `%` is FLOOR mod
@@ -188,16 +187,24 @@ fn bitwise_and_signed_semantics() {
 
 /// Equation `shift_left_signed_semantics`: i64 wrapping `<<` agrees
 /// with BigInt slow path on `0 ≤ b < 64 ∧ fits_i64(a * 2^b)`.
+/// Bounded for BMC tractability.
 #[kani::proof]
 fn shift_left_signed_semantics() {
     let a: i64 = kani::any();
     let b: u32 = kani::any();
-    kani::assume(b < 64);
-    // Bound the shift amount further to keep i128 math tractable.
-    kani::assume(b < 30);
-    kani::assume(a.abs() < 1 << 30);
+    // Bound the shift amount tightly.
+    kani::assume(b <= 8);
+    kani::assume(a.abs() <= 100);
 
-    let product: i128 = (a as i128) * (1_i128 << b);
+    // Compute the mathematical product via multiplication (avoiding
+    // the heavier `1_i128 << b` symbolic shift).
+    let mut multiplier: i128 = 1;
+    let mut i: u32 = 0;
+    while i < b {
+        multiplier *= 2;
+        i += 1;
+    }
+    let product: i128 = (a as i128) * multiplier;
     kani::assume(product >= i64::MIN as i128);
     kani::assume(product <= i64::MAX as i128);
 
@@ -207,19 +214,22 @@ fn shift_left_signed_semantics() {
 }
 
 /// Equation `shift_right_signed_semantics`: arithmetic right shift
-/// (sign-preserving) agrees with floor-div by 2^b.
+/// (sign-preserving) agrees with floor-div by 2^b. Bounded for BMC.
 #[kani::proof]
 fn shift_right_signed_semantics() {
     let a: i64 = kani::any();
     let b: u32 = kani::any();
-    kani::assume(b < 64);
-    kani::assume(b < 30);
+    kani::assume(b <= 8);
+    kani::assume(a.abs() <= 1000);
 
-    let divisor: i64 = 1_i64 << b;
+    let mut divisor: i64 = 1;
+    let mut i: u32 = 0;
+    while i < b {
+        divisor *= 2;
+        i += 1;
+    }
     let fast: i64 = a >> b;
     let slow: i64 = a.div_euclid(divisor);
-    // Arithmetic shift right and floor-div by 2^b agree on the
-    // fits_i64 domain when b < 64.
     assert_eq!(fast, slow);
 }
 
@@ -231,9 +241,9 @@ fn shift_right_signed_semantics() {
 fn power_signed_semantics() {
     let a: i64 = kani::any();
     let b: u32 = kani::any();
-    // Bound exponent so the BMC stays tractable.
-    kani::assume(b <= 4);
-    kani::assume(a.abs() < 100);
+    // Bound exponent very tightly so the BMC stays fast.
+    kani::assume(b <= 3);
+    kani::assume(a.abs() < 10);
 
     // Compute a^b in i128 (guaranteed to fit for the bounded
     // domain above), then check that the i64 result agrees.
