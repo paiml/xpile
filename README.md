@@ -56,7 +56,7 @@ def factorial (n : Int) : Int :=
 
 - 27 workspace crates · all compile clean (`cargo check --workspace`)
 - 12 contracts · `pv lint` PASS with **0 errors and 0 warnings** (full-clean substrate since PMAT-138)
-- **100% QUORUM + 100% Silver + 100% Gold + 100% Platinum + 100% Diamond — UNIVERSAL 5-TIER + UNIVERSAL DEPTH-2 (12/12 contracts)** — every contract has paired Lean refinement theorem + Kani BMC harness ([`xpile quorum`](crates/xpile/src/quorum.rs)); **253 Lean theorems (53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 29 Diamond) + 43 Kani harnesses = 296 stratum-vote artifacts** post-PMAT-156..239. 42/42 equations at Silver; **12/12 contracts at Gold** (5 subtype patterns); **12/12 contracts at Platinum** (7 algebraic shapes); **12/12 contracts at Diamond depth-1** (PMAT-214..226) — **12 distinct algebraic categories**; **12/12 contracts at Diamond depth-2** (PMAT-228..239) — every contract has at least 2 distinct Diamond categories
+- **100% QUORUM + UNIVERSAL 5-TIER + UNIVERSAL Diamond depth-2 + UNIVERSAL Diamond depth-3 across all 5 layers** — every contract has paired Lean refinement theorem + Kani BMC harness ([`xpile quorum`](crates/xpile/src/quorum.rs)); **258 Lean theorems (53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 34 Diamond) + 43 Kani harnesses = 301 stratum-vote artifacts** post-PMAT-156..245. 42/42 equations at Silver; **12/12 contracts at Gold** (5 subtype patterns); **12/12 contracts at Platinum** (7 algebraic shapes); **12/12 contracts at Diamond depth-1** (12 algebraic categories); **12/12 contracts at Diamond depth-2** (PMAT-228..239); **5/5 layers at Diamond depth-3** (PMAT-241..245) — shift-monoid (L1), length-homomorphism (L2), function-axiom (L3), zero-copy-functor (L4), meet-semilattice (L5)
 - **204 workspace tests** · 11+ Python fixtures runtime-verified via `rustc -O` + `assert_eq!` (canonical list in `CHANGELOG.md` §"Python subset"); plus 54 bashrs-frontend tests covering POSIX shell idioms
 - **`pmat tdg .` score 95.7 / 100 (Grade A-)** — meets the originally-planned XPILE-CI-PMAT-TDG-001 ≥ A- threshold without explicit CI enforcement
 - Python subset shipped: see [`CHANGELOG.md`](CHANGELOG.md) §"Python subset (live, runtime-verified)" — typed `def`, multi-statement bodies, all binary + unary ops, ternary, if/else, elif chains, function calls including self-recursion (canonical source — this README intentionally does not duplicate the list to avoid the staleness it kept accumulating)
@@ -76,9 +76,9 @@ $ xpile quorum
   totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)
 ```
 
-**253 Lean refinement theorems** ([`contracts/lean/*.lean`](contracts/lean/), 53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 29 Diamond) +
+**258 Lean refinement theorems** ([`contracts/lean/*.lean`](contracts/lean/), 53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 34 Diamond) +
 **43 Kani BMC harnesses** ([`contracts/kani/*.rs`](contracts/kani/)) —
-**296 stratum-vote artifacts** across all 5 layers of the contract taxonomy. **42/42 equations at Silver** (PMAT-183) + **12/12 contracts at Gold** (PMAT-185..197) + **12/12 contracts at Platinum** (PMAT-199..212) + **12/12 contracts at Diamond depth-1** (PMAT-214..226) with **12 distinct algebraic categories** + **12/12 contracts at Diamond depth-2** (PMAT-228..239) — every contract has at least 2 distinct Diamond categories, totaling 24+ algebraic-category proofs across the substrate.
+**301 stratum-vote artifacts** across all 5 layers of the contract taxonomy. **42/42 equations at Silver** (PMAT-183) + **12/12 contracts at Gold** (PMAT-185..197) + **12/12 contracts at Platinum** (PMAT-199..212) + **12/12 contracts at Diamond depth-1** (PMAT-214..226) + **12/12 contracts at Diamond depth-2** (PMAT-228..239) + **5/5 layers at Diamond depth-3** (PMAT-241..245) — Diamond now demonstrated at three depths universally across the substrate (every contract depth-2, every layer depth-3).
 Every equation in every contract has both its own Bronze-tier Lean theorem
 (`rfl` by construction) AND its own Kani symbolic harness exploring 256^4 ≈
 4.3B configurations per harness. Silver/Gold/Platinum refinement is

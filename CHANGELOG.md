@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Doc sweep: UNIVERSAL Diamond depth-3 across all 5 layers milestone (PMAT-241..245) reflected across README, status, audit, kaizen-fleet (PMAT-246)
+
+Doc sweep recording the UNIVERSAL Diamond depth-3 across-layers milestone landed via PMAT-241..245. Every layer of the 5-layer contract taxonomy now has at least one contract with THREE distinct Diamond categories.
+
+Aggregate refresh: **253 Lean (53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 29 Diamond) / 296 stratum-vote artifacts → 258 Lean (53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 34 Diamond) / 301 stratum-vote artifacts**. +5 Diamond theorems from PMAT-241..245.
+
+**Headline post-PMAT-246:** Three orthogonal Diamond depth claims now hold universally:
+- **Depth-1 UNIVERSAL**: 12/12 contracts at Diamond tier (12 distinct algebraic categories)
+- **Depth-2 UNIVERSAL**: 12/12 contracts with at least 2 distinct Diamond categories
+- **Depth-3 UNIVERSAL across layers**: 5/5 layers have at least one contract with 3 distinct Diamond categories
+
+The five depth-3 algebraic categories (one per layer):
+- **Layer 1 (PyIntArith)**: shift-monoid (PMAT-241) — `(Int × Nat, shl, 0)` monoid action via powers of 2
+- **Layer 2 (XlatePyListToVec)**: length monoid homomorphism (PMAT-244) — cardinality functor into `(Nat, +, 0)`
+- **Layer 3 (XpileFrontendTrait)**: parse-and-lower function axioms (PMAT-245) — totality + uniqueness + congruence
+- **Layer 4 (FfiCpython)**: zero-copy pointer-identity functor (PMAT-243) — buffer ownership semantics
+- **Layer 5 (CompileRustToPtxMma)**: meet-semilattice via min (PMAT-242) — lattice dual to PMAT-231's join
+
+Together with PMAT-228..239's depth-2 (every contract) and PMAT-214..226's depth-1 (every contract), the substrate now demonstrates Diamond at three orthogonal depths — every contract at depth-2, every layer at depth-3.
+
 ### Added — THIRD Diamond on C-XPILE-FRONTEND-TRAIT (Layer 3 DEPTH-3) — parse-and-lower function axioms; **completes UNIVERSAL Diamond depth-3 across ALL 5 LAYERS** (PMAT-245 / XPILE-REFINE-FRONTEND-TRAIT-006)
 
 **Fifth DEPTH-3 Diamond in the substrate — completes UNIVERSAL Diamond depth-3 across ALL 5 LAYERS.** Following PMAT-241/242/243/244 (depth-3 on L1/L5/L4/L2), PMAT-245 extends Diamond depth-3 to Layer 3 — completing the universality-across-layers milestone at depth-3.
