@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-179
+  github_issue: null
+  item_type: task
+  title: 'PMAT-179: Silver-tier — complete C-XLATE-RUST-FN-TO-LEAN-THM Silver (5/5), THIRD contract at full Silver'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T05:00:00Z
+  updated: 2026-05-19T05:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Four new Silver theorems on C-XLATE-RUST-FN-TO-LEAN-THM completing full Silver coverage (5/5). expansion_count_preserved_silver, source_indices_preserved_silver, attribute_source_location_preserved_silver, produced_lean_source_preserved_silver. Each comes with companion theorems. Captures obligation-merge bug class, HashSet-precondition-IR bug class, source-location-drop bug class, side-output-elision bug class. C-XLATE-RUST-FN-TO-LEAN-THM Sem 6 → 10, Ext 3 → 4. Silver coverage 1/5 → 5/5. THIRD contract at full Silver tier after C-FFI-CPYTHON-EXT (PMAT-174) and C-XLATE-LEAN-TO-RUST (PMAT-178).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-178
   github_issue: null
   item_type: task

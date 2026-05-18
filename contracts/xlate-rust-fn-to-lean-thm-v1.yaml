@@ -130,6 +130,30 @@ equations:
       - "each emitted theorem carries `@[xpile_contract \"<C.id>\", xpile_equation \"<eq_name>\"]` parseable by Lean's elaborator (see citation_bridge_via_attribute)"
       - "the theorem's stated goal corresponds 1:1 with the obligation's `formal:` field — no weakening, no strengthening"
 
+  expansion_count_preserved_silver:
+    # PMAT-179 / XPILE-REFINE-XLATE-RUST-TO-LEAN-002: Silver-tier
+    # promotion of rust_postcondition_to_lean_theorem. Adds
+    # ContractObligationSilver { applies_to_all, source_index,
+    # expansion_count } typed model. Proves expansion_count is
+    # preserved as a separable field. Captures the bug class of
+    # an emitter that merges obligations during 1:N expansion.
+    # Companion theorem applies_to_all_preserved_silver locks
+    # in the flag distinction.
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.expansion_count_preserved_silver"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    formula: |
+      lift_obligation(obl).lifted_count == obl.expansion_count
+    domain: |
+      Same as rust_postcondition_to_lean_theorem — a postcondition
+      proof obligation citing an equation by name.
+    invariants:
+      - "expansion_count survives lifting as a separate typed field — no silent zeroing, no off-by-one"
+      - "applies_to_all flag preserved (companion theorem) — captures semantic distinction between single-eq and applies_to: all"
+    preconditions:
+      - "the obligation's applies_to field names a real equation or is `all`"
+    postconditions:
+      - "an emitter that merges N obligations into a single theorem (losing provenance) would falsify expansion_count_preserved_silver"
+
   rust_precondition_to_lean_hypothesis:
     # PMAT-136: Bronze-tier refinement theorem locks in count +
     # source-order preservation of preconditions.
@@ -156,6 +180,30 @@ equations:
       - "the precondition appears BEFORE the postcondition in the implication chain (`P → Q`, not `Q` with `P` assumed in tactic body)"
       - "multiple preconditions chain as left-associated implications or conjunctions, preserving source order"
       - "no precondition is silently dropped — the count of lifted hypotheses matches the count of `preconditions:` entries"
+
+  source_indices_preserved_silver:
+    # PMAT-179: Silver-tier promotion of
+    # rust_precondition_to_lean_hypothesis. Bronze proved
+    # count + list-identity; Silver adds the source_indices
+    # vector as a separate structural field. Captures the
+    # source-order invariant at the type level — Bronze
+    # couldn't catch an emitter using an unordered Set
+    # intermediate representation. Companion theorem
+    # hypothesis_payloads_preserved_silver.
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.source_indices_preserved_silver"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    formula: |
+      lift_preconditions(pl).source_indices == pl.source_indices
+    domain: |
+      Same as rust_precondition_to_lean_hypothesis.
+    invariants:
+      - "source_indices Array Nat preserved as separate structural field"
+      - "payloads Array preserved (companion theorem)"
+      - "captures source-order invariant Bronze couldn't see at the typed level"
+    preconditions:
+      - "the equation has at least one precondition entry"
+    postconditions:
+      - "an emitter using HashSet (or any unordered IR) for preconditions would falsify source_indices_preserved_silver — caught at the typed-vector level"
 
   citation_bridge_via_attribute:
     # PMAT-136: Bronze-tier refinement theorem locks in byte-for-byte
@@ -193,6 +241,27 @@ equations:
       - "no two distinct contracts produce theorems whose (xpile_contract, xpile_equation) attribute tuple collides (citation key is globally unique)"
       - "if Contract.metadata.id violates `^C-[A-Z0-9-]+$/`, lifting fails with a structured error before any Lean is written"
 
+  attribute_source_location_preserved_silver:
+    # PMAT-179: Silver-tier promotion of citation_bridge_via_attribute.
+    # Bronze had contract_id + equation_name; Silver adds
+    # source_location as a separate structural field for audit
+    # traceability. Captures the "<file>:<line>" requirement at
+    # the type level — Bronze couldn't model where in Lean source
+    # the cited declaration appeared.
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.attribute_source_location_preserved_silver"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    formula: |
+      emit_attribute(cid, eq_name, src_loc).source_location == src_loc
+    domain: |
+      Same as citation_bridge_via_attribute.
+    invariants:
+      - "source_location preserved as separate structural field in the attribute payload"
+      - "audit traceability: a downstream tool seeing @[xpile_contract] can recover the source location via Lean.Meta API"
+    preconditions:
+      - "the source location string follows `<file>:<line>` format"
+    postconditions:
+      - "an emitter that drops source_location to save attribute-payload size would falsify this — caught at the structural field level"
+
   frame_translation_is_textual:
     # PMAT-136: Bronze-tier refinement theorem locks in input-hash
     # bit-identity before/after lift() — cache-determinism guarantee.
@@ -216,6 +285,32 @@ equations:
       - "blake3-hash(contract) before == blake3-hash(contract) after lift() — bit-identical"
       - "the same (module, contract) input pair produces byte-identical Lean output across calls (deterministic, no nondet-iteration over HashMap)"
       - "if lift() fails (e.g., malformed contract ID), neither input is mutated and no partial Lean file is left behind"
+
+  produced_lean_source_preserved_silver:
+    # PMAT-179: Silver-tier promotion of frame_translation_is_textual.
+    # Bronze captured input-hash bit-identity; Silver adds a
+    # produced_lean_source boolean tracking whether the lift call
+    # actually emitted any Lean source. Captures the observable-
+    # determinism claim that Bronze couldn't see (Bronze only
+    # proved inputs unchanged; Silver also proves output-status
+    # flag is preserved). Companion theorem
+    # silver_module_hash_preserved.
+    # COMPLETES Silver coverage on C-XLATE-RUST-FN-TO-LEAN-THM
+    # (5/5) — THIRD contract at full Silver.
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.produced_lean_source_preserved_silver"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    formula: |
+      lift_frame_preserving(inputs).produced_lean_source == inputs.produced_lean_source
+    domain: |
+      Same as frame_translation_is_textual — any input to lift().
+    invariants:
+      - "produced_lean_source flag preserved through lift — captures observable-determinism Bronze couldn't see"
+      - "module_hash preserved (companion theorem silver_module_hash_preserved)"
+    preconditions:
+      - "the lift entry point receives &Module and &Contract (read-only borrows)"
+    postconditions:
+      - "the produced-source flag is observably-deterministic: same inputs produce same flag value across calls"
+      - "an emitter that silently elides the side-output marker (e.g., to skip Lean-file write on no-op calls) would falsify this"
 
 proof_obligations:
   - type: postcondition
