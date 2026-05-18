@@ -2037,3 +2037,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-124
+  github_issue: null
+  item_type: task
+  title: 'PMAT-124: Runtime witnesses for remaining 8 contracts — substrate reaches §14.4 ceiling (12/12 at full 4-stratum)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-19T04:00:00Z
+  updated: 2026-05-19T04:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add 8 fixture files under crates/xpile/tests/fixtures/ — one per remaining 3-stratum contract — each carrying its contract ID in a header comment. Lifts each from 3-stratum (Sem+Sym+Ext) to full 4-stratum (Sem+Sym+Run+Ext). Substrate reaches the §14.4 N-of-M ceiling — every contract at full 4-stratum. Files - notation_demo.tex (3 display-math forms), xlate_py_list_demo.py, contract_frontend_trait_demo.tex, contract_backend_trait_demo.yaml, xlate_lean_to_rust_demo.lean, xlate_rust_fn_to_lean_thm_demo.rs, compile_rust_to_ptx_demo.rs (#[gpu_kernel(mma)] GEMM kernel), ffi_cpython_ext_demo.py (NumPy hybrid). The fixtures are future-test anchors; dedicated round-trip tests per contract are XPILE-*-RUNTIME-001 follow-ons.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

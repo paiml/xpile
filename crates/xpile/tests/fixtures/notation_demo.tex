@@ -1,0 +1,48 @@
+% PMAT-124 — Runtime witness for the notation contract.
+%
+% This fixture exists to provide a Runtime-stratum vote for:
+%   C-NOTATION-LATEX-MATH-TO-EQUATION
+%
+% It's a minimal LaTeX document exercising the three display-math
+% forms whose equivalence is the load-bearing claim of the contract:
+% \[ ... \], \begin{equation} ... \end{equation}, and
+% \begin{align} ... \end{align}. The Lean refinement theorem from
+% PMAT-057 (`display_math_eq_equation_env_eq_align_env`) and its
+% Kani-harness Rust mirror from PMAT-059 prove these three forms
+% lower to the same `EquationsBlock` entry on the same formula
+% input; this fixture is the concrete observed-evidence
+% counterpart.
+%
+% latex-contract-frontend's `parse_to_equations` body is
+% scaffold-stage at v0.1.0 (XPILE-LATEX-PARSER-001 future work);
+% the fixture is in place ahead of that wiring so the contract
+% can move from 3-stratum QUORUM (Sem+Sym+Ext) to full 4-stratum
+% coverage immediately, matching the four-stratum tier other
+% contracts in the substrate already occupy.
+%
+% A dedicated round-trip test that parses this fixture three ways
+% (via the \[, equation, and align forms) and asserts they
+% produce equal `EquationsBlock` entries is
+% XPILE-NOTATION-RUNTIME-001 future work, deferred behind the
+% real latex-contract-frontend parser.
+
+\documentclass{article}
+\begin{document}
+
+% Form 1: \[ ... \] display-math
+The Pythagorean identity:
+\[ a^2 + b^2 = c^2 \]
+
+% Form 2: equation environment
+The same identity in an equation environment:
+\begin{equation}
+  a^2 + b^2 = c^2
+\end{equation}
+
+% Form 3: align environment (single equation)
+And once more in an align environment:
+\begin{align}
+  a^2 + b^2 = c^2
+\end{align}
+
+\end{document}

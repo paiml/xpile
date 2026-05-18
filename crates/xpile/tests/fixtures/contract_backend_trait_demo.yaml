@@ -1,0 +1,41 @@
+# PMAT-124 — Runtime witness for the ContractBackend trait.
+#
+# Provides a Runtime-stratum vote for:
+#   C-XPILE-CONTRACT-BACKEND-TRAIT
+#
+# Small contract-YAML source designed to be rendered by
+# xpile-lean-contract-backend or xpile-latex-contract-backend
+# (the two ContractBackend impls in tree at v0.1.0) when their
+# render bodies land. The fixture exercises the determinism
+# invariant the contract pins down: rendering the same contract
+# twice must produce identical RenderedDoc output.
+#
+# Both contract-backend render bodies are scaffold-stage at
+# v0.1.0; the fixture is in place ahead of that wiring so the
+# contract can move from 3-stratum QUORUM to full 4-stratum.
+# A dedicated round-trip test that renders this contract twice
+# and asserts byte-identical output is
+# XPILE-CONTRACT-BACKEND-TRAIT-RUNTIME-001 future work.
+
+metadata:
+  id: C-DEMO-FIXTURE
+  version: "1.0.0"
+  created: "2026-05-18"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Inline fixture demonstrating a minimal contract-YAML shape
+    for ContractBackend determinism testing.
+  references:
+    - docs/specifications/sub/contract-backend-trait.md
+  depends_on: []
+
+equations:
+  identity:
+    formula: |
+      input == input
+    domain: "any input value"
+    invariants:
+      - "reflexivity holds for all inputs"
+    preconditions: []
