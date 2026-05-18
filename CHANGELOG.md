@@ -7,6 +7,15 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — Silver-bracket completion reflected across spec/audit/status/README (PMAT-163)
+
+Doc sweep recording the Silver-tier refinement bracket completion (PMAT-156..162).
+
+- **README.md** "by the numbers" QUORUM line: "50 Lean theorems + 43 Kani harnesses = 93 stratum-vote artifacts" → **"57 Lean theorems (50 Bronze + 7 Silver) + 43 Kani harnesses = 100 stratum-vote artifacts"**. Removed "Bronze tier" caveat since 7 contracts are now at Silver.
+- **substrate-completion.md** §Numbers + INDEX.md row 19: same numeric refresh; row title gains "+ Silver bracket"; PMAT range extended to PMAT-058..163.
+- **audit-design.md** §3: 50 → 57 Lean theorems, 93 → 100 stratum-vote artifacts; PMAT-156..162 Silver bracket attribution.
+- **sub/kaizen-fleet.md**: same refresh.
+
 ### Added — Silver-tier refinement: `exit_code_consistency` on BASHRS-POSIX-IDEMPOTENCE (PMAT-162 / XPILE-REFINE-BASHRS-001)
 
 Seventh Silver refinement, completing Silver coverage for all single-Sem contracts in the substrate (the 2×2 trait matrix + FFI + PTX + bashrs). Adds a new `exit_code_consistency` equation to the bashrs YAML, wired to a Silver theorem that extends the cross-domain Outcome model with an explicit `exit_code : Int` field.
