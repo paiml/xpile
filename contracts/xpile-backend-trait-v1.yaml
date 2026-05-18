@@ -183,6 +183,37 @@ equations:
       - "Backend impls are classifiable by their declared_target"
       - "an emitter that auto-selects target would break BOTH PMAT-211 determinism AND the Diamond equivalence-class structure"
 
+  target_constant_projection_diamond:
+    # PMAT-235 / XPILE-REFINE-BACKEND-TRAIT-005: SECOND Diamond
+    # on this contract — Layer 3 depth-2. Mirror of PMAT-232 on
+    # the Frontend side. Together with PMAT-232, this CLOSES the
+    # 2x2 trait matrix at depth-2 for the constant-projection
+    # pattern. The TARGET-CONSTANT-PROJECTION Diamond is a
+    # fundamentally distinct algebraic category from PMAT-225's
+    # equivalence-relation Diamond.
+    lean_theorem: "XpileContracts.CXpileBackendTrait.target_constant_projection_diamond"
+    lean_file: "contracts/lean/XpileBackendTrait.lean"
+    formula: |
+      target is a CONSTANT-PROJECTION from Backend to lang:
+        (a) constant in module: target(m, c) = target(m', c)
+        (b) constant in config: target(m, c) = target(m, c')
+        (c) projection: target = b.declared_target
+        (d) jointly constant: target fixed across all input pairs
+    domain: |
+      Any Backend b and Array UInt8 inputs (m, c, m', c'). The
+      Diamond upgrade captures the FUNCTORIAL property that the
+      target projection is fully determined by the backend
+      choice — inputs cannot override it.
+    invariants:
+      - "SECOND Diamond category on C-XPILE-BACKEND-TRAIT — mirrors PMAT-232 on Frontend side"
+      - "distinct algebraic category from PMAT-225 equivalence-relation"
+      - "together with PMAT-232 closes the 2x2 trait matrix at depth-2 for constant-projection"
+    preconditions:
+      - "well-formed Backend b with four arbitrary module/config byte arrays"
+    postconditions:
+      - "an emitter that introspects module bytes and re-tags target based on heuristic detection (e.g., emitting PTX on CUDA intrinsics) would falsify this Diamond"
+      - "2x2 trait matrix at depth-2: complete with both Frontend (PMAT-232) and Backend (this PR) constant-projection Diamonds"
+
   compile_contract_citation:
     formula: |
       forall b, (module, config), instr in ir_constructs(Artifact.primary):
