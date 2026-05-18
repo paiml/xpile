@@ -168,4 +168,96 @@ theorem citation_round_trip_silver (c : Contract) :
     (render_silver c).citations = c.depends_on ++ c.references := by
   rfl
 
+/-! ## PMAT-197 — TWELFTH Gold-tier refinement:
+    CitationCompleteContract
+    (XPILE-REFINE-CONTRACT-BACKEND-TRAIT-002).
+
+    Twelfth Gold-tier theorem in the substrate. **Completes the
+    2×2 trait matrix at Gold tier** (4/4 trait contracts now at
+    Gold): C-XPILE-FRONTEND-TRAIT (PMAT-194),
+    C-XPILE-BACKEND-TRAIT (PMAT-195),
+    C-XPILE-CONTRACT-FRONTEND-TRAIT (PMAT-196), and this PR's
+    C-XPILE-CONTRACT-BACKEND-TRAIT.
+
+    Uses the cross-field equality Gold pattern (PMAT-194/195
+    pattern): `CitationCompleteContract := { p : Contract ×
+    RenderedDocSilver // p.snd.citations = p.fst.depends_on ++
+    p.fst.references }` — pairs a contract with its rendered
+    document under a type-level proof that the citation set
+    fully captures `depends_on ++ references`.
+
+    Captures what Silver couldn't model:
+    - Silver: "render produces a document whose citations equal
+      depends_on ++ references" (postcondition per call)
+    - Gold: "the (contract, rendered_doc) pair IS a
+      CitationCompleteContract" (citation-completeness witness
+      travels with the pair through downstream processing)
+
+    Gold coverage breakdown after this PR: **10 contracts at
+    Gold tier** (the 2 not yet Gold-covered are
+    C-XPILE-CONTRACT-FRONTEND-TRAIT is wait, it WAS covered by
+    PMAT-196... let me recount). Actually:
+    - C-PY-INT-ARITH (PMAT-185)
+    - C-FFI-CPYTHON-EXT (PMAT-186)
+    - C-COMPILE-RUST-TO-PTX-MMA (PMAT-187)
+    - C-XLATE-LEAN-TO-RUST (PMAT-188)
+    - C-NOTATION-LATEX-MATH-TO-EQUATION (PMAT-189)
+    - C-XLATE-RUST-FN-TO-LEAN-THM (PMAT-191)
+    - C-XLATE-PY-LIST-TO-VEC (PMAT-192)
+    - C-BASHRS-POSIX-IDEMPOTENCE (PMAT-193)
+    - C-XPILE-FRONTEND-TRAIT (PMAT-194)
+    - C-XPILE-BACKEND-TRAIT (PMAT-195)
+    - C-XPILE-CONTRACT-FRONTEND-TRAIT (PMAT-196)
+    - **C-XPILE-CONTRACT-BACKEND-TRAIT (PMAT-197 — this PR)**
+
+    With PMAT-197 landed, ALL 12 contracts in the substrate
+    have at least one Gold-tier refinement theorem. Gold-tier
+    universally established.
+
+    Status: discharged at v0.1.0 (PMAT-197). Tier: GOLD.
+    Twelfth Gold theorem; completes Gold coverage 12/12. -/
+
+/-- Gold-tier refinement subtype: a (Contract, RenderedDocSilver)
+    pair proven to have a complete citation set. -/
+def CitationCompleteContract :=
+  { p : Contract × RenderedDocSilver //
+    p.snd.citations = p.fst.depends_on ++ p.fst.references }
+
+/-- Extract the contract half. -/
+def CitationCompleteContract.contract (c : CitationCompleteContract) :
+    Contract :=
+  c.val.fst
+
+/-- Extract the rendered-doc half. -/
+def CitationCompleteContract.doc (c : CitationCompleteContract) :
+    RenderedDocSilver :=
+  c.val.snd
+
+/-- Gold-tier `render` constructing a CitationCompleteContract
+    by construction. The Silver theorem IS the witness proof. -/
+def render_gold (c : Contract) : CitationCompleteContract :=
+  ⟨(c, render_silver c), citation_round_trip_silver c⟩
+
+/-- **Gold-tier refinement theorem** — render_gold produces a
+    CitationCompleteContract whose components agree on the
+    citation set by construction. -/
+theorem citation_complete_contract_gold (c : Contract) :
+    (render_gold c).doc.citations
+      = (render_gold c).contract.depends_on
+          ++ (render_gold c).contract.references :=
+  (render_gold c).property
+
+/-- **Gold-tier refinement theorem** — citation-completeness
+    witness preserved through extraction. For any
+    CitationCompleteContract, the doc's citations match
+    contract's `depends_on ++ references` BY TYPE. -/
+theorem citation_completeness_witness_gold (c : CitationCompleteContract) :
+    c.doc.citations = c.contract.depends_on ++ c.contract.references :=
+  c.property
+
+/-- **Gold-tier refinement theorem** — bridges Gold to Silver. -/
+theorem gold_contract_backend_agrees_with_silver (c : Contract) :
+    (render_gold c).doc = render_silver c := by
+  rfl
+
 end XpileContracts.CXpileContractBackendTrait

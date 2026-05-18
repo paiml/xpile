@@ -86,6 +86,40 @@ equations:
       - "when embed_citation == true: every cited ID is parseable from primary via the host format's STRUCTURED parser (Lean attribute table, LaTeX \\label/\\ref, mdBook structured-comment preprocessor) — NOT by regex over body text"
     preconditions: []
 
+  citation_complete_contract_gold:
+    # PMAT-197 / XPILE-REFINE-CONTRACT-BACKEND-TRAIT-002: TWELFTH
+    # Gold-tier refinement in the substrate. COMPLETES the 2×2
+    # trait matrix at Gold tier (4/4 trait contracts now Gold)
+    # AND brings Gold coverage to 12/12 across the entire
+    # substrate. Uses cross-field equality Gold pattern from
+    # PMAT-194/195. CitationCompleteContract := { p : Contract ×
+    # RenderedDocSilver // p.snd.citations = p.fst.depends_on ++
+    # p.fst.references } pairs contract with rendered doc under
+    # type-level proof of citation completeness. Companion
+    # theorems citation_completeness_witness_gold and
+    # gold_contract_backend_agrees_with_silver.
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.citation_complete_contract_gold"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    formula: |
+      render_gold(c).doc.citations
+        == render_gold(c).contract.depends_on
+            ++ render_gold(c).contract.references
+      BY TYPE  (citation-completeness witness travels with the pair)
+    domain: |
+      Same as citation_round_trip — every ContractBackend impl.
+      The Gold upgrade encodes the citation-completeness invariant
+      at the type level via a pair-with-witness refinement subtype.
+    invariants:
+      - "CitationCompleteContract pairs Contract with RenderedDocSilver under a TYPE-LEVEL proof that citations = depends_on ++ references"
+      - "citation-completeness witness travels with the pair — no per-call-site re-proof"
+      - "PMAT-197 closes the 2×2 trait matrix at Gold (PMAT-194 frontend, PMAT-195 backend, PMAT-196 contract-frontend, PMAT-197 contract-backend)"
+      - "with PMAT-197 landed, ALL 12 contracts in the substrate have at least one Gold-tier refinement theorem — Gold-tier universally established"
+    preconditions:
+      - "the ContractBackend impl is well-formed (Silver model preconditions inherited)"
+    postconditions:
+      - "an emitter returning a (contract, doc) pair where citations ≠ depends_on ++ references would not type-check against render_gold"
+      - "Gold-tier coverage is now universal across the substrate (12/12 contracts)"
+
   citation_via_structured_attribute:
     formula: |
       forall theorem T in rendered.primary when config.format == LeanTheorem:

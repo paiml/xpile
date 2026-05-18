@@ -7,6 +7,37 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — TWELFTH Gold-tier refinement: `CitationCompleteContract` subtype on C-XPILE-CONTRACT-BACKEND-TRAIT — **Gold-tier coverage universal (12/12)** (PMAT-197 / XPILE-REFINE-CONTRACT-BACKEND-TRAIT-002)
+
+🎯 **MILESTONE: Gold-tier coverage is now universal — every contract in the xpile substrate has at least one Gold-tier refinement theorem.** The Silver→Gold transition pattern has been demonstrated across all 12 contracts and all 5 layers.
+
+Twelfth Gold-tier theorem in the substrate. **Completes the 2×2 trait matrix at Gold tier** (PMAT-194 frontend, PMAT-195 backend, PMAT-196 contract-frontend, PMAT-197 contract-backend). Uses the cross-field equality Gold pattern from PMAT-194/195.
+
+`CitationCompleteContract := { p : Contract × RenderedDocSilver // p.snd.citations = p.fst.depends_on ++ p.fst.references }` — pairs a contract with its rendered document under a type-level proof that the citation set captures `depends_on ++ references`.
+
+**12 Gold-tier contracts** post-PMAT-197:
+1. C-PY-INT-ARITH (PMAT-185, Layer-1)
+2. C-FFI-CPYTHON-EXT (PMAT-186, Layer-4)
+3. C-COMPILE-RUST-TO-PTX-MMA (PMAT-187, Layer-5)
+4. C-XLATE-LEAN-TO-RUST (PMAT-188, Layer-2)
+5. C-NOTATION-LATEX-MATH-TO-EQUATION (PMAT-189, Layer-2)
+6. C-XLATE-RUST-FN-TO-LEAN-THM (PMAT-191, Layer-2)
+7. C-XLATE-PY-LIST-TO-VEC (PMAT-192, Layer-2)
+8. C-BASHRS-POSIX-IDEMPOTENCE (PMAT-193, Layer-1/4)
+9. C-XPILE-FRONTEND-TRAIT (PMAT-194, Layer-3)
+10. C-XPILE-BACKEND-TRAIT (PMAT-195, Layer-3)
+11. C-XPILE-CONTRACT-FRONTEND-TRAIT (PMAT-196, Layer-3)
+12. **C-XPILE-CONTRACT-BACKEND-TRAIT (PMAT-197, Layer-3)** ← this PR
+
+The Gold model:
+- `CitationCompleteContract := { p : Contract × RenderedDocSilver // p.snd.citations = p.fst.depends_on ++ p.fst.references }`
+- `render_gold`: constructs the pair with the Silver theorem `citation_round_trip_silver` as the witness
+- `citation_complete_contract_gold` (wired): components agree on citation set BY TYPE
+- `citation_completeness_witness_gold`: extraction preserves witness
+- `gold_contract_backend_agrees_with_silver`: bridges Gold to PMAT-159's Silver model
+
+YAML: adds new equation `citation_complete_contract_gold` wired to the Gold theorem. `xpile quorum` view for C-XPILE-CONTRACT-BACKEND-TRAIT: Sem=3 (was 2), Sym=1, Run=1, Ext=4.
+
 ### Added — ELEVENTH Gold-tier refinement: `FrameSafeTransition` subtype on C-XPILE-CONTRACT-FRONTEND-TRAIT — FIFTH Gold pattern variant unlocked (PMAT-196 / XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-002)
 
 Eleventh Gold-tier theorem in the substrate. **Demonstrates a FIFTH Gold pattern variant**: frame-safe transition refinement, encoding frame-preservation invariants at the type level.
