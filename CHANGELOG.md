@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — Platinum-tier kickoff (PMAT-199..204) reflected across README/spec/audit/status (PMAT-205)
+
+Doc sweep recording the Platinum-tier kickoff. PMAT-199..204 added 6 wired Platinum theorems demonstrating 6 distinct compositional algebraic shapes across 5 contracts.
+
+Aggregate refresh: 185 Lean (53 Bronze + 108 Silver + 24 Gold) / 228 stratum-vote artifacts → **203 Lean (53 Bronze + 108 Silver + 24 Gold + 18 Platinum) / 246 stratum-vote artifacts**. +18 Lean theorems split: +18 Platinum (the 6 wired theorems plus 12 companion theorems supporting them — reflexivity, associativity, identity, and Silver-bridge claims).
+
+Files updated:
+- **README.md**: tier-status line shifted to "100% QUORUM + 100% Silver + Universal Gold + Platinum kickoff"; by-the-numbers footer refreshed
+- **docs/specifications/audit-design.md §3**: full Platinum-tier framing; 6 algebraic shapes enumerated
+- **docs/specifications/sub/kaizen-fleet.md**: kernel-tier paragraph refresh with Platinum attribution
+- **docs/status/CURRENT.md**: §quorum-line shifted to Platinum-kickoff framing
+- **docs/status/INDEX.md**: session-log row title gains "+ Platinum-tier kickoff"; all 6 Platinum theorems enumerated
+- **docs/status/2026-05-18-substrate-completion.md**: §Numbers refreshed
+
 ### Added — SIXTH Platinum-tier refinement: refcount additivity on C-FFI-CPYTHON-EXT (PMAT-204 / XPILE-REFINE-FFI-CPYTHON-009)
 
 Sixth Platinum-tier theorem in the substrate. Demonstrates the **SIXTH distinct Platinum algebraic shape**: additivity / linearity — `delta(c1; c2) = c1.delta + c2.delta`. Distinct from prior Platinum patterns.
