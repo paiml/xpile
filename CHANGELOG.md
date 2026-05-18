@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond CI gate test: assert UNIVERSAL depth-2 across 12 contracts (PMAT-251)
+
+Adds `crates/xpile/tests/diamond_coverage.rs` — an integration test that runs `xpile diamond --json` and asserts substrate-wide Diamond coverage invariants:
+
+1. **`substrate_diamond_depth_1_universal`**: every contract has ≥1 Diamond (PMAT-214..226 milestone)
+2. **`substrate_diamond_depth_2_universal`**: every contract has ≥2 Diamonds (PMAT-228..250 milestone)
+3. **`substrate_diamond_depth_3_across_layers`**: ≥5 contracts at depth-3+ (PMAT-241..245 milestone)
+4. **`substrate_diamond_depth_4_opened`**: ≥2 contracts at depth-4+ (PMAT-247..248 milestone)
+5. **`substrate_diamond_aggregate_total_at_least_30`**: ≥30 wired Diamond equations across the substrate
+
+**Reporter → Gate transition.** PMAT-249 added the reporter (informational). PMAT-251 turns it into a gate (enforcement). Future PRs that weaken Diamond coverage (e.g., remove a `_diamond` equation from any contract YAML) will now fail CI loudly.
+
+Live verification: all 5 tests pass at the current substrate state (31 wired Diamonds across 12 contracts, depth-2 truly UNIVERSAL after PMAT-250).
+
 ### Added — Wire `parse_preserves_equivalence_class_diamond` on C-XPILE-CONTRACT-FRONTEND-TRAIT — closes TRUE UNIVERSAL Diamond depth-2 (PMAT-250 / XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-005)
 
 Closes the audit finding from PMAT-249's `xpile diamond` reporter: `C-XPILE-CONTRACT-FRONTEND-TRAIT` had its companion theorem `parse_preserves_equivalence_class_diamond` already defined in Lean (PMAT-217) but not separately wired as a YAML equation. This PR wires it.
