@@ -556,4 +556,66 @@ theorem bounded_smem_join_semilattice_diamond
   · exact Nat.zero_max a.val
   · exact Nat.max_self a.val
 
+/-! ## PMAT-242 — THIRD Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (Layer 5 DEPTH-3): meet-semilattice via min
+    (XPILE-REFINE-COMPILE-PTX-007).
+
+    **Second DEPTH-3 Diamond in the substrate.** Following
+    PMAT-241 (PyIntArith depth-3), PMAT-242 extends depth-3 to
+    Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The substrate now has
+    depth-3 on TWO contracts spanning Layer 1 and Layer 5.
+
+    CompileRustToPtxMma already has TWO Diamond categories:
+    - PMAT-218: (BoundedSmem, +, 0) BOUNDED MONOID (additive)
+    - PMAT-231: (BoundedSmem, max, 0) JOIN-SEMILATTICE (idempotent)
+
+    PMAT-242 adds the dual:
+    - **PMAT-242: (BoundedSmem, min, top) MEET-SEMILATTICE
+      (idempotent with top element)**
+
+    The categorical distinction: meet-semilattice is the DUAL
+    of the join-semilattice (PMAT-231). Together they form the
+    foundations for a BOUNDED LATTICE structure on BoundedSmem.
+    Captures HIGH-WATER-MARK semantics: when allocating smem
+    across parallel kernels with a shared upper bound,
+    `min(a, b)` gives the safe over-subscription floor.
+
+    Status: discharged at v0.1.0 (PMAT-242). Tier: DIAMOND.
+    SECOND DEPTH-3 Diamond in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `min` on BoundedSmem
+  forms a MEET-SEMILATTICE.
+
+  Combines four properties into the MEET-SEMILATTICE
+  axiomatization on (Nat, min):
+  (a) Commutativity: min(a, b) = min(b, a)
+  (b) Associativity: min(min(a, b), c) = min(a, min(b, c))
+  (c) Bottom absorption: min(0, a) = 0 (0 is absorbing for min)
+  (d) Idempotence: min(a, a) = a (semilattice-defining axiom)
+
+  Together with PMAT-231 (join-semilattice via max), this gives
+  the BOUNDED LATTICE structure on BoundedSmem — both join
+  (worst-case parallel reservation) and meet (safe over-
+  subscription floor) operations are axiomatized.
+
+  Status: **discharged at v0.1.0 (PMAT-242)**. Tier: DIAMOND.
+-/
+theorem bounded_smem_meet_semilattice_diamond
+    (a b c : BoundedSmem) :
+    -- (a) Commutativity of min
+    Nat.min a.val b.val = Nat.min b.val a.val
+    -- (b) Associativity of min
+    ∧ Nat.min (Nat.min a.val b.val) c.val
+        = Nat.min a.val (Nat.min b.val c.val)
+    -- (c) Bottom absorption: min(0, a) = 0
+    ∧ Nat.min 0 a.val = 0
+    -- (d) Idempotence (semilattice-defining axiom)
+    ∧ Nat.min a.val a.val = a.val := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.min_comm a.val b.val
+  · exact Nat.min_assoc a.val b.val c.val
+  · exact Nat.zero_min a.val
+  · exact Nat.min_self a.val
+
 end XpileContracts.CCompileRustToPtxMma

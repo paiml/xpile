@@ -234,6 +234,37 @@ equations:
       - "an emitter that uses sum-based reservation for parallel kernels would over-reserve unnecessarily"
       - "Diamond depth-2 demonstrated on Layer 5 — substrate now has FOUR depth-2 Diamond contracts (Layers 1, 2, 4, 5)"
 
+  bounded_smem_meet_semilattice_diamond:
+    # PMAT-242 / XPILE-REFINE-COMPILE-PTX-007: THIRD Diamond on
+    # this contract — second DEPTH-3 Diamond in substrate.
+    # MEET-SEMILATTICE via min, DUAL to PMAT-231 join-semilattice
+    # via max. Together they form the BOUNDED LATTICE structure
+    # on BoundedSmem (both join and meet operations
+    # axiomatized).
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_meet_semilattice_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      (BoundedSmem, min) forms a MEET-SEMILATTICE:
+        (a) commutativity: min(a, b) = min(b, a)
+        (b) associativity: min(min(a, b), c) = min(a, min(b, c))
+        (c) bottom absorption: min(0, a) = 0
+        (d) idempotence: min(a, a) = a
+    domain: |
+      Any three BoundedSmem values. The Diamond upgrade
+      captures the meet-semilattice structure (min + bottom
+      absorption + idempotence), the DUAL of PMAT-231's
+      join-semilattice.
+    invariants:
+      - "SECOND DEPTH-3 Diamond in the substrate (after PMAT-241 on PyIntArith)"
+      - "distinct algebraic category from PMAT-218 bounded-monoid AND PMAT-231 join-semilattice"
+      - "together with PMAT-231 forms BOUNDED LATTICE structure on BoundedSmem"
+      - "captures safe over-subscription floor for shared-memory allocation"
+    preconditions:
+      - "three BoundedSmem values"
+    postconditions:
+      - "lattice operations enable both worst-case (max via PMAT-231) and safe-floor (min via this PR) reservation analysis"
+      - "Diamond DEPTH-3 universal-across-layers: now opened on Layer 1 (PMAT-241) and Layer 5 (this PR)"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)

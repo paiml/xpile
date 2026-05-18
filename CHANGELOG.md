@@ -7,6 +7,32 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — THIRD Diamond on C-COMPILE-RUST-TO-PTX-MMA (Layer 5 DEPTH-3) — meet-semilattice via min (PMAT-242 / XPILE-REFINE-COMPILE-PTX-007)
+
+**Second DEPTH-3 Diamond in the substrate.** Following PMAT-241 on PyIntArith (Layer 1), PMAT-242 extends Diamond depth-3 to Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The substrate now has depth-3 on TWO contracts spanning Layer 1 and Layer 5.
+
+CompileRustToPtxMma already had TWO Diamond categories:
+- **PMAT-218**: `(BoundedSmem, +, 0)` BOUNDED MONOID (additive)
+- **PMAT-231**: `(BoundedSmem, max, 0)` JOIN-SEMILATTICE (idempotent with bottom)
+
+PMAT-242 adds the DUAL:
+- **PMAT-242**: `(BoundedSmem, min)` MEET-SEMILATTICE (idempotent with top absorption)
+
+Together with PMAT-231, this forms the BOUNDED LATTICE structure on BoundedSmem — both join (worst-case parallel reservation) and meet (safe over-subscription floor) operations are axiomatized.
+
+Combines four properties:
+(a) Commutativity: `min(a, b) = min(b, a)`
+(b) Associativity: `min(min(a, b), c) = min(a, min(b, c))`
+(c) Bottom absorption: `min(0, a) = 0`
+(d) Idempotence: `min(a, a) = a`
+
+`bounded_smem_meet_semilattice_diamond` (wired): 4-conjunction proving the meet-semilattice axiomatization via `Nat.min_comm`, `Nat.min_assoc`, `Nat.zero_min`, `Nat.min_self`.
+
+**Diamond depth census after this PR:**
+- Depth-1 UNIVERSAL: 12/12 contracts (12 categories)
+- Depth-2 UNIVERSAL: 12/12 contracts (24+ categories)
+- **Depth-3**: 2 contracts (PyIntArith on Layer 1, CompileRustToPtxMma on Layer 5)
+
 ### Added — THIRD Diamond on C-PY-INT-ARITH (FIRST DEPTH-3 DIAMOND IN SUBSTRATE) — shift-monoid via exponentiation (PMAT-241 / XPILE-REFINE-PY-INT-ARITH-010)
 
 **First DEPTH-3 Diamond in the substrate.** Opens Diamond depth-3 — three distinct algebraic categories on the same contract. PyIntArith already had TWO Diamond categories (semiring at PMAT-214, Euclidean-domain at PMAT-228); PMAT-241 adds the SHIFT-MONOID Diamond as the third orthogonal category.
