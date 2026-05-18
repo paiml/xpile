@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — TENTH Diamond-tier refinement: source-lang equivalence-class axioms on C-XPILE-FRONTEND-TRAIT (PMAT-224 / XPILE-REFINE-FRONTEND-TRAIT-004)
+
+Tenth Diamond-tier theorem. Combines four properties into the FRONTEND EQUIVALENCE CLASS axiomatization on declared_lang:
+- PMAT-210 Platinum source-lang determinism
+- Reflexivity (`lang_equiv f f`)
+- Symmetry (`lang_equiv f1 f2 → lang_equiv f2 f1`)
+- Transitivity (chain of same-lang frontends)
+
+Captures the substrate's commitment that Frontend impls are CLASSIFIED by their declared_lang with full equivalence-relation algebraic structure. Distinct from PMAT-217's equivalence-relation Diamond because it operates on Frontend (Layer-3 trait) rather than TranspileSession (Layer-3 contract-frontend).
+
+`frontend_equivalence_class_diamond` (wired): 4-conjunction proving reflexivity + symmetry + transitivity + PMAT-210 determinism preservation.
+
+YAML: adds new equation `frontend_equivalence_class_diamond` wired to the Diamond theorem. `xpile quorum` view for C-XPILE-FRONTEND-TRAIT: Sem=5 (was 4), Sym=1, Run=1, Ext=10. Ten Diamond axiomatizations now in substrate across 10 contracts.
+
 ### Added — NINTH Diamond-tier refinement: precondition-list-monoid axioms on C-XLATE-RUST-FN-TO-LEAN-THM (PMAT-223 / XPILE-REFINE-XLATE-RUST-TO-LEAN-005)
 
 Ninth Diamond-tier theorem. Combines four properties into the PRECONDITION LIST MONOID axiomatization on the proof lane direction:

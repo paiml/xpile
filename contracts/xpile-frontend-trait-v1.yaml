@@ -145,6 +145,37 @@ equations:
       - "any Frontend impl that auto-detects the language from source content (changing the source_lang tag accordingly) would falsify this theorem"
       - "the contract's modelling commitment is that source_lang comes from declared_lang, NOT from input introspection — Platinum locks this in compositionally"
 
+  frontend_equivalence_class_diamond:
+    # PMAT-224 / XPILE-REFINE-FRONTEND-TRAIT-004: TENTH
+    # Diamond-tier refinement. Combines PMAT-210 determinism +
+    # reflexivity + symmetry + transitivity into the FRONTEND
+    # EQUIVALENCE CLASS axiomatization on declared_lang.
+    # Captures the substrate's commitment that Frontend impls
+    # are CLASSIFIED by their declared_lang with full
+    # equivalence-relation algebraic structure.
+    lean_theorem: "XpileContracts.CXpileFrontendTrait.frontend_equivalence_class_diamond"
+    lean_file: "contracts/lean/XpileFrontendTrait.lean"
+    formula: |
+      lang_equiv forms an EQUIVALENCE RELATION on Frontend:
+        (a) reflexivity: lang_equiv f f
+        (b) symmetry: lang_equiv f1 f2 → lang_equiv f2 f1
+        (c) transitivity: lang_equiv f1 f2 → lang_equiv f2 f3 → lang_equiv f1 f3
+        (d) PMAT-210 determinism preserved: same-lang frontends
+            produce modules with the same source_lang
+    domain: |
+      Any Frontend values under the lang_equiv relation. The
+      Diamond upgrade captures the equivalence-class structure
+      on declared_lang with full preservation of determinism.
+    invariants:
+      - "TENTH Diamond-tier theorem; combines PMAT-210 determinism + 3 equivalence axioms"
+      - "FRONTEND EQUIVALENCE CLASS — algebraic classification by declared_lang"
+      - "preserves PMAT-210's determinism through the equivalence relation"
+    preconditions:
+      - "three well-formed Frontend values"
+    postconditions:
+      - "Frontend impls are now classifiable by their declared_lang — load-bearing for quotient-based reasoning about language-specific behavior"
+      - "an emitter that auto-detects language would break BOTH PMAT-210 determinism AND the Diamond equivalence-class structure"
+
   ffi_boundaries_are_outgoing_only:
     formula: |
       forall b in module.ffi_boundaries: b.from_lang == module.source_lang
