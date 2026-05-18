@@ -176,6 +176,40 @@ equations:
       - "Frontend impls are now classifiable by their declared_lang — load-bearing for quotient-based reasoning about language-specific behavior"
       - "an emitter that auto-detects language would break BOTH PMAT-210 determinism AND the Diamond equivalence-class structure"
 
+  source_lang_constant_projection_diamond:
+    # PMAT-232 / XPILE-REFINE-FRONTEND-TRAIT-005: SECOND Diamond
+    # on this contract — Layer 3 depth-2 Diamond. Following
+    # PMAT-228 (Layer 1), PMAT-229 (Layer 2), PMAT-230 (Layer 4),
+    # PMAT-231 (Layer 5), this completes Diamond depth-2 across
+    # ALL FIVE LAYERS — Diamond depth-2 UNIVERSAL milestone.
+    # The CONSTANT-PROJECTION Diamond is a fundamentally distinct
+    # algebraic category from PMAT-224 equivalence-class:
+    # equivalence-class captures ABOUT-NESS of two frontends;
+    # constant-projection captures INVARIANCE OF OUTPUT under
+    # input variation.
+    lean_theorem: "XpileContracts.CXpileFrontendTrait.source_lang_constant_projection_diamond"
+    lean_file: "contracts/lean/XpileFrontendTrait.lean"
+    formula: |
+      source_lang is a CONSTANT-PROJECTION from Frontend to lang:
+        (a) constant in path: source_lang(p,s) = source_lang(p',s)
+        (b) constant in source: source_lang(p,s) = source_lang(p,s')
+        (c) projection: source_lang = f.declared_lang
+        (d) jointly constant: source_lang fixed across all inputs
+    domain: |
+      Any Frontend f and Array UInt8 inputs (p, s, p', s'). The
+      Diamond upgrade captures the FUNCTORIAL property that the
+      source_lang projection is fully determined by the frontend
+      choice — inputs cannot override it.
+    invariants:
+      - "SECOND Diamond category on C-XPILE-FRONTEND-TRAIT — completes Diamond depth-2 UNIVERSAL across all 5 layers"
+      - "distinct algebraic category from PMAT-224 equivalence-relation"
+      - "captures FUNCTORIAL constant-projection from (Frontend, inputs) onto declared_lang"
+    preconditions:
+      - "well-formed Frontend f with four arbitrary path/source byte arrays"
+    postconditions:
+      - "an emitter that introspects source content and re-tags source_lang based on heuristic detection (e.g., shebang lines) would falsify this Diamond"
+      - "Diamond depth-2 UNIVERSAL milestone: substrate now has depth-2 Diamonds across ALL 5 layers (1, 2, 3, 4, 5)"
+
   ffi_boundaries_are_outgoing_only:
     formula: |
       forall b in module.ffi_boundaries: b.from_lang == module.source_lang

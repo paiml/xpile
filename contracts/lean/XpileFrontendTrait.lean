@@ -401,4 +401,73 @@ theorem frontend_equivalence_class_diamond
   · intro h
     exact source_lang_class_congruent_platinum f1 f2 p s h
 
+/-! ## PMAT-232 — SECOND Diamond on C-XPILE-FRONTEND-TRAIT
+    (Layer 3 depth-2): SOURCE-LANG CONSTANT-PROJECTION axioms
+    (XPILE-REFINE-FRONTEND-TRAIT-005).
+
+    **Fifth depth-2 Diamond in the substrate, first on Layer 3.**
+    Following PMAT-228 (Layer 1), PMAT-229 (Layer 2), PMAT-230
+    (Layer 4), PMAT-231 (Layer 5), PMAT-232 extends Diamond
+    breadth to Layer 3 C-XPILE-FRONTEND-TRAIT. The substrate now
+    has depth-2 Diamonds across **ALL FIVE LAYERS** — Diamond
+    depth-2 UNIVERSAL across the contract taxonomy.
+
+    XpileFrontendTrait already had the equivalence-class Diamond
+    (PMAT-224) on the lang_equiv relation. PMAT-232 adds the
+    SOURCE-LANG CONSTANT-PROJECTION Diamond — a fundamentally
+    distinct algebraic category covering the FUNCTORIAL
+    projection from (Frontend, inputs) onto declared_lang:
+
+    - PMAT-224: equivalence-relation on Frontend (relational)
+    - PMAT-232: constant-projection of source_lang from inputs
+      (functorial / kernel structure)
+
+    The categorical distinction: equivalence-relation captures
+    ABOUT-NESS of two frontends; constant-projection captures
+    INVARIANCE OF OUTPUT under input variation. Both are
+    load-bearing for the Frontend trait's correctness.
+
+    Status: discharged at v0.1.0 (PMAT-232). Tier: DIAMOND.
+    SECOND Diamond category on C-XPILE-FRONTEND-TRAIT. -/
+
+/--
+  **Diamond-tier refinement theorem** — the `source_lang` field
+  of the parsed module is a CONSTANT-PROJECTION from the
+  frontend's `declared_lang`, independent of (path, source) input.
+
+  Combines four properties into the CONSTANT-PROJECTION
+  axiomatization:
+  (a) Constant in path: source_lang doesn't depend on path
+  (b) Constant in source: source_lang doesn't depend on source
+  (c) Equals declared_lang: source_lang = f.declared_lang
+  (d) Jointly constant: source_lang stays fixed across all
+      input pairs simultaneously
+
+  Captures the FUNCTORIAL property that parse_and_lower's
+  source_lang tag is fully determined by the FRONTEND choice —
+  inputs cannot override it. An emitter that introspects source
+  content and re-tags source_lang based on heuristic detection
+  (e.g., shebang lines) would falsify this Diamond.
+
+  Status: **discharged at v0.1.0 (PMAT-232)**. Tier: DIAMOND.
+-/
+theorem source_lang_constant_projection_diamond
+    (f : Frontend) (p s p' s' : Array UInt8) :
+    -- (a) Constant in path: source_lang independent of path
+    (parse_and_lower_silver f p s).source_lang
+      = (parse_and_lower_silver f p' s).source_lang
+    -- (b) Constant in source: source_lang independent of source
+    ∧ (parse_and_lower_silver f p s).source_lang
+      = (parse_and_lower_silver f p s').source_lang
+    -- (c) Projection equals declared_lang
+    ∧ (parse_and_lower_silver f p s).source_lang = f.declared_lang
+    -- (d) Jointly constant: source_lang fixed across all input pairs
+    ∧ (parse_and_lower_silver f p s).source_lang
+      = (parse_and_lower_silver f p' s').source_lang := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact source_lang_deterministic_platinum f p s p' s
+  · exact source_lang_deterministic_platinum f p s p s'
+  · exact source_lang_consistency_silver f p s
+  · exact source_lang_deterministic_platinum f p s p' s'
+
 end XpileContracts.CXpileFrontendTrait

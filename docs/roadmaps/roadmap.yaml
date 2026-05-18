@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-232
+  github_issue: null
+  item_type: task
+  title: 'PMAT-232: SECOND Diamond on C-XPILE-FRONTEND-TRAIT (Layer 3 depth-2) — source-lang CONSTANT-PROJECTION; completes UNIVERSAL Diamond depth-2 milestone (XPILE-REFINE-FRONTEND-TRAIT-005)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T08:00:00Z
+  updated: 2026-05-20T08:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Fifth depth-2 Diamond in substrate — completes Diamond depth-2 UNIVERSAL across all 5 layers. SOURCE-LANG CONSTANT-PROJECTION Diamond, distinct algebraic category from PMAT-224 equivalence-relation (functorial vs relational). Combines PMAT-210 + PMAT-156 + joint determinism. source_lang_constant_projection_diamond (wired). Substrate now has depth-2 Diamonds across Layers 1, 2, 3, 4, 5.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-231
   github_issue: null
   item_type: task
