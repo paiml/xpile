@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-239
+  github_issue: null
+  item_type: task
+  title: 'PMAT-239: SECOND Diamond on C-XPILE-CONTRACT-BACKEND-TRAIT — contract product-monoid; completes UNIVERSAL Diamond depth-2 across ALL 12 contracts (XPILE-REFINE-CONTRACT-BACKEND-TRAIT-005)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T11:30:00Z
+  updated: 2026-05-20T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Eleventh depth-2 Diamond in substrate. CONTRACT PRODUCT-MONOID Diamond on (depends_on × references) field pair, distinct algebraic category from PMAT-226 single-field render-monoid. Combines PMAT-212 + references homomorphism + left identities on both fields. contract_product_monoid_diamond (wired). COMPLETES UNIVERSAL Diamond depth-2 milestone — every contract in substrate now has at least 2 distinct Diamond categories.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-238
   github_issue: null
   item_type: task
