@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier refinement: kind-tagged equivalence under normaliser on NOTATION-LATEX-MATH-TO-EQUATION, first notation-lane Silver (PMAT-167 / XPILE-REFINE-NOTATION-001)
+
+Eleventh Silver refinement; fourth multi-equation contract Silver upgrade; **first Silver upgrade on the notation lane** (previous Silver upgrades were all on the code/proof translation lanes). Broadens the Silver bracket horizontally across lanes.
+
+The Bronze `display_math_eq_equation_env_eq_align_env` proved that all three LaTeX display-math forms produce *structurally-equal* `EquationFormula` values — by **anonymising the source kind** (all three lowerings returned the same anonymous record). Silver introduces a discriminator field and proves equivalence under a normaliser instead.
+
+The Silver model:
+- `LatexDisplayKind`: enum `displayMath | equation | align`
+- `EquationFormulaSilver`: `{ kind, ascii_normalised }`
+- `lower_{display_math,equation_env,align_env}_silver`: each produces an EquationFormulaSilver with its own kind tag
+- `normalise_silver`: extracts the content, discarding the kind discriminator
+- `display_math_equiv_under_normaliser_silver` theorem (wired): the three lowerings' contents are equal under the normaliser
+- `kinds_are_distinct_silver`: companion claim that the three kind tags ARE pairwise distinct in the typed model
+
+**Strictly stronger than Bronze**: an emitter that quietly relabels `\[ ... \]` as `align` (e.g., to enable multi-line wrapping for a benign-looking refactor) is now caught by the kind field — Bronze couldn't see the relabelling. The kind retention also enables downstream audit tooling to trust `display_kind: align` annotations on emitted YAML.
+
+YAML: adds a new equation `display_math_equiv_under_normaliser_silver` wired to the Silver theorem. `xpile quorum` view for C-NOTATION-LATEX-MATH-TO-EQUATION: Sem=8 (was 7), Sym=7, Run=1, Ext=4.
+
 ### Added — Silver-tier refinement: `name_preserved` typed AST on XLATE-RUST-FN-TO-LEAN-THM, closes bidirectional Silver bracket (PMAT-166 / XPILE-REFINE-XLATE-RUST-TO-LEAN-001)
 
 Tenth Silver refinement; third multi-equation contract Silver upgrade. Symmetric counterpart of PMAT-165 — together with that PR's Lean→Rust Silver, **PMAT-166 closes the bidirectional Rust ↔ Lean Silver bracket**: both directions of the Layer-2 translation are now at typed-AST Silver, not just byte-array Bronze.

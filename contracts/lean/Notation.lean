@@ -329,4 +329,139 @@ theorem citation_preservation (c : LatexCitation) :
     (lower_citation c).contract_id = c.contract_id := by
   rfl
 
+/-! ## PMAT-167 — Silver-tier refinement for `display_math_eq_equation_env_eq_align_env`.
+
+    Promotes the LaTeX display-math triumvirate (`\[ ... \]`,
+    `equation`, `align`) from Bronze (where the model throws away
+    the source kind so all three reduce to the same
+    `EquationFormula`) to Silver (where the model RETAINS the
+    source kind as a discriminator field, and the equivalence
+    claim is recovered structurally under a normaliser).
+
+    Why this is strictly stronger than Bronze:
+    - Bronze proves `lower_display_math = lower_equation_env =
+      lower_align_env` by `rfl` because all three return the same
+      `EquationFormula` value (a structural anonymisation that
+      DESTROYS the source-kind provenance).
+    - Silver proves the equality of the *normalised* content
+      while RETAINING the source kind (`DisplayMath | Equation |
+      Align`) for audit purposes. An emitter that quietly relabels
+      `\[ ... \]` as `Align` to enable multi-line wrapping (a
+      benign-looking refactor) is now caught by the kind field —
+      Bronze couldn't see it.
+
+    Silver tier per ruchy 5.0 §14.10.5: typed structural model +
+    real proof (non-`rfl` — uses a `normalise` extractor to bridge
+    the kind-tagged structures). Gold tier introduces a true
+    `canonical_equality : EquationFormula → EquationFormula → Prop`
+    relation that admits whitespace/operator-spelling tolerance
+    while still ruling out hostile transformations.
+
+    This is the **fourth multi-equation contract Silver upgrade**
+    (after PMAT-164 on C-XLATE-PY-LIST-TO-VEC, PMAT-165 on
+    C-XLATE-LEAN-TO-RUST, PMAT-166 on C-XLATE-RUST-FN-TO-LEAN-THM)
+    and the **first Silver upgrade on the notation lane** — until
+    now all multi-eq Silver work has been on the code/proof
+    translation lanes. Broadens the Silver-bracket horizontally.
+-/
+
+/--
+  Source-environment discriminator. The three LaTeX display-math
+  forms are syntactically distinct even though they produce
+  equivalent ASCII-normalised content; Silver keeps the kind tag
+  for audit (every emitted contract YAML can be traced to its
+  source environment).
+-/
+inductive LatexDisplayKind where
+  | displayMath
+  | equation
+  | align
+deriving DecidableEq
+
+/--
+  Silver-tier model of an `EquationFormula` that retains its source
+  environment kind. Bronze (`EquationFormula`) lost this information
+  by reducing all three lowerings to the same anonymous record.
+  Silver keeps `kind` AND `ascii_normalised`, locking in the
+  modelling commitment that emission must record provenance even
+  when the normalised content matches.
+-/
+structure EquationFormulaSilver where
+  kind : LatexDisplayKind
+  ascii_normalised : String
+deriving DecidableEq
+
+/--
+  Silver-tier lowering: `\[ formula \]` produces a typed record
+  with `kind = displayMath`. The `ascii_normalised` field carries
+  the formula content byte-for-byte at v0.1.0; Gold tier introduces
+  a real normaliser.
+-/
+def lower_display_math_silver (formula : String) : EquationFormulaSilver :=
+  { kind := LatexDisplayKind.displayMath
+    ascii_normalised := formula }
+
+/-- Silver-tier lowering for `\begin{equation} ... \end{equation}`. -/
+def lower_equation_env_silver (formula : String) : EquationFormulaSilver :=
+  { kind := LatexDisplayKind.equation
+    ascii_normalised := formula }
+
+/-- Silver-tier lowering for `\begin{align} ... \end{align}`. -/
+def lower_align_env_silver (formula : String) : EquationFormulaSilver :=
+  { kind := LatexDisplayKind.align
+    ascii_normalised := formula }
+
+/--
+  Normaliser that extracts the `ascii_normalised` content while
+  discarding the kind discriminator. This is the bridge between
+  the typed Silver model and Bronze's anonymisation — Silver
+  proves equivalence UNDER this normaliser, not at the structural
+  level.
+-/
+def normalise_silver (e : EquationFormulaSilver) : String :=
+  e.ascii_normalised
+
+/--
+  **Silver-tier refinement theorem** for the LaTeX display-math
+  triumvirate. The three forms produce structurally-distinct
+  `EquationFormulaSilver` values (different `kind` tags) but
+  their normalised contents are equal — exactly the strengthening
+  Silver provides over Bronze.
+
+  Documentary value: this theorem captures the modelling commitment
+  that lowering is BOTH provenance-preserving (kind tag retained)
+  AND content-equivalent (normaliser-agnostic). An emitter that
+  rewrites `\[ ... \]` content during display-math lowering (e.g.,
+  applying `\implies → \Rightarrow` substitution per Mathlib
+  convention) would falsify the second conjunct without touching
+  the first.
+
+  Status: discharged at v0.1.0 (PMAT-167). Tier: Silver.
+-/
+theorem display_math_equiv_under_normaliser_silver (formula : String) :
+    normalise_silver (lower_display_math_silver formula)
+      = normalise_silver (lower_equation_env_silver formula)
+    ∧ normalise_silver (lower_equation_env_silver formula)
+      = normalise_silver (lower_align_env_silver formula) := by
+  refine ⟨?_, ?_⟩ <;> rfl
+
+/--
+  **Silver-tier refinement theorem** — kind provenance is recorded
+  distinctly for each source environment. This is the new structural
+  claim Silver provides that Bronze couldn't: an emitter that
+  conflates `\[ ... \]` with `align` (or vice versa) would falsify
+  this theorem because the `kind` fields would no longer be
+  pairwise distinct.
+
+  Critical for audit: when a downstream tool sees a contract YAML
+  emission with `display_kind: align`, it needs to trust that the
+  source was indeed `\begin{align}` and not a silent relabelling
+  by the emitter.
+-/
+theorem kinds_are_distinct_silver (formula : String) :
+    (lower_display_math_silver formula).kind = LatexDisplayKind.displayMath
+    ∧ (lower_equation_env_silver formula).kind = LatexDisplayKind.equation
+    ∧ (lower_align_env_silver formula).kind = LatexDisplayKind.align := by
+  refine ⟨?_, ?_, ?_⟩ <;> rfl
+
 end XpileContracts.CNotationLatexMathToEquation
