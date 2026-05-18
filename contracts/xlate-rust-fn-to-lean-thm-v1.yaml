@@ -67,6 +67,10 @@ equations:
       - "lean --check succeeds on the emitted def in isolation (no dangling references to un-lifted helpers)"
 
   rust_postcondition_to_lean_theorem:
+    # PMAT-136: Bronze-tier refinement theorem locks in 1:1 / 1:N
+    # obligation → theorem expansion rule.
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.rust_postcondition_to_lean_theorem"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
     formula: |
       lift(contract_C.proof_obligations[i] of type postcondition)
         produces a theorem carrying @[xpile_contract "<C.id>", xpile_equation "<applies_to>"]
@@ -90,6 +94,10 @@ equations:
       - "the theorem's stated goal corresponds 1:1 with the obligation's `formal:` field — no weakening, no strengthening"
 
   rust_precondition_to_lean_hypothesis:
+    # PMAT-136: Bronze-tier refinement theorem locks in count +
+    # source-order preservation of preconditions.
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.rust_precondition_to_lean_hypothesis"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
     formula: |
       lift(contract_C.proof_obligations[i] of type precondition)
         produces a Lean ∀-binder or `(h : P)` hypothesis in the relevant
@@ -110,6 +118,12 @@ equations:
       - "no precondition is silently dropped — the count of lifted hypotheses matches the count of `preconditions:` entries"
 
   citation_bridge_via_attribute:
+    # PMAT-136: Bronze-tier refinement theorem locks in byte-for-byte
+    # contract_id + equation_name preservation in @[xpile_contract,
+    # xpile_equation] attribute payload (no dash-to-underscore
+    # mangling, no case folding).
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.citation_bridge_via_attribute"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
     formula: |
       ∀ theorem T emitted from contract C :
         ∃ attr ∈ attributes_of(T) :
@@ -137,6 +151,10 @@ equations:
       - "if Contract.metadata.id violates `^C-[A-Z0-9-]+$/`, lifting fails with a structured error before any Lean is written"
 
   frame_translation_is_textual:
+    # PMAT-136: Bronze-tier refinement theorem locks in input-hash
+    # bit-identity before/after lift() — cache-determinism guarantee.
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.frame_translation_is_textual"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
     formula: |
       lift(rust_fn, C) does not mutate rust_fn's meta-HIR or contract C
     domain: |

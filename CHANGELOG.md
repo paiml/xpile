@@ -7,6 +7,40 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Bronze-tier refinement theorems for 4 remaining `xlate-rust-fn-to-lean-thm` equations (PMAT-136)
+
+`contracts/lean/XlateRustFnToLeanThm.lean` now carries Bronze-tier
+refinement theorems for every equation in
+`C-XLATE-RUST-FN-TO-LEAN-THM` beyond the original
+`rust_fn_to_lean_def` (PMAT-072). The placeholder
+`citation_bridge_via_attribute` theorem (which was a near-rfl
+duplicate of the body-preservation claim) has been REWRITTEN to
+actually capture the load-bearing attribute-payload invariant.
+
+- `rust_postcondition_to_lean_theorem`: the 1:1 / 1:N obligation
+  → theorem expansion rule is locked in. A single-equation
+  `applies_to:` produces exactly one theorem; `applies_to: all`
+  expands to one theorem per equation in the contract.
+- `rust_precondition_to_lean_hypothesis`: lifting the precondition
+  list to Lean ∀-binders preserves both count AND source order
+  (no silent drops, no reordering, no deduplication by syntactic
+  equality).
+- `citation_bridge_via_attribute`: the emitted
+  `@[xpile_contract \"<C.id>\", xpile_equation \"<eq_name>\"]`
+  attribute's two argument strings equal the source contract ID
+  and equation name BYTE FOR BYTE (no dash-to-underscore mangling,
+  no case folding, no Unicode normalisation). Replaces the
+  placeholder body-preservation duplicate.
+- `frame_translation_is_textual`: `lift()` does NOT mutate the
+  meta-HIR module or contract YAML; both input hashes are
+  bit-identical before/after the call (cache-determinism guarantee).
+
+YAML side: all 4 equations gain `lean_theorem:` + `lean_file:`
+references discoverable by `every_referenced_lean_theorem_exists_in_its_file`.
+
+Contract warnings 5 → 1 (the remaining 1 is PV-VAL-001 qa_gate).
+Total substrate warnings 10 → 6.
+
 ### Added — Bronze-tier refinement theorems for 4 remaining `xlate-py-list-to-vec` equations (PMAT-135)
 
 `contracts/lean/XlatePyListToVec.lean` now carries Bronze-tier
