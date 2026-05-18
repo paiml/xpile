@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — Gold-tier kickoff (PMAT-185..189) reflected across README/spec/audit/status (PMAT-190)
+
+Doc sweep recording the Gold-tier kickoff. PMAT-185..189 opened the Gold tier with 5 wired Gold theorems spanning all 4 major contract layers and two distinct subtype patterns.
+
+Aggregate refresh: 150 Lean (53 Bronze + 97 Silver) / 193 stratum-vote artifacts → **165 Lean (58 Bronze + 97 Silver + 10 Gold) / 208 stratum-vote artifacts**. The +15 Lean theorems split: +5 Bronze companion claims supporting the Gold structures, +10 Gold theorems (5 wired + 5 companion bridges to Silver).
+
+Files updated:
+- **README.md** "by the numbers" QUORUM line: 150/193 → 165/208, framing expanded to include Gold-tier kickoff with per-layer enumeration
+- **README.md** §By the numbers footer: aggregate refreshed with Gold count
+- **substrate-completion.md** §Numbers: same refresh with PMAT-185..189 Gold-tier attribution
+- **INDEX.md** session-log row: title gains "+ Gold-tier kickoff", PMAT range extended PMAT-058..190
+- **CURRENT.md** §quorum-line: framing expanded to "QUORUM + Silver + Gold kickoff"; per-PMAT Gold theorem enumerated
+- **audit-design.md** §3: rewritten with Gold-tier kickoff framing; subtype-pattern enumeration (bounded-numeric vs collection-cardinality)
+- **sub/kaizen-fleet.md**: kernel-tier paragraph refresh with Gold attribution
+
 ### Added — FIFTH Gold-tier refinement: `NonEmptyDefinition` subtype on C-NOTATION-LATEX-MATH-TO-EQUATION — NEW SUBTYPE PATTERN (PMAT-189 / XPILE-REFINE-NOTATION-004)
 
 Fifth Gold-tier theorem in the substrate. **First Gold theorem using a new subtype shape**: non-empty-list / collection-cardinality refinement, distinct from the bounded-Nat pattern used in PMAT-185/186/187/188.
