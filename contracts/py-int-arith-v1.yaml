@@ -152,11 +152,13 @@ equations:
       - "the result equals `Int.land a b` over the two's-complement i64 representation"
       - "the result equals CPython `int.__and__(a, b)` bit-for-bit in the i64 domain"
       - "no heap allocation in the fits_i64 fast path"
-    # No `lean_theorem` yet: core Lean 4.15 doesn't ship
-    # `Int.land` / `Int.lor` / `Int.xor`; encoding requires either a
-    # mathlib dep or a hand-rolled cast-through-Nat. Tracked as
-    # XPILE-REFINE-005 (separate from XPILE-REFINE-004's shift/pow
-    # corpus completion).
+    # PMAT-138 / XPILE-REFINE-005: Bronze-tier refinement theorem
+    # via hand-rolled cast-through-Nat encoding. Both fast and slow
+    # paths invoke the shared `i64_and` kernel; proof is `rfl` by
+    # construction. Silver tier replaces the encoding with a precise
+    # BitVec 64 model.
+    lean_theorem: "XpileContracts.CPyIntArith.and_fast_path_eq_slow_path"
+    lean_file: "contracts/lean/PyIntArith.lean"
 
   shift_left_signed_semantics:
     formula: |
