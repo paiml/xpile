@@ -7,6 +7,15 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — README "by the numbers" final polish (PMAT-155)
+
+`README.md` "by the numbers (live, not aspirational)" section refreshed to match the post-session state:
+
+- "~195 workspace tests" → **"204 workspace tests"** (+9 from PMAT-146 qa_gate enforcer + assorted adds).
+- "Three real backends" → **"Four real backends"** (the body already listed Rust, Ruchy, Lean 4, AND bashrs but the lede said three — fixed).
+- **100% QUORUM line**: now says "4-stratum minimum" and quotes the 50+43=93 stratum-vote-artifacts total.
+- **Added `pmat tdg .` baseline**: 95.7/100 (Grade A-).
+
 ### Docs — CURRENT.md refreshed for 25-PR session (PMAT-154)
 
 `docs/status/CURRENT.md` updated to reflect end-of-session state:
