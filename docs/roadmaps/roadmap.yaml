@@ -2105,3 +2105,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-128
+  github_issue: null
+  item_type: task
+  title: 'PMAT-128: notation contract — pre/postconditions for all 6 equations (warnings 16 → 7)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-19T06:00:00Z
+  updated: 2026-05-19T06:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Batch-add genuine pre/postconditions for the 5 remaining equations in notation-latex-math-to-equation-v1.yaml (inline_math_to_equation, theorem_env_to_obligation, proof_env_to_lean_pointer, definition_env_to_equation, remark_env_to_falsification, citation_preservation). Each pre/post-condition is a domain-design judgment call grounded in the equation's invariants and load-bearing semantics. Contract warnings 16 → 7 (the remaining 7 are PV-ENF-002 missing-lean_theorem on equations other than display_math_to_equation — those require actual Lean proofs, deferred to per-equation refinement tickets). Total substrate warnings 77 → 68.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
