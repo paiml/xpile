@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-223
+  github_issue: null
+  item_type: task
+  title: 'PMAT-223: NINTH Diamond-tier refinement — precondition-list-monoid axioms on C-XLATE-RUST-FN-TO-LEAN-THM (XPILE-REFINE-XLATE-RUST-TO-LEAN-005)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T03:30:00Z
+  updated: 2026-05-20T03:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Ninth Diamond-tier theorem. Combines PMAT-209 source_indices homomorphism + payloads homomorphism + identity + associativity into the PRECONDITION LIST MONOID axiomatization on proof lane. Completes monoid Diamond demonstration across both lanes (code via PMAT-221, proof via PMAT-223). precondition_list_monoid_diamond (wired). C-XLATE-RUST-FN-TO-LEAN-THM Sem 12 → 13.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-222
   github_issue: null
   item_type: task
