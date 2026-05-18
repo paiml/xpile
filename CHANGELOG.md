@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — 6 more Kani harnesses for `notation-latex-math-to-equation` (PMAT-150)
+
+`contracts/kani/notation.rs` now carries 7 Kani BMC harnesses (was 1), mirroring the 7 Bronze-tier Lean theorems shipped in PMAT-134.
+
+- `inline_math_to_equation`: byte-for-byte at Bronze tier
+- `theorem_env_to_obligation`: precondition-flag polarity safety
+- `proof_env_to_lean_pointer`: status classification + body-never-leaks lane separation (TWO claims)
+- `definition_env_to_equation`: first math span byte-for-byte
+- `remark_env_to_falsification`: entry iff RFC-2119 keyword present (iff-style)
+- `citation_preservation`: cited contract ID byte-for-byte (companion to `citation_in_emitted_rust` from PMAT-147)
+
+YAML wires each new harness via `kani_harness:` + `kani_file:` references.
+
+`xpile quorum` view for C-NOTATION-LATEX-MATH-TO-EQUATION: Sem=7, **Sym=7** (was 1), Run=1, Ext=3.
+
+Continues the XPILE-QUORUM-006 per-equation Kani fan-out series.
+
 ### Added — 4 more Kani harnesses for `xlate-py-list-to-vec` (PMAT-149)
 
 `contracts/kani/xlate_py_list_to_vec.rs` now carries 5 Kani BMC harnesses (was 1), mirroring the 5 Bronze-tier Lean theorems shipped in PMAT-135.
