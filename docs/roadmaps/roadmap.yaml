@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-258
+  github_issue: null
+  item_type: task
+  title: 'PMAT-258: Refresh CURRENT.md PR count 184 → 217 (Diamond program shipped 32 PRs)'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-05-20T21:00:00Z
+  updated: 2026-05-20T21:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Refresh CURRENT.md \"184 PRs merged on main\" → \"217 PRs merged on main\" reflecting the 32 PRs shipped in the Diamond program (PMAT-226..257)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-257
   github_issue: null
   item_type: task
