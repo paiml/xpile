@@ -168,6 +168,38 @@ equations:
       - "Platinum patterns COMPOSE — building richer compositional properties from prior tier components"
       - "an emitter that sums two BoundedSmems without checking the cumulative bound would not produce a valid BoundedSmem — caught at composition time by the type system"
 
+  bounded_smem_monoid_diamond:
+    # PMAT-218 / XPILE-REFINE-COMPILE-PTX-005: FIFTH Diamond-tier
+    # refinement. Combines PMAT-187 Gold BoundedSmem + PMAT-206
+    # Platinum bounded composition + commutativity + identity
+    # into the BOUNDED MONOID axiomatization. Fifth distinct
+    # Diamond category — bounded algebraic structure.
+    # Companion theorem bounded_smem_closure_diamond captures
+    # closure under the budget.
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_monoid_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      BoundedSmem forms a BOUNDED COMMUTATIVE MONOID:
+        (a) closure: a + b ≤ budget → result is BoundedSmem
+        (b) commutativity: a + b = b + a
+        (c) right identity: a + 0 = a
+        (d) bounded by smem_budget_sm80 = 49152
+    domain: |
+      Any BoundedSmem values with sum-bound preconditions. The
+      Diamond upgrade captures the FULL bounded-monoid
+      axiomatization at the type level.
+    invariants:
+      - "FIFTH Diamond-tier theorem; combines PMAT-187 + PMAT-206 + commutativity + identity"
+      - "distinct from PMAT-214 commutative-monoid: bounded-monoid REQUIRES the operation stay within a bound"
+      - "captures hardware-bound algebraic structure for sm_80 shared memory"
+      - "companion theorem bounded_smem_closure_diamond proves closure under the budget"
+    preconditions:
+      - "all values are BoundedSmem (Gold-tier well-formedness)"
+      - "sum-bound preconditions hold for the binary operations"
+    postconditions:
+      - "an emitter satisfying individual Platinum + Gold theorems but breaking joint structure (non-commutative representation, off-by-one in zero-handling) would falsify this Diamond"
+      - "the bounded-monoid structure is the algebraic foundation for compositional sm_80 budget analysis"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)
