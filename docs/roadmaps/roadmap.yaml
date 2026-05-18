@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-222
+  github_issue: null
+  item_type: task
+  title: 'PMAT-222: EIGHTH Diamond-tier refinement — inductive-monoid axioms on C-XLATE-LEAN-TO-RUST (XPILE-REFINE-XLATE-LEAN-006)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T03:00:00Z
+  updated: 2026-05-20T03:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Eighth Diamond-tier theorem. Combines PMAT-207 variant_count additivity + variant_arities homomorphism + left/right identity into the INDUCTIVE MONOID axiomatization. Eighth distinct Diamond category — structural algebraic for inductive types. inductive_monoid_diamond (wired) — 4-conjunction. C-XLATE-LEAN-TO-RUST Sem 20 → 21.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-221
   github_issue: null
   item_type: task

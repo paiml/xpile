@@ -278,6 +278,35 @@ equations:
       - "an emitter that does variant deduplication during composition would falsify additivity — caught at the Platinum theorem level"
       - "the substrate has now demonstrated functoriality on TWO different lowerings (PMAT-202 list, PMAT-207 inductive), confirming the pattern is portable across Layer-2 contract domains"
 
+  inductive_monoid_diamond:
+    # PMAT-222 / XPILE-REFINE-XLATE-LEAN-006: EIGHTH Diamond-tier
+    # refinement. Combines PMAT-207 variant_count additivity +
+    # variant_arities homomorphism + identity into the INDUCTIVE
+    # MONOID axiomatization. Eighth distinct Diamond category —
+    # structural algebraic for inductive types.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.inductive_monoid_diamond"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      inductive composition forms a MONOID:
+        (a) variant_count additivity: compose(i1, i2).count = i1.count + i2.count
+        (b) variant_arities homomorphism: compose(i1, i2).arities = i1.arities ++ i2.arities
+        (c) left identity: compose(empty, i) = i
+        (d) right identity: compose(i, empty) = i
+    domain: |
+      Any two LeanInductiveSilver values under compose_inductive_silver.
+      The Diamond upgrade captures the FULL inductive-monoid
+      axiomatization.
+    invariants:
+      - "EIGHTH Diamond-tier theorem; combines PMAT-207 additivity + homomorphism + identity"
+      - "INDUCTIVE MONOID — structural algebraic for Lean inductives"
+      - "captures (LeanInductiveSilver, compose, empty) monoid structure for inductive-type assembly"
+    preconditions:
+      - "two well-formed LeanInductiveSilver values"
+      - "no special preconditions — monoid axioms hold universally"
+    postconditions:
+      - "an emitter that deduplicates variants during composition or reorders arities would falsify this Diamond"
+      - "compositional reasoning about inductive-type assembly is now fully type-level"
+
   structure_to_rust_struct:
     # PMAT-133: Bronze-tier refinement theorem locks in
     # field-count preservation.

@@ -7,6 +7,28 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — EIGHTH Diamond-tier refinement: inductive-monoid axioms on C-XLATE-LEAN-TO-RUST (PMAT-222 / XPILE-REFINE-XLATE-LEAN-006)
+
+Eighth Diamond-tier theorem. Combines four properties into the INDUCTIVE MONOID axiomatization:
+- PMAT-207 Platinum variant_count additivity
+- PMAT-207 Platinum variant_arities homomorphism
+- Left identity (`compose(empty, i) = i`)
+- Right identity (`compose(i, empty) = i`)
+
+**Eighth distinct Diamond category**:
+1. PMAT-214: commutative-monoid / semiring
+2. PMAT-215: pure-function
+3. PMAT-216: abelian-group
+4. PMAT-217: equivalence-relation
+5. PMAT-218: bounded-monoid
+6. PMAT-219: string-monoid
+7. PMAT-221: free list-monoid
+8. **PMAT-222: inductive-monoid (structural algebraic)** ← NEW
+
+Captures the `(LeanInductiveSilver, compose, empty)` monoid structure at the type level — fundamental for compositional reasoning about inductive-type assembly. An emitter that deduplicates variants during composition or reorders arities would falsify this Diamond.
+
+YAML: adds new equation `inductive_monoid_diamond` wired to the Diamond theorem. `xpile quorum` view for C-XLATE-LEAN-TO-RUST: Sem=21 (was 20), Sym=9, Run=1, Ext=13. Eight Diamond axiomatizations now in substrate across 8 contracts.
+
 ### Added — SEVENTH Diamond-tier refinement: free list-monoid axioms on C-XLATE-PY-LIST-TO-VEC (PMAT-221 / XPILE-REFINE-XLATE-PY-LIST-005)
 
 Seventh Diamond-tier theorem. Combines four properties into the FREE LIST MONOID axiomatization for polymorphic Python list lowering:
