@@ -7,6 +7,13 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — post-session numerics refresh: 204 tests + TDG A- baseline (PMAT-153)
+
+Final numeric polish after the XPILE-QUORUM-006 session's 24 PRs.
+
+- `docs/status/2026-05-18-substrate-completion.md` §Workspace state: "195 workspace tests" → "204 workspace tests" (+9 from PMAT-146 qa_gate enforcer + assorted adds).
+- Added pmat-tdg baseline: `pmat tdg .` reports score 95.7 / 100 (Grade **A-**) — meeting the originally-planned XPILE-CI-PMAT-TDG-001 ≥ A- threshold without explicit enforcement. Not a CI gate yet (post-v0.1.0 tracking ticket); recorded as a substrate-health milestone.
+
 ### Docs — XPILE-QUORUM-006 series reflected across spec/audit/status (PMAT-152)
 
 Post-PMAT-147..151 numeric-drift sweep across all spec/audit/status docs.
