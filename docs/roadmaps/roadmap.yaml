@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-151
+  github_issue: null
+  item_type: task
+  title: 'PMAT-151: py-int-arith Kani fan-out — 8 more harnesses, completes XPILE-QUORUM-006 series'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T15:30:00Z
+  updated: 2026-05-18T15:30:00Z
+  spec: null
+  acceptance_criteria:
+  - contracts/kani/py_int_arith.rs grows from 1 wired harness (addition_no_overflow) to 9, mirroring the 9 Bronze-tier Lean theorems. Adds addition_overflow_promotion, multiplication_quadratic_promotion, division_floor_semantics (bounded |a|,|b| < 2^30), modulo_floor_semantics, bitwise_and_signed_semantics, shift_left_signed_semantics (bounded), shift_right_signed_semantics (bounded), power_signed_semantics (bounded b≤4). YAML wires each via kani_harness+kani_file refs. xpile quorum view for C-PY-INT-ARITH gains Sym=9 (was 1). XPILE-QUORUM-006 series complete (PMAT-147..151). Total Kani harnesses substrate-wide 12 → 35.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-150
   github_issue: null
   item_type: task

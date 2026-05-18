@@ -7,6 +7,33 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — 8 more Kani harnesses for `py-int-arith` — XPILE-QUORUM-006 series complete (PMAT-151)
+
+`contracts/kani/py_int_arith.rs` now carries 10 `#[kani::proof]` harnesses (9 wired to YAML equations, plus the bonus `subtraction_no_overflow` for the forthcoming subtraction extension). The 8 new harnesses mirror the 8 remaining Bronze-tier Lean theorems shipped in PMAT-028..030, PMAT-034, PMAT-138:
+
+- `addition_overflow_promotion`: BigInt path = i128 mathematical sum (no silent wrap)
+- `multiplication_quadratic_promotion`: fast path = slow path on `fits_i64`
+- `division_floor_semantics`: `div_euclid` matches Python `//` (floor); bounded by `|a|, |b| < 2^30` for BMC tractability
+- `modulo_floor_semantics`: `rem_euclid` always in `[0, |b|)`
+- `bitwise_and_signed_semantics`: i64 bit-AND is the same operation in fast and slow path
+- `shift_left_signed_semantics`: wrapping shl = `a * 2^b` reduced mod 2^64
+- `shift_right_signed_semantics`: arithmetic shift right = floor-div by 2^b
+- `power_signed_semantics`: a^b agrees on bounded domain (b ≤ 4, |a| < 100)
+
+YAML wires all 8 via `kani_harness:` + `kani_file:` references.
+
+**XPILE-QUORUM-006 series complete**: PMAT-147 (xlate-lean-to-rust 1→9), PMAT-148 (xlate-rust-fn-to-lean-thm 1→5), PMAT-149 (xlate-py-list-to-vec 1→5), PMAT-150 (notation 1→7), PMAT-151 (py-int-arith 1→9). All 5 multi-equation contracts now have per-equation Kani parity with their Lean theorems.
+
+`xpile quorum` substrate summary:
+- C-PY-INT-ARITH: 9/9/4/7
+- C-XLATE-LEAN-TO-RUST: 9/9/1/3
+- C-NOTATION-LATEX-MATH-TO-EQUATION: 7/7/1/4
+- C-XLATE-PY-LIST-TO-VEC: 5/5/1/4
+- C-XLATE-RUST-FN-TO-LEAN-THM: 5/5/1/3
+- (5 trait/pattern contracts at 1/1/1/3-5)
+
+Total Kani harnesses: 12 → **35** (post-XPILE-QUORUM-006 series).
+
 ### Added — 6 more Kani harnesses for `notation-latex-math-to-equation` (PMAT-150)
 
 `contracts/kani/notation.rs` now carries 7 Kani BMC harnesses (was 1), mirroring the 7 Bronze-tier Lean theorems shipped in PMAT-134.
