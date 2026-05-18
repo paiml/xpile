@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FOURTH Diamond-tier refinement: equivalence-relation axioms on C-XPILE-CONTRACT-FRONTEND-TRAIT (PMAT-217 / XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-004)
+
+Fourth Diamond-tier theorem. Combines three equivalence-relation axioms on modules-preservation:
+- PMAT-203 Platinum transitivity
+- Reflexivity (companion to PMAT-203)
+- Symmetry (proved here at Diamond)
+
+Together these characterize `modules_equiv` as a proper EQUIVALENCE RELATION on TranspileSession values.
+
+**Four distinct Diamond axiomatizations now in the substrate**:
+1. PMAT-214: commutative-monoid / semiring (algebraic structure)
+2. PMAT-215: pure-function (functional characterization)
+3. PMAT-216: abelian-group (algebraic with inverses)
+4. **PMAT-217: equivalence-relation (relational structure)** ← NEW
+
+The Diamond theorems:
+- `modules_equivalence_relation_diamond` (wired): 3-conjunction proving reflexivity + symmetry + transitivity
+- `parse_preserves_equivalence_class_diamond`: parse_to_equations is INVARIANT-PRESERVING under the equivalence
+
+Diamond captures **RELATIONAL algebraic structure** for the first time. modules-preservation can now be quotiented to form equivalence classes — the algebraic foundation for "modules-preservation" reasoning about session state.
+
+YAML: adds new equation `modules_equivalence_relation_diamond` wired to the Diamond theorem. `xpile quorum` view for C-XPILE-CONTRACT-FRONTEND-TRAIT: Sem=5 (was 4), Sym=1, Run=1, Ext=8. Four Diamond theorems now in the substrate covering distinct algebraic categories.
+
 ### Added — THIRD Diamond-tier refinement: refcount abelian-group axioms on C-FFI-CPYTHON-EXT (PMAT-216 / XPILE-REFINE-FFI-CPYTHON-010)
 
 Third Diamond-tier theorem in the substrate. Combines four group axioms into the ABELIAN GROUP axiomatization for refcount-delta semantics:

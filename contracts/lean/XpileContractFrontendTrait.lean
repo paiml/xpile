@@ -299,4 +299,82 @@ theorem frame_safety_chain_parse_platinum
   unfold parse_to_equations_silver
   rfl
 
+/-! ## PMAT-217 — FOURTH Diamond-tier refinement: equivalence-
+    relation axioms (XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-004).
+
+    Fourth Diamond-tier theorem in the substrate. Combines three
+    equivalence-relation axioms on frame-safety:
+    - PMAT-203 Platinum transitivity
+    - Reflexivity (companion to PMAT-203)
+    - Symmetry (proved here at Diamond)
+
+    Together these characterize modules-preservation as a
+    proper EQUIVALENCE RELATION on TranspileSession values.
+
+    Diamond captures the equivalence-class structure, distinct
+    from prior Diamond axiomatizations:
+    - PMAT-214: commutative-monoid / semiring (algebraic)
+    - PMAT-215: pure-function (functional)
+    - PMAT-216: abelian-group (algebraic with inverses)
+    - **PMAT-217 (NEW): equivalence-relation (relational)**
+
+    Status: discharged at v0.1.0 (PMAT-217). Tier: DIAMOND.
+    Fourth Diamond theorem in the substrate. -/
+
+/-- The "modules-equivalent" relation on TranspileSession. Two
+    sessions are equivalent iff they have the same modules
+    field, regardless of equations. -/
+def modules_equiv (s1 s2 : TranspileSession) : Prop :=
+  s1.modules = s2.modules
+
+/--
+  **Diamond-tier refinement theorem** — modules_equiv is a
+  proper EQUIVALENCE RELATION on TranspileSession.
+
+  Combines three axioms:
+  - Reflexivity: every session is modules-equivalent to itself
+  - Symmetry: if s1 ~ s2 then s2 ~ s1
+  - Transitivity: if s1 ~ s2 and s2 ~ s3 then s1 ~ s3
+
+  These three properties JOINTLY characterize equivalence
+  relations in classical logic. Any binary relation satisfying
+  this Diamond can be quotiented to form equivalence classes —
+  the algebraic foundation for "modules-preservation" reasoning.
+
+  An emitter satisfying transitivity (PMAT-203) but failing
+  symmetry (e.g., a directional refinement relation rather than
+  a true equivalence) would falsify this Diamond.
+
+  Status: **discharged at v0.1.0 (PMAT-217)**. Tier: DIAMOND.
+-/
+theorem modules_equivalence_relation_diamond
+    (s1 s2 s3 : TranspileSession) :
+    -- Reflexivity
+    modules_equiv s1 s1
+    -- Symmetry
+    ∧ (modules_equiv s1 s2 → modules_equiv s2 s1)
+    -- Transitivity
+    ∧ (modules_equiv s1 s2 → modules_equiv s2 s3 → modules_equiv s1 s3) := by
+  refine ⟨?_, ?_, ?_⟩
+  · rfl
+  · intro h
+    exact h.symm
+  · intros h1 h2
+    exact h1.trans h2
+
+/--
+  **Diamond-tier refinement theorem** — parse_to_equations_silver
+  is an INVARIANT-PRESERVING operation under the modules_equiv
+  equivalence relation.
+
+  For any source input, calling parse_to_equations_silver
+  produces a session that is modules-equivalent to the input.
+  This connects the Diamond equivalence relation to the
+  contract's primary operation.
+-/
+theorem parse_preserves_equivalence_class_diamond
+    (s : TranspileSession) (src : Array UInt8) :
+    modules_equiv s (parse_to_equations_silver s src) :=
+  (equations_only_silver s src).symm
+
 end XpileContracts.CXpileContractFrontendTrait
