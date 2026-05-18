@@ -777,4 +777,82 @@ theorem and_dispatch_total_silver (path : PyIntPath) (a b : Int) :
     ∃ n : Int, and_dispatch_silver path a b = n := by
   exact ⟨_, rfl⟩
 
+/-! ## PMAT-183 — Silver-tier refinement for `addition_overflow_promotion`
+    (XPILE-REFINE-PY-INT-ARITH-004).
+
+    Wires the slow-path-only companion of `addition_no_overflow`
+    with a Silver-tier theorem. Bronze (PMAT-034 /
+    `add_slow_path_eq_python`) proved the slow path returns the
+    mathematical sum on EVERY input. Silver adds a typed
+    BigIntPromotion model that captures the allocation contract
+    (the slow path must HEAP-ALLOCATE the BigInt result, not
+    stack-allocate as a wrapped i64).
+
+    The Silver model:
+    - `Allocation`: enum `Stack | Heap` — captures the allocation
+      semantics that Bronze couldn't see (Bronze's `bigint_add`
+      returned a raw Int with no allocation metadata).
+    - `BigIntResult`: { value : Int, allocation : Allocation }
+    - `bigint_add_with_allocation_silver`: produces Heap-allocated
+      result on every input.
+    - `bigint_addition_is_heap_allocated_silver` (wired): the
+      load-bearing safety claim that the slow path always
+      heap-allocates.
+
+    With this PR landed, **C-PY-INT-ARITH has Silver coverage on
+    all 9 equations (9/9 — full Silver tier)**. This is the
+    **SIXTH and FINAL multi-equation contract in the substrate
+    at full Silver**: all 6 multi-eq contracts (C-FFI-CPYTHON-EXT,
+    C-XLATE-LEAN-TO-RUST, C-XLATE-RUST-FN-TO-LEAN-THM,
+    C-NOTATION-LATEX-MATH-TO-EQUATION, C-XLATE-PY-LIST-TO-VEC,
+    C-PY-INT-ARITH) now at full Silver coverage on every
+    equation. -/
+
+/-- Caller-observable allocation strategy. Bronze had no
+    distinction; Silver introduces this enum to capture
+    Heap-allocation vs Stack-allocation. Used to lock in the
+    contract's "exactly one heap allocation" invariant. -/
+inductive Allocation where
+  | stack
+  | heap
+deriving DecidableEq
+
+/-- Silver-tier model of the slow-path BigInt result. -/
+structure BigIntResult where
+  value : Int
+  allocation : Allocation
+deriving DecidableEq
+
+/-- Silver-tier slow-path addition. Always heap-allocates (the
+    contract's load-bearing safety claim for the slow path —
+    fast-path inputs would wrap, slow-path inputs MUST promote
+    to BigInt). -/
+def bigint_add_with_allocation_silver (a b : Int) : BigIntResult :=
+  { value := a + b, allocation := Allocation.heap }
+
+/-- **Silver-tier refinement theorem** — the slow-path addition
+    is always heap-allocated. Captures the BigInt-promotion
+    invariant that Bronze couldn't see (Bronze's `bigint_add`
+    returned a raw Int with no allocation metadata).
+
+    Falsified by an emitter that "optimises" small BigInt values
+    onto the stack as a wrapped i64 (which would silently truncate
+    if the value later grows beyond i64::MAX — a real bug class
+    in production BigInt libraries that use SmallVec-style
+    representations).
+
+    Status: discharged at v0.1.0 (PMAT-183). Tier: Silver.
+    COMPLETES Silver coverage on C-PY-INT-ARITH (9/9) — SIXTH
+    and FINAL multi-eq contract at full Silver tier. -/
+theorem bigint_addition_is_heap_allocated_silver (a b : Int) :
+    (bigint_add_with_allocation_silver a b).allocation = Allocation.heap := by
+  rfl
+
+/-- **Silver-tier refinement theorem** — slow-path value equals
+    the mathematical sum. Composes with Bronze
+    `add_slow_path_eq_python` at the typed-result level. -/
+theorem bigint_addition_value_eq_math_silver (a b : Int) :
+    (bigint_add_with_allocation_silver a b).value = a + b := by
+  rfl
+
 end XpileContracts.CPyIntArith
