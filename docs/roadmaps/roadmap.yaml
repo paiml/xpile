@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-136
+  github_issue: null
+  item_type: task
+  title: 'PMAT-136: xlate-rust-fn-to-lean-thm — Bronze-tier refinement theorems for the 4 remaining equations (warnings 5 → 1)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T09:30:00Z
+  updated: 2026-05-18T09:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add Bronze-tier refinement theorems to contracts/lean/XlateRustFnToLeanThm.lean for the 4 remaining equations (rust_postcondition_to_lean_theorem, rust_precondition_to_lean_hypothesis, citation_bridge_via_attribute REWRITTEN to capture load-bearing attribute payload invariant, frame_translation_is_textual). Each theorem captures a different load-bearing aspect (1:1/1:N expansion rule, count+source-order preservation, byte-for-byte contract_id+equation_name in the emitted attribute, input-hash bit-identity for cache-determinism). Wire lean_theorem + lean_file references in xlate-rust-fn-to-lean-thm-v1.yaml. Contract warnings 5 → 1. Total substrate warnings 10 → 6.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-135
   github_issue: null
   item_type: task
