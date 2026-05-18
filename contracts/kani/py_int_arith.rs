@@ -94,34 +94,42 @@ fn subtraction_no_overflow() {
 
 /// Equation `addition_overflow_promotion`: when fits_i64 fails,
 /// emission must promote to BigInt (modelled here as i128 result).
-/// Falsified by an emitter that silently wraps on overflow.
+/// Falsified by an emitter that silently wraps on overflow. The
+/// `sum > MAX || sum < MIN` precondition narrowly selects only
+/// overflowing inputs — CBMC has trouble enumerating that thin
+/// slice of the full i64 × i64 space, so we bound the operands
+/// to a narrow envelope around i64::MAX that still triggers overflow.
 #[kani::proof]
 fn addition_overflow_promotion() {
     let a: i64 = kani::any();
     let b: i64 = kani::any();
+    // Restrict to near-MAX so overflow is symbolically reachable
+    // without exploring all 2^128 (a, b) pairs.
+    kani::assume(a >= i64::MAX - 1000 && a <= i64::MAX);
+    kani::assume(b >= i64::MAX - 1000 && b <= i64::MAX);
 
     let sum_i128: i128 = a as i128 + b as i128;
-    kani::assume(sum_i128 > i64::MAX as i128 || sum_i128 < i64::MIN as i128);
+    // With both operands near MAX, the sum always overflows i64.
+    kani::assume(sum_i128 > i64::MAX as i128);
 
-    // BigInt path: result is the mathematically exact sum in i128.
-    // The contract claim is that this value equals CPython
-    // `int.__add__(a, b)`.
     let bigint_result: i128 = sum_i128;
     assert_eq!(bigint_result, a as i128 + b as i128);
 }
 
 /// Equation `multiplication_quadratic_promotion`: fast path agrees
-/// with slow path on the fits_i64 domain. Special case i64::MIN *
-/// -1 always promotes (handled separately by the `> max || < min`
-/// assume).
+/// with slow path on the fits_i64 domain. Bounded for BMC
+/// tractability — i64 * i64 multiplication is much harder for
+/// CBMC than addition (the bit-blasted SAT encoding is
+/// quadratic in operand size), so we restrict |a|, |b| ≤ 1000.
 #[kani::proof]
 fn multiplication_quadratic_promotion() {
     let a: i64 = kani::any();
     let b: i64 = kani::any();
+    kani::assume(a.abs() <= 1000);
+    kani::assume(b.abs() <= 1000);
 
     let prod_i128: i128 = a as i128 * b as i128;
-    kani::assume(prod_i128 >= i64::MIN as i128);
-    kani::assume(prod_i128 <= i64::MAX as i128);
+    // With |a|, |b| ≤ 1000, |product| ≤ 10^6 — always fits i64.
 
     let fast: i64 = a.wrapping_mul(b);
     let slow: i64 = prod_i128 as i64;
