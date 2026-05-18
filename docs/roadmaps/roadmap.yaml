@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-202
+  github_issue: null
+  item_type: task
+  title: 'PMAT-202: FOURTH Platinum-tier refinement — functoriality / monoid homomorphism on C-XLATE-PY-LIST-TO-VEC (XPILE-REFINE-XLATE-PY-LIST-004)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T17:00:00Z
+  updated: 2026-05-19T17:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Fourth Platinum-tier theorem. Demonstrates FOURTH distinct Platinum algebraic shape — functoriality / monoid homomorphism. lower(l1 ++ l2) = lower(l1) ++ lower(l2). Distinct from PMAT-199 commutativity, PMAT-200 associativity, PMAT-201 idempotence. lower_distributes_over_append_platinum (wired) + lower_preserves_empty_platinum (identity) + lower_length_homomorphism_platinum (length is also a homomorphism). Load-bearing for emitter-composition (piecewise vs monolithic build strategies proven equivalent). C-XLATE-PY-LIST-TO-VEC Sem 11 → 12.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-201
   github_issue: null
   item_type: task

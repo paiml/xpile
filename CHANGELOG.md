@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FOURTH Platinum-tier refinement: functoriality on C-XLATE-PY-LIST-TO-VEC (PMAT-202 / XPILE-REFINE-XLATE-PY-LIST-004)
+
+Fourth Platinum-tier theorem in the substrate. Demonstrates the **FOURTH distinct Platinum algebraic shape**: functoriality / monoid homomorphism — `lower(l1 ++ l2) = lower(l1) ++ lower(l2)`. Distinct from PMAT-199 commutativity, PMAT-200 associativity, PMAT-201 idempotence.
+
+The Platinum theorems:
+- `lower_distributes_over_append_platinum` (wired): `lower(l1 ++ l2).elems = lower(l1).elems ++ lower(l2).elems` — functoriality of the lowering over list append, polymorphic over α
+- `lower_preserves_empty_platinum`: identity preservation (`lower([]) = []`) — combined with append-distributivity, proves the lowering is a MONOID HOMOMORPHISM
+- `lower_length_homomorphism_platinum`: length is also a homomorphism — `length(lower(l1 ++ l2)) = length(l1) + length(l2)`
+
+**Four distinct Platinum algebraic shapes now demonstrated**:
+1. Commutativity (PMAT-199): binary `f(a, b) = f(b, a)`
+2. Associativity + Distributivity (PMAT-200): ternary + cross-op
+3. Idempotence (PMAT-201): fixed-point `f(x) = f(f(x))`
+4. **Functoriality / Monoid Homomorphism (PMAT-202): `lower(l1 ++ l2) = lower(l1) ++ lower(l2)`**
+
+**Load-bearing for emitter compositions**: an emitter that builds a Rust Vec piecewise (streaming/buffering) produces the same observable result as one that builds the full Python list first and lowers in one shot. Platinum guarantees these strategies are EQUIVALENT, not merely compatible.
+
+YAML: adds new equation `lower_distributes_over_append_platinum` wired to the Platinum theorem. `xpile quorum` view for C-XLATE-PY-LIST-TO-VEC: Sem=12 (was 11), Sym=5, Run=1, Ext=10. Platinum tier now established with 4 distinct algebraic-property shapes across 3 contracts.
+
 ### Added — THIRD Platinum-tier refinement: idempotence on C-BASHRS-POSIX-IDEMPOTENCE — captures the contract's NAMESAKE property (PMAT-201 / XPILE-REFINE-BASHRS-003)
 
 Third Platinum-tier theorem in the substrate. Demonstrates the Platinum pattern captures a **fixed-point / idempotence algebraic property**, distinct from PMAT-199's binary commutativity and PMAT-200's ternary associativity/distributivity.
