@@ -8,7 +8,7 @@ This file used to enumerate every implemented crate / contract / construct, and 
 ## High-water mark (v0.1.0, 2026-05-18 substrate completion)
 
 - 27 workspace crates compile clean; `cargo check`, `cargo clippy -D warnings`, `cargo fmt --check`, `cargo deny check advisories` all green
-- 12 contracts pass `pv lint` (0 errors)
+- 12 contracts pass `pv lint` (0 errors, **0 warnings** — full clean state as of PMAT-138 closing XPILE-REFINE-005). Every equation carries domain-grounded pre/postconditions, every equation is anchored to a Lean refinement theorem, every contract declares a `qa_gate`.
 - **100% §14.4 N-of-M QUORUM coverage** — every contract has paired Lean refinement theorem + Kani BMC harness at Bronze tier. `xpile quorum` → `12 QUORUM, 0 PARTIAL, 0 UNVERIFIED`. Two contracts at full four-stratum coverage (C-PY-INT-ARITH, C-BASHRS-POSIX-IDEMPOTENCE).
 - Four real backends: Rust (`pub fn`), Ruchy (`fun`), Lean 4 (`def`), Shell/bashrs (POSIX subset). PTX / WGSL / SPIR-V still scaffolded.
 - Python subset supported: see [`CHANGELOG.md`](../../CHANGELOG.md) §"Python subset (live, runtime-verified)"

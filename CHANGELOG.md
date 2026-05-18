@@ -7,6 +7,10 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — spec + status now reflect zero-warnings substrate (PMAT-139)
+
+Spec sweep correcting post-PMAT-138 numeric drift. `docs/specifications/xpile-spec.md` and `docs/status/CURRENT.md` now state explicitly that `pv lint contracts/` reports **0 errors AND 0 warnings** — the substrate has been at full-clean state since PMAT-138 closed XPILE-REFINE-005. The §13/§23 lines also note that every equation carries domain-grounded pre/postconditions, every equation is anchored to a Lean refinement theorem, and every contract declares a `qa_gate`.
+
 ### Added — `bitwise_and_signed_semantics` refinement theorem (PMAT-138 / XPILE-REFINE-005)
 
 `contracts/lean/PyIntArith.lean` now carries a Bronze-tier
