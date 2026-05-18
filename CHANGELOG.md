@@ -7,6 +7,15 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — CURRENT.md refreshed for 25-PR session (PMAT-154)
+
+`docs/status/CURRENT.md` updated to reflect end-of-session state:
+
+- **Last refreshed:** stamp moved from "PMAT-083 substrate-completion sweep" to "PMAT-154; post-PMAT-127..153 quality + Kani fan-out + doc sweep session, 25 PRs".
+- **§14.4 QUORUM line**: expanded to note 4-stratum minimum, multi-vote runtime coverage for the two top contracts, and the post-XPILE-QUORUM-006 totals (50 Lean theorems + 43 Kani harnesses = 93 stratum-vote artifacts).
+- **Added `pmat tdg` baseline** to the high-water-mark list: 95.7 / 100 (Grade A-).
+- **PR count**: 113 → **184** merged on `main` (+71 since the previous refresh stamp).
+
 ### Docs — post-session numerics refresh: 204 tests + TDG A- baseline (PMAT-153)
 
 Final numeric polish after the XPILE-QUORUM-006 session's 24 PRs.

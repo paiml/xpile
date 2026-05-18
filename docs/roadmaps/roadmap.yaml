@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-154
+  github_issue: null
+  item_type: task
+  title: 'PMAT-154: CURRENT.md refresh — PR count 113 → 184, post-session refresh stamp, QUORUM line expansion'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-05-18T17:00:00Z
+  updated: 2026-05-18T17:00:00Z
+  spec: null
+  acceptance_criteria:
+  - CURRENT.md Last-refreshed stamp moved from PMAT-083 → PMAT-154 (this session). §14.4 QUORUM line expanded to note 4-stratum minimum + 93 stratum-vote artifacts. Added pmat tdg A- baseline. PR count 113 → 184.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-153
   github_issue: null
   item_type: task
