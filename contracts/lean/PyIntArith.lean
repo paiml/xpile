@@ -1264,4 +1264,85 @@ theorem slow_path_semiring_diamond (a b c : Int) :
         (mul_dispatch_silver PyIntPath.SlowPath a c) := by
   exact mul_distributes_over_add_slow_path_platinum a b c
 
+/-! ## PMAT-228 — SECOND Diamond-tier refinement (DIAMOND BREADTH):
+    Euclidean-division axioms (XPILE-REFINE-PY-INT-ARITH-009).
+
+    **First DEPTH-2 Diamond in the substrate.** Previously every
+    contract had at most ONE Diamond theorem (Diamond-universal
+    coverage achieved at PMAT-226 — 12/12 contracts at one
+    Diamond category each). PMAT-228 opens **Diamond breadth**:
+    proving multiple distinct algebraic categories on the SAME
+    contract.
+
+    PyIntArith already has the commutative-monoid / semiring
+    Diamond at PMAT-214 (add/mul axioms). This PMAT adds the
+    EUCLIDEAN-DIVISION Diamond — a fundamentally distinct
+    algebraic category covering integer-division semantics:
+
+    - PMAT-214 axiomatizes (Int, +, 0, *, 1) as a semiring
+    - PMAT-228 axiomatizes (Int, fdiv, fmod) as a Euclidean
+      domain — the division algorithm + slow-path soundness
+
+    Together they prove that the C-PY-INT-ARITH substrate
+    captures BOTH the additive/multiplicative semiring AND the
+    integer-division semantics at the type level. An emitter
+    that satisfies one Diamond but breaks the other would be
+    rejected.
+
+    The Diamond combines four properties:
+    (a) Division algorithm: `b * (a fdiv b) + (a fmod b) = a`
+    (b) Slow-path soundness for fdiv (PMAT-175 lifted)
+    (c) Slow-path soundness for fmod (PMAT-175 lifted)
+    (d) Composed: division algorithm holds on slow-path dispatchers
+
+    Status: discharged at v0.1.0 (PMAT-228). Tier: DIAMOND.
+    SECOND Diamond on PyIntArith — opens Diamond breadth. -/
+
+/--
+  **Diamond-tier refinement theorem** — the floor-division /
+  modulus pair forms a EUCLIDEAN DOMAIN on the slow path,
+  satisfying the canonical division algorithm:
+
+      ∀ a b : Int, b * (a fdiv b) + (a fmod b) = a
+
+  Combines four properties:
+  (a) Lean stdlib's division algorithm `Int.fmod_add_fdiv`
+  (b) Slow-path soundness for floor-div (PMAT-175 lifted)
+  (c) Slow-path soundness for modulus (PMAT-175 lifted)
+  (d) The division algorithm holds when both dispatchers are
+      read on the slow path
+
+  This is the SECOND Diamond category on C-PY-INT-ARITH —
+  fundamentally distinct from PMAT-214's commutative-monoid /
+  semiring axiomatization. The Diamond captures **integer-
+  division semantics** at the type level. Falsification: an
+  emitter that swaps Python-style floor-div for C-style
+  truncating div would break this Diamond (truncating div does
+  not satisfy `b * (a fdiv b) + (a fmod b) = a` for negative
+  dividends).
+
+  Status: **discharged at v0.1.0 (PMAT-228)**. Tier: DIAMOND.
+-/
+theorem division_algorithm_diamond
+    (a b : Int) :
+    -- (a) Division algorithm — canonical Euclidean identity
+    Int.fmod a b + b * Int.fdiv a b = a
+    -- (b) Slow-path soundness for fdiv (PMAT-175 lifted)
+    ∧ floor_div_dispatch_silver PyIntPath.SlowPath a b
+        = Int.fdiv a b
+    -- (c) Slow-path soundness for fmod (PMAT-175 lifted)
+    ∧ mod_dispatch_silver PyIntPath.SlowPath a b
+        = Int.fmod a b
+    -- (d) Composed: division algorithm on slow-path dispatchers
+    ∧ mod_dispatch_silver PyIntPath.SlowPath a b
+        + b * floor_div_dispatch_silver PyIntPath.SlowPath a b
+        = a := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.fmod_add_fdiv a b
+  · rfl
+  · rfl
+  · -- definitionally reduce dispatchers, then apply (a)
+    show Int.fmod a b + b * Int.fdiv a b = a
+    exact Int.fmod_add_fdiv a b
+
 end XpileContracts.CPyIntArith

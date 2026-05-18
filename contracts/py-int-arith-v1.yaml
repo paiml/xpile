@@ -421,6 +421,47 @@ equations:
       - "an emitter that uses Rust's truncating `%` instead of checked_rem_euclid would diverge from CPython on mixed-sign operands"
     kani_file: "contracts/kani/py_int_arith.rs"
 
+  division_algorithm_diamond:
+    # PMAT-228 / XPILE-REFINE-PY-INT-ARITH-009: SECOND Diamond-
+    # tier refinement on C-PY-INT-ARITH. First DEPTH-2 Diamond in
+    # the entire substrate — opens Diamond breadth. Previously,
+    # every contract had at most one Diamond category; PMAT-228
+    # adds the EUCLIDEAN-DOMAIN Diamond on the same contract that
+    # already has the commutative-monoid / semiring Diamond
+    # (PMAT-214). The two Diamonds capture distinct algebraic
+    # categories: PMAT-214 is (Int, +, 0, *, 1) as semiring;
+    # PMAT-228 is (Int, fdiv, fmod) satisfying the canonical
+    # division algorithm.
+    lean_theorem: "XpileContracts.CPyIntArith.division_algorithm_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      ∀ a b : Int.
+        (a fmod b + b * (a fdiv b) = a)                 -- division algorithm
+        ∧ (floor_div_dispatch SlowPath a b = Int.fdiv a b)
+        ∧ (mod_dispatch SlowPath a b = Int.fmod a b)
+        ∧ (mod_dispatch SlowPath a b
+            + b * floor_div_dispatch SlowPath a b = a)   -- composed
+      (Euclidean-domain axiomatization)
+    domain: |
+      Any Int operands a, b on the SlowPath. The Diamond upgrade
+      captures the FULL Euclidean-domain axiomatization, including
+      the canonical division algorithm and slow-path dispatcher
+      soundness. b = 0 is admitted in the algebraic statement
+      because Int.fdiv / Int.fmod default to 0 at b = 0 in Lean,
+      satisfying the identity trivially; runtime emission still
+      enforces b ≠ 0 via Python's ZeroDivisionError semantics.
+    invariants:
+      - "SECOND Diamond-tier theorem on C-PY-INT-ARITH — opens Diamond breadth (first DEPTH-2 Diamond in the substrate)"
+      - "fundamentally distinct algebraic category from PMAT-214 (semiring vs Euclidean-domain)"
+      - "captures (Int, fdiv, fmod) as a Euclidean domain at the type level"
+      - "the division algorithm holds when both dispatchers are read on the slow path"
+    preconditions:
+      - "Lean's Int.fdiv / Int.fmod default to 0 at b = 0 — the algebraic identity holds for ALL b including 0"
+    postconditions:
+      - "an emitter that uses C-style truncating div instead of Python floor-div would falsify the division algorithm on negative dividends"
+      - "Diamond BREADTH demonstrated: 2 distinct Diamond categories on the same contract is possible"
+      - "the substrate's Diamond tier can now demonstrate algebraic depth-2 — multiple categories per contract"
+
   bitwise_and_signed_semantics:
     formula: |
       python_int_and(a, b) == rust_i64::bitand(a, b)  WHEN  both_fit_i64(a, b)

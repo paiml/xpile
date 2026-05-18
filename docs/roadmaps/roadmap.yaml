@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-228
+  github_issue: null
+  item_type: task
+  title: 'PMAT-228: SECOND Diamond-tier refinement on C-PY-INT-ARITH (DIAMOND BREADTH) — Euclidean-division axioms (XPILE-REFINE-PY-INT-ARITH-009)'
+  status: planned
+  priority: medium
+  assigned_to: now-shipping
+  created: 2026-05-20T06:00:00Z
+  updated: 2026-05-20T06:00:00Z
+  spec: null
+  acceptance_criteria:
+  - First DEPTH-2 Diamond in the substrate. Adds EUCLIDEAN-DOMAIN Diamond on PyIntArith covering division algorithm + slow-path dispatcher soundness. Combines Int.fmod_add_fdiv + PMAT-175 fdiv/fmod soundness + composed identity. division_algorithm_diamond (wired). C-PY-INT-ARITH Sem 13 → 14.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-227
   github_issue: null
   item_type: task
