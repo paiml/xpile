@@ -200,4 +200,116 @@ theorem shared_memory_budget_silver (k : KernelInputSilver) :
   unfold lower_kernel_to_ptx_silver
   exact Nat.min_le_right _ _
 
+/-! ## PMAT-187 — THIRD Gold-tier refinement: BoundedSmem subtype
+    (XPILE-REFINE-COMPILE-PTX-003).
+
+    Third Gold-tier theorem in the substrate (after PMAT-185
+    PyIntFast and PMAT-186 BoundedRefcountDelta). Promotes
+    Silver's `smem_bytes : Nat` (clamped via `min` at lowering
+    time) to a refinement subtype `BoundedSmem := { s : Nat //
+    s ≤ smem_budget_sm80 }` that encodes the sm_80 hardware
+    shared-memory budget at the TYPE level.
+
+    Silver (PMAT-161 `shared_memory_budget_silver`) proves the
+    emitted smem_bytes is bounded — using runtime clamping with
+    `min`. Gold tier removes the need for runtime clamping: the
+    BoundedSmem subtype rules out over-budget values at
+    construction time. A caller passing a raw `Nat` must
+    construct a proof that it fits in 48 KiB before it can be
+    accepted; the type system forbids over-budget kernels by
+    construction.
+
+    Architectural payoff: this is the third Gold pattern
+    demonstration, applied to **hardware-aware compile-time
+    contracts**. The previous Gold theorems covered arithmetic
+    (PMAT-185) and ABI semantics (PMAT-186); this one covers
+    hardware-targeting emission. Together they establish that
+    Gold-tier subtype refinement is a *universal pattern* across
+    Layer-1 (arithmetic), Layer-4 (FFI), and Layer-5 (compile).
+
+    Status: discharged at v0.1.0 (PMAT-187). Tier: GOLD. -/
+
+/-- Gold-tier refinement subtype: a shared-memory byte count
+    proven to fit within the sm_80 48 KiB budget. The invariant
+    is carried by the value. An emitter receiving a BoundedSmem
+    cannot pass an over-budget value — ptxas would otherwise
+    reject the emission, but the type system catches it earlier. -/
+def BoundedSmem := { s : Nat // s ≤ smem_budget_sm80 }
+
+/-- Extract the underlying byte count. -/
+def BoundedSmem.val (b : BoundedSmem) : Nat := b.val
+
+/-- Gold-tier model of a Rust kernel input with bounded smem
+    request. The kernel can't even REQUEST more than 48 KiB —
+    the type system forbids it. -/
+structure KernelInputGold where
+  marker : Array UInt8
+  requested_smem : BoundedSmem
+deriving DecidableEq
+
+/-- Gold-tier model of emitted PTX text. The emitted smem_bytes
+    is a BoundedSmem by construction — no runtime clamp needed,
+    no `min` operation. -/
+structure PtxOutputGold where
+  emitted : Array UInt8
+  smem_bytes : BoundedSmem
+deriving DecidableEq
+
+/-- Gold-tier lowering: pass-through. Because the input's
+    requested_smem is already a BoundedSmem, the output's
+    smem_bytes can copy the bound witness directly. No `min`
+    clamp needed (Silver's clamp was a runtime workaround for
+    untyped Nat input). -/
+def lower_kernel_to_ptx_gold (k : KernelInputGold) : PtxOutputGold :=
+  { emitted := k.marker
+    smem_bytes := k.requested_smem }
+
+/--
+  **Gold-tier refinement theorem** — emitted smem_bytes is
+  bounded by the sm_80 budget BY TYPE (not by clamp).
+
+  This is the third Gold theorem in the substrate. Captures
+  what Silver couldn't model:
+  - Silver: "the emitter clamps via `min` to enforce the bound"
+    — the bound is enforced at lowering time by a runtime
+    operation.
+  - Gold: "the input's smem request IS already bounded" — the
+    type system prevents over-budget requests from being
+    constructed. No runtime check needed.
+
+  Falsification at Gold tier is structural: an emitter that
+  accepts raw `Nat` requests (instead of BoundedSmem) would not
+  type-check against `lower_kernel_to_ptx_gold`. The
+  type-level encoding makes the budget violation impossible at
+  the API boundary.
+
+  Status: **discharged at v0.1.0 (PMAT-187)**. Tier: GOLD.
+-/
+theorem bounded_smem_preserved_gold (k : KernelInputGold) :
+    (lower_kernel_to_ptx_gold k).smem_bytes.val ≤ smem_budget_sm80 :=
+  (lower_kernel_to_ptx_gold k).smem_bytes.property
+
+/--
+  **Gold-tier refinement theorem** — value preserved. The
+  underlying Nat survives lowering byte-for-byte; the bound
+  witness travels alongside.
+-/
+theorem bounded_smem_value_preserved_gold (k : KernelInputGold) :
+    (lower_kernel_to_ptx_gold k).smem_bytes.val = k.requested_smem.val := by
+  rfl
+
+/--
+  **Gold-tier refinement theorem** — bridges Gold to Silver:
+  the BoundedSmem-typed value agrees with what Silver's
+  min-clamp would have produced (since the clamp is a no-op
+  when the input is already in range).
+-/
+theorem gold_subtype_agrees_with_silver_clamp
+    (k : KernelInputGold) :
+    (lower_kernel_to_ptx_gold k).smem_bytes.val
+      = min k.requested_smem.val smem_budget_sm80 := by
+  have h := k.requested_smem.property
+  unfold lower_kernel_to_ptx_gold
+  exact (Nat.min_eq_left h).symm
+
 end XpileContracts.CCompileRustToPtxMma

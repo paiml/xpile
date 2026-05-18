@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — THIRD Gold-tier refinement: `BoundedSmem` subtype on C-COMPILE-RUST-TO-PTX-MMA (PMAT-187 / XPILE-REFINE-COMPILE-PTX-003)
+
+Third Gold-tier theorem in the substrate (after PMAT-185 PyIntFast on C-PY-INT-ARITH and PMAT-186 BoundedRefcountDelta on C-FFI-CPYTHON-EXT). Promotes Silver's `smem_bytes : Nat` (with runtime `min` clamp) to refinement subtype `BoundedSmem := { s : Nat // s ≤ smem_budget_sm80 }`. The sm_80 hardware shared-memory budget is now encoded at the **type level**.
+
+The Gold model:
+- `BoundedSmem := { s : Nat // s ≤ smem_budget_sm80 }` — refinement subtype carrying the 48 KiB bound proof
+- `KernelInputGold { marker, requested_smem : BoundedSmem }` — kernel can't even *request* over-budget memory
+- `PtxOutputGold { emitted, smem_bytes : BoundedSmem }`
+- `lower_kernel_to_ptx_gold`: pass-through (no `min` clamp needed since input is already bounded)
+- `bounded_smem_preserved_gold` (wired): emitted bytes ≤ budget BY TYPE
+- `bounded_smem_value_preserved_gold`: value preserved through lowering
+- `gold_subtype_agrees_with_silver_clamp`: bridges Gold to PMAT-161's Silver model
+
+**What Gold captures that Silver couldn't**:
+- Silver: "the emitter clamps via `min` to enforce the bound" — runtime operation at lowering time
+- Gold: "the input's smem request IS already bounded" — type system prevents over-budget requests from being constructed; no runtime check needed
+
+**Universal Gold pattern across 3 layers**: PMAT-185 (Layer-1 arithmetic) + PMAT-186 (Layer-4 FFI) + PMAT-187 (Layer-5 compile-time) demonstrate that refinement subtypes work uniformly across the contract taxonomy. The same pattern (Silver-precondition-as-hypothesis → Gold-precondition-as-subtype) applies whether the precondition is `fits_i64`, `|delta| ≤ 8`, or `smem ≤ 48*1024`.
+
+YAML: adds new equation `bounded_smem_preserved_gold` wired to the Gold theorem. `xpile quorum` view for C-COMPILE-RUST-TO-PTX-MMA: Sem=3 (was 2), Sym=1, Run=1, Ext=5.
+
 ### Added — SECOND Gold-tier refinement: `BoundedRefcountDelta` subtype on C-FFI-CPYTHON-EXT (PMAT-186 / XPILE-REFINE-FFI-CPYTHON-008)
 
 Second Gold-tier theorem in the substrate (after PMAT-185's PyIntFast on C-PY-INT-ARITH). Promotes Silver's `refcount_delta : Int` to a refinement subtype `BoundedRefcountDelta := { d : Int // -8 ≤ d ∧ d ≤ 8 }`. The CPython ABI's per-call refcount-delta bound is now encoded at the **type level**.
