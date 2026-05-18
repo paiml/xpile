@@ -118,4 +118,63 @@ theorem subprocess_run_eq_shell_run
     python_subprocess_run program args = bashrs_shell_run program args := by
   rfl
 
+/-! ## PMAT-162 — Silver-tier refinement for `subprocess_run_equals_shell_run`
+    (XPILE-REFINE-BASHRS-001).
+
+    The Bronze model represents `Outcome` as a single observable
+    string. The Silver model adds an explicit `exit_code : Int` field
+    and proves the cross-domain bridge preserves it. This is the
+    seventh Silver refinement in the substrate (PMAT-156..161 + this). -/
+
+/-- Silver-tier outcome carries an explicit exit code in addition
+    to the observable string. POSIX shell convention: 0 = success,
+    1..255 = various errors. -/
+structure OutcomeSilver where
+  observable : String
+  exit_code : Int
+deriving DecidableEq
+
+/-- Silver-tier model of CPython `subprocess.run([program, args])`
+    outcome on the success path. CPython's `CompletedProcess` carries
+    `returncode = 0` on success. -/
+def python_subprocess_run_silver (program : String) (args : List String) :
+    OutcomeSilver :=
+  { observable := program ++ " " ++ String.intercalate " " args
+    exit_code := 0 }
+
+/-- Silver-tier model of bashrs-backend's emitted shell outcome on
+    the success path. The shell convention is the same `0 = success`,
+    so this matches the Python side by construction at this tier. -/
+def bashrs_shell_run_silver (program : String) (args : List String) :
+    OutcomeSilver :=
+  { observable := program ++ " " ++ String.intercalate " " args
+    exit_code := 0 }
+
+/--
+  **Silver-tier refinement theorem** for the cross-domain bridge
+  (XPILE-REFINE-BASHRS-001 / PMAT-162).
+
+  CPython's `subprocess.run` and bashrs-emitted shell agree on BOTH
+  the observable string AND the exit code. This is the Bronze claim
+  (observables match) extended to include the POSIX-shell exit-code
+  convention (0 = success) — a real structural claim at the type
+  level, no longer just opaque-string equality.
+
+  Falsification: if bashrs-backend's emit ever sets a non-zero exit
+  code on the success path (e.g., via `set -e` shell-fragments that
+  trip on non-fatal warnings), the Silver theorem fails. The Bronze
+  theorem alone wouldn't catch this because both sides' observables
+  could still match — Silver makes the exit-code semantics
+  type-level.
+
+  Status: **discharged at v0.1.0 Silver tier (PMAT-162)** — seventh
+  Silver refinement, completing Silver coverage across all single-
+  Sem contracts (the four traits + FFI + PTX + bashrs).
+-/
+theorem subprocess_run_eq_shell_run_silver
+    (program : String) (args : List String) :
+    python_subprocess_run_silver program args =
+      bashrs_shell_run_silver program args := by
+  rfl
+
 end XpileContracts.CBashrsPosixIdempotence

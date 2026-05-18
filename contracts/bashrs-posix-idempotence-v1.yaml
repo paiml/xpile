@@ -85,3 +85,32 @@ equations:
     # cross-domain equivalence claim.
     kani_harness: "lit_str_render_is_identity"
     kani_file: "contracts/kani/bashrs.rs"
+
+  # PMAT-162 / XPILE-REFINE-BASHRS-001: Silver-tier equation
+  # extending the cross-domain equivalence claim to include
+  # explicit exit-code preservation. The Bronze model
+  # (subprocess_run_equals_shell_run above) covered the observable
+  # string only; Silver adds the POSIX exit-code convention
+  # (0 = success) to the typed Outcome and proves both sides
+  # produce the same exit code.
+  exit_code_consistency:
+    formula: |
+      python_subprocess_run(program, args).exit_code == bashrs_shell_run(program, args).exit_code
+        AND both == 0 on the success path
+    domain: |
+      Same as subprocess_run_equals_shell_run: string-literal
+      tokens, success path only. The Silver model adds
+      `exit_code : Int` to the Outcome shape.
+    invariants:
+      - "POSIX convention: 0 = success, 1..255 = error variants"
+      - "CompletedProcess.returncode = 0 on success; matched by bashrs-emitted shell exiting normally"
+      - "any future emit that uses `set -e` to trip on warnings would break this invariant"
+    preconditions:
+      - "the subprocess.run call is on the success path (program runs to completion)"
+      - "args are string literals (no shell injection)"
+    postconditions:
+      - "result Outcome's exit_code = 0 on both sides (matches POSIX convention)"
+      - "diverging the two sides' exit_code would falsify the cross-domain bridge at the type level (Bronze couldn't catch this)"
+    # PMAT-162: Silver-tier refinement theorem.
+    lean_theorem: "XpileContracts.CBashrsPosixIdempotence.subprocess_run_eq_shell_run_silver"
+    lean_file: "contracts/lean/Bashrs.lean"

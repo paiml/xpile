@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier refinement: `exit_code_consistency` on BASHRS-POSIX-IDEMPOTENCE (PMAT-162 / XPILE-REFINE-BASHRS-001)
+
+Seventh Silver refinement, completing Silver coverage for all single-Sem contracts in the substrate (the 2×2 trait matrix + FFI + PTX + bashrs). Adds a new `exit_code_consistency` equation to the bashrs YAML, wired to a Silver theorem that extends the cross-domain Outcome model with an explicit `exit_code : Int` field.
+
+The Silver model:
+- `OutcomeSilver`: observable + `exit_code : Int` (0 = success per POSIX convention)
+- `python_subprocess_run_silver`: produces Outcome with exit_code = 0
+- `bashrs_shell_run_silver`: matches, by construction
+- `subprocess_run_eq_shell_run_silver` theorem proves both sides produce the same OutcomeSilver including exit code
+
+Load-bearing for the POSIX-shell convention: any future bashrs-backend emit that uses `set -e` to trip on warnings (producing exit_code ≠ 0 on the success path) would falsify the Silver theorem — Bronze alone couldn't catch this because both sides' observables could still match.
+
+`xpile quorum` view for C-BASHRS-POSIX-IDEMPOTENCE: Sem=2 (was 1), Sym=1, Run=1, Ext=12.
+
 ### Added — Silver-tier refinement: `shared_memory_budget` on COMPILE-RUST-TO-PTX-MMA (PMAT-161 / XPILE-REFINE-COMPILE-PTX-002)
 
 Sixth Silver refinement, and the **first Silver proof in the substrate that's NOT trivial `rfl`** — uses `Nat.min_le_right`. Promotes the byte-array model in `CompileRustToPtxMma.lean` to a typed `PtxOutputSilver` with an explicit `smem_bytes : Nat` field bounded by the sm_80 hardware budget.

@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-162
+  github_issue: null
+  item_type: task
+  title: 'PMAT-162: Silver-tier — exit_code_consistency for BASHRS-POSIX-IDEMPOTENCE (XPILE-REFINE-BASHRS-001), completes Silver coverage'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T20:00:00Z
+  updated: 2026-05-18T20:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Silver-tier refinement for subprocess_run_eq_shell_run_silver on C-BASHRS-POSIX-IDEMPOTENCE. Adds OutcomeSilver with explicit exit_code Int field; Silver theorem proves both Python and bashrs sides produce matching Outcomes including exit code on success path. New `exit_code_consistency` equation added to YAML (bashrs only had 1 equation; Silver requires a new entry to be wired). C-BASHRS-POSIX-IDEMPOTENCE Sem 1 → 2. Completes Silver coverage for all 7 single-Sem contracts (PMAT-156..162).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-161
   github_issue: null
   item_type: task
