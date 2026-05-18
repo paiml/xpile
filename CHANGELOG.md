@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier completion: definition_env + remark_env + citation_preservation on NOTATION-LATEX-MATH-TO-EQUATION, **brings contract to full Silver (7/7)** — FOURTH contract at full Silver (PMAT-181 / XPILE-REFINE-NOTATION-003)
+
+Fortieth through forty-second Silver refinements. Three Silver upgrades that **complete C-NOTATION-LATEX-MATH-TO-EQUATION to full Silver coverage on every equation (7/7)**. This is the **FOURTH contract in the substrate at full Silver tier** (after C-FFI-CPYTHON-EXT in PMAT-174, C-XLATE-LEAN-TO-RUST in PMAT-178, C-XLATE-RUST-FN-TO-LEAN-THM in PMAT-179).
+
+Three new wired equations + companion theorems:
+- `additional_spans_preserved_silver` (wired) + `definition_label_preserved_silver` — `DefinitionEnvSilver { first_math_span, all_math_spans, label : Option }`
+- `normative_keyword_classification_silver` (wired) + `must_not_implies_ship_blocking_inverted_silver` — `NormativeKeyword { None | Should | Must | MustNot }` enum replaces Bronze's three independent Bools
+- `bib_key_preserved_silver` (wired) + `silver_contract_id_preserved` — `LatexCitationSilver { contract_id, bib_key }` enables LaTeX `\cite{...}` round-tripping
+
+**Bug classes now caught at type level**: emitter that drops 2nd-N math spans from a multi-span definition, ambiguous independent-Bool corruption (Bronze allowed `has_must=true && has_must_not=true` simultaneously, leading to undefined classification), emitter that drops `bib_key` during YAML emission (orphaning the citation from LaTeX's `\cite` resolution).
+
+YAML: adds three new equations wired to the three Silver theorems. `xpile quorum` view for C-NOTATION-LATEX-MATH-TO-EQUATION: Sem=14 (was 11), Sym=7, Run=1, Ext=7 (was 5). **C-NOTATION-LATEX-MATH-TO-EQUATION is now the fourth contract in the substrate at full Silver (7/7).**
+
 ### Added — Silver-tier expansion: inline_math + theorem_env + proof_env typed enums on NOTATION-LATEX-MATH-TO-EQUATION (PMAT-180 / XPILE-REFINE-NOTATION-002)
 
 Thirty-seventh through thirty-ninth Silver refinements. Three Silver upgrades replicating the PMAT-167 kind-tagged typed-model pattern across more equations on C-NOTATION-LATEX-MATH-TO-EQUATION. Brings Silver coverage on this contract from 1/7 to 4/7 equations.

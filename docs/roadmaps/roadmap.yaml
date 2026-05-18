@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-181
+  github_issue: null
+  item_type: task
+  title: 'PMAT-181: Silver-tier — complete C-NOTATION-LATEX-MATH-TO-EQUATION Silver (7/7), FOURTH contract at full Silver'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T06:00:00Z
+  updated: 2026-05-19T06:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Three new Silver theorems on C-NOTATION-LATEX-MATH-TO-EQUATION completing full Silver coverage (7/7). additional_spans_preserved_silver, normative_keyword_classification_silver, bib_key_preserved_silver. Each comes with companion theorems. Captures multi-span definitions, ambiguous-Bool corruption, BibTeX-key orphaning bug classes. C-NOTATION-LATEX-MATH-TO-EQUATION Sem 11 → 14, Ext 5 → 7. Silver coverage 4/7 → 7/7. FOURTH contract in substrate at full Silver tier.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-180
   github_issue: null
   item_type: task
