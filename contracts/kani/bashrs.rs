@@ -43,12 +43,13 @@
 /// Reproduction of bashrs-backend's LitStr rendering at the byte
 /// level. Mirrors `Expr::LitStr(s) => Ok(s.clone())` from
 /// `crates/bashrs-backend/src/lib.rs::render_arg`. We model at
-/// `&[u8]` rather than `&str` because Kani's symbolic engine
-/// handles fixed-size byte arrays orders of magnitude faster than
-/// symbolic `String` allocation. The byte-level property is the
-/// load-bearing claim — UTF-8 wrapping is purely structural.
-fn render_lit_str_bytes(content: &[u8]) -> Vec<u8> {
-    content.to_vec()
+/// fixed-size `[u8; 4]` rather than `Vec<u8>` because Kani's
+/// goto-instrument backend explodes on symbolic `Vec` allocation
+/// (PMAT-151 CI investigation: two goto-instrument processes
+/// reached ~46 GB RSS each before being killed). The byte-level
+/// identity property is preserved; UTF-8 wrapping is structural.
+fn render_lit_str_bytes(content: [u8; 4]) -> [u8; 4] {
+    content
 }
 
 /// Equation `subprocess_run_equals_shell_run` from
@@ -65,9 +66,9 @@ fn lit_str_render_is_identity() {
     // Kani verifies in <100ms because the symbolic state is small
     // and the property is structural.
     let input: [u8; 4] = kani::any();
-    let rendered = render_lit_str_bytes(&input);
+    let rendered = render_lit_str_bytes(input);
     kani::assert(
-        rendered.as_slice() == input.as_slice(),
+        rendered == input,
         "render_lit_str_bytes must be byte-level identity",
     );
 }

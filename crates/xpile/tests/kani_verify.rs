@@ -94,8 +94,19 @@ path = "lib.rs"
 }
 
 fn run_kani(crate_dir: &Path) -> Result<String, String> {
+    // PMAT-151 lesson: a slow harness can hang `cargo kani` for hours
+    // (observed 105+ min on a multiplication symbolic state explosion
+    // before manual intervention). Cap each invocation at 3 minutes
+    // via `-Z unstable-options --harness-timeout 180s` — Kani returns
+    // a clear error message and we move on rather than hang the CI
+    // job indefinitely. The unstable-options flag is documented in
+    // `cargo kani --help` and gated behind the `-Z` Cargo flag.
     let out = Command::new("cargo")
         .arg("kani")
+        .arg("-Z")
+        .arg("unstable-options")
+        .arg("--harness-timeout")
+        .arg("180s")
         .current_dir(crate_dir)
         .output()
         .map_err(|e| format!("spawn cargo kani: {e}"))?;

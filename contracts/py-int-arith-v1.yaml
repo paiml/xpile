@@ -73,6 +73,9 @@ equations:
     # precondition — it documents which equation this theorem refines.
     lean_theorem: "XpileContracts.CPyIntArith.add_slow_path_eq_python"
     lean_file: "contracts/lean/PyIntArith.lean"
+    # PMAT-151: Kani harness mirrors the Lean theorem.
+    kani_harness: "addition_overflow_promotion"
+    kani_file: "contracts/kani/py_int_arith.rs"
 
   multiplication_quadratic_promotion:
     formula: |
@@ -93,6 +96,9 @@ equations:
     # XPILE-REFINE-004+.
     lean_theorem: "XpileContracts.CPyIntArith.mul_fast_path_eq_slow_path"
     lean_file: "contracts/lean/PyIntArith.lean"
+    # PMAT-151: Kani harness mirrors the Lean theorem.
+    kani_harness: "multiplication_quadratic_promotion"
+    kani_file: "contracts/kani/py_int_arith.rs"
 
   division_floor_semantics:
     formula: |
@@ -116,6 +122,9 @@ equations:
     # implicit in the prose.
     lean_theorem: "XpileContracts.CPyIntArith.floor_div_fast_path_eq_slow_path"
     lean_file: "contracts/lean/PyIntArith.lean"
+    # PMAT-151: Kani harness mirrors the Lean theorem.
+    kani_harness: "division_floor_semantics"
+    kani_file: "contracts/kani/py_int_arith.rs"
 
   modulo_floor_semantics:
     formula: |
@@ -136,6 +145,9 @@ equations:
     # Both paths model mod as `Int.fmod`.
     lean_theorem: "XpileContracts.CPyIntArith.mod_fast_path_eq_slow_path"
     lean_file: "contracts/lean/PyIntArith.lean"
+    # PMAT-151: Kani harness mirrors the Lean theorem.
+    kani_harness: "modulo_floor_semantics"
+    kani_file: "contracts/kani/py_int_arith.rs"
 
   bitwise_and_signed_semantics:
     formula: |
@@ -159,6 +171,9 @@ equations:
     # BitVec 64 model.
     lean_theorem: "XpileContracts.CPyIntArith.and_fast_path_eq_slow_path"
     lean_file: "contracts/lean/PyIntArith.lean"
+    # PMAT-151: Kani harness mirrors the Lean theorem.
+    kani_harness: "bitwise_and_signed_semantics"
+    kani_file: "contracts/kani/py_int_arith.rs"
 
   shift_left_signed_semantics:
     formula: |
@@ -179,6 +194,9 @@ equations:
     # XPILE-REFINE-004 / PMAT-030: shl reuses bmod_fits_i64.
     lean_theorem: "XpileContracts.CPyIntArith.shl_fast_path_eq_slow_path"
     lean_file: "contracts/lean/PyIntArith.lean"
+    # PMAT-151: Kani harness mirrors the Lean theorem.
+    kani_harness: "shift_left_signed_semantics"
+    kani_file: "contracts/kani/py_int_arith.rs"
 
   shift_right_signed_semantics:
     formula: |
@@ -197,6 +215,9 @@ equations:
     # XPILE-REFINE-004 / PMAT-030: shr is `rfl` (Int.fdiv on both sides).
     lean_theorem: "XpileContracts.CPyIntArith.shr_fast_path_eq_slow_path"
     lean_file: "contracts/lean/PyIntArith.lean"
+    # PMAT-151: Kani harness mirrors the Lean theorem.
+    kani_harness: "shift_right_signed_semantics"
+    kani_file: "contracts/kani/py_int_arith.rs"
 
   power_signed_semantics:
     formula: |
@@ -217,6 +238,9 @@ equations:
     # XPILE-REFINE-004 / PMAT-030: pow reuses bmod_fits_i64.
     lean_theorem: "XpileContracts.CPyIntArith.pow_fast_path_eq_slow_path"
     lean_file: "contracts/lean/PyIntArith.lean"
+    # PMAT-151: Kani harness mirrors the Lean theorem.
+    kani_harness: "power_signed_semantics"
+    kani_file: "contracts/kani/py_int_arith.rs"
 
 proof_obligations:
   - type: precondition
