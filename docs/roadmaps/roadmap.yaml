@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-237
+  github_issue: null
+  item_type: task
+  title: 'PMAT-237: SECOND Diamond on C-XLATE-LEAN-TO-RUST (Layer 2 depth-2 alt) — variant-count cardinality-functor axioms (XPILE-REFINE-XLATE-LEAN-TO-RUST-006)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T10:30:00Z
+  updated: 2026-05-20T10:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Ninth depth-2 Diamond in substrate. CARDINALITY-FUNCTOR Diamond on variant_count as monoid homomorphism into (Nat, +, 0), distinct algebraic category from PMAT-222 inductive-monoid (structural composition). Combines PMAT-207 additivity + identity preservation + non-negativity + cardinality-consistency. variant_count_cardinality_functor_diamond (wired). Captures the FUNCTORIAL projection from inductive-monoid to Nat-monoid.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-236
   github_issue: null
   item_type: task
