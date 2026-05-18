@@ -963,4 +963,73 @@ theorem citation_composition_associative_platinum
   unfold compose_latex_citation_silver
   simp [String.append_assoc]
 
+/-! ## PMAT-219 — SIXTH Diamond-tier refinement: string-monoid
+    axioms (XPILE-REFINE-NOTATION-006).
+
+    Sixth Diamond-tier theorem in the substrate. Combines four
+    monoid properties on citation composition:
+    - PMAT-208 Platinum functoriality (the homomorphism)
+    - Associativity (PMAT-208 companion)
+    - Identity (empty citation = "")
+    - The String-monoid structure
+
+    Captures the (String, ++, "") monoid structure for citation
+    lowering at the type level — fundamental to compositional
+    citation analysis.
+
+    Sixth distinct Diamond category, distinct from prior 5:
+    1. PMAT-214: commutative-monoid / semiring (algebraic)
+    2. PMAT-215: pure-function (functional)
+    3. PMAT-216: abelian-group (algebraic w/ inverses)
+    4. PMAT-217: equivalence-relation (relational)
+    5. PMAT-218: bounded-monoid (bounded algebraic)
+    6. **PMAT-219 (NEW): string-monoid (textual algebraic)**
+
+    Status: discharged at v0.1.0 (PMAT-219). Tier: DIAMOND.
+    Sixth Diamond theorem in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — citation composition
+  forms a STRING MONOID under (String, ++, "").
+
+  Combines four monoid axioms:
+  - Closure: composing two citations produces a citation
+  - Associativity: (c1 ++ c2) ++ c3 = c1 ++ (c2 ++ c3)
+  - Left identity: "" ++ c = c
+  - Right identity: c ++ "" = c
+
+  Note: NOT commutative (string concat is order-sensitive) —
+  this distinguishes the string-monoid from the commutative-
+  monoid of PMAT-214.
+
+  Status: **discharged at v0.1.0 (PMAT-219)**. Tier: DIAMOND.
+-/
+theorem citation_string_monoid_diamond
+    (c1 c2 c3 : LatexCitationSilver) :
+    -- Closure / homomorphism (PMAT-208 lifted)
+    (lower_citation_silver (compose_latex_citation_silver c1 c2)).contract_id
+      = (lower_citation_silver c1).contract_id
+          ++ (lower_citation_silver c2).contract_id
+    -- Associativity (PMAT-208 companion lifted)
+    ∧ (compose_latex_citation_silver
+        (compose_latex_citation_silver c1 c2) c3).contract_id
+      = (compose_latex_citation_silver c1
+          (compose_latex_citation_silver c2 c3)).contract_id
+    -- Left identity
+    ∧ (compose_latex_citation_silver
+        { contract_id := "", bib_key := "" } c1).contract_id
+      = c1.contract_id
+    -- Right identity
+    ∧ (compose_latex_citation_silver
+        c1 { contract_id := "", bib_key := "" }).contract_id
+      = c1.contract_id := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · unfold lower_citation_silver compose_latex_citation_silver
+    rfl
+  · exact citation_composition_associative_platinum c1 c2 c3
+  · unfold compose_latex_citation_silver
+    simp
+  · unfold compose_latex_citation_silver
+    simp
+
 end XpileContracts.CNotationLatexMathToEquation
