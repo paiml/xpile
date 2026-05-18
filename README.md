@@ -56,7 +56,7 @@ def factorial (n : Int) : Int :=
 
 - 27 workspace crates · all compile clean (`cargo check --workspace`)
 - 12 contracts · `pv lint` PASS with **0 errors and 0 warnings** (full-clean substrate since PMAT-138)
-- **100% of contracts at §14.4 QUORUM (4-stratum minimum), 100% of equations at Silver tier, and Gold-tier refinement kickoff across 4 contract layers** — every contract has paired Lean refinement theorem + Kani BMC harness ([`xpile quorum`](crates/xpile/src/quorum.rs)); **165 Lean theorems (58 Bronze + 97 Silver + 10 Gold) + 43 Kani harnesses = 208 stratum-vote artifacts** post-PMAT-156..189. 42/42 equations at Silver; **5 Gold theorems demonstrate refinement subtypes across all 4 major contract layers** (Layer-1 `PyIntFast`, Layer-2 `WarningLineCount` + `NonEmptyDefinition`, Layer-4 `BoundedRefcountDelta`, Layer-5 `BoundedSmem`) using both bounded-numeric and collection-cardinality subtype patterns
+- **100% of contracts at §14.4 QUORUM, 100% Silver coverage on every equation, AND universal Gold-tier coverage** — every contract has paired Lean refinement theorem + Kani BMC harness ([`xpile quorum`](crates/xpile/src/quorum.rs)); **185 Lean theorems (53 Bronze + 108 Silver + 24 Gold) + 43 Kani harnesses = 228 stratum-vote artifacts** post-PMAT-156..197. 42/42 equations at Silver; **12/12 contracts at Gold** across all 5 layers using FIVE distinct subtype patterns (bounded-numeric, collection-cardinality, equality-to-constant, cross-field equality, frame-safety)
 - **204 workspace tests** · 11+ Python fixtures runtime-verified via `rustc -O` + `assert_eq!` (canonical list in `CHANGELOG.md` §"Python subset"); plus 54 bashrs-frontend tests covering POSIX shell idioms
 - **`pmat tdg .` score 95.7 / 100 (Grade A-)** — meets the originally-planned XPILE-CI-PMAT-TDG-001 ≥ A- threshold without explicit CI enforcement
 - Python subset shipped: see [`CHANGELOG.md`](CHANGELOG.md) §"Python subset (live, runtime-verified)" — typed `def`, multi-statement bodies, all binary + unary ops, ternary, if/else, elif chains, function calls including self-recursion (canonical source — this README intentionally does not duplicate the list to avoid the staleness it kept accumulating)
@@ -76,9 +76,9 @@ $ xpile quorum
   totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)
 ```
 
-**165 Lean refinement theorems** ([`contracts/lean/*.lean`](contracts/lean/), 58 Bronze + 97 Silver + 10 Gold) +
+**185 Lean refinement theorems** ([`contracts/lean/*.lean`](contracts/lean/), 53 Bronze + 108 Silver + 24 Gold) +
 **43 Kani BMC harnesses** ([`contracts/kani/*.rs`](contracts/kani/)) —
-**208 stratum-vote artifacts** across all 5 layers of the contract taxonomy. **42/42 equations at Silver tier** (PMAT-183) + **5 Gold theorems demonstrating refinement subtypes across Layers 1/2/4/5** (PMAT-185..189).
+**228 stratum-vote artifacts** across all 5 layers of the contract taxonomy. **42/42 equations at Silver tier** (PMAT-183) + **12/12 contracts at Gold tier** (PMAT-185..197) using 5 distinct subtype patterns.
 Every equation in every contract has both its own Bronze-tier Lean theorem
 (`rfl` by construction) AND its own Kani symbolic harness exploring 256^4 ≈
 4.3B configurations per harness. Silver/Gold/Platinum refinement is
