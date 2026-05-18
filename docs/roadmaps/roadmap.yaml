@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-206
+  github_issue: null
+  item_type: task
+  title: 'PMAT-206: SEVENTH Platinum-tier refinement — bounded smem sum on C-COMPILE-RUST-TO-PTX-MMA; first PATTERN-COMPOSITION Platinum (XPILE-REFINE-COMPILE-PTX-004)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T19:00:00Z
+  updated: 2026-05-19T19:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Seventh Platinum-tier theorem. First Platinum theorem demonstrating COMPOSITION of prior tier patterns - PMAT-187 Gold BoundedSmem + PMAT-204 Platinum additivity combined into bounded-monoid-homomorphism. bounded_smem_sum_within_budget_platinum (wired) + bounded_smem_add_commutative_platinum (combines THREE prior patterns - Gold subtype + Platinum commutativity + Platinum additivity) + zero_is_bounded_smem_platinum (monoid identity). Demonstrates the categorical "lift along monoid homomorphism" pattern. C-COMPILE-RUST-TO-PTX-MMA Sem 3 → 4.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-205
   github_issue: null
   item_type: task
