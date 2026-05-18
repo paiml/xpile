@@ -111,6 +111,35 @@ equations:
     kani_harness: "addition_overflow_promotion"
     kani_file: "contracts/kani/py_int_arith.rs"
 
+  bigint_addition_is_heap_allocated_silver:
+    # PMAT-183 / XPILE-REFINE-PY-INT-ARITH-004: Silver-tier
+    # refinement wires the slow-path-only companion equation.
+    # Bronze (add_slow_path_eq_python) proved the slow path
+    # returns the mathematical sum; Silver adds a typed
+    # BigIntResult { value, allocation : Heap | Stack } that
+    # captures the load-bearing allocation semantics. Companion
+    # theorem bigint_addition_value_eq_math_silver keeps the
+    # Bronze sum-equality claim in the Silver model. COMPLETES
+    # Silver coverage on C-PY-INT-ARITH (9/9) — SIXTH and FINAL
+    # multi-eq contract at full Silver.
+    lean_theorem: "XpileContracts.CPyIntArith.bigint_addition_is_heap_allocated_silver"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      bigint_add_with_allocation(a, b).allocation == Heap
+    domain: |
+      Same as addition_overflow_promotion — a, b Python ints whose
+      mathematical sum does not fit in i64.
+    invariants:
+      - "the slow-path result is HEAP-ALLOCATED (Allocation::Heap), never stack-allocated as a wrapped i64"
+      - "the result value equals the mathematical sum (companion theorem bigint_addition_value_eq_math_silver)"
+      - "captures the load-bearing 'exactly one heap allocation' invariant at the type level — Bronze couldn't model allocation strategy"
+    preconditions:
+      - "the function is lowered in BigInt mode"
+      - "the Silver model assumes a 2-state allocation enum (Stack | Heap); Gold tier introduces refinement subtypes for allocator tracking"
+    postconditions:
+      - "an emitter that optimises small BigInt values onto the stack as wrapped i64 (SmallVec-style representation) would falsify the Silver theorem — caught at the typed-enum level"
+      - "the heap-allocation contract is structurally locked-in regardless of value magnitude"
+
   multiplication_quadratic_promotion:
     formula: |
       python_int_mul(a, b) == if fits_i64(a * b) { rust_i64::wrapping_mul(a, b) } else { bigint::mul(a, b) }

@@ -7,6 +7,30 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier completion: heap-allocation model for `addition_overflow_promotion` on PY-INT-ARITH, **brings contract to full Silver (9/9)** — SIXTH and FINAL multi-eq contract at full Silver (PMAT-183 / XPILE-REFINE-PY-INT-ARITH-004)
+
+Forty-seventh Silver refinement. Wires the slow-path-only companion of `addition_no_overflow` with a Silver-tier `Allocation { Stack | Heap }` model. **MILESTONE: with this PR landed, every equation in every contract in the substrate has Silver coverage.** All 6 multi-equation contracts at full Silver:
+
+1. C-FFI-CPYTHON-EXT (6/6 — PMAT-174)
+2. C-XLATE-LEAN-TO-RUST (9/9 — PMAT-178)
+3. C-XLATE-RUST-FN-TO-LEAN-THM (5/5 — PMAT-179)
+4. C-NOTATION-LATEX-MATH-TO-EQUATION (7/7 — PMAT-181)
+5. C-XLATE-PY-LIST-TO-VEC (6/6 — PMAT-182)
+6. C-PY-INT-ARITH (9/9 — PMAT-183)
+
+Plus all 6 single-equation contracts at 1/1 Silver (PMAT-156..162). **Total: 42/42 equations at Silver tier across the substrate.**
+
+The Silver model for this PR:
+- `Allocation`: enum `Stack | Heap` — captures allocation semantics Bronze couldn't model (Bronze's `bigint_add` returned a raw Int with no allocation metadata)
+- `BigIntResult`: `{ value, allocation }`
+- `bigint_add_with_allocation_silver`: always heap-allocates
+- `bigint_addition_is_heap_allocated_silver` (wired): proves the slow-path result is always heap-allocated
+- `bigint_addition_value_eq_math_silver`: companion claim preserving Bronze's sum-equality
+
+**Captures the load-bearing 'exactly one heap allocation' invariant**: an emitter that optimises small BigInt values onto the stack as a wrapped i64 (SmallVec-style representation) would silently truncate if the value later grows beyond i64::MAX — a real bug class in production BigInt libraries. Now caught at the typed-enum level.
+
+YAML: adds new equation `bigint_addition_is_heap_allocated_silver` wired to the Silver theorem. `xpile quorum` view for C-PY-INT-ARITH: Sem=18 (was 17), Sym=9, Run=4, Ext=15. C-PY-INT-ARITH is now the sixth and final multi-eq contract at full Silver (9/9).
+
 ### Added — Silver-tier completion: homogeneous + heterogeneous + alias + length on XLATE-PY-LIST-TO-VEC, **brings contract to full Silver (6/6)** — FIFTH contract at full Silver (PMAT-182 / XPILE-REFINE-XLATE-PY-LIST-002)
 
 Forty-third through forty-sixth Silver refinements. Four Silver upgrades that **complete C-XLATE-PY-LIST-TO-VEC to full Silver coverage on every equation (6/6)**. This is the **FIFTH contract in the substrate at full Silver tier** (after C-FFI-CPYTHON-EXT in PMAT-174, C-XLATE-LEAN-TO-RUST in PMAT-178, C-XLATE-RUST-FN-TO-LEAN-THM in PMAT-179, C-NOTATION-LATEX-MATH-TO-EQUATION in PMAT-181).
