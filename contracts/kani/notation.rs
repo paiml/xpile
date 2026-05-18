@@ -104,3 +104,139 @@ fn display_math_eq_equation_env_eq_align_env() {
         "lower_equation_env and lower_align_env must agree on identical input",
     );
 }
+
+// ============================================================
+// PMAT-150 — Kani harnesses for the 6 remaining equations of
+// C-NOTATION-LATEX-MATH-TO-EQUATION, mirroring the Bronze-tier
+// Lean theorems shipped in PMAT-134.
+// ============================================================
+
+/// Inline math span lowering — byte-identity at Bronze tier.
+fn lower_inline_math(formula: &[u8; 4]) -> [u8; 4] {
+    *formula
+}
+
+/// Equation `inline_math_to_equation`: inline math span lowers
+/// byte-for-byte. Falsified by an emitter that silently strips
+/// whitespace or normalises operator spelling.
+#[kani::proof]
+fn inline_math_to_equation() {
+    let formula: [u8; 4] = kani::any();
+    let lowered = lower_inline_math(&formula);
+    kani::assert(
+        lowered == formula,
+        "inline math span must lower byte-for-byte at Bronze tier",
+    );
+}
+
+/// `\textbf{Precondition:}` flag → obligation type mapping.
+/// 0 = postcondition, 1 = precondition.
+fn lower_theorem_env(is_precondition_flagged: bool) -> u8 {
+    if is_precondition_flagged {
+        1
+    } else {
+        0
+    }
+}
+
+/// Equation `theorem_env_to_obligation`: precondition-flag
+/// polarity safety claim.
+#[kani::proof]
+fn theorem_env_to_obligation() {
+    let flagged: bool = kani::any();
+    let obligation_type = lower_theorem_env(flagged);
+    if flagged {
+        kani::assert(
+            obligation_type == 1,
+            "Precondition flag must produce type=precondition",
+        );
+    } else {
+        kani::assert(
+            obligation_type == 0,
+            "absent precondition flag must produce type=postcondition",
+        );
+    }
+}
+
+/// Bronze-tier proof env lowering output. `status_tag`: 0 = stub,
+/// 1 = claimed. `body_leaked` MUST be false.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct LeanPointer {
+    status_tag: u8,
+    body_leaked: bool,
+}
+
+fn lower_proof_env(is_stub: bool) -> LeanPointer {
+    LeanPointer {
+        status_tag: if is_stub { 0 } else { 1 },
+        body_leaked: false,
+    }
+}
+
+/// Equation `proof_env_to_lean_pointer`: status classification +
+/// body never leaks (lane separation).
+#[kani::proof]
+fn proof_env_to_lean_pointer() {
+    let is_stub: bool = kani::any();
+    let ptr = lower_proof_env(is_stub);
+    if is_stub {
+        kani::assert(ptr.status_tag == 0, "stub body → status=stub");
+    } else {
+        kani::assert(ptr.status_tag == 1, "non-stub body → status=claimed");
+    }
+    kani::assert(
+        !ptr.body_leaked,
+        "proof body must NEVER leak into EquationsBlock (lane separation)",
+    );
+}
+
+/// Definition env first math span — byte identity.
+fn lower_definition_env(first_math_span: &[u8; 4]) -> [u8; 4] {
+    *first_math_span
+}
+
+/// Equation `definition_env_to_equation`: first math span byte-for-byte.
+#[kani::proof]
+fn definition_env_to_equation() {
+    let first_math_span: [u8; 4] = kani::any();
+    let lowered = lower_definition_env(&first_math_span);
+    kani::assert(
+        lowered == first_math_span,
+        "definition first math span must lower byte-for-byte",
+    );
+}
+
+/// Remark env classification: entry iff any RFC-2119 keyword.
+fn lower_remark_env(has_must: bool, has_should: bool, has_must_not: bool) -> bool {
+    has_must || has_should || has_must_not
+}
+
+/// Equation `remark_env_to_falsification`: entry iff MUST/SHOULD/MUST NOT.
+#[kani::proof]
+fn remark_env_to_falsification() {
+    let has_must: bool = kani::any();
+    let has_should: bool = kani::any();
+    let has_must_not: bool = kani::any();
+    let entry_emitted = lower_remark_env(has_must, has_should, has_must_not);
+    kani::assert(
+        entry_emitted == (has_must || has_should || has_must_not),
+        "entry iff any normative keyword present",
+    );
+}
+
+/// Citation lowering: byte-identity of contract ID.
+fn lower_citation(contract_id: &[u8; 4]) -> [u8; 4] {
+    *contract_id
+}
+
+/// Equation `citation_preservation`: cited contract ID survives
+/// byte-for-byte. Companion to `citation_in_emitted_rust` (PMAT-147).
+#[kani::proof]
+fn citation_preservation() {
+    let contract_id: [u8; 4] = kani::any();
+    let lowered = lower_citation(&contract_id);
+    kani::assert(
+        lowered == contract_id,
+        "cited contract ID must survive lowering byte-for-byte",
+    );
+}

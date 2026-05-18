@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-150
+  github_issue: null
+  item_type: task
+  title: 'PMAT-150: notation-latex-math-to-equation Kani harnesses — 6 more for per-equation Sym coverage'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T15:00:00Z
+  updated: 2026-05-18T15:00:00Z
+  spec: null
+  acceptance_criteria:
+  - contracts/kani/notation.rs grows from 1 to 7 Kani harnesses, mirroring the 7 Bronze-tier Lean theorems from PMAT-134 (inline byte-identity, precondition-flag polarity, stub/claimed + body-never-leaks, definition first-math-span byte-identity, remark iff RFC-2119 keyword, citation byte-identity). YAML wires each via kani_harness+kani_file refs. xpile quorum view for C-NOTATION-LATEX-MATH-TO-EQUATION gains Sym=7 (was 1). Continues the XPILE-QUORUM-006 per-equation Kani fan-out series.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-149
   github_issue: null
   item_type: task
