@@ -1,6 +1,6 @@
 # xpile — Current Status
 
-**Last refreshed:** 2026-05-18 (PMAT-083 substrate-completion sweep)
+**Last refreshed:** 2026-05-18 (PMAT-154; post-PMAT-127..153 quality + Kani fan-out + doc sweep session, 25 PRs)
 **Canonical source of truth for the supported subset:** [`/CHANGELOG.md`](../../CHANGELOG.md)
 
 This file used to enumerate every implemented crate / contract / construct, and went stale within hours of each PR. The previous 180-line snapshot is preserved in git history (last useful version: commit `cdcece9`, the initial bootstrap). Going forward, this file is a thin index — anything that needs to stay accurate lives in `CHANGELOG.md`.
@@ -9,7 +9,8 @@ This file used to enumerate every implemented crate / contract / construct, and 
 
 - 27 workspace crates compile clean; `cargo check`, `cargo clippy -D warnings`, `cargo fmt --check`, `cargo deny check advisories` all green
 - 12 contracts pass `pv lint` (0 errors, **0 warnings** — full clean state as of PMAT-138 closing XPILE-REFINE-005). Every equation carries domain-grounded pre/postconditions, every equation is anchored to a Lean refinement theorem, every contract declares a `qa_gate`.
-- **100% §14.4 N-of-M QUORUM coverage** — every contract has paired Lean refinement theorem + Kani BMC harness at Bronze tier. `xpile quorum` → `12 QUORUM, 0 PARTIAL, 0 UNVERIFIED`. Two contracts at full four-stratum coverage (C-PY-INT-ARITH, C-BASHRS-POSIX-IDEMPOTENCE).
+- **100% §14.4 N-of-M QUORUM coverage at 4-stratum** — every contract has paired Lean refinement theorem + Kani BMC harness at Bronze tier, plus ≥1 Runtime fixture and ≥3 Extrinsic attestations. `xpile quorum` → `12 QUORUM, 0 PARTIAL, 0 UNVERIFIED`. Two contracts with multi-vote runtime coverage (C-PY-INT-ARITH Run=4, C-BASHRS-POSIX-IDEMPOTENCE Ext=12). **50 Lean theorems + 43 Kani harnesses = 93 stratum-vote artifacts** post-XPILE-QUORUM-006 (PMAT-147..151).
+- **`pmat tdg .` score: 95.7 / 100 (Grade A-)** — meets the originally-planned XPILE-CI-PMAT-TDG-001 ≥ A- threshold without explicit CI enforcement.
 - Four real backends: Rust (`pub fn`), Ruchy (`fun`), Lean 4 (`def`), Shell/bashrs (POSIX subset). PTX / WGSL / SPIR-V still scaffolded.
 - Python subset supported: see [`CHANGELOG.md`](../../CHANGELOG.md) §"Python subset (live, runtime-verified)"
 - Shell subset supported: POSIX tokenizing (quoted strings, $NAME/${NAME}, $(cmd), backtick subst, NAME=value, pipelines, ShellLoop, special parameters); see CHANGELOG PMAT-037..058
@@ -17,7 +18,7 @@ This file used to enumerate every implemented crate / contract / construct, and 
 - **43 Kani BMC harnesses** verify on every CI run via dedicated `kani` job + `every_kani_harness_discharges` workspace test (XPILE-QUORUM-006 series PMAT-147..151 added per-equation symbolic coverage for the 5 multi-equation contracts)
 - CI: `gate` + `kani` + `workspace-test` all run on every PR; `gate` is the load-bearing required status check via the org-level ruleset rule (verifiable with `gh api repos/paiml/xpile/rules/branches/main`). `kani` and `workspace-test` are not yet required-status-checks but in practice green on every merged PR — flipping them required is post-v0.1.0 work.
 - crates.io: `xpile 0.0.1` published as a name reservation; v0.1.0+ unreleased
-- 113 PRs merged on `main`
+- 184 PRs merged on `main`
 
 ## Where to look next
 
