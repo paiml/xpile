@@ -7,6 +7,42 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Bronze-tier refinement theorems for all 8 remaining `xlate-lean-to-rust` equations (PMAT-133)
+
+`contracts/lean/XlateLeanToRust.lean` now carries Bronze-tier
+refinement theorems for every equation in `C-XLATE-LEAN-TO-RUST`
+beyond the original `def_to_rust_fn` (PMAT-070). Each theorem is
+`rfl`-by-construction at v0.1.0; the documentary value is the
+*modelling commitment* locked into the proof file — an emitter
+implementation that mutates the captured aspect breaks
+`rfl`-equivalence and the citation gate fires.
+
+- `partial_def_to_rust_fn`: body bytes preserved AND the
+  `is_partial` marker survives lowering (load-bearing: stripping
+  `#[partial_translation]` would falsify the safety claim).
+- `theorem_carried_as_lean_sidecar`: theorem text byte-for-byte
+  copy into the Lean sidecar; no Rust fn is emitted.
+- `inductive_to_rust_enum`: variant count preserved exactly.
+- `structure_to_rust_struct`: field count preserved exactly.
+- `instance_to_rust_impl`: method count preserved exactly.
+- `axiom_to_extern_fn`: signature bytes preserved AND the
+  WARNING comment header is ≥5 lines (the contract's load-bearing
+  safety floor).
+- `noncomputable_def_to_rust_panic`: body = canonical
+  `noncomputable Lean def has no runtime equivalent` panic marker
+  AND `#[doc(hidden)]` flag set.
+- `citation_in_emitted_rust`: contract ID copied into the
+  citation doc-comment byte-for-byte (no dash-to-underscore
+  mangling, no case folding, no prefix stripping).
+
+YAML side: all 8 equations gain `lean_theorem:` + `lean_file:`
+references discoverable by `every_referenced_lean_theorem_exists_in_its_file`
+and recognised by the Lean-elaborator-based citation lookup
+(audit-design.md §4).
+
+Contract warnings 9 → 1 (the remaining 1 is PV-VAL-001 qa_gate).
+Total substrate warnings 28 → 20.
+
 ### Added — `xlate-rust-fn-to-lean-thm` contract gains domain-grounded pre/postconditions (PMAT-132)
 
 All 5 equations now carry equation-specific preconditions and
