@@ -110,6 +110,42 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### Runtime witness for trait determinism — Frontend + Backend traits reach full 4-stratum coverage (PMAT-123)
+
+**Two more contracts at full 4-stratum coverage.** Adds
+`crates/xpile/tests/fixtures/trait_determinism_demo.py` — a
+small type-annotated Python fixture exercised end-to-end by the
+existing transpile_e2e test surface. The fixture references
+`C-XPILE-FRONTEND-TRAIT` and `C-XPILE-BACKEND-TRAIT` in its
+header comment, so `xpile quorum`'s Runtime-stratum scanner
+counts it toward both contracts.
+
+```
+$ xpile quorum
+  contract                                  Sem  Sym  Run  Ext  status
+  C-PY-INT-ARITH                              8    1    4    5  QUORUM
+  C-BASHRS-POSIX-IDEMPOTENCE                  1    1    1   11  QUORUM
+  C-XPILE-FRONTEND-TRAIT                      1    1    1    3  QUORUM  ← Run now 1
+  C-XPILE-BACKEND-TRAIT                       1    1    1    2  QUORUM  ← Run now 1
+  ...
+  totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)
+```
+
+**4 contracts now at full 4-stratum coverage** (up from 2):
+- C-PY-INT-ARITH (8/1/4/5)
+- C-BASHRS-POSIX-IDEMPOTENCE (1/1/1/11)
+- C-XPILE-FRONTEND-TRAIT (1/1/1/3) ← new
+- C-XPILE-BACKEND-TRAIT (1/1/1/2) ← new
+
+The other 8 contracts are at 3-stratum (Sem+Sym+Ext); a
+dedicated determinism-asserting test for the Runtime witness is
+XPILE-TRAIT-DETERMINISM-RUNTIME-001 future work (requires
+adding depyler-frontend + codegen crates + serde as
+dev-dependencies on the xpile binary crate). The §14.4 Symbolic
+stratum (Kani harnesses PMAT-063 + PMAT-065) already proves the
+determinism property symbolically; the Runtime stratum adds the
+per-fixture observed-evidence vote.
+
 ### bashrs-backend capstone emit test (PMAT-121)
 
 **Emission-side capstone test** mirroring PMAT-092's frontend
