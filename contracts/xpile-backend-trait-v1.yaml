@@ -70,6 +70,14 @@ equations:
       - "config.target is in this backend's targets()"
 
   target_consistency:
+    # PMAT-157 / XPILE-REFINE-BACKEND-TRAIT-001: Silver-tier
+    # refinement theorem. Mirror of PMAT-156's Frontend-side
+    # source_lang_consistency_silver. Introduces a typed `Target`
+    # enum + `ArtifactSilver` carrying both bytes and target tag,
+    # plus a `Backend` struct with a `declared_target` field.
+    # Proves `result.target = b.declared_target` at the type level.
+    lean_theorem: "XpileContracts.CXpileBackendTrait.target_consistency_silver"
+    lean_file: "contracts/lean/XpileBackendTrait.lean"
     formula: |
       forall b, (module, config): b.lower(module, config).unwrap().primary
         parses or links cleanly under config.target's reference toolchain
