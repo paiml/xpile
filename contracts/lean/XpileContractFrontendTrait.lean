@@ -152,4 +152,68 @@ theorem equations_only_silver
     (parse_to_equations_silver session source).modules = session.modules := by
   rfl
 
+/-! ## PMAT-196 — ELEVENTH Gold-tier refinement: FrameSafeTransition
+    (XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-002).
+
+    Eleventh Gold-tier theorem in the substrate. Demonstrates a
+    **FIFTH Gold pattern variant**: frame-safe transition
+    refinement — `{ (before, after) : T × T // before.field =
+    after.field }` — encoding frame-preservation at the type
+    level.
+
+    Distinct from cross-field equality (PMAT-194/195): in
+    cross-field equality the two sides are different types
+    (Frontend vs MetaHirModule); in frame-safety the two sides
+    are the SAME type (before/after) and the preserved field
+    has the SAME name. Load-bearing for `modifies()` / frame
+    invariants in separation-logic style.
+
+    Status: discharged at v0.1.0 (PMAT-196). Tier: GOLD. -/
+
+/-- Gold-tier refinement subtype: a (before, after) session
+    pair proven to preserve the modules field. -/
+def FrameSafeTransition :=
+  { p : TranspileSession × TranspileSession // p.fst.modules = p.snd.modules }
+
+/-- Extract the before-session. -/
+def FrameSafeTransition.before (f : FrameSafeTransition) :
+    TranspileSession :=
+  f.val.fst
+
+/-- Extract the after-session. -/
+def FrameSafeTransition.after (f : FrameSafeTransition) :
+    TranspileSession :=
+  f.val.snd
+
+/-- Gold-tier `parse_to_equations` constructing a
+    FrameSafeTransition by construction. The Silver theorem IS
+    the witness proof. -/
+def parse_to_equations_gold
+    (session : TranspileSession) (source : Array UInt8) :
+    FrameSafeTransition :=
+  ⟨(session, parse_to_equations_silver session source),
+   (equations_only_silver session source).symm⟩
+
+/-- **Gold-tier refinement theorem** — Gold-tier
+    parse_to_equations_gold produces a FrameSafeTransition whose
+    before/after sessions agree on the modules field by
+    construction. -/
+theorem frame_safe_transition_gold
+    (session : TranspileSession) (source : Array UInt8) :
+    (parse_to_equations_gold session source).before.modules
+      = (parse_to_equations_gold session source).after.modules :=
+  (parse_to_equations_gold session source).property
+
+/-- **Gold-tier refinement theorem** — frame-safety witness
+    preserved through extraction. -/
+theorem frame_safety_witness_gold (f : FrameSafeTransition) :
+    f.before.modules = f.after.modules := f.property
+
+/-- **Gold-tier refinement theorem** — bridges Gold to Silver. -/
+theorem gold_contract_frontend_agrees_with_silver
+    (session : TranspileSession) (source : Array UInt8) :
+    (parse_to_equations_gold session source).after
+      = parse_to_equations_silver session source := by
+  rfl
+
 end XpileContracts.CXpileContractFrontendTrait

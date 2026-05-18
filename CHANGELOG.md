@@ -7,6 +7,30 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — ELEVENTH Gold-tier refinement: `FrameSafeTransition` subtype on C-XPILE-CONTRACT-FRONTEND-TRAIT — FIFTH Gold pattern variant unlocked (PMAT-196 / XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-002)
+
+Eleventh Gold-tier theorem in the substrate. **Demonstrates a FIFTH Gold pattern variant**: frame-safe transition refinement, encoding frame-preservation invariants at the type level.
+
+`FrameSafeTransition := { p : TranspileSession × TranspileSession // p.fst.modules = p.snd.modules }` — pairs a before/after session under a type-level proof that the modules field is preserved.
+
+**Five Gold pattern variants now demonstrated**:
+1. Bounded-numeric (PMAT-185..188): `{ x : Nat // x ≥/≤ N }`
+2. Collection-cardinality (PMAT-189/191/192): `{ c // c.size > 0 }`
+3. Equality to constant (PMAT-193): `{ o // o.field = const }`
+4. Cross-field equality (PMAT-194/195): `{ (a, b) // a.field = b.field }` — distinct types
+5. **Frame-safety (PMAT-196): `{ (before, after) // before.field = after.field }` — same type ← NEW**
+
+Distinction from PMAT-194/195: in cross-field equality the two sides are different types (Frontend vs MetaHirModule); in frame-safety the two sides are the SAME type (before/after Session) and the preserved field has the SAME name. This shape is load-bearing for `modifies()` / frame invariants in separation-logic style.
+
+The Gold model:
+- `FrameSafeTransition := { p : TranspileSession × TranspileSession // p.fst.modules = p.snd.modules }`
+- `parse_to_equations_gold`: constructs the pair with the Silver theorem as the witness
+- `frame_safe_transition_gold` (wired): components agree on modules BY TYPE
+- `frame_safety_witness_gold`: extraction preserves the frame witness
+- `gold_contract_frontend_agrees_with_silver`: bridges Gold to PMAT-158's Silver model
+
+YAML: adds new equation `frame_safe_transition_gold` wired to the Gold theorem. `xpile quorum` view for C-XPILE-CONTRACT-FRONTEND-TRAIT: Sem=3 (was 2), Sym=1, Run=1, Ext=4. Gold-tier pattern now demonstrated across **5 subtype shapes × 10 contracts × 5 layers**.
+
 ### Added — TENTH Gold-tier refinement: `ConsistentBackendInput` subtype on C-XPILE-BACKEND-TRAIT — closes 2×2 trait matrix at Gold (PMAT-195 / XPILE-REFINE-BACKEND-TRAIT-002)
 
 Tenth Gold-tier theorem in the substrate. **Mirror of PMAT-194's Frontend trait Gold on the Backend side** — together they close both ends of the 2×2 trait matrix at Gold tier for typed-target/source_lang consistency invariants. Gold coverage now spans **9 of 12 contracts**.
