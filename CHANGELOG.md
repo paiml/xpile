@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — 4 more Kani harnesses for `xlate-py-list-to-vec` (PMAT-149)
+
+`contracts/kani/xlate_py_list_to_vec.rs` now carries 5 Kani BMC harnesses (was 1), mirroring the 5 Bronze-tier Lean theorems shipped in PMAT-135.
+
+- `homogeneous_list_to_vec`: element bytes + element-type tag preservation
+- `heterogeneous_list_rejected`: lowering NEVER returns `ok` (always errors with full found_types count)
+- `alias_observation_inserts_clone`: alias-flagged lists NEVER lower to move-semantics
+- `length_method`: usize result byte-identical to source `vec.len()`; i64 cast iff consumer expects it
+
+YAML wires each new harness via `kani_harness:` + `kani_file:` references.
+
+`xpile quorum` view for C-XLATE-PY-LIST-TO-VEC: Sem=5, **Sym=5** (was 1), Run=1, Ext=3.
+
+Continues the XPILE-QUORUM-006 per-equation Kani fan-out series (PMAT-147 for xlate-lean-to-rust, PMAT-148 for xlate-rust-fn-to-lean-thm).
+
 ### Added — 4 more Kani harnesses for `xlate-rust-fn-to-lean-thm` (PMAT-148)
 
 `contracts/kani/xlate_rust_fn_to_lean_thm.rs` now carries 5 Kani BMC harnesses (was 1), mirroring the 5 Bronze-tier Lean theorems shipped in PMAT-136. Each harness captures the same load-bearing modelling commitment as its Lean counterpart:
