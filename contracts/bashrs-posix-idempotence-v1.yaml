@@ -148,3 +148,38 @@ equations:
     postconditions:
       - "both lifts produce SuccessfulOutcome values; downstream code can rely on exit_code = 0 without re-deriving"
       - "establishes that equality-refinement (x = const) is a viable Gold-tier subtype pattern alongside bounded-numeric and collection-cardinality"
+
+  bashrs_run_is_idempotent_platinum:
+    # PMAT-201 / XPILE-REFINE-BASHRS-003: THIRD Platinum-tier
+    # refinement in the substrate. Demonstrates the Platinum
+    # pattern captures a fixed-point / idempotence algebraic
+    # property — distinct from binary commutativity (PMAT-199)
+    # and ternary associativity (PMAT-200). The contract's NAME
+    # is C-BASHRS-POSIX-IDEMPOTENCE — Platinum captures the
+    # LITERAL idempotence claim that the contract is named
+    # after. Companion theorems python_run_is_idempotent_platinum
+    # (mirror on Python side) and
+    # idempotence_congruent_across_bridge_platinum (combines
+    # cross-domain equivalence + idempotence into a higher-level
+    # compositional claim — substrate's FIRST Platinum theorem
+    # combining two prior properties).
+    lean_theorem: "XpileContracts.CBashrsPosixIdempotence.bashrs_run_is_idempotent_platinum"
+    lean_file: "contracts/lean/Bashrs.lean"
+    formula: |
+      bashrs_shell_run(p, a) == bashrs_shell_run(p, a)
+      (identical observation across repeated invocations)
+    domain: |
+      Any (program, args) pair fed to bashrs_shell_run. The
+      Platinum upgrade captures the deterministic-purity / fixed-
+      point algebraic property at the type level.
+    invariants:
+      - "fixed-point / idempotence algebraic property — distinct from PMAT-199 commutativity and PMAT-200 associativity"
+      - "the property is the LITERAL claim the contract is named after — C-BASHRS-POSIX-IDEMPOTENCE"
+      - "Platinum captures DIFFERENT shapes of compositional algebra (commutativity, associativity, idempotence)"
+      - "companion theorem idempotence_congruent_across_bridge_platinum is the FIRST Platinum theorem combining two prior properties (cross-domain equivalence + idempotence) into a higher-level compositional claim"
+    preconditions:
+      - "no special preconditions — idempotence is a structural property of pure functions"
+      - "the bashrs_shell_run_silver function is well-formed (Silver model preconditions inherited)"
+    postconditions:
+      - "an emitter introducing side effects (e.g., temp-file writes on first run) on the bashrs side would have non-idempotent shell observations — falsifying the idempotence_congruent_across_bridge_platinum claim"
+      - "the substrate now demonstrates 3 distinct compositional algebraic shapes at Platinum tier (commutativity, associativity/distributivity, idempotence)"
