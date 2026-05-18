@@ -638,4 +638,143 @@ theorem mod_dispatch_total_silver (path : PyIntPath) (a b : Int) :
     ∃ n : Int, mod_dispatch_silver path a b = n := by
   exact ⟨_, rfl⟩
 
+/-! ## PMAT-176 — Silver-tier dispatchers for `<<`, `>>`, `**`, `&`
+    (XPILE-REFINE-PY-INT-ARITH-003).
+
+    Replicates the PMAT-169 / PMAT-175 typed-dispatch pattern
+    across the remaining FOUR arithmetic operations in
+    C-PY-INT-ARITH: left-shift, right-shift, power, bitwise-AND.
+    Brings Silver coverage on this contract to **8/9 equations**
+    — every fits_i64 dispatch-based equation now has a Silver
+    dispatcher.
+
+    (The ninth equation, `addition_overflow_promotion`, is the
+    slow-path-only companion of `addition_no_overflow`; it has no
+    fast/slow dispatch and its slow-path soundness is already
+    captured by `dispatch_slow_path_eq_python_silver` from
+    PMAT-169.)
+
+    The pattern is identical across all four:
+    - `<op>_dispatch_silver`: typed dispatcher
+    - `<op>_dispatch_correct_on_fits_silver`: path-correct on
+      the fits_i64 domain
+    - `<op>_dispatch_slow_path_eq_python_silver`: slow path
+      soundness
+    - `<op>_dispatch_total_silver`: totality
+
+    Shift operations note: the dispatcher takes `b : Nat` (not
+    Int) because Rust's `wrapping_shl`/`shr` and Python's `<<`
+    / `>>` both reject negative shift amounts — modelling this
+    as `Nat` matches the in-domain API exactly. -/
+
+/-- Silver-tier dispatcher for left-shift. `b : Nat` matches
+    the Rust API (negative shifts are out of domain). -/
+def shl_dispatch_silver (path : PyIntPath) (a : Int) (b : Nat) : Int :=
+  match path with
+  | PyIntPath.FastPath => i64_wrap_shl a b
+  | PyIntPath.SlowPath => bigint_shl a b
+
+/-- **Silver-tier refinement theorem** — left-shift dispatch is
+    path-correct on the fits_i64 domain. Composes with Bronze
+    `shl_fast_path_eq_slow_path`. -/
+theorem shl_dispatch_correct_on_fits_silver
+    (a : Int) (b : Nat) (h : fits_i64 (a * (2 ^ b))) :
+    shl_dispatch_silver PyIntPath.FastPath a b
+      = shl_dispatch_silver PyIntPath.SlowPath a b := by
+  unfold shl_dispatch_silver
+  exact shl_fast_path_eq_slow_path a b h
+
+/-- Slow-path soundness for left-shift dispatch (rfl). -/
+theorem shl_dispatch_slow_path_eq_python_silver (a : Int) (b : Nat) :
+    shl_dispatch_silver PyIntPath.SlowPath a b = a * (2 ^ b) := by
+  rfl
+
+/-- Left-shift dispatcher totality. -/
+theorem shl_dispatch_total_silver (path : PyIntPath) (a : Int) (b : Nat) :
+    ∃ n : Int, shl_dispatch_silver path a b = n := by
+  exact ⟨_, rfl⟩
+
+/-- Silver-tier dispatcher for right-shift. -/
+def shr_dispatch_silver (path : PyIntPath) (a : Int) (b : Nat) : Int :=
+  match path with
+  | PyIntPath.FastPath => i64_shr a b
+  | PyIntPath.SlowPath => bigint_shr a b
+
+/-- **Silver-tier refinement theorem** — right-shift dispatch is
+    path-correct. Composes with Bronze `shr_fast_path_eq_slow_path`. -/
+theorem shr_dispatch_correct_on_fits_silver
+    (a : Int) (b : Nat) (h : fits_i64 (Int.fdiv a (2 ^ b))) :
+    shr_dispatch_silver PyIntPath.FastPath a b
+      = shr_dispatch_silver PyIntPath.SlowPath a b := by
+  unfold shr_dispatch_silver
+  exact shr_fast_path_eq_slow_path a b h
+
+/-- Slow-path soundness for right-shift dispatch (rfl). -/
+theorem shr_dispatch_slow_path_eq_python_silver (a : Int) (b : Nat) :
+    shr_dispatch_silver PyIntPath.SlowPath a b = Int.fdiv a (2 ^ b) := by
+  rfl
+
+/-- Right-shift dispatcher totality. -/
+theorem shr_dispatch_total_silver (path : PyIntPath) (a : Int) (b : Nat) :
+    ∃ n : Int, shr_dispatch_silver path a b = n := by
+  exact ⟨_, rfl⟩
+
+/-- Silver-tier dispatcher for power (`a ** b`). -/
+def pow_dispatch_silver (path : PyIntPath) (a : Int) (b : Nat) : Int :=
+  match path with
+  | PyIntPath.FastPath => i64_wrap_pow a b
+  | PyIntPath.SlowPath => bigint_pow a b
+
+/-- **Silver-tier refinement theorem** — power dispatch is
+    path-correct on the fits_i64 domain. Composes with Bronze
+    `pow_fast_path_eq_slow_path`. -/
+theorem pow_dispatch_correct_on_fits_silver
+    (a : Int) (b : Nat) (h : fits_i64 (a ^ b)) :
+    pow_dispatch_silver PyIntPath.FastPath a b
+      = pow_dispatch_silver PyIntPath.SlowPath a b := by
+  unfold pow_dispatch_silver
+  exact pow_fast_path_eq_slow_path a b h
+
+/-- Slow-path soundness for power dispatch (rfl). -/
+theorem pow_dispatch_slow_path_eq_python_silver (a : Int) (b : Nat) :
+    pow_dispatch_silver PyIntPath.SlowPath a b = a ^ b := by
+  rfl
+
+/-- Power dispatcher totality. -/
+theorem pow_dispatch_total_silver (path : PyIntPath) (a : Int) (b : Nat) :
+    ∃ n : Int, pow_dispatch_silver path a b = n := by
+  exact ⟨_, rfl⟩
+
+/-- Silver-tier dispatcher for bitwise-AND. Note: at fits_i64 of
+    both operands, fast and slow paths are *definitionally the
+    same* shared-kernel operation (see `bigint_and := i64_and`).
+    The Silver dispatcher still captures the SELECTION decision —
+    a future emitter that swaps `bigint_and` for a distinct
+    GMP-`mpz_and` implementation would falsify the path-correctness
+    claim without touching the Bronze theorem. -/
+def and_dispatch_silver (path : PyIntPath) (a b : Int) : Int :=
+  match path with
+  | PyIntPath.FastPath => i64_and a b
+  | PyIntPath.SlowPath => bigint_and a b
+
+/-- **Silver-tier refinement theorem** — bitwise-AND dispatch is
+    path-correct on the fits_i64 domain (both operands). Composes
+    with Bronze `and_fast_path_eq_slow_path`. -/
+theorem and_dispatch_correct_on_fits_silver
+    (a b : Int) (h : fits_i64 a) (h2 : fits_i64 b) :
+    and_dispatch_silver PyIntPath.FastPath a b
+      = and_dispatch_silver PyIntPath.SlowPath a b := by
+  unfold and_dispatch_silver
+  exact and_fast_path_eq_slow_path a b h h2
+
+/-- Slow-path soundness for bitwise-AND dispatch (rfl). -/
+theorem and_dispatch_slow_path_eq_python_silver (a b : Int) :
+    and_dispatch_silver PyIntPath.SlowPath a b = bigint_and a b := by
+  rfl
+
+/-- Bitwise-AND dispatcher totality. -/
+theorem and_dispatch_total_silver (path : PyIntPath) (a b : Int) :
+    ∃ n : Int, and_dispatch_silver path a b = n := by
+  exact ⟨_, rfl⟩
+
 end XpileContracts.CPyIntArith

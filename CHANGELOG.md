@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier dispatchers: `<<`, `>>`, `**`, `&` on PY-INT-ARITH, brings contract to full dispatch Silver coverage (PMAT-176 / XPILE-REFINE-PY-INT-ARITH-003)
+
+Twenty-first through twenty-fourth Silver refinements — four new dispatchers in a single PR. Replicates the PMAT-169/175 typed-dispatcher pattern across the remaining FOUR arithmetic operations on C-PY-INT-ARITH: left-shift, right-shift, power, bitwise-AND.
+
+**C-PY-INT-ARITH now has Silver dispatcher coverage on 8/9 equations** — every fits_i64-based dispatch equation has a Silver companion. (The ninth equation, `addition_overflow_promotion`, is the slow-path-only companion of `addition_no_overflow` and has no fast/slow dispatch — its slow-path soundness is already captured by `dispatch_slow_path_eq_python_silver` from PMAT-169.)
+
+Four new wired equations:
+- `shl_dispatch_correct_on_fits_silver`
+- `shr_dispatch_correct_on_fits_silver`
+- `pow_dispatch_correct_on_fits_silver`
+- `and_dispatch_correct_on_fits_silver`
+
+Each follows the identical PMAT-169 structure: typed dispatcher + path-correctness theorem (wired) + slow-path soundness companion + totality companion.
+
+**Type-level capture of multiple bug classes**: left-shift overflow (raw `<<` instead of `checked_shl`), right-shift overflow on b ≥ 64, power overflow on unchecked_pow, and GMP-mpz_and substitution that diverges from CPython on i64::MIN bit patterns — all now caught at dispatcher level.
+
+YAML: adds four new equations wired to the four Silver theorems. `xpile quorum` view for C-PY-INT-ARITH: Sem=17 (was 13), Sym=9, Run=4, Ext=13 (was 11). C-PY-INT-ARITH is now the SECOND most Silver-saturated contract in the substrate (after C-FFI-CPYTHON-EXT at 6/6, this contract has 8 Silver dispatchers + 1 dispatch-orchestrating original = 9 Silver theorems across 8/9 equations).
+
 ### Added — Silver-tier dispatchers: `*`, `//`, `%` on PY-INT-ARITH, replicates PMAT-169 pattern (PMAT-175 / XPILE-REFINE-PY-INT-ARITH-002)
 
 Eighteenth, nineteenth, twentieth Silver refinements in a single PR — replicates the PMAT-169 typed-dispatcher pattern across three more arithmetic operations: multiplication, floor-division, modulo. Brings Silver coverage on C-PY-INT-ARITH from 1 equation to 4 equations (out of 9).

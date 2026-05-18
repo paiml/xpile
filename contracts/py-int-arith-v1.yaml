@@ -281,6 +281,29 @@ equations:
     kani_harness: "bitwise_and_signed_semantics"
     kani_file: "contracts/kani/py_int_arith.rs"
 
+  and_dispatch_correct_on_fits_silver:
+    # PMAT-176: Silver-tier dispatcher for bitwise-AND.
+    # Replicates PMAT-169 pattern. Even though Bronze had both
+    # paths reduce to the same shared-kernel i64_and, the Silver
+    # claim is on the path-selection — a future emitter swapping
+    # bigint_and for GMP's mpz_and would falsify path-correctness
+    # without touching the Bronze theorem.
+    lean_theorem: "XpileContracts.CPyIntArith.and_dispatch_correct_on_fits_silver"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      and_dispatch(FastPath, a, b) == and_dispatch(SlowPath, a, b)
+        WHEN fits_i64(a) AND fits_i64(b)
+    domain: |
+      Same as bitwise_and_signed_semantics — a, b Python ints that fit in i64.
+    invariants:
+      - "fast and slow bitwise-AND paths agree when both operands fit in i64"
+      - "the slow path returns bigint_and on every input (companion theorem)"
+      - "the bitwise-AND dispatcher is total (companion theorem)"
+    preconditions:
+      - "fits_i64(a) AND fits_i64(b) — the contract precondition for emitting i64 bit-AND"
+    postconditions:
+      - "a future emitter swapping bigint_and for GMP's mpz_and would falsify path-correctness — caught at the dispatcher level"
+
   shift_left_signed_semantics:
     formula: |
       python_int_shl(a, b) == rust_i64::wrapping_shl(a, b)  WHEN  0 <= b < 64 AND fits_i64(a * 2^b)
@@ -304,6 +327,27 @@ equations:
     kani_harness: "shift_left_signed_semantics"
     kani_file: "contracts/kani/py_int_arith.rs"
 
+  shl_dispatch_correct_on_fits_silver:
+    # PMAT-176: Silver-tier dispatcher for left-shift.
+    # Replicates PMAT-169 pattern. Captures the path-selection
+    # decision per `<<` call site.
+    lean_theorem: "XpileContracts.CPyIntArith.shl_dispatch_correct_on_fits_silver"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      shl_dispatch(FastPath, a, b) == shl_dispatch(SlowPath, a, b)
+        WHEN fits_i64(a * 2^b)
+    domain: |
+      Same as shift_left_signed_semantics — a Python int that fits in i64; b Nat.
+    invariants:
+      - "fast and slow left-shift paths agree on the fits_i64-of-product domain"
+      - "the slow path returns a * 2^b on every input (companion theorem)"
+      - "the left-shift dispatcher is total (companion theorem)"
+    preconditions:
+      - "fits_i64(a * 2^b) — the contract precondition for emitting i64_wrap_shl"
+      - "b : Nat (negative shifts are out of domain per Rust's u32 API match)"
+    postconditions:
+      - "an emitter that emits raw `<<` instead of `checked_shl` for out-of-domain inputs would silently wrap rather than panic"
+
   shift_right_signed_semantics:
     formula: |
       python_int_shr(a, b) == rust_i64::checked_shr(a, b)  WHEN  0 <= b < 64
@@ -324,6 +368,27 @@ equations:
     # PMAT-151: Kani harness mirrors the Lean theorem.
     kani_harness: "shift_right_signed_semantics"
     kani_file: "contracts/kani/py_int_arith.rs"
+
+  shr_dispatch_correct_on_fits_silver:
+    # PMAT-176: Silver-tier dispatcher for right-shift.
+    # Replicates PMAT-169 pattern. Both paths reduce to Int.fdiv
+    # — the Silver claim captures the path-selection decision.
+    lean_theorem: "XpileContracts.CPyIntArith.shr_dispatch_correct_on_fits_silver"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      shr_dispatch(FastPath, a, b) == shr_dispatch(SlowPath, a, b)
+        WHEN fits_i64(Int.fdiv a (2^b))
+    domain: |
+      Same as shift_right_signed_semantics — a Python int that fits in i64; b Nat in [0, 64).
+    invariants:
+      - "fast and slow right-shift paths agree on the fits_i64 domain"
+      - "the slow path returns Int.fdiv a (2^b) on every input (companion theorem)"
+      - "the right-shift dispatcher is total (companion theorem)"
+    preconditions:
+      - "0 <= b < 64 (else Rust panics)"
+      - "fits_i64(Int.fdiv a (2^b)) for the fast-path agreement claim"
+    postconditions:
+      - "the dispatch claim is preserved even when both paths' underlying ops are identical — captures the selection-decision Bronze couldn't model"
 
   power_signed_semantics:
     formula: |
@@ -347,6 +412,31 @@ equations:
     # PMAT-151: Kani harness mirrors the Lean theorem.
     kani_harness: "power_signed_semantics"
     kani_file: "contracts/kani/py_int_arith.rs"
+
+  pow_dispatch_correct_on_fits_silver:
+    # PMAT-176: Silver-tier dispatcher for power (`a ** b`).
+    # Replicates PMAT-169 pattern. With this, C-PY-INT-ARITH has
+    # Silver dispatchers on ALL 8 fast/slow-path equations
+    # (addition_overflow_promotion is the slow-path-only
+    # companion that doesn't have its own dispatcher; its
+    # slow-path soundness is covered by
+    # dispatch_slow_path_eq_python_silver from PMAT-169).
+    lean_theorem: "XpileContracts.CPyIntArith.pow_dispatch_correct_on_fits_silver"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      pow_dispatch(FastPath, a, b) == pow_dispatch(SlowPath, a, b)
+        WHEN fits_i64(a^b)
+    domain: |
+      Same as power_signed_semantics — a Python int that fits in i64; b Nat (non-negative).
+    invariants:
+      - "fast and slow power paths agree on the fits_i64-of-result domain"
+      - "the slow path returns a^b on every input (companion theorem)"
+      - "the power dispatcher is total (companion theorem)"
+    preconditions:
+      - "fits_i64(a^b) — the contract precondition for emitting checked_pow"
+      - "b : Nat (negative exponent promotes to Float — separate contract)"
+    postconditions:
+      - "an emitter that uses unchecked pow for out-of-domain inputs would overflow silently — caught by the dispatcher's selection claim"
 
 proof_obligations:
   - type: precondition

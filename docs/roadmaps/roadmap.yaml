@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-176
+  github_issue: null
+  item_type: task
+  title: 'PMAT-176: Silver-tier — shl + shr + pow + and dispatchers on C-PY-INT-ARITH (XPILE-REFINE-PY-INT-ARITH-003), full Silver dispatch coverage'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T03:30:00Z
+  updated: 2026-05-19T03:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Four new Silver dispatcher theorems on C-PY-INT-ARITH (shl, shr, pow, and) replicating PMAT-169/175 pattern. Brings Silver dispatch coverage to 8/9 equations (every fits_i64-based dispatch equation now has Silver). New wired equations shl_dispatch_correct_on_fits_silver, shr_dispatch_correct_on_fits_silver, pow_dispatch_correct_on_fits_silver, and_dispatch_correct_on_fits_silver. Each comes with slow-path and totality companions. Captures left-shift/right-shift/power overflow bug classes and GMP-mpz_and substitution at the dispatcher level. C-PY-INT-ARITH Sem 13 → 17, Ext 11 → 13. Second most Silver-saturated contract in substrate.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-175
   github_issue: null
   item_type: task
