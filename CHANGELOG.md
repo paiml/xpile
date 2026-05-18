@@ -7,6 +7,31 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FOURTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-4 Diamond in substrate) — power-monoid via Nat-action exponentiation (PMAT-247 / XPILE-REFINE-PY-INT-ARITH-011)
+
+**First DEPTH-4 Diamond in the substrate.** Opens Diamond depth-4 — FOUR distinct algebraic categories on a single contract. PyIntArith already had THREE Diamond categories (semiring at PMAT-214, Euclidean-domain at PMAT-228, shift-monoid at PMAT-241); PMAT-247 adds the POWER-MONOID Diamond as the fourth orthogonal category.
+
+- **PMAT-214**: `(Int, +, 0, *, 1)` SEMIRING (additive/multiplicative)
+- **PMAT-228**: `(Int, fdiv, fmod)` EUCLIDEAN DOMAIN (division)
+- **PMAT-241**: `(Int × Nat, shl, 0)` SHIFT-MONOID (multiplicative by 2^b, FIXED BASE)
+- **PMAT-247**: `(Int × Nat, pow, 0)` POWER-MONOID (Nat-action via exponentiation, ARBITRARY BASE) — **NEW depth-4**
+
+The categorical distinction: shift-monoid fixes the base at 2; power-monoid generalizes to arbitrary base. The composition law `a^(b1+b2) = a^b1 * a^b2` is the canonical Nat-action homomorphism — orthogonal to shift-monoid because the action structure is generic over the base.
+
+Combines four properties:
+(a) Slow-path semantics: `pow(a, b) = a^b` (PMAT-176 lifted)
+(b) Identity: `pow(a, 0) = 1`
+(c) Single application: `pow(a, 1) = a`
+(d) Exponent additivity: `pow(a, b1+b2) = pow(a, b1) * pow(a, b2)`
+
+`power_monoid_diamond` (wired): 4-conjunction proving the power-monoid axiomatization via Lean stdlib `pow_zero`, `pow_one`, `pow_add`.
+
+**Diamond depth census after this PR:**
+- Depth-1 UNIVERSAL: 12/12 contracts
+- Depth-2 UNIVERSAL: 12/12 contracts
+- Depth-3 UNIVERSAL across layers: 5/5 layers
+- **Depth-4 OPENED**: 1 contract (PyIntArith)
+
 ### Changed — Doc sweep: UNIVERSAL Diamond depth-3 across all 5 layers milestone (PMAT-241..245) reflected across README, status, audit, kaizen-fleet (PMAT-246)
 
 Doc sweep recording the UNIVERSAL Diamond depth-3 across-layers milestone landed via PMAT-241..245. Every layer of the 5-layer contract taxonomy now has at least one contract with THREE distinct Diamond categories.

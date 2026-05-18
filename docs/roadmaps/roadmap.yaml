@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-247
+  github_issue: null
+  item_type: task
+  title: 'PMAT-247: FOURTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-4 Diamond in substrate) — power-monoid via Nat-action (XPILE-REFINE-PY-INT-ARITH-011)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T15:30:00Z
+  updated: 2026-05-20T15:30:00Z
+  spec: null
+  acceptance_criteria:
+  - First DEPTH-4 Diamond in substrate. Opens Diamond depth-4 — four orthogonal categories on PyIntArith. POWER-MONOID Diamond on (Int × Nat, pow, 0) Nat-action via exponentiation, distinct from PMAT-214 semiring + PMAT-228 Euclidean + PMAT-241 shift-monoid (fixed-base). Combines pow_zero + pow_one + pow_add + slow-path-semantics. power_monoid_diamond (wired).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-246
   github_issue: null
   item_type: task

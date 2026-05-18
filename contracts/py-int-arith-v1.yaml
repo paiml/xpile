@@ -496,6 +496,38 @@ equations:
       - "an emitter that uses wrap-around shift on the slow path would falsify the exponent-additivity composition law"
       - "Diamond DEPTH-3 demonstrated: three distinct algebraic categories on PyIntArith — opens new dimension of refinement"
 
+  power_monoid_diamond:
+    # PMAT-247 / XPILE-REFINE-PY-INT-ARITH-011: FOURTH Diamond on
+    # this contract — FIRST DEPTH-4 Diamond in substrate. Opens
+    # Diamond depth-4. POWER-MONOID Diamond captures (Int × Nat,
+    # pow, 0) Nat-action via exponentiation a^b. Distinct from
+    # PMAT-214 semiring (additive/multiplicative), PMAT-228
+    # Euclidean-domain (division), and PMAT-241 shift-monoid
+    # (multiplication by 2^b — fixed base).
+    lean_theorem: "XpileContracts.CPyIntArith.power_monoid_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      pow forms a MONOID ACTION of (Nat, +, 0) on Int via
+      exponentiation:
+        (a) slow-path semantics: pow(a, b) = a^b
+        (b) identity: pow(a, 0) = 1
+        (c) single application: pow(a, 1) = a
+        (d) exponent additivity: pow(a, b1+b2)
+                                   = pow(a, b1) * pow(a, b2)
+    domain: |
+      Any Int base a and Nat exponents b1, b2 on the SlowPath.
+      The Diamond captures the FULL power-monoid axiomatization
+      as a fourth orthogonal algebraic structure on PyIntArith.
+    invariants:
+      - "FIRST DEPTH-4 Diamond in the substrate — four orthogonal algebraic categories on PyIntArith"
+      - "distinct from PMAT-214 semiring AND PMAT-228 Euclidean-domain AND PMAT-241 shift-monoid (fixed-base power)"
+      - "captures (Nat, +, 0) → Int power-action as a monoid homomorphism with arbitrary base"
+    preconditions:
+      - "SlowPath dispatcher (power-monoid axioms hold under unbounded Int, not FastPath wrap-around)"
+    postconditions:
+      - "an emitter that truncates exponents > 63 to zero on the slow path would falsify the exponent-additivity law"
+      - "Diamond DEPTH-4 demonstrated: four distinct algebraic categories on PyIntArith — opens depth-4 dimension"
+
   bitwise_and_signed_semantics:
     formula: |
       python_int_and(a, b) == rust_i64::bitand(a, b)  WHEN  both_fit_i64(a, b)

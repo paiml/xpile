@@ -1412,4 +1412,70 @@ theorem shift_monoid_diamond
   · unfold shl_dispatch_silver bigint_shl
     simp
 
+/-! ## PMAT-247 — FOURTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-4
+    Diamond in substrate): power monoid via Nat-action exponentiation
+    (XPILE-REFINE-PY-INT-ARITH-011).
+
+    **First DEPTH-4 Diamond in the substrate.** Opens Diamond
+    depth-4 — FOUR distinct algebraic categories on a single
+    contract. PyIntArith already has THREE Diamond categories
+    (semiring at PMAT-214, Euclidean-domain at PMAT-228,
+    shift-monoid at PMAT-241); PMAT-247 adds the POWER-MONOID
+    Diamond as the fourth orthogonal category.
+
+    - PMAT-214: (Int, +, 0, *, 1) SEMIRING (additive/multiplicative)
+    - PMAT-228: (Int, fdiv, fmod) EUCLIDEAN DOMAIN (division)
+    - PMAT-241: (Int × Nat, shl, 0) SHIFT-MONOID (multiplicative
+      by powers of 2)
+    - **PMAT-247: (Int × Nat, pow, 0) POWER-MONOID (Nat-action
+      on Int via exponentiation)**
+
+    The categorical distinction: shift-monoid is specifically
+    multiplication by 2^b; power-monoid generalizes to a^b for
+    arbitrary base a. The composition law `a^(b1+b2) = a^b1 * a^b2`
+    is the canonical Nat-action homomorphism — orthogonal to
+    shift-monoid's `shl(a, b) = a * 2^b` because shift fixes
+    the base at 2.
+
+    Status: discharged at v0.1.0 (PMAT-247). Tier: DIAMOND.
+    First DEPTH-4 Diamond in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — power on the slow path
+  forms a MONOID ACTION of `(Nat, +, 0)` on Int via
+  exponentiation `a^b`.
+
+  Combines four properties into the POWER-MONOID axiomatization:
+  (a) Slow-path semantics: pow(a, b) = a^b (PMAT-176 lifted)
+  (b) Identity: pow(a, 0) = 1
+  (c) Single application: pow(a, 1) = a
+  (d) Exponent additivity: pow(a, b1+b2) = pow(a, b1) * pow(a, b2)
+
+  An emitter that breaks the exponent-additivity composition
+  law (e.g., truncating exponents > 63 to zero) would falsify
+  the power-monoid structure.
+
+  Status: **discharged at v0.1.0 (PMAT-247)**. Tier: DIAMOND.
+-/
+theorem power_monoid_diamond
+    (a : Int) (b1 b2 : Nat) :
+    -- (a) Slow-path semantics: pow(a, b) = a^b
+    pow_dispatch_silver PyIntPath.SlowPath a b1 = a ^ b1
+    -- (b) Identity: pow(a, 0) = 1
+    ∧ pow_dispatch_silver PyIntPath.SlowPath a 0 = 1
+    -- (c) Single application: pow(a, 1) = a
+    ∧ pow_dispatch_silver PyIntPath.SlowPath a 1 = a
+    -- (d) Exponent additivity: pow(a, b1+b2) = pow(a,b1) * pow(a,b2)
+    ∧ pow_dispatch_silver PyIntPath.SlowPath a (b1 + b2)
+        = pow_dispatch_silver PyIntPath.SlowPath a b1
+          * pow_dispatch_silver PyIntPath.SlowPath a b2 := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · unfold pow_dispatch_silver bigint_pow
+    exact pow_zero a
+  · unfold pow_dispatch_silver bigint_pow
+    exact pow_one a
+  · unfold pow_dispatch_silver bigint_pow
+    exact pow_add a b1 b2
+
 end XpileContracts.CPyIntArith
