@@ -307,6 +307,38 @@ equations:
       - "an emitter that deduplicates variants during composition or reorders arities would falsify this Diamond"
       - "compositional reasoning about inductive-type assembly is now fully type-level"
 
+  variant_count_cardinality_functor_diamond:
+    # PMAT-237 / XPILE-REFINE-XLATE-LEAN-TO-RUST-006: SECOND
+    # Diamond on this contract — Layer 2 depth-2 alt. Distinct
+    # algebraic category from PMAT-222 inductive-monoid (structural
+    # composition) vs cardinality-functor (variant_count as a
+    # Nat-monoid homomorphism). The cardinality functor captures
+    # an ORTHOGONAL property: the count projection could be
+    # broken (e.g., via double-counting) while the structural
+    # monoid remains valid.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.variant_count_cardinality_functor_diamond"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      variant_count is a MONOID HOMOMORPHISM
+      (LeanInductiveSilver, compose, empty) → (Nat, +, 0):
+        (a) additivity: count(compose(i1, i2)) = count(i1) + count(i2)
+        (b) identity preservation: count(empty) = 0
+        (c) non-negativity: count(i) ≥ 0
+        (d) cardinality consistency: count = arities.size in model
+    domain: |
+      Any two LeanInductiveSilver values. The Diamond captures
+      the FUNCTORIAL projection from the inductive-monoid to the
+      Nat-monoid via variant_count.
+    invariants:
+      - "SECOND Diamond category on C-XLATE-LEAN-TO-RUST — Layer 2 depth-2 alt"
+      - "distinct algebraic category from PMAT-222 inductive-monoid (structural vs cardinality)"
+      - "captures FUNCTORIAL monoid homomorphism into (Nat, +, 0)"
+    preconditions:
+      - "two well-formed LeanInductiveSilver values; the cardinality-consistency clause requires count = arities.size at the model level"
+    postconditions:
+      - "an emitter that doubles variant counts during composition (e.g., via dedup-then-restore) would falsify (a)"
+      - "an emitter that lifts the empty inductive to a non-zero count would falsify (b)"
+
   structure_to_rust_struct:
     # PMAT-133: Bronze-tier refinement theorem locks in
     # field-count preservation.

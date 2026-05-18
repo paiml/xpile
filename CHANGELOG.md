@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SECOND Diamond on C-XLATE-LEAN-TO-RUST (Layer 2 depth-2 alt) — variant-count cardinality-functor axioms (PMAT-237 / XPILE-REFINE-XLATE-LEAN-TO-RUST-006)
+
+**Ninth depth-2 Diamond in the substrate.** XlateLeanToRust already had the inductive-monoid Diamond at PMAT-222 (structural composition algebra). PMAT-237 adds the CARDINALITY-FUNCTOR Diamond — fundamentally distinct algebraic category covering the variant_count projection as a monoid homomorphism:
+
+- **PMAT-222**: inductive-monoid `(LeanInductiveSilver, compose, empty)` structural composition
+- **PMAT-237**: cardinality functor `variant_count: (LeanInductiveSilver, compose, empty) → (Nat, +, 0)` monoid homomorphism
+
+The categorical distinction is fundamental: structural monoid captures the algebra of inductive composition itself; cardinality functor captures the PROJECTION from the inductive monoid into the Nat additive monoid. These are orthogonal — an emitter that doubles variant counts during composition (e.g., via deduplication-then-restore) would break the functor while leaving the structural monoid intact.
+
+Combines four properties:
+(a) Additivity: `count(compose(i1, i2)) = count(i1) + count(i2)` (PMAT-207 lifted)
+(b) Identity preservation: `count(empty) = 0`
+(c) Non-negativity: `count(i) ≥ 0` (Nat is closed under non-negative)
+(d) Cardinality consistency: `count = arities.size` in the model
+
+`variant_count_cardinality_functor_diamond` (wired): 4-conjunction proving the cardinality-functor axiomatization.
+
+YAML: adds new equation `variant_count_cardinality_functor_diamond` wired to the Diamond theorem.
+
 ### Added — SECOND Diamond on C-XLATE-RUST-FN-TO-LEAN-THM (proof-lane depth-2) — NonEmpty section-retraction axioms (PMAT-236 / XPILE-REFINE-XLATE-RUST-TO-LEAN-006)
 
 **Eighth depth-2 Diamond in the substrate.** Proof-lane mirror of PMAT-229's NonEmpty section-retraction Diamond. Adds a SECOND Layer-2 contract with depth-2 Diamond coverage (XlateRustFnToLeanThm joins XlatePyListToVec at Layer 2).
