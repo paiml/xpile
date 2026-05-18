@@ -102,7 +102,7 @@ Real bug-class find during sweep: **branch-protection ruleset** only requires `g
 totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)
 ```
 
-- **76 Lean theorems (50 Bronze + 26 Silver) + 43 Kani BMC harnesses = 119 stratum-vote artifacts** (post-PMAT-127..138 the Lean Bronze side grew from 12 to 50; post-PMAT-147..151 / XPILE-QUORUM-006 the Kani side grew from 12 to 43; post-PMAT-156..162 Silver bracket added 7 Silver theorems across all single-equation contracts; post-PMAT-164..169 the Silver bracket extended to all 6 multi-equation contracts, adding 19 more Silver theorems — bringing Silver coverage to 12/12 of the substrate)
+- **150 Lean theorems (53 Bronze + 97 Silver) + 43 Kani BMC harnesses = 193 stratum-vote artifacts** (post-PMAT-127..138 the Lean Bronze side grew from 12 to 50; post-PMAT-147..151 / XPILE-QUORUM-006 the Kani side grew from 12 to 43; post-PMAT-156..162 Silver bracket added 7 Silver theorems across all single-equation contracts; post-PMAT-164..169 the Silver bracket extended to all 6 multi-equation contracts with 19 more Silver theorems; post-PMAT-171..183 brought Silver to EVERY equation in every contract — 42/42 — adding 71 more Silver theorems, with all 6 multi-equation contracts reaching full Silver coverage on every equation)
 - 2 contracts at rich 4-stratum coverage with multi-vote Runtime witnesses (C-PY-INT-ARITH, C-BASHRS-POSIX-IDEMPOTENCE)
 - 10 contracts at 4-stratum minimum with a single demo Runtime fixture each (single-vote demo); deeper Runtime witnesses (Gold tier) replace with property-specific diff_exec fixtures
 - All 5 layers of the contract taxonomy covered (Layer 1, 2, 3, 4, 5)
