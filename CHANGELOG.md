@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SECOND Diamond on C-BASHRS-POSIX-IDEMPOTENCE (Layer 1/4 depth-2) — exit-code constant-projection axioms (PMAT-238 / XPILE-REFINE-BASHRS-005)
+
+**Tenth depth-2 Diamond in the substrate.** Bashrs already had the pure-function Diamond at PMAT-215 (combining idempotence + cross-domain equivalence + determinism on the full OutcomeSilver). PMAT-238 adds the EXIT-CODE CONSTANT-PROJECTION Diamond — fundamentally distinct algebraic category covering a sub-field invariant:
+
+- **PMAT-215**: pure-function on the FULL Outcome value
+- **PMAT-238**: exit-code constant-projection on the SUB-FIELD `exit_code`
+
+The categorical distinction: pure-function is on the whole Outcome; constant-projection is on the exit_code sub-field. These are orthogonal — an emitter could preserve full Outcome equality while still introducing exit-code drift between Python (`subprocess.run`) and bashrs (`shell_run`) on the success path.
+
+Combines four properties:
+(a) Python `exit_code = 0` on the success path
+(b) Bashrs `exit_code = 0` on the success path
+(c) Cross-domain consistency on `exit_code`
+(d) Constant in input: independent of `(program, args)`
+
+`exit_code_constant_projection_diamond` (wired): 4-conjunction proving the constant-projection axiomatization. Falsification: an emitter that introduces a `set -e` shell-fragment that trips on non-fatal warnings would emit a non-zero `exit_code` on the success path — falsifying (b) and (c).
+
+YAML: adds new equation `exit_code_constant_projection_diamond` wired to the Diamond theorem.
+
 ### Added — SECOND Diamond on C-XLATE-LEAN-TO-RUST (Layer 2 depth-2 alt) — variant-count cardinality-functor axioms (PMAT-237 / XPILE-REFINE-XLATE-LEAN-TO-RUST-006)
 
 **Ninth depth-2 Diamond in the substrate.** XlateLeanToRust already had the inductive-monoid Diamond at PMAT-222 (structural composition algebra). PMAT-237 adds the CARDINALITY-FUNCTOR Diamond — fundamentally distinct algebraic category covering the variant_count projection as a monoid homomorphism:
