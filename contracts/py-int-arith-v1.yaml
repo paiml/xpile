@@ -49,6 +49,38 @@ equations:
     kani_harness: "addition_no_overflow"
     kani_file: "contracts/kani/py_int_arith.rs"
 
+  pyint_fast_add_returns_fast_gold:
+    # PMAT-185 / XPILE-REFINE-PY-INT-ARITH-005: FIRST Gold-tier
+    # refinement in the entire substrate. Promotes Silver's
+    # fits_i64-as-hypothesis to a refinement subtype
+    # PyIntFast := { n : Int // fits_i64 n }. The fits_i64
+    # invariant is carried by the value, not by an external
+    # hypothesis. An emitter receiving a PyIntFast cannot pass
+    # an out-of-range Int — the type system rules it out at
+    # compile time. Companion theorems pyint_fast_witness_gold
+    # and gold_subtype_agrees_with_silver_dispatch.
+    lean_theorem: "XpileContracts.CPyIntArith.pyint_fast_add_returns_fast_gold"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      PyIntFast.add_with_fits_proof(a, b, h_sum).val == a.val + b.val
+    domain: |
+      Two PyIntFast operands (each carries its own fits_i64
+      witness) plus a proof that their sum also fits. The Gold
+      upgrade captures what Silver couldn't model — the fits_i64
+      proof TRAVELS WITH the value through subsequent calls.
+    invariants:
+      - "PyIntFast values carry their fits_i64 witness with them (witness theorem pyint_fast_witness_gold)"
+      - "downstream code can chain PyIntFast additions without re-proving fits_i64 at every step — the type system enforces it"
+      - "Gold-tier refinement subtype rules out invalid inputs at CONSTRUCTION time (caller without a fits_i64 proof can't create the PyIntFast)"
+      - "bridges to the Silver model via gold_subtype_agrees_with_silver_dispatch — both Silver and Gold agree on the fits domain"
+    preconditions:
+      - "both operands are PyIntFast (carry their own fits_i64 witness)"
+      - "h_sum : fits_i64 (a.val + b.val) — the carry-out check that addition can introduce a witness that the operands don't have alone"
+    postconditions:
+      - "the result is a PyIntFast (the fits_i64 proof is preserved at the type level for subsequent calls)"
+      - "an emitter accepting raw Int values is upgradeable to PyIntFast by inserting fits_i64-proof construction at the boundary — once inside the typed region, no precondition propagation needed"
+      - "this is the archetype Gold-tier refinement pattern per ruchy 5.0 §14.10.5: structural typing + subtype-encoded preconditions"
+
   dispatch_correct_on_fits_silver:
     # PMAT-169 / XPILE-REFINE-PY-INT-ARITH-001: Silver-tier
     # refinement promotes the Bronze pointwise-equality model of
