@@ -203,6 +203,41 @@ equations:
       - "an emitter that drops Py_BEGIN_ALLOW_THREADS / Py_END_ALLOW_THREADS pairing would falsify (d) at compile time"
       - "Diamond depth-2 demonstrated on Layer 4 — substrate now has THREE depth-2 Diamond contracts (Layers 1, 2, 4)"
 
+  zero_copy_pointer_functor_diamond:
+    # PMAT-243 / XPILE-REFINE-FFI-CPYTHON-012: THIRD Diamond on
+    # this contract — Layer 4 DEPTH-3. FfiCpythonExt joins
+    # PyIntArith (PMAT-241 depth-3 on Layer 1) and
+    # CompileRustToPtxMma (PMAT-242 depth-3 on Layer 5) as the
+    # THIRD contract at depth-3 in the substrate. Distinct
+    # algebraic category from PMAT-216 abelian-group and
+    # PMAT-230 GIL-invariant — captures BUFFER OWNERSHIP
+    # functorial semantics (memory pointer preservation).
+    lean_theorem: "XpileContracts.CFfiCpythonExt.zero_copy_pointer_functor_diamond"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
+    formula: |
+      Zero-copy passthrough forms a FUNCTOR preserving pointer
+      identity and length, with mode-dependent pointer behavior:
+        (a) ZeroCopy preserves pointer (PMAT-173 lifted)
+        (b) Length preserved unconditionally
+        (c) Materialised mode produces sentinel pointer (= 0)
+        (d) Length is mode-independent
+    domain: |
+      Any NdarrayPassthrough with ZeroCopy mode (PMAT-173
+      precondition). The Diamond combines the ZeroCopy pointer-
+      identity claim with universal length preservation and
+      mode-dependent pointer behavior as a single algebraic
+      statement.
+    invariants:
+      - "THIRD DEPTH-3 Diamond in substrate (after PMAT-241, PMAT-242)"
+      - "distinct algebraic category from PMAT-216 abelian-group AND PMAT-230 GIL-invariant"
+      - "captures buffer-ownership functorial semantics"
+      - "three orthogonal CPython safety invariants now axiomatized: refcount, locks, memory ownership"
+    preconditions:
+      - "NdarrayPassthrough with mode = ZeroCopy for the (a) clause"
+    postconditions:
+      - "an emitter that always materialises while claiming ZeroCopy would falsify (a) at the type level"
+      - "Diamond depth-3 now extends to Layer 4 — substrate has depth-3 on three layers (Layer 1 PyIntArith, Layer 4 FfiCpython, Layer 5 CompileRustToPtx)"
+
   bounded_refcount_delta_preserved_gold:
     # PMAT-186 / XPILE-REFINE-FFI-CPYTHON-008: SECOND Gold-tier
     # refinement in the substrate (after PMAT-185 PyIntFast on

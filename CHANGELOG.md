@@ -7,6 +7,32 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — THIRD Diamond on C-FFI-CPYTHON-EXT (Layer 4 DEPTH-3) — zero-copy pointer-identity functor (PMAT-243 / XPILE-REFINE-FFI-CPYTHON-012)
+
+**Third DEPTH-3 Diamond in the substrate.** Following PMAT-241 on PyIntArith (Layer 1) and PMAT-242 on CompileRustToPtxMma (Layer 5), PMAT-243 extends Diamond depth-3 to Layer 4 C-FFI-CPYTHON-EXT. The substrate now has depth-3 on THREE contracts spanning Layers 1, 4, and 5.
+
+FfiCpythonExt now has THREE Diamond categories:
+- **PMAT-216**: refcount `(Int, +, 0, -)` ABELIAN GROUP (reference counting)
+- **PMAT-230**: GIL-state preservation (thread synchronization)
+- **PMAT-243**: zero-copy pointer-identity FUNCTOR (memory ownership)
+
+The categorical distinction: three orthogonal CPython safety invariants now axiomatized — refcount, locks, and memory ownership. Each captures a fundamentally different aspect of the FFI boundary.
+
+Combines four properties on `NdarrayPassthrough → RustViewSilver`:
+(a) ZeroCopy preserves pointer identity (PMAT-173 lifted)
+(b) Length preserved unconditionally (PMAT-173 companion)
+(c) Materialised mode produces sentinel pointer (= 0)
+(d) Length is mode-independent (always preserved)
+
+`zero_copy_pointer_functor_diamond` (wired): 4-conjunction proving the buffer-protocol zero-copy functor axiomatization. Falsification: an emitter that always materialises buffers while claiming ZeroCopy would falsify (a) at the type level.
+
+YAML: adds new equation `zero_copy_pointer_functor_diamond`.
+
+**Diamond depth census after this PR:**
+- Depth-1 UNIVERSAL: 12/12 contracts
+- Depth-2 UNIVERSAL: 12/12 contracts
+- **Depth-3**: 3 contracts on 3 distinct layers (PyIntArith on L1, FfiCpython on L4, CompileRustToPtx on L5)
+
 ### Added — THIRD Diamond on C-COMPILE-RUST-TO-PTX-MMA (Layer 5 DEPTH-3) — meet-semilattice via min (PMAT-242 / XPILE-REFINE-COMPILE-PTX-007)
 
 **Second DEPTH-3 Diamond in the substrate.** Following PMAT-241 on PyIntArith (Layer 1), PMAT-242 extends Diamond depth-3 to Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The substrate now has depth-3 on TWO contracts spanning Layer 1 and Layer 5.
