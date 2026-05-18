@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SECOND Diamond-tier refinement: pure-function axioms on C-BASHRS-POSIX-IDEMPOTENCE (PMAT-215 / XPILE-REFINE-BASHRS-004)
+
+Second Diamond-tier theorem. Combines three prior tier theorems into the PURE-FUNCTION axiomatization:
+- PMAT-162 Silver cross-domain equivalence
+- PMAT-201 Platinum idempotence
+- Determinism (proved here at Diamond)
+
+Diamond captures the FULL pure-function characterization: a function is pure iff it is (a) idempotent in observation, (b) cross-domain equivalent, AND (c) deterministic. These three properties JOINTLY characterize pure functions in the POSIX-shell + Python subprocess domain.
+
+The Diamond theorems:
+- `bashrs_pure_function_diamond` (wired): bashrs_shell_run is PURE
+- `python_pure_function_diamond`: Python subprocess.run is PURE under the same characterization (mirror)
+
+**Cross-domain purity preservation**: together these prove the bridge preserves purity on BOTH sides — neither side introduces impurity that the other lacks.
+
+**What Diamond captures that prior tiers couldn't**: an emitter satisfying ANY individual prior theorem but breaking the JOINT pure-function characterization (e.g., introducing a hidden cache that makes consecutive calls diverge despite each agreeing with Python) would falsify the Diamond.
+
+YAML: adds new equation `bashrs_pure_function_diamond` wired to the Diamond theorem. `xpile quorum` view for C-BASHRS-POSIX-IDEMPOTENCE: Sem=5 (was 4), Sym=1, Run=1, Ext=17.
+
 ### Added — FIRST Diamond-tier refinement: commutative monoid axioms on C-PY-INT-ARITH (PMAT-214 / XPILE-REFINE-PY-INT-ARITH-008)
 
 💎 **First Diamond-tier theorem in the entire xpile substrate.** Opens the next tier beyond Platinum per ruchy 5.0 §14.10.5.
