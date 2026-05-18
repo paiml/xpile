@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-227
+  github_issue: null
+  item_type: task
+  title: 'PMAT-227: UNIVERSAL Diamond doc sweep — reflect 5-tier UNIVERSAL coverage across README, CURRENT.md, audit-design, kaizen-fleet, INDEX, substrate-completion'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T05:30:00Z
+  updated: 2026-05-20T05:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Doc sweep recording the Diamond-UNIVERSAL milestone landed via PMAT-214..226. Refresh aggregate 236 → 242 Lean theorems, 279 → 285 stratum-vote artifacts. Enumerate the 12 distinct Diamond algebraic categories. README, CURRENT.md, INDEX.md, substrate-completion, audit-design §3, kaizen-fleet "Tier classification" all consistent.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-226
   github_issue: null
   item_type: task

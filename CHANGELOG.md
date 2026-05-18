@@ -7,6 +7,16 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Doc sweep: UNIVERSAL Diamond milestone — substrate now at 100% coverage at all 5 refinement tiers (PMAT-227)
+
+Doc sweep across `README.md`, `docs/status/CURRENT.md`, `docs/status/INDEX.md`, `docs/status/2026-05-18-substrate-completion.md`, `docs/specifications/audit-design.md`, and `docs/specifications/sub/kaizen-fleet.md` to reflect the Diamond-UNIVERSAL milestone that landed via PMAT-214..226.
+
+Aggregate refresh: **236 Lean (53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 12 Diamond) / 279 stratum-vote artifacts → 242 Lean (53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 18 Diamond) / 285 stratum-vote artifacts**. +6 Diamond theorems from PMAT-221..226.
+
+**Headline post-PMAT-227:** The xpile contract substrate now has UNIVERSAL coverage at all 5 refinement tiers — every one of the 12 contracts has a Bronze-tier rfl-by-construction theorem, a Silver-tier typed-structural-model theorem, a Gold-tier refinement-subtype theorem, a Platinum-tier compositional-property theorem, and a Diamond-tier multi-axiom-algebraic-category theorem. 12 distinct Diamond algebraic categories are demonstrated (one per contract): commutative-monoid (PMAT-214), pure-function (PMAT-215), abelian-group (PMAT-216), equivalence-relation (PMAT-217), bounded-monoid (PMAT-218), string-monoid (PMAT-219), free list-monoid (PMAT-221), inductive-monoid (PMAT-222), precondition-list-monoid (PMAT-223), frontend equivalence-class (PMAT-224), backend equivalence-class (PMAT-225), citation render-monoid (PMAT-226).
+
+This is the substrate's terminal claim for v0.1.0: every contract has been falsifier-quorum verified (Sem/Sym/Run/Ext) AND has full 5-tier refinement-theorem coverage. Subsequent work targets v0.2.0+ topics (Diamond breadth — more theorems per contract; deeper Runtime witnesses; new contract additions) rather than universality milestones.
+
 ### Added — TWELFTH Diamond-tier refinement: citation render-monoid on C-XPILE-CONTRACT-BACKEND-TRAIT — UNIVERSAL DIAMOND MILESTONE (PMAT-226 / XPILE-REFINE-CONTRACT-BACKEND-TRAIT-004)
 
 **Twelfth and FINAL Diamond-tier theorem for substrate-wide Diamond universality.** This closes the 5-tier refinement ladder universally — **every one of the 12 contracts** in the substrate now has at least one theorem at every tier: Bronze, Silver, Gold, Platinum, and Diamond. The progression that began with PMAT-203 (the first Diamond on PyIntArith) now spans the entire substrate.
