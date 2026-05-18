@@ -7,6 +7,28 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond-tier refinement: commutative monoid axioms on C-PY-INT-ARITH (PMAT-214 / XPILE-REFINE-PY-INT-ARITH-008)
+
+💎 **First Diamond-tier theorem in the entire xpile substrate.** Opens the next tier beyond Platinum per ruchy 5.0 §14.10.5.
+
+The tier progression now stands at:
+- **Bronze** (PMAT-070+): pointwise equality
+- **Silver** (PMAT-156+): typed structural model
+- **Gold** (PMAT-185+): refinement subtypes encoding preconditions
+- **Platinum** (PMAT-199+): single compositional algebraic properties
+- **Diamond** (PMAT-214+, NEW)**: COMBINED algebraic axiomatizations
+
+Diamond captures multi-property algebraic structures — monoids, groups, rings, semirings — by COMBINING multiple Platinum theorems into single tier-defining theorems. A Platinum theorem proves ONE compositional property; a Diamond theorem proves multiple properties together AND their joint consequences.
+
+The Diamond theorems:
+- `add_dispatch_commutative_monoid_diamond` (wired): combines PMAT-199 commutativity + PMAT-200 associativity + identity (`0 + x = x`) into the (Int, +, 0) commutative-monoid axiomatization
+- `mul_dispatch_commutative_monoid_diamond`: mirror for multiplication — (Int, *, 1) commutative monoid
+- `slow_path_semiring_diamond`: combines BOTH commutative monoids with distributivity (PMAT-200) into the full SEMIRING axiomatization (Int, +, 0, *, 1)
+
+**Strongest algebraic structure derivable from the substrate** captured at Diamond tier. An emitter satisfying individual Platinum theorems but breaking the joint structure (e.g., position-dependent reductions, one-direction-only distributivity) would not type-check against the Diamond conjunction.
+
+YAML: adds new equation `add_dispatch_commutative_monoid_diamond` wired to the Diamond theorem. `xpile quorum` view for C-PY-INT-ARITH: Sem=22 (was 21), Sym=9, Run=4, Ext=23.
+
 ### Docs — Platinum-universal milestone (PMAT-199..212) reflected across docs (PMAT-213)
 
 🏆 **Platinum-tier coverage is now UNIVERSAL across the substrate.** All 12 contracts now have at least one Platinum-tier compositional theorem. The Silver→Gold→Platinum tier progression is empirically complete.

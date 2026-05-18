@@ -83,6 +83,43 @@ equations:
       - "an emitter that uses a non-commutative representation (e.g., string concatenation before parsing) would falsify the commutativity claim — a real semantic bug class Bronze/Silver/Gold couldn't catch"
       - "Platinum tier captures algebraic STRUCTURE that prior tiers couldn't model"
 
+  add_dispatch_commutative_monoid_diamond:
+    # PMAT-214 / XPILE-REFINE-PY-INT-ARITH-008: FIRST Diamond-
+    # tier refinement in the entire substrate. Opens the next
+    # tier beyond Platinum per ruchy 5.0 §14.10.5. Diamond
+    # captures COMBINED algebraic axiomatizations (monoids,
+    # rings, semirings) by combining multiple Platinum
+    # theorems into single tier-defining theorems. PMAT-214
+    # combines PMAT-199 commutativity + PMAT-200 associativity
+    # + identity into the commutative-monoid axiomatization
+    # for slow-path addition. Companion theorems
+    # mul_dispatch_commutative_monoid_diamond and
+    # slow_path_semiring_diamond extend to multiplication and
+    # the full SEMIRING structure.
+    lean_theorem: "XpileContracts.CPyIntArith.add_dispatch_commutative_monoid_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      ∀ a b c : Int.
+        (add(a,b) = add(b,a))                 -- commutativity
+        ∧ (add(add(a,b),c) = add(a,add(b,c))) -- associativity
+        ∧ (add(0, a) = a)                     -- left identity
+      (commutative monoid)
+    domain: |
+      Any Int operands a, b, c on the SlowPath. The Diamond
+      upgrade captures the FULL commutative-monoid axiomatization
+      combining commutativity + associativity + identity.
+    invariants:
+      - "FIRST Diamond-tier theorem in the substrate"
+      - "COMBINED algebraic axiomatization: commutativity + associativity + identity"
+      - "captures the (Int, +, 0) commutative monoid at the type level"
+      - "companion theorem mul_dispatch_commutative_monoid_diamond extends to (Int, *, 1)"
+      - "companion theorem slow_path_semiring_diamond combines both monoids with distributivity (PMAT-200) into the full SEMIRING axiomatization"
+    preconditions:
+      - "the dispatcher path is SlowPath (Diamond combines Platinum theorems that hold on SlowPath only — associativity does not hold on FastPath under wrap-around)"
+    postconditions:
+      - "an emitter satisfying individual Platinum theorems but breaking the joint structure (e.g., position-dependent reductions) would falsify the Diamond conjunction"
+      - "Diamond tier captures algebraic STRUCTURE COMPOSITION that prior tiers couldn't axiomatize as a single unit"
+
   add_dispatch_slow_path_associative_platinum:
     # PMAT-200 / XPILE-REFINE-PY-INT-ARITH-007: SECOND Platinum-tier
     # refinement in the substrate. Demonstrates that the Platinum
