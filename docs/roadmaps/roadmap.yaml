@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-132
+  github_issue: null
+  item_type: task
+  title: 'PMAT-132: xlate-rust-fn-to-lean-thm contract — pre/postconditions for all 5 equations (warnings 12 → 5)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T07:30:00Z
+  updated: 2026-05-18T07:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Batch-add genuine domain-design pre/postconditions for all 5 equations in xlate-rust-fn-to-lean-thm-v1.yaml (rust_fn_to_lean_def, rust_postcondition_to_lean_theorem, rust_precondition_to_lean_hypothesis, citation_bridge_via_attribute, frame_translation_is_textual). Each statement grounded in Lean-elaborator-parseable attribute semantics, citation key uniqueness, deterministic emission, frame safety, and verbatim contract-ID preservation. Contract warnings 12 → 5 (remaining 5 are PV-ENF-002 for the 4 equations not yet behind Lean theorems plus PV-VAL-001 qa_gate). Total substrate warnings 35 → 28.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-131
   github_issue: null
   item_type: task

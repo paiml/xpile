@@ -7,6 +7,44 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — `xlate-rust-fn-to-lean-thm` contract gains domain-grounded pre/postconditions (PMAT-132)
+
+All 5 equations now carry equation-specific preconditions and
+postconditions. Each statement is a domain-design judgment call
+grounded in Lean-elaborator-parseable attribute semantics, citation
+key uniqueness, deterministic emission, and frame safety — not a
+blanket template.
+
+- `rust_fn_to_lean_def`: every Rust type lifts via the backend's
+  canonical Lift; emitted def name equals rust_fn's name byte-for-byte
+  (no mangling); generic param order preserved; no monadic wrapper;
+  `lean --check` succeeds on the def in isolation.
+- `rust_postcondition_to_lean_theorem`: `applies_to:` must name an
+  existing equation; 1:1 theorem-per-obligation, 1:N for
+  `applies_to: all`; theorem name equals the equation name; emits
+  `@[xpile_contract, xpile_equation]`; goal corresponds 1:1 with
+  the obligation's `formal:` field (no weakening/strengthening).
+- `rust_precondition_to_lean_hypothesis`: the equation has at least
+  one precondition; every Rust predicate has a Lean-expressible
+  counterpart; emitted as `∀`-binder or `(h : P)`; appears before
+  the postcondition in the implication chain; no silent drops.
+- `citation_bridge_via_attribute`: equation names within a contract
+  are unique; every theorem carries
+  `@[xpile_contract "<C.id>", xpile_equation "<eq_name>"]` preceding
+  the `theorem` keyword; contract ID preserved VERBATIM (dashes
+  intact, no case folding); recoverable via `Lean.Meta.getAttribute?`
+  (not regex); (contract_id, equation_name) tuple is globally unique;
+  malformed ID fails before any Lean is written.
+- `frame_translation_is_textual`: `lift()` receives `&Module` and
+  `&Contract` (read-only borrows); buffers fresh per call;
+  blake3-hash bit-identical before/after; same inputs produce
+  byte-identical Lean output (deterministic); on failure, neither
+  input is mutated and no partial file is left behind.
+
+Contract warnings 12 → 5 (the remaining 5 are PV-ENF-002 for the 4
+equations not yet behind Lean theorems plus PV-VAL-001 qa_gate).
+Total substrate warnings 35 → 28.
+
 ### Added — `xlate-py-list-to-vec` contract gains domain-grounded pre/postconditions (PMAT-131)
 
 All 5 equations now carry equation-specific preconditions and
