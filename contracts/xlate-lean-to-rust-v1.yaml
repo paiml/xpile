@@ -64,6 +64,35 @@ equations:
       - "Rust parameter list preserves source parameter order"
       - "the lowered Rust body is panic-free for all inputs in the declared `domain` (load-bearing for the Bronze-tier body-preservation theorem PMAT-070)"
 
+  name_preserved_silver:
+    # PMAT-165: Silver-tier refinement theorem locks in name
+    # preservation as a separate structural field of the typed
+    # LeanDefSilver / RustFnSilver model. This is the second
+    # multi-equation contract Silver upgrade (after PMAT-164's
+    # iteration_order_preserved_polymorphic on
+    # C-XLATE-PY-LIST-TO-VEC). Bronze (def_to_rust_fn above)
+    # smushed name/args/return_type/body into a single
+    # byte-array payload; Silver splits them and proves each
+    # preservation claim separately.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.name_preserved_silver"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      xlate(def f (args : T1) ... : R := body).name == f
+    domain: |
+      Same as `def_to_rust_fn` — a total Lean `def` with a Rust-
+      compatible body. The Silver upgrade narrows the modelling
+      from "body bytes preserved" to "name AND body AND args AND
+      return type each preserved as a separate structural field".
+    invariants:
+      - "Lean def name preserved byte-for-byte as a separate field of the Rust fn (no mangling, no snake_case normalisation, no prefix stripping)"
+      - "args, return_type, and body are preserved as separate structural fields (companion theorems body_preserved_silver, args_preserved_silver, return_type_preserved_silver in the same Lean file)"
+    preconditions:
+      - "def is total (Lean accepted it without `partial`)"
+      - "the Silver model assumes the source name fits in an opaque byte payload (Gold tier replaces this with Lean.Name with universe levels)"
+    postconditions:
+      - "the Rust function's name field equals the Lean def's name field byte-for-byte"
+      - "no other field is silently merged into the name (e.g., name + qualifier prefix is rejected at Silver tier)"
+
   partial_def_to_rust_fn:
     # PMAT-133: Bronze-tier refinement theorem locks in body +
     # partial-marker preservation. See contracts/lean/XlateLeanToRust.lean.
