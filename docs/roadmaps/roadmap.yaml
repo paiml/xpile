@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-194
+  github_issue: null
+  item_type: task
+  title: 'PMAT-194: NINTH Gold-tier refinement — ConsistentFrontendOutput subtype on C-XPILE-FRONTEND-TRAIT (XPILE-REFINE-FRONTEND-TRAIT-002); first Gold on Layer-3 + fourth Gold pattern variant (cross-field equality)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T13:00:00Z
+  updated: 2026-05-19T13:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Ninth Gold-tier theorem. First Gold on Layer-3 trait contracts. ConsistentFrontendOutput := { p : Frontend × MetaHirModuleSilver // p.snd.source_lang = p.fst.declared_lang } pairs a Frontend with its lowered module under type-level consistency proof. Fourth Gold pattern variant unlocked - cross-field equality refinement (x.fst.field = y.snd.field). consistent_frontend_output_gold (wired) + consistent_output_witness_gold + gold_frontend_agrees_with_silver companions. C-XPILE-FRONTEND-TRAIT Sem 2 → 3. Gold-tier pattern now spans 4 subtype shapes × 8 contracts × 5 layers.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-193
   github_issue: null
   item_type: task
