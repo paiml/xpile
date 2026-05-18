@@ -18,7 +18,7 @@ This file used to enumerate every implemented crate / contract / construct, and 
 - **43 Kani BMC harnesses** verify on every CI run via dedicated `kani` job + `every_kani_harness_discharges` workspace test (XPILE-QUORUM-006 series PMAT-147..151 added per-equation symbolic coverage for the 5 multi-equation contracts)
 - CI: `gate` + `kani` + `workspace-test` all run on every PR; `gate` is the load-bearing required status check via the org-level ruleset rule (verifiable with `gh api repos/paiml/xpile/rules/branches/main`). `kani` and `workspace-test` are not yet required-status-checks but in practice green on every merged PR — flipping them required is post-v0.1.0 work.
 - crates.io: `xpile 0.0.1` published as a name reservation; v0.1.0+ unreleased
-- 184 PRs merged on `main`
+- 217 PRs merged on `main` (was 184 — the Diamond program shipped 32 PRs at PMAT-226..257 with the Diamond depth-1/2/3/4 milestones + reporter + CI gate + taxonomy doc + Section 28)
 
 ## Where to look next
 

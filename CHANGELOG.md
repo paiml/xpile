@@ -7,6 +7,10 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Refresh CURRENT.md PR count: 184 → 217 (PMAT-258)
+
+The Diamond program shipped 32 PRs at PMAT-226..257 with the full depth-1/2/3/4 Diamond milestones + `xpile diamond` reporter + `diamond_coverage.rs` CI gate + comprehensive taxonomy doc + Section 28 of xpile-spec.md + `pmat work list` fix. Refresh CURRENT.md to reflect the live PR count.
+
 ### Fixed — Quote acceptance_criteria with embedded colons in roadmap.yaml — unblocks `pmat work list` (PMAT-257)
 
 `pmat work list` was failing with `Parse error: roadmap[N].acceptance_criteria[0]: invalid type: map, expected a string`. Root cause: many roadmap entries (predating this session and added during it) had acceptance_criteria list items containing colons (e.g., `"axiomatized: refcount + locks"`, `"{ p : Contract × ...}"`, `"Sem N → M"`). pmat's strict YAML parser interpreted the colon as a mapping separator.
