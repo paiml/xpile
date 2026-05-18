@@ -508,3 +508,12 @@ kani_harnesses:
               assert_eq!(rust_enum.variants[i].arity(), ctors[i].arity());
           }
       }
+
+qa_gate:
+  id: QA-XLATE-LEAN-TO-RUST
+  name: "Lean → Rust translation contract"
+  min_coverage: 0.50
+  max_complexity: 20
+  required_tests:
+    - every_referenced_lean_theorem_exists_in_its_file
+    - every_referenced_kani_harness_exists_in_its_file

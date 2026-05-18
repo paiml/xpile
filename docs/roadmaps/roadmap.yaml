@@ -2156,6 +2156,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-137
+  github_issue: null
+  item_type: task
+  title: 'PMAT-137: qa_gate blocks for all 5 kernel contracts (warnings 6 → 1)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-18T10:00:00Z
+  updated: 2026-05-18T10:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add qa_gate (id, name, min_coverage, max_complexity, required_tests) blocks to all 5 Layer-1/2 kernel contracts (py-int-arith, xlate-py-list-to-vec, xlate-lean-to-rust, xlate-rust-fn-to-lean-thm, notation-latex-math-to-equation). Each required_tests entry names a real test function in the workspace. py-int-arith uses min_coverage 0.85 (only end-to-end-implemented Layer-1 contract); the four Layer-2 scaffolded contracts use 0.50. Closes 5 PV-VAL-001 SCHEMA-013 warnings. Total substrate warnings 6 → 1. The remaining 1 is XPILE-REFINE-005 placeholder (bitwise_and_signed_semantics missing Lean theorem, needs mathlib Int.land).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-136
   github_issue: null
   item_type: task

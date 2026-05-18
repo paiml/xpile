@@ -420,3 +420,12 @@ kani_harnesses:
               assert!(parsed.citations.contains(&ids[i]));
           }
       }
+
+qa_gate:
+  id: QA-NOTATION-LATEX-MATH-TO-EQUATION
+  name: "LaTeX math/theorem environments → xpile contract YAML"
+  min_coverage: 0.50
+  max_complexity: 20
+  required_tests:
+    - every_referenced_lean_theorem_exists_in_its_file
+    - every_referenced_kani_harness_exists_in_its_file

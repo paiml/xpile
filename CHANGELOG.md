@@ -7,6 +7,30 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — `qa_gate:` blocks for all 5 Layer-1/2 kernel contracts (PMAT-137)
+
+Every kernel contract now declares a `qa_gate:` block (id, name,
+min_coverage, max_complexity, required_tests) per the pv schema
+SCHEMA-013 requirement. Required-tests entries name real test
+functions in the workspace (`every_referenced_lean_theorem_exists_in_its_file`,
+`every_referenced_kani_harness_exists_in_its_file`, plus the
+contract-specific transpile / landmark tests where applicable).
+
+- `py-int-arith`: QA-PY-INT-ARITH @ min_coverage 0.85 (covers the
+  Layer-1 transpile path which is the only end-to-end-implemented
+  contract at v0.1.0).
+- `xlate-py-list-to-vec`: QA-XLATE-PY-LIST-TO-VEC @ 0.50 (scaffolded;
+  the Lean refinement gate is what's actually verifiable).
+- `xlate-lean-to-rust`: QA-XLATE-LEAN-TO-RUST @ 0.50 (same).
+- `xlate-rust-fn-to-lean-thm`: QA-XLATE-RUST-FN-TO-LEAN-THM @ 0.50
+  (same).
+- `notation-latex-math-to-equation`: QA-NOTATION-LATEX-MATH-TO-EQUATION
+  @ 0.50 (same).
+
+Total substrate warnings 6 → 1. The remaining 1 is the documented
+XPILE-REFINE-005 placeholder for `bitwise_and_signed_semantics`'s
+missing Lean theorem (needs mathlib's `Int.land`).
+
 ### Added — Bronze-tier refinement theorems for 4 remaining `xlate-rust-fn-to-lean-thm` equations (PMAT-136)
 
 `contracts/lean/XlateRustFnToLeanThm.lean` now carries Bronze-tier

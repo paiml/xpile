@@ -359,3 +359,12 @@ kani_harnesses:
                          "contract ID must appear verbatim, no mangling");
           }
       }
+
+qa_gate:
+  id: QA-XLATE-RUST-FN-TO-LEAN-THM
+  name: "Rust fn + contract → Lean theorem lifting contract"
+  min_coverage: 0.50
+  max_complexity: 20
+  required_tests:
+    - every_referenced_lean_theorem_exists_in_its_file
+    - every_referenced_kani_harness_exists_in_its_file
