@@ -2,6 +2,40 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-159
+  github_issue: null
+  item_type: task
+  title: 'PMAT-159: Silver-tier — citation_round_trip for CONTRACT-BACKEND-TRAIT, completes trait 2×2 Silver bracket'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T18:30:00Z
+  updated: 2026-05-18T18:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Silver-tier refinement for citation_round_trip_silver on C-XPILE-CONTRACT-BACKEND-TRAIT. Introduces ContractId, Contract struct with depends_on/references, RenderedDocSilver with citations. Theorem proves citations = depends_on ++ references (no drops). C-XPILE-CONTRACT-BACKEND-TRAIT Sem 1 → 2. Completes the trait-determinism 2×2 Silver bracket with PMAT-156..158.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-158
+  github_issue: null
+  item_type: task
+  title: 'PMAT-158: Silver-tier — equations_only for CONTRACT-FRONTEND-TRAIT (XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-001)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T18:30:00Z
+  updated: 2026-05-18T18:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Silver-tier refinement for equations_only_silver on C-XPILE-CONTRACT-FRONTEND-TRAIT. Introduces TranspileSession with disjoint modules + equations storage. parse_to_equations_silver leaves modules unchanged. Theorem proves session.modules invariant at type level. C-XPILE-CONTRACT-FRONTEND-TRAIT Sem 1 → 2.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-157
   github_issue: null
   item_type: task

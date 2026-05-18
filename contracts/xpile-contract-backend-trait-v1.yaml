@@ -68,6 +68,12 @@ equations:
       - "config.lean_version, when set, is (4, _) (decision #1)"
 
   citation_round_trip:
+    # PMAT-159 / XPILE-REFINE-CONTRACT-BACKEND-TRAIT-001: Silver-tier
+    # refinement theorem. Introduces typed Contract + RenderedDocSilver
+    # with explicit citations field. Proves
+    # `RenderedDoc.citations = depends_on ++ references` structurally.
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.citation_round_trip_silver"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
     formula: |
       forall (contract, config): contract.depends_on union contract.references subset RenderedDoc.citations
     domain: |

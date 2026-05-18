@@ -60,6 +60,12 @@ equations:
       - "source is valid UTF-8"
 
   equations_only:
+    # PMAT-158 / XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-001: Silver-tier
+    # refinement theorem. Introduces TranspileSession with disjoint
+    # modules + equations storage. Proves parse_to_equations leaves
+    # the modules array unchanged at the type level.
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.equations_only_silver"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
     formula: |
       forall cf, source: cf.parse_to_equations(source) produces no xpile_meta_hir::Module
         and does not mutate any Module reachable from the call site
