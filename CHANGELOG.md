@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — THIRD Diamond-tier refinement: refcount abelian-group axioms on C-FFI-CPYTHON-EXT (PMAT-216 / XPILE-REFINE-FFI-CPYTHON-010)
+
+Third Diamond-tier theorem in the substrate. Combines four group axioms into the ABELIAN GROUP axiomatization for refcount-delta semantics:
+- PMAT-204 Platinum additivity (closure + binary operation)
+- Commutativity (proved here via `Int.add_comm`)
+- Associativity (companion to PMAT-204)
+- Identity (zero-delta call is additive identity)
+- Inverses (negation: every call has a counterpart that cancels its delta)
+
+**Stronger than PMAT-214's commutative-monoid**: Nat doesn't have inverses; Int does. The abelian-group structure captures the substrate's deepest algebraic claim about refcount accounting — every refcount-modifying call has a CANCELING counterpart.
+
+The Diamond theorems:
+- `refcount_abelian_group_diamond` (wired): 4-conjunction proving closure + commutativity + associativity + identity
+- `refcount_inverse_diamond`: existence proof that every call has an inverse (Py_INCREF/Py_DECREF pairing at the group level)
+
+**Captures the load-bearing Py_INCREF/Py_DECREF pairing claim**: every reference INCrement has a corresponding DECrement, and the pair cancels at the refcount-delta level. An emitter that produces unmatched refcount changes would falsify the group structure at compile time.
+
+YAML: adds new equation `refcount_abelian_group_diamond` wired to the Diamond theorem. `xpile quorum` view for C-FFI-CPYTHON-EXT: Sem=10 (was 9), Sym=1, Run=1, Ext=22. Three Diamond theorems now in the substrate, each capturing a different algebraic structure: commutative-monoid (PMAT-214), pure-function (PMAT-215), abelian-group (PMAT-216).
+
 ### Added — SECOND Diamond-tier refinement: pure-function axioms on C-BASHRS-POSIX-IDEMPOTENCE (PMAT-215 / XPILE-REFINE-BASHRS-004)
 
 Second Diamond-tier theorem. Combines three prior tier theorems into the PURE-FUNCTION axiomatization:
