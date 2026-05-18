@@ -7,6 +7,35 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — First Silver-tier refinement: `source_lang_consistency` on FRONTEND-TRAIT (PMAT-156 / XPILE-REFINE-FRONTEND-TRAIT-001)
+
+`contracts/lean/XpileFrontendTrait.lean` gains a Silver-tier
+refinement section for the `source_lang_consistency` equation —
+promoting it from Bronze (trivial `rfl` placeholder) to Silver
+(type-level structural claim).
+
+The Silver model introduces:
+- `SourceLang` enum (Python | C | Rust | Ruchy | Shell | Lean)
+- `MetaHirModuleSilver` with explicit `bytes` AND `source_lang` fields
+- `Frontend` struct carrying a `declared_lang : SourceLang` field
+- `parse_and_lower_silver f path source` that stamps `f.declared_lang` onto the emitted module
+- `source_lang_consistency_silver` theorem proving `result.source_lang = f.declared_lang` at the type level
+
+This is the **first XPILE-REFINE-*-001 ticket promoted from Bronze
+to Silver**. The pattern (typed AST + structural claim replacing
+byte-array + rfl) generalises to the other XPILE-REFINE-FRONTEND-TRAIT-***,
+XPILE-REFINE-BACKEND-TRAIT-***, etc. tickets that have been parked
+since the v0.1.0 substrate-completion run.
+
+YAML: `source_lang_consistency` equation now wires the Silver
+theorem (`source_lang_consistency_silver`) — `xpile quorum` view
+for C-XPILE-FRONTEND-TRAIT: Sem=2 (was 1), Sym=1, Run=1, Ext=5.
+
+The existing Bronze theorem `parse_idempotency` (and its rfl-stub
+sibling `source_lang_consistency`) remain in place for the
+citation-gate landmark assertions; the Silver theorem is added
+alongside, not as a replacement.
+
 ### Docs — README "by the numbers" final polish (PMAT-155)
 
 `README.md` "by the numbers (live, not aspirational)" section refreshed to match the post-session state:

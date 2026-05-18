@@ -55,6 +55,15 @@ equations:
       - "path is canonicalized"
 
   source_lang_consistency:
+    # PMAT-156 / XPILE-REFINE-FRONTEND-TRAIT-001: Silver-tier
+    # refinement theorem. Introduces a typed `SourceLang` enum +
+    # `MetaHirModuleSilver` carrying both bytes and source_lang
+    # tag, plus a `Frontend` struct with a `declared_lang` field.
+    # Proves `result.source_lang = f.declared_lang` at the type
+    # level — promoted from Bronze placeholder to Silver-tier
+    # structural claim.
+    lean_theorem: "XpileContracts.CXpileFrontendTrait.source_lang_consistency_silver"
+    lean_file: "contracts/lean/XpileFrontendTrait.lean"
     formula: |
       forall f, (path, source): f.parse_and_lower(path, source).unwrap().source_lang == f.declared_lang()
     domain: |
