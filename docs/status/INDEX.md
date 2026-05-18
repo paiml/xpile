@@ -16,7 +16,7 @@ This directory tracks where xpile is and what's next. The **single source of tru
 | Date | Session | Topic |
 |---|---|---|
 | 2026-05-15 | Initial scaffold | [2026-05-15-scaffold.md](2026-05-15-scaffold.md) — workspace creation, 14 crates, `pv` wiring, 4 example contracts, full docs/specifications tree |
-| 2026-05-18 | Substrate completion + bashrs polish + docs sweep + quality sweep + Kani fan-out | [2026-05-18-substrate-completion.md](2026-05-18-substrate-completion.md) — PMAT-058..152: 12/12 contracts to §14.4 QUORUM at 4-stratum (50 Lean theorems + 43 Kani harnesses = 93 stratum-vote artifacts), 9-PR bashrs round-trip lock-in series with 2 real parser bug fixes, comprehensive doc sweep across 24+ files, PMAT-127..145 quality sweep bringing substrate warnings 79 → 0, PMAT-147..151 XPILE-QUORUM-006 per-equation Kani fan-out |
+| 2026-05-18 | Substrate completion + bashrs polish + docs sweep + quality sweep + Kani fan-out + Silver bracket | [2026-05-18-substrate-completion.md](2026-05-18-substrate-completion.md) — PMAT-058..163: 12/12 contracts to §14.4 QUORUM at 4-stratum (57 Lean theorems = 50 Bronze + 7 Silver + 43 Kani harnesses = 100 stratum-vote artifacts), 9-PR bashrs round-trip lock-in series with 2 real parser bug fixes, comprehensive doc sweep across 24+ files, PMAT-127..145 quality sweep bringing substrate warnings 79 → 0, PMAT-147..151 XPILE-QUORUM-006 per-equation Kani fan-out, PMAT-156..162 Silver-tier bracket across all single-equation contracts |
 
 ## Quarterly rollups
 
