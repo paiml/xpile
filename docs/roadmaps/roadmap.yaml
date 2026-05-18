@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-193
+  github_issue: null
+  item_type: task
+  title: 'PMAT-193: EIGHTH Gold-tier refinement — SuccessfulOutcome subtype on C-BASHRS-POSIX-IDEMPOTENCE (XPILE-REFINE-BASHRS-002); third Gold pattern variant (equality refinement)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T12:30:00Z
+  updated: 2026-05-19T12:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Eighth Gold-tier theorem. Extends Gold to seventh contract (C-BASHRS-POSIX-IDEMPOTENCE, cross-domain Layer-1/4). SuccessfulOutcome := { o : OutcomeSilver // o.exit_code = 0 } refinement subtype encodes POSIX success path at type level. Third Gold pattern variant unlocked - equality refinement (x = const), distinct from bounded-numeric (PMAT-185..188) and collection-cardinality (PMAT-189/191/192). subprocess_run_eq_shell_run_gold (wired) + successful_outcome_witness_gold companion. C-BASHRS-POSIX-IDEMPOTENCE Sem 2 → 3. Gold-tier pattern now demonstrated across 3 subtype shapes × 7 contracts × 4 layers.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-192
   github_issue: null
   item_type: task

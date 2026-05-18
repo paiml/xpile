@@ -114,3 +114,37 @@ equations:
     # PMAT-162: Silver-tier refinement theorem.
     lean_theorem: "XpileContracts.CBashrsPosixIdempotence.subprocess_run_eq_shell_run_silver"
     lean_file: "contracts/lean/Bashrs.lean"
+
+  subprocess_run_eq_shell_run_gold:
+    # PMAT-193 / XPILE-REFINE-BASHRS-002: EIGHTH Gold-tier
+    # refinement in the substrate. Extends Gold to a seventh
+    # contract (C-BASHRS-POSIX-IDEMPOTENCE, cross-domain
+    # Layer-1/4). SuccessfulOutcome := { o : OutcomeSilver //
+    # o.exit_code = 0 } refinement subtype encodes the POSIX
+    # success path at the type level. Third Gold pattern
+    # variant: equality refinement (x = const), distinct from
+    # bounded-numeric (PMAT-185..188) and collection-cardinality
+    # (PMAT-189/191/192). Companion theorem
+    # successful_outcome_witness_gold preserves the exit_code = 0
+    # witness through both lifts.
+    lean_theorem: "XpileContracts.CBashrsPosixIdempotence.subprocess_run_eq_shell_run_gold"
+    lean_file: "contracts/lean/Bashrs.lean"
+    formula: |
+      python_subprocess_run_gold(p, a).val == bashrs_shell_run_gold(p, a).val
+      WITH both .val.exit_code = 0  (success path at type level)
+    domain: |
+      Same as exit_code_consistency — success path of subprocess
+      execution. The Gold upgrade encodes exit_code = 0 at the
+      type level, not as a definitional property of the Silver
+      model.
+    invariants:
+      - "SuccessfulOutcome subtype carries the exit_code = 0 witness BY TYPE — caller cannot construct one with non-zero exit code"
+      - "the witness travels through both Python and bashrs lifts — neither side can drop it"
+      - "third Gold pattern variant: equality refinement (x = const)"
+      - "companion theorem successful_outcome_witness_gold confirms preservation of the success witness through both lifts"
+    preconditions:
+      - "subprocess execution is on the success path — encoded as a SuccessfulOutcome construction obligation, not as a runtime check"
+      - "an emitter introducing a side-effect that sets non-zero exit code on the success path would not type-check against the Gold lifts"
+    postconditions:
+      - "both lifts produce SuccessfulOutcome values; downstream code can rely on exit_code = 0 without re-deriving"
+      - "establishes that equality-refinement (x = const) is a viable Gold-tier subtype pattern alongside bounded-numeric and collection-cardinality"
