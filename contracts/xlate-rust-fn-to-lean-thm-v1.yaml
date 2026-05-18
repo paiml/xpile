@@ -71,6 +71,9 @@ equations:
     # obligation → theorem expansion rule.
     lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.rust_postcondition_to_lean_theorem"
     lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    # PMAT-148: Kani harness mirrors the Lean theorem.
+    kani_harness: "rust_postcondition_to_lean_theorem"
+    kani_file: "contracts/kani/xlate_rust_fn_to_lean_thm.rs"
     formula: |
       lift(contract_C.proof_obligations[i] of type postcondition)
         produces a theorem carrying @[xpile_contract "<C.id>", xpile_equation "<applies_to>"]
@@ -98,6 +101,9 @@ equations:
     # source-order preservation of preconditions.
     lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.rust_precondition_to_lean_hypothesis"
     lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    # PMAT-148: Kani harness mirrors the Lean theorem.
+    kani_harness: "rust_precondition_to_lean_hypothesis"
+    kani_file: "contracts/kani/xlate_rust_fn_to_lean_thm.rs"
     formula: |
       lift(contract_C.proof_obligations[i] of type precondition)
         produces a Lean ∀-binder or `(h : P)` hypothesis in the relevant
@@ -124,6 +130,9 @@ equations:
     # mangling, no case folding).
     lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.citation_bridge_via_attribute"
     lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    # PMAT-148: Kani harness mirrors the Lean theorem.
+    kani_harness: "citation_bridge_via_attribute"
+    kani_file: "contracts/kani/xlate_rust_fn_to_lean_thm.rs"
     formula: |
       ∀ theorem T emitted from contract C :
         ∃ attr ∈ attributes_of(T) :
@@ -155,6 +164,9 @@ equations:
     # bit-identity before/after lift() — cache-determinism guarantee.
     lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.frame_translation_is_textual"
     lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    # PMAT-148: Kani harness mirrors the Lean theorem.
+    kani_harness: "frame_translation_is_textual"
+    kani_file: "contracts/kani/xlate_rust_fn_to_lean_thm.rs"
     formula: |
       lift(rust_fn, C) does not mutate rust_fn's meta-HIR or contract C
     domain: |

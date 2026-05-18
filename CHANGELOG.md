@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — 4 more Kani harnesses for `xlate-rust-fn-to-lean-thm` (PMAT-148)
+
+`contracts/kani/xlate_rust_fn_to_lean_thm.rs` now carries 5 Kani BMC harnesses (was 1), mirroring the 5 Bronze-tier Lean theorems shipped in PMAT-136. Each harness captures the same load-bearing modelling commitment as its Lean counterpart:
+
+- `rust_postcondition_to_lean_theorem`: 1:1 / 1:N obligation → theorem expansion rule
+- `rust_precondition_to_lean_hypothesis`: count + source-order preservation
+- `citation_bridge_via_attribute`: byte-for-byte `contract_id` + `equation_name` in attribute payload
+- `frame_translation_is_textual`: input hash bit-identity (cache-determinism)
+
+YAML wires each new harness via `kani_harness:` + `kani_file:` references.
+
+`xpile quorum` view for C-XLATE-RUST-FN-TO-LEAN-THM: Sem=5, **Sym=5** (was 1), Run=1, Ext=2 — both directions of the Rust ↔ Lean translation bracket now have per-equation symbolic verification.
+
+Continues the XPILE-QUORUM-006 per-equation Kani fan-out series (PMAT-147 for xlate-lean-to-rust).
+
 ### Added — 8 more Kani harnesses for `xlate-lean-to-rust` (PMAT-147 / XPILE-QUORUM-006)
 
 `contracts/kani/xlate_lean_to_rust.rs` now carries 9 Kani BMC harnesses (was 1), mirroring all 9 Bronze-tier Lean theorems shipped in PMAT-133. Each harness explores 256^4 ≈ 4.3B symbolic 4-byte configurations and asserts the same load-bearing modelling commitment as its Lean counterpart:
