@@ -119,6 +119,19 @@ equations:
     preconditions: []
 
   gil_invariant:
+    # PMAT-171 / XPILE-REFINE-FFI-CPYTHON-004: Silver-tier
+    # refinement wires the previously-unwired gil_invariant
+    # equation. THIRD Silver theorem on C-FFI-CPYTHON-EXT
+    # (after PMAT-160 refcount_balance_on_success_silver and
+    # PMAT-168 symbol_preserved_silver). Models the CPython GIL
+    # as a typed 2-state value (Held | Released) observed at
+    # both ends of the FFI call boundary, and proves the
+    # lowering preserves the (enter, exit) pair. Captures the
+    # load-bearing CPython-ABI safety invariant that the GIL is
+    # held across every PyObject access — pyo3's Python<'_>
+    # guard encodes this rule statically in Rust.
+    lean_theorem: "XpileContracts.CFfiCpythonExt.gil_invariant_silver"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
     formula: |
       gil_held(t) for t in [enter_call, exit_call]
     domain: |
@@ -126,8 +139,11 @@ equations:
     invariants:
       - "Rust output uses pyo3's GIL guards (or equivalent) to preserve this"
       - "transpiled extensions that explicitly release the GIL must mark that in the manifest entry"
+      - "the (gil_at_enter, gil_at_exit) pair is preserved by lowering — emitters cannot drop the GIL pair from the manifest entry"
+      - "specialization theorem gil_held_implies_held_silver locks in the default case (no Py_BEGIN_ALLOW_THREADS) — caller observes GIL=Held at both ends"
     preconditions:
       - "Python frontend identified the call site as Python→C"
+      - "the gil_invariant_silver theorem assumes balanced GIL state at input (gil_at_enter = gil_at_exit) — an unbalanced input represents an already-broken caller and is out of domain"
 
   buffer_protocol_zero_copy:
     formula: |

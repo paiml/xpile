@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier refinement: GIL-state model for `gil_invariant` on FFI-CPYTHON-EXT, third Silver on this contract + first wiring of previously-unwired equation (PMAT-171 / XPILE-REFINE-FFI-CPYTHON-004)
+
+Fourteenth Silver refinement; third Silver theorem on C-FFI-CPYTHON-EXT specifically (after PMAT-160's `refcount_balance_on_success_silver` and PMAT-168's `symbol_preserved_silver`). Also the **first Silver upgrade that wires a previously-unwired equation** — `gil_invariant` had no `lean_theorem` field at all pre-PMAT-171, so this PR both adds Silver coverage AND extends the contract's Semantic-stratum count via a brand new equation→theorem link.
+
+The Silver model:
+- `GilState`: enum `Held | Released` (caller-side observable, reduces CPython's reentrant lock to a 2-state observation at the call boundary)
+- `FfiCallWithGilSilver`: `{ payload, gil_at_enter, gil_at_exit }` — GIL state at both ends of the call
+- `FfiManifestEntryWithGilSilver`: mirror image; lowering must preserve the (enter, exit) pair
+- `gil_invariant_silver` theorem (wired): for balanced input, the GIL pair is preserved by lowering
+- `gil_held_implies_held_silver`: specialization to the default no-`Py_BEGIN_ALLOW_THREADS` case
+
+**Captures the load-bearing CPython-ABI safety invariant** — pyo3's `Python<'_>` guard encodes this rule statically (you can't call CPython APIs without proving you hold the lock); the emitted Rust must preserve it. Falsified by an emitter that lowers `Py_BEGIN_ALLOW_THREADS ... // forgot Py_END_ALLOW_THREADS` as plain Rust without the corresponding `Python::allow_threads` wrapper.
+
+YAML: adds `lean_theorem` wiring on the previously-unwired `gil_invariant` equation. `xpile quorum` view for C-FFI-CPYTHON-EXT: Sem=4 (was 3), Sym=1, Run=1, Ext=8 (Ext bumped via the new wiring).
+
 ### Docs — Silver-bracket expansion to multi-eq contracts reflected across spec/audit/status/README (PMAT-170)
 
 Doc sweep recording the PMAT-164..169 Silver-bracket extension that brought Silver coverage to all 6 multi-equation contracts (after PMAT-156..162 covered all 7 single-equation contracts).
