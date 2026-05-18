@@ -2020,3 +2020,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-123
+  github_issue: null
+  item_type: task
+  title: 'PMAT-123: trait-determinism Runtime witness — Frontend and Backend trait contracts reach full 4-stratum coverage'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-19T03:30:00Z
+  updated: 2026-05-19T03:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Add crates/xpile/tests/fixtures/trait_determinism_demo.py — small type-annotated Python fixture mentioning C-XPILE-FRONTEND-TRAIT and C-XPILE-BACKEND-TRAIT in its header comment. The Runtime-stratum scanner counts the fixture toward both contracts, bringing them from 3-stratum (Sem+Sym+Ext) to full 4-stratum coverage. 4 contracts now at full four-stratum (PyIntArith, Bashrs, FrontendTrait, BackendTrait); the other 8 still at 3-stratum. Dedicated determinism-asserting test is XPILE-TRAIT-DETERMINISM-RUNTIME-001 future work.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
