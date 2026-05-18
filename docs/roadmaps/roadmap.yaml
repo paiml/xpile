@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-182
+  github_issue: null
+  item_type: task
+  title: 'PMAT-182: Silver-tier — complete C-XLATE-PY-LIST-TO-VEC Silver (6/6), FIFTH contract at full Silver'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T07:00:00Z
+  updated: 2026-05-19T07:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Four new Silver theorems completing full Silver coverage on C-XLATE-PY-LIST-TO-VEC (6/6). homogeneous_element_type_preserved_silver (polymorphic), heterogeneous_rejection_reason_preserved_silver (RejectionReason enum), in_function_alias_emits_clone_silver (AliasKind enum), cast_target_preserved_silver (CastTarget enum). Companion theorems for elements/totality/no-alias/length. Catches Box<dyn Any> erasure, rejection-reason collapse, unnecessary Rc<RefCell>, silent 32-bit truncation bug classes. C-XLATE-PY-LIST-TO-VEC Sem 6 → 10. Silver coverage 2/6 → 6/6. FIFTH contract at full Silver tier.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-181
   github_issue: null
   item_type: task

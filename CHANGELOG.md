@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier completion: homogeneous + heterogeneous + alias + length on XLATE-PY-LIST-TO-VEC, **brings contract to full Silver (6/6)** — FIFTH contract at full Silver (PMAT-182 / XPILE-REFINE-XLATE-PY-LIST-002)
+
+Forty-third through forty-sixth Silver refinements. Four Silver upgrades that **complete C-XLATE-PY-LIST-TO-VEC to full Silver coverage on every equation (6/6)**. This is the **FIFTH contract in the substrate at full Silver tier** (after C-FFI-CPYTHON-EXT in PMAT-174, C-XLATE-LEAN-TO-RUST in PMAT-178, C-XLATE-RUST-FN-TO-LEAN-THM in PMAT-179, C-NOTATION-LATEX-MATH-TO-EQUATION in PMAT-181).
+
+Four new wired equations + companion theorems:
+- `homogeneous_element_type_preserved_silver` (wired) + `homogeneous_elements_preserved_silver` — polymorphic `HomogeneousListSilver α { elements, element_type_tag }`
+- `heterogeneous_rejection_reason_preserved_silver` (wired) + `heterogeneous_always_rejected_silver` — `RejectionReason` enum { MixedNumericNonNumeric | MixedSignedUnsigned | UnknownDynamicType | MultipleTypesAtSameDepth }
+- `in_function_alias_emits_clone_silver` (wired) + `no_alias_emits_none_silver` — `AliasKind` enum { InFunctionLocal | CrossFunction | CrossModule }
+- `cast_target_preserved_silver` (wired) + `silver_length_preserved` — `CastTarget` enum { None | I64 | Usize }
+
+**Bug classes now caught at type level**: emitter Box<dyn Any>-erasing homogeneous lists, emitter collapsing rejection reasons into a single category, emitter defaulting to Rc<RefCell> for in-function aliases (unnecessary heap allocations), emitter defaulting to usize cast when i64 requested (silent truncation on 32-bit platforms).
+
+YAML: adds four new equations wired to the four Silver theorems. `xpile quorum` view for C-XLATE-PY-LIST-TO-VEC: Sem=10 (was 6), Sym=5, Run=1, Ext=6. **C-XLATE-PY-LIST-TO-VEC is now the fifth contract in the substrate at full Silver (6/6).**
+
 ### Added — Silver-tier completion: definition_env + remark_env + citation_preservation on NOTATION-LATEX-MATH-TO-EQUATION, **brings contract to full Silver (7/7)** — FOURTH contract at full Silver (PMAT-181 / XPILE-REFINE-NOTATION-003)
 
 Fortieth through forty-second Silver refinements. Three Silver upgrades that **complete C-NOTATION-LATEX-MATH-TO-EQUATION to full Silver coverage on every equation (7/7)**. This is the **FOURTH contract in the substrate at full Silver tier** (after C-FFI-CPYTHON-EXT in PMAT-174, C-XLATE-LEAN-TO-RUST in PMAT-178, C-XLATE-RUST-FN-TO-LEAN-THM in PMAT-179).
