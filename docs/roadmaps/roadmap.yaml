@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-234
+  github_issue: null
+  item_type: task
+  title: 'PMAT-234: SECOND Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION — citation product-monoid axioms (XPILE-REFINE-NOTATION-007)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T09:00:00Z
+  updated: 2026-05-20T09:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Sixth depth-2 Diamond in substrate (second on Layer 4). PRODUCT-MONOID Diamond on (contract_id × bib_key) fields, distinct algebraic category from PMAT-219 single-field string-monoid. Combines PMAT-208a + PMAT-208b + left identities on both fields. citation_product_monoid_diamond (wired). Notation joins FfiCpython as the second Layer-4 contract with depth-2 Diamonds.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-233
   github_issue: null
   item_type: task

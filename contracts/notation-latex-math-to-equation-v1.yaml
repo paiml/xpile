@@ -517,6 +517,40 @@ equations:
       - "an emitter that introduces non-empty noise into '' or breaks associativity would falsify this Diamond"
       - "captures the fundamental algebraic structure for compositional citation analysis"
 
+  citation_product_monoid_diamond:
+    # PMAT-234 / XPILE-REFINE-NOTATION-007: SECOND Diamond on
+    # this contract — Notation joins FfiCpython as the second
+    # Layer-4 contract with depth-2 Diamonds. The PRODUCT-MONOID
+    # Diamond captures the (contract_id × bib_key) field pair as
+    # a free product of two string-monoids. Fundamentally
+    # distinct algebraic category from PMAT-219's single-field
+    # string-monoid — product-monoid is STRICTLY STRONGER because
+    # it requires component-wise operations (no cross-field
+    # interference).
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.citation_product_monoid_diamond"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      citation values form a PRODUCT MONOID
+      (String × String, ++_componentwise, ("", "")):
+        (a) contract_id homomorphism (PMAT-208a lifted)
+        (b) bib_key homomorphism (PMAT-208b lifted)
+        (c) Left identity on contract_id
+        (d) Left identity on bib_key
+    domain: |
+      Any LatexCitationSilver values c1, c2. The Diamond upgrade
+      captures the FULL product-monoid structure simultaneously
+      on both fields (contract_id, bib_key).
+    invariants:
+      - "SECOND Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — Notation joins depth-2 set"
+      - "distinct algebraic category from PMAT-219 single-field string-monoid"
+      - "captures PRODUCT-MONOID structure: component-wise operations on (contract_id, bib_key)"
+      - "strictly stronger than PMAT-219: requires that bib_key composes independently of contract_id"
+    preconditions:
+      - "two well-formed LatexCitationSilver values"
+    postconditions:
+      - "an emitter that lowers contract_id correctly but introduces hidden coupling (e.g., always setting bib_key = contract_id) would falsify (b)"
+      - "Diamond depth-2 now extends to C-NOTATION-LATEX-MATH-TO-EQUATION — sixth contract with two distinct Diamonds"
+
 proof_obligations:
   - type: postcondition
     property: math-mode round-trips through render() losslessly

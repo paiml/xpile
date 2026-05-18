@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SECOND Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION — citation product-monoid axioms (PMAT-234 / XPILE-REFINE-NOTATION-007)
+
+**Sixth depth-2 Diamond in the substrate.** Following the UNIVERSAL Diamond depth-2 milestone (PMAT-228..232 — one rep per layer), PMAT-234 begins extending depth-2 coverage to a SECOND contract within Layer 4. C-NOTATION-LATEX-MATH-TO-EQUATION joins C-FFI-CPYTHON-EXT as the second Layer-4 contract with two Diamonds.
+
+Notation already had the citation-STRING-MONOID Diamond at PMAT-219 covering only the `contract_id` field. PMAT-234 adds the **CITATION-PRODUCT-MONOID Diamond** — fundamentally distinct algebraic category covering BOTH `contract_id` and `bib_key` simultaneously as a free product of two string-monoids:
+
+- **PMAT-219** axiomatizes `(String_contract_id, ++, "")` string-monoid on ONE field
+- **PMAT-234** axiomatizes `(String × String, ++_componentwise, ("", ""))` product-monoid on the FULL LatexCitationSilver value
+
+The categorical distinction: string-monoid is on a single string component; product-monoid captures the algebraic PRODUCT of two independent string-monoids. Product is strictly stronger — knowing each component is a monoid does NOT imply they form a product-monoid; the product structure requires component-wise operations with NO cross-field interference.
+
+Combines four properties:
+(a) `contract_id` homomorphism (PMAT-208a lifted)
+(b) `bib_key` homomorphism (PMAT-208b lifted)
+(c) Left identity on `contract_id` (empty composes to identity)
+(d) Left identity on `bib_key` (empty composes to identity)
+
+`citation_product_monoid_diamond` (wired): 4-conjunction proving the product-monoid axiomatization. Falsification: an emitter that lowers `contract_id` correctly but introduces hidden coupling between fields (e.g., always setting `bib_key = contract_id`) would falsify (b) — the bib_key homomorphism would fail.
+
+YAML: adds new equation `citation_product_monoid_diamond` wired to the Diamond theorem.
+
 ### Changed — Doc sweep: UNIVERSAL Diamond depth-2 milestone reflected across README, status, audit, kaizen-fleet (PMAT-233)
 
 Doc sweep across `README.md`, `docs/status/CURRENT.md`, `docs/status/INDEX.md`, `docs/status/2026-05-18-substrate-completion.md`, `docs/specifications/audit-design.md`, and `docs/specifications/sub/kaizen-fleet.md` to reflect the UNIVERSAL Diamond depth-2 milestone landed via PMAT-228..232.
