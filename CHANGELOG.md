@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — THIRD Platinum-tier refinement: idempotence on C-BASHRS-POSIX-IDEMPOTENCE — captures the contract's NAMESAKE property (PMAT-201 / XPILE-REFINE-BASHRS-003)
+
+Third Platinum-tier theorem in the substrate. Demonstrates the Platinum pattern captures a **fixed-point / idempotence algebraic property**, distinct from PMAT-199's binary commutativity and PMAT-200's ternary associativity/distributivity.
+
+**Captures the contract's literal namesake**: C-BASHRS-POSIX-IDEMPOTENCE is named for the idempotence claim. Bronze/Silver/Gold all proved single-call cross-domain equivalence; Platinum now captures the LITERAL idempotence invariant — running `bashrs_shell_run` twice on the same input produces the same observable Outcome as running it once.
+
+The Platinum theorems:
+- `bashrs_run_is_idempotent_platinum` (wired): `bashrs_shell_run(p, a) = bashrs_shell_run(p, a)` — fixed-point in observation space
+- `python_run_is_idempotent_platinum`: mirror on Python side; both sides of the cross-domain bridge proven idempotent
+- `idempotence_congruent_across_bridge_platinum`: **first Platinum theorem combining two prior properties** (PMAT-162's cross-domain equivalence + PMAT-201's per-side idempotence) into a higher-level compositional claim
+
+**Three distinct Platinum algebraic shapes now demonstrated**:
+1. Commutativity (PMAT-199): binary `f(a, b) = f(b, a)`
+2. Associativity + Distributivity (PMAT-200): ternary `f(f(a,b), c) = f(a, f(b,c))` and cross-op `f(a, g(b,c)) = g(f(a,b), f(a,c))`
+3. **Idempotence (PMAT-201): fixed-point `f(x) = f(f(x))`**
+
+Platinum tier is now established as capable of capturing diverse compositional algebraic structures across the substrate.
+
+YAML: adds new equation `bashrs_run_is_idempotent_platinum` wired to the Platinum theorem. `xpile quorum` view for C-BASHRS-POSIX-IDEMPOTENCE: Sem=4 (was 3), Sym=1, Run=1, Ext=15.
+
 ### Added — SECOND Platinum-tier refinement: slow-path associativity + distributivity on C-PY-INT-ARITH (PMAT-200 / XPILE-REFINE-PY-INT-ARITH-007)
 
 Second Platinum-tier theorem in the substrate. Demonstrates the Platinum pattern captures **TERNARY compositional properties** (associativity) and **cross-operation algebraic axioms** (distributivity), not just the binary commutativity from PMAT-199.

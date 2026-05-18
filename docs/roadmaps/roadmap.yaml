@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-201
+  github_issue: null
+  item_type: task
+  title: 'PMAT-201: THIRD Platinum-tier refinement — idempotence on C-BASHRS-POSIX-IDEMPOTENCE (XPILE-REFINE-BASHRS-003); captures the contract namesake property'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T16:30:00Z
+  updated: 2026-05-19T16:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Third Platinum-tier theorem. Demonstrates Platinum captures fixed-point / idempotence algebraic property — distinct from PMAT-199 commutativity and PMAT-200 associativity. Captures the LITERAL claim the contract is named after. bashrs_run_is_idempotent_platinum (wired) + python_run_is_idempotent_platinum (mirror) + idempotence_congruent_across_bridge_platinum (FIRST Platinum theorem combining two prior properties into higher-level compositional claim). C-BASHRS-POSIX-IDEMPOTENCE Sem 3 → 4. Three distinct Platinum algebraic shapes now demonstrated (commutativity, associativity/distributivity, idempotence).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-200
   github_issue: null
   item_type: task
