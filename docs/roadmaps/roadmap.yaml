@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-165
+  github_issue: null
+  item_type: task
+  title: 'PMAT-165: Silver-tier — name_preserved typed AST for XLATE-LEAN-TO-RUST (XPILE-REFINE-XLATE-LEAN-001), second multi-eq contract Silver upgrade'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T22:00:00Z
+  updated: 2026-05-18T22:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Silver-tier refinement for name_preserved_silver on C-XLATE-LEAN-TO-RUST. Introduces typed LeanDefSilver / RustFnSilver { name, args, return_type, body } AST. Theorem proves name preservation as a separate structural field distinct from body. Companion theorems body_preserved_silver, args_preserved_silver, return_type_preserved_silver in same file. YAML adds new equation name_preserved_silver wired to Silver theorem. C-XLATE-LEAN-TO-RUST Sem 9 → 10. Second multi-eq contract Silver upgrade (after PMAT-164 on C-XLATE-PY-LIST-TO-VEC).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-164
   github_issue: null
   item_type: task

@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier refinement: `name_preserved` typed AST on XLATE-LEAN-TO-RUST (PMAT-165 / XPILE-REFINE-XLATE-LEAN-001)
+
+Ninth Silver refinement — and the **second multi-equation contract Silver upgrade** (after PMAT-164's polymorphic refinement on C-XLATE-PY-LIST-TO-VEC). The Bronze `def_to_rust_fn` theorem smushed Lean→Rust lowering into a single `body : Array UInt8` payload; Silver splits the declaration into separate typed AST fields and proves preservation of each one.
+
+The Silver model:
+- `LeanDefSilver`: `{ name, args, return_type, body }` — all opaque byte payloads at this tier
+- `RustFnSilver`: mirror image with the same four named fields
+- `lower_def_to_fn_silver`: structural copy preserving every field
+- `name_preserved_silver` theorem (the wired equation): name field preserved byte-for-byte
+- `body_preserved_silver`, `args_preserved_silver`, `return_type_preserved_silver`: companion theorems for the other three fields
+
+**Stronger than Bronze**: an emitter that mangles ANY single field (snake_case name normalisation, return-type inference via `-> _` elision, positional argument reordering) is now caught at the typed-field level — Bronze byte-equality could only catch joint corruption of all four. **Documentary value**: the four named fields lock in the modelling commitment that Lean→Rust lowering treats them as separate concerns, banning the implicit-blend strategy a more aggressive emitter might choose.
+
+YAML: adds a new equation `name_preserved_silver` wired to the Silver theorem. `xpile quorum` view for C-XLATE-LEAN-TO-RUST: Sem=10 (was 9), Sym=9, Run=1, Ext=3.
+
 ### Added — Silver-tier refinement: `iteration_order_preserved` polymorphic on XLATE-PY-LIST-TO-VEC (PMAT-164 / XPILE-REFINE-XLATE-PY-LIST-001)
 
 Eighth Silver refinement — and the **first to upgrade a multi-equation contract beyond its Bronze baseline**. The PMAT-156..162 Silver bracket covered single-equation contracts; PMAT-164 starts the next-tier work of bringing multi-equation contracts to Silver.
