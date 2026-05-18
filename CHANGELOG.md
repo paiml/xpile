@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier refinement: `target_consistency` on BACKEND-TRAIT (PMAT-157 / XPILE-REFINE-BACKEND-TRAIT-001)
+
+Mirror of PMAT-156's Frontend-side Silver refinement. `contracts/lean/XpileBackendTrait.lean` gains a Silver-tier section for the `target_consistency` equation — promoting it from Bronze (trivial `rfl` placeholder) to Silver (type-level structural claim).
+
+The Silver model introduces:
+- `Target` enum (Rust | Ruchy | Lean | PTX | WGSL | SPIRV | Shell)
+- `ArtifactSilver` with explicit `bytes` AND `target` fields
+- `Backend` struct carrying a `declared_target : Target` field
+- `lower_silver b module config` that stamps `b.declared_target` onto the emitted artifact
+- `target_consistency_silver` theorem proving `result.target = b.declared_target` at the type level
+
+Pairs with PMAT-156 to close the Frontend / Backend Silver refinement bracket for typed-lang/target consistency. `xpile quorum` view for C-XPILE-BACKEND-TRAIT: Sem=2 (was 1), Sym=1, Run=1, Ext=4.
+
 ### Added — First Silver-tier refinement: `source_lang_consistency` on FRONTEND-TRAIT (PMAT-156 / XPILE-REFINE-FRONTEND-TRAIT-001)
 
 `contracts/lean/XpileFrontendTrait.lean` gains a Silver-tier

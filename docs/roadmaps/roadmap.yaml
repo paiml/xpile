@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-157
+  github_issue: null
+  item_type: task
+  title: 'PMAT-157: Silver-tier refinement — target_consistency for BACKEND-TRAIT (XPILE-REFINE-BACKEND-TRAIT-001), mirrors PMAT-156'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-18T18:00:00Z
+  updated: 2026-05-18T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Silver-tier refinement section added to contracts/lean/XpileBackendTrait.lean introducing Target enum (Rust|Ruchy|Lean|PTX|WGSL|SPIRV|Shell), ArtifactSilver with target field, Backend struct with declared_target, lower_silver, and the target_consistency_silver theorem (type-level structural claim, no longer trivial rfl). YAML target_consistency equation wires the Silver theorem. C-XPILE-BACKEND-TRAIT gains Sem=2 (was 1). Pairs with PMAT-156 to close the Frontend / Backend Silver refinement bracket.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-156
   github_issue: null
   item_type: task

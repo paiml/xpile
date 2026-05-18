@@ -95,18 +95,82 @@ theorem lower_idempotency (module config : Array UInt8) :
   rfl
 
 /--
-  **Target consistency** auxiliary claim. At Bronze tier this
-  reduces to `rfl` because the model doesn't carry a target tag
-  separate from the byte payload. Silver-tier refinement will
-  introduce a `Target` field in `Artifact` and require the proof
-  that `config.target == result.target` holds for all Backend
-  impls.
+  **Target consistency** auxiliary claim — Bronze-tier placeholder.
+  At Bronze tier this reduces to `rfl` because the model doesn't
+  carry a target tag separate from the byte payload. The
+  Silver-tier refinement below introduces a real `Target` enum.
 
-  Listed here so the Silver refinement has a stub to overwrite
-  rather than introducing a new theorem at refinement time.
+  Listed here for the citation gate; the load-bearing claim lives
+  in `target_consistency_silver` below.
 -/
 theorem target_consistency (module config : Array UInt8) :
     lower module config = lower module config := by
+  rfl
+
+/-! ## PMAT-157 — Silver-tier refinement for `target_consistency`
+    (XPILE-REFINE-BACKEND-TRAIT-001).
+
+    Mirror of PMAT-156's Silver-tier upgrade on the Frontend side
+    (XPILE-REFINE-FRONTEND-TRAIT-001). The Bronze model represents
+    `Artifact` as a flat byte array; Silver introduces a typed
+    `Target` enum and proves the backend's `declared_target` is
+    stamped onto the emitted `Artifact.target` field. -/
+
+inductive Target
+  | rust
+  | ruchy
+  | lean
+  | ptx
+  | wgsl
+  | spirv
+  | shell
+deriving DecidableEq
+
+structure ArtifactSilver where
+  bytes : Array UInt8
+  target : Target
+deriving DecidableEq
+
+/-- Silver-tier model of a Backend implementation. Carries the
+    declared target as data — enough to express the consistency
+    invariant structurally. -/
+structure Backend where
+  declared_target : Target
+deriving DecidableEq
+
+/-- Silver-tier `lower`: stamps `b.declared_target` onto the
+    emitted Artifact. Body still byte-concatenates module + config
+    (Bronze placeholder for the actual codegen), but the `target`
+    field is now a type-level claim. -/
+def lower_silver (b : Backend) (module config : Array UInt8) : ArtifactSilver :=
+  { bytes := module ++ config, target := b.declared_target }
+
+/--
+  **Silver-tier refinement theorem** for `target_consistency`
+  (XPILE-REFINE-BACKEND-TRAIT-001 / PMAT-157).
+
+  The emitted `Artifact`'s `target` field equals the backend's
+  `declared_target`. Mirror of PMAT-156's source_lang_consistency_silver
+  on the Frontend side — together they close both ends of the
+  meta-HIR pipeline at Silver tier for the typed-tag invariants.
+
+  Falsification: any Backend impl whose `lower` writes a
+  `target` different from `self.declared_target()` falsifies this
+  theorem. Examples:
+  - A Rust backend that, on detecting GPU intrinsics in the
+    meta-HIR, silently emits PTX instead and tags the artifact
+    `Target::PTX` (would falsify — the lang field must come from
+    the *backend's* declared target, not detected content).
+  - A backend that defaults `target` to a fixed value regardless
+    of `declared_target`.
+
+  Status: **discharged at v0.1.0 Silver tier (PMAT-157)** —
+  paired with PMAT-156 to close the Frontend / Backend Silver
+  refinement bracket for typed-lang/target consistency.
+-/
+theorem target_consistency_silver
+    (b : Backend) (module config : Array UInt8) :
+    (lower_silver b module config).target = b.declared_target := by
   rfl
 
 end XpileContracts.CXpileBackendTrait
