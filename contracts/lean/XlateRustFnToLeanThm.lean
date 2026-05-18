@@ -583,4 +583,105 @@ theorem silver_module_hash_preserved (inputs : LiftInputsSilver) :
     (lift_frame_preserving_silver inputs).module_hash = inputs.module_hash := by
   rfl
 
+/-! ## PMAT-191 — SIXTH Gold-tier refinement: NonEmptyPreconditionList
+    (XPILE-REFINE-XLATE-RUST-TO-LEAN-003).
+
+    Sixth Gold-tier theorem in the substrate. **Extends Gold to a
+    sixth contract** (C-XLATE-RUST-FN-TO-LEAN-THM, Layer-2 reverse
+    direction). Second demonstration of the collection-cardinality
+    subtype pattern (after PMAT-189's NonEmptyDefinition on
+    NOTATION-LATEX-MATH-TO-EQUATION).
+
+    Silver (PMAT-179's `source_indices_preserved_silver`) captured
+    the precondition source-indices vector preservation. But the
+    contract YAML's precondition for the equation requires at
+    least one entry in the preconditions list — encoded as a
+    separate proof obligation at Silver.
+
+    Gold tier promotes it: `NonEmptyPreconditionList := { pl :
+    PreconditionListSilver // pl.source_indices.size > 0 }` — the
+    non-emptiness witness is carried by the value. A
+    PreconditionListSilver with zero entries cannot be
+    constructed as a NonEmptyPreconditionList; the type system
+    rules it out at construction time.
+
+    Cross-contract pattern reuse: this Gold theorem applies the
+    same `{ pl // pl.size > 0 }` shape that PMAT-189 used for
+    `NonEmptyDefinition`. The pattern is now demonstrated on TWO
+    different contract domains (LaTeX definitions and Rust
+    precondition lists), confirming that non-empty-list
+    refinement is a portable Gold-tier idiom.
+
+    Status: discharged at v0.1.0 (PMAT-191). Tier: GOLD.
+    Sixth Gold theorem in the substrate. -/
+
+/-- Gold-tier refinement subtype: a Silver precondition list
+    proven to have at least one entry. The non-emptiness witness
+    travels with the value. An emitter receiving a
+    NonEmptyPreconditionList cannot pass a zero-entry list —
+    the type system rules it out at compile time. -/
+def NonEmptyPreconditionList :=
+  { pl : PreconditionListSilver // pl.source_indices.size > 0 }
+
+/-- Extract the underlying Silver precondition list. -/
+def NonEmptyPreconditionList.val (n : NonEmptyPreconditionList) :
+    PreconditionListSilver :=
+  n.val
+
+/-- Gold-tier lowering: extracts the structural data, the
+    non-emptiness witness is carried into the typed output. -/
+def lower_non_empty_preconditions_gold (n : NonEmptyPreconditionList) :
+    EmittedLeanHypothesesSilver :=
+  lift_preconditions_silver n.val
+
+/--
+  **Gold-tier refinement theorem** — lowering a
+  NonEmptyPreconditionList preserves the source-indices field
+  AND the non-emptiness witness travels with the value at the
+  type level.
+
+  This is the sixth Gold theorem in the substrate. Captures what
+  Silver couldn't model:
+  - Silver: "source_indices preserved IF list has at least one
+    entry" (precondition as a separate obligation)
+  - Gold: "input IS a NonEmptyPreconditionList" (non-emptiness
+    witness travels with the value; downstream code can iterate
+    the source_indices without an empty-check)
+
+  An emitter that constructs a PreconditionListSilver from a
+  zero-entry list would not type-check against
+  `lower_non_empty_preconditions_gold` — the type system catches
+  the empty-list case at the API boundary.
+
+  Status: **discharged at v0.1.0 (PMAT-191)**. Tier: GOLD.
+-/
+theorem non_empty_preconditions_preserves_indices_gold
+    (n : NonEmptyPreconditionList) :
+    (lower_non_empty_preconditions_gold n).source_indices = n.val.source_indices := by
+  rfl
+
+/--
+  **Gold-tier refinement theorem** — the non-emptiness witness
+  is preserved through lowering. The output's source_indices
+  has size > 0 BY TYPE — no runtime empty-check needed.
+-/
+theorem non_empty_preconditions_witness_gold
+    (n : NonEmptyPreconditionList) :
+    (lower_non_empty_preconditions_gold n).source_indices.size > 0 := by
+  unfold lower_non_empty_preconditions_gold lift_preconditions_silver
+  exact n.property
+
+/--
+  **Gold-tier refinement theorem** — bridges Gold to Silver:
+  the underlying source_indices agrees with what Silver's
+  `source_indices_preserved_silver` produces on the same
+  underlying PreconditionListSilver. Gold simply carries the
+  non-emptiness witness in addition.
+-/
+theorem gold_non_empty_preconditions_agrees_with_silver
+    (n : NonEmptyPreconditionList) :
+    (lower_non_empty_preconditions_gold n).source_indices
+      = (lift_preconditions_silver n.val).source_indices := by
+  rfl
+
 end XpileContracts.CXlateRustFnToLeanThm

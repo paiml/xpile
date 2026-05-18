@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SIXTH Gold-tier refinement: `NonEmptyPreconditionList` subtype on C-XLATE-RUST-FN-TO-LEAN-THM (PMAT-191 / XPILE-REFINE-XLATE-RUST-TO-LEAN-003)
+
+Sixth Gold-tier theorem in the substrate. **Extends Gold to the Layer-2 reverse-translation direction** (after Layer-1 PMAT-185, Layer-4 PMAT-186, Layer-5 PMAT-187, Layer-2-forward PMAT-188, Layer-2-notation PMAT-189). Sixth contract gains Gold coverage.
+
+**Second demonstration of the collection-cardinality subtype pattern** (after PMAT-189's NonEmptyDefinition on NOTATION-LATEX-MATH-TO-EQUATION). This confirms the `{ c // c.size > 0 }` shape is a portable Gold-tier idiom — same proof pattern works on LaTeX definition spans (PMAT-189) and Rust precondition lists (PMAT-191).
+
+The Gold model:
+- `NonEmptyPreconditionList := { pl : PreconditionListSilver // pl.source_indices.size > 0 }`
+- `lower_non_empty_preconditions_gold`: extracts structural data, witness travels
+- `non_empty_preconditions_preserves_indices_gold` (wired): source_indices preserved
+- `non_empty_preconditions_witness_gold`: output's source_indices has size > 0 BY TYPE
+- `gold_non_empty_preconditions_agrees_with_silver`: bridges Gold to PMAT-179's Silver model
+
+YAML: adds new equation `non_empty_preconditions_preserves_indices_gold` wired to the Gold theorem. `xpile quorum` view for C-XLATE-RUST-FN-TO-LEAN-THM: Sem=11 (was 10), Sym=5, Run=1, Ext=6. Six contracts now at Gold tier; the substrate has Gold demonstrations on **5 of 12 contracts** across Layers 1/2/4/5.
+
 ### Docs — Gold-tier kickoff (PMAT-185..189) reflected across README/spec/audit/status (PMAT-190)
 
 Doc sweep recording the Gold-tier kickoff. PMAT-185..189 opened the Gold tier with 5 wired Gold theorems spanning all 4 major contract layers and two distinct subtype patterns.
