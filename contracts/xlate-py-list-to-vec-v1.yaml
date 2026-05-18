@@ -25,6 +25,10 @@ metadata:
 
 equations:
   homogeneous_list_to_vec:
+    # PMAT-135: Bronze-tier refinement theorem locks in element-bytes
+    # + element-type-tag preservation.
+    lean_theorem: "XpileContracts.CXlatePyListToVec.homogeneous_list_to_vec"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
     formula: |
       xlate(list[T] for T in {int, float, str, bool, bytes}) == Vec<T_rust>
     domain: |
@@ -43,6 +47,10 @@ equations:
       - "no implicit type coercion occurs at element boundaries (homogeneous source → homogeneous Vec)"
 
   heterogeneous_list_rejected:
+    # PMAT-135: Bronze-tier refinement theorem locks in error-with-types
+    # outcome (no silent boxing); proof excludes the `ok` arm by construction.
+    lean_theorem: "XpileContracts.CXlatePyListToVec.heterogeneous_list_rejected"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
     formula: |
       xlate(list[T1 | T2 | ...]) == TranslationError::Heterogeneous{found_types}
     domain: |
@@ -60,6 +68,10 @@ equations:
       - "no Rust code is emitted for the offending list — the error short-circuits emission"
 
   alias_observation_inserts_clone:
+    # PMAT-135: Bronze-tier refinement theorem locks in
+    # never-move-semantics-when-alias-flagged invariant.
+    lean_theorem: "XpileContracts.CXlatePyListToVec.alias_observation_inserts_clone"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
     formula: |
       observable_mutation_via_alias(a, b) WHEN b = a; mutate(b); observe(a)
         ==> xlate emits explicit clone or shared-mutable reference
@@ -106,6 +118,10 @@ equations:
       - "byte-level identity of the lowered RustVec holds (locked in by `iteration_order_preserved` in contracts/lean/XlatePyListToVec.lean and contracts/kani/xlate_py_list_to_vec.rs)"
 
   length_method:
+    # PMAT-135: Bronze-tier refinement theorem locks in usize-result
+    # AND consumer-expectation-driven cast decision (no silent truncation).
+    lean_theorem: "XpileContracts.CXlatePyListToVec.length_method"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
     formula: |
       len(py_list) == rust_vec.len()
     domain: |
