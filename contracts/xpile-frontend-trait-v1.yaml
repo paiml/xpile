@@ -108,6 +108,43 @@ equations:
       - "an emitter returning a (frontend, module) pair where source_lang ≠ declared_lang would not type-check against parse_and_lower_gold"
       - "downstream consumers receiving a ConsistentFrontendOutput can rely on field consistency without runtime checks"
 
+  source_lang_deterministic_platinum:
+    # PMAT-210 / XPILE-REFINE-FRONTEND-TRAIT-003: ELEVENTH
+    # Platinum-tier refinement in the substrate. First Platinum
+    # on Layer-3 trait contracts. Demonstrates SEVENTH distinct
+    # Platinum algebraic shape — input-determinism / output-
+    # independence. For a fixed Frontend, the source_lang is
+    # INDEPENDENT of path/source content. Distinct from
+    # commutativity (199), associativity (200), idempotence
+    # (201), functoriality (202/207/208/209), transitivity
+    # (203), additivity (204). Companion theorems
+    # source_lang_class_congruent_platinum (equivalence-class
+    # structure via declared_lang) and consistency_universal_platinum
+    # (universal-quantifier closure).
+    lean_theorem: "XpileContracts.CXpileFrontendTrait.source_lang_deterministic_platinum"
+    lean_file: "contracts/lean/XpileFrontendTrait.lean"
+    formula: |
+      forall f, p1 s1 p2 s2:
+        parse_and_lower(f, p1, s1).source_lang
+          == parse_and_lower(f, p2, s2).source_lang
+      (input-determinism / output-independence)
+    domain: |
+      Any Frontend impl, evaluated on any two (path, source)
+      input pairs. The Platinum upgrade captures that the
+      source_lang is INDEPENDENT of input content.
+    invariants:
+      - "ELEVENTH Platinum theorem; SEVENTH distinct algebraic shape (input-determinism)"
+      - "captures Hoare-style 'result depends only on fixed parameters' determinism"
+      - "load-bearing for any contract where output structure should be invariant under content variation"
+      - "source_lang_class_congruent_platinum (companion) extends determinism to equivalence-class structure via declared_lang"
+      - "consistency_universal_platinum (companion) is the universal-quantifier closure of PMAT-156's per-call result"
+    preconditions:
+      - "the Frontend impl is well-formed (Silver model preconditions inherited)"
+      - "no precondition on the input variation — determinism holds for ANY pair of inputs"
+    postconditions:
+      - "any Frontend impl that auto-detects the language from source content (changing the source_lang tag accordingly) would falsify this theorem"
+      - "the contract's modelling commitment is that source_lang comes from declared_lang, NOT from input introspection — Platinum locks this in compositionally"
+
   ffi_boundaries_are_outgoing_only:
     formula: |
       forall b in module.ffi_boundaries: b.from_lang == module.source_lang

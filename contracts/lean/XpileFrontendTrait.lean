@@ -254,4 +254,89 @@ theorem gold_frontend_agrees_with_silver
       = parse_and_lower_silver f path source := by
   rfl
 
+/-! ## PMAT-210 — ELEVENTH Platinum-tier refinement: source-lang
+    determinism (XPILE-REFINE-FRONTEND-TRAIT-003).
+
+    Eleventh Platinum-tier theorem in the substrate. Extends
+    Platinum coverage to C-XPILE-FRONTEND-TRAIT — the FIRST
+    Layer-3 trait contract to receive a Platinum theorem.
+    Platinum coverage now spans **9 of 12 contracts across
+    all 5 layers**.
+
+    Demonstrates a **SEVENTH distinct Platinum algebraic shape**:
+    **input-determinism / output-independence** — for a fixed
+    Frontend, the output's source_lang is INDEPENDENT of the
+    path/source content. Distinct from prior shapes:
+    1. Commutativity (PMAT-199): `f(a,b) = f(b,a)`
+    2. Associativity (PMAT-200): `f(f(a,b),c) = f(a,f(b,c))`
+    3. Idempotence (PMAT-201): `f(x) = f(f(x))`
+    4. Functoriality (PMAT-202/207/208/209): `lower(a+b) = lower(a)+lower(b)`
+    5. Transitivity (PMAT-203): `R(a,b) ∧ R(b,c) ⟹ R(a,c)`
+    6. Additivity (PMAT-204): `delta(c1;c2) = c1.delta + c2.delta`
+    7. **Determinism (PMAT-210): `f(x) = f(y)` on the discriminator field**
+
+    This pattern captures Hoare-style "result depends only on
+    fixed parameters" determinism. Load-bearing for any contract
+    where the output structure should be invariant under
+    content variation.
+
+    Status: discharged at v0.1.0 (PMAT-210). Tier: PLATINUM.
+    Eleventh Platinum theorem in the substrate. -/
+
+/--
+  **Platinum-tier refinement theorem** — source_lang is
+  deterministic over (path, source) inputs.
+
+  For a fixed Frontend f, the lowering produces the same
+  source_lang regardless of path/source content. This captures
+  the INDEPENDENCE of the source_lang field from input
+  content — emitter cannot produce different language tags
+  for the same frontend on different inputs.
+
+  Falsification: any Frontend impl that auto-detects the
+  language from source content (and changes the source_lang
+  tag accordingly) would falsify this theorem. The contract's
+  modelling commitment is that source_lang comes from the
+  Frontend's declared_lang, NOT from input introspection.
+
+  Status: **discharged at v0.1.0 (PMAT-210)**. Tier: PLATINUM.
+-/
+theorem source_lang_deterministic_platinum
+    (f : Frontend) (p1 s1 p2 s2 : Array UInt8) :
+    (parse_and_lower_silver f p1 s1).source_lang
+      = (parse_and_lower_silver f p2 s2).source_lang := by
+  unfold parse_and_lower_silver
+  rfl
+
+/--
+  **Platinum-tier refinement theorem** — source_lang
+  determinism is congruent across two frontends with the same
+  declared_lang.
+
+  For any two frontends f1 and f2 with `f1.declared_lang =
+  f2.declared_lang`, the lowering produces the same source_lang
+  regardless of inputs. Captures the EQUIVALENCE-CLASS
+  structure: declared_lang is the equivalence-class invariant.
+-/
+theorem source_lang_class_congruent_platinum
+    (f1 f2 : Frontend) (p s : Array UInt8)
+    (h : f1.declared_lang = f2.declared_lang) :
+    (parse_and_lower_silver f1 p s).source_lang
+      = (parse_and_lower_silver f2 p s).source_lang := by
+  unfold parse_and_lower_silver
+  exact h
+
+/--
+  **Platinum-tier refinement theorem** — the consistency
+  invariant from Silver propagates universally: for any
+  frontend, ALL inputs produce a module whose source_lang
+  matches the frontend's declared_lang. This is the universal-
+  quantifier closure of PMAT-156's per-call result.
+-/
+theorem consistency_universal_platinum (f : Frontend) :
+    ∀ p s : Array UInt8,
+      (parse_and_lower_silver f p s).source_lang = f.declared_lang := by
+  intros p s
+  exact source_lang_consistency_silver f p s
+
 end XpileContracts.CXpileFrontendTrait
