@@ -150,6 +150,40 @@ equations:
       - "the COMPOSED transition is frame-safe — the modules field is preserved from t1.before to t2.after"
       - "this enables emitter implementations to compose frame-safe operations into pipelines without re-verifying the frame condition at each step"
 
+  modules_equivalence_relation_diamond:
+    # PMAT-217 / XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-004: FOURTH
+    # Diamond-tier refinement. Combines PMAT-203 transitivity +
+    # reflexivity + symmetry into the EQUIVALENCE RELATION
+    # axiomatization for modules_equiv on TranspileSession.
+    # Distinct from prior Diamond axiomatizations (commutative-
+    # monoid PMAT-214, pure-function PMAT-215, abelian-group
+    # PMAT-216) — this is the RELATIONAL algebraic structure.
+    # Companion theorem parse_preserves_equivalence_class_diamond
+    # connects the Diamond to the contract's primary operation.
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.modules_equivalence_relation_diamond"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    formula: |
+      modules_equiv s1 s2 := s1.modules = s2.modules
+      forms an EQUIVALENCE RELATION:
+        (a) reflexivity: modules_equiv s s
+        (b) symmetry: modules_equiv s1 s2 → modules_equiv s2 s1
+        (c) transitivity: modules_equiv s1 s2 → modules_equiv s2 s3 → modules_equiv s1 s3
+    domain: |
+      Any TranspileSession values under the modules_equiv
+      relation. The Diamond upgrade captures the FULL
+      equivalence-relation axiomatization.
+    invariants:
+      - "FOURTH Diamond-tier theorem; combines PMAT-203 transitivity + reflexivity + symmetry"
+      - "modules_equiv is a proper EQUIVALENCE RELATION → can be quotiented to form equivalence classes"
+      - "RELATIONAL algebraic structure, distinct from PMAT-214 algebraic, PMAT-215 functional, PMAT-216 group-theoretic"
+      - "companion theorem parse_preserves_equivalence_class_diamond proves parse_to_equations is INVARIANT-PRESERVING under the equivalence"
+    preconditions:
+      - "three well-formed TranspileSession values"
+      - "no special preconditions — equivalence relation axioms hold universally"
+    postconditions:
+      - "an emitter satisfying transitivity (PMAT-203) but failing symmetry (e.g., directional refinement rather than true equivalence) would falsify this Diamond"
+      - "Diamond axiomatizes modules-preservation as a proper algebraic equivalence on sessions — load-bearing for quotient-based reasoning about session state"
+
   citation_preservation:
     formula: |
       forall cf, source: contract_ids_textually_in(source) subset EquationsBlock.citations
