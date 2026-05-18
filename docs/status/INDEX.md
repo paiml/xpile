@@ -16,10 +16,11 @@ This directory tracks where xpile is and what's next. The **single source of tru
 | Date | Session | Topic |
 |---|---|---|
 | 2026-05-15 | Initial scaffold | [2026-05-15-scaffold.md](2026-05-15-scaffold.md) — workspace creation, 14 crates, `pv` wiring, 4 example contracts, full docs/specifications tree |
+| 2026-05-18 | Substrate completion + bashrs polish + docs sweep | [2026-05-18-substrate-completion.md](2026-05-18-substrate-completion.md) — PMAT-058..122: 12/12 contracts to §14.4 QUORUM (24 paired Lean+Kani Bronze-tier discharges), 9-PR bashrs round-trip lock-in series with 2 real parser bug fixes, comprehensive doc sweep across 24+ files |
 
 ## Quarterly rollups
 
-(none yet — first quarterly rollup expected at 2026-Q3 close, after Phase 1 lands)
+(none yet — first quarterly rollup expected at 2026-Q3 close. The original "after Phase 1 lands" gating was superseded by the substrate-first pivot — Phase 1 is now an over-shipped artifact per `sub/phased-rollout.md`.)
 
 ## How to pick this up in a future session
 
