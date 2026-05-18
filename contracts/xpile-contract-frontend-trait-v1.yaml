@@ -112,6 +112,44 @@ equations:
       - "an emitter returning a (before, after) pair where modules differ would not type-check against parse_to_equations_gold"
       - "this pattern is the building block for `modifies()` frame conditions throughout the codebase"
 
+  frame_safety_transitive_platinum:
+    # PMAT-203 / XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-003: FIFTH
+    # Platinum-tier refinement in the substrate. Demonstrates
+    # the FIFTH distinct Platinum algebraic shape: transitivity
+    # / chain-rule. Distinct from PMAT-199 commutativity,
+    # PMAT-200 associativity, PMAT-201 idempotence, PMAT-202
+    # functoriality. Frame-safety (PMAT-196's FrameSafeTransition)
+    # captures modifies()-style invariants per call; PMAT-203
+    # proves this invariant COMPOSES across sequenced calls —
+    # the classic chain-rule for Hoare-style frame conditions.
+    # Companion theorems frame_safety_reflexive_platinum
+    # (reflexivity → equivalence-like structure) and
+    # frame_safety_chain_parse_platinum (compositional structure
+    # under chained source-parsing).
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.frame_safety_transitive_platinum"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    formula: |
+      ∀ t1, t2 : FrameSafeTransition,
+        t1.after = t2.before ⟹
+          t1.before.modules = t2.after.modules
+      (transitivity / chain-rule of frame-safety)
+    domain: |
+      Any two FrameSafeTransition values whose intermediate
+      states match (t1.after = t2.before). The Platinum upgrade
+      captures the chain-rule for frame conditions at the type
+      level.
+    invariants:
+      - "FIFTH Platinum algebraic shape: transitivity / chain-rule"
+      - "frame-safety is reflexive (companion theorem) + transitive + symmetric → equivalence-like structure over sessions"
+      - "load-bearing for sequenced emitter pipelines: composing N parse_to_equations operations preserves the frame invariant overall, not just per-step"
+      - "captures the classic separation-logic composition law: safe(a,b) ∧ safe(b,c) ⟹ safe(a,c)"
+    preconditions:
+      - "two FrameSafeTransition values exist with t1.after = t2.before (the chaining precondition)"
+      - "frame-safety reflexivity is unconditional (companion theorem frame_safety_reflexive_platinum)"
+    postconditions:
+      - "the COMPOSED transition is frame-safe — the modules field is preserved from t1.before to t2.after"
+      - "this enables emitter implementations to compose frame-safe operations into pipelines without re-verifying the frame condition at each step"
+
   citation_preservation:
     formula: |
       forall cf, source: contract_ids_textually_in(source) subset EquationsBlock.citations
