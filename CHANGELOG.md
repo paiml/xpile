@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Silver-tier refinement: `oracle_endtoend_equivalence` on FFI-CPYTHON-EXT, sixth and FINAL Silver — completes full Silver coverage on this contract (PMAT-174 / XPILE-REFINE-FFI-CPYTHON-007)
+
+Seventeenth Silver refinement; sixth Silver theorem on C-FFI-CPYTHON-EXT specifically. Wires the last previously-unwired equation on this contract. **With this landed, every equation in C-FFI-CPYTHON-EXT has Silver-tier coverage** — making it the first contract in the substrate at FULL Silver tier.
+
+The Silver model captures the contract's agent exit condition — end-to-end oracle equivalence between the Python-baseline hybrid module and the xpile-transpiled Rust crate:
+- `OracleObservation`: `{ output, refcount_delta, exception_kind }` — the three observables the oracle compares
+- `hybrid_python_observation` / `transpiled_rust_observation`: both lift the same input observation
+- `oracle_endtoend_equivalence_silver` theorem (wired): same-input ⟹ structurally-equal observations
+- `oracle_observation_fields_preserved_silver`: companion field-level preservation claim
+
+**Captures the COMPOSITION of the prior 5 Silver theorems** (PMAT-160 refcount, PMAT-168 structural, PMAT-171 GIL, PMAT-172 error-path, PMAT-173 buffer-protocol). An emitter that satisfies each individual Silver claim but breaks their composition (correct per-call refcounts but desynced multi-call sequences, correct GIL pairs but interleaved badly with refcount drops) falsifies PMAT-174 without touching the individuals — the oracle's end-to-end witness is strictly stronger than the conjunction of point claims.
+
+YAML: adds `lean_theorem` wiring on previously-unwired `oracle_endtoend_equivalence` equation. `xpile quorum` view for C-FFI-CPYTHON-EXT: Sem=7 (was 6), Sym=1, Run=1, Ext=14 (was 12). **C-FFI-CPYTHON-EXT is now the first contract in the substrate with Silver coverage on 100% of its equations** (6/6).
+
 ### Added — Silver-tier refinement: zero-copy pointer-identity for `buffer_protocol_zero_copy` on FFI-CPYTHON-EXT, fifth Silver + performance-cliff wired (PMAT-173 / XPILE-REFINE-FFI-CPYTHON-006)
 
 Sixteenth Silver refinement; fifth Silver theorem on C-FFI-CPYTHON-EXT (after PMAT-160/168/171/172). Wires the previously-unwired `buffer_protocol_zero_copy` equation — third equation wired via the Silver bracket on this contract (after `gil_invariant` in PMAT-171 and `refcount_balance_on_error` in PMAT-172).

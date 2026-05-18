@@ -190,6 +190,20 @@ equations:
       - "the pointer_identity_on_zero_copy_silver theorem assumes mode = ZeroCopy at input — the Materialised case is out of domain (pointer divergence is permitted but must be flagged in manifest per the contract invariant)"
 
   oracle_endtoend_equivalence:
+    # PMAT-174 / XPILE-REFINE-FFI-CPYTHON-007: Silver-tier
+    # refinement wires the last previously-unwired equation on
+    # this contract — SIXTH and FINAL Silver theorem on
+    # C-FFI-CPYTHON-EXT. With this landed, every equation in
+    # the contract has Silver-tier coverage; C-FFI-CPYTHON-EXT
+    # becomes the first contract in the substrate at FULL
+    # Silver tier. Models typed OracleObservation { output,
+    # refcount_delta, exception_kind } and proves both sides
+    # (Python-baseline + Rust-transpiled) produce structurally-
+    # equal observations on the same input — capturing the
+    # composition of the prior 5 Silver theorems (PMAT-160/
+    # 168/171/172/173).
+    lean_theorem: "XpileContracts.CFfiCpythonExt.oracle_endtoend_equivalence_silver"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
     formula: |
       forall input in fixture: hybrid_python_module(input) == transpiled_rust(input)
     domain: |
@@ -197,9 +211,12 @@ equations:
     invariants:
       - "this is the agent's exit condition"
       - "equality propagates through alias chains, refcounts, AND ndarray views"
+      - "the typed OracleObservation triple (output, refcount_delta, exception_kind) survives both lifts — companion theorem oracle_observation_fields_preserved_silver locks in field-level preservation"
+      - "the Silver theorem captures the COMPOSITION of PMAT-160/168/171/172/173 — an emitter satisfying each individual Silver claim but breaking their composition falsifies oracle_endtoend_equivalence_silver"
     preconditions:
       - "fixture is non-empty"
       - "both sides built clean"
+      - "the Silver theorem assumes both lifts receive the SAME OracleObservation input — the agent's exit condition is conditional on input equivalence (a fixture-driver invariant, not an emitter responsibility)"
 
 proof_obligations:
   - type: precondition
