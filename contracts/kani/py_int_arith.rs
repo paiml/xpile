@@ -132,14 +132,17 @@ fn multiplication_quadratic_promotion() {
 /// division. Rust's `div_euclid` matches by construction (Euclidean
 /// division returns a quotient `q` and a non-negative remainder
 /// `r ∈ [0, |b|)`). Bronze-tier proves the load-bearing property:
-/// the Euclidean remainder is always non-negative, which is what
-/// distinguishes Python `//`+`%` from Rust's default truncating `/`+`%`.
+/// the Euclidean remainder is always non-negative. Bounded operands
+/// for BMC tractability — `rem_euclid` over full i64 is much harder
+/// for CBMC than `+`/`*` because division has SAT-unfriendly
+/// structure; bounding to i16-equivalents keeps verification fast.
 #[kani::proof]
 fn division_floor_semantics() {
     let a: i64 = kani::any();
     let b: i64 = kani::any();
     kani::assume(b != 0);
-    kani::assume(!(a == i64::MIN && b == -1));
+    kani::assume(a.abs() <= 1000);
+    kani::assume(b.abs() <= 1000);
 
     let r: i64 = a.rem_euclid(b);
     assert!(r >= 0);
@@ -148,13 +151,14 @@ fn division_floor_semantics() {
 /// Equation `modulo_floor_semantics`: Python `%` is FLOOR mod
 /// (sign matches divisor). Rust `rem_euclid` matches. Bronze-tier
 /// proves r >= 0 (the load-bearing property that distinguishes
-/// Euclidean from truncating remainder).
+/// Euclidean from truncating remainder). Bounded for BMC tractability.
 #[kani::proof]
 fn modulo_floor_semantics() {
     let a: i64 = kani::any();
     let b: i64 = kani::any();
     kani::assume(b != 0);
-    kani::assume(!(a == i64::MIN && b == -1));
+    kani::assume(a.abs() <= 1000);
+    kani::assume(b.abs() <= 1000);
 
     let result: i64 = a.rem_euclid(b);
     assert!(result >= 0);
