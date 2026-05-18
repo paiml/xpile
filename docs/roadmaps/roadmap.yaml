@@ -2003,3 +2003,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-122
+  github_issue: null
+  item_type: task
+  title: 'PMAT-122: substrate-completion session log — append 2026-05-18 entry per docs/status/INDEX.md convention'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-19T03:00:00Z
+  updated: 2026-05-19T03:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Per docs/status/INDEX.md convention ("YYYY-MM-DD-<topic>.md — Per-session change log — At session end"), append a session log for the PMAT-058..121 substrate-completion run. Document the substrate work, bashrs polish, comprehensive docs sweep, and notable bug-class finds. Cross-reference from INDEX.md session-log table. Update the "Quarterly rollups" note since Phase 1 was substantially overshipped per phased-rollout sweep.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
