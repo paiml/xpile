@@ -2071,3 +2071,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-126
+  github_issue: null
+  item_type: task
+  title: 'PMAT-126: bashrs CLI determinism Runtime test — extends PMAT-125 pattern to shell domain'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-19T05:00:00Z
+  updated: 2026-05-19T05:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add bashrs_round_trip_is_byte_identical_on_repeat to trait_determinism.rs. Runs `xpile transpile bashrs_realistic_demo.sh --target shell` twice and asserts byte-identical stdout. Complements PMAT-043's shell_diff_exec.rs which checks semantic equivalence between CPython subprocess.run and bashrs-emitted shell — this asserts byte-level determinism. trait_determinism.rs now covers 4 CLI-level determinism witnesses (Rust, Ruchy, Lean, Shell).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

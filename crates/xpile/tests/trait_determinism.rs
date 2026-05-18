@@ -97,3 +97,43 @@ fn transpile_python_to_lean_is_byte_identical_on_repeat() {
          C-XPILE-FRONTEND-TRAIT + C-XPILE-BACKEND-TRAIT"
     );
 }
+
+#[test]
+fn bashrs_round_trip_is_byte_identical_on_repeat() {
+    // PMAT-126 / C-BASHRS-POSIX-IDEMPOTENCE — CLI-level
+    // determinism for the shell domain. Same subprocess
+    // pattern as the Python tests above but exercises
+    // bashrs-frontend → bashrs-backend rather than
+    // depyler-frontend → Rust/Ruchy/Lean codegen.
+    //
+    // Complements PMAT-043's `shell_diff_exec.rs` which checks
+    // *semantic* equivalence between CPython subprocess.run
+    // and the bashrs-emitted shell. This test asserts
+    // *byte-level* determinism: two transpile invocations
+    // produce byte-identical output.
+    let shell_fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join("bashrs_realistic_demo.sh");
+    let run = |_: ()| {
+        let out = Command::new(bin())
+            .arg("transpile")
+            .arg(&shell_fixture)
+            .arg("--target")
+            .arg("shell")
+            .output()
+            .expect("spawn xpile transpile");
+        assert!(
+            out.status.success(),
+            "bashrs round-trip failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).expect("utf-8 stdout")
+    };
+    let first = run(());
+    let second = run(());
+    assert_eq!(
+        first, second,
+        "xpile transpile foo.sh --target shell must be deterministic \
+         per C-BASHRS-POSIX-IDEMPOTENCE"
+    );
+}

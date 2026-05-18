@@ -110,6 +110,25 @@ Same Python source transpiles to all three via `xpile transpile <file.py> --targ
 - `cargo deny check advisories`
 - `cargo test --workspace`
 
+### bashrs CLI determinism Runtime test (PMAT-126)
+
+**Extends PMAT-125's asserting Runtime test pattern to the
+bashrs domain.** Adds `bashrs_round_trip_is_byte_identical_on_repeat`
+to `crates/xpile/tests/trait_determinism.rs`. Runs
+`xpile transpile bashrs_realistic_demo.sh --target shell` twice
+and asserts byte-identical stdout.
+
+Complements PMAT-043's `shell_diff_exec.rs` which checks
+*semantic* equivalence between CPython `subprocess.run` and
+the bashrs-emitted shell. This test asserts the
+**byte-level determinism** property — the same source through
+the same pipeline must produce the same bytes.
+
+The trait_determinism.rs test file now covers 4 CLI-level
+determinism witnesses (Rust, Ruchy, Lean, Shell), all sharing
+the subprocess pattern that avoids dev-dependency additions to
+the xpile crate.
+
 ### Asserting trait-determinism Runtime test (PMAT-125)
 
 **Closes XPILE-TRAIT-DETERMINISM-RUNTIME-001** (the follow-on
