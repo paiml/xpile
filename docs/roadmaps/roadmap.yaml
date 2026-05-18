@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-242
+  github_issue: null
+  item_type: task
+  title: 'PMAT-242: THIRD Diamond on C-COMPILE-RUST-TO-PTX-MMA (Layer 5 DEPTH-3) — meet-semilattice via min (XPILE-REFINE-COMPILE-PTX-007)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T13:00:00Z
+  updated: 2026-05-20T13:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Second DEPTH-3 Diamond in substrate. MEET-SEMILATTICE via min on BoundedSmem, dual to PMAT-231 join-semilattice via max. Combines Nat.min_comm + Nat.min_assoc + Nat.zero_min + Nat.min_self. bounded_smem_meet_semilattice_diamond (wired). Together with PMAT-231 forms BOUNDED LATTICE structure on BoundedSmem.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-241
   github_issue: null
   item_type: task
