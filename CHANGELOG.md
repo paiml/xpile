@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Doc sweep: Diamond program completion (depth-3 UNIVERSAL + depth-4 opened + CI gate + reporter) reflected across README, status, audit, kaizen-fleet (PMAT-252)
+
+Comprehensive final doc sweep for the Diamond program completion. Aggregate refresh: **258 Lean (53+108+24+39+34) / 301 stratum-vote → 260 Lean (53+108+24+39+36) / 303 stratum-vote artifacts**. +2 Diamond theorems from PMAT-247 (power-monoid on PyIntArith) + PMAT-248 (lattice absorption on CompileRustToPtxMma).
+
+**Headline post-PMAT-252:** the v0.1.0 Diamond program is now FULLY ENFORCED:
+
+| Layer | Coverage | Mechanism |
+|---|---|---|
+| Diamond depth-1 | 12/12 contracts | PMAT-214..226 |
+| Diamond depth-2 | 12/12 contracts (UNIVERSAL) | PMAT-228..250, **CI-enforced via PMAT-251** |
+| Diamond depth-3 | 5/5 layers (UNIVERSAL across layers) | PMAT-241..245 |
+| Diamond depth-4 | 2 contracts opened | PMAT-247 (PyIntArith L1), PMAT-248 (CompileRustToPtxMma L5) |
+| Tooling | `xpile diamond` reporter CLI | PMAT-249 |
+| Enforcement | `diamond_coverage.rs` CI gate (5 tests) | PMAT-251 |
+
+The Diamond program has progressed from aspirational to enforced — substrate-wide Diamond invariants will fail builds if any PR weakens coverage.
+
 ### Added — Diamond CI gate test: assert UNIVERSAL depth-2 across 12 contracts (PMAT-251)
 
 Adds `crates/xpile/tests/diamond_coverage.rs` — an integration test that runs `xpile diamond --json` and asserts substrate-wide Diamond coverage invariants:

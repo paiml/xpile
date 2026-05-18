@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-252
+  github_issue: null
+  item_type: task
+  title: 'PMAT-252: Final Diamond program doc sweep — depth-3 UNIVERSAL across layers + depth-4 opened + CI gate + reporter, all reflected across docs'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T18:00:00Z
+  updated: 2026-05-20T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Comprehensive final doc sweep for the v0.1.0 Diamond program. Refresh aggregate 258 → 260 Lean theorems (+2 Diamond from PMAT-247/248), 301 → 303 stratum-vote artifacts. README, CURRENT.md, INDEX.md, substrate-completion, audit-design §3, kaizen-fleet "Tier classification" all consistent. Headline that Diamond depth-2 is now CI-ENFORCED via PMAT-251.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-251
   github_issue: null
   item_type: task
