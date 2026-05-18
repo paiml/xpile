@@ -7,6 +7,14 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Refresh `pmat tdg .` score: 95.7 → 95.1 (PMAT-256)
+
+Live re-run of `pmat tdg .` reports 95.1 / 100 (Grade A-) — slight dip from the previously-recorded 95.7 reflecting the +600 lines of Diamond-program documentation shipped in this session (`sub/diamond-taxonomy.md`, README updates, status/CURRENT.md headlines, audit-design §3 refresh, Section 28 of xpile-spec.md).
+
+The score still solidly meets the originally-planned XPILE-CI-PMAT-TDG-001 ≥ A- threshold. The dip is expected and benign — `pmat tdg` weights short, focused files higher than long descriptive prose, and the Diamond program required substantive prose to document.
+
+README + CURRENT.md updated to reflect the live score.
+
 ### Changed — Refresh README workspace-test count: 204 → 211 (PMAT-255)
 
 The Diamond program shipped over PMAT-249..251 added 7 new tests:
