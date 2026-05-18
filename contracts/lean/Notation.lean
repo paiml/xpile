@@ -770,4 +770,104 @@ theorem silver_contract_id_preserved (c : LatexCitationSilver) :
     (lower_citation_silver c).contract_id = c.contract_id := by
   rfl
 
+/-! ## PMAT-189 — FIFTH Gold-tier refinement: NonEmptyDefinition
+    on definition_env_to_equation (XPILE-REFINE-NOTATION-004).
+
+    Fifth Gold-tier theorem in the substrate. **Demonstrates the
+    Gold-tier subtype pattern on a NEW shape** — non-empty-list
+    refinement, distinct from the bounded-Nat pattern used in
+    PMAT-185/186/187/188.
+
+    Silver (PMAT-181's `additional_spans_preserved_silver`)
+    captured "all math spans survive lowering" via a typed model.
+    But Silver couldn't encode the contract's `domain` precondition
+    "definition body contains at least one math span": that
+    constraint was a separate proof obligation.
+
+    Gold tier promotes it: `NonEmptyDefinition := { d :
+    DefinitionEnvSilver // d.all_math_spans.size > 0 }` — the
+    non-emptiness witness is carried by the value. A
+    DefinitionEnvSilver with an empty math-span vector cannot
+    even be constructed as a NonEmptyDefinition; the type
+    system catches the violation at the API boundary.
+
+    **Why this matters as a new pattern**: bounded-Nat subtypes
+    (PMAT-185..188) encode numeric inequalities. Non-empty-list
+    subtypes encode a different proof shape — collection
+    non-emptiness, which appears in many other contracts
+    (precondition lists, equation lists, citation sets).
+    PMAT-189 establishes that Gold-tier refinement works for
+    collection-cardinality preconditions too, not just numeric
+    bounds.
+
+    Status: discharged at v0.1.0 (PMAT-189). Tier: GOLD.
+    Fifth Gold theorem in the xpile substrate, first of a new
+    subtype pattern (non-emptiness rather than numeric bounds). -/
+
+/-- Gold-tier refinement subtype: a Silver definition env proven
+    to have at least one math span. The non-emptiness witness
+    travels with the value. An emitter receiving a
+    NonEmptyDefinition cannot pass an empty-span definition —
+    the type system rules it out at compile time. -/
+def NonEmptyDefinition :=
+  { d : DefinitionEnvSilver // d.all_math_spans.size > 0 }
+
+/-- Extract the underlying Silver definition. -/
+def NonEmptyDefinition.val (n : NonEmptyDefinition) : DefinitionEnvSilver :=
+  n.val
+
+/-- Gold-tier lowering: extracts the structural definition data
+    from the non-empty wrapper. The non-emptiness witness is
+    carried into the typed output. -/
+def lower_non_empty_definition_gold (d : NonEmptyDefinition) :
+    DefinitionEquationSilver :=
+  lower_definition_env_silver d.val
+
+/--
+  **Gold-tier refinement theorem** — lowering a NonEmptyDefinition
+  preserves the additional_spans field, AND the non-emptiness
+  witness travels with the value at the type level.
+
+  This is the fifth Gold theorem in the substrate. Captures what
+  Silver couldn't model:
+  - Silver: "additional_spans preserved IF body has at least one
+    span" (precondition as a separate obligation)
+  - Gold: "input IS a NonEmptyDefinition" (non-emptiness witness
+    travels with the value; downstream code can iterate the
+    additional_spans without an empty-check)
+
+  An emitter that constructs a DefinitionEnvSilver from a
+  zero-span body would not type-check against
+  `lower_non_empty_definition_gold` — the type system catches
+  the empty-body case at the API boundary.
+
+  Status: **discharged at v0.1.0 (PMAT-189)**. Tier: GOLD.
+-/
+theorem non_empty_definition_preserves_spans_gold (d : NonEmptyDefinition) :
+    (lower_non_empty_definition_gold d).additional_spans = d.val.all_math_spans := by
+  rfl
+
+/--
+  **Gold-tier refinement theorem** — the non-emptiness witness
+  is preserved through lowering. The output's additional_spans
+  has size > 0 BY TYPE — no runtime empty-check needed.
+-/
+theorem non_empty_witness_gold (d : NonEmptyDefinition) :
+    (lower_non_empty_definition_gold d).additional_spans.size > 0 := by
+  unfold lower_non_empty_definition_gold lower_definition_env_silver
+  exact d.property
+
+/--
+  **Gold-tier refinement theorem** — bridges Gold to Silver: the
+  underlying additional_spans agrees with what Silver's
+  `additional_spans_preserved_silver` produces on the same
+  underlying DefinitionEnvSilver. Gold simply carries the
+  non-emptiness witness in addition.
+-/
+theorem gold_non_empty_agrees_with_silver_spans
+    (d : NonEmptyDefinition) :
+    (lower_non_empty_definition_gold d).additional_spans
+      = (lower_definition_env_silver d.val).additional_spans := by
+  rfl
+
 end XpileContracts.CNotationLatexMathToEquation

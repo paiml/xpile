@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIFTH Gold-tier refinement: `NonEmptyDefinition` subtype on C-NOTATION-LATEX-MATH-TO-EQUATION — NEW SUBTYPE PATTERN (PMAT-189 / XPILE-REFINE-NOTATION-004)
+
+Fifth Gold-tier theorem in the substrate. **First Gold theorem using a new subtype shape**: non-empty-list / collection-cardinality refinement, distinct from the bounded-Nat pattern used in PMAT-185/186/187/188.
+
+`NonEmptyDefinition := { d : DefinitionEnvSilver // d.all_math_spans.size > 0 }` encodes the "definition body contains at least one math span" precondition at the type level. A caller passing a `DefinitionEnvSilver` must supply a proof of non-emptiness; the type system forbids zero-span definitions by construction.
+
+The Gold model:
+- `NonEmptyDefinition := { d : DefinitionEnvSilver // d.all_math_spans.size > 0 }`
+- `lower_non_empty_definition_gold`: extracts structural data, witness travels with the value
+- `non_empty_definition_preserves_spans_gold` (wired): additional_spans preserved
+- `non_empty_witness_gold`: output's spans have size > 0 BY TYPE — downstream code can iterate without empty-check
+- `gold_non_empty_agrees_with_silver_spans`: bridges Gold to PMAT-181's Silver model
+
+**Why this new pattern matters**: the four prior Gold theorems (PMAT-185 PyIntFast, PMAT-186 BoundedRefcountDelta, PMAT-187 BoundedSmem, PMAT-188 WarningLineCount) all used `{ x : Nat // x ≥/≤ N }` bounded-numeric subtypes. PMAT-189 demonstrates Gold works for **collection-cardinality preconditions** too: precondition lists, equation lists, citation sets, etc. The Silver→Gold transition pattern (precondition-as-hypothesis → precondition-as-subtype) now empirically extends beyond numeric bounds.
+
+YAML: adds new equation `non_empty_definition_preserves_spans_gold` wired to the Gold theorem. `xpile quorum` view for C-NOTATION-LATEX-MATH-TO-EQUATION: Sem=15 (was 14), Sym=7, Run=1, Ext=9.
+
 ### Added — FOURTH Gold-tier refinement: `WarningLineCount` subtype on C-XLATE-LEAN-TO-RUST `axiom_to_extern_fn` (PMAT-188 / XPILE-REFINE-XLATE-LEAN-004)
 
 Fourth Gold-tier theorem in the substrate. **Completes Gold-tier demonstration across all four major contract layers**:
