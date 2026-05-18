@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-203
+  github_issue: null
+  item_type: task
+  title: 'PMAT-203: FIFTH Platinum-tier refinement — frame-safety transitivity on C-XPILE-CONTRACT-FRONTEND-TRAIT (XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-003)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T17:30:00Z
+  updated: 2026-05-19T17:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Fifth Platinum-tier theorem. Demonstrates FIFTH distinct Platinum algebraic shape — transitivity / chain-rule. safe(a,b) ∧ safe(b,c) ⟹ safe(a,c). Distinct from PMAT-199 commutativity, PMAT-200 associativity, PMAT-201 idempotence, PMAT-202 functoriality. frame_safety_transitive_platinum (wired) + frame_safety_reflexive_platinum (reflexivity → equivalence-like structure) + frame_safety_chain_parse_platinum (compositional structure under chained source-parsing). Captures classic separation-logic composition law. C-XPILE-CONTRACT-FRONTEND-TRAIT Sem 3 → 4.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-202
   github_issue: null
   item_type: task

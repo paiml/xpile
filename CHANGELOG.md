@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIFTH Platinum-tier refinement: frame-safety transitivity on C-XPILE-CONTRACT-FRONTEND-TRAIT (PMAT-203 / XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-003)
+
+Fifth Platinum-tier theorem in the substrate. Demonstrates the **FIFTH distinct Platinum algebraic shape**: transitivity / chain-rule — `safe(a,b) ∧ safe(b,c) ⟹ safe(a,c)`. Distinct from PMAT-199 commutativity, PMAT-200 associativity, PMAT-201 idempotence, PMAT-202 functoriality.
+
+The Platinum theorems:
+- `frame_safety_transitive_platinum` (wired): chains two FrameSafeTransition values whose intermediate states match into a composed frame-safe transition. Classic chain-rule for Hoare-style frame conditions.
+- `frame_safety_reflexive_platinum`: any session is frame-safe with itself. Combined with transitivity, gives equivalence-like structure.
+- `frame_safety_chain_parse_platinum`: compositional structure under chained source-parsing.
+
+**Five distinct Platinum algebraic shapes now demonstrated**:
+1. Commutativity (PMAT-199): binary `f(a, b) = f(b, a)`
+2. Associativity + Distributivity (PMAT-200): ternary + cross-op
+3. Idempotence (PMAT-201): fixed-point `f(x) = f(f(x))`
+4. Functoriality / Monoid Homomorphism (PMAT-202): `lower(l1 ++ l2) = lower(l1) ++ lower(l2)`
+5. **Transitivity / Chain-rule (PMAT-203): `safe(a,b) ∧ safe(b,c) ⟹ safe(a,c)`**
+
+**Load-bearing for emitter pipelines**: composing N parse_to_equations operations preserves the frame invariant overall, not just per-step. The Platinum theorem guarantees the composite operation is frame-safe by construction.
+
+YAML: adds new equation `frame_safety_transitive_platinum` wired to the Platinum theorem. `xpile quorum` view for C-XPILE-CONTRACT-FRONTEND-TRAIT: Sem=4 (was 3), Sym=1, Run=1, Ext=6. Platinum tier now established with 5 distinct algebraic-property shapes across 4 contracts.
+
 ### Added — FOURTH Platinum-tier refinement: functoriality on C-XLATE-PY-LIST-TO-VEC (PMAT-202 / XPILE-REFINE-XLATE-PY-LIST-004)
 
 Fourth Platinum-tier theorem in the substrate. Demonstrates the **FOURTH distinct Platinum algebraic shape**: functoriality / monoid homomorphism — `lower(l1 ++ l2) = lower(l1) ++ lower(l2)`. Distinct from PMAT-199 commutativity, PMAT-200 associativity, PMAT-201 idempotence.
