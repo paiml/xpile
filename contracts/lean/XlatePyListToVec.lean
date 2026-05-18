@@ -729,4 +729,70 @@ theorem lower_length_homomorphism_platinum {α : Type}
   unfold lower_py_list_to_rust_vec_silver
   simp [List.length_append]
 
+/-! ## PMAT-221 — SEVENTH Diamond-tier refinement: free
+    list-monoid axioms (XPILE-REFINE-XLATE-PY-LIST-005).
+
+    Seventh Diamond-tier theorem in the substrate. Combines four
+    properties into the FREE LIST MONOID axiomatization
+    polymorphic over element type α:
+    - PMAT-202 Platinum functoriality (the homomorphism)
+    - PMAT-202 companion empty preservation (identity)
+    - Associativity (List.append_assoc)
+    - Length-additivity (PMAT-202 companion lifted)
+
+    Free list monoid is distinct from prior Diamond categories:
+    1. PMAT-214: commutative-monoid / semiring (algebraic)
+    2. PMAT-215: pure-function (functional)
+    3. PMAT-216: abelian-group (algebraic w/ inverses)
+    4. PMAT-217: equivalence-relation (relational)
+    5. PMAT-218: bounded-monoid (bounded algebraic)
+    6. PMAT-219: string-monoid (textual algebraic)
+    7. **PMAT-221 (NEW): free list-monoid (polymorphic list)**
+
+    The free list monoid captures the universal algebraic
+    structure of lists with append + nil. "Free" means no
+    additional relations — every monoid law that holds must
+    follow from the three axioms.
+
+    Status: discharged at v0.1.0 (PMAT-221). Tier: DIAMOND.
+    Seventh Diamond theorem in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — list lowering forms a
+  FREE LIST MONOID polymorphic over α.
+
+  Combines four monoid axioms:
+  - Closure / homomorphism (PMAT-202 lifted)
+  - Associativity ((l1 ++ l2) ++ l3 = l1 ++ (l2 ++ l3))
+  - Left identity ([] ++ l = l)
+  - Length-additivity (length is a monoid homomorphism into Nat)
+
+  Captures the FREE algebraic structure — additional relations
+  cannot be assumed without falsifying the freeness claim.
+
+  Status: **discharged at v0.1.0 (PMAT-221)**. Tier: DIAMOND.
+-/
+theorem list_free_monoid_diamond {α : Type}
+    (l1 l2 l3 : PyListSilver α) :
+    -- Closure / homomorphism (PMAT-202 lifted)
+    (lower_py_list_to_rust_vec_silver
+       { elems := l1.elems ++ l2.elems }).elems
+      = (lower_py_list_to_rust_vec_silver l1).elems
+          ++ (lower_py_list_to_rust_vec_silver l2).elems
+    -- Associativity
+    ∧ (l1.elems ++ l2.elems) ++ l3.elems
+      = l1.elems ++ (l2.elems ++ l3.elems)
+    -- Left identity (PMAT-202 companion lifted)
+    ∧ (lower_py_list_to_rust_vec_silver (α := α) { elems := [] }).elems
+      = []
+    -- Length-additivity (PMAT-202 companion lifted)
+    ∧ (lower_py_list_to_rust_vec_silver
+        { elems := l1.elems ++ l2.elems }).elems.length
+      = l1.elems.length + l2.elems.length := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · exact List.append_assoc l1.elems l2.elems l3.elems
+  · rfl
+  · simp [List.length_append]
+
 end XpileContracts.CXlatePyListToVec

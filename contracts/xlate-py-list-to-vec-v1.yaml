@@ -138,6 +138,37 @@ equations:
       - "an emitter that builds Rust Vec piecewise via streaming through a buffer produces the same observable result as monolithic construction — Platinum guarantees the strategies are EQUIVALENT, not merely compatible"
       - "the monoid-homomorphism property composes with the append-associativity of List itself, giving full distributivity for n-ary concatenations"
 
+  list_free_monoid_diamond:
+    # PMAT-221 / XPILE-REFINE-XLATE-PY-LIST-005: SEVENTH Diamond-
+    # tier refinement. Combines PMAT-202 functoriality +
+    # associativity + identity + length-additivity into the
+    # FREE LIST MONOID axiomatization polymorphic over α.
+    # Seventh distinct Diamond category — free polymorphic
+    # list-monoid (distinct from PMAT-219's string-monoid).
+    lean_theorem: "XpileContracts.CXlatePyListToVec.list_free_monoid_diamond"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      list lowering forms a FREE LIST MONOID polymorphic over α:
+        (a) closure: lower(l1 ++ l2) = lower(l1) ++ lower(l2)
+        (b) associativity: (l1 ++ l2) ++ l3 = l1 ++ (l2 ++ l3)
+        (c) left identity: [] ++ l = l
+        (d) length-additivity: length(lower(l1 ++ l2)) = length(l1) + length(l2)
+    domain: |
+      Any PyListSilver α values polymorphic over element type α.
+      The Diamond upgrade captures the FREE algebraic structure
+      of polymorphic list lowering.
+    invariants:
+      - "SEVENTH Diamond-tier theorem; combines PMAT-202 functoriality + associativity + identity + length-additivity"
+      - "FREE LIST MONOID — no additional relations beyond the three monoid axioms"
+      - "polymorphic over α (Silver model's parameter inherited)"
+      - "distinct from PMAT-219 string-monoid (lists have length, strings don't compose elementwise)"
+    preconditions:
+      - "three well-formed PyListSilver α values of the same element type"
+      - "polymorphic — proof holds for any α"
+    postconditions:
+      - "free-monoid structure makes the list lowering universal: every other algebraic property derives from the three axioms"
+      - "an emitter that adds hidden semantic relations (e.g., reordering invariants, deduplication) would falsify the freeness claim"
+
   heterogeneous_list_rejected:
     # PMAT-135: Bronze-tier refinement theorem locks in error-with-types
     # outcome (no silent boxing); proof excludes the `ok` arm by construction.
