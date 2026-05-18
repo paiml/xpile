@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — SEVENTH Gold-tier refinement: polymorphic `NonEmptyHomogeneousList α` on C-XLATE-PY-LIST-TO-VEC (PMAT-192 / XPILE-REFINE-XLATE-PY-LIST-003)
+
+Seventh Gold-tier theorem in the substrate. Extends Gold to a seventh contract (C-XLATE-PY-LIST-TO-VEC) and demonstrates a new composition: **Gold-tier refinement subtype + Silver-tier polymorphism**.
+
+`NonEmptyHomogeneousList α := { l : HomogeneousListSilver α // l.elements ≠ [] }` — the α parameter is inherited from the Silver model; the non-emptiness witness travels with the value polymorphically.
+
+The Gold model:
+- `NonEmptyHomogeneousList α := { l : HomogeneousListSilver α // l.elements ≠ [] }` — polymorphic refinement
+- `lower_non_empty_homogeneous_gold`: extracts structural data, witness travels polymorphically
+- `non_empty_homogeneous_preserves_elements_gold` (wired): elements preserved
+- `non_empty_homogeneous_witness_gold`: output's elements ≠ [] BY TYPE for any α
+- `gold_non_empty_homogeneous_agrees_with_silver`: bridges Gold to PMAT-182's Silver model
+
+**First demonstration that Gold + polymorphism compose orthogonally**. Silver introduces the type parameter (α); Gold adds the refinement invariant. The two are independent concerns and stack cleanly — this confirms the Gold-tier refinement pattern doesn't depend on monomorphic Silver models.
+
+**Third demonstration of the collection-cardinality subtype pattern** (after PMAT-189 NonEmptyDefinition and PMAT-191 NonEmptyPreconditionList). The pattern is now demonstrated on THREE different contract domains (LaTeX definitions, Rust precondition lists, polymorphic Python lists), confirming portability.
+
+YAML: adds new equation `non_empty_homogeneous_preserves_elements_gold` wired to the Gold theorem. `xpile quorum` view for C-XLATE-PY-LIST-TO-VEC: Sem=11 (was 10), Sym=5, Run=1, Ext=8.
+
 ### Added — SIXTH Gold-tier refinement: `NonEmptyPreconditionList` subtype on C-XLATE-RUST-FN-TO-LEAN-THM (PMAT-191 / XPILE-REFINE-XLATE-RUST-TO-LEAN-003)
 
 Sixth Gold-tier theorem in the substrate. **Extends Gold to the Layer-2 reverse-translation direction** (after Layer-1 PMAT-185, Layer-4 PMAT-186, Layer-5 PMAT-187, Layer-2-forward PMAT-188, Layer-2-notation PMAT-189). Sixth contract gains Gold coverage.

@@ -70,6 +70,38 @@ equations:
     postconditions:
       - "an emitter that uses Box<dyn Any> erasure for homogeneous lists would falsify element_type_tag_preserved_silver"
 
+  non_empty_homogeneous_preserves_elements_gold:
+    # PMAT-192 / XPILE-REFINE-XLATE-PY-LIST-003: SEVENTH Gold-
+    # tier refinement in the substrate. First Gold theorem
+    # applied to a POLYMORPHIC Silver model — threading α
+    # through the refinement subtype. NonEmptyHomogeneousList α
+    # := { l : HomogeneousListSilver α // l.elements ≠ [] }
+    # encodes non-emptiness at the type level for any element
+    # type α. Demonstrates Gold-subtype + Silver-polymorphism
+    # compose orthogonally. Companion theorems
+    # non_empty_homogeneous_witness_gold and
+    # gold_non_empty_homogeneous_agrees_with_silver.
+    lean_theorem: "XpileContracts.CXlatePyListToVec.non_empty_homogeneous_preserves_elements_gold"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      lower_non_empty_homogeneous(n).elements == n.val.elements
+      WITH n.val.elements ≠ []  (polymorphic over α)
+    domain: |
+      Same as homogeneous_element_type_preserved_silver — a
+      polymorphic homogeneous Python list. The Gold upgrade
+      narrows the modelling to non-empty lists at the type
+      level, threading α through.
+    invariants:
+      - "non-emptiness witness travels with the value polymorphically through lowering"
+      - "downstream can iterate elements without an empty-check, regardless of element type α"
+      - "first demonstration that Gold-tier refinement subtypes compose orthogonally with Silver-tier polymorphism"
+    preconditions:
+      - "the list has at least one element — encoded as a refinement subtype, not as an external proof obligation"
+      - "polymorphic over element type α (Silver model's parameter inherited)"
+    postconditions:
+      - "an emitter accepting an empty list would not type-check against lower_non_empty_homogeneous_gold for any α"
+      - "establishes that Gold + polymorphism compose without friction"
+
   heterogeneous_list_rejected:
     # PMAT-135: Bronze-tier refinement theorem locks in error-with-types
     # outcome (no silent boxing); proof excludes the `ok` arm by construction.

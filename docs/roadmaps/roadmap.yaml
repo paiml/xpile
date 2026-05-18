@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-192
+  github_issue: null
+  item_type: task
+  title: 'PMAT-192: SEVENTH Gold-tier refinement — NonEmptyHomogeneousList polymorphic subtype on C-XLATE-PY-LIST-TO-VEC (XPILE-REFINE-XLATE-PY-LIST-003)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T12:00:00Z
+  updated: 2026-05-19T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Seventh Gold-tier theorem in the substrate. First Gold refinement applied to a POLYMORPHIC Silver model — threading α through the refinement subtype. NonEmptyHomogeneousList α := { l : HomogeneousListSilver α // l.elements ≠ [] }. non_empty_homogeneous_preserves_elements_gold (wired) + non_empty_homogeneous_witness_gold + gold_non_empty_homogeneous_agrees_with_silver companions. Demonstrates Gold + polymorphism compose orthogonally — two independent concerns that stack cleanly. Third demonstration of collection-cardinality Gold pattern (after PMAT-189, PMAT-191) — confirms portability across LaTeX, Rust preconditions, and polymorphic Python lists. C-XLATE-PY-LIST-TO-VEC Sem 10 → 11.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-191
   github_issue: null
   item_type: task
