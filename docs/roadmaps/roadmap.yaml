@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-245
+  github_issue: null
+  item_type: task
+  title: 'PMAT-245: THIRD Diamond on C-XPILE-FRONTEND-TRAIT (Layer 3 DEPTH-3) — parse-and-lower function axioms; completes UNIVERSAL Diamond depth-3 across all 5 layers (XPILE-REFINE-FRONTEND-TRAIT-006)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T14:30:00Z
+  updated: 2026-05-20T14:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Fifth DEPTH-3 Diamond in substrate — completes UNIVERSAL Diamond depth-3 across all 5 layers. PARSE-AND-LOWER FUNCTION-AXIOM Diamond, distinct algebraic category from PMAT-224 equiv-rel AND PMAT-232 constant-projection. Combines PMAT-156 existence + reflexivity + frontend-congruence + input-congruence. parse_and_lower_function_diamond (wired). Depth-3 now UNIVERSAL across all 5 layers.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-244
   github_issue: null
   item_type: task

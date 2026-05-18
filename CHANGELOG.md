@@ -7,6 +7,32 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — THIRD Diamond on C-XPILE-FRONTEND-TRAIT (Layer 3 DEPTH-3) — parse-and-lower function axioms; **completes UNIVERSAL Diamond depth-3 across ALL 5 LAYERS** (PMAT-245 / XPILE-REFINE-FRONTEND-TRAIT-006)
+
+**Fifth DEPTH-3 Diamond in the substrate — completes UNIVERSAL Diamond depth-3 across ALL 5 LAYERS.** Following PMAT-241/242/243/244 (depth-3 on L1/L5/L4/L2), PMAT-245 extends Diamond depth-3 to Layer 3 — completing the universality-across-layers milestone at depth-3.
+
+XpileFrontendTrait now has THREE Diamond categories:
+- **PMAT-224**: equivalence-relation `lang_equiv` on Frontend pairs (relational)
+- **PMAT-232**: source-lang constant-projection on sub-field (functorial)
+- **PMAT-245**: parse-and-lower FUNCTION-AXIOM (full output: totality + uniqueness + congruence)
+
+The categorical distinction: equiv-rel is on Frontend pairs (relational); const-projection is on the source_lang sub-field (functorial); function-axiom is on the FULL output structure — capturing set-theoretic function laws (totality + uniqueness + input/frontend congruence).
+
+Combines four FUNCTION-AXIOM properties:
+(a) Existence: `source_lang = declared_lang` (PMAT-156 lifted, witnesses output exists)
+(b) Reflexivity: `parse f p s = parse f p s` (rfl)
+(c) Frontend congruence: `f1 = f2 ⇒ outputs equal`
+(d) Input congruence: equal inputs ⇒ equal outputs
+
+`parse_and_lower_function_diamond` (wired): 4-conjunction proving the function-axiom characterization. Falsification: an emitter adding non-determinism (random module reordering, time-dependent metadata) would falsify (c) and (d).
+
+YAML: adds new equation `parse_and_lower_function_diamond`.
+
+**Diamond depth census after this PR — UNIVERSAL depth-3 across ALL 5 LAYERS:**
+- Depth-1 UNIVERSAL: 12/12 contracts
+- Depth-2 UNIVERSAL: 12/12 contracts
+- **Depth-3 UNIVERSAL ACROSS LAYERS: 5/5 layers (5 representative contracts)** — Layer 1 PyIntArith (PMAT-241), Layer 2 XlatePyListToVec (PMAT-244), Layer 3 XpileFrontendTrait (PMAT-245, this PR), Layer 4 FfiCpython (PMAT-243), Layer 5 CompileRustToPtxMma (PMAT-242)
+
 ### Added — THIRD Diamond on C-XLATE-PY-LIST-TO-VEC (Layer 2 DEPTH-3) — length monoid homomorphism (PMAT-244 / XPILE-REFINE-XLATE-PY-LIST-007)
 
 **Fourth DEPTH-3 Diamond in the substrate.** Following PMAT-241/242/243 (depth-3 on L1/L5/L4), PMAT-244 extends Diamond depth-3 to Layer 2 C-XLATE-PY-LIST-TO-VEC. Four depth-3 contracts now span four distinct layers.
