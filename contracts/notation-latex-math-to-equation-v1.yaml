@@ -80,7 +80,13 @@ equations:
       - "align/gather: N rows produce N equation entries"
       - "row labels (\\tag, \\label) preserved as equation metadata"
       - "blank rows skipped, not lowered as empty equations"
-    preconditions: []
+    preconditions:
+      - "input LaTeX source has matching display-math delimiters (well-formed `\\[ ... \\]` or balanced `\\begin{env}` / `\\end{env}` pair)"
+      - "the display-math environment is not embedded inside a LaTeX comment (`% ... \\n`) or a verbatim block"
+    postconditions:
+      - "output `EquationsBlock.equations` contains at least one entry per non-empty display-math source span"
+      - "every output `formula` field is the ASCII-normalized form of the source's inner content (per the Bronze-tier model in PMAT-057 / PMAT-059)"
+      - "all three display-math forms (`\\[ ... \\]`, `equation`, `align`) produce structurally-equal `EquationFormula` values on the same `formula` input (locked in by `display_math_eq_equation_env_eq_align_env` in contracts/lean/Notation.lean)"
 
   theorem_env_to_obligation:
     formula: |
