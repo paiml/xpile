@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Docs — Silver-bracket expansion to multi-eq contracts reflected across spec/audit/status/README (PMAT-170)
+
+Doc sweep recording the PMAT-164..169 Silver-bracket extension that brought Silver coverage to all 6 multi-equation contracts (after PMAT-156..162 covered all 7 single-equation contracts).
+
+- **README.md** "by the numbers" QUORUM line: "57 Lean theorems (50 Bronze + 7 Silver) + 43 Kani harnesses = 100 stratum-vote artifacts" → **"76 Lean theorems (50 Bronze + 26 Silver) + 43 Kani harnesses = 119 stratum-vote artifacts"**. Added explicit enumeration of the 6 multi-eq contracts now in the Silver bracket.
+- **README.md** §By the numbers footer: same 50/93 → 50+26/119 refresh.
+- **substrate-completion.md** §Numbers + INDEX.md row 19: same numeric refresh; INDEX session-log title gains "(single-eq + multi-eq)"; PMAT range extended to PMAT-058..170.
+- **CURRENT.md** §quorum-line: 50/93 → 50+26/119; added "Silver tier on all 12 contracts post-PMAT-156..169" qualifier.
+- **audit-design.md** §3: full rewrite with 6-multi-eq enumeration. PMAT-169 noted as first Silver promoted from substantive Bronze; PMAT-161 retained as first non-rfl Silver. C-PY-INT-ARITH stratum counts refreshed (Sem 9 → 10), C-BASHRS-POSIX-IDEMPOTENCE Ext 11 → 13 to reflect accumulated attestations.
+- **sub/kaizen-fleet.md**: same refresh of the kernel-tier paragraph with the 19-new-Silver-theorems attribution.
+
 ### Added — Silver-tier refinement: typed-dispatch model for `addition_no_overflow` on PY-INT-ARITH, first Silver on substantive Bronze base (PMAT-169 / XPILE-REFINE-PY-INT-ARITH-001)
 
 Thirteenth Silver refinement; sixth multi-equation contract Silver upgrade. **First Silver upgrade on a contract whose Bronze theorems were already substantive** — previous Silver upgrades (PMAT-164..168) promoted byte-array Bronze to typed-AST Silver; this one promotes already-Int-level Bronze (`Int.bmod`, `bmod_fits_i64` lemma) to a typed-DISPATCH Silver.

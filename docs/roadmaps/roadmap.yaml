@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-170
+  github_issue: null
+  item_type: task
+  title: 'PMAT-170: Doc sweep — PMAT-164..169 Silver-bracket expansion to all 6 multi-equation contracts reflected across README/spec/audit/status'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-19T00:30:00Z
+  updated: 2026-05-19T00:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'README.md "by the numbers" QUORUM line refreshed: 57 Lean theorems (50 Bronze + 7 Silver) + 43 Kani = 100 stratum-vote artifacts → 76 Lean theorems (50 Bronze + 26 Silver) + 43 Kani = 119 stratum-vote artifacts. README §By the numbers footer: 50 / 93 → 50+26 / 119. substrate-completion.md §Numbers + INDEX.md row 19: same refresh; INDEX session-log title gains "(single-eq + multi-eq)" qualifier; PMAT range extended PMAT-058..170. CURRENT.md §quorum-line: 50/93 → 50+26/119. audit-design.md §3 rewritten with 6-multi-eq enumeration; PMAT-169 noted as first Silver from substantive Bronze; PMAT-161 retained as first non-rfl Silver; C-PY-INT-ARITH Sem 9 → 10. sub/kaizen-fleet.md kernel-tier paragraph: 19-new-Silver-theorems attribution.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-169
   github_issue: null
   item_type: task

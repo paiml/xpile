@@ -56,7 +56,7 @@ def factorial (n : Int) : Int :=
 
 - 27 workspace crates · all compile clean (`cargo check --workspace`)
 - 12 contracts · `pv lint` PASS with **0 errors and 0 warnings** (full-clean substrate since PMAT-138)
-- **100% of contracts at §14.4 QUORUM (4-stratum minimum)** — every contract has paired Lean refinement theorem + Kani BMC harness ([`xpile quorum`](crates/xpile/src/quorum.rs)); **57 Lean theorems (50 Bronze + 7 Silver) + 43 Kani harnesses = 100 stratum-vote artifacts** post-PMAT-156..162 Silver bracket completion across all 7 single-equation contracts
+- **100% of contracts at §14.4 QUORUM (4-stratum minimum)** — every contract has paired Lean refinement theorem + Kani BMC harness ([`xpile quorum`](crates/xpile/src/quorum.rs)); **76 Lean theorems (50 Bronze + 26 Silver) + 43 Kani harnesses = 119 stratum-vote artifacts** post-PMAT-156..169 Silver bracket — covers all 7 single-equation contracts AND all 6 multi-equation contracts (PMAT-164..169 brought multi-eq contracts into the Silver bracket: XLATE-PY-LIST-TO-VEC, XLATE-LEAN-TO-RUST, XLATE-RUST-FN-TO-LEAN-THM, NOTATION-LATEX-MATH-TO-EQUATION, FFI-CPYTHON-EXT, PY-INT-ARITH)
 - **204 workspace tests** · 11+ Python fixtures runtime-verified via `rustc -O` + `assert_eq!` (canonical list in `CHANGELOG.md` §"Python subset"); plus 54 bashrs-frontend tests covering POSIX shell idioms
 - **`pmat tdg .` score 95.7 / 100 (Grade A-)** — meets the originally-planned XPILE-CI-PMAT-TDG-001 ≥ A- threshold without explicit CI enforcement
 - Python subset shipped: see [`CHANGELOG.md`](CHANGELOG.md) §"Python subset (live, runtime-verified)" — typed `def`, multi-statement bodies, all binary + unary ops, ternary, if/else, elif chains, function calls including self-recursion (canonical source — this README intentionally does not duplicate the list to avoid the staleness it kept accumulating)
@@ -76,9 +76,9 @@ $ xpile quorum
   totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)
 ```
 
-**50 Lean refinement theorems** ([`contracts/lean/*.lean`](contracts/lean/)) +
+**76 Lean refinement theorems** ([`contracts/lean/*.lean`](contracts/lean/), 50 Bronze + 26 Silver) +
 **43 Kani BMC harnesses** ([`contracts/kani/*.rs`](contracts/kani/)) —
-**93 stratum-vote artifacts** across all 5 layers of the contract taxonomy.
+**119 stratum-vote artifacts** across all 5 layers of the contract taxonomy.
 Every equation in every contract has both its own Bronze-tier Lean theorem
 (`rfl` by construction) AND its own Kani symbolic harness exploring 256^4 ≈
 4.3B configurations per harness. Silver/Gold/Platinum refinement is
