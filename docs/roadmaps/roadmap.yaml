@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-224
+  github_issue: null
+  item_type: task
+  title: 'PMAT-224: TENTH Diamond-tier refinement — source-lang equivalence-class axioms on C-XPILE-FRONTEND-TRAIT (XPILE-REFINE-FRONTEND-TRAIT-004)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T04:00:00Z
+  updated: 2026-05-20T04:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Tenth Diamond-tier theorem. Combines PMAT-210 determinism + reflexivity + symmetry + transitivity into FRONTEND EQUIVALENCE CLASS axiomatization on declared_lang. Distinct from PMAT-217 equivalence-relation (Layer-3 trait vs Layer-3 contract-frontend). frontend_equivalence_class_diamond (wired). C-XPILE-FRONTEND-TRAIT Sem 4 → 5.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-223
   github_issue: null
   item_type: task

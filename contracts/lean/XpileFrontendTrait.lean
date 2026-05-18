@@ -339,4 +339,66 @@ theorem consistency_universal_platinum (f : Frontend) :
   intros p s
   exact source_lang_consistency_silver f p s
 
+/-! ## PMAT-224 — TENTH Diamond-tier refinement: source-lang
+    equivalence-class axioms (XPILE-REFINE-FRONTEND-TRAIT-004).
+
+    Tenth Diamond-tier theorem in the substrate. Combines four
+    properties into the FRONTEND EQUIVALENCE CLASS axiomatization:
+    - PMAT-210 Platinum source-lang determinism
+    - Reflexivity (every frontend ~ itself)
+    - Symmetry (same-lang frontends form equivalence classes)
+    - Transitivity (chain of same-lang frontends)
+
+    Captures the equivalence-relation structure on the
+    declared_lang field — frontends declaring the same source
+    language form an equivalence class under PMAT-210's
+    determinism. Distinct algebraic category from prior 9
+    Diamonds.
+
+    Status: discharged at v0.1.0 (PMAT-224). Tier: DIAMOND.
+    Tenth Diamond theorem in the substrate. -/
+
+/-- The "declared-lang-equivalent" relation on Frontend. -/
+def lang_equiv (f1 f2 : Frontend) : Prop :=
+  f1.declared_lang = f2.declared_lang
+
+/--
+  **Diamond-tier refinement theorem** — lang_equiv forms an
+  EQUIVALENCE RELATION on Frontend, AND parse_and_lower
+  PRESERVES the equivalence class.
+
+  Combines four properties:
+  - Reflexivity: every frontend is lang-equivalent to itself
+  - Symmetry: if f1 ~ f2 then f2 ~ f1
+  - Transitivity: if f1 ~ f2 and f2 ~ f3 then f1 ~ f3
+  - Determinism (PMAT-210 lifted): same-lang frontends produce
+    modules with the same source_lang regardless of inputs
+
+  Captures the substrate's commitment that Frontend impls are
+  CLASSIFIED by their declared_lang, with full equivalence-
+  relation algebraic structure.
+
+  Status: **discharged at v0.1.0 (PMAT-224)**. Tier: DIAMOND.
+-/
+theorem frontend_equivalence_class_diamond
+    (f1 f2 f3 : Frontend) (p s : Array UInt8) :
+    -- Reflexivity
+    lang_equiv f1 f1
+    -- Symmetry
+    ∧ (lang_equiv f1 f2 → lang_equiv f2 f1)
+    -- Transitivity
+    ∧ (lang_equiv f1 f2 → lang_equiv f2 f3 → lang_equiv f1 f3)
+    -- Determinism: same-lang frontends produce same source_lang
+    ∧ (lang_equiv f1 f2 →
+        (parse_and_lower_silver f1 p s).source_lang
+          = (parse_and_lower_silver f2 p s).source_lang) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · intro h
+    exact h.symm
+  · intros h1 h2
+    exact h1.trans h2
+  · intro h
+    exact source_lang_class_congruent_platinum f1 f2 p s h
+
 end XpileContracts.CXpileFrontendTrait
