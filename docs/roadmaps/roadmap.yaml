@@ -2054,3 +2054,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-125
+  github_issue: null
+  item_type: task
+  title: 'PMAT-125: trait-determinism asserting Runtime test — closes XPILE-TRAIT-DETERMINISM-RUNTIME-001'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-05-19T04:30:00Z
+  updated: 2026-05-19T04:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Closes the follow-on ticket from PMAT-123's fixture. Add crates/xpile/tests/trait_determinism.rs with 3 tests that run `xpile transpile trait_determinism_demo.py --target T` twice for T in {rust, ruchy, lean} and assert byte-identical stdout. Uses the subprocess pattern from transpile_e2e.rs so no dev-dependencies need to be added to the xpile crate. The two trait contracts (C-XPILE-FRONTEND-TRAIT, C-XPILE-BACKEND-TRAIT) now have Symbolic verification (Kani) + observed verification (this test) + Semantic locking (Lean rfl) + Extrinsic attestation. Future autonomous shipping can use this pattern (subprocess + fixture + byte-equality assertion) to close the XPILE-*-RUNTIME-001 tickets for the other 10 contracts.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
