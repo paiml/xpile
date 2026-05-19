@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-279
+  github_issue: null
+  item_type: task
+  title: 'PMAT-279: Property-specific Silver-tier Kani harnesses for C-XLATE-PY-LIST-TO-VEC (Path α, FIFTH and FINAL contract)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T17:00:00Z
+  updated: 2026-05-22T17:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Lift iteration_order_preserved Kani harness from Bronze byte-payload to Silver structural model. Add PyListSilver + RustVecSilver with element_type_tag (encodes Lean's α polymorphism via tag: int=0, float=1, str=2, bool=3, bytes=4), elems, len fields. Three new Kani proofs: iteration_order_preserved_silver, length_preserved_silver, homogeneous_element_type_preserved_silver. Wire kani_harness in contracts/xlate-py-list-to-vec-v1.yaml on homogeneous_element_type_preserved_silver equation (mirrors Lean PMAT-182). FIFTH and FINAL Path α contract closed — all 5 contracts that had byte-identity placeholder Kani harnesses now have property-specific Silver-tier proofs alongside their Bronze baselines."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-278
   github_issue: null
   item_type: task
