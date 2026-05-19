@@ -18,7 +18,7 @@ A Diamond theorem combines multiple Platinum properties into a **single algebrai
 
 ## Coverage milestones
 
-As of v0.1.0+ (PMAT-214..313), the substrate has:
+As of v0.1.0+ (PMAT-214..318), the substrate has:
 
 - **Diamond depth-1 UNIVERSAL** (12/12 contracts): every contract has at least one Diamond at one algebraic category.
 - **Diamond depth-2 UNIVERSAL** (12/12 contracts): every contract has at least two **distinct** Diamond categories. CI-enforced via PMAT-251.
@@ -35,8 +35,10 @@ As of v0.1.0+ (PMAT-214..313), the substrate has:
 - **Diamond depth-13 ACROSS LAYERS** (2/12 contracts): PMAT-307 (absolute value / norm on L1) + PMAT-308 (GLB/LUB universal property on L5).
 - **Diamond depth-14 ACROSS LAYERS** (2/12 contracts): PMAT-310 (Nat-cast ring homomorphism on L1, FIRST EXTERNAL claim) + PMAT-311 (subtype extensionality on L5, FIRST SUBTYPE-STRUCTURE claim).
 - **Diamond depth-15 ACROSS LAYERS** (2/12 contracts): PMAT-312 (Int-emod quotient ring homomorphism on L1, FIRST QUOTIENT-RING claim) + PMAT-313 (Nat-mod quotient ring homomorphism on L5).
+- **Diamond depth-16 ACROSS LAYERS** (2/12 contracts): PMAT-315 (Int gcd-monoid + Bézout / PID on L1, FIRST UNIVERSAL-OBJECT-WITH-CONSTRUCTIVE-WITNESS claim) + PMAT-316 (Nat gcd-monoid on L5).
+- **Diamond depth-17 ACROSS LAYERS** (2/12 contracts): PMAT-317 (unit group `{1, -1} ≅ Z/2Z` on L1, FIRST UNIT-GROUP claim) + PMAT-318 (Nat power-monoid on L5).
 
-**Substrate total: 55 wired Diamond equations across 12 contracts.**
+**Substrate total: 59 wired Diamond equations across 12 contracts.**
 
 ## Diamond categories by family
 
@@ -101,6 +103,32 @@ Captures external category-theoretic claims about structure-preserving maps BETW
 | Nat-cast ring hom (INJECTIVE) | PMAT-310 | C-PY-INT-ARITH | `Nat.cast : Nat → Int` preserves 0, 1, +, * — FIRST EXTERNAL/category-theoretic claim in substrate |
 | Int-emod quotient hom (SURJECTIVE) | PMAT-312 | C-PY-INT-ARITH | `(· % 2) : Int → Z/2Z` preserves +, *, non-negative, < n — FIRST QUOTIENT-RING claim |
 | Nat-mod quotient hom (SURJECTIVE) | PMAT-313 | C-COMPILE-RUST-TO-PTX-MMA | `(· % 2) : Nat → Z/2Z` on BoundedSmem.val carrier — mirror of PMAT-312 |
+
+### GCD-monoid / PID family
+
+Captures the universal-object property of gcd plus constructive Bézout for PIDs:
+
+| Category | Example PMAT | Contract | Carrier |
+|---|---|---|---|
+| Int GCD monoid + Bézout / PID | PMAT-315 | C-PY-INT-ARITH | `Int.gcd` as universal object (divides both, dvd_gcd) plus constructive Bézout pair (`gcd a b = a*x + b*y`) — establishes Int as a `IsPrincipalIdealRing` |
+| Nat GCD monoid | PMAT-316 | C-COMPILE-RUST-TO-PTX-MMA | `Nat.gcd` as universal object with commutativity (replaces Bézout since Nat lacks negatives) |
+
+### Unit-group family
+
+Captures the multiplicative-inverse structure within a ring:
+
+| Category | Example PMAT | Contract | Carrier |
+|---|---|---|---|
+| Int unit group `{1, -1} ≅ Z/2Z` | PMAT-317 | C-PY-INT-ARITH | multiplicative-inverse-structure of Int: -1 is self-inverse, negation factors via -1, squares non-negative |
+
+### Power-monoid family
+
+Captures the Nat-action by exponentiation:
+
+| Category | Example PMAT | Contract | Carrier |
+|---|---|---|---|
+| Int power-monoid | PMAT-247 | C-PY-INT-ARITH | `Int.pow` with `(Int × Nat, pow, 0)` Nat-action |
+| Nat power-monoid | PMAT-318 | C-COMPILE-RUST-TO-PTX-MMA | `Nat.pow` axioms on BoundedSmem.val (pow_zero/succ/add/one_pow) |
 
 ### Subtype-structure family
 
@@ -289,6 +317,8 @@ The `crates/xpile/tests/diamond_coverage.rs` integration test (PMAT-251) enforce
 - ≥2 contracts have ≥13 Diamonds (depth-13 ACROSS LAYERS, PMAT-307/308).
 - ≥2 contracts have ≥14 Diamonds (depth-14 ACROSS LAYERS, PMAT-310/311).
 - ≥2 contracts have ≥15 Diamonds (depth-15 ACROSS LAYERS, PMAT-312/313).
+- ≥2 contracts have ≥16 Diamonds (depth-16 ACROSS LAYERS, PMAT-315/316).
+- ≥2 contracts have ≥17 Diamonds (depth-17 ACROSS LAYERS, PMAT-317/318).
 
 A future regression that removes a `_diamond` from any YAML or fails to keep depth-N invariants will fire the gate.
 - ≥30 total wired Diamond equations.
