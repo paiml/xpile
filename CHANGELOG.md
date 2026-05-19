@@ -7,6 +7,30 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — `WgslBackend` now uses `MultiEmitterBackend` internally (mirrors PMAT-264 pattern for WGSL) (PMAT-265)
+
+Mirrors the PMAT-264 wrapper-refactor pattern across the second GPU backend. `xpile-wgsl-codegen::WgslBackend` becomes a wrapper around `MultiEmitterBackend` holding a `ScaffoldWgslEmitter: TargetEmitter`. The Section 29 routing layer now backs both code-lane Layer-5 GPU targets (PTX + WGSL) in production.
+
+**What changed:**
+
+- `WgslBackend` becomes a wrapper struct holding `inner: MultiEmitterBackend`. Public API unchanged for `Backend` callers.
+- Adds `WgslBackend::new()` constructor + `Default` impl (was a unit struct; now needs construction). One call site in `xpile-core` updated.
+- New private `ScaffoldWgslEmitter: TargetEmitter` produces the same placeholder text users see at v0.1.0.
+- `BackendError::MissingHardware(Target::Wgsl)` returned for non-Wgsl `HwProfile`s; `None` is still accepted (defaults to empty feature list).
+
+**4 new unit tests in xpile-wgsl-codegen:**
+
+- `wgsl_backend_emits_through_multi_emitter` — emit output + quorum status + scaffold-emitter name propagation
+- `wgsl_backend_accepts_no_hardware` — `None` hardware path still works (WGSL-specific, unlike PTX)
+- `wgsl_backend_rejects_wrong_hardware` — `HwProfile::Ptx` rejected with `MissingHardware(Target::Wgsl)`
+- `wgsl_backend_targets_only_wgsl` — target-ownership + name advertisement
+
+**Why this matters:**
+
+- Confirms the Section 29 routing pattern is a real reusable abstraction, not a one-off shape that happened to fit PTX
+- Both GPU backends now share the same emitter-routing seam; future `naga`-based or `rust-gpu` SPIR-V→WGSL specialists slot in without touching `WgslBackend`'s public surface
+- Sets up `SpirvBackend` (when authored) and `BashrsBackend` to follow the same refactor without architectural debate
+
 ### Changed — `PtxBackend` now uses `MultiEmitterBackend` internally (Section 29 architecture in production) (PMAT-264)
 
 Refactors `xpile-ptx-codegen::PtxBackend` to wrap a [`MultiEmitterBackend`] rather than impl `Backend` directly. The v0.1.0 scaffold output is now driven by a `ScaffoldPtxEmitter: TargetEmitter` that plugs into the same routing layer the future `rustc_codegen_nvvm` + `aprender-gpu` quorum will use.

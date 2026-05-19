@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-265
+  github_issue: null
+  item_type: task
+  title: 'PMAT-265: Refactor WgslBackend to use MultiEmitterBackend internally (mirrors PMAT-264 pattern for WGSL)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T10:00:00Z
+  updated: 2026-05-22T10:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "xpile-wgsl-codegen::WgslBackend refactored to wrap MultiEmitterBackend with a ScaffoldWgslEmitter in the general slot. WgslBackend::new() constructor + Default impl. xpile-core call site updated. 4 new unit tests verify wrapper drives same behavior as direct impl. Confirms Section 29 routing pattern is reusable across both code-lane GPU backends (PTX + WGSL). Sets up SpirvBackend and BashrsBackend to follow without architectural debate."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-264
   github_issue: null
   item_type: task
