@@ -188,6 +188,41 @@ equations:
       - "Diamond axiomatizes refcount-delta as forming a mathematically PROPER algebraic group (not just a monoid)"
       - "load-bearing for compositional refcount safety: every modifying call has a CANCELING counterpart"
 
+  refcount_inverse_diamond:
+    # PMAT-288 / XPILE-REFINE-FFI-CPYTHON-012: FOURTH Diamond on this
+    # contract — pushes C-FFI-CPYTHON-EXT from depth-3 to depth-4
+    # (joining PyIntArith and CompileRustToPtxMma at depth-4+). The
+    # CONSTRUCTIVE-INVERSE Diamond captures a categorically distinct
+    # claim from PMAT-216's axiomatic refcount_abelian_group_diamond:
+    # the inverse element EXISTS as a constructible value, not just
+    # satisfies the group law abstractly. The Lean theorem witnesses
+    # the inverse by giving an explicit construction
+    # ({ payload, refcount_delta := -c.refcount_delta }). Distinct
+    # from the abstract group axiomatization because the existence
+    # claim is constructive (gives a witness) — load-bearing for an
+    # emitter that needs to MATERIALIZE the Py_DECREF call balancing
+    # a prior Py_INCREF, not just assert the algebraic law.
+    lean_theorem: "XpileContracts.CFfiCpythonExt.refcount_inverse_diamond"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
+    formula: |
+      ∀ c : FfiCallSilver,
+        ∃ c_inv : FfiCallSilver,
+          (compose_ffi_calls_silver c c_inv).refcount_delta = 0
+    domain: |
+      Any FfiCallSilver value c. The Diamond witnesses that an
+      inverse call exists constructively — the emitter can build
+      the Py_DECREF that balances any prior Py_INCREF.
+    invariants:
+      - "FOURTH Diamond on this contract — pushes C-FFI-CPYTHON-EXT to depth-4 (third contract at depth-4+ alongside C-PY-INT-ARITH and C-COMPILE-RUST-TO-PTX-MMA)"
+      - "CONSTRUCTIVE existence claim — gives an explicit inverse, not just asserts existence"
+      - "distinct from PMAT-216's axiomatic abelian group claim: PMAT-216 proves the LAWS hold; this proves the GENERATOR is constructible"
+      - "load-bearing for Py_INCREF/Py_DECREF code generation: every refcount increment can be materialized into a balancing decrement at emit time"
+    preconditions:
+      - "FfiCallSilver value is well-formed (Silver model preconditions inherited)"
+    postconditions:
+      - "an emitter that produces Py_INCREF without being able to construct the balancing Py_DECREF call (e.g., due to type erasure losing the payload) would falsify the constructive inverse claim"
+      - "Diamond DEPTH-4 demonstrated for C-FFI-CPYTHON-EXT: four distinct Diamond categories (additive + abelian-group axioms + constructive-inverse + GIL-invariant + zero-copy-functor — the depth-4+ count of 4 in the YAML reporter)"
+
   gil_invariant_preservation_diamond:
     # PMAT-230 / XPILE-REFINE-FFI-CPYTHON-011: SECOND Diamond on
     # this contract — Layer 4 depth-2 Diamond. Following
