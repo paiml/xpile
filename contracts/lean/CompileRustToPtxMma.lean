@@ -930,4 +930,91 @@ theorem bounded_smem_ordered_monoid_diamond (a b c : BoundedSmem) :
   · exact Nat.le_refl a.val
   · intro h1 h2; exact Nat.le_trans h1 h2
 
+/-! ## PMAT-301 — TENTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (DEPTH-10 ACROSS LAYERS): additive-lattice distributivity —
+    addition distributes over both max and min on BoundedSmem
+    (XPILE-REFINE-COMPILE-PTX-011).
+
+    **Opens DEPTH-10 ACROSS LAYERS.** PyIntArith reached depth-10
+    at PMAT-300 (RING-distributivity); PMAT-301 extends depth-10 to
+    Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The substrate now has
+    depth-10 on TWO contracts spanning Layer 1 and Layer 5.
+
+    CompileRustToPtxMma already has NINE Diamond categories:
+    - PMAT-218: BOUNDED MONOID (additive)
+    - PMAT-287: CLOSURE
+    - PMAT-231: JOIN-SEMILATTICE (max)
+    - PMAT-242: MEET-SEMILATTICE (min)
+    - PMAT-248: LATTICE ABSORPTION
+    - PMAT-291: DISTRIBUTIVE LATTICE
+    - PMAT-293: BOUNDED LATTICE (top/bottom)
+    - PMAT-295: CANCELLATIVE MONOID
+    - PMAT-299: ORDERED MONOID (monotone preorder)
+
+    PMAT-301 adds the BRIDGING axiom between the additive monoid
+    (PMAT-218) and the lattice family (PMAT-231/242/248/291/293):
+    - **PMAT-301: (BoundedSmem, +, max, min) is an
+      ADDITIVE-LATTICE — addition distributes over both join (max)
+      and meet (min)**
+
+    The categorical distinction is sharp:
+      - PMAT-291 DISTRIBUTIVE LATTICE proves max distributes over
+        min within the LATTICE structure — no arithmetic involved.
+      - PMAT-299 ORDERED MONOID proves addition is monotone w.r.t.
+        the order — no distributivity claim.
+      - PMAT-301 ADDITIVE-LATTICE proves addition distributes over
+        max AND min — the bridge that turns "+-monoid plus
+        independent lattice" into a structure with COMPATIBLE
+        arithmetic and lattice operations.
+
+    The (Nat, max, +) tropical semiring axiom `a + max(b, c) =
+    max(a + b, a + c)` is exactly this property. An emitter that
+    over-reserved smem by computing `worst_case(a + smem_b,
+    a + smem_c)` separately from `a + worst_case(smem_b, smem_c)`
+    and getting different answers would falsify (a).
+
+    Status: discharged at v0.1.0 (PMAT-301). Tier: DIAMOND.
+    Second DEPTH-10 in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `(BoundedSmem, +, max, min)`
+  is an ADDITIVE LATTICE — addition distributes over both join (max)
+  and meet (min).
+
+  Combines four ADDITIVE-LATTICE properties:
+  (a) Left addition distributes over max:  c + max a b = max (c + a) (c + b)
+  (b) Right addition distributes over max: max a b + c = max (a + c) (b + c)
+  (c) Left addition distributes over min:  c + min a b = min (c + a) (c + b)
+  (d) Right addition distributes over min: min a b + c = min (a + c) (b + c)
+
+  Distinct from:
+    - PMAT-291 DISTRIBUTIVE LATTICE (max distributes over min within
+      the LATTICE — no arithmetic).
+    - PMAT-299 ORDERED MONOID (addition is monotone — no distribution).
+    - PMAT-218 MONOID (algebra of + alone — no lattice interaction).
+
+  This is the TROPICAL SEMIRING axiom relating max/min and +.
+  Mathlib's `Nat.add_max_add_left` / `Nat.add_min_add_left` are
+  the canonical lemmas; pulled into a single Diamond theorem.
+
+  An emitter that double-counted parallel smem reservation by
+  computing `max(a + smem_b, a + smem_c)` via a different path
+  than `a + max(smem_b, smem_c)` and getting different answers
+  would falsify (a) — a real bug class invisible to the
+  independent monoid + lattice categories.
+
+  Status: **discharged at v0.1.0 (PMAT-301)**. Tier: DIAMOND.
+  Second DEPTH-10 in the substrate (DEPTH-10 ACROSS LAYERS).
+-/
+theorem bounded_smem_additive_lattice_diamond (a b c : BoundedSmem) :
+    -- (a) Left addition distributes over max
+    c.val + Nat.max a.val b.val = Nat.max (c.val + a.val) (c.val + b.val)
+    -- (b) Right addition distributes over max
+    ∧ Nat.max a.val b.val + c.val = Nat.max (a.val + c.val) (b.val + c.val)
+    -- (c) Left addition distributes over min
+    ∧ c.val + Nat.min a.val b.val = Nat.min (c.val + a.val) (c.val + b.val)
+    -- (d) Right addition distributes over min
+    ∧ Nat.min a.val b.val + c.val = Nat.min (a.val + c.val) (b.val + c.val) := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> omega
+
 end XpileContracts.CCompileRustToPtxMma

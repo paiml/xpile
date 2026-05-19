@@ -7,6 +7,55 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-10 ACROSS LAYERS: additive-lattice Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-301)
+
+**Path β extension.** Depth-10 was opened by PMAT-300 on PyIntArith (Layer 1). PMAT-301 extends depth-10 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) so the substrate now has **two contracts at depth-10+** across distinct taxonomy layers.
+
+**The 10 Diamond categories on `C-COMPILE-RUST-TO-PTX-MMA`:**
+
+1. PMAT-218: BOUNDED MONOID (additive)
+2. PMAT-287: CLOSURE
+3. PMAT-231: JOIN-SEMILATTICE (max)
+4. PMAT-242: MEET-SEMILATTICE (min)
+5. PMAT-248: LATTICE ABSORPTION
+6. PMAT-291: DISTRIBUTIVE LATTICE
+7. PMAT-293: BOUNDED LATTICE (top + bottom)
+8. PMAT-295: CANCELLATIVE MONOID
+9. PMAT-299: ORDERED MONOID
+10. **PMAT-301: ADDITIVE-LATTICE DISTRIBUTIVITY** ← extends depth-10 ACROSS LAYERS
+
+**Why additive-lattice is genuinely a NEW category — orthogonal to ALL 9 prior:**
+
+- PMAT-218 (**MONOID**) is about `(+, 0)` algebra alone — no lattice interaction.
+- PMAT-291 (**DISTRIBUTIVE LATTICE**) is about `max` distributing over `min` — no arithmetic.
+- PMAT-299 (**ORDERED MONOID**) is about monotonicity of `+` — not distribution.
+- PMAT-301 (**ADDITIVE-LATTICE**) BRIDGES the additive monoid and the lattice via:
+  - `c + max(a, b) = max(c + a, c + b)`
+  - `c + min(a, b) = min(c + a, c + b)`
+
+This is exactly the **tropical-semiring axiom** relating `+` and `max`/`min` on `Nat`. None of the prior 9 categories assert it.
+
+**New Lean theorem:**
+
+```lean
+theorem bounded_smem_additive_lattice_diamond (a b c : BoundedSmem) :
+    c.val + Nat.max a.val b.val = Nat.max (c.val + a.val) (c.val + b.val)
+    ∧ Nat.max a.val b.val + c.val = Nat.max (a.val + c.val) (b.val + c.val)
+    ∧ c.val + Nat.min a.val b.val = Nat.min (c.val + a.val) (c.val + b.val)
+    ∧ Nat.min a.val b.val + c.val = Nat.min (a.val + c.val) (b.val + c.val) := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> omega
+```
+
+Proved by `omega` — linear arithmetic with `Nat.min`/`Nat.max` is decidable and Lean's `omega` tactic handles it natively.
+
+**Falsification surface:** an emitter that computed parallel smem reservation by `a + max(b, c)` via a different dispatch path than `max(a+b, a+c)` and got different answers (double-counting, path-dependent accounting) would falsify property (a) — a real bug class invisible to independent monoid + lattice categories.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_10_plus: 2` (was 1 after PMAT-300).
+- `substrate_diamond_depth_10_opened` gate tightened to `≥ 2` (ACROSS LAYERS).
+- Substrate Diamond totals: **45 wired Diamond theorems** across 12 contracts (was 44).
+
 ### Added — FIRST Diamond depth-10 in the substrate: RING-distributivity Diamond on `C-PY-INT-ARITH` (PMAT-300)
 
 **Path β extension.** Opens Diamond depth-10 — **ten** distinct algebraic categories on a single contract. PyIntArith was at depth-9 (post-PMAT-298); PMAT-300 adds **RING-DISTRIBUTIVITY OF NEGATION OVER MULTIPLICATION** as the tenth orthogonal category.
