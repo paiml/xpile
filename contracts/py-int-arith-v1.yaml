@@ -921,6 +921,42 @@ equations:
       - "an emitter with a non-canonical (-a)*b implementation that does not reduce to -(a*b) would falsify (a)"
       - "Diamond DEPTH-10 opened — 1 contract at depth-10+"
 
+  integral_domain_diamond:
+    # PMAT-302: ELEVENTH Diamond on this contract — opens FIRST
+    # DEPTH-11 in the substrate. INTEGRAL DOMAIN axioms: no zero
+    # divisors (a*b=0 → a=0 ∨ b=0), multiplicative cancellation on
+    # the nonzero domain, nontrivial multiplicative identity (1≠0),
+    # and product-of-nonzeros-is-nonzero. Categorically orthogonal
+    # to PMAT-300 RING: rings CAN have zero divisors (e.g., Z/6Z
+    # where 2*3=0), but integral domains forbid them. Mathlib's
+    # `IsDomain` / `NoZeroDivisors` typeclass encodes this
+    # SEPARATELY from `Ring`. An emitter that lowered multiplication
+    # through a modular path (mod 2^31 i32 fast-path) would have
+    # spurious zero divisors and fail (a) — invisible to all 10
+    # prior categories.
+    lean_theorem: "XpileContracts.CPyIntArith.integral_domain_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      (Int, +, *) is an INTEGRAL DOMAIN:
+        (a) no zero divisors:           a * b = 0 → a = 0 ∨ b = 0
+        (b) mul cancellation (nonzero): a ≠ 0 → a*b = a*c → b = c
+        (c) nontrivial identity:        (1 : Int) ≠ 0
+        (d) nonzero product:            a ≠ 0 → b ≠ 0 → a * b ≠ 0
+    domain: |
+      Any three Int values. The four properties together axiomatize
+      the INTEGRAL DOMAIN structure — Mathlib's `IsDomain` typeclass
+      shape. (Int, +, *) is a commutative integral domain.
+    invariants:
+      - "ELEVENTH Diamond category on C-PY-INT-ARITH — opens FIRST DEPTH-11 in the substrate"
+      - "STRENGTHENS PMAT-300 RING with the no-zero-divisors axiom"
+      - "distinct from PMAT-300 RING: Z/6Z satisfies all ring axioms but has zero divisors (2*3=0) — falsifies (a)"
+      - "load-bearing for modular-arithmetic emitters: an i32 mod-2^32 fast-path would have spurious zero divisors (e.g., 2^16 * 2^16 = 0 mod 2^32)"
+    preconditions:
+      - "three Int values; theorem stated on the standard Int.mul, Int.zero, Int.one"
+    postconditions:
+      - "an emitter with modular-arithmetic multiplication (mod 2^N) would falsify (a) for inputs whose product crosses the modulus"
+      - "Diamond DEPTH-11 opened — 1 contract at depth-11+"
+
 proof_obligations:
   - type: precondition
     property: operands are Python int (not int-subclass, not bool-as-int)

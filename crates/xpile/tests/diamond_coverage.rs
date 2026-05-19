@@ -204,14 +204,29 @@ fn substrate_diamond_depth_9_opened() {
 fn substrate_diamond_depth_10_opened() {
     let json = run_diamond_json();
     let depth_10_plus = read_aggregate_field(&json, "depth_10_plus");
-    // PMAT-300 opened depth-10 on C-PY-INT-ARITH (Layer 1): RING-distributivity of
-    // negation over multiplication.
-    // PMAT-301 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): additive-lattice
-    // distributivity — addition distributes over max and min (tropical-semiring axiom).
-    // Gate now asserts depth-10 ACROSS LAYERS (≥2 contracts at depth-10+).
+    // PMAT-300 opened depth-10 on C-PY-INT-ARITH (Layer 1): RING-distributivity.
+    // PMAT-301 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): additive-lattice.
+    // PMAT-302 took PyIntArith to depth-11 (still ≥2 at depth-10+).
+    // Gate asserts depth-10 ACROSS LAYERS (≥2 contracts at depth-10+).
     assert!(
         depth_10_plus >= 2,
         "Diamond depth-10 ACROSS LAYERS milestone (PMAT-300, PMAT-301): \
          expected ≥2 contracts at depth-10+ (Layer 1 + Layer 5), got {depth_10_plus}.\n{json}"
+    );
+}
+
+#[test]
+fn substrate_diamond_depth_11_opened() {
+    let json = run_diamond_json();
+    let depth_11_plus = read_aggregate_field(&json, "depth_11_plus");
+    // PMAT-302 opened depth-11 on C-PY-INT-ARITH: INTEGRAL DOMAIN axioms
+    // (no zero divisors + multiplicative cancellation + nontrivial identity).
+    // The 11th orthogonal category STRENGTHENS PMAT-300 RING with the
+    // no-zero-divisors axiom — Z/6Z satisfies all ring axioms but is not
+    // an integral domain (2*3=0).
+    assert!(
+        depth_11_plus >= 1,
+        "Diamond depth-11 milestone (PMAT-302): expected ≥1 contract at depth-11+, \
+         got {depth_11_plus}.\n{json}"
     );
 }
