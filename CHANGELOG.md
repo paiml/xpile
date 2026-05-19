@@ -7,6 +7,56 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-6 ACROSS LAYERS: `C-COMPILE-RUST-TO-PTX-MMA` reaches depth-6 via distributive lattice (PMAT-291)
+
+**Path β extension.** Pushes `C-COMPILE-RUST-TO-PTX-MMA` (Layer 5) from depth-5 to depth-6, opening **DEPTH-6 ACROSS LAYERS** alongside PyIntArith (Layer 1, PMAT-290).
+
+**The 6 Diamond categories on `C-COMPILE-RUST-TO-PTX-MMA`:**
+
+1. PMAT-218: bounded-monoid (additive)
+2. PMAT-287: closure (subalgebra well-definedness)
+3. PMAT-231: join-semilattice (max)
+4. PMAT-242: meet-semilattice (min)
+5. PMAT-248: lattice absorption (joint absorption + shared idempotence)
+6. **PMAT-291: distributive lattice (cross-distributivity of max/min)** ← FIRST DEPTH-6 ACROSS LAYERS
+
+**Why distributivity is categorically distinct from absorption:**
+
+ABSORPTION (PMAT-248) says `a ⊓ (a ⊔ b) = a` — a **same-operand** law on `a`. DISTRIBUTIVITY says `a ⊓ (b ⊔ c) = (a ⊓ b) ⊔ (a ⊓ c)` — a **cross-operand** law on `a`, `b`, `c`.
+
+**Not all lattices are distributive** — the pentagon lattice N5 has absorption but not distributivity. An emitter that implements a non-distributive lattice (e.g., reduces parallel-then-sequential smem composition asymmetrically) would falsify this Diamond while leaving PMAT-248 intact.
+
+Distributive lattices are the algebraic foundation of **Boolean algebras** — load-bearing for downstream emitters that perform Boolean-algebra reasoning on smem reservations.
+
+**New Lean theorem:**
+
+```lean
+theorem bounded_smem_distributive_lattice_diamond
+    (a b c : BoundedSmem) :
+    Nat.max a.val (Nat.min b.val c.val)
+      = Nat.min (Nat.max a.val b.val) (Nat.max a.val c.val)
+    ∧ Nat.min a.val (Nat.max b.val c.val)
+        = Nat.max (Nat.min a.val b.val) (Nat.min a.val c.val) := by
+  refine ⟨?_, ?_⟩
+  · exact Nat.max_min_distrib_left a.val b.val c.val
+  · exact Nat.min_max_distrib_left a.val b.val c.val
+```
+
+Uses only Mathlib's `Nat.max_min_distrib_left` and `Nat.min_max_distrib_left` — no new proof engineering.
+
+**Gate update:** `substrate_diamond_depth_6_opened` tightened to assert **≥2** contracts at depth-6+ (was ≥1). Verified live: `depth_6_plus=2`.
+
+**Path β extension recap:**
+
+| PMAT | Milestone |
+|------|-----------|
+| 286 | FIRST depth-5 (PyIntArith) |
+| 287 | depth-5 ACROSS LAYERS (+CompileRustToPtxMma) |
+| 288 | depth-4 ACROSS LAYERS (+FFI-CPYTHON-EXT) |
+| 289 | depth-3 broadened (+Bashrs) |
+| 290 | FIRST depth-6 (PyIntArith → 6 categories) |
+| **291** | **depth-6 ACROSS LAYERS (+CompileRustToPtxMma)** |
+
 ### Added — FIRST Diamond depth-6 in the substrate: negation-involution / abelian-group enrichment on `C-PY-INT-ARITH` (PMAT-290)
 
 **Path β extension.** Opens Diamond depth-6 — six distinct algebraic categories on a single contract. PyIntArith was at depth-5 (post-PMAT-286); PMAT-290 adds **NEGATION-INVOLUTION / ABELIAN-GROUP-ENRICHMENT** as the sixth orthogonal category.

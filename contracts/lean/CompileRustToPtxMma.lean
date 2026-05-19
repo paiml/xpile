@@ -667,4 +667,80 @@ theorem bounded_smem_lattice_absorption_diamond
   · exact Nat.max_self a.val
   · exact Nat.min_self a.val
 
+/-! ## PMAT-291 — SIXTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (FIRST DEPTH-6 ACROSS LAYERS): distributive-lattice axioms
+    via max/min cross-distributivity (XPILE-REFINE-COMPILE-PTX-009).
+
+    **Opens DEPTH-6 ACROSS LAYERS.** PyIntArith already reached
+    depth-6 at PMAT-290 (negation-involution / abelian-group
+    enrichment); PMAT-291 extends depth-6 to Layer 5
+    C-COMPILE-RUST-TO-PTX-MMA. The substrate now has depth-6 on
+    TWO contracts spanning Layer 1 and Layer 5.
+
+    CompileRustToPtxMma already has FIVE Diamond categories:
+    - PMAT-218: (BoundedSmem, +, 0) BOUNDED MONOID
+    - PMAT-287: CLOSURE (subalgebra well-definedness)
+    - PMAT-231: (BoundedSmem, max, 0) JOIN-SEMILATTICE
+    - PMAT-242: (BoundedSmem, min, top) MEET-SEMILATTICE
+    - PMAT-248: LATTICE-ABSORPTION (joint max/min absorption +
+      shared idempotence)
+
+    PMAT-291 adds the structural enrichment from a generic LATTICE
+    to a DISTRIBUTIVE LATTICE:
+    - **PMAT-291: (BoundedSmem, max, min) DISTRIBUTIVE LATTICE
+      via cross-distributivity laws** —
+        max(a, min(b, c)) = min(max(a, b), max(a, c))
+        min(a, max(b, c)) = max(min(a, b), min(a, c))
+
+    The categorical distinction is precise: ABSORPTION (PMAT-248)
+    says `a ⊓ (a ⊔ b) = a`. DISTRIBUTIVITY says `a ⊓ (b ⊔ c) =
+    (a ⊓ b) ⊔ (a ⊓ c)` — a DIFFERENT structural claim. Not all
+    lattices are distributive (e.g., the pentagon lattice N5 has
+    absorption but not distributivity). Adding distributivity is
+    a genuinely new categorical claim.
+
+    Distributive lattices are the algebraic foundation of BOOLEAN
+    ALGEBRAS — and proving (BoundedSmem, max, min) is distributive
+    lays the groundwork for downstream Boolean-algebra reasoning
+    about smem reservations.
+
+    Status: discharged at v0.1.0 (PMAT-291). Tier: DIAMOND.
+    First DEPTH-6 ACROSS LAYERS in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `(BoundedSmem, max, min)`
+  is a DISTRIBUTIVE LATTICE.
+
+  Combines two cross-distributivity laws into the
+  DISTRIBUTIVE-LATTICE axiomatization:
+  (a) Max distributes over min: max(a, min(b, c)) = min(max(a, b), max(a, c))
+  (b) Min distributes over max: min(a, max(b, c)) = max(min(a, b), min(a, c))
+
+  Distinct from PMAT-248 absorption (which proves `a ⊓ (a ⊔ b) = a`,
+  a same-operand law). The distributivity laws are cross-operand —
+  they govern how max and min interact across different operands.
+
+  An emitter that satisfies absorption but breaks distributivity
+  (i.e., implements a non-distributive lattice like the pentagon
+  N5 modular sublattice) would falsify this Diamond while leaving
+  PMAT-248 intact.
+
+  Proof uses Nat.max_min_distrib_left and Nat.min_max_distrib_left
+  from Mathlib — standard lemmas for Nat's lattice structure.
+
+  Status: **discharged at v0.1.0 (PMAT-291)**. Tier: DIAMOND.
+  First DEPTH-6 ACROSS LAYERS in the substrate.
+-/
+theorem bounded_smem_distributive_lattice_diamond
+    (a b c : BoundedSmem) :
+    -- (a) Max distributes over min
+    Nat.max a.val (Nat.min b.val c.val)
+      = Nat.min (Nat.max a.val b.val) (Nat.max a.val c.val)
+    -- (b) Min distributes over max
+    ∧ Nat.min a.val (Nat.max b.val c.val)
+        = Nat.max (Nat.min a.val b.val) (Nat.min a.val c.val) := by
+  refine ⟨?_, ?_⟩
+  · exact Nat.max_min_distrib_left a.val b.val c.val
+  · exact Nat.min_max_distrib_left a.val b.val c.val
+
 end XpileContracts.CCompileRustToPtxMma

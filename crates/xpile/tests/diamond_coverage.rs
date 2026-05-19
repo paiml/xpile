@@ -147,11 +147,12 @@ fn substrate_diamond_depth_5_opened() {
 fn substrate_diamond_depth_6_opened() {
     let json = run_diamond_json();
     let depth_6_plus = read_aggregate_field(&json, "depth_6_plus");
-    // PMAT-290 opened depth-6 on C-PY-INT-ARITH: added negation-involution /
-    // abelian-group enrichment as the 6th orthogonal Diamond category.
+    // PMAT-290 opened depth-6 on C-PY-INT-ARITH (Layer 1): negation-involution.
+    // PMAT-291 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): distributive lattice.
+    // Gate now asserts depth-6 ACROSS LAYERS (≥2 contracts at depth-6+).
     assert!(
-        depth_6_plus >= 1,
-        "Diamond depth-6 milestone (PMAT-290): expected ≥1 contract at depth-6+, \
-         got {depth_6_plus}.\n{json}"
+        depth_6_plus >= 2,
+        "Diamond depth-6 ACROSS LAYERS milestone (PMAT-290, PMAT-291): \
+         expected ≥2 contracts at depth-6+ (Layer 1 + Layer 5), got {depth_6_plus}.\n{json}"
     );
 }
