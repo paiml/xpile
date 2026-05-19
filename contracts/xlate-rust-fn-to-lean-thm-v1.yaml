@@ -498,6 +498,37 @@ equations:
     postconditions:
       - "DEPTH-4 UNIVERSAL achieved: 12 contracts at depth-4+"
 
+  lean_def_silver_struct_extensionality_diamond:
+    # PMAT-352: FIFTH Diamond on this contract — BROADENS DEPTH-5
+    # from 9 to 10 contracts. Pushes XlateRustFnToLeanThm (Layer 5)
+    # from depth-4 to depth-5, making it the FOURTH Layer 5
+    # contract at depth-5+. LEAN-DEF-SILVER STRUCTURE
+    # EXTENSIONALITY: the 4-field LeanDefSilver record is
+    # field-extensional. Eleventh substrate-wide demonstration of
+    # the structure-extensionality pattern. Closes the Rust ↔ Lean
+    # translation pair at the structure level (mirror of PMAT-336
+    # which captured RustFnSilver).
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.lean_def_silver_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    formula: |
+      LeanDefSilver admits STRUCTURE EXTENSIONALITY:
+        (a) field eq (4 fields) → record eq
+        (b) record eq → field eq (congruence)
+        (c) decidable equality
+        (d) self-equality (reflexivity)
+    domain: |
+      Two LeanDefSilver records with 4 fields (name, binders,
+      return_type, body) — each Array UInt8 at Silver tier.
+    invariants:
+      - "FIFTH Diamond category on C-XLATE-RUST-FN-TO-LEAN-THM — BROADENS DEPTH-5 from 9 to 10 contracts"
+      - "STRUCTURE EXTENSIONALITY — eleventh substrate-wide demonstration of this pattern"
+      - "closes the Rust ↔ Lean translation pair at the structure level (mirror of PMAT-336 on RustFnSilver)"
+    preconditions:
+      - "two LeanDefSilver records (DecidableEq derived)"
+    postconditions:
+      - "an emitter that drops or adds fields to LeanDefSilver would falsify the structure"
+      - "Diamond depth-5 broadened: 10 contracts at depth-5+ (4 Layer 5 contracts at depth-5)"
+
 proof_obligations:
   - type: postcondition
     property: Lean def name equals Rust fn name

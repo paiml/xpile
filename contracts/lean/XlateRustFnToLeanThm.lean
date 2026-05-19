@@ -986,4 +986,85 @@ theorem rust_fn_silver_body_size_diamond (f : RustFnSilver) :
   · exact Nat.zero_le _
   · omega
 
+/-! ## PMAT-352 — FIFTH Diamond on C-XLATE-RUST-FN-TO-LEAN-THM
+    (Layer 5 BROADENING DEPTH-5 from 9 to 10 contracts):
+    LEAN-DEF-SILVER STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XLATE-RUST-FN-TO-LEAN-THM-007).
+
+    **Broadens DEPTH-5 from 9 to 10 contracts.** After PMAT-351
+    brought XlateLeanToRust (Layer 5) to depth-5 as the 3rd L5
+    contract at depth-5+, PMAT-352 pushes XlateRustFnToLeanThm
+    (Layer 5) from depth-4 to depth-5, making it the FOURTH Layer 5
+    contract at depth-5+.
+
+    The 5 Diamond categories on C-XLATE-RUST-FN-TO-LEAN-THM:
+    - PMAT-220 precondition_list_monoid: precondition list monoid
+    - PMAT-236 nonempty_preconditions_section_retraction: NonEmpty
+    - PMAT-336 rust_fn_silver_struct_extensionality: RustFnSilver record
+    - PMAT-344 rust_fn_silver_body_size: body/name Array.size
+    - **PMAT-352: LEAN-DEF-SILVER STRUCTURE EXTENSIONALITY** ← depth-5
+
+    The categorical distinction is sharp:
+      - PMAT-336 captures STRUCTURAL extensionality of RustFnSilver
+        (the Rust side record).
+      - PMAT-352 captures STRUCTURAL extensionality of LeanDefSilver
+        (the Lean side record) — the COMPLEMENTARY structure that
+        the trait lifts INTO.
+
+    PMAT-352 is the structural-extensionality mirror that closes
+    the Rust ↔ Lean translation pair at the structure level. Just
+    as PMAT-336 establishes RustFnSilver field-equality structure,
+    PMAT-352 establishes LeanDefSilver field-equality structure —
+    the contract spans BOTH sides of the lift.
+
+    Mirror of PMAT-311/329/330/331/332/333/334/335/336/349 —
+    eleventh substrate-wide demonstration of the structure-
+    extensionality pattern.
+
+    Status: discharged at v0.1.0 (PMAT-352). Tier: DIAMOND.
+    Broadens DEPTH-5 from 9 to 10 contracts. -/
+
+/--
+  **Diamond-tier refinement theorem** — `LeanDefSilver` admits
+  STRUCTURE EXTENSIONALITY.
+
+  Combines four STRUCTURE-EXTENSIONALITY properties on the 4-field
+  LeanDefSilver record (name, binders, return_type, body):
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality (congruence)
+  (c) Decidable equality (deriving DecidableEq)
+  (d) Self-equality (reflexivity)
+
+  Eleventh substrate-wide demonstration of the structure-
+  extensionality pattern (after PMAT-311/329/330/331/332/333/334/
+  335/336/349) — closes the Rust ↔ Lean translation pair at the
+  structure level.
+
+  Status: **discharged at v0.1.0 (PMAT-352)**. Tier: DIAMOND.
+  Broadens DEPTH-5 from 9 to 10 contracts.
+-/
+theorem lean_def_silver_struct_extensionality_diamond
+    (d1 d2 : LeanDefSilver) :
+    -- (a) Field equality → record equality
+    (d1.name = d2.name ∧ d1.binders = d2.binders
+        ∧ d1.return_type = d2.return_type ∧ d1.body = d2.body
+      → d1 = d2)
+    -- (b) Record equality → field equality
+    ∧ (d1 = d2 → d1.name = d2.name ∧ d1.binders = d2.binders
+        ∧ d1.return_type = d2.return_type ∧ d1.body = d2.body)
+    -- (c) Decidable equality
+    ∧ (d1 = d2 ∨ d1 ≠ d2)
+    -- (d) Self-equality (reflexivity)
+    ∧ (d1 = d1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2, h3, h4⟩
+    cases d1; cases d2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h], by rw [h], by rw [h]⟩
+  · by_cases h : d1 = d2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXlateRustFnToLeanThm
