@@ -78,6 +78,17 @@ equations:
     # Proves `result.target = b.declared_target` at the type level.
     lean_theorem: "XpileContracts.CXpileBackendTrait.target_consistency_silver"
     lean_file: "contracts/lean/XpileBackendTrait.lean"
+    # PMAT-283: Property-specific Silver-tier Kani harness. Closes
+    # audit-design.md §4 caveat. Bronze lower_idempotency proved
+    # determinism on (module, config) -> Artifact { bytes } — a buggy
+    # Rust backend that detected GPU intrinsics and switched targets
+    # (Rust -> PTX) silently would still pass Bronze idempotency
+    # (deterministic per input). Silver introduces explicit target +
+    # declared_target fields and proves consistency. Companion
+    # harness lower_idempotency_silver re-proves idempotency at the
+    # structured level. Mirror of PMAT-282 (Frontend side).
+    kani_harness: "target_consistency_silver"
+    kani_file: "contracts/kani/xpile_backend_trait.rs"
     formula: |
       forall b, (module, config): b.lower(module, config).unwrap().primary
         parses or links cleanly under config.target's reference toolchain

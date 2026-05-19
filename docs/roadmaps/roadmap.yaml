@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-283
+  github_issue: null
+  item_type: task
+  title: 'PMAT-283: Property-specific Silver-tier Kani harnesses for C-XPILE-BACKEND-TRAIT (Path α extension, eighth contract)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T19:00:00Z
+  updated: 2026-05-22T19:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Lift contracts/kani/xpile_backend_trait.rs from Bronze byte-identity placeholder (lower_idempotency on opaque Artifact.bytes) to Silver-tier structural model. Add ArtifactSilver { bytes, target } + BackendSilver { declared_target } + lower_silver. Two new Kani proofs: target_consistency_silver (catches a backend that detects content and switches targets behind the user's back), lower_idempotency_silver (structural idempotency). Wire kani_harness on target_consistency equation in contracts/xpile-backend-trait-v1.yaml. Path α extension — 8 contracts. Symmetric mirror of PMAT-282 (Frontend side)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-282
   github_issue: null
   item_type: task
