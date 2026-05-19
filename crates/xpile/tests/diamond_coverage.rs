@@ -135,6 +135,7 @@ fn substrate_diamond_aggregate_total_at_least_30() {
 #[test]
 fn substrate_diamond_depth_5_opened() {
     let json = run_diamond_json();
+    let contracts_total = read_aggregate_field(&json, "contracts_total");
     let depth_5_plus = read_aggregate_field(&json, "depth_5_plus");
     // PMAT-286 opened depth-5 on C-PY-INT-ARITH (Layer 1).
     // PMAT-287 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5).
@@ -142,17 +143,13 @@ fn substrate_diamond_depth_5_opened() {
     // PMAT-346 BROADENED depth-5 to C-BASHRS-POSIX-IDEMPOTENCE (Layer 2).
     // PMAT-347 BROADENED depth-5 to C-XPILE-FRONTEND-TRAIT (Layer 3) — COMPLETED
     // depth-5 ACROSS ALL 5 TAXONOMY LAYERS (parallel to PMAT-330 for depth-4).
-    // PMAT-348 BROADENED depth-5 to C-XPILE-BACKEND-TRAIT (Layer 3, 2nd L3).
-    // PMAT-349 BROADENED depth-5 to C-XLATE-PY-LIST-TO-VEC (Layer 2, 2nd L2).
-    // PMAT-350 BROADENED depth-5 to C-NOTATION-LATEX-MATH-TO-EQUATION (Layer 5, 2nd L5).
-    // PMAT-351 BROADENED depth-5 to C-XLATE-LEAN-TO-RUST (Layer 5, 3rd L5).
-    // PMAT-352 BROADENED depth-5 to C-XLATE-RUST-FN-TO-LEAN-THM (Layer 5, 4th L5).
-    // PMAT-353 BROADENED depth-5 to C-XPILE-CONTRACT-FRONTEND-TRAIT (Layer 3, 3rd L3).
-    assert!(
-        depth_5_plus >= 11,
-        "Diamond depth-5 BROADENED milestone (PMAT-286/287/328/346/347/348/349/350/351/352/353): \
-         expected ≥11 contracts at depth-5+ (all 5 layers + 3rd L3 + 2nd L2 + 4 of 5 L5), \
-         got {depth_5_plus}.\n{json}"
+    // PMAT-348..353 BROADENED depth-5 to 11 of 12 contracts.
+    // PMAT-354 COMPLETED depth-5 UNIVERSAL via C-XPILE-CONTRACT-BACKEND-TRAIT
+    // (Layer 3) — substrate milestone: every contract has ≥5 Diamond categories.
+    assert_eq!(
+        depth_5_plus, contracts_total,
+        "Diamond depth-5 UNIVERSAL milestone (PMAT-354): every contract should have \
+         ≥5 Diamond equations, but only {depth_5_plus} of {contracts_total} do.\n{json}"
     );
 }
 
