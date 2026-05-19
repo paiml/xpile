@@ -1111,4 +1111,46 @@ theorem citation_product_monoid_diamond
   · unfold compose_latex_citation_silver
     simp
 
+/-! ## PMAT-334 — THIRD Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION
+    (Layer 5 BROADENING DEPTH-3 from 9 to 10 contracts):
+    EquationFormulaSilver STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-NOTATION-007).
+
+    **Broadens DEPTH-3 from 9 to 10 contracts.** Pushes
+    NotationLatexMathToEquation (Layer 5) from depth-2 to depth-3,
+    adding a SECOND Layer 5 contract at depth-3
+    (CompileRustToPtxMma was first via PMAT-242).
+
+    Seventh substrate-wide demonstration of structure-extensionality
+    pattern (after PMAT-311/329/330/331/332/333).
+
+    Status: discharged at v0.1.0 (PMAT-334). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `EquationFormulaSilver`
+  admits STRUCTURE EXTENSIONALITY.
+
+  Status: **discharged at v0.1.0 (PMAT-334)**. Tier: DIAMOND.
+-/
+theorem equation_formula_struct_extensionality_diamond
+    (f1 f2 : EquationFormulaSilver) :
+    -- (a) Field equality → record equality
+    (f1.kind = f2.kind ∧ f1.ascii_normalised = f2.ascii_normalised → f1 = f2)
+    -- (b) Record equality → field equality
+    ∧ (f1 = f2 → f1.kind = f2.kind ∧ f1.ascii_normalised = f2.ascii_normalised)
+    -- (c) Decidable equality
+    ∧ (f1 = f2 ∨ f1 ≠ f2)
+    -- (d) Self-equality (reflexivity)
+    ∧ (f1 = f1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2⟩
+    cases f1; cases f2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h]⟩
+  · by_cases h : f1 = f2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CNotationLatexMathToEquation
