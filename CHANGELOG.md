@@ -7,6 +7,34 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — **MILESTONE: Diamond depth-5 ACROSS ALL 5 TAXONOMY LAYERS**: SourceLang-enum-distinctness Diamond on `C-XPILE-FRONTEND-TRAIT` (PMAT-347)
+
+**SUBSTRATE MILESTONE: depth-5 reaches every xpile taxonomy layer.** After PMAT-346 brought depth-5 to 4 layers (L1+L2+L4+L5), only Layer 3 was missing. PMAT-347 pushes `C-XPILE-FRONTEND-TRAIT` (Layer 3) from depth-4 to depth-5, **completing depth-5 ACROSS ALL 5 LAYERS** — parallel to PMAT-330's depth-4 milestone.
+
+**Coverage state at PMAT-347:**
+
+| Layer | Contract at depth-5+ | Diamond category at depth-5 |
+|---|---|---|
+| L1 (per-language semantics) | C-PY-INT-ARITH | PMAT-286 BITWISE-AND-MONOID |
+| L2 (translation) | C-BASHRS-POSIX-IDEMPOTENCE | PMAT-346 OBSERVABLE STRING LENGTH NAT |
+| L3 (trait surfaces) | **C-XPILE-FRONTEND-TRAIT** | **PMAT-347 SOURCE-LANG ENUM DISTINCTNESS** ← NEW |
+| L4 (FFI) | C-FFI-CPYTHON-EXT | PMAT-328 REFCOUNT DELTA SIGN DECOMP |
+| L5 (compilation) | C-COMPILE-RUST-TO-PTX-MMA | PMAT-287 BOUNDED-MONOID CLOSURE |
+
+**The 5 Diamond categories on `C-XPILE-FRONTEND-TRAIT`:**
+
+1. PMAT-224 frontend_equivalence_class_diamond
+2. PMAT-232 source_lang_constant_projection_diamond
+3. PMAT-245 parse_and_lower_function_diamond
+4. PMAT-330 metahir_module_struct_extensionality_diamond
+5. **PMAT-347 source_lang_enum_distinctness_diamond** ← depth-5
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_5_plus: 5` (was 4).
+- `substrate_diamond_depth_5_opened` gate **tightened to ≥ 5** (ALL 5 LAYERS).
+- Substrate Diamond totals: **84 wired Diamond theorems** (was 83).
+
 ### Added — Diamond depth-5 BROADENED from 3 to 4 LAYERS: observable-string-length Nat-structure Diamond on `C-BASHRS-POSIX-IDEMPOTENCE` (PMAT-346)
 
 **Continuing the broadening pivot at depth-5.** After PMAT-328 brought depth-5 to 3 layers (L1+L4+L5), PMAT-346 pushes Bashrs (Layer 2) from depth-4 to depth-5, adding Layer 2 to depth-5+ coverage. **One more layer (L3) needed for depth-5 ALL 5 LAYERS milestone.**

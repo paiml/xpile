@@ -289,6 +289,30 @@ equations:
       - "an emitter introducing a phantom field (e.g., cached_ast_hash) or stripping fields would falsify (a)"
       - "Diamond depth-4 ACROSS ALL 5 TAXONOMY LAYERS demonstrated: 5 contracts on 5 distinct layers"
 
+  source_lang_enum_distinctness_diamond:
+    # PMAT-347: FIFTH Diamond on this contract — COMPLETES DEPTH-5
+    # ACROSS ALL 5 TAXONOMY LAYERS. Mirror of PMAT-330 (depth-4 ALL
+    # 5 LAYERS milestone). Pushes XpileFrontendTrait (Layer 3) from
+    # depth-4 to depth-5, adding Layer 3 to depth-5+ coverage.
+    # SourceLang enum distinctness (6-variant inductive).
+    lean_theorem: "XpileContracts.CXpileFrontendTrait.source_lang_enum_distinctness_diamond"
+    lean_file: "contracts/lean/XpileFrontendTrait.lean"
+    formula: |
+      SourceLang is a 6-variant decidable enumeration:
+        (a) python ≠ rust
+        (b) ruchy ≠ lean
+        (c) self-equality
+        (d) decidable equality
+    domain: |
+      Any SourceLang value (6-variant: python/c/rust/ruchy/shell/lean).
+    invariants:
+      - "FIFTH Diamond category on C-XPILE-FRONTEND-TRAIT — COMPLETES DEPTH-5 ACROSS ALL 5 TAXONOMY LAYERS"
+      - "Mirror of PMAT-330 depth-4 ALL 5 LAYERS milestone"
+    preconditions:
+      - "SourceLang inductive type with derived DecidableEq"
+    postconditions:
+      - "Diamond depth-5 ACROSS ALL 5 TAXONOMY LAYERS demonstrated: 5 contracts on 5 distinct layers"
+
   ffi_boundaries_are_outgoing_only:
     formula: |
       forall b in module.ffi_boundaries: b.from_lang == module.source_lang
