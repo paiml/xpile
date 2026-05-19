@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-268
+  github_issue: null
+  item_type: task
+  title: 'PMAT-268: Runtime-stratum sweeps for recursion + branching + modulo (C-PY-INT-ARITH deepening)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T11:30:00Z
+  updated: 2026-05-22T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Extend crates/xpile/tests/runtime_strata.rs with three additional Runtime-stratum tests: abs_val_matches_sign_branch (if/else + negation, 4096 samples), fib_matches_iterative_reference (binary recursion, 24 samples), gcd_matches_euclidean_reference (modulo + recursion, 1024 samples). Each transpiles a different existing fixture (abs_val.py, fib.py, gcd.py), compiles via rustc -O, and executes a property-style sweep against a hand-written reference. Total Runtime-stratum samples on C-PY-INT-ARITH rise from 4097 to 9241 across 5 code paths."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-267
   github_issue: null
   item_type: task

@@ -7,6 +7,32 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Runtime-stratum sweeps for recursion + branching + modulo (`C-PY-INT-ARITH` deepening) (PMAT-268)
+
+Extends PMAT-267's Runtime-stratum fixture pattern to three additional code paths through the xpile-rust-codegen pipeline. Each new test is a real property-style oracle vote at the Runtime stratum.
+
+**Three new tests in `crates/xpile/tests/runtime_strata.rs`:**
+
+- `py_int_arith_runtime_stratum_abs_val_matches_sign_branch` — `abs_val.py` exercises if/else control flow + unary negation. 4096 LCG-generated inputs (right-shifted by 1 to avoid `i64::MIN` edge case) compared against `if x < 0 { -x } else { x }`.
+- `py_int_arith_runtime_stratum_fib_matches_iterative_reference` — `fib.py` lowers to a recursive Rust function with TWO recursive calls per invocation. First 24 Fibonacci numbers compared against an iteratively-computed reference. Verifies recursion + branch + addition end-to-end.
+- `py_int_arith_runtime_stratum_gcd_matches_euclidean_reference` — `gcd.py` exercises modulo (`%`) + structural recursion. 1024 LCG pairs of positive i64s clamped to `[1, i64::MAX/4]` compared against an iterative Euclidean GCD reference.
+
+**What this covers:**
+
+| Test | Code-path exercised |
+|------|--------------------|
+| abs_val | if/else + unary negation |
+| fib | binary recursion + branch + addition |
+| gcd | modulo + structural recursion |
+
+Total Runtime-stratum samples on `C-PY-INT-ARITH`: 4096 (add) + 4096 (abs) + 24 (fib) + 1024 (gcd) + 1 (overflow boundary) = **9241 oracle votes across 5 code paths**.
+
+**Why this matters:**
+
+- `C-PY-INT-ARITH` was the FIRST contract with property-style Runtime coverage at v0.1.0 (PMAT-267). This PR deepens that coverage from one code path to four, covering the recursion + branching + modulo surface area the contract's Lean theorems claim.
+- Each fixture is a different falsifier surface: if a future codegen regression breaks recursion lowering, the fib test fires. If modulo lowering breaks, gcd fires. If branch lowering breaks, abs_val fires.
+- Run-stratum coverage on C-PY-INT-ARITH now exceeds the pre-PMAT-267 "Run=1 demo fixture" caveat by ~9000x.
+
 ### Added — FIRST contract Runtime-stratum oracle fixture (`C-PY-INT-ARITH`) (PMAT-267)
 
 Closes the audit-design.md §4 "Run=1 demo fixture" caveat for `C-PY-INT-ARITH`. Every existing contract reached §14.4 N-of-M QUORUM at Bronze tier (Lean refinement theorem + Kani BMC harness — Sem + Sym strata) but no contract had a real property-style Runtime stratum vote. This PR ships that vote.

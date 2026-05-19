@@ -168,6 +168,116 @@ fn main() {
         .expect("runtime stratum: add(a, b) must match checked_add semantics across the sweep");
 }
 
+/// PMAT-268 — Runtime-stratum sweep for branching + unary negation
+/// (abs_val).
+///
+/// `abs_val.py` lowers to a Rust function that exercises `if/else`
+/// control flow + unary `-`. The sweep runs 4096 LCG-generated inputs
+/// (right-shifted by 1 so negation can't overflow) through the
+/// transpiled function and verifies the result matches the
+/// hand-written reference. The `i64::MIN.wrapping_abs() == i64::MIN`
+/// edge case is intentionally excluded by the shift — the contract
+/// for that case is unspecified at v0.1.0.
+#[test]
+fn py_int_arith_runtime_stratum_abs_val_matches_sign_branch() {
+    let transpiled = xpile_transpile_to_rust("abs_val.py");
+
+    let driver = r#"
+fn main() {
+    let mut state: u64 = 0xdead_beef_cafe_f00d;
+    for i in 0..4096u64 {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let x: i64 = (state as i64) >> 1;
+        let expected: i64 = if x < 0 { -x } else { x };
+        let got = abs_val(x);
+        assert_eq!(got, expected, "iter {i}: abs_val({x}) gave {got}, expected {expected}");
+    }
+    println!("ok abs_val sweep: 4096/4096");
+}
+"#;
+
+    let merged = format!("{transpiled}\n\n{driver}\n");
+    build_and_run("py_int_arith_runtime_abs_val", &merged)
+        .expect("runtime stratum: abs_val(x) must match Python sign-branching semantics");
+}
+
+/// PMAT-268 — Runtime-stratum sweep for binary recursion (fib).
+///
+/// `fib.py` lowers to a recursive Rust function with TWO recursive
+/// calls per invocation. The sweep computes the first 24 Fibonacci
+/// numbers (small enough that exponential recursion is tractable but
+/// well past the boundary cases) and asserts each matches an
+/// iteratively-computed reference. Verifies recursion + branch +
+/// addition end-to-end.
+#[test]
+fn py_int_arith_runtime_stratum_fib_matches_iterative_reference() {
+    let transpiled = xpile_transpile_to_rust("fib.py");
+
+    let driver = r#"
+fn fib_iter(n: i64) -> i64 {
+    if n <= 1 { return n; }
+    let (mut a, mut b) = (0i64, 1i64);
+    for _ in 1..n { let t = b; b = a + b; a = t; }
+    b
+}
+
+fn main() {
+    for n in 0..24i64 {
+        let expected = fib_iter(n);
+        let got = fib(n);
+        assert_eq!(got, expected, "fib({n}) gave {got}, expected {expected}");
+    }
+    println!("ok fib recursion: 24/24");
+}
+"#;
+
+    let merged = format!("{transpiled}\n\n{driver}\n");
+    build_and_run("py_int_arith_runtime_fib", &merged)
+        .expect("runtime stratum: fib(n) must match iterative reference for n in 0..24");
+}
+
+/// PMAT-268 — Runtime-stratum sweep for modulo + tail recursion (gcd).
+///
+/// `gcd.py` exercises `%` (modulo) plus structural recursion. The
+/// sweep generates 1024 LCG pairs of positive i64s clamped to
+/// `[1, i64::MAX/4]` (so recursion depth stays bounded and modulo
+/// is well-defined) and compares against an iterative Euclidean GCD.
+/// GCD on negatives is out-of-scope — Python and Rust `%` semantics
+/// differ on sign.
+#[test]
+fn py_int_arith_runtime_stratum_gcd_matches_euclidean_reference() {
+    let transpiled = xpile_transpile_to_rust("gcd.py");
+
+    let driver = r#"
+fn gcd_iter(mut a: i64, mut b: i64) -> i64 {
+    while b != 0 {
+        let t = b;
+        b = a % b;
+        a = t;
+    }
+    a
+}
+
+fn main() {
+    let mut state: u64 = 0xdead_beef_cafe_f00d;
+    for i in 0..1024u64 {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let a: i64 = ((state >> 2) as i64).abs().max(1).min(i64::MAX / 4);
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let b: i64 = ((state >> 2) as i64).abs().max(1).min(i64::MAX / 4);
+        let expected = gcd_iter(a, b);
+        let got = gcd(a, b);
+        assert_eq!(got, expected, "iter {i}: gcd({a}, {b}) gave {got}, expected {expected}");
+    }
+    println!("ok gcd sweep: 1024/1024");
+}
+"#;
+
+    let merged = format!("{transpiled}\n\n{driver}\n");
+    build_and_run("py_int_arith_runtime_gcd", &merged)
+        .expect("runtime stratum: gcd(a, b) must match iterative Euclidean reference");
+}
+
 /// Companion test — verifies the OVERFLOW arm of the C-PY-INT-ARITH
 /// contract. Per PMAT-002, the transpiled code uses
 /// `checked_add(...).expect(...)` so adding `i64::MAX + 1` must panic.
