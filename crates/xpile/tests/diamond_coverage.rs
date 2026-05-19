@@ -281,10 +281,26 @@ fn substrate_diamond_depth_15_opened() {
     let depth_15_plus = read_aggregate_field(&json, "depth_15_plus");
     // PMAT-312 opened depth-15 on C-PY-INT-ARITH (Layer 1): INT-EMOD QUOTIENT HOM.
     // PMAT-313 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): NAT-MOD QUOTIENT HOM.
-    // Gate now asserts depth-15 ACROSS LAYERS (≥2 contracts at depth-15+).
+    // PMAT-315 took PyIntArith to depth-16 (still ≥2 at depth-15+).
+    // Gate asserts depth-15 ACROSS LAYERS (≥2 contracts at depth-15+).
     assert!(
         depth_15_plus >= 2,
         "Diamond depth-15 ACROSS LAYERS milestone (PMAT-312, PMAT-313): \
          expected ≥2 contracts at depth-15+ (Layer 1 + Layer 5), got {depth_15_plus}.\n{json}"
+    );
+}
+
+#[test]
+fn substrate_diamond_depth_16_opened() {
+    let json = run_diamond_json();
+    let depth_16_plus = read_aggregate_field(&json, "depth_16_plus");
+    // PMAT-315 opened depth-16 on C-PY-INT-ARITH: GCD MONOID + BÉZOUT IDENTITY.
+    // The 16th orthogonal category characterizes Int.gcd as a UNIVERSAL OBJECT
+    // (categorical gcd) with a CONSTRUCTIVE linear combination (Bézout). This
+    // establishes Int as a PRINCIPAL IDEAL DOMAIN.
+    assert!(
+        depth_16_plus >= 1,
+        "Diamond depth-16 milestone (PMAT-315): expected ≥1 contract at depth-16+, \
+         got {depth_16_plus}.\n{json}"
     );
 }
