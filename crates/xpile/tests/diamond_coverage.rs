@@ -324,13 +324,12 @@ fn substrate_diamond_depth_17_opened() {
 fn substrate_diamond_depth_18_opened() {
     let json = run_diamond_json();
     let depth_18_plus = read_aggregate_field(&json, "depth_18_plus");
-    // PMAT-320 opened depth-18 on C-PY-INT-ARITH: SIGN FUNCTION MONOID HOMOMORPHISM
-    // (Int.sign is a multiplicative monoid hom (Int, *) → ({-1, 0, 1}, *)).
-    // The 18th orthogonal category is the third piece of the `Int = sign × magnitude`
-    // decomposition (with PMAT-307 abs and PMAT-317 unit group).
+    // PMAT-320 opened depth-18 on C-PY-INT-ARITH (Layer 1): SIGN FUNCTION monoid hom.
+    // PMAT-321 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): NAT INTEGRAL DOMAIN.
+    // Gate now asserts depth-18 ACROSS LAYERS (≥2 contracts at depth-18+).
     assert!(
-        depth_18_plus >= 1,
-        "Diamond depth-18 milestone (PMAT-320): expected ≥1 contract at depth-18+, \
-         got {depth_18_plus}.\n{json}"
+        depth_18_plus >= 2,
+        "Diamond depth-18 ACROSS LAYERS milestone (PMAT-320, PMAT-321): \
+         expected ≥2 contracts at depth-18+ (Layer 1 + Layer 5), got {depth_18_plus}.\n{json}"
     );
 }
