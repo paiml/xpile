@@ -2,6 +2,15 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-335
+  github_issue: null
+  item_type: task
+  title: 'PMAT-335: Diamond depth-3 BROADENED from 10 to 11 contracts (RustFn structure extensionality on C-XLATE-LEAN-TO-RUST)'
+  status: planned
+  priority: medium
+  created: 2026-05-23T20:00:00Z
+  acceptance_criteria:
+  - "Continuing BROADENING sweep. Add rust_fn_struct_extensionality_diamond Lean theorem. EIGHTH substrate-wide demonstration. Tighten depth-3 gate from ≥10 to ≥11. Substrate now 1 contract away from depth-3 UNIVERSAL."
 - id: PMAT-334
   github_issue: null
   item_type: task

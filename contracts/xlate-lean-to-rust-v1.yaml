@@ -629,6 +629,29 @@ equations:
       - "every emitted Rust item produced from a cited Lean decl carries the full multi-citation set in its doc-comment"
       - "the source-location string survives lowering as a separate field, not folded into the citation text"
 
+  rust_fn_struct_extensionality_diamond:
+    # PMAT-335: THIRD Diamond on this contract — BROADENS DEPTH-3
+    # from 10 to 11 contracts. EIGHTH substrate-wide demonstration
+    # of structure-extensionality pattern. Substrate now only 1
+    # contract away from depth-3 UNIVERSAL.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.rust_fn_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      RustFn admits STRUCTURE EXTENSIONALITY:
+        (a) field eq → record eq
+        (b) record eq → field eq (congruence)
+        (c) decidable equality
+        (d) self-equality (reflexivity)
+    domain: |
+      Two RustFn records (body : Array UInt8).
+    invariants:
+      - "THIRD Diamond category — BROADENS DEPTH-3 from 10 to 11 contracts"
+      - "EIGHTH substrate-wide demonstration of structure-extensionality pattern"
+    preconditions:
+      - "two RustFn records"
+    postconditions:
+      - "Diamond depth-3 broadened: 11 contracts at depth-3+"
+
 proof_obligations:
   - type: postcondition
     property: total def lowers to a panic-free Rust fn
