@@ -572,11 +572,20 @@ The pattern is not PTX-specific. Same shape applies to WGSL (`naga` + WebGPU spe
 
 ### Implementation roadmap
 
-- **PMAT-259** (this spec) — design + sub-spec + schema sketch
-- **PMAT-260+** — `pv lint` schema extension for `compile_targets.via` (role: general | specialist)
-- **PMAT-26X+** — light up rustc_codegen_nvvm path in xpile-ptx-codegen
-- **PMAT-26Y+** — cross-repo binding to aprender-gpu specialist
-- **PMAT-26Z+** — `DiffExec` engine + `xpile quorum` reporting of multi-vote Runtime stratum
+- ✅ **PMAT-259** — design + sub-spec + schema sketch
+- ⏳ **PMAT-260** — `audit-design.md` "Oracle Hardware Blind Spots" entry marked Mitigated via Multi-Emitter Quorum
+- ✅ **PMAT-261** — `EmitterRole`, `QuorumPolicy`, `QuorumStatus`, `DiffExecResult`, `ViaEntry` data model (serde round-trip tested)
+- ✅ **PMAT-262** — `Artifact.quorum_status` field + backwards-compat default for legacy payloads
+- ✅ **PMAT-263** — `TargetEmitter` trait + `MultiEmitterBackend` routing layer (mock-emitter unit tests cover the four routing cases: specialist-missing, specialist-unmatched, prefer-specialist, strict-match/divergent)
+- ✅ **PMAT-264** — `PtxBackend` refactored to wrap `MultiEmitterBackend` (Section 29 architecture validated in production code, not just mock tests)
+- ✅ **PMAT-265** — `WgslBackend` mirrored the wrapper-refactor pattern, confirming the §29 routing is a real reusable abstraction
+- ✅ **PMAT-266** — 7 adversarial invariant tests for the routing layer (citation provenance under Strict divergence, PreferSpecialist hides divergence by design, error propagation from general/specialist, general-None as contract violation, NotRun reason carries tolerance, DiffExec does not short-circuit on text equality)
+- ⏳ **PMAT-26X+** — light up `rustc_codegen_nvvm` path in xpile-ptx-codegen (replaces `ScaffoldPtxEmitter` in the `general` slot)
+- ⏳ **PMAT-26Y+** — cross-repo binding to `aprender-gpu` specialist (plugs into the `specialist` slot via `MultiEmitterBackend::new_with_specialist`)
+- ⏳ **PMAT-26Z+** — `DiffExec` engine + `xpile quorum` reporting of multi-vote Runtime stratum (replaces the `DiffExecResult::NotRun` branch with real execution comparison)
+- ⏳ **PMAT-A5** — `pv lint` schema extension for `compile_targets.via.role` (cross-repo work in `../provable-contracts/`)
+
+**Status at v0.1.0+ (post-PMAT-264..266):** the §29 routing layer is production-wired into both code-lane GPU backends (PTX and WGSL). The architecture has been validated by both happy-path mock tests (PMAT-263) and adversarial invariant tests (PMAT-266). What remains is implementation of the actual specialist emitters (`rustc_codegen_nvvm`, `aprender-gpu`) and the `DiffExec` execution engine that consumes their outputs.
 
 Full per-phase scope and pros/cons in [sub/layer5-multi-emitter-quorum.md](sub/layer5-multi-emitter-quorum.md).
 

@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — xpile-spec.md §29 implementation roadmap updated with PMAT-261..266 status (PMAT-273)
+
+Updates the Section 29 implementation roadmap to reflect what's actually shipped vs. pending. The original roadmap (written at PMAT-259) listed `PMAT-26X+`, `PMAT-26Y+`, `PMAT-26Z+` as undifferentiated future work; reality is that PMAT-261..266 shipped the routing layer + adversarial tests over the past several PRs.
+
+**Roadmap delta:**
+
+- PMAT-259 ✅ design (was already marked complete in audit-design.md)
+- PMAT-260 ⏳ audit-design.md "Oracle Hardware Blind Spots" mitigation marker
+- PMAT-261 ✅ data model (`EmitterRole`, `QuorumPolicy`, `QuorumStatus`, `DiffExecResult`, `ViaEntry`)
+- PMAT-262 ✅ `Artifact.quorum_status` field
+- PMAT-263 ✅ `TargetEmitter` trait + `MultiEmitterBackend` routing layer (mock-tested)
+- PMAT-264 ✅ PtxBackend wraps MultiEmitterBackend (production)
+- PMAT-265 ✅ WgslBackend mirrors the wrapper-refactor pattern
+- PMAT-266 ✅ 7 adversarial invariant tests for the routing layer
+- PMAT-26X+/Y+/Z+ ⏳ still pending: real `rustc_codegen_nvvm`, `aprender-gpu` bridge, `DiffExec` engine
+- PMAT-A5 ⏳ `pv lint` schema extension (cross-repo)
+
+**Adds a new "Status at v0.1.0+" paragraph** to the section: the routing layer is production-wired into both code-lane GPU backends (PTX + WGSL); what remains is the actual specialist emitters and the `DiffExec` execution engine.
+
+Documentation-only change — no code touched.
+
 ### Changed — `LatexContractFrontend` parse body lit up (math + citations + references) (PMAT-272)
 
 Replaces the v0.1.0 `Ok(EquationsBlock::default())` scaffold in `crates/latex-contract-frontend/src/lib.rs` with a hand-rolled scanner that extracts:
