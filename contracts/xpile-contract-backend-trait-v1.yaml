@@ -74,6 +74,17 @@ equations:
     # `RenderedDoc.citations = depends_on ++ references` structurally.
     lean_theorem: "XpileContracts.CXpileContractBackendTrait.citation_round_trip_silver"
     lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    # PMAT-285: Property-specific Silver-tier Kani harness. Closes
+    # audit-design.md §4 caveat — TENTH Path α contract. Citation-set
+    # preservation property with concat order (depends_on ++
+    # references). Bronze byte-payload model couldn't catch a backend
+    # that filters self-citations, drops IDs by regex, or swaps the
+    # depends_on/references order. Silver introduces explicit
+    # citations field and proves no drop + correct order. Companion
+    # harness render_idempotency_silver re-proves idempotency at the
+    # structured level.
+    kani_harness: "citation_round_trip_silver"
+    kani_file: "contracts/kani/xpile_contract_backend_trait.rs"
     formula: |
       forall (contract, config): contract.depends_on union contract.references subset RenderedDoc.citations
     domain: |
