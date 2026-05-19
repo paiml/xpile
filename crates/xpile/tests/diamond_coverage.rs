@@ -104,32 +104,19 @@ fn substrate_diamond_depth_3_universal() {
 }
 
 #[test]
-fn substrate_diamond_depth_4_opened() {
+fn substrate_diamond_depth_4_universal() {
     let json = run_diamond_json();
+    let contracts_total = read_aggregate_field(&json, "contracts_total");
     let depth_4_plus = read_aggregate_field(&json, "depth_4_plus");
-    // PMAT-247 (PyIntArith) + PMAT-248 (CompileRustToPtxMma) opened depth-4.
-    // PMAT-288 added refcount_inverse_diamond → C-FFI-CPYTHON-EXT joins depth-4.
-    // PMAT-329 added outcome_struct_extensionality_diamond → C-BASHRS-POSIX-IDEMPOTENCE
-    // joins depth-4 on Layer 2.
-    // PMAT-330 added metahir_module_struct_extensionality_diamond → C-XPILE-FRONTEND-TRAIT
-    // joins depth-4 on Layer 3, COMPLETING depth-4 across ALL 5 taxonomy layers.
-    // PMAT-338 added list_reverse_involution_diamond → C-XLATE-PY-LIST-TO-VEC joins
-    // depth-4 on Layer 2 (second Layer 2 contract at depth-4), broadening to 6 contracts.
-    // PMAT-339 added target_enum_distinctness_diamond → C-XPILE-BACKEND-TRAIT joins
-    // depth-4 on Layer 3 (second Layer 3 contract at depth-4), broadening to 7 contracts.
-    // PMAT-340 added transpile_session_array_size_diamond → C-XPILE-CONTRACT-FRONTEND-TRAIT
-    // joins depth-4 on Layer 3 (third Layer 3 contract at depth-4), broadening to 8.
-    // PMAT-341 added contract_array_size_diamond → C-XPILE-CONTRACT-BACKEND-TRAIT joins
-    // depth-4 on Layer 3 (fourth Layer 3 contract), broadening to 9.
-    // PMAT-342 added latex_display_kind_enum_distinctness_diamond → NotationLatex joins
-    // depth-4 on Layer 5 (second Layer 5 contract), broadening to 10.
-    // PMAT-343 added variant_count_nat_structure_diamond → XlateLeanToRust joins
-    // depth-4 on Layer 5 (third Layer 5 contract), broadening to 11.
-    // Only 1 contract (XlateRustFnToLeanThm) remains for depth-4 UNIVERSAL.
-    assert!(
-        depth_4_plus >= 11,
-        "Diamond depth-4 broadening milestone (PMAT-247/248/288/329/330/338..343): \
-         expected ≥11 contracts at depth-4+, got {depth_4_plus}.\n{json}"
+    // PMAT-247..344 sweep: depth-4 reached UNIVERSAL across all 12 contracts at PMAT-344.
+    // The post-PMAT-330 (ALL 5 LAYERS) broadening sweep used the structure-extensionality
+    // template (PMAT-329..336), Array.size template (PMAT-340/341/344), enum-distinctness
+    // template (PMAT-339/342), Nat-structure template (PMAT-343), and reverse-involution
+    // template (PMAT-338) to reach depth-4 on the remaining 7 contracts.
+    assert_eq!(
+        depth_4_plus, contracts_total,
+        "Diamond depth-4 UNIVERSAL milestone (PMAT-344): every contract should have \
+         ≥4 Diamond equations, but only {depth_4_plus} of {contracts_total} do.\n{json}"
     );
 }
 

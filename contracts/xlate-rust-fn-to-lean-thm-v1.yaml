@@ -476,6 +476,28 @@ equations:
     postconditions:
       - "DEPTH-3 UNIVERSAL achieved: 12 contracts at depth-3+"
 
+  rust_fn_silver_body_size_diamond:
+    # PMAT-344: FOURTH Diamond on this contract — COMPLETES DEPTH-4
+    # UNIVERSAL ACROSS ALL 12 CONTRACTS. SUBSTRATE MILESTONE: every
+    # contract now has ≥4 distinct Diamond categories.
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.rust_fn_silver_body_size_diamond"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    formula: |
+      RustFnSilver.body and .name Array.size structure:
+        (a) body.size ≥ 0
+        (b) body.size < body.size + 1
+        (c) name.size ≥ 0
+        (d) name.size < name.size + 1
+    domain: |
+      Any RustFnSilver record.
+    invariants:
+      - "FOURTH Diamond category — COMPLETES DEPTH-4 UNIVERSAL ACROSS ALL 12 CONTRACTS"
+      - "Substrate milestone: every contract has ≥4 distinct Diamond categories"
+    preconditions:
+      - "one RustFnSilver record"
+    postconditions:
+      - "DEPTH-4 UNIVERSAL achieved: 12 contracts at depth-4+"
+
 proof_obligations:
   - type: postcondition
     property: Lean def name equals Rust fn name

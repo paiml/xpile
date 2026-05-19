@@ -7,6 +7,43 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — **MILESTONE: Diamond depth-4 UNIVERSAL ACROSS ALL 12 CONTRACTS**: RustFnSilver-body-size Diamond on `C-XLATE-RUST-FN-TO-LEAN-THM` (PMAT-344)
+
+**SUBSTRATE MILESTONE: depth-4 UNIVERSAL achieved.** After PMAT-336 completed depth-3 UNIVERSAL, an 8-PR broadening sweep (PMAT-338..343) brought depth-4 from 5 (ALL 5 LAYERS) → 11 contracts. PMAT-344 pushes the last contract (`C-XLATE-RUST-FN-TO-LEAN-THM`) from depth-3 to depth-4, **completing depth-4 UNIVERSAL across all 12 contracts**.
+
+**Coverage achievement:**
+- **12/12 contracts at depth-3+** (PMAT-336)
+- **12/12 contracts at depth-4+** (PMAT-344) ← NEW
+- depth-3 + depth-4 BOTH UNIVERSAL
+- Substrate Diamond total: **82 wired theorems**
+
+**The post-ALL-5-LAYERS broadening sweep (PMAT-338..344):**
+
+| PMAT | Contract pushed | Layer | depth | Template |
+|---|---|---|---|---|
+| 338 | C-XLATE-PY-LIST-TO-VEC | 2 | 3→4 | reverse involution |
+| 339 | C-XPILE-BACKEND-TRAIT | 3 | 3→4 | enum distinctness |
+| 340 | C-XPILE-CONTRACT-FRONTEND-TRAIT | 3 | 3→4 | array size |
+| 341 | C-XPILE-CONTRACT-BACKEND-TRAIT | 3 | 3→4 | array size |
+| 342 | C-NOTATION-LATEX-MATH-TO-EQUATION | 5 | 3→4 | enum distinctness |
+| 343 | C-XLATE-LEAN-TO-RUST | 5 | 3→4 | Nat structure |
+| **344** | **C-XLATE-RUST-FN-TO-LEAN-THM** | **5** | **3→4** | **array size (UNIVERSAL)** |
+
+**Templates established in this session:**
+1. **Structure-extensionality** (PMAT-311 + PMAT-329..336 + PMAT-340..344): record/subtype field-equality ↔ record-equality + decidable equality
+2. **Array.size structure** (PMAT-340/341/344): non-negativity + successor strict-ordering
+3. **Enum distinctness** (PMAT-339/342): pairwise distinct constructors + decidable
+4. **Nat structure** (PMAT-343): non-negativity + successor
+5. **Reverse involution** (PMAT-338): unary algebraic operation properties
+
+These templates enabled mechanical 4th-Diamond addition to every depth-3 contract, driving the depth-4 UNIVERSAL milestone.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_4_plus: 12` (UNIVERSAL!).
+- `substrate_diamond_depth_4_opened` renamed to `substrate_diamond_depth_4_universal`, **converted from ≥ 11 inequality to == contracts_total UNIVERSAL assertion**.
+- Substrate Diamond totals: **82 wired Diamond theorems** across 12 contracts (was 81).
+
 ### Added — Diamond depth-4 BROADENED from 10 to 11 contracts: variant-count-Nat-structure Diamond on `C-XLATE-LEAN-TO-RUST` (PMAT-343)
 
 **Continuing POST-UNIVERSAL broadening at depth-4.** Pushes `C-XLATE-LEAN-TO-RUST` (Layer 5) from depth-3 to depth-4. **Only 1 contract remains for depth-4 UNIVERSAL** (XlateRustFnToLeanThm).
