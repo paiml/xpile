@@ -7,6 +7,31 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Multi-emitter quorum scaffolding types in xpile-backend (PMAT-261)
+
+Codifies the Section 29 spec types (`sub/layer5-multi-emitter-quorum.md`) as Rust definitions in `xpile-backend`. Pure scaffolding — no Backend impl yet uses these; future PRs (rustc_codegen_nvvm wiring, aprender-gpu bridge, DiffExec engine) build against this stable API surface.
+
+**New public types in `xpile-backend`:**
+- `EmitterRole { General, Specialist }` — mandatory-fallback role marker corresponding to `compile_targets.via.role` in the YAML schema
+- `QuorumPolicy { PreferSpecialist, DiffExec { tolerance }, Strict }` — per-contract policy for combining two emitter outputs
+- `QuorumStatus { Single { emitter }, Multi { emitters, diff_exec } }` — runtime-attached marker for which emitters fired and what comparison engine ran
+- `DiffExecResult { Match { max_abs_diff }, Divergent { max_abs_diff, tolerance }, NotRun { reason } }` — the comparison verdict, including the explicit `Divergent` case that falsifies the contract
+- `ViaEntry { emitter, role, crate_name?, cross_repo?, shape_filter? }` — Rust mirror of the structured-record YAML schema the v0.2.0+ `pv lint` will deserialize
+
+All types `Serialize/Deserialize` via serde with snake_case rename for direct YAML/JSON roundtrip. Internally-tagged enums (`tag = "kind"`) so contract YAML files can use:
+
+```yaml
+quorum_policy:
+  kind: DiffExec
+  tolerance: 1.0e-3
+```
+
+without nested mapping awkwardness.
+
+**6 unit tests** covering serde round-trip for every new type. Workspace builds clean with `cargo fmt`, `cargo clippy -D warnings`, `cargo check --workspace`, and `pv lint contracts/` all green.
+
+This is the API anchor for the v0.2.0+ multi-emitter implementation roadmap in Section 29. The existing `Artifact` struct is unchanged — extending it with `quorum_status: QuorumStatus` is the next scoped PR.
+
 ### Changed — Audit-design.md §4: mark "Oracle Hardware Blind Spots Re-emerge" as Mitigated via Multi-Emitter Quorum (PMAT-260)
 
 Follow-up audit pass on PMAT-259's `sub/layer5-multi-emitter-quorum.md` design. The §4 "Oracle Hardware Blind Spots Re-emerge" caveat was previously flagged as an unmitigated vulnerability: *"the Oracle itself generally cannot observe deep hardware-level races or WGSL/PTX thread divergence... creating a single point of failure if the contract proves incomplete."*

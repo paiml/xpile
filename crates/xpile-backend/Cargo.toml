@@ -13,3 +13,6 @@ xpile-meta-hir = { workspace = true }
 xpile-contracts = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
