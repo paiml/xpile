@@ -260,6 +260,36 @@ equations:
       - "no backend-internal mutable cache is permitted to escape lower()"
     preconditions: []
 
+  artifact_struct_extensionality_diamond:
+    # PMAT-331: THIRD Diamond on this contract — BROADENS DEPTH-3
+    # from 6 to 7 contracts. Pushes XpileBackendTrait (Layer 3)
+    # from depth-2 to depth-3, adding a SECOND Layer 3 contract at
+    # depth-3 (XpileFrontendTrait was first). ArtifactSilver
+    # STRUCTURE EXTENSIONALITY: the record type is field-extensional
+    # with decidable equality. Mirror of PMAT-311 (BoundedSmem),
+    # PMAT-329 (OutcomeSilver), PMAT-330 (MetaHirModuleSilver) —
+    # fourth substrate-wide demonstration of this structural pattern.
+    lean_theorem: "XpileContracts.CXpileBackendTrait.artifact_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XpileBackendTrait.lean"
+    formula: |
+      ArtifactSilver admits STRUCTURE EXTENSIONALITY:
+        (a) field eq → record eq
+        (b) record eq → field eq (congruence)
+        (c) decidable equality
+        (d) self-equality (reflexivity)
+    domain: |
+      Two ArtifactSilver records (bytes : Array UInt8, target : Target).
+      The four properties together axiomatize the record-type structure.
+    invariants:
+      - "THIRD Diamond category on C-XPILE-BACKEND-TRAIT — BROADENS DEPTH-3 from 6 to 7 contracts"
+      - "RECORD-STRUCTURE / SUBTYPE-LIKE claim, fourth substrate-wide demonstration of this pattern (after PMAT-311, PMAT-329, PMAT-330)"
+      - "distinct from PMAT-225 equivalence-class and PMAT-235 constant-projection — captures the OUTPUT RECORD TYPE structure"
+    preconditions:
+      - "two ArtifactSilver records (with derived DecidableEq instance)"
+    postconditions:
+      - "an emitter introducing phantom fields (e.g., compiler_version_hash) or stripping fields would falsify (a)"
+      - "Diamond depth-3 broadened: 7 contracts at depth-3+"
+
 proof_obligations:
   - type: invariant
     property: Every registered Target is owned by exactly one Backend

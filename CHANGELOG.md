@@ -7,6 +7,58 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-3 BROADENED from 6 to 7 contracts: ArtifactSilver structure-extensionality Diamond on `C-XPILE-BACKEND-TRAIT` (PMAT-331)
+
+**Continuing the BROADENING pivot.** PMAT-331 pushes `C-XPILE-BACKEND-TRAIT` (Layer 3) from depth-2 to depth-3, broadening depth-3 from 6 to **7 contracts**. This adds a SECOND Layer 3 contract at depth-3 (XpileFrontendTrait was the first).
+
+**The 3 Diamond categories on `C-XPILE-BACKEND-TRAIT`:**
+
+1. PMAT-225 backend_equivalence_class_diamond: equivalence relation
+2. PMAT-235 target_constant_projection_diamond: constant projection
+3. **PMAT-331 artifact_struct_extensionality_diamond** ← depth-3
+
+**Why STRUCTURE EXTENSIONALITY is genuinely a NEW category:**
+
+Mirror of PMAT-311 (BoundedSmem), PMAT-329 (OutcomeSilver), PMAT-330 (MetaHirModuleSilver) — **fourth substrate-wide demonstration** of this structural pattern. The pattern now spans **4 distinct record/subtype contracts**, establishing structure-extensionality as a recurring algebraic category.
+
+Adapted for `ArtifactSilver` (`bytes : Array UInt8`, `target : Target`):
+
+- **Field eq → record eq:** `a1.bytes = a2.bytes ∧ a1.target = a2.target → a1 = a2`
+- **Record eq → field eq** (congruence)
+- **Decidable equality:** `a1 = a2 ∨ a1 ≠ a2`
+- **Self-equality** (reflexivity)
+
+Distinct from the prior 2 on this contract:
+- PMAT-225: about EQUIVALENCE between backends
+- PMAT-235: about the `target` FIELD VALUE invariance
+- PMAT-331: about the OUTPUT RECORD TYPE's identity-from-fields property
+
+**New Lean theorem:**
+
+```lean
+theorem artifact_struct_extensionality_diamond
+    (a1 a2 : ArtifactSilver) :
+    (a1.bytes = a2.bytes ∧ a1.target = a2.target → a1 = a2)
+    ∧ (a1 = a2 → a1.bytes = a2.bytes ∧ a1.target = a2.target)
+    ∧ (a1 = a2 ∨ a1 ≠ a2)
+    ∧ (a1 = a1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2⟩; cases a1; cases a2; simp_all
+  · intro h; exact ⟨by rw [h], by rw [h]⟩
+  · by_cases h : a1 = a2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+```
+
+**Falsification surface:** an emitter that introduces phantom fields (e.g., `compiler_version_hash`) or strips fields (e.g., a memory-saving variant omitting `target` on Rust backend) would falsify property (a).
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_3_plus: 7` (was 6).
+- `substrate_diamond_depth_3_across_layers` gate **tightened to ≥ 7**.
+- Substrate Diamond totals: **70 wired Diamond theorems** across 12 contracts (was 69).
+
 ### Added — **MILESTONE: Diamond depth-4 UNIVERSAL ACROSS ALL 5 TAXONOMY LAYERS**: MetaHirModuleSilver structure-extensionality Diamond on `C-XPILE-FRONTEND-TRAIT` (PMAT-330)
 
 **Substrate milestone: depth-4 reaches every xpile taxonomy layer.** After PMAT-329 broadened depth-4 to 4 layers (L1+L2+L4+L5), only Layer 3 was missing. PMAT-330 pushes `C-XPILE-FRONTEND-TRAIT` (Layer 3) from depth-3 to depth-4, completing **depth-4 ACROSS ALL 5 LAYERS**.
