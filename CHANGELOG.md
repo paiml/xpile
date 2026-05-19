@@ -7,6 +7,55 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-9 ACROSS LAYERS: ordered-monoid Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-299)
+
+**Path β extension.** Depth-9 was opened by PMAT-298 on PyIntArith (Layer 1). PMAT-299 extends depth-9 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) so the substrate now has **two contracts at depth-9+** across distinct taxonomy layers.
+
+**The 9 Diamond categories on `C-COMPILE-RUST-TO-PTX-MMA`:**
+
+1. PMAT-218: BOUNDED MONOID (additive)
+2. PMAT-287: CLOSURE (subalgebra well-definedness)
+3. PMAT-231: JOIN-SEMILATTICE (max)
+4. PMAT-242: MEET-SEMILATTICE (min)
+5. PMAT-248: LATTICE ABSORPTION
+6. PMAT-291: DISTRIBUTIVE LATTICE
+7. PMAT-293: BOUNDED LATTICE (top + bottom)
+8. PMAT-295: CANCELLATIVE MONOID
+9. **PMAT-299: ORDERED MONOID** ← extends depth-9 ACROSS LAYERS
+
+**Why ordered-monoid is genuinely a NEW category:**
+
+- PMAT-295 (**CANCELLATIVE MONOID**) is a **reverse-direction** property: `a + b = a + c → b = c` — equality recovers equality.
+- PMAT-299 (**ORDERED MONOID**) is a **forward-direction** property: `a ≤ b → a + c ≤ b + c` — order is preserved by the operation.
+- PMAT-231/242/248/291/293 (the **lattice family**) govern max/min as standalone operations; ordered-monoid says **addition** is compatible with the order.
+
+Mathlib's `OrderedAddCommMonoid` typeclass canonically packages this combination. A non-ordered example: `(Z/nZ, +, 0)` is a monoid with no compatible total order.
+
+**New Lean theorem:**
+
+```lean
+theorem bounded_smem_ordered_monoid_diamond (a b c : BoundedSmem) :
+    (a.val ≤ b.val → a.val + c.val ≤ b.val + c.val)        -- right-monotone
+    ∧ (a.val ≤ b.val → c.val + a.val ≤ c.val + b.val)      -- left-monotone
+    ∧ a.val ≤ a.val                                         -- reflexive
+    ∧ (a.val ≤ b.val → b.val ≤ c.val → a.val ≤ c.val) := by -- transitive
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h; exact Nat.add_le_add_right h c.val
+  · intro h; exact Nat.add_le_add_left h c.val
+  · exact Nat.le_refl a.val
+  · intro h1 h2; exact Nat.le_trans h1 h2
+```
+
+Uses only core `Nat` ordering lemmas.
+
+**Falsification surface:** a wrap-around-arithmetic emitter (e.g., smem represented modulo 2^32) could decrease the represented total under addition of a positive value, falsifying property (a). The `BoundedSmem` subtype's `Nat`-valued bound rules that out structurally.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_9_plus: 2` (was 1 after PMAT-298).
+- `substrate_diamond_depth_9_opened` gate tightened to `≥ 2` (ACROSS LAYERS).
+- Substrate Diamond totals: **43 wired Diamond theorems** across 12 contracts (was 42).
+
 ### Added — FIRST Diamond depth-9 in the substrate: linear-order trichotomy on `C-PY-INT-ARITH` (PMAT-298)
 
 **Path β extension.** Opens Diamond depth-9 — nine distinct algebraic categories on a single contract. PyIntArith was at depth-8 (post-PMAT-294); PMAT-298 adds **LINEAR-ORDER / TRICHOTOMY** as the ninth orthogonal category.

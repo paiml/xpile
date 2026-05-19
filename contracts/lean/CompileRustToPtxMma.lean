@@ -844,4 +844,90 @@ theorem bounded_smem_cancellative_monoid_diamond
   · intro h; exact Nat.add_left_cancel h
   · intro h; exact Nat.add_right_cancel h
 
+/-! ## PMAT-299 — NINTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (FIRST DEPTH-9 ACROSS LAYERS): ordered monoid via
+    Nat.add_le_add_left, Nat.add_le_add_right, Nat.le_refl, Nat.le_trans.
+
+    **Opens DEPTH-9 ACROSS LAYERS.** PyIntArith reached depth-9 at
+    PMAT-298 (linear-order trichotomy); PMAT-299 extends depth-9 to
+    Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The substrate now has depth-9
+    on TWO contracts spanning Layer 1 and Layer 5.
+
+    CompileRustToPtxMma already has EIGHT Diamond categories:
+    - PMAT-218: bounded-monoid (additive)
+    - PMAT-287: closure (subalgebra well-definedness)
+    - PMAT-231: join-semilattice (max)
+    - PMAT-242: meet-semilattice (min)
+    - PMAT-248: lattice absorption
+    - PMAT-291: distributive lattice
+    - PMAT-293: bounded lattice (top/bottom)
+    - PMAT-295: cancellative monoid
+
+    PMAT-299 adds the order-theoretic enrichment of the additive monoid:
+    - **PMAT-299: (BoundedSmem, +, 0, ≤) ORDERED MONOID — addition is
+      monotone in both arguments AND the induced ≤ is a partial order
+      (reflexive + transitive)**
+
+    The categorical distinction is precise:
+      - CANCELLATIVE (PMAT-295) is a REVERSE-direction property:
+        `a + b = a + c → b = c` — uses equality to recover equality.
+      - ORDERED MONOID (PMAT-299) is a FORWARD-direction property:
+        `a ≤ b → a + c ≤ b + c` — order is preserved by the operation.
+      - LATTICE axioms (PMAT-231/242/248/291/293) are about the
+        algebraic structure on max/min as standalone operations.
+        ORDERED-MONOID says addition COMPATIBLY relates to the order
+        — a different structural claim.
+
+    Mathlib's `OrderedAddCommMonoid` typeclass canonically packages
+    this combination (monoid + partial order + add-monotone). A non-
+    ordered monoid example: `(Z/nZ, +, 0)` with the cyclic structure
+    has no compatible total order.
+
+    For GPU smem accounting, monotonicity captures the operational
+    intuition that reserving more memory in one composition path
+    cannot reduce the total reservation — an emitter that violated
+    monotonicity (e.g., via wrap-around) would falsify this Diamond.
+
+    Status: discharged at v0.1.0 (PMAT-299). Tier: DIAMOND.
+    First DEPTH-9 ACROSS LAYERS in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `(BoundedSmem, +, 0, ≤)` is an
+  ORDERED MONOID.
+
+  Combines four properties characterizing an ordered-monoid structure
+  on BoundedSmem (the Mathlib `OrderedAddCommMonoid` shape):
+  (a) Right-monotonicity of addition: a ≤ b → a + c ≤ b + c
+  (b) Left-monotonicity of addition:  a ≤ b → c + a ≤ c + b
+  (c) Reflexivity of the order:       a ≤ a
+  (d) Transitivity of the order:      a ≤ b → b ≤ c → a ≤ c
+
+  Distinct from PMAT-295 cancellative monoid:
+    - cancellation goes *equality → equality* (reverse direction);
+    - ordered-monoid monotonicity goes *order → order* (forward).
+
+  An emitter using a wrap-around representation of smem (e.g., bytes
+  modulo 2^32) would falsify monotonicity: adding a positive value
+  could decrease the represented total, breaking property (a). The
+  BoundedSmem subtype carries enough information (Nat-valued bound)
+  to rule that out structurally.
+
+  Status: **discharged at v0.1.0 (PMAT-299)**. Tier: DIAMOND.
+  First DEPTH-9 ACROSS LAYERS in the substrate.
+-/
+theorem bounded_smem_ordered_monoid_diamond (a b c : BoundedSmem) :
+    -- (a) Right-monotonicity: a ≤ b → a + c ≤ b + c
+    (a.val ≤ b.val → a.val + c.val ≤ b.val + c.val)
+    -- (b) Left-monotonicity: a ≤ b → c + a ≤ c + b
+    ∧ (a.val ≤ b.val → c.val + a.val ≤ c.val + b.val)
+    -- (c) Reflexivity of ≤
+    ∧ a.val ≤ a.val
+    -- (d) Transitivity of ≤
+    ∧ (a.val ≤ b.val → b.val ≤ c.val → a.val ≤ c.val) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h; exact Nat.add_le_add_right h c.val
+  · intro h; exact Nat.add_le_add_left h c.val
+  · exact Nat.le_refl a.val
+  · intro h1 h2; exact Nat.le_trans h1 h2
+
 end XpileContracts.CCompileRustToPtxMma

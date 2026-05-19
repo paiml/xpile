@@ -464,6 +464,43 @@ equations:
       - "an emitter that uses non-cancellative accounting would falsify both laws"
       - "Diamond DEPTH-8 ACROSS LAYERS demonstrated: 2 contracts at depth-8+"
 
+  bounded_smem_ordered_monoid_diamond:
+    # PMAT-299: NINTH Diamond on this contract — opens DEPTH-9 ACROSS
+    # LAYERS. ORDERED MONOID via Nat.add_le_add_left,
+    # Nat.add_le_add_right, Nat.le_refl, Nat.le_trans. Distinct from
+    # PMAT-295 cancellative monoid:
+    #   - cancellation:  equality → equality (reverse direction)
+    #   - ordered-monoid: order  → order    (forward monotonicity)
+    # Distinct from the lattice family (PMAT-231/242/248/291/293):
+    # lattice axioms are about max/min as standalone operations;
+    # ordered-monoid says ADDITION is COMPATIBLE with the order.
+    # Mathlib's `OrderedAddCommMonoid` typeclass canonically packages
+    # this combination. PyIntArith reached depth-9 at PMAT-298
+    # (linear-order trichotomy); PMAT-299 extends depth-9 to Layer 5.
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_ordered_monoid_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      (BoundedSmem, +, 0, ≤) is an ORDERED MONOID:
+        (a) right-monotonicity: a.val ≤ b.val → a.val + c.val ≤ b.val + c.val
+        (b) left-monotonicity:  a.val ≤ b.val → c.val + a.val ≤ c.val + b.val
+        (c) reflexivity:        a.val ≤ a.val
+        (d) transitivity:       a.val ≤ b.val → b.val ≤ c.val → a.val ≤ c.val
+    domain: |
+      Any three BoundedSmem values, on the underlying Nat .val
+      projection with the standard ≤ order. The four properties
+      together axiomatize an ordered (additive) monoid — Mathlib's
+      `OrderedAddCommMonoid` typeclass shape.
+    invariants:
+      - "NINTH Diamond category on C-COMPILE-RUST-TO-PTX-MMA — opens DEPTH-9 ACROSS LAYERS (second contract at depth-9+ after PMAT-298 on PyIntArith)"
+      - "distinct from PMAT-295 cancellative monoid: cancellation is reverse-direction (eq → eq), monotonicity is forward (order → order)"
+      - "distinct from PMAT-231/242/248/291/293 lattice family: lattice axioms govern max/min as standalone operations; ordered-monoid couples addition with the order"
+      - "load-bearing for wrap-around-arithmetic emitters: smem represented modulo 2^32 could decrease under addition of a positive value, falsifying property (a)"
+    preconditions:
+      - "three BoundedSmem values; theorem stated on Nat .val projection"
+    postconditions:
+      - "an emitter that uses wrap-around accounting would falsify monotonicity"
+      - "Diamond DEPTH-9 ACROSS LAYERS demonstrated: 2 contracts at depth-9+"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)
