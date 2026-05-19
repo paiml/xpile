@@ -263,6 +263,30 @@ equations:
       - "when true: 1-to-1 surface coverage (no test dropped silently)"
     preconditions: []
 
+  contract_struct_extensionality_diamond:
+    # PMAT-333: THIRD Diamond on this contract — BROADENS DEPTH-3
+    # from 8 to 9 contracts. Pushes XpileContractBackendTrait
+    # (Layer 3) from depth-2 to depth-3, adding a FOURTH Layer 3
+    # contract at depth-3. Sixth substrate-wide demonstration of
+    # structure-extensionality pattern.
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.contract_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    formula: |
+      Contract admits STRUCTURE EXTENSIONALITY:
+        (a) field eq → record eq
+        (b) record eq → field eq (congruence)
+        (c) decidable equality
+        (d) self-equality (reflexivity)
+    domain: |
+      Two Contract records (depends_on, references : Array ContractId).
+    invariants:
+      - "THIRD Diamond category — BROADENS DEPTH-3 from 8 to 9 contracts"
+      - "SIXTH substrate-wide demonstration of structure-extensionality pattern"
+    preconditions:
+      - "two Contract records"
+    postconditions:
+      - "Diamond depth-3 broadened: 9 contracts at depth-3+"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractBackend

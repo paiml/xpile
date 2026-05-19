@@ -7,6 +7,15 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-3 BROADENED from 8 to 9 contracts: Contract structure-extensionality Diamond on `C-XPILE-CONTRACT-BACKEND-TRAIT` (PMAT-333)
+
+**Continuing the BROADENING pivot.** PMAT-333 pushes `C-XPILE-CONTRACT-BACKEND-TRAIT` (Layer 3) from depth-2 to depth-3, broadening depth-3 from 8 to **9 contracts**. Sixth substrate-wide demonstration of structure-extensionality.
+
+**Reporter + gate:**
+- `xpile diamond --json` now reports `depth_3_plus: 9` (was 8).
+- `substrate_diamond_depth_3_across_layers` gate **tightened to ≥ 9**.
+- Substrate Diamond totals: **72 wired Diamond theorems** across 12 contracts (was 71).
+
 ### Added — Diamond depth-3 BROADENED from 7 to 8 contracts: TranspileSession structure-extensionality Diamond on `C-XPILE-CONTRACT-FRONTEND-TRAIT` (PMAT-332)
 
 **Continuing the BROADENING pivot.** PMAT-332 pushes `C-XPILE-CONTRACT-FRONTEND-TRAIT` (Layer 3) from depth-2 to depth-3, broadening depth-3 from 7 to **8 contracts**. This adds a THIRD Layer 3 contract at depth-3 (XpileFrontendTrait + XpileBackendTrait + this).

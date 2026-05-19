@@ -463,4 +463,54 @@ theorem contract_product_monoid_diamond
   · unfold compose_contract
     simp
 
+/-! ## PMAT-333 — THIRD Diamond on C-XPILE-CONTRACT-BACKEND-TRAIT
+    (Layer 3 BROADENING DEPTH-3 from 8 to 9 contracts):
+    Contract STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XPILE-CONTRACT-BACKEND-TRAIT-006).
+
+    **Broadens DEPTH-3 from 8 to 9 contracts.** Pushes
+    XpileContractBackendTrait (Layer 3) from depth-2 to depth-3,
+    adding a FOURTH Layer 3 contract at depth-3 (XpileFrontendTrait
+    + XpileBackendTrait + XpileContractFrontendTrait + this).
+
+    The 3 Diamond categories on C-XPILE-CONTRACT-BACKEND-TRAIT:
+    - PMAT-226 citation_render_monoid_diamond: monoid structure
+    - PMAT-239 contract_product_monoid_diamond: product monoid
+    - **PMAT-333: Contract STRUCTURE EXTENSIONALITY** ← depth-3
+
+    Sixth substrate-wide demonstration of structure-extensionality
+    pattern (after PMAT-311 BoundedSmem, PMAT-329 OutcomeSilver,
+    PMAT-330 MetaHirModuleSilver, PMAT-331 ArtifactSilver,
+    PMAT-332 TranspileSession).
+
+    Status: discharged at v0.1.0 (PMAT-333). Tier: DIAMOND.
+    Broadens DEPTH-3 from 8 to 9 contracts. -/
+
+/--
+  **Diamond-tier refinement theorem** — `Contract` admits
+  STRUCTURE EXTENSIONALITY (sixth substrate-wide demonstration).
+
+  Status: **discharged at v0.1.0 (PMAT-333)**. Tier: DIAMOND.
+-/
+theorem contract_struct_extensionality_diamond
+    (c1 c2 : Contract) :
+    -- (a) Field equality → record equality
+    (c1.depends_on = c2.depends_on ∧ c1.references = c2.references → c1 = c2)
+    -- (b) Record equality → field equality
+    ∧ (c1 = c2 → c1.depends_on = c2.depends_on ∧ c1.references = c2.references)
+    -- (c) Decidable equality
+    ∧ (c1 = c2 ∨ c1 ≠ c2)
+    -- (d) Self-equality (reflexivity)
+    ∧ (c1 = c1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2⟩
+    cases c1; cases c2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h]⟩
+  · by_cases h : c1 = c2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXpileContractBackendTrait
