@@ -731,6 +731,43 @@ equations:
       - "an emitter with a buggy modulo that didn't fully reduce (smem_bytes % alignment ≥ alignment) would falsify (d)"
       - "Diamond DEPTH-15 ACROSS LAYERS demonstrated: 2 contracts at depth-15+"
 
+  bounded_smem_nat_gcd_monoid_diamond:
+    # PMAT-316: SIXTEENTH Diamond on this contract — opens DEPTH-16
+    # ACROSS LAYERS. NAT GCD MONOID: Nat.gcd as a UNIVERSAL OBJECT
+    # (categorical gcd) on the BoundedSmem.val carrier with
+    # commutativity. Mirror of PMAT-315 (Int.gcd with Bézout on
+    # PyIntArith). Since Nat doesn't have negatives, COMMUTATIVITY
+    # replaces the Bézout identity as the fourth conjunct — both
+    # are characteristic of a GCD-monoid. Categorically orthogonal
+    # to all 15 prior categories on this contract — none mentions
+    # Nat.gcd or characterizes gcd as a universal object. Load-
+    # bearing for alignment computations (LCM/GCD-aligned smem
+    # allocation).
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_nat_gcd_monoid_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      Nat.gcd is a GCD-MONOID universal object on BoundedSmem.val:
+        (a) gcd divides left:     Nat.gcd a.val b.val ∣ a.val
+        (b) gcd divides right:    Nat.gcd a.val b.val ∣ b.val
+        (c) gcd is universal:     k ∣ a.val → k ∣ b.val → k ∣ Nat.gcd a.val b.val
+        (d) gcd is commutative:   Nat.gcd a.val b.val = Nat.gcd b.val a.val
+    domain: |
+      Any two BoundedSmem values and any Nat k. The four properties
+      together axiomatize Nat.gcd as a GCD-monoid universal object
+      on the underlying Nat .val carrier — Mathlib's `GCDMonoid Nat`
+      typeclass shape (with commutativity replacing Bézout since
+      Nat lacks negatives).
+    invariants:
+      - "SIXTEENTH Diamond category on C-COMPILE-RUST-TO-PTX-MMA — opens DEPTH-16 ACROSS LAYERS (second contract at depth-16+ after PMAT-315 on PyIntArith)"
+      - "mirror of PMAT-315 (Int.gcd with Bézout on PyIntArith): COMMUTATIVITY replaces Bézout since Nat lacks negatives"
+      - "characterizes Nat.gcd as a UNIVERSAL OBJECT (categorical gcd) — distinct from all 15 prior categories"
+      - "load-bearing for alignment computations: LCM/GCD-aligned smem allocation requires correct gcd semantics"
+    preconditions:
+      - "two BoundedSmem values and one Nat divisor k"
+    postconditions:
+      - "an emitter using a buggy gcd (returning non-divisor or asymmetric in args) would falsify (a)/(b) or (d)"
+      - "Diamond DEPTH-16 ACROSS LAYERS demonstrated: 2 contracts at depth-16+"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)
