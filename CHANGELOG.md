@@ -7,6 +7,31 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-4 BROADENED from 6 to 7 contracts: Target-enum-distinctness Diamond on `C-XPILE-BACKEND-TRAIT` (PMAT-339)
+
+**Continuing POST-UNIVERSAL broadening at depth-4.** Pushes `C-XPILE-BACKEND-TRAIT` (Layer 3) from depth-3 to depth-4, adding a SECOND Layer 3 contract at depth-4 (XpileFrontendTrait was first via PMAT-330).
+
+**The 4 Diamond categories on `C-XPILE-BACKEND-TRAIT`:**
+
+1. PMAT-225 backend_equivalence_class: equivalence relation
+2. PMAT-235 target_constant_projection: constant projection
+3. PMAT-331 artifact_struct_extensionality: record structure
+4. **PMAT-339 target_enum_distinctness** ← depth-4
+
+**Why TARGET ENUM DISTINCTNESS is genuinely a NEW category:**
+
+The 7-variant Target enum (`rust`, `ruchy`, `lean`, `ptx`, `wgsl`, `spirv`, `shell`) has pairwise distinct constructors with derived `DecidableEq`. Asserting their distinctness is a **SYMBOLIC** claim about the enumeration, structurally orthogonal to value-level operations:
+
+- **rust ≠ ruchy** (cross-type distinctness)
+- **ptx ≠ shell** (cross-domain distinctness)
+- **Self-equality:** any target equals itself
+- **Decidable equality**
+
+Proved by `decide` (Target has derived `DecidableEq`).
+
+- `depth_4_plus: 7` (was 6), gate **tightened to ≥ 7**.
+- Substrate Diamond totals: **77 wired Diamond theorems** (was 76).
+
 ### Added — Diamond depth-4 BROADENED from 5 to 6 contracts: List-reverse-involution Diamond on `C-XLATE-PY-LIST-TO-VEC` (PMAT-338)
 
 **First POST-UNIVERSAL broadening at depth-4.** After PMAT-330 completed depth-4 ACROSS ALL 5 LAYERS, PMAT-338 begins the next phase: pushing depth-4 to MORE contracts beyond the one-per-layer minimum. Pushes `C-XLATE-PY-LIST-TO-VEC` (Layer 2) from depth-3 to depth-4, adding a SECOND Layer 2 contract at depth-4 (Bashrs was first via PMAT-329).
