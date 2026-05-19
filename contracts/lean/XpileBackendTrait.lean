@@ -408,4 +408,83 @@ theorem target_constant_projection_diamond
   · exact target_consistency_silver b m c
   · exact target_deterministic_platinum b m c m' c'
 
+/-! ## PMAT-331 — THIRD Diamond on C-XPILE-BACKEND-TRAIT (Layer 3
+    BROADENING DEPTH-3 from 6 to 7 contracts): ArtifactSilver
+    STRUCTURE EXTENSIONALITY (XPILE-REFINE-XPILE-BACKEND-TRAIT-006).
+
+    **Broadens DEPTH-3 from 6 to 7 contracts.** Previously
+    depth-3+ was 6 contracts (PyIntArith, CompileRustToPtxMma,
+    FFI-CPYTHON-EXT, Bashrs, XlatePyList, XpileFrontendTrait).
+    PMAT-331 pushes XpileBackendTrait (Layer 3) from depth-2 to
+    depth-3, adding a SECOND Layer 3 contract at depth-3.
+
+    The 3 Diamond categories on C-XPILE-BACKEND-TRAIT:
+    - PMAT-225 backend_equivalence_class_diamond: equivalence relation
+    - PMAT-235 target_constant_projection_diamond: constant projection
+    - **PMAT-331: ArtifactSilver STRUCTURE EXTENSIONALITY** ← depth-3
+
+    The categorical distinction is sharp:
+      - PMAT-225 equivalence-class: about EQUIVALENCE between backends
+      - PMAT-235 constant-projection: about the target FIELD VALUE
+      - PMAT-331 STRUCTURE EXTENSIONALITY: about the OUTPUT RECORD
+        TYPE itself — how ArtifactSilver fields determine identity.
+
+    Mirror of PMAT-311 (BoundedSmem), PMAT-329 (OutcomeSilver),
+    PMAT-330 (MetaHirModuleSilver) — completing the fourth
+    structure-extensionality demonstration on a 4th distinct
+    record/subtype contract.
+
+    Why this is genuinely orthogonal:
+      None of the prior 2 Diamonds on XpileBackendTrait axiomatizes
+      the RECORD-STRUCTURE of ArtifactSilver. The constant-projection
+      Diamond came close but axiomatized a FIELD VALUE invariant,
+      not the structure-from-fields property.
+
+    For backend implementations, this matters: an emitter that
+    introduced phantom fields to ArtifactSilver (e.g., a
+    "compiler_version_hash") or stripped fields (e.g., memory-saving
+    variant omitting target on Rust backend) would falsify (a) —
+    equal fields must imply equal records.
+
+    Status: discharged at v0.1.0 (PMAT-331). Tier: DIAMOND.
+    Broadens DEPTH-3 from 6 to 7 contracts. -/
+
+/--
+  **Diamond-tier refinement theorem** — `ArtifactSilver` admits
+  STRUCTURE EXTENSIONALITY.
+
+  Combines four STRUCTURE-EXTENSIONALITY properties:
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality (congruence)
+  (c) Decidable equality on artifacts
+  (d) Self-equality (reflexivity)
+
+  Fourth substrate-wide demonstration of the structure-extensionality
+  pattern (after PMAT-311 BoundedSmem, PMAT-329 OutcomeSilver,
+  PMAT-330 MetaHirModuleSilver).
+
+  Status: **discharged at v0.1.0 (PMAT-331)**. Tier: DIAMOND.
+  Broadens DEPTH-3 from 6 to 7 contracts.
+-/
+theorem artifact_struct_extensionality_diamond
+    (a1 a2 : ArtifactSilver) :
+    -- (a) Field equality → record equality
+    (a1.bytes = a2.bytes ∧ a1.target = a2.target → a1 = a2)
+    -- (b) Record equality → field equality
+    ∧ (a1 = a2 → a1.bytes = a2.bytes ∧ a1.target = a2.target)
+    -- (c) Decidable equality
+    ∧ (a1 = a2 ∨ a1 ≠ a2)
+    -- (d) Self-equality (reflexivity)
+    ∧ (a1 = a1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2⟩
+    cases a1; cases a2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h]⟩
+  · by_cases h : a1 = a2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXpileBackendTrait

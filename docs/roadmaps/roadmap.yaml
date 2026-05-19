@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-331
+  github_issue: null
+  item_type: task
+  title: 'PMAT-331: Diamond depth-3 BROADENED from 6 to 7 contracts (ArtifactSilver structure extensionality on C-XPILE-BACKEND-TRAIT)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T18:00:00Z
+  updated: 2026-05-23T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Continuing the BROADENING pivot. Add artifact_struct_extensionality_diamond Lean theorem to contracts/lean/XpileBackendTrait.lean — 4 conjuncts: field eq → record eq, record eq → field eq, decidable equality, self-equality. Fourth substrate-wide demonstration of structure-extensionality pattern (after PMAT-311 BoundedSmem, PMAT-329 OutcomeSilver, PMAT-330 MetaHirModuleSilver). Wire as new equation in xpile-backend-trait-v1.yaml. Tighten substrate_diamond_depth_3_across_layers gate from ≥6 to ≥7. Pushes XpileBackendTrait (Layer 3) from depth-2 to depth-3, adding a SECOND Layer 3 contract at depth-3."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-330
   github_issue: null
   item_type: task
