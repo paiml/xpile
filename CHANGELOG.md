@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Trait-contract Runtime stratum upgrade (SECOND contract family to escape "demo fixture" status) (PMAT-269)
+
+Upgrades the trait contracts (`C-XPILE-BACKEND-TRAIT`, `C-XPILE-FRONTEND-TRAIT`, and their contract-lane counterparts) from "minimum-viable single Runtime witness" status to **property-specific Runtime invariants** verified against the LIVE `xpile_core::default_session()`. They become the SECOND contract family (after `C-PY-INT-ARITH` via PMAT-267..268) to escape the audit-design.md §4 "demo fixture" caveat.
+
+**New test file:** `crates/xpile/tests/trait_runtime_properties.rs`
+
+**Six new property-style Runtime invariants:**
+
+| Test | Trait invariant pinned |
+|------|------------------------|
+| `backend_target_ownership_is_unique_across_registered_impls` | C-XPILE-BACKEND-TRAIT :: `target_ownership` — no two registered backends declare the same `Target` variant |
+| `backend_names_are_unique_across_registered_impls` | C-XPILE-BACKEND-TRAIT :: `name_uniqueness` — no two backends share `name()` |
+| `frontend_extensions_are_disjoint_across_registered_impls` | C-XPILE-FRONTEND-TRAIT :: extension counterpart to `target_ownership` |
+| `every_backend_lower_is_deterministic_on_minimal_module` | C-XPILE-BACKEND-TRAIT :: `lower_idempotency` — for every registered backend × target, two `lower()` calls produce identical `Artifact.primary` (or identical errors) |
+| `every_backend_targets_slice_is_stable_across_calls` | `targets()` slice contents must be stable across calls (catches lazy/non-deterministic target lists) |
+| `default_session_registers_at_least_one_backend` | Vacuous-truth guard: the suite above is meaningless if the session is empty; this asserts non-emptiness |
+
+**Why this matters:**
+
+- Where `trait_determinism.rs` (PMAT-125) tests determinism via a single fixed Python fixture, this file exercises the trait invariants as *universal properties* over the live session: every registered backend, every owned target, every frontend extension. Adding a new backend or frontend will automatically extend the test coverage — no per-impl maintenance burden.
+- Closes the "demo fixture" caveat for `C-XPILE-BACKEND-TRAIT` and `C-XPILE-FRONTEND-TRAIT` (the two contracts whose invariants are session-shape properties).
+- `lower_idempotency` was previously only Sym-stratum (Kani harness PMAT-065); now also Run-stratum on every concrete impl. That's a real cross-stratum independent confirmation.
+
 ### Added — Runtime-stratum sweeps for recursion + branching + modulo (`C-PY-INT-ARITH` deepening) (PMAT-268)
 
 Extends PMAT-267's Runtime-stratum fixture pattern to three additional code paths through the xpile-rust-codegen pipeline. Each new test is a real property-style oracle vote at the Runtime stratum.

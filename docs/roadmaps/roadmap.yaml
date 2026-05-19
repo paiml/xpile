@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-269
+  github_issue: null
+  item_type: task
+  title: 'PMAT-269: Trait-contract Runtime stratum upgrade (SECOND contract family to escape demo fixture status)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T12:00:00Z
+  updated: 2026-05-22T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add crates/xpile/tests/trait_runtime_properties.rs with 6 tests exercising trait invariants over the LIVE default_session(): target_ownership (no Target collisions across backends), name_uniqueness (no name() collisions), extension_disjointness (no extension collisions across frontends), lower_idempotency (every backend determinism on a minimal module across every owned target), targets_slice_is_stable (consistent across calls), vacuous-truth guard (non-empty session). Closes audit-design.md §4 demo fixture caveat for C-XPILE-BACKEND-TRAIT and C-XPILE-FRONTEND-TRAIT — SECOND contract family to escape after C-PY-INT-ARITH (PMAT-267..268)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-268
   github_issue: null
   item_type: task
