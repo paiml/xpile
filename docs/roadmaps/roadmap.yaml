@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-325
+  github_issue: null
+  item_type: task
+  title: 'PMAT-325: FIRST Diamond depth-20 in the substrate (Int.toNat partial inverse on C-PY-INT-ARITH)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T15:00:00Z
+  updated: 2026-05-23T15:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add int_to_nat_partial_inverse_diamond Lean theorem to contracts/lean/PyIntArith.lean — 4 conjuncts: round-trip on Nat (Int.toNat_natCast), non-negative round-trip (Int.toNat_of_nonneg), negative saturates to 0 (Int.toNat_eq_zero), non-negative result (Nat.zero_le). Wire as new equation in py-int-arith-v1.yaml. Extend xpile diamond reporter with depth-20+ label + depth_20_plus aggregate. Refine depth-19 from depth-19+ to discrete depth-19. Add substrate_diamond_depth_20_opened gate test (≥1). FIRST DEPTH-20 — PyIntArith reaches 20 categories. The 20th (Int.toNat PARTIAL INVERSE) is the canonical Int → Nat partial retraction of the Nat → Int cast (PMAT-310). FIRST PARTIAL-INVERSE / SECTION-RETRACTION claim on PyIntArith. Falsification: buggy Int→Nat retraction with sentinel values falsifies (a)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-324
   github_issue: null
   item_type: task

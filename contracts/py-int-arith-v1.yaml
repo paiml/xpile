@@ -1255,6 +1255,41 @@ equations:
       - "an emitter with saturating negation that fails order-reversing at the saturation boundary would falsify (a)"
       - "Diamond DEPTH-19 opened — 1 contract at depth-19+"
 
+  int_to_nat_partial_inverse_diamond:
+    # PMAT-325: TWENTIETH Diamond on this contract — opens FIRST
+    # DEPTH-20 in the substrate. Int.toNat PARTIAL INVERSE:
+    # Int.toNat : Int → Nat is the PARTIAL retraction of
+    # Nat.cast : Nat → Int (PMAT-310). Together they give:
+    #   Nat ──cast──> Int ──toNat──> Nat
+    #       injective    partial retraction (identity on Nat-image)
+    # Categorically orthogonal to all 19 prior categories — none
+    # axiomatizes the Int → Nat partial retraction. PMAT-310 went
+    # one way (Nat embeds into Int); PMAT-325 goes the OTHER way
+    # (Int retracts to Nat partially, saturating negatives to 0).
+    # Load-bearing for Python's non-negative-only fast path.
+    lean_theorem: "XpileContracts.CPyIntArith.int_to_nat_partial_inverse_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      Int.toNat : Int → Nat is the PARTIAL INVERSE of Nat.cast:
+        (a) round-trip on Nat:       Int.toNat ((n : Int)) = n
+        (b) non-negative round-trip: 0 ≤ a → ((Int.toNat a : Int)) = a
+        (c) negative saturates:      Int.toNat a = 0 ↔ a ≤ 0
+        (d) non-negative result:     0 ≤ Int.toNat a (trivially)
+    domain: |
+      Any Int value a and Nat value n. The four properties together
+      axiomatize Int.toNat as the canonical partial-inverse
+      retraction of Nat.cast — Mathlib's standard cast / toNat lemmas.
+    invariants:
+      - "TWENTIETH Diamond category on C-PY-INT-ARITH — opens FIRST DEPTH-20 in the substrate"
+      - "FIRST PARTIAL-INVERSE / SECTION-RETRACTION claim on PyIntArith"
+      - "Companion to PMAT-310 (Nat → Int INJECTIVE embedding): PMAT-325 is the Int → Nat PARTIAL retraction direction"
+      - "load-bearing for Python's non-negative-only fast path: a buggy retraction with sentinel values would falsify (a)"
+    preconditions:
+      - "one Int value a, one Nat value n"
+    postconditions:
+      - "an emitter using a buggy Int → Nat retraction (e.g., sentinel mapping for 0) would falsify (a)"
+      - "Diamond DEPTH-20 opened — 1 contract at depth-20+"
+
 proof_obligations:
   - type: precondition
     property: operands are Python int (not int-subclass, not bool-as-int)

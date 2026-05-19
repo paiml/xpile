@@ -2822,4 +2822,95 @@ theorem int_neg_order_compat_diamond (a : Int) :
   · constructor <;> intro h <;> omega
   · constructor <;> intro h <;> omega
 
+/-! ## PMAT-325 — TWENTIETH Diamond on C-PY-INT-ARITH (FIRST
+    DEPTH-20 in the substrate): Int.toNat PARTIAL INVERSE —
+    `Int.toNat : Int → Nat` is the partial-inverse retraction of
+    `Nat.cast : Nat → Int` (XPILE-REFINE-PY-INT-ARITH-028).
+
+    **Opens DEPTH-20 in the substrate.** PyIntArith reached depth-19
+    at PMAT-322 (negation-order compatibility); PMAT-325 adds the
+    TWENTIETH orthogonal Diamond category — `Int.toNat` as the
+    PARTIAL INVERSE of the `Nat → Int` ring homomorphism (PMAT-310).
+
+    The 20 Diamond categories on C-PY-INT-ARITH:
+    - PMAT-214..322: prior 19 categories
+    - **PMAT-325: Int.toNat PARTIAL INVERSE** ← FIRST DEPTH-20
+
+    The categorical distinction is sharp:
+      - PMAT-310 NAT-CAST RING HOM: `Nat → Int` INJECTIVE
+        embedding (FIRST EXTERNAL/category-theoretic claim)
+      - PMAT-312 INT-EMOD QUOTIENT HOM: `Int → Z/nZ` SURJECTIVE
+        projection (FIRST QUOTIENT-RING claim)
+      - PMAT-325 Int.toNat PARTIAL INVERSE: `Int → Nat` PARTIAL
+        RETRACTION (saturating at 0 for negatives). This is the
+        FIRST PARTIAL/SECTION-RETRACTION claim on PyIntArith.
+
+    Together with PMAT-310, this gives:
+      Nat ──cast──> Int ──toNat──> Nat
+      ─────────────────────────────────
+        injective    partial retraction (identity on Nat-image)
+
+    `Int.toNat (Nat.cast n) = n` — the section-retraction round-
+    trip on the Nat embedding. For negatives, `toNat` saturates to
+    0 (the partial-inverse "lossy" path).
+
+    Why this is genuinely orthogonal:
+      The PARTIAL INVERSE / SECTION-RETRACTION structure is a NEW
+      category-theoretic claim. None of the prior 19 categories
+      axiomatizes the Int → Nat retraction. PMAT-310 went one way
+      (Nat embeds into Int); PMAT-325 goes the OTHER way (Int
+      retracts to Nat partially).
+
+    For Python int dispatch, this matters: an emitter that lowered
+    Python's non-negative-only fast path through `Int.toNat` must
+    preserve the round-trip property. A buggy retraction that mapped
+    `(0 : Nat)` to anything other than 0 (or failed to saturate
+    negatives to 0) would falsify (a) or (c).
+
+    Status: discharged at v0.1.0 (PMAT-325). Tier: DIAMOND.
+    FIRST DEPTH-20 in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `Int.toNat : Int → Nat` is
+  the PARTIAL INVERSE of `Nat.cast : Nat → Int`.
+
+  Combines four PARTIAL-INVERSE properties:
+  (a) Round-trip on Nat:        `Int.toNat ((n : Int)) = n`
+  (b) Non-negative round-trip:  `0 ≤ a → ((Int.toNat a : Int)) = a`
+  (c) Negative saturates to 0:  `Int.toNat a = 0 ↔ a ≤ 0`
+  (d) Non-negative result:      `(0 : Nat) ≤ Int.toNat a` (trivially)
+
+  Together these characterize `Int.toNat` as the canonical
+  partial-inverse retraction of the `Nat → Int` cast. Distinct
+  from PMAT-310 (which was the embedding direction) and PMAT-312
+  (which was a different quotient retraction Int → Z/nZ).
+
+  Uses Mathlib's `Int.toNat_natCast`, `Int.toNat_of_nonneg`,
+  `Int.toNat_eq_zero`, and `Nat.zero_le`. Standard cast / partial-
+  inverse lemmas.
+
+  An emitter that lowered Python's non-negative-only fast path
+  through a path that didn't preserve `Int.toNat (n : Int) = n`
+  (e.g., a buggy retraction that introduced sentinel values) would
+  falsify (a) — a real bug class invisible to PMAT-310 (which
+  only required the FORWARD direction).
+
+  Status: **discharged at v0.1.0 (PMAT-325)**. Tier: DIAMOND.
+  FIRST DEPTH-20 in the substrate.
+-/
+theorem int_to_nat_partial_inverse_diamond (a : Int) (n : Nat) :
+    -- (a) Round-trip on Nat
+    (Int.toNat ((n : Int)) = n)
+    -- (b) Non-negative round-trip
+    ∧ (0 ≤ a → ((Int.toNat a : Int)) = a)
+    -- (c) Negative saturates to 0
+    ∧ (Int.toNat a = 0 ↔ a ≤ 0)
+    -- (d) Non-negative result (Nat is always ≥ 0)
+    ∧ ((0 : Nat) ≤ Int.toNat a) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.toNat_natCast n
+  · exact Int.toNat_of_nonneg
+  · exact Int.toNat_eq_zero
+  · exact Nat.zero_le _
+
 end XpileContracts.CPyIntArith
