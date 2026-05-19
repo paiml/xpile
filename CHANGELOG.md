@@ -7,6 +7,28 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — `PtxBackend` now uses `MultiEmitterBackend` internally (Section 29 architecture in production) (PMAT-264)
+
+Refactors `xpile-ptx-codegen::PtxBackend` to wrap a [`MultiEmitterBackend`] rather than impl `Backend` directly. The v0.1.0 scaffold output is now driven by a `ScaffoldPtxEmitter: TargetEmitter` that plugs into the same routing layer the future `rustc_codegen_nvvm` + `aprender-gpu` quorum will use.
+
+**What changed:**
+
+- `PtxBackend` becomes a wrapper struct holding `inner: MultiEmitterBackend`. Public API unchanged for `Backend` callers.
+- Adds `PtxBackend::new()` constructor + `Default` impl (was a unit struct; now needs construction). One call site in `xpile-core` updated.
+- New private `ScaffoldPtxEmitter: TargetEmitter` produces the same placeholder text users see at v0.1.0.
+- `BackendError::MissingHardware(Target::Ptx)` still returned eagerly for inputs without `HwProfile::Ptx`.
+
+**3 new unit tests in xpile-ptx-codegen** verify the wrapper drives the same observable behavior as the previous direct impl (emit output, quorum status, hardware rejection, target advertisement).
+
+**Why this matters:**
+
+- Validates the Section 29 routing layer (PMAT-263) against production code, not just mock tests
+- When `rustc_codegen_nvvm` lights up, it slots into the `general` position via `MultiEmitterBackend::new_with_specialist`; no changes to `PtxBackend`'s public API
+- When `aprender-gpu` ships its cross-repo bridge, it slots into the `specialist` position; same isolation guarantee
+- DiffExec engine plugs into the `NotRun` branch already exercised by PMAT-263 tests
+
+Sets the precedent for `WgslBackend` / `SpirvBackend` / `BashrsBackend` to follow the same refactor pattern when their multi-emitter pairs ship.
+
 ### Added — `TargetEmitter` trait + `MultiEmitterBackend` routing layer (Section 29 routing) (PMAT-263)
 
 Direct continuation of PMAT-261/PMAT-262. Adds the routing layer where a multi-emitter backend (e.g., PTX with `rustc_codegen_nvvm` general + `aprender-gpu` specialist) composes two emitters under a `QuorumPolicy`. Concrete implementations of `rustc_codegen_nvvm` and `aprender-gpu` are still future work — this PR ships the routing scaffold + mock-emitter unit tests demonstrating the four routing cases.
