@@ -1705,4 +1705,76 @@ theorem order_distributive_lattice_diamond (a b c : Int) :
   · exact Int.max_min_distrib_left
   · exact Int.min_max_distrib_left
 
+/-! ## PMAT-294 — EIGHTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-8
+    Diamond in substrate): divisibility-preorder via Int.dvd
+    (XPILE-REFINE-PY-INT-ARITH-015).
+
+    **First DEPTH-8 Diamond in the substrate.** Opens Diamond
+    depth-8 — eight distinct algebraic categories on a single
+    contract. PyIntArith already has SEVEN Diamond categories
+    (semiring + Euclidean + shift-monoid + power-monoid +
+    bitwise-AND + abelian-group-enrichment + order-lattice);
+    PMAT-294 adds the DIVISIBILITY-PREORDER Diamond as the eighth
+    orthogonal category.
+
+    The categorical distinction is sharp: prior seven categories
+    all use BINARY OPERATIONS on Int (+, *, fdiv, shl, pow, &,
+    neg, min, max). The eighth is about a BINARY RELATION — the
+    divisibility relation `a ∣ b`. This shifts abstraction layer
+    from operations to relations:
+
+    - PMAT-214: SEMIRING (+, *) — operations
+    - PMAT-228: EUCLIDEAN DOMAIN (fdiv, fmod) — operations
+    - PMAT-241: SHIFT-MONOID — operations
+    - PMAT-247: POWER-MONOID — operations
+    - PMAT-286: BITWISE-AND-MONOID — operations
+    - PMAT-290: ABELIAN-GROUP-ENRICHMENT — operations
+    - PMAT-292: ORDER-DISTRIBUTIVE-LATTICE — operations (min/max)
+    - **PMAT-294: (Int, ∣) DIVISIBILITY PREORDER — RELATION**
+
+    Divisibility is a preorder (reflexive + transitive) but NOT a
+    partial order on Int (antisymmetry fails: 2 ∣ -2 and -2 ∣ 2
+    but 2 ≠ -2). The Diamond captures the preorder structure plus
+    the universal absorbers (1 and 0).
+
+    Status: discharged at v0.1.0 (PMAT-294). Tier: DIAMOND.
+    First DEPTH-8 Diamond in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `(Int, ∣)` is a PREORDER
+  with universal absorbers.
+
+  Combines four properties characterizing the divisibility
+  preorder on Int:
+  (a) Reflexivity: a ∣ a (every Int divides itself)
+  (b) Transitivity: a ∣ b → b ∣ c → a ∣ c
+  (c) Universal divisor 1: 1 ∣ a (one divides every Int)
+  (d) Universal multiple 0: a ∣ 0 (every Int divides zero)
+
+  Proof uses Mathlib's Int.dvd_refl, dvd_trans, Int.one_dvd,
+  Int.dvd_zero — all standard preorder lemmas.
+
+  The Diamond category is "DIVISIBILITY PREORDER ON Int" —
+  genuinely orthogonal to the prior seven because it's about a
+  binary RELATION (`a ∣ b`), not a binary OPERATION. The shift in
+  abstraction layer is what makes this categorically distinct.
+
+  Status: **discharged at v0.1.0 (PMAT-294)**. Tier: DIAMOND.
+  First DEPTH-8 Diamond in the substrate.
+-/
+theorem divisibility_preorder_diamond (a b c : Int) :
+    -- (a) Reflexivity: a ∣ a
+    a ∣ a
+    -- (b) Transitivity (placeholder; uses dvd_trans inline)
+    ∧ (a ∣ b → b ∣ c → a ∣ c)
+    -- (c) Universal divisor 1: 1 ∣ a
+    ∧ 1 ∣ a
+    -- (d) Universal multiple 0: a ∣ 0
+    ∧ a ∣ 0 := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.dvd_refl a
+  · intro h1 h2; exact dvd_trans h1 h2
+  · exact Int.one_dvd a
+  · exact Int.dvd_zero a
+
 end XpileContracts.CPyIntArith

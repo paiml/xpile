@@ -170,3 +170,17 @@ fn substrate_diamond_depth_7_opened() {
          expected ≥2 contracts at depth-7+ (Layer 1 + Layer 5), got {depth_7_plus}.\n{json}"
     );
 }
+
+#[test]
+fn substrate_diamond_depth_8_opened() {
+    let json = run_diamond_json();
+    let depth_8_plus = read_aggregate_field(&json, "depth_8_plus");
+    // PMAT-294 opened depth-8 on C-PY-INT-ARITH: divisibility-preorder Diamond
+    // — FIRST category to shift abstraction layer from binary operations to a
+    // binary relation.
+    assert!(
+        depth_8_plus >= 1,
+        "Diamond depth-8 milestone (PMAT-294): expected ≥1 contract at depth-8+, \
+         got {depth_8_plus}.\n{json}"
+    );
+}

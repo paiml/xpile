@@ -7,6 +7,72 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-8 in the substrate: divisibility-preorder on `C-PY-INT-ARITH` (PMAT-294)
+
+**Path β extension.** Opens Diamond depth-8 — eight distinct algebraic categories on a single contract. PyIntArith was at depth-7 (post-PMAT-292); PMAT-294 adds **DIVISIBILITY-PREORDER** as the eighth orthogonal category.
+
+**The 8 Diamond categories on `C-PY-INT-ARITH`:**
+
+1. PMAT-214: SEMIRING (+, *)
+2. PMAT-228: EUCLIDEAN DOMAIN (fdiv, fmod)
+3. PMAT-241: SHIFT-MONOID (shl)
+4. PMAT-247: POWER-MONOID (pow)
+5. PMAT-286: BITWISE-AND-MONOID (&)
+6. PMAT-290: ABELIAN-GROUP-ENRICHMENT (neg)
+7. PMAT-292: ORDER-DISTRIBUTIVE-LATTICE (min, max)
+8. **PMAT-294: DIVISIBILITY-PREORDER (∣)** ← FIRST DEPTH-8
+
+## Why divisibility is sharply orthogonal to the prior 7
+
+The prior seven categories all use **binary OPERATIONS** on Int (+, *, fdiv, shl, pow, &, neg, min, max). The eighth shifts abstraction layer to a **binary RELATION** (`a ∣ b`).
+
+This is a real categorical shift — from operations (functions Int × Int → Int) to relations (predicates Int × Int → Prop). The divisibility preorder captures:
+
+- **Reflexivity**: `a ∣ a`
+- **Transitivity**: `a ∣ b → b ∣ c → a ∣ c`
+- **Universal divisor**: `1 ∣ a` (one divides everything)
+- **Universal multiple**: `a ∣ 0` (everything divides zero)
+
+Divisibility on Int is a **preorder**, NOT a partial order (antisymmetry fails: `2 ∣ -2 ∧ -2 ∣ 2` but `2 ≠ -2`). This is a meaningful distinction — the relation is finer than equality but coarser than a partial order.
+
+## New Lean theorem
+
+```lean
+theorem divisibility_preorder_diamond (a b c : Int) :
+    a ∣ a
+    ∧ (a ∣ b → b ∣ c → a ∣ c)
+    ∧ 1 ∣ a
+    ∧ a ∣ 0 := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.dvd_refl a
+  · intro h1 h2; exact dvd_trans h1 h2
+  · exact Int.one_dvd a
+  · exact Int.dvd_zero a
+```
+
+Uses only Mathlib's `Int.dvd_refl`, `dvd_trans`, `Int.one_dvd`, `Int.dvd_zero` — no new proof engineering.
+
+## Reporter + gate updates
+
+- `xpile diamond` depth label: `depth-7` (was the cap) + new `depth-8+`
+- New aggregate `depth_8_plus`
+- New gate test `substrate_diamond_depth_8_opened` asserts ≥1 at depth-8+
+- `diamond_row_depth_label` unit test updated
+
+## Path β extension recap
+
+| PMAT | Milestone |
+|------|-----------|
+| 286 | FIRST depth-5 (PyIntArith) |
+| 287 | depth-5 ACROSS LAYERS |
+| 288 | depth-4 ACROSS LAYERS |
+| 289 | depth-3 broadened |
+| 290 | FIRST depth-6 (PyIntArith) |
+| 291 | depth-6 ACROSS LAYERS |
+| 292 | FIRST depth-7 (PyIntArith) |
+| 293 | depth-7 ACROSS LAYERS |
+| **294** | **FIRST depth-8 (PyIntArith → 8 categories)** |
+
 ### Added — Diamond depth-7 ACROSS LAYERS: `C-COMPILE-RUST-TO-PTX-MMA` reaches depth-7 via bounded lattice with top+bottom (PMAT-293)
 
 **Path β extension.** Pushes `C-COMPILE-RUST-TO-PTX-MMA` (Layer 5) from depth-6 to depth-7, opening **DEPTH-7 ACROSS LAYERS** alongside PyIntArith (Layer 1, PMAT-292).

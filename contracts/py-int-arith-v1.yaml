@@ -640,6 +640,39 @@ equations:
       - "an emitter that breaks monotonicity of min/max (e.g., SIMD min that's NOT order-preserving on signed integers) would falsify (c)/(d)"
       - "Diamond DEPTH-7 demonstrated: seven distinct algebraic categories on PyIntArith — opens depth-7 dimension"
 
+  divisibility_preorder_diamond:
+    # PMAT-294 / XPILE-REFINE-PY-INT-ARITH-015: EIGHTH Diamond on
+    # this contract — FIRST DEPTH-8 Diamond in substrate. Opens
+    # Diamond depth-8. The DIVISIBILITY-PREORDER Diamond captures
+    # the (Int, ∣) preorder structure — genuinely orthogonal to the
+    # prior 7 categories because they all use binary OPERATIONS on
+    # Int (+, *, fdiv, shl, pow, &, neg, min, max); this one is
+    # about a binary RELATION (a ∣ b). The shift in abstraction
+    # layer from operations to relations is what makes this
+    # categorically distinct.
+    lean_theorem: "XpileContracts.CPyIntArith.divisibility_preorder_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      (Int, ∣) is a PREORDER with universal absorbers:
+        (a) reflexivity: a ∣ a
+        (b) transitivity: a ∣ b → b ∣ c → a ∣ c
+        (c) universal divisor 1: 1 ∣ a
+        (d) universal multiple 0: a ∣ 0
+    domain: |
+      Any Int operands a, b, c. The Diamond captures the
+      divisibility preorder as a relational (not operational)
+      structure orthogonal to all seven prior algebraic categories.
+    invariants:
+      - "FIRST DEPTH-8 Diamond in the substrate — eight orthogonal algebraic categories on PyIntArith"
+      - "distinct from all seven prior categories: shifts abstraction layer from binary OPERATIONS (+, *, fdiv, shl, pow, &, neg, min, max) to a binary RELATION (∣)"
+      - "captures the divisibility STRUCTURE — a preorder, NOT a partial order (antisymmetry fails on Int up to sign)"
+      - "universal absorbers (1 divides everything, everything divides 0) are the preorder's structural boundary elements"
+    preconditions:
+      - "Int.dvd is well-defined (Mathlib's Int instance)"
+    postconditions:
+      - "an emitter that breaks reflexivity (e.g., a self-divisibility test that returns false for 0) would falsify (a)"
+      - "Diamond DEPTH-8 demonstrated: eight distinct algebraic categories on PyIntArith — opens depth-8 dimension"
+
   bitwise_and_signed_semantics:
     formula: |
       python_int_and(a, b) == rust_i64::bitand(a, b)  WHEN  both_fit_i64(a, b)
