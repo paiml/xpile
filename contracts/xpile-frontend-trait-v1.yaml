@@ -254,6 +254,41 @@ equations:
       - "an emitter adding non-determinism (random module reordering, time-dependent metadata) would falsify (c) and (d)"
       - "UNIVERSAL Diamond depth-3 across all 5 layers: substrate now has depth-3 Diamonds on Layer 1, 2, 3, 4, AND 5"
 
+  metahir_module_struct_extensionality_diamond:
+    # PMAT-330: FOURTH Diamond on this contract — COMPLETES DEPTH-4
+    # ACROSS ALL 5 TAXONOMY LAYERS. After PMAT-329 broadened depth-4
+    # to 4 layers (L1+L2+L4+L5), only Layer 3 was missing. PMAT-330
+    # pushes XpileFrontendTrait (Layer 3) from depth-3 to depth-4,
+    # making depth-4 ACROSS LAYERS reach EVERY xpile taxonomy layer.
+    # MetaHirModuleSilver STRUCTURE EXTENSIONALITY: the record type
+    # is field-extensional with decidable equality. Mirror of
+    # PMAT-311 (BoundedSmem subtype) and PMAT-329 (OutcomeSilver
+    # record) — this "record-structure extensionality" pattern is
+    # now a recurring substrate-wide theme on 3 distinct contracts.
+    lean_theorem: "XpileContracts.CXpileFrontendTrait.metahir_module_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XpileFrontendTrait.lean"
+    formula: |
+      MetaHirModuleSilver admits STRUCTURE EXTENSIONALITY:
+        (a) field eq → record eq
+        (b) record eq → field eq (congruence)
+        (c) decidable equality
+        (d) self-equality (reflexivity)
+    domain: |
+      Two MetaHirModuleSilver records (bytes : Array UInt8,
+      source_lang : SourceLang). The four properties together
+      axiomatize the record-type structure: field equality
+      determines record equality, with decidable equality.
+    invariants:
+      - "FOURTH Diamond category on C-XPILE-FRONTEND-TRAIT — COMPLETES DEPTH-4 ACROSS ALL 5 TAXONOMY LAYERS (L1+L2+L3+L4+L5)"
+      - "RECORD-STRUCTURE / SUBTYPE-LIKE claim, mirror of PMAT-311 (BoundedSmem) and PMAT-329 (OutcomeSilver)"
+      - "distinct from the prior 3 Diamonds (equivalence, projection, function axioms) — captures the OUTPUT RECORD TYPE structure"
+      - "completes a recurring substrate-wide theme: structure-extensionality demonstrated on 3 distinct record/subtype contracts"
+    preconditions:
+      - "two MetaHirModuleSilver records (with derived DecidableEq instance)"
+    postconditions:
+      - "an emitter introducing a phantom field (e.g., cached_ast_hash) or stripping fields would falsify (a)"
+      - "Diamond depth-4 ACROSS ALL 5 TAXONOMY LAYERS demonstrated: 5 contracts on 5 distinct layers"
+
   ffi_boundaries_are_outgoing_only:
     formula: |
       forall b in module.ffi_boundaries: b.from_lang == module.source_lang
