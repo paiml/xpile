@@ -1026,6 +1026,7 @@ name = "xpile-backend"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "thiserror 1.0.69",
  "xpile-contracts",
  "xpile-meta-hir",
