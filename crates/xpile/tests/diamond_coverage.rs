@@ -354,12 +354,12 @@ fn substrate_diamond_depth_19_opened() {
 fn substrate_diamond_depth_20_opened() {
     let json = run_diamond_json();
     let depth_20_plus = read_aggregate_field(&json, "depth_20_plus");
-    // PMAT-325 opened depth-20 on C-PY-INT-ARITH: Int.toNat PARTIAL INVERSE
-    // (canonical Int → Nat partial retraction of the Nat → Int cast).
-    // FIRST PARTIAL-INVERSE / SECTION-RETRACTION claim on PyIntArith.
+    // PMAT-325 opened depth-20 on C-PY-INT-ARITH (Layer 1): Int.toNat partial inverse.
+    // PMAT-326 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): Nat power monotonicity.
+    // Gate now asserts depth-20 ACROSS LAYERS (≥2 contracts at depth-20+).
     assert!(
-        depth_20_plus >= 1,
-        "Diamond depth-20 milestone (PMAT-325): expected ≥1 contract at depth-20+, \
-         got {depth_20_plus}.\n{json}"
+        depth_20_plus >= 2,
+        "Diamond depth-20 ACROSS LAYERS milestone (PMAT-325, PMAT-326): \
+         expected ≥2 contracts at depth-20+ (Layer 1 + Layer 5), got {depth_20_plus}.\n{json}"
     );
 }

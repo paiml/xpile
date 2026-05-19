@@ -874,6 +874,42 @@ equations:
       - "an emitter lowering remaining-smem via signed subtraction would falsify (a) when over-reserving (result must saturate at 0)"
       - "Diamond DEPTH-19 ACROSS LAYERS demonstrated: 2 contracts at depth-19+"
 
+  bounded_smem_nat_pow_monotone_diamond:
+    # PMAT-326: TWENTIETH Diamond on this contract — opens
+    # DEPTH-20 ACROSS LAYERS. NAT POWER-MONOTONICITY: Nat.pow is
+    # monotone in BOTH base and exponent arguments on
+    # BoundedSmem.val. Distinct from PMAT-318 NAT POWER-MONOID
+    # (algebraic pow_zero/succ/add axioms) — PMAT-326 captures
+    # the ORDER-PRESERVING behavior of the same operation.
+    # Together they give the full structured behavior of Nat.pow:
+    # algebraic AND order-preserving. Load-bearing for tile-based
+    # parallel kernel smem aggregation: tile_count^k must be
+    # monotone in tile_count to ensure increasing tile_count
+    # never decreases total bytes.
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_nat_pow_monotone_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      Nat.pow is MONOTONE in both arguments on BoundedSmem.val:
+        (a) base monotone:           a ≤ b → a^n ≤ b^n
+        (b) exponent monotone:       1 ≤ a → m ≤ n → a^m ≤ a^n
+        (c) preserves 1-or-more:     1 ≤ a → 1 ≤ a^n
+        (d) zero base positive exp:  0^(n+1) = 0
+    domain: |
+      Two BoundedSmem values and two Nat exponents. The four
+      properties together capture the order-preservation of
+      Nat.pow — Mathlib's standard pow_le_pow_left /
+      pow_le_pow_right lemmas.
+    invariants:
+      - "TWENTIETH Diamond category on C-COMPILE-RUST-TO-PTX-MMA — opens DEPTH-20 ACROSS LAYERS (second contract at depth-20+ after PMAT-325 on PyIntArith)"
+      - "distinct from PMAT-318 Nat power-monoid (algebraic axioms) — PMAT-326 captures ORDER-PRESERVATION of pow"
+      - "together with PMAT-318, fully characterizes Nat.pow behavior (algebraic + order-preserving)"
+      - "load-bearing for tile-based parallel kernel smem aggregation: tile_count^k monotone in tile_count"
+    preconditions:
+      - "two BoundedSmem values and two Nat exponents"
+    postconditions:
+      - "an emitter using non-monotone pow (e.g., overflow-prone right-associated mult producing wrong sign) would falsify (a)"
+      - "Diamond DEPTH-20 ACROSS LAYERS demonstrated: 2 contracts at depth-20+"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)
