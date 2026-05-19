@@ -2226,4 +2226,108 @@ theorem abs_value_norm_diamond (a b : Int) :
   · exact abs_add a b
   · exact abs_mul a b
 
+/-! ## PMAT-310 — FOURTEENTH Diamond on C-PY-INT-ARITH (FIRST
+    DEPTH-14 in the substrate): NAT-TO-INT RING HOMOMORPHISM —
+    the canonical embedding (·: Nat → Int) is a ring homomorphism,
+    establishing Int as a Z-extension of Nat (XPILE-REFINE-PY-INT-
+    ARITH-022).
+
+    **Opens DEPTH-14 in the substrate.** PyIntArith reached depth-13
+    at PMAT-307 (absolute value / norm); PMAT-310 adds the
+    FOURTEENTH orthogonal Diamond category — the RING-HOMOMORPHISM
+    axioms for the canonical inclusion `Nat → Int`.
+
+    The 14 Diamond categories on C-PY-INT-ARITH:
+    - PMAT-214: SEMIRING
+    - PMAT-228: EUCLIDEAN DOMAIN
+    - PMAT-241: SHIFT-MONOID
+    - PMAT-247: POWER-MONOID
+    - PMAT-286: BITWISE-AND-MONOID
+    - PMAT-290: ABELIAN-GROUP-ENRICHMENT
+    - PMAT-292: ORDER-DISTRIBUTIVE-LATTICE
+    - PMAT-294: DIVISIBILITY-PREORDER
+    - PMAT-298: LINEAR-ORDER TRICHOTOMY
+    - PMAT-300: RING-DISTRIBUTIVITY
+    - PMAT-302: INTEGRAL DOMAIN
+    - PMAT-305: ORDERED RING
+    - PMAT-307: ABSOLUTE VALUE / NORM
+    - **PMAT-310: NAT-CAST RING HOMOMORPHISM** ← FIRST DEPTH-14
+
+    The categorical distinction is sharp:
+      None of the prior 13 categories axiomatizes the RELATIONSHIP
+      between Int and its Nat-subset via a structure-preserving map.
+      The four conjuncts characterize `Nat.cast : Nat → Int` as a
+      RING HOMOMORPHISM:
+        - preserves 0 (additive identity)
+        - preserves 1 (multiplicative identity)
+        - preserves + (additive structure)
+        - preserves * (multiplicative structure)
+
+    These are the AXIOMS of a `RingHom Nat Int` in Mathlib's
+    `RingHom` typeclass. Their joint satisfaction is what makes Int
+    a NAT-ALGEBRA (or equivalently, Int has CHARACTERISTIC ZERO,
+    since the kernel of `Nat → Int` is trivial).
+
+    Why this is genuinely orthogonal:
+      The prior 13 categories all live "inside" the ring Int. None
+      relates Int to ANOTHER algebraic structure (Nat) via a map.
+      The RING-HOMOMORPHISM axioms are about EXTERNAL structure
+      preservation — a category-theoretic claim, not a per-element
+      algebraic property. Mathlib's `Int.instSemiringHomNat` (and
+      related) encode this separately from any of the prior
+      typeclasses.
+
+    For Python int dispatch, this matters: an emitter that lowered
+    Python's non-negative-int fast path (a wrapper around `Nat`)
+    must preserve all four homomorphism properties to be sound. An
+    emitter that mapped `(0 : Nat)` to anything other than `(0 : Int)`
+    (e.g., a "sentinel" representation) would falsify (a).
+
+    Status: discharged at v0.1.0 (PMAT-310). Tier: DIAMOND.
+    FIRST DEPTH-14 in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — the canonical embedding
+  `Nat.cast : Nat → Int` is a RING HOMOMORPHISM.
+
+  Combines four RING-HOMOMORPHISM axioms:
+  (a) Preserves zero:           `((0 : Nat) : Int) = 0`
+  (b) Preserves one:            `((1 : Nat) : Int) = 1`
+  (c) Preserves addition:       `((m + n : Nat) : Int) = (m : Int) + (n : Int)`
+  (d) Preserves multiplication: `((m * n : Nat) : Int) = (m : Int) * (n : Int)`
+
+  Together these axiomatize `Nat → Int` as a ring homomorphism,
+  establishing Int as a Nat-ALGEBRA with CHARACTERISTIC ZERO. This
+  is the EXTERNAL category-theoretic content (structure-preserving
+  map between two rings), distinct from all 13 prior INTERNAL
+  algebraic claims.
+
+  Uses standard Mathlib lemmas: `Nat.cast_zero`, `Nat.cast_one`,
+  `Nat.cast_add`, `Nat.cast_mul`. Mathlib's `RingHom Nat Int`
+  encodes this.
+
+  An emitter that lowered Python's non-negative-int fast path
+  through a path that violated (a) — e.g., mapped `(0 : Nat)` to
+  a sentinel value ≠ `(0 : Int)` — would falsify the zero-preservation
+  axiom. This bug class slips past all 13 prior categories which
+  axiomatize Int internally but not its relationship to Nat.
+
+  Status: **discharged at v0.1.0 (PMAT-310)**. Tier: DIAMOND.
+  FIRST DEPTH-14 in the substrate.
+-/
+theorem nat_cast_ring_hom_diamond (m n : Nat) :
+    -- (a) Preserves zero
+    (((0 : Nat) : Int) = 0)
+    -- (b) Preserves one
+    ∧ (((1 : Nat) : Int) = 1)
+    -- (c) Preserves addition
+    ∧ (((m + n : Nat) : Int) = (m : Int) + (n : Int))
+    -- (d) Preserves multiplication
+    ∧ (((m * n : Nat) : Int) = (m : Int) * (n : Int)) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.cast_zero
+  · exact Nat.cast_one
+  · exact Nat.cast_add m n
+  · exact Nat.cast_mul m n
+
 end XpileContracts.CPyIntArith

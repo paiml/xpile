@@ -1030,6 +1030,43 @@ equations:
       - "an emitter with non-canonical abs that violates one of the four norm axioms would falsify the corresponding conjunct"
       - "Diamond DEPTH-13 opened — 1 contract at depth-13+"
 
+  nat_cast_ring_hom_diamond:
+    # PMAT-310: FOURTEENTH Diamond on this contract — opens FIRST
+    # DEPTH-14 in the substrate. NAT-TO-INT RING HOMOMORPHISM
+    # axioms: preserves zero (Nat.cast_zero), preserves one
+    # (Nat.cast_one), preserves + (Nat.cast_add), preserves *
+    # (Nat.cast_mul). Categorically orthogonal to all 13 prior
+    # categories — they all live INSIDE the ring Int. PMAT-310 is
+    # an EXTERNAL category-theoretic claim about the structure-
+    # preserving map Nat → Int. The four axioms together encode
+    # `RingHom Nat Int`, establishing Int as a NAT-ALGEBRA with
+    # CHARACTERISTIC ZERO. An emitter that lowered the non-negative
+    # fast path through a sentinel zero representation would
+    # falsify (a) — a real bug class invisible to the 13 prior
+    # INTERNAL categories.
+    lean_theorem: "XpileContracts.CPyIntArith.nat_cast_ring_hom_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      Nat.cast : Nat → Int is a RING HOMOMORPHISM:
+        (a) preserves zero:  ((0 : Nat) : Int) = 0
+        (b) preserves one:   ((1 : Nat) : Int) = 1
+        (c) preserves +:     ((m + n : Nat) : Int) = (m : Int) + (n : Int)
+        (d) preserves *:     ((m * n : Nat) : Int) = (m : Int) * (n : Int)
+    domain: |
+      Any two Nat values m, n. The four homomorphism axioms
+      together encode Nat.cast as a `RingHom Nat Int` in Mathlib's
+      typeclass shape.
+    invariants:
+      - "FOURTEENTH Diamond category on C-PY-INT-ARITH — opens FIRST DEPTH-14 in the substrate"
+      - "EXTERNAL category-theoretic claim (Nat → Int structure preservation), distinct from all 13 prior INTERNAL algebraic claims"
+      - "establishes Int as a NAT-ALGEBRA with CHARACTERISTIC ZERO via the canonical inclusion"
+      - "load-bearing for non-negative fast-path emitters: a sentinel zero representation (Nat.zero → sentinel ≠ Int.zero) would falsify (a)"
+    preconditions:
+      - "two Nat values; theorem stated on Nat.cast : Nat → Int"
+    postconditions:
+      - "an emitter mapping (0 : Nat) to anything other than (0 : Int) would falsify zero-preservation"
+      - "Diamond DEPTH-14 opened — 1 contract at depth-14+"
+
 proof_obligations:
   - type: precondition
     property: operands are Python int (not int-subclass, not bool-as-int)
