@@ -7,6 +7,38 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Spec §28 + diamond-taxonomy.md sync to depth-3 UNIVERSAL + depth-21 substrate reality (PMAT-337)
+
+**Massive spec catch-up** after 12 PRs of unsynced state (PMAT-325..336). Captures both the **Path β depth grind** (depth-20/21) and the **broadening pivot** (depth-3 UNIVERSAL, depth-4 ALL 5 LAYERS, depth-5 ACROSS 3 LAYERS), plus the substrate-wide structure-extensionality pattern.
+
+**`docs/specifications/xpile-spec.md` §28:**
+
+- Substrate total: 63 → **75 wired Diamond equations**
+- Category families: 22+ → **25+**
+- Added Path β extension recap section describing the depth grind (PMAT-298..327) and broadening pivot (PMAT-328..336).
+- Coverage state table extended:
+  - depth-3 row reclassified from "broadened" to **UNIVERSAL** (12/12, post-PMAT-336)
+  - depth-4 row reclassified from "across layers" to **ALL 5 TAXONOMY LAYERS** (5/12, post-PMAT-330)
+  - depth-5 row updated to 3 contracts across 3 layers (post-PMAT-328)
+  - Added depth-20 and depth-21 rows
+- `C-PY-INT-ARITH` listing: 19 → **21 categories** (added PMAT-325 Int.toNat partial inverse, PMAT-327 Nat-cast order embedding)
+- `C-COMPILE-RUST-TO-PTX-MMA` listing: 19 → **20 categories** (added PMAT-326 Nat power monotonicity)
+- Depth labels: `depth-18 / depth-19+` → `depth-20 / depth-21+`
+- CI gate count: 20 → **22 integration tests**
+
+**`docs/specifications/sub/diamond-taxonomy.md`:**
+
+- Coverage milestones rewritten:
+  - depth-3 reclassified to UNIVERSAL
+  - depth-4 reclassified to ALL 5 TAXONOMY LAYERS
+  - depth-5 updated to 3 contracts/3 layers
+  - Added depth-20 + depth-21 rows
+- Substrate total: 63 → **75**
+- **New top-level section: "Structure-extensionality pattern (substrate-wide)"** documenting the 9-contract recurrence (PMAT-311 + PMAT-329..336) that drove the depth-3 UNIVERSAL milestone
+- CI enforcement clause extended with depth-20/21 invariants + UNIVERSAL milestones
+
+No code changes — pure documentation alignment. Mirrors PMAT-296 / PMAT-297 / PMAT-304 / PMAT-309 / PMAT-314 / PMAT-319 / PMAT-324 sync pattern.
+
 ### Added — **MILESTONE: Diamond depth-3 UNIVERSAL ACROSS ALL 12 CONTRACTS**: RustFnSilver structure-extensionality Diamond on `C-XLATE-RUST-FN-TO-LEAN-THM` (PMAT-336)
 
 **SUBSTRATE MILESTONE: depth-3 UNIVERSAL achieved.** After 5 PRs of broadening (PMAT-331..335), only one contract remained at depth-2. PMAT-336 pushes `C-XLATE-RUST-FN-TO-LEAN-THM` (Layer 5) from depth-2 to depth-3, **completing depth-3 UNIVERSAL across ALL 12 contracts**.
