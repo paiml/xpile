@@ -599,6 +599,39 @@ equations:
     postconditions:
       - "Diamond depth-4 broadened: 10 contracts at depth-4+"
 
+  equation_formula_ascii_length_nat_diamond:
+    # PMAT-350: FIFTH Diamond on this contract — BROADENS DEPTH-5
+    # from 7 to 8 contracts. Pushes NotationLatexMathToEquation
+    # (Layer 5) from depth-4 to depth-5, adding a SECOND Layer 5
+    # contract at depth-5 (CompileRustToPtxMma was first via
+    # PMAT-287). EQUATION-FORMULA ASCII LENGTH NAT STRUCTURE: the
+    # ascii_normalised String.length satisfies non-negativity,
+    # empty-base, and field-replacement invariants. Second
+    # substrate-wide demonstration of the String.length Nat-structure
+    # template (after PMAT-346 OutcomeSilver), complementing the
+    # Array.size template family (PMAT-340/341/343/344/348).
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.equation_formula_ascii_length_nat_diamond"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      EquationFormulaSilver.ascii_normalised String.length structure:
+        (a) ascii_normalised.length >= 0 (trivially for Nat)
+        (b) empty ascii_normalised has length-0
+        (c) field-replacement preserves length
+        (d) kind field is independent (length unchanged by kind swap)
+    domain: |
+      Any EquationFormulaSilver value. The four properties together
+      axiomatize the ascii_normalised field's String.length as a
+      well-behaved natural-number measure.
+    invariants:
+      - "FIFTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — BROADENS DEPTH-5 from 7 to 8 contracts"
+      - "STRING.LENGTH NAT STRUCTURE — distinct from PMAT-219/234/334/342 categories"
+      - "second substrate-wide demonstration of the String.length Nat-structure pattern"
+    preconditions:
+      - "EquationFormulaSilver record with kind : LatexDisplayKind and ascii_normalised : String"
+    postconditions:
+      - "an emitter that misreported ascii_normalised.length would falsify the size structure"
+      - "Diamond depth-5 broadened: 8 contracts at depth-5+ (2 Layer 5 contracts at depth-5)"
+
 proof_obligations:
   - type: postcondition
     property: math-mode round-trips through render() losslessly

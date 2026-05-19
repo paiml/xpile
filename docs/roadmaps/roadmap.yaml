@@ -2,6 +2,15 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-350
+  github_issue: null
+  item_type: task
+  title: 'PMAT-350: Diamond depth-5 BROADENED from 7 to 8 contracts (EquationFormula ASCII length on C-NOTATION-LATEX-MATH-TO-EQUATION)'
+  status: planned
+  priority: medium
+  created: 2026-05-20T02:30:00Z
+  acceptance_criteria:
+  - "Post-PMAT-349 broadening: add equation_formula_ascii_length_nat_diamond to Notation. Pushes Layer 5 contract from depth-4 to depth-5, making it the 2nd Layer 5 contract at depth-5 (CompileRustToPtxMma was first). Second substrate-wide String.length Nat-structure demonstration. Tighten depth-5 gate from ≥7 to ≥8."
 - id: PMAT-349
   github_issue: null
   item_type: task
