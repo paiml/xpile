@@ -1006,6 +1006,9 @@ dependencies = [
  "anyhow",
  "clap",
  "xpile-backend",
+ "xpile-contract-backend",
+ "xpile-contract-frontend",
+ "xpile-contracts",
  "xpile-core",
  "xpile-meta-hir",
 ]
