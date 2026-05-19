@@ -7,6 +7,33 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-8 ACROSS LAYERS: `C-COMPILE-RUST-TO-PTX-MMA` reaches depth-8 via cancellative monoid (PMAT-295)
+
+**Path β extension.** Pushes `C-COMPILE-RUST-TO-PTX-MMA` (Layer 5) from depth-7 to depth-8, opening **DEPTH-8 ACROSS LAYERS** alongside PyIntArith (Layer 1, PMAT-294).
+
+**The 8 Diamond categories on `C-COMPILE-RUST-TO-PTX-MMA`:**
+
+1. PMAT-218: bounded-monoid (additive)
+2. PMAT-287: closure (subalgebra well-definedness)
+3. PMAT-231: join-semilattice
+4. PMAT-242: meet-semilattice
+5. PMAT-248: lattice absorption
+6. PMAT-291: distributive lattice
+7. PMAT-293: bounded lattice (top + bottom)
+8. **PMAT-295: cancellative monoid** ← FIRST DEPTH-8 ACROSS LAYERS
+
+**Why cancellative monoid is categorically distinct:**
+
+PMAT-218 monoid axioms prove identity + associativity. PMAT-295 adds **cancellation** — `a + b = a + c → b = c`. This is a strictly stronger structural property. **Not all monoids are cancellative** — `(Nat ∪ {∞}, +, 0)` is a monoid but cancellation fails (`∞ + 0 = ∞ + 1` yet `0 ≠ 1`).
+
+Cancellation distinguishes "well-behaved" monoids from generic ones. Closing-the-loop on BoundedSmem's additive structure: together with PMAT-218 (axioms) + PMAT-287 (closure), proves BoundedSmem (modulo budget) is a CANCELLATIVE COMMUTATIVE MONOID — the closest algebraic cousin to an abelian group (which would also need inverses).
+
+**Load-bearing for emitter design:** a saturating add that maps both `(48 KiB + 1)` and `(48 KiB + 2)` to `48 KiB` would falsify both cancellation laws.
+
+**New Lean theorem** uses Mathlib's `Nat.add_left_cancel` and `Nat.add_right_cancel`.
+
+**Gate update:** `substrate_diamond_depth_8_opened` tightened to **≥2** contracts at depth-8+ (was ≥1).
+
 ### Added — FIRST Diamond depth-8 in the substrate: divisibility-preorder on `C-PY-INT-ARITH` (PMAT-294)
 
 **Path β extension.** Opens Diamond depth-8 — eight distinct algebraic categories on a single contract. PyIntArith was at depth-7 (post-PMAT-292); PMAT-294 adds **DIVISIBILITY-PREORDER** as the eighth orthogonal category.
