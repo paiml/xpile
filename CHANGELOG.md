@@ -7,6 +7,35 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-3 across-layers broadened: `C-BASHRS-POSIX-IDEMPOTENCE` joins depth-3 via symmetric python-purity (PMAT-289)
+
+Path β extension. Pushes `C-BASHRS-POSIX-IDEMPOTENCE` (Layer 2/4 hybrid, cross-domain bridge) from depth-2 to depth-3 by wiring the existing `python_pure_function_diamond` Lean theorem in YAML. **Six contracts now at depth-3+** (was 5).
+
+**The 3 Diamond categories on `C-BASHRS-POSIX-IDEMPOTENCE`:**
+
+1. **PMAT-215** — `bashrs_pure_function_diamond` (bashrs side is pure with Python as reference)
+2. **PMAT-289** — **`python_pure_function_diamond` (Python side is pure with bashrs as reference)** ← this PR
+3. **PMAT-238** — `exit_code_constant_projection_diamond` (exit-code semantics constant across paths)
+
+**Why symmetric purity is categorically distinct:**
+
+PMAT-215 proves bashrs is pure assuming Python is the reference. PMAT-289 proves the mirror — Python is pure assuming bashrs is the reference. **Together they rule out asymmetric purity drift**: a buggy emitter that satisfies PMAT-215 but introduces Python-side impurity (e.g., environment-variable-dependent normalization that bashrs doesn't replicate) would pass the bashrs-side claim while failing the Python-side claim.
+
+The dual claim is what makes the cross-domain bridge load-bearing in BOTH directions.
+
+**No new Lean proof needed.** `python_pure_function_diamond` already exists at `contracts/lean/Bashrs.lean` line 406.
+
+**Gate update:** `substrate_diamond_depth_3_across_layers` tightened to assert **≥6** contracts at depth-3+ (was ≥5). Verified live: `depth_3_plus=6`.
+
+**Path β extension recap:**
+
+| PMAT | Milestone | Contracts at depth-N+ |
+|------|-----------|----------------------|
+| 286 | FIRST depth-5 | depth-5+: 1 (PyIntArith) |
+| 287 | depth-5 ACROSS LAYERS | depth-5+: 2 (+CompileRustToPtxMma) |
+| 288 | depth-4 ACROSS LAYERS | depth-4+: 3 (+FFI-CPYTHON-EXT) |
+| **289** | **depth-3 across-layers broadened** | **depth-3+: 6 (+Bashrs)** |
+
 ### Added — Diamond depth-4 ACROSS LAYERS extended: `C-FFI-CPYTHON-EXT` joins depth-4 via constructive refcount inverse (PMAT-288)
 
 Path β extension. Pushes `C-FFI-CPYTHON-EXT` (Layer 4 hybrid pipeline) from depth-3 to depth-4 by wiring the existing `refcount_inverse_diamond` Lean theorem in YAML. **Three contracts now at depth-4+**, spanning Layer 1 + Layer 4 + Layer 5.

@@ -92,10 +92,11 @@ fn substrate_diamond_depth_3_across_layers() {
     let json = run_diamond_json();
     let depth_3_plus = read_aggregate_field(&json, "depth_3_plus");
     // PMAT-241..245 milestone: one contract per layer at depth-3 = 5.
+    // PMAT-289 added Bashrs (Layer 2/4 hybrid) to depth-3, total = 6.
     assert!(
-        depth_3_plus >= 5,
-        "Diamond depth-3 across-layers milestone (PMAT-241..245): expected ≥5 contracts at \
-         depth-3+, got {depth_3_plus}.\n{json}"
+        depth_3_plus >= 6,
+        "Diamond depth-3 across-layers milestone (PMAT-241..245 + PMAT-289): expected ≥6 \
+         contracts at depth-3+, got {depth_3_plus}.\n{json}"
     );
 }
 

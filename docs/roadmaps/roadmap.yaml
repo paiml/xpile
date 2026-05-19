@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-289
+  github_issue: null
+  item_type: task
+  title: 'PMAT-289: Diamond depth-3 across-layers broadened (C-BASHRS-POSIX-IDEMPOTENCE joins depth-3 via symmetric python-purity)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T22:00:00Z
+  updated: 2026-05-22T22:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Wire existing python_pure_function_diamond Lean theorem in contracts/bashrs-posix-idempotence-v1.yaml. Pushes C-BASHRS-POSIX-IDEMPOTENCE from depth-2 to depth-3. Symmetric mirror of PMAT-215's bashrs_pure_function_diamond — together they rule out asymmetric purity drift across the cross-domain bridge. Six contracts now at depth-3+. Tighten substrate_diamond_depth_3_across_layers gate to ≥6 contracts. No new Lean proof needed."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-288
   github_issue: null
   item_type: task

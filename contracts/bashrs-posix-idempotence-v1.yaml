@@ -230,6 +230,43 @@ equations:
       - "bashrs_shell_run is GUARANTEED pure — no side effects, no state-dependent output, no implementation-divergence"
       - "Diamond tier captures algebraic STRUCTURE COMPOSITION that prior tiers couldn't axiomatize as a single unit"
 
+  python_pure_function_diamond:
+    # PMAT-289 / XPILE-REFINE-BASHRS-006: THIRD Diamond on this
+    # contract — pushes C-BASHRS-POSIX-IDEMPOTENCE from depth-2 to
+    # depth-3. Mirror of PMAT-215's bashrs_pure_function_diamond on
+    # the Python side: python_subprocess_run is ALSO pure under the
+    # same Diamond characterization (idempotent + cross-domain
+    # equivalent + deterministic). Together with PMAT-215, this pair
+    # proves the cross-domain bridge preserves purity on BOTH sides
+    # — neither side introduces impurity that the other lacks. The
+    # Lean theorem already exists at python_pure_function_diamond —
+    # this YAML entry wires it as a separately-counted Diamond. The
+    # SYMMETRIC PURITY claim is distinct from bashrs's because it
+    # asserts the property holds when the Python side is the
+    # reference (anti-symmetry would mean one side is pure but the
+    # other implementation drifts; symmetric purity rules this out).
+    lean_theorem: "XpileContracts.CBashrsPosixIdempotence.python_pure_function_diamond"
+    lean_file: "contracts/lean/Bashrs.lean"
+    formula: |
+      python_subprocess_run(p, a) is PURE — symmetric mirror:
+        (a) idempotent — f(x) = f(f(x))
+        (b) cross-domain equal to bashrs_shell_run (mirror direction)
+        (c) deterministic — same input → same output
+    domain: |
+      Any (program, args) pair. Symmetric mirror of
+      bashrs_pure_function_diamond — proves the same purity axioms
+      hold with the Python side as reference.
+    invariants:
+      - "THIRD Diamond on C-BASHRS-POSIX-IDEMPOTENCE — pushes contract to depth-3 (joining the depth-3+ set with PyIntArith, FFI-CPYTHON-EXT, XlatePyListToVec, XpileFrontendTrait, CompileRustToPtxMma)"
+      - "SYMMETRIC PURITY: PMAT-215 proved bashrs is pure with Python as reference; PMAT-289 proves Python is pure with bashrs as reference — together they rule out asymmetric purity drift"
+      - "an emitter that satisfies PMAT-215 but introduces Python-side impurity (e.g., an environment-variable-dependent normalization that bashrs doesn't replicate) would falsify this Diamond while leaving the bashrs-side claim intact"
+    preconditions:
+      - "args are string literals (no shell injection)"
+      - "the Python side has equivalent normalization behavior to the bashrs side"
+    postconditions:
+      - "python_subprocess_run is GUARANTEED pure as a SYMMETRIC bridge — the cross-domain claim holds in both directions"
+      - "Diamond DEPTH-3 demonstrated for C-BASHRS-POSIX-IDEMPOTENCE: 3 distinct Diamond categories (bashrs-pure + python-pure + exit-code-projection)"
+
   exit_code_constant_projection_diamond:
     # PMAT-238 / XPILE-REFINE-BASHRS-005: SECOND Diamond on this
     # contract — Layer 1/4 depth-2. Distinct algebraic category
