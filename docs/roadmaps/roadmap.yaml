@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-280
+  github_issue: null
+  item_type: task
+  title: 'PMAT-280: PtxBackend::new_with_matmul_specialist — end-to-end §29 multi-emitter validation in production code'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T17:30:00Z
+  updated: 2026-05-22T17:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add PtxBackend::new_with_matmul_specialist() constructor that builds a MultiEmitterBackend with ScaffoldPtxEmitter (general) + MatmulSpecialistEmitter (specialist) under QuorumPolicy::PreferSpecialist. MatmulSpecialistEmitter matches modules whose name starts with matmul_; returns None for other modules. Not registered in default_session() — production unchanged. 4 new unit tests verify: matmul routes through specialist, non-matmul falls back to general, multi-emitter constructor advertises same target/name as single, hardware-rejection happens before either emitter fires. Closes the gap between PMAT-263 (mock tests) and PMAT-264 (production single-emitter wiring) — new_with_specialist is now exercised against the production PtxBackend wrapper. Path γ."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-279
   github_issue: null
   item_type: task

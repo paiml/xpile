@@ -7,6 +7,31 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — `PtxBackend::new_with_matmul_specialist` — end-to-end §29 multi-emitter validation in production code (PMAT-280)
+
+Path γ — adds a constructor that proves the §29 routing layer is end-to-end usable in production, not just in mock tests (PMAT-263) or with single-emitter scaffolds (PMAT-264).
+
+**New public API:** `PtxBackend::new_with_matmul_specialist()` — builds a `PtxBackend` whose `MultiEmitterBackend` carries `ScaffoldPtxEmitter` in the `general` slot AND a new `MatmulSpecialistEmitter` in the `specialist` slot under `QuorumPolicy::PreferSpecialist`.
+
+**`MatmulSpecialistEmitter` shape filter:** matches only modules whose name starts with `matmul_` — the shape filter real specialists like `aprender-gpu` would use to claim the GEMM/MMA kernel domain. Returns `None` from `try_emit` for non-matching modules, letting the general emitter handle them. For matching modules, emits a distinct PTX text body so the `QuorumStatus::Multi` (or `Single { specialist }` under `PreferSpecialist`) path is exercised under real divergence.
+
+**Not registered in `default_session()`** — production at v0.1.0+ still uses `PtxBackend::new()`. The constructor exists so tests + future integrations can exercise the `MultiEmitterBackend::new_with_specialist` path against production code without changing default behavior.
+
+**4 new unit tests:**
+
+| Test | Verifies |
+|------|----------|
+| `matmul_module_routes_through_specialist_under_multi_emitter` | Module named `matmul_gemm_fp16` lowers via specialist; `QuorumStatus::Single { emitter: "matmul-specialist-mock" }` |
+| `non_matmul_module_falls_back_to_general_under_multi_emitter` | Module named `test_kernel` lowers via general; `QuorumStatus::Single { emitter: "xpile-ptx-codegen-scaffold" }` |
+| `multi_emitter_constructor_targets_match_single_emitter` | Multi-emitter constructor advertises same targets/name as single-emitter |
+| `multi_emitter_constructor_rejects_missing_hardware` | Wrapper hardware-rejection happens before either emitter fires |
+
+**Why this matters:**
+
+- PMAT-263 mock-tested the `MultiEmitterBackend::new_with_specialist` routing in isolation. PMAT-264 wired `MultiEmitterBackend::new_single` into production via `PtxBackend`. PMAT-280 closes the gap — `new_with_specialist` is now exercised against the production `PtxBackend` wrapper.
+- Sets the precedent for the eventual `aprender-gpu` bridge: it plugs in via the same trait by calling `MultiEmitterBackend::new_with_specialist` with a real shape filter and emission body. No changes to `PtxBackend`'s public API.
+- Documents the "shape filter pattern" — return `None` from `try_emit` for inputs outside the specialist's domain — which the audit-design lists as a §14.10 anti-correlation guard.
+
 ### Added — Property-specific Silver-tier Kani harnesses for `C-XLATE-PY-LIST-TO-VEC` (Path α, FIFTH and FINAL contract) (PMAT-279)
 
 **Path α complete.** Lifts the `iteration_order_preserved` equation's Kani harness from a Bronze byte-payload to Silver-tier structural proofs matching Lean's `iteration_order_preserved_silver` + `length_preserved_silver` + `homogeneous_element_type_preserved_silver` (PMAT-164 + PMAT-182). Closes the **audit-design.md §4 "byte-identity placeholder rather than property-specific structural proofs" caveat for all 5 contracts that were on demo-fixture status entering this session.**
