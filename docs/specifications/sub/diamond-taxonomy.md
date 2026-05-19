@@ -18,7 +18,7 @@ A Diamond theorem combines multiple Platinum properties into a **single algebrai
 
 ## Coverage milestones
 
-As of v0.1.0+ (PMAT-214..318), the substrate has:
+As of v0.1.0+ (PMAT-214..323), the substrate has:
 
 - **Diamond depth-1 UNIVERSAL** (12/12 contracts): every contract has at least one Diamond at one algebraic category.
 - **Diamond depth-2 UNIVERSAL** (12/12 contracts): every contract has at least two **distinct** Diamond categories. CI-enforced via PMAT-251.
@@ -37,8 +37,10 @@ As of v0.1.0+ (PMAT-214..318), the substrate has:
 - **Diamond depth-15 ACROSS LAYERS** (2/12 contracts): PMAT-312 (Int-emod quotient ring homomorphism on L1, FIRST QUOTIENT-RING claim) + PMAT-313 (Nat-mod quotient ring homomorphism on L5).
 - **Diamond depth-16 ACROSS LAYERS** (2/12 contracts): PMAT-315 (Int gcd-monoid + Bézout / PID on L1, FIRST UNIVERSAL-OBJECT-WITH-CONSTRUCTIVE-WITNESS claim) + PMAT-316 (Nat gcd-monoid on L5).
 - **Diamond depth-17 ACROSS LAYERS** (2/12 contracts): PMAT-317 (unit group `{1, -1} ≅ Z/2Z` on L1, FIRST UNIT-GROUP claim) + PMAT-318 (Nat power-monoid on L5).
+- **Diamond depth-18 ACROSS LAYERS** (2/12 contracts): PMAT-320 (sign function monoid hom `Int → {-1,0,1}` on L1, third piece of sign×magnitude decomposition) + PMAT-321 (Nat integral domain on L5).
+- **Diamond depth-19 ACROSS LAYERS** (2/12 contracts): PMAT-322 (negation-order compatibility / OrderedAddCommGroup on L1) + PMAT-323 (Nat truncated subtraction on L5).
 
-**Substrate total: 59 wired Diamond equations across 12 contracts.**
+**Substrate total: 63 wired Diamond equations across 12 contracts.**
 
 ## Diamond categories by family
 
@@ -120,6 +122,30 @@ Captures the multiplicative-inverse structure within a ring:
 | Category | Example PMAT | Contract | Carrier |
 |---|---|---|---|
 | Int unit group `{1, -1} ≅ Z/2Z` | PMAT-317 | C-PY-INT-ARITH | multiplicative-inverse-structure of Int: -1 is self-inverse, negation factors via -1, squares non-negative |
+
+### Sign-function family
+
+Captures the SIGN map as a monoid morphism:
+
+| Category | Example PMAT | Contract | Map |
+|---|---|---|---|
+| Int sign monoid hom | PMAT-320 | C-PY-INT-ARITH | `Int.sign : (Int, *) → ({-1, 0, 1}, *)` SURJECTIVE multiplicative monoid hom; preserves +, neg, 0, 1. Third piece of the `Int = sign × magnitude` decomposition |
+
+### Ordered-add-comm-group family
+
+Captures how negation interacts with the linear order on an abelian group:
+
+| Category | Example PMAT | Contract | Carrier |
+|---|---|---|---|
+| Int neg-order compatibility | PMAT-322 | C-PY-INT-ARITH | negation reverses `<` and `≤` (Mathlib's `OrderedAddCommGroup` typeclass shape); positivity-negativity duality |
+
+### Truncated-subtraction family
+
+Captures Nat's semiring-minus-like structure (subtraction saturates at 0):
+
+| Category | Example PMAT | Contract | Operation |
+|---|---|---|---|
+| Nat truncated subtraction | PMAT-323 | C-COMPILE-RUST-TO-PTX-MMA | `Nat.sub` on BoundedSmem.val: truncates at 0 (a - b ≤ a), add-sub roundtrip, self-cancellation, zero-identity |
 
 ### Power-monoid family
 
@@ -319,6 +345,8 @@ The `crates/xpile/tests/diamond_coverage.rs` integration test (PMAT-251) enforce
 - ≥2 contracts have ≥15 Diamonds (depth-15 ACROSS LAYERS, PMAT-312/313).
 - ≥2 contracts have ≥16 Diamonds (depth-16 ACROSS LAYERS, PMAT-315/316).
 - ≥2 contracts have ≥17 Diamonds (depth-17 ACROSS LAYERS, PMAT-317/318).
+- ≥2 contracts have ≥18 Diamonds (depth-18 ACROSS LAYERS, PMAT-320/321).
+- ≥2 contracts have ≥19 Diamonds (depth-19 ACROSS LAYERS, PMAT-322/323).
 
 A future regression that removes a `_diamond` from any YAML or fails to keep depth-N invariants will fire the gate.
 - ≥30 total wired Diamond equations.

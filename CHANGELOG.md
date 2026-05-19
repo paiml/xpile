@@ -7,6 +7,34 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Spec §28 + diamond-taxonomy.md sync to depth-19 ACROSS LAYERS reality (PMAT-324)
+
+After 4 Path β PRs (PMAT-320..323) added depths 18 and 19 ACROSS LAYERS — including the **SIGN FUNCTION monoid hom** (PMAT-320), **NAT INTEGRAL DOMAIN** (PMAT-321), **NEGATION-ORDER COMPATIBILITY / OrderedAddCommGroup** (PMAT-322), and **NAT TRUNCATED SUBTRACTION** (PMAT-323) — the spec accumulated 2 more tiers of documentation rot. PMAT-324 syncs:
+
+**`docs/specifications/xpile-spec.md` §28:**
+
+- Substrate total: 59 → **63 wired Diamond equations**
+- Category families: 19+ → **22+** (added: ordered-add-comm-group, sign-function, truncated-subtraction)
+- Coverage state table extended with 2 new rows: depth-18, depth-19 (both ACROSS LAYERS)
+- `C-PY-INT-ARITH` deep-depth listing: 17 → **19 categories** (added PMAT-320 SIGN FUNCTION, PMAT-322 NEGATION-ORDER)
+- `C-COMPILE-RUST-TO-PTX-MMA` listing: 17 → **19 categories** (added PMAT-321 NAT INTEGRAL DOMAIN, PMAT-323 NAT TRUNCATED SUB)
+- Depth labels: `depth-16 / depth-17+` → `depth-18 / depth-19+`
+- CI gate count: 18 → **20 integration tests**
+
+**`docs/specifications/sub/diamond-taxonomy.md`:**
+
+- Coverage milestones extended with depth-18/19 rows
+- Substrate total: 59 → **63**
+- **New Sign-function family** subsection (1 entry):
+  - PMAT-320: Int sign monoid hom (third piece of sign × magnitude decomposition)
+- **New Ordered-add-comm-group family** subsection (1 entry):
+  - PMAT-322: Int neg-order compatibility
+- **New Truncated-subtraction family** subsection (1 entry):
+  - PMAT-323: Nat truncated subtraction on BoundedSmem.val
+- CI enforcement clause extended with depth-18/19 invariants
+
+No code changes — pure documentation alignment. Mirrors PMAT-296 / PMAT-297 / PMAT-304 / PMAT-309 / PMAT-314 / PMAT-319 sync pattern.
+
 ### Added — Diamond depth-19 ACROSS LAYERS: Nat-truncated-subtraction Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-323)
 
 **Path β extension.** Depth-19 was opened by PMAT-322 on PyIntArith (Layer 1). PMAT-323 extends depth-19 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) via the Nat-truncated-subtraction Diamond — the substrate now has **2 contracts at depth-19+**.
