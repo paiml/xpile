@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-316
+  github_issue: null
+  item_type: task
+  title: 'PMAT-316: Diamond depth-16 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-16 via Nat GCD monoid)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T10:30:00Z
+  updated: 2026-05-23T10:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add bounded_smem_nat_gcd_monoid_diamond Lean theorem to contracts/lean/CompileRustToPtxMma.lean — 4 conjuncts: gcd divides left (Nat.gcd_dvd_left), gcd divides right (Nat.gcd_dvd_right), gcd is universal (Nat.dvd_gcd), gcd is commutative (Nat.gcd_comm). Wire as new equation in compile-rust-to-ptx-mma-v1.yaml. Tighten substrate_diamond_depth_16_opened gate to ≥2 contracts. Opens DEPTH-16 ACROSS LAYERS — 2 contracts at depth-16+. Mirror of PMAT-315 (Int.gcd with Bézout on PyIntArith) — COMMUTATIVITY replaces Bézout since Nat lacks negatives. Characterizes Nat.gcd as a UNIVERSAL OBJECT on BoundedSmem.val carrier. Distinct from all 15 prior categories on this contract."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-315
   github_issue: null
   item_type: task

@@ -7,6 +7,66 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-16 ACROSS LAYERS: Nat-GCD-monoid Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-316)
+
+**Path β extension.** Depth-16 was opened by PMAT-315 on PyIntArith (Layer 1). PMAT-316 extends depth-16 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) via the Nat-GCD-monoid Diamond — the substrate now has **2 contracts at depth-16+**.
+
+**The 16 Diamond categories on `C-COMPILE-RUST-TO-PTX-MMA`:**
+
+1. PMAT-218: BOUNDED MONOID
+2. PMAT-287: CLOSURE
+3. PMAT-231: JOIN-SEMILATTICE
+4. PMAT-242: MEET-SEMILATTICE
+5. PMAT-248: LATTICE ABSORPTION
+6. PMAT-291: DISTRIBUTIVE LATTICE
+7. PMAT-293: BOUNDED LATTICE
+8. PMAT-295: CANCELLATIVE MONOID
+9. PMAT-299: ORDERED MONOID
+10. PMAT-301: ADDITIVE-LATTICE DISTRIBUTIVITY
+11. PMAT-303: DISCRETE ORDER
+12. PMAT-306: MAX/MIN MONOTONICITY
+13. PMAT-308: GLB/LUB UNIVERSAL PROPERTY
+14. PMAT-311: SUBTYPE EXTENSIONALITY
+15. PMAT-313: NAT-MOD QUOTIENT HOMOMORPHISM
+16. **PMAT-316: NAT GCD MONOID** ← extends depth-16 ACROSS LAYERS
+
+**Why NAT GCD MONOID is genuinely a NEW category:**
+
+Mirror of PMAT-315 (Int.gcd with Bézout on PyIntArith). Since `Nat` doesn't have negatives, **commutativity** replaces the Bézout identity as the fourth conjunct — both are characteristic of a GCD-monoid:
+
+- **GCD divides left:** `Nat.gcd a.val b.val ∣ a.val`
+- **GCD divides right:** `Nat.gcd a.val b.val ∣ b.val`
+- **GCD is universal:** `k ∣ a.val → k ∣ b.val → k ∣ Nat.gcd a.val b.val`
+- **GCD is commutative:** `Nat.gcd a.val b.val = Nat.gcd b.val a.val`
+
+None of the prior 15 categories mentions `Nat.gcd` or characterizes the gcd as a universal object on BoundedSmem.val. This adds the CATEGORICAL gcd structure to the BoundedSmem algebra.
+
+**New Lean theorem:**
+
+```lean
+theorem bounded_smem_nat_gcd_monoid_diamond
+    (a b : BoundedSmem) (k : Nat) :
+    (Nat.gcd a.val b.val ∣ a.val)
+    ∧ (Nat.gcd a.val b.val ∣ b.val)
+    ∧ (k ∣ a.val → k ∣ b.val → k ∣ Nat.gcd a.val b.val)
+    ∧ (Nat.gcd a.val b.val = Nat.gcd b.val a.val) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.gcd_dvd_left a.val b.val
+  · exact Nat.gcd_dvd_right a.val b.val
+  · intro h1 h2; exact Nat.dvd_gcd h1 h2
+  · exact Nat.gcd_comm a.val b.val
+```
+
+Uses standard Mathlib lemmas: `Nat.gcd_dvd_left`, `Nat.gcd_dvd_right`, `Nat.dvd_gcd`, `Nat.gcd_comm`.
+
+**Falsification surface:** an emitter using a **buggy gcd implementation** (returning a non-divisor, or asymmetric in arguments due to argument-order bias) would falsify properties (a)/(b) or (d) — a real bug class for alignment computations (LCM/GCD-aligned smem allocation) invisible to the prior 15 categories.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_16_plus: 2` (was 1 after PMAT-315).
+- `substrate_diamond_depth_16_opened` gate tightened to `≥ 2` (ACROSS LAYERS).
+- Substrate Diamond totals: **57 wired Diamond theorems** across 12 contracts (was 56).
+
 ### Added — FIRST Diamond depth-16 in the substrate: GCD-monoid + Bézout-identity Diamond on `C-PY-INT-ARITH` (PMAT-315)
 
 **Path β extension.** Opens Diamond **depth-16** — sixteen distinct algebraic categories on a single contract. PyIntArith was at depth-15 (post-PMAT-312); PMAT-315 adds **GCD MONOID + BÉZOUT IDENTITY** as the sixteenth orthogonal category — establishing Int as a **Principal Ideal Domain (PID)**.
