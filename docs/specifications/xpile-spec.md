@@ -519,9 +519,9 @@ audit-design.md §6 already shows we know *how* the five-whys → provable-contr
 
 **Sub-spec**: [sub/diamond-taxonomy.md](sub/diamond-taxonomy.md)
 
-The substrate's Diamond-tier program (PMAT-214..308) ships **51 wired Diamond equations across 12 contracts**, demonstrating 50+ distinct algebraic categories grouped into 14+ families (monoid, group, ring, integral-domain, ordered-ring, lattice, distributive-lattice, bounded-lattice, additive-lattice, functor, relation, ordering, order-topology, norm, lattice-universal-property).
+The substrate's Diamond-tier program (PMAT-214..313) ships **55 wired Diamond equations across 12 contracts**, demonstrating 55+ distinct algebraic categories grouped into 17+ families (monoid, group, ring, integral-domain, ordered-ring, lattice, distributive-lattice, bounded-lattice, additive-lattice, functor, relation, ordering, order-topology, norm, lattice-universal-property, ring-homomorphism-embedding, ring-homomorphism-quotient).
 
-### Coverage state (v0.1.0+, post-PMAT-286..308)
+### Coverage state (v0.1.0+, post-PMAT-286..313)
 
 | Depth | Coverage | Mechanism |
 |---|---|---|
@@ -538,10 +538,12 @@ The substrate's Diamond-tier program (PMAT-214..308) ships **51 wired Diamond eq
 | Diamond depth-11 | 2 contracts ACROSS LAYERS | PMAT-302 (PyIntArith), PMAT-303 (CompileRustToPtxMma) |
 | Diamond depth-12 | 2 contracts ACROSS LAYERS | PMAT-305 (PyIntArith), PMAT-306 (CompileRustToPtxMma) |
 | Diamond depth-13 | 2 contracts ACROSS LAYERS | PMAT-307 (PyIntArith), PMAT-308 (CompileRustToPtxMma) |
+| Diamond depth-14 | 2 contracts ACROSS LAYERS | PMAT-310 (PyIntArith), PMAT-311 (CompileRustToPtxMma) |
+| Diamond depth-15 | 2 contracts ACROSS LAYERS | PMAT-312 (PyIntArith), PMAT-313 (CompileRustToPtxMma) |
 
 ### Deep-depth contracts at v0.1.0+
 
-**`C-PY-INT-ARITH` (Layer 1) — 13 categories:**
+**`C-PY-INT-ARITH` (Layer 1) — 15 categories:**
 1. PMAT-214: SEMIRING (+, *)
 2. PMAT-228: EUCLIDEAN DOMAIN (fdiv, fmod)
 3. PMAT-241: SHIFT-MONOID (shl)
@@ -552,11 +554,13 @@ The substrate's Diamond-tier program (PMAT-214..308) ships **51 wired Diamond eq
 8. PMAT-294: DIVISIBILITY-PREORDER (∣) — FIRST relation-not-operation category
 9. PMAT-298: LINEAR-ORDER TRICHOTOMY (<)
 10. PMAT-300: RING-DISTRIBUTIVITY (neg × mul) — bridges PMAT-214 SEMIRING and PMAT-290 ABELIAN-GROUP-ENRICHMENT
-11. PMAT-302: INTEGRAL DOMAIN (no zero divisors) — strengthens PMAT-300 RING
-12. PMAT-305: ORDERED RING (sign rules) — bridges PMAT-298 LINEAR-ORDER and PMAT-300 RING
-13. PMAT-307: ABSOLUTE VALUE / NORM — `(Int, |·|)` is a NORMED RING (non-negativity + definiteness + triangle inequality + multiplicativity)
+11. PMAT-302: INTEGRAL DOMAIN (no zero divisors)
+12. PMAT-305: ORDERED RING (sign rules)
+13. PMAT-307: ABSOLUTE VALUE / NORM — `(Int, |·|)` is a NORMED RING
+14. PMAT-310: NAT-CAST RING HOMOMORPHISM — `Nat → Int` INJECTIVE embedding (FIRST EXTERNAL/category-theoretic claim)
+15. PMAT-312: INT-EMOD QUOTIENT HOMOMORPHISM — `Int → Z/nZ` SURJECTIVE quotient (FIRST QUOTIENT-RING claim)
 
-**`C-COMPILE-RUST-TO-PTX-MMA` (Layer 5) — 13 categories:**
+**`C-COMPILE-RUST-TO-PTX-MMA` (Layer 5) — 15 categories:**
 1. PMAT-218: bounded-monoid (additive)
 2. PMAT-287: closure (subalgebra well-definedness)
 3. PMAT-231: join-semilattice (max)
@@ -567,14 +571,16 @@ The substrate's Diamond-tier program (PMAT-214..308) ships **51 wired Diamond eq
 8. PMAT-295: cancellative monoid
 9. PMAT-299: ordered monoid (monotone preorder)
 10. PMAT-301: additive-lattice distributivity (tropical-semiring axiom)
-11. PMAT-303: discrete order (successor + no-gaps + irreflexivity + successor-iff)
-12. PMAT-306: MAX/MIN MONOTONICITY — max and min preserve ≤ in both arguments
-13. PMAT-308: GLB/LUB UNIVERSAL PROPERTY — min is the GREATEST lower bound, max is the LEAST upper bound (CATEGORICAL definition of meet/join)
+11. PMAT-303: discrete order
+12. PMAT-306: max/min monotonicity
+13. PMAT-308: GLB/LUB universal property
+14. PMAT-311: SUBTYPE EXTENSIONALITY — BoundedSmem ↔ Nat .val isomorphism via Subtype.ext (FIRST SUBTYPE-STRUCTURE claim)
+15. PMAT-313: NAT-MOD QUOTIENT HOMOMORPHISM — `Nat → Z/nZ` SURJECTIVE quotient (mirror of PMAT-312)
 
 ### Tooling
 
-- `xpile diamond` (PMAT-249): live per-contract Diamond count + depth classification, with `--json` output for CI dashboards. Depth labels: `none` / `depth-1` / ... / `depth-12` / `depth-13+`.
-- `crates/xpile/tests/diamond_coverage.rs` (PMAT-251..308): CI gate — **14 integration tests** enforce depth-1/2/3/4/5/6/7/8/9/10/11/12/13 invariants plus aggregate-total-≥30; substrate-wide Diamond coverage cannot regress.
+- `xpile diamond` (PMAT-249): live per-contract Diamond count + depth classification, with `--json` output for CI dashboards. Depth labels: `none` / `depth-1` / ... / `depth-14` / `depth-15+`.
+- `crates/xpile/tests/diamond_coverage.rs` (PMAT-251..313): CI gate — **16 integration tests** enforce depth-1/2/3/4/5/6/7/8/9/10/11/12/13/14/15 invariants plus aggregate-total-≥30; substrate-wide Diamond coverage cannot regress.
 
 ### Canonical reference
 
