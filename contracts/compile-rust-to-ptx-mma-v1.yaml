@@ -230,6 +230,44 @@ equations:
       - "an emitter satisfying individual Platinum + Gold theorems but breaking joint structure (non-commutative representation, off-by-one in zero-handling) would falsify this Diamond"
       - "the bounded-monoid structure is the algebraic foundation for compositional sm_80 budget analysis"
 
+  bounded_smem_closure_diamond:
+    # PMAT-287 / XPILE-REFINE-COMPILE-PTX-008: FIFTH Diamond on this
+    # contract — opens DEPTH-5 ACROSS LAYERS milestone (second
+    # contract to reach depth-5 after PMAT-286 on C-PY-INT-ARITH).
+    # The CLOSURE Diamond captures a categorically distinct claim:
+    # bounded composition produces a value IN the BoundedSmem set
+    # (closure under sum-fits operation). Distinct from PMAT-218
+    # monoid (axiomatic), PMAT-231/232 semilattices (max/min lattice
+    # structure), PMAT-248 absorption (lattice law) — closure is a
+    # SUBALGEBRA / WELL-DEFINEDNESS property: given valid inputs +
+    # precondition, the output is also a valid input for the next
+    # composition. Without closure, even valid monoid axioms wouldn't
+    # support compositional analysis (you'd need to re-validate the
+    # bounded property after every step). The Lean theorem already
+    # exists at bounded_smem_closure_diamond — this YAML entry wires
+    # it as a separately-counted Diamond category for the diamond
+    # reporter.
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_closure_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      ∀ (a b : BoundedSmem) (h : a.val + b.val ≤ smem_budget_sm80),
+        ∃ c : BoundedSmem, c.val = a.val + b.val
+    domain: |
+      Any pair of BoundedSmem values whose sum fits the sm_80 budget.
+      The closure Diamond asserts the result is also a BoundedSmem —
+      i.e., bounded composition is closed under the budget.
+    invariants:
+      - "SECOND contract to reach Diamond depth-5 (after PMAT-286 on C-PY-INT-ARITH)"
+      - "opens DEPTH-5 ACROSS LAYERS milestone — Layer 1 (PyIntArith) + Layer 5 (CompileRustToPtxMma)"
+      - "closure is a SUBALGEBRA property distinct from monoid axioms, semilattice axioms, and absorption laws"
+      - "load-bearing for compositional smem analysis: without closure, every step needs re-validation; with closure, the analysis composes as a chain of monoid operations"
+    preconditions:
+      - "all values are BoundedSmem (Gold-tier well-formedness)"
+      - "sum-fits precondition holds for the operation"
+    postconditions:
+      - "an emitter that produces an over-budget result on bounded+bounded with sum-fits precondition would falsify the closure (no witness c exists)"
+      - "Diamond DEPTH-5 ACROSS LAYERS demonstrated: 2 contracts at depth-5+ — opens the depth-5-across-layers dimension"
+
   bounded_smem_join_semilattice_diamond:
     # PMAT-231 / XPILE-REFINE-COMPILE-PTX-006: SECOND Diamond on
     # this contract — Layer 5 depth-2 Diamond. Following

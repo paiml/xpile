@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-287
+  github_issue: null
+  item_type: task
+  title: 'PMAT-287: Diamond depth-5 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-5 via bounded-smem closure)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T21:00:00Z
+  updated: 2026-05-22T21:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Wire the existing bounded_smem_closure_diamond Lean theorem in contracts/compile-rust-to-ptx-mma-v1.yaml as a 5th categorically distinct Diamond on C-COMPILE-RUST-TO-PTX-MMA. Pushes the contract from depth-4 to depth-5. Tighten substrate_diamond_depth_5_opened gate to assert ≥2 contracts at depth-5+ (was ≥1). Opens DEPTH-5 ACROSS LAYERS milestone — 2 contracts (Layer 1 PyIntArith + Layer 5 CompileRustToPtxMma) at depth-5+. No new Lean proof needed — leverages existing theorem at line 484. Path β extension."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-286
   github_issue: null
   item_type: task

@@ -127,11 +127,15 @@ fn substrate_diamond_aggregate_total_at_least_30() {
 fn substrate_diamond_depth_5_opened() {
     let json = run_diamond_json();
     let depth_5_plus = read_aggregate_field(&json, "depth_5_plus");
-    // PMAT-286 opened depth-5: PyIntArith has 5 Diamond categories
-    // (semiring + Euclidean + shift-monoid + power-monoid + bitwise-AND-monoid).
+    // PMAT-286 opened depth-5 on C-PY-INT-ARITH (Layer 1):
+    //   semiring + Euclidean + shift-monoid + power-monoid + bitwise-AND-monoid.
+    // PMAT-287 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5):
+    //   bounded-monoid + closure + join-lattice + meet-lattice + absorption.
+    // Gate now asserts depth-5 ACROSS LAYERS (≥2 contracts on distinct
+    // taxonomy layers at depth-5+).
     assert!(
-        depth_5_plus >= 1,
-        "Diamond depth-5 milestone (PMAT-286): expected ≥1 contract at depth-5+, \
-         got {depth_5_plus}.\n{json}"
+        depth_5_plus >= 2,
+        "Diamond depth-5 ACROSS LAYERS milestone (PMAT-286, PMAT-287): \
+         expected ≥2 contracts at depth-5+ (Layer 1 + Layer 5), got {depth_5_plus}.\n{json}"
     );
 }
