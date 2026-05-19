@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-323
+  github_issue: null
+  item_type: task
+  title: 'PMAT-323: Diamond depth-19 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-19 via Nat truncated subtraction)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T14:00:00Z
+  updated: 2026-05-23T14:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add bounded_smem_nat_truncated_sub_diamond Lean theorem to contracts/lean/CompileRustToPtxMma.lean — 4 conjuncts: truncation (a-b ≤ a), add-sub roundtrip ((a+b)-b = a), self-cancellation (a-a = 0), zero is identity (a-0 = a). Proved by `omega`. Wire as new equation in compile-rust-to-ptx-mma-v1.yaml. Tighten substrate_diamond_depth_19_opened gate to ≥2 contracts. Opens DEPTH-19 ACROSS LAYERS — 2 contracts at depth-19+. Captures Nat-specific SEMIRING-MINUS-LIKE structure (no negatives, so PMAT-322 negation-order has no direct mirror). Distinct from PMAT-218/295/321 (additive monoid/cancellation, multiplicative integral domain). Falsification: SIGNED subtraction allowing negative results falsifies (a) when over-reserving."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-322
   github_issue: null
   item_type: task
