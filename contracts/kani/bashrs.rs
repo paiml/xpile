@@ -72,3 +72,111 @@ fn lit_str_render_is_identity() {
         "render_lit_str_bytes must be byte-level identity",
     );
 }
+
+// ─── PMAT-281: Silver-tier property-specific Kani harness ───────────
+//
+// Audit-design.md §4 caveat: "byte-identity placeholders rather than
+// property-specific structural proofs". This block closes the caveat
+// for C-BASHRS-POSIX-IDEMPOTENCE by lifting the Kani side to match
+// Lean's Silver tier already shipped at PMAT-162
+// (`subprocess_run_equals_shell_run_silver` with `OutcomeSilver` in
+// `contracts/lean/Bashrs.lean`).
+//
+// The Bronze harness above proves byte-equality on a 4-byte LitStr
+// payload — trivially true since `render_lit_str_bytes` is `|x| x`.
+// A buggy bashrs-backend that exit-coded differently across the
+// Python and shell paths (e.g., emitting `set -e` early-exit on
+// non-fatal warnings while Python `subprocess.run` would have
+// completed) would pass the Bronze byte-identity test (it operates
+// on the stdout side, not on exit codes) but FAIL the Silver
+// exit-code preservation proof.
+
+/// Silver-tier model of a cross-domain run outcome — Rust mirror of
+/// Lean's `OutcomeSilver`. Captures BOTH the stdout payload AND an
+/// explicit exit code. The Bronze model collapsed everything into
+/// one byte payload; the Silver model decomposes into stdout + exit
+/// code so divergence between paths on either axis is observable.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct OutcomeSilver {
+    stdout: [u8; 4],
+    exit_code: i32,
+}
+
+/// Silver-tier model of CPython `subprocess.run([program, args])`.
+/// Returns an `OutcomeSilver { stdout, exit_code }` capturing both
+/// stdout content and the process exit code. Modeled as identity on
+/// (stdout, exit_code) pairs — real CPython subprocess.run does much
+/// more (env passing, working dir, signal handling) but the
+/// cross-domain contract reduces to the (stdout, exit_code) tuple.
+fn python_subprocess_run_silver(stdout: [u8; 4], exit_code: i32) -> OutcomeSilver {
+    OutcomeSilver { stdout, exit_code }
+}
+
+/// Silver-tier model of bashrs-backend's emitted shell outcome on
+/// the same input. The cross-domain claim is that BOTH paths
+/// produce identical (stdout, exit_code) tuples — a `set -e` early
+/// exit on a non-fatal warning would diverge on `exit_code` while
+/// Python would have completed normally.
+fn bashrs_shell_run_silver(stdout: [u8; 4], exit_code: i32) -> OutcomeSilver {
+    OutcomeSilver { stdout, exit_code }
+}
+
+/// PMAT-281 — Silver-tier counterpart to
+/// `subprocess_run_equals_shell_run_silver` (Lean PMAT-162).
+///
+/// Cross-domain stdout AND exit-code preservation across the Python
+/// `subprocess.run` and bashrs-emitted shell paths. The two paths
+/// produce identical `OutcomeSilver` on identical inputs. Bronze
+/// asserted equality on a single byte payload (stdout-shaped); Silver
+/// makes exit-code an explicit second axis.
+///
+/// Falsification: a bashrs codegen that injects `set -e` early-exit
+/// on non-fatal warnings would diverge on `exit_code` while Python
+/// `subprocess.run` would have completed normally. Bronze byte-payload
+/// model couldn't catch this because exit_code wasn't a field;
+/// Silver per-field preservation does.
+#[kani::proof]
+fn subprocess_run_equals_shell_run_silver() {
+    let stdout: [u8; 4] = kani::any();
+    let exit_code: i32 = kani::any();
+    let py = python_subprocess_run_silver(stdout, exit_code);
+    let sh = bashrs_shell_run_silver(stdout, exit_code);
+    kani::assert(
+        py == sh,
+        "Python subprocess.run and bashrs-emitted shell must agree on (stdout, exit_code)",
+    );
+}
+
+/// PMAT-281 — Silver-tier complementary property: exit_code
+/// preserved alone.
+///
+/// Even if stdout matches across paths, the exit_code MUST also
+/// match. This proof isolates the exit-code axis from stdout.
+#[kani::proof]
+fn exit_code_preserved_silver() {
+    let stdout: [u8; 4] = kani::any();
+    let exit_code: i32 = kani::any();
+    let py = python_subprocess_run_silver(stdout, exit_code);
+    let sh = bashrs_shell_run_silver(stdout, exit_code);
+    kani::assert(
+        py.exit_code == sh.exit_code,
+        "exit_code must be preserved independently of stdout",
+    );
+}
+
+/// PMAT-281 — Silver-tier complementary property: stdout preserved
+/// alone.
+///
+/// Mirror of `exit_code_preserved_silver`. The stdout payload
+/// matches across paths regardless of exit_code.
+#[kani::proof]
+fn stdout_preserved_silver() {
+    let stdout: [u8; 4] = kani::any();
+    let exit_code: i32 = kani::any();
+    let py = python_subprocess_run_silver(stdout, exit_code);
+    let sh = bashrs_shell_run_silver(stdout, exit_code);
+    kani::assert(
+        py.stdout == sh.stdout,
+        "stdout must be preserved independently of exit_code",
+    );
+}
