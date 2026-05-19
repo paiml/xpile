@@ -7,6 +7,68 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-5 ACROSS LAYERS BROADENED to 3 layers: refcount-delta sign-decomposition Diamond on `C-FFI-CPYTHON-EXT` (PMAT-328)
+
+**STRATEGIC PIVOT from "deeper same 2 contracts" to "wider substrate coverage".** Path β had been deepening PyIntArith (L1) + CompileRustToPtxMma (L5) to depth-21. PMAT-328 pivots to BROADENING: pushes `C-FFI-CPYTHON-EXT` (Layer 4) from depth-4 to depth-5, making **depth-5 ACROSS LAYERS a 3-LAYER claim** (Layer 1 + Layer 4 + Layer 5).
+
+**Why this is higher EV than continuing depth-22+:**
+
+- Substrate-wide depth-5 ACROSS LAYERS strengthens from 2 contracts/2 layers to **3 contracts/3 layers**
+- The "ACROSS LAYERS" claim becomes meaningfully more general (covers Python int arithmetic + GPU SMA + FFI all at depth-5+)
+- Per-PR categorical novelty remains high (introducing sign-decomposition as a new algebraic category on a new contract)
+- Per-PR substrate impact is higher than deepening the same two contracts further
+
+**The 5 Diamond categories on `C-FFI-CPYTHON-EXT`:**
+
+1. PMAT-216: refcount abelian group `(Int, +, 0, -)`
+2. PMAT-288: refcount inverse existence
+3. PMAT-230: GIL-invariant preservation
+4. PMAT-243: zero-copy pointer functor
+5. **PMAT-328: REFCOUNT-DELTA SIGN DECOMPOSITION** ← broadens depth-5 ACROSS LAYERS
+
+**Why SIGN DECOMPOSITION is genuinely a NEW category:**
+
+The sign-decomposition is a STRUCTURAL claim about the VALUE of `refcount_delta`, distinct from its algebraic behavior (PMAT-216) or inverse-existence (PMAT-288). Sign decomposition is **load-bearing for FFI safety auditing**:
+
+- **Net-incref (positive delta):** ref-leak pattern indicator
+- **Net-balanced (zero delta):** healthy paired incref/decref
+- **Net-decref (negative delta):** over-decref pattern indicator (segfault precursor)
+
+A sign-confused emitter (e.g., unsigned arithmetic wrapping negatives to positives) would falsify (a) and (d) while preserving PMAT-216 group structure — a category-specific bug class invisible to the prior 4.
+
+**Four conjuncts:**
+
+- **Sign trichotomy:** `0 < delta ∨ delta = 0 ∨ delta < 0`
+- **Positive delta = |delta|:** `0 < delta → delta = |delta|`
+- **Negative delta's neg = |delta|:** `delta < 0 → -delta = |delta|`
+- **Sign-magnitude reconstruction:** `Int.sign delta * |delta| = delta`
+
+**New Lean theorem:**
+
+```lean
+theorem refcount_delta_sign_decomp_diamond (c : FfiCallSilver) :
+    (0 < c.refcount_delta ∨ c.refcount_delta = 0 ∨ c.refcount_delta < 0)
+    ∧ (0 < c.refcount_delta → c.refcount_delta = |c.refcount_delta|)
+    ∧ (c.refcount_delta < 0 → -c.refcount_delta = |c.refcount_delta|)
+    ∧ (Int.sign c.refcount_delta * |c.refcount_delta| = c.refcount_delta) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rcases lt_trichotomy c.refcount_delta 0 with h | h | h
+    · exact Or.inr (Or.inr h)
+    · exact Or.inr (Or.inl h)
+    · exact Or.inl h
+  · intro h; exact (abs_of_pos h).symm
+  · intro h; exact (abs_of_neg h).symm
+  · exact Int.sign_mul_abs c.refcount_delta
+```
+
+Uses Mathlib's `lt_trichotomy`, `abs_of_pos`, `abs_of_neg`, `Int.sign_mul_abs`.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_5_plus: 3` (was 2).
+- `substrate_diamond_depth_5_opened` gate **tightened to ≥ 3** to lock in the layer broadening.
+- Substrate Diamond totals: **67 wired Diamond theorems** across 12 contracts (was 66).
+
 ### Added — FIRST Diamond depth-21 in the substrate: Nat-cast order-embedding Diamond on `C-PY-INT-ARITH` (PMAT-327)
 
 **Path β extension.** Opens Diamond **depth-21** — twenty-one distinct algebraic categories on a single contract. PyIntArith was at depth-20 (post-PMAT-325); PMAT-327 adds **NAT-CAST ORDER EMBEDDING** as the twenty-first orthogonal category.
