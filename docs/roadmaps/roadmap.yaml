@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-306
+  github_issue: null
+  item_type: task
+  title: 'PMAT-306: Diamond depth-12 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-12 via max/min monotonicity)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T05:30:00Z
+  updated: 2026-05-23T05:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add bounded_smem_max_min_monotone_diamond Lean theorem to contracts/lean/CompileRustToPtxMma.lean — 4 conjuncts: max left-monotone (a ≤ b → max a c ≤ max b c), max right-monotone, min left-monotone, min right-monotone. Proved by `omega`. Wire as new equation in compile-rust-to-ptx-mma-v1.yaml. Tighten substrate_diamond_depth_12_opened gate to ≥2 contracts. Opens DEPTH-12 ACROSS LAYERS — 2 contracts at depth-12+. Categorically distinct from PMAT-231/242 semilattices (algebraic axioms only), PMAT-291 distributive lattice (cross-distributivity, not monotonicity), PMAT-299 ordered monoid (+ monotone, not max/min), PMAT-301 additive-lattice (+ over max/min, not max/min monotonicity)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-305
   github_issue: null
   item_type: task

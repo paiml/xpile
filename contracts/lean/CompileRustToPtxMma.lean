@@ -1112,4 +1112,107 @@ theorem bounded_smem_discrete_order_diamond (a b : BoundedSmem) :
     ∧ (a.val < b.val + 1 ↔ a.val ≤ b.val) := by
   refine ⟨?_, ?_, ?_, ?_⟩ <;> omega
 
+/-! ## PMAT-306 — TWELFTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (DEPTH-12 ACROSS LAYERS): MAX/MIN ORDER-PRESERVATION —
+    the lattice operations are monotone in their arguments
+    (XPILE-REFINE-COMPILE-PTX-013).
+
+    **Opens DEPTH-12 ACROSS LAYERS.** PyIntArith reached depth-12
+    at PMAT-305 (ordered-ring sign rules); PMAT-306 extends depth-12
+    to Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The substrate now has
+    depth-12 on TWO contracts spanning Layer 1 and Layer 5.
+
+    CompileRustToPtxMma already has ELEVEN Diamond categories:
+    - PMAT-218: BOUNDED MONOID
+    - PMAT-287: CLOSURE
+    - PMAT-231: JOIN-SEMILATTICE (max)
+    - PMAT-242: MEET-SEMILATTICE (min)
+    - PMAT-248: LATTICE ABSORPTION
+    - PMAT-291: DISTRIBUTIVE LATTICE
+    - PMAT-293: BOUNDED LATTICE (top/bottom)
+    - PMAT-295: CANCELLATIVE MONOID
+    - PMAT-299: ORDERED MONOID (monotone +)
+    - PMAT-301: ADDITIVE-LATTICE DISTRIBUTIVITY
+    - PMAT-303: DISCRETE ORDER
+
+    PMAT-306 adds the MONOTONICITY axioms for the LATTICE operations
+    themselves (max and min) — distinct from PMAT-299 (which was
+    about + being monotone, not max/min):
+    - **PMAT-306: max and min are MONOTONE in their arguments —
+      preserve the ≤ order**
+
+    The categorical distinction is sharp:
+      - PMAT-231/242 SEMILATTICES give the algebraic axioms
+        (commutativity, associativity, idempotence) but DON'T claim
+        the operations are monotone in their arguments.
+      - PMAT-291 DISTRIBUTIVE LATTICE gives cross-distributivity
+        but doesn't claim monotonicity.
+      - PMAT-299 ORDERED MONOID gives + monotonicity (not max/min).
+      - PMAT-301 ADDITIVE-LATTICE gives + distributing over max/min
+        (not monotonicity of max/min themselves).
+      - PMAT-306 axiomatizes that MAX and MIN are themselves
+        ORDER-PRESERVING: a ≤ b → max(a, c) ≤ max(b, c) (and dually
+        for min, both arguments).
+
+    Why this is genuinely orthogonal:
+      Monotonicity of max/min is a separate algebraic claim from
+      the lattice axioms. It would hold for any operation that
+      respects the order (e.g., addition does too), but it does
+      NOT follow from the semilattice / distributive-lattice axioms
+      alone. A non-monotone lattice-like operation could be
+      constructed (e.g., bit-reversal-and-max) that satisfies
+      commutativity/associativity/idempotence but breaks
+      monotonicity.
+
+    For GPU smem accounting, this matters: when scaling up a
+    parallel kernel composition, INCREASING any individual smem
+    reservation should never DECREASE the worst-case parallel
+    reservation. An emitter that lowered max through a path that
+    failed this would falsify (a).
+
+    Status: discharged at v0.1.0 (PMAT-306). Tier: DIAMOND.
+    Second DEPTH-12 in the substrate (DEPTH-12 ACROSS LAYERS). -/
+
+/--
+  **Diamond-tier refinement theorem** — max and min on
+  `(BoundedSmem.val, ≤)` are MONOTONE in both arguments.
+
+  Combines four MAX/MIN MONOTONICITY properties:
+  (a) Max is left-monotone:  a ≤ b → max a c ≤ max b c
+  (b) Max is right-monotone: a ≤ b → max c a ≤ max c b
+  (c) Min is left-monotone:  a ≤ b → min a c ≤ min b c
+  (d) Min is right-monotone: a ≤ b → min c a ≤ min c b
+
+  Distinct from:
+    - PMAT-231/242 SEMILATTICES (algebraic axioms only — no order
+      preservation of max/min themselves).
+    - PMAT-291 DISTRIBUTIVE LATTICE (cross-distributivity — not
+      monotonicity).
+    - PMAT-299 ORDERED MONOID (+ is monotone — not max/min).
+    - PMAT-301 ADDITIVE-LATTICE (+ distributes over max/min — not
+      max/min monotonicity).
+
+  Proved by `omega` — Mathlib's `omega` tactic handles linear
+  arithmetic on Nat with min/max.
+
+  An emitter that lowered max through a path that failed to
+  preserve order (e.g., a non-monotone arithmetic-like operation)
+  would falsify (a) — a real bug class invisible to the prior 11
+  categories which axiomatize max/min algebra but not order
+  preservation.
+
+  Status: **discharged at v0.1.0 (PMAT-306)**. Tier: DIAMOND.
+  Second DEPTH-12 in the substrate (DEPTH-12 ACROSS LAYERS).
+-/
+theorem bounded_smem_max_min_monotone_diamond (a b c : BoundedSmem) :
+    -- (a) Max is left-monotone
+    (a.val ≤ b.val → Nat.max a.val c.val ≤ Nat.max b.val c.val)
+    -- (b) Max is right-monotone
+    ∧ (a.val ≤ b.val → Nat.max c.val a.val ≤ Nat.max c.val b.val)
+    -- (c) Min is left-monotone
+    ∧ (a.val ≤ b.val → Nat.min a.val c.val ≤ Nat.min b.val c.val)
+    -- (d) Min is right-monotone
+    ∧ (a.val ≤ b.val → Nat.min c.val a.val ≤ Nat.min c.val b.val) := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> intros <;> omega
+
 end XpileContracts.CCompileRustToPtxMma
