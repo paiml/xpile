@@ -821,4 +821,27 @@ theorem bounded_smem_bounded_lattice_diamond (a : BoundedSmem) :
   · exact Nat.max_eq_right a.property
   · exact Nat.min_eq_right a.property
 
+/-! ## PMAT-295 — EIGHTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (FIRST DEPTH-8 ACROSS LAYERS): cancellative monoid via
+    Nat.add_left_cancel and Nat.add_right_cancel. -/
+
+/--
+  **Diamond-tier refinement theorem** — `(BoundedSmem, +, 0)` is a
+  CANCELLATIVE MONOID.
+
+  Distinct from PMAT-218 monoid axioms — cancellation is a stronger
+  structural property. Not all monoids are cancellative; e.g.,
+  `(Nat ∪ {∞}, +, 0)` is a monoid but not cancellative.
+
+  Status: **discharged at v0.1.0 (PMAT-295)**. Tier: DIAMOND.
+  First DEPTH-8 ACROSS LAYERS in the substrate.
+-/
+theorem bounded_smem_cancellative_monoid_diamond
+    (a b c : BoundedSmem) :
+    (a.val + b.val = a.val + c.val → b.val = c.val)
+    ∧ (b.val + a.val = c.val + a.val → b.val = c.val) := by
+  refine ⟨?_, ?_⟩
+  · intro h; exact Nat.add_left_cancel h
+  · intro h; exact Nat.add_right_cancel h
+
 end XpileContracts.CCompileRustToPtxMma

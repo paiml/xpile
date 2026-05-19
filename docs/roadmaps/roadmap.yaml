@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-295
+  github_issue: null
+  item_type: task
+  title: 'PMAT-295: Diamond depth-8 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-8 via cancellative monoid)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T01:00:00Z
+  updated: 2026-05-23T01:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add bounded_smem_cancellative_monoid_diamond Lean theorem using Nat.add_left_cancel and Nat.add_right_cancel. Wire as new equation in contracts/compile-rust-to-ptx-mma-v1.yaml. Tighten substrate_diamond_depth_8_opened gate to ≥2 contracts. Opens DEPTH-8 ACROSS LAYERS — 2 contracts at depth-8+. Categorically distinct from PMAT-218 monoid axioms: cancellation is a stronger structural property not all monoids share. Closes the loop on BoundedSmem additive structure (cancellative commutative monoid = closest algebraic cousin to abelian group)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-294
   github_issue: null
   item_type: task
