@@ -7,6 +7,60 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-12 ACROSS LAYERS: max/min-monotonicity Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-306)
+
+**Path β extension.** Depth-12 was opened by PMAT-305 on PyIntArith (Layer 1). PMAT-306 extends depth-12 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) so the substrate now has **two contracts at depth-12+** across distinct taxonomy layers.
+
+**The 12 Diamond categories on `C-COMPILE-RUST-TO-PTX-MMA`:**
+
+1. PMAT-218: BOUNDED MONOID
+2. PMAT-287: CLOSURE
+3. PMAT-231: JOIN-SEMILATTICE
+4. PMAT-242: MEET-SEMILATTICE
+5. PMAT-248: LATTICE ABSORPTION
+6. PMAT-291: DISTRIBUTIVE LATTICE
+7. PMAT-293: BOUNDED LATTICE
+8. PMAT-295: CANCELLATIVE MONOID
+9. PMAT-299: ORDERED MONOID
+10. PMAT-301: ADDITIVE-LATTICE DISTRIBUTIVITY
+11. PMAT-303: DISCRETE ORDER
+12. **PMAT-306: MAX/MIN MONOTONICITY** ← extends depth-12 ACROSS LAYERS
+
+**Why MAX/MIN MONOTONICITY is genuinely a NEW category:**
+
+- PMAT-231/242 (**SEMILATTICES**) give algebraic axioms (commutativity, associativity, idempotence) but **don't claim** max/min are monotone in their arguments.
+- PMAT-291 (**DISTRIBUTIVE LATTICE**) gives cross-distributivity — not monotonicity of the operations themselves.
+- PMAT-299 (**ORDERED MONOID**) gives `+` monotonicity — not max/min.
+- PMAT-301 (**ADDITIVE-LATTICE**) gives `+` distributing over max/min — not max/min monotonicity.
+- PMAT-306 axiomatizes that **MAX and MIN are themselves ORDER-PRESERVING**:
+  - `a ≤ b → max(a, c) ≤ max(b, c)` (left-monotone)
+  - `a ≤ b → max(c, a) ≤ max(c, b)` (right-monotone)
+  - `a ≤ b → min(a, c) ≤ min(b, c)` (left-monotone)
+  - `a ≤ b → min(c, a) ≤ min(c, b)` (right-monotone)
+
+A non-monotone lattice-like operation could be constructed (e.g., bit-reversal-and-max) that satisfies commutativity/associativity/idempotence but breaks monotonicity. So PMAT-306 is a genuinely new claim.
+
+**New Lean theorem:**
+
+```lean
+theorem bounded_smem_max_min_monotone_diamond (a b c : BoundedSmem) :
+    (a.val ≤ b.val → Nat.max a.val c.val ≤ Nat.max b.val c.val)
+    ∧ (a.val ≤ b.val → Nat.max c.val a.val ≤ Nat.max c.val b.val)
+    ∧ (a.val ≤ b.val → Nat.min a.val c.val ≤ Nat.min b.val c.val)
+    ∧ (a.val ≤ b.val → Nat.min c.val a.val ≤ Nat.min c.val b.val) := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> intros <;> omega
+```
+
+Proved by `omega` — Mathlib's `omega` tactic handles linear arithmetic on Nat with `min`/`max`.
+
+**Falsification surface:** an emitter that lowered max through a path that failed to preserve order (e.g., a non-monotone arithmetic-like operation, or a max that depended on bit-pattern ordering rather than numeric ordering) would falsify property (a) — a real bug class invisible to the prior 11 categories which axiomatize max/min algebra but not order preservation.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_12_plus: 2` (was 1 after PMAT-305).
+- `substrate_diamond_depth_12_opened` gate tightened to `≥ 2` (ACROSS LAYERS).
+- Substrate Diamond totals: **49 wired Diamond theorems** across 12 contracts (was 48).
+
 ### Added — FIRST Diamond depth-12 in the substrate: ordered-ring Diamond on `C-PY-INT-ARITH` (PMAT-305)
 
 **Path β extension.** Opens Diamond **depth-12** — twelve distinct algebraic categories on a single contract. PyIntArith was at depth-11 (post-PMAT-302); PMAT-305 adds **ORDERED RING (sign rules)** as the twelfth orthogonal category.

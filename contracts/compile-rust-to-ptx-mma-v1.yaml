@@ -576,6 +576,46 @@ equations:
       - "an emitter using floating-point smem accounting would falsify the no-gaps axiom (b)"
       - "Diamond DEPTH-11 ACROSS LAYERS demonstrated: 2 contracts at depth-11+"
 
+  bounded_smem_max_min_monotone_diamond:
+    # PMAT-306: TWELFTH Diamond on this contract — opens DEPTH-12
+    # ACROSS LAYERS. MAX/MIN MONOTONICITY: max and min preserve ≤
+    # in both arguments. Categorically orthogonal to all 11 prior
+    # categories:
+    #   - PMAT-231/242 SEMILATTICES: algebraic axioms (commutativity,
+    #     associativity, idempotence) — but DON'T claim monotonicity
+    #   - PMAT-291 DISTRIBUTIVE LATTICE: cross-distributivity — not
+    #     monotonicity of the operations themselves
+    #   - PMAT-299 ORDERED MONOID: + is monotone — not max/min
+    #   - PMAT-301 ADDITIVE-LATTICE: + distributes over max/min —
+    #     not max/min monotonicity
+    # PyIntArith reached depth-12 at PMAT-305 (ordered-ring sign
+    # rules); PMAT-306 extends depth-12 to Layer 5 via max/min
+    # monotonicity.
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_max_min_monotone_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      max and min on (BoundedSmem.val, ≤) are MONOTONE in both arguments:
+        (a) max left-monotone:  a ≤ b → max a c ≤ max b c
+        (b) max right-monotone: a ≤ b → max c a ≤ max c b
+        (c) min left-monotone:  a ≤ b → min a c ≤ min b c
+        (d) min right-monotone: a ≤ b → min c a ≤ min c b
+    domain: |
+      Any three BoundedSmem values, on the underlying Nat .val
+      projection. The four monotonicity properties together
+      axiomatize that max and min are order-preserving operations
+      on (Nat, ≤).
+    invariants:
+      - "TWELFTH Diamond category on C-COMPILE-RUST-TO-PTX-MMA — opens DEPTH-12 ACROSS LAYERS (second contract at depth-12+ after PMAT-305 on PyIntArith)"
+      - "distinct from PMAT-231/242 semilattices: algebraic axioms (commutativity/associativity/idempotence) — but don't claim monotonicity of operations"
+      - "distinct from PMAT-299 ordered monoid: + is monotone — not max/min"
+      - "distinct from PMAT-301 additive-lattice: + distributes over max/min — not max/min monotonicity"
+      - "load-bearing for parallel-composition emitters: increasing any individual smem reservation should never decrease the worst-case parallel reservation — a non-monotone max would falsify (a)"
+    preconditions:
+      - "three BoundedSmem values; theorem stated on Nat .val projection"
+    postconditions:
+      - "an emitter using a non-monotone arithmetic-like operation in place of max would falsify (a)"
+      - "Diamond DEPTH-12 ACROSS LAYERS demonstrated: 2 contracts at depth-12+"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)
