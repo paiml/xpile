@@ -981,4 +981,75 @@ theorem list_reverse_involution_diamond {α : Type} (l : PyListSilver α) :
   · rfl
   · intro a; rfl
 
+/-! ## PMAT-349 — FIFTH Diamond on C-XLATE-PY-LIST-TO-VEC (Layer 2
+    BROADENING DEPTH-5 from 6 to 7 contracts): PYLIST-SILVER
+    STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XLATE-PY-LIST-TO-VEC-007).
+
+    **Broadens DEPTH-5 from 6 to 7 contracts.** After PMAT-348
+    achieved depth-5 with 2nd Layer 3 contract (XpileBackendTrait),
+    PMAT-349 pushes XlatePyListToVec (Layer 2) from depth-4 to
+    depth-5, adding a SECOND Layer 2 contract at depth-5
+    (Bashrs was first via PMAT-346).
+
+    The 5 Diamond categories on C-XLATE-PY-LIST-TO-VEC:
+    - PMAT-221 list_free_monoid_diamond: (List, ++, []) monoid
+    - PMAT-229 nonempty_section_retraction_diamond: NonEmpty subtype
+    - PMAT-244 length_monoid_homomorphism_diamond: length functor
+    - PMAT-338 list_reverse_involution_diamond: reverse involution
+    - **PMAT-349: PYLIST-SILVER STRUCTURE EXTENSIONALITY** ← depth-5
+
+    The categorical distinction is sharp:
+      - PMAT-221: about `++` (concatenation algebra)
+      - PMAT-229: about NonEmpty subtype refinement
+      - PMAT-244: about length functor (homomorphism)
+      - PMAT-338: about `reverse` (involution)
+      - PMAT-349: about RECORD-FROM-FIELDS identity — distinct
+        from all four prior algebraic categories
+
+    Mirror of PMAT-311 (BoundedSmem), PMAT-329 (OutcomeSilver),
+    PMAT-330 (MetaHirModuleSilver), PMAT-331 (ArtifactSilver),
+    PMAT-332 (TranspileSession), PMAT-333 (Contract), PMAT-334
+    (EquationFormula), PMAT-335 (RustFn), PMAT-336 (RustFnSilver) —
+    tenth substrate-wide demonstration of the structure-
+    extensionality pattern, first on PyListSilver.
+
+    Status: discharged at v0.1.0 (PMAT-349). Tier: DIAMOND.
+    Broadens DEPTH-5 from 6 to 7 contracts. -/
+
+/--
+  **Diamond-tier refinement theorem** — `PyListSilver α` admits
+  STRUCTURE EXTENSIONALITY.
+
+  Combines four STRUCTURE-EXTENSIONALITY properties:
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality (congruence)
+  (c) Self-equality (reflexivity)
+  (d) Identity field-replacement preserves elems
+
+  Tenth substrate-wide demonstration of the structure-extensionality
+  pattern (after PMAT-311/329/330/331/332/333/334/335/336).
+
+  Status: **discharged at v0.1.0 (PMAT-349)**. Tier: DIAMOND.
+  Broadens DEPTH-5 from 6 to 7 contracts.
+-/
+theorem py_list_silver_struct_extensionality_diamond {α : Type}
+    (l1 l2 : PyListSilver α) :
+    -- (a) Field equality → record equality
+    (l1.elems = l2.elems → l1 = l2)
+    -- (b) Record equality → field equality
+    ∧ (l1 = l2 → l1.elems = l2.elems)
+    -- (c) Self-equality (reflexivity)
+    ∧ (l1 = l1)
+    -- (d) Identity field-replacement preserves elems
+    ∧ (({ elems := l1.elems } : PyListSilver α).elems = l1.elems) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    cases l1; cases l2
+    simp_all
+  · intro h
+    rw [h]
+  · rfl
+  · rfl
+
 end XpileContracts.CXlatePyListToVec

@@ -142,12 +142,12 @@ fn substrate_diamond_depth_5_opened() {
     // PMAT-346 BROADENED depth-5 to C-BASHRS-POSIX-IDEMPOTENCE (Layer 2).
     // PMAT-347 BROADENED depth-5 to C-XPILE-FRONTEND-TRAIT (Layer 3) — COMPLETED
     // depth-5 ACROSS ALL 5 TAXONOMY LAYERS (parallel to PMAT-330 for depth-4).
-    // PMAT-348 BROADENED depth-5 to C-XPILE-BACKEND-TRAIT (Layer 3) — SECOND
-    // Layer 3 contract at depth-5+, lifting substrate to 6 contracts.
+    // PMAT-348 BROADENED depth-5 to C-XPILE-BACKEND-TRAIT (Layer 3, 2nd L3).
+    // PMAT-349 BROADENED depth-5 to C-XLATE-PY-LIST-TO-VEC (Layer 2, 2nd L2).
     assert!(
-        depth_5_plus >= 6,
-        "Diamond depth-5 BEYOND ALL 5 LAYERS milestone (PMAT-286/287/328/346/347/348): \
-         expected ≥6 contracts at depth-5+ (all 5 layers + 2nd Layer 3), \
+        depth_5_plus >= 7,
+        "Diamond depth-5 BROADENED milestone (PMAT-286/287/328/346/347/348/349): \
+         expected ≥7 contracts at depth-5+ (all 5 layers + 2nd L3 + 2nd L2), \
          got {depth_5_plus}.\n{json}"
     );
 }

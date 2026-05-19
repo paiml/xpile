@@ -2,6 +2,15 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-349
+  github_issue: null
+  item_type: task
+  title: 'PMAT-349: Diamond depth-5 BROADENED from 6 to 7 contracts (PyListSilver struct extensionality on C-XLATE-PY-LIST-TO-VEC)'
+  status: planned
+  priority: medium
+  created: 2026-05-20T02:00:00Z
+  acceptance_criteria:
+  - "Post-PMAT-348 broadening: add py_list_silver_struct_extensionality_diamond to XlatePyListToVec. Pushes Layer 2 contract from depth-4 to depth-5, making it the 2nd Layer 2 contract at depth-5 (Bashrs was first via PMAT-346). Tenth substrate-wide structure-extensionality demonstration. Tighten depth-5 gate from ≥6 to ≥7."
 - id: PMAT-348
   github_issue: null
   item_type: task
