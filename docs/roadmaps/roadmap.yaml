@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-294
+  github_issue: null
+  item_type: task
+  title: 'PMAT-294: FIRST Diamond depth-8 in the substrate (divisibility-preorder on C-PY-INT-ARITH)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T00:30:00Z
+  updated: 2026-05-23T00:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add divisibility_preorder_diamond Lean theorem to contracts/lean/PyIntArith.lean — 4 conjuncts: reflexivity (a | a), transitivity (a | b → b | c → a | c), universal divisor 1 (1 | a), universal multiple 0 (a | 0). Uses Int.dvd_refl, dvd_trans, Int.one_dvd, Int.dvd_zero from Mathlib. Wire as new equation in contracts/py-int-arith-v1.yaml. Extend xpile diamond reporter with depth-8+ label + depth_8_plus aggregate. Add substrate_diamond_depth_8_opened gate test. FIRST DEPTH-8 Diamond in substrate — PyIntArith reaches 8 distinct algebraic categories. The 8th category (divisibility preorder) is genuinely orthogonal — it shifts abstraction layer from binary operations (the prior 7) to a binary RELATION. Path β extension."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-293
   github_issue: null
   item_type: task
