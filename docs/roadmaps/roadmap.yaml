@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-300
+  github_issue: null
+  item_type: task
+  title: 'PMAT-300: FIRST Diamond depth-10 in the substrate (RING-distributivity of negation over multiplication on C-PY-INT-ARITH)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T02:30:00Z
+  updated: 2026-05-23T02:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add ring_neg_mul_distrib_diamond Lean theorem to contracts/lean/PyIntArith.lean — 4 conjuncts: left negation distributes (Int.neg_mul), right negation distributes (Int.mul_neg), sign cancel (Int.neg_mul_neg), subtraction distributes (Int.sub_mul). Wire as new equation in py-int-arith-v1.yaml. Extend xpile diamond reporter with depth-10+ label + depth_10_plus aggregate. Add substrate_diamond_depth_10_opened gate test (≥1). Refine depth-9 label from depth-9+ to discrete depth-9 (PMAT-298+PMAT-299 effect). FIRST DEPTH-10 — PyIntArith reaches 10 categories. The 10th (RING) is the structural BRIDGE between PMAT-214 SEMIRING (no neg) and PMAT-290 ABELIAN-GROUP-ENRICHMENT (no mul) — the axiom (-a)*b = -(a*b) cannot be derived from either alone. Matches Mathlib's Ring / CommRing typeclass shape."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-299
   github_issue: null
   item_type: task

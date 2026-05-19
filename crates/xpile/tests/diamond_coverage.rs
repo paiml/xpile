@@ -190,12 +190,27 @@ fn substrate_diamond_depth_9_opened() {
     let json = run_diamond_json();
     let depth_9_plus = read_aggregate_field(&json, "depth_9_plus");
     // PMAT-298 opened depth-9 on C-PY-INT-ARITH (Layer 1): linear-order trichotomy.
-    // PMAT-299 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): ordered monoid
-    // (forward monotonicity + reflexivity + transitivity).
-    // Gate now asserts depth-9 ACROSS LAYERS (≥2 contracts at depth-9+).
+    // PMAT-299 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): ordered monoid.
+    // PMAT-300 took PyIntArith to depth-10 (still ≥2 at depth-9+).
+    // Gate asserts depth-9 ACROSS LAYERS (≥2 contracts at depth-9+).
     assert!(
         depth_9_plus >= 2,
         "Diamond depth-9 ACROSS LAYERS milestone (PMAT-298, PMAT-299): \
          expected ≥2 contracts at depth-9+ (Layer 1 + Layer 5), got {depth_9_plus}.\n{json}"
+    );
+}
+
+#[test]
+fn substrate_diamond_depth_10_opened() {
+    let json = run_diamond_json();
+    let depth_10_plus = read_aggregate_field(&json, "depth_10_plus");
+    // PMAT-300 opened depth-10 on C-PY-INT-ARITH: RING-distributivity of negation
+    // over multiplication. The 10th orthogonal category bridges PMAT-214
+    // SEMIRING (no neg) and PMAT-290 ABELIAN-GROUP-ENRICHMENT (no mul) into a
+    // full RING via (-a)*b = -(a*b) — Mathlib's `Ring` typeclass shape.
+    assert!(
+        depth_10_plus >= 1,
+        "Diamond depth-10 milestone (PMAT-300): expected ≥1 contract at depth-10+, \
+         got {depth_10_plus}.\n{json}"
     );
 }

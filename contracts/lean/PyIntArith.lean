@@ -1841,4 +1841,97 @@ theorem linear_order_trichotomy_diamond (a b c : Int) :
   · intro hab hba; exact Int.lt_asymm hab hba
   · intro hab hbc; exact Int.lt_trans hab hbc
 
+/-! ## PMAT-300 — TENTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-10
+    in the substrate): RING-structure / negation-multiplication
+    distributivity (XPILE-REFINE-PY-INT-ARITH-018).
+
+    **Opens DEPTH-10 in the substrate.** PyIntArith reached depth-9
+    at PMAT-298 (linear-order trichotomy); PMAT-300 adds the TENTH
+    orthogonal Diamond category — the RING-defining axioms that tie
+    SEMIRING (PMAT-214) and ABELIAN-GROUP-ENRICHMENT (PMAT-290)
+    together into a full RING.
+
+    The 10 Diamond categories on C-PY-INT-ARITH:
+    - PMAT-214: SEMIRING (+, *)
+    - PMAT-228: EUCLIDEAN DOMAIN (fdiv, fmod)
+    - PMAT-241: SHIFT-MONOID (shl)
+    - PMAT-247: POWER-MONOID (pow)
+    - PMAT-286: BITWISE-AND-MONOID (&)
+    - PMAT-290: ABELIAN-GROUP-ENRICHMENT (neg)
+    - PMAT-292: ORDER-DISTRIBUTIVE-LATTICE (min, max)
+    - PMAT-294: DIVISIBILITY-PREORDER (∣)
+    - PMAT-298: LINEAR-ORDER TRICHOTOMY (<)
+    - **PMAT-300: RING-DISTRIBUTIVITY (neg × mul)** ← FIRST DEPTH-10
+
+    The categorical distinction is sharp:
+      - SEMIRING (PMAT-214) gives (Int, +, *, 0, 1) but says nothing
+        about negation — semirings (e.g., Nat) need not even have
+        negation defined.
+      - ABELIAN-GROUP (PMAT-290) gives (Int, +, neg, 0) but says
+        nothing about multiplication — abelian groups (e.g., (R, +))
+        need not have a multiplicative operation.
+      - RING (PMAT-300) ADDS the AXIOM that ties them together:
+        (-a) * b = -(a * b). This is what makes Int a RING rather
+        than just "semiring + abelian group on disjoint operations".
+
+    Why this is genuinely orthogonal:
+      The axiom (-a) * b = -(a * b) cannot be derived from semiring
+      axioms alone (semirings lack negation) nor from abelian-group
+      axioms alone (abelian groups lack multiplication). It is the
+      structural BRIDGE between the two — exactly the property that
+      separates "additive-group-with-monoid-structure-tacked-on"
+      from "RING". Mathlib's `Ring` typeclass encodes this combination.
+
+    For Python int dispatch, this matters: an emitter that computed
+    `(-a) * b` as a separate dispatch path that did NOT cancel back
+    to `-(a * b)` would violate the RING axiom — a real bug class
+    that semiring + group + lattice + linear-order all leave silent.
+
+    Status: discharged at v0.1.0 (PMAT-300). Tier: DIAMOND.
+    FIRST DEPTH-10 in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `(Int, +, *, neg, 0, 1)` is
+  a RING (the negation-multiplication distributivity laws).
+
+  Combines four RING-defining properties that tie semiring + abelian
+  group together:
+  (a) Left negation distributes over multiplication: (-a) * b = -(a * b)
+  (b) Right negation distributes over multiplication: a * (-b) = -(a * b)
+  (c) Negation of both sides cancels (sign rule): (-a) * (-b) = a * b
+  (d) Subtraction distributes over multiplication: (a - b) * c = a*c - b*c
+
+  Together these axiomatize the RING structure: (Int, +, *) is a
+  commutative ring with unit. Distinct from PMAT-214 SEMIRING
+  (which has no negation) and PMAT-290 ABELIAN-GROUP-ENRICHMENT
+  (which only relates + and neg, not × and neg).
+
+  Mathlib's `Int.neg_mul`, `Int.mul_neg`, `Int.neg_mul_neg`, and
+  `Int.sub_mul` are standard ring lemmas — `Int.instCommRing`
+  provides the typeclass evidence.
+
+  An emitter that lowered `(-a) * b` to a separate slow path that
+  did NOT cancel back to `-(a * b)` would falsify (a). Such a bug
+  class slips past SEMIRING (no neg), ABELIAN-GROUP (no mul),
+  LATTICE (no arithmetic), and LINEAR-ORDER (no algebraic
+  structure) — only RING catches it.
+
+  Status: **discharged at v0.1.0 (PMAT-300)**. Tier: DIAMOND.
+  FIRST DEPTH-10 in the substrate.
+-/
+theorem ring_neg_mul_distrib_diamond (a b c : Int) :
+    -- (a) Left negation distributes over multiplication
+    (-a) * b = -(a * b)
+    -- (b) Right negation distributes over multiplication
+    ∧ a * (-b) = -(a * b)
+    -- (c) Negation of both sides cancels (sign rule)
+    ∧ (-a) * (-b) = a * b
+    -- (d) Subtraction distributes over multiplication
+    ∧ (a - b) * c = a * c - b * c := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.neg_mul a b
+  · exact Int.mul_neg a b
+  · exact Int.neg_mul_neg a b
+  · exact Int.sub_mul a b c
+
 end XpileContracts.CPyIntArith

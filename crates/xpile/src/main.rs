@@ -1228,7 +1228,8 @@ impl DiamondRow {
             6 => "depth-6",
             7 => "depth-7",
             8 => "depth-8",
-            _ => "depth-9+",
+            9 => "depth-9",
+            _ => "depth-10+",
         }
     }
 }
@@ -1309,6 +1310,7 @@ fn print_diamond_text(rows: &[DiamondRow]) {
     let depth_7_plus = rows.iter().filter(|r| r.diamond_count >= 7).count();
     let depth_8_plus = rows.iter().filter(|r| r.diamond_count >= 8).count();
     let depth_9_plus = rows.iter().filter(|r| r.diamond_count >= 9).count();
+    let depth_10_plus = rows.iter().filter(|r| r.diamond_count >= 10).count();
     println!(
         "totals: {total_diamonds} Diamond theorems across {} contracts",
         rows.len()
@@ -1318,7 +1320,7 @@ fn print_diamond_text(rows: &[DiamondRow]) {
          depth-3+: {depth_3_plus} contracts, depth-4+: {depth_4_plus} contracts, \
          depth-5+: {depth_5_plus} contracts, depth-6+: {depth_6_plus} contracts, \
          depth-7+: {depth_7_plus} contracts, depth-8+: {depth_8_plus} contracts, \
-         depth-9+: {depth_9_plus} contracts"
+         depth-9+: {depth_9_plus} contracts, depth-10+: {depth_10_plus} contracts"
     );
 }
 
@@ -1347,13 +1349,14 @@ fn print_diamond_json(rows: &[DiamondRow]) {
     let depth_7_plus = rows.iter().filter(|r| r.diamond_count >= 7).count();
     let depth_8_plus = rows.iter().filter(|r| r.diamond_count >= 8).count();
     let depth_9_plus = rows.iter().filter(|r| r.diamond_count >= 9).count();
+    let depth_10_plus = rows.iter().filter(|r| r.diamond_count >= 10).count();
     println!(
         "],\"total_diamonds\":{total_diamonds},\"contracts_total\":{},\
          \"depth_1_plus\":{depth_1_plus},\"depth_2_plus\":{depth_2_plus},\
          \"depth_3_plus\":{depth_3_plus},\"depth_4_plus\":{depth_4_plus},\
          \"depth_5_plus\":{depth_5_plus},\"depth_6_plus\":{depth_6_plus},\
          \"depth_7_plus\":{depth_7_plus},\"depth_8_plus\":{depth_8_plus},\
-         \"depth_9_plus\":{depth_9_plus}}}",
+         \"depth_9_plus\":{depth_9_plus},\"depth_10_plus\":{depth_10_plus}}}",
         rows.len()
     );
 }
@@ -1403,17 +1406,23 @@ mod diamond_tests {
             diamond_count: 8,
         };
         assert_eq!(r8.depth_label(), "depth-8");
-        // PMAT-298: depth-9+ opened
+        // PMAT-298: depth-9 opened (later refined to discrete label by PMAT-300)
         let r9 = DiamondRow {
             id: "X".into(),
             diamond_count: 9,
         };
-        assert_eq!(r9.depth_label(), "depth-9+");
+        assert_eq!(r9.depth_label(), "depth-9");
+        // PMAT-300: depth-10+ opened (FIRST DEPTH-10 in the substrate)
         let r10 = DiamondRow {
             id: "X".into(),
             diamond_count: 10,
         };
-        assert_eq!(r10.depth_label(), "depth-9+");
+        assert_eq!(r10.depth_label(), "depth-10+");
+        let r11 = DiamondRow {
+            id: "X".into(),
+            diamond_count: 11,
+        };
+        assert_eq!(r11.depth_label(), "depth-10+");
     }
 
     #[test]
