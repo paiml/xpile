@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-326
+  github_issue: null
+  item_type: task
+  title: 'PMAT-326: Diamond depth-20 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-20 via Nat power-monotonicity)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T15:30:00Z
+  updated: 2026-05-23T15:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add bounded_smem_nat_pow_monotone_diamond Lean theorem to contracts/lean/CompileRustToPtxMma.lean — 4 conjuncts: base monotonicity (Nat.pow_le_pow_left), exponent monotonicity (Nat.pow_le_pow_right), preserves 1-or-more (Nat.one_le_pow), zero base positive exp (Nat.zero_pow). Wire as new equation in compile-rust-to-ptx-mma-v1.yaml. Tighten substrate_diamond_depth_20_opened gate to ≥2 contracts. Opens DEPTH-20 ACROSS LAYERS — 2 contracts at depth-20+. Distinct from PMAT-318 NAT POWER-MONOID (algebraic pow_zero/succ/add axioms): PMAT-326 captures ORDER-PRESERVATION of pow. Together with PMAT-318 fully characterizes Nat.pow (algebraic + order-preserving). Load-bearing for tile-based parallel kernel smem aggregation."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-325
   github_issue: null
   item_type: task

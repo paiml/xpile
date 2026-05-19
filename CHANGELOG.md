@@ -7,6 +7,47 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-20 ACROSS LAYERS: Nat-power-monotonicity Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-326)
+
+**Path β extension.** Depth-20 was opened by PMAT-325 on PyIntArith (Layer 1). PMAT-326 extends depth-20 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) via the Nat-power-monotonicity Diamond — the substrate now has **2 contracts at depth-20+**.
+
+**Why NAT POWER-MONOTONICITY is genuinely a NEW category:**
+
+Distinct from PMAT-318 NAT POWER-MONOID (which captured the algebraic pow_zero/succ/add axioms). PMAT-326 captures the **ORDER-PRESERVING** behavior of the same operation:
+
+- **Base monotonicity:** `a ≤ b → a^n ≤ b^n`
+- **Exponent monotonicity (base ≥ 1):** `1 ≤ a → m ≤ n → a^m ≤ a^n`
+- **Preserves 1-or-more:** `1 ≤ a → 1 ≤ a^n`
+- **Zero base, positive exponent:** `0^(n+1) = 0`
+
+Together with PMAT-318, this gives the full structured behavior of `Nat.pow`: algebraic AND order-preserving. None of the prior 19 categories on this contract axiomatizes the order-preservation of pow.
+
+**New Lean theorem:**
+
+```lean
+theorem bounded_smem_nat_pow_monotone_diamond
+    (a b : BoundedSmem) (n m : Nat) :
+    (a.val ≤ b.val → a.val ^ n ≤ b.val ^ n)
+    ∧ (1 ≤ a.val → m ≤ n → a.val ^ m ≤ a.val ^ n)
+    ∧ (1 ≤ a.val → 1 ≤ a.val ^ n)
+    ∧ ((0 : Nat) ^ (n + 1) = 0) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h; exact Nat.pow_le_pow_left h n
+  · intro h1 h2; exact Nat.pow_le_pow_right h1 h2
+  · intro h; exact Nat.one_le_pow n a.val (Nat.lt_of_lt_of_le Nat.zero_lt_one h)
+  · exact Nat.zero_pow (Nat.succ_pos n)
+```
+
+Uses Mathlib's `Nat.pow_le_pow_left`, `Nat.pow_le_pow_right`, `Nat.one_le_pow`, `Nat.zero_pow`.
+
+**Falsification surface:** an emitter that lowered `tile_count^k` through a path that failed monotonicity (e.g., overflow-prone right-associated multiplication producing wrong sign in fixed-width arithmetic) would falsify property (a). This is load-bearing for tile-based parallel kernel smem aggregation — increasing `tile_count` should never decrease the total bytes.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_20_plus: 2` (was 1 after PMAT-325).
+- `substrate_diamond_depth_20_opened` gate tightened to `≥ 2` (ACROSS LAYERS).
+- Substrate Diamond totals: **65 wired Diamond theorems** across 12 contracts (was 64).
+
 ### Added — FIRST Diamond depth-20 in the substrate: Int.toNat partial-inverse Diamond on `C-PY-INT-ARITH` (PMAT-325)
 
 **Path β extension.** Opens Diamond **depth-20** — twenty distinct algebraic categories on a single contract. PyIntArith was at depth-19 (post-PMAT-322); PMAT-325 adds **Int.toNat PARTIAL INVERSE** as the twentieth orthogonal category.

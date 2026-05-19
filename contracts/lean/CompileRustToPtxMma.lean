@@ -1862,4 +1862,89 @@ theorem bounded_smem_nat_truncated_sub_diamond
     ∧ (a.val - 0 = a.val) := by
   refine ⟨?_, ?_, ?_, ?_⟩ <;> omega
 
+/-! ## PMAT-326 — TWENTIETH Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (DEPTH-20 ACROSS LAYERS): NAT POWER-MONOTONICITY — `Nat.pow`
+    is monotone in BOTH the base and exponent arguments on
+    BoundedSmem.val (XPILE-REFINE-COMPILE-PTX-021).
+
+    **Opens DEPTH-20 ACROSS LAYERS.** PyIntArith reached depth-20
+    at PMAT-325 (Int.toNat partial inverse); PMAT-326 extends
+    depth-20 to Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The substrate
+    now has depth-20 on TWO contracts spanning Layer 1 and Layer 5.
+
+    CompileRustToPtxMma already has NINETEEN Diamond categories:
+    - PMAT-218..323: prior 19 categories
+    - **PMAT-326: NAT POWER-MONOTONICITY** ← depth-20 ACROSS LAYERS
+
+    The categorical distinction is sharp:
+      - PMAT-318 NAT POWER-MONOID: algebraic axioms (pow_zero,
+        pow_succ, pow_add, one_pow) — captures the MONOID action.
+      - PMAT-326 NAT POW-MONOTONICITY: how `Nat.pow` preserves
+        order in BOTH arguments — captures the ORDER-PRESERVING
+        behavior of the same operation, distinct from its
+        algebraic axioms.
+
+    Together with PMAT-318, this gives the full structured
+    behavior of Nat.pow: algebraic AND order-preserving. None of
+    the prior 19 categories axiomatizes the order-preservation
+    of pow.
+
+    Key claims:
+      - Base monotonicity: `a ≤ b → a^n ≤ b^n`
+      - Exponent monotonicity (base ≥ 1): `1 ≤ a → m ≤ n → a^m ≤ a^n`
+      - Pow preserves 1-or-more: `1 ≤ a → 1 ≤ a^n`
+      - `0^(n+1) = 0` (zero base, positive exponent)
+
+    For GPU smem accounting, this matters: when computing
+    `bytes_per_tile * tile_count^k` for power-of-tile-count
+    aggregations, monotonicity guarantees that increasing
+    `tile_count` never decreases total bytes — a structural
+    invariant for tile-based parallel kernel composition.
+
+    Status: discharged at v0.1.0 (PMAT-326). Tier: DIAMOND.
+    Second DEPTH-20 in the substrate (DEPTH-20 ACROSS LAYERS). -/
+
+/--
+  **Diamond-tier refinement theorem** — `Nat.pow` is monotone in
+  both arguments on `BoundedSmem.val`.
+
+  Combines four POW-MONOTONICITY properties:
+  (a) Base monotone:           `a ≤ b → a^n ≤ b^n`
+  (b) Exponent monotone:       `1 ≤ a → m ≤ n → a^m ≤ a^n`
+  (c) Preserves 1-or-more:     `1 ≤ a → 1 ≤ a^n`
+  (d) Zero-base positive exp:  `0^(n+1) = 0`
+
+  Together these characterize the ORDER-PRESERVING behavior of
+  `Nat.pow`. Distinct from PMAT-318 (which captured the algebraic
+  pow_zero/succ/add axioms).
+
+  Uses Mathlib's `Nat.pow_le_pow_left`, `Nat.pow_le_pow_right`,
+  `Nat.one_le_pow`, plus `Nat.zero_pow` (or the equivalent
+  `zero_pow`).
+
+  An emitter that lowered `tile_count^k` through a path that
+  failed monotonicity (e.g., overflow-prone right-associated
+  multiplication producing wrong sign in fixed-width) would
+  falsify (a) — a real bug class for tile-based parallel kernel
+  smem aggregation.
+
+  Status: **discharged at v0.1.0 (PMAT-326)**. Tier: DIAMOND.
+  Second DEPTH-20 in the substrate (DEPTH-20 ACROSS LAYERS).
+-/
+theorem bounded_smem_nat_pow_monotone_diamond
+    (a b : BoundedSmem) (n m : Nat) :
+    -- (a) Base monotonicity: a ≤ b → a^n ≤ b^n
+    (a.val ≤ b.val → a.val ^ n ≤ b.val ^ n)
+    -- (b) Exponent monotonicity (base ≥ 1)
+    ∧ (1 ≤ a.val → m ≤ n → a.val ^ m ≤ a.val ^ n)
+    -- (c) Preserves 1-or-more
+    ∧ (1 ≤ a.val → 1 ≤ a.val ^ n)
+    -- (d) Zero base, positive exponent → 0
+    ∧ ((0 : Nat) ^ (n + 1) = 0) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h; exact Nat.pow_le_pow_left h n
+  · intro h1 h2; exact Nat.pow_le_pow_right h1 h2
+  · intro h; exact Nat.one_le_pow n a.val (Nat.lt_of_lt_of_le Nat.zero_lt_one h)
+  · exact Nat.zero_pow (Nat.succ_pos n)
+
 end XpileContracts.CCompileRustToPtxMma
