@@ -1299,4 +1299,44 @@ theorem variant_count_cardinality_functor_diamond
   · exact Nat.zero_le i1.variant_count
   · exact hi
 
+/-! ## PMAT-335 — THIRD Diamond on C-XLATE-LEAN-TO-RUST (Layer 5
+    BROADENING DEPTH-3 from 10 to 11 contracts):
+    RustFn STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XLATE-LEAN-TO-RUST-005).
+
+    **Broadens DEPTH-3 from 10 to 11 contracts.** Substrate is now
+    only 1 contract away from depth-3 UNIVERSAL across all 12.
+
+    Eighth substrate-wide demonstration of structure-extensionality
+    pattern.
+
+    Status: discharged at v0.1.0 (PMAT-335). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `RustFn` admits
+  STRUCTURE EXTENSIONALITY.
+
+  Status: **discharged at v0.1.0 (PMAT-335)**. Tier: DIAMOND.
+-/
+theorem rust_fn_struct_extensionality_diamond
+    (f1 f2 : RustFn) :
+    -- (a) Field equality → record equality
+    (f1.body = f2.body → f1 = f2)
+    -- (b) Record equality → field equality
+    ∧ (f1 = f2 → f1.body = f2.body)
+    -- (c) Decidable equality
+    ∧ (f1 = f2 ∨ f1 ≠ f2)
+    -- (d) Self-equality (reflexivity)
+    ∧ (f1 = f1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    cases f1; cases f2
+    simp_all
+  · intro h
+    rw [h]
+  · by_cases h : f1 = f2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXlateLeanToRust
