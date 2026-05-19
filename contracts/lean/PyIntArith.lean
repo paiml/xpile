@@ -1777,4 +1777,68 @@ theorem divisibility_preorder_diamond (a b c : Int) :
   · exact Int.one_dvd a
   · exact Int.dvd_zero a
 
+/-! ## PMAT-298 — NINTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-9):
+    linear-order / trichotomy via Int.lt_trichotomy
+    (XPILE-REFINE-PY-INT-ARITH-016).
+
+    **First DEPTH-9 Diamond in the substrate.** Opens Diamond
+    depth-9. Adds the LINEAR-ORDER / TRICHOTOMY category as the
+    ninth orthogonal Diamond on PyIntArith.
+
+    Distinct from prior 8 categories:
+    - PMAT-292 (ORDER-DISTRIBUTIVE-LATTICE) proves the LATTICE
+      STRUCTURE on min/max but does NOT claim totality (lattices
+      can be non-linear — e.g., divisibility lattice on Nat).
+    - PMAT-294 (DIVISIBILITY-PREORDER) is a PREORDER, not even a
+      partial order on Int (antisymmetry fails up to sign).
+    - PMAT-298 (TOTAL ORDER) claims TRICHOTOMY: any two Ints are
+      comparable. This is what makes the Int order LINEAR, not
+      just lattice-like.
+
+    The categorical distinction between PMAT-292 and PMAT-298:
+    PMAT-292 captures the algebraic LATTICE laws (distributivity,
+    associativity, commutativity of min/max). PMAT-298 captures
+    the ORDER-THEORETIC claim that the underlying order is total.
+    A non-linear lattice (e.g., (Nat, ∣) which has gcd/lcm as
+    lattice ops but isn't linear) satisfies the lattice laws but
+    NOT trichotomy.
+
+    Status: discharged at v0.1.0 (PMAT-298). Tier: DIAMOND.
+    First DEPTH-9 Diamond in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `(Int, <)` is a LINEAR
+  ORDER via TRICHOTOMY.
+
+  Combines four properties characterizing the linear order:
+  (a) Trichotomy: ∀ a b, a < b ∨ a = b ∨ b < a
+  (b) Irreflexivity: ¬ (a < a)
+  (c) Asymmetry: a < b → ¬ (b < a)
+  (d) Transitivity: a < b → b < c → a < c
+
+  Proof uses Mathlib's `Int.lt_trichotomy`, `Int.lt_irrefl`,
+  `Int.lt_asymm`, and `Int.lt_trans` — standard linear-order lemmas.
+
+  Distinct from PMAT-292 ORDER-DISTRIBUTIVE-LATTICE (lattice laws
+  on min/max, not totality) and from PMAT-294 DIVISIBILITY-PREORDER
+  (preorder via ∣, not strict order via <).
+
+  Status: **discharged at v0.1.0 (PMAT-298)**. Tier: DIAMOND.
+  First DEPTH-9 Diamond in the substrate.
+-/
+theorem linear_order_trichotomy_diamond (a b c : Int) :
+    -- (a) Trichotomy: any two Ints are comparable
+    (a < b ∨ a = b ∨ b < a)
+    -- (b) Irreflexivity: nothing is less than itself
+    ∧ ¬ (a < a)
+    -- (c) Asymmetry: strict order is one-directional
+    ∧ (a < b → ¬ (b < a))
+    -- (d) Transitivity
+    ∧ (a < b → b < c → a < c) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.lt_trichotomy a b
+  · exact Int.lt_irrefl a
+  · intro hab hba; exact Int.lt_asymm hab hba
+  · intro hab hbc; exact Int.lt_trans hab hbc
+
 end XpileContracts.CPyIntArith

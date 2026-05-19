@@ -673,6 +673,34 @@ equations:
       - "an emitter that breaks reflexivity (e.g., a self-divisibility test that returns false for 0) would falsify (a)"
       - "Diamond DEPTH-8 demonstrated: eight distinct algebraic categories on PyIntArith — opens depth-8 dimension"
 
+  linear_order_trichotomy_diamond:
+    # PMAT-298: NINTH Diamond on this contract — FIRST DEPTH-9 in
+    # substrate. LINEAR-ORDER/TRICHOTOMY captures the (Int, <)
+    # total-order structure. Distinct from PMAT-292 ORDER-LATTICE
+    # (lattice laws on min/max ≠ totality; lattices can be
+    # non-linear) and PMAT-294 DIVISIBILITY-PREORDER (preorder
+    # via ∣, not strict order via <). Trichotomy is the defining
+    # axiom that makes Int's order LINEAR.
+    lean_theorem: "XpileContracts.CPyIntArith.linear_order_trichotomy_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      (Int, <) is a LINEAR ORDER via trichotomy:
+        (a) trichotomy: ∀ a b, a < b ∨ a = b ∨ b < a
+        (b) irreflexivity: ¬ (a < a)
+        (c) asymmetry: a < b → ¬ (b < a)
+        (d) transitivity
+    domain: |
+      Any Int operands a, b, c.
+    invariants:
+      - "FIRST DEPTH-9 Diamond in the substrate — nine orthogonal algebraic categories on PyIntArith"
+      - "distinct from PMAT-292 ORDER-LATTICE (lattice ≠ linear) and PMAT-294 DIVISIBILITY-PREORDER (preorder ≠ strict order)"
+      - "captures TRICHOTOMY as the defining axiom of linear order"
+    preconditions:
+      - "Int.lt is well-defined (Mathlib's linear-order instance)"
+    postconditions:
+      - "an emitter using partial-order comparisons (e.g., signed-magnitude with incomparable -0/+0) would falsify trichotomy"
+      - "Diamond DEPTH-9 demonstrated: nine distinct algebraic categories — opens depth-9 dimension"
+
   bitwise_and_signed_semantics:
     formula: |
       python_int_and(a, b) == rust_i64::bitand(a, b)  WHEN  both_fit_i64(a, b)

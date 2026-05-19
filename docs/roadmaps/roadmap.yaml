@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-298
+  github_issue: null
+  item_type: task
+  title: 'PMAT-298: FIRST Diamond depth-9 in the substrate (linear-order trichotomy on C-PY-INT-ARITH)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T01:30:00Z
+  updated: 2026-05-23T01:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add linear_order_trichotomy_diamond Lean theorem to contracts/lean/PyIntArith.lean — 4 conjuncts: trichotomy, irreflexivity, asymmetry, transitivity. Uses Int.lt_trichotomy, Int.lt_irrefl, Int.lt_asymm, Int.lt_trans from Mathlib. Wire as new equation in py-int-arith-v1.yaml. Extend xpile diamond reporter with depth-9+ label + depth_9_plus aggregate. Add substrate_diamond_depth_9_opened gate test. Tighten substrate_diamond_depth_8_opened to ≥2. FIRST DEPTH-9 — PyIntArith reaches 9 categories. The 9th (linear-order / trichotomy) is distinct from PMAT-292 ORDER-LATTICE (lattice laws ≠ totality) and PMAT-294 DIVISIBILITY-PREORDER (preorder ≠ strict order)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-295
   github_issue: null
   item_type: task
