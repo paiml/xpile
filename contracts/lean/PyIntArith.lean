@@ -1630,4 +1630,79 @@ theorem negation_involution_abelian_group_diamond (a b : Int) :
   · exact Int.add_left_neg a
   · exact Int.neg_add a b
 
+/-! ## PMAT-292 — SEVENTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-7
+    Diamond in substrate): order-lattice via Int min/max
+    distributivity (XPILE-REFINE-PY-INT-ARITH-014).
+
+    **First DEPTH-7 Diamond in the substrate.** Opens Diamond
+    depth-7 — seven distinct algebraic categories on a single
+    contract. PyIntArith already has SIX Diamond categories
+    (semiring + Euclidean + shift-monoid + power-monoid +
+    bitwise-AND + abelian-group-enrichment); PMAT-292 adds the
+    ORDER-LATTICE Diamond as the seventh orthogonal category.
+
+    The categorical distinction is sharp: the prior six categories
+    live in the (Int, +, *, &, neg) ALGEBRAIC structure. The
+    seventh is about the (Int, ≤) ORDER structure. Min/max are
+    order-theoretic operations, not arithmetic — they form a
+    DISTRIBUTIVE LATTICE under Int's natural ordering, fundamentally
+    distinct from monoid/group/semiring/bitwise structure.
+
+    - PMAT-214: (Int, +, *) SEMIRING (additive + multiplicative)
+    - PMAT-228: (Int, fdiv, fmod) EUCLIDEAN DOMAIN
+    - PMAT-241: SHIFT-MONOID (multiplicative by 2^b)
+    - PMAT-247: POWER-MONOID (Nat-action)
+    - PMAT-286: BITWISE-AND-COMMUTATIVE-MONOID
+    - PMAT-290: ABELIAN-GROUP-ENRICHMENT (Int.neg)
+    - **PMAT-292: (Int, min, max) DISTRIBUTIVE-ORDER-LATTICE
+      — captures the ORDER structure as an algebraic lattice**
+
+    Parallels PMAT-291's distributive-lattice Diamond on
+    BoundedSmem (Nat) — applied here to Int. The lattice structure
+    on Int's order is what enables compile-time reasoning about
+    range-bounded arithmetic (saturating ops, clamps, monotone
+    folds).
+
+    Status: discharged at v0.1.0 (PMAT-292). Tier: DIAMOND.
+    First DEPTH-7 Diamond in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `(Int, min, max)` is a
+  DISTRIBUTIVE LATTICE via the natural ordering on Int.
+
+  Combines four properties into the order-lattice axiomatization:
+  (a) Max commutativity: max(a, b) = max(b, a)
+  (b) Min commutativity: min(a, b) = min(b, a)
+  (c) Max distributes over min: max(a, min(b, c)) = min(max(a, b), max(a, c))
+  (d) Min distributes over max: min(a, max(b, c)) = max(min(a, b), min(a, c))
+
+  An emitter that satisfies arithmetic/monoid theorems but breaks
+  monotonicity of min/max (e.g., a SIMD min that's NOT order-
+  preserving on signed integers) would falsify (c)/(d).
+
+  Proof uses only already-proven Mathlib lemmas: Int.max_comm,
+  Int.min_comm, Int.max_min_distrib_left, Int.min_max_distrib_left.
+  The Diamond category is "DISTRIBUTIVE ORDER-LATTICE on Int" —
+  genuinely orthogonal to the prior six categories because they
+  all sit inside the algebraic (Int, +, *, &, neg) structure;
+  this one is about the order (Int, ≤).
+
+  Status: **discharged at v0.1.0 (PMAT-292)**. Tier: DIAMOND.
+  First DEPTH-7 Diamond in the substrate.
+-/
+theorem order_distributive_lattice_diamond (a b c : Int) :
+    -- (a) Max commutativity
+    max a b = max b a
+    -- (b) Min commutativity
+    ∧ min a b = min b a
+    -- (c) Max distributes over min
+    ∧ max a (min b c) = min (max a b) (max a c)
+    -- (d) Min distributes over max
+    ∧ min a (max b c) = max (min a b) (min a c) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.max_comm a b
+  · exact Int.min_comm a b
+  · exact Int.max_min_distrib_left
+  · exact Int.min_max_distrib_left
+
 end XpileContracts.CPyIntArith

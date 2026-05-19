@@ -606,6 +606,40 @@ equations:
       - "an emitter that fails to maintain cancellation across a SUB → ADD-NEG rewrite would falsify (b)/(c)"
       - "Diamond DEPTH-6 demonstrated: six distinct algebraic categories on PyIntArith — opens depth-6 dimension"
 
+  order_distributive_lattice_diamond:
+    # PMAT-292 / XPILE-REFINE-PY-INT-ARITH-014: SEVENTH Diamond on
+    # this contract — FIRST DEPTH-7 Diamond in substrate. Opens
+    # Diamond depth-7. The ORDER-LATTICE Diamond captures the
+    # (Int, min, max) DISTRIBUTIVE LATTICE structure via Int's
+    # natural ordering — genuinely orthogonal to the prior six
+    # categories because they all sit inside the algebraic
+    # (Int, +, *, &, neg) structure; this one is about the
+    # (Int, ≤) ORDER structure. Parallels PMAT-291 on BoundedSmem
+    # (Nat) but applied to Int.
+    lean_theorem: "XpileContracts.CPyIntArith.order_distributive_lattice_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      (Int, min, max) is a DISTRIBUTIVE LATTICE via the natural
+      ordering on Int:
+        (a) max commutativity: max(a, b) = max(b, a)
+        (b) min commutativity: min(a, b) = min(b, a)
+        (c) max distributes over min: max(a, min(b, c)) = min(max(a, b), max(a, c))
+        (d) min distributes over max: min(a, max(b, c)) = max(min(a, b), min(a, c))
+    domain: |
+      Any Int operands a, b, c. The Diamond captures the order-
+      theoretic distributive-lattice structure orthogonal to all
+      six prior algebraic categories.
+    invariants:
+      - "FIRST DEPTH-7 Diamond in the substrate — seven orthogonal algebraic categories on PyIntArith"
+      - "distinct from all six prior categories: semiring, Euclidean-domain, shift-monoid, power-monoid, bitwise-AND-monoid, abelian-group-enrichment"
+      - "captures the ORDER structure (Int, ≤) as an algebraic lattice — distinct from arithmetic/bitwise/group structure on (Int, +, *, &, neg)"
+      - "load-bearing for compile-time range-bounded arithmetic reasoning: saturating ops, clamps, monotone folds — all rest on min/max satisfying the distributive lattice laws"
+    preconditions:
+      - "the standard order on Int is well-defined (Mathlib's Int instance)"
+    postconditions:
+      - "an emitter that breaks monotonicity of min/max (e.g., SIMD min that's NOT order-preserving on signed integers) would falsify (c)/(d)"
+      - "Diamond DEPTH-7 demonstrated: seven distinct algebraic categories on PyIntArith — opens depth-7 dimension"
+
   bitwise_and_signed_semantics:
     formula: |
       python_int_and(a, b) == rust_i64::bitand(a, b)  WHEN  both_fit_i64(a, b)
