@@ -7,6 +7,67 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-15 ACROSS LAYERS: Nat-mod quotient-ring-homomorphism Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-313)
+
+**Path β extension.** Depth-15 was opened by PMAT-312 on PyIntArith (Layer 1). PMAT-313 extends depth-15 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) so the substrate now has **two contracts at depth-15+** across distinct taxonomy layers.
+
+**The 15 Diamond categories on `C-COMPILE-RUST-TO-PTX-MMA`:**
+
+1. PMAT-218: BOUNDED MONOID
+2. PMAT-287: CLOSURE
+3. PMAT-231: JOIN-SEMILATTICE
+4. PMAT-242: MEET-SEMILATTICE
+5. PMAT-248: LATTICE ABSORPTION
+6. PMAT-291: DISTRIBUTIVE LATTICE
+7. PMAT-293: BOUNDED LATTICE
+8. PMAT-295: CANCELLATIVE MONOID
+9. PMAT-299: ORDERED MONOID
+10. PMAT-301: ADDITIVE-LATTICE DISTRIBUTIVITY
+11. PMAT-303: DISCRETE ORDER
+12. PMAT-306: MAX/MIN MONOTONICITY
+13. PMAT-308: GLB/LUB UNIVERSAL PROPERTY
+14. PMAT-311: SUBTYPE EXTENSIONALITY
+15. **PMAT-313: NAT-MOD QUOTIENT RING HOMOMORPHISM** ← extends depth-15 ACROSS LAYERS
+
+**Why NAT-MOD QUOTIENT HOMOMORPHISM is genuinely a NEW category:**
+
+- PMAT-311 (**SUBTYPE EXTENSIONALITY**) was about the BoundedSmem ↔ Nat .val **isomorphism** (the subtype's relationship to its underlying carrier).
+- PMAT-313 (**NAT-MOD QUOTIENT**) is about Nat → Z/nZ **surjection** — the quotient ring structure induced by Nat.mod.
+
+These are at **different category-theoretic depths**: PMAT-311 captures the "interface" between BoundedSmem and Nat; PMAT-313 captures the "interface" between Nat (BoundedSmem's underlying carrier) and Z/nZ. Both are external (category-theoretic) claims, but along orthogonal axes.
+
+Mirror of PMAT-312 (Int.emod on PyIntArith) for Nat.mod on BoundedSmem.val:
+
+- **Preserves +:** `(a.val + b.val) % 2 = (a.val%2 + b.val%2) % 2`
+- **Preserves *:** `(a.val * b.val) % 2 = (a.val%2 * b.val%2) % 2`
+- **Non-negative result:** `0 ≤ a.val % 2` (trivial for Nat)
+- **Lands in Z/2Z:** `a.val % 2 < 2`
+
+**New Lean theorem:**
+
+```lean
+theorem bounded_smem_nat_mod_quotient_diamond (a b : BoundedSmem) :
+    ((a.val + b.val) % 2 = (a.val % 2 + b.val % 2) % 2)
+    ∧ ((a.val * b.val) % 2 = (a.val % 2 * b.val % 2) % 2)
+    ∧ (0 ≤ a.val % 2)
+    ∧ (a.val % 2 < 2) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.add_mod a.val b.val 2
+  · exact Nat.mul_mod a.val b.val 2
+  · exact Nat.zero_le (a.val % 2)
+  · omega
+```
+
+Uses Mathlib's `Nat.add_mod`, `Nat.mul_mod`, `Nat.zero_le`, and `omega`.
+
+**Falsification surface:** an emitter with a **buggy modulo implementation** that didn't fully reduce (e.g., `smem_bytes % alignment ≥ alignment` due to incorrect alignment computation) would falsify property (d). This bug class is load-bearing for alignment reasoning — `smem_bytes % alignment` computations reduce to Z/alignment-Z ring arithmetic only if `Nat.mod` is a true quotient.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_15_plus: 2` (was 1 after PMAT-312).
+- `substrate_diamond_depth_15_opened` gate tightened to `≥ 2` (ACROSS LAYERS).
+- Substrate Diamond totals: **55 wired Diamond theorems** across 12 contracts (was 54).
+
 ### Added — FIRST Diamond depth-15 in the substrate: Int-emod quotient-ring-homomorphism Diamond on `C-PY-INT-ARITH` (PMAT-312)
 
 **Path β extension.** Opens Diamond **depth-15** — fifteen distinct algebraic categories on a single contract. PyIntArith was at depth-14 (post-PMAT-310); PMAT-312 adds **INT-EMOD QUOTIENT RING HOMOMORPHISM** as the fifteenth orthogonal category.

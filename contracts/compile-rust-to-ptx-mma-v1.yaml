@@ -696,6 +696,41 @@ equations:
       - "an emitter that strips the bound proof when lowering to raw Nat would falsify (c)"
       - "Diamond DEPTH-14 ACROSS LAYERS demonstrated: 2 contracts at depth-14+"
 
+  bounded_smem_nat_mod_quotient_diamond:
+    # PMAT-313: FIFTEENTH Diamond on this contract — opens DEPTH-15
+    # ACROSS LAYERS. NAT-MOD QUOTIENT RING HOMOMORPHISM:
+    # Nat.mod : Nat → Z/nZ is the SURJECTIVE projection on the
+    # BoundedSmem.val carrier (demonstrated for n=2). Mirror of
+    # PMAT-312 (Int.emod on PyIntArith) for Nat.mod on BoundedSmem.
+    # Categorically distinct from PMAT-311 SUBTYPE EXTENSIONALITY
+    # (which was BoundedSmem ↔ Nat .val isomorphism) — PMAT-313 is
+    # Nat → Z/nZ quotient. Load-bearing for alignment reasoning:
+    # smem_bytes % alignment computations reduce to Z/alignment-Z
+    # ring computations, and an emitter that allowed
+    # smem_bytes % alignment ≥ alignment would falsify (d).
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_nat_mod_quotient_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      Nat.mod (· % 2) : Nat → Z/2Z is a RING HOMOMORPHISM on BoundedSmem.val:
+        (a) preserves +:           (a.val + b.val) % 2 = (a.val%2 + b.val%2) % 2
+        (b) preserves *:           (a.val * b.val) % 2 = (a.val%2 * b.val%2) % 2
+        (c) non-negative result:   0 ≤ a.val % 2
+        (d) lands in Z/2Z:         a.val % 2 < 2
+    domain: |
+      Any two BoundedSmem values. The four homomorphism axioms
+      together encode Nat.mod (· % 2) as a SURJECTIVE quotient
+      ring projection on the underlying Nat .val carrier.
+    invariants:
+      - "FIFTEENTH Diamond category on C-COMPILE-RUST-TO-PTX-MMA — opens DEPTH-15 ACROSS LAYERS (second contract at depth-15+ after PMAT-312 on PyIntArith)"
+      - "mirror of PMAT-312 (Int.emod on PyIntArith) for Nat.mod on BoundedSmem.val"
+      - "distinct from PMAT-311 subtype extensionality: PMAT-311 was BoundedSmem ↔ Nat .val isomorphism; PMAT-313 is Nat → Z/nZ quotient"
+      - "load-bearing for alignment reasoning: smem_bytes % alignment computations reduce to Z/alignment-Z ring arithmetic"
+    preconditions:
+      - "two BoundedSmem values; theorem stated on .val projection with literal modulus 2"
+    postconditions:
+      - "an emitter with a buggy modulo that didn't fully reduce (smem_bytes % alignment ≥ alignment) would falsify (d)"
+      - "Diamond DEPTH-15 ACROSS LAYERS demonstrated: 2 contracts at depth-15+"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)
