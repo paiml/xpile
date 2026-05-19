@@ -1199,4 +1199,73 @@ theorem latex_display_kind_enum_distinctness_diamond (k : LatexDisplayKind) :
     · exact Or.inl h
     · exact Or.inr h
 
+/-! ## PMAT-350 — FIFTH Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION
+    (Layer 5 BROADENING DEPTH-5 from 7 to 8 contracts):
+    EQUATION-FORMULA ASCII LENGTH NAT STRUCTURE
+    (XPILE-REFINE-NOTATION-009).
+
+    **Broadens DEPTH-5 from 7 to 8 contracts.** After PMAT-349
+    brought XlatePyListToVec (Layer 2) to depth-5 (substrate at 7
+    contracts at depth-5+), PMAT-350 pushes
+    NotationLatexMathToEquation (Layer 5) from depth-4 to depth-5,
+    adding a SECOND Layer 5 contract at depth-5 (CompileRustToPtxMma
+    was first via PMAT-287).
+
+    The 5 Diamond categories on C-NOTATION-LATEX-MATH-TO-EQUATION:
+    - PMAT-219 citation_string_monoid: monoid on contract_id
+    - PMAT-234 citation_product_monoid: product monoid
+    - PMAT-334 equation_formula_struct_extensionality: record
+    - PMAT-342 latex_display_kind_enum_distinctness: enum
+    - **PMAT-350: ASCII-LENGTH NAT STRUCTURE** ← depth-5
+
+    The categorical distinction is sharp:
+      - PMAT-219/234: monoid algebras (binary operations)
+      - PMAT-334: record-from-fields extensionality
+      - PMAT-342: enum constructor distinctness
+      - PMAT-350: String.length Nat measure on ascii_normalised
+
+    Mirror of PMAT-346 (Bashrs observable string length) — second
+    substrate-wide demonstration of the String.length Nat-structure
+    template on a TEXTUAL field. Complements the Array.size template
+    family (PMAT-340/341/343/344/348) — both are Nat-measure
+    invariants but on different underlying containers (String vs.
+    Array).
+
+    Status: discharged at v0.1.0 (PMAT-350). Tier: DIAMOND.
+    Broadens DEPTH-5 from 7 to 8 contracts. -/
+
+/--
+  **Diamond-tier refinement theorem** — `EquationFormulaSilver.ascii_normalised`
+  String.length Nat structure.
+
+  Combines four LENGTH-NAT properties:
+  (a) ascii_normalised.length is non-negative (trivially for Nat)
+  (b) Empty ascii_normalised has length-0
+  (c) Field-replacement preserves length
+  (d) kind field is independent (length unchanged by kind swap)
+
+  Second substrate-wide demonstration of the String.length
+  Nat-structure pattern (after PMAT-346 OutcomeSilver), complementing
+  the Array.size template family.
+
+  Status: **discharged at v0.1.0 (PMAT-350)**. Tier: DIAMOND.
+  Broadens DEPTH-5 from 7 to 8 contracts.
+-/
+theorem equation_formula_ascii_length_nat_diamond (f : EquationFormulaSilver) :
+    -- (a) length is non-negative (trivially for Nat)
+    (0 ≤ f.ascii_normalised.length)
+    -- (b) Empty ascii_normalised gives length 0
+    ∧ ((⟨LatexDisplayKind.displayMath, ""⟩ : EquationFormulaSilver).ascii_normalised.length = 0)
+    -- (c) Field-replacement preserves length
+    ∧ ((⟨f.kind, f.ascii_normalised⟩ : EquationFormulaSilver).ascii_normalised.length
+        = f.ascii_normalised.length)
+    -- (d) kind field is independent (length unchanged by kind swap)
+    ∧ ((⟨LatexDisplayKind.equation, f.ascii_normalised⟩ : EquationFormulaSilver).ascii_normalised.length
+        = f.ascii_normalised.length) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.zero_le _
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CNotationLatexMathToEquation

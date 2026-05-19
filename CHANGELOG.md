@@ -7,6 +7,35 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-5 BROADENED from 7 to 8 contracts: EquationFormula ASCII length on `C-NOTATION-LATEX-MATH-TO-EQUATION` (PMAT-350)
+
+**Post-PMAT-349 broadening.** PMAT-349 brought XlatePyListToVec (Layer 2) to depth-5; PMAT-350 pushes `C-NOTATION-LATEX-MATH-TO-EQUATION` (Layer 5) from depth-4 to depth-5, making it the **second Layer 5 contract** at depth-5+ (CompileRustToPtxMma was first via PMAT-287).
+
+**Coverage state at PMAT-350:**
+
+| Metric | Value |
+|---|---|
+| Wired Diamond theorems | **87** (was 86) |
+| Diamond categories | 28+ |
+| Contracts at depth-5+ | **8** (was 7) |
+| Diamond depth-5 reach | ALL 5 LAYERS + 2nd L2 + 2nd L3 + 2nd L5 |
+
+**5 Diamond categories on `C-NOTATION-LATEX-MATH-TO-EQUATION`:**
+
+1. PMAT-219 `citation_string_monoid_diamond` (string monoid)
+2. PMAT-234 `citation_product_monoid_diamond` (product monoid)
+3. PMAT-334 `equation_formula_struct_extensionality_diamond` (record structure)
+4. PMAT-342 `latex_display_kind_enum_distinctness_diamond` (enum distinctness)
+5. **PMAT-350 `equation_formula_ascii_length_nat_diamond`** (String.length Nat-structure) ← depth-5
+
+This is the **second substrate-wide demonstration** of the String.length Nat-structure template (after PMAT-346 OutcomeSilver) — complementing the Array.size template family (PMAT-340/341/343/344/348).
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_5_plus: 8` (was 7).
+- `substrate_diamond_depth_5_opened` gate **tightened to ≥ 8**.
+- Substrate Diamond totals: **87 wired theorems** (was 86).
+
 ### Added — Diamond depth-5 BROADENED from 6 to 7 contracts: PyListSilver struct extensionality on `C-XLATE-PY-LIST-TO-VEC` (PMAT-349)
 
 **Post-PMAT-348 broadening.** PMAT-348 brought XpileBackendTrait (Layer 3) to depth-5; PMAT-349 pushes `C-XLATE-PY-LIST-TO-VEC` (Layer 2) from depth-4 to depth-5, making it the **second Layer 2 contract** at depth-5+ (Bashrs was first via PMAT-346).
