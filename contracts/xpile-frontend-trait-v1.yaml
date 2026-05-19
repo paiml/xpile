@@ -64,6 +64,18 @@ equations:
     # structural claim.
     lean_theorem: "XpileContracts.CXpileFrontendTrait.source_lang_consistency_silver"
     lean_file: "contracts/lean/XpileFrontendTrait.lean"
+    # PMAT-282: Property-specific Silver-tier Kani harness. Closes
+    # audit-design.md §4 caveat for this equation. Bronze
+    # parse_idempotency proved byte-equality on (path, source) ->
+    # MetaHirModule { bytes } — a buggy Python frontend that auto-
+    # detected shell scripts and stamped SourceLang::Shell would
+    # still pass the Bronze idempotency test (different bytes, but
+    # idempotent). Silver introduces explicit source_lang +
+    # declared_lang fields and proves equality. Companion harness
+    # parse_idempotency_silver re-proves idempotency at the
+    # structured level. Path α extension — seventh contract.
+    kani_harness: "source_lang_consistency_silver"
+    kani_file: "contracts/kani/xpile_frontend_trait.rs"
     formula: |
       forall f, (path, source): f.parse_and_lower(path, source).unwrap().source_lang == f.declared_lang()
     domain: |

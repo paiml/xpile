@@ -7,6 +7,44 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Property-specific Silver-tier Kani harnesses for `C-XPILE-FRONTEND-TRAIT` (Path α extension, seventh contract) (PMAT-282)
+
+Extends Path α to a seventh contract. Lifts `parse_idempotency` from a Bronze byte-identity placeholder to Silver-tier structural proofs matching Lean's `source_lang_consistency_silver` (PMAT-156).
+
+**Why this contract's Silver tier matters:** the Bronze model collapsed `MetaHirModule` into a single `bytes: [u8; 4]` payload — a buggy Python frontend that auto-detected shell scripts and stamped `SourceLang::Shell` on the output would still pass the Bronze idempotency test (different bytes, but idempotent). Silver introduces an explicit `source_lang` field on the emitted module + an explicit `declared_lang` on the Frontend; the consistency invariant is then structurally provable.
+
+**Silver-tier model:**
+
+```rust
+type SourceLangSilver = u8;
+struct MetaHirModuleSilver { bytes: [u8; 4], source_lang: SourceLangSilver }
+struct FrontendSilver { declared_lang: SourceLangSilver }
+fn parse_and_lower_silver(f, path, source) -> MetaHirModuleSilver
+```
+
+**Two new `#[kani::proof]` functions:**
+
+| Proof | Catches |
+|-------|---------|
+| `source_lang_consistency_silver` | a frontend that auto-detects the source language from content rather than stamping its `declared_lang` |
+| `parse_idempotency_silver` | structural idempotency over the wider Silver shape (catches a non-deterministic source_lang stamp) |
+
+**Contract YAML wiring**
+
+`contracts/xpile-frontend-trait-v1.yaml` `source_lang_consistency` equation now has `kani_harness:` + `kani_file:` pointing at the new Silver proof.
+
+**Path α extension recap (7 contracts):**
+
+| Contract | PMAT | Silver tier |
+|----------|------|-------------|
+| C-FFI-CPYTHON-EXT-V1 | 275 | per-field byte equality |
+| C-COMPILE-RUST-TO-PTX-MMA | 276 | smem_bytes ≤ 48 KiB inequality |
+| C-XLATE-RUST-FN-TO-LEAN-THM-V1 | 277 | concat-order |
+| C-XLATE-LEAN-TO-RUST-V1 | 278 | symmetric mirror |
+| C-XLATE-PY-LIST-TO-VEC-V1 | 279 | polymorphism via tag |
+| C-BASHRS-POSIX-IDEMPOTENCE | 281 | 2-axis cross-domain |
+| C-XPILE-FRONTEND-TRAIT | **282** | **source_lang consistency** |
+
 ### Added — Property-specific Silver-tier Kani harnesses for `C-BASHRS-POSIX-IDEMPOTENCE` (Path α extension, sixth contract) (PMAT-281)
 
 Extends Path α to a sixth contract. C-BASHRS-POSIX-IDEMPOTENCE was NOT one of the original 5 Path α targets (its Runtime stratum already had rich coverage via `bashrs_realistic_demo.sh`), but its Kani harness `lit_str_render_is_identity` was still a byte-identity placeholder. This PR lifts it to Silver-tier matching Lean's `subprocess_run_eq_shell_run_silver` (PMAT-162).
