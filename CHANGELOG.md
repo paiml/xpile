@@ -7,6 +7,35 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — `TargetEmitter` trait + `MultiEmitterBackend` routing layer (Section 29 routing) (PMAT-263)
+
+Direct continuation of PMAT-261/PMAT-262. Adds the routing layer where a multi-emitter backend (e.g., PTX with `rustc_codegen_nvvm` general + `aprender-gpu` specialist) composes two emitters under a `QuorumPolicy`. Concrete implementations of `rustc_codegen_nvvm` and `aprender-gpu` are still future work — this PR ships the routing scaffold + mock-emitter unit tests demonstrating the four routing cases.
+
+**New types in `xpile-backend`:**
+- `EmittedText { primary, citations }` — plain emission from one emitter before the wrapper assembles the final `Artifact`
+- `trait TargetEmitter` — single-emitter contract; specialists can return `None` from `try_emit` when their shape filter misses
+- `struct MultiEmitterBackend { target, general, specialist?, quorum_policy }` — wrapper impl of `Backend` that routes via `QuorumPolicy`
+- Constructors: `new_single`, `new_with_specialist`
+
+**Routing logic (impl `Backend for MultiEmitterBackend`):**
+
+| Case | Result |
+|---|---|
+| Specialist missing | `Artifact { quorum_status: Single { emitter: general_name } }` |
+| Specialist returns `None` (shape miss) | Same as above — single-vote fallback |
+| `PreferSpecialist` + specialist matches | `Artifact { primary: specialist_out, quorum_status: Single { emitter: specialist_name } }` |
+| `Strict` + both match | `Artifact { quorum_status: Multi { ..., diff_exec: Match { max_abs_diff: 0.0 } } }` |
+| `Strict` + outputs differ | `Artifact { quorum_status: Multi { ..., diff_exec: Divergent { max_abs_diff: ∞, tolerance: 0.0 } } }` |
+| `DiffExec { tolerance }` | `Artifact { quorum_status: Multi { ..., diff_exec: NotRun { reason } } }` — engine plugs in next phase |
+
+**6 new tests** with mock emitters cover all routing cases (14 tests total in `xpile-backend`). Specialist output recorded as `sidecar = "specialist_emission"` for audit-trail recovery in Multi cases.
+
+**What this unlocks:**
+
+- Concrete PTX backend can drop in `rustc_codegen_nvvm` as `general` + `aprender-gpu` as `specialist` without touching `xpile-backend` again
+- WGSL/SPIR-V follow the same pattern by instantiating `MultiEmitterBackend` with their respective emitter pair
+- The `DiffExec { tolerance }` branch's `NotRun` marker is the plug-in point for the future execution-comparison engine
+
 ### Added — Artifact carries QuorumStatus (Section 29 wiring continued) (PMAT-262)
 
 Direct continuation of PMAT-261. `Artifact` now carries a `quorum_status: QuorumStatus` field. Every existing backend (`xpile-rust-codegen`, `xpile-ruchy-codegen`, `xpile-ptx-codegen`, `xpile-wgsl-codegen`, `xpile-lean-codegen`, `bashrs-backend`) populates `QuorumStatus::Single { emitter: <backend_name> }` at v0.1.0. Future multi-emitter backends will populate `QuorumStatus::Multi { emitters, diff_exec }`.
