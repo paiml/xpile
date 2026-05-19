@@ -8,6 +8,23 @@ meta-HIR and the trait surfaces.
 ## [Unreleased]
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+### Added — Diamond depth-5 BROADENED: LeanDefSilver struct extensionality on `C-XLATE-RUST-FN-TO-LEAN-THM` (PMAT-352)
+
+**Post-PMAT-351 broadening.** PMAT-351 brought XlateLeanToRust (Layer 5) to depth-5 as the 3rd L5 contract; PMAT-352 pushes `C-XLATE-RUST-FN-TO-LEAN-THM` (Layer 5) from depth-4 to depth-5, making it the **fourth Layer 5 contract** at depth-5+.
+
+**5 Diamond categories on `C-XLATE-RUST-FN-TO-LEAN-THM`:**
+
+1. PMAT-220 `precondition_list_monoid_diamond`
+2. PMAT-236 `nonempty_preconditions_section_retraction_diamond`
+3. PMAT-336 `rust_fn_silver_struct_extensionality_diamond` (Rust side record)
+4. PMAT-344 `rust_fn_silver_body_size_diamond` (Array.size)
+5. **PMAT-352 `lean_def_silver_struct_extensionality_diamond`** (Lean side record) ← depth-5
+
+This is the **eleventh substrate-wide demonstration** of the structure-extensionality pattern, and closes the **Rust ↔ Lean translation pair at the structure level** (PMAT-336 captured the Rust side; PMAT-352 the Lean side).
+
+>>>>>>> 42df7ee (PMAT-352: Diamond depth-5 BROADENED to C-XLATE-RUST-FN-TO-LEAN-THM (LeanDefSilver struct extensionality))
 ### Added — Diamond depth-5 BROADENED from 7 to 8 contracts: EquationFormula ASCII length on `C-NOTATION-LATEX-MATH-TO-EQUATION` (PMAT-350)
 
 **Post-PMAT-349 broadening.** PMAT-349 brought XlatePyListToVec (Layer 2) to depth-5; PMAT-350 pushes `C-NOTATION-LATEX-MATH-TO-EQUATION` (Layer 5) from depth-4 to depth-5, making it the **second Layer 5 contract** at depth-5+ (CompileRustToPtxMma was first via PMAT-287).
