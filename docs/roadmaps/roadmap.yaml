@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-302
+  github_issue: null
+  item_type: task
+  title: 'PMAT-302: FIRST Diamond depth-11 in the substrate (integral-domain axioms on C-PY-INT-ARITH)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T03:30:00Z
+  updated: 2026-05-23T03:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add integral_domain_diamond Lean theorem to contracts/lean/PyIntArith.lean — 4 conjuncts: no zero divisors (Int.mul_eq_zero), multiplicative cancellation on nonzero domain (Int.eq_of_mul_eq_mul_left), nontrivial identity (Int.one_ne_zero), product of nonzeros is nonzero (Int.mul_ne_zero). Wire as new equation in py-int-arith-v1.yaml. Extend xpile diamond reporter with depth-11+ label + depth_11_plus aggregate. Refine depth-10 from depth-10+ to discrete depth-10. Add substrate_diamond_depth_11_opened gate test (≥1). FIRST DEPTH-11 — PyIntArith reaches 11 categories. The 11th (INTEGRAL DOMAIN) strengthens PMAT-300 RING with no-zero-divisors. Z/6Z satisfies all PMAT-300 ring axioms but fails (a) since 2*3=0; Mathlib's IsDomain / NoZeroDivisors typeclass encodes this SEPARATELY from Ring."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-301
   github_issue: null
   item_type: task

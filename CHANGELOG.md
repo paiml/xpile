@@ -7,6 +7,78 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-11 in the substrate: integral-domain Diamond on `C-PY-INT-ARITH` (PMAT-302)
+
+**Path β extension.** Opens Diamond **depth-11** — eleven distinct algebraic categories on a single contract. PyIntArith was at depth-10 (post-PMAT-300); PMAT-302 adds **INTEGRAL DOMAIN** as the eleventh orthogonal category.
+
+**The 11 Diamond categories on `C-PY-INT-ARITH`:**
+
+1. PMAT-214: SEMIRING (+, *)
+2. PMAT-228: EUCLIDEAN DOMAIN (fdiv, fmod)
+3. PMAT-241: SHIFT-MONOID (shl)
+4. PMAT-247: POWER-MONOID (pow)
+5. PMAT-286: BITWISE-AND-MONOID (&)
+6. PMAT-290: ABELIAN-GROUP-ENRICHMENT (neg)
+7. PMAT-292: ORDER-DISTRIBUTIVE-LATTICE (min, max)
+8. PMAT-294: DIVISIBILITY-PREORDER (∣)
+9. PMAT-298: LINEAR-ORDER TRICHOTOMY (<)
+10. PMAT-300: RING-DISTRIBUTIVITY (neg × mul)
+11. **PMAT-302: INTEGRAL DOMAIN (no zero divisors)** ← FIRST DEPTH-11
+
+**Why INTEGRAL DOMAIN is genuinely a NEW category:**
+
+- PMAT-300 (**RING**) gives `(Int, +, *, neg, 0, 1)` with all ring axioms — but **rings can have zero divisors**. For example, `Z/6Z` is a commutative ring where `2 * 3 = 0` yet neither factor is zero.
+- PMAT-302 (**INTEGRAL DOMAIN**) strengthens RING with the no-zero-divisors axiom: `a * b = 0 → a = 0 ∨ b = 0`. This is what makes `Int` an integral domain rather than just a commutative ring.
+
+Mathlib's `IsDomain` / `NoZeroDivisors` typeclass encodes this **separately** from `Ring` — proving rings vs integral domains are genuinely distinct categorical claims.
+
+**New Lean theorem:**
+
+```lean
+theorem integral_domain_diamond (a b c : Int) :
+    (a * b = 0 → a = 0 ∨ b = 0)                  -- no zero divisors
+    ∧ (a ≠ 0 → a * b = a * c → b = c)            -- mul cancel (nonzero)
+    ∧ (1 : Int) ≠ 0                              -- nontrivial 1
+    ∧ (a ≠ 0 → b ≠ 0 → a * b ≠ 0) := by          -- nonzero product
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact fun h => Int.mul_eq_zero.mp h
+  · intro ha h; exact Int.eq_of_mul_eq_mul_left ha h
+  · exact Int.one_ne_zero
+  · exact fun ha hb => Int.mul_ne_zero ha hb
+```
+
+Uses standard `Int.mul_eq_zero`, `Int.eq_of_mul_eq_mul_left`, `Int.one_ne_zero`, `Int.mul_ne_zero` — Mathlib's `Int.instIsDomain` provides the typeclass evidence.
+
+**Falsification surface:** an emitter that lowered Python-int multiplication through a modular-arithmetic fast-path (e.g., `i32` mod `2^32`) would have spurious zero divisors — `(2^16) * (2^16) = 0 mod 2^32` yet neither factor is zero. This bug class slips past **all 10 prior Diamond categories** including PMAT-300 RING (Z/2^32-Z IS a ring) — only INTEGRAL DOMAIN catches it.
+
+**Reporter + gate updates:**
+
+- `xpile diamond --json` extended with `depth-10` discrete label + `depth-11+` aggregate.
+- `substrate_diamond_depth_11_opened` gate test added (≥ 1 at depth-11+).
+- Substrate Diamond totals: **46 wired Diamond theorems** across 12 contracts (was 45).
+
+**Path β extension recap:**
+
+| PMAT | Milestone |
+|------|-----------|
+| 286 | FIRST depth-5 |
+| 287 | depth-5 ACROSS LAYERS |
+| 288 | depth-4 ACROSS LAYERS |
+| 289 | depth-3 broadened |
+| 290 | FIRST depth-6 |
+| 291 | depth-6 ACROSS LAYERS |
+| 292 | FIRST depth-7 |
+| 293 | depth-7 ACROSS LAYERS |
+| 294 | FIRST depth-8 |
+| 295 | depth-8 ACROSS LAYERS |
+| 296 | spec §28 sync |
+| 297 | sub-spec sync |
+| 298 | FIRST depth-9 |
+| 299 | depth-9 ACROSS LAYERS |
+| 300 | FIRST depth-10 (RING) |
+| 301 | depth-10 ACROSS LAYERS |
+| **302** | **FIRST depth-11** (integral domain) ← here |
+
 ### Added — Diamond depth-10 ACROSS LAYERS: additive-lattice Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-301)
 
 **Path β extension.** Depth-10 was opened by PMAT-300 on PyIntArith (Layer 1). PMAT-301 extends depth-10 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) so the substrate now has **two contracts at depth-10+** across distinct taxonomy layers.

@@ -1934,4 +1934,102 @@ theorem ring_neg_mul_distrib_diamond (a b c : Int) :
   · exact Int.neg_mul_neg a b
   · exact Int.sub_mul a b c
 
+/-! ## PMAT-302 — ELEVENTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-11
+    in the substrate): INTEGRAL DOMAIN — no zero divisors and
+    multiplicative cancellation (XPILE-REFINE-PY-INT-ARITH-019).
+
+    **Opens DEPTH-11 in the substrate.** PyIntArith reached depth-10
+    at PMAT-300 (RING-distributivity); PMAT-302 adds the ELEVENTH
+    orthogonal Diamond category — INTEGRAL DOMAIN, the strengthening
+    of RING that forbids zero divisors.
+
+    The 11 Diamond categories on C-PY-INT-ARITH:
+    - PMAT-214: SEMIRING (+, *)
+    - PMAT-228: EUCLIDEAN DOMAIN (fdiv, fmod)
+    - PMAT-241: SHIFT-MONOID (shl)
+    - PMAT-247: POWER-MONOID (pow)
+    - PMAT-286: BITWISE-AND-MONOID (&)
+    - PMAT-290: ABELIAN-GROUP-ENRICHMENT (neg)
+    - PMAT-292: ORDER-DISTRIBUTIVE-LATTICE (min, max)
+    - PMAT-294: DIVISIBILITY-PREORDER (∣)
+    - PMAT-298: LINEAR-ORDER TRICHOTOMY (<)
+    - PMAT-300: RING-DISTRIBUTIVITY (neg × mul)
+    - **PMAT-302: INTEGRAL DOMAIN (no zero divisors)** ← FIRST DEPTH-11
+
+    The categorical distinction is precise:
+      - PMAT-300 RING gives `(Int, +, *, neg, 0, 1)` with all ring
+        axioms — but RINGS CAN HAVE ZERO DIVISORS. For example,
+        Z/6Z is a commutative ring where 2 * 3 = 0 yet neither
+        is zero.
+      - PMAT-302 INTEGRAL DOMAIN strengthens RING with the axiom
+        that `a * b = 0 → a = 0 ∨ b = 0`. This excludes zero
+        divisors and is what makes Int an INTEGRAL DOMAIN rather
+        than just a commutative ring.
+
+    Why this is genuinely orthogonal to PMAT-300 (and ALL prior 10):
+      The no-zero-divisors axiom is the DEFINING property that
+      separates rings WITH from rings WITHOUT zero divisors. It
+      cannot be derived from the ring axioms alone (PMAT-300) —
+      Z/6Z satisfies all PMAT-300 ring axioms but fails no-zero-
+      divisors. Mathlib's `IsDomain` / `NoZeroDivisors` typeclass
+      encodes this separately from `Ring`.
+
+    Integral domains are precisely the rings where multiplicative
+    cancellation works on the nonzero domain: `a ≠ 0 → a * b =
+    a * c → b = c`. Note: this is RING-MULTIPLICATIVE cancellation
+    on a partial domain (a ≠ 0), DISTINCT from PMAT-218 ADDITIVE
+    cancellation in (BoundedSmem, +) — different operation, different
+    structural axiom.
+
+    For Python int dispatch, this matters: an emitter that lowered
+    multiplication through a saturating or modular arithmetic path
+    (e.g., (mod 2^31) on i32 for fast-path) would have spurious
+    zero divisors (e.g., 2^16 * 2^16 = 0 mod 2^32) — a real bug
+    class invisible to all ring-level checks.
+
+    Status: discharged at v0.1.0 (PMAT-302). Tier: DIAMOND.
+    FIRST DEPTH-11 in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `(Int, +, *)` is an
+  INTEGRAL DOMAIN (no zero divisors + multiplicative cancellation
+  + nontrivial identity).
+
+  Combines four INTEGRAL-DOMAIN-defining properties:
+  (a) No zero divisors: `a * b = 0 → a = 0 ∨ b = 0`
+  (b) Multiplicative cancellation on the nonzero domain
+      (left): `a ≠ 0 → a * b = a * c → b = c`
+  (c) Nontrivial multiplicative identity: `(1 : Int) ≠ 0`
+  (d) Product of nonzeros is nonzero: `a ≠ 0 → b ≠ 0 → a * b ≠ 0`
+
+  Together these axiomatize the INTEGRAL DOMAIN structure. Distinct
+  from PMAT-300 RING (which doesn't preclude zero divisors — Z/6Z
+  satisfies all ring axioms but is not an integral domain).
+
+  Mathlib's `Int.mul_eq_zero`, `Int.eq_of_mul_eq_mul_left`,
+  `Int.one_ne_zero`, `Int.mul_ne_zero` are the standard integral-
+  domain lemmas. `Int.instIsDomain` provides the typeclass evidence.
+
+  An emitter that lowered multiplication through a saturating /
+  modular path (e.g., mod-2^31 i32 fast-path) would have spurious
+  zero divisors and fail (a) — invisible to all 10 prior categories.
+
+  Status: **discharged at v0.1.0 (PMAT-302)**. Tier: DIAMOND.
+  FIRST DEPTH-11 in the substrate.
+-/
+theorem integral_domain_diamond (a b c : Int) :
+    -- (a) No zero divisors
+    (a * b = 0 → a = 0 ∨ b = 0)
+    -- (b) Multiplicative cancellation on the nonzero domain (left)
+    ∧ (a ≠ 0 → a * b = a * c → b = c)
+    -- (c) Nontrivial multiplicative identity
+    ∧ (1 : Int) ≠ 0
+    -- (d) Product of nonzeros is nonzero
+    ∧ (a ≠ 0 → b ≠ 0 → a * b ≠ 0) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact fun h => Int.mul_eq_zero.mp h
+  · intro ha h; exact Int.eq_of_mul_eq_mul_left ha h
+  · exact Int.one_ne_zero
+  · exact fun ha hb => Int.mul_ne_zero ha hb
+
 end XpileContracts.CPyIntArith
