@@ -7,6 +7,76 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-10 in the substrate: RING-distributivity Diamond on `C-PY-INT-ARITH` (PMAT-300)
+
+**Path β extension.** Opens Diamond depth-10 — **ten** distinct algebraic categories on a single contract. PyIntArith was at depth-9 (post-PMAT-298); PMAT-300 adds **RING-DISTRIBUTIVITY OF NEGATION OVER MULTIPLICATION** as the tenth orthogonal category.
+
+**The 10 Diamond categories on `C-PY-INT-ARITH`:**
+
+1. PMAT-214: SEMIRING (+, *)
+2. PMAT-228: EUCLIDEAN DOMAIN (fdiv, fmod)
+3. PMAT-241: SHIFT-MONOID (shl)
+4. PMAT-247: POWER-MONOID (pow)
+5. PMAT-286: BITWISE-AND-MONOID (&)
+6. PMAT-290: ABELIAN-GROUP-ENRICHMENT (neg)
+7. PMAT-292: ORDER-DISTRIBUTIVE-LATTICE (min, max)
+8. PMAT-294: DIVISIBILITY-PREORDER (∣)
+9. PMAT-298: LINEAR-ORDER TRICHOTOMY (<)
+10. **PMAT-300: RING-DISTRIBUTIVITY (neg × mul)** ← FIRST DEPTH-10
+
+**Why RING is genuinely a NEW category — orthogonal to ALL 9 prior:**
+
+- PMAT-214 (**SEMIRING**) gives `(Int, +, *, 0, 1)` but **has no negation** — semirings (e.g., `Nat`) need not even define neg.
+- PMAT-290 (**ABELIAN-GROUP-ENRICHMENT**) gives `(Int, +, neg, 0)` but **has no multiplication** — abelian groups (e.g., `(R, +)`) need not have a multiplicative operation.
+- PMAT-300 (**RING**) adds the **bridging axiom** `(-a) * b = -(a * b)`. This is the structural connection that turns "semiring + abelian group on disjoint operations" into a true RING. Mathlib's `Ring` typeclass encodes exactly this combination.
+
+The axiom cannot be derived from semiring axioms alone (no neg) or from abelian-group axioms alone (no mul) — it is the structural BRIDGE between them.
+
+**New Lean theorem:**
+
+```lean
+theorem ring_neg_mul_distrib_diamond (a b c : Int) :
+    (-a) * b = -(a * b)              -- left neg distributes
+    ∧ a * (-b) = -(a * b)            -- right neg distributes
+    ∧ (-a) * (-b) = a * b            -- sign cancel
+    ∧ (a - b) * c = a * c - b * c := by -- subtraction distributes
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.neg_mul a b
+  · exact Int.mul_neg a b
+  · exact Int.neg_mul_neg a b
+  · exact Int.sub_mul a b c
+```
+
+Uses standard core/Mathlib Int ring lemmas — `Int.instCommRing` provides the typeclass evidence.
+
+**Falsification surface:** an emitter that lowered `(-a) * b` to a separate dispatch path that did NOT cancel back to `-(a * b)` would falsify property (a). Such a bug class slips past SEMIRING (no neg), ABELIAN-GROUP (no mul), LATTICE (no arithmetic), DIVISIBILITY (no negation), and LINEAR-ORDER (no algebraic structure) — only RING catches it.
+
+**Reporter + gate updates:**
+
+- `xpile diamond --json` extended with `depth-9` discrete label + `depth-10+` aggregate.
+- `substrate_diamond_depth_10_opened` gate test added (≥ 1 at depth-10+).
+- Substrate Diamond totals: **44 wired Diamond theorems** across 12 contracts (was 43).
+
+**Path β extension recap:**
+
+| PMAT | Milestone |
+|------|-----------|
+| 286 | FIRST depth-5 |
+| 287 | depth-5 ACROSS LAYERS |
+| 288 | depth-4 ACROSS LAYERS |
+| 289 | depth-3 broadened |
+| 290 | FIRST depth-6 |
+| 291 | depth-6 ACROSS LAYERS |
+| 292 | FIRST depth-7 |
+| 293 | depth-7 ACROSS LAYERS |
+| 294 | FIRST depth-8 |
+| 295 | depth-8 ACROSS LAYERS |
+| 296 | spec §28 sync |
+| 297 | sub-spec sync |
+| 298 | FIRST depth-9 |
+| 299 | depth-9 ACROSS LAYERS |
+| **300** | **FIRST depth-10** (RING) ← here |
+
 ### Added — Diamond depth-9 ACROSS LAYERS: ordered-monoid Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-299)
 
 **Path β extension.** Depth-9 was opened by PMAT-298 on PyIntArith (Layer 1). PMAT-299 extends depth-9 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) so the substrate now has **two contracts at depth-9+** across distinct taxonomy layers.

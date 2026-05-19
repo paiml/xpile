@@ -884,6 +884,43 @@ equations:
     postconditions:
       - "an emitter that uses unchecked pow for out-of-domain inputs would overflow silently — caught by the dispatcher's selection claim"
 
+  ring_neg_mul_distrib_diamond:
+    # PMAT-300: TENTH Diamond on this contract — opens FIRST DEPTH-10
+    # in the substrate. RING-DISTRIBUTIVITY of negation over
+    # multiplication via Int.neg_mul, Int.mul_neg, Int.neg_mul_neg,
+    # Int.sub_mul. Categorically orthogonal to all prior 9 categories:
+    #   - PMAT-214 SEMIRING: has no negation
+    #   - PMAT-290 ABELIAN-GROUP-ENRICHMENT: has no multiplication
+    #   - PMAT-300 RING: BRIDGES the two via (-a)*b = -(a*b)
+    # This is exactly Mathlib's `Ring` typeclass shape — the axiom
+    # that separates "semiring + group on disjoint operations" from
+    # a true RING. An emitter that lowered (-a)*b to a separate
+    # dispatch path that did NOT cancel back to -(a*b) would
+    # falsify (a) — a real bug class invisible to the prior 9
+    # categories.
+    lean_theorem: "XpileContracts.CPyIntArith.ring_neg_mul_distrib_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      (Int, +, *, neg, 0, 1) is a RING:
+        (a) left negation:   (-a) * b = -(a * b)
+        (b) right negation:  a * (-b) = -(a * b)
+        (c) sign cancel:     (-a) * (-b) = a * b
+        (d) sub distrib:     (a - b) * c = a * c - b * c
+    domain: |
+      Any three Int values. The four properties together axiomatize
+      the RING structure — Mathlib's `Ring` / `CommRing` typeclass
+      shape. (Int, +, *) is a commutative ring with unit.
+    invariants:
+      - "TENTH Diamond category on C-PY-INT-ARITH — opens FIRST DEPTH-10 in the substrate"
+      - "BRIDGES PMAT-214 SEMIRING and PMAT-290 ABELIAN-GROUP-ENRICHMENT into a full RING"
+      - "the axiom (-a)*b = -(a*b) cannot be derived from semiring axioms (no neg) nor from abelian-group axioms (no mul) — it is genuinely orthogonal"
+      - "load-bearing for any emitter that lowers negation as a separate dispatch step: failure to cancel back to -(a*b) would falsify left-distribution"
+    preconditions:
+      - "three Int values; theorem stated on the standard Int.add, Int.mul, Int.neg, Int.sub operations"
+    postconditions:
+      - "an emitter with a non-canonical (-a)*b implementation that does not reduce to -(a*b) would falsify (a)"
+      - "Diamond DEPTH-10 opened — 1 contract at depth-10+"
+
 proof_obligations:
   - type: precondition
     property: operands are Python int (not int-subclass, not bool-as-int)
