@@ -108,6 +108,19 @@ equations:
     # `emitted.smem_bytes ≤ 49152` structurally.
     lean_theorem: "XpileContracts.CCompileRustToPtxMma.shared_memory_budget_silver"
     lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    # PMAT-276: Property-specific Silver-tier Kani harness. Closes
+    # audit-design.md §4 "byte-identity placeholder" caveat for this
+    # equation. Bronze (mma_emission_for_gemm_kernel) only proved
+    # byte-equality on a 4-byte marker — trivially true. Silver
+    # introduces a real INEQUALITY: emitted smem_bytes ≤ 48 KiB,
+    # proved over symbolic 4.3B u32 requested_smem values. Companion
+    # Kani harnesses (smem_under_budget_preserved_silver,
+    # smem_over_budget_clamps_to_budget_silver) verify the exact
+    # clamp semantics — both arms of the min boundary. First Silver-
+    # tier Kani proof on this contract (matches the Lean theorem's
+    # non-trivial Nat.min_le_right structure, not rfl).
+    kani_harness: "shared_memory_budget_silver"
+    kani_file: "contracts/kani/compile_rust_to_ptx_mma.rs"
     formula: |
       smem_static_bytes(emitted_ptx) ≤ 49152
     domain: |
