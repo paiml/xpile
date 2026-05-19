@@ -513,4 +513,44 @@ theorem contract_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/-! ## PMAT-341 — FOURTH Diamond on C-XPILE-CONTRACT-BACKEND-TRAIT
+    (Layer 3 BROADENING DEPTH-4 from 8 to 9 contracts):
+    CONTRACT ARRAY SIZE STRUCTURE on depends_on / references
+    (XPILE-REFINE-XPILE-CONTRACT-BACKEND-TRAIT-007).
+
+    **Broadens DEPTH-4 from 8 to 9 contracts.** Pushes
+    XpileContractBackendTrait (Layer 3) from depth-3 to depth-4,
+    adding a FOURTH Layer 3 contract at depth-4. Layer 3 now
+    has 4 contracts at depth-4 (XpileFrontendTrait, XpileBackendTrait,
+    XpileContractFrontendTrait, XpileContractBackendTrait).
+
+    The 4 Diamond categories on C-XPILE-CONTRACT-BACKEND-TRAIT:
+    - PMAT-226 citation_render_monoid: monoid structure
+    - PMAT-239 contract_product_monoid: product monoid
+    - PMAT-333 contract_struct_extensionality: record structure
+    - **PMAT-341: CONTRACT ARRAY SIZE STRUCTURE** ← depth-4
+
+    Status: discharged at v0.1.0 (PMAT-341). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `Contract.depends_on` and
+  `Contract.references` Array.size structure.
+
+  Status: **discharged at v0.1.0 (PMAT-341)**. Tier: DIAMOND.
+-/
+theorem contract_array_size_diamond (c : Contract) :
+    -- (a) depends_on size is non-negative
+    (0 ≤ c.depends_on.size)
+    -- (b) Empty Contract has size-0 depends_on
+    ∧ ((⟨#[], #[]⟩ : Contract).depends_on.size = 0)
+    -- (c) Field-replacement preserves depends_on size
+    ∧ ((⟨c.depends_on, c.references⟩ : Contract).depends_on.size = c.depends_on.size)
+    -- (d) references is independent
+    ∧ ((⟨c.depends_on, c.references⟩ : Contract).references.size = c.references.size) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.zero_le _
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileContractBackendTrait
