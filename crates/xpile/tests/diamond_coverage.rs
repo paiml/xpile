@@ -121,10 +121,12 @@ fn substrate_diamond_depth_4_opened() {
     // joins depth-4 on Layer 3 (third Layer 3 contract at depth-4), broadening to 8.
     // PMAT-341 added contract_array_size_diamond → C-XPILE-CONTRACT-BACKEND-TRAIT joins
     // depth-4 on Layer 3 (fourth Layer 3 contract), broadening to 9.
+    // PMAT-342 added latex_display_kind_enum_distinctness_diamond → NotationLatex joins
+    // depth-4 on Layer 5 (second Layer 5 contract), broadening to 10.
     assert!(
-        depth_4_plus >= 9,
-        "Diamond depth-4 broadening milestone (PMAT-247/248/288/329/330/338/339/340/341): \
-         expected ≥9 contracts at depth-4+, got {depth_4_plus}.\n{json}"
+        depth_4_plus >= 10,
+        "Diamond depth-4 broadening milestone (PMAT-247/248/288/329/330/338..342): \
+         expected ≥10 contracts at depth-4+, got {depth_4_plus}.\n{json}"
     );
 }
 

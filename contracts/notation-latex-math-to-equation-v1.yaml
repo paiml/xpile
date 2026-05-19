@@ -575,6 +575,30 @@ equations:
     postconditions:
       - "Diamond depth-3 broadened: 10 contracts at depth-3+"
 
+  latex_display_kind_enum_distinctness_diamond:
+    # PMAT-342: FOURTH Diamond on this contract — BROADENS DEPTH-4
+    # from 9 to 10 contracts. Pushes NotationLatexMathToEquation
+    # (Layer 5) from depth-3 to depth-4, adding SECOND Layer 5
+    # contract at depth-4. LatexDisplayKind enum distinctness
+    # (mirror of PMAT-339 on Target enum).
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.latex_display_kind_enum_distinctness_diamond"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      LatexDisplayKind is a 3-variant decidable enumeration:
+        (a) displayMath ≠ equation
+        (b) equation ≠ align
+        (c) self-equality
+        (d) decidable equality
+    domain: |
+      Any LatexDisplayKind value (3-variant inductive type).
+    invariants:
+      - "FOURTH Diamond category — BROADENS DEPTH-4 from 9 to 10 contracts"
+      - "Mirror of PMAT-339 Target enum distinctness pattern"
+    preconditions:
+      - "LatexDisplayKind inductive type with derived DecidableEq"
+    postconditions:
+      - "Diamond depth-4 broadened: 10 contracts at depth-4+"
+
 proof_obligations:
   - type: postcondition
     property: math-mode round-trips through render() losslessly

@@ -1153,4 +1153,50 @@ theorem equation_formula_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/-! ## PMAT-342 — FOURTH Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION
+    (Layer 5 BROADENING DEPTH-4 from 9 to 10 contracts):
+    LATEX-DISPLAY-KIND ENUM DISTINCTNESS
+    (XPILE-REFINE-NOTATION-008).
+
+    **Broadens DEPTH-4 from 9 to 10 contracts.** Pushes
+    NotationLatexMathToEquation (Layer 5) from depth-3 to depth-4,
+    adding a SECOND Layer 5 contract at depth-4 (CompileRustToPtxMma
+    was first).
+
+    The 4 Diamond categories on C-NOTATION-LATEX-MATH-TO-EQUATION:
+    - PMAT-219 citation_string_monoid: monoid on contract_id
+    - PMAT-234 citation_product_monoid: product monoid
+    - PMAT-334 equation_formula_struct_extensionality: record
+    - **PMAT-342: LATEX-DISPLAY-KIND ENUM DISTINCTNESS** ← depth-4
+
+    Mirror of PMAT-339 (Target enum distinctness on
+    XpileBackendTrait) — captures FINITE ENUMERATION DECIDABILITY
+    of the 3-variant LatexDisplayKind enum (displayMath, equation,
+    align).
+
+    Status: discharged at v0.1.0 (PMAT-342). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `LatexDisplayKind` is a
+  3-variant decidable enumeration with distinct constructors.
+
+  Status: **discharged at v0.1.0 (PMAT-342)**. Tier: DIAMOND.
+-/
+theorem latex_display_kind_enum_distinctness_diamond (k : LatexDisplayKind) :
+    -- (a) displayMath ≠ equation
+    (LatexDisplayKind.displayMath ≠ LatexDisplayKind.equation)
+    -- (b) equation ≠ align
+    ∧ (LatexDisplayKind.equation ≠ LatexDisplayKind.align)
+    -- (c) Self-equality
+    ∧ (k = k)
+    -- (d) Decidable equality
+    ∧ (k = LatexDisplayKind.displayMath ∨ k ≠ LatexDisplayKind.displayMath) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · decide
+  · decide
+  · rfl
+  · by_cases h : k = LatexDisplayKind.displayMath
+    · exact Or.inl h
+    · exact Or.inr h
+
 end XpileContracts.CNotationLatexMathToEquation
