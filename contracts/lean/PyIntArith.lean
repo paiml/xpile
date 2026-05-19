@@ -1547,4 +1547,87 @@ theorem bitwise_and_commutative_monoid_diamond
     rw [Nat.land_comm]
   · rfl
 
+/-! ## PMAT-290 — SIXTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-6
+    Diamond in substrate): negation-involution / abelian-group
+    enrichment of additive monoid (XPILE-REFINE-PY-INT-ARITH-013).
+
+    **First DEPTH-6 Diamond in the substrate.** Opens Diamond
+    depth-6 — six distinct algebraic categories on a single
+    contract. PyIntArith already has FIVE Diamond categories
+    (semiring + Euclidean + shift-monoid + power-monoid +
+    bitwise-AND); PMAT-290 adds the NEGATION-INVOLUTION /
+    ABELIAN-GROUP-ENRICHMENT Diamond as the sixth orthogonal
+    category.
+
+    - PMAT-214: (Int, +, 0) commutative monoid (additive)
+    - PMAT-214 companion: (Int, *, 1) commutative monoid
+    - PMAT-228: (Int, fdiv, fmod) Euclidean domain
+    - PMAT-241: shift-monoid (multiplicative by 2^b)
+    - PMAT-247: power-monoid (Nat-action on Int)
+    - PMAT-286: bitwise-AND commutative monoid
+    - **PMAT-290: (Int, +, 0, -) ABELIAN GROUP via Int.neg
+      — adds INVERSES as the structural enrichment of additive
+      monoid to abelian group**
+
+    The categorical distinction is sharp: the SEMIRING (PMAT-214)
+    proves the ADDITIVE COMMUTATIVE MONOID structure on (Int, +, 0)
+    — closure, associativity, commutativity, identity. The ABELIAN
+    GROUP adds INVERSES: every element has a negation -a such that
+    a + (-a) = 0. This is what distinguishes Int from Nat — Nat
+    has the additive monoid but NOT the inverse structure (no
+    negative naturals).
+
+    For Python int arithmetic, the abelian-group structure is
+    load-bearing because Python int permits negation, and the
+    emitter must preserve the negation laws across path dispatch.
+    The Diamond captures four interlocking structural claims about
+    Int.neg using already-proven Mathlib lemmas.
+
+    Status: discharged at v0.1.0 (PMAT-290). Tier: DIAMOND.
+    First DEPTH-6 Diamond in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — Int negation is an
+  INVOLUTION enriching the additive monoid to an ABELIAN GROUP.
+
+  Combines four properties into the negation-involution
+  axiomatization:
+  (a) Involution: -(-a) = a (negation is its own inverse)
+  (b) Right inverse: a + (-a) = 0 (additive cancellation)
+  (c) Left inverse: (-a) + a = 0 (companion to right inverse)
+  (d) Distributivity over addition: -(a + b) = (-a) + (-b)
+
+  An emitter that uses a NON-INVOLUTION negation (e.g., a
+  two's-complement-truncated `-a` that doesn't fully reverse on
+  i64::MIN) would falsify (a). An emitter that fails to maintain
+  cancellation across a SUB → ADD-NEG rewrite would falsify (b)/(c).
+  An emitter that doesn't distribute negation over addition (e.g.,
+  expands `-(a+b)` as `-a-b` vs `(-a)+(-b)` in a way that produces
+  different operand orderings on the dispatcher) would falsify (d).
+
+  Proof uses only already-proven Mathlib lemmas: Int.neg_neg,
+  Int.add_neg_cancel (or Int.add_right_neg), Int.neg_add_cancel,
+  Int.neg_add. The Diamond category is "abelian-group enrichment
+  of the additive monoid" — genuinely orthogonal to the prior
+  five categories because they all sit inside (Int, +, *)
+  multiplicative-semiring extensions or bitwise structure.
+
+  Status: **discharged at v0.1.0 (PMAT-290)**. Tier: DIAMOND.
+  First DEPTH-6 Diamond in the substrate.
+-/
+theorem negation_involution_abelian_group_diamond (a b : Int) :
+    -- (a) Involution: -(-a) = a
+    -(-a) = a
+    -- (b) Right inverse: a + (-a) = 0
+    ∧ a + (-a) = 0
+    -- (c) Left inverse: (-a) + a = 0
+    ∧ (-a) + a = 0
+    -- (d) Distributivity over addition: -(a + b) = (-a) + (-b)
+    ∧ -(a + b) = (-a) + (-b) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.neg_neg a
+  · exact Int.add_right_neg a
+  · exact Int.add_left_neg a
+  · exact Int.neg_add a b
+
 end XpileContracts.CPyIntArith

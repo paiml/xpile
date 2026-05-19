@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-290
+  github_issue: null
+  item_type: task
+  title: 'PMAT-290: FIRST Diamond depth-6 in the substrate (negation-involution / abelian-group enrichment on C-PY-INT-ARITH)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T22:30:00Z
+  updated: 2026-05-22T22:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add negation_involution_abelian_group_diamond Lean theorem to contracts/lean/PyIntArith.lean — 4 conjuncts proving (a) involution -(-a) = a (b) right inverse a + (-a) = 0 (c) left inverse (-a) + a = 0 (d) distributivity -(a+b) = (-a) + (-b). Uses only Mathlib lemmas (Int.neg_neg, Int.add_right_neg, Int.add_left_neg, Int.neg_add). Wire in contracts/py-int-arith-v1.yaml as new equation. Extend xpile diamond reporter with depth-6+ label + depth_6_plus aggregate. Add substrate_diamond_depth_6_opened gate test. FIRST DEPTH-6 Diamond in substrate — PyIntArith reaches 6 distinct algebraic categories. The 6th category (abelian-group enrichment of additive monoid) is genuinely orthogonal — it captures the inverse structure that distinguishes (Int, +, 0, -) from (Nat, +, 0). Path β extension."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-289
   github_issue: null
   item_type: task
