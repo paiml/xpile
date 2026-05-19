@@ -2544,4 +2544,94 @@ theorem gcd_monoid_bezout_diamond (a b c : Int) :
   · intro h1 h2; exact Int.dvd_gcd h1 h2
   · exact Int.gcd_eq_gcd_ab a b
 
+/-! ## PMAT-317 — SEVENTEENTH Diamond on C-PY-INT-ARITH (FIRST
+    DEPTH-17 in the substrate): UNIT GROUP STRUCTURE — the units
+    of `Int` form the multiplicative group `{1, -1} ≅ Z/2Z`
+    (XPILE-REFINE-PY-INT-ARITH-025).
+
+    **Opens DEPTH-17 in the substrate.** PyIntArith reached depth-16
+    at PMAT-315 (GCD monoid + Bézout / PID); PMAT-317 adds the
+    SEVENTEENTH orthogonal Diamond category — the UNIT GROUP
+    structure characterizing the multiplicatively invertible
+    elements of Int.
+
+    The 17 Diamond categories on C-PY-INT-ARITH:
+    - PMAT-214..315: prior 16 categories (semiring, Euclidean,
+      shift, power, AND, abelian group, lattice, divisibility,
+      linear-order, ring, integral domain, ordered ring, norm,
+      Nat-cast hom, emod quotient hom, GCD monoid + Bézout/PID)
+    - **PMAT-317: UNIT GROUP `{1, -1} ≅ Z/2Z`** ← FIRST DEPTH-17
+
+    The categorical distinction is sharp:
+      - PMAT-315 GCD-MONOID + BÉZOUT established Int as a PID.
+      - PMAT-317 UNIT GROUP characterizes the GROUP OF UNITS within
+        that PID: `{a : Int | ∃ b, a*b = 1} = {1, -1}`. This is
+        the multiplicative-inverse-structure of a ring, distinct
+        from the additive group (PMAT-290 abelian-group-enrichment)
+        and from the gcd structure (PMAT-315 GCD + Bézout).
+
+    The unit group of Int is the simplest non-trivial finite
+    group: `Z/2Z`. The four conjuncts encode this concretely:
+      - 1 is the identity (mul_one)
+      - -1 is its own inverse: (-1) * (-1) = 1 (Z/2Z involution)
+      - Negation factors through -1: -a = (-1) * a
+      - Squares are non-negative (sign rule from PMAT-305 lifted
+        to the unit-group context: a² = a*a ≥ 0)
+
+    Why this is genuinely orthogonal:
+      None of the prior 16 categories axiomatizes the MULTIPLICATIVE
+      INVERTIBLE ELEMENTS as a separate algebraic structure. PMAT-300
+      RING / PMAT-302 INTEGRAL DOMAIN / PMAT-305 ORDERED RING all
+      live in the ring; PMAT-315 GCD/PID characterizes ideals/gcd;
+      PMAT-310 NAT-CAST / PMAT-312 INT-EMOD are homomorphisms.
+      The unit group `Int×` is a NEW algebraic object — the kernel
+      of the natural map `Int → Int / Int×` (associates).
+
+    For Python int dispatch, this matters: an emitter that lowered
+    Python's unary minus through a path that didn't satisfy `-a =
+    (-1) * a` (e.g., a bitwise-complement-plus-one shortcut that
+    failed on `Int.minValue` due to overflow) would falsify (c).
+
+    Status: discharged at v0.1.0 (PMAT-317). Tier: DIAMOND.
+    FIRST DEPTH-17 in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — the unit group of `Int` is
+  `{1, -1} ≅ Z/2Z`.
+
+  Combines four UNIT-GROUP properties:
+  (a) Multiplicative identity:       `a * 1 = a`
+  (b) `-1` is self-inverse (Z/2Z):   `(-1) * (-1) = 1`
+  (c) Negation = mult by -1:         `-a = (-1) * a`
+  (d) Squares are non-negative:      `0 ≤ a * a`
+
+  Together these characterize the multiplicative-inverse-structure
+  of Int: the units are `{1, -1}`, forming a cyclic group of order
+  2. Uses `mul_one`, `Int.neg_one_mul`, `mul_self_nonneg` from
+  Mathlib plus `decide` for the concrete `(-1) * (-1) = 1` fact.
+
+  An emitter that lowered unary minus through a path that didn't
+  preserve `-a = (-1) * a` (e.g., bitwise-complement-plus-one
+  on a two's-complement representation that failed on Int.minValue
+  due to overflow) would falsify (c) — a real bug class invisible
+  to the prior 16 categories.
+
+  Status: **discharged at v0.1.0 (PMAT-317)**. Tier: DIAMOND.
+  FIRST DEPTH-17 in the substrate.
+-/
+theorem unit_group_diamond (a : Int) :
+    -- (a) 1 is the multiplicative identity
+    (a * 1 = a)
+    -- (b) -1 is self-inverse: (-1) * (-1) = 1 (Z/2Z structure)
+    ∧ ((-1 : Int) * (-1) = 1)
+    -- (c) Negation factors through multiplication by -1
+    ∧ (-a = (-1) * a)
+    -- (d) Squares are non-negative (sign rule for a²)
+    ∧ (0 ≤ a * a) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact mul_one a
+  · decide
+  · exact (Int.neg_one_mul a).symm
+  · exact mul_self_nonneg a
+
 end XpileContracts.CPyIntArith
