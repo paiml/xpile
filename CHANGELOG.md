@@ -7,6 +7,7 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+<<<<<<< HEAD
 ### Added — Diamond depth-5 BROADENED from 7 to 8 contracts: EquationFormula ASCII length on `C-NOTATION-LATEX-MATH-TO-EQUATION` (PMAT-350)
 
 **Post-PMAT-349 broadening.** PMAT-349 brought XlatePyListToVec (Layer 2) to depth-5; PMAT-350 pushes `C-NOTATION-LATEX-MATH-TO-EQUATION` (Layer 5) from depth-4 to depth-5, making it the **second Layer 5 contract** at depth-5+ (CompileRustToPtxMma was first via PMAT-287).
@@ -35,6 +36,21 @@ This is the **second substrate-wide demonstration** of the String.length Nat-str
 - `xpile diamond --json` now reports `depth_5_plus: 8` (was 7).
 - `substrate_diamond_depth_5_opened` gate **tightened to ≥ 8**.
 - Substrate Diamond totals: **87 wired theorems** (was 86).
+=======
+### Added — Diamond depth-5 BROADENED: RustFn body Array.size on `C-XLATE-LEAN-TO-RUST` (PMAT-351)
+
+**Post-PMAT-350 broadening.** PMAT-350 brought Notation (Layer 5) to depth-5; PMAT-351 pushes `C-XLATE-LEAN-TO-RUST` (Layer 5) from depth-4 to depth-5, making it the **third Layer 5 contract** at depth-5+.
+
+**5 Diamond categories on `C-XLATE-LEAN-TO-RUST`:**
+
+1. PMAT-222 `inductive_monoid_diamond` (inductive composition monoid)
+2. PMAT-237 `variant_count_cardinality_functor_diamond` (cardinality functor)
+3. PMAT-335 `rust_fn_struct_extensionality_diamond` (record structure)
+4. PMAT-343 `variant_count_nat_structure_diamond` (variant count Nat)
+5. **PMAT-351 `rust_fn_body_array_size_diamond`** (Array.size structure) ← depth-5
+
+This is the **sixth substrate-wide demonstration** of the Array.size template (after PMAT-340/341/344/348).
+>>>>>>> 17824e4 (PMAT-351: Diamond depth-5 BROADENED to C-XLATE-LEAN-TO-RUST (RustFn body Array.size))
 
 ### Added — Diamond depth-5 BROADENED from 6 to 7 contracts: PyListSilver struct extensionality on `C-XLATE-PY-LIST-TO-VEC` (PMAT-349)
 
