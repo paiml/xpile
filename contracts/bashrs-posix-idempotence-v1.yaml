@@ -297,3 +297,33 @@ equations:
     postconditions:
       - "an emitter introducing set -e shell-fragments that trip on non-fatal warnings would emit non-zero exit_code on success path, falsifying (b) and (c)"
       - "Diamond depth-2 on bashrs — substrate now has TEN depth-2 Diamonds across multiple contracts"
+
+  outcome_struct_extensionality_diamond:
+    # PMAT-329: FOURTH Diamond on this contract — BROADENS DEPTH-4
+    # ACROSS LAYERS from 3 contracts (L1 PyIntArith + L4 FFI +
+    # L5 CompileRustToPtxMma) to 4 contracts on 4 distinct layers
+    # (adding L2 Bashrs). OutcomeSilver STRUCTURE EXTENSIONALITY:
+    # the record type is field-extensional with decidable equality.
+    # Categorically orthogonal to all 3 prior on this contract.
+    # Mirror of PMAT-311 SUBTYPE EXTENSIONALITY on BoundedSmem.
+    lean_theorem: "XpileContracts.CBashrsPosixIdempotence.outcome_struct_extensionality_diamond"
+    lean_file: "contracts/lean/Bashrs.lean"
+    formula: |
+      OutcomeSilver admits STRUCTURE EXTENSIONALITY:
+        (a) field eq → record eq
+        (b) record eq → field eq (congruence)
+        (c) decidable equality
+        (d) self-equality (reflexivity)
+    domain: |
+      Two OutcomeSilver records. The four properties together
+      axiomatize the record-type structure: field equality
+      determines record equality, with decidable equality.
+    invariants:
+      - "FOURTH Diamond category on C-BASHRS-POSIX-IDEMPOTENCE — BROADENS DEPTH-4 ACROSS LAYERS to 4 contracts on 4 distinct layers (L1 + L2 + L4 + L5)"
+      - "RECORD-STRUCTURE / SUBTYPE-LIKE claim, mirror of PMAT-311 on BoundedSmem"
+      - "distinct from PMAT-215/python pure-function (determinism) and PMAT-238 (specific value claim)"
+    preconditions:
+      - "two OutcomeSilver records (with DecidableEq instance)"
+    postconditions:
+      - "an emitter using a JSON serialization that re-orders or drops the exit_code field when observable is empty would falsify (a)"
+      - "Diamond depth-4 ACROSS LAYERS broadened: 4 contracts on 4 distinct layers"

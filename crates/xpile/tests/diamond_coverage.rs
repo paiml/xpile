@@ -106,11 +106,13 @@ fn substrate_diamond_depth_4_opened() {
     let depth_4_plus = read_aggregate_field(&json, "depth_4_plus");
     // PMAT-247 (PyIntArith) + PMAT-248 (CompileRustToPtxMma) opened depth-4.
     // PMAT-288 added refcount_inverse_diamond → C-FFI-CPYTHON-EXT joins depth-4.
-    // Gate tightened to ≥3 contracts across layers (Layer 1, Layer 4, Layer 5).
+    // PMAT-329 added outcome_struct_extensionality_diamond → C-BASHRS-POSIX-IDEMPOTENCE
+    // joins depth-4 on Layer 2, broadening depth-4 ACROSS LAYERS to 4 contracts.
+    // Gate now asserts ≥4 contracts across 4 layers (Layer 1 + Layer 2 + Layer 4 + Layer 5).
     assert!(
-        depth_4_plus >= 3,
-        "Diamond depth-4 ACROSS LAYERS milestone (PMAT-247, PMAT-248, PMAT-288): \
-         expected ≥3 contracts at depth-4+ (Layer 1 + Layer 4 + Layer 5), got {depth_4_plus}.\n{json}"
+        depth_4_plus >= 4,
+        "Diamond depth-4 ACROSS LAYERS milestone (PMAT-247/248/288/329): \
+         expected ≥4 contracts at depth-4+ (L1 + L2 + L4 + L5), got {depth_4_plus}.\n{json}"
     );
 }
 
