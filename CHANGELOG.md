@@ -7,6 +7,35 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-5 BROADENED from 6 to 7 contracts: PyListSilver struct extensionality on `C-XLATE-PY-LIST-TO-VEC` (PMAT-349)
+
+**Post-PMAT-348 broadening.** PMAT-348 brought XpileBackendTrait (Layer 3) to depth-5; PMAT-349 pushes `C-XLATE-PY-LIST-TO-VEC` (Layer 2) from depth-4 to depth-5, making it the **second Layer 2 contract** at depth-5+ (Bashrs was first via PMAT-346).
+
+**Coverage state at PMAT-349:**
+
+| Metric | Value |
+|---|---|
+| Wired Diamond theorems | **86** (was 85) |
+| Diamond categories | 28+ |
+| Contracts at depth-5+ | **7** (was 6) |
+| Diamond depth-5 reach | ALL 5 LAYERS + 2nd L3 + 2nd L2 |
+
+**5 Diamond categories on `C-XLATE-PY-LIST-TO-VEC`:**
+
+1. PMAT-221 `list_free_monoid_diamond` (free monoid)
+2. PMAT-229 `nonempty_section_retraction_diamond` (NonEmpty subtype)
+3. PMAT-244 `length_monoid_homomorphism_diamond` (length functor)
+4. PMAT-338 `list_reverse_involution_diamond` (reverse involution)
+5. **PMAT-349 `py_list_silver_struct_extensionality_diamond`** (record-from-fields) ← depth-5
+
+This is the **tenth substrate-wide demonstration** of the structure-extensionality pattern (after PMAT-311/329/330/331/332/333/334/335/336) — and the first to apply it polymorphically over an element type parameter `α`.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_5_plus: 7` (was 6).
+- `substrate_diamond_depth_5_opened` gate **tightened to ≥ 7**.
+- Substrate Diamond totals: **86 wired theorems** (was 85).
+
 ### Added — Diamond depth-5 BROADENED from 5 to 6 contracts: ArtifactSilver.bytes Array.size Diamond on `C-XPILE-BACKEND-TRAIT` (PMAT-348)
 
 **Post-milestone broadening.** PMAT-347 achieved depth-5 ACROSS ALL 5 LAYERS with exactly one contract per layer at depth-5+ (5 total). PMAT-348 pushes `C-XPILE-BACKEND-TRAIT` (Layer 3) from depth-4 to depth-5, making it the **second Layer 3 contract** at depth-5+ (XpileFrontendTrait was first via PMAT-347).
