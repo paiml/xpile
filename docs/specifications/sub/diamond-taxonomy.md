@@ -18,7 +18,7 @@ A Diamond theorem combines multiple Platinum properties into a **single algebrai
 
 ## Coverage milestones
 
-As of v0.1.0+ (PMAT-214..308), the substrate has:
+As of v0.1.0+ (PMAT-214..313), the substrate has:
 
 - **Diamond depth-1 UNIVERSAL** (12/12 contracts): every contract has at least one Diamond at one algebraic category.
 - **Diamond depth-2 UNIVERSAL** (12/12 contracts): every contract has at least two **distinct** Diamond categories. CI-enforced via PMAT-251.
@@ -33,8 +33,10 @@ As of v0.1.0+ (PMAT-214..308), the substrate has:
 - **Diamond depth-11 ACROSS LAYERS** (2/12 contracts): PMAT-302 (integral-domain / no-zero-divisors on L1) + PMAT-303 (discrete-order / successor + no-gaps on L5).
 - **Diamond depth-12 ACROSS LAYERS** (2/12 contracts): PMAT-305 (ordered-ring sign rules on L1) + PMAT-306 (max/min monotonicity on L5).
 - **Diamond depth-13 ACROSS LAYERS** (2/12 contracts): PMAT-307 (absolute value / norm on L1) + PMAT-308 (GLB/LUB universal property on L5).
+- **Diamond depth-14 ACROSS LAYERS** (2/12 contracts): PMAT-310 (Nat-cast ring homomorphism on L1, FIRST EXTERNAL claim) + PMAT-311 (subtype extensionality on L5, FIRST SUBTYPE-STRUCTURE claim).
+- **Diamond depth-15 ACROSS LAYERS** (2/12 contracts): PMAT-312 (Int-emod quotient ring homomorphism on L1, FIRST QUOTIENT-RING claim) + PMAT-313 (Nat-mod quotient ring homomorphism on L5).
 
-**Substrate total: 51 wired Diamond equations across 12 contracts.**
+**Substrate total: 55 wired Diamond equations across 12 contracts.**
 
 ## Diamond categories by family
 
@@ -89,6 +91,24 @@ Captures `|·|`-style "size" / "magnitude" structures:
 | Category | Example PMAT | Contract | Carrier |
 |---|---|---|---|
 | Absolute value / norm | PMAT-307 | C-PY-INT-ARITH | `(Int, |·|)` as a NORMED RING: non-negativity + definiteness + triangle inequality + multiplicativity — Mathlib's `AbsoluteValue` typeclass |
+
+### Ring-homomorphism family
+
+Captures external category-theoretic claims about structure-preserving maps BETWEEN rings:
+
+| Category | Example PMAT | Contract | Map |
+|---|---|---|---|
+| Nat-cast ring hom (INJECTIVE) | PMAT-310 | C-PY-INT-ARITH | `Nat.cast : Nat → Int` preserves 0, 1, +, * — FIRST EXTERNAL/category-theoretic claim in substrate |
+| Int-emod quotient hom (SURJECTIVE) | PMAT-312 | C-PY-INT-ARITH | `(· % 2) : Int → Z/2Z` preserves +, *, non-negative, < n — FIRST QUOTIENT-RING claim |
+| Nat-mod quotient hom (SURJECTIVE) | PMAT-313 | C-COMPILE-RUST-TO-PTX-MMA | `(· % 2) : Nat → Z/2Z` on BoundedSmem.val carrier — mirror of PMAT-312 |
+
+### Subtype-structure family
+
+Captures claims about subtype carriers (not just operations through the projection):
+
+| Category | Example PMAT | Contract | Carrier |
+|---|---|---|---|
+| Subtype extensionality | PMAT-311 | C-COMPILE-RUST-TO-PTX-MMA | BoundedSmem ↔ Nat .val via `Subtype.ext` — extensionality + congruence + antisymmetric-lift + decidable equality. FIRST SUBTYPE-STRUCTURE claim on BoundedSmem |
 
 ### Lattice family
 
@@ -267,6 +287,8 @@ The `crates/xpile/tests/diamond_coverage.rs` integration test (PMAT-251) enforce
 - ≥2 contracts have ≥11 Diamonds (depth-11 ACROSS LAYERS, PMAT-302/303).
 - ≥2 contracts have ≥12 Diamonds (depth-12 ACROSS LAYERS, PMAT-305/306).
 - ≥2 contracts have ≥13 Diamonds (depth-13 ACROSS LAYERS, PMAT-307/308).
+- ≥2 contracts have ≥14 Diamonds (depth-14 ACROSS LAYERS, PMAT-310/311).
+- ≥2 contracts have ≥15 Diamonds (depth-15 ACROSS LAYERS, PMAT-312/313).
 
 A future regression that removes a `_diamond` from any YAML or fails to keep depth-N invariants will fire the gate.
 - ≥30 total wired Diamond equations.

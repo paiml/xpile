@@ -7,6 +7,34 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Spec §28 + diamond-taxonomy.md sync to depth-15 ACROSS LAYERS reality (PMAT-314)
+
+After 4 Path β PRs (PMAT-310..313) added depths 14 and 15 ACROSS LAYERS — including the FIRST EXTERNAL category-theoretic claims (PMAT-310/312) and the FIRST SUBTYPE-STRUCTURE / QUOTIENT-RING claims (PMAT-311/312/313) — the spec accumulated 2 more tiers of documentation rot. PMAT-314 syncs:
+
+**`docs/specifications/xpile-spec.md` §28:**
+
+- Substrate total: 51 → **55 wired Diamond equations**
+- Category families: 14+ → **17+** (added: ring-homomorphism-embedding, ring-homomorphism-quotient, subtype-structure)
+- Coverage state table extended with 2 new rows: depth-14, depth-15 (both ACROSS LAYERS)
+- `C-PY-INT-ARITH` deep-depth listing: 13 → **15 categories** (added PMAT-310 NAT-CAST RING HOMOMORPHISM, PMAT-312 INT-EMOD QUOTIENT HOMOMORPHISM)
+- `C-COMPILE-RUST-TO-PTX-MMA` listing: 13 → **15 categories** (added PMAT-311 SUBTYPE EXTENSIONALITY, PMAT-313 NAT-MOD QUOTIENT HOMOMORPHISM)
+- Depth labels: `depth-12 / depth-13+` → `depth-14 / depth-15+`
+- CI gate count: 14 → **16 integration tests**
+
+**`docs/specifications/sub/diamond-taxonomy.md`:**
+
+- Coverage milestones extended with depth-14/15 rows
+- Substrate total: 51 → **55**
+- **New Ring-homomorphism family** subsection (3 entries):
+  - PMAT-310: Nat → Int INJECTIVE embedding (FIRST EXTERNAL claim)
+  - PMAT-312: Int → Z/nZ SURJECTIVE quotient (FIRST QUOTIENT-RING claim)
+  - PMAT-313: Nat → Z/nZ SURJECTIVE quotient on BoundedSmem.val
+- **New Subtype-structure family** subsection (1 entry):
+  - PMAT-311: BoundedSmem ↔ Nat .val via Subtype.ext (FIRST SUBTYPE-STRUCTURE claim)
+- CI enforcement clause extended with depth-14/15 invariants
+
+No code changes — pure documentation alignment. Mirrors PMAT-296 / PMAT-297 / PMAT-304 / PMAT-309 sync pattern.
+
 ### Added — Diamond depth-15 ACROSS LAYERS: Nat-mod quotient-ring-homomorphism Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-313)
 
 **Path β extension.** Depth-15 was opened by PMAT-312 on PyIntArith (Layer 1). PMAT-313 extends depth-15 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) so the substrate now has **two contracts at depth-15+** across distinct taxonomy layers.
