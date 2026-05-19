@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-319
+  github_issue: null
+  item_type: task
+  title: 'PMAT-319: Spec §28 + diamond-taxonomy.md sync to depth-17 ACROSS LAYERS reality'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T12:00:00Z
+  updated: 2026-05-23T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "After 4 Path β PRs (PMAT-315..318) added depths 16 and 17 ACROSS LAYERS — including FIRST UNIVERSAL-OBJECT-WITH-CONSTRUCTIVE-WITNESS claim (PMAT-315/316: gcd-monoid + Bézout / PID), FIRST UNIT-GROUP claim (PMAT-317: `{1,-1}≅Z/2Z`), and depth-17 Nat power-monoid mirror (PMAT-318) — the spec accumulated 2 more tiers of documentation rot. Sync docs/specifications/xpile-spec.md §28 (substrate total 55 → 59, families 17+ → 19+, coverage state table extended with depth-16/17 rows, deep-depth listings updated to 17 categories each, depth labels updated to depth-17+, CI gate count 16 → 18 tests). Sync docs/specifications/sub/diamond-taxonomy.md (coverage milestones extended with depth-16/17, NEW GCD-monoid/PID family subsection with PMAT-315/316, NEW Unit-group family subsection with PMAT-317, NEW Power-monoid family subsection with PMAT-247/318, CI enforcement clause extended). No code changes. Mirrors PMAT-296 / PMAT-297 / PMAT-304 / PMAT-309 / PMAT-314 sync pattern."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-318
   github_issue: null
   item_type: task

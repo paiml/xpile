@@ -7,6 +7,36 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Spec §28 + diamond-taxonomy.md sync to depth-17 ACROSS LAYERS reality (PMAT-319)
+
+After 4 Path β PRs (PMAT-315..318) added depths 16 and 17 ACROSS LAYERS — including the **FIRST UNIVERSAL-OBJECT-WITH-CONSTRUCTIVE-WITNESS** claim (PMAT-315/316: gcd-monoid + Bézout / PID), the **FIRST UNIT-GROUP** claim (PMAT-317: `{1, -1} ≅ Z/2Z`), and the depth-17 Nat power-monoid mirror (PMAT-318) — the spec accumulated 2 more tiers of documentation rot. PMAT-319 syncs:
+
+**`docs/specifications/xpile-spec.md` §28:**
+
+- Substrate total: 55 → **59 wired Diamond equations**
+- Category families: 17+ → **19+** (added: gcd-monoid/PID, unit-group, power-monoid)
+- Coverage state table extended with 2 new rows: depth-16, depth-17 (both ACROSS LAYERS)
+- `C-PY-INT-ARITH` deep-depth listing: 15 → **17 categories** (added PMAT-315 GCD/Bézout/PID, PMAT-317 UNIT GROUP)
+- `C-COMPILE-RUST-TO-PTX-MMA` listing: 15 → **17 categories** (added PMAT-316 NAT GCD MONOID, PMAT-318 NAT POWER-MONOID)
+- Depth labels: `depth-14 / depth-15+` → `depth-16 / depth-17+`
+- CI gate count: 16 → **18 integration tests**
+
+**`docs/specifications/sub/diamond-taxonomy.md`:**
+
+- Coverage milestones extended with depth-16/17 rows
+- Substrate total: 55 → **59**
+- **New GCD-monoid / PID family** subsection (2 entries):
+  - PMAT-315: Int GCD + Bézout / PID (FIRST UNIVERSAL-OBJECT-WITH-CONSTRUCTIVE-WITNESS)
+  - PMAT-316: Nat GCD monoid with commutativity (mirror)
+- **New Unit-group family** subsection (1 entry):
+  - PMAT-317: Int unit group `{1, -1} ≅ Z/2Z`
+- **New Power-monoid family** subsection (2 entries):
+  - PMAT-247: Int power-monoid (retro-classified)
+  - PMAT-318: Nat power-monoid on BoundedSmem.val
+- CI enforcement clause extended with depth-16/17 invariants
+
+No code changes — pure documentation alignment. Mirrors PMAT-296 / PMAT-297 / PMAT-304 / PMAT-309 / PMAT-314 sync pattern.
+
 ### Added — Diamond depth-17 ACROSS LAYERS: Nat-power-monoid Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-318)
 
 **Path β extension.** Depth-17 was opened by PMAT-317 on PyIntArith (Layer 1). PMAT-318 extends depth-17 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) via the Nat-power-monoid Diamond — the substrate now has **2 contracts at depth-17+**.
