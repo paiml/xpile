@@ -7,6 +7,35 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-5 ACROSS LAYERS: `C-COMPILE-RUST-TO-PTX-MMA` reaches depth-5 via bounded-smem closure (PMAT-287)
+
+Path β extension. Pushes `C-COMPILE-RUST-TO-PTX-MMA` (Layer 5 compile-time) from depth-4 to depth-5 by wiring the existing `bounded_smem_closure_diamond` Lean theorem in YAML as a 5th categorically distinct Diamond. Together with PMAT-286 (Layer 1 PyIntArith), this opens the **DEPTH-5 ACROSS LAYERS** milestone — 2 contracts on distinct taxonomy layers at depth-5+.
+
+**The 5 Diamond categories on `C-COMPILE-RUST-TO-PTX-MMA`:**
+
+1. PMAT-218: `(BoundedSmem, +, 0)` bounded-monoid (additive)
+2. PMAT-231: `(BoundedSmem, max, 0)` join-semilattice (idempotent commutative monoid)
+3. PMAT-232: `(BoundedSmem, min, 0)` meet-semilattice (mirror)
+4. PMAT-248: `(BoundedSmem, max, min)` lattice with absorption laws (FIRST DEPTH-4 along with PMAT-247)
+5. **PMAT-287: `(BoundedSmem, +, sum-fits → closed)` SUBALGEBRA-CLOSURE**
+
+**Why closure is categorically distinct:** the prior 4 categories are AXIOMATIC (laws hold on existing values). Closure is a **subalgebra/well-definedness** property: given valid inputs + precondition, the OUTPUT is also a valid input for the next composition. Without closure, monoid axioms alone don't support compositional analysis — every step would need re-validation. With closure, the analysis composes as a chain of monoid operations.
+
+**No new Lean proof needed.** The `bounded_smem_closure_diamond` theorem already exists at `contracts/lean/CompileRustToPtxMma.lean` line 484:
+
+```lean
+theorem bounded_smem_closure_diamond
+    (a b : BoundedSmem) (h : a.val + b.val ≤ smem_budget_sm80) :
+    ∃ c : BoundedSmem, c.val = a.val + b.val :=
+  ⟨add_bounded_smem a b h, rfl⟩
+```
+
+**Contract YAML wiring** adds a new equation entry referencing this Lean theorem with a comment block explaining the categorical orthogonality.
+
+**Gate update:** `substrate_diamond_depth_5_opened` now asserts `≥2` contracts at depth-5+ (was `≥1`). Verified live: `depth_5_plus=2, contracts=[C-COMPILE-RUST-TO-PTX-MMA, C-PY-INT-ARITH]`.
+
+**Why this is α-tier of Path β extension:** zero new Lean proof (theorem already shipped at PMAT-219 era); the work is YAML wiring + gate tightening. Demonstrates that depth expansion can leverage existing under-wired theorems before committing to new proof engineering.
+
 ### Added — FIRST Diamond depth-5 in the substrate: bitwise-AND-commutative-monoid on `C-PY-INT-ARITH` (PMAT-286)
 
 **Path β.** Opens Diamond depth-5 — five distinct algebraic categories on a single contract. PyIntArith was at depth-4 (PMAT-247's power-monoid); PMAT-286 adds **BITWISE-AND-COMMUTATIVE-MONOID** as the fifth orthogonal category.
