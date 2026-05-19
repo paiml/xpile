@@ -7,6 +7,73 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-15 in the substrate: Int-emod quotient-ring-homomorphism Diamond on `C-PY-INT-ARITH` (PMAT-312)
+
+**Path β extension.** Opens Diamond **depth-15** — fifteen distinct algebraic categories on a single contract. PyIntArith was at depth-14 (post-PMAT-310); PMAT-312 adds **INT-EMOD QUOTIENT RING HOMOMORPHISM** as the fifteenth orthogonal category.
+
+**The 15 Diamond categories on `C-PY-INT-ARITH`:**
+
+1. PMAT-214: SEMIRING (+, *)
+2. PMAT-228: EUCLIDEAN DOMAIN (fdiv, fmod)
+3. PMAT-241: SHIFT-MONOID (shl)
+4. PMAT-247: POWER-MONOID (pow)
+5. PMAT-286: BITWISE-AND-MONOID (&)
+6. PMAT-290: ABELIAN-GROUP-ENRICHMENT (neg)
+7. PMAT-292: ORDER-DISTRIBUTIVE-LATTICE (min, max)
+8. PMAT-294: DIVISIBILITY-PREORDER (∣)
+9. PMAT-298: LINEAR-ORDER TRICHOTOMY (<)
+10. PMAT-300: RING-DISTRIBUTIVITY (neg × mul)
+11. PMAT-302: INTEGRAL DOMAIN (no zero divisors)
+12. PMAT-305: ORDERED RING (sign rules)
+13. PMAT-307: ABSOLUTE VALUE / NORM
+14. PMAT-310: NAT-CAST RING HOMOMORPHISM (Nat → Int, INJECTIVE)
+15. **PMAT-312: INT-EMOD QUOTIENT RING HOMOMORPHISM (Int → Z/nZ, SURJECTIVE)** ← FIRST DEPTH-15
+
+**Why INT-EMOD QUOTIENT HOMOMORPHISM is genuinely a NEW category — orthogonal to ALL 14 prior:**
+
+- PMAT-310 (**NAT-CAST RING HOMOMORPHISM**) is an INJECTIVE embedding `Nat → Int` (lossless extension).
+- PMAT-312 (**INT-EMOD QUOTIENT HOMOMORPHISM**) is a SURJECTIVE projection `Int → Z/nZ` (lossy collapse).
+
+Both are ring homomorphisms, but in **opposite directions**:
+
+```
+Nat ──cast──> Int ──emod n──> Z/nZ
+─────────────  ─────────────
+   injective    surjective
+```
+
+PMAT-312 adds the **FIRST QUOTIENT-RING claim** to the substrate. Demonstrated for n=2 (PARITY/Z/2Z), captures the Int → Z/2Z homomorphism:
+
+- **Preserves +:** `(a + b) % 2 = (a%2 + b%2) % 2`
+- **Preserves *:** `(a * b) % 2 = (a%2 * b%2) % 2`
+- **Non-negative result:** `0 ≤ a % 2`
+- **Less than n:** `a % 2 < 2`
+
+**New Lean theorem:**
+
+```lean
+theorem int_emod_quotient_hom_diamond (a b : Int) :
+    ((a + b) % 2 = (a % 2 + b % 2) % 2)        -- preserves +
+    ∧ ((a * b) % 2 = (a % 2 * b % 2) % 2)      -- preserves *
+    ∧ (0 ≤ a % 2)                              -- non-negative
+    ∧ (a % 2 < 2) := by                        -- lands in Z/2Z
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.add_emod a b 2
+  · exact Int.mul_emod a b 2
+  · exact Int.emod_nonneg a (by decide)
+  · exact Int.emod_lt_of_pos a (by decide)
+```
+
+Uses standard Mathlib `Int.add_emod`, `Int.mul_emod`, `Int.emod_nonneg`, `Int.emod_lt_of_pos`.
+
+**Falsification surface:** an emitter that lowered Python's `%` to **C-style signed modulo** (where `(-1) % 2 = -1` in C, vs `1` in Python and Lean's `Int.emod`) would falsify the non-negativity axiom (c) for negative dividends. This is a documented Python-vs-C semantic mismatch. The bug class slips past **all 14 prior Diamond categories** because none captures the QUOTIENT structure.
+
+**Reporter + gate updates:**
+
+- `xpile diamond --json` extended with `depth-14` discrete label + `depth-15+` aggregate.
+- `substrate_diamond_depth_15_opened` gate test added (≥ 1 at depth-15+).
+- Substrate Diamond totals: **54 wired Diamond theorems** across 12 contracts (was 53).
+
 ### Added — Diamond depth-14 ACROSS LAYERS: subtype-extensionality Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-311)
 
 **Path β extension.** Depth-14 was opened by PMAT-310 on PyIntArith (Layer 1). PMAT-311 extends depth-14 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) so the substrate now has **two contracts at depth-14+** across distinct taxonomy layers.

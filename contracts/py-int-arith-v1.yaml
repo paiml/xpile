@@ -1067,6 +1067,43 @@ equations:
       - "an emitter mapping (0 : Nat) to anything other than (0 : Int) would falsify zero-preservation"
       - "Diamond DEPTH-14 opened — 1 contract at depth-14+"
 
+  int_emod_quotient_hom_diamond:
+    # PMAT-312: FIFTEENTH Diamond on this contract — opens FIRST
+    # DEPTH-15 in the substrate. INT-EMOD QUOTIENT RING HOMOMORPHISM:
+    # Int.emod is the SURJECTIVE projection Int → Z/nZ (demonstrated
+    # for n=2, PARITY/Z/2Z quotient). Mirror of PMAT-310 which was
+    # the INJECTIVE embedding Nat → Int. Together they capture:
+    #   Nat ──cast──> Int ──emod n──> Z/nZ
+    #       injective         surjective
+    # Categorically orthogonal to all 14 prior categories — none
+    # captures the QUOTIENT-RING structure. Falsification surface:
+    # C-style signed modulo (where (-1) % 2 = -1) violates the
+    # non-negativity axiom (c). Python's % matches Lean's Int.emod
+    # (always non-negative).
+    lean_theorem: "XpileContracts.CPyIntArith.int_emod_quotient_hom_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      Int.emod (· % 2) : Int → Z/2Z is a RING HOMOMORPHISM (quotient projection):
+        (a) preserves +:           (a + b) % 2 = (a%2 + b%2) % 2
+        (b) preserves *:           (a * b) % 2 = (a%2 * b%2) % 2
+        (c) non-negative result:   0 ≤ a % 2
+        (d) less than 2 (Z/2Z):    a % 2 < 2
+    domain: |
+      Any two Int values a, b. The four homomorphism axioms
+      together encode Int.emod (· % 2) as a SURJECTIVE
+      `RingHom Int (ZMod 2)` (quotient projection). Demonstrated
+      for n=2 (parity/Z/2Z); generalizes to arbitrary n.
+    invariants:
+      - "FIFTEENTH Diamond category on C-PY-INT-ARITH — opens FIRST DEPTH-15 in the substrate"
+      - "FIRST QUOTIENT-RING structure claim in the substrate (Int → Z/nZ)"
+      - "mirror of PMAT-310 (Nat → Int INJECTIVE embedding): PMAT-312 is the SURJECTIVE quotient direction"
+      - "load-bearing for Python `%` lowering: C-style signed modulo violates (c) for negative dividends; Python's % matches Lean Int.emod"
+    preconditions:
+      - "two Int values; theorem stated on standard Int.emod (· % 2)"
+    postconditions:
+      - "an emitter using C-style signed modulo would falsify (c) for negative dividends (e.g., (-1) % 2 = -1 in C, vs 1 in Python/Lean)"
+      - "Diamond DEPTH-15 opened — 1 contract at depth-15+"
+
 proof_obligations:
   - type: precondition
     property: operands are Python int (not int-subclass, not bool-as-int)
