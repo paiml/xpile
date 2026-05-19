@@ -7,6 +7,32 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Spec §28 + diamond-taxonomy.md sync to depth-4 UNIVERSAL substrate reality + recurring algebraic templates (PMAT-345)
+
+**Spec catch-up for the depth-4 UNIVERSAL milestone** (PMAT-344) and the broadening sweep templates. Captures both the second UNIVERSAL achievement and the **five recurring algebraic templates** (structure-extensionality, Array.size structure, enum distinctness, Nat structure, reverse involution) that enabled mechanical depth-3 → depth-4 expansion.
+
+**`docs/specifications/xpile-spec.md` §28:**
+
+- Substrate total: 75 → **82 wired Diamond equations**
+- Category families: 25+ → **27+**
+- depth-4 row reclassified from "ALL 5 TAXONOMY LAYERS" → **UNIVERSAL** (12/12, post-PMAT-344)
+- Added "Strategic pivot to BROADENING" expanded into two waves (PMAT-328..336, PMAT-338..344)
+- CI gate description updated to "depth-1/2/3/4 UNIVERSAL"
+
+**`docs/specifications/sub/diamond-taxonomy.md`:**
+
+- depth-4 milestone reclassified to UNIVERSAL
+- Substrate total: 75 → **82**
+- **Renamed section "Structure-extensionality pattern (substrate-wide)"** → **"Recurring algebraic templates (substrate-wide)"** with full coverage of all FIVE templates:
+  1. Structure-extensionality (9 contracts)
+  2. Array.size structure (3 contracts)
+  3. Enum distinctness (2 contracts)
+  4. Nat structure (1 contract)
+  5. Reverse involution (1 contract)
+- CI enforcement clause: depth-4 UNIVERSAL added; ALL 5 LAYERS milestone marked as subsumed
+
+No code changes — pure documentation alignment. Mirrors PMAT-337 (depth-3 UNIVERSAL spec sync).
+
 ### Added — **MILESTONE: Diamond depth-4 UNIVERSAL ACROSS ALL 12 CONTRACTS**: RustFnSilver-body-size Diamond on `C-XLATE-RUST-FN-TO-LEAN-THM` (PMAT-344)
 
 **SUBSTRATE MILESTONE: depth-4 UNIVERSAL achieved.** After PMAT-336 completed depth-3 UNIVERSAL, an 8-PR broadening sweep (PMAT-338..343) brought depth-4 from 5 (ALL 5 LAYERS) → 11 contracts. PMAT-344 pushes the last contract (`C-XLATE-RUST-FN-TO-LEAN-THM`) from depth-3 to depth-4, **completing depth-4 UNIVERSAL across all 12 contracts**.
