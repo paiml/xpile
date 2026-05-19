@@ -264,13 +264,12 @@ fn substrate_diamond_depth_13_opened() {
 fn substrate_diamond_depth_14_opened() {
     let json = run_diamond_json();
     let depth_14_plus = read_aggregate_field(&json, "depth_14_plus");
-    // PMAT-310 opened depth-14 on C-PY-INT-ARITH: NAT-CAST RING HOMOMORPHISM axioms
-    // (preserves zero, one, addition, multiplication). The 14th orthogonal category
-    // is an EXTERNAL category-theoretic claim (Nat → Int structure preservation),
-    // distinct from all 13 prior INTERNAL algebraic claims.
+    // PMAT-310 opened depth-14 on C-PY-INT-ARITH (Layer 1): NAT-CAST RING HOMOMORPHISM.
+    // PMAT-311 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): SUBTYPE EXTENSIONALITY.
+    // Gate now asserts depth-14 ACROSS LAYERS (≥2 contracts at depth-14+).
     assert!(
-        depth_14_plus >= 1,
-        "Diamond depth-14 milestone (PMAT-310): expected ≥1 contract at depth-14+, \
-         got {depth_14_plus}.\n{json}"
+        depth_14_plus >= 2,
+        "Diamond depth-14 ACROSS LAYERS milestone (PMAT-310, PMAT-311): \
+         expected ≥2 contracts at depth-14+ (Layer 1 + Layer 5), got {depth_14_plus}.\n{json}"
     );
 }

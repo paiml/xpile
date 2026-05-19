@@ -7,6 +7,63 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-14 ACROSS LAYERS: subtype-extensionality Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-311)
+
+**Path β extension.** Depth-14 was opened by PMAT-310 on PyIntArith (Layer 1). PMAT-311 extends depth-14 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) so the substrate now has **two contracts at depth-14+** across distinct taxonomy layers.
+
+**The 14 Diamond categories on `C-COMPILE-RUST-TO-PTX-MMA`:**
+
+1. PMAT-218: BOUNDED MONOID
+2. PMAT-287: CLOSURE
+3. PMAT-231: JOIN-SEMILATTICE
+4. PMAT-242: MEET-SEMILATTICE
+5. PMAT-248: LATTICE ABSORPTION
+6. PMAT-291: DISTRIBUTIVE LATTICE
+7. PMAT-293: BOUNDED LATTICE
+8. PMAT-295: CANCELLATIVE MONOID
+9. PMAT-299: ORDERED MONOID
+10. PMAT-301: ADDITIVE-LATTICE DISTRIBUTIVITY
+11. PMAT-303: DISCRETE ORDER
+12. PMAT-306: MAX/MIN MONOTONICITY
+13. PMAT-308: GLB/LUB UNIVERSAL PROPERTY
+14. **PMAT-311: SUBTYPE EXTENSIONALITY + DECIDABLE EQUALITY** ← extends depth-14 ACROSS LAYERS
+
+**Why SUBTYPE EXTENSIONALITY is genuinely a NEW category:**
+
+The prior 13 categories all work **through** the `.val` projection — they treat `BoundedSmem` as if it were `Nat` for arithmetic/order purposes. PMAT-311 is the **FIRST claim about BoundedSmem AS A SUBTYPE** (rather than as a stand-in for Nat):
+
+- **Extensionality:** `a.val = b.val → a = b`
+- **Congruence:** `a = b → a.val = b.val`
+- **Antisymmetric ≤ lift:** `a.val ≤ b.val → b.val ≤ a.val → a = b`
+- **Decidable equality on val:** `a.val = b.val ∨ a.val ≠ b.val`
+
+Mirror of PMAT-310 (which introduced the FIRST EXTERNAL/category-theoretic claim on PyIntArith via the Nat→Int ring homomorphism). PMAT-311 introduces the FIRST SUBTYPE-STRUCTURE claim on BoundedSmem — together they capture the "interface" between BoundedSmem/Nat/Int that the prior 13 categories used implicitly.
+
+**New Lean theorem:**
+
+```lean
+theorem bounded_smem_subtype_extensionality_diamond (a b : BoundedSmem) :
+    (a.val = b.val → a = b)
+    ∧ (a = b → a.val = b.val)
+    ∧ (a.val ≤ b.val → b.val ≤ a.val → a = b)
+    ∧ (a.val = b.val ∨ a.val ≠ b.val) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact fun h => Subtype.ext h
+  · intro h; rw [h]
+  · intro h1 h2; exact Subtype.ext (Nat.le_antisymm h1 h2)
+  · exact Nat.eq_or_ne a.val b.val
+```
+
+Uses Lean core's `Subtype.ext` (for val-equality → subtype-equality lift) and `Nat.le_antisymm` + `Nat.eq_or_ne` (standard Nat lemmas).
+
+**Falsification surface:** an emitter that lowered `BoundedSmem` to a **raw `Nat`** (discarding the bound proof) would satisfy all 13 prior algebraic axioms but **FAIL** the antisymmetric-lift (c) — two subtype elements with the same val wouldn't be guaranteed equal without the bound proof being preserved. This bug class slips past the prior 13 categories which axiomatize operations on `.val` but not the subtype relationship.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_14_plus: 2` (was 1 after PMAT-310).
+- `substrate_diamond_depth_14_opened` gate tightened to `≥ 2` (ACROSS LAYERS).
+- Substrate Diamond totals: **53 wired Diamond theorems** across 12 contracts (was 52).
+
 ### Added — FIRST Diamond depth-14 in the substrate: Nat-cast ring-homomorphism Diamond on `C-PY-INT-ARITH` (PMAT-310)
 
 **Path β extension.** Opens Diamond **depth-14** — fourteen distinct algebraic categories on a single contract. PyIntArith was at depth-13 (post-PMAT-307); PMAT-310 adds **NAT-CAST RING HOMOMORPHISM** as the fourteenth orthogonal category.
