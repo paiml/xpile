@@ -254,6 +254,187 @@ pub struct ViaEntry {
     pub shape_filter: Option<String>,
 }
 
+// ─── PMAT-263 / Section 29: TargetEmitter trait + MultiEmitterBackend ────
+//
+// Routing layer for multi-emitter backends. A [`MultiEmitterBackend`]
+// composes a general emitter (mandatory fallback) + an optional
+// specialist emitter under a [`QuorumPolicy`]. Single-emitter and
+// multi-emitter cases produce explicit `QuorumStatus` on the emitted
+// [`Artifact`].
+
+/// Plain text emitted by a single [`TargetEmitter`] before the
+/// multi-emitter routing decides what to put in the final [`Artifact`].
+/// Doesn't carry `QuorumStatus` (that's chosen by the wrapper).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EmittedText {
+    pub primary: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub citations: Vec<ContractId>,
+}
+
+/// Single-emitter trait — sub-trait of a multi-emitter backend.
+/// One [`TargetEmitter`] handles emission for one logical path
+/// (general vs specialist). Each [`MultiEmitterBackend`] wraps
+/// one mandatory general emitter and optionally one specialist.
+pub trait TargetEmitter: Send + Sync {
+    /// Human-readable emitter name (used in [`QuorumStatus`]).
+    fn name(&self) -> &str;
+
+    /// Attempt to emit for this input. Specialists return `None`
+    /// when their shape filter doesn't match — the wrapper then
+    /// uses only the general emitter. General emitters should
+    /// always return `Some(...)` for any contract-conforming input.
+    fn try_emit(
+        &self,
+        module: &Module,
+        config: &BackendConfig,
+    ) -> Option<Result<EmittedText, BackendError>>;
+}
+
+/// Multi-emitter backend wrapper. Composes a general emitter
+/// (mandatory) + an optional specialist under a [`QuorumPolicy`].
+/// Implements [`Backend`] so it slots into the existing dispatch
+/// without touching `TranspileSession`.
+pub struct MultiEmitterBackend {
+    /// Single target this multi-emitter backend serves
+    /// (e.g., [`Target::Ptx`]).
+    pub target: Target,
+    /// Mandatory general emitter. Must handle any
+    /// contract-conforming input as a fallback.
+    pub general: Box<dyn TargetEmitter>,
+    /// Optional specialist emitter. Returns `None` from `try_emit`
+    /// when its shape filter doesn't match the input.
+    pub specialist: Option<Box<dyn TargetEmitter>>,
+    /// How to combine outputs when both emitters fire.
+    pub quorum_policy: QuorumPolicy,
+}
+
+impl MultiEmitterBackend {
+    pub fn new_single(target: Target, general: Box<dyn TargetEmitter>) -> Self {
+        Self {
+            target,
+            general,
+            specialist: None,
+            quorum_policy: QuorumPolicy::PreferSpecialist,
+        }
+    }
+
+    pub fn new_with_specialist(
+        target: Target,
+        general: Box<dyn TargetEmitter>,
+        specialist: Box<dyn TargetEmitter>,
+        quorum_policy: QuorumPolicy,
+    ) -> Self {
+        Self {
+            target,
+            general,
+            specialist: Some(specialist),
+            quorum_policy,
+        }
+    }
+}
+
+impl Backend for MultiEmitterBackend {
+    fn name(&self) -> &'static str {
+        // The wrapper name is generic; per-emitter names live in
+        // QuorumStatus on each emitted Artifact for audit recovery.
+        "multi-emitter"
+    }
+
+    fn targets(&self) -> &[Target] {
+        std::slice::from_ref(&self.target)
+    }
+
+    fn lower(&self, module: &Module, config: &BackendConfig) -> Result<Artifact, BackendError> {
+        let general_result = self.general.try_emit(module, config).ok_or_else(|| {
+            BackendError::Lower(format!(
+                "general emitter {} must always match contract-conforming input",
+                self.general.name()
+            ))
+        })??;
+
+        let specialist_result = self.specialist.as_ref().and_then(|s| {
+            s.try_emit(module, config)
+                .map(|r| (s.name().to_string(), r))
+        });
+
+        match specialist_result {
+            None => {
+                // Only general fired — Single-vote Runtime stratum.
+                Ok(Artifact {
+                    primary: general_result.primary,
+                    sidecars: Vec::new(),
+                    citations: general_result.citations,
+                    quorum_status: QuorumStatus::Single {
+                        emitter: self.general.name().to_string(),
+                    },
+                })
+            }
+            Some((specialist_name, specialist_emit)) => {
+                let specialist_text = specialist_emit?;
+                match &self.quorum_policy {
+                    QuorumPolicy::PreferSpecialist => {
+                        // Use specialist's output; general was emitted for
+                        // sanity but isn't reported as a vote.
+                        Ok(Artifact {
+                            primary: specialist_text.primary,
+                            sidecars: Vec::new(),
+                            citations: specialist_text.citations,
+                            quorum_status: QuorumStatus::Single {
+                                emitter: specialist_name,
+                            },
+                        })
+                    }
+                    QuorumPolicy::Strict => {
+                        // Text-equality check.
+                        let diff_exec = if general_result.primary == specialist_text.primary {
+                            Some(DiffExecResult::Match { max_abs_diff: 0.0 })
+                        } else {
+                            Some(DiffExecResult::Divergent {
+                                max_abs_diff: f64::INFINITY,
+                                tolerance: 0.0,
+                            })
+                        };
+                        Ok(Artifact {
+                            primary: general_result.primary.clone(),
+                            sidecars: vec![(
+                                "specialist_emission".to_string(),
+                                specialist_text.primary.into_bytes(),
+                            )],
+                            citations: general_result.citations,
+                            quorum_status: QuorumStatus::Multi {
+                                emitters: vec![self.general.name().to_string(), specialist_name],
+                                diff_exec,
+                            },
+                        })
+                    }
+                    QuorumPolicy::DiffExec { tolerance } => {
+                        // Actual numerical execution requires hw / emulator
+                        // — record NotRun until the DiffExec engine PR
+                        // (next phase) plugs in execution.
+                        Ok(Artifact {
+                            primary: general_result.primary.clone(),
+                            sidecars: vec![(
+                                "specialist_emission".to_string(),
+                                specialist_text.primary.into_bytes(),
+                            )],
+                            citations: general_result.citations,
+                            quorum_status: QuorumStatus::Multi {
+                                emitters: vec![self.general.name().to_string(), specialist_name],
+                                diff_exec: Some(DiffExecResult::NotRun {
+                                    reason: format!(
+                                        "DiffExec engine not yet implemented (tolerance was {tolerance})"
+                                    ),
+                                }),
+                            },
+                        })
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod quorum_scaffolding_tests {
     use super::*;
@@ -367,5 +548,228 @@ mod quorum_scaffolding_tests {
         let s = serde_json::to_string(&a).unwrap();
         let back: Artifact = serde_json::from_str(&s).unwrap();
         assert_eq!(back, a);
+    }
+
+    // ─── PMAT-263: MultiEmitterBackend routing tests with mock emitters ─
+
+    /// Mock emitter returning a fixed primary string and always matching
+    /// (use for `general` role). Cloneable to construct two copies for
+    /// match cases.
+    struct MockGeneral {
+        name: &'static str,
+        body: String,
+    }
+    impl TargetEmitter for MockGeneral {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn try_emit(
+            &self,
+            _module: &Module,
+            _config: &BackendConfig,
+        ) -> Option<Result<EmittedText, BackendError>> {
+            Some(Ok(EmittedText {
+                primary: self.body.clone(),
+                citations: Vec::new(),
+            }))
+        }
+    }
+
+    /// Mock specialist emitter — matches conditionally and returns a
+    /// configurable body.
+    struct MockSpecialist {
+        name: &'static str,
+        matches: bool,
+        body: String,
+    }
+    impl TargetEmitter for MockSpecialist {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn try_emit(
+            &self,
+            _module: &Module,
+            _config: &BackendConfig,
+        ) -> Option<Result<EmittedText, BackendError>> {
+            if self.matches {
+                Some(Ok(EmittedText {
+                    primary: self.body.clone(),
+                    citations: Vec::new(),
+                }))
+            } else {
+                None
+            }
+        }
+    }
+
+    fn dummy_module() -> Module {
+        Module {
+            name: "test".into(),
+            source_lang: xpile_meta_hir::SourceLang::Rust,
+            items: Vec::new(),
+            ffi_boundaries: Vec::new(),
+        }
+    }
+
+    fn dummy_config() -> BackendConfig {
+        BackendConfig {
+            target: Target::Ptx,
+            profile: Profile::RustOut,
+            hardware: None,
+        }
+    }
+
+    #[test]
+    fn multi_emitter_specialist_missing_falls_back_to_general() {
+        let backend = MultiEmitterBackend::new_single(
+            Target::Ptx,
+            Box::new(MockGeneral {
+                name: "general",
+                body: "general output".into(),
+            }),
+        );
+        let artifact = backend.lower(&dummy_module(), &dummy_config()).unwrap();
+        assert_eq!(artifact.primary, "general output");
+        assert_eq!(
+            artifact.quorum_status,
+            QuorumStatus::Single {
+                emitter: "general".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn multi_emitter_specialist_unmatched_falls_back_to_general() {
+        let backend = MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(MockGeneral {
+                name: "general",
+                body: "general output".into(),
+            }),
+            Box::new(MockSpecialist {
+                name: "specialist",
+                matches: false,
+                body: "specialist output".into(),
+            }),
+            QuorumPolicy::DiffExec { tolerance: 1e-3 },
+        );
+        let artifact = backend.lower(&dummy_module(), &dummy_config()).unwrap();
+        assert_eq!(artifact.primary, "general output");
+        // Specialist returned None → Single vote.
+        assert_eq!(
+            artifact.quorum_status,
+            QuorumStatus::Single {
+                emitter: "general".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn multi_emitter_prefer_specialist_uses_specialist_output() {
+        let backend = MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(MockGeneral {
+                name: "general",
+                body: "general".into(),
+            }),
+            Box::new(MockSpecialist {
+                name: "specialist",
+                matches: true,
+                body: "specialist tuned".into(),
+            }),
+            QuorumPolicy::PreferSpecialist,
+        );
+        let artifact = backend.lower(&dummy_module(), &dummy_config()).unwrap();
+        assert_eq!(artifact.primary, "specialist tuned");
+        assert_eq!(
+            artifact.quorum_status,
+            QuorumStatus::Single {
+                emitter: "specialist".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn multi_emitter_strict_match_records_zero_diff() {
+        let backend = MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(MockGeneral {
+                name: "general",
+                body: "same output".into(),
+            }),
+            Box::new(MockSpecialist {
+                name: "specialist",
+                matches: true,
+                body: "same output".into(),
+            }),
+            QuorumPolicy::Strict,
+        );
+        let artifact = backend.lower(&dummy_module(), &dummy_config()).unwrap();
+        match artifact.quorum_status {
+            QuorumStatus::Multi {
+                emitters,
+                diff_exec,
+            } => {
+                assert_eq!(emitters, vec!["general", "specialist"]);
+                assert_eq!(diff_exec, Some(DiffExecResult::Match { max_abs_diff: 0.0 }));
+            }
+            _ => panic!("expected Multi quorum status"),
+        }
+        // Specialist's output recorded as sidecar for audit trail.
+        assert_eq!(artifact.sidecars.len(), 1);
+        assert_eq!(artifact.sidecars[0].0, "specialist_emission");
+    }
+
+    #[test]
+    fn multi_emitter_strict_divergence_records_infinity() {
+        let backend = MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(MockGeneral {
+                name: "general",
+                body: "general output".into(),
+            }),
+            Box::new(MockSpecialist {
+                name: "specialist",
+                matches: true,
+                body: "different output".into(),
+            }),
+            QuorumPolicy::Strict,
+        );
+        let artifact = backend.lower(&dummy_module(), &dummy_config()).unwrap();
+        match artifact.quorum_status {
+            QuorumStatus::Multi { diff_exec, .. } => {
+                assert!(matches!(diff_exec, Some(DiffExecResult::Divergent { .. })));
+            }
+            _ => panic!("expected Multi quorum status"),
+        }
+    }
+
+    #[test]
+    fn multi_emitter_diff_exec_records_not_run_until_engine_plugged_in() {
+        let backend = MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(MockGeneral {
+                name: "rustc_codegen_nvvm",
+                body: "ptx general".into(),
+            }),
+            Box::new(MockSpecialist {
+                name: "aprender-gpu",
+                matches: true,
+                body: "ptx specialist".into(),
+            }),
+            QuorumPolicy::DiffExec { tolerance: 1e-3 },
+        );
+        let artifact = backend.lower(&dummy_module(), &dummy_config()).unwrap();
+        match artifact.quorum_status {
+            QuorumStatus::Multi {
+                emitters,
+                diff_exec,
+            } => {
+                assert_eq!(emitters, vec!["rustc_codegen_nvvm", "aprender-gpu"]);
+                // DiffExec engine isn't plugged in yet — should record NotRun.
+                assert!(matches!(diff_exec, Some(DiffExecResult::NotRun { .. })));
+            }
+            _ => panic!("expected Multi quorum status"),
+        }
     }
 }
