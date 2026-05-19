@@ -7,6 +7,14 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-4 BROADENED from 9 to 10 contracts: LatexDisplayKind-enum-distinctness Diamond on `C-NOTATION-LATEX-MATH-TO-EQUATION` (PMAT-342)
+
+**Continuing POST-UNIVERSAL broadening at depth-4.** Pushes `C-NOTATION-LATEX-MATH-TO-EQUATION` (Layer 5) from depth-3 to depth-4. Mirror of PMAT-339 (Target enum distinctness). **2 more contracts needed for depth-4 UNIVERSAL.**
+
+- 4 Diamonds: citation string monoid, citation product monoid, struct extensionality, **LatexDisplayKind enum distinctness** ← PMAT-342
+- `depth_4_plus: 10` (was 9), gate **tightened to ≥ 10**.
+- Substrate Diamond totals: **80 wired theorems** (was 79).
+
 ### Added — Diamond depth-4 BROADENED from 8 to 9 contracts: Contract-array-size Diamond on `C-XPILE-CONTRACT-BACKEND-TRAIT` (PMAT-341)
 
 **Continuing POST-UNIVERSAL broadening at depth-4.** Pushes `C-XPILE-CONTRACT-BACKEND-TRAIT` (Layer 3) from depth-3 to depth-4. **All 4 Layer 3 contracts now at depth-4+** (XpileFrontendTrait + XpileBackendTrait + XpileContractFrontendTrait + XpileContractBackendTrait).
