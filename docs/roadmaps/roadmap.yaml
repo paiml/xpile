@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-308
+  github_issue: null
+  item_type: task
+  title: 'PMAT-308: Diamond depth-13 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-13 via GLB/LUB universal property)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T06:30:00Z
+  updated: 2026-05-23T06:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add bounded_smem_glb_lub_diamond Lean theorem to contracts/lean/CompileRustToPtxMma.lean — 4 conjuncts capturing the GLB/LUB universal property: min is lower bound, min is GREATEST lower bound, max is upper bound, max is LEAST upper bound. Proved by `omega`. Wire as new equation in compile-rust-to-ptx-mma-v1.yaml. Tighten substrate_diamond_depth_13_opened gate to ≥2 contracts. Opens DEPTH-13 ACROSS LAYERS — 2 contracts at depth-13+. Captures the CATEGORICAL DEFINITION of meet/join in a lattice — distinct from PMAT-231/242 semilattices (algebraic axioms only), PMAT-248 absorption (max ↔ min interaction), PMAT-291 distributive lattice (cross-distributivity), PMAT-306 max/min monotonicity (order preservation, not extremality)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-307
   github_issue: null
   item_type: task

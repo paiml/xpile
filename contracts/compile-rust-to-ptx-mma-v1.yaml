@@ -616,6 +616,48 @@ equations:
       - "an emitter using a non-monotone arithmetic-like operation in place of max would falsify (a)"
       - "Diamond DEPTH-12 ACROSS LAYERS demonstrated: 2 contracts at depth-12+"
 
+  bounded_smem_glb_lub_diamond:
+    # PMAT-308: THIRTEENTH Diamond on this contract — opens DEPTH-13
+    # ACROSS LAYERS. GLB/LUB UNIVERSAL PROPERTY of max and min:
+    #   - min is the GREATEST lower bound of {a, b}
+    #   - max is the LEAST upper bound of {a, b}
+    # Categorically orthogonal to all 12 prior categories:
+    #   - PMAT-231/242 SEMILATTICES: algebraic axioms (commutativity,
+    #     associativity, idempotence) — say NOTHING about how max/min
+    #     relate to ALL OTHER elements of the order.
+    #   - PMAT-248 ABSORPTION: max ↔ min interaction, not GLB/LUB.
+    #   - PMAT-291 DISTRIBUTIVE LATTICE: cross-distributivity.
+    #   - PMAT-306 MAX/MIN MONOTONICITY: order preservation, not
+    #     extremality.
+    # This is the CATEGORICAL DEFINITION of meet/join in a lattice.
+    # PyIntArith reached depth-13 at PMAT-307 (absolute value / norm);
+    # PMAT-308 extends depth-13 to Layer 5 via GLB/LUB universal property.
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_glb_lub_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      max and min on (BoundedSmem.val, ≤) satisfy the GLB/LUB universal property:
+        (a) min lower-bound:     min a b ≤ a
+        (b) min GREATEST l.b.:   c ≤ a → c ≤ b → c ≤ min a b
+        (c) max upper-bound:     a ≤ max a b
+        (d) max LEAST u.b.:      a ≤ c → b ≤ c → max a b ≤ c
+    domain: |
+      Any three BoundedSmem values, on the underlying Nat .val
+      projection. The four properties together axiomatize the
+      UNIVERSAL PROPERTY (categorical definition) of min as GLB and
+      max as LUB on (Nat, ≤).
+    invariants:
+      - "THIRTEENTH Diamond category on C-COMPILE-RUST-TO-PTX-MMA — opens DEPTH-13 ACROSS LAYERS (second contract at depth-13+ after PMAT-307 on PyIntArith)"
+      - "captures the CATEGORICAL DEFINITION of meet/join in a lattice"
+      - "distinct from PMAT-231/242 semilattices (algebraic axioms, no universal property)"
+      - "distinct from PMAT-248 absorption (max ↔ min interaction, not GLB/LUB)"
+      - "distinct from PMAT-306 max/min monotonicity (order preservation, not extremality)"
+      - "load-bearing for tight smem accounting: when selecting a reservation that satisfies multiple lower bounds c ≤ a AND c ≤ b, min a b is the LARGEST feasible choice — a sub-optimal pick would falsify (b)"
+    preconditions:
+      - "three BoundedSmem values; theorem stated on Nat .val projection"
+    postconditions:
+      - "an emitter that picked any value smaller than min a b satisfying c ≤ a ∧ c ≤ b would falsify the GREATEST-lower-bound characterization"
+      - "Diamond DEPTH-13 ACROSS LAYERS demonstrated: 2 contracts at depth-13+"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)

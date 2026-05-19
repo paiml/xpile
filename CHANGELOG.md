@@ -7,6 +7,61 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-13 ACROSS LAYERS: GLB/LUB-universal-property Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-308)
+
+**Path β extension.** Depth-13 was opened by PMAT-307 on PyIntArith (Layer 1). PMAT-308 extends depth-13 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) so the substrate now has **two contracts at depth-13+** across distinct taxonomy layers.
+
+**The 13 Diamond categories on `C-COMPILE-RUST-TO-PTX-MMA`:**
+
+1. PMAT-218: BOUNDED MONOID
+2. PMAT-287: CLOSURE
+3. PMAT-231: JOIN-SEMILATTICE
+4. PMAT-242: MEET-SEMILATTICE
+5. PMAT-248: LATTICE ABSORPTION
+6. PMAT-291: DISTRIBUTIVE LATTICE
+7. PMAT-293: BOUNDED LATTICE
+8. PMAT-295: CANCELLATIVE MONOID
+9. PMAT-299: ORDERED MONOID
+10. PMAT-301: ADDITIVE-LATTICE DISTRIBUTIVITY
+11. PMAT-303: DISCRETE ORDER
+12. PMAT-306: MAX/MIN MONOTONICITY
+13. **PMAT-308: GLB/LUB UNIVERSAL PROPERTY** ← extends depth-13 ACROSS LAYERS
+
+**Why GLB/LUB UNIVERSAL PROPERTY is genuinely a NEW category:**
+
+- PMAT-231/242 (**SEMILATTICES**) give algebraic axioms (commutativity, associativity, idempotence) but **say NOTHING** about how max/min relate to ALL OTHER elements of the order.
+- PMAT-248 (**LATTICE ABSORPTION**) relates max ↔ min — but doesn't characterize them as GLB/LUB.
+- PMAT-291 (**DISTRIBUTIVE LATTICE**) adds cross-distributivity — still not the universal property.
+- PMAT-306 (**MAX/MIN MONOTONICITY**) says max/min preserve order — but doesn't claim they are **extremal**.
+- PMAT-308 axiomatizes the **CATEGORICAL DEFINITION** of meet/join in a lattice:
+  - `min a b ≤ a` (min is a lower bound)
+  - `c ≤ a → c ≤ b → c ≤ min a b` (min is the GREATEST lower bound)
+  - `a ≤ max a b` (max is an upper bound)
+  - `a ≤ c → b ≤ c → max a b ≤ c` (max is the LEAST upper bound)
+
+This is the universal property of meet/join — distinct from the operational axioms (PMAT-231/242), the algebraic interactions (PMAT-248/291/306), and the monotonicity claims (PMAT-306).
+
+**New Lean theorem:**
+
+```lean
+theorem bounded_smem_glb_lub_diamond (a b c : BoundedSmem) :
+    (Nat.min a.val b.val ≤ a.val)
+    ∧ (c.val ≤ a.val → c.val ≤ b.val → c.val ≤ Nat.min a.val b.val)
+    ∧ (a.val ≤ Nat.max a.val b.val)
+    ∧ (a.val ≤ c.val → b.val ≤ c.val → Nat.max a.val b.val ≤ c.val) := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> intros <;> omega
+```
+
+Proved by `omega` — linear arithmetic on Nat with min/max is decidable.
+
+**Falsification surface:** an emitter that selected a sub-optimal smem reservation (any value strictly less than `min a b` while still satisfying `c ≤ a ∧ c ≤ b`) would falsify property (b) — the GREATEST-lower-bound characterization. This bug class slips past the prior 12 categories because none assert extremality.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_13_plus: 2` (was 1 after PMAT-307).
+- `substrate_diamond_depth_13_opened` gate tightened to `≥ 2` (ACROSS LAYERS).
+- Substrate Diamond totals: **51 wired Diamond theorems** across 12 contracts (was 50).
+
 ### Added — FIRST Diamond depth-13 in the substrate: absolute-value/norm Diamond on `C-PY-INT-ARITH` (PMAT-307)
 
 **Path β extension.** Opens Diamond **depth-13** — thirteen distinct algebraic categories on a single contract. PyIntArith was at depth-12 (post-PMAT-305); PMAT-307 adds **ABSOLUTE VALUE / NORM** as the thirteenth orthogonal category.

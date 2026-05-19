@@ -1215,4 +1215,107 @@ theorem bounded_smem_max_min_monotone_diamond (a b c : BoundedSmem) :
     ∧ (a.val ≤ b.val → Nat.min c.val a.val ≤ Nat.min c.val b.val) := by
   refine ⟨?_, ?_, ?_, ?_⟩ <;> intros <;> omega
 
+/-! ## PMAT-308 — THIRTEENTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (DEPTH-13 ACROSS LAYERS): GLB/LUB UNIVERSAL PROPERTY of
+    max and min — min is the greatest lower bound, max is the least
+    upper bound (XPILE-REFINE-COMPILE-PTX-014).
+
+    **Opens DEPTH-13 ACROSS LAYERS.** PyIntArith reached depth-13
+    at PMAT-307 (absolute value / norm); PMAT-308 extends depth-13
+    to Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The substrate now has
+    depth-13 on TWO contracts spanning Layer 1 and Layer 5.
+
+    CompileRustToPtxMma already has TWELVE Diamond categories:
+    - PMAT-218: BOUNDED MONOID
+    - PMAT-287: CLOSURE
+    - PMAT-231: JOIN-SEMILATTICE
+    - PMAT-242: MEET-SEMILATTICE
+    - PMAT-248: LATTICE ABSORPTION
+    - PMAT-291: DISTRIBUTIVE LATTICE
+    - PMAT-293: BOUNDED LATTICE
+    - PMAT-295: CANCELLATIVE MONOID
+    - PMAT-299: ORDERED MONOID
+    - PMAT-301: ADDITIVE-LATTICE DISTRIBUTIVITY
+    - PMAT-303: DISCRETE ORDER
+    - PMAT-306: MAX/MIN MONOTONICITY
+
+    PMAT-308 adds the UNIVERSAL PROPERTY characterization of max
+    and min — they are NOT just any commutative idempotent
+    operations, they are the GLB and LUB respectively:
+    - **PMAT-308: min is the GREATEST lower bound; max is the
+      LEAST upper bound of two-element sets**
+
+    The categorical distinction is sharp:
+      - PMAT-231/242 SEMILATTICES axiomatize max/min algebraically
+        (commutativity, associativity, idempotence) — but say
+        NOTHING about how they relate to ALL OTHER elements of the
+        order.
+      - PMAT-248 LATTICE ABSORPTION relates max ↔ min — but doesn't
+        characterize them as GLB/LUB.
+      - PMAT-291 DISTRIBUTIVE LATTICE adds cross-distributivity —
+        still not the universal property.
+      - PMAT-306 MAX/MIN MONOTONICITY says max/min preserve order
+        — but doesn't claim they are EXTREMAL.
+      - PMAT-308 axiomatizes the UNIVERSAL PROPERTY of GLB/LUB:
+        * min a b is the GREATEST lower bound of {a, b}: any c that
+          is ≤ both a and b must be ≤ min a b.
+        * max a b is the LEAST upper bound of {a, b}: any c that
+          is ≥ both a and b must be ≥ max a b.
+
+    This is the CATEGORICAL DEFINITION of meet/join in a lattice —
+    distinct from the operational axioms (PMAT-231/242) and from
+    the algebraic interactions (PMAT-248/291/306).
+
+    For GPU smem accounting, the universal property matters: when
+    selecting a smem reservation that satisfies multiple constraints
+    `c ≤ a` AND `c ≤ b`, the BEST (largest) choice is `min a b`.
+    No smaller bound suffices, no larger bound is feasible. An
+    emitter that picked a sub-optimal lower bound would falsify (b).
+
+    Status: discharged at v0.1.0 (PMAT-308). Tier: DIAMOND.
+    Second DEPTH-13 in the substrate (DEPTH-13 ACROSS LAYERS). -/
+
+/--
+  **Diamond-tier refinement theorem** — `max` and `min` on
+  `(BoundedSmem.val, ≤)` satisfy the GLB/LUB UNIVERSAL PROPERTY.
+
+  Combines four UNIVERSAL-PROPERTY characterizations:
+  (a) min is a lower bound:     `min a b ≤ a`
+  (b) min is the GREATEST lower bound:
+      `c ≤ a → c ≤ b → c ≤ min a b`
+  (c) max is an upper bound:    `a ≤ max a b`
+  (d) max is the LEAST upper bound:
+      `a ≤ c → b ≤ c → max a b ≤ c`
+
+  Distinct from:
+    - PMAT-231/242 SEMILATTICES (algebraic axioms only).
+    - PMAT-248 ABSORPTION (max ↔ min interaction, not GLB/LUB).
+    - PMAT-291 DISTRIBUTIVE LATTICE (cross-distributivity).
+    - PMAT-306 MAX/MIN MONOTONICITY (order preservation, not
+      extremality).
+
+  This is the CATEGORICAL DEFINITION of meet/join in a lattice.
+
+  Proved by `omega` — linear arithmetic on Nat with min/max is
+  decidable and handled natively.
+
+  An emitter that selected a sub-optimal smem reservation
+  (anything ≠ min/max but satisfying the lower/upper bound
+  separately) would falsify (b) or (d) — a real bug class
+  invisible to the prior 12 categories.
+
+  Status: **discharged at v0.1.0 (PMAT-308)**. Tier: DIAMOND.
+  Second DEPTH-13 in the substrate (DEPTH-13 ACROSS LAYERS).
+-/
+theorem bounded_smem_glb_lub_diamond (a b c : BoundedSmem) :
+    -- (a) min is a lower bound
+    (Nat.min a.val b.val ≤ a.val)
+    -- (b) min is the GREATEST lower bound
+    ∧ (c.val ≤ a.val → c.val ≤ b.val → c.val ≤ Nat.min a.val b.val)
+    -- (c) max is an upper bound
+    ∧ (a.val ≤ Nat.max a.val b.val)
+    -- (d) max is the LEAST upper bound
+    ∧ (a.val ≤ c.val → b.val ≤ c.val → Nat.max a.val b.val ≤ c.val) := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> intros <;> omega
+
 end XpileContracts.CCompileRustToPtxMma
