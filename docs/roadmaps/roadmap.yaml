@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-315
+  github_issue: null
+  item_type: task
+  title: 'PMAT-315: FIRST Diamond depth-16 in the substrate (GCD-monoid + Bézout identity on C-PY-INT-ARITH)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T10:00:00Z
+  updated: 2026-05-23T10:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add gcd_monoid_bezout_diamond Lean theorem to contracts/lean/PyIntArith.lean — 4 conjuncts: gcd divides left (Int.gcd_dvd_left), gcd divides right (Int.gcd_dvd_right), gcd is universal (Int.dvd_gcd), Bézout identity (Int.gcd_eq_gcd_ab). Wire as new equation in py-int-arith-v1.yaml. Extend xpile diamond reporter with depth-16+ label + depth_16_plus aggregate. Refine depth-15 from depth-15+ to discrete depth-15. Add substrate_diamond_depth_16_opened gate test (≥1). FIRST DEPTH-16 — PyIntArith reaches 16 categories. The 16th (GCD MONOID + BÉZOUT) is the FIRST claim characterizing gcd as a UNIVERSAL OBJECT plus a CONSTRUCTIVE linear combination. Establishes Int as a Principal Ideal Domain (PID). Falsification surface: Stein's binary GCD without backward substitution falsifies (d)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-314
   github_issue: null
   item_type: task
