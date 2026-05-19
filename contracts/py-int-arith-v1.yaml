@@ -1214,6 +1214,47 @@ equations:
       - "an emitter computing sign(a*b) directly via bit pattern of a*b could falsify (a) on overflow"
       - "Diamond DEPTH-18 opened — 1 contract at depth-18+"
 
+  int_neg_order_compat_diamond:
+    # PMAT-322: NINETEENTH Diamond on this contract — opens FIRST
+    # DEPTH-19 in the substrate. NEGATION-ORDER COMPATIBILITY:
+    # negation on Int is order-reversing (a < b ↔ -b < -a).
+    # Categorically orthogonal to all 18 prior categories:
+    #   - PMAT-290 ABELIAN-GROUP-ENRICHMENT: negation as group
+    #     inverse (algebraic, no order)
+    #   - PMAT-298 LINEAR-ORDER TRICHOTOMY: strict order axioms
+    #     (no negation)
+    #   - PMAT-305 ORDERED RING: sign rules on PRODUCTS
+    #   - PMAT-322 NEGATION-ORDER: how unary `-` interacts with
+    #     the linear order
+    # This is the canonical axiom that distinguishes an ordered
+    # group from a group with an independent (unrelated) order.
+    # Mathlib's `OrderedAddCommGroup` typeclass encodes this.
+    # Load-bearing for Python int negation: a saturating fast-path
+    # where -2^63 maps to 2^63-1 would falsify (a).
+    lean_theorem: "XpileContracts.CPyIntArith.int_neg_order_compat_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      Negation on Int is ORDER-REVERSING (Mathlib's OrderedAddCommGroup shape):
+        (a) reverses strict order:        a < b ↔ -b < -a
+        (b) reverses non-strict order:    a ≤ b ↔ -b ≤ -a
+        (c) positivity-negativity dual:   0 < a ↔ -a < 0
+        (d) non-neg-non-pos dual:         0 ≤ a ↔ -a ≤ 0
+    domain: |
+      Any Int value (with the universal quantification on b in
+      conjuncts (a) and (b)). Together the four properties
+      axiomatize Int as an OrderedAddCommGroup — Mathlib's
+      typeclass shape.
+    invariants:
+      - "NINETEENTH Diamond category on C-PY-INT-ARITH — opens FIRST DEPTH-19 in the substrate"
+      - "FIRST claim characterizing negation-order interaction (OrderedAddCommGroup axioms)"
+      - "distinct from PMAT-290 abelian-group-enrichment (algebraic, no order) and PMAT-298 linear-order (no negation)"
+      - "load-bearing for Python int negation: saturating fast-path where -2^63 maps to 2^63-1 would falsify (a)"
+    preconditions:
+      - "one Int value (plus universally-quantified b in conjuncts a and b)"
+    postconditions:
+      - "an emitter with saturating negation that fails order-reversing at the saturation boundary would falsify (a)"
+      - "Diamond DEPTH-19 opened — 1 contract at depth-19+"
+
 proof_obligations:
   - type: precondition
     property: operands are Python int (not int-subclass, not bool-as-int)

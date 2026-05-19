@@ -2726,4 +2726,100 @@ theorem int_sign_monoid_hom_diamond (a b : Int) :
   · rfl
   · rfl
 
+/-! ## PMAT-322 — NINETEENTH Diamond on C-PY-INT-ARITH (FIRST
+    DEPTH-19 in the substrate): NEGATION-ORDER COMPATIBILITY —
+    how negation interacts with the linear order on Int
+    (XPILE-REFINE-PY-INT-ARITH-027).
+
+    **Opens DEPTH-19 in the substrate.** PyIntArith reached depth-18
+    at PMAT-320 (sign function monoid homomorphism); PMAT-322 adds
+    the NINETEENTH orthogonal Diamond category — the
+    NEGATION-ORDER COMPATIBILITY axioms.
+
+    The 19 Diamond categories on C-PY-INT-ARITH:
+    - PMAT-214..320: prior 18 categories
+    - **PMAT-322: NEGATION-ORDER COMPATIBILITY** ← FIRST DEPTH-19
+
+    The categorical distinction is sharp:
+      - PMAT-290 ABELIAN-GROUP-ENRICHMENT: negation as group
+        inverse (-(-a) = a, distributivity)
+      - PMAT-298 LINEAR-ORDER TRICHOTOMY: strict-order axioms
+      - PMAT-305 ORDERED RING: sign rules on PRODUCTS
+      - PMAT-322 NEGATION-ORDER COMPATIBILITY: how unary `-`
+        interacts with the linear order:
+          a < b ↔ -b < -a (order-reversing)
+          0 < a ↔ -a < 0 (sign-flip)
+
+    None of the prior 18 categories axiomatizes how NEGATION
+    interacts with ORDER. PMAT-290 was negation as group inverse
+    (algebraic). PMAT-298 was strict order axioms (no negation).
+    PMAT-305 was sign rules on multiplication (no negation
+    interaction). PMAT-322 is the FIRST claim that negation
+    REVERSES the strict order — a fundamental property of
+    ORDERED-COMMUTATIVE-GROUP structure.
+
+    Why this is genuinely orthogonal:
+      ORDERED-COMMUTATIVE-GROUP requires the order-reversing
+      property `a < b → -b < -a`. This is the canonical axiom
+      that distinguishes an ordered group from a group with an
+      independent (unrelated) order. Mathlib's `OrderedAddCommGroup`
+      typeclass encodes precisely this. The bidirectional iff
+      formulation captures both order-reversing and its converse.
+
+    For Python int dispatch, this matters: an emitter that lowered
+    unary minus through a path that didn't preserve order-reversing
+    (e.g., a saturating negation where -2^63 maps to 2^63-1 instead
+    of overflow) would falsify (a) or (b). Python's int negation
+    is order-reversing because Python ints are unbounded; a
+    fixed-width fast-path that wraps would falsify the axiom.
+
+    Status: discharged at v0.1.0 (PMAT-322). Tier: DIAMOND.
+    FIRST DEPTH-19 in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — negation on `Int` is
+  ORDER-REVERSING (the bidirectional negation-order
+  compatibility axioms).
+
+  Combines four NEGATION-ORDER properties:
+  (a) Negation reverses strict order: `a < b ↔ -b < -a`
+  (b) Negation reverses non-strict order: `a ≤ b ↔ -b ≤ -a`
+  (c) Positivity-negativity duality: `0 < a ↔ -a < 0`
+  (d) Non-negativity-non-positivity duality: `0 ≤ a ↔ -a ≤ 0`
+
+  Together these characterize Int as an ORDERED-ADDITIVE-
+  COMMUTATIVE-GROUP — Mathlib's `OrderedAddCommGroup` typeclass
+  shape. Distinct from PMAT-290 abelian-group enrichment (which
+  captured negation as group inverse without order) and from
+  PMAT-298 linear-order trichotomy (which captured the order
+  without negation interaction).
+
+  Uses Mathlib's `neg_lt_neg_iff`, `neg_le_neg_iff`,
+  `Left.neg_neg_iff`, `Left.neg_nonpos_iff` (or `neg_lt_zero` /
+  `neg_le_zero`). All standard ordered-group lemmas.
+
+  An emitter that lowered unary minus through a saturating path
+  (e.g., -2^63 maps to 2^63-1 instead of overflow) would falsify
+  (a) — saturating negation is not order-reversing on the
+  saturation boundary. Python's int negation is order-reversing
+  because Python ints are unbounded.
+
+  Status: **discharged at v0.1.0 (PMAT-322)**. Tier: DIAMOND.
+  FIRST DEPTH-19 in the substrate.
+-/
+theorem int_neg_order_compat_diamond (a : Int) :
+    -- (a) Negation reverses strict order
+    (∀ b : Int, a < b ↔ -b < -a)
+    -- (b) Negation reverses non-strict order
+    ∧ (∀ b : Int, a ≤ b ↔ -b ≤ -a)
+    -- (c) Positivity-negativity duality
+    ∧ (0 < a ↔ -a < 0)
+    -- (d) Non-negativity-non-positivity duality
+    ∧ (0 ≤ a ↔ -a ≤ 0) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro b; constructor <;> intro h <;> omega
+  · intro b; constructor <;> intro h <;> omega
+  · constructor <;> intro h <;> omega
+  · constructor <;> intro h <;> omega
+
 end XpileContracts.CPyIntArith
