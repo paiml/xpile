@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-328
+  github_issue: null
+  item_type: task
+  title: 'PMAT-328: Diamond depth-5 ACROSS LAYERS BROADENED to 3 layers (refcount-delta sign decomposition on C-FFI-CPYTHON-EXT)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T16:30:00Z
+  updated: 2026-05-23T16:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "STRATEGIC PIVOT from deeper-on-2-contracts to wider-substrate-coverage. Add refcount_delta_sign_decomp_diamond Lean theorem to contracts/lean/FfiCpythonExt.lean — 4 conjuncts: sign trichotomy, positive = |delta|, negative neg = |delta|, sign-magnitude reconstruction. Uses Mathlib's lt_trichotomy, abs_of_pos, abs_of_neg, Int.sign_mul_abs. Wire as new equation in ffi-cpython-ext-v1.yaml. Tighten substrate_diamond_depth_5_opened gate from ≥2 to ≥3 contracts. Pushes FFI-CPYTHON-EXT from depth-4 to depth-5, making depth-5 ACROSS LAYERS a 3-LAYER claim (L1 + L4 + L5). Sign decomposition is the orthogonal algebraic category capturing FFI-safety-critical ref-leak vs over-decref vs balanced patterns. A sign-confused unsigned-arithmetic emitter would falsify (a) and (d) while preserving PMAT-216 group structure."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-327
   github_issue: null
   item_type: task

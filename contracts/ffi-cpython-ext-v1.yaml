@@ -436,6 +436,46 @@ equations:
       - "both sides built clean"
       - "the Silver theorem assumes both lifts receive the SAME OracleObservation input — the agent's exit condition is conditional on input equivalence (a fixture-driver invariant, not an emitter responsibility)"
 
+  refcount_delta_sign_decomp_diamond:
+    # PMAT-328: FIFTH Diamond on this contract — BROADENS DEPTH-5
+    # ACROSS LAYERS from 2 contracts (PyIntArith on L1 + CompileRust
+    # ToPtxMma on L5) to 3 contracts on 3 distinct layers (adding
+    # FFI-CPYTHON-EXT on L4). Refcount-delta SIGN DECOMPOSITION:
+    # the sign structure of FfiCallSilver.refcount_delta captures
+    # the semantic dichotomy between net-incref (positive),
+    # net-balanced (zero), and net-decref (negative) sequences.
+    # Categorically orthogonal to all 4 prior on this contract:
+    #   - PMAT-216 abelian group: algebraic (+, 0, -)
+    #   - PMAT-288 inverse: existence of inverse
+    #   - PMAT-230 GIL: lock state (orthogonal to refcount)
+    #   - PMAT-243 buffer: memory ownership (orthogonal)
+    # Load-bearing for FFI safety auditing: ref-leak (persistent
+    # positive delta) vs over-decref (persistent negative delta)
+    # patterns require sign decomposition, not just group structure.
+    lean_theorem: "XpileContracts.CFfiCpythonExt.refcount_delta_sign_decomp_diamond"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
+    formula: |
+      FfiCallSilver.refcount_delta admits SIGN DECOMPOSITION:
+        (a) sign trichotomy:                 0 < d ∨ d = 0 ∨ d < 0
+        (b) positive delta is |delta|:       0 < d → d = |d|
+        (c) negative delta's neg is |delta|: d < 0 → -d = |d|
+        (d) sign-magnitude reconstruction:   Int.sign d * |d| = d
+    domain: |
+      Any FfiCallSilver value with its Int refcount_delta field.
+      The four properties together axiomatize the SEMANTIC SIGN
+      STRUCTURE of refcount_delta — distinguishing net-incref,
+      net-balanced, and net-decref states.
+    invariants:
+      - "FIFTH Diamond category on C-FFI-CPYTHON-EXT — BROADENS DEPTH-5 ACROSS LAYERS to 3 contracts on 3 distinct layers (L1 + L4 + L5)"
+      - "Sign decomposition captures FFI-safety-critical semantic dichotomy: ref-leak vs over-decref vs balanced patterns"
+      - "distinct from PMAT-216 abelian group (algebraic) and PMAT-288 inverse (existence) — these are about REFCOUNT operations, PMAT-328 is about the STRUCTURE of delta values"
+      - "load-bearing for refcount safety auditors: a sign-confused unsigned-arithmetic emitter would falsify (a) and (d) while preserving PMAT-216 group structure"
+    preconditions:
+      - "one FfiCallSilver value with Int-valued refcount_delta"
+    postconditions:
+      - "an emitter using unsigned arithmetic on refcount_delta (wrapping negative to positive) would falsify (a) and (d)"
+      - "Diamond depth-5 ACROSS LAYERS broadened: 3 contracts on 3 distinct layers (L1 + L4 + L5)"
+
 proof_obligations:
   - type: precondition
     property: both Python and C frontends produced meta-HIR

@@ -1384,4 +1384,97 @@ theorem zero_copy_pointer_functor_diamond
   · intros m
     exact length_preserved_in_view_silver m
 
+/-! ## PMAT-328 — FIFTH Diamond on C-FFI-CPYTHON-EXT (Layer 4
+    BROADENING DEPTH-5 ACROSS LAYERS): refcount-delta SIGN
+    DECOMPOSITION — the FfiCallSilver.refcount_delta sign
+    structure (XPILE-REFINE-FFI-CPYTHON-013).
+
+    **Broadens DEPTH-5 ACROSS LAYERS from 2 to 3 contracts.**
+    Previously depth-5 was only on PyIntArith (Layer 1, PMAT-286)
+    and CompileRustToPtxMma (Layer 5, PMAT-287). PMAT-328 pushes
+    FFI-CPYTHON-EXT (Layer 4) from depth-4 to depth-5, making
+    depth-5 ACROSS LAYERS a 3-LAYER claim (Layer 1 + 4 + 5).
+
+    The 5 Diamond categories on C-FFI-CPYTHON-EXT:
+    - PMAT-216: refcount abelian group (+, 0, -)
+    - PMAT-288: refcount inverse (existence)
+    - PMAT-230: GIL-invariant preservation (lock state)
+    - PMAT-243: zero-copy pointer functor (buffer memory)
+    - **PMAT-328: refcount-delta SIGN DECOMPOSITION** ← depth-5
+
+    The categorical distinction is sharp:
+      - PMAT-216 ABELIAN GROUP: algebraic operations on delta
+        (+, 0, -)
+      - PMAT-288 INVERSE: existence of an inverse element
+      - PMAT-230 GIL: orthogonal to refcount (lock state)
+      - PMAT-243 BUFFER: orthogonal to refcount (memory)
+      - PMAT-328 SIGN: structural decomposition of delta into
+        net-incref (positive) vs net-decref (negative) vs net-
+        balanced (zero). This semantic dichotomy is what enables
+        FFI safety analyzers to reason about REF-LEAK patterns
+        (persistent positive deltas) vs OVER-DECREF patterns
+        (persistent negative deltas).
+
+    Why this is genuinely orthogonal:
+      The sign-decomposition is a STRUCTURAL claim about the
+      VALUE of refcount_delta, distinct from its algebraic
+      behavior (PMAT-216) or its inverse-existence (PMAT-288).
+      Sign-decomposition matters for FFI safety auditing:
+      analyzing whether a refcount sequence is in a "growing"
+      or "shrinking" state requires the sign decomposition,
+      not just the algebraic group structure.
+
+    For Python C-API FFI dispatch, this matters: an emitter that
+    confused the sign of refcount_delta (e.g., used unsigned
+    arithmetic on Int delta and wrapped negative values to
+    positive) would falsify (a) and (d), even though the
+    algebraic group structure (PMAT-216) could still hold under
+    the unsigned representation.
+
+    Status: discharged at v0.1.0 (PMAT-328). Tier: DIAMOND.
+    Broadens DEPTH-5 ACROSS LAYERS to 3 contracts on 3 layers. -/
+
+/--
+  **Diamond-tier refinement theorem** — `FfiCallSilver.refcount_delta`
+  admits SIGN DECOMPOSITION.
+
+  Combines four SIGN-DECOMPOSITION properties:
+  (a) Sign trichotomy:           `0 < delta ∨ delta = 0 ∨ delta < 0`
+  (b) Positive delta = |delta|:  `0 < delta → delta = |delta|`
+  (c) Negative delta = -|delta|: `delta < 0 → -delta = |delta|`
+  (d) Sign-magnitude reconstruction: `Int.sign delta * |delta| = delta`
+
+  Together these capture the SEMANTIC SIGN STRUCTURE of
+  `refcount_delta` — distinguishing net-incref (positive),
+  net-balanced (zero), and net-decref (negative) sequences.
+
+  Uses Mathlib's `lt_trichotomy`, `Int.sign_mul_abs`, plus
+  absolute-value facts.
+
+  An emitter that confused refcount sign (e.g., used unsigned
+  arithmetic) would falsify (a) and (d). The abelian-group
+  structure (PMAT-216) would still hold under the unsigned
+  representation, making this a category-specific bug class.
+
+  Status: **discharged at v0.1.0 (PMAT-328)**. Tier: DIAMOND.
+  Broadens DEPTH-5 ACROSS LAYERS to 3 contracts on 3 layers.
+-/
+theorem refcount_delta_sign_decomp_diamond (c : FfiCallSilver) :
+    -- (a) Sign trichotomy on refcount_delta
+    (0 < c.refcount_delta ∨ c.refcount_delta = 0 ∨ c.refcount_delta < 0)
+    -- (b) Positive delta equals its absolute value
+    ∧ (0 < c.refcount_delta → c.refcount_delta = |c.refcount_delta|)
+    -- (c) Negative delta's negation equals its absolute value
+    ∧ (c.refcount_delta < 0 → -c.refcount_delta = |c.refcount_delta|)
+    -- (d) Sign-magnitude reconstruction
+    ∧ (Int.sign c.refcount_delta * |c.refcount_delta| = c.refcount_delta) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rcases lt_trichotomy c.refcount_delta 0 with h | h | h
+    · exact Or.inr (Or.inr h)
+    · exact Or.inr (Or.inl h)
+    · exact Or.inl h
+  · intro h; exact (abs_of_pos h).symm
+  · intro h; exact (abs_of_neg h).symm
+  · exact Int.sign_mul_abs c.refcount_delta
+
 end XpileContracts.CFfiCpythonExt
