@@ -107,12 +107,14 @@ fn substrate_diamond_depth_4_opened() {
     // PMAT-247 (PyIntArith) + PMAT-248 (CompileRustToPtxMma) opened depth-4.
     // PMAT-288 added refcount_inverse_diamond → C-FFI-CPYTHON-EXT joins depth-4.
     // PMAT-329 added outcome_struct_extensionality_diamond → C-BASHRS-POSIX-IDEMPOTENCE
-    // joins depth-4 on Layer 2, broadening depth-4 ACROSS LAYERS to 4 contracts.
-    // Gate now asserts ≥4 contracts across 4 layers (Layer 1 + Layer 2 + Layer 4 + Layer 5).
+    // joins depth-4 on Layer 2.
+    // PMAT-330 added metahir_module_struct_extensionality_diamond → C-XPILE-FRONTEND-TRAIT
+    // joins depth-4 on Layer 3, COMPLETING depth-4 across ALL 5 taxonomy layers.
+    // Gate now asserts ≥5 contracts across ALL 5 layers (L1 + L2 + L3 + L4 + L5).
     assert!(
-        depth_4_plus >= 4,
-        "Diamond depth-4 ACROSS LAYERS milestone (PMAT-247/248/288/329): \
-         expected ≥4 contracts at depth-4+ (L1 + L2 + L4 + L5), got {depth_4_plus}.\n{json}"
+        depth_4_plus >= 5,
+        "Diamond depth-4 UNIVERSAL ACROSS ALL 5 LAYERS milestone (PMAT-247/248/288/329/330): \
+         expected ≥5 contracts at depth-4+ (L1 + L2 + L3 + L4 + L5), got {depth_4_plus}.\n{json}"
     );
 }
 

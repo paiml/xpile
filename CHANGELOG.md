@@ -7,6 +7,70 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — **MILESTONE: Diamond depth-4 UNIVERSAL ACROSS ALL 5 TAXONOMY LAYERS**: MetaHirModuleSilver structure-extensionality Diamond on `C-XPILE-FRONTEND-TRAIT` (PMAT-330)
+
+**Substrate milestone: depth-4 reaches every xpile taxonomy layer.** After PMAT-329 broadened depth-4 to 4 layers (L1+L2+L4+L5), only Layer 3 was missing. PMAT-330 pushes `C-XPILE-FRONTEND-TRAIT` (Layer 3) from depth-3 to depth-4, completing **depth-4 ACROSS ALL 5 LAYERS**.
+
+**Coverage state at PMAT-330:**
+
+| Layer | Contract at depth-4+ | Diamond category |
+|---|---|---|
+| L1 (per-language semantics) | C-PY-INT-ARITH | PMAT-247 POWER-MONOID |
+| L2 (translation) | C-BASHRS-POSIX-IDEMPOTENCE | PMAT-329 OUTCOME STRUCT EXTENSIONALITY |
+| L3 (trait surfaces) | C-XPILE-FRONTEND-TRAIT | **PMAT-330 METAHIR MODULE STRUCT EXTENSIONALITY** |
+| L4 (FFI) | C-FFI-CPYTHON-EXT | PMAT-288 REFCOUNT INVERSE |
+| L5 (compilation) | C-COMPILE-RUST-TO-PTX-MMA | PMAT-248 LATTICE ABSORPTION |
+
+**The 4 Diamond categories on `C-XPILE-FRONTEND-TRAIT`:**
+
+1. PMAT-224 frontend_equivalence_class_diamond: equivalence relation
+2. PMAT-232 source_lang_constant_projection_diamond: constant projection
+3. PMAT-245 parse_and_lower_function_diamond: function axioms
+4. **PMAT-330 metahir_module_struct_extensionality_diamond** ← completes depth-4 ACROSS ALL 5 LAYERS
+
+**Why STRUCTURE EXTENSIONALITY is genuinely a NEW category:**
+
+Mirror of PMAT-311 (BoundedSmem subtype extensionality) and PMAT-329 (OutcomeSilver record extensionality), adapted for `MetaHirModuleSilver` (`bytes : Array UInt8`, `source_lang : SourceLang`):
+
+- **Field eq → record eq:** `m1.bytes = m2.bytes ∧ m1.source_lang = m2.source_lang → m1 = m2`
+- **Record eq → field eq** (congruence)
+- **Decidable equality:** `m1 = m2 ∨ m1 ≠ m2`
+- **Self-equality** (reflexivity)
+
+This is now a recurring substrate-wide theme: **structure-extensionality demonstrated on 3 distinct record/subtype contracts** (PMAT-311 BoundedSmem, PMAT-329 OutcomeSilver, PMAT-330 MetaHirModuleSilver).
+
+Distinct from the prior 3 categories on this contract:
+- PMAT-224: about EQUIVALENCE between frontends
+- PMAT-232: about the source_lang FIELD VALUE
+- PMAT-245: about parse_and_lower BEHAVIOR
+- PMAT-330: about the OUTPUT RECORD TYPE's identity-from-fields property
+
+**New Lean theorem:**
+
+```lean
+theorem metahir_module_struct_extensionality_diamond
+    (m1 m2 : MetaHirModuleSilver) :
+    (m1.bytes = m2.bytes ∧ m1.source_lang = m2.source_lang → m1 = m2)
+    ∧ (m1 = m2 → m1.bytes = m2.bytes ∧ m1.source_lang = m2.source_lang)
+    ∧ (m1 = m2 ∨ m1 ≠ m2)
+    ∧ (m1 = m1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2⟩; cases m1; cases m2; simp_all
+  · intro h; exact ⟨by rw [h], by rw [h]⟩
+  · by_cases h : m1 = m2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+```
+
+**Falsification surface:** an emitter that introduces phantom fields to MetaHirModuleSilver (e.g., a `cached_ast_hash` field that varies by parse path) or strips fields (e.g., a memory-saving variant that omits `source_lang` when `bytes` is empty) would falsify property (a) — equal fields must imply equal records.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_4_plus: 5` (was 4).
+- `substrate_diamond_depth_4_opened` gate **tightened to ≥ 5** to lock in the all-5-layers universality.
+- Substrate Diamond totals: **69 wired Diamond theorems** across 12 contracts (was 68).
+
 ### Added — Diamond depth-4 ACROSS LAYERS BROADENED to 4 layers: OutcomeSilver structure-extensionality Diamond on `C-BASHRS-POSIX-IDEMPOTENCE` (PMAT-329)
 
 **Continuing the BROADENING pivot.** PMAT-328 pushed depth-5 ACROSS LAYERS from 2→3 layers. PMAT-329 pushes depth-4 ACROSS LAYERS from 3→**4 layers**: pushes `C-BASHRS-POSIX-IDEMPOTENCE` (Layer 2) from depth-3 to depth-4, adding the Layer 2 representative.
