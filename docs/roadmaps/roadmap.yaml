@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-285
+  github_issue: null
+  item_type: task
+  title: 'PMAT-285: Property-specific Silver-tier Kani harnesses for C-XPILE-CONTRACT-BACKEND-TRAIT (Path α extension, TENTH and final contract — citation round-trip pattern)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T20:00:00Z
+  updated: 2026-05-22T20:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Lift contracts/kani/xpile_contract_backend_trait.rs from Bronze byte-identity to Silver-tier citation-set preservation model. Add ContractSilver { depends_on, references } + RenderedDocSilver { bytes, citations: (u8, u8) } + render_silver. Two new Kani proofs: citation_round_trip_silver (catches a backend that filters self-citations, drops by regex, or swaps depends_on/references order), render_idempotency_silver. Wire kani_harness on citation_round_trip equation. TENTH and FINAL Path α contract — completes Silver-tier Kani coverage across all 10 contracts that had placeholder Kani harnesses entering this session. audit-design.md §4 second-clause caveat (Kani placeholders) fully closed substrate-wide."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-284
   github_issue: null
   item_type: task

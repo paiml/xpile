@@ -7,6 +7,53 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Property-specific Silver-tier Kani harnesses for `C-XPILE-CONTRACT-BACKEND-TRAIT` (Path α extension, TENTH and final contract — citation round-trip pattern) (PMAT-285)
+
+Extends Path α to a **tenth and final** contract — completing Silver-tier Kani coverage across every contract that had a placeholder. Lifts `render_idempotency` from a Bronze byte-payload to Silver-tier matching Lean's `citation_round_trip_silver` (PMAT-159).
+
+**Why this contract's Silver tier matters:** the citation bridge is load-bearing for the entire audit chain. Bronze byte-payload model couldn't catch a backend that:
+- Filters self-citations (contract referencing itself)
+- Drops ContractIds failing a naming regex (e.g., enforces a convention not present at contract definition time)
+- Swaps `depends_on` and `references` order (breaking dependency resolution)
+
+Silver introduces an explicit `citations` field and proves no drop + correct concat order.
+
+**Silver-tier model:**
+
+```rust
+struct ContractSilver { depends_on: u8, references: u8 }
+struct RenderedDocSilver { bytes: [u8; 4], citations: (u8, u8) }
+fn render_silver(c) -> RenderedDocSilver { citations: (c.depends_on, c.references) }
+```
+
+**Two new `#[kani::proof]` functions:**
+
+| Proof | Catches |
+|-------|---------|
+| `citation_round_trip_silver` | a backend that filters/drops citations or swaps depends_on/references order |
+| `render_idempotency_silver` | structural idempotency over the wider Silver shape |
+
+## Path α — FINAL FINAL SUMMARY (10 contracts)
+
+All 10 contracts that had placeholder Kani harnesses entering this session now have property-specific Silver-tier proofs alongside their Bronze baselines.
+
+| Contract | PMAT | Silver pattern |
+|----------|------|----------------|
+| C-FFI-CPYTHON-EXT-V1 | 275 | per-field byte equality |
+| C-COMPILE-RUST-TO-PTX-MMA | 276 | inequality (smem ≤ 48 KiB) — FIRST non-`rfl` |
+| C-XLATE-RUST-FN-TO-LEAN-THM-V1 | 277 | concat-order (binders = generics ++ args) |
+| C-XLATE-LEAN-TO-RUST-V1 | 278 | symmetric mirror of 277 |
+| C-XLATE-PY-LIST-TO-VEC-V1 | 279 | polymorphism via element-type tag |
+| C-BASHRS-POSIX-IDEMPOTENCE | 281 | 2-axis cross-domain (stdout + exit_code) |
+| C-XPILE-FRONTEND-TRAIT | 282 | source_lang consistency |
+| C-XPILE-BACKEND-TRAIT | 283 | target consistency (mirror of 282) |
+| C-XPILE-CONTRACT-FRONTEND-TRAIT | 284 | frame preservation (NEW pattern) |
+| **C-XPILE-CONTRACT-BACKEND-TRAIT** | **285** | **citation round-trip** |
+
+**Patterns discovered:** per-field byte equality (5×), inequality (1×), concat-order (2× symmetric), polymorphism via tag (1×), 2-axis cross-domain (1×), frame preservation (1×), citation round-trip (1×). Each pattern catches a different falsifier class that Bronze byte-payload couldn't.
+
+audit-design.md §4 second-clause caveat (Kani placeholders): **fully closed** across the full substrate.
+
 ### Added — Property-specific Silver-tier Kani harnesses for `C-XPILE-CONTRACT-FRONTEND-TRAIT` (Path α extension, ninth contract — frame preservation pattern) (PMAT-284)
 
 Extends Path α to a ninth contract. **Introduces a new Silver pattern** — frame preservation — distinct from the per-field-equality pattern used in PMAT-275..283. Mirrors Lean's `equations_only_silver` (PMAT-158).
