@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-301
+  github_issue: null
+  item_type: task
+  title: 'PMAT-301: Diamond depth-10 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-10 via additive-lattice distributivity)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T03:00:00Z
+  updated: 2026-05-23T03:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add bounded_smem_additive_lattice_diamond Lean theorem to contracts/lean/CompileRustToPtxMma.lean — 4 conjuncts: c + max a b = max (c+a) (c+b) (left over max), max a b + c = max (a+c) (b+c) (right over max), c + min a b = min (c+a) (c+b) (left over min), min a b + c = min (a+c) (b+c) (right over min). Proved by `omega`. Wire as new equation in compile-rust-to-ptx-mma-v1.yaml. Tighten substrate_diamond_depth_10_opened gate to ≥2 contracts. Opens DEPTH-10 ACROSS LAYERS — 2 contracts at depth-10+ across Layer 1 (PyIntArith) and Layer 5 (CompileRustToPtxMma). Categorically distinct from PMAT-218 monoid (no lattice), PMAT-291 distributive lattice (no arithmetic), PMAT-299 ordered monoid (monotonicity, not distribution). This is the TROPICAL SEMIRING axiom relating + and max/min."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-300
   github_issue: null
   item_type: task

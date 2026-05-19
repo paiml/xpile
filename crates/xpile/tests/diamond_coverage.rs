@@ -204,13 +204,14 @@ fn substrate_diamond_depth_9_opened() {
 fn substrate_diamond_depth_10_opened() {
     let json = run_diamond_json();
     let depth_10_plus = read_aggregate_field(&json, "depth_10_plus");
-    // PMAT-300 opened depth-10 on C-PY-INT-ARITH: RING-distributivity of negation
-    // over multiplication. The 10th orthogonal category bridges PMAT-214
-    // SEMIRING (no neg) and PMAT-290 ABELIAN-GROUP-ENRICHMENT (no mul) into a
-    // full RING via (-a)*b = -(a*b) — Mathlib's `Ring` typeclass shape.
+    // PMAT-300 opened depth-10 on C-PY-INT-ARITH (Layer 1): RING-distributivity of
+    // negation over multiplication.
+    // PMAT-301 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): additive-lattice
+    // distributivity — addition distributes over max and min (tropical-semiring axiom).
+    // Gate now asserts depth-10 ACROSS LAYERS (≥2 contracts at depth-10+).
     assert!(
-        depth_10_plus >= 1,
-        "Diamond depth-10 milestone (PMAT-300): expected ≥1 contract at depth-10+, \
-         got {depth_10_plus}.\n{json}"
+        depth_10_plus >= 2,
+        "Diamond depth-10 ACROSS LAYERS milestone (PMAT-300, PMAT-301): \
+         expected ≥2 contracts at depth-10+ (Layer 1 + Layer 5), got {depth_10_plus}.\n{json}"
     );
 }

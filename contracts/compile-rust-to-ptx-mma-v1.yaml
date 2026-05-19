@@ -501,6 +501,43 @@ equations:
       - "an emitter that uses wrap-around accounting would falsify monotonicity"
       - "Diamond DEPTH-9 ACROSS LAYERS demonstrated: 2 contracts at depth-9+"
 
+  bounded_smem_additive_lattice_diamond:
+    # PMAT-301: TENTH Diamond on this contract — opens DEPTH-10
+    # ACROSS LAYERS. ADDITIVE-LATTICE distributivity: addition
+    # distributes over both max and min. Categorically distinct
+    # from all 9 prior categories:
+    #   - PMAT-218 monoid: only about + alone, no lattice interaction
+    #   - PMAT-291 distributive lattice: max distrib over min, no +
+    #   - PMAT-299 ordered monoid: monotonicity, not distribution
+    # This is the BRIDGE between the additive monoid and the lattice
+    # family — exactly the TROPICAL SEMIRING axiom (a + max b c =
+    # max (a+b) (a+c)). PyIntArith reached depth-10 at PMAT-300
+    # (RING-distributivity); PMAT-301 extends depth-10 to Layer 5.
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_additive_lattice_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      (BoundedSmem, +, max, min) is an ADDITIVE LATTICE:
+        (a) c + max a b = max (c + a) (c + b)    -- left + over max
+        (b) max a b + c = max (a + c) (b + c)    -- right + over max
+        (c) c + min a b = min (c + a) (c + b)    -- left + over min
+        (d) min a b + c = min (a + c) (b + c)    -- right + over min
+    domain: |
+      Any three BoundedSmem values, on the underlying Nat .val
+      projection. The four properties together axiomatize the
+      additive-lattice structure on (Nat, +, max, min) — the
+      tropical-semiring axiom relating + and max/min.
+    invariants:
+      - "TENTH Diamond category on C-COMPILE-RUST-TO-PTX-MMA — opens DEPTH-10 ACROSS LAYERS (second contract at depth-10+ after PMAT-300 on PyIntArith)"
+      - "BRIDGES the additive monoid (PMAT-218) and the lattice family (PMAT-231/242/248/291/293)"
+      - "distinct from PMAT-291 distributive lattice (max over min, no +)"
+      - "distinct from PMAT-299 ordered monoid (monotonicity, not distribution)"
+      - "load-bearing for smem-accounting emitters that compute worst-case parallel reservation: double-counting via a + max(b,c) ≠ max(a+b, a+c) would falsify (a)"
+    preconditions:
+      - "three BoundedSmem values; theorem stated on Nat .val projection"
+    postconditions:
+      - "an emitter using path-dependent worst-case reservation would falsify (a) or (b)"
+      - "Diamond DEPTH-10 ACROSS LAYERS demonstrated: 2 contracts at depth-10+"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)
