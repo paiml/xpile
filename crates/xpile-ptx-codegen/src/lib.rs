@@ -7,7 +7,9 @@
 //!
 //! Layer 5 compile contract: `contracts/compile-rust-to-ptx-mma-v1.yaml`.
 
-use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, HwProfile, Target};
+use xpile_backend::{
+    Artifact, Backend, BackendConfig, BackendError, HwProfile, QuorumStatus, Target,
+};
 use xpile_contracts::ContractId;
 use xpile_meta_hir::Module;
 
@@ -31,6 +33,9 @@ impl Backend for PtxBackend {
                 ),
                 sidecars: Vec::new(),
                 citations: vec![ContractId::new("C-COMPILE-RUST-TO-PTX-MMA")],
+                quorum_status: QuorumStatus::Single {
+                    emitter: "xpile-ptx-codegen-scaffold".to_string(),
+                },
             }),
             _ => Err(BackendError::MissingHardware(Target::Ptx)),
         }

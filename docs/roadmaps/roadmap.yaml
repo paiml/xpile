@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-262
+  github_issue: null
+  item_type: task
+  title: 'PMAT-262: Extend Artifact to carry QuorumStatus (Section 29 wiring continued)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-21T10:00:00Z
+  updated: 2026-05-21T10:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Artifact gains quorum_status: QuorumStatus field. All 6 existing backend construction sites populate Single { emitter: <backend_name> }. Serde-default for backward-compatible deserialization. Eq dropped from Artifact (DiffExecResult contains f64); PartialEq retained. 2 new tests cover legacy-JSON default fallback and modern round-trip. Workspace builds clean; pv lint green."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-261
   github_issue: null
   item_type: task

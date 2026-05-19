@@ -11,7 +11,7 @@
 //! patterns. See `docs/specifications/sub/bidirectional-ruchy.md`.
 
 use std::fmt::Write;
-use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, Target};
+use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_meta_hir::{BinOp, Block, Expr, Function, Item, Module, Param, Stmt, Type, UnOp};
 
 #[derive(Debug, thiserror::Error)]
@@ -519,6 +519,9 @@ impl Backend for RuchyBackend {
             primary,
             sidecars: Vec::new(),
             citations: Vec::new(),
+            quorum_status: QuorumStatus::Single {
+                emitter: "xpile-ruchy-codegen".to_string(),
+            },
         })
     }
 }

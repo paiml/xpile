@@ -80,7 +80,7 @@ pub struct BackendConfig {
 /// a Layer-5 compile contract by ID. Recovery is via this field, NOT
 /// via regex over `primary` text. See
 /// `contracts/xpile-backend-trait-v1.yaml` equation `compile_contract_citation`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Artifact {
     /// Emitted source / IR text (Rust source, Ruchy source, PTX text,
     /// WGSL source, SPIR-V text, Lean source).
@@ -90,6 +90,22 @@ pub struct Artifact {
     /// Layer-5 compile contracts sanctioning every target-specific
     /// construct in `primary`. Structural — not regex-recoverable.
     pub citations: Vec<ContractId>,
+    /// Multi-emitter quorum status (PMAT-262 / Section 29). At v0.1.0
+    /// every Backend impl emits exactly one artifact, so this is always
+    /// `QuorumStatus::Single { emitter: <backend_name> }`. Multi-emitter
+    /// backends (future rustc_codegen_nvvm + aprender-gpu quorum on PTX)
+    /// populate `QuorumStatus::Multi { ... }` with the diff_exec result.
+    ///
+    /// Defaults via serde to `Single { emitter: "unknown" }` for
+    /// backward-compatible deserialization of older JSON payloads.
+    #[serde(default = "default_quorum_status")]
+    pub quorum_status: QuorumStatus,
+}
+
+fn default_quorum_status() -> QuorumStatus {
+    QuorumStatus::Single {
+        emitter: "unknown".to_string(),
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -319,5 +335,37 @@ mod quorum_scaffolding_tests {
         assert!(s.contains("specialist"));
         assert!(s.contains("aprender"));
         assert!(s.contains("gemm_fp16_mma_64x128"));
+    }
+
+    /// PMAT-262: Artifact carries QuorumStatus; default deserialization
+    /// gracefully populates Single { emitter: "unknown" } for older JSON
+    /// payloads that predate the field.
+    #[test]
+    fn artifact_quorum_status_defaults_for_older_payloads() {
+        let legacy_json = r#"{"primary":"// test","sidecars":[],"citations":[]}"#;
+        let a: Artifact = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(
+            a.quorum_status,
+            QuorumStatus::Single {
+                emitter: "unknown".to_string()
+            }
+        );
+    }
+
+    /// PMAT-262: Artifact round-trips QuorumStatus::Single produced by
+    /// every single-emitter backend at v0.1.0.
+    #[test]
+    fn artifact_quorum_status_single_round_trips() {
+        let a = Artifact {
+            primary: "// test".into(),
+            sidecars: Vec::new(),
+            citations: Vec::new(),
+            quorum_status: QuorumStatus::Single {
+                emitter: "xpile-rust-codegen".to_string(),
+            },
+        };
+        let s = serde_json::to_string(&a).unwrap();
+        let back: Artifact = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, a);
     }
 }

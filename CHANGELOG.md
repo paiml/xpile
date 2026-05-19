@@ -7,6 +7,31 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Artifact carries QuorumStatus (Section 29 wiring continued) (PMAT-262)
+
+Direct continuation of PMAT-261. `Artifact` now carries a `quorum_status: QuorumStatus` field. Every existing backend (`xpile-rust-codegen`, `xpile-ruchy-codegen`, `xpile-ptx-codegen`, `xpile-wgsl-codegen`, `xpile-lean-codegen`, `bashrs-backend`) populates `QuorumStatus::Single { emitter: <backend_name> }` at v0.1.0. Future multi-emitter backends will populate `QuorumStatus::Multi { emitters, diff_exec }`.
+
+**API surface:**
+- `Artifact.quorum_status: QuorumStatus` (new field)
+- Serde-default for backward-compatible deserialization of older JSON payloads (defaults to `Single { emitter: "unknown" }`)
+- `Eq` dropped from `Artifact`'s derive (because `QuorumStatus → DiffExecResult` contains `f64`, which lacks `Eq`); `PartialEq` retained. No caller depended on `Artifact: Eq`.
+
+**Construction sites updated:**
+- `xpile-rust-codegen` → `emitter: "xpile-rust-codegen"`
+- `xpile-ruchy-codegen` → `emitter: "xpile-ruchy-codegen"`
+- `xpile-lean-codegen` → `emitter: "xpile-lean-codegen"`
+- `bashrs-backend` → `emitter: "bashrs-backend"`
+- `xpile-ptx-codegen` → `emitter: "xpile-ptx-codegen-scaffold"` (will become `Multi { rustc_codegen_nvvm, aprender-gpu }` per Section 29)
+- `xpile-wgsl-codegen` → `emitter: "xpile-wgsl-codegen-scaffold"`
+
+**New tests (2):**
+- `artifact_quorum_status_defaults_for_older_payloads` — pre-PMAT-262 JSON deserializes cleanly via serde default
+- `artifact_quorum_status_single_round_trips` — modern Artifact serde round-trips intact
+
+**Workspace impact:** all 6 backend crates updated; workspace builds clean; cargo clippy + cargo test + pv lint all green.
+
+This unlocks the next Section 29 PRs: the `PtxBackend` (and future multi-emitter backends) can now populate real `QuorumStatus::Multi { ... }` values without further struct-shape changes.
+
 ### Added — Multi-emitter quorum scaffolding types in xpile-backend (PMAT-261)
 
 Codifies the Section 29 spec types (`sub/layer5-multi-emitter-quorum.md`) as Rust definitions in `xpile-backend`. Pure scaffolding — no Backend impl yet uses these; future PRs (rustc_codegen_nvvm wiring, aprender-gpu bridge, DiffExec engine) build against this stable API surface.
