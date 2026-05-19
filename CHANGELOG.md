@@ -7,6 +7,53 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-17 in the substrate: unit-group Diamond on `C-PY-INT-ARITH` (PMAT-317)
+
+**Path β extension.** Opens Diamond **depth-17** — seventeen distinct algebraic categories on a single contract. PyIntArith was at depth-16 (post-PMAT-315); PMAT-317 adds **UNIT GROUP STRUCTURE** as the seventeenth orthogonal category — characterizing the multiplicative-inverse elements of Int.
+
+**The 17 Diamond categories on `C-PY-INT-ARITH`:**
+
+1–16. (Prior categories — semiring, Euclidean, shift, power, AND, abelian-group, lattice, divisibility, linear-order, ring, integral domain, ordered ring, norm, Nat-cast hom, emod quotient hom, GCD-monoid + Bézout/PID)
+17. **PMAT-317: UNIT GROUP `{1, -1} ≅ Z/2Z`** ← FIRST DEPTH-17
+
+**Why UNIT GROUP is genuinely a NEW category — orthogonal to ALL 16 prior:**
+
+- PMAT-290 (**ABELIAN-GROUP-ENRICHMENT**) axiomatized the ADDITIVE group `(Int, +, 0, -)`.
+- PMAT-315 (**GCD MONOID + BÉZOUT**) characterized gcd / ideals.
+- PMAT-317 axiomatizes the **MULTIPLICATIVE INVERTIBLE ELEMENTS** as a separate structure: the unit group of Int is `{1, -1} ≅ Z/2Z` (the simplest non-trivial finite group).
+
+The four conjuncts encode this concretely:
+
+- **Multiplicative identity:** `a * 1 = a`
+- **-1 is self-inverse (Z/2Z):** `(-1) * (-1) = 1`
+- **Negation factors via -1:** `-a = (-1) * a`
+- **Squares are non-negative:** `0 ≤ a * a`
+
+**New Lean theorem:**
+
+```lean
+theorem unit_group_diamond (a : Int) :
+    (a * 1 = a)                  -- multiplicative identity
+    ∧ ((-1 : Int) * (-1) = 1)    -- -1 self-inverse (Z/2Z)
+    ∧ (-a = (-1) * a)            -- negation factors via -1
+    ∧ (0 ≤ a * a) := by          -- squares non-negative
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact mul_one a
+  · decide
+  · exact (Int.neg_one_mul a).symm
+  · exact mul_self_nonneg a
+```
+
+Uses `mul_one`, `Int.neg_one_mul`, `mul_self_nonneg` from Mathlib plus `decide` for the concrete `(-1) * (-1) = 1` fact.
+
+**Falsification surface:** an emitter that lowered unary minus through a path that didn't preserve `-a = (-1) * a` (e.g., a **bitwise-complement-plus-one shortcut** that failed on `Int.minValue` due to overflow in two's-complement) would falsify property (c) — a real bug class invisible to the prior 16 categories.
+
+**Reporter + gate updates:**
+
+- `xpile diamond --json` extended with `depth-16` discrete label + `depth-17+` aggregate.
+- `substrate_diamond_depth_17_opened` gate test added (≥ 1 at depth-17+).
+- Substrate Diamond totals: **58 wired Diamond theorems** across 12 contracts (was 57).
+
 ### Added — Diamond depth-16 ACROSS LAYERS: Nat-GCD-monoid Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-316)
 
 **Path β extension.** Depth-16 was opened by PMAT-315 on PyIntArith (Layer 1). PMAT-316 extends depth-16 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) via the Nat-GCD-monoid Diamond — the substrate now has **2 contracts at depth-16+**.

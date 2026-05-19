@@ -1141,6 +1141,43 @@ equations:
       - "an emitter lowering gcd through a path that doesn't produce a Bézout pair would falsify (d)"
       - "Diamond DEPTH-16 opened — 1 contract at depth-16+"
 
+  unit_group_diamond:
+    # PMAT-317: SEVENTEENTH Diamond on this contract — opens FIRST
+    # DEPTH-17 in the substrate. UNIT GROUP STRUCTURE: the units
+    # of Int form `{1, -1} ≅ Z/2Z`. Categorically orthogonal to
+    # all 16 prior categories — none characterizes the
+    # MULTIPLICATIVE INVERTIBLE ELEMENTS as a separate algebraic
+    # structure. PMAT-300 RING / PMAT-302 INTEGRAL DOMAIN axiomatize
+    # the ring; PMAT-315 GCD/PID characterizes ideals/gcd; PMAT-317
+    # axiomatizes the unit-group of multiplicative inverses.
+    # Load-bearing for unary-minus lowerings: a bitwise-complement-
+    # plus-one shortcut that failed on Int.minValue due to overflow
+    # would falsify (c) `-a = (-1) * a`.
+    lean_theorem: "XpileContracts.CPyIntArith.unit_group_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      The unit group of Int is `{1, -1} ≅ Z/2Z`:
+        (a) multiplicative identity:      a * 1 = a
+        (b) -1 is self-inverse (Z/2Z):    (-1) * (-1) = 1
+        (c) negation factors via -1:      -a = (-1) * a
+        (d) squares are non-negative:     0 ≤ a * a
+    domain: |
+      Any Int value a. The four properties together axiomatize
+      the multiplicative-inverse structure of Int: the units form
+      the cyclic group Z/2Z. Uses Mathlib's mul_one,
+      Int.neg_one_mul, mul_self_nonneg.
+    invariants:
+      - "SEVENTEENTH Diamond category on C-PY-INT-ARITH — opens FIRST DEPTH-17 in the substrate"
+      - "FIRST claim characterizing the MULTIPLICATIVE INVERTIBLE ELEMENTS of Int as a separate algebraic structure (unit group)"
+      - "distinct from PMAT-290 abelian-group-enrichment (which axiomatized the ADDITIVE group)"
+      - "distinct from PMAT-315 GCD/PID (which characterized ideals/gcd, not units)"
+      - "load-bearing for unary-minus lowerings: bitwise-complement-plus-one on Int.minValue would falsify (c)"
+    preconditions:
+      - "one Int value; theorem stated on standard Int.mul, Int.neg"
+    postconditions:
+      - "an emitter that uses overflow-prone unary minus (e.g., bitwise-not + 1 on minValue) would falsify (c)"
+      - "Diamond DEPTH-17 opened — 1 contract at depth-17+"
+
 proof_obligations:
   - type: precondition
     property: operands are Python int (not int-subclass, not bool-as-int)

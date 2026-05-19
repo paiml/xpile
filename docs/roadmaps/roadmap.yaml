@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-317
+  github_issue: null
+  item_type: task
+  title: 'PMAT-317: FIRST Diamond depth-17 in the substrate (unit-group `{1, -1} ≅ Z/2Z` on C-PY-INT-ARITH)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T11:00:00Z
+  updated: 2026-05-23T11:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add unit_group_diamond Lean theorem to contracts/lean/PyIntArith.lean — 4 conjuncts: multiplicative identity (mul_one), -1 self-inverse via decide, negation factors via -1 (Int.neg_one_mul), squares non-negative (mul_self_nonneg). Wire as new equation in py-int-arith-v1.yaml. Extend xpile diamond reporter with depth-17+ label + depth_17_plus aggregate. Refine depth-16 from depth-16+ to discrete depth-16. Add substrate_diamond_depth_17_opened gate test (≥1). FIRST DEPTH-17 — PyIntArith reaches 17 categories. The 17th (UNIT GROUP) characterizes the MULTIPLICATIVE INVERTIBLE ELEMENTS of Int as `{1, -1} ≅ Z/2Z` — distinct from PMAT-290 abelian-group-enrichment (which was about ADDITIVE group) and from PMAT-315 GCD/PID (about ideals). Falsification surface: bitwise-complement-plus-one unary-minus on Int.minValue overflow falsifies (c)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-316
   github_issue: null
   item_type: task
