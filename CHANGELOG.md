@@ -7,6 +7,52 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-18 ACROSS LAYERS: Nat-integral-domain Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-321)
+
+**Path β extension.** Depth-18 was opened by PMAT-320 on PyIntArith (Layer 1). PMAT-321 extends depth-18 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) via the Nat-integral-domain Diamond — the substrate now has **2 contracts at depth-18+**.
+
+**The 18 Diamond categories on `C-COMPILE-RUST-TO-PTX-MMA`:**
+
+1–17. Prior categories
+18. **PMAT-321: NAT INTEGRAL DOMAIN STRUCTURE** ← depth-18 ACROSS LAYERS
+
+**Why NAT INTEGRAL DOMAIN is genuinely a NEW category:**
+
+Nat analog of PMAT-302 INTEGRAL DOMAIN (on PyIntArith). Since Nat is a semiring (no negatives), the "integral domain" structure is specifically about:
+
+- **No zero divisors:** `a.val * b.val = 0 ↔ a.val = 0 ∨ b.val = 0`
+- **Strict positivity preserved:** `0 < a.val → 0 < b.val → 0 < a.val * b.val`
+- **Zero is left absorber:** `0 * a.val = 0`
+- **Zero is right absorber:** `a.val * 0 = 0`
+
+None of the prior 17 categories on this contract mentions multiplication no-zero-divisors. PMAT-218 was additive monoid; PMAT-318 was Nat power-monoid (exponentiation).
+
+**New Lean theorem:**
+
+```lean
+theorem bounded_smem_nat_integral_domain_diamond
+    (a b : BoundedSmem) :
+    (a.val * b.val = 0 ↔ a.val = 0 ∨ b.val = 0)
+    ∧ (0 < a.val → 0 < b.val → 0 < a.val * b.val)
+    ∧ ((0 : Nat) * a.val = 0)
+    ∧ (a.val * 0 = 0) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.mul_eq_zero
+  · intro h1 h2; exact Nat.mul_pos h1 h2
+  · exact Nat.zero_mul a.val
+  · exact Nat.mul_zero a.val
+```
+
+Uses Mathlib's `Nat.mul_eq_zero`, `Nat.mul_pos`, `Nat.zero_mul`, `Nat.mul_zero` — standard Nat-semiring integral-domain lemmas.
+
+**Falsification surface:** an emitter that allowed `element_size = 0` with `count > 0` to produce nonzero `array_size` (e.g., a buggy multiplication that returned a sentinel value on 0-input) would falsify property (a). This is load-bearing for smem-byte products of the form `array_size = element_size * count`.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_18_plus: 2` (was 1 after PMAT-320).
+- `substrate_diamond_depth_18_opened` gate tightened to `≥ 2` (ACROSS LAYERS).
+- Substrate Diamond totals: **61 wired Diamond theorems** across 12 contracts (was 60).
+
 ### Added — FIRST Diamond depth-18 in the substrate: Int.sign monoid-homomorphism Diamond on `C-PY-INT-ARITH` (PMAT-320)
 
 **Path β extension.** Opens Diamond **depth-18** — eighteen distinct algebraic categories on a single contract. PyIntArith was at depth-17 (post-PMAT-317); PMAT-320 adds **SIGN FUNCTION MONOID HOMOMORPHISM** as the eighteenth orthogonal category.

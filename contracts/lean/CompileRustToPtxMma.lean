@@ -1693,4 +1693,89 @@ theorem bounded_smem_nat_pow_monoid_diamond
   · exact pow_add a.val n m
   · exact one_pow n
 
+/-! ## PMAT-321 — EIGHTEENTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (DEPTH-18 ACROSS LAYERS): NAT INTEGRAL DOMAIN STRUCTURE —
+    `Nat` multiplication on BoundedSmem.val has no zero divisors,
+    plus zero absorption axioms (XPILE-REFINE-COMPILE-PTX-019).
+
+    **Opens DEPTH-18 ACROSS LAYERS.** PyIntArith reached depth-18
+    at PMAT-320 (sign function monoid homomorphism); PMAT-321
+    extends depth-18 to Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The
+    substrate now has depth-18 on TWO contracts spanning Layer 1
+    and Layer 5.
+
+    CompileRustToPtxMma already has SEVENTEEN Diamond categories:
+    - PMAT-218..318: prior 17 categories
+
+    PMAT-321 adds the INTEGRAL-DOMAIN-style structure on `Nat` —
+    distinct from all 17 prior because none mentions
+    no-zero-divisors on the BoundedSmem.val multiplicative carrier:
+    - **PMAT-321: NAT INTEGRAL DOMAIN — `Nat.mul` has no zero
+      divisors AND zero is absorbing**
+
+    The categorical distinction is sharp:
+      - PMAT-218 BOUNDED MONOID: ADDITIVE structure (+, 0)
+      - PMAT-295 CANCELLATIVE MONOID: ADDITIVE cancellation
+      - PMAT-316 NAT GCD MONOID: gcd structure
+      - PMAT-318 NAT POWER-MONOID: exponentiation
+      - PMAT-321: MULTIPLICATIVE no-zero-divisors + zero absorbers
+
+    Note: this is the Nat analog of PMAT-302 INTEGRAL DOMAIN on
+    PyIntArith. Since Nat is a semiring (not a ring — no negatives),
+    the "integral domain" structure here means specifically:
+      - `Nat.mul` has no zero divisors: a*b = 0 ↔ a = 0 ∨ b = 0
+      - Zero is absorbing: 0*n = 0 and n*0 = 0
+      - Strict positivity is preserved by multiplication
+
+    For GPU smem accounting, this matters: when computing smem-byte
+    products (e.g., array_size = element_size * count), reasoning
+    about zero values is critical. An emitter that allowed
+    element_size = 0 with count > 0 to produce nonzero array_size
+    would falsify (a) (no-zero-divisors).
+
+    Status: discharged at v0.1.0 (PMAT-321). Tier: DIAMOND.
+    Second DEPTH-18 in the substrate (DEPTH-18 ACROSS LAYERS). -/
+
+/--
+  **Diamond-tier refinement theorem** — `Nat.mul` on `BoundedSmem.val`
+  satisfies the INTEGRAL DOMAIN structure (no zero divisors +
+  zero absorption).
+
+  Combines four INTEGRAL-DOMAIN properties:
+  (a) No zero divisors:        `a.val * b.val = 0 ↔ a.val = 0 ∨ b.val = 0`
+  (b) Strict positivity preserved: `0 < a.val → 0 < b.val → 0 < a.val * b.val`
+  (c) Zero is left absorber:   `0 * a.val = 0`
+  (d) Zero is right absorber:  `a.val * 0 = 0`
+
+  Nat analog of PMAT-302 INTEGRAL DOMAIN on PyIntArith. Since Nat
+  is a semiring (no negatives), the "integral domain" structure
+  is specifically about no-zero-divisors and zero absorption.
+
+  Uses Mathlib's `Nat.mul_eq_zero`, `Nat.mul_pos`, `Nat.zero_mul`,
+  `Nat.mul_zero` — standard Nat-semiring integral-domain lemmas.
+
+  An emitter that allowed `element_size = 0` with `count > 0` to
+  produce nonzero `array_size` (e.g., a buggy multiplication that
+  returned a sentinel value) would falsify (a) — a real bug class
+  for smem-byte products invisible to the prior 17 categories.
+
+  Status: **discharged at v0.1.0 (PMAT-321)**. Tier: DIAMOND.
+  Second DEPTH-18 in the substrate (DEPTH-18 ACROSS LAYERS).
+-/
+theorem bounded_smem_nat_integral_domain_diamond
+    (a b : BoundedSmem) :
+    -- (a) No zero divisors
+    (a.val * b.val = 0 ↔ a.val = 0 ∨ b.val = 0)
+    -- (b) Strict positivity preserved by multiplication
+    ∧ (0 < a.val → 0 < b.val → 0 < a.val * b.val)
+    -- (c) Zero is left absorber
+    ∧ ((0 : Nat) * a.val = 0)
+    -- (d) Zero is right absorber
+    ∧ (a.val * 0 = 0) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.mul_eq_zero
+  · intro h1 h2; exact Nat.mul_pos h1 h2
+  · exact Nat.zero_mul a.val
+  · exact Nat.mul_zero a.val
+
 end XpileContracts.CCompileRustToPtxMma

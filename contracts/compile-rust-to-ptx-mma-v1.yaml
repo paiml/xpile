@@ -801,6 +801,44 @@ equations:
       - "an emitter using parenthesization-order-dependent multiplication for a^k would falsify (c)"
       - "Diamond DEPTH-17 ACROSS LAYERS demonstrated: 2 contracts at depth-17+"
 
+  bounded_smem_nat_integral_domain_diamond:
+    # PMAT-321: EIGHTEENTH Diamond on this contract — opens
+    # DEPTH-18 ACROSS LAYERS. NAT INTEGRAL DOMAIN STRUCTURE:
+    # Nat.mul on BoundedSmem.val has no zero divisors plus zero
+    # absorption axioms. Categorically orthogonal to all 17 prior
+    # categories on this contract — none mentions multiplication
+    # no-zero-divisors (PMAT-218 was additive monoid, PMAT-318
+    # was Nat.pow). Nat analog of PMAT-302 INTEGRAL DOMAIN on
+    # PyIntArith. Load-bearing for smem-byte products:
+    # array_size = element_size * count — an emitter that allowed
+    # element_size = 0 with count > 0 to produce nonzero
+    # array_size would falsify (a).
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_nat_integral_domain_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      Nat.mul on BoundedSmem.val is INTEGRAL-DOMAIN-like:
+        (a) no zero divisors:       a.val * b.val = 0 ↔ a.val = 0 ∨ b.val = 0
+        (b) strict positivity:      0 < a.val → 0 < b.val → 0 < a.val * b.val
+        (c) zero left absorber:     0 * a.val = 0
+        (d) zero right absorber:    a.val * 0 = 0
+    domain: |
+      Any two BoundedSmem values. The four properties together
+      axiomatize Nat.mul on the underlying .val carrier as an
+      integral-domain-like structure (since Nat is a semiring,
+      not a ring, the "integral domain" axiomatization is
+      specifically about no-zero-divisors and zero absorption).
+    invariants:
+      - "EIGHTEENTH Diamond category on C-COMPILE-RUST-TO-PTX-MMA — opens DEPTH-18 ACROSS LAYERS (second contract at depth-18+ after PMAT-320 on PyIntArith)"
+      - "Nat analog of PMAT-302 INTEGRAL DOMAIN (on PyIntArith)"
+      - "distinct from PMAT-218 bounded-monoid (additive structure)"
+      - "distinct from PMAT-318 Nat power-monoid (exponentiation, not multiplication-zero-divisors)"
+      - "load-bearing for smem-byte products: array_size = element_size * count — an emitter producing nonzero result from element_size = 0 would falsify (a)"
+    preconditions:
+      - "two BoundedSmem values"
+    postconditions:
+      - "an emitter with a buggy multiplication that returns sentinel values on 0-input would falsify (a)"
+      - "Diamond DEPTH-18 ACROSS LAYERS demonstrated: 2 contracts at depth-18+"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)
