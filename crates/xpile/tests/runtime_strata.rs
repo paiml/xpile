@@ -316,3 +316,93 @@ fn main() {
     build_and_run("py_int_arith_runtime_overflow", &merged)
         .expect("runtime stratum: add(i64::MAX, 1) must panic per checked_add semantics");
 }
+
+/// PMAT-271 — Runtime-stratum sweep for `for-in-range` desugaring
+/// (for_sum.py).
+///
+/// `for_sum.py` defines three functions exercising the PMAT-007
+/// for-in-range → while-loop desugaring:
+///
+/// * `for_sum(n)`: `range(n)` — single-arg range with implicit start=0
+///   and step=1.
+/// * `range_with_start(a, b)`: `range(a, b)` — two-arg range with
+///   explicit start.
+/// * `range_with_step(stop)`: `range(0, stop, 2)` — three-arg range
+///   with step != 1.
+///
+/// The fixed-input tests in transpile_e2e.rs cover ~6 cases. This
+/// sweep covers 200 contiguous `n` values for `for_sum` + 100 LCG
+/// pairs for `range_with_start` + 100 LCG `stop` values for
+/// `range_with_step`, all compared against hand-written Rust
+/// references. Verifies the desugaring is correct across the
+/// boundary cases the existing tests don't hit (n=0 edge, negative
+/// ranges that should produce empty loops, large strides).
+///
+/// All inputs clamped to small bounds so checked-arithmetic overflow
+/// can't fire — overflow is exercised by the `overflow_panics`
+/// fixture, not here.
+#[test]
+fn py_int_arith_runtime_stratum_for_loop_desugaring_matches_reference() {
+    let transpiled = xpile_transpile_to_rust("for_sum.py");
+
+    let driver = r#"
+fn ref_for_sum(n: i64) -> i64 {
+    // CPython `range(n)` is empty for n <= 0; sum over 0..n.
+    if n <= 0 { return 0; }
+    (0..n).sum()
+}
+
+fn ref_range_with_start(a: i64, b: i64) -> i64 {
+    // CPython `range(a, b)` is empty if a >= b.
+    if a >= b { return 0; }
+    (a..b).sum()
+}
+
+fn ref_range_with_step(stop: i64) -> i64 {
+    // CPython `range(0, stop, 2)` is empty if stop <= 0; otherwise
+    // sums 0, 2, 4, ... < stop.
+    if stop <= 0 { return 0; }
+    (0..stop).step_by(2).sum()
+}
+
+fn main() {
+    // Sweep 1: for_sum(n) over n in 0..200 — contiguous coverage of
+    // small n including the n=0 edge.
+    for n in 0i64..200 {
+        let expected = ref_for_sum(n);
+        let got = for_sum(n);
+        assert_eq!(got, expected, "for_sum({n}) gave {got}, expected {expected}");
+    }
+
+    // Sweep 2: range_with_start(a, b) over 100 LCG pairs clamped to
+    // small range. Some pairs will have a >= b (empty loop case).
+    let mut state: u64 = 0xdead_beef_cafe_f00d;
+    for i in 0..100u64 {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let a: i64 = (state as i64) % 100; // [-99..99]
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let b: i64 = (state as i64) % 100;
+        let expected = ref_range_with_start(a, b);
+        let got = range_with_start(a, b);
+        assert_eq!(got, expected, "iter {i}: range_with_start({a}, {b}) gave {got}, expected {expected}");
+    }
+
+    // Sweep 3: range_with_step(stop) over 100 LCG values clamped to
+    // small positive bound — including stop <= 0 boundary.
+    for i in 0..100u64 {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let stop: i64 = (state as i64) % 200; // [-199..199]
+        let expected = ref_range_with_step(stop);
+        let got = range_with_step(stop);
+        assert_eq!(got, expected, "iter {i}: range_with_step({stop}) gave {got}, expected {expected}");
+    }
+
+    println!("ok for-loop sweeps: 200 + 100 + 100");
+}
+"#;
+
+    let merged = format!("{transpiled}\n\n{driver}\n");
+    build_and_run("py_int_arith_runtime_for_loop", &merged).expect(
+        "runtime stratum: for-in-range desugaring must match CPython range semantics across the sweep",
+    );
+}

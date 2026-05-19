@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — `for-in-range` desugaring Runtime sweep (`C-PY-INT-ARITH` extension) (PMAT-271)
+
+Adds a 6th Runtime-stratum sweep to `crates/xpile/tests/runtime_strata.rs` exercising the PMAT-007 `for-in-range → while-loop` desugaring across all three range shapes:
+
+| Sub-sweep | Function | Samples | Reference |
+|-----------|----------|---------|-----------|
+| Single-arg `range(n)` | `for_sum(n)` | 200 (contiguous `0..200`) | `(0..n).sum()` for `n>0` else 0 |
+| Two-arg `range(a, b)` | `range_with_start(a, b)` | 100 (LCG pairs in `[-99..99]`) | `(a..b).sum()` for `a<b` else 0 |
+| Three-arg `range(0, stop, 2)` | `range_with_step(stop)` | 100 (LCG `stop` in `[-199..199]`) | `(0..stop).step_by(2).sum()` for `stop>0` else 0 |
+
+**Boundary coverage:** the LCG ranges deliberately include negative/empty cases — `range(a, b)` where `a >= b` and `range(0, stop, 2)` where `stop <= 0` must produce 0 (empty loop). Fixed-input tests in `transpile_e2e.rs` covered ~6 cases; this sweep covers 400 inputs with explicit empty-loop boundaries.
+
+**Runtime-stratum samples on C-PY-INT-ARITH after this PR:** 4096 (add) + 4096 (abs) + 24 (fib) + 1024 (gcd) + 200+100+100 (for-loop desugaring) + 1 (overflow) = **9641 oracle votes across 6 code paths**.
+
 ### Added — Contract-lane trait Runtime invariants (THIRD/FOURTH contracts to escape "demo fixture" status) (PMAT-270)
 
 Mirrors the PMAT-269 pattern across the proof-lane trait contracts: `C-XPILE-CONTRACT-BACKEND-TRAIT` and `C-XPILE-CONTRACT-FRONTEND-TRAIT` are now property-tested against the LIVE `xpile_core::default_session()`. Discharges the XPILE-CONTRACT-BACKEND-TRAIT-RUNTIME-001 and XPILE-CONTRACT-FRONTEND-TRAIT-RUNTIME-001 future-work tickets flagged in the `contract_*_trait_demo` fixture headers.
