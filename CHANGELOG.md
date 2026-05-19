@@ -7,6 +7,31 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Spec §28 + diamond-taxonomy.md sync to depth-13 ACROSS LAYERS reality (PMAT-309)
+
+After 4 Path β PRs (PMAT-305..308) added depths 12 and 13 ACROSS LAYERS, the spec had accumulated 2 more tiers of documentation rot. PMAT-309 syncs:
+
+**`docs/specifications/xpile-spec.md` §28:**
+
+- Substrate total: 47 → **51 wired Diamond equations**
+- Category families: 12+ → **14+** (added: ordered-ring, norm, lattice-universal-property)
+- Coverage state table extended with 2 new rows: depth-12, depth-13 (both ACROSS LAYERS)
+- `C-PY-INT-ARITH` deep-depth listing: 11 → **13 categories** (added PMAT-305 ORDERED RING, PMAT-307 ABSOLUTE VALUE / NORM)
+- `C-COMPILE-RUST-TO-PTX-MMA` listing: 11 → **13 categories** (added PMAT-306 MAX/MIN MONOTONICITY, PMAT-308 GLB/LUB UNIVERSAL PROPERTY)
+- Depth labels: `depth-10 / depth-11+` → `depth-12 / depth-13+`
+- CI gate count: 12 → **14 integration tests**
+
+**`docs/specifications/sub/diamond-taxonomy.md`:**
+
+- Coverage milestones extended with depth-12/13 rows
+- Substrate total: 47 → **51**
+- Ring family extended with PMAT-305 (ordered ring sign rules)
+- **New Norm family** subsection: PMAT-307 (absolute value as `(Int, |·|)` normed ring)
+- Lattice family extended with PMAT-306 (max/min monotonicity) and PMAT-308 (GLB/LUB universal property)
+- CI enforcement clause extended with depth-12/13 invariants
+
+No code changes — pure documentation alignment. Mirrors PMAT-296 / PMAT-297 / PMAT-304 sync pattern.
+
 ### Added — Diamond depth-13 ACROSS LAYERS: GLB/LUB-universal-property Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-308)
 
 **Path β extension.** Depth-13 was opened by PMAT-307 on PyIntArith (Layer 1). PMAT-308 extends depth-13 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) so the substrate now has **two contracts at depth-13+** across distinct taxonomy layers.

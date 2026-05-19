@@ -18,7 +18,7 @@ A Diamond theorem combines multiple Platinum properties into a **single algebrai
 
 ## Coverage milestones
 
-As of v0.1.0+ (PMAT-214..303), the substrate has:
+As of v0.1.0+ (PMAT-214..308), the substrate has:
 
 - **Diamond depth-1 UNIVERSAL** (12/12 contracts): every contract has at least one Diamond at one algebraic category.
 - **Diamond depth-2 UNIVERSAL** (12/12 contracts): every contract has at least two **distinct** Diamond categories. CI-enforced via PMAT-251.
@@ -31,8 +31,10 @@ As of v0.1.0+ (PMAT-214..303), the substrate has:
 - **Diamond depth-9 ACROSS LAYERS** (2/12 contracts): PMAT-298 (linear-order trichotomy on L1) + PMAT-299 (ordered-monoid on L5).
 - **Diamond depth-10 ACROSS LAYERS** (2/12 contracts): PMAT-300 (RING-distributivity / neg × mul bridge on L1) + PMAT-301 (additive-lattice / tropical-semiring axiom on L5).
 - **Diamond depth-11 ACROSS LAYERS** (2/12 contracts): PMAT-302 (integral-domain / no-zero-divisors on L1) + PMAT-303 (discrete-order / successor + no-gaps on L5).
+- **Diamond depth-12 ACROSS LAYERS** (2/12 contracts): PMAT-305 (ordered-ring sign rules on L1) + PMAT-306 (max/min monotonicity on L5).
+- **Diamond depth-13 ACROSS LAYERS** (2/12 contracts): PMAT-307 (absolute value / norm on L1) + PMAT-308 (GLB/LUB universal property on L5).
 
-**Substrate total: 47 wired Diamond equations across 12 contracts.**
+**Substrate total: 51 wired Diamond equations across 12 contracts.**
 
 ## Diamond categories by family
 
@@ -78,6 +80,15 @@ Captures ring-theoretic axioms — bridges between additive group and multiplica
 |---|---|---|---|
 | Ring distributivity (neg × mul) | PMAT-300 | C-PY-INT-ARITH | `(Int, +, *, neg)` with `(-a)*b = -(a*b)` — bridges PMAT-214 SEMIRING + PMAT-290 ABELIAN-GROUP into a full RING |
 | Integral domain | PMAT-302 | C-PY-INT-ARITH | `(Int, +, *)` with no zero divisors (`a*b = 0 → a = 0 ∨ b = 0`) — Mathlib's `IsDomain` / `NoZeroDivisors` (strengthens PMAT-300 RING; Z/6Z falsifies) |
+| Ordered ring (sign rules) | PMAT-305 | C-PY-INT-ARITH | `(Int, +, *, ≤)` sign rules: nonneg × nonneg ≥ 0, nonpos × nonpos ≥ 0, nonneg × nonpos ≤ 0, strictpos × strictpos > 0 — bridges PMAT-298 LINEAR-ORDER + PMAT-300 RING (Mathlib's `OrderedRing`; Z[i] falsifies) |
+
+### Norm family
+
+Captures `|·|`-style "size" / "magnitude" structures:
+
+| Category | Example PMAT | Contract | Carrier |
+|---|---|---|---|
+| Absolute value / norm | PMAT-307 | C-PY-INT-ARITH | `(Int, |·|)` as a NORMED RING: non-negativity + definiteness + triangle inequality + multiplicativity — Mathlib's `AbsoluteValue` typeclass |
 
 ### Lattice family
 
@@ -92,6 +103,8 @@ Captures `(S, ⊔, ⊓)` with absorption laws:
 | Order distributive lattice | PMAT-292 | C-PY-INT-ARITH | `(Int, min, max)` Int's natural ordering as a lattice |
 | Bounded lattice (top+bottom) | PMAT-293 | C-COMPILE-RUST-TO-PTX-MMA | explicit top (smem_budget) + bottom (0) elements with absorption |
 | Additive-lattice distributivity | PMAT-301 | C-COMPILE-RUST-TO-PTX-MMA | `(BoundedSmem, +, max, min)` tropical-semiring axiom: + distributes over max AND min (bridges PMAT-218 monoid + PMAT-291 distributive lattice) |
+| Max/min monotonicity | PMAT-306 | C-COMPILE-RUST-TO-PTX-MMA | max and min are MONOTONE in both arguments (a ≤ b → max a c ≤ max b c, etc.) — order preservation distinct from algebra |
+| GLB/LUB universal property | PMAT-308 | C-COMPILE-RUST-TO-PTX-MMA | CATEGORICAL definition of meet/join — min is the GREATEST lower bound, max is the LEAST upper bound (extremality, distinct from algebra/absorption/monotonicity) |
 
 ### Functor family
 
@@ -252,6 +265,8 @@ The `crates/xpile/tests/diamond_coverage.rs` integration test (PMAT-251) enforce
 - ≥2 contracts have ≥9 Diamonds (depth-9 ACROSS LAYERS, PMAT-298/299).
 - ≥2 contracts have ≥10 Diamonds (depth-10 ACROSS LAYERS, PMAT-300/301).
 - ≥2 contracts have ≥11 Diamonds (depth-11 ACROSS LAYERS, PMAT-302/303).
+- ≥2 contracts have ≥12 Diamonds (depth-12 ACROSS LAYERS, PMAT-305/306).
+- ≥2 contracts have ≥13 Diamonds (depth-13 ACROSS LAYERS, PMAT-307/308).
 
 A future regression that removes a `_diamond` from any YAML or fails to keep depth-N invariants will fire the gate.
 - ≥30 total wired Diamond equations.
