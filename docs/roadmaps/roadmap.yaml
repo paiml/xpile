@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-329
+  github_issue: null
+  item_type: task
+  title: 'PMAT-329: Diamond depth-4 ACROSS LAYERS BROADENED to 4 layers (OutcomeSilver structure extensionality on C-BASHRS-POSIX-IDEMPOTENCE)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T17:00:00Z
+  updated: 2026-05-23T17:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Continuing the BROADENING pivot. Add outcome_struct_extensionality_diamond Lean theorem to contracts/lean/Bashrs.lean — 4 conjuncts: field eq → record eq, record eq → field eq, decidable equality, self-equality. Mirror of PMAT-311 SUBTYPE EXTENSIONALITY on BoundedSmem, adapted for OutcomeSilver record. Wire as new equation in bashrs-posix-idempotence-v1.yaml. Tighten substrate_diamond_depth_4_opened gate from ≥3 to ≥4. Pushes Bashrs (Layer 2) from depth-3 to depth-4, broadening depth-4 ACROSS LAYERS from 3 contracts/3 layers to 4 contracts/4 layers (L1 + L2 + L4 + L5). Now depth-4 covers 4 of the 5 xpile taxonomy layers."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-328
   github_issue: null
   item_type: task

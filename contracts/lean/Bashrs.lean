@@ -483,4 +483,100 @@ theorem exit_code_constant_projection_diamond
   · intros p' a'
     rfl
 
+/-! ## PMAT-329 — FOURTH Diamond on C-BASHRS-POSIX-IDEMPOTENCE
+    (Layer 2 BROADENING DEPTH-4 ACROSS LAYERS): OutcomeSilver
+    STRUCTURE EXTENSIONALITY — `OutcomeSilver` is a record type
+    with field-extensional equality and decidable equality
+    (XPILE-REFINE-BASHRS-007).
+
+    **Broadens DEPTH-4 ACROSS LAYERS from 3 to 4 contracts.**
+    Previously depth-4 was on PyIntArith (L1, PMAT-247),
+    CompileRustToPtxMma (L5, PMAT-248), and FFI-CPYTHON-EXT (L4,
+    PMAT-288). PMAT-329 pushes Bashrs (Layer 2) from depth-3 to
+    depth-4, making depth-4 ACROSS LAYERS a 4-LAYER claim
+    (Layer 1 + Layer 2 + Layer 4 + Layer 5).
+
+    The 4 Diamond categories on C-BASHRS-POSIX-IDEMPOTENCE:
+    - PMAT-215: bashrs pure function
+    - python_pure_function: python pure function (companion)
+    - PMAT-238: exit_code constant projection
+    - **PMAT-329: OUTCOME STRUCTURE EXTENSIONALITY** ← depth-4
+
+    The categorical distinction is sharp:
+      - PMAT-215 / python pure function: DETERMINISM (same input
+        → same output)
+      - PMAT-238 exit_code projection: SUCCESS-PATH constant
+        (specific value claim)
+      - PMAT-329 STRUCTURE EXTENSIONALITY: SUBTYPE-LIKE structural
+        claim about the OutcomeSilver record itself — field
+        equality determines outcome equality, decidable equality
+        holds.
+
+    Mirror of PMAT-311 (SUBTYPE EXTENSIONALITY on BoundedSmem)
+    adapted for the OutcomeSilver record structure. Captures the
+    relationship between the record's fields (observable,
+    exit_code) and its identity.
+
+    Why this is genuinely orthogonal:
+      None of the prior 3 categories axiomatizes the RECORD-
+      STRUCTURE properties of OutcomeSilver. PMAT-215 was about
+      pure-function determinism; PMAT-238 was about a specific
+      field value; PMAT-329 captures HOW the fields determine
+      the record's identity.
+
+    For shell/python cross-domain transpilation, this matters:
+    an emitter that lowered OutcomeSilver through a path that
+    introduced "phantom fields" or stripped fields (e.g., a JSON
+    serialization that re-orders or drops the exit_code field
+    when observable is empty) would falsify (a) — equal fields
+    must imply equal records.
+
+    Status: discharged at v0.1.0 (PMAT-329). Tier: DIAMOND.
+    Broadens DEPTH-4 ACROSS LAYERS to 4 contracts on 4 layers. -/
+
+/--
+  **Diamond-tier refinement theorem** — `OutcomeSilver` admits
+  STRUCTURE EXTENSIONALITY (field equality ↔ record equality
+  plus decidable equality).
+
+  Combines four STRUCTURE-EXTENSIONALITY properties:
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality (congruence)
+  (c) Decidable equality on outcomes
+  (d) Self-equality (reflexivity)
+
+  Mirror of PMAT-311 SUBTYPE EXTENSIONALITY on BoundedSmem,
+  adapted for the OutcomeSilver record type (observable, exit_code).
+
+  Uses `OutcomeSilver.mk.injEq` (record extensionality) and the
+  derived `DecidableEq OutcomeSilver` instance.
+
+  An emitter that introduced phantom fields or stripped fields
+  during cross-domain transpilation (e.g., a JSON serialization
+  dropping exit_code when observable is empty) would falsify (a).
+
+  Status: **discharged at v0.1.0 (PMAT-329)**. Tier: DIAMOND.
+  Broadens DEPTH-4 ACROSS LAYERS to 4 contracts on 4 layers.
+-/
+theorem outcome_struct_extensionality_diamond
+    (o1 o2 : OutcomeSilver) :
+    -- (a) Field equality → record equality
+    (o1.observable = o2.observable ∧ o1.exit_code = o2.exit_code → o1 = o2)
+    -- (b) Record equality → field equality
+    ∧ (o1 = o2 → o1.observable = o2.observable ∧ o1.exit_code = o2.exit_code)
+    -- (c) Decidable equality
+    ∧ (o1 = o2 ∨ o1 ≠ o2)
+    -- (d) Self-equality (reflexivity)
+    ∧ (o1 = o1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2⟩
+    cases o1; cases o2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h]⟩
+  · by_cases h : o1 = o2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CBashrsPosixIdempotence

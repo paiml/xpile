@@ -7,6 +7,59 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-4 ACROSS LAYERS BROADENED to 4 layers: OutcomeSilver structure-extensionality Diamond on `C-BASHRS-POSIX-IDEMPOTENCE` (PMAT-329)
+
+**Continuing the BROADENING pivot.** PMAT-328 pushed depth-5 ACROSS LAYERS from 2→3 layers. PMAT-329 pushes depth-4 ACROSS LAYERS from 3→**4 layers**: pushes `C-BASHRS-POSIX-IDEMPOTENCE` (Layer 2) from depth-3 to depth-4, adding the Layer 2 representative.
+
+**Now depth-4 ACROSS LAYERS covers 4 of the 5 xpile taxonomy layers** (Layer 1 + Layer 2 + Layer 4 + Layer 5; only Layer 3 remains uncovered at depth-4).
+
+**The 4 Diamond categories on `C-BASHRS-POSIX-IDEMPOTENCE`:**
+
+1. PMAT-215: bashrs pure function (determinism)
+2. python_pure_function: companion determinism
+3. PMAT-238: exit_code constant projection (specific value)
+4. **PMAT-329: OUTCOME STRUCTURE EXTENSIONALITY** ← broadens depth-4
+
+**Why STRUCTURE EXTENSIONALITY is genuinely a NEW category:**
+
+Mirror of PMAT-311 (SUBTYPE EXTENSIONALITY on BoundedSmem), adapted for the `OutcomeSilver` record (`observable : String`, `exit_code : Int`):
+
+- **Field eq → record eq:** `o1.observable = o2.observable ∧ o1.exit_code = o2.exit_code → o1 = o2`
+- **Record eq → field eq** (congruence)
+- **Decidable equality:** `o1 = o2 ∨ o1 ≠ o2`
+- **Self-equality** (reflexivity)
+
+Distinct from the prior 3 categories:
+- PMAT-215 / python pure function: **DETERMINISM** (same input → same output)
+- PMAT-238 exit_code projection: **SUCCESS-PATH constant** (specific value claim)
+- PMAT-329: **SUBTYPE-LIKE structural** claim about the record itself
+
+**New Lean theorem:**
+
+```lean
+theorem outcome_struct_extensionality_diamond
+    (o1 o2 : OutcomeSilver) :
+    (o1.observable = o2.observable ∧ o1.exit_code = o2.exit_code → o1 = o2)
+    ∧ (o1 = o2 → o1.observable = o2.observable ∧ o1.exit_code = o2.exit_code)
+    ∧ (o1 = o2 ∨ o1 ≠ o2)
+    ∧ (o1 = o1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2⟩; cases o1; cases o2; simp_all
+  · intro h; exact ⟨by rw [h], by rw [h]⟩
+  · by_cases h : o1 = o2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+```
+
+**Falsification surface:** an emitter that introduces phantom fields or strips fields during cross-domain transpilation (e.g., a JSON serialization that re-orders or drops the `exit_code` field when `observable` is empty) would falsify property (a).
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_4_plus: 4` (was 3).
+- `substrate_diamond_depth_4_opened` gate **tightened to ≥ 4** to lock in the L1+L2+L4+L5 broadening.
+- Substrate Diamond totals: **68 wired Diamond theorems** across 12 contracts (was 67).
+
 ### Added — Diamond depth-5 ACROSS LAYERS BROADENED to 3 layers: refcount-delta sign-decomposition Diamond on `C-FFI-CPYTHON-EXT` (PMAT-328)
 
 **STRATEGIC PIVOT from "deeper same 2 contracts" to "wider substrate coverage".** Path β had been deepening PyIntArith (L1) + CompileRustToPtxMma (L5) to depth-21. PMAT-328 pivots to BROADENING: pushes `C-FFI-CPYTHON-EXT` (Layer 4) from depth-4 to depth-5, making **depth-5 ACROSS LAYERS a 3-LAYER claim** (Layer 1 + Layer 4 + Layer 5).
