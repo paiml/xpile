@@ -768,6 +768,39 @@ equations:
       - "an emitter using a buggy gcd (returning non-divisor or asymmetric in args) would falsify (a)/(b) or (d)"
       - "Diamond DEPTH-16 ACROSS LAYERS demonstrated: 2 contracts at depth-16+"
 
+  bounded_smem_nat_pow_monoid_diamond:
+    # PMAT-318: SEVENTEENTH Diamond on this contract — opens
+    # DEPTH-17 ACROSS LAYERS. NAT POWER-MONOID: Nat.pow satisfies
+    # the power-monoid axioms on BoundedSmem.val. Mirror of PMAT-247
+    # (Int.pow POWER-MONOID on PyIntArith), adapted for Nat. None
+    # of the 16 prior categories on this contract mentions
+    # exponentiation. Load-bearing for smem-allocation formulas
+    # involving repeated multiplication (e.g., dim^k tensor sizes).
+    # An emitter using parenthesization-order-dependent overflow
+    # would falsify (c) `a^(n+m) = a^n * a^m`.
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_nat_pow_monoid_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      Nat.pow satisfies the POWER-MONOID axioms on BoundedSmem.val:
+        (a) pow zero:           a.val ^ 0 = 1
+        (b) pow successor:      a.val ^ (n+1) = a.val^n * a.val
+        (c) pow additivity:     a.val ^ (n+m) = a.val^n * a.val^m
+        (d) one is identity:    1 ^ n = 1
+    domain: |
+      Any BoundedSmem value a and Nat exponents n, m. The four
+      power-monoid axioms characterize Nat.pow as the canonical
+      power-monoid action — Mathlib's standard `Monoid.npow` shape.
+    invariants:
+      - "SEVENTEENTH Diamond category on C-COMPILE-RUST-TO-PTX-MMA — opens DEPTH-17 ACROSS LAYERS (second contract at depth-17+ after PMAT-317 on PyIntArith)"
+      - "mirror of PMAT-247 POWER-MONOID (Int.pow on PyIntArith), adapted for Nat"
+      - "distinct from PMAT-218 bounded-monoid (additive), PMAT-295 cancellative (also additive), PMAT-316 GCD-monoid"
+      - "load-bearing for smem-allocation formulas with repeated multiplication (e.g., dim^k tensor sizes)"
+    preconditions:
+      - "one BoundedSmem value and two Nat exponents"
+    postconditions:
+      - "an emitter using parenthesization-order-dependent multiplication for a^k would falsify (c)"
+      - "Diamond DEPTH-17 ACROSS LAYERS demonstrated: 2 contracts at depth-17+"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)

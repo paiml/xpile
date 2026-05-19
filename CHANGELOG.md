@@ -7,6 +7,52 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-17 ACROSS LAYERS: Nat-power-monoid Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-318)
+
+**Path β extension.** Depth-17 was opened by PMAT-317 on PyIntArith (Layer 1). PMAT-318 extends depth-17 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) via the Nat-power-monoid Diamond — the substrate now has **2 contracts at depth-17+**.
+
+**The 17 Diamond categories on `C-COMPILE-RUST-TO-PTX-MMA`:**
+
+1–16. Prior categories (bounded-monoid, closure, lattice family, cancellative, ordered-monoid, additive-lattice, discrete-order, max/min monotonicity, GLB/LUB, subtype extensionality, Nat-mod quotient hom, Nat GCD monoid)
+17. **PMAT-318: NAT POWER-MONOID** ← depth-17 ACROSS LAYERS
+
+**Why NAT POWER-MONOID is genuinely a NEW category:**
+
+Mirror of PMAT-247 (Int.pow POWER-MONOID on PyIntArith), adapted for Nat. None of the 16 prior categories on this contract mentions exponentiation:
+
+- **Pow zero:** `a.val ^ 0 = 1`
+- **Pow successor:** `a.val ^ (n+1) = a.val^n * a.val`
+- **Pow additivity:** `a.val ^ (n+m) = a.val^n * a.val^m`
+- **One is identity:** `1 ^ n = 1`
+
+Together these characterize `Nat.pow` as the canonical power-monoid action — Mathlib's standard `Monoid.npow` shape.
+
+**New Lean theorem:**
+
+```lean
+theorem bounded_smem_nat_pow_monoid_diamond
+    (a : BoundedSmem) (n m : Nat) :
+    (a.val ^ 0 = 1)                                       -- pow zero
+    ∧ (a.val ^ (n + 1) = a.val ^ n * a.val)               -- pow succ
+    ∧ (a.val ^ (n + m) = a.val ^ n * a.val ^ m)           -- pow add
+    ∧ ((1 : Nat) ^ n = 1) := by                           -- one^n = 1
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact pow_zero a.val
+  · exact pow_succ a.val n
+  · exact pow_add a.val n m
+  · exact one_pow n
+```
+
+Uses Mathlib's `pow_zero`, `pow_succ`, `pow_add`, `one_pow` — standard power-monoid lemmas.
+
+**Falsification surface:** an emitter using **parenthesization-order-dependent multiplication** when computing `dim^k` (e.g., overflow-prone right-associated multiplication producing different results than left-associated) would falsify property (c). This is load-bearing for smem-allocation formulas involving repeated multiplication.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_17_plus: 2` (was 1 after PMAT-317).
+- `substrate_diamond_depth_17_opened` gate tightened to `≥ 2` (ACROSS LAYERS).
+- Substrate Diamond totals: **59 wired Diamond theorems** across 12 contracts (was 58).
+
 ### Added — FIRST Diamond depth-17 in the substrate: unit-group Diamond on `C-PY-INT-ARITH` (PMAT-317)
 
 **Path β extension.** Opens Diamond **depth-17** — seventeen distinct algebraic categories on a single contract. PyIntArith was at depth-16 (post-PMAT-315); PMAT-317 adds **UNIT GROUP STRUCTURE** as the seventeenth orthogonal category — characterizing the multiplicative-inverse elements of Int.

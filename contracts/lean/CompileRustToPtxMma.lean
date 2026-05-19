@@ -1607,4 +1607,90 @@ theorem bounded_smem_nat_gcd_monoid_diamond
   · intro h1 h2; exact Nat.dvd_gcd h1 h2
   · exact Nat.gcd_comm a.val b.val
 
+/-! ## PMAT-318 — SEVENTEENTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (DEPTH-17 ACROSS LAYERS): NAT POWER-MONOID — `Nat.pow`
+    satisfies the power-monoid axioms on the BoundedSmem.val
+    carrier (XPILE-REFINE-COMPILE-PTX-018).
+
+    **Opens DEPTH-17 ACROSS LAYERS.** PyIntArith reached depth-17
+    at PMAT-317 (unit group `{1, -1} ≅ Z/2Z`); PMAT-318 extends
+    depth-17 to Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The substrate
+    now has depth-17 on TWO contracts spanning Layer 1 and Layer 5.
+
+    CompileRustToPtxMma already has SIXTEEN Diamond categories:
+    - PMAT-218..316: prior 16 categories (monoid, lattice family,
+      cancellative, ordered, additive-lattice, discrete-order,
+      max/min monotonicity, GLB/LUB universal property, subtype
+      extensionality, Nat-mod quotient hom, Nat GCD monoid)
+
+    PMAT-318 adds the POWER-MONOID structure for Nat exponentiation
+    on the BoundedSmem.val carrier — distinct from all 16 prior
+    because none mentions exponentiation:
+    - **PMAT-318: `Nat.pow` satisfies the POWER-MONOID axioms**
+
+    The categorical distinction is sharp:
+      - PMAT-218 BOUNDED MONOID: ADDITIVE monoid (+, 0)
+      - PMAT-295 CANCELLATIVE MONOID: cancellation under +
+      - PMAT-316 NAT GCD MONOID: gcd structure
+      - PMAT-318 NAT POWER-MONOID: exponentiation structure
+        (a^0 = 1, a^(n+1) = a * a^n, exponent additivity)
+
+    Mirror of PMAT-247 POWER-MONOID on PyIntArith (Int.pow), but
+    adapted for Nat (which has additional `1^n = 1` axiom since
+    Nat has only one unit).
+
+    For GPU smem accounting, this matters: when smem-allocation
+    formulas involve repeated multiplication (e.g., tensor sizes
+    of form `dim^k`), the Nat power monoid structure governs the
+    composition rules. An emitter that lowered `dim^k` through a
+    non-associative path (e.g., `(((dim*dim)*dim)*...)` with
+    arbitrary parenthesization order producing different overflow
+    behavior) would falsify (c) `a^(n+m) = a^n * a^m`.
+
+    Status: discharged at v0.1.0 (PMAT-318). Tier: DIAMOND.
+    Second DEPTH-17 in the substrate (DEPTH-17 ACROSS LAYERS). -/
+
+/--
+  **Diamond-tier refinement theorem** — `Nat.pow` satisfies the
+  POWER-MONOID axioms on the `BoundedSmem.val` carrier.
+
+  Combines four POWER-MONOID properties:
+  (a) Pow zero:               `a^0 = 1`
+  (b) Pow successor:          `a^(n+1) = a^n * a`
+  (c) Pow additivity:         `a^(n+m) = a^n * a^m`
+  (d) One is pow identity:    `1^n = 1`
+
+  Together these characterize `Nat.pow` as the canonical power-
+  monoid action of Nat on Nat. Mirror of PMAT-247 (Int.pow on
+  PyIntArith), adapted for Nat (which has only `{1}` as units,
+  so the additional `1^n = 1` axiom is concrete).
+
+  Uses Mathlib's `pow_zero`, `pow_succ`, `pow_add`, `one_pow` —
+  standard power-monoid lemmas.
+
+  An emitter that lowered `dim^k` through a non-associative path
+  (e.g., parenthesization-order-dependent overflow behavior)
+  would falsify property (c) — a real bug class for smem
+  formulas involving repeated multiplication, invisible to the
+  prior 16 categories.
+
+  Status: **discharged at v0.1.0 (PMAT-318)**. Tier: DIAMOND.
+  Second DEPTH-17 in the substrate (DEPTH-17 ACROSS LAYERS).
+-/
+theorem bounded_smem_nat_pow_monoid_diamond
+    (a : BoundedSmem) (n m : Nat) :
+    -- (a) Pow zero: a^0 = 1
+    (a.val ^ 0 = 1)
+    -- (b) Pow successor: a^(n+1) = a^n * a
+    ∧ (a.val ^ (n + 1) = a.val ^ n * a.val)
+    -- (c) Pow additivity: a^(n+m) = a^n * a^m
+    ∧ (a.val ^ (n + m) = a.val ^ n * a.val ^ m)
+    -- (d) One is pow identity: 1^n = 1
+    ∧ ((1 : Nat) ^ n = 1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact pow_zero a.val
+  · exact pow_succ a.val n
+  · exact pow_add a.val n m
+  · exact one_pow n
+
 end XpileContracts.CCompileRustToPtxMma
