@@ -4,7 +4,9 @@
 //! `naga`. Layer 5 compile contracts live under
 //! `contracts/compile-rust-to-wgsl-*.yaml` (to author).
 
-use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, HwProfile, Target};
+use xpile_backend::{
+    Artifact, Backend, BackendConfig, BackendError, HwProfile, QuorumStatus, Target,
+};
 use xpile_meta_hir::Module;
 
 pub struct WgslBackend;
@@ -31,6 +33,9 @@ impl Backend for WgslBackend {
             ),
             sidecars: Vec::new(),
             citations: Vec::new(),
+            quorum_status: QuorumStatus::Single {
+                emitter: "xpile-wgsl-codegen-scaffold".to_string(),
+            },
         })
     }
 }

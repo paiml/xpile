@@ -13,7 +13,7 @@
 //! but with `#` instead of `//` — sh's comment syntax).
 
 use std::fmt::Write;
-use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, Target};
+use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_contracts::ContractId;
 use xpile_meta_hir::{Expr, Item, LoopKind, Module, QuotingStrategy, Stmt};
 
@@ -281,6 +281,9 @@ impl Backend for BashrsBackend {
             primary,
             sidecars: Vec::new(),
             citations: vec![ContractId::new("C-BASHRS-POSIX-IDEMPOTENCE")],
+            quorum_status: QuorumStatus::Single {
+                emitter: "bashrs-backend".to_string(),
+            },
         })
     }
 }
