@@ -7,6 +7,52 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-11 ACROSS LAYERS: discrete-order Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-303)
+
+**Path β extension.** Depth-11 was opened by PMAT-302 on PyIntArith (Layer 1). PMAT-303 extends depth-11 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) so the substrate now has **two contracts at depth-11+** across distinct taxonomy layers.
+
+**The 11 Diamond categories on `C-COMPILE-RUST-TO-PTX-MMA`:**
+
+1. PMAT-218: BOUNDED MONOID
+2. PMAT-287: CLOSURE
+3. PMAT-231: JOIN-SEMILATTICE
+4. PMAT-242: MEET-SEMILATTICE
+5. PMAT-248: LATTICE ABSORPTION
+6. PMAT-291: DISTRIBUTIVE LATTICE
+7. PMAT-293: BOUNDED LATTICE (top + bottom)
+8. PMAT-295: CANCELLATIVE MONOID
+9. PMAT-299: ORDERED MONOID
+10. PMAT-301: ADDITIVE-LATTICE DISTRIBUTIVITY
+11. **PMAT-303: DISCRETE ORDER** ← extends depth-11 ACROSS LAYERS
+
+**Why discrete-order is genuinely a NEW category:**
+
+- PMAT-299 (**ORDERED MONOID**) gives reflexivity + transitivity + monotonicity of `+` — but says **nothing about density vs discreteness**. `(Real, +, ≤)` satisfies all PMAT-299 axioms but is **dense**, not discrete.
+- PMAT-301 (**ADDITIVE-LATTICE**) gives `+` distributing over max/min — about ALGEBRA, not order topology.
+- Lattice family (PMAT-231/242/248/291/293) axiomatizes max/min — about LATTICE OPERATIONS, not the structure of the underlying order.
+- PMAT-303 (**DISCRETE ORDER**) axiomatizes that `(BoundedSmem.val, <)` has the same structure as `(Nat, <)`: every element has a unique successor with no element strictly between (a < b → a + 1 ≤ b), and the strict order is irreflexive.
+
+**New Lean theorem:**
+
+```lean
+theorem bounded_smem_discrete_order_diamond (a b : BoundedSmem) :
+    (a.val < a.val + 1)                          -- successor
+    ∧ (a.val < b.val → a.val + 1 ≤ b.val)        -- no-gaps
+    ∧ ¬ (a.val < a.val)                          -- irreflexivity
+    ∧ (a.val < b.val + 1 ↔ a.val ≤ b.val) := by  -- successor-iff
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> omega
+```
+
+Proved by `omega` — linear arithmetic on Nat with `< / ≤ / + 1` is decidable and handled natively.
+
+**Falsification surface:** an emitter that lowered smem-bytes through a **floating-point path** would violate the no-gaps axiom (b) — between any two distinct floats there are infinitely many other floats, falsifying discreteness. This bug class slips past all prior 10 categories — only DISCRETE ORDER catches order-topology violations.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_11_plus: 2` (was 1 after PMAT-302).
+- `substrate_diamond_depth_11_opened` gate tightened to `≥ 2` (ACROSS LAYERS).
+- Substrate Diamond totals: **47 wired Diamond theorems** across 12 contracts (was 46).
+
 ### Added — FIRST Diamond depth-11 in the substrate: integral-domain Diamond on `C-PY-INT-ARITH` (PMAT-302)
 
 **Path β extension.** Opens Diamond **depth-11** — eleven distinct algebraic categories on a single contract. PyIntArith was at depth-10 (post-PMAT-300); PMAT-302 adds **INTEGRAL DOMAIN** as the eleventh orthogonal category.

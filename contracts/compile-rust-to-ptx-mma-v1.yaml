@@ -538,6 +538,44 @@ equations:
       - "an emitter using path-dependent worst-case reservation would falsify (a) or (b)"
       - "Diamond DEPTH-10 ACROSS LAYERS demonstrated: 2 contracts at depth-10+"
 
+  bounded_smem_discrete_order_diamond:
+    # PMAT-303: ELEVENTH Diamond on this contract — opens DEPTH-11
+    # ACROSS LAYERS. DISCRETE-ORDER axioms on (BoundedSmem.val, <):
+    # successor exists, no-gaps (a < b → a+1 ≤ b), irreflexivity,
+    # successor-iff (a < b+1 ↔ a ≤ b). Categorically orthogonal to
+    # all 10 prior categories:
+    #   - PMAT-299 ordered-monoid: gives reflexivity + transitivity
+    #     but says nothing about density vs discreteness.
+    #   - Lattice family (PMAT-231/242/248/291/293): axiomatizes
+    #     max/min but not order TOPOLOGY.
+    # (Real, ≤) satisfies PMAT-299 but is DENSE, not discrete.
+    # PyIntArith reached depth-11 at PMAT-302 (integral domain);
+    # PMAT-303 extends depth-11 to Layer 5 via discrete-order.
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_discrete_order_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      (BoundedSmem.val, <) is a DISCRETE ORDER:
+        (a) successor:        a.val < a.val + 1
+        (b) no-gaps:          a.val < b.val → a.val + 1 ≤ b.val
+        (c) irreflexivity:    ¬ (a.val < a.val)
+        (d) successor-iff:    a.val < b.val + 1 ↔ a.val ≤ b.val
+    domain: |
+      Any two BoundedSmem values, on the underlying Nat .val
+      projection with the standard < / ≤ order. The four
+      properties together axiomatize the DISCRETE-ORDER structure —
+      distinguishing (Nat, <) from dense orders like (Q, <)
+      or (Real, <).
+    invariants:
+      - "ELEVENTH Diamond category on C-COMPILE-RUST-TO-PTX-MMA — opens DEPTH-11 ACROSS LAYERS (second contract at depth-11+ after PMAT-302 on PyIntArith)"
+      - "distinct from PMAT-299 ordered monoid: ordered-monoid gives reflexivity + transitivity but is silent on density vs discreteness"
+      - "distinct from PMAT-231/242/248/291/293 lattice family: lattice axiomatizes max/min, not order topology"
+      - "load-bearing for floating-point-smem emitters: an emitter that lowered smem-bytes through a float path would falsify (b) since between two distinct floats there are infinitely many other floats"
+    preconditions:
+      - "two BoundedSmem values; theorem stated on Nat .val projection"
+    postconditions:
+      - "an emitter using floating-point smem accounting would falsify the no-gaps axiom (b)"
+      - "Diamond DEPTH-11 ACROSS LAYERS demonstrated: 2 contracts at depth-11+"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)
