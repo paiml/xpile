@@ -1005,6 +1005,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "latex-contract-frontend",
  "xpile-backend",
  "xpile-contract-backend",
  "xpile-contract-frontend",

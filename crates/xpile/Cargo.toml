@@ -30,3 +30,7 @@ clap           = { version = "4", features = ["derive"] }
 xpile-contract-backend  = { workspace = true }
 xpile-contract-frontend = { workspace = true }
 xpile-contracts         = { workspace = true }
+# PMAT-274: notation_runtime.rs parses notation_demo.tex through the
+# real LatexContractFrontend (the test asserts the C-NOTATION three-
+# form equivalence claim against on-disk evidence).
+latex-contract-frontend = { workspace = true }

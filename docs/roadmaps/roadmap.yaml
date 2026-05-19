@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-274
+  github_issue: null
+  item_type: task
+  title: 'PMAT-274: equation + align math envs in LatexContractFrontend + FIFTH contract Runtime escape (C-NOTATION-LATEX-MATH-TO-EQUATION-V1)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T14:30:00Z
+  updated: 2026-05-22T14:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Extend crates/latex-contract-frontend/src/lib.rs scanner with EquationEnv and AlignEnv token branches for \\begin{equation}...\\end{equation} and \\begin{align}...\\end{align} (single-equation form; numbered sub-equations flagged XPILE-LATEX-PARSE-ALIGN-COLUMNS future). Add 5 unit tests (16 total). Add crates/xpile/tests/notation_runtime.rs with 2 tests: c_notation_runtime_three_forms_produce_equal_formula (parse notation_demo.tex through LatexContractFrontend, assert 3 equations all with formula a^2 + b^2 = c^2) and c_notation_runtime_parse_is_deterministic_on_notation_demo_fixture (parse_idempotency on on-disk fixture). Add latex-contract-frontend as dev-dependency of xpile. C-NOTATION-LATEX-MATH-TO-EQUATION-V1 becomes the FIFTH contract to escape demo-fixture status. audit-design.md §4 residual: 6 -> 5 contracts."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-273
   github_issue: null
   item_type: task

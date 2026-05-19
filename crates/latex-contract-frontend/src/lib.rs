@@ -11,8 +11,9 @@
 //! The parser is a hand-rolled scanner over a small subset of LaTeX —
 //! NOT a general LaTeX parser. Out of scope at v0.1.0:
 //!
-//! * Math environments (`equation`, `align`, `gather`) — only `\[...\]`
-//!   and `$...$` delimiters are handled.
+//! * Math environments (`equation`, `align`) are HANDLED as of PMAT-274
+//!   (single-equation form only — no numbered sub-equations, no
+//!   alignment columns). `gather` is still future work.
 //! * Theorem-class environments (`theorem`, `lemma`, `proof`) — no
 //!   `proof_obligations` are produced.
 //! * Macro expansion, comments-with-special-chars, escaped delimiters.
@@ -54,6 +55,12 @@ impl ContractFrontend for LatexContractFrontend {
                 Token::DisplayMath(formula) => {
                     insert_math_equation(&mut block, &mut eq_index, formula, "display");
                 }
+                Token::EquationEnv(formula) => {
+                    insert_math_equation(&mut block, &mut eq_index, formula, "equation");
+                }
+                Token::AlignEnv(formula) => {
+                    insert_math_equation(&mut block, &mut eq_index, formula, "align");
+                }
                 Token::XpileContract(id) => {
                     block.citations.push(ContractId::new(id));
                 }
@@ -89,6 +96,10 @@ fn insert_math_equation(
 enum Token {
     InlineMath(String),
     DisplayMath(String),
+    /// PMAT-274: `\begin{equation} ... \end{equation}`.
+    EquationEnv(String),
+    /// PMAT-274: `\begin{align} ... \end{align}` (single-equation form).
+    AlignEnv(String),
     XpileContract(String),
     Cite(String),
 }
@@ -136,6 +147,35 @@ impl<'a> Scanner<'a> {
                 }
                 // Unterminated display math — treat as no token, end
                 // of input.
+                return None;
+            }
+
+            // PMAT-274: equation environment.
+            //   \begin{equation} ... \end{equation}
+            if rest.starts_with("\\begin{equation}") {
+                self.advance("\\begin{equation}".len());
+                if let Some(end) = self.rest().find("\\end{equation}") {
+                    let formula = self.rest()[..end].to_string();
+                    self.advance(end + "\\end{equation}".len());
+                    return Some(Token::EquationEnv(formula));
+                }
+                // Unterminated equation env — stop scanning.
+                return None;
+            }
+
+            // PMAT-274: align environment (single-equation form).
+            //   \begin{align} ... \end{align}
+            // Numbered sub-equations (`\\` separators inside the
+            // environment) are NOT individually extracted at v0.1.0+ —
+            // the entire body is one EquationsBlock entry. Documented
+            // as XPILE-LATEX-PARSE-ALIGN-COLUMNS future work.
+            if rest.starts_with("\\begin{align}") {
+                self.advance("\\begin{align}".len());
+                if let Some(end) = self.rest().find("\\end{align}") {
+                    let formula = self.rest()[..end].to_string();
+                    self.advance(end + "\\end{align}".len());
+                    return Some(Token::AlignEnv(formula));
+                }
                 return None;
             }
 
@@ -316,6 +356,71 @@ A display math span:
     #[test]
     fn unterminated_inline_math_does_not_panic() {
         let block = parse(r"$unterminated inline");
+        assert!(block.equations.is_empty());
+    }
+
+    #[test]
+    fn equation_env_is_extracted() {
+        let src = r"\begin{equation}
+  a^2 + b^2 = c^2
+\end{equation}";
+        let block = parse(src);
+        assert_eq!(block.equations.len(), 1);
+        let (_, eq) = block.equations.iter().next().unwrap();
+        assert_eq!(eq.formula, "a^2 + b^2 = c^2");
+    }
+
+    #[test]
+    fn align_env_is_extracted() {
+        let src = r"\begin{align}
+  a^2 + b^2 = c^2
+\end{align}";
+        let block = parse(src);
+        assert_eq!(block.equations.len(), 1);
+        let (_, eq) = block.equations.iter().next().unwrap();
+        assert_eq!(eq.formula, "a^2 + b^2 = c^2");
+    }
+
+    /// PMAT-274: the load-bearing claim of C-NOTATION-LATEX-MATH-TO-EQUATION:
+    /// `\[ ... \]`, `\begin{equation} ... \end{equation}`, and
+    /// `\begin{align} ... \end{align}` produce structurally-equal
+    /// `Equation` entries on the same `formula` input. This test is the
+    /// concrete observed evidence the Lean theorem
+    /// `display_math_eq_equation_env_eq_align_env` (PMAT-057) models.
+    #[test]
+    fn three_display_math_forms_produce_equal_formulas() {
+        let src = r"\[ a^2 + b^2 = c^2 \]
+\begin{equation}
+  a^2 + b^2 = c^2
+\end{equation}
+\begin{align}
+  a^2 + b^2 = c^2
+\end{align}";
+        let block = parse(src);
+        assert_eq!(
+            block.equations.len(),
+            3,
+            "expected 3 equations from the three forms"
+        );
+        let formulas: Vec<&str> = block
+            .equations
+            .values()
+            .map(|e| e.formula.as_str())
+            .collect();
+        for f in &formulas {
+            assert_eq!(*f, "a^2 + b^2 = c^2", "form's formula differs: {f:?}");
+        }
+    }
+
+    #[test]
+    fn unterminated_equation_env_does_not_panic() {
+        let block = parse(r"\begin{equation} unterminated content");
+        assert!(block.equations.is_empty());
+    }
+
+    #[test]
+    fn unterminated_align_env_does_not_panic() {
+        let block = parse(r"\begin{align} unterminated content");
         assert!(block.equations.is_empty());
     }
 

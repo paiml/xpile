@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — `equation` + `align` math environments in `LatexContractFrontend` + FIFTH contract Runtime escape (`C-NOTATION-LATEX-MATH-TO-EQUATION-V1`) (PMAT-274)
+
+Two bundled changes (one PR because they're load-bearing for each other):
+
+**1. Parser extension** — `crates/latex-contract-frontend/src/lib.rs` gains two new token types `EquationEnv` and `AlignEnv` plus scanner branches for `\begin{equation}...\end{equation}` and `\begin{align}...\end{align}` (single-equation form). Both emit `Equation` entries with the trimmed body as `formula`, keyed `eq_equation_N` / `eq_align_N`. Numbered sub-equations inside `align` (`\\` separators) are intentionally NOT split — entire body is one entry; flagged as XPILE-LATEX-PARSE-ALIGN-COLUMNS future work.
+
+**2. C-NOTATION Runtime fixture** — `crates/xpile/tests/notation_runtime.rs` (new file, 2 tests):
+
+- `c_notation_runtime_three_forms_produce_equal_formula` — parses the canonical `notation_demo.tex` (which exercises `\[ \]`, `equation`, `align` on the formula `a^2 + b^2 = c^2`) through the live `LatexContractFrontend`. Asserts exactly 3 equations are extracted AND all 3 have byte-identical `formula` strings AND the value is `a^2 + b^2 = c^2`. This is the **Runtime-stratum oracle vote** for the contract's load-bearing claim that the three forms are equivalent — the concrete observed-evidence counterpart to the Lean theorem `display_math_eq_equation_env_eq_align_env` (PMAT-057) and its Kani BMC mirror (PMAT-059).
+- `c_notation_runtime_parse_is_deterministic_on_notation_demo_fixture` — two parses of the same on-disk fixture produce byte-identical `EquationsBlock`. Anchors the `parse_idempotency` claim to real content (vs. synthetic LaTeX in `trait_runtime_properties.rs`).
+
+**5 new unit tests** in `latex-contract-frontend`: `equation_env_is_extracted`, `align_env_is_extracted`, `three_display_math_forms_produce_equal_formulas`, `unterminated_equation_env_does_not_panic`, `unterminated_align_env_does_not_panic`. Total: 16 (was 11).
+
+**Build:** `xpile/Cargo.toml` gains `latex-contract-frontend` as `[dev-dependencies]` so `notation_runtime.rs` can call into it.
+
+**Audit-design.md §4 residual:** demo-fixture count drops from **6 → 5** contracts. `C-NOTATION-LATEX-MATH-TO-EQUATION-V1` becomes the FIFTH contract to escape (after C-PY-INT-ARITH and the four trait contracts). The remaining 5 are blocked on upstream feature work (Rust frontend, Lean toolchain, CPython FFI, list types, §29 specialist emitters).
+
 ### Changed — xpile-spec.md §29 implementation roadmap updated with PMAT-261..266 status (PMAT-273)
 
 Updates the Section 29 implementation roadmap to reflect what's actually shipped vs. pending. The original roadmap (written at PMAT-259) listed `PMAT-26X+`, `PMAT-26Y+`, `PMAT-26Z+` as undifferentiated future work; reality is that PMAT-261..266 shipped the routing layer + adversarial tests over the past several PRs.
