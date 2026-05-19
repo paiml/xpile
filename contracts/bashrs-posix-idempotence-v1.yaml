@@ -114,6 +114,17 @@ equations:
     # PMAT-162: Silver-tier refinement theorem.
     lean_theorem: "XpileContracts.CBashrsPosixIdempotence.subprocess_run_eq_shell_run_silver"
     lean_file: "contracts/lean/Bashrs.lean"
+    # PMAT-281: Property-specific Silver-tier Kani harness. Bronze
+    # (lit_str_render_is_identity) proved byte-equality on a 4-byte
+    # LitStr payload — would not catch a bashrs codegen that
+    # diverged on exit_code (set -e early-exit on non-fatal
+    # warnings). Silver adds OutcomeSilver { stdout, exit_code }
+    # and proves Python subprocess.run + bashrs-emitted shell
+    # produce identical outcome on identical inputs. Companion
+    # harnesses exit_code_preserved_silver + stdout_preserved_silver
+    # isolate each axis.
+    kani_harness: "subprocess_run_equals_shell_run_silver"
+    kani_file: "contracts/kani/bashrs.rs"
 
   subprocess_run_eq_shell_run_gold:
     # PMAT-193 / XPILE-REFINE-BASHRS-002: EIGHTH Gold-tier

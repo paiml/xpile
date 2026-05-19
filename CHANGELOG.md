@@ -7,6 +7,45 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Property-specific Silver-tier Kani harnesses for `C-BASHRS-POSIX-IDEMPOTENCE` (Path α extension, sixth contract) (PMAT-281)
+
+Extends Path α to a sixth contract. C-BASHRS-POSIX-IDEMPOTENCE was NOT one of the original 5 Path α targets (its Runtime stratum already had rich coverage via `bashrs_realistic_demo.sh`), but its Kani harness `lit_str_render_is_identity` was still a byte-identity placeholder. This PR lifts it to Silver-tier matching Lean's `subprocess_run_eq_shell_run_silver` (PMAT-162).
+
+**Why this matters beyond Path α:** the cross-domain claim has TWO axes — stdout content AND exit code. Bronze byte-payload model only captured one (stdout, via LitStr identity). A buggy bashrs codegen that injects `set -e` early-exit on non-fatal warnings would diverge on exit_code while Python `subprocess.run` would complete normally. Bronze couldn't catch this; Silver makes exit_code an explicit second axis.
+
+**Silver-tier model:**
+
+```rust
+struct OutcomeSilver { stdout: [u8; 4], exit_code: i32 }
+fn python_subprocess_run_silver(stdout, exit_code) -> OutcomeSilver
+fn bashrs_shell_run_silver(stdout, exit_code) -> OutcomeSilver
+```
+
+**Three new `#[kani::proof]` functions:**
+
+| Proof | Catches |
+|-------|---------|
+| `subprocess_run_equals_shell_run_silver` | Python + bashrs paths producing different (stdout, exit_code) on identical inputs |
+| `exit_code_preserved_silver` | `set -e` early-exit on warnings (the load-bearing case Bronze missed) |
+| `stdout_preserved_silver` | stdout drift independent of exit_code |
+
+**Contract YAML wiring**
+
+`contracts/bashrs-posix-idempotence-v1.yaml` `exit_code_consistency` equation now has `kani_harness:` + `kani_file:` pointing at the new Silver proof.
+
+**Path α extension recap:**
+
+| Contract | PMAT | Silver tier |
+|----------|------|-------------|
+| C-FFI-CPYTHON-EXT-V1 | 275 | per-field byte equality |
+| C-COMPILE-RUST-TO-PTX-MMA | 276 | smem_bytes ≤ 48 KiB inequality (FIRST non-`rfl`) |
+| C-XLATE-RUST-FN-TO-LEAN-THM-V1 | 277 | concat-order `binders = generics ++ args` |
+| C-XLATE-LEAN-TO-RUST-V1 | 278 | symmetric mirror of 277 |
+| C-XLATE-PY-LIST-TO-VEC-V1 | 279 | polymorphism via element-type tag |
+| C-BASHRS-POSIX-IDEMPOTENCE | **281** | **2-axis cross-domain (stdout + exit_code)** |
+
+6 contracts now have property-specific Silver-tier Kani proofs alongside their Bronze baselines.
+
 ### Added — `PtxBackend::new_with_matmul_specialist` — end-to-end §29 multi-emitter validation in production code (PMAT-280)
 
 Path γ — adds a constructor that proves the §29 routing layer is end-to-end usable in production, not just in mock tests (PMAT-263) or with single-emitter scaffolds (PMAT-264).

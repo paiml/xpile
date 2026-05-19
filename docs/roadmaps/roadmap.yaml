@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-281
+  github_issue: null
+  item_type: task
+  title: 'PMAT-281: Property-specific Silver-tier Kani harnesses for C-BASHRS-POSIX-IDEMPOTENCE (Path α extension, sixth contract)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T18:00:00Z
+  updated: 2026-05-22T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Extend contracts/kani/bashrs.rs from Bronze byte-identity (lit_str_render_is_identity) to Silver-tier 2-axis cross-domain model. Add OutcomeSilver { stdout: [u8; 4], exit_code: i32 } plus python_subprocess_run_silver + bashrs_shell_run_silver. Three new Kani proofs: subprocess_run_equals_shell_run_silver (Python + bashrs paths produce identical OutcomeSilver on identical inputs), exit_code_preserved_silver (catches set -e early-exit on warnings), stdout_preserved_silver. Wire kani_harness on exit_code_consistency equation in contracts/bashrs-posix-idempotence-v1.yaml. Path α extension — 6 contracts now have Silver-tier property-specific Kani proofs."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-280
   github_issue: null
   item_type: task
