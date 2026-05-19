@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-264
+  github_issue: null
+  item_type: task
+  title: 'PMAT-264: Refactor PtxBackend to use MultiEmitterBackend internally (validates Section 29 architecture in production)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-21T11:30:00Z
+  updated: 2026-05-21T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "xpile-ptx-codegen::PtxBackend refactored to wrap MultiEmitterBackend with a ScaffoldPtxEmitter in the general slot. PtxBackend::new() constructor + Default impl. xpile-core call site updated. 3 new unit tests verify wrapper drives same behavior as direct impl. Validates Section 29 routing layer against production code. Sets precedent for WgslBackend / SpirvBackend / BashrsBackend refactors."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-263
   github_issue: null
   item_type: task

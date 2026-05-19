@@ -81,7 +81,7 @@ pub fn default_session() -> TranspileSession {
     // Code lane: backends
     s.register_backend(Arc::new(xpile_rust_codegen::RustBackend));
     s.register_backend(Arc::new(xpile_ruchy_codegen::RuchyBackend));
-    s.register_backend(Arc::new(xpile_ptx_codegen::PtxBackend));
+    s.register_backend(Arc::new(xpile_ptx_codegen::PtxBackend::new()));
     s.register_backend(Arc::new(xpile_wgsl_codegen::WgslBackend));
     s.register_backend(Arc::new(xpile_lean_codegen::LeanBackend));
     // PMAT-037 / XPILE-BASHRS-MERGER-001: pairs with bashrs-frontend
