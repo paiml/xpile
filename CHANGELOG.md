@@ -7,6 +7,55 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-18 in the substrate: Int.sign monoid-homomorphism Diamond on `C-PY-INT-ARITH` (PMAT-320)
+
+**Path β extension.** Opens Diamond **depth-18** — eighteen distinct algebraic categories on a single contract. PyIntArith was at depth-17 (post-PMAT-317); PMAT-320 adds **SIGN FUNCTION MONOID HOMOMORPHISM** as the eighteenth orthogonal category.
+
+**The 18 Diamond categories on `C-PY-INT-ARITH`:**
+
+1–17. Prior categories (semiring, Euclidean, shift, power, AND, abelian-group, lattice, divisibility, linear-order, ring, integral domain, ordered ring, norm, Nat-cast hom, emod quotient hom, GCD-monoid + Bézout/PID, unit group)
+18. **PMAT-320: SIGN FUNCTION MONOID HOMOMORPHISM** ← FIRST DEPTH-18
+
+**Why SIGN FUNCTION is genuinely a NEW category — orthogonal to ALL 17 prior:**
+
+The sign function `Int.sign : Int → {-1, 0, 1}` is a SURJECTIVE multiplicative monoid homomorphism. None of the prior 17 categories axiomatizes the sign as a separate operation with its own monoid-homomorphism structure:
+
+- PMAT-307 (**ABSOLUTE VALUE / NORM**): captures "size" via `|·|`.
+- PMAT-317 (**UNIT GROUP**): characterizes the multiplicative-inverse elements `{1, -1} ≅ Z/2Z`.
+- PMAT-320 (**SIGN FUNCTION**): characterizes the **MAP** `Int → {-1, 0, 1}` as a SURJECTIVE monoid hom.
+
+Together with `Int.sign a * |a| = a`, these three are the three orthogonal pieces of the **`Int = sign × magnitude`** decomposition:
+
+- **Preserves multiplication:** `Int.sign (a * b) = Int.sign a * Int.sign b`
+- **Respects negation:** `Int.sign (-a) = -Int.sign a`
+- **Preserves zero:** `Int.sign 0 = 0`
+- **Preserves one:** `Int.sign 1 = 1`
+
+**New Lean theorem:**
+
+```lean
+theorem int_sign_monoid_hom_diamond (a b : Int) :
+    (Int.sign (a * b) = Int.sign a * Int.sign b)       -- preserves *
+    ∧ (Int.sign (-a) = -Int.sign a)                    -- respects neg
+    ∧ (Int.sign 0 = 0)                                 -- preserves 0
+    ∧ (Int.sign 1 = 1) := by                           -- preserves 1
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.sign_mul a b
+  · exact Int.sign_neg a
+  · rfl
+  · rfl
+```
+
+Uses Mathlib's `Int.sign_mul`, `Int.sign_neg`; the `sign 0 = 0` and `sign 1 = 1` are definitionally true (`rfl`).
+
+**Falsification surface:** an emitter that computed `sign(a * b)` directly via the result's bit pattern (rather than via `sign(a) * sign(b)`) could overflow on `Int.minValue * Int.minValue` (or similar) and produce wrong sign — falsifying property (a). This bug class is invisible to PMAT-307 ABS (which captures magnitude) and PMAT-317 UNIT GROUP (which captures invertibles), neither mentioning the sign map.
+
+**Reporter + gate updates:**
+
+- `xpile diamond --json` extended with `depth-17` discrete label + `depth-18+` aggregate.
+- `substrate_diamond_depth_18_opened` gate test added (≥ 1 at depth-18+).
+- Substrate Diamond totals: **60 wired Diamond theorems** across 12 contracts (was 59).
+
 ### Changed — Spec §28 + diamond-taxonomy.md sync to depth-17 ACROSS LAYERS reality (PMAT-319)
 
 After 4 Path β PRs (PMAT-315..318) added depths 16 and 17 ACROSS LAYERS — including the **FIRST UNIVERSAL-OBJECT-WITH-CONSTRUCTIVE-WITNESS** claim (PMAT-315/316: gcd-monoid + Bézout / PID), the **FIRST UNIT-GROUP** claim (PMAT-317: `{1, -1} ≅ Z/2Z`), and the depth-17 Nat power-monoid mirror (PMAT-318) — the spec accumulated 2 more tiers of documentation rot. PMAT-319 syncs:

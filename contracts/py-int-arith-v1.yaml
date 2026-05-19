@@ -1178,6 +1178,42 @@ equations:
       - "an emitter that uses overflow-prone unary minus (e.g., bitwise-not + 1 on minValue) would falsify (c)"
       - "Diamond DEPTH-17 opened — 1 contract at depth-17+"
 
+  int_sign_monoid_hom_diamond:
+    # PMAT-320: EIGHTEENTH Diamond on this contract — opens FIRST
+    # DEPTH-18 in the substrate. SIGN FUNCTION MONOID HOMOMORPHISM:
+    # Int.sign is a multiplicative monoid hom `(Int, *) →
+    # ({-1, 0, 1}, *)`. Categorically orthogonal to all 17 prior
+    # categories — none axiomatizes the SIGN as a separate
+    # operation with monoid-hom structure. Together with PMAT-307
+    # (abs/norm) and PMAT-317 (unit group), this is the third
+    # orthogonal piece of the `Int = sign × magnitude`
+    # decomposition. Load-bearing for dispatch optimizations using
+    # sign comparisons: an emitter computing sign(a*b) via result
+    # bit pattern (rather than sign(a)*sign(b)) could overflow on
+    # Int.minValue * Int.minValue, falsifying (a).
+    lean_theorem: "XpileContracts.CPyIntArith.int_sign_monoid_hom_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      Int.sign is a multiplicative monoid hom (Int, *) → ({-1, 0, 1}, *):
+        (a) preserves multiplication:  Int.sign (a*b) = Int.sign a * Int.sign b
+        (b) respects negation:         Int.sign (-a) = -(Int.sign a)
+        (c) preserves zero:            Int.sign 0 = 0
+        (d) preserves one (identity):  Int.sign 1 = 1
+    domain: |
+      Any two Int values. The four properties axiomatize Int.sign
+      as the canonical SURJECTIVE multiplicative monoid homomorphism
+      Int → {-1, 0, 1}.
+    invariants:
+      - "EIGHTEENTH Diamond category on C-PY-INT-ARITH — opens FIRST DEPTH-18 in the substrate"
+      - "FIRST claim characterizing Int.sign as a multiplicative monoid HOMOMORPHISM"
+      - "third orthogonal piece of `Int = sign × magnitude` decomposition (with PMAT-307 abs and PMAT-317 unit group)"
+      - "load-bearing for sign-based dispatch optimizations: sign(a*b) via result bit pattern could overflow, falsifying (a)"
+    preconditions:
+      - "two Int values; theorem stated on Int.sign, Int.mul, Int.neg"
+    postconditions:
+      - "an emitter computing sign(a*b) directly via bit pattern of a*b could falsify (a) on overflow"
+      - "Diamond DEPTH-18 opened — 1 contract at depth-18+"
+
 proof_obligations:
   - type: precondition
     property: operands are Python int (not int-subclass, not bool-as-int)
