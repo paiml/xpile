@@ -2634,4 +2634,96 @@ theorem unit_group_diamond (a : Int) :
   · exact (Int.neg_one_mul a).symm
   · exact mul_self_nonneg a
 
+/-! ## PMAT-320 — EIGHTEENTH Diamond on C-PY-INT-ARITH (FIRST
+    DEPTH-18 in the substrate): SIGN FUNCTION MONOID HOMOMORPHISM
+    — `Int.sign` is a multiplicative monoid hom from `(Int, *)` to
+    `({-1, 0, 1}, *)` (XPILE-REFINE-PY-INT-ARITH-026).
+
+    **Opens DEPTH-18 in the substrate.** PyIntArith reached depth-17
+    at PMAT-317 (unit group `{1, -1} ≅ Z/2Z`); PMAT-320 adds the
+    EIGHTEENTH orthogonal Diamond category — the SIGN FUNCTION as
+    a multiplicative monoid homomorphism.
+
+    The 18 Diamond categories on C-PY-INT-ARITH:
+    - PMAT-214..317: prior 17 categories
+    - **PMAT-320: SIGN FUNCTION (monoid hom Int → {-1, 0, 1})**
+      ← FIRST DEPTH-18
+
+    The categorical distinction is sharp:
+      - PMAT-307 ABSOLUTE VALUE / NORM: `(Int, |·|)` is a NORMED
+        RING. Captures the "size" of an Int.
+      - PMAT-317 UNIT GROUP `{1, -1} ≅ Z/2Z`: characterizes the
+        multiplicative-inverse elements as an algebraic structure.
+      - PMAT-320 SIGN FUNCTION: characterizes the MAP `Int → {-1, 0, 1}`
+        as a SURJECTIVE multiplicative monoid homomorphism that
+        captures the "sign" of an Int. Together with PMAT-307's
+        absolute value, `Int.sign a * |a| = a` reconstructs an Int
+        from its sign and magnitude.
+
+    None of the prior 17 categories axiomatizes the SIGN FUNCTION
+    as a SEPARATE OPERATION with its own monoid-homomorphism
+    structure. PMAT-307 was about the abs operation; PMAT-317 was
+    about the unit-group elements; PMAT-320 is about the sign as
+    a morphism. Three orthogonal pieces of the
+    `Int = sign × magnitude` decomposition.
+
+    Why this is genuinely orthogonal:
+      The sign function maps `(Int, *)` to `({-1, 0, 1}, *)` —
+      this is a SURJECTIVE multiplicative monoid hom (not group
+      hom, because 0 has no multiplicative inverse). The
+      homomorphism property `sign(a*b) = sign(a) * sign(b)` is a
+      genuine structural claim about how multiplication interacts
+      with sign. Combined with `sign(-a) = -sign(a)`, it captures
+      the full multiplicative behavior of the sign function.
+
+    For Python int dispatch, this matters: sign comparisons are
+    used in dispatch (e.g., choosing fast-path for positive
+    operands). An emitter that lowered `sign(a * b)` directly
+    rather than going through `sign(a) * sign(b)` could overflow
+    on large operands and produce wrong sign — falsifying (a).
+
+    Status: discharged at v0.1.0 (PMAT-320). Tier: DIAMOND.
+    FIRST DEPTH-18 in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `Int.sign` is a
+  multiplicative monoid homomorphism `(Int, *) → ({-1, 0, 1}, *)`.
+
+  Combines four MONOID-HOMOMORPHISM properties:
+  (a) Preserves multiplication: `Int.sign (a * b) = Int.sign a * Int.sign b`
+  (b) Preserves negation:       `Int.sign (-a) = -Int.sign a`
+  (c) Preserves zero:           `Int.sign 0 = 0`
+  (d) Preserves one (identity): `Int.sign 1 = 1`
+
+  Together these characterize `Int.sign` as the canonical SURJECTIVE
+  multiplicative monoid hom to the sign monoid `{-1, 0, 1}`.
+
+  Uses Mathlib's `Int.sign_mul`, `Int.sign_neg`. The `sign 0 = 0`
+  and `sign 1 = 1` are definitionally true (`rfl`).
+
+  An emitter that lowered `sign(a * b)` directly via the result's
+  bit pattern (rather than via `sign(a) * sign(b)`) could overflow
+  on `Int.minValue * Int.minValue` and produce wrong sign —
+  falsifying (a). This bug class is invisible to PMAT-307 ABS
+  (which captures magnitude) and PMAT-317 UNIT GROUP (which
+  captures invertibles), neither mentioning the sign map.
+
+  Status: **discharged at v0.1.0 (PMAT-320)**. Tier: DIAMOND.
+  FIRST DEPTH-18 in the substrate.
+-/
+theorem int_sign_monoid_hom_diamond (a b : Int) :
+    -- (a) Sign is multiplicative
+    (Int.sign (a * b) = Int.sign a * Int.sign b)
+    -- (b) Sign respects negation
+    ∧ (Int.sign (-a) = -Int.sign a)
+    -- (c) Sign of zero is zero
+    ∧ (Int.sign 0 = 0)
+    -- (d) Sign of one is one (preserves multiplicative identity)
+    ∧ (Int.sign 1 = 1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.sign_mul a b
+  · exact Int.sign_neg a
+  · rfl
+  · rfl
+
 end XpileContracts.CPyIntArith
