@@ -341,10 +341,25 @@ fn substrate_diamond_depth_19_opened() {
     let depth_19_plus = read_aggregate_field(&json, "depth_19_plus");
     // PMAT-322 opened depth-19 on C-PY-INT-ARITH (Layer 1): NEGATION-ORDER COMPAT.
     // PMAT-323 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): NAT TRUNCATED SUB.
-    // Gate now asserts depth-19 ACROSS LAYERS (≥2 contracts at depth-19+).
+    // PMAT-325 took PyIntArith to depth-20 (still ≥2 at depth-19+).
+    // Gate asserts depth-19 ACROSS LAYERS (≥2 contracts at depth-19+).
     assert!(
         depth_19_plus >= 2,
         "Diamond depth-19 ACROSS LAYERS milestone (PMAT-322, PMAT-323): \
          expected ≥2 contracts at depth-19+ (Layer 1 + Layer 5), got {depth_19_plus}.\n{json}"
+    );
+}
+
+#[test]
+fn substrate_diamond_depth_20_opened() {
+    let json = run_diamond_json();
+    let depth_20_plus = read_aggregate_field(&json, "depth_20_plus");
+    // PMAT-325 opened depth-20 on C-PY-INT-ARITH: Int.toNat PARTIAL INVERSE
+    // (canonical Int → Nat partial retraction of the Nat → Int cast).
+    // FIRST PARTIAL-INVERSE / SECTION-RETRACTION claim on PyIntArith.
+    assert!(
+        depth_20_plus >= 1,
+        "Diamond depth-20 milestone (PMAT-325): expected ≥1 contract at depth-20+, \
+         got {depth_20_plus}.\n{json}"
     );
 }

@@ -7,6 +7,57 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-20 in the substrate: Int.toNat partial-inverse Diamond on `C-PY-INT-ARITH` (PMAT-325)
+
+**Path β extension.** Opens Diamond **depth-20** — twenty distinct algebraic categories on a single contract. PyIntArith was at depth-19 (post-PMAT-322); PMAT-325 adds **Int.toNat PARTIAL INVERSE** as the twentieth orthogonal category.
+
+**The 20 Diamond categories on `C-PY-INT-ARITH`:**
+
+1–19. Prior categories
+20. **PMAT-325: Int.toNat PARTIAL INVERSE** ← FIRST DEPTH-20
+
+**Why Int.toNat PARTIAL INVERSE is genuinely a NEW category — orthogonal to ALL 19 prior:**
+
+The PARTIAL INVERSE / SECTION-RETRACTION structure is a NEW category-theoretic claim. None of the prior 19 categories axiomatizes the Int → Nat retraction. PMAT-310 went one way (Nat embeds into Int); PMAT-325 goes the OTHER way (Int retracts to Nat partially, saturating negatives to 0):
+
+- **Round-trip on Nat:** `Int.toNat ((n : Int)) = n`
+- **Non-negative round-trip:** `0 ≤ a → ((Int.toNat a : Int)) = a`
+- **Negative saturates to 0:** `Int.toNat a = 0 ↔ a ≤ 0`
+- **Non-negative result:** `(0 : Nat) ≤ Int.toNat a` (trivially)
+
+Together with PMAT-310, this gives:
+
+```
+Nat ──cast──> Int ──toNat──> Nat
+─────────────────────────────────
+  injective    partial retraction (identity on Nat-image)
+```
+
+**New Lean theorem:**
+
+```lean
+theorem int_to_nat_partial_inverse_diamond (a : Int) (n : Nat) :
+    (Int.toNat ((n : Int)) = n)                          -- round-trip on Nat
+    ∧ (0 ≤ a → ((Int.toNat a : Int)) = a)                -- non-neg round-trip
+    ∧ (Int.toNat a = 0 ↔ a ≤ 0)                          -- neg saturates to 0
+    ∧ ((0 : Nat) ≤ Int.toNat a) := by                    -- non-neg result
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.toNat_natCast n
+  · exact Int.toNat_of_nonneg
+  · exact Int.toNat_eq_zero
+  · exact Nat.zero_le _
+```
+
+Uses Mathlib's `Int.toNat_natCast`, `Int.toNat_of_nonneg`, `Int.toNat_eq_zero`, and `Nat.zero_le`.
+
+**Falsification surface:** an emitter that lowered Python's non-negative-only fast path through a path that didn't preserve `Int.toNat (n : Int) = n` (e.g., a **buggy retraction that introduced sentinel values**) would falsify property (a). This bug class slips past PMAT-310 (which only required the FORWARD `Nat → Int` direction).
+
+**Reporter + gate updates:**
+
+- `xpile diamond --json` extended with `depth-19` discrete label + `depth-20+` aggregate.
+- `substrate_diamond_depth_20_opened` gate test added (≥ 1 at depth-20+).
+- Substrate Diamond totals: **64 wired Diamond theorems** across 12 contracts (was 63).
+
 ### Changed — Spec §28 + diamond-taxonomy.md sync to depth-19 ACROSS LAYERS reality (PMAT-324)
 
 After 4 Path β PRs (PMAT-320..323) added depths 18 and 19 ACROSS LAYERS — including the **SIGN FUNCTION monoid hom** (PMAT-320), **NAT INTEGRAL DOMAIN** (PMAT-321), **NEGATION-ORDER COMPATIBILITY / OrderedAddCommGroup** (PMAT-322), and **NAT TRUNCATED SUBTRACTION** (PMAT-323) — the spec accumulated 2 more tiers of documentation rot. PMAT-324 syncs:
