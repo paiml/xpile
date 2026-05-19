@@ -920,4 +920,65 @@ theorem length_monoid_homomorphism_diamond {α : Type}
   · rfl
   · exact Nat.zero_le _
 
+/-! ## PMAT-338 — FOURTH Diamond on C-XLATE-PY-LIST-TO-VEC (Layer 2
+    BROADENING DEPTH-4 from 5 to 6 contracts): LIST REVERSE
+    INVOLUTION (XPILE-REFINE-XLATE-PY-LIST-TO-VEC-006).
+
+    **Broadens DEPTH-4 from 5 to 6 contracts.** After PMAT-330
+    completed depth-4 ACROSS ALL 5 LAYERS, this is the first
+    POST-UNIVERSAL broadening: pushes XlatePyList (Layer 2) from
+    depth-3 to depth-4, adding a SECOND Layer 2 contract at
+    depth-4 (Bashrs was the first via PMAT-329).
+
+    The 4 Diamond categories on C-XLATE-PY-LIST-TO-VEC:
+    - PMAT-221 list_free_monoid_diamond: (List, ++, []) monoid
+    - PMAT-229 nonempty_section_retraction_diamond: NonEmpty subtype
+    - PMAT-244 length_monoid_homomorphism_diamond: length functor
+    - **PMAT-338: LIST REVERSE INVOLUTION** ← depth-4
+
+    The categorical distinction is sharp:
+      - PMAT-221: about `++` (concatenation algebra)
+      - PMAT-229: about NonEmpty subtype refinement
+      - PMAT-244: about length functor (homomorphism)
+      - PMAT-338: about `reverse` (involution + interaction with
+        length and base cases)
+
+    `reverse` is a UNARY operation distinct from all three prior
+    (which were about binary `++`, subtype, or functor properties).
+    Reverse-involution is the canonical algebraic structure of
+    `(List α, reverse)`.
+
+    Status: discharged at v0.1.0 (PMAT-338). Tier: DIAMOND.
+    Broadens DEPTH-4 from 5 to 6 contracts (post-PMAT-330 milestone). -/
+
+/--
+  **Diamond-tier refinement theorem** — `List.reverse` is an
+  INVOLUTION on `PyListSilver.elems`.
+
+  Combines four REVERSE-INVOLUTION properties:
+  (a) Double reverse is identity: `l.elems.reverse.reverse = l.elems`
+  (b) Reverse preserves length: `l.elems.reverse.length = l.elems.length`
+  (c) Reverse of empty is empty: `([] : List α).reverse = []`
+  (d) Reverse of singleton is itself: `[a].reverse = [a]`
+
+  Uses Mathlib's `List.reverse_reverse`, `List.length_reverse`,
+  `List.reverse_nil`. The singleton case is by `rfl`.
+
+  Status: **discharged at v0.1.0 (PMAT-338)**. Tier: DIAMOND.
+-/
+theorem list_reverse_involution_diamond {α : Type} (l : PyListSilver α) :
+    -- (a) Double reverse is identity (involution)
+    (l.elems.reverse.reverse = l.elems)
+    -- (b) Reverse preserves length
+    ∧ (l.elems.reverse.length = l.elems.length)
+    -- (c) Reverse of empty is empty
+    ∧ (([] : List α).reverse = [])
+    -- (d) Reverse of singleton is itself
+    ∧ (∀ a : α, [a].reverse = [a]) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact List.reverse_reverse l.elems
+  · exact List.length_reverse
+  · rfl
+  · intro a; rfl
+
 end XpileContracts.CXlatePyListToVec

@@ -7,6 +7,40 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-4 BROADENED from 5 to 6 contracts: List-reverse-involution Diamond on `C-XLATE-PY-LIST-TO-VEC` (PMAT-338)
+
+**First POST-UNIVERSAL broadening at depth-4.** After PMAT-330 completed depth-4 ACROSS ALL 5 LAYERS, PMAT-338 begins the next phase: pushing depth-4 to MORE contracts beyond the one-per-layer minimum. Pushes `C-XLATE-PY-LIST-TO-VEC` (Layer 2) from depth-3 to depth-4, adding a SECOND Layer 2 contract at depth-4 (Bashrs was first via PMAT-329).
+
+**The 4 Diamond categories on `C-XLATE-PY-LIST-TO-VEC`:**
+
+1. PMAT-221 `list_free_monoid_diamond`: `(List, ++, [])` monoid
+2. PMAT-229 `nonempty_section_retraction_diamond`: NonEmpty subtype
+3. PMAT-244 `length_monoid_homomorphism_diamond`: length functor
+4. **PMAT-338 `list_reverse_involution_diamond`** ← depth-4
+
+**Why LIST REVERSE INVOLUTION is genuinely a NEW category:**
+
+`reverse` is a UNARY operation distinct from all three prior:
+- PMAT-221: about `++` (BINARY concatenation algebra)
+- PMAT-229: about NonEmpty SUBTYPE refinement
+- PMAT-244: about length FUNCTOR (homomorphism)
+- PMAT-338: about `reverse` INVOLUTION
+
+Reverse-involution is the canonical algebraic structure of `(List α, reverse)`:
+
+- **Double reverse is identity:** `l.elems.reverse.reverse = l.elems`
+- **Reverse preserves length:** `l.elems.reverse.length = l.elems.length`
+- **Reverse of empty is empty:** `([] : List α).reverse = []`
+- **Reverse of singleton is itself:** `[a].reverse = [a]`
+
+Uses Mathlib's `List.reverse_reverse`, `List.length_reverse`, `List.reverse_nil`; singleton case is by `rfl`.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_4_plus: 6` (was 5).
+- `substrate_diamond_depth_4_opened` gate **tightened to ≥ 6**.
+- Substrate Diamond totals: **76 wired Diamond theorems** across 12 contracts (was 75).
+
 ### Changed — Spec §28 + diamond-taxonomy.md sync to depth-3 UNIVERSAL + depth-21 substrate reality (PMAT-337)
 
 **Massive spec catch-up** after 12 PRs of unsynced state (PMAT-325..336). Captures both the **Path β depth grind** (depth-20/21) and the **broadening pivot** (depth-3 UNIVERSAL, depth-4 ALL 5 LAYERS, depth-5 ACROSS 3 LAYERS), plus the substrate-wide structure-extensionality pattern.
