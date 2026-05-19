@@ -7,6 +7,15 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-3 BROADENED from 9 to 10 contracts: EquationFormulaSilver structure-extensionality Diamond on `C-NOTATION-LATEX-MATH-TO-EQUATION` (PMAT-334)
+
+**Continuing the BROADENING sweep.** PMAT-334 pushes `C-NOTATION-LATEX-MATH-TO-EQUATION` (Layer 5) from depth-2 to depth-3, broadening depth-3 from 9 to **10 contracts**. Seventh substrate-wide demonstration of structure-extensionality. With 10/12 contracts at depth-3+, the substrate is **2 contracts away from depth-3 UNIVERSAL**.
+
+**Reporter + gate:**
+- `xpile diamond --json` now reports `depth_3_plus: 10` (was 9).
+- `substrate_diamond_depth_3_across_layers` gate **tightened to ≥ 10**.
+- Substrate Diamond totals: **73 wired Diamond theorems** across 12 contracts (was 72).
+
 ### Added — Diamond depth-3 BROADENED from 8 to 9 contracts: Contract structure-extensionality Diamond on `C-XPILE-CONTRACT-BACKEND-TRAIT` (PMAT-333)
 
 **Continuing the BROADENING pivot.** PMAT-333 pushes `C-XPILE-CONTRACT-BACKEND-TRAIT` (Layer 3) from depth-2 to depth-3, broadening depth-3 from 8 to **9 contracts**. Sixth substrate-wide demonstration of structure-extensionality.

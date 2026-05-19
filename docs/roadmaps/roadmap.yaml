@@ -2,6 +2,15 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-334
+  github_issue: null
+  item_type: task
+  title: 'PMAT-334: Diamond depth-3 BROADENED from 9 to 10 contracts (EquationFormulaSilver structure extensionality on C-NOTATION-LATEX-MATH-TO-EQUATION)'
+  status: planned
+  priority: medium
+  created: 2026-05-23T19:30:00Z
+  acceptance_criteria:
+  - "Continuing the BROADENING sweep. Add equation_formula_struct_extensionality_diamond Lean theorem. SEVENTH substrate-wide demonstration. Tighten depth-3 gate from ≥9 to ≥10."
 - id: PMAT-333
   github_issue: null
   item_type: task

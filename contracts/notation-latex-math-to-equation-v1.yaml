@@ -551,6 +551,30 @@ equations:
       - "an emitter that lowers contract_id correctly but introduces hidden coupling (e.g., always setting bib_key = contract_id) would falsify (b)"
       - "Diamond depth-2 now extends to C-NOTATION-LATEX-MATH-TO-EQUATION — sixth contract with two distinct Diamonds"
 
+  equation_formula_struct_extensionality_diamond:
+    # PMAT-334: THIRD Diamond on this contract — BROADENS DEPTH-3
+    # from 9 to 10 contracts. Pushes NotationLatexMathToEquation
+    # (Layer 5) from depth-2 to depth-3. Seventh substrate-wide
+    # demonstration of structure-extensionality pattern.
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.equation_formula_struct_extensionality_diamond"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      EquationFormulaSilver admits STRUCTURE EXTENSIONALITY:
+        (a) field eq → record eq
+        (b) record eq → field eq (congruence)
+        (c) decidable equality
+        (d) self-equality (reflexivity)
+    domain: |
+      Two EquationFormulaSilver records (kind : LatexDisplayKind,
+      ascii_normalised : String).
+    invariants:
+      - "THIRD Diamond category — BROADENS DEPTH-3 from 9 to 10 contracts"
+      - "SEVENTH substrate-wide demonstration of structure-extensionality pattern"
+    preconditions:
+      - "two EquationFormulaSilver records"
+    postconditions:
+      - "Diamond depth-3 broadened: 10 contracts at depth-3+"
+
 proof_obligations:
   - type: postcondition
     property: math-mode round-trips through render() losslessly

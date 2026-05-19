@@ -96,9 +96,10 @@ fn substrate_diamond_depth_3_across_layers() {
     // PMAT-331 added XpileBackendTrait (Layer 3) to depth-3, total = 7.
     // PMAT-332 added XpileContractFrontendTrait (Layer 3) to depth-3, total = 8.
     // PMAT-333 added XpileContractBackendTrait (Layer 3) to depth-3, total = 9.
+    // PMAT-334 added NotationLatex (Layer 5) to depth-3, total = 10.
     assert!(
-        depth_3_plus >= 9,
-        "Diamond depth-3 across-layers milestone (PMAT-241..245 + PMAT-289 + PMAT-331..333): expected ≥9 \
+        depth_3_plus >= 10,
+        "Diamond depth-3 across-layers milestone (PMAT-241..245 + PMAT-289 + PMAT-331..334): expected ≥10 \
          contracts at depth-3+, got {depth_3_plus}.\n{json}"
     );
 }
