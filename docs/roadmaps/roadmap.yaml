@@ -2,6 +2,15 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-340
+  github_issue: null
+  item_type: task
+  title: 'PMAT-340: Diamond depth-4 BROADENED from 7 to 8 contracts (TranspileSession array size on C-XPILE-CONTRACT-FRONTEND-TRAIT)'
+  status: planned
+  priority: medium
+  created: 2026-05-23T22:30:00Z
+  acceptance_criteria:
+  - "Continuing POST-UNIVERSAL broadening at depth-4. Add transpile_session_array_size_diamond. Tighten depth-4 gate from ≥7 to ≥8. Pushes XpileContractFrontendTrait from depth-3 to depth-4."
 - id: PMAT-339
   github_issue: null
   item_type: task
