@@ -249,13 +249,12 @@ fn substrate_diamond_depth_12_opened() {
 fn substrate_diamond_depth_13_opened() {
     let json = run_diamond_json();
     let depth_13_plus = read_aggregate_field(&json, "depth_13_plus");
-    // PMAT-307 opened depth-13 on C-PY-INT-ARITH: ABSOLUTE VALUE / NORM axioms
-    // (non-negativity, definiteness, triangle inequality, multiplicativity).
-    // The 13th orthogonal category captures (Int, |·|) as a NORMED RING —
-    // none of the prior 12 categories defines a unary "size" operation.
+    // PMAT-307 opened depth-13 on C-PY-INT-ARITH (Layer 1): ABSOLUTE VALUE / NORM.
+    // PMAT-308 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): GLB/LUB universal property.
+    // Gate now asserts depth-13 ACROSS LAYERS (≥2 contracts at depth-13+).
     assert!(
-        depth_13_plus >= 1,
-        "Diamond depth-13 milestone (PMAT-307): expected ≥1 contract at depth-13+, \
-         got {depth_13_plus}.\n{json}"
+        depth_13_plus >= 2,
+        "Diamond depth-13 ACROSS LAYERS milestone (PMAT-307, PMAT-308): \
+         expected ≥2 contracts at depth-13+ (Layer 1 + Layer 5), got {depth_13_plus}.\n{json}"
     );
 }
