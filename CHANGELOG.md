@@ -7,6 +7,53 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-9 in the substrate: linear-order trichotomy on `C-PY-INT-ARITH` (PMAT-298)
+
+**Path β extension.** Opens Diamond depth-9 — nine distinct algebraic categories on a single contract. PyIntArith was at depth-8 (post-PMAT-294); PMAT-298 adds **LINEAR-ORDER / TRICHOTOMY** as the ninth orthogonal category.
+
+**The 9 Diamond categories on `C-PY-INT-ARITH`:**
+
+1. PMAT-214: SEMIRING (+, *)
+2. PMAT-228: EUCLIDEAN DOMAIN (fdiv, fmod)
+3. PMAT-241: SHIFT-MONOID (shl)
+4. PMAT-247: POWER-MONOID (pow)
+5. PMAT-286: BITWISE-AND-MONOID (&)
+6. PMAT-290: ABELIAN-GROUP-ENRICHMENT (neg)
+7. PMAT-292: ORDER-DISTRIBUTIVE-LATTICE (min, max)
+8. PMAT-294: DIVISIBILITY-PREORDER (∣)
+9. **PMAT-298: LINEAR-ORDER TRICHOTOMY (<)** ← FIRST DEPTH-9
+
+**Why trichotomy is genuinely a NEW category:**
+
+- PMAT-292 (**ORDER-DISTRIBUTIVE-LATTICE**) proves the lattice laws on min/max but does **NOT** claim totality. **Lattices can be non-linear** — e.g., the divisibility lattice on Nat with gcd/lcm is a lattice but not a linear order.
+- PMAT-294 (**DIVISIBILITY-PREORDER**) is a preorder via `∣`, not even a partial order on Int.
+- PMAT-298 (**LINEAR-ORDER**) claims trichotomy: any two Ints are **comparable**. This is what makes the Int order linear.
+
+The categorical distinction is sharp: lattice algebraic laws ≠ order-theoretic totality.
+
+**New Lean theorem:**
+
+```lean
+theorem linear_order_trichotomy_diamond (a b c : Int) :
+    (a < b ∨ a = b ∨ b < a)        -- trichotomy
+    ∧ ¬ (a < a)                    -- irreflexivity
+    ∧ (a < b → ¬ (b < a))          -- asymmetry
+    ∧ (a < b → b < c → a < c) := by  -- transitivity
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.lt_trichotomy a b
+  · exact Int.lt_irrefl a
+  · intro hab hba; exact Int.lt_asymm hab hba
+  · intro hab hbc; exact Int.lt_trans hab hbc
+```
+
+Uses only Mathlib's standard linear-order lemmas.
+
+**Reporter + gate updates:**
+- `xpile diamond` depth label: `depth-8` + new `depth-9+`
+- New aggregate field `depth_9_plus`
+- New gate test `substrate_diamond_depth_9_opened` (≥1 at depth-9+)
+- `substrate_diamond_depth_8_opened` tightened to ≥2 (was ≥1)
+
 ### Added — Diamond depth-8 ACROSS LAYERS: `C-COMPILE-RUST-TO-PTX-MMA` reaches depth-8 via cancellative monoid (PMAT-295)
 
 **Path β extension.** Pushes `C-COMPILE-RUST-TO-PTX-MMA` (Layer 5) from depth-7 to depth-8, opening **DEPTH-8 ACROSS LAYERS** alongside PyIntArith (Layer 1, PMAT-294).

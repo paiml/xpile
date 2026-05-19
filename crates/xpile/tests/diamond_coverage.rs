@@ -175,12 +175,26 @@ fn substrate_diamond_depth_7_opened() {
 fn substrate_diamond_depth_8_opened() {
     let json = run_diamond_json();
     let depth_8_plus = read_aggregate_field(&json, "depth_8_plus");
-    // PMAT-294 opened depth-8 on C-PY-INT-ARITH: divisibility-preorder Diamond
-    // — FIRST category to shift abstraction layer from binary operations to a
-    // binary relation.
+    // PMAT-294 opened depth-8 on C-PY-INT-ARITH (Layer 1): divisibility-preorder.
+    // PMAT-295 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): cancellative monoid.
+    // Gate now asserts depth-8 ACROSS LAYERS (≥2 contracts at depth-8+).
     assert!(
-        depth_8_plus >= 1,
-        "Diamond depth-8 milestone (PMAT-294): expected ≥1 contract at depth-8+, \
-         got {depth_8_plus}.\n{json}"
+        depth_8_plus >= 2,
+        "Diamond depth-8 ACROSS LAYERS milestone (PMAT-294, PMAT-295): \
+         expected ≥2 contracts at depth-8+ (Layer 1 + Layer 5), got {depth_8_plus}.\n{json}"
+    );
+}
+
+#[test]
+fn substrate_diamond_depth_9_opened() {
+    let json = run_diamond_json();
+    let depth_9_plus = read_aggregate_field(&json, "depth_9_plus");
+    // PMAT-298 opened depth-9 on C-PY-INT-ARITH: linear-order trichotomy as
+    // the 9th orthogonal Diamond category — distinct from PMAT-292 order-lattice
+    // (lattice ≠ linear) and PMAT-294 divisibility-preorder (preorder ≠ strict order).
+    assert!(
+        depth_9_plus >= 1,
+        "Diamond depth-9 milestone (PMAT-298): expected ≥1 contract at depth-9+, \
+         got {depth_9_plus}.\n{json}"
     );
 }
