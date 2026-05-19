@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-260
+  github_issue: null
+  item_type: task
+  title: 'PMAT-260: Audit-design.md §4 — mark "Oracle Hardware Blind Spots Re-emerge" as Mitigated via Multi-Emitter Quorum'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-05-21T08:00:00Z
+  updated: 2026-05-21T08:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Follow-up audit-design.md update marking the Oracle Hardware Blind Spots caveat as Mitigated via the PMAT-259 Multi-Emitter Oracle Quorum design. Documentation-only — keeps original caveat inline for traceability alongside the mitigation."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-259
   github_issue: null
   item_type: task

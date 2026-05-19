@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Audit-design.md §4: mark "Oracle Hardware Blind Spots Re-emerge" as Mitigated via Multi-Emitter Quorum (PMAT-260)
+
+Follow-up audit pass on PMAT-259's `sub/layer5-multi-emitter-quorum.md` design. The §4 "Oracle Hardware Blind Spots Re-emerge" caveat was previously flagged as an unmitigated vulnerability: *"the Oracle itself generally cannot observe deep hardware-level races or WGSL/PTX thread divergence... creating a single point of failure if the contract proves incomplete."*
+
+This caveat is now **Mitigated** by the Layer-5 Multi-Emitter Oracle Quorum design (PMAT-259, Section 29). By running both emitters under a `DiffExec` quorum policy, the architecture:
+
+- Falsifies in-vacuum Diamond proofs (PMAT-218/231/242/248) against actually emitted PTX bytecounts
+- Removes the single-point-of-failure on Layer 5 contract completeness — categorically independent emitters must produce functionally equivalent outputs
+- Provides a high-signal divergence-detection mechanism that the original single-emitter design lacked
+
+The Mitigation note is added inline in audit-design.md §4 alongside the original caveat for traceability (Popperian: the falsifier is now disclosed AND the mitigation is recorded — future readers see both).
+
 ### Added — Section 29 (Layer-5 Multi-Emitter Oracle Quorum) — spec a+b quorum design for PTX emission (PMAT-259)
 
 New sub-spec [`sub/layer5-multi-emitter-quorum.md`](docs/specifications/sub/layer5-multi-emitter-quorum.md) wired into `xpile-spec.md` as Section 29. Captures the design decision NOT to pick a single PTX emitter (rustc_codegen_nvvm OR aprender-gpu) but to route through BOTH as a §14.4 N-of-M oracle quorum at the Runtime stratum.
