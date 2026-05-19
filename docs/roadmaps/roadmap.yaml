@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-273
+  github_issue: null
+  item_type: task
+  title: 'PMAT-273: xpile-spec.md §29 implementation roadmap updated with PMAT-261..266 status'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-05-22T14:00:00Z
+  updated: 2026-05-22T14:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Update docs/specifications/xpile-spec.md §29 Implementation roadmap to mark PMAT-259..266 as shipped (with checkmarks per item) and PMAT-26X+/Y+/Z+/A5 as still pending. Add a Status at v0.1.0+ paragraph summarizing what's wired (routing layer in PtxBackend + WgslBackend) vs. what's pending (real specialist emitters and DiffExec engine). Documentation-only change — no code touched."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-272
   github_issue: null
   item_type: task
