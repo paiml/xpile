@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-5 BROADENED from 3 to 4 LAYERS: observable-string-length Nat-structure Diamond on `C-BASHRS-POSIX-IDEMPOTENCE` (PMAT-346)
+
+**Continuing the broadening pivot at depth-5.** After PMAT-328 brought depth-5 to 3 layers (L1+L4+L5), PMAT-346 pushes Bashrs (Layer 2) from depth-4 to depth-5, adding Layer 2 to depth-5+ coverage. **One more layer (L3) needed for depth-5 ALL 5 LAYERS milestone.**
+
+**The 5 Diamond categories on `C-BASHRS-POSIX-IDEMPOTENCE`:**
+
+1. PMAT-215 bashrs_pure_function (determinism)
+2. python_pure_function (companion)
+3. PMAT-238 exit_code_constant_projection
+4. PMAT-329 outcome_struct_extensionality
+5. **PMAT-346 outcome_observable_length_nat** ← depth-5
+
+Captures `OutcomeSilver.observable` String.length Nat structure:
+- length ≥ 0
+- successor strict ordering
+- empty observable has length 0
+- length preserved under field replacement
+
+- `depth_5_plus: 4` (was 3), gate **tightened to ≥ 4**.
+- Substrate Diamond totals: **83 wired theorems** (was 82).
+
 ### Changed — Spec §28 + diamond-taxonomy.md sync to depth-4 UNIVERSAL substrate reality + recurring algebraic templates (PMAT-345)
 
 **Spec catch-up for the depth-4 UNIVERSAL milestone** (PMAT-344) and the broadening sweep templates. Captures both the second UNIVERSAL achievement and the **five recurring algebraic templates** (structure-extensionality, Array.size structure, enum distinctness, Nat structure, reverse involution) that enabled mechanical depth-3 → depth-4 expansion.

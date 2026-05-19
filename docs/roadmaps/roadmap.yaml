@@ -2,6 +2,15 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-346
+  github_issue: null
+  item_type: task
+  title: 'PMAT-346: Diamond depth-5 BROADENED from 3 to 4 LAYERS (observable-string-length Nat-structure on C-BASHRS-POSIX-IDEMPOTENCE)'
+  status: planned
+  priority: medium
+  created: 2026-05-24T01:30:00Z
+  acceptance_criteria:
+  - "Continuing broadening pivot at depth-5. Add outcome_observable_length_nat_diamond to Bashrs. Pushes from depth-4 to depth-5, adds Layer 2 to depth-5+ coverage. Tighten depth-5 gate from ≥3 to ≥4."
 - id: PMAT-345
   github_issue: null
   item_type: task

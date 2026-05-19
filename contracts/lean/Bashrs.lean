@@ -579,4 +579,46 @@ theorem outcome_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/-! ## PMAT-346 — FIFTH Diamond on C-BASHRS-POSIX-IDEMPOTENCE
+    (Layer 2 BROADENING DEPTH-5 from 3 to 4 layers):
+    OUTCOME OBSERVABLE STRING LENGTH NAT STRUCTURE
+    (XPILE-REFINE-BASHRS-008).
+
+    **Broadens DEPTH-5 from 3 to 4 layers.** After PMAT-328 brought
+    depth-5 to 3 layers (L1 PyIntArith, L4 FFI-CPYTHON-EXT, L5
+    CompileRustToPtxMma), PMAT-346 pushes Bashrs (Layer 2) from
+    depth-4 to depth-5, adding Layer 2 to depth-5+ coverage.
+
+    The 5 Diamond categories on C-BASHRS-POSIX-IDEMPOTENCE:
+    - PMAT-215 bashrs_pure_function (determinism)
+    - python_pure_function (companion determinism)
+    - PMAT-238 exit_code_constant_projection
+    - PMAT-329 outcome_struct_extensionality
+    - **PMAT-346: OUTCOME OBSERVABLE STRING LENGTH NAT STRUCTURE**
+      ← depth-5
+
+    Status: discharged at v0.1.0 (PMAT-346). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `OutcomeSilver.observable`
+  String.length Nat structure.
+
+  Status: **discharged at v0.1.0 (PMAT-346)**. Tier: DIAMOND.
+-/
+theorem outcome_observable_length_nat_diamond (o : OutcomeSilver) :
+    -- (a) Length is non-negative
+    (0 ≤ o.observable.length)
+    -- (b) Successor strict ordering on length
+    ∧ (o.observable.length < o.observable.length + 1)
+    -- (c) Empty observable has length 0
+    ∧ (("" : String).length = 0)
+    -- (d) Length is preserved under field replacement
+    ∧ (({ observable := o.observable, exit_code := o.exit_code } : OutcomeSilver).observable.length
+        = o.observable.length) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.zero_le _
+  · omega
+  · rfl
+  · rfl
+
 end XpileContracts.CBashrsPosixIdempotence

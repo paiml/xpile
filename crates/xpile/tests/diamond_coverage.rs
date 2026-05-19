@@ -138,13 +138,13 @@ fn substrate_diamond_depth_5_opened() {
     let depth_5_plus = read_aggregate_field(&json, "depth_5_plus");
     // PMAT-286 opened depth-5 on C-PY-INT-ARITH (Layer 1).
     // PMAT-287 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5).
-    // PMAT-328 BROADENED depth-5 to C-FFI-CPYTHON-EXT (Layer 4) via
-    // refcount-delta SIGN DECOMPOSITION. Substrate now has depth-5 on 3
-    // distinct taxonomy layers (Layer 1 + Layer 4 + Layer 5).
+    // PMAT-328 BROADENED depth-5 to C-FFI-CPYTHON-EXT (Layer 4).
+    // PMAT-346 BROADENED depth-5 to C-BASHRS-POSIX-IDEMPOTENCE (Layer 2).
+    // Substrate now has depth-5 on 4 distinct taxonomy layers (L1+L2+L4+L5).
     assert!(
-        depth_5_plus >= 3,
-        "Diamond depth-5 ACROSS LAYERS milestone (PMAT-286/287/328): \
-         expected ≥3 contracts at depth-5+ (Layer 1 + Layer 4 + Layer 5), got {depth_5_plus}.\n{json}"
+        depth_5_plus >= 4,
+        "Diamond depth-5 ACROSS LAYERS milestone (PMAT-286/287/328/346): \
+         expected ≥4 contracts at depth-5+ (L1+L2+L4+L5), got {depth_5_plus}.\n{json}"
     );
 }
 
