@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-266
+  github_issue: null
+  item_type: task
+  title: 'PMAT-266: Adversarial invariant tests for MultiEmitterBackend (Section 29 oracle hardening)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T10:30:00Z
+  updated: 2026-05-22T10:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add 7 adversarial tests to xpile-backend::quorum_scaffolding_tests covering: citation-provenance under Strict divergence, PreferSpecialist-hides-divergence (documented trade-off), general/specialist error propagation, general-returning-None as hard contract violation, NotRun reason includes tolerance for observability, DiffExec does NOT short-circuit on text-equality (engine compares runtime values not source text). Add 4 new mock-emitter fixtures: MockGeneralWithCitations, MockSpecialistWithCitations, MockFailingEmitter, MockNoneEmitter. Total xpile-backend tests rise to 21."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-265
   github_issue: null
   item_type: task

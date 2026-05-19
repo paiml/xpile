@@ -7,6 +7,28 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Adversarial invariant tests for `MultiEmitterBackend` (Section 29 oracle hardening) (PMAT-266)
+
+Pins down the security-relevant contract behavior the PMAT-263 happy-path tests don't cover. These 7 new tests guard against silent regressions in the routing layer that would weaken the Section 29 oracle.
+
+**New test cases in `xpile-backend::quorum_scaffolding_tests`:**
+
+- `strict_divergence_preserves_general_citations_not_specialist` — citation provenance: under `Strict`, only `general`'s citations end up in the final `Artifact.citations`. Specialist's body is preserved in `sidecars` for audit recovery but its citations are dropped. This prevents a rogue specialist from quietly swapping its own contract IDs into the audit trail.
+- `prefer_specialist_hides_divergence_by_design` — documents the explicit trade-off that `PreferSpecialist` is the single-vote-runtime stratum and does NOT compare general vs specialist. A future "helpful" refactor that turns this into a quiet divergence detector would break the test.
+- `general_emitter_failure_propagates` — `general` returning `Some(Err(...))` propagates as `BackendError::Lower`, never silently falling through to specialist (general is the mandatory fallback).
+- `specialist_emitter_failure_propagates_when_matched` — `specialist` matching shape but erroring during emission propagates the error rather than discarding it.
+- `general_returning_none_is_a_hard_contract_violation` — `general.try_emit()` returning `None` is a contract violation (general MUST match contract-conforming input) and produces a `BackendError::Lower` naming the offending emitter.
+- `diff_exec_not_run_reason_records_tolerance_for_observability` — the `NotRun` reason carries the configured tolerance value so debug output is actionable when the DiffExec engine eventually lights up.
+- `diff_exec_does_not_short_circuit_on_text_equality` — even when general and specialist emit byte-identical text, `DiffExec` records `NotRun` rather than `Match { 0.0 }`. Identical source could still produce divergent runtime values on different hardware; the engine's job is to compare RUNTIME behavior, not source text.
+
+**New mock emitters** in the test module: `MockGeneralWithCitations`, `MockSpecialistWithCitations`, `MockFailingEmitter`, `MockNoneEmitter` — each adversarial fixture for one of the invariants above.
+
+**Why this matters:**
+
+- Each test pins a property that, if violated, would degrade the Section 29 oracle silently (no compile error, no obvious test failure — just a weaker guarantee). These tests catch that silent degradation.
+- Provides regression guards for when the DiffExec engine ships — the engine swaps in under `NotRun` and the existing tests confirm the policy semantics it's replacing.
+- Documents the *intended* trade-offs (e.g., `PreferSpecialist` hides divergence) so future readers don't mistake them for bugs.
+
 ### Changed — `WgslBackend` now uses `MultiEmitterBackend` internally (mirrors PMAT-264 pattern for WGSL) (PMAT-265)
 
 Mirrors the PMAT-264 wrapper-refactor pattern across the second GPU backend. `xpile-wgsl-codegen::WgslBackend` becomes a wrapper around `MultiEmitterBackend` holding a `ScaffoldWgslEmitter: TargetEmitter`. The Section 29 routing layer now backs both code-lane Layer-5 GPU targets (PTX + WGSL) in production.
