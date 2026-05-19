@@ -7,6 +7,64 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-7 in the substrate: order-distributive-lattice on `C-PY-INT-ARITH` (PMAT-292)
+
+**Path β extension.** Opens Diamond depth-7 — seven distinct algebraic categories on a single contract. PyIntArith was at depth-6 (post-PMAT-290); PMAT-292 adds **ORDER-DISTRIBUTIVE-LATTICE** as the seventh orthogonal category.
+
+**The 7 Diamond categories on `C-PY-INT-ARITH`:**
+
+1. PMAT-214: `(Int, +, 0, *, 1)` SEMIRING
+2. PMAT-228: `(Int, fdiv, fmod)` EUCLIDEAN DOMAIN
+3. PMAT-241: `(Int × Nat, shl, 0)` SHIFT-MONOID
+4. PMAT-247: `(Int × Nat, pow, 0)` POWER-MONOID
+5. PMAT-286: `(Int, &, ...)` BITWISE-AND-COMMUTATIVE-MONOID
+6. PMAT-290: `(Int, +, 0, -)` ABELIAN-GROUP-ENRICHMENT
+7. **PMAT-292: `(Int, min, max)` DISTRIBUTIVE-ORDER-LATTICE** ← FIRST DEPTH-7
+
+**Why ordering is genuinely a NEW category:**
+
+The prior six categories all live in the **algebraic** structure `(Int, +, *, &, neg)`. The seventh is about the **order** structure `(Int, ≤)`. Min/max are order-theoretic operations, not arithmetic — they form a distributive lattice fundamentally distinct from monoid/group/semiring/bitwise structure.
+
+Parallels PMAT-291's distributive-lattice Diamond on BoundedSmem (Nat); this one applies to Int.
+
+**Load-bearing for compile-time range-bounded arithmetic reasoning** — saturating ops, clamps, monotone folds all rest on min/max satisfying the distributive lattice laws.
+
+**New Lean theorem:**
+
+```lean
+theorem order_distributive_lattice_diamond (a b c : Int) :
+    max a b = max b a
+    ∧ min a b = min b a
+    ∧ max a (min b c) = min (max a b) (max a c)
+    ∧ min a (max b c) = max (min a b) (min a c) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.max_comm a b
+  · exact Int.min_comm a b
+  · exact Int.max_min_distrib_left
+  · exact Int.min_max_distrib_left
+```
+
+Uses only Mathlib's `Int.max_comm`, `Int.min_comm`, `Int.max_min_distrib_left`, `Int.min_max_distrib_left` — no new proof engineering.
+
+**Reporter + gate updates:**
+
+- `xpile diamond` depth label extended: `depth-6` (was the cap `depth-6+`) + new `depth-7+`
+- New aggregate field `depth_7_plus` in JSON output
+- New gate test `substrate_diamond_depth_7_opened` asserts ≥1 contract at depth-7+
+- `diamond_row_depth_label` unit test updated
+
+**Path β extension recap:**
+
+| PMAT | Milestone |
+|------|-----------|
+| 286 | FIRST depth-5 (PyIntArith) |
+| 287 | depth-5 ACROSS LAYERS (+CompileRustToPtxMma) |
+| 288 | depth-4 ACROSS LAYERS (+FFI-CPYTHON-EXT) |
+| 289 | depth-3 broadened (+Bashrs) |
+| 290 | FIRST depth-6 (PyIntArith → 6 categories) |
+| 291 | depth-6 ACROSS LAYERS (+CompileRustToPtxMma) |
+| **292** | **FIRST depth-7 (PyIntArith → 7 categories)** |
+
 ### Added — Diamond depth-6 ACROSS LAYERS: `C-COMPILE-RUST-TO-PTX-MMA` reaches depth-6 via distributive lattice (PMAT-291)
 
 **Path β extension.** Pushes `C-COMPILE-RUST-TO-PTX-MMA` (Layer 5) from depth-5 to depth-6, opening **DEPTH-6 ACROSS LAYERS** alongside PyIntArith (Layer 1, PMAT-290).

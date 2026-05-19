@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-292
+  github_issue: null
+  item_type: task
+  title: 'PMAT-292: FIRST Diamond depth-7 in the substrate (order-distributive-lattice on C-PY-INT-ARITH)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T23:30:00Z
+  updated: 2026-05-22T23:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add order_distributive_lattice_diamond Lean theorem to contracts/lean/PyIntArith.lean — 4 conjuncts: max commutativity, min commutativity, max-over-min distributivity, min-over-max distributivity. Uses Int.max_comm, Int.min_comm, Int.max_min_distrib_left, Int.min_max_distrib_left from Mathlib. Wire as new equation in contracts/py-int-arith-v1.yaml. Extend xpile diamond reporter with depth-7+ label + depth_7_plus aggregate. Add substrate_diamond_depth_7_opened gate test. FIRST DEPTH-7 Diamond in substrate — PyIntArith reaches 7 distinct algebraic categories. The 7th category (Int distributive order-lattice) is genuinely orthogonal — it captures the (Int, ≤) ORDER structure as an algebraic lattice, distinct from the algebraic (Int, +, *, &, neg) structure of the prior 6 categories. Path β extension."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-291
   github_issue: null
   item_type: task
