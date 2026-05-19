@@ -7,6 +7,77 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-13 in the substrate: absolute-value/norm Diamond on `C-PY-INT-ARITH` (PMAT-307)
+
+**Path β extension.** Opens Diamond **depth-13** — thirteen distinct algebraic categories on a single contract. PyIntArith was at depth-12 (post-PMAT-305); PMAT-307 adds **ABSOLUTE VALUE / NORM** as the thirteenth orthogonal category.
+
+**The 13 Diamond categories on `C-PY-INT-ARITH`:**
+
+1. PMAT-214: SEMIRING (+, *)
+2. PMAT-228: EUCLIDEAN DOMAIN (fdiv, fmod)
+3. PMAT-241: SHIFT-MONOID (shl)
+4. PMAT-247: POWER-MONOID (pow)
+5. PMAT-286: BITWISE-AND-MONOID (&)
+6. PMAT-290: ABELIAN-GROUP-ENRICHMENT (neg)
+7. PMAT-292: ORDER-DISTRIBUTIVE-LATTICE (min, max)
+8. PMAT-294: DIVISIBILITY-PREORDER (∣)
+9. PMAT-298: LINEAR-ORDER TRICHOTOMY (<)
+10. PMAT-300: RING-DISTRIBUTIVITY (neg × mul)
+11. PMAT-302: INTEGRAL DOMAIN (no zero divisors)
+12. PMAT-305: ORDERED RING (sign rules)
+13. **PMAT-307: ABSOLUTE VALUE / NORM** ← FIRST DEPTH-13
+
+**Why ABSOLUTE VALUE is genuinely a NEW category — orthogonal to ALL 12 prior:**
+
+None of the prior 12 categories mentions a **UNARY OPERATION** capturing "size" / "magnitude". The norm axioms are:
+
+- **Non-negativity:** `0 ≤ |a|`
+- **Definiteness:** `|a| = 0 ↔ a = 0`
+- **Triangle inequality:** `|a + b| ≤ |a| + |b|`
+- **Multiplicativity:** `|a * b| = |a| * |b|`
+
+Together these characterize `(Int, |·|)` as a **NORMED RING** — strictly richer than just an ordered ring. Mathlib's `AbsoluteValue` typeclass encodes this structure.
+
+**New Lean theorem:**
+
+```lean
+theorem abs_value_norm_diamond (a b : Int) :
+    (0 ≤ |a|)                          -- non-negativity
+    ∧ (|a| = 0 ↔ a = 0)                -- definiteness
+    ∧ (|a + b| ≤ |a| + |b|)            -- triangle inequality
+    ∧ (|a * b| = |a| * |b|) := by      -- multiplicativity
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact abs_nonneg a
+  · exact abs_eq_zero
+  · exact abs_add a b
+  · exact abs_mul a b
+```
+
+Uses standard Mathlib lemmas: `abs_nonneg`, `abs_eq_zero`, `abs_add`, `abs_mul`.
+
+**Falsification surface:** an emitter that lowered `abs` through a path that violated the triangle inequality (e.g., a saturating abs that wrapped around for `Int.minValue`, where `-(-2^63) = -2^63` due to overflow) would falsify property (c). This bug class slips past **all 12 prior Diamond categories** because none mention abs.
+
+**Reporter + gate updates:**
+
+- `xpile diamond --json` extended with `depth-12` discrete label + `depth-13+` aggregate.
+- `substrate_diamond_depth_13_opened` gate test added (≥ 1 at depth-13+).
+- Substrate Diamond totals: **50 wired Diamond theorems** across 12 contracts (was 49).
+
+**Path β extension recap:**
+
+| PMAT | Milestone |
+|------|-----------|
+| 298 | FIRST depth-9 |
+| 299 | depth-9 ACROSS LAYERS |
+| 300 | FIRST depth-10 |
+| 301 | depth-10 ACROSS LAYERS |
+| 302 | FIRST depth-11 |
+| 303 | depth-11 ACROSS LAYERS |
+| 304 | spec + sub-spec sync (depth-11) |
+| 305 | FIRST depth-12 |
+| 306 | depth-12 ACROSS LAYERS |
+| **307** | **FIRST depth-13** (absolute value / norm) ← here |
+
 ### Added — Diamond depth-12 ACROSS LAYERS: max/min-monotonicity Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-306)
 
 **Path β extension.** Depth-12 was opened by PMAT-305 on PyIntArith (Layer 1). PMAT-306 extends depth-12 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) so the substrate now has **two contracts at depth-12+** across distinct taxonomy layers.

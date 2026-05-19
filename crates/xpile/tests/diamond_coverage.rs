@@ -236,10 +236,26 @@ fn substrate_diamond_depth_12_opened() {
     let depth_12_plus = read_aggregate_field(&json, "depth_12_plus");
     // PMAT-305 opened depth-12 on C-PY-INT-ARITH (Layer 1): ORDERED RING.
     // PMAT-306 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): MAX/MIN MONOTONICITY.
-    // Gate now asserts depth-12 ACROSS LAYERS (≥2 contracts at depth-12+).
+    // PMAT-307 took PyIntArith to depth-13 (still ≥2 at depth-12+).
+    // Gate asserts depth-12 ACROSS LAYERS (≥2 contracts at depth-12+).
     assert!(
         depth_12_plus >= 2,
         "Diamond depth-12 ACROSS LAYERS milestone (PMAT-305, PMAT-306): \
          expected ≥2 contracts at depth-12+ (Layer 1 + Layer 5), got {depth_12_plus}.\n{json}"
+    );
+}
+
+#[test]
+fn substrate_diamond_depth_13_opened() {
+    let json = run_diamond_json();
+    let depth_13_plus = read_aggregate_field(&json, "depth_13_plus");
+    // PMAT-307 opened depth-13 on C-PY-INT-ARITH: ABSOLUTE VALUE / NORM axioms
+    // (non-negativity, definiteness, triangle inequality, multiplicativity).
+    // The 13th orthogonal category captures (Int, |·|) as a NORMED RING —
+    // none of the prior 12 categories defines a unary "size" operation.
+    assert!(
+        depth_13_plus >= 1,
+        "Diamond depth-13 milestone (PMAT-307): expected ≥1 contract at depth-13+, \
+         got {depth_13_plus}.\n{json}"
     );
 }

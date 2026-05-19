@@ -2129,4 +2129,101 @@ theorem ordered_ring_diamond (a b : Int) :
     ∧ (0 < a → 0 < b → 0 < a * b) := by
   refine ⟨?_, ?_, ?_, ?_⟩ <;> intros <;> nlinarith
 
+/-! ## PMAT-307 — THIRTEENTH Diamond on C-PY-INT-ARITH (FIRST
+    DEPTH-13 in the substrate): ABSOLUTE VALUE / NORM AXIOMS
+    on (Int, |·|) (XPILE-REFINE-PY-INT-ARITH-021).
+
+    **Opens DEPTH-13 in the substrate.** PyIntArith reached depth-12
+    at PMAT-305 (ordered-ring sign rules); PMAT-307 adds the
+    THIRTEENTH orthogonal Diamond category — ABSOLUTE VALUE as a
+    NORM on the ring Int.
+
+    The 13 Diamond categories on C-PY-INT-ARITH:
+    - PMAT-214: SEMIRING
+    - PMAT-228: EUCLIDEAN DOMAIN
+    - PMAT-241: SHIFT-MONOID
+    - PMAT-247: POWER-MONOID
+    - PMAT-286: BITWISE-AND-MONOID
+    - PMAT-290: ABELIAN-GROUP-ENRICHMENT
+    - PMAT-292: ORDER-DISTRIBUTIVE-LATTICE
+    - PMAT-294: DIVISIBILITY-PREORDER
+    - PMAT-298: LINEAR-ORDER TRICHOTOMY
+    - PMAT-300: RING-DISTRIBUTIVITY
+    - PMAT-302: INTEGRAL DOMAIN
+    - PMAT-305: ORDERED RING
+    - **PMAT-307: ABSOLUTE VALUE / NORM** ← FIRST DEPTH-13
+
+    The categorical distinction is sharp:
+      None of the prior 12 categories mentions a UNARY OPERATION
+      that captures "size" (norm). |·| is a non-trivial unary
+      operation with:
+        - non-negativity:        0 ≤ |a|
+        - definiteness:          |a| = 0 ↔ a = 0
+        - triangle inequality:   |a + b| ≤ |a| + |b|
+        - multiplicativity:      |a * b| = |a| * |b|
+
+    These are the AXIOMS of an ABSOLUTE VALUE / NORM on a ring.
+    Mathlib's `AbsoluteValue` typeclass and `abs` function on Int
+    satisfy all four.
+
+    Why this is genuinely orthogonal:
+      ABSOLUTE VALUE captures the "size" / "magnitude" of an Int
+      independently of sign. None of the prior 12 categories
+      (semiring, ring, integral domain, ordered ring, lattice,
+      linear order, divisibility, ...) defines or constrains a
+      norm-like unary operation. The norm axioms (non-negativity,
+      definiteness, triangle, multiplicativity) characterize Int
+      as a NORMED RING — a strictly richer structure than just
+      an ordered ring.
+
+    For Python int dispatch, this matters: an emitter that lowered
+    abs through a path that violated the triangle inequality (e.g.,
+    a saturating abs that wrapped around for very negative inputs)
+    would falsify (c). This bug class slips past all 12 prior
+    categories because none mention abs.
+
+    Status: discharged at v0.1.0 (PMAT-307). Tier: DIAMOND.
+    FIRST DEPTH-13 in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `(Int, |·|)` is a
+  NORMED RING.
+
+  Combines four NORM-defining properties:
+  (a) Non-negativity:        `0 ≤ |a|`
+  (b) Definiteness:          `|a| = 0 ↔ a = 0`
+  (c) Triangle inequality:   `|a + b| ≤ |a| + |b|`
+  (d) Multiplicativity:      `|a * b| = |a| * |b|`
+
+  Together these axiomatize |·| as an ABSOLUTE VALUE / NORM on
+  the ring Int. Distinct from all prior 12 categories — none
+  mention a unary operation capturing "size".
+
+  Uses standard Mathlib lemmas: `abs_nonneg`, `abs_eq_zero`,
+  `abs_add`, `abs_mul`. Mathlib's `AbsoluteValue` typeclass
+  encodes this structure.
+
+  An emitter that lowered abs through a path that violated the
+  triangle inequality (e.g., a saturating abs that wrapped
+  around for `Int.minValue`) would falsify (c) — a real bug
+  class invisible to all 12 prior categories.
+
+  Status: **discharged at v0.1.0 (PMAT-307)**. Tier: DIAMOND.
+  FIRST DEPTH-13 in the substrate.
+-/
+theorem abs_value_norm_diamond (a b : Int) :
+    -- (a) Non-negativity of absolute value
+    (0 ≤ |a|)
+    -- (b) Definiteness: |a| = 0 ↔ a = 0
+    ∧ (|a| = 0 ↔ a = 0)
+    -- (c) Triangle inequality
+    ∧ (|a + b| ≤ |a| + |b|)
+    -- (d) Multiplicativity
+    ∧ (|a * b| = |a| * |b|) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact abs_nonneg a
+  · exact abs_eq_zero
+  · exact abs_add a b
+  · exact abs_mul a b
+
 end XpileContracts.CPyIntArith
