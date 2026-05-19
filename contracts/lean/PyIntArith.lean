@@ -1478,4 +1478,73 @@ theorem power_monoid_diamond
   · unfold pow_dispatch_silver bigint_pow
     exact pow_add a b1 b2
 
+/-! ## PMAT-286 — FIFTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-5
+    Diamond in substrate): bitwise-AND commutative monoid via
+    `Nat.land` kernel (XPILE-REFINE-PY-INT-ARITH-012).
+
+    **First DEPTH-5 Diamond in the substrate.** Opens Diamond
+    depth-5 — FIVE distinct algebraic categories on a single
+    contract. PyIntArith already has FOUR Diamond categories
+    (semiring at PMAT-214, Euclidean-domain at PMAT-228,
+    shift-monoid at PMAT-241, power-monoid at PMAT-247); PMAT-286
+    adds the BITWISE-AND-MONOID Diamond as the fifth orthogonal
+    category.
+
+    - PMAT-214: (Int, +, 0, *, 1) SEMIRING (additive/multiplicative)
+    - PMAT-228: (Int, fdiv, fmod) EUCLIDEAN DOMAIN (division)
+    - PMAT-241: (Int × Nat, shl, 0) SHIFT-MONOID (multiplicative
+      by powers of 2)
+    - PMAT-247: (Int × Nat, pow, 0) POWER-MONOID (Nat-action on
+      Int via exponentiation)
+    - **PMAT-286: (Int, &, ...) BITWISE-AND-COMMUTATIVE-MONOID
+      (Nat.land kernel via 2's-complement encoding)**
+
+    The categorical distinction: bitwise-AND lives on the BITS of
+    the 2's-complement encoding, not on the arithmetic structure.
+    The four prior Diamond categories all sit inside (Int, +, *)
+    semiring extensions; bitwise AND is genuinely orthogonal —
+    it satisfies commutativity and the kernel correspondence, but
+    NOT distributivity over addition, and NOT the semiring/
+    Euclidean/shift/power identities.
+
+    Status: discharged at v0.1.0 (PMAT-286). Tier: DIAMOND.
+    First DEPTH-5 Diamond in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — bitwise-AND on the slow
+  path forms a COMMUTATIVE MONOID via the `Nat.land` kernel.
+
+  Combines four properties into the BITWISE-AND-MONOID
+  axiomatization:
+  (a) Dispatcher commutativity (PMAT-PLATINUM lifted to Diamond)
+  (b) Slow-path = `bigint_and` (kernel correspondence)
+  (c) Kernel commutativity: `bigint_and a b = bigint_and b a`
+  (d) Modelling commitment: `bigint_and = i64_and` (XPILE-REFINE-005
+      / PMAT-138 — both paths share the same 2's-complement kernel)
+
+  An emitter that broke the path-collapse modelling commitment
+  (e.g., using a distinct unbounded bit-AND kernel like Python's
+  Negative-aware bignum AND that doesn't agree with the i64
+  kernel under 2's-complement) would falsify (d) and break the
+  bitwise-AND-monoid structure.
+
+  Status: **discharged at v0.1.0 (PMAT-286)**. Tier: DIAMOND.
+-/
+theorem bitwise_and_commutative_monoid_diamond
+    (path : PyIntPath) (a b : Int) :
+    -- (a) Dispatcher commutativity
+    and_dispatch_silver path a b = and_dispatch_silver path b a
+    -- (b) Slow-path = bigint_and (kernel correspondence)
+    ∧ and_dispatch_silver PyIntPath.SlowPath a b = bigint_and a b
+    -- (c) Kernel commutativity
+    ∧ bigint_and a b = bigint_and b a
+    -- (d) Modelling commitment: bigint_and = i64_and
+    ∧ bigint_and a b = i64_and a b := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact and_dispatch_commutative_platinum path a b
+  · rfl
+  · unfold bigint_and i64_and
+    rw [Nat.land_comm]
+  · rfl
+
 end XpileContracts.CPyIntArith

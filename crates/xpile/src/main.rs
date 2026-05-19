@@ -108,7 +108,8 @@ enum Cmd {
     /// references — the substrate's Diamond-tier coverage per contract.
     /// Reports raw count + classification:
     ///   `none` (0 Diamonds), `depth-1` (1 Diamond category),
-    ///   `depth-2` (2 Diamonds), `depth-3+` (3+ Diamonds).
+    ///   `depth-2` (2 Diamonds), ..., `depth-4` (4 Diamonds),
+    ///   `depth-5+` (5+ Diamonds — opened by PMAT-286).
     ///
     /// Useful for tracking Diamond depth over time and identifying
     /// contracts that could benefit from additional algebraic
@@ -1222,7 +1223,8 @@ impl DiamondRow {
             1 => "depth-1",
             2 => "depth-2",
             3 => "depth-3",
-            _ => "depth-4+",
+            4 => "depth-4",
+            _ => "depth-5+",
         }
     }
 }
@@ -1298,13 +1300,15 @@ fn print_diamond_text(rows: &[DiamondRow]) {
     let depth_2_plus = rows.iter().filter(|r| r.diamond_count >= 2).count();
     let depth_3_plus = rows.iter().filter(|r| r.diamond_count >= 3).count();
     let depth_4_plus = rows.iter().filter(|r| r.diamond_count >= 4).count();
+    let depth_5_plus = rows.iter().filter(|r| r.diamond_count >= 5).count();
     println!(
         "totals: {total_diamonds} Diamond theorems across {} contracts",
         rows.len()
     );
     println!(
         "  depth-1+: {depth_1_plus} contracts, depth-2+: {depth_2_plus} contracts, \
-         depth-3+: {depth_3_plus} contracts, depth-4+: {depth_4_plus} contracts"
+         depth-3+: {depth_3_plus} contracts, depth-4+: {depth_4_plus} contracts, \
+         depth-5+: {depth_5_plus} contracts"
     );
 }
 
@@ -1328,10 +1332,12 @@ fn print_diamond_json(rows: &[DiamondRow]) {
     let depth_2_plus = rows.iter().filter(|r| r.diamond_count >= 2).count();
     let depth_3_plus = rows.iter().filter(|r| r.diamond_count >= 3).count();
     let depth_4_plus = rows.iter().filter(|r| r.diamond_count >= 4).count();
+    let depth_5_plus = rows.iter().filter(|r| r.diamond_count >= 5).count();
     println!(
         "],\"total_diamonds\":{total_diamonds},\"contracts_total\":{},\
          \"depth_1_plus\":{depth_1_plus},\"depth_2_plus\":{depth_2_plus},\
-         \"depth_3_plus\":{depth_3_plus},\"depth_4_plus\":{depth_4_plus}}}",
+         \"depth_3_plus\":{depth_3_plus},\"depth_4_plus\":{depth_4_plus},\
+         \"depth_5_plus\":{depth_5_plus}}}",
         rows.len()
     );
 }
@@ -1356,7 +1362,18 @@ mod diamond_tests {
             id: "X".into(),
             diamond_count: 4,
         };
-        assert_eq!(r4.depth_label(), "depth-4+");
+        assert_eq!(r4.depth_label(), "depth-4");
+        // PMAT-286: depth-5+ opened
+        let r5 = DiamondRow {
+            id: "X".into(),
+            diamond_count: 5,
+        };
+        assert_eq!(r5.depth_label(), "depth-5+");
+        let r6 = DiamondRow {
+            id: "X".into(),
+            diamond_count: 6,
+        };
+        assert_eq!(r6.depth_label(), "depth-5+");
     }
 
     #[test]

@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-286
+  github_issue: null
+  item_type: task
+  title: 'PMAT-286: FIRST Diamond depth-5 in the substrate (bitwise-AND-commutative-monoid on C-PY-INT-ARITH)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T20:30:00Z
+  updated: 2026-05-22T20:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add bitwise_and_commutative_monoid_diamond Lean theorem to contracts/lean/PyIntArith.lean — 4 conjuncts proving (a) dispatcher commutativity (b) slow-path = bigint_and (c) kernel commutativity (d) modelling commitment bigint_and = i64_and. Wire in contracts/py-int-arith-v1.yaml as new equation. Extend xpile diamond reporter with depth-5+ label + depth_5_plus aggregate. Add substrate_diamond_depth_5_opened gate test asserting ≥1 contract at depth-5+. FIRST DEPTH-5 Diamond in substrate — PyIntArith reaches 5 distinct algebraic categories (semiring + Euclidean + shift-monoid + power-monoid + bitwise-AND-monoid). Path β."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-285
   github_issue: null
   item_type: task
