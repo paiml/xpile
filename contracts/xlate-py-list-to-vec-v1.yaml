@@ -441,6 +441,35 @@ equations:
     lean_theorem: "XpileContracts.CXlatePyListToVec.iteration_order_preserved_silver"
     lean_file: "contracts/lean/XlatePyListToVec.lean"
 
+  list_reverse_involution_diamond:
+    # PMAT-338: FOURTH Diamond on this contract — BROADENS DEPTH-4
+    # from 5 to 6 contracts. First POST-UNIVERSAL broadening
+    # (post-PMAT-330 depth-4 ACROSS ALL 5 LAYERS milestone).
+    # Pushes XlatePyList (Layer 2) from depth-3 to depth-4,
+    # adding a SECOND Layer 2 contract at depth-4 (Bashrs was
+    # the first via PMAT-329).
+    lean_theorem: "XpileContracts.CXlatePyListToVec.list_reverse_involution_diamond"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      List.reverse is an INVOLUTION on PyListSilver.elems:
+        (a) double reverse is identity:  l.elems.reverse.reverse = l.elems
+        (b) reverse preserves length:    l.elems.reverse.length = l.elems.length
+        (c) reverse of empty is empty:   ([] : List α).reverse = []
+        (d) reverse of singleton:        [a].reverse = [a]
+    domain: |
+      Any PyListSilver α value. The four properties together
+      characterize List.reverse as a UNARY involution operation,
+      distinct from the binary ++ algebra (PMAT-221), the NonEmpty
+      subtype (PMAT-229), and the length functor (PMAT-244).
+    invariants:
+      - "FOURTH Diamond category on C-XLATE-PY-LIST-TO-VEC — BROADENS DEPTH-4 from 5 to 6 contracts"
+      - "first POST-UNIVERSAL broadening (post-PMAT-330 depth-4 ACROSS ALL 5 LAYERS milestone)"
+      - "captures (List, reverse) involution algebra — distinct from monoid (PMAT-221), subtype (PMAT-229), functor (PMAT-244)"
+    preconditions:
+      - "one PyListSilver α value (polymorphic in α)"
+    postconditions:
+      - "Diamond depth-4 broadened: 6 contracts at depth-4+"
+
 proof_obligations:
   - type: precondition
     property: meta-HIR carries a list type with inferred element type
