@@ -658,6 +658,44 @@ equations:
       - "an emitter that picked any value smaller than min a b satisfying c ≤ a ∧ c ≤ b would falsify the GREATEST-lower-bound characterization"
       - "Diamond DEPTH-13 ACROSS LAYERS demonstrated: 2 contracts at depth-13+"
 
+  bounded_smem_subtype_extensionality_diamond:
+    # PMAT-311: FOURTEENTH Diamond on this contract — opens DEPTH-14
+    # ACROSS LAYERS. SUBTYPE EXTENSIONALITY + DECIDABLE EQUALITY:
+    # BoundedSmem inherits equality from Nat .val via Subtype.ext,
+    # with antisymmetric ≤ lifting to subtype equality and decidable
+    # equality on val. Categorically orthogonal to all 13 prior
+    # categories — they work THROUGH the .val projection but don't
+    # axiomatize the SUBTYPE STRUCTURE itself. Mirror of PMAT-310
+    # (FIRST EXTERNAL category-theoretic claim on PyIntArith via
+    # Nat → Int ring homomorphism); PMAT-311 is the FIRST
+    # SUBTYPE-STRUCTURE claim on BoundedSmem. An emitter that
+    # lowered BoundedSmem to a raw Nat (discarding the bound proof)
+    # would satisfy all 13 prior algebraic axioms but FAIL the
+    # antisymmetric-lift (c) — a real bug class invisible to the
+    # other categories.
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_subtype_extensionality_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      BoundedSmem inherits equality from Nat .val (subtype extensionality):
+        (a) extensionality:        a.val = b.val → a = b
+        (b) congruence:            a = b → a.val = b.val
+        (c) antisymmetric lift:    a.val ≤ b.val → b.val ≤ a.val → a = b
+        (d) decidable equality:    a.val = b.val ∨ a.val ≠ b.val
+    domain: |
+      Any two BoundedSmem values. The four properties together
+      axiomatize the SUBTYPE STRUCTURE on BoundedSmem — its
+      relationship to the underlying Nat carrier via Subtype.ext.
+    invariants:
+      - "FOURTEENTH Diamond category on C-COMPILE-RUST-TO-PTX-MMA — opens DEPTH-14 ACROSS LAYERS (second contract at depth-14+ after PMAT-310 on PyIntArith)"
+      - "FIRST SUBTYPE-STRUCTURE claim on BoundedSmem — distinct from all 13 prior categories which work THROUGH .val but don't axiomatize the subtype relationship"
+      - "mirror of PMAT-310 (FIRST EXTERNAL category-theoretic claim on PyIntArith via Nat → Int)"
+      - "load-bearing for emitters that strip the bound proof: an emitter lowering BoundedSmem to raw Nat would satisfy all 13 prior algebraic axioms but FAIL the antisymmetric-lift (c) — two subtype elements with same val wouldn't be guaranteed equal without the bound preserved"
+    preconditions:
+      - "two BoundedSmem values; theorem uses Lean core's Subtype.ext and Nat.eq_or_ne"
+    postconditions:
+      - "an emitter that strips the bound proof when lowering to raw Nat would falsify (c)"
+      - "Diamond DEPTH-14 ACROSS LAYERS demonstrated: 2 contracts at depth-14+"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)

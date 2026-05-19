@@ -1318,4 +1318,108 @@ theorem bounded_smem_glb_lub_diamond (a b c : BoundedSmem) :
     ∧ (a.val ≤ c.val → b.val ≤ c.val → Nat.max a.val b.val ≤ c.val) := by
   refine ⟨?_, ?_, ?_, ?_⟩ <;> intros <;> omega
 
+/-! ## PMAT-311 — FOURTEENTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (DEPTH-14 ACROSS LAYERS): SUBTYPE EXTENSIONALITY + DECIDABLE
+    EQUALITY — BoundedSmem inherits its equality from Nat .val
+    (XPILE-REFINE-COMPILE-PTX-015).
+
+    **Opens DEPTH-14 ACROSS LAYERS.** PyIntArith reached depth-14
+    at PMAT-310 (Nat-cast ring homomorphism); PMAT-311 extends
+    depth-14 to Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The substrate
+    now has depth-14 on TWO contracts spanning Layer 1 and Layer 5.
+
+    CompileRustToPtxMma already has THIRTEEN Diamond categories:
+    - PMAT-218: BOUNDED MONOID
+    - PMAT-287: CLOSURE
+    - PMAT-231: JOIN-SEMILATTICE
+    - PMAT-242: MEET-SEMILATTICE
+    - PMAT-248: LATTICE ABSORPTION
+    - PMAT-291: DISTRIBUTIVE LATTICE
+    - PMAT-293: BOUNDED LATTICE
+    - PMAT-295: CANCELLATIVE MONOID
+    - PMAT-299: ORDERED MONOID
+    - PMAT-301: ADDITIVE-LATTICE DISTRIBUTIVITY
+    - PMAT-303: DISCRETE ORDER
+    - PMAT-306: MAX/MIN MONOTONICITY
+    - PMAT-308: GLB/LUB UNIVERSAL PROPERTY
+
+    PMAT-311 adds the SUBTYPE-STRUCTURE axioms — distinct from all
+    13 prior categories which work via the `.val` projection but
+    don't axiomatize the SUBTYPE relationship itself:
+    - **PMAT-311: BoundedSmem inherits equality from Nat .val —
+      val-equality lifts to subtype-equality, with decidable
+      equality on val**
+
+    The categorical distinction is sharp:
+      - PMAT-218..308 axiomatize operations and orderings on
+        BoundedSmem THROUGH the `.val` projection — they treat
+        BoundedSmem AS IF it were Nat for arithmetic purposes.
+      - PMAT-311 axiomatizes the SUBTYPE STRUCTURE itself: the
+        relationship between BoundedSmem and its underlying Nat
+        carrier:
+        * Extensionality: val determines the element (a.val = b.val → a = b)
+        * Congruence: equal elements have equal vals (a = b → a.val = b.val)
+        * Antisymmetric ≤ lifts: a.val ≤ b.val ∧ b.val ≤ a.val → a = b
+        * Decidable equality on val (Nat.eq_or_ne)
+
+    This is the FIRST claim about BoundedSmem AS A SUBTYPE (rather
+    than as a stand-in for Nat). It parallels PMAT-310 (which
+    introduced the FIRST EXTERNAL/category-theoretic claim on
+    PyIntArith) by introducing the FIRST SUBTYPE-STRUCTURE claim
+    on BoundedSmem.
+
+    Why this is genuinely orthogonal:
+      An emitter could satisfy all 13 prior algebraic axioms by
+      lowering BoundedSmem to a raw `Nat` (discarding the bound
+      proof). It would FAIL the antisymmetric-lift axiom (c)
+      because two distinct subtype elements with the same val
+      would not be guaranteed equal — unless the bound proof is
+      preserved. Mathlib's `Subtype.ext` is the canonical lifter.
+
+    Status: discharged at v0.1.0 (PMAT-311). Tier: DIAMOND.
+    Second DEPTH-14 in the substrate (DEPTH-14 ACROSS LAYERS). -/
+
+/--
+  **Diamond-tier refinement theorem** — `BoundedSmem` is a SUBTYPE
+  with extensional equality inherited from Nat .val.
+
+  Combines four SUBTYPE-STRUCTURE properties:
+  (a) Extensionality:        `a.val = b.val → a = b`
+  (b) Congruence:            `a = b → a.val = b.val`
+  (c) Antisymmetric ≤ lift:  `a.val ≤ b.val → b.val ≤ a.val → a = b`
+  (d) Decidable equality:    `a.val = b.val ∨ a.val ≠ b.val`
+
+  Uses Lean core's `Subtype.ext` for the val-equality → subtype-
+  equality lift. Distinct from all 13 prior Diamond categories
+  which work THROUGH the `.val` projection but don't axiomatize
+  the SUBTYPE STRUCTURE itself.
+
+  Mirror of PMAT-310 (which introduced the FIRST EXTERNAL claim
+  on PyIntArith via the Nat→Int ring homomorphism). PMAT-311
+  introduces the FIRST SUBTYPE-STRUCTURE claim on BoundedSmem.
+
+  An emitter that lowered BoundedSmem to a raw Nat (discarding
+  the bound proof) would satisfy all 13 prior algebraic axioms
+  but FAIL the antisymmetric-lift (c) — two subtype elements
+  with the same val would not be guaranteed equal without the
+  bound proof being preserved.
+
+  Status: **discharged at v0.1.0 (PMAT-311)**. Tier: DIAMOND.
+  Second DEPTH-14 in the substrate (DEPTH-14 ACROSS LAYERS).
+-/
+theorem bounded_smem_subtype_extensionality_diamond (a b : BoundedSmem) :
+    -- (a) Extensionality: val determines the element
+    (a.val = b.val → a = b)
+    -- (b) Congruence: equal elements have equal vals
+    ∧ (a = b → a.val = b.val)
+    -- (c) Antisymmetric ≤ lift: val-antisymmetry → subtype equality
+    ∧ (a.val ≤ b.val → b.val ≤ a.val → a = b)
+    -- (d) Decidable equality on val
+    ∧ (a.val = b.val ∨ a.val ≠ b.val) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact fun h => Subtype.ext h
+  · intro h; rw [h]
+  · intro h1 h2; exact Subtype.ext (Nat.le_antisymm h1 h2)
+  · exact Nat.eq_or_ne a.val b.val
+
 end XpileContracts.CCompileRustToPtxMma

@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-311
+  github_issue: null
+  item_type: task
+  title: 'PMAT-311: Diamond depth-14 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-14 via subtype-extensionality axioms)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T08:00:00Z
+  updated: 2026-05-23T08:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add bounded_smem_subtype_extensionality_diamond Lean theorem to contracts/lean/CompileRustToPtxMma.lean — 4 conjuncts: extensionality (a.val = b.val → a = b via Subtype.ext), congruence (a = b → a.val = b.val), antisymmetric ≤ lift (val antisymmetry → subtype equality), decidable equality (Nat.eq_or_ne). Wire as new equation in compile-rust-to-ptx-mma-v1.yaml. Tighten substrate_diamond_depth_14_opened gate to ≥2 contracts. Opens DEPTH-14 ACROSS LAYERS — 2 contracts at depth-14+. FIRST SUBTYPE-STRUCTURE claim on BoundedSmem — mirror of PMAT-310 (FIRST EXTERNAL category-theoretic claim on PyIntArith). Distinct from all 13 prior categories which work THROUGH .val but don't axiomatize the subtype relationship. Falsification surface: emitters that strip the bound proof when lowering BoundedSmem to raw Nat."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-310
   github_issue: null
   item_type: task
