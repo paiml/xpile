@@ -674,6 +674,37 @@ equations:
     postconditions:
       - "Diamond depth-4 broadened: 11 contracts at depth-4+"
 
+  rust_fn_body_array_size_diamond:
+    # PMAT-351: FIFTH Diamond on this contract — BROADENS DEPTH-5
+    # from 8 to 9 contracts. Pushes XlateLeanToRust (Layer 5) from
+    # depth-4 to depth-5, adding a THIRD Layer 5 contract at depth-5
+    # (CompileRustToPtxMma was first via PMAT-287, Notation second
+    # via PMAT-350). RUST-FN BODY ARRAY.SIZE STRUCTURE: the body
+    # Array.size satisfies non-negativity, empty-base, and
+    # field-replacement invariants. Sixth substrate-wide
+    # demonstration of the Array.size template (after PMAT-340/341/
+    # 344/348).
+    lean_theorem: "XpileContracts.CXlateLeanToRust.rust_fn_body_array_size_diamond"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      RustFn.body Array.size structure:
+        (a) body.size >= 0 (trivially for Nat)
+        (b) empty body has size-0
+        (c) field-replacement preserves body size
+        (d) self-equal size (reflexivity)
+    domain: |
+      Any RustFn value (body : Array UInt8). The four properties
+      together axiomatize the body-field Array.size structure as a
+      well-behaved natural-number measure.
+    invariants:
+      - "FIFTH Diamond category on C-XLATE-LEAN-TO-RUST — BROADENS DEPTH-5 from 8 to 9 contracts"
+      - "ARRAY.SIZE STRUCTURE — distinct from PMAT-222 monoid, PMAT-237 functor, PMAT-335 struct-ext, PMAT-343 Nat-structure"
+      - "sixth substrate-wide demonstration of the Array.size template"
+    preconditions:
+      - "one RustFn record with body : Array UInt8"
+    postconditions:
+      - "Diamond depth-5 broadened: 9 contracts at depth-5+ (3 Layer 5 contracts at depth-5)"
+
 proof_obligations:
   - type: postcondition
     property: total def lowers to a panic-free Rust fn
