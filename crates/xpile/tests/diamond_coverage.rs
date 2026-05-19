@@ -326,10 +326,25 @@ fn substrate_diamond_depth_18_opened() {
     let depth_18_plus = read_aggregate_field(&json, "depth_18_plus");
     // PMAT-320 opened depth-18 on C-PY-INT-ARITH (Layer 1): SIGN FUNCTION monoid hom.
     // PMAT-321 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): NAT INTEGRAL DOMAIN.
-    // Gate now asserts depth-18 ACROSS LAYERS (≥2 contracts at depth-18+).
+    // PMAT-322 took PyIntArith to depth-19 (still ≥2 at depth-18+).
+    // Gate asserts depth-18 ACROSS LAYERS (≥2 contracts at depth-18+).
     assert!(
         depth_18_plus >= 2,
         "Diamond depth-18 ACROSS LAYERS milestone (PMAT-320, PMAT-321): \
          expected ≥2 contracts at depth-18+ (Layer 1 + Layer 5), got {depth_18_plus}.\n{json}"
+    );
+}
+
+#[test]
+fn substrate_diamond_depth_19_opened() {
+    let json = run_diamond_json();
+    let depth_19_plus = read_aggregate_field(&json, "depth_19_plus");
+    // PMAT-322 opened depth-19 on C-PY-INT-ARITH: NEGATION-ORDER COMPATIBILITY
+    // (negation reverses the linear order; Mathlib's OrderedAddCommGroup shape).
+    // The 19th orthogonal category captures how unary `-` interacts with `<` and `≤`.
+    assert!(
+        depth_19_plus >= 1,
+        "Diamond depth-19 milestone (PMAT-322): expected ≥1 contract at depth-19+, \
+         got {depth_19_plus}.\n{json}"
     );
 }

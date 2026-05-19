@@ -7,6 +7,53 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-19 in the substrate: Int negation-order-compatibility Diamond on `C-PY-INT-ARITH` (PMAT-322)
+
+**Path β extension.** Opens Diamond **depth-19** — nineteen distinct algebraic categories on a single contract. PyIntArith was at depth-18 (post-PMAT-320); PMAT-322 adds **NEGATION-ORDER COMPATIBILITY** as the nineteenth orthogonal category.
+
+**The 19 Diamond categories on `C-PY-INT-ARITH`:**
+
+1–18. Prior categories
+19. **PMAT-322: NEGATION-ORDER COMPATIBILITY** ← FIRST DEPTH-19
+
+**Why NEGATION-ORDER COMPATIBILITY is genuinely a NEW category — orthogonal to ALL 18 prior:**
+
+- PMAT-290 (**ABELIAN-GROUP-ENRICHMENT**) characterized negation as group inverse (`-(-a) = a`, distributivity over `+`) — algebraic only, **no order**.
+- PMAT-298 (**LINEAR-ORDER TRICHOTOMY**) gave strict-order axioms — **no negation**.
+- PMAT-305 (**ORDERED RING**) gave sign rules on **products** — no negation interaction with the order itself.
+- PMAT-322 (**NEGATION-ORDER COMPATIBILITY**) is the **FIRST claim** characterizing how unary `-` interacts with the linear order:
+  - **Reverses strict order:** `a < b ↔ -b < -a`
+  - **Reverses non-strict order:** `a ≤ b ↔ -b ≤ -a`
+  - **Positivity-negativity duality:** `0 < a ↔ -a < 0`
+  - **Non-negativity-non-positivity duality:** `0 ≤ a ↔ -a ≤ 0`
+
+Together these characterize Int as an **ORDERED-ADDITIVE-COMMUTATIVE-GROUP** — Mathlib's `OrderedAddCommGroup` typeclass shape. This is the canonical axiom that distinguishes an ordered group from a group with an independent (unrelated) order.
+
+**New Lean theorem:**
+
+```lean
+theorem int_neg_order_compat_diamond (a : Int) :
+    (∀ b : Int, a < b ↔ -b < -a)
+    ∧ (∀ b : Int, a ≤ b ↔ -b ≤ -a)
+    ∧ (0 < a ↔ -a < 0)
+    ∧ (0 ≤ a ↔ -a ≤ 0) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro b; constructor <;> intro h <;> omega
+  · intro b; constructor <;> intro h <;> omega
+  · constructor <;> intro h <;> omega
+  · constructor <;> intro h <;> omega
+```
+
+Proved by `omega` — linear arithmetic on Int with negation, `<`, `≤` is decidable.
+
+**Falsification surface:** an emitter that lowered unary minus through a **saturating fast-path** (e.g., `-2^63` maps to `2^63-1` instead of overflow) would falsify property (a) — saturating negation is not order-reversing at the saturation boundary. Python's int negation is order-reversing because Python ints are unbounded; a fixed-width fast-path that wraps would falsify the axiom.
+
+**Reporter + gate updates:**
+
+- `xpile diamond --json` extended with `depth-18` discrete label + `depth-19+` aggregate.
+- `substrate_diamond_depth_19_opened` gate test added (≥ 1 at depth-19+).
+- Substrate Diamond totals: **62 wired Diamond theorems** across 12 contracts (was 61).
+
 ### Added — Diamond depth-18 ACROSS LAYERS: Nat-integral-domain Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-321)
 
 **Path β extension.** Depth-18 was opened by PMAT-320 on PyIntArith (Layer 1). PMAT-321 extends depth-18 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) via the Nat-integral-domain Diamond — the substrate now has **2 contracts at depth-18+**.

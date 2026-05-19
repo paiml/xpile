@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-322
+  github_issue: null
+  item_type: task
+  title: 'PMAT-322: FIRST Diamond depth-19 in the substrate (negation-order compatibility on C-PY-INT-ARITH)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T13:30:00Z
+  updated: 2026-05-23T13:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add int_neg_order_compat_diamond Lean theorem to contracts/lean/PyIntArith.lean — 4 conjuncts: reverses strict order, reverses non-strict order, positivity-negativity duality, non-neg-non-pos duality. Proved by `omega`. Wire as new equation in py-int-arith-v1.yaml. Extend xpile diamond reporter with depth-19+ label + depth_19_plus aggregate. Refine depth-18 from depth-18+ to discrete depth-18. Add substrate_diamond_depth_19_opened gate test (≥1). FIRST DEPTH-19 — PyIntArith reaches 19 categories. The 19th (NEGATION-ORDER COMPATIBILITY) characterizes how unary `-` interacts with the linear order — Mathlib's OrderedAddCommGroup shape. Distinct from PMAT-290 (algebraic neg, no order), PMAT-298 (linear order, no neg), PMAT-305 (sign rules on products). Falsification: saturating unary minus where -2^63 maps to 2^63-1 falsifies (a)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-321
   github_issue: null
   item_type: task
