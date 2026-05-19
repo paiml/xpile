@@ -7,6 +7,32 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Spec §28 + diamond-taxonomy.md sync to depth-11 ACROSS LAYERS reality (PMAT-304)
+
+After 6 Path β PRs (PMAT-298..303) added depths 9, 10, and 11 ACROSS LAYERS, the spec had accumulated 3 tiers of documentation rot. PMAT-304 syncs:
+
+**`docs/specifications/xpile-spec.md` §28:**
+
+- Bumped substrate total: 42 → **47 wired Diamond equations**.
+- Bumped category families: 9+ → **12+** (added: ring, integral-domain, distributive-lattice, bounded-lattice, additive-lattice, order-topology).
+- Extended Coverage state table with 3 new rows: depth-9, depth-10, depth-11 (all ACROSS LAYERS).
+- Updated `C-PY-INT-ARITH` deep-depth listing from 8 → **11 categories** (added PMAT-298 LINEAR-ORDER, PMAT-300 RING-DISTRIBUTIVITY, PMAT-302 INTEGRAL DOMAIN).
+- Updated `C-COMPILE-RUST-TO-PTX-MMA` listing from 8 → **11 categories** (added PMAT-299 ORDERED MONOID, PMAT-301 ADDITIVE-LATTICE, PMAT-303 DISCRETE ORDER).
+- Updated tooling depth labels: `none / depth-1 / ... / depth-7 / depth-8+` → `none / depth-1 / ... / depth-10 / depth-11+`.
+- Updated CI gate count: 9 → **12 integration tests**.
+
+**`docs/specifications/sub/diamond-taxonomy.md`:**
+
+- Coverage milestones extended with depth-9/10/11 rows (PMAT-298..303 mechanism rows).
+- Substrate total bumped 42 → **47 wired Diamond equations**.
+- New **Ring family** subsection with PMAT-300 (ring-distributivity) + PMAT-302 (integral-domain) entries.
+- New **Order-topology family** subsection with PMAT-298 (linear-order trichotomy) + PMAT-303 (discrete order) entries.
+- Lattice family extended with PMAT-301 (additive-lattice distributivity).
+- Monoid family extended with PMAT-299 (ordered monoid).
+- CI enforcement clause extended with depth-9/10/11 invariants.
+
+No code changes — pure documentation alignment. Mirrors PMAT-296 / PMAT-297 sync pattern from the post-PMAT-295 depth-8 cycle.
+
 ### Added — Diamond depth-11 ACROSS LAYERS: discrete-order Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-303)
 
 **Path β extension.** Depth-11 was opened by PMAT-302 on PyIntArith (Layer 1). PMAT-303 extends depth-11 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) so the substrate now has **two contracts at depth-11+** across distinct taxonomy layers.

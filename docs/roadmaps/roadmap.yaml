@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-304
+  github_issue: null
+  item_type: task
+  title: 'PMAT-304: Spec §28 + diamond-taxonomy.md sync to depth-11 ACROSS LAYERS reality'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T04:30:00Z
+  updated: 2026-05-23T04:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "After 6 Path β PRs (PMAT-298..303) added depths 9, 10, 11 ACROSS LAYERS, the spec accumulated 3 tiers of documentation rot. Sync docs/specifications/xpile-spec.md §28 (substrate total 42 → 47, families 9+ → 12+, coverage state table extended with depth-9/10/11 rows, deep-depth listings updated to 11 categories each, depth labels updated to depth-11+, CI gate count 9 → 12 tests). Sync docs/specifications/sub/diamond-taxonomy.md (coverage milestones extended, new Ring family subsection with PMAT-300/302, new Order-topology family subsection with PMAT-298/303, lattice family extended with PMAT-301, monoid family extended with PMAT-299, CI enforcement clause extended with depth-9/10/11 invariants). No code changes. Mirrors PMAT-296 / PMAT-297 sync pattern from the depth-8 cycle."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-303
   github_issue: null
   item_type: task
