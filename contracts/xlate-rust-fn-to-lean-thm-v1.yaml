@@ -81,6 +81,19 @@ equations:
     # and PMAT-165).
     lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.name_preserved_silver"
     lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    # PMAT-277: Property-specific Silver-tier Kani harness. Closes
+    # audit-design.md §4 caveat for this equation. Bronze harness on
+    # `rust_fn_to_lean_def` was a single 4-byte payload (would pass
+    # if the emitter swapped name and body bytes); Silver decomposes
+    # into 5 source fields (name, generics, args, return_type, body)
+    # and 4 target fields (binders = generics ++ args). Companion
+    # harnesses body_preserved_silver, return_type_preserved_silver,
+    # binders_concat_generics_args_silver in the same Kani file
+    # exhaust per-field preservation. The binders concat order is
+    # load-bearing — Lean's dependent-binder elaboration requires
+    # generics-first.
+    kani_harness: "name_preserved_silver"
+    kani_file: "contracts/kani/xlate_rust_fn_to_lean_thm.rs"
     formula: |
       lift(rust_fn(name := n, ...), C).name == n
     domain: |

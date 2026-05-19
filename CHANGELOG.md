@@ -7,6 +7,44 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Property-specific Silver-tier Kani harnesses for `C-XLATE-RUST-FN-TO-LEAN-THM` (Path α, third contract) (PMAT-277)
+
+Continues Path α (audit-design.md §4 placeholder cleanup) on the third contract. Lifts the `rust_fn_to_lean_def` equation's Kani harness from a Bronze byte-payload to Silver-tier structural proofs matching Lean's `name_preserved_silver` / `body_preserved_silver` / `return_type_preserved_silver` / `binders_concat_generics_args_silver` (PMAT-166..167).
+
+**Structural decomposition mirrors the Lean Silver:**
+
+```rust
+RustFnSilver  { name, generics, args, return_type, body }       // 5 fields
+LeanDefSilver { name, binders = (generics, args), return_type, body } // 4 fields
+```
+
+**Why this is sharper than PMAT-275's per-field equality**
+
+The Lean Silver explicitly proves `binders = generics ++ args` — concat order is load-bearing. Lean's dependent-binder syntax requires generics to bind FIRST so subsequent args can reference them. An emitter that swaps the order, or interleaves, would emit Lean that fails elaboration. The Bronze byte-payload couldn't catch this; the Silver per-position proof pins it down.
+
+**Four new `#[kani::proof]` functions:**
+
+| Proof | Catches |
+|-------|---------|
+| `name_preserved_silver` | snake_case → lowerCamelCase normalization, Mathlib-style namespacing |
+| `body_preserved_silver` | byte-level body mangling |
+| `return_type_preserved_silver` | `Result<T, E>` → `Except T E` auto-lift (sound semantically, but byte-level change — Gold tier admits this via `↦` equivalence) |
+| `binders_concat_generics_args_silver` | generics/args order swap or interleaving — fatal for Lean elaboration |
+
+**Contract YAML wiring**
+
+`contracts/xlate-rust-fn-to-lean-thm-v1.yaml` `name_preserved_silver` equation now has `kani_harness:` + `kani_file:` pointing at the new proof.
+
+**Path α progress (3 of 5 closed):**
+
+| Contract | Status |
+|----------|--------|
+| C-FFI-CPYTHON-EXT-V1 | ✅ PMAT-275 |
+| C-COMPILE-RUST-TO-PTX-MMA | ✅ PMAT-276 |
+| C-XLATE-RUST-FN-TO-LEAN-THM-V1 | ✅ PMAT-277 |
+| C-XLATE-LEAN-TO-RUST-V1 | ⏳ |
+| C-XLATE-PY-LIST-TO-VEC-V1 | ⏳ |
+
 ### Added — Property-specific Silver-tier Kani harnesses for `C-COMPILE-RUST-TO-PTX-MMA` (Path α, second contract) (PMAT-276)
 
 Continues Path α (audit-design.md §4 placeholder cleanup) on the second contract. Lifts `contracts/kani/compile_rust_to_ptx_mma.rs` from a Bronze byte-identity placeholder to property-specific Silver-tier structural proofs matching the Lean Silver theorem `shared_memory_budget_silver` already shipped at PMAT-161.

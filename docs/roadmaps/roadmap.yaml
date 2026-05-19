@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-277
+  github_issue: null
+  item_type: task
+  title: 'PMAT-277: Property-specific Silver-tier Kani harnesses for C-XLATE-RUST-FN-TO-LEAN-THM (Path α, third contract)'
+  status: planned
+  priority: medium
+  assigned_to: low
+  created: 2026-05-22T16:00:00Z
+  updated: 2026-05-22T16:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Lift the rust_fn_to_lean_def equation's Kani harness from Bronze byte-payload to Silver structural proofs. Add RustFnSilver (5 fields: name/generics/args/return_type/body) + LeanDefSilver (4 fields: name/binders/return_type/body, binders = (generics, args) tuple). Four new Kani proofs: name_preserved_silver, body_preserved_silver, return_type_preserved_silver, binders_concat_generics_args_silver — the last one is the load-bearing concat-order claim (generics MUST precede args for Lean dependent-binder elaboration). Wire kani_harness in contracts/xlate-rust-fn-to-lean-thm-v1.yaml on name_preserved_silver equation. Third Path α contract closed."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-276
   github_issue: null
   item_type: task
