@@ -2,6 +2,15 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-348
+  github_issue: null
+  item_type: task
+  title: 'PMAT-348: Diamond depth-5 BROADENED from 5 to 6 contracts (ArtifactSilver.bytes Array.size on C-XPILE-BACKEND-TRAIT)'
+  status: planned
+  priority: medium
+  created: 2026-05-20T01:30:00Z
+  acceptance_criteria:
+  - "Post-PMAT-347 milestone broadening: add artifact_bytes_array_size_diamond to XpileBackendTrait. Pushes Layer 3 contract from depth-4 to depth-5, making it the 2nd Layer 3 contract at depth-5 (XpileFrontendTrait was first via PMAT-347). Fifth substrate-wide Array.size demonstration. Tighten depth-5 gate from ≥5 to ≥6."
 - id: PMAT-347
   github_issue: null
   item_type: task

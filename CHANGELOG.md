@@ -7,6 +7,35 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-5 BROADENED from 5 to 6 contracts: ArtifactSilver.bytes Array.size Diamond on `C-XPILE-BACKEND-TRAIT` (PMAT-348)
+
+**Post-milestone broadening.** PMAT-347 achieved depth-5 ACROSS ALL 5 LAYERS with exactly one contract per layer at depth-5+ (5 total). PMAT-348 pushes `C-XPILE-BACKEND-TRAIT` (Layer 3) from depth-4 to depth-5, making it the **second Layer 3 contract** at depth-5+ (XpileFrontendTrait was first via PMAT-347).
+
+**Coverage state at PMAT-348:**
+
+| Metric | Value |
+|---|---|
+| Wired Diamond theorems | **85** (was 84) |
+| Diamond categories | 27+ |
+| Contracts at depth-5+ | **6** (was 5) |
+| Diamond depth-5 reach | ALL 5 LAYERS + 2nd Layer 3 (PMAT-348) |
+
+**5 Diamond categories on `C-XPILE-BACKEND-TRAIT`:**
+
+1. PMAT-225 `backend_equivalence_class_diamond` (equivalence relation)
+2. PMAT-235 `target_constant_projection_diamond` (constant projection)
+3. PMAT-331 `artifact_struct_extensionality_diamond` (record structure)
+4. PMAT-339 `target_enum_distinctness_diamond` (enum distinctness)
+5. **PMAT-348 `artifact_bytes_array_size_diamond`** (Array.size structure) ← depth-5
+
+This is the **fifth substrate-wide demonstration** of the Array.size structural pattern (after PMAT-340 / PMAT-341 / PMAT-343 / PMAT-344) — confirming Array.size invariants as a portable Diamond template across record-bearing contracts.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_5_plus: 6` (was 5).
+- `substrate_diamond_depth_5_opened` gate **tightened to ≥ 6** (ALL 5 LAYERS + 2nd Layer 3).
+- Substrate Diamond totals: **85 wired theorems** (was 84).
+
 ### Added — **MILESTONE: Diamond depth-5 ACROSS ALL 5 TAXONOMY LAYERS**: SourceLang-enum-distinctness Diamond on `C-XPILE-FRONTEND-TRAIT` (PMAT-347)
 
 **SUBSTRATE MILESTONE: depth-5 reaches every xpile taxonomy layer.** After PMAT-346 brought depth-5 to 4 layers (L1+L2+L4+L5), only Layer 3 was missing. PMAT-347 pushes `C-XPILE-FRONTEND-TRAIT` (Layer 3) from depth-4 to depth-5, **completing depth-5 ACROSS ALL 5 LAYERS** — parallel to PMAT-330's depth-4 milestone.

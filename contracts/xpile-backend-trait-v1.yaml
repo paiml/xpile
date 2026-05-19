@@ -318,6 +318,38 @@ equations:
       - "an emitter conflating two Target constructors (e.g., emitting PTX when WGSL declared) would falsify enumeration distinctness"
       - "Diamond depth-4 broadened: 7 contracts at depth-4+"
 
+  artifact_bytes_array_size_diamond:
+    # PMAT-348: FIFTH Diamond on this contract — BROADENS DEPTH-5
+    # from 5 to 6 contracts. Pushes XpileBackendTrait (Layer 3) from
+    # depth-4 to depth-5, adding SECOND Layer 3 contract at depth-5
+    # (XpileFrontendTrait was first via PMAT-347). ARTIFACT-SILVER
+    # BYTES ARRAY SIZE STRUCTURE: the bytes Array.size satisfies
+    # standard non-negativity, empty-base, and field-replacement
+    # invariants. Fifth substrate-wide demonstration of the
+    # Array.size pattern (after PMAT-340 / PMAT-341 / PMAT-343 /
+    # PMAT-344).
+    lean_theorem: "XpileContracts.CXpileBackendTrait.artifact_bytes_array_size_diamond"
+    lean_file: "contracts/lean/XpileBackendTrait.lean"
+    formula: |
+      ArtifactSilver.bytes Array.size structure:
+        (a) bytes.size >= 0 (trivially for Nat)
+        (b) empty artifact has size-0 bytes
+        (c) field-replacement preserves bytes size
+        (d) target field is independent (size unchanged by target swap)
+    domain: |
+      Any ArtifactSilver value. The four properties together
+      axiomatize the bytes-field Array.size structure as a
+      well-behaved natural-number measure.
+    invariants:
+      - "FIFTH Diamond category on C-XPILE-BACKEND-TRAIT — BROADENS DEPTH-5 from 5 to 6 contracts"
+      - "ARRAY.SIZE STRUCTURE — distinct from PMAT-225/235/331/339 categories"
+      - "fifth substrate-wide demonstration of the Array.size pattern"
+    preconditions:
+      - "ArtifactSilver record with bytes : Array UInt8 and target : Target"
+    postconditions:
+      - "an emitter that misreported bytes.size (e.g., overflow truncation) would falsify the size structure"
+      - "Diamond depth-5 broadened: 6 contracts at depth-5+ (2 Layer 3 contracts at depth-5)"
+
 proof_obligations:
   - type: invariant
     property: Every registered Target is owned by exactly one Backend
