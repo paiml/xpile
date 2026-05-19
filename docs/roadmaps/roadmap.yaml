@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-271
+  github_issue: null
+  item_type: task
+  title: 'PMAT-271: for-in-range desugaring Runtime sweep (C-PY-INT-ARITH extension)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T13:00:00Z
+  updated: 2026-05-22T13:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add py_int_arith_runtime_stratum_for_loop_desugaring_matches_reference test to crates/xpile/tests/runtime_strata.rs. Sweep covers 400 inputs across three range shapes: single-arg range(n) on n in 0..200; two-arg range(a,b) on 100 LCG pairs in [-99..99]; three-arg range(0,stop,2) on 100 LCG stop values in [-199..199]. Empty-loop boundary cases (a>=b, stop<=0) explicitly covered. Verifies PMAT-007 for-in-range desugaring matches CPython range semantics. Runtime-stratum samples on C-PY-INT-ARITH: 9241 -> 9641."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-270
   github_issue: null
   item_type: task
