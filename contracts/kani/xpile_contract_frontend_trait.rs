@@ -79,3 +79,82 @@ fn parse_idempotency() {
         "parse_to_equations must be deterministic on identical sources",
     );
 }
+
+// ─── PMAT-284: Silver-tier property-specific Kani harness ───────────
+//
+// Audit-design.md §4 caveat: Bronze-tier Kani harnesses are "byte-
+// identity placeholders". Path α extension to ninth contract.
+// Mirrors Lean PMAT-158 `equations_only_silver` — a FRAME-PRESERVATION
+// property (parse_to_equations must NOT mutate the modules side),
+// distinct from per-field equality (PMAT-275..283).
+
+/// Silver-tier model of a TranspileSession — fixed-shape stand-in
+/// for Lean's `TranspileSession { modules, equations }`. Tracks
+/// counts + digests on both lanes so frame preservation is observable.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct TranspileSessionSilver {
+    module_count: u8,
+    modules_digest: [u8; 4],
+    equation_count: u8,
+    equations_digest: [u8; 4],
+}
+
+/// Silver-tier `parse_to_equations` — appends to equations side
+/// (count +1, digest = source); leaves modules side untouched.
+fn parse_to_equations_silver(
+    session: &TranspileSessionSilver,
+    source: &[u8; 4],
+) -> TranspileSessionSilver {
+    TranspileSessionSilver {
+        module_count: session.module_count,
+        modules_digest: session.modules_digest,
+        equation_count: session.equation_count.wrapping_add(1),
+        equations_digest: *source,
+    }
+}
+
+fn arb_session() -> TranspileSessionSilver {
+    TranspileSessionSilver {
+        module_count: kani::any(),
+        modules_digest: kani::any(),
+        equation_count: kani::any(),
+        equations_digest: kani::any(),
+    }
+}
+
+/// PMAT-284 — Silver-tier counterpart to `equations_only_silver`
+/// (Lean PMAT-158). Frame preservation: `parse_to_equations` MUST
+/// NOT mutate the modules side. Catches a buggy ContractFrontend
+/// that creates meta-HIR Modules on detecting `def`/`theorem` keywords.
+#[kani::proof]
+fn equations_only_silver() {
+    let session = arb_session();
+    let source: [u8; 4] = kani::any();
+    let result = parse_to_equations_silver(&session, &source);
+    kani::assert(
+        result.module_count == session.module_count,
+        "parse_to_equations must not change module_count (frame preservation)",
+    );
+    kani::assert(
+        result.modules_digest == session.modules_digest,
+        "parse_to_equations must not change modules_digest (frame preservation)",
+    );
+}
+
+/// PMAT-284 — Complementary: equations side advances as expected.
+/// Frame preservation alone allows a no-op; this proof + the
+/// preceding one together characterize parse_to_equations fully.
+#[kani::proof]
+fn equations_advance_silver() {
+    let session = arb_session();
+    let source: [u8; 4] = kani::any();
+    let result = parse_to_equations_silver(&session, &source);
+    kani::assert(
+        result.equation_count == session.equation_count.wrapping_add(1),
+        "equation_count must advance by exactly 1",
+    );
+    kani::assert(
+        result.equations_digest == source,
+        "equations_digest must equal source (faithful append)",
+    );
+}

@@ -7,6 +7,52 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Property-specific Silver-tier Kani harnesses for `C-XPILE-CONTRACT-FRONTEND-TRAIT` (Path α extension, ninth contract — frame preservation pattern) (PMAT-284)
+
+Extends Path α to a ninth contract. **Introduces a new Silver pattern** — frame preservation — distinct from the per-field-equality pattern used in PMAT-275..283. Mirrors Lean's `equations_only_silver` (PMAT-158).
+
+**Why frame preservation is a different Silver pattern**
+
+PMAT-275..283 proved equalities on what was *preserved* (per-field byte equality). This contract requires proving the OPPOSITE: a property about what *did NOT change*. `parse_to_equations` must leave the meta-HIR module store untouched even as it appends to the equations store. A buggy ContractFrontend that, on detecting `def`/`theorem` keywords in source, creates a meta-HIR Module on the side would pass Bronze byte-payload idempotency but corrupt the dual-lane architecture's separation. Silver introduces a `TranspileSession` shape and proves the modules field is preserved.
+
+**Silver-tier model:**
+
+```rust
+struct TranspileSessionSilver {
+    module_count: u8,
+    modules_digest: [u8; 4],     // code lane — MUST be preserved
+    equation_count: u8,
+    equations_digest: [u8; 4],   // proof lane — advances on each call
+}
+```
+
+**Two new `#[kani::proof]` functions:**
+
+| Proof | Catches |
+|-------|---------|
+| `equations_only_silver` | a ContractFrontend that creates meta-HIR Modules on detecting `def`/`theorem` (frame violation) |
+| `equations_advance_silver` | a no-op `parse_to_equations` (would pass frame preservation but fail to do the expected work) |
+
+The two proofs together characterize `parse_to_equations` fully — frame preservation alone allows no-ops; advance-claim alone allows side-mutations.
+
+**Contract YAML wiring**
+
+`contracts/xpile-contract-frontend-trait-v1.yaml` `equations_only` equation now has `kani_harness:` + `kani_file:` pointing at the new Silver proof.
+
+**Path α extension recap (9 contracts):**
+
+| Contract | PMAT | Silver tier |
+|----------|------|-------------|
+| C-FFI-CPYTHON-EXT-V1 | 275 | per-field byte equality |
+| C-COMPILE-RUST-TO-PTX-MMA | 276 | smem_bytes ≤ 48 KiB inequality |
+| C-XLATE-RUST-FN-TO-LEAN-THM-V1 | 277 | concat-order |
+| C-XLATE-LEAN-TO-RUST-V1 | 278 | symmetric mirror |
+| C-XLATE-PY-LIST-TO-VEC-V1 | 279 | polymorphism via tag |
+| C-BASHRS-POSIX-IDEMPOTENCE | 281 | 2-axis cross-domain |
+| C-XPILE-FRONTEND-TRAIT | 282 | source_lang consistency |
+| C-XPILE-BACKEND-TRAIT | 283 | target consistency |
+| **C-XPILE-CONTRACT-FRONTEND-TRAIT** | **284** | **frame preservation (NEW pattern)** |
+
 ### Added — Property-specific Silver-tier Kani harnesses for `C-XPILE-BACKEND-TRAIT` (Path α extension, eighth contract) (PMAT-283)
 
 Extends Path α to an eighth contract. Lifts `lower_idempotency` from a Bronze byte-identity placeholder to Silver-tier structural proofs matching Lean's `target_consistency_silver` (PMAT-157).

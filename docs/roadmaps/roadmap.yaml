@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-284
+  github_issue: null
+  item_type: task
+  title: 'PMAT-284: Property-specific Silver-tier Kani harnesses for C-XPILE-CONTRACT-FRONTEND-TRAIT (Path α extension, ninth contract — frame preservation pattern)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T19:30:00Z
+  updated: 2026-05-22T19:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Lift contracts/kani/xpile_contract_frontend_trait.rs from Bronze byte-identity to Silver-tier frame-preservation model. Introduces a NEW Silver pattern distinct from per-field equality (PMAT-275..283): proving what did NOT change (modules side untouched) instead of what was preserved. Add TranspileSessionSilver record + parse_to_equations_silver. Two new Kani proofs: equations_only_silver (frame preservation — catches a ContractFrontend that creates Modules on detecting def/theorem), equations_advance_silver (catches no-op that would pass frame preservation). Wire kani_harness on equations_only equation. Path α extension — 9 contracts."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-283
   github_issue: null
   item_type: task

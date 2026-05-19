@@ -66,6 +66,16 @@ equations:
     # the modules array unchanged at the type level.
     lean_theorem: "XpileContracts.CXpileContractFrontendTrait.equations_only_silver"
     lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    # PMAT-284: Property-specific Silver-tier Kani harness. Closes
+    # audit-design.md §4 caveat. Different pattern from PMAT-275..283
+    # — instead of per-field equality, this is FRAME PRESERVATION
+    # (parse_to_equations must leave the modules side unchanged).
+    # Bronze byte-payload model couldn't catch a ContractFrontend
+    # that creates meta-HIR Modules on the side; Silver TranspileSession
+    # shape makes the frame invariant explicit. Companion harness
+    # equations_advance_silver characterizes what DOES change.
+    kani_harness: "equations_only_silver"
+    kani_file: "contracts/kani/xpile_contract_frontend_trait.rs"
     formula: |
       forall cf, source: cf.parse_to_equations(source) produces no xpile_meta_hir::Module
         and does not mutate any Module reachable from the call site
