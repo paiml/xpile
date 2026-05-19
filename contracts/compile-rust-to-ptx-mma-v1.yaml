@@ -363,6 +363,42 @@ equations:
       - "lattice structure now fully axiomatized"
       - "Diamond depth-4 opened on TWO contracts (PMAT-247 PyIntArith L1, this PR CompileRustToPtxMma L5)"
 
+  bounded_smem_distributive_lattice_diamond:
+    # PMAT-291 / XPILE-REFINE-COMPILE-PTX-009: SIXTH Diamond on this
+    # contract — opens DEPTH-6 ACROSS LAYERS (second contract at
+    # depth-6+ after PMAT-290 on C-PY-INT-ARITH). The
+    # DISTRIBUTIVE-LATTICE Diamond captures cross-distributivity of
+    # max and min: max(a, min(b, c)) = min(max(a, b), max(a, c))
+    # and the symmetric law. Distinct from PMAT-248 absorption
+    # (which is a SAME-OPERAND law: a ⊓ (a ⊔ b) = a) — distributivity
+    # is CROSS-OPERAND. Not all lattices are distributive (e.g., the
+    # pentagon lattice N5 has absorption but not distributivity);
+    # this Diamond proves BoundedSmem is in the distributive class.
+    # Distributive lattices are the algebraic foundation of BOOLEAN
+    # ALGEBRAS — load-bearing for any downstream emitter that uses
+    # Boolean-algebra reasoning on smem reservations.
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_distributive_lattice_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      (BoundedSmem, max, min) is a DISTRIBUTIVE LATTICE:
+        (a) max distributes over min: max(a, min(b, c)) = min(max(a, b), max(a, c))
+        (b) min distributes over max: min(a, max(b, c)) = max(min(a, b), min(a, c))
+    domain: |
+      Any three BoundedSmem values. The Diamond captures the
+      cross-distributivity of max and min — a CROSS-OPERAND
+      structural claim distinct from the SAME-OPERAND absorption
+      laws at PMAT-248.
+    invariants:
+      - "SIXTH Diamond category on C-COMPILE-RUST-TO-PTX-MMA — opens DEPTH-6 ACROSS LAYERS (second contract at depth-6+ after PMAT-290 on PyIntArith)"
+      - "distinct from PMAT-218 monoid, PMAT-231 join-semilattice, PMAT-242 meet-semilattice, PMAT-248 absorption, PMAT-287 closure — distributivity is a SHARP structural enrichment"
+      - "captures the BOOLEAN-ALGEBRA-FOUNDATIONAL distributivity law — not all lattices are distributive (pentagon N5 isn't), so this is a real categorical claim"
+      - "load-bearing for emitters that perform Boolean-algebra reasoning on smem reservations (smem regions can be unioned/intersected via max/min)"
+    preconditions:
+      - "three BoundedSmem values"
+    postconditions:
+      - "an emitter that implements a non-distributive lattice (e.g., reduces parallel-then-sequential smem composition asymmetrically) would falsify this Diamond while leaving PMAT-248 absorption intact"
+      - "Diamond DEPTH-6 ACROSS LAYERS demonstrated: 2 contracts at depth-6+ — opens the depth-6-across-layers dimension"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)

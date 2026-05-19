@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-291
+  github_issue: null
+  item_type: task
+  title: 'PMAT-291: Diamond depth-6 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-6 via distributive lattice)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T23:00:00Z
+  updated: 2026-05-22T23:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add bounded_smem_distributive_lattice_diamond Lean theorem to contracts/lean/CompileRustToPtxMma.lean using Nat.max_min_distrib_left and Nat.min_max_distrib_left. Wire as new equation in contracts/compile-rust-to-ptx-mma-v1.yaml. Tighten substrate_diamond_depth_6_opened gate to ≥2 contracts. Opens DEPTH-6 ACROSS LAYERS — two contracts (Layer 1 PyIntArith + Layer 5 CompileRustToPtxMma) at depth-6+. The distributive-lattice category is categorically distinct from PMAT-248 absorption: absorption is same-operand, distributivity is cross-operand. Path β extension."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-290
   github_issue: null
   item_type: task
