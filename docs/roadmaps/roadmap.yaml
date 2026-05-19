@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-303
+  github_issue: null
+  item_type: task
+  title: 'PMAT-303: Diamond depth-11 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-11 via discrete-order axioms)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T04:00:00Z
+  updated: 2026-05-23T04:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add bounded_smem_discrete_order_diamond Lean theorem to contracts/lean/CompileRustToPtxMma.lean — 4 conjuncts: successor (a.val < a.val + 1), no-gaps (a < b → a+1 ≤ b), irreflexivity (¬ a < a), successor-iff (a < b+1 ↔ a ≤ b). Proved by `omega`. Wire as new equation in compile-rust-to-ptx-mma-v1.yaml. Tighten substrate_diamond_depth_11_opened gate to ≥2 contracts. Opens DEPTH-11 ACROSS LAYERS — 2 contracts at depth-11+. Categorically distinct from PMAT-299 ordered monoid (silent on density vs discreteness — (Real, ≤) satisfies PMAT-299 but is dense) and from PMAT-231/242/248/291/293 lattice family (axiomatize max/min, not order topology). A floating-point smem accounting emitter would falsify no-gaps."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-302
   github_issue: null
   item_type: task

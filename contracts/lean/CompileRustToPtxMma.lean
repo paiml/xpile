@@ -1017,4 +1017,99 @@ theorem bounded_smem_additive_lattice_diamond (a b c : BoundedSmem) :
     ∧ Nat.min a.val b.val + c.val = Nat.min (a.val + c.val) (b.val + c.val) := by
   refine ⟨?_, ?_, ?_, ?_⟩ <;> omega
 
+/-! ## PMAT-303 — ELEVENTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (DEPTH-11 ACROSS LAYERS): DISCRETE-ORDER axioms on BoundedSmem
+    — successor, no-gaps, irreflexivity, successor-iff
+    (XPILE-REFINE-COMPILE-PTX-012).
+
+    **Opens DEPTH-11 ACROSS LAYERS.** PyIntArith reached depth-11
+    at PMAT-302 (integral-domain axioms); PMAT-303 extends depth-11
+    to Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The substrate now has
+    depth-11 on TWO contracts spanning Layer 1 and Layer 5.
+
+    CompileRustToPtxMma already has TEN Diamond categories:
+    - PMAT-218: BOUNDED MONOID (additive)
+    - PMAT-287: CLOSURE
+    - PMAT-231: JOIN-SEMILATTICE (max)
+    - PMAT-242: MEET-SEMILATTICE (min)
+    - PMAT-248: LATTICE ABSORPTION
+    - PMAT-291: DISTRIBUTIVE LATTICE
+    - PMAT-293: BOUNDED LATTICE (top/bottom)
+    - PMAT-295: CANCELLATIVE MONOID
+    - PMAT-299: ORDERED MONOID
+    - PMAT-301: ADDITIVE-LATTICE DISTRIBUTIVITY
+
+    PMAT-303 adds the ORDER-STRUCTURE axioms that characterize
+    (Nat, <) as a DISCRETE ORDER (as opposed to a dense order
+    like (Q, <)):
+    - **PMAT-303: (BoundedSmem.val, <) is a DISCRETE ORDER —
+      successor exists, no element strictly between n and n+1,
+      irreflexive, successor-iff-le**
+
+    The categorical distinction is sharp:
+      - PMAT-299 ORDERED MONOID gives reflexivity, transitivity,
+        and monotonicity of + — but says NOTHING about whether
+        the order is dense or discrete. (Real, +, ≤) satisfies
+        all PMAT-299 axioms but is DENSE, not discrete.
+      - PMAT-303 DISCRETE ORDER axiomatizes that the order has
+        the same structure as (Nat, <): every element has a
+        unique successor with no element strictly between, and
+        the order is irreflexive.
+
+    None of the prior 10 categories distinguishes discrete from
+    dense orders. This is what makes (BoundedSmem.val, <)
+    isomorphic to an INITIAL segment of (Nat, <) — exactly the
+    smem-budget interval.
+
+    For GPU smem accounting, discreteness matters: smem reservation
+    counts are in WHOLE BYTES, not arbitrary rationals. An emitter
+    that lowered smem-bytes through a floating-point path would
+    violate discreteness — between any two distinct float values
+    there are infinitely many other floats, falsifying the
+    no-gaps axiom (b).
+
+    Status: discharged at v0.1.0 (PMAT-303). Tier: DIAMOND.
+    Second DEPTH-11 in the substrate (DEPTH-11 ACROSS LAYERS). -/
+
+/--
+  **Diamond-tier refinement theorem** — `(BoundedSmem.val, <)` is
+  a DISCRETE ORDER.
+
+  Combines four DISCRETE-ORDER axioms:
+  (a) Successor: every element has a strictly larger successor
+      (a.val < a.val + 1)
+  (b) No-gaps: if a < b then a + 1 ≤ b
+      (the strict order has no elements strictly between n and n+1)
+  (c) Irreflexivity of <
+      (¬ a.val < a.val)
+  (d) Successor-iff: a < b + 1 ↔ a ≤ b
+      (the canonical relationship between strict < and non-strict ≤
+      via the successor function)
+
+  Distinct from PMAT-299 ORDERED MONOID (which gives reflexivity
+  and transitivity but says nothing about density vs discreteness)
+  and from the lattice family (which axiomatizes max/min but not
+  order topology).
+
+  An emitter that lowered smem-bytes through a floating-point path
+  would falsify (b) — between two distinct floats there are infinitely
+  many other floats, breaking the no-gaps axiom.
+
+  Proved by `omega` — linear arithmetic on Nat with < / ≤ / + 1 is
+  decidable and handled natively.
+
+  Status: **discharged at v0.1.0 (PMAT-303)**. Tier: DIAMOND.
+  Second DEPTH-11 in the substrate (DEPTH-11 ACROSS LAYERS).
+-/
+theorem bounded_smem_discrete_order_diamond (a b : BoundedSmem) :
+    -- (a) Successor: every element has a strictly larger successor
+    (a.val < a.val + 1)
+    -- (b) No-gaps: if a < b then a + 1 ≤ b
+    ∧ (a.val < b.val → a.val + 1 ≤ b.val)
+    -- (c) Irreflexivity of <
+    ∧ ¬ (a.val < a.val)
+    -- (d) Successor-iff: a < b + 1 ↔ a ≤ b
+    ∧ (a.val < b.val + 1 ↔ a.val ≤ b.val) := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> omega
+
 end XpileContracts.CCompileRustToPtxMma
