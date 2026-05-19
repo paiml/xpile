@@ -772,4 +772,301 @@ mod quorum_scaffolding_tests {
             _ => panic!("expected Multi quorum status"),
         }
     }
+
+    // ─── PMAT-266: Adversarial invariants for MultiEmitterBackend ───
+    //
+    // These tests pin down security-relevant contract behavior that the
+    // PMAT-263 happy-path tests don't cover: citation provenance, error
+    // propagation, hidden-divergence documentation, and observability of
+    // the `NotRun` reason. They guard against silent regressions in the
+    // routing layer that would weaken the Section 29 oracle.
+
+    /// Mock emitter with configurable citations — used to verify which
+    /// emitter's citations end up in the final Artifact.
+    struct MockGeneralWithCitations {
+        body: String,
+        citations: Vec<ContractId>,
+    }
+    impl TargetEmitter for MockGeneralWithCitations {
+        fn name(&self) -> &str {
+            "general-with-cites"
+        }
+        fn try_emit(
+            &self,
+            _module: &Module,
+            _config: &BackendConfig,
+        ) -> Option<Result<EmittedText, BackendError>> {
+            Some(Ok(EmittedText {
+                primary: self.body.clone(),
+                citations: self.citations.clone(),
+            }))
+        }
+    }
+
+    /// Mock specialist that always matches and carries configurable
+    /// citations distinct from `MockGeneralWithCitations`.
+    struct MockSpecialistWithCitations {
+        body: String,
+        citations: Vec<ContractId>,
+    }
+    impl TargetEmitter for MockSpecialistWithCitations {
+        fn name(&self) -> &str {
+            "specialist-with-cites"
+        }
+        fn try_emit(
+            &self,
+            _module: &Module,
+            _config: &BackendConfig,
+        ) -> Option<Result<EmittedText, BackendError>> {
+            Some(Ok(EmittedText {
+                primary: self.body.clone(),
+                citations: self.citations.clone(),
+            }))
+        }
+    }
+
+    /// Mock emitter that always fails — used to verify error
+    /// propagation from each role.
+    struct MockFailingEmitter {
+        name: &'static str,
+        err: String,
+    }
+    impl TargetEmitter for MockFailingEmitter {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn try_emit(
+            &self,
+            _module: &Module,
+            _config: &BackendConfig,
+        ) -> Option<Result<EmittedText, BackendError>> {
+            Some(Err(BackendError::Lower(self.err.clone())))
+        }
+    }
+
+    /// Mock emitter that returns `None` — for `general`, this is a
+    /// contract violation (general MUST match contract-conforming
+    /// input); the wrapper must surface it as a hard `BackendError`.
+    struct MockNoneEmitter;
+    impl TargetEmitter for MockNoneEmitter {
+        fn name(&self) -> &str {
+            "always-none"
+        }
+        fn try_emit(
+            &self,
+            _module: &Module,
+            _config: &BackendConfig,
+        ) -> Option<Result<EmittedText, BackendError>> {
+            None
+        }
+    }
+
+    #[test]
+    fn strict_divergence_preserves_general_citations_not_specialist() {
+        // Security invariant: under `Strict`, citations come from
+        // `general`. The proof lane relies on this — citations identify
+        // which contracts the artifact was authored against. A
+        // specialist that disagrees with general must not be able to
+        // silently swap its own citations into the audit trail.
+        let backend = MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(MockGeneralWithCitations {
+                body: "general output".into(),
+                citations: vec![ContractId::new("C-GENERAL-CITED")],
+            }),
+            Box::new(MockSpecialistWithCitations {
+                body: "different output".into(),
+                citations: vec![ContractId::new("C-SPECIALIST-CITED")],
+            }),
+            QuorumPolicy::Strict,
+        );
+        let artifact = backend.lower(&dummy_module(), &dummy_config()).unwrap();
+        assert_eq!(artifact.citations.len(), 1);
+        assert_eq!(artifact.citations[0].as_str(), "C-GENERAL-CITED");
+        // Specialist's body is still recoverable from the sidecar even
+        // though its citations are dropped.
+        assert_eq!(artifact.sidecars.len(), 1);
+        assert_eq!(
+            artifact.sidecars[0].1,
+            b"different output".to_vec(),
+            "specialist body should be preserved in sidecar"
+        );
+    }
+
+    #[test]
+    fn prefer_specialist_hides_divergence_by_design() {
+        // Documented trade-off: `PreferSpecialist` is the
+        // single-vote-runtime stratum — it intentionally does NOT
+        // compare general vs specialist. Use `Strict` or `DiffExec`
+        // when divergence detection matters. This test pins down the
+        // behavior so a future "helpful" refactor can't accidentally
+        // turn this into a quiet divergence detector.
+        let backend = MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(MockGeneralWithCitations {
+                body: "general thinks the answer is 42".into(),
+                citations: vec![ContractId::new("C-GENERAL")],
+            }),
+            Box::new(MockSpecialistWithCitations {
+                body: "specialist thinks the answer is 99".into(),
+                citations: vec![ContractId::new("C-SPECIALIST")],
+            }),
+            QuorumPolicy::PreferSpecialist,
+        );
+        let artifact = backend.lower(&dummy_module(), &dummy_config()).unwrap();
+        // Specialist's body wins; specialist's citations win;
+        // QuorumStatus reports Single (no divergence captured).
+        assert!(artifact.primary.contains("99"));
+        assert_eq!(artifact.citations[0].as_str(), "C-SPECIALIST");
+        match artifact.quorum_status {
+            QuorumStatus::Single { emitter } => {
+                assert_eq!(emitter, "specialist-with-cites");
+            }
+            other => panic!("expected Single quorum status, got {other:?}"),
+        }
+        // No sidecar — general's emission isn't even captured.
+        assert!(artifact.sidecars.is_empty());
+    }
+
+    #[test]
+    fn general_emitter_failure_propagates() {
+        // If `general` returns Some(Err(...)), the wrapper must
+        // propagate the error — never silently fall through to
+        // specialist. General is the mandatory fallback; its failure
+        // is the whole backend's failure.
+        let backend = MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(MockFailingEmitter {
+                name: "general-broken",
+                err: "general blew up".into(),
+            }),
+            Box::new(MockSpecialist {
+                name: "specialist",
+                matches: true,
+                body: "specialist output".into(),
+            }),
+            QuorumPolicy::PreferSpecialist,
+        );
+        let err = backend.lower(&dummy_module(), &dummy_config()).unwrap_err();
+        match err {
+            BackendError::Lower(msg) => assert!(msg.contains("general blew up")),
+            other => panic!("expected Lower error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn specialist_emitter_failure_propagates_when_matched() {
+        // If `specialist` matches and then errors, propagate. This is
+        // a real partial-failure mode for shape-tuned emitters
+        // (matched on shape but failed during lowering).
+        let backend = MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(MockGeneral {
+                name: "general",
+                body: "general output".into(),
+            }),
+            Box::new(MockFailingEmitter {
+                name: "specialist-broken",
+                err: "specialist blew up after matching".into(),
+            }),
+            QuorumPolicy::Strict,
+        );
+        let err = backend.lower(&dummy_module(), &dummy_config()).unwrap_err();
+        match err {
+            BackendError::Lower(msg) => {
+                assert!(msg.contains("specialist blew up after matching"))
+            }
+            other => panic!("expected Lower error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn general_returning_none_is_a_hard_contract_violation() {
+        // `general` returning `None` from `try_emit` means it refused
+        // to handle contract-conforming input — that's a hard error.
+        // (Specialists are allowed to return None; general isn't.)
+        let backend = MultiEmitterBackend::new_single(Target::Ptx, Box::new(MockNoneEmitter));
+        let err = backend.lower(&dummy_module(), &dummy_config()).unwrap_err();
+        match err {
+            BackendError::Lower(msg) => {
+                assert!(
+                    msg.contains("always-none"),
+                    "error should name the offending emitter; got: {msg}"
+                );
+                assert!(msg.contains("must always match"));
+            }
+            other => panic!("expected Lower error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn diff_exec_not_run_reason_records_tolerance_for_observability() {
+        // The `NotRun` reason is the user-facing breadcrumb pointing
+        // at "DiffExec engine not yet wired" — and it must carry the
+        // configured tolerance so debug output is actionable.
+        let backend = MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(MockGeneral {
+                name: "general",
+                body: "g".into(),
+            }),
+            Box::new(MockSpecialist {
+                name: "specialist",
+                matches: true,
+                body: "s".into(),
+            }),
+            QuorumPolicy::DiffExec { tolerance: 2.5e-4 },
+        );
+        let artifact = backend.lower(&dummy_module(), &dummy_config()).unwrap();
+        match artifact.quorum_status {
+            QuorumStatus::Multi {
+                diff_exec: Some(DiffExecResult::NotRun { reason }),
+                ..
+            } => {
+                assert!(
+                    reason.contains("0.00025")
+                        || reason.contains("2.5e-4")
+                        || reason.contains("0.000250"),
+                    "tolerance should appear in NotRun reason; got: {reason}"
+                );
+            }
+            other => panic!("expected Multi NotRun status, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn diff_exec_does_not_short_circuit_on_text_equality() {
+        // Architectural invariant: even when general and specialist
+        // emit byte-identical text, `DiffExec` policy must still
+        // record `NotRun` (because the real engine compares numerical
+        // outputs after execution, not source text). A future
+        // optimization that says "skip diff if text matches" would
+        // break this invariant — the engine's job is to check the
+        // RUNTIME behavior, and identical source could still produce
+        // divergent runtime values on different hardware.
+        let backend = MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(MockGeneral {
+                name: "general",
+                body: "byte identical".into(),
+            }),
+            Box::new(MockSpecialist {
+                name: "specialist",
+                matches: true,
+                body: "byte identical".into(),
+            }),
+            QuorumPolicy::DiffExec { tolerance: 1e-6 },
+        );
+        let artifact = backend.lower(&dummy_module(), &dummy_config()).unwrap();
+        match artifact.quorum_status {
+            QuorumStatus::Multi { diff_exec, .. } => {
+                assert!(
+                    matches!(diff_exec, Some(DiffExecResult::NotRun { .. })),
+                    "DiffExec policy must NOT short-circuit on text equality \
+                     — engine compares runtime values, not source text"
+                );
+            }
+            other => panic!("expected Multi quorum status, got {other:?}"),
+        }
+    }
 }
