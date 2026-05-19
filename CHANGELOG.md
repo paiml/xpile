@@ -7,6 +7,84 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-12 in the substrate: ordered-ring Diamond on `C-PY-INT-ARITH` (PMAT-305)
+
+**Path β extension.** Opens Diamond **depth-12** — twelve distinct algebraic categories on a single contract. PyIntArith was at depth-11 (post-PMAT-302); PMAT-305 adds **ORDERED RING (sign rules)** as the twelfth orthogonal category.
+
+**The 12 Diamond categories on `C-PY-INT-ARITH`:**
+
+1. PMAT-214: SEMIRING (+, *)
+2. PMAT-228: EUCLIDEAN DOMAIN (fdiv, fmod)
+3. PMAT-241: SHIFT-MONOID (shl)
+4. PMAT-247: POWER-MONOID (pow)
+5. PMAT-286: BITWISE-AND-MONOID (&)
+6. PMAT-290: ABELIAN-GROUP-ENRICHMENT (neg)
+7. PMAT-292: ORDER-DISTRIBUTIVE-LATTICE (min, max)
+8. PMAT-294: DIVISIBILITY-PREORDER (∣)
+9. PMAT-298: LINEAR-ORDER TRICHOTOMY (<)
+10. PMAT-300: RING-DISTRIBUTIVITY (neg × mul)
+11. PMAT-302: INTEGRAL DOMAIN (no zero divisors)
+12. **PMAT-305: ORDERED RING (sign rules)** ← FIRST DEPTH-12
+
+**Why ORDERED RING is genuinely a NEW category — orthogonal to ALL 11 prior:**
+
+- PMAT-298 (**LINEAR-ORDER**) axiomatizes `(Int, <)` totality but **says nothing about multiplication**.
+- PMAT-300 (**RING**) axiomatizes ring axioms (incl. `(-a)*b = -(a*b)`) but **says nothing about order**.
+- PMAT-302 (**INTEGRAL DOMAIN**) axiomatizes no-zero-divisors but **is silent on signs**.
+- PMAT-305 (**ORDERED RING**) BRIDGES order and multiplication via the sign rules:
+  - `0 ≤ a → 0 ≤ b → 0 ≤ a * b` (nonneg × nonneg)
+  - `a ≤ 0 → b ≤ 0 → 0 ≤ a * b` (nonpos × nonpos)
+  - `0 ≤ a → b ≤ 0 → a * b ≤ 0` (nonneg × nonpos)
+  - `0 < a → 0 < b → 0 < a * b` (strictpos × strictpos)
+
+A non-ordered ring example: the **Gaussian integers `Z[i]`** form a ring with no compatible total order (you cannot consistently say `i > 0` or `i < 0`) — so this bridging axiom genuinely requires BOTH the order and multiplication structures to be present AND compatible. Mathlib's `OrderedRing` / `LinearOrderedCommRing` typeclass encodes the bridge separately from `Ring` and `LinearOrder`.
+
+**New Lean theorem:**
+
+```lean
+theorem ordered_ring_diamond (a b : Int) :
+    (0 ≤ a → 0 ≤ b → 0 ≤ a * b)        -- nonneg × nonneg
+    ∧ (a ≤ 0 → b ≤ 0 → 0 ≤ a * b)      -- nonpos × nonpos
+    ∧ (0 ≤ a → b ≤ 0 → a * b ≤ 0)      -- nonneg × nonpos
+    ∧ (0 < a → 0 < b → 0 < a * b) := by -- strictpos × strictpos
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> intros <;> nlinarith
+```
+
+Proved by `nlinarith` — Mathlib's nonlinear arithmetic tactic for ordered rings handles these sign rules automatically.
+
+**Falsification surface:** an emitter that lowered Python-int multiplication through a **saturating-to-nonneg fast-path** (e.g., clamping `(-1) * (-1)` to `0`) would falsify property (b) — `nonpos × nonpos ≥ 0` is violated. This bug class slips past **all 11 prior Diamond categories** because none assert order-multiplication compatibility.
+
+**Reporter + gate updates:**
+
+- `xpile diamond --json` extended with `depth-11` discrete label + `depth-12+` aggregate.
+- `substrate_diamond_depth_12_opened` gate test added (≥ 1 at depth-12+).
+- Substrate Diamond totals: **48 wired Diamond theorems** across 12 contracts (was 47).
+
+**Path β extension recap:**
+
+| PMAT | Milestone |
+|------|-----------|
+| 286 | FIRST depth-5 |
+| 287 | depth-5 ACROSS LAYERS |
+| 288 | depth-4 ACROSS LAYERS |
+| 289 | depth-3 broadened |
+| 290 | FIRST depth-6 |
+| 291 | depth-6 ACROSS LAYERS |
+| 292 | FIRST depth-7 |
+| 293 | depth-7 ACROSS LAYERS |
+| 294 | FIRST depth-8 |
+| 295 | depth-8 ACROSS LAYERS |
+| 296 | spec §28 sync |
+| 297 | sub-spec sync |
+| 298 | FIRST depth-9 |
+| 299 | depth-9 ACROSS LAYERS |
+| 300 | FIRST depth-10 |
+| 301 | depth-10 ACROSS LAYERS |
+| 302 | FIRST depth-11 |
+| 303 | depth-11 ACROSS LAYERS |
+| 304 | spec + sub-spec sync (depth-11) |
+| **305** | **FIRST depth-12** (ordered ring) ← here |
+
 ### Changed — Spec §28 + diamond-taxonomy.md sync to depth-11 ACROSS LAYERS reality (PMAT-304)
 
 After 6 Path β PRs (PMAT-298..303) added depths 9, 10, and 11 ACROSS LAYERS, the spec had accumulated 3 tiers of documentation rot. PMAT-304 syncs:

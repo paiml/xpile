@@ -221,10 +221,27 @@ fn substrate_diamond_depth_11_opened() {
     let depth_11_plus = read_aggregate_field(&json, "depth_11_plus");
     // PMAT-302 opened depth-11 on C-PY-INT-ARITH (Layer 1): INTEGRAL DOMAIN.
     // PMAT-303 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): DISCRETE ORDER.
-    // Gate now asserts depth-11 ACROSS LAYERS (≥2 contracts at depth-11+).
+    // PMAT-305 took PyIntArith to depth-12 (still ≥2 at depth-11+).
+    // Gate asserts depth-11 ACROSS LAYERS (≥2 contracts at depth-11+).
     assert!(
         depth_11_plus >= 2,
         "Diamond depth-11 ACROSS LAYERS milestone (PMAT-302, PMAT-303): \
          expected ≥2 contracts at depth-11+ (Layer 1 + Layer 5), got {depth_11_plus}.\n{json}"
+    );
+}
+
+#[test]
+fn substrate_diamond_depth_12_opened() {
+    let json = run_diamond_json();
+    let depth_12_plus = read_aggregate_field(&json, "depth_12_plus");
+    // PMAT-305 opened depth-12 on C-PY-INT-ARITH: ORDERED RING sign rules
+    // (nonneg × nonneg ≥ 0, nonpos × nonpos ≥ 0, nonneg × nonpos ≤ 0,
+    // strictpos × strictpos > 0). The 12th orthogonal category BRIDGES
+    // PMAT-298 LINEAR-ORDER (no multiplication) and PMAT-300 RING (no order)
+    // into an ordered-ring structure — Mathlib's `OrderedRing` typeclass shape.
+    assert!(
+        depth_12_plus >= 1,
+        "Diamond depth-12 milestone (PMAT-305): expected ≥1 contract at depth-12+, \
+         got {depth_12_plus}.\n{json}"
     );
 }
