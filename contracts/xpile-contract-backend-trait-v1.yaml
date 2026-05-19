@@ -287,6 +287,29 @@ equations:
     postconditions:
       - "Diamond depth-3 broadened: 9 contracts at depth-3+"
 
+  contract_array_size_diamond:
+    # PMAT-341: FOURTH Diamond on this contract — BROADENS DEPTH-4
+    # from 8 to 9 contracts. Pushes XpileContractBackendTrait
+    # (Layer 3) from depth-3 to depth-4, adding FOURTH Layer 3
+    # contract at depth-4. CONTRACT.depends_on/references ARRAY
+    # SIZE STRUCTURE.
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.contract_array_size_diamond"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    formula: |
+      Contract.depends_on and .references Array.size structure:
+        (a) depends_on.size ≥ 0
+        (b) Empty Contract has size-0 depends_on
+        (c) Field-replacement preserves depends_on size
+        (d) references is independent
+    domain: |
+      Any Contract record.
+    invariants:
+      - "FOURTH Diamond category — BROADENS DEPTH-4 from 8 to 9 contracts"
+    preconditions:
+      - "one Contract record"
+    postconditions:
+      - "Diamond depth-4 broadened: 9 contracts at depth-4+"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractBackend

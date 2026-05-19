@@ -7,6 +7,14 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-4 BROADENED from 8 to 9 contracts: Contract-array-size Diamond on `C-XPILE-CONTRACT-BACKEND-TRAIT` (PMAT-341)
+
+**Continuing POST-UNIVERSAL broadening at depth-4.** Pushes `C-XPILE-CONTRACT-BACKEND-TRAIT` (Layer 3) from depth-3 to depth-4. **All 4 Layer 3 contracts now at depth-4+** (XpileFrontendTrait + XpileBackendTrait + XpileContractFrontendTrait + XpileContractBackendTrait).
+
+- 4 Diamonds: citation monoid, contract product monoid, struct extensionality, **array size** ← PMAT-341
+- `depth_4_plus: 9` (was 8), gate **tightened to ≥ 9**.
+- Substrate Diamond totals: **79 wired theorems** (was 78).
+
 ### Added — Diamond depth-4 BROADENED from 7 to 8 contracts: TranspileSession-array-size Diamond on `C-XPILE-CONTRACT-FRONTEND-TRAIT` (PMAT-340)
 
 **Continuing POST-UNIVERSAL broadening at depth-4.** Pushes `C-XPILE-CONTRACT-FRONTEND-TRAIT` (Layer 3) from depth-3 to depth-4, adding a THIRD Layer 3 contract at depth-4.
