@@ -997,6 +997,39 @@ equations:
       - "an emitter with saturating-to-nonneg arithmetic would falsify (b)"
       - "Diamond DEPTH-12 opened — 1 contract at depth-12+"
 
+  abs_value_norm_diamond:
+    # PMAT-307: THIRTEENTH Diamond on this contract — opens FIRST
+    # DEPTH-13 in the substrate. ABSOLUTE VALUE / NORM axioms:
+    # non-negativity (0 ≤ |a|), definiteness (|a| = 0 ↔ a = 0),
+    # triangle inequality (|a + b| ≤ |a| + |b|), multiplicativity
+    # (|a * b| = |a| * |b|). Categorically orthogonal to all 12
+    # prior categories — none mentions a UNARY OPERATION capturing
+    # "size" / "magnitude". Mathlib's `AbsoluteValue` typeclass
+    # encodes this. The four axioms together characterize Int as
+    # a NORMED RING — strictly richer than just an ordered ring.
+    lean_theorem: "XpileContracts.CPyIntArith.abs_value_norm_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      (Int, |·|) is a NORMED RING:
+        (a) non-negativity:      0 ≤ |a|
+        (b) definiteness:        |a| = 0 ↔ a = 0
+        (c) triangle inequality: |a + b| ≤ |a| + |b|
+        (d) multiplicativity:    |a * b| = |a| * |b|
+    domain: |
+      Any two Int values. The four properties together axiomatize
+      |·| as an ABSOLUTE VALUE / NORM on the ring Int — Mathlib's
+      `AbsoluteValue` typeclass shape.
+    invariants:
+      - "THIRTEENTH Diamond category on C-PY-INT-ARITH — opens FIRST DEPTH-13 in the substrate"
+      - "captures (Int, |·|) as a NORMED RING — Mathlib's AbsoluteValue shape"
+      - "none of the prior 12 categories defines or constrains a UNARY size operation"
+      - "load-bearing for saturating-abs emitters: an abs that wrapped around for Int.minValue would falsify the triangle inequality"
+    preconditions:
+      - "two Int values; theorem stated on the standard Int.add, Int.mul, abs (|·|) operations"
+    postconditions:
+      - "an emitter with non-canonical abs that violates one of the four norm axioms would falsify the corresponding conjunct"
+      - "Diamond DEPTH-13 opened — 1 contract at depth-13+"
+
 proof_obligations:
   - type: precondition
     property: operands are Python int (not int-subclass, not bool-as-int)

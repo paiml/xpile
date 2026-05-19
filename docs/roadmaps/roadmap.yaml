@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-307
+  github_issue: null
+  item_type: task
+  title: 'PMAT-307: FIRST Diamond depth-13 in the substrate (absolute-value / norm axioms on C-PY-INT-ARITH)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T06:00:00Z
+  updated: 2026-05-23T06:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add abs_value_norm_diamond Lean theorem to contracts/lean/PyIntArith.lean — 4 conjuncts: non-negativity (abs_nonneg), definiteness (abs_eq_zero), triangle inequality (abs_add), multiplicativity (abs_mul). Wire as new equation in py-int-arith-v1.yaml. Extend xpile diamond reporter with depth-13+ label + depth_13_plus aggregate. Refine depth-12 from depth-12+ to discrete depth-12. Add substrate_diamond_depth_13_opened gate test (≥1). FIRST DEPTH-13 — PyIntArith reaches 13 categories. The 13th (ABSOLUTE VALUE / NORM) is orthogonal to all 12 prior — none mention a unary 'size' operation. Captures (Int, |·|) as a NORMED RING (Mathlib's AbsoluteValue shape). Falsification surface: saturating-abs emitters that wrap around for Int.minValue would violate the triangle inequality."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-306
   github_issue: null
   item_type: task
