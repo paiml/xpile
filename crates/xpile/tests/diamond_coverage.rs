@@ -161,11 +161,12 @@ fn substrate_diamond_depth_6_opened() {
 fn substrate_diamond_depth_7_opened() {
     let json = run_diamond_json();
     let depth_7_plus = read_aggregate_field(&json, "depth_7_plus");
-    // PMAT-292 opened depth-7 on C-PY-INT-ARITH: added order-distributive-lattice
-    // (Int, min, max) as the 7th orthogonal Diamond category.
+    // PMAT-292 opened depth-7 on C-PY-INT-ARITH (Layer 1): order-distributive-lattice.
+    // PMAT-293 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): bounded lattice with top+bottom.
+    // Gate now asserts depth-7 ACROSS LAYERS (≥2 contracts at depth-7+).
     assert!(
-        depth_7_plus >= 1,
-        "Diamond depth-7 milestone (PMAT-292): expected ≥1 contract at depth-7+, \
-         got {depth_7_plus}.\n{json}"
+        depth_7_plus >= 2,
+        "Diamond depth-7 ACROSS LAYERS milestone (PMAT-292, PMAT-293): \
+         expected ≥2 contracts at depth-7+ (Layer 1 + Layer 5), got {depth_7_plus}.\n{json}"
     );
 }

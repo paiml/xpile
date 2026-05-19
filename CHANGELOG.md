@@ -7,6 +7,47 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-7 ACROSS LAYERS: `C-COMPILE-RUST-TO-PTX-MMA` reaches depth-7 via bounded lattice with top+bottom (PMAT-293)
+
+**Path β extension.** Pushes `C-COMPILE-RUST-TO-PTX-MMA` (Layer 5) from depth-6 to depth-7, opening **DEPTH-7 ACROSS LAYERS** alongside PyIntArith (Layer 1, PMAT-292).
+
+**The 7 Diamond categories on `C-COMPILE-RUST-TO-PTX-MMA`:**
+
+1. PMAT-218: bounded-monoid (additive)
+2. PMAT-287: closure (subalgebra well-definedness)
+3. PMAT-231: join-semilattice (max)
+4. PMAT-242: meet-semilattice (min)
+5. PMAT-248: lattice absorption
+6. PMAT-291: distributive lattice
+7. **PMAT-293: bounded lattice with explicit top + bottom** ← FIRST DEPTH-7 ACROSS LAYERS
+
+**Why bounded-lattice is categorically distinct from distributive-lattice:**
+
+A DISTRIBUTIVE LATTICE (PMAT-291) proves the distributivity laws on max/min. A BOUNDED LATTICE additionally identifies explicit **TOP and BOTTOM elements** with their absorption properties. For BoundedSmem:
+- 0 is bottom: `max(0, a) = a`, `min(0, a) = 0`
+- `smem_budget_sm80` is top: `max(a, top) = top` (uses `a.property` — the bound proof carried by the BoundedSmem subtype), `min(top, a) = a`
+
+The BoundedSmem subtype's bound is **load-bearing**: `a.property` is what makes `smem_budget_sm80` a REAL structural top element, not just a Nat constant. An emitter that allowed BoundedSmem values to exceed the budget would falsify the top-absorbs-join law.
+
+This is the **closing-the-loop Diamond** for BoundedSmem — together with PMAT-218..291 it captures the full BOUNDED DISTRIBUTIVE LATTICE axiomatization (Boolean-algebra foundation restricted to the smem budget interval).
+
+**New Lean theorem** uses `Nat.zero_max`, `Nat.zero_min`, `Nat.max_eq_right`, `Nat.min_eq_right` + `a.property` — no new proof engineering.
+
+**Gate update:** `substrate_diamond_depth_7_opened` tightened to assert **≥2** contracts at depth-7+ (was ≥1). Verified live: `depth_7_plus=2`.
+
+**Path β extension recap:**
+
+| PMAT | Milestone |
+|------|-----------|
+| 286 | FIRST depth-5 (PyIntArith) |
+| 287 | depth-5 ACROSS LAYERS (+CompileRustToPtxMma) |
+| 288 | depth-4 ACROSS LAYERS (+FFI-CPYTHON-EXT) |
+| 289 | depth-3 broadened (+Bashrs) |
+| 290 | FIRST depth-6 (PyIntArith) |
+| 291 | depth-6 ACROSS LAYERS (+CompileRustToPtxMma) |
+| 292 | FIRST depth-7 (PyIntArith) |
+| **293** | **depth-7 ACROSS LAYERS (+CompileRustToPtxMma)** |
+
 ### Added — FIRST Diamond depth-7 in the substrate: order-distributive-lattice on `C-PY-INT-ARITH` (PMAT-292)
 
 **Path β extension.** Opens Diamond depth-7 — seven distinct algebraic categories on a single contract. PyIntArith was at depth-6 (post-PMAT-290); PMAT-292 adds **ORDER-DISTRIBUTIVE-LATTICE** as the seventh orthogonal category.

@@ -743,4 +743,82 @@ theorem bounded_smem_distributive_lattice_diamond
   · exact Nat.max_min_distrib_left a.val b.val c.val
   · exact Nat.min_max_distrib_left a.val b.val c.val
 
+/-! ## PMAT-293 — SEVENTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (FIRST DEPTH-7 ACROSS LAYERS): bounded lattice with top/bottom
+    elements via smem_budget_sm80 and 0 (XPILE-REFINE-COMPILE-PTX-010).
+
+    **Opens DEPTH-7 ACROSS LAYERS.** PyIntArith reached depth-7 at
+    PMAT-292 (order-distributive-lattice); PMAT-293 extends depth-7
+    to Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The substrate now has
+    depth-7 on TWO contracts spanning Layer 1 and Layer 5.
+
+    CompileRustToPtxMma already has SIX Diamond categories:
+    - PMAT-218: bounded-monoid (additive)
+    - PMAT-287: closure (subalgebra well-definedness)
+    - PMAT-231: join-semilattice (max)
+    - PMAT-242: meet-semilattice (min)
+    - PMAT-248: lattice absorption
+    - PMAT-291: distributive lattice
+
+    PMAT-293 adds the structural enrichment from a DISTRIBUTIVE
+    LATTICE to a BOUNDED DISTRIBUTIVE LATTICE — adds top and
+    bottom elements with their absorption properties:
+    - **PMAT-293: (BoundedSmem, max, min, 0, smem_budget_sm80)
+      BOUNDED DISTRIBUTIVE LATTICE — explicit top + bottom**
+
+    The categorical distinction: a DISTRIBUTIVE LATTICE (PMAT-291)
+    proves the distributivity laws on max/min. A BOUNDED LATTICE
+    additionally identifies explicit TOP and BOTTOM elements that
+    serve as identities/absorbers for the lattice operations. For
+    BoundedSmem, 0 is bottom (max(0, a) = a, min(0, a) = 0) and
+    smem_budget_sm80 is top (max(top, a) = top for any a in the
+    subtype, min(top, a) = a for any a in the subtype). The
+    BoundedSmem subtype's bound is what makes top a real
+    structural element.
+
+    This is the closing-the-loop Diamond for BoundedSmem's algebraic
+    structure — together with PMAT-218..291 it captures the full
+    BOUNDED DISTRIBUTIVE LATTICE axiomatization (the foundation of
+    Boolean algebras restricted to the smem budget interval).
+
+    Status: discharged at v0.1.0 (PMAT-293). Tier: DIAMOND.
+    First DEPTH-7 ACROSS LAYERS in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `(BoundedSmem, max, min, 0,
+  smem_budget_sm80)` is a BOUNDED DISTRIBUTIVE LATTICE.
+
+  Combines four properties characterizing top and bottom elements:
+  (a) Bottom is left-identity for max: max(0, a) = a
+  (b) Bottom is left-zero for min: min(0, a) = 0
+  (c) Top absorbs join (from the right): max(a, top) = top
+  (d) Top is identity for meet (from the left): min(top, a) = a
+
+  The top-element claims (c)/(d) use `a.property` — the proof
+  carried by the BoundedSmem subtype that `a.val ≤ smem_budget_sm80`.
+  This is what makes smem_budget_sm80 a REAL top element of the
+  bounded lattice (not just a Nat bound).
+
+  An emitter that allowed BoundedSmem values to exceed the budget
+  would falsify (c)/(d) because the top-absorbs-join law requires
+  every value to be ≤ top.
+
+  Status: **discharged at v0.1.0 (PMAT-293)**. Tier: DIAMOND.
+  First DEPTH-7 ACROSS LAYERS in the substrate.
+-/
+theorem bounded_smem_bounded_lattice_diamond (a : BoundedSmem) :
+    -- (a) Bottom is left-identity for max
+    Nat.max 0 a.val = a.val
+    -- (b) Bottom is left-zero for min
+    ∧ Nat.min 0 a.val = 0
+    -- (c) Top absorbs from right under max (uses a.property bound)
+    ∧ Nat.max a.val smem_budget_sm80 = smem_budget_sm80
+    -- (d) Top is identity from left under min (uses a.property bound)
+    ∧ Nat.min smem_budget_sm80 a.val = a.val := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.zero_max a.val
+  · exact Nat.zero_min a.val
+  · exact Nat.max_eq_right a.property
+  · exact Nat.min_eq_right a.property
+
 end XpileContracts.CCompileRustToPtxMma

@@ -399,6 +399,44 @@ equations:
       - "an emitter that implements a non-distributive lattice (e.g., reduces parallel-then-sequential smem composition asymmetrically) would falsify this Diamond while leaving PMAT-248 absorption intact"
       - "Diamond DEPTH-6 ACROSS LAYERS demonstrated: 2 contracts at depth-6+ — opens the depth-6-across-layers dimension"
 
+  bounded_smem_bounded_lattice_diamond:
+    # PMAT-293 / XPILE-REFINE-COMPILE-PTX-010: SEVENTH Diamond on this
+    # contract — opens DEPTH-7 ACROSS LAYERS (second contract at
+    # depth-7+ after PMAT-292 on C-PY-INT-ARITH). The BOUNDED LATTICE
+    # Diamond adds explicit TOP and BOTTOM elements to PMAT-291's
+    # distributive lattice: 0 is bottom (max(0, a) = a; min(0, a) = 0)
+    # and smem_budget_sm80 is top (max(a, top) = top for a in
+    # BoundedSmem; min(top, a) = a). The top-element claims use
+    # a.property — the proof carried by the BoundedSmem subtype that
+    # a.val ≤ smem_budget_sm80. This makes smem_budget_sm80 a REAL
+    # structural top, not just a Nat bound. This is the closing-the-
+    # loop Diamond for BoundedSmem's algebraic structure — together
+    # with PMAT-218..291 it captures the full BOUNDED DISTRIBUTIVE
+    # LATTICE axiomatization (the foundation of Boolean algebras
+    # restricted to the smem budget interval).
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_bounded_lattice_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      (BoundedSmem, max, min, 0, smem_budget_sm80) is a BOUNDED
+      DISTRIBUTIVE LATTICE:
+        (a) bottom-left-identity for max: max(0, a) = a
+        (b) bottom-left-zero for min: min(0, a) = 0
+        (c) top-absorbs-from-right under max: max(a, top) = top
+        (d) top-is-identity-from-left under min: min(top, a) = a
+    domain: |
+      Any BoundedSmem value a. The Diamond captures the explicit
+      top/bottom enrichment of PMAT-291's distributive lattice.
+    invariants:
+      - "SEVENTH Diamond category on C-COMPILE-RUST-TO-PTX-MMA — opens DEPTH-7 ACROSS LAYERS (second contract at depth-7+ after PMAT-292 on PyIntArith)"
+      - "distinct from PMAT-291 distributive lattice — bounded lattice adds explicit top/bottom STRUCTURAL elements with absorption properties"
+      - "captures the BOOLEAN-ALGEBRA-CLOSURE structure — together with PMAT-291 distributivity + PMAT-248 absorption + PMAT-218..242 monoids/semilattices, the full BOUNDED DISTRIBUTIVE LATTICE axiomatization is in place"
+      - "the BoundedSmem subtype's bound is load-bearing: a.property is what makes smem_budget_sm80 a REAL top element, not just a Nat constant"
+    preconditions:
+      - "BoundedSmem value with a.val ≤ smem_budget_sm80 (carried by a.property)"
+    postconditions:
+      - "an emitter that allowed BoundedSmem values to exceed the budget would falsify (c)/(d) because top-absorbs-join requires every value ≤ top"
+      - "Diamond DEPTH-7 ACROSS LAYERS demonstrated: 2 contracts at depth-7+ — opens the depth-7-across-layers dimension"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)

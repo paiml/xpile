@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-293
+  github_issue: null
+  item_type: task
+  title: 'PMAT-293: Diamond depth-7 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-7 via bounded lattice with top+bottom)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T00:00:00Z
+  updated: 2026-05-23T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add bounded_smem_bounded_lattice_diamond Lean theorem to contracts/lean/CompileRustToPtxMma.lean — 4 conjuncts: max(0, a) = a (bottom-left-identity for max), min(0, a) = 0 (bottom-left-zero for min), max(a, top) = top (top-absorbs-join from right via a.property), min(top, a) = a (top-identity-for-meet from left via a.property). The top-element claims use a.property — the proof carried by BoundedSmem subtype that a.val ≤ smem_budget_sm80. Wire in YAML. Tighten substrate_diamond_depth_7_opened gate to ≥2 contracts. Opens DEPTH-7 ACROSS LAYERS — 2 contracts at depth-7+. Closes the loop on BoundedSmem's algebraic structure (BOUNDED DISTRIBUTIVE LATTICE axiomatization)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-292
   github_issue: null
   item_type: task
