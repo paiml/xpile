@@ -18,7 +18,7 @@ A Diamond theorem combines multiple Platinum properties into a **single algebrai
 
 ## Coverage milestones
 
-As of v0.1.0+ (PMAT-214..295), the substrate has:
+As of v0.1.0+ (PMAT-214..303), the substrate has:
 
 - **Diamond depth-1 UNIVERSAL** (12/12 contracts): every contract has at least one Diamond at one algebraic category.
 - **Diamond depth-2 UNIVERSAL** (12/12 contracts): every contract has at least two **distinct** Diamond categories. CI-enforced via PMAT-251.
@@ -28,8 +28,11 @@ As of v0.1.0+ (PMAT-214..295), the substrate has:
 - **Diamond depth-6 ACROSS LAYERS** (2/12 contracts): PMAT-290 (abelian-group on L1) + PMAT-291 (distributive lattice on L5).
 - **Diamond depth-7 ACROSS LAYERS** (2/12 contracts): PMAT-292 (order-distributive-lattice on L1) + PMAT-293 (bounded lattice with top+bottom on L5).
 - **Diamond depth-8 ACROSS LAYERS** (2/12 contracts): PMAT-294 (divisibility-preorder on L1, FIRST relation-not-operation category) + PMAT-295 (cancellative monoid on L5).
+- **Diamond depth-9 ACROSS LAYERS** (2/12 contracts): PMAT-298 (linear-order trichotomy on L1) + PMAT-299 (ordered-monoid on L5).
+- **Diamond depth-10 ACROSS LAYERS** (2/12 contracts): PMAT-300 (RING-distributivity / neg × mul bridge on L1) + PMAT-301 (additive-lattice / tropical-semiring axiom on L5).
+- **Diamond depth-11 ACROSS LAYERS** (2/12 contracts): PMAT-302 (integral-domain / no-zero-divisors on L1) + PMAT-303 (discrete-order / successor + no-gaps on L5).
 
-**Substrate total: 42 wired Diamond equations across 12 contracts.**
+**Substrate total: 47 wired Diamond equations across 12 contracts.**
 
 ## Diamond categories by family
 
@@ -55,6 +58,7 @@ Captures `(S, op, identity)` with closure + associativity + identity laws. Speci
 | Bitwise-AND commutative monoid | PMAT-286 | C-PY-INT-ARITH | `(Int, &, ...)` via Nat.land kernel + 2's-complement |
 | Closure / subalgebra | PMAT-287 | C-COMPILE-RUST-TO-PTX-MMA | bounded-sum closure under budget precondition |
 | Cancellative monoid | PMAT-295 | C-COMPILE-RUST-TO-PTX-MMA | `(BoundedSmem, +, 0)` with Nat.add_left/right_cancel |
+| Ordered monoid | PMAT-299 | C-COMPILE-RUST-TO-PTX-MMA | `(BoundedSmem, +, ≤)` reflexivity + transitivity + monotonicity (Mathlib's `OrderedAddCommMonoid` shape) |
 
 ### Group family
 
@@ -65,6 +69,15 @@ Adds inverses to monoid structure:
 | Abelian group | PMAT-216 | C-FFI-CPYTHON-EXT | refcount-delta `(Int, +, 0, -)` |
 | Constructive inverse | PMAT-288 | C-FFI-CPYTHON-EXT | existential witness for refcount inverse |
 | Abelian-group enrichment | PMAT-290 | C-PY-INT-ARITH | `(Int, +, 0, -)` negation-involution + distributivity (enriches additive monoid to abelian group) |
+
+### Ring family
+
+Captures ring-theoretic axioms — bridges between additive group and multiplicative monoid:
+
+| Category | Example PMAT | Contract | Carrier |
+|---|---|---|---|
+| Ring distributivity (neg × mul) | PMAT-300 | C-PY-INT-ARITH | `(Int, +, *, neg)` with `(-a)*b = -(a*b)` — bridges PMAT-214 SEMIRING + PMAT-290 ABELIAN-GROUP into a full RING |
+| Integral domain | PMAT-302 | C-PY-INT-ARITH | `(Int, +, *)` with no zero divisors (`a*b = 0 → a = 0 ∨ b = 0`) — Mathlib's `IsDomain` / `NoZeroDivisors` (strengthens PMAT-300 RING; Z/6Z falsifies) |
 
 ### Lattice family
 
@@ -78,6 +91,7 @@ Captures `(S, ⊔, ⊓)` with absorption laws:
 | Distributive lattice | PMAT-291 | C-COMPILE-RUST-TO-PTX-MMA | cross-distributivity of max/min |
 | Order distributive lattice | PMAT-292 | C-PY-INT-ARITH | `(Int, min, max)` Int's natural ordering as a lattice |
 | Bounded lattice (top+bottom) | PMAT-293 | C-COMPILE-RUST-TO-PTX-MMA | explicit top (smem_budget) + bottom (0) elements with absorption |
+| Additive-lattice distributivity | PMAT-301 | C-COMPILE-RUST-TO-PTX-MMA | `(BoundedSmem, +, max, min)` tropical-semiring axiom: + distributes over max AND min (bridges PMAT-218 monoid + PMAT-291 distributive lattice) |
 
 ### Functor family
 
@@ -104,6 +118,15 @@ Captures equivalence-relation structures (reflexivity + symmetry + transitivity)
 | Backend equivalence-class | PMAT-225 | C-XPILE-BACKEND-TRAIT | `target_equiv` on Backend pairs |
 | Symmetric purity (cross-domain) | PMAT-289 | C-BASHRS-POSIX-IDEMPOTENCE | python-side purity mirrors bashrs-side purity |
 | **Divisibility preorder** | **PMAT-294** | **C-PY-INT-ARITH** | **`(Int, ∣)` preorder — FIRST relation-not-operation category in substrate** |
+
+### Order-topology family
+
+Captures structural properties of orders beyond the algebraic axioms — totality, density, discreteness:
+
+| Category | Example PMAT | Contract | Carrier |
+|---|---|---|---|
+| Linear-order trichotomy | PMAT-298 | C-PY-INT-ARITH | `(Int, <)` trichotomy + irreflexivity + asymmetry + transitivity (totality of strict order) |
+| Discrete order | PMAT-303 | C-COMPILE-RUST-TO-PTX-MMA | `(BoundedSmem.val, <)` successor + no-gaps + irreflexivity + successor-iff (distinguishes (Nat, <) from dense (Real, <)) |
 
 ### Subtype / section-retraction family
 
@@ -226,6 +249,9 @@ The `crates/xpile/tests/diamond_coverage.rs` integration test (PMAT-251) enforce
 - ≥2 contracts have ≥6 Diamonds (depth-6 ACROSS LAYERS, PMAT-290/291).
 - ≥2 contracts have ≥7 Diamonds (depth-7 ACROSS LAYERS, PMAT-292/293).
 - ≥2 contracts have ≥8 Diamonds (depth-8 ACROSS LAYERS, PMAT-294/295).
+- ≥2 contracts have ≥9 Diamonds (depth-9 ACROSS LAYERS, PMAT-298/299).
+- ≥2 contracts have ≥10 Diamonds (depth-10 ACROSS LAYERS, PMAT-300/301).
+- ≥2 contracts have ≥11 Diamonds (depth-11 ACROSS LAYERS, PMAT-302/303).
 
 A future regression that removes a `_diamond` from any YAML or fails to keep depth-N invariants will fire the gate.
 - ≥30 total wired Diamond equations.
