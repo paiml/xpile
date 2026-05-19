@@ -2330,4 +2330,110 @@ theorem nat_cast_ring_hom_diamond (m n : Nat) :
   · exact Nat.cast_add m n
   · exact Nat.cast_mul m n
 
+/-! ## PMAT-312 — FIFTEENTH Diamond on C-PY-INT-ARITH (FIRST
+    DEPTH-15 in the substrate): INT-EMOD QUOTIENT HOMOMORPHISM —
+    Int.emod : Int → Z/nZ is a ring homomorphism, characterizing
+    the QUOTIENT RING structure (XPILE-REFINE-PY-INT-ARITH-023).
+
+    **Opens DEPTH-15 in the substrate.** PyIntArith reached depth-14
+    at PMAT-310 (Nat-cast ring homomorphism); PMAT-312 adds the
+    FIFTEENTH orthogonal Diamond category — the QUOTIENT-RING
+    HOMOMORPHISM axioms for `Int.emod : Int → Z/nZ`.
+
+    The 15 Diamond categories on C-PY-INT-ARITH:
+    - PMAT-214: SEMIRING
+    - PMAT-228: EUCLIDEAN DOMAIN
+    - PMAT-241: SHIFT-MONOID
+    - PMAT-247: POWER-MONOID
+    - PMAT-286: BITWISE-AND-MONOID
+    - PMAT-290: ABELIAN-GROUP-ENRICHMENT
+    - PMAT-292: ORDER-DISTRIBUTIVE-LATTICE
+    - PMAT-294: DIVISIBILITY-PREORDER
+    - PMAT-298: LINEAR-ORDER TRICHOTOMY
+    - PMAT-300: RING-DISTRIBUTIVITY
+    - PMAT-302: INTEGRAL DOMAIN
+    - PMAT-305: ORDERED RING
+    - PMAT-307: ABSOLUTE VALUE / NORM
+    - PMAT-310: NAT-CAST RING HOMOMORPHISM
+    - **PMAT-312: INT-EMOD QUOTIENT HOMOMORPHISM** ← FIRST DEPTH-15
+
+    The categorical distinction is sharp:
+      - PMAT-310 (NAT-CAST RING HOMOMORPHISM) is an INJECTIVE
+        embedding `Nat → Int` (lossless extension).
+      - PMAT-312 (INT-EMOD QUOTIENT HOMOMORPHISM) is a SURJECTIVE
+        projection `Int → Z/nZ` (lossy collapse). Demonstrated for
+        n = 2, capturing the PARITY structure (Z/2Z quotient).
+
+    Both are RING HOMOMORPHISMS, but in opposite directions:
+      Nat ──cast──> Int ──emod n──> Z/nZ
+      ─────────────  ─────────────
+          injective    surjective
+
+    PMAT-312 adds the FIRST QUOTIENT-RING claim to the substrate.
+    Mathlib's `Int.emod` (Euclidean modulo, always non-negative
+    result) satisfies the ring-homomorphism axioms:
+      - `(a + b) % n = (a%n + b%n) % n` (preserves +)
+      - `(a * b) % n = (a%n * b%n) % n` (preserves *)
+      - `0 ≤ a % n` (lands in non-negative domain)
+      - `a % n < n` (lands in {0, ..., n-1} = Z/nZ)
+
+    Why this is genuinely orthogonal:
+      The QUOTIENT structure is fundamentally different from the
+      EMBEDDING structure (PMAT-310). An emitter could lower
+      Int correctly (preserving the Nat embedding) yet falsify
+      the quotient claim by using e.g. signed modulo (where
+      `(-1) % 2 = -1` instead of `1`) — this is the standard
+      C `%` semantics, which differs from Python's `%` and from
+      Lean's `Int.emod`.
+
+    For Python int dispatch, this matters: an emitter that lowered
+    Python's `%` operator to C-style signed modulo (instead of
+    Python's truncated-toward-negative-infinity modulo) would
+    falsify the non-negativity axiom (c) for negative dividends.
+    This is a documented Python-vs-C semantic mismatch.
+
+    Status: discharged at v0.1.0 (PMAT-312). Tier: DIAMOND.
+    FIRST DEPTH-15 in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `Int.emod (· 2) : Int → Z/2Z`
+  is a RING HOMOMORPHISM (quotient ring construction).
+
+  Combines four QUOTIENT-HOMOMORPHISM properties:
+  (a) Preserves +:           `(a + b) % 2 = (a % 2 + b % 2) % 2`
+  (b) Preserves *:           `(a * b) % 2 = (a % 2 * b % 2) % 2`
+  (c) Lands in non-negative: `0 ≤ a % 2`
+  (d) Lands in `{0, 1}`:     `a % 2 < 2`
+
+  Together these characterize `(· % 2) : Int → Z/2Z` as a SURJECTIVE
+  ring homomorphism (quotient projection). Mirror of PMAT-310 which
+  characterized `Nat → Int` as an INJECTIVE ring homomorphism.
+
+  Uses Mathlib's `Int.add_emod`, `Int.mul_emod`, `Int.emod_nonneg`,
+  `Int.emod_lt_of_pos`. These are the standard quotient-ring
+  homomorphism lemmas.
+
+  An emitter that lowered Python's `%` to C-style signed modulo
+  (where `(-1) % 2 = -1` in C, vs `1` in Python and Lean's
+  `Int.emod`) would falsify (c) for negative dividends — a real
+  bug class invisible to all 14 prior Diamond categories.
+
+  Status: **discharged at v0.1.0 (PMAT-312)**. Tier: DIAMOND.
+  FIRST DEPTH-15 in the substrate.
+-/
+theorem int_emod_quotient_hom_diamond (a b : Int) :
+    -- (a) emod is + homomorphism: (a + b) % 2 = (a%2 + b%2) % 2
+    ((a + b) % 2 = (a % 2 + b % 2) % 2)
+    -- (b) emod is * homomorphism: (a * b) % 2 = (a%2 * b%2) % 2
+    ∧ ((a * b) % 2 = (a % 2 * b % 2) % 2)
+    -- (c) emod result is non-negative (lands in Z/nZ canonical domain)
+    ∧ (0 ≤ a % 2)
+    -- (d) emod result is strictly less than 2 (lands in {0, 1} = Z/2Z)
+    ∧ (a % 2 < 2) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.add_emod a b 2
+  · exact Int.mul_emod a b 2
+  · exact Int.emod_nonneg a (by decide)
+  · exact Int.emod_lt_of_pos a (by decide)
+
 end XpileContracts.CPyIntArith
