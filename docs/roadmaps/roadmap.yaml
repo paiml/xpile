@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-272
+  github_issue: null
+  item_type: task
+  title: 'PMAT-272: LatexContractFrontend parse body lit up (math + citations + references)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T13:30:00Z
+  updated: 2026-05-22T13:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Replace crates/latex-contract-frontend/src/lib.rs scaffold (Ok(EquationsBlock::default())) with a hand-rolled scanner that extracts: inline math ($...$) and display math (\\[...\\]) as Equation entries; \\xpileContract{C-…}{…} citations; \\cite{key} references; LaTeX line comments. Robustness: $$...$$ skipped safely, unterminated math doesn't panic, brace balancing handles \\{ \\} escapes. Out of scope at v0.1.0+: math environments, theorem-class environments, macro expansion (flagged XPILE-LATEX-PARSE-* future work). 11 unit tests in latex-contract-frontend. Workspace clippy + tests green. Enables a future real C-NOTATION-LATEX-MATH-TO-EQUATION-V1 Runtime fixture."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-271
   github_issue: null
   item_type: task

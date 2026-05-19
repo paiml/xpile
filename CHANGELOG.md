@@ -7,6 +7,47 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — `LatexContractFrontend` parse body lit up (math + citations + references) (PMAT-272)
+
+Replaces the v0.1.0 `Ok(EquationsBlock::default())` scaffold in `crates/latex-contract-frontend/src/lib.rs` with a hand-rolled scanner that extracts:
+
+- **Math spans** — `$...$` (inline) and `\[...\]` (display) become `Equation` entries keyed `eq_inline_N` / `eq_display_N`. Body is trimmed; domain/invariants/preconditions left empty (deferred to a later equation-template pass).
+- **`\xpileContract{C-…}{…}` citations** — first brace-balanced arg pushed to `EquationsBlock.citations` as a `ContractId`; second arg consumed and discarded.
+- **`\cite{key}` references** — brace-balanced key pushed to `EquationsBlock.references`.
+
+**Out of scope at v0.1.0+ (flagged as XPILE-LATEX-PARSE-* future work):**
+
+- Math environments (`equation`, `align`, `gather`) — only `\[...\]` and `$...$` delimiters handled.
+- Theorem-class environments (`theorem`, `lemma`, `proof`) — no `proof_obligations` produced.
+- Macro expansion, escaped delimiters in non-comment contexts.
+
+**Robustness:**
+
+- LaTeX comments (`% ... \n`) skipped; escaped `\%` not treated as comment.
+- `$$...$$` (unsupported display syntax) skipped cleanly, doesn't break following spans.
+- Unterminated `$...` and `\[...` don't panic — scanner stops.
+- Brace balancing handles `\{` / `\}` escapes correctly inside citation/cite args.
+
+**11 new unit tests** in `latex-contract-frontend`:
+
+- `empty_input_yields_empty_block` (preserves existing xpile-core test)
+- `inline_math_is_extracted`
+- `display_math_is_extracted`
+- `multiple_math_spans_are_keyed_distinctly`
+- `xpile_contract_citation_is_collected`
+- `cite_reference_is_collected`
+- `line_comments_are_skipped`
+- `parse_is_deterministic_on_realistic_fixture` (uses same content as `contract_frontend_trait_demo.tex`)
+- `unterminated_display_math_does_not_panic`
+- `unterminated_inline_math_does_not_panic`
+- `double_dollar_blocks_are_skipped_safely`
+
+**Why this matters:**
+
+- The scaffold returned `EquationsBlock::default()` regardless of input — the contract `C-NOTATION-LATEX-MATH-TO-EQUATION-V1` and the trait `C-XPILE-CONTRACT-FRONTEND-TRAIT` were technically passing Runtime determinism (vacuously: same input → same empty output), but the parse-bridge claim was unfulfilled.
+- The audit-design.md "citation bridge fragility" concern requires structured parsing for citation extraction; this scanner is the first step — explicit token-matching, not regex over body text.
+- Downstream: enables a real `C-NOTATION-LATEX-MATH-TO-EQUATION-V1` Runtime fixture that asserts specific math spans extract correctly from `contract_frontend_trait_demo.tex`. That's a future PR; this PR ships the parse machinery.
+
 ### Added — `for-in-range` desugaring Runtime sweep (`C-PY-INT-ARITH` extension) (PMAT-271)
 
 Adds a 6th Runtime-stratum sweep to `crates/xpile/tests/runtime_strata.rs` exercising the PMAT-007 `for-in-range → while-loop` desugaring across all three range shapes:
