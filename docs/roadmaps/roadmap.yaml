@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-318
+  github_issue: null
+  item_type: task
+  title: 'PMAT-318: Diamond depth-17 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-17 via Nat power-monoid)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T11:30:00Z
+  updated: 2026-05-23T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add bounded_smem_nat_pow_monoid_diamond Lean theorem to contracts/lean/CompileRustToPtxMma.lean — 4 conjuncts: pow zero (pow_zero), pow successor (pow_succ), pow additivity (pow_add), one is identity (one_pow). Wire as new equation in compile-rust-to-ptx-mma-v1.yaml. Tighten substrate_diamond_depth_17_opened gate to ≥2 contracts. Opens DEPTH-17 ACROSS LAYERS — 2 contracts at depth-17+. Mirror of PMAT-247 (Int.pow POWER-MONOID on PyIntArith), adapted for Nat. None of the 16 prior categories on CompileRustToPtxMma mentions exponentiation. Load-bearing for smem-allocation formulas with repeated multiplication (dim^k tensor sizes)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-317
   github_issue: null
   item_type: task

@@ -309,13 +309,12 @@ fn substrate_diamond_depth_16_opened() {
 fn substrate_diamond_depth_17_opened() {
     let json = run_diamond_json();
     let depth_17_plus = read_aggregate_field(&json, "depth_17_plus");
-    // PMAT-317 opened depth-17 on C-PY-INT-ARITH: UNIT GROUP STRUCTURE
-    // (the multiplicative-inverse elements of Int form `{1, -1} ≅ Z/2Z`).
-    // FIRST claim characterizing the multiplicative-invertible elements as
-    // a separate algebraic structure — distinct from all 16 prior categories.
+    // PMAT-317 opened depth-17 on C-PY-INT-ARITH (Layer 1): UNIT GROUP `{1,-1}≅Z/2Z`.
+    // PMAT-318 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): NAT POWER-MONOID.
+    // Gate now asserts depth-17 ACROSS LAYERS (≥2 contracts at depth-17+).
     assert!(
-        depth_17_plus >= 1,
-        "Diamond depth-17 milestone (PMAT-317): expected ≥1 contract at depth-17+, \
-         got {depth_17_plus}.\n{json}"
+        depth_17_plus >= 2,
+        "Diamond depth-17 ACROSS LAYERS milestone (PMAT-317, PMAT-318): \
+         expected ≥2 contracts at depth-17+ (Layer 1 + Layer 5), got {depth_17_plus}.\n{json}"
     );
 }
