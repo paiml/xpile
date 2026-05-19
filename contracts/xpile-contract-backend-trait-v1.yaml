@@ -310,6 +310,39 @@ equations:
     postconditions:
       - "Diamond depth-4 broadened: 9 contracts at depth-4+"
 
+  contract_id_struct_extensionality_diamond:
+    # PMAT-354: FIFTH Diamond on this contract — COMPLETES DEPTH-5
+    # UNIVERSAL ACROSS ALL 12 CONTRACTS. SUBSTRATE MILESTONE: every
+    # contract now has ≥5 distinct Diamond categories. Pushes
+    # XpileContractBackendTrait (Layer 3) from depth-4 to depth-5,
+    # which was the LAST contract at depth-4 only. CONTRACT-ID
+    # STRUCTURE EXTENSIONALITY: the inner ContractId record (bytes :
+    # Array UInt8) is field-extensional with decidable equality.
+    # Thirteenth substrate-wide demonstration of the
+    # structure-extensionality pattern.
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.contract_id_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    formula: |
+      ContractId admits STRUCTURE EXTENSIONALITY:
+        (a) field eq → record eq
+        (b) record eq → field eq (congruence)
+        (c) decidable equality
+        (d) self-equality (reflexivity)
+    domain: |
+      Two ContractId records (bytes : Array UInt8) — the INNER
+      identifier record stored inside Contract.depends_on and
+      Contract.references arrays.
+    invariants:
+      - "FIFTH Diamond category on C-XPILE-CONTRACT-BACKEND-TRAIT — COMPLETES DEPTH-5 UNIVERSAL ACROSS ALL 12 CONTRACTS"
+      - "Substrate milestone: every contract has ≥5 distinct Diamond categories"
+      - "STRUCTURE EXTENSIONALITY — thirteenth substrate-wide demonstration of this pattern"
+      - "distinct from PMAT-333 (outer Contract record) — captures the INNER ContractId structure"
+      - "mirror of PMAT-353 (EquationsBlock on the Frontend-trait side) — closes inner-record extensionality on both sides of the trait pair"
+    preconditions:
+      - "two ContractId records (DecidableEq derived)"
+    postconditions:
+      - "DEPTH-5 UNIVERSAL achieved: 12 contracts at depth-5+"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractBackend

@@ -553,4 +553,86 @@ theorem contract_array_size_diamond (c : Contract) :
   · rfl
   · rfl
 
+/-! ## PMAT-354 — FIFTH Diamond on C-XPILE-CONTRACT-BACKEND-TRAIT
+    (Layer 3 BROADENING DEPTH-5 from 11 to 12 contracts):
+    CONTRACT-ID STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XPILE-CONTRACT-BACKEND-TRAIT-008).
+
+    **SUBSTRATE MILESTONE: DEPTH-5 UNIVERSAL ACROSS ALL 12 CONTRACTS.**
+
+    PMAT-354 is the FINAL push that takes the substrate from depth-5
+    on 11 contracts to depth-5 ACROSS ALL 12 CONTRACTS — parallel
+    to PMAT-336 (depth-3 UNIVERSAL) and PMAT-344 (depth-4 UNIVERSAL).
+    After 16 sweeps (PMAT-286/287/328/346/347/348/349/350/351/352/
+    353 + 5 earlier opens), every contract has ≥5 Diamond categories.
+
+    The 5 Diamond categories on C-XPILE-CONTRACT-BACKEND-TRAIT:
+    - PMAT-218 citation_render_monoid: monoid on rendered output
+    - PMAT-233 contract_product_monoid: product monoid on Contract
+    - PMAT-333 contract_struct_extensionality: outer Contract record
+    - PMAT-341 contract_array_size: Contract.depends_on/references size
+    - **PMAT-354: CONTRACT-ID STRUCTURE EXTENSIONALITY** ← depth-5
+
+    The categorical distinction is sharp:
+      - PMAT-218/233 are monoid algebras
+      - PMAT-333 captures STRUCTURAL extensionality of Contract
+        (the OUTER record that REFERS to ContractIds).
+      - PMAT-341 captures Array.size on Contract.depends_on.
+      - PMAT-354 captures STRUCTURAL extensionality of ContractId
+        (the INNER record that the OUTER record's arrays CONTAIN) —
+        fundamentally different structural target.
+
+    Mirror of PMAT-353 (EquationsBlock struct ext on the
+    Frontend-trait side) — together PMAT-353/PMAT-354 establish the
+    INNER-record extensionality on both sides of the
+    ContractFrontend/ContractBackend pair, while PMAT-332/PMAT-333
+    established the OUTER-record extensionality. This closes the
+    structural-extensionality matrix across the contract-trait
+    pair at BOTH abstraction levels.
+
+    Thirteenth substrate-wide demonstration of the structure-
+    extensionality pattern.
+
+    Status: discharged at v0.1.0 (PMAT-354). Tier: DIAMOND.
+    **COMPLETES DEPTH-5 UNIVERSAL ACROSS ALL 12 CONTRACTS.** -/
+
+/--
+  **Diamond-tier refinement theorem** — `ContractId` admits
+  STRUCTURE EXTENSIONALITY.
+
+  Combines four STRUCTURE-EXTENSIONALITY properties on the
+  single-field ContractId record (bytes : Array UInt8):
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality (congruence)
+  (c) Decidable equality (deriving DecidableEq)
+  (d) Self-equality (reflexivity)
+
+  Thirteenth substrate-wide demonstration of the structure-
+  extensionality pattern, and the LAST broadening required to
+  COMPLETE depth-5 UNIVERSAL ACROSS ALL 12 CONTRACTS.
+
+  Status: **discharged at v0.1.0 (PMAT-354)**. Tier: DIAMOND.
+  **COMPLETES DEPTH-5 UNIVERSAL ACROSS ALL 12 CONTRACTS.**
+-/
+theorem contract_id_struct_extensionality_diamond
+    (c1 c2 : ContractId) :
+    -- (a) Field equality → record equality
+    (c1.bytes = c2.bytes → c1 = c2)
+    -- (b) Record equality → field equality
+    ∧ (c1 = c2 → c1.bytes = c2.bytes)
+    -- (c) Decidable equality
+    ∧ (c1 = c2 ∨ c1 ≠ c2)
+    -- (d) Self-equality (reflexivity)
+    ∧ (c1 = c1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    cases c1; cases c2
+    simp_all
+  · intro h
+    rw [h]
+  · by_cases h : c1 = c2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXpileContractBackendTrait

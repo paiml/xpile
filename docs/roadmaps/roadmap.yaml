@@ -2,6 +2,15 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-354
+  github_issue: null
+  item_type: task
+  title: 'PMAT-354: MILESTONE — Diamond depth-5 UNIVERSAL ACROSS ALL 12 CONTRACTS (ContractId struct extensionality on C-XPILE-CONTRACT-BACKEND-TRAIT)'
+  status: planned
+  priority: medium
+  created: 2026-05-20T04:30:00Z
+  acceptance_criteria:
+  - "SUBSTRATE MILESTONE: depth-5 UNIVERSAL ACROSS ALL 12 CONTRACTS. Final push from 11 to 12 contracts at depth-5+. Parallel to PMAT-336 (depth-3 UNIVERSAL) and PMAT-344 (depth-4 UNIVERSAL). Add contract_id_struct_extensionality_diamond. Pushes Layer 3 contract from depth-4 to depth-5. Thirteenth substrate-wide struct-extensionality demonstration. Tighten depth-5 gate to UNIVERSAL (== contracts_total)."
 - id: PMAT-353
   github_issue: null
   item_type: task
