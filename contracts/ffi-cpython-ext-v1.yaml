@@ -69,6 +69,17 @@ equations:
     # PMAT-164/165/166/167).
     lean_theorem: "XpileContracts.CFfiCpythonExt.symbol_preserved_silver"
     lean_file: "contracts/lean/FfiCpythonExt.lean"
+    # PMAT-275: Property-specific Silver-tier Kani harness. Closes
+    # audit-design.md §4 "byte-identity placeholder" caveat for this
+    # equation. Models FfiCallSilver as a structural record with
+    # named fields (symbol + from_lang + to_lang + args + return_type
+    # + refcount_delta) and proves byte-equality of the `symbol` field
+    # alone. Companion harnesses for the other fields wired below.
+    # The Bronze byte-payload harness (manifest_completeness) couldn't
+    # tell a symbol-mangling bug apart from a payload byte permutation;
+    # Silver-tier per-field harnesses distinguish them.
+    kani_harness: "symbol_preserved_silver"
+    kani_file: "contracts/kani/ffi_cpython_ext.rs"
     formula: |
       lower(call).symbol == call.symbol
     domain: |
@@ -96,6 +107,14 @@ equations:
     # at the type level (no silent drift across the FFI boundary).
     lean_theorem: "XpileContracts.CFfiCpythonExt.refcount_balance_on_success_silver"
     lean_file: "contracts/lean/FfiCpythonExt.lean"
+    # PMAT-275: Property-specific Silver-tier Kani harness. Closes
+    # audit-design.md §4 caveat for the refcount-delta preservation
+    # claim — load-bearing for memory safety. A 0-delta call recorded
+    # as non-0 (or vice versa) becomes a memory leak or use-after-free
+    # in emitted Rust. Kani exhaustively explores the symbolic input
+    # space over i8 refcount_delta + the other 5 fields.
+    kani_harness: "refcount_delta_preserved_silver"
+    kani_file: "contracts/kani/ffi_cpython_ext.rs"
     formula: |
       pre_call_refcount(obj) == post_call_refcount(obj)  WHEN call returns non-error
     domain: |
