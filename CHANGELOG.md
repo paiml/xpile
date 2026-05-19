@@ -7,6 +7,43 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Property-specific Silver-tier Kani harnesses for `C-XLATE-PY-LIST-TO-VEC` (Path α, FIFTH and FINAL contract) (PMAT-279)
+
+**Path α complete.** Lifts the `iteration_order_preserved` equation's Kani harness from a Bronze byte-payload to Silver-tier structural proofs matching Lean's `iteration_order_preserved_silver` + `length_preserved_silver` + `homogeneous_element_type_preserved_silver` (PMAT-164 + PMAT-182). Closes the **audit-design.md §4 "byte-identity placeholder rather than property-specific structural proofs" caveat for all 5 contracts that were on demo-fixture status entering this session.**
+
+**Structural model — polymorphism encoded via tag:**
+
+The Lean Silver tier uses polymorphic `PyListSilver α` / `RustVecSilver α`. Kani can't do generics, so we encode element-type polymorphism via a tag (int=0, float=1, str=2, bool=3, bytes=4) alongside an opaque element-bytes payload and an explicit length:
+
+```rust
+struct PyListSilver  { element_type_tag: u8, elems: [u8; 4], len: u8 }
+struct RustVecSilver { element_type_tag: u8, elems: [u8; 4], len: u8 }
+```
+
+**Three new `#[kani::proof]` functions:**
+
+| Proof | Catches |
+|-------|---------|
+| `iteration_order_preserved_silver` | a lowering specialized for byte-elements (SIMD on u8) that breaks on other element types |
+| `length_preserved_silver` | length drift independent of element-payload — Bronze relied on `[u8; 4]` always having `.len() == 4`, trivially true |
+| `homogeneous_element_type_preserved_silver` | `list[int]` → `Vec<f64>` coercion or `Box<dyn Any>` erasure on homogeneous lists |
+
+**Contract YAML wiring**
+
+`contracts/xlate-py-list-to-vec-v1.yaml` `homogeneous_element_type_preserved_silver` equation now has `kani_harness:` + `kani_file:` pointing at the new proof. (This is the Silver equation that explicitly references PMAT-182's Lean theorem; the Bronze `iteration_order_preserved` equation retains its existing harness.)
+
+## Path α — FINAL SUMMARY (5 of 5 closed)
+
+| Contract | Status |
+|----------|--------|
+| C-FFI-CPYTHON-EXT-V1 | ✅ PMAT-275 (per-field byte equality) |
+| C-COMPILE-RUST-TO-PTX-MMA | ✅ PMAT-276 (FIRST non-`rfl` Silver Kani — `smem_bytes ≤ 48 KiB` inequality) |
+| C-XLATE-RUST-FN-TO-LEAN-THM-V1 | ✅ PMAT-277 (concat-order: `binders = generics ++ args`) |
+| C-XLATE-LEAN-TO-RUST-V1 | ✅ PMAT-278 (symmetric mirror of PMAT-277) |
+| C-XLATE-PY-LIST-TO-VEC-V1 | ✅ PMAT-279 (polymorphism via element-type tag) |
+
+**audit-design.md §4 caveat:** Path α addressed the second clause ("Bronze-tier Lean theorems and Kani harnesses are byte-identity placeholders rather than property-specific structural proofs"). The 5 contracts that had placeholder Kani harnesses (FFI, PTX, XLATE-RUST-FN-TO-LEAN, XLATE-LEAN-TO-RUST, XLATE-PY-LIST-TO-VEC) now have property-specific Silver-tier proofs alongside their Bronze byte-identity baselines.
+
 ### Added — Property-specific Silver-tier Kani harnesses for `C-XLATE-LEAN-TO-RUST` (Path α, fourth contract) (PMAT-278)
 
 Fourth Path α contract closure. Lifts the `def_to_rust_fn` equation's Kani harness from a Bronze byte-payload to Silver-tier structural proofs matching Lean's `name_preserved_silver` / `body_preserved_silver` / `args_preserved_silver` / `return_type_preserved_silver` (PMAT-165).

@@ -58,6 +58,18 @@ equations:
     # captures the polymorphic element-list preservation claim.
     lean_theorem: "XpileContracts.CXlatePyListToVec.homogeneous_element_type_preserved_silver"
     lean_file: "contracts/lean/XlatePyListToVec.lean"
+    # PMAT-279: Property-specific Silver-tier Kani harness. Closes
+    # audit-design.md §4 caveat — FIFTH and FINAL Path α contract
+    # closure. Bronze iteration_order_preserved used a fixed 4-byte
+    # payload (would silently pass a lowering specialized for
+    # byte-elements but broken on other types). Silver adds an
+    # element_type_tag field; the homogeneous_element_type_preserved_silver
+    # Kani harness proves the tag is preserved across lowering.
+    # Companion harnesses iteration_order_preserved_silver and
+    # length_preserved_silver in the same Kani file pin the order
+    # and length claims independently.
+    kani_harness: "homogeneous_element_type_preserved_silver"
+    kani_file: "contracts/kani/xlate_py_list_to_vec.rs"
     formula: |
       lower_homogeneous_list(l).element_type_tag == l.element_type_tag
     domain: |
