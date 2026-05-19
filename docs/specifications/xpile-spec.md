@@ -53,6 +53,7 @@
 | 26 | [Audit-acknowledged Caveats](#26-audit-acknowledged-caveats) | [audit-design.md](audit-design.md) |
 | 27 | [Provability Roadmap — ruchy 5.0 alignment](#27-provability-roadmap--ruchy-50-alignment) | [sub/provability-roadmap.md](sub/provability-roadmap.md) |
 | 28 | [Diamond-Tier Refinement Taxonomy](#28-diamond-tier-refinement-taxonomy) | [sub/diamond-taxonomy.md](sub/diamond-taxonomy.md) |
+| 29 | [Layer-5 Multi-Emitter Oracle Quorum](#29-layer-5-multi-emitter-oracle-quorum) | [sub/layer5-multi-emitter-quorum.md](sub/layer5-multi-emitter-quorum.md) |
 
 ---
 
@@ -541,6 +542,52 @@ Per-category catalog, proof-pattern recipes, and "when to add a new Diamond" dec
 ### Falsification posture
 
 If a future PR weakens Diamond coverage — removes a `_diamond` equation, breaks a contract's depth-2 invariant, etc. — the `diamond_coverage.rs` gate fails the build. This is the **enforcement** counterpart to the **reporter** posture of `xpile quorum`.
+
+---
+
+## 29. Layer-5 Multi-Emitter Oracle Quorum
+
+**Sub-spec**: [sub/layer5-multi-emitter-quorum.md](sub/layer5-multi-emitter-quorum.md)
+
+Layer-5 compile contracts (`C-COMPILE-RUST-TO-PTX-MMA` and future siblings for WGSL, SPIR-V) have rich Semantic-stratum coverage via the Diamond program but currently only single-vote Runtime stratum (the "Run=1 demo fixture" caveat in audit-design.md §4). This section commits to closing that gap via §14.4 N-of-M oracle quorum applied to backend emitters.
+
+### Design
+
+For each Layer-5 target, xpile-N-codegen routes through:
+
+- **General emitter** (mandatory) — handles any contract-conforming input. For PTX: `rustc_codegen_nvvm`. For WGSL: `naga`. For SPIR-V: `rspirv`.
+- **Specialist emitter** (optional) — handles a domain-specific subset with hand-tuned templates. For PTX: aprender-gpu's GEMM/MMA kernels. For shell: bashrs-realistic's 17k+ corpus-tuned patterns.
+
+When BOTH emitters fire on the same input, their outputs become two independent oracle votes at the Runtime stratum. A `DiffExec` quorum policy executes both PTX programs on test inputs and compares numerical outputs — divergence falsifies the contract.
+
+### Why this matters
+
+The Diamond proofs (PMAT-218/231/242/248 on C-COMPILE-RUST-TO-PTX-MMA) currently prove things about a `BoundedSmem` MODEL, not about emitted PTX text. They are *in-vacuum*. Adding multi-emitter quorum at the Runtime stratum creates the gate that connects model to emission: if either emitter produces PTX violating the modeled invariants, runtime divergence catches it.
+
+The two emitters fail in **categorically independent** ways (LLVM bug vs hand-tuned-template bug) — the §14.10 anti-correlation guard is satisfied by construction.
+
+### Generalization
+
+The pattern is not PTX-specific. Same shape applies to WGSL (`naga` + WebGPU specialists), SPIR-V (`rspirv` + Vulkan compute specialists), shell (`bashrs-backend` + `bashrs-realistic` corpus), and C extensions (`pyo3` + hand-tuned `cffi`).
+
+### Implementation roadmap
+
+- **PMAT-259** (this spec) — design + sub-spec + schema sketch
+- **PMAT-260+** — `pv lint` schema extension for `compile_targets.via` (role: general | specialist)
+- **PMAT-26X+** — light up rustc_codegen_nvvm path in xpile-ptx-codegen
+- **PMAT-26Y+** — cross-repo binding to aprender-gpu specialist
+- **PMAT-26Z+** — `DiffExec` engine + `xpile quorum` reporting of multi-vote Runtime stratum
+
+Full per-phase scope and pros/cons in [sub/layer5-multi-emitter-quorum.md](sub/layer5-multi-emitter-quorum.md).
+
+### Falsification posture
+
+Once the spec is implemented, the following weaken the substrate (fail CI):
+
+1. PTX produced by either emitter executed on test inputs returns outputs that diverge from the quorum (tolerance configured per contract).
+2. The specialist emitter is silently dropped without a `quorum_policy: PreferSpecialist` annotation in the YAML.
+3. The general emitter is removed (no fallback for unknown shapes).
+4. `pv lint` is weakened to allow `compile_targets.via` without a `role: general` entry.
 
 ---
 

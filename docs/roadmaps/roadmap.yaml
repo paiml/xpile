@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-259
+  github_issue: null
+  item_type: task
+  title: 'PMAT-259: Add Section 29 (Layer-5 Multi-Emitter Oracle Quorum) — spec a+b quorum design for PTX emission'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-20T21:30:00Z
+  updated: 2026-05-20T21:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "New sub-spec sub/layer5-multi-emitter-quorum.md wired into xpile-spec.md as Section 29. Captures the multi-emitter quorum design for Layer 5 compile contracts: general emitter (rustc_codegen_nvvm) + specialist (aprender-gpu) routed through QuorumPolicy with DiffExec runtime comparison. Extends compile_targets.via schema. Closes audit-design.md §4 Run=1 caveat. Phased roadmap for PMAT-260+ implementation."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-258
   github_issue: null
   item_type: task
