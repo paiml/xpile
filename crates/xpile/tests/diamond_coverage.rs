@@ -115,11 +115,13 @@ fn substrate_diamond_depth_4_opened() {
     // joins depth-4 on Layer 3, COMPLETING depth-4 across ALL 5 taxonomy layers.
     // PMAT-338 added list_reverse_involution_diamond → C-XLATE-PY-LIST-TO-VEC joins
     // depth-4 on Layer 2 (second Layer 2 contract at depth-4), broadening to 6 contracts.
-    // Gate now asserts ≥6 contracts spanning all 5 layers.
+    // PMAT-339 added target_enum_distinctness_diamond → C-XPILE-BACKEND-TRAIT joins
+    // depth-4 on Layer 3 (second Layer 3 contract at depth-4), broadening to 7 contracts.
+    // Gate now asserts ≥7 contracts spanning all 5 layers with L2+L3 doubled.
     assert!(
-        depth_4_plus >= 6,
-        "Diamond depth-4 ACROSS ALL 5 LAYERS + L2 broadening milestone (PMAT-247/248/288/329/330/338): \
-         expected ≥6 contracts at depth-4+ (5 layers + L2 doubled), got {depth_4_plus}.\n{json}"
+        depth_4_plus >= 7,
+        "Diamond depth-4 ACROSS ALL 5 LAYERS + L2/L3 broadening milestone (PMAT-247/248/288/329/330/338/339): \
+         expected ≥7 contracts at depth-4+, got {depth_4_plus}.\n{json}"
     );
 }
 

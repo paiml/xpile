@@ -290,6 +290,34 @@ equations:
       - "an emitter introducing phantom fields (e.g., compiler_version_hash) or stripping fields would falsify (a)"
       - "Diamond depth-3 broadened: 7 contracts at depth-3+"
 
+  target_enum_distinctness_diamond:
+    # PMAT-339: FOURTH Diamond on this contract — BROADENS DEPTH-4
+    # from 6 to 7 contracts. Pushes XpileBackendTrait (Layer 3)
+    # from depth-3 to depth-4, adding SECOND Layer 3 contract at
+    # depth-4 (XpileFrontendTrait was first via PMAT-330). TARGET
+    # ENUM DISTINCTNESS: the 7-variant Target enumeration has
+    # pairwise distinct constructors with decidable equality.
+    lean_theorem: "XpileContracts.CXpileBackendTrait.target_enum_distinctness_diamond"
+    lean_file: "contracts/lean/XpileBackendTrait.lean"
+    formula: |
+      Target is a 7-variant decidable enumeration with distinct constructors:
+        (a) rust ≠ ruchy
+        (b) ptx ≠ shell
+        (c) self-equality (reflexivity)
+        (d) decidable equality
+    domain: |
+      Any Target value. The four properties together axiomatize
+      Target as a finite, decidable, pairwise-distinct enumeration.
+    invariants:
+      - "FOURTH Diamond category on C-XPILE-BACKEND-TRAIT — BROADENS DEPTH-4 from 6 to 7 contracts"
+      - "FINITE ENUMERATION DECIDABILITY — distinct from value-level claims (PMAT-225/235/331)"
+      - "captures symbolic structure of Target enumeration (7 distinct constructors)"
+    preconditions:
+      - "Target inductive type with derived DecidableEq"
+    postconditions:
+      - "an emitter conflating two Target constructors (e.g., emitting PTX when WGSL declared) would falsify enumeration distinctness"
+      - "Diamond depth-4 broadened: 7 contracts at depth-4+"
+
 proof_obligations:
   - type: invariant
     property: Every registered Target is owned by exactly one Backend
