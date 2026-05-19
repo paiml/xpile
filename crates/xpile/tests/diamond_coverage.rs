@@ -356,10 +356,25 @@ fn substrate_diamond_depth_20_opened() {
     let depth_20_plus = read_aggregate_field(&json, "depth_20_plus");
     // PMAT-325 opened depth-20 on C-PY-INT-ARITH (Layer 1): Int.toNat partial inverse.
     // PMAT-326 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): Nat power monotonicity.
-    // Gate now asserts depth-20 ACROSS LAYERS (≥2 contracts at depth-20+).
+    // PMAT-327 took PyIntArith to depth-21 (still ≥2 at depth-20+).
+    // Gate asserts depth-20 ACROSS LAYERS (≥2 contracts at depth-20+).
     assert!(
         depth_20_plus >= 2,
         "Diamond depth-20 ACROSS LAYERS milestone (PMAT-325, PMAT-326): \
          expected ≥2 contracts at depth-20+ (Layer 1 + Layer 5), got {depth_20_plus}.\n{json}"
+    );
+}
+
+#[test]
+fn substrate_diamond_depth_21_opened() {
+    let json = run_diamond_json();
+    let depth_21_plus = read_aggregate_field(&json, "depth_21_plus");
+    // PMAT-327 opened depth-21 on C-PY-INT-ARITH: NAT-CAST ORDER EMBEDDING
+    // (Nat.cast preserves ≤, <, =; complement to PMAT-310 ring-hom direction).
+    // Together with PMAT-310, captures Nat.cast as an OrderRingHom.
+    assert!(
+        depth_21_plus >= 1,
+        "Diamond depth-21 milestone (PMAT-327): expected ≥1 contract at depth-21+, \
+         got {depth_21_plus}.\n{json}"
     );
 }

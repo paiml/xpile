@@ -2913,4 +2913,93 @@ theorem int_to_nat_partial_inverse_diamond (a : Int) (n : Nat) :
   · exact Int.toNat_eq_zero
   · exact Nat.zero_le _
 
+/-! ## PMAT-327 — TWENTY-FIRST Diamond on C-PY-INT-ARITH (FIRST
+    DEPTH-21 in the substrate): NAT-CAST ORDER EMBEDDING —
+    `Nat.cast : Nat → Int` preserves the ORDER structure
+    (XPILE-REFINE-PY-INT-ARITH-029).
+
+    **Opens DEPTH-21 in the substrate.** PyIntArith reached depth-20
+    at PMAT-325 (Int.toNat partial inverse); PMAT-327 adds the
+    TWENTY-FIRST orthogonal Diamond category — the ORDER-EMBEDDING
+    properties of the `Nat → Int` cast.
+
+    The 21 Diamond categories on C-PY-INT-ARITH:
+    - PMAT-214..325: prior 20 categories
+    - **PMAT-327: NAT-CAST ORDER EMBEDDING** ← FIRST DEPTH-21
+
+    The categorical distinction is sharp:
+      - PMAT-310 NAT-CAST RING HOM: `Nat → Int` preserves 0, 1, +, *
+        (the RING structure)
+      - PMAT-325 Int.toNat PARTIAL INVERSE: the REVERSE direction
+        (Int → Nat partial retraction)
+      - PMAT-327 NAT-CAST ORDER EMBEDDING: `Nat → Int` preserves
+        ≤, <, = (the ORDER structure)
+
+    Together PMAT-310 + PMAT-327 characterize the Nat → Int cast
+    as an ORDER-PRESERVING RING HOMOMORPHISM (Mathlib's
+    `OrderRingHom Nat Int` typeclass shape). Each piece is a
+    distinct categorical claim:
+      - Algebraic structure preservation (PMAT-310)
+      - Partial inverse / retraction (PMAT-325)
+      - Order structure preservation (PMAT-327)
+
+    Why this is genuinely orthogonal:
+      The ORDER-EMBEDDING axioms are independent of the ring-hom
+      axioms. A ring-hom could fail to be order-preserving (e.g.,
+      the quotient hom `Z → Z/2Z` is a ring hom but doesn't
+      preserve order — there's no consistent order on Z/2Z that's
+      compatible with all of Z's order). So PMAT-310 + PMAT-327
+      together capture strictly more structure than either alone.
+
+    For Python int dispatch, this matters: an emitter that lowered
+    Python's non-negative-int fast path through a path that
+    preserved arithmetic operations (PMAT-310 ring hom) but
+    failed order preservation (e.g., a hash-table encoding where
+    insertion order doesn't match numeric order) would falsify (a).
+
+    Status: discharged at v0.1.0 (PMAT-327). Tier: DIAMOND.
+    FIRST DEPTH-21 in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `Nat.cast : Nat → Int` is
+  an ORDER EMBEDDING (preserves ≤, <, =) and is non-negative.
+
+  Combines four ORDER-EMBEDDING properties:
+  (a) Preserves ≤ (iff):  `((n : Int)) ≤ ((m : Int)) ↔ n ≤ m`
+  (b) Preserves < (iff):  `((n : Int)) < ((m : Int)) ↔ n < m`
+  (c) Injectivity (=):    `((n : Int)) = ((m : Int)) ↔ n = m`
+  (d) Non-negative:       `0 ≤ ((n : Int))`
+
+  Together these characterize `Nat.cast` as the canonical
+  ORDER-PRESERVING RING HOMOMORPHISM (Mathlib's `OrderRingHom`
+  shape) when combined with PMAT-310 (the ring-hom direction).
+
+  Uses Mathlib's `Nat.cast_le`, `Nat.cast_lt`, `Nat.cast_inj`,
+  `Nat.cast_nonneg`. Standard cast lemmas.
+
+  An emitter that lowered Python's non-negative-int fast path
+  through a path that preserved arithmetic operations (PMAT-310
+  ring hom) but FAILED order preservation (e.g., a hash-table
+  encoding where insertion order doesn't match numeric order)
+  would falsify (a). This bug class slips past PMAT-310
+  (algebraic) and PMAT-325 (round-trip).
+
+  Status: **discharged at v0.1.0 (PMAT-327)**. Tier: DIAMOND.
+  FIRST DEPTH-21 in the substrate.
+-/
+theorem int_nat_cast_order_embedding_diamond (n m : Nat) :
+    -- (a) Cast preserves ≤
+    (((n : Int)) ≤ ((m : Int)) ↔ n ≤ m)
+    -- (b) Cast preserves <
+    ∧ (((n : Int)) < ((m : Int)) ↔ n < m)
+    -- (c) Cast preserves = (injectivity)
+    ∧ (((n : Int)) = ((m : Int)) ↔ n = m)
+    -- (d) Cast is non-negative
+    ∧ (0 ≤ ((n : Int))) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.cast_le
+  · exact Nat.cast_lt
+  · exact Nat.cast_inj
+  · exact Nat.cast_nonneg n
+
 end XpileContracts.CPyIntArith

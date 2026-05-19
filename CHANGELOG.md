@@ -7,6 +7,46 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-21 in the substrate: Nat-cast order-embedding Diamond on `C-PY-INT-ARITH` (PMAT-327)
+
+**Path β extension.** Opens Diamond **depth-21** — twenty-one distinct algebraic categories on a single contract. PyIntArith was at depth-20 (post-PMAT-325); PMAT-327 adds **NAT-CAST ORDER EMBEDDING** as the twenty-first orthogonal category.
+
+**Why NAT-CAST ORDER EMBEDDING is genuinely a NEW category:**
+
+The ORDER-EMBEDDING axioms are independent of the ring-hom axioms (PMAT-310). A ring-hom could fail to be order-preserving (e.g., the quotient hom `Z → Z/2Z` is a ring hom but doesn't preserve order — there's no consistent order on Z/2Z that's compatible with all of Z's order). So PMAT-310 + PMAT-327 together capture strictly more structure than either alone.
+
+- **Preserves ≤:** `((n : Int)) ≤ ((m : Int)) ↔ n ≤ m`
+- **Preserves <:** `((n : Int)) < ((m : Int)) ↔ n < m`
+- **Injectivity (=):** `((n : Int)) = ((m : Int)) ↔ n = m`
+- **Non-negative:** `0 ≤ ((n : Int))`
+
+Together with PMAT-310 (ring-hom direction) + PMAT-325 (partial inverse), this characterizes `Nat.cast` as a complete **ORDER-PRESERVING RING HOMOMORPHISM** (Mathlib's `OrderRingHom Nat Int` typeclass shape).
+
+**New Lean theorem:**
+
+```lean
+theorem int_nat_cast_order_embedding_diamond (n m : Nat) :
+    (((n : Int)) ≤ ((m : Int)) ↔ n ≤ m)
+    ∧ (((n : Int)) < ((m : Int)) ↔ n < m)
+    ∧ (((n : Int)) = ((m : Int)) ↔ n = m)
+    ∧ (0 ≤ ((n : Int))) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.cast_le
+  · exact Nat.cast_lt
+  · exact Nat.cast_inj
+  · exact Nat.cast_nonneg n
+```
+
+Uses Mathlib's `Nat.cast_le`, `Nat.cast_lt`, `Nat.cast_inj`, `Nat.cast_nonneg`.
+
+**Falsification surface:** an emitter that lowered Python's non-negative-int fast path through a path that preserved arithmetic (PMAT-310 ring hom) but FAILED order preservation (e.g., a **hash-table encoding** where insertion order doesn't match numeric order) would falsify (a). This bug class slips past PMAT-310 (algebraic) and PMAT-325 (round-trip).
+
+**Reporter + gate updates:**
+
+- `xpile diamond --json` extended with `depth-20` discrete label + `depth-21+` aggregate.
+- `substrate_diamond_depth_21_opened` gate test added (≥ 1 at depth-21+).
+- Substrate Diamond totals: **66 wired Diamond theorems** across 12 contracts (was 65).
+
 ### Added — Diamond depth-20 ACROSS LAYERS: Nat-power-monotonicity Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-326)
 
 **Path β extension.** Depth-20 was opened by PMAT-325 on PyIntArith (Layer 1). PMAT-326 extends depth-20 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) via the Nat-power-monotonicity Diamond — the substrate now has **2 contracts at depth-20+**.

@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-327
+  github_issue: null
+  item_type: task
+  title: 'PMAT-327: FIRST Diamond depth-21 in the substrate (Nat-cast order embedding on C-PY-INT-ARITH)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T16:00:00Z
+  updated: 2026-05-23T16:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add int_nat_cast_order_embedding_diamond Lean theorem to contracts/lean/PyIntArith.lean — 4 conjuncts: preserves ≤ (Nat.cast_le), preserves < (Nat.cast_lt), injectivity (Nat.cast_inj), non-negative (Nat.cast_nonneg). Wire as new equation in py-int-arith-v1.yaml. Extend xpile diamond reporter with depth-21+ label + depth_21_plus aggregate. Refine depth-20 from depth-20+ to discrete depth-20. Add substrate_diamond_depth_21_opened gate test (≥1). FIRST DEPTH-21 — PyIntArith reaches 21 categories. The 21st (NAT-CAST ORDER EMBEDDING) is the ORDER-PRESERVATION component of the Nat.cast — independent of PMAT-310 ring-hom axioms. Together with PMAT-310 + PMAT-325, characterizes Nat.cast as a complete OrderRingHom (Mathlib's typeclass shape). Falsification: hash-table encoding preserving arithmetic but failing order would falsify (a)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-326
   github_issue: null
   item_type: task
