@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-305
+  github_issue: null
+  item_type: task
+  title: 'PMAT-305: FIRST Diamond depth-12 in the substrate (ordered-ring sign rules on C-PY-INT-ARITH)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T05:00:00Z
+  updated: 2026-05-23T05:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add ordered_ring_diamond Lean theorem to contracts/lean/PyIntArith.lean — 4 conjuncts: nonneg × nonneg ≥ 0, nonpos × nonpos ≥ 0, nonneg × nonpos ≤ 0, strictpos × strictpos > 0. Proved by `nlinarith`. Wire as new equation in py-int-arith-v1.yaml. Extend xpile diamond reporter with depth-12+ label + depth_12_plus aggregate. Refine depth-11 from depth-11+ to discrete depth-11. Add substrate_diamond_depth_12_opened gate test (≥1). FIRST DEPTH-12 — PyIntArith reaches 12 categories. The 12th (ORDERED RING sign rules) BRIDGES PMAT-298 LINEAR-ORDER (no mul) and PMAT-300 RING (no order). Mathlib's OrderedRing typeclass encodes this bridge separately. Non-ordered example: Z[i] is a ring with no compatible order."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-304
   github_issue: null
   item_type: task

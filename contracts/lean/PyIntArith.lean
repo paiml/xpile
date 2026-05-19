@@ -2032,4 +2032,101 @@ theorem integral_domain_diamond (a b c : Int) :
   · exact Int.one_ne_zero
   · exact fun ha hb => Int.mul_ne_zero ha hb
 
+/-! ## PMAT-305 — TWELFTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-12
+    in the substrate): ORDERED RING — multiplication is compatible
+    with the order (XPILE-REFINE-PY-INT-ARITH-020).
+
+    **Opens DEPTH-12 in the substrate.** PyIntArith reached depth-11
+    at PMAT-302 (integral domain); PMAT-305 adds the TWELFTH
+    orthogonal Diamond category — ORDERED RING, the structural
+    BRIDGE between the algebraic ring axioms (PMAT-300) and the
+    order axioms (PMAT-298).
+
+    The 12 Diamond categories on C-PY-INT-ARITH:
+    - PMAT-214: SEMIRING
+    - PMAT-228: EUCLIDEAN DOMAIN
+    - PMAT-241: SHIFT-MONOID
+    - PMAT-247: POWER-MONOID
+    - PMAT-286: BITWISE-AND-MONOID
+    - PMAT-290: ABELIAN-GROUP-ENRICHMENT
+    - PMAT-292: ORDER-DISTRIBUTIVE-LATTICE
+    - PMAT-294: DIVISIBILITY-PREORDER
+    - PMAT-298: LINEAR-ORDER TRICHOTOMY
+    - PMAT-300: RING-DISTRIBUTIVITY
+    - PMAT-302: INTEGRAL DOMAIN
+    - **PMAT-305: ORDERED RING (sign rules)** ← FIRST DEPTH-12
+
+    The categorical distinction is sharp:
+      - PMAT-298 LINEAR-ORDER axiomatizes the strict-order axioms
+        on (Int, <) but says nothing about multiplication.
+      - PMAT-300 RING axiomatizes the ring axioms but says nothing
+        about how multiplication interacts with the order.
+      - PMAT-302 INTEGRAL DOMAIN axiomatizes no-zero-divisors but
+        is silent on signs.
+      - PMAT-305 ORDERED RING axiomatizes the SIGN RULES that
+        connect multiplication with the order:
+        - nonneg × nonneg ≥ 0
+        - nonpos × nonpos ≥ 0
+        - nonneg × nonpos ≤ 0
+        - strictpos × strictpos > 0
+
+    Why this is genuinely orthogonal:
+      The sign rules cannot be derived from PMAT-298 LINEAR-ORDER
+      (which has no multiplication) nor from PMAT-300 RING (which
+      has no order) — they require BOTH the order and the
+      multiplicative structure to be present AND compatible.
+      Mathlib's `OrderedRing` / `LinearOrderedCommRing` typeclass
+      encodes this BRIDGE separately from `Ring` and `LinearOrder`.
+
+    A non-ordered ring example: the Gaussian integers Z[i] form a
+    ring with no compatible total order (you cannot consistently
+    say `i > 0` or `i < 0`) — so this bridging axiom genuinely
+    requires the order-multiplication compatibility.
+
+    For Python int dispatch, the sign rules are load-bearing for
+    SATURATING arithmetic: an emitter that computed `(-1) * (-1)`
+    as `0` (saturating to nonneg) instead of `1` would falsify
+    the nonpos × nonpos ≥ 0 rule — a real bug class invisible to
+    all 11 prior Diamond categories.
+
+    Status: discharged at v0.1.0 (PMAT-305). Tier: DIAMOND.
+    FIRST DEPTH-12 in the substrate. -/
+
+/--
+  **Diamond-tier refinement theorem** — `(Int, +, *, ≤)` is an
+  ORDERED RING (the sign rules).
+
+  Combines four ORDERED-RING-defining sign rules:
+  (a) `0 ≤ a → 0 ≤ b → 0 ≤ a * b` (nonneg × nonneg)
+  (b) `a ≤ 0 → b ≤ 0 → 0 ≤ a * b` (nonpos × nonpos)
+  (c) `0 ≤ a → b ≤ 0 → a * b ≤ 0` (nonneg × nonpos)
+  (d) `0 < a → 0 < b → 0 < a * b` (strictpos × strictpos)
+
+  Together these characterize the ORDERED-RING structure — the
+  compatibility between multiplication and the order. Distinct from
+  PMAT-298 LINEAR-ORDER (no multiplication), PMAT-300 RING (no order),
+  and PMAT-302 INTEGRAL DOMAIN (no signs).
+
+  Proved by `nlinarith` — Mathlib's nonlinear arithmetic tactic
+  for ordered rings handles these sign rules automatically.
+
+  An emitter that lowered Python-int multiplication through a
+  SATURATING-to-nonneg fast-path (e.g., clamping `(-1) * (-1)` to
+  `0`) would falsify (b) — a real bug class invisible to all 11
+  prior Diamond categories which lack order × ring interaction.
+
+  Status: **discharged at v0.1.0 (PMAT-305)**. Tier: DIAMOND.
+  FIRST DEPTH-12 in the substrate.
+-/
+theorem ordered_ring_diamond (a b : Int) :
+    -- (a) Nonneg × nonneg ≥ 0
+    (0 ≤ a → 0 ≤ b → 0 ≤ a * b)
+    -- (b) Nonpos × nonpos ≥ 0
+    ∧ (a ≤ 0 → b ≤ 0 → 0 ≤ a * b)
+    -- (c) Nonneg × nonpos ≤ 0
+    ∧ (0 ≤ a → b ≤ 0 → a * b ≤ 0)
+    -- (d) Strictpos × strictpos > 0
+    ∧ (0 < a → 0 < b → 0 < a * b) := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> intros <;> nlinarith
+
 end XpileContracts.CPyIntArith

@@ -957,6 +957,46 @@ equations:
       - "an emitter with modular-arithmetic multiplication (mod 2^N) would falsify (a) for inputs whose product crosses the modulus"
       - "Diamond DEPTH-11 opened — 1 contract at depth-11+"
 
+  ordered_ring_diamond:
+    # PMAT-305: TWELFTH Diamond on this contract — opens FIRST
+    # DEPTH-12 in the substrate. ORDERED RING sign rules: nonneg ×
+    # nonneg ≥ 0, nonpos × nonpos ≥ 0, nonneg × nonpos ≤ 0,
+    # strictpos × strictpos > 0. Categorically orthogonal:
+    #   - PMAT-298 LINEAR-ORDER: no multiplication
+    #   - PMAT-300 RING: no order
+    #   - PMAT-302 INTEGRAL DOMAIN: no signs
+    #   - PMAT-305 ORDERED RING: bridges order × ring multiplication
+    # Mathlib's `OrderedRing` / `LinearOrderedCommRing` typeclass
+    # encodes this BRIDGE separately. Non-ordered-ring example: the
+    # Gaussian integers Z[i] form a ring with no compatible total
+    # order, so the sign rules genuinely require BOTH the order and
+    # multiplication structures to be present AND compatible.
+    lean_theorem: "XpileContracts.CPyIntArith.ordered_ring_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      (Int, +, *, ≤) is an ORDERED RING:
+        (a) nonneg × nonneg:        0 ≤ a → 0 ≤ b → 0 ≤ a * b
+        (b) nonpos × nonpos:        a ≤ 0 → b ≤ 0 → 0 ≤ a * b
+        (c) nonneg × nonpos:        0 ≤ a → b ≤ 0 → a * b ≤ 0
+        (d) strictpos × strictpos:  0 < a → 0 < b → 0 < a * b
+    domain: |
+      Any two Int values. The four sign rules together axiomatize
+      the ORDERED RING structure — Mathlib's `OrderedRing` /
+      `LinearOrderedCommRing` typeclass shape. (Int, +, *, ≤) is a
+      linearly-ordered commutative ring with sign rules.
+    invariants:
+      - "TWELFTH Diamond category on C-PY-INT-ARITH — opens FIRST DEPTH-12 in the substrate"
+      - "BRIDGES PMAT-298 LINEAR-ORDER and PMAT-300 RING into an ordered-ring structure"
+      - "distinct from PMAT-300 RING: ring axioms don't constrain signs; Z[i] is a ring with no compatible order"
+      - "distinct from PMAT-298 LINEAR-ORDER: linear-order axioms don't mention multiplication"
+      - "distinct from PMAT-302 INTEGRAL DOMAIN: no-zero-divisors doesn't say what signs do under multiplication"
+      - "load-bearing for saturating-to-nonneg emitters: a saturating multiplication that clamped (-1)*(-1) to 0 would falsify (b)"
+    preconditions:
+      - "two Int values; theorem stated on the standard Int.mul, Int.zero, Int.lt, Int.le"
+    postconditions:
+      - "an emitter with saturating-to-nonneg arithmetic would falsify (b)"
+      - "Diamond DEPTH-12 opened — 1 contract at depth-12+"
+
 proof_obligations:
   - type: precondition
     property: operands are Python int (not int-subclass, not bool-as-int)
