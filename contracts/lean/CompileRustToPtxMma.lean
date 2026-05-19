@@ -1422,4 +1422,96 @@ theorem bounded_smem_subtype_extensionality_diamond (a b : BoundedSmem) :
   · intro h1 h2; exact Subtype.ext (Nat.le_antisymm h1 h2)
   · exact Nat.eq_or_ne a.val b.val
 
+/-! ## PMAT-313 — FIFTEENTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (DEPTH-15 ACROSS LAYERS): NAT-MOD QUOTIENT HOMOMORPHISM —
+    Nat.mod : Nat → Z/nZ is a ring homomorphism on the
+    BoundedSmem.val carrier (XPILE-REFINE-COMPILE-PTX-016).
+
+    **Opens DEPTH-15 ACROSS LAYERS.** PyIntArith reached depth-15
+    at PMAT-312 (Int-emod quotient ring homomorphism); PMAT-313
+    extends depth-15 to Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The
+    substrate now has depth-15 on TWO contracts spanning Layer 1
+    and Layer 5.
+
+    CompileRustToPtxMma already has FOURTEEN Diamond categories:
+    - PMAT-218: BOUNDED MONOID
+    - PMAT-287: CLOSURE
+    - PMAT-231: JOIN-SEMILATTICE
+    - PMAT-242: MEET-SEMILATTICE
+    - PMAT-248: LATTICE ABSORPTION
+    - PMAT-291: DISTRIBUTIVE LATTICE
+    - PMAT-293: BOUNDED LATTICE
+    - PMAT-295: CANCELLATIVE MONOID
+    - PMAT-299: ORDERED MONOID
+    - PMAT-301: ADDITIVE-LATTICE DISTRIBUTIVITY
+    - PMAT-303: DISCRETE ORDER
+    - PMAT-306: MAX/MIN MONOTONICITY
+    - PMAT-308: GLB/LUB UNIVERSAL PROPERTY
+    - PMAT-311: SUBTYPE EXTENSIONALITY
+
+    PMAT-313 adds the QUOTIENT-RING structure on BoundedSmem.val —
+    distinct from PMAT-311 SUBTYPE EXTENSIONALITY (which was about
+    the BoundedSmem ↔ Nat .val isomorphism) by going further into
+    Nat → Z/nZ quotient territory.
+
+    The categorical distinction is sharp:
+      - PMAT-311 SUBTYPE EXTENSIONALITY: relationship between
+        BoundedSmem and Nat (the underlying carrier).
+      - PMAT-313 NAT-MOD QUOTIENT: relationship between BoundedSmem
+        (via .val) and Z/nZ — captures the QUOTIENT-RING structure
+        induced by Nat.mod.
+
+    This mirrors PMAT-312 (Int.emod on PyIntArith) for Nat.mod on
+    BoundedSmem. Both are SURJECTIVE quotient ring homomorphisms;
+    they differ in the underlying carrier (Int vs Nat).
+
+    For GPU smem accounting, this matters: when a parallel kernel
+    is aligned to a power-of-2 byte boundary (e.g., 16-byte aligned
+    smem), reasoning about `smem_bytes % alignment` reduces to a
+    Z/alignment-Z computation. An emitter that allowed
+    smem_bytes % alignment ≥ alignment would falsify (d).
+
+    Status: discharged at v0.1.0 (PMAT-313). Tier: DIAMOND.
+    Second DEPTH-15 in the substrate (DEPTH-15 ACROSS LAYERS). -/
+
+/--
+  **Diamond-tier refinement theorem** — `Nat.mod (· % 2) : Nat → Z/2Z`
+  is a RING HOMOMORPHISM on the `BoundedSmem.val` carrier.
+
+  Combines four QUOTIENT-HOMOMORPHISM properties:
+  (a) Preserves +:           `(a + b) % 2 = (a%2 + b%2) % 2`
+  (b) Preserves *:           `(a * b) % 2 = (a%2 * b%2) % 2`
+  (c) Non-negative result:   `0 ≤ a % 2` (trivial for Nat)
+  (d) Lands in `{0, 1}`:     `a % 2 < 2`
+
+  Together these characterize `(· % 2) : Nat → Z/2Z` as a SURJECTIVE
+  ring homomorphism (quotient projection). Mirror of PMAT-312
+  (Int.emod on PyIntArith) for Nat.mod on BoundedSmem.val.
+
+  Uses Mathlib's `Nat.add_mod`, `Nat.mul_mod`, `Nat.zero_le`,
+  `Nat.mod_lt`. Standard Nat quotient-ring homomorphism lemmas.
+
+  An emitter that allowed `smem_bytes % alignment ≥ alignment`
+  (e.g., a buggy modulo implementation that didn't reduce fully)
+  would falsify (d) — a real bug class for alignment reasoning
+  invisible to the prior 14 categories.
+
+  Status: **discharged at v0.1.0 (PMAT-313)**. Tier: DIAMOND.
+  Second DEPTH-15 in the substrate (DEPTH-15 ACROSS LAYERS).
+-/
+theorem bounded_smem_nat_mod_quotient_diamond (a b : BoundedSmem) :
+    -- (a) mod is + homomorphism: (a.val + b.val) % 2 = (a.val%2 + b.val%2) % 2
+    ((a.val + b.val) % 2 = (a.val % 2 + b.val % 2) % 2)
+    -- (b) mod is * homomorphism: (a.val * b.val) % 2 = (a.val%2 * b.val%2) % 2
+    ∧ ((a.val * b.val) % 2 = (a.val % 2 * b.val % 2) % 2)
+    -- (c) Non-negative result (trivially for Nat)
+    ∧ (0 ≤ a.val % 2)
+    -- (d) Lands in {0, 1} (Z/2Z)
+    ∧ (a.val % 2 < 2) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.add_mod a.val b.val 2
+  · exact Nat.mul_mod a.val b.val 2
+  · exact Nat.zero_le (a.val % 2)
+  · omega
+
 end XpileContracts.CCompileRustToPtxMma

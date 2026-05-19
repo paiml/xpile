@@ -279,13 +279,12 @@ fn substrate_diamond_depth_14_opened() {
 fn substrate_diamond_depth_15_opened() {
     let json = run_diamond_json();
     let depth_15_plus = read_aggregate_field(&json, "depth_15_plus");
-    // PMAT-312 opened depth-15 on C-PY-INT-ARITH: INT-EMOD QUOTIENT RING HOMOMORPHISM
-    // (Int → Z/nZ surjective projection). The 15th orthogonal category is the
-    // FIRST QUOTIENT-RING claim in the substrate — mirror of PMAT-310 (Nat → Int
-    // injective embedding) in the surjective direction.
+    // PMAT-312 opened depth-15 on C-PY-INT-ARITH (Layer 1): INT-EMOD QUOTIENT HOM.
+    // PMAT-313 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): NAT-MOD QUOTIENT HOM.
+    // Gate now asserts depth-15 ACROSS LAYERS (≥2 contracts at depth-15+).
     assert!(
-        depth_15_plus >= 1,
-        "Diamond depth-15 milestone (PMAT-312): expected ≥1 contract at depth-15+, \
-         got {depth_15_plus}.\n{json}"
+        depth_15_plus >= 2,
+        "Diamond depth-15 ACROSS LAYERS milestone (PMAT-312, PMAT-313): \
+         expected ≥2 contracts at depth-15+ (Layer 1 + Layer 5), got {depth_15_plus}.\n{json}"
     );
 }

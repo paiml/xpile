@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-313
+  github_issue: null
+  item_type: task
+  title: 'PMAT-313: Diamond depth-15 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-15 via Nat-mod quotient ring homomorphism)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T09:00:00Z
+  updated: 2026-05-23T09:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add bounded_smem_nat_mod_quotient_diamond Lean theorem to contracts/lean/CompileRustToPtxMma.lean — 4 conjuncts: preserves + (Nat.add_mod), preserves * (Nat.mul_mod), non-negative result (Nat.zero_le), lands in Z/nZ (omega). Wire as new equation in compile-rust-to-ptx-mma-v1.yaml. Tighten substrate_diamond_depth_15_opened gate to ≥2 contracts. Opens DEPTH-15 ACROSS LAYERS — 2 contracts at depth-15+. Mirror of PMAT-312 (Int.emod on PyIntArith) for Nat.mod on BoundedSmem.val. Distinct from PMAT-311 SUBTYPE EXTENSIONALITY (BoundedSmem ↔ Nat .val isomorphism) — PMAT-313 is Nat → Z/nZ quotient. Falsification surface: buggy modulo implementation (smem_bytes % alignment ≥ alignment) falsifies (d)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-312
   github_issue: null
   item_type: task
