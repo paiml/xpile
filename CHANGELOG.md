@@ -7,6 +7,81 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-14 in the substrate: Nat-cast ring-homomorphism Diamond on `C-PY-INT-ARITH` (PMAT-310)
+
+**Path β extension.** Opens Diamond **depth-14** — fourteen distinct algebraic categories on a single contract. PyIntArith was at depth-13 (post-PMAT-307); PMAT-310 adds **NAT-CAST RING HOMOMORPHISM** as the fourteenth orthogonal category.
+
+**The 14 Diamond categories on `C-PY-INT-ARITH`:**
+
+1. PMAT-214: SEMIRING (+, *)
+2. PMAT-228: EUCLIDEAN DOMAIN (fdiv, fmod)
+3. PMAT-241: SHIFT-MONOID (shl)
+4. PMAT-247: POWER-MONOID (pow)
+5. PMAT-286: BITWISE-AND-MONOID (&)
+6. PMAT-290: ABELIAN-GROUP-ENRICHMENT (neg)
+7. PMAT-292: ORDER-DISTRIBUTIVE-LATTICE (min, max)
+8. PMAT-294: DIVISIBILITY-PREORDER (∣)
+9. PMAT-298: LINEAR-ORDER TRICHOTOMY (<)
+10. PMAT-300: RING-DISTRIBUTIVITY (neg × mul)
+11. PMAT-302: INTEGRAL DOMAIN (no zero divisors)
+12. PMAT-305: ORDERED RING (sign rules)
+13. PMAT-307: ABSOLUTE VALUE / NORM
+14. **PMAT-310: NAT-CAST RING HOMOMORPHISM** ← FIRST DEPTH-14
+
+**Why NAT-CAST RING HOMOMORPHISM is genuinely a NEW category — orthogonal to ALL 13 prior:**
+
+The prior 13 categories all live **inside** the ring Int — they axiomatize per-element algebraic properties. PMAT-310 is the **FIRST EXTERNAL** category-theoretic claim: it characterizes the structure-preserving map `Nat.cast : Nat → Int`.
+
+- **Preserves zero:** `((0 : Nat) : Int) = 0`
+- **Preserves one:** `((1 : Nat) : Int) = 1`
+- **Preserves addition:** `((m + n : Nat) : Int) = (m : Int) + (n : Int)`
+- **Preserves multiplication:** `((m * n : Nat) : Int) = (m : Int) * (n : Int)`
+
+Together these are the axioms of a **`RingHom Nat Int`** in Mathlib's `RingHom` typeclass. Their joint satisfaction is what makes Int a **Nat-ALGEBRA** with **CHARACTERISTIC ZERO** (since the kernel of `Nat → Int` is trivial).
+
+**New Lean theorem:**
+
+```lean
+theorem nat_cast_ring_hom_diamond (m n : Nat) :
+    (((0 : Nat) : Int) = 0)                                    -- preserves zero
+    ∧ (((1 : Nat) : Int) = 1)                                  -- preserves one
+    ∧ (((m + n : Nat) : Int) = (m : Int) + (n : Int))          -- preserves +
+    ∧ (((m * n : Nat) : Int) = (m : Int) * (n : Int)) := by    -- preserves *
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.cast_zero
+  · exact Nat.cast_one
+  · exact Nat.cast_add m n
+  · exact Nat.cast_mul m n
+```
+
+Uses standard Mathlib lemmas: `Nat.cast_zero`, `Nat.cast_one`, `Nat.cast_add`, `Nat.cast_mul`.
+
+**Falsification surface:** an emitter that lowered Python's non-negative-int fast path (a wrapper around `Nat`) through a path that violated zero-preservation — e.g., mapped `(0 : Nat)` to a **sentinel value** in `Int` representation — would falsify property (a). This bug class slips past **all 13 prior Diamond categories** because none mention the Nat-to-Int embedding.
+
+**Reporter + gate updates:**
+
+- `xpile diamond --json` extended with `depth-13` discrete label + `depth-14+` aggregate.
+- `substrate_diamond_depth_14_opened` gate test added (≥ 1 at depth-14+).
+- Substrate Diamond totals: **52 wired Diamond theorems** across 12 contracts (was 51).
+
+**Path β extension recap:**
+
+| PMAT | Milestone |
+|------|-----------|
+| 298 | FIRST depth-9 |
+| 299 | depth-9 ACROSS LAYERS |
+| 300 | FIRST depth-10 |
+| 301 | depth-10 ACROSS LAYERS |
+| 302 | FIRST depth-11 |
+| 303 | depth-11 ACROSS LAYERS |
+| 304 | spec + sub-spec sync (depth-11) |
+| 305 | FIRST depth-12 |
+| 306 | depth-12 ACROSS LAYERS |
+| 307 | FIRST depth-13 |
+| 308 | depth-13 ACROSS LAYERS |
+| 309 | spec + sub-spec sync (depth-13) |
+| **310** | **FIRST depth-14** (Nat-cast ring hom) ← here |
+
 ### Changed — Spec §28 + diamond-taxonomy.md sync to depth-13 ACROSS LAYERS reality (PMAT-309)
 
 After 4 Path β PRs (PMAT-305..308) added depths 12 and 13 ACROSS LAYERS, the spec had accumulated 2 more tiers of documentation rot. PMAT-309 syncs:
