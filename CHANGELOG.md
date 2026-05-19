@@ -7,6 +7,44 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-4 ACROSS LAYERS extended: `C-FFI-CPYTHON-EXT` joins depth-4 via constructive refcount inverse (PMAT-288)
+
+Path β extension. Pushes `C-FFI-CPYTHON-EXT` (Layer 4 hybrid pipeline) from depth-3 to depth-4 by wiring the existing `refcount_inverse_diamond` Lean theorem in YAML. **Three contracts now at depth-4+**, spanning Layer 1 + Layer 4 + Layer 5.
+
+**The 4 Diamond categories on `C-FFI-CPYTHON-EXT`:**
+
+1. **PMAT-216** — `refcount_abelian_group_diamond` (axiomatic group laws)
+2. **PMAT-288** — **`refcount_inverse_diamond` (constructive inverse witness)** — this PR
+3. **PMAT-230** — `gil_invariant_preservation_diamond` (GIL state preservation)
+4. **PMAT-232** — `zero_copy_pointer_functor_diamond` (functor laws on pointers)
+
+**Why `refcount_inverse_diamond` is categorically distinct from `refcount_abelian_group_diamond`:**
+
+PMAT-216 proves the abelian group LAWS hold (closure + commutativity + associativity + identity + inverses) — an axiomatic claim about EXISTING values. PMAT-288's `refcount_inverse_diamond` is a CONSTRUCTIVE existence claim: it explicitly *gives the inverse* (`{ payload, refcount_delta := -c.refcount_delta }`).
+
+Load-bearing for Py_INCREF/Py_DECREF code generation: an emitter must be able to *materialize* the Py_DECREF that balances any prior Py_INCREF, not just assert algebraically that one exists. A type-erasure bug that loses payload information would prevent the constructive inverse from being built — falsifying this Diamond while leaving the abstract group claim intact.
+
+**No new Lean proof needed.** `refcount_inverse_diamond` already exists at `contracts/lean/FfiCpythonExt.lean` line 1233:
+
+```lean
+theorem refcount_inverse_diamond (c : FfiCallSilver) :
+    ∃ c_inv : FfiCallSilver,
+      (compose_ffi_calls_silver c c_inv).refcount_delta = 0 := by
+  use { payload := c.payload, refcount_delta := -c.refcount_delta }
+  unfold compose_ffi_calls_silver
+  exact Int.add_right_neg c.refcount_delta
+```
+
+**Gate update:** `substrate_diamond_depth_4_opened` tightened to assert **≥3** contracts at depth-4+ (was ≥2). Verified live: depth_4_plus=3, contracts span Layer 1 (PyIntArith), Layer 4 (FFI-CPYTHON-EXT), Layer 5 (CompileRustToPtxMma).
+
+**Path β extension recap:**
+
+| PMAT | Milestone | Contracts |
+|------|-----------|-----------|
+| 286 | FIRST depth-5 | PyIntArith |
+| 287 | depth-5 ACROSS LAYERS | + CompileRustToPtxMma |
+| **288** | **depth-4 ACROSS LAYERS** (3 contracts, 3 layers) | **+ FFI-CPYTHON-EXT** |
+
 ### Added — Diamond depth-5 ACROSS LAYERS: `C-COMPILE-RUST-TO-PTX-MMA` reaches depth-5 via bounded-smem closure (PMAT-287)
 
 Path β extension. Pushes `C-COMPILE-RUST-TO-PTX-MMA` (Layer 5 compile-time) from depth-4 to depth-5 by wiring the existing `bounded_smem_closure_diamond` Lean theorem in YAML as a 5th categorically distinct Diamond. Together with PMAT-286 (Layer 1 PyIntArith), this opens the **DEPTH-5 ACROSS LAYERS** milestone — 2 contracts on distinct taxonomy layers at depth-5+.
