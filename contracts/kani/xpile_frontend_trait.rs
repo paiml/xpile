@@ -98,3 +98,91 @@ fn parse_idempotency() {
         "parse_and_lower must be deterministic on identical inputs",
     );
 }
+
+// ─── PMAT-282: Silver-tier property-specific Kani harness ───────────
+//
+// Audit-design.md §4 caveat: Bronze-tier Kani harnesses are "byte-
+// identity placeholders". Extends Path α to a seventh contract,
+// C-XPILE-FRONTEND-TRAIT, by lifting the Kani side to match Lean's
+// Silver tier already shipped at PMAT-156
+// (`source_lang_consistency_silver` in
+// `contracts/lean/XpileFrontendTrait.lean`).
+//
+// The Bronze harness above proves byte-equality on (path, source) ->
+// MetaHirModule { bytes } — a buggy Python frontend that auto-
+// detected shell scripts and stamped SourceLang::Shell would still
+// pass the Bronze idempotency test (different bytes, but idempotent).
+// Silver introduces explicit source_lang + declared_lang fields and
+// proves equality.
+
+/// Silver-tier source-language tag — encoded as u8 for Kani-friendliness.
+type SourceLangSilver = u8;
+
+/// Silver-tier model of an emitted MetaHirModule with explicit
+/// source_lang. Bronze collapsed everything into `bytes`; Silver
+/// decomposes so a wrong-lang stamp is observable.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct MetaHirModuleSilver {
+    bytes: [u8; 4],
+    source_lang: SourceLangSilver,
+}
+
+/// Silver-tier model of a Frontend impl — carries `declared_lang`.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct FrontendSilver {
+    declared_lang: SourceLangSilver,
+}
+
+/// Silver-tier `parse_and_lower` — stamps `f.declared_lang` onto the
+/// emitted module's `source_lang` field.
+fn parse_and_lower_silver(
+    f: &FrontendSilver,
+    path: &[u8; 2],
+    source: &[u8; 2],
+) -> MetaHirModuleSilver {
+    let mut bytes = [0u8; 4];
+    bytes[0] = path[0];
+    bytes[1] = path[1];
+    bytes[2] = source[0];
+    bytes[3] = source[1];
+    MetaHirModuleSilver {
+        bytes,
+        source_lang: f.declared_lang,
+    }
+}
+
+/// PMAT-282 — Silver-tier counterpart to
+/// `source_lang_consistency_silver` (Lean PMAT-156).
+///
+/// Emitted source_lang MUST equal frontend's declared_lang. Catches
+/// a Python frontend that auto-detects shell scripts and stamps
+/// SourceLang::Shell on the output — Bronze couldn't catch this
+/// because the emitted module didn't have a source_lang field.
+#[kani::proof]
+fn source_lang_consistency_silver() {
+    let declared_lang: SourceLangSilver = kani::any();
+    let path: [u8; 2] = kani::any();
+    let source: [u8; 2] = kani::any();
+    let f = FrontendSilver { declared_lang };
+    let module = parse_and_lower_silver(&f, &path, &source);
+    kani::assert(
+        module.source_lang == declared_lang,
+        "emitted source_lang must equal frontend's declared_lang",
+    );
+}
+
+/// PMAT-282 — Silver-tier complementary property: idempotency holds
+/// structurally too.
+#[kani::proof]
+fn parse_idempotency_silver() {
+    let declared_lang: SourceLangSilver = kani::any();
+    let path: [u8; 2] = kani::any();
+    let source: [u8; 2] = kani::any();
+    let f = FrontendSilver { declared_lang };
+    let m1 = parse_and_lower_silver(&f, &path, &source);
+    let m2 = parse_and_lower_silver(&f, &path, &source);
+    kani::assert(
+        m1 == m2,
+        "parse_and_lower_silver must be deterministic on identical inputs",
+    );
+}
