@@ -572,6 +572,40 @@ equations:
       - "an emitter that uses a distinct unbounded bit-AND for bigint_and (e.g., Python-native sign-magnitude AND that disagrees with the 2's-complement-via-i64 kernel) would falsify (d) and break the bitwise-AND-monoid structure"
       - "Diamond DEPTH-5 demonstrated: five distinct algebraic categories on PyIntArith — opens depth-5 dimension"
 
+  negation_involution_abelian_group_diamond:
+    # PMAT-290 / XPILE-REFINE-PY-INT-ARITH-013: SIXTH Diamond on this
+    # contract — FIRST DEPTH-6 Diamond in substrate. Opens Diamond
+    # depth-6. The NEGATION-INVOLUTION / ABELIAN-GROUP-ENRICHMENT
+    # Diamond captures the (Int, +, 0, -) abelian-group structure
+    # via Int.neg, distinct from PMAT-214's additive commutative
+    # monoid (which doesn't include inverses; that's what
+    # distinguishes Int from Nat). Distinct from the other 5
+    # categories because it specifically captures the INVERSE
+    # structure enrichment from monoid to group.
+    lean_theorem: "XpileContracts.CPyIntArith.negation_involution_abelian_group_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      Int negation forms an ABELIAN GROUP enriching the additive
+      monoid:
+        (a) involution: -(-a) = a
+        (b) right inverse: a + (-a) = 0
+        (c) left inverse: (-a) + a = 0
+        (d) distributivity: -(a + b) = (-a) + (-b)
+    domain: |
+      Any Int operands a, b. The Diamond captures the abelian-group
+      enrichment of the additive monoid via Int.neg.
+    invariants:
+      - "FIRST DEPTH-6 Diamond in the substrate — six orthogonal algebraic categories on PyIntArith"
+      - "distinct from all five prior categories: semiring, Euclidean-domain, shift-monoid, power-monoid, bitwise-AND-monoid"
+      - "captures INVERSE structure enriching the additive monoid to abelian group — the structural difference between (Nat, +, 0) monoid and (Int, +, 0, -) abelian group"
+      - "load-bearing for Python int negation semantics — emitters that use truncated or path-divergent negation would falsify the involution and inverse laws"
+    preconditions:
+      - "the dispatcher and kernels are well-formed (Silver / Platinum preconditions inherited)"
+    postconditions:
+      - "an emitter that uses a NON-INVOLUTION negation would falsify (a)"
+      - "an emitter that fails to maintain cancellation across a SUB → ADD-NEG rewrite would falsify (b)/(c)"
+      - "Diamond DEPTH-6 demonstrated: six distinct algebraic categories on PyIntArith — opens depth-6 dimension"
+
   bitwise_and_signed_semantics:
     formula: |
       python_int_and(a, b) == rust_i64::bitand(a, b)  WHEN  both_fit_i64(a, b)

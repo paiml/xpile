@@ -142,3 +142,16 @@ fn substrate_diamond_depth_5_opened() {
          expected ≥2 contracts at depth-5+ (Layer 1 + Layer 5), got {depth_5_plus}.\n{json}"
     );
 }
+
+#[test]
+fn substrate_diamond_depth_6_opened() {
+    let json = run_diamond_json();
+    let depth_6_plus = read_aggregate_field(&json, "depth_6_plus");
+    // PMAT-290 opened depth-6 on C-PY-INT-ARITH: added negation-involution /
+    // abelian-group enrichment as the 6th orthogonal Diamond category.
+    assert!(
+        depth_6_plus >= 1,
+        "Diamond depth-6 milestone (PMAT-290): expected ≥1 contract at depth-6+, \
+         got {depth_6_plus}.\n{json}"
+    );
+}

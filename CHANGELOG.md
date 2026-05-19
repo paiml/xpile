@@ -7,6 +7,63 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-6 in the substrate: negation-involution / abelian-group enrichment on `C-PY-INT-ARITH` (PMAT-290)
+
+**Path β extension.** Opens Diamond depth-6 — six distinct algebraic categories on a single contract. PyIntArith was at depth-5 (post-PMAT-286); PMAT-290 adds **NEGATION-INVOLUTION / ABELIAN-GROUP-ENRICHMENT** as the sixth orthogonal category.
+
+**The 6 Diamond categories on `C-PY-INT-ARITH`:**
+
+1. PMAT-214: `(Int, +, 0, *, 1)` SEMIRING (additive/multiplicative commutative monoid)
+2. PMAT-228: `(Int, fdiv, fmod)` EUCLIDEAN DOMAIN (division)
+3. PMAT-241: `(Int × Nat, shl, 0)` SHIFT-MONOID (multiplicative by powers of 2)
+4. PMAT-247: `(Int × Nat, pow, 0)` POWER-MONOID (Nat-action on Int)
+5. PMAT-286: `(Int, &, ...)` BITWISE-AND-COMMUTATIVE-MONOID (Nat.land kernel)
+6. **PMAT-290: `(Int, +, 0, -)` ABELIAN-GROUP-ENRICHMENT via `Int.neg`** ← FIRST DEPTH-6
+
+**Why this is genuinely a NEW category, not a companion theorem:**
+
+The SEMIRING category (PMAT-214) proves the ADDITIVE COMMUTATIVE MONOID structure: closure + associativity + commutativity + identity. The ABELIAN GROUP adds **INVERSES** — every element has a negation `-a` such that `a + (-a) = 0`. **This is what distinguishes `(Int, +, 0, -)` from `(Nat, +, 0)`** — Nat has the additive monoid but NOT the inverse structure (no negative naturals).
+
+The negation-involution Diamond is the structural enrichment from monoid to group, which is genuinely orthogonal to the prior five categories (they all sit inside (Int, +, *) multiplicative-semiring extensions or bitwise structure).
+
+**New Lean theorem:**
+
+```lean
+theorem negation_involution_abelian_group_diamond (a b : Int) :
+    -- (a) Involution: -(-a) = a
+    -(-a) = a
+    -- (b) Right inverse: a + (-a) = 0
+    ∧ a + (-a) = 0
+    -- (c) Left inverse: (-a) + a = 0
+    ∧ (-a) + a = 0
+    -- (d) Distributivity over addition: -(a + b) = (-a) + (-b)
+    ∧ -(a + b) = (-a) + (-b) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Int.neg_neg a
+  · exact Int.add_right_neg a
+  · exact Int.add_left_neg a
+  · exact Int.neg_add a b
+```
+
+Uses only already-proven Mathlib lemmas (`Int.neg_neg`, `Int.add_right_neg`, `Int.add_left_neg`, `Int.neg_add`) — no new proof engineering.
+
+**Reporter + gate updates:**
+
+- `xpile diamond` depth label extended: `depth-5` (was the cap `depth-5+`) + new `depth-6+` for 6+ Diamonds
+- New aggregate field `depth_6_plus` in JSON output
+- New gate test `substrate_diamond_depth_6_opened` asserts ≥1 contract at depth-6+
+- `diamond_row_depth_label` unit test updated
+
+**Path β extension recap:**
+
+| PMAT | Milestone |
+|------|-----------|
+| 286 | FIRST depth-5 (PyIntArith) |
+| 287 | depth-5 ACROSS LAYERS (+CompileRustToPtxMma) |
+| 288 | depth-4 ACROSS LAYERS (+FFI-CPYTHON-EXT) |
+| 289 | depth-3 broadened (+Bashrs) |
+| **290** | **FIRST depth-6 (PyIntArith → 6 categories)** |
+
 ### Added — Diamond depth-3 across-layers broadened: `C-BASHRS-POSIX-IDEMPOTENCE` joins depth-3 via symmetric python-purity (PMAT-289)
 
 Path β extension. Pushes `C-BASHRS-POSIX-IDEMPOTENCE` (Layer 2/4 hybrid, cross-domain bridge) from depth-2 to depth-3 by wiring the existing `python_pure_function_diamond` Lean theorem in YAML. **Six contracts now at depth-3+** (was 5).
