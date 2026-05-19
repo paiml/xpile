@@ -7,6 +7,43 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Property-specific Silver-tier Kani harnesses for `C-COMPILE-RUST-TO-PTX-MMA` (Path α, second contract) (PMAT-276)
+
+Continues Path α (audit-design.md §4 placeholder cleanup) on the second contract. Lifts `contracts/kani/compile_rust_to_ptx_mma.rs` from a Bronze byte-identity placeholder to property-specific Silver-tier structural proofs matching the Lean Silver theorem `shared_memory_budget_silver` already shipped at PMAT-161.
+
+**Why this Silver tier is the most interesting yet:** unlike PMAT-275's per-field byte-equality proofs, the PTX Silver tier introduces a real **inequality** property — emitted `smem_bytes ≤ 48 KiB` (sm_80 hardware budget). The lowering clamps via `min`; Kani exhaustively explores the symbolic `requested_smem` space (~4.3B u32 values) and verifies the clamp holds in every case. This is the first non-`rfl` Silver-tier proof on the Kani side.
+
+**Four new `#[kani::proof]` functions:**
+
+| Proof | Catches |
+|-------|---------|
+| `shared_memory_budget_silver` | over-budget kernel passing ptxas-rejected PTX through to deployment |
+| `smem_under_budget_preserved_silver` | spurious clamp on under-budget kernels (wastes shared memory) |
+| `smem_over_budget_clamps_to_budget_silver` | over-budget kernels substituted with 0 or a fallback rather than the budget |
+| `marker_preserved_under_silver_lowering` | smem-clamping logic inadvertently mangles the kernel marker |
+
+**Silver-tier model**
+
+`KernelInputSilver` and `PtxOutputSilver` mirror the Lean structures with:
+- `marker: [u8; 4]` — Bronze byte-array preserved for compatibility
+- `requested_smem: u32` / `smem_bytes: u32` — structured shared-memory budget
+
+`SMEM_BUDGET_SM80 = 48 * 1024` matches the Lean `smem_budget_sm80`.
+
+**Contract YAML wiring**
+
+`contracts/compile-rust-to-ptx-mma-v1.yaml` `shared_memory_budget` equation now has `kani_harness:` + `kani_file:` references pointing at the new Silver proof. `kani_harnesses.rs` gate resolves; `xpile quorum` counts.
+
+**Path α progress**
+
+| Contract | Status |
+|----------|--------|
+| C-FFI-CPYTHON-EXT-V1 | ✅ closed via PMAT-275 |
+| C-COMPILE-RUST-TO-PTX-MMA | ✅ closed via PMAT-276 |
+| C-XLATE-LEAN-TO-RUST-V1 | ⏳ pattern is reusable |
+| C-XLATE-PY-LIST-TO-VEC-V1 | ⏳ pattern is reusable |
+| C-XLATE-RUST-FN-TO-LEAN-THM-V1 | ⏳ pattern is reusable |
+
 ### Added — Property-specific Silver-tier Kani harnesses for `C-FFI-CPYTHON-EXT` (closes audit-design.md §4 caveat for this contract) (PMAT-275)
 
 Lifts the Kani harness `contracts/kani/ffi_cpython_ext.rs` from a Bronze byte-identity placeholder to property-specific Silver-tier structural proofs. Closes the audit-design.md §4 "byte-identity placeholder rather than property-specific structural proofs" caveat for `C-FFI-CPYTHON-EXT-V1` and brings the Kani side in sync with the Lean Silver-tier theorems already shipped at PMAT-160 + PMAT-168.

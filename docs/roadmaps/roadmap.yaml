@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-276
+  github_issue: null
+  item_type: task
+  title: 'PMAT-276: Property-specific Silver-tier Kani harnesses for C-COMPILE-RUST-TO-PTX-MMA (Path α, second contract)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T15:30:00Z
+  updated: 2026-05-22T15:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Lift contracts/kani/compile_rust_to_ptx_mma.rs from Bronze byte-identity to Silver-tier with inequality property. Add KernelInputSilver + PtxOutputSilver records with marker + requested_smem/smem_bytes fields mirroring Lean. SMEM_BUDGET_SM80 = 48 KiB. Four new Kani proofs: shared_memory_budget_silver (smem_bytes <= 48 KiB), smem_under_budget_preserved_silver (under-budget exact), smem_over_budget_clamps_to_budget_silver (over-budget exact clamp), marker_preserved_under_silver_lowering. First non-rfl Silver-tier Kani proof in substrate. Wire kani_harness on shared_memory_budget equation in contracts/compile-rust-to-ptx-mma-v1.yaml. Second Path α contract closed (after PMAT-275 on C-FFI-CPYTHON-EXT)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-275
   github_issue: null
   item_type: task
