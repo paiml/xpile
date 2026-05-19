@@ -122,3 +122,16 @@ fn substrate_diamond_aggregate_total_at_least_30() {
         "expected substrate to have ≥30 wired Diamond equations, got {total_diamonds}.\n{json}"
     );
 }
+
+#[test]
+fn substrate_diamond_depth_5_opened() {
+    let json = run_diamond_json();
+    let depth_5_plus = read_aggregate_field(&json, "depth_5_plus");
+    // PMAT-286 opened depth-5: PyIntArith has 5 Diamond categories
+    // (semiring + Euclidean + shift-monoid + power-monoid + bitwise-AND-monoid).
+    assert!(
+        depth_5_plus >= 1,
+        "Diamond depth-5 milestone (PMAT-286): expected ≥1 contract at depth-5+, \
+         got {depth_5_plus}.\n{json}"
+    );
+}

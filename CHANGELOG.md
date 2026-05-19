@@ -7,6 +7,45 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST Diamond depth-5 in the substrate: bitwise-AND-commutative-monoid on `C-PY-INT-ARITH` (PMAT-286)
+
+**Path β.** Opens Diamond depth-5 — five distinct algebraic categories on a single contract. PyIntArith was at depth-4 (PMAT-247's power-monoid); PMAT-286 adds **BITWISE-AND-COMMUTATIVE-MONOID** as the fifth orthogonal category.
+
+**The 5 Diamond categories on `C-PY-INT-ARITH`:**
+
+1. PMAT-214: `(Int, +, 0, *, 1)` SEMIRING (additive/multiplicative)
+2. PMAT-228: `(Int, fdiv, fmod)` EUCLIDEAN DOMAIN (division)
+3. PMAT-241: `(Int × Nat, shl, 0)` SHIFT-MONOID (multiplicative by powers of 2)
+4. PMAT-247: `(Int × Nat, pow, 0)` POWER-MONOID (Nat-action on Int)
+5. **PMAT-286: `(Int, &, ...)` BITWISE-AND-COMMUTATIVE-MONOID** (Nat.land kernel via 2's-complement)
+
+**Why bitwise AND is genuinely orthogonal** — it lives on the BITS of the 2's-complement encoding, not on arithmetic structure. The four prior categories all sit inside `(Int, +, *)` semiring extensions; bitwise AND satisfies commutativity and the kernel correspondence but NOT distributivity over addition, NOT the semiring/Euclidean/shift/power identities.
+
+**New Lean Diamond theorem** in `contracts/lean/PyIntArith.lean`:
+
+```lean
+theorem bitwise_and_commutative_monoid_diamond
+    (path : PyIntPath) (a b : Int) :
+    -- (a) Dispatcher commutativity (PMAT-PLATINUM lifted)
+    and_dispatch_silver path a b = and_dispatch_silver path b a
+    -- (b) Slow-path = bigint_and (kernel correspondence)
+    ∧ and_dispatch_silver PyIntPath.SlowPath a b = bigint_and a b
+    -- (c) Kernel commutativity (Nat.land_comm composed with bmod)
+    ∧ bigint_and a b = bigint_and b a
+    -- (d) Modelling commitment: bigint_and = i64_and (XPILE-REFINE-005)
+    ∧ bigint_and a b = i64_and a b
+```
+
+**Reporter + gate updates:**
+
+- `xpile diamond` depth label extended: `depth-4` (was the cap "depth-4+") + new `depth-5+` for 5 Diamonds or more
+- New aggregate field `depth_5_plus` in JSON output
+- New gate test `substrate_diamond_depth_5_opened` in `crates/xpile/tests/diamond_coverage.rs` asserts ≥1 contract at depth-5+
+
+**Contract YAML wiring:** `contracts/py-int-arith-v1.yaml` gains a new `bitwise_and_commutative_monoid_diamond` equation entry referencing the Lean theorem.
+
+**Why this is α-tier of β:** opens the proof-lane scaling milestone (FIRST depth-5) using only existing kernel lemmas (`Nat.land_comm`, `and_dispatch_commutative_platinum`) — no new bmod gymnastics. Sets the precedent that depth-N expansion can use composition of already-proven properties.
+
 ### Added — Property-specific Silver-tier Kani harnesses for `C-XPILE-CONTRACT-BACKEND-TRAIT` (Path α extension, TENTH and final contract — citation round-trip pattern) (PMAT-285)
 
 Extends Path α to a **tenth and final** contract — completing Silver-tier Kani coverage across every contract that had a placeholder. Lifts `render_idempotency` from a Bronze byte-payload to Silver-tier matching Lean's `citation_round_trip_silver` (PMAT-159).

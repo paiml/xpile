@@ -540,6 +540,38 @@ equations:
       - "an emitter that truncates exponents > 63 to zero on the slow path would falsify the exponent-additivity law"
       - "Diamond DEPTH-4 demonstrated: four distinct algebraic categories on PyIntArith — opens depth-4 dimension"
 
+  bitwise_and_commutative_monoid_diamond:
+    # PMAT-286 / XPILE-REFINE-PY-INT-ARITH-012: FIFTH Diamond on this
+    # contract — FIRST DEPTH-5 Diamond in substrate. Opens Diamond
+    # depth-5. BITWISE-AND-COMMUTATIVE-MONOID Diamond captures the
+    # (Int, &, ...) bitwise structure via the Nat.land kernel and
+    # the 2's-complement encoding. Distinct from PMAT-214 semiring,
+    # PMAT-228 Euclidean-domain, PMAT-241 shift-monoid, PMAT-247
+    # power-monoid — bitwise AND lives on BITS of the 2's-complement
+    # encoding, NOT on arithmetic structure.
+    lean_theorem: "XpileContracts.CPyIntArith.bitwise_and_commutative_monoid_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      bitwise AND forms a COMMUTATIVE MONOID via the Nat.land kernel:
+        (a) dispatcher commutativity: and(a, b) = and(b, a)
+        (b) slow-path = bigint_and (kernel correspondence)
+        (c) kernel commutativity: bigint_and(a, b) = bigint_and(b, a)
+        (d) modelling commitment: bigint_and = i64_and (shared kernel)
+    domain: |
+      Any Int operands a, b on any PyIntPath. The Diamond captures
+      the bitwise-AND structural axiomatization as a fifth orthogonal
+      algebraic category on PyIntArith.
+    invariants:
+      - "FIRST DEPTH-5 Diamond in the substrate — five orthogonal algebraic categories on PyIntArith"
+      - "distinct from PMAT-214 semiring AND PMAT-228 Euclidean-domain AND PMAT-241 shift-monoid AND PMAT-247 power-monoid"
+      - "captures (Int, &) as a commutative monoid via the Nat.land kernel — orthogonal to (Int, +) and (Int, *) since bitwise AND does not distribute over addition"
+      - "the modelling commitment bigint_and = i64_and (XPILE-REFINE-005 / PMAT-138) is part of the Diamond claim — an emitter that swaps either kernel would falsify (d)"
+    preconditions:
+      - "the dispatcher and kernels are well-formed (Silver / Platinum preconditions inherited via PMAT-202 and_dispatch_commutative_platinum)"
+    postconditions:
+      - "an emitter that uses a distinct unbounded bit-AND for bigint_and (e.g., Python-native sign-magnitude AND that disagrees with the 2's-complement-via-i64 kernel) would falsify (d) and break the bitwise-AND-monoid structure"
+      - "Diamond DEPTH-5 demonstrated: five distinct algebraic categories on PyIntArith — opens depth-5 dimension"
+
   bitwise_and_signed_semantics:
     formula: |
       python_int_and(a, b) == rust_i64::bitand(a, b)  WHEN  both_fit_i64(a, b)
