@@ -327,3 +327,26 @@ equations:
     postconditions:
       - "an emitter using a JSON serialization that re-orders or drops the exit_code field when observable is empty would falsify (a)"
       - "Diamond depth-4 ACROSS LAYERS broadened: 4 contracts on 4 distinct layers"
+
+  outcome_observable_length_nat_diamond:
+    # PMAT-346: FIFTH Diamond on this contract — BROADENS DEPTH-5
+    # from 3 to 4 layers. Pushes Bashrs (Layer 2) from depth-4 to
+    # depth-5, adding Layer 2 to depth-5+ coverage. OutcomeSilver
+    # observable String.length Nat structure.
+    lean_theorem: "XpileContracts.CBashrsPosixIdempotence.outcome_observable_length_nat_diamond"
+    lean_file: "contracts/lean/Bashrs.lean"
+    formula: |
+      OutcomeSilver.observable String.length Nat structure:
+        (a) length ≥ 0
+        (b) successor strict ordering
+        (c) empty observable has length 0
+        (d) length preserved under field replacement
+    domain: |
+      Any OutcomeSilver record.
+    invariants:
+      - "FIFTH Diamond category on C-BASHRS-POSIX-IDEMPOTENCE — BROADENS DEPTH-5 from 3 to 4 layers"
+      - "First post-PMAT-328 depth-5 broadening — adds Layer 2 to depth-5+ coverage"
+    preconditions:
+      - "one OutcomeSilver record"
+    postconditions:
+      - "Diamond depth-5 broadened: 4 contracts on 4 distinct layers"
