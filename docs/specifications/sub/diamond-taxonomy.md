@@ -18,12 +18,18 @@ A Diamond theorem combines multiple Platinum properties into a **single algebrai
 
 ## Coverage milestones
 
-As of v0.1.0 (PMAT-214..252), the substrate has:
+As of v0.1.0+ (PMAT-214..295), the substrate has:
 
 - **Diamond depth-1 UNIVERSAL** (12/12 contracts): every contract has at least one Diamond at one algebraic category.
 - **Diamond depth-2 UNIVERSAL** (12/12 contracts): every contract has at least two **distinct** Diamond categories. CI-enforced via PMAT-251.
-- **Diamond depth-3 UNIVERSAL across layers** (5/5 layers): every layer of the contract taxonomy has at least one contract with three distinct Diamond categories.
-- **Diamond depth-4 opened** (2/12 contracts): PyIntArith (Layer 1) and CompileRustToPtxMma (Layer 5) each have four distinct Diamond categories.
+- **Diamond depth-3 broadened** (6/12 contracts): six contracts have ≥3 Diamond categories (5 originally + Bashrs via PMAT-289).
+- **Diamond depth-4 ACROSS LAYERS** (3/12 contracts): PyIntArith (Layer 1, PMAT-247), CompileRustToPtxMma (Layer 5, PMAT-248), FFI-CPYTHON-EXT (Layer 4, PMAT-288). Three distinct taxonomy layers.
+- **Diamond depth-5 ACROSS LAYERS** (2/12 contracts): PyIntArith + CompileRustToPtxMma via PMAT-286 (bitwise-AND on L1) + PMAT-287 (closure on L5).
+- **Diamond depth-6 ACROSS LAYERS** (2/12 contracts): PMAT-290 (abelian-group on L1) + PMAT-291 (distributive lattice on L5).
+- **Diamond depth-7 ACROSS LAYERS** (2/12 contracts): PMAT-292 (order-distributive-lattice on L1) + PMAT-293 (bounded lattice with top+bottom on L5).
+- **Diamond depth-8 ACROSS LAYERS** (2/12 contracts): PMAT-294 (divisibility-preorder on L1, FIRST relation-not-operation category) + PMAT-295 (cancellative monoid on L5).
+
+**Substrate total: 42 wired Diamond equations across 12 contracts.**
 
 ## Diamond categories by family
 
@@ -46,6 +52,9 @@ Captures `(S, op, identity)` with closure + associativity + identity laws. Speci
 | Shift-monoid | PMAT-241 | C-PY-INT-ARITH | `(Int × Nat, shl, 0)` Nat-action via powers of 2 |
 | Length-monoid homomorphism | PMAT-244 | C-XLATE-PY-LIST-TO-VEC | `length: (PyListSilver α, ++, []) → (Nat, +, 0)` |
 | Power-monoid | PMAT-247 | C-PY-INT-ARITH | `(Int × Nat, pow, 0)` arbitrary-base Nat-action |
+| Bitwise-AND commutative monoid | PMAT-286 | C-PY-INT-ARITH | `(Int, &, ...)` via Nat.land kernel + 2's-complement |
+| Closure / subalgebra | PMAT-287 | C-COMPILE-RUST-TO-PTX-MMA | bounded-sum closure under budget precondition |
+| Cancellative monoid | PMAT-295 | C-COMPILE-RUST-TO-PTX-MMA | `(BoundedSmem, +, 0)` with Nat.add_left/right_cancel |
 
 ### Group family
 
@@ -54,6 +63,8 @@ Adds inverses to monoid structure:
 | Category | Example PMAT | Contract | Carrier |
 |---|---|---|---|
 | Abelian group | PMAT-216 | C-FFI-CPYTHON-EXT | refcount-delta `(Int, +, 0, -)` |
+| Constructive inverse | PMAT-288 | C-FFI-CPYTHON-EXT | existential witness for refcount inverse |
+| Abelian-group enrichment | PMAT-290 | C-PY-INT-ARITH | `(Int, +, 0, -)` negation-involution + distributivity (enriches additive monoid to abelian group) |
 
 ### Lattice family
 
@@ -63,7 +74,10 @@ Captures `(S, ⊔, ⊓)` with absorption laws:
 |---|---|---|---|
 | Join-semilattice | PMAT-231 | C-COMPILE-RUST-TO-PTX-MMA | `(BoundedSmem, max)` |
 | Meet-semilattice | PMAT-242 | C-COMPILE-RUST-TO-PTX-MMA | `(BoundedSmem, min)` |
-| Bounded lattice | PMAT-248 | C-COMPILE-RUST-TO-PTX-MMA | `max ↔ min` via absorption |
+| Bounded lattice (absorption) | PMAT-248 | C-COMPILE-RUST-TO-PTX-MMA | `max ↔ min` via absorption |
+| Distributive lattice | PMAT-291 | C-COMPILE-RUST-TO-PTX-MMA | cross-distributivity of max/min |
+| Order distributive lattice | PMAT-292 | C-PY-INT-ARITH | `(Int, min, max)` Int's natural ordering as a lattice |
+| Bounded lattice (top+bottom) | PMAT-293 | C-COMPILE-RUST-TO-PTX-MMA | explicit top (smem_budget) + bottom (0) elements with absorption |
 
 ### Functor family
 
@@ -80,7 +94,7 @@ Captures functorial / projection-style structures preserving algebraic invariant
 
 ### Relation family
 
-Captures equivalence-relation structures (reflexivity + symmetry + transitivity):
+Captures equivalence-relation structures (reflexivity + symmetry + transitivity) and preorders:
 
 | Category | Example PMAT | Contract | Relation |
 |---|---|---|---|
@@ -88,6 +102,8 @@ Captures equivalence-relation structures (reflexivity + symmetry + transitivity)
 | Equivalence-class congruence | PMAT-217 (companion) / PMAT-250 (wired) | C-XPILE-CONTRACT-FRONTEND-TRAIT | parse_to_equations preserves `modules_equiv` |
 | Frontend equivalence-class | PMAT-224 | C-XPILE-FRONTEND-TRAIT | `lang_equiv` on Frontend pairs |
 | Backend equivalence-class | PMAT-225 | C-XPILE-BACKEND-TRAIT | `target_equiv` on Backend pairs |
+| Symmetric purity (cross-domain) | PMAT-289 | C-BASHRS-POSIX-IDEMPOTENCE | python-side purity mirrors bashrs-side purity |
+| **Divisibility preorder** | **PMAT-294** | **C-PY-INT-ARITH** | **`(Int, ∣)` preorder — FIRST relation-not-operation category in substrate** |
 
 ### Subtype / section-retraction family
 
@@ -204,8 +220,14 @@ The `crates/xpile/tests/diamond_coverage.rs` integration test (PMAT-251) enforce
 
 - Every contract has ≥1 Diamond (depth-1 UNIVERSAL).
 - Every contract has ≥2 Diamonds (depth-2 UNIVERSAL).
-- ≥5 contracts have ≥3 Diamonds (depth-3 across layers).
-- ≥2 contracts have ≥4 Diamonds (depth-4 opened).
+- ≥6 contracts have ≥3 Diamonds (depth-3 broadened via PMAT-289).
+- ≥3 contracts have ≥4 Diamonds (depth-4 ACROSS LAYERS — L1 + L4 + L5).
+- ≥2 contracts have ≥5 Diamonds (depth-5 ACROSS LAYERS, PMAT-286/287).
+- ≥2 contracts have ≥6 Diamonds (depth-6 ACROSS LAYERS, PMAT-290/291).
+- ≥2 contracts have ≥7 Diamonds (depth-7 ACROSS LAYERS, PMAT-292/293).
+- ≥2 contracts have ≥8 Diamonds (depth-8 ACROSS LAYERS, PMAT-294/295).
+
+A future regression that removes a `_diamond` from any YAML or fails to keep depth-N invariants will fire the gate.
 - ≥30 total wired Diamond equations.
 
 PRs that weaken these invariants — e.g., remove a `_diamond` equation from any contract YAML — will fail CI.
