@@ -7,6 +7,46 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Property-specific Silver-tier Kani harnesses for `C-FFI-CPYTHON-EXT` (closes audit-design.md §4 caveat for this contract) (PMAT-275)
+
+Lifts the Kani harness `contracts/kani/ffi_cpython_ext.rs` from a Bronze byte-identity placeholder to property-specific Silver-tier structural proofs. Closes the audit-design.md §4 "byte-identity placeholder rather than property-specific structural proofs" caveat for `C-FFI-CPYTHON-EXT-V1` and brings the Kani side in sync with the Lean Silver-tier theorems already shipped at PMAT-160 + PMAT-168.
+
+**Why the previous harness was a placeholder:**
+
+The Bronze model collapsed an FFI call into a single opaque `[u8; 4]` payload. The proof `lower(c).payload == c.payload` was trivially true by construction (the lowering function did `FfiManifestEntry { payload: c.payload }`). A buggy manifest serializer that scrambled symbol bytes internally — but preserved the total payload — would silently pass.
+
+**Silver-tier structural model**
+
+Adds `FfiCallSilver` and `FfiManifestEntrySilver` records mirroring Lean's `FfiCallStructuredSilver` with the CPython ABI fields named explicitly:
+
+- `symbol: u8` — C function name (lookup key for the manifest)
+- `from_lang: u8` / `to_lang: u8` — cross-lane dispatch tags
+- `args: u8` — argument tuple shape (opaque at Silver)
+- `return_type: u8` — C return type tag
+- `refcount_delta: i8` — PyObject refcount delta (load-bearing for memory safety)
+
+**Seven new `#[kani::proof]` functions:**
+
+| Proof | Catches |
+|-------|---------|
+| `symbol_preserved_silver` | symbol-mangling during manifest emission |
+| `refcount_delta_preserved_silver` | refcount drift (memory-safety load-bearing) |
+| `from_lang_preserved_silver` | cross-lane bridge integrity (source side) |
+| `to_lang_preserved_silver` | cross-lane bridge integrity (dest side) |
+| `args_preserved_silver` | ABI matching on argument tuple |
+| `return_type_preserved_silver` | ABI matching on return type |
+| `manifest_entry_field_for_field_silver` | compositional: catches a "swapper" bug that preserves each field's domain but transposes positions |
+
+Each proof exhausts a structural input space (5 × u8 + i8) ≈ 256⁶ ≈ 281 trillion configurations under Kani's BMC.
+
+**Contract YAML wiring**
+
+`contracts/ffi-cpython-ext-v1.yaml` `symbol_preserved_silver` and `refcount_balance_on_success` equations now have `kani_harness:` + `kani_file:` references pointing at the new property-specific proofs. The `kani_harnesses.rs` gate test resolves them; `xpile quorum` reporter now counts them.
+
+**Why this is α (and not stopping at one harness)**
+
+Per the highest-EV analysis, Path α targets the long-standing audit-design.md §4 caveat that "Their Bronze-tier Lean theorems and Kani harnesses are byte-identity placeholders rather than property-specific structural proofs." This PR closes the Kani side for one contract — `C-FFI-CPYTHON-EXT-V1`. The Lean side was already at Silver tier; the Kani side has now caught up. Pattern is reusable for the other still-placeholder contracts.
+
 ### Added — `equation` + `align` math environments in `LatexContractFrontend` + FIFTH contract Runtime escape (`C-NOTATION-LATEX-MATH-TO-EQUATION-V1`) (PMAT-274)
 
 Two bundled changes (one PR because they're load-bearing for each other):

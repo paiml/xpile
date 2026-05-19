@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-275
+  github_issue: null
+  item_type: task
+  title: 'PMAT-275: Property-specific Silver-tier Kani harnesses for C-FFI-CPYTHON-EXT (closes audit-design.md §4 caveat for this contract)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T15:00:00Z
+  updated: 2026-05-22T15:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Lift contracts/kani/ffi_cpython_ext.rs from Bronze byte-identity placeholder to Silver-tier structural model. Add FfiCallSilver + FfiManifestEntrySilver records with named CPython ABI fields (symbol/from_lang/to_lang/args/return_type/refcount_delta) mirroring Lean's FfiCallStructuredSilver. Seven new Kani proofs: symbol_preserved_silver, refcount_delta_preserved_silver, from_lang_preserved_silver, to_lang_preserved_silver, args_preserved_silver, return_type_preserved_silver, manifest_entry_field_for_field_silver. Wire kani_harness fields in contracts/ffi-cpython-ext-v1.yaml for symbol_preserved_silver + refcount_balance_on_success equations. Closes audit-design.md §4 byte-identity placeholder caveat for C-FFI-CPYTHON-EXT-V1; Kani side now matches Lean Silver tier (PMAT-160 + PMAT-168)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-274
   github_issue: null
   item_type: task
