@@ -147,10 +147,11 @@ fn substrate_diamond_depth_5_opened() {
     // PMAT-350 BROADENED depth-5 to C-NOTATION-LATEX-MATH-TO-EQUATION (Layer 5, 2nd L5).
     // PMAT-351 BROADENED depth-5 to C-XLATE-LEAN-TO-RUST (Layer 5, 3rd L5).
     // PMAT-352 BROADENED depth-5 to C-XLATE-RUST-FN-TO-LEAN-THM (Layer 5, 4th L5).
+    // PMAT-353 BROADENED depth-5 to C-XPILE-CONTRACT-FRONTEND-TRAIT (Layer 3, 3rd L3).
     assert!(
-        depth_5_plus >= 10,
-        "Diamond depth-5 BROADENED milestone (PMAT-286/287/328/346/347/348/349/350/351/352): \
-         expected ≥10 contracts at depth-5+ (all 5 layers + 2nd L3 + 2nd L2 + 4 of 5 L5), \
+        depth_5_plus >= 11,
+        "Diamond depth-5 BROADENED milestone (PMAT-286/287/328/346/347/348/349/350/351/352/353): \
+         expected ≥11 contracts at depth-5+ (all 5 layers + 3rd L3 + 2nd L2 + 4 of 5 L5), \
          got {depth_5_plus}.\n{json}"
     );
 }

@@ -294,6 +294,34 @@ equations:
     postconditions:
       - "Diamond depth-4 broadened: 8 contracts at depth-4+"
 
+  equations_block_struct_extensionality_diamond:
+    # PMAT-353: FIFTH Diamond on this contract — BROADENS DEPTH-5
+    # from 10 to 11 contracts. Pushes XpileContractFrontendTrait
+    # (Layer 3) from depth-4 to depth-5, adding a THIRD Layer 3
+    # contract at depth-5. EQUATIONS-BLOCK STRUCTURE EXTENSIONALITY:
+    # the inner EquationsBlock record (bytes : Array UInt8) is
+    # field-extensional with decidable equality. Twelfth substrate-
+    # wide demonstration of the structure-extensionality pattern.
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.equations_block_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    formula: |
+      EquationsBlock admits STRUCTURE EXTENSIONALITY:
+        (a) field eq → record eq
+        (b) record eq → field eq (congruence)
+        (c) decidable equality
+        (d) self-equality (reflexivity)
+    domain: |
+      Two EquationsBlock records (bytes : Array UInt8) — the INNER
+      record stored inside TranspileSession.equations.
+    invariants:
+      - "FIFTH Diamond category on C-XPILE-CONTRACT-FRONTEND-TRAIT — BROADENS DEPTH-5 from 10 to 11 contracts"
+      - "STRUCTURE EXTENSIONALITY — twelfth substrate-wide demonstration of this pattern"
+      - "distinct from PMAT-332 (outer TranspileSession record) — captures the INNER EquationsBlock structure"
+    preconditions:
+      - "two EquationsBlock records (DecidableEq derived)"
+    postconditions:
+      - "Diamond depth-5 broadened: 11 contracts at depth-5+ (3 Layer 3 contracts at depth-5)"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractFrontend

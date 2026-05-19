@@ -498,4 +498,76 @@ theorem transpile_session_array_size_diamond (s : TranspileSession) :
   · rfl
   · rfl
 
+/-! ## PMAT-353 — FIFTH Diamond on C-XPILE-CONTRACT-FRONTEND-TRAIT
+    (Layer 3 BROADENING DEPTH-5 from 10 to 11 contracts):
+    EQUATIONS-BLOCK STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XPILE-CONTRACT-FRONTEND-TRAIT-008).
+
+    **Broadens DEPTH-5 from 10 to 11 contracts.** After PMAT-352
+    brought XlateRustFnToLeanThm (Layer 5) to depth-5 as 4th L5
+    contract at depth-5, PMAT-353 pushes
+    XpileContractFrontendTrait (Layer 3) from depth-4 to depth-5,
+    adding a THIRD Layer 3 contract at depth-5+.
+
+    The 5 Diamond categories on C-XPILE-CONTRACT-FRONTEND-TRAIT:
+    - PMAT-217 modules_equivalence_relation: equivalence relation
+    - PMAT-250 parse_preserves_equivalence_class: congruence
+    - PMAT-332 transpile_session_struct_extensionality: session record
+    - PMAT-340 transpile_session_array_size: modules Array.size
+    - **PMAT-353: EQUATIONS-BLOCK STRUCTURE EXTENSIONALITY** ← depth-5
+
+    The categorical distinction is sharp:
+      - PMAT-217/250 are relational claims (equivalence, congruence)
+      - PMAT-332 captures STRUCTURAL extensionality of TranspileSession
+        (the OUTER record).
+      - PMAT-340 captures Array.size on TranspileSession.modules.
+      - PMAT-353 captures STRUCTURAL extensionality of EquationsBlock
+        (the INNER record that lives inside the session's equations
+        field) — fundamentally different structural target.
+
+    Mirror of PMAT-311/329/330/331/332/333/334/335/336/349/352 —
+    twelfth substrate-wide demonstration of the structure-
+    extensionality pattern.
+
+    Status: discharged at v0.1.0 (PMAT-353). Tier: DIAMOND.
+    Broadens DEPTH-5 from 10 to 11 contracts. -/
+
+/--
+  **Diamond-tier refinement theorem** — `EquationsBlock` admits
+  STRUCTURE EXTENSIONALITY.
+
+  Combines four STRUCTURE-EXTENSIONALITY properties on the
+  single-field EquationsBlock record (bytes : Array UInt8):
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality (congruence)
+  (c) Decidable equality (deriving DecidableEq)
+  (d) Self-equality (reflexivity)
+
+  Twelfth substrate-wide demonstration of the structure-
+  extensionality pattern.
+
+  Status: **discharged at v0.1.0 (PMAT-353)**. Tier: DIAMOND.
+  Broadens DEPTH-5 from 10 to 11 contracts.
+-/
+theorem equations_block_struct_extensionality_diamond
+    (e1 e2 : EquationsBlock) :
+    -- (a) Field equality → record equality
+    (e1.bytes = e2.bytes → e1 = e2)
+    -- (b) Record equality → field equality
+    ∧ (e1 = e2 → e1.bytes = e2.bytes)
+    -- (c) Decidable equality
+    ∧ (e1 = e2 ∨ e1 ≠ e2)
+    -- (d) Self-equality (reflexivity)
+    ∧ (e1 = e1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    cases e1; cases e2
+    simp_all
+  · intro h
+    rw [h]
+  · by_cases h : e1 = e2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXpileContractFrontendTrait
