@@ -7,6 +7,32 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Section 29 (Layer-5 Multi-Emitter Oracle Quorum) — spec a+b quorum design for PTX emission (PMAT-259)
+
+New sub-spec [`sub/layer5-multi-emitter-quorum.md`](docs/specifications/sub/layer5-multi-emitter-quorum.md) wired into `xpile-spec.md` as Section 29. Captures the design decision NOT to pick a single PTX emitter (rustc_codegen_nvvm OR aprender-gpu) but to route through BOTH as a §14.4 N-of-M oracle quorum at the Runtime stratum.
+
+**Why it matters:**
+- The existing Diamond proofs (PMAT-218/231/242/248) on C-COMPILE-RUST-TO-PTX-MMA prove things about a `BoundedSmem` model, not about emitted PTX text. They are *in-vacuum*.
+- Adding multi-emitter quorum at the Runtime stratum creates the gate connecting model to emission: if either emitter produces PTX violating modeled invariants, runtime divergence catches it.
+- The two emitters fail in categorically independent ways (LLVM lowering bug vs hand-tuned-template bug) — the §14.10 anti-correlation guard is satisfied by construction.
+- Closes the `Run=1 demo fixture` caveat from audit-design.md §4 for this contract specifically.
+
+**Architecture:**
+- `PtxBackend` holds `general: Box<dyn PtxEmitter>` (mandatory fallback — currently `rustc_codegen_nvvm`) + `specialist: Option<Box<dyn PtxEmitter>>` (optional — `aprender-gpu` for tensor-op shapes)
+- `QuorumPolicy::DiffExec { tolerance }` executes both PTX outputs on test inputs and compares numerical results
+- Contract YAML schema extends `compile_targets.via` from `[String]` to `[ViaEntry]` with `role: general | specialist` per entry
+
+**Generalization:**
+The pattern applies beyond PTX: WGSL (`naga` + WebGPU specialists), SPIR-V (`rspirv` + Vulkan specialists), shell (`bashrs-backend` + bashrs-realistic corpus), C extensions (`pyo3` + hand-tuned `cffi`). Every Layer-5 contract gets two independent emitters at the Runtime stratum.
+
+**Phased roadmap (in spec):**
+- PMAT-260: extend `pv lint` schema for `compile_targets.via.role`
+- PMAT-26X+: light up rustc_codegen_nvvm path
+- PMAT-26Y+: cross-repo binding to aprender-gpu
+- PMAT-26Z+: `DiffExec` engine + `xpile quorum` multi-vote Runtime reporting
+
+Also annotates the existing `C-COMPILE-RUST-TO-PTX-MMA` YAML's `compile_targets.via` with a comment block referencing the new spec, so future readers see the structured-schema migration path inline.
+
 ### Changed — Refresh CURRENT.md PR count: 184 → 217 (PMAT-258)
 
 The Diamond program shipped 32 PRs at PMAT-226..257 with the full depth-1/2/3/4 Diamond milestones + `xpile diamond` reporter + `diamond_coverage.rs` CI gate + comprehensive taxonomy doc + Section 28 of xpile-spec.md + `pmat work list` fix. Refresh CURRENT.md to reflect the live PR count.
