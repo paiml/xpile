@@ -7,6 +7,40 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Property-specific Silver-tier Kani harnesses for `C-XLATE-LEAN-TO-RUST` (Path α, fourth contract) (PMAT-278)
+
+Fourth Path α contract closure. Lifts the `def_to_rust_fn` equation's Kani harness from a Bronze byte-payload to Silver-tier structural proofs matching Lean's `name_preserved_silver` / `body_preserved_silver` / `args_preserved_silver` / `return_type_preserved_silver` (PMAT-165).
+
+**Symmetric mirror of PMAT-277** — that PR did Rust → Lean; this PR does Lean → Rust. Both directions now have property-specific Silver-tier Kani coverage.
+
+```rust
+struct LeanDefSilver { name, args, return_type, body }  // 4 fields
+struct RustFnSilver  { name, args, return_type, body }  // mirror image
+```
+
+**Four new `#[kani::proof]` functions:**
+
+| Proof | Catches |
+|-------|---------|
+| `name_preserved_silver` | snake_case → lowerCamelCase normalization, prefix stripping |
+| `body_preserved_silver` | byte-level body mangling |
+| `args_preserved_silver` | argument-ordering reshuffle (fatal for `Decidable`/`Hashable` impl pattern-matching) |
+| `return_type_preserved_silver` | Rust-side `-> _` elision (return-type inference banned at Silver) |
+
+**Contract YAML wiring**
+
+`contracts/xlate-lean-to-rust-v1.yaml` `name_preserved_silver` equation now has `kani_harness:` + `kani_file:` pointing at the new proof.
+
+**Path α progress (4 of 5 closed):**
+
+| Contract | Status |
+|----------|--------|
+| C-FFI-CPYTHON-EXT-V1 | ✅ PMAT-275 |
+| C-COMPILE-RUST-TO-PTX-MMA | ✅ PMAT-276 |
+| C-XLATE-RUST-FN-TO-LEAN-THM-V1 | ✅ PMAT-277 |
+| C-XLATE-LEAN-TO-RUST-V1 | ✅ PMAT-278 |
+| C-XLATE-PY-LIST-TO-VEC-V1 | ⏳ |
+
 ### Added — Property-specific Silver-tier Kani harnesses for `C-XLATE-RUST-FN-TO-LEAN-THM` (Path α, third contract) (PMAT-277)
 
 Continues Path α (audit-design.md §4 placeholder cleanup) on the third contract. Lifts the `rust_fn_to_lean_def` equation's Kani harness from a Bronze byte-payload to Silver-tier structural proofs matching Lean's `name_preserved_silver` / `body_preserved_silver` / `return_type_preserved_silver` / `binders_concat_generics_args_silver` (PMAT-166..167).

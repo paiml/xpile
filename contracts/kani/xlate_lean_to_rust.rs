@@ -95,6 +95,135 @@ fn def_to_rust_fn() {
     );
 }
 
+// ─── PMAT-278: Silver-tier property-specific Kani harnesses ─────────
+//
+// Audit-design.md §4 caveat: Bronze-tier Kani harnesses are "byte-
+// identity placeholders". This block closes the caveat for
+// C-XLATE-LEAN-TO-RUST's `def_to_rust_fn` equation by lifting the
+// Kani side to match Lean's Silver tier already shipped at PMAT-165
+// (`name_preserved_silver`, `body_preserved_silver`, `args_preserved_silver`,
+// `return_type_preserved_silver` in `contracts/lean/XlateLeanToRust.lean`).
+//
+// The Bronze harness above proves byte-equality on a single 4-byte
+// payload — a buggy emitter that swapped name and body bytes would
+// pass. The Silver tier decomposes into 4 fields on both sides.
+
+/// Silver-tier model of a Lean `def` declaration — Rust mirror of
+/// `LeanDefSilver`. Four named fields each occupying one symbolic
+/// byte under Kani.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct LeanDefSilver {
+    name: u8,
+    args: u8,
+    return_type: u8,
+    body: u8,
+}
+
+/// Silver-tier model of a Rust `fn` declaration — mirror image of
+/// `LeanDefSilver`. Same four fields. The structural split is what
+/// makes the Silver refinement non-trivial: a buggy emitter that
+/// mangles ONE field but preserves the OTHERS (e.g., snake-case
+/// normalizing names while leaving body bytes alone) would falsify
+/// only the affected per-field proof.
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct RustFnSilver {
+    name: u8,
+    args: u8,
+    return_type: u8,
+    body: u8,
+}
+
+/// Silver-tier lowering — Rust mirror of Lean's
+/// `lower_def_to_fn_silver`. Structural copy preserving every named
+/// field. Each field copies byte-for-byte; Gold tier introduces a
+/// per-field equivalence relation (e.g., body modulo whitespace,
+/// args modulo positional reordering when type-driven).
+fn lower_def_to_fn_silver(d: &LeanDefSilver) -> RustFnSilver {
+    RustFnSilver {
+        name: d.name,
+        args: d.args,
+        return_type: d.return_type,
+        body: d.body,
+    }
+}
+
+fn arb_lean_def() -> LeanDefSilver {
+    LeanDefSilver {
+        name: kani::any(),
+        args: kani::any(),
+        return_type: kani::any(),
+        body: kani::any(),
+    }
+}
+
+/// PMAT-278 — Silver-tier counterpart to `name_preserved_silver`
+/// (Lean PMAT-165).
+///
+/// Lowering preserves the function name as a separate structural
+/// field, distinct from the body. An emitter that mangles the name
+/// (snake_case normalization, prefix stripping, kebab→snake) would
+/// falsify this proof — Bronze byte-equality on a joined payload
+/// couldn't catch the field-level corruption.
+#[kani::proof]
+fn name_preserved_silver() {
+    let d = arb_lean_def();
+    let r = lower_def_to_fn_silver(&d);
+    kani::assert(
+        r.name == d.name,
+        "lower_def_to_fn must preserve the function name as a separate field",
+    );
+}
+
+/// PMAT-278 — Silver-tier counterpart to `body_preserved_silver`
+/// (Lean PMAT-165).
+///
+/// Body preserved as a structural field distinct from name/args/return_type.
+/// Companion to `name_preserved_silver`; the pair locks in the
+/// contract claim that BOTH fields must be preserved, not just one.
+#[kani::proof]
+fn body_preserved_silver() {
+    let d = arb_lean_def();
+    let r = lower_def_to_fn_silver(&d);
+    kani::assert(
+        r.body == d.body,
+        "lower_def_to_fn must preserve the function body as a separate field",
+    );
+}
+
+/// PMAT-278 — Silver-tier counterpart to `args_preserved_silver`
+/// (Lean PMAT-165).
+///
+/// Argument list preserved. Argument-ordering preservation is
+/// critical for `Decidable` / `Hashable` instance method bodies
+/// that pattern-match positionally.
+#[kani::proof]
+fn args_preserved_silver() {
+    let d = arb_lean_def();
+    let r = lower_def_to_fn_silver(&d);
+    kani::assert(
+        r.args == d.args,
+        "lower_def_to_fn must preserve the args list",
+    );
+}
+
+/// PMAT-278 — Silver-tier counterpart to `return_type_preserved_silver`
+/// (Lean PMAT-165).
+///
+/// Return type preserved. Distinguishes the Bronze single-payload
+/// model from any emitter strategy that "infers" the return type
+/// from the body (Rust-side `-> _` elision); such inference is
+/// banned by the contract at Silver tier and would falsify this
+/// proof.
+#[kani::proof]
+fn return_type_preserved_silver() {
+    let d = arb_lean_def();
+    let r = lower_def_to_fn_silver(&d);
+    kani::assert(
+        r.return_type == d.return_type,
+        "lower_def_to_fn must preserve the return type explicitly (no `-> _` elision)",
+    );
+}
+
 // ============================================================
 // PMAT-147 — Kani harnesses for the 8 remaining equations of
 // C-XLATE-LEAN-TO-RUST, mirroring the Bronze-tier Lean theorems
