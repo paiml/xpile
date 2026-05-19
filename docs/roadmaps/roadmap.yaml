@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-324
+  github_issue: null
+  item_type: task
+  title: 'PMAT-324: Spec §28 + diamond-taxonomy.md sync to depth-19 ACROSS LAYERS reality'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T14:30:00Z
+  updated: 2026-05-23T14:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "After 4 Path β PRs (PMAT-320..323) added depths 18 and 19 ACROSS LAYERS — sign function (PMAT-320), Nat integral domain (PMAT-321), negation-order compatibility / OrderedAddCommGroup (PMAT-322), Nat truncated subtraction (PMAT-323) — sync docs/specifications/xpile-spec.md §28 (substrate total 59 → 63, families 19+ → 22+, coverage state table extended with depth-18/19 rows, deep-depth listings updated to 19 categories each, depth labels updated to depth-19+, CI gate count 18 → 20 tests). Sync docs/specifications/sub/diamond-taxonomy.md (coverage milestones extended with depth-18/19, NEW Sign-function family with PMAT-320, NEW Ordered-add-comm-group family with PMAT-322, NEW Truncated-subtraction family with PMAT-323, CI enforcement clause extended). No code changes. Mirrors PMAT-296 / PMAT-297 / PMAT-304 / PMAT-309 / PMAT-314 / PMAT-319 sync pattern."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-323
   github_issue: null
   item_type: task

@@ -519,9 +519,9 @@ audit-design.md §6 already shows we know *how* the five-whys → provable-contr
 
 **Sub-spec**: [sub/diamond-taxonomy.md](sub/diamond-taxonomy.md)
 
-The substrate's Diamond-tier program (PMAT-214..318) ships **59 wired Diamond equations across 12 contracts**, demonstrating 60+ distinct algebraic categories grouped into 19+ families (monoid, group, ring, integral-domain, ordered-ring, lattice, distributive-lattice, bounded-lattice, additive-lattice, functor, relation, ordering, order-topology, norm, lattice-universal-property, ring-homomorphism-embedding, ring-homomorphism-quotient, gcd-monoid / PID, unit-group, power-monoid).
+The substrate's Diamond-tier program (PMAT-214..323) ships **63 wired Diamond equations across 12 contracts**, demonstrating 65+ distinct algebraic categories grouped into 22+ families (monoid, group, ring, integral-domain, ordered-ring, ordered-add-comm-group, lattice, distributive-lattice, bounded-lattice, additive-lattice, functor, relation, ordering, order-topology, norm, lattice-universal-property, ring-homomorphism-embedding, ring-homomorphism-quotient, gcd-monoid / PID, unit-group, power-monoid, sign-function, truncated-subtraction).
 
-### Coverage state (v0.1.0+, post-PMAT-286..318)
+### Coverage state (v0.1.0+, post-PMAT-286..323)
 
 | Depth | Coverage | Mechanism |
 |---|---|---|
@@ -542,10 +542,12 @@ The substrate's Diamond-tier program (PMAT-214..318) ships **59 wired Diamond eq
 | Diamond depth-15 | 2 contracts ACROSS LAYERS | PMAT-312 (PyIntArith), PMAT-313 (CompileRustToPtxMma) |
 | Diamond depth-16 | 2 contracts ACROSS LAYERS | PMAT-315 (PyIntArith), PMAT-316 (CompileRustToPtxMma) |
 | Diamond depth-17 | 2 contracts ACROSS LAYERS | PMAT-317 (PyIntArith), PMAT-318 (CompileRustToPtxMma) |
+| Diamond depth-18 | 2 contracts ACROSS LAYERS | PMAT-320 (PyIntArith), PMAT-321 (CompileRustToPtxMma) |
+| Diamond depth-19 | 2 contracts ACROSS LAYERS | PMAT-322 (PyIntArith), PMAT-323 (CompileRustToPtxMma) |
 
 ### Deep-depth contracts at v0.1.0+
 
-**`C-PY-INT-ARITH` (Layer 1) — 17 categories:**
+**`C-PY-INT-ARITH` (Layer 1) — 19 categories:**
 1. PMAT-214: SEMIRING (+, *)
 2. PMAT-228: EUCLIDEAN DOMAIN (fdiv, fmod)
 3. PMAT-241: SHIFT-MONOID (shl)
@@ -561,10 +563,12 @@ The substrate's Diamond-tier program (PMAT-214..318) ships **59 wired Diamond eq
 13. PMAT-307: ABSOLUTE VALUE / NORM
 14. PMAT-310: NAT-CAST RING HOMOMORPHISM
 15. PMAT-312: INT-EMOD QUOTIENT HOMOMORPHISM
-16. PMAT-315: GCD MONOID + BÉZOUT IDENTITY — Int is a PID (Mathlib's `IsPrincipalIdealRing`)
-17. PMAT-317: UNIT GROUP `{1, -1} ≅ Z/2Z` — multiplicative-inverse structure
+16. PMAT-315: GCD MONOID + BÉZOUT IDENTITY — Int is a PID
+17. PMAT-317: UNIT GROUP `{1, -1} ≅ Z/2Z`
+18. PMAT-320: SIGN FUNCTION MONOID HOMOMORPHISM `Int → {-1, 0, 1}`
+19. PMAT-322: NEGATION-ORDER COMPATIBILITY — Int is an `OrderedAddCommGroup`
 
-**`C-COMPILE-RUST-TO-PTX-MMA` (Layer 5) — 17 categories:**
+**`C-COMPILE-RUST-TO-PTX-MMA` (Layer 5) — 19 categories:**
 1. PMAT-218: bounded-monoid (additive)
 2. PMAT-287: closure (subalgebra well-definedness)
 3. PMAT-231: join-semilattice (max)
@@ -580,13 +584,15 @@ The substrate's Diamond-tier program (PMAT-214..318) ships **59 wired Diamond eq
 13. PMAT-308: GLB/LUB universal property
 14. PMAT-311: subtype extensionality (BoundedSmem ↔ Nat .val)
 15. PMAT-313: Nat-mod quotient homomorphism
-16. PMAT-316: NAT GCD MONOID — Nat.gcd as universal object (commutativity replaces Bézout)
-17. PMAT-318: NAT POWER-MONOID — Nat.pow axioms on BoundedSmem.val (pow_zero/succ/add/one_pow)
+16. PMAT-316: Nat GCD monoid
+17. PMAT-318: Nat power-monoid
+18. PMAT-321: NAT INTEGRAL DOMAIN — multiplicative no-zero-divisors + zero absorption
+19. PMAT-323: NAT TRUNCATED SUBTRACTION — `Nat.sub` saturates at 0 (semiring-minus structure)
 
 ### Tooling
 
-- `xpile diamond` (PMAT-249): live per-contract Diamond count + depth classification, with `--json` output for CI dashboards. Depth labels: `none` / `depth-1` / ... / `depth-16` / `depth-17+`.
-- `crates/xpile/tests/diamond_coverage.rs` (PMAT-251..318): CI gate — **18 integration tests** enforce depth-1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/16/17 invariants plus aggregate-total-≥30; substrate-wide Diamond coverage cannot regress.
+- `xpile diamond` (PMAT-249): live per-contract Diamond count + depth classification, with `--json` output for CI dashboards. Depth labels: `none` / `depth-1` / ... / `depth-18` / `depth-19+`.
+- `crates/xpile/tests/diamond_coverage.rs` (PMAT-251..323): CI gate — **20 integration tests** enforce depth-1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/16/17/18/19 invariants plus aggregate-total-≥30; substrate-wide Diamond coverage cannot regress.
 
 ### Canonical reference
 
