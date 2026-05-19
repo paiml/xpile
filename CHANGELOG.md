@@ -7,6 +7,33 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-3 BROADENED from 7 to 8 contracts: TranspileSession structure-extensionality Diamond on `C-XPILE-CONTRACT-FRONTEND-TRAIT` (PMAT-332)
+
+**Continuing the BROADENING pivot.** PMAT-332 pushes `C-XPILE-CONTRACT-FRONTEND-TRAIT` (Layer 3) from depth-2 to depth-3, broadening depth-3 from 7 to **8 contracts**. This adds a THIRD Layer 3 contract at depth-3 (XpileFrontendTrait + XpileBackendTrait + this).
+
+**The 3 Diamond categories on `C-XPILE-CONTRACT-FRONTEND-TRAIT`:**
+
+1. PMAT-217 modules_equivalence_relation_diamond: equivalence relation on modules
+2. PMAT-250 parse_preserves_equivalence_class_diamond: congruence
+3. **PMAT-332 transpile_session_struct_extensionality_diamond** ← depth-3
+
+**Why STRUCTURE EXTENSIONALITY is genuinely a NEW category:**
+
+**FIFTH substrate-wide demonstration** of this pattern (after PMAT-311 BoundedSmem, PMAT-329 OutcomeSilver, PMAT-330 MetaHirModuleSilver, PMAT-331 ArtifactSilver). The pattern is now firmly established as a recurring substrate-wide algebraic theme on 5 distinct record/subtype contracts.
+
+Adapted for `TranspileSession` (`modules : Array MetaHirModule`, `equations : Array EquationsBlock`):
+
+- **Field eq → record eq:** `s1.modules = s2.modules ∧ s1.equations = s2.equations → s1 = s2`
+- **Record eq → field eq** (congruence)
+- **Decidable equality:** `s1 = s2 ∨ s1 ≠ s2`
+- **Self-equality** (reflexivity)
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_3_plus: 8` (was 7).
+- `substrate_diamond_depth_3_across_layers` gate **tightened to ≥ 8**.
+- Substrate Diamond totals: **71 wired Diamond theorems** across 12 contracts (was 70).
+
 ### Added — Diamond depth-3 BROADENED from 6 to 7 contracts: ArtifactSilver structure-extensionality Diamond on `C-XPILE-BACKEND-TRAIT` (PMAT-331)
 
 **Continuing the BROADENING pivot.** PMAT-331 pushes `C-XPILE-BACKEND-TRAIT` (Layer 3) from depth-2 to depth-3, broadening depth-3 from 6 to **7 contracts**. This adds a SECOND Layer 3 contract at depth-3 (XpileFrontendTrait was the first).

@@ -377,4 +377,73 @@ theorem parse_preserves_equivalence_class_diamond
     modules_equiv s (parse_to_equations_silver s src) :=
   (equations_only_silver s src).symm
 
+/-! ## PMAT-332 — THIRD Diamond on C-XPILE-CONTRACT-FRONTEND-TRAIT
+    (Layer 3 BROADENING DEPTH-3 from 7 to 8 contracts):
+    TranspileSession STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XPILE-CONTRACT-FRONTEND-TRAIT-006).
+
+    **Broadens DEPTH-3 from 7 to 8 contracts.** After PMAT-331
+    pushed XpileBackendTrait to depth-3, depth-3+ was 7 contracts.
+    PMAT-332 pushes XpileContractFrontendTrait (Layer 3) from
+    depth-2 to depth-3, adding a THIRD Layer 3 contract at depth-3
+    (XpileFrontendTrait + XpileBackendTrait + this).
+
+    The 3 Diamond categories on C-XPILE-CONTRACT-FRONTEND-TRAIT:
+    - PMAT-217 modules_equivalence_relation_diamond: equivalence on modules
+    - PMAT-250 parse_preserves_equivalence_class_diamond: congruence
+    - **PMAT-332: TranspileSession STRUCTURE EXTENSIONALITY** ← depth-3
+
+    The categorical distinction is sharp:
+      - PMAT-217: about EQUIVALENCE RELATION on sessions (modules
+        component only)
+      - PMAT-250: about CONGRUENCE of parse_to_equations w.r.t. the
+        relation (operation-equivalence interaction)
+      - PMAT-332: about the OUTPUT RECORD TYPE itself — how
+        TranspileSession's fields determine identity.
+
+    Mirror of PMAT-311 (BoundedSmem), PMAT-329 (OutcomeSilver),
+    PMAT-330 (MetaHirModuleSilver), PMAT-331 (ArtifactSilver) —
+    fifth substrate-wide demonstration of this pattern.
+
+    Status: discharged at v0.1.0 (PMAT-332). Tier: DIAMOND.
+    Broadens DEPTH-3 from 7 to 8 contracts. -/
+
+/--
+  **Diamond-tier refinement theorem** — `TranspileSession` admits
+  STRUCTURE EXTENSIONALITY.
+
+  Combines four STRUCTURE-EXTENSIONALITY properties:
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality (congruence)
+  (c) Decidable equality on sessions
+  (d) Self-equality (reflexivity)
+
+  Fifth substrate-wide demonstration of structure-extensionality
+  (after PMAT-311 BoundedSmem, PMAT-329 OutcomeSilver,
+  PMAT-330 MetaHirModuleSilver, PMAT-331 ArtifactSilver).
+
+  Status: **discharged at v0.1.0 (PMAT-332)**. Tier: DIAMOND.
+  Broadens DEPTH-3 from 7 to 8 contracts.
+-/
+theorem transpile_session_struct_extensionality_diamond
+    (s1 s2 : TranspileSession) :
+    -- (a) Field equality → record equality
+    (s1.modules = s2.modules ∧ s1.equations = s2.equations → s1 = s2)
+    -- (b) Record equality → field equality
+    ∧ (s1 = s2 → s1.modules = s2.modules ∧ s1.equations = s2.equations)
+    -- (c) Decidable equality
+    ∧ (s1 = s2 ∨ s1 ≠ s2)
+    -- (d) Self-equality (reflexivity)
+    ∧ (s1 = s1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2⟩
+    cases s1; cases s2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h]⟩
+  · by_cases h : s1 = s2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXpileContractFrontendTrait
