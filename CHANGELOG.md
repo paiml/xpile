@@ -7,6 +7,47 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Property-specific Silver-tier Kani harnesses for `C-XPILE-BACKEND-TRAIT` (Path α extension, eighth contract) (PMAT-283)
+
+Extends Path α to an eighth contract. Lifts `lower_idempotency` from a Bronze byte-identity placeholder to Silver-tier structural proofs matching Lean's `target_consistency_silver` (PMAT-157).
+
+**Symmetric mirror of PMAT-282** — PMAT-282 closed the typed-tag Silver bracket on the Frontend side (`source_lang_consistency`); this PR closes it on the Backend side (`target_consistency`). Together they bracket both ends of the meta-HIR pipeline.
+
+**Why this contract's Silver tier matters:** the Bronze model collapsed `Artifact` into a single `bytes: [u8; 4]` payload — a buggy Rust backend that detected GPU intrinsics in the meta-HIR and silently switched targets (Rust → PTX) would still pass the Bronze idempotency test (deterministic per input). Silver introduces an explicit `target` field on the emitted Artifact + an explicit `declared_target` on the Backend; the consistency invariant is then structurally provable.
+
+**Silver-tier model:**
+
+```rust
+type TargetSilver = u8;
+struct ArtifactSilver { bytes: [u8; 4], target: TargetSilver }
+struct BackendSilver { declared_target: TargetSilver }
+fn lower_silver(b, module, config) -> ArtifactSilver
+```
+
+**Two new `#[kani::proof]` functions:**
+
+| Proof | Catches |
+|-------|---------|
+| `target_consistency_silver` | a backend that detects content (GPU intrinsics, etc.) and switches targets behind the user's back |
+| `lower_idempotency_silver` | structural idempotency over the wider Silver shape (catches non-deterministic target stamp) |
+
+**Contract YAML wiring**
+
+`contracts/xpile-backend-trait-v1.yaml` `target_consistency` equation now has `kani_harness:` + `kani_file:` pointing at the new Silver proof.
+
+**Path α extension recap (8 contracts):**
+
+| Contract | PMAT | Silver tier |
+|----------|------|-------------|
+| C-FFI-CPYTHON-EXT-V1 | 275 | per-field byte equality |
+| C-COMPILE-RUST-TO-PTX-MMA | 276 | smem_bytes ≤ 48 KiB inequality |
+| C-XLATE-RUST-FN-TO-LEAN-THM-V1 | 277 | concat-order |
+| C-XLATE-LEAN-TO-RUST-V1 | 278 | symmetric mirror |
+| C-XLATE-PY-LIST-TO-VEC-V1 | 279 | polymorphism via tag |
+| C-BASHRS-POSIX-IDEMPOTENCE | 281 | 2-axis cross-domain |
+| C-XPILE-FRONTEND-TRAIT | 282 | source_lang consistency |
+| **C-XPILE-BACKEND-TRAIT** | **283** | **target consistency (Frontend-side mirror)** |
+
 ### Added — Property-specific Silver-tier Kani harnesses for `C-XPILE-FRONTEND-TRAIT` (Path α extension, seventh contract) (PMAT-282)
 
 Extends Path α to a seventh contract. Lifts `parse_idempotency` from a Bronze byte-identity placeholder to Silver-tier structural proofs matching Lean's `source_lang_consistency_silver` (PMAT-156).
