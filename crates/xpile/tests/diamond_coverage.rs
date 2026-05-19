@@ -117,11 +117,12 @@ fn substrate_diamond_depth_4_opened() {
     // depth-4 on Layer 2 (second Layer 2 contract at depth-4), broadening to 6 contracts.
     // PMAT-339 added target_enum_distinctness_diamond → C-XPILE-BACKEND-TRAIT joins
     // depth-4 on Layer 3 (second Layer 3 contract at depth-4), broadening to 7 contracts.
-    // Gate now asserts ≥7 contracts spanning all 5 layers with L2+L3 doubled.
+    // PMAT-340 added transpile_session_array_size_diamond → C-XPILE-CONTRACT-FRONTEND-TRAIT
+    // joins depth-4 on Layer 3 (third Layer 3 contract at depth-4), broadening to 8.
     assert!(
-        depth_4_plus >= 7,
-        "Diamond depth-4 ACROSS ALL 5 LAYERS + L2/L3 broadening milestone (PMAT-247/248/288/329/330/338/339): \
-         expected ≥7 contracts at depth-4+, got {depth_4_plus}.\n{json}"
+        depth_4_plus >= 8,
+        "Diamond depth-4 broadening milestone (PMAT-247/248/288/329/330/338/339/340): \
+         expected ≥8 contracts at depth-4+, got {depth_4_plus}.\n{json}"
     );
 }
 

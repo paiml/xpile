@@ -271,6 +271,29 @@ equations:
       - "an emitter introducing phantom fields or stripping fields would falsify (a)"
       - "Diamond depth-3 broadened: 8 contracts at depth-3+"
 
+  transpile_session_array_size_diamond:
+    # PMAT-340: FOURTH Diamond on this contract — BROADENS DEPTH-4
+    # from 7 to 8 contracts. Pushes XpileContractFrontendTrait
+    # (Layer 3) from depth-3 to depth-4, adding THIRD Layer 3
+    # contract at depth-4. TRANSPILE-SESSION ARRAY SIZE STRUCTURE.
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.transpile_session_array_size_diamond"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    formula: |
+      TranspileSession.modules and .equations Array.size structure:
+        (a) modules.size ≥ 0 (Nat non-negative)
+        (b) Empty session has size-0 modules
+        (c) Field-replacement preserves modules size
+        (d) modules and equations fields independent
+    domain: |
+      Any TranspileSession record.
+    invariants:
+      - "FOURTH Diamond category — BROADENS DEPTH-4 from 7 to 8 contracts"
+      - "Captures FIELD-VALUE SIZE PROPERTIES — distinct from equivalence, congruence, record structure"
+    preconditions:
+      - "one TranspileSession record"
+    postconditions:
+      - "Diamond depth-4 broadened: 8 contracts at depth-4+"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractFrontend
