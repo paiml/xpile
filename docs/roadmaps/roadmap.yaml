@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-267
+  github_issue: null
+  item_type: task
+  title: 'PMAT-267: FIRST contract Runtime-stratum oracle fixture (C-PY-INT-ARITH)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T11:00:00Z
+  updated: 2026-05-22T11:00:00Z
+  spec: null
+  acceptance_criteria:
+  - "Add crates/xpile/tests/runtime_strata.rs with two tests that transpile add.py end-to-end, compile via rustc -O, and execute the binary. Happy-path test runs a 4096-pair LCG-generated sweep with overflow-safe inputs and asserts add(a, b) == a.checked_add(b).unwrap() for every pair. Overflow test asserts add(i64::MAX, 1) panics per the checked_add.expect contract. Annotate contracts/py-int-arith-v1.yaml fast_path_eq_slow_path equation with runtime_fixture / runtime_fixture_overflow / runtime_fixture_file fields. Update audit-design.md §4 to reflect Run=4096 status. Closes the audit-design.md §4 Run=1 demo fixture caveat for the first contract; FIRST contract with full §14.4 Sem + Sym + Run stratum coverage."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-266
   github_issue: null
   item_type: task

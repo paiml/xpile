@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — FIRST contract Runtime-stratum oracle fixture (`C-PY-INT-ARITH`) (PMAT-267)
+
+Closes the audit-design.md §4 "Run=1 demo fixture" caveat for `C-PY-INT-ARITH`. Every existing contract reached §14.4 N-of-M QUORUM at Bronze tier (Lean refinement theorem + Kani BMC harness — Sem + Sym strata) but no contract had a real property-style Runtime stratum vote. This PR ships that vote.
+
+**New test file:** `crates/xpile/tests/runtime_strata.rs`
+
+**Mechanism:** the fixture transpiles `add.py` end-to-end, compiles the emitted Rust through `rustc -O`, and *executes* the resulting binary against a 4096-pair LCG-generated sweep plus an overflow boundary case. Behavioral equivalence between Python integer arithmetic and the emitted Rust is asserted at every step.
+
+**Two tests:**
+
+- `py_int_arith_runtime_stratum_add_matches_python_semantics` — 4096 LCG-generated `(a, b)` pairs (shifted right by 2 so overflow is impossible), assertion that the transpiled `add(a, b)` equals `a.checked_add(b).unwrap()` for every pair. One rustc invocation amortizes the cost.
+- `py_int_arith_runtime_stratum_overflow_panics` — companion exercising the OVERFLOW arm: `add(i64::MAX, 1)` must panic per the C-PY-INT-ARITH `checked_add(...).expect(...)` contract. Driver wraps the call in `std::panic::catch_unwind` and exits 0 IFF the contract'd panic fires.
+
+**Contract YAML annotated:** `contracts/py-int-arith-v1.yaml` (the `fast_path_eq_slow_path` equation) gets `runtime_fixture` + `runtime_fixture_overflow` + `runtime_fixture_file` fields pointing at the test file. (These are advisory annotations at v0.1.0; `pv lint` schema extension to enforce them is future work.)
+
+**Audit-design.md update:** §4 "Fixture-Overfitting" paragraph updated to reflect that `C-PY-INT-ARITH` is now at Run=4096 happy-path + 1 overflow boundary, making it the FIRST contract with a real property-style Runtime-stratum oracle vote rather than fixed Python smoke fixtures.
+
+**Why this matters:**
+
+- The "Run=1 demo fixture" caveat has been the longest-standing open audit concern. Every contract showed §14.4 quorum on paper but only as Sem + Sym; this is the first contract showing real Sem + Sym + Run coverage.
+- Establishes the pattern (rustc + emit-then-exec + LCG-driven sweep) that other Layer-1/Layer-2 contracts (`xlate-py-list-to-vec-v1`, `xlate-rust-fn-to-lean-thm-v1`, etc.) can copy without architectural debate.
+- Each fixture is *real* code under test: the binary that runs in the test is byte-identical to what users would compile and ship.
+
 ### Added — Adversarial invariant tests for `MultiEmitterBackend` (Section 29 oracle hardening) (PMAT-266)
 
 Pins down the security-relevant contract behavior the PMAT-263 happy-path tests don't cover. These 7 new tests guard against silent regressions in the routing layer that would weaken the Section 29 oracle.

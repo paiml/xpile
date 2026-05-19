@@ -48,6 +48,18 @@ equations:
     # Semantic vote per the ruchy 5.0 §14.4 quorum rule.
     kani_harness: "addition_no_overflow"
     kani_file: "contracts/kani/py_int_arith.rs"
+    # PMAT-267: FIRST Runtime stratum oracle vote. The proptest-style
+    # sweep in `crates/xpile/tests/runtime_strata.rs` transpiles
+    # `add.py` end-to-end, compiles it through `rustc -O`, and
+    # *executes* the binary against a 4096-pair LCG-generated sweep
+    # plus an overflow boundary case. Closes the audit-design.md §4
+    # "Run=1 demo fixture" caveat for C-PY-INT-ARITH and makes this
+    # the FIRST contract with full §14.4 Sem + Sym + Run stratum
+    # coverage. (Run stratum was previously "Run=1 from CI smoke
+    # test" — now an independent oracle with 4096 votes.)
+    runtime_fixture: "py_int_arith_runtime_stratum_add_matches_python_semantics"
+    runtime_fixture_overflow: "py_int_arith_runtime_stratum_overflow_panics"
+    runtime_fixture_file: "crates/xpile/tests/runtime_strata.rs"
 
   add_dispatch_commutative_platinum:
     # PMAT-199 / XPILE-REFINE-PY-INT-ARITH-006: FIRST Platinum-tier
