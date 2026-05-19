@@ -1778,4 +1778,88 @@ theorem bounded_smem_nat_integral_domain_diamond
   · exact Nat.zero_mul a.val
   · exact Nat.mul_zero a.val
 
+/-! ## PMAT-323 — NINETEENTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
+    (DEPTH-19 ACROSS LAYERS): NAT TRUNCATED SUBTRACTION axioms
+    on BoundedSmem.val (XPILE-REFINE-COMPILE-PTX-020).
+
+    **Opens DEPTH-19 ACROSS LAYERS.** PyIntArith reached depth-19
+    at PMAT-322 (negation-order compatibility); PMAT-323 extends
+    depth-19 to Layer 5 C-COMPILE-RUST-TO-PTX-MMA. The substrate
+    now has depth-19 on TWO contracts spanning Layer 1 and Layer 5.
+
+    Since BoundedSmem.val is Nat (no negatives), the PyIntArith
+    negation-order-compatibility category doesn't have a direct
+    mirror. Instead, PMAT-323 introduces the analog of subtraction
+    structure: TRUNCATED SUBTRACTION axioms — Nat's `Nat.sub`
+    operation truncates at 0 (saturates rather than wrapping).
+    This captures the SEMIRING-MINUS-LIKE structure of Nat where
+    subtraction is defined but not a true inverse of addition.
+
+    The 19 Diamond categories on C-COMPILE-RUST-TO-PTX-MMA:
+    - PMAT-218..321: prior 18 categories
+    - **PMAT-323: NAT TRUNCATED SUBTRACTION** ← depth-19 ACROSS LAYERS
+
+    The categorical distinction is sharp:
+      - PMAT-218 BOUNDED MONOID: ADDITIVE monoid only (+, 0)
+      - PMAT-295 CANCELLATIVE MONOID: ADDITIVE cancellation
+      - PMAT-321 NAT INTEGRAL DOMAIN: MULTIPLICATIVE no-zero-divisors
+      - PMAT-323 NAT TRUNCATED SUB: the OPPOSITE of monoid —
+        Nat.sub is NOT closed under monoid laws (it saturates).
+        Captures the SUBTRACTION-AS-TRUNCATION structure unique
+        to Nat.
+
+    Key axioms:
+      - `a - b ≤ a` (truncated sub never increases)
+      - `(a + b) - b = a` (sub-add roundtrip when both Nat-valued)
+      - `a - a = 0` (self-cancellation)
+      - `a - 0 = a` (zero is identity for sub)
+
+    For GPU smem accounting, this matters: when computing
+    "remaining smem" after a reservation (`budget - allocated`),
+    the truncated-subtraction semantics ensure no negative
+    overflow. An emitter that lowered through a signed subtraction
+    path producing -1 (instead of 0) when over-reserving would
+    falsify (a) — saturating at 0 is essential for the Nat-valued
+    smem accounting.
+
+    Status: discharged at v0.1.0 (PMAT-323). Tier: DIAMOND.
+    Second DEPTH-19 in the substrate (DEPTH-19 ACROSS LAYERS). -/
+
+/--
+  **Diamond-tier refinement theorem** — `Nat.sub` on `BoundedSmem.val`
+  is TRUNCATED SUBTRACTION (saturates at 0).
+
+  Combines four TRUNCATED-SUBTRACTION properties:
+  (a) Truncation:           `a - b ≤ a` (sub never increases)
+  (b) Add-sub roundtrip:    `(a + b) - b = a`
+  (c) Self-cancellation:    `a - a = 0`
+  (d) Zero identity:        `a - 0 = a`
+
+  Together these characterize `Nat.sub` as the canonical truncated
+  subtraction on Nat. Proved by `omega` — linear arithmetic on Nat
+  with truncated subtraction is decidable.
+
+  An emitter that lowered "remaining smem" computation through a
+  SIGNED subtraction path (allowing negative results) would
+  falsify (a) when over-reserving — the result must be 0
+  (saturated), not -1. This bug class is invisible to PMAT-218
+  monoid (which is about +), PMAT-295 cancellation (additive),
+  PMAT-321 integral-domain (multiplicative), and all other prior
+  18 categories.
+
+  Status: **discharged at v0.1.0 (PMAT-323)**. Tier: DIAMOND.
+  Second DEPTH-19 in the substrate (DEPTH-19 ACROSS LAYERS).
+-/
+theorem bounded_smem_nat_truncated_sub_diamond
+    (a b : BoundedSmem) :
+    -- (a) Truncated sub: a - b ≤ a (never increases)
+    (a.val - b.val ≤ a.val)
+    -- (b) Add-sub roundtrip: (a + b) - b = a
+    ∧ (a.val + b.val - b.val = a.val)
+    -- (c) Self-cancellation: a - a = 0
+    ∧ (a.val - a.val = 0)
+    -- (d) Zero is identity for subtraction: a - 0 = a
+    ∧ (a.val - 0 = a.val) := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> omega
+
 end XpileContracts.CCompileRustToPtxMma

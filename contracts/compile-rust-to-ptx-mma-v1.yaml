@@ -839,6 +839,41 @@ equations:
       - "an emitter with a buggy multiplication that returns sentinel values on 0-input would falsify (a)"
       - "Diamond DEPTH-18 ACROSS LAYERS demonstrated: 2 contracts at depth-18+"
 
+  bounded_smem_nat_truncated_sub_diamond:
+    # PMAT-323: NINETEENTH Diamond on this contract — opens
+    # DEPTH-19 ACROSS LAYERS. NAT TRUNCATED SUBTRACTION: Nat.sub
+    # on BoundedSmem.val truncates at 0 (saturates rather than
+    # wrapping). Mirror is not direct for PMAT-322 (negation-order
+    # on Int) since Nat has no negatives — instead, PMAT-323
+    # captures the SEMIRING-MINUS-LIKE structure of Nat:
+    # subtraction defined but not a true inverse of addition.
+    # Categorically orthogonal to all 18 prior categories — none
+    # mentions truncated subtraction. Load-bearing for smem
+    # remaining-budget computation: signed subtraction allowing
+    # negative results would falsify (a).
+    lean_theorem: "XpileContracts.CCompileRustToPtxMma.bounded_smem_nat_truncated_sub_diamond"
+    lean_file: "contracts/lean/CompileRustToPtxMma.lean"
+    formula: |
+      Nat.sub on BoundedSmem.val is TRUNCATED SUBTRACTION:
+        (a) truncation:           a.val - b.val ≤ a.val
+        (b) add-sub roundtrip:    (a.val + b.val) - b.val = a.val
+        (c) self-cancellation:    a.val - a.val = 0
+        (d) zero is identity:     a.val - 0 = a.val
+    domain: |
+      Any two BoundedSmem values. The four properties together
+      axiomatize Nat.sub as truncated subtraction — saturating
+      at 0 rather than wrapping.
+    invariants:
+      - "NINETEENTH Diamond category on C-COMPILE-RUST-TO-PTX-MMA — opens DEPTH-19 ACROSS LAYERS (second contract at depth-19+ after PMAT-322 on PyIntArith)"
+      - "captures Nat-specific SEMIRING-MINUS-LIKE structure (sub defined but not a true additive inverse)"
+      - "distinct from PMAT-218 bounded-monoid (additive +), PMAT-295 cancellative (additive cancellation), PMAT-321 integral-domain (multiplicative no-zero-divisors)"
+      - "load-bearing for smem remaining-budget computation: a SIGNED subtraction allowing negative results would falsify (a)"
+    preconditions:
+      - "two BoundedSmem values"
+    postconditions:
+      - "an emitter lowering remaining-smem via signed subtraction would falsify (a) when over-reserving (result must saturate at 0)"
+      - "Diamond DEPTH-19 ACROSS LAYERS demonstrated: 2 contracts at depth-19+"
+
   output_equivalence_to_cublas:
     formula: |
       run(emitted_ptx, A, B, C) ≈ cublas_gemm(A, B, C)

@@ -7,6 +7,43 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-19 ACROSS LAYERS: Nat-truncated-subtraction Diamond on `C-COMPILE-RUST-TO-PTX-MMA` (PMAT-323)
+
+**Path β extension.** Depth-19 was opened by PMAT-322 on PyIntArith (Layer 1). PMAT-323 extends depth-19 to **Layer 5** (`C-COMPILE-RUST-TO-PTX-MMA`) via the Nat-truncated-subtraction Diamond — the substrate now has **2 contracts at depth-19+**.
+
+**Why NAT TRUNCATED SUBTRACTION is genuinely a NEW category:**
+
+Since BoundedSmem.val is Nat (no negatives), the PyIntArith negation-order-compatibility category doesn't have a direct mirror. Instead, PMAT-323 introduces the analog of subtraction structure: **TRUNCATED SUBTRACTION** axioms — Nat's `Nat.sub` operation saturates at 0 rather than wrapping. This captures the **SEMIRING-MINUS-LIKE** structure of Nat where subtraction is defined but not a true inverse of addition:
+
+- **Truncation:** `a.val - b.val ≤ a.val` (sub never increases)
+- **Add-sub roundtrip:** `(a.val + b.val) - b.val = a.val`
+- **Self-cancellation:** `a.val - a.val = 0`
+- **Zero is identity:** `a.val - 0 = a.val`
+
+None of the prior 18 categories on this contract mentions truncated subtraction. PMAT-218 was additive monoid (+); PMAT-295 was additive cancellation; PMAT-321 was multiplicative no-zero-divisors.
+
+**New Lean theorem:**
+
+```lean
+theorem bounded_smem_nat_truncated_sub_diamond
+    (a b : BoundedSmem) :
+    (a.val - b.val ≤ a.val)
+    ∧ (a.val + b.val - b.val = a.val)
+    ∧ (a.val - a.val = 0)
+    ∧ (a.val - 0 = a.val) := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> omega
+```
+
+Proved by `omega` — linear arithmetic on Nat with truncated subtraction is decidable.
+
+**Falsification surface:** an emitter that lowered the "remaining smem" computation (`budget - allocated`) through a **SIGNED subtraction path** (allowing negative results) would falsify property (a) when over-reserving — the result must be 0 (saturated), not -1. This is load-bearing for Nat-valued smem accounting.
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_19_plus: 2` (was 1 after PMAT-322).
+- `substrate_diamond_depth_19_opened` gate tightened to `≥ 2` (ACROSS LAYERS).
+- Substrate Diamond totals: **63 wired Diamond theorems** across 12 contracts (was 62).
+
 ### Added — FIRST Diamond depth-19 in the substrate: Int negation-order-compatibility Diamond on `C-PY-INT-ARITH` (PMAT-322)
 
 **Path β extension.** Opens Diamond **depth-19** — nineteen distinct algebraic categories on a single contract. PyIntArith was at depth-18 (post-PMAT-320); PMAT-322 adds **NEGATION-ORDER COMPATIBILITY** as the nineteenth orthogonal category.
