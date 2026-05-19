@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-270
+  github_issue: null
+  item_type: task
+  title: 'PMAT-270: Contract-lane trait Runtime invariants (THIRD/FOURTH contracts to escape demo-fixture status)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-22T12:30:00Z
+  updated: 2026-05-22T12:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Extend crates/xpile/tests/trait_runtime_properties.rs with 7 tests covering the contract-lane trait invariants: contract_backend_format_ownership, contract_backend_name_uniqueness, contract_frontend_format_ownership, contract_frontend_name_uniqueness, render_idempotency (every contract backend × every format), parse_idempotency (every contract frontend on a representative LaTeX source), and vacuous-truth guard. Add xpile-contract-backend / xpile-contract-frontend / xpile-contracts as dev-dependencies of xpile. Discharges XPILE-CONTRACT-BACKEND-TRAIT-RUNTIME-001 and XPILE-CONTRACT-FRONTEND-TRAIT-RUNTIME-001 future-work tickets. audit-design.md §4 residual count drops from 8 to 6 contracts on demo-fixture status."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-269
   github_issue: null
   item_type: task

@@ -23,3 +23,10 @@ xpile-backend  = { workspace = true }
 xpile-meta-hir = { workspace = true }
 anyhow         = { workspace = true }
 clap           = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+# PMAT-270: trait_runtime_properties.rs exercises ContractBackend +
+# ContractFrontend traits directly against the live default_session().
+xpile-contract-backend  = { workspace = true }
+xpile-contract-frontend = { workspace = true }
+xpile-contracts         = { workspace = true }

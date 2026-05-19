@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Contract-lane trait Runtime invariants (THIRD/FOURTH contracts to escape "demo fixture" status) (PMAT-270)
+
+Mirrors the PMAT-269 pattern across the proof-lane trait contracts: `C-XPILE-CONTRACT-BACKEND-TRAIT` and `C-XPILE-CONTRACT-FRONTEND-TRAIT` are now property-tested against the LIVE `xpile_core::default_session()`. Discharges the XPILE-CONTRACT-BACKEND-TRAIT-RUNTIME-001 and XPILE-CONTRACT-FRONTEND-TRAIT-RUNTIME-001 future-work tickets flagged in the `contract_*_trait_demo` fixture headers.
+
+**Seven new tests appended to `crates/xpile/tests/trait_runtime_properties.rs`:**
+
+| Test | Trait invariant pinned |
+|------|------------------------|
+| `contract_backend_format_ownership_is_unique_across_registered_impls` | Proof-lane counterpart to `backend_target_ownership` — no two contract backends share a `ContractFormat` |
+| `contract_backend_names_are_unique_across_registered_impls` | `name()` uniqueness on the contract-backend dispatch table |
+| `contract_frontend_format_ownership_is_unique_across_registered_impls` | Proof-lane counterpart for ContractFrontend |
+| `contract_frontend_names_are_unique_across_registered_impls` | `name()` uniqueness on the contract-frontend dispatch table |
+| `every_contract_backend_render_is_deterministic_on_minimal_contract` | `render_idempotency` — render(contract, config) twice produces byte-identical `RenderedDoc.primary` + citations |
+| `every_contract_frontend_parse_is_deterministic_on_minimal_source` | `parse_idempotency` — parse_to_equations(source) twice produces identical `EquationsBlock` |
+| `default_session_registers_at_least_one_contract_backend_and_frontend` | Vacuous-truth guard for the contract-lane block |
+
+**Build:** `xpile/Cargo.toml` gains three `[dev-dependencies]` (`xpile-contract-backend`, `xpile-contract-frontend`, `xpile-contracts`) — workspace members, no new external deps.
+
+**audit-design.md §4 update:** residual demo-fixture count drops from **8 → 6** contracts as both contract-lane trait contracts escape.
+
 ### Added — Trait-contract Runtime stratum upgrade (SECOND contract family to escape "demo fixture" status) (PMAT-269)
 
 Upgrades the trait contracts (`C-XPILE-BACKEND-TRAIT`, `C-XPILE-FRONTEND-TRAIT`, and their contract-lane counterparts) from "minimum-viable single Runtime witness" status to **property-specific Runtime invariants** verified against the LIVE `xpile_core::default_session()`. They become the SECOND contract family (after `C-PY-INT-ARITH` via PMAT-267..268) to escape the audit-design.md §4 "demo fixture" caveat.
