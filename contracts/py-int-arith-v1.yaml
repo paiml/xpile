@@ -1290,6 +1290,43 @@ equations:
       - "an emitter using a buggy Int → Nat retraction (e.g., sentinel mapping for 0) would falsify (a)"
       - "Diamond DEPTH-20 opened — 1 contract at depth-20+"
 
+  int_nat_cast_order_embedding_diamond:
+    # PMAT-327: TWENTY-FIRST Diamond on this contract — opens FIRST
+    # DEPTH-21 in the substrate. NAT-CAST ORDER EMBEDDING:
+    # `Nat.cast : Nat → Int` preserves the ORDER structure (≤, <, =).
+    # Distinct from:
+    #   - PMAT-310 NAT-CAST RING HOM: preserves RING structure
+    #     (0, 1, +, *) but not order
+    #   - PMAT-325 Int.toNat PARTIAL INVERSE: round-trip / retraction
+    # Together PMAT-310 + PMAT-327 characterize Nat.cast as an
+    # ORDER-PRESERVING RING HOMOMORPHISM (Mathlib's `OrderRingHom`
+    # typeclass shape). The order-embedding axioms are independent
+    # of the ring-hom axioms — a quotient hom Z → Z/2Z is a ring
+    # hom but doesn't preserve order. Load-bearing for Python's
+    # non-negative-int fast path with order-sensitive dispatch.
+    lean_theorem: "XpileContracts.CPyIntArith.int_nat_cast_order_embedding_diamond"
+    lean_file: "contracts/lean/PyIntArith.lean"
+    formula: |
+      Nat.cast : Nat → Int is an ORDER EMBEDDING:
+        (a) preserves ≤ (iff):  ((n : Int)) ≤ ((m : Int)) ↔ n ≤ m
+        (b) preserves < (iff):  ((n : Int)) < ((m : Int)) ↔ n < m
+        (c) injectivity (=):    ((n : Int)) = ((m : Int)) ↔ n = m
+        (d) non-negative:       0 ≤ ((n : Int))
+    domain: |
+      Two Nat values n, m. The four properties characterize the
+      Nat.cast : Nat → Int as a canonical order embedding — Mathlib's
+      standard cast / order lemmas.
+    invariants:
+      - "TWENTY-FIRST Diamond category on C-PY-INT-ARITH — opens FIRST DEPTH-21 in the substrate"
+      - "ORDER-EMBEDDING component of the Nat.cast structure (complement to PMAT-310 ring-hom)"
+      - "together with PMAT-310 captures Nat.cast as an OrderRingHom (Mathlib's typeclass shape)"
+      - "load-bearing for Python's non-negative-int fast path with order-sensitive dispatch"
+    preconditions:
+      - "two Nat values"
+    postconditions:
+      - "an emitter using a hash-table encoding where insertion order doesn't match numeric order would falsify (a)"
+      - "Diamond DEPTH-21 opened — 1 contract at depth-21+"
+
 proof_obligations:
   - type: precondition
     property: operands are Python int (not int-subclass, not bool-as-int)
