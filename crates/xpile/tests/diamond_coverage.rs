@@ -123,10 +123,13 @@ fn substrate_diamond_depth_4_opened() {
     // depth-4 on Layer 3 (fourth Layer 3 contract), broadening to 9.
     // PMAT-342 added latex_display_kind_enum_distinctness_diamond → NotationLatex joins
     // depth-4 on Layer 5 (second Layer 5 contract), broadening to 10.
+    // PMAT-343 added variant_count_nat_structure_diamond → XlateLeanToRust joins
+    // depth-4 on Layer 5 (third Layer 5 contract), broadening to 11.
+    // Only 1 contract (XlateRustFnToLeanThm) remains for depth-4 UNIVERSAL.
     assert!(
-        depth_4_plus >= 10,
-        "Diamond depth-4 broadening milestone (PMAT-247/248/288/329/330/338..342): \
-         expected ≥10 contracts at depth-4+, got {depth_4_plus}.\n{json}"
+        depth_4_plus >= 11,
+        "Diamond depth-4 broadening milestone (PMAT-247/248/288/329/330/338..343): \
+         expected ≥11 contracts at depth-4+, got {depth_4_plus}.\n{json}"
     );
 }
 

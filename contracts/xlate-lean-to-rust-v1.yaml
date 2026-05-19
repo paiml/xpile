@@ -652,6 +652,28 @@ equations:
     postconditions:
       - "Diamond depth-3 broadened: 11 contracts at depth-3+"
 
+  variant_count_nat_structure_diamond:
+    # PMAT-343: FOURTH Diamond on this contract — BROADENS DEPTH-4
+    # from 10 to 11 contracts. LeanInductive / RustEnum
+    # variant_count Nat structure (non-negativity + successor
+    # strict-ordering).
+    lean_theorem: "XpileContracts.CXlateLeanToRust.variant_count_nat_structure_diamond"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      LeanInductive / RustEnum variant_count Nat structure:
+        (a) i.variant_count ≥ 0
+        (b) i.variant_count < i.variant_count + 1
+        (c) e.variant_count ≥ 0
+        (d) e.variant_count < e.variant_count + 1
+    domain: |
+      Any LeanInductive and RustEnum.
+    invariants:
+      - "FOURTH Diamond category — BROADENS DEPTH-4 from 10 to 11 contracts"
+    preconditions:
+      - "one LeanInductive, one RustEnum"
+    postconditions:
+      - "Diamond depth-4 broadened: 11 contracts at depth-4+"
+
 proof_obligations:
   - type: postcondition
     property: total def lowers to a panic-free Rust fn

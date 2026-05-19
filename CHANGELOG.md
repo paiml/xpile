@@ -7,6 +7,14 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — Diamond depth-4 BROADENED from 10 to 11 contracts: variant-count-Nat-structure Diamond on `C-XLATE-LEAN-TO-RUST` (PMAT-343)
+
+**Continuing POST-UNIVERSAL broadening at depth-4.** Pushes `C-XLATE-LEAN-TO-RUST` (Layer 5) from depth-3 to depth-4. **Only 1 contract remains for depth-4 UNIVERSAL** (XlateRustFnToLeanThm).
+
+- 4 Diamonds: inductive monoid, variant count cardinality functor, RustFn struct extensionality, **variant_count Nat structure** ← PMAT-343
+- `depth_4_plus: 11` (was 10), gate **tightened to ≥ 11**.
+- Substrate Diamond totals: **81 wired theorems** (was 80).
+
 ### Added — Diamond depth-4 BROADENED from 9 to 10 contracts: LatexDisplayKind-enum-distinctness Diamond on `C-NOTATION-LATEX-MATH-TO-EQUATION` (PMAT-342)
 
 **Continuing POST-UNIVERSAL broadening at depth-4.** Pushes `C-NOTATION-LATEX-MATH-TO-EQUATION` (Layer 5) from depth-3 to depth-4. Mirror of PMAT-339 (Target enum distinctness). **2 more contracts needed for depth-4 UNIVERSAL.**
