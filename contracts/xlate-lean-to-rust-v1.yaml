@@ -76,6 +76,16 @@ equations:
     # preservation claim separately.
     lean_theorem: "XpileContracts.CXlateLeanToRust.name_preserved_silver"
     lean_file: "contracts/lean/XlateLeanToRust.lean"
+    # PMAT-278: Property-specific Silver-tier Kani harness. Closes
+    # audit-design.md §4 caveat for this equation. Bronze
+    # def_to_rust_fn was a single 4-byte payload (would pass if the
+    # emitter swapped name and body); Silver decomposes into 4
+    # fields (name/args/return_type/body). Companion harnesses
+    # body_preserved_silver, args_preserved_silver,
+    # return_type_preserved_silver in the same Kani file. Fourth
+    # Path α contract closed.
+    kani_harness: "name_preserved_silver"
+    kani_file: "contracts/kani/xlate_lean_to_rust.rs"
     formula: |
       xlate(def f (args : T1) ... : R := body).name == f
     domain: |
