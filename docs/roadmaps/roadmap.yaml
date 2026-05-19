@@ -2,6 +2,23 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-332
+  github_issue: null
+  item_type: task
+  title: 'PMAT-332: Diamond depth-3 BROADENED from 7 to 8 contracts (TranspileSession structure extensionality on C-XPILE-CONTRACT-FRONTEND-TRAIT)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-05-23T18:30:00Z
+  updated: 2026-05-23T18:30:00Z
+  spec: null
+  acceptance_criteria:
+  - "Continuing the BROADENING pivot. Add transpile_session_struct_extensionality_diamond Lean theorem — 4 conjuncts. FIFTH substrate-wide demonstration of structure-extensionality pattern (after PMAT-311/329/330/331). Tighten substrate_diamond_depth_3_across_layers gate from ≥7 to ≥8. Pushes XpileContractFrontendTrait (Layer 3) from depth-2 to depth-3, adding a THIRD Layer 3 contract at depth-3."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-331
   github_issue: null
   item_type: task
