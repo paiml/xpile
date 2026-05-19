@@ -7,6 +7,56 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added — **MILESTONE: Diamond depth-3 UNIVERSAL ACROSS ALL 12 CONTRACTS**: RustFnSilver structure-extensionality Diamond on `C-XLATE-RUST-FN-TO-LEAN-THM` (PMAT-336)
+
+**SUBSTRATE MILESTONE: depth-3 UNIVERSAL achieved.** After 5 PRs of broadening (PMAT-331..335), only one contract remained at depth-2. PMAT-336 pushes `C-XLATE-RUST-FN-TO-LEAN-THM` (Layer 5) from depth-2 to depth-3, **completing depth-3 UNIVERSAL across ALL 12 contracts**.
+
+**Coverage achievement:**
+- **12/12 contracts at depth-3+** (UNIVERSAL)
+- depth-3 spans **all 5 taxonomy layers**
+- Substrate Diamond total: **75 wired theorems** (was 74)
+
+**The broadening sweep recap (PMAT-328..336):**
+
+| PMAT | Contract pushed | Layer | depth |
+|---|---|---|---|
+| 328 | C-FFI-CPYTHON-EXT | 4 | 4→5 |
+| 329 | C-BASHRS-POSIX-IDEMPOTENCE | 2 | 3→4 |
+| 330 | C-XPILE-FRONTEND-TRAIT | 3 | 3→4 (depth-4 ALL 5 LAYERS) |
+| 331 | C-XPILE-BACKEND-TRAIT | 3 | 2→3 |
+| 332 | C-XPILE-CONTRACT-FRONTEND-TRAIT | 3 | 2→3 |
+| 333 | C-XPILE-CONTRACT-BACKEND-TRAIT | 3 | 2→3 |
+| 334 | C-NOTATION-LATEX-MATH-TO-EQUATION | 5 | 2→3 |
+| 335 | C-XLATE-LEAN-TO-RUST | 5 | 2→3 |
+| **336** | **C-XLATE-RUST-FN-TO-LEAN-THM** | **5** | **2→3** (depth-3 UNIVERSAL) |
+
+**Structure-extensionality pattern:** PMAT-311 (BoundedSmem subtype) seeded a pattern that became a substrate-wide recurring algebraic theme. Now **9 distinct contracts** demonstrate structure-extensionality (PMAT-311, 329, 330, 331, 332, 333, 334, 335, 336).
+
+**New Lean theorem:**
+
+```lean
+theorem rust_fn_silver_struct_extensionality_diamond
+    (f1 f2 : RustFnSilver) :
+    (f1.name = f2.name ∧ f1.generics = f2.generics ∧ f1.args = f2.args
+       ∧ f1.return_type = f2.return_type ∧ f1.body = f2.body → f1 = f2)
+    ∧ (f1 = f2 → f1.name = f2.name)
+    ∧ (f1 = f2 ∨ f1 ≠ f2)
+    ∧ (f1 = f1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2, h3, h4, h5⟩; cases f1; cases f2; simp_all
+  · intro h; rw [h]
+  · by_cases h : f1 = f2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+```
+
+**Reporter + gate:**
+
+- `xpile diamond --json` now reports `depth_3_plus: 12` (UNIVERSAL!).
+- `substrate_diamond_depth_3_across_layers` renamed to `substrate_diamond_depth_3_universal`, **converted from `≥ 11` inequality to `== contracts_total` UNIVERSAL assertion**.
+- Substrate Diamond totals: **75 wired Diamond theorems** across 12 contracts (was 74).
+
 ### Added — Diamond depth-3 BROADENED from 10 to 11 contracts: RustFn structure-extensionality Diamond on `C-XLATE-LEAN-TO-RUST` (PMAT-335)
 
 **Continuing the BROADENING sweep.** PMAT-335 pushes `C-XLATE-LEAN-TO-RUST` (Layer 5) from depth-2 to depth-3, broadening depth-3 from 10 to **11 contracts**. Eighth substrate-wide demonstration of structure-extensionality. **Substrate now only 1 contract away from depth-3 UNIVERSAL.**

@@ -2,6 +2,15 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-336
+  github_issue: null
+  item_type: task
+  title: 'PMAT-336: MILESTONE — Diamond depth-3 UNIVERSAL ACROSS ALL 12 CONTRACTS (RustFnSilver structure extensionality on C-XLATE-RUST-FN-TO-LEAN-THM)'
+  status: planned
+  priority: medium
+  created: 2026-05-23T20:30:00Z
+  acceptance_criteria:
+  - "SUBSTRATE MILESTONE: depth-3 UNIVERSAL achieved. After 5 PRs of broadening (PMAT-331..335), only one contract remained at depth-2. PMAT-336 pushes C-XLATE-RUST-FN-TO-LEAN-THM (Layer 5) from depth-2 to depth-3, completing depth-3 UNIVERSAL across ALL 12 contracts. NINTH substrate-wide demonstration of structure-extensionality pattern. Convert depth-3 gate from ≥11 inequality to ==contracts_total UNIVERSAL assertion (renamed substrate_diamond_depth_3_universal)."
 - id: PMAT-335
   github_issue: null
   item_type: task

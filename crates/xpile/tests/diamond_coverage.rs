@@ -88,20 +88,18 @@ fn substrate_diamond_depth_2_universal() {
 }
 
 #[test]
-fn substrate_diamond_depth_3_across_layers() {
+fn substrate_diamond_depth_3_universal() {
     let json = run_diamond_json();
+    let contracts_total = read_aggregate_field(&json, "contracts_total");
     let depth_3_plus = read_aggregate_field(&json, "depth_3_plus");
-    // PMAT-241..245 milestone: one contract per layer at depth-3 = 5.
-    // PMAT-289 added Bashrs (Layer 2/4 hybrid) to depth-3, total = 6.
-    // PMAT-331 added XpileBackendTrait (Layer 3) to depth-3, total = 7.
-    // PMAT-332 added XpileContractFrontendTrait (Layer 3) to depth-3, total = 8.
-    // PMAT-333 added XpileContractBackendTrait (Layer 3) to depth-3, total = 9.
-    // PMAT-334 added NotationLatex (Layer 5) to depth-3, total = 10.
-    // PMAT-335 added XlateLeanToRust (Layer 5) to depth-3, total = 11.
-    assert!(
-        depth_3_plus >= 11,
-        "Diamond depth-3 across-layers milestone (PMAT-241..245 + PMAT-289 + PMAT-331..335): expected ≥11 \
-         contracts at depth-3+, got {depth_3_plus}.\n{json}"
+    // PMAT-241..245 + PMAT-289 + PMAT-331..336 broadening sweep:
+    // depth-3 reached UNIVERSAL across ALL 12 contracts at PMAT-336.
+    // The structure-extensionality pattern (PMAT-311/329/330/331/332/
+    // 333/334/335/336) is now a substrate-wide recurring theme.
+    assert_eq!(
+        depth_3_plus, contracts_total,
+        "Diamond depth-3 UNIVERSAL milestone (PMAT-336): every contract should have \
+         ≥3 Diamond equations, but only {depth_3_plus} of {contracts_total} do.\n{json}"
     );
 }
 
