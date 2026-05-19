@@ -189,12 +189,13 @@ fn substrate_diamond_depth_8_opened() {
 fn substrate_diamond_depth_9_opened() {
     let json = run_diamond_json();
     let depth_9_plus = read_aggregate_field(&json, "depth_9_plus");
-    // PMAT-298 opened depth-9 on C-PY-INT-ARITH: linear-order trichotomy as
-    // the 9th orthogonal Diamond category — distinct from PMAT-292 order-lattice
-    // (lattice ≠ linear) and PMAT-294 divisibility-preorder (preorder ≠ strict order).
+    // PMAT-298 opened depth-9 on C-PY-INT-ARITH (Layer 1): linear-order trichotomy.
+    // PMAT-299 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): ordered monoid
+    // (forward monotonicity + reflexivity + transitivity).
+    // Gate now asserts depth-9 ACROSS LAYERS (≥2 contracts at depth-9+).
     assert!(
-        depth_9_plus >= 1,
-        "Diamond depth-9 milestone (PMAT-298): expected ≥1 contract at depth-9+, \
-         got {depth_9_plus}.\n{json}"
+        depth_9_plus >= 2,
+        "Diamond depth-9 ACROSS LAYERS milestone (PMAT-298, PMAT-299): \
+         expected ≥2 contracts at depth-9+ (Layer 1 + Layer 5), got {depth_9_plus}.\n{json}"
     );
 }
