@@ -56,13 +56,13 @@ def factorial (n : Int) : Int :=
 
 - 27 workspace crates · all compile clean (`cargo check --workspace`)
 - 12 contracts · `pv lint` PASS with **0 errors and 0 warnings** (full-clean substrate since PMAT-138)
-- **100% QUORUM + UNIVERSAL 5-TIER + UNIVERSAL Diamond depth-2 + UNIVERSAL Diamond depth-3 across all 5 layers + depth-4 opened — Diamond CI gate enforced** — every contract has paired Lean refinement theorem + Kani BMC harness; **260 Lean theorems (53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 36 Diamond) + 43 Kani harnesses = 303 stratum-vote artifacts** post-PMAT-156..251. 42/42 equations at Silver; 12/12 contracts at Gold/Platinum; **12/12 contracts at Diamond depth-2** (PMAT-228..250); **5/5 layers at Diamond depth-3** (PMAT-241..245); **2 contracts at Diamond depth-4** (PyIntArith L1, CompileRustToPtxMma L5). Diamond coverage is now CI-enforced via the `diamond_coverage.rs` gate (PMAT-251) — regressions fail builds. New tooling: `xpile diamond` reporter (PMAT-249) for per-contract Diamond counts
-- **211 workspace tests** · 11+ Python fixtures runtime-verified via `rustc -O` + `assert_eq!` (canonical list in `CHANGELOG.md` §"Python subset"); plus 54 bashrs-frontend tests covering POSIX shell idioms; **+7 tests added in PMAT-249/251** (2 `xpile diamond` reporter unit tests + 5 `diamond_coverage.rs` CI-gate integration tests)
+- **100% QUORUM + UNIVERSAL 5-TIER + UNIVERSAL Diamond depth-3..13 across all 12 contracts — Diamond CI gate enforced** — every contract has paired Lean refinement theorem + Kani BMC harness; **638 stratum-vote artifacts** (285 Semantic + 53 Symbolic + 15 Runtime + 285 Extrinsic) across all 5 taxonomy layers. 42/42 equations at Silver; 12/12 contracts at Gold/Platinum; **eleven UNIVERSAL Diamond milestones** depth-3..13 (PMAT-336..442) with **171 wired Diamond theorems** across 12 contracts; deepest contracts at depth-21 (PyIntArith L1) and depth-20 (CompileRustToPtxMma L5). Thirteen recurring algebraic templates discovered: structure-extensionality (32+ contracts), enum completeness, Gold-tier subtype-ext, tier-projection homomorphism, canonical identity, Bronze↔Silver round-trip. Diamond coverage CI-enforced via `diamond_coverage.rs` (22 integration tests, depth-1..13 UNIVERSAL gates) — regressions fail builds. Reporter: `xpile diamond --json`
+- **297 workspace tests** · 11+ Python fixtures runtime-verified via `rustc -O` + `assert_eq!` (canonical list in `CHANGELOG.md` §"Python subset"); plus 54 bashrs-frontend tests covering POSIX shell idioms; 22 `diamond_coverage.rs` integration tests gate depth-1..13 UNIVERSAL invariants
 - **`pmat tdg .` score 95.1 / 100 (Grade A-)** — meets the originally-planned XPILE-CI-PMAT-TDG-001 ≥ A- threshold without explicit CI enforcement (slight dip from 95.7 reflects the +600 lines of Diamond-program documentation; still solidly A-)
 - Python subset shipped: see [`CHANGELOG.md`](CHANGELOG.md) §"Python subset (live, runtime-verified)" — typed `def`, multi-statement bodies, all binary + unary ops, ternary, if/else, elif chains, function calls including self-recursion (canonical source — this README intentionally does not duplicate the list to avoid the staleness it kept accumulating)
 - **Four real backends**: Rust (`pub fn`, Python-floor semantics via `checked_div_euclid` / `checked_rem_euclid`, all arithmetic checked for the `C-PY-INT-ARITH` contract), Ruchy (`fun ... -> T`, same overflow semantics — compiles to Rust), Lean 4 (`def`, `Int.fdiv` / `Int.fmod`; `Int` is unbounded so the contract holds by construction), bashrs (POSIX shell — see [`sub/bashrs-merger.md`](docs/specifications/sub/bashrs-merger.md))
 - CI: `gate` + `kani` + `workspace-test` all run on every PR; `gate` is the load-bearing required status check (org-level ruleset rule); `kani` + `workspace-test` are not yet required but in practice green on every merged PR. Branch protection: `non_fast_forward` + PR required + `gate` status check (`gh api repos/paiml/xpile/rules/branches/main`).
-- Published: [`xpile 0.0.1`](https://crates.io/crates/xpile) (name reservation; v0.1.0+ is real)
+- Published: [`xpile 0.1.0`](https://crates.io/crates/xpile) — first real release (all 27 workspace crates published; `cargo install xpile` works for end users)
 
 ### Contract substrate at QUORUM
 
@@ -76,9 +76,7 @@ $ xpile quorum
   totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)
 ```
 
-**260 Lean refinement theorems** ([`contracts/lean/*.lean`](contracts/lean/), 53 Bronze + 108 Silver + 24 Gold + 39 Platinum + 36 Diamond) +
-**43 Kani BMC harnesses** ([`contracts/kani/*.rs`](contracts/kani/)) —
-**303 stratum-vote artifacts** across all 5 layers of the contract taxonomy. **42/42 equations at Silver** (PMAT-183) + **12/12 contracts at Gold** (PMAT-185..197) + **12/12 contracts at Platinum** (PMAT-199..212) + **12/12 contracts at Diamond depth-1** (PMAT-214..226) + **12/12 contracts at Diamond depth-2** (PMAT-228..250) + **5/5 layers at Diamond depth-3** (PMAT-241..245) + **2 contracts at Diamond depth-4** (PMAT-247..248). Diamond coverage is CI-enforced via the `diamond_coverage.rs` gate (PMAT-251) — regressions fail builds.
+**285 Semantic + 53 Symbolic + 15 Runtime + 285 Extrinsic = 638 stratum-vote artifacts** across all 5 layers of the contract taxonomy, via [`contracts/lean/*.lean`](contracts/lean/) and [`contracts/kani/*.rs`](contracts/kani/). **42/42 equations at Silver** + **12/12 contracts at Gold/Platinum** + **eleven UNIVERSAL Diamond milestones depth-3..13** (PMAT-336..442) totalling **171 wired Diamond theorems**; deepest 21 (PyIntArith L1), 20 (CompileRustToPtxMma L5). Diamond coverage is CI-enforced via the `diamond_coverage.rs` gate (22 integration tests, depth-1..13 UNIVERSAL) — regressions fail builds.
 Every equation in every contract has both its own Bronze-tier Lean theorem
 (`rfl` by construction) AND its own Kani symbolic harness exploring 256^4 ≈
 4.3B configurations per harness. Silver/Gold/Platinum refinement is
@@ -202,7 +200,7 @@ Every PR runs:
 | Provable contracts | `pv lint contracts/` (via `aprender-contracts-cli`) |
 | Security advisories | `cargo deny check advisories` |
 | Tests | `cargo test --workspace` (incl. e2e rustc round-trip and `every_kani_harness_discharges`) |
-| Kani BMC | dedicated `kani` job runs `cargo kani` over all 43 harnesses in `contracts/kani/` |
+| Kani BMC | dedicated `kani` job runs `cargo kani` over all Kani harnesses in `contracts/kani/` |
 
 Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 

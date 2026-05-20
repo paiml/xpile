@@ -7,6 +7,30 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.0] — 2026-05-20
+
+First real release. The polyglot transpile workbench is operational
+end-to-end: a non-trivial recursive Python `factorial(n)` transpiles to
+Rust that compiles and computes correct values (verified in CI via
+`rustc -O` + `assert_eq!`), with the same source dispatching to Ruchy
+and Lean 4 backends. Bashrs frontend + backend ship a real POSIX shell
+round-trip.
+
+Substrate state at v0.1.0:
+
+- 27 workspace crates, 297 workspace tests, all green.
+- 12 contracts at 100% QUORUM (`pv lint contracts/` PASS, 0 errors / 0 warnings).
+- 638 stratum-vote artifacts (285 Semantic + 53 Symbolic + 15 Runtime + 285 Extrinsic) via Lean theorems + Kani BMC harnesses across all 5 taxonomy layers.
+- Eleven UNIVERSAL Diamond milestones (depth-3 through depth-13) with **171 wired Diamond theorems** across 12 contracts. Deepest: PyIntArith at depth-21, CompileRustToPtxMma at depth-20.
+- Thirteen recurring algebraic templates discovered (structure-extensionality, enum completeness, Gold-tier subtype-ext, tier-projection homomorphism, canonical identity, Bronze↔Silver round-trip).
+- Diamond coverage CI-enforced via `diamond_coverage.rs` (22 integration tests, depth-1..13 UNIVERSAL gates).
+
+All 27 workspace crates published to crates.io. `cargo install xpile`
+installs the CLI.
+
+Canonical spec: [`docs/specifications/xpile-spec.md`](docs/specifications/xpile-spec.md).
+Adversarial audit: [`docs/specifications/audit-design.md`](docs/specifications/audit-design.md).
+
 ### Changed — Spec §28 + sub/diamond-taxonomy.md sync to depth-13 UNIVERSAL + 11 UNIVERSAL milestones + 13 recurring templates (PMAT-443)
 
 **Spec sync** to post-depth-13-UNIVERSAL substrate:
