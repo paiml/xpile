@@ -744,4 +744,36 @@ theorem metahir_module_bytes_array_size_diamond (m : MetaHirModule) :
   · rfl
   · rfl
 
+/--
+  **PMAT-391 Diamond — FrameSafeTransition subtype extensionality.**
+
+  The Gold-tier subtype `FrameSafeTransition := { p :
+  TranspileSession × TranspileSession // p.fst.modules =
+  p.snd.modules }` satisfies subtype extensionality. THIRD
+  substrate-wide subtype-extensionality demonstration after
+  PMAT-311 (BoundedSmem on C-COMPILE-RUST-TO-PTX-MMA) and
+  PMAT-390 (SuccessfulOutcome on C-BASHRS-POSIX-IDEMPOTENCE),
+  forming an emerging Template 9 (Gold-tier subtype-ext)
+  alongside the standard record struct-ext template.
+
+  Adds a NINTH distinct Diamond category on
+  `C-XPILE-CONTRACT-FRONTEND-TRAIT`, pushing the contract from
+  depth-8 to depth-9. First L3 contract at depth-9.
+-/
+theorem frame_safe_transition_subtype_extensionality_diamond
+    (f1 f2 : FrameSafeTransition) :
+    (f1.val = f2.val → f1 = f2)
+    ∧ (f1 = f2 → f1.val = f2.val)
+    ∧ (f1 = f2 ∨ f1 ≠ f2)
+    ∧ (f1 = f1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    exact Subtype.ext h
+  · intro h
+    rw [h]
+  · by_cases h : f1 = f2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXpileContractFrontendTrait

@@ -408,6 +408,39 @@ equations:
     postconditions:
       - "Diamond depth-8 broadened: 3 L3 contracts at depth-8"
 
+  frame_safe_transition_subtype_extensionality_diamond:
+    # PMAT-391: NINTH Diamond on this contract — BROADENS DEPTH-9
+    # substrate-wide. Pushes XpileContractFrontendTrait (Layer 3)
+    # from depth-8 to depth-9 as the first L3 contract at depth-9.
+    # FRAME-SAFE-TRANSITION SUBTYPE EXTENSIONALITY: the Gold-tier
+    # subtype `{ p : TranspileSession × TranspileSession //
+    # p.fst.modules = p.snd.modules }` admits subtype extensionality.
+    # THIRD substrate-wide subtype-extensionality demonstration
+    # after PMAT-311 (BoundedSmem on C-COMPILE-RUST-TO-PTX-MMA) and
+    # PMAT-390 (SuccessfulOutcome on C-BASHRS-POSIX-IDEMPOTENCE).
+    # Together these three form an emerging Template 9 pattern
+    # (Gold-tier subtype-ext) on the substrate.
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.frame_safe_transition_subtype_extensionality_diamond"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    formula: |
+      FrameSafeTransition admits SUBTYPE EXTENSIONALITY:
+        (a) val eq -> subtype eq (Subtype.ext)
+        (b) subtype eq -> val eq (congruence)
+        (c) decidable equality
+        (d) self-equality
+    domain: |
+      Two FrameSafeTransition values (subtype of
+      TranspileSession × TranspileSession with the
+      modules-preservation witness).
+    invariants:
+      - "NINTH Diamond category on C-XPILE-CONTRACT-FRONTEND-TRAIT — BROADENS DEPTH-9 substrate-wide"
+      - "SUBTYPE EXTENSIONALITY — third substrate-wide demonstration after PMAT-311 (BoundedSmem) and PMAT-390 (SuccessfulOutcome)"
+      - "Gold-tier refinement-subtype pattern emerging as Template 9 (3 substrate instances now)"
+    preconditions:
+      - "two FrameSafeTransition values"
+    postconditions:
+      - "Diamond depth-9 broadened: first L3 contract at depth-9"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractFrontend
