@@ -876,4 +876,39 @@ theorem source_lang_enum_completeness_diamond (l : SourceLang) :
     · exact Or.inr h
   · decide
 
+/--
+  **PMAT-393 Diamond — ConsistentFrontendOutput subtype extensionality.**
+
+  The Gold-tier subtype `ConsistentFrontendOutput := { p :
+  Frontend × MetaHirModuleSilver // p.snd.source_lang =
+  p.fst.declared_lang }` satisfies subtype extensionality. FIFTH
+  substrate-wide subtype-extensionality demonstration after
+  PMAT-311 (BoundedSmem), PMAT-390 (SuccessfulOutcome), PMAT-391
+  (FrameSafeTransition), and PMAT-392 (ConsistentBackendInput).
+  Template 9 (Gold-tier subtype-ext) expands to 5 substrate
+  instances.
+
+  Adds a NINTH distinct Diamond category on
+  `C-XPILE-FRONTEND-TRAIT`, pushing the contract from depth-8 to
+  depth-9. **Closes Frontend↔Backend trait Gold-tier subtype-ext
+  symmetry pair** with PMAT-392 (ConsistentBackendInput) — both
+  subtypes lift `Trait × OutputRecord` via a cross-field
+  consistency witness.
+-/
+theorem consistent_frontend_output_subtype_extensionality_diamond
+    (c1 c2 : ConsistentFrontendOutput) :
+    (c1.val = c2.val → c1 = c2)
+    ∧ (c1 = c2 → c1.val = c2.val)
+    ∧ (c1 = c2 ∨ c1 ≠ c2)
+    ∧ (c1 = c1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    exact Subtype.ext h
+  · intro h
+    rw [h]
+  · by_cases h : c1 = c2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXpileFrontendTrait
