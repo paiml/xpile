@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Spec §28 + sub/diamond-taxonomy.md sync to depth-13 UNIVERSAL + 11 UNIVERSAL milestones + 13 recurring templates (PMAT-443)
+
+**Spec sync** to post-depth-13-UNIVERSAL substrate:
+
+- **171 wired Diamond theorems** (was 161) across 12 contracts.
+- **Eleven UNIVERSAL milestones documented**: depth-3..13.
+- **Thirteen recurring algebraic templates** (was 12) — added **Template 13: Bronze→Silver→Bronze round-trip identity** demonstrated on 10 substrate round-trip diamonds (PMAT-433..442). Captures correctness relationship between Templates 10 and 12.
+- **Eleventh broadening wave (PMAT-433..442)** documented.
+
+### Added — **MILESTONE: Diamond depth-13 UNIVERSAL ACROSS ALL 12 CONTRACTS** via DefinitionEnv round-trip identity on `C-NOTATION-LATEX-MATH-TO-EQUATION` (PMAT-442)
+
+**SUBSTRATE MILESTONE: depth-13 UNIVERSAL.** Eleventh UNIVERSAL milestone.
+
+### Added — Diamond depth-13 broadening sweep PMAT-433..441 (Template 13: round-trip identity)
+
+- **PMAT-433** (L4): FfiCall round-trip — **Template 13 introduction**.
+- **PMAT-434..441**: Outcome / Artifact / MetaHirModule (closes F↔B) / EquationsBlock (singleton variant) / RenderedDoc (closes CF↔CB) / PyList (UInt8 variant) / LeanDef / RustFn (closes Rust↔Lean).
+
 ### Changed — Spec §28 + sub/diamond-taxonomy.md sync to depth-12 UNIVERSAL + 10 UNIVERSAL milestones + 12 recurring templates (PMAT-432)
 
 **Spec sync** to post-depth-12-UNIVERSAL substrate:
