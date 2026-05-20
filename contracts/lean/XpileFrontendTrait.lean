@@ -762,4 +762,58 @@ theorem metahir_module_silver_bytes_array_size_diamond
   · rfl
   · rfl
 
+/-! ## PMAT-369 — SEVENTH Diamond on C-XPILE-FRONTEND-TRAIT
+    (Layer 3 COMPLETES DEPTH-7 ACROSS ALL 5 TAXONOMY LAYERS):
+    FRONTEND STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XPILE-FRONTEND-TRAIT-010).
+
+    **MILESTONE: DEPTH-7 ACROSS ALL 5 TAXONOMY LAYERS.**
+
+    After PMAT-367 opened depth-7 on L4 and PMAT-368 broadened to L2,
+    depth-7 spans 4 of 5 taxonomy layers. PMAT-369 pushes
+    XpileFrontendTrait (Layer 3) from depth-6 to depth-7, completing
+    depth-7 ACROSS ALL 5 TAXONOMY LAYERS. Parallel to PMAT-330
+    (depth-4 ALL 5 LAYERS), PMAT-347 (depth-5 ALL 5 LAYERS), and
+    PMAT-358 (depth-6 ALL 5 LAYERS) milestones.
+
+    The 7 Diamond categories on C-XPILE-FRONTEND-TRAIT:
+    - PMAT-224 frontend_equivalence_class
+    - PMAT-232 source_lang_constant_projection
+    - PMAT-245 parse_and_lower_function
+    - PMAT-330 metahir_module_struct_extensionality (output record)
+    - PMAT-347 source_lang_enum_distinctness (enum)
+    - PMAT-358 metahir_module_silver_bytes_array_size (Array.size)
+    - **PMAT-369: FRONTEND STRUCTURE EXTENSIONALITY** ← depth-7
+
+    Mirror of PMAT-359 on the Backend side.
+
+    Status: discharged at v0.1.0 (PMAT-369). Tier: DIAMOND.
+    **COMPLETES DEPTH-7 ACROSS ALL 5 TAXONOMY LAYERS.** -/
+
+/--
+  **Diamond-tier refinement theorem** — `Frontend` admits
+  STRUCTURE EXTENSIONALITY.
+
+  Single-field Frontend record (declared_lang : SourceLang) with
+  derived DecidableEq.
+
+  Status: **discharged at v0.1.0 (PMAT-369)**. Tier: DIAMOND.
+  **COMPLETES DEPTH-7 ACROSS ALL 5 TAXONOMY LAYERS.**
+-/
+theorem frontend_struct_extensionality_diamond (f1 f2 : Frontend) :
+    (f1.declared_lang = f2.declared_lang → f1 = f2)
+    ∧ (f1 = f2 → f1.declared_lang = f2.declared_lang)
+    ∧ (f1 = f2 ∨ f1 ≠ f2)
+    ∧ (f1 = f1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    cases f1; cases f2
+    simp_all
+  · intro h
+    rw [h]
+  · by_cases h : f1 = f2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXpileFrontendTrait

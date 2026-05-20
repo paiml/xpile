@@ -354,6 +354,35 @@ equations:
       - "incoming-call boundaries are reconciled by the FFI manifest, not by frontends"
     preconditions: []
 
+  frontend_struct_extensionality_diamond:
+    # PMAT-369: SEVENTH Diamond on this contract — COMPLETES DEPTH-7
+    # ACROSS ALL 5 TAXONOMY LAYERS. Mirror of PMAT-330 (depth-4 ALL
+    # 5 LAYERS), PMAT-347 (depth-5), and PMAT-358 (depth-6)
+    # milestones. Pushes XpileFrontendTrait (Layer 3) from depth-6
+    # to depth-7. FRONTEND STRUCTURE EXTENSIONALITY: the single-field
+    # Frontend record (declared_lang : SourceLang) is field-extensional.
+    # Mirror of PMAT-359 on the Backend side (Backend INPUT record).
+    # Twenty-third substrate-wide demonstration.
+    lean_theorem: "XpileContracts.CXpileFrontendTrait.frontend_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XpileFrontendTrait.lean"
+    formula: |
+      Frontend admits STRUCTURE EXTENSIONALITY:
+        (a) field eq (declared_lang) -> record eq
+        (b) record eq -> field eq (congruence)
+        (c) decidable equality
+        (d) self-equality
+    domain: |
+      Two Frontend records (declared_lang : SourceLang) — the INPUT
+      record of the parse_and_lower trait method.
+    invariants:
+      - "SEVENTH Diamond category on C-XPILE-FRONTEND-TRAIT — COMPLETES DEPTH-7 ACROSS ALL 5 TAXONOMY LAYERS"
+      - "STRUCTURE EXTENSIONALITY — twenty-third substrate-wide demonstration"
+      - "Mirror of PMAT-359 on Backend side (Backend INPUT record)"
+    preconditions:
+      - "two Frontend records (DecidableEq derived)"
+    postconditions:
+      - "Diamond depth-7 ACROSS ALL 5 TAXONOMY LAYERS demonstrated: 5 contracts on 5 distinct layers"
+
 proof_obligations:
   - type: invariant
     property: Every registered extension is owned by exactly one frontend
@@ -449,3 +478,4 @@ kani_harnesses:
               kani::assume(seen.insert(ext));
           }
       }
+
