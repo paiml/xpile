@@ -802,4 +802,36 @@ theorem rendered_doc_silver_bytes_array_size_diamond (d : RenderedDocSilver) :
   · rfl
   · rfl
 
+/--
+  **PMAT-394 Diamond — CitationCompleteContract subtype extensionality.**
+
+  The Gold-tier subtype `CitationCompleteContract := { p :
+  Contract × RenderedDocSilver // p.snd.citations =
+  p.fst.depends_on ++ p.fst.references }` satisfies subtype
+  extensionality. SIXTH substrate-wide subtype-extensionality
+  demonstration. Template 9 (Gold-tier subtype-ext) expands to 6
+  substrate instances. CLOSES ContractFrontend↔ContractBackend
+  Gold-tier subtype-ext symmetry pair with PMAT-391
+  (FrameSafeTransition on XpileContractFrontendTrait).
+
+  Adds a NINTH distinct Diamond category on
+  `C-XPILE-CONTRACT-BACKEND-TRAIT`, pushing the contract from
+  depth-8 to depth-9. Fourth L3 contract at depth-9.
+-/
+theorem citation_complete_contract_subtype_extensionality_diamond
+    (c1 c2 : CitationCompleteContract) :
+    (c1.val = c2.val → c1 = c2)
+    ∧ (c1 = c2 → c1.val = c2.val)
+    ∧ (c1 = c2 ∨ c1 ≠ c2)
+    ∧ (c1 = c1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    exact Subtype.ext h
+  · intro h
+    rw [h]
+  · by_cases h : c1 = c2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXpileContractBackendTrait
