@@ -705,6 +705,33 @@ equations:
     postconditions:
       - "Diamond depth-5 broadened: 9 contracts at depth-5+ (3 Layer 5 contracts at depth-5)"
 
+  rust_item_with_citation_silver_struct_extensionality_diamond:
+    # PMAT-363: SIXTH Diamond on this contract — BROADENS DEPTH-6
+    # substrate-wide. Pushes XlateLeanToRust (Layer 5) from depth-5
+    # to depth-6. RUST-ITEM-WITH-CITATION-SILVER STRUCTURE
+    # EXTENSIONALITY: the 3-field record (contract_id,
+    # source_location, multi_citation_set) is field-extensional with
+    # decidable equality. Nineteenth substrate-wide demonstration of
+    # the structure-extensionality pattern.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.rust_item_with_citation_silver_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      RustItemWithCitationSilver admits STRUCTURE EXTENSIONALITY:
+        (a) field eq (contract_id, source_location, multi_citation_set) -> record eq
+        (b) record eq -> field eq (congruence)
+        (c) decidable equality
+        (d) self-equality (reflexivity)
+    domain: |
+      Two RustItemWithCitationSilver records with 3 fields and
+      derived DecidableEq.
+    invariants:
+      - "SIXTH Diamond category on C-XLATE-LEAN-TO-RUST — BROADENS DEPTH-6 substrate-wide"
+      - "STRUCTURE EXTENSIONALITY — nineteenth substrate-wide demonstration of this pattern"
+    preconditions:
+      - "two RustItemWithCitationSilver records (DecidableEq derived)"
+    postconditions:
+      - "Diamond depth-6 broadened: 8 contracts at depth-6+"
+
 proof_obligations:
   - type: postcondition
     property: total def lowers to a panic-free Rust fn
