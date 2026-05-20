@@ -7,6 +7,46 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Spec §28 + sub/diamond-taxonomy.md sync to depth-10 UNIVERSAL + 8 UNIVERSAL milestones + 10 recurring templates (PMAT-410)
+
+**Spec sync**: `xpile-spec.md` §28 and `sub/diamond-taxonomy.md` now reflect the post-depth-10-UNIVERSAL substrate:
+
+- **141 wired Diamond theorems** (was 131) across 12 contracts.
+- **36+ Diamond categories** (was 35+).
+- **Eight UNIVERSAL milestones documented**: depth-3..10.
+- **Ten recurring algebraic templates** (was 9) — added **Template 10: Tier-projection homomorphism** demonstrated on 9 substrate forgetful-map projections (PMAT-401..409).
+- **Eighth broadening wave (PMAT-400..409)** documented: 10-PR sweep from depth-9 to depth-10 UNIVERSAL.
+- Cross-substrate symmetry closures: Frontend↔Backend tier-projection pair (PMAT-402/403), ContractFrontend↔ContractBackend tier-projection pair (PMAT-404/405), Rust↔Lean tier-projection pair (PMAT-407/408).
+- Second polymorphic Template instance (PMAT-406 HomogeneousListSilver α → PyListSilver α).
+
+### Added — **MILESTONE: Diamond depth-10 UNIVERSAL ACROSS ALL 12 CONTRACTS** via DefinitionEnvSilver→Bronze projection on `C-NOTATION-LATEX-MATH-TO-EQUATION` (PMAT-409)
+
+**SUBSTRATE MILESTONE: depth-10 UNIVERSAL.** Eighth UNIVERSAL milestone. After 10 broadening sweeps (PMAT-400..408), every contract has ≥10 distinct Diamond categories.
+
+**Coverage state at PMAT-409:**
+
+| Metric | Value |
+|---|---|
+| Wired Diamond theorems | **141** |
+| Diamond categories | 36+ |
+| UNIVERSAL milestones | **8** (depth-3..10) |
+| Contracts at depth-10+ | **12 = contracts_total** — **UNIVERSAL** |
+| Recurring templates | **10** |
+
+### Added — Diamond depth-10 broadening sweep PMAT-400..408 (Template 10: Tier-projection homomorphism)
+
+The depth-10 wave **introduced Template 10** as a new recurring algebraic family.
+
+- **PMAT-400** (L4): BoundedRefcountDelta subtype-ext on FfiCpythonExt — transitional Template 9 extension, opens depth-10 on L4.
+- **PMAT-401** (L2): silver_to_bronze on Bashrs Outcome — **Template 10 introduction**.
+- **PMAT-402** (L3): artifact_silver_to_bronze on BackendTrait.
+- **PMAT-403** (L3): metahir_module_silver_to_bronze on FrontendTrait — closes F↔B pair with PMAT-402.
+- **PMAT-404** (L3): session_to_equations_view on ContractFrontendTrait — proof-lane projection.
+- **PMAT-405** (L3): rendered_doc_silver_to_bronze on ContractBackendTrait — closes CF↔CB pair with PMAT-404.
+- **PMAT-406** (L2): homogeneous_to_simple_list on PyListToVec — second polymorphic Template instance.
+- **PMAT-407** (L5): lean_def_silver_to_bronze on XlateLeanToRust.
+- **PMAT-408** (L5): rust_fn_silver_to_bronze on XlateRustFnToLeanThm — closes Rust↔Lean pair with PMAT-407.
+
 ### Changed — Spec §28 + sub/diamond-taxonomy.md sync to depth-9 UNIVERSAL + 7 UNIVERSAL milestones + 9 recurring templates (PMAT-399)
 
 **Spec sync**: `xpile-spec.md` §28 and `sub/diamond-taxonomy.md` now reflect the post-depth-9-UNIVERSAL substrate:
