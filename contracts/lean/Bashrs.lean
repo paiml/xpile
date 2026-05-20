@@ -935,4 +935,32 @@ theorem bronze_to_silver_lift_diamond (o : Outcome) :
   · rfl
   · rfl
 
+/--
+  **PMAT-434 Diamond — Outcome Bronze→Silver→Bronze round-trip identity.**
+
+  Compose Template 10 (silver_to_bronze, PMAT-401) and Template 12
+  (bronze_to_silver, PMAT-423) and prove the round-trip identity
+  `silver_to_bronze ∘ bronze_to_silver = id_Outcome`. **SECOND
+  instance of Template 13 (Bronze→Silver→Bronze round-trip
+  identity)** introduced in PMAT-433.
+
+  Adds a THIRTEENTH distinct Diamond category on
+  `C-BASHRS-POSIX-IDEMPOTENCE`, pushing the contract from depth-12
+  to depth-13. Second L2 contract at depth-13.
+-/
+theorem outcome_roundtrip_identity_diamond (o : Outcome) :
+    -- (a) Bronze→Silver→Bronze is identity on Bronze
+    (silver_to_bronze (bronze_to_silver o) = o)
+    -- (b) observable preserved through the round-trip
+    ∧ ((silver_to_bronze (bronze_to_silver o)).observable = o.observable)
+    -- (c) empty Bronze round-trips to empty
+    ∧ (silver_to_bronze (bronze_to_silver ⟨""⟩) = ⟨""⟩)
+    -- (d) self-equality (reflexivity)
+    ∧ (o = o) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases o; rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CBashrsPosixIdempotence
