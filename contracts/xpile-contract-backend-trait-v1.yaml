@@ -544,6 +544,24 @@ equations:
     postconditions:
       - "Diamond depth-12 broadened: fourth L3 contract at depth-12"
 
+  rendered_doc_roundtrip_identity_diamond:
+    # PMAT-438: THIRTEENTH Diamond on this contract — BROADENS DEPTH-13.
+    # **SIXTH instance of Template 13**. Closes CF↔CB Template 13 pair.
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.rendered_doc_roundtrip_identity_diamond"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    formula: |
+      Round-trip identity on RenderedDoc.
+    domain: |
+      Composition of rendered_doc_silver_to_bronze with
+      rendered_doc_bronze_to_silver equals identity.
+    invariants:
+      - "THIRTEENTH Diamond category on C-XPILE-CONTRACT-BACKEND-TRAIT — BROADENS DEPTH-13"
+      - "ROUND-TRIP IDENTITY — sixth instance of Template 13"
+      - "Closes CF↔CB Template 13 pair with PMAT-437"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-13 broadened: fourth L3 contract at depth-13"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractBackend
