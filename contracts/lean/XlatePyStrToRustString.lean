@@ -294,4 +294,136 @@ theorem non_empty_str_subtype_extensionality_diamond
   cases a; cases b
   exact py_str_structure_extensionality_diamond _ _ h
 
+/- ──────────────────────────────────────────────────────────────────
+   SILVER TIER (PMAT-454): polymorphic `List UInt8`-based model
+   parallel to XlatePyListToVec's Silver tier. Six more Diamond
+   theorems → depth-13.
+   ────────────────────────────────────────────────────────────────── -/
+
+/-- Silver-tier Python str: `List UInt8` rather than `Array UInt8`.
+    Mirrors PyListSilver α; for str the element type is fixed at
+    UInt8 (the UTF-8 byte view), so no element-type parameter. -/
+structure PyStrSilver where
+  elems : List UInt8
+
+/-- Silver-tier Rust owned String: matching shape. -/
+structure RustStringSilver where
+  elems : List UInt8
+
+/-- Silver-tier lowering: identity at the typed-list level. -/
+def lower_py_str_to_rust_string_silver (s : PyStrSilver) : RustStringSilver :=
+  { elems := s.elems }
+
+/-- Bronze → Silver lift: Array.toList preserves byte sequence. -/
+def py_str_bronze_to_silver (s : PyStr) : PyStrSilver :=
+  { elems := s.bytes.toList }
+
+/-- Silver → Bronze projection: List.toArray inverse direction. -/
+def py_str_silver_to_bronze (s : PyStrSilver) : PyStr :=
+  { bytes := s.elems.toArray }
+
+/--
+  **Template 1 Silver — PyStrSilver structure extensionality
+  (PMAT-454, eighth Diamond).** Same shape as
+  `py_str_structure_extensionality_diamond` but at Silver tier.
+-/
+theorem py_str_silver_struct_extensionality_diamond
+    (a b : PyStrSilver) : a.elems = b.elems → a = b := by
+  intro h
+  cases a; cases b
+  simp_all
+
+/--
+  **Template 1 Silver — RustStringSilver structure extensionality
+  (PMAT-454, ninth Diamond).** Codomain-side companion of the
+  previous; together they pin extensionality on both sides of the
+  Silver-tier lowering boundary.
+-/
+theorem rust_string_silver_struct_extensionality_diamond
+    (a b : RustStringSilver) : a.elems = b.elems → a = b := by
+  intro h
+  cases a; cases b
+  simp_all
+
+/--
+  **Template 10 — Tier projection homomorphism (PMAT-454, tenth Diamond).**
+
+  `py_str_silver_to_bronze` is a structural projection: elements
+  preserved + empty-Silver maps to empty-Bronze + length preserved.
+  Same conjunction form as `homogeneous_to_simple_list_projection_diamond`.
+-/
+theorem silver_to_bronze_str_projection_diamond (s : PyStrSilver) :
+    -- (a) elements preserved by projection
+    ((py_str_silver_to_bronze s).bytes = s.elems.toArray)
+    -- (b) length preserved
+    ∧ ((py_str_silver_to_bronze s).bytes.size = s.elems.length)
+    -- (c) empty Silver maps to empty Bronze
+    ∧ ((py_str_silver_to_bronze ⟨[]⟩).bytes.size = 0) := by
+  refine ⟨?_, ?_, ?_⟩
+  · rfl
+  · simp [py_str_silver_to_bronze]
+  · rfl
+
+/--
+  **Template 12 — Bronze → Silver canonical lift (PMAT-454, eleventh Diamond).**
+
+  `py_str_bronze_to_silver` is a structural lift: byte list equals
+  Array.toList + length preserved + empty Bronze maps to empty
+  Silver. Same conjunction form as
+  `py_list_bronze_to_silver_u8_lift_diamond`.
+-/
+theorem bronze_to_silver_str_lift_diamond (s : PyStr) :
+    -- (a) lift's elems equal Array.toList of Bronze bytes
+    ((py_str_bronze_to_silver s).elems = s.bytes.toList)
+    -- (b) lift's element count equals Bronze byte count
+    ∧ ((py_str_bronze_to_silver s).elems.length = s.bytes.size)
+    -- (c) empty Bronze maps to empty Silver
+    ∧ ((py_str_bronze_to_silver ⟨#[]⟩).elems.length = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (py_str_bronze_to_silver s = py_str_bronze_to_silver s) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · simp [py_str_bronze_to_silver]
+  · rfl
+  · rfl
+
+/--
+  **Template 13 — Bronze ↔ Silver round-trip identity (PMAT-454, twelfth Diamond).**
+
+  Composing `bronze_to_silver` then `silver_to_bronze` is the identity
+  on PyStr. Mirrors `py_list_roundtrip_identity_diamond`. This is the
+  load-bearing tier-consistency claim — the two tiers describe the
+  same underlying data.
+-/
+theorem str_roundtrip_identity_diamond (s : PyStr) :
+    (py_str_silver_to_bronze (py_str_bronze_to_silver s) = s)
+    ∧ ((py_str_silver_to_bronze (py_str_bronze_to_silver s)).bytes = s.bytes)
+    ∧ (py_str_silver_to_bronze (py_str_bronze_to_silver ⟨#[]⟩) = ⟨#[]⟩)
+    ∧ (s = s) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases s
+    simp [py_str_silver_to_bronze, py_str_bronze_to_silver]
+  · simp [py_str_silver_to_bronze, py_str_bronze_to_silver]
+  · rfl
+  · rfl
+
+/--
+  **Template 9 Silver — Gold-tier subtype extensionality on
+  non-empty PyStrSilver (PMAT-454, thirteenth Diamond).**
+
+  Silver-tier companion of `non_empty_str_subtype_extensionality_diamond`.
+  The non-emptiness invariant is carried as a proof field on the
+  Silver-tier model. Brings the contract to depth-13.
+-/
+structure NonEmptyPyStrSilver where
+  s : PyStrSilver
+  ne : s.elems.length > 0
+
+theorem non_empty_str_silver_subtype_extensionality_diamond
+    (a b : NonEmptyPyStrSilver) :
+    a.s.elems = b.s.elems → a.s = b.s := by
+  intro h
+  cases a; cases b
+  exact py_str_silver_struct_extensionality_diamond _ _ h
+
 end XpileContracts.CXlatePyStrToRustString

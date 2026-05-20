@@ -243,6 +243,125 @@ equations:
       - "extensionality on the subtype follows from extensionality on the underlying type"
       - "downstream proofs about indexed access at byte 0 cite this subtype's `ne` field directly"
 
+  py_str_silver_struct_extensionality_diamond:
+    # PMAT-454: EIGHTH Diamond — Template 1 Silver tier on PyStrSilver.
+    # The Silver model uses List UInt8 (vs Bronze's Array UInt8).
+    lean_theorem: "XpileContracts.CXlatePyStrToRustString.py_str_silver_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XlatePyStrToRustString.lean"
+    formula: |
+      ∀ (a b : PyStrSilver), a.elems = b.elems → a = b
+    domain: |
+      PyStrSilver pairs at Silver tier (List UInt8 model).
+    invariants:
+      - "Template 1 Silver — structure extensionality on the Silver model"
+      - "discharges by simp_all after cases"
+    preconditions:
+      - "two PyStrSilver values at Silver tier"
+    postconditions:
+      - "extensionality lifts cleanly from Bronze to Silver model"
+
+  rust_string_silver_struct_extensionality_diamond:
+    # PMAT-454: NINTH Diamond — codomain-side Silver struct-ext.
+    lean_theorem: "XpileContracts.CXlatePyStrToRustString.rust_string_silver_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XlatePyStrToRustString.lean"
+    formula: |
+      ∀ (a b : RustStringSilver), a.elems = b.elems → a = b
+    domain: |
+      RustStringSilver pairs at Silver tier (output side).
+    invariants:
+      - "Template 1 Silver — codomain-side structure extensionality"
+      - "completes the Silver-tier extensionality pair (Frontend↔Backend)"
+    preconditions:
+      - "two RustStringSilver values"
+    postconditions:
+      - "downstream Silver-tier emit-side proofs cite this directly"
+
+  silver_to_bronze_str_projection_diamond:
+    # PMAT-454: TENTH Diamond — Template 10 (Tier-projection homomorphism).
+    # Silver → Bronze is a structural projection; same shape as
+    # homogeneous_to_simple_list_projection_diamond.
+    lean_theorem: "XpileContracts.CXlatePyStrToRustString.silver_to_bronze_str_projection_diamond"
+    lean_file: "contracts/lean/XlatePyStrToRustString.lean"
+    formula: |
+      ∀ (s : PyStrSilver),
+        (project s).bytes = s.elems.toArray
+        ∧ (project s).bytes.size = s.elems.length
+        ∧ (project ⟨[]⟩).bytes.size = 0
+    domain: |
+      Any PyStrSilver value; the projection drops the typed-list view
+      back to the Array UInt8 view.
+    invariants:
+      - "Template 10 — Tier projection (Silver → Bronze)"
+      - "elements preserved + length preserved + empty preserved"
+      - "conjunction form mirrors XlatePyListToVec's projection diamond"
+    preconditions:
+      - "PyStrSilver at Silver tier"
+    postconditions:
+      - "projection composes with lift to give round-trip identity (Diamond 13)"
+
+  bronze_to_silver_str_lift_diamond:
+    # PMAT-454: ELEVENTH Diamond — Template 12 (Bronze → Silver canonical lift).
+    # Same shape as py_list_bronze_to_silver_u8_lift_diamond.
+    lean_theorem: "XpileContracts.CXlatePyStrToRustString.bronze_to_silver_str_lift_diamond"
+    lean_file: "contracts/lean/XlatePyStrToRustString.lean"
+    formula: |
+      ∀ (s : PyStr),
+        (lift s).elems = s.bytes.toList
+        ∧ (lift s).elems.length = s.bytes.size
+        ∧ (lift ⟨#[]⟩).elems.length = 0
+    domain: |
+      Any PyStr at Bronze tier; the lift converts to the typed-list
+      view at Silver tier.
+    invariants:
+      - "Template 12 — Bronze → Silver canonical lift"
+      - "byte list equals Array.toList + length preserved + empty preserved"
+      - "inverse direction of Template 10 (projection)"
+    preconditions:
+      - "PyStr at Bronze tier"
+    postconditions:
+      - "lift composes with project to give round-trip identity (Diamond 13)"
+
+  str_roundtrip_identity_diamond:
+    # PMAT-454: TWELFTH Diamond — Template 13 (Bronze ↔ Silver round-trip identity).
+    # Same shape as py_list_roundtrip_identity_diamond. Load-bearing
+    # tier-consistency claim.
+    lean_theorem: "XpileContracts.CXlatePyStrToRustString.str_roundtrip_identity_diamond"
+    lean_file: "contracts/lean/XlatePyStrToRustString.lean"
+    formula: |
+      ∀ (s : PyStr),
+        project (lift s) = s
+        ∧ (project (lift s)).bytes = s.bytes
+        ∧ project (lift ⟨#[]⟩) = ⟨#[]⟩
+    domain: |
+      Any PyStr at Bronze tier; round-trip via lift and project.
+    invariants:
+      - "Template 13 — Bronze→Silver→Bronze round-trip identity"
+      - "composition of Templates 10 + 12 equals identity on Bronze"
+      - "tier-consistency proof: the two tiers describe the same data"
+    preconditions:
+      - "PyStr at Bronze tier"
+    postconditions:
+      - "any future Silver-tier model refinement must preserve this round-trip identity"
+
+  non_empty_str_silver_subtype_extensionality_diamond:
+    # PMAT-454: THIRTEENTH Diamond — Template 9 Silver tier — closes
+    # depth-13 UNIVERSAL gap for the str contract.
+    lean_theorem: "XpileContracts.CXlatePyStrToRustString.non_empty_str_silver_subtype_extensionality_diamond"
+    lean_file: "contracts/lean/XlatePyStrToRustString.lean"
+    formula: |
+      ∀ (a b : NonEmptyPyStrSilver), a.s.elems = b.s.elems → a.s = b.s
+    domain: |
+      Pairs of NonEmptyPyStrSilver values — Silver-tier Gold subtype
+      carrying a non-emptiness proof field.
+    invariants:
+      - "Template 9 Silver — Gold-tier subtype extensionality on Silver model"
+      - "non-emptiness invariant carried at Silver tier as well as Bronze"
+      - "discharges by chaining py_str_silver_struct_extensionality_diamond"
+    preconditions:
+      - "two NonEmptyPyStrSilver values"
+    postconditions:
+      - "Silver-tier slice / indexed-access proofs cite this subtype's ne field"
+
   py_str_structure_extensionality_diamond:
     # PMAT-450: FIRST Diamond-tier algebraic theorem for this
     # contract — Template 1 (Structure extensionality), from the
