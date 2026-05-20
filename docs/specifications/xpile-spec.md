@@ -418,7 +418,7 @@ v0.1.0 — **SHIPPED 2026-05-20** — first real release; `cargo install xpile` 
 - ✅ **Branch protection on `main`**; tag `v0.1.0` pushed at commit `7a82b23`; GitHub Release live at https://github.com/paiml/xpile/releases/tag/v0.1.0
 - ✅ **End-user-facing mdBook deployed** at https://paiml.github.io/xpile/ (PMAT-446) — 16 chapters covering introduction, install, quick start, concepts/contracts/Diamond-substrate, tutorials for Python→Rust/Lean and shell round-trip, full CLI + frontend + backend + contract reference, and contributing guides. Every concept/tutorial page begins with a `> **Governing contract:**` quote-block linking to the contract row, so the citation graph stays joinable from prose to YAML to Lean to Kani. `pmat comply asset-validate` → 4 pass, 0 warn, 3 skip.
 - ⏳ Bigint promotion (`py-int-arith-v1.yaml` slow path) — fast-path overflow is load-bearing (Rust + Ruchy emit `.checked_*().expect(...)`, contract name appears in the panic message); the slow path itself is still unimplemented
-- ⏳ Types beyond int/bool (str, float, collections)
+- 🟡 Types beyond int/bool — **v0.2.0 Track 1.A foundation merged** (PMAT-449): `Type::Str` + `Expr::LitStr` end-to-end through depyler-frontend → Rust/Ruchy/Lean backends; `def greet() -> str: return "hello"` transpiles + compiles. Concatenation, f-strings, parameters, `list[T]`, `dict[str,T]`, `float` are subsequent sub-tracks per [`sub/v0.2.0-depyler-merger.md`](sub/v0.2.0-depyler-merger.md).
 - ⏳ Lean encoding for `while` (`partial def` tail-recursion follow-up)
 - ⏳ `for` over non-range iterables (blocked on collection types)
 - ⏳ Real C frontend (decy-frontend currently stub)

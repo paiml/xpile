@@ -213,6 +213,22 @@ fn emit_param(out: &mut String, p: &Param) -> Result<(), CodegenError> {
     Ok(())
 }
 
+/// Escape a string for emission inside a Rust `"..."` literal.
+/// PMAT-449 (v0.2.0 Track 1.A): minimal escape set for the first
+/// `Type::Str` pass — `\` and `"`. Newlines / tabs / unicode escapes
+/// land in subsequent sub-tracks alongside f-string lowering.
+fn escape_rust_str(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 fn emit_type(out: &mut String, t: Type) -> Result<(), CodegenError> {
     out.push_str(match t {
         Type::I64 => "i64",
@@ -223,6 +239,10 @@ fn emit_type(out: &mut String, t: Type) -> Result<(), CodegenError> {
         // shape — except no `.checked_*().expect(...)` since BigInt
         // never overflows.
         Type::BigInt => "xpile_bigint::BigInt",
+        // PMAT-449: v0.2.0 Track 1.A — Python `str` → Rust owned
+        // `String`. First pass is owned-only; `&str` borrowing is the
+        // 1.D stretch sub-track per sub/v0.2.0-depyler-merger.md.
+        Type::Str => "String",
         // PMAT-046: bashrs-domain types. Rust backend refuses — the
         // analogous Rust type for ShellString would be the bashrs
         // runtime's quoting-aware wrapper (not yet shipped); the
@@ -273,12 +293,20 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         } => emit_if_expr(out, cond, then_expr, else_expr, mode)?,
         Expr::Call { callee, args } => emit_call(out, callee, args, mode)?,
         Expr::UnOp { op, operand } => emit_unop(out, *op, operand, mode)?,
-        // PMAT-042: string-literal Expr variants belong to the
-        // bashrs domain. Other backends refuse them.
-        Expr::LitStr(_) | Expr::QuotedString { .. } => {
+        // PMAT-449 (v0.2.0 Track 1.A): Python `str` literals lower
+        // to owned `String::from("...")`. The character set is
+        // escape-aware (`"` and `\` → `\"` / `\\`); v0.2.0 starts
+        // with the minimal escape set, expanded in later sub-tracks.
+        Expr::LitStr(s) => {
+            write!(out, "String::from(\"{}\")", escape_rust_str(s))?;
+        }
+        // PMAT-042: `QuotedString` carries an explicit shell-domain
+        // quoting strategy (bareword vs single-quote vs double-quote);
+        // its semantics are bashrs-only. Rust backend refuses.
+        Expr::QuotedString { .. } => {
             return Err(CodegenError::Unsupported(
-                "Rust backend does not lower Expr::LitStr / Expr::QuotedString — \
-                 contract C-BASHRS-POSIX-IDEMPOTENCE governs shell string literals; \
+                "Rust backend does not lower Expr::QuotedString — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs quoted shell strings; \
                  use `--target shell`"
                     .into(),
             ));
