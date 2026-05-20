@@ -2,6 +2,15 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-377
+  github_issue: null
+  item_type: task
+  title: 'PMAT-377: Spec §28 + diamond-taxonomy.md sync to depth-7 UNIVERSAL + 5 UNIVERSAL milestones + 8 recurring templates'
+  status: planned
+  priority: medium
+  created: 2026-05-20T12:00:00Z
+  acceptance_criteria:
+  - "Sync xpile-spec.md §28 and sub/diamond-taxonomy.md to post-PMAT-376 substrate state: 111 wired theorems, 5 UNIVERSAL milestones (depth-3/4/5/6/7), 8 recurring algebraic templates (added Template 8: Enum completeness), structure-extensionality demonstrated on 26 contracts. Document fifth broadening wave (PMAT-367..376)."
 - id: PMAT-366
   github_issue: null
   item_type: task

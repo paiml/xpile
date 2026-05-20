@@ -7,6 +7,34 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Spec §28 + sub/diamond-taxonomy.md sync to depth-7 UNIVERSAL + 5 UNIVERSAL milestones + 8 recurring templates (PMAT-377)
+
+**Spec sync**: `xpile-spec.md` §28 and `sub/diamond-taxonomy.md` now reflect the post-depth-7-UNIVERSAL substrate:
+
+- **111 wired Diamond theorems** (was 101) across 12 contracts.
+- **32+ Diamond categories** (was 30+) grouped into recurring algebraic families.
+- **Five UNIVERSAL milestones documented**: depth-3 (PMAT-336), depth-4 (PMAT-344), depth-5 (PMAT-354), depth-6 (PMAT-365), depth-7 (PMAT-376).
+- **Eight recurring algebraic templates** (was 7) — added **Template 8: Enum completeness** (PMAT-370 Target, PMAT-372 LatexDisplayKind), capturing total-coverage axiomatization complementary to enum distinctness.
+- **Template 1 (structure-extensionality) expanded to 26 contracts** (was 20).
+- **Template 2 (Array.size) expanded to 9 contracts** (was 7) — added PMAT-375/376 closing the ContractFrontend↔ContractBackend inner-record Array.size invariant.
+- **Fifth broadening wave (PMAT-367..376) documented**: 10-PR sweep from depth-6 to depth-7 UNIVERSAL with intermediate ALL 5 LAYERS milestone at PMAT-369.
+
+### Added — **MILESTONE: Diamond depth-7 UNIVERSAL ACROSS ALL 12 CONTRACTS** via ContractId bytes Array.size on `C-XPILE-CONTRACT-BACKEND-TRAIT` (PMAT-376)
+
+**SUBSTRATE MILESTONE: depth-7 UNIVERSAL.** Parallel to PMAT-336 (depth-3), PMAT-344 (depth-4), PMAT-354 (depth-5), and PMAT-365 (depth-6) UNIVERSAL milestones. After 10 broadening sweeps (PMAT-367..375), every contract has ≥7 distinct Diamond categories.
+
+### Added — Diamond depth-7 broadening sweep PMAT-367..375
+
+- **PMAT-367** (L4): FfiManifestEntryStructuredSilver struct ext — opens depth-7 on Layer 4.
+- **PMAT-368** (L2): Outcome (Bronze) struct ext on Bashrs.
+- **PMAT-369** (L3): Frontend struct ext — **depth-7 ACROSS ALL 5 LAYERS** milestone.
+- **PMAT-370** (L3): Target enum completeness on XpileBackendTrait — introduces Template 8 (enum completeness).
+- **PMAT-371** (L2): HeterogeneousListSilver struct ext on XlatePyListToVec.
+- **PMAT-372** (L5): LatexDisplayKind enum completeness on Notation — second Template 8 instance.
+- **PMAT-373** (L5): LeanInductive struct ext on XlateLeanToRust.
+- **PMAT-374** (L5): ContractObligationSilver struct ext on XlateRustFnToLeanThm.
+- **PMAT-375** (L3): EquationsBlock bytes Array.size on XpileContractFrontendTrait.
+
 ### Changed — Spec §28 + sub/diamond-taxonomy.md sync to post-PMAT-365 depth-6 UNIVERSAL substrate state (PMAT-366)
 
 **Spec sync**: `xpile-spec.md` §28 and `sub/diamond-taxonomy.md` now reflect the post-depth-6-UNIVERSAL substrate:
