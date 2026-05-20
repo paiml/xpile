@@ -465,3 +465,37 @@ equations:
       - "two SuccessfulOutcome values (DecidableEq from underlying OutcomeSilver)"
     postconditions:
       - "Diamond depth-9 broadened"
+
+  silver_to_bronze_projection_diamond:
+    # PMAT-401: TENTH Diamond on this contract — BROADENS DEPTH-10
+    # substrate-wide. Pushes Bashrs (Layer 2) from depth-9 to depth-10.
+    # Second L2 contract at depth-10 in the broadening wave (after
+    # PMAT-400 FfiCpythonExt opening L4).
+    # SILVER→BRONZE TIER PROJECTION: define the canonical forgetful
+    # map silver_to_bronze : OutcomeSilver → Outcome that projects out
+    # the exit_code field. Prove the projection is a
+    # structure-preserving forgetful map — preserves observable, is
+    # independent of exit_code, preserves empty-string identity, and
+    # is reflexive.
+    # **Introduces Template 10 (Tier-projection homomorphism)** as a
+    # new substrate-wide recurring algebraic family for capturing the
+    # Silver→Bronze refinement direction structurally. First instance.
+    lean_theorem: "XpileContracts.CBashrsPosixIdempotence.silver_to_bronze_projection_diamond"
+    lean_file: "contracts/lean/Bashrs.lean"
+    formula: |
+      Silver→Bronze tier projection homomorphism on Outcome:
+        (a) silver_to_bronze(o).observable = o.observable
+        (b) silver_to_bronze is independent of exit_code (forgetful)
+        (c) empty observable maps to empty Bronze observable
+        (d) self-equality
+    domain: |
+      The forgetful map silver_to_bronze : OutcomeSilver → Outcome
+      that drops the exit_code field while retaining observable.
+    invariants:
+      - "TENTH Diamond category on C-BASHRS-POSIX-IDEMPOTENCE — BROADENS DEPTH-10 substrate-wide"
+      - "TIER-PROJECTION HOMOMORPHISM — introduces Template 10 as a NEW substrate-wide algebraic template"
+      - "Captures Silver→Bronze refinement direction structurally as a forgetful map"
+    preconditions:
+      - "one OutcomeSilver record"
+    postconditions:
+      - "Diamond depth-10 broadened: second L2 contract at depth-10"
