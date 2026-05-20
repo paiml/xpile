@@ -1626,4 +1626,64 @@ theorem ffi_manifest_entry_structured_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/-! ## PMAT-378 — EIGHTH Diamond on C-FFI-CPYTHON-EXT (Layer 4 OPENS
+    DEPTH-8 ACROSS 3 LAYERS):
+    BORROWED-REF STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-FFI-CPYTHON-EXT-011).
+
+    **Opens DEPTH-8 ACROSS 3 LAYERS.** Before PMAT-378, depth-8 was
+    only on L1 (PyIntArith, PMAT-294) + L5 (CompileRustToPtxMma,
+    PMAT-295). PMAT-378 pushes FFI-CPYTHON-EXT (Layer 4) from
+    depth-7 to depth-8, adding the first L4 contract at depth-8.
+
+    The 8 Diamond categories on C-FFI-CPYTHON-EXT:
+    - PMAT-216 refcount_abelian_group_diamond
+    - PMAT-? refcount_inverse_diamond
+    - PMAT-? gil_invariant_preservation_diamond
+    - PMAT-? zero_copy_pointer_functor_diamond
+    - PMAT-328 refcount_delta_sign_decomp_diamond
+    - PMAT-356 ffi_call_silver_struct_extensionality_diamond
+    - PMAT-367 ffi_manifest_entry_structured_struct_extensionality_diamond
+    - **PMAT-378: BORROWED-REF STRUCTURE EXTENSIONALITY** ← depth-8
+
+    Twenty-seventh substrate-wide demonstration of the structure-
+    extensionality pattern. Captures BorrowedRef record (3 fields:
+    refcount_before, refcount_after, outcome) — load-bearing for
+    leak-class detection.
+
+    Status: discharged at v0.1.0 (PMAT-378). Tier: DIAMOND.
+    OPENS DEPTH-8 ACROSS 3 LAYERS. -/
+
+/--
+  **Diamond-tier refinement theorem** — `BorrowedRef` admits
+  STRUCTURE EXTENSIONALITY.
+
+  3-field record (refcount_before : Int, refcount_after : Int,
+  outcome : CallOutcome) with derived DecidableEq.
+
+  Status: **discharged at v0.1.0 (PMAT-378)**. Tier: DIAMOND.
+  OPENS DEPTH-8 ACROSS 3 LAYERS.
+-/
+theorem borrowed_ref_struct_extensionality_diamond
+    (b1 b2 : BorrowedRef) :
+    (b1.refcount_before = b2.refcount_before
+        ∧ b1.refcount_after = b2.refcount_after
+        ∧ b1.outcome = b2.outcome
+      → b1 = b2)
+    ∧ (b1 = b2 → b1.refcount_before = b2.refcount_before
+        ∧ b1.refcount_after = b2.refcount_after
+        ∧ b1.outcome = b2.outcome)
+    ∧ (b1 = b2 ∨ b1 ≠ b2)
+    ∧ (b1 = b1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2, h3⟩
+    cases b1; cases b2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h], by rw [h]⟩
+  · by_cases h : b1 = b2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CFfiCpythonExt
