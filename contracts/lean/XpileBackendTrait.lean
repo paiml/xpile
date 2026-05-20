@@ -868,4 +868,34 @@ theorem artifact_silver_to_bronze_projection_diamond (a : ArtifactSilver) :
   · rfl
   · rfl
 
+/--
+  **PMAT-413 Diamond — Canonical empty Rust-target ArtifactSilver.**
+
+  Define the canonical empty ArtifactSilver element with empty
+  bytes and Target.rust default (the "empty Rust compilation
+  output" canonical value). **THIRD instance of Template 11
+  (Canonical identity element)** introduced in PMAT-411.
+
+  Adds an ELEVENTH distinct Diamond category on
+  `C-XPILE-BACKEND-TRAIT`, pushing the contract from depth-10 to
+  depth-11. First L3 contract at depth-11.
+-/
+def empty_rust_artifact : ArtifactSilver :=
+  { bytes := #[], target := Target.rust }
+
+theorem empty_rust_artifact_canonical_diamond :
+    -- (a) canonical bytes are empty
+    (empty_rust_artifact.bytes = #[])
+    -- (b) canonical target is rust
+    ∧ (empty_rust_artifact.target = Target.rust)
+    -- (c) canonical bytes size is 0
+    ∧ (empty_rust_artifact.bytes.size = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (empty_rust_artifact = empty_rust_artifact) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileBackendTrait

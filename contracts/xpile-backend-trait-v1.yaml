@@ -501,6 +501,33 @@ equations:
     postconditions:
       - "Diamond depth-10 broadened: first L3 contract at depth-10"
 
+  empty_rust_artifact_canonical_diamond:
+    # PMAT-413: ELEVENTH Diamond on this contract — BROADENS DEPTH-11
+    # substrate-wide. Pushes XpileBackendTrait (Layer 3) from depth-10
+    # to depth-11. First L3 contract at depth-11.
+    # CANONICAL EMPTY RUST-TARGET ARTIFACTSILVER: define the canonical
+    # empty ArtifactSilver with empty bytes and Target.rust default.
+    # **THIRD instance of Template 11 (Canonical identity element)**
+    # introduced in PMAT-411 (FfiCpythonExt).
+    lean_theorem: "XpileContracts.CXpileBackendTrait.empty_rust_artifact_canonical_diamond"
+    lean_file: "contracts/lean/XpileBackendTrait.lean"
+    formula: |
+      Canonical identity element on ArtifactSilver:
+        (a) empty_rust_artifact.bytes = #[]
+        (b) empty_rust_artifact.target = Target.rust
+        (c) empty_rust_artifact.bytes.size = 0
+        (d) self-equality
+    domain: |
+      The canonical empty ArtifactSilver element (bytes empty, target
+      Target.rust default) — the "empty Rust compilation output".
+    invariants:
+      - "ELEVENTH Diamond category on C-XPILE-BACKEND-TRAIT — BROADENS DEPTH-11 substrate-wide"
+      - "CANONICAL IDENTITY ELEMENT — third instance of Template 11"
+      - "Captures the empty Rust-target Artifact as a typed canonical element"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-11 broadened: first L3 contract at depth-11"
+
 proof_obligations:
   - type: invariant
     property: Every registered Target is owned by exactly one Backend
