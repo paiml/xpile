@@ -1232,4 +1232,31 @@ theorem homogeneous_list_silver_struct_extensionality_diamond
     exact ⟨by rw [h], by rw [h]⟩
   · rfl
 
+/--
+  **PMAT-395 Diamond — NonEmptyHomogeneousList subtype extensionality.**
+
+  The Gold-tier subtype `NonEmptyHomogeneousList α := { l :
+  HomogeneousListSilver α // l.elements ≠ [] }` satisfies subtype
+  extensionality. SEVENTH substrate-wide subtype-extensionality
+  demonstration. Template 9 (Gold-tier subtype-ext) expands to 7
+  substrate instances.
+
+  Adds a NINTH distinct Diamond category on
+  `C-XLATE-PY-LIST-TO-VEC`, pushing the contract from depth-8 to
+  depth-9. Second L2 contract at depth-9 (after PMAT-390 Bashrs).
+  Polymorphic in α — first polymorphic subtype-ext on the
+  substrate.
+-/
+theorem non_empty_homogeneous_list_subtype_extensionality_diamond
+    {α : Type} (n1 n2 : NonEmptyHomogeneousList α) :
+    (n1.val = n2.val → n1 = n2)
+    ∧ (n1 = n2 → n1.val = n2.val)
+    ∧ (n1 = n1) := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro h
+    exact Subtype.ext h
+  · intro h
+    rw [h]
+  · rfl
+
 end XpileContracts.CXlatePyListToVec
