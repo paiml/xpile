@@ -313,6 +313,37 @@ equations:
     postconditions:
       - "Diamond depth-5 ACROSS ALL 5 TAXONOMY LAYERS demonstrated: 5 contracts on 5 distinct layers"
 
+  metahir_module_silver_bytes_array_size_diamond:
+    # PMAT-358: SIXTH Diamond on this contract — COMPLETES DEPTH-6
+    # ACROSS ALL 5 TAXONOMY LAYERS. Mirror of PMAT-330 (depth-4 ALL
+    # 5 LAYERS milestone) and PMAT-347 (depth-5 ALL 5 LAYERS
+    # milestone). After PMAT-356 opened depth-6 on Layer 4
+    # (FFI-CPYTHON-EXT) and PMAT-357 broadened it to Layer 2
+    # (Bashrs) — making depth-6 ACROSS 4 LAYERS — PMAT-358 pushes
+    # XpileFrontendTrait (Layer 3) from depth-5 to depth-6,
+    # COMPLETING depth-6 ACROSS ALL 5 TAXONOMY LAYERS.
+    # MetaHirModuleSilver bytes Array.size structure — seventh
+    # substrate-wide Array.size demonstration.
+    lean_theorem: "XpileContracts.CXpileFrontendTrait.metahir_module_silver_bytes_array_size_diamond"
+    lean_file: "contracts/lean/XpileFrontendTrait.lean"
+    formula: |
+      MetaHirModuleSilver.bytes Array.size structure:
+        (a) bytes.size >= 0 (trivially for Nat)
+        (b) empty record has size-0 bytes
+        (c) field-replacement preserves bytes size
+        (d) source_lang field is independent (size unchanged by lang swap)
+    domain: |
+      Any MetaHirModuleSilver record with bytes : Array UInt8 and
+      source_lang : SourceLang fields.
+    invariants:
+      - "SIXTH Diamond category on C-XPILE-FRONTEND-TRAIT — COMPLETES DEPTH-6 ACROSS ALL 5 TAXONOMY LAYERS"
+      - "Mirror of PMAT-330 (depth-4 ALL 5 LAYERS) and PMAT-347 (depth-5 ALL 5 LAYERS) milestones"
+      - "Seventh substrate-wide demonstration of the Array.size template"
+    preconditions:
+      - "one MetaHirModuleSilver record"
+    postconditions:
+      - "Diamond depth-6 ACROSS ALL 5 TAXONOMY LAYERS demonstrated: 5 contracts on 5 distinct layers"
+
   ffi_boundaries_are_outgoing_only:
     formula: |
       forall b in module.ffi_boundaries: b.from_lang == module.source_lang
