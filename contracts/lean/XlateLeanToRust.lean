@@ -1452,4 +1452,64 @@ theorem rust_fn_body_array_size_diamond (f : RustFn) :
   · rfl
   · rfl
 
+/-! ## PMAT-363 — SIXTH Diamond on C-XLATE-LEAN-TO-RUST
+    (Layer 5 BROADENS DEPTH-6):
+    RUST-ITEM-WITH-CITATION-SILVER STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XLATE-LEAN-TO-RUST-008).
+
+    **Broadens depth-6 substrate-wide.** Pushes XlateLeanToRust
+    (Layer 5) from depth-5 to depth-6.
+
+    The 6 Diamond categories on C-XLATE-LEAN-TO-RUST:
+    - PMAT-222 inductive_monoid_diamond
+    - PMAT-237 variant_count_cardinality_functor_diamond
+    - PMAT-335 rust_fn_struct_extensionality_diamond
+    - PMAT-343 variant_count_nat_structure_diamond
+    - PMAT-351 rust_fn_body_array_size_diamond
+    - **PMAT-363: RUST-ITEM-WITH-CITATION-SILVER STRUCTURE EXT** ← depth-6
+
+    Nineteenth substrate-wide demonstration of the structure-
+    extensionality pattern.
+
+    Status: discharged at v0.1.0 (PMAT-363). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `RustItemWithCitationSilver`
+  admits STRUCTURE EXTENSIONALITY.
+
+  Combines four properties on the 3-field record (contract_id,
+  source_location, multi_citation_set):
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality
+  (c) Decidable equality
+  (d) Self-equality
+
+  Status: **discharged at v0.1.0 (PMAT-363)**. Tier: DIAMOND.
+-/
+theorem rust_item_with_citation_silver_struct_extensionality_diamond
+    (r1 r2 : RustItemWithCitationSilver) :
+    -- (a) Field equality → record equality
+    (r1.contract_id = r2.contract_id
+        ∧ r1.source_location = r2.source_location
+        ∧ r1.multi_citation_set = r2.multi_citation_set
+      → r1 = r2)
+    -- (b) Record equality → field equality
+    ∧ (r1 = r2 → r1.contract_id = r2.contract_id
+        ∧ r1.source_location = r2.source_location
+        ∧ r1.multi_citation_set = r2.multi_citation_set)
+    -- (c) Decidable equality
+    ∧ (r1 = r2 ∨ r1 ≠ r2)
+    -- (d) Self-equality
+    ∧ (r1 = r1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2, h3⟩
+    cases r1; cases r2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h], by rw [h]⟩
+  · by_cases h : r1 = r2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXlateLeanToRust

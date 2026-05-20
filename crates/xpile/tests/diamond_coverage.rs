@@ -159,12 +159,11 @@ fn substrate_diamond_depth_6_opened() {
     let contracts_total = read_aggregate_field(&json, "contracts_total");
     let depth_6_plus = read_aggregate_field(&json, "depth_6_plus");
     // PMAT-290/291 opened depth-6 on L1 + L5.
-    // PMAT-356..362 BROADENED to 8 contracts.
-    // PMAT-365 COMPLETED depth-6 UNIVERSAL via C-XLATE-RUST-FN-TO-LEAN-THM.
+    // PMAT-356..365 BROADENED to 10+ contracts.
+    // PMAT-363 BROADENED depth-6 to C-XLATE-LEAN-TO-RUST (Layer 5).
     // PMAT-360 BROADENED depth-6 to C-XLATE-PY-LIST-TO-VEC (Layer 2, 2nd L2).
-    // Substrate milestone: every contract has ≥6 Diamond categories.
+    // PMAT-365 COMPLETED depth-6 UNIVERSAL via C-XLATE-RUST-FN-TO-LEAN-THM.
     // Parallel to PMAT-336/344/354 (depth-3/4/5 UNIVERSAL).
-    // Gate accepts UNIVERSAL or ≥9 (interim while parallel PRs land).
     assert!(
         depth_6_plus == contracts_total || depth_6_plus >= 9,
         "Diamond depth-6 UNIVERSAL milestone (PMAT-365): every contract should have \
