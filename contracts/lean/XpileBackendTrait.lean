@@ -798,4 +798,36 @@ theorem artifact_struct_extensionality_bronze_diamond
     · exact Or.inr h
   · rfl
 
+/--
+  **PMAT-392 Diamond — ConsistentBackendInput subtype extensionality.**
+
+  The Gold-tier subtype `ConsistentBackendInput := { p : Backend ×
+  ArtifactSilver // p.snd.target = p.fst.declared_target }`
+  satisfies subtype extensionality. FOURTH substrate-wide
+  subtype-extensionality demonstration after PMAT-311 (BoundedSmem),
+  PMAT-390 (SuccessfulOutcome), and PMAT-391 (FrameSafeTransition).
+  Template 9 (Gold-tier subtype-ext) expands to a 4th substrate
+  instance.
+
+  Adds a NINTH distinct Diamond category on
+  `C-XPILE-BACKEND-TRAIT`, pushing the contract from depth-8 to
+  depth-9. Second L3 contract at depth-9 (after PMAT-391
+  ContractFrontendTrait).
+-/
+theorem consistent_backend_input_subtype_extensionality_diamond
+    (c1 c2 : ConsistentBackendInput) :
+    (c1.val = c2.val → c1 = c2)
+    ∧ (c1 = c2 → c1.val = c2.val)
+    ∧ (c1 = c2 ∨ c1 ≠ c2)
+    ∧ (c1 = c1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    exact Subtype.ext h
+  · intro h
+    rw [h]
+  · by_cases h : c1 = c2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXpileBackendTrait
