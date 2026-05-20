@@ -383,6 +383,33 @@ equations:
     postconditions:
       - "Diamond depth-7 ACROSS ALL 5 TAXONOMY LAYERS demonstrated: 5 contracts on 5 distinct layers"
 
+  source_lang_enum_completeness_diamond:
+    # PMAT-380: EIGHTH Diamond on this contract — COMPLETES DEPTH-8
+    # ACROSS ALL 5 TAXONOMY LAYERS. Parallel to PMAT-330 (depth-4),
+    # PMAT-347 (depth-5), PMAT-358 (depth-6), and PMAT-369 (depth-7)
+    # ALL 5 LAYERS milestones. SOURCE-LANG ENUM COMPLETENESS: every
+    # SourceLang value matches one of 6 known variants. Mirror of
+    # PMAT-370 (Target completeness on Backend trait). Third instance
+    # of Template 8 (enum completeness) substrate-wide.
+    lean_theorem: "XpileContracts.CXpileFrontendTrait.source_lang_enum_completeness_diamond"
+    lean_file: "contracts/lean/XpileFrontendTrait.lean"
+    formula: |
+      SourceLang admits FINITE ENUMERATION COMPLETENESS:
+        (a) total coverage: every SourceLang = one of 6 variants
+        (b) self-equality
+        (c) decidable membership
+        (d) constructor distinctness sample
+    domain: |
+      Any SourceLang value (6-variant inductive).
+    invariants:
+      - "EIGHTH Diamond category on C-XPILE-FRONTEND-TRAIT — COMPLETES DEPTH-8 ACROSS ALL 5 TAXONOMY LAYERS"
+      - "FINITE ENUMERATION COMPLETENESS — Template 8; third substrate-wide instance after PMAT-370/372"
+      - "Mirror of PMAT-370 (Target completeness on Backend trait)"
+    preconditions:
+      - "SourceLang inductive type with derived DecidableEq"
+    postconditions:
+      - "Diamond depth-8 ACROSS ALL 5 TAXONOMY LAYERS demonstrated: 5 contracts on 5 distinct layers"
+
 proof_obligations:
   - type: invariant
     property: Every registered extension is owned by exactly one frontend
