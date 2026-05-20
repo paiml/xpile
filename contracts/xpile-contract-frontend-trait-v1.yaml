@@ -354,6 +354,32 @@ equations:
     postconditions:
       - "Diamond depth-6 broadened: contracts at depth-6+ (3 L3 contracts at depth-6)"
 
+  equations_block_bytes_array_size_diamond:
+    # PMAT-375: SEVENTH Diamond on this contract — BROADENS DEPTH-7
+    # substrate-wide. Pushes XpileContractFrontendTrait (Layer 3) from
+    # depth-6 to depth-7 as the third L3 contract at depth-7+.
+    # EQUATIONS-BLOCK BYTES ARRAY.SIZE STRUCTURE: Nat-measure
+    # invariants on EquationsBlock.bytes field. Eighth substrate-wide
+    # demonstration of the Array.size template.
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.equations_block_bytes_array_size_diamond"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    formula: |
+      EquationsBlock.bytes Array.size structure:
+        (a) bytes.size >= 0
+        (b) empty bytes has size-0
+        (c) field-replacement preserves bytes size
+        (d) self-equal size
+    domain: |
+      Any EquationsBlock record with bytes : Array UInt8 field.
+    invariants:
+      - "SEVENTH Diamond category on C-XPILE-CONTRACT-FRONTEND-TRAIT — BROADENS DEPTH-7 substrate-wide"
+      - "ARRAY.SIZE STRUCTURE — eighth substrate-wide demonstration"
+      - "distinct from PMAT-340 (Array.size on TranspileSession arrays) and PMAT-353 (struct-ext of EquationsBlock)"
+    preconditions:
+      - "one EquationsBlock record"
+    postconditions:
+      - "Diamond depth-7 broadened: 3 L3 contracts at depth-7"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractFrontend
