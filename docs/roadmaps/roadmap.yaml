@@ -2,6 +2,15 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-399
+  github_issue: null
+  item_type: task
+  title: 'PMAT-399: Spec §28 + diamond-taxonomy.md sync to depth-9 UNIVERSAL + 7 UNIVERSAL milestones + 9 recurring templates'
+  status: planned
+  priority: medium
+  created: 2026-05-20T18:00:00Z
+  acceptance_criteria:
+  - "Sync xpile-spec.md §28 and sub/diamond-taxonomy.md to post-PMAT-398 substrate state: 131 wired theorems, 7 UNIVERSAL milestones (depth-3/4/5/6/7/8/9), 9 recurring algebraic templates (added Template 9: Gold-tier subtype extensionality demonstrated on 10 substrate refinement subtypes via PMAT-311 + PMAT-390..398). Document seventh broadening wave (PMAT-389..398) and cross-substrate symmetry closures (Frontend↔Backend Gold-tier subtype-ext pair PMAT-392/393, ContractFrontend↔ContractBackend Gold-tier subtype-ext pair PMAT-391/394, first polymorphic subtype-ext PMAT-395)."
 - id: PMAT-388
   github_issue: null
   item_type: task

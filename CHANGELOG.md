@@ -7,6 +7,44 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Spec §28 + sub/diamond-taxonomy.md sync to depth-9 UNIVERSAL + 7 UNIVERSAL milestones + 9 recurring templates (PMAT-399)
+
+**Spec sync**: `xpile-spec.md` §28 and `sub/diamond-taxonomy.md` now reflect the post-depth-9-UNIVERSAL substrate:
+
+- **131 wired Diamond theorems** (was 121) across 12 contracts.
+- **35+ Diamond categories** (was 34+) grouped into recurring algebraic families.
+- **Seven UNIVERSAL milestones documented**: depth-3 (PMAT-336), depth-4 (PMAT-344), depth-5 (PMAT-354), depth-6 (PMAT-365), depth-7 (PMAT-376), depth-8 (PMAT-387), depth-9 (PMAT-398).
+- **Nine recurring algebraic templates** (was 8) — added **Template 9: Gold-tier subtype extensionality** (PMAT-311 prior solo + PMAT-390..398 broadening), demonstrated on 10 substrate refinement subtypes.
+- **Seventh broadening wave (PMAT-389..398) documented**: 10-PR sweep from depth-8 to depth-9 UNIVERSAL.
+- Cross-substrate symmetry closures: **Frontend↔Backend Gold-tier subtype-ext pair** (PMAT-392/393), **ContractFrontend↔ContractBackend Gold-tier subtype-ext pair** (PMAT-391/394), **Bashrs Bronze/Silver/Gold tier emergence** (PMAT-329/368/390).
+
+### Added — **MILESTONE: Diamond depth-9 UNIVERSAL ACROSS ALL 12 CONTRACTS** via NonEmptyDefinition subtype-ext on `C-NOTATION-LATEX-MATH-TO-EQUATION` (PMAT-398)
+
+**SUBSTRATE MILESTONE: depth-9 UNIVERSAL.** Parallel to PMAT-336 (depth-3), PMAT-344 (depth-4), PMAT-354 (depth-5), PMAT-365 (depth-6), PMAT-376 (depth-7), and PMAT-387 (depth-8) UNIVERSAL milestones. After 10 broadening sweeps (PMAT-389..397), every contract has ≥9 distinct Diamond categories.
+
+**Coverage state at PMAT-398:**
+
+| Metric | Value |
+|---|---|
+| Wired Diamond theorems | **131** |
+| Diamond categories | 35+ |
+| UNIVERSAL milestones | **7** (depth-3, 4, 5, 6, 7, 8, 9) |
+| Contracts at depth-9+ | **12 = contracts_total** — **UNIVERSAL** |
+
+### Added — Diamond depth-9 broadening sweep PMAT-389..397 (Template 9: Gold-tier subtype-extensionality)
+
+The depth-9 wave **introduced Template 9** as a new recurring algebraic family. Every contract was pushed to depth-9 by capturing its Gold-tier refinement subtype:
+
+- **PMAT-389** (L4): BorrowedRefManifestEntry struct-ext on FfiCpythonExt — opens depth-9 on Layer 4 (transitional struct-ext rather than subtype-ext).
+- **PMAT-390** (L2): SuccessfulOutcome subtype-ext on Bashrs — SECOND substrate subtype-ext (after PMAT-311 BoundedSmem).
+- **PMAT-391** (L3): FrameSafeTransition subtype-ext on ContractFrontendTrait — THIRD instance.
+- **PMAT-392** (L3): ConsistentBackendInput subtype-ext on BackendTrait — FOURTH instance.
+- **PMAT-393** (L3): ConsistentFrontendOutput subtype-ext on FrontendTrait — FIFTH instance, closes Frontend↔Backend pair with PMAT-392.
+- **PMAT-394** (L3): CitationCompleteContract subtype-ext on ContractBackendTrait — SIXTH instance, closes ContractFrontend↔ContractBackend pair with PMAT-391.
+- **PMAT-395** (L2): NonEmptyHomogeneousList α subtype-ext on PyListToVec — SEVENTH instance, FIRST polymorphic subtype-ext.
+- **PMAT-396** (L5): WarningLineCount subtype-ext on XlateLeanToRust — EIGHTH instance.
+- **PMAT-397** (L5): NonEmptyPreconditionList subtype-ext on XlateRustFnToLeanThm — NINTH instance.
+
 ### Changed — Spec §28 + sub/diamond-taxonomy.md sync to depth-8 UNIVERSAL + 6 UNIVERSAL milestones + 8 recurring templates (PMAT-388)
 
 **Spec sync**: `xpile-spec.md` §28 and `sub/diamond-taxonomy.md` now reflect the post-depth-8-UNIVERSAL substrate:
