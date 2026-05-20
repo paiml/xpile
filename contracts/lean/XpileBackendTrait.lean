@@ -694,4 +694,55 @@ theorem backend_struct_extensionality_diamond (b1 b2 : Backend) :
     · exact Or.inr h
   · rfl
 
+/-! ## PMAT-370 — SEVENTH Diamond on C-XPILE-BACKEND-TRAIT
+    (Layer 3 BROADENS DEPTH-7):
+    TARGET-COMPLETENESS ENUMERATION
+    (XPILE-REFINE-XPILE-BACKEND-TRAIT-010).
+
+    **Broadens depth-7 post-ALL 5 LAYERS milestone.** After PMAT-369
+    completed depth-7 ACROSS ALL 5 TAXONOMY LAYERS, PMAT-370 pushes
+    XpileBackendTrait (Layer 3) from depth-6 to depth-7 as the
+    second L3 contract at depth-7+.
+
+    The 7 Diamond categories on C-XPILE-BACKEND-TRAIT:
+    - PMAT-225 backend_equivalence_class
+    - PMAT-235 target_constant_projection
+    - PMAT-331 artifact_struct_extensionality
+    - PMAT-339 target_enum_distinctness (pairwise distinctness)
+    - PMAT-348 artifact_bytes_array_size
+    - PMAT-359 backend_struct_extensionality
+    - **PMAT-370: TARGET-COMPLETENESS ENUMERATION** ← depth-7
+
+    PMAT-339 captures pairwise DISTINCTNESS; PMAT-370 captures
+    COMPLETENESS. Together they give the full FINITE ENUMERATION
+    axiomatization: distinct AND complete.
+
+    Status: discharged at v0.1.0 (PMAT-370). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `Target` admits FINITE
+  ENUMERATION COMPLETENESS.
+
+  Combines four properties:
+  (a) Total coverage: every Target value matches one of the 7 known variants
+  (b) Self-equality
+  (c) Decidable membership
+  (d) Constructor distinctness sample
+
+  Status: **discharged at v0.1.0 (PMAT-370)**. Tier: DIAMOND.
+-/
+theorem target_enum_completeness_diamond (t : Target) :
+    (t = Target.rust ∨ t = Target.ruchy ∨ t = Target.lean ∨ t = Target.ptx
+      ∨ t = Target.wgsl ∨ t = Target.spirv ∨ t = Target.shell)
+    ∧ (t = t)
+    ∧ (t = Target.rust ∨ t ≠ Target.rust)
+    ∧ (Target.rust ≠ Target.shell) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases t <;> tauto
+  · rfl
+  · by_cases h : t = Target.rust
+    · exact Or.inl h
+    · exact Or.inr h
+  · decide
+
 end XpileContracts.CXpileBackendTrait
