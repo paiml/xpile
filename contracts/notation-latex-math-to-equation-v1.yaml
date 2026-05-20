@@ -711,6 +711,39 @@ equations:
     postconditions:
       - "Diamond depth-8 broadened: 2 L5 contracts at depth-8"
 
+  non_empty_definition_subtype_extensionality_diamond:
+    # PMAT-398: NINTH Diamond on this contract — COMPLETES DEPTH-9
+    # UNIVERSAL ACROSS ALL 12 CONTRACTS. Pushes Notation (Layer 5)
+    # from depth-8 to depth-9 as the third L5 contract at depth-9.
+    # Parallel to PMAT-336 (depth-3 UNIVERSAL), PMAT-344 (depth-4),
+    # PMAT-354 (depth-5), PMAT-365 (depth-6), PMAT-376 (depth-7),
+    # PMAT-387 (depth-8 UNIVERSAL). Substrate now at SEVEN UNIVERSAL
+    # milestones.
+    # NON-EMPTY-DEFINITION SUBTYPE EXTENSIONALITY: the Gold-tier
+    # subtype `{ d : DefinitionEnvSilver // d.all_math_spans.size > 0 }`
+    # admits subtype extensionality. TENTH substrate-wide
+    # subtype-extensionality demonstration (Template 9 Gold-tier
+    # subtype-ext expands to 10 instances).
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.non_empty_definition_subtype_extensionality_diamond"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      NonEmptyDefinition admits SUBTYPE EXTENSIONALITY:
+        (a) val eq -> subtype eq (Subtype.ext)
+        (b) subtype eq -> val eq (congruence)
+        (c) decidable equality
+        (d) self-equality
+    domain: |
+      Two NonEmptyDefinition values (Gold-tier subtype of
+      DefinitionEnvSilver with non-empty all_math_spans witness).
+    invariants:
+      - "NINTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — COMPLETES DEPTH-9 UNIVERSAL ACROSS ALL 12 CONTRACTS"
+      - "SUBTYPE EXTENSIONALITY — tenth substrate-wide demonstration (Template 9 Gold-tier subtype-ext)"
+      - "Substrate milestone: every contract has ≥9 distinct Diamond categories — SEVEN UNIVERSAL milestones"
+    preconditions:
+      - "two NonEmptyDefinition values"
+    postconditions:
+      - "DEPTH-9 UNIVERSAL achieved: 12 contracts at depth-9+"
+
 proof_obligations:
   - type: postcondition
     property: math-mode round-trips through render() losslessly
