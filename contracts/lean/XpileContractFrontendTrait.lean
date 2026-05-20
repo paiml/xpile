@@ -846,4 +846,35 @@ theorem empty_session_canonical_diamond :
   · rfl
   · rfl
 
+/--
+  **PMAT-426 Diamond — EquationsBlock Bronze→Silver lift to TranspileSession.**
+
+  Define the canonical lift `equations_block_to_session` :
+  `EquationsBlock → TranspileSession` that wraps a Bronze
+  EquationsBlock into a singleton TranspileSession with empty
+  modules array. **FIFTH instance of Template 12 (Bronze→Silver
+  canonical-lift homomorphism)**.
+
+  Adds a TWELFTH distinct Diamond category on
+  `C-XPILE-CONTRACT-FRONTEND-TRAIT`, pushing the contract from
+  depth-11 to depth-12. Third L3 contract at depth-12.
+-/
+def equations_block_to_session (e : EquationsBlock) : TranspileSession :=
+  { modules := #[], equations := #[e] }
+
+theorem equations_block_to_session_lift_diamond (e : EquationsBlock) :
+    -- (a) lift produces empty modules
+    ((equations_block_to_session e).modules = #[])
+    -- (b) lift produces singleton equations
+    ∧ ((equations_block_to_session e).equations.size = 1)
+    -- (c) the wrapped equation is the lifted one
+    ∧ ((equations_block_to_session e).equations[0]! = e)
+    -- (d) self-equality (reflexivity)
+    ∧ (equations_block_to_session e = equations_block_to_session e) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileContractFrontendTrait
