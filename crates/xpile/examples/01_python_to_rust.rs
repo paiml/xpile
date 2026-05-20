@@ -1,0 +1,61 @@
+//! Example 01: Python → Rust, programmatically (no CLI).
+//!
+//! Demonstrates:
+//!   - xpile-core's `default_session()` library API
+//!   - Frontend dispatch by file extension
+//!   - Backend dispatch by `Target` enum
+//!   - The emitted Rust carries `// xpile-contract: C-PY-INT-ARITH`
+//!     citation + `.checked_*().expect(...)` overflow guards
+//!
+//! Run:   cargo run --example 01_python_to_rust -p xpile
+//! Reads: crates/xpile/examples/inputs/factorial.py
+
+use std::path::PathBuf;
+use xpile_backend::{BackendConfig, Profile, Target};
+
+fn main() -> anyhow::Result<()> {
+    let session = xpile_core::default_session();
+
+    let input: PathBuf = [
+        env!("CARGO_MANIFEST_DIR"),
+        "examples",
+        "inputs",
+        "factorial.py",
+    ]
+    .iter()
+    .collect();
+
+    let source = std::fs::read_to_string(&input)?;
+    println!("─── INPUT  ({}) ───\n{}", input.display(), source);
+
+    let frontend = session
+        .frontends
+        .iter()
+        .find(|f| f.matches_path(&input))
+        .expect("python frontend");
+    let module = frontend.parse_and_lower(&input, &source)?;
+
+    let backend = session
+        .backends
+        .iter()
+        .find(|b| b.targets().contains(&Target::Rust))
+        .expect("rust backend");
+    let cfg = BackendConfig {
+        target: Target::Rust,
+        profile: Profile::RustOut,
+        hardware: None,
+    };
+    let artifact = backend.lower(&module, &cfg)?;
+
+    println!("─── OUTPUT (target=rust) ───\n{}", artifact.primary);
+
+    println!("─── WHAT THIS DEMONSTRATES ───");
+    println!("• Python frontend (depyler-frontend) parsed a recursive `def` with type hints.");
+    println!("• meta-HIR lowered the body into structured Expr / Stmt nodes.");
+    println!("• Rust backend (xpile-rust-codegen) emitted a `pub fn` with:");
+    println!("    - `// xpile-contract: C-PY-INT-ARITH` citation");
+    println!("    - `.checked_mul()` and `.checked_sub()` wrappers");
+    println!("    - panic text NAMING the governing contract");
+    println!("• The result is `rustc -O`-clean and `assert_eq!(factorial(10), 3628800)` green.");
+    Ok(())
+}
