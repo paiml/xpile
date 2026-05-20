@@ -798,3 +798,31 @@ qa_gate:
       - "one HomogeneousListSilver α record"
     postconditions:
       - "Diamond depth-10 broadened: third L2 contract at depth-10"
+
+  empty_py_list_silver_canonical_diamond:
+    # PMAT-417: ELEVENTH Diamond on this contract — BROADENS DEPTH-11
+    # substrate-wide. Pushes XlatePyListToVec (Layer 2) from depth-10
+    # to depth-11. Third L2 contract at depth-11.
+    # CANONICAL EMPTY POLYMORPHIC PyListSilver α: define the canonical
+    # empty PyListSilver α with empty elements list — the "empty
+    # Python list of element type α".
+    # **SEVENTH instance of Template 11 (Canonical identity element)**.
+    # Third polymorphic substrate instance.
+    lean_theorem: "XpileContracts.CXlatePyListToVec.empty_py_list_silver_canonical_diamond"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      Canonical identity element on PyListSilver α (polymorphic):
+        (a) (empty_py_list_silver α).elems = []
+        (b) (empty_py_list_silver α).elems.length = 0
+        (c) (empty_py_list_silver α).elems.reverse = []
+        (d) self-equality
+    domain: |
+      The canonical empty PyListSilver α (polymorphic in α) with
+      empty elements list — the "empty Python list".
+    invariants:
+      - "ELEVENTH Diamond category on C-XLATE-PY-LIST-TO-VEC — BROADENS DEPTH-11 substrate-wide"
+      - "CANONICAL IDENTITY ELEMENT — seventh instance of Template 11"
+      - "Third polymorphic substrate instance (after PMAT-395 Template 9 + PMAT-406 Template 10)"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-11 broadened: third L2 contract at depth-11"
