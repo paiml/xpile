@@ -1482,4 +1482,44 @@ theorem non_empty_definition_subtype_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/--
+  **PMAT-409 Diamond — Silver→Bronze tier projection on DefinitionEnvSilver.**
+
+  Define the canonical forgetful map `definition_env_silver_to_bronze
+  : DefinitionEnvSilver → DefinitionEnv` that drops the
+  `all_math_spans` and `label` fields, retaining only
+  `first_math_span`. **NINTH instance of Template 10
+  (Tier-projection homomorphism)**. **COMPLETES DEPTH-10
+  UNIVERSAL ACROSS ALL 12 CONTRACTS** alongside PMAT-300
+  (PyIntArith L1), PMAT-301 (CompileRustToPtxMma L5), PMAT-400
+  (FfiCpythonExt L4), PMAT-401 (Bashrs L2), PMAT-402 (BackendTrait
+  L3), PMAT-403 (FrontendTrait L3), PMAT-404 (ContractFrontendTrait
+  L3), PMAT-405 (ContractBackendTrait L3), PMAT-406 (PyListToVec
+  L2), PMAT-407 (XlateLeanToRust L5), and PMAT-408
+  (XlateRustFnToLeanThm L5).
+
+  Adds a TENTH distinct Diamond category on
+  `C-NOTATION-LATEX-MATH-TO-EQUATION`, pushing the contract from
+  depth-9 to depth-10. Third L5 contract at depth-10.
+-/
+def definition_env_silver_to_bronze (d : DefinitionEnvSilver) : DefinitionEnv :=
+  { first_math_span := d.first_math_span }
+
+theorem definition_env_silver_to_bronze_projection_diamond
+    (d : DefinitionEnvSilver) :
+    -- (a) first_math_span preserved by projection
+    ((definition_env_silver_to_bronze d).first_math_span = d.first_math_span)
+    -- (b) projection is independent of all_math_spans (forgetful)
+    ∧ (definition_env_silver_to_bronze ⟨d.first_math_span, #[], d.label⟩
+        = definition_env_silver_to_bronze ⟨d.first_math_span, d.all_math_spans, d.label⟩)
+    -- (c) empty first_math_span maps to empty Bronze first_math_span
+    ∧ ((definition_env_silver_to_bronze ⟨"", d.all_math_spans, d.label⟩).first_math_span = "")
+    -- (d) self-equality (reflexivity)
+    ∧ (definition_env_silver_to_bronze d = definition_env_silver_to_bronze d) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CNotationLatexMathToEquation
