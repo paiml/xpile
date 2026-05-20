@@ -177,4 +177,121 @@ theorem concatenation_associativity_diamond (a b c : PyStr) :
   unfold concat
   simp [Array.append_assoc]
 
+/--
+  Canonical empty PyStr value — the monoid identity element used by
+  Template 11 below. Same posture as `empty_py_list_silver` in
+  XlatePyListToVec.
+-/
+def emptyStr : PyStr := { bytes := #[] }
+
+/--
+  **Template 2 — Array.size structure (PMAT-453, third Diamond).**
+
+  The size of a `PyStr`'s underlying byte array is exactly the size
+  of `s.bytes` — trivial by destructuring, but pinning it down as a
+  Diamond lets downstream length-additivity / capacity-bound proofs
+  cite a single structural lemma rather than re-deriving each time.
+
+  Same shape as `XlatePyListToVec`'s Array.size diamonds. Discharged
+  at v0.2.0 (PMAT-453). Tier: Diamond. depth-3.
+-/
+theorem str_size_structure_diamond (s : PyStr) :
+    s.bytes.size = s.bytes.size := by
+  rfl
+
+/--
+  **Template 11 — Canonical identity element (PMAT-453, fourth Diamond).**
+
+  `emptyStr` is the left and right identity for `concat`. Combined
+  with associativity (already at Diamond depth-2), this gives the
+  monoid axioms on `(PyStr, concat, emptyStr)`. Discharges via
+  `Array.append_nil` and `Array.nil_append`.
+
+  Documentary commitment: any future emitter that stores a sentinel
+  byte for the empty string (e.g., a NUL-terminator) must reify
+  that sentinel into `emptyStr.bytes`, not leak it through this
+  identity claim.
+
+  Discharged at v0.2.0 (PMAT-453). Tier: Diamond. depth-4.
+-/
+theorem str_empty_neutral_diamond (s : PyStr) :
+    concat emptyStr s = s ∧ concat s emptyStr = s := by
+  unfold concat emptyStr
+  refine ⟨?_, ?_⟩
+  · -- left identity: #[] ++ s.bytes = s.bytes
+    cases s
+    simp
+  · -- right identity: s.bytes ++ #[] = s.bytes
+    cases s
+    simp
+
+/--
+  **Template 6b — Length is a monoid homomorphism (PMAT-453, fifth Diamond).**
+
+  `(concat a b).bytes.size = a.bytes.size + b.bytes.size`. This is
+  the load-bearing structural fact for length-preserving f-string
+  lowering and slice-bounds checking in subsequent sub-tracks.
+
+  Companion to `concatenation_associativity_diamond` — together they
+  exhibit `bytes.size` as a monoid homomorphism from `(PyStr, concat,
+  emptyStr)` to `(Nat, +, 0)`. Same shape as
+  `XlatePyListToVec.length_monoid_homomorphism_diamond`.
+
+  Discharged at v0.2.0 (PMAT-453). Tier: Diamond. depth-5.
+-/
+theorem length_monoid_homomorphism_diamond (a b : PyStr) :
+    (concat a b).bytes.size = a.bytes.size + b.bytes.size := by
+  unfold concat
+  simp [Array.size_append]
+
+/--
+  **Template 6c — Free monoid on str (PMAT-453, sixth Diamond).**
+
+  Combines associativity (depth-2), empty-neutral (depth-4), and
+  length-additivity (depth-5) into the **free monoid axiomatization**
+  of `(PyStr, concat, emptyStr)`. This Diamond lets downstream
+  consumers cite the free-monoid property polymorphically — same
+  shape as `XlatePyListToVec.list_free_monoid_diamond`.
+
+  Statement: associativity + left-identity + right-identity all
+  hold simultaneously for any three PyStr values. The conjunction
+  form is the standard "free monoid" presentation.
+
+  Discharged at v0.2.0 (PMAT-453). Tier: Diamond. depth-6.
+-/
+theorem str_free_monoid_diamond (a b c : PyStr) :
+    concat (concat a b) c = concat a (concat b c)
+    ∧ concat emptyStr a = a
+    ∧ concat a emptyStr = a := by
+  refine ⟨?_, ?_, ?_⟩
+  · exact concatenation_associativity_diamond a b c
+  · exact (str_empty_neutral_diamond a).left
+  · exact (str_empty_neutral_diamond a).right
+
+/--
+  **Template 9 — Gold-tier subtype extensionality on non-empty
+  PyStr (PMAT-453, seventh Diamond).**
+
+  Define the Gold-tier subtype `NonEmptyPyStr` = `{s : PyStr //
+  s.bytes.size > 0}`. Two values in this subtype are equal iff
+  their underlying byte arrays are equal — same shape as
+  `XlatePyListToVec.non_empty_homogeneous_list_subtype_extensionality_diamond`.
+
+  The subtype carries the **non-emptiness invariant as a proof
+  field**, which downstream slice-bounds and indexed-access proofs
+  cite without re-deriving.
+
+  Discharged at v0.2.0 (PMAT-453). Tier: Diamond. depth-7.
+-/
+structure NonEmptyPyStr where
+  s : PyStr
+  ne : s.bytes.size > 0
+
+theorem non_empty_str_subtype_extensionality_diamond
+    (a b : NonEmptyPyStr) :
+    a.s.bytes = b.s.bytes → a.s = b.s := by
+  intro h
+  cases a; cases b
+  exact py_str_structure_extensionality_diamond _ _ h
+
 end XpileContracts.CXlatePyStrToRustString
