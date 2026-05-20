@@ -54,6 +54,7 @@
 | 27 | [Provability Roadmap — ruchy 5.0 alignment](#27-provability-roadmap--ruchy-50-alignment) | [sub/provability-roadmap.md](sub/provability-roadmap.md) |
 | 28 | [Diamond-Tier Refinement Taxonomy](#28-diamond-tier-refinement-taxonomy) | [sub/diamond-taxonomy.md](sub/diamond-taxonomy.md) |
 | 29 | [Layer-5 Multi-Emitter Oracle Quorum](#29-layer-5-multi-emitter-oracle-quorum) | [sub/layer5-multi-emitter-quorum.md](sub/layer5-multi-emitter-quorum.md) |
+| 30 | [v0.2.0 Roadmap — Three Mergers](#30-v020-roadmap--three-mergers) | [sub/v0.2.0-depyler-merger.md](sub/v0.2.0-depyler-merger.md), [sub/v0.2.0-decy-merger.md](sub/v0.2.0-decy-merger.md), [sub/v0.2.0-bashrs-checkback.md](sub/v0.2.0-bashrs-checkback.md) |
 
 ---
 
@@ -676,6 +677,84 @@ Once the spec is implemented, the following weaken the substrate (fail CI):
 2. The specialist emitter is silently dropped without a `quorum_policy: PreferSpecialist` annotation in the YAML.
 3. The general emitter is removed (no fallback for unknown shapes).
 4. `pv lint` is weakened to allow `compile_targets.via` without a `role: general` entry.
+
+---
+
+## 30. v0.2.0 Roadmap — Three Mergers
+
+**Sub-specs:**
+[`sub/v0.2.0-depyler-merger.md`](sub/v0.2.0-depyler-merger.md),
+[`sub/v0.2.0-decy-merger.md`](sub/v0.2.0-decy-merger.md),
+[`sub/v0.2.0-bashrs-checkback.md`](sub/v0.2.0-bashrs-checkback.md).
+Pattern precedent: [`sub/bashrs-merger.md`](sub/bashrs-merger.md) — the v0.1.0 bashrs merger ran the same shape and shipped successfully (PMAT-037..119).
+
+### Premise (load-bearing)
+
+v0.1.0 is "real transpiler for int/bool Python, real POSIX shell round-trip." It does not yet replace the standalone `paiml/depyler` for Python work because xpile's `depyler-frontend` is a **1,586-line single-file extract** (int/bool only) while standalone depyler is **18 sub-crates / 310+ source files** with `str` / `list` / `dict` / `float` / borrowing analysis already implemented. `decy-frontend` is even further behind — a 35-line scaffold against standalone `paiml/decy`'s **16 sub-crates**.
+
+**v0.2.0 is the realization that this is not a build problem — it's a port problem.** All three mature standalone transpilers (depyler, decy, bashrs) already exist. The v0.1.0 bashrs merger demonstrated the absorb-into-substrate pattern works at production cadence. v0.2.0 runs that same pattern twice more.
+
+### Three concurrent tracks
+
+| Track | What | Effort | Discharges |
+|---|---|---|---|
+| **1. Depyler merger** | Port `str` + `list[T]` + `dict[str, T]` (and optionally `&str`/borrowing as stretch) from standalone depyler into xpile-meta-hir + depyler-frontend + xpile-rust-codegen + xpile-lean-codegen. New contracts at Layer 2. | ~5 weeks (3 sub-tracks: str/list/dict, sequential) | "Can xpile replace depyler?" closes from "No" to "Yes for the str/list/dict subset" |
+| **2. Decy merger** | Port `decy-parser` + `decy-codegen` int/bool subset into xpile-folded `decy-frontend` + `xpile-rust-codegen`. New Layer-1 contract `C-C-INT-ARITH` (sibling of `C-PY-INT-ARITH`, capturing C's truncating-`/`, UB-signed-overflow semantics → `wrapping_*`). Stack-only — no pointers. | ~3 weeks (parser + new contract + codegen) | C → Rust transpile works for stack-only int/bool C |
+| **3. Bashrs check-back** | Discharge XPILE-UNMERGE-001 falsifier with a **second** independent oracle: Lean theorem for shell composition idempotence (option (c) from `sub/bashrs-merger.md`'s acceptance set). | ~3 days | Falsifier survives loss of option (a) `subprocess.run` discharge → defense in depth |
+
+Tracks 1 and 2 are independent and can run in parallel. Track 3 is small and slots in opportunistically.
+
+### Substrate impact
+
+v0.2.0 adds **at least 4 new contracts** to the substrate:
+
+| Contract | Layer × Lane | Source track |
+|---|---|---|
+| `C-XLATE-PY-STR-TO-RUST-STRING` | 2 / code, kind: kernel | 1.A |
+| `C-XLATE-PY-DICT-TO-HASHMAP` | 2 / code, kind: kernel | 1.C |
+| `C-C-INT-ARITH` | **1 semantics / code**, kind: kernel | 2.B |
+| (Optional) `C-XLATE-PY-STR-BORROWING` | 2 / code, kind: kernel | 1.D (stretch) |
+
+Note `C-XLATE-PY-LIST-TO-VEC` already exists at v0.1.0; Track 1.B extends it with new equations, doesn't create a new contract.
+
+The Diamond program broadens from 12 contracts to **16 contracts (or 15 without 1.D)**. The 13 recurring algebraic templates apply mechanically — Templates 1, 6, 9, 10, 11, 12, 13 are all directly applicable to the new contracts.
+
+### Exit criterion
+
+```python
+# real_python.py
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+def count_chars(name: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for c in name:
+        counts[c] = counts.get(c, 0) + 1
+    return counts
+```
+
+```c
+// real_c.c
+int add(int a, int b) { return a + b; }
+int factorial(int n) { return n <= 1 ? 1 : n * factorial(n - 1); }
+```
+
+Both transpile cleanly via `xpile transpile` → Rust + Ruchy + Lean for the Python case; → Rust for the C case. Each emitted function carries a `// xpile-contract: <ID>` citation referencing the appropriate v0.2.0 contract.
+
+`xpile quorum` → 16 (or 15) QUORUM, 0 PARTIAL, 0 UNVERIFIED.
+`xpile diamond` → depth-13 UNIVERSAL still holds (CI gate); newer contracts at depth-1+ at minimum, ratcheting up via subsequent broadening waves.
+
+### What this is NOT
+
+- **Not** a "build str/list/dict from scratch" project. The hard semantics work is already done in standalone depyler and decy. The xpile-specific work is the **contract substrate** (Lean theorems, Kani harnesses, Diamond program ratchet) and the meta-HIR adapter layer.
+- **Not** the end of the standalone repos. paiml/depyler, paiml/decy, paiml/bashrs continue to be authoritative for their respective AST surfaces; xpile vendors a snapshot and mirrors patches downstream — same posture as the v0.1.0 bashrs merger.
+- **Not** a single mega-PR. Each sub-track (1.A, 1.B, 1.C, 2.A, 2.B, 2.C, 3.A) ships as its own PR series with QUORUM + Diamond ratchets, same cadence as the v0.1.0 substrate work.
+
+### Realistic timeline
+
+~6 weeks if Tracks 1 and 2 run in parallel, given the bashrs-merger precedent. Sequential would push to ~8-9 weeks.
+
+The next-session pickup is whichever sub-track has open capacity. See the sub-specs for per-track sequencing.
 
 ---
 
