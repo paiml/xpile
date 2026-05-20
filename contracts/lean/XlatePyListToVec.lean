@@ -1052,4 +1052,78 @@ theorem py_list_silver_struct_extensionality_diamond {α : Type}
   · rfl
   · rfl
 
+/-! ## PMAT-360 — SIXTH Diamond on C-XLATE-PY-LIST-TO-VEC
+    (Layer 2 BROADENS DEPTH-6):
+    TYPED-RUST-VEC-SILVER STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XLATE-PY-LIST-008).
+
+    **Broadens depth-6 substrate-wide.** PMAT-360 pushes
+    XlatePyListToVec (Layer 2) from depth-5 to depth-6 as the
+    second L2 contract at depth-6+ (Bashrs was first via PMAT-357).
+
+    The 6 Diamond categories on C-XLATE-PY-LIST-TO-VEC:
+    - PMAT-221 list_free_monoid_diamond: free monoid
+    - PMAT-229 nonempty_section_retraction_diamond: NonEmpty subtype
+    - PMAT-244 length_monoid_homomorphism_diamond: length functor
+    - PMAT-338 list_reverse_involution_diamond: reverse involution
+    - PMAT-349 py_list_silver_struct_extensionality_diamond: INPUT record
+    - **PMAT-360: TYPED-RUST-VEC-SILVER STRUCTURE EXTENSIONALITY** ← depth-6
+
+    The categorical distinction is sharp:
+      - PMAT-349 captures struct-ext of PyListSilver α (the INPUT
+        record, the Python list).
+      - PMAT-360 captures struct-ext of TypedRustVecSilver α (the
+        OUTPUT record, the Rust Vec) — fundamentally distinct
+        structural target. Closes the Python↔Rust lowering pair at
+        the STRUCTURE level (mirror of PMAT-336/PMAT-352 which
+        closed the Rust↔Lean pair).
+
+    Sixteenth substrate-wide demonstration of the structure-
+    extensionality pattern (after PMAT-311/329..336/349/352/353/
+    354/356/359).
+
+    Status: discharged at v0.1.0 (PMAT-360). Tier: DIAMOND.
+    Broadens depth-6 to 7 contracts. -/
+
+/--
+  **Diamond-tier refinement theorem** — `TypedRustVecSilver α`
+  admits STRUCTURE EXTENSIONALITY.
+
+  Combines four STRUCTURE-EXTENSIONALITY properties on the 2-field
+  TypedRustVecSilver record (elements : List α, element_type_tag :
+  String):
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality (congruence)
+  (c) Self-equality (reflexivity)
+  (d) Identity field-replacement preserves elements
+
+  Sixteenth substrate-wide demonstration of the structure-
+  extensionality pattern. Closes Python↔Rust lowering pair at the
+  STRUCTURE level (mirror of PMAT-336/PMAT-352 closing Rust↔Lean).
+
+  Status: **discharged at v0.1.0 (PMAT-360)**. Tier: DIAMOND.
+  Broadens depth-6 to 7 contracts.
+-/
+theorem typed_rust_vec_silver_struct_extensionality_diamond
+    {α : Type} (v1 v2 : TypedRustVecSilver α) :
+    -- (a) Field equality → record equality
+    (v1.elements = v2.elements ∧ v1.element_type_tag = v2.element_type_tag
+      → v1 = v2)
+    -- (b) Record equality → field equality
+    ∧ (v1 = v2 → v1.elements = v2.elements
+        ∧ v1.element_type_tag = v2.element_type_tag)
+    -- (c) Self-equality (reflexivity)
+    ∧ (v1 = v1)
+    -- (d) Identity field-replacement preserves elements
+    ∧ (({ elements := v1.elements, element_type_tag := v1.element_type_tag }
+          : TypedRustVecSilver α).elements = v1.elements) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2⟩
+    cases v1; cases v2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h]⟩
+  · rfl
+  · rfl
+
 end XpileContracts.CXlatePyListToVec
