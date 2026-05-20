@@ -203,10 +203,11 @@ fn substrate_diamond_depth_8_opened() {
     // PMAT-381 BROADENED depth-8 to C-XPILE-BACKEND-TRAIT (Layer 3, 2nd L3).
     // PMAT-382 BROADENED depth-8 to C-XLATE-PY-LIST-TO-VEC (Layer 2, 2nd L2).
     // PMAT-383 BROADENED depth-8 to C-NOTATION-LATEX-MATH-TO-EQUATION (Layer 5, 2nd L5).
+    // PMAT-384 BROADENED depth-8 to C-XLATE-LEAN-TO-RUST (Layer 5, 3rd L5).
     assert!(
-        depth_8_plus >= 8,
-        "Diamond depth-8 BROADENED milestone (PMAT-294/295/378..383): \
-         expected ≥8 contracts at depth-8+, got {depth_8_plus}.\n{json}"
+        depth_8_plus >= 9,
+        "Diamond depth-8 BROADENED milestone (PMAT-294/295/378..384): \
+         expected ≥9 contracts at depth-8+, got {depth_8_plus}.\n{json}"
     );
 }
 
