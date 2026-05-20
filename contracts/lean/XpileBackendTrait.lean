@@ -830,4 +830,42 @@ theorem consistent_backend_input_subtype_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/--
+  **PMAT-402 Diamond — Silver→Bronze tier projection on ArtifactSilver.**
+
+  Define the canonical forgetful map `artifact_silver_to_bronze
+  : ArtifactSilver → Artifact` that drops the `target` field,
+  retaining only `bytes`. Prove that this projection is a
+  **structure-preserving forgetful map** — preserves bytes
+  byte-for-byte, is independent of target (forgetful), preserves
+  empty-bytes identity, and is reflexive.
+
+  **SECOND instance of Template 10 (Tier-projection
+  homomorphism)** introduced in PMAT-401 (Bashrs). Captures the
+  Silver→Bronze refinement direction structurally on the Backend
+  trait's emitted `Artifact` record.
+
+  Adds a TENTH distinct Diamond category on
+  `C-XPILE-BACKEND-TRAIT`, pushing the contract from depth-9 to
+  depth-10. First L3 contract at depth-10 in the broadening wave.
+-/
+def artifact_silver_to_bronze (a : ArtifactSilver) : Artifact :=
+  { bytes := a.bytes }
+
+theorem artifact_silver_to_bronze_projection_diamond (a : ArtifactSilver) :
+    -- (a) bytes preserved by projection
+    ((artifact_silver_to_bronze a).bytes = a.bytes)
+    -- (b) projection is independent of target (forgetful)
+    ∧ (artifact_silver_to_bronze ⟨a.bytes, Target.rust⟩
+        = artifact_silver_to_bronze ⟨a.bytes, a.target⟩)
+    -- (c) empty bytes maps to empty Bronze artifact
+    ∧ ((artifact_silver_to_bronze ⟨#[], a.target⟩).bytes.size = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (artifact_silver_to_bronze a = artifact_silver_to_bronze a) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileBackendTrait

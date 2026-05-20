@@ -469,6 +469,38 @@ equations:
     postconditions:
       - "Diamond depth-9 broadened: second L3 contract at depth-9"
 
+  artifact_silver_to_bronze_projection_diamond:
+    # PMAT-402: TENTH Diamond on this contract — BROADENS DEPTH-10
+    # substrate-wide. Pushes XpileBackendTrait (Layer 3) from depth-9
+    # to depth-10. First L3 contract at depth-10 in the broadening wave.
+    # SILVER→BRONZE TIER PROJECTION on ArtifactSilver: define the
+    # canonical forgetful map artifact_silver_to_bronze : ArtifactSilver
+    # → Artifact that drops the target field. Prove the projection
+    # is a structure-preserving forgetful map.
+    # **SECOND instance of Template 10 (Tier-projection homomorphism)**
+    # introduced in PMAT-401 (Bashrs). Captures the Silver→Bronze
+    # refinement direction structurally on the Backend trait's
+    # emitted Artifact record.
+    lean_theorem: "XpileContracts.CXpileBackendTrait.artifact_silver_to_bronze_projection_diamond"
+    lean_file: "contracts/lean/XpileBackendTrait.lean"
+    formula: |
+      Silver→Bronze tier projection homomorphism on ArtifactSilver:
+        (a) artifact_silver_to_bronze(a).bytes = a.bytes
+        (b) artifact_silver_to_bronze is independent of target (forgetful)
+        (c) empty bytes maps to empty Bronze Artifact
+        (d) self-equality
+    domain: |
+      The forgetful map artifact_silver_to_bronze : ArtifactSilver
+      → Artifact that drops the target field while retaining bytes.
+    invariants:
+      - "TENTH Diamond category on C-XPILE-BACKEND-TRAIT — BROADENS DEPTH-10 substrate-wide"
+      - "TIER-PROJECTION HOMOMORPHISM — second instance of Template 10 (after PMAT-401 on Bashrs)"
+      - "Captures Silver→Bronze refinement direction on Backend trait's Artifact record"
+    preconditions:
+      - "one ArtifactSilver record"
+    postconditions:
+      - "Diamond depth-10 broadened: first L3 contract at depth-10"
+
 proof_obligations:
   - type: invariant
     property: Every registered Target is owned by exactly one Backend
