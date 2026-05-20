@@ -1260,4 +1260,39 @@ theorem non_empty_precondition_list_subtype_extensionality_diamond
     rw [h]
   · rfl
 
+/--
+  **PMAT-408 Diamond — Silver→Bronze tier projection on RustFnSilver.**
+
+  Define the canonical forgetful map `rust_fn_silver_to_bronze :
+  RustFnSilver → RustFn` that drops the `name`, `generics`,
+  `args`, and `return_type` fields, retaining only `body`.
+  **EIGHTH instance of Template 10 (Tier-projection
+  homomorphism)**. Mirror of PMAT-407 (LeanDefSilver→LeanDef) —
+  closes the bidirectional Rust↔Lean Silver→Bronze tier-projection
+  pair.
+
+  Adds a TENTH distinct Diamond category on
+  `C-XLATE-RUST-FN-TO-LEAN-THM`, pushing the contract from depth-9
+  to depth-10. Second L5 contract at depth-10 in the broadening
+  wave.
+-/
+def rust_fn_silver_to_bronze (f : RustFnSilver) : RustFn :=
+  { body := f.body }
+
+theorem rust_fn_silver_to_bronze_projection_diamond (f : RustFnSilver) :
+    -- (a) body preserved by projection
+    ((rust_fn_silver_to_bronze f).body = f.body)
+    -- (b) projection is independent of name/generics/args/return_type (forgetful)
+    ∧ (rust_fn_silver_to_bronze ⟨#[], f.generics, f.args, f.return_type, f.body⟩
+        = rust_fn_silver_to_bronze ⟨f.name, f.generics, f.args, f.return_type, f.body⟩)
+    -- (c) empty body maps to empty Bronze RustFn
+    ∧ ((rust_fn_silver_to_bronze ⟨f.name, f.generics, f.args, f.return_type, #[]⟩).body.size = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (rust_fn_silver_to_bronze f = rust_fn_silver_to_bronze f) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXlateRustFnToLeanThm

@@ -645,6 +645,38 @@ equations:
     postconditions:
       - "Diamond depth-9 broadened: second L5 contract at depth-9 in broadening wave"
 
+  rust_fn_silver_to_bronze_projection_diamond:
+    # PMAT-408: TENTH Diamond on this contract — BROADENS DEPTH-10
+    # substrate-wide. Pushes XlateRustFnToLeanThm (Layer 5) from
+    # depth-9 to depth-10. Second L5 contract at depth-10 in the
+    # broadening wave.
+    # SILVER→BRONZE TIER PROJECTION on RustFnSilver: define the
+    # canonical forgetful map rust_fn_silver_to_bronze : RustFnSilver
+    # → RustFn that drops the name/generics/args/return_type fields.
+    # EIGHTH instance of Template 10 (Tier-projection homomorphism).
+    # **Closes Rust↔Lean Silver→Bronze tier-projection symmetry pair**
+    # with PMAT-407 (LeanDefSilver→LeanDef on XlateLeanToRust).
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.rust_fn_silver_to_bronze_projection_diamond"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    formula: |
+      Silver→Bronze tier projection homomorphism on RustFnSilver:
+        (a) rust_fn_silver_to_bronze(f).body = f.body
+        (b) projection is independent of name/generics/args/return_type (forgetful)
+        (c) empty body maps to empty Bronze RustFn
+        (d) self-equality
+    domain: |
+      The forgetful map rust_fn_silver_to_bronze : RustFnSilver
+      → RustFn that drops name, generics, args, and return_type
+      fields while retaining body.
+    invariants:
+      - "TENTH Diamond category on C-XLATE-RUST-FN-TO-LEAN-THM — BROADENS DEPTH-10 substrate-wide"
+      - "TIER-PROJECTION HOMOMORPHISM — eighth instance of Template 10"
+      - "Closes Rust↔Lean Silver→Bronze tier-projection symmetry pair with PMAT-407 (LeanDefSilver→LeanDef)"
+    preconditions:
+      - "one RustFnSilver record"
+    postconditions:
+      - "Diamond depth-10 broadened: second L5 contract at depth-10 in broadening wave"
+
 proof_obligations:
   - type: postcondition
     property: Lean def name equals Rust fn name
