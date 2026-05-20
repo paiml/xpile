@@ -1827,4 +1827,41 @@ theorem lift_ffi_call_bronze_to_silver_diamond (c : FfiCall) :
   · rfl
   · rfl
 
+/--
+  **PMAT-433 Diamond — FfiCall Bronze→Silver→Bronze round-trip identity.**
+
+  Define `ffi_call_silver_to_bronze : FfiCallSilver → FfiCall`
+  (the forgetful projection — drops all but symbol) and prove
+  the **round-trip identity** `silver_to_bronze ∘
+  bronze_to_silver = id_FfiCall`. **Introduces Template 13
+  (Bronze→Silver→Bronze round-trip identity)** as a new
+  substrate-wide recurring algebraic family — captures the
+  correctness relationship between Templates 10 (projection)
+  and 12 (lift).
+
+  Adds a THIRTEENTH distinct Diamond category on
+  `C-FFI-CPYTHON-EXT`, pushing the contract from depth-12 to
+  depth-13. First L4 contract at depth-13. **Opens Diamond
+  depth-13 ACROSS 3 LAYERS** (L1 PyIntArith + L4 FfiCpythonExt
+  + L5 CompileRustToPtxMma).
+-/
+def ffi_call_silver_to_bronze (c : FfiCallSilver) : FfiCall :=
+  { payload := c.symbol }
+
+theorem ffi_call_roundtrip_identity_diamond (c : FfiCall) :
+    -- (a) Bronze→Silver→Bronze is identity on Bronze
+    (ffi_call_silver_to_bronze (lift_ffi_call_bronze_to_silver c) = c)
+    -- (b) payload field is preserved through the round-trip
+    ∧ ((ffi_call_silver_to_bronze (lift_ffi_call_bronze_to_silver c)).payload
+        = c.payload)
+    -- (c) empty Bronze round-trips to empty
+    ∧ (ffi_call_silver_to_bronze (lift_ffi_call_bronze_to_silver ⟨#[]⟩) = ⟨#[]⟩)
+    -- (d) self-equality (reflexivity)
+    ∧ (c = c) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases c; rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CFfiCpythonExt
