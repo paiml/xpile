@@ -1677,4 +1677,33 @@ theorem lean_def_silver_to_bronze_projection_diamond (d : LeanDefSilver) :
   · rfl
   · rfl
 
+/--
+  **PMAT-418 Diamond — Canonical empty LeanDefSilver.**
+
+  Define the canonical empty LeanDefSilver with all fields empty
+  (the "empty Lean def" placeholder value). **EIGHTH instance of
+  Template 11 (Canonical identity element)**.
+
+  Adds an ELEVENTH distinct Diamond category on
+  `C-XLATE-LEAN-TO-RUST`, pushing the contract from depth-10 to
+  depth-11. First L5 contract at depth-11 in the broadening wave.
+-/
+def empty_lean_def_silver : LeanDefSilver :=
+  { name := #[], args := #[], return_type := #[], body := #[] }
+
+theorem empty_lean_def_silver_canonical_diamond :
+    -- (a) canonical name is empty
+    (empty_lean_def_silver.name = #[])
+    -- (b) canonical body is empty
+    ∧ (empty_lean_def_silver.body = #[])
+    -- (c) canonical name size is 0
+    ∧ (empty_lean_def_silver.name.size = 0)
+    -- (d) canonical body size is 0
+    ∧ (empty_lean_def_silver.body.size = 0) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXlateLeanToRust
