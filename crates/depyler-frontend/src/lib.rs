@@ -1227,11 +1227,56 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
         ast::Expr::Call(c) => lower_call(c),
         ast::Expr::BoolOp(b) => lower_bool_op(b),
         ast::Expr::UnaryOp(u) => lower_unary_op(u),
+        // PMAT-452 (v0.2.0 Track 1.A): f-string lowering. Python
+        // `f"hello, {name}!"` parses as JoinedStr { values: [
+        //   Constant("hello, "), FormattedValue(name), Constant("!")
+        // ] }. We fold the values into a left-associative chain of
+        // Expr::Concat — each level emits format!("{}{}", l, r) in
+        // Rust/Ruchy (which Display-coerces any operand), or
+        // (l ++ r) in Lean. Empty f-string → empty LitStr.
+        ast::Expr::JoinedStr(js) => lower_fstring(js.values),
+        // PMAT-452: FormattedValue inside an f-string. We strip the
+        // conversion + format_spec at v0.2.0 first cut (only `{expr}`
+        // without `!r` / `:>10` / etc. is supported); the underlying
+        // expression lowers as usual and gets Display-coerced by the
+        // surrounding format!() call.
+        ast::Expr::FormattedValue(fv) => {
+            if fv.conversion != ast::ConversionFlag::None || fv.format_spec.is_some() {
+                return Err(FrontendError::Lower(
+                    "f-string conversion flags (`!r`/`!s`/`!a`) and format specs (`:>10`/`:.2f`/etc.) \
+                     are not supported at v0.2.0 — use plain `{expr}` only"
+                        .into(),
+                ));
+            }
+            lower_expr(*fv.value)
+        }
         other => Err(FrontendError::Lower(format!(
             "unsupported expression: {:?}",
             std::mem::discriminant(&other)
         ))),
     }
+}
+
+/// PMAT-452 — lower an f-string's `values: Vec<ast::Expr>` to a
+/// left-associative chain of `Expr::Concat`.
+///
+/// - `values.len() == 0` → empty literal (`""`).
+/// - `values.len() == 1` → unwrap to the single part (no Concat).
+/// - `values.len() >= 2` → fold left: `Concat(Concat(v0, v1), v2)` ...
+fn lower_fstring(values: Vec<ast::Expr>) -> Result<Expr, FrontendError> {
+    let mut parts = values.into_iter();
+    let Some(first) = parts.next() else {
+        return Ok(Expr::LitStr(String::new()));
+    };
+    let mut acc = lower_expr(first)?;
+    for v in parts {
+        let rhs = lower_expr(v)?;
+        acc = Expr::Concat {
+            lhs: Box::new(acc),
+            rhs: Box::new(rhs),
+        };
+    }
+    Ok(acc)
 }
 
 /// Lower Python `a and b and c` / `a or b or c` to a left-folded chain

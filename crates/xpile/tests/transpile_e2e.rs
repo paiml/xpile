@@ -431,6 +431,25 @@ fn main() {
     assert_rustc_runs("factorial", &format!("{shim}\n{rust}"), driver);
 }
 
+/// PMAT-452 — v0.2.0 Track 1.A EXIT CRITERION: f-string lowering.
+/// `f"Hello, {name}!"` parses to `JoinedStr { values: [Const, Fmt, Const] }`,
+/// the frontend folds it to left-associative `Expr::Concat`, and the
+/// Rust backend emits nested `format!("{}{}", ...)`. This is the
+/// fixture cited by sub/v0.2.0-depyler-merger.md as the exit
+/// criterion for the depyler-merger string lane.
+#[test]
+fn greet_fstring_emitted_rust_returns_formatted_string() {
+    let rust = xpile_transpile_to_rust("greet_fstring.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(greet(String::from("world")), String::from("Hello, world!"));
+    assert_eq!(greet(String::from("xpile")), String::from("Hello, xpile!"));
+    assert_eq!(greet(String::from("")), String::from("Hello, !"));
+}
+"#;
+    assert_rustc_runs("greet_fstring", &rust, driver);
+}
+
 /// PMAT-451 — v0.2.0 Track 1.A: str + str concatenation via
 /// `Expr::Concat`. `"hello, " + name` lowers to `format!("{}{}", ...)`
 /// in Rust; verify the rustc round-trip produces `"hello, world"`.
