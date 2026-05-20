@@ -178,11 +178,13 @@ fn substrate_diamond_depth_7_opened() {
     let depth_7_plus = read_aggregate_field(&json, "depth_7_plus");
     // PMAT-292 opened depth-7 on C-PY-INT-ARITH (Layer 1): order-distributive-lattice.
     // PMAT-293 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): bounded lattice with top+bottom.
-    // Gate now asserts depth-7 ACROSS LAYERS (≥2 contracts at depth-7+).
+    // PMAT-367 BROADENED depth-7 to C-FFI-CPYTHON-EXT (Layer 4): FfiManifestEntryStructuredSilver struct ext.
+    // Gate now asserts depth-7 ACROSS 3 LAYERS (L1+L4+L5).
     assert!(
-        depth_7_plus >= 2,
-        "Diamond depth-7 ACROSS LAYERS milestone (PMAT-292, PMAT-293): \
-         expected ≥2 contracts at depth-7+ (Layer 1 + Layer 5), got {depth_7_plus}.\n{json}"
+        depth_7_plus >= 3,
+        "Diamond depth-7 ACROSS 3 LAYERS milestone (PMAT-292, PMAT-293, PMAT-367): \
+         expected ≥3 contracts at depth-7+ (Layer 1 + Layer 4 + Layer 5), \
+         got {depth_7_plus}.\n{json}"
     );
 }
 

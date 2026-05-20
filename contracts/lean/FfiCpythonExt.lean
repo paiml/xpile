@@ -1553,4 +1553,77 @@ theorem ffi_call_silver_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/-! ## PMAT-367 — SEVENTH Diamond on C-FFI-CPYTHON-EXT (Layer 4 OPENS
+    DEPTH-7 ACROSS 3 LAYERS):
+    FFI-MANIFEST-ENTRY-STRUCTURED-SILVER STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-FFI-CPYTHON-EXT-010).
+
+    **Opens DEPTH-7 ACROSS 3 LAYERS.** Before PMAT-367, depth-7 was
+    only on L1 (PyIntArith, PMAT-292) + L5 (CompileRustToPtxMma,
+    PMAT-293). PMAT-367 pushes FFI-CPYTHON-EXT (Layer 4) from
+    depth-6 to depth-7, adding the first L4 contract at depth-7.
+
+    The 7 Diamond categories on C-FFI-CPYTHON-EXT:
+    - PMAT-216 refcount_abelian_group_diamond
+    - PMAT-? refcount_inverse_diamond
+    - PMAT-? gil_invariant_preservation_diamond
+    - PMAT-? zero_copy_pointer_functor_diamond
+    - PMAT-328 refcount_delta_sign_decomp_diamond
+    - PMAT-356 ffi_call_silver_struct_extensionality_diamond
+    - **PMAT-367: FFI-MANIFEST-ENTRY-STRUCTURED STRUCTURE EXT** ← depth-7
+
+    Twenty-first substrate-wide demonstration of the structure-
+    extensionality pattern. Distinct from PMAT-356 (FfiCallSilver,
+    the CALL record) — PMAT-367 captures FfiManifestEntryStructuredSilver
+    (the MANIFEST record, with 6 typed fields: symbol, from_lang,
+    to_lang, args, return_type, refcount_delta).
+
+    Status: discharged at v0.1.0 (PMAT-367). Tier: DIAMOND.
+    OPENS DEPTH-7 ACROSS 3 LAYERS. -/
+
+/--
+  **Diamond-tier refinement theorem** — `FfiManifestEntryStructuredSilver`
+  admits STRUCTURE EXTENSIONALITY.
+
+  Combines four STRUCTURE-EXTENSIONALITY properties on the 6-field
+  FfiManifestEntryStructuredSilver record:
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality (congruence)
+  (c) Decidable equality (deriving DecidableEq)
+  (d) Self-equality (reflexivity)
+
+  Twenty-first substrate-wide demonstration of the structure-
+  extensionality pattern, opening depth-7 ACROSS 3 LAYERS.
+
+  Status: **discharged at v0.1.0 (PMAT-367)**. Tier: DIAMOND.
+  OPENS DEPTH-7 ACROSS 3 LAYERS.
+-/
+theorem ffi_manifest_entry_structured_struct_extensionality_diamond
+    (m1 m2 : FfiManifestEntryStructuredSilver) :
+    -- (a) Field equality → record equality
+    (m1.symbol = m2.symbol ∧ m1.from_lang = m2.from_lang
+        ∧ m1.to_lang = m2.to_lang ∧ m1.args = m2.args
+        ∧ m1.return_type = m2.return_type
+        ∧ m1.refcount_delta = m2.refcount_delta
+      → m1 = m2)
+    -- (b) Record equality → field equality
+    ∧ (m1 = m2 → m1.symbol = m2.symbol ∧ m1.from_lang = m2.from_lang
+        ∧ m1.to_lang = m2.to_lang ∧ m1.args = m2.args
+        ∧ m1.return_type = m2.return_type
+        ∧ m1.refcount_delta = m2.refcount_delta)
+    -- (c) Decidable equality
+    ∧ (m1 = m2 ∨ m1 ≠ m2)
+    -- (d) Self-equality (reflexivity)
+    ∧ (m1 = m1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2, h3, h4, h5, h6⟩
+    cases m1; cases m2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h], by rw [h], by rw [h], by rw [h], by rw [h]⟩
+  · by_cases h : m1 = m2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CFfiCpythonExt

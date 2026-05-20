@@ -506,6 +506,39 @@ equations:
     postconditions:
       - "Diamond depth-6 ACROSS 3 LAYERS opened: PyIntArith (L1) + FFI-CPYTHON-EXT (L4) + CompileRustToPtxMma (L5)"
 
+  ffi_manifest_entry_structured_struct_extensionality_diamond:
+    # PMAT-367: SEVENTH Diamond on this contract — OPENS DEPTH-7
+    # ACROSS 3 LAYERS. Before PMAT-367, depth-7 was only on L1
+    # (PyIntArith, PMAT-292) + L5 (CompileRustToPtxMma, PMAT-293).
+    # PMAT-367 pushes FFI-CPYTHON-EXT (Layer 4) from depth-6 to
+    # depth-7, adding the first L4 contract at depth-7.
+    # FFI-MANIFEST-ENTRY-STRUCTURED-SILVER STRUCTURE EXTENSIONALITY:
+    # the 6-field FfiManifestEntryStructuredSilver record (symbol,
+    # from_lang, to_lang, args, return_type, refcount_delta) is
+    # field-extensional with decidable equality. Twenty-first
+    # substrate-wide demonstration of the structure-extensionality
+    # pattern; second on Layer 4 after PMAT-356.
+    lean_theorem: "XpileContracts.CFfiCpythonExt.ffi_manifest_entry_structured_struct_extensionality_diamond"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
+    formula: |
+      FfiManifestEntryStructuredSilver admits STRUCTURE EXTENSIONALITY:
+        (a) field eq (6 fields) -> record eq
+        (b) record eq -> field eq (congruence)
+        (c) decidable equality
+        (d) self-equality (reflexivity)
+    domain: |
+      Two FfiManifestEntryStructuredSilver records with 6 fields
+      (symbol, from_lang, to_lang, args : Array UInt8;
+      return_type : Array UInt8; refcount_delta : Int).
+    invariants:
+      - "SEVENTH Diamond category on C-FFI-CPYTHON-EXT — OPENS DEPTH-7 ACROSS 3 LAYERS"
+      - "STRUCTURE EXTENSIONALITY — twenty-first substrate-wide demonstration of this pattern"
+      - "distinct from PMAT-356 (struct-ext of FfiCallSilver, the CALL record) — PMAT-367 captures the MANIFEST record"
+    preconditions:
+      - "two FfiManifestEntryStructuredSilver records (DecidableEq derived)"
+    postconditions:
+      - "Diamond depth-7 ACROSS 3 LAYERS opened: PyIntArith (L1) + FFI-CPYTHON-EXT (L4) + CompileRustToPtxMma (L5)"
+
 proof_obligations:
   - type: precondition
     property: both Python and C frontends produced meta-HIR
