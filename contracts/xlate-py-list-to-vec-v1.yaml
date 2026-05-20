@@ -710,3 +710,31 @@ qa_gate:
   required_tests:
     - every_referenced_lean_theorem_exists_in_its_file
     - every_referenced_kani_harness_exists_in_its_file
+
+  homogeneous_list_silver_struct_extensionality_diamond:
+    # PMAT-382: EIGHTH Diamond on this contract — BROADENS DEPTH-8
+    # substrate-wide. Pushes XlatePyListToVec (Layer 2) from depth-7
+    # to depth-8 as the second L2 contract at depth-8+. HOMOGENEOUS-
+    # LIST-SILVER α STRUCTURE EXTENSIONALITY: polymorphic 2-field
+    # record (elements : List α, element_type_tag : String). 
+    # Twenty-ninth substrate-wide demonstration. Fourth major record
+    # on this contract.
+    lean_theorem: "XpileContracts.CXlatePyListToVec.homogeneous_list_silver_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      HomogeneousListSilver α admits STRUCTURE EXTENSIONALITY (3-way):
+        (a) field eq -> record eq
+        (b) record eq -> field eq
+        (c) self-equality
+    domain: |
+      Two HomogeneousListSilver α records (elements : List α,
+      element_type_tag : String). No deriving DecidableEq (List α
+      type-class concern in polymorphic mode), so 3-way variant.
+    invariants:
+      - "EIGHTH Diamond category on C-XLATE-PY-LIST-TO-VEC — BROADENS DEPTH-8 substrate-wide"
+      - "STRUCTURE EXTENSIONALITY — twenty-ninth substrate-wide demonstration"
+      - "Fourth major record on this contract after PMAT-349/360/371"
+    preconditions:
+      - "two HomogeneousListSilver α records"
+    postconditions:
+      - "Diamond depth-8 broadened"
