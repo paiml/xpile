@@ -402,22 +402,21 @@ Key terms: **meta-HIR**, **Frontend trait**, **FFI manifest**, **oracle**, **age
 
 **Sub-spec**: [docs/status/CURRENT.md](../status/CURRENT.md). Live source of truth for the supported subset: `CHANGELOG.md`.
 
-v0.1.0 — **end-to-end transpiler with semantic round-trip verification**:
+v0.1.0 — **SHIPPED 2026-05-20** — first real release; `cargo install xpile` works for end users:
 
-- ✅ 27 workspace crates compile clean (`cargo check`, `cargo clippy -- -D warnings`)
-- ✅ `aprender-contracts` (`pv`) wired via crates.io 0.33 (path-dep removed in PR #3 fix)
-- ✅ 12 contracts pass `pv lint` (0 errors, 0 warnings — full clean state as of PMAT-138 closing XPILE-REFINE-005)
-- ✅ **100% §14.4 N-of-M QUORUM coverage** — all 12 contracts have paired Lean refinement theorems (`contracts/lean/*.lean`) AND Kani BMC harnesses (`contracts/kani/*.rs`) at Bronze tier; **50 Lean theorems + 43 Kani harnesses** (post-XPILE-QUORUM-006 series PMAT-147..151 fanning out per-equation Kani coverage for the 5 multi-equation contracts). PMAT-058..077 shipped the substrate-completion run; PMAT-127..138 closed all PV-ENF warnings; PMAT-147..151 closed the per-equation Sym gap. See `xpile quorum` and CHANGELOG entries for each contract.
-- ✅ Four real backends (Rust, Ruchy, Lean 4, Shell/bashrs); PTX/WGSL/SPIR-V still scaffolded
+- ✅ **All 27 workspace crates published to crates.io at v0.1.0** (topological order; published over ~3.5h on the new-crate 5/hour rate-limit budget). xpile is no longer a name reservation — it's a working CLI.
+- ✅ `aprender-contracts` (`pv`) wired via crates.io 0.33
+- ✅ 12 contracts pass `pv lint` (0 errors, 0 warnings)
+- ✅ **100% §14.4 N-of-M QUORUM coverage** — all 12 contracts have paired Lean refinement theorems AND Kani BMC harnesses; **638 stratum-vote artifacts** total (285 Semantic + 53 Symbolic + 15 Runtime + 285 Extrinsic) across all 5 taxonomy layers. See `xpile quorum`.
+- ✅ **Eleven UNIVERSAL Diamond milestones depth-3..13** (PMAT-336..442); **171 wired Diamond theorems** across 12 contracts; 13 recurring algebraic templates. Deepest contracts: `C-PY-INT-ARITH` at depth-21, `C-COMPILE-RUST-TO-PTX-MMA` at depth-20. Diamond coverage CI-enforced via `crates/xpile/tests/diamond_coverage.rs` (22 integration tests, depth-1..13 UNIVERSAL gates).
+- ✅ **Four real backends** (Rust, Ruchy, Lean 4, Shell/bashrs); PTX/WGSL/SPIR-V still scaffolded
 - ✅ Python subset (canonical: [`/CHANGELOG.md`](../../CHANGELOG.md)): typed `def`, multi-statement body, all binary + unary ops including bitwise / power, ternary, if/elif/else with single- *or multi-*assignment branches, function calls including self-recursion, **while loops with mutable rebinding** (PMAT-006), **for-in-range with positive *or negative* literal steps** (PMAT-007, PMAT-008), **`subprocess.run([...])` cross-domain to bashrs** (PMAT-040..058)
-- ✅ Shell subset (POSIX): quoted strings (single + double + escape sequences), `$NAME` / `${NAME}` variable expansion, `$(cmd)` and backtick command substitution, NAME=value assignment, pipelines, ShellLoop (for/while/until), POSIX special parameters ($1..9, $@, $#, etc.). See PMAT-037..058 entries.
-- ✅ Semantic round-trip verified for 11+ fixtures (factorial, fib, gcd, abs_val, sign, bits, square_plus, range_size, sum_to, for_sum / range_with_start / range_with_step, factorial_iter) plus shell `bashrs_realistic_demo.sh` (PMAT-052)
-- ✅ CI gate enforced on PRs (fmt, check, clippy -D warnings, pv lint, cargo deny, workspace tests including `every_kani_harness_discharges`, dedicated `kani` job runs all 43 BMC harnesses post-XPILE-QUORUM-006)
-- ✅ Branch protection on `main`; crates.io reservation at `xpile 0.0.1`
-- ⏳ Bigint promotion (`py-int-arith-v1.yaml` slow path) — fast-path
-  overflow is now load-bearing (Rust + Ruchy emit
-  `.checked_*().expect(...)`, contract name appears in the panic
-  message); the slow path itself is still unimplemented
+- ✅ Shell subset (POSIX): quoted strings (single + double + escape sequences), `$NAME` / `${NAME}` variable expansion, `$(cmd)` and backtick command substitution, NAME=value assignment, pipelines, ShellLoop (for/while/until), POSIX special parameters
+- ✅ **297 workspace tests**, all green; semantic round-trip verified for 11+ Python fixtures (factorial, fib, gcd, abs_val, sign, bits, square_plus, range_size, sum_to, for_sum / range_with_start / range_with_step, factorial_iter) plus shell `bashrs_realistic_demo.sh`
+- ✅ CI: `gate` + `workspace-test` + `kani` + new `book` workflow all green on every PR
+- ✅ **Branch protection on `main`**; tag `v0.1.0` pushed at commit `7a82b23`; GitHub Release live at https://github.com/paiml/xpile/releases/tag/v0.1.0
+- ✅ **End-user-facing mdBook deployed** at https://paiml.github.io/xpile/ (PMAT-446) — 16 chapters covering introduction, install, quick start, concepts/contracts/Diamond-substrate, tutorials for Python→Rust/Lean and shell round-trip, full CLI + frontend + backend + contract reference, and contributing guides. Every concept/tutorial page begins with a `> **Governing contract:**` quote-block linking to the contract row, so the citation graph stays joinable from prose to YAML to Lean to Kani. `pmat comply asset-validate` → 4 pass, 0 warn, 3 skip.
+- ⏳ Bigint promotion (`py-int-arith-v1.yaml` slow path) — fast-path overflow is load-bearing (Rust + Ruchy emit `.checked_*().expect(...)`, contract name appears in the panic message); the slow path itself is still unimplemented
 - ⏳ Types beyond int/bool (str, float, collections)
 - ⏳ Lean encoding for `while` (`partial def` tail-recursion follow-up)
 - ⏳ `for` over non-range iterables (blocked on collection types)

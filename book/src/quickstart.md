@@ -79,6 +79,24 @@ $ xpile quorum      # if you're in a repo with contracts/
 
 See the [CLI reference](reference/cli.md) for everything xpile can do.
 
+## 5. Runnable examples (library API)
+
+The repository ships six runnable examples under
+[`crates/xpile/examples/`](https://github.com/paiml/xpile/tree/main/crates/xpile/examples)
+that use the **library API** instead of the CLI:
+
+```bash
+$ git clone https://github.com/paiml/xpile && cd xpile
+$ cargo run --example 01_python_to_rust   -p xpile  # factorial → Rust
+$ cargo run --example 02_python_to_lean   -p xpile  # factorial → Lean
+$ cargo run --example 03_python_to_ruchy  -p xpile  # gcd → Ruchy (Python-floor `%`)
+$ cargo run --example 04_shell_roundtrip  -p xpile  # POSIX shell in → POSIX shell out
+$ cargo run --example 05_python_to_shell  -p xpile  # `subprocess.run([...])` → shell
+$ cargo run --example 06_inspect_session  -p xpile  # what's registered?
+```
+
+Each one prints input + output + a "what this demonstrates" block.
+
 ## Next steps
 
 - [Two lanes, one substrate](concepts/two-lanes.md) — the mental model.
