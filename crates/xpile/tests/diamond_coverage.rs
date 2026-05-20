@@ -156,19 +156,20 @@ fn substrate_diamond_depth_5_opened() {
 #[test]
 fn substrate_diamond_depth_6_opened() {
     let json = run_diamond_json();
+    let contracts_total = read_aggregate_field(&json, "contracts_total");
     let depth_6_plus = read_aggregate_field(&json, "depth_6_plus");
-    // PMAT-290 opened depth-6 on C-PY-INT-ARITH (Layer 1).
-    // PMAT-291 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5).
-    // PMAT-356 BROADENED depth-6 to C-FFI-CPYTHON-EXT (Layer 4).
-    // PMAT-357 BROADENED depth-6 to C-BASHRS-POSIX-IDEMPOTENCE (Layer 2).
-    // PMAT-358 COMPLETED depth-6 ACROSS ALL 5 TAXONOMY LAYERS via C-XPILE-FRONTEND-TRAIT (Layer 3).
-    // PMAT-359 BROADENED depth-6 to C-XPILE-BACKEND-TRAIT (Layer 3).
-    // PMAT-362 BROADENED depth-6 to C-NOTATION-LATEX-MATH-TO-EQUATION (Layer 5).
-    // PMAT-361 BROADENED depth-6 to C-XPILE-CONTRACT-FRONTEND-TRAIT (Layer 3).
+    // PMAT-290/291 opened depth-6 on L1 + L5.
+    // PMAT-356..362 BROADENED to 8 contracts.
+    // PMAT-363/364 BROADENED to 10 contracts.
+    // PMAT-365 COMPLETED depth-6 UNIVERSAL via C-XLATE-RUST-FN-TO-LEAN-THM —
+    // substrate milestone: every contract has ≥6 Diamond categories.
+    // Parallel to PMAT-336/344/354 (depth-3/4/5 UNIVERSAL).
+    // Gate accepts UNIVERSAL or ≥8 (interim while parallel PRs land).
     assert!(
-        depth_6_plus >= 8,
-        "Diamond depth-6 BROADENED milestone (PMAT-290/291/356/357/358/359/362/361): \
-         expected ≥8 contracts at depth-6+, got {depth_6_plus}.\n{json}"
+        depth_6_plus == contracts_total || depth_6_plus >= 8,
+        "Diamond depth-6 UNIVERSAL milestone (PMAT-365): every contract should have \
+         ≥6 Diamond equations; on this branch the gate accepts ≥8 (interim) or UNIVERSAL. \
+         Got {depth_6_plus} of {contracts_total}.\n{json}"
     );
 }
 
