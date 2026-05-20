@@ -1554,4 +1554,37 @@ theorem empty_definition_env_silver_canonical_diamond :
   · rfl
   · rfl
 
+/--
+  **PMAT-431 Diamond — DefinitionEnv Bronze→Silver lift.**
+
+  Define the canonical lift `definition_env_bronze_to_silver` :
+  `DefinitionEnv → DefinitionEnvSilver` that preserves
+  first_math_span and defaults all_math_spans to empty and label
+  to none. **TENTH instance of Template 12 (Bronze→Silver
+  canonical-lift homomorphism)**. **COMPLETES DEPTH-12 UNIVERSAL
+  ACROSS ALL 12 CONTRACTS** alongside PMAT-305/306 (initial L1/L5
+  opens) and PMAT-422..430 broadening wave.
+
+  Adds a TWELFTH distinct Diamond category on
+  `C-NOTATION-LATEX-MATH-TO-EQUATION`, pushing the contract from
+  depth-11 to depth-12. Third L5 contract at depth-12.
+-/
+def definition_env_bronze_to_silver (d : DefinitionEnv) : DefinitionEnvSilver :=
+  { first_math_span := d.first_math_span, all_math_spans := #[], label := none }
+
+theorem definition_env_bronze_to_silver_lift_diamond (d : DefinitionEnv) :
+    -- (a) lift preserves first_math_span
+    ((definition_env_bronze_to_silver d).first_math_span = d.first_math_span)
+    -- (b) lift sets default all_math_spans to empty
+    ∧ ((definition_env_bronze_to_silver d).all_math_spans = #[])
+    -- (c) empty Bronze first_math_span maps to empty Silver first_math_span
+    ∧ ((definition_env_bronze_to_silver ⟨""⟩).first_math_span = "")
+    -- (d) self-equality (reflexivity)
+    ∧ (definition_env_bronze_to_silver d = definition_env_bronze_to_silver d) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CNotationLatexMathToEquation
