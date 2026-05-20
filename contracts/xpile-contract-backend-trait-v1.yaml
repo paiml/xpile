@@ -343,6 +343,33 @@ equations:
     postconditions:
       - "DEPTH-5 UNIVERSAL achieved: 12 contracts at depth-5+"
 
+  rendered_doc_silver_struct_extensionality_diamond:
+    # PMAT-364: SIXTH Diamond on this contract — BROADENS DEPTH-6
+    # substrate-wide. Pushes XpileContractBackendTrait (Layer 3) from
+    # depth-5 to depth-6. RENDERED-DOC-SILVER STRUCTURE EXTENSIONALITY:
+    # the 2-field RenderedDocSilver record (bytes, citations) is
+    # field-extensional with decidable equality. Twentieth
+    # substrate-wide demonstration of the structure-extensionality
+    # pattern.
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.rendered_doc_silver_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    formula: |
+      RenderedDocSilver admits STRUCTURE EXTENSIONALITY:
+        (a) field eq (bytes, citations) -> record eq
+        (b) record eq -> field eq (congruence)
+        (c) decidable equality
+        (d) self-equality
+    domain: |
+      Two RenderedDocSilver records (bytes : Array UInt8, citations :
+      Array ContractId) with derived DecidableEq.
+    invariants:
+      - "SIXTH Diamond category on C-XPILE-CONTRACT-BACKEND-TRAIT — BROADENS DEPTH-6 substrate-wide"
+      - "STRUCTURE EXTENSIONALITY — twentieth substrate-wide demonstration of this pattern"
+    preconditions:
+      - "two RenderedDocSilver records (DecidableEq derived)"
+    postconditions:
+      - "Diamond depth-6 broadened: contracts at depth-6+"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractBackend
