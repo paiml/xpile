@@ -911,4 +911,40 @@ theorem consistent_frontend_output_subtype_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/--
+  **PMAT-403 Diamond — Silver→Bronze tier projection on MetaHirModuleSilver.**
+
+  Define the canonical forgetful map
+  `metahir_module_silver_to_bronze : MetaHirModuleSilver →
+  MetaHirModule` that drops the `source_lang` field, retaining
+  only `bytes`. **THIRD instance of Template 10 (Tier-projection
+  homomorphism)** introduced in PMAT-401. Closes Frontend↔Backend
+  trait Silver→Bronze tier-projection symmetry pair with
+  PMAT-402 (ArtifactSilver→Artifact).
+
+  Adds a TENTH distinct Diamond category on
+  `C-XPILE-FRONTEND-TRAIT`, pushing the contract from depth-9 to
+  depth-10. Second L3 contract at depth-10 in the broadening wave.
+-/
+def metahir_module_silver_to_bronze (m : MetaHirModuleSilver) : MetaHirModule :=
+  { bytes := m.bytes }
+
+theorem metahir_module_silver_to_bronze_projection_diamond
+    (m : MetaHirModuleSilver) :
+    -- (a) bytes preserved by projection
+    ((metahir_module_silver_to_bronze m).bytes = m.bytes)
+    -- (b) projection is independent of source_lang (forgetful)
+    ∧ (metahir_module_silver_to_bronze ⟨m.bytes, SourceLang.python⟩
+        = metahir_module_silver_to_bronze ⟨m.bytes, m.source_lang⟩)
+    -- (c) empty bytes maps to empty Bronze MetaHirModule
+    ∧ ((metahir_module_silver_to_bronze ⟨#[], m.source_lang⟩).bytes.size = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (metahir_module_silver_to_bronze m
+        = metahir_module_silver_to_bronze m) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileFrontendTrait
