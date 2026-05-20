@@ -694,4 +694,63 @@ theorem outcome_exit_code_int_sign_diamond (o : OutcomeSilver) :
   · intro h; rw [h]; simp
   · rfl
 
+/-! ## PMAT-368 — SEVENTH Diamond on C-BASHRS-POSIX-IDEMPOTENCE
+    (Layer 2 BROADENS DEPTH-7):
+    OUTCOME (BRONZE) STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-BASHRS-010).
+
+    **Broadens DEPTH-7 substrate-wide.** Pushes Bashrs (Layer 2)
+    from depth-6 to depth-7 as the second L2/non-L1-L5 contract at
+    depth-7+.
+
+    The 7 Diamond categories on C-BASHRS-POSIX-IDEMPOTENCE:
+    - PMAT-215 bashrs_pure_function_diamond
+    - PMAT-? python_pure_function_diamond
+    - PMAT-238 exit_code_constant_projection_diamond
+    - PMAT-329 outcome_struct_extensionality_diamond (OutcomeSilver)
+    - PMAT-346 outcome_observable_length_nat_diamond
+    - PMAT-357 outcome_exit_code_int_sign_diamond
+    - **PMAT-368: OUTCOME (BRONZE) STRUCTURE EXTENSIONALITY** ← depth-7
+
+    Twenty-second substrate-wide demonstration of the structure-
+    extensionality pattern. Distinct from PMAT-329 (OutcomeSilver,
+    the Silver-tier record) — PMAT-368 captures the Bronze-tier
+    Outcome record (single observable : String field).
+
+    Status: discharged at v0.1.0 (PMAT-368). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `Outcome` (Bronze) admits
+  STRUCTURE EXTENSIONALITY.
+
+  Combines four properties on the single-field Outcome record
+  (observable : String):
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality (congruence)
+  (c) Decidable equality
+  (d) Self-equality
+
+  Status: **discharged at v0.1.0 (PMAT-368)**. Tier: DIAMOND.
+-/
+theorem outcome_struct_extensionality_bronze_diamond
+    (o1 o2 : Outcome) :
+    -- (a) Field equality → record equality
+    (o1.observable = o2.observable → o1 = o2)
+    -- (b) Record equality → field equality
+    ∧ (o1 = o2 → o1.observable = o2.observable)
+    -- (c) Decidable equality
+    ∧ (o1 = o2 ∨ o1 ≠ o2)
+    -- (d) Self-equality (reflexivity)
+    ∧ (o1 = o1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    cases o1; cases o2
+    simp_all
+  · intro h
+    rw [h]
+  · by_cases h : o1 = o2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CBashrsPosixIdempotence
