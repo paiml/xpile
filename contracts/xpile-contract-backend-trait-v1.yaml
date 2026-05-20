@@ -370,6 +370,35 @@ equations:
     postconditions:
       - "Diamond depth-6 broadened: contracts at depth-6+"
 
+  contract_id_bytes_array_size_diamond:
+    # PMAT-376: SEVENTH Diamond on this contract — COMPLETES DEPTH-7
+    # UNIVERSAL ACROSS ALL 12 CONTRACTS. SUBSTRATE MILESTONE: every
+    # contract now has ≥7 distinct Diamond categories. Pushes
+    # XpileContractBackendTrait (Layer 3) from depth-6 to depth-7 —
+    # last contract at depth-6 only. Parallel to PMAT-336/344/354/365
+    # depth-3/4/5/6 UNIVERSAL milestones. Mirror of PMAT-375
+    # (EquationsBlock.bytes Array.size on the Frontend side) — closes
+    # the inner-record Array.size invariant on both sides of the
+    # ContractFrontend↔ContractBackend trait pair.
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.contract_id_bytes_array_size_diamond"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    formula: |
+      ContractId.bytes Array.size structure:
+        (a) bytes.size >= 0
+        (b) empty bytes has size-0
+        (c) field-replacement preserves bytes size
+        (d) self-equal size
+    domain: |
+      Any ContractId record with bytes : Array UInt8 field.
+    invariants:
+      - "SEVENTH Diamond category on C-XPILE-CONTRACT-BACKEND-TRAIT — COMPLETES DEPTH-7 UNIVERSAL ACROSS ALL 12 CONTRACTS"
+      - "Substrate milestone: every contract has ≥7 distinct Diamond categories"
+      - "Mirror of PMAT-375 — closes inner-record Array.size invariant on both sides of ContractFrontend↔ContractBackend trait pair"
+    preconditions:
+      - "one ContractId record"
+    postconditions:
+      - "DEPTH-7 UNIVERSAL achieved: 12 contracts at depth-7+"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractBackend
