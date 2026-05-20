@@ -870,4 +870,34 @@ theorem rendered_doc_silver_to_bronze_projection_diamond
   · rfl
   · rfl
 
+/--
+  **PMAT-416 Diamond — Canonical empty Contract.**
+
+  Define the canonical empty Contract with no dependencies and no
+  references. **SIXTH instance of Template 11 (Canonical identity
+  element)**. Closes ContractFrontend↔ContractBackend trait
+  canonical-element symmetry pair with PMAT-415 (empty_session).
+
+  Adds an ELEVENTH distinct Diamond category on
+  `C-XPILE-CONTRACT-BACKEND-TRAIT`, pushing the contract from
+  depth-10 to depth-11. Fourth L3 contract at depth-11.
+-/
+def empty_contract : Contract :=
+  { depends_on := #[], references := #[] }
+
+theorem empty_contract_canonical_diamond :
+    -- (a) canonical depends_on is empty
+    (empty_contract.depends_on = #[])
+    -- (b) canonical references is empty
+    ∧ (empty_contract.references = #[])
+    -- (c) canonical depends_on size is 0
+    ∧ (empty_contract.depends_on.size = 0)
+    -- (d) canonical references size is 0
+    ∧ (empty_contract.references.size = 0) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileContractBackendTrait

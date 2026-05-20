@@ -493,6 +493,34 @@ equations:
     postconditions:
       - "Diamond depth-10 broadened: fourth L3 contract at depth-10"
 
+  empty_contract_canonical_diamond:
+    # PMAT-416: ELEVENTH Diamond on this contract — BROADENS DEPTH-11
+    # substrate-wide. Pushes XpileContractBackendTrait (Layer 3)
+    # from depth-10 to depth-11. Fourth L3 contract at depth-11.
+    # CANONICAL EMPTY CONTRACT: define the canonical Contract with
+    # no dependencies and no references.
+    # **SIXTH instance of Template 11 (Canonical identity element)**.
+    # Closes ContractFrontend↔ContractBackend trait canonical-element
+    # symmetry pair with PMAT-415 (empty_session).
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.empty_contract_canonical_diamond"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    formula: |
+      Canonical identity element on Contract:
+        (a) empty_contract.depends_on = #[]
+        (b) empty_contract.references = #[]
+        (c) empty_contract.depends_on.size = 0
+        (d) empty_contract.references.size = 0
+    domain: |
+      The canonical empty Contract with no dependencies and no
+      references — the citation-free state.
+    invariants:
+      - "ELEVENTH Diamond category on C-XPILE-CONTRACT-BACKEND-TRAIT — BROADENS DEPTH-11 substrate-wide"
+      - "CANONICAL IDENTITY ELEMENT — sixth instance of Template 11"
+      - "Closes ContractFrontend↔ContractBackend trait canonical-element symmetry pair with PMAT-415 (empty_session)"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-11 broadened: fourth L3 contract at depth-11"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractBackend
