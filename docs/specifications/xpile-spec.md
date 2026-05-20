@@ -519,16 +519,17 @@ audit-design.md §6 already shows we know *how* the five-whys → provable-contr
 
 **Sub-spec**: [sub/diamond-taxonomy.md](sub/diamond-taxonomy.md)
 
-The substrate's Diamond-tier program (PMAT-214..344) ships **82 wired Diamond equations across 12 contracts**, demonstrating 75+ distinct algebraic categories grouped into 27+ families. Two UNIVERSAL milestones now hold: **depth-3 UNIVERSAL** (PMAT-336) and **depth-4 UNIVERSAL** (PMAT-344) — every contract has ≥4 Diamond categories. The structure-extensionality pattern (introduced at PMAT-311) became a substrate-wide recurring theme demonstrated on 9 distinct record/subtype contracts (PMAT-311, 329..336). Five recurring algebraic templates emerged during the broadening sweeps: structure-extensionality, Array.size structure, enum distinctness, Nat structure, reverse involution.
+The substrate's Diamond-tier program (PMAT-214..354) ships **91 wired Diamond equations across 12 contracts**, demonstrating 80+ distinct algebraic categories grouped into 28+ families. **Three UNIVERSAL milestones now hold**: **depth-3 UNIVERSAL** (PMAT-336), **depth-4 UNIVERSAL** (PMAT-344), and **depth-5 UNIVERSAL** (PMAT-354) — every contract has ≥5 Diamond categories. The structure-extensionality pattern (introduced at PMAT-311) became a substrate-wide recurring theme demonstrated on **13 distinct record/subtype contracts** (PMAT-311, 329..336, 349, 352, 353, 354). Six recurring algebraic templates emerged during the broadening sweeps: structure-extensionality, Array.size structure, enum distinctness, Nat structure, reverse involution, String.length Nat-structure.
 
 **Path β extension recap (this work stream):**
 
 1. **Path β depth grind** (PMAT-298..327): pushed PyIntArith from depth-8 → depth-21 (13 new tiers), CompileRustToPtxMma from depth-8 → depth-20 (12 new tiers) — each tier added genuinely orthogonal algebraic categories (ring, integral-domain, ordered-ring, normed-ring, sign function, gcd/PID, unit group, partial-inverse, order-embedding, etc.).
-2. **Strategic pivot to BROADENING** (PMAT-328..344):
+2. **Strategic pivot to BROADENING** (PMAT-328..354):
    - **First broadening wave (PMAT-328..336):** pushed 8 contracts to depth-3+ via the structure-extensionality pattern, achieving **depth-3 UNIVERSAL across all 12 contracts** (PMAT-336) and **depth-4 ACROSS ALL 5 TAXONOMY LAYERS** (PMAT-330).
    - **Second broadening wave (PMAT-338..344):** pushed 7 contracts from depth-3 to depth-4 via five recurring algebraic templates (structure-extensionality, Array.size structure, enum distinctness, Nat structure, reverse involution), achieving **depth-4 UNIVERSAL across all 12 contracts** (PMAT-344).
+   - **Third broadening wave (PMAT-346..354):** pushed 9 contracts from depth-4 to depth-5, achieving **depth-5 ACROSS ALL 5 TAXONOMY LAYERS** (PMAT-347) and then **depth-5 UNIVERSAL across all 12 contracts** (PMAT-354). Substantially expanded the structure-extensionality template family (PMAT-349, 352, 353, 354) and introduced the String.length Nat-structure as a sixth recurring template (PMAT-346, 350).
 
-### Coverage state (v0.1.0+, post-PMAT-286..344)
+### Coverage state (v0.1.0+, post-PMAT-286..354)
 
 | Depth | Coverage | Mechanism |
 |---|---|---|
@@ -536,7 +537,7 @@ The substrate's Diamond-tier program (PMAT-214..344) ships **82 wired Diamond eq
 | Diamond depth-2 | 12/12 contracts (UNIVERSAL, CI-enforced) | PMAT-228..250, CI gate via PMAT-251 |
 | **Diamond depth-3** | **12/12 contracts (UNIVERSAL, post-PMAT-336)** | PMAT-241..245 + PMAT-289 + PMAT-331..336 broadening sweep |
 | **Diamond depth-4** | **12/12 contracts (UNIVERSAL, post-PMAT-344)** | PMAT-247/248/288/329/330 (one per layer) + PMAT-338..344 (broadening sweep) |
-| Diamond depth-5 | 3 contracts ACROSS 3 LAYERS (post-PMAT-328) | PMAT-286 (L1), PMAT-328 (L4), PMAT-287 (L5) |
+| **Diamond depth-5** | **12/12 contracts (UNIVERSAL, post-PMAT-354)** | PMAT-286/287/328 (initial) + PMAT-346..354 broadening sweep |
 | Diamond depth-6 | 2 contracts ACROSS LAYERS | PMAT-290 (PyIntArith), PMAT-291 (CompileRustToPtxMma) |
 | Diamond depth-7 | 2 contracts ACROSS LAYERS | PMAT-292 (PyIntArith), PMAT-293 (CompileRustToPtxMma) |
 | Diamond depth-8 | 2 contracts ACROSS LAYERS | PMAT-294 (PyIntArith), PMAT-295 (CompileRustToPtxMma) |
@@ -604,7 +605,7 @@ The substrate's Diamond-tier program (PMAT-214..344) ships **82 wired Diamond eq
 ### Tooling
 
 - `xpile diamond` (PMAT-249): live per-contract Diamond count + depth classification, with `--json` output for CI dashboards. Depth labels: `none` / `depth-1` / ... / `depth-20` / `depth-21+`.
-- `crates/xpile/tests/diamond_coverage.rs` (PMAT-251..344): CI gate — **22 integration tests** enforce depth-1/2/3/4 UNIVERSAL (all 12 contracts), depth-5 across 3 layers, depth-6..21 across 2 layers (or single deepest), plus aggregate-total-≥30; substrate-wide Diamond coverage cannot regress.
+- `crates/xpile/tests/diamond_coverage.rs` (PMAT-251..354): CI gate — **22 integration tests** enforce depth-1/2/3/4/5 UNIVERSAL (all 12 contracts), depth-6..21 across 2 layers (or single deepest), plus aggregate-total-≥30; substrate-wide Diamond coverage cannot regress.
 
 ### Canonical reference
 

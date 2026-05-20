@@ -7,17 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-### Added — Diamond depth-5 BROADENED: LeanDefSilver struct extensionality on `C-XLATE-RUST-FN-TO-LEAN-THM` (PMAT-352)
-=======
-### Added — **MILESTONE: Diamond depth-5 UNIVERSAL ACROSS ALL 12 CONTRACTS** via ContractId struct extensionality on `C-XPILE-CONTRACT-BACKEND-TRAIT` (PMAT-354)
->>>>>>> e83fa2b (PMAT-354: MILESTONE — Diamond depth-5 UNIVERSAL ACROSS ALL 12 CONTRACTS via ContractId struct extensionality on C-XPILE-CONTRACT-BACKEND-TRAIT)
+### Changed — Spec §28 + sub/diamond-taxonomy.md sync to post-PMAT-354 substrate state (PMAT-355)
 
-**SUBSTRATE MILESTONE: depth-5 UNIVERSAL.** After 13 broadening sweeps (PMAT-286/287/328/346/347/348/349/350/351/352/353 + 2 earlier opens), every contract has ≥5 distinct Diamond categories. **Parallel to PMAT-336 (depth-3 UNIVERSAL) and PMAT-344 (depth-4 UNIVERSAL)** — the substrate now has UNIVERSAL coverage at depths 1, 2, 3, 4, AND 5.
+**Spec sync**: `xpile-spec.md` §28 and `sub/diamond-taxonomy.md` now reflect the post-depth-5-UNIVERSAL substrate:
+
+- **91 wired Diamond theorems** (was 82) across 12 contracts.
+- **28+ Diamond categories** grouped into recurring algebraic families.
+- **Three UNIVERSAL milestones documented**: depth-3 (PMAT-336), depth-4 (PMAT-344), and depth-5 (PMAT-354).
+- **Six recurring algebraic templates** (was 5) — added **Template 6: String.length Nat-structure** (demonstrated on PMAT-346 OutcomeSilver, PMAT-350 EquationFormulaSilver).
+- **Template 1 (structure-extensionality) expanded to 13 contracts** — added PMAT-349 (PyListSilver α polymorphic), PMAT-352 (LeanDefSilver — closes Rust↔Lean pair), PMAT-353 (EquationsBlock inner), PMAT-354 (ContractId inner — closes ContractFrontend↔ContractBackend pair at both abstraction levels).
+- **Template 2 (Array.size) expanded to 5 contracts** — added PMAT-348 (ArtifactSilver.bytes), PMAT-351 (RustFn.body).
+- **Template 3 (enum distinctness) expanded to 3 contracts** — added PMAT-347 (SourceLang).
+- **Third broadening wave (PMAT-346..354) documented**: 9-PR sweep from depth-4 to depth-5 UNIVERSAL with intermediate ALL 5 LAYERS milestone at PMAT-347.
+
+### Added — **MILESTONE: Diamond depth-5 UNIVERSAL ACROSS ALL 12 CONTRACTS** via ContractId struct extensionality on `C-XPILE-CONTRACT-BACKEND-TRAIT` (PMAT-354)
+
+**SUBSTRATE MILESTONE: depth-5 UNIVERSAL.** After 13 broadening sweeps (PMAT-286/287/328/346/347/348/349/350/351/352/353 + earlier opens), every contract has ≥5 distinct Diamond categories. **Parallel to PMAT-336 (depth-3 UNIVERSAL) and PMAT-344 (depth-4 UNIVERSAL)** — the substrate now has UNIVERSAL coverage at depths 1, 2, 3, 4, AND 5.
 
 **5 Diamond categories on `C-XPILE-CONTRACT-BACKEND-TRAIT`:**
 
@@ -35,37 +40,37 @@ This is the **thirteenth substrate-wide demonstration** of the structure-extensi
 - `substrate_diamond_depth_5_opened` gate **tightened to UNIVERSAL** (`== contracts_total`).
 - Substrate Diamond totals: **91 wired theorems** (was 90).
 
-### Added — Diamond depth-5 BROADENED from 7 to 8 contracts: EquationFormula ASCII length on `C-NOTATION-LATEX-MATH-TO-EQUATION` (PMAT-350)
-<<<<<<< HEAD
-=======
-### Added — Diamond depth-5 BROADENED: EquationsBlock struct extensionality on `C-XPILE-CONTRACT-FRONTEND-TRAIT` (PMAT-353)
->>>>>>> 5cf58ce (PMAT-353: Diamond depth-5 BROADENED to C-XPILE-CONTRACT-FRONTEND-TRAIT (EquationsBlock struct extensionality))
+### Added — Diamond depth-5 BROADENED to `C-XPILE-CONTRACT-FRONTEND-TRAIT` (EquationsBlock struct extensionality, PMAT-353)
 
-**Post-PMAT-352 broadening.** PMAT-352 brought XlateRustFnToLeanThm (Layer 5) to depth-5 as the 4th L5 contract; PMAT-353 pushes `C-XPILE-CONTRACT-FRONTEND-TRAIT` (Layer 3) from depth-4 to depth-5, making it the **third Layer 3 contract** at depth-5+.
+**Post-PMAT-352 broadening.** PMAT-353 pushes `C-XPILE-CONTRACT-FRONTEND-TRAIT` (Layer 3) from depth-4 to depth-5, making it the **third Layer 3 contract** at depth-5+.
 
-**5 Diamond categories on `C-XPILE-CONTRACT-FRONTEND-TRAIT`:**
+5 Diamond categories: PMAT-217 (modules_equivalence_relation), PMAT-250 (parse_preserves_equivalence_class), PMAT-332 (transpile_session_struct_extensionality — outer record), PMAT-340 (transpile_session_array_size), **PMAT-353 `equations_block_struct_extensionality_diamond`** (inner record) ← depth-5.
 
-1. PMAT-217 `modules_equivalence_relation_diamond`
-2. PMAT-250 `parse_preserves_equivalence_class_diamond`
-3. PMAT-332 `transpile_session_struct_extensionality_diamond` (outer record)
-4. PMAT-340 `transpile_session_array_size_diamond` (Array.size)
-5. **PMAT-353 `equations_block_struct_extensionality_diamond`** (inner record) ← depth-5
+**Twelfth substrate-wide demonstration** of the structure-extensionality pattern, capturing the INNER EquationsBlock record.
 
-This is the **twelfth substrate-wide demonstration** of the structure-extensionality pattern — and captures the INNER EquationsBlock record (distinct from PMAT-332 which captured the OUTER TranspileSession record).
-=======
+### Added — Diamond depth-5 BROADENED to `C-XLATE-RUST-FN-TO-LEAN-THM` (LeanDefSilver struct extensionality, PMAT-352)
 
-**Post-PMAT-349 broadening.** PMAT-349 brought XlatePyListToVec (Layer 2) to depth-5; PMAT-350 pushes `C-NOTATION-LATEX-MATH-TO-EQUATION` (Layer 5) from depth-4 to depth-5, making it the **second Layer 5 contract** at depth-5+ (CompileRustToPtxMma was first via PMAT-287).
+**Post-PMAT-351 broadening.** PMAT-352 pushes `C-XLATE-RUST-FN-TO-LEAN-THM` (Layer 5) from depth-4 to depth-5, making it the **fourth Layer 5 contract** at depth-5+.
 
-**5 Diamond categories on `C-NOTATION-LATEX-MATH-TO-EQUATION`:**
+5 Diamond categories: PMAT-220 (precondition_list_monoid), PMAT-236 (nonempty_preconditions_section_retraction), PMAT-336 (rust_fn_silver_struct_extensionality — Rust side), PMAT-344 (rust_fn_silver_body_size), **PMAT-352 `lean_def_silver_struct_extensionality_diamond`** (Lean side) ← depth-5.
 
-1. PMAT-219 `citation_string_monoid_diamond` (string monoid)
-2. PMAT-234 `citation_product_monoid_diamond` (product monoid)
-3. PMAT-334 `equation_formula_struct_extensionality_diamond` (record structure)
-4. PMAT-342 `latex_display_kind_enum_distinctness_diamond` (enum distinctness)
-5. **PMAT-350 `equation_formula_ascii_length_nat_diamond`** (String.length Nat-structure) ← depth-5
+**Eleventh substrate-wide demonstration** of the structure-extensionality pattern, closing the Rust ↔ Lean translation pair at the STRUCTURE level (PMAT-336 captured the Rust side; PMAT-352 the Lean side).
 
-This is the **second substrate-wide demonstration** of the String.length Nat-structure template (after PMAT-346 OutcomeSilver) — complementing the Array.size template family (PMAT-340/341/343/344/348).
->>>>>>> e83fa2b (PMAT-354: MILESTONE — Diamond depth-5 UNIVERSAL ACROSS ALL 12 CONTRACTS via ContractId struct extensionality on C-XPILE-CONTRACT-BACKEND-TRAIT)
+### Added — Diamond depth-5 BROADENED to `C-XLATE-LEAN-TO-RUST` (RustFn body Array.size, PMAT-351)
+
+**Post-PMAT-350 broadening.** PMAT-351 pushes `C-XLATE-LEAN-TO-RUST` (Layer 5) from depth-4 to depth-5, making it the **third Layer 5 contract** at depth-5+.
+
+5 Diamond categories: PMAT-222 (inductive_monoid), PMAT-237 (variant_count_cardinality_functor), PMAT-335 (rust_fn_struct_extensionality), PMAT-343 (variant_count_nat_structure), **PMAT-351 `rust_fn_body_array_size_diamond`** ← depth-5.
+
+**Sixth substrate-wide demonstration** of the Array.size template (after PMAT-340/341/344/348).
+
+### Added — Diamond depth-5 BROADENED to `C-NOTATION-LATEX-MATH-TO-EQUATION` (EquationFormula ASCII length, PMAT-350)
+
+**Post-PMAT-349 broadening.** PMAT-350 pushes `C-NOTATION-LATEX-MATH-TO-EQUATION` (Layer 5) from depth-4 to depth-5, making it the **second Layer 5 contract** at depth-5+ (CompileRustToPtxMma was first via PMAT-287).
+
+5 Diamond categories: PMAT-219 (citation_string_monoid), PMAT-234 (citation_product_monoid), PMAT-334 (equation_formula_struct_extensionality), PMAT-342 (latex_display_kind_enum_distinctness), **PMAT-350 `equation_formula_ascii_length_nat_diamond`** ← depth-5.
+
+**Second substrate-wide demonstration** of the String.length Nat-structure template (after PMAT-346 OutcomeSilver) — complementing the Array.size template family.
 
 ### Added — Diamond depth-5 BROADENED from 6 to 7 contracts: PyListSilver struct extensionality on `C-XLATE-PY-LIST-TO-VEC` (PMAT-349)
 
