@@ -216,6 +216,32 @@ Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 | `paiml/paiml-mcp-agent-toolkit` | `pmat` |
 | `pymc-labs/alchemize` | Source of the four-tool agent loop pattern |
 
+## Install
+
+```bash
+cargo install xpile
+```
+
+Requires Rust 1.93+. All 27 workspace crates are published on crates.io
+at v0.1.0. For source-based installs and the optional dev tooling (`pv`,
+`pmat`, `cargo kani`), see the
+[book's Installation chapter](https://paiml.github.io/xpile/installation.html).
+
+## Usage
+
+```bash
+$ xpile info                                  # list registered frontends/backends
+$ xpile transpile factorial.py                # Python → Rust (default)
+$ xpile transpile factorial.py --target ruchy # Python → Ruchy
+$ xpile transpile factorial.py --target lean  # Python → Lean 4
+$ xpile transpile script.sh --target shell    # POSIX shell round-trip
+$ xpile diamond --contracts-dir ./contracts   # Diamond-tier coverage report
+$ xpile quorum  --contracts-dir ./contracts   # 4-stratum quorum report
+```
+
+End-to-end tutorials and the full CLI reference live in the book:
+**<https://paiml.github.io/xpile/>**.
+
 ## License
 
 MIT OR Apache-2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
