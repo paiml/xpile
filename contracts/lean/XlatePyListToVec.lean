@@ -1360,4 +1360,25 @@ theorem py_list_bronze_to_silver_u8_lift_diamond (l : PyList) :
   · rfl
   · rfl
 
+/--
+  **PMAT-439 Diamond — PyList Bronze→Silver UInt8→Bronze round-trip identity.**
+
+  Define `py_list_silver_u8_to_bronze : PyListSilver UInt8 →
+  PyList` and prove round-trip identity. SEVENTH instance of
+  Template 13. UInt8-specialized.
+-/
+def py_list_silver_u8_to_bronze (l : PyListSilver UInt8) : PyList :=
+  { elems := l.elems.toArray }
+
+theorem py_list_roundtrip_identity_diamond (l : PyList) :
+    (py_list_silver_u8_to_bronze (py_list_bronze_to_silver_u8 l) = l)
+    ∧ ((py_list_silver_u8_to_bronze (py_list_bronze_to_silver_u8 l)).elems = l.elems)
+    ∧ (py_list_silver_u8_to_bronze (py_list_bronze_to_silver_u8 ⟨#[]⟩) = ⟨#[]⟩)
+    ∧ (l = l) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases l; simp [py_list_silver_u8_to_bronze, py_list_bronze_to_silver_u8]
+  · simp [py_list_silver_u8_to_bronze, py_list_bronze_to_silver_u8]
+  · rfl
+  · rfl
+
 end XpileContracts.CXlatePyListToVec
