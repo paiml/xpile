@@ -1522,4 +1522,36 @@ theorem definition_env_silver_to_bronze_projection_diamond
   · rfl
   · rfl
 
+/--
+  **PMAT-420 Diamond — Canonical empty DefinitionEnvSilver.**
+
+  Define the canonical empty DefinitionEnvSilver with empty
+  first_math_span, empty all_math_spans, and no label.
+  **TENTH instance of Template 11 (Canonical identity element)**.
+  **COMPLETES DEPTH-11 UNIVERSAL ACROSS ALL 12 CONTRACTS** alongside
+  PMAT-302/303 (initial L1/L5 opens) and PMAT-411..419 (broadening
+  wave). Substrate now at NINE UNIVERSAL milestones.
+
+  Adds an ELEVENTH distinct Diamond category on
+  `C-NOTATION-LATEX-MATH-TO-EQUATION`, pushing the contract from
+  depth-10 to depth-11. Third L5 contract at depth-11.
+-/
+def empty_definition_env_silver : DefinitionEnvSilver :=
+  { first_math_span := "", all_math_spans := #[], label := none }
+
+theorem empty_definition_env_silver_canonical_diamond :
+    -- (a) canonical first_math_span is empty
+    (empty_definition_env_silver.first_math_span = "")
+    -- (b) canonical all_math_spans is empty
+    ∧ (empty_definition_env_silver.all_math_spans = #[])
+    -- (c) canonical label is none
+    ∧ (empty_definition_env_silver.label = none)
+    -- (d) canonical all_math_spans size is 0
+    ∧ (empty_definition_env_silver.all_math_spans.size = 0) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CNotationLatexMathToEquation
