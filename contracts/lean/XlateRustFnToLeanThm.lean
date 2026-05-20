@@ -1119,4 +1119,61 @@ theorem lean_def_silver_body_size_diamond (d : LeanDefSilver) :
   · exact Nat.zero_le _
   · omega
 
+/-! ## PMAT-374 — SEVENTH Diamond on C-XLATE-RUST-FN-TO-LEAN-THM
+    (Layer 5 BROADENS DEPTH-7):
+    CONTRACT-OBLIGATION-SILVER STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XLATE-RUST-FN-TO-LEAN-THM-009).
+
+    **Broadens DEPTH-7 substrate-wide.** Pushes XlateRustFnToLeanThm
+    (Layer 5) from depth-6 to depth-7 as the fourth L5 contract at
+    depth-7+.
+
+    The 7 Diamond categories on C-XLATE-RUST-FN-TO-LEAN-THM:
+    - PMAT-220 precondition_list_monoid
+    - PMAT-236 nonempty_preconditions_section_retraction
+    - PMAT-336 rust_fn_silver_struct_extensionality (Rust)
+    - PMAT-344 rust_fn_silver_body_size (Rust Array.size)
+    - PMAT-352 lean_def_silver_struct_extensionality (Lean struct)
+    - PMAT-365 lean_def_silver_body_size (Lean Array.size)
+    - **PMAT-374: CONTRACT-OBLIGATION-SILVER STRUCTURE EXT** ← depth-7
+
+    Twenty-sixth substrate-wide demonstration of the structure-
+    extensionality pattern. Captures the CONTRACT OBLIGATION input
+    record (applies_to_all : Bool, source_index : Nat, expansion_count
+    : Nat) — distinct from the Rust/Lean output pair captured by
+    PMAT-336/352.
+
+    Status: discharged at v0.1.0 (PMAT-374). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `ContractObligationSilver`
+  admits STRUCTURE EXTENSIONALITY.
+
+  3-field record (applies_to_all : Bool, source_index : Nat,
+  expansion_count : Nat) with derived DecidableEq.
+
+  Status: **discharged at v0.1.0 (PMAT-374)**. Tier: DIAMOND.
+-/
+theorem contract_obligation_silver_struct_extensionality_diamond
+    (o1 o2 : ContractObligationSilver) :
+    (o1.applies_to_all = o2.applies_to_all
+        ∧ o1.source_index = o2.source_index
+        ∧ o1.expansion_count = o2.expansion_count
+      → o1 = o2)
+    ∧ (o1 = o2 → o1.applies_to_all = o2.applies_to_all
+        ∧ o1.source_index = o2.source_index
+        ∧ o1.expansion_count = o2.expansion_count)
+    ∧ (o1 = o2 ∨ o1 ≠ o2)
+    ∧ (o1 = o1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2, h3⟩
+    cases o1; cases o2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h], by rw [h]⟩
+  · by_cases h : o1 = o2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXlateRustFnToLeanThm
