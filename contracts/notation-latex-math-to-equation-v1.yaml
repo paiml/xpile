@@ -744,6 +744,40 @@ equations:
     postconditions:
       - "DEPTH-9 UNIVERSAL achieved: 12 contracts at depth-9+"
 
+  definition_env_silver_to_bronze_projection_diamond:
+    # PMAT-409: TENTH Diamond on this contract — COMPLETES DEPTH-10
+    # UNIVERSAL ACROSS ALL 12 CONTRACTS. Pushes Notation (Layer 5)
+    # from depth-9 to depth-10 as the third L5 contract at depth-10.
+    # Parallel to PMAT-336 (depth-3), PMAT-344 (depth-4), PMAT-354
+    # (depth-5), PMAT-365 (depth-6), PMAT-376 (depth-7), PMAT-387
+    # (depth-8 UNIVERSAL), PMAT-398 (depth-9 UNIVERSAL). Substrate
+    # now at EIGHT UNIVERSAL milestones.
+    # SILVER→BRONZE TIER PROJECTION on DefinitionEnvSilver: define
+    # the canonical forgetful map definition_env_silver_to_bronze :
+    # DefinitionEnvSilver → DefinitionEnv that drops the
+    # all_math_spans and label fields. NINTH instance of Template 10
+    # (Tier-projection homomorphism).
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.definition_env_silver_to_bronze_projection_diamond"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      Silver→Bronze tier projection homomorphism on DefinitionEnvSilver:
+        (a) definition_env_silver_to_bronze(d).first_math_span = d.first_math_span
+        (b) projection is independent of all_math_spans/label (forgetful)
+        (c) empty first_math_span maps to empty Bronze first_math_span
+        (d) self-equality
+    domain: |
+      The forgetful map definition_env_silver_to_bronze :
+      DefinitionEnvSilver → DefinitionEnv that drops all_math_spans
+      and label fields while retaining first_math_span.
+    invariants:
+      - "TENTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — COMPLETES DEPTH-10 UNIVERSAL ACROSS ALL 12 CONTRACTS"
+      - "TIER-PROJECTION HOMOMORPHISM — ninth instance of Template 10"
+      - "Substrate milestone: every contract has ≥10 distinct Diamond categories — EIGHT UNIVERSAL milestones"
+    preconditions:
+      - "one DefinitionEnvSilver record"
+    postconditions:
+      - "DEPTH-10 UNIVERSAL achieved: 12 contracts at depth-10+"
+
 proof_obligations:
   - type: postcondition
     property: math-mode round-trips through render() losslessly
