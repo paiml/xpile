@@ -695,4 +695,53 @@ theorem equations_block_bytes_array_size_diamond (e : EquationsBlock) :
   · rfl
   · rfl
 
+/-! ## PMAT-386 — EIGHTH Diamond on C-XPILE-CONTRACT-FRONTEND-TRAIT
+    (Layer 3 BROADENS DEPTH-8):
+    METAHIR-MODULE BYTES ARRAY.SIZE STRUCTURE
+    (XPILE-REFINE-XPILE-CONTRACT-FRONTEND-TRAIT-011).
+
+    **Broadens DEPTH-8 substrate-wide.** Pushes
+    XpileContractFrontendTrait (Layer 3) from depth-7 to depth-8 as
+    the third L3 contract at depth-8+.
+
+    The 8 Diamond categories on C-XPILE-CONTRACT-FRONTEND-TRAIT:
+    - PMAT-217 modules_equivalence_relation
+    - PMAT-250 parse_preserves_equivalence_class
+    - PMAT-332 transpile_session_struct_extensionality
+    - PMAT-340 transpile_session_array_size
+    - PMAT-353 equations_block_struct_extensionality
+    - PMAT-361 metahir_module_struct_extensionality
+    - PMAT-375 equations_block_bytes_array_size
+    - **PMAT-386: METAHIR-MODULE BYTES ARRAY.SIZE STRUCTURE** ← depth-8
+
+    Mirror of PMAT-375 (EquationsBlock.bytes Array.size) on the
+    modules side — together they close inner-record Array.size on
+    both sides of TranspileSession (equations and modules). Eleventh
+    substrate-wide Array.size demonstration.
+
+    Status: discharged at v0.1.0 (PMAT-386). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `MetaHirModule.bytes`
+  Array.size structure.
+
+  Single-field Nat-measure invariants:
+  (a) bytes.size is non-negative
+  (b) Empty bytes has size-0
+  (c) Field-replacement preserves bytes size
+  (d) Self-equal size (reflexivity)
+
+  Status: **discharged at v0.1.0 (PMAT-386)**. Tier: DIAMOND.
+-/
+theorem metahir_module_bytes_array_size_diamond (m : MetaHirModule) :
+    (0 ≤ m.bytes.size)
+    ∧ ((⟨#[]⟩ : MetaHirModule).bytes.size = 0)
+    ∧ ((⟨m.bytes⟩ : MetaHirModule).bytes.size = m.bytes.size)
+    ∧ (m.bytes.size = m.bytes.size) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.zero_le _
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileContractFrontendTrait

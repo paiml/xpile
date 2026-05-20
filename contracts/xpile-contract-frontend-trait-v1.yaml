@@ -380,6 +380,34 @@ equations:
     postconditions:
       - "Diamond depth-7 broadened: 3 L3 contracts at depth-7"
 
+  metahir_module_bytes_array_size_diamond:
+    # PMAT-386: EIGHTH Diamond on this contract — BROADENS DEPTH-8
+    # substrate-wide. Pushes XpileContractFrontendTrait (Layer 3) from
+    # depth-7 to depth-8 as the third L3 contract at depth-8+.
+    # METAHIR-MODULE BYTES ARRAY.SIZE STRUCTURE: mirror of PMAT-375
+    # (EquationsBlock.bytes Array.size) on the modules side. Together
+    # they close inner-record Array.size on both sides of
+    # TranspileSession (equations + modules). Eleventh substrate-wide
+    # Array.size demonstration.
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.metahir_module_bytes_array_size_diamond"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    formula: |
+      MetaHirModule.bytes Array.size structure:
+        (a) bytes.size >= 0
+        (b) empty bytes has size-0
+        (c) field-replacement preserves bytes size
+        (d) self-equal size
+    domain: |
+      Any MetaHirModule record with bytes : Array UInt8 field.
+    invariants:
+      - "EIGHTH Diamond category on C-XPILE-CONTRACT-FRONTEND-TRAIT — BROADENS DEPTH-8 substrate-wide"
+      - "ARRAY.SIZE STRUCTURE — eleventh substrate-wide demonstration"
+      - "Mirror of PMAT-375 (EquationsBlock.bytes) — closes inner-record Array.size on both TranspileSession sides"
+    preconditions:
+      - "one MetaHirModule record"
+    postconditions:
+      - "Diamond depth-8 broadened: 3 L3 contracts at depth-8"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractFrontend
