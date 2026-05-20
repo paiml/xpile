@@ -662,6 +662,29 @@ equations:
     postconditions:
       - "Diamond depth-6 broadened: 2 L5 contracts at depth-6 (CompileRustToPtxMma + Notation)"
 
+  latex_display_kind_enum_completeness_diamond:
+    # PMAT-372: SEVENTH Diamond on this contract — BROADENS DEPTH-7
+    # substrate-wide. Mirror of PMAT-370 (Target enum completeness).
+    # Together PMAT-342 (distinctness) + PMAT-372 (completeness) give
+    # the full finite-enumeration axiomatization for LatexDisplayKind.
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.latex_display_kind_enum_completeness_diamond"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      LatexDisplayKind admits FINITE ENUMERATION COMPLETENESS:
+        (a) total coverage: every LatexDisplayKind = one of 3 variants
+        (b) self-equality
+        (c) decidable membership
+        (d) constructor distinctness sample
+    domain: |
+      Any LatexDisplayKind value (3-variant inductive).
+    invariants:
+      - "SEVENTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — BROADENS DEPTH-7 substrate-wide"
+      - "FINITE ENUMERATION COMPLETENESS — complement to PMAT-342 distinctness; mirror of PMAT-370 Target"
+    preconditions:
+      - "LatexDisplayKind inductive type with derived DecidableEq"
+    postconditions:
+      - "Diamond depth-7 broadened: 2 L5 contracts at depth-7"
+
 proof_obligations:
   - type: postcondition
     property: math-mode round-trips through render() losslessly
