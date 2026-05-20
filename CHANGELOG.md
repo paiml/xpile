@@ -7,6 +7,46 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Spec §28 + sub/diamond-taxonomy.md sync to depth-11 UNIVERSAL + 9 UNIVERSAL milestones + 11 recurring templates (PMAT-421)
+
+**Spec sync** to post-depth-11-UNIVERSAL substrate:
+
+- **151 wired Diamond theorems** (was 141) across 12 contracts.
+- **37+ Diamond categories** grouped into recurring families.
+- **Nine UNIVERSAL milestones documented**: depth-3..11.
+- **Eleven recurring algebraic templates** (was 10) — added **Template 11: Canonical identity element** demonstrated on 10 substrate canonical-element diamonds (PMAT-411..420).
+- **Ninth broadening wave (PMAT-411..420)** documented: 10-PR sweep from depth-10 to depth-11 UNIVERSAL.
+- Cross-substrate symmetry closures: Frontend↔Backend canonical-element pair (PMAT-413/414), ContractFrontend↔ContractBackend canonical-element pair (PMAT-415/416), Rust↔Lean canonical-element pair (PMAT-418/419).
+- Third polymorphic Template instance (PMAT-417 empty_py_list_silver α).
+
+### Added — **MILESTONE: Diamond depth-11 UNIVERSAL ACROSS ALL 12 CONTRACTS** via empty DefinitionEnvSilver canonical on `C-NOTATION-LATEX-MATH-TO-EQUATION` (PMAT-420)
+
+**SUBSTRATE MILESTONE: depth-11 UNIVERSAL.** Ninth UNIVERSAL milestone. After 10 broadening sweeps (PMAT-411..419), every contract has ≥11 distinct Diamond categories.
+
+**Coverage state at PMAT-420:**
+
+| Metric | Value |
+|---|---|
+| Wired Diamond theorems | **151** |
+| Diamond categories | 37+ |
+| UNIVERSAL milestones | **9** (depth-3..11) |
+| Contracts at depth-11+ | **12 = contracts_total** — **UNIVERSAL** |
+| Recurring templates | **11** |
+
+### Added — Diamond depth-11 broadening sweep PMAT-411..419 (Template 11: Canonical identity element)
+
+The depth-11 wave **introduced Template 11** as a new recurring algebraic family — distinguished identity/zero elements on Silver/Gold tiered models.
+
+- **PMAT-411** (L4): balanced_refcount_delta on FfiCpythonExt — **Template 11 introduction**.
+- **PMAT-412** (L2): empty_success_outcome on Bashrs.
+- **PMAT-413** (L3): empty_rust_artifact on BackendTrait.
+- **PMAT-414** (L3): empty_python_module on FrontendTrait — closes F↔B pair.
+- **PMAT-415** (L3): empty_session on ContractFrontendTrait.
+- **PMAT-416** (L3): empty_contract on ContractBackendTrait — closes CF↔CB pair.
+- **PMAT-417** (L2): empty_py_list_silver α on PyListToVec — third polymorphic canonical.
+- **PMAT-418** (L5): empty_lean_def_silver on XlateLeanToRust.
+- **PMAT-419** (L5): empty_rust_fn_silver on XlateRustFnToLeanThm — closes Rust↔Lean pair.
+
 ### Changed — Spec §28 + sub/diamond-taxonomy.md sync to depth-10 UNIVERSAL + 8 UNIVERSAL milestones + 10 recurring templates (PMAT-410)
 
 **Spec sync**: `xpile-spec.md` §28 and `sub/diamond-taxonomy.md` now reflect the post-depth-10-UNIVERSAL substrate:
