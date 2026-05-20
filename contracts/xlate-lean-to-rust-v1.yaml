@@ -872,6 +872,27 @@ equations:
     postconditions:
       - "Diamond depth-11 broadened: first L5 contract at depth-11 in broadening wave"
 
+  lean_def_bronze_to_silver_lift_diamond:
+    # PMAT-429: TWELFTH Diamond on this contract — BROADENS DEPTH-12.
+    # BRONZE→SILVER LIFT on LeanDef: preserves body, defaults
+    # name/args/return_type to empty. **EIGHTH instance of Template 12**.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.lean_def_bronze_to_silver_lift_diamond"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      Bronze→Silver canonical-lift on LeanDef:
+        (a) preserves body
+        (b) defaults name to empty
+        (c) empty maps to empty
+        (d) reflexivity
+    domain: |
+      The lift lean_def_bronze_to_silver : LeanDef → LeanDefSilver.
+    invariants:
+      - "TWELFTH Diamond category on C-XLATE-LEAN-TO-RUST — BROADENS DEPTH-12 substrate-wide"
+      - "BRONZE→SILVER LIFT HOMOMORPHISM — eighth instance of Template 12"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-12 broadened: first L5 contract at depth-12 in broadening wave"
+
 proof_obligations:
   - type: postcondition
     property: total def lowers to a panic-free Rust fn
