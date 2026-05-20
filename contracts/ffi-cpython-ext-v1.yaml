@@ -600,6 +600,37 @@ equations:
     postconditions:
       - "Diamond depth-9 ACROSS 3 LAYERS opened: PyIntArith (L1) + FFI-CPYTHON-EXT (L4) + CompileRustToPtxMma (L5)"
 
+  bounded_refcount_delta_subtype_extensionality_diamond:
+    # PMAT-400: TENTH Diamond on this contract — OPENS DEPTH-10
+    # ACROSS 3 LAYERS. Pushes FFI-CPYTHON-EXT (Layer 4) from
+    # depth-9 to depth-10 as the first L4 contract at depth-10.
+    # BOUNDED-REFCOUNT-DELTA SUBTYPE EXTENSIONALITY: the Gold-tier
+    # subtype `{ d : Int // -refcount_delta_bound ≤ d ∧
+    # d ≤ refcount_delta_bound }` admits subtype extensionality.
+    # ELEVENTH substrate-wide subtype-extensionality demonstration
+    # (Template 9 Gold-tier subtype-ext expands to 11 contracts).
+    # Mirror of PMAT-311 (BoundedSmem Nat) on Int — both are
+    # bounded-numeric subtypes with `≤` constraints.
+    lean_theorem: "XpileContracts.CFfiCpythonExt.bounded_refcount_delta_subtype_extensionality_diamond"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
+    formula: |
+      BoundedRefcountDelta admits SUBTYPE EXTENSIONALITY:
+        (a) val eq -> subtype eq (Subtype.ext)
+        (b) subtype eq -> val eq (congruence)
+        (c) decidable equality
+        (d) self-equality
+    domain: |
+      Two BoundedRefcountDelta values (Gold-tier Int subtype with
+      bounded-magnitude witness ±refcount_delta_bound).
+    invariants:
+      - "TENTH Diamond category on C-FFI-CPYTHON-EXT — OPENS DEPTH-10 ACROSS 3 LAYERS"
+      - "SUBTYPE EXTENSIONALITY — eleventh substrate-wide demonstration (Template 9 Gold-tier subtype-ext)"
+      - "Mirror of PMAT-311 (BoundedSmem Nat) — both bounded-numeric subtypes with `≤` constraints"
+    preconditions:
+      - "two BoundedRefcountDelta values"
+    postconditions:
+      - "Diamond depth-10 ACROSS 3 LAYERS opened: PyIntArith (L1) + FFI-CPYTHON-EXT (L4) + CompileRustToPtxMma (L5)"
+
 proof_obligations:
   - type: precondition
     property: both Python and C frontends produced meta-HIR
