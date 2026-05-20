@@ -18,7 +18,7 @@ A Diamond theorem combines multiple Platinum properties into a **single algebrai
 
 ## Coverage milestones
 
-As of v0.1.0+ (PMAT-214..365), the substrate has:
+As of v0.1.0+ (PMAT-214..376), the substrate has:
 
 - **Diamond depth-1 UNIVERSAL** (12/12 contracts): every contract has at least one Diamond at one algebraic category.
 - **Diamond depth-2 UNIVERSAL** (12/12 contracts): every contract has at least two **distinct** Diamond categories. CI-enforced via PMAT-251.
@@ -26,6 +26,7 @@ As of v0.1.0+ (PMAT-214..365), the substrate has:
 - **Diamond depth-4 UNIVERSAL** (12/12 contracts, post-PMAT-344): every contract has ≥4 distinct Diamond categories. Achieved through PMAT-247/248/288/329/330 (ALL 5 LAYERS milestone at PMAT-330) followed by 7-PR broadening sweep (PMAT-338..344) using five recurring algebraic templates.
 - **Diamond depth-5 UNIVERSAL** (12/12 contracts, post-PMAT-354): every contract has ≥5 distinct Diamond categories. Achieved through PMAT-286/287/328 (initial L1/L4/L5 opens) followed by a 9-PR broadening sweep (PMAT-346..354), with **depth-5 ACROSS ALL 5 TAXONOMY LAYERS** intermediate milestone at PMAT-347 and **depth-5 UNIVERSAL** finale at PMAT-354. The broadening leaned heavily on the structure-extensionality template (PMAT-349, 352, 353, 354) and introduced the String.length Nat-structure as a sixth recurring template (PMAT-346, 350).
 - **Diamond depth-6 UNIVERSAL** (12/12 contracts, post-PMAT-365): every contract has ≥6 distinct Diamond categories. Achieved through PMAT-290/291 (initial L1/L5 opens) followed by a 10-PR broadening sweep (PMAT-356..365), with **depth-6 ACROSS ALL 5 TAXONOMY LAYERS** intermediate milestone at PMAT-358 and **depth-6 UNIVERSAL** finale at PMAT-365. The wave was dominated by the structure-extensionality template (PMAT-356/359/360/361/362/363/364) — and closed Rust↔Lean Array.size invariant on both sides (PMAT-344 Rust, PMAT-365 Lean) and ContractFrontend↔ContractBackend inner/outer record extensionality on the trait pair (PMAT-353/354/361/364).
+- **Diamond depth-7 UNIVERSAL** (12/12 contracts, post-PMAT-376): every contract has ≥7 distinct Diamond categories. Achieved through PMAT-292/293 (initial L1/L5 opens) followed by a 10-PR broadening sweep (PMAT-367..376), with **depth-7 ACROSS ALL 5 TAXONOMY LAYERS** intermediate milestone at PMAT-369 and **depth-7 UNIVERSAL** finale at PMAT-376. The wave continued the structure-extensionality template (PMAT-367/368/371/373/374) and Array.size template (PMAT-375/376), and **introduced the enum completeness template as a 7th recurring algebraic family** (PMAT-370 Target, PMAT-372 LatexDisplayKind).
 - **Diamond depth-7 ACROSS LAYERS** (2/12 contracts): PMAT-292 (order-distributive-lattice on L1) + PMAT-293 (bounded lattice with top+bottom on L5).
 - **Diamond depth-8 ACROSS LAYERS** (2/12 contracts): PMAT-294 (divisibility-preorder on L1, FIRST relation-not-operation category) + PMAT-295 (cancellative monoid on L5).
 - **Diamond depth-9 ACROSS LAYERS** (2/12 contracts): PMAT-298 (linear-order trichotomy on L1) + PMAT-299 (ordered-monoid on L5).
@@ -42,15 +43,15 @@ As of v0.1.0+ (PMAT-214..365), the substrate has:
 - **Diamond depth-20 ACROSS LAYERS** (2/12 contracts): PMAT-325 (Int.toNat partial inverse on L1) + PMAT-326 (Nat power monotonicity on L5).
 - **Diamond depth-21** (1/12 contracts, DEEPEST): PMAT-327 (Nat-cast order embedding on PyIntArith L1, captures Mathlib's `OrderRingHom Nat Int` shape together with PMAT-310).
 
-**Substrate total: 101 wired Diamond equations across 12 contracts.**
+**Substrate total: 111 wired Diamond equations across 12 contracts.**
 
 ## Recurring algebraic templates (substrate-wide)
 
-Six recurring algebraic templates emerged during the depth-3/depth-4/depth-5/depth-6 broadening sweeps. Each is mechanically applicable to specific record/subtype/enum patterns, enabling the **depth-3 UNIVERSAL** (PMAT-336), **depth-4 UNIVERSAL** (PMAT-344), **depth-5 UNIVERSAL** (PMAT-354), and **depth-6 UNIVERSAL** (PMAT-365) milestones:
+Seven recurring algebraic templates emerged during the depth-3/4/5/6/7 broadening sweeps. Each is mechanically applicable to specific record/subtype/enum patterns, enabling the **depth-3 UNIVERSAL** (PMAT-336), **depth-4 UNIVERSAL** (PMAT-344), **depth-5 UNIVERSAL** (PMAT-354), **depth-6 UNIVERSAL** (PMAT-365), and **depth-7 UNIVERSAL** (PMAT-376) milestones:
 
 ### Template 1: Structure-extensionality
 
-Demonstrated on **20 distinct record/subtype contracts** (PMAT-311 + PMAT-329..336 + PMAT-349, 352, 353, 354, 356, 359, 360, 361, 362, 363, 364):
+Demonstrated on **26 distinct record/subtype contracts** (PMAT-311 + PMAT-329..336 + PMAT-349, 352..354, 356, 359..364, 367, 368, 371, 373, 374):
 
 | PMAT | Contract | Target type |
 |---|---|---|
@@ -74,6 +75,12 @@ Demonstrated on **20 distinct record/subtype contracts** (PMAT-311 + PMAT-329..3
 | 362 | C-NOTATION-LATEX-MATH-TO-EQUATION | LatexCitationSilver (record, CITATION record) |
 | 363 | C-XLATE-LEAN-TO-RUST | RustItemWithCitationSilver (record, 3-field) |
 | 364 | C-XPILE-CONTRACT-BACKEND-TRAIT | RenderedDocSilver (record) |
+| 367 | C-FFI-CPYTHON-EXT | FfiManifestEntryStructuredSilver (record, 6-field manifest) |
+| 368 | C-BASHRS-POSIX-IDEMPOTENCE | Outcome (Bronze, single-field) |
+| 369 | C-XPILE-FRONTEND-TRAIT | Frontend (record, INPUT side — closes Frontend↔Backend trait input-record pair with PMAT-359) |
+| 371 | C-XLATE-PY-LIST-TO-VEC | HeterogeneousListSilver (rejection record) |
+| 373 | C-XLATE-LEAN-TO-RUST | LeanInductive (record, Lean INPUT) |
+| 374 | C-XLATE-RUST-FN-TO-LEAN-THM | ContractObligationSilver (record, 3-field input) |
 
 Each Diamond combines: field-equality → record-equality (Subtype.ext / record extensionality), record-equality → field-equality (congruence), decidable equality, self-equality.
 
@@ -89,7 +96,7 @@ Each Diamond combines: field-equality → record-equality (Subtype.ext / record 
 
 ### Template 2: Array.size structure
 
-Demonstrated on **7 contracts** (PMAT-340/341/344/348/351/358/365) for `Array.size` axioms on record fields:
+Demonstrated on **9 contracts** (PMAT-340/341/344/348/351/358/365/375/376) for `Array.size` axioms on record fields:
 
 | PMAT | Contract | Field |
 |---|---|---|
@@ -100,6 +107,8 @@ Demonstrated on **7 contracts** (PMAT-340/341/344/348/351/358/365) for `Array.si
 | 351 | C-XLATE-LEAN-TO-RUST | RustFn.body |
 | 358 | C-XPILE-FRONTEND-TRAIT | MetaHirModuleSilver.bytes |
 | 365 | C-XLATE-RUST-FN-TO-LEAN-THM | LeanDefSilver.body/name (Lean side — closes Rust↔Lean Array.size pair with PMAT-344) |
+| 375 | C-XPILE-CONTRACT-FRONTEND-TRAIT | EquationsBlock.bytes (inner record) |
+| 376 | C-XPILE-CONTRACT-BACKEND-TRAIT | ContractId.bytes (inner record — closes ContractFrontend↔ContractBackend Array.size pair with PMAT-375) |
 
 Each Diamond combines: size non-negativity, empty-record size-0 case, field-replacement preservation, field independence (or reflexivity for single-field records).
 
@@ -146,7 +155,7 @@ Demonstrated on 2 contracts (PMAT-346/350) for `String.length` Nat-measure invar
 
 Combines: length non-negativity (trivially for Nat), empty-string length-0, field-replacement preservation, other-field independence. Complements Template 2 (Array.size) — both Nat-measure invariants on container fields, targeting String vs. Array containers respectively.
 
-### Template 7 (emerging): Int-sign decomposition
+### Template 7: Int-sign decomposition
 
 Demonstrated on 2 contracts (PMAT-328/357) for sign-trichotomy + absolute-value invariants on Int-valued fields with semantic dichotomy:
 
@@ -157,7 +166,18 @@ Demonstrated on 2 contracts (PMAT-328/357) for sign-trichotomy + absolute-value 
 
 Combines: sign trichotomy (0 < x ∨ x = 0 ∨ x < 0), absolute-value non-negativity, zero-value identity, reflexivity. Cross-substrate parallel — both contracts host Int fields with semantic success/failure dichotomies that the sign-structure axiomatizes.
 
-These seven templates enabled mechanical 3rd/4th/5th/6th-Diamond addition to every depth-2/depth-3/depth-4/depth-5 contract, driving all four UNIVERSAL milestones (depth-3/4/5/6).
+### Template 8: Enum completeness
+
+Demonstrated on 2 contracts (PMAT-370/372) for total-coverage axiomatization of finite enum types:
+
+| PMAT | Contract | Enum |
+|---|---|---|
+| 370 | C-XPILE-BACKEND-TRAIT | Target (7 variants — rust/ruchy/lean/ptx/wgsl/spirv/shell) |
+| 372 | C-NOTATION-LATEX-MATH-TO-EQUATION | LatexDisplayKind (3 variants — displayMath/equation/align) |
+
+Combines: total coverage (every value matches one of N known variants), self-equality, decidable membership, constructor distinctness sample. Complement to Template 3 (enum distinctness) — together they give the full finite-enumeration axiomatization. Introduced during the depth-7 broadening sweep (PMAT-367..376) to add genuine new algebraic categories beyond struct-extensionality/Array.size repetition.
+
+These eight templates enabled mechanical 3rd/4th/5th/6th/7th-Diamond addition to every depth-2/depth-3/depth-4/depth-5/depth-6 contract, driving all five UNIVERSAL milestones (depth-3/4/5/6/7).
 
 ## Diamond categories by family
 
@@ -470,9 +490,11 @@ The `crates/xpile/tests/diamond_coverage.rs` integration test (PMAT-251) enforce
 - 12/12 contracts have ≥4 Diamonds (depth-4 UNIVERSAL, post-PMAT-344).
 - 12/12 contracts have ≥5 Diamonds (depth-5 UNIVERSAL, post-PMAT-354).
 - 12/12 contracts have ≥6 Diamonds (depth-6 UNIVERSAL, post-PMAT-365).
+- 12/12 contracts have ≥7 Diamonds (depth-7 UNIVERSAL, post-PMAT-376).
 - (Depth-4 ALL 5 LAYERS milestone subsumed by depth-4 UNIVERSAL post-PMAT-344.)
 - (Depth-5 ACROSS ALL 5 LAYERS intermediate milestone (PMAT-347) subsumed by depth-5 UNIVERSAL post-PMAT-354.)
 - (Depth-6 ACROSS ALL 5 LAYERS intermediate milestone (PMAT-358) subsumed by depth-6 UNIVERSAL post-PMAT-365.)
+- (Depth-7 ACROSS ALL 5 LAYERS intermediate milestone (PMAT-369) subsumed by depth-7 UNIVERSAL post-PMAT-376.)
 
 A future regression that removes a `_diamond` from any YAML or fails to keep depth-N invariants will fire the gate.
 - ≥30 total wired Diamond equations.
