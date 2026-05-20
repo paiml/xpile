@@ -848,3 +848,26 @@ qa_gate:
     preconditions: []
     postconditions:
       - "Diamond depth-12 broadened: third L2 contract at depth-12"
+
+  py_list_roundtrip_identity_diamond:
+    # PMAT-439: THIRTEENTH Diamond on this contract — BROADENS DEPTH-13.
+    # Define py_list_silver_u8_to_bronze and prove round-trip identity
+    # via List.toArray ∘ Array.toList = id. **SEVENTH instance of
+    # Template 13** (UInt8-specialized).
+    lean_theorem: "XpileContracts.CXlatePyListToVec.py_list_roundtrip_identity_diamond"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      Round-trip identity on PyList (UInt8-specialized):
+        (a) silver_u8_to_bronze ∘ bronze_to_silver_u8 = id
+        (b) elems preserved
+        (c) empty round-trips to empty
+        (d) self-equality
+    domain: |
+      Composition of py_list_silver_u8_to_bronze with
+      py_list_bronze_to_silver_u8 equals identity on PyList.
+    invariants:
+      - "THIRTEENTH Diamond category on C-XLATE-PY-LIST-TO-VEC — BROADENS DEPTH-13"
+      - "ROUND-TRIP IDENTITY — seventh instance of Template 13"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-13 broadened: third L2 contract at depth-13"
