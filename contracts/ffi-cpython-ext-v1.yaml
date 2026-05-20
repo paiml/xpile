@@ -631,6 +631,37 @@ equations:
     postconditions:
       - "Diamond depth-10 ACROSS 3 LAYERS opened: PyIntArith (L1) + FFI-CPYTHON-EXT (L4) + CompileRustToPtxMma (L5)"
 
+  balanced_refcount_delta_canonical_diamond:
+    # PMAT-411: ELEVENTH Diamond on this contract — OPENS DEPTH-11
+    # ACROSS 3 LAYERS. Pushes FFI-CPYTHON-EXT (Layer 4) from depth-10
+    # to depth-11 as the first L4 contract at depth-11.
+    # BALANCED REFCOUNT DELTA CANONICAL ELEMENT: define the canonical
+    # "balanced" BoundedRefcountDelta with val=0 (the POSIX-FFI
+    # balanced-references invariant — success path signature) and
+    # prove its structural properties.
+    # **Introduces Template 11 (Canonical identity element)** as a
+    # new substrate-wide recurring algebraic family for capturing the
+    # existence and properties of distinguished identity / zero
+    # elements within Silver/Gold subtypes.
+    lean_theorem: "XpileContracts.CFfiCpythonExt.balanced_refcount_delta_canonical_diamond"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
+    formula: |
+      Canonical identity element on BoundedRefcountDelta:
+        (a) balanced_refcount_delta.val = 0
+        (b) -refcount_delta_bound ≤ balanced_refcount_delta.val
+        (c) balanced_refcount_delta.val ≤ refcount_delta_bound
+        (d) self-equality
+    domain: |
+      The canonical zero-delta element of the BoundedRefcountDelta
+      subtype — the balanced-references signature for FFI calls.
+    invariants:
+      - "ELEVENTH Diamond category on C-FFI-CPYTHON-EXT — OPENS DEPTH-11 ACROSS 3 LAYERS"
+      - "CANONICAL IDENTITY ELEMENT — introduces Template 11 as a NEW substrate-wide algebraic template"
+      - "Captures the POSIX-FFI balanced-references signature as a typed canonical element"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-11 ACROSS 3 LAYERS opened: PyIntArith (L1) + FFI-CPYTHON-EXT (L4) + CompileRustToPtxMma (L5)"
+
 proof_obligations:
   - type: precondition
     property: both Python and C frontends produced meta-HIR
