@@ -1234,4 +1234,30 @@ theorem emitted_lean_theorem_silver_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/--
+  **PMAT-397 Diamond — NonEmptyPreconditionList subtype extensionality.**
+
+  The Gold-tier subtype `NonEmptyPreconditionList := { pl :
+  PreconditionListSilver // pl.source_indices.size > 0 }` satisfies
+  subtype extensionality. NINTH substrate-wide
+  subtype-extensionality demonstration. Template 9 (Gold-tier
+  subtype-ext) expands to 9 substrate instances.
+
+  Adds a NINTH distinct Diamond category on
+  `C-XLATE-RUST-FN-TO-LEAN-THM`, pushing the contract from depth-8
+  to depth-9. Second L5 contract at depth-9 in the broadening wave
+  (after PMAT-396 XlateLeanToRust).
+-/
+theorem non_empty_precondition_list_subtype_extensionality_diamond
+    (n1 n2 : NonEmptyPreconditionList) :
+    (n1.val = n2.val → n1 = n2)
+    ∧ (n1 = n2 → n1.val = n2.val)
+    ∧ (n1 = n1) := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro h
+    exact Subtype.ext h
+  · intro h
+    rw [h]
+  · rfl
+
 end XpileContracts.CXlateRustFnToLeanThm
