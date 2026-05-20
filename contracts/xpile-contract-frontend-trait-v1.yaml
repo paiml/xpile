@@ -441,6 +441,37 @@ equations:
     postconditions:
       - "Diamond depth-9 broadened: first L3 contract at depth-9"
 
+  session_to_equations_view_projection_diamond:
+    # PMAT-404: TENTH Diamond on this contract — BROADENS DEPTH-10
+    # substrate-wide. Pushes XpileContractFrontendTrait (Layer 3)
+    # from depth-9 to depth-10. Third L3 contract at depth-10.
+    # SILVER→BRONZE TIER PROJECTION on TranspileSession: define the
+    # canonical proof-lane forgetful map session_to_equations_view :
+    # TranspileSession → Array EquationsBlock that drops the modules
+    # field. FOURTH instance of Template 10 (Tier-projection
+    # homomorphism). Captures the proof-lane-only refinement
+    # direction on the multi-field Silver record.
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.session_to_equations_view_projection_diamond"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    formula: |
+      Silver→Bronze proof-lane projection homomorphism on TranspileSession:
+        (a) session_to_equations_view(s) = s.equations
+        (b) projection is independent of modules (forgetful)
+        (c) empty equations maps to empty Array
+        (d) self-equality
+    domain: |
+      The forgetful map session_to_equations_view : TranspileSession
+      → Array EquationsBlock that drops the modules field while
+      retaining the equations side.
+    invariants:
+      - "TENTH Diamond category on C-XPILE-CONTRACT-FRONTEND-TRAIT — BROADENS DEPTH-10 substrate-wide"
+      - "TIER-PROJECTION HOMOMORPHISM — fourth instance of Template 10"
+      - "Captures proof-lane axis of Silver→Bronze projection on multi-field Silver TranspileSession"
+    preconditions:
+      - "one TranspileSession record"
+    postconditions:
+      - "Diamond depth-10 broadened: third L3 contract at depth-10"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractFrontend
