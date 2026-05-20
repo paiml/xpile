@@ -1339,4 +1339,56 @@ theorem latex_citation_silver_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/-! ## PMAT-372 — SEVENTH Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION
+    (Layer 5 BROADENS DEPTH-7):
+    LATEX-DISPLAY-KIND ENUM COMPLETENESS
+    (XPILE-REFINE-NOTATION-011).
+
+    **Broadens DEPTH-7 substrate-wide.** Pushes
+    NotationLatexMathToEquation (Layer 5) from depth-6 to depth-7
+    as the second L5 contract at depth-7+ (CompileRustToPtxMma was
+    first via PMAT-293).
+
+    The 7 Diamond categories on C-NOTATION-LATEX-MATH-TO-EQUATION:
+    - PMAT-219 citation_string_monoid
+    - PMAT-234 citation_product_monoid
+    - PMAT-334 equation_formula_struct_extensionality
+    - PMAT-342 latex_display_kind_enum_distinctness
+    - PMAT-350 equation_formula_ascii_length_nat
+    - PMAT-362 latex_citation_silver_struct_extensionality
+    - **PMAT-372: LATEX-DISPLAY-KIND ENUM COMPLETENESS** ← depth-7
+
+    Mirror of PMAT-370 (Target enum completeness on
+    C-XPILE-BACKEND-TRAIT). Together PMAT-342 (distinctness) +
+    PMAT-372 (completeness) give the full finite-enumeration
+    axiomatization for LatexDisplayKind.
+
+    Status: discharged at v0.1.0 (PMAT-372). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `LatexDisplayKind` admits
+  FINITE ENUMERATION COMPLETENESS.
+
+  Combines four properties:
+  (a) Total coverage: every LatexDisplayKind matches one of 3 variants
+  (b) Self-equality
+  (c) Decidable membership
+  (d) Constructor distinctness sample
+
+  Status: **discharged at v0.1.0 (PMAT-372)**. Tier: DIAMOND.
+-/
+theorem latex_display_kind_enum_completeness_diamond (k : LatexDisplayKind) :
+    (k = LatexDisplayKind.displayMath ∨ k = LatexDisplayKind.equation
+      ∨ k = LatexDisplayKind.align)
+    ∧ (k = k)
+    ∧ (k = LatexDisplayKind.displayMath ∨ k ≠ LatexDisplayKind.displayMath)
+    ∧ (LatexDisplayKind.displayMath ≠ LatexDisplayKind.align) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases k <;> tauto
+  · rfl
+  · by_cases h : k = LatexDisplayKind.displayMath
+    · exact Or.inl h
+    · exact Or.inr h
+  · decide
+
 end XpileContracts.CNotationLatexMathToEquation

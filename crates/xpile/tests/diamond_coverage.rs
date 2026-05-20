@@ -183,10 +183,11 @@ fn substrate_diamond_depth_7_opened() {
     // PMAT-369 COMPLETED depth-7 ACROSS ALL 5 TAXONOMY LAYERS via C-XPILE-FRONTEND-TRAIT.
     // PMAT-370 BROADENED depth-7 to C-XPILE-BACKEND-TRAIT (Layer 3, 2nd L3).
     // PMAT-371 BROADENED depth-7 to C-XLATE-PY-LIST-TO-VEC (Layer 2, 2nd L2).
+    // PMAT-372 BROADENED depth-7 to C-NOTATION-LATEX-MATH-TO-EQUATION (Layer 5, 2nd L5).
     assert!(
-        depth_7_plus >= 7,
-        "Diamond depth-7 BROADENED milestone (PMAT-292/293/367/368/369/370/371): \
-         expected ≥7 contracts at depth-7+, got {depth_7_plus}.\n{json}"
+        depth_7_plus >= 8,
+        "Diamond depth-7 BROADENED milestone (PMAT-292/293/367..372): \
+         expected ≥8 contracts at depth-7+, got {depth_7_plus}.\n{json}"
     );
 }
 
