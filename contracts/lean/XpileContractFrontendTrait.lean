@@ -570,4 +570,78 @@ theorem equations_block_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/-! ## PMAT-361 — SIXTH Diamond on C-XPILE-CONTRACT-FRONTEND-TRAIT
+    (Layer 3 BROADENS DEPTH-6 post-ALL 5 LAYERS milestone):
+    METAHIR-MODULE (BRONZE) STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XPILE-CONTRACT-FRONTEND-TRAIT-009).
+
+    **Broadens depth-6 substrate-wide.** After PMAT-358 completed
+    depth-6 ACROSS ALL 5 TAXONOMY LAYERS, PMAT-361 pushes
+    XpileContractFrontendTrait (Layer 3) from depth-5 to depth-6 as
+    the third L3 contract at depth-6+ (XpileFrontendTrait was first
+    via PMAT-358, XpileBackendTrait via PMAT-359 pending).
+
+    The 6 Diamond categories on C-XPILE-CONTRACT-FRONTEND-TRAIT:
+    - PMAT-217 modules_equivalence_relation: equivalence
+    - PMAT-250 parse_preserves_equivalence_class: congruence
+    - PMAT-332 transpile_session_struct_extensionality: outer session
+    - PMAT-340 transpile_session_array_size: modules Array.size
+    - PMAT-353 equations_block_struct_extensionality: inner equations
+    - **PMAT-361: METAHIR-MODULE STRUCTURE EXTENSIONALITY** ← depth-6
+
+    The categorical distinction:
+      - PMAT-332 captures struct-ext of TranspileSession (the outer
+        record).
+      - PMAT-353 captures struct-ext of EquationsBlock (the inner
+        equations-side record).
+      - PMAT-361 captures struct-ext of MetaHirModule (the inner
+        modules-side record) — completing inner-record structural
+        coverage on both the equations and modules sides of
+        TranspileSession.
+
+    Seventeenth substrate-wide demonstration of the structure-
+    extensionality pattern (after PMAT-311/329..336/349/352/353/354/
+    356/359/360).
+
+    Status: discharged at v0.1.0 (PMAT-361). Tier: DIAMOND.
+    Broadens depth-6 post-ALL 5 LAYERS milestone. -/
+
+/--
+  **Diamond-tier refinement theorem** — `MetaHirModule` (Bronze
+  model) admits STRUCTURE EXTENSIONALITY.
+
+  Combines four STRUCTURE-EXTENSIONALITY properties on the
+  single-field MetaHirModule record (bytes : Array UInt8):
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality (congruence)
+  (c) Decidable equality (deriving DecidableEq)
+  (d) Self-equality (reflexivity)
+
+  Seventeenth substrate-wide demonstration of the structure-
+  extensionality pattern.
+
+  Status: **discharged at v0.1.0 (PMAT-361)**. Tier: DIAMOND.
+  Broadens depth-6 post-ALL 5 LAYERS milestone.
+-/
+theorem metahir_module_struct_extensionality_diamond
+    (m1 m2 : MetaHirModule) :
+    -- (a) Field equality → record equality
+    (m1.bytes = m2.bytes → m1 = m2)
+    -- (b) Record equality → field equality
+    ∧ (m1 = m2 → m1.bytes = m2.bytes)
+    -- (c) Decidable equality
+    ∧ (m1 = m2 ∨ m1 ≠ m2)
+    -- (d) Self-equality (reflexivity)
+    ∧ (m1 = m1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    cases m1; cases m2
+    simp_all
+  · intro h
+    rw [h]
+  · by_cases h : m1 = m2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXpileContractFrontendTrait

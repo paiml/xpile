@@ -322,6 +322,38 @@ equations:
     postconditions:
       - "Diamond depth-5 broadened: 11 contracts at depth-5+ (3 Layer 3 contracts at depth-5)"
 
+  metahir_module_struct_extensionality_diamond:
+    # PMAT-361: SIXTH Diamond on this contract — BROADENS DEPTH-6
+    # post-ALL 5 LAYERS milestone. After PMAT-358 completed depth-6
+    # ACROSS ALL 5 TAXONOMY LAYERS, PMAT-361 pushes
+    # XpileContractFrontendTrait (Layer 3) from depth-5 to depth-6.
+    # METAHIR-MODULE (Bronze) STRUCTURE EXTENSIONALITY: the inner
+    # MetaHirModule record (bytes : Array UInt8) is field-extensional.
+    # Seventeenth substrate-wide demonstration of the structure-
+    # extensionality pattern, complementing PMAT-353
+    # (EquationsBlock inner-equations side) — together PMAT-353/361
+    # close inner-record extensionality on both equations and modules
+    # sides of TranspileSession.
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.metahir_module_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    formula: |
+      MetaHirModule (Bronze) admits STRUCTURE EXTENSIONALITY:
+        (a) field eq (bytes) -> record eq
+        (b) record eq -> field eq (congruence)
+        (c) decidable equality
+        (d) self-equality (reflexivity)
+    domain: |
+      Two MetaHirModule records (bytes : Array UInt8) — the INNER
+      modules-side record stored inside TranspileSession.modules.
+    invariants:
+      - "SIXTH Diamond category on C-XPILE-CONTRACT-FRONTEND-TRAIT — BROADENS DEPTH-6 post-ALL 5 LAYERS milestone"
+      - "STRUCTURE EXTENSIONALITY — seventeenth substrate-wide demonstration of this pattern"
+      - "complementary to PMAT-353 (EquationsBlock equations-side inner record) — together close inner-record extensionality on both sides of TranspileSession"
+    preconditions:
+      - "two MetaHirModule records (DecidableEq derived)"
+    postconditions:
+      - "Diamond depth-6 broadened: contracts at depth-6+ (3 L3 contracts at depth-6)"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractFrontend
