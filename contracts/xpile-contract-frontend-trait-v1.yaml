@@ -472,6 +472,32 @@ equations:
     postconditions:
       - "Diamond depth-10 broadened: third L3 contract at depth-10"
 
+  empty_session_canonical_diamond:
+    # PMAT-415: ELEVENTH Diamond on this contract — BROADENS DEPTH-11
+    # substrate-wide. Pushes XpileContractFrontendTrait (Layer 3)
+    # from depth-10 to depth-11. Third L3 contract at depth-11.
+    # CANONICAL EMPTY TranspileSession: define the canonical empty
+    # TranspileSession with both modules and equations arrays empty
+    # — the initial state before any parsing.
+    # **FIFTH instance of Template 11 (Canonical identity element)**.
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.empty_session_canonical_diamond"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    formula: |
+      Canonical identity element on TranspileSession:
+        (a) empty_session.modules = #[]
+        (b) empty_session.equations = #[]
+        (c) empty_session.modules.size = 0
+        (d) empty_session.equations.size = 0
+    domain: |
+      The canonical empty TranspileSession (modules and equations
+      both empty) — initial state before any parsing.
+    invariants:
+      - "ELEVENTH Diamond category on C-XPILE-CONTRACT-FRONTEND-TRAIT — BROADENS DEPTH-11 substrate-wide"
+      - "CANONICAL IDENTITY ELEMENT — fifth instance of Template 11"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-11 broadened: third L3 contract at depth-11"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractFrontend
