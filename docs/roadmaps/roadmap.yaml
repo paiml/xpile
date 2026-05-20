@@ -2,6 +2,15 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-410
+  github_issue: null
+  item_type: task
+  title: 'PMAT-410: Spec §28 + diamond-taxonomy.md sync to depth-10 UNIVERSAL + 8 UNIVERSAL milestones + 10 recurring templates'
+  status: planned
+  priority: medium
+  created: 2026-05-20T20:00:00Z
+  acceptance_criteria:
+  - "Sync xpile-spec.md §28 and sub/diamond-taxonomy.md to post-PMAT-409 substrate state: 141 wired theorems, 8 UNIVERSAL milestones (depth-3..10), 10 recurring algebraic templates (added Template 10: Tier-projection homomorphism demonstrated on 9 forgetful-map projections via PMAT-401..409). Document eighth broadening wave (PMAT-400..409) and cross-substrate symmetry closures (Frontend↔Backend tier-projection pair PMAT-402/403, ContractFrontend↔ContractBackend tier-projection pair PMAT-404/405, Rust↔Lean tier-projection pair PMAT-407/408)."
 - id: PMAT-399
   github_issue: null
   item_type: task
