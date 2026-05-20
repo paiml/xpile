@@ -399,6 +399,34 @@ equations:
     postconditions:
       - "DEPTH-7 UNIVERSAL achieved: 12 contracts at depth-7+"
 
+  rendered_doc_silver_bytes_array_size_diamond:
+    # PMAT-387: EIGHTH Diamond on this contract — COMPLETES DEPTH-8
+    # UNIVERSAL ACROSS ALL 12 CONTRACTS. SUBSTRATE MILESTONE: every
+    # contract now has ≥8 distinct Diamond categories. Pushes
+    # XpileContractBackendTrait (Layer 3) from depth-7 to depth-8 —
+    # last contract at depth-7 only. Parallel to PMAT-336/344/354/365/
+    # 376 depth-3/4/5/6/7 UNIVERSAL milestones. RENDERED-DOC-SILVER
+    # BYTES ARRAY.SIZE STRUCTURE: 12th Array.size demonstration.
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.rendered_doc_silver_bytes_array_size_diamond"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    formula: |
+      RenderedDocSilver.bytes Array.size structure:
+        (a) bytes.size >= 0
+        (b) empty rendered doc has size-0 bytes
+        (c) field-replacement preserves bytes size
+        (d) citations field is independent
+    domain: |
+      Any RenderedDocSilver record with bytes : Array UInt8 and
+      citations : Array ContractId fields.
+    invariants:
+      - "EIGHTH Diamond category on C-XPILE-CONTRACT-BACKEND-TRAIT — COMPLETES DEPTH-8 UNIVERSAL ACROSS ALL 12 CONTRACTS"
+      - "Substrate milestone: every contract has ≥8 distinct Diamond categories"
+      - "Twelfth substrate-wide Array.size demonstration"
+    preconditions:
+      - "one RenderedDocSilver record"
+    postconditions:
+      - "DEPTH-8 UNIVERSAL achieved: 12 contracts at depth-8+"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractBackend

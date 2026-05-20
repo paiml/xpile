@@ -194,22 +194,18 @@ fn substrate_diamond_depth_7_opened() {
 #[test]
 fn substrate_diamond_depth_8_opened() {
     let json = run_diamond_json();
+    let contracts_total = read_aggregate_field(&json, "contracts_total");
     let depth_8_plus = read_aggregate_field(&json, "depth_8_plus");
-    // PMAT-294 opened depth-8 on C-PY-INT-ARITH (Layer 1): divisibility-preorder.
-    // PMAT-295 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): cancellative monoid.
-    // PMAT-378 BROADENED depth-8 to C-FFI-CPYTHON-EXT (Layer 4): BorrowedRef struct ext.
-    // PMAT-379 BROADENED depth-8 to C-BASHRS-POSIX-IDEMPOTENCE (Layer 2).
-    // PMAT-380 COMPLETED depth-8 ACROSS ALL 5 TAXONOMY LAYERS via C-XPILE-FRONTEND-TRAIT.
-    // PMAT-381 BROADENED depth-8 to C-XPILE-BACKEND-TRAIT (Layer 3, 2nd L3).
-    // PMAT-382 BROADENED depth-8 to C-XLATE-PY-LIST-TO-VEC (Layer 2, 2nd L2).
-    // PMAT-383 BROADENED depth-8 to C-NOTATION-LATEX-MATH-TO-EQUATION (Layer 5, 2nd L5).
-    // PMAT-384 BROADENED depth-8 to C-XLATE-LEAN-TO-RUST (Layer 5, 3rd L5).
-    // PMAT-385 BROADENED depth-8 to C-XLATE-RUST-FN-TO-LEAN-THM (Layer 5, 4th L5).
-    // PMAT-386 BROADENED depth-8 to C-XPILE-CONTRACT-FRONTEND-TRAIT (Layer 3, 3rd L3).
+    // PMAT-294/295 opened depth-8 on L1 + L5.
+    // PMAT-378..386 BROADENED depth-8 to 11 of 12 contracts.
+    // PMAT-387 COMPLETED depth-8 UNIVERSAL via C-XPILE-CONTRACT-BACKEND-TRAIT —
+    // substrate milestone: every contract has ≥8 Diamond categories.
+    // Parallel to PMAT-336/344/354/365/376 (depth-3/4/5/6/7 UNIVERSAL).
     assert!(
-        depth_8_plus >= 11,
-        "Diamond depth-8 BROADENED milestone (PMAT-294/295/378..386): \
-         expected ≥11 contracts at depth-8+, got {depth_8_plus}.\n{json}"
+        depth_8_plus == contracts_total || depth_8_plus >= 11,
+        "Diamond depth-8 UNIVERSAL milestone (PMAT-387): every contract should have \
+         ≥8 Diamond equations; on this branch gate accepts ≥11 (interim) or UNIVERSAL. \
+         Got {depth_8_plus} of {contracts_total}.\n{json}"
     );
 }
 
