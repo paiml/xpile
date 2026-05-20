@@ -159,16 +159,14 @@ fn substrate_diamond_depth_6_opened() {
     let depth_6_plus = read_aggregate_field(&json, "depth_6_plus");
     // PMAT-290 opened depth-6 on C-PY-INT-ARITH (Layer 1).
     // PMAT-291 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5).
-    // PMAT-356 BROADENED depth-6 to C-FFI-CPYTHON-EXT (Layer 4).
-    // PMAT-357 BROADENED depth-6 to C-BASHRS-POSIX-IDEMPOTENCE (Layer 2).
-    // PMAT-358 COMPLETED depth-6 ACROSS ALL 5 TAXONOMY LAYERS via
-    // C-XPILE-FRONTEND-TRAIT (Layer 3) — parallel to PMAT-330 (depth-4)
-    // and PMAT-347 (depth-5) ALL 5 LAYERS milestones.
+    // PMAT-356 BROADENED depth-6 to C-FFI-CPYTHON-EXT (Layer 4): FfiCallSilver struct ext.
+    // PMAT-357 BROADENED depth-6 to C-BASHRS-POSIX-IDEMPOTENCE (Layer 2): exit_code Int sign.
+    // PMAT-358 COMPLETED depth-6 ACROSS ALL 5 TAXONOMY LAYERS via C-XPILE-FRONTEND-TRAIT (Layer 3).
+    // PMAT-359 BROADENED depth-6 to C-XPILE-BACKEND-TRAIT (Layer 3): Backend struct ext.
     assert!(
-        depth_6_plus >= 5,
-        "Diamond depth-6 ACROSS ALL 5 TAXONOMY LAYERS milestone \
-         (PMAT-290/291/356/357/358): expected ≥5 contracts at depth-6+ \
-         (Layer 1 + Layer 2 + Layer 3 + Layer 4 + Layer 5), got {depth_6_plus}.\n{json}"
+        depth_6_plus >= 6,
+        "Diamond depth-6 BROADENED milestone (PMAT-290/291/356/357/358/359): \
+         expected ≥6 contracts at depth-6+, got {depth_6_plus}.\n{json}"
     );
 }
 
