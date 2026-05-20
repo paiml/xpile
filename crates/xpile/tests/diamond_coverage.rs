@@ -163,10 +163,12 @@ fn substrate_diamond_depth_6_opened() {
     // PMAT-357 BROADENED depth-6 to C-BASHRS-POSIX-IDEMPOTENCE (Layer 2): exit_code Int sign.
     // PMAT-358 COMPLETED depth-6 ACROSS ALL 5 TAXONOMY LAYERS via C-XPILE-FRONTEND-TRAIT (Layer 3).
     // PMAT-359 BROADENED depth-6 to C-XPILE-BACKEND-TRAIT (Layer 3): Backend struct ext.
+    // PMAT-362 BROADENED depth-6 to C-NOTATION-LATEX-MATH-TO-EQUATION (Layer 5).
+    // (PMAT-360, PMAT-361 also pending on separate branches.)
     assert!(
-        depth_6_plus >= 6,
-        "Diamond depth-6 BROADENED milestone (PMAT-290/291/356/357/358/359): \
-         expected ≥6 contracts at depth-6+, got {depth_6_plus}.\n{json}"
+        depth_6_plus >= 7,
+        "Diamond depth-6 BROADENED milestone (PMAT-290/291/356/357/358/359/362 + interim): \
+         expected ≥7 contracts at depth-6+, got {depth_6_plus}.\n{json}"
     );
 }
 

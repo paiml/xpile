@@ -1268,4 +1268,75 @@ theorem equation_formula_ascii_length_nat_diamond (f : EquationFormulaSilver) :
   · rfl
   · rfl
 
+/-! ## PMAT-362 — SIXTH Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION
+    (Layer 5 BROADENS DEPTH-6 post-ALL 5 LAYERS milestone):
+    LATEX-CITATION-SILVER STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-NOTATION-010).
+
+    **Broadens depth-6 substrate-wide.** After PMAT-358 completed
+    depth-6 ACROSS ALL 5 TAXONOMY LAYERS, PMAT-362 pushes
+    NotationLatexMathToEquation (Layer 5) from depth-5 to depth-6 as
+    the second L5 contract at depth-6+ (CompileRustToPtxMma was
+    first via PMAT-291).
+
+    The 6 Diamond categories on C-NOTATION-LATEX-MATH-TO-EQUATION:
+    - PMAT-219 citation_string_monoid: contract_id String monoid
+    - PMAT-234 citation_product_monoid: product monoid
+    - PMAT-334 equation_formula_struct_extensionality: formula record
+    - PMAT-342 latex_display_kind_enum_distinctness: kind enum
+    - PMAT-350 equation_formula_ascii_length_nat: String.length
+    - **PMAT-362: LATEX-CITATION-SILVER STRUCTURE EXTENSIONALITY** ← depth-6
+
+    The categorical distinction is sharp:
+      - PMAT-334 captures struct-ext of EquationFormulaSilver (the
+        FORMULA record).
+      - PMAT-362 captures struct-ext of LatexCitationSilver (the
+        CITATION record — distinct AST node carrying citation
+        bibkey metadata).
+
+    Eighteenth substrate-wide demonstration of the structure-
+    extensionality pattern (after PMAT-311/329..336/349/352/353/354/
+    356/359/360/361).
+
+    Status: discharged at v0.1.0 (PMAT-362). Tier: DIAMOND.
+    Broadens depth-6 post-ALL 5 LAYERS milestone. -/
+
+/--
+  **Diamond-tier refinement theorem** — `LatexCitationSilver` admits
+  STRUCTURE EXTENSIONALITY.
+
+  Combines four STRUCTURE-EXTENSIONALITY properties on the 2-field
+  LatexCitationSilver record (contract_id : String, bib_key : String):
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality (congruence)
+  (c) Decidable equality (deriving DecidableEq)
+  (d) Self-equality (reflexivity)
+
+  Eighteenth substrate-wide demonstration of the structure-
+  extensionality pattern.
+
+  Status: **discharged at v0.1.0 (PMAT-362)**. Tier: DIAMOND.
+  Broadens depth-6 post-ALL 5 LAYERS milestone.
+-/
+theorem latex_citation_silver_struct_extensionality_diamond
+    (c1 c2 : LatexCitationSilver) :
+    -- (a) Field equality → record equality
+    (c1.contract_id = c2.contract_id ∧ c1.bib_key = c2.bib_key → c1 = c2)
+    -- (b) Record equality → field equality
+    ∧ (c1 = c2 → c1.contract_id = c2.contract_id ∧ c1.bib_key = c2.bib_key)
+    -- (c) Decidable equality
+    ∧ (c1 = c2 ∨ c1 ≠ c2)
+    -- (d) Self-equality (reflexivity)
+    ∧ (c1 = c1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2⟩
+    cases c1; cases c2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h]⟩
+  · by_cases h : c1 = c2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CNotationLatexMathToEquation
