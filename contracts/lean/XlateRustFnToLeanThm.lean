@@ -1176,4 +1176,62 @@ theorem contract_obligation_silver_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/-! ## PMAT-385 — EIGHTH Diamond on C-XLATE-RUST-FN-TO-LEAN-THM
+    (Layer 5 BROADENS DEPTH-8):
+    EMITTED-LEAN-THEOREM-SILVER STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XLATE-RUST-FN-TO-LEAN-THM-010).
+
+    **Broadens DEPTH-8 substrate-wide.** Pushes XlateRustFnToLeanThm
+    (Layer 5) from depth-7 to depth-8 as the fourth L5 contract at
+    depth-8+.
+
+    The 8 Diamond categories on C-XLATE-RUST-FN-TO-LEAN-THM:
+    - PMAT-220 precondition_list_monoid
+    - PMAT-236 nonempty_preconditions_section_retraction
+    - PMAT-336 rust_fn_silver_struct_extensionality (Rust)
+    - PMAT-344 rust_fn_silver_body_size (Rust Array.size)
+    - PMAT-352 lean_def_silver_struct_extensionality (Lean struct)
+    - PMAT-365 lean_def_silver_body_size (Lean Array.size)
+    - PMAT-374 contract_obligation_silver_struct_extensionality (INPUT)
+    - **PMAT-385: EMITTED-LEAN-THEOREM-SILVER STRUCTURE EXT** ← depth-8
+
+    Thirty-second substrate-wide demonstration of structure-
+    extensionality. Captures EmittedLeanTheoremSilver — the OUTPUT
+    record. Mirror of PMAT-374 (ContractObligationSilver INPUT) —
+    together they close the input-output struct-ext pair on this
+    contract.
+
+    Status: discharged at v0.1.0 (PMAT-385). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `EmittedLeanTheoremSilver`
+  admits STRUCTURE EXTENSIONALITY.
+
+  3-field record (applies_to_all : Bool, source_index : Nat,
+  lifted_count : Nat) with derived DecidableEq.
+
+  Status: **discharged at v0.1.0 (PMAT-385)**. Tier: DIAMOND.
+-/
+theorem emitted_lean_theorem_silver_struct_extensionality_diamond
+    (t1 t2 : EmittedLeanTheoremSilver) :
+    (t1.applies_to_all = t2.applies_to_all
+        ∧ t1.source_index = t2.source_index
+        ∧ t1.lifted_count = t2.lifted_count
+      → t1 = t2)
+    ∧ (t1 = t2 → t1.applies_to_all = t2.applies_to_all
+        ∧ t1.source_index = t2.source_index
+        ∧ t1.lifted_count = t2.lifted_count)
+    ∧ (t1 = t2 ∨ t1 ≠ t2)
+    ∧ (t1 = t1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2, h3⟩
+    cases t1; cases t2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h], by rw [h]⟩
+  · by_cases h : t1 = t2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXlateRustFnToLeanThm
