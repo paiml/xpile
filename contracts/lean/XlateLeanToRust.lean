@@ -1644,4 +1644,37 @@ theorem warning_line_count_subtype_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/--
+  **PMAT-407 Diamond — Silver→Bronze tier projection on LeanDefSilver.**
+
+  Define the canonical forgetful map `lean_def_silver_to_bronze :
+  LeanDefSilver → LeanDef` that drops the `name`, `args`, and
+  `return_type` fields, retaining only `body`. **SEVENTH instance
+  of Template 10 (Tier-projection homomorphism)**. Captures the
+  Silver→Bronze refinement direction on the Lean side of the
+  Lean→Rust translation contract.
+
+  Adds a TENTH distinct Diamond category on
+  `C-XLATE-LEAN-TO-RUST`, pushing the contract from depth-9 to
+  depth-10. First L5 contract at depth-10 in the broadening wave.
+-/
+def lean_def_silver_to_bronze (d : LeanDefSilver) : LeanDef :=
+  { body := d.body }
+
+theorem lean_def_silver_to_bronze_projection_diamond (d : LeanDefSilver) :
+    -- (a) body preserved by projection
+    ((lean_def_silver_to_bronze d).body = d.body)
+    -- (b) projection is independent of name (forgetful)
+    ∧ (lean_def_silver_to_bronze ⟨#[], d.args, d.return_type, d.body⟩
+        = lean_def_silver_to_bronze ⟨d.name, d.args, d.return_type, d.body⟩)
+    -- (c) empty body maps to empty Bronze LeanDef
+    ∧ ((lean_def_silver_to_bronze ⟨d.name, d.args, d.return_type, #[]⟩).body.size = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (lean_def_silver_to_bronze d = lean_def_silver_to_bronze d) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXlateLeanToRust
