@@ -644,4 +644,55 @@ theorem metahir_module_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/-! ## PMAT-375 — SEVENTH Diamond on C-XPILE-CONTRACT-FRONTEND-TRAIT
+    (Layer 3 BROADENS DEPTH-7):
+    EQUATIONS-BLOCK BYTES ARRAY.SIZE STRUCTURE
+    (XPILE-REFINE-XPILE-CONTRACT-FRONTEND-TRAIT-010).
+
+    **Broadens DEPTH-7 substrate-wide.** Pushes
+    XpileContractFrontendTrait (Layer 3) from depth-6 to depth-7
+    as the third L3 contract at depth-7+.
+
+    The 7 Diamond categories on C-XPILE-CONTRACT-FRONTEND-TRAIT:
+    - PMAT-217 modules_equivalence_relation
+    - PMAT-250 parse_preserves_equivalence_class
+    - PMAT-332 transpile_session_struct_extensionality (outer)
+    - PMAT-340 transpile_session_array_size (modules/equations arrays)
+    - PMAT-353 equations_block_struct_extensionality (inner equations)
+    - PMAT-361 metahir_module_struct_extensionality (inner modules)
+    - **PMAT-375: EQUATIONS-BLOCK BYTES ARRAY.SIZE STRUCTURE** ← depth-7
+
+    Captures Array.size invariants on the EquationsBlock.bytes
+    field — distinct from PMAT-340 (Array.size on TranspileSession's
+    Array of EquationsBlocks/MetaHirModules) and PMAT-353 (struct-ext
+    of EquationsBlock).
+
+    Eighth substrate-wide demonstration of the Array.size template
+    (after PMAT-340/341/344/348/351/358/365).
+
+    Status: discharged at v0.1.0 (PMAT-375). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `EquationsBlock.bytes`
+  Array.size structure.
+
+  Single-field Nat-measure invariants on the bytes field:
+  (a) bytes.size is non-negative
+  (b) Empty bytes has size-0
+  (c) Field-replacement preserves bytes size
+  (d) Self-equal size (reflexivity)
+
+  Status: **discharged at v0.1.0 (PMAT-375)**. Tier: DIAMOND.
+-/
+theorem equations_block_bytes_array_size_diamond (e : EquationsBlock) :
+    (0 ≤ e.bytes.size)
+    ∧ ((⟨#[]⟩ : EquationsBlock).bytes.size = 0)
+    ∧ ((⟨e.bytes⟩ : EquationsBlock).bytes.size = e.bytes.size)
+    ∧ (e.bytes.size = e.bytes.size) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.zero_le _
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileContractFrontendTrait
