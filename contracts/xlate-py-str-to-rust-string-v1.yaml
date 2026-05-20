@@ -104,6 +104,35 @@ equations:
       - "emitted Rust value is owned `String`, not `&str`"
       - "no `'a` lifetime annotation appears on the emitted signature"
 
+  concatenation_associativity_diamond:
+    # PMAT-451: SECOND Diamond category for this contract —
+    # Template 6 (String.length Nat-structure / monoid structure
+    # family). String concatenation is associative; this theorem
+    # locks in the algebraic law before the recursive f-string
+    # lowering (which fans out into n-ary Concat sequences) can
+    # rely on it.
+    lean_theorem: "XpileContracts.CXlatePyStrToRustString.concatenation_associativity_diamond"
+    lean_file: "contracts/lean/XlatePyStrToRustString.lean"
+    formula: |
+      ∀ (a b c : PyStr),
+        concat (concat a b) c = concat a (concat b c)
+    domain: |
+      Three str values at the meta-HIR boundary. The associativity
+      law combines with `length_preserved` to give the free-monoid
+      structure on str — same algebraic shape as the list contract's
+      Diamond program (Template 6).
+    invariants:
+      - "SECOND Diamond category for C-XLATE-PY-STR-TO-RUST-STRING"
+      - "Template 6 — monoid associativity (combines with length-preservation)"
+      - "discharges by structural induction on the underlying byte arrays"
+      - "preserves under any future Silver-tier refinement that keeps the byte sequence as the equality witness"
+    preconditions:
+      - "three well-formed PyStr values"
+      - "concat is defined as byte-array append at Bronze tier"
+    postconditions:
+      - "free-monoid associativity holds — strict equality, not just observational"
+      - "any future emitter that re-orders concat for SIMD or parallel writes must preserve this property"
+
   py_str_structure_extensionality_diamond:
     # PMAT-450: FIRST Diamond-tier algebraic theorem for this
     # contract — Template 1 (Structure extensionality), from the
