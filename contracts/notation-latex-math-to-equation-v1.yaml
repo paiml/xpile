@@ -632,6 +632,36 @@ equations:
       - "an emitter that misreported ascii_normalised.length would falsify the size structure"
       - "Diamond depth-5 broadened: 8 contracts at depth-5+ (2 Layer 5 contracts at depth-5)"
 
+  latex_citation_silver_struct_extensionality_diamond:
+    # PMAT-362: SIXTH Diamond on this contract — BROADENS DEPTH-6
+    # post-ALL 5 LAYERS milestone. After PMAT-358 completed depth-6
+    # ACROSS ALL 5 TAXONOMY LAYERS, PMAT-362 pushes
+    # NotationLatexMathToEquation (Layer 5) from depth-5 to depth-6
+    # as the second L5 contract at depth-6+. LATEX-CITATION-SILVER
+    # STRUCTURE EXTENSIONALITY: the 2-field LatexCitationSilver
+    # record is field-extensional with decidable equality.
+    # Eighteenth substrate-wide demonstration of the structure-
+    # extensionality pattern.
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.latex_citation_silver_struct_extensionality_diamond"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      LatexCitationSilver admits STRUCTURE EXTENSIONALITY:
+        (a) field eq (contract_id, bib_key) -> record eq
+        (b) record eq -> field eq (congruence)
+        (c) decidable equality
+        (d) self-equality (reflexivity)
+    domain: |
+      Two LatexCitationSilver records (contract_id : String,
+      bib_key : String) with derived DecidableEq.
+    invariants:
+      - "SIXTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — BROADENS DEPTH-6 post-ALL 5 LAYERS milestone"
+      - "STRUCTURE EXTENSIONALITY — eighteenth substrate-wide demonstration of this pattern"
+      - "distinct from PMAT-334 (struct-ext of EquationFormulaSilver, the FORMULA record) — PMAT-362 captures the CITATION record"
+    preconditions:
+      - "two LatexCitationSilver records (DecidableEq derived)"
+    postconditions:
+      - "Diamond depth-6 broadened: 2 L5 contracts at depth-6 (CompileRustToPtxMma + Notation)"
+
 proof_obligations:
   - type: postcondition
     property: math-mode round-trips through render() losslessly
