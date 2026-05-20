@@ -498,6 +498,29 @@ equations:
     postconditions:
       - "Diamond depth-11 broadened: third L3 contract at depth-11"
 
+  equations_block_to_session_lift_diamond:
+    # PMAT-426: TWELFTH Diamond on this contract — BROADENS DEPTH-12.
+    # BRONZE→SILVER LIFT on EquationsBlock: wraps Bronze EquationsBlock
+    # into a singleton TranspileSession with empty modules.
+    # **FIFTH instance of Template 12**.
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.equations_block_to_session_lift_diamond"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    formula: |
+      Bronze→Silver lift on EquationsBlock to TranspileSession:
+        (a) lift produces empty modules
+        (b) lift produces singleton equations
+        (c) wrapped equation equals lifted EquationsBlock
+        (d) self-equality
+    domain: |
+      The lift equations_block_to_session : EquationsBlock →
+      TranspileSession that wraps Bronze into a singleton Silver.
+    invariants:
+      - "TWELFTH Diamond category on C-XPILE-CONTRACT-FRONTEND-TRAIT — BROADENS DEPTH-12 substrate-wide"
+      - "BRONZE→SILVER LIFT HOMOMORPHISM — fifth instance of Template 12"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-12 broadened: third L3 contract at depth-12"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractFrontend
