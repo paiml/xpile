@@ -834,4 +834,40 @@ theorem citation_complete_contract_subtype_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/--
+  **PMAT-405 Diamond — Silver→Bronze tier projection on RenderedDocSilver.**
+
+  Define the canonical forgetful map `rendered_doc_silver_to_bronze
+  : RenderedDocSilver → RenderedDoc` that drops the `citations`
+  field, retaining only `bytes`. **FIFTH instance of Template 10
+  (Tier-projection homomorphism)** introduced in PMAT-401. Closes
+  ContractFrontend↔ContractBackend trait Silver→Bronze
+  tier-projection symmetry pair with PMAT-404
+  (session_to_equations_view).
+
+  Adds a TENTH distinct Diamond category on
+  `C-XPILE-CONTRACT-BACKEND-TRAIT`, pushing the contract from
+  depth-9 to depth-10. Fourth L3 contract at depth-10.
+-/
+def rendered_doc_silver_to_bronze (d : RenderedDocSilver) : RenderedDoc :=
+  { bytes := d.bytes }
+
+theorem rendered_doc_silver_to_bronze_projection_diamond
+    (d : RenderedDocSilver) :
+    -- (a) bytes preserved by projection
+    ((rendered_doc_silver_to_bronze d).bytes = d.bytes)
+    -- (b) projection is independent of citations (forgetful)
+    ∧ (rendered_doc_silver_to_bronze ⟨d.bytes, #[]⟩
+        = rendered_doc_silver_to_bronze ⟨d.bytes, d.citations⟩)
+    -- (c) empty bytes maps to empty Bronze RenderedDoc
+    ∧ ((rendered_doc_silver_to_bronze ⟨#[], d.citations⟩).bytes.size = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (rendered_doc_silver_to_bronze d
+        = rendered_doc_silver_to_bronze d) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileContractBackendTrait
