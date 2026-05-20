@@ -445,6 +445,39 @@ equations:
     postconditions:
       - "Diamond depth-9 broadened: third L3 contract at depth-9"
 
+  metahir_module_silver_to_bronze_projection_diamond:
+    # PMAT-403: TENTH Diamond on this contract — BROADENS DEPTH-10
+    # substrate-wide. Pushes XpileFrontendTrait (Layer 3) from
+    # depth-9 to depth-10. Second L3 contract at depth-10 in the
+    # broadening wave.
+    # SILVER→BRONZE TIER PROJECTION on MetaHirModuleSilver: define
+    # the canonical forgetful map metahir_module_silver_to_bronze :
+    # MetaHirModuleSilver → MetaHirModule that drops the source_lang
+    # field. THIRD instance of Template 10 (Tier-projection
+    # homomorphism). Closes Frontend↔Backend trait Silver→Bronze
+    # tier-projection symmetry pair with PMAT-402
+    # (ArtifactSilver→Artifact).
+    lean_theorem: "XpileContracts.CXpileFrontendTrait.metahir_module_silver_to_bronze_projection_diamond"
+    lean_file: "contracts/lean/XpileFrontendTrait.lean"
+    formula: |
+      Silver→Bronze tier projection homomorphism on MetaHirModuleSilver:
+        (a) metahir_module_silver_to_bronze(m).bytes = m.bytes
+        (b) projection is independent of source_lang (forgetful)
+        (c) empty bytes maps to empty Bronze MetaHirModule
+        (d) self-equality
+    domain: |
+      The forgetful map metahir_module_silver_to_bronze :
+      MetaHirModuleSilver → MetaHirModule that drops the source_lang
+      field while retaining bytes.
+    invariants:
+      - "TENTH Diamond category on C-XPILE-FRONTEND-TRAIT — BROADENS DEPTH-10 substrate-wide"
+      - "TIER-PROJECTION HOMOMORPHISM — third instance of Template 10 (after PMAT-401 Bashrs, PMAT-402 Backend)"
+      - "Closes Frontend↔Backend trait Silver→Bronze tier-projection symmetry pair with PMAT-402 (ArtifactSilver→Artifact)"
+    preconditions:
+      - "one MetaHirModuleSilver record"
+    postconditions:
+      - "Diamond depth-10 broadened: second L3 contract at depth-10"
+
 proof_obligations:
   - type: invariant
     property: Every registered extension is owned by exactly one frontend
