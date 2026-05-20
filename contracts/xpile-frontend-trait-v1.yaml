@@ -478,6 +478,36 @@ equations:
     postconditions:
       - "Diamond depth-10 broadened: second L3 contract at depth-10"
 
+  empty_python_module_canonical_diamond:
+    # PMAT-414: ELEVENTH Diamond on this contract — BROADENS DEPTH-11
+    # substrate-wide. Pushes XpileFrontendTrait (Layer 3) from
+    # depth-10 to depth-11. Second L3 contract at depth-11.
+    # CANONICAL EMPTY PYTHON-SOURCE MetaHirModuleSilver: define the
+    # canonical empty MetaHirModuleSilver with empty bytes and
+    # SourceLang.python default.
+    # **FOURTH instance of Template 11 (Canonical identity element)**.
+    # Closes Frontend↔Backend trait canonical-element symmetry pair
+    # with PMAT-413 (empty_rust_artifact on BackendTrait).
+    lean_theorem: "XpileContracts.CXpileFrontendTrait.empty_python_module_canonical_diamond"
+    lean_file: "contracts/lean/XpileFrontendTrait.lean"
+    formula: |
+      Canonical identity element on MetaHirModuleSilver:
+        (a) empty_python_module.bytes = #[]
+        (b) empty_python_module.source_lang = SourceLang.python
+        (c) empty_python_module.bytes.size = 0
+        (d) self-equality
+    domain: |
+      The canonical empty MetaHirModuleSilver element (bytes empty,
+      source_lang SourceLang.python default) — the "empty Python
+      source" canonical value.
+    invariants:
+      - "ELEVENTH Diamond category on C-XPILE-FRONTEND-TRAIT — BROADENS DEPTH-11 substrate-wide"
+      - "CANONICAL IDENTITY ELEMENT — fourth instance of Template 11"
+      - "Closes Frontend↔Backend trait canonical-element symmetry pair with PMAT-413 (empty_rust_artifact)"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-11 broadened: second L3 contract at depth-11"
+
 proof_obligations:
   - type: invariant
     property: Every registered extension is owned by exactly one frontend

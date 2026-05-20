@@ -947,4 +947,35 @@ theorem metahir_module_silver_to_bronze_projection_diamond
   · rfl
   · rfl
 
+/--
+  **PMAT-414 Diamond — Canonical empty Python-source MetaHirModuleSilver.**
+
+  Define the canonical empty MetaHirModuleSilver with empty bytes
+  and SourceLang.python default (the "empty Python source" canonical
+  value). **FOURTH instance of Template 11 (Canonical identity
+  element)**. Closes Frontend↔Backend trait canonical-element
+  symmetry pair with PMAT-413 (empty_rust_artifact).
+
+  Adds an ELEVENTH distinct Diamond category on
+  `C-XPILE-FRONTEND-TRAIT`, pushing the contract from depth-10 to
+  depth-11. Second L3 contract at depth-11.
+-/
+def empty_python_module : MetaHirModuleSilver :=
+  { bytes := #[], source_lang := SourceLang.python }
+
+theorem empty_python_module_canonical_diamond :
+    -- (a) canonical bytes are empty
+    (empty_python_module.bytes = #[])
+    -- (b) canonical source_lang is python
+    ∧ (empty_python_module.source_lang = SourceLang.python)
+    -- (c) canonical bytes size is 0
+    ∧ (empty_python_module.bytes.size = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (empty_python_module = empty_python_module) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileFrontendTrait
