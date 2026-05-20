@@ -521,6 +521,29 @@ equations:
     postconditions:
       - "Diamond depth-11 broadened: fourth L3 contract at depth-11"
 
+  rendered_doc_bronze_to_silver_lift_diamond:
+    # PMAT-427: TWELFTH Diamond on this contract — BROADENS DEPTH-12.
+    # BRONZE→SILVER LIFT on RenderedDoc: preserves bytes, defaults
+    # citations to empty. **SIXTH instance of Template 12**. Closes
+    # ContractFrontend↔ContractBackend Template 12 pair with PMAT-426.
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.rendered_doc_bronze_to_silver_lift_diamond"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    formula: |
+      Bronze→Silver canonical-lift on RenderedDoc:
+        (a) preserves bytes
+        (b) defaults citations to empty
+        (c) empty maps to empty
+        (d) reflexivity
+    domain: |
+      The lift rendered_doc_bronze_to_silver : RenderedDoc → RenderedDocSilver.
+    invariants:
+      - "TWELFTH Diamond category on C-XPILE-CONTRACT-BACKEND-TRAIT — BROADENS DEPTH-12 substrate-wide"
+      - "BRONZE→SILVER LIFT HOMOMORPHISM — sixth instance of Template 12"
+      - "Closes ContractFrontend↔ContractBackend Template 12 pair with PMAT-426"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-12 broadened: fourth L3 contract at depth-12"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractBackend
