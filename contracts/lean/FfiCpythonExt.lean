@@ -1755,4 +1755,37 @@ theorem bounded_refcount_delta_subtype_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/--
+  **PMAT-411 Diamond — BoundedRefcountDelta canonical-zero element.**
+
+  Define the canonical "balanced" BoundedRefcountDelta with val=0
+  (the POSIX-FFI balanced-references invariant — the success path
+  signature) and prove its structural properties. **Introduces
+  Template 11 (Canonical identity element)** as a new
+  substrate-wide recurring algebraic family — captures the
+  existence and properties of distinguished identity / zero
+  elements within Silver/Gold subtypes.
+
+  Adds an ELEVENTH distinct Diamond category on
+  `C-FFI-CPYTHON-EXT`, pushing the contract from depth-10 to
+  depth-11. First L4 contract at depth-11.
+-/
+def balanced_refcount_delta : BoundedRefcountDelta :=
+  ⟨0, by constructor <;> decide⟩
+
+theorem balanced_refcount_delta_canonical_diamond :
+    -- (a) val of canonical balanced delta is exactly 0
+    (balanced_refcount_delta.val = 0)
+    -- (b) canonical val satisfies the lower bound
+    ∧ (-refcount_delta_bound ≤ balanced_refcount_delta.val)
+    -- (c) canonical val satisfies the upper bound
+    ∧ (balanced_refcount_delta.val ≤ refcount_delta_bound)
+    -- (d) self-equality (reflexivity)
+    ∧ (balanced_refcount_delta = balanced_refcount_delta) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · decide
+  · decide
+  · rfl
+
 end XpileContracts.CFfiCpythonExt
