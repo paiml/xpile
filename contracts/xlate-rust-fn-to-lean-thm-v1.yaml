@@ -677,6 +677,30 @@ equations:
     postconditions:
       - "Diamond depth-10 broadened: second L5 contract at depth-10 in broadening wave"
 
+  empty_rust_fn_silver_canonical_diamond:
+    # PMAT-419: ELEVENTH Diamond on this contract — BROADENS DEPTH-11
+    # substrate-wide. Pushes XlateRustFnToLeanThm (Layer 5) from
+    # depth-10 to depth-11. Second L5 contract at depth-11.
+    # **NINTH instance of Template 11 (Canonical identity element)**.
+    # Mirror of PMAT-418 — closes Rust↔Lean canonical-element pair.
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.empty_rust_fn_silver_canonical_diamond"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    formula: |
+      Canonical identity element on RustFnSilver:
+        (a) empty_rust_fn_silver.name = #[]
+        (b) empty_rust_fn_silver.body = #[]
+        (c) empty_rust_fn_silver.name.size = 0
+        (d) empty_rust_fn_silver.body.size = 0
+    domain: |
+      The canonical empty RustFnSilver with all 5 fields empty.
+    invariants:
+      - "ELEVENTH Diamond category on C-XLATE-RUST-FN-TO-LEAN-THM — BROADENS DEPTH-11 substrate-wide"
+      - "CANONICAL IDENTITY ELEMENT — ninth instance of Template 11"
+      - "Closes Rust↔Lean canonical-element symmetry pair with PMAT-418 (empty_lean_def_silver)"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-11 broadened: second L5 contract at depth-11"
+
 proof_obligations:
   - type: postcondition
     property: Lean def name equals Rust fn name

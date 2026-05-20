@@ -1295,4 +1295,35 @@ theorem rust_fn_silver_to_bronze_projection_diamond (f : RustFnSilver) :
   · rfl
   · rfl
 
+/--
+  **PMAT-419 Diamond — Canonical empty RustFnSilver.**
+
+  Define the canonical empty RustFnSilver with all 5 fields empty
+  (the "empty Rust function" placeholder). **NINTH instance of
+  Template 11 (Canonical identity element)**. Mirror of PMAT-418
+  (empty_lean_def_silver) — closes Rust↔Lean canonical-element
+  symmetry pair.
+
+  Adds an ELEVENTH distinct Diamond category on
+  `C-XLATE-RUST-FN-TO-LEAN-THM`, pushing the contract from depth-10
+  to depth-11. Second L5 contract at depth-11.
+-/
+def empty_rust_fn_silver : RustFnSilver :=
+  { name := #[], generics := #[], args := #[], return_type := #[], body := #[] }
+
+theorem empty_rust_fn_silver_canonical_diamond :
+    -- (a) canonical name is empty
+    (empty_rust_fn_silver.name = #[])
+    -- (b) canonical body is empty
+    ∧ (empty_rust_fn_silver.body = #[])
+    -- (c) canonical name size is 0
+    ∧ (empty_rust_fn_silver.name.size = 0)
+    -- (d) canonical body size is 0
+    ∧ (empty_rust_fn_silver.body.size = 0) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXlateRustFnToLeanThm
