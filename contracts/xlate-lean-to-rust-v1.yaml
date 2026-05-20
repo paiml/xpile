@@ -760,6 +760,34 @@ equations:
     postconditions:
       - "Diamond depth-7 broadened: 3 L5 contracts at depth-7"
 
+  rust_enum_struct_extensionality_diamond:
+    # PMAT-384: EIGHTH Diamond on this contract — BROADENS DEPTH-8
+    # substrate-wide. Pushes XlateLeanToRust (Layer 5) from depth-7
+    # to depth-8 as the third L5 contract at depth-8+. RUST-ENUM
+    # STRUCTURE EXTENSIONALITY: single-field record (variant_count :
+    # Nat). Thirty-first substrate-wide demonstration. Mirror of
+    # PMAT-373 (LeanInductive) — closes Lean↔Rust inductive/enum
+    # structural pair.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.rust_enum_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      RustEnum admits STRUCTURE EXTENSIONALITY:
+        (a) field eq (variant_count) -> record eq
+        (b) record eq -> field eq (congruence)
+        (c) decidable equality
+        (d) self-equality
+    domain: |
+      Two RustEnum records (variant_count : Nat) with derived
+      DecidableEq.
+    invariants:
+      - "EIGHTH Diamond category on C-XLATE-LEAN-TO-RUST — BROADENS DEPTH-8 substrate-wide"
+      - "STRUCTURE EXTENSIONALITY — thirty-first substrate-wide demonstration"
+      - "Mirror of PMAT-373 (LeanInductive) — closes Lean↔Rust inductive/enum struct pair"
+    preconditions:
+      - "two RustEnum records (DecidableEq derived)"
+    postconditions:
+      - "Diamond depth-8 broadened"
+
 proof_obligations:
   - type: postcondition
     property: total def lowers to a panic-free Rust fn

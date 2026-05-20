@@ -1563,4 +1563,54 @@ theorem lean_inductive_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/-! ## PMAT-384 — EIGHTH Diamond on C-XLATE-LEAN-TO-RUST
+    (Layer 5 BROADENS DEPTH-8):
+    RUST-ENUM STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XLATE-LEAN-TO-RUST-010).
+
+    **Broadens DEPTH-8 substrate-wide.** Pushes XlateLeanToRust
+    (Layer 5) from depth-7 to depth-8 as the third L5 contract at
+    depth-8+.
+
+    The 8 Diamond categories on C-XLATE-LEAN-TO-RUST:
+    - PMAT-222 inductive_monoid
+    - PMAT-237 variant_count_cardinality_functor
+    - PMAT-335 rust_fn_struct_extensionality
+    - PMAT-343 variant_count_nat_structure
+    - PMAT-351 rust_fn_body_array_size
+    - PMAT-363 rust_item_with_citation_silver_struct_extensionality
+    - PMAT-373 lean_inductive_struct_extensionality
+    - **PMAT-384: RUST-ENUM STRUCTURE EXTENSIONALITY** ← depth-8
+
+    Thirty-first substrate-wide demonstration of structure-
+    extensionality. Mirror of PMAT-373 (LeanInductive) on the
+    Rust side — together they close the Lean↔Rust inductive/enum
+    structural pair.
+
+    Status: discharged at v0.1.0 (PMAT-384). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `RustEnum` admits
+  STRUCTURE EXTENSIONALITY.
+
+  Single-field record (variant_count : Nat) with derived DecidableEq.
+
+  Status: **discharged at v0.1.0 (PMAT-384)**. Tier: DIAMOND.
+-/
+theorem rust_enum_struct_extensionality_diamond (e1 e2 : RustEnum) :
+    (e1.variant_count = e2.variant_count → e1 = e2)
+    ∧ (e1 = e2 → e1.variant_count = e2.variant_count)
+    ∧ (e1 = e2 ∨ e1 ≠ e2)
+    ∧ (e1 = e1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    cases e1; cases e2
+    simp_all
+  · intro h
+    rw [h]
+  · by_cases h : e1 = e2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXlateLeanToRust
