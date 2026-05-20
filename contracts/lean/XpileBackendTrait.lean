@@ -929,4 +929,22 @@ theorem artifact_bronze_to_silver_lift_diamond (a : Artifact) :
   · rfl
   · rfl
 
+/--
+  **PMAT-435 Diamond — Artifact Bronze→Silver→Bronze round-trip identity.**
+
+  Compose PMAT-402 (artifact_silver_to_bronze) with PMAT-424
+  (artifact_bronze_to_silver) and prove round-trip identity.
+  THIRD instance of Template 13. Pushes BackendTrait depth-12→13.
+-/
+theorem artifact_roundtrip_identity_diamond (a : Artifact) :
+    (artifact_silver_to_bronze (artifact_bronze_to_silver a) = a)
+    ∧ ((artifact_silver_to_bronze (artifact_bronze_to_silver a)).bytes = a.bytes)
+    ∧ (artifact_silver_to_bronze (artifact_bronze_to_silver ⟨#[]⟩) = ⟨#[]⟩)
+    ∧ (a = a) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases a; rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileBackendTrait
