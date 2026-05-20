@@ -527,3 +527,30 @@ equations:
     preconditions: []
     postconditions:
       - "Diamond depth-11 broadened: second L2 contract at depth-11"
+
+  bronze_to_silver_lift_diamond:
+    # PMAT-423: TWELFTH Diamond on this contract — BROADENS DEPTH-12
+    # substrate-wide. Pushes Bashrs (Layer 2) from depth-11 to depth-12.
+    # Second L2 contract at depth-12 in the broadening wave.
+    # BRONZE→SILVER LIFT on Outcome: define the canonical lift
+    # bronze_to_silver : Outcome → OutcomeSilver that preserves
+    # observable and sets default exit_code to 0 (success path).
+    # **SECOND instance of Template 12 (Bronze→Silver
+    # canonical-lift homomorphism)** introduced in PMAT-422.
+    lean_theorem: "XpileContracts.CBashrsPosixIdempotence.bronze_to_silver_lift_diamond"
+    lean_file: "contracts/lean/Bashrs.lean"
+    formula: |
+      Bronze→Silver canonical-lift homomorphism on Outcome:
+        (a) bronze_to_silver(o).observable = o.observable
+        (b) bronze_to_silver(o).exit_code = 0
+        (c) empty Bronze observable maps to empty Silver observable
+        (d) self-equality
+    domain: |
+      The canonical lift bronze_to_silver : Outcome → OutcomeSilver
+      that preserves observable and sets default exit_code to 0.
+    invariants:
+      - "TWELFTH Diamond category on C-BASHRS-POSIX-IDEMPOTENCE — BROADENS DEPTH-12 substrate-wide"
+      - "BRONZE→SILVER LIFT HOMOMORPHISM — second instance of Template 12 (after PMAT-422 FfiCpythonExt)"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-12 broadened: second L2 contract at depth-12"

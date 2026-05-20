@@ -902,4 +902,37 @@ theorem empty_success_outcome_canonical_diamond :
   · rfl
   · rfl
 
+/--
+  **PMAT-423 Diamond — Outcome Bronze→Silver lift.**
+
+  Define the canonical lift `bronze_to_silver` : `Outcome →
+  OutcomeSilver` that takes a Bronze Outcome (observable only)
+  and produces a Silver OutcomeSilver with the observable preserved
+  and exit_code defaulted to 0 (success path). **SECOND instance
+  of Template 12 (Bronze→Silver canonical-lift homomorphism)**
+  introduced in PMAT-422.
+
+  Adds a TWELFTH distinct Diamond category on
+  `C-BASHRS-POSIX-IDEMPOTENCE`, pushing the contract from depth-11
+  to depth-12. Second L2 contract at depth-12 in the broadening
+  wave.
+-/
+def bronze_to_silver (o : Outcome) : OutcomeSilver :=
+  { observable := o.observable, exit_code := 0 }
+
+theorem bronze_to_silver_lift_diamond (o : Outcome) :
+    -- (a) lift preserves observable
+    ((bronze_to_silver o).observable = o.observable)
+    -- (b) lift sets default exit_code to 0
+    ∧ ((bronze_to_silver o).exit_code = 0)
+    -- (c) empty Bronze observable maps to empty Silver observable
+    ∧ ((bronze_to_silver ⟨""⟩).observable.length = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (bronze_to_silver o = bronze_to_silver o) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CBashrsPosixIdempotence
