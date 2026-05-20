@@ -1,0 +1,30 @@
+[book]
+title = "xpile — the polyglot transpile workbench"
+authors = ["PAIML Engineering"]
+description = "Polyglot transpile workbench with provable contracts at every layer. Python/C/C++/Rust/Ruchy/Lean 4/Shell ↔ Rust/Ruchy/PTX/WGSL/SPIR-V/Lean 4/Shell."
+language = "en"
+src = "src"
+
+[build]
+build-dir = "../target/book"
+create-missing = false
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/paiml/xpile"
+edit-url-template = "https://github.com/paiml/xpile/edit/main/book/{path}"
+site-url = "/xpile/"
+
+[output.html.search]
+limit-results = 30
+use-boolean-and = true
+boost-title = 2
+boost-hierarchy = 2
+boost-paragraph = 1
+expand = true
+heading-split-level = 3
+
+[output.html.fold]
+enable = true
+level = 1
