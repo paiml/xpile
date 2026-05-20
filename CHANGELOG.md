@@ -7,6 +7,35 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Spec §28 + sub/diamond-taxonomy.md sync to depth-12 UNIVERSAL + 10 UNIVERSAL milestones + 12 recurring templates (PMAT-432)
+
+**Spec sync** to post-depth-12-UNIVERSAL substrate:
+
+- **161 wired Diamond theorems** (was 151) across 12 contracts.
+- **38+ Diamond categories** grouped into recurring families.
+- **Ten UNIVERSAL milestones documented**: depth-3..12.
+- **Twelve recurring algebraic templates** (was 11) — added **Template 12: Bronze→Silver canonical-lift homomorphism** demonstrated on 10 substrate lift diamonds (PMAT-422..431). Inverse direction of Template 10.
+- **Tenth broadening wave (PMAT-422..431)** documented: 10-PR sweep from depth-11 to depth-12 UNIVERSAL.
+- Cross-substrate symmetry closures: Frontend↔Backend lift pair (PMAT-424/425), ContractFrontend↔ContractBackend lift pair (PMAT-426/427), Rust↔Lean lift pair (PMAT-429/430).
+
+### Added — **MILESTONE: Diamond depth-12 UNIVERSAL ACROSS ALL 12 CONTRACTS** via DefinitionEnv Bronze→Silver lift on `C-NOTATION-LATEX-MATH-TO-EQUATION` (PMAT-431)
+
+**SUBSTRATE MILESTONE: depth-12 UNIVERSAL.** Tenth UNIVERSAL milestone. After 10 broadening sweeps (PMAT-422..430), every contract has ≥12 distinct Diamond categories.
+
+### Added — Diamond depth-12 broadening sweep PMAT-422..430 (Template 12: Bronze→Silver canonical-lift)
+
+The depth-12 wave **introduced Template 12** as inverse direction of Template 10.
+
+- **PMAT-422** (L4): FfiCall→FfiCallSilver lift — **Template 12 introduction**.
+- **PMAT-423** (L2): Outcome→OutcomeSilver lift.
+- **PMAT-424** (L3): Artifact→ArtifactSilver lift.
+- **PMAT-425** (L3): MetaHirModule→MetaHirModuleSilver lift — closes F↔B pair.
+- **PMAT-426** (L3): EquationsBlock→TranspileSession lift.
+- **PMAT-427** (L3): RenderedDoc→RenderedDocSilver lift — closes CF↔CB pair.
+- **PMAT-428** (L2): PyList→PyListSilver UInt8 lift — UInt8-specialized.
+- **PMAT-429** (L5): LeanDef→LeanDefSilver lift.
+- **PMAT-430** (L5): RustFn→RustFnSilver lift — closes Rust↔Lean pair.
+
 ### Changed — Spec §28 + sub/diamond-taxonomy.md sync to depth-11 UNIVERSAL + 9 UNIVERSAL milestones + 11 recurring templates (PMAT-421)
 
 **Spec sync** to post-depth-11-UNIVERSAL substrate:

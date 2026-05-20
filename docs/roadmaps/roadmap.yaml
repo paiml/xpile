@@ -2,6 +2,15 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-432
+  github_issue: null
+  item_type: task
+  title: 'PMAT-432: Spec §28 + diamond-taxonomy.md sync to depth-12 UNIVERSAL + 10 UNIVERSAL milestones + 12 recurring templates'
+  status: planned
+  priority: medium
+  created: 2026-05-20T23:30:00Z
+  acceptance_criteria:
+  - "Sync xpile-spec.md §28 and sub/diamond-taxonomy.md to post-PMAT-431 substrate state: 161 wired theorems, 10 UNIVERSAL milestones (depth-3..12), 12 recurring algebraic templates (added Template 12: Bronze→Silver canonical-lift homomorphism — inverse of Template 10 — demonstrated on 10 substrate lift diamonds via PMAT-422..431). Document tenth broadening wave (PMAT-422..431) and cross-substrate symmetry closures."
 - id: PMAT-421
   github_issue: null
   item_type: task
