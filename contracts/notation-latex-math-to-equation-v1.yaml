@@ -778,6 +778,30 @@ equations:
     postconditions:
       - "DEPTH-10 UNIVERSAL achieved: 12 contracts at depth-10+"
 
+  empty_definition_env_silver_canonical_diamond:
+    # PMAT-420: ELEVENTH Diamond on this contract — COMPLETES DEPTH-11
+    # UNIVERSAL ACROSS ALL 12 CONTRACTS. Pushes Notation (Layer 5)
+    # from depth-10 to depth-11 as the third L5 contract at depth-11.
+    # **TENTH instance of Template 11 (Canonical identity element)**.
+    # Substrate now at NINE UNIVERSAL milestones (depth-3..11).
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.empty_definition_env_silver_canonical_diamond"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      Canonical identity element on DefinitionEnvSilver:
+        (a) empty_definition_env_silver.first_math_span = ""
+        (b) empty_definition_env_silver.all_math_spans = #[]
+        (c) empty_definition_env_silver.label = none
+        (d) empty_definition_env_silver.all_math_spans.size = 0
+    domain: |
+      The canonical empty DefinitionEnvSilver.
+    invariants:
+      - "ELEVENTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — COMPLETES DEPTH-11 UNIVERSAL ACROSS ALL 12 CONTRACTS"
+      - "CANONICAL IDENTITY ELEMENT — tenth instance of Template 11"
+      - "Substrate milestone: every contract has ≥11 distinct Diamond categories — NINE UNIVERSAL milestones"
+    preconditions: []
+    postconditions:
+      - "DEPTH-11 UNIVERSAL achieved: 12 contracts at depth-11+"
+
 proof_obligations:
   - type: postcondition
     property: math-mode round-trips through render() losslessly
