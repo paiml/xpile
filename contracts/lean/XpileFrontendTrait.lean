@@ -1010,4 +1010,22 @@ theorem metahir_module_bronze_to_silver_lift_diamond (m : MetaHirModule) :
   · rfl
   · rfl
 
+/--
+  **PMAT-436 Diamond — MetaHirModule round-trip identity.**
+
+  Compose PMAT-403 (metahir_module_silver_to_bronze) with PMAT-425
+  (metahir_module_bronze_to_silver). FOURTH instance of Template
+  13. Closes Frontend↔Backend Template 13 pair with PMAT-435.
+-/
+theorem metahir_module_roundtrip_identity_diamond (m : MetaHirModule) :
+    (metahir_module_silver_to_bronze (metahir_module_bronze_to_silver m) = m)
+    ∧ ((metahir_module_silver_to_bronze (metahir_module_bronze_to_silver m)).bytes = m.bytes)
+    ∧ (metahir_module_silver_to_bronze (metahir_module_bronze_to_silver ⟨#[]⟩) = ⟨#[]⟩)
+    ∧ (m = m) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases m; rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileFrontendTrait
