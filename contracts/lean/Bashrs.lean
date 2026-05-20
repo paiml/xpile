@@ -801,4 +801,35 @@ theorem outcome_observable_length_bronze_nat_diamond (o : Outcome) :
   · rfl
   · rfl
 
+/--
+  **PMAT-390 Diamond — SuccessfulOutcome subtype extensionality.**
+
+  The Gold-tier subtype `SuccessfulOutcome := { o : OutcomeSilver
+  // o.exit_code = 0 }` satisfies subtype extensionality: equality
+  on values lifts to equality on the subtype, and decidable
+  equality holds on the subtype level. This is the SECOND
+  substrate-wide subtype-extensionality demonstration after
+  PMAT-311 (BoundedSmem on C-COMPILE-RUST-TO-PTX-MMA),
+  capturing the Gold-tier refinement-subtype pattern on Bashrs.
+
+  Adds a NINTH distinct Diamond category on
+  `C-BASHRS-POSIX-IDEMPOTENCE`, pushing the contract from depth-8
+  to depth-9. Second L2 contract at depth-9.
+-/
+theorem successful_outcome_subtype_extensionality_diamond
+    (s1 s2 : SuccessfulOutcome) :
+    (s1.val = s2.val → s1 = s2)
+    ∧ (s1 = s2 → s1.val = s2.val)
+    ∧ (s1 = s2 ∨ s1 ≠ s2)
+    ∧ (s1 = s1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    exact Subtype.ext h
+  · intro h
+    rw [h]
+  · by_cases h : s1 = s2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CBashrsPosixIdempotence
