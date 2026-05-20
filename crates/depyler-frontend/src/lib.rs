@@ -419,6 +419,9 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
 /// * `BigInt` → `Type::BigInt` — the slow path of `C-PY-INT-ARITH`
 ///   (PMAT-012). User-supplied annotation that opts a function into
 ///   the unbounded-int Rust/Ruchy emission.
+/// * `str` → `Type::Str` — PMAT-449, v0.2.0 Track 1.A foundation.
+///   Python `str` annotation lowers to owned-`String` in Rust/Ruchy
+///   and Lean `String` in the proof lane.
 ///
 /// `BigInt` is intentionally not a real Python type — this is xpile-specific
 /// nomenclature for the slow path. A future PR will infer it from `int`
@@ -433,12 +436,13 @@ fn parse_type_annotation(
             "int" => Ok(Type::I64),
             "bool" => Ok(Type::Bool),
             "BigInt" => Ok(Type::BigInt),
+            "str" => Ok(Type::Str),
             other => Err(FrontendError::Lower(format!(
-                "function `{fn_name}` annotates `{site}` with unsupported type `{other}` — only `int`, `bool`, `BigInt` at v0.1.0"
+                "function `{fn_name}` annotates `{site}` with unsupported type `{other}` — only `int`, `bool`, `BigInt`, `str` at v0.2.0 Track 1.A"
             ))),
         },
         _ => Err(FrontendError::Lower(format!(
-            "function `{fn_name}` annotates `{site}` with a non-trivial type expression — not supported at v0.1.0"
+            "function `{fn_name}` annotates `{site}` with a non-trivial type expression — not supported at v0.2.0"
         ))),
     }
 }
@@ -1092,14 +1096,14 @@ fn infer_type(e: &Expr) -> Type {
             UnOp::Neg => Type::I64,
             UnOp::Not => Type::Bool,
         },
-        // PMAT-042 + PMAT-045 + PMAT-047 + PMAT-055: shell-string /
-        // command-sub / special-param Expr variants belong to the
-        // bashrs domain. They don't appear inside Python-frontend
-        // lowering, so `infer_type` is never called on one in
-        // practice. Default to I64 for safety so any future
-        // accidental call doesn't panic.
-        Expr::LitStr(_)
-        | Expr::QuotedString { .. }
+        // PMAT-449 (v0.2.0 Track 1.A): Python `"..."` literal now
+        // produces `Expr::LitStr` and is typed as `Type::Str`.
+        Expr::LitStr(_) => Type::Str,
+        // PMAT-042 + PMAT-045 + PMAT-047 + PMAT-055: shell-domain
+        // Expr variants don't appear inside Python-frontend lowering.
+        // Default to I64 for safety so any future accidental call
+        // doesn't panic.
+        Expr::QuotedString { .. }
         | Expr::ShellVar(_)
         | Expr::CommandSubstitution(_)
         | Expr::ShellSpecial(_) => Type::I64,
@@ -1150,10 +1154,12 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             UnOp::Neg => infer_type_in_ctx(ctx, operand),
             UnOp::Not => Type::Bool,
         },
+        // PMAT-449 (v0.2.0 Track 1.A): Python `"..."` literal is
+        // typed as `Type::Str`.
+        Expr::LitStr(_) => Type::Str,
         // PMAT-042 + PMAT-045 + PMAT-047 + PMAT-055: see twin arm
         // in `infer_type` above.
-        Expr::LitStr(_)
-        | Expr::QuotedString { .. }
+        Expr::QuotedString { .. }
         | Expr::ShellVar(_)
         | Expr::CommandSubstitution(_)
         | Expr::ShellSpecial(_) => Type::I64,
@@ -1172,6 +1178,11 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
                 })?;
                 Ok(Expr::LitInt(v))
             }
+            // PMAT-449 (v0.2.0 Track 1.A): Python `"..."` literal →
+            // `Expr::LitStr`, downstream-typed as `Type::Str`. The
+            // raw Python source text is carried through to the
+            // backend (which escapes for its target language).
+            ast::Constant::Str(s) => Ok(Expr::LitStr(s.to_string())),
             other => Err(FrontendError::Lower(format!(
                 "unsupported constant: {:?}",
                 std::mem::discriminant(&other)

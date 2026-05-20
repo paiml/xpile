@@ -431,6 +431,21 @@ fn main() {
     assert_rustc_runs("factorial", &format!("{shim}\n{rust}"), driver);
 }
 
+/// PMAT-449 — v0.2.0 Track 1.A foundation: the first end-to-end
+/// `Type::Str` round-trip. `def greet() -> str: return "hello"`
+/// transpiles to Rust `pub fn greet() -> String { String::from("hello") }`
+/// and the result compiles + computes the right value at runtime.
+#[test]
+fn greet_lit_emitted_rust_returns_hello_string() {
+    let rust = xpile_transpile_to_rust("greet_lit.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(greet(), String::from("hello"));
+}
+"#;
+    assert_rustc_runs("greet_lit", &rust, driver);
+}
+
 /// Binary recursion — fib makes two recursive calls per invocation
 /// (factorial makes one). Validates that `f(n-1) + f(n-2)` style
 /// patterns work, not just `n * f(n-1)`.

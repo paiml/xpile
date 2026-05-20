@@ -341,6 +341,23 @@ pub enum Type {
     /// `xpile_bigint::BigInt`; Lean emits `Int` (which is already
     /// unbounded). PMAT-012.
     BigInt,
+    /// Owned UTF-8 string — Python `str`'s native shape. PMAT-449,
+    /// the v0.2.0 Track 1.A foundation
+    /// ([`sub/v0.2.0-depyler-merger.md`](../../docs/specifications/sub/v0.2.0-depyler-merger.md)).
+    ///
+    /// Distinct from [`Type::ShellString`] (which carries an implicit
+    /// quoting strategy and bashrs-domain semantics). `Type::Str`
+    /// values are UTF-8 owned strings — Rust/Ruchy emit `String`,
+    /// Lean emits `String`. v0.2.0 starts with owned-only; `&str`
+    /// borrowing is the stretch sub-track 1.D.
+    ///
+    /// Currently produced by `depyler-frontend` for Python `str`
+    /// annotations and `"..."` literals. Other frontends are free to
+    /// produce it when they wire up real string parsing.
+    ///
+    /// Governing contract (Layer 2 translation, code lane): the v0.2.0
+    /// `C-XLATE-PY-STR-TO-RUST-STRING` contract once authored.
+    Str,
     /// POSIX shell string — quoted-aware string type for the bashrs
     /// domain. PMAT-046 / XPILE-BASHRS-MERGER-001 Layer B.
     ///

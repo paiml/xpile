@@ -195,12 +195,30 @@ fn emit_param(out: &mut String, p: &Param) -> Result<(), RuchyCodegenError> {
     Ok(())
 }
 
+/// Escape a string for emission inside a Ruchy `"..."` literal.
+/// PMAT-449 — Ruchy compiles to Rust, so identical escape semantics.
+fn escape_ruchy_str(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 fn emit_type(out: &mut String, t: Type) -> Result<(), RuchyCodegenError> {
     out.push_str(match t {
         Type::I64 => "i64",
         Type::Bool => "bool",
         // Ruchy compiles to Rust → same BigInt re-export. PMAT-012.
         Type::BigInt => "xpile_bigint::BigInt",
+        // PMAT-449 (v0.2.0 Track 1.A): Ruchy → Rust → owned `String`,
+        // mirrors xpile-rust-codegen's lowering. See
+        // sub/v0.2.0-depyler-merger.md.
+        Type::Str => "String",
         // PMAT-046: same disposition as the Rust backend.
         Type::ShellString | Type::ExitCode => {
             return Err(RuchyCodegenError::Unsupported(format!(
@@ -242,11 +260,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         } => emit_if_expr(out, cond, then_expr, else_expr, mode)?,
         Expr::Call { callee, args } => emit_call(out, callee, args, mode)?,
         Expr::UnOp { op, operand } => emit_unop(out, *op, operand, mode)?,
-        // PMAT-042: see rust-codegen's matching arm.
-        Expr::LitStr(_) | Expr::QuotedString { .. } => {
+        // PMAT-449 (v0.2.0 Track 1.A): Python `str` literal → Ruchy
+        // owned `String::from("...")`. Same escape semantics as the
+        // Rust backend.
+        Expr::LitStr(s) => {
+            write!(out, "String::from(\"{}\")", escape_ruchy_str(s))?;
+        }
+        // PMAT-042: `QuotedString` carries explicit shell quoting and
+        // stays bashrs-only.
+        Expr::QuotedString { .. } => {
             return Err(RuchyCodegenError::Unsupported(
-                "Ruchy backend does not lower Expr::LitStr / Expr::QuotedString — \
-                 contract C-BASHRS-POSIX-IDEMPOTENCE governs shell string literals; \
+                "Ruchy backend does not lower Expr::QuotedString — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs quoted shell strings; \
                  use `--target shell`"
                     .into(),
             ));

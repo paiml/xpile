@@ -388,6 +388,22 @@ fn emit_param(out: &mut String, p: &Param) -> Result<(), LeanCodegenError> {
     Ok(())
 }
 
+/// Escape a string for emission inside a Lean `"..."` literal.
+/// PMAT-449 — Lean's string literal syntax handles `\\` and `\"`
+/// the same way as Rust; richer escapes (Unicode, octal) are v0.2.0
+/// later sub-tracks.
+fn escape_lean_str(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 fn emit_type(out: &mut String, t: Type) -> Result<(), LeanCodegenError> {
     out.push_str(match t {
         Type::I64 => "Int",
@@ -396,6 +412,10 @@ fn emit_type(out: &mut String, t: Type) -> Result<(), LeanCodegenError> {
         // C-PY-INT-ARITH slow path is satisfied by construction in Lean
         // regardless of which type the frontend chose. PMAT-012.
         Type::BigInt => "Int",
+        // PMAT-449 (v0.2.0 Track 1.A): Lean's built-in `String` is
+        // UTF-8 owned, same shape as Python `str`. Discharges
+        // C-XLATE-PY-STR-TO-RUST-STRING in the proof lane.
+        Type::Str => "String",
         // PMAT-046: bashrs-domain types refused. A future Silver-tier
         // refinement of `C-BASHRS-POSIX-IDEMPOTENCE` will model these
         // in `contracts/lean/Bashrs.lean` directly (typed POSIX shell
@@ -537,12 +557,18 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         } => emit_if_expr(out, cond, then_expr, else_expr)?,
         Expr::Call { callee, args } => emit_call(out, callee, args)?,
         Expr::UnOp { op, operand } => emit_unop(out, *op, operand)?,
-        // PMAT-042: shell-string Expr variants belong to the bashrs
-        // domain. Lean refuses them.
-        Expr::LitStr(_) | Expr::QuotedString { .. } => {
+        // PMAT-449 (v0.2.0 Track 1.A): Python `str` literal → Lean
+        // `String` literal. Lean's string syntax is the same as
+        // Rust's, but the escape set is slightly more restricted at
+        // v0.2.0 first pass.
+        Expr::LitStr(s) => {
+            write!(out, "\"{}\"", escape_lean_str(s))?;
+        }
+        // PMAT-042: `QuotedString` stays bashrs-only; Lean refuses.
+        Expr::QuotedString { .. } => {
             return Err(LeanCodegenError::Unsupported(
-                "Lean backend does not lower Expr::LitStr / Expr::QuotedString — \
-                 contract C-BASHRS-POSIX-IDEMPOTENCE governs shell string literals; \
+                "Lean backend does not lower Expr::QuotedString — \
+                 contract C-BASHRS-POSIX-IDEMPOTENCE governs quoted shell strings; \
                  use `--target shell`"
                     .into(),
             ));
