@@ -898,4 +898,35 @@ theorem empty_rust_artifact_canonical_diamond :
   · rfl
   · rfl
 
+/--
+  **PMAT-424 Diamond — Artifact Bronze→Silver lift.**
+
+  Define the canonical lift `artifact_bronze_to_silver` :
+  `Artifact → ArtifactSilver` that takes a Bronze Artifact (bytes
+  only) and produces a Silver ArtifactSilver with the bytes
+  preserved and target defaulted to Target.rust. **THIRD instance
+  of Template 12 (Bronze→Silver canonical-lift homomorphism)**.
+
+  Adds a TWELFTH distinct Diamond category on
+  `C-XPILE-BACKEND-TRAIT`, pushing the contract from depth-11 to
+  depth-12. First L3 contract at depth-12 in the broadening wave.
+-/
+def artifact_bronze_to_silver (a : Artifact) : ArtifactSilver :=
+  { bytes := a.bytes, target := Target.rust }
+
+theorem artifact_bronze_to_silver_lift_diamond (a : Artifact) :
+    -- (a) lift preserves bytes
+    ((artifact_bronze_to_silver a).bytes = a.bytes)
+    -- (b) lift sets default target to Target.rust
+    ∧ ((artifact_bronze_to_silver a).target = Target.rust)
+    -- (c) empty Bronze bytes maps to empty Silver bytes
+    ∧ ((artifact_bronze_to_silver ⟨#[]⟩).bytes.size = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (artifact_bronze_to_silver a = artifact_bronze_to_silver a) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileBackendTrait

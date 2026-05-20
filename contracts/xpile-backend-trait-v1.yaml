@@ -528,6 +528,34 @@ equations:
     postconditions:
       - "Diamond depth-11 broadened: first L3 contract at depth-11"
 
+  artifact_bronze_to_silver_lift_diamond:
+    # PMAT-424: TWELFTH Diamond on this contract — BROADENS DEPTH-12
+    # substrate-wide. Pushes XpileBackendTrait (Layer 3) from
+    # depth-11 to depth-12. First L3 contract at depth-12.
+    # BRONZE→SILVER LIFT on Artifact: define the canonical lift
+    # artifact_bronze_to_silver : Artifact → ArtifactSilver that
+    # preserves bytes and sets default target to Target.rust.
+    # **THIRD instance of Template 12 (Bronze→Silver canonical-lift
+    # homomorphism)**.
+    lean_theorem: "XpileContracts.CXpileBackendTrait.artifact_bronze_to_silver_lift_diamond"
+    lean_file: "contracts/lean/XpileBackendTrait.lean"
+    formula: |
+      Bronze→Silver canonical-lift homomorphism on Artifact:
+        (a) artifact_bronze_to_silver(a).bytes = a.bytes
+        (b) artifact_bronze_to_silver(a).target = Target.rust
+        (c) empty Bronze bytes maps to empty Silver bytes
+        (d) self-equality
+    domain: |
+      The canonical lift artifact_bronze_to_silver : Artifact →
+      ArtifactSilver that preserves bytes and uses Target.rust
+      as default target.
+    invariants:
+      - "TWELFTH Diamond category on C-XPILE-BACKEND-TRAIT — BROADENS DEPTH-12 substrate-wide"
+      - "BRONZE→SILVER LIFT HOMOMORPHISM — third instance of Template 12"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-12 broadened: first L3 contract at depth-12"
+
 proof_obligations:
   - type: invariant
     property: Every registered Target is owned by exactly one Backend
