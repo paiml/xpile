@@ -1613,4 +1613,35 @@ theorem rust_enum_struct_extensionality_diamond (e1 e2 : RustEnum) :
     · exact Or.inr h
   · rfl
 
+/--
+  **PMAT-396 Diamond — WarningLineCount subtype extensionality.**
+
+  The Gold-tier subtype `WarningLineCount := { n : Nat // n ≥
+  warning_lines_floor }` satisfies subtype extensionality.
+  EIGHTH substrate-wide subtype-extensionality demonstration.
+  Template 9 (Gold-tier subtype-ext) expands to 8 substrate
+  instances. Mirror of PMAT-311 (BoundedSmem) — both are
+  bounded-Nat subtypes (PMAT-311 with upper bound `≤`, PMAT-396
+  with lower bound `≥`).
+
+  Adds a NINTH distinct Diamond category on
+  `C-XLATE-LEAN-TO-RUST`, pushing the contract from depth-8 to
+  depth-9. First L5 contract at depth-9 in the broadening wave.
+-/
+theorem warning_line_count_subtype_extensionality_diamond
+    (w1 w2 : WarningLineCount) :
+    (w1.val = w2.val → w1 = w2)
+    ∧ (w1 = w2 → w1.val = w2.val)
+    ∧ (w1 = w2 ∨ w1 ≠ w2)
+    ∧ (w1 = w1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    exact Subtype.ext h
+  · intro h
+    rw [h]
+  · by_cases h : w1 = w2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXlateLeanToRust
