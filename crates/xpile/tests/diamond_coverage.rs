@@ -199,14 +199,12 @@ fn substrate_diamond_depth_8_opened() {
     // PMAT-295 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): cancellative monoid.
     // PMAT-378 BROADENED depth-8 to C-FFI-CPYTHON-EXT (Layer 4): BorrowedRef struct ext.
     // PMAT-379 BROADENED depth-8 to C-BASHRS-POSIX-IDEMPOTENCE (Layer 2).
-    // PMAT-380 COMPLETED depth-8 ACROSS ALL 5 TAXONOMY LAYERS via
-    // C-XPILE-FRONTEND-TRAIT (Layer 3) — parallel to PMAT-330/347/358/369
-    // ALL 5 LAYERS milestones.
+    // PMAT-380 COMPLETED depth-8 ACROSS ALL 5 TAXONOMY LAYERS via C-XPILE-FRONTEND-TRAIT.
+    // PMAT-381 BROADENED depth-8 to C-XPILE-BACKEND-TRAIT (Layer 3, 2nd L3).
     assert!(
-        depth_8_plus >= 5,
-        "Diamond depth-8 ACROSS ALL 5 TAXONOMY LAYERS milestone (PMAT-294/295/378/379/380): \
-         expected ≥5 contracts at depth-8+ (Layer 1 + Layer 2 + Layer 3 + Layer 4 + Layer 5), \
-         got {depth_8_plus}.\n{json}"
+        depth_8_plus >= 6,
+        "Diamond depth-8 BROADENED milestone (PMAT-294/295/378..381): \
+         expected ≥6 contracts at depth-8+, got {depth_8_plus}.\n{json}"
     );
 }
 
