@@ -872,4 +872,34 @@ theorem silver_to_bronze_projection_diamond (o : OutcomeSilver) :
   · rfl
   · rfl
 
+/--
+  **PMAT-412 Diamond — Canonical "empty success" OutcomeSilver.**
+
+  Define the canonical empty-success OutcomeSilver element with
+  empty observable and zero exit_code (the POSIX-shell empty success
+  trace — observable="", exit_code=0). **SECOND instance of
+  Template 11 (Canonical identity element)** introduced in PMAT-411.
+
+  Adds an ELEVENTH distinct Diamond category on
+  `C-BASHRS-POSIX-IDEMPOTENCE`, pushing the contract from depth-10
+  to depth-11. Second L2 contract at depth-11 in the broadening wave.
+-/
+def empty_success_outcome : OutcomeSilver :=
+  { observable := "", exit_code := 0 }
+
+theorem empty_success_outcome_canonical_diamond :
+    -- (a) canonical observable is empty
+    (empty_success_outcome.observable = "")
+    -- (b) canonical exit_code is 0
+    ∧ (empty_success_outcome.exit_code = 0)
+    -- (c) canonical observable length is 0
+    ∧ (empty_success_outcome.observable.length = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (empty_success_outcome = empty_success_outcome) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CBashrsPosixIdempotence

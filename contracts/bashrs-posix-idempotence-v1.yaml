@@ -499,3 +499,31 @@ equations:
       - "one OutcomeSilver record"
     postconditions:
       - "Diamond depth-10 broadened: second L2 contract at depth-10"
+
+  empty_success_outcome_canonical_diamond:
+    # PMAT-412: ELEVENTH Diamond on this contract — BROADENS DEPTH-11
+    # substrate-wide. Pushes Bashrs (Layer 2) from depth-10 to depth-11.
+    # Second L2 contract at depth-11.
+    # CANONICAL EMPTY-SUCCESS OutcomeSilver: define the canonical
+    # OutcomeSilver element with empty observable and zero exit_code
+    # — the POSIX-shell empty success trace.
+    # **SECOND instance of Template 11 (Canonical identity element)**
+    # introduced in PMAT-411 (FfiCpythonExt).
+    lean_theorem: "XpileContracts.CBashrsPosixIdempotence.empty_success_outcome_canonical_diamond"
+    lean_file: "contracts/lean/Bashrs.lean"
+    formula: |
+      Canonical identity element on OutcomeSilver:
+        (a) empty_success_outcome.observable = ""
+        (b) empty_success_outcome.exit_code = 0
+        (c) empty_success_outcome.observable.length = 0
+        (d) self-equality
+    domain: |
+      The canonical empty-success OutcomeSilver element (observable
+      empty, exit_code zero) — the POSIX-shell empty success trace.
+    invariants:
+      - "ELEVENTH Diamond category on C-BASHRS-POSIX-IDEMPOTENCE — BROADENS DEPTH-11 substrate-wide"
+      - "CANONICAL IDENTITY ELEMENT — second instance of Template 11 (after PMAT-411 FfiCpythonExt)"
+      - "Captures the POSIX-shell empty success trace as a typed canonical element"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-11 broadened: second L2 contract at depth-11"
