@@ -696,6 +696,38 @@ equations:
     postconditions:
       - "Diamond depth-12 ACROSS 3 LAYERS opened: PyIntArith (L1) + FFI-CPYTHON-EXT (L4) + CompileRustToPtxMma (L5)"
 
+  ffi_call_roundtrip_identity_diamond:
+    # PMAT-433: THIRTEENTH Diamond on this contract — OPENS DEPTH-13
+    # ACROSS 3 LAYERS. Pushes FFI-CPYTHON-EXT (Layer 4) from
+    # depth-12 to depth-13 as the first L4 contract at depth-13.
+    # BRONZE→SILVER→BRONZE ROUND-TRIP IDENTITY on FfiCall: define
+    # ffi_call_silver_to_bronze as the forgetful projection (drops
+    # all but symbol) and prove silver_to_bronze ∘ bronze_to_silver
+    # = id_FfiCall.
+    # **Introduces Template 13 (Bronze→Silver→Bronze round-trip
+    # identity)** as a new substrate-wide recurring algebraic
+    # family — captures the correctness relationship between
+    # Templates 10 (projection) and 12 (lift).
+    lean_theorem: "XpileContracts.CFfiCpythonExt.ffi_call_roundtrip_identity_diamond"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
+    formula: |
+      Bronze→Silver→Bronze round-trip identity on FfiCall:
+        (a) silver_to_bronze ∘ bronze_to_silver = id_FfiCall
+        (b) payload preserved through the round-trip
+        (c) empty round-trips to empty
+        (d) self-equality
+    domain: |
+      Composition of forgetful projection ffi_call_silver_to_bronze
+      with canonical lift lift_ffi_call_bronze_to_silver equals
+      identity on FfiCall.
+    invariants:
+      - "THIRTEENTH Diamond category on C-FFI-CPYTHON-EXT — OPENS DEPTH-13 ACROSS 3 LAYERS"
+      - "BRONZE→SILVER→BRONZE ROUND-TRIP IDENTITY — introduces Template 13 as a NEW substrate-wide algebraic template"
+      - "Captures correctness relationship between Templates 10 (projection) and 12 (lift)"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-13 ACROSS 3 LAYERS opened: PyIntArith (L1) + FFI-CPYTHON-EXT (L4) + CompileRustToPtxMma (L5)"
+
 proof_obligations:
   - type: precondition
     property: both Python and C frontends produced meta-HIR
