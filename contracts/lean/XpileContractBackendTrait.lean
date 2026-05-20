@@ -932,4 +932,22 @@ theorem rendered_doc_bronze_to_silver_lift_diamond (d : RenderedDoc) :
   · rfl
   · rfl
 
+/--
+  **PMAT-438 Diamond — RenderedDoc round-trip identity.**
+
+  Compose PMAT-405 (rendered_doc_silver_to_bronze) with PMAT-427
+  (rendered_doc_bronze_to_silver). SIXTH instance of Template 13.
+  Closes CF↔CB Template 13 pair with PMAT-437.
+-/
+theorem rendered_doc_roundtrip_identity_diamond (d : RenderedDoc) :
+    (rendered_doc_silver_to_bronze (rendered_doc_bronze_to_silver d) = d)
+    ∧ ((rendered_doc_silver_to_bronze (rendered_doc_bronze_to_silver d)).bytes = d.bytes)
+    ∧ (rendered_doc_silver_to_bronze (rendered_doc_bronze_to_silver ⟨#[]⟩) = ⟨#[]⟩)
+    ∧ (d = d) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases d; rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileContractBackendTrait
