@@ -818,6 +818,38 @@ equations:
     postconditions:
       - "Diamond depth-9 broadened: first L5 contract at depth-9 in broadening wave"
 
+  lean_def_silver_to_bronze_projection_diamond:
+    # PMAT-407: TENTH Diamond on this contract — BROADENS DEPTH-10
+    # substrate-wide. Pushes XlateLeanToRust (Layer 5) from depth-9
+    # to depth-10. First L5 contract at depth-10 in the broadening
+    # wave.
+    # SILVER→BRONZE TIER PROJECTION on LeanDefSilver: define the
+    # canonical forgetful map lean_def_silver_to_bronze :
+    # LeanDefSilver → LeanDef that drops the name/args/return_type
+    # fields. SEVENTH instance of Template 10 (Tier-projection
+    # homomorphism). Captures Silver→Bronze refinement direction
+    # on the Lean side of the Lean→Rust translation contract.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.lean_def_silver_to_bronze_projection_diamond"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      Silver→Bronze tier projection homomorphism on LeanDefSilver:
+        (a) lean_def_silver_to_bronze(d).body = d.body
+        (b) projection is independent of name/args/return_type (forgetful)
+        (c) empty body maps to empty Bronze LeanDef
+        (d) self-equality
+    domain: |
+      The forgetful map lean_def_silver_to_bronze : LeanDefSilver
+      → LeanDef that drops name, args, and return_type fields
+      while retaining body.
+    invariants:
+      - "TENTH Diamond category on C-XLATE-LEAN-TO-RUST — BROADENS DEPTH-10 substrate-wide"
+      - "TIER-PROJECTION HOMOMORPHISM — seventh instance of Template 10"
+      - "Captures Silver→Bronze refinement on Lean side of Lean→Rust translation"
+    preconditions:
+      - "one LeanDefSilver record"
+    postconditions:
+      - "Diamond depth-10 broadened: first L5 contract at depth-10 in broadening wave"
+
 proof_obligations:
   - type: postcondition
     property: total def lowers to a panic-free Rust fn
