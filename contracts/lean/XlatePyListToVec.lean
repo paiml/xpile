@@ -1182,4 +1182,54 @@ theorem heterogeneous_list_silver_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/-! ## PMAT-382 — EIGHTH Diamond on C-XLATE-PY-LIST-TO-VEC
+    (Layer 2 BROADENS DEPTH-8):
+    HOMOGENEOUS-LIST-SILVER α STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XLATE-PY-LIST-009).
+
+    **Broadens DEPTH-8 substrate-wide.** Pushes XlatePyListToVec
+    (Layer 2) from depth-7 to depth-8 as the second L2 contract at
+    depth-8+.
+
+    The 8 Diamond categories on C-XLATE-PY-LIST-TO-VEC:
+    - PMAT-221 list_free_monoid
+    - PMAT-229 nonempty_section_retraction
+    - PMAT-244 length_monoid_homomorphism
+    - PMAT-338 list_reverse_involution
+    - PMAT-349 py_list_silver_struct_extensionality
+    - PMAT-360 typed_rust_vec_silver_struct_extensionality
+    - PMAT-371 heterogeneous_list_silver_struct_extensionality
+    - **PMAT-382: HOMOGENEOUS-LIST-SILVER α STRUCTURE EXT** ← depth-8
+
+    Twenty-ninth substrate-wide demonstration of structure-
+    extensionality. Captures HomogeneousListSilver α — the fourth
+    major record on this contract (after PMAT-349 PyListSilver α,
+    PMAT-360 TypedRustVecSilver α, PMAT-371 HeterogeneousListSilver).
+
+    Status: discharged at v0.1.0 (PMAT-382). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `HomogeneousListSilver α`
+  admits STRUCTURE EXTENSIONALITY.
+
+  2-field polymorphic record (elements : List α, element_type_tag :
+  String) with derived DecidableEq.
+
+  Status: **discharged at v0.1.0 (PMAT-382)**. Tier: DIAMOND.
+-/
+theorem homogeneous_list_silver_struct_extensionality_diamond
+    {α : Type} (h1 h2 : HomogeneousListSilver α) :
+    (h1.elements = h2.elements ∧ h1.element_type_tag = h2.element_type_tag
+      → h1 = h2)
+    ∧ (h1 = h2 → h1.elements = h2.elements
+        ∧ h1.element_type_tag = h2.element_type_tag)
+    ∧ (h1 = h1) := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro ⟨h_e, h_t⟩
+    cases h1; cases h2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h]⟩
+  · rfl
+
 end XpileContracts.CXlatePyListToVec
