@@ -802,6 +802,32 @@ equations:
     postconditions:
       - "DEPTH-11 UNIVERSAL achieved: 12 contracts at depth-11+"
 
+  definition_env_bronze_to_silver_lift_diamond:
+    # PMAT-431: TWELFTH Diamond on this contract — COMPLETES DEPTH-12
+    # UNIVERSAL ACROSS ALL 12 CONTRACTS. Pushes Notation (Layer 5)
+    # from depth-11 to depth-12 as the third L5 contract at depth-12.
+    # **TENTH instance of Template 12 (Bronze→Silver canonical-lift
+    # homomorphism)**. Substrate now at TEN UNIVERSAL milestones
+    # (depth-3..12).
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.definition_env_bronze_to_silver_lift_diamond"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      Bronze→Silver canonical-lift on DefinitionEnv:
+        (a) preserves first_math_span
+        (b) defaults all_math_spans to empty
+        (c) empty maps to empty
+        (d) reflexivity
+    domain: |
+      The lift definition_env_bronze_to_silver : DefinitionEnv →
+      DefinitionEnvSilver.
+    invariants:
+      - "TWELFTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — COMPLETES DEPTH-12 UNIVERSAL"
+      - "BRONZE→SILVER LIFT HOMOMORPHISM — tenth instance of Template 12"
+      - "Substrate milestone: every contract has ≥12 distinct Diamond categories — TEN UNIVERSAL milestones"
+    preconditions: []
+    postconditions:
+      - "DEPTH-12 UNIVERSAL achieved: 12 contracts at depth-12+"
+
 proof_obligations:
   - type: postcondition
     property: math-mode round-trips through render() losslessly
