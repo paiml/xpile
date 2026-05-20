@@ -350,3 +350,35 @@ equations:
       - "one OutcomeSilver record"
     postconditions:
       - "Diamond depth-5 broadened: 4 contracts on 4 distinct layers"
+
+  outcome_exit_code_int_sign_diamond:
+    # PMAT-357: SIXTH Diamond on this contract — BROADENS DEPTH-6
+    # from 3 to 4 LAYERS. After PMAT-356 opened depth-6 on Layer 4
+    # (FFI-CPYTHON-EXT) — making depth-6 ACROSS 3 LAYERS
+    # (L1+L4+L5) — PMAT-357 pushes Bashrs (Layer 2) from depth-5 to
+    # depth-6. Depth-6 now spans 4 of 5 taxonomy layers
+    # (L1+L2+L4+L5; only L3 remains at depth-5). OutcomeSilver
+    # exit_code Int sign structure — cross-substrate parallel with
+    # PMAT-328 (refcount_delta sign decomp on FFI-CPYTHON-EXT).
+    lean_theorem: "XpileContracts.CBashrsPosixIdempotence.outcome_exit_code_int_sign_diamond"
+    lean_file: "contracts/lean/Bashrs.lean"
+    formula: |
+      OutcomeSilver.exit_code Int sign structure:
+        (a) sign trichotomy:        0 < c ∨ c = 0 ∨ c < 0
+        (b) absolute value non-negativity
+        (c) zero exit_code has zero absolute value
+        (d) reflexivity
+    domain: |
+      Any OutcomeSilver record with its Int-valued exit_code field.
+      The four properties together axiomatize the SEMANTIC SIGN
+      STRUCTURE of exit_code — distinguishing success (zero) from
+      non-zero failure modes.
+    invariants:
+      - "SIXTH Diamond category on C-BASHRS-POSIX-IDEMPOTENCE — BROADENS DEPTH-6 from 3 to 4 LAYERS"
+      - "INT-SIGN STRUCTURE template — cross-substrate parallel with PMAT-328 (refcount_delta on FFI-CPYTHON-EXT)"
+      - "depth-6 now spans 4 of 5 taxonomy layers (L1+L2+L4+L5); only L3 remains at depth-5"
+    preconditions:
+      - "one OutcomeSilver record with Int-valued exit_code"
+    postconditions:
+      - "an emitter that conflated success (0) and failure (non-zero) modes would falsify (a) and (c)"
+      - "Diamond depth-6 broadened: 4 contracts on 4 distinct layers"

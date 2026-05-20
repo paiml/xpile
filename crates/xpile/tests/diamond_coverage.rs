@@ -159,12 +159,13 @@ fn substrate_diamond_depth_6_opened() {
     let depth_6_plus = read_aggregate_field(&json, "depth_6_plus");
     // PMAT-290 opened depth-6 on C-PY-INT-ARITH (Layer 1): negation-involution.
     // PMAT-291 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): distributive lattice.
-    // PMAT-356 BROADENED depth-6 to C-FFI-CPYTHON-EXT (Layer 4): FfiCallSilver
-    // struct extensionality. Gate now asserts depth-6 ACROSS 3 LAYERS (L1+L4+L5).
+    // PMAT-356 BROADENED depth-6 to C-FFI-CPYTHON-EXT (Layer 4): FfiCallSilver struct ext.
+    // PMAT-357 BROADENED depth-6 to C-BASHRS-POSIX-IDEMPOTENCE (Layer 2): exit_code Int sign.
+    // Gate now asserts depth-6 ACROSS 4 LAYERS (L1+L2+L4+L5).
     assert!(
-        depth_6_plus >= 3,
-        "Diamond depth-6 ACROSS 3 LAYERS milestone (PMAT-290, PMAT-291, PMAT-356): \
-         expected ≥3 contracts at depth-6+ (Layer 1 + Layer 4 + Layer 5), \
+        depth_6_plus >= 4,
+        "Diamond depth-6 ACROSS 4 LAYERS milestone (PMAT-290/291/356/357): \
+         expected ≥4 contracts at depth-6+ (Layer 1 + Layer 2 + Layer 4 + Layer 5), \
          got {depth_6_plus}.\n{json}"
     );
 }
