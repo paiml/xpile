@@ -635,4 +635,58 @@ theorem contract_id_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/-! ## PMAT-364 — SIXTH Diamond on C-XPILE-CONTRACT-BACKEND-TRAIT
+    (Layer 3 BROADENS DEPTH-6):
+    RENDERED-DOC-SILVER STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XPILE-CONTRACT-BACKEND-TRAIT-009).
+
+    **Broadens depth-6 substrate-wide.** Pushes
+    XpileContractBackendTrait (Layer 3) from depth-5 to depth-6.
+
+    The 6 Diamond categories on C-XPILE-CONTRACT-BACKEND-TRAIT:
+    - PMAT-218 citation_render_monoid_diamond
+    - PMAT-233 contract_product_monoid_diamond
+    - PMAT-333 contract_struct_extensionality_diamond (outer Contract)
+    - PMAT-341 contract_array_size_diamond
+    - PMAT-354 contract_id_struct_extensionality_diamond (inner ContractId)
+    - **PMAT-364: RENDERED-DOC-SILVER STRUCTURE EXTENSIONALITY** ← depth-6
+
+    Twentieth substrate-wide demonstration of the structure-
+    extensionality pattern.
+
+    Status: discharged at v0.1.0 (PMAT-364). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `RenderedDocSilver` admits
+  STRUCTURE EXTENSIONALITY.
+
+  Combines four properties on the 2-field record (bytes, citations):
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality
+  (c) Decidable equality
+  (d) Self-equality
+
+  Status: **discharged at v0.1.0 (PMAT-364)**. Tier: DIAMOND.
+-/
+theorem rendered_doc_silver_struct_extensionality_diamond
+    (d1 d2 : RenderedDocSilver) :
+    -- (a) Field equality → record equality
+    (d1.bytes = d2.bytes ∧ d1.citations = d2.citations → d1 = d2)
+    -- (b) Record equality → field equality
+    ∧ (d1 = d2 → d1.bytes = d2.bytes ∧ d1.citations = d2.citations)
+    -- (c) Decidable equality
+    ∧ (d1 = d2 ∨ d1 ≠ d2)
+    -- (d) Self-equality
+    ∧ (d1 = d1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2⟩
+    cases d1; cases d2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h]⟩
+  · by_cases h : d1 = d2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXpileContractBackendTrait
