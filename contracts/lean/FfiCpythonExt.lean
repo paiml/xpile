@@ -1477,4 +1477,80 @@ theorem refcount_delta_sign_decomp_diamond (c : FfiCallSilver) :
   · intro h; exact (abs_of_neg h).symm
   · exact Int.sign_mul_abs c.refcount_delta
 
+/-! ## PMAT-356 — SIXTH Diamond on C-FFI-CPYTHON-EXT (Layer 4 OPENS
+    DEPTH-6 ACROSS 3 LAYERS):
+    FFI-CALL-SILVER STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-FFI-CPYTHON-EXT-009).
+
+    **Opens DEPTH-6 ACROSS 3 LAYERS** (L1 + L4 + L5). Before
+    PMAT-356, depth-6 was only on L1 (PyIntArith, PMAT-290) + L5
+    (CompileRustToPtxMma, PMAT-291). PMAT-356 pushes
+    FFI-CPYTHON-EXT (Layer 4) from depth-5 to depth-6, adding the
+    first L4 contract at depth-6.
+
+    The 6 Diamond categories on C-FFI-CPYTHON-EXT:
+    - PMAT-216 refcount_abelian_group_diamond: abelian group
+    - PMAT-? refcount_inverse_diamond: constructive inverse witness
+    - PMAT-? gil_invariant_preservation_diamond: GIL invariant
+    - PMAT-? zero_copy_pointer_functor_diamond: pointer functor
+    - PMAT-328 refcount_delta_sign_decomp_diamond: sign decomp
+    - **PMAT-356: FFI-CALL-SILVER STRUCTURE EXTENSIONALITY** ← depth-6
+
+    The categorical distinction is sharp:
+      - PMAT-216/288/etc. capture algebraic structure on
+        refcount_delta (Int) — VALUE-level claims.
+      - PMAT-328 captures sign × magnitude DECOMPOSITION on
+        refcount_delta — also VALUE-level.
+      - PMAT-356 captures STRUCTURAL extensionality of the
+        FfiCallSilver record itself — distinct from value-level
+        claims on individual fields.
+
+    Fourteenth substrate-wide demonstration of the structure-
+    extensionality pattern (after PMAT-311/329..336/349/352/353/354).
+    First struct-ext on Layer 4.
+
+    Status: discharged at v0.1.0 (PMAT-356). Tier: DIAMOND.
+    OPENS DEPTH-6 ACROSS 3 LAYERS. -/
+
+/--
+  **Diamond-tier refinement theorem** — `FfiCallSilver` admits
+  STRUCTURE EXTENSIONALITY.
+
+  Combines four STRUCTURE-EXTENSIONALITY properties on the 2-field
+  FfiCallSilver record (payload : Array UInt8, refcount_delta : Int):
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality (congruence)
+  (c) Decidable equality (deriving DecidableEq)
+  (d) Self-equality (reflexivity)
+
+  Fourteenth substrate-wide demonstration of the structure-
+  extensionality pattern, and opens depth-6 ACROSS 3 LAYERS on
+  Layer 4.
+
+  Status: **discharged at v0.1.0 (PMAT-356)**. Tier: DIAMOND.
+  OPENS DEPTH-6 ACROSS 3 LAYERS.
+-/
+theorem ffi_call_silver_struct_extensionality_diamond
+    (c1 c2 : FfiCallSilver) :
+    -- (a) Field equality → record equality
+    (c1.payload = c2.payload ∧ c1.refcount_delta = c2.refcount_delta
+      → c1 = c2)
+    -- (b) Record equality → field equality
+    ∧ (c1 = c2 → c1.payload = c2.payload
+        ∧ c1.refcount_delta = c2.refcount_delta)
+    -- (c) Decidable equality
+    ∧ (c1 = c2 ∨ c1 ≠ c2)
+    -- (d) Self-equality (reflexivity)
+    ∧ (c1 = c1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2⟩
+    cases c1; cases c2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h]⟩
+  · by_cases h : c1 = c2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CFfiCpythonExt

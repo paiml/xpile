@@ -476,6 +476,36 @@ equations:
       - "an emitter using unsigned arithmetic on refcount_delta (wrapping negative to positive) would falsify (a) and (d)"
       - "Diamond depth-5 ACROSS LAYERS broadened: 3 contracts on 3 distinct layers (L1 + L4 + L5)"
 
+  ffi_call_silver_struct_extensionality_diamond:
+    # PMAT-356: SIXTH Diamond on this contract — OPENS DEPTH-6
+    # ACROSS 3 LAYERS. Pushes FFI-CPYTHON-EXT (Layer 4) from
+    # depth-5 to depth-6, joining PyIntArith (L1, PMAT-290) and
+    # CompileRustToPtxMma (L5, PMAT-291) as the third contract at
+    # depth-6+ (FIRST L4 contract at depth-6). FFI-CALL-SILVER
+    # STRUCTURE EXTENSIONALITY: the 2-field FfiCallSilver record
+    # (payload, refcount_delta) is field-extensional with
+    # decidable equality. Fourteenth substrate-wide demonstration
+    # of the structure-extensionality pattern, FIRST on Layer 4.
+    lean_theorem: "XpileContracts.CFfiCpythonExt.ffi_call_silver_struct_extensionality_diamond"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
+    formula: |
+      FfiCallSilver admits STRUCTURE EXTENSIONALITY:
+        (a) field eq (payload, refcount_delta) → record eq
+        (b) record eq → field eq (congruence)
+        (c) decidable equality
+        (d) self-equality (reflexivity)
+    domain: |
+      Two FfiCallSilver records with 2 fields (payload : Array UInt8,
+      refcount_delta : Int) and derived DecidableEq.
+    invariants:
+      - "SIXTH Diamond category on C-FFI-CPYTHON-EXT — OPENS DEPTH-6 ACROSS 3 LAYERS"
+      - "STRUCTURE EXTENSIONALITY — fourteenth substrate-wide demonstration of this pattern; FIRST on Layer 4"
+      - "distinct from PMAT-216/288/230/243/328 — these are VALUE-level claims on individual fields, PMAT-356 is the RECORD-level structural claim"
+    preconditions:
+      - "two FfiCallSilver records (DecidableEq derived)"
+    postconditions:
+      - "Diamond depth-6 ACROSS 3 LAYERS opened: PyIntArith (L1) + FFI-CPYTHON-EXT (L4) + CompileRustToPtxMma (L5)"
+
 proof_obligations:
   - type: precondition
     property: both Python and C frontends produced meta-HIR
