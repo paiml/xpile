@@ -1357,4 +1357,21 @@ theorem rust_fn_bronze_to_silver_lift_diamond (f : RustFn) :
   · rfl
   · rfl
 
+/--
+  **PMAT-441 Diamond — RustFn round-trip identity.**
+
+  Compose PMAT-408 + PMAT-430. NINTH instance of Template 13.
+  Closes Rust↔Lean Template 13 pair with PMAT-440.
+-/
+theorem rust_fn_roundtrip_identity_diamond (f : RustFn) :
+    (rust_fn_silver_to_bronze (rust_fn_bronze_to_silver f) = f)
+    ∧ ((rust_fn_silver_to_bronze (rust_fn_bronze_to_silver f)).body = f.body)
+    ∧ (rust_fn_silver_to_bronze (rust_fn_bronze_to_silver ⟨#[]⟩) = ⟨#[]⟩)
+    ∧ (f = f) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases f; rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXlateRustFnToLeanThm
