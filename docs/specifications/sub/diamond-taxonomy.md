@@ -18,7 +18,7 @@ A Diamond theorem combines multiple Platinum properties into a **single algebrai
 
 ## Coverage milestones
 
-As of v0.1.0+ (PMAT-214..409), the substrate has:
+As of v0.1.0+ (PMAT-214..420), the substrate has:
 
 - **Diamond depth-1 UNIVERSAL** (12/12 contracts): every contract has at least one Diamond at one algebraic category.
 - **Diamond depth-2 UNIVERSAL** (12/12 contracts): every contract has at least two **distinct** Diamond categories. CI-enforced via PMAT-251.
@@ -30,6 +30,7 @@ As of v0.1.0+ (PMAT-214..409), the substrate has:
 - **Diamond depth-8 UNIVERSAL** (12/12 contracts, post-PMAT-387): every contract has ≥8 distinct Diamond categories. Achieved through PMAT-294/295 (initial L1/L5 opens) followed by a 10-PR broadening sweep (PMAT-378..387), with **depth-8 ACROSS ALL 5 TAXONOMY LAYERS** intermediate milestone at PMAT-380 and **depth-8 UNIVERSAL** finale at PMAT-387. The wave continued the structure-extensionality template (PMAT-378/381..385) and Array.size template (PMAT-386/387). Added Bronze-tier struct-ext demonstrations as a substrate-wide pattern (PMAT-379 Outcome.length on Bronze, PMAT-381 Artifact Bronze, PMAT-368 prior wave) and added a third instance of enum-completeness (PMAT-380 SourceLang).
 - **Diamond depth-9 UNIVERSAL** (12/12 contracts, post-PMAT-398): every contract has ≥9 distinct Diamond categories. Achieved through PMAT-296/297 (initial L1/L5 opens) followed by a 10-PR broadening sweep (PMAT-389..398), with **depth-9 UNIVERSAL** finale at PMAT-398. The wave **introduced Template 9 (Gold-tier subtype-extensionality)** as a new recurring algebraic family, captured the Gold-tier refinement subtype on every contract: PMAT-389 (BorrowedRefManifestEntry struct-ext on FfiCpythonExt, transitional), PMAT-390 (SuccessfulOutcome on Bashrs), PMAT-391 (FrameSafeTransition on ContractFrontendTrait), PMAT-392 (ConsistentBackendInput on BackendTrait), PMAT-393 (ConsistentFrontendOutput on FrontendTrait), PMAT-394 (CitationCompleteContract on ContractBackendTrait), PMAT-395 (NonEmptyHomogeneousList α on PyListToVec — first polymorphic subtype-ext), PMAT-396 (WarningLineCount on XlateLeanToRust), PMAT-397 (NonEmptyPreconditionList on XlateRustFnToLeanThm), PMAT-398 (NonEmptyDefinition on Notation — finale). PMAT-311 was the prior solo subtype-ext (BoundedSmem), now joined by 9 more for a total of 10 substrate instances. Closes Frontend↔Backend Gold-tier subtype-ext symmetry pair (PMAT-392/393) and ContractFrontend↔ContractBackend Gold-tier subtype-ext pair (PMAT-391/394).
 - **Diamond depth-10 UNIVERSAL** (12/12 contracts, post-PMAT-409): every contract has ≥10 distinct Diamond categories. Achieved through PMAT-300/301 (initial L1/L5 opens) followed by a 10-PR broadening sweep (PMAT-400..409), with **depth-10 UNIVERSAL** finale at PMAT-409. The wave **introduced Template 10 (Tier-projection homomorphism)** as a new recurring algebraic family — canonical forgetful Silver→Bronze maps defined on every contract's tiered model and proven structure-preserving. PMAT-400 (BoundedRefcountDelta subtype-ext on FfiCpythonExt, transitional Template 9), PMAT-401 (silver_to_bronze on Bashrs Outcome — Template 10 introduction), PMAT-402 (ArtifactSilver→Artifact), PMAT-403 (MetaHirModuleSilver→MetaHirModule), PMAT-404 (TranspileSession→Array EquationsBlock), PMAT-405 (RenderedDocSilver→RenderedDoc), PMAT-406 (HomogeneousListSilver α→PyListSilver α — second polymorphic projection), PMAT-407 (LeanDefSilver→LeanDef), PMAT-408 (RustFnSilver→RustFn), PMAT-409 (DefinitionEnvSilver→DefinitionEnv — finale). Closes Frontend↔Backend trait Silver→Bronze tier-projection pair (PMAT-402/403), ContractFrontend↔ContractBackend Silver→Bronze tier-projection pair (PMAT-404/405), and Rust↔Lean Silver→Bronze tier-projection pair (PMAT-407/408).
+- **Diamond depth-11 UNIVERSAL** (12/12 contracts, post-PMAT-420): every contract has ≥11 distinct Diamond categories. Achieved through PMAT-302/303 (initial L1/L5 opens) followed by a 10-PR broadening sweep (PMAT-411..420), with **depth-11 UNIVERSAL** finale at PMAT-420. The wave **introduced Template 11 (Canonical identity element)** as a new recurring algebraic family — distinguished identity/zero elements on every contract's Silver/Gold tiered model with structural properties proven. PMAT-411 (balanced_refcount_delta on FfiCpythonExt — Template 11 introduction), PMAT-412 (empty_success_outcome on Bashrs), PMAT-413 (empty_rust_artifact on BackendTrait), PMAT-414 (empty_python_module on FrontendTrait — closes F↔B pair), PMAT-415 (empty_session on ContractFrontendTrait), PMAT-416 (empty_contract on ContractBackendTrait — closes CF↔CB pair), PMAT-417 (empty_py_list_silver α on PyListToVec — third polymorphic canonical), PMAT-418 (empty_lean_def_silver on XlateLeanToRust), PMAT-419 (empty_rust_fn_silver on XlateRustFnToLeanThm — closes Rust↔Lean pair), PMAT-420 (empty_definition_env_silver on Notation — finale).
 - **Diamond depth-7 ACROSS LAYERS** (2/12 contracts): PMAT-292 (order-distributive-lattice on L1) + PMAT-293 (bounded lattice with top+bottom on L5).
 - **Diamond depth-8 ACROSS LAYERS** (2/12 contracts): PMAT-294 (divisibility-preorder on L1, FIRST relation-not-operation category) + PMAT-295 (cancellative monoid on L5).
 - **Diamond depth-9 ACROSS LAYERS** (2/12 contracts): PMAT-298 (linear-order trichotomy on L1) + PMAT-299 (ordered-monoid on L5).
@@ -46,11 +47,11 @@ As of v0.1.0+ (PMAT-214..409), the substrate has:
 - **Diamond depth-20 ACROSS LAYERS** (2/12 contracts): PMAT-325 (Int.toNat partial inverse on L1) + PMAT-326 (Nat power monotonicity on L5).
 - **Diamond depth-21** (1/12 contracts, DEEPEST): PMAT-327 (Nat-cast order embedding on PyIntArith L1, captures Mathlib's `OrderRingHom Nat Int` shape together with PMAT-310).
 
-**Substrate total: 141 wired Diamond equations across 12 contracts.**
+**Substrate total: 151 wired Diamond equations across 12 contracts.**
 
 ## Recurring algebraic templates (substrate-wide)
 
-Ten recurring algebraic templates emerged during the depth-3/4/5/6/7/8/9/10 broadening sweeps. Each is mechanically applicable to specific record/subtype/enum patterns, enabling the **depth-3 UNIVERSAL** (PMAT-336), **depth-4 UNIVERSAL** (PMAT-344), **depth-5 UNIVERSAL** (PMAT-354), **depth-6 UNIVERSAL** (PMAT-365), **depth-7 UNIVERSAL** (PMAT-376), **depth-8 UNIVERSAL** (PMAT-387), **depth-9 UNIVERSAL** (PMAT-398), and **depth-10 UNIVERSAL** (PMAT-409) milestones:
+Eleven recurring algebraic templates emerged during the depth-3..11 broadening sweeps. Each is mechanically applicable to specific record/subtype/enum patterns, enabling the **depth-3..11 UNIVERSAL** milestones (PMAT-336/344/354/365/376/387/398/409/420):
 
 ### Template 1: Structure-extensionality
 
@@ -241,7 +242,32 @@ Each Diamond combines: (a) primary field preserved by projection, (b) projection
 - **Rust↔Lean Silver→Bronze tier-projection pair**: PMAT-407 (LeanDefSilver→LeanDef) + PMAT-408 (RustFnSilver→RustFn).
 - **Polymorphic tier-projection**: PMAT-406 (HomogeneousListSilver α → PyListSilver α) — second polymorphic Template (after PMAT-395 Template 9).
 
-These ten templates enabled mechanical 3rd/4th/5th/6th/7th/8th/9th/10th-Diamond addition to every depth-2/depth-3/depth-4/depth-5/depth-6/depth-7/depth-8/depth-9 contract, driving all eight UNIVERSAL milestones (depth-3/4/5/6/7/8/9/10).
+### Template 11: Canonical identity element
+
+Demonstrated on **10 contracts** (PMAT-411/412/413/414/415/416/417/418/419/420) for **distinguished identity/zero elements** within Silver/Gold subtypes — defines a canonical "empty" or "zero" value and proves its structural properties. Introduced during the depth-11 broadening sweep:
+
+| PMAT | Contract | Canonical element |
+|---|---|---|
+| 411 | C-FFI-CPYTHON-EXT | balanced_refcount_delta : BoundedRefcountDelta (val=0 — Template 11 introduction) |
+| 412 | C-BASHRS-POSIX-IDEMPOTENCE | empty_success_outcome : OutcomeSilver (observable="", exit_code=0) |
+| 413 | C-XPILE-BACKEND-TRAIT | empty_rust_artifact : ArtifactSilver (bytes=#[], target=Target.rust) |
+| 414 | C-XPILE-FRONTEND-TRAIT | empty_python_module : MetaHirModuleSilver (bytes=#[], source_lang=python — closes F↔B pair with PMAT-413) |
+| 415 | C-XPILE-CONTRACT-FRONTEND-TRAIT | empty_session : TranspileSession (both arrays empty) |
+| 416 | C-XPILE-CONTRACT-BACKEND-TRAIT | empty_contract : Contract (no dependencies, no references — closes CF↔CB pair with PMAT-415) |
+| 417 | C-XLATE-PY-LIST-TO-VEC | empty_py_list_silver α : PyListSilver α (polymorphic — third polymorphic canonical) |
+| 418 | C-XLATE-LEAN-TO-RUST | empty_lean_def_silver : LeanDefSilver (all 4 fields empty) |
+| 419 | C-XLATE-RUST-FN-TO-LEAN-THM | empty_rust_fn_silver : RustFnSilver (all 5 fields empty — closes Rust↔Lean pair with PMAT-418) |
+| 420 | C-NOTATION-LATEX-MATH-TO-EQUATION | empty_definition_env_silver : DefinitionEnvSilver (first_math_span="", all_math_spans=#[], label=none — depth-11 UNIVERSAL finale) |
+
+Each Diamond combines: (a) primary field has canonical zero/empty value, (b) auxiliary field has canonical zero/empty value, (c) size/length of canonical field is 0, (d) reflexivity.
+
+**Cross-substrate symmetry closures from the depth-11 wave:**
+- **Frontend↔Backend trait canonical-element pair**: PMAT-413 (empty_rust_artifact) + PMAT-414 (empty_python_module).
+- **ContractFrontend↔ContractBackend trait canonical-element pair**: PMAT-415 (empty_session) + PMAT-416 (empty_contract).
+- **Rust↔Lean canonical-element pair**: PMAT-418 (empty_lean_def_silver) + PMAT-419 (empty_rust_fn_silver).
+- **Third polymorphic substrate Template instance**: PMAT-417 (empty_py_list_silver α).
+
+These eleven templates enabled mechanical 3rd/4th/5th/6th/7th/8th/9th/10th/11th-Diamond addition to every contract, driving all nine UNIVERSAL milestones (depth-3..11).
 
 ## Diamond categories by family
 
@@ -558,6 +584,7 @@ The `crates/xpile/tests/diamond_coverage.rs` integration test (PMAT-251) enforce
 - 12/12 contracts have ≥8 Diamonds (depth-8 UNIVERSAL, post-PMAT-387).
 - 12/12 contracts have ≥9 Diamonds (depth-9 UNIVERSAL, post-PMAT-398).
 - 12/12 contracts have ≥10 Diamonds (depth-10 UNIVERSAL, post-PMAT-409).
+- 12/12 contracts have ≥11 Diamonds (depth-11 UNIVERSAL, post-PMAT-420).
 - (Depth-4 ALL 5 LAYERS milestone subsumed by depth-4 UNIVERSAL post-PMAT-344.)
 - (Depth-5 ACROSS ALL 5 LAYERS intermediate milestone (PMAT-347) subsumed by depth-5 UNIVERSAL post-PMAT-354.)
 - (Depth-6 ACROSS ALL 5 LAYERS intermediate milestone (PMAT-358) subsumed by depth-6 UNIVERSAL post-PMAT-365.)
@@ -565,6 +592,7 @@ The `crates/xpile/tests/diamond_coverage.rs` integration test (PMAT-251) enforce
 - (Depth-8 ACROSS ALL 5 LAYERS intermediate milestone (PMAT-380) subsumed by depth-8 UNIVERSAL post-PMAT-387.)
 - (Depth-9 ACROSS LAYERS milestone (PMAT-296/297) subsumed by depth-9 UNIVERSAL post-PMAT-398.)
 - (Depth-10 ACROSS LAYERS milestone (PMAT-300/301) subsumed by depth-10 UNIVERSAL post-PMAT-409.)
+- (Depth-11 ACROSS LAYERS milestone (PMAT-302/303) subsumed by depth-11 UNIVERSAL post-PMAT-420.)
 
 A future regression that removes a `_diamond` from any YAML or fails to keep depth-N invariants will fire the gate.
 - ≥30 total wired Diamond equations.
