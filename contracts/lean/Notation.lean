@@ -1446,4 +1446,40 @@ theorem lean_theorem_env_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/--
+  **PMAT-398 Diamond — NonEmptyDefinition subtype extensionality.**
+
+  The Gold-tier subtype `NonEmptyDefinition := { d :
+  DefinitionEnvSilver // d.all_math_spans.size > 0 }` satisfies
+  subtype extensionality. TENTH substrate-wide
+  subtype-extensionality demonstration. Template 9 (Gold-tier
+  subtype-ext) expands to 10 substrate instances.
+
+  Adds a NINTH distinct Diamond category on
+  `C-NOTATION-LATEX-MATH-TO-EQUATION`, pushing the contract from
+  depth-8 to depth-9. Third L5 contract at depth-9. **COMPLETES
+  DEPTH-9 UNIVERSAL ACROSS ALL 12 CONTRACTS** alongside PMAT-296
+  (PyIntArith L1), PMAT-297 (CompileRustToPtxMma L5), PMAT-389
+  (FfiCpythonExt L4), PMAT-390 (Bashrs L2), PMAT-391
+  (ContractFrontendTrait L3), PMAT-392 (BackendTrait L3),
+  PMAT-393 (FrontendTrait L3), PMAT-394 (ContractBackendTrait L3),
+  PMAT-395 (PyListToVec L2), PMAT-396 (XlateLeanToRust L5), and
+  PMAT-397 (XlateRustFnToLeanThm L5).
+-/
+theorem non_empty_definition_subtype_extensionality_diamond
+    (n1 n2 : NonEmptyDefinition) :
+    (n1.val = n2.val → n1 = n2)
+    ∧ (n1 = n2 → n1.val = n2.val)
+    ∧ (n1 = n2 ∨ n1 ≠ n2)
+    ∧ (n1 = n1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    exact Subtype.ext h
+  · intro h
+    rw [h]
+  · by_cases h : n1 = n2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CNotationLatexMathToEquation
