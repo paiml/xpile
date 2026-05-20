@@ -893,6 +893,22 @@ equations:
     postconditions:
       - "Diamond depth-12 broadened: first L5 contract at depth-12 in broadening wave"
 
+  lean_def_roundtrip_identity_diamond:
+    # PMAT-440: THIRTEENTH Diamond. **EIGHTH instance of Template 13**.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.lean_def_roundtrip_identity_diamond"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      Round-trip identity on LeanDef.
+    domain: |
+      Composition of lean_def_silver_to_bronze with
+      lean_def_bronze_to_silver equals identity.
+    invariants:
+      - "THIRTEENTH Diamond category on C-XLATE-LEAN-TO-RUST — BROADENS DEPTH-13"
+      - "ROUND-TRIP IDENTITY — eighth instance of Template 13"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-13 broadened: first L5 contract at depth-13"
+
 proof_obligations:
   - type: postcondition
     property: total def lowers to a panic-free Rust fn
