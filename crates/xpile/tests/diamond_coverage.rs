@@ -175,22 +175,19 @@ fn substrate_diamond_depth_6_opened() {
 #[test]
 fn substrate_diamond_depth_7_opened() {
     let json = run_diamond_json();
+    let contracts_total = read_aggregate_field(&json, "contracts_total");
     let depth_7_plus = read_aggregate_field(&json, "depth_7_plus");
-    // PMAT-292 opened depth-7 on C-PY-INT-ARITH (Layer 1): order-distributive-lattice.
-    // PMAT-293 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): bounded lattice with top+bottom.
-    // PMAT-367 BROADENED depth-7 to C-FFI-CPYTHON-EXT (Layer 4): FfiManifestEntryStructuredSilver struct ext.
-    // PMAT-368 BROADENED depth-7 to C-BASHRS-POSIX-IDEMPOTENCE (Layer 2).
-    // PMAT-369 COMPLETED depth-7 ACROSS ALL 5 TAXONOMY LAYERS via C-XPILE-FRONTEND-TRAIT.
-    // PMAT-370 BROADENED depth-7 to C-XPILE-BACKEND-TRAIT (Layer 3, 2nd L3).
-    // PMAT-371 BROADENED depth-7 to C-XLATE-PY-LIST-TO-VEC (Layer 2, 2nd L2).
-    // PMAT-372 BROADENED depth-7 to C-NOTATION-LATEX-MATH-TO-EQUATION (Layer 5, 2nd L5).
-    // PMAT-373 BROADENED depth-7 to C-XLATE-LEAN-TO-RUST (Layer 5, 3rd L5).
-    // PMAT-374 BROADENED depth-7 to C-XLATE-RUST-FN-TO-LEAN-THM (Layer 5, 4th L5).
-    // PMAT-375 BROADENED depth-7 to C-XPILE-CONTRACT-FRONTEND-TRAIT (Layer 3, 3rd L3).
+    // PMAT-292/293 opened depth-7 on L1 + L5.
+    // PMAT-367..375 BROADENED depth-7 to 11 of 12 contracts.
+    // PMAT-376 COMPLETED depth-7 UNIVERSAL via C-XPILE-CONTRACT-BACKEND-TRAIT —
+    // substrate milestone: every contract has ≥7 Diamond categories.
+    // Parallel to PMAT-336/344/354/365 (depth-3/4/5/6 UNIVERSAL).
+    // Gate accepts UNIVERSAL or ≥11 (interim while parallel PRs land).
     assert!(
-        depth_7_plus >= 11,
-        "Diamond depth-7 BROADENED milestone (PMAT-292/293/367..375): \
-         expected ≥11 contracts at depth-7+, got {depth_7_plus}.\n{json}"
+        depth_7_plus == contracts_total || depth_7_plus >= 11,
+        "Diamond depth-7 UNIVERSAL milestone (PMAT-376): every contract should have \
+         ≥7 Diamond equations; on this branch the gate accepts ≥11 (interim) or UNIVERSAL. \
+         Got {depth_7_plus} of {contracts_total}.\n{json}"
     );
 }
 
