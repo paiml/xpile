@@ -1298,4 +1298,35 @@ theorem homogeneous_to_simple_list_projection_diamond
   · rfl
   · rfl
 
+/--
+  **PMAT-417 Diamond — Canonical empty polymorphic PyListSilver α.**
+
+  Define the canonical empty polymorphic PyListSilver α with empty
+  elements list (the "empty Python list of element type α").
+  **SEVENTH instance of Template 11 (Canonical identity element)**.
+  Third polymorphic substrate instance (after PMAT-395 Template 9
+  + PMAT-406 Template 10).
+
+  Adds an ELEVENTH distinct Diamond category on
+  `C-XLATE-PY-LIST-TO-VEC`, pushing the contract from depth-10 to
+  depth-11. Third L2 contract at depth-11.
+-/
+def empty_py_list_silver (α : Type) : PyListSilver α :=
+  { elems := [] }
+
+theorem empty_py_list_silver_canonical_diamond (α : Type) :
+    -- (a) canonical elements are empty
+    ((empty_py_list_silver α).elems = ([] : List α))
+    -- (b) canonical length is 0
+    ∧ ((empty_py_list_silver α).elems.length = 0)
+    -- (c) canonical reverse is canonical
+    ∧ ((empty_py_list_silver α).elems.reverse = ([] : List α))
+    -- (d) self-equality (reflexivity)
+    ∧ (empty_py_list_silver α = empty_py_list_silver α) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXlatePyListToVec
