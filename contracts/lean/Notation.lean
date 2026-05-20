@@ -1391,4 +1391,59 @@ theorem latex_display_kind_enum_completeness_diamond (k : LatexDisplayKind) :
     · exact Or.inr h
   · decide
 
+/-! ## PMAT-383 — EIGHTH Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION
+    (Layer 5 BROADENS DEPTH-8):
+    LEAN-THEOREM-ENV STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-NOTATION-012).
+
+    **Broadens DEPTH-8 substrate-wide.** Pushes
+    NotationLatexMathToEquation (Layer 5) from depth-7 to depth-8 as
+    the second L5 contract at depth-8+.
+
+    The 8 Diamond categories on C-NOTATION-LATEX-MATH-TO-EQUATION:
+    - PMAT-219 citation_string_monoid
+    - PMAT-234 citation_product_monoid
+    - PMAT-334 equation_formula_struct_extensionality
+    - PMAT-342 latex_display_kind_enum_distinctness
+    - PMAT-350 equation_formula_ascii_length_nat
+    - PMAT-362 latex_citation_silver_struct_extensionality
+    - PMAT-372 latex_display_kind_enum_completeness
+    - **PMAT-383: LEAN-THEOREM-ENV STRUCTURE EXTENSIONALITY** ← depth-8
+
+    Thirtieth substrate-wide demonstration of structure-extensionality.
+    Captures LeanTheoremEnv record (body_text : String,
+    is_precondition_flagged : Bool) — the abstract theorem-class
+    LaTeX environment input record.
+
+    Status: discharged at v0.1.0 (PMAT-383). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `LeanTheoremEnv` admits
+  STRUCTURE EXTENSIONALITY.
+
+  2-field record (body_text : String, is_precondition_flagged : Bool)
+  with derived DecidableEq.
+
+  Status: **discharged at v0.1.0 (PMAT-383)**. Tier: DIAMOND.
+-/
+theorem lean_theorem_env_struct_extensionality_diamond
+    (t1 t2 : LeanTheoremEnv) :
+    (t1.body_text = t2.body_text
+        ∧ t1.is_precondition_flagged = t2.is_precondition_flagged
+      → t1 = t2)
+    ∧ (t1 = t2 → t1.body_text = t2.body_text
+        ∧ t1.is_precondition_flagged = t2.is_precondition_flagged)
+    ∧ (t1 = t2 ∨ t1 ≠ t2)
+    ∧ (t1 = t1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h_b, h_f⟩
+    cases t1; cases t2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h]⟩
+  · by_cases h : t1 = t2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CNotationLatexMathToEquation

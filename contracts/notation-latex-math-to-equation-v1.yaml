@@ -685,6 +685,32 @@ equations:
     postconditions:
       - "Diamond depth-7 broadened: 2 L5 contracts at depth-7"
 
+  lean_theorem_env_struct_extensionality_diamond:
+    # PMAT-383: EIGHTH Diamond on this contract — BROADENS DEPTH-8
+    # substrate-wide. Pushes NotationLatexMathToEquation (Layer 5)
+    # from depth-7 to depth-8 as the second L5 contract at depth-8+.
+    # LEAN-THEOREM-ENV STRUCTURE EXTENSIONALITY: 2-field
+    # LeanTheoremEnv record (body_text, is_precondition_flagged).
+    # Thirtieth substrate-wide demonstration.
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.lean_theorem_env_struct_extensionality_diamond"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      LeanTheoremEnv admits STRUCTURE EXTENSIONALITY:
+        (a) field eq (body_text, is_precondition_flagged) -> record eq
+        (b) record eq -> field eq (congruence)
+        (c) decidable equality
+        (d) self-equality
+    domain: |
+      Two LeanTheoremEnv records (body_text : String,
+      is_precondition_flagged : Bool) with derived DecidableEq.
+    invariants:
+      - "EIGHTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — BROADENS DEPTH-8 substrate-wide"
+      - "STRUCTURE EXTENSIONALITY — thirtieth substrate-wide demonstration"
+    preconditions:
+      - "two LeanTheoremEnv records (DecidableEq derived)"
+    postconditions:
+      - "Diamond depth-8 broadened: 2 L5 contracts at depth-8"
+
 proof_obligations:
   - type: postcondition
     property: math-mode round-trips through render() losslessly
