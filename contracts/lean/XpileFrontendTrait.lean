@@ -978,4 +978,36 @@ theorem empty_python_module_canonical_diamond :
   · rfl
   · rfl
 
+/--
+  **PMAT-425 Diamond — MetaHirModule Bronze→Silver lift.**
+
+  Define the canonical lift `metahir_module_bronze_to_silver` :
+  `MetaHirModule → MetaHirModuleSilver` that preserves bytes and
+  defaults source_lang to SourceLang.python. **FOURTH instance of
+  Template 12 (Bronze→Silver canonical-lift homomorphism)**.
+  Closes Frontend↔Backend trait Bronze→Silver lift symmetry pair
+  with PMAT-424 (artifact_bronze_to_silver).
+
+  Adds a TWELFTH distinct Diamond category on
+  `C-XPILE-FRONTEND-TRAIT`, pushing the contract from depth-11 to
+  depth-12. Second L3 contract at depth-12.
+-/
+def metahir_module_bronze_to_silver (m : MetaHirModule) : MetaHirModuleSilver :=
+  { bytes := m.bytes, source_lang := SourceLang.python }
+
+theorem metahir_module_bronze_to_silver_lift_diamond (m : MetaHirModule) :
+    -- (a) lift preserves bytes
+    ((metahir_module_bronze_to_silver m).bytes = m.bytes)
+    -- (b) lift sets default source_lang to python
+    ∧ ((metahir_module_bronze_to_silver m).source_lang = SourceLang.python)
+    -- (c) empty Bronze bytes maps to empty Silver bytes
+    ∧ ((metahir_module_bronze_to_silver ⟨#[]⟩).bytes.size = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (metahir_module_bronze_to_silver m = metahir_module_bronze_to_silver m) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileFrontendTrait
