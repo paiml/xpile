@@ -508,6 +508,37 @@ equations:
     postconditions:
       - "Diamond depth-11 broadened: second L3 contract at depth-11"
 
+  metahir_module_bronze_to_silver_lift_diamond:
+    # PMAT-425: TWELFTH Diamond on this contract — BROADENS DEPTH-12
+    # substrate-wide. Pushes XpileFrontendTrait (Layer 3) from
+    # depth-11 to depth-12. Second L3 contract at depth-12.
+    # BRONZE→SILVER LIFT on MetaHirModule: define the canonical
+    # lift metahir_module_bronze_to_silver : MetaHirModule →
+    # MetaHirModuleSilver that preserves bytes and defaults
+    # source_lang to SourceLang.python. **FOURTH instance of
+    # Template 12 (Bronze→Silver canonical-lift homomorphism)**.
+    # Closes Frontend↔Backend trait Bronze→Silver lift symmetry
+    # pair with PMAT-424 (artifact_bronze_to_silver).
+    lean_theorem: "XpileContracts.CXpileFrontendTrait.metahir_module_bronze_to_silver_lift_diamond"
+    lean_file: "contracts/lean/XpileFrontendTrait.lean"
+    formula: |
+      Bronze→Silver canonical-lift homomorphism on MetaHirModule:
+        (a) metahir_module_bronze_to_silver(m).bytes = m.bytes
+        (b) metahir_module_bronze_to_silver(m).source_lang = SourceLang.python
+        (c) empty Bronze bytes maps to empty Silver bytes
+        (d) self-equality
+    domain: |
+      The canonical lift metahir_module_bronze_to_silver :
+      MetaHirModule → MetaHirModuleSilver that preserves bytes
+      and uses SourceLang.python as default source_lang.
+    invariants:
+      - "TWELFTH Diamond category on C-XPILE-FRONTEND-TRAIT — BROADENS DEPTH-12 substrate-wide"
+      - "BRONZE→SILVER LIFT HOMOMORPHISM — fourth instance of Template 12"
+      - "Closes Frontend↔Backend trait Bronze→Silver lift symmetry pair with PMAT-424"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-12 broadened: second L3 contract at depth-12"
+
 proof_obligations:
   - type: invariant
     property: Every registered extension is owned by exactly one frontend
