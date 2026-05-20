@@ -850,6 +850,28 @@ equations:
     postconditions:
       - "Diamond depth-10 broadened: first L5 contract at depth-10 in broadening wave"
 
+  empty_lean_def_silver_canonical_diamond:
+    # PMAT-418: ELEVENTH Diamond on this contract — BROADENS DEPTH-11
+    # substrate-wide. Pushes XlateLeanToRust (Layer 5) from depth-10
+    # to depth-11. First L5 contract at depth-11 in the broadening wave.
+    # **EIGHTH instance of Template 11 (Canonical identity element)**.
+    lean_theorem: "XpileContracts.CXlateLeanToRust.empty_lean_def_silver_canonical_diamond"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      Canonical identity element on LeanDefSilver:
+        (a) empty_lean_def_silver.name = #[]
+        (b) empty_lean_def_silver.body = #[]
+        (c) empty_lean_def_silver.name.size = 0
+        (d) empty_lean_def_silver.body.size = 0
+    domain: |
+      The canonical empty LeanDefSilver with all fields empty.
+    invariants:
+      - "ELEVENTH Diamond category on C-XLATE-LEAN-TO-RUST — BROADENS DEPTH-11 substrate-wide"
+      - "CANONICAL IDENTITY ELEMENT — eighth instance of Template 11"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-11 broadened: first L5 contract at depth-11 in broadening wave"
+
 proof_obligations:
   - type: postcondition
     property: total def lowers to a panic-free Rust fn
