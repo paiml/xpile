@@ -350,6 +350,37 @@ equations:
       - "an emitter that misreported bytes.size (e.g., overflow truncation) would falsify the size structure"
       - "Diamond depth-5 broadened: 6 contracts at depth-5+ (2 Layer 3 contracts at depth-5)"
 
+  backend_struct_extensionality_diamond:
+    # PMAT-359: SIXTH Diamond on this contract — BROADENS DEPTH-6
+    # substrate-wide. After PMAT-358 brought depth-6 ACROSS ALL 5
+    # TAXONOMY LAYERS, PMAT-359 pushes XpileBackendTrait (Layer 3)
+    # from depth-5 to depth-6 as the SECOND L3 contract at depth-6+
+    # (XpileFrontendTrait was first via PMAT-358). BACKEND STRUCTURE
+    # EXTENSIONALITY: the single-field Backend record
+    # (declared_target : Target) is field-extensional with decidable
+    # equality. Fifteenth substrate-wide demonstration of the
+    # structure-extensionality pattern.
+    lean_theorem: "XpileContracts.CXpileBackendTrait.backend_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XpileBackendTrait.lean"
+    formula: |
+      Backend admits STRUCTURE EXTENSIONALITY:
+        (a) field eq (declared_target) -> record eq
+        (b) record eq -> field eq (congruence)
+        (c) decidable equality
+        (d) self-equality (reflexivity)
+    domain: |
+      Two Backend records (declared_target : Target) — the INPUT
+      record of the lower trait. Distinct from PMAT-331 which
+      captured struct-ext of ArtifactSilver (the OUTPUT record).
+    invariants:
+      - "SIXTH Diamond category on C-XPILE-BACKEND-TRAIT — BROADENS DEPTH-6 substrate-wide"
+      - "STRUCTURE EXTENSIONALITY — fifteenth substrate-wide demonstration of this pattern"
+      - "distinct from PMAT-331 (struct-ext of ArtifactSilver, the OUTPUT record) — PMAT-359 captures the INPUT record (Backend itself)"
+    preconditions:
+      - "two Backend records (DecidableEq derived)"
+    postconditions:
+      - "Diamond depth-6 broadened: 6 contracts at depth-6+ (2 L3 contracts at depth-6)"
+
 proof_obligations:
   - type: invariant
     property: Every registered Target is owned by exactly one Backend

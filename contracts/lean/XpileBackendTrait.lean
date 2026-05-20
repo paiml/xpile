@@ -624,4 +624,74 @@ theorem artifact_bytes_array_size_diamond (a : ArtifactSilver) :
   · rfl
   · rfl
 
+/-! ## PMAT-359 — SIXTH Diamond on C-XPILE-BACKEND-TRAIT
+    (Layer 3 BROADENS DEPTH-6):
+    BACKEND STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XPILE-BACKEND-TRAIT-009).
+
+    **Broadens depth-6 substrate-wide.** After PMAT-358 brought
+    depth-6 ACROSS ALL 5 TAXONOMY LAYERS, PMAT-359 pushes
+    XpileBackendTrait (Layer 3) from depth-5 to depth-6 as the
+    SECOND L3 contract at depth-6+ (XpileFrontendTrait was first
+    via PMAT-358).
+
+    The 6 Diamond categories on C-XPILE-BACKEND-TRAIT:
+    - PMAT-225 backend_equivalence_class_diamond: equivalence
+    - PMAT-235 target_constant_projection_diamond: projection
+    - PMAT-331 artifact_struct_extensionality_diamond: ArtifactSilver
+    - PMAT-339 target_enum_distinctness_diamond: Target enum
+    - PMAT-348 artifact_bytes_array_size_diamond: ArtifactSilver.bytes
+    - **PMAT-359: BACKEND STRUCTURE EXTENSIONALITY** ← depth-6
+
+    The categorical distinction is sharp:
+      - PMAT-331 captures struct-ext of ArtifactSilver (the OUTPUT
+        record).
+      - PMAT-359 captures struct-ext of Backend (the INPUT record
+        — the backend itself) — fundamentally distinct structural
+        target.
+
+    Fifteenth substrate-wide demonstration of the structure-
+    extensionality pattern (after PMAT-311/329..336/349/352/353/354/
+    356).
+
+    Status: discharged at v0.1.0 (PMAT-359). Tier: DIAMOND.
+    Broadens depth-6 to 6 contracts. -/
+
+/--
+  **Diamond-tier refinement theorem** — `Backend` admits
+  STRUCTURE EXTENSIONALITY.
+
+  Combines four STRUCTURE-EXTENSIONALITY properties on the
+  single-field Backend record (declared_target : Target):
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality (congruence)
+  (c) Decidable equality (deriving DecidableEq)
+  (d) Self-equality (reflexivity)
+
+  Fifteenth substrate-wide demonstration of the structure-
+  extensionality pattern.
+
+  Status: **discharged at v0.1.0 (PMAT-359)**. Tier: DIAMOND.
+  Broadens depth-6 to 6 contracts.
+-/
+theorem backend_struct_extensionality_diamond (b1 b2 : Backend) :
+    -- (a) Field equality → record equality
+    (b1.declared_target = b2.declared_target → b1 = b2)
+    -- (b) Record equality → field equality
+    ∧ (b1 = b2 → b1.declared_target = b2.declared_target)
+    -- (c) Decidable equality
+    ∧ (b1 = b2 ∨ b1 ≠ b2)
+    -- (d) Self-equality (reflexivity)
+    ∧ (b1 = b1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    cases b1; cases b2
+    simp_all
+  · intro h
+    rw [h]
+  · by_cases h : b1 = b2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXpileBackendTrait
