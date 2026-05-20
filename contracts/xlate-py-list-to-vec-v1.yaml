@@ -767,3 +767,34 @@ qa_gate:
       - "two NonEmptyHomogeneousList α values"
     postconditions:
       - "Diamond depth-9 broadened: second L2 contract at depth-9"
+
+  homogeneous_to_simple_list_projection_diamond:
+    # PMAT-406: TENTH Diamond on this contract — BROADENS DEPTH-10
+    # substrate-wide. Pushes XlatePyListToVec (Layer 2) from depth-9
+    # to depth-10. Third L2 contract at depth-10.
+    # TAGGED→UNTAGGED TIER PROJECTION on HomogeneousListSilver α:
+    # define the canonical forgetful map homogeneous_to_simple_list :
+    # HomogeneousListSilver α → PyListSilver α that drops the
+    # element_type_tag field. SIXTH instance of Template 10
+    # (Tier-projection homomorphism). Second polymorphic instance —
+    # captures the tagged→untagged refinement direction within Silver.
+    lean_theorem: "XpileContracts.CXlatePyListToVec.homogeneous_to_simple_list_projection_diamond"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      Tagged→Untagged tier projection homomorphism on HomogeneousListSilver:
+        (a) homogeneous_to_simple_list(h).elems = h.elements
+        (b) projection is independent of element_type_tag (forgetful)
+        (c) empty elements maps to empty PyListSilver
+        (d) self-equality
+    domain: |
+      The forgetful map homogeneous_to_simple_list :
+      HomogeneousListSilver α → PyListSilver α that drops the
+      element_type_tag field while retaining elements (polymorphic).
+    invariants:
+      - "TENTH Diamond category on C-XLATE-PY-LIST-TO-VEC — BROADENS DEPTH-10 substrate-wide"
+      - "TIER-PROJECTION HOMOMORPHISM — sixth instance of Template 10"
+      - "Second polymorphic Template 10 instance (after PMAT-395 NonEmptyHomogeneousList α Template 9)"
+    preconditions:
+      - "one HomogeneousListSilver α record"
+    postconditions:
+      - "Diamond depth-10 broadened: third L2 contract at depth-10"

@@ -1259,4 +1259,43 @@ theorem non_empty_homogeneous_list_subtype_extensionality_diamond
     rw [h]
   · rfl
 
+/--
+  **PMAT-406 Diamond — Tagged→Untagged tier projection on HomogeneousListSilver.**
+
+  Define the canonical forgetful map `homogeneous_to_simple_list :
+  HomogeneousListSilver α → PyListSilver α` that drops the
+  `element_type_tag` field, retaining only `elements`. **SIXTH
+  instance of Template 10 (Tier-projection homomorphism)**.
+  Captures the tagged→untagged refinement direction within the
+  Silver tier — the audit tag is forgotten while the structural
+  payload is preserved.
+
+  Adds a TENTH distinct Diamond category on
+  `C-XLATE-PY-LIST-TO-VEC`, pushing the contract from depth-9 to
+  depth-10. Third L2 contract at depth-10 (after PMAT-401 Bashrs
+  and PMAT-400 FfiCpythonExt openers). Polymorphic in α — second
+  polymorphic Template 10 instance.
+-/
+def homogeneous_to_simple_list {α : Type}
+    (h : HomogeneousListSilver α) : PyListSilver α :=
+  { elems := h.elements }
+
+theorem homogeneous_to_simple_list_projection_diamond
+    {α : Type} (h : HomogeneousListSilver α) :
+    -- (a) elements preserved by projection
+    ((homogeneous_to_simple_list h).elems = h.elements)
+    -- (b) projection is independent of element_type_tag (forgetful)
+    ∧ (homogeneous_to_simple_list ⟨h.elements, ""⟩
+        = homogeneous_to_simple_list ⟨h.elements, h.element_type_tag⟩)
+    -- (c) empty elements maps to empty PyListSilver
+    ∧ ((homogeneous_to_simple_list
+          ⟨([] : List α), h.element_type_tag⟩).elems = ([] : List α))
+    -- (d) self-equality (reflexivity)
+    ∧ (homogeneous_to_simple_list h = homogeneous_to_simple_list h) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXlatePyListToVec
