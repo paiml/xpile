@@ -554,11 +554,6 @@ The substrate's Diamond-tier program (PMAT-214..442) ships **171 wired Diamond e
 | **Diamond depth-11** | **12/12 contracts (UNIVERSAL, post-PMAT-420)** | PMAT-302/303 (initial) + PMAT-411..420 broadening sweep (Template 11 Canonical identity element) |
 | **Diamond depth-12** | **12/12 contracts (UNIVERSAL, post-PMAT-431)** | PMAT-305/306 (initial) + PMAT-422..431 broadening sweep (Template 12 Bronze→Silver canonical-lift) |
 | **Diamond depth-13** | **12/12 contracts (UNIVERSAL, post-PMAT-442)** | PMAT-307/308 (initial) + PMAT-433..442 broadening sweep (Template 13 Bronze↔Silver round-trip identity) |
-| Diamond depth-9 | 2 contracts ACROSS LAYERS | PMAT-298 (PyIntArith), PMAT-299 (CompileRustToPtxMma) |
-| Diamond depth-10 | 2 contracts ACROSS LAYERS | PMAT-300 (PyIntArith), PMAT-301 (CompileRustToPtxMma) |
-| Diamond depth-11 | 2 contracts ACROSS LAYERS | PMAT-302 (PyIntArith), PMAT-303 (CompileRustToPtxMma) |
-| Diamond depth-12 | 2 contracts ACROSS LAYERS | PMAT-305 (PyIntArith), PMAT-306 (CompileRustToPtxMma) |
-| Diamond depth-13 | 2 contracts ACROSS LAYERS | PMAT-307 (PyIntArith), PMAT-308 (CompileRustToPtxMma) |
 | Diamond depth-14 | 2 contracts ACROSS LAYERS | PMAT-310 (PyIntArith), PMAT-311 (CompileRustToPtxMma) |
 | Diamond depth-15 | 2 contracts ACROSS LAYERS | PMAT-312 (PyIntArith), PMAT-313 (CompileRustToPtxMma) |
 | Diamond depth-16 | 2 contracts ACROSS LAYERS | PMAT-315 (PyIntArith), PMAT-316 (CompileRustToPtxMma) |

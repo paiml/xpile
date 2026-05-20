@@ -35,11 +35,7 @@ As of v0.1.0+ (PMAT-214..442), the substrate has:
 - **Diamond depth-13 UNIVERSAL** (12/12 contracts, post-PMAT-442): every contract has ≥13 distinct Diamond categories. Achieved through PMAT-307/308 (initial L1/L5 opens) followed by a 10-PR broadening sweep (PMAT-433..442), with **depth-13 UNIVERSAL** finale at PMAT-442. The wave **introduced Template 13 (Bronze→Silver→Bronze round-trip identity)** as a new recurring algebraic family — proves the composition of Template 10 projection and Template 12 lift equals identity on Bronze type. Captures correctness relationship between Templates 10 and 12.
 - **Diamond depth-7 ACROSS LAYERS** (2/12 contracts): PMAT-292 (order-distributive-lattice on L1) + PMAT-293 (bounded lattice with top+bottom on L5).
 - **Diamond depth-8 ACROSS LAYERS** (2/12 contracts): PMAT-294 (divisibility-preorder on L1, FIRST relation-not-operation category) + PMAT-295 (cancellative monoid on L5).
-- **Diamond depth-9 ACROSS LAYERS** (2/12 contracts): PMAT-298 (linear-order trichotomy on L1) + PMAT-299 (ordered-monoid on L5).
-- **Diamond depth-10 ACROSS LAYERS** (2/12 contracts): PMAT-300 (RING-distributivity / neg × mul bridge on L1) + PMAT-301 (additive-lattice / tropical-semiring axiom on L5).
-- **Diamond depth-11 ACROSS LAYERS** (2/12 contracts): PMAT-302 (integral-domain / no-zero-divisors on L1) + PMAT-303 (discrete-order / successor + no-gaps on L5).
-- **Diamond depth-12 ACROSS LAYERS** (2/12 contracts): PMAT-305 (ordered-ring sign rules on L1) + PMAT-306 (max/min monotonicity on L5).
-- **Diamond depth-13 ACROSS LAYERS** (2/12 contracts): PMAT-307 (absolute value / norm on L1) + PMAT-308 (GLB/LUB universal property on L5).
+- (Depth-9..13 ACROSS LAYERS milestones subsumed by depth-9..13 UNIVERSAL after PMAT-398/409/420/431/442. Historical anchors: PMAT-298/299 opened depth-9; PMAT-300/301 opened depth-10; PMAT-302/303 opened depth-11; PMAT-305/306 opened depth-12; PMAT-307/308 opened depth-13.)
 - **Diamond depth-14 ACROSS LAYERS** (2/12 contracts): PMAT-310 (Nat-cast ring homomorphism on L1, FIRST EXTERNAL claim) + PMAT-311 (subtype extensionality on L5, FIRST SUBTYPE-STRUCTURE claim).
 - **Diamond depth-15 ACROSS LAYERS** (2/12 contracts): PMAT-312 (Int-emod quotient ring homomorphism on L1, FIRST QUOTIENT-RING claim) + PMAT-313 (Nat-mod quotient ring homomorphism on L5).
 - **Diamond depth-16 ACROSS LAYERS** (2/12 contracts): PMAT-315 (Int gcd-monoid + Bézout / PID on L1, FIRST UNIVERSAL-OBJECT-WITH-CONSTRUCTIVE-WITNESS claim) + PMAT-316 (Nat gcd-monoid on L5).
