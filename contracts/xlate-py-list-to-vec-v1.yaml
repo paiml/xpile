@@ -500,6 +500,38 @@ equations:
     postconditions:
       - "Diamond depth-5 broadened: 7 contracts at depth-5+ (2 Layer 2 contracts at depth-5)"
 
+  typed_rust_vec_silver_struct_extensionality_diamond:
+    # PMAT-360: SIXTH Diamond on this contract — BROADENS DEPTH-6
+    # substrate-wide. Pushes XlatePyListToVec (Layer 2) from depth-5
+    # to depth-6 as the SECOND L2 contract at depth-6+ (Bashrs was
+    # first via PMAT-357). TYPED-RUST-VEC-SILVER STRUCTURE
+    # EXTENSIONALITY: the polymorphic OUTPUT record (Rust side) is
+    # field-extensional. Sixteenth substrate-wide demonstration of
+    # the structure-extensionality pattern. Mirror of PMAT-349
+    # (PyListSilver α, INPUT side) — together PMAT-349/PMAT-360
+    # close Python↔Rust lowering pair at the STRUCTURE level
+    # (parallel to PMAT-336/PMAT-352 closing Rust↔Lean).
+    lean_theorem: "XpileContracts.CXlatePyListToVec.typed_rust_vec_silver_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      TypedRustVecSilver α admits STRUCTURE EXTENSIONALITY:
+        (a) field eq (elements, element_type_tag) -> record eq
+        (b) record eq -> field eq (congruence)
+        (c) self-equality (reflexivity)
+        (d) identity field-replacement preserves elements
+    domain: |
+      Two TypedRustVecSilver α records (elements : List α,
+      element_type_tag : String) — the polymorphic OUTPUT record
+      (Rust Vec side) on the Python→Rust lowering.
+    invariants:
+      - "SIXTH Diamond category on C-XLATE-PY-LIST-TO-VEC — BROADENS DEPTH-6 substrate-wide"
+      - "STRUCTURE EXTENSIONALITY — sixteenth substrate-wide demonstration of this pattern"
+      - "closes Python↔Rust lowering pair at STRUCTURE level (mirror of PMAT-349 PyListSilver INPUT side)"
+    preconditions:
+      - "two TypedRustVecSilver α records (polymorphic in α)"
+    postconditions:
+      - "Diamond depth-6 broadened: 7 contracts at depth-6+ (2 L2 contracts at depth-6)"
+
 proof_obligations:
   - type: precondition
     property: meta-HIR carries a list type with inferred element type
