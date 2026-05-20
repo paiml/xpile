@@ -1329,4 +1329,35 @@ theorem empty_py_list_silver_canonical_diamond (α : Type) :
   · rfl
   · rfl
 
+/--
+  **PMAT-428 Diamond — PyList Bronze→Silver UInt8-specialized lift.**
+
+  Define the canonical lift `py_list_bronze_to_silver_u8` :
+  `PyList → PyListSilver UInt8` that takes a Bronze PyList (Array
+  UInt8 payload) and lifts it to a Silver PyListSilver UInt8 with
+  elements converted from Array to List. **SEVENTH instance of
+  Template 12 (Bronze→Silver canonical-lift homomorphism)**.
+
+  Adds a TWELFTH distinct Diamond category on
+  `C-XLATE-PY-LIST-TO-VEC`, pushing the contract from depth-11 to
+  depth-12. Third L2 contract at depth-12.
+-/
+def py_list_bronze_to_silver_u8 (l : PyList) : PyListSilver UInt8 :=
+  { elems := l.elems.toList }
+
+theorem py_list_bronze_to_silver_u8_lift_diamond (l : PyList) :
+    -- (a) lift's elements equal Array.toList of Bronze elems
+    ((py_list_bronze_to_silver_u8 l).elems = l.elems.toList)
+    -- (b) lift's element count equals Bronze element count
+    ∧ ((py_list_bronze_to_silver_u8 l).elems.length = l.elems.size)
+    -- (c) empty Bronze maps to empty Silver
+    ∧ ((py_list_bronze_to_silver_u8 ⟨#[]⟩).elems.length = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (py_list_bronze_to_silver_u8 l = py_list_bronze_to_silver_u8 l) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · simp [Array.toList_length]
+  · rfl
+  · rfl
+
 end XpileContracts.CXlatePyListToVec
