@@ -427,6 +427,40 @@ equations:
     postconditions:
       - "DEPTH-8 UNIVERSAL achieved: 12 contracts at depth-8+"
 
+  citation_complete_contract_subtype_extensionality_diamond:
+    # PMAT-394: NINTH Diamond on this contract — BROADENS DEPTH-9
+    # substrate-wide. Pushes XpileContractBackendTrait (Layer 3)
+    # from depth-8 to depth-9. Fourth L3 contract at depth-9.
+    # CITATION-COMPLETE-CONTRACT SUBTYPE EXTENSIONALITY: the
+    # Gold-tier subtype `{ p : Contract × RenderedDocSilver //
+    # p.snd.citations = p.fst.depends_on ++ p.fst.references }`
+    # admits subtype extensionality. SIXTH substrate-wide
+    # subtype-extensionality demonstration. Template 9
+    # (Gold-tier subtype-ext) expands to 6 contracts.
+    # CLOSES ContractFrontend↔ContractBackend Gold-tier
+    # subtype-ext symmetry pair with PMAT-391 (FrameSafeTransition
+    # on XpileContractFrontendTrait).
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.citation_complete_contract_subtype_extensionality_diamond"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    formula: |
+      CitationCompleteContract admits SUBTYPE EXTENSIONALITY:
+        (a) val eq -> subtype eq (Subtype.ext)
+        (b) subtype eq -> val eq (congruence)
+        (c) decidable equality
+        (d) self-equality
+    domain: |
+      Two CitationCompleteContract values (Gold-tier subtype of
+      Contract × RenderedDocSilver with citation-completeness
+      witness).
+    invariants:
+      - "NINTH Diamond category on C-XPILE-CONTRACT-BACKEND-TRAIT — BROADENS DEPTH-9 substrate-wide"
+      - "SUBTYPE EXTENSIONALITY — sixth substrate-wide demonstration (Template 9 Gold-tier subtype-ext)"
+      - "Closes ContractFrontend↔ContractBackend Gold-tier subtype-ext symmetry pair with PMAT-391 (FrameSafeTransition)"
+    preconditions:
+      - "two CitationCompleteContract values"
+    postconditions:
+      - "Diamond depth-9 broadened: fourth L3 contract at depth-9"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractBackend
