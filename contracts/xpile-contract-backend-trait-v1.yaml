@@ -461,6 +461,38 @@ equations:
     postconditions:
       - "Diamond depth-9 broadened: fourth L3 contract at depth-9"
 
+  rendered_doc_silver_to_bronze_projection_diamond:
+    # PMAT-405: TENTH Diamond on this contract — BROADENS DEPTH-10
+    # substrate-wide. Pushes XpileContractBackendTrait (Layer 3)
+    # from depth-9 to depth-10. Fourth L3 contract at depth-10.
+    # SILVER→BRONZE TIER PROJECTION on RenderedDocSilver: define
+    # the canonical forgetful map rendered_doc_silver_to_bronze :
+    # RenderedDocSilver → RenderedDoc that drops the citations
+    # field. FIFTH instance of Template 10 (Tier-projection
+    # homomorphism). Closes ContractFrontend↔ContractBackend trait
+    # Silver→Bronze tier-projection symmetry pair with PMAT-404
+    # (session_to_equations_view on ContractFrontendTrait).
+    lean_theorem: "XpileContracts.CXpileContractBackendTrait.rendered_doc_silver_to_bronze_projection_diamond"
+    lean_file: "contracts/lean/XpileContractBackendTrait.lean"
+    formula: |
+      Silver→Bronze tier projection homomorphism on RenderedDocSilver:
+        (a) rendered_doc_silver_to_bronze(d).bytes = d.bytes
+        (b) projection is independent of citations (forgetful)
+        (c) empty bytes maps to empty Bronze RenderedDoc
+        (d) self-equality
+    domain: |
+      The forgetful map rendered_doc_silver_to_bronze :
+      RenderedDocSilver → RenderedDoc that drops the citations
+      field while retaining bytes.
+    invariants:
+      - "TENTH Diamond category on C-XPILE-CONTRACT-BACKEND-TRAIT — BROADENS DEPTH-10 substrate-wide"
+      - "TIER-PROJECTION HOMOMORPHISM — fifth instance of Template 10"
+      - "Closes ContractFrontend↔ContractBackend trait Silver→Bronze tier-projection symmetry pair with PMAT-404"
+    preconditions:
+      - "one RenderedDocSilver record"
+    postconditions:
+      - "Diamond depth-10 broadened: fourth L3 contract at depth-10"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractBackend
