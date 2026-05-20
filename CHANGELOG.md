@@ -7,6 +7,48 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Spec §28 + sub/diamond-taxonomy.md sync to post-PMAT-365 depth-6 UNIVERSAL substrate state (PMAT-366)
+
+**Spec sync**: `xpile-spec.md` §28 and `sub/diamond-taxonomy.md` now reflect the post-depth-6-UNIVERSAL substrate:
+
+- **101 wired Diamond theorems** (was 91) across 12 contracts.
+- **30+ Diamond categories** (was 28+) grouped into recurring algebraic families.
+- **Four UNIVERSAL milestones documented**: depth-3 (PMAT-336), depth-4 (PMAT-344), depth-5 (PMAT-354), depth-6 (PMAT-365).
+- **Seven recurring algebraic templates** (was 6) — added **Template 7: Int-sign decomposition** (PMAT-328/357), capturing sign-trichotomy + absolute-value invariants on Int-valued fields with semantic dichotomy.
+- **Template 1 (structure-extensionality) expanded to 20 contracts** (was 13) — added PMAT-356/359/360/361/362/363/364 from the depth-6 broadening sweep.
+- **Template 2 (Array.size) expanded to 7 contracts** (was 5) — added PMAT-358 (MetaHirModuleSilver.bytes), PMAT-365 (LeanDefSilver.body/name — closes Rust↔Lean Array.size pair).
+- **Fourth broadening wave (PMAT-356..365) documented**: 10-PR sweep from depth-5 to depth-6 UNIVERSAL with intermediate ALL 5 LAYERS milestone at PMAT-358.
+- Cross-substrate symmetry closures documented: Rust↔Lean struct pair (PMAT-336/352), Rust↔Lean Array.size pair (PMAT-344/365), Python↔Rust translation pair (PMAT-349/360), ContractFrontend↔ContractBackend trait pair inner/outer records (PMAT-332/333/353/354/361/364).
+
+### Added — **MILESTONE: Diamond depth-6 UNIVERSAL ACROSS ALL 12 CONTRACTS** via LeanDefSilver body Array.size on `C-XLATE-RUST-FN-TO-LEAN-THM` (PMAT-365)
+
+**SUBSTRATE MILESTONE: depth-6 UNIVERSAL.** Parallel to PMAT-336 (depth-3), PMAT-344 (depth-4), and PMAT-354 (depth-5) UNIVERSAL milestones. After 10 broadening sweeps (PMAT-356..364), every contract has ≥6 distinct Diamond categories. PMAT-365 is the final push pushing `C-XLATE-RUST-FN-TO-LEAN-THM` (Layer 5) — the last contract at depth-5 only — from depth-5 to depth-6.
+
+**Coverage state at PMAT-365:**
+
+| Metric | Value |
+|---|---|
+| Wired Diamond theorems | **101** |
+| Diamond categories | 30+ |
+| UNIVERSAL milestones | **4** (depth-3, 4, 5, 6) |
+| Contracts at depth-6+ | **12 = contracts_total** — **UNIVERSAL** |
+
+This closes the Rust↔Lean Array.size invariant on **both sides** of the translation pair (PMAT-344 Rust, PMAT-365 Lean).
+
+### Added — Diamond depth-6 broadening sweep PMAT-356..364 (Layer 4, 2, 3, 3, 3, 5, 5, 3, 5, 5)
+
+Substrate-wide broadening from depth-5 UNIVERSAL to depth-6 UNIVERSAL across 9 PRs:
+
+- **PMAT-356** (L4): FfiCallSilver struct ext on C-FFI-CPYTHON-EXT — opens depth-6 on Layer 4 (depth-6 ACROSS 3 LAYERS).
+- **PMAT-357** (L2): OutcomeSilver.exit_code Int sign on C-BASHRS-POSIX-IDEMPOTENCE — introduces Template 7 (Int-sign decomposition).
+- **PMAT-358** (L3): MetaHirModuleSilver.bytes Array.size on C-XPILE-FRONTEND-TRAIT — **depth-6 ACROSS ALL 5 LAYERS** milestone.
+- **PMAT-359** (L3): Backend struct ext on C-XPILE-BACKEND-TRAIT (INPUT record).
+- **PMAT-360** (L2): TypedRustVecSilver α struct ext on C-XLATE-PY-LIST-TO-VEC (closes Python↔Rust struct pair).
+- **PMAT-361** (L3): MetaHirModule struct ext on C-XPILE-CONTRACT-FRONTEND-TRAIT (modules-side inner).
+- **PMAT-362** (L5): LatexCitationSilver struct ext on C-NOTATION-LATEX-MATH-TO-EQUATION.
+- **PMAT-363** (L5): RustItemWithCitationSilver struct ext on C-XLATE-LEAN-TO-RUST.
+- **PMAT-364** (L3): RenderedDocSilver struct ext on C-XPILE-CONTRACT-BACKEND-TRAIT.
+
 ### Changed — Spec §28 + sub/diamond-taxonomy.md sync to post-PMAT-354 substrate state (PMAT-355)
 
 **Spec sync**: `xpile-spec.md` §28 and `sub/diamond-taxonomy.md` now reflect the post-depth-5-UNIVERSAL substrate:
