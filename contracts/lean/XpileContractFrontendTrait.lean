@@ -816,4 +816,34 @@ theorem session_to_equations_view_projection_diamond
   · rfl
   · rfl
 
+/--
+  **PMAT-415 Diamond — Canonical empty TranspileSession.**
+
+  Define the canonical empty TranspileSession with both modules
+  and equations arrays empty (the initial state before any
+  parsing). **FIFTH instance of Template 11 (Canonical identity
+  element)**.
+
+  Adds an ELEVENTH distinct Diamond category on
+  `C-XPILE-CONTRACT-FRONTEND-TRAIT`, pushing the contract from
+  depth-10 to depth-11. Third L3 contract at depth-11.
+-/
+def empty_session : TranspileSession :=
+  { modules := #[], equations := #[] }
+
+theorem empty_session_canonical_diamond :
+    -- (a) canonical modules are empty
+    (empty_session.modules = #[])
+    -- (b) canonical equations are empty
+    ∧ (empty_session.equations = #[])
+    -- (c) canonical modules size is 0
+    ∧ (empty_session.modules.size = 0)
+    -- (d) canonical equations size is 0
+    ∧ (empty_session.equations.size = 0) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileContractFrontendTrait
