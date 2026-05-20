@@ -1686,4 +1686,40 @@ theorem borrowed_ref_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/--
+  **PMAT-389 Diamond — BorrowedRefManifestEntry structure extensionality.**
+
+  The OUTPUT 3-field record that the `lower_borrowed_call`
+  emitter produces — `(refcount_before, refcount_after, outcome)`
+  — satisfies the structure-extensionality template like the
+  INPUT side `BorrowedRef` (PMAT-378), closing the
+  INPUT/OUTPUT extensionality pair across the lowering. Adds
+  a NINTH distinct Diamond category on `C-FFI-CPYTHON-EXT`,
+  pushing the contract from depth-8 to depth-9 (FIRST L4
+  contract at depth-9; opens depth-9 ACROSS 3 LAYERS combined
+  with L1 PyIntArith depth-21 and L5 CompileRustToPtxMma
+  depth-20).
+-/
+theorem borrowed_ref_manifest_entry_struct_extensionality_diamond
+    (m1 m2 : BorrowedRefManifestEntry) :
+    (m1.refcount_before = m2.refcount_before
+        ∧ m1.refcount_after = m2.refcount_after
+        ∧ m1.outcome = m2.outcome
+      → m1 = m2)
+    ∧ (m1 = m2 → m1.refcount_before = m2.refcount_before
+        ∧ m1.refcount_after = m2.refcount_after
+        ∧ m1.outcome = m2.outcome)
+    ∧ (m1 = m2 ∨ m1 ≠ m2)
+    ∧ (m1 = m1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h1, h2, h3⟩
+    cases m1; cases m2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h], by rw [h]⟩
+  · by_cases h : m1 = m2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CFfiCpythonExt
