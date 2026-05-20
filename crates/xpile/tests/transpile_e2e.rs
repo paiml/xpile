@@ -431,6 +431,25 @@ fn main() {
     assert_rustc_runs("factorial", &format!("{shim}\n{rust}"), driver);
 }
 
+/// PMAT-450 — v0.2.0 Track 1.A: str-typed parameter passthrough.
+/// `def echo(name: str) -> str: return name` transpiles to
+/// `pub fn echo(name: String) -> String { name }`, exercises the
+/// parameter-position Type::Str path (the foundation PR PMAT-449
+/// enabled return-position; this locks in the param case via the
+/// new C-XLATE-PY-STR-TO-RUST-STRING contract substrate).
+#[test]
+fn echo_name_emitted_rust_returns_param() {
+    let rust = xpile_transpile_to_rust("echo_name.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(echo(String::from("world")), String::from("world"));
+    assert_eq!(echo(String::from("")), String::from(""));
+    assert_eq!(echo(String::from("hello, xpile")), String::from("hello, xpile"));
+}
+"#;
+    assert_rustc_runs("echo_name", &rust, driver);
+}
+
 /// PMAT-449 — v0.2.0 Track 1.A foundation: the first end-to-end
 /// `Type::Str` round-trip. `def greet() -> str: return "hello"`
 /// transpiles to Rust `pub fn greet() -> String { String::from("hello") }`

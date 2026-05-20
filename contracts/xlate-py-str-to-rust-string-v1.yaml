@@ -1,0 +1,292 @@
+metadata:
+  id: C-XLATE-PY-STR-TO-RUST-STRING
+  version: "1.0.0"
+  created: "2026-05-20"
+  author: PAIML Engineering
+  kind: kernel
+  status: draft
+  description: |
+    Translation contract: how Python `str` lowers to Rust owned `String`.
+
+    Python's `str` is an immutable UTF-8-encoded text type. Rust's owned
+    `String` is a `Vec<u8>` that maintains a UTF-8 invariant.
+    Translation must preserve:
+      1. The underlying UTF-8 byte sequence — `len(py_str.encode("utf-8"))`
+         must equal `rust_string.len()`, and the bytes match index-for-index.
+      2. Unicode scalar value sequence — `list(py_str)` must equal
+         `rust_string.chars().collect::<Vec<char>>()` (modulo grapheme
+         boundary ambiguity, which is a property of the encoding, not of
+         the lowering).
+      3. Ownership semantics — at v0.2.0 first pass, every emitted
+         `String` is owned (the `&str` borrowing case is the
+         sub-track 1.D stretch path; this contract pins down the
+         owned-only foundation).
+
+    Layer 2 of the xpile contract taxonomy (translation), code lane,
+    kind: kernel. v0.2.0 Track 1.A foundation, per
+    [`sub/v0.2.0-depyler-merger.md`](../docs/specifications/sub/v0.2.0-depyler-merger.md).
+  references:
+    - "Python Language Reference §3.3.3 (str)"
+    - "Rust Reference §6.5 (str type)"
+    - "Unicode 15.1.0 §3.9 (UTF-8 encoding)"
+    - contracts/xlate-py-list-to-vec-v1.yaml
+    - docs/specifications/sub/v0.2.0-depyler-merger.md
+  depends_on: []
+
+equations:
+  utf8_bytes_preserved:
+    # PMAT-450 (v0.2.0 Track 1.A): Bronze-tier refinement theorem
+    # locks in the byte-level identity of `lower_py_str_to_rust_string`.
+    # Same shape as `iteration_order_preserved` in C-XLATE-PY-LIST-TO-VEC.
+    lean_theorem: "XpileContracts.CXlatePyStrToRustString.utf8_bytes_preserved"
+    lean_file: "contracts/lean/XlatePyStrToRustString.lean"
+    kani_harness: "utf8_bytes_preserved"
+    kani_file: "contracts/kani/xlate_py_str_to_rust_string.rs"
+    formula: |
+      lower(py_str: str).as_bytes() == py_str.encode("utf-8")
+    domain: |
+      A Python `str` value at the meta-HIR boundary (`Type::Str`,
+      `Expr::LitStr(s)` or any other str-typed expression). Excludes
+      `bytes` and `bytearray` (those are separate contracts at v0.3.0+).
+    invariants:
+      - "preserves UTF-8 byte sequence exactly"
+      - "preserves byte length exactly"
+      - "no implicit encoding coercion at the boundary"
+    preconditions:
+      - "py_str is a valid Python str (UTF-8-decodable from its source)"
+      - "the meta-HIR layer types the expression as `Type::Str`"
+    postconditions:
+      - "emitted Rust value is an owned `String` carrying the same UTF-8 byte sequence"
+      - "byte length matches: `rust_string.len() == py_str.encode('utf-8').__len__()`"
+      - "every Rust `String` retains the UTF-8 well-formedness invariant"
+
+  length_preserved:
+    # Corollary of `utf8_bytes_preserved` — byte-equal implies
+    # length-equal. Listed as a separate equation because the
+    # length-preservation claim is what downstream consumers (e.g.,
+    # the f-string lowering at sub-track 1.A-iv) cite directly.
+    lean_theorem: "XpileContracts.CXlatePyStrToRustString.length_preserved"
+    lean_file: "contracts/lean/XlatePyStrToRustString.lean"
+    kani_harness: "length_preserved"
+    kani_file: "contracts/kani/xlate_py_str_to_rust_string.rs"
+    formula: |
+      lower(py_str: str).len() == py_str.encode("utf-8").__len__()
+    domain: |
+      Same as `utf8_bytes_preserved` — any str-typed meta-HIR boundary
+      crossing.
+    invariants:
+      - "byte length is identity under lowering"
+    preconditions:
+      - "py_str types as `Type::Str` at the meta-HIR boundary"
+    postconditions:
+      - "rust_string.len() == py_str.encode('utf-8').__len__()"
+
+  ownership_owned:
+    # PMAT-450: ownership-discipline equation. At v0.2.0 first pass
+    # every emitted Rust `String` is owned (heap-allocated, deep-copy
+    # semantics on assign). The Silver-tier refinement for
+    # borrowing (`&str` with inferred lifetimes) is the 1.D stretch
+    # sub-track per sub/v0.2.0-depyler-merger.md.
+    lean_theorem: "XpileContracts.CXlatePyStrToRustString.ownership_owned"
+    lean_file: "contracts/lean/XlatePyStrToRustString.lean"
+    kani_harness: "ownership_owned"
+    kani_file: "contracts/kani/xlate_py_str_to_rust_string.rs"
+    formula: |
+      forall e: Expr where typeof(e) == Type::Str,
+        emit_rust(e) is owned (no shared reference to caller buffer)
+    domain: |
+      Every str-typed expression at the meta-HIR Code-lane boundary.
+    invariants:
+      - "no borrowed-lifetime escape across the meta-HIR boundary at v0.2.0"
+    preconditions:
+      - "expression types as `Type::Str` (not the v0.3.0+ `Type::StrRef`)"
+    postconditions:
+      - "emitted Rust value is owned `String`, not `&str`"
+      - "no `'a` lifetime annotation appears on the emitted signature"
+
+  py_str_structure_extensionality_diamond:
+    # PMAT-450: FIRST Diamond-tier algebraic theorem for this
+    # contract — Template 1 (Structure extensionality), from the
+    # 13 recurring algebraic templates in sub/diamond-taxonomy.md.
+    # PyStr is uniquely determined by its bytes field. Future
+    # broadening sweeps wire additional Diamond categories (Template
+    # 6 String.length Nat-structure, Template 11 canonical identity,
+    # Template 13 Bronze↔Silver round-trip) once 1.A f-strings +
+    # concat land.
+    lean_theorem: "XpileContracts.CXlatePyStrToRustString.py_str_structure_extensionality_diamond"
+    lean_file: "contracts/lean/XlatePyStrToRustString.lean"
+    formula: |
+      ∀ (s₁ s₂ : PyStr), s₁.bytes = s₂.bytes → s₁ = s₂
+    domain: |
+      Any two PyStr values modelled at Bronze tier (single `bytes`
+      field). Template 1 from the recurring algebraic templates.
+    invariants:
+      - "Template 1 — structure extensionality (32+ other contracts share this template)"
+      - "discharges by structural cases + simp_all (DecidableEq derived)"
+      - "first Diamond category for this contract; ratchets through depths 1..13 via subsequent broadening sweeps"
+    preconditions:
+      - "two well-formed PyStr values at Bronze tier"
+    postconditions:
+      - "byte-array equality entails structural equality"
+      - "any future Silver-tier field addition (e.g., codepoints, normalisation form) must be covered by a matching extensionality lemma"
+
+stratum_votes:
+  - stratum: Semantic
+    lean_theorem: utf8_bytes_preserved
+    tier: bronze
+  - stratum: Semantic
+    lean_theorem: length_preserved
+    tier: bronze
+  - stratum: Semantic
+    lean_theorem: ownership_owned
+    tier: bronze
+  - stratum: Symbolic
+    kani_harness: utf8_bytes_preserved
+  - stratum: Symbolic
+    kani_harness: length_preserved
+  - stratum: Symbolic
+    kani_harness: ownership_owned
+  - stratum: Extrinsic
+    roadmap_ref: "PMAT-450"
+
+proof_obligations:
+  - type: precondition
+    property: meta-HIR carries a `Type::Str` value (Python str)
+    formal: "item.type == Type::Str"
+    applies_to: utf8_bytes_preserved
+  - type: postcondition
+    property: byte sequence is preserved exactly under lowering
+    formal: "lower(s).bytes == s.encode('utf-8')"
+    applies_to: utf8_bytes_preserved
+  - type: postcondition
+    property: byte length is preserved
+    formal: "lower(s).len() == len(s.encode('utf-8'))"
+    applies_to: length_preserved
+  - type: invariant
+    property: every emitted Rust value for a str-typed expression is owned `String`
+    formal: "∀ e where typeof(e) == Type::Str: emit_rust(e).is_owned()"
+    applies_to: ownership_owned
+  - type: frame
+    property: no mutation of the meta-HIR module during str lowering
+    formal: "modifies() == ∅"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-XLATE-STR-001
+    rule: |
+      Lowering a Python str literal MUST produce a Rust value whose
+      bytes() iterator equals the UTF-8 encoding of the source.
+    prediction: |
+      For `"hello"`, the emitted Rust `String::from("hello").as_bytes()`
+      equals `[0x68, 0x65, 0x6c, 0x6c, 0x6f]`.
+    test: |
+      cargo test -p xpile --test transpile_e2e greet_lit
+    if_fails: |
+      The frontend's str-literal lowering introduced an encoding step
+      that mangles the byte sequence.
+    ship_blocking: true
+    counter_example_classes:
+      - silent_re_encoding
+      - escape_misinterpretation
+
+  - id: FALSIFY-XLATE-STR-002
+    rule: |
+      Byte length MUST be preserved.
+    prediction: |
+      `len(py_str.encode('utf-8'))` == `rust_string.len()` for all
+      inputs.
+    test: |
+      cargo test -p xpile --test transpile_e2e echo_name
+    if_fails: |
+      Probable string-builder bug (excess capacity exposed via len()).
+    ship_blocking: true
+    counter_example_classes:
+      - capacity_leak
+      - utf16_internal_representation
+
+  - id: FALSIFY-XLATE-STR-003
+    rule: |
+      No emitted Rust signature for a str-typed expression carries a
+      `'a` lifetime annotation at v0.2.0 first pass — every value is
+      owned.
+    prediction: |
+      grep -E "&'[a-z]+ ?str" on emitted Rust returns no matches for
+      v0.2.0 Track 1.A fixtures.
+    test: |
+      cargo test -p xpile --test transpile_e2e str_no_lifetimes
+    if_fails: |
+      Frontend started inferring borrows without the 1.D stretch
+      sub-track infrastructure (lifetime inference graph).
+    ship_blocking: true
+    counter_example_classes:
+      - premature_borrowing_inference
+
+  - id: FALSIFY-XLATE-STR-004
+    rule: |
+      str lowering MUST NOT mutate the meta-HIR module.
+    prediction: |
+      hash(module) before == hash(module) after str-lowering.
+    test: |
+      cargo test -p xpile --test transpile_e2e str_no_mutation
+    if_fails: |
+      str lowering has hidden side effects — breaks composability with
+      list-of-str / dict-of-str (1.B / 1.C dependencies).
+    ship_blocking: false
+    counter_example_classes:
+      - hidden_side_effect
+
+  - id: FALSIFY-XLATE-STR-005
+    rule: |
+      Every emitted Rust function with a str-typed signature carries
+      a `// xpile-contract: C-XLATE-PY-STR-TO-RUST-STRING` citation
+      above the body (per the C-XPILE-BACKEND-TRAIT citation
+      requirement).
+    prediction: |
+      For greet_lit.py and echo_name.py, the emitted Rust contains
+      the contract citation line above `pub fn`.
+    test: |
+      cargo test -p xpile --test qa_gate str_citation_present
+    if_fails: |
+      The backend dropped the citation when extending to a new
+      Type — citation graph drift.
+    ship_blocking: true
+    counter_example_classes:
+      - missing_citation
+
+kani_harnesses:
+  - id: KANI-XLATE-STR-001
+    obligation: utf8_bytes_preserved
+    bound: 4
+    property: |
+      For str values of byte length up to 4, the lowered RustString
+      contains exactly the source byte sequence.
+    harness: |
+      #[kani::proof]
+      fn utf8_bytes_preserved() { /* see kani/xlate_py_str_to_rust_string.rs */ }
+  - id: KANI-XLATE-STR-002
+    obligation: length_preserved
+    bound: 4
+    property: |
+      Byte length of the lowered RustString equals byte length of the
+      source PyStr.
+    harness: |
+      #[kani::proof]
+      fn length_preserved() { /* see kani/xlate_py_str_to_rust_string.rs */ }
+  - id: KANI-XLATE-STR-003
+    obligation: ownership_owned
+    bound: 4
+    property: |
+      Every lowered value equals the canonical owned-String constructor
+      applied to the source bytes (Bronze-tier singleton-variant claim).
+    harness: |
+      #[kani::proof]
+      fn ownership_owned() { /* see kani/xlate_py_str_to_rust_string.rs */ }
+
+qa_gate:
+  required_strata: 3
+  rationale: |
+    Layer-2 translation contracts ride on the §14.4 N-of-M oracle
+    quorum: ≥1 vote in ≥3 strata. Semantic (3 theorems) + Symbolic
+    (3 harnesses) + Extrinsic (roadmap) discharges at v0.2.0; the
+    Runtime stratum arrives when the v0.2.0 e2e fixture corpus
+    runs the str-typed fixtures through diff_exec.
