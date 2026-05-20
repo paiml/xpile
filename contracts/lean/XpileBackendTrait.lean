@@ -745,4 +745,57 @@ theorem target_enum_completeness_diamond (t : Target) :
     · exact Or.inr h
   · decide
 
+/-! ## PMAT-381 — EIGHTH Diamond on C-XPILE-BACKEND-TRAIT
+    (Layer 3 BROADENS DEPTH-8):
+    ARTIFACT (BRONZE) STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XPILE-BACKEND-TRAIT-011).
+
+    **Broadens DEPTH-8 substrate-wide.** Pushes XpileBackendTrait
+    (Layer 3) from depth-7 to depth-8 as the second L3 contract at
+    depth-8+.
+
+    The 8 Diamond categories on C-XPILE-BACKEND-TRAIT:
+    - PMAT-225 backend_equivalence_class
+    - PMAT-235 target_constant_projection
+    - PMAT-331 artifact_struct_extensionality (Silver ArtifactSilver)
+    - PMAT-339 target_enum_distinctness
+    - PMAT-348 artifact_bytes_array_size
+    - PMAT-359 backend_struct_extensionality
+    - PMAT-370 target_enum_completeness
+    - **PMAT-381: ARTIFACT (BRONZE) STRUCTURE EXTENSIONALITY** ← depth-8
+
+    Twenty-eighth substrate-wide demonstration of structure-
+    extensionality. Mirror of PMAT-368 (Outcome Bronze on Bashrs) —
+    second contract with Bronze-tier struct-ext alongside the
+    existing Silver-tier struct-ext (PMAT-331 ArtifactSilver here,
+    PMAT-329 OutcomeSilver on Bashrs).
+
+    Status: discharged at v0.1.0 (PMAT-381). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `Artifact` (Bronze) admits
+  STRUCTURE EXTENSIONALITY.
+
+  Single-field Bronze Artifact record (bytes : Array UInt8) with
+  derived DecidableEq.
+
+  Status: **discharged at v0.1.0 (PMAT-381)**. Tier: DIAMOND.
+-/
+theorem artifact_struct_extensionality_bronze_diamond
+    (a1 a2 : Artifact) :
+    (a1.bytes = a2.bytes → a1 = a2)
+    ∧ (a1 = a2 → a1.bytes = a2.bytes)
+    ∧ (a1 = a2 ∨ a1 ≠ a2)
+    ∧ (a1 = a1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    cases a1; cases a2
+    simp_all
+  · intro h
+    rw [h]
+  · by_cases h : a1 = a2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXpileBackendTrait
