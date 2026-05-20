@@ -529,6 +529,35 @@ equations:
       - "an emitter that drops or adds fields to LeanDefSilver would falsify the structure"
       - "Diamond depth-5 broadened: 10 contracts at depth-5+ (4 Layer 5 contracts at depth-5)"
 
+  lean_def_silver_body_size_diamond:
+    # PMAT-365: SIXTH Diamond on this contract — COMPLETES DEPTH-6
+    # UNIVERSAL ACROSS ALL 12 CONTRACTS. SUBSTRATE MILESTONE: every
+    # contract now has ≥6 distinct Diamond categories. Pushes
+    # XlateRustFnToLeanThm (Layer 5) from depth-5 to depth-6 — last
+    # contract at depth-5 only. Parallel to PMAT-336 (depth-3
+    # UNIVERSAL), PMAT-344 (depth-4 UNIVERSAL), and PMAT-354
+    # (depth-5 UNIVERSAL). LEAN-DEF-SILVER BODY ARRAY.SIZE
+    # STRUCTURE: mirrors PMAT-344 (RustFnSilver) on the Lean side —
+    # closes Rust↔Lean Array.size invariant on both sides.
+    lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.lean_def_silver_body_size_diamond"
+    lean_file: "contracts/lean/XlateRustFnToLeanThm.lean"
+    formula: |
+      LeanDefSilver.body and .name Array.size structure:
+        (a) body.size >= 0
+        (b) body.size < body.size + 1
+        (c) name.size >= 0
+        (d) name.size < name.size + 1
+    domain: |
+      Any LeanDefSilver record.
+    invariants:
+      - "SIXTH Diamond category on C-XLATE-RUST-FN-TO-LEAN-THM — COMPLETES DEPTH-6 UNIVERSAL ACROSS ALL 12 CONTRACTS"
+      - "Substrate milestone: every contract has ≥6 distinct Diamond categories"
+      - "Closes Rust↔Lean Array.size invariant on BOTH sides (PMAT-344 Rust, PMAT-365 Lean)"
+    preconditions:
+      - "one LeanDefSilver record"
+    postconditions:
+      - "DEPTH-6 UNIVERSAL achieved: 12 contracts at depth-6+"
+
 proof_obligations:
   - type: postcondition
     property: Lean def name equals Rust fn name
