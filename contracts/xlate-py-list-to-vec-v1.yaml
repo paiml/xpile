@@ -532,6 +532,33 @@ equations:
     postconditions:
       - "Diamond depth-6 broadened: 7 contracts at depth-6+ (2 L2 contracts at depth-6)"
 
+  heterogeneous_list_silver_struct_extensionality_diamond:
+    # PMAT-371: SEVENTH Diamond on this contract — BROADENS DEPTH-7
+    # substrate-wide. Pushes XlatePyListToVec (Layer 2) from depth-6
+    # to depth-7 as the second L2 contract at depth-7+ (Bashrs was
+    # first via PMAT-368). HETEROGENEOUS-LIST-SILVER STRUCTURE
+    # EXTENSIONALITY: third major record on this contract (after
+    # PMAT-349 INPUT and PMAT-360 OUTPUT).
+    lean_theorem: "XpileContracts.CXlatePyListToVec.heterogeneous_list_silver_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XlatePyListToVec.lean"
+    formula: |
+      HeterogeneousListSilver admits STRUCTURE EXTENSIONALITY:
+        (a) field eq (reason, element_types) -> record eq
+        (b) record eq -> field eq (congruence)
+        (c) decidable equality
+        (d) self-equality
+    domain: |
+      Two HeterogeneousListSilver records (reason : RejectionReason,
+      element_types : Array String) with derived DecidableEq.
+    invariants:
+      - "SEVENTH Diamond category on C-XLATE-PY-LIST-TO-VEC — BROADENS DEPTH-7 substrate-wide"
+      - "STRUCTURE EXTENSIONALITY — twenty-fourth substrate-wide demonstration"
+      - "third major record on this contract (after PMAT-349 INPUT, PMAT-360 OUTPUT)"
+    preconditions:
+      - "two HeterogeneousListSilver records (DecidableEq derived)"
+    postconditions:
+      - "Diamond depth-7 broadened"
+
 proof_obligations:
   - type: precondition
     property: meta-HIR carries a list type with inferred element type
