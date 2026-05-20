@@ -1736,4 +1736,21 @@ theorem lean_def_bronze_to_silver_lift_diamond (d : LeanDef) :
   · rfl
   · rfl
 
+/--
+  **PMAT-440 Diamond — LeanDef Bronze→Silver→Bronze round-trip identity.**
+
+  Compose PMAT-407 (lean_def_silver_to_bronze) with PMAT-429
+  (lean_def_bronze_to_silver). EIGHTH instance of Template 13.
+-/
+theorem lean_def_roundtrip_identity_diamond (d : LeanDef) :
+    (lean_def_silver_to_bronze (lean_def_bronze_to_silver d) = d)
+    ∧ ((lean_def_silver_to_bronze (lean_def_bronze_to_silver d)).body = d.body)
+    ∧ (lean_def_silver_to_bronze (lean_def_bronze_to_silver ⟨#[]⟩) = ⟨#[]⟩)
+    ∧ (d = d) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases d; rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXlateLeanToRust
