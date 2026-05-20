@@ -1512,4 +1512,55 @@ theorem rust_item_with_citation_silver_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/-! ## PMAT-373 — SEVENTH Diamond on C-XLATE-LEAN-TO-RUST
+    (Layer 5 BROADENS DEPTH-7):
+    LEAN-INDUCTIVE STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XLATE-LEAN-TO-RUST-009).
+
+    **Broadens DEPTH-7 substrate-wide.** Pushes XlateLeanToRust
+    (Layer 5) from depth-6 to depth-7 as the third L5 contract at
+    depth-7+.
+
+    The 7 Diamond categories on C-XLATE-LEAN-TO-RUST:
+    - PMAT-222 inductive_monoid
+    - PMAT-237 variant_count_cardinality_functor
+    - PMAT-335 rust_fn_struct_extensionality
+    - PMAT-343 variant_count_nat_structure
+    - PMAT-351 rust_fn_body_array_size
+    - PMAT-363 rust_item_with_citation_silver_struct_extensionality
+    - **PMAT-373: LEAN-INDUCTIVE STRUCTURE EXTENSIONALITY** ← depth-7
+
+    Twenty-fifth substrate-wide demonstration of the structure-
+    extensionality pattern. Captures the Lean-side INPUT record
+    LeanInductive (variant_count : Nat), distinct from PMAT-335
+    (RustFn output) and PMAT-363 (RustItemWithCitationSilver
+    Rust-side citation record).
+
+    Status: discharged at v0.1.0 (PMAT-373). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `LeanInductive` admits
+  STRUCTURE EXTENSIONALITY.
+
+  Single-field record (variant_count : Nat) with derived DecidableEq.
+
+  Status: **discharged at v0.1.0 (PMAT-373)**. Tier: DIAMOND.
+-/
+theorem lean_inductive_struct_extensionality_diamond
+    (i1 i2 : LeanInductive) :
+    (i1.variant_count = i2.variant_count → i1 = i2)
+    ∧ (i1 = i2 → i1.variant_count = i2.variant_count)
+    ∧ (i1 = i2 ∨ i1 ≠ i2)
+    ∧ (i1 = i1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    cases i1; cases i2
+    simp_all
+  · intro h
+    rw [h]
+  · by_cases h : i1 = i2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXlateLeanToRust

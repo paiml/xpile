@@ -732,6 +732,34 @@ equations:
     postconditions:
       - "Diamond depth-6 broadened: 8 contracts at depth-6+"
 
+  lean_inductive_struct_extensionality_diamond:
+    # PMAT-373: SEVENTH Diamond on this contract — BROADENS DEPTH-7
+    # substrate-wide. Pushes XlateLeanToRust (Layer 5) from depth-6
+    # to depth-7 as the third L5 contract at depth-7+. LEAN-INDUCTIVE
+    # STRUCTURE EXTENSIONALITY: the single-field LeanInductive record
+    # (variant_count : Nat) is field-extensional. Twenty-fifth
+    # substrate-wide demonstration. Captures the Lean-side INPUT
+    # record, distinct from PMAT-335 (RustFn output) and PMAT-363
+    # (RustItemWithCitationSilver Rust-side citation record).
+    lean_theorem: "XpileContracts.CXlateLeanToRust.lean_inductive_struct_extensionality_diamond"
+    lean_file: "contracts/lean/XlateLeanToRust.lean"
+    formula: |
+      LeanInductive admits STRUCTURE EXTENSIONALITY:
+        (a) field eq (variant_count) -> record eq
+        (b) record eq -> field eq (congruence)
+        (c) decidable equality
+        (d) self-equality
+    domain: |
+      Two LeanInductive records (variant_count : Nat) with derived
+      DecidableEq.
+    invariants:
+      - "SEVENTH Diamond category on C-XLATE-LEAN-TO-RUST — BROADENS DEPTH-7 substrate-wide"
+      - "STRUCTURE EXTENSIONALITY — twenty-fifth substrate-wide demonstration"
+    preconditions:
+      - "two LeanInductive records (DecidableEq derived)"
+    postconditions:
+      - "Diamond depth-7 broadened: 3 L5 contracts at depth-7"
+
 proof_obligations:
   - type: postcondition
     property: total def lowers to a panic-free Rust fn
