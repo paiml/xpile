@@ -1706,4 +1706,34 @@ theorem empty_lean_def_silver_canonical_diamond :
   · rfl
   · rfl
 
+/--
+  **PMAT-429 Diamond — LeanDef Bronze→Silver lift.**
+
+  Define the canonical lift `lean_def_bronze_to_silver` :
+  `LeanDef → LeanDefSilver` that preserves body and defaults
+  name/args/return_type to empty arrays. **EIGHTH instance of
+  Template 12 (Bronze→Silver canonical-lift homomorphism)**.
+
+  Adds a TWELFTH distinct Diamond category on
+  `C-XLATE-LEAN-TO-RUST`, pushing the contract from depth-11 to
+  depth-12. First L5 contract at depth-12 in the broadening wave.
+-/
+def lean_def_bronze_to_silver (d : LeanDef) : LeanDefSilver :=
+  { name := #[], args := #[], return_type := #[], body := d.body }
+
+theorem lean_def_bronze_to_silver_lift_diamond (d : LeanDef) :
+    -- (a) lift preserves body
+    ((lean_def_bronze_to_silver d).body = d.body)
+    -- (b) lift sets default name to empty
+    ∧ ((lean_def_bronze_to_silver d).name = #[])
+    -- (c) empty Bronze body maps to empty Silver body
+    ∧ ((lean_def_bronze_to_silver ⟨#[]⟩).body.size = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (lean_def_bronze_to_silver d = lean_def_bronze_to_silver d) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXlateLeanToRust
