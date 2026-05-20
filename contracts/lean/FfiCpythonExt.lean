@@ -1722,4 +1722,37 @@ theorem borrowed_ref_manifest_entry_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
+/--
+  **PMAT-400 Diamond — BoundedRefcountDelta subtype extensionality.**
+
+  The Gold-tier subtype `BoundedRefcountDelta := { d : Int //
+  -refcount_delta_bound ≤ d ∧ d ≤ refcount_delta_bound }`
+  satisfies subtype extensionality. **Eleventh substrate-wide
+  subtype-extensionality demonstration** — Template 9 expands to
+  11 substrate instances. Opens depth-10 on Layer 4
+  (FfiCpythonExt) — the first L4 contract at depth-10. Mirror of
+  PMAT-311 (BoundedSmem Nat) on Int — both are bounded-numeric
+  subtypes with `≤` constraints.
+
+  Adds a TENTH distinct Diamond category on `C-FFI-CPYTHON-EXT`,
+  pushing the contract from depth-9 to depth-10. **Opens
+  Diamond depth-10 ACROSS 3 LAYERS** (L1 PyIntArith + L4
+  FfiCpythonExt + L5 CompileRustToPtxMma).
+-/
+theorem bounded_refcount_delta_subtype_extensionality_diamond
+    (b1 b2 : BoundedRefcountDelta) :
+    (b1.val = b2.val → b1 = b2)
+    ∧ (b1 = b2 → b1.val = b2.val)
+    ∧ (b1 = b2 ∨ b1 ≠ b2)
+    ∧ (b1 = b1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    exact Subtype.ext h
+  · intro h
+    rw [h]
+  · by_cases h : b1 = b2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CFfiCpythonExt
