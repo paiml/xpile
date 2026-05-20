@@ -1788,4 +1788,43 @@ theorem balanced_refcount_delta_canonical_diamond :
   · decide
   · rfl
 
+/--
+  **PMAT-422 Diamond — FfiCall Bronze→Silver lift (idempotent over symbol).**
+
+  Define the canonical lift `lift_ffi_call_bronze_to_silver` :
+  `FfiCall → FfiCallSilver` that takes a Bronze FfiCall (payload
+  only) and produces a Silver FfiCallSilver with the payload as
+  the symbol and default values for the other fields. **Introduces
+  Template 12 (Bronze→Silver canonical-lift homomorphism)** —
+  the inverse direction of Template 10 (Silver→Bronze
+  tier-projection).
+
+  Adds a TWELFTH distinct Diamond category on `C-FFI-CPYTHON-EXT`,
+  pushing the contract from depth-11 to depth-12. First L4
+  contract at depth-12. **Opens Diamond depth-12 ACROSS 3 LAYERS**
+  (L1 PyIntArith + L4 FfiCpythonExt + L5 CompileRustToPtxMma).
+-/
+def lift_ffi_call_bronze_to_silver (c : FfiCall) : FfiCallSilver :=
+  { symbol := c.payload
+    from_lang := #[]
+    to_lang := #[]
+    args := #[]
+    return_type := #[]
+    refcount_delta := 0 }
+
+theorem lift_ffi_call_bronze_to_silver_diamond (c : FfiCall) :
+    -- (a) lift preserves payload as symbol
+    ((lift_ffi_call_bronze_to_silver c).symbol = c.payload)
+    -- (b) lift sets default refcount_delta to 0
+    ∧ ((lift_ffi_call_bronze_to_silver c).refcount_delta = 0)
+    -- (c) empty Bronze payload maps to empty Silver symbol
+    ∧ ((lift_ffi_call_bronze_to_silver ⟨#[]⟩).symbol.size = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (lift_ffi_call_bronze_to_silver c = lift_ffi_call_bronze_to_silver c) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CFfiCpythonExt

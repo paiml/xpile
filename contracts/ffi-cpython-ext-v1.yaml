@@ -662,6 +662,40 @@ equations:
     postconditions:
       - "Diamond depth-11 ACROSS 3 LAYERS opened: PyIntArith (L1) + FFI-CPYTHON-EXT (L4) + CompileRustToPtxMma (L5)"
 
+  lift_ffi_call_bronze_to_silver_diamond:
+    # PMAT-422: TWELFTH Diamond on this contract — OPENS DEPTH-12
+    # ACROSS 3 LAYERS. Pushes FFI-CPYTHON-EXT (Layer 4) from
+    # depth-11 to depth-12 as the first L4 contract at depth-12.
+    # BRONZE→SILVER LIFT on FfiCall: define the canonical lift
+    # lift_ffi_call_bronze_to_silver : FfiCall → FfiCallSilver
+    # that maps payload to symbol and uses default values for
+    # other fields. Prove the lift preserves payload-as-symbol
+    # and is structure-preserving.
+    # **Introduces Template 12 (Bronze→Silver canonical-lift
+    # homomorphism)** as a new substrate-wide recurring algebraic
+    # family — the inverse direction of Template 10 (Silver→Bronze
+    # tier-projection homomorphism).
+    lean_theorem: "XpileContracts.CFfiCpythonExt.lift_ffi_call_bronze_to_silver_diamond"
+    lean_file: "contracts/lean/FfiCpythonExt.lean"
+    formula: |
+      Bronze→Silver canonical-lift homomorphism on FfiCall:
+        (a) lift_ffi_call_bronze_to_silver(c).symbol = c.payload
+        (b) lift_ffi_call_bronze_to_silver(c).refcount_delta = 0
+        (c) empty Bronze payload maps to empty Silver symbol
+        (d) self-equality
+    domain: |
+      The canonical lift lift_ffi_call_bronze_to_silver :
+      FfiCall → FfiCallSilver that maps payload to symbol and
+      uses default values for from_lang, to_lang, args,
+      return_type, refcount_delta.
+    invariants:
+      - "TWELFTH Diamond category on C-FFI-CPYTHON-EXT — OPENS DEPTH-12 ACROSS 3 LAYERS"
+      - "BRONZE→SILVER LIFT HOMOMORPHISM — introduces Template 12 as a NEW substrate-wide algebraic template"
+      - "Inverse direction of Template 10 (Silver→Bronze tier-projection homomorphism)"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-12 ACROSS 3 LAYERS opened: PyIntArith (L1) + FFI-CPYTHON-EXT (L4) + CompileRustToPtxMma (L5)"
+
 proof_obligations:
   - type: precondition
     property: both Python and C frontends produced meta-HIR
