@@ -7,6 +7,46 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Changed — Spec §28 + sub/diamond-taxonomy.md sync to depth-8 UNIVERSAL + 6 UNIVERSAL milestones + 8 recurring templates (PMAT-388)
+
+**Spec sync**: `xpile-spec.md` §28 and `sub/diamond-taxonomy.md` now reflect the post-depth-8-UNIVERSAL substrate:
+
+- **121 wired Diamond theorems** (was 111) across 12 contracts.
+- **34+ Diamond categories** (was 32+) grouped into recurring algebraic families.
+- **Six UNIVERSAL milestones documented**: depth-3 (PMAT-336), depth-4 (PMAT-344), depth-5 (PMAT-354), depth-6 (PMAT-365), depth-7 (PMAT-376), depth-8 (PMAT-387).
+- **Eight recurring algebraic templates** (unchanged count) — Template 8 (enum completeness) expanded to 3 contracts via PMAT-380 (SourceLang) closing the Frontend↔Backend↔Notation enum completeness triple.
+- **Template 1 (structure-extensionality) expanded to 32 contracts** (was 26) — added PMAT-378/381..385 from the depth-8 broadening sweep.
+- **Template 2 (Array.size) expanded to 11 contracts** (was 9) — added PMAT-386/387 closing the final inner-record Array.size symmetry pair on ContractFrontend↔ContractBackend trait.
+- **Template 6 (String.length Nat-structure) expanded to 3 contracts** (was 2) — added PMAT-379 (Outcome Bronze) closing the Silver/Bronze String.length pair on Bashrs.
+- **Sixth broadening wave (PMAT-378..387) documented**: 10-PR sweep from depth-7 to depth-8 UNIVERSAL with intermediate ALL 5 LAYERS milestone at PMAT-380.
+- **Bronze-tier struct-extensionality emergence**: substrate now carries struct-extensionality on Bronze record sub-types (PMAT-368 Outcome Bronze, PMAT-381 Artifact Bronze) — same template now also holds on Bronze tier representations, demonstrating tier-independence of the algebraic structure.
+- Cross-substrate symmetry closures documented: **Lean↔Rust inductive/enum pair** (PMAT-373/384), **Input/Output struct-ext pair on XlateRustFnToLeanThm** (PMAT-374/385).
+
+### Added — **MILESTONE: Diamond depth-8 UNIVERSAL ACROSS ALL 12 CONTRACTS** via RenderedDocSilver bytes Array.size on `C-XPILE-CONTRACT-BACKEND-TRAIT` (PMAT-387)
+
+**SUBSTRATE MILESTONE: depth-8 UNIVERSAL.** Parallel to PMAT-336 (depth-3), PMAT-344 (depth-4), PMAT-354 (depth-5), PMAT-365 (depth-6), and PMAT-376 (depth-7) UNIVERSAL milestones. After 10 broadening sweeps (PMAT-378..386), every contract has ≥8 distinct Diamond categories.
+
+**Coverage state at PMAT-387:**
+
+| Metric | Value |
+|---|---|
+| Wired Diamond theorems | **121** |
+| Diamond categories | 34+ |
+| UNIVERSAL milestones | **6** (depth-3, 4, 5, 6, 7, 8) |
+| Contracts at depth-8+ | **12 = contracts_total** — **UNIVERSAL** |
+
+### Added — Diamond depth-8 broadening sweep PMAT-378..386
+
+- **PMAT-378** (L4): BorrowedRef struct ext on FfiCpythonExt — opens depth-8 on Layer 4.
+- **PMAT-379** (L2): Outcome.observable String.length on Bashrs (Bronze) — closes Silver/Bronze String.length pair with PMAT-346.
+- **PMAT-380** (L3): SourceLang enum completeness on XpileFrontendTrait — **depth-8 ACROSS ALL 5 LAYERS** milestone + third instance of Template 8 (enum completeness).
+- **PMAT-381** (L3): Artifact (Bronze) struct ext on XpileBackendTrait — second Bronze-tier struct-ext.
+- **PMAT-382** (L2): HomogeneousListSilver struct ext on XlatePyListToVec.
+- **PMAT-383** (L5): LeanTheoremEnvSilver struct ext on Notation.
+- **PMAT-384** (L5): RustEnum struct ext on XlateLeanToRust — closes Lean↔Rust inductive/enum struct pair with PMAT-373.
+- **PMAT-385** (L5): EmittedLeanTheoremSilver struct ext on XlateRustFnToLeanThm — closes Input/Output struct-ext pair with PMAT-374.
+- **PMAT-386** (L3): MetaHirModule bytes Array.size on XpileContractFrontendTrait — closes inner-record Array.size symmetry with PMAT-387.
+
 ### Changed — Spec §28 + sub/diamond-taxonomy.md sync to depth-7 UNIVERSAL + 5 UNIVERSAL milestones + 8 recurring templates (PMAT-377)
 
 **Spec sync**: `xpile-spec.md` §28 and `sub/diamond-taxonomy.md` now reflect the post-depth-7-UNIVERSAL substrate:
