@@ -521,6 +521,30 @@ equations:
     postconditions:
       - "Diamond depth-12 broadened: third L3 contract at depth-12"
 
+  equations_block_singleton_roundtrip_identity_diamond:
+    # PMAT-437: THIRTEENTH Diamond on this contract — BROADENS DEPTH-13.
+    # SINGLETON ROUND-TRIP IDENTITY on EquationsBlock: define
+    # session_to_first_equation_or_empty as inverse of
+    # equations_block_to_session, prove round-trip recovers original.
+    # **FIFTH instance of Template 13**.
+    lean_theorem: "XpileContracts.CXpileContractFrontendTrait.equations_block_singleton_roundtrip_identity_diamond"
+    lean_file: "contracts/lean/XpileContractFrontendTrait.lean"
+    formula: |
+      Singleton round-trip identity on EquationsBlock:
+        (a) first_equation_or_empty ∘ to_session = id
+        (b) bytes preserved through round-trip
+        (c) lift produces singleton (size = 1)
+        (d) self-equality
+    domain: |
+      Composition of session_to_first_equation_or_empty with
+      equations_block_to_session equals identity on EquationsBlock.
+    invariants:
+      - "THIRTEENTH Diamond category on C-XPILE-CONTRACT-FRONTEND-TRAIT — BROADENS DEPTH-13"
+      - "SINGLETON ROUND-TRIP IDENTITY — fifth instance of Template 13"
+    preconditions: []
+    postconditions:
+      - "Diamond depth-13 broadened: third L3 contract at depth-13"
+
 proof_obligations:
   - type: invariant
     property: Every registered format is owned by exactly one ContractFrontend

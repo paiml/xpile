@@ -877,4 +877,27 @@ theorem equations_block_to_session_lift_diamond (e : EquationsBlock) :
   · rfl
   · rfl
 
+/--
+  **PMAT-437 Diamond — EquationsBlock singleton-view round-trip identity.**
+
+  Define `session_to_first_equation_or_empty : TranspileSession →
+  EquationsBlock` that extracts the first equation or returns
+  empty default. Prove that for a Bronze EquationsBlock that's
+  been lifted via PMAT-426, applying this extraction recovers the
+  original. FIFTH instance of Template 13.
+-/
+def session_to_first_equation_or_empty (s : TranspileSession) : EquationsBlock :=
+  if h : 0 < s.equations.size then s.equations[0]'h else { bytes := #[] }
+
+theorem equations_block_singleton_roundtrip_identity_diamond (e : EquationsBlock) :
+    (session_to_first_equation_or_empty (equations_block_to_session e) = e)
+    ∧ ((session_to_first_equation_or_empty (equations_block_to_session e)).bytes = e.bytes)
+    ∧ ((equations_block_to_session e).equations.size = 1)
+    ∧ (e = e) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases e; rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileContractFrontendTrait
