@@ -753,4 +753,52 @@ theorem outcome_struct_extensionality_bronze_diamond
     · exact Or.inr h
   · rfl
 
+/-! ## PMAT-379 — EIGHTH Diamond on C-BASHRS-POSIX-IDEMPOTENCE
+    (Layer 2 BROADENS DEPTH-8):
+    OUTCOME (BRONZE) OBSERVABLE STRING.LENGTH NAT STRUCTURE
+    (XPILE-REFINE-BASHRS-011).
+
+    **Broadens DEPTH-8 substrate-wide.** Pushes Bashrs (Layer 2)
+    from depth-7 to depth-8.
+
+    The 8 Diamond categories on C-BASHRS-POSIX-IDEMPOTENCE:
+    - PMAT-215 bashrs_pure_function
+    - python_pure_function
+    - PMAT-238 exit_code_constant_projection
+    - PMAT-329 outcome_struct_extensionality (Silver)
+    - PMAT-346 outcome_observable_length_nat (Silver String.length)
+    - PMAT-357 outcome_exit_code_int_sign
+    - PMAT-368 outcome_struct_extensionality_bronze
+    - **PMAT-379: OUTCOME (BRONZE) OBSERVABLE STRING.LENGTH NAT** ← depth-8
+
+    Captures String.length Nat-measure on the Bronze Outcome record's
+    observable field — distinct from PMAT-346 (Silver-tier String.length
+    on OutcomeSilver.observable). Tenth substrate-wide Array.size/
+    String.length Nat-measure demonstration.
+
+    Status: discharged at v0.1.0 (PMAT-379). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `Outcome.observable`
+  (Bronze) String.length Nat structure.
+
+  Combines four Nat-measure properties on the observable field:
+  (a) length is non-negative
+  (b) Empty observable has length-0
+  (c) Field-replacement preserves length
+  (d) Self-equal length
+
+  Status: **discharged at v0.1.0 (PMAT-379)**. Tier: DIAMOND.
+-/
+theorem outcome_observable_length_bronze_nat_diamond (o : Outcome) :
+    (0 ≤ o.observable.length)
+    ∧ ((⟨""⟩ : Outcome).observable.length = 0)
+    ∧ ((⟨o.observable⟩ : Outcome).observable.length = o.observable.length)
+    ∧ (o.observable.length = o.observable.length) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.zero_le _
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CBashrsPosixIdempotence

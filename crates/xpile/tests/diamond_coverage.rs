@@ -198,11 +198,12 @@ fn substrate_diamond_depth_8_opened() {
     // PMAT-294 opened depth-8 on C-PY-INT-ARITH (Layer 1): divisibility-preorder.
     // PMAT-295 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): cancellative monoid.
     // PMAT-378 BROADENED depth-8 to C-FFI-CPYTHON-EXT (Layer 4): BorrowedRef struct ext.
-    // Gate now asserts depth-8 ACROSS 3 LAYERS (L1+L4+L5).
+    // PMAT-379 BROADENED depth-8 to C-BASHRS-POSIX-IDEMPOTENCE (Layer 2): Outcome (Bronze) String.length Nat.
+    // Gate now asserts depth-8 ACROSS 4 LAYERS (L1+L2+L4+L5).
     assert!(
-        depth_8_plus >= 3,
-        "Diamond depth-8 ACROSS 3 LAYERS milestone (PMAT-294, PMAT-295, PMAT-378): \
-         expected ≥3 contracts at depth-8+ (Layer 1 + Layer 4 + Layer 5), \
+        depth_8_plus >= 4,
+        "Diamond depth-8 ACROSS 4 LAYERS milestone (PMAT-294, PMAT-295, PMAT-378, PMAT-379): \
+         expected ≥4 contracts at depth-8+ (Layer 1 + Layer 2 + Layer 4 + Layer 5), \
          got {depth_8_plus}.\n{json}"
     );
 }
