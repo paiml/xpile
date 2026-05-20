@@ -900,4 +900,36 @@ theorem empty_contract_canonical_diamond :
   · rfl
   · rfl
 
+/--
+  **PMAT-427 Diamond — RenderedDoc Bronze→Silver lift.**
+
+  Define the canonical lift `rendered_doc_bronze_to_silver` :
+  `RenderedDoc → RenderedDocSilver` that preserves bytes and
+  defaults citations to empty array. **SIXTH instance of Template
+  12 (Bronze→Silver canonical-lift homomorphism)**. Closes
+  ContractFrontend↔ContractBackend trait Template 12 pair with
+  PMAT-426.
+
+  Adds a TWELFTH distinct Diamond category on
+  `C-XPILE-CONTRACT-BACKEND-TRAIT`, pushing the contract from
+  depth-11 to depth-12. Fourth L3 contract at depth-12.
+-/
+def rendered_doc_bronze_to_silver (d : RenderedDoc) : RenderedDocSilver :=
+  { bytes := d.bytes, citations := #[] }
+
+theorem rendered_doc_bronze_to_silver_lift_diamond (d : RenderedDoc) :
+    -- (a) lift preserves bytes
+    ((rendered_doc_bronze_to_silver d).bytes = d.bytes)
+    -- (b) lift sets default citations to empty
+    ∧ ((rendered_doc_bronze_to_silver d).citations = #[])
+    -- (c) empty Bronze bytes maps to empty Silver bytes
+    ∧ ((rendered_doc_bronze_to_silver ⟨#[]⟩).bytes.size = 0)
+    -- (d) self-equality (reflexivity)
+    ∧ (rendered_doc_bronze_to_silver d = rendered_doc_bronze_to_silver d) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CXpileContractBackendTrait
