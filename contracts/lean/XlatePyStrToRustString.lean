@@ -145,4 +145,36 @@ theorem py_str_structure_extensionality_diamond (s₁ s₂ : PyStr) :
   cases s₂
   simp_all
 
+/--
+  Concatenation on `PyStr`: append the underlying byte arrays.
+  v0.2.0 Bronze-tier model — byte-array append; Silver-tier
+  refinement will track UTF-8 codepoint boundaries, but the byte
+  view of the result is unchanged.
+-/
+def concat (a b : PyStr) : PyStr :=
+  { bytes := a.bytes ++ b.bytes }
+
+/--
+  **Template 6 — String monoid associativity (PMAT-451).**
+
+  String concatenation is associative: `(a ++ b) ++ c = a ++ (b ++ c)`
+  for any `PyStr` values. Discharges via `Array.append_assoc` from
+  Lean's stdlib + structure-extensionality.
+
+  Documentary commitment: any future emitter that re-orders concat
+  for SIMD or parallel writes must preserve associativity; otherwise
+  the citation gate fires.
+
+  Combines with `length_preserved` to give the free-monoid algebraic
+  structure on str (same Template 6 shape as
+  `XlatePyListToVec.length_monoid_homomorphism_diamond`).
+
+  Discharged at v0.2.0 (PMAT-451). Tier: Diamond. SECOND Diamond
+  category for this contract → depth-2.
+-/
+theorem concatenation_associativity_diamond (a b c : PyStr) :
+    concat (concat a b) c = concat a (concat b c) := by
+  unfold concat
+  simp [Array.append_assoc]
+
 end XpileContracts.CXlatePyStrToRustString

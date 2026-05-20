@@ -151,9 +151,16 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         }
         Expr::Call { args, .. } => args.iter().any(expr_has_int_arith),
         // PMAT-042: string-literal Expr variants carry no arithmetic
-        // operands; they're governed by C-BASHRS-POSIX-IDEMPOTENCE,
-        // not C-PY-INT-ARITH.
+        // operands; they're governed by C-BASHRS-POSIX-IDEMPOTENCE
+        // (or, for Python `str` literals at v0.2.0, by
+        // C-XLATE-PY-STR-TO-RUST-STRING), not C-PY-INT-ARITH.
         Expr::LitStr(_) | Expr::QuotedString { .. } => false,
+        // PMAT-451: string concatenation is a str-domain operation;
+        // operands type as `Type::Str` and never contribute to
+        // C-PY-INT-ARITH's overflow analysis. Recurse defensively in
+        // case future lowering ever nests an int-arith expression
+        // inside a string-typed position (unlikely but cheap).
+        Expr::Concat { lhs, rhs } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
         // PMAT-045: shell-variable references same disposition.
         Expr::ShellVar(_) => false,
         // PMAT-055: shell special parameters same disposition.
@@ -401,6 +408,20 @@ pub enum Expr {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
+    /// String concatenation — Python `str + str` semantics. PMAT-451,
+    /// v0.2.0 Track 1.A. Distinct from `BinOp::Add` because:
+    ///   * No overflow concept (strings never overflow).
+    ///   * Backend host varies: Rust/Ruchy emit `format!("{}{}", l, r)`;
+    ///     Lean emits `l ++ r`.
+    ///   * The contract substrate's associativity equation
+    ///     (`C-XLATE-PY-STR-TO-RUST-STRING::concatenation_associativity`)
+    ///     attaches to this variant, not to `BinOp::Add`.
+    ///
+    /// Produced by depyler-frontend when both operands of `+` are
+    /// `Type::Str`-typed. f-string lowering (subsequent sub-track)
+    /// generalises to `Vec<Expr>` parts via a `Concat { parts }`
+    /// rewrite; the binary form is sufficient for v0.2.0 first cut.
+    Concat { lhs: Box<Expr>, rhs: Box<Expr> },
     /// Conditional expression — Python's `then if cond else else_`, lowered
     /// from `ast::Expr::IfExp`. Both branches must produce the same type at
     /// v0.1.0 (the frontend rejects branch-type-mismatch; future versions

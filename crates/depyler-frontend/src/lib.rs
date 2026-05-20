@@ -1099,6 +1099,8 @@ fn infer_type(e: &Expr) -> Type {
         // PMAT-449 (v0.2.0 Track 1.A): Python `"..."` literal now
         // produces `Expr::LitStr` and is typed as `Type::Str`.
         Expr::LitStr(_) => Type::Str,
+        // PMAT-451: str concatenation is a Type::Str-producing op.
+        Expr::Concat { .. } => Type::Str,
         // PMAT-042 + PMAT-045 + PMAT-047 + PMAT-055: shell-domain
         // Expr variants don't appear inside Python-frontend lowering.
         // Default to I64 for safety so any future accidental call
@@ -1157,6 +1159,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-449 (v0.2.0 Track 1.A): Python `"..."` literal is
         // typed as `Type::Str`.
         Expr::LitStr(_) => Type::Str,
+        // PMAT-451: str concatenation is Type::Str-producing.
+        Expr::Concat { .. } => Type::Str,
         // PMAT-042 + PMAT-045 + PMAT-047 + PMAT-055: see twin arm
         // in `infer_type` above.
         Expr::QuotedString { .. }
@@ -1190,10 +1194,32 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
         },
         ast::Expr::BinOp(b) => {
             let op = lower_binop(&b.op)?;
+            let lhs = lower_expr(*b.left)?;
+            let rhs = lower_expr(*b.right)?;
+            // PMAT-451 (v0.2.0 Track 1.A): when `+` is applied to two
+            // Type::Str operands, lower to Expr::Concat. The backends
+            // emit `format!("{}{}", l, r)` (Rust/Ruchy) or `l ++ r`
+            // (Lean), governed by the new
+            // `C-XLATE-PY-STR-TO-RUST-STRING::concatenation_associativity`
+            // equation.
+            //
+            // Type inference here is context-free (`infer_type`); a
+            // future enhancement will use `infer_type_in_ctx` to also
+            // recognize `name: str` parameters via the name table.
+            // First cut handles `"a" + "b"` and `"prefix" + literal`
+            // shapes — sufficient for the greet_concat fixture.
+            if matches!(op, BinOp::Add)
+                && (infer_type(&lhs) == Type::Str || infer_type(&rhs) == Type::Str)
+            {
+                return Ok(Expr::Concat {
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                });
+            }
             Ok(Expr::BinOp {
                 op,
-                lhs: Box::new(lower_expr(*b.left)?),
-                rhs: Box::new(lower_expr(*b.right)?),
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
             })
         }
         ast::Expr::Compare(c) => lower_compare(c),

@@ -344,7 +344,7 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             }
         }
         Expr::LitInt(_) => {}
-        Expr::BinOp { lhs, rhs, .. } => {
+        Expr::BinOp { lhs, rhs, .. } | Expr::Concat { lhs, rhs } => {
             collect_idents(lhs, out);
             collect_idents(rhs, out);
         }
@@ -550,6 +550,17 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::Ident(name) => write!(out, "{}", name)?,
         Expr::LitInt(v) => write!(out, "({}: Int)", v)?,
         Expr::BinOp { op, lhs, rhs } => emit_binop(out, *op, lhs, rhs)?,
+        // PMAT-451 (v0.2.0 Track 1.A): Lean's `String` concatenation
+        // is the `++` operator (`String.append`). Strings are
+        // unbounded in Lean — no overflow concept, mirrors the proof-
+        // lane shadow of the Rust/Ruchy `format!()` emission.
+        Expr::Concat { lhs, rhs } => {
+            out.push('(');
+            emit_expr(out, lhs)?;
+            out.push_str(" ++ ");
+            emit_expr(out, rhs)?;
+            out.push(')');
+        }
         Expr::IfExpr {
             cond,
             then_expr,

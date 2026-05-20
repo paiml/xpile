@@ -253,6 +253,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             }
         }
         Expr::BinOp { op, lhs, rhs } => emit_binop(out, *op, lhs, rhs, mode)?,
+        // PMAT-451 (v0.2.0 Track 1.A): same str-concat shape as the
+        // Rust backend — Ruchy compiles to Rust, so `format!()` works
+        // identically.
+        Expr::Concat { lhs, rhs } => {
+            out.push_str("format!(\"{}{}\", ");
+            emit_expr(out, lhs, mode)?;
+            out.push_str(", ");
+            emit_expr(out, rhs, mode)?;
+            out.push(')');
+        }
         Expr::IfExpr {
             cond,
             then_expr,

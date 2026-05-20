@@ -431,6 +431,22 @@ fn main() {
     assert_rustc_runs("factorial", &format!("{shim}\n{rust}"), driver);
 }
 
+/// PMAT-451 — v0.2.0 Track 1.A: str + str concatenation via
+/// `Expr::Concat`. `"hello, " + name` lowers to `format!("{}{}", ...)`
+/// in Rust; verify the rustc round-trip produces `"hello, world"`.
+#[test]
+fn greet_concat_emitted_rust_returns_concatenated_string() {
+    let rust = xpile_transpile_to_rust("greet_concat.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(greet(String::from("world")), String::from("hello, world"));
+    assert_eq!(greet(String::from("")), String::from("hello, "));
+    assert_eq!(greet(String::from("xpile")), String::from("hello, xpile"));
+}
+"#;
+    assert_rustc_runs("greet_concat", &rust, driver);
+}
+
 /// PMAT-450 — v0.2.0 Track 1.A: str-typed parameter passthrough.
 /// `def echo(name: str) -> str: return name` transpiles to
 /// `pub fn echo(name: String) -> String { name }`, exercises the

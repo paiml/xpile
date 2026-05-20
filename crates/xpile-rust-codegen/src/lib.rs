@@ -286,6 +286,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             }
         }
         Expr::BinOp { op, lhs, rhs } => emit_binop(out, *op, lhs, rhs, mode)?,
+        // PMAT-451 (v0.2.0 Track 1.A): str concatenation. Rust's
+        // `String + &str` is the idiomatic form but requires the lhs
+        // to be owned and rhs to be borrowed — annoying to thread
+        // through when both come from the same xpile lowering pipeline.
+        // `format!("{}{}", l, r)` works uniformly for any `Display`
+        // operands and produces an owned `String`, matching the v0.2.0
+        // owned-only ownership posture (see C-XLATE-PY-STR-TO-RUST-STRING
+        // `ownership_owned` equation).
+        Expr::Concat { lhs, rhs } => {
+            out.push_str("format!(\"{}{}\", ");
+            emit_expr(out, lhs, mode)?;
+            out.push_str(", ");
+            emit_expr(out, rhs, mode)?;
+            out.push(')');
+        }
         Expr::IfExpr {
             cond,
             then_expr,
