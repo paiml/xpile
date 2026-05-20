@@ -828,6 +828,25 @@ equations:
     postconditions:
       - "DEPTH-12 UNIVERSAL achieved: 12 contracts at depth-12+"
 
+  definition_env_roundtrip_identity_diamond:
+    # PMAT-442: THIRTEENTH Diamond — COMPLETES DEPTH-13 UNIVERSAL.
+    # **TENTH instance of Template 13**. Substrate now at ELEVEN
+    # UNIVERSAL milestones (depth-3..13).
+    lean_theorem: "XpileContracts.CNotationLatexMathToEquation.definition_env_roundtrip_identity_diamond"
+    lean_file: "contracts/lean/Notation.lean"
+    formula: |
+      Round-trip identity on DefinitionEnv.
+    domain: |
+      Composition of definition_env_silver_to_bronze with
+      definition_env_bronze_to_silver equals identity.
+    invariants:
+      - "THIRTEENTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — COMPLETES DEPTH-13 UNIVERSAL"
+      - "ROUND-TRIP IDENTITY — tenth instance of Template 13"
+      - "Substrate milestone: every contract has ≥13 distinct Diamond categories — ELEVEN UNIVERSAL milestones"
+    preconditions: []
+    postconditions:
+      - "DEPTH-13 UNIVERSAL achieved: 12 contracts at depth-13+"
+
 proof_obligations:
   - type: postcondition
     property: math-mode round-trips through render() losslessly

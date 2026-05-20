@@ -285,14 +285,17 @@ fn substrate_diamond_depth_12_opened() {
 fn substrate_diamond_depth_13_opened() {
     let json = run_diamond_json();
     let depth_13_plus = read_aggregate_field(&json, "depth_13_plus");
+    let contracts_total = read_aggregate_field(&json, "contracts_total");
     // PMAT-307 opened depth-13 on C-PY-INT-ARITH (Layer 1): ABSOLUTE VALUE / NORM.
     // PMAT-308 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): GLB/LUB universal property.
-    // PMAT-310 took PyIntArith to depth-14 (still ≥2 at depth-13+).
-    // Gate asserts depth-13 ACROSS LAYERS (≥2 contracts at depth-13+).
+    // PMAT-433..442 broadening wave pushed all 10 remaining contracts to depth-13
+    // via Template 13 (Bronze→Silver→Bronze round-trip identity).
+    // PMAT-442: DEPTH-13 UNIVERSAL achieved — gate tightened to == contracts_total.
     assert!(
-        depth_13_plus >= 2,
-        "Diamond depth-13 ACROSS LAYERS milestone (PMAT-307, PMAT-308): \
-         expected ≥2 contracts at depth-13+ (Layer 1 + Layer 5), got {depth_13_plus}.\n{json}"
+        depth_13_plus == contracts_total,
+        "Diamond depth-13 UNIVERSAL milestone (PMAT-442): \
+         expected ALL {contracts_total} contracts at depth-13+. \
+         Got {depth_13_plus} of {contracts_total}.\n{json}"
     );
 }
 
