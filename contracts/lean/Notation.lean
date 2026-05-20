@@ -1587,4 +1587,22 @@ theorem definition_env_bronze_to_silver_lift_diamond (d : DefinitionEnv) :
   · rfl
   · rfl
 
+/--
+  **PMAT-442 Diamond — DefinitionEnv round-trip identity. COMPLETES DEPTH-13 UNIVERSAL.**
+
+  Compose PMAT-409 + PMAT-431. TENTH instance of Template 13.
+  COMPLETES DEPTH-13 UNIVERSAL ACROSS ALL 12 CONTRACTS.
+-/
+theorem definition_env_roundtrip_identity_diamond (d : DefinitionEnv) :
+    (definition_env_silver_to_bronze (definition_env_bronze_to_silver d) = d)
+    ∧ ((definition_env_silver_to_bronze (definition_env_bronze_to_silver d)).first_math_span
+        = d.first_math_span)
+    ∧ (definition_env_silver_to_bronze (definition_env_bronze_to_silver ⟨""⟩) = ⟨""⟩)
+    ∧ (d = d) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases d; rfl
+  · rfl
+  · rfl
+  · rfl
+
 end XpileContracts.CNotationLatexMathToEquation
