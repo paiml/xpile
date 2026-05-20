@@ -412,3 +412,27 @@ equations:
       - "two Outcome records (DecidableEq derived)"
     postconditions:
       - "Diamond depth-7 broadened"
+
+  outcome_observable_length_bronze_nat_diamond:
+    # PMAT-379: EIGHTH Diamond on this contract — BROADENS DEPTH-8
+    # substrate-wide. Pushes Bashrs (Layer 2) from depth-7 to depth-8.
+    # OUTCOME (Bronze) OBSERVABLE STRING.LENGTH NAT STRUCTURE: Nat
+    # measure on the Bronze Outcome.observable field, distinct from
+    # PMAT-346 (Silver-tier String.length on OutcomeSilver.observable).
+    lean_theorem: "XpileContracts.CBashrsPosixIdempotence.outcome_observable_length_bronze_nat_diamond"
+    lean_file: "contracts/lean/Bashrs.lean"
+    formula: |
+      Outcome.observable (Bronze) String.length Nat structure:
+        (a) length >= 0
+        (b) empty observable has length 0
+        (c) field-replacement preserves length
+        (d) self-equal length
+    domain: |
+      Any Bronze Outcome record (observable : String).
+    invariants:
+      - "EIGHTH Diamond category on C-BASHRS-POSIX-IDEMPOTENCE — BROADENS DEPTH-8 substrate-wide"
+      - "STRING.LENGTH NAT-MEASURE on Bronze Outcome (distinct from PMAT-346 on Silver OutcomeSilver)"
+    preconditions:
+      - "one Outcome record"
+    postconditions:
+      - "Diamond depth-8 broadened"
