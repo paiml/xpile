@@ -1126,4 +1126,60 @@ theorem typed_rust_vec_silver_struct_extensionality_diamond
   · rfl
   · rfl
 
+/-! ## PMAT-371 — SEVENTH Diamond on C-XLATE-PY-LIST-TO-VEC
+    (Layer 2 BROADENS DEPTH-7):
+    HETEROGENEOUS-LIST-SILVER STRUCTURE EXTENSIONALITY
+    (XPILE-REFINE-XLATE-PY-LIST-008).
+
+    **Broadens DEPTH-7 substrate-wide.** Pushes XlatePyListToVec
+    (Layer 2) from depth-6 to depth-7 as the second L2 contract at
+    depth-7+ (Bashrs was first via PMAT-368).
+
+    The 7 Diamond categories on C-XLATE-PY-LIST-TO-VEC:
+    - PMAT-221 list_free_monoid_diamond
+    - PMAT-229 nonempty_section_retraction_diamond
+    - PMAT-244 length_monoid_homomorphism_diamond
+    - PMAT-338 list_reverse_involution_diamond
+    - PMAT-349 py_list_silver_struct_extensionality_diamond (Python INPUT)
+    - PMAT-360 typed_rust_vec_silver_struct_extensionality_diamond (Rust OUTPUT)
+    - **PMAT-371: HETEROGENEOUS-LIST-SILVER STRUCTURE EXT** ← depth-7
+
+    Twenty-fourth substrate-wide demonstration of the structure-
+    extensionality pattern. Distinct from PMAT-349/PMAT-360 (which
+    captured the homogeneous Python/Rust pair) — PMAT-371 captures
+    the HETEROGENEOUS-list rejection record (reason : RejectionReason,
+    element_types : Array String), the third major record type on
+    this contract.
+
+    Status: discharged at v0.1.0 (PMAT-371). Tier: DIAMOND. -/
+
+/--
+  **Diamond-tier refinement theorem** — `HeterogeneousListSilver`
+  admits STRUCTURE EXTENSIONALITY.
+
+  Combines four properties on the 2-field record:
+  (a) Field-equality → record-equality
+  (b) Record-equality → field-equality (congruence)
+  (c) Decidable equality
+  (d) Self-equality
+
+  Status: **discharged at v0.1.0 (PMAT-371)**. Tier: DIAMOND.
+-/
+theorem heterogeneous_list_silver_struct_extensionality_diamond
+    (h1 h2 : HeterogeneousListSilver) :
+    (h1.reason = h2.reason ∧ h1.element_types = h2.element_types → h1 = h2)
+    ∧ (h1 = h2 → h1.reason = h2.reason ∧ h1.element_types = h2.element_types)
+    ∧ (h1 = h2 ∨ h1 ≠ h2)
+    ∧ (h1 = h1) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ⟨h_a, h_b⟩
+    cases h1; cases h2
+    simp_all
+  · intro h
+    exact ⟨by rw [h], by rw [h]⟩
+  · by_cases h : h1 = h2
+    · exact Or.inl h
+    · exact Or.inr h
+  · rfl
+
 end XpileContracts.CXlatePyListToVec
