@@ -179,12 +179,14 @@ fn substrate_diamond_depth_7_opened() {
     // PMAT-292 opened depth-7 on C-PY-INT-ARITH (Layer 1): order-distributive-lattice.
     // PMAT-293 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): bounded lattice with top+bottom.
     // PMAT-367 BROADENED depth-7 to C-FFI-CPYTHON-EXT (Layer 4): FfiManifestEntryStructuredSilver struct ext.
-    // PMAT-368 BROADENED depth-7 to C-BASHRS-POSIX-IDEMPOTENCE (Layer 2): Outcome (Bronze) struct ext.
-    // Gate now asserts depth-7 ACROSS 4 LAYERS (L1+L2+L4+L5).
+    // PMAT-368 BROADENED depth-7 to C-BASHRS-POSIX-IDEMPOTENCE (Layer 2).
+    // PMAT-369 COMPLETED depth-7 ACROSS ALL 5 TAXONOMY LAYERS via
+    // C-XPILE-FRONTEND-TRAIT (Layer 3) — parallel to PMAT-330 (depth-4),
+    // PMAT-347 (depth-5), and PMAT-358 (depth-6) ALL 5 LAYERS milestones.
     assert!(
-        depth_7_plus >= 4,
-        "Diamond depth-7 ACROSS 4 LAYERS milestone (PMAT-292, PMAT-293, PMAT-367, PMAT-368): \
-         expected ≥4 contracts at depth-7+ (Layer 1 + Layer 2 + Layer 4 + Layer 5), \
+        depth_7_plus >= 5,
+        "Diamond depth-7 ACROSS ALL 5 TAXONOMY LAYERS milestone (PMAT-292/293/367/368/369): \
+         expected ≥5 contracts at depth-7+ (Layer 1 + Layer 2 + Layer 3 + Layer 4 + Layer 5), \
          got {depth_7_plus}.\n{json}"
     );
 }
