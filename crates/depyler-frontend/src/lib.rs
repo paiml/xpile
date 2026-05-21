@@ -1133,6 +1133,9 @@ fn infer_type(e: &Expr) -> Type {
         Expr::Ident(_) | Expr::LitInt(_) => Type::I64,
         // PMAT-456 (v0.2.0 Track 1.B): bool literal is Type::Bool.
         Expr::LitBool(_) => Type::Bool,
+        // PMAT-459 (v0.2.0 Track 1.B): len(x) always returns Type::I64
+        // (Python int).
+        Expr::Len(_) => Type::I64,
         Expr::BinOp { op, .. } => match op {
             BinOp::Add
             | BinOp::Sub
@@ -1203,6 +1206,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::Ident(n) => ctx.name_types.get(n).cloned().unwrap_or(Type::I64),
         // PMAT-456 (v0.2.0 Track 1.B): bool literal is Type::Bool.
         Expr::LitBool(_) => Type::Bool,
+        // PMAT-459: len() always returns Type::I64.
+        Expr::Len(_) => Type::I64,
         Expr::LitInt(_) => {
             if matches!(ctx.fn_return_type, Type::BigInt) {
                 Type::BigInt
@@ -1526,11 +1531,29 @@ fn lower_call(c: ast::ExprCall) -> Result<Expr, FrontendError> {
             ));
         }
     };
-    let args: Result<Vec<Expr>, _> = c.args.into_iter().map(lower_expr).collect();
-    Ok(Expr::Call {
-        callee,
-        args: args?,
-    })
+    let args: Vec<Expr> = c
+        .args
+        .into_iter()
+        .map(lower_expr)
+        .collect::<Result<_, _>>()?;
+    // PMAT-459 (v0.2.0 Track 1.B): builtin `len(x)` recognized here
+    // and lowered to Expr::Len. The frontend disambiguates `len`
+    // from a user-defined function via fixed-arity + builtin-name
+    // matching; a function named `len` in user code would shadow
+    // the builtin, but v0.2.0 first cut takes the builtin path
+    // unconditionally (consistent with Python's actual behavior
+    // unless `len` is rebound).
+    if callee == "len" {
+        if args.len() != 1 {
+            return Err(FrontendError::Lower(format!(
+                "builtin `len(x)` takes exactly one argument; got {}",
+                args.len()
+            )));
+        }
+        let mut args = args;
+        return Ok(Expr::Len(Box::new(args.pop().unwrap())));
+    }
+    Ok(Expr::Call { callee, args })
 }
 
 fn lower_if_exp(ie: ast::ExprIfExp) -> Result<Expr, FrontendError> {

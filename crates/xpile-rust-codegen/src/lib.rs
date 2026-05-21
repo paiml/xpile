@@ -359,6 +359,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, index, mode)?;
             out.push_str(" as usize].clone()");
         }
+        // PMAT-459 (v0.2.0 Track 1.B): Python `len(x)` → Rust
+        // `x.len() as i64`. Vec/String both expose `.len()` returning
+        // `usize`; the `as i64` cast brings the result back into
+        // Python's signed-int domain.
+        Expr::Len(inner) => {
+            emit_expr(out, inner, mode)?;
+            out.push_str(".len() as i64");
+        }
         Expr::IfExpr {
             cond,
             then_expr,
