@@ -307,6 +307,11 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, index, mode)?;
             out.push_str(" as usize].clone()");
         }
+        // PMAT-459 (v0.2.0 Track 1.B): Ruchy → Rust → `.len() as i64`.
+        Expr::Len(inner) => {
+            emit_expr(out, inner, mode)?;
+            out.push_str(".len() as i64");
+        }
         Expr::IfExpr {
             cond,
             then_expr,

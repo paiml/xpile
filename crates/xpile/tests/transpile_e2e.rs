@@ -431,6 +431,38 @@ fn main() {
     assert_rustc_runs("factorial", &format!("{shim}\n{rust}"), driver);
 }
 
+/// PMAT-459 — v0.2.0 Track 1.B: builtin `len(xs)` over a list[int].
+/// Returns the element count as Python int. Rust emits `xs.len() as i64`.
+#[test]
+fn len_list_emitted_rust_returns_count() {
+    let rust = xpile_transpile_to_rust("len_list.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(count_xs(vec![1i64, 2, 3]), 3i64);
+    assert_eq!(count_xs(vec![]), 0i64);
+    assert_eq!(count_xs(vec![42i64]), 1i64);
+}
+"#;
+    assert_rustc_runs("len_list", &rust, driver);
+}
+
+/// PMAT-459 — v0.2.0 Track 1.B: builtin `len(s)` over a str.
+/// Returns the UTF-8 byte length (matching Rust's `String::len`
+/// semantics — v0.2.0 first cut, codepoint-count is a Silver-tier
+/// refinement in subsequent sub-tracks).
+#[test]
+fn len_str_emitted_rust_returns_byte_count() {
+    let rust = xpile_transpile_to_rust("len_str.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(name_len(String::from("hello")), 5i64);
+    assert_eq!(name_len(String::from("")), 0i64);
+    assert_eq!(name_len(String::from("xpile")), 5i64);
+}
+"#;
+    assert_rustc_runs("len_str", &rust, driver);
+}
+
 /// PMAT-458 — v0.2.0 Track 1.B: for-each iteration over list[int].
 /// Closes the spec §23 ⏳ entry "`for` over non-range iterables".
 /// The frontend lowers `for x in xs:` (where xs has Type::List) to

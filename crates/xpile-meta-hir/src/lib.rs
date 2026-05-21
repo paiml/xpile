@@ -181,6 +181,9 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::Index { collection, index } => {
             expr_has_int_arith(collection) || expr_has_int_arith(index)
         }
+        // PMAT-459 (v0.2.0 Track 1.B): len() of a collection is not
+        // itself arithmetic; recurse defensively into the inner expr.
+        Expr::Len(inner) => expr_has_int_arith(inner),
         // PMAT-045: shell-variable references same disposition.
         Expr::ShellVar(_) => false,
         // PMAT-055: shell special parameters same disposition.
@@ -482,6 +485,22 @@ pub enum Expr {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
+    /// `len(collection)` — Python builtin returning the length of a
+    /// list / str / dict / etc. PMAT-459, v0.2.0 Track 1.B.
+    ///
+    /// At v0.2.0 first cut the collection must type as `Type::List(_)`
+    /// or `Type::Str` — both have well-defined byte-/element- counts.
+    /// The result is `Type::I64` (matching Python's signed int return
+    /// from len).
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: `<collection>.len() as i64` — `.len()` returns
+    ///     `usize`, cast back to `i64` for the Python int domain.
+    ///   * Lean: `(<collection>.length : Int)` for List; `<s>.length`
+    ///     for String (Lean's `String.length` is already `Nat`,
+    ///     coerced to `Int` via the explicit type ascription).
+    ///   * Shell: refuses (no collection-length concept).
+    Len(Box<Expr>),
     /// List indexed access — Python `xs[i]`. PMAT-457, v0.2.0 Track 1.B.
     ///
     /// At v0.2.0 first cut the `index` expression is treated as a

@@ -370,6 +370,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(collection, out);
             collect_idents(index, out);
         }
+        // PMAT-459: len(x) — recurse into inner.
+        Expr::Len(inner) => collect_idents(inner, out),
         Expr::UnOp { operand, .. } => collect_idents(operand, out),
         Expr::IfExpr {
             cond,
@@ -615,6 +617,13 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             out.push('[');
             emit_expr(out, index)?;
             out.push_str(".toNat]!");
+        }
+        // PMAT-459 (v0.2.0 Track 1.B): Lean's `.length` returns Nat;
+        // coerce to Int via `(... : Int)` ascription.
+        Expr::Len(inner) => {
+            out.push_str("((");
+            emit_expr(out, inner)?;
+            out.push_str(").length : Int)");
         }
         Expr::IfExpr {
             cond,
