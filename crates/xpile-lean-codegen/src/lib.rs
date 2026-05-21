@@ -343,7 +343,7 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 out.push(n.clone());
             }
         }
-        Expr::LitInt(_) => {}
+        Expr::LitInt(_) | Expr::LitBool(_) => {}
         Expr::BinOp { lhs, rhs, .. } | Expr::Concat { lhs, rhs } => {
             collect_idents(lhs, out);
             collect_idents(rhs, out);
@@ -553,6 +553,9 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
     match e {
         Expr::Ident(name) => write!(out, "{}", name)?,
         Expr::LitInt(v) => write!(out, "({}: Int)", v)?,
+        // PMAT-456 (v0.2.0 Track 1.B): bool literal — Lean
+        // capitalises the constructors (`True` / `False`).
+        Expr::LitBool(b) => write!(out, "{}", if *b { "True" } else { "False" })?,
         Expr::BinOp { op, lhs, rhs } => emit_binop(out, *op, lhs, rhs)?,
         // PMAT-451 (v0.2.0 Track 1.A): Lean's `String` concatenation
         // is the `++` operator (`String.append`). Strings are

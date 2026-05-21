@@ -293,6 +293,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 write!(out, "{}i64", v)?;
             }
         }
+        // PMAT-456 (v0.2.0 Track 1.B): bool literal — Rust's
+        // lowercase `true` / `false`.
+        Expr::LitBool(b) => write!(out, "{}", b)?,
         Expr::BinOp { op, lhs, rhs } => emit_binop(out, *op, lhs, rhs, mode)?,
         // PMAT-451 (v0.2.0 Track 1.A): str concatenation. Rust's
         // `String + &str` is the idiomatic form but requires the lhs
