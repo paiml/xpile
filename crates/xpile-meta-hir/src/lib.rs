@@ -161,6 +161,11 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // case future lowering ever nests an int-arith expression
         // inside a string-typed position (unlikely but cheap).
         Expr::Concat { lhs, rhs } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
+        // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
+        // each element. An int-typed element (`[1, 2, 3]`) doesn't
+        // by itself involve overflow-prone arithmetic, but a list of
+        // computed values (`[a + b, c * d]`) does.
+        Expr::ListLit(elems) => elems.iter().any(expr_has_int_arith),
         // PMAT-045: shell-variable references same disposition.
         Expr::ShellVar(_) => false,
         // PMAT-055: shell special parameters same disposition.
@@ -336,7 +341,11 @@ pub struct Param {
 /// MVP type lattice. Will grow as frontends demand it. Keep semantically
 /// minimal; map source-language type idiosyncrasies (Python int bigint
 /// promotion, C signed/unsigned, etc.) at the frontend boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// PMAT-455 — `Type` is no longer `Copy` because `Type::List(Box<Type>)`
+/// is heap-allocated. Callers that previously relied on `*ty` to
+/// dereference / copy now use `.clone()` (cheap — most Type values
+/// are leaf variants or 1-deep boxes).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Type {
     /// 64-bit signed integer. The fast path for Python `int` — covers
     /// every case where the frontend can prove the value fits.
@@ -365,6 +374,24 @@ pub enum Type {
     /// Governing contract (Layer 2 translation, code lane): the v0.2.0
     /// `C-XLATE-PY-STR-TO-RUST-STRING` contract once authored.
     Str,
+    /// Homogeneous list / vector. PMAT-455, v0.2.0 Track 1.B
+    /// foundation (per [`sub/v0.2.0-depyler-merger.md`](../../docs/specifications/sub/v0.2.0-depyler-merger.md)).
+    ///
+    /// `Type::List(Box<Type>)` represents Python `list[T]` and lowers
+    /// to Rust/Ruchy `Vec<T>` (owned, length-stable) and Lean `List T`.
+    /// Heterogeneous lists are not supported at v0.2.0 — they'd
+    /// require either `Box<dyn Any>`-style boxing (rejected by
+    /// `C-XLATE-PY-LIST-TO-VEC`'s `heterogeneous_list_rejected`
+    /// equation) or a Silver-tier sum type which is post-v0.2.0.
+    ///
+    /// At v0.2.0 first cut the element type is restricted to
+    /// `Type::I64`; subsequent sub-tracks widen to `Type::Str`,
+    /// `Type::Bool`, and nested `Type::List`. Other element types
+    /// are explicitly rejected by the frontend with a clear error.
+    ///
+    /// Governing contract: `C-XLATE-PY-LIST-TO-VEC` (already QUORUM
+    /// at depth-13).
+    List(Box<Type>),
     /// POSIX shell string — quoted-aware string type for the bashrs
     /// domain. PMAT-046 / XPILE-BASHRS-MERGER-001 Layer B.
     ///
@@ -408,6 +435,22 @@ pub enum Expr {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
+    /// Homogeneous list literal — Python `[1, 2, 3]`. PMAT-455,
+    /// v0.2.0 Track 1.B foundation.
+    ///
+    /// All elements must type identically; heterogeneous literals are
+    /// rejected at frontend lowering time per
+    /// `C-XLATE-PY-LIST-TO-VEC::heterogeneous_list_rejected`. Empty
+    /// list `[]` requires a type annotation upstream (since the
+    /// frontend can't infer the element type from zero elements);
+    /// v0.2.0 first cut requires non-empty list literals.
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy emit `vec![<elem>, <elem>, ...]`
+    ///   * Lean emits `[<elem>, <elem>, ...]` (Lean's built-in
+    ///     `List` literal syntax)
+    ///   * Shell refuses (lists aren't a POSIX construct)
+    ListLit(Vec<Expr>),
     /// String concatenation — Python `str + str` semantics. PMAT-451,
     /// v0.2.0 Track 1.A. Distinct from `BinOp::Add` because:
     ///   * No overflow concept (strings never overflow).

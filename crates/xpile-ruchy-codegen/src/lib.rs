@@ -49,7 +49,7 @@ fn emit_function(out: &mut String, f: &Function) -> Result<(), RuchyCodegenError
         emit_param(out, p)?;
     }
     write!(out, ") -> ")?;
-    emit_type(out, f.return_type)?;
+    emit_type(out, &f.return_type)?;
     writeln!(out, " {{")?;
     let mode = function_bigint_mode(f);
     emit_block(out, &f.body, mode)?;
@@ -64,15 +64,15 @@ fn emit_function(out: &mut String, f: &Function) -> Result<(), RuchyCodegenError
 /// `xpile_bigint::BigInt::from(<n>i64)` literals + plain infix
 /// arithmetic + `.clone()` on Ident references (BigInt isn't `Copy`).
 fn function_bigint_mode(f: &Function) -> bool {
-    if f.return_type == Type::BigInt {
+    if matches!(f.return_type, Type::BigInt) {
         return true;
     }
-    if f.params.iter().any(|p| p.ty == Type::BigInt) {
+    if f.params.iter().any(|p| matches!(p.ty, Type::BigInt)) {
         return true;
     }
     fn stmt_has_bigint(s: &Stmt) -> bool {
         match s {
-            Stmt::Let { ty, .. } => *ty == Type::BigInt,
+            Stmt::Let { ty, .. } => matches!(ty, Type::BigInt),
             Stmt::Assign { .. } | Stmt::Assert { .. } => false,
             Stmt::While { body, .. } => body.iter().any(stmt_has_bigint),
             // PMAT-039: see rust-codegen's twin arm — shell commands
@@ -127,7 +127,7 @@ fn emit_stmt_indented(
         } => {
             let kw = if *mutable { "let mut" } else { "let" };
             write!(out, "{indent}{kw} {name}: ")?;
-            emit_type(out, *ty)?;
+            emit_type(out, ty)?;
             write!(out, " = ")?;
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
@@ -191,7 +191,7 @@ fn emit_stmt_indented(
 
 fn emit_param(out: &mut String, p: &Param) -> Result<(), RuchyCodegenError> {
     write!(out, "{}: ", p.name)?;
-    emit_type(out, p.ty)?;
+    emit_type(out, &p.ty)?;
     Ok(())
 }
 
@@ -209,16 +209,21 @@ fn escape_ruchy_str(s: &str) -> String {
     out
 }
 
-fn emit_type(out: &mut String, t: Type) -> Result<(), RuchyCodegenError> {
-    out.push_str(match t {
-        Type::I64 => "i64",
-        Type::Bool => "bool",
+fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
+    match t {
+        Type::I64 => out.push_str("i64"),
+        Type::Bool => out.push_str("bool"),
         // Ruchy compiles to Rust → same BigInt re-export. PMAT-012.
-        Type::BigInt => "xpile_bigint::BigInt",
+        Type::BigInt => out.push_str("xpile_bigint::BigInt"),
         // PMAT-449 (v0.2.0 Track 1.A): Ruchy → Rust → owned `String`,
-        // mirrors xpile-rust-codegen's lowering. See
-        // sub/v0.2.0-depyler-merger.md.
-        Type::Str => "String",
+        // mirrors xpile-rust-codegen's lowering.
+        Type::Str => out.push_str("String"),
+        // PMAT-455 (v0.2.0 Track 1.B): Ruchy → Rust Vec<T>.
+        Type::List(elem_ty) => {
+            out.push_str("Vec<");
+            emit_type(out, elem_ty)?;
+            out.push('>');
+        }
         // PMAT-046: same disposition as the Rust backend.
         Type::ShellString | Type::ExitCode => {
             return Err(RuchyCodegenError::Unsupported(format!(
@@ -227,7 +232,7 @@ fn emit_type(out: &mut String, t: Type) -> Result<(), RuchyCodegenError> {
                  use `--target shell`"
             )));
         }
-    });
+    }
     Ok(())
 }
 
@@ -262,6 +267,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str(", ");
             emit_expr(out, rhs, mode)?;
             out.push(')');
+        }
+        // PMAT-455 (v0.2.0 Track 1.B): Ruchy → Rust → `vec![...]`.
+        Expr::ListLit(elems) => {
+            out.push_str("vec![");
+            for (i, e) in elems.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                emit_expr(out, e, mode)?;
+            }
+            out.push(']');
         }
         Expr::IfExpr {
             cond,

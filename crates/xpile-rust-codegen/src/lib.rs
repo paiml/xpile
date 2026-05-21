@@ -51,7 +51,7 @@ fn emit_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
         emit_param(out, p)?;
     }
     write!(out, ") -> ")?;
-    emit_type(out, f.return_type)?;
+    emit_type(out, &f.return_type)?;
     writeln!(out, " {{")?;
     let mode = function_bigint_mode(f);
     emit_block(out, &f.body, mode)?;
@@ -65,15 +65,15 @@ fn emit_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
 /// for integer literals and plain infix `+ - * <= ...` for arithmetic
 /// (BigInt never overflows, so no `.checked_*().expect(...)`).
 fn function_bigint_mode(f: &Function) -> bool {
-    if f.return_type == Type::BigInt {
+    if matches!(f.return_type, Type::BigInt) {
         return true;
     }
-    if f.params.iter().any(|p| p.ty == Type::BigInt) {
+    if f.params.iter().any(|p| matches!(p.ty, Type::BigInt)) {
         return true;
     }
     fn stmt_has_bigint(s: &Stmt) -> bool {
         match s {
-            Stmt::Let { ty, .. } => *ty == Type::BigInt,
+            Stmt::Let { ty, .. } => matches!(ty, Type::BigInt),
             Stmt::Assign { .. } | Stmt::Assert { .. } => false,
             Stmt::While { body, .. } => body.iter().any(stmt_has_bigint),
             // PMAT-039: shell commands carry no BigInt operands. They
@@ -138,7 +138,7 @@ fn emit_stmt_indented(
         } => {
             let kw = if *mutable { "let mut" } else { "let" };
             write!(out, "{indent}{kw} {name}: ")?;
-            emit_type(out, *ty)?;
+            emit_type(out, ty)?;
             write!(out, " = ")?;
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
@@ -209,7 +209,7 @@ fn emit_stmt_indented(
 
 fn emit_param(out: &mut String, p: &Param) -> Result<(), CodegenError> {
     write!(out, "{}: ", p.name)?;
-    emit_type(out, p.ty)?;
+    emit_type(out, &p.ty)?;
     Ok(())
 }
 
@@ -229,20 +229,28 @@ fn escape_rust_str(s: &str) -> String {
     out
 }
 
-fn emit_type(out: &mut String, t: Type) -> Result<(), CodegenError> {
-    out.push_str(match t {
-        Type::I64 => "i64",
-        Type::Bool => "bool",
+fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
+    match t {
+        Type::I64 => out.push_str("i64"),
+        Type::Bool => out.push_str("bool"),
         // PMAT-012: re-exported from `xpile-bigint` (which wraps
         // `num_bigint::BigInt`). Operator overloads (`+`, `-`, `*`,
         // `<=`, …) work without method calls, matching the i64 codegen
         // shape — except no `.checked_*().expect(...)` since BigInt
         // never overflows.
-        Type::BigInt => "xpile_bigint::BigInt",
+        Type::BigInt => out.push_str("xpile_bigint::BigInt"),
         // PMAT-449: v0.2.0 Track 1.A — Python `str` → Rust owned
         // `String`. First pass is owned-only; `&str` borrowing is the
         // 1.D stretch sub-track per sub/v0.2.0-depyler-merger.md.
-        Type::Str => "String",
+        Type::Str => out.push_str("String"),
+        // PMAT-455: v0.2.0 Track 1.B — Python `list[T]` → Rust
+        // `Vec<T>`. Owned-first; lifetime-borrowing variants come
+        // after Track 1.D `&str` work lands.
+        Type::List(elem_ty) => {
+            out.push_str("Vec<");
+            emit_type(out, elem_ty)?;
+            out.push('>');
+        }
         // PMAT-046: bashrs-domain types. Rust backend refuses — the
         // analogous Rust type for ShellString would be the bashrs
         // runtime's quoting-aware wrapper (not yet shipped); the
@@ -257,7 +265,7 @@ fn emit_type(out: &mut String, t: Type) -> Result<(), CodegenError> {
                  use `--target shell` for shell-typed signatures"
             )));
         }
-    });
+    }
     Ok(())
 }
 
@@ -300,6 +308,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push_str(", ");
             emit_expr(out, rhs, mode)?;
             out.push(')');
+        }
+        // PMAT-455 (v0.2.0 Track 1.B): Python list literal → Rust
+        // `vec![...]` macro. The element types are guaranteed
+        // homogeneous by the frontend's lowering check.
+        Expr::ListLit(elems) => {
+            out.push_str("vec![");
+            for (i, e) in elems.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                emit_expr(out, e, mode)?;
+            }
+            out.push(']');
         }
         Expr::IfExpr {
             cond,

@@ -68,8 +68,10 @@ struct LoweringCtx {
 impl LoweringCtx {
     fn new(fn_name: &str, fn_return_type: Type, params: &[Param], body: &[ast::Stmt]) -> Self {
         let bound: HashSet<String> = params.iter().map(|p| p.name.clone()).collect();
-        let name_types: HashMap<String, Type> =
-            params.iter().map(|p| (p.name.clone(), p.ty)).collect();
+        let name_types: HashMap<String, Type> = params
+            .iter()
+            .map(|p| (p.name.clone(), p.ty.clone()))
+            .collect();
         let mutable = compute_mutable_names(params, body);
         Self {
             fn_name: fn_name.to_string(),
@@ -341,7 +343,7 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
         None => None,
         Some(ann) => Some(parse_type_annotation(&f.name, "<return>", ann)?),
     };
-    let ctx_return_type = declared_return_type.unwrap_or(Type::I64);
+    let ctx_return_type = declared_return_type.clone().unwrap_or(Type::I64);
 
     // PMAT-013: implicit BigInt promotion. When the user declares the
     // return type as BigInt, every `int`-typed param is promoted to
@@ -352,15 +354,15 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
     //
     // Explicitly-annotated Bool params are left alone (Bool doesn't
     // overflow). Explicit BigInt annotations are already BigInt.
-    if ctx_return_type == Type::BigInt {
+    if matches!(ctx_return_type, Type::BigInt) {
         for p in &mut params {
-            if p.ty == Type::I64 {
+            if matches!(p.ty, Type::I64) {
                 p.ty = Type::BigInt;
             }
         }
     }
 
-    let mut ctx = LoweringCtx::new(&f.name, ctx_return_type, &params, &body_stmts);
+    let mut ctx = LoweringCtx::new(&f.name, ctx_return_type.clone(), &params, &body_stmts);
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
     for stmt in leading {
         // A single Python statement may lower to multiple meta-HIR
@@ -438,9 +440,28 @@ fn parse_type_annotation(
             "BigInt" => Ok(Type::BigInt),
             "str" => Ok(Type::Str),
             other => Err(FrontendError::Lower(format!(
-                "function `{fn_name}` annotates `{site}` with unsupported type `{other}` — only `int`, `bool`, `BigInt`, `str` at v0.2.0 Track 1.A"
+                "function `{fn_name}` annotates `{site}` with unsupported type `{other}` — only `int`, `bool`, `BigInt`, `str`, `list[T]` at v0.2.0"
             ))),
         },
+        // PMAT-455 (v0.2.0 Track 1.B): list[T] annotation parses as
+        // a Python Subscript expression: `Subscript(value=Name("list"),
+        // slice=<T>)`. The slice is a single type annotation we
+        // recurse into for the element type.
+        ast::Expr::Subscript(sub) => {
+            let ast::Expr::Name(outer) = sub.value.as_ref() else {
+                return Err(FrontendError::Lower(format!(
+                    "function `{fn_name}` annotates `{site}` with non-Name subscripted type — only `list[T]` at v0.2.0"
+                )));
+            };
+            if outer.id.as_str() != "list" {
+                return Err(FrontendError::Lower(format!(
+                    "function `{fn_name}` annotates `{site}` with subscripted `{}[...]` — only `list[T]` at v0.2.0",
+                    outer.id.as_str()
+                )));
+            }
+            let elem_ty = parse_type_annotation(fn_name, &format!("{site} element"), &sub.slice)?;
+            Ok(Type::List(Box::new(elem_ty)))
+        }
         _ => Err(FrontendError::Lower(format!(
             "function `{fn_name}` annotates `{site}` with a non-trivial type expression — not supported at v0.2.0"
         ))),
@@ -687,7 +708,8 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
     let target_ty = match ctx.fn_return_type {
         Type::BigInt => Type::BigInt,
         _ => Type::I64,
-    };
+    }
+    .clone();
     let init_stmt = if ctx.bound.contains(&target_name) {
         Stmt::Assign {
             name: target_name.clone(),
@@ -695,7 +717,8 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
         }
     } else {
         ctx.bound.insert(target_name.clone());
-        ctx.name_types.insert(target_name.clone(), target_ty);
+        ctx.name_types
+            .insert(target_name.clone(), target_ty.clone());
         Stmt::Let {
             name: target_name.clone(),
             ty: target_ty,
@@ -822,7 +845,7 @@ fn lower_if_stmt_as_lets(
         } else {
             stmts.push(Stmt::Let {
                 name: name.clone(),
-                ty,
+                ty: ty.clone(),
                 value: if_expr,
                 mutable: ctx.mutable.contains(name),
             });
@@ -1051,7 +1074,7 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
     } else {
         let mutable = ctx.mutable.contains(&name);
         ctx.bound.insert(name.clone());
-        ctx.name_types.insert(name.clone(), ty);
+        ctx.name_types.insert(name.clone(), ty.clone());
         Ok(Stmt::Let {
             name,
             ty,
@@ -1101,10 +1124,17 @@ fn infer_type(e: &Expr) -> Type {
         Expr::LitStr(_) => Type::Str,
         // PMAT-451: str concatenation is a Type::Str-producing op.
         Expr::Concat { .. } => Type::Str,
+        // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
+        // type from the first element (frontend ensures homogeneity
+        // at lowering time). Empty literal is conservatively typed as
+        // List I64 — the frontend rejects empty literals without an
+        // annotation, so this path is only reached for non-empty.
+        Expr::ListLit(elems) => {
+            let elem_ty = elems.first().map(infer_type).unwrap_or(Type::I64);
+            Type::List(Box::new(elem_ty))
+        }
         // PMAT-042 + PMAT-045 + PMAT-047 + PMAT-055: shell-domain
         // Expr variants don't appear inside Python-frontend lowering.
-        // Default to I64 for safety so any future accidental call
-        // doesn't panic.
         Expr::QuotedString { .. }
         | Expr::ShellVar(_)
         | Expr::CommandSubstitution(_)
@@ -1121,9 +1151,9 @@ fn infer_type(e: &Expr) -> Type {
 /// `1` branch and fail the return-type check.
 fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
     match e {
-        Expr::Ident(n) => ctx.name_types.get(n).copied().unwrap_or(Type::I64),
+        Expr::Ident(n) => ctx.name_types.get(n).cloned().unwrap_or(Type::I64),
         Expr::LitInt(_) => {
-            if ctx.fn_return_type == Type::BigInt {
+            if matches!(ctx.fn_return_type, Type::BigInt) {
                 Type::BigInt
             } else {
                 Type::I64
@@ -1137,7 +1167,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             _ => {
                 let lt = infer_type_in_ctx(ctx, lhs);
                 let rt = infer_type_in_ctx(ctx, rhs);
-                if lt == Type::BigInt || rt == Type::BigInt {
+                if matches!(lt, Type::BigInt) || matches!(rt, Type::BigInt) {
                     Type::BigInt
                 } else {
                     Type::I64
@@ -1147,7 +1177,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::IfExpr { then_expr, .. } => infer_type_in_ctx(ctx, then_expr),
         Expr::Call { callee, .. } => {
             if callee == &ctx.fn_name {
-                ctx.fn_return_type
+                ctx.fn_return_type.clone()
             } else {
                 Type::I64
             }
@@ -1161,8 +1191,15 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::LitStr(_) => Type::Str,
         // PMAT-451: str concatenation is Type::Str-producing.
         Expr::Concat { .. } => Type::Str,
-        // PMAT-042 + PMAT-045 + PMAT-047 + PMAT-055: see twin arm
-        // in `infer_type` above.
+        // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
+        // shape as the context-free `infer_type` arm.
+        Expr::ListLit(elems) => {
+            let elem_ty = elems
+                .first()
+                .map(|e| infer_type_in_ctx(ctx, e))
+                .unwrap_or(Type::I64);
+            Type::List(Box::new(elem_ty))
+        }
         Expr::QuotedString { .. }
         | Expr::ShellVar(_)
         | Expr::CommandSubstitution(_)
@@ -1235,6 +1272,40 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
         // Rust/Ruchy (which Display-coerces any operand), or
         // (l ++ r) in Lean. Empty f-string → empty LitStr.
         ast::Expr::JoinedStr(js) => lower_fstring(js.values),
+        // PMAT-455 (v0.2.0 Track 1.B): list literal. The frontend
+        // enforces non-emptiness (an empty `[]` requires upstream
+        // annotation to type the elements, which v0.2.0 doesn't yet
+        // thread through — handled in subsequent sub-tracks).
+        // Homogeneity is enforced by the lowering check before the
+        // ListLit is built.
+        ast::Expr::List(list_expr) => {
+            if list_expr.elts.is_empty() {
+                return Err(FrontendError::Lower(
+                    "empty list literal `[]` requires a type annotation to infer the element type \
+                     — pass via `def f() -> list[int]: return []` once empty-literal annotation \
+                     threading lands in a subsequent v0.2.0 Track 1.B sub-track"
+                        .into(),
+                ));
+            }
+            let mut elems = Vec::with_capacity(list_expr.elts.len());
+            let mut elem_ty: Option<Type> = None;
+            for e in list_expr.elts {
+                let lowered = lower_expr(e)?;
+                let ty = infer_type(&lowered);
+                if let Some(expected) = &elem_ty {
+                    if expected != &ty {
+                        return Err(FrontendError::Lower(format!(
+                            "heterogeneous list literal — element types {expected:?} and {ty:?} \
+                             mixed; C-XLATE-PY-LIST-TO-VEC requires homogeneous element types"
+                        )));
+                    }
+                } else {
+                    elem_ty = Some(ty);
+                }
+                elems.push(lowered);
+            }
+            Ok(Expr::ListLit(elems))
+        }
         // PMAT-452: FormattedValue inside an f-string. We strip the
         // conversion + format_spec at v0.2.0 first cut (only `{expr}`
         // without `!r` / `:>10` / etc. is supported); the underlying

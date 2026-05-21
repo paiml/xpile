@@ -67,7 +67,7 @@ fn emit_function(out: &mut String, f: &Function) -> Result<(), LeanCodegenError>
         write!(out, ")")?;
     }
     write!(out, " : ")?;
-    emit_type(out, f.return_type)?;
+    emit_type(out, &f.return_type)?;
     writeln!(out, " :=")?;
     emit_block(out, &f.body)?;
     Ok(())
@@ -259,16 +259,16 @@ fn emit_function_with_while_helpers(
     write!(out, "partial def {} ", helper_name)?;
     for name in &loop_state {
         write!(out, "({} : ", name)?;
-        emit_type(out, Type::I64)?;
+        emit_type(out, &Type::I64)?;
         write!(out, ") ")?;
     }
     for name in &free_vars {
         write!(out, "({} : ", name)?;
-        emit_type(out, lookup_var_type(name, &f.params))?;
+        emit_type(out, &lookup_var_type(name, &f.params))?;
         write!(out, ") ")?;
     }
     write!(out, ": ")?;
-    emit_type(out, f.return_type)?;
+    emit_type(out, &f.return_type)?;
     writeln!(out, " :=")?;
     write!(out, "  if ")?;
     emit_expr(out, cond)?;
@@ -307,7 +307,7 @@ fn emit_function_with_while_helpers(
         write!(out, ")")?;
     }
     write!(out, " : ")?;
-    emit_type(out, f.return_type)?;
+    emit_type(out, &f.return_type)?;
     writeln!(out, " :=")?;
     for stmt in pre_stmts {
         emit_stmt(out, stmt)?;
@@ -326,7 +326,7 @@ fn emit_function_with_while_helpers(
 fn lookup_var_type(name: &str, params: &[Param]) -> Type {
     for p in params {
         if p.name == name {
-            return p.ty;
+            return p.ty.clone();
         }
     }
     Type::I64
@@ -347,6 +347,12 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         Expr::BinOp { lhs, rhs, .. } | Expr::Concat { lhs, rhs } => {
             collect_idents(lhs, out);
             collect_idents(rhs, out);
+        }
+        // PMAT-455: list literal — recurse into each element.
+        Expr::ListLit(elems) => {
+            for e in elems {
+                collect_idents(e, out);
+            }
         }
         Expr::UnOp { operand, .. } => collect_idents(operand, out),
         Expr::IfExpr {
@@ -384,7 +390,7 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
 
 fn emit_param(out: &mut String, p: &Param) -> Result<(), LeanCodegenError> {
     write!(out, "{} : ", p.name)?;
-    emit_type(out, p.ty)?;
+    emit_type(out, &p.ty)?;
     Ok(())
 }
 
@@ -404,29 +410,27 @@ fn escape_lean_str(s: &str) -> String {
     out
 }
 
-fn emit_type(out: &mut String, t: Type) -> Result<(), LeanCodegenError> {
-    out.push_str(match t {
-        Type::I64 => "Int",
-        Type::Bool => "Bool",
-        // Lean's Int is already unbounded — same shape as BigInt. The
-        // C-PY-INT-ARITH slow path is satisfied by construction in Lean
-        // regardless of which type the frontend chose. PMAT-012.
-        Type::BigInt => "Int",
-        // PMAT-449 (v0.2.0 Track 1.A): Lean's built-in `String` is
-        // UTF-8 owned, same shape as Python `str`. Discharges
-        // C-XLATE-PY-STR-TO-RUST-STRING in the proof lane.
-        Type::Str => "String",
-        // PMAT-046: bashrs-domain types refused. A future Silver-tier
-        // refinement of `C-BASHRS-POSIX-IDEMPOTENCE` will model these
-        // in `contracts/lean/Bashrs.lean` directly (typed POSIX shell
-        // state), not via the code-lane `emit_type`.
+fn emit_type(out: &mut String, t: &Type) -> Result<(), LeanCodegenError> {
+    match t {
+        Type::I64 => out.push_str("Int"),
+        Type::Bool => out.push_str("Bool"),
+        // Lean's Int is already unbounded — same shape as BigInt.
+        Type::BigInt => out.push_str("Int"),
+        // PMAT-449 (v0.2.0 Track 1.A): Lean's built-in String.
+        Type::Str => out.push_str("String"),
+        // PMAT-455 (v0.2.0 Track 1.B): Lean's built-in List T.
+        Type::List(elem_ty) => {
+            out.push_str("List ");
+            emit_type(out, elem_ty)?;
+        }
+        // PMAT-046: bashrs-domain types refused.
         Type::ShellString | Type::ExitCode => {
             return Err(LeanCodegenError::Unsupported(format!(
                 "Lean code backend does not lower {t:?} — \
                  contract C-BASHRS-POSIX-IDEMPOTENCE governs the bashrs type domain"
             )));
         }
-    });
+    }
     Ok(())
 }
 
@@ -560,6 +564,18 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             out.push_str(" ++ ");
             emit_expr(out, rhs)?;
             out.push(')');
+        }
+        // PMAT-455 (v0.2.0 Track 1.B): Lean's built-in `List` literal
+        // syntax — `[a, b, c]`.
+        Expr::ListLit(elems) => {
+            out.push('[');
+            for (i, e) in elems.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                emit_expr(out, e)?;
+            }
+            out.push(']');
         }
         Expr::IfExpr {
             cond,
