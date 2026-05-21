@@ -282,6 +282,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             }
             out.push(']');
         }
+        // PMAT-457 (v0.2.0 Track 1.B): Ruchy → Rust →
+        // `xs[i as usize].clone()`, matching the Rust backend.
+        Expr::Index { collection, index } => {
+            emit_expr(out, collection, mode)?;
+            out.push('[');
+            emit_expr(out, index, mode)?;
+            out.push_str(" as usize].clone()");
+        }
         Expr::IfExpr {
             cond,
             then_expr,

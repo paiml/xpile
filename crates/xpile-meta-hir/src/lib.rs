@@ -166,6 +166,12 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // by itself involve overflow-prone arithmetic, but a list of
         // computed values (`[a + b, c * d]`) does.
         Expr::ListLit(elems) => elems.iter().any(expr_has_int_arith),
+        // PMAT-457 (v0.2.0 Track 1.B): list indexed access. Neither
+        // collection nor index expressions are themselves arithmetic;
+        // recurse defensively for computed indices like `xs[a + b]`.
+        Expr::Index { collection, index } => {
+            expr_has_int_arith(collection) || expr_has_int_arith(index)
+        }
         // PMAT-045: shell-variable references same disposition.
         Expr::ShellVar(_) => false,
         // PMAT-055: shell special parameters same disposition.
@@ -438,6 +444,25 @@ pub enum Expr {
         op: BinOp,
         lhs: Box<Expr>,
         rhs: Box<Expr>,
+    },
+    /// List indexed access — Python `xs[i]`. PMAT-457, v0.2.0 Track 1.B.
+    ///
+    /// At v0.2.0 first cut the `index` expression is treated as a
+    /// non-negative `i64` and the backend coerces to `usize` (Rust /
+    /// Ruchy) or `Nat` (Lean) at emission. Negative-index semantics
+    /// (Python's `xs[-1]` = last element) are not supported — the
+    /// emitted Rust will panic on overflow if `index < 0`.
+    /// Out-of-range access panics in all three backends, matching
+    /// Python's `IndexError` posture (Rust: panic in `vec[i]`;
+    /// Lean: `xs[i]!` panic on `none`).
+    ///
+    /// Governing contract: `C-XLATE-PY-LIST-TO-VEC` —
+    /// `iteration_order_preserved` Bronze theorem implies the lowered
+    /// `Vec`'s `[i]` produces the same element as the source `list`'s
+    /// `[i]`.
+    Index {
+        collection: Box<Expr>,
+        index: Box<Expr>,
     },
     /// Homogeneous list literal — Python `[1, 2, 3]`. PMAT-455,
     /// v0.2.0 Track 1.B foundation.

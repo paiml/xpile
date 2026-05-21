@@ -325,6 +325,20 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             }
             out.push(']');
         }
+        // PMAT-457 (v0.2.0 Track 1.B): Python `xs[i]` → Rust
+        // `xs[i as usize].clone()`. The `.clone()` produces an
+        // owned value matching the v0.2.0 owned-only ownership
+        // posture (we don't yet emit `&xs[i]` borrowed refs). `i64`
+        // indices coerce to `usize` via `as`; negative indices
+        // would underflow and panic — that's the v0.2.0 first-cut
+        // semantics (Python's negative-index wrap is a v0.3.0+
+        // sub-track).
+        Expr::Index { collection, index } => {
+            emit_expr(out, collection, mode)?;
+            out.push('[');
+            emit_expr(out, index, mode)?;
+            out.push_str(" as usize].clone()");
+        }
         Expr::IfExpr {
             cond,
             then_expr,
