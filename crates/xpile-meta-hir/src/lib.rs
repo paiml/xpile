@@ -109,6 +109,8 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
             }
             body.iter().any(stmt_has_int_arith)
         }
+        // PMAT-460: list.append() — recurse into the elem expression.
+        Stmt::ListAppend { elem, .. } => expr_has_int_arith(elem),
         Stmt::Assert { cond } => expr_has_int_arith(cond),
         // PMAT-039: shell commands are governed by `C-BASHRS-POSIX-IDEMPOTENCE`,
         // not `C-PY-INT-ARITH`. The args are `Vec<String>` (literal
@@ -247,6 +249,29 @@ pub enum Stmt {
     /// a list of statements (no trailing return; the loop body is not
     /// an expression). PMAT-006.
     While { cond: Expr, body: Vec<Stmt> },
+    /// `list.append(elem)` — Python `xs.append(v)` mutation. PMAT-460,
+    /// v0.2.0 Track 1.B.
+    ///
+    /// Distinct from a generic `Expr::Call` because:
+    ///   - Method-call mutation requires the receiver to be a name
+    ///     (no chained `f().append(...)` shapes at v0.2.0).
+    ///   - The receiver must be declared mutable (param or let-mut).
+    ///   - The receiver must type as `Type::List(_)`.
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: emit `<list_name>.push(<elem>);`. The frontend
+    ///     ensures the receiver is `mut` so the call type-checks.
+    ///   * Lean: refuses at v0.2.0 first cut — Lean has no in-place
+    ///     mutation; the encoding would need a state-monad rewrite.
+    ///     Deferred alongside other Lean v0.3.0 work.
+    ///
+    /// Governing contract: `C-XLATE-PY-LIST-TO-VEC` —
+    /// `alias_observation_inserts_clone` Bronze theorem covers the
+    /// alias-mediated-mutation semantics in Python (Rust's owned-Vec
+    /// emission preserves the same observation by virtue of move
+    /// semantics; aliased mutation through `&mut` is a v0.3.0+
+    /// sub-track).
+    ListAppend { list_name: String, elem: Expr },
     /// `for var in iter { body }` — Python `for x in xs:` over a
     /// non-range iterable. PMAT-458, v0.2.0 Track 1.B.
     ///
@@ -382,6 +407,13 @@ impl From<Expr> for Block {
 pub struct Param {
     pub name: String,
     pub ty: Type,
+    /// PMAT-460 (v0.2.0 Track 1.B): set to `true` when the function
+    /// mutates this parameter in-place (currently only via
+    /// `xs.append(...)`). Rust/Ruchy backends emit `mut name: T` so
+    /// the `.push()` call type-checks. Lean ignores (in-place
+    /// mutation isn't supported there at v0.2.0).
+    #[serde(default)]
+    pub mutable: bool,
 }
 
 /// MVP type lattice. Will grow as frontends demand it. Keep semantically

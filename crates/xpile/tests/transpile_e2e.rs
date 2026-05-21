@@ -431,6 +431,25 @@ fn main() {
     assert_rustc_runs("factorial", &format!("{shim}\n{rust}"), driver);
 }
 
+/// PMAT-460 — v0.2.0 Track 1.B: list.append() mutation. Calls
+/// `xs.append(...)` twice on a list parameter; the frontend marks
+/// the parameter mutable, the Rust backend emits `mut xs: Vec<i64>`
+/// and `.push()`. Verifies the post-mutation length via the value
+/// returned.
+#[test]
+fn append_demo_emitted_rust_grows_list() {
+    let rust = xpile_transpile_to_rust("append_demo.py");
+    let driver = r#"
+fn main() {
+    // Empty input + 2 appends → length 2
+    assert_eq!(double_and_append(vec![], 5i64), 2i64);
+    // 3 existing + 2 appends → 5
+    assert_eq!(double_and_append(vec![1i64, 2, 3], 10i64), 5i64);
+}
+"#;
+    assert_rustc_runs("append_demo", &rust, driver);
+}
+
 /// PMAT-459 — v0.2.0 Track 1.B: builtin `len(xs)` over a list[int].
 /// Returns the element count as Python int. Rust emits `xs.len() as i64`.
 #[test]

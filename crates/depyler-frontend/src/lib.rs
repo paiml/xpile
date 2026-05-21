@@ -322,7 +322,11 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
             None => Type::I64,
             Some(ann) => parse_type_annotation(&f.name, &name, ann)?,
         };
-        params.push(Param { name, ty });
+        params.push(Param {
+            name,
+            ty,
+            mutable: false,
+        });
     }
 
     // Body: zero or more leading `let`s, then a final `return expr`.
@@ -405,6 +409,18 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
         stmts,
         trailing_return,
     };
+
+    // PMAT-460: thread post-body mutability into the param list.
+    // `try_lower_list_method_call` marks names in `ctx.mutable` when
+    // it sees `xs.append(v)`; lift that to the corresponding Param's
+    // mutable flag so the Rust/Ruchy emitter wraps the param as
+    // `mut name: T`. Idempotent — names already mut for reassignment
+    // are unchanged.
+    for p in &mut params {
+        if ctx.mutable.contains(&p.name) {
+            p.mutable = true;
+        }
+    }
 
     Ok(Function {
         name: f.name.to_string(),
@@ -497,13 +513,86 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         // the `sub/bashrs-merger.md` v0.3.0 check-back's "at least
         // one cross-domain consumer of shell variants must ship by
         // v0.3.0" precondition — and ships it at v0.1.0.
-        ast::Stmt::Expr(e) => lower_expr_stmt_as_cmd(ctx, e).map(|s| vec![s]),
+        //
+        // PMAT-460 (v0.2.0 Track 1.B): an additional pre-check for
+        // list method calls (`xs.append(v)`); if neither shape
+        // matches, fall through to the subprocess.run path's error
+        // messages.
+        ast::Stmt::Expr(e) => match try_lower_list_method_call(ctx, &e) {
+            Some(result) => result.map(|s| vec![s]),
+            None => lower_expr_stmt_as_cmd(ctx, e).map(|s| vec![s]),
+        },
         other => Err(FrontendError::Lower(format!(
             "function `{}` contains unsupported statement: {:?} — supported: assignment, if/elif/else, while, for-in-range, assert, subprocess.run([...]), then a final `return`",
             ctx.fn_name,
             std::mem::discriminant(&other)
         ))),
     }
+}
+
+/// PMAT-460 (v0.2.0 Track 1.B): pattern-match `<name>.append(<expr>)`
+/// where `<name>` types as `Type::List(_)` and lower to
+/// `Stmt::ListAppend`. Returns `None` if the expression-statement
+/// doesn't match the shape (so the caller can try other dispatch
+/// paths like `subprocess.run([...])`). Returns `Some(Err(...))` for
+/// shape matches that fail later checks (e.g. wrong arity, non-list
+/// receiver type).
+fn try_lower_list_method_call(
+    ctx: &mut LoweringCtx,
+    e: &ast::StmtExpr,
+) -> Option<Result<Stmt, FrontendError>> {
+    let ast::Expr::Call(call) = e.value.as_ref() else {
+        return None;
+    };
+    let ast::Expr::Attribute(attr) = call.func.as_ref() else {
+        return None;
+    };
+    let ast::Expr::Name(receiver) = attr.value.as_ref() else {
+        return None;
+    };
+    let method = attr.attr.as_str();
+    let receiver_name = receiver.id.as_str();
+    // Only recognise `.append` (the load-bearing mutation method at
+    // v0.2.0 first cut). Other methods (`.extend`, `.insert`,
+    // `.pop`, `.remove`) are explicit v0.3.0+ sub-tracks.
+    if method != "append" {
+        return None;
+    }
+    // Confirm the receiver types as a list. If it doesn't, this
+    // probably is a different method call shape — defer to error
+    // surface in the next dispatch path.
+    let receiver_ty = ctx.name_types.get(receiver_name).cloned();
+    if !matches!(receiver_ty, Some(Type::List(_))) {
+        return None;
+    }
+    // Arity / kwargs check.
+    if !call.keywords.is_empty() {
+        return Some(Err(FrontendError::Lower(format!(
+            "function `{}` calls `{receiver_name}.append(...)` with keyword args; \
+             v0.2.0 first cut takes a single positional value",
+            ctx.fn_name
+        ))));
+    }
+    if call.args.len() != 1 {
+        return Some(Err(FrontendError::Lower(format!(
+            "function `{}` calls `{receiver_name}.append(...)` with {} positional arg(s); v0.2.0 requires exactly 1",
+            ctx.fn_name,
+            call.args.len()
+        ))));
+    }
+    let elem = match lower_expr(call.args[0].clone()) {
+        Ok(e) => e,
+        Err(err) => return Some(Err(err)),
+    };
+    // Mark the receiver as mutable so the Rust/Ruchy emitter wraps it
+    // in `mut`. Idempotent — existing mutable inference already does
+    // the same for reassigned names; this catches the in-place-
+    // mutation case that compute_mutable_names doesn't see.
+    ctx.mutable.insert(receiver_name.to_string());
+    Some(Ok(Stmt::ListAppend {
+        list_name: receiver_name.to_string(),
+        elem,
+    }))
 }
 
 /// PMAT-040: pattern-match `subprocess.run([str-literal, ...])` and
