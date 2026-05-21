@@ -79,6 +79,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             }
             // PMAT-460: list.append() — same disposition.
             Stmt::ListAppend { .. } => false,
+            // PMAT-461: indexed assignment same disposition.
+            Stmt::IndexAssign { .. } => false,
             // PMAT-039: see rust-codegen's twin arm — shell commands
             // carry no BigInt operands.
             Stmt::Cmd { .. } => false,
@@ -174,6 +176,20 @@ fn emit_stmt_indented(
             write!(out, "{indent}{list_name}.push(")?;
             emit_expr(out, elem, mode)?;
             writeln!(out, ");")?;
+            Ok(())
+        }
+        // PMAT-461 (v0.2.0 Track 1.B): Ruchy → Rust →
+        // `xs[i as usize] = v;`, matching the Rust backend.
+        Stmt::IndexAssign {
+            list_name,
+            index,
+            value,
+        } => {
+            write!(out, "{indent}{list_name}[")?;
+            emit_expr(out, index, mode)?;
+            out.push_str(" as usize] = ");
+            emit_expr(out, value, mode)?;
+            writeln!(out, ";")?;
             Ok(())
         }
         Stmt::Assert { cond } => {

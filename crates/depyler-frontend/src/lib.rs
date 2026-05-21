@@ -1178,9 +1178,46 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
                 ctx.fn_name
             )));
         }
-        ast::Expr::Attribute(_) | ast::Expr::Subscript(_) => {
+        // PMAT-461 (v0.2.0 Track 1.B): `xs[i] = v` indexed
+        // assignment. Recognised when the Subscript target's value is
+        // a Name typing as `Type::List(_)`. Marks the receiver
+        // mutable and produces Stmt::IndexAssign.
+        ast::Expr::Subscript(sub) => {
+            let receiver = match sub.value.as_ref() {
+                ast::Expr::Name(n) => n.id.to_string(),
+                _ => {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` has a non-Name subscript-assignment target — v0.2.0 supports `<name>[i] = v` only",
+                        ctx.fn_name
+                    )));
+                }
+            };
+            let receiver_ty = ctx.name_types.get(&receiver).cloned();
+            if !matches!(receiver_ty, Some(Type::List(_))) {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` indexed-assigns to `{receiver}` which doesn't type as list[T] — v0.2.0 supports list-indexed assignment only",
+                    ctx.fn_name
+                )));
+            }
+            let index = lower_expr((*sub.slice).clone())?;
+            let idx_ty = infer_type_in_ctx(ctx, &index);
+            if !matches!(idx_ty, Type::I64) {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` indexed-assigns `{receiver}[<expr>]` where index types as {idx_ty:?}; only `int` indices are supported at v0.2.0",
+                    ctx.fn_name
+                )));
+            }
+            let value = lower_expr(*asn.value)?;
+            ctx.mutable.insert(receiver.clone());
+            return Ok(Stmt::IndexAssign {
+                list_name: receiver,
+                index,
+                value,
+            });
+        }
+        ast::Expr::Attribute(_) => {
             return Err(FrontendError::Lower(format!(
-                "function `{}` assigns to an attribute/subscript — not supported at v0.1.0",
+                "function `{}` assigns to an attribute — not supported at v0.2.0",
                 ctx.fn_name
             )));
         }

@@ -240,6 +240,14 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-461: indexed assignment inside a while loop — same.
+            Stmt::IndexAssign { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has Stmt::IndexAssign inside a while loop; \
+                     Lean codegen at v0.2.0 first cut doesn't compose in-place mutation with while",
+                    f.name
+                )));
+            }
         }
     }
 
@@ -555,6 +563,13 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         Stmt::ListAppend { list_name, .. } => Err(LeanCodegenError::Unsupported(format!(
             "`{list_name}.append(...)` (Stmt::ListAppend) requires state-monad encoding in Lean — \
              not yet implemented at v0.2.0 first cut (PMAT-460 follow-up); \
+             use `--target rust` or `--target ruchy` for in-place mutation"
+        ))),
+        // PMAT-461 (v0.2.0 Track 1.B): indexed assignment — same
+        // monadic-encoding gap as ListAppend / ForEach.
+        Stmt::IndexAssign { list_name, .. } => Err(LeanCodegenError::Unsupported(format!(
+            "`{list_name}[i] = v` (Stmt::IndexAssign) requires state-monad encoding in Lean — \
+             not yet implemented at v0.2.0 first cut (PMAT-461 follow-up); \
              use `--target rust` or `--target ruchy` for in-place mutation"
         ))),
         // Stmt::Assert is handled by emit_stmts_then_trailing — should

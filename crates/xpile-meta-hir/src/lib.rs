@@ -111,6 +111,11 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         }
         // PMAT-460: list.append() — recurse into the elem expression.
         Stmt::ListAppend { elem, .. } => expr_has_int_arith(elem),
+        // PMAT-461: indexed assignment — recurse into both index and
+        // value expressions (either may carry arithmetic).
+        Stmt::IndexAssign { index, value, .. } => {
+            expr_has_int_arith(index) || expr_has_int_arith(value)
+        }
         Stmt::Assert { cond } => expr_has_int_arith(cond),
         // PMAT-039: shell commands are governed by `C-BASHRS-POSIX-IDEMPOTENCE`,
         // not `C-PY-INT-ARITH`. The args are `Vec<String>` (literal
@@ -249,6 +254,31 @@ pub enum Stmt {
     /// a list of statements (no trailing return; the loop body is not
     /// an expression). PMAT-006.
     While { cond: Expr, body: Vec<Stmt> },
+    /// `list[index] = value` — Python `xs[i] = v` indexed assignment.
+    /// PMAT-461, v0.2.0 Track 1.B. Companion of [`Stmt::ListAppend`]
+    /// on the indexed-mutation side.
+    ///
+    /// Constraints (same as `ListAppend`):
+    ///   - `list_name` must be a bound name typing as `Type::List(_)`.
+    ///   - The receiver gets marked mutable so the emitter wraps it
+    ///     in `mut name: Vec<T>`.
+    ///   - Index must type as `Type::I64`; negative indices coerce
+    ///     via `as usize` (underflow → panic) matching `Expr::Index`.
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: `<list_name>[<index> as usize] = <value>;`.
+    ///   * Lean: refuses at v0.2.0 first cut — same monadic-encoding
+    ///     gap as `ListAppend` and `ForEach`.
+    ///   * Shell: refuses.
+    ///
+    /// Governing contract: `C-XLATE-PY-LIST-TO-VEC` —
+    /// iteration_order_preserved Bronze theorem implies in-place
+    /// assignment preserves all other indices.
+    IndexAssign {
+        list_name: String,
+        index: Expr,
+        value: Expr,
+    },
     /// `list.append(elem)` — Python `xs.append(v)` mutation. PMAT-460,
     /// v0.2.0 Track 1.B.
     ///
