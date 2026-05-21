@@ -431,6 +431,23 @@ fn main() {
     assert_rustc_runs("factorial", &format!("{shim}\n{rust}"), driver);
 }
 
+/// PMAT-455 — v0.2.0 Track 1.B foundation: list[int] literal.
+/// `def squares() -> list[int]: return [1, 4, 9, 16, 25]` transpiles
+/// to `pub fn squares() -> Vec<i64> { vec![1i64, 4i64, 9i64, 16i64, 25i64] }`
+/// and the rustc round-trip green confirms the values + length.
+#[test]
+fn squares_list_emitted_rust_returns_int_vec() {
+    let rust = xpile_transpile_to_rust("squares_list.py");
+    let driver = r#"
+fn main() {
+    let result = squares();
+    assert_eq!(result.len(), 5);
+    assert_eq!(result, vec![1i64, 4i64, 9i64, 16i64, 25i64]);
+}
+"#;
+    assert_rustc_runs("squares_list", &rust, driver);
+}
+
 /// PMAT-452 — v0.2.0 Track 1.A EXIT CRITERION: f-string lowering.
 /// `f"Hello, {name}!"` parses to `JoinedStr { values: [Const, Fmt, Const] }`,
 /// the frontend folds it to left-associative `Expr::Concat`, and the
