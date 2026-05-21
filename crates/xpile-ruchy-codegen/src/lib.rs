@@ -77,6 +77,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::While { body, .. } | Stmt::ForEach { body, .. } => {
                 body.iter().any(stmt_has_bigint)
             }
+            // PMAT-460: list.append() — same disposition.
+            Stmt::ListAppend { .. } => false,
             // PMAT-039: see rust-codegen's twin arm — shell commands
             // carry no BigInt operands.
             Stmt::Cmd { .. } => false,
@@ -167,6 +169,13 @@ fn emit_stmt_indented(
             writeln!(out, "{indent}}}")?;
             Ok(())
         }
+        // PMAT-460 (v0.2.0 Track 1.B): Ruchy → Rust → `.push(...)`.
+        Stmt::ListAppend { list_name, elem } => {
+            write!(out, "{indent}{list_name}.push(")?;
+            emit_expr(out, elem, mode)?;
+            writeln!(out, ");")?;
+            Ok(())
+        }
         Stmt::Assert { cond } => {
             write!(out, "{indent}assert!(")?;
             emit_expr(out, cond, mode)?;
@@ -207,6 +216,10 @@ fn emit_stmt_indented(
 }
 
 fn emit_param(out: &mut String, p: &Param) -> Result<(), RuchyCodegenError> {
+    // PMAT-460: same posture as the Rust backend.
+    if p.mutable {
+        write!(out, "mut ")?;
+    }
     write!(out, "{}: ", p.name)?;
     emit_type(out, &p.ty)?;
     Ok(())
@@ -631,10 +644,12 @@ mod tests {
                 Param {
                     name: "a".into(),
                     ty: Type::I64,
+                    mutable: false,
                 },
                 Param {
                     name: "b".into(),
                     ty: Type::I64,
+                    mutable: false,
                 },
             ],
             return_type: Type::I64,
@@ -680,10 +695,12 @@ mod tests {
                 Param {
                     name: "a".into(),
                     ty: Type::I64,
+                    mutable: false,
                 },
                 Param {
                     name: "b".into(),
                     ty: Type::I64,
+                    mutable: false,
                 },
             ],
             return_type: Type::I64,

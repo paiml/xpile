@@ -231,6 +231,15 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-460: list.append() inside a while loop — same
+            // monadic-encoding gap as ForEach. Deferred.
+            Stmt::ListAppend { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has Stmt::ListAppend inside a while loop; \
+                     Lean codegen at v0.2.0 first cut doesn't compose in-place mutation with while",
+                    f.name
+                )));
+            }
         }
     }
 
@@ -539,6 +548,15 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
              use `--target rust` or `--target ruchy` for iteration"
                 .into(),
         )),
+        // PMAT-460 (v0.2.0 Track 1.B): list.append() mutation. Lean
+        // has no in-place mutation; the encoding would need a
+        // state-monad rewrite of the surrounding function. Same
+        // posture as Stmt::ForEach — deferred to v0.3.0.
+        Stmt::ListAppend { list_name, .. } => Err(LeanCodegenError::Unsupported(format!(
+            "`{list_name}.append(...)` (Stmt::ListAppend) requires state-monad encoding in Lean — \
+             not yet implemented at v0.2.0 first cut (PMAT-460 follow-up); \
+             use `--target rust` or `--target ruchy` for in-place mutation"
+        ))),
         // Stmt::Assert is handled by emit_stmts_then_trailing — should
         // never reach this match arm. The unreachable here catches a
         // future refactor that bypasses the recursive emit.
@@ -831,10 +849,12 @@ mod tests {
                 Param {
                     name: "a".into(),
                     ty: Type::I64,
+                    mutable: false,
                 },
                 Param {
                     name: "b".into(),
                     ty: Type::I64,
+                    mutable: false,
                 },
             ],
             return_type: Type::I64,
@@ -867,10 +887,12 @@ mod tests {
                 Param {
                     name: "a".into(),
                     ty: Type::I64,
+                    mutable: false,
                 },
                 Param {
                     name: "b".into(),
                     ty: Type::I64,
+                    mutable: false,
                 },
             ],
             return_type: Type::I64,
@@ -897,6 +919,7 @@ mod tests {
             params: vec![Param {
                 name: "x".into(),
                 ty: Type::I64,
+                mutable: false,
             }],
             return_type: Type::I64,
             body: Expr::Call {
