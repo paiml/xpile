@@ -453,10 +453,15 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), LeanCodegenError> {
         Type::BigInt => out.push_str("Int"),
         // PMAT-449 (v0.2.0 Track 1.A): Lean's built-in String.
         Type::Str => out.push_str("String"),
-        // PMAT-455 (v0.2.0 Track 1.B): Lean's built-in List T.
+        // PMAT-455 (v0.2.0 Track 1.B): Lean's built-in `List T`.
+        // PMAT-462 fixup: parenthesize the element so nested
+        // `list[list[T]]` lowers to `List (List Int)` rather than
+        // `List List Int` (which Lean parses as application of two
+        // separate types).
         Type::List(elem_ty) => {
-            out.push_str("List ");
+            out.push_str("List (");
             emit_type(out, elem_ty)?;
+            out.push(')');
         }
         // PMAT-046: bashrs-domain types refused.
         Type::ShellString | Type::ExitCode => {

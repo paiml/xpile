@@ -431,6 +431,25 @@ fn main() {
     assert_rustc_runs("factorial", &format!("{shim}\n{rust}"), driver);
 }
 
+/// PMAT-462 — v0.2.0 Track 1.B: nested `list[list[int]]`. Verifies
+/// the recursive Type::List + Expr::ListLit composition produces a
+/// well-typed Rust `Vec<Vec<i64>>` and (transitively) a properly
+/// parenthesised Lean `List (List Int)`.
+#[test]
+fn nested_list_emitted_rust_returns_2d_vec() {
+    let rust = xpile_transpile_to_rust("nested_list.py");
+    let driver = r#"
+fn main() {
+    let g = grid();
+    assert_eq!(g.len(), 3);
+    assert_eq!(g[0], vec![1i64, 2, 3]);
+    assert_eq!(g[1], vec![4i64, 5, 6]);
+    assert_eq!(g[2], vec![7i64, 8, 9]);
+}
+"#;
+    assert_rustc_runs("nested_list", &rust, driver);
+}
+
 /// PMAT-461 — v0.2.0 Track 1.B: indexed assignment `xs[i] = v`.
 /// Pairs with PMAT-457's Expr::Index read; together they give the
 /// full read/write list-element API. Param mutation flows through
