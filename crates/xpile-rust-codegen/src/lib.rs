@@ -75,7 +75,9 @@ fn function_bigint_mode(f: &Function) -> bool {
         match s {
             Stmt::Let { ty, .. } => matches!(ty, Type::BigInt),
             Stmt::Assign { .. } | Stmt::Assert { .. } => false,
-            Stmt::While { body, .. } => body.iter().any(stmt_has_bigint),
+            Stmt::While { body, .. } | Stmt::ForEach { body, .. } => {
+                body.iter().any(stmt_has_bigint)
+            }
             // PMAT-039: shell commands carry no BigInt operands. They
             // also never reach this Rust-codegen scan in practice
             // (bashrs-frontend produces Shell modules that the Rust
@@ -154,6 +156,24 @@ fn emit_stmt_indented(
             write!(out, "{indent}while ")?;
             emit_expr(out, cond, mode)?;
             writeln!(out, " {{")?;
+            let inner = format!("{indent}    ");
+            for s in body {
+                emit_stmt_indented(out, s, &inner, mode)?;
+            }
+            writeln!(out, "{indent}}}")?;
+            Ok(())
+        }
+        // PMAT-458 (v0.2.0 Track 1.B): for-each over a collection.
+        // Emit `for var in iter.iter().cloned() { body }` — the
+        // .iter().cloned() produces owned elements matching the
+        // v0.2.0 owned-value posture (Index already returns .clone(),
+        // so the body sees owned values consistently).
+        Stmt::ForEach {
+            var, iter, body, ..
+        } => {
+            write!(out, "{indent}for {var} in ")?;
+            emit_expr(out, iter, mode)?;
+            writeln!(out, ".iter().cloned() {{")?;
             let inner = format!("{indent}    ");
             for s in body {
                 emit_stmt_indented(out, s, &inner, mode)?;

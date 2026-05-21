@@ -635,6 +635,45 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
         }
     };
 
+    // PMAT-458 (v0.2.0 Track 1.B): dispatch on iter shape.
+    //   - `range(...)` call → existing Let+While desugar (below).
+    //   - Otherwise: lower iter as an expression and emit
+    //     `Stmt::ForEach` if it types as Type::List.
+    // The match-on-Call below handles the range case; the early-
+    // return here handles the non-Call (= collection-iter) case.
+    if !matches!(&*f.iter, ast::Expr::Call(_)) {
+        let iter_expr = lower_expr((*f.iter).clone())?;
+        let iter_ty = infer_type_in_ctx(ctx, &iter_expr);
+        let elem_ty = match iter_ty {
+            Type::List(elem) => *elem,
+            other => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` iterates a non-collection expression typing as {other:?} — \
+                     v0.2.0 supports `for target in range(...)` (existing) or \
+                     `for target in <list[T] expr>` (new); other iterables are deferred",
+                    ctx.fn_name
+                )));
+            }
+        };
+
+        // Bind the loop variable in ctx so the body's typed accesses
+        // resolve.
+        ctx.bound.insert(target_name.clone());
+        ctx.name_types.insert(target_name.clone(), elem_ty.clone());
+
+        let mut body: Vec<Stmt> = Vec::new();
+        for s in f.body {
+            let lowered = lower_block_stmt(ctx, s)?;
+            body.extend(lowered);
+        }
+        return Ok(vec![Stmt::ForEach {
+            var: target_name,
+            iter: iter_expr,
+            elem_ty,
+            body,
+        }]);
+    }
+
     // Match range(...) call. Anything else (list/tuple/dict iteration)
     // requires collection types and is out of scope at v0.1.0.
     let call = match &*f.iter {

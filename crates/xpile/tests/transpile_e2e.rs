@@ -431,6 +431,24 @@ fn main() {
     assert_rustc_runs("factorial", &format!("{shim}\n{rust}"), driver);
 }
 
+/// PMAT-458 — v0.2.0 Track 1.B: for-each iteration over list[int].
+/// Closes the spec §23 ⏳ entry "`for` over non-range iterables".
+/// The frontend lowers `for x in xs:` (where xs has Type::List) to
+/// Stmt::ForEach; the Rust backend emits `for x in xs.iter().cloned()`.
+#[test]
+fn sum_list_emitted_rust_returns_total() {
+    let rust = xpile_transpile_to_rust("sum_list.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(total(vec![1i64, 2, 3, 4, 5]), 15i64);
+    assert_eq!(total(vec![]), 0i64);
+    assert_eq!(total(vec![42i64]), 42i64);
+    assert_eq!(total(vec![-1i64, 1]), 0i64);
+}
+"#;
+    assert_rustc_runs("sum_list", &rust, driver);
+}
+
 /// PMAT-457 — v0.2.0 Track 1.B: list indexed access `xs[0]`. The
 /// frontend lowers ast::Expr::Subscript to Expr::Index; backends
 /// emit `xs[i as usize].clone()` (Rust) / `xs[i.toNat]!` (Lean).

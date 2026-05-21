@@ -100,6 +100,15 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
             }
             body.iter().any(stmt_has_int_arith)
         }
+        // PMAT-458: for-each over a collection. The `iter` and `body`
+        // are recursed; an arithmetic-using collection (e.g.,
+        // `for x in [a+b, c*d]:`) propagates the citation requirement.
+        Stmt::ForEach { iter, body, .. } => {
+            if expr_has_int_arith(iter) {
+                return true;
+            }
+            body.iter().any(stmt_has_int_arith)
+        }
         Stmt::Assert { cond } => expr_has_int_arith(cond),
         // PMAT-039: shell commands are governed by `C-BASHRS-POSIX-IDEMPOTENCE`,
         // not `C-PY-INT-ARITH`. The args are `Vec<String>` (literal
@@ -235,6 +244,34 @@ pub enum Stmt {
     /// a list of statements (no trailing return; the loop body is not
     /// an expression). PMAT-006.
     While { cond: Expr, body: Vec<Stmt> },
+    /// `for var in iter { body }` — Python `for x in xs:` over a
+    /// non-range iterable. PMAT-458, v0.2.0 Track 1.B.
+    ///
+    /// The frontend reserves `range(...)`-shaped iters for the
+    /// existing Let+While desugaring (PMAT-007); ForEach is for
+    /// list-typed (and later other collection-typed) iter
+    /// expressions. The `elem_ty` is the inferred element type of
+    /// `iter`, threaded so the backend knows what to bind `var` to.
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: `for var in iter.iter().cloned() { body }`
+    ///   * Lean: refuses at v0.2.0 first cut — Lean iteration without
+    ///     `partial def` machinery is a v0.3.0 sub-track (Lean has
+    ///     no for-loop primitive; `forM` / list-recursion is the
+    ///     idiomatic encoding, and the body must be encoded as a
+    ///     monadic action).
+    ///   * Shell: refuses (already not a Python-flow target).
+    ///
+    /// Governing contract: `C-XLATE-PY-LIST-TO-VEC` —
+    /// iteration_order_preserved Bronze theorem implies the lowered
+    /// `for x in vec.iter()` produces the same element sequence as
+    /// the source Python iteration.
+    ForEach {
+        var: String,
+        iter: Expr,
+        elem_ty: Type,
+        body: Vec<Stmt>,
+    },
     /// `assert cond` — Python `assert cond` (no message form at v0.1.0).
     /// Lowers to `assert!(cond);` in Rust/Ruchy. Lean is skipped (Lean's
     /// assertion machinery requires `Decidable` instances; deferred). PMAT-009.

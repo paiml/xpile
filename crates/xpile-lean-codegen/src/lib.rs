@@ -220,6 +220,17 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-458: for-each inside a while loop — composing a
+            // for-each within a partial-def while-helper would need
+            // monadic encoding (forM in some monad over the closing
+            // partial def). Deferred to v0.3.0.
+            Stmt::ForEach { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has Stmt::ForEach inside a while loop; \
+                     Lean codegen at v0.2.0 first cut doesn't compose for-each with while",
+                    f.name
+                )));
+            }
         }
     }
 
@@ -513,6 +524,17 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         // ultimately come from contracts/xlate-lean-to-rust-v1.yaml.
         Stmt::While { .. } => Err(LeanCodegenError::Unsupported(
             "`while` loops require partial def / tail-recursion in Lean — not yet implemented (PMAT-006 follow-up)"
+                .into(),
+        )),
+        // PMAT-458 (v0.2.0 Track 1.B): for-each over collections.
+        // Lean's idiomatic encoding is `xs.forM (fun var => body)` in
+        // some monad, or List recursion. Both require monadic
+        // structure that v0.2.0 first cut doesn't yet thread. Deferred
+        // to v0.3.0+ alongside other Lean iteration work.
+        Stmt::ForEach { .. } => Err(LeanCodegenError::Unsupported(
+            "`for x in xs:` (Stmt::ForEach) requires monadic-iteration encoding in Lean — \
+             not yet implemented at v0.2.0 first cut (PMAT-458 follow-up); \
+             use `--target rust` or `--target ruchy` for iteration"
                 .into(),
         )),
         // Stmt::Assert is handled by emit_stmts_then_trailing — should

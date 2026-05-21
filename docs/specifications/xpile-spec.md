@@ -420,7 +420,7 @@ v0.1.0 — **SHIPPED 2026-05-20** — first real release; `cargo install xpile` 
 - ⏳ Bigint promotion (`py-int-arith-v1.yaml` slow path) — fast-path overflow is load-bearing (Rust + Ruchy emit `.checked_*().expect(...)`, contract name appears in the panic message); the slow path itself is still unimplemented
 - 🟢 Types beyond int/bool — **v0.2.0 Track 1.A SHIPPED + Track 1.B foundation merged** (PMAT-449..454, PMAT-455): str lane (depth-13 UNIVERSAL `C-XLATE-PY-STR-TO-RUST-STRING`) + `list[int]` literal end-to-end through depyler-frontend → Rust/Ruchy/Lean backends (`pub fn squares() -> Vec<i64> { vec![1i64, ...] }`). `Type` is no longer `Copy` (it carries `Box<Type>` now); call sites refactored to `&Type` or `.clone()`. Substrate: **13 contracts at QUORUM**, **184 Diamond theorems**. `dict[str,T]`, `float`, list ops (append, index, iteration) are subsequent sub-tracks per [`sub/v0.2.0-depyler-merger.md`](sub/v0.2.0-depyler-merger.md).
 - ⏳ Lean encoding for `while` (`partial def` tail-recursion follow-up)
-- ⏳ `for` over non-range iterables (blocked on collection types)
+- 🟢 `for` over non-range iterables — **shipped at v0.2.0 Track 1.B** (PMAT-458): `for x in xs:` over a `Type::List(T)` parameter or expression lowers to `Stmt::ForEach`; Rust/Ruchy emit `for x in xs.iter().cloned() { ... }`. Lean still refuses (monadic iteration encoding deferred to v0.3.0). Closes the original v0.1.0 ⏳ entry. Fixture: `sum_list.py` runs `total(vec![1..5]) == 15` green via rustc round-trip.
 - ⏳ Real C frontend (decy-frontend currently stub)
 - ⏳ Real PTX/WGSL emission (scaffolds in place)
 
