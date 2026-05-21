@@ -431,6 +431,37 @@ fn main() {
     assert_rustc_runs("factorial", &format!("{shim}\n{rust}"), driver);
 }
 
+/// PMAT-456 — v0.2.0 Track 1.B: list[str] literal exercising
+/// Type::List(Box<Type::Str>) + Expr::ListLit of LitStr elements.
+#[test]
+fn names_list_emitted_rust_returns_string_vec() {
+    let rust = xpile_transpile_to_rust("names_list.py");
+    let driver = r#"
+fn main() {
+    let result = names();
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0], String::from("alice"));
+    assert_eq!(result[1], String::from("bob"));
+    assert_eq!(result[2], String::from("carol"));
+}
+"#;
+    assert_rustc_runs("names_list", &rust, driver);
+}
+
+/// PMAT-456 — v0.2.0 Track 1.B: list[bool] literal exercising the
+/// new Expr::LitBool variant. True/False lower to Rust `true`/`false`.
+#[test]
+fn flags_list_emitted_rust_returns_bool_vec() {
+    let rust = xpile_transpile_to_rust("flags_list.py");
+    let driver = r#"
+fn main() {
+    let result = flags();
+    assert_eq!(result, vec![true, false, true]);
+}
+"#;
+    assert_rustc_runs("flags_list", &rust, driver);
+}
+
 /// PMAT-455 — v0.2.0 Track 1.B foundation: list[int] literal.
 /// `def squares() -> list[int]: return [1, 4, 9, 16, 25]` transpiles
 /// to `pub fn squares() -> Vec<i64> { vec![1i64, 4i64, 9i64, 16i64, 25i64] }`

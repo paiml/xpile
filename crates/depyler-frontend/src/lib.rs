@@ -1092,6 +1092,8 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
 fn infer_type(e: &Expr) -> Type {
     match e {
         Expr::Ident(_) | Expr::LitInt(_) => Type::I64,
+        // PMAT-456 (v0.2.0 Track 1.B): bool literal is Type::Bool.
+        Expr::LitBool(_) => Type::Bool,
         Expr::BinOp { op, .. } => match op {
             BinOp::Add
             | BinOp::Sub
@@ -1152,6 +1154,8 @@ fn infer_type(e: &Expr) -> Type {
 fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
     match e {
         Expr::Ident(n) => ctx.name_types.get(n).cloned().unwrap_or(Type::I64),
+        // PMAT-456 (v0.2.0 Track 1.B): bool literal is Type::Bool.
+        Expr::LitBool(_) => Type::Bool,
         Expr::LitInt(_) => {
             if matches!(ctx.fn_return_type, Type::BigInt) {
                 Type::BigInt
@@ -1224,6 +1228,12 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             // raw Python source text is carried through to the
             // backend (which escapes for its target language).
             ast::Constant::Str(s) => Ok(Expr::LitStr(s.to_string())),
+            // PMAT-456 (v0.2.0 Track 1.B): Python `True` / `False`
+            // literals → `Expr::LitBool(bool)`. Aligns with the
+            // existing `LitInt` / `LitStr` shape. Backends emit
+            // `true` / `false` (Rust/Ruchy) and `True` / `False`
+            // (Lean — capitalised).
+            ast::Constant::Bool(b) => Ok(Expr::LitBool(b)),
             other => Err(FrontendError::Lower(format!(
                 "unsupported constant: {:?}",
                 std::mem::discriminant(&other)

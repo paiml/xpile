@@ -127,7 +127,7 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
 
 fn expr_has_int_arith(e: &Expr) -> bool {
     match e {
-        Expr::Ident(_) | Expr::LitInt(_) => false,
+        Expr::Ident(_) | Expr::LitInt(_) | Expr::LitBool(_) => false,
         Expr::BinOp { op, lhs, rhs } => {
             if binop_is_int_arith(*op) {
                 return true;
@@ -428,6 +428,10 @@ pub enum Expr {
     Ident(String),
     /// Integer literal, lowered as i64 at the boundary.
     LitInt(i64),
+    /// Boolean literal — Python `True` / `False`. PMAT-456,
+    /// v0.2.0 Track 1.B. Rust/Ruchy emit `true` / `false`; Lean
+    /// emits `True` / `False` (capitalised).
+    LitBool(bool),
     /// Binary operation. Type inference is intentionally absent at v0.1.0:
     /// each backend infers result type from operand types via [`BinOp`].
     BinOp {
