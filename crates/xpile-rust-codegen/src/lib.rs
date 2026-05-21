@@ -81,6 +81,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             // PMAT-460: list.append() carries no Type::Let, so no
             // BigInt-mode trigger of its own.
             Stmt::ListAppend { .. } => false,
+            // PMAT-461: indexed assignment same disposition.
+            Stmt::IndexAssign { .. } => false,
             // PMAT-039: shell commands carry no BigInt operands. They
             // also never reach this Rust-codegen scan in practice
             // (bashrs-frontend produces Shell modules that the Rust
@@ -191,6 +193,21 @@ fn emit_stmt_indented(
             write!(out, "{indent}{list_name}.push(")?;
             emit_expr(out, elem, mode)?;
             writeln!(out, ");")?;
+            Ok(())
+        }
+        // PMAT-461 (v0.2.0 Track 1.B): Python `xs[i] = v` → Rust
+        // `xs[i as usize] = v;`. Same `as usize` coercion as
+        // Expr::Index; same param-mut threading as ListAppend.
+        Stmt::IndexAssign {
+            list_name,
+            index,
+            value,
+        } => {
+            write!(out, "{indent}{list_name}[")?;
+            emit_expr(out, index, mode)?;
+            out.push_str(" as usize] = ");
+            emit_expr(out, value, mode)?;
+            writeln!(out, ";")?;
             Ok(())
         }
         Stmt::Assert { cond } => {

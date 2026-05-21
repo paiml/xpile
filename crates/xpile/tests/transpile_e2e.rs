@@ -431,6 +431,22 @@ fn main() {
     assert_rustc_runs("factorial", &format!("{shim}\n{rust}"), driver);
 }
 
+/// PMAT-461 — v0.2.0 Track 1.B: indexed assignment `xs[i] = v`.
+/// Pairs with PMAT-457's Expr::Index read; together they give the
+/// full read/write list-element API. Param mutation flows through
+/// the same `mutable` flag as `.append()`.
+#[test]
+fn set_first_emitted_rust_overwrites_element() {
+    let rust = xpile_transpile_to_rust("set_first.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(set_first(vec![10i64, 20, 30], 99i64), 99i64);
+    assert_eq!(set_first(vec![1i64], -5i64), -5i64);
+}
+"#;
+    assert_rustc_runs("set_first", &rust, driver);
+}
+
 /// PMAT-460 — v0.2.0 Track 1.B: list.append() mutation. Calls
 /// `xs.append(...)` twice on a list parameter; the frontend marks
 /// the parameter mutable, the Rust backend emits `mut xs: Vec<i64>`
