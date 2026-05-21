@@ -434,7 +434,7 @@ fn main() {
 /// PMAT-460 — v0.2.0 Track 1.B: list.append() mutation. Calls
 /// `xs.append(...)` twice on a list parameter; the frontend marks
 /// the parameter mutable, the Rust backend emits `mut xs: Vec<i64>`
-/// + `.push()`. Verifies the post-mutation length via the value
+/// and `.push()`. Verifies the post-mutation length via the value
 /// returned.
 #[test]
 fn append_demo_emitted_rust_grows_list() {
