@@ -1135,6 +1135,14 @@ fn infer_type(e: &Expr) -> Type {
             let elem_ty = elems.first().map(infer_type).unwrap_or(Type::I64);
             Type::List(Box::new(elem_ty))
         }
+        // PMAT-457 (v0.2.0 Track 1.B): indexed access returns the
+        // collection's element type. If the collection types as
+        // Type::List(T), the result is T; otherwise fall back to I64
+        // (defensive — frontend only emits Index when typing succeeds).
+        Expr::Index { collection, .. } => match infer_type(collection) {
+            Type::List(elem_ty) => *elem_ty,
+            _ => Type::I64,
+        },
         // PMAT-042 + PMAT-045 + PMAT-047 + PMAT-055: shell-domain
         // Expr variants don't appear inside Python-frontend lowering.
         Expr::QuotedString { .. }
@@ -1204,6 +1212,11 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
                 .unwrap_or(Type::I64);
             Type::List(Box::new(elem_ty))
         }
+        // PMAT-457: indexed access returns the collection element type.
+        Expr::Index { collection, .. } => match infer_type_in_ctx(ctx, collection) {
+            Type::List(elem_ty) => *elem_ty,
+            _ => Type::I64,
+        },
         Expr::QuotedString { .. }
         | Expr::ShellVar(_)
         | Expr::CommandSubstitution(_)
@@ -1288,6 +1301,29 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
         // thread through — handled in subsequent sub-tracks).
         // Homogeneity is enforced by the lowering check before the
         // ListLit is built.
+        // PMAT-457 (v0.2.0 Track 1.B): list indexed access. Python
+        // `xs[i]` parses as Subscript when in expression position.
+        // (In type-annotation position, Subscript means `list[T]` /
+        // generic-param-application — that path is handled by
+        // parse_type_annotation, distinct call site.)
+        ast::Expr::Subscript(sub) => {
+            let collection = lower_expr(*sub.value)?;
+            let index = lower_expr(*sub.slice)?;
+            // v0.2.0 first cut: index must type as Type::I64. Float /
+            // slice-object / advanced subscript shapes are deferred.
+            let idx_ty = infer_type(&index);
+            if !matches!(idx_ty, Type::I64) {
+                return Err(FrontendError::Lower(format!(
+                    "list-index expression types as {idx_ty:?} but only `int` indices are \
+                     supported at v0.2.0 first cut — slicing, negative-step ranges, and \
+                     non-integer keys are deferred to subsequent sub-tracks"
+                )));
+            }
+            Ok(Expr::Index {
+                collection: Box::new(collection),
+                index: Box::new(index),
+            })
+        }
         ast::Expr::List(list_expr) => {
             if list_expr.elts.is_empty() {
                 return Err(FrontendError::Lower(

@@ -431,6 +431,23 @@ fn main() {
     assert_rustc_runs("factorial", &format!("{shim}\n{rust}"), driver);
 }
 
+/// PMAT-457 — v0.2.0 Track 1.B: list indexed access `xs[0]`. The
+/// frontend lowers ast::Expr::Subscript to Expr::Index; backends
+/// emit `xs[i as usize].clone()` (Rust) / `xs[i.toNat]!` (Lean).
+/// The rustc round-trip confirms the indexed value at runtime.
+#[test]
+fn list_first_emitted_rust_returns_first_element() {
+    let rust = xpile_transpile_to_rust("list_first.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(first(vec![10i64, 20, 30]), 10i64);
+    assert_eq!(first(vec![42i64]), 42i64);
+    assert_eq!(first(vec![-1i64, 0, 1]), -1i64);
+}
+"#;
+    assert_rustc_runs("list_first", &rust, driver);
+}
+
 /// PMAT-456 — v0.2.0 Track 1.B: list[str] literal exercising
 /// Type::List(Box<Type::Str>) + Expr::ListLit of LitStr elements.
 #[test]

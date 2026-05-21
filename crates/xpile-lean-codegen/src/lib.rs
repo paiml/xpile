@@ -354,6 +354,11 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 collect_idents(e, out);
             }
         }
+        // PMAT-457: indexed access — recurse into both sides.
+        Expr::Index { collection, index } => {
+            collect_idents(collection, out);
+            collect_idents(index, out);
+        }
         Expr::UnOp { operand, .. } => collect_idents(operand, out),
         Expr::IfExpr {
             cond,
@@ -579,6 +584,15 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
                 emit_expr(out, e)?;
             }
             out.push(']');
+        }
+        // PMAT-457 (v0.2.0 Track 1.B): Lean's `xs[i]!` syntax —
+        // panics on out-of-range with a clear error message. We
+        // coerce the i64 index to `Nat` via `.toNat`.
+        Expr::Index { collection, index } => {
+            emit_expr(out, collection)?;
+            out.push('[');
+            emit_expr(out, index)?;
+            out.push_str(".toNat]!");
         }
         Expr::IfExpr {
             cond,
