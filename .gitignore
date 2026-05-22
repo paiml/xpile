@@ -19,5 +19,11 @@ Cargo.lock.bak
 .env
 .env.local
 
-# Claude Code session-local artifacts
-.claude/
+# Claude Code session-local artifacts (transcripts, paste-cache,
+# scheduled-tasks state, etc.) — but DO check in the slash-command
+# skills under .claude/commands/ so the repo ships its dogfood
+# workflow. The `.claude/*` (trailing `*`) form makes git evaluate
+# each direct child individually so the `!.claude/commands/`
+# exception takes effect.
+.claude/*
+!.claude/commands/
