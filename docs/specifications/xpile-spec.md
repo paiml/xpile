@@ -403,6 +403,8 @@ Key terms: **meta-HIR**, **Frontend trait**, **FFI manifest**, **oracle**, **age
 
 **Sub-spec**: [docs/status/CURRENT.md](../status/CURRENT.md). Live source of truth for the supported subset: `CHANGELOG.md`.
 
+**v0.1.1 — SHIPPED 2026-05-22** — incremental release on top of v0.1.0. Adds the Python types lane (`str` + `list[T]` r/w + `dict[K, V]` foundation, PMAT-449..462) without touching the substrate at QUORUM (still 13 contracts, 184 Diamond theorems, depth-13 UNIVERSAL strict gate). Lean iteration / mutation, dict operations, and the Track 2 / Track 3 mergers from spec §30 remain queued for v0.2.0.
+
 v0.1.0 — **SHIPPED 2026-05-20** — first real release; `cargo install xpile` works for end users:
 
 - ✅ **All 27 workspace crates published to crates.io at v0.1.0** (topological order; published over ~3.5h on the new-crate 5/hour rate-limit budget). xpile is no longer a name reservation — it's a working CLI.
