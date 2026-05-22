@@ -696,6 +696,12 @@ v0.1.0 is "real transpiler for int/bool Python, real POSIX shell round-trip." It
 
 **v0.2.0 is the realization that this is not a build problem — it's a port problem.** All three mature standalone transpilers (depyler, decy, bashrs) already exist. The v0.1.0 bashrs merger demonstrated the absorb-into-substrate pattern works at production cadence. v0.2.0 runs that same pattern twice more.
 
+### Status update (post-v0.1.1, 2026-05-22)
+
+Track 1's str + list + dict-foundation work was sliced off as the **v0.1.1 incremental release** (PMAT-449..462) rather than waiting for the full v0.2.0 cut. This preserves the "three mergers" framing of v0.2.0 — Tracks 2 (decy) and 3 (bashrs check-back) are still its load-bearing scope, plus the remaining Track 1 work (dict operations, dict contract substrate, Lean iteration/mutation, `float`, `&str` borrowing, list `.extend()`/`.insert()`/etc.).
+
+See [`sub/v0.2.0-depyler-merger.md`](sub/v0.2.0-depyler-merger.md) for the per-sub-track status table.
+
 ### Three concurrent tracks
 
 | Track | What | Effort | Discharges |
