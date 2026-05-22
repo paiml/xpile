@@ -62,7 +62,7 @@ def factorial (n : Int) : Int :=
 - Python subset shipped: see [`CHANGELOG.md`](CHANGELOG.md) §"Python subset (live, runtime-verified)" — typed `def`, multi-statement bodies, all binary + unary ops, ternary, if/else, elif chains, function calls including self-recursion (canonical source — this README intentionally does not duplicate the list to avoid the staleness it kept accumulating)
 - **Four real backends**: Rust (`pub fn`, Python-floor semantics via `checked_div_euclid` / `checked_rem_euclid`, all arithmetic checked for the `C-PY-INT-ARITH` contract), Ruchy (`fun ... -> T`, same overflow semantics — compiles to Rust), Lean 4 (`def`, `Int.fdiv` / `Int.fmod`; `Int` is unbounded so the contract holds by construction), bashrs (POSIX shell — see [`sub/bashrs-merger.md`](docs/specifications/sub/bashrs-merger.md))
 - CI: `gate` + `kani` + `workspace-test` all run on every PR; `gate` is the load-bearing required status check (org-level ruleset rule); `kani` + `workspace-test` are not yet required but in practice green on every merged PR. Branch protection: `non_fast_forward` + PR required + `gate` status check (`gh api repos/paiml/xpile/rules/branches/main`).
-- Published: [`xpile 0.1.0`](https://crates.io/crates/xpile) — first real release (all 27 workspace crates published; `cargo install xpile` works for end users)
+- Published: [`xpile 0.1.1`](https://crates.io/crates/xpile) — incremental release adding the Python types lane (str + list + dict-foundation) on top of v0.1.0's substrate. All 27 workspace crates at 0.1.1; `cargo install xpile` upgrades cleanly.
 
 ### Contract substrate at QUORUM
 

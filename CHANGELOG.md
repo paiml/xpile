@@ -7,6 +7,60 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-05-22
+
+Incremental release. Python types lane expanded: real `str` (with
+concatenation, f-strings, `len()`), real `list[T]` (with literal,
+parameters, indexed read/write, iteration, `len()`, `.append()`,
+nested `list[list[T]]`), and dict-foundation (`dict[K, V]`
+annotation + `{...}` literal). The Track 2 (decy real C frontend
+merger) and Track 3 (bashrs check-back) sub-specs remain queued for
+v0.2.0; the spec's "three mergers" framing is deferred there.
+
+What works at v0.1.1 (end-to-end transpile, rustc round-trip green):
+
+- `str` lane (PMAT-449/450/451/452):
+  - `def greet(name: str) -> str: return f"Hello, {name}!"` →
+    `pub fn greet(name: String) -> String { format!(...) }`
+  - Contract: `C-XLATE-PY-STR-TO-RUST-STRING` at QUORUM, depth-13
+    UNIVERSAL with all 13 Diamond categories wired (PMAT-453/454).
+- `list[T]` lane (PMAT-455..461):
+  - Element types: `list[int]`, `list[str]`, `list[bool]`,
+    nested `list[list[int]]`.
+  - Operations: indexed access `xs[i]`, indexed assignment
+    `xs[i] = v`, iteration `for x in xs:`, `len(xs)`,
+    `xs.append(v)` (with automatic param-mut threading).
+- `dict[K, V]` lane (PMAT-462) — **foundation only**:
+  - `dict[str, int]` / `dict[str, str]` / `dict[str, bool]`
+    annotations + `{...}` literals.
+  - Rust: `HashMap<K, V>` block expression.
+  - Lean: `List (K × V)` first cut.
+  - **No `C-XLATE-PY-DICT-TO-HASHMAP` substrate yet** — queued for
+    v0.2.0 alongside dict operations (`d[k]`, `d[k]=v`, etc.).
+
+What does NOT work yet (deferred to v0.2.0):
+
+- Dict operations: lookup `d[k]`, insert `d[k] = v`, `len(d)`,
+  iteration `for k in d:`, membership `k in d`.
+- Lean iteration / mutation: `Stmt::ForEach`, `Stmt::ListAppend`,
+  `Stmt::IndexAssign` refuse in Lean backend with clear
+  "deferred to v0.3.0" errors. Rust + Ruchy support them fully.
+- `list.extend()`, `.insert()`, `.pop()`, slicing `xs[a:b]`.
+- `float` type, negative-index wrap (`xs[-1]`).
+- Track 2 (decy real C frontend) — still scaffold.
+- Track 3 (bashrs check-back option (c)) — first option (a)
+  shipped at v0.1.0; second discharge queued.
+
+Substrate state at v0.1.1:
+
+- 13 contracts at QUORUM (unchanged from v0.1.0).
+- 184 Diamond theorems across 13 contracts.
+- Depth-13 UNIVERSAL CI gate strict-equality.
+- 297 → 304+ workspace tests (new dict_counts, append_demo, etc.
+  e2e tests across the v0.1.0→v0.1.1 window).
+
+Install: `cargo install xpile` upgrades to 0.1.1.
+
 ## [0.1.0] — 2026-05-20
 
 First real release. The polyglot transpile workbench is operational
