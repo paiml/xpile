@@ -182,6 +182,11 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // by itself involve overflow-prone arithmetic, but a list of
         // computed values (`[a + b, c * d]`) does.
         Expr::ListLit(elems) => elems.iter().any(expr_has_int_arith),
+        // PMAT-462 (v0.2.0 Track 1.C): dict literal — recurse into
+        // each key + value expression.
+        Expr::DictLit(pairs) => pairs
+            .iter()
+            .any(|(k, v)| expr_has_int_arith(k) || expr_has_int_arith(v)),
         // PMAT-457 (v0.2.0 Track 1.B): list indexed access. Neither
         // collection nor index expressions are themselves arithmetic;
         // recurse defensively for computed indices like `xs[a + b]`.
@@ -482,6 +487,27 @@ pub enum Type {
     /// Governing contract (Layer 2 translation, code lane): the v0.2.0
     /// `C-XLATE-PY-STR-TO-RUST-STRING` contract once authored.
     Str,
+    /// Typed dictionary / map — Python `dict[K, V]`. PMAT-462,
+    /// v0.2.0 Track 1.C foundation
+    /// ([`sub/v0.2.0-depyler-merger.md`](../../docs/specifications/sub/v0.2.0-depyler-merger.md)
+    /// Track 1.C).
+    ///
+    /// `Type::Dict(Box<Type>, Box<Type>)` represents Python
+    /// `dict[K, V]` and lowers to Rust/Ruchy `HashMap<K, V>` and
+    /// Lean `List (K × V)` (first cut — Lean's `Std.HashMap` is a
+    /// v0.3.0+ refinement once iteration / lookup encoding lands).
+    /// Heterogeneous keys / values are not supported at v0.2.0 —
+    /// they'd require a `Box<dyn Any>`-style boxing rejected by
+    /// the soon-to-be-authored `C-XLATE-PY-DICT-TO-HASHMAP`
+    /// contract's `homogeneous_keys_values_rejected` equation.
+    ///
+    /// At v0.2.0 first cut both `K` and `V` are restricted to
+    /// `Type::I64`, `Type::Bool`, or `Type::Str`; nested dicts /
+    /// lists as values are subsequent sub-tracks.
+    ///
+    /// Governing contract: `C-XLATE-PY-DICT-TO-HASHMAP` (to be
+    /// authored alongside this PR's substrate ratchet).
+    Dict(Box<Type>, Box<Type>),
     /// Homogeneous list / vector. PMAT-455, v0.2.0 Track 1.B
     /// foundation (per [`sub/v0.2.0-depyler-merger.md`](../../docs/specifications/sub/v0.2.0-depyler-merger.md)).
     ///
@@ -582,6 +608,21 @@ pub enum Expr {
         collection: Box<Expr>,
         index: Box<Expr>,
     },
+    /// Dictionary literal — Python `{"a": 1, "b": 2}`. PMAT-462,
+    /// v0.2.0 Track 1.C foundation.
+    ///
+    /// All keys and values must type identically; heterogeneous
+    /// literals are rejected at frontend lowering time. Empty
+    /// literal `{}` requires an annotation upstream; v0.2.0 first
+    /// cut requires non-empty.
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: emit `{ let mut m = HashMap::new(); m.insert(k, v); ... m }`
+    ///     as a block expression returning the owned HashMap.
+    ///   * Lean: emit `[(k, v), ...]` (a List of pairs — first cut
+    ///     before Std.HashMap encoding lands).
+    ///   * Shell: refuses.
+    DictLit(Vec<(Expr, Expr)>),
     /// Homogeneous list literal — Python `[1, 2, 3]`. PMAT-455,
     /// v0.2.0 Track 1.B foundation.
     ///

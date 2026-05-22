@@ -382,6 +382,13 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 collect_idents(e, out);
             }
         }
+        // PMAT-462: dict literal — recurse into each key + value.
+        Expr::DictLit(pairs) => {
+            for (k, v) in pairs {
+                collect_idents(k, out);
+                collect_idents(v, out);
+            }
+        }
         // PMAT-457: indexed access — recurse into both sides.
         Expr::Index { collection, index } => {
             collect_idents(collection, out);
@@ -461,6 +468,18 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), LeanCodegenError> {
         Type::List(elem_ty) => {
             out.push_str("List (");
             emit_type(out, elem_ty)?;
+            out.push(')');
+        }
+        // PMAT-462 (v0.2.0 Track 1.C): Python `dict[K, V]` → Lean
+        // `List (K × V)` first cut. The product type `K × V` is
+        // Lean's native pair / `Prod K V`. A subsequent v0.3.0
+        // sub-track upgrades to `Std.HashMap` once iteration /
+        // lookup encoding lands.
+        Type::Dict(k_ty, v_ty) => {
+            out.push_str("List (");
+            emit_type(out, k_ty)?;
+            out.push_str(" × ");
+            emit_type(out, v_ty)?;
             out.push(')');
         }
         // PMAT-046: bashrs-domain types refused.
@@ -644,6 +663,24 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
                     out.push_str(", ");
                 }
                 emit_expr(out, e)?;
+            }
+            out.push(']');
+        }
+        // PMAT-462 (v0.2.0 Track 1.C): Lean dict literal as a list
+        // of pairs — `[(k1, v1), (k2, v2), ...]`. First-cut model;
+        // when the v0.3.0 Std.HashMap encoding lands the lowering
+        // wraps this in an `Std.HashMap.ofList`.
+        Expr::DictLit(pairs) => {
+            out.push('[');
+            for (i, (k, v)) in pairs.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                out.push('(');
+                emit_expr(out, k)?;
+                out.push_str(", ");
+                emit_expr(out, v)?;
+                out.push(')');
             }
             out.push(']');
         }

@@ -306,6 +306,17 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
             emit_type(out, elem_ty)?;
             out.push('>');
         }
+        // PMAT-462: v0.2.0 Track 1.C — Python `dict[K, V]` → Rust
+        // `std::collections::HashMap<K, V>`. Owned-first. The
+        // fully-qualified path avoids requiring callers to add a
+        // `use` statement.
+        Type::Dict(k_ty, v_ty) => {
+            out.push_str("std::collections::HashMap<");
+            emit_type(out, k_ty)?;
+            out.push_str(", ");
+            emit_type(out, v_ty)?;
+            out.push('>');
+        }
         // PMAT-046: bashrs-domain types. Rust backend refuses — the
         // analogous Rust type for ShellString would be the bashrs
         // runtime's quoting-aware wrapper (not yet shipped); the
@@ -379,6 +390,20 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, e, mode)?;
             }
             out.push(']');
+        }
+        // PMAT-462 (v0.2.0 Track 1.C): Python dict literal →
+        // Rust `{ let mut m = HashMap::new(); m.insert(k, v); ... m }`
+        // block expression returning the owned HashMap.
+        Expr::DictLit(pairs) => {
+            out.push_str("{ let mut m = std::collections::HashMap::new(); ");
+            for (k, v) in pairs {
+                out.push_str("m.insert(");
+                emit_expr(out, k, mode)?;
+                out.push_str(", ");
+                emit_expr(out, v, mode)?;
+                out.push_str("); ");
+            }
+            out.push_str("m }");
         }
         // PMAT-457 (v0.2.0 Track 1.B): Python `xs[i]` → Rust
         // `xs[i as usize].clone()`. The `.clone()` produces an
