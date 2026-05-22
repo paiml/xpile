@@ -431,6 +431,25 @@ fn main() {
     assert_rustc_runs("factorial", &format!("{shim}\n{rust}"), driver);
 }
 
+/// PMAT-462 — v0.2.0 Track 1.C foundation: `dict[str, int]` literal.
+/// First Track 1.C sub-PR. Rust emits a block expression returning
+/// an owned `HashMap<String, i64>` populated via `.insert(...)` calls.
+#[test]
+fn dict_counts_emitted_rust_returns_hashmap() {
+    let rust = xpile_transpile_to_rust("dict_counts.py");
+    let driver = r#"
+fn main() {
+    let m = counts();
+    assert_eq!(m.len(), 3);
+    assert_eq!(m.get(&String::from("alice")), Some(&1i64));
+    assert_eq!(m.get(&String::from("bob")), Some(&2i64));
+    assert_eq!(m.get(&String::from("carol")), Some(&3i64));
+    assert_eq!(m.get(&String::from("nobody")), None);
+}
+"#;
+    assert_rustc_runs("dict_counts", &rust, driver);
+}
+
 /// PMAT-462 — v0.2.0 Track 1.B: nested `list[list[int]]`. Verifies
 /// the recursive Type::List + Expr::ListLit composition produces a
 /// well-typed Rust `Vec<Vec<i64>>` and (transitively) a properly

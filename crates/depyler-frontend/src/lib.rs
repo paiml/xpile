@@ -459,24 +459,53 @@ fn parse_type_annotation(
                 "function `{fn_name}` annotates `{site}` with unsupported type `{other}` — only `int`, `bool`, `BigInt`, `str`, `list[T]` at v0.2.0"
             ))),
         },
-        // PMAT-455 (v0.2.0 Track 1.B): list[T] annotation parses as
-        // a Python Subscript expression: `Subscript(value=Name("list"),
-        // slice=<T>)`. The slice is a single type annotation we
-        // recurse into for the element type.
+        // PMAT-455/PMAT-462 (v0.2.0 Track 1.B/1.C): list[T] / dict[K, V]
+        // annotations parse as Python Subscript expressions. The
+        // outer name selects the collection kind; the slice is either
+        // a single type (list) or a tuple of two types (dict).
         ast::Expr::Subscript(sub) => {
             let ast::Expr::Name(outer) = sub.value.as_ref() else {
                 return Err(FrontendError::Lower(format!(
-                    "function `{fn_name}` annotates `{site}` with non-Name subscripted type — only `list[T]` at v0.2.0"
+                    "function `{fn_name}` annotates `{site}` with non-Name subscripted type — only `list[T]` / `dict[K, V]` at v0.2.0"
                 )));
             };
-            if outer.id.as_str() != "list" {
-                return Err(FrontendError::Lower(format!(
-                    "function `{fn_name}` annotates `{site}` with subscripted `{}[...]` — only `list[T]` at v0.2.0",
-                    outer.id.as_str()
-                )));
+            match outer.id.as_str() {
+                "list" => {
+                    let elem_ty = parse_type_annotation(
+                        fn_name,
+                        &format!("{site} element"),
+                        &sub.slice,
+                    )?;
+                    Ok(Type::List(Box::new(elem_ty)))
+                }
+                "dict" => {
+                    let ast::Expr::Tuple(t) = sub.slice.as_ref() else {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{fn_name}` annotates `{site}` with `dict[...]` lacking a key/value pair — expected `dict[K, V]`"
+                        )));
+                    };
+                    if t.elts.len() != 2 {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{fn_name}` annotates `{site}` with `dict[...]` containing {} type(s); expected exactly 2 (K, V)",
+                            t.elts.len()
+                        )));
+                    }
+                    let k_ty = parse_type_annotation(
+                        fn_name,
+                        &format!("{site} key"),
+                        &t.elts[0],
+                    )?;
+                    let v_ty = parse_type_annotation(
+                        fn_name,
+                        &format!("{site} value"),
+                        &t.elts[1],
+                    )?;
+                    Ok(Type::Dict(Box::new(k_ty), Box::new(v_ty)))
+                }
+                other => Err(FrontendError::Lower(format!(
+                    "function `{fn_name}` annotates `{site}` with subscripted `{other}[...]` — only `list[T]` / `dict[K, V]` at v0.2.0"
+                ))),
             }
-            let elem_ty = parse_type_annotation(fn_name, &format!("{site} element"), &sub.slice)?;
-            Ok(Type::List(Box::new(elem_ty)))
         }
         _ => Err(FrontendError::Lower(format!(
             "function `{fn_name}` annotates `{site}` with a non-trivial type expression — not supported at v0.2.0"
@@ -1309,8 +1338,19 @@ fn infer_type(e: &Expr) -> Type {
         // (defensive — frontend only emits Index when typing succeeds).
         Expr::Index { collection, .. } => match infer_type(collection) {
             Type::List(elem_ty) => *elem_ty,
+            Type::Dict(_, value_ty) => *value_ty,
             _ => Type::I64,
         },
+        // PMAT-462 (v0.2.0 Track 1.C): dict literal types as
+        // Type::Dict over the inferred key + value types from the
+        // first pair. Frontend enforces homogeneity at lowering time.
+        Expr::DictLit(pairs) => {
+            let (k_ty, v_ty) = pairs
+                .first()
+                .map(|(k, v)| (infer_type(k), infer_type(v)))
+                .unwrap_or((Type::Str, Type::I64));
+            Type::Dict(Box::new(k_ty), Box::new(v_ty))
+        }
         // PMAT-042 + PMAT-045 + PMAT-047 + PMAT-055: shell-domain
         // Expr variants don't appear inside Python-frontend lowering.
         Expr::QuotedString { .. }
@@ -1385,8 +1425,17 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-457: indexed access returns the collection element type.
         Expr::Index { collection, .. } => match infer_type_in_ctx(ctx, collection) {
             Type::List(elem_ty) => *elem_ty,
+            Type::Dict(_, value_ty) => *value_ty,
             _ => Type::I64,
         },
+        // PMAT-462: dict literal — see twin arm in `infer_type` above.
+        Expr::DictLit(pairs) => {
+            let (k_ty, v_ty) = pairs
+                .first()
+                .map(|(k, v)| (infer_type_in_ctx(ctx, k), infer_type_in_ctx(ctx, v)))
+                .unwrap_or((Type::Str, Type::I64));
+            Type::Dict(Box::new(k_ty), Box::new(v_ty))
+        }
         Expr::QuotedString { .. }
         | Expr::ShellVar(_)
         | Expr::CommandSubstitution(_)
@@ -1493,6 +1542,58 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
                 collection: Box::new(collection),
                 index: Box::new(index),
             })
+        }
+        // PMAT-462 (v0.2.0 Track 1.C): dict literal. Python `{...}`
+        // parses as ast::Expr::Dict { keys: Vec<Option<Expr>>, values:
+        // Vec<Expr> } — the key slot is Option to accommodate `**unpack`
+        // splats (None for those). v0.2.0 first cut requires all keys
+        // to be Some (no splat) and rejects empty literals (no upstream
+        // annotation threading for empty dicts yet).
+        ast::Expr::Dict(dict_expr) => {
+            if dict_expr.keys.is_empty() {
+                return Err(FrontendError::Lower(
+                    "empty dict literal `{}` requires a type annotation to infer K/V — \
+                     pass via `def f() -> dict[str, int]: return {}` once empty-literal annotation \
+                     threading lands in a subsequent v0.2.0 Track 1.C sub-track"
+                        .into(),
+                ));
+            }
+            let mut pairs: Vec<(Expr, Expr)> = Vec::with_capacity(dict_expr.keys.len());
+            let mut k_ty: Option<Type> = None;
+            let mut v_ty: Option<Type> = None;
+            for (k_opt, v) in dict_expr.keys.into_iter().zip(dict_expr.values.into_iter()) {
+                let Some(k) = k_opt else {
+                    return Err(FrontendError::Lower(
+                        "dict-splat (`**other`) in literals not supported at v0.2.0".into(),
+                    ));
+                };
+                let lk = lower_expr(k)?;
+                let lv = lower_expr(v)?;
+                let kt = infer_type(&lk);
+                let vt = infer_type(&lv);
+                if let Some(expected) = &k_ty {
+                    if expected != &kt {
+                        return Err(FrontendError::Lower(format!(
+                            "heterogeneous dict literal — key types {expected:?} and {kt:?} \
+                             mixed; C-XLATE-PY-DICT-TO-HASHMAP requires homogeneous keys"
+                        )));
+                    }
+                } else {
+                    k_ty = Some(kt);
+                }
+                if let Some(expected) = &v_ty {
+                    if expected != &vt {
+                        return Err(FrontendError::Lower(format!(
+                            "heterogeneous dict literal — value types {expected:?} and {vt:?} \
+                             mixed; C-XLATE-PY-DICT-TO-HASHMAP requires homogeneous values"
+                        )));
+                    }
+                } else {
+                    v_ty = Some(vt);
+                }
+                pairs.push((lk, lv));
+            }
+            Ok(Expr::DictLit(pairs))
         }
         ast::Expr::List(list_expr) => {
             if list_expr.elts.is_empty() {

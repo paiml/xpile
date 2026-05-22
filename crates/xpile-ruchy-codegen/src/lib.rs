@@ -270,6 +270,14 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
             emit_type(out, elem_ty)?;
             out.push('>');
         }
+        // PMAT-462 (v0.2.0 Track 1.C): Ruchy → Rust HashMap<K, V>.
+        Type::Dict(k_ty, v_ty) => {
+            out.push_str("std::collections::HashMap<");
+            emit_type(out, k_ty)?;
+            out.push_str(", ");
+            emit_type(out, v_ty)?;
+            out.push('>');
+        }
         // PMAT-046: same disposition as the Rust backend.
         Type::ShellString | Type::ExitCode => {
             return Err(RuchyCodegenError::Unsupported(format!(
@@ -327,6 +335,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 emit_expr(out, e, mode)?;
             }
             out.push(']');
+        }
+        // PMAT-462 (v0.2.0 Track 1.C): Ruchy → Rust HashMap-init block.
+        Expr::DictLit(pairs) => {
+            out.push_str("{ let mut m = std::collections::HashMap::new(); ");
+            for (k, v) in pairs {
+                out.push_str("m.insert(");
+                emit_expr(out, k, mode)?;
+                out.push_str(", ");
+                emit_expr(out, v, mode)?;
+                out.push_str("); ");
+            }
+            out.push_str("m }");
         }
         // PMAT-457 (v0.2.0 Track 1.B): Ruchy → Rust →
         // `xs[i as usize].clone()`, matching the Rust backend.
