@@ -883,13 +883,16 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
     if !matches!(&*f.iter, ast::Expr::Call(_)) {
         let iter_expr = lower_expr_in_ctx(ctx, (*f.iter).clone())?;
         let iter_ty = infer_type_in_ctx(ctx, &iter_expr);
-        let elem_ty = match iter_ty {
-            Type::List(elem) => *elem,
+        // PMAT-472 (R3): a dict iterates its keys (`for k in d:`), so
+        // bind `target` to the key type and flag `over_keys`.
+        let (elem_ty, over_keys) = match iter_ty {
+            Type::List(elem) => (*elem, false),
+            Type::Dict(key_ty, _) => (*key_ty, true),
             other => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` iterates a non-collection expression typing as {other:?} — \
-                     v0.2.0 supports `for target in range(...)` (existing) or \
-                     `for target in <list[T] expr>` (new); other iterables are deferred",
+                     v0.2.0 supports `for target in range(...)`, `for target in <list[T]>`, \
+                     or `for key in <dict[K, V]>`; other iterables are deferred",
                     ctx.fn_name
                 )));
             }
@@ -910,6 +913,7 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
             iter: iter_expr,
             elem_ty,
             body,
+            over_keys,
         }]);
     }
 
