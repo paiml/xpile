@@ -232,6 +232,43 @@ fn xpile_transpile_to_rust(fixture_name: &str) -> String {
     String::from_utf8(out.stdout).expect("stdout is UTF-8")
 }
 
+/// PMAT-467 (v0.2.0 Track 2.A): the decy C → Rust frontend, xpile's
+/// second source language. A stack-only int C module (`add`, recursive
+/// `factorial` via ternary, `poly` with local decls) must transpile to
+/// Rust with **C arithmetic semantics** — `i32` (not Python's i64) and
+/// `wrapping_*` (not Python's `checked_*`) — and compute correct values.
+#[test]
+fn c_int_arith_transpiles_to_rust_and_runs() {
+    let rust = xpile_transpile_to_rust("c_int_arith.c");
+    assert!(
+        rust.contains("-> i32") && rust.contains(": i32"),
+        "C int must lower to i32, not i64:\n{rust}"
+    );
+    assert!(
+        rust.contains("wrapping_add") && rust.contains("wrapping_mul"),
+        "C arithmetic must use wrapping_*, not checked_*:\n{rust}"
+    );
+    assert!(
+        !rust.contains("checked_") && !rust.contains("i64"),
+        "C emission must not use Python's checked_*/i64 path:\n{rust}"
+    );
+    assert!(
+        rust.contains("C-C-INT-ARITH"),
+        "C functions should cite C-C-INT-ARITH:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(add(2, 3), 5);
+    assert_eq!(add(-4, 10), 6);
+    assert_eq!(factorial(0), 1);
+    assert_eq!(factorial(5), 120);
+    assert_eq!(factorial(12), 479001600);
+    assert_eq!(poly(3), 16);   // 9 + (6+1)
+}
+"#;
+    assert_rustc_runs("c_int_arith", &rust, driver);
+}
+
 #[test]
 fn rust_emission_for_add_compiles_with_rustc() {
     let rust = xpile_transpile_to_rust("add.py");
