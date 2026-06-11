@@ -11,3 +11,17 @@ int poly(int x) {
     int lin = 2 * x + 1;
     return sq + lin;
 }
+
+/* iterative: while loop + reassignment (slice 2) */
+int sum_to(int n) {
+    int s = 0;
+    int i = 1;
+    while (i <= n) {
+        s = s + i;
+        i = i + 1;
+    }
+    return s;
+}
+
+/* C truncating division (toward zero), not Python floor */
+int half(int x) { return x / 2; }

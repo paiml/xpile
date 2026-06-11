@@ -856,7 +856,7 @@ fn emit_c_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
     }
     writeln!(out, ") -> i32 {{")?;
     for stmt in &f.body.stmts {
-        emit_c_stmt(out, stmt)?;
+        emit_c_stmt(out, stmt, "    ")?;
     }
     write!(out, "    ")?;
     emit_c_expr(out, &f.body.trailing_return)?;
@@ -865,16 +865,39 @@ fn emit_c_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
     Ok(())
 }
 
-fn emit_c_stmt(out: &mut String, stmt: &Stmt) -> Result<(), CodegenError> {
+fn emit_c_stmt(out: &mut String, stmt: &Stmt, indent: &str) -> Result<(), CodegenError> {
     match stmt {
-        Stmt::Let { name, value, .. } => {
-            write!(out, "    let {name}: i32 = ")?;
+        Stmt::Let {
+            name,
+            value,
+            mutable,
+            ..
+        } => {
+            let kw = if *mutable { "let mut" } else { "let" };
+            write!(out, "{indent}{kw} {name}: i32 = ")?;
             emit_c_expr(out, value)?;
             writeln!(out, ";")?;
             Ok(())
         }
+        Stmt::Assign { name, value } => {
+            write!(out, "{indent}{name} = ")?;
+            emit_c_expr(out, value)?;
+            writeln!(out, ";")?;
+            Ok(())
+        }
+        Stmt::While { cond, body } => {
+            write!(out, "{indent}while ")?;
+            emit_c_expr(out, cond)?;
+            writeln!(out, " {{")?;
+            let inner = format!("{indent}    ");
+            for s in body {
+                emit_c_stmt(out, s, &inner)?;
+            }
+            writeln!(out, "{indent}}}")?;
+            Ok(())
+        }
         other => Err(CodegenError::Unsupported(format!(
-            "C backend slice 1 supports only `int x = expr;` declarations, got {other:?}"
+            "C backend supports `int x = e;`, `x = e;`, and `while (c) {{ … }}`, got {other:?}"
         ))),
     }
 }
@@ -954,6 +977,13 @@ fn emit_c_binop(out: &mut String, op: BinOp, lhs: &Expr, rhs: &Expr) -> Result<(
         BinOp::Add => wrapping(out, "wrapping_add")?,
         BinOp::Sub => wrapping(out, "wrapping_sub")?,
         BinOp::Mul => wrapping(out, "wrapping_mul")?,
+        // C `/` truncates toward zero (Rust integer `/` does too);
+        // `wrapping_div`/`wrapping_rem` add the INT_MIN/-1 UB guard.
+        // The frontend carries these as FloorDiv/Mod (shared IR
+        // variants); here they mean C truncating div/rem, not Python
+        // floor.
+        BinOp::FloorDiv => wrapping(out, "wrapping_div")?,
+        BinOp::Mod => wrapping(out, "wrapping_rem")?,
         BinOp::Eq => infix(out, "==")?,
         BinOp::NotEq => infix(out, "!=")?,
         BinOp::Lt => infix(out, "<")?,
