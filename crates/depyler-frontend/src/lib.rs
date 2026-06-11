@@ -28,6 +28,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::rc::Rc;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
     BinOp, Block, Expr, Function, Item, Module, Param, SourceLang, Stmt, Type, UnOp,
@@ -63,10 +64,24 @@ struct LoweringCtx {
     /// body count as mutable even if the source has only one assign,
     /// because the runtime executes that assign repeatedly.
     mutable: HashSet<String>,
+    /// PMAT-471 (R2): module-level signature table — every top-level
+    /// function's declared return type, built in a pre-pass before any
+    /// function is lowered. Consulted when typing `Expr::Call` so a
+    /// call to *another* function (e.g. `d = make_dict()`) gets its real
+    /// return type instead of the old hardcoded `Type::I64` fallback
+    /// (which silently emitted `let d: i64` and broke rustc). Shared
+    /// across all functions in the module via `Rc`.
+    signatures: Rc<HashMap<String, Type>>,
 }
 
 impl LoweringCtx {
-    fn new(fn_name: &str, fn_return_type: Type, params: &[Param], body: &[ast::Stmt]) -> Self {
+    fn new(
+        fn_name: &str,
+        fn_return_type: Type,
+        params: &[Param],
+        body: &[ast::Stmt],
+        signatures: Rc<HashMap<String, Type>>,
+    ) -> Self {
         let bound: HashSet<String> = params.iter().map(|p| p.name.clone()).collect();
         let name_types: HashMap<String, Type> = params
             .iter()
@@ -79,6 +94,7 @@ impl LoweringCtx {
             bound,
             name_types,
             mutable,
+            signatures,
         }
     }
 }
@@ -284,6 +300,24 @@ impl Frontend for PythonFrontend {
         let suite = ast::Suite::parse(source, &source_name)
             .map_err(|e| FrontendError::Parse(format!("{}: {}", source_name, e)))?;
 
+        // PMAT-471 (R2): pre-pass — record every top-level function's
+        // declared return type so cross-function calls type correctly
+        // (a leniently-unparseable annotation falls back to I64; the
+        // real per-function lowering below reports a precise error).
+        let mut sig_map: HashMap<String, Type> = HashMap::new();
+        for stmt in &suite {
+            if let ast::Stmt::FunctionDef(f) = stmt {
+                let ret = match f.returns.as_ref() {
+                    None => Type::I64,
+                    Some(ann) => {
+                        parse_type_annotation(f.name.as_str(), "return", ann).unwrap_or(Type::I64)
+                    }
+                };
+                sig_map.insert(f.name.to_string(), ret);
+            }
+        }
+        let signatures = Rc::new(sig_map);
+
         let mut items = Vec::new();
         for stmt in suite {
             // PMAT-036: `from __future__ import annotations` is the
@@ -296,7 +330,7 @@ impl Frontend for PythonFrontend {
             if is_future_annotations_import(&stmt) {
                 continue;
             }
-            let fn_item = lower_top_level_stmt(stmt)?;
+            let fn_item = lower_top_level_stmt(stmt, signatures.clone())?;
             items.push(Item::Function(fn_item));
         }
 
@@ -332,9 +366,12 @@ fn is_future_annotations_import(stmt: &ast::Stmt) -> bool {
         .any(|alias| alias.name.as_str() == "annotations" && alias.asname.is_none())
 }
 
-fn lower_top_level_stmt(stmt: ast::Stmt) -> Result<Function, FrontendError> {
+fn lower_top_level_stmt(
+    stmt: ast::Stmt,
+    signatures: Rc<HashMap<String, Type>>,
+) -> Result<Function, FrontendError> {
     match stmt {
-        ast::Stmt::FunctionDef(f) => lower_function_def(f),
+        ast::Stmt::FunctionDef(f) => lower_function_def(f, signatures),
         other => Err(FrontendError::Lower(format!(
             "unsupported top-level statement: {:?} — only `def` is supported at v0.1.0",
             std::mem::discriminant(&other)
@@ -342,7 +379,10 @@ fn lower_top_level_stmt(stmt: ast::Stmt) -> Result<Function, FrontendError> {
     }
 }
 
-fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError> {
+fn lower_function_def(
+    f: ast::StmtFunctionDef,
+    signatures: Rc<HashMap<String, Type>>,
+) -> Result<Function, FrontendError> {
     if !f.decorator_list.is_empty() {
         return Err(FrontendError::Lower(format!(
             "function `{}` has decorators — not supported at v0.1.0",
@@ -409,7 +449,13 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
         }
     }
 
-    let mut ctx = LoweringCtx::new(&f.name, ctx_return_type.clone(), &params, &body_stmts);
+    let mut ctx = LoweringCtx::new(
+        &f.name,
+        ctx_return_type.clone(),
+        &params,
+        &body_stmts,
+        signatures,
+    );
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
     for stmt in leading {
         // A single Python statement may lower to multiple meta-HIR
@@ -1689,13 +1735,18 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             }
         },
         Expr::IfExpr { then_expr, .. } => infer_type_in_ctx(ctx, then_expr),
-        Expr::Call { callee, .. } => {
+        // PMAT-471 (R2): consult the module signature table first so a
+        // call to another function gets its real declared return type
+        // (e.g. `make_dict()` → Type::Dict, not the old I64 fallback
+        // that silently emitted `let d: i64`). The table includes the
+        // enclosing function, so self-recursion is covered too.
+        Expr::Call { callee, .. } => ctx.signatures.get(callee).cloned().unwrap_or_else(|| {
             if callee == &ctx.fn_name {
                 ctx.fn_return_type.clone()
             } else {
                 Type::I64
             }
-        }
+        }),
         Expr::UnOp { op, operand } => match op {
             UnOp::Neg => infer_type_in_ctx(ctx, operand),
             UnOp::Not => Type::Bool,

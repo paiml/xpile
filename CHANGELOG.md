@@ -7,6 +7,28 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.6] — 2026-06-11
+
+Incremental release adding **cross-function return-type inference**
+(PMAT-471, the post-v0.1.4 audit's R2).
+
+- A module-level signature table (built in a pre-pass over the top-level
+  `def`s) records each function's declared return type. `Expr::Call`
+  inference now consults it instead of the old hardcoded `Type::I64`
+  fallback. So `s = make_scores()` where `make_scores() -> dict[str,int]`
+  now types `s` as `HashMap<String, i64>` (was `let s: i64`, which made
+  `s["alice"]` reject under rustc).
+- This fixes code that *should* transpile but silently emitted wrong
+  Rust, and is a prerequisite for any non-trivial multi-function program
+  that composes dict/list/str-returning helpers.
+- Exit (rustc round-trip): a `make_scores()` → `alice_score()`/`total()`
+  composition compiles and computes `total() == 30`.
+
+Frontend-only; no meta-HIR or backend change. Substrate unchanged at
+QUORUM. `transpile_e2e` at 78 tests.
+
+Install: `cargo install xpile` upgrades to 0.1.6.
+
 ## [0.1.5] — 2026-06-11
 
 Incremental release adding Python **augmented assignment** (PMAT-470,

@@ -232,6 +232,30 @@ fn xpile_transpile_to_rust(fixture_name: &str) -> String {
     String::from_utf8(out.stdout).expect("stdout is UTF-8")
 }
 
+/// PMAT-471 (R2): cross-function return-type inference. A local bound to
+/// a call (`s = make_scores()`) must take the callee's declared return
+/// type from the module signature table, not the old hardcoded `i64`
+/// fallback (which emitted `let s: i64` and made `s["alice"]` reject).
+#[test]
+fn cross_function_return_type_inference_roundtrip() {
+    let rust = xpile_transpile_to_rust("cross_fn_dict.py");
+    assert!(
+        rust.contains("let s: std::collections::HashMap<String, i64> = make_scores()"),
+        "`s = make_scores()` should type s as the callee's dict return, not i64:\n{rust}"
+    );
+    assert!(
+        !rust.contains("let s: i64 = make_scores()"),
+        "the old i64 call-result fallback must not apply to a dict-returning call:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(alice_score(), 10i64);
+    assert_eq!(total(), 30i64);
+}
+"#;
+    assert_rustc_runs("cross_fn_dict", &rust, driver);
+}
+
 /// PMAT-470 (R1): augmented assignment (`x += i`, `p *= x`, `out += "!"`).
 /// Desugars to `x = x <op> e` reusing the BinOp machinery (so overflow
 /// checking and str-concat detection apply); must compute correct values.
