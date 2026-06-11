@@ -2,6 +2,65 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-465
+  github_issue: 496
+  item_type: task
+  title: 'PMAT-465: Reprioritize v0.2.0 roadmap by expected value; freeze Diamond depth at 13; encode autonomous high-EV pickup order'
+  status: in_progress
+  priority: high
+  created: 2026-06-11T00:00:00Z
+  acceptance_criteria:
+  - "spec §30 gains an EV-ranked Autonomous execution priority table (P1 dict lane, P2 decy C frontend, P3 fixture-overfitting paydown, P4 bashrs check-back); the next-session pickup line points at it instead of whichever-sub-track-has-capacity."
+  - "Diamond depth ratchet frozen at depth-13 (banner in sub/diamond-taxonomy.md); no depth-14+ broadening as default/background work."
+  - "Ledger reconciled: forward priorities PMAT-466..469 tracked here; note recorded that PMAT-444..464 live only in git + CHANGELOG (canonical record per PMAT-001), not this ledger."
+  - "PR #496 merges green."
+- id: PMAT-466
+  github_issue: null
+  item_type: task
+  title: 'PMAT-466: [P1] Complete the dict[K,V] lane — operations + C-XLATE-PY-DICT-TO-HASHMAP contract'
+  status: planned
+  priority: critical
+  created: 2026-06-11T00:00:00Z
+  acceptance_criteria:
+  - "Foundation present: Type::Dict + Expr::DictLit exist (xpile-meta-hir/src/lib.rs:510,625) and DictLit lowers to a HashMap block (xpile-rust-codegen/src/lib.rs:397). MISSING and to add: Expr::DictGet (d[k]) and Stmt::DictSet (d[k]=v) in meta-HIR."
+  - "depyler-frontend: lower dict subscript read/write, len(d), for k in d, and k in d membership."
+  - "xpile-rust-codegen: emit HashMap get/insert/contains_key/len; xpile-ruchy-codegen mirror; xpile-lean-codegen may refuse mutation/iteration (deferred v0.3.0) with a clear error."
+  - "Author contracts/xlate-py-dict-to-hashmap-v1.yaml (14th contract) → §14.4 QUORUM (paired Lean + Kani); pv lint 8/8, 0 errors."
+  - "Exit criterion (spec §30): count_chars with counts[c] = counts.get(c,0)+1 transpiles to compileable Rust carrying // xpile-contract: C-XLATE-PY-DICT-TO-HASHMAP; rustc round-trip green. Flips the depyler-replacement claim to true for the str/list/dict subset."
+- id: PMAT-467
+  github_issue: null
+  item_type: task
+  title: 'PMAT-467: [P2] Decy real C frontend — replace 35-line stub with tree-sitter-c parser + C-C-INT-ARITH'
+  status: planned
+  priority: high
+  created: 2026-06-11T00:00:00Z
+  acceptance_criteria:
+  - "decy-frontend is currently a 35-line stub returning an empty Module (decy-frontend/src/lib.rs) vs depyler-frontend 2074 lines / bashrs-frontend 2229 lines. 2.A: port decy-parser (tree-sitter-c) into it — stack-only int/bool, NO pointers."
+  - "2.B: author contracts/c-int-arith-v1.yaml (Layer-1, sibling of C-PY-INT-ARITH) capturing C truncating /, sign-of-dividend %, signed-overflow-as-UB lowered to wrapping_*; → QUORUM."
+  - "2.C: xpile-rust-codegen C path emits i32 + wrapping_* (NOT checked_*/div_euclid); thread SourceLang::C through BackendConfig."
+  - "Exit criterion: int add(int,int) and recursive C factorial transpile to Rust with // xpile-contract: C-C-INT-ARITH; rustc round-trip green. The actual second source language (today polyglot is Python + shell only)."
+- id: PMAT-468
+  github_issue: null
+  item_type: task
+  title: 'PMAT-468: [P3] Pay down Fixture Overfitting — property-specific Runtime witnesses for the 10 placeholder contracts'
+  status: planned
+  priority: high
+  created: 2026-06-11T00:00:00Z
+  acceptance_criteria:
+  - "audit-design.md §4: 10/13 contracts reach QUORUM on a single byte-identity demo-fixture Runtime witness. Replace each with a property-specific differential-execution witness modeled on runtime_strata.rs / trait_runtime_properties.rs (the contracts that already have real Runtime depth)."
+  - "Deep-value signal (--lib coverage, 2026-06-11): the live lowering/emit path is thinly unit-covered — depyler lower_expr 16%, lower_for_stmt 0%, parse_type_annotation 0%, rust emit_stmt_indented 17%, ruchy emit_stmt_indented 0%, lean emit_function_with_while_helpers 0%. Add per-branch unit/property tests alongside the runtime witnesses. Caveat: the integration suite in crates/xpile/tests adds coverage not counted by --lib."
+  - "Absorbs the capacity freed by the depth-13 Diamond freeze; one contract per PR, same broadening cadence."
+- id: PMAT-469
+  github_issue: null
+  item_type: task
+  title: 'PMAT-469: [P4] Bashrs check-back option (c) — Lean shell-composition-idempotence theorem'
+  status: planned
+  priority: medium
+  created: 2026-06-11T00:00:00Z
+  acceptance_criteria:
+  - "Write composition_idempotence_diamond in contracts/lean/Bashrs.lean for the idempotent shell subset (mkdir -p, chmod, touch, > redirect, var-assign): observe(compose cmd cmd) = observe cmd."
+  - "Wire as a Diamond theorem in contracts/bashrs-posix-idempotence-v1.yaml; advances C-BASHRS-POSIX-IDEMPOTENCE diamond depth (an allowed exception to the depth-13 freeze because it discharges a falsifier, not pure broadening)."
+  - "Record the second independent discharge of XPILE-UNMERGE-001 in sub/bashrs-merger.md + audit-design.md (defense-in-depth; option (a) subprocess.run still holds)."
 - id: PMAT-443
   github_issue: null
   item_type: task
