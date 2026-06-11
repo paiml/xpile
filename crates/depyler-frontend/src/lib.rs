@@ -122,6 +122,14 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                     *counts.entry(name).or_insert(0) += bump;
                 }
             }
+            // PMAT-470 (R1): `x <op>= e` is a read-modify-write
+            // reassignment → mutates `x`, so count it like an Assign.
+            ast::Stmt::AugAssign(a) => {
+                if let ast::Expr::Name(n) = a.target.as_ref() {
+                    let bump = if in_loop { 2 } else { 1 };
+                    *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                }
+            }
             // PMAT-466: an annotated local binding counts exactly ONCE,
             // even inside a loop — each iteration re-binds a fresh
             // (shadowing) local; it does NOT mutate a prior binding, so
@@ -587,6 +595,8 @@ fn parse_type_annotation(
 fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>, FrontendError> {
     match stmt {
         ast::Stmt::Assign(asn) => lower_assign(ctx, asn).map(|s| vec![s]),
+        // PMAT-470 (R1): augmented assignment `x += e` → `x = x <op> e`.
+        ast::Stmt::AugAssign(aug) => lower_aug_assign(ctx, aug).map(|s| vec![s]),
         // PMAT-466 (v0.2.0 Track 1.C): annotated local `name: T = value`.
         ast::Stmt::AnnAssign(aa) => lower_ann_assign(ctx, aa).map(|s| vec![s]),
         ast::Stmt::If(if_stmt) => lower_if_stmt_as_lets(ctx, if_stmt),
@@ -1382,6 +1392,49 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
             mutable,
         })
     }
+}
+
+/// PMAT-470 (R1): lower an augmented assignment `x <op>= e` to the
+/// reassignment `x = x <op> e`, reusing the existing `BinOp` machinery
+/// (so overflow checking, str-concat detection, etc. apply uniformly).
+/// No meta-HIR or backend change. Subscript targets (`d[k] += e`) are
+/// not handled here — use the explicit `d[k] = d[k] + e` form.
+fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<Stmt, FrontendError> {
+    let name = match aug.target.as_ref() {
+        ast::Expr::Name(n) => n.id.to_string(),
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` uses augmented assignment on a non-Name target — at v0.2.0 use the explicit form `d[k] = d[k] + e`; `name <op>= e` for a plain variable is supported",
+                ctx.fn_name
+            )));
+        }
+    };
+    if !ctx.bound.contains(&name) {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` augments `{name}` (`{name} <op>= …`) before it is assigned — initialise `{name}` first",
+            ctx.fn_name
+        )));
+    }
+    let op = lower_binop(&aug.op)?;
+    let lhs = Expr::Ident(name.clone());
+    let rhs = lower_expr_in_ctx(ctx, (*aug.value).clone())?;
+    // Mirror lower_expr_in_ctx's str-concat detection so `s += "x"`
+    // lowers to Concat (format!), not a checked_add on String.
+    let value = if matches!(op, BinOp::Add)
+        && (infer_type_in_ctx(ctx, &lhs) == Type::Str || infer_type_in_ctx(ctx, &rhs) == Type::Str)
+    {
+        Expr::Concat {
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        }
+    } else {
+        Expr::BinOp {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        }
+    };
+    Ok(Stmt::Assign { name, value })
 }
 
 /// PMAT-466 (v0.2.0 Track 1.C): lower an annotated local assignment

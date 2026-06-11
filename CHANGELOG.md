@@ -7,6 +7,33 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.5] — 2026-06-11
+
+Incremental release adding Python **augmented assignment** (PMAT-470,
+the post-v0.1.4 audit's R1 — highest capability-per-hour item).
+
+- `x += e` and the family `-= *= //= %= &= |= ^= <<= >>= **=` now
+  transpile, desugared to `x = x <op> e` — reusing the existing `BinOp`
+  machinery, so overflow-checking (`checked_*`) and string-concat
+  detection apply uniformly, with **no meta-HIR or backend change**.
+  `s += "!"` lowers to a `format!` concat (not a `checked_add` on
+  `String`); `p *= x` to a `checked_mul`. The mutability pre-pass counts
+  augmented targets, so the binding is emitted `let mut`.
+- This unblocks the single most-used Python loop idiom (counters /
+  accumulators), present in essentially every loop-bearing codebase.
+- Exit (rustc round-trip): `count_up` (`total += i; i += 1` in a while)
+  computes `count_up(100) == 4950`; `product` (`p *= x` in a for-loop)
+  and `shout` (`out += "!"`) compute correctly.
+
+Not yet supported: augmented assignment to a subscript target
+(`d[k] += v`) — use the explicit `d[k] = d[k] + v`; `name <op>= e` for a
+plain variable is supported.
+
+Substrate unchanged at QUORUM (13 contracts, depth-13 UNIVERSAL frozen
+per §30). `transpile_e2e` at 77 tests.
+
+Install: `cargo install xpile` upgrades to 0.1.5.
+
 ## [0.1.4] — 2026-06-11
 
 Incremental release extending the `decy` C → Rust frontend (PMAT-467,
