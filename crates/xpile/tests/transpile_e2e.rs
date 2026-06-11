@@ -232,6 +232,29 @@ fn xpile_transpile_to_rust(fixture_name: &str) -> String {
     String::from_utf8(out.stdout).expect("stdout is UTF-8")
 }
 
+/// PMAT-472 (R3): dict iteration `for k in d:` lowers to
+/// `for k in d.keys().cloned()` (the loop var is the key type).
+/// Assertions are order-independent — HashMap key order is unspecified.
+#[test]
+fn dict_iteration_roundtrip() {
+    let rust = xpile_transpile_to_rust("dict_iter.py");
+    assert!(
+        rust.contains("for k in d.keys().cloned()"),
+        "`for k in d:` should iterate keys:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let mut d = std::collections::HashMap::new();
+    d.insert(1i64, 10i64);
+    d.insert(2i64, 20i64);
+    d.insert(3i64, 30i64);
+    assert_eq!(sum_keys(d.clone()), 6i64);     // 1+2+3
+    assert_eq!(sum_values(d.clone()), 60i64);  // 10+20+30
+}
+"#;
+    assert_rustc_runs("dict_iter", &rust, driver);
+}
+
 /// PMAT-471 (R2): cross-function return-type inference. A local bound to
 /// a call (`s = make_scores()`) must take the callee's declared return
 /// type from the module signature table, not the old hardcoded `i64`

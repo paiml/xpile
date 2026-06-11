@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.7] — 2026-06-11
+
+Incremental release adding Python **dict iteration** `for k in d:`
+(PMAT-472, the post-v0.1.4 audit's R3) — completing the dict lane
+(read / write / `.get` / `in` / `len` shipped in v0.1.2).
+
+- `for k in d:` over a `dict[K, V]` now binds `k` to the key type and
+  emits Rust `for k in d.keys().cloned() { … }` (a new `over_keys` flag
+  on `Stmt::ForEach`; the list case is unchanged at `.iter().cloned()`).
+- Exit (rustc round-trip, order-independent): `sum_keys` (`total += k`)
+  → 6 and `sum_values` (`total += d[k]`) → 60 over `{1:10, 2:20, 3:30}`.
+- **Note:** `HashMap` key order is unspecified, so a `for k in d:` loop
+  observes keys in arbitrary order — order-dependent dict iteration is
+  not yet faithful to CPython ≥3.7 insertion order (deferred).
+
+Substrate unchanged at QUORUM. `transpile_e2e` at 79 tests.
+
+Install: `cargo install xpile` upgrades to 0.1.7.
+
 ## [0.1.6] — 2026-06-11
 
 Incremental release adding **cross-function return-type inference**

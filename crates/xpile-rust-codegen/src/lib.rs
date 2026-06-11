@@ -188,11 +188,19 @@ fn emit_stmt_indented(
         // v0.2.0 owned-value posture (Index already returns .clone(),
         // so the body sees owned values consistently).
         Stmt::ForEach {
-            var, iter, body, ..
+            var,
+            iter,
+            body,
+            over_keys,
+            ..
         } => {
+            // PMAT-472 (R3): a dict iterates keys (`for k in d:`) via
+            // `.keys().cloned()`; a list iterates elements via
+            // `.iter().cloned()`. Both yield owned values.
+            let method = if *over_keys { "keys" } else { "iter" };
             write!(out, "{indent}for {var} in ")?;
             emit_expr(out, iter, mode)?;
-            writeln!(out, ".iter().cloned() {{")?;
+            writeln!(out, ".{method}().cloned() {{")?;
             let inner = format!("{indent}    ");
             for s in body {
                 emit_stmt_indented(out, s, &inner, mode)?;

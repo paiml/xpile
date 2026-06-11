@@ -36,7 +36,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 rust-version = "1.93"
 license = "MIT OR Apache-2.0"
@@ -66,38 +66,38 @@ anyhow = "1"
 provable-contracts = { version = "0.33", package = "aprender-contracts" }
 
 # Code lane: core
-xpile-agent          = { version = "0.1.6", path = "crates/xpile-agent" }
-xpile-contracts      = { version = "0.1.6", path = "crates/xpile-contracts" }
-xpile-core           = { version = "0.1.6", path = "crates/xpile-core" }
-xpile-ffi-manifest   = { version = "0.1.6", path = "crates/xpile-ffi-manifest" }
-xpile-frontend       = { version = "0.1.6", path = "crates/xpile-frontend" }
-xpile-backend        = { version = "0.1.6", path = "crates/xpile-backend" }
-xpile-llm            = { version = "0.1.6", path = "crates/xpile-llm" }
-xpile-mcp            = { version = "0.1.6", path = "crates/xpile-mcp" }
-xpile-meta-hir       = { version = "0.1.6", path = "crates/xpile-meta-hir" }
-xpile-oracle         = { version = "0.1.6", path = "crates/xpile-oracle" }
-xpile-bigint         = { version = "0.1.6", path = "crates/xpile-bigint" }
+xpile-agent          = { version = "0.1.7", path = "crates/xpile-agent" }
+xpile-contracts      = { version = "0.1.7", path = "crates/xpile-contracts" }
+xpile-core           = { version = "0.1.7", path = "crates/xpile-core" }
+xpile-ffi-manifest   = { version = "0.1.7", path = "crates/xpile-ffi-manifest" }
+xpile-frontend       = { version = "0.1.7", path = "crates/xpile-frontend" }
+xpile-backend        = { version = "0.1.7", path = "crates/xpile-backend" }
+xpile-llm            = { version = "0.1.7", path = "crates/xpile-llm" }
+xpile-mcp            = { version = "0.1.7", path = "crates/xpile-mcp" }
+xpile-meta-hir       = { version = "0.1.7", path = "crates/xpile-meta-hir" }
+xpile-oracle         = { version = "0.1.7", path = "crates/xpile-oracle" }
+xpile-bigint         = { version = "0.1.7", path = "crates/xpile-bigint" }
 
 # Code lane: frontends
-depyler-frontend = { version = "0.1.6", path = "crates/depyler-frontend" }
-decy-frontend    = { version = "0.1.6", path = "crates/decy-frontend" }
-ruchy-frontend   = { version = "0.1.6", path = "crates/ruchy-frontend" }
-bashrs-frontend  = { version = "0.1.6", path = "crates/bashrs-frontend" }
+depyler-frontend = { version = "0.1.7", path = "crates/depyler-frontend" }
+decy-frontend    = { version = "0.1.7", path = "crates/decy-frontend" }
+ruchy-frontend   = { version = "0.1.7", path = "crates/ruchy-frontend" }
+bashrs-frontend  = { version = "0.1.7", path = "crates/bashrs-frontend" }
 
 # Code lane: backends
-xpile-rust-codegen  = { version = "0.1.6", path = "crates/xpile-rust-codegen" }
-xpile-ruchy-codegen = { version = "0.1.6", path = "crates/xpile-ruchy-codegen" }
-xpile-ptx-codegen   = { version = "0.1.6", path = "crates/xpile-ptx-codegen" }
-xpile-wgsl-codegen  = { version = "0.1.6", path = "crates/xpile-wgsl-codegen" }
-xpile-lean-codegen  = { version = "0.1.6", path = "crates/xpile-lean-codegen" }
-bashrs-backend      = { version = "0.1.6", path = "crates/bashrs-backend" }
+xpile-rust-codegen  = { version = "0.1.7", path = "crates/xpile-rust-codegen" }
+xpile-ruchy-codegen = { version = "0.1.7", path = "crates/xpile-ruchy-codegen" }
+xpile-ptx-codegen   = { version = "0.1.7", path = "crates/xpile-ptx-codegen" }
+xpile-wgsl-codegen  = { version = "0.1.7", path = "crates/xpile-wgsl-codegen" }
+xpile-lean-codegen  = { version = "0.1.7", path = "crates/xpile-lean-codegen" }
+bashrs-backend      = { version = "0.1.7", path = "crates/bashrs-backend" }
 
 # Proof lane
-xpile-contract-frontend     = { version = "0.1.6", path = "crates/xpile-contract-frontend" }
-xpile-contract-backend      = { version = "0.1.6", path = "crates/xpile-contract-backend" }
-latex-contract-frontend     = { version = "0.1.6", path = "crates/latex-contract-frontend" }
-xpile-lean-contract-backend = { version = "0.1.6", path = "crates/xpile-lean-contract-backend" }
-xpile-latex-contract-backend = { version = "0.1.6", path = "crates/xpile-latex-contract-backend" }
+xpile-contract-frontend     = { version = "0.1.7", path = "crates/xpile-contract-frontend" }
+xpile-contract-backend      = { version = "0.1.7", path = "crates/xpile-contract-backend" }
+latex-contract-frontend     = { version = "0.1.7", path = "crates/latex-contract-frontend" }
+xpile-lean-contract-backend = { version = "0.1.7", path = "crates/xpile-lean-contract-backend" }
+xpile-latex-contract-backend = { version = "0.1.7", path = "crates/xpile-latex-contract-backend" }
 
 # ── aprender-pattern aliases ──────────────────────────────────────
 # Preserve the historic crate names from sibling repos so that
@@ -105,10 +105,10 @@ xpile-latex-contract-backend = { version = "0.1.6", path = "crates/xpile-latex-c
 # (paiml/depyler etc. as ~50-line shim repos) keep importing under the
 # old names. Decision recorded 2026-05-15; see project-xpile-vision memory
 # and aprender's Cargo.toml lines 254-273 for the originating pattern.
-depyler = { version = "0.1.6", path = "crates/depyler-frontend", package = "depyler-frontend" }
-decy    = { version = "0.1.6", path = "crates/decy-frontend",    package = "decy-frontend" }
-ruchy   = { version = "0.1.6", path = "crates/ruchy-frontend",   package = "ruchy-frontend" }
-bashrs  = { version = "0.1.6", path = "crates/bashrs-frontend",  package = "bashrs-frontend" }
+depyler = { version = "0.1.7", path = "crates/depyler-frontend", package = "depyler-frontend" }
+decy    = { version = "0.1.7", path = "crates/decy-frontend",    package = "decy-frontend" }
+ruchy   = { version = "0.1.7", path = "crates/ruchy-frontend",   package = "ruchy-frontend" }
+bashrs  = { version = "0.1.7", path = "crates/bashrs-frontend",  package = "bashrs-frontend" }
 
 [profile.release]
 lto = "thin"

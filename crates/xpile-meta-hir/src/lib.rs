@@ -369,6 +369,15 @@ pub enum Stmt {
         iter: Expr,
         elem_ty: Type,
         body: Vec<Stmt>,
+        /// PMAT-472 (R3): when `iter` is a dict, the loop iterates its
+        /// **keys** (Python `for k in d:`), so Rust/Ruchy emit
+        /// `iter.keys().cloned()` instead of `iter.iter().cloned()`,
+        /// and `elem_ty` is the key type. `false` for the list case.
+        /// NOTE: HashMap key order is unspecified — a `for k in d:` loop
+        /// observes keys in arbitrary order (matching CPython ≥3.7 only
+        /// for insertion-order semantics it does NOT yet preserve).
+        #[serde(default)]
+        over_keys: bool,
     },
     /// `assert cond` — Python `assert cond` (no message form at v0.1.0).
     /// Lowers to `assert!(cond);` in Rust/Ruchy. Lean is skipped (Lean's

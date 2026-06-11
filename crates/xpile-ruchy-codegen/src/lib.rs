@@ -161,11 +161,17 @@ fn emit_stmt_indented(
         // PMAT-458 (v0.2.0 Track 1.B): Ruchy → Rust → for-each with
         // .iter().cloned() for owned-value bindings.
         Stmt::ForEach {
-            var, iter, body, ..
+            var,
+            iter,
+            body,
+            over_keys,
+            ..
         } => {
+            // PMAT-472 (R3): dict iterates keys via `.keys().cloned()`.
+            let method = if *over_keys { "keys" } else { "iter" };
             write!(out, "{indent}for {var} in ")?;
             emit_expr(out, iter, mode)?;
-            writeln!(out, ".iter().cloned() {{")?;
+            writeln!(out, ".{method}().cloned() {{")?;
             let inner = format!("{indent}    ");
             for s in body {
                 emit_stmt_indented(out, s, &inner, mode)?;
