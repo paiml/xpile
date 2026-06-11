@@ -232,6 +232,31 @@ fn xpile_transpile_to_rust(fixture_name: &str) -> String {
     String::from_utf8(out.stdout).expect("stdout is UTF-8")
 }
 
+/// PMAT-470 (R1): augmented assignment (`x += i`, `p *= x`, `out += "!"`).
+/// Desugars to `x = x <op> e` reusing the BinOp machinery (so overflow
+/// checking and str-concat detection apply); must compute correct values.
+#[test]
+fn augmented_assignment_roundtrip() {
+    let rust = xpile_transpile_to_rust("aug_assign.py");
+    assert!(
+        rust.contains("total = (total).checked_add(i)"),
+        "`total += i` should desugar to a checked add:\n{rust}"
+    );
+    assert!(
+        rust.contains("out = format!(\"{}{}\", out,"),
+        "`out += \"!\"` should desugar to str concat, not checked_add:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(count_up(5), 10);      // 0+1+2+3+4
+    assert_eq!(count_up(100), 4950);
+    assert_eq!(product(vec![1i64, 2, 3, 4]), 24i64);
+    assert_eq!(shout(String::from("hi")), "hi!!");
+}
+"#;
+    assert_rustc_runs("aug_assign", &rust, driver);
+}
+
 /// PMAT-467 (v0.2.0 Track 2.A): the decy C → Rust frontend, xpile's
 /// second source language. A stack-only int C module (`add`, recursive
 /// `factorial` via ternary, `poly` with local decls) must transpile to
