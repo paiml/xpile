@@ -2,6 +2,112 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-470
+  github_issue: null
+  item_type: task
+  title: 'PMAT-470: [R1] Python augmented assignment (x += 1, -= *= //= %= &= |= ^= >>= <<=)'
+  status: planned
+  priority: critical
+  created: 2026-06-11T00:00:00Z
+  acceptance_criteria:
+  - "Add an ast::Stmt::AugAssign arm to lower_block_stmt in depyler-frontend (currently falls through to the unsupported-statement error). Desugar to Stmt::Assign of `target = target <op> rhs`, reusing lower_assign + BinOp — NO meta-HIR or backend change."
+  - "Highest capability-per-hour win in the post-v0.1.4 audit: unblocks 60-80% of real Python (every counter/accumulator loop)."
+  - "Fixture aug_assign.py (counter/accumulator loop); rustc -O round-trip asserts the emitted Rust matches the Python-computed value. Ship as a tagged release."
+- id: PMAT-471
+  github_issue: null
+  item_type: task
+  title: 'PMAT-471: [R2] Cross-function return-type inference (module signature table)'
+  status: planned
+  priority: high
+  created: 2026-06-11T00:00:00Z
+  acceptance_criteria:
+  - "Pre-pass over top-level FunctionDefs records each declared return Type into a map on LoweringCtx; consult it at the hardcoded Type::I64 call-result fallback sites (depyler-frontend ~:357/:944/:1520) before defaulting."
+  - "Fixes silently-wrong emission: `d = make_dict(); d[k]` currently emits `let d: i64` and rustc rejects. Frontend-only; prerequisite for multi-function dict/list/str programs."
+  - "rustc round-trip on a two-function fixture (make_dict composed with a dict consumer) that fails today and must compile + assert_eq! after."
+- id: PMAT-472
+  github_issue: null
+  item_type: task
+  title: 'PMAT-472: [R3] Dict iteration for k in d: (desugar to d.keys())'
+  status: planned
+  priority: high
+  created: 2026-06-11T00:00:00Z
+  acceptance_criteria:
+  - "In lower_for_stmt, when the iterable types as Type::Dict, iterate keys (Rust `for k in d.keys().cloned()`). Completes the dict lane (read/write/.get/in/len already shipped)."
+  - "Fixture sum_keys.py / frequency-table; rustc round-trip vs Python-computed value."
+- id: PMAT-473
+  github_issue: null
+  item_type: task
+  title: 'PMAT-473: [R4] List comprehensions [f(x) for x in xs] (desugar to for + append)'
+  status: planned
+  priority: high
+  created: 2026-06-11T00:00:00Z
+  acceptance_criteria:
+  - "ast::ListComp in lower_expr synthesizes `tmp: list[T] = []`, a for-loop over the iterable whose body is `tmp.append(<elem>)`, yielding `tmp`. Single-generator no-condition first; if-filter follow-up. Reuses shipped .append()/for machinery — no new IR."
+  - "Fixture squared_list.py ([x*x for x in range(n)]); rustc round-trip."
+- id: PMAT-474
+  github_issue: null
+  item_type: task
+  title: 'PMAT-474: [R5] Keyword arguments f(x=1, y=2) — reorder to positional at lowering'
+  status: planned
+  priority: medium
+  created: 2026-06-11T00:00:00Z
+  acceptance_criteria:
+  - "Using the R2 (PMAT-471) signature table, partition Call args into positional + ast::Keyword and reorder keywords into positional slots; emit a plain positional Call. No backend change. Depends on PMAT-471."
+  - "rustc round-trip on a fixture calling f(1, y=2)."
+- id: PMAT-475
+  github_issue: null
+  item_type: task
+  title: 'PMAT-475: [R6] Close contract-integrity gap — author C-C-INT-ARITH + C-XLATE-PY-DICT-TO-HASHMAP + grandfather the depth-13 Diamond gate'
+  status: planned
+  priority: high
+  created: 2026-06-11T00:00:00Z
+  acceptance_criteria:
+  - "Emitted C cites C-C-INT-ARITH and dict code shipped with NO on-disk contract YAML — a live falsification of the every-construct-under-contract claim. Author both YAMLs (Bronze→QUORUM, Lean theorem + Kani harness reusing the py-int-arith / xlate-py-list-to-vec templates)."
+  - "BLOCKER to resolve FIRST: diamond_coverage.rs gates `depth_N_plus == contracts_total`, so a 14th/15th YAML forces depth-13 (13 Diamond theorems) — the treadmill. Change the gate to require depth-13 of the existing 13 grandfathered contracts and depth-1+ of new contracts (the §30 intent). This gate change is the only sanctioned reason to touch the Diamond machinery."
+  - "pv lint contracts/ passes; refinement_proofs.rs resolves the new lean_theorem fields (sorry-free); the emitted C/dict citations now resolve to on-disk contracts; xpile quorum shows 15."
+- id: PMAT-476
+  github_issue: null
+  item_type: task
+  title: 'PMAT-476: [R7] 2026-Q3 SOTA dossier (HARD-DATED CI gate 2026-08-15)'
+  status: planned
+  priority: high
+  created: 2026-06-11T00:00:00Z
+  acceptance_criteria:
+  - "sota_dossier_deadline.rs fails the build the instant wall-clock reaches the date in audit-design.md §0 (Next Dossier Deadline: 2026-08-15, ~65 days from 2026-06-11). Missing it fires falsifier F6 and blocks release."
+  - "Append §7 (2026-Q3 dossier) to audit-design.md using the §1-§6 template: (a) external transpiler/verifier work beating xpile on any axis, (b) newly-stressed hypotheses (the two uncontracted capabilities + the depth-freeze incentive shift), (c) falsifier status; bump the deadline line to 2026-Q4 (2026-11-15)."
+  - "cargo test --test sota_dossier_deadline passes. Land well before the deadline, not at it."
+- id: PMAT-477
+  github_issue: null
+  item_type: task
+  title: 'PMAT-477: [R8] Float (Type::F64 + LitFloat) end-to-end + forward-referenced C-PY-FLOAT-ARITH'
+  status: planned
+  priority: medium
+  created: 2026-06-11T00:00:00Z
+  acceptance_criteria:
+  - "Add Type::F64 + Expr::LitFloat to meta-HIR; accept `float` annotations + float literals in depyler-frontend; emit f64 in Rust/Ruchy and Float in Lean. 21 float literals already appear in the corpus as i64 workarounds."
+  - "Forward-reference a C-PY-FLOAT-ARITH contract YAML so it does NOT repeat the R6 integrity sin (note: this also needs the R6 gate grandfather to add a contract without the treadmill)."
+  - "rustc round-trip on lerp/average fixtures with epsilon-tolerance asserts (IEEE-754, not assert_eq!)."
+- id: PMAT-478
+  github_issue: null
+  item_type: task
+  title: 'PMAT-478: [R9] Stmt::If in meta-HIR + decy/Python (if/else as a statement)'
+  status: planned
+  priority: medium
+  created: 2026-06-11T00:00:00Z
+  acceptance_criteria:
+  - "Add Stmt::If { cond, then_body: Vec<Stmt>, else_body: Vec<Stmt> } to meta-HIR; Tok::If/Else + parse_if in decy; emit in Rust codegen first (Ruchy/Lean behind Unsupported arms). Biggest C-coverage multiplier (~15-25% -> ~45-55% of real C); also lifts Python if-as-control-flow."
+  - "rustc round-trip on a C if/else fixture (abs/clamp); existing fixture suite stays green. Pairs with R10 (PMAT-479) for idiomatic early-exit."
+- id: PMAT-479
+  github_issue: null
+  item_type: task
+  title: 'PMAT-479: [R10] Early returns — Block.trailing_return -> Option + Stmt::Return (load-bearing meta-HIR unlock)'
+  status: planned
+  priority: medium
+  created: 2026-06-11T00:00:00Z
+  acceptance_criteria:
+  - "The single most fundamental cap: Block { stmts, trailing_return: Expr } (xpile-meta-hir) blocks guard clauses / search / early-exit across EVERY frontend (Python AND C). Change trailing_return to Option<Expr>, add Stmt::Return mixed into stmts; update lower_block_stmt + decy parser; add a CI check that every CFG path terminates in a value."
+  - "HIGH RISK: changes the every-function-yields-one-value invariant (spec §3) + ripples to all 7 backends. Sequence AFTER R9 (control-flow target exists) and the cheap wins. Wire Rust first; explicit Unsupported arms elsewhere."
+  - "rustc round-trip on `for x in xs: if x==target: return idx` (Python list-search) and a C is_prime guard-clause fixture."
 - id: PMAT-465
   github_issue: 496
   item_type: task
