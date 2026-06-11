@@ -13,7 +13,9 @@
 
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
-use xpile_meta_hir::{BinOp, Block, Expr, Function, Item, Module, Param, Stmt, Type, UnOp};
+use xpile_meta_hir::{
+    BinOp, Block, Expr, Function, Item, Module, Param, SourceLang, Stmt, Type, UnOp,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CodegenError {
@@ -31,10 +33,19 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
         module.source_lang, module.name
     )?;
     writeln!(out)?;
+    // PMAT-467 (v0.2.0 Track 2.A): C sources lower with C arithmetic
+    // semantics (fixed-width `i32`, wrapping overflow) via an isolated
+    // emit path, keeping the Python/Ruchy codegen (i64 + checked /
+    // bigint) untouched. Governed by `C-C-INT-ARITH` (substrate queued).
+    let is_c = matches!(module.source_lang, SourceLang::C);
     for item in &module.items {
         match item {
             Item::Function(f) => {
-                emit_function(&mut out, f)?;
+                if is_c {
+                    emit_c_function(&mut out, f)?;
+                } else {
+                    emit_function(&mut out, f)?;
+                }
             }
         }
     }
@@ -821,6 +832,144 @@ impl Backend for RustBackend {
             },
         })
     }
+}
+
+// ── C emit path (PMAT-467, v0.2.0 Track 2.A) ────────────────────────
+//
+// Isolated from the Python/Ruchy emit above so C's semantics can't
+// regress it. C `int` is fixed-width `i32`; signed overflow is UB, for
+// which `wrapping_*` is the sound conservative discharge (it produces a
+// deterministic two's-complement result rather than invoking Rust UB).
+// This mirrors the standalone-decy → C-C-INT-ARITH plan in
+// `sub/v0.2.0-decy-merger.md`; the contract substrate is queued.
+
+fn emit_c_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
+    // Forward-reference citation (substrate queued, same posture as the
+    // dict lane citing C-XLATE-PY-DICT-TO-HASHMAP before it existed).
+    writeln!(out, "// xpile-contract: C-C-INT-ARITH")?;
+    write!(out, "pub fn {}(", f.name)?;
+    for (i, p) in f.params.iter().enumerate() {
+        if i > 0 {
+            write!(out, ", ")?;
+        }
+        write!(out, "{}: i32", p.name)?;
+    }
+    writeln!(out, ") -> i32 {{")?;
+    for stmt in &f.body.stmts {
+        emit_c_stmt(out, stmt)?;
+    }
+    write!(out, "    ")?;
+    emit_c_expr(out, &f.body.trailing_return)?;
+    writeln!(out)?;
+    writeln!(out, "}}")?;
+    Ok(())
+}
+
+fn emit_c_stmt(out: &mut String, stmt: &Stmt) -> Result<(), CodegenError> {
+    match stmt {
+        Stmt::Let { name, value, .. } => {
+            write!(out, "    let {name}: i32 = ")?;
+            emit_c_expr(out, value)?;
+            writeln!(out, ";")?;
+            Ok(())
+        }
+        other => Err(CodegenError::Unsupported(format!(
+            "C backend slice 1 supports only `int x = expr;` declarations, got {other:?}"
+        ))),
+    }
+}
+
+fn emit_c_expr(out: &mut String, e: &Expr) -> Result<(), CodegenError> {
+    match e {
+        Expr::LitInt(v) => write!(out, "{v}i32")?,
+        Expr::Ident(name) => write!(out, "{name}")?,
+        Expr::BinOp { op, lhs, rhs } => emit_c_binop(out, *op, lhs, rhs)?,
+        Expr::UnOp { op, operand } => match op {
+            // C unary minus on `int` is wrapping (INT_MIN negation is UB
+            // in C; `wrapping_neg` is the sound deterministic discharge).
+            UnOp::Neg => {
+                write!(out, "(")?;
+                emit_c_expr(out, operand)?;
+                write!(out, ").wrapping_neg()")?;
+            }
+            UnOp::Not => {
+                write!(out, "!(")?;
+                emit_c_expr(out, operand)?;
+                write!(out, ")")?;
+            }
+        },
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            write!(out, "if ")?;
+            emit_c_expr(out, cond)?;
+            write!(out, " {{ ")?;
+            emit_c_expr(out, then_expr)?;
+            write!(out, " }} else {{ ")?;
+            emit_c_expr(out, else_expr)?;
+            write!(out, " }}")?;
+        }
+        Expr::Call { callee, args } => {
+            write!(out, "{callee}(")?;
+            for (i, a) in args.iter().enumerate() {
+                if i > 0 {
+                    write!(out, ", ")?;
+                }
+                emit_c_expr(out, a)?;
+            }
+            write!(out, ")")?;
+        }
+        other => {
+            return Err(CodegenError::Unsupported(format!(
+                "C backend slice 1 does not lower {other:?} — supported: int literals, \
+                 identifiers, calls, + - *, comparisons, && ||, unary - !, and the ternary"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn emit_c_binop(out: &mut String, op: BinOp, lhs: &Expr, rhs: &Expr) -> Result<(), CodegenError> {
+    // Arithmetic: wrapping (C signed overflow is UB → deterministic
+    // two's-complement). Comparisons / logicals: plain infix, producing
+    // a Rust `bool` (correct for `if`/`&&`/`||` operand positions, which
+    // is where the C frontend places them).
+    let wrapping = |out: &mut String, method: &str| -> Result<(), CodegenError> {
+        write!(out, "(")?;
+        emit_c_expr(out, lhs)?;
+        write!(out, ").{method}(")?;
+        emit_c_expr(out, rhs)?;
+        write!(out, ")")?;
+        Ok(())
+    };
+    let infix = |out: &mut String, sym: &str| -> Result<(), CodegenError> {
+        emit_c_expr(out, lhs)?;
+        write!(out, " {sym} ")?;
+        emit_c_expr(out, rhs)?;
+        Ok(())
+    };
+    match op {
+        BinOp::Add => wrapping(out, "wrapping_add")?,
+        BinOp::Sub => wrapping(out, "wrapping_sub")?,
+        BinOp::Mul => wrapping(out, "wrapping_mul")?,
+        BinOp::Eq => infix(out, "==")?,
+        BinOp::NotEq => infix(out, "!=")?,
+        BinOp::Lt => infix(out, "<")?,
+        BinOp::LtEq => infix(out, "<=")?,
+        BinOp::Gt => infix(out, ">")?,
+        BinOp::GtEq => infix(out, ">=")?,
+        BinOp::And => infix(out, "&&")?,
+        BinOp::Or => infix(out, "||")?,
+        other => {
+            return Err(CodegenError::Unsupported(format!(
+                "C backend slice 1 does not lower BinOp::{other:?} — `/`, `%`, bitwise, \
+                 shift, and power are deferred to a later decy slice"
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
