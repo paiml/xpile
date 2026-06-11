@@ -2,6 +2,8 @@
 
 **Section 28 of [xpile-spec.md](../xpile-spec.md).** Catalogs every Diamond-tier algebraic category demonstrated across xpile's contract substrate.
 
+> **⛔ DEPTH RATCHET FROZEN AT depth-13 (PMAT-465, 2026-06-11).** Do **not** run further depth-14+ UNIVERSAL broadening sweeps as default or background work. Per [xpile-spec.md §30 "Autonomous execution priority"](../xpile-spec.md#autonomous-execution-priority--ev-ranked-pmat-465-2026-06-11), that capacity is redirected to higher-EV work (dict lane, decy C frontend, and paying down the placeholder Runtime witnesses on the 10 contracts flagged in [`audit-design.md`](../audit-design.md) §4). Depth broadening resumes **only** when a new contract must reach the existing UNIVERSAL floor, or on explicit user request. The taxonomy below remains the authoritative record of what *has* been demonstrated through depth-13.
+
 ## What is a Diamond?
 
 Per [ruchy 5.0 §14.10.5](../sub/provability-roadmap.md), the refinement-tier progression is:

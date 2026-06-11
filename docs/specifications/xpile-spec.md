@@ -712,6 +712,27 @@ See [`sub/v0.2.0-depyler-merger.md`](sub/v0.2.0-depyler-merger.md) for the per-s
 
 Tracks 1 and 2 are independent and can run in parallel. Track 3 is small and slots in opportunistically.
 
+### Autonomous execution priority — EV-ranked (PMAT-465, 2026-06-11)
+
+**This subsection is the canonical pickup order for autonomous sessions.** It supersedes the older "pick whichever sub-track has open capacity" guidance, which in practice fed an open-ended Diamond-depth broadening treadmill (≈80% of the PMAT-228..442 commit stream was depth-N UNIVERSAL broadening / spec-sync, against a still-narrow transpile surface and 10/13 contracts resting on placeholder byte-identity Runtime witnesses — see [`audit-design.md`](../audit-design.md) §4 "Fixture Overfitting"). An autonomous session **picks the highest-ranked open item below and proceeds without asking**, consistent with the repo's autonomy norms in [`/CLAUDE.md`](../../CLAUDE.md).
+
+The ranking is by **expected value = (capability or epistemic gain) ÷ effort**, not by spec section order:
+
+| Rank | Work item | Why it's high-EV | Effort | Maps to |
+|---|---|---|---|---|
+| **P1** | **Complete the `dict[K,V]` lane** — operations (`d[k]`, `d[k]=v`, `len(d)`, `for k in d`, `k in d`) + author `C-XLATE-PY-DICT-TO-HASHMAP` (14th contract). | Closes this section's own **exit criterion** (`count_chars` uses `counts[c] = counts.get(c,0)+1`). Flips the depyler-replacement claim to true for the str/list/dict subset. Mechanical port from standalone depyler — hard semantics already solved. | ~1 wk | Track 1.C (the only remaining Track-1 blocker for the headline claim) |
+| **P2** | **Decy real C frontend** — 2.A tree-sitter-c parser + 2.B `C-C-INT-ARITH` substrate + 2.C `wrapping_*` codegen path. Stack-only int/bool, **no pointers**. | The actual *second source language* (today "polyglot" is Python+shell). Proves the absorb-into-substrate pattern a third time. `C-C-INT-ARITH` is a **genuinely differential** contract (truncating `/`, signed-overflow-as-UB) — real verification content, not template breadth. | ~3 wk | Track 2 (independent of P1, parallelizable) |
+| **P3** | **Pay down Fixture Overfitting** — give the 10 placeholder contracts real property-specific Runtime witnesses (the way `C-PY-INT-ARITH` and the four trait contracts already have). | Converts shallow depth-13 *breadth* into actual verification *depth*; closes the audit's most serious open vulnerability. Reuses `runtime_strata.rs` / `trait_runtime_properties.rs` as templates — same cadence the team is fast at, pointed at the floor instead of the ceiling. | ongoing, ~½ wk/contract | absorbs the freed Diamond-program capacity |
+| **P4** | **Bashrs check-back option (c)** — Lean shell-composition-idempotence theorem. | Cheap defense-in-depth: second independent discharge of `XPILE-UNMERGE-001` (today it rests on one fixture + one example) **and** legitimately advances Diamond depth on `C-BASHRS-POSIX-IDEMPOTENCE`. | ~3 days | Track 3 (opportunistic slot-in between P1/P2 PRs) |
+
+**Frozen / deferred (explicitly lower EV — do *not* pick up as default work):**
+
+- **Diamond-depth UNIVERSAL ratchet is frozen at depth-13.** No further depth-14+ broadening sweeps as default or background work — diminishing epistemic returns (mechanical re-application of the 13 templates to more contracts at deeper depths strengthens a self-referential metric more than the transpiler or the proofs). Depth broadening resumes **only** when (a) a new contract is added and must reach the existing UNIVERSAL floor, or (b) on explicit user request. See the freeze banner in [`sub/diamond-taxonomy.md`](sub/diamond-taxonomy.md).
+- `float`, `&str`/borrowing (Track 1.D), Lean iteration/mutation — real new semantics, correctly deferred to v0.2.0-late / v0.3.0.
+- JS / TypeScript / Julia / R frontends — deliberate non-goal (see [`audit-design.md`](../audit-design.md) §4 "Sovereign AI").
+
+**Hard dated obligation (overrides EV ordering):** the 2026-Q3 SOTA dossier is **CI-enforced** — `crates/xpile/tests/sota_dossier_deadline.rs` fails the build the moment the date in [`audit-design.md`](../audit-design.md) §0 passes. **Next deadline: 2026-08-15.** It must land before then regardless of where it sits in the EV order.
+
 ### Substrate impact
 
 v0.2.0 adds **at least 4 new contracts** to the substrate:
@@ -762,7 +783,7 @@ Both transpile cleanly via `xpile transpile` → Rust + Ruchy + Lean for the Pyt
 
 ~6 weeks if Tracks 1 and 2 run in parallel, given the bashrs-merger precedent. Sequential would push to ~8-9 weeks.
 
-The next-session pickup is whichever sub-track has open capacity. See the sub-specs for per-track sequencing.
+The next-session pickup is **the highest-ranked open item in the [Autonomous execution priority](#autonomous-execution-priority--ev-ranked-pmat-465-2026-06-11) table** (currently P1 — complete the `dict[K,V]` lane), not "whichever sub-track has open capacity." See the sub-specs for per-track sequencing within each track.
 
 ---
 
