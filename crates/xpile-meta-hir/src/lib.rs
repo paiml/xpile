@@ -116,6 +116,9 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         Stmt::IndexAssign { index, value, .. } => {
             expr_has_int_arith(index) || expr_has_int_arith(value)
         }
+        // PMAT-466 (v0.2.0 Track 1.C): dict keyed assignment — recurse
+        // into both key and value expressions.
+        Stmt::DictSet { key, value, .. } => expr_has_int_arith(key) || expr_has_int_arith(value),
         Stmt::Assert { cond } => expr_has_int_arith(cond),
         // PMAT-039: shell commands are governed by `C-BASHRS-POSIX-IDEMPOTENCE`,
         // not `C-PY-INT-ARITH`. The args are `Vec<String>` (literal
@@ -193,6 +196,14 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::Index { collection, index } => {
             expr_has_int_arith(collection) || expr_has_int_arith(index)
         }
+        // PMAT-466 (v0.2.0 Track 1.C): dict ops. The lookup/membership
+        // operations are not themselves arithmetic; recurse into the
+        // sub-expressions (a computed key or default may carry it).
+        Expr::DictGet { dict, key } => expr_has_int_arith(dict) || expr_has_int_arith(key),
+        Expr::DictGetOr { dict, key, default } => {
+            expr_has_int_arith(dict) || expr_has_int_arith(key) || expr_has_int_arith(default)
+        }
+        Expr::DictContains { dict, key } => expr_has_int_arith(dict) || expr_has_int_arith(key),
         // PMAT-459 (v0.2.0 Track 1.B): len() of a collection is not
         // itself arithmetic; recurse defensively into the inner expr.
         Expr::Len(inner) => expr_has_int_arith(inner),
@@ -282,6 +293,30 @@ pub enum Stmt {
     IndexAssign {
         list_name: String,
         index: Expr,
+        value: Expr,
+    },
+    /// `dict[key] = value` — Python `d[k] = v` keyed assignment.
+    /// PMAT-466, v0.2.0 Track 1.C operations. Companion of
+    /// [`Stmt::IndexAssign`] on the dict side; the frontend chooses
+    /// between them by the receiver's inferred type.
+    ///
+    /// Constraints:
+    ///   - `dict_name` must be a bound name typing as `Type::Dict(_, _)`.
+    ///   - The receiver is marked mutable so the emitter wraps it in
+    ///     `mut name: HashMap<K, V>` (the mutability pre-pass also
+    ///     recognises subscript-target assigns, so a `let`-bound dict
+    ///     mutated only via `d[k] = v` is correctly emitted `mut`).
+    ///   - Insertion semantics: present key overwrites, absent key
+    ///     inserts — exactly `HashMap::insert` and Python `d[k] = v`.
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: `<dict_name>.insert(<key>, <value>);`.
+    ///   * Lean: refuses at v0.2.0 first cut (no in-place mutation;
+    ///     same monadic-encoding gap as `ListAppend`/`IndexAssign`).
+    ///   * Shell: refuses.
+    DictSet {
+        dict_name: String,
+        key: Expr,
         value: Expr,
     },
     /// `list.append(elem)` — Python `xs.append(v)` mutation. PMAT-460,
@@ -622,7 +657,56 @@ pub enum Expr {
     ///   * Lean: emit `[(k, v), ...]` (a List of pairs — first cut
     ///     before Std.HashMap encoding lands).
     ///   * Shell: refuses.
+    ///
+    /// PMAT-466 (v0.2.0 Track 1.C operations): the empty literal
+    /// `{}` is now permitted as `DictLit(vec![])` when the binding
+    /// site carries a `dict[K, V]` annotation (the frontend threads
+    /// the K/V from the annotation). Rust/Ruchy emit
+    /// `std::collections::HashMap::new()` (type inferred from the
+    /// `let` annotation); Lean emits `[]`.
     DictLit(Vec<(Expr, Expr)>),
+    /// Dictionary indexed read — Python `d[k]`. PMAT-466,
+    /// v0.2.0 Track 1.C operations. Distinct from [`Expr::Index`]
+    /// (which lowers list `xs[i]` to `Vec` indexing) because the
+    /// dict path emits `HashMap` keyed lookup (`d[&k]`), not a
+    /// `usize`-coerced positional index. The frontend chooses the
+    /// variant by the receiver's inferred type
+    /// (`Type::Dict` → `DictGet`, `Type::List` → `Index`).
+    ///
+    /// Missing-key semantics match Python's `KeyError`: Rust's
+    /// `HashMap` `Index` impl panics on an absent key, mirroring the
+    /// `vec[i]` out-of-range panic posture already used for lists.
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: `<dict>[&(<key>)].clone()` — owned value
+    ///     (the v0.2.0 owned-only posture), panic on absent key.
+    ///   * Lean: refuses at v0.2.0 first cut (the `List (K × V)`
+    ///     encoding has no panic-on-absent lookup; deferred to the
+    ///     `Std.HashMap` upgrade alongside Lean iteration/mutation).
+    ///   * Shell: refuses.
+    DictGet { dict: Box<Expr>, key: Box<Expr> },
+    /// Dictionary get-with-default — Python `d.get(k, default)`.
+    /// PMAT-466, v0.2.0 Track 1.C operations. Total (never panics):
+    /// returns the stored value if `k` is present, else `default`.
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: `<dict>.get(&(<key>)).cloned().unwrap_or(<default>)`.
+    ///   * Lean: refuses at v0.2.0 first cut (same reason as
+    ///     `DictGet`).
+    ///   * Shell: refuses.
+    DictGetOr {
+        dict: Box<Expr>,
+        key: Box<Expr>,
+        default: Box<Expr>,
+    },
+    /// Dictionary key membership — Python `k in d`. PMAT-466,
+    /// v0.2.0 Track 1.C operations. Result types as `Type::Bool`.
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: `<dict>.contains_key(&(<key>))`.
+    ///   * Lean: refuses at v0.2.0 first cut.
+    ///   * Shell: refuses.
+    DictContains { dict: Box<Expr>, key: Box<Expr> },
     /// Homogeneous list literal — Python `[1, 2, 3]`. PMAT-455,
     /// v0.2.0 Track 1.B foundation.
     ///

@@ -7,6 +7,74 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-06-11
+
+Incremental release. Completes the Python **dict operations** lane on
+top of v0.1.1's dict-literal foundation (PMAT-466, the EV-ranked P1 of
+the v0.2.0 roadmap — see spec §30). Dict programs now transpile and run
+end-to-end through Rust and Ruchy.
+
+What works at v0.1.2 (end-to-end transpile, rustc round-trip green):
+
+- **Dict operations** lowering Python `dict[K, V]` → Rust `HashMap`:
+  - `d[k]` read → `d[&(k)].clone()` (panics on absent key, matching
+    Python `KeyError`).
+  - `d[k] = v` write → `{ let __v = v; d.insert(k, __v); }` (the temp
+    binds the value before the key is moved, so the canonical
+    `d[k] = d.get(k, 0) + 1` histogram idiom compiles for non-Copy
+    `str` keys as well as `int`).
+  - `d.get(k, default)` → `d.get(&(k)).cloned().unwrap_or(default)`.
+  - `k in d` / `k not in d` → `d.contains_key(&(k))` (negated form
+    wrapped in `!`).
+  - `len(d)` → `d.len() as i64`.
+  - Empty annotated literal `counts: dict[K, V] = {}` →
+    `HashMap::new()` (the annotation supplies K/V).
+- **Annotated local assignment** `name: T = value` (`AnnAssign`) is now
+  supported, with correct `mut` inference (a dict mutated via
+  `d[k] = v` is emitted `mut`; a read-only annotated local is not).
+- Element types: `dict[int, int]`, `dict[str, int]`, `dict[str, str]`,
+  `dict[int, str]`, etc. — int/bool/str keys and values.
+- Dict reads work in every expression position (return, call argument,
+  relational operand, ternary branch, `len(...)` argument, and `if/else`
+  lookup-with-fallback branches) via a context-aware lowering pass.
+- Ruchy mirrors the Rust HashMap emission; **Lean refuses** dict ops
+  with a clear "deferred to the `Std.HashMap` encoding (v0.3.0)" error,
+  the same posture as Lean list iteration/mutation.
+
+Quality: this release's diff was put through a two-round adversarial
+multi-agent review before merge. The first round surfaced 11 confirmed
+defects (a move-then-borrow on `str` keys, dict reads mis-dispatching to
+list indexing in un-recursed positions, a spurious `let mut` on
+read-only annotated loop-locals, and others); all were fixed and a
+second round verified the fixes introduced no regressions. Five
+regression tests + three fixtures (`histogram.py`, `word_count.py`,
+`dict_read_positions.py`, `loop_local_readonly.py`) lock the behaviour.
+
+What does NOT work yet (deferred):
+
+- `C-XLATE-PY-DICT-TO-HASHMAP` contract substrate (Lean theorems +
+  Kani harnesses → QUORUM) — capability ships here; the substrate
+  authoring remains queued under PMAT-466, mirroring how v0.1.1 shipped
+  the dict *foundation* ahead of its contract.
+- Dict iteration `for k in d:`, deletion `del d[k]`, `.keys()` /
+  `.values()` / `.items()`, `.pop()` / `.update()`.
+- Nested `d.get(...)` / `k in d` in deeply un-recursed positions (e.g.
+  as a call argument) — these reject cleanly rather than mis-compile.
+- Dict ops combined with BigInt overflow-slow-path arithmetic — rejected
+  with a clear error (type-incoherent to mix fixed-width dict
+  values with unbounded BigInt).
+- Lean dict ops (read/write/membership) — deferred to the `Std.HashMap`
+  encoding alongside Lean iteration/mutation (v0.3.0).
+
+Substrate state at v0.1.2:
+
+- 13 contracts at QUORUM (unchanged), 184 Diamond theorems, depth-13
+  UNIVERSAL strict-equality CI gate (the Diamond ratchet is frozen at
+  depth-13 per spec §30 — capacity redirected to capability work).
+- Workspace test suite green; `transpile_e2e` grows to 74 tests.
+
+Install: `cargo install xpile` upgrades to 0.1.2.
+
 ## [0.1.1] — 2026-05-22
 
 Incremental release. Python types lane expanded: real `str` (with

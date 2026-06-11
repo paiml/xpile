@@ -81,6 +81,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::ListAppend { .. } => false,
             // PMAT-461: indexed assignment same disposition.
             Stmt::IndexAssign { .. } => false,
+            // PMAT-466: dict keyed assignment same disposition.
+            Stmt::DictSet { .. } => false,
             // PMAT-039: see rust-codegen's twin arm — shell commands
             // carry no BigInt operands.
             Stmt::Cmd { .. } => false,
@@ -190,6 +192,23 @@ fn emit_stmt_indented(
             out.push_str(" as usize] = ");
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
+            Ok(())
+        }
+        // PMAT-466 (v0.2.0 Track 1.C): Ruchy → Rust
+        // `{ let __v = v; d.insert(k.clone(), __v); }`, matching the Rust
+        // backend — value bound to a temp before insert, and the key
+        // cloned so a non-Copy str key survives a later read (see the
+        // Rust twin arm for the full move-then-borrow rationale).
+        Stmt::DictSet {
+            dict_name,
+            key,
+            value,
+        } => {
+            write!(out, "{indent}{{ let __xpile_dict_val = ")?;
+            emit_expr(out, value, mode)?;
+            write!(out, "; {dict_name}.insert(")?;
+            emit_expr(out, key, mode)?;
+            writeln!(out, ".clone(), __xpile_dict_val); }}")?;
             Ok(())
         }
         Stmt::Assert { cond } => {
@@ -337,16 +356,22 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push(']');
         }
         // PMAT-462 (v0.2.0 Track 1.C): Ruchy → Rust HashMap-init block.
+        // PMAT-466: empty literal → bare `HashMap::new()` (see the Rust
+        // backend's twin arm — avoids clippy `unused_mut`).
         Expr::DictLit(pairs) => {
-            out.push_str("{ let mut m = std::collections::HashMap::new(); ");
-            for (k, v) in pairs {
-                out.push_str("m.insert(");
-                emit_expr(out, k, mode)?;
-                out.push_str(", ");
-                emit_expr(out, v, mode)?;
-                out.push_str("); ");
+            if pairs.is_empty() {
+                out.push_str("std::collections::HashMap::new()");
+            } else {
+                out.push_str("{ let mut m = std::collections::HashMap::new(); ");
+                for (k, v) in pairs {
+                    out.push_str("m.insert(");
+                    emit_expr(out, k, mode)?;
+                    out.push_str(", ");
+                    emit_expr(out, v, mode)?;
+                    out.push_str("); ");
+                }
+                out.push_str("m }");
             }
-            out.push_str("m }");
         }
         // PMAT-457 (v0.2.0 Track 1.B): Ruchy → Rust →
         // `xs[i as usize].clone()`, matching the Rust backend.
@@ -355,6 +380,28 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push('[');
             emit_expr(out, index, mode)?;
             out.push_str(" as usize].clone()");
+        }
+        // PMAT-466 (v0.2.0 Track 1.C): dict ops → Rust, matching the
+        // Rust backend exactly (Ruchy compiles to Rust).
+        Expr::DictGet { dict, key } => {
+            emit_expr(out, dict, mode)?;
+            out.push_str("[&(");
+            emit_expr(out, key, mode)?;
+            out.push_str(")].clone()");
+        }
+        Expr::DictGetOr { dict, key, default } => {
+            emit_expr(out, dict, mode)?;
+            out.push_str(".get(&(");
+            emit_expr(out, key, mode)?;
+            out.push_str(")).cloned().unwrap_or(");
+            emit_expr(out, default, mode)?;
+            out.push(')');
+        }
+        Expr::DictContains { dict, key } => {
+            emit_expr(out, dict, mode)?;
+            out.push_str(".contains_key(&(");
+            emit_expr(out, key, mode)?;
+            out.push_str("))");
         }
         // PMAT-459 (v0.2.0 Track 1.B): Ruchy → Rust → `.len() as i64`.
         Expr::Len(inner) => {
