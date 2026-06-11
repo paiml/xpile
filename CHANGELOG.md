@@ -7,6 +7,57 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.3] — 2026-06-11
+
+Incremental release adding **xpile's second source language**: a real
+`decy` C → Rust frontend (PMAT-467, the EV-ranked **P2** of the §30
+roadmap). C programs in a stack-only int subset now transpile to Rust
+that compiles and computes correct values (rustc round-trip verified).
+
+What works at v0.1.3:
+
+- **C → Rust** for the stack-only int subset: `int` function
+  definitions with `int` parameters, local `int x = <expr>;`
+  declarations, a trailing `return <expr>;`, and expressions — integer
+  literals, identifiers, calls (incl. self-recursion), `+ - *`,
+  comparisons (`< <= > >= == !=`), `&& ||`, unary `- !`, the ternary
+  `c ? a : b`, and parentheses. Comments and `(void)` params handled.
+- **C arithmetic semantics**, distinct from Python's: `int` → Rust
+  `i32` (not `i64`), and `+ - *` → `wrapping_*` (C signed overflow is
+  UB; wrapping is the sound, deterministic discharge) rather than
+  Python's `checked_*` / bigint promotion. Emitted via an isolated C
+  codegen path so the Python/Ruchy backends are untouched.
+- Exit criterion (rustc round-trip, `-O`):
+  - `int add(int a, int b) { return a + b; }` →
+    `pub fn add(a: i32, b: i32) -> i32 { (a).wrapping_add(b) }`
+  - `int factorial(int n) { return n <= 1 ? 1 : n * factorial(n-1); }`
+    → ternary→`if`, `wrapping_mul`/`wrapping_sub`, recursion;
+    `factorial(12) == 479001600`.
+  - Functions carry `// xpile-contract: C-C-INT-ARITH`.
+
+What does NOT work yet (deferred):
+
+- C `/` and `%` (truncating division), `if` / `while` statements,
+  pointers, structs, unions, strings, `goto`, multiple types — later
+  decy slices.
+- The `C-C-INT-ARITH` contract substrate (Lean theorems + Kani
+  harnesses → QUORUM) — capability ships here; substrate authoring is
+  queued (capability-ahead-of-contract, as the v0.1.2 dict lane did).
+  Authoring it would require broadening it to the depth-13 UNIVERSAL
+  floor (the Diamond ratchet frozen per §30), so it is sequenced as a
+  deliberate, separate effort.
+- C → Ruchy / Lean (C lowers to Rust only at v0.2.0, per the
+  decy-merger sub-spec).
+
+Substrate state at v0.1.3:
+
+- 13 contracts at QUORUM (unchanged), 184 Diamond theorems, depth-13
+  UNIVERSAL CI gate (frozen per §30).
+- Workspace test suite green; `transpile_e2e` grows to 76 tests;
+  decy-frontend ships 5 parser unit tests.
+
+Install: `cargo install xpile` upgrades to 0.1.3.
+
 ## [0.1.2] — 2026-06-11
 
 Incremental release. Completes the Python **dict operations** lane on
