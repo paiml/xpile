@@ -576,6 +576,48 @@ fn annotated_loop_local_is_not_mut() {
     assert_rustc_runs("loop_local_readonly", &rust, driver);
 }
 
+/// PMAT-466 regression (2nd adversarial-review round): dict reads in
+/// positions the first fix overlooked — a `range()` bound, a
+/// `list.append()` argument, and a list indexed-assign target index —
+/// plus the str-key increment-then-read-back move. All must compile and
+/// compute correctly.
+#[test]
+fn dict_ops_edge_positions_roundtrip() {
+    let rust = xpile_transpile_to_rust("dict_ops_edge.py");
+    // Dict reads must lower to keyed access `d[&(k)]`, never a list
+    // `usize` index `d[k as usize]`. (The fixture also has *legitimate*
+    // list indexing — `xs[0]`, `xs[<dict-read> as usize]` — so we check
+    // for the mis-dispatch pattern directly rather than the absence of
+    // `as usize`.)
+    assert!(
+        rust.contains("d[&(k)].clone()"),
+        "dict reads should lower to keyed access:\n{rust}"
+    );
+    assert!(
+        !rust.contains("d[k as usize]"),
+        "a dict read must not lower to a list usize index:\n{rust}"
+    );
+    assert!(
+        rust.contains(".clone(), __xpile_dict_val)"),
+        "DictSet must clone the key so it survives a later read:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let mut d = std::collections::HashMap::new();
+    d.insert(2i64, 4i64);
+    assert_eq!(range_bound(d.clone(), 2i64), 6i64); // 0+1+2+3
+    assert_eq!(append_val(vec![], d.clone(), 2i64), 1i64);
+    let mut t = std::collections::HashMap::new();
+    t.insert(5i64, 0i64);
+    assert_eq!(index_target(vec![1i64, 2], t, 5i64, 9i64), 9i64);
+    let mut s = std::collections::HashMap::new();
+    s.insert(String::from("a"), 5i64);
+    assert_eq!(readback(s, String::from("a")), 6i64);
+}
+"#;
+    assert_rustc_runs("dict_ops_edge", &rust, driver);
+}
+
 /// PMAT-466 regression (adversarial review #10): the Lean backend must
 /// REFUSE dict operations with a clear error, never silently emit Lean
 /// (the `List (K × V)` model has no keyed lookup). The histogram
