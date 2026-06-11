@@ -403,6 +403,8 @@ Key terms: **meta-HIR**, **Frontend trait**, **FFI manifest**, **oracle**, **age
 
 **Sub-spec**: [docs/status/CURRENT.md](../status/CURRENT.md). Live source of truth for the supported subset: `CHANGELOG.md`.
 
+**v0.1.2 — SHIPPED 2026-06-11** — incremental release on top of v0.1.1. Completes the Python **dict operations** lane (PMAT-466, the EV-ranked P1 of the §30 roadmap): `d[k]` read, `d[k] = v` write, `d.get(k, default)`, `k in d` membership, `len(d)`, empty annotated literal `{}`, and `name: T = value` annotated locals with correct `mut` inference. Rust + Ruchy emit a real `HashMap` pipeline (verified by rustc round-trip); Lean refuses dict ops (deferred to the `Std.HashMap` encoding, v0.3.0). The diff passed a two-round adversarial multi-agent review (11 defects found + fixed, then regression-verified). Substrate unchanged at QUORUM (13 contracts, 184 Diamond theorems, depth-13 UNIVERSAL — the Diamond ratchet is frozen at depth-13 per §30). The `C-XLATE-PY-DICT-TO-HASHMAP` contract substrate, dict iteration (`for k in d:`), and the Track 2 / Track 3 mergers remain queued.
+
 **v0.1.1 — SHIPPED 2026-05-22** — incremental release on top of v0.1.0. Adds the Python types lane (`str` + `list[T]` r/w + `dict[K, V]` foundation, PMAT-449..462) without touching the substrate at QUORUM (still 13 contracts, 184 Diamond theorems, depth-13 UNIVERSAL strict gate). Lean iteration / mutation, dict operations, and the Track 2 / Track 3 mergers from spec §30 remain queued for v0.2.0.
 
 v0.1.0 — **SHIPPED 2026-05-20** — first real release; `cargo install xpile` works for end users:

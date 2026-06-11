@@ -111,9 +111,29 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
     for stmt in stmts {
         match stmt {
             ast::Stmt::Assign(a) => {
+                let bump = if in_loop { 2 } else { 1 };
                 if let Some(name) = simple_assign_target_name(a) {
-                    let bump = if in_loop { 2 } else { 1 };
                     *counts.entry(name).or_insert(0) += bump;
+                } else if let Some(name) = subscript_assign_base_name(a) {
+                    // PMAT-466 (also fixes latent list case): `d[k] = v`
+                    // / `xs[i] = v` mutate the base collection in place,
+                    // so the binding must be emitted `mut`. The pre-pass
+                    // didn't previously see subscript targets.
+                    *counts.entry(name).or_insert(0) += bump;
+                }
+            }
+            // PMAT-466: an annotated local binding counts exactly ONCE,
+            // even inside a loop — each iteration re-binds a fresh
+            // (shadowing) local; it does NOT mutate a prior binding, so
+            // the loop-doubling that is correct for `Assign` reassignment
+            // must not apply here. A genuine mutation of an annotated
+            // dict (e.g. `d[k] = v`) is counted by the subscript-assign
+            // arm above and still crosses the `> 1` threshold. Doubling
+            // here would emit a spurious `let mut` for a never-mutated
+            // annotated loop-local, which `clippy -D warnings` rejects.
+            ast::Stmt::AnnAssign(aa) => {
+                if let ast::Expr::Name(n) = aa.target.as_ref() {
+                    *counts.entry(n.id.to_string()).or_insert(0) += 1;
                 }
             }
             ast::Stmt::If(if_stmt) => {
@@ -217,6 +237,21 @@ fn simple_assign_target_name(a: &ast::StmtAssign) -> Option<String> {
     } else {
         None
     }
+}
+
+/// PMAT-466: the base name of a subscript-target assign (`name[k] = v`),
+/// used by the mutability pre-pass — such an assignment mutates `name`
+/// in place, so the binding must be `mut`.
+fn subscript_assign_base_name(a: &ast::StmtAssign) -> Option<String> {
+    if a.targets.len() != 1 {
+        return None;
+    }
+    if let ast::Expr::Subscript(sub) = &a.targets[0] {
+        if let ast::Expr::Name(n) = sub.value.as_ref() {
+            return Some(n.id.to_string());
+        }
+    }
+    None
 }
 
 pub struct PythonFrontend;
@@ -381,7 +416,10 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
             let value = ret.value.as_ref().ok_or_else(|| {
                 FrontendError::Lower(format!("function `{}` returns nothing", f.name))
             })?;
-            lower_expr((**value).clone())?
+            // PMAT-466: context-aware so `return table[key]`,
+            // `return table.get(k, 0)`, and `return key in table`
+            // lower to the dict variants.
+            lower_expr_in_ctx(&ctx, (**value).clone())?
         }
         _ => {
             return Err(FrontendError::Lower(format!(
@@ -409,6 +447,29 @@ fn lower_function_def(f: ast::StmtFunctionDef) -> Result<Function, FrontendError
         stmts,
         trailing_return,
     };
+
+    // PMAT-466 (review #8): BigInt overflow-slow-path mode wraps integer
+    // literals as `BigInt` and treats arithmetic as unbounded, but dict
+    // keys/values are concrete fixed-width `i64`/`bool`/`String`. Mixing
+    // them emits type-incoherent Rust (e.g. `unwrap_or(BigInt::from(0i64))`
+    // on an `Option<i64>`), so reject the combination with a clear error.
+    let bigint_mode = matches!(return_type, Type::BigInt)
+        || params.iter().any(|p| matches!(p.ty, Type::BigInt))
+        || body.stmts.iter().any(|s| {
+            matches!(
+                s,
+                Stmt::Let {
+                    ty: Type::BigInt,
+                    ..
+                }
+            )
+        });
+    if bigint_mode && body_uses_dict(&body) {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` combines BigInt (overflow slow-path) arithmetic with dict operations — unsupported at v0.2.0: dict keys/values are fixed-width while BigInt is unbounded, so the emission is type-incoherent. Move the dict work into a non-BigInt helper.",
+            f.name
+        )));
+    }
 
     // PMAT-460: thread post-body mutability into the param list.
     // `try_lower_list_method_call` marks names in `ctx.mutable` when
@@ -526,6 +587,8 @@ fn parse_type_annotation(
 fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>, FrontendError> {
     match stmt {
         ast::Stmt::Assign(asn) => lower_assign(ctx, asn).map(|s| vec![s]),
+        // PMAT-466 (v0.2.0 Track 1.C): annotated local `name: T = value`.
+        ast::Stmt::AnnAssign(aa) => lower_ann_assign(ctx, aa).map(|s| vec![s]),
         ast::Stmt::If(if_stmt) => lower_if_stmt_as_lets(ctx, if_stmt),
         ast::Stmt::While(w) => lower_while_stmt(ctx, w).map(|s| vec![s]),
         ast::Stmt::For(f) => lower_for_stmt(ctx, f),
@@ -609,7 +672,9 @@ fn try_lower_list_method_call(
             call.args.len()
         ))));
     }
-    let elem = match lower_expr(call.args[0].clone()) {
+    // PMAT-466: ctx-aware so `xs.append(d[k])` lowers the dict read to
+    // DictGet, not a list index.
+    let elem = match lower_expr_in_ctx(ctx, call.args[0].clone()) {
         Ok(e) => e,
         Err(err) => return Some(Err(err)),
     };
@@ -760,7 +825,7 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
     // The match-on-Call below handles the range case; the early-
     // return here handles the non-Call (= collection-iter) case.
     if !matches!(&*f.iter, ast::Expr::Call(_)) {
-        let iter_expr = lower_expr((*f.iter).clone())?;
+        let iter_expr = lower_expr_in_ctx(ctx, (*f.iter).clone())?;
         let iter_ty = infer_type_in_ctx(ctx, &iter_expr);
         let elem_ty = match iter_ty {
             Type::List(elem) => *elem,
@@ -818,9 +883,17 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
             ctx.fn_name
         )));
     }
+    // PMAT-466: route range bounds through the context-aware path so a
+    // dict read used as a bound (`for i in range(d[k])`) lowers to a
+    // DictGet, not a list `Expr::Index` (`d[k as usize]`, uncompilable
+    // against a HashMap). The step stays an integer literal.
     let (start_expr, stop_expr, step_int) = match call.args.as_slice() {
-        [stop] => (Expr::LitInt(0), lower_expr(stop.clone())?, 1i64),
-        [start, stop] => (lower_expr(start.clone())?, lower_expr(stop.clone())?, 1i64),
+        [stop] => (Expr::LitInt(0), lower_expr_in_ctx(ctx, stop.clone())?, 1i64),
+        [start, stop] => (
+            lower_expr_in_ctx(ctx, start.clone())?,
+            lower_expr_in_ctx(ctx, stop.clone())?,
+            1i64,
+        ),
         [start, stop, step] => {
             // v0.1.0 requires a non-zero *integer literal* step so the
             // loop direction (`i < stop` vs `i > stop`) is known at lower
@@ -834,7 +907,11 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
                     ctx.fn_name
                 ))
             })?;
-            (lower_expr(start.clone())?, lower_expr(stop.clone())?, step)
+            (
+                lower_expr_in_ctx(ctx, start.clone())?,
+                lower_expr_in_ctx(ctx, stop.clone())?,
+                step,
+            )
         }
         _ => {
             return Err(FrontendError::Lower(format!(
@@ -925,7 +1002,7 @@ fn lower_while_stmt(ctx: &mut LoweringCtx, w: ast::StmtWhile) -> Result<Stmt, Fr
             ctx.fn_name
         )));
     }
-    let cond = lower_expr(*w.test)?;
+    let cond = lower_expr_in_ctx(ctx, *w.test)?;
     if infer_type(&cond) != Type::Bool {
         return Err(FrontendError::Lower(format!(
             "function `{}` has a while-condition that is not Bool (no int-truthiness at v0.1.0)",
@@ -949,7 +1026,7 @@ fn lower_assert_stmt(ctx: &mut LoweringCtx, a: ast::StmtAssert) -> Result<Stmt, 
             ctx.fn_name
         )));
     }
-    let cond = lower_expr(*a.test)?;
+    let cond = lower_expr_in_ctx(ctx, *a.test)?;
     if infer_type(&cond) != Type::Bool {
         return Err(FrontendError::Lower(format!(
             "function `{}` has an `assert` whose expression is not Bool (no int-truthiness at v0.1.0)",
@@ -986,7 +1063,7 @@ fn lower_if_stmt_as_lets(
 
     let mut stmts = Vec::with_capacity(target_names.len());
     for name in &target_names {
-        let if_expr = lower_if_chain_to_expr(&ctx.fn_name, &if_stmt, name)?;
+        let if_expr = lower_if_chain_to_expr(ctx, &ctx.fn_name, &if_stmt, name)?;
         let ty = match &if_expr {
             Expr::IfExpr { then_expr, .. } => infer_type_in_ctx(ctx, then_expr),
             other => infer_type_in_ctx(ctx, other),
@@ -1101,6 +1178,7 @@ fn validate_branch_name_sets(
 /// is `if a { 1 } else { if b { 2 } else { 3 } }` (semantically equivalent
 /// to `else if` — a future pretty-printer can flatten).
 fn lower_if_chain_to_expr(
+    ctx: &LoweringCtx,
     fn_name: &str,
     if_stmt: &ast::StmtIf,
     target_name: &str,
@@ -1114,29 +1192,29 @@ fn lower_if_chain_to_expr(
         )));
     }
 
-    let cond = lower_expr((*if_stmt.test).clone())?;
-    if infer_type(&cond) != Type::Bool {
+    let cond = lower_expr_in_ctx(ctx, (*if_stmt.test).clone())?;
+    if infer_type_in_ctx(ctx, &cond) != Type::Bool {
         return Err(FrontendError::Lower(format!(
             "function `{fn_name}` has an if-condition that is not Bool (no int-truthiness at v0.1.0)"
         )));
     }
 
-    let then_expr = find_assignment_value(fn_name, &if_stmt.body, target_name)?;
-    let then_ty = infer_type(&then_expr);
+    let then_expr = find_assignment_value(ctx, fn_name, &if_stmt.body, target_name)?;
+    let then_ty = infer_type_in_ctx(ctx, &then_expr);
 
     // Else branch is one of:
     //   nested StmtIf → recurse (handles elif)
     //   any list of assignments → terminal else: find `target_name` here
     let else_expr = if if_stmt.orelse.len() == 1 {
         if let ast::Stmt::If(nested) = &if_stmt.orelse[0] {
-            lower_if_chain_to_expr(fn_name, nested, target_name)?
+            lower_if_chain_to_expr(ctx, fn_name, nested, target_name)?
         } else {
-            find_assignment_value(fn_name, &if_stmt.orelse, target_name)?
+            find_assignment_value(ctx, fn_name, &if_stmt.orelse, target_name)?
         }
     } else {
-        find_assignment_value(fn_name, &if_stmt.orelse, target_name)?
+        find_assignment_value(ctx, fn_name, &if_stmt.orelse, target_name)?
     };
-    let else_ty = infer_type(&else_expr);
+    let else_ty = infer_type_in_ctx(ctx, &else_expr);
     if then_ty != else_ty {
         return Err(FrontendError::Lower(format!(
             "function `{fn_name}` if-branches assign `{target_name}` with mismatched types ({then_ty:?} vs {else_ty:?})"
@@ -1154,6 +1232,7 @@ fn lower_if_chain_to_expr(
 /// lowered RHS. Errors if `target_name` is not assigned in this branch
 /// (set-equality is checked upstream; this is the "extract" step).
 fn find_assignment_value(
+    ctx: &LoweringCtx,
     fn_name: &str,
     body: &[ast::Stmt],
     target_name: &str,
@@ -1162,7 +1241,9 @@ fn find_assignment_value(
         if let ast::Stmt::Assign(a) = stmt {
             let name = single_name_target(fn_name, a)?;
             if name == target_name {
-                return lower_expr((*a.value).clone());
+                // PMAT-466: context-aware so a dict read `y = d[k]` in an
+                // if/else branch lowers to `DictGet`, not a list index.
+                return lower_expr_in_ctx(ctx, (*a.value).clone());
             }
         }
     }
@@ -1207,42 +1288,64 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
                 ctx.fn_name
             )));
         }
-        // PMAT-461 (v0.2.0 Track 1.B): `xs[i] = v` indexed
-        // assignment. Recognised when the Subscript target's value is
-        // a Name typing as `Type::List(_)`. Marks the receiver
-        // mutable and produces Stmt::IndexAssign.
+        // PMAT-461 (v0.2.0 Track 1.B): `xs[i] = v` indexed assignment
+        // for lists. PMAT-466 (v0.2.0 Track 1.C): `d[k] = v` keyed
+        // assignment for dicts. The Subscript target's value must be a
+        // Name; the receiver's inferred type selects the variant
+        // (`Type::List` → `Stmt::IndexAssign`, `Type::Dict` →
+        // `Stmt::DictSet`). Either way the receiver is marked mutable.
         ast::Expr::Subscript(sub) => {
             let receiver = match sub.value.as_ref() {
                 ast::Expr::Name(n) => n.id.to_string(),
                 _ => {
                     return Err(FrontendError::Lower(format!(
-                        "function `{}` has a non-Name subscript-assignment target — v0.2.0 supports `<name>[i] = v` only",
+                        "function `{}` has a non-Name subscript-assignment target — v0.2.0 supports `<name>[k] = v` only",
                         ctx.fn_name
                     )));
                 }
             };
             let receiver_ty = ctx.name_types.get(&receiver).cloned();
-            if !matches!(receiver_ty, Some(Type::List(_))) {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` indexed-assigns to `{receiver}` which doesn't type as list[T] — v0.2.0 supports list-indexed assignment only",
-                    ctx.fn_name
-                )));
+            match receiver_ty {
+                Some(Type::List(_)) => {
+                    // PMAT-466: ctx-aware so a dict read used as a list
+                    // index (`xs[d[k]] = v`) lowers to DictGet, not a
+                    // nested list index.
+                    let index = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+                    let idx_ty = infer_type_in_ctx(ctx, &index);
+                    if !matches!(idx_ty, Type::I64) {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` indexed-assigns `{receiver}[<expr>]` where index types as {idx_ty:?}; only `int` indices are supported at v0.2.0",
+                            ctx.fn_name
+                        )));
+                    }
+                    let value = lower_expr_in_ctx(ctx, *asn.value)?;
+                    ctx.mutable.insert(receiver.clone());
+                    return Ok(Stmt::IndexAssign {
+                        list_name: receiver,
+                        index,
+                        value,
+                    });
+                }
+                // PMAT-466: dict keyed assignment. Keys may be any
+                // hashable scalar the dict was declared over (str / int
+                // / bool) — no `int`-index constraint as for lists.
+                Some(Type::Dict(_, _)) => {
+                    let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+                    let value = lower_expr_in_ctx(ctx, *asn.value)?;
+                    ctx.mutable.insert(receiver.clone());
+                    return Ok(Stmt::DictSet {
+                        dict_name: receiver,
+                        key,
+                        value,
+                    });
+                }
+                _ => {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` keyed-assigns to `{receiver}` which doesn't type as list[T] or dict[K, V] — v0.2.0 supports list/dict subscript assignment only",
+                        ctx.fn_name
+                    )));
+                }
             }
-            let index = lower_expr((*sub.slice).clone())?;
-            let idx_ty = infer_type_in_ctx(ctx, &index);
-            if !matches!(idx_ty, Type::I64) {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` indexed-assigns `{receiver}[<expr>]` where index types as {idx_ty:?}; only `int` indices are supported at v0.2.0",
-                    ctx.fn_name
-                )));
-            }
-            let value = lower_expr(*asn.value)?;
-            ctx.mutable.insert(receiver.clone());
-            return Ok(Stmt::IndexAssign {
-                list_name: receiver,
-                index,
-                value,
-            });
         }
         ast::Expr::Attribute(_) => {
             return Err(FrontendError::Lower(format!(
@@ -1258,7 +1361,10 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
             )));
         }
     };
-    let value = lower_expr(*asn.value)?;
+    // PMAT-466: route the RHS through the context-aware path so a
+    // dict op on the right of a plain `name = ...` (e.g.
+    // `result = table.get(k, 0)`) lowers correctly.
+    let value = lower_expr_in_ctx(ctx, *asn.value)?;
     let ty = infer_type_in_ctx(ctx, &value);
     // If the name is already bound, this is a reassignment — emit
     // `Stmt::Assign` (the backend will write `name = value;` and the
@@ -1275,6 +1381,132 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
             value,
             mutable,
         })
+    }
+}
+
+/// PMAT-466 (v0.2.0 Track 1.C): lower an annotated local assignment
+/// `name: T = value`. The annotation is authoritative for the
+/// binding's type — notably, an annotated empty dict
+/// `counts: dict[K, V] = {}` lowers to `DictLit(vec![])` typed by the
+/// annotation, the only way to introduce an empty dict (the value
+/// alone can't infer K/V). Non-empty / non-dict values are lowered
+/// through the context-aware path and must agree with the annotation.
+fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stmt, FrontendError> {
+    let name = match aa.target.as_ref() {
+        ast::Expr::Name(n) => n.id.to_string(),
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` has a non-Name annotated-assignment target — v0.2.0 supports `name: T = value` only",
+                ctx.fn_name
+            )));
+        }
+    };
+    let declared_ty = parse_type_annotation(&ctx.fn_name, &name, &aa.annotation)?;
+    let value_expr = aa.value.ok_or_else(|| {
+        FrontendError::Lower(format!(
+            "function `{}` declares `{name}: {declared_ty:?}` without an initializer — v0.2.0 requires `name: T = value`",
+            ctx.fn_name
+        ))
+    })?;
+    // Empty dict literal: the annotation supplies K/V that the value
+    // can't. Any other empty-collection / annotation combination is
+    // rejected here rather than silently mis-typing.
+    let value = if let ast::Expr::Dict(d) = value_expr.as_ref() {
+        if d.keys.is_empty() {
+            if !matches!(declared_ty, Type::Dict(_, _)) {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` assigns empty `{{}}` to `{name}` annotated as {declared_ty:?}; an empty literal requires a `dict[K, V]` annotation",
+                    ctx.fn_name
+                )));
+            }
+            Expr::DictLit(Vec::new())
+        } else {
+            lower_expr_in_ctx(ctx, (*value_expr).clone())?
+        }
+    } else {
+        lower_expr_in_ctx(ctx, (*value_expr).clone())?
+    };
+    // PMAT-466 (review #3): reject an obvious annotation/initializer
+    // KIND mismatch when the value is a literal (kind known exactly) —
+    // e.g. `x: dict[int,int] = 5`, `x: int = [1, 2]`. Non-literal values
+    // keep trusting the annotation (v0.2.0 inference is too thin to
+    // judge a call/ident without false positives).
+    let value_lit_kind = match &value {
+        Expr::ListLit(_) => Some("list[T]"),
+        Expr::DictLit(pairs) if !pairs.is_empty() => Some("dict[K, V]"),
+        Expr::LitInt(_) | Expr::LitBool(_) | Expr::LitStr(_) | Expr::Concat { .. } => {
+            Some("a scalar")
+        }
+        _ => None,
+    };
+    let declared_kind = match declared_ty {
+        Type::List(_) => "list[T]",
+        Type::Dict(_, _) => "dict[K, V]",
+        _ => "a scalar",
+    };
+    if let Some(vk) = value_lit_kind {
+        if vk != declared_kind {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` annotates `{name}` as {declared_ty:?} ({declared_kind}) but its initializer is {vk} — the annotation and value must agree",
+                ctx.fn_name
+            )));
+        }
+    }
+    // Annotation is the source of truth for the binding type (an empty
+    // DictLit would otherwise infer the wrong K/V). For non-empty
+    // values we trust the annotation and let backend compilation catch
+    // any genuine mismatch — the v0.2.0 inference is intentionally thin.
+    let mutable = ctx.mutable.contains(&name);
+    ctx.bound.insert(name.clone());
+    ctx.name_types.insert(name.clone(), declared_ty.clone());
+    Ok(Stmt::Let {
+        name,
+        ty: declared_ty,
+        value,
+        mutable,
+    })
+}
+
+/// PMAT-466 (review #8): true if any expression in the lowered body
+/// uses a dict construct (read, get-with-default, membership, keyed
+/// assignment, or literal). Drives the BigInt-mode + dict rejection.
+fn body_uses_dict(body: &Block) -> bool {
+    body.stmts.iter().any(stmt_uses_dict) || expr_uses_dict(&body.trailing_return)
+}
+
+fn stmt_uses_dict(s: &Stmt) -> bool {
+    match s {
+        Stmt::DictSet { .. } => true,
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } => expr_uses_dict(value),
+        Stmt::While { cond, body } => expr_uses_dict(cond) || body.iter().any(stmt_uses_dict),
+        Stmt::ForEach { iter, body, .. } => expr_uses_dict(iter) || body.iter().any(stmt_uses_dict),
+        Stmt::ListAppend { elem, .. } => expr_uses_dict(elem),
+        Stmt::IndexAssign { index, value, .. } => expr_uses_dict(index) || expr_uses_dict(value),
+        Stmt::Assert { cond } => expr_uses_dict(cond),
+        _ => false,
+    }
+}
+
+fn expr_uses_dict(e: &Expr) -> bool {
+    match e {
+        Expr::DictGet { .. }
+        | Expr::DictGetOr { .. }
+        | Expr::DictContains { .. }
+        | Expr::DictLit(_) => true,
+        Expr::BinOp { lhs, rhs, .. } | Expr::Concat { lhs, rhs } => {
+            expr_uses_dict(lhs) || expr_uses_dict(rhs)
+        }
+        Expr::UnOp { operand, .. } => expr_uses_dict(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => expr_uses_dict(cond) || expr_uses_dict(then_expr) || expr_uses_dict(else_expr),
+        Expr::Call { args, .. } => args.iter().any(expr_uses_dict),
+        Expr::Len(inner) => expr_uses_dict(inner),
+        Expr::Index { collection, index } => expr_uses_dict(collection) || expr_uses_dict(index),
+        Expr::ListLit(elems) => elems.iter().any(expr_uses_dict),
+        _ => false,
     }
 }
 
@@ -1341,6 +1573,13 @@ fn infer_type(e: &Expr) -> Type {
             Type::Dict(_, value_ty) => *value_ty,
             _ => Type::I64,
         },
+        // PMAT-466 (v0.2.0 Track 1.C): dict read + get-with-default
+        // return the dict's value type; membership is Bool.
+        Expr::DictGet { dict, .. } | Expr::DictGetOr { dict, .. } => match infer_type(dict) {
+            Type::Dict(_, value_ty) => *value_ty,
+            _ => Type::I64,
+        },
+        Expr::DictContains { .. } => Type::Bool,
         // PMAT-462 (v0.2.0 Track 1.C): dict literal types as
         // Type::Dict over the inferred key + value types from the
         // first pair. Frontend enforces homogeneity at lowering time.
@@ -1428,6 +1667,15 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             Type::Dict(_, value_ty) => *value_ty,
             _ => Type::I64,
         },
+        // PMAT-466 (v0.2.0 Track 1.C): dict read + get-with-default
+        // return the dict value type; membership is Bool.
+        Expr::DictGet { dict, .. } | Expr::DictGetOr { dict, .. } => {
+            match infer_type_in_ctx(ctx, dict) {
+                Type::Dict(_, value_ty) => *value_ty,
+                _ => Type::I64,
+            }
+        }
+        Expr::DictContains { .. } => Type::Bool,
         // PMAT-462: dict literal — see twin arm in `infer_type` above.
         Expr::DictLit(pairs) => {
             let (k_ty, v_ty) = pairs
@@ -1440,6 +1688,191 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         | Expr::ShellVar(_)
         | Expr::CommandSubstitution(_)
         | Expr::ShellSpecial(_) => Type::I64,
+    }
+}
+
+/// PMAT-466 (v0.2.0 Track 1.C operations): context-aware expression
+/// lowering used for every function-body expression.
+///
+/// Two stages: (1) [`lower_expr_in_ctx_inner`] dispatches the dict-only
+/// *constructing* shapes — `d.get(k, default)` and `k in d` membership
+/// (which the context-free [`lower_expr`] would reject) plus the
+/// directly-recursed `d[k]` and BinOp cases. (2) [`rewrite_dict_reads`]
+/// then walks the whole lowered tree and repairs any *remaining*
+/// `Expr::Index` whose collection types as a dict into an
+/// `Expr::DictGet`. Stage 2 is what makes `d[k]` reads correct in EVERY
+/// position (call args, ternary branches, `len(...)` args, relational
+/// operands, …), not just the few the inner pass recurses through.
+fn lower_expr_in_ctx(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, FrontendError> {
+    Ok(rewrite_dict_reads(ctx, lower_expr_in_ctx_inner(ctx, e)?))
+}
+
+/// PMAT-466: post-lowering rewrite — `Expr::Index` over a dict-typed
+/// collection becomes `Expr::DictGet`. Recurses through every compound
+/// `Expr`. Idempotent (a tree with no dict-typed `Index` is returned
+/// unchanged).
+fn rewrite_dict_reads(ctx: &LoweringCtx, e: Expr) -> Expr {
+    let rw = |x: Expr| rewrite_dict_reads(ctx, x);
+    let rwb = |x: Box<Expr>| Box::new(rewrite_dict_reads(ctx, *x));
+    match e {
+        Expr::Index { collection, index } => {
+            let collection = rwb(collection);
+            let index = rwb(index);
+            if matches!(infer_type_in_ctx(ctx, &collection), Type::Dict(_, _)) {
+                Expr::DictGet {
+                    dict: collection,
+                    key: index,
+                }
+            } else {
+                Expr::Index { collection, index }
+            }
+        }
+        Expr::DictGet { dict, key } => Expr::DictGet {
+            dict: rwb(dict),
+            key: rwb(key),
+        },
+        Expr::DictContains { dict, key } => Expr::DictContains {
+            dict: rwb(dict),
+            key: rwb(key),
+        },
+        Expr::DictGetOr { dict, key, default } => Expr::DictGetOr {
+            dict: rwb(dict),
+            key: rwb(key),
+            default: rwb(default),
+        },
+        Expr::BinOp { op, lhs, rhs } => Expr::BinOp {
+            op,
+            lhs: rwb(lhs),
+            rhs: rwb(rhs),
+        },
+        Expr::Concat { lhs, rhs } => Expr::Concat {
+            lhs: rwb(lhs),
+            rhs: rwb(rhs),
+        },
+        Expr::UnOp { op, operand } => Expr::UnOp {
+            op,
+            operand: rwb(operand),
+        },
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => Expr::IfExpr {
+            cond: rwb(cond),
+            then_expr: rwb(then_expr),
+            else_expr: rwb(else_expr),
+        },
+        Expr::Call { callee, args } => Expr::Call {
+            callee,
+            args: args.into_iter().map(rw).collect(),
+        },
+        Expr::Len(inner) => Expr::Len(rwb(inner)),
+        Expr::ListLit(elems) => Expr::ListLit(elems.into_iter().map(rw).collect()),
+        Expr::DictLit(pairs) => {
+            Expr::DictLit(pairs.into_iter().map(|(k, v)| (rw(k), rw(v))).collect())
+        }
+        // Leaves + shell-domain variants carry no nested dict reads.
+        other => other,
+    }
+}
+
+fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, FrontendError> {
+    match e {
+        // `d[k]` read → `Expr::DictGet` when the receiver types as a
+        // dict; otherwise fall through to the context-free list path.
+        ast::Expr::Subscript(sub) => {
+            let collection = lower_expr_in_ctx(ctx, (*sub.value).clone())?;
+            if matches!(infer_type_in_ctx(ctx, &collection), Type::Dict(_, _)) {
+                let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+                return Ok(Expr::DictGet {
+                    dict: Box::new(collection),
+                    key: Box::new(key),
+                });
+            }
+            lower_expr(ast::Expr::Subscript(sub))
+        }
+        // `d.get(k, default)` → `Expr::DictGetOr` when `d` is a dict.
+        ast::Expr::Call(call) => {
+            if let ast::Expr::Attribute(attr) = call.func.as_ref() {
+                if attr.attr.as_str() == "get" {
+                    let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &recv), Type::Dict(_, _)) {
+                        if !call.keywords.is_empty() || call.args.len() != 2 {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` calls dict `.get(...)` with {} positional arg(s){} \
+                                 — v0.2.0 Track 1.C supports exactly `.get(key, default)`",
+                                ctx.fn_name,
+                                call.args.len(),
+                                if call.keywords.is_empty() {
+                                    ""
+                                } else {
+                                    " plus keyword args"
+                                },
+                            )));
+                        }
+                        let key = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                        let default = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                        return Ok(Expr::DictGetOr {
+                            dict: Box::new(recv),
+                            key: Box::new(key),
+                            default: Box::new(default),
+                        });
+                    }
+                }
+            }
+            lower_call(call)
+        }
+        // `k in d` / `k not in d` → `Expr::DictContains` (wrapped in
+        // `not` for the negated form) when the RHS is a dict.
+        ast::Expr::Compare(c) => {
+            if c.ops.len() == 1
+                && c.comparators.len() == 1
+                && matches!(c.ops[0], ast::CmpOp::In | ast::CmpOp::NotIn)
+            {
+                let rhs = lower_expr_in_ctx(ctx, c.comparators[0].clone())?;
+                if matches!(infer_type_in_ctx(ctx, &rhs), Type::Dict(_, _)) {
+                    let key = lower_expr_in_ctx(ctx, (*c.left).clone())?;
+                    let contains = Expr::DictContains {
+                        dict: Box::new(rhs),
+                        key: Box::new(key),
+                    };
+                    return Ok(if matches!(c.ops[0], ast::CmpOp::NotIn) {
+                        Expr::UnOp {
+                            op: UnOp::Not,
+                            operand: Box::new(contains),
+                        }
+                    } else {
+                        contains
+                    });
+                }
+            }
+            lower_compare(c)
+        }
+        // Recurse through `+`/etc. so a dict op on either side (e.g.
+        // `counts.get(x, 0) + 1`) is lowered correctly. Mirror the
+        // str-Concat detection from `lower_expr`, using the
+        // context-aware inference.
+        ast::Expr::BinOp(b) => {
+            let op = lower_binop(&b.op)?;
+            let lhs = lower_expr_in_ctx(ctx, *b.left)?;
+            let rhs = lower_expr_in_ctx(ctx, *b.right)?;
+            if matches!(op, BinOp::Add)
+                && (infer_type_in_ctx(ctx, &lhs) == Type::Str
+                    || infer_type_in_ctx(ctx, &rhs) == Type::Str)
+            {
+                return Ok(Expr::Concat {
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                });
+            }
+            Ok(Expr::BinOp {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            })
+        }
+        // No dict-specific shape: the context-free path is sufficient.
+        other => lower_expr(other),
     }
 }
 

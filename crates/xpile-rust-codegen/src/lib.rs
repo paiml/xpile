@@ -83,6 +83,9 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::ListAppend { .. } => false,
             // PMAT-461: indexed assignment same disposition.
             Stmt::IndexAssign { .. } => false,
+            // PMAT-466: dict keyed assignment carries no Type::Let;
+            // dict values are int/bool/str at v0.2.0, never BigInt.
+            Stmt::DictSet { .. } => false,
             // PMAT-039: shell commands carry no BigInt operands. They
             // also never reach this Rust-codegen scan in practice
             // (bashrs-frontend produces Shell modules that the Rust
@@ -208,6 +211,36 @@ fn emit_stmt_indented(
             out.push_str(" as usize] = ");
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
+            Ok(())
+        }
+        // PMAT-466 (v0.2.0 Track 1.C): Python `d[k] = v` → Rust
+        // `{ let __v = v; d.insert(k.clone(), __v); }`. Present-key
+        // overwrite / absent-key insert matches Python dict assignment.
+        //
+        // Two subtleties, both about the move-then-borrow hazard of a
+        // non-Copy (`String`) key:
+        //   1. The value is bound to a temp BEFORE `.insert`, so the
+        //      canonical `d[k] = d.get(k, 0) + 1` idiom (value borrows
+        //      the key) doesn't move the key out from under its own
+        //      value expression (E0382). Binding the value first also
+        //      ends the immutable `.get` borrow before the mutable
+        //      `.insert` borrow (NLL).
+        //   2. The key is `.clone()`d into `.insert` so the caller's key
+        //      binding survives a *later* read of the same key (e.g.
+        //      `d[k] = …; return d[k]`). For Copy keys (int/bool) the
+        //      clone is a no-op move; `rustc` accepts it (the
+        //      `clone_on_copy` lint is clippy-only and xpile does not
+        //      clippy emitted output).
+        Stmt::DictSet {
+            dict_name,
+            key,
+            value,
+        } => {
+            write!(out, "{indent}{{ let __xpile_dict_val = ")?;
+            emit_expr(out, value, mode)?;
+            write!(out, "; {dict_name}.insert(")?;
+            emit_expr(out, key, mode)?;
+            writeln!(out, ".clone(), __xpile_dict_val); }}")?;
             Ok(())
         }
         Stmt::Assert { cond } => {
@@ -395,15 +428,23 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // Rust `{ let mut m = HashMap::new(); m.insert(k, v); ... m }`
         // block expression returning the owned HashMap.
         Expr::DictLit(pairs) => {
-            out.push_str("{ let mut m = std::collections::HashMap::new(); ");
-            for (k, v) in pairs {
-                out.push_str("m.insert(");
-                emit_expr(out, k, mode)?;
-                out.push_str(", ");
-                emit_expr(out, v, mode)?;
-                out.push_str("); ");
+            // PMAT-466: the empty literal emits a bare `HashMap::new()`
+            // (the surrounding `let`'s annotation supplies K/V). A
+            // `{ let mut m = …; m }` block with no inserts would trip
+            // clippy's `unused_mut` under `-D warnings`.
+            if pairs.is_empty() {
+                out.push_str("std::collections::HashMap::new()");
+            } else {
+                out.push_str("{ let mut m = std::collections::HashMap::new(); ");
+                for (k, v) in pairs {
+                    out.push_str("m.insert(");
+                    emit_expr(out, k, mode)?;
+                    out.push_str(", ");
+                    emit_expr(out, v, mode)?;
+                    out.push_str("); ");
+                }
+                out.push_str("m }");
             }
-            out.push_str("m }");
         }
         // PMAT-457 (v0.2.0 Track 1.B): Python `xs[i]` → Rust
         // `xs[i as usize].clone()`. The `.clone()` produces an
@@ -418,6 +459,35 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push('[');
             emit_expr(out, index, mode)?;
             out.push_str(" as usize].clone()");
+        }
+        // PMAT-466 (v0.2.0 Track 1.C): Python `d[k]` → Rust
+        // `d[&(k)].clone()`. HashMap's `Index` panics on an absent key
+        // (matches Python `KeyError`); `.clone()` yields an owned value
+        // (the v0.2.0 owned-only posture); `&(k)` borrows the key for
+        // the `Index<&Q>` impl.
+        Expr::DictGet { dict, key } => {
+            emit_expr(out, dict, mode)?;
+            out.push_str("[&(");
+            emit_expr(out, key, mode)?;
+            out.push_str(")].clone()");
+        }
+        // PMAT-466: Python `d.get(k, default)` → Rust
+        // `d.get(&(k)).cloned().unwrap_or(default)`. Total: never
+        // panics; returns `default` for an absent key.
+        Expr::DictGetOr { dict, key, default } => {
+            emit_expr(out, dict, mode)?;
+            out.push_str(".get(&(");
+            emit_expr(out, key, mode)?;
+            out.push_str(")).cloned().unwrap_or(");
+            emit_expr(out, default, mode)?;
+            out.push(')');
+        }
+        // PMAT-466: Python `k in d` → Rust `d.contains_key(&(k))`.
+        Expr::DictContains { dict, key } => {
+            emit_expr(out, dict, mode)?;
+            out.push_str(".contains_key(&(");
+            emit_expr(out, key, mode)?;
+            out.push_str("))");
         }
         // PMAT-459 (v0.2.0 Track 1.B): Python `len(x)` → Rust
         // `x.len() as i64`. Vec/String both expose `.len()` returning

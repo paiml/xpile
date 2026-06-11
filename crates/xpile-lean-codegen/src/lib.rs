@@ -248,6 +248,15 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-466: dict keyed assignment inside a while — same
+            // disposition as IndexAssign.
+            Stmt::DictSet { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has Stmt::DictSet inside a while loop; \
+                     Lean codegen at v0.2.0 first cut doesn't compose in-place mutation with while",
+                    f.name
+                )));
+            }
         }
     }
 
@@ -393,6 +402,18 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         Expr::Index { collection, index } => {
             collect_idents(collection, out);
             collect_idents(index, out);
+        }
+        // PMAT-466: dict ops — recurse into all sub-expressions so
+        // loop-state ident discovery stays correct even though Lean
+        // emit refuses these constructs downstream.
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
+            collect_idents(dict, out);
+            collect_idents(key, out);
+        }
+        Expr::DictGetOr { dict, key, default } => {
+            collect_idents(dict, out);
+            collect_idents(key, out);
+            collect_idents(default, out);
         }
         // PMAT-459: len(x) — recurse into inner.
         Expr::Len(inner) => collect_idents(inner, out),
@@ -596,6 +617,13 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
              not yet implemented at v0.2.0 first cut (PMAT-461 follow-up); \
              use `--target rust` or `--target ruchy` for in-place mutation"
         ))),
+        // PMAT-466 (v0.2.0 Track 1.C): dict keyed assignment — same
+        // state-monad encoding gap as IndexAssign / ListAppend.
+        Stmt::DictSet { dict_name, .. } => Err(LeanCodegenError::Unsupported(format!(
+            "`{dict_name}[k] = v` (Stmt::DictSet) requires state-monad encoding in Lean — \
+             not yet implemented at v0.2.0 first cut (PMAT-466 follow-up); \
+             use `--target rust` or `--target ruchy` for in-place mutation"
+        ))),
         // Stmt::Assert is handled by emit_stmts_then_trailing — should
         // never reach this match arm. The unreachable here catches a
         // future refactor that bypasses the recursive emit.
@@ -692,6 +720,20 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             out.push('[');
             emit_expr(out, index)?;
             out.push_str(".toNat]!");
+        }
+        // PMAT-466 (v0.2.0 Track 1.C): dict read / get-with-default /
+        // membership. The `List (K × V)` first-cut model has no
+        // panic-on-absent lookup or O(1) keyed access; a faithful
+        // encoding needs the `Std.HashMap` upgrade that also unblocks
+        // Lean iteration/mutation. Deferred to v0.3.0; refuse clearly.
+        Expr::DictGet { .. } | Expr::DictGetOr { .. } | Expr::DictContains { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "dict operations (`d[k]`, `d.get(k, default)`, `k in d`) require the \
+                 Std.HashMap Lean encoding — not yet implemented at v0.2.0 first cut \
+                 (PMAT-466 follow-up, alongside Lean iteration/mutation); \
+                 use `--target rust` or `--target ruchy`"
+                    .into(),
+            ));
         }
         // PMAT-459 (v0.2.0 Track 1.B): Lean's `.length` returns Nat;
         // coerce to Int via `(... : Int)` ascription.

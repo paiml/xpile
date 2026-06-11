@@ -450,6 +450,217 @@ fn main() {
     assert_rustc_runs("dict_counts", &rust, driver);
 }
 
+/// PMAT-466 — v0.2.0 Track 1.C operations: the full dict read/write
+/// API. `histogram` builds a frequency map from an empty annotated
+/// literal using `d[k] = d.get(k, 0) + 1` inside a `for` loop;
+/// `lookup` reads `d[k]`; `has_key` tests `k in d`; `size` is
+/// `len(d)`. The emitted Rust must compile (HashMap insert / get /
+/// index / contains_key / len) and compute the correct frequencies.
+#[test]
+fn histogram_dict_ops_roundtrip() {
+    let rust = xpile_transpile_to_rust("histogram.py");
+    // Emission shape: empty literal → bare HashMap::new() (no
+    // `let mut m` block that would trip clippy unused_mut), insert
+    // for the keyed assign, get/cloned/unwrap_or for get-with-default,
+    // index+clone for the read, contains_key for membership.
+    assert!(
+        rust.contains("std::collections::HashMap::new()"),
+        "empty dict literal should emit a bare HashMap::new():\n{rust}"
+    );
+    assert!(
+        rust.contains("counts.insert("),
+        "d[k] = v should emit HashMap::insert:\n{rust}"
+    );
+    assert!(
+        rust.contains(".cloned().unwrap_or("),
+        "d.get(k, default) should emit get/cloned/unwrap_or:\n{rust}"
+    );
+    assert!(
+        rust.contains("table[&(key)].clone()"),
+        "d[k] read should emit indexed clone:\n{rust}"
+    );
+    assert!(
+        rust.contains("table.contains_key(&(key))"),
+        "k in d should emit contains_key:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let h = histogram(vec![1i64, 1, 2, 3, 3, 3]);
+    assert_eq!(h.len(), 3);
+    assert_eq!(lookup(h.clone(), 1i64), 2i64);
+    assert_eq!(lookup(h.clone(), 2i64), 1i64);
+    assert_eq!(lookup(h.clone(), 3i64), 3i64);
+    assert_eq!(has_key(h.clone(), 2i64), true);
+    assert_eq!(has_key(h.clone(), 99i64), false);
+    assert_eq!(size(h.clone()), 3i64);
+    // Absent-key get-with-default path: a fresh histogram of [5]
+    // exercises the unwrap_or(0) branch for first insertion.
+    let single = histogram(vec![5i64]);
+    assert_eq!(lookup(single, 5i64), 1i64);
+}
+"#;
+    assert_rustc_runs("histogram", &rust, driver);
+}
+
+/// PMAT-466 regression (adversarial review #5/#6/#9): string-keyed
+/// histogram. The canonical `counts[w] = counts.get(w, 0) + 1` over
+/// non-Copy `String` keys must compile — the DictSet emission binds the
+/// value to a temp BEFORE moving the key into `.insert`, avoiding the
+/// borrow-of-moved-value (E0382) that a naive `insert(w, …w…)` causes.
+#[test]
+fn word_count_str_keys_roundtrip() {
+    let rust = xpile_transpile_to_rust("word_count.py");
+    assert!(
+        rust.contains("let __xpile_dict_val ="),
+        "DictSet must bind the value to a temp before moving the key:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let h = word_count(vec![
+        String::from("a"), String::from("b"), String::from("a"), String::from("a"),
+    ]);
+    assert_eq!(h.get(&String::from("a")), Some(&3i64));
+    assert_eq!(h.get(&String::from("b")), Some(&1i64));
+    assert_eq!(h.len(), 2);
+}
+"#;
+    assert_rustc_runs("word_count", &rust, driver);
+}
+
+/// PMAT-466 regression (adversarial review #2/#4/#7): dict reads in
+/// call args, relational operands, ternary branches, and `len(...)`
+/// args all lower to HashMap keyed access (`d[&(k)].clone()`), never a
+/// list `usize` index. The `rewrite_dict_reads` post-pass repairs them
+/// in every position, not just the few `lower_expr_in_ctx` recurses.
+#[test]
+fn dict_reads_in_nested_positions_roundtrip() {
+    let rust = xpile_transpile_to_rust("dict_read_positions.py");
+    assert!(
+        !rust.contains("as usize"),
+        "no dict read should lower to a `usize` list index:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let mut d = std::collections::HashMap::new();
+    d.insert(1i64, 5i64);
+    assert_eq!(via_call(d.clone(), 1i64), 5i64);
+    assert_eq!(is_positive(d.clone(), 1i64), true);
+    assert_eq!(pick(d.clone(), 1i64, 3i64), 5i64);
+    assert_eq!(pick(d.clone(), 9i64, -1i64), 0i64);
+    let mut s = std::collections::HashMap::new();
+    s.insert(2i64, String::from("hello"));
+    assert_eq!(val_len(s, 2i64), 5i64);
+    // Dict read inside an if/else branch (lookup-with-fallback).
+    assert_eq!(lookup_or(d.clone(), 1i64), 5i64);
+    assert_eq!(lookup_or(d.clone(), -1i64), 0i64);
+}
+"#;
+    assert_rustc_runs("dict_read_positions", &rust, driver);
+}
+
+/// PMAT-466 regression (adversarial review #1): a read-only annotated
+/// local inside a loop body must emit `let`, not `let mut` — otherwise
+/// `cargo clippy -D warnings` (the pre-push gate) rejects `unused_mut`.
+#[test]
+fn annotated_loop_local_is_not_mut() {
+    let rust = xpile_transpile_to_rust("loop_local_readonly.py");
+    assert!(
+        rust.contains("let tmp: i64 = x;"),
+        "read-only annotated loop local should be an immutable binding:\n{rust}"
+    );
+    assert!(
+        !rust.contains("let mut tmp"),
+        "read-only annotated loop local must NOT be `mut` (clippy unused_mut):\n{rust}"
+    );
+    let driver = "fn main() { assert_eq!(f(vec![1i64, 2, 3]), 6i64); }";
+    assert_rustc_runs("loop_local_readonly", &rust, driver);
+}
+
+/// PMAT-466 regression (2nd adversarial-review round): dict reads in
+/// positions the first fix overlooked — a `range()` bound, a
+/// `list.append()` argument, and a list indexed-assign target index —
+/// plus the str-key increment-then-read-back move. All must compile and
+/// compute correctly.
+#[test]
+fn dict_ops_edge_positions_roundtrip() {
+    let rust = xpile_transpile_to_rust("dict_ops_edge.py");
+    // Dict reads must lower to keyed access `d[&(k)]`, never a list
+    // `usize` index `d[k as usize]`. (The fixture also has *legitimate*
+    // list indexing — `xs[0]`, `xs[<dict-read> as usize]` — so we check
+    // for the mis-dispatch pattern directly rather than the absence of
+    // `as usize`.)
+    assert!(
+        rust.contains("d[&(k)].clone()"),
+        "dict reads should lower to keyed access:\n{rust}"
+    );
+    assert!(
+        !rust.contains("d[k as usize]"),
+        "a dict read must not lower to a list usize index:\n{rust}"
+    );
+    assert!(
+        rust.contains(".clone(), __xpile_dict_val)"),
+        "DictSet must clone the key so it survives a later read:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let mut d = std::collections::HashMap::new();
+    d.insert(2i64, 4i64);
+    assert_eq!(range_bound(d.clone(), 2i64), 6i64); // 0+1+2+3
+    assert_eq!(append_val(vec![], d.clone(), 2i64), 1i64);
+    let mut t = std::collections::HashMap::new();
+    t.insert(5i64, 0i64);
+    assert_eq!(index_target(vec![1i64, 2], t, 5i64, 9i64), 9i64);
+    let mut s = std::collections::HashMap::new();
+    s.insert(String::from("a"), 5i64);
+    assert_eq!(readback(s, String::from("a")), 6i64);
+}
+"#;
+    assert_rustc_runs("dict_ops_edge", &rust, driver);
+}
+
+/// PMAT-466 regression (adversarial review #10): the Lean backend must
+/// REFUSE dict operations with a clear error, never silently emit Lean
+/// (the `List (K × V)` model has no keyed lookup). The histogram
+/// fixture refuses on `for` first, so this uses a pure dict-read
+/// fixture to exercise the dict-op refusal directly.
+#[test]
+fn dict_reads_refused_by_lean() {
+    let py = fixture("dict_read_positions.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "lean"]);
+    assert!(
+        !out.status.success(),
+        "Lean should refuse dict ops, not emit code"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("dict") || stderr.contains("Std.HashMap"),
+        "Lean refusal should name the dict-op gap:\n{stderr}"
+    );
+}
+
+/// PMAT-466 regression (adversarial review #11): the Ruchy backend
+/// emits the same HashMap pipeline as Rust (Ruchy compiles to Rust),
+/// including the temp-let DictSet form.
+#[test]
+fn dict_ops_ruchy_target_emits_hashmap() {
+    let py = fixture("word_count.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "ruchy"]);
+    assert!(
+        out.status.success(),
+        "ruchy transpile failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("fun word_count"),
+        "ruchy should emit a `fun`:\n{stdout}"
+    );
+    assert!(
+        stdout.contains(".insert(") && stdout.contains("let __xpile_dict_val ="),
+        "ruchy dict write should emit the temp-let insert form:\n{stdout}"
+    );
+}
+
 /// PMAT-462 — v0.2.0 Track 1.B: nested `list[list[int]]`. Verifies
 /// the recursive Type::List + Expr::ListLit composition produces a
 /// well-typed Rust `Vec<Vec<i64>>` and (transitively) a properly
