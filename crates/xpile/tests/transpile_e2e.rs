@@ -256,6 +256,14 @@ fn c_int_arith_transpiles_to_rust_and_runs() {
         rust.contains("C-C-INT-ARITH"),
         "C functions should cite C-C-INT-ARITH:\n{rust}"
     );
+    assert!(
+        rust.contains("while ") && rust.contains("let mut "),
+        "iterative C should emit a while loop with mutable locals:\n{rust}"
+    );
+    assert!(
+        rust.contains("wrapping_div"),
+        "C `/` should emit truncating wrapping_div:\n{rust}"
+    );
     let driver = r#"
 fn main() {
     assert_eq!(add(2, 3), 5);
@@ -264,6 +272,12 @@ fn main() {
     assert_eq!(factorial(5), 120);
     assert_eq!(factorial(12), 479001600);
     assert_eq!(poly(3), 16);   // 9 + (6+1)
+    // iterative (slice 2): while + reassignment
+    assert_eq!(sum_to(5), 15);
+    assert_eq!(sum_to(100), 5050);
+    // C truncating division (toward zero), not Python floor
+    assert_eq!(half(7), 3);
+    assert_eq!(half(-7), -3);
 }
 "#;
     assert_rustc_runs("c_int_arith", &rust, driver);

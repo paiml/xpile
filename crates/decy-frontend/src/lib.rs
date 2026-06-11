@@ -76,6 +76,9 @@ enum Tok {
     Plus,
     Minus,
     Star,
+    Slash,
+    Percent,
+    While,
     Lt,
     Le,
     Gt,
@@ -145,6 +148,15 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
             }
             '*' => {
                 toks.push(Tok::Star);
+                i += 1;
+            }
+            // `/` reaches here only when not `//` or `/*` (handled above).
+            '/' => {
+                toks.push(Tok::Slash);
+                i += 1;
+            }
+            '%' => {
+                toks.push(Tok::Percent);
                 i += 1;
             }
             '?' => {
@@ -222,6 +234,7 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
                     "int" => Tok::Int,
                     "return" => Tok::Return,
                     "void" => Tok::Void,
+                    "while" => Tok::While,
                     other => Tok::Ident(other.to_string()),
                 });
             }
@@ -326,44 +339,80 @@ impl<'a> Parser<'a> {
         let mut stmts = Vec::new();
         let mut trailing_return: Option<Expr> = None;
         while !matches!(self.peek(), Some(Tok::RBrace)) {
-            match self.peek() {
-                Some(Tok::Return) => {
-                    self.bump();
-                    let e = self.parse_expr()?;
-                    self.eat(&Tok::Semi)?;
-                    trailing_return = Some(e);
-                    break; // return must be the last statement (slice 1)
-                }
-                Some(Tok::Int) => {
-                    // local decl: `int NAME = expr ;`
-                    self.bump();
-                    let name = self.parse_ident()?;
-                    self.eat(&Tok::Assign)?;
-                    let value = self.parse_expr()?;
-                    self.eat(&Tok::Semi)?;
-                    stmts.push(Stmt::Let {
-                        name,
-                        ty: Type::I64,
-                        value,
-                        mutable: false,
-                    });
-                }
-                other => {
-                    return Err(format!(
-                        "function `{fn_name}`: unexpected token {other:?} — slice 1 supports `int x = expr;` declarations then a final `return expr;`"
-                    ));
-                }
+            if matches!(self.peek(), Some(Tok::Return)) {
+                self.bump();
+                let e = self.parse_expr()?;
+                self.eat(&Tok::Semi)?;
+                trailing_return = Some(e);
+                break; // the trailing return must be the last statement
             }
+            stmts.push(self.parse_stmt(fn_name)?);
         }
-        match trailing_return {
-            Some(e) => Ok(Block {
-                stmts,
-                trailing_return: e,
-            }),
-            None => Err(format!(
-                "function `{fn_name}` has no `return` — every C function must end with `return <expr>;` at v0.2.0 slice 1"
+        let trailing_return = trailing_return.ok_or_else(|| {
+            format!(
+                "function `{fn_name}` has no `return` — every C function must end with `return <expr>;`"
+            )
+        })?;
+        // Mark a `let` mutable iff the local is reassigned somewhere
+        // (including inside a `while` body). Keeps `clippy -D warnings`
+        // happy: no spurious `mut`, and `mut` where `x = …` requires it.
+        mark_mutable(&mut stmts);
+        Ok(Block {
+            stmts,
+            trailing_return,
+        })
+    }
+
+    /// A single in-body statement: `int x = e;` (decl), `x = e;`
+    /// (reassignment), or `while (c) { … }`. The trailing `return` is
+    /// handled by the caller (it must be last; `return` inside a loop
+    /// body is rejected since the meta-HIR has a single trailing return).
+    fn parse_stmt(&mut self, fn_name: &str) -> Result<Stmt, String> {
+        match self.peek() {
+            Some(Tok::Int) => {
+                self.bump();
+                let name = self.parse_ident()?;
+                self.eat(&Tok::Assign)?;
+                let value = self.parse_expr()?;
+                self.eat(&Tok::Semi)?;
+                Ok(Stmt::Let {
+                    name,
+                    ty: Type::I64,
+                    value,
+                    mutable: false,
+                })
+            }
+            Some(Tok::While) => self.parse_while(fn_name),
+            Some(Tok::Ident(_)) => {
+                let name = self.parse_ident()?;
+                self.eat(&Tok::Assign)?;
+                let value = self.parse_expr()?;
+                self.eat(&Tok::Semi)?;
+                Ok(Stmt::Assign { name, value })
+            }
+            other => Err(format!(
+                "function `{fn_name}`: unexpected token {other:?} — supported statements: `int x = e;`, `x = e;`, `while (c) {{ … }}`, then a final `return e;`"
             )),
         }
+    }
+
+    fn parse_while(&mut self, fn_name: &str) -> Result<Stmt, String> {
+        self.eat(&Tok::While)?;
+        self.eat(&Tok::LParen)?;
+        let cond = self.parse_expr()?;
+        self.eat(&Tok::RParen)?;
+        self.eat(&Tok::LBrace)?;
+        let mut body = Vec::new();
+        while !matches!(self.peek(), Some(Tok::RBrace)) {
+            if matches!(self.peek(), Some(Tok::Return)) {
+                return Err(format!(
+                    "function `{fn_name}`: `return` inside a `while` body is not supported at v0.2.0 (the meta-HIR uses a single trailing return)"
+                ));
+            }
+            body.push(self.parse_stmt(fn_name)?);
+        }
+        self.eat(&Tok::RBrace)?;
+        Ok(Stmt::While { cond, body })
     }
 
     fn parse_ident(&mut self) -> Result<String, String> {
@@ -464,10 +513,21 @@ impl<'a> Parser<'a> {
 
     fn parse_multiplicative(&mut self) -> Result<Expr, String> {
         let mut lhs = self.parse_unary()?;
-        while matches!(self.peek(), Some(Tok::Star)) {
+        loop {
+            // C `/` truncates toward zero and `%` takes the sign of the
+            // dividend. We reuse `BinOp::FloorDiv`/`BinOp::Mod` as the IR
+            // carriers; the isolated C emit path renders them as Rust
+            // `wrapping_div` / `wrapping_rem` (truncating, UB-safe), NOT
+            // the Python floor (`div_euclid`) the shared variants imply.
+            let op = match self.peek() {
+                Some(Tok::Star) => BinOp::Mul,
+                Some(Tok::Slash) => BinOp::FloorDiv,
+                Some(Tok::Percent) => BinOp::Mod,
+                _ => break,
+            };
             self.bump();
             let rhs = self.parse_unary()?;
-            lhs = bin(BinOp::Mul, lhs, rhs);
+            lhs = bin(op, lhs, rhs);
         }
         Ok(lhs)
     }
@@ -537,6 +597,42 @@ fn bin(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
     }
 }
 
+/// Set `Stmt::Let { mutable }` to true for any local that is reassigned
+/// (`x = e;`) somewhere in the function — including inside a `while`
+/// body. The Rust backend emits `let mut` only for these, keeping the
+/// emitted code clean under `clippy -D warnings`.
+fn mark_mutable(stmts: &mut [Stmt]) {
+    let mut reassigned = std::collections::HashSet::new();
+    collect_reassigned(stmts, &mut reassigned);
+    set_let_mut(stmts, &reassigned);
+}
+
+fn collect_reassigned(stmts: &[Stmt], out: &mut std::collections::HashSet<String>) {
+    for s in stmts {
+        match s {
+            Stmt::Assign { name, .. } => {
+                out.insert(name.clone());
+            }
+            Stmt::While { body, .. } => collect_reassigned(body, out),
+            _ => {}
+        }
+    }
+}
+
+fn set_let_mut(stmts: &mut [Stmt], reassigned: &std::collections::HashSet<String>) {
+    for s in stmts {
+        match s {
+            Stmt::Let { name, mutable, .. } => {
+                if reassigned.contains(name) {
+                    *mutable = true;
+                }
+            }
+            Stmt::While { body, .. } => set_let_mut(body, reassigned),
+            _ => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -590,6 +686,47 @@ mod tests {
     fn rejects_empty() {
         assert!(CFrontend
             .parse_and_lower(&PathBuf::from("x.c"), "   ")
+            .is_err());
+    }
+
+    #[test]
+    fn parses_while_with_reassignment_marks_mut() {
+        let m = lower(
+            "int sum_to(int n) { int s = 0; int i = 1; while (i <= n) { s = s + i; i = i + 1; } return s; }",
+        );
+        let Item::Function(f) = &m.items[0];
+        // `s` and `i` are reassigned inside the loop → both `let mut`.
+        let muts: Vec<bool> = f
+            .body
+            .stmts
+            .iter()
+            .filter_map(|s| match s {
+                Stmt::Let { mutable, .. } => Some(*mutable),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(muts, vec![true, true], "reassigned locals must be mutable");
+        assert!(matches!(f.body.stmts.last(), Some(Stmt::While { .. })));
+    }
+
+    #[test]
+    fn parses_truncating_div_and_mod() {
+        let m = lower("int f(int a, int b) { return a / b % 2; }");
+        let Item::Function(f) = &m.items[0];
+        // `/` and `%` carried as FloorDiv/Mod (C-truncating in the backend).
+        assert!(matches!(
+            f.body.trailing_return,
+            Expr::BinOp { op: BinOp::Mod, .. }
+        ));
+    }
+
+    #[test]
+    fn rejects_return_inside_while() {
+        assert!(CFrontend
+            .parse_and_lower(
+                &PathBuf::from("x.c"),
+                "int f(int n) { while (n > 0) { return n; } return 0; }"
+            )
             .is_err());
     }
 }

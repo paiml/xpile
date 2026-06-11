@@ -7,6 +7,37 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.4] — 2026-06-11
+
+Incremental release extending the `decy` C → Rust frontend (PMAT-467,
+slice 2) from recursion-only to **iterative** C programs.
+
+What works at v0.1.4 (added on top of v0.1.3's C int subset):
+
+- **`while` loops**: `while (<cond>) { <stmts> }` → Rust `while`.
+- **Variable reassignment**: `x = <expr>;` → Rust `x = …;`, with
+  correct `let mut` inference — a local is emitted `mut` iff it is
+  reassigned somewhere (including inside a loop body), so emitted code
+  is clean under `rustc -D warnings` (no spurious `mut`).
+- **C truncating division / remainder**: `/` and `%` → Rust
+  `wrapping_div` / `wrapping_rem` (truncation toward zero, matching C —
+  e.g. `-7 / 2 == -3`, not Python's floor `-4`; wrapping adds the
+  `INT_MIN / -1` UB guard).
+- Exit (rustc round-trip, `-O`, clean under `-D warnings`):
+  iterative `sum_to` (`int s=0; int i=1; while (i<=n){ s=s+i; i=i+1; }
+  return s;`) computes `sum_to(100) == 5050`; `half(-7) == -3`.
+
+Deferred (later decy slices): `if`/`else` statements, early returns
+(the meta-HIR uses a single trailing return — `return` inside a loop
+body is rejected), pointers/structs/strings, the `C-C-INT-ARITH`
+contract substrate, and C → Ruchy/Lean.
+
+Substrate unchanged at QUORUM (13 contracts, depth-13 UNIVERSAL frozen
+per §30). decy-frontend ships 8 parser unit tests; `transpile_e2e` at
+76 tests.
+
+Install: `cargo install xpile` upgrades to 0.1.4.
+
 ## [0.1.3] — 2026-06-11
 
 Incremental release adding **xpile's second source language**: a real
