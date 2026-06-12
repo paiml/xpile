@@ -108,6 +108,17 @@ roadmap:
   - "The single most fundamental cap: Block { stmts, trailing_return: Expr } (xpile-meta-hir) blocks guard clauses / search / early-exit across EVERY frontend (Python AND C). Change trailing_return to Option<Expr>, add Stmt::Return mixed into stmts; update lower_block_stmt + decy parser; add a CI check that every CFG path terminates in a value."
   - "HIGH RISK: changes the every-function-yields-one-value invariant (spec §3) + ripples to all 7 backends. Sequence AFTER R9 (control-flow target exists) and the cheap wins. Wire Rust first; explicit Unsupported arms elsewhere."
   - "rustc round-trip on `for x in xs: if x==target: return idx` (Python list-search) and a C is_prime guard-clause fixture."
+- id: PMAT-480
+  github_issue: null
+  item_type: task
+  title: 'PMAT-480: [WATCHED] cuda-oxide (NVlabs pure-Rust->PTX) as a third independent §29 PTX emitter — tracked, NOT scheduled'
+  status: blocked
+  priority: low
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "WATCHED BET, not an R-item — must NOT be auto-picked-up by autonomous sessions. cuda-oxide (github.com/NVlabs/cuda-oxide, NVIDIA-Research, experimental/alpha, v0.2.1 2026-06-10) compiles single-source SIMT Rust (#[kernel]) directly to PTX via a fully Rust-native pipeline (Rust -> Stable MIR -> Pliron IR -> LLVM -> PTX). It is the upstream realization of xpile's scaffolded pure-Rust->PTX lane and a categorically-independent third 'general' PTX emitter for the §29 Multi-Emitter Quorum (strengthens the §14.10 anti-correlation guard vs rustc_codegen_nvvm's NVVM path)."
+  - "BLOCKED on three external developments: (1) LLVM 21+ hard dependency not yet in xpile's pinned toolchain; (2) hardware mismatch — flagship abstractions (TMA, thread-block clusters) are Hopper-class sm_90 while available hardware is Ada sm_89, so the §29 Runtime stratum (DiffExec on a real GPU) cannot execute-verify them here; (3) alpha churn (README warns of bugs/breakage; documented index_2d(stride) unsoundness). Also gated on its own consumer: §29 PMAT-26X+ PTX emitter is still scaffolded."
+  - "RE-EVALUATE when (a) LLVM 21 is pinned, (b) Ada/Blackwell support lands or sm_90 hardware is available, AND (c) cuda-oxide exits alpha — or at the next SOTA dossier (2026-11-15), whichever is first. Recorded per user insight 2026-06-12. See spec §30 'Watched bets' + §29 PMAT-26X+ note."
 - id: PMAT-465
   github_issue: 496
   item_type: task
