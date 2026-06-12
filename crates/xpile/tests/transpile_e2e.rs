@@ -2535,6 +2535,36 @@ fn main() {
     assert_rustc_runs("closure_multiparam", &rust, driver);
 }
 
+/// PMAT-502be (Tranche 2): `bool(x)` truthiness cast — a pure desugar to
+/// `!= 0`: int → `x != 0`, str/list/dict/set → `len(x) != 0`, bool →
+/// identity.
+#[test]
+fn bool_cast() {
+    let rust = xpile_transpile_to_rust("bool_cast.py");
+    assert!(rust.contains("(x != 0i64)"), "int cast:\n{rust}");
+    assert!(
+        rust.contains("(s.len() as i64 != 0i64)"),
+        "str cast:\n{rust}"
+    );
+    assert!(
+        rust.contains("(xs.len() as i64 != 0i64)"),
+        "list cast:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(from_int(5), true);
+    assert_eq!(from_int(0), false);
+    assert_eq!(from_int(-3), true);
+    assert_eq!(from_str("hi".to_string()), true);
+    assert_eq!(from_str("".to_string()), false);
+    assert_eq!(from_list(vec![1]), true);
+    assert_eq!(from_list(vec![]), false);
+    assert_eq!(idempotent(true), true);
+}
+"#;
+    assert_rustc_runs("bool_cast", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

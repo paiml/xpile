@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.91] — 2026-06-12
+
+Tranche-2 slice PMAT-502be — Python **`bool(x)` truthiness cast**.
+
+`bool(x)` now lowers as a pure desugar to a `!= 0` comparison — no new meta-HIR
+variant. An `int` argument becomes `x != 0`; a `str` / `list` / `dict` / `set`
+becomes `len(x) != 0`; a `bool` is the identity. (`bool(float)` is deferred.)
+Previously `bool(x)` fell through to a non-existent `bool(...)` call (typing as
+I64, which then failed the `-> bool` return-type check). Because the desugar
+reuses existing `BinOp::NotEq` and `Expr::Len`, it works across all backends.
+rustc round-trip `bool_cast.py` (cross-checked against `python3`):
+`from_int(5) -> true` / `from_int(0) -> false`, `from_str("") -> false` /
+`from_str("hi") -> true`, `from_list([]) -> false` / `from_list([1]) -> true`,
+`idempotent(true) -> true`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.90] — 2026-06-12
 
 Tranche-2 slice PMAT-504b — **multi-parameter + nullary closures**.
