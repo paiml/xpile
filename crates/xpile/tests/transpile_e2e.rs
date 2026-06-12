@@ -232,6 +232,30 @@ fn xpile_transpile_to_rust(fixture_name: &str) -> String {
     String::from_utf8(out.stdout).expect("stdout is UTF-8")
 }
 
+/// PMAT-477 (R8): Python `float` (f64). Float arithmetic is plain infix
+/// (IEEE-754, no `checked_*`); `/` is true division (not floor).
+#[test]
+fn float_arithmetic_roundtrip() {
+    let rust = xpile_transpile_to_rust("float_arith.py");
+    assert!(
+        rust.contains("-> f64") && rust.contains(": f64"),
+        "float params/returns should be f64:\n{rust}"
+    );
+    assert!(
+        !rust.contains("checked_") && rust.contains("/ 2f64"),
+        "float arithmetic should be plain infix (no checked_*); `/` is true division:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert!((lerp(0.0, 10.0, 0.5) - 5.0).abs() < 1e-9);
+    assert!((lerp(2.0, 4.0, 0.25) - 2.5).abs() < 1e-9);
+    assert!((average(3.0, 4.0) - 3.5).abs() < 1e-9);
+    assert!((scale(2.5, 4.0) - 10.0).abs() < 1e-9);
+}
+"#;
+    assert_rustc_runs("float_arith", &rust, driver);
+}
+
 /// PMAT-474 (R5): keyword arguments `f(x=1, y=2)` reorder to positional
 /// at lowering using the callee's declared parameter order.
 #[test]

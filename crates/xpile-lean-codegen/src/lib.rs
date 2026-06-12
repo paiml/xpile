@@ -22,7 +22,9 @@
 
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
-use xpile_meta_hir::{BinOp, Block, Expr, Function, Item, Module, Param, Stmt, Type, UnOp};
+use xpile_meta_hir::{
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, Stmt, Type, UnOp,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum LeanCodegenError {
@@ -380,7 +382,12 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 out.push(n.clone());
             }
         }
-        Expr::LitInt(_) | Expr::LitBool(_) => {}
+        Expr::LitInt(_) | Expr::LitBool(_) | Expr::LitFloat(_) => {}
+        // PMAT-477 (R8): float arithmetic — recurse into operands.
+        Expr::FloatBinOp { lhs, rhs, .. } => {
+            collect_idents(lhs, out);
+            collect_idents(rhs, out);
+        }
         Expr::BinOp { lhs, rhs, .. } | Expr::Concat { lhs, rhs } => {
             collect_idents(lhs, out);
             collect_idents(rhs, out);
@@ -476,6 +483,8 @@ fn escape_lean_str(s: &str) -> String {
 fn emit_type(out: &mut String, t: &Type) -> Result<(), LeanCodegenError> {
     match t {
         Type::I64 => out.push_str("Int"),
+        // PMAT-477 (R8): Python `float` → Lean `Float`.
+        Type::F64 => out.push_str("Float"),
         Type::Bool => out.push_str("Bool"),
         // Lean's Int is already unbounded — same shape as BigInt.
         Type::BigInt => out.push_str("Int"),
@@ -667,6 +676,22 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
     match e {
         Expr::Ident(name) => write!(out, "{}", name)?,
         Expr::LitInt(v) => write!(out, "({}: Int)", v)?,
+        // PMAT-477 (R8): Python `float` → Lean `Float` literal +
+        // plain-infix arithmetic (Lean `Float` supports `+ - * /`).
+        Expr::LitFloat(v) => write!(out, "({}: Float)", v)?,
+        Expr::FloatBinOp { op, lhs, rhs } => {
+            let sym = match op {
+                FloatOp::Add => "+",
+                FloatOp::Sub => "-",
+                FloatOp::Mul => "*",
+                FloatOp::Div => "/",
+            };
+            out.push('(');
+            emit_expr(out, lhs)?;
+            write!(out, " {sym} ")?;
+            emit_expr(out, rhs)?;
+            out.push(')');
+        }
         // PMAT-456 (v0.2.0 Track 1.B): bool literal — Lean
         // capitalises the constructors (`True` / `False`).
         Expr::LitBool(b) => write!(out, "{}", if *b { "True" } else { "False" })?,

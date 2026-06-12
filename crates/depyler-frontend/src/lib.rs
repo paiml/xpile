@@ -31,7 +31,7 @@ use std::path::Path;
 use std::rc::Rc;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, Function, Item, Module, Param, SourceLang, Stmt, Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, SourceLang, Stmt, Type, UnOp,
 };
 
 use rustpython_parser::ast;
@@ -591,6 +591,8 @@ fn parse_type_annotation(
         ast::Expr::Name(n) => match n.id.as_str() {
             "int" => Ok(Type::I64),
             "bool" => Ok(Type::Bool),
+            // PMAT-477 (R8): Python `float` → IEEE-754 `f64`.
+            "float" => Ok(Type::F64),
             "BigInt" => Ok(Type::BigInt),
             "str" => Ok(Type::Str),
             other => Err(FrontendError::Lower(format!(
@@ -1805,6 +1807,8 @@ fn expr_uses_dict(e: &Expr) -> bool {
 fn infer_type(e: &Expr) -> Type {
     match e {
         Expr::Ident(_) | Expr::LitInt(_) => Type::I64,
+        // PMAT-477 (R8): float literal + float arithmetic are Type::F64.
+        Expr::LitFloat(_) | Expr::FloatBinOp { .. } => Type::F64,
         // PMAT-456 (v0.2.0 Track 1.B): bool literal is Type::Bool.
         Expr::LitBool(_) => Type::Bool,
         // PMAT-459 (v0.2.0 Track 1.B): len(x) always returns Type::I64
@@ -1896,6 +1900,8 @@ fn infer_type(e: &Expr) -> Type {
 fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
     match e {
         Expr::Ident(n) => ctx.name_types.get(n).cloned().unwrap_or(Type::I64),
+        // PMAT-477 (R8): float literal + float arithmetic are Type::F64.
+        Expr::LitFloat(_) | Expr::FloatBinOp { .. } => Type::F64,
         // PMAT-456 (v0.2.0 Track 1.B): bool literal is Type::Bool.
         Expr::LitBool(_) => Type::Bool,
         // PMAT-459: len() always returns Type::I64.
@@ -2152,9 +2158,24 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // str-Concat detection from `lower_expr`, using the
         // context-aware inference.
         ast::Expr::BinOp(b) => {
-            let op = lower_binop(&b.op)?;
             let lhs = lower_expr_in_ctx(ctx, *b.left)?;
             let rhs = lower_expr_in_ctx(ctx, *b.right)?;
+            // PMAT-477 (R8): float arithmetic → FloatBinOp (plain infix,
+            // `/` is true division). Detected before `lower_binop`,
+            // which rejects `/`. Float *comparisons* fall through to
+            // BinOp (plain infix is already f64-correct, yields Bool).
+            if infer_type_in_ctx(ctx, &lhs) == Type::F64
+                || infer_type_in_ctx(ctx, &rhs) == Type::F64
+            {
+                if let Some(fop) = float_op_from_ast(&b.op) {
+                    return Ok(Expr::FloatBinOp {
+                        op: fop,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    });
+                }
+            }
+            let op = lower_binop(&b.op)?;
             if matches!(op, BinOp::Add)
                 && (infer_type_in_ctx(ctx, &lhs) == Type::Str
                     || infer_type_in_ctx(ctx, &rhs) == Type::Str)
@@ -2187,6 +2208,8 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
                 })?;
                 Ok(Expr::LitInt(v))
             }
+            // PMAT-477 (R8): Python float literal `3.14` → LitFloat.
+            ast::Constant::Float(f) => Ok(Expr::LitFloat(f)),
             // PMAT-449 (v0.2.0 Track 1.A): Python `"..."` literal →
             // `Expr::LitStr`, downstream-typed as `Type::Str`. The
             // raw Python source text is carried through to the
@@ -2204,9 +2227,22 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             ))),
         },
         ast::Expr::BinOp(b) => {
-            let op = lower_binop(&b.op)?;
             let lhs = lower_expr(*b.left)?;
             let rhs = lower_expr(*b.right)?;
+            // PMAT-477 (R8): float arithmetic (context-free path detects
+            // float *literals*; param-typed floats are caught by
+            // lower_expr_in_ctx). Checked before `lower_binop` rejects
+            // `/`.
+            if infer_type(&lhs) == Type::F64 || infer_type(&rhs) == Type::F64 {
+                if let Some(fop) = float_op_from_ast(&b.op) {
+                    return Ok(Expr::FloatBinOp {
+                        op: fop,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    });
+                }
+            }
+            let op = lower_binop(&b.op)?;
             // PMAT-451 (v0.2.0 Track 1.A): when `+` is applied to two
             // Type::Str operands, lower to Expr::Concat. The backends
             // emit `format!("{}{}", l, r)` (Rust/Ruchy) or `l ++ r`
@@ -2542,6 +2578,20 @@ fn lower_if_exp(ie: ast::ExprIfExp) -> Result<Expr, FrontendError> {
         then_expr: Box::new(then_expr),
         else_expr: Box::new(else_expr),
     })
+}
+
+/// PMAT-477 (R8): map a Python arithmetic operator to a [`FloatOp`]
+/// for float operands. Returns `None` for non-arithmetic ops
+/// (comparisons stay on `BinOp`) and for `//`/`%`/bitwise/`**` on
+/// floats (deferred).
+fn float_op_from_ast(op: &ast::Operator) -> Option<FloatOp> {
+    match op {
+        ast::Operator::Add => Some(FloatOp::Add),
+        ast::Operator::Sub => Some(FloatOp::Sub),
+        ast::Operator::Mult => Some(FloatOp::Mul),
+        ast::Operator::Div => Some(FloatOp::Div),
+        _ => None,
+    }
 }
 
 fn lower_binop(op: &ast::Operator) -> Result<BinOp, FrontendError> {
