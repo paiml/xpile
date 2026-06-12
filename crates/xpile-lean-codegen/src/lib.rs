@@ -190,6 +190,14 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-494b: tuple unpacking inside a while — the Lean lane
+            // does not support tuples at v0.2.0.
+            Stmt::LetTuple { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has tuple unpacking inside a while loop; the Lean lane does not support tuples at v0.2.0",
+                    f.name
+                )));
+            }
             Stmt::While { .. } => {
                 return Err(LeanCodegenError::Unsupported(format!(
                     "function `{}` has a nested while; Lean codegen at v0.1.0 doesn't translate nested loops",
@@ -638,6 +646,13 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         Stmt::If { .. } => Err(LeanCodegenError::Unsupported(
             "Stmt::If (statement-form if/else) is not lowered by the Lean backend — \
              Lean uses the if-expression form; use `--target rust` or `--target ruchy`"
+                .into(),
+        )),
+        // PMAT-494b: tuple unpacking — the Lean lane does not support
+        // tuples at v0.2.0 (refuse with a pointer, like Stmt::If/Return).
+        Stmt::LetTuple { .. } => Err(LeanCodegenError::Unsupported(
+            "Stmt::LetTuple (tuple unpacking) is not lowered by the Lean backend — \
+             tuples are unsupported at v0.2.0; use `--target rust` or `--target ruchy`"
                 .into(),
         )),
         Stmt::Let { name, value, .. } | Stmt::Assign { name, value } => {

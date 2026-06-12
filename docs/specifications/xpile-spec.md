@@ -810,7 +810,7 @@ Tracks 1 and 2 are independent and can run in parallel. Track 3 is small and slo
 | 2 | **PMAT-482** — Track-4 offline WGSL/SPIR-V gate | second lane, near-zero effort | hours | free |
 | 3 | ~~PMAT-492 string methods~~ — ✅ **COMPLETE** — `upper`/`lower`/`strip` (v0.1.15), `startswith`/`endswith` (v0.1.16), `split` (v0.1.17), `join` (v0.1.18). Full `Expr::StrMethod` family. | — | done | — |
 | 4 | ~~PMAT-493 f-strings~~ — ✅ **already shipped as PMAT-452** (v0.2.0 Track 1.A); `f"{x}"` → chained `Concat`/`format!`. Do NOT re-pick. | — | done | — |
-| 5 | **PMAT-494** — **tuples**: ✅ first cut SHIPPED v0.1.19 (`Type::Tuple`/`Expr::TupleLit`, multiple-return + `tuple[...]` annotation). **Unpacking** (`a, b = f()`, `for k, v in …`) remains → **PMAT-494b** (prereq for `dict.items()`/`zip`/PMAT-495) | high | days | free |
+| 5 | ~~PMAT-494 tuples~~ — ✅ **COMPLETE** — literals + `tuple[...]` + multiple-return (v0.1.19), unpacking `a, b = f()` (`Stmt::LetTuple`, v0.1.20). `for k, v in …` target unpacking folds into PMAT-495. | — | done | — |
 | 6 | **R6 / PMAT-475** — contract-integrity gap + Diamond-gate grandfather | closes a live "every construct under contract" falsification | days | free |
 | 7 | **PMAT-484** — Track-4 structured `compile_targets.via.role` | honors §29 falsification posture #4 | days | free |
 | 8 | **PMAT-495** — `enumerate()` / `zip()` in `for` loops | high; pairs with PMAT-494 | days | free |

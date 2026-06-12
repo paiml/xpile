@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.20] — 2026-06-12
+
+Sprint slice PMAT-494b — Python **tuple unpacking** `a, b = <expr>`,
+completing the tuple lane.
+
+New meta-HIR `Stmt::LetTuple { names, value }`. `a, b = <expr>` (all-Name
+targets) lowers to `LetTuple`; each name's type is taken from the value's
+`Type::Tuple`, so later references infer correctly. Rust + Ruchy emit
+`let (a, b, ...) = <value>;` (immutable first cut). Lean refuses (tuples
+unsupported in that lane). rustc round-trip `tuple_unpack.py`:
+`swap_diff(5,3) -> -2`, `sum_pair(4,9) -> 13`.
+
+Combined with v0.1.19, the tuple lane now covers literals, `tuple[...]`
+annotations, multiple-return, and unpacking — which **unblocks PMAT-495
+(`enumerate`/`zip`)**. Nested / starred / subscript unpack targets and
+unpack-then-reassign remain out of scope.
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.19] — 2026-06-12
 
 Sprint slice PMAT-494 (first cut) — Python **tuples**: multiple-return +

@@ -1399,11 +1399,39 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
     let target = asn.targets.into_iter().next().expect("len checked");
     let name = match target {
         ast::Expr::Name(n) => n.id.to_string(),
-        ast::Expr::Tuple(_) => {
-            return Err(FrontendError::Lower(format!(
-                "function `{}` uses tuple unpacking `a, b = ...` — not supported at v0.1.0",
-                ctx.fn_name
-            )));
+        // PMAT-494b: tuple unpacking `a, b = <expr>` → Stmt::LetTuple.
+        // All targets must be plain names (no nested / starred / subscript
+        // patterns at first cut). Each name's type comes from the value's
+        // tuple type so later references infer correctly.
+        ast::Expr::Tuple(t) => {
+            let names = t
+                .elts
+                .iter()
+                .map(|e| match e {
+                    ast::Expr::Name(n) => Ok(n.id.to_string()),
+                    _ => Err(FrontendError::Lower(format!(
+                        "function `{}` uses a non-Name tuple-unpacking target (nested / starred / subscript) — not supported at v0.2.0 first cut",
+                        ctx.fn_name
+                    ))),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let value = lower_expr_in_ctx(ctx, *asn.value)?;
+            match infer_type_in_ctx(ctx, &value) {
+                Type::Tuple(elem_tys) if elem_tys.len() == names.len() => {
+                    for (n, ty) in names.iter().zip(elem_tys.into_iter()) {
+                        ctx.name_types.insert(n.clone(), ty);
+                    }
+                }
+                other => {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` unpacks {} names but the right-hand side types as {other:?} — expected a tuple of {} elements",
+                        ctx.fn_name,
+                        names.len(),
+                        names.len()
+                    )));
+                }
+            }
+            return Ok(Stmt::LetTuple { names, value });
         }
         // PMAT-461 (v0.2.0 Track 1.B): `xs[i] = v` indexed assignment
         // for lists. PMAT-466 (v0.2.0 Track 1.C): `d[k] = v` keyed
