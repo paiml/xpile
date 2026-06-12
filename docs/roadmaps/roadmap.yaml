@@ -750,6 +750,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::ListPop { list, index: Option<Box<Expr>> } — the FIRST list mutator that is an EXPRESSION (removes an element and evaluates to it). xs.pop() -> (<list>).pop().unwrap() (last; panics if empty = Python IndexError); xs.pop(i) -> (<list>).remove((<i>) as usize). Result types as the list element type (infer_type + infer_type_in_ctx). Frontend recognises it in the expr-context Call arm (List receiver, 0/1 int arg). Receiver mut handled by a NEW count_pop_receivers pre-pass that recursively scans value expressions (Assign/AugAssign/AnnAssign/Return RHS) for <name>.pop(...) receivers — so a popped LOCAL as well as a popped PARAM crosses the >1 count threshold and gets let mut (the param lift alone wouldn't catch locals, and the expr-lowering path only has &ctx so can't insert ctx.mutable). Bare-statement discard form xs.pop() deferred. Lean refuses (in-place mutation). rustc round-trip list_pop.py: take_last([1,2,3])->3, take_at([10,20,30])->10, local_pop()->5 (local receiver), sum_two([1,2,3,4])->7 (pop in arithmetic). FREE CI. SHIPPED v0.1.77."
+- id: PMAT-502AT
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502at: [Tranche2] item deletion del coll[key] (list or dict)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Stmt::DelItem { name, key, is_dict }. Frontend lowers ast::Stmt::Delete (a single subscript target whose receiver is a Name) via new lower_delete_stmt, resolving is_dict from the receiver's inferred type and marking it mut. list del xs[i] -> xs.remove((<i>) as usize); (int index; shifts tail left; past-end panics = Python IndexError); dict del d[k] -> d.remove(&(<k>));. walk_counts gained a Delete arm so a deleted LOCAL as well as a PARAM gets let mut. Multiple targets (del a, b), whole-name del x, and slice deletion rejected. Lean refuses (in-place mutation). Deferred gap: deleting an absent dict key is a silent no-op here vs Python KeyError. rustc round-trip del_item.py: drop_at([1,2,3],1)->2, drop_first([10,20,30])->20, drop_key({a:1,b:2},a)->1, drop_local()->3 (local receiver). FREE CI. SHIPPED v0.1.78."
 - id: PMAT-465
   github_issue: 496
   item_type: task

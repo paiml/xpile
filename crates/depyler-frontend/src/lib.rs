@@ -235,6 +235,18 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                     *counts.entry(name).or_insert(0) += c;
                 }
             }
+            // PMAT-502at: `del coll[key]` mutates `coll` in place, so the
+            // binding must be `mut` (mirrors the subscript-assign arm).
+            ast::Stmt::Delete(d) => {
+                let bump = if in_loop { 2 } else { 1 };
+                for t in &d.targets {
+                    if let ast::Expr::Subscript(sub) = t {
+                        if let ast::Expr::Name(n) = sub.value.as_ref() {
+                            *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -861,6 +873,8 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         ast::Stmt::While(w) => lower_while_stmt(ctx, w).map(|s| vec![s]),
         ast::Stmt::For(f) => lower_for_stmt(ctx, f),
         ast::Stmt::Assert(a) => lower_assert_stmt(ctx, a).map(|s| vec![s]),
+        // PMAT-502at: `del coll[key]` item deletion (list or dict).
+        ast::Stmt::Delete(d) => lower_delete_stmt(ctx, d).map(|s| vec![s]),
         // PMAT-503a: `raise SomeException("msg")` → `Stmt::Raise`. Works
         // both at top level and inside a guard-clause `if` (this fn is the
         // recursion point for if-branch bodies).
@@ -1502,6 +1516,66 @@ fn lower_assert_stmt(ctx: &mut LoweringCtx, a: ast::StmtAssert) -> Result<Stmt, 
         }
     };
     Ok(Stmt::Assert { cond, msg })
+}
+
+/// PMAT-502at: lower `del coll[key]` to [`Stmt::DelItem`]. First cut
+/// supports exactly one subscript target whose receiver is a Name typing
+/// as a list (int index) or a dict (any declared key type). Multiple
+/// targets (`del a, b`), whole-name deletion (`del x`), and slice
+/// deletion (`del xs[a:b]`) are rejected.
+fn lower_delete_stmt(ctx: &mut LoweringCtx, d: ast::StmtDelete) -> Result<Stmt, FrontendError> {
+    if d.targets.len() != 1 {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` has `del` with {} targets; v0.2.0 supports exactly one `del coll[key]`",
+            ctx.fn_name,
+            d.targets.len()
+        )));
+    }
+    let ast::Expr::Subscript(sub) = &d.targets[0] else {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` has a `del` of a non-subscript target — v0.2.0 supports `del coll[key]` only",
+            ctx.fn_name
+        )));
+    };
+    let ast::Expr::Name(recv) = sub.value.as_ref() else {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` has a `del` whose collection isn't a simple Name — v0.2.0 supports `del <name>[key]` only",
+            ctx.fn_name
+        )));
+    };
+    let name = recv.id.to_string();
+    let receiver_ty = ctx.name_types.get(&name).cloned();
+    match receiver_ty {
+        Some(Type::List(_)) => {
+            let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+            let idx_ty = infer_type_in_ctx(ctx, &key);
+            if !matches!(idx_ty, Type::I64) {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` deletes `{name}[<expr>]` where index types as {idx_ty:?}; only `int` indices are supported at v0.2.0",
+                    ctx.fn_name
+                )));
+            }
+            ctx.mutable.insert(name.clone());
+            Ok(Stmt::DelItem {
+                name,
+                key,
+                is_dict: false,
+            })
+        }
+        Some(Type::Dict(_, _)) => {
+            let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+            ctx.mutable.insert(name.clone());
+            Ok(Stmt::DelItem {
+                name,
+                key,
+                is_dict: true,
+            })
+        }
+        _ => Err(FrontendError::Lower(format!(
+            "function `{}` deletes from `{name}` which doesn't type as list[T] or dict[K, V] — v0.2.0 supports list/dict `del` only",
+            ctx.fn_name
+        ))),
+    }
 }
 
 /// PMAT-503a (first sub-slice of PMAT-503 exceptions): lower

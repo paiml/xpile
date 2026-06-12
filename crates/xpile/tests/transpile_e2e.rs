@@ -2146,6 +2146,47 @@ fn main() {
     assert_rustc_runs("list_pop", &rust, driver);
 }
 
+/// PMAT-502at (Tranche 2): item deletion `del coll[key]` — list →
+/// `coll.remove((k) as usize);`, dict → `coll.remove(&(k));`.
+#[test]
+fn del_item() {
+    let rust = xpile_transpile_to_rust("del_item.py");
+    assert!(
+        rust.contains("xs.remove((i) as usize);"),
+        "list del (var):\n{rust}"
+    );
+    assert!(
+        rust.contains("xs.remove((0i64) as usize);"),
+        "list del (literal):\n{rust}"
+    );
+    assert!(rust.contains("d.remove(&(k));"), "dict del:\n{rust}");
+    assert!(
+        rust.contains("drop_at(mut xs: Vec<i64>"),
+        "mut list param:\n{rust}"
+    );
+    assert!(
+        rust.contains("mut d: std::collections::HashMap"),
+        "mut dict param:\n{rust}"
+    );
+    // Local receiver marked mut by the walk_counts Delete arm.
+    assert!(
+        rust.contains("let mut xs: Vec<i64> = vec!"),
+        "mut local:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(drop_at(vec![1, 2, 3], 1), 2);
+    assert_eq!(drop_first(vec![10, 20, 30]), 20);
+    let mut d = std::collections::HashMap::new();
+    d.insert("a".to_string(), 1);
+    d.insert("b".to_string(), 2);
+    assert_eq!(drop_key(d, "a".to_string()), 1);
+    assert_eq!(drop_local(), 3);
+}
+"#;
+    assert_rustc_runs("del_item", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
