@@ -288,6 +288,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
             expr_has_int_arith(dict) || expr_has_int_arith(key) || expr_has_int_arith(default)
         }
         Expr::DictContains { dict, key } => expr_has_int_arith(dict) || expr_has_int_arith(key),
+        // PMAT-502v: dict view — recurse into the dict expression.
+        Expr::DictView { dict, .. } => expr_has_int_arith(dict),
         // PMAT-459 (v0.2.0 Track 1.B): len() of a collection is not
         // itself arithmetic; recurse defensively into the inner expr.
         Expr::Len(inner) => expr_has_int_arith(inner),
@@ -909,6 +911,14 @@ pub enum Expr {
     ///   * Lean: refuses at v0.2.0 first cut.
     ///   * Shell: refuses.
     DictContains { dict: Box<Expr>, key: Box<Expr> },
+    /// Dict view — Python `d.keys()` / `d.values()` materialized to a new
+    /// `Vec`. PMAT-502v (Tranche 2). Rust/Ruchy emit
+    /// `<dict>.keys().cloned().collect::<Vec<_>>()` (or `.values()`). Result
+    /// types as `List(K)` (keys) / `List(V)` (values) — so it composes with
+    /// `len`/`sum`/`sorted`/for-iteration. HashMap iteration order is
+    /// unspecified (callers should not rely on it). Lean refuses. (`.items()`
+    /// → `List(Tuple[K,V])` follows as its own slice.)
+    DictView { dict: Box<Expr>, kind: DictViewKind },
     /// Set membership — Python `x in s`. PMAT-500 (Tranche 2). Result
     /// types as `Type::Bool`. Rust/Ruchy emit `<set>.contains(&(<elem>))`;
     /// Lean refuses. The frontend chooses this over [`Expr::DictContains`]
@@ -1306,6 +1316,15 @@ pub enum ListQueryOp {
     Count,
     /// `xs.index(x)` → index of the first equal element (panics if absent).
     Index,
+}
+
+/// PMAT-502v (Tranche 2): dict view methods carried by [`Expr::DictView`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DictViewKind {
+    /// `d.keys()` → `List(K)`.
+    Keys,
+    /// `d.values()` → `List(V)`.
+    Values,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

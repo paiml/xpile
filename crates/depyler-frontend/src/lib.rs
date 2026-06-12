@@ -31,8 +31,8 @@ use std::path::Path;
 use std::rc::Rc;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, ListQueryOp, Module, NumBuiltinOp, PairIterKind,
-    Param, SetOp, SourceLang, Stmt, StrMethodOp, Type, UnOp,
+    BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListQueryOp, Module, NumBuiltinOp,
+    PairIterKind, Param, SetOp, SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
 use rustpython_parser::ast;
@@ -2388,6 +2388,14 @@ fn infer_type(e: &Expr) -> Type {
         },
         // PMAT-502u: list.count(x)/index(x) return Int.
         Expr::ListQuery { .. } => Type::I64,
+        // PMAT-502v: d.keys()/d.values() materialize to List(K)/List(V).
+        Expr::DictView { dict, kind } => match infer_type(dict) {
+            Type::Dict(k, v) => Type::List(match kind {
+                DictViewKind::Keys => k,
+                DictViewKind::Values => v,
+            }),
+            _ => Type::List(Box::new(Type::I64)),
+        },
         // PMAT-457 (v0.2.0 Track 1.B): indexed access returns the
         // collection's element type. If the collection types as
         // Type::List(T), the result is T; otherwise fall back to I64
@@ -2565,6 +2573,14 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         },
         // PMAT-502u: list.count(x)/index(x) return Int.
         Expr::ListQuery { .. } => Type::I64,
+        // PMAT-502v: d.keys()/d.values() materialize to List(K)/List(V).
+        Expr::DictView { dict, kind } => match infer_type_in_ctx(ctx, dict) {
+            Type::Dict(k, v) => Type::List(match kind {
+                DictViewKind::Keys => k,
+                DictViewKind::Values => v,
+            }),
+            _ => Type::List(Box::new(Type::I64)),
+        },
         // PMAT-457: indexed access returns the collection element type.
         Expr::Index { collection, .. } => match infer_type_in_ctx(ctx, collection) {
             Type::List(elem_ty) => *elem_ty,
@@ -2771,6 +2787,25 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             dict: Box::new(recv),
                             key: Box::new(key),
                             default: Box::new(default),
+                        });
+                    }
+                }
+                // PMAT-502v: dict view methods `d.keys()` / `d.values()`
+                // (0 args) → a materialized `Vec` of keys / values, when the
+                // receiver types as a dict.
+                if matches!(attr.attr.as_str(), "keys" | "values") {
+                    let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &recv), Type::Dict(_, _))
+                        && call.keywords.is_empty()
+                        && call.args.is_empty()
+                    {
+                        return Ok(Expr::DictView {
+                            dict: Box::new(recv),
+                            kind: if attr.attr.as_str() == "keys" {
+                                DictViewKind::Keys
+                            } else {
+                                DictViewKind::Values
+                            },
                         });
                     }
                 }

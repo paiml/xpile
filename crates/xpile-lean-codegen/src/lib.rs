@@ -533,6 +533,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(dict, out);
             collect_idents(key, out);
         }
+        // PMAT-502v: dict view — recurse into the dict expression.
+        Expr::DictView { dict, .. } => collect_idents(dict, out),
         Expr::DictGetOr { dict, key, default } => {
             collect_idents(dict, out);
             collect_idents(key, out);
@@ -1051,10 +1053,13 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
                     .to_string(),
             ));
         }
-        Expr::DictGet { .. } | Expr::DictGetOr { .. } | Expr::DictContains { .. } => {
+        Expr::DictGet { .. }
+        | Expr::DictGetOr { .. }
+        | Expr::DictContains { .. }
+        | Expr::DictView { .. } => {
             return Err(LeanCodegenError::Unsupported(
-                "dict operations (`d[k]`, `d.get(k, default)`, `k in d`) require the \
-                 Std.HashMap Lean encoding — not yet implemented at v0.2.0 first cut \
+                "dict operations (`d[k]`, `d.get(k, default)`, `k in d`, `d.keys()`/`d.values()`) \
+                 require the Std.HashMap Lean encoding — not yet implemented at v0.2.0 first cut \
                  (PMAT-466 follow-up, alongside Lean iteration/mutation); \
                  use `--target rust` or `--target ruchy`"
                     .into(),

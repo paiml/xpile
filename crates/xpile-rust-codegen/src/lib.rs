@@ -14,8 +14,8 @@
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, ListQueryOp, Module, NumBuiltinOp, Param, SetOp,
-    SourceLang, Stmt, StrMethodOp, Type, UnOp,
+    BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListQueryOp, Module, NumBuiltinOp,
+    Param, SetOp, SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
 /// PMAT-477 (R8): the Rust infix symbol for a float arithmetic op.
@@ -849,6 +849,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push_str(".contains_key(&(");
             emit_expr(out, key, mode)?;
             out.push_str("))");
+        }
+        // PMAT-502v: `d.keys()`/`d.values()` → materialized Vec.
+        Expr::DictView { dict, kind } => {
+            emit_expr(out, dict, mode)?;
+            out.push_str(match kind {
+                DictViewKind::Keys => ".keys().cloned().collect::<Vec<_>>()",
+                DictViewKind::Values => ".values().cloned().collect::<Vec<_>>()",
+            });
         }
         // PMAT-500: Python set literal `{a, b, c}` → HashSet-init block.
         // PMAT-501b: an empty SetLit (the set-comprehension accumulator)
