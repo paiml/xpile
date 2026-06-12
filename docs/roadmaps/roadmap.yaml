@@ -516,6 +516,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Pure-frontend desugar (no new IR). xs[-k] over a list[T] -> Index { collection: xs, index: Sub(Len(xs), LitInt(k)) } = xs[len(xs) - k] (Python from-the-end). Reuses Len + BinOp::Sub + Index, so the index inherits C-PY-INT-ARITH checked sub: xs[(xs.len() as i64).checked_sub(k).expect(..) as usize].clone(). Collection appears twice (length + target); pure v0.1.0 collections -> sound. Negative literal parses as UnaryOp(USub, Int(k)). Str negative index + negative slice bounds deferred. rustc round-trip neg_index.py: last([10,20,30])->30, second_last([10,20,30])->20, sum_ends([10,20,30])->40 (xs[0]+xs[-1]). FREE CI. SHIPPED v0.1.51."
+- id: PMAT-502T
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502t: [Tranche2] reverse-slice idiom xs[::-1]'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Pure-frontend desugar (no new IR). The canonical reverse idiom xs[::-1] (no bounds, step -1, via UnaryOp(USub,Int(1))) over a list[T] -> Expr::Reversed (shipped v0.1.35) = { let mut __xv = xs.clone(); __xv.reverse(); __xv }. Narrows the blanket slice-step rejection; other steps + str[::-1] + stepped sub-ranges remain deferred. rustc round-trip slice_reverse.py: rev([1,2,3])->[3,2,1], rev_strs([a,b,c])->[c,b,a]. FREE CI. SHIPPED v0.1.52."
 - id: PMAT-465
   github_issue: 496
   item_type: task

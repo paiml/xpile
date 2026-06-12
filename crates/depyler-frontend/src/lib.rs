@@ -3142,9 +3142,28 @@ fn lower_slice_in_ctx(
             )));
         }
     };
-    if slice.step.is_some() {
+    if let Some(step) = slice.step.as_ref() {
+        // PMAT-502t: the reverse idiom `xs[::-1]` (no bounds, step −1) over a
+        // list → a new reversed list, reusing `Expr::Reversed` (PMAT-502d). A
+        // negative literal parses as `UnaryOp(USub, Int(1))`. Other steps (and
+        // `str[::-1]`) are still deferred.
+        let mut step_is_neg_one = false;
+        if let ast::Expr::UnaryOp(u) = step.as_ref() {
+            if matches!(u.op, ast::UnaryOp::USub) {
+                if let ast::Expr::Constant(c) = u.operand.as_ref() {
+                    if let ast::Constant::Int(k) = &c.value {
+                        step_is_neg_one = k.to_string() == "1";
+                    }
+                }
+            }
+        }
+        if step_is_neg_one && slice.lower.is_none() && slice.upper.is_none() && !of_str {
+            return Ok(Expr::Reversed {
+                list: Box::new(collection),
+            });
+        }
         return Err(FrontendError::Lower(format!(
-            "function `{}` uses a slice step (`xs[a:b:c]`) — deferred",
+            "function `{}` uses a slice step (`xs[a:b:c]`); only the reverse idiom `xs[::-1]` over a list is supported at v0.1.0",
             ctx.fn_name
         )));
     }
