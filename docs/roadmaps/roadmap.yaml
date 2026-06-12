@@ -525,6 +525,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Pure-frontend desugar (no new IR). The canonical reverse idiom xs[::-1] (no bounds, step -1, via UnaryOp(USub,Int(1))) over a list[T] -> Expr::Reversed (shipped v0.1.35) = { let mut __xv = xs.clone(); __xv.reverse(); __xv }. Narrows the blanket slice-step rejection; other steps + str[::-1] + stepped sub-ranges remain deferred. rustc round-trip slice_reverse.py: rev([1,2,3])->[3,2,1], rev_strs([a,b,c])->[c,b,a]. FREE CI. SHIPPED v0.1.52."
+- id: PMAT-502U
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502u: [Tranche2] list query methods count/index'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::ListQuery { list, op, arg } + ListQueryOp (Count/Index). Over a list[int] (1 arg, -> Int): xs.count(x) -> xs.iter().filter(|&&__e| __e == x).count() as i64; xs.index(x) -> xs.iter().position(|&__e| __e == x).map(|__i| __i as i64).expect(..) (panics if absent, Python ValueError). Frontend disambiguates .count from str method (v0.1.44) by recv type. First cut list[int] (Copy+Eq). Lean refuses. rustc round-trip list_query.py: how_many([1,2,2,3,2],2)->3, how_many([1,2,3],9)->0, first_at([10,20,30],20)->1, first_at([10,20,30],10)->0. FREE CI. SHIPPED v0.1.53."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -13,8 +13,8 @@
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, Module, NumBuiltinOp, Param, SetOp, Stmt,
-    StrMethodOp, Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, ListQueryOp, Module, NumBuiltinOp, Param, SetOp,
+    Stmt, StrMethodOp, Type, UnOp,
 };
 
 /// PMAT-477 (R8): Ruchy → Rust infix symbol for a float arithmetic op.
@@ -659,6 +659,22 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 (true, true) => ".iter().copied().fold(f64::NEG_INFINITY, f64::max)",
                 (true, false) => ".iter().copied().fold(f64::INFINITY, f64::min)",
             });
+        }
+        // PMAT-502u: list query — `xs.count(x)` / `xs.index(x)` (→ i64).
+        Expr::ListQuery { list, op, arg } => {
+            emit_expr(out, list, mode)?;
+            match op {
+                ListQueryOp::Count => {
+                    out.push_str(".iter().filter(|&&__e| __e == ");
+                    emit_expr(out, arg, mode)?;
+                    out.push_str(").count() as i64");
+                }
+                ListQueryOp::Index => {
+                    out.push_str(".iter().position(|&__e| __e == ");
+                    emit_expr(out, arg, mode)?;
+                    out.push_str(").map(|__i| __i as i64).expect(\"xpile: ValueError: list.index(x): x not in list\")");
+                }
+            }
         }
         // PMAT-502c: `sorted(xs)` → clone+sort block.
         // PMAT-502f: `reverse=True` appends `__xv.reverse();` (descending).

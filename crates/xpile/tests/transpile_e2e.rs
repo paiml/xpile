@@ -1494,6 +1494,27 @@ fn main() {
     assert_rustc_runs("slice_reverse", &rust, driver);
 }
 
+/// PMAT-502u (Tranche 2): list query methods `xs.count(x)` / `xs.index(x)`
+/// over an int list → `.iter().filter(…).count()` / `.iter().position(…)`.
+#[test]
+fn list_query() {
+    let rust = xpile_transpile_to_rust("list_query.py");
+    assert!(
+        rust.contains(".iter().filter(|&&__e| __e ==")
+            && rust.contains(".iter().position(|&__e| __e =="),
+        "expected count/index emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(how_many(vec![1, 2, 2, 3, 2], 2), 3);
+    assert_eq!(how_many(vec![1, 2, 3], 9), 0);
+    assert_eq!(first_at(vec![10, 20, 30], 20), 1);
+    assert_eq!(first_at(vec![10, 20, 30], 10), 0);
+}
+"#;
+    assert_rustc_runs("list_query", &rust, driver);
+}
+
 /// PMAT-502r (Tranche 2): open-ended slices `xs[a:]` / `xs[:b]` / `xs[:]`
 /// (list + str) → half-open / full Rust ranges.
 #[test]

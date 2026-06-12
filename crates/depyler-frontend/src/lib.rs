@@ -31,8 +31,8 @@ use std::path::Path;
 use std::rc::Rc;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, Module, NumBuiltinOp, PairIterKind, Param, SetOp,
-    SourceLang, Stmt, StrMethodOp, Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, ListQueryOp, Module, NumBuiltinOp, PairIterKind,
+    Param, SetOp, SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
 use rustpython_parser::ast;
@@ -2386,6 +2386,8 @@ fn infer_type(e: &Expr) -> Type {
             Type::List(elem) => *elem,
             _ => Type::I64,
         },
+        // PMAT-502u: list.count(x)/index(x) return Int.
+        Expr::ListQuery { .. } => Type::I64,
         // PMAT-457 (v0.2.0 Track 1.B): indexed access returns the
         // collection's element type. If the collection types as
         // Type::List(T), the result is T; otherwise fall back to I64
@@ -2561,6 +2563,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             Type::List(elem) => *elem,
             _ => Type::I64,
         },
+        // PMAT-502u: list.count(x)/index(x) return Int.
+        Expr::ListQuery { .. } => Type::I64,
         // PMAT-457: indexed access returns the collection element type.
         Expr::Index { collection, .. } => match infer_type_in_ctx(ctx, collection) {
             Type::List(elem_ty) => *elem_ty,
@@ -2801,6 +2805,28 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             recv: Box::new(recv),
                             op,
                             args,
+                        });
+                    }
+                }
+                // PMAT-502u: list query methods `xs.count(x)` / `xs.index(x)`
+                // over a `list[int]` (1 arg, → Int). `.count` also names a str
+                // method (handled above for a Str receiver); the receiver-type
+                // check disambiguates.
+                if matches!(attr.attr.as_str(), "count" | "index") {
+                    let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &recv), Type::List(elem) if *elem == Type::I64)
+                        && call.keywords.is_empty()
+                        && call.args.len() == 1
+                    {
+                        let arg = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                        return Ok(Expr::ListQuery {
+                            list: Box::new(recv),
+                            op: if attr.attr.as_str() == "count" {
+                                ListQueryOp::Count
+                            } else {
+                                ListQueryOp::Index
+                            },
+                            arg: Box::new(arg),
                         });
                     }
                 }

@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.53] — 2026-06-12
+
+Tranche-2 slice PMAT-502u — Python **list query methods** `xs.count(x)` / `xs.index(x)`.
+
+New meta-HIR `Expr::ListQuery { list, op, arg }` + `ListQueryOp`
+(Count/Index). Over a `list[int]` (1 arg, → **Int**): `xs.count(x)` →
+`xs.iter().filter(|&&__e| __e == x).count() as i64`; `xs.index(x)` →
+`xs.iter().position(|&__e| __e == x).map(|__i| __i as i64).expect(…)` (panics if
+the element is absent, matching Python's `ValueError`). The frontend
+disambiguates `.count` from the str method (shipped v0.1.44) by receiver type.
+First cut is `list[int]` (`Copy`+`Eq`); Lean refuses. rustc round-trip
+`list_query.py`: `how_many([1,2,2,3,2],2) -> 3`, `how_many([1,2,3],9) -> 0`,
+`first_at([10,20,30],20) -> 1`, `first_at([10,20,30],10) -> 0`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.52] — 2026-06-12
 
 Tranche-2 slice PMAT-502t — Python **reverse-slice idiom** `xs[::-1]`.
