@@ -676,6 +676,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, list, mode)?;
             out.push_str(".clone(); __xv.sort(); __xv }");
         }
+        // PMAT-502d: `reversed(xs)` → a new reversed Vec.
+        Expr::Reversed { list } => {
+            out.push_str("{ let mut __xv = ");
+            emit_expr(out, list, mode)?;
+            out.push_str(".clone(); __xv.reverse(); __xv }");
+        }
         // PMAT-462 (v0.2.0 Track 1.C): Python dict literal →
         // Rust `{ let mut m = HashMap::new(); m.insert(k, v); ... m }`
         // block expression returning the owned HashMap.

@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.35] — 2026-06-12
+
+Tranche-2 slice PMAT-502d — Python **`reversed(xs)`** builtin.
+
+New meta-HIR `Expr::Reversed { list }`. `reversed(xs)` (1 list arg) returns a
+**new** reversed list (the input is not mutated), lowering to
+`{ let mut __xv = <list>.clone(); __xv.reverse(); __xv }` in Rust + Ruchy;
+result types as the list's type. The idiomatic `list(reversed(xs))` unwraps to
+the same node (the `list(...)` wrapper is a no-op once `reversed` already
+materializes a `Vec`). Lean refuses. rustc round-trip `reversed_builtin.py`:
+`flip([1,2,3]) -> [3,2,1]`, `flip_str(["a","b","c"]) -> ["c","b","a"]`.
+
 ## [0.1.34] — 2026-06-12
 
 Tranche-2 slice PMAT-502c — Python **`sorted(xs)`** builtin.

@@ -2292,6 +2292,8 @@ fn infer_type(e: &Expr) -> Type {
         }
         // PMAT-502c: sorted(xs) has the same type as its list.
         Expr::Sorted { list } => infer_type(list),
+        // PMAT-502d: reversed(xs) has the same type as its list.
+        Expr::Reversed { list } => infer_type(list),
         // PMAT-457 (v0.2.0 Track 1.B): indexed access returns the
         // collection's element type. If the collection types as
         // Type::List(T), the result is T; otherwise fall back to I64
@@ -2436,6 +2438,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         }
         // PMAT-502c: sorted(xs) has the same type as its list.
         Expr::Sorted { list } => infer_type_in_ctx(ctx, list),
+        // PMAT-502d: reversed(xs) has the same type as its list.
+        Expr::Reversed { list } => infer_type_in_ctx(ctx, list),
         // PMAT-457: indexed access returns the collection element type.
         Expr::Index { collection, .. } => match infer_type_in_ctx(ctx, collection) {
             Type::List(elem_ty) => *elem_ty,
@@ -2670,6 +2674,30 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         return Ok(Expr::Sorted {
                             list: Box::new(list),
                         });
+                    }
+                }
+                // PMAT-502d: `reversed(xs)` over a list → a new reversed
+                // list. The supported subset materializes Python's lazy
+                // `reversed` iterator as a `Vec`, so `reversed(xs)` and the
+                // idiomatic `list(reversed(xs))` both produce `Expr::Reversed`.
+                if fname.id.as_str() == "reversed"
+                    && call.keywords.is_empty()
+                    && call.args.len() == 1
+                {
+                    let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
+                        return Ok(Expr::Reversed {
+                            list: Box::new(list),
+                        });
+                    }
+                }
+                // PMAT-502d: `list(reversed(xs))` — the `list(...)` wrapper is
+                // a no-op once the inner `reversed(xs)` already materializes
+                // to a `Vec`. Unwrap a single already-list-typed argument.
+                if fname.id.as_str() == "list" && call.keywords.is_empty() && call.args.len() == 1 {
+                    let inner = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    if matches!(inner, Expr::Reversed { .. } | Expr::Sorted { .. }) {
+                        return Ok(inner);
                     }
                 }
             }

@@ -589,6 +589,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, list, mode)?;
             out.push_str(".clone(); __xv.sort(); __xv }");
         }
+        // PMAT-502d: `reversed(xs)` → a new reversed Vec.
+        Expr::Reversed { list } => {
+            out.push_str("{ let mut __xv = ");
+            emit_expr(out, list, mode)?;
+            out.push_str(".clone(); __xv.reverse(); __xv }");
+        }
         // PMAT-462 (v0.2.0 Track 1.C): Ruchy → Rust HashMap-init block.
         // PMAT-466: empty literal → bare `HashMap::new()` (see the Rust
         // backend's twin arm — avoids clippy `unused_mut`).

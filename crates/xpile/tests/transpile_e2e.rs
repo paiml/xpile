@@ -1224,6 +1224,27 @@ fn main() {
     assert_rustc_runs("sorted_builtin", &rust, driver);
 }
 
+/// PMAT-502d (Tranche 2): `reversed(xs)` (and `list(reversed(xs))`) →
+/// a new reversed list (`{ let mut __xv = xs.clone(); __xv.reverse(); __xv }`).
+#[test]
+fn reversed_builtin_int_and_str() {
+    let rust = xpile_transpile_to_rust("reversed_builtin.py");
+    assert!(
+        rust.contains(".clone(); __xv.reverse();"),
+        "expected reverse block, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(flip(vec![1, 2, 3]), vec![3, 2, 1]);
+    assert_eq!(
+        flip_str(vec![String::from("a"), String::from("b"), String::from("c")]),
+        vec![String::from("c"), String::from("b"), String::from("a")]
+    );
+}
+"#;
+    assert_rustc_runs("reversed_builtin", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
