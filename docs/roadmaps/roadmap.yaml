@@ -120,6 +120,114 @@ roadmap:
   - "HARDWARE BLOCKER RETIRED 2026-06-12 (per user hardware inventory): Lambda Cloud rents Hopper H100/GH200 (sm_90, full TMA + real thread-block clusters) and Blackwell B200 (sm_100) on-demand, and the local GX10 (NVIDIA GB10 Grace-Blackwell, sm_121) is a real CUDA device — so the §29 Runtime stratum (DiffExec on a real GPU) CAN now execute-verify Hopper/Blackwell PTX. See spec §29 'Runtime-stratum hardware'. (The 'intel' host is an Intel Xeon Mac Pro w/ 2x AMD Radeon Pro W5700X via Vulkan — SPIR-V/WGSL + CPU-rustc-round-trip lane, not PTX.)"
   - "SURVIVING BLOCKERS (3): (1) CONTROLLING — unbuilt consumer: the §29 PTX lane is still scaffolded (PMAT-26X+ real general emitter + PMAT-26Z+ DiffExec engine are pending; path is ScaffoldPtxEmitter / DiffExecResult::NotRun). A third independent emitter cannot precede its consumer. (2) Toolchain pin: LLVM-21 floor is met by bundled llc 21.1.8, but cuda-oxide hard-pins nightly-2026-04-03 + rust-src + rustc-dev while xpile pins stable 1.93.0 — adopting it means a nightly codegen lane xpile has not taken. (3) Alpha churn (v0.2.1, documented index_2d(stride) unsoundness). Minor: sm_121/GB10 is prose-only/unconfirmed as a cuda-oxide target, so local GX10 is least-proven; moot since rented Lambda sm_90/sm_100 are confirmed."
   - "RE-EVALUATE when (a) §29 PMAT-26X+/26Z+ light up a real general emitter + DiffExec engine (now the gating trigger — consumer must exist first), (b) a decision is taken to carry a nightly + rust-src + rustc-dev codegen lane, AND (c) cuda-oxide exits alpha — or at the next SOTA dossier (2026-11-15), whichever is first. See spec §30 'Watched bets' + §29 PMAT-26X+ note + §29 'Runtime-stratum hardware' table."
+- id: PMAT-481
+  github_issue: null
+  item_type: task
+  title: 'PMAT-481: [Track4] Offline PTX well-formedness gate — structural asserts + ptxas-assembles (free CI, no GPU)'
+  status: planned
+  priority: high
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "TRACK 4 (§29 Runtime-stratum DiffExec lighting), co-equal with R6; smallest-PMAT-first; CI-green on FREE GitHub-hosted runners. Add structural assertions on emitted PTX text + a ptxas-assembles CI step in xpile-ptx-codegen. ptxas ships in the CUDA toolkit and installs via apt with NO GPU (verified on-box assembling handwritten + rustc-nvptx64 PTX to cubin for sm_70/sm_89). Run the CUDA-toolkit install as a SEPARATE job (like kani), not folded into the required fast gate."
+  - "Asserts run against CURRENT emitter output (initially the scaffold's comment-only shape — do NOT assert .visible .entry on the scaffold). The .visible .entry / .target sm_NN / .address_size 64 checks + the ptxas assemble ACTIVATE once a real emitter exists (PMAT-485). Derive the ptxas -arch from the same HwProfile::Ptx.compute_capability the test asserts — never hard-code sm_80. This is a well-formedness gate, NOT the model->emission gate (that is PMAT-488)."
+  - "Exit: cargo test -p xpile-ptx-codegen green; ptxas step green on a hosted runner. No circular dep on PMAT-485 (day-one criterion satisfiable on the scaffold)."
+- id: PMAT-482
+  github_issue: null
+  item_type: task
+  title: 'PMAT-482: [Track4] Offline WGSL/SPIR-V validation gate — naga + spirv-val on CPU (free CI, no GPU)'
+  status: planned
+  priority: high
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Mirrors PMAT-481 for the second target lane at near-zero effort. CI step runs naga over the WgslEmitter output (scaffold now, real later) + spirv-val (SPIRV-Tools) on SPIR-V; both are pure-CPU validators. Structural asserts on EmittedText for WGSL added to xpile-wgsl-codegen. Exit: cargo test -p xpile-wgsl-codegen green; naga/spirv-val step green on a hosted runner. FREE CI, no GPU."
+- id: PMAT-483
+  github_issue: null
+  item_type: task
+  title: 'PMAT-483: [Track4] QuorumPolicy::Strict golden-text regression-lock for emitted PTX (free CI)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Exercises the already-present Strict arm of MultiEmitterBackend on LIVE emission. A golden-text fixture runs PtxBackend under QuorumPolicy::Strict against a committed snapshot; intentional text mutation flips it red — catches codegen drift (toolchain bump, refactor) without a GPU. Activates once PMAT-485 emits real PTX. Pure-Rust unit test, FREE CI. Depends on PMAT-481/485 for real text."
+- id: PMAT-484
+  github_issue: null
+  item_type: task
+  title: 'PMAT-484: [Track4] Lift compile_targets.via.role to structured YAML in PTX contract + in-tree validator (free CI)'
+  status: planned
+  priority: high
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Honors §29 falsification posture #4 + citation-provenance. Lift compile-rust-to-ptx-mma-v1.yaml `via` from comment-block to structured records (emitter/role/crate, cross_repo, shape_filter, quorum_policy:{kind,tolerance}); add an in-tree test asserting >=1 role:general, <=1 general, no specialist-only route, tolerance present for DiffExec."
+  - "CONFIRM the pinned crates.io aprender-contracts-cli (pv) tolerates the structured `via` shape BEFORE landing; if pv rejects or silently ignores it, keep the structured form ADDITIVE alongside the flat list so `pv lint contracts/` stays green — the in-tree Rust test is the authoritative validator. Full pv-engine role enforcement is the residual cross-repo PMAT-A5 in ../provable-contracts/. FREE CI."
+- id: PMAT-485
+  github_issue: null
+  item_type: task
+  title: 'PMAT-485: [Track4] Real general PTX emitter via nvptx64-nvidia-cuda rustc path (replace ScaffoldPtxEmitter)'
+  status: planned
+  priority: high
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "First REAL emission, smallest credible Rust->PTX path (verified end-to-end on-box at /tmp/ptxprobe): real .visible .entry PTX from rustc's upstream nvptx64-nvidia-cuda target — far lighter than rustc_codegen_nvvm/libnvvm. Replace ScaffoldPtxEmitter::try_emit (xpile-ptx-codegen/src/lib.rs:108-124) with a meta-HIR->nvptx64 build returning real PTX for >=1 kernel (e.g. add_one). Routes automatically through MultiEmitterBackend -> Artifact -> QuorumStatus; TargetEmitter trait UNCHANGED."
+  - "Lights up the general SLOT with the first real assemblable PTX; does NOT yet satisfy the contract's mma.sync.aligned headline invariant (an elementwise kernel emits no MMA — later/specialist work). Emitted PTX passes the PMAT-481 ptxas gate for the configured arch; citations still include C-COMPILE-RUST-TO-PTX-MMA."
+  - "ONE committed CI story (no IF/otherwise hedge): a contained NIGHTLY emit job added to .github/workflows/ci.yml (separate job like kani; needs nightly + rust-src + llvm-tools + llvm-bitcode-linker, core-only no_std kernel crate) runs the emit + ptxas gate. xpile pins stable 1.93.0 (rust-toolchain.toml) — the nightly lane is a DELIBERATELY separate toolchain, NEVER the default build."
+- id: PMAT-486
+  github_issue: null
+  item_type: task
+  title: 'PMAT-486: [Track4] DiffExecEngine trait + Option<Arc<dyn>> hook in MultiEmitterBackend; NoopEngine preserves NotRun (free CI)'
+  status: planned
+  priority: high
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Decouples the engine INTERFACE from the GPU impl so wiring lands CI-green before hardware. Add DiffExecEngine trait (execute_and_compare(general_text, specialist_text, module, config, tolerance) -> Result<DiffExecResult, DiffExecError>); MultiEmitterBackend gains diff_exec_engine: Option<Arc<dyn DiffExecEngine>>; the DiffExec arm (xpile-backend/src/lib.rs:411-431) calls the engine when present. NoopEngine keeps today's NotRun. Existing PMAT-266/280 + NotRun-default tests stay green. FREE CI, no hardware."
+  - "DISTINGUISH NotRun{reason:no-engine} (benign, free-CI) from a hard DiffExecError on an INSTALLED engine (must FAIL the GPU CI job) — do NOT collapse DiffExecError into NotRun via .ok(), or a broken GPU run masquerades as 'not run' and a discharged caveat could silently regress."
+- id: PMAT-487
+  github_issue: null
+  item_type: task
+  title: 'PMAT-487: [Track4] Self-hosted NVIDIA runner bring-up (on-box RTX 4090 sm_89) — prerequisite for PMAT-488'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "EXPLICIT prerequisite — the repo has ZERO self-hosted runner infra today (ci.yml is all ubuntu-latest). Register the on-box RTX 4090 (sm_89; ptxas/nvcc/driver 570.207/CUDA 12.8 already present — cheapest first NVIDIA runner) as runs-on: [self-hosted, linux, gpu, cuda]. Add a gpu-ci maintainer-approval label so fork PRs NEVER auto-run on local hardware (the documented self-hosted security risk). Ephemeral / NVIDIA-Container-Toolkit (--gpus all) job. Prove a trivial GPU smoke job green."
+  - "Keep GPU jobs ADVISORY (non-required) in branch protection until the runner is reliably up; promote to required once stable (matches xpile's 'gates advisory during prototype' stance). PMAT-488 depends on this slice and contains ONLY the CudaDiffExecEngine impl."
+- id: PMAT-488
+  github_issue: null
+  item_type: task
+  title: 'PMAT-488: [Track4] CudaDiffExecEngine — real GPU exec+compare via cudarc; first Run>=2; DISCHARGES audit §4 caveat for PTX'
+  status: planned
+  priority: high
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "THE epistemic payload. CudaDiffExecEngine implements DiffExecEngine: cudarc CudaContext::new -> load_module(general_ptx) + load_module(specialist_ptx) -> launch on contract-fixture inputs -> element-wise compare within tolerance -> DiffExecResult::Match{max_abs_diff} or Divergent. Use cudarc (dynamic libcuda load -> non-GPU CI still COMPILES), NOT cust (links CUDA at build time). Verified-feasible load/launch loop on the on-box RTX 4090."
+  - "Converts C-COMPILE-RUST-TO-PTX-MMA from Run=1 demo fixture to a real multi-vote Runtime witness — DISCHARGES the audit §4 caveat for the PTX lane and flips §29 falsification posture #1 to enforced. `xpile quorum` reports Run>=2 for the PTX contract; commit the diff_exec_report sidecar. ONLY NOW may audit-design.md §4/§62's 'single demo-fixture witness' line for this contract be edited to discharged. CI: self-hosted GPU runner (deps PMAT-485, 486, 487). Advanced sm_90/sm_100 TMA/cluster kernels verified out-of-band on Lambda H100/B200 or GX10."
+- id: PMAT-489
+  github_issue: null
+  item_type: task
+  title: 'PMAT-489: [Track4] Self-hosted AMD-Vulkan runner bring-up (intel box, 2x Radeon Pro W5700X) — prerequisite for PMAT-490'
+  status: planned
+  priority: low
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "EXPLICIT prerequisite (mirrors PMAT-487 for the SPIR-V/WGSL lane). Register the 'intel' box's 2x AMD Radeon Pro W5700X (Navi10/RDNA1, Vulkan 1.3 RADV) as runs-on: [self-hosted, linux, vulkan, amd]. Same gpu-ci maintainer-approval label gating + ephemeral/containerized job + advisory->required promotion. Prove a trivial Vulkan compute smoke job green."
+- id: PMAT-490
+  github_issue: null
+  item_type: task
+  title: 'PMAT-490: [Track4] VulkanDiffExecEngine for WGSL/SPIR-V lane; Run>=2; DISCHARGES §4 caveat for WGSL'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Generalizes Run>=2 quorum to the second target family, proving DiffExec is target-agnostic (the spec's explicit claim). A SPIR-V/WGSL DiffExecEngine runs a wgpu/vulkano compute pipeline on fixture inputs for both emitters and returns Match/Divergent; the WGSL contract reports Run>=2. Discharges the §4 caveat for the WGSL lane only. CI: self-hosted Vulkan runner (deps PMAT-482, 486, 489). Offline naga/spirv-val (PMAT-482) stays the free-CI structural gate upstream."
+- id: PMAT-491
+  github_issue: null
+  item_type: task
+  title: 'PMAT-491: [Track4] Cross-repo aprender-gpu specialist binding (old PMAT-26Y+) — real specialist slot'
+  status: planned
+  priority: low
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Replaces the MatmulSpecialistEmitter mock with the real categorically-independent specialist (hand-tuned MMA templates vs LLVM/NVVM), satisfying the §14.10 anti-correlation guarantee that makes DiffExec divergence high-signal. MULTI-PR by nature (aprender-gpu changes live in another repo); sequenced LAST — only adds value once a real general emitter (PMAT-485) + real engine (PMAT-488) exist to vote against it."
+  - "Exit: aprender-gpu implements TargetEmitter, slots into the specialist slot via new_with_specialist with a gemm/mma shape_filter + cross_repo provenance resolving through the fleet manifest; under DiffExec on a matmul_* module both emitters fire and Match within tolerance on the GPU runner; citations resolve cross-repo per the PMAT-484 schema. CI: self-hosted GPU runner (deps PMAT-488, 484) + free ptxas/structural gate."
 - id: PMAT-465
   github_issue: 496
   item_type: task
