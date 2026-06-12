@@ -363,6 +363,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::Sorted { list }. sorted(xs) (1 list arg) returns a NEW sorted list (input not mutated) -> { let mut __xv = <list>.clone(); __xv.sort(); __xv } in Rust+Ruchy; result types as the list type. Lean refuses. rustc round-trip sorted_builtin.py: order([3,1,2])->[1,2,3], order_str([c,a,b])->[a,b,c]. reverse=/key= follow. FREE CI. SHIPPED v0.1.34."
+- id: PMAT-502D
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502d: [Tranche2] reversed(xs) builtin'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::Reversed { list }. reversed(xs) (1 list arg) returns a NEW reversed list (input not mutated) -> { let mut __xv = <list>.clone(); __xv.reverse(); __xv } in Rust+Ruchy; result types as the list type. The idiomatic list(reversed(xs)) unwraps to the same node. Lean refuses. rustc round-trip reversed_builtin.py: flip([1,2,3])->[3,2,1], flip_str([a,b,c])->[c,b,a]. FREE CI. SHIPPED v0.1.35."
 - id: PMAT-465
   github_issue: 496
   item_type: task
