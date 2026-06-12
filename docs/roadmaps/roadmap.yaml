@@ -859,6 +859,15 @@ roadmap:
   acceptance_criteria:
   - "FIRST STRUCTURAL STEP beyond the lambda foothold (which only inlined bodies into sorted/filter/map). f = lambda y: <body> lowers to a new meta-HIR Stmt::ClosureLet { name, param, param_ty, body }, emitting let f = |y: i64| { <body> }; in Rust+Ruchy; callable as f(arg) via the existing Expr::Call machinery. First cut: single positional param typed i64; return type inferred from body and recorded in NEW ctx.closure_returns side-table so the call site types correctly (Bool-returning closure -> caller returns bool). Achieved WITHOUT a Type::Closure variant (Rust infers the closure type, so the let carries no annotation) — this avoids high churn across every exhaustive Type match. Param bound i64 during body lowering, then restored (no leak). Lean refuses (first-class fns = v0.3.0). rustc round-trip closure_local.py: apply_twice(5)->7 (nested inc(inc(x))), is_positive(3)->true/is_positive(-1)->false, scale(4)->12. FOLLOW-UPS: multi-param closures, non-i64 params (infer from usage), closures passed as fn args, closure capture edge cases. FREE CI. SHIPPED v0.1.89."
   - "PMAT-504b: multi-param + nullary closures. Generalized Stmt::ClosureLet from single param/param_ty to params: Vec<(String, Type)>. f = lambda x, y: x+y -> let f = |x: i64, y: i64| { ... };; g = lambda: 42 -> let g = || { 42i64 };. Each param still i64 first cut; all bound for body inference then restored. Call site unchanged (Expr::Call passes all positional args). Lean refuses. rustc round-trip closure_multiparam.py: add(3,4)->7, nullary()->42, combine(2,3,5)->11. FREE CI. SHIPPED v0.1.90. Remaining 504 follow-ups: non-i64 params (infer from usage), closures passed as fn args."
+- id: PMAT-502BE
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502be: [Tranche2] bool(x) truthiness cast'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "bool(x) lowers as a PURE DESUGAR to a != 0 comparison (no new meta-HIR variant). int -> x != 0; str/list/dict/set -> len(x) != 0 (reuses Expr::Len); bool -> identity. float deferred. Previously bool(x) fell through to a non-existent bool(...) call (typed I64, failing the -> bool return-type check). Reuses BinOp::NotEq + Expr::Len so it works across ALL backends. rustc round-trip bool_cast.py (cross-checked vs python3): from_int(5)->true/from_int(0)->false, from_str()->false/from_str(hi)->true, from_list([])->false/from_list([1])->true, idempotent(true)->true. FREE CI. SHIPPED v0.1.91."
 - id: PMAT-465
   github_issue: 496
   item_type: task

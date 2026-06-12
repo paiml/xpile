@@ -3890,6 +3890,28 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         });
                     }
                 }
+                // PMAT-502be: `bool(x)` truthiness cast — a pure desugar to a
+                // `!= 0` comparison (no new Expr). int → `x != 0`; str / list /
+                // dict / set → `len(x) != 0`; bool → identity. (float deferred.)
+                if fname.id.as_str() == "bool" && call.keywords.is_empty() && call.args.len() == 1 {
+                    let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    let ne_zero = |lhs: Expr| Expr::BinOp {
+                        op: BinOp::NotEq,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(Expr::LitInt(0)),
+                    };
+                    return match infer_type_in_ctx(ctx, &value) {
+                        Type::Bool => Ok(value),
+                        Type::I64 => Ok(ne_zero(value)),
+                        Type::Str | Type::List(_) | Type::Dict(_, _) | Type::Set(_) => {
+                            Ok(ne_zero(Expr::Len(Box::new(value))))
+                        }
+                        other => Err(FrontendError::Lower(format!(
+                            "function `{}` calls `bool(...)` on a {other:?}; v0.2.0 supports bool over int/bool/str/list/dict/set",
+                            ctx.fn_name
+                        ))),
+                    };
+                }
                 // PMAT-502ad/af: `str(x)` over an `int`/`float` → `Expr::ToStr`
                 // (int → `format!("{}", x)`; float → a Python-matching format
                 // block). PMAT-502ae: `str(b)` over a `bool` desugars to
