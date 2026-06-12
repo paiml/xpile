@@ -2294,6 +2294,11 @@ fn infer_type(e: &Expr) -> Type {
         Expr::Sorted { list } => infer_type(list),
         // PMAT-502d: reversed(xs) has the same type as its list.
         Expr::Reversed { list } => infer_type(list),
+        // PMAT-502e: min(xs)/max(xs) reduce a list to its element type.
+        Expr::ListMinMax { list, .. } => match infer_type(list) {
+            Type::List(elem) => *elem,
+            _ => Type::I64,
+        },
         // PMAT-457 (v0.2.0 Track 1.B): indexed access returns the
         // collection's element type. If the collection types as
         // Type::List(T), the result is T; otherwise fall back to I64
@@ -2440,6 +2445,11 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::Sorted { list } => infer_type_in_ctx(ctx, list),
         // PMAT-502d: reversed(xs) has the same type as its list.
         Expr::Reversed { list } => infer_type_in_ctx(ctx, list),
+        // PMAT-502e: min(xs)/max(xs) reduce a list to its element type.
+        Expr::ListMinMax { list, .. } => match infer_type_in_ctx(ctx, list) {
+            Type::List(elem) => *elem,
+            _ => Type::I64,
+        },
         // PMAT-457: indexed access returns the collection element type.
         Expr::Index { collection, .. } => match infer_type_in_ctx(ctx, collection) {
             Type::List(elem_ty) => *elem_ty,
@@ -2662,6 +2672,25 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             return Ok(Expr::Sum {
                                 list: Box::new(list),
                                 of_float: matches!(*elem, Type::F64),
+                            });
+                        }
+                    }
+                }
+                // PMAT-502e: 1-arg `min(xs)`/`max(xs)` over an `int` list →
+                // a reduction. The 2-arg `min(a, b)` form is handled above by
+                // the NumBuiltin intercept (arity 2), so this only matches the
+                // single-list-argument reduction. `f64` lists lack `Ord` and
+                // follow as their own slice.
+                if matches!(fname.id.as_str(), "min" | "max")
+                    && call.keywords.is_empty()
+                    && call.args.len() == 1
+                {
+                    let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
+                        if matches!(*elem, Type::I64) {
+                            return Ok(Expr::ListMinMax {
+                                list: Box::new(list),
+                                is_max: fname.id.as_str() == "max",
                             });
                         }
                     }

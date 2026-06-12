@@ -1245,6 +1245,26 @@ fn main() {
     assert_rustc_runs("reversed_builtin", &rust, driver);
 }
 
+/// PMAT-502e (Tranche 2): 1-arg `min(xs)`/`max(xs)` over an int list →
+/// `xs.iter().copied().min().unwrap()` (or `.max()`).
+#[test]
+fn list_minmax_builtin() {
+    let rust = xpile_transpile_to_rust("list_minmax_builtin.py");
+    assert!(
+        rust.contains(".iter().copied().min().unwrap()")
+            && rust.contains(".iter().copied().max().unwrap()"),
+        "expected min/max reduction emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(smallest(vec![3, 1, 2]), 1);
+    assert_eq!(largest(vec![3, 1, 2]), 3);
+    assert_eq!(span(vec![3, 1, 2, 9, 4]), 8);
+}
+"#;
+    assert_rustc_runs("list_minmax_builtin", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

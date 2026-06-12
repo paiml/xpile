@@ -372,6 +372,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::Reversed { list }. reversed(xs) (1 list arg) returns a NEW reversed list (input not mutated) -> { let mut __xv = <list>.clone(); __xv.reverse(); __xv } in Rust+Ruchy; result types as the list type. The idiomatic list(reversed(xs)) unwraps to the same node. Lean refuses. rustc round-trip reversed_builtin.py: flip([1,2,3])->[3,2,1], flip_str([a,b,c])->[c,b,a]. FREE CI. SHIPPED v0.1.35."
+- id: PMAT-502E
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502e: [Tranche2] 1-arg min(xs)/max(xs) over a list'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::ListMinMax { list, is_max } — the reduction form, distinct from 2-arg min(a,b)/max(a,b) (Expr::NumBuiltin). 1-arg min(xs)/max(xs) over a list[int] -> <list>.iter().copied().min().unwrap() (or .max()) in Rust+Ruchy; result types as element type. First cut list[int] only (f64 lacks Ord, follows). Lean refuses. rustc round-trip list_minmax_builtin.py: smallest([3,1,2])->1, largest([3,1,2])->3, span([3,1,2,9,4])->8. FREE CI. SHIPPED v0.1.36."
 - id: PMAT-465
   github_issue: 496
   item_type: task

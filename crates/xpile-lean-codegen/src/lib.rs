@@ -456,6 +456,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         Expr::Sorted { list } => collect_idents(list, out),
         // PMAT-502d: reversed — recurse into the list expression.
         Expr::Reversed { list } => collect_idents(list, out),
+        // PMAT-502e: min/max reduction — recurse into the list expression.
+        Expr::ListMinMax { list, .. } => collect_idents(list, out),
         // PMAT-455: list literal — recurse into each element.
         Expr::ListLit(elems) => {
             for e in elems {
@@ -889,6 +891,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             return Err(LeanCodegenError::Unsupported(
                 "Python reversed(xs) is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502e: min/max reduction deferred in the Lean lane at first cut.
+        Expr::ListMinMax { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python min(xs)/max(xs) over a list is not yet supported in \
+                 the Lean lane — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
         }

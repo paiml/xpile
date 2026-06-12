@@ -670,6 +670,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 ".iter().sum::<i64>()"
             });
         }
+        // PMAT-502e: 1-arg `min(xs)`/`max(xs)` reduction over an int list.
+        Expr::ListMinMax { list, is_max } => {
+            emit_expr(out, list, mode)?;
+            out.push_str(if *is_max {
+                ".iter().copied().max().unwrap()"
+            } else {
+                ".iter().copied().min().unwrap()"
+            });
+        }
         // PMAT-502c: `sorted(xs)` → `{ let mut __xv = <list>.clone(); __xv.sort(); __xv }`.
         Expr::Sorted { list } => {
             out.push_str("{ let mut __xv = ");

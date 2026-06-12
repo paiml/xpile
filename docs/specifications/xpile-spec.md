@@ -832,7 +832,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 |---|---|---|
 | **PMAT-497** — aug-subscript assign `d[k] += v` / `xs[i] += v` | desugar to `d[k] = d[k] <op> v`; reuses DictSet/IndexAssign — no new IR | ✅ SHIPPED v0.1.25 |
 | **PMAT-498** — numeric builtins `abs`/`min`/`max` (`Expr::NumBuiltin`) | `abs(x)`→`(x).abs()`, `min/max(a,b)`→`(a).min/max(b)` | ✅ SHIPPED v0.1.26 |
-| **PMAT-498b** — `sum(xs)` (`Expr::Sum`) | `sum(xs)`→`xs.iter().sum::<i64\|f64>()` | ✅ SHIPPED v0.1.27 (1-arg list min/max still open) |
+| **PMAT-498b** — `sum(xs)` (`Expr::Sum`) | `sum(xs)`→`xs.iter().sum::<i64\|f64>()` | ✅ SHIPPED v0.1.27 (1-arg list min/max → PMAT-502e v0.1.36) |
 | **PMAT-499** — `range(start, stop, step)` | full 3-arg range + **negative steps** (countdown) | ✅ already satisfied (PMAT-008; cond flips `<`/`>` on step sign). Only non-literal steps remain (deferred — needs runtime direction). |
 | **PMAT-500** — sets: literal + `x in s` + `len` (v0.1.29) + **`.add()`** mutation (`Stmt::SetAdd`, v0.1.31) | `HashSet` lane | ✅ SHIPPED (empty `set()` / ∪∩ → follow-up; set comp now unblocked) |
 | **PMAT-501** — dict comprehensions (v0.1.30) + **set comprehensions** `{e for …}` (v0.1.32) | materialise via for-DictSet / for-SetAdd; no new IR | ✅ SHIPPED — completes list/dict/set comprehensions |
@@ -840,6 +840,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502b** — `str.replace(old, new)` (`StrMethodOp::Replace`, 2-arg) | `.replace(&(old)[..], &(new)[..])` | ✅ SHIPPED v0.1.33 |
 | **PMAT-502c** — `sorted(xs)` (`Expr::Sorted`) | `{ let mut __xv = xs.clone(); __xv.sort(); __xv }` | ✅ SHIPPED v0.1.34 (`reverse=`/`key=` → follow-up) |
 | **PMAT-502d** — `reversed(xs)` (`Expr::Reversed`) | `{ let mut __xv = xs.clone(); __xv.reverse(); __xv }`; `list(reversed(xs))` unwraps to the same | ✅ SHIPPED v0.1.35 |
+| **PMAT-502e** — 1-arg `min(xs)`/`max(xs)` over a list (`Expr::ListMinMax`) | `xs.iter().copied().min().unwrap()` / `.max()`; `list[int]` first cut, `f64` follows | ✅ SHIPPED v0.1.36 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | open |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |
