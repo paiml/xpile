@@ -95,7 +95,9 @@ fn function_bigint_mode(f: &Function) -> bool {
     fn stmt_has_bigint(s: &Stmt) -> bool {
         match s {
             Stmt::Let { ty, .. } => matches!(ty, Type::BigInt),
-            Stmt::Assign { .. } | Stmt::Assert { .. } => false,
+            // PMAT-479 (R10): an early return introduces no BigInt
+            // binding (bigint mode is set by params/lets/return type).
+            Stmt::Assign { .. } | Stmt::Assert { .. } | Stmt::Return(_) => false,
             Stmt::While { body, .. } | Stmt::ForEach { body, .. } => {
                 body.iter().any(stmt_has_bigint)
             }
@@ -184,6 +186,13 @@ fn emit_stmt_indented(
         Stmt::Assign { name, value } => {
             write!(out, "{indent}{name} = ")?;
             emit_expr(out, value, mode)?;
+            writeln!(out, ";")?;
+            Ok(())
+        }
+        // PMAT-479 (R10): early `return <expr>;` (e.g. a guard clause).
+        Stmt::Return(e) => {
+            write!(out, "{indent}return ")?;
+            emit_expr(out, e, mode)?;
             writeln!(out, ";")?;
             Ok(())
         }
@@ -943,6 +952,13 @@ fn emit_c_stmt(out: &mut String, stmt: &Stmt, indent: &str) -> Result<(), Codege
         Stmt::Assign { name, value } => {
             write!(out, "{indent}{name} = ")?;
             emit_c_expr(out, value)?;
+            writeln!(out, ";")?;
+            Ok(())
+        }
+        // PMAT-479 (R10): C early `return <expr>;` (guard clause).
+        Stmt::Return(e) => {
+            write!(out, "{indent}return ")?;
+            emit_c_expr(out, e)?;
             writeln!(out, ";")?;
             Ok(())
         }

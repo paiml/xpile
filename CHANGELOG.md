@@ -7,6 +7,35 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.12] — 2026-06-12
+
+Incremental release adding **early returns** (guard clauses) —
+PMAT-479, the post-v0.1.4 audit's R10 (the load-bearing control-flow
+item).
+
+- meta-HIR gains `Stmt::Return(Expr)` for *non-final* returns. A guard
+  clause `if (n <= 1) { return 1; } return n * fact(n-1);` lowers the
+  early return to `Stmt::Return` (Rust/Ruchy emit `return e;`) while the
+  function's final value still flows through `Block::trailing_return`.
+  Lean refuses (it keeps the single-trailing-return shape).
+- This is the tractable slice of R10: it unlocks the dominant
+  guard-clause idiom **without** changing the load-bearing
+  "every function yields exactly one value via a trailing return"
+  invariant — the early return is additive. (Functions where *every*
+  path returns with no trailing fall-through still require a trailing
+  return; the full `trailing_return → Option` change is a follow-up.)
+- Exit (rustc round-trip): recursive `fact` via a guard clause →
+  `fact(5) == 120`; 3-way `sign(7)/sign(-3)/sign(0)` → 1/-1/0.
+
+Produced by the decy C frontend (early `return` inside an `if` branch).
+Substrate unchanged at QUORUM. `transpile_e2e` at 84 tests.
+
+This completes the post-v0.1.4 audit's EV ladder **R1–R5, R7–R10**
+(R6 — the contract-integrity gap + Diamond-gate grandfather — remains,
+sequenced for careful substrate work; see spec §30).
+
+Install: `cargo install xpile` upgrades to 0.1.12.
+
 ## [0.1.11] — 2026-06-12
 
 Incremental release adding **`Stmt::If`** — C `if`/`else` statements

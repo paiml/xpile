@@ -169,6 +169,13 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-479 (R10): early return inside a while is not encodable.
+            Stmt::Return(_) => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has an early `return` inside a while loop; Lean codegen keeps the single-trailing-return shape at v0.2.0",
+                    f.name
+                )));
+            }
             Stmt::Let { name, .. } => {
                 // v0.1.0 frontend produces only Assigns inside loop
                 // bodies; treat a Let as a fresh binding the loop
@@ -593,6 +600,14 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         // Lean has no `mut` — let-bindings are already immutable.
         // Reassignment via `Stmt::Assign` works because Lean's `let`
         // allows shadowing: emit it as another `let name := value`.
+        // PMAT-479 (R10): early returns need a match/monadic encoding;
+        // Lean keeps the single-trailing-return shape. The decy C
+        // frontend (which produces these) targets Rust.
+        Stmt::Return(_) => Err(LeanCodegenError::Unsupported(
+            "Stmt::Return (early return) is not lowered by the Lean backend — \
+             Lean uses a single trailing return; use `--target rust` or `--target ruchy`"
+                .into(),
+        )),
         // PMAT-478 (R9): the executable-Lean encoding routes branching
         // through the if-*expression* form (see emit_if_expr), not a
         // statement-if; the decy C frontend (which produces Stmt::If)
