@@ -866,7 +866,8 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502ab** — `filter(lambda p: pred, xs)` (`Expr::Filter`) | `.iter().cloned().filter(\|__k\| { let p = __k.clone(); pred }).collect::<Vec<_>>()`; Bool predicate; `list(filter(…))` unwraps; result = input list type | ✅ SHIPPED v0.1.60 |
 | **PMAT-502ac** — `map(lambda p: e, xs)` (`Expr::Map`) | `.iter().cloned().map(\|__k\| { let p = __k.clone(); e }).collect::<Vec<_>>()`; result = `List(<body type>)`; `list(map(…))` unwraps; 5th lambda position | ✅ SHIPPED v0.1.61 |
 | **PMAT-502ad** — `str(x)` over an int (`Expr::ToStr`) | `format!("{}", x)` → `Str`; unblocks `"prefix" + str(n)` concat; `str(float)` deferred (formatting diffs) | ✅ SHIPPED v0.1.62 |
-| **PMAT-502ae** — `str(b)` over a bool (pure desugar → `IfExpr`) | `"True" if b else "False"` → `if b { String::from("True") } else {…"False"…}`; matches Python's capitalization; `str(float)` still deferred | ✅ SHIPPED v0.1.63 |
+| **PMAT-502ae** — `str(b)` over a bool (pure desugar → `IfExpr`) | `"True" if b else "False"` → `if b { String::from("True") } else {…"False"…}`; matches Python's capitalization | ✅ SHIPPED v0.1.63 |
+| **PMAT-502af** — `str(x)` over a float (`ToStr.of_float`) | block: `nan`→"nan", finite whole→`format!("{}.0",…)`, else `format!("{}",…)`; matches Python (`2.0`→"2.0"); completes str() int/float/bool | ✅ SHIPPED v0.1.64 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |

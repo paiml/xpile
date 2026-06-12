@@ -478,7 +478,7 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         // PMAT-502m: int(x)/float(x) — recurse into the converted value.
         Expr::NumCast { value, .. } => collect_idents(value, out),
         // PMAT-502ad: str(x) — recurse into the converted value.
-        Expr::ToStr { value } => collect_idents(value, out),
+        Expr::ToStr { value, .. } => collect_idents(value, out),
         // PMAT-502c: sorted — recurse into the list expression.
         Expr::Sorted { list, .. } => collect_idents(list, out),
         // PMAT-502d: reversed — recurse into the list expression.

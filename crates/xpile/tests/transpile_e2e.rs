@@ -1508,6 +1508,27 @@ fn main() {
     assert_rustc_runs("str_of_bool", &rust, driver);
 }
 
+/// PMAT-502af (Tranche 2): `str(x)` over a float → Python-matching string
+/// (whole numbers get a `.0` suffix; `nan`/`inf` handled).
+#[test]
+fn str_of_float() {
+    let rust = xpile_transpile_to_rust("str_of_float.py");
+    assert!(
+        rust.contains("__sf.fract() == 0.0") && rust.contains("format!(\"{}.0\", __sf)"),
+        "expected float str format block, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(f_str(2.0), String::from("2.0"));
+    assert_eq!(f_str(2.5), String::from("2.5"));
+    assert_eq!(f_str(-1.5), String::from("-1.5"));
+    assert_eq!(half_str(5), String::from("2.5"));
+    assert_eq!(half_str(4), String::from("2.0"));
+}
+"#;
+    assert_rustc_runs("str_of_float", &rust, driver);
+}
+
 /// PMAT-502n (Tranche 2): `divmod(a, b)` → the tuple `(a // b, a % b)`,
 /// reusing the contract-checked floor-div + mod ops.
 #[test]

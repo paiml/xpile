@@ -649,11 +649,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, value, mode)?;
             out.push_str(if *to_float { ") as f64)" } else { ") as i64)" });
         }
-        // PMAT-502ad: `str(x)` (int) → `format!("{}", <value>)`.
-        Expr::ToStr { value } => {
-            out.push_str("format!(\"{}\", ");
-            emit_expr(out, value, mode)?;
-            out.push(')');
+        // PMAT-502ad/af: `str(x)` → `format!("{}", x)` (int) or a
+        // Python-matching format block (float).
+        Expr::ToStr { value, of_float } => {
+            if *of_float {
+                out.push_str("{ let __sf = ");
+                emit_expr(out, value, mode)?;
+                out.push_str("; if __sf.is_nan() { String::from(\"nan\") } else if __sf.is_finite() && __sf.fract() == 0.0 { format!(\"{}.0\", __sf) } else { format!(\"{}\", __sf) } }");
+            } else {
+                out.push_str("format!(\"{}\", ");
+                emit_expr(out, value, mode)?;
+                out.push(')');
+            }
         }
         // PMAT-502e/h/aa: 1-arg `min(xs)`/`max(xs)`; `key=lambda` →
         // `min_by_key`/`max_by_key`.

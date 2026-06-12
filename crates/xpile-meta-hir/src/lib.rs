@@ -248,7 +248,7 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-502m: int(x)/float(x) — recurse into the converted value.
         Expr::NumCast { value, .. } => expr_has_int_arith(value),
         // PMAT-502ad: str(x) — recurse into the converted value.
-        Expr::ToStr { value } => expr_has_int_arith(value),
+        Expr::ToStr { value, .. } => expr_has_int_arith(value),
         // PMAT-502k: seq * n — recurse into both the sequence and count.
         Expr::Repeat { seq, n } => expr_has_int_arith(seq) || expr_has_int_arith(n),
         // PMAT-502c: sorted — recurse into the list expression.
@@ -1077,12 +1077,14 @@ pub enum Expr {
     /// `str(x)` are separate slices — `str` has Python/Rust float/bool
     /// formatting differences.)
     NumCast { value: Box<Expr>, to_float: bool },
-    /// Python `str(x)` over an **int** `x` → its decimal string. PMAT-502ad
-    /// (Tranche 2). Rust/Ruchy emit `format!("{}", <value>)`; result types as
-    /// `Str`. First cut is `int` only — `str(float)` ("2.0" vs Rust's "2")
-    /// and `str(bool)` ("True" vs Rust's "true") differ from Python and
-    /// follow as their own slice. Lean refuses.
-    ToStr { value: Box<Expr> },
+    /// Python `str(x)` over an **int** or **float** `x` → its string form.
+    /// PMAT-502ad (int); `of_float` is PMAT-502af. For int, Rust/Ruchy emit
+    /// `format!("{}", <value>)`. For float they emit a block that matches
+    /// Python's formatting (`is_nan()` → `"nan"`; finite whole numbers get a
+    /// `".0"` suffix; otherwise `format!("{}", …)`), since Rust's bare
+    /// `format!` prints e.g. `2.0` as `"2"`. Result types as `Str`.
+    /// (`str(bool)` desugars to an `IfExpr`, PMAT-502ae.) Lean refuses.
+    ToStr { value: Box<Expr>, of_float: bool },
     /// `sorted(xs)` / `sorted(xs, reverse=True)` / `sorted(xs, key=lambda
     /// p: e)` over a list — Python builtin returning a **new** sorted list
     /// (the input is not mutated). PMAT-502c; `reverse` is PMAT-502f; the
