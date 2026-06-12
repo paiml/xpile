@@ -949,6 +949,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "ast::Stmt::Pass lowers to NO statements (empty Vec<Stmt>) in lower_block_stmt. Combined with v0.1.98 void functions + v0.1.99 if/else: enables a pass-only void body (def noop()->None: pass -> fn noop()->(){ () }) and a pass in an if/for/else branch (-> empty Rust block). A pass-last in a value-returning fn still fails the trailing-return requirement (correct — Python returns None there). No meta-HIR or backend change. rustc round-trip pass_stmt.py: noop() returns (), guard_pass(-2/5)->-1/6 (empty if), skip_first([0,1,0,2,3])->6 (empty if branch, populated else). FREE CI. SHIPPED v0.1.100."
+- id: PMAT-502BO
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bo: [Tranche2] negative float literals (-3.14)'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "lower_unary_op folds UnaryOp(USub, Expr::LitFloat(f)) -> Expr::LitFloat(-f) -> -3.14f64. Previously unary - only accepted an i64 operand (UnOp::Neg emits the i64-only checked_neg().expect(...)), so -3.14 was rejected with 'unary - requires I64 operand'. Fold keeps negative-float module constants (X = -3.14) const-evaluable (try_const_decl sees LitFloat). Negative INT literals unchanged (UnOp::Neg / checked_neg). Float VARIABLE negation (-x for float x) still deferred — the unary lowering is context-free so it can't see x's type; needs ctx-aware unary. rustc round-trip neg_float.py (cross-checked vs python3): pi()->-3.14, offset(2.0)->0.5. FREE CI. SHIPPED v0.1.101."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -2800,6 +2800,26 @@ fn main() {
     assert_rustc_runs("pass_stmt", &rust, driver);
 }
 
+/// PMAT-502bo (Tranche 2): negative float literals `-3.14` fold to a
+/// single `LitFloat(-3.14)` → `-3.14f64` (not the i64-only `checked_neg`).
+#[test]
+fn neg_float() {
+    let rust = xpile_transpile_to_rust("neg_float.py");
+    assert!(rust.contains("-3.14f64"), "neg float literal:\n{rust}");
+    assert!(rust.contains("-1.5f64"), "neg float in arith:\n{rust}");
+    assert!(
+        !rust.contains("checked_neg"),
+        "float negation must not use checked_neg:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(pi(), -3.14);
+    assert_eq!(offset(2.0), 0.5);
+}
+"#;
+    assert_rustc_runs("neg_float", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
