@@ -940,6 +940,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "The Python frontend previously required leading-stmts + a single trailing return expr; any earlier return errored (even though meta-HIR Stmt::Return + the backend emit existed for the C frontend). Two additions: (1) GUARD-CLAUSE EARLY RETURNS — a non-last return <expr> (e.g. inside an if) lowers to Stmt::Return -> return <expr>;, with the function's real trailing return after; (2) TERMINAL if/elif/else — when the LAST statement is an exhaustive if/elif/else whose every branch is a single return <expr>, it lowers to the trailing return via a (possibly nested) Expr::IfExpr (new terminal_if_as_expr helper recurses for elif; cond must be Bool; else required). Bare return (no value) deferred. Lean refuses Stmt::Return. rustc round-trip early_return.py (cross-checked vs python3): sign(5/-3/0)->1/-1/0 (if/elif/else), abs_val(-4)->4 (if/else), guard(-2/5)->0/6 (guard clause). FREE CI. SHIPPED v0.1.99."
+- id: PMAT-502BN
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bn: [Tranche2] pass no-op statement'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "ast::Stmt::Pass lowers to NO statements (empty Vec<Stmt>) in lower_block_stmt. Combined with v0.1.98 void functions + v0.1.99 if/else: enables a pass-only void body (def noop()->None: pass -> fn noop()->(){ () }) and a pass in an if/for/else branch (-> empty Rust block). A pass-last in a value-returning fn still fails the trailing-return requirement (correct — Python returns None there). No meta-HIR or backend change. rustc round-trip pass_stmt.py: noop() returns (), guard_pass(-2/5)->-1/6 (empty if), skip_first([0,1,0,2,3])->6 (empty if branch, populated else). FREE CI. SHIPPED v0.1.100."
 - id: PMAT-465
   github_issue: 496
   item_type: task

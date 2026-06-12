@@ -1019,6 +1019,11 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         // `continue` would skip); `break` and list/while `continue` are fine.
         ast::Stmt::Continue(_) => Ok(vec![Stmt::Continue]),
         ast::Stmt::Break(_) => Ok(vec![Stmt::Break]),
+        // PMAT-502bn: `pass` is a no-op — it lowers to no statements. An
+        // empty `if`/`for` body or a `pass`-only void function are the
+        // common shapes (a `pass`-last in a value-returning function still
+        // fails the trailing-`return` requirement, which is correct).
+        ast::Stmt::Pass(_) => Ok(Vec::new()),
         // PMAT-502at: `del coll[key]` item deletion (list or dict).
         ast::Stmt::Delete(d) => lower_delete_stmt(ctx, d).map(|s| vec![s]),
         // PMAT-503a: `raise SomeException("msg")` → `Stmt::Raise`. Works

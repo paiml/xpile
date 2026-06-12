@@ -2777,6 +2777,29 @@ fn main() {
     assert_rustc_runs("early_return", &rust, driver);
 }
 
+/// PMAT-502bn (Tranche 2): `pass` (no-op) → no emitted statements (an
+/// empty `if`/branch, or a `pass`-only void function body).
+#[test]
+fn pass_stmt() {
+    let rust = xpile_transpile_to_rust("pass_stmt.py");
+    // pass-only void function: empty body returning `()`.
+    assert!(rust.contains("pub fn noop() -> () {"), "void noop:\n{rust}");
+    // pass in an `if` body → an empty `if { }`.
+    assert!(
+        rust.contains("if (x < 0i64) {\n    }"),
+        "empty if from pass:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    noop();
+    assert_eq!(guard_pass(-2), -1);
+    assert_eq!(guard_pass(5), 6);
+    assert_eq!(skip_first(vec![0, 1, 0, 2, 3]), 6);
+}
+"#;
+    assert_rustc_runs("pass_stmt", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
