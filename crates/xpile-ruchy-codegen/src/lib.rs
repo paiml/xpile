@@ -527,6 +527,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     emit_expr(out, &args[1], mode)?;
                     out.push_str(")[..])");
                 }
+                // PMAT-502l: lstrip/rstrip → trim_start/trim_end; find/count → i64.
+                StrMethodOp::LStrip => out.push_str(".trim_start().to_string()"),
+                StrMethodOp::RStrip => out.push_str(".trim_end().to_string()"),
+                StrMethodOp::Find => {
+                    out.push_str(".find(&(");
+                    emit_expr(out, &args[0], mode)?;
+                    out.push_str(")[..]).map(|__i| __i as i64).unwrap_or(-1)");
+                }
+                StrMethodOp::Count => {
+                    out.push_str(".matches(&(");
+                    emit_expr(out, &args[0], mode)?;
+                    out.push_str(")[..]).count() as i64");
+                }
                 StrMethodOp::Join => unreachable!("Join handled above"),
             }
         }

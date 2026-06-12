@@ -611,6 +611,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                         emit_expr(out, &args[1], mode)?;
                         out.push_str(")[..])");
                     }
+                    // PMAT-502l: lstrip/rstrip → trim_start/trim_end.
+                    StrMethodOp::LStrip => out.push_str(".trim_start().to_string()"),
+                    StrMethodOp::RStrip => out.push_str(".trim_end().to_string()"),
+                    // PMAT-502l: `.find(sub)` → byte index or -1 (i64).
+                    StrMethodOp::Find => {
+                        out.push_str(".find(&(");
+                        emit_expr(out, &args[0], mode)?;
+                        out.push_str(")[..]).map(|__i| __i as i64).unwrap_or(-1)");
+                    }
+                    // PMAT-502l: `.count(sub)` → non-overlapping match count (i64).
+                    StrMethodOp::Count => {
+                        out.push_str(".matches(&(");
+                        emit_expr(out, &args[0], mode)?;
+                        out.push_str(")[..]).count() as i64");
+                    }
                     StrMethodOp::Join => unreachable!("Join handled above"),
                 }
             }

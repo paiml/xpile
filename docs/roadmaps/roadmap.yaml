@@ -444,6 +444,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::Repeat { seq, n }. When one * operand is Str/List and the other Int, \"x\"*n / [0]*n (and reversed n*\"x\" / n*[0]) -> (<seq>).repeat(((<n>).max(0)) as usize) in Rust+Ruchy; one form covers str::repeat (->String) and slice <[T]>::repeat (->Vec). .max(0) clamps negative to empty (Python \"x\"*-1==\"\"). Frontend disambiguates from numeric * by operand type (int/float * unaffected). Result types as seq. Lean refuses. rustc round-trip seq_repeat.py: bar(3)->\"===\", left_mul(2)->\"abab\", zeros(3)->[0,0,0], repeat_pair(2)->[1,2,1,2], clamp_negative()->\"\". FREE CI. SHIPPED v0.1.43."
+- id: PMAT-502L
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502l: [Tranche2] more string methods lstrip/rstrip/find/count'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Four new StrMethodOp variants. .lstrip()->.trim_start().to_string() and .rstrip()->.trim_end().to_string() (Str, 0-arg); .find(sub)->.find(&(sub)[..]).map(|__i| __i as i64).unwrap_or(-1) and .count(sub)->.matches(&(sub)[..]).count() as i64 (Int, 1-arg). Rust+Ruchy emit; Lean refuses (generic StrMethod refusal). find returns byte index (ASCII subset: byte==char index). rustc round-trip str_methods_more.py: trim_left(\"  hi  \")->\"hi  \", trim_right->\"  hi\", index_of(hello,ll)->2, index_of(hello,z)->-1, occurrences(banana,a)->3, occurrences(banana,na)->2. FREE CI. SHIPPED v0.1.44."
 - id: PMAT-465
   github_issue: 496
   item_type: task
