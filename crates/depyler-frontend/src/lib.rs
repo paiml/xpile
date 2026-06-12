@@ -4268,11 +4268,11 @@ fn lower_slice_in_ctx(
             )));
         }
     };
+    let mut step_lit: Option<i64> = None;
     if let Some(step) = slice.step.as_ref() {
         // PMAT-502t: the reverse idiom `xs[::-1]` (no bounds, step −1) over a
         // list → a new reversed list, reusing `Expr::Reversed` (PMAT-502d). A
-        // negative literal parses as `UnaryOp(USub, Int(1))`. Other steps (and
-        // `str[::-1]`) are still deferred.
+        // negative literal parses as `UnaryOp(USub, Int(1))`.
         let mut step_is_neg_one = false;
         if let ast::Expr::UnaryOp(u) = step.as_ref() {
             if matches!(u.op, ast::UnaryOp::USub) {
@@ -4288,10 +4288,41 @@ fn lower_slice_in_ctx(
                 list: Box::new(collection),
             });
         }
-        return Err(FrontendError::Lower(format!(
-            "function `{}` uses a slice step (`xs[a:b:c]`); only the reverse idiom `xs[::-1]` over a list is supported at v0.1.0",
-            ctx.fn_name
-        )));
+        // PMAT-502bc: a **positive** integer-literal step over a *list*
+        // (`xs[a:b:c]`, `xs[::2]`). A step of 1 is the default (drop it).
+        // Negative steps (other than the `-1` reverse above) and stepped
+        // string slices remain deferred.
+        if let ast::Expr::Constant(c) = step.as_ref() {
+            if let ast::Constant::Int(k) = &c.value {
+                if let Ok(s) = k.to_string().parse::<i64>() {
+                    if s >= 1 && !of_str {
+                        step_lit = if s == 1 { None } else { Some(s) };
+                    } else {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` uses a slice step that is not a positive list step; \
+                             v0.2.0 supports `xs[a:b:c]` over a list with a positive literal `c` \
+                             (and the `xs[::-1]` reverse idiom); negative/string steps are deferred",
+                            ctx.fn_name
+                        )));
+                    }
+                } else {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` uses a non-`i64` slice step — unsupported",
+                        ctx.fn_name
+                    )));
+                }
+            } else {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` uses a non-integer slice step — unsupported",
+                    ctx.fn_name
+                )));
+            }
+        } else {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` uses a non-literal slice step; v0.2.0 requires a positive integer literal step",
+                ctx.fn_name
+            )));
+        }
     }
     // PMAT-502r: an absent bound is an open end (`xs[a:]`, `xs[:b]`, `xs[:]`).
     // Each present bound must type as `int`.
@@ -4320,6 +4351,7 @@ fn lower_slice_in_ctx(
         lo,
         hi,
         of_str,
+        step: step_lit,
     })
 }
 

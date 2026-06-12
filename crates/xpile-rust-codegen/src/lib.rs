@@ -831,6 +831,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             lo,
             hi,
             of_str,
+            step,
         } => {
             // PMAT-502r: an absent bound is an open end (`a..`, `..b`, `..`).
             emit_expr(out, collection, mode)?;
@@ -847,7 +848,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str(") as usize");
             }
             out.push(']');
-            out.push_str(if *of_str { ".to_string()" } else { ".to_vec()" });
+            match step {
+                // PMAT-502bc: positive list step → `.iter().step_by(c)
+                // .cloned().collect::<Vec<_>>()` (str steps are rejected
+                // in the frontend, so `step` is only ever set for lists).
+                Some(s) => {
+                    write!(out, ".iter().step_by({s}).cloned().collect::<Vec<_>>()")?;
+                }
+                None => out.push_str(if *of_str { ".to_string()" } else { ".to_vec()" }),
+            }
         }
         // PMAT-498: scalar numeric builtins → receiver-method form.
         Expr::NumBuiltin { op, args } => {

@@ -890,6 +890,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502az** — filtered dict + set comprehensions `{k:v for v in xs if cond}` / `{e for v in xs if cond}` (extends `desugar_dict_comp`/`desugar_set_comp`) | `if cond` guards the desugared `DictSet`/`SetAdd`; completes comp-filter across list/dict/set; Lean refuses | ✅ SHIPPED v0.1.84 |
 | **PMAT-502ba** — list comprehension over `range(...)` `[e for x in range(n)]` (extends `desugar_list_comp` + `comp_range_bounds`) | desugars to counter `let mut x=start; while (x<cmp>stop) { t.append(e); x+=step; }`; composes with `if` filter; literal step; Lean refuses | ✅ SHIPPED v0.1.85 |
 | **PMAT-502bb** — in-place dict merge `a.update(b)` (`Stmt::DictUpdate`) | `<dict>.extend((<b>).iter().map(\|(k,v)\| (k.clone(), v.clone())));`; overwrites; doesn't consume `b`; receiver `mut`; rounds out dict mutation; Lean refuses | ✅ SHIPPED v0.1.86 |
+| **PMAT-502bc** — general slice step `xs[a:b:c]` over a list (`Expr::Slice.step`) | `<c>[<range>].iter().step_by(<c>).cloned().collect::<Vec<_>>()`; positive literal step; neg-step (except `[::-1]`) + str-step deferred; Lean refuses | ✅ SHIPPED v0.1.87 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |
