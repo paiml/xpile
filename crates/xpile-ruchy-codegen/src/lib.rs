@@ -623,15 +623,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, key, mode)?;
             out.push_str("))");
         }
-        // PMAT-500: Ruchy → Rust set literal + membership.
+        // PMAT-500/501b: Ruchy → Rust set literal (empty → bare new()).
         Expr::SetLit(elems) => {
-            out.push_str("{ let mut __xset = std::collections::HashSet::new(); ");
-            for e in elems {
-                out.push_str("__xset.insert(");
-                emit_expr(out, e, mode)?;
-                out.push_str("); ");
+            if elems.is_empty() {
+                out.push_str("std::collections::HashSet::new()");
+            } else {
+                out.push_str("{ let mut __xset = std::collections::HashSet::new(); ");
+                for e in elems {
+                    out.push_str("__xset.insert(");
+                    emit_expr(out, e, mode)?;
+                    out.push_str("); ");
+                }
+                out.push_str("__xset }");
             }
-            out.push_str("__xset }");
         }
         Expr::SetContains { set, elem } => {
             emit_expr(out, set, mode)?;

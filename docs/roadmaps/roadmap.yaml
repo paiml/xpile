@@ -336,6 +336,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Stmt::SetAdd { set_name, elem } (mirrors ListAppend). s.add(x) -> <set>.insert(x); receiver marked mut. Recognised in try_lower_list_method_call alongside .append. NEW walk_counts arm counts .add/.append method mutations in the mutability pre-pass so a straight-line s = {1}; s.add(x) gets let mut (also retroactively hardens hand-written .append). Lean refuses. rustc round-trip set_add.py: has_after_add, loop_contains (building a set in a for loop). Unblocks set comprehensions. FREE CI. SHIPPED v0.1.31."
+- id: PMAT-501B
+  github_issue: null
+  item_type: task
+  title: 'PMAT-501b: [Tranche2] Set comprehensions {e for x in xs}'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New desugar_set_comp materialises {e for x in iter} to let mut <acc>: set[T] = set() + for x in iter { <acc>.add(e) } — the dict-comp shape with Stmt::SetAdd into an empty SetLit accumulator (which now emits bare HashSet::new(); the let annotation supplies T). Assignment + return position. Single generator, no filter, list-typed iterable. NO new IR. Completes list/dict/set comprehensions. rustc round-trip set_comp.py: distinct_doubles([1,2,2,3])->3, has_square([1,2,3],4)->true. FREE CI. SHIPPED v0.1.32."
 - id: PMAT-465
   github_issue: 496
   item_type: task
