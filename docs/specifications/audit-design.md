@@ -15,11 +15,11 @@ The deadline is enforced by a CI test (`crates/xpile/tests/sota_dossier_deadline
 | Quarter | Deadline | Status |
 |---|---|---|
 | 2026-Q2 (initial) | 2026-05-15 | ✅ shipped (§1–§6 below) |
-| 2026-Q3 | 2026-08-15 | ⏳ pending |
+| 2026-Q3 | 2026-08-15 | ✅ shipped (§7 below, 2026-06-12) |
 | 2026-Q4 | 2026-11-15 | ⏳ pending |
 | 2027-Q1 | 2027-02-15 | ⏳ pending |
 
-**Next Dossier Deadline: 2026-08-15**
+**Next Dossier Deadline: 2026-11-15**
 
 (The deadline string above is parsed verbatim by the CI gate; do not reword without also updating the regex in the deadline test.)
 
@@ -139,3 +139,37 @@ kani_harnesses:
 ```
 
 By completing this cycle, `xpile` transforms a stochastic hallucination (an LLM forgetting a C macro) into a deterministic compiler guarantee. The pipeline now hard-fails at the Kani step if this memory safety invariant is violated, permanently falsifying Hypothesis 2 (Semantic Equivalence vs. Memory Safety) for this specific edge case.
+
+---
+
+## 7. 2026-Q3 SOTA-Gap Dossier (XPILE-SOTA-001, published 2026-06-12)
+
+Per §0, this is the scheduled 2026-Q3 republication. It enumerates (1) external systems that beat xpile on at least one axis since the 2026-Q2 dossier, (2) which load-bearing hypothesis from §5 is newly stressed, and (3) falsifier status. The dossier is written against the post-v0.1.9 substrate.
+
+### 7.1 Where xpile moved since 2026-Q2
+
+The 2026-Q3 window was a **capability surge**, not a substrate-depth surge — a deliberate reprioritization (spec §30, PMAT-465: the Diamond-depth ratchet was *frozen at depth-13* after the maintainers judged that ≈80% of the prior commit stream was mechanical depth-N broadening against a narrow transpile surface). Shipped: Python dict operations (v0.1.2), a real C → Rust frontend — xpile's **second source language** (v0.1.3) — iterative C (v0.1.4), and the post-audit EV ladder R1–R5: augmented assignment, cross-function return-type inference, dict iteration, list comprehensions, and keyword arguments (v0.1.5–v0.1.9). The transpile surface roughly doubled; the contract substrate stayed at 13 contracts / depth-13 UNIVERSAL.
+
+### 7.2 External systems that beat xpile on ≥1 axis
+
+The point of this section is calibration, not defeatism: xpile is a young (v0.1.x) research workbench, so most mature transpilers beat it on **breadth** and **scale**, and that is expected. What matters is whether any external work beats it on its *differentiating* axis — contract-grounded, multi-target, formally-witnessed transpilation.
+
+- **Breadth / maturity (xpile loses, by design of being early):** production source-to-source transpilers and language-port toolchains (the established C2Rust-style and Python-port lineages, plus LLM-assisted code-translation systems benchmarked on execution-based suites à la the Chen et al. 2021 / Roziere et al. 2020 line cited in §2) handle vastly larger language subsets — pointers, classes, exceptions, generics — than xpile's stack-only int/collection subset. xpile's own audit (§4 "Sovereign AI") already concedes the breadth gap as a deliberate scope choice.
+- **Verification depth on real code (a genuine stress):** SMT/BMC-backed verifiers and refinement-type systems verify properties over *unrestricted* programs, whereas xpile's strongest guarantees (Kani BMC + Lean refinement) currently sit on a 13-contract substrate, 8 of which still ride single demo-fixture Runtime witnesses (§4 "Fixture Overfitting", still open). External verifiers beat xpile on *coverage of the verified surface*.
+- **No external system beats xpile on its differentiator:** the combination of (a) one Meta-HIR fanning out to Rust/Ruchy/Lean/shell, (b) per-construct provable-contract citations, and (c) an execution-grounded stratified oracle remains distinctive. The 2026-Q3 window did not surface an external system that subsumes all three.
+
+### 7.3 Hypotheses newly stressed (§5)
+
+- **The central claim — "every emitted construct is under a provable-contract regime" — is newly *falsified in practice* (not just stressed).** The v0.1.2 dict operations and the v0.1.3/v0.1.4 C arithmetic shipped **capability-ahead-of-contract**: emitted C cites `C-C-INT-ARITH` and dict code is governed by `C-XLATE-PY-DICT-TO-HASHMAP`, **neither of which exists as an on-disk contract YAML**. The citation is currently a cosmetic comment with no backing substrate, and no CI gate enforces citation→contract resolution. This is the most important finding of the quarter. It is tracked as roadmap **R6 (PMAT-475)**, whose blocker is structural: adding a 14th/15th contract trips `diamond_coverage.rs` (`depth_N_plus == contracts_total`), so closing the gap requires *first* grandfathering that gate so new contracts join at depth-1+ rather than being forced to the frozen depth-13 floor.
+- **Hypothesis 1 (Federated Meta-HIR sufficiency) is stressed by the single-trailing-return ceiling.** The capability audit (spec §30 re-evaluation) confirmed `Block { stmts, trailing_return }` blocks early returns and if-as-control-flow across *every* frontend at once — the dominant limit on real-world Python *and* C. This does not falsify Hypothesis 1 (the federation still works for what it accepts), but it shows the minimal-IR is now the binding constraint on breadth (roadmap R9/R10).
+- **The depth-13 freeze creates a new incentive-shift to monitor:** with the Diamond ratchet frozen, there is no longer an automatic pressure to bring new constructs under contract — which is precisely how the §7.3 integrity gap opened. The R6 gate change is the structural fix that re-aligns the incentive.
+
+### 7.4 Falsifier status
+
+- **F6 (missing dossier ⇒ auto-fire):** satisfied — this §7 is the 2026-Q3 publication, landed 2026-06-12, well before the 2026-08-15 deadline. The `**Next Dossier Deadline:**` line is bumped to the 2026-Q4 slot (2026-11-15).
+- **No falsifier from `sub/provability-roadmap.md` §1.1 entered the falsified range this quarter.** The substrate invariants (12→13-contract QUORUM, depth-13 UNIVERSAL, the `kani`/`gate`/`workspace-test` CI checks) held green across every v0.1.2–v0.1.9 merge.
+- **One standing `sorry`** remains at `contracts/lean/Notation.lean` (a real TODO predating the Diamond work); the no-new-`sorry` invariant in `refinement_proofs.rs` held for all work this quarter.
+
+### 7.5 Action carried into 2026-Q4
+
+The highest-leverage *epistemic* item is **R6**: close the capability-without-contract gap (author `C-C-INT-ARITH` + `C-XLATE-PY-DICT-TO-HASHMAP`, grandfather the Diamond gate) so §7.3's falsified claim is restored to true. The highest-leverage *capability* item is **R10** (early returns), which lifts the dominant structural ceiling. Both are specified in spec §30.
