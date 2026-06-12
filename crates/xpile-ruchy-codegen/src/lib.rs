@@ -110,6 +110,7 @@ fn function_bigint_mode(f: &Function) -> bool {
             | Stmt::SetRemove { .. }
             | Stmt::ListMutate { .. }
             | Stmt::ListExtend { .. }
+            | Stmt::DictUpdate { .. }
             | Stmt::ListInsert { .. } => false,
             // PMAT-461: indexed assignment same disposition.
             Stmt::IndexAssign { .. } => false,
@@ -341,6 +342,16 @@ fn emit_stmt_indented(
             write!(out, "{indent}{list_name}.extend((")?;
             emit_expr(out, other, mode)?;
             writeln!(out, ").iter().cloned());")?;
+            Ok(())
+        }
+        // PMAT-502bb: `d.update(other)`, matching the Rust backend.
+        Stmt::DictUpdate { dict_name, other } => {
+            write!(out, "{indent}{dict_name}.extend((")?;
+            emit_expr(out, other, mode)?;
+            writeln!(
+                out,
+                ").iter().map(|(__k, __v)| (__k.clone(), __v.clone())));"
+            )?;
             Ok(())
         }
         // PMAT-502ar: `xs.insert(i, x)`, matching the Rust backend.
