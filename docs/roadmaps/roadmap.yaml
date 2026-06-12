@@ -327,6 +327,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New desugar_dict_comp materialises {k: v for x in iter} to let mut <acc>: dict[K,V] = {} + for x in iter { <acc>[k] = v } — same shape as the shipped desugar_list_comp but with Stmt::DictSet instead of .append(). NO new IR. Handled in assignment (m = {..}) + return (return {..}, hoisted to temp) position. Single generator, no filter, list-typed iterable. Lean inherits dict/for support. rustc round-trip dict_comp.py: squares([1,2,3])->{1:1,2:4,3:9}, lengths([a,bb])->{a:1,bb:2}. Set comp {x for ..} follows set .add(). FREE CI. SHIPPED v0.1.30."
+- id: PMAT-500B
+  github_issue: null
+  item_type: task
+  title: 'PMAT-500b: [Tranche2] Set .add() mutation (set write-side)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Stmt::SetAdd { set_name, elem } (mirrors ListAppend). s.add(x) -> <set>.insert(x); receiver marked mut. Recognised in try_lower_list_method_call alongside .append. NEW walk_counts arm counts .add/.append method mutations in the mutability pre-pass so a straight-line s = {1}; s.add(x) gets let mut (also retroactively hardens hand-written .append). Lean refuses. rustc round-trip set_add.py: has_after_add, loop_contains (building a set in a for loop). Unblocks set comprehensions. FREE CI. SHIPPED v0.1.31."
 - id: PMAT-465
   github_issue: 496
   item_type: task

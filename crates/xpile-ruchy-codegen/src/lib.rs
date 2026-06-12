@@ -101,7 +101,7 @@ fn function_bigint_mode(f: &Function) -> bool {
                 ..
             } => then_body.iter().any(stmt_has_bigint) || else_body.iter().any(stmt_has_bigint),
             // PMAT-460: list.append() — same disposition.
-            Stmt::ListAppend { .. } => false,
+            Stmt::ListAppend { .. } | Stmt::SetAdd { .. } => false,
             // PMAT-461: indexed assignment same disposition.
             Stmt::IndexAssign { .. } => false,
             // PMAT-466: dict keyed assignment same disposition.
@@ -273,6 +273,13 @@ fn emit_stmt_indented(
         // PMAT-460 (v0.2.0 Track 1.B): Ruchy → Rust → `.push(...)`.
         Stmt::ListAppend { list_name, elem } => {
             write!(out, "{indent}{list_name}.push(")?;
+            emit_expr(out, elem, mode)?;
+            writeln!(out, ");")?;
+            Ok(())
+        }
+        // PMAT-500b: Ruchy → Rust `s.insert(x);`.
+        Stmt::SetAdd { set_name, elem } => {
+            write!(out, "{indent}{set_name}.insert(")?;
             emit_expr(out, elem, mode)?;
             writeln!(out, ");")?;
             Ok(())

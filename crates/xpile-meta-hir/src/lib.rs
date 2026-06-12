@@ -140,6 +140,8 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         }
         // PMAT-460: list.append() — recurse into the elem expression.
         Stmt::ListAppend { elem, .. } => expr_has_int_arith(elem),
+        // PMAT-500b: set.add() — recurse into the elem expression.
+        Stmt::SetAdd { elem, .. } => expr_has_int_arith(elem),
         // PMAT-461: indexed assignment — recurse into both index and
         // value expressions (either may carry arithmetic).
         Stmt::IndexAssign { index, value, .. } => {
@@ -429,6 +431,10 @@ pub enum Stmt {
     /// semantics; aliased mutation through `&mut` is a v0.3.0+
     /// sub-track).
     ListAppend { list_name: String, elem: Expr },
+    /// Set insertion — Python `s.add(x)`. PMAT-500b (Tranche 2). Mirrors
+    /// [`Stmt::ListAppend`]; Rust/Ruchy emit `<set>.insert(<elem>);` (the
+    /// receiver is marked mutable). Lean refuses.
+    SetAdd { set_name: String, elem: Expr },
     /// `for var in iter { body }` — Python `for x in xs:` over a
     /// non-range iterable. PMAT-458, v0.2.0 Track 1.B.
     ///
