@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.43] — 2026-06-12
+
+Tranche-2 slice PMAT-502k — Python **sequence repetition** `seq * n` / `n * seq`.
+
+New meta-HIR `Expr::Repeat { seq, n }`. When one `*` operand is a `Str`/`List`
+and the other an `Int`, `"x" * n` / `[0] * n` (and the reversed `n * "x"` /
+`n * [0]`) lower to `(<seq>).repeat(((<n>).max(0)) as usize)` in Rust + Ruchy —
+one form covers both `str::repeat` (→ `String`) and slice `<[T]>::repeat`
+(→ `Vec<T>`). The `.max(0)` clamps a negative count to the empty sequence,
+matching Python (`"x" * -1 == ""`). The frontend disambiguates from int/float
+`*` by operand type, so numeric multiplication is unaffected. Result types as
+the sequence. Lean refuses. rustc round-trip `seq_repeat.py`: `bar(3) -> "==="`,
+`left_mul(2) -> "abab"`, `zeros(3) -> [0,0,0]`, `repeat_pair(2) -> [1,2,1,2]`,
+`clamp_negative() -> ""`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.42] — 2026-06-12
 
 Tranche-2 slice PMAT-502j — Python **`all(xs)`/`any(xs)`** over a `list[bool]`.

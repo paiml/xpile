@@ -691,6 +691,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 ".iter().any(|&__b| __b)"
             });
         }
+        // PMAT-502k: `seq * n` → `(seq).repeat(((n).max(0)) as usize)`
+        // (str → String, slice → Vec; negative count clamps to empty).
+        Expr::Repeat { seq, n } => {
+            out.push('(');
+            emit_expr(out, seq, mode)?;
+            out.push_str(").repeat(((");
+            emit_expr(out, n, mode)?;
+            out.push_str(").max(0)) as usize)");
+        }
         // PMAT-502e: 1-arg `min(xs)`/`max(xs)` reduction over an int list.
         // PMAT-502h: `list[float]` uses a fold (f64 has no `Ord`).
         Expr::ListMinMax {
