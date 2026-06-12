@@ -13,7 +13,7 @@
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, Stmt, Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, Stmt, StrMethodOp, Type, UnOp,
 };
 
 /// PMAT-477 (R8): Ruchy → Rust infix symbol for a float arithmetic op.
@@ -410,6 +410,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str(", ");
             emit_expr(out, rhs, mode)?;
             out.push(')');
+        }
+        // PMAT-492: Python no-arg string transform methods (Ruchy → Rust).
+        Expr::StrMethod { recv, op } => {
+            emit_expr(out, recv, mode)?;
+            out.push_str(match op {
+                StrMethodOp::Upper => ".to_uppercase()",
+                StrMethodOp::Lower => ".to_lowercase()",
+                StrMethodOp::Strip => ".trim().to_string()",
+            });
         }
         // PMAT-455 (v0.2.0 Track 1.B): Ruchy → Rust → `vec![...]`.
         Expr::ListLit(elems) => {

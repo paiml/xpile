@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.15] — 2026-06-12
+
+Sprint capability slice PMAT-492 — Python **no-argument string transform
+methods**.
+
+`s.upper()` / `s.lower()` / `s.strip()` now lower to a new meta-HIR
+`Expr::StrMethod { recv, op }` (`StrMethodOp::{Upper,Lower,Strip}`),
+emitting `.to_uppercase()` / `.to_lowercase()` / `.trim().to_string()` in
+Rust and Ruchy. The frontend recognises these only when the receiver types
+as `Type::Str` (otherwise the call falls through to normal call-lowering).
+Lean refuses (no stable `String.toUpper`/trim model at first cut). rustc
+round-trip fixture `str_methods.py`: `shout/quiet/clean`.
+
+Argument-bearing string methods (`startswith`/`endswith` predicates,
+`split`/`join` list-interplay) are deliberately **out of this slice** —
+they need pattern/list handling and follow as their own slices.
+
+Also: the §30 sprint cadence is now **continuous** (ship slices
+back-to-back; no daily cap), per the 2026-06-12 directive.
+
+GitHub-tagged only; crates.io stays at 0.1.13 until the Friday 2026-06-19
+window.
+
 ## [0.1.14] — 2026-06-12
 
 Second §30 Track 4 slice (PMAT-482) — the WGSL/SPIR-V lane's offline,
