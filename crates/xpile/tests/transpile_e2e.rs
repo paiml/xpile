@@ -1203,6 +1203,22 @@ fn main() {
     assert_rustc_runs("slicing", &rust, driver);
 }
 
+/// PMAT-497 (Tranche 2): augmented subscript assignment `d[k] += v` /
+/// `xs[i] += v` — desugars to `d[k] = d[k] <op> v` reusing DictSet /
+/// IndexAssign. Exercised via the canonical histogram idiom + a list bump.
+#[test]
+fn aug_subscript_assign_dict_and_list() {
+    let rust = xpile_transpile_to_rust("aug_subscript.py");
+    let driver = r#"
+fn main() {
+    let m = counts();
+    assert_eq!(m.get("a"), Some(&6));
+    assert_eq!(bump(vec![1, 2, 3]), vec![11, 12, 13]);
+}
+"#;
+    assert_rustc_runs("aug_subscript", &rust, driver);
+}
+
 /// PMAT-495 (sprint): enumerate / zip in for-loops → `Stmt::ForEachPair`,
 /// emitting `for (i, x) in xs.iter().cloned().enumerate().map(...)` /
 /// `for (a, b) in xs.iter().cloned().zip(ys.iter().cloned())`.

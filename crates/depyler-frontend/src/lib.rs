@@ -1590,28 +1590,11 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
 /// (so overflow checking, str-concat detection, etc. apply uniformly).
 /// No meta-HIR or backend change. Subscript targets (`d[k] += e`) are
 /// not handled here — use the explicit `d[k] = d[k] + e` form.
-fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<Stmt, FrontendError> {
-    let name = match aug.target.as_ref() {
-        ast::Expr::Name(n) => n.id.to_string(),
-        _ => {
-            return Err(FrontendError::Lower(format!(
-                "function `{}` uses augmented assignment on a non-Name target — at v0.2.0 use the explicit form `d[k] = d[k] + e`; `name <op>= e` for a plain variable is supported",
-                ctx.fn_name
-            )));
-        }
-    };
-    if !ctx.bound.contains(&name) {
-        return Err(FrontendError::Lower(format!(
-            "function `{}` augments `{name}` (`{name} <op>= …`) before it is assigned — initialise `{name}` first",
-            ctx.fn_name
-        )));
-    }
-    let op = lower_binop(&aug.op)?;
-    let lhs = Expr::Ident(name.clone());
-    let rhs = lower_expr_in_ctx(ctx, (*aug.value).clone())?;
-    // Mirror lower_expr_in_ctx's str-concat detection so `s += "x"`
-    // lowers to Concat (format!), not a checked_add on String.
-    let value = if matches!(op, BinOp::Add)
+/// Combine the current value `lhs` with `rhs` under `op` for an augmented
+/// assignment, mirroring `lower_expr_in_ctx`'s str-concat detection so
+/// `+=` on strings lowers to `Concat` (format!), not a `checked_add`.
+fn combine_aug(ctx: &LoweringCtx, op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
+    if matches!(op, BinOp::Add)
         && (infer_type_in_ctx(ctx, &lhs) == Type::Str || infer_type_in_ctx(ctx, &rhs) == Type::Str)
     {
         Expr::Concat {
@@ -1624,8 +1607,83 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
         }
-    };
-    Ok(Stmt::Assign { name, value })
+    }
+}
+
+fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<Stmt, FrontendError> {
+    let op = lower_binop(&aug.op)?;
+    let rhs = lower_expr_in_ctx(ctx, (*aug.value).clone())?;
+    match aug.target.as_ref() {
+        ast::Expr::Name(n) => {
+            let name = n.id.to_string();
+            if !ctx.bound.contains(&name) {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` augments `{name}` (`{name} <op>= …`) before it is assigned — initialise `{name}` first",
+                    ctx.fn_name
+                )));
+            }
+            let value = combine_aug(ctx, op, Expr::Ident(name.clone()), rhs);
+            Ok(Stmt::Assign { name, value })
+        }
+        // PMAT-497: augmented subscript assignment `d[k] += v` /
+        // `xs[i] += v` — desugar to `d[k] = d[k] <op> v`, reusing the
+        // shipped DictGet/Index reads + DictSet/IndexAssign writes.
+        ast::Expr::Subscript(sub) => {
+            let receiver = match sub.value.as_ref() {
+                ast::Expr::Name(n) => n.id.to_string(),
+                _ => {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` augments a non-Name subscript target — v0.2.0 supports `<name>[k] <op>= v`",
+                        ctx.fn_name
+                    )));
+                }
+            };
+            match ctx.name_types.get(&receiver).cloned() {
+                Some(Type::Dict(_, _)) => {
+                    let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+                    let current = Expr::DictGet {
+                        dict: Box::new(Expr::Ident(receiver.clone())),
+                        key: Box::new(key.clone()),
+                    };
+                    let value = combine_aug(ctx, op, current, rhs);
+                    ctx.mutable.insert(receiver.clone());
+                    Ok(Stmt::DictSet {
+                        dict_name: receiver,
+                        key,
+                        value,
+                    })
+                }
+                Some(Type::List(_)) => {
+                    let index = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+                    if !matches!(infer_type_in_ctx(ctx, &index), Type::I64) {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` augments `{receiver}[<expr>]` with a non-int index",
+                            ctx.fn_name
+                        )));
+                    }
+                    let current = Expr::Index {
+                        collection: Box::new(Expr::Ident(receiver.clone())),
+                        index: Box::new(index.clone()),
+                    };
+                    let value = combine_aug(ctx, op, current, rhs);
+                    ctx.mutable.insert(receiver.clone());
+                    Ok(Stmt::IndexAssign {
+                        list_name: receiver,
+                        index,
+                        value,
+                    })
+                }
+                _ => Err(FrontendError::Lower(format!(
+                    "function `{}` augments `{receiver}[...]` which doesn't type as list[T] or dict[K, V]",
+                    ctx.fn_name
+                ))),
+            }
+        }
+        _ => Err(FrontendError::Lower(format!(
+            "function `{}` uses augmented assignment on an unsupported target — supported: `name <op>= e`, `d[k] <op>= e`, `xs[i] <op>= e`",
+            ctx.fn_name
+        ))),
+    }
 }
 
 /// PMAT-473 (R4): desugar a list comprehension `[elem for var in iter]`
