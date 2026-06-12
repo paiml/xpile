@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.26] — 2026-06-12
+
+Tranche-2 slice PMAT-498 — Python **scalar numeric builtins** `abs` / `min`
+/ `max`.
+
+New meta-HIR `Expr::NumBuiltin { op, args }` + `NumBuiltinOp::{Abs,Min,Max}`.
+`abs(x)` / `min(a, b)` / `max(a, b)` lower to the Rust/Ruchy receiver-method
+form `(x).abs()` / `(a).min(b)` / `(a).max(b)` (valid for both `i64` and
+`f64`); the result types as the first argument. The frontend only intercepts
+these by name + arity when the first arg types as a number, so a user
+function shadowing `min`/`max`/`abs` still lowers as a normal call. Lean
+refuses. rustc round-trip `num_builtins.py`: `clamp` (via `min(max(...))`)
+and `magnitude` (`abs`).
+
+`sum(xs)` and 1-arg `min`/`max` over a list (which need an element-type
+hint) follow as their own slice.
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.25] — 2026-06-12
 
 First **Tranche 2** capability slice (PMAT-497) — Python **augmented

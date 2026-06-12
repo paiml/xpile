@@ -444,6 +444,12 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(lo, out);
             collect_idents(hi, out);
         }
+        // PMAT-498: numeric builtin — recurse into each arg.
+        Expr::NumBuiltin { args, .. } => {
+            for a in args {
+                collect_idents(a, out);
+            }
+        }
         // PMAT-455: list literal — recurse into each element.
         Expr::ListLit(elems) => {
             for e in elems {
@@ -822,6 +828,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             return Err(LeanCodegenError::Unsupported(
                 "Python slicing (xs[a:b]) is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-498: numeric builtins deferred in the Lean lane at first cut.
+        Expr::NumBuiltin { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python numeric builtins (abs/min/max) are not yet supported in the \
+                 Lean lane — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
         }

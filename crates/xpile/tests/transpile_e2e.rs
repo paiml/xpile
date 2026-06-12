@@ -1203,6 +1203,27 @@ fn main() {
     assert_rustc_runs("slicing", &rust, driver);
 }
 
+/// PMAT-498 (Tranche 2): scalar numeric builtins `abs`/`min`/`max` →
+/// `(x).abs()` / `(a).min(b)` / `(a).max(b)`. `clamp` via `min(max(...))`.
+#[test]
+fn num_builtins_abs_min_max() {
+    let rust = xpile_transpile_to_rust("num_builtins.py");
+    assert!(
+        rust.contains(".abs()") && rust.contains(".min(") && rust.contains(".max("),
+        "expected abs/min/max emissions, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(clamp(5, 0, 10), 5);
+    assert_eq!(clamp(15, 0, 10), 10);
+    assert_eq!(clamp(-3, 0, 10), 0);
+    assert_eq!(magnitude(-7), 7);
+    assert_eq!(magnitude(7), 7);
+}
+"#;
+    assert_rustc_runs("num_builtins", &rust, driver);
+}
+
 /// PMAT-497 (Tranche 2): augmented subscript assignment `d[k] += v` /
 /// `xs[i] += v` — desugars to `d[k] = d[k] <op> v` reusing DictSet /
 /// IndexAssign. Exercised via the canonical histogram idiom + a list bump.

@@ -228,6 +228,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::Slice {
             collection, lo, hi, ..
         } => expr_has_int_arith(collection) || expr_has_int_arith(lo) || expr_has_int_arith(hi),
+        // PMAT-498: numeric builtin — recurse into each arg.
+        Expr::NumBuiltin { args, .. } => args.iter().any(expr_has_int_arith),
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -925,6 +927,13 @@ pub enum Expr {
     /// lacks a cross-function signature table, so promote to proper
     /// inference when one lands.
     Call { callee: String, args: Vec<Expr> },
+    /// Scalar numeric builtin — Python `abs(x)` / `min(a, b)` /
+    /// `max(a, b)`. PMAT-498 (Tranche 2). Rust/Ruchy emit the receiver-
+    /// method form (`(a).abs()` / `(a).min(b)` / `(a).max(b)`), valid for
+    /// both `i64` and `f64`. Result types as the first arg's type. Lean
+    /// refuses at first cut. (`sum`/1-arg `min`/`max` over a list need an
+    /// element-type hint and follow as their own slice.)
+    NumBuiltin { op: NumBuiltinOp, args: Vec<Expr> },
     /// Unary operation — `not x` (logical, Bool → Bool) or `-x`
     /// (numeric negate, I64 → I64).
     UnOp { op: UnOp, operand: Box<Expr> },
@@ -1037,6 +1046,18 @@ pub enum FloatOp {
     Sub,
     Mul,
     Div,
+}
+
+/// PMAT-498 (Tranche 2): scalar numeric builtins carried by
+/// [`Expr::NumBuiltin`]. `Abs` takes 1 arg; `Min`/`Max` take 2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NumBuiltinOp {
+    /// `abs(x)` → `(x).abs()`
+    Abs,
+    /// `min(a, b)` → `(a).min(b)`
+    Min,
+    /// `max(a, b)` → `(a).max(b)`
+    Max,
 }
 
 /// PMAT-495 (sprint): the iterator adapter for a [`Stmt::ForEachPair`].

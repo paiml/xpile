@@ -31,8 +31,8 @@ use std::path::Path;
 use std::rc::Rc;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, Module, PairIterKind, Param, SourceLang, Stmt,
-    StrMethodOp, Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, NumBuiltinOp, PairIterKind, Param,
+    SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
 use rustpython_parser::ast;
@@ -2027,6 +2027,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::TupleLit(elems) => Type::Tuple(elems.iter().map(infer_type).collect()),
         // PMAT-496: a slice has the same type as its collection.
         Expr::Slice { collection, .. } => infer_type(collection),
+        // PMAT-498: numeric builtin types as its first argument.
+        Expr::NumBuiltin { args, .. } => args.first().map(infer_type).unwrap_or(Type::I64),
         // PMAT-457 (v0.2.0 Track 1.B): indexed access returns the
         // collection's element type. If the collection types as
         // Type::List(T), the result is T; otherwise fall back to I64
@@ -2148,6 +2150,11 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         }
         // PMAT-496: a slice has the same type as its collection.
         Expr::Slice { collection, .. } => infer_type_in_ctx(ctx, collection),
+        // PMAT-498: numeric builtin types as its first argument.
+        Expr::NumBuiltin { args, .. } => args
+            .first()
+            .map(|a| infer_type_in_ctx(ctx, a))
+            .unwrap_or(Type::I64),
         // PMAT-457: indexed access returns the collection element type.
         Expr::Index { collection, .. } => match infer_type_in_ctx(ctx, collection) {
             Type::List(elem_ty) => *elem_ty,
@@ -2342,6 +2349,24 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             op,
                             args,
                         });
+                    }
+                }
+            }
+            // PMAT-498: scalar numeric builtins abs/min/max — when the
+            // callee is one of these by name + arity and the first arg
+            // types as a number, lower to `Expr::NumBuiltin`. Otherwise
+            // fall through (e.g. a user fn named `min`).
+            if let ast::Expr::Name(fname) = call.func.as_ref() {
+                if let Some((op, arity)) = num_builtin_op(fname.id.as_str()) {
+                    if call.keywords.is_empty() && call.args.len() == arity {
+                        let args = call
+                            .args
+                            .iter()
+                            .map(|a| lower_expr_in_ctx(ctx, a.clone()))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        if matches!(infer_type_in_ctx(ctx, &args[0]), Type::I64 | Type::F64) {
+                            return Ok(Expr::NumBuiltin { op, args });
+                        }
                     }
                 }
             }
@@ -2883,6 +2908,17 @@ fn float_op_from_ast(op: &ast::Operator) -> Option<FloatOp> {
 /// then falls through to the normal call-lowering path). The whole
 /// string-method family (upper/lower/strip/startswith/endswith/split/
 /// join) is handled here as of PMAT-492a..d.
+/// PMAT-498: map a Python scalar numeric builtin name to its
+/// [`NumBuiltinOp`] and argument count. `None` for any other name.
+fn num_builtin_op(name: &str) -> Option<(NumBuiltinOp, usize)> {
+    match name {
+        "abs" => Some((NumBuiltinOp::Abs, 1)),
+        "min" => Some((NumBuiltinOp::Min, 2)),
+        "max" => Some((NumBuiltinOp::Max, 2)),
+        _ => None,
+    }
+}
+
 fn str_method_op(name: &str) -> Option<StrMethodOp> {
     match name {
         "upper" => Some(StrMethodOp::Upper),

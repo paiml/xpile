@@ -282,6 +282,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "High prevalence (dict/list counters). Extend lower_aug_assign to Subscript targets: d[k] <op>= v desugars to d[k] = d[k] <op> v (DictSet over DictGet+BinOp); xs[i] <op>= v to IndexAssign over Index+BinOp. Reuses shipped machinery — NO new meta-HIR variant. str-concat detection shared via combine_aug helper. Receiver marked mutable. rustc round-trip aug_subscript.py: counts() d[a]=1; d[a]+=5 -> {a:6}; bump([1,2,3]) xs[i]+=10 -> [11,12,13]. FREE CI. SHIPPED v0.1.25."
+- id: PMAT-498
+  github_issue: null
+  item_type: task
+  title: 'PMAT-498: [Tranche2] Scalar numeric builtins abs/min/max'
+  status: planned
+  priority: high
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::NumBuiltin { op, args } + NumBuiltinOp::{Abs,Min,Max}. abs(x) -> (x).abs(); min/max(a,b) -> (a).min/max(b) (valid i64+f64). Result types as first arg. Frontend intercepts by name+arity only when first arg is numeric (user-shadowed min/max/abs still lower as a normal call). Lean refuses. rustc round-trip num_builtins.py: clamp via min(max(...)), magnitude(abs). sum/1-arg-min/max over lists -> follow-up PMAT-498b (need element-type hint). FREE CI. SHIPPED v0.1.26."
 - id: PMAT-465
   github_issue: 496
   item_type: task
