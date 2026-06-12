@@ -399,6 +399,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Extends Expr::Sorted with a reverse: bool flag. sorted(xs, reverse=True) -> { let mut __xv = <list>.clone(); __xv.sort(); __xv.reverse(); __xv } (descending, stable-sort-then-reverse) in Rust+Ruchy; sorted(xs)/reverse=False stay ascending. A non-bool reverse= or any other keyword (key=) leaves the intercept to fall through. Lean refuses. rustc round-trip sorted_reverse.py: order_desc([3,1,2])->[3,2,1], order_asc([3,1,2])->[1,2,3]. key= follows. FREE CI. SHIPPED v0.1.38."
+- id: PMAT-502G
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502g: [Tranche2] set algebra (union/intersection/difference/symdiff)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::SetOp { lhs, op, rhs } + SetOp enum (Union/Intersection/Difference/SymmetricDifference). When BOTH operands are set[T], a|b a&b a-b a^b -> (a).union(&(b)).cloned().collect::<std::collections::HashSet<_>>() (and .intersection/.difference/.symmetric_difference) in Rust+Ruchy, a new HashSet (operands unchanged). Frontend disambiguates from int bitwise/arith BinOp by operand type (int &|^- unaffected). Result types as operand set type. Lean refuses. rustc round-trip set_ops.py on {1,2,3}/{2,3,4}: union {1,2,3,4}, intersect {2,3}, diff {1}, symdiff {1,4}. FREE CI. SHIPPED v0.1.39."
 - id: PMAT-465
   github_issue: 496
   item_type: task

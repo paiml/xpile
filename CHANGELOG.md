@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.39] — 2026-06-12
+
+Tranche-2 slice PMAT-502g — Python **set algebra** (`|` `&` `-` `^`).
+
+New meta-HIR `Expr::SetOp { lhs, op, rhs }` + `SetOp` enum
+(Union/Intersection/Difference/SymmetricDifference). When **both** operands are
+`set[T]`, `a | b` / `a & b` / `a - b` / `a ^ b` lower to
+`(a).union(&(b)).cloned().collect::<std::collections::HashSet<_>>()` (and
+`.intersection`/`.difference`/`.symmetric_difference`) in Rust + Ruchy, yielding
+a **new** `HashSet` (operands unchanged). The frontend disambiguates from the
+int bitwise/arith `Expr::BinOp` by operand type, so integer `&`/`|`/`^`/`-` are
+unaffected. Result types as the operand set type. Lean refuses. rustc round-trip
+`set_ops.py` on `{1,2,3}`/`{2,3,4}`: union `{1,2,3,4}`, intersection `{2,3}`,
+difference `{1}`, symmetric difference `{1,4}`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.38] — 2026-06-12
 
 Tranche-2 slice PMAT-502f — Python **`sorted(xs, reverse=True)`**.

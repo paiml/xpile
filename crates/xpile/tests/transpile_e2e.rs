@@ -1341,6 +1341,32 @@ fn main() {
     assert_rustc_runs("set_comp", &rust, driver);
 }
 
+/// PMAT-502g (Tranche 2): set algebra — `a | b` / `a & b` / `a - b` /
+/// `a ^ b` over `set[int]` → `(a).union(&(b)).cloned().collect::<…>()` etc.
+#[test]
+fn set_ops_algebra() {
+    let rust = xpile_transpile_to_rust("set_ops.py");
+    assert!(
+        rust.contains(".union(&(")
+            && rust.contains(".intersection(&(")
+            && rust.contains(".difference(&(")
+            && rust.contains(".symmetric_difference(&("),
+        "expected set-algebra method emission, got:\n{rust}"
+    );
+    let driver = r#"
+use std::collections::HashSet;
+fn main() {
+    let a: HashSet<i64> = [1, 2, 3].into_iter().collect();
+    let b: HashSet<i64> = [2, 3, 4].into_iter().collect();
+    assert_eq!(union_op(a.clone(), b.clone()), [1, 2, 3, 4].into_iter().collect::<HashSet<i64>>());
+    assert_eq!(intersect_op(a.clone(), b.clone()), [2, 3].into_iter().collect::<HashSet<i64>>());
+    assert_eq!(diff_op(a.clone(), b.clone()), [1].into_iter().collect::<HashSet<i64>>());
+    assert_eq!(symdiff_op(a.clone(), b.clone()), [1, 4].into_iter().collect::<HashSet<i64>>());
+}
+"#;
+    assert_rustc_runs("set_ops", &rust, driver);
+}
+
 /// PMAT-500b (Tranche 2): set `.add()` mutation → `s.insert(x)` (the
 /// receiver is marked `mut` by the pre-pass), straight-line + in a loop.
 #[test]
