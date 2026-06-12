@@ -586,6 +586,24 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str(".join(&(");
                 emit_expr(out, recv, mode)?;
                 out.push_str(")[..])");
+            } else if matches!(
+                op,
+                StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace
+            ) {
+                // PMAT-502ag: `.isdigit()`/`.isalpha()`/`.isspace()` →
+                // `(!(s).is_empty() && (s).chars().all(|__c| __c.<pred>()))`.
+                // The empty guard matches Python (`"".isdigit()` is `False`).
+                out.push_str("(!(");
+                emit_expr(out, recv, mode)?;
+                out.push_str(").is_empty() && (");
+                emit_expr(out, recv, mode)?;
+                out.push_str(").chars().all(|__c| __c.");
+                out.push_str(match op {
+                    StrMethodOp::IsDigit => "is_ascii_digit()",
+                    StrMethodOp::IsAlpha => "is_alphabetic()",
+                    _ => "is_whitespace()",
+                });
+                out.push_str("))");
             } else {
                 emit_expr(out, recv, mode)?;
                 match op {
@@ -631,6 +649,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                         out.push_str(")[..]).count() as i64");
                     }
                     StrMethodOp::Join => unreachable!("Join handled above"),
+                    StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace => {
+                        unreachable!("classification predicates handled above")
+                    }
                 }
             }
         }

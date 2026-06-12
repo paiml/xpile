@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.65] — 2026-06-12
+
+Tranche-2 slice PMAT-502ag — Python **string classification predicates**
+`.isdigit()` / `.isalpha()` / `.isspace()`.
+
+Three new `StrMethodOp` variants (0-arg, → `Bool`). Each lowers to
+`(!(s).is_empty() && (s).chars().all(|__c| __c.<pred>()))` in Rust + Ruchy —
+`is_ascii_digit()` / `is_alphabetic()` / `is_whitespace()` respectively. The
+explicit empty-string guard matches Python (`"".isdigit()` is `False`, whereas a
+vacuous `.all()` is `true`). Lean refuses (generic `StrMethod` refusal). rustc
+round-trip `str_predicates.py`: `all_digits("123") -> true`,
+`all_digits("12a") -> false`, `all_digits("") -> false`,
+`all_alpha("abc") -> true`, `all_space("  \t") -> true`,
+`all_space(" x ") -> false`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.64] — 2026-06-12
 
 Tranche-2 slice PMAT-502af — Python **`str(x)`** over a float (completes the str() family).

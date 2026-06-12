@@ -633,6 +633,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Expr::ToStr gains of_float. str(x) over a float -> { let __sf = <value>; if __sf.is_nan() { String::from(\"nan\") } else if __sf.is_finite() && __sf.fract() == 0.0 { format!(\"{}.0\", __sf) } else { format!(\"{}\", __sf) } } in Rust+Ruchy. Matches Python where bare format! would not: whole floats get .0 (str(2.0)->2.0 not 2), nan lowercases (Rust NaN). inf/-inf/-0.0 already match. str(int) unchanged. str() now covers int/float/bool all matching Python. Lean refuses. rustc round-trip str_of_float.py: f_str(2.0)->2.0, f_str(2.5)->2.5, f_str(-1.5)->-1.5, half_str(5)->2.5, half_str(4)->2.0. FREE CI. SHIPPED v0.1.64."
+- id: PMAT-502AG
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ag: [Tranche2] str predicates isdigit/isalpha/isspace'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Three new StrMethodOp variants (0-arg, -> Bool). .isdigit()/.isalpha()/.isspace() -> (!(s).is_empty() && (s).chars().all(|__c| __c.is_ascii_digit()/is_alphabetic()/is_whitespace())) in Rust+Ruchy (special-cased before the recv-once emit, like Join). Explicit empty guard matches Python (\"\".isdigit() is False vs vacuous all()=true). Lean refuses (generic StrMethod refusal). rustc round-trip str_predicates.py: all_digits(123)->true, all_digits(12a)->false, all_digits(\"\")->false, all_alpha(abc)->true, all_space(\"  tab\")->true, all_space(\" x \")->false. FREE CI. SHIPPED v0.1.65."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -1448,6 +1448,32 @@ fn main() {
     assert_rustc_runs("str_methods_more", &rust, driver);
 }
 
+/// PMAT-502ag (Tranche 2): string classification predicates
+/// `.isdigit()`/`.isalpha()`/`.isspace()` → `Bool` (empty → False).
+#[test]
+fn str_predicates() {
+    let rust = xpile_transpile_to_rust("str_predicates.py");
+    assert!(
+        rust.contains(".chars().all(|__c| __c.is_ascii_digit())")
+            && rust.contains("is_alphabetic()")
+            && rust.contains("is_whitespace()")
+            && rust.contains(".is_empty() &&"),
+        "expected predicate emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert!(all_digits(String::from("123")));
+    assert!(!all_digits(String::from("12a")));
+    assert!(!all_digits(String::from("")));
+    assert!(all_alpha(String::from("abc")));
+    assert!(!all_alpha(String::from("ab1")));
+    assert!(all_space(String::from("  \t")));
+    assert!(!all_space(String::from(" x ")));
+}
+"#;
+    assert_rustc_runs("str_predicates", &rust, driver);
+}
+
 /// PMAT-502m (Tranche 2): numeric conversions `int(x)` / `float(x)` →
 /// `((x) as i64)` (truncate toward zero) / `((x) as f64)`.
 #[test]
