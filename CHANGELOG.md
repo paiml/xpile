@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.82] — 2026-06-12
+
+Tranche-2 slice PMAT-502ax — Python **dict get-or-insert** `d.setdefault(k, default)`.
+
+New meta-HIR `Expr::DictSetDefault { dict, key, default }`. An expression: if `key`
+is present it evaluates to the existing value; otherwise it inserts `default` under
+`key` and evaluates to it. Lowers to
+`(<dict>).entry((<key>).clone()).or_insert(<default>).clone()` in Rust + Ruchy —
+`.entry` consumes the key, so it is `.clone()`d to keep the caller's binding usable
+(a no-op move for `Copy` keys); the trailing `.clone()` lifts the `&mut V` to an
+owned value. The result types as the dict's value type. Because the absent case
+mutates, the receiver is marked `mut` by the `count_pop_receivers` pre-pass, now
+generalized to scan `.setdefault` as well as `.pop` (so popped/set-defaulted
+**locals** as well as **params** get `let mut`). First cut requires the explicit
+default (1-arg `setdefault` defaulting to `None` needs Optional support). Lean
+refuses (in-place mutation). rustc round-trip `dict_setdefault.py`:
+`getset_present({a:7},"a") -> 7` (no insert), `getset({},"x") -> 0` (insert),
+`local_setdefault() -> 6` (local receiver).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.81] — 2026-06-12
 
 Tranche-2 slice PMAT-502aw — Python **string padding** `s.rjust(w)` / `s.ljust(w)`.

@@ -544,6 +544,12 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 collect_idents(d, out);
             }
         }
+        // PMAT-502ax: dict setdefault — recurse into dict, key, default.
+        Expr::DictSetDefault { dict, key, default } => {
+            collect_idents(dict, out);
+            collect_idents(key, out);
+            collect_idents(default, out);
+        }
         // PMAT-455: list literal — recurse into each element.
         Expr::ListLit(elems) => {
             for e in elems {
@@ -1131,6 +1137,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::DictPop { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python dict.pop() is not yet supported in the Lean lane \
+                 (in-place mutation) — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502ax: dict setdefault deferred in the Lean lane (mutation).
+        Expr::DictSetDefault { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python dict.setdefault() is not yet supported in the Lean lane \
                  (in-place mutation) — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
