@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.63] — 2026-06-12
+
+Tranche-2 slice PMAT-502ae — Python **`str(b)`** over a bool.
+
+Pure-frontend desugar (no new IR): `str(b)` over a `bool` lowers to the ternary
+`"True" if b else "False"` — an `Expr::IfExpr` over two `Str` literals — so the
+emitted Rust is `if <b> { String::from("True") } else { String::from("False") }`.
+This matches Python's **capitalized** `"True"`/`"False"` (Rust's `format!("{}",
+b)` would give lowercase `"true"`/`"false"`). Composes with `+` (e.g.
+`"flag=" + str(b)`) since the result types as `Str`. `str(float)` still differs
+from Python ("2.0" vs Rust's "2") and is deferred. rustc round-trip
+`str_of_bool.py`: `flag_str(true) -> "True"`, `flag_str(false) -> "False"`,
+`cmp_str(1,2) -> "True"`, `labeled(true) -> "flag=True"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.62] — 2026-06-12
 
 Tranche-2 slice PMAT-502ad — Python **`str(x)`** over an int.

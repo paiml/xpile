@@ -615,6 +615,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::ToStr { value }. str(x) over an int -> format!(\"{}\", x) in Rust+Ruchy; result Str. Unblocks the common \"prefix\" + str(n) concat idiom (str(n) types as Str so + becomes Concat). First cut int only; str(float) (2.0 vs Rust 2) + str(bool) (True vs Rust true) differ from Python formatting and deferred. Lean refuses. rustc round-trip str_of_int.py: show(42)->\"count: 42\", num_str(7)->\"7\", neg_str(5)->\"-5\". FREE CI. SHIPPED v0.1.62."
+- id: PMAT-502AE
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ae: [Tranche2] str(b) over a bool'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Pure-frontend desugar (no new IR). str(b) over a bool -> IfExpr { cond: b, then: LitStr(\"True\"), else: LitStr(\"False\") } = if b { String::from(\"True\") } else { String::from(\"False\") } in Rust+Ruchy; result Str. Matches Python's CAPITALIZED True/False (Rust format! would give lowercase). Composes with + (str result types Str -> Concat). str(float) still deferred (2.0 vs Rust 2). rustc round-trip str_of_bool.py: flag_str(true)->\"True\", flag_str(false)->\"False\", cmp_str(1,2)->\"True\", labeled(true)->\"flag=True\". FREE CI. SHIPPED v0.1.63."
 - id: PMAT-465
   github_issue: 496
   item_type: task

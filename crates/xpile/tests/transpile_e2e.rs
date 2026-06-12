@@ -1487,6 +1487,27 @@ fn main() {
     assert_rustc_runs("str_of_int", &rust, driver);
 }
 
+/// PMAT-502ae (Tranche 2): `str(b)` over a bool → Python's `"True"`/`"False"`
+/// via a desugar to `"True" if b else "False"`.
+#[test]
+fn str_of_bool() {
+    let rust = xpile_transpile_to_rust("str_of_bool.py");
+    assert!(
+        rust.contains("String::from(\"True\")") && rust.contains("String::from(\"False\")"),
+        "expected True/False string branches, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(flag_str(true), String::from("True"));
+    assert_eq!(flag_str(false), String::from("False"));
+    assert_eq!(cmp_str(1, 2), String::from("True"));
+    assert_eq!(cmp_str(5, 2), String::from("False"));
+    assert_eq!(labeled(true), String::from("flag=True"));
+}
+"#;
+    assert_rustc_runs("str_of_bool", &rust, driver);
+}
+
 /// PMAT-502n (Tranche 2): `divmod(a, b)` → the tuple `(a // b, a % b)`,
 /// reusing the contract-checked floor-div + mod ops.
 #[test]

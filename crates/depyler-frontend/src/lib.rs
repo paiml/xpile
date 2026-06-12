@@ -2980,14 +2980,27 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                 }
                 // PMAT-502ad: `str(x)` over an `int` → its decimal string
-                // (`format!("{}", x)`). `str(float)`/`str(bool)` differ from
-                // Python's formatting and fall through (deferred).
+                // (`format!("{}", x)`). PMAT-502ae: `str(b)` over a `bool`
+                // desugars to `"True" if b else "False"` (an `IfExpr` over
+                // string literals) — Python capitalizes (`"True"`/`"False"`),
+                // unlike Rust's lowercase `format!`. `str(float)` ("2.0" vs
+                // Rust's "2") still differs and falls through (deferred).
                 if fname.id.as_str() == "str" && call.keywords.is_empty() && call.args.len() == 1 {
                     let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
-                    if infer_type_in_ctx(ctx, &value) == Type::I64 {
-                        return Ok(Expr::ToStr {
-                            value: Box::new(value),
-                        });
+                    match infer_type_in_ctx(ctx, &value) {
+                        Type::I64 => {
+                            return Ok(Expr::ToStr {
+                                value: Box::new(value),
+                            });
+                        }
+                        Type::Bool => {
+                            return Ok(Expr::IfExpr {
+                                cond: Box::new(value),
+                                then_expr: Box::new(Expr::LitStr("True".to_string())),
+                                else_expr: Box::new(Expr::LitStr("False".to_string())),
+                            });
+                        }
+                        _ => {}
                     }
                 }
                 // PMAT-502n: `divmod(a, b)` over two ints → the tuple
