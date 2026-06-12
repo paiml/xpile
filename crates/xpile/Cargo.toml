@@ -25,6 +25,9 @@ anyhow         = { workspace = true }
 clap           = { version = "4", features = ["derive"] }
 
 [dev-dependencies]
+# PMAT-484: contract_via_roles.rs parses the PTX contract YAML to
+# validate the structured compile_targets.via_roles records.
+serde_yaml              = { workspace = true }
 # PMAT-270: trait_runtime_properties.rs exercises ContractBackend +
 # ContractFrontend traits directly against the live default_session().
 xpile-contract-backend  = { workspace = true }

@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.24] — 2026-06-12
+
+Sprint slice PMAT-484 (§30 Track 4) — structured **`compile_targets.via_roles`**
+in the PTX contract + an in-tree validator.
+
+The PTX contract (`compile-rust-to-ptx-mma-v1.yaml`) now carries structured
+emitter-role records (`role: general`/`specialist`, `crate`, `cross_repo`,
+`shape_filter`) plus a `quorum_policy: { kind: DiffExec, tolerance }` — added
+**additively** alongside the existing flat `via:` list (which the pinned
+`pv` schema validates), so `pv lint` stays green (0 errors, confirmed).
+A new in-tree test `crates/xpile/tests/contract_via_roles.rs` (4 cases,
+serde_yaml-parsed) is the authoritative validator: exactly one `role:
+general`, no specialist-only route, a `DiffExec` policy with a numeric
+`tolerance`, and a crate-named general emitter — honoring §29 falsification
+posture #4. The cross-repo `pv`-engine enforcement of these roles remains the
+residual PMAT-A5.
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.23] — 2026-06-12
 
 Sprint slice PMAT-495 — Python **`enumerate` / `zip`** in `for` loops.
