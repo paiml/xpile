@@ -1473,6 +1473,27 @@ fn main() {
     assert_rustc_runs("neg_index", &rust, driver);
 }
 
+/// PMAT-502t (Tranche 2): the reverse idiom `xs[::-1]` over a list →
+/// a new reversed list (reuses `Expr::Reversed`).
+#[test]
+fn slice_reverse() {
+    let rust = xpile_transpile_to_rust("slice_reverse.py");
+    assert!(
+        rust.contains(".clone(); __xv.reverse(); __xv }"),
+        "expected reversed-list block, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(rev(vec![1, 2, 3]), vec![3, 2, 1]);
+    assert_eq!(
+        rev_strs(vec![String::from("a"), String::from("b"), String::from("c")]),
+        vec![String::from("c"), String::from("b"), String::from("a")]
+    );
+}
+"#;
+    assert_rustc_runs("slice_reverse", &rust, driver);
+}
+
 /// PMAT-502r (Tranche 2): open-ended slices `xs[a:]` / `xs[:b]` / `xs[:]`
 /// (list + str) → half-open / full Rust ranges.
 #[test]

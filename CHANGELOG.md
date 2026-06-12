@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.52] — 2026-06-12
+
+Tranche-2 slice PMAT-502t — Python **reverse-slice idiom** `xs[::-1]`.
+
+Pure-frontend desugar (no new IR): the canonical reverse idiom `xs[::-1]`
+(no bounds, step −1) over a `list[T]` lowers to `Expr::Reversed` (shipped in
+v0.1.35), emitting `{ let mut __xv = xs.clone(); __xv.reverse(); __xv }` — a new
+reversed list, input unchanged. The blanket slice-step rejection is narrowed:
+other steps (and `str[::-1]`, stepped sub-ranges) remain deferred. rustc
+round-trip `slice_reverse.py`: `rev([1,2,3]) -> [3,2,1]`,
+`rev_strs(["a","b","c"]) -> ["c","b","a"]`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.51] — 2026-06-12
 
 Tranche-2 slice PMAT-502s — Python **negative list indexing** `xs[-k]`.

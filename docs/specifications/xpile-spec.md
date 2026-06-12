@@ -855,6 +855,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502q** — tuple constant-index `t[N]` (`Expr::TupleIndex`) | `(t).N.clone()` (Rust tuple field access, distinct from list/dict `Expr::Index`); compile-time literal N in range; negative/non-literal deferred | ✅ SHIPPED v0.1.49 |
 | **PMAT-502r** — open-ended slices `xs[a:]`/`xs[:b]`/`xs[:]` (`Expr::Slice.lo/hi` → `Option`) | absent bound → open Rust range (`a..`, `..b`, `..`) + `.to_vec()`/`.to_string()`; list + str; bounded `xs[a:b]` unchanged | ✅ SHIPPED v0.1.50 |
 | **PMAT-502s** — negative list index `xs[-k]` (pure desugar) | `xs[len(xs) - k]` reusing `Len`+`Sub`+`Index` (inherits C-PY-INT-ARITH checked sub); list only; str/slice-bound negatives deferred | ✅ SHIPPED v0.1.51 |
+| **PMAT-502t** — reverse-slice idiom `xs[::-1]` (pure desugar) | step −1 + no bounds over a list → `Expr::Reversed` (reuses v0.1.35); other steps + `str[::-1]` deferred | ✅ SHIPPED v0.1.52 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |
