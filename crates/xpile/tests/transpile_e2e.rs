@@ -2187,6 +2187,42 @@ fn main() {
     assert_rustc_runs("del_item", &rust, driver);
 }
 
+/// PMAT-502au (Tranche 2): dict pop (expression form) `d.pop(k)` →
+/// `(d).remove(&(k)).unwrap()` and `d.pop(k, default)` →
+/// `(d).remove(&(k)).unwrap_or(default)`. Covers param + local receivers.
+#[test]
+fn dict_pop() {
+    let rust = xpile_transpile_to_rust("dict_pop.py");
+    assert!(
+        rust.contains("(d).remove(&(k)).unwrap()"),
+        "pop (no default):\n{rust}"
+    );
+    assert!(
+        rust.contains("(d).remove(&(k)).unwrap_or(0i64)"),
+        "pop (default):\n{rust}"
+    );
+    assert!(
+        rust.contains("take(mut d: std::collections::HashMap"),
+        "mut param:\n{rust}"
+    );
+    // Local receiver marked mut by the count_pop_receivers pre-pass.
+    assert!(
+        rust.contains("let mut d: std::collections::HashMap"),
+        "mut local:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let mut d = std::collections::HashMap::new();
+    d.insert("a".to_string(), 5);
+    assert_eq!(take(d, "a".to_string()), 5);
+    let d2 = std::collections::HashMap::new();
+    assert_eq!(take_or(d2, "missing".to_string()), 0);
+    assert_eq!(take_local(), 2);
+}
+"#;
+    assert_rustc_runs("dict_pop", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

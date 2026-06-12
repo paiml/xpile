@@ -535,6 +535,14 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 collect_idents(i, out);
             }
         }
+        // PMAT-502au: dict pop — recurse into dict, key, optional default.
+        Expr::DictPop { dict, key, default } => {
+            collect_idents(dict, out);
+            collect_idents(key, out);
+            if let Some(d) = default {
+                collect_idents(d, out);
+            }
+        }
         // PMAT-455: list literal — recurse into each element.
         Expr::ListLit(elems) => {
             for e in elems {
@@ -1109,6 +1117,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::ListPop { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python list.pop() is not yet supported in the Lean lane \
+                 (in-place mutation) — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502au: dict pop deferred in the Lean lane (in-place mutation).
+        Expr::DictPop { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python dict.pop() is not yet supported in the Lean lane \
                  (in-place mutation) — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

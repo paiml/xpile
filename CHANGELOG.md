@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.79] — 2026-06-12
+
+Tranche-2 slice PMAT-502au — Python **dict pop** `d.pop(k)` / `d.pop(k, default)`
+(expression form).
+
+New meta-HIR `Expr::DictPop { dict, key, default }` — the dict analogue of the
+v0.1.77 list pop. `d.pop(k)` lowers to `(<dict>).remove(&(<key>)).unwrap()`
+(panics if the key is absent, matching Python's `KeyError`); `d.pop(k, default)`
+lowers to `(<dict>).remove(&(<key>)).unwrap_or(<default>)`. The result types as
+the dict's value type. Recognised in the expr-context `pop` block (1 or 2 args; a
+no-arg `.pop()` is a Python error for dicts), disambiguated from list pop by the
+receiver type. The receiver is marked `mut` by the same `count_pop_receivers`
+pre-pass, so both popped **params** and popped **locals** get `let mut`. Lean
+refuses (in-place mutation). rustc round-trip `dict_pop.py`:
+`take({a:5},"a") -> 5`, `take_or({},"missing") -> 0`, `take_local() -> 2`
+(local receiver).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.78] — 2026-06-12
 
 Tranche-2 slice PMAT-502at — Python **item deletion** `del coll[key]` (list or

@@ -294,6 +294,12 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::ListPop { list, index } => {
             expr_has_int_arith(list) || index.as_ref().is_some_and(|i| expr_has_int_arith(i))
         }
+        // PMAT-502au: dict.pop() — recurse into dict, key, and optional default.
+        Expr::DictPop { dict, key, default } => {
+            expr_has_int_arith(dict)
+                || expr_has_int_arith(key)
+                || default.as_ref().is_some_and(|d| expr_has_int_arith(d))
+        }
         // PMAT-500: set literal / membership — recurse defensively.
         Expr::SetLit(elems) => elems.iter().any(expr_has_int_arith),
         Expr::SetContains { set, elem } => expr_has_int_arith(set) || expr_has_int_arith(elem),
@@ -1310,6 +1316,22 @@ pub enum Expr {
     ListPop {
         list: Box<Expr>,
         index: Option<Box<Expr>>,
+    },
+    /// Dict pop — Python `d.pop(k)` / `d.pop(k, default)`. PMAT-502au
+    /// (Tranche 2). An *expression* that removes the entry for `key` and
+    /// evaluates to its value (so the receiver must be mutable; the
+    /// frontend marks it). With no `default`, panics when the key is
+    /// absent, matching Python's `KeyError`; with a `default`, evaluates
+    /// to it instead. The result type is the dict's value type.
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: no default → `(<dict>).remove(&(<key>)).unwrap()`;
+    ///     with default → `(<dict>).remove(&(<key>)).unwrap_or(<default>)`.
+    ///   * Lean: refuses (in-place mutation, same gap as `Stmt::ListAppend`).
+    DictPop {
+        dict: Box<Expr>,
+        key: Box<Expr>,
+        default: Option<Box<Expr>>,
     },
     /// Unary operation — `not x` (logical, Bool → Bool) or `-x`
     /// (numeric negate, I64 → I64).

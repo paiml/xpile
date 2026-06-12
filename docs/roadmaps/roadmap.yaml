@@ -759,6 +759,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Stmt::DelItem { name, key, is_dict }. Frontend lowers ast::Stmt::Delete (a single subscript target whose receiver is a Name) via new lower_delete_stmt, resolving is_dict from the receiver's inferred type and marking it mut. list del xs[i] -> xs.remove((<i>) as usize); (int index; shifts tail left; past-end panics = Python IndexError); dict del d[k] -> d.remove(&(<k>));. walk_counts gained a Delete arm so a deleted LOCAL as well as a PARAM gets let mut. Multiple targets (del a, b), whole-name del x, and slice deletion rejected. Lean refuses (in-place mutation). Deferred gap: deleting an absent dict key is a silent no-op here vs Python KeyError. rustc round-trip del_item.py: drop_at([1,2,3],1)->2, drop_first([10,20,30])->20, drop_key({a:1,b:2},a)->1, drop_local()->3 (local receiver). FREE CI. SHIPPED v0.1.78."
+- id: PMAT-502AU
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502au: [Tranche2] dict pop d.pop(k) / d.pop(k, default) (expression form)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::DictPop { dict, key, default: Option<Box<Expr>> } — the dict analogue of v0.1.77 list pop. d.pop(k) -> (<dict>).remove(&(<key>)).unwrap() (panics if absent = Python KeyError); d.pop(k, default) -> (<dict>).remove(&(<key>)).unwrap_or(<default>). Result types as the dict value type (infer_type + infer_type_in_ctx). Recognised in the expr-context pop block (1 or 2 args; no-arg .pop() is a Python error for dicts), disambiguated from list pop by receiver type. Receiver mut via the same count_pop_receivers pre-pass (params + locals). Lean refuses (in-place mutation). rustc round-trip dict_pop.py: take({a:5},a)->5, take_or({},missing)->0, take_local()->2 (local receiver). FREE CI. SHIPPED v0.1.79."
 - id: PMAT-465
   github_issue: 496
   item_type: task

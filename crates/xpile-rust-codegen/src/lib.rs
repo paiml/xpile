@@ -939,6 +939,23 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 }
             }
         }
+        // PMAT-502au: `d.pop(k)` → `(<dict>).remove(&(<key>)).unwrap()`
+        // (panics if absent, matching Python `KeyError`); `d.pop(k, def)`
+        // → `(<dict>).remove(&(<key>)).unwrap_or(<default>)`.
+        Expr::DictPop { dict, key, default } => {
+            out.push('(');
+            emit_expr(out, dict, mode)?;
+            out.push_str(").remove(&(");
+            emit_expr(out, key, mode)?;
+            match default {
+                None => out.push_str(")).unwrap()"),
+                Some(d) => {
+                    out.push_str(")).unwrap_or(");
+                    emit_expr(out, d, mode)?;
+                    out.push(')');
+                }
+            }
+        }
         // PMAT-502c/f/z: `sorted(xs)` → `{ let mut __xv = <list>.clone();
         // __xv.sort(); __xv }`; `reverse=True` appends `__xv.reverse();`;
         // `key=lambda p: e` uses `__xv.sort_by_key(|__k| { let p = __k.clone(); e })`.
