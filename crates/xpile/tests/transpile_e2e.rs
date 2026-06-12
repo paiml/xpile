@@ -232,6 +232,31 @@ fn xpile_transpile_to_rust(fixture_name: &str) -> String {
     String::from_utf8(out.stdout).expect("stdout is UTF-8")
 }
 
+/// PMAT-473 (R4): list comprehensions `[elem for var in iter]`
+/// materialise to `tmp = []` + a for-append loop, in both return
+/// position (hoisted to a temp) and assignment position.
+#[test]
+fn list_comprehension_roundtrip() {
+    let rust = xpile_transpile_to_rust("list_comp.py");
+    assert!(
+        rust.contains("let mut __xpile_comp: Vec<i64> = vec![];")
+            && rust.contains("__xpile_comp.push("),
+        "return-position comprehension should hoist to a temp + push loop:\n{rust}"
+    );
+    assert!(
+        rust.contains("let mut ys: Vec<i64> = vec![];") && rust.contains("ys.push("),
+        "assignment-position comprehension should build the named accumulator:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(squares(vec![1i64, 2, 3, 4]), vec![1i64, 4, 9, 16]);
+    assert_eq!(doubled(vec![5i64, 10]), vec![10i64, 20]);
+    assert_eq!(total_sq(vec![1i64, 2, 3]), 14i64);
+}
+"#;
+    assert_rustc_runs("list_comp", &rust, driver);
+}
+
 /// PMAT-472 (R3): dict iteration `for k in d:` lowers to
 /// `for k in d.keys().cloned()` (the loop var is the key type).
 /// Assertions are order-independent — HashMap key order is unspecified.
