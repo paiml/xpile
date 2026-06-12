@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.88] — 2026-06-12
+
+Tranche-2 slice PMAT-502bd — Python **dict + set comprehensions over `range(...)`**
+`{k: v for x in range(n)}` / `{e for x in range(n)}`.
+
+Extends `desugar_dict_comp` and `desugar_set_comp` with the `range(...)` iterable
+branch that v0.1.85 added to list comprehensions. A range-iterable dict/set comp
+desugars to a counter loop around the accumulator —
+`let mut t = {…}; let mut x = start; while (x <cmp> stop) { <insert>; x = x + step; }`
+— reusing the shared `comp_range_bounds` helper. Two new shared helpers,
+`comp_filter` (lowers the optional `if` to a `Bool`) and `comp_range_stmts`
+(assembles the counter loop), are now used by both the list-iterable and
+range-iterable paths. The `if` filter composes. This completes the
+comprehension-over-range family across list/dict/set. Lean refuses. rustc
+round-trip `dict_set_comp_range.py`: `sq_map(4) -> {0:0,1:1,2:4,3:9}`,
+`even_set(4) -> {1,2,3}`, `from_two(5) -> 3`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.87] — 2026-06-12
 
 Tranche-2 slice PMAT-502bc — Python **general slice step** `xs[a:b:c]` over a list

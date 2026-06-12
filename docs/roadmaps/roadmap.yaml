@@ -840,6 +840,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Expr::Slice gained a step: Option<i64> field. A stepped list slice (xs[a:b:c], xs[::2], xs[1::2]) with a POSITIVE integer literal step lowers to <c>[<range>].iter().step_by(<step>).cloned().collect::<Vec<_>>() in Rust+Ruchy (the open/half-open/full range from existing lo/hi still applies). Step of 1 = default (dropped). The xs[::-1] reverse idiom still lowers to Expr::Reversed upstream so a negative step never reaches the new path; other negative steps + stepped STRING slices remain deferred (precise error). Plain un-stepped slices unchanged. Lean refuses. rustc round-trip slice_step.py: every_other([0..5])->[0,2,4], bounded_step([0..9])->[1,4,7], from_one_step([0..5])->[1,3,5] (cross-checked vs python3). FREE CI. SHIPPED v0.1.87."
+- id: PMAT-502BD
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bd: [Tranche2] dict + set comprehensions over range(...)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Extends desugar_dict_comp + desugar_set_comp with the range(...) iterable branch that v0.1.85 added to list comps. A range-iterable dict/set comp desugars to a counter loop around the accumulator: let mut t = {...}; let mut x = start; while (x <cmp> stop) { <insert>; x = x + step; } — reusing the shared comp_range_bounds helper. Two new shared helpers comp_filter (lowers optional if to Bool) and comp_range_stmts (assembles the counter loop) now used by both list-iterable and range-iterable paths. The if filter composes. Completes the comprehension-over-range family across list/dict/set. Lean refuses. rustc round-trip dict_set_comp_range.py: sq_map(4)->{0:0,1:1,2:4,3:9}, even_set(4)->{1,2,3}, from_two(5)->3. FREE CI. SHIPPED v0.1.88."
 - id: PMAT-465
   github_issue: 496
   item_type: task
