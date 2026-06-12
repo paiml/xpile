@@ -2979,18 +2979,24 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         });
                     }
                 }
-                // PMAT-502ad: `str(x)` over an `int` → its decimal string
-                // (`format!("{}", x)`). PMAT-502ae: `str(b)` over a `bool`
-                // desugars to `"True" if b else "False"` (an `IfExpr` over
-                // string literals) — Python capitalizes (`"True"`/`"False"`),
-                // unlike Rust's lowercase `format!`. `str(float)` ("2.0" vs
-                // Rust's "2") still differs and falls through (deferred).
+                // PMAT-502ad/af: `str(x)` over an `int`/`float` → `Expr::ToStr`
+                // (int → `format!("{}", x)`; float → a Python-matching format
+                // block). PMAT-502ae: `str(b)` over a `bool` desugars to
+                // `"True" if b else "False"` (an `IfExpr`) — Python capitalizes
+                // (`"True"`/`"False"`), unlike Rust's lowercase `format!`.
                 if fname.id.as_str() == "str" && call.keywords.is_empty() && call.args.len() == 1 {
                     let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                     match infer_type_in_ctx(ctx, &value) {
                         Type::I64 => {
                             return Ok(Expr::ToStr {
                                 value: Box::new(value),
+                                of_float: false,
+                            });
+                        }
+                        Type::F64 => {
+                            return Ok(Expr::ToStr {
+                                value: Box::new(value),
+                                of_float: true,
                             });
                         }
                         Type::Bool => {

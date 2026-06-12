@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.64] — 2026-06-12
+
+Tranche-2 slice PMAT-502af — Python **`str(x)`** over a float (completes the str() family).
+
+`Expr::ToStr` gains an `of_float` flag. `str(x)` over a `float` now lowers to a
+block that reproduces Python's formatting:
+`{ let __sf = <value>; if __sf.is_nan() { String::from("nan") } else if
+__sf.is_finite() && __sf.fract() == 0.0 { format!("{}.0", __sf) } else {
+format!("{}", __sf) } }`. This matches Python where Rust's bare `format!("{}",
+…)` would not: whole-number floats get a `.0` suffix (`str(2.0)` → `"2.0"`, not
+`"2"`), and `nan` lower-cases to match Python (Rust prints `"NaN"`). `inf`/`-inf`
+and `-0.0` already match. `str(int)` (v0.1.62) is unchanged. With this, the
+`str()` family covers **int, float, and bool** — all matching Python's
+formatting exactly. Lean refuses. rustc round-trip `str_of_float.py`:
+`f_str(2.0) -> "2.0"`, `f_str(2.5) -> "2.5"`, `f_str(-1.5) -> "-1.5"`,
+`half_str(5) -> "2.5"`, `half_str(4) -> "2.0"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.63] — 2026-06-12
 
 Tranche-2 slice PMAT-502ae — Python **`str(b)`** over a bool.
