@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.54] — 2026-06-12
+
+Tranche-2 slice PMAT-502v — Python **dict views** `d.keys()` / `d.values()`.
+
+New meta-HIR `Expr::DictView { dict, kind }` + `DictViewKind` (Keys/Values).
+Over a `dict[K, V]` receiver (0 args), `d.keys()` → `d.keys().cloned()
+.collect::<Vec<_>>()` and `d.values()` → `d.values().cloned().collect::<Vec<_>>()`
+in Rust + Ruchy; result types as `List(K)` / `List(V)` so they compose with
+`sorted`/`sum`/for-iteration. (HashMap iteration order is unspecified; pair with
+`sorted`/`sum` for deterministic results.) `.items()` → `List(Tuple[K,V])` and
+`len(d.keys())` via the context-free path follow as their own slices. Lean
+refuses. rustc round-trip `dict_views.py` over `{1:10,2:20,3:30}`:
+`sorted_keys -> [1,2,3]`, `sorted_values -> [10,20,30]`, `total_values -> 60`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.53] — 2026-06-12
 
 Tranche-2 slice PMAT-502u — Python **list query methods** `xs.count(x)` / `xs.index(x)`.

@@ -534,6 +534,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::ListQuery { list, op, arg } + ListQueryOp (Count/Index). Over a list[int] (1 arg, -> Int): xs.count(x) -> xs.iter().filter(|&&__e| __e == x).count() as i64; xs.index(x) -> xs.iter().position(|&__e| __e == x).map(|__i| __i as i64).expect(..) (panics if absent, Python ValueError). Frontend disambiguates .count from str method (v0.1.44) by recv type. First cut list[int] (Copy+Eq). Lean refuses. rustc round-trip list_query.py: how_many([1,2,2,3,2],2)->3, how_many([1,2,3],9)->0, first_at([10,20,30],20)->1, first_at([10,20,30],10)->0. FREE CI. SHIPPED v0.1.53."
+- id: PMAT-502V
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502v: [Tranche2] dict views d.keys()/d.values()'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::DictView { dict, kind } + DictViewKind (Keys/Values). Over a dict[K,V] recv (0 args): d.keys() -> d.keys().cloned().collect::<Vec<_>>(), d.values() -> d.values().cloned().collect::<Vec<_>>() in Rust+Ruchy; result List(K)/List(V) so they compose with sorted/sum/for-iter. HashMap order unspecified (pair w/ sorted/sum). .items() (List(Tuple)) + context-free len(d.keys()) deferred. Lean refuses. rustc round-trip dict_views.py over {1:10,2:20,3:30}: sorted_keys->[1,2,3], sorted_values->[10,20,30], total_values->60. FREE CI. SHIPPED v0.1.54."
 - id: PMAT-465
   github_issue: 496
   item_type: task

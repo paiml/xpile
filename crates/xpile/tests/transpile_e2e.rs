@@ -1515,6 +1515,28 @@ fn main() {
     assert_rustc_runs("list_query", &rust, driver);
 }
 
+/// PMAT-502v (Tranche 2): dict views `d.keys()` / `d.values()` →
+/// `.keys()/.values().cloned().collect::<Vec<_>>()` (compose w/ sorted/sum).
+#[test]
+fn dict_views() {
+    let rust = xpile_transpile_to_rust("dict_views.py");
+    assert!(
+        rust.contains(".keys().cloned().collect::<Vec<_>>()")
+            && rust.contains(".values().cloned().collect::<Vec<_>>()"),
+        "expected dict view emission, got:\n{rust}"
+    );
+    let driver = r#"
+use std::collections::HashMap;
+fn main() {
+    let d: HashMap<i64, i64> = [(1, 10), (2, 20), (3, 30)].into_iter().collect();
+    assert_eq!(sorted_keys(d.clone()), vec![1, 2, 3]);
+    assert_eq!(sorted_values(d.clone()), vec![10, 20, 30]);
+    assert_eq!(total_values(d.clone()), 60);
+}
+"#;
+    assert_rustc_runs("dict_views", &rust, driver);
+}
+
 /// PMAT-502r (Tranche 2): open-ended slices `xs[a:]` / `xs[:b]` / `xs[:]`
 /// (list + str) → half-open / full Rust ranges.
 #[test]
