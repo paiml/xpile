@@ -89,6 +89,74 @@ impl TargetEmitter for ScaffoldWgslEmitter {
     }
 }
 
+// ─── PMAT-482: offline WGSL well-formedness gate (§30 Track 4) ───────
+//
+// Mirrors the PMAT-481 PTX gate for the WGSL/SPIR-V lane: a structural,
+// CPU-only check on emitted WGSL text. The deeper `naga` validation +
+// `spirv-val` CI step (also CPU, no GPU) wires in alongside the real
+// WGSL emitter — exactly as the `ptxas`-assembles step does for PTX in
+// PMAT-485. Gate on [`wgsl_looks_real`] so the v0.1.0 scaffold comment
+// placeholder is never treated as real emission. This is a structural
+// gate, not the model→emission gate (that is the on-hardware AMD-Vulkan
+// `DiffExec` slice, PMAT-490).
+
+/// Reasons emitted WGSL text fails the [`validate_wgsl`] well-formedness gate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WgslValidationError {
+    /// No `@compute` entry attribute (e.g. the scaffold placeholder).
+    MissingComputeEntry,
+    /// No `@workgroup_size(...)` — required on a compute entry point.
+    MissingWorkgroupSize,
+    /// No `fn` declaration (the entry-point body).
+    MissingFn,
+}
+
+impl std::fmt::Display for WgslValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingComputeEntry => write!(f, "WGSL has no `@compute` entry attribute"),
+            Self::MissingWorkgroupSize => {
+                write!(f, "WGSL compute entry is missing `@workgroup_size(...)`")
+            }
+            Self::MissingFn => write!(f, "WGSL has no `fn` entry-point declaration"),
+        }
+    }
+}
+
+impl std::error::Error for WgslValidationError {}
+
+/// `true` when `text` looks like real WGSL (carries a `@compute`
+/// attribute or an `fn` declaration) rather than the v0.1.0 scaffold
+/// comment placeholder.
+pub fn wgsl_looks_real(text: &str) -> bool {
+    noncomment_lines(text).any(|l| l.contains("@compute") || l.contains("fn "))
+}
+
+/// PMAT-482 — structural well-formedness check on emitted WGSL text: a
+/// `@compute` entry, a `@workgroup_size(...)`, and an `fn` declaration.
+/// Pure text — no GPU. Gate on [`wgsl_looks_real`] first so the scaffold
+/// placeholder is not treated as real emission.
+pub fn validate_wgsl(text: &str) -> Result<(), WgslValidationError> {
+    let has = |needle: &str| noncomment_lines(text).any(|l| l.contains(needle));
+    if !has("@compute") {
+        return Err(WgslValidationError::MissingComputeEntry);
+    }
+    if !has("@workgroup_size(") {
+        return Err(WgslValidationError::MissingWorkgroupSize);
+    }
+    if !has("fn ") {
+        return Err(WgslValidationError::MissingFn);
+    }
+    Ok(())
+}
+
+/// Non-empty, non-`//`-comment lines, trimmed.
+fn noncomment_lines(text: &str) -> impl Iterator<Item = &str> {
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with("//") && !l.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,5 +230,55 @@ mod tests {
         let backend = WgslBackend::new();
         assert_eq!(backend.targets(), &[Target::Wgsl]);
         assert_eq!(backend.name(), "wgsl");
+    }
+
+    // ─── PMAT-482: offline WGSL well-formedness gate ────────────────
+
+    /// A minimal but real WGSL compute shader — the shape a real WGSL
+    /// emitter will produce (PMAT-490 territory).
+    const GOLDEN_WGSL: &str = "\
+// generated
+@compute @workgroup_size(64)
+fn add_one(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+}
+";
+
+    #[test]
+    fn validate_wgsl_accepts_well_formed_compute_shader() {
+        assert_eq!(validate_wgsl(GOLDEN_WGSL), Ok(()));
+    }
+
+    #[test]
+    fn wgsl_looks_real_classifies_golden_vs_scaffold() {
+        assert!(wgsl_looks_real(GOLDEN_WGSL));
+        let scaffold = WgslBackend::new()
+            .lower(&dummy_module(), &wgsl_config(vec![]))
+            .unwrap()
+            .primary;
+        assert!(!wgsl_looks_real(&scaffold));
+    }
+
+    #[test]
+    fn validate_wgsl_rejects_scaffold_placeholder() {
+        let scaffold = WgslBackend::new()
+            .lower(&dummy_module(), &wgsl_config(vec![]))
+            .unwrap()
+            .primary;
+        assert_eq!(
+            validate_wgsl(&scaffold),
+            Err(WgslValidationError::MissingComputeEntry)
+        );
+    }
+
+    #[test]
+    fn validate_wgsl_requires_workgroup_size_and_fn() {
+        let no_wg = "@compute\nfn k() {}\n";
+        assert_eq!(
+            validate_wgsl(no_wg),
+            Err(WgslValidationError::MissingWorkgroupSize)
+        );
+        let no_fn = "@compute @workgroup_size(1)\n";
+        assert_eq!(validate_wgsl(no_fn), Err(WgslValidationError::MissingFn));
     }
 }

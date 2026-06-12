@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.14] — 2026-06-12
+
+Second §30 Track 4 slice (PMAT-482) — the WGSL/SPIR-V lane's offline,
+free-CI well-formedness gate, mirroring v0.1.13's PTX gate.
+
+Adds a pure-Rust **WGSL validator** in `xpile-wgsl-codegen`
+(`validate_wgsl`, `wgsl_looks_real`): structural checks on emitted WGSL —
+a `@compute` entry, `@workgroup_size(...)`, and an `fn` entry point.
+`wgsl_looks_real` classifies the v0.1.0 scaffold comment placeholder as
+*not real* so the gate never false-fails before a real WGSL emitter lands.
+The deeper `naga` + `spirv-val` CI step (CPU, no GPU) wires in alongside
+that emitter, just as `ptxas` does for PTX. Structural gate only — not the
+model→emission gate (that is the on-hardware AMD-Vulkan `DiffExec` slice,
+PMAT-490). 4 new unit tests.
+
+GitHub-tagged only; crates.io stays at 0.1.13 until the next Friday window
+(2026-06-19) per the once-per-week cadence.
+
 ## [0.1.13] — 2026-06-12
 
 First slice of the **§30 Track 4** GPU Runtime-stratum work (PMAT-481)
