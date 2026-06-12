@@ -1283,6 +1283,25 @@ fn main() {
     assert_rustc_runs("list_minmax_builtin", &rust, driver);
 }
 
+/// PMAT-502h (Tranche 2): 1-arg `min(xs)`/`max(xs)` over a `list[float]` →
+/// a fold (`fold(f64::INFINITY, f64::min)` / `fold(f64::NEG_INFINITY, f64::max)`).
+#[test]
+fn list_minmax_float() {
+    let rust = xpile_transpile_to_rust("list_minmax_float.py");
+    assert!(
+        rust.contains(".fold(f64::INFINITY, f64::min)")
+            && rust.contains(".fold(f64::NEG_INFINITY, f64::max)"),
+        "expected float min/max fold emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(lowest(vec![3.5, 1.5, 2.5]), 1.5);
+    assert_eq!(highest(vec![3.5, 1.5, 2.5]), 3.5);
+}
+"#;
+    assert_rustc_runs("list_minmax_float", &rust, driver);
+}
+
 /// PMAT-503a (Tranche 2, exceptions sub-slice 1): a `raise Exc("msg")`
 /// guard clause → `panic!("{}", <message>)`. The non-raising path returns
 /// normally; the raising path panics (caught via `catch_unwind`).

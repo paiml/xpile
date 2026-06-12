@@ -595,12 +595,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             });
         }
         // PMAT-502e: 1-arg `min(xs)`/`max(xs)` reduction over an int list.
-        Expr::ListMinMax { list, is_max } => {
+        // PMAT-502h: `list[float]` uses a fold (f64 has no `Ord`).
+        Expr::ListMinMax {
+            list,
+            is_max,
+            of_float,
+        } => {
             emit_expr(out, list, mode)?;
-            out.push_str(if *is_max {
-                ".iter().copied().max().unwrap()"
-            } else {
-                ".iter().copied().min().unwrap()"
+            out.push_str(match (*of_float, *is_max) {
+                (false, true) => ".iter().copied().max().unwrap()",
+                (false, false) => ".iter().copied().min().unwrap()",
+                (true, true) => ".iter().copied().fold(f64::NEG_INFINITY, f64::max)",
+                (true, false) => ".iter().copied().fold(f64::INFINITY, f64::min)",
             });
         }
         // PMAT-502c: `sorted(xs)` → clone+sort block.
