@@ -20,3 +20,7 @@ def is_greeting(s: str) -> bool:
 
 def is_question(s: str) -> bool:
     return s.endswith("?")
+
+
+def words(s: str) -> list[str]:
+    return s.split(" ")

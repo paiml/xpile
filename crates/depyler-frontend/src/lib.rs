@@ -1851,6 +1851,7 @@ fn infer_type(e: &Expr) -> Type {
         Expr::StrMethod { op, .. } => match op {
             StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
             StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
+            StrMethodOp::Split => Type::List(Box::new(Type::Str)),
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
         // type from the first element (frontend ensures homogeneity
@@ -1964,6 +1965,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::StrMethod { op, .. } => match op {
             StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
             StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
+            StrMethodOp::Split => Type::List(Box::new(Type::Str)),
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
         // shape as the context-free `infer_type` arm.
@@ -2650,16 +2652,17 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
         "strip" => Some(StrMethodOp::Strip),
         "startswith" => Some(StrMethodOp::StartsWith),
         "endswith" => Some(StrMethodOp::EndsWith),
+        "split" => Some(StrMethodOp::Split),
         _ => None,
     }
 }
 
 /// Number of arguments a [`StrMethodOp`] expects: 0 for the transforms,
-/// 1 (a pattern) for the `startswith`/`endswith` predicates.
+/// 1 for the `startswith`/`endswith` predicates and `split(sep)`.
 fn str_method_arity(op: StrMethodOp) -> usize {
     match op {
         StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => 0,
-        StrMethodOp::StartsWith | StrMethodOp::EndsWith => 1,
+        StrMethodOp::StartsWith | StrMethodOp::EndsWith | StrMethodOp::Split => 1,
     }
 }
 

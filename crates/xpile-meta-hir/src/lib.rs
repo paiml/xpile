@@ -983,6 +983,9 @@ pub enum StrMethodOp {
     StartsWith,
     /// `.endswith(p)` → `.ends_with(&(p)[..])` (Bool, 1 arg). PMAT-493b.
     EndsWith,
+    /// `.split(sep)` → `.split(&(sep)[..]).map(|s| s.to_string())
+    /// .collect::<Vec<String>>()` (List(Str), 1 arg). PMAT-492c.
+    Split,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
