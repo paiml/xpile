@@ -2344,6 +2344,32 @@ fn main() {
     assert_rustc_runs("list_comp_filter", &rust, driver);
 }
 
+/// PMAT-502az (Tranche 2): filtered dict + set comprehensions
+/// `{k: v for x in xs if cond}` / `{e for x in xs if cond}` — the `if`
+/// guards the desugared insert/add.
+#[test]
+fn dict_set_comp_filter() {
+    let rust = xpile_transpile_to_rust("dict_set_comp_filter.py");
+    // Both desugarings guard the accumulator with an `if`.
+    assert!(
+        rust.contains("if (x > 0i64) {") && rust.contains("__xpile_comp.insert("),
+        "filter guards insert/add:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let m = pos_map(vec![-1, 2, 3]);
+    assert_eq!(m.get(&2), Some(&4));
+    assert_eq!(m.get(&3), Some(&9));
+    assert_eq!(m.len(), 2);
+    let s = pos_set(vec![-1, 2, 2, 3]);
+    assert!(s.contains(&2) && s.contains(&3) && !s.contains(&-1));
+    assert_eq!(s.len(), 2);
+    assert_eq!(dc_assign(vec![1, 6, 7, 2]), 2);
+}
+"#;
+    assert_rustc_runs("dict_set_comp_filter", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

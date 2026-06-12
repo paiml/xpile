@@ -2320,9 +2320,9 @@ fn desugar_dict_comp(
         )));
     }
     let gen = &comp.generators[0];
-    if !gen.ifs.is_empty() {
+    if gen.ifs.len() > 1 {
         return Err(FrontendError::Lower(format!(
-            "function `{}` uses a filtered dict comprehension (`{{… if …}}`) — deferred",
+            "function `{}` uses a dict comprehension with multiple `if` clauses — v0.2.0 supports one (combine with `and`)",
             ctx.fn_name
         )));
     }
@@ -2347,6 +2347,20 @@ fn desugar_dict_comp(
     };
     ctx.bound.insert(var.clone());
     ctx.name_types.insert(var.clone(), elem_in_ty.clone());
+    // PMAT-502az: lower the optional `if` filter (must type as Bool).
+    let filter = match gen.ifs.first() {
+        None => None,
+        Some(cond) => {
+            let c = lower_expr_in_ctx(ctx, cond.clone())?;
+            if infer_type_in_ctx(ctx, &c) != Type::Bool {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` has a dict-comprehension filter that is not Bool (no int-truthiness at v0.2.0)",
+                    ctx.fn_name
+                )));
+            }
+            Some(c)
+        }
+    };
     let key = lower_expr_in_ctx(ctx, (*comp.key).clone())?;
     let value = lower_expr_in_ctx(ctx, (*comp.value).clone())?;
     let k_ty = infer_type_in_ctx(ctx, &key);
@@ -2354,6 +2368,19 @@ fn desugar_dict_comp(
     let dict_ty = Type::Dict(Box::new(k_ty), Box::new(v_ty));
     ctx.bound.insert(target.to_string());
     ctx.name_types.insert(target.to_string(), dict_ty.clone());
+    let insert = Stmt::DictSet {
+        dict_name: target.to_string(),
+        key,
+        value,
+    };
+    let body = match filter {
+        None => vec![insert],
+        Some(cond) => vec![Stmt::If {
+            cond,
+            then_body: vec![insert],
+            else_body: Vec::new(),
+        }],
+    };
     Ok(vec![
         Stmt::Let {
             name: target.to_string(),
@@ -2365,11 +2392,7 @@ fn desugar_dict_comp(
             var,
             iter: iter_expr,
             elem_ty: elem_in_ty,
-            body: vec![Stmt::DictSet {
-                dict_name: target.to_string(),
-                key,
-                value,
-            }],
+            body,
             over_keys: false,
         },
     ])
@@ -2391,9 +2414,9 @@ fn desugar_set_comp(
         )));
     }
     let gen = &comp.generators[0];
-    if !gen.ifs.is_empty() {
+    if gen.ifs.len() > 1 {
         return Err(FrontendError::Lower(format!(
-            "function `{}` uses a filtered set comprehension (`{{… if …}}`) — deferred",
+            "function `{}` uses a set comprehension with multiple `if` clauses — v0.2.0 supports one (combine with `and`)",
             ctx.fn_name
         )));
     }
@@ -2418,11 +2441,37 @@ fn desugar_set_comp(
     };
     ctx.bound.insert(var.clone());
     ctx.name_types.insert(var.clone(), elem_in_ty.clone());
+    // PMAT-502az: lower the optional `if` filter (must type as Bool).
+    let filter = match gen.ifs.first() {
+        None => None,
+        Some(cond) => {
+            let c = lower_expr_in_ctx(ctx, cond.clone())?;
+            if infer_type_in_ctx(ctx, &c) != Type::Bool {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` has a set-comprehension filter that is not Bool (no int-truthiness at v0.2.0)",
+                    ctx.fn_name
+                )));
+            }
+            Some(c)
+        }
+    };
     let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
     let out_ty = infer_type_in_ctx(ctx, &elem);
     let set_ty = Type::Set(Box::new(out_ty));
     ctx.bound.insert(target.to_string());
     ctx.name_types.insert(target.to_string(), set_ty.clone());
+    let insert = Stmt::SetAdd {
+        set_name: target.to_string(),
+        elem,
+    };
+    let body = match filter {
+        None => vec![insert],
+        Some(cond) => vec![Stmt::If {
+            cond,
+            then_body: vec![insert],
+            else_body: Vec::new(),
+        }],
+    };
     Ok(vec![
         Stmt::Let {
             name: target.to_string(),
@@ -2434,10 +2483,7 @@ fn desugar_set_comp(
             var,
             iter: iter_expr,
             elem_ty: elem_in_ty,
-            body: vec![Stmt::SetAdd {
-                set_name: target.to_string(),
-                elem,
-            }],
+            body,
             over_keys: false,
         },
     ])
