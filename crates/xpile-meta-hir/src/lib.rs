@@ -253,6 +253,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::Sorted { list, .. } => expr_has_int_arith(list),
         Expr::Reversed { list } => expr_has_int_arith(list),
         Expr::ListMinMax { list, .. } => expr_has_int_arith(list),
+        // PMAT-502u: list query — recurse into the list and the arg.
+        Expr::ListQuery { list, arg, .. } => expr_has_int_arith(list) || expr_has_int_arith(arg),
         // PMAT-500: set literal / membership — recurse defensively.
         Expr::SetLit(elems) => elems.iter().any(expr_has_int_arith),
         Expr::SetContains { set, elem } => expr_has_int_arith(set) || expr_has_int_arith(elem),
@@ -1083,6 +1085,18 @@ pub enum Expr {
         is_max: bool,
         of_float: bool,
     },
+    /// List query method — Python `xs.count(x)` / `xs.index(x)` over a
+    /// `list[int]`. PMAT-502u (Tranche 2). Both return **Int**. Rust/Ruchy
+    /// emit `<list>.iter().filter(|&&__e| __e == <arg>).count() as i64`
+    /// (count) and
+    /// `<list>.iter().position(|&__e| __e == <arg>).map(|__i| __i as i64)
+    /// .expect(…)` (index — panics if absent, matching Python `ValueError`).
+    /// First cut is `list[int]` (`Copy`+`Eq`). Lean refuses.
+    ListQuery {
+        list: Box<Expr>,
+        op: ListQueryOp,
+        arg: Box<Expr>,
+    },
     /// Unary operation — `not x` (logical, Bool → Bool) or `-x`
     /// (numeric negate, I64 → I64).
     UnOp { op: UnOp, operand: Box<Expr> },
@@ -1282,6 +1296,16 @@ pub enum SetOp {
     Difference,
     /// `a ^ b` → `a.symmetric_difference(&b)`.
     SymmetricDifference,
+}
+
+/// PMAT-502u (Tranche 2): list query methods carried by [`Expr::ListQuery`].
+/// Both return `Int`; `Index` panics on a missing element (Python `ValueError`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ListQueryOp {
+    /// `xs.count(x)` → number of equal elements.
+    Count,
+    /// `xs.index(x)` → index of the first equal element (panics if absent).
+    Index,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
