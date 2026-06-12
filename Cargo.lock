@@ -1006,6 +1006,7 @@ dependencies = [
  "anyhow",
  "clap",
  "latex-contract-frontend",
+ "serde_yaml",
  "xpile-backend",
  "xpile-contract-backend",
  "xpile-contract-frontend",

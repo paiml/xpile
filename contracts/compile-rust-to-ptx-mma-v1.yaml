@@ -39,23 +39,27 @@ compile_targets:
       - rustc_codegen_nvvm
       - rust-cuda
     backend_crate: xpile-ptx-codegen
-    # PMAT-259 / sub/layer5-multi-emitter-quorum.md: this `via` list
-    # is the v0.1.0 flat-string form. The spec'd v0.2.0+ schema
-    # extends each entry to a structured record:
-    #   - emitter: rustc_codegen_nvvm
-    #     role: general
-    #     crate: xpile-ptx-codegen
-    #   - emitter: aprender-gpu
-    #     role: specialist
-    #     cross_repo: aprender
-    #     shape_filter: gemm_fp16_mma_64x128
-    # with a quorum_policy: { kind: DiffExec, tolerance: 1.0e-3 }
-    # field at the compile_targets level. This wires the §14.4
-    # N-of-M oracle quorum into the Runtime stratum: divergence
-    # between general (rustc_codegen_nvvm) and specialist
-    # (aprender-gpu) emitters at runtime falsifies the contract.
-    # Closes the audit-design.md §4 "Run=1 demo fixture" caveat
-    # for C-COMPILE-RUST-TO-PTX-MMA specifically.
+    # PMAT-484 (§30 Track 4): structured emitter-role records for the
+    # §29 Multi-Emitter Oracle Quorum. ADDITIVE alongside the flat
+    # `via:` list above (which pv's current schema validates); the
+    # in-tree test `crates/xpile/tests/contract_via_roles.rs` is the
+    # authoritative validator. Cross-repo pv-engine enforcement of these
+    # roles is the residual PMAT-A5. Divergence between general
+    # (rustc_codegen_nvvm) and specialist (aprender-gpu) emitters at
+    # runtime falsifies the contract — closing the audit-design.md §4
+    # "Run=1 demo fixture" caveat for C-COMPILE-RUST-TO-PTX-MMA once the
+    # DiffExec engine (PMAT-488) executes it on hardware.
+    quorum_policy:
+      kind: DiffExec
+      tolerance: 1.0e-3
+    via_roles:
+      - emitter: rustc_codegen_nvvm
+        role: general
+        crate: xpile-ptx-codegen
+      - emitter: aprender-gpu
+        role: specialist
+        cross_repo: aprender
+        shape_filter: gemm_fp16_mma_64x128
 
 equations:
   mma_emission_for_gemm_kernel:
