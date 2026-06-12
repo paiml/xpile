@@ -283,7 +283,9 @@ mod tests {
         // The synthesised function shape: exactly one Item (the
         // `main` Function) containing two Stmt::Cmds.
         assert_eq!(module.items.len(), 1);
-        let xpile_meta_hir::Item::Function(f) = &module.items[0];
+        let xpile_meta_hir::Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         assert_eq!(f.name, "main");
         assert_eq!(f.body.stmts.len(), 2);
 

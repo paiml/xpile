@@ -150,7 +150,11 @@ impl Backend for BashrsBackend {
 
         let mut emitted_commands = 0usize;
         for item in &module.items {
-            let Item::Function(f) = item;
+            // PMAT-502bj: module-level constants are not part of the shell
+            // domain — skip them (the bashrs lane only walks functions).
+            let Item::Function(f) = item else {
+                continue;
+            };
             // PMAT-040: walk every function's body for `Stmt::Cmd`.
             // PMAT-039's bashrs-frontend produces a single
             // synthesised `main`; PMAT-040's depyler-frontend

@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.96] — 2026-06-13
+
+Tranche-2 slice PMAT-502bj — Python **module-level constants** `NAME = <literal>`.
+
+New meta-HIR `Item::Const { name, ty, value }` — the first non-function top-level
+item (previously only `def` was accepted at module level). A `NAME = <literal>` /
+`NAME: T = <literal>` whose value is an `int` / `bool` / `float` literal (or a
+negated numeric literal, folded to a plain negative literal so it stays
+`const`-evaluable) lowers to a constant item. Rust + Ruchy emit
+`const <name>: <ty> = <value>;`; Lean emits `def <name> : <ty> := <value>`. A
+pre-pass records each constant's type so references in function bodies resolve
+correctly (a same-named parameter shadows the constant). `str` / collection /
+computed-expression constants are rejected with a precise error (deferred — `str`
+needs `&str`). rustc round-trip `module_const.py`: `get_max() -> 100`,
+`use_neg(10) -> 5` (with `NEG = -5`), `use_flag() -> true`,
+`scaled(4.0) -> 10.0` (with `RATIO = 2.5`).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.95] — 2026-06-13
 
 Tranche-2 slice PMAT-502bi — Python **`s.index(sub)`** (substring index).

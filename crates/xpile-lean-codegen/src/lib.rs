@@ -51,6 +51,14 @@ pub fn emit_module(module: &Module) -> Result<String, LeanCodegenError> {
                     emit_function(&mut out, f)?;
                 }
             }
+            // PMAT-502bj: module-level constant → `def NAME : T := value`.
+            Item::Const { name, ty, value } => {
+                write!(out, "def {name} : ")?;
+                emit_type(&mut out, ty)?;
+                out.push_str(" := ");
+                emit_expr(&mut out, value)?;
+                out.push('\n');
+            }
         }
     }
     Ok(out)
