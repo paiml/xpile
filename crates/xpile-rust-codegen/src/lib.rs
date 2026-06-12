@@ -610,6 +610,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str("{ let __cs = &(");
                 emit_expr(out, recv, mode)?;
                 out.push_str("); let mut __ch = __cs.chars(); match __ch.next() { Some(__f) => __f.to_uppercase().collect::<String>() + &(__ch.as_str().to_lowercase()), None => String::new() } }");
+            } else if matches!(op, StrMethodOp::Title) {
+                // PMAT-502aj: `.title()` → upper the first alpha of each word,
+                // lower the rest; any non-alpha is a word boundary (matches
+                // Python, incl. `"it's".title()` → `"It'S"`).
+                out.push_str("{ let mut __tr = String::new(); let mut __pa = false; for __c in (");
+                emit_expr(out, recv, mode)?;
+                out.push_str(").chars() { if __c.is_alphabetic() { if __pa { __tr.extend(__c.to_lowercase()); } else { __tr.extend(__c.to_uppercase()); } __pa = true; } else { __tr.push(__c); __pa = false; } } __tr }");
             } else {
                 emit_expr(out, recv, mode)?;
                 match op {
@@ -659,6 +666,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                         unreachable!("classification predicates handled above")
                     }
                     StrMethodOp::Capitalize => unreachable!("capitalize handled above"),
+                    StrMethodOp::Title => unreachable!("title handled above"),
                 }
             }
         }

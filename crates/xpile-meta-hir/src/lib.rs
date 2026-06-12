@@ -1367,6 +1367,12 @@ pub enum StrMethodOp {
     /// char (`to_uppercase`) and lower-cases the remainder; the empty
     /// string maps to `""` (matching Python).
     Capitalize,
+    /// `.title()` → title-case: the first alphabetic char of each word is
+    /// upper-cased, the rest lower-cased; any non-alphabetic char is a word
+    /// boundary (**Str**, 0 args). PMAT-502aj. Emits a fold that tracks
+    /// "previous char was alphabetic", matching Python's exact semantics
+    /// (e.g. `"it's".title()` → `"It'S"`).
+    Title,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

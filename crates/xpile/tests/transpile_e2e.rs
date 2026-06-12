@@ -1517,6 +1517,27 @@ fn main() {
     assert_rustc_runs("str_capitalize", &rust, driver);
 }
 
+/// PMAT-502aj (Tranche 2): `s.title()` → title-case each word, matching
+/// Python's exact word-boundary semantics.
+#[test]
+fn str_title() {
+    let rust = xpile_transpile_to_rust("str_title.py");
+    assert!(
+        rust.contains("__c.is_alphabetic()") && rust.contains("__pa"),
+        "expected title-case fold, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(t(String::from("hello world")), String::from("Hello World"));
+    assert_eq!(t(String::from("HELLO")), String::from("Hello"));
+    assert_eq!(t(String::from("123abc")), String::from("123Abc"));
+    assert_eq!(t(String::from("it's")), String::from("It'S"));
+    assert_eq!(t(String::from("")), String::from(""));
+}
+"#;
+    assert_rustc_runs("str_title", &rust, driver);
+}
+
 /// PMAT-502m (Tranche 2): numeric conversions `int(x)` / `float(x)` →
 /// `((x) as i64)` (truncate toward zero) / `((x) as f64)`.
 #[test]

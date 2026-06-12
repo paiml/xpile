@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.68] — 2026-06-12
+
+Tranche-2 slice PMAT-502aj — Python **`s.title()`**.
+
+New `StrMethodOp::Title` (0-arg, → `Str`). `s.title()` lowers to a fold that
+upper-cases the first alphabetic char of each word and lower-cases the rest —
+any non-alphabetic char is a word boundary — in Rust + Ruchy:
+`{ let mut __tr = String::new(); let mut __pa = false; for __c in (s).chars() {
+if __c.is_alphabetic() { if __pa { __tr.extend(__c.to_lowercase()); } else {
+__tr.extend(__c.to_uppercase()); } __pa = true; } else { __tr.push(__c); __pa =
+false; } } __tr }`. This matches Python exactly, including the apostrophe quirk
+(`"it's".title()` → `"It'S"`). Rounds out the case-transform family
+(upper/lower/capitalize/title). Lean refuses. rustc round-trip `str_title.py`:
+`t("hello world") -> "Hello World"`, `t("HELLO") -> "Hello"`,
+`t("123abc") -> "123Abc"`, `t("it's") -> "It'S"`, `t("") -> ""`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.67] — 2026-06-12
 
 Tranche-2 slice PMAT-502ai — Python **standalone `enumerate(xs)` / `zip(a, b)`**.
