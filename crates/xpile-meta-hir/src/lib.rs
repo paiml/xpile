@@ -93,6 +93,8 @@ impl Function {
 
 fn stmt_has_int_arith(s: &Stmt) -> bool {
     match s {
+        // PMAT-479 (R10): early return — recurse into the returned expr.
+        Stmt::Return(e) => expr_has_int_arith(e),
         Stmt::Let { value, .. } | Stmt::Assign { value, .. } => expr_has_int_arith(value),
         Stmt::While { cond, body } => {
             if expr_has_int_arith(cond) {
@@ -268,6 +270,17 @@ pub struct Block {
 // Vec<Stmt>), so the derive is mechanical.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Stmt {
+    /// `return <expr>;` as an **early** return — a mid-body return,
+    /// typically inside an [`Stmt::If`] branch (a guard clause:
+    /// `if (n <= 1) { return 1; } return n * …;`). PMAT-479 (R10).
+    ///
+    /// The function's *final* value still flows through
+    /// [`Block::trailing_return`]; this variant is only for the
+    /// non-final returns. Rust/Ruchy emit `return <expr>;` (the trailing
+    /// expression remains the fallthrough value). Lean refuses (early
+    /// return needs a match/monadic encoding; Lean keeps the
+    /// single-trailing-return shape at v0.2.0).
+    Return(Expr),
     /// `if cond { then_body } else { else_body }` — an if/else as a
     /// *statement* (not the if-as-let-expression form). PMAT-478 (R9).
     /// Produced by the decy C frontend for `if (c) { … } else { … }`

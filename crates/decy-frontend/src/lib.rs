@@ -437,10 +437,15 @@ impl<'a> Parser<'a> {
         self.eat(&Tok::LBrace)?;
         let mut body = Vec::new();
         while !matches!(self.peek(), Some(Tok::RBrace)) {
+            // PMAT-479 (R10): early `return <expr>;` inside a branch →
+            // Stmt::Return (guard clauses). The function still ends with
+            // a trailing return; this is a non-final return.
             if matches!(self.peek(), Some(Tok::Return)) {
-                return Err(format!(
-                    "function `{fn_name}`: `return` inside an `if`/`else` branch is not supported at v0.2.0 (the meta-HIR uses a single trailing return)"
-                ));
+                self.bump();
+                let e = self.parse_expr()?;
+                self.eat(&Tok::Semi)?;
+                body.push(Stmt::Return(e));
+                continue;
             }
             body.push(self.parse_stmt(fn_name)?);
         }

@@ -232,6 +232,29 @@ fn xpile_transpile_to_rust(fixture_name: &str) -> String {
     String::from_utf8(out.stdout).expect("stdout is UTF-8")
 }
 
+/// PMAT-479 (R10): C early returns (guard clauses) — a non-final
+/// `return` inside an if-branch lowers to `Stmt::Return`; the function
+/// still ends with a trailing return. Recursive `fact` via a guard
+/// clause and a 3-way `sign` must compute correctly.
+#[test]
+fn c_early_return_guard_clauses_roundtrip() {
+    let rust = xpile_transpile_to_rust("c_early_return.c");
+    assert!(
+        rust.contains("return 1i32;"),
+        "early return inside a branch should emit `return e;`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(fact(0), 1);
+    assert_eq!(fact(5), 120);
+    assert_eq!(sign(7), 1);
+    assert_eq!(sign(-3), -1);
+    assert_eq!(sign(0), 0);
+}
+"#;
+    assert_rustc_runs("c_early_return", &rust, driver);
+}
+
 /// PMAT-478 (R9): C if/else statements (`Stmt::If`) — the decy
 /// frontend's first statement-level branching (beyond the ternary).
 /// Locals reassigned in a branch are inferred `mut`.
