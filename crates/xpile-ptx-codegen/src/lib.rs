@@ -168,6 +168,111 @@ impl TargetEmitter for MatmulSpecialistEmitter {
     }
 }
 
+// ─── PMAT-481: offline PTX well-formedness gate (§30 Track 4) ────────
+//
+// A *structural* check on emitted PTX text — it does NOT execute
+// anything and is not the model→emission gate (that is the `DiffExec`
+// slice, PMAT-488). It exists so that the moment a real emitter lands
+// (PMAT-485, the `nvptx64` path) its output is gated for well-formedness
+// on FREE CI, and the `ptxas`-assembles step (wired with that emitter)
+// derives its `-arch` from the same `compute_capability` checked here —
+// never a hard-coded `sm_80`. Callers gate on [`ptx_looks_real`] so the
+// v0.1.0 scaffold comment placeholder is never treated as real emission.
+
+/// Reasons emitted PTX text fails the [`validate_ptx`] well-formedness gate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PtxValidationError {
+    /// No `.version` directive — not PTX at all (e.g. the scaffold placeholder).
+    MissingVersion,
+    /// No `.target` directive.
+    MissingTarget,
+    /// `.target` arch does not match the requested compute capability.
+    TargetMismatch { expected: String, found: String },
+    /// No `.address_size 64` directive.
+    MissingAddressSize,
+    /// No `.visible .entry` kernel entry point.
+    MissingEntry,
+}
+
+impl std::fmt::Display for PtxValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingVersion => write!(f, "PTX is missing a `.version` directive"),
+            Self::MissingTarget => write!(f, "PTX is missing a `.target` directive"),
+            Self::TargetMismatch { expected, found } => write!(
+                f,
+                "PTX `.target {found}` does not match requested compute capability `{expected}`"
+            ),
+            Self::MissingAddressSize => write!(f, "PTX is missing `.address_size 64`"),
+            Self::MissingEntry => write!(f, "PTX has no `.visible .entry` kernel"),
+        }
+    }
+}
+
+impl std::error::Error for PtxValidationError {}
+
+/// `true` when `text` looks like real PTX (carries a `.version`
+/// directive) rather than the v0.1.0 scaffold comment placeholder.
+pub fn ptx_looks_real(text: &str) -> bool {
+    directive_present(text, ".version")
+}
+
+/// The `ptxas -arch=<…>` value for a PTX `.target` compute capability —
+/// **derived, never hard-coded** (PMAT-481). The `ptxas` assemble step
+/// (free CI, wired with the real emitter in PMAT-485) uses this so the
+/// assembled arch always matches the emitted `.target`.
+pub fn ptxas_arch(compute_capability: &str) -> String {
+    format!("-arch={compute_capability}")
+}
+
+/// PMAT-481 — structural well-formedness check on emitted PTX text:
+/// `.version`, `.target` matching `compute_capability`, `.address_size
+/// 64`, and at least one `.visible .entry`. Pure text — no GPU, no
+/// `ptxas`. Gate on [`ptx_looks_real`] first so the scaffold placeholder
+/// is not treated as real emission.
+pub fn validate_ptx(text: &str, compute_capability: &str) -> Result<(), PtxValidationError> {
+    if !directive_present(text, ".version") {
+        return Err(PtxValidationError::MissingVersion);
+    }
+    let target = ptx_target_arch(text).ok_or(PtxValidationError::MissingTarget)?;
+    if target != compute_capability {
+        return Err(PtxValidationError::TargetMismatch {
+            expected: compute_capability.to_string(),
+            found: target,
+        });
+    }
+    if !directive_present(text, ".address_size 64") {
+        return Err(PtxValidationError::MissingAddressSize);
+    }
+    if !text.contains(".visible .entry") {
+        return Err(PtxValidationError::MissingEntry);
+    }
+    Ok(())
+}
+
+/// True when a non-comment line starts with `directive`.
+fn directive_present(text: &str, directive: &str) -> bool {
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with("//"))
+        .any(|l| l.starts_with(directive))
+}
+
+/// Extract the arch token (e.g. `sm_80`) from the `.target` directive.
+fn ptx_target_arch(text: &str) -> Option<String> {
+    text.lines().map(str::trim).find_map(|l| {
+        if l.starts_with("//") {
+            return None;
+        }
+        let rest = l.strip_prefix(".target")?;
+        if !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
+            return None; // e.g. `.target_foo` — not the directive
+        }
+        let arch = rest.trim().split([',', ' ']).next().unwrap_or("").trim();
+        (!arch.is_empty()).then(|| arch.to_string())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,5 +421,86 @@ mod tests {
         };
         let err = backend.lower(&matmul_module(), &cfg).unwrap_err();
         assert!(matches!(err, BackendError::MissingHardware(Target::Ptx)));
+    }
+
+    // ─── PMAT-481: offline PTX well-formedness gate ─────────────────
+
+    /// A minimal but real PTX kernel, the shape `nvptx64-nvidia-cuda`
+    /// rustc emits (verified on-box) — what PMAT-485 will produce.
+    const GOLDEN_PTX_SM80: &str = "\
+//
+// Generated by LLVM NVPTX Back-End
+//
+.version 6.0
+.target sm_80
+.address_size 64
+
+\t.visible .entry add_one(
+\t\t.param .u64 add_one_param_0
+\t)
+\t{
+\t\tret;
+\t}
+";
+
+    #[test]
+    fn validate_ptx_accepts_well_formed_kernel() {
+        assert_eq!(validate_ptx(GOLDEN_PTX_SM80, "sm_80"), Ok(()));
+    }
+
+    #[test]
+    fn ptx_looks_real_classifies_golden_vs_scaffold() {
+        assert!(ptx_looks_real(GOLDEN_PTX_SM80));
+        // The v0.1.0 scaffold output is comment-only — must NOT be
+        // treated as real PTX (so PMAT-481 never false-fails on it).
+        let scaffold = PtxBackend::new()
+            .lower(&dummy_module(), &ptx_config("sm_80"))
+            .unwrap()
+            .primary;
+        assert!(!ptx_looks_real(&scaffold));
+    }
+
+    #[test]
+    fn validate_ptx_rejects_scaffold_placeholder() {
+        let scaffold = PtxBackend::new()
+            .lower(&dummy_module(), &ptx_config("sm_80"))
+            .unwrap()
+            .primary;
+        assert_eq!(
+            validate_ptx(&scaffold, "sm_80"),
+            Err(PtxValidationError::MissingVersion)
+        );
+    }
+
+    #[test]
+    fn validate_ptx_detects_target_mismatch() {
+        // arch is derived from the requested capability, never pinned.
+        assert_eq!(
+            validate_ptx(GOLDEN_PTX_SM80, "sm_90"),
+            Err(PtxValidationError::TargetMismatch {
+                expected: "sm_90".into(),
+                found: "sm_80".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn validate_ptx_requires_address_size_and_entry() {
+        let no_addr = ".version 6.0\n.target sm_80\n.visible .entry k() { ret; }\n";
+        assert_eq!(
+            validate_ptx(no_addr, "sm_80"),
+            Err(PtxValidationError::MissingAddressSize)
+        );
+        let no_entry = ".version 6.0\n.target sm_80\n.address_size 64\n";
+        assert_eq!(
+            validate_ptx(no_entry, "sm_80"),
+            Err(PtxValidationError::MissingEntry)
+        );
+    }
+
+    #[test]
+    fn ptxas_arch_derives_from_capability_not_hardcoded() {
+        assert_eq!(ptxas_arch("sm_89"), "-arch=sm_89");
+        assert_eq!(ptxas_arch("sm_90"), "-arch=sm_90");
     }
 }
