@@ -151,6 +151,8 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         // into both key and value expressions.
         Stmt::DictSet { key, value, .. } => expr_has_int_arith(key) || expr_has_int_arith(value),
         Stmt::Assert { cond } => expr_has_int_arith(cond),
+        // PMAT-503a: raise — recurse into the panic message expression.
+        Stmt::Raise { message } => expr_has_int_arith(message),
         // PMAT-039: shell commands are governed by `C-BASHRS-POSIX-IDEMPOTENCE`,
         // not `C-PY-INT-ARITH`. The args are `Vec<String>` (literal
         // tokens) — no arithmetic operands.
@@ -493,6 +495,15 @@ pub enum Stmt {
     /// Lowers to `assert!(cond);` in Rust/Ruchy. Lean is skipped (Lean's
     /// assertion machinery requires `Decidable` instances; deferred). PMAT-009.
     Assert { cond: Expr },
+    /// `raise SomeException("message")` — the first decomposed sub-slice of
+    /// PMAT-503 (exceptions). The `message` is the exception constructor's
+    /// single string argument (an `Expr::LitStr`, an f-string `Concat`, or
+    /// any `Type::Str` expression). Lowers to `panic!("{}", <message>)` in
+    /// Rust/Ruchy — the diverging `!` type unifies with any function return,
+    /// so a `raise` inside a guard clause type-checks. Lean refuses. The
+    /// `try/except` catch side and `Result`-typed propagation follow as
+    /// their own slices. PMAT-503a.
+    Raise { message: Expr },
     /// `program arg1 arg2 ...` — a single shell-command invocation.
     /// PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B: the first shell
     /// variant to land in meta-HIR.

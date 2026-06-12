@@ -290,6 +290,15 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-503a: `raise` is unsupported in the Lean lane entirely
+            // (panic has no total-function encoding); refuse it here too.
+            Stmt::Raise { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has a `raise` inside a while loop; \
+                     Python exceptions are not supported in the Lean lane",
+                    f.name
+                )));
+            }
         }
     }
 
@@ -768,6 +777,13 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         Stmt::Assert { .. } => unreachable!(
             "Stmt::Assert handled in emit_stmts_then_trailing — emit_stmt called directly"
         ),
+        // PMAT-503a: Python exceptions have no total-function encoding in
+        // the Lean lane — `raise` is refused (use `--target rust`/`ruchy`).
+        Stmt::Raise { .. } => Err(LeanCodegenError::Unsupported(
+            "Stmt::Raise (Python `raise`) is not lowered by the Lean backend — \
+             exceptions have no total-function encoding; use `--target rust` or `--target ruchy`"
+                .into(),
+        )),
         // PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B: Lean has no
         // notion of shell-command invocation. `C-BASHRS-POSIX-IDEMPOTENCE`
         // governs `Stmt::Cmd`; any cross-domain refinement would lower

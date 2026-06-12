@@ -101,7 +101,10 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::LetTuple { .. } => false,
             // PMAT-479 (R10): an early return introduces no BigInt
             // binding (bigint mode is set by params/lets/return type).
-            Stmt::Assign { .. } | Stmt::Assert { .. } | Stmt::Return(_) => false,
+            // PMAT-503a: a raise introduces no BigInt binding.
+            Stmt::Assign { .. } | Stmt::Assert { .. } | Stmt::Return(_) | Stmt::Raise { .. } => {
+                false
+            }
             Stmt::While { body, .. }
             | Stmt::ForEach { body, .. }
             | Stmt::ForEachPair { body, .. } => body.iter().any(stmt_has_bigint),
@@ -364,6 +367,15 @@ fn emit_stmt_indented(
         Stmt::Assert { cond } => {
             write!(out, "{indent}assert!(")?;
             emit_expr(out, cond, mode)?;
+            writeln!(out, ");")?;
+            Ok(())
+        }
+        // PMAT-503a: `raise Exc("msg")` → `panic!("{}", <message>);`. The
+        // diverging `!` type unifies with any function return, so a `raise`
+        // in a guard clause type-checks without a phantom value.
+        Stmt::Raise { message } => {
+            write!(out, "{indent}panic!(\"{{}}\", ")?;
+            emit_expr(out, message, mode)?;
             writeln!(out, ");")?;
             Ok(())
         }
