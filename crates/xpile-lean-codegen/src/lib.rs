@@ -445,6 +445,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 collect_idents(e, out);
             }
         }
+        // PMAT-502q: tuple constant-index — recurse into the tuple expr.
+        Expr::TupleIndex { tuple, .. } => collect_idents(tuple, out),
         // PMAT-496: slice — recurse into collection + bound expressions.
         Expr::Slice {
             collection, lo, hi, ..
@@ -885,6 +887,15 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::TupleLit(_) => {
             return Err(LeanCodegenError::Unsupported(
                 "Python tuple literals are not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502q: tuple indexing deferred in the Lean lane (tuples
+        // are unsupported there at first cut).
+        Expr::TupleIndex { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python tuple indexing (t[N]) is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

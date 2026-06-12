@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.49] — 2026-06-12
+
+Tranche-2 slice PMAT-502q — Python **tuple constant-indexing** `t[N]`.
+
+New meta-HIR `Expr::TupleIndex { tuple, index }`. Over a `Tuple`-typed `t` with
+a compile-time non-negative literal `N` in range, `t[N]` lowers to
+`(<tuple>).N.clone()` in Rust + Ruchy — Rust tuples use field access (`t.0`),
+not `[]` indexing, so this is a distinct node from `Expr::Index` (list/dict
+subscript); the `.clone()` keeps the owned-value posture. Result types as the
+N-th element type. Out-of-range / non-literal / negative indices fall through to
+the existing list-index path's error. Lean refuses (tuples unsupported there).
+rustc round-trip `tuple_index.py`: `first((10,20)) -> 10`,
+`second((10,20)) -> 20`, `from_local(3,4) -> 7` (local tuple `t=(a,b)`,
+`t[0]+t[1]`).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.48] — 2026-06-12
 
 Tranche-2 slice PMAT-502p — Python **chained comparisons** `a < b < c`.

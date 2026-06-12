@@ -654,6 +654,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             }
             out.push(')');
         }
+        // PMAT-502q: Python `t[N]` (tuple) → `(<tuple>).N.clone()` — Rust
+        // tuple field access, owned-value posture (matches list-index clone).
+        Expr::TupleIndex { tuple, index } => {
+            out.push('(');
+            emit_expr(out, tuple, mode)?;
+            write!(out, ").{index}.clone()")?;
+        }
         // PMAT-496: Python `xs[lo:hi]` slice → `<c>[(lo) as usize..(hi)
         // as usize].to_vec()` (list) / `.to_string()` (str).
         Expr::Slice {

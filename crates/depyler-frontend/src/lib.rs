@@ -2348,6 +2348,11 @@ fn infer_type(e: &Expr) -> Type {
         Expr::SetOp { lhs, .. } => infer_type(lhs),
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => Type::Tuple(elems.iter().map(infer_type).collect()),
+        // PMAT-502q: tuple constant-index → the N-th element type.
+        Expr::TupleIndex { tuple, index } => match infer_type(tuple) {
+            Type::Tuple(elems) => elems.get(*index).cloned().unwrap_or(Type::I64),
+            _ => Type::I64,
+        },
         // PMAT-496: a slice has the same type as its collection.
         Expr::Slice { collection, .. } => infer_type(collection),
         // PMAT-498: numeric builtin types as its first argument.
@@ -2515,6 +2520,11 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::TupleLit(elems) => {
             Type::Tuple(elems.iter().map(|e| infer_type_in_ctx(ctx, e)).collect())
         }
+        // PMAT-502q: tuple constant-index → the N-th element type.
+        Expr::TupleIndex { tuple, index } => match infer_type_in_ctx(ctx, tuple) {
+            Type::Tuple(elems) => elems.get(*index).cloned().unwrap_or(Type::I64),
+            _ => Type::I64,
+        },
         // PMAT-496: a slice has the same type as its collection.
         Expr::Slice { collection, .. } => infer_type_in_ctx(ctx, collection),
         // PMAT-498: numeric builtin types as its first argument.
@@ -2682,6 +2692,25 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     dict: Box::new(collection),
                     key: Box::new(key),
                 });
+            }
+            // PMAT-502q: `t[N]` over a Tuple-typed `t` with a compile-time
+            // non-negative literal N in range → field access `t.N` (Rust
+            // tuples don't support `[]` indexing). Out-of-range / non-literal
+            // / negative indices fall through to the list-index path's error.
+            if let Type::Tuple(elem_tys) = infer_type_in_ctx(ctx, &collection) {
+                if let ast::Expr::Constant(c) = sub.slice.as_ref() {
+                    if let ast::Constant::Int(n) = &c.value {
+                        if let Some(idx) = n.to_string().parse::<i64>().ok().filter(|i| *i >= 0) {
+                            let idx = idx as usize;
+                            if idx < elem_tys.len() {
+                                return Ok(Expr::TupleIndex {
+                                    tuple: Box::new(collection),
+                                    index: idx,
+                                });
+                            }
+                        }
+                    }
+                }
             }
             lower_expr(ast::Expr::Subscript(sub))
         }
