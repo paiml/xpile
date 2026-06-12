@@ -493,6 +493,12 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(list, out);
             collect_idents(&lambda.body, out);
         }
+        // PMAT-502ai: enumerate/zip — recurse into the source list(s).
+        Expr::Enumerate { list } => collect_idents(list, out),
+        Expr::Zip { left, right } => {
+            collect_idents(left, out);
+            collect_idents(right, out);
+        }
         // PMAT-502e: min/max reduction — recurse into the list expression.
         Expr::ListMinMax { list, .. } => collect_idents(list, out),
         // PMAT-502u: list query — recurse into the list and the arg.
@@ -1009,6 +1015,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::Map { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python map(f, xs) is not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502ai: enumerate/zip deferred in the Lean lane at first cut.
+        Expr::Enumerate { .. } | Expr::Zip { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python enumerate(xs)/zip(xs, ys) is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

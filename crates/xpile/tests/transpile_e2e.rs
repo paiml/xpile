@@ -1334,6 +1334,29 @@ fn main() {
     assert_rustc_runs("map_lambda", &rust, driver);
 }
 
+/// PMAT-502ai (Tranche 2): standalone `enumerate(xs)` / `zip(a, b)` →
+/// materialized `Vec`s of tuples (compose with `for`-pair loops and `len`).
+#[test]
+fn enumerate_zip_standalone() {
+    let rust = xpile_transpile_to_rust("enumerate_zip_standalone.py");
+    assert!(
+        rust.contains(".iter().cloned().enumerate().map(|(__i, __e)| (__i as i64, __e))")
+            && rust.contains(".iter().cloned().zip("),
+        "expected enumerate/zip emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // idx_sum: sum(i*x) over enumerate -> 0*10 + 1*20 + 2*30 = 80
+    assert_eq!(idx_sum(vec![10, 20, 30]), 80);
+    // dot: 1*4 + 2*5 + 3*6 = 32
+    assert_eq!(dot(vec![1, 2, 3], vec![4, 5, 6]), 32);
+    // zip truncates to shorter
+    assert_eq!(n_pairs(vec![1, 2, 3], vec![9, 9]), 2);
+}
+"#;
+    assert_rustc_runs("enumerate_zip_standalone", &rust, driver);
+}
+
 /// PMAT-502e (Tranche 2): 1-arg `min(xs)`/`max(xs)` over an int list →
 /// `xs.iter().copied().min().unwrap()` (or `.max()`).
 #[test]

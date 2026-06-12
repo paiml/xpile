@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.67] — 2026-06-12
+
+Tranche-2 slice PMAT-502ai — Python **standalone `enumerate(xs)` / `zip(a, b)`**.
+
+New meta-HIR `Expr::Enumerate { list }` and `Expr::Zip { left, right }` — the
+builtins used outside a `for` header (the for-loop forms shipped in PMAT-495).
+`enumerate(xs)` → `xs.iter().cloned().enumerate().map(|(__i, __e)| (__i as i64,
+__e)).collect::<Vec<_>>()` (result `List(Tuple[I64, elem])`); `zip(a, b)` →
+`a.iter().cloned().zip(b.iter().cloned()).collect::<Vec<_>>()` (result
+`List(Tuple[elemL, elemR])`, truncated to the shorter) in Rust + Ruchy.
+`list(enumerate(…))`/`list(zip(…))` unwrap to the same node. They compose with
+the `for k, v in …` pair-destructuring loop (v0.1.57) and `len(…)` (v0.1.55).
+Lean refuses. rustc round-trip `enumerate_zip_standalone.py`:
+`idx_sum([10,20,30]) -> 80`, `dot([1,2,3],[4,5,6]) -> 32`,
+`n_pairs([1,2,3],[9,9]) -> 2` (zip truncates).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.66] — 2026-06-12
 
 Tranche-2 slice PMAT-502ah — Python **`s.capitalize()`**.
