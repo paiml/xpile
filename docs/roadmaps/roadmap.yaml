@@ -777,6 +777,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Stmt::SetRemove { set_name, elem, error_if_absent }. Both remove elem from the receiver (marked mut), differing only on an absent element: s.remove(x) (error_if_absent=true) -> assert!(<set>.remove(&(<elem>)), \"xpile: KeyError: ...\"); (panics = Python KeyError); s.discard(x) -> <set>.remove(&(<elem>)); (bool discarded; absent = silent no-op). Frontend recognises both in try_lower_list_method_call (Set receiver, 1 arg), disambiguated from unrelated list.remove by receiver type; mutability pre-pass counts remove/discard. Completes the set-mutation surface (add/remove/discard). Lean refuses (in-place mutation). rustc round-trip set_remove.py: drop({1,2,3},2)->2, disc({1},99)->1 (absent no-op), drop_local()->2 (local receiver), drop({1},99) panics (catch_unwind). FREE CI. SHIPPED v0.1.80."
+- id: PMAT-502AW
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502aw: [Tranche2] string padding s.rjust(w) / s.ljust(w)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Two new StrMethodOp variants (RJust, LJust), each a 1-arg width method returning Str. s.rjust(w) -> format!(\"{:>1$}\", <s>, (<w>) as usize) (right-justify, space-pad left); s.ljust(w) -> format!(\"{:<1$}\", <s>, (<w>) as usize). Rust format width is a MINIMUM so a string already >= w is returned unchanged = Python (no truncation). Emitted as block-form special case before the recv-once str method match in rust+ruchy (recv and width both inside format!). Non-default fill char (s.rjust(w, '*')) deferred. Lean refuses (str methods not in Lean lane). rustc round-trip str_just.py: pad_r(hi,5)->'   hi', pad_l(hi,5)->'hi   ', pad_r(hello,3)->'hello' (no truncation), lit_pad()->'   hi'. FREE CI. SHIPPED v0.1.81."
 - id: PMAT-465
   github_issue: 496
   item_type: task

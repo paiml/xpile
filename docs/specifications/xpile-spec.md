@@ -884,6 +884,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502at** — item deletion `del coll[key]` (`Stmt::DelItem`) | list → `<name>.remove((<k>) as usize);`; dict → `<name>.remove(&(<k>));`; `is_dict` from receiver type; receiver `mut`; absent-dict-key KeyError deferred; Lean refuses | ✅ SHIPPED v0.1.78 |
 | **PMAT-502au** — dict pop (expr) `d.pop(k)` / `d.pop(k, default)` (`Expr::DictPop`) | `(<dict>).remove(&(<k>)).unwrap()` (KeyError if absent) / `.unwrap_or(<default>)`; result = value type; receiver `mut` via `count_pop_receivers`; Lean refuses | ✅ SHIPPED v0.1.79 |
 | **PMAT-502av** — set removal `s.remove(x)` / `s.discard(x)` (`Stmt::SetRemove`) | `remove` → `assert!(<set>.remove(&(<x>)), "…KeyError…");`; `discard` → `<set>.remove(&(<x>));`; receiver `mut`; completes set add/remove/discard; Lean refuses | ✅ SHIPPED v0.1.80 |
+| **PMAT-502aw** — str padding `s.rjust(w)` / `s.ljust(w)` (`StrMethodOp::RJust`/`LJust`) | `format!("{:>1$}", <s>, (<w>) as usize)` / `{:<1$}`; format width = minimum (no truncation, matches Python); fill-char arg deferred; Lean refuses | ✅ SHIPPED v0.1.81 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |
