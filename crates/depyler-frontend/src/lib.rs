@@ -758,6 +758,10 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         ast::Stmt::While(w) => lower_while_stmt(ctx, w).map(|s| vec![s]),
         ast::Stmt::For(f) => lower_for_stmt(ctx, f),
         ast::Stmt::Assert(a) => lower_assert_stmt(ctx, a).map(|s| vec![s]),
+        // PMAT-503a: `raise SomeException("msg")` → `Stmt::Raise`. Works
+        // both at top level and inside a guard-clause `if` (this fn is the
+        // recursion point for if-branch bodies).
+        ast::Stmt::Raise(r) => lower_raise_stmt(ctx, r).map(|s| vec![s]),
         ast::Stmt::Return(_) => Err(FrontendError::Lower(format!(
             "function `{}` has an early `return` — only the last statement may be `return` at v0.1.0",
             ctx.fn_name
@@ -1261,6 +1265,65 @@ fn lower_assert_stmt(ctx: &mut LoweringCtx, a: ast::StmtAssert) -> Result<Stmt, 
         )));
     }
     Ok(Stmt::Assert { cond })
+}
+
+/// PMAT-503a (first sub-slice of PMAT-503 exceptions): lower
+/// `raise SomeException("message")` to [`Stmt::Raise`]. The supported
+/// forms are `raise Exc("msg")` / `raise Exc(<str-expr>)` (1 string arg),
+/// `raise Exc()` (no args → the class name is the message), and a bare
+/// `raise Exc` class name. A re-raising bare `raise` and the
+/// `raise ... from ...` cause form are rejected at this first cut.
+fn lower_raise_stmt(ctx: &mut LoweringCtx, r: ast::StmtRaise) -> Result<Stmt, FrontendError> {
+    if r.cause.is_some() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` uses `raise ... from ...` — the cause form is not supported at v0.1.0",
+            ctx.fn_name
+        )));
+    }
+    let Some(exc) = r.exc else {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` uses a bare `raise` (re-raise) — only `raise Exc(\"msg\")` is supported at v0.1.0",
+            ctx.fn_name
+        )));
+    };
+    let message = match *exc {
+        // `raise ValueError("msg")` / `raise Exception(<str expr>)`.
+        ast::Expr::Call(call) if call.keywords.is_empty() && call.args.len() == 1 => {
+            let msg = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+            if infer_type_in_ctx(ctx, &msg) != Type::Str {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` raises with a non-string message — only a `Str` \
+                     message (`raise Exc(\"...\")`) is supported at v0.1.0",
+                    ctx.fn_name
+                )));
+            }
+            msg
+        }
+        // `raise ValueError()` — no message → use the exception class name.
+        ast::Expr::Call(call) if call.keywords.is_empty() && call.args.is_empty() => {
+            Expr::LitStr(exc_class_name(&call.func))
+        }
+        // `raise StopIteration` — a bare exception class name.
+        ast::Expr::Name(name) => Expr::LitStr(name.id.to_string()),
+        other => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` uses an unsupported `raise` form: {:?}",
+                ctx.fn_name,
+                std::mem::discriminant(&other)
+            )));
+        }
+    };
+    Ok(Stmt::Raise { message })
+}
+
+/// Best-effort name of the exception class in a `raise Exc(...)` callee —
+/// used as the panic message when the constructor has no string argument.
+fn exc_class_name(func: &ast::Expr) -> String {
+    match func {
+        ast::Expr::Name(n) => n.id.to_string(),
+        ast::Expr::Attribute(a) => a.attr.to_string(),
+        _ => "exception".to_string(),
+    }
 }
 
 /// Lower a Python `if/elif*/else` statement whose every branch is a

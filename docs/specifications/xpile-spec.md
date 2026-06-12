@@ -841,7 +841,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502c** — `sorted(xs)` (`Expr::Sorted`) | `{ let mut __xv = xs.clone(); __xv.sort(); __xv }` | ✅ SHIPPED v0.1.34 (`reverse=`/`key=` → follow-up) |
 | **PMAT-502d** — `reversed(xs)` (`Expr::Reversed`) | `{ let mut __xv = xs.clone(); __xv.reverse(); __xv }`; `list(reversed(xs))` unwraps to the same | ✅ SHIPPED v0.1.35 |
 | **PMAT-502e** — 1-arg `min(xs)`/`max(xs)` over a list (`Expr::ListMinMax`) | `xs.iter().copied().min().unwrap()` / `.max()`; `list[int]` first cut, `f64` follows | ✅ SHIPPED v0.1.36 |
-| **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | open |
+| **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |
 

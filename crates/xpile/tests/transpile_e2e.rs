@@ -1265,6 +1265,31 @@ fn main() {
     assert_rustc_runs("list_minmax_builtin", &rust, driver);
 }
 
+/// PMAT-503a (Tranche 2, exceptions sub-slice 1): a `raise Exc("msg")`
+/// guard clause → `panic!("{}", <message>)`. The non-raising path returns
+/// normally; the raising path panics (caught via `catch_unwind`).
+#[test]
+fn raise_guard_panics() {
+    let rust = xpile_transpile_to_rust("raise_guard.py");
+    assert!(
+        rust.contains("panic!(\"{}\","),
+        "expected panic emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // Silence the default panic hook so the expected panics stay quiet.
+    std::panic::set_hook(Box::new(|_| {}));
+    // Non-raising paths return normally.
+    assert_eq!(checked_div(10, 2), 5);
+    assert_eq!(must_be_positive(7), 7);
+    // Guard conditions fire → panic, caught here.
+    assert!(std::panic::catch_unwind(|| checked_div(1, 0)).is_err());
+    assert!(std::panic::catch_unwind(|| must_be_positive(0)).is_err());
+}
+"#;
+    assert_rustc_runs("raise_guard", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

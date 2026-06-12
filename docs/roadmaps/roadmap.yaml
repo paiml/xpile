@@ -381,6 +381,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::ListMinMax { list, is_max } — the reduction form, distinct from 2-arg min(a,b)/max(a,b) (Expr::NumBuiltin). 1-arg min(xs)/max(xs) over a list[int] -> <list>.iter().copied().min().unwrap() (or .max()) in Rust+Ruchy; result types as element type. First cut list[int] only (f64 lacks Ord, follows). Lean refuses. rustc round-trip list_minmax_builtin.py: smallest([3,1,2])->1, largest([3,1,2])->3, span([3,1,2,9,4])->8. FREE CI. SHIPPED v0.1.36."
+- id: PMAT-503A
+  github_issue: null
+  item_type: task
+  title: 'PMAT-503a: [Tranche2] raise Exc("msg") -> panic! (exceptions sub-slice 1)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "First decomposed sub-slice of PMAT-503 (exceptions). New meta-HIR Stmt::Raise { message }. raise SomeException(\"msg\") (and raise Exc() -> class-name message, bare raise Exc -> class name) -> panic!(\"{}\", <message>) in Rust+Ruchy; the diverging ! type unifies with any return so a guard-clause raise type-checks without a phantom value. raise ... from ... and re-raising bare raise rejected. Lean refuses (no total-function encoding). rustc round-trip raise_guard.py: checked_div(10,2)->5, checked_div(1,0) panics (catch_unwind), must_be_positive likewise. try/except catch + Result propagation follow. FREE CI. SHIPPED v0.1.37."
 - id: PMAT-465
   github_issue: 496
   item_type: task

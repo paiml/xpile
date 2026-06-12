@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.37] — 2026-06-12
+
+Tranche-2 slice PMAT-503a — Python **`raise`** (exceptions sub-slice 1).
+
+First decomposed sub-slice of PMAT-503 (exceptions). New meta-HIR
+`Stmt::Raise { message }`. `raise SomeException("msg")` (and `raise Exc()` →
+class-name message, bare `raise Exc` → class name) lowers to
+`panic!("{}", <message>)` in Rust + Ruchy — the diverging `!` type unifies with
+any function return, so a `raise` in a guard clause type-checks without a
+phantom value. The `raise ... from ...` cause form and a re-raising bare
+`raise` are rejected at this cut. Lean refuses (no total-function encoding of
+exceptions). rustc round-trip `raise_guard.py`: `checked_div(10,2) -> 5` and
+`checked_div(1,0)` panics (caught via `catch_unwind`); same for
+`must_be_positive`.
+
+`try/except` catch + `Result`-typed propagation follow as their own slices.
+
 ## [0.1.36] — 2026-06-12
 
 Tranche-2 slice PMAT-502e — Python 1-arg **`min(xs)`/`max(xs)`** over a list.
