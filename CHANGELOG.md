@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.75] — 2026-06-12
+
+Tranche-2 slice PMAT-502aq — Python **in-place list concatenation** `xs.extend(ys)`.
+
+New meta-HIR `Stmt::ListExtend { list_name, other }`. `xs.extend(ys)` (where `ys`
+is any list-typed expression) lowers to `xs.extend((<ys>).iter().cloned());` in
+Rust + Ruchy, marking the receiver `mut`. Cloning each element keeps `ys` usable
+afterwards (matching Python, where `extend` does not consume its argument) and
+only needs `T: Clone` (true for every v0.2.0 element type). The frontend
+recognises it in `try_lower_list_method_call` (1-arg, list receiver) and the
+mutability pre-pass counts it. Lean refuses (in-place mutation, same gap as
+`.append`). rustc round-trip `list_extend.py`: `grow([1,2],[3,4,5]) -> 5`,
+`grow_lit([1,2,3]) -> 4`, `sum_after([1,2],[3,4]) -> 10` (composes with `for`).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.74] — 2026-06-12
 
 Tranche-2 slice PMAT-502ap — Python **in-place list mutators** `xs.sort()`,
