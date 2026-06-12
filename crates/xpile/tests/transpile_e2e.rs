@@ -1165,6 +1165,24 @@ fn main() {
     assert_rustc_runs("tuples", &rust, driver);
 }
 
+/// PMAT-494b (sprint): tuple unpacking `a, b = <expr>` → `Stmt::LetTuple`,
+/// emitting Rust `let (x, y) = <value>;`.
+#[test]
+fn tuple_unpack_emitted_rust_destructures() {
+    let rust = xpile_transpile_to_rust("tuple_unpack.py");
+    assert!(
+        rust.contains("let (x, y) = "),
+        "expected a tuple-destructuring let, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(swap_diff(5, 3), -2);
+    assert_eq!(sum_pair(4, 9), 13);
+}
+"#;
+    assert_rustc_runs("tuple_unpack", &rust, driver);
+}
+
 /// PMAT-450 — v0.2.0 Track 1.A: str-typed parameter passthrough.
 /// `def echo(name: str) -> str: return name` transpiles to
 /// `pub fn echo(name: String) -> String { name }`, exercises the

@@ -96,6 +96,9 @@ fn function_bigint_mode(f: &Function) -> bool {
     fn stmt_has_bigint(s: &Stmt) -> bool {
         match s {
             Stmt::Let { ty, .. } => matches!(ty, Type::BigInt),
+            // PMAT-494b: tuple unpacking introduces no BigInt binding
+            // (tuples aren't BigInt-typed at first cut).
+            Stmt::LetTuple { .. } => false,
             // PMAT-479 (R10): an early return introduces no BigInt
             // binding (bigint mode is set by params/lets/return type).
             Stmt::Assign { .. } | Stmt::Assert { .. } | Stmt::Return(_) => false,
@@ -186,6 +189,13 @@ fn emit_stmt_indented(
         }
         Stmt::Assign { name, value } => {
             write!(out, "{indent}{name} = ")?;
+            emit_expr(out, value, mode)?;
+            writeln!(out, ";")?;
+            Ok(())
+        }
+        // PMAT-494b: tuple unpacking → `let (a, b, ...) = <value>;`.
+        Stmt::LetTuple { names, value } => {
+            write!(out, "{indent}let ({}) = ", names.join(", "))?;
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
             Ok(())

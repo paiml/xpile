@@ -96,6 +96,8 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         // PMAT-479 (R10): early return — recurse into the returned expr.
         Stmt::Return(e) => expr_has_int_arith(e),
         Stmt::Let { value, .. } | Stmt::Assign { value, .. } => expr_has_int_arith(value),
+        // PMAT-494b: tuple unpacking — recurse into the unpacked value.
+        Stmt::LetTuple { value, .. } => expr_has_int_arith(value),
         Stmt::While { cond, body } => {
             if expr_has_int_arith(cond) {
                 return true;
@@ -319,6 +321,12 @@ pub enum Stmt {
     /// `name = value;` — reassignment of a name previously introduced
     /// by [`Stmt::Let`]. PMAT-006.
     Assign { name: String, value: Expr },
+    /// Tuple-destructuring binding — Python `a, b = <expr>`. PMAT-494b
+    /// (sprint). `value` types as [`Type::Tuple`] with arity matching
+    /// `names`. Rust/Ruchy emit `let (a, b, ...) = <value>;` (immutable
+    /// first cut); Lean refuses. Nested / starred / subscript patterns
+    /// are not supported at first cut (all targets must be plain names).
+    LetTuple { names: Vec<String>, value: Expr },
     /// `while cond { body }` — Python `while cond: body`. The body is
     /// a list of statements (no trailing return; the loop body is not
     /// an expression). PMAT-006.
