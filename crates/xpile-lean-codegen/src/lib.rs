@@ -468,6 +468,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(seq, out);
             collect_idents(n, out);
         }
+        // PMAT-502m: int(x)/float(x) — recurse into the converted value.
+        Expr::NumCast { value, .. } => collect_idents(value, out),
         // PMAT-502c: sorted — recurse into the list expression.
         Expr::Sorted { list, .. } => collect_idents(list, out),
         // PMAT-502d: reversed — recurse into the list expression.
@@ -918,6 +920,15 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::Repeat { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python seq * n (string/list repetition) is not yet supported in the \
+                 Lean lane — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502m: int(x)/float(x) conversion deferred in the Lean lane
+        // (Int↔Float coercion isn't modeled in the v0.1.0 Int-only subset).
+        Expr::NumCast { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python int(x)/float(x) numeric conversion is not yet supported in the \
                  Lean lane — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

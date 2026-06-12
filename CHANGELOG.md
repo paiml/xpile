@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.45] — 2026-06-12
+
+Tranche-2 slice PMAT-502m — Python **numeric conversions** `int(x)` / `float(x)`.
+
+New meta-HIR `Expr::NumCast { value, to_float }`. Over a numeric arg,
+`int(x)` → `((<value>) as i64)` (truncates toward zero, exactly like Python:
+`int(2.7)==2`, `int(-2.7)==-2`) and `float(x)` → `((<value>) as f64)` in
+Rust + Ruchy; result types as `I64`/`F64`. The frontend intercepts only numeric
+args, so `int("42")` string-parsing and `str(x)` (which has Python/Rust
+float/bool formatting differences) are left for separate slices. Lean refuses
+(Int↔Float coercion isn't in the Int-only Lean subset). rustc round-trip
+`num_cast.py`: `to_float(7) -> 7.0`, `to_int(2.7) -> 2`, `to_int(-2.7) -> -2`,
+`half(5) -> 2.5`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.44] — 2026-06-12
 
 Tranche-2 slice PMAT-502l — more Python **string methods**:

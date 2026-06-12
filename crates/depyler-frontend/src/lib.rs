@@ -2360,6 +2360,14 @@ fn infer_type(e: &Expr) -> Type {
         }
         // PMAT-502j: all(xs)/any(xs) reduce a bool list to a Bool.
         Expr::BoolReduce { .. } => Type::Bool,
+        // PMAT-502m: int(x)/float(x) type as I64/F64 respectively.
+        Expr::NumCast { to_float, .. } => {
+            if *to_float {
+                Type::F64
+            } else {
+                Type::I64
+            }
+        }
         // PMAT-502k: seq * n has the same type as the sequence.
         Expr::Repeat { seq, .. } => infer_type(seq),
         // PMAT-502c: sorted(xs) has the same type as its list.
@@ -2520,6 +2528,14 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         }
         // PMAT-502j: all(xs)/any(xs) reduce a bool list to a Bool.
         Expr::BoolReduce { .. } => Type::Bool,
+        // PMAT-502m: int(x)/float(x) type as I64/F64 respectively.
+        Expr::NumCast { to_float, .. } => {
+            if *to_float {
+                Type::F64
+            } else {
+                Type::I64
+            }
+        }
         // PMAT-502k: seq * n has the same type as the sequence.
         Expr::Repeat { seq, .. } => infer_type_in_ctx(ctx, seq),
         // PMAT-502c: sorted(xs) has the same type as its list.
@@ -2772,6 +2788,21 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 is_all: fname.id.as_str() == "all",
                             });
                         }
+                    }
+                }
+                // PMAT-502m: `int(x)` / `float(x)` numeric conversion over a
+                // numeric arg → `(x) as i64` / `(x) as f64`. (The `int("42")`
+                // string-parse form is deferred — only numeric args here.)
+                if matches!(fname.id.as_str(), "int" | "float")
+                    && call.keywords.is_empty()
+                    && call.args.len() == 1
+                {
+                    let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &value), Type::I64 | Type::F64) {
+                        return Ok(Expr::NumCast {
+                            value: Box::new(value),
+                            to_float: fname.id.as_str() == "float",
+                        });
                     }
                 }
                 // PMAT-502e/502h: 1-arg `min(xs)`/`max(xs)` over a numeric

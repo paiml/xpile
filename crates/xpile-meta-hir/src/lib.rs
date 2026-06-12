@@ -238,6 +238,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::Sum { list, .. } => expr_has_int_arith(list),
         // PMAT-502j: all(xs)/any(xs) — recurse into the bool list.
         Expr::BoolReduce { list, .. } => expr_has_int_arith(list),
+        // PMAT-502m: int(x)/float(x) — recurse into the converted value.
+        Expr::NumCast { value, .. } => expr_has_int_arith(value),
         // PMAT-502k: seq * n — recurse into both the sequence and count.
         Expr::Repeat { seq, n } => expr_has_int_arith(seq) || expr_has_int_arith(n),
         // PMAT-502c: sorted — recurse into the list expression.
@@ -1014,6 +1016,14 @@ pub enum Expr {
     /// The `.max(0)` clamps a negative count to the empty sequence, matching
     /// Python (`"x" * -1 == ""`). Result types as `seq`. Lean refuses.
     Repeat { seq: Box<Expr>, n: Box<Expr> },
+    /// Numeric conversion — Python `int(x)` / `float(x)` over a numeric `x`.
+    /// PMAT-502m (Tranche 2). Rust/Ruchy emit `((<value>) as i64)` (for
+    /// `int`, which truncates toward zero exactly like Python) or
+    /// `((<value>) as f64)` (for `float`). Result types as `I64`/`F64`
+    /// per `to_float`. Lean refuses. (`int("42")` string-parsing and
+    /// `str(x)` are separate slices — `str` has Python/Rust float/bool
+    /// formatting differences.)
+    NumCast { value: Box<Expr>, to_float: bool },
     /// `sorted(xs)` / `sorted(xs, reverse=True)` over a list — Python
     /// builtin returning a **new** sorted list (the input is not mutated).
     /// PMAT-502c (Tranche 2); the `reverse` flag is PMAT-502f. Rust/Ruchy
