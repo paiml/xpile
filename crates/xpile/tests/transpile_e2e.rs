@@ -1558,6 +1558,26 @@ fn main() {
     assert_rustc_runs("len_ctx", &rust, driver);
 }
 
+/// PMAT-502x (Tranche 2): `d.items()` → a `Vec` of `(k, v)` tuples
+/// (composes with `sorted`/`len`).
+#[test]
+fn dict_items() {
+    let rust = xpile_transpile_to_rust("dict_items.py");
+    assert!(
+        rust.contains(".iter().map(|(__k, __v)| (__k.clone(), __v.clone())).collect::<Vec<_>>()"),
+        "expected dict items emission, got:\n{rust}"
+    );
+    let driver = r#"
+use std::collections::HashMap;
+fn main() {
+    let d: HashMap<i64, i64> = [(3, 30), (1, 10), (2, 20)].into_iter().collect();
+    assert_eq!(sorted_items(d.clone()), vec![(1, 10), (2, 20), (3, 30)]);
+    assert_eq!(num_items(d.clone()), 3);
+}
+"#;
+    assert_rustc_runs("dict_items", &rust, driver);
+}
+
 /// PMAT-502r (Tranche 2): open-ended slices `xs[a:]` / `xs[:b]` / `xs[:]`
 /// (list + str) → half-open / full Rust ranges.
 #[test]

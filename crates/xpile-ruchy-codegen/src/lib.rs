@@ -741,12 +741,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, key, mode)?;
             out.push_str("))");
         }
-        // PMAT-502v: `d.keys()`/`d.values()` → materialized Vec.
+        // PMAT-502v/502x: `d.keys()`/`d.values()`/`d.items()` → materialized Vec.
         Expr::DictView { dict, kind } => {
             emit_expr(out, dict, mode)?;
             out.push_str(match kind {
                 DictViewKind::Keys => ".keys().cloned().collect::<Vec<_>>()",
                 DictViewKind::Values => ".values().cloned().collect::<Vec<_>>()",
+                DictViewKind::Items => {
+                    ".iter().map(|(__k, __v)| (__k.clone(), __v.clone())).collect::<Vec<_>>()"
+                }
             });
         }
         // PMAT-500/501b: Ruchy → Rust set literal (empty → bare new()).

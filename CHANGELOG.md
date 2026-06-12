@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.56] — 2026-06-12
+
+Tranche-2 slice PMAT-502x — Python **`d.items()`**.
+
+Extends `DictViewKind` with `Items` (completing the dict-view family alongside
+`Keys`/`Values` from v0.1.54). `d.items()` over a `dict[K, V]` lowers to
+`d.iter().map(|(__k, __v)| (__k.clone(), __v.clone())).collect::<Vec<_>>()` in
+Rust + Ruchy; result types as `List(Tuple[K, V])`, so it composes with `sorted`
+(tuples are `Ord`) and `len` (ctx-aware since v0.1.55). HashMap iteration order
+is unspecified (pair with `sorted` for deterministic results). Lean refuses.
+rustc round-trip `dict_items.py` over `{3:30,1:10,2:20}`:
+`sorted_items -> [(1,10),(2,20),(3,30)]`, `num_items -> 3`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.55] — 2026-06-12
 
 Tranche-2 slice PMAT-502w — **context-aware `len(x)`**.

@@ -2388,11 +2388,13 @@ fn infer_type(e: &Expr) -> Type {
         },
         // PMAT-502u: list.count(x)/index(x) return Int.
         Expr::ListQuery { .. } => Type::I64,
-        // PMAT-502v: d.keys()/d.values() materialize to List(K)/List(V).
+        // PMAT-502v/502x: d.keys()/d.values()/d.items() materialize to
+        // List(K)/List(V)/List(Tuple[K, V]).
         Expr::DictView { dict, kind } => match infer_type(dict) {
             Type::Dict(k, v) => Type::List(match kind {
                 DictViewKind::Keys => k,
                 DictViewKind::Values => v,
+                DictViewKind::Items => Box::new(Type::Tuple(vec![*k, *v])),
             }),
             _ => Type::List(Box::new(Type::I64)),
         },
@@ -2578,6 +2580,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             Type::Dict(k, v) => Type::List(match kind {
                 DictViewKind::Keys => k,
                 DictViewKind::Values => v,
+                DictViewKind::Items => Box::new(Type::Tuple(vec![*k, *v])),
             }),
             _ => Type::List(Box::new(Type::I64)),
         },
@@ -2790,10 +2793,10 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         });
                     }
                 }
-                // PMAT-502v: dict view methods `d.keys()` / `d.values()`
-                // (0 args) → a materialized `Vec` of keys / values, when the
-                // receiver types as a dict.
-                if matches!(attr.attr.as_str(), "keys" | "values") {
+                // PMAT-502v/502x: dict view methods `d.keys()` / `d.values()`
+                // / `d.items()` (0 args) → a materialized `Vec` of keys /
+                // values / (k, v) tuples, when the receiver types as a dict.
+                if matches!(attr.attr.as_str(), "keys" | "values" | "items") {
                     let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
                     if matches!(infer_type_in_ctx(ctx, &recv), Type::Dict(_, _))
                         && call.keywords.is_empty()
@@ -2801,10 +2804,10 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     {
                         return Ok(Expr::DictView {
                             dict: Box::new(recv),
-                            kind: if attr.attr.as_str() == "keys" {
-                                DictViewKind::Keys
-                            } else {
-                                DictViewKind::Values
+                            kind: match attr.attr.as_str() {
+                                "keys" => DictViewKind::Keys,
+                                "values" => DictViewKind::Values,
+                                _ => DictViewKind::Items,
                             },
                         });
                     }

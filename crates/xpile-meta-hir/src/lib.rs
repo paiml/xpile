@@ -1325,6 +1325,9 @@ pub enum DictViewKind {
     Keys,
     /// `d.values()` → `List(V)`.
     Values,
+    /// `d.items()` → `List(Tuple[K, V])`. PMAT-502x. Emits
+    /// `d.iter().map(|(__k, __v)| (__k.clone(), __v.clone())).collect::<Vec<_>>()`.
+    Items,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
