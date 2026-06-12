@@ -7,6 +7,31 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.99] — 2026-06-13
+
+Tranche-2 slice PMAT-502bm — Python **early returns / guard clauses** and
+**terminal `if/elif/else`**.
+
+The Python frontend previously required a function to be "leading statements + a
+single trailing `return expr`"; any earlier `return` errored. Two additions (both
+reusing meta-HIR that the C frontend already produced/emitted):
+
+- **Guard-clause early returns**: a non-last `return <expr>` (e.g. inside an
+  `if`) now lowers to `Stmt::Return` → `return <expr>;`, with the function's real
+  trailing `return` after it.
+- **Terminal `if/elif/else`**: when the *last* statement is an exhaustive
+  `if/elif/else` whose every branch is a single `return <expr>`, it lowers to the
+  trailing return via a (possibly nested) `Expr::IfExpr` — the same
+  if-as-expression already used for assignments.
+
+A bare `return` (no value) is still deferred. Lean refuses `Stmt::Return` (it
+keeps the single-trailing-return shape). rustc round-trip `early_return.py`
+(cross-checked against `python3`): `sign(5)/sign(-3)/sign(0) -> 1/-1/0`
+(if/elif/else), `abs_val(-4) -> 4` (if/else), `guard(-2)/guard(5) -> 0/6`
+(guard clause).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.98] — 2026-06-13
 
 Tranche-2 slice PMAT-502bl — Python **void functions** (`-> None`).

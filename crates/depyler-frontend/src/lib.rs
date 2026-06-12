@@ -758,6 +758,19 @@ fn lower_function_def(
                 lower_expr_in_ctx(&ctx, (**value).clone())?
             }
         }
+        // PMAT-502bm: a terminal `if cond: return A else: return B`
+        // (and `elif` chains) — where every branch is a single `return
+        // <expr>` — becomes the function's trailing return via an
+        // `Expr::IfExpr` (the same if-as-expression used for assignments).
+        ast::Stmt::If(if_stmt) => match terminal_if_as_expr(&mut ctx, if_stmt)? {
+            Some(expr) => expr,
+            None => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}`'s final `if` is not an exhaustive `if/elif/else` whose every branch is a single `return <expr>` — v0.2.0 supports that shape (or a trailing `return`)",
+                    f.name
+                )));
+            }
+        },
         _ => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` does not end with `return expr` — required at v0.1.0",
@@ -1012,10 +1025,19 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         // both at top level and inside a guard-clause `if` (this fn is the
         // recursion point for if-branch bodies).
         ast::Stmt::Raise(r) => lower_raise_stmt(ctx, r).map(|s| vec![s]),
-        ast::Stmt::Return(_) => Err(FrontendError::Lower(format!(
-            "function `{}` has an early `return` — only the last statement may be `return` at v0.1.0",
-            ctx.fn_name
-        ))),
+        // PMAT-502bm: an early `return <expr>` (guard clause) → `Stmt::Return`.
+        // The backends already emit `return <expr>;` (the C frontend produces
+        // these). A bare `return` (no value) is deferred.
+        ast::Stmt::Return(ret) => {
+            let value = ret.value.as_ref().ok_or_else(|| {
+                FrontendError::Lower(format!(
+                    "function `{}` has a bare `return` (no value) — deferred at v0.2.0",
+                    ctx.fn_name
+                ))
+            })?;
+            let lowered = lower_expr_in_ctx(ctx, (**value).clone())?;
+            Ok(vec![Stmt::Return(lowered)])
+        }
         // PMAT-040 / XPILE-BASHRS-MERGER-001 v0.3.0 falsifier evidence:
         // `subprocess.run([...])` is the first cross-domain producer
         // of `Stmt::Cmd`. Recognising it in depyler-frontend means
@@ -1938,6 +1960,50 @@ fn is_if_as_let_shape(if_stmt: &ast::StmtIf) -> bool {
 /// escape it (Rust block scoping) — use the `name = expr` form for a
 /// value needed after the `if`. `elif` nests as a `Stmt::If` in `else_body`
 /// via `lower_block_stmt` recursion.
+/// PMAT-502bm: convert a terminal `if cond: return A else: return B`
+/// (including `elif` chains) into an `Expr::IfExpr`, so it can be the
+/// function's trailing return. Returns `Ok(None)` if the shape isn't an
+/// exhaustive if/elif/else whose every branch is exactly a single
+/// `return <expr>` — the caller then reports a precise error. The
+/// condition must type as `Bool`.
+fn terminal_if_as_expr(
+    ctx: &mut LoweringCtx,
+    if_stmt: &ast::StmtIf,
+) -> Result<Option<Expr>, FrontendError> {
+    // The branch must be exactly one statement: a `return <value>`
+    // (giving the branch expr), or a nested `if` (an `elif`/`else: if`).
+    fn branch_expr(
+        ctx: &mut LoweringCtx,
+        body: &[ast::Stmt],
+    ) -> Result<Option<Expr>, FrontendError> {
+        match body {
+            [ast::Stmt::Return(ret)] => match ret.value.as_ref() {
+                Some(v) => Ok(Some(lower_expr_in_ctx(ctx, (**v).clone())?)),
+                None => Ok(None),
+            },
+            [ast::Stmt::If(inner)] => terminal_if_as_expr(ctx, inner),
+            _ => Ok(None),
+        }
+    }
+    let cond = lower_expr_in_ctx(ctx, (*if_stmt.test).clone())?;
+    if !matches!(infer_type_in_ctx(ctx, &cond), Type::Bool) {
+        return Ok(None);
+    }
+    let Some(then_expr) = branch_expr(ctx, &if_stmt.body)? else {
+        return Ok(None);
+    };
+    // An exhaustive if needs an `else` (or `elif … else`) so every path
+    // returns a value.
+    let Some(else_expr) = branch_expr(ctx, &if_stmt.orelse)? else {
+        return Ok(None);
+    };
+    Ok(Some(Expr::IfExpr {
+        cond: Box::new(cond),
+        then_expr: Box::new(then_expr),
+        else_expr: Box::new(else_expr),
+    }))
+}
+
 fn lower_if_stmt(ctx: &mut LoweringCtx, if_stmt: ast::StmtIf) -> Result<Vec<Stmt>, FrontendError> {
     if is_if_as_let_shape(&if_stmt) {
         return lower_if_stmt_as_lets(ctx, if_stmt);

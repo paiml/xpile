@@ -2748,6 +2748,35 @@ fn main() {
     assert_rustc_runs("void_fn", &rust, driver);
 }
 
+/// PMAT-502bm (Tranche 2): early returns / guard clauses + a terminal
+/// `if/elif/else` whose branches all return (→ `Expr::IfExpr`).
+#[test]
+fn early_return() {
+    let rust = xpile_transpile_to_rust("early_return.py");
+    // Terminal if/elif/else becomes a nested if-expression trailing return.
+    assert!(
+        rust.contains("if (x > 0i64) { 1i64 } else if (x < 0i64)"),
+        "terminal if/elif/else:\n{rust}"
+    );
+    // Guard clause emits an early `return` then a trailing expr.
+    assert!(
+        rust.contains("return 0i64;"),
+        "guard-clause early return:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sign(5), 1);
+    assert_eq!(sign(-3), -1);
+    assert_eq!(sign(0), 0);
+    assert_eq!(abs_val(-4), 4);
+    assert_eq!(abs_val(7), 7);
+    assert_eq!(guard(-2), 0);
+    assert_eq!(guard(5), 6);
+}
+"#;
+    assert_rustc_runs("early_return", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
