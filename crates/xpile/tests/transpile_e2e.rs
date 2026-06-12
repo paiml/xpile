@@ -1203,6 +1203,27 @@ fn main() {
     assert_rustc_runs("slicing", &rust, driver);
 }
 
+/// PMAT-502c (Tranche 2): `sorted(xs)` → a new sorted list
+/// (`{ let mut __xv = xs.clone(); __xv.sort(); __xv }`).
+#[test]
+fn sorted_builtin_int_and_str() {
+    let rust = xpile_transpile_to_rust("sorted_builtin.py");
+    assert!(
+        rust.contains(".clone(); __xv.sort();"),
+        "expected sort block, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(order(vec![3, 1, 2]), vec![1, 2, 3]);
+    assert_eq!(
+        order_str(vec![String::from("c"), String::from("a"), String::from("b")]),
+        vec![String::from("a"), String::from("b"), String::from("c")]
+    );
+}
+"#;
+    assert_rustc_runs("sorted_builtin", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
