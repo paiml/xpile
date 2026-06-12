@@ -2355,6 +2355,8 @@ fn infer_type(e: &Expr) -> Type {
                 Type::I64
             }
         }
+        // PMAT-502j: all(xs)/any(xs) reduce a bool list to a Bool.
+        Expr::BoolReduce { .. } => Type::Bool,
         // PMAT-502c: sorted(xs) has the same type as its list.
         Expr::Sorted { list, .. } => infer_type(list),
         // PMAT-502d: reversed(xs) has the same type as its list.
@@ -2508,6 +2510,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
                 Type::I64
             }
         }
+        // PMAT-502j: all(xs)/any(xs) reduce a bool list to a Bool.
+        Expr::BoolReduce { .. } => Type::Bool,
         // PMAT-502c: sorted(xs) has the same type as its list.
         Expr::Sorted { list, .. } => infer_type_in_ctx(ctx, list),
         // PMAT-502d: reversed(xs) has the same type as its list.
@@ -2739,6 +2743,23 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             return Ok(Expr::Sum {
                                 list: Box::new(list),
                                 of_float: matches!(*elem, Type::F64),
+                            });
+                        }
+                    }
+                }
+                // PMAT-502j: `all(xs)`/`any(xs)` over a `list[bool]` →
+                // `.iter().all/any(|&__b| __b)`. (Truthiness over non-bool
+                // lists is deferred — v0.1.0 has no int/str truthiness.)
+                if matches!(fname.id.as_str(), "all" | "any")
+                    && call.keywords.is_empty()
+                    && call.args.len() == 1
+                {
+                    let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
+                        if matches!(*elem, Type::Bool) {
+                            return Ok(Expr::BoolReduce {
+                                list: Box::new(list),
+                                is_all: fname.id.as_str() == "all",
                             });
                         }
                     }

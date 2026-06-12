@@ -1283,6 +1283,27 @@ fn main() {
     assert_rustc_runs("list_minmax_builtin", &rust, driver);
 }
 
+/// PMAT-502j (Tranche 2): `all(xs)`/`any(xs)` over a `list[bool]` →
+/// `xs.iter().all(|&__b| __b)` / `.any(|&__b| __b)`.
+#[test]
+fn bool_reduce_all_any() {
+    let rust = xpile_transpile_to_rust("bool_reduce.py");
+    assert!(
+        rust.contains(".iter().all(|&__b| __b)") && rust.contains(".iter().any(|&__b| __b)"),
+        "expected all/any reduction emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(all_true(vec![true, true, true]), true);
+    assert_eq!(all_true(vec![true, false, true]), false);
+    assert_eq!(any_true(vec![false, false, true]), true);
+    assert_eq!(any_true(vec![false, false, false]), false);
+    assert_eq!(all_of_literals(), false);
+}
+"#;
+    assert_rustc_runs("bool_reduce", &rust, driver);
+}
+
 /// PMAT-502h (Tranche 2): 1-arg `min(xs)`/`max(xs)` over a `list[float]` →
 /// a fold (`fold(f64::INFINITY, f64::min)` / `fold(f64::NEG_INFINITY, f64::max)`).
 #[test]

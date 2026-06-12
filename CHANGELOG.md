@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.42] — 2026-06-12
+
+Tranche-2 slice PMAT-502j — Python **`all(xs)`/`any(xs)`** over a `list[bool]`.
+
+New meta-HIR `Expr::BoolReduce { list, is_all }`. `all(xs)`/`any(xs)` over a
+`list[bool]` lower to `<list>.iter().all(|&__b| __b)` / `.any(|&__b| __b)` in
+Rust + Ruchy; result types as `Bool`. Like Python, `all([])` is `true` and
+`any([])` is `false` (the iterator-adaptor identities). Truthiness over non-bool
+lists is deferred (v0.1.0 has no int/str truthiness). Lean refuses. This
+completes the reduction-over-a-list builtin family (`sum`/`min`/`max`/`all`/
+`any`). rustc round-trip `bool_reduce.py`: `all_true([T,T,T]) -> true`,
+`all_true([T,F,T]) -> false`, `any_true([F,F,T]) -> true`,
+`any_true([F,F,F]) -> false`, `all_of_literals() -> false`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.41] — 2026-06-12
 
 Tranche-2 slice PMAT-502i — Python **empty collection constructors**
