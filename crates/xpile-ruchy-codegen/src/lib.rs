@@ -625,6 +625,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 out.push_str(").chars() { if __c.is_alphabetic() { if __pa { __tr.extend(__c.to_lowercase()); } else { __tr.extend(__c.to_uppercase()); } __pa = true; } else { __tr.push(__c); __pa = false; } } __tr }");
                 return Ok(());
             }
+            // PMAT-502aw: `.rjust(w)`/`.ljust(w)`, matching the Rust backend.
+            if matches!(op, StrMethodOp::RJust | StrMethodOp::LJust) {
+                out.push_str(if matches!(op, StrMethodOp::RJust) {
+                    "format!(\"{:>1$}\", "
+                } else {
+                    "format!(\"{:<1$}\", "
+                });
+                emit_expr(out, recv, mode)?;
+                out.push_str(", (");
+                emit_expr(out, &args[0], mode)?;
+                out.push_str(") as usize)");
+                return Ok(());
+            }
             emit_expr(out, recv, mode)?;
             match op {
                 StrMethodOp::Upper => out.push_str(".to_uppercase()"),
@@ -672,6 +685,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 }
                 StrMethodOp::Capitalize => unreachable!("capitalize handled above"),
                 StrMethodOp::Title => unreachable!("title handled above"),
+                StrMethodOp::RJust | StrMethodOp::LJust => {
+                    unreachable!("rjust/ljust handled above")
+                }
             }
         }
         // PMAT-455 (v0.2.0 Track 1.B): Ruchy → Rust → `vec![...]`.

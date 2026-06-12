@@ -1550,6 +1550,16 @@ pub enum StrMethodOp {
     /// "previous char was alphabetic", matching Python's exact semantics
     /// (e.g. `"it's".title()` → `"It'S"`).
     Title,
+    /// `.rjust(width)` → right-justify in a field of `width` (space-padded
+    /// on the left) (**Str**, 1 int arg). PMAT-502aw. Emits
+    /// `format!("{:>1$}", <recv>, (<width>) as usize)`. Rust's format width
+    /// is a *minimum* — a longer string is returned unchanged, exactly
+    /// matching Python (no truncation). A non-default fill char is deferred.
+    RJust,
+    /// `.ljust(width)` → left-justify (space-padded on the right)
+    /// (**Str**, 1 int arg). PMAT-502aw. Emits
+    /// `format!("{:<1$}", <recv>, (<width>) as usize)`.
+    LJust,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

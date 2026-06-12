@@ -712,6 +712,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str("{ let mut __tr = String::new(); let mut __pa = false; for __c in (");
                 emit_expr(out, recv, mode)?;
                 out.push_str(").chars() { if __c.is_alphabetic() { if __pa { __tr.extend(__c.to_lowercase()); } else { __tr.extend(__c.to_uppercase()); } __pa = true; } else { __tr.push(__c); __pa = false; } } __tr }");
+            } else if matches!(op, StrMethodOp::RJust | StrMethodOp::LJust) {
+                // PMAT-502aw: `.rjust(w)`/`.ljust(w)` → `format!("{:>1$}", s, w)`
+                // / `format!("{:<1$}", s, w)`. Rust's format width is a minimum,
+                // so a longer string is returned unchanged (matching Python).
+                out.push_str(if matches!(op, StrMethodOp::RJust) {
+                    "format!(\"{:>1$}\", "
+                } else {
+                    "format!(\"{:<1$}\", "
+                });
+                emit_expr(out, recv, mode)?;
+                out.push_str(", (");
+                emit_expr(out, &args[0], mode)?;
+                out.push_str(") as usize)");
             } else {
                 emit_expr(out, recv, mode)?;
                 match op {
@@ -762,6 +775,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     }
                     StrMethodOp::Capitalize => unreachable!("capitalize handled above"),
                     StrMethodOp::Title => unreachable!("title handled above"),
+                    StrMethodOp::RJust | StrMethodOp::LJust => {
+                        unreachable!("rjust/ljust handled above")
+                    }
                 }
             }
         }

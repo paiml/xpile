@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.81] — 2026-06-12
+
+Tranche-2 slice PMAT-502aw — Python **string padding** `s.rjust(w)` / `s.ljust(w)`.
+
+Two new `StrMethodOp` variants (`RJust`, `LJust`), each a 1-arg width method
+returning `Str`. `s.rjust(w)` lowers to `format!("{:>1$}", <s>, (<w>) as usize)`
+(right-justify, space-padded on the left); `s.ljust(w)` lowers to
+`format!("{:<1$}", <s>, (<w>) as usize)`. Rust's format width is a *minimum*, so a
+string already at least `w` long is returned unchanged — exactly matching Python
+(no truncation). Emitted as a block-form special case before the recv-once str
+method match (the receiver and width both appear inside `format!`). A non-default
+fill char (`s.rjust(w, "*")`) is deferred. Lean refuses (str methods are not in
+the Lean lane). rustc round-trip `str_just.py`: `pad_r("hi",5) -> "   hi"`,
+`pad_l("hi",5) -> "hi   "`, `pad_r("hello",3) -> "hello"` (no truncation),
+`lit_pad() -> "   hi"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.80] — 2026-06-12
 
 Tranche-2 slice PMAT-502av — Python **set element removal** `s.remove(x)` /

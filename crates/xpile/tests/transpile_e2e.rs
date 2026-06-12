@@ -2261,6 +2261,33 @@ fn main() {
     assert_rustc_runs("set_remove", &rust, driver);
 }
 
+/// PMAT-502aw (Tranche 2): str padding `s.rjust(w)` →
+/// `format!("{:>1$}", s, (w) as usize)` and `s.ljust(w)` →
+/// `format!("{:<1$}", s, (w) as usize)`. Rust format width is a minimum,
+/// so a longer string is returned unchanged (matching Python).
+#[test]
+fn str_just() {
+    let rust = xpile_transpile_to_rust("str_just.py");
+    assert!(
+        rust.contains("format!(\"{:>1$}\", s, (w) as usize)"),
+        "rjust:\n{rust}"
+    );
+    assert!(
+        rust.contains("format!(\"{:<1$}\", s, (w) as usize)"),
+        "ljust:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(pad_r("hi".to_string(), 5), "   hi");
+    assert_eq!(pad_l("hi".to_string(), 5), "hi   ");
+    // No truncation when already longer (Python returns unchanged).
+    assert_eq!(pad_r("hello".to_string(), 3), "hello");
+    assert_eq!(lit_pad(), "   hi");
+}
+"#;
+    assert_rustc_runs("str_just", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
