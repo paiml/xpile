@@ -1337,6 +1337,16 @@ pub enum StrMethodOp {
     /// `.count(sub)` → `.matches(&(sub)[..]).count() as i64` (**Int**, 1 arg)
     /// — count of non-overlapping occurrences. PMAT-502l.
     Count,
+    /// `.isdigit()` → `(!(s).is_empty() && (s).chars().all(|c| c.is_ascii_digit()))`
+    /// (**Bool**, 0 args). PMAT-502ag. Python returns `False` for the empty
+    /// string, so the empty guard is required (a vacuous `.all()` is `true`).
+    IsDigit,
+    /// `.isalpha()` → `(!(s).is_empty() && (s).chars().all(|c| c.is_alphabetic()))`
+    /// (**Bool**, 0 args). PMAT-502ag.
+    IsAlpha,
+    /// `.isspace()` → `(!(s).is_empty() && (s).chars().all(|c| c.is_whitespace()))`
+    /// (**Bool**, 0 args). PMAT-502ag.
+    IsSpace,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

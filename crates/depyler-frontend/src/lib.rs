@@ -2355,6 +2355,8 @@ fn infer_type(e: &Expr) -> Type {
             // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
             StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
             StrMethodOp::Find | StrMethodOp::Count => Type::I64,
+            // PMAT-502ag: isdigit/isalpha/isspace → Bool.
+            StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace => Type::Bool,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
         // type from the first element (frontend ensures homogeneity
@@ -2540,6 +2542,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
             StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
             StrMethodOp::Find | StrMethodOp::Count => Type::I64,
+            // PMAT-502ag: isdigit/isalpha/isspace → Bool.
+            StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace => Type::Bool,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
         // shape as the context-free `infer_type` arm.
@@ -3934,6 +3938,10 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
         "rstrip" => Some(StrMethodOp::RStrip),
         "find" => Some(StrMethodOp::Find),
         "count" => Some(StrMethodOp::Count),
+        // PMAT-502ag: classification predicates (0-arg).
+        "isdigit" => Some(StrMethodOp::IsDigit),
+        "isalpha" => Some(StrMethodOp::IsAlpha),
+        "isspace" => Some(StrMethodOp::IsSpace),
         _ => None,
     }
 }
@@ -3951,6 +3959,8 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         // PMAT-502l: lstrip/rstrip take no args; find/count take one.
         StrMethodOp::LStrip | StrMethodOp::RStrip => 0,
         StrMethodOp::Find | StrMethodOp::Count => 1,
+        // PMAT-502ag: classification predicates take no args.
+        StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace => 0,
     }
 }
 

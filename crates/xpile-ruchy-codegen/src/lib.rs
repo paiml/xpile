@@ -503,6 +503,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 out.push_str(")[..])");
                 return Ok(());
             }
+            // PMAT-502ag: `.isdigit()`/`.isalpha()`/`.isspace()` →
+            // `(!(s).is_empty() && (s).chars().all(|__c| __c.<pred>()))`.
+            if matches!(
+                op,
+                StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace
+            ) {
+                out.push_str("(!(");
+                emit_expr(out, recv, mode)?;
+                out.push_str(").is_empty() && (");
+                emit_expr(out, recv, mode)?;
+                out.push_str(").chars().all(|__c| __c.");
+                out.push_str(match op {
+                    StrMethodOp::IsDigit => "is_ascii_digit()",
+                    StrMethodOp::IsAlpha => "is_alphabetic()",
+                    _ => "is_whitespace()",
+                });
+                out.push_str("))");
+                return Ok(());
+            }
             emit_expr(out, recv, mode)?;
             match op {
                 StrMethodOp::Upper => out.push_str(".to_uppercase()"),
@@ -545,6 +564,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     out.push_str(")[..]).count() as i64");
                 }
                 StrMethodOp::Join => unreachable!("Join handled above"),
+                StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace => {
+                    unreachable!("classification predicates handled above")
+                }
             }
         }
         // PMAT-455 (v0.2.0 Track 1.B): Ruchy → Rust → `vec![...]`.

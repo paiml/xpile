@@ -868,6 +868,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502ad** — `str(x)` over an int (`Expr::ToStr`) | `format!("{}", x)` → `Str`; unblocks `"prefix" + str(n)` concat; `str(float)` deferred (formatting diffs) | ✅ SHIPPED v0.1.62 |
 | **PMAT-502ae** — `str(b)` over a bool (pure desugar → `IfExpr`) | `"True" if b else "False"` → `if b { String::from("True") } else {…"False"…}`; matches Python's capitalization | ✅ SHIPPED v0.1.63 |
 | **PMAT-502af** — `str(x)` over a float (`ToStr.of_float`) | block: `nan`→"nan", finite whole→`format!("{}.0",…)`, else `format!("{}",…)`; matches Python (`2.0`→"2.0"); completes str() int/float/bool | ✅ SHIPPED v0.1.64 |
+| **PMAT-502ag** — str predicates `.isdigit`/`.isalpha`/`.isspace` (`StrMethodOp`) | `(!(s).is_empty() && (s).chars().all(\|__c\| __c.is_ascii_digit/is_alphabetic/is_whitespace()))` → `Bool`; empty→False (Python) | ✅ SHIPPED v0.1.65 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |
