@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.57] — 2026-06-12
+
+Tranche-2 slice PMAT-502y — Python **`for k, v in d.items()`** loop.
+
+New `PairIterKind::Pairs`. A `for first, second in <expr>` loop whose iterable
+types as `List(Tuple[A, B])` (e.g. `d.items()` from v0.1.56) lowers to a
+`Stmt::ForEachPair` that destructures each 2-tuple, emitting
+`for (first, second) in <iter>.iter().cloned() { … }` in Rust + Ruchy (the
+clone-based, non-consuming form, like `zip`). `first`/`second` bind to the tuple
+element types A/B. Reached only when the iterable isn't `enumerate`/`zip`. This
+makes the canonical `for k, v in d.items()` idiom work end-to-end. Lean refuses.
+rustc round-trip `for_items.py` over `{1:10,2:20,3:30}`: `sum_kv -> 66`
+(Σ k+v), `sum_values -> 60`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.56] — 2026-06-12
 
 Tranche-2 slice PMAT-502x — Python **`d.items()`**.

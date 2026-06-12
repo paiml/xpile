@@ -1242,6 +1242,11 @@ pub enum PairIterKind {
     /// `zip(iter, other)` — `first` = element of `iter`, `second` =
     /// element of `other`. Emits `.iter().cloned().zip(other.iter().cloned())`.
     Zip(Box<Expr>),
+    /// `for first, second in <list of 2-tuples>` — e.g. `for k, v in
+    /// d.items()`. PMAT-502y. The `iter` is already a `List(Tuple[A, B])`;
+    /// each element is destructured into `(first, second)`. Emits
+    /// `.iter().cloned()` (clone-based, non-consuming, like `Zip`).
+    Pairs,
 }
 
 /// PMAT-492 (sprint): no-argument Python string transform methods,

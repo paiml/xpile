@@ -1578,6 +1578,26 @@ fn main() {
     assert_rustc_runs("dict_items", &rust, driver);
 }
 
+/// PMAT-502y (Tranche 2): `for k, v in d.items()` — iterate dict pairs,
+/// destructuring each `(k, v)` (`PairIterKind::Pairs`).
+#[test]
+fn for_items() {
+    let rust = xpile_transpile_to_rust("for_items.py");
+    assert!(
+        rust.contains("for (k, v) in "),
+        "expected destructuring pair loop, got:\n{rust}"
+    );
+    let driver = r#"
+use std::collections::HashMap;
+fn main() {
+    let d: HashMap<i64, i64> = [(1, 10), (2, 20), (3, 30)].into_iter().collect();
+    assert_eq!(sum_kv(d.clone()), 66);
+    assert_eq!(sum_values(d.clone()), 60);
+}
+"#;
+    assert_rustc_runs("for_items", &rust, driver);
+}
+
 /// PMAT-502r (Tranche 2): open-ended slices `xs[a:]` / `xs[:b]` / `xs[:]`
 /// (list + str) → half-open / full Rust ranges.
 #[test]
