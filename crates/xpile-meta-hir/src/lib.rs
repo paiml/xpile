@@ -250,7 +250,9 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-502k: seq * n — recurse into both the sequence and count.
         Expr::Repeat { seq, n } => expr_has_int_arith(seq) || expr_has_int_arith(n),
         // PMAT-502c: sorted — recurse into the list expression.
-        Expr::Sorted { list, .. } => expr_has_int_arith(list),
+        Expr::Sorted { list, key, .. } => {
+            expr_has_int_arith(list) || key.as_ref().is_some_and(|k| expr_has_int_arith(&k.body))
+        }
         Expr::Reversed { list } => expr_has_int_arith(list),
         Expr::ListMinMax { list, .. } => expr_has_int_arith(list),
         // PMAT-502u: list query — recurse into the list and the arg.
@@ -1065,14 +1067,21 @@ pub enum Expr {
     /// `str(x)` are separate slices — `str` has Python/Rust float/bool
     /// formatting differences.)
     NumCast { value: Box<Expr>, to_float: bool },
-    /// `sorted(xs)` / `sorted(xs, reverse=True)` over a list — Python
-    /// builtin returning a **new** sorted list (the input is not mutated).
-    /// PMAT-502c (Tranche 2); the `reverse` flag is PMAT-502f. Rust/Ruchy
-    /// emit `{ let mut __v = <list>.clone(); __v.sort(); __v }` (ascending)
-    /// or, when `reverse`, `{ … __v.sort(); __v.reverse(); __v }`
-    /// (descending — stable-sort-then-reverse). Result types as the list's
-    /// type. Lean refuses. (`key=` follows as its own slice.)
-    Sorted { list: Box<Expr>, reverse: bool },
+    /// `sorted(xs)` / `sorted(xs, reverse=True)` / `sorted(xs, key=lambda
+    /// p: e)` over a list — Python builtin returning a **new** sorted list
+    /// (the input is not mutated). PMAT-502c; `reverse` is PMAT-502f; the
+    /// optional `key` lambda is PMAT-502z. Rust/Ruchy emit
+    /// `{ let mut __v = <list>.clone(); __v.sort(); __v }` (ascending) or,
+    /// when `reverse`, append `__v.reverse();`. With a `key`, emit
+    /// `__v.sort_by_key(|__k| { let <param> = __k.clone(); <body> })` — the
+    /// clone-to-local binds the element by value so the body type-checks
+    /// regardless of `sort_by_key`'s `&T` argument; the body must yield an
+    /// `Ord` key. Result types as the list's type. Lean refuses.
+    Sorted {
+        list: Box<Expr>,
+        reverse: bool,
+        key: Option<SortKey>,
+    },
     /// `list(reversed(xs))` / `reversed(xs)` over a list — Python builtin
     /// returning a **new** reversed list (the input is not mutated).
     /// PMAT-502d (Tranche 2). Rust/Ruchy emit
@@ -1321,6 +1330,18 @@ pub enum ListQueryOp {
     Count,
     /// `xs.index(x)` → index of the first equal element (panics if absent).
     Index,
+}
+
+/// PMAT-502z (Tranche 2): a `sorted(xs, key=lambda p: e)` sort key — the
+/// lambda's single parameter name plus its (already-lowered) body. The body
+/// is lowered with `param` left unbound (an `Ident`), so it works for bodies
+/// that don't need the param's precise static type (arithmetic, `len(p)`,
+/// most builtins); the backend emits `let <param> = __k.clone();` to bind it
+/// by value at runtime. Str-method keys (`p.upper()`) are deferred.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SortKey {
+    pub param: String,
+    pub body: Box<Expr>,
 }
 
 /// PMAT-502v (Tranche 2): dict view methods carried by [`Expr::DictView`].

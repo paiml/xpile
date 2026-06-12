@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.58] — 2026-06-12
+
+Tranche-2 slice PMAT-502z — Python **`sorted(xs, key=lambda p: e)`** (first lambda/closure support).
+
+`Expr::Sorted` gains an optional `key: Option<SortKey>` (`SortKey { param, body }`).
+A `sorted(xs, key=lambda p: e)` call with a simple single-parameter lambda lowers
+to `{ let mut __xv = xs.clone(); __xv.sort_by_key(|__k| { let p = __k.clone(); e }); __xv }`
+in Rust + Ruchy — the clone-to-local binds the element by value so the body
+type-checks regardless of `sort_by_key`'s `&T` argument, and the key must be
+`Ord`. The lambda body is lowered with `p` left **unbound**, which covers
+arithmetic keys (`key=lambda x: -x`) and `len`/builtin keys (`key=lambda w:
+len(w)`); str-method keys (`p.upper()`) cleanly error and are deferred. `key=`
+composes with `reverse=` (append `__xv.reverse();`). Lean refuses. This is the
+first lambda handling in xpile, bounded to the `key=` position where the param
+type is inferable. rustc round-trip `sorted_key.py`:
+`by_len(["ccc","a","bb"]) -> ["a","bb","ccc"]`, `by_neg([1,3,2]) -> [3,2,1]`,
+`by_len_desc(["a","ccc","bb"]) -> ["ccc","bb","a"]`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.57] — 2026-06-12
 
 Tranche-2 slice PMAT-502y — Python **`for k, v in d.items()`** loop.

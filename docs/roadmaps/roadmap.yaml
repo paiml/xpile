@@ -570,6 +570,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New PairIterKind::Pairs. A for first, second in <expr> loop whose iterable types as List(Tuple[A,B]) (e.g. d.items() v0.1.56) -> Stmt::ForEachPair destructuring each 2-tuple: for (first, second) in <iter>.iter().cloned() {..} in Rust+Ruchy (clone-based, non-consuming, like zip). first/second bind to A/B. Reached only when iter is not enumerate/zip. Makes canonical for k,v in d.items() work end-to-end. Lean refuses. rustc round-trip for_items.py over {1:10,2:20,3:30}: sum_kv->66 (sum k+v), sum_values->60. FREE CI. SHIPPED v0.1.57."
+- id: PMAT-502Z
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502z: [Tranche2] sorted(xs, key=lambda) — first lambda support'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Expr::Sorted gains key: Option<SortKey> (SortKey { param, body }). sorted(xs, key=lambda p: e) with a simple 1-param lambda -> { let mut __xv = xs.clone(); __xv.sort_by_key(|__k| { let p = __k.clone(); e }); __xv } in Rust+Ruchy. Clone-to-local binds element by value (sidesteps sort_by_key's &T); key must be Ord. Body lowered with p UNBOUND -> covers arithmetic (key=lambda x: -x) + len/builtin (key=lambda w: len(w)) bodies; str-method keys (p.upper()) error+deferred. Composes with reverse= (append __xv.reverse();). First lambda handling in xpile, bounded to key= where param type is inferable. Lean refuses. rustc round-trip sorted_key.py: by_len([ccc,a,bb])->[a,bb,ccc], by_neg([1,3,2])->[3,2,1], by_len_desc([a,ccc,bb])->[ccc,bb,a]. FREE CI. SHIPPED v0.1.58."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -772,16 +772,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 }
             }
         }
-        // PMAT-502c: `sorted(xs)` → `{ let mut __xv = <list>.clone(); __xv.sort(); __xv }`.
-        // PMAT-502f: `sorted(xs, reverse=True)` appends `__xv.reverse();`.
-        Expr::Sorted { list, reverse } => {
+        // PMAT-502c/f/z: `sorted(xs)` → `{ let mut __xv = <list>.clone();
+        // __xv.sort(); __xv }`; `reverse=True` appends `__xv.reverse();`;
+        // `key=lambda p: e` uses `__xv.sort_by_key(|__k| { let p = __k.clone(); e })`.
+        Expr::Sorted { list, reverse, key } => {
             out.push_str("{ let mut __xv = ");
             emit_expr(out, list, mode)?;
-            out.push_str(if *reverse {
-                ".clone(); __xv.sort(); __xv.reverse(); __xv }"
-            } else {
-                ".clone(); __xv.sort(); __xv }"
-            });
+            out.push_str(".clone(); __xv.");
+            match key {
+                None => out.push_str("sort();"),
+                Some(k) => {
+                    write!(out, "sort_by_key(|__k| {{ let {} = __k.clone(); ", k.param)?;
+                    emit_expr(out, &k.body, mode)?;
+                    out.push_str(" });");
+                }
+            }
+            if *reverse {
+                out.push_str(" __xv.reverse();");
+            }
+            out.push_str(" __xv }");
         }
         // PMAT-502d: `reversed(xs)` → a new reversed Vec.
         Expr::Reversed { list } => {
