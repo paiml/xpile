@@ -14,8 +14,8 @@
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, SourceLang, Stmt, StrMethodOp,
-    Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, NumBuiltinOp, Param, SourceLang, Stmt,
+    StrMethodOp, Type, UnOp,
 };
 
 /// PMAT-477 (R8): the Rust infix symbol for a float arithmetic op.
@@ -621,6 +621,24 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, hi, mode)?;
             out.push_str(") as usize]");
             out.push_str(if *of_str { ".to_string()" } else { ".to_vec()" });
+        }
+        // PMAT-498: scalar numeric builtins → receiver-method form.
+        Expr::NumBuiltin { op, args } => {
+            out.push('(');
+            emit_expr(out, &args[0], mode)?;
+            out.push(')');
+            match op {
+                NumBuiltinOp::Abs => out.push_str(".abs()"),
+                NumBuiltinOp::Min | NumBuiltinOp::Max => {
+                    out.push_str(if matches!(op, NumBuiltinOp::Min) {
+                        ".min("
+                    } else {
+                        ".max("
+                    });
+                    emit_expr(out, &args[1], mode)?;
+                    out.push(')');
+                }
+            }
         }
         // PMAT-462 (v0.2.0 Track 1.C): Python dict literal →
         // Rust `{ let mut m = HashMap::new(); m.insert(k, v); ... m }`

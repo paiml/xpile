@@ -831,7 +831,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | Item | Sketch | Status |
 |---|---|---|
 | **PMAT-497** — aug-subscript assign `d[k] += v` / `xs[i] += v` | desugar to `d[k] = d[k] <op> v`; reuses DictSet/IndexAssign — no new IR | ✅ SHIPPED v0.1.25 |
-| **PMAT-498** — numeric builtins `abs`/`min`/`max`/`sum` | `abs(x)`→`x.abs()`, `min(a,b)`→`a.min(b)`, `sum(xs)`→`xs.iter().sum()` | open |
+| **PMAT-498** — numeric builtins `abs`/`min`/`max` (`Expr::NumBuiltin`) | `abs(x)`→`(x).abs()`, `min/max(a,b)`→`(a).min/max(b)` | ✅ SHIPPED v0.1.26 (`sum`/1-arg min/max over lists → follow-up PMAT-498b) |
 | **PMAT-499** — `range(start, stop, step)` | full 3-arg range in `for` | open |
 | **PMAT-500** — sets `{1,2,3}` / `.add()` / `in` / `len` | `HashSet` lane mirroring the dict lane | open |
 | **PMAT-501** — dict/set comprehensions | `{k: v for …}` / `{x for …}` — materialise like list comp | open |
