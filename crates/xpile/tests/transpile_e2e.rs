@@ -2370,6 +2370,32 @@ fn main() {
     assert_rustc_runs("dict_set_comp_filter", &rust, driver);
 }
 
+/// PMAT-502ba (Tranche 2): list comprehension over `range(...)` →
+/// a counter `let mut x = start; while (x < stop) { …push…; x += step; }`
+/// (mirroring the for-over-range desugaring), with optional `if` filter.
+#[test]
+fn list_comp_range() {
+    let rust = xpile_transpile_to_rust("list_comp_range.py");
+    // Range comp desugars to a counter while-loop, not a ForEach.
+    assert!(
+        rust.contains("let mut x: i64 = 0i64;") && rust.contains("while (x < n) {"),
+        "range counter loop:\n{rust}"
+    );
+    assert!(
+        rust.contains("let mut x: i64 = 1i64;"),
+        "range(1, n) start:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(squares(4), vec![0, 1, 4, 9]);
+    assert_eq!(odd_squares(4), vec![1, 4, 9]);
+    assert_eq!(from_one(5), vec![1, 2, 3, 4]);
+    assert_eq!(assign_form(3), 3);
+}
+"#;
+    assert_rustc_runs("list_comp_range", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

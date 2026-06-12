@@ -2209,11 +2209,65 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
 /// block-expression, so it is materialised at statement level (in
 /// assignment position, or hoisted to a temp in return position).
 ///
-/// v0.2.0 slice: single generator, iterable typing as a `list[T]`
-/// (range/dict iterables deferred). A single `if` filter is supported
+/// PMAT-502ba: extract `(start, stop, step_int)` from a `range(...)` call
+/// for a comprehension's `for x in range(...)` generator. Mirrors the
+/// range-bound handling in [`lower_for_stmt`]: 1–3 args, the step (when
+/// present) a non-zero integer literal (so the loop direction is known at
+/// lower time). Returns `Ok(None)` if `iter` isn't a `range(...)` call (the
+/// caller then falls back to the list-iterable path).
+fn comp_range_bounds(
+    ctx: &mut LoweringCtx,
+    iter: &ast::Expr,
+) -> Result<Option<(Expr, Expr, i64)>, FrontendError> {
+    let ast::Expr::Call(call) = iter else {
+        return Ok(None);
+    };
+    match call.func.as_ref() {
+        ast::Expr::Name(n) if n.id.as_str() == "range" => {}
+        _ => return Ok(None),
+    }
+    if !call.keywords.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` passes keyword args to `range(...)` in a comprehension — only positional args are supported",
+            ctx.fn_name
+        )));
+    }
+    let bounds = match call.args.as_slice() {
+        [stop] => (Expr::LitInt(0), lower_expr_in_ctx(ctx, stop.clone())?, 1i64),
+        [start, stop] => (
+            lower_expr_in_ctx(ctx, start.clone())?,
+            lower_expr_in_ctx(ctx, stop.clone())?,
+            1i64,
+        ),
+        [start, stop, step] => {
+            let step = extract_step_literal(step).ok_or_else(|| {
+                FrontendError::Lower(format!(
+                    "function `{}` uses `range(..., step)` in a comprehension with a non-literal-int or zero step — a non-zero integer literal is required",
+                    ctx.fn_name
+                ))
+            })?;
+            (
+                lower_expr_in_ctx(ctx, start.clone())?,
+                lower_expr_in_ctx(ctx, stop.clone())?,
+                step,
+            )
+        }
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `range(...)` with {} args in a comprehension — Python supports 1-3",
+                ctx.fn_name,
+                call.args.len()
+            )));
+        }
+    };
+    Ok(Some(bounds))
+}
+
+/// v0.2.0 slice: single generator; the iterable is either a `list[T]` or a
+/// `range(...)` (PMAT-502ba). A single `if` filter is supported
 /// (PMAT-502ay): `[elem for var in iter if cond]` wraps the append in an
 /// `if cond { … }`. Multiple `if` clauses (`… if a if b`) are deferred —
-/// use `… if a and b`.
+/// use `… if a and b`. Other iterables (dict, etc.) remain deferred.
 fn desugar_list_comp(
     ctx: &mut LoweringCtx,
     target: &str,
@@ -2241,12 +2295,80 @@ fn desugar_list_comp(
             )));
         }
     };
+    // PMAT-502ba: `[elem for x in range(...)]` desugars to a counter
+    // `let mut x = start; while (x <cmp> stop) { <…append…>; x = x + step; }`
+    // around the accumulator — mirroring the for-over-range desugaring,
+    // rather than the list-iterable ForEach below.
+    if let Some((start, stop, step_int)) = comp_range_bounds(ctx, &gen.iter)? {
+        // The range counter is an `i64`; bind it before lowering elem/filter.
+        ctx.bound.insert(var.clone());
+        ctx.name_types.insert(var.clone(), Type::I64);
+        let filter = match gen.ifs.first() {
+            None => None,
+            Some(cond) => {
+                let c = lower_expr_in_ctx(ctx, cond.clone())?;
+                if infer_type_in_ctx(ctx, &c) != Type::Bool {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` has a list-comprehension filter that is not Bool (no int-truthiness at v0.2.0)",
+                        ctx.fn_name
+                    )));
+                }
+                Some(c)
+            }
+        };
+        let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
+        let out_ty = infer_type_in_ctx(ctx, &elem);
+        let list_ty = Type::List(Box::new(out_ty));
+        ctx.bound.insert(target.to_string());
+        ctx.name_types.insert(target.to_string(), list_ty.clone());
+        let append = Stmt::ListAppend {
+            list_name: target.to_string(),
+            elem,
+        };
+        let mut body = match filter {
+            None => vec![append],
+            Some(cond) => vec![Stmt::If {
+                cond,
+                then_body: vec![append],
+                else_body: Vec::new(),
+            }],
+        };
+        // Tail: x = x + step.
+        body.push(Stmt::Assign {
+            name: var.clone(),
+            value: Expr::BinOp {
+                op: BinOp::Add,
+                lhs: Box::new(Expr::Ident(var.clone())),
+                rhs: Box::new(Expr::LitInt(step_int)),
+            },
+        });
+        let cond = Expr::BinOp {
+            op: if step_int > 0 { BinOp::Lt } else { BinOp::Gt },
+            lhs: Box::new(Expr::Ident(var.clone())),
+            rhs: Box::new(stop),
+        };
+        return Ok(vec![
+            Stmt::Let {
+                name: target.to_string(),
+                ty: list_ty,
+                value: Expr::ListLit(Vec::new()),
+                mutable: true,
+            },
+            Stmt::Let {
+                name: var,
+                ty: Type::I64,
+                value: start,
+                mutable: true,
+            },
+            Stmt::While { cond, body },
+        ]);
+    }
     let iter_expr = lower_expr_in_ctx(ctx, gen.iter.clone())?;
     let elem_in_ty = match infer_type_in_ctx(ctx, &iter_expr) {
         Type::List(e) => *e,
         other => {
             return Err(FrontendError::Lower(format!(
-                "function `{}` comprehends over an iterable typing as {other:?}; v0.2.0 supports `[… for x in <list[T]>]` (range/dict iterables deferred)",
+                "function `{}` comprehends over an iterable typing as {other:?}; v0.2.0 supports `[… for x in <list[T]>]` or `[… for x in range(...)]` (dict iterables deferred)",
                 ctx.fn_name
             )));
         }

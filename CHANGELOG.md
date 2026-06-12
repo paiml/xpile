@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.85] — 2026-06-12
+
+Tranche-2 slice PMAT-502ba — Python **list comprehension over `range(...)`**
+`[elem for x in range(n)]`.
+
+Extends `desugar_list_comp` to accept a `range(...)` iterable (previously only
+`list[T]` iterables worked). `[elem for x in range(start, stop, step)]` now
+desugars to a counter loop —
+`let mut t = []; let mut x = start; while (x <cmp> stop) { t.append(elem); x = x + step; }`
+— mirroring the for-over-range desugaring (the comparison is `<` for a positive
+step, `>` for a negative one; the step must be a non-zero integer literal). The
+optional `if` filter (PMAT-502ay) composes, wrapping the append in `if cond { … }`.
+A new `comp_range_bounds` helper extracts the 1–3 `range` args. List-iterable
+comprehensions are unchanged. Lean refuses (the desugaring contains a loop).
+rustc round-trip `list_comp_range.py`: `squares(4) -> [0,1,4,9]`,
+`odd_squares(4) -> [1,4,9]`, `from_one(5) -> [1,2,3,4]`, `assign_form(3) -> 3`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.84] — 2026-06-12
 
 Tranche-2 slice PMAT-502az — Python **filtered dict + set comprehensions**
