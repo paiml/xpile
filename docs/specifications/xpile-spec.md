@@ -836,7 +836,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-499** — `range(start, stop, step)` | full 3-arg range + **negative steps** (countdown) | ✅ already satisfied (PMAT-008; cond flips `<`/`>` on step sign). Only non-literal steps remain (deferred — needs runtime direction). |
 | **PMAT-500** — sets `{1,2,3}` / `.add()` / `in` / `len` | `HashSet` lane mirroring the dict lane | open |
 | **PMAT-501** — dict/set comprehensions | `{k: v for …}` / `{x for …}` — materialise like list comp | open |
-| **PMAT-502** — `Stmt::If` branch generalization | allow subscript/append/non-`name=expr` statements in if/else branches (currently restricted to `name = expr`) | open |
+| **PMAT-502** — `Stmt::If` branch generalization | dispatcher: if-as-let for `name=expr` branches, else a real `Stmt::If` (subscript assigns / `.append` / dict mutation) — unblocks the histogram idiom | ✅ SHIPPED v0.1.28 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | open |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |

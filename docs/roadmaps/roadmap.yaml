@@ -300,6 +300,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::Sum { list, of_float }. sum(xs) (1 list arg, element typing as int/float) -> <list>.iter().sum::<i64>() / ::<f64>(); turbofish selected by of_float (frontend sets from element type so the sum is unambiguous in any position). Result types as element type. Lean refuses. rustc round-trip sum_builtin.py: total([1,2,3,4])->10, ftotal([1.5,2.5])->4.0. NOTE PMAT-499 (full range incl. negative-literal steps) was already satisfied by PMAT-008. FREE CI. SHIPPED v0.1.27."
+- id: PMAT-502
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502: [Tranche2] General Stmt::If with side-effecting branches'
+  status: planned
+  priority: high
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "The Python frontend previously lowered EVERY if/else to the value-producing if-as-let form (let x = if c {..} else {..}), restricting branch statements to name=expr — rejecting the histogram (if w in freq: freq[w] += 1 else: freq[w] = 1). New lower_if_stmt dispatcher: if-as-let when all branches are name=expr (is_if_as_let_shape), else a real Stmt::If { cond, then_body, else_body } (already supported by meta-HIR + backends via the C frontend). elif nests as Stmt::If in else_body. Names assigned in a general branch do not escape it (documented). No regression to existing if-as-let. rustc round-trip histogram_if.py: word_freq([a,b,a]) -> {a:2,b:1}. FREE CI. SHIPPED v0.1.28."
 - id: PMAT-465
   github_issue: 496
   item_type: task

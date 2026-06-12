@@ -702,7 +702,7 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         ast::Stmt::AugAssign(aug) => lower_aug_assign(ctx, aug).map(|s| vec![s]),
         // PMAT-466 (v0.2.0 Track 1.C): annotated local `name: T = value`.
         ast::Stmt::AnnAssign(aa) => lower_ann_assign(ctx, aa).map(|s| vec![s]),
-        ast::Stmt::If(if_stmt) => lower_if_stmt_as_lets(ctx, if_stmt),
+        ast::Stmt::If(if_stmt) => lower_if_stmt(ctx, if_stmt),
         ast::Stmt::While(w) => lower_while_stmt(ctx, w).map(|s| vec![s]),
         ast::Stmt::For(f) => lower_for_stmt(ctx, f),
         ast::Stmt::Assert(a) => lower_assert_stmt(ctx, a).map(|s| vec![s]),
@@ -1261,6 +1261,60 @@ fn lower_if_stmt_as_lets(
         }
     }
     Ok(stmts)
+}
+
+/// True for a simple `name = expr` statement (the if-as-let branch shape).
+fn is_simple_name_assign(s: &ast::Stmt) -> bool {
+    matches!(s, ast::Stmt::Assign(a)
+        if a.targets.len() == 1 && matches!(a.targets[0], ast::Expr::Name(_)))
+}
+
+/// Whether `if_stmt` fits the value-producing **if-as-let** shape: every
+/// statement in every branch is `name = expr`, with a final `else`.
+/// Otherwise (side-effecting branches — subscript assigns, `.append`,
+/// dict mutation, …) the if/else lowers to a general [`Stmt::If`].
+fn is_if_as_let_shape(if_stmt: &ast::StmtIf) -> bool {
+    if if_stmt.body.is_empty() || !if_stmt.body.iter().all(is_simple_name_assign) {
+        return false;
+    }
+    match if_stmt.orelse.as_slice() {
+        [] => false,
+        [ast::Stmt::If(nested)] => is_if_as_let_shape(nested),
+        rest => rest.iter().all(is_simple_name_assign),
+    }
+}
+
+/// PMAT-502: lower a Python `if/elif/else`. Dispatches between the
+/// value-producing if-as-let form (all branches `name = expr` → `let x =
+/// if c { … } else { … }`) and a general [`Stmt::If`] for side-effecting
+/// branches. In the general form, names assigned inside a branch do NOT
+/// escape it (Rust block scoping) — use the `name = expr` form for a
+/// value needed after the `if`. `elif` nests as a `Stmt::If` in `else_body`
+/// via `lower_block_stmt` recursion.
+fn lower_if_stmt(ctx: &mut LoweringCtx, if_stmt: ast::StmtIf) -> Result<Vec<Stmt>, FrontendError> {
+    if is_if_as_let_shape(&if_stmt) {
+        return lower_if_stmt_as_lets(ctx, if_stmt);
+    }
+    let cond = lower_expr_in_ctx(ctx, (*if_stmt.test).clone())?;
+    if !matches!(infer_type_in_ctx(ctx, &cond), Type::Bool) {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` has an `if` condition that does not type as bool — v0.2.0 requires a boolean condition",
+            ctx.fn_name
+        )));
+    }
+    let mut then_body = Vec::new();
+    for s in if_stmt.body {
+        then_body.extend(lower_block_stmt(ctx, s)?);
+    }
+    let mut else_body = Vec::new();
+    for s in if_stmt.orelse {
+        else_body.extend(lower_block_stmt(ctx, s)?);
+    }
+    Ok(vec![Stmt::If {
+        cond,
+        then_body,
+        else_body,
+    }])
 }
 
 /// Inspect a branch body (a Vec<ast::Stmt>) and return the list of
