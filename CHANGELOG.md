@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.71] — 2026-06-12
+
+Tranche-2 slice PMAT-502am — Python **f-string format specs** (`f"{x:.2f}"`).
+
+f-strings now lower **context-aware** (so a `{value:spec}` field can see the
+value's type), and a new meta-HIR `Expr::FormatSpec { value, rust_spec }`
+carries a translated Rust format spec. The frontend maps the common static-spec
+subset to Rust's nearly-identical mini-language and emits `format!("{:<spec>}",
+value)`:
+- `.Nf` — fixed-point float, N decimals (requires `float`) → `{:.N}`
+- `0Nd` / `Nd` — integer width / zero-pad (requires `int`) → `{:0N}` / `{:N}`
+- `>N` / `<N` / `^N` — alignment within width (any value) → same
+
+Conversion flags (`!r`/`!s`/`!a`), dynamic specs (`{x:{w}}`), and unsupported
+specs error cleanly (not silently mis-formatted). Plain `{x}` is unchanged. Lean
+refuses. rustc round-trip `fstring_spec.py`: `price(3.14159) -> "$3.14"`,
+`padded(42) -> "[00042]"`, `aligned("hi") -> "|      hi|"`, `width(42) -> "  42"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.70] — 2026-06-12
 
 Tranche-2 slice PMAT-502al — Python **`round(x, n)`** (2-arg), completing `round`.

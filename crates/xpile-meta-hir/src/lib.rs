@@ -220,6 +220,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // case future lowering ever nests an int-arith expression
         // inside a string-typed position (unlikely but cheap).
         Expr::Concat { lhs, rhs } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
+        // PMAT-502am: formatted f-string field — recurse into the value.
+        Expr::FormatSpec { value, .. } => expr_has_int_arith(value),
         // PMAT-492: string methods are str-domain; recurse into the
         // receiver and any args defensively (mirrors Concat).
         Expr::StrMethod { recv, args, .. } => {
@@ -1016,6 +1018,12 @@ pub enum Expr {
     /// generalises to `Vec<Expr>` parts via a `Concat { parts }`
     /// rewrite; the binary form is sufficient for v0.2.0 first cut.
     Concat { lhs: Box<Expr>, rhs: Box<Expr> },
+    /// A formatted f-string field — Python `{value:spec}` where `spec` is a
+    /// static format spec (e.g. `.2f`, `05d`, `>10`). PMAT-502am (Tranche 2).
+    /// `rust_spec` is the already-translated Rust format spec (the frontend
+    /// maps the supported Python subset to it). Rust/Ruchy emit
+    /// `format!("{:<rust_spec>}", <value>)` → `Str`. Lean refuses.
+    FormatSpec { value: Box<Expr>, rust_spec: String },
     /// No-argument Python string transform method — `s.upper()` /
     /// `s.lower()` / `s.strip()`. PMAT-492 (sprint). Result types as
     /// `Type::Str`. Distinct from [`Expr::Call`] (a free function

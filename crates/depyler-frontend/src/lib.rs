@@ -2346,6 +2346,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::LitStr(_) => Type::Str,
         // PMAT-451: str concatenation is a Type::Str-producing op.
         Expr::Concat { .. } => Type::Str,
+        // PMAT-502am: a formatted f-string field produces a Str.
+        Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
         Expr::StrMethod { op, .. } => match op {
             StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
@@ -2559,6 +2561,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::LitStr(_) => Type::Str,
         // PMAT-451: str concatenation is Type::Str-producing.
         Expr::Concat { .. } => Type::Str,
+        // PMAT-502am: a formatted f-string field produces a Str.
+        Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
         Expr::StrMethod { op, .. } => match op {
             StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
@@ -3495,8 +3499,73 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Expr::TupleLit(elems))
         }
+        // PMAT-502am: f-strings lower context-aware so a `{x:.2f}` field can
+        // see the value's type (the context-free path can't, and rejects
+        // format specs). Plain `{name}` parts still work via Display.
+        ast::Expr::JoinedStr(js) => lower_fstring_in_ctx(ctx, js.values),
         // No dict-specific shape: the context-free path is sufficient.
         other => lower_expr(other),
+    }
+}
+
+/// PMAT-502am (ctx-aware f-string): fold the `values` parts into a
+/// left-associative [`Expr::Concat`] chain, lowering each part with `ctx` so a
+/// `FormattedValue` with a static format spec (`{x:.2f}`) can be type-checked
+/// and translated. Mirrors [`lower_fstring`] but ctx-aware.
+fn lower_fstring_in_ctx(ctx: &LoweringCtx, values: Vec<ast::Expr>) -> Result<Expr, FrontendError> {
+    let mut parts = values.into_iter();
+    let Some(first) = parts.next() else {
+        return Ok(Expr::LitStr(String::new()));
+    };
+    let mut acc = lower_fstring_part_in_ctx(ctx, first)?;
+    for v in parts {
+        let rhs = lower_fstring_part_in_ctx(ctx, v)?;
+        acc = Expr::Concat {
+            lhs: Box::new(acc),
+            rhs: Box::new(rhs),
+        };
+    }
+    Ok(acc)
+}
+
+/// Lower a single f-string part (a literal `Constant` or a `FormattedValue`)
+/// context-aware. A `FormattedValue` with a static, supported format spec
+/// becomes [`Expr::FormatSpec`]; a plain `{expr}` lowers its value; conversion
+/// flags (`!r`/`!s`/`!a`) and unsupported / dynamic specs error.
+fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr, FrontendError> {
+    let ast::Expr::FormattedValue(fv) = part else {
+        return lower_expr_in_ctx(ctx, part);
+    };
+    if fv.conversion != ast::ConversionFlag::None {
+        return Err(FrontendError::Lower(
+            "f-string conversion flags (`!r` / `!s` / `!a`) are not supported at v0.2.0".into(),
+        ));
+    }
+    let value = lower_expr_in_ctx(ctx, (*fv.value).clone())?;
+    let Some(spec_expr) = fv.format_spec.as_ref() else {
+        // Plain `{expr}` — no spec; Display-coerced by the surrounding format!.
+        return Ok(value);
+    };
+    let Some(spec) = static_format_spec(spec_expr) else {
+        return Err(FrontendError::Lower(
+            "f-string format spec must be a static literal (dynamic widths like `{x:{w}}` \
+             are not supported at v0.2.0)"
+                .into(),
+        ));
+    };
+    if spec.is_empty() {
+        return Ok(value); // `{x:}` — empty spec, same as plain.
+    }
+    let ty = infer_type_in_ctx(ctx, &value);
+    match translate_format_spec(&spec, &ty) {
+        Some(rust_spec) => Ok(Expr::FormatSpec {
+            value: Box::new(value),
+            rust_spec,
+        }),
+        None => Err(FrontendError::Lower(format!(
+            "unsupported f-string format spec `:{spec}` (for a {ty:?} value) — supported: \
+             `.Nf` (float), `0Nd`/`Nd` (int), `>N`/`<N`/`^N` (align) at v0.2.0"
+        ))),
     }
 }
 
@@ -3858,6 +3927,69 @@ fn lower_fstring(values: Vec<ast::Expr>) -> Result<Expr, FrontendError> {
         };
     }
     Ok(acc)
+}
+
+/// PMAT-502am: extract a **static** f-string format spec (the common case
+/// where `{x:.2f}` has a literal spec, not a nested-expr dynamic width). The
+/// `format_spec` is itself a `JoinedStr`; a static spec is a single
+/// `Constant(Str)` part. Returns the raw Python spec string, or `None` for a
+/// dynamic / non-literal spec (caller errors).
+fn static_format_spec(spec: &ast::Expr) -> Option<String> {
+    let ast::Expr::JoinedStr(js) = spec else {
+        return None;
+    };
+    match js.values.as_slice() {
+        // `{x:}` (empty spec) — an empty JoinedStr.
+        [] => Some(String::new()),
+        [ast::Expr::Constant(c)] => match &c.value {
+            ast::Constant::Str(s) => Some(s.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// PMAT-502am: translate a static Python format spec to the equivalent Rust
+/// format spec for the supported subset, given the formatted value's type.
+/// Returns `None` for unsupported specs (the caller errors so they aren't
+/// silently mis-formatted). Supported:
+///   * `.Nf` — fixed-point float, N decimals (requires a `float` value) → `.N`
+///   * `0Nd` / `Nd` — integer width / zero-pad (requires `int`) → `0N` / `N`
+///   * `>N` / `<N` / `^N` — alignment within width N (any Display value) → same
+fn translate_format_spec(spec: &str, ty: &Type) -> Option<String> {
+    // `.Nf` — fixed-point float.
+    if let Some(rest) = spec.strip_prefix('.') {
+        if let Some(n) = rest.strip_suffix('f') {
+            if *ty == Type::F64 && !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) {
+                return Some(format!(".{n}"));
+            }
+        }
+        return None;
+    }
+    // `0Nd` / `Nd` — integer width / zero-pad.
+    if let Some(n) = spec.strip_suffix('d') {
+        if *ty == Type::I64 && !n.is_empty() {
+            let (zero, width) = match n.strip_prefix('0') {
+                Some(w) => ("0", w),
+                None => ("", n),
+            };
+            if !width.is_empty() && width.bytes().all(|b| b.is_ascii_digit()) {
+                return Some(format!("{zero}{width}"));
+            }
+        }
+        return None;
+    }
+    // `>N` / `<N` / `^N` — alignment within width (any Display type).
+    if let Some(align) = spec.chars().next() {
+        if matches!(align, '<' | '>' | '^') {
+            let width = &spec[align.len_utf8()..];
+            if !width.is_empty() && width.bytes().all(|b| b.is_ascii_digit()) {
+                // Rust uses the same `[align][width]` syntax.
+                return Some(spec.to_string());
+            }
+        }
+    }
+    None
 }
 
 /// Lower Python `a and b and c` / `a or b or c` to a left-folded chain

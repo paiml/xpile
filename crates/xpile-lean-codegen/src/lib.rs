@@ -432,6 +432,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(lhs, out);
             collect_idents(rhs, out);
         }
+        // PMAT-502am: formatted f-string field — recurse into the value.
+        Expr::FormatSpec { value, .. } => collect_idents(value, out),
         // PMAT-492: string method — recurse into the receiver + args.
         Expr::StrMethod { recv, args, .. } => {
             collect_idents(recv, out);
@@ -917,6 +919,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             return Err(LeanCodegenError::Unsupported(
                 "Python string methods (.upper()/.lower()/.strip()) are not yet \
                  supported in the Lean lane — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502am: formatted f-string fields deferred in the Lean lane.
+        Expr::FormatSpec { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python f-string format specs (`{x:.2f}`) are not yet supported in the \
+                 Lean lane — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
         }

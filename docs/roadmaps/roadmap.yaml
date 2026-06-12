@@ -687,6 +687,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::RoundToDigits { value, ndigits }. round(x, n) over float x + int n -> a block returning Float. n>=0: format!(\"{:.1$}\", x, n as usize).parse::<f64>().unwrap() (Rust {:.} formatting is round-half-to-even = Python's CORRECT decimal rounding -> matches Python exactly incl float-repr edge round(2.675,2)==2.67). n<0: scale down by 10^|n|, round_ties_even, scale back. CRITICAL: the naive x*10^n/10^n scaling diverges from Python in the last ULP for n>=0 (the e2e assert_eq! caught this) -> use format-parse for n>=0. Lean refuses. rustc round-trip round_digits.py: r2(3.14159,2)->3.14, r2(2.5,0)->2.0, r2(1234.5,-1)->1230.0, half_cent(2.675)->2.67. FREE CI. SHIPPED v0.1.70."
+- id: PMAT-502AM
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502am: [Tranche2] f-string format specs'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "f-strings now lower CONTEXT-AWARE (new lower_fstring_in_ctx; ast::Expr::JoinedStr arm in lower_expr_in_ctx_inner before the catch-all) so a {value:spec} field sees the value type. New meta-HIR Expr::FormatSpec { value, rust_spec } emits format!(\"{:<rust_spec>}\", value) -> Str. Frontend translate_format_spec maps the static subset: .Nf (float,N dec)->.N, 0Nd/Nd (int width/zeropad)->0N/N, >N/<N/^N (align)->same. static_format_spec extracts the literal spec from the format_spec JoinedStr. Conversion flags (!r/!s/!a), dynamic specs ({x:{w}}), unsupported specs error (NOT silently mis-formatted). Plain {x} unchanged. Lean refuses. rustc round-trip fstring_spec.py: price(3.14159)->$3.14, padded(42)->[00042], aligned(hi)->|      hi|, width(42)->'  42'. FREE CI. SHIPPED v0.1.71."
 - id: PMAT-465
   github_issue: 496
   item_type: task
