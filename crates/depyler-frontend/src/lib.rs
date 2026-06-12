@@ -2712,6 +2712,34 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                 }
             }
+            // PMAT-502s: negative list index `xs[-k]` → `xs[len(xs) - k]`
+            // (Python's from-the-end indexing). Pure desugar reusing
+            // `Expr::Len` + `BinOp::Sub` + `Expr::Index`, so the resulting
+            // index inherits the C-PY-INT-ARITH checked subtraction. The
+            // collection appears twice (in the length and the index target);
+            // v0.1.0 collections are pure, so the reuse is sound. A negative
+            // literal parses as `UnaryOp(USub, Int(k))`.
+            if matches!(infer_type_in_ctx(ctx, &collection), Type::List(_)) {
+                if let ast::Expr::UnaryOp(u) = sub.slice.as_ref() {
+                    if matches!(u.op, ast::UnaryOp::USub) {
+                        if let ast::Expr::Constant(c) = u.operand.as_ref() {
+                            if let ast::Constant::Int(k) = &c.value {
+                                if let Ok(k) = k.to_string().parse::<i64>() {
+                                    let index = Expr::BinOp {
+                                        op: BinOp::Sub,
+                                        lhs: Box::new(Expr::Len(Box::new(collection.clone()))),
+                                        rhs: Box::new(Expr::LitInt(k)),
+                                    };
+                                    return Ok(Expr::Index {
+                                        collection: Box::new(collection),
+                                        index: Box::new(index),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             lower_expr(ast::Expr::Subscript(sub))
         }
         // `d.get(k, default)` → `Expr::DictGetOr` when `d` is a dict.
