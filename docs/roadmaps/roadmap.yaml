@@ -642,6 +642,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Three new StrMethodOp variants (0-arg, -> Bool). .isdigit()/.isalpha()/.isspace() -> (!(s).is_empty() && (s).chars().all(|__c| __c.is_ascii_digit()/is_alphabetic()/is_whitespace())) in Rust+Ruchy (special-cased before the recv-once emit, like Join). Explicit empty guard matches Python (\"\".isdigit() is False vs vacuous all()=true). Lean refuses (generic StrMethod refusal). rustc round-trip str_predicates.py: all_digits(123)->true, all_digits(12a)->false, all_digits(\"\")->false, all_alpha(abc)->true, all_space(\"  tab\")->true, all_space(\" x \")->false. FREE CI. SHIPPED v0.1.65."
+- id: PMAT-502AH
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ah: [Tranche2] s.capitalize()'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New StrMethodOp::Capitalize (0-arg, -> Str). s.capitalize() -> { let __cs = &(s); let mut __ch = __cs.chars(); match __ch.next() { Some(__f) => __f.to_uppercase().collect::<String>() + &(__ch.as_str().to_lowercase()), None => String::new() } } in Rust+Ruchy (special-cased block before recv-once emit). Matches Python: first char upper, rest lower, empty -> \"\". Lean refuses. rustc round-trip str_capitalize.py: cap(hELLO)->Hello, cap(world)->World, cap(a)->A, cap(\"\")->\"\". FREE CI. SHIPPED v0.1.66."
 - id: PMAT-465
   github_issue: 496
   item_type: task

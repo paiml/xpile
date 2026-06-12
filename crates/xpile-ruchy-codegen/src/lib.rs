@@ -522,6 +522,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 out.push_str("))");
                 return Ok(());
             }
+            // PMAT-502ah: `.capitalize()` → first char upper, rest lower.
+            if matches!(op, StrMethodOp::Capitalize) {
+                out.push_str("{ let __cs = &(");
+                emit_expr(out, recv, mode)?;
+                out.push_str("); let mut __ch = __cs.chars(); match __ch.next() { Some(__f) => __f.to_uppercase().collect::<String>() + &(__ch.as_str().to_lowercase()), None => String::new() } }");
+                return Ok(());
+            }
             emit_expr(out, recv, mode)?;
             match op {
                 StrMethodOp::Upper => out.push_str(".to_uppercase()"),
@@ -567,6 +574,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace => {
                     unreachable!("classification predicates handled above")
                 }
+                StrMethodOp::Capitalize => unreachable!("capitalize handled above"),
             }
         }
         // PMAT-455 (v0.2.0 Track 1.B): Ruchy → Rust → `vec![...]`.

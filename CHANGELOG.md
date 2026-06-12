@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.66] — 2026-06-12
+
+Tranche-2 slice PMAT-502ah — Python **`s.capitalize()`**.
+
+New `StrMethodOp::Capitalize` (0-arg, → `Str`). `s.capitalize()` lowers to a
+block that upper-cases the first character and lower-cases the rest:
+`{ let __cs = &(s); let mut __ch = __cs.chars(); match __ch.next() { Some(__f) =>
+__f.to_uppercase().collect::<String>() + &(__ch.as_str().to_lowercase()), None =>
+String::new() } }` in Rust + Ruchy — matching Python (`"hELLO".capitalize()` →
+`"Hello"`, `"".capitalize()` → `""`). Lean refuses (generic `StrMethod`
+refusal). rustc round-trip `str_capitalize.py`: `cap("hELLO") -> "Hello"`,
+`cap("world") -> "World"`, `cap("a") -> "A"`, `cap("") -> ""`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.65] — 2026-06-12
 
 Tranche-2 slice PMAT-502ag — Python **string classification predicates**
