@@ -450,6 +450,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 collect_idents(a, out);
             }
         }
+        // PMAT-498b: sum — recurse into the list expression.
+        Expr::Sum { list, .. } => collect_idents(list, out),
         // PMAT-455: list literal — recurse into each element.
         Expr::ListLit(elems) => {
             for e in elems {
@@ -836,6 +838,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             return Err(LeanCodegenError::Unsupported(
                 "Python numeric builtins (abs/min/max) are not yet supported in the \
                  Lean lane — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-498b: sum deferred in the Lean lane at first cut.
+        Expr::Sum { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python sum(xs) is not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
         }

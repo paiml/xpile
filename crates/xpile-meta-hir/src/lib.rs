@@ -230,6 +230,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         } => expr_has_int_arith(collection) || expr_has_int_arith(lo) || expr_has_int_arith(hi),
         // PMAT-498: numeric builtin — recurse into each arg.
         Expr::NumBuiltin { args, .. } => args.iter().any(expr_has_int_arith),
+        // PMAT-498b: sum — recurse into the list expression.
+        Expr::Sum { list, .. } => expr_has_int_arith(list),
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -934,6 +936,12 @@ pub enum Expr {
     /// refuses at first cut. (`sum`/1-arg `min`/`max` over a list need an
     /// element-type hint and follow as their own slice.)
     NumBuiltin { op: NumBuiltinOp, args: Vec<Expr> },
+    /// `sum(xs)` over a numeric list — Python builtin. PMAT-498b
+    /// (Tranche 2). Rust/Ruchy emit `<list>.iter().sum::<T>()` with the
+    /// turbofish `T` selected by `of_float` (the frontend sets it from
+    /// the element type — `i64` for `list[int]`, `f64` for `list[float]`).
+    /// Result types as the element type. Lean refuses.
+    Sum { list: Box<Expr>, of_float: bool },
     /// Unary operation — `not x` (logical, Bool → Bool) or `-x`
     /// (numeric negate, I64 → I64).
     UnOp { op: UnOp, operand: Box<Expr> },

@@ -1203,6 +1203,24 @@ fn main() {
     assert_rustc_runs("slicing", &rust, driver);
 }
 
+/// PMAT-498b (Tranche 2): `sum(xs)` over a numeric list →
+/// `xs.iter().sum::<i64>()` / `::<f64>()` (turbofish from the element type).
+#[test]
+fn sum_builtin_int_and_float() {
+    let rust = xpile_transpile_to_rust("sum_builtin.py");
+    assert!(
+        rust.contains(".iter().sum::<i64>()") && rust.contains(".iter().sum::<f64>()"),
+        "expected typed sum emissions, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(total(vec![1, 2, 3, 4]), 10);
+    assert!((ftotal(vec![1.5, 2.5]) - 4.0).abs() < 1e-9);
+}
+"#;
+    assert_rustc_runs("sum_builtin", &rust, driver);
+}
+
 /// PMAT-498 (Tranche 2): scalar numeric builtins `abs`/`min`/`max` →
 /// `(x).abs()` / `(a).min(b)` / `(a).max(b)`. `clamp` via `min(max(...))`.
 #[test]

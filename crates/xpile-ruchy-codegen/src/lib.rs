@@ -553,6 +553,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 }
             }
         }
+        // PMAT-498b: `sum(xs)` → `<list>.iter().sum::<T>()`.
+        Expr::Sum { list, of_float } => {
+            emit_expr(out, list, mode)?;
+            out.push_str(if *of_float {
+                ".iter().sum::<f64>()"
+            } else {
+                ".iter().sum::<i64>()"
+            });
+        }
         // PMAT-462 (v0.2.0 Track 1.C): Ruchy → Rust HashMap-init block.
         // PMAT-466: empty literal → bare `HashMap::new()` (see the Rust
         // backend's twin arm — avoids clippy `unused_mut`).
