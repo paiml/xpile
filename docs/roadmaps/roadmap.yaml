@@ -426,6 +426,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Pure-frontend slice (no new IR). 0-arg set()/dict()/list() -> empty SetLit/DictLit/ListLit -> std::collections::HashSet::new()/HashMap::new()/vec![]. Element type from binding annotation (s: set[int] = set()) or a subsequent .add()/.append() (Stmt::Let always emits a typed binding so both compile). Closes the empty-set() gap ({} is an empty dict). rustc round-trip empty_constructors.py: set_then_add()->2, set_annotated()->0, list_then_append()->2, dict_annotated()->0. FREE CI. SHIPPED v0.1.41."
+- id: PMAT-502J
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502j: [Tranche2] all(xs)/any(xs) over list[bool]'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::BoolReduce { list, is_all }. all(xs)/any(xs) over a list[bool] -> <list>.iter().all(|&__b| __b) / .any(|&__b| __b) in Rust+Ruchy; result types Bool. all([])=true, any([])=false (adaptor identities). Non-bool truthiness deferred (no int/str truthiness at v0.1.0). Lean refuses. Completes reduction-over-list family (sum/min/max/all/any). rustc round-trip bool_reduce.py: all_true([T,T,T])->true, all_true([T,F,T])->false, any_true([F,F,T])->true, any_true([F,F,F])->false, all_of_literals()->false. FREE CI. SHIPPED v0.1.42."
 - id: PMAT-465
   github_issue: 496
   item_type: task

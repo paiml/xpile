@@ -594,6 +594,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 ".iter().sum::<i64>()"
             });
         }
+        // PMAT-502j: `all(xs)`/`any(xs)` over a bool list.
+        Expr::BoolReduce { list, is_all } => {
+            emit_expr(out, list, mode)?;
+            out.push_str(if *is_all {
+                ".iter().all(|&__b| __b)"
+            } else {
+                ".iter().any(|&__b| __b)"
+            });
+        }
         // PMAT-502e: 1-arg `min(xs)`/`max(xs)` reduction over an int list.
         // PMAT-502h: `list[float]` uses a fold (f64 has no `Ord`).
         Expr::ListMinMax {

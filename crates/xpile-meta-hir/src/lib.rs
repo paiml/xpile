@@ -236,6 +236,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::NumBuiltin { args, .. } => args.iter().any(expr_has_int_arith),
         // PMAT-498b: sum — recurse into the list expression.
         Expr::Sum { list, .. } => expr_has_int_arith(list),
+        // PMAT-502j: all(xs)/any(xs) — recurse into the bool list.
+        Expr::BoolReduce { list, .. } => expr_has_int_arith(list),
         // PMAT-502c: sorted — recurse into the list expression.
         Expr::Sorted { list, .. } => expr_has_int_arith(list),
         Expr::Reversed { list } => expr_has_int_arith(list),
@@ -997,6 +999,12 @@ pub enum Expr {
     /// the element type — `i64` for `list[int]`, `f64` for `list[float]`).
     /// Result types as the element type. Lean refuses.
     Sum { list: Box<Expr>, of_float: bool },
+    /// `all(xs)` / `any(xs)` over a `list[bool]` — Python builtins.
+    /// PMAT-502j (Tranche 2). Rust/Ruchy emit
+    /// `<list>.iter().all(|&__b| __b)` (or `.any(…)`); result types as
+    /// `Bool`. Like Python, `all([])` is `true` and `any([])` is `false`
+    /// (the iterator-adaptor identities). Lean refuses.
+    BoolReduce { list: Box<Expr>, is_all: bool },
     /// `sorted(xs)` / `sorted(xs, reverse=True)` over a list — Python
     /// builtin returning a **new** sorted list (the input is not mutated).
     /// PMAT-502c (Tranche 2); the `reverse` flag is PMAT-502f. Rust/Ruchy
