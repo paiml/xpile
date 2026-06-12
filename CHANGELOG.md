@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.74] — 2026-06-12
+
+Tranche-2 slice PMAT-502ap — Python **in-place list mutators** `xs.sort()`,
+`xs.reverse()`, `xs.clear()`.
+
+New meta-HIR `Stmt::ListMutate { list_name, op, of_float }` with
+`ListMutateOp ∈ {Sort, Reverse, Clear}`. These no-arg, `None`-returning list
+methods (previously rejected as unrecognised expression statements) lower to the
+matching `Vec` method in Rust + Ruchy, marking the receiver `mut`: `.sort()` for
+`Vec<i64>`, `.sort_by(|a, b| a.partial_cmp(b).unwrap())` for `Vec<f64>` (no `Ord`
+on `f64`; NaN panics, matching Python's undefined NaN-sort), `.reverse()`,
+`.clear()`. The frontend recognises them in `try_lower_list_method_call` (0-arg,
+list receiver) and the mutability pre-pass counts them. Lean refuses (in-place
+mutation, same gap as `.append`). rustc round-trip `list_mutate.py`:
+`first_sorted([3,1,2]) -> 1`, `first_reversed([3,1,2]) -> 2`,
+`first_fsorted([3.0,1.5,2.0]) -> 1.5`, `cleared_len([1,2,3]) -> 0`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.73] — 2026-06-12
 
 Tranche-2 slice PMAT-502ao — Python **assert with message** `assert cond, msg`.

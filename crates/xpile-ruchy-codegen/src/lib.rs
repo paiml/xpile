@@ -13,8 +13,8 @@
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_meta_hir::{
-    BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListQueryOp, Module, NumBuiltinOp,
-    Param, SetOp, Stmt, StrMethodOp, Type, UnOp,
+    BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListMutateOp, ListQueryOp, Module,
+    NumBuiltinOp, Param, SetOp, Stmt, StrMethodOp, Type, UnOp,
 };
 
 /// PMAT-477 (R8): Ruchy → Rust infix symbol for a float arithmetic op.
@@ -103,8 +103,9 @@ fn function_bigint_mode(f: &Function) -> bool {
                 else_body,
                 ..
             } => then_body.iter().any(stmt_has_bigint) || else_body.iter().any(stmt_has_bigint),
-            // PMAT-460: list.append() — same disposition.
-            Stmt::ListAppend { .. } | Stmt::SetAdd { .. } => false,
+            // PMAT-460: list.append() — same disposition. PMAT-502ap:
+            // in-place list mutators likewise carry no binding.
+            Stmt::ListAppend { .. } | Stmt::SetAdd { .. } | Stmt::ListMutate { .. } => false,
             // PMAT-461: indexed assignment same disposition.
             Stmt::IndexAssign { .. } => false,
             // PMAT-466: dict keyed assignment same disposition.
@@ -289,6 +290,23 @@ fn emit_stmt_indented(
             write!(out, "{indent}{set_name}.insert(")?;
             emit_expr(out, elem, mode)?;
             writeln!(out, ");")?;
+            Ok(())
+        }
+        // PMAT-502ap: in-place list mutators, matching the Rust backend.
+        Stmt::ListMutate {
+            list_name,
+            op,
+            of_float,
+        } => {
+            match op {
+                ListMutateOp::Sort if *of_float => writeln!(
+                    out,
+                    "{indent}{list_name}.sort_by(|a, b| a.partial_cmp(b).unwrap());"
+                )?,
+                ListMutateOp::Sort => writeln!(out, "{indent}{list_name}.sort();")?,
+                ListMutateOp::Reverse => writeln!(out, "{indent}{list_name}.reverse();")?,
+                ListMutateOp::Clear => writeln!(out, "{indent}{list_name}.clear();")?,
+            }
             Ok(())
         }
         // PMAT-461 (v0.2.0 Track 1.B): Ruchy → Rust →

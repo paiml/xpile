@@ -142,6 +142,8 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         Stmt::ListAppend { elem, .. } => expr_has_int_arith(elem),
         // PMAT-500b: set.add() — recurse into the elem expression.
         Stmt::SetAdd { elem, .. } => expr_has_int_arith(elem),
+        // PMAT-502ap: in-place list mutators carry no sub-expression.
+        Stmt::ListMutate { .. } => false,
         // PMAT-461: indexed assignment — recurse into both index and
         // value expressions (either may carry arithmetic).
         Stmt::IndexAssign { index, value, .. } => {
@@ -491,6 +493,25 @@ pub enum Stmt {
     /// [`Stmt::ListAppend`]; Rust/Ruchy emit `<set>.insert(<elem>);` (the
     /// receiver is marked mutable). Lean refuses.
     SetAdd { set_name: String, elem: Expr },
+    /// In-place, zero-argument list mutation — Python `xs.sort()` /
+    /// `xs.reverse()` / `xs.clear()`. PMAT-502ap (Tranche 2). These are
+    /// the no-arg, in-place, `None`-returning list methods, lowered to
+    /// the matching `Vec` method as an expression statement (the receiver
+    /// is marked mutable). `of_float` is only consulted for [`ListMutateOp::Sort`]:
+    /// `Vec<i64>` sorts via `.sort()`, but `Vec<f64>` has no `Ord` so it
+    /// sorts via `.sort_by(|a, b| a.partial_cmp(b).unwrap())` (NaN panics,
+    /// matching Python's undefined NaN-sort behaviour). Lean refuses
+    /// (in-place mutation, same gap as `ListAppend`).
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: `<list>.sort();` / `<list>.sort_by(…);` /
+    ///     `<list>.reverse();` / `<list>.clear();`
+    ///   * Lean: refuses.
+    ListMutate {
+        list_name: String,
+        op: ListMutateOp,
+        of_float: bool,
+    },
     /// `for var in iter { body }` — Python `for x in xs:` over a
     /// non-range iterable. PMAT-458, v0.2.0 Track 1.B.
     ///
@@ -1453,6 +1474,20 @@ pub enum ListQueryOp {
     Count,
     /// `xs.index(x)` → index of the first equal element (panics if absent).
     Index,
+}
+
+/// PMAT-502ap (Tranche 2): no-argument in-place list mutators carried by
+/// [`Stmt::ListMutate`]. Each maps to the matching `Vec` method; all return
+/// `None` in Python (so they only appear as expression statements).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ListMutateOp {
+    /// `xs.sort()` → `.sort()` (`Vec<i64>`) or `.sort_by(|a, b|
+    /// a.partial_cmp(b).unwrap())` (`Vec<f64>`, see `Stmt::ListMutate.of_float`).
+    Sort,
+    /// `xs.reverse()` → `.reverse()` (element-type-agnostic).
+    Reverse,
+    /// `xs.clear()` → `.clear()` (element-type-agnostic).
+    Clear,
 }
 
 /// PMAT-502z (Tranche 2): a `sorted(xs, key=lambda p: e)` sort key — the

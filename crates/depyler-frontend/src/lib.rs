@@ -31,8 +31,8 @@ use std::path::Path;
 use std::rc::Rc;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
-    BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListQueryOp, Module, NumBuiltinOp,
-    PairIterKind, Param, SetOp, SortKey, SourceLang, Stmt, StrMethodOp, Type, UnOp,
+    BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListMutateOp, ListQueryOp, Module,
+    NumBuiltinOp, PairIterKind, Param, SetOp, SortKey, SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
 use rustpython_parser::ast;
@@ -180,7 +180,12 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                 if let ast::Expr::Call(call) = e.value.as_ref() {
                     if let ast::Expr::Attribute(attr) = call.func.as_ref() {
                         if let ast::Expr::Name(recv) = attr.value.as_ref() {
-                            if matches!(attr.attr.as_str(), "add" | "append") {
+                            // PMAT-502ap: sort/reverse/clear also mutate
+                            // the receiver in place.
+                            if matches!(
+                                attr.attr.as_str(),
+                                "add" | "append" | "sort" | "reverse" | "clear"
+                            ) {
                                 let bump = if in_loop { 2 } else { 1 };
                                 *counts.entry(recv.id.to_string()).or_insert(0) += bump;
                             }
@@ -820,6 +825,33 @@ fn try_lower_list_method_call(
     // through to the next dispatch path's error surface.
     let is_append = method == "append" && matches!(receiver_ty, Some(Type::List(_)));
     let is_add = method == "add" && matches!(receiver_ty, Some(Type::Set(_)));
+    // PMAT-502ap: no-arg in-place list mutators `xs.sort()/.reverse()/.clear()`.
+    let list_mutate_op = match method {
+        "sort" => Some(ListMutateOp::Sort),
+        "reverse" => Some(ListMutateOp::Reverse),
+        "clear" => Some(ListMutateOp::Clear),
+        _ => None,
+    };
+    if let Some(op) = list_mutate_op {
+        let Some(Type::List(inner)) = receiver_ty.as_ref() else {
+            return None;
+        };
+        // 0-arg, no kwargs.
+        if !call.args.is_empty() || !call.keywords.is_empty() {
+            return Some(Err(FrontendError::Lower(format!(
+                "function `{}` calls `{receiver_name}.{method}(...)` with arguments; \
+                 the in-place list mutators sort/reverse/clear take none at v0.2.0",
+                ctx.fn_name
+            ))));
+        }
+        let of_float = matches!(inner.as_ref(), Type::F64);
+        ctx.mutable.insert(receiver_name.to_string());
+        return Some(Ok(Stmt::ListMutate {
+            list_name: receiver_name.to_string(),
+            op,
+            of_float,
+        }));
+    }
     if !is_append && !is_add {
         return None;
     }
