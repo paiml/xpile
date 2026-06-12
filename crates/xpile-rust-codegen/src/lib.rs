@@ -574,6 +574,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, rhs, mode)?;
             out.push(')');
         }
+        // PMAT-502am: a formatted f-string field → `format!("{:<spec>}", v)`.
+        Expr::FormatSpec { value, rust_spec } => {
+            write!(out, "format!(\"{{:{rust_spec}}}\", ")?;
+            emit_expr(out, value, mode)?;
+            out.push(')');
+        }
         // PMAT-492/493b: Python string methods. No-arg transforms emit a
         // suffix; the startswith/endswith predicates emit
         // `.starts_with(&(<pat>)[..])` — the `&(..)[..]` reslice yields

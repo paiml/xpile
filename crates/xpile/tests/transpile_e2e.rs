@@ -1092,6 +1092,29 @@ fn main() {
     assert_rustc_runs("greet_fstring", &rust, driver);
 }
 
+/// PMAT-502am (Tranche 2): f-string format specs → Rust `format!` specs
+/// (`.2f`→`.2`, `05d`→`05`, `>8`→`>8`, `4d`→`4`).
+#[test]
+fn fstring_spec() {
+    let rust = xpile_transpile_to_rust("fstring_spec.py");
+    assert!(
+        rust.contains("format!(\"{:.2}\", x)")
+            && rust.contains("format!(\"{:05}\", n)")
+            && rust.contains("format!(\"{:>8}\", name)")
+            && rust.contains("format!(\"{:4}\", n)"),
+        "expected translated format specs, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(price(3.14159), String::from("$3.14"));
+    assert_eq!(padded(42), String::from("[00042]"));
+    assert_eq!(aligned(String::from("hi")), String::from("|      hi|"));
+    assert_eq!(width(42), String::from("  42"));
+}
+"#;
+    assert_rustc_runs("fstring_spec", &rust, driver);
+}
+
 /// PMAT-451 — v0.2.0 Track 1.A: str + str concatenation via
 /// `Expr::Concat`. `"hello, " + name` lowers to `format!("{}{}", ...)`
 /// in Rust; verify the rustc round-trip produces `"hello, world"`.
