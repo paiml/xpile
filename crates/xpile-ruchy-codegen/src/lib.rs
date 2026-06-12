@@ -89,6 +89,12 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::While { body, .. } | Stmt::ForEach { body, .. } => {
                 body.iter().any(stmt_has_bigint)
             }
+            // PMAT-478 (R9): recurse both branches of an if/else.
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => then_body.iter().any(stmt_has_bigint) || else_body.iter().any(stmt_has_bigint),
             // PMAT-460: list.append() — same disposition.
             Stmt::ListAppend { .. } => false,
             // PMAT-461: indexed assignment same disposition.
@@ -151,6 +157,30 @@ fn emit_stmt_indented(
             write!(out, " = ")?;
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
+            Ok(())
+        }
+        // PMAT-478 (R9): if/else statement → `if c { … } else { … }`.
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            write!(out, "{indent}if ")?;
+            emit_expr(out, cond, mode)?;
+            writeln!(out, " {{")?;
+            let inner = format!("{indent}    ");
+            for s in then_body {
+                emit_stmt_indented(out, s, &inner, mode)?;
+            }
+            if else_body.is_empty() {
+                writeln!(out, "{indent}}}")?;
+            } else {
+                writeln!(out, "{indent}}} else {{")?;
+                for s in else_body {
+                    emit_stmt_indented(out, s, &inner, mode)?;
+                }
+                writeln!(out, "{indent}}}")?;
+            }
             Ok(())
         }
         Stmt::Assign { name, value } => {

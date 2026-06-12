@@ -99,6 +99,12 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::While { body, .. } | Stmt::ForEach { body, .. } => {
                 body.iter().any(stmt_has_bigint)
             }
+            // PMAT-478 (R9): recurse both branches of an if/else.
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => then_body.iter().any(stmt_has_bigint) || else_body.iter().any(stmt_has_bigint),
             // PMAT-460: list.append() carries no Type::Let, so no
             // BigInt-mode trigger of its own.
             Stmt::ListAppend { .. } => false,
@@ -179,6 +185,31 @@ fn emit_stmt_indented(
             write!(out, "{indent}{name} = ")?;
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
+            Ok(())
+        }
+        // PMAT-478 (R9): if/else statement → Rust `if c { … } else { … }`.
+        // The `else` block is omitted when `else_body` is empty.
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            write!(out, "{indent}if ")?;
+            emit_expr(out, cond, mode)?;
+            writeln!(out, " {{")?;
+            let inner = format!("{indent}    ");
+            for s in then_body {
+                emit_stmt_indented(out, s, &inner, mode)?;
+            }
+            if else_body.is_empty() {
+                writeln!(out, "{indent}}}")?;
+            } else {
+                writeln!(out, "{indent}}} else {{")?;
+                for s in else_body {
+                    emit_stmt_indented(out, s, &inner, mode)?;
+                }
+                writeln!(out, "{indent}}}")?;
+            }
             Ok(())
         }
         Stmt::While { cond, body } => {
@@ -926,8 +957,33 @@ fn emit_c_stmt(out: &mut String, stmt: &Stmt, indent: &str) -> Result<(), Codege
             writeln!(out, "{indent}}}")?;
             Ok(())
         }
+        // PMAT-478 (R9): C `if (c) { … } else { … }` → Rust if/else
+        // statement (the `else` block omitted when empty).
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            write!(out, "{indent}if ")?;
+            emit_c_expr(out, cond)?;
+            writeln!(out, " {{")?;
+            let inner = format!("{indent}    ");
+            for s in then_body {
+                emit_c_stmt(out, s, &inner)?;
+            }
+            if else_body.is_empty() {
+                writeln!(out, "{indent}}}")?;
+            } else {
+                writeln!(out, "{indent}}} else {{")?;
+                for s in else_body {
+                    emit_c_stmt(out, s, &inner)?;
+                }
+                writeln!(out, "{indent}}}")?;
+            }
+            Ok(())
+        }
         other => Err(CodegenError::Unsupported(format!(
-            "C backend supports `int x = e;`, `x = e;`, and `while (c) {{ … }}`, got {other:?}"
+            "C backend supports `int x = e;`, `x = e;`, `if (c) {{ … }} else {{ … }}`, and `while (c) {{ … }}`, got {other:?}"
         ))),
     }
 }

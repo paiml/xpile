@@ -100,6 +100,16 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
             }
             body.iter().any(stmt_has_int_arith)
         }
+        // PMAT-478 (R9): if/else statement — recurse cond + both bodies.
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            expr_has_int_arith(cond)
+                || then_body.iter().any(stmt_has_int_arith)
+                || else_body.iter().any(stmt_has_int_arith)
+        }
         // PMAT-458: for-each over a collection. The `iter` and `body`
         // are recursed; an arithmetic-using collection (e.g.,
         // `for x in [a+b, c*d]:`) propagates the citation requirement.
@@ -258,6 +268,21 @@ pub struct Block {
 // Vec<Stmt>), so the derive is mechanical.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Stmt {
+    /// `if cond { then_body } else { else_body }` — an if/else as a
+    /// *statement* (not the if-as-let-expression form). PMAT-478 (R9).
+    /// Produced by the decy C frontend for `if (c) { … } else { … }`
+    /// (C has no if-expression); the Python frontend keeps its
+    /// if-as-let lowering for the assignment shape. `else_body` is empty
+    /// for an `if` with no `else`.
+    ///
+    /// Backends: Rust/Ruchy emit `if cond { … } else { … }`; Lean
+    /// refuses (the executable-subset encoding routes branches through
+    /// the if-expression form, not statement-if) at v0.2.0.
+    If {
+        cond: Expr,
+        then_body: Vec<Stmt>,
+        else_body: Vec<Stmt>,
+    },
     /// `let [mut] name: ty = value;` — first binding of `name` in this
     /// scope. `mutable` is set by the frontend when the same name is
     /// reassigned later in the function (including inside a [`While`]
