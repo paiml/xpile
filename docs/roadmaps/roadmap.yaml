@@ -868,6 +868,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "bool(x) lowers as a PURE DESUGAR to a != 0 comparison (no new meta-HIR variant). int -> x != 0; str/list/dict/set -> len(x) != 0 (reuses Expr::Len); bool -> identity. float deferred. Previously bool(x) fell through to a non-existent bool(...) call (typed I64, failing the -> bool return-type check). Reuses BinOp::NotEq + Expr::Len so it works across ALL backends. rustc round-trip bool_cast.py (cross-checked vs python3): from_int(5)->true/from_int(0)->false, from_str()->false/from_str(hi)->true, from_list([])->false/from_list([1])->true, idempotent(true)->true. FREE CI. SHIPPED v0.1.91."
+- id: PMAT-502BF
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bf: [Tranche2] int(s) / float(s) string parsing'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Expr::NumCast gained a from_str: bool flag. int(s)/float(s) over a STRING arg lowers to (<s>).trim().parse::<i64>().expect(...) / .parse::<f64>().expect(...) in Rust+Ruchy — .trim() matches Python whitespace stripping (int('  -7  ')==-7), parse failure panics = Python ValueError. Numeric int(x)/float(x) over int/float still emits the as-cast. Previously a string arg fell through to a non-existent int(...) call emitting uncompilable Rust (silently broken). Lean refuses. rustc round-trip str_parse.py (cross-checked vs python3): to_int('42')->42, to_int('  -7  ')->-7, to_float('3.14')->3.14, add_parsed('10','20')->30, numeric_still(2.9)->2, int('abc') panics. FREE CI. SHIPPED v0.1.92."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -1237,14 +1237,22 @@ pub enum Expr {
     /// The `.max(0)` clamps a negative count to the empty sequence, matching
     /// Python (`"x" * -1 == ""`). Result types as `seq`. Lean refuses.
     Repeat { seq: Box<Expr>, n: Box<Expr> },
-    /// Numeric conversion — Python `int(x)` / `float(x)` over a numeric `x`.
-    /// PMAT-502m (Tranche 2). Rust/Ruchy emit `((<value>) as i64)` (for
-    /// `int`, which truncates toward zero exactly like Python) or
-    /// `((<value>) as f64)` (for `float`). Result types as `I64`/`F64`
-    /// per `to_float`. Lean refuses. (`int("42")` string-parsing and
-    /// `str(x)` are separate slices — `str` has Python/Rust float/bool
-    /// formatting differences.)
-    NumCast { value: Box<Expr>, to_float: bool },
+    /// Numeric conversion — Python `int(x)` / `float(x)`. PMAT-502m
+    /// (Tranche 2). For a **numeric** `value` (`from_str = false`),
+    /// Rust/Ruchy emit `((<value>) as i64)` (for `int`, which truncates
+    /// toward zero exactly like Python) or `((<value>) as f64)` (for
+    /// `float`). PMAT-502bf: for a **string** `value` (`from_str = true`),
+    /// they emit `(<value>).trim().parse::<i64>().expect(…)` /
+    /// `…parse::<f64>().expect(…)` — `.trim()` matches Python's
+    /// whitespace stripping, and a parse failure panics, matching Python's
+    /// `ValueError`. Result types as `I64`/`F64` per `to_float`. Lean
+    /// refuses.
+    NumCast {
+        value: Box<Expr>,
+        to_float: bool,
+        #[serde(default)]
+        from_str: bool,
+    },
     /// Python `str(x)` over an **int** or **float** `x` → its string form.
     /// PMAT-502ad (int); `of_float` is PMAT-502af. For int, Rust/Ruchy emit
     /// `format!("{}", <value>)`. For float they emit a block that matches

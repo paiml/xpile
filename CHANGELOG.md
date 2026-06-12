@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.92] — 2026-06-12
+
+Tranche-2 slice PMAT-502bf — Python **`int(s)` / `float(s)` string parsing**.
+
+`Expr::NumCast` gained a `from_str: bool` flag. `int(s)` / `float(s)` over a
+**string** argument now lowers to `(<s>).trim().parse::<i64>().expect(…)` /
+`.parse::<f64>().expect(…)` in Rust + Ruchy — `.trim()` matches Python's
+whitespace stripping (`int("  -7  ") == -7`), and a parse failure panics, matching
+Python's `ValueError`. Numeric `int(x)` / `float(x)` over an int/float still emits
+the `as`-cast. Previously a string argument fell through to a non-existent
+`int(...)` call that emitted uncompilable Rust. Lean still refuses. rustc
+round-trip `str_parse.py` (cross-checked against `python3`): `to_int("42") -> 42`,
+`to_int("  -7  ") -> -7`, `to_float("3.14") -> 3.14`,
+`add_parsed("10","20") -> 30`, `numeric_still(2.9) -> 2`, and `int("abc")` panics.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.91] — 2026-06-12
 
 Tranche-2 slice PMAT-502be — Python **`bool(x)` truthiness cast**.

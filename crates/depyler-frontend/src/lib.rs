@@ -3876,17 +3876,20 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                 }
                 // PMAT-502m: `int(x)` / `float(x)` numeric conversion over a
-                // numeric arg → `(x) as i64` / `(x) as f64`. (The `int("42")`
-                // string-parse form is deferred — only numeric args here.)
+                // numeric arg → `(x) as i64` / `(x) as f64`. PMAT-502bf: over
+                // a `str` arg → a trimmed `.parse()` (panics on bad input,
+                // matching Python's `ValueError`).
                 if matches!(fname.id.as_str(), "int" | "float")
                     && call.keywords.is_empty()
                     && call.args.len() == 1
                 {
                     let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
-                    if matches!(infer_type_in_ctx(ctx, &value), Type::I64 | Type::F64) {
+                    let vty = infer_type_in_ctx(ctx, &value);
+                    if matches!(vty, Type::I64 | Type::F64 | Type::Str) {
                         return Ok(Expr::NumCast {
                             value: Box::new(value),
                             to_float: fname.id.as_str() == "float",
+                            from_str: matches!(vty, Type::Str),
                         });
                     }
                 }
