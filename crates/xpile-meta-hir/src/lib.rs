@@ -986,6 +986,11 @@ pub enum StrMethodOp {
     /// `.split(sep)` → `.split(&(sep)[..]).map(|s| s.to_string())
     /// .collect::<Vec<String>>()` (List(Str), 1 arg). PMAT-492c.
     Split,
+    /// `.join(xs)` → `xs.join(&(sep)[..])` (Str, 1 list arg). PMAT-492d.
+    /// NOTE the **receiver/arg inversion**: Python `sep.join(xs)` has the
+    /// separator as receiver, but Rust's `[String]::join` has the list as
+    /// receiver — so backends emit the arg as the Rust receiver.
+    Join,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

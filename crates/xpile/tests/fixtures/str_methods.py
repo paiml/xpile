@@ -24,3 +24,7 @@ def is_question(s: str) -> bool:
 
 def words(s: str) -> list[str]:
     return s.split(" ")
+
+
+def joined(xs: list[str]) -> str:
+    return " ".join(xs)

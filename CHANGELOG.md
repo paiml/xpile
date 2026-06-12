@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.18] — 2026-06-12
+
+Sprint slice — Python **`sep.join(xs)`**, **completing the string-method
+family** (PMAT-492: upper/lower/strip/startswith/endswith/split/join).
+
+`sep.join(xs)` lowers to `StrMethodOp::Join` and emits `<xs>.join(&(<sep>)[..])`
+in Rust + Ruchy — note the **receiver/arg inversion**: Python's separator is
+the receiver, but Rust's `[String]::join` takes the list as receiver, so the
+backends emit the list arg as the Rust receiver. Result types as `Str`. Lean
+refuses. rustc round-trip: `" ".join(["a","b","c"]) -> "a b c"`.
+
+`Expr::StrMethod` now covers the full no-arg + predicate + list-interplay
+string-method set. §30 queue item PMAT-492 is **complete**.
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.17] — 2026-06-12
 
 Sprint slice — Python **`str.split(sep)`**, extending `Expr::StrMethod`.

@@ -808,7 +808,7 @@ Tracks 1 and 2 are independent and can run in parallel. Track 3 is small and slo
 |---|---|---|---|---|
 | 1 | **PMAT-481** — Track-4 offline PTX gate | unblocks the whole GPU lane; zero hardware | hours | free |
 | 2 | **PMAT-482** — Track-4 offline WGSL/SPIR-V gate | second lane, near-zero effort | hours | free |
-| 3 | **PMAT-492** — Python **string methods** — ✅ SHIPPED v0.1.15 (`upper`/`lower`/`strip`) + v0.1.16 (`startswith`/`endswith`); **`split`/`join` remain** (list-interplay, follow-up) | very high real-Python prevalence; `rustc`-verifiable | days | free |
+| 3 | ~~PMAT-492 string methods~~ — ✅ **COMPLETE** — `upper`/`lower`/`strip` (v0.1.15), `startswith`/`endswith` (v0.1.16), `split` (v0.1.17), `join` (v0.1.18). Full `Expr::StrMethod` family. | — | done | — |
 | 4 | ~~PMAT-493 f-strings~~ — ✅ **already shipped as PMAT-452** (v0.2.0 Track 1.A); `f"{x}"` → chained `Concat`/`format!`. Do NOT re-pick. | — | done | — |
 | 5 | **PMAT-494** — **tuples** + multiple return + `a, b = f()` unpacking | high; prerequisite for `dict.items()` / `zip` | ~1 wk | free |
 | 6 | **R6 / PMAT-475** — contract-integrity gap + Diamond-gate grandfather | closes a live "every construct under contract" falsification | days | free |

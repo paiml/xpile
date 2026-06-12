@@ -1121,7 +1121,8 @@ fn str_methods_emitted_rust_transforms_strings() {
             && rust.contains(".trim().to_string()")
             && rust.contains(".starts_with(")
             && rust.contains(".ends_with(")
-            && rust.contains(".split(&("),
+            && rust.contains(".split(&(")
+            && rust.contains(".join(&("),
         "expected str-method emissions in Rust, got:\n{rust}"
     );
     let driver = r#"
@@ -1134,6 +1135,7 @@ fn main() {
     assert!(is_question(String::from("ok?")));
     assert!(!is_question(String::from("ok")));
     assert_eq!(words(String::from("a b c")), vec![String::from("a"), String::from("b"), String::from("c")]);
+    assert_eq!(joined(vec![String::from("a"), String::from("b"), String::from("c")]), String::from("a b c"));
 }
 "#;
     assert_rustc_runs("str_methods", &rust, driver);
