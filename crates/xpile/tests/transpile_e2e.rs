@@ -1325,6 +1325,32 @@ fn main() {
     assert_rustc_runs("seq_repeat", &rust, driver);
 }
 
+/// PMAT-502l (Tranche 2): more string methods — `.lstrip()`/`.rstrip()` (Str)
+/// and `.find(sub)`/`.count(sub)` (Int).
+#[test]
+fn str_methods_more() {
+    let rust = xpile_transpile_to_rust("str_methods_more.py");
+    assert!(
+        rust.contains(".trim_start().to_string()")
+            && rust.contains(".trim_end().to_string()")
+            && rust.contains(".map(|__i| __i as i64).unwrap_or(-1)")
+            && rust.contains(".matches(&(")
+            && rust.contains(".count() as i64"),
+        "expected lstrip/rstrip/find/count emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(trim_left(String::from("  hi  ")), String::from("hi  "));
+    assert_eq!(trim_right(String::from("  hi  ")), String::from("  hi"));
+    assert_eq!(index_of(String::from("hello"), String::from("ll")), 2);
+    assert_eq!(index_of(String::from("hello"), String::from("z")), -1);
+    assert_eq!(occurrences(String::from("banana"), String::from("a")), 3);
+    assert_eq!(occurrences(String::from("banana"), String::from("na")), 2);
+}
+"#;
+    assert_rustc_runs("str_methods_more", &rust, driver);
+}
+
 /// PMAT-502h (Tranche 2): 1-arg `min(xs)`/`max(xs)` over a `list[float]` →
 /// a fold (`fold(f64::INFINITY, f64::min)` / `fold(f64::NEG_INFINITY, f64::max)`).
 #[test]

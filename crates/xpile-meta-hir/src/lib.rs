@@ -1207,6 +1207,18 @@ pub enum StrMethodOp {
     /// `.replace(old, new)` → `.replace(&(old)[..], &(new)[..])`
     /// (Str, 2 args). PMAT-502b.
     Replace,
+    /// `.lstrip()` → `.trim_start().to_string()` (Str, 0 args). PMAT-502l.
+    LStrip,
+    /// `.rstrip()` → `.trim_end().to_string()` (Str, 0 args). PMAT-502l.
+    RStrip,
+    /// `.find(sub)` → `.find(&(sub)[..]).map(|__i| __i as i64).unwrap_or(-1)`
+    /// (**Int**, 1 arg) — byte index of the first match, or `-1`. PMAT-502l.
+    /// (Python's `.find` is a *char* index; for ASCII — the v0.1.0 subset —
+    /// byte and char indices coincide.)
+    Find,
+    /// `.count(sub)` → `.matches(&(sub)[..]).count() as i64` (**Int**, 1 arg)
+    /// — count of non-overlapping occurrences. PMAT-502l.
+    Count,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

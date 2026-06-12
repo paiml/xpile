@@ -2324,6 +2324,9 @@ fn infer_type(e: &Expr) -> Type {
             StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
             StrMethodOp::Split => Type::List(Box::new(Type::Str)),
             StrMethodOp::Join | StrMethodOp::Replace => Type::Str,
+            // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
+            StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
+            StrMethodOp::Find | StrMethodOp::Count => Type::I64,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
         // type from the first element (frontend ensures homogeneity
@@ -2473,6 +2476,9 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
             StrMethodOp::Split => Type::List(Box::new(Type::Str)),
             StrMethodOp::Join | StrMethodOp::Replace => Type::Str,
+            // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
+            StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
+            StrMethodOp::Find | StrMethodOp::Count => Type::I64,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
         // shape as the context-free `infer_type` arm.
@@ -3502,6 +3508,11 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
         "split" => Some(StrMethodOp::Split),
         "join" => Some(StrMethodOp::Join),
         "replace" => Some(StrMethodOp::Replace),
+        // PMAT-502l: lstrip/rstrip (0-arg) + find/count (1-arg).
+        "lstrip" => Some(StrMethodOp::LStrip),
+        "rstrip" => Some(StrMethodOp::RStrip),
+        "find" => Some(StrMethodOp::Find),
+        "count" => Some(StrMethodOp::Count),
         _ => None,
     }
 }
@@ -3516,6 +3527,9 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         | StrMethodOp::Split
         | StrMethodOp::Join => 1,
         StrMethodOp::Replace => 2,
+        // PMAT-502l: lstrip/rstrip take no args; find/count take one.
+        StrMethodOp::LStrip | StrMethodOp::RStrip => 0,
+        StrMethodOp::Find | StrMethodOp::Count => 1,
     }
 }
 

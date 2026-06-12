@@ -7,6 +7,28 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.44] — 2026-06-12
+
+Tranche-2 slice PMAT-502l — more Python **string methods**:
+`.lstrip()` / `.rstrip()` / `.find(sub)` / `.count(sub)`.
+
+Four new `StrMethodOp` variants:
+- `.lstrip()` → `.trim_start().to_string()` (Str, 0 args)
+- `.rstrip()` → `.trim_end().to_string()` (Str, 0 args)
+- `.find(sub)` → `.find(&(sub)[..]).map(|__i| __i as i64).unwrap_or(-1)`
+  (**Int**, 1 arg) — byte index of the first match, or `-1` (for the
+  ASCII v0.1.0 subset, byte and char indices coincide)
+- `.count(sub)` → `.matches(&(sub)[..]).count() as i64` (**Int**, 1 arg) —
+  non-overlapping occurrence count
+
+Rust + Ruchy emit; Lean refuses (generic `StrMethod` refusal). rustc round-trip
+`str_methods_more.py`: `trim_left("  hi  ") -> "hi  "`,
+`trim_right("  hi  ") -> "  hi"`, `index_of("hello","ll") -> 2`,
+`index_of("hello","z") -> -1`, `occurrences("banana","a") -> 3`,
+`occurrences("banana","na") -> 2`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.43] — 2026-06-12
 
 Tranche-2 slice PMAT-502k — Python **sequence repetition** `seq * n` / `n * seq`.
