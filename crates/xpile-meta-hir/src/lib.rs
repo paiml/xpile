@@ -96,6 +96,8 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         // PMAT-479 (R10): early return — recurse into the returned expr.
         Stmt::Return(e) => expr_has_int_arith(e),
         Stmt::Let { value, .. } | Stmt::Assign { value, .. } => expr_has_int_arith(value),
+        // PMAT-504: a closure binding — recurse into the body expression.
+        Stmt::ClosureLet { body, .. } => expr_has_int_arith(body),
         // PMAT-494b: tuple unpacking — recurse into the unpacked value.
         Stmt::LetTuple { value, .. } => expr_has_int_arith(value),
         Stmt::While { cond, body } => {
@@ -433,6 +435,22 @@ pub enum Stmt {
     /// `name = value;` — reassignment of a name previously introduced
     /// by [`Stmt::Let`]. PMAT-006.
     Assign { name: String, value: Expr },
+    /// `let name = |param: param_ty| { body };` — a first-class closure
+    /// bound to a local. PMAT-504 (Tranche 2). The Python source is
+    /// `name = lambda param: <body>`. First cut: a single parameter,
+    /// emitted with its inferred type (`param_ty`); the return type is
+    /// left to Rust's inference (no `-> R` annotation). The closure is
+    /// then callable as `name(arg)` via the existing [`Expr::Call`]
+    /// machinery (the frontend records the return type so the call site
+    /// types correctly). Rust/Ruchy emit
+    /// `let <name> = |<param>: <param_ty>| { <body> };`; Lean refuses
+    /// (first-class functions are a v0.3.0 sub-track).
+    ClosureLet {
+        name: String,
+        param: String,
+        param_ty: Type,
+        body: Expr,
+    },
     /// Tuple-destructuring binding — Python `a, b = <expr>`. PMAT-494b
     /// (sprint). `value` types as [`Type::Tuple`] with arity matching
     /// `names`. Rust/Ruchy emit `let (a, b, ...) = <value>;` (immutable

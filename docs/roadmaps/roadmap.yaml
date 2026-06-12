@@ -849,6 +849,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Extends desugar_dict_comp + desugar_set_comp with the range(...) iterable branch that v0.1.85 added to list comps. A range-iterable dict/set comp desugars to a counter loop around the accumulator: let mut t = {...}; let mut x = start; while (x <cmp> stop) { <insert>; x = x + step; } — reusing the shared comp_range_bounds helper. Two new shared helpers comp_filter (lowers optional if to Bool) and comp_range_stmts (assembles the counter loop) now used by both list-iterable and range-iterable paths. The if filter composes. Completes the comprehension-over-range family across list/dict/set. Lean refuses. rustc round-trip dict_set_comp_range.py: sq_map(4)->{0:0,1:1,2:4,3:9}, even_set(4)->{1,2,3}, from_two(5)->3. FREE CI. SHIPPED v0.1.88."
+- id: PMAT-504
+  github_issue: null
+  item_type: task
+  title: 'PMAT-504: [Tranche2] first-class closures (lambda assigned to local + called)'
+  status: in_progress
+  priority: high
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "FIRST STRUCTURAL STEP beyond the lambda foothold (which only inlined bodies into sorted/filter/map). f = lambda y: <body> lowers to a new meta-HIR Stmt::ClosureLet { name, param, param_ty, body }, emitting let f = |y: i64| { <body> }; in Rust+Ruchy; callable as f(arg) via the existing Expr::Call machinery. First cut: single positional param typed i64; return type inferred from body and recorded in NEW ctx.closure_returns side-table so the call site types correctly (Bool-returning closure -> caller returns bool). Achieved WITHOUT a Type::Closure variant (Rust infers the closure type, so the let carries no annotation) — this avoids high churn across every exhaustive Type match. Param bound i64 during body lowering, then restored (no leak). Lean refuses (first-class fns = v0.3.0). rustc round-trip closure_local.py: apply_twice(5)->7 (nested inc(inc(x))), is_positive(3)->true/is_positive(-1)->false, scale(4)->12. FOLLOW-UPS: multi-param closures, non-i64 params (infer from usage), closures passed as fn args, closure capture edge cases. FREE CI. SHIPPED v0.1.89."
 - id: PMAT-465
   github_issue: 496
   item_type: task

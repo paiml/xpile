@@ -93,6 +93,7 @@ fn function_bigint_mode(f: &Function) -> bool {
             | Stmt::Assert { .. }
             | Stmt::Return(_)
             | Stmt::LetTuple { .. }
+            | Stmt::ClosureLet { .. }
             | Stmt::Raise { .. } => false,
             Stmt::While { body, .. }
             | Stmt::ForEach { body, .. }
@@ -218,6 +219,20 @@ fn emit_stmt_indented(
             write!(out, "{indent}{name} = ")?;
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
+            Ok(())
+        }
+        // PMAT-504: closure binding, matching the Rust backend.
+        Stmt::ClosureLet {
+            name,
+            param,
+            param_ty,
+            body,
+        } => {
+            write!(out, "{indent}let {name} = |{param}: ")?;
+            emit_type(out, param_ty)?;
+            out.push_str("| { ");
+            emit_expr(out, body, mode)?;
+            writeln!(out, " }};")?;
             Ok(())
         }
         Stmt::While { cond, body } => {
