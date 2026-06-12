@@ -840,9 +840,10 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502b** — `str.replace(old, new)` (`StrMethodOp::Replace`, 2-arg) | `.replace(&(old)[..], &(new)[..])` | ✅ SHIPPED v0.1.33 |
 | **PMAT-502c** — `sorted(xs)` (`Expr::Sorted`) | `{ let mut __xv = xs.clone(); __xv.sort(); __xv }` | ✅ SHIPPED v0.1.34 (`reverse=` → PMAT-502f v0.1.38; `key=` → follow-up) |
 | **PMAT-502d** — `reversed(xs)` (`Expr::Reversed`) | `{ let mut __xv = xs.clone(); __xv.reverse(); __xv }`; `list(reversed(xs))` unwraps to the same | ✅ SHIPPED v0.1.35 |
-| **PMAT-502e** — 1-arg `min(xs)`/`max(xs)` over a list (`Expr::ListMinMax`) | `xs.iter().copied().min().unwrap()` / `.max()`; `list[int]` first cut, `f64` follows | ✅ SHIPPED v0.1.36 |
+| **PMAT-502e** — 1-arg `min(xs)`/`max(xs)` over a list (`Expr::ListMinMax`) | `xs.iter().copied().min().unwrap()` / `.max()`; `list[int]` | ✅ SHIPPED v0.1.36 (`list[float]` → PMAT-502h v0.1.40) |
 | **PMAT-502f** — `sorted(xs, reverse=True)` (`Expr::Sorted.reverse`) | `{ … __xv.sort(); __xv.reverse(); __xv }` (descending); non-bool/`key=` falls through | ✅ SHIPPED v0.1.38 |
 | **PMAT-502g** — set algebra `a\|b` `a&b` `a-b` `a^b` (`Expr::SetOp`) | `(a).union/intersection/difference/symmetric_difference(&(b)).cloned().collect::<HashSet<_>>()`; both operands `Set`-typed (disambiguates from int BinOp) | ✅ SHIPPED v0.1.39 |
+| **PMAT-502h** — `min(xs)`/`max(xs)` over `list[float]` (`Expr::ListMinMax.of_float`) | `xs.iter().copied().fold(f64::INFINITY, f64::min)` / `(f64::NEG_INFINITY, f64::max)` (f64 has no `Ord`) | ✅ SHIPPED v0.1.40 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |

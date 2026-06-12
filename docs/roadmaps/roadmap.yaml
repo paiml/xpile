@@ -408,6 +408,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::SetOp { lhs, op, rhs } + SetOp enum (Union/Intersection/Difference/SymmetricDifference). When BOTH operands are set[T], a|b a&b a-b a^b -> (a).union(&(b)).cloned().collect::<std::collections::HashSet<_>>() (and .intersection/.difference/.symmetric_difference) in Rust+Ruchy, a new HashSet (operands unchanged). Frontend disambiguates from int bitwise/arith BinOp by operand type (int &|^- unaffected). Result types as operand set type. Lean refuses. rustc round-trip set_ops.py on {1,2,3}/{2,3,4}: union {1,2,3,4}, intersect {2,3}, diff {1}, symdiff {1,4}. FREE CI. SHIPPED v0.1.39."
+- id: PMAT-502H
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502h: [Tranche2] min(xs)/max(xs) over list[float]'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Extends Expr::ListMinMax with of_float: bool (completes PMAT-502e which was list[int] only). f64 has no Ord, so list[float] min(xs) -> <list>.iter().copied().fold(f64::INFINITY, f64::min) and max(xs) -> ...fold(f64::NEG_INFINITY, f64::max) in Rust+Ruchy; list[int] keeps .iter().copied().min().unwrap()/.max(). Result types as element type. Lean refuses. Empty list[float] yields +/-inf (fold identity, first-cut wart). rustc round-trip list_minmax_float.py: lowest([3.5,1.5,2.5])->1.5, highest([3.5,1.5,2.5])->3.5. FREE CI. SHIPPED v0.1.40."
 - id: PMAT-465
   github_issue: 496
   item_type: task

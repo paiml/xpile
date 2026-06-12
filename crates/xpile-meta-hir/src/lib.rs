@@ -1014,12 +1014,19 @@ pub enum Expr {
     Reversed { list: Box<Expr> },
     /// `min(xs)` / `max(xs)` over a list — the 1-arg reduction form of
     /// the Python builtins (distinct from the 2-arg `min(a, b)` which is
-    /// an [`Expr::NumBuiltin`]). PMAT-502e (Tranche 2). Rust/Ruchy emit
-    /// `<list>.iter().copied().min().unwrap()` (or `.max()`); result types
-    /// as the list's element type. First cut is `list[int]` only — `f64`
-    /// lacks `Ord` and follows as its own slice. Lean refuses. Like
-    /// Python, an empty list is a runtime error (here a `.unwrap()` panic).
-    ListMinMax { list: Box<Expr>, is_max: bool },
+    /// an [`Expr::NumBuiltin`]). PMAT-502e (`list[int]`); `of_float` is
+    /// PMAT-502h (`list[float]`). For `list[int]` Rust/Ruchy emit
+    /// `<list>.iter().copied().min().unwrap()` (or `.max()`) — `i64: Ord`.
+    /// For `list[float]` they emit `<list>.iter().copied().fold(f64::INFINITY,
+    /// f64::min)` (or `f64::NEG_INFINITY, f64::max`) since `f64` lacks `Ord`.
+    /// Result types as the list's element type. Lean refuses. For `int` an
+    /// empty list panics (`.unwrap()`, ~Python's `ValueError`); for `float`
+    /// it yields ±∞ (the fold identity — a first-cut wart on empty input).
+    ListMinMax {
+        list: Box<Expr>,
+        is_max: bool,
+        of_float: bool,
+    },
     /// Unary operation — `not x` (logical, Bool → Bool) or `-x`
     /// (numeric negate, I64 → I64).
     UnOp { op: UnOp, operand: Box<Expr> },

@@ -2743,21 +2743,23 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         }
                     }
                 }
-                // PMAT-502e: 1-arg `min(xs)`/`max(xs)` over an `int` list →
-                // a reduction. The 2-arg `min(a, b)` form is handled above by
-                // the NumBuiltin intercept (arity 2), so this only matches the
-                // single-list-argument reduction. `f64` lists lack `Ord` and
-                // follow as their own slice.
+                // PMAT-502e/502h: 1-arg `min(xs)`/`max(xs)` over a numeric
+                // list → a reduction. The 2-arg `min(a, b)` form is handled
+                // above by the NumBuiltin intercept (arity 2), so this only
+                // matches the single-list-argument reduction. `int` lists use
+                // `.min()/.max()` (i64: Ord); `float` lists use a fold (f64
+                // has no Ord) — see the codegen `of_float` branch.
                 if matches!(fname.id.as_str(), "min" | "max")
                     && call.keywords.is_empty()
                     && call.args.len() == 1
                 {
                     let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                     if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
-                        if matches!(*elem, Type::I64) {
+                        if matches!(*elem, Type::I64 | Type::F64) {
                             return Ok(Expr::ListMinMax {
                                 list: Box::new(list),
                                 is_max: fname.id.as_str() == "max",
+                                of_float: matches!(*elem, Type::F64),
                             });
                         }
                     }

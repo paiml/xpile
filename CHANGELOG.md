@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.40] — 2026-06-12
+
+Tranche-2 slice PMAT-502h — Python **`min(xs)`/`max(xs)` over a `list[float]`**.
+
+Extends `Expr::ListMinMax` with an `of_float: bool` flag (completing PMAT-502e,
+which was `list[int]` only). Since `f64` has no `Ord`, a `list[float]` reduction
+emits a fold instead of `.min()`/`.max()`: `min(xs)` →
+`<list>.iter().copied().fold(f64::INFINITY, f64::min)` and `max(xs)` →
+`...fold(f64::NEG_INFINITY, f64::max)` in Rust + Ruchy; `list[int]` keeps
+`.iter().copied().min().unwrap()`/`.max()`. Result types as the element type.
+Lean refuses. (Empty `list[float]` yields ±∞ — the fold identity — a first-cut
+wart vs. Python's `ValueError`.) rustc round-trip `list_minmax_float.py`:
+`lowest([3.5,1.5,2.5]) -> 1.5`, `highest([3.5,1.5,2.5]) -> 3.5`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.39] — 2026-06-12
 
 Tranche-2 slice PMAT-502g — Python **set algebra** (`|` `&` `-` `^`).
