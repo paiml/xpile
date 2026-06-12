@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.100] — 2026-06-13
+
+Tranche-2 slice PMAT-502bn — Python **`pass`** (no-op statement).
+
+`pass` now lowers to *no* statements (an empty `Vec<Stmt>`). Combined with the
+v0.1.98 void-function and v0.1.99 if/else work, this enables a `pass`-only void
+function body (`def noop() -> None: pass` → `fn noop() -> () { () }`) and a `pass`
+inside an `if`/`for`/`else` branch (→ an empty Rust block). A `pass` as the last
+statement of a *value-returning* function still fails the trailing-`return`
+requirement (correct — Python would return `None` there). No meta-HIR or backend
+change. rustc round-trip `pass_stmt.py`: `noop()` returns `()`,
+`guard_pass(-2)/guard_pass(5) -> -1/6` (empty `if`), `skip_first([0,1,0,2,3]) -> 6`
+(empty `if` branch, populated `else`).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.99] — 2026-06-13
 
 Tranche-2 slice PMAT-502bm — Python **early returns / guard clauses** and
