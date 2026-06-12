@@ -715,6 +715,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, n, mode)?;
             out.push_str(").max(0)) as usize)");
         }
+        // PMAT-502m: `int(x)`/`float(x)` → `((x) as i64)` / `((x) as f64)`.
+        Expr::NumCast { value, to_float } => {
+            out.push_str("((");
+            emit_expr(out, value, mode)?;
+            out.push_str(if *to_float { ") as f64)" } else { ") as i64)" });
+        }
         // PMAT-502e: 1-arg `min(xs)`/`max(xs)` reduction over an int list.
         // PMAT-502h: `list[float]` uses a fold (f64 has no `Ord`).
         Expr::ListMinMax {

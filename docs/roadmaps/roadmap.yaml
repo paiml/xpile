@@ -453,6 +453,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Four new StrMethodOp variants. .lstrip()->.trim_start().to_string() and .rstrip()->.trim_end().to_string() (Str, 0-arg); .find(sub)->.find(&(sub)[..]).map(|__i| __i as i64).unwrap_or(-1) and .count(sub)->.matches(&(sub)[..]).count() as i64 (Int, 1-arg). Rust+Ruchy emit; Lean refuses (generic StrMethod refusal). find returns byte index (ASCII subset: byte==char index). rustc round-trip str_methods_more.py: trim_left(\"  hi  \")->\"hi  \", trim_right->\"  hi\", index_of(hello,ll)->2, index_of(hello,z)->-1, occurrences(banana,a)->3, occurrences(banana,na)->2. FREE CI. SHIPPED v0.1.44."
+- id: PMAT-502M
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502m: [Tranche2] numeric conversions int(x)/float(x)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::NumCast { value, to_float }. Over a numeric arg, int(x)->((<value>) as i64) (truncate toward zero, like Python int(2.7)==2, int(-2.7)==-2) and float(x)->((<value>) as f64) in Rust+Ruchy; result types I64/F64. Frontend intercepts numeric args only (int(\"42\") parse + str(x) deferred — str has Python/Rust float/bool formatting diffs). Lean refuses (Int<->Float coercion not in Int-only subset). rustc round-trip num_cast.py: to_float(7)->7.0, to_int(2.7)->2, to_int(-2.7)->-2, half(5)->2.5. FREE CI. SHIPPED v0.1.45."
 - id: PMAT-465
   github_issue: 496
   item_type: task

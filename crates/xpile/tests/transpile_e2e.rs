@@ -1351,6 +1351,26 @@ fn main() {
     assert_rustc_runs("str_methods_more", &rust, driver);
 }
 
+/// PMAT-502m (Tranche 2): numeric conversions `int(x)` / `float(x)` →
+/// `((x) as i64)` (truncate toward zero) / `((x) as f64)`.
+#[test]
+fn num_cast_int_float() {
+    let rust = xpile_transpile_to_rust("num_cast.py");
+    assert!(
+        rust.contains(") as f64)") && rust.contains(") as i64)"),
+        "expected numeric cast emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(to_float(7), 7.0);
+    assert_eq!(to_int(2.7), 2);
+    assert_eq!(to_int(-2.7), -2);
+    assert_eq!(half(5), 2.5);
+}
+"#;
+    assert_rustc_runs("num_cast", &rust, driver);
+}
+
 /// PMAT-502h (Tranche 2): 1-arg `min(xs)`/`max(xs)` over a `list[float]` →
 /// a fold (`fold(f64::INFINITY, f64::min)` / `fold(f64::NEG_INFINITY, f64::max)`).
 #[test]
