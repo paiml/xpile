@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.31] — 2026-06-12
+
+Tranche-2 slice PMAT-500b — Python set **`.add()`** mutation (set
+write-side).
+
+New meta-HIR `Stmt::SetAdd { set_name, elem }` (mirrors `ListAppend`);
+`s.add(x)` lowers to `<set>.insert(<elem>);` and marks the receiver `mut`.
+Recognised in `try_lower_list_method_call` alongside `.append`. Lean refuses.
+A new `walk_counts` arm counts `.add`/`.append` method mutations in the
+mutability **pre-pass**, so a set/list built and mutated in straight-line
+code (`s = {1}; s.add(x)`) gets a `let mut` binding — this also retroactively
+hardens hand-written `.append`. rustc round-trip `set_add.py`:
+`has_after_add`, `loop_contains` (building a set in a `for` loop).
+
+With `.add()` shipped, set comprehensions `{x for x in xs}` are now
+unblocked (next slice).
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.30] — 2026-06-12
 
 Tranche-2 slice PMAT-501 — Python **dict comprehensions** `{k: v for x in

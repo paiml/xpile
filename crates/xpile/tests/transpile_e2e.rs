@@ -1203,6 +1203,27 @@ fn main() {
     assert_rustc_runs("slicing", &rust, driver);
 }
 
+/// PMAT-500b (Tranche 2): set `.add()` mutation → `s.insert(x)` (the
+/// receiver is marked `mut` by the pre-pass), straight-line + in a loop.
+#[test]
+fn set_add_mutation() {
+    let rust = xpile_transpile_to_rust("set_add.py");
+    assert!(
+        rust.contains(".insert(") && rust.contains("let mut s"),
+        "expected set .insert() on a mut binding, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert!(has_after_add(5, 5));
+    assert!(!has_after_add(5, 9));
+    assert!(has_after_add(0, 1));
+    assert!(loop_contains(vec![1, 2, 3], 2));
+    assert!(!loop_contains(vec![1, 2, 3], 9));
+}
+"#;
+    assert_rustc_runs("set_add", &rust, driver);
+}
+
 /// PMAT-501 (Tranche 2): dict comprehension `{k: v for x in xs}` —
 /// materialises to `acc = {}` + `for x in xs { acc[k] = v }` (return +
 /// assignment position).

@@ -171,6 +171,23 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                     *counts.entry(n.id.to_string()).or_insert(0) += 1;
                 }
             }
+            // PMAT-500b: an in-place mutation method call `<name>.add(x)`
+            // / `<name>.append(x)` mutates the receiver, so the binding
+            // must be `mut`. The pre-pass didn't previously see method
+            // mutations (it relied on the lower-time `ctx.mutable.insert`,
+            // which is too late for the receiver's own `let`).
+            ast::Stmt::Expr(e) => {
+                if let ast::Expr::Call(call) = e.value.as_ref() {
+                    if let ast::Expr::Attribute(attr) = call.func.as_ref() {
+                        if let ast::Expr::Name(recv) = attr.value.as_ref() {
+                            if matches!(attr.attr.as_str(), "add" | "append") {
+                                let bump = if in_loop { 2 } else { 1 };
+                                *counts.entry(recv.id.to_string()).or_insert(0) += bump;
+                            }
+                        }
+                    }
+                }
+            }
             ast::Stmt::If(if_stmt) => {
                 let then_counts = walk_counts(&if_stmt.body, in_loop);
                 let else_counts = walk_counts(&if_stmt.orelse, in_loop);
@@ -779,30 +796,27 @@ fn try_lower_list_method_call(
     };
     let method = attr.attr.as_str();
     let receiver_name = receiver.id.as_str();
-    // Only recognise `.append` (the load-bearing mutation method at
-    // v0.2.0 first cut). Other methods (`.extend`, `.insert`,
-    // `.pop`, `.remove`) are explicit v0.3.0+ sub-tracks.
-    if method != "append" {
-        return None;
-    }
-    // Confirm the receiver types as a list. If it doesn't, this
-    // probably is a different method call shape — defer to error
-    // surface in the next dispatch path.
     let receiver_ty = ctx.name_types.get(receiver_name).cloned();
-    if !matches!(receiver_ty, Some(Type::List(_))) {
+    // `.append` on a list → ListAppend; `.add` on a set → SetAdd
+    // (PMAT-500b). Other methods (`.extend`/`.insert`/`.pop`/`.remove`)
+    // are explicit v0.3.0+ sub-tracks; non-matching receiver types fall
+    // through to the next dispatch path's error surface.
+    let is_append = method == "append" && matches!(receiver_ty, Some(Type::List(_)));
+    let is_add = method == "add" && matches!(receiver_ty, Some(Type::Set(_)));
+    if !is_append && !is_add {
         return None;
     }
     // Arity / kwargs check.
     if !call.keywords.is_empty() {
         return Some(Err(FrontendError::Lower(format!(
-            "function `{}` calls `{receiver_name}.append(...)` with keyword args; \
+            "function `{}` calls `{receiver_name}.{method}(...)` with keyword args; \
              v0.2.0 first cut takes a single positional value",
             ctx.fn_name
         ))));
     }
     if call.args.len() != 1 {
         return Some(Err(FrontendError::Lower(format!(
-            "function `{}` calls `{receiver_name}.append(...)` with {} positional arg(s); v0.2.0 requires exactly 1",
+            "function `{}` calls `{receiver_name}.{method}(...)` with {} positional arg(s); v0.2.0 requires exactly 1",
             ctx.fn_name,
             call.args.len()
         ))));
@@ -813,14 +827,19 @@ fn try_lower_list_method_call(
         Ok(e) => e,
         Err(err) => return Some(Err(err)),
     };
-    // Mark the receiver as mutable so the Rust/Ruchy emitter wraps it
-    // in `mut`. Idempotent — existing mutable inference already does
-    // the same for reassigned names; this catches the in-place-
-    // mutation case that compute_mutable_names doesn't see.
+    // Mark the receiver as mutable (idempotent — the pre-pass also flags
+    // it via the `.add`/`.append` walk_counts arm).
     ctx.mutable.insert(receiver_name.to_string());
-    Some(Ok(Stmt::ListAppend {
-        list_name: receiver_name.to_string(),
-        elem,
+    Some(Ok(if is_add {
+        Stmt::SetAdd {
+            set_name: receiver_name.to_string(),
+            elem,
+        }
+    } else {
+        Stmt::ListAppend {
+            list_name: receiver_name.to_string(),
+            elem,
+        }
     }))
 }
 

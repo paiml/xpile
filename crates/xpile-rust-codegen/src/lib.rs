@@ -113,7 +113,7 @@ fn function_bigint_mode(f: &Function) -> bool {
             } => then_body.iter().any(stmt_has_bigint) || else_body.iter().any(stmt_has_bigint),
             // PMAT-460: list.append() carries no Type::Let, so no
             // BigInt-mode trigger of its own.
-            Stmt::ListAppend { .. } => false,
+            Stmt::ListAppend { .. } | Stmt::SetAdd { .. } => false,
             // PMAT-461: indexed assignment same disposition.
             Stmt::IndexAssign { .. } => false,
             // PMAT-466: dict keyed assignment carries no Type::Let;
@@ -305,6 +305,13 @@ fn emit_stmt_indented(
         // mutable so the emission type-checks.
         Stmt::ListAppend { list_name, elem } => {
             write!(out, "{indent}{list_name}.push(")?;
+            emit_expr(out, elem, mode)?;
+            writeln!(out, ");")?;
+            Ok(())
+        }
+        // PMAT-500b: Python `s.add(x)` → Rust `s.insert(x);`.
+        Stmt::SetAdd { set_name, elem } => {
+            write!(out, "{indent}{set_name}.insert(")?;
             emit_expr(out, elem, mode)?;
             writeln!(out, ");")?;
             Ok(())

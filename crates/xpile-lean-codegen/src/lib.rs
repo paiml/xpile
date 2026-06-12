@@ -266,9 +266,9 @@ fn emit_function_with_while_helpers(
             }
             // PMAT-460: list.append() inside a while loop — same
             // monadic-encoding gap as ForEach. Deferred.
-            Stmt::ListAppend { .. } => {
+            Stmt::ListAppend { .. } | Stmt::SetAdd { .. } => {
                 return Err(LeanCodegenError::Unsupported(format!(
-                    "function `{}` has Stmt::ListAppend inside a while loop; \
+                    "function `{}` has in-place mutation (.append/.add) inside a while loop; \
                      Lean codegen at v0.2.0 first cut doesn't compose in-place mutation with while",
                     f.name
                 )));
@@ -736,6 +736,11 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
             "`{list_name}.append(...)` (Stmt::ListAppend) requires state-monad encoding in Lean — \
              not yet implemented at v0.2.0 first cut (PMAT-460 follow-up); \
              use `--target rust` or `--target ruchy` for in-place mutation"
+        ))),
+        // PMAT-500b: set mutation — same monadic-encoding gap.
+        Stmt::SetAdd { set_name, .. } => Err(LeanCodegenError::Unsupported(format!(
+            "`{set_name}.add(...)` (Stmt::SetAdd) requires state-monad encoding in Lean — \
+             use `--target rust` or `--target ruchy`"
         ))),
         // PMAT-461 (v0.2.0 Track 1.B): indexed assignment — same
         // monadic-encoding gap as ListAppend / ForEach.
