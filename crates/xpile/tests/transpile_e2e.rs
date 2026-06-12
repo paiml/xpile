@@ -1224,6 +1224,31 @@ fn main() {
     assert_rustc_runs("sorted_builtin", &rust, driver);
 }
 
+/// PMAT-502z (Tranche 2): `sorted(xs, key=lambda p: e)` → `sort_by_key`
+/// (first lambda/closure support, bounded to the `key=` position).
+#[test]
+fn sorted_key_lambda() {
+    let rust = xpile_transpile_to_rust("sorted_key.py");
+    assert!(
+        rust.contains("sort_by_key(|__k| { let w = __k.clone(); w.len() as i64 }"),
+        "expected sort_by_key emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(
+        by_len(vec![String::from("ccc"), String::from("a"), String::from("bb")]),
+        vec![String::from("a"), String::from("bb"), String::from("ccc")]
+    );
+    assert_eq!(by_neg(vec![1, 3, 2]), vec![3, 2, 1]);
+    assert_eq!(
+        by_len_desc(vec![String::from("a"), String::from("ccc"), String::from("bb")]),
+        vec![String::from("ccc"), String::from("bb"), String::from("a")]
+    );
+}
+"#;
+    assert_rustc_runs("sorted_key", &rust, driver);
+}
+
 /// PMAT-502f (Tranche 2): `sorted(xs, reverse=True)` → descending order
 /// (`__xv.sort(); __xv.reverse();`); `reverse=False` stays ascending.
 #[test]

@@ -32,7 +32,7 @@ use std::rc::Rc;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
     BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListQueryOp, Module, NumBuiltinOp,
-    PairIterKind, Param, SetOp, SourceLang, Stmt, StrMethodOp, Type, UnOp,
+    PairIterKind, Param, SetOp, SortKey, SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
 use rustpython_parser::ast;
@@ -3015,30 +3015,56 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                 }
                 // PMAT-502c: `sorted(xs)` over a list → a new sorted list.
-                // PMAT-502f: an optional `reverse=<bool literal>` keyword
-                // selects descending order (sort-then-reverse). Any other
-                // keyword (e.g. `key=`) leaves the intercept to fall through.
+                // PMAT-502f: optional `reverse=<bool literal>` (descending).
+                // PMAT-502z: optional `key=lambda p: e` (sort_by_key). The
+                // lambda must be a simple single-param form; its body is
+                // lowered with `p` left unbound (works for arithmetic / `len`
+                // / builtin bodies; str-method keys fall through to error).
+                // Any other keyword leaves the intercept to fall through.
                 if fname.id.as_str() == "sorted" && call.args.len() == 1 {
                     let mut reverse = false;
-                    let mut only_reverse_kw = true;
+                    let mut key: Option<SortKey> = None;
+                    let mut kwargs_ok = true;
                     for kw in &call.keywords {
-                        match (kw.arg.as_ref().map(|a| a.as_str()), &kw.value) {
-                            (Some("reverse"), ast::Expr::Constant(c)) => {
-                                if let ast::Constant::Bool(b) = &c.value {
-                                    reverse = *b;
-                                } else {
-                                    only_reverse_kw = false;
+                        match kw.arg.as_ref().map(|a| a.as_str()) {
+                            Some("reverse") => {
+                                if let ast::Expr::Constant(c) = &kw.value {
+                                    if let ast::Constant::Bool(b) = &c.value {
+                                        reverse = *b;
+                                        continue;
+                                    }
                                 }
+                                kwargs_ok = false;
                             }
-                            _ => only_reverse_kw = false,
+                            Some("key") => {
+                                if let ast::Expr::Lambda(lam) = &kw.value {
+                                    if lam.args.args.len() == 1
+                                        && lam.args.posonlyargs.is_empty()
+                                        && lam.args.kwonlyargs.is_empty()
+                                        && lam.args.vararg.is_none()
+                                        && lam.args.kwarg.is_none()
+                                    {
+                                        let param = lam.args.args[0].def.arg.to_string();
+                                        let body = lower_expr_in_ctx(ctx, (*lam.body).clone())?;
+                                        key = Some(SortKey {
+                                            param,
+                                            body: Box::new(body),
+                                        });
+                                        continue;
+                                    }
+                                }
+                                kwargs_ok = false;
+                            }
+                            _ => kwargs_ok = false,
                         }
                     }
-                    if only_reverse_kw {
+                    if kwargs_ok {
                         let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                         if matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
                             return Ok(Expr::Sorted {
                                 list: Box::new(list),
                                 reverse,
+                                key,
                             });
                         }
                     }
