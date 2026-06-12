@@ -322,9 +322,14 @@ fn emit_stmt_indented(
             writeln!(out, ".clone(), __xpile_dict_val); }}")?;
             Ok(())
         }
-        Stmt::Assert { cond } => {
+        // PMAT-502ao: `assert cond, msg` → `assert!(cond, "{}", <msg>);`.
+        Stmt::Assert { cond, msg } => {
             write!(out, "{indent}assert!(")?;
             emit_expr(out, cond, mode)?;
+            if let Some(msg) = msg {
+                out.push_str(", \"{}\", ");
+                emit_expr(out, msg, mode)?;
+            }
             writeln!(out, ");")?;
             Ok(())
         }

@@ -705,6 +705,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::ListContains { list, elem }. When RHS of in/not in is List, x in xs -> (<xs>).contains(&(<x>)) (and not in wraps in !) in Rust+Ruchy; result Bool. Frontend selects over Set/Dict/Str membership by RHS type. Fills the in-operator gap (dict/set/str/list all done). Lean refuses. rustc round-trip list_membership.py: has([1,2,3],2)->true, has([1,2,3],9)->false, lacks([1,2,3],9)->true, has_str([a,b],b)->true, has_str([a,b],z)->false. FREE CI. SHIPPED v0.1.72."
+- id: PMAT-502AO
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ao: [Tranche2] assert with message assert cond, msg'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Stmt::Assert now carries msg: Option<Expr>. Message form assert cond, \"text\" -> assert!(<cond>, \"{}\", <msg>); bare assert cond unchanged (assert!(<cond>);) in Rust+Ruchy. Frontend lower_assert_stmt validates msg is a Str expression. Lean ignores the message (existing if cond then ... else panic! shape retained). rustc round-trip assert_msg.py: checked(5)->5, bare(5)->5, checked(0)/bare(-1) both panic (caught via catch_unwind). FREE CI. SHIPPED v0.1.73."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -2006,6 +2006,30 @@ fn main() {
     assert_rustc_runs("raise_guard", &rust, driver);
 }
 
+/// PMAT-502ao (Tranche 2): `assert cond, msg` → `assert!(cond, "{}", msg)`;
+/// the bare `assert cond` form is unchanged.
+#[test]
+fn assert_msg() {
+    let rust = xpile_transpile_to_rust("assert_msg.py");
+    assert!(
+        rust.contains("assert!((x > 0i64), \"{}\", String::from(\"x must be positive\"))")
+            && rust.contains("assert!((x > 0i64));"),
+        "expected assert with + without message, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    // Passing paths return normally.
+    assert_eq!(checked(5), 5);
+    assert_eq!(bare(5), 5);
+    // Failing assert (with message) panics, caught here.
+    assert!(std::panic::catch_unwind(|| checked(0)).is_err());
+    assert!(std::panic::catch_unwind(|| bare(-1)).is_err());
+}
+"#;
+    assert_rustc_runs("assert_msg", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

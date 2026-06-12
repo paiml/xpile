@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.73] — 2026-06-12
+
+Tranche-2 slice PMAT-502ao — Python **assert with message** `assert cond, msg`.
+
+`Stmt::Assert` now carries an optional `msg: Option<Expr>`. The message form
+`assert cond, "text"` lowers to `assert!(<cond>, "{}", <msg>);` in Rust + Ruchy;
+the bare `assert cond` form is unchanged (`assert!(<cond>);`). The frontend
+validates that the message is a `Str` expression. Lean ignores the message (the
+existing `if cond then … else panic!` shape is retained). rustc round-trip
+`assert_msg.py`: `checked(5) -> 5`, `bare(5) -> 5`, and `checked(0)` / `bare(-1)`
+both panic (caught via `catch_unwind`).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.72] — 2026-06-12
 
 Tranche-2 slice PMAT-502an — Python **list membership** `x in xs`.

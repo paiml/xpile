@@ -730,7 +730,7 @@ fn emit_stmts_then_trailing(
         return Ok(());
     }
     match &stmts[0] {
-        Stmt::Assert { cond } => {
+        Stmt::Assert { cond, .. } => {
             write!(out, "  if (")?;
             emit_expr(out, cond)?;
             writeln!(out, ") then")?;
