@@ -1031,6 +1031,34 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
                         }
                     }
                 }
+                // PMAT-502y: `for k, v in <list of 2-tuples>` (e.g.
+                // `for k, v in d.items()`) — iterate a `List(Tuple[A, B])`
+                // and destructure each element into (k, v). Reached only when
+                // the iter is not enumerate/zip (those returned above).
+                let iter_expr = lower_expr_in_ctx(ctx, (*f.iter).clone())?;
+                if let Type::List(elem) = infer_type_in_ctx(ctx, &iter_expr) {
+                    if let Type::Tuple(tys) = &*elem {
+                        if tys.len() == 2 {
+                            let first = a.id.to_string();
+                            let second = b.id.to_string();
+                            ctx.name_types.insert(first.clone(), tys[0].clone());
+                            ctx.name_types.insert(second.clone(), tys[1].clone());
+                            ctx.bound.insert(first.clone());
+                            ctx.bound.insert(second.clone());
+                            let mut body: Vec<Stmt> = Vec::new();
+                            for s in f.body {
+                                body.extend(lower_block_stmt(ctx, s)?);
+                            }
+                            return Ok(vec![Stmt::ForEachPair {
+                                first,
+                                second,
+                                iter: iter_expr,
+                                kind: PairIterKind::Pairs,
+                                body,
+                            }]);
+                        }
+                    }
+                }
             }
         }
     }

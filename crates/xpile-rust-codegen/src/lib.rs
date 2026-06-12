@@ -294,6 +294,10 @@ fn emit_stmt_indented(
                     emit_expr(out, other, mode)?;
                     out.push_str(".iter().cloned())");
                 }
+                // PMAT-502y: iterate a list of 2-tuples, destructuring each.
+                xpile_meta_hir::PairIterKind::Pairs => {
+                    out.push_str(".iter().cloned()");
+                }
             }
             writeln!(out, " {{")?;
             let inner = format!("{indent}    ");
