@@ -1537,6 +1537,27 @@ fn main() {
     assert_rustc_runs("dict_views", &rust, driver);
 }
 
+/// PMAT-502w (Tranche 2): ctx-aware `len(x)` over context-dependent
+/// expressions (dict views, sorted) — previously a hard error.
+#[test]
+fn len_ctx() {
+    let rust = xpile_transpile_to_rust("len_ctx.py");
+    assert!(
+        rust.contains(".cloned().collect::<Vec<_>>().len() as i64"),
+        "expected len over a dict view, got:\n{rust}"
+    );
+    let driver = r#"
+use std::collections::HashMap;
+fn main() {
+    let d: HashMap<i64, i64> = [(1, 10), (2, 20), (3, 30)].into_iter().collect();
+    assert_eq!(num_keys(d.clone()), 3);
+    assert_eq!(num_values(d.clone()), 3);
+    assert_eq!(len_sorted(vec![5, 1, 3, 2]), 4);
+}
+"#;
+    assert_rustc_runs("len_ctx", &rust, driver);
+}
+
 /// PMAT-502r (Tranche 2): open-ended slices `xs[a:]` / `xs[:b]` / `xs[:]`
 /// (list + str) → half-open / full Rust ranges.
 #[test]
