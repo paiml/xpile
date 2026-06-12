@@ -1203,6 +1203,26 @@ fn main() {
     assert_rustc_runs("slicing", &rust, driver);
 }
 
+/// PMAT-501 (Tranche 2): dict comprehension `{k: v for x in xs}` —
+/// materialises to `acc = {}` + `for x in xs { acc[k] = v }` (return +
+/// assignment position).
+#[test]
+fn dict_comprehension_materialises() {
+    let rust = xpile_transpile_to_rust("dict_comp.py");
+    let driver = r#"
+fn main() {
+    let m = squares(vec![1, 2, 3]);
+    assert_eq!(m.get(&1), Some(&1));
+    assert_eq!(m.get(&2), Some(&4));
+    assert_eq!(m.get(&3), Some(&9));
+    let n = lengths(vec![String::from("a"), String::from("bb")]);
+    assert_eq!(n.get("a"), Some(&1));
+    assert_eq!(n.get("bb"), Some(&2));
+}
+"#;
+    assert_rustc_runs("dict_comp", &rust, driver);
+}
+
 /// PMAT-500 (Tranche 2): sets — literal `{a, b, c}` → `HashSet`-init block,
 /// `x in s` / `x not in s` → `s.contains(&(x))`.
 #[test]

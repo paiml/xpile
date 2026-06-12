@@ -318,6 +318,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Type::Set(Box<Type>), Expr::SetLit(Vec<Expr>), Expr::SetContains { set, elem }. set[T] annotation -> Type::Set; non-empty {..} (no colon) -> SetLit; x in s over a set-typed RHS -> SetContains (chosen over DictContains by RHS type). Rust/Ruchy emit HashSet-init block + <set>.contains(&(<elem>)); len(s) reuses Len. Lean refuses. rustc round-trip sets.py: is_vowel, is_small, not_member. Empty set()/.add()/union-intersection -> follow-up; {} remains an empty dict. FREE CI. SHIPPED v0.1.29."
+- id: PMAT-501
+  github_issue: null
+  item_type: task
+  title: 'PMAT-501: [Tranche2] Dict comprehensions {k: v for x in xs}'
+  status: planned
+  priority: high
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New desugar_dict_comp materialises {k: v for x in iter} to let mut <acc>: dict[K,V] = {} + for x in iter { <acc>[k] = v } — same shape as the shipped desugar_list_comp but with Stmt::DictSet instead of .append(). NO new IR. Handled in assignment (m = {..}) + return (return {..}, hoisted to temp) position. Single generator, no filter, list-typed iterable. Lean inherits dict/for support. rustc round-trip dict_comp.py: squares([1,2,3])->{1:1,2:4,3:9}, lengths([a,bb])->{a:1,bb:2}. Set comp {x for ..} follows set .add(). FREE CI. SHIPPED v0.1.30."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.30] — 2026-06-12
+
+Tranche-2 slice PMAT-501 — Python **dict comprehensions** `{k: v for x in
+xs}`.
+
+A new `desugar_dict_comp` materialises `{k: v for x in iter}` to `let mut
+<acc>: dict[K, V] = {}` + `for x in iter { <acc>[k] = v }` — the same shape
+as the shipped list-comp desugar but with a `Stmt::DictSet` insert instead
+of `.append()`, so **no new IR**. Handled in both assignment position
+(`m = {…}`) and return position (`return {…}`, hoisted to a temp). Single
+generator, no filter, list-typed iterable (the list-comp slice's
+restrictions). rustc round-trip `dict_comp.py`: `squares([1,2,3]) ->
+{1:1,2:4,3:9}`, `lengths(["a","bb"]) -> {a:1,bb:2}`.
+
+Set comprehensions follow once set `.add()` mutation lands.
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.29] — 2026-06-12
 
 Tranche-2 slice PMAT-500 — Python **sets** (read-side first cut): literal

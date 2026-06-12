@@ -492,6 +492,12 @@ fn lower_function_def(
                 let comp_stmts = desugar_list_comp(&mut ctx, tmp, comp)?;
                 stmts.extend(comp_stmts);
                 Expr::Ident(tmp.to_string())
+            } else if let ast::Expr::DictComp(comp) = value.as_ref() {
+                // PMAT-501: `return {k: v for x in xs}` — same hoist.
+                let tmp = "__xpile_comp";
+                let comp_stmts = desugar_dict_comp(&mut ctx, tmp, comp)?;
+                stmts.extend(comp_stmts);
+                Expr::Ident(tmp.to_string())
             } else {
                 // PMAT-466: context-aware so `return table[key]`,
                 // `return table.get(k, 0)`, and `return key in table`
@@ -703,6 +709,13 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
                 {
                     let name = n.id.to_string();
                     return desugar_list_comp(ctx, &name, comp);
+                }
+                // PMAT-501: `name = {k: v for x in xs}` dict comprehension.
+                if let (ast::Expr::Name(n), ast::Expr::DictComp(comp)) =
+                    (&asn.targets[0], asn.value.as_ref())
+                {
+                    let name = n.id.to_string();
+                    return desugar_dict_comp(ctx, &name, comp);
                 }
             }
             lower_assign(ctx, asn).map(|s| vec![s])
@@ -1818,6 +1831,78 @@ fn desugar_list_comp(
             body: vec![Stmt::ListAppend {
                 list_name: target.to_string(),
                 elem,
+            }],
+            over_keys: false,
+        },
+    ])
+}
+
+/// PMAT-501: desugar a dict comprehension `{k: v for x in iter}` into
+/// `let mut <target>: dict[K, V] = {}` + `for x in iter { <target>[k] = v }`
+/// — the same materialisation as [`desugar_list_comp`] but with a
+/// `Stmt::DictSet` insert instead of an append. Single generator, no
+/// filter, list-typed iterable (the list-comp slice's restrictions).
+fn desugar_dict_comp(
+    ctx: &mut LoweringCtx,
+    target: &str,
+    comp: &ast::ExprDictComp,
+) -> Result<Vec<Stmt>, FrontendError> {
+    if comp.generators.len() != 1 {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` uses a multi-generator dict comprehension — v0.2.0 supports a single `for` clause",
+            ctx.fn_name
+        )));
+    }
+    let gen = &comp.generators[0];
+    if !gen.ifs.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` uses a filtered dict comprehension (`{{… if …}}`) — deferred",
+            ctx.fn_name
+        )));
+    }
+    let var = match &gen.target {
+        ast::Expr::Name(n) => n.id.to_string(),
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` has a non-Name dict-comprehension target (tuple unpacking) — deferred",
+                ctx.fn_name
+            )));
+        }
+    };
+    let iter_expr = lower_expr_in_ctx(ctx, gen.iter.clone())?;
+    let elem_in_ty = match infer_type_in_ctx(ctx, &iter_expr) {
+        Type::List(e) => *e,
+        other => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` dict-comprehends over an iterable typing as {other:?}; v0.2.0 supports `{{… for x in <list[T]>}}`",
+                ctx.fn_name
+            )));
+        }
+    };
+    ctx.bound.insert(var.clone());
+    ctx.name_types.insert(var.clone(), elem_in_ty.clone());
+    let key = lower_expr_in_ctx(ctx, (*comp.key).clone())?;
+    let value = lower_expr_in_ctx(ctx, (*comp.value).clone())?;
+    let k_ty = infer_type_in_ctx(ctx, &key);
+    let v_ty = infer_type_in_ctx(ctx, &value);
+    let dict_ty = Type::Dict(Box::new(k_ty), Box::new(v_ty));
+    ctx.bound.insert(target.to_string());
+    ctx.name_types.insert(target.to_string(), dict_ty.clone());
+    Ok(vec![
+        Stmt::Let {
+            name: target.to_string(),
+            ty: dict_ty,
+            value: Expr::DictLit(Vec::new()),
+            mutable: true,
+        },
+        Stmt::ForEach {
+            var,
+            iter: iter_expr,
+            elem_ty: elem_in_ty,
+            body: vec![Stmt::DictSet {
+                dict_name: target.to_string(),
+                key,
+                value,
             }],
             over_keys: false,
         },
