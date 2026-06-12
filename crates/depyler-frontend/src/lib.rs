@@ -699,6 +699,33 @@ fn lower_function_def(
         stmts.extend(lower_block_stmt(&mut ctx, stmt.clone())?);
     }
 
+    // PMAT-502bl: a void (`-> None`) function has no trailing `return
+    // expr` — its last statement is a regular (side-effecting) statement,
+    // and the body evaluates to the unit value `()`. Lower the last
+    // statement like the leading ones and use `Expr::Unit` as the trailing
+    // return. (An explicit `return` inside a void function still flows
+    // through the early-return error path — bare/early returns are a
+    // separate deferred sub-slice.)
+    if matches!(ctx_return_type, Type::Unit) {
+        stmts.extend(lower_block_stmt(&mut ctx, last.clone())?);
+        // Lift in-place-mutation receivers to `mut params` (same as the
+        // value-returning path below).
+        for p in &mut params {
+            if ctx.mutable.contains(&p.name) {
+                p.mutable = true;
+            }
+        }
+        let body = Block {
+            stmts,
+            trailing_return: Expr::Unit,
+        };
+        return Ok(Function {
+            name: f.name.to_string(),
+            params,
+            return_type: Type::Unit,
+            body,
+        });
+    }
     let trailing_return = match last {
         ast::Stmt::Return(ret) => {
             let value = ret.value.as_ref().ok_or_else(|| {
@@ -821,6 +848,10 @@ fn parse_type_annotation(
     ann: &ast::Expr,
 ) -> Result<Type, FrontendError> {
     match ann {
+        // PMAT-502bl: `-> None` is the void return type. Python's `None`
+        // annotation parses as the `None` constant (and, defensively, a
+        // bare `None` name).
+        ast::Expr::Constant(c) if matches!(c.value, ast::Constant::None) => Ok(Type::Unit),
         ast::Expr::Name(n) => match n.id.as_str() {
             "int" => Ok(Type::I64),
             "bool" => Ok(Type::Bool),
@@ -828,8 +859,9 @@ fn parse_type_annotation(
             "float" => Ok(Type::F64),
             "BigInt" => Ok(Type::BigInt),
             "str" => Ok(Type::Str),
+            "None" => Ok(Type::Unit),
             other => Err(FrontendError::Lower(format!(
-                "function `{fn_name}` annotates `{site}` with unsupported type `{other}` — only `int`, `bool`, `BigInt`, `str`, `list[T]` at v0.2.0"
+                "function `{fn_name}` annotates `{site}` with unsupported type `{other}` — only `int`, `bool`, `BigInt`, `str`, `None`, `list[T]` at v0.2.0"
             ))),
         },
         // PMAT-455/PMAT-462 (v0.2.0 Track 1.B/1.C): list[T] / dict[K, V]
@@ -3145,6 +3177,8 @@ fn expr_uses_dict(e: &Expr) -> bool {
 fn infer_type(e: &Expr) -> Type {
     match e {
         Expr::Ident(_) | Expr::LitInt(_) => Type::I64,
+        // PMAT-502bl: the unit value types as Unit (void function return).
+        Expr::Unit => Type::Unit,
         // PMAT-477 (R8): float literal + float arithmetic are Type::F64.
         Expr::LitFloat(_) | Expr::FloatBinOp { .. } => Type::F64,
         // PMAT-456 (v0.2.0 Track 1.B): bool literal is Type::Bool.
@@ -3368,6 +3402,8 @@ fn infer_type(e: &Expr) -> Type {
 fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
     match e {
         Expr::Ident(n) => ctx.name_types.get(n).cloned().unwrap_or(Type::I64),
+        // PMAT-502bl: the unit value types as Unit (void function return).
+        Expr::Unit => Type::Unit,
         // PMAT-477 (R8): float literal + float arithmetic are Type::F64.
         Expr::LitFloat(_) | Expr::FloatBinOp { .. } => Type::F64,
         // PMAT-456 (v0.2.0 Track 1.B): bool literal is Type::Bool.

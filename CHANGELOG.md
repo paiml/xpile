@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.98] — 2026-06-13
+
+Tranche-2 slice PMAT-502bl — Python **void functions** (`-> None`).
+
+New meta-HIR `Type::Unit` and `Expr::Unit`. A function annotated `-> None` no
+longer requires a trailing `return expr`: its last statement is lowered as a
+regular (side-effecting) statement and the body evaluates to the unit value. Rust
++ Ruchy emit `fn <name>(…) -> () { …; () }`; the `-> None` annotation parses (as
+the `None` constant / name) to `Type::Unit`. In-place-mutation receivers are still
+lifted to `mut` params. Lean refuses (a side-effecting void function has no
+total-function encoding). Note: under value semantics an arg mutated inside a void
+function is **not** observed by the caller — the `&mut` aliasing path is a v0.3.0
+sub-track — but the function compiles and its observable effects (e.g. an `assert`)
+work. An explicit `return` inside a void function still flows through the
+early-return error path (bare/early returns deferred). rustc round-trip
+`void_fn.py`: `check_pos(5)` returns `()`, `check_pos(-1)` panics (assert), and a
+dict-mutating `put(...)` compiles and runs.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.97] — 2026-06-13
 
 Tranche-2 slice PMAT-502bk — Python **`continue` / `break`** loop control.
