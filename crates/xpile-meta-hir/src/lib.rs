@@ -984,12 +984,19 @@ pub enum Expr {
     /// existing str byte-length posture). PMAT-502r: `lo`/`hi` are
     /// `Option` — an absent bound is an open end (`xs[a:]`, `xs[:b]`,
     /// `xs[:]`), emitting a half-open / full Rust range (`a..`, `..b`,
-    /// `..`). Step and negative indices are still deferred. Lean refuses.
+    /// `..`). PMAT-502bc: `step` carries a **positive integer literal**
+    /// step over a *list* (`xs[a:b:c]`, `xs[::2]`, …); `None` is the
+    /// default step of 1. With a step, the list emit becomes
+    /// `<c>[<range>].iter().step_by(<step>).cloned().collect::<Vec<_>>()`.
+    /// The `xs[::-1]` reverse idiom is lowered to [`Expr::Reversed`]
+    /// upstream, so a negative `step` never reaches here; other negative
+    /// steps and stepped *string* slices remain deferred. Lean refuses.
     Slice {
         collection: Box<Expr>,
         lo: Option<Box<Expr>>,
         hi: Option<Box<Expr>>,
         of_str: bool,
+        step: Option<i64>,
     },
     /// Dictionary literal — Python `{"a": 1, "b": 2}`. PMAT-462,
     /// v0.2.0 Track 1.C foundation.

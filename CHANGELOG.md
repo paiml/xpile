@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.87] — 2026-06-12
+
+Tranche-2 slice PMAT-502bc — Python **general slice step** `xs[a:b:c]` over a list
+(positive literal `c`).
+
+`Expr::Slice` gained a `step: Option<i64>` field. A stepped list slice
+(`xs[a:b:c]`, `xs[::2]`, `xs[1::2]`, …) with a **positive integer literal** step
+lowers to `<c>[<range>].iter().step_by(<step>).cloned().collect::<Vec<_>>()` in
+Rust + Ruchy (the open/half-open/full range from the existing `lo`/`hi` machinery
+still applies). A step of `1` is the default (dropped). The `xs[::-1]` reverse
+idiom still lowers to `Expr::Reversed` upstream, so a negative step never reaches
+the new path; other negative steps and **stepped string** slices remain deferred
+(rejected with a precise error). Plain (un-stepped) slices are unchanged. Lean
+refuses. rustc round-trip `slice_step.py`: `every_other([0..5]) -> [0,2,4]`,
+`bounded_step([0..9]) -> [1,4,7]`, `from_one_step([0..5]) -> [1,3,5]`
+(cross-checked against `python3`).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.86] — 2026-06-12
 
 Tranche-2 slice PMAT-502bb — Python **in-place dict merge** `a.update(b)`.

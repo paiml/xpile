@@ -735,6 +735,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             lo,
             hi,
             of_str,
+            step,
         } => {
             // PMAT-502r: an absent bound is an open end (`a..`, `..b`, `..`).
             emit_expr(out, collection, mode)?;
@@ -751,7 +752,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 out.push_str(") as usize");
             }
             out.push(']');
-            out.push_str(if *of_str { ".to_string()" } else { ".to_vec()" });
+            // PMAT-502bc: positive list step, matching the Rust backend.
+            match step {
+                Some(s) => {
+                    write!(out, ".iter().step_by({s}).cloned().collect::<Vec<_>>()")?;
+                }
+                None => out.push_str(if *of_str { ".to_string()" } else { ".to_vec()" }),
+            }
         }
         // PMAT-498: scalar numeric builtins → receiver-method form.
         Expr::NumBuiltin { op, args } => {

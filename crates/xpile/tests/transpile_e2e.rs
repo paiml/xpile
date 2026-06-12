@@ -2430,6 +2430,32 @@ fn main() {
     assert_rustc_runs("dict_update", &rust, driver);
 }
 
+/// PMAT-502bc (Tranche 2): general slice step `xs[a:b:c]` over a list
+/// (positive literal `c`) → `<c>[<range>].iter().step_by(c).cloned()
+/// .collect::<Vec<_>>()`.
+#[test]
+fn slice_step() {
+    let rust = xpile_transpile_to_rust("slice_step.py");
+    assert!(
+        rust.contains("xs[..].iter().step_by(2).cloned().collect::<Vec<_>>()"),
+        "xs[::2]:\n{rust}"
+    );
+    assert!(
+        rust.contains(
+            "xs[(1i64) as usize..(8i64) as usize].iter().step_by(3).cloned().collect::<Vec<_>>()"
+        ),
+        "xs[1:8:3]:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(every_other(vec![0, 1, 2, 3, 4, 5]), vec![0, 2, 4]);
+    assert_eq!(bounded_step(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]), vec![1, 4, 7]);
+    assert_eq!(from_one_step(vec![0, 1, 2, 3, 4, 5]), vec![1, 3, 5]);
+}
+"#;
+    assert_rustc_runs("slice_step", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
