@@ -732,6 +732,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Stmt::ListExtend { list_name, other }. xs.extend(ys) (ys any list-typed expr) lowers to xs.extend((<ys>).iter().cloned()); in Rust+Ruchy with the receiver marked mut. Cloning each element keeps ys usable afterwards (Python extend doesn't consume its arg) and only needs T: Clone (every v0.2.0 elem type). Frontend try_lower_list_method_call recognises it (1-arg, List receiver); mutability pre-pass counts extend. Lean refuses (in-place mutation gap, same as .append). rustc round-trip list_extend.py: grow([1,2],[3,4,5])->5, grow_lit([1,2,3])->4, sum_after([1,2],[3,4])->10 (composes with for). FREE CI. SHIPPED v0.1.75."
+- id: PMAT-502AR
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ar: [Tranche2] positional list insertion xs.insert(i, x)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Stmt::ListInsert { list_name, index, elem }. xs.insert(i, x) lowers to xs.insert((<i>) as usize, <x>); in Rust+Ruchy (same as usize coercion as IndexAssign), receiver marked mut. Frontend try_lower_list_method_call recognises it (2-arg, List receiver, int index); mutability pre-pass counts insert. First cut covers in-range non-negative index (0<=i<=len, matching Vec::insert); negative/past-end clamping deferred (same disposition as negative read-index PMAT-502s). Lean refuses (in-place mutation gap, same as .append). rustc round-trip list_insert.py: ins_mid([10,20,30],99)->99, ins_front([1,2,3])->99, ins_grows([1,2,3])->4. FREE CI. SHIPPED v0.1.76."
 - id: PMAT-465
   github_issue: 496
   item_type: task

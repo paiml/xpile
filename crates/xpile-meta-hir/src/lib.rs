@@ -146,6 +146,10 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         Stmt::ListMutate { .. } => false,
         // PMAT-502aq: list.extend() — recurse into the other-list expr.
         Stmt::ListExtend { other, .. } => expr_has_int_arith(other),
+        // PMAT-502ar: list.insert() — recurse into index and elem.
+        Stmt::ListInsert { index, elem, .. } => {
+            expr_has_int_arith(index) || expr_has_int_arith(elem)
+        }
         // PMAT-461: indexed assignment — recurse into both index and
         // value expressions (either may carry arithmetic).
         Stmt::IndexAssign { index, value, .. } => {
@@ -523,6 +527,21 @@ pub enum Stmt {
     /// (true for every v0.2.0 element type). Lean refuses (in-place
     /// mutation, same gap as `ListAppend`).
     ListExtend { list_name: String, other: Expr },
+    /// Positional list insertion — Python `xs.insert(i, x)`. PMAT-502ar
+    /// (Tranche 2). Inserts `elem` before index `index`, shifting the
+    /// tail right; the receiver is marked mutable. Rust/Ruchy emit
+    /// `<list>.insert((<index>) as usize, <elem>);` (same `as usize`
+    /// coercion as [`Stmt::IndexAssign`]). First cut covers the in-range
+    /// non-negative index (`0 <= i <= len`, matching `Vec::insert`);
+    /// Python's negative-index and past-the-end clamping semantics are a
+    /// deferred follow-up (same disposition as the negative read-index
+    /// slice PMAT-502s). Lean refuses (in-place mutation, same gap as
+    /// `ListAppend`).
+    ListInsert {
+        list_name: String,
+        index: Expr,
+        elem: Expr,
+    },
     /// `for var in iter { body }` — Python `for x in xs:` over a
     /// non-range iterable. PMAT-458, v0.2.0 Track 1.B.
     ///

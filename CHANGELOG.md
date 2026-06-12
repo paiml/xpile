@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.76] — 2026-06-12
+
+Tranche-2 slice PMAT-502ar — Python **positional list insertion** `xs.insert(i, x)`.
+
+New meta-HIR `Stmt::ListInsert { list_name, index, elem }`. `xs.insert(i, x)`
+lowers to `xs.insert((<i>) as usize, <x>);` in Rust + Ruchy (the same `as usize`
+coercion as `Stmt::IndexAssign`), marking the receiver `mut`. The frontend
+recognises it in `try_lower_list_method_call` (2-arg, list receiver, int index)
+and the mutability pre-pass counts it. First cut covers the in-range non-negative
+index (`0 <= i <= len`, matching `Vec::insert`); Python's negative-index and
+past-the-end clamping are deferred (same disposition as the negative read-index
+slice). Lean refuses (in-place mutation, same gap as `.append`). rustc round-trip
+`list_insert.py`: `ins_mid([10,20,30],99) -> 99`, `ins_front([1,2,3]) -> 99`,
+`ins_grows([1,2,3]) -> 4`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.75] — 2026-06-12
 
 Tranche-2 slice PMAT-502aq — Python **in-place list concatenation** `xs.extend(ys)`.
