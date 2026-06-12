@@ -2086,6 +2086,33 @@ fn main() {
     assert_rustc_runs("list_extend", &rust, driver);
 }
 
+/// PMAT-502ar (Tranche 2): positional list insertion `xs.insert(i, x)` →
+/// `xs.insert((i) as usize, x);`.
+#[test]
+fn list_insert() {
+    let rust = xpile_transpile_to_rust("list_insert.py");
+    assert!(
+        rust.contains("xs.insert((1i64) as usize, x);"),
+        "insert(var):\n{rust}"
+    );
+    assert!(
+        rust.contains("xs.insert((0i64) as usize, 99i64);"),
+        "insert(front):\n{rust}"
+    );
+    assert!(
+        rust.contains("ins_mid(mut xs: Vec<i64>"),
+        "mut receiver:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(ins_mid(vec![10, 20, 30], 99), 99);
+    assert_eq!(ins_front(vec![1, 2, 3]), 99);
+    assert_eq!(ins_grows(vec![1, 2, 3]), 4);
+}
+"#;
+    assert_rustc_runs("list_insert", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

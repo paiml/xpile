@@ -879,6 +879,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502ao** — assert with message `assert cond, msg` (`Stmt::Assert.msg`) | `assert!(<cond>, "{}", <msg>);`; bare form unchanged; frontend validates `msg: Str`; Lean ignores message | ✅ SHIPPED v0.1.73 |
 | **PMAT-502ap** — in-place list mutators `xs.sort()`/`.reverse()`/`.clear()` (`Stmt::ListMutate`) | `<list>.sort()` (`Vec<i64>`) / `.sort_by(\|a,b\| a.partial_cmp(b).unwrap())` (`Vec<f64>`) / `.reverse()` / `.clear()`; receiver `mut`; Lean refuses | ✅ SHIPPED v0.1.74 |
 | **PMAT-502aq** — in-place list concatenation `xs.extend(ys)` (`Stmt::ListExtend`) | `<list>.extend((<ys>).iter().cloned());`; clones elements (Python `extend` doesn't consume its arg); receiver `mut`; Lean refuses | ✅ SHIPPED v0.1.75 |
+| **PMAT-502ar** — positional list insertion `xs.insert(i, x)` (`Stmt::ListInsert`) | `<list>.insert((<i>) as usize, <x>);`; int index, in-range non-negative first cut (neg/past-end deferred); receiver `mut`; Lean refuses | ✅ SHIPPED v0.1.76 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |

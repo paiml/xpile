@@ -184,7 +184,13 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                             // the receiver in place.
                             if matches!(
                                 attr.attr.as_str(),
-                                "add" | "append" | "sort" | "reverse" | "clear" | "extend"
+                                "add"
+                                    | "append"
+                                    | "sort"
+                                    | "reverse"
+                                    | "clear"
+                                    | "extend"
+                                    | "insert"
                             ) {
                                 let bump = if in_loop { 2 } else { 1 };
                                 *counts.entry(recv.id.to_string()).or_insert(0) += bump;
@@ -880,6 +886,48 @@ fn try_lower_list_method_call(
         return Some(Ok(Stmt::ListExtend {
             list_name: receiver_name.to_string(),
             other,
+        }));
+    }
+    // PMAT-502ar: `xs.insert(i, x)` — 2-arg positional list insertion.
+    if method == "insert" {
+        let Some(Type::List(_)) = receiver_ty.as_ref() else {
+            return None;
+        };
+        if !call.keywords.is_empty() {
+            return Some(Err(FrontendError::Lower(format!(
+                "function `{}` calls `{receiver_name}.insert(...)` with keyword args; \
+                 v0.2.0 takes two positional args (index, value)",
+                ctx.fn_name
+            ))));
+        }
+        if call.args.len() != 2 {
+            return Some(Err(FrontendError::Lower(format!(
+                "function `{}` calls `{receiver_name}.insert(...)` with {} positional arg(s); \
+                 v0.2.0 requires exactly 2 (index, value)",
+                ctx.fn_name,
+                call.args.len()
+            ))));
+        }
+        let index = match lower_expr_in_ctx(ctx, call.args[0].clone()) {
+            Ok(e) => e,
+            Err(err) => return Some(Err(err)),
+        };
+        if infer_type_in_ctx(ctx, &index) != Type::I64 {
+            return Some(Err(FrontendError::Lower(format!(
+                "function `{}` calls `{receiver_name}.insert(<index>, ...)` with a non-int index; \
+                 v0.2.0 requires an int position",
+                ctx.fn_name
+            ))));
+        }
+        let elem = match lower_expr_in_ctx(ctx, call.args[1].clone()) {
+            Ok(e) => e,
+            Err(err) => return Some(Err(err)),
+        };
+        ctx.mutable.insert(receiver_name.to_string());
+        return Some(Ok(Stmt::ListInsert {
+            list_name: receiver_name.to_string(),
+            index,
+            elem,
         }));
     }
     if !is_append && !is_add {
