@@ -258,6 +258,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::Filter { list, lambda } => {
             expr_has_int_arith(list) || expr_has_int_arith(&lambda.body)
         }
+        // PMAT-502ac: map — recurse into the list and transform body.
+        Expr::Map { list, lambda } => expr_has_int_arith(list) || expr_has_int_arith(&lambda.body),
         Expr::ListMinMax { list, key, .. } => {
             expr_has_int_arith(list) || key.as_ref().is_some_and(|k| expr_has_int_arith(&k.body))
         }
@@ -1103,6 +1105,15 @@ pub enum Expr {
     /// .collect::<Vec<_>>()`; result types as the **input** list type
     /// (filter keeps the element type, drops some elements). Lean refuses.
     Filter { list: Box<Expr>, lambda: SortKey },
+    /// `map(lambda p: e, xs)` over a list — Python builtin. PMAT-502ac
+    /// (Tranche 2). The supported subset materializes the lazy `map`
+    /// iterator as a `Vec`. The `lambda` is a [`SortKey`] (param + body).
+    /// Rust/Ruchy emit `<list>.iter().cloned().map(|__k| { let p =
+    /// __k.clone(); e }).collect::<Vec<_>>()`; result types as
+    /// `List(<body type>)` — the body's transformed element type (correct
+    /// for arithmetic / `len` / conversion bodies, which is what lowers).
+    /// Lean refuses.
+    Map { list: Box<Expr>, lambda: SortKey },
     /// `min(xs)` / `max(xs)` over a list — the 1-arg reduction form of
     /// the Python builtins (distinct from the 2-arg `min(a, b)` which is
     /// an [`Expr::NumBuiltin`]). PMAT-502e (`list[int]`); `of_float` is

@@ -1311,6 +1311,29 @@ fn main() {
     assert_rustc_runs("filter_lambda", &rust, driver);
 }
 
+/// PMAT-502ac (Tranche 2): `map(lambda p: e, xs)` → a materialized list of
+/// transformed elements; result element type = the body's type.
+#[test]
+fn map_lambda() {
+    let rust = xpile_transpile_to_rust("map_lambda.py");
+    assert!(
+        rust.contains(".iter().cloned().map(|__k| { let x = __k.clone();")
+            && rust.contains(").collect::<Vec<_>>()"),
+        "expected map emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(doubled(vec![1, 2, 3]), vec![2, 4, 6]);
+    assert_eq!(
+        lengths(vec![String::from("a"), String::from("bbb"), String::from("cc")]),
+        vec![1, 3, 2]
+    );
+    assert_eq!(to_floats(vec![1, 2, 3]), vec![1.0, 2.0, 3.0]);
+}
+"#;
+    assert_rustc_runs("map_lambda", &rust, driver);
+}
+
 /// PMAT-502e (Tranche 2): 1-arg `min(xs)`/`max(xs)` over an int list →
 /// `xs.iter().copied().min().unwrap()` (or `.max()`).
 #[test]

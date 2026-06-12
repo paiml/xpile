@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.61] — 2026-06-12
+
+Tranche-2 slice PMAT-502ac — Python **`map(lambda p: e, xs)`**.
+
+New meta-HIR `Expr::Map { list, lambda }` (mirroring `Expr::Filter`; the lambda
+reuses `SortKey`). `map(lambda p: e, xs)` over a list lowers to
+`xs.iter().cloned().map(|__k| { let p = __k.clone(); e }).collect::<Vec<_>>()` in
+Rust + Ruchy — a materialized list of the transformed elements; the result
+element type is the **body's** type (`map(lambda x: x*2, …) -> list[int]`,
+`map(lambda w: len(w), …) -> list[int]`, `map(lambda x: float(x), …) ->
+list[float]`). `list(map(…))` unwraps to the same node. The body is lowered with
+`p` unbound (same as the v0.1.58–60 lambda foothold), so arithmetic / `len` /
+conversion bodies work; str-method bodies cleanly error and are deferred. Lean
+refuses. This extends the lambda foothold to its fifth position (after
+`sorted`/`min`/`max` keys and `filter`). rustc round-trip `map_lambda.py`:
+`doubled([1,2,3]) -> [2,4,6]`, `lengths(["a","bbb","cc"]) -> [1,3,2]`,
+`to_floats([1,2,3]) -> [1.0,2.0,3.0]`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.60] — 2026-06-12
 
 Tranche-2 slice PMAT-502ab — Python **`filter(lambda p: pred, xs)`**.

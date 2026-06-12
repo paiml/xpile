@@ -597,6 +597,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::Filter { list, lambda } (lambda reuses SortKey param+body). filter(lambda p: pred, xs) over a list -> xs.iter().cloned().filter(|__k| { let p = __k.clone(); pred }).collect::<Vec<_>>() in Rust+Ruchy; order-preserving materialized list of elements where the Bool predicate holds; result = input list type. list(filter(..)) unwraps to the same node. Predicate body lowered with p unbound; must infer Bool (truthiness deferred). Extends lambda foothold to a 3rd builtin (after sorted/min/max keys). Lean refuses. rustc round-trip filter_lambda.py: positives([-1,2,-3,4,0])->[2,4], evens([1..6])->[2,4,6], nonempty([a,'',bb])->[a,bb]. FREE CI. SHIPPED v0.1.60."
+- id: PMAT-502AC
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ac: [Tranche2] map(lambda, xs)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::Map { list, lambda } (mirrors Filter; lambda reuses SortKey). map(lambda p: e, xs) over a list -> xs.iter().cloned().map(|__k| { let p = __k.clone(); e }).collect::<Vec<_>>() in Rust+Ruchy; result element type = body type (map(x*2)->list[int], map(len(w))->list[int], map(float(x))->list[float]). list(map(..)) unwraps. Body lowered with p unbound (arith/len/conversion bodies OK; str-method deferred). 5th lambda position (after sorted/min/max/filter). Lean refuses. rustc round-trip map_lambda.py: doubled([1,2,3])->[2,4,6], lengths([a,bbb,cc])->[1,3,2], to_floats([1,2,3])->[1.0,2.0,3.0]. FREE CI. SHIPPED v0.1.61."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -486,6 +486,11 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(list, out);
             collect_idents(&lambda.body, out);
         }
+        // PMAT-502ac: map — recurse into the list and transform body.
+        Expr::Map { list, lambda } => {
+            collect_idents(list, out);
+            collect_idents(&lambda.body, out);
+        }
         // PMAT-502e: min/max reduction — recurse into the list expression.
         Expr::ListMinMax { list, .. } => collect_idents(list, out),
         // PMAT-502u: list query — recurse into the list and the arg.
@@ -986,6 +991,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::Filter { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python filter(pred, xs) is not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502ac: map deferred in the Lean lane at first cut.
+        Expr::Map { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python map(f, xs) is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

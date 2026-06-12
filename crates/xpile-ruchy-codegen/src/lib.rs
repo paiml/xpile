@@ -729,6 +729,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, &lambda.body, mode)?;
             out.push_str(" }).collect::<Vec<_>>()");
         }
+        // PMAT-502ac: `map(f, xs)` → `.iter().cloned().map(...).collect()`.
+        Expr::Map { list, lambda } => {
+            emit_expr(out, list, mode)?;
+            write!(
+                out,
+                ".iter().cloned().map(|__k| {{ let {} = __k.clone(); ",
+                lambda.param
+            )?;
+            emit_expr(out, &lambda.body, mode)?;
+            out.push_str(" }).collect::<Vec<_>>()");
+        }
         // PMAT-462 (v0.2.0 Track 1.C): Ruchy → Rust HashMap-init block.
         // PMAT-466: empty literal → bare `HashMap::new()` (see the Rust
         // backend's twin arm — avoids clippy `unused_mut`).
