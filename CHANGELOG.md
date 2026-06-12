@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.94] — 2026-06-13
+
+Tranche-2 slice PMAT-502bh — Python **`str.format`** with sequential `{}`
+placeholders.
+
+New meta-HIR `Expr::StrFormat { fmt, args }`. `"<fmt>".format(args…)` over a
+**string-literal** receiver lowers to `format!("<fmt>", args…)` in Rust + Ruchy —
+Python's sequential `{}` placeholders and `{{` / `}}` escapes map one-to-one to
+Rust's `format!`, so the validated format string is re-emitted verbatim (via the
+`{:?}` Rust-string-literal escape). A new `count_simple_placeholders` validator
+enforces that every field is a bare `{}` (the count must equal the arg count) and
+rejects indexed (`{0}`), named (`{name}`), and spec'd (`{:.2f}`) fields with a
+precise error. First cut: `int` / `str` args only — a `bool` (`True`/`False` vs
+`true`/`false`) and a whole-number `float` (`2.0` → `2` in Rust `Display`)
+mismatch Python, so they're deferred. Lean refuses. rustc round-trip
+`str_format.py` (cross-checked against `python3`): `one(42) -> "val=42"`,
+`two(3,7) -> "3 + 7 done"`, `with_str("x",5) -> "x: 5"`,
+`escaped(9) -> "{literal} 9"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.93] — 2026-06-13
 
 Tranche-2 slice PMAT-502bg — Python **list concatenation** `xs + ys`.

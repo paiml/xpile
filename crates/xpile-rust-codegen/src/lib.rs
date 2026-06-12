@@ -702,6 +702,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, rhs, mode)?;
             out.push_str(").iter()).cloned().collect::<Vec<_>>()");
         }
+        // PMAT-502bh: `"<fmt>".format(args…)` → `format!("<fmt>", args…)`.
+        // `{fmt:?}` re-escapes the validated format string as a Rust string
+        // literal (preserving `{}` placeholders + `{{`/`}}` escapes).
+        Expr::StrFormat { fmt, args } => {
+            write!(out, "format!({fmt:?}")?;
+            for a in args {
+                out.push_str(", ");
+                emit_expr(out, a, mode)?;
+            }
+            out.push(')');
+        }
         // PMAT-502am: a formatted f-string field → `format!("{:<spec>}", v)`.
         Expr::FormatSpec { value, rust_spec } => {
             write!(out, "format!(\"{{:{rust_spec}}}\", ")?;

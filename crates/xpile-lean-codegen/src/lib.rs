@@ -457,6 +457,12 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(lhs, out);
             collect_idents(rhs, out);
         }
+        // PMAT-502bh: str.format — recurse into each formatted arg.
+        Expr::StrFormat { args, .. } => {
+            for a in args {
+                collect_idents(a, out);
+            }
+        }
         // PMAT-502am: formatted f-string field — recurse into the value.
         Expr::FormatSpec { value, .. } => collect_idents(value, out),
         // PMAT-492: string method — recurse into the receiver + args.
@@ -1004,6 +1010,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::ListConcat { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python list `+` concatenation is not yet supported in the Lean lane — \
+                 use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502bh: str.format deferred in the Lean lane.
+        Expr::StrFormat { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python str.format(...) is not yet supported in the Lean lane — \
                  use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

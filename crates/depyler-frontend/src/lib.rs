@@ -3075,6 +3075,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::Concat { .. } => Type::Str,
         // PMAT-502bg: list concatenation types as the list (of `lhs`).
         Expr::ListConcat { lhs, .. } => infer_type(lhs),
+        // PMAT-502bh: str.format produces a Str.
+        Expr::StrFormat { .. } => Type::Str,
         // PMAT-502am: a formatted f-string field produces a Str.
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
@@ -3314,6 +3316,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::Concat { .. } => Type::Str,
         // PMAT-502bg: list concatenation types as the list (of `lhs`).
         Expr::ListConcat { lhs, .. } => infer_type_in_ctx(ctx, lhs),
+        // PMAT-502bh: str.format produces a Str.
+        Expr::StrFormat { .. } => Type::Str,
         // PMAT-502am: a formatted f-string field produces a Str.
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
@@ -3712,6 +3716,47 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 _ => DictViewKind::Items,
                             },
                         });
+                    }
+                }
+                // PMAT-502bh: `"<fmt>".format(args…)` — Python str.format
+                // with sequential `{}` placeholders. The receiver must be a
+                // string literal so the format string is validated at lower
+                // time; the `{}` count must match the arg count; args are
+                // int/str (bool/float Display differently than Python).
+                if attr.attr.as_str() == "format" && call.keywords.is_empty() {
+                    if let ast::Expr::Constant(c) = attr.value.as_ref() {
+                        if let ast::Constant::Str(fmt) = &c.value {
+                            let n = count_simple_placeholders(fmt).ok_or_else(|| {
+                                FrontendError::Lower(format!(
+                                    "function `{}` uses str.format with non-sequential placeholders (`{{0}}`/`{{name}}`/`{{:spec}}`) — v0.2.0 supports only sequential `{{}}`",
+                                    ctx.fn_name
+                                ))
+                            })?;
+                            if n != call.args.len() {
+                                return Err(FrontendError::Lower(format!(
+                                    "function `{}` calls str.format with {n} `{{}}` placeholder(s) but {} arg(s)",
+                                    ctx.fn_name,
+                                    call.args.len()
+                                )));
+                            }
+                            let mut args = Vec::with_capacity(call.args.len());
+                            for a in &call.args {
+                                let lowered = lower_expr_in_ctx(ctx, a.clone())?;
+                                match infer_type_in_ctx(ctx, &lowered) {
+                                    Type::I64 | Type::Str => args.push(lowered),
+                                    other => {
+                                        return Err(FrontendError::Lower(format!(
+                                            "function `{}` formats a {other:?} value via str.format; v0.2.0 supports int/str args (bool/float deferred — they Display differently than Python)",
+                                            ctx.fn_name
+                                        )))
+                                    }
+                                }
+                            }
+                            return Ok(Expr::StrFormat {
+                                fmt: fmt.clone(),
+                                args,
+                            });
+                        }
                     }
                 }
                 // PMAT-492/493b: string methods — `s.upper()/.lower()/
@@ -5115,6 +5160,40 @@ fn num_builtin_op(name: &str) -> Option<(NumBuiltinOp, usize)> {
         "max" => Some((NumBuiltinOp::Max, 2)),
         _ => None,
     }
+}
+
+/// PMAT-502bh: count the sequential `{}` placeholders in a Python
+/// `str.format` template, treating `{{` / `}}` as literal-brace escapes.
+/// Returns `None` if the template uses an unsupported field — an indexed
+/// (`{0}`), named (`{name}`), or spec'd (`{:.2f}`) placeholder, or an
+/// unmatched `{` / `}`. Braces are ASCII, so byte-walking is UTF-8-safe.
+fn count_simple_placeholders(fmt: &str) -> Option<usize> {
+    let b = fmt.as_bytes();
+    let mut count = 0usize;
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'{' => {
+                if i + 1 < b.len() && b[i + 1] == b'{' {
+                    i += 2; // `{{` escape
+                } else if i + 1 < b.len() && b[i + 1] == b'}' {
+                    count += 1;
+                    i += 2; // sequential `{}`
+                } else {
+                    return None; // `{0}` / `{name}` / `{:spec}` / lone `{`
+                }
+            }
+            b'}' => {
+                if i + 1 < b.len() && b[i + 1] == b'}' {
+                    i += 2; // `}}` escape
+                } else {
+                    return None; // lone `}`
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    Some(count)
 }
 
 fn str_method_op(name: &str) -> Option<StrMethodOp> {
