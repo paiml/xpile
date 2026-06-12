@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.11] — 2026-06-12
+
+Incremental release adding **`Stmt::If`** — C `if`/`else` statements
+(PMAT-478, the post-v0.1.4 audit's R9). The decy C frontend's first
+statement-level branching beyond the ternary.
+
+- meta-HIR gains `Stmt::If { cond, then_body, else_body }`; the decy
+  parser produces it for `if (c) { … } else { … }` (incl. `else if`
+  chains), Rust/Ruchy emit `if c { … } else { … }`, Lean refuses (its
+  executable encoding uses the if-*expression* form).
+- Branch bodies are statement lists (assignments / nested if / while);
+  a local reassigned in a branch is inferred `mut`. Early returns
+  inside a branch are **not** yet supported (that is R10 — the meta-HIR
+  still uses a single trailing return).
+- Exit (rustc round-trip): `max3(1,5,3)` → 5, `clamp(15,0,10)` → 10,
+  `clamp(-3,0,10)` → 0.
+
+The Python frontend keeps its if-as-let lowering for the assignment
+shape; the Python→`Stmt::If` migration is a follow-up. Substrate
+unchanged at QUORUM. `transpile_e2e` at 83 tests.
+
+Install: `cargo install xpile` upgrades to 0.1.11.
+
 ## [0.1.10] — 2026-06-12
 
 Incremental release adding the Python **`float`** type (PMAT-477, the

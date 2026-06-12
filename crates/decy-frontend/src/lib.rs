@@ -79,6 +79,8 @@ enum Tok {
     Slash,
     Percent,
     While,
+    If,
+    Else,
     Lt,
     Le,
     Gt,
@@ -235,6 +237,8 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
                     "return" => Tok::Return,
                     "void" => Tok::Void,
                     "while" => Tok::While,
+                    "if" => Tok::If,
+                    "else" => Tok::Else,
                     other => Tok::Ident(other.to_string()),
                 });
             }
@@ -383,6 +387,7 @@ impl<'a> Parser<'a> {
                 })
             }
             Some(Tok::While) => self.parse_while(fn_name),
+            Some(Tok::If) => self.parse_if(fn_name),
             Some(Tok::Ident(_)) => {
                 let name = self.parse_ident()?;
                 self.eat(&Tok::Assign)?;
@@ -391,9 +396,56 @@ impl<'a> Parser<'a> {
                 Ok(Stmt::Assign { name, value })
             }
             other => Err(format!(
-                "function `{fn_name}`: unexpected token {other:?} — supported statements: `int x = e;`, `x = e;`, `while (c) {{ … }}`, then a final `return e;`"
+                "function `{fn_name}`: unexpected token {other:?} — supported statements: `int x = e;`, `x = e;`, `if (c) {{ … }} else {{ … }}`, `while (c) {{ … }}`, then a final `return e;`"
             )),
         }
+    }
+
+    /// PMAT-478 (R9): `if (cond) { stmts } [else { stmts }]` →
+    /// `Stmt::If`. Branch bodies are statement lists (decls / assigns /
+    /// nested if / while); `return` inside a branch is not supported at
+    /// v0.2.0 (the meta-HIR uses a single trailing return — that is R10).
+    fn parse_if(&mut self, fn_name: &str) -> Result<Stmt, String> {
+        self.eat(&Tok::If)?;
+        self.eat(&Tok::LParen)?;
+        let cond = self.parse_expr()?;
+        self.eat(&Tok::RParen)?;
+        let then_body = self.parse_brace_block(fn_name)?;
+        let else_body = if matches!(self.peek(), Some(Tok::Else)) {
+            self.bump();
+            // `else if` chains: an `else` directly followed by `if`
+            // nests as a single-statement else block.
+            if matches!(self.peek(), Some(Tok::If)) {
+                vec![self.parse_if(fn_name)?]
+            } else {
+                self.parse_brace_block(fn_name)?
+            }
+        } else {
+            Vec::new()
+        };
+        Ok(Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        })
+    }
+
+    /// Parse `{ stmt* }` — a brace-delimited statement list with no
+    /// trailing return (used by `if`/`else` branch bodies). Rejects
+    /// `return` inside (early returns are R10).
+    fn parse_brace_block(&mut self, fn_name: &str) -> Result<Vec<Stmt>, String> {
+        self.eat(&Tok::LBrace)?;
+        let mut body = Vec::new();
+        while !matches!(self.peek(), Some(Tok::RBrace)) {
+            if matches!(self.peek(), Some(Tok::Return)) {
+                return Err(format!(
+                    "function `{fn_name}`: `return` inside an `if`/`else` branch is not supported at v0.2.0 (the meta-HIR uses a single trailing return)"
+                ));
+            }
+            body.push(self.parse_stmt(fn_name)?);
+        }
+        self.eat(&Tok::RBrace)?;
+        Ok(body)
     }
 
     fn parse_while(&mut self, fn_name: &str) -> Result<Stmt, String> {
@@ -614,6 +666,15 @@ fn collect_reassigned(stmts: &[Stmt], out: &mut std::collections::HashSet<String
                 out.insert(name.clone());
             }
             Stmt::While { body, .. } => collect_reassigned(body, out),
+            // PMAT-478 (R9): a local reassigned in either branch is mutable.
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_reassigned(then_body, out);
+                collect_reassigned(else_body, out);
+            }
             _ => {}
         }
     }
@@ -628,6 +689,14 @@ fn set_let_mut(stmts: &mut [Stmt], reassigned: &std::collections::HashSet<String
                 }
             }
             Stmt::While { body, .. } => set_let_mut(body, reassigned),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                set_let_mut(then_body, reassigned);
+                set_let_mut(else_body, reassigned);
+            }
             _ => {}
         }
     }

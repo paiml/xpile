@@ -232,6 +232,32 @@ fn xpile_transpile_to_rust(fixture_name: &str) -> String {
     String::from_utf8(out.stdout).expect("stdout is UTF-8")
 }
 
+/// PMAT-478 (R9): C if/else statements (`Stmt::If`) — the decy
+/// frontend's first statement-level branching (beyond the ternary).
+/// Locals reassigned in a branch are inferred `mut`.
+#[test]
+fn c_if_else_statements_roundtrip() {
+    let rust = xpile_transpile_to_rust("c_if.c");
+    assert!(
+        rust.contains("if b > m {") && rust.contains("} else {"),
+        "C if/else should emit Rust if/else statements:\n{rust}"
+    );
+    assert!(
+        rust.contains("let mut m: i32") && rust.contains("let mut r: i32"),
+        "locals reassigned in a branch should be `mut`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(max3(1, 5, 3), 5);
+    assert_eq!(max3(9, 2, 4), 9);
+    assert_eq!(clamp(15, 0, 10), 10);
+    assert_eq!(clamp(-3, 0, 10), 0);
+    assert_eq!(clamp(7, 0, 10), 7);
+}
+"#;
+    assert_rustc_runs("c_if", &rust, driver);
+}
+
 /// PMAT-477 (R8): Python `float` (f64). Float arithmetic is plain infix
 /// (IEEE-754, no `checked_*`); `/` is true division (not floor).
 #[test]

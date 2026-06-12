@@ -161,6 +161,14 @@ fn emit_function_with_while_helpers(
                     loop_state.push(name.clone());
                 }
             }
+            // PMAT-478 (R9): if/else inside a while is not encodable in
+            // the v0.2.0 partial-def loop shape.
+            Stmt::If { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has an if/else statement inside a while loop; Lean codegen does not compose Stmt::If with the partial-def loop encoding at v0.2.0",
+                    f.name
+                )));
+            }
             Stmt::Let { name, .. } => {
                 // v0.1.0 frontend produces only Assigns inside loop
                 // bodies; treat a Let as a fresh binding the loop
@@ -585,6 +593,15 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         // Lean has no `mut` — let-bindings are already immutable.
         // Reassignment via `Stmt::Assign` works because Lean's `let`
         // allows shadowing: emit it as another `let name := value`.
+        // PMAT-478 (R9): the executable-Lean encoding routes branching
+        // through the if-*expression* form (see emit_if_expr), not a
+        // statement-if; the decy C frontend (which produces Stmt::If)
+        // targets Rust, so refuse here with a clear pointer.
+        Stmt::If { .. } => Err(LeanCodegenError::Unsupported(
+            "Stmt::If (statement-form if/else) is not lowered by the Lean backend — \
+             Lean uses the if-expression form; use `--target rust` or `--target ruchy`"
+                .into(),
+        )),
         Stmt::Let { name, value, .. } | Stmt::Assign { name, value } => {
             write!(out, "  let {name} := ")?;
             emit_expr(out, value)?;
