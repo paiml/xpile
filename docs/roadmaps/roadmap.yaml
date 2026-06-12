@@ -795,6 +795,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::DictSetDefault { dict, key, default }. Expression: present key -> existing value; absent key -> insert default + return it. Lowers to (<dict>).entry((<key>).clone()).or_insert(<default>).clone() in Rust+Ruchy (.entry consumes key so it's cloned to keep the caller binding usable, no-op move for Copy keys; trailing .clone() lifts &mut V to owned). Result types as dict value type (both infer paths). Recognised in the expr-context Call arm next to .get (Dict receiver, 2 args). Receiver mut via the count_pop_receivers pre-pass, GENERALIZED to scan .setdefault as well as .pop (so set-defaulted locals + params get let mut). First cut requires explicit default (1-arg setdefault -> None needs Optional). Lean refuses (in-place mutation). rustc round-trip dict_setdefault.py: getset_present({a:7},a)->7 (no insert), getset({},x)->0 (insert), local_setdefault()->6 (local receiver). FREE CI. SHIPPED v0.1.82."
+- id: PMAT-502AY
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ay: [Tranche2] filtered list comprehension [e for v in xs if cond]'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Extends desugar_list_comp (PMAT-473) with an optional single if filter. [elem for v in xs if cond] desugars to let mut t = []; for v in xs { if cond { t.append(elem); } } — the filter becomes a Stmt::If guarding the accumulator append (reuses R9 if/else machinery). Filter must type as Bool (no int-truthiness). Multiple if clauses (... if a if b) deferred -> use ... if a and b. Unfiltered form unchanged. Lean refuses (desugaring contains a for loop, outside the Lean lane). rustc round-trip list_comp_filter.py: positives([-1,2,-3,4])->[2,4], doubled_positives([-1,2,3])->[4,6], assign_form([1,6,7,2])->2. FREE CI. SHIPPED v0.1.83."
 - id: PMAT-465
   github_issue: 496
   item_type: task

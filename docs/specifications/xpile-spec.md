@@ -886,6 +886,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502av** — set removal `s.remove(x)` / `s.discard(x)` (`Stmt::SetRemove`) | `remove` → `assert!(<set>.remove(&(<x>)), "…KeyError…");`; `discard` → `<set>.remove(&(<x>));`; receiver `mut`; completes set add/remove/discard; Lean refuses | ✅ SHIPPED v0.1.80 |
 | **PMAT-502aw** — str padding `s.rjust(w)` / `s.ljust(w)` (`StrMethodOp::RJust`/`LJust`) | `format!("{:>1$}", <s>, (<w>) as usize)` / `{:<1$}`; format width = minimum (no truncation, matches Python); fill-char arg deferred; Lean refuses | ✅ SHIPPED v0.1.81 |
 | **PMAT-502ax** — dict get-or-insert `d.setdefault(k, default)` (`Expr::DictSetDefault`) | `(<dict>).entry((<k>).clone()).or_insert(<default>).clone()`; result = value type; receiver `mut` via generalized `count_pop_receivers` (pop+setdefault); 2-arg first cut; Lean refuses | ✅ SHIPPED v0.1.82 |
+| **PMAT-502ay** — filtered list comprehension `[e for v in xs if cond]` (extends `desugar_list_comp`) | desugars to `for v in xs { if cond { t.append(e); } }` (reuses `Stmt::If`); filter must be Bool; single `if` (multi → use `and`); Lean refuses | ✅ SHIPPED v0.1.83 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |
