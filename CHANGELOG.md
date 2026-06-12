@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.28] — 2026-06-12
+
+Tranche-2 slice PMAT-502 — **general `Stmt::If`** with side-effecting
+branches (Python `if/elif/else` no longer restricted to `name = expr`).
+
+The Python frontend previously lowered *every* `if/else` to the
+value-producing "if-as-let" form (`let x = if c { … } else { … }`), so
+branch statements had to be simple `name = expr` assignments — which
+rejected the canonical histogram (`if w in freq: freq[w] += 1 else: freq[w]
+= 1`). A new dispatcher keeps if-as-let for the value-producing shape but
+falls back to a real `Stmt::If { cond, then_body, else_body }` (already
+supported by the meta-HIR + all backends, via the C frontend) when branches
+contain subscript assigns, `.append`, dict mutation, etc. `elif` nests as a
+`Stmt::If` in `else_body`. Names assigned inside a general branch do not
+escape it (Rust block scoping) — use `name = expr` for a value needed after
+the `if`. rustc round-trip `histogram_if.py`: `word_freq(["a","b","a"]) ->
+{a:2, b:1}`. No regressions (existing if-as-let tests stay green).
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.27] — 2026-06-12
 
 Tranche-2 slice PMAT-498b — Python **`sum(xs)`** over numeric lists.

@@ -1203,6 +1203,27 @@ fn main() {
     assert_rustc_runs("slicing", &rust, driver);
 }
 
+/// PMAT-502 (Tranche 2): general `Stmt::If` with side-effecting branches.
+/// The canonical histogram (`if w in freq: freq[w] += 1 else: freq[w] = 1`)
+/// — branches mutate a dict, which the if-as-let form rejected.
+#[test]
+fn general_if_side_effecting_branches_histogram() {
+    let rust = xpile_transpile_to_rust("histogram_if.py");
+    assert!(
+        rust.contains("if ") && rust.contains("} else {"),
+        "expected a real if/else statement, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let m = word_freq(vec![String::from("a"), String::from("b"), String::from("a")]);
+    assert_eq!(m.get("a"), Some(&2));
+    assert_eq!(m.get("b"), Some(&1));
+    assert_eq!(m.get("z"), None);
+}
+"#;
+    assert_rustc_runs("histogram_if", &rust, driver);
+}
+
 /// PMAT-498b (Tranche 2): `sum(xs)` over a numeric list →
 /// `xs.iter().sum::<i64>()` / `::<f64>()` (turbofish from the element type).
 #[test]
