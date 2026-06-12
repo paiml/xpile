@@ -1141,6 +1141,30 @@ fn main() {
     assert_rustc_runs("str_methods", &rust, driver);
 }
 
+/// PMAT-494 (sprint): tuples — multiple return + `tuple[...]`
+/// annotation. `return a, b` → `Expr::TupleLit` (Rust `(e0, e1)`),
+/// `tuple[T0, T1]` → `(T0, T1)`. The driver destructures the returned
+/// tuples (Python-side unpacking is a follow-up slice).
+#[test]
+fn tuples_emitted_rust_multiple_return() {
+    let rust = xpile_transpile_to_rust("tuples.py");
+    assert!(
+        rust.contains("-> (i64, i64)") && rust.contains("-> (String, i64)"),
+        "expected tuple return types in emitted Rust, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let (q, r) = divmod_pair(17, 5);
+    assert_eq!(q, 3);
+    assert_eq!(r, 2);
+    let (s, c) = tagged(String::from("x"), 9);
+    assert_eq!(s, String::from("x"));
+    assert_eq!(c, 9);
+}
+"#;
+    assert_rustc_runs("tuples", &rust, driver);
+}
+
 /// PMAT-450 — v0.2.0 Track 1.A: str-typed parameter passthrough.
 /// `def echo(name: str) -> str: return name` transpiles to
 /// `pub fn echo(name: String) -> String { name }`, exercises the

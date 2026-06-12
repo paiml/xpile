@@ -204,6 +204,9 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::StrMethod { recv, args, .. } => {
             expr_has_int_arith(recv) || args.iter().any(expr_has_int_arith)
         }
+        // PMAT-494: tuple literal — recurse into each element (a tuple of
+        // computed ints can carry overflow-prone arithmetic).
+        Expr::TupleLit(elems) => elems.iter().any(expr_has_int_arith),
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -628,6 +631,13 @@ pub enum Type {
     /// Governing contract: `C-XLATE-PY-LIST-TO-VEC` (already QUORUM
     /// at depth-13).
     List(Box<Type>),
+    /// `Type::Tuple(Vec<Type>)` represents Python `tuple[T0, T1, ...]` and
+    /// lowers to a Rust/Ruchy anonymous tuple `(T0, T1, ...)`. PMAT-494
+    /// (sprint), first cut: fixed-arity heterogeneous tuples in return /
+    /// expression position (multiple return `return a, b`). Lean refuses
+    /// at first cut (Prod encoding deferred). Tuple *unpacking* (`a, b =
+    /// f()`) is a follow-up slice.
+    Tuple(Vec<Type>),
     /// POSIX shell string — quoted-aware string type for the bashrs
     /// domain. PMAT-046 / XPILE-BASHRS-MERGER-001 Layer B.
     ///
@@ -804,6 +814,11 @@ pub enum Expr {
     ///     `List` literal syntax)
     ///   * Shell refuses (lists aren't a POSIX construct)
     ListLit(Vec<Expr>),
+    /// Tuple literal — Python `(a, b)` / multiple-return `return a, b`.
+    /// PMAT-494 (sprint). Elements may be heterogeneous (unlike
+    /// [`Expr::ListLit`]). Rust/Ruchy emit `(e0, e1, ...)`; Lean refuses
+    /// at first cut. Result types as [`Type::Tuple`].
+    TupleLit(Vec<Expr>),
     /// String concatenation — Python `str + str` semantics. PMAT-451,
     /// v0.2.0 Track 1.A. Distinct from `BinOp::Add` because:
     ///   * No overflow concept (strings never overflow).

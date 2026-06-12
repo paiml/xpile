@@ -414,6 +414,12 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 collect_idents(a, out);
             }
         }
+        // PMAT-494: tuple literal — recurse into each element.
+        Expr::TupleLit(elems) => {
+            for e in elems {
+                collect_idents(e, out);
+            }
+        }
         // PMAT-455: list literal — recurse into each element.
         Expr::ListLit(elems) => {
             for e in elems {
@@ -533,6 +539,16 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), LeanCodegenError> {
             out.push_str(" × ");
             emit_type(out, v_ty)?;
             out.push(')');
+        }
+        // PMAT-494: Python tuples deferred in the Lean lane at first cut
+        // (Prod encoding + multi-return shape follow) — refuse with a
+        // pointer, like the other capability-ahead-of-Lean refusals.
+        Type::Tuple(_) => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python tuples (tuple[...]) are not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
         }
         // PMAT-046: bashrs-domain types refused.
         Type::ShellString | Type::ExitCode => {
@@ -753,6 +769,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             return Err(LeanCodegenError::Unsupported(
                 "Python string methods (.upper()/.lower()/.strip()) are not yet \
                  supported in the Lean lane — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-494: tuple literals deferred in the Lean lane at first cut.
+        Expr::TupleLit(_) => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python tuple literals are not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
         }

@@ -422,6 +422,17 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
             emit_type(out, v_ty)?;
             out.push('>');
         }
+        // PMAT-494: Python `tuple[T0, T1, ...]` → Rust `(T0, T1, ...)`.
+        Type::Tuple(elems) => {
+            out.push('(');
+            for (i, t) in elems.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                emit_type(out, t)?;
+            }
+            out.push(')');
+        }
         // PMAT-046: bashrs-domain types. Rust backend refuses — the
         // analogous Rust type for ShellString would be the bashrs
         // runtime's quoting-aware wrapper (not yet shipped); the
@@ -542,6 +553,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, e, mode)?;
             }
             out.push(']');
+        }
+        // PMAT-494: Python tuple literal → Rust `(e0, e1, ...)`.
+        Expr::TupleLit(elems) => {
+            out.push('(');
+            for (i, e) in elems.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                emit_expr(out, e, mode)?;
+            }
+            out.push(')');
         }
         // PMAT-462 (v0.2.0 Track 1.C): Python dict literal →
         // Rust `{ let mut m = HashMap::new(); m.insert(k, v); ... m }`

@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.19] — 2026-06-12
+
+Sprint slice PMAT-494 (first cut) — Python **tuples**: multiple-return +
+`tuple[...]` annotations.
+
+New meta-HIR `Type::Tuple(Vec<Type>)` + `Expr::TupleLit(Vec<Expr>)`.
+`def f(...) -> tuple[T0, T1]: return a, b` lowers the comma-expression to
+`TupleLit` and the annotation to `Type::Tuple`; Rust + Ruchy emit
+`(e0, e1, ...)` / `(T0, T1, ...)` (heterogeneous, fixed-arity). Lean refuses
+(Prod encoding deferred). rustc round-trip `tuples.py`:
+`divmod_pair(17,5) -> (3,2)`, `tagged("x",9) -> ("x",9)`.
+
+**Tuple unpacking** (`a, b = f()`, `for k, v in ...`) is the follow-up slice
+(PMAT-494b) — it needs a destructuring-`let` / for-target. For now the
+consumer destructures on the Rust side.
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.18] — 2026-06-12
 
 Sprint slice — Python **`sep.join(xs)`**, **completing the string-method
