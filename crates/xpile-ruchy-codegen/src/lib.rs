@@ -649,20 +649,33 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, value, mode)?;
             out.push_str(if *to_float { ") as f64)" } else { ") as i64)" });
         }
-        // PMAT-502e: 1-arg `min(xs)`/`max(xs)` reduction over an int list.
-        // PMAT-502h: `list[float]` uses a fold (f64 has no `Ord`).
+        // PMAT-502e/h/aa: 1-arg `min(xs)`/`max(xs)`; `key=lambda` →
+        // `min_by_key`/`max_by_key`.
         Expr::ListMinMax {
             list,
             is_max,
             of_float,
+            key,
         } => {
             emit_expr(out, list, mode)?;
-            out.push_str(match (*of_float, *is_max) {
-                (false, true) => ".iter().copied().max().unwrap()",
-                (false, false) => ".iter().copied().min().unwrap()",
-                (true, true) => ".iter().copied().fold(f64::NEG_INFINITY, f64::max)",
-                (true, false) => ".iter().copied().fold(f64::INFINITY, f64::min)",
-            });
+            match key {
+                Some(k) => {
+                    write!(
+                        out,
+                        ".iter().cloned().{}(|__k| {{ let {} = __k.clone(); ",
+                        if *is_max { "max_by_key" } else { "min_by_key" },
+                        k.param
+                    )?;
+                    emit_expr(out, &k.body, mode)?;
+                    out.push_str(" }).unwrap()");
+                }
+                None => out.push_str(match (*of_float, *is_max) {
+                    (false, true) => ".iter().copied().max().unwrap()",
+                    (false, false) => ".iter().copied().min().unwrap()",
+                    (true, true) => ".iter().copied().fold(f64::NEG_INFINITY, f64::max)",
+                    (true, false) => ".iter().copied().fold(f64::INFINITY, f64::min)",
+                }),
+            }
         }
         // PMAT-502u: list query — `xs.count(x)` / `xs.index(x)` (→ i64).
         Expr::ListQuery { list, op, arg } => {

@@ -579,6 +579,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Expr::Sorted gains key: Option<SortKey> (SortKey { param, body }). sorted(xs, key=lambda p: e) with a simple 1-param lambda -> { let mut __xv = xs.clone(); __xv.sort_by_key(|__k| { let p = __k.clone(); e }); __xv } in Rust+Ruchy. Clone-to-local binds element by value (sidesteps sort_by_key's &T); key must be Ord. Body lowered with p UNBOUND -> covers arithmetic (key=lambda x: -x) + len/builtin (key=lambda w: len(w)) bodies; str-method keys (p.upper()) error+deferred. Composes with reverse= (append __xv.reverse();). First lambda handling in xpile, bounded to key= where param type is inferable. Lean refuses. rustc round-trip sorted_key.py: by_len([ccc,a,bb])->[a,bb,ccc], by_neg([1,3,2])->[3,2,1], by_len_desc([a,ccc,bb])->[ccc,bb,a]. FREE CI. SHIPPED v0.1.58."
+- id: PMAT-502AA
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502aa: [Tranche2] min/max(xs, key=lambda)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Extends Expr::ListMinMax with key: Option<SortKey> (reuses v0.1.58 SortKey + lambda foothold). min(xs, key=lambda)/max(xs, key=lambda) -> xs.iter().cloned().min_by_key/max_by_key(|__k| { let p = __k.clone(); e }).unwrap() in Rust+Ruchy. Result is the ELEMENT (not key); with a key the element may be ANY type (only key needs Ord). Keyless min(xs)/max(xs) over list[int]/[float] unchanged. Body lowered with p unbound (same constraints as 502z). Lean refuses. rustc round-trip minmax_key.py: longest([a,ccc,bb])->ccc, shortest([ccc,a,bb])->a, closest_to_zero([5,-2,8,-1,3])->-1. FREE CI. SHIPPED v0.1.59."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -254,7 +254,9 @@ fn expr_has_int_arith(e: &Expr) -> bool {
             expr_has_int_arith(list) || key.as_ref().is_some_and(|k| expr_has_int_arith(&k.body))
         }
         Expr::Reversed { list } => expr_has_int_arith(list),
-        Expr::ListMinMax { list, .. } => expr_has_int_arith(list),
+        Expr::ListMinMax { list, key, .. } => {
+            expr_has_int_arith(list) || key.as_ref().is_some_and(|k| expr_has_int_arith(&k.body))
+        }
         // PMAT-502u: list query — recurse into the list and the arg.
         Expr::ListQuery { list, arg, .. } => expr_has_int_arith(list) || expr_has_int_arith(arg),
         // PMAT-500: set literal / membership — recurse defensively.
@@ -1099,10 +1101,16 @@ pub enum Expr {
     /// Result types as the list's element type. Lean refuses. For `int` an
     /// empty list panics (`.unwrap()`, ~Python's `ValueError`); for `float`
     /// it yields ±∞ (the fold identity — a first-cut wart on empty input).
+    /// PMAT-502aa: an optional `key=lambda p: e` reduces by the key instead
+    /// of the element. With a key, Rust/Ruchy emit
+    /// `<list>.iter().cloned().min_by_key(|__k| { let p = __k.clone(); e })
+    /// .unwrap()` (or `max_by_key`); the element can be any type (only the
+    /// key needs `Ord`), and the result is still the **element**, not the key.
     ListMinMax {
         list: Box<Expr>,
         is_max: bool,
         of_float: bool,
+        key: Option<SortKey>,
     },
     /// List query method — Python `xs.count(x)` / `xs.index(x)` over a
     /// `list[int]`. PMAT-502u (Tranche 2). Both return **Int**. Rust/Ruchy

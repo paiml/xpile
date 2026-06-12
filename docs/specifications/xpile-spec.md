@@ -862,6 +862,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502x** — `d.items()` (`DictViewKind::Items`) | `.iter().map(\|(k,v)\| (k.clone(), v.clone())).collect::<Vec<_>>()` → `List(Tuple[K,V])`; composes w/ `sorted`/`len`; completes dict views | ✅ SHIPPED v0.1.56 |
 | **PMAT-502y** — `for k, v in d.items()` loop (`PairIterKind::Pairs`) | `for (k,v) in <iter>.iter().cloned()`; iter typing as `List(Tuple[A,B])` destructured; not enumerate/zip | ✅ SHIPPED v0.1.57 |
 | **PMAT-502z** — `sorted(xs, key=lambda p: e)` (`Sorted.key`/`SortKey`) | `sort_by_key(\|__k\| { let p = __k.clone(); e })`; **first lambda support** (param unbound → arith/`len` bodies; str-method keys deferred); composes w/ `reverse=` | ✅ SHIPPED v0.1.58 |
+| **PMAT-502aa** — `min/max(xs, key=lambda)` (`ListMinMax.key`) | `.iter().cloned().min_by_key/max_by_key(\|__k\| { let p = __k.clone(); e }).unwrap()`; returns element (any type — only key needs `Ord`) | ✅ SHIPPED v0.1.59 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |
