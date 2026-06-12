@@ -1730,6 +1730,28 @@ fn main() {
     assert_rustc_runs("str_contains", &rust, driver);
 }
 
+/// PMAT-502an (Tranche 2): list membership `x in xs` / `x not in xs` →
+/// `(xs).contains(&(x))` (and `!` for `not in`).
+#[test]
+fn list_membership() {
+    let rust = xpile_transpile_to_rust("list_membership.py");
+    assert!(
+        rust.contains("(xs).contains(&(x))") && rust.contains("(!(xs).contains(&(x)))"),
+        "expected list contains emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert!(has(vec![1, 2, 3], 2));
+    assert!(!has(vec![1, 2, 3], 9));
+    assert!(lacks(vec![1, 2, 3], 9));
+    assert!(!lacks(vec![1, 2, 3], 2));
+    assert!(has_str(vec![String::from("a"), String::from("b")], String::from("b")));
+    assert!(!has_str(vec![String::from("a"), String::from("b")], String::from("z")));
+}
+"#;
+    assert_rustc_runs("list_membership", &rust, driver);
+}
+
 /// PMAT-502p (Tranche 2): chained comparison `a OP b OP c` →
 /// `(a OP b) && (b OP c)`.
 #[test]

@@ -1022,6 +1022,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, elem, mode)?;
             out.push_str("))");
         }
+        // PMAT-502an: Python `x in xs` (list) → `(xs).contains(&(x))`.
+        Expr::ListContains { list, elem } => {
+            out.push('(');
+            emit_expr(out, list, mode)?;
+            out.push_str(").contains(&(");
+            emit_expr(out, elem, mode)?;
+            out.push_str("))");
+        }
         // PMAT-502o: Python `sub in s` (str) → `(s).contains(&(sub)[..])`.
         Expr::StrContains { haystack, needle } => {
             out.push('(');

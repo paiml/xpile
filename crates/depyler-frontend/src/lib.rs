@@ -2376,6 +2376,8 @@ fn infer_type(e: &Expr) -> Type {
             Type::Set(Box::new(elems.first().map(infer_type).unwrap_or(Type::I64)))
         }
         Expr::SetContains { .. } => Type::Bool,
+        // PMAT-502an: list membership -> Bool.
+        Expr::ListContains { .. } => Type::Bool,
         // PMAT-502o: str substring containment -> Bool.
         Expr::StrContains { .. } => Type::Bool,
         // PMAT-502g: set algebra preserves the operand set type.
@@ -2594,6 +2596,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
                 .unwrap_or(Type::I64),
         )),
         Expr::SetContains { .. } => Type::Bool,
+        // PMAT-502an: list membership -> Bool.
+        Expr::ListContains { .. } => Type::Bool,
         // PMAT-502o: str substring containment -> Bool.
         Expr::StrContains { .. } => Type::Bool,
         // PMAT-502g: set algebra preserves the operand set type.
@@ -3412,6 +3416,22 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     let elem = lower_expr_in_ctx(ctx, (*c.left).clone())?;
                     let contains = Expr::SetContains {
                         set: Box::new(rhs),
+                        elem: Box::new(elem),
+                    };
+                    return Ok(if matches!(c.ops[0], ast::CmpOp::NotIn) {
+                        Expr::UnOp {
+                            op: UnOp::Not,
+                            operand: Box::new(contains),
+                        }
+                    } else {
+                        contains
+                    });
+                }
+                // PMAT-502an: `x in xs` / `x not in xs` over a list.
+                if matches!(infer_type_in_ctx(ctx, &rhs), Type::List(_)) {
+                    let elem = lower_expr_in_ctx(ctx, (*c.left).clone())?;
+                    let contains = Expr::ListContains {
+                        list: Box::new(rhs),
                         elem: Box::new(elem),
                     };
                     return Ok(if matches!(c.ops[0], ast::CmpOp::NotIn) {
