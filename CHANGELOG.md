@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.25] — 2026-06-12
+
+First **Tranche 2** capability slice (PMAT-497) — Python **augmented
+subscript assignment** `d[k] += v` / `xs[i] += v`.
+
+`lower_aug_assign` now handles `Subscript` targets, desugaring `d[k] <op>= v`
+→ `d[k] = d[k] <op> v` (a `DictSet` over `DictGet` + `BinOp`) and
+`xs[i] <op>= v` → `IndexAssign` over `Index` + `BinOp`. **No new meta-HIR
+variant** — it reuses the shipped dict/list write + read machinery; the
+str-concat path (`+=` on strings) is shared via a new `combine_aug` helper,
+and the receiver is marked mutable. rustc round-trip `aug_subscript.py`:
+`counts()` (`d["a"]=1; d["a"]+=5` → `{a: 6}`) and `bump([1,2,3])`
+(`xs[i]+=10` in a `while` → `[11,12,13]`).
+
+Also opens the §30 **"Tranche 2 capability backlog"** (PMAT-497..505 + the
+two decomposable epics) so the continuous loop never stalls on an empty
+queue.
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.24] — 2026-06-12
 
 Sprint slice PMAT-484 (§30 Track 4) — structured **`compile_targets.via_roles`**

@@ -821,6 +821,30 @@ Tracks 1 and 2 are independent and can run in parallel. Track 3 is small and slo
 
 The Track-4 **GPU-execution** slices (**PMAT-487..491**, `needs_hardware`) are picked up **out-of-band** once the self-hosted runner is stood up (the on-box RTX 4090) — not part of the free-CI daily cadence. The queue is a *guide*, not a straitjacket: a session may reorder by live EV (e.g. take a quick capability win before a `~1 wk` item), but never picks a `needs_hardware` slice into the free-CI loop and never publishes crates.io off-Friday.
 
+### Tranche 2 — capability backlog (continuous; the numbered queue is drained)
+
+Per the 2026-06-12 "never pause, never ask" directive: when the numbered sprint
+queue is exhausted, the loop pulls from this ranked backlog (and invents the next
+high-EV slice if it empties). All are slice-sized, free-CI, `rustc`-round-trip-
+verifiable; add `PMAT-497+` tickets as each is taken.
+
+| Item | Sketch | Status |
+|---|---|---|
+| **PMAT-497** — aug-subscript assign `d[k] += v` / `xs[i] += v` | desugar to `d[k] = d[k] <op> v`; reuses DictSet/IndexAssign — no new IR | ✅ SHIPPED v0.1.25 |
+| **PMAT-498** — numeric builtins `abs`/`min`/`max`/`sum` | `abs(x)`→`x.abs()`, `min(a,b)`→`a.min(b)`, `sum(xs)`→`xs.iter().sum()` | open |
+| **PMAT-499** — `range(start, stop, step)` | full 3-arg range in `for` | open |
+| **PMAT-500** — sets `{1,2,3}` / `.add()` / `in` / `len` | `HashSet` lane mirroring the dict lane | open |
+| **PMAT-501** — dict/set comprehensions | `{k: v for …}` / `{x for …}` — materialise like list comp | open |
+| **PMAT-502** — `Stmt::If` branch generalization | allow subscript/append/non-`name=expr` statements in if/else branches (currently restricted to `name = expr`) | open |
+| **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | open |
+| **PMAT-504** — closures / `lambda` | first-class fn values | open |
+| **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |
+
+**Epics (decompose into sub-slices, do NOT skip):** **R6/PMAT-475** — first sub-slice
+= grandfather the depth-13 Diamond gate (`diamond_coverage.rs`) as an isolated,
+green refactor, *then* author each contract to QUORUM. **PMAT-485** — real
+`nvptx64` PTX emitter behind a contained nightly CI job.
+
 **Frozen / deferred (explicitly lower EV — do *not* pick up as default work):**
 
 - **Diamond-depth UNIVERSAL ratchet is frozen at depth-13.** No depth-14+ broadening sweeps as default/background work — diminishing epistemic returns. **New contracts (R6) join at depth-1+ and are NOT forced to the depth-13 floor** — that is the whole point of R6's gate change; the old "a new contract must reach the existing UNIVERSAL floor" rule is **retired** (it *was* the treadmill — it made adding any contract cost 13 Diamond theorems). Depth broadening of *existing* contracts resumes only on explicit user request. See the freeze banner in [`sub/diamond-taxonomy.md`](sub/diamond-taxonomy.md).

@@ -273,6 +273,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "High prevalence. Lower Python slice ast::Subscript-with-Slice to Rust xs[a..b].to_vec() (list) / s[a..b].to_string() (str), with bounded forms xs[a:]/xs[:b]/xs[:]. Defer step and negative indices initially (document). frontend + codegen. rustc round-trip: head(xs)=xs[:2], tail(xs)=xs[1:]. FREE CI."
+- id: PMAT-497
+  github_issue: null
+  item_type: task
+  title: 'PMAT-497: [Tranche2] Augmented subscript assignment d[k] += v / xs[i] += v'
+  status: planned
+  priority: high
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "High prevalence (dict/list counters). Extend lower_aug_assign to Subscript targets: d[k] <op>= v desugars to d[k] = d[k] <op> v (DictSet over DictGet+BinOp); xs[i] <op>= v to IndexAssign over Index+BinOp. Reuses shipped machinery — NO new meta-HIR variant. str-concat detection shared via combine_aug helper. Receiver marked mutable. rustc round-trip aug_subscript.py: counts() d[a]=1; d[a]+=5 -> {a:6}; bump([1,2,3]) xs[i]+=10 -> [11,12,13]. FREE CI. SHIPPED v0.1.25."
 - id: PMAT-465
   github_issue: 496
   item_type: task
