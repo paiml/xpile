@@ -643,8 +643,26 @@ fn parse_type_annotation(
                     )?;
                     Ok(Type::Dict(Box::new(k_ty), Box::new(v_ty)))
                 }
+                // PMAT-494: `tuple[T0, T1, ...]` (or single `tuple[T]`).
+                "tuple" => {
+                    let elem_tys = match sub.slice.as_ref() {
+                        ast::Expr::Tuple(t) => t
+                            .elts
+                            .iter()
+                            .map(|e| {
+                                parse_type_annotation(fn_name, &format!("{site} element"), e)
+                            })
+                            .collect::<Result<Vec<_>, _>>()?,
+                        single => vec![parse_type_annotation(
+                            fn_name,
+                            &format!("{site} element"),
+                            single,
+                        )?],
+                    };
+                    Ok(Type::Tuple(elem_tys))
+                }
                 other => Err(FrontendError::Lower(format!(
-                    "function `{fn_name}` annotates `{site}` with subscripted `{other}[...]` — only `list[T]` / `dict[K, V]` at v0.2.0"
+                    "function `{fn_name}` annotates `{site}` with subscripted `{other}[...]` — only `list[T]` / `dict[K, V]` / `tuple[...]` at v0.2.0"
                 ))),
             }
         }
@@ -1863,6 +1881,8 @@ fn infer_type(e: &Expr) -> Type {
             let elem_ty = elems.first().map(infer_type).unwrap_or(Type::I64);
             Type::List(Box::new(elem_ty))
         }
+        // PMAT-494: tuple literal → Type::Tuple of each element's type.
+        Expr::TupleLit(elems) => Type::Tuple(elems.iter().map(infer_type).collect()),
         // PMAT-457 (v0.2.0 Track 1.B): indexed access returns the
         // collection's element type. If the collection types as
         // Type::List(T), the result is T; otherwise fall back to I64
@@ -1977,6 +1997,10 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
                 .map(|e| infer_type_in_ctx(ctx, e))
                 .unwrap_or(Type::I64);
             Type::List(Box::new(elem_ty))
+        }
+        // PMAT-494: tuple literal → Type::Tuple of each element's type.
+        Expr::TupleLit(elems) => {
+            Type::Tuple(elems.iter().map(|e| infer_type_in_ctx(ctx, e)).collect())
         }
         // PMAT-457: indexed access returns the collection element type.
         Expr::Index { collection, .. } => match infer_type_in_ctx(ctx, collection) {
@@ -2239,6 +2263,16 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
             })
+        }
+        // PMAT-494: tuple literal / multiple-return `return a, b` →
+        // `Expr::TupleLit`, lowering each element context-aware.
+        ast::Expr::Tuple(t) => {
+            let elems = t
+                .elts
+                .into_iter()
+                .map(|e| lower_expr_in_ctx(ctx, e))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Expr::TupleLit(elems))
         }
         // No dict-specific shape: the context-free path is sufficient.
         other => lower_expr(other),

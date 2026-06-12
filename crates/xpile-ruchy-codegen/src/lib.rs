@@ -355,6 +355,17 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
             emit_type(out, v_ty)?;
             out.push('>');
         }
+        // PMAT-494: Ruchy → Rust `(T0, T1, ...)`.
+        Type::Tuple(elems) => {
+            out.push('(');
+            for (i, t) in elems.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                emit_type(out, t)?;
+            }
+            out.push(')');
+        }
         // PMAT-046: same disposition as the Rust backend.
         Type::ShellString | Type::ExitCode => {
             return Err(RuchyCodegenError::Unsupported(format!(
@@ -456,6 +467,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 emit_expr(out, e, mode)?;
             }
             out.push(']');
+        }
+        // PMAT-494: Python tuple literal → Ruchy → Rust `(e0, e1, ...)`.
+        Expr::TupleLit(elems) => {
+            out.push('(');
+            for (i, e) in elems.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                emit_expr(out, e, mode)?;
+            }
+            out.push(')');
         }
         // PMAT-462 (v0.2.0 Track 1.C): Ruchy → Rust HashMap-init block.
         // PMAT-466: empty literal → bare `HashMap::new()` (see the Rust
