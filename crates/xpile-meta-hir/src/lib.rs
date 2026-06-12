@@ -234,6 +234,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::NumBuiltin { args, .. } => args.iter().any(expr_has_int_arith),
         // PMAT-498b: sum — recurse into the list expression.
         Expr::Sum { list, .. } => expr_has_int_arith(list),
+        // PMAT-502c: sorted — recurse into the list expression.
+        Expr::Sorted { list } => expr_has_int_arith(list),
         // PMAT-500: set literal / membership — recurse defensively.
         Expr::SetLit(elems) => elems.iter().any(expr_has_int_arith),
         Expr::SetContains { set, elem } => expr_has_int_arith(set) || expr_has_int_arith(elem),
@@ -967,6 +969,12 @@ pub enum Expr {
     /// the element type — `i64` for `list[int]`, `f64` for `list[float]`).
     /// Result types as the element type. Lean refuses.
     Sum { list: Box<Expr>, of_float: bool },
+    /// `sorted(xs)` over a list — Python builtin returning a **new**
+    /// sorted list (the input is not mutated). PMAT-502c (Tranche 2).
+    /// Rust/Ruchy emit `{ let mut __v = <list>.clone(); __v.sort(); __v }`;
+    /// result types as the list's type. Lean refuses. (Reverse / key=
+    /// follow as their own slice.)
+    Sorted { list: Box<Expr> },
     /// Unary operation — `not x` (logical, Bool → Bool) or `-x`
     /// (numeric negate, I64 → I64).
     UnOp { op: UnOp, operand: Box<Expr> },

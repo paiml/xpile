@@ -452,6 +452,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         }
         // PMAT-498b: sum — recurse into the list expression.
         Expr::Sum { list, .. } => collect_idents(list, out),
+        // PMAT-502c: sorted — recurse into the list expression.
+        Expr::Sorted { list } => collect_idents(list, out),
         // PMAT-455: list literal — recurse into each element.
         Expr::ListLit(elems) => {
             for e in elems {
@@ -868,6 +870,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::Sum { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python sum(xs) is not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502c: sorted deferred in the Lean lane at first cut.
+        Expr::Sorted { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python sorted(xs) is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

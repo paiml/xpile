@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.34] — 2026-06-12
+
+Tranche-2 slice PMAT-502c — Python **`sorted(xs)`** builtin.
+
+New meta-HIR `Expr::Sorted { list }`. `sorted(xs)` (1 list arg) returns a
+**new** sorted list (the input is not mutated), lowering to
+`{ let mut __xv = <list>.clone(); __xv.sort(); __xv }` in Rust + Ruchy; result
+types as the list's type. Lean refuses. rustc round-trip `sorted_builtin.py`:
+`order([3,1,2]) -> [1,2,3]`, `order_str(["c","a","b"]) -> ["a","b","c"]`.
+
+`reverse=`/`key=` follow as their own slice.
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.33] — 2026-06-12
 
 Tranche-2 slice PMAT-502b — Python **`str.replace(old, new)`**.

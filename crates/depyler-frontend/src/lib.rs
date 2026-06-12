@@ -2290,6 +2290,8 @@ fn infer_type(e: &Expr) -> Type {
                 Type::I64
             }
         }
+        // PMAT-502c: sorted(xs) has the same type as its list.
+        Expr::Sorted { list } => infer_type(list),
         // PMAT-457 (v0.2.0 Track 1.B): indexed access returns the
         // collection's element type. If the collection types as
         // Type::List(T), the result is T; otherwise fall back to I64
@@ -2432,6 +2434,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
                 Type::I64
             }
         }
+        // PMAT-502c: sorted(xs) has the same type as its list.
+        Expr::Sorted { list } => infer_type_in_ctx(ctx, list),
         // PMAT-457: indexed access returns the collection element type.
         Expr::Index { collection, .. } => match infer_type_in_ctx(ctx, collection) {
             Type::List(elem_ty) => *elem_ty,
@@ -2656,6 +2660,16 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 of_float: matches!(*elem, Type::F64),
                             });
                         }
+                    }
+                }
+                // PMAT-502c: `sorted(xs)` over a list → a new sorted list.
+                if fname.id.as_str() == "sorted" && call.keywords.is_empty() && call.args.len() == 1
+                {
+                    let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
+                        return Ok(Expr::Sorted {
+                            list: Box::new(list),
+                        });
                     }
                 }
             }
