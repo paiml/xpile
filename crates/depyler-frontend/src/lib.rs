@@ -2999,18 +2999,47 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // matches the single-list-argument reduction. `int` lists use
                 // `.min()/.max()` (i64: Ord); `float` lists use a fold (f64
                 // has no Ord) — see the codegen `of_float` branch.
-                if matches!(fname.id.as_str(), "min" | "max")
-                    && call.keywords.is_empty()
-                    && call.args.len() == 1
-                {
-                    let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
-                    if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
-                        if matches!(*elem, Type::I64 | Type::F64) {
-                            return Ok(Expr::ListMinMax {
-                                list: Box::new(list),
-                                is_max: fname.id.as_str() == "max",
-                                of_float: matches!(*elem, Type::F64),
-                            });
+                // PMAT-502aa: an optional `key=lambda p: e` reduces by the key
+                // (`min_by_key`/`max_by_key`); with a key the element may be
+                // any type (only the key needs `Ord`).
+                if matches!(fname.id.as_str(), "min" | "max") && call.args.len() == 1 {
+                    let mut key: Option<SortKey> = None;
+                    let mut kwargs_ok = true;
+                    for kw in &call.keywords {
+                        if kw.arg.as_ref().map(|a| a.as_str()) == Some("key") {
+                            if let ast::Expr::Lambda(lam) = &kw.value {
+                                if lam.args.args.len() == 1
+                                    && lam.args.posonlyargs.is_empty()
+                                    && lam.args.kwonlyargs.is_empty()
+                                    && lam.args.vararg.is_none()
+                                    && lam.args.kwarg.is_none()
+                                {
+                                    let param = lam.args.args[0].def.arg.to_string();
+                                    let body = lower_expr_in_ctx(ctx, (*lam.body).clone())?;
+                                    key = Some(SortKey {
+                                        param,
+                                        body: Box::new(body),
+                                    });
+                                    continue;
+                                }
+                            }
+                        }
+                        kwargs_ok = false;
+                    }
+                    if kwargs_ok {
+                        let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                        if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
+                            // With a key, any element type works (the key
+                            // supplies the ordering); without, restrict to
+                            // numeric for the `.min()/.max()`/fold form.
+                            if key.is_some() || matches!(*elem, Type::I64 | Type::F64) {
+                                return Ok(Expr::ListMinMax {
+                                    list: Box::new(list),
+                                    is_max: fname.id.as_str() == "max",
+                                    of_float: matches!(*elem, Type::F64),
+                                    key,
+                                });
+                            }
                         }
                     }
                 }

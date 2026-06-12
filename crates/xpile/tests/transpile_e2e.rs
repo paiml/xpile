@@ -1308,6 +1308,32 @@ fn main() {
     assert_rustc_runs("list_minmax_builtin", &rust, driver);
 }
 
+/// PMAT-502aa (Tranche 2): `min(xs, key=lambda)` / `max(xs, key=lambda)` →
+/// `min_by_key`/`max_by_key` (returns the element; any element type).
+#[test]
+fn minmax_key_lambda() {
+    let rust = xpile_transpile_to_rust("minmax_key.py");
+    assert!(
+        rust.contains(".iter().cloned().max_by_key(|__k| { let w = __k.clone(); w.len() as i64 })")
+            && rust.contains(".iter().cloned().min_by_key("),
+        "expected min/max_by_key emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(
+        longest(vec![String::from("a"), String::from("ccc"), String::from("bb")]),
+        String::from("ccc")
+    );
+    assert_eq!(
+        shortest(vec![String::from("ccc"), String::from("a"), String::from("bb")]),
+        String::from("a")
+    );
+    assert_eq!(closest_to_zero(vec![5, -2, 8, -1, 3]), -1);
+}
+"#;
+    assert_rustc_runs("minmax_key", &rust, driver);
+}
+
 /// PMAT-502j (Tranche 2): `all(xs)`/`any(xs)` over a `list[bool]` →
 /// `xs.iter().all(|&__b| __b)` / `.any(|&__b| __b)`.
 #[test]

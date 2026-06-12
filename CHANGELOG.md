@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.59] — 2026-06-12
+
+Tranche-2 slice PMAT-502aa — Python **`min(xs, key=lambda)` / `max(xs, key=lambda)`**.
+
+Extends `Expr::ListMinMax` with the optional `key: Option<SortKey>` introduced in
+v0.1.58, applying the lambda foothold to the min/max reductions. `min(xs, key=…)`
+/ `max(xs, key=…)` lower to
+`xs.iter().cloned().min_by_key(|__k| { let p = __k.clone(); e }).unwrap()`
+(or `max_by_key`) in Rust + Ruchy — the result is the **element**, not the key,
+and (unlike the keyless form) the element may be **any type** since only the key
+needs `Ord`. The keyless `min(xs)`/`max(xs)` over `list[int]`/`list[float]` is
+unchanged. The lambda body is lowered with the param unbound (same constraints as
+sorted-key, v0.1.58). Lean refuses. rustc round-trip `minmax_key.py`:
+`longest(["a","ccc","bb"]) -> "ccc"`, `shortest(["ccc","a","bb"]) -> "a"`,
+`closest_to_zero([5,-2,8,-1,3]) -> -1`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.58] — 2026-06-12
 
 Tranche-2 slice PMAT-502z — Python **`sorted(xs, key=lambda p: e)`** (first lambda/closure support).
