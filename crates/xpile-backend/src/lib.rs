@@ -291,6 +291,32 @@ pub trait TargetEmitter: Send + Sync {
     ) -> Option<Result<EmittedText, BackendError>>;
 }
 
+/// PMAT-486 (§30 Track 4): engine that executes two emitted programs on
+/// contract-fixture inputs and numerically compares the outputs within a
+/// tolerance — the Runtime-stratum half of the §29 quorum. The trait +
+/// hook land here (free CI); the real CUDA / Vulkan implementations
+/// (PMAT-488 / PMAT-490) run out-of-band on self-hosted GPU runners.
+///
+/// Error posture (per the §30 Track-4 review): with **no engine
+/// installed** the `DiffExec` policy records `NotRun { reason: no-engine }`
+/// (benign — free CI stays green). An **installed** engine that returns
+/// `Err` propagates a hard [`BackendError`] that fails the job — a broken
+/// GPU run must NOT masquerade as "not run".
+pub trait DiffExecEngine: Send + Sync {
+    /// Execute `general_text` and `specialist_text` on the contract's
+    /// fixture inputs and compare. `Ok(Match|Divergent)` records the
+    /// vote; `Err(msg)` is a hard failure (e.g. driver fault / launch
+    /// error) the caller turns into a `BackendError`.
+    fn execute_and_compare(
+        &self,
+        general_text: &str,
+        specialist_text: &str,
+        module: &Module,
+        config: &BackendConfig,
+        tolerance: f64,
+    ) -> Result<DiffExecResult, String>;
+}
+
 /// Multi-emitter backend wrapper. Composes a general emitter
 /// (mandatory) + an optional specialist under a [`QuorumPolicy`].
 /// Implements [`Backend`] so it slots into the existing dispatch
@@ -307,6 +333,10 @@ pub struct MultiEmitterBackend {
     pub specialist: Option<Box<dyn TargetEmitter>>,
     /// How to combine outputs when both emitters fire.
     pub quorum_policy: QuorumPolicy,
+    /// PMAT-486: optional `DiffExec` execution engine. `None` (the
+    /// default) records `NotRun { no-engine }` under `QuorumPolicy::
+    /// DiffExec`; `Some(engine)` runs the Runtime-stratum comparison.
+    pub diff_exec_engine: Option<std::sync::Arc<dyn DiffExecEngine>>,
 }
 
 impl MultiEmitterBackend {
@@ -316,6 +346,7 @@ impl MultiEmitterBackend {
             general,
             specialist: None,
             quorum_policy: QuorumPolicy::PreferSpecialist,
+            diff_exec_engine: None,
         }
     }
 
@@ -330,7 +361,16 @@ impl MultiEmitterBackend {
             general,
             specialist: Some(specialist),
             quorum_policy,
+            diff_exec_engine: None,
         }
+    }
+
+    /// PMAT-486: install a `DiffExec` engine (builder style). The real
+    /// CUDA / Vulkan engines (PMAT-488 / PMAT-490) plug in here on the
+    /// self-hosted GPU runners; on free CI the engine stays `None`.
+    pub fn with_diff_exec_engine(mut self, engine: std::sync::Arc<dyn DiffExecEngine>) -> Self {
+        self.diff_exec_engine = Some(engine);
+        self
     }
 }
 
@@ -409,9 +449,32 @@ impl Backend for MultiEmitterBackend {
                         })
                     }
                     QuorumPolicy::DiffExec { tolerance } => {
-                        // Actual numerical execution requires hw / emulator
-                        // — record NotRun until the DiffExec engine PR
-                        // (next phase) plugs in execution.
+                        // PMAT-486: run the installed engine, or record
+                        // NotRun{no-engine} when none is installed (free
+                        // CI). An installed engine that errors propagates
+                        // a hard BackendError — a broken GPU run must NOT
+                        // masquerade as "not run".
+                        let diff_exec = match &self.diff_exec_engine {
+                            Some(engine) => engine
+                                .execute_and_compare(
+                                    &general_result.primary,
+                                    &specialist_text.primary,
+                                    module,
+                                    config,
+                                    *tolerance,
+                                )
+                                .map_err(|e| {
+                                    BackendError::Lower(format!(
+                                        "DiffExec engine for {:?} failed: {e}",
+                                        self.target
+                                    ))
+                                })?,
+                            None => DiffExecResult::NotRun {
+                                reason: format!(
+                                    "no DiffExec engine installed (tolerance was {tolerance})"
+                                ),
+                            },
+                        };
                         Ok(Artifact {
                             primary: general_result.primary.clone(),
                             sidecars: vec![(
@@ -421,11 +484,7 @@ impl Backend for MultiEmitterBackend {
                             citations: general_result.citations,
                             quorum_status: QuorumStatus::Multi {
                                 emitters: vec![self.general.name().to_string(), specialist_name],
-                                diff_exec: Some(DiffExecResult::NotRun {
-                                    reason: format!(
-                                        "DiffExec engine not yet implemented (tolerance was {tolerance})"
-                                    ),
-                                }),
+                                diff_exec: Some(diff_exec),
                             },
                         })
                     }
@@ -1067,6 +1126,86 @@ mod quorum_scaffolding_tests {
                 );
             }
             other => panic!("expected Multi quorum status, got {other:?}"),
+        }
+    }
+
+    // ─── PMAT-486: DiffExecEngine trait + hook ──────────────────────
+
+    /// Stub engine returning a fixed result (or a hard error).
+    struct StubEngine {
+        result: Result<DiffExecResult, String>,
+    }
+    impl DiffExecEngine for StubEngine {
+        fn execute_and_compare(
+            &self,
+            _g: &str,
+            _s: &str,
+            _m: &Module,
+            _c: &BackendConfig,
+            _tol: f64,
+        ) -> Result<DiffExecResult, String> {
+            self.result.clone()
+        }
+    }
+
+    fn diff_exec_backend() -> MultiEmitterBackend {
+        MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(MockGeneral {
+                name: "general",
+                body: "g".into(),
+            }),
+            Box::new(MockSpecialist {
+                name: "specialist",
+                matches: true,
+                body: "s".into(),
+            }),
+            QuorumPolicy::DiffExec { tolerance: 1e-6 },
+        )
+    }
+
+    /// PMAT-486: an installed engine's `Ok(Match)` becomes the recorded
+    /// Runtime vote (replacing NotRun).
+    #[test]
+    fn diff_exec_engine_records_match() {
+        let backend = diff_exec_backend().with_diff_exec_engine(std::sync::Arc::new(StubEngine {
+            result: Ok(DiffExecResult::Match { max_abs_diff: 0.0 }),
+        }));
+        let artifact = backend.lower(&dummy_module(), &dummy_config()).unwrap();
+        match artifact.quorum_status {
+            QuorumStatus::Multi {
+                diff_exec: Some(DiffExecResult::Match { .. }),
+                ..
+            } => {}
+            other => panic!("expected Multi Match, got {other:?}"),
+        }
+    }
+
+    /// PMAT-486: an installed engine that errors propagates a hard
+    /// `BackendError` — it must NOT be swallowed into `NotRun`.
+    #[test]
+    fn diff_exec_engine_error_is_a_hard_failure() {
+        let backend = diff_exec_backend().with_diff_exec_engine(std::sync::Arc::new(StubEngine {
+            result: Err("driver fault: CUDA_ERROR_LAUNCH_FAILED".into()),
+        }));
+        let err = backend
+            .lower(&dummy_module(), &dummy_config())
+            .expect_err("engine error must surface as a hard BackendError");
+        assert!(matches!(err, BackendError::Lower(_)));
+    }
+
+    /// PMAT-486: with no engine installed, the policy still records the
+    /// benign `NotRun { no-engine }` (free CI stays green).
+    #[test]
+    fn diff_exec_no_engine_records_not_run() {
+        let backend = diff_exec_backend();
+        let artifact = backend.lower(&dummy_module(), &dummy_config()).unwrap();
+        match artifact.quorum_status {
+            QuorumStatus::Multi {
+                diff_exec: Some(DiffExecResult::NotRun { reason }),
+                ..
+            } => assert!(reason.contains("no DiffExec engine"), "got: {reason}"),
+            other => panic!("expected Multi NotRun, got {other:?}"),
         }
     }
 }
