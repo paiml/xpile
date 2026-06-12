@@ -2409,6 +2409,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::Sorted { list, .. } => infer_type(list),
         // PMAT-502d: reversed(xs) has the same type as its list.
         Expr::Reversed { list } => infer_type(list),
+        // PMAT-502ab: filter(pred, xs) keeps the input list type.
+        Expr::Filter { list, .. } => infer_type(list),
         // PMAT-502e: min(xs)/max(xs) reduce a list to its element type.
         Expr::ListMinMax { list, .. } => match infer_type(list) {
             Type::List(elem) => *elem,
@@ -2596,6 +2598,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::Sorted { list, .. } => infer_type_in_ctx(ctx, list),
         // PMAT-502d: reversed(xs) has the same type as its list.
         Expr::Reversed { list } => infer_type_in_ctx(ctx, list),
+        // PMAT-502ab: filter(pred, xs) keeps the input list type.
+        Expr::Filter { list, .. } => infer_type_in_ctx(ctx, list),
         // PMAT-502e: min(xs)/max(xs) reduce a list to its element type.
         Expr::ListMinMax { list, .. } => match infer_type_in_ctx(ctx, list) {
             Type::List(elem) => *elem,
@@ -3113,12 +3117,46 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         });
                     }
                 }
+                // PMAT-502ab: `filter(lambda p: pred, xs)` over a list → a new
+                // list of the elements where the Bool predicate holds
+                // (materializing the lazy iterator). The body is lowered with
+                // `p` unbound (same as sorted-key, v0.1.58); non-Bool bodies
+                // (Python truthiness) fall through to error.
+                if fname.id.as_str() == "filter" && call.keywords.is_empty() && call.args.len() == 2
+                {
+                    if let ast::Expr::Lambda(lam) = &call.args[0] {
+                        if lam.args.args.len() == 1
+                            && lam.args.posonlyargs.is_empty()
+                            && lam.args.kwonlyargs.is_empty()
+                            && lam.args.vararg.is_none()
+                            && lam.args.kwarg.is_none()
+                        {
+                            let list = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                            if matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
+                                let param = lam.args.args[0].def.arg.to_string();
+                                let body = lower_expr_in_ctx(ctx, (*lam.body).clone())?;
+                                if infer_type_in_ctx(ctx, &body) == Type::Bool {
+                                    return Ok(Expr::Filter {
+                                        list: Box::new(list),
+                                        lambda: SortKey {
+                                            param,
+                                            body: Box::new(body),
+                                        },
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
                 // PMAT-502d: `list(reversed(xs))` — the `list(...)` wrapper is
                 // a no-op once the inner `reversed(xs)` already materializes
                 // to a `Vec`. Unwrap a single already-list-typed argument.
                 if fname.id.as_str() == "list" && call.keywords.is_empty() && call.args.len() == 1 {
                     let inner = lower_expr_in_ctx(ctx, call.args[0].clone())?;
-                    if matches!(inner, Expr::Reversed { .. } | Expr::Sorted { .. }) {
+                    if matches!(
+                        inner,
+                        Expr::Reversed { .. } | Expr::Sorted { .. } | Expr::Filter { .. }
+                    ) {
                         return Ok(inner);
                     }
                 }

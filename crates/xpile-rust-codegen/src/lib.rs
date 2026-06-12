@@ -812,6 +812,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, list, mode)?;
             out.push_str(".clone(); __xv.reverse(); __xv }");
         }
+        // PMAT-502ab: `filter(pred, xs)` → `.iter().cloned().filter(|__k| {
+        // let p = __k.clone(); pred }).collect::<Vec<_>>()`.
+        Expr::Filter { list, lambda } => {
+            emit_expr(out, list, mode)?;
+            write!(
+                out,
+                ".iter().cloned().filter(|__k| {{ let {} = __k.clone(); ",
+                lambda.param
+            )?;
+            emit_expr(out, &lambda.body, mode)?;
+            out.push_str(" }).collect::<Vec<_>>()");
+        }
         // PMAT-462 (v0.2.0 Track 1.C): Python dict literal →
         // Rust `{ let mut m = HashMap::new(); m.insert(k, v); ... m }`
         // block expression returning the owned HashMap.

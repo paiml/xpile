@@ -254,6 +254,10 @@ fn expr_has_int_arith(e: &Expr) -> bool {
             expr_has_int_arith(list) || key.as_ref().is_some_and(|k| expr_has_int_arith(&k.body))
         }
         Expr::Reversed { list } => expr_has_int_arith(list),
+        // PMAT-502ab: filter — recurse into the list and predicate body.
+        Expr::Filter { list, lambda } => {
+            expr_has_int_arith(list) || expr_has_int_arith(&lambda.body)
+        }
         Expr::ListMinMax { list, key, .. } => {
             expr_has_int_arith(list) || key.as_ref().is_some_and(|k| expr_has_int_arith(&k.body))
         }
@@ -1091,6 +1095,14 @@ pub enum Expr {
     /// as the list's type. Lean refuses. (Python's `reversed` yields a lazy
     /// iterator, but the supported subset materializes it as a `Vec`.)
     Reversed { list: Box<Expr> },
+    /// `filter(lambda p: pred, xs)` over a list — Python builtin. PMAT-502ab
+    /// (Tranche 2). The supported subset materializes the lazy `filter`
+    /// iterator as a `Vec`. The `lambda` is a [`SortKey`] (param + body) whose
+    /// body is a `Bool` predicate. Rust/Ruchy emit
+    /// `<list>.iter().cloned().filter(|__k| { let p = __k.clone(); pred })
+    /// .collect::<Vec<_>>()`; result types as the **input** list type
+    /// (filter keeps the element type, drops some elements). Lean refuses.
+    Filter { list: Box<Expr>, lambda: SortKey },
     /// `min(xs)` / `max(xs)` over a list — the 1-arg reduction form of
     /// the Python builtins (distinct from the 2-arg `min(a, b)` which is
     /// an [`Expr::NumBuiltin`]). PMAT-502e (`list[int]`); `of_float` is
