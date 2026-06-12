@@ -7,6 +7,28 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.10] — 2026-06-12
+
+Incremental release adding the Python **`float`** type (PMAT-477, the
+post-v0.1.4 audit's R8) — xpile's first non-integer numeric type.
+
+- `Type::F64` + `Expr::LitFloat` + `Expr::FloatBinOp` in the meta-HIR.
+  `float` params/returns/locals lower to Rust/Ruchy `f64` and Lean
+  `Float`. Float arithmetic (`+ - * /`) is **plain infix** (IEEE-754
+  saturates — no `checked_*`/overflow path), and `/` is **true
+  division** (not floor). Float comparisons reuse `Expr::BinOp` (their
+  plain-infix emission is already `f64`-correct, yielding `Bool`).
+- Exit (rustc round-trip, epsilon-tolerance asserts): `lerp(0,10,0.5)`
+  → 5.0, `average(3,4)` → 3.5, `scale(2.5,4)` → 10.0.
+
+No governing contract yet (capability-ahead-of-contract; a
+`C-PY-FLOAT-ARITH` substrate is queued — float functions cite nothing
+rather than a non-existent contract). `//`/`%` on floats, mixed
+int/float coercion, and float `**` are deferred. Substrate unchanged at
+QUORUM. `transpile_e2e` at 82 tests.
+
+Install: `cargo install xpile` upgrades to 0.1.10.
+
 ## [0.1.9] — 2026-06-12
 
 Incremental release adding Python **keyword arguments** in calls

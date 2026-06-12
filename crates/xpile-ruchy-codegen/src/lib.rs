@@ -12,7 +12,19 @@
 
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
-use xpile_meta_hir::{BinOp, Block, Expr, Function, Item, Module, Param, Stmt, Type, UnOp};
+use xpile_meta_hir::{
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, Stmt, Type, UnOp,
+};
+
+/// PMAT-477 (R8): Ruchy → Rust infix symbol for a float arithmetic op.
+fn float_op_sym(op: FloatOp) -> &'static str {
+    match op {
+        FloatOp::Add => "+",
+        FloatOp::Sub => "-",
+        FloatOp::Mul => "*",
+        FloatOp::Div => "/",
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuchyCodegenError {
@@ -283,6 +295,8 @@ fn escape_ruchy_str(s: &str) -> String {
 fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
     match t {
         Type::I64 => out.push_str("i64"),
+        // PMAT-477 (R8): Ruchy → Rust `f64`.
+        Type::F64 => out.push_str("f64"),
         Type::Bool => out.push_str("bool"),
         // Ruchy compiles to Rust → same BigInt re-export. PMAT-012.
         Type::BigInt => out.push_str("xpile_bigint::BigInt"),
@@ -335,6 +349,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             } else {
                 write!(out, "{}i64", v)?;
             }
+        }
+        // PMAT-477 (R8): float literal + plain-infix float arithmetic.
+        Expr::LitFloat(v) => write!(out, "{}f64", v)?,
+        Expr::FloatBinOp { op, lhs, rhs } => {
+            out.push('(');
+            emit_expr(out, lhs, mode)?;
+            write!(out, " {} ", float_op_sym(*op))?;
+            emit_expr(out, rhs, mode)?;
+            out.push(')');
         }
         // PMAT-456 (v0.2.0 Track 1.B): Ruchy → Rust → lowercase
         // `true` / `false`.

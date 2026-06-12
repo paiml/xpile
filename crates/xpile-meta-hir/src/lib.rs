@@ -147,6 +147,13 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
 fn expr_has_int_arith(e: &Expr) -> bool {
     match e {
         Expr::Ident(_) | Expr::LitInt(_) | Expr::LitBool(_) => false,
+        // PMAT-477 (R8): float arithmetic is governed by float
+        // semantics (IEEE-754 saturation), not C-PY-INT-ARITH's
+        // integer-overflow analysis. Literal carries no operands;
+        // FloatBinOp recurses defensively (float subtrees never carry
+        // int arithmetic in practice).
+        Expr::LitFloat(_) => false,
+        Expr::FloatBinOp { lhs, rhs, .. } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
         Expr::BinOp { op, lhs, rhs } => {
             if binop_is_int_arith(*op) {
                 return true;
@@ -509,6 +516,14 @@ pub enum Type {
     I64,
     /// Boolean — produced by comparison ops in [`Expr::BinOp`].
     Bool,
+    /// IEEE-754 double — Python `float`. PMAT-477 (R8). Rust/Ruchy emit
+    /// `f64`; Lean emits `Float`. Arithmetic (`Expr::FloatBinOp`) is
+    /// plain infix (no overflow/checked path — floats saturate to
+    /// ±inf, they don't wrap). Comparisons reuse `Expr::BinOp` (plain
+    /// infix `<`/`==`/… already type-correct for `f64`, yielding
+    /// `Bool`). No governing contract yet (capability-ahead-of-
+    /// contract); a `C-PY-FLOAT-ARITH` substrate is queued.
+    F64,
     /// Unbounded integer — Python `int`'s native shape. The slow path
     /// of contract `C-PY-INT-ARITH`. Rust/Ruchy emit
     /// `xpile_bigint::BigInt`; Lean emits `Int` (which is already
@@ -606,6 +621,20 @@ pub enum Expr {
     Ident(String),
     /// Integer literal, lowered as i64 at the boundary.
     LitInt(i64),
+    /// IEEE-754 float literal — Python `3.14`. PMAT-477 (R8).
+    /// Rust/Ruchy emit `<v>f64`; Lean emits the decimal as a `Float`.
+    LitFloat(f64),
+    /// Float arithmetic `a <op> b` for `f64` operands — Python `+ - *
+    /// /` on floats. PMAT-477 (R8). Distinct from [`Expr::BinOp`]
+    /// because float arithmetic is **plain infix** (no `checked_*` /
+    /// overflow path — IEEE-754 saturates to ±inf), and `/` is true
+    /// division, not floor. Float comparisons stay on `Expr::BinOp`
+    /// (their plain-infix emission is already `f64`-correct → `Bool`).
+    FloatBinOp {
+        op: FloatOp,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
     /// Boolean literal — Python `True` / `False`. PMAT-456,
     /// v0.2.0 Track 1.B. Rust/Ruchy emit `true` / `false`; Lean
     /// emits `True` / `False` (capitalised).
@@ -862,6 +891,17 @@ pub enum QuotingStrategy {
     /// for short fragments where surrounding quotes would be
     /// awkward.
     Backslash,
+}
+
+/// PMAT-477 (R8): float arithmetic operators. Carried by
+/// [`Expr::FloatBinOp`]; all emit plain infix (`f64` saturates, no
+/// `checked_*`). `Div` is IEEE-754 true division.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FloatOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

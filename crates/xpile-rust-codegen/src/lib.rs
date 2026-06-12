@@ -14,8 +14,18 @@
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, Function, Item, Module, Param, SourceLang, Stmt, Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, SourceLang, Stmt, Type, UnOp,
 };
+
+/// PMAT-477 (R8): the Rust infix symbol for a float arithmetic op.
+fn float_op_sym(op: FloatOp) -> &'static str {
+    match op {
+        FloatOp::Add => "+",
+        FloatOp::Sub => "-",
+        FloatOp::Mul => "*",
+        FloatOp::Div => "/",
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum CodegenError {
@@ -339,6 +349,8 @@ fn escape_rust_str(s: &str) -> String {
 fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
     match t {
         Type::I64 => out.push_str("i64"),
+        // PMAT-477 (R8): Python `float` → Rust `f64`.
+        Type::F64 => out.push_str("f64"),
         Type::Bool => out.push_str("bool"),
         // PMAT-012: re-exported from `xpile-bigint` (which wraps
         // `num_bigint::BigInt`). Operator overloads (`+`, `-`, `*`,
@@ -410,6 +422,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             } else {
                 write!(out, "{}i64", v)?;
             }
+        }
+        // PMAT-477 (R8): float literal → `<v>f64`; float arithmetic →
+        // plain infix (IEEE-754 saturates, no checked path).
+        Expr::LitFloat(v) => write!(out, "{}f64", v)?,
+        Expr::FloatBinOp { op, lhs, rhs } => {
+            out.push('(');
+            emit_expr(out, lhs, mode)?;
+            write!(out, " {} ", float_op_sym(*op))?;
+            emit_expr(out, rhs, mode)?;
+            out.push(')');
         }
         // PMAT-456 (v0.2.0 Track 1.B): bool literal — Rust's
         // lowercase `true` / `false`.
