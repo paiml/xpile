@@ -493,14 +493,26 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, rhs, mode)?;
             out.push(')');
         }
-        // PMAT-492: Python no-arg string transform methods.
-        Expr::StrMethod { recv, op } => {
+        // PMAT-492/493b: Python string methods. No-arg transforms emit a
+        // suffix; the startswith/endswith predicates emit
+        // `.starts_with(&(<pat>)[..])` — the `&(..)[..]` reslice yields
+        // `&str` uniformly whether the pattern is a `String` or a literal.
+        Expr::StrMethod { recv, op, args } => {
             emit_expr(out, recv, mode)?;
-            out.push_str(match op {
-                StrMethodOp::Upper => ".to_uppercase()",
-                StrMethodOp::Lower => ".to_lowercase()",
-                StrMethodOp::Strip => ".trim().to_string()",
-            });
+            match op {
+                StrMethodOp::Upper => out.push_str(".to_uppercase()"),
+                StrMethodOp::Lower => out.push_str(".to_lowercase()"),
+                StrMethodOp::Strip => out.push_str(".trim().to_string()"),
+                StrMethodOp::StartsWith | StrMethodOp::EndsWith => {
+                    out.push_str(if matches!(op, StrMethodOp::StartsWith) {
+                        ".starts_with(&("
+                    } else {
+                        ".ends_with(&("
+                    });
+                    emit_expr(out, &args[0], mode)?;
+                    out.push_str(")[..])");
+                }
+            }
         }
         // PMAT-455 (v0.2.0 Track 1.B): Python list literal → Rust
         // `vec![...]` macro. The element types are guaranteed
