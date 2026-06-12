@@ -2565,6 +2565,39 @@ fn main() {
     assert_rustc_runs("bool_cast", &rust, driver);
 }
 
+/// PMAT-502bf (Tranche 2): `int(s)` / `float(s)` string parsing →
+/// `(s).trim().parse::<i64|f64>().expect(…)` (trims like Python; panics
+/// on bad input, matching `ValueError`). The numeric `int(float)` cast
+/// still uses `as`.
+#[test]
+fn str_parse() {
+    let rust = xpile_transpile_to_rust("str_parse.py");
+    assert!(
+        rust.contains("(s).trim().parse::<i64>().expect("),
+        "int(s):\n{rust}"
+    );
+    assert!(
+        rust.contains("(s).trim().parse::<f64>().expect("),
+        "float(s):\n{rust}"
+    );
+    assert!(
+        rust.contains("((x) as i64)"),
+        "numeric still as-cast:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    assert_eq!(to_int("42".to_string()), 42);
+    assert_eq!(to_int("  -7  ".to_string()), -7);
+    assert_eq!(to_float("3.14".to_string()), 3.14);
+    assert_eq!(add_parsed("10".to_string(), "20".to_string()), 30);
+    assert_eq!(numeric_still(2.9), 2);
+    assert!(std::panic::catch_unwind(|| to_int("abc".to_string())).is_err());
+}
+"#;
+    assert_rustc_runs("str_parse", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

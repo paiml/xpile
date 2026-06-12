@@ -922,10 +922,26 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push_str(").max(0)) as usize)");
         }
         // PMAT-502m: `int(x)`/`float(x)` → `((x) as i64)` / `((x) as f64)`.
-        Expr::NumCast { value, to_float } => {
-            out.push_str("((");
-            emit_expr(out, value, mode)?;
-            out.push_str(if *to_float { ") as f64)" } else { ") as i64)" });
+        Expr::NumCast {
+            value,
+            to_float,
+            from_str,
+        } => {
+            if *from_str {
+                // PMAT-502bf: `int(s)`/`float(s)` → trimmed `.parse()`
+                // (panics on bad input, matching Python's `ValueError`).
+                out.push('(');
+                emit_expr(out, value, mode)?;
+                out.push_str(if *to_float {
+                    ").trim().parse::<f64>().expect(\"xpile: ValueError: could not convert string to float\")"
+                } else {
+                    ").trim().parse::<i64>().expect(\"xpile: ValueError: invalid literal for int()\")"
+                });
+            } else {
+                out.push_str("((");
+                emit_expr(out, value, mode)?;
+                out.push_str(if *to_float { ") as f64)" } else { ") as i64)" });
+            }
         }
         // PMAT-502ad/af: `str(x)` → `format!("{}", x)` (int) or a
         // Python-matching format block (float: `nan` + `".0"` whole-number suffix).
