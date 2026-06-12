@@ -5245,9 +5245,16 @@ fn lower_unary_op(u: ast::ExprUnaryOp) -> Result<Expr, FrontendError> {
     let operand = lower_expr(*u.operand)?;
     let op = match u.op {
         ast::UnaryOp::USub => {
+            // PMAT-502bo: a negated float literal (`-3.14`) folds to a
+            // single negative `LitFloat` — `UnOp::Neg` emits `checked_neg`,
+            // which is i64-only. (Float *variable* negation `-x` needs
+            // context-aware typing and is deferred.)
+            if let Expr::LitFloat(f) = operand {
+                return Ok(Expr::LitFloat(-f));
+            }
             if infer_type(&operand) != Type::I64 {
                 return Err(FrontendError::Lower(
-                    "unary `-` requires I64 operand".into(),
+                    "unary `-` requires an I64 operand or a float literal (float-variable negation is deferred)".into(),
                 ));
             }
             UnOp::Neg

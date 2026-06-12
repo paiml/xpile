@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.101] — 2026-06-13
+
+Tranche-2 slice PMAT-502bo — Python **negative float literals** `-3.14`.
+
+A negated float literal now folds to a single negative `Expr::LitFloat` (→
+`-3.14f64`) instead of erroring. Previously unary `-` only accepted an `i64`
+operand (and `UnOp::Neg` emits the i64-only `checked_neg().expect(…)`), so `-3.14`
+was rejected. This also keeps negative-float module constants (`X = -3.14`)
+const-evaluable. Float *variable* negation (`-x` for a float `x`) still needs
+context-aware typing and is deferred. Negative int literals are unchanged
+(`checked_neg`). rustc round-trip `neg_float.py` (cross-checked against `python3`):
+`pi() -> -3.14`, `offset(2.0) -> 0.5`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.100] — 2026-06-13
 
 Tranche-2 slice PMAT-502bn — Python **`pass`** (no-op statement).
