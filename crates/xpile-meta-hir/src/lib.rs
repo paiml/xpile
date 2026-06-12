@@ -262,6 +262,9 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         }
         // PMAT-502ac: map — recurse into the list and transform body.
         Expr::Map { list, lambda } => expr_has_int_arith(list) || expr_has_int_arith(&lambda.body),
+        // PMAT-502ai: enumerate/zip — recurse into the source list(s).
+        Expr::Enumerate { list } => expr_has_int_arith(list),
+        Expr::Zip { left, right } => expr_has_int_arith(left) || expr_has_int_arith(right),
         Expr::ListMinMax { list, key, .. } => {
             expr_has_int_arith(list) || key.as_ref().is_some_and(|k| expr_has_int_arith(&k.body))
         }
@@ -1124,6 +1127,18 @@ pub enum Expr {
     /// for arithmetic / `len` / conversion bodies, which is what lowers).
     /// Lean refuses.
     Map { list: Box<Expr>, lambda: SortKey },
+    /// `enumerate(xs)` over a list — Python builtin, materialized to a `Vec`
+    /// of `(index, element)` 2-tuples. PMAT-502ai (Tranche 2). Rust/Ruchy
+    /// emit `<list>.iter().cloned().enumerate().map(|(__i, __e)| (__i as i64,
+    /// __e)).collect::<Vec<_>>()`; result types as `List(Tuple[I64, elem])`.
+    /// (`enumerate(xs, start)` follows.) Lean refuses.
+    Enumerate { list: Box<Expr> },
+    /// `zip(xs, ys)` over two lists — Python builtin, materialized to a `Vec`
+    /// of paired 2-tuples (truncated to the shorter). PMAT-502ai (Tranche 2).
+    /// Rust/Ruchy emit `<left>.iter().cloned().zip(<right>.iter().cloned())
+    /// .collect::<Vec<_>>()`; result types as `List(Tuple[elemL, elemR])`.
+    /// Lean refuses.
+    Zip { left: Box<Expr>, right: Box<Expr> },
     /// `min(xs)` / `max(xs)` over a list — the 1-arg reduction form of
     /// the Python builtins (distinct from the 2-arg `min(a, b)` which is
     /// an [`Expr::NumBuiltin`]). PMAT-502e (`list[int]`); `of_float` is

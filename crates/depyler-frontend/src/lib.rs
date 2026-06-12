@@ -2419,6 +2419,26 @@ fn infer_type(e: &Expr) -> Type {
         Expr::Filter { list, .. } => infer_type(list),
         // PMAT-502ac: map(f, xs) → List of the body's transformed type.
         Expr::Map { lambda, .. } => Type::List(Box::new(infer_type(&lambda.body))),
+        // PMAT-502ai: enumerate(xs) → List(Tuple[I64, elem]); zip(xs, ys) →
+        // List(Tuple[elemL, elemR]).
+        Expr::Enumerate { list } => {
+            let elem = match infer_type(list) {
+                Type::List(e) => *e,
+                _ => Type::I64,
+            };
+            Type::List(Box::new(Type::Tuple(vec![Type::I64, elem])))
+        }
+        Expr::Zip { left, right } => {
+            let el = match infer_type(left) {
+                Type::List(e) => *e,
+                _ => Type::I64,
+            };
+            let er = match infer_type(right) {
+                Type::List(e) => *e,
+                _ => Type::I64,
+            };
+            Type::List(Box::new(Type::Tuple(vec![el, er])))
+        }
         // PMAT-502e: min(xs)/max(xs) reduce a list to its element type.
         Expr::ListMinMax { list, .. } => match infer_type(list) {
             Type::List(elem) => *elem,
@@ -2616,6 +2636,25 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::Filter { list, .. } => infer_type_in_ctx(ctx, list),
         // PMAT-502ac: map(f, xs) → List of the body's transformed type.
         Expr::Map { lambda, .. } => Type::List(Box::new(infer_type_in_ctx(ctx, &lambda.body))),
+        // PMAT-502ai: enumerate/zip → List(Tuple[...]).
+        Expr::Enumerate { list } => {
+            let elem = match infer_type_in_ctx(ctx, list) {
+                Type::List(e) => *e,
+                _ => Type::I64,
+            };
+            Type::List(Box::new(Type::Tuple(vec![Type::I64, elem])))
+        }
+        Expr::Zip { left, right } => {
+            let el = match infer_type_in_ctx(ctx, left) {
+                Type::List(e) => *e,
+                _ => Type::I64,
+            };
+            let er = match infer_type_in_ctx(ctx, right) {
+                Type::List(e) => *e,
+                _ => Type::I64,
+            };
+            Type::List(Box::new(Type::Tuple(vec![el, er])))
+        }
         // PMAT-502e: min(xs)/max(xs) reduce a list to its element type.
         Expr::ListMinMax { list, .. } => match infer_type_in_ctx(ctx, list) {
             Type::List(elem) => *elem,
@@ -3221,6 +3260,33 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         }
                     }
                 }
+                // PMAT-502ai: `enumerate(xs)` over a list → a Vec of
+                // (index, element) tuples (materializing the lazy iterator).
+                if fname.id.as_str() == "enumerate"
+                    && call.keywords.is_empty()
+                    && call.args.len() == 1
+                {
+                    let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
+                        return Ok(Expr::Enumerate {
+                            list: Box::new(list),
+                        });
+                    }
+                }
+                // PMAT-502ai: `zip(xs, ys)` over two lists → a Vec of paired
+                // tuples (truncated to the shorter).
+                if fname.id.as_str() == "zip" && call.keywords.is_empty() && call.args.len() == 2 {
+                    let left = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    let right = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &left), Type::List(_))
+                        && matches!(infer_type_in_ctx(ctx, &right), Type::List(_))
+                    {
+                        return Ok(Expr::Zip {
+                            left: Box::new(left),
+                            right: Box::new(right),
+                        });
+                    }
+                }
                 // PMAT-502d: `list(reversed(xs))` — the `list(...)` wrapper is
                 // a no-op once the inner `reversed(xs)` already materializes
                 // to a `Vec`. Unwrap a single already-list-typed argument.
@@ -3232,6 +3298,8 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             | Expr::Sorted { .. }
                             | Expr::Filter { .. }
                             | Expr::Map { .. }
+                            | Expr::Enumerate { .. }
+                            | Expr::Zip { .. }
                     ) {
                         return Ok(inner);
                     }

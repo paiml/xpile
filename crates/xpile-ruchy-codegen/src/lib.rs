@@ -783,6 +783,20 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, &lambda.body, mode)?;
             out.push_str(" }).collect::<Vec<_>>()");
         }
+        // PMAT-502ai: `enumerate(xs)` → Vec of (i64, elem) tuples.
+        Expr::Enumerate { list } => {
+            emit_expr(out, list, mode)?;
+            out.push_str(
+                ".iter().cloned().enumerate().map(|(__i, __e)| (__i as i64, __e)).collect::<Vec<_>>()",
+            );
+        }
+        // PMAT-502ai: `zip(xs, ys)` → Vec of paired tuples.
+        Expr::Zip { left, right } => {
+            emit_expr(out, left, mode)?;
+            out.push_str(".iter().cloned().zip(");
+            emit_expr(out, right, mode)?;
+            out.push_str(".iter().cloned()).collect::<Vec<_>>()");
+        }
         // PMAT-462 (v0.2.0 Track 1.C): Ruchy → Rust HashMap-init block.
         // PMAT-466: empty literal → bare `HashMap::new()` (see the Rust
         // backend's twin arm — avoids clippy `unused_mut`).

@@ -651,6 +651,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New StrMethodOp::Capitalize (0-arg, -> Str). s.capitalize() -> { let __cs = &(s); let mut __ch = __cs.chars(); match __ch.next() { Some(__f) => __f.to_uppercase().collect::<String>() + &(__ch.as_str().to_lowercase()), None => String::new() } } in Rust+Ruchy (special-cased block before recv-once emit). Matches Python: first char upper, rest lower, empty -> \"\". Lean refuses. rustc round-trip str_capitalize.py: cap(hELLO)->Hello, cap(world)->World, cap(a)->A, cap(\"\")->\"\". FREE CI. SHIPPED v0.1.66."
+- id: PMAT-502AI
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ai: [Tranche2] standalone enumerate(xs)/zip(a,b)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::Enumerate { list } + Expr::Zip { left, right } — the builtins used OUTSIDE a for header (for-loop forms = PMAT-495). enumerate(xs) -> xs.iter().cloned().enumerate().map(|(__i, __e)| (__i as i64, __e)).collect::<Vec<_>>() (List(Tuple[I64,elem])); zip(a,b) -> a.iter().cloned().zip(b.iter().cloned()).collect::<Vec<_>>() (List(Tuple[eL,eR]), truncates to shorter) in Rust+Ruchy. list(enumerate(..))/list(zip(..)) unwrap. Compose with for k,v in.. pair loop (v0.1.57) + len (v0.1.55). Lean refuses. rustc round-trip enumerate_zip_standalone.py: idx_sum([10,20,30])->80, dot([1,2,3],[4,5,6])->32, n_pairs([1,2,3],[9,9])->2. FREE CI. SHIPPED v0.1.67."
 - id: PMAT-465
   github_issue: 496
   item_type: task
