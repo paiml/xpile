@@ -417,6 +417,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Extends Expr::ListMinMax with of_float: bool (completes PMAT-502e which was list[int] only). f64 has no Ord, so list[float] min(xs) -> <list>.iter().copied().fold(f64::INFINITY, f64::min) and max(xs) -> ...fold(f64::NEG_INFINITY, f64::max) in Rust+Ruchy; list[int] keeps .iter().copied().min().unwrap()/.max(). Result types as element type. Lean refuses. Empty list[float] yields +/-inf (fold identity, first-cut wart). rustc round-trip list_minmax_float.py: lowest([3.5,1.5,2.5])->1.5, highest([3.5,1.5,2.5])->3.5. FREE CI. SHIPPED v0.1.40."
+- id: PMAT-502I
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502i: [Tranche2] empty collection constructors set()/dict()/list()'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Pure-frontend slice (no new IR). 0-arg set()/dict()/list() -> empty SetLit/DictLit/ListLit -> std::collections::HashSet::new()/HashMap::new()/vec![]. Element type from binding annotation (s: set[int] = set()) or a subsequent .add()/.append() (Stmt::Let always emits a typed binding so both compile). Closes the empty-set() gap ({} is an empty dict). rustc round-trip empty_constructors.py: set_then_add()->2, set_annotated()->0, list_then_append()->2, dict_annotated()->0. FREE CI. SHIPPED v0.1.41."
 - id: PMAT-465
   github_issue: 496
   item_type: task

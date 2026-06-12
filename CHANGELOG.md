@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.41] — 2026-06-12
+
+Tranche-2 slice PMAT-502i — Python **empty collection constructors**
+`set()` / `dict()` / `list()`.
+
+Pure-frontend slice (no new IR): a 0-arg `set()` / `dict()` / `list()` call
+lowers to the corresponding empty literal (`Expr::SetLit`/`DictLit`/`ListLit`
+with no elements), emitting `std::collections::HashSet::new()` /
+`HashMap::new()` / `vec![]`. The element type comes from a binding annotation
+(`s: set[int] = set()`) or a subsequent `.add()`/`.append()` that lets rustc
+infer it — the `Stmt::Let` always emits a typed binding, so both forms compile.
+This closes the long-standing empty-`set()` gap (`{}` is an empty *dict*, so a
+set had no literal spelling). rustc round-trip `empty_constructors.py`:
+`set_then_add() -> 2`, `set_annotated() -> 0`, `list_then_append() -> 2`,
+`dict_annotated() -> 0`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.40] — 2026-06-12
 
 Tranche-2 slice PMAT-502h — Python **`min(xs)`/`max(xs)` over a `list[float]`**.

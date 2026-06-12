@@ -1386,6 +1386,29 @@ fn main() {
     assert_rustc_runs("set_ops", &rust, driver);
 }
 
+/// PMAT-502i (Tranche 2): empty collection constructors `set()` / `dict()` /
+/// `list()` → empty `HashSet::new()` / `HashMap::new()` / `vec![]`, typed by
+/// a binding annotation or a subsequent `.add()`/`.append()`.
+#[test]
+fn empty_constructors() {
+    let rust = xpile_transpile_to_rust("empty_constructors.py");
+    assert!(
+        rust.contains("std::collections::HashSet::new()")
+            && rust.contains("std::collections::HashMap::new()")
+            && rust.contains("Vec<i64> = vec![]"),
+        "expected empty-constructor emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(set_then_add(), 2);
+    assert_eq!(set_annotated(), 0);
+    assert_eq!(list_then_append(), 2);
+    assert_eq!(dict_annotated(), 0);
+}
+"#;
+    assert_rustc_runs("empty_constructors", &rust, driver);
+}
+
 /// PMAT-500b (Tranche 2): set `.add()` mutation → `s.insert(x)` (the
 /// receiver is marked `mut` by the pre-pass), straight-line + in a loop.
 #[test]
