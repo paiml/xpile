@@ -295,6 +295,14 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-502at: del coll[key] inside a while loop — same gap.
+            Stmt::DelItem { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has Stmt::DelItem (del coll[key]) inside a while loop; \
+                     Lean codegen at v0.2.0 first cut doesn't compose in-place mutation with while",
+                    f.name
+                )));
+            }
             // PMAT-503a: `raise` is unsupported in the Lean lane entirely
             // (panic has no total-function encoding); refuse it here too.
             Stmt::Raise { .. } => {
@@ -861,6 +869,11 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         Stmt::DictSet { dict_name, .. } => Err(LeanCodegenError::Unsupported(format!(
             "`{dict_name}[k] = v` (Stmt::DictSet) requires state-monad encoding in Lean — \
              not yet implemented at v0.2.0 first cut (PMAT-466 follow-up); \
+             use `--target rust` or `--target ruchy` for in-place mutation"
+        ))),
+        // PMAT-502at: del coll[key] — same state-monad encoding gap.
+        Stmt::DelItem { name, .. } => Err(LeanCodegenError::Unsupported(format!(
+            "`del {name}[k]` (Stmt::DelItem) requires state-monad encoding in Lean — \
              use `--target rust` or `--target ruchy` for in-place mutation"
         ))),
         // Stmt::Assert is handled by emit_stmts_then_trailing — should

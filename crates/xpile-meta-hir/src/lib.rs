@@ -158,6 +158,8 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         // PMAT-466 (v0.2.0 Track 1.C): dict keyed assignment — recurse
         // into both key and value expressions.
         Stmt::DictSet { key, value, .. } => expr_has_int_arith(key) || expr_has_int_arith(value),
+        // PMAT-502at: del coll[key] — recurse into the key expression.
+        Stmt::DelItem { key, .. } => expr_has_int_arith(key),
         Stmt::Assert { cond, msg } => {
             expr_has_int_arith(cond) || msg.as_ref().is_some_and(expr_has_int_arith)
         }
@@ -475,6 +477,26 @@ pub enum Stmt {
         dict_name: String,
         key: Expr,
         value: Expr,
+    },
+    /// `del coll[key]` — Python item deletion over a list or dict.
+    /// PMAT-502at (Tranche 2). The frontend resolves `is_dict` from the
+    /// receiver's inferred type and marks it mutable. For a list,
+    /// removes the element at the (int) index, shifting the tail left;
+    /// for a dict, removes the entry for the key. Both backends discard
+    /// the removed value (Python `del` is a statement). Out-of-range /
+    /// absent-key behaviour follows the underlying Rust method (a list
+    /// index past the end panics, matching Python `IndexError`; a dict
+    /// `del` of an absent key is a silent no-op here, whereas Python
+    /// raises `KeyError` — a deferred fidelity gap).
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: list → `<name>.remove((<key>) as usize);`;
+    ///     dict → `<name>.remove(&(<key>));`.
+    ///   * Lean: refuses (in-place mutation, same gap as `ListAppend`).
+    DelItem {
+        name: String,
+        key: Expr,
+        is_dict: bool,
     },
     /// `list.append(elem)` — Python `xs.append(v)` mutation. PMAT-460,
     /// v0.2.0 Track 1.B.

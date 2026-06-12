@@ -127,6 +127,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             // PMAT-466: dict keyed assignment carries no Type::Let;
             // dict values are int/bool/str at v0.2.0, never BigInt.
             Stmt::DictSet { .. } => false,
+            // PMAT-502at: del coll[key] introduces no binding.
+            Stmt::DelItem { .. } => false,
             // PMAT-039: shell commands carry no BigInt operands. They
             // also never reach this Rust-codegen scan in practice
             // (bashrs-frontend produces Shell modules that the Rust
@@ -410,6 +412,21 @@ fn emit_stmt_indented(
             write!(out, "; {dict_name}.insert(")?;
             emit_expr(out, key, mode)?;
             writeln!(out, ".clone(), __xpile_dict_val); }}")?;
+            Ok(())
+        }
+        // PMAT-502at: Python `del coll[key]`. list → `coll.remove((k) as
+        // usize);` (shift tail left; panics past end = Python IndexError);
+        // dict → `coll.remove(&(k));` (discards the value).
+        Stmt::DelItem { name, key, is_dict } => {
+            if *is_dict {
+                write!(out, "{indent}{name}.remove(&(")?;
+                emit_expr(out, key, mode)?;
+                writeln!(out, "));")?;
+            } else {
+                write!(out, "{indent}{name}.remove((")?;
+                emit_expr(out, key, mode)?;
+                writeln!(out, ") as usize);")?;
+            }
             Ok(())
         }
         // PMAT-502ao: `assert cond, msg` → `assert!(cond, "{}", <msg>);`.

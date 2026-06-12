@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.78] — 2026-06-12
+
+Tranche-2 slice PMAT-502at — Python **item deletion** `del coll[key]` (list or
+dict).
+
+New meta-HIR `Stmt::DelItem { name, key, is_dict }`. The frontend lowers
+`ast::Stmt::Delete` for a single subscript target, resolving `is_dict` from the
+receiver's inferred type and marking it `mut`. A list `del xs[i]` lowers to
+`xs.remove((<i>) as usize);` (int index; shifts the tail left; past-the-end
+panics, matching Python `IndexError`); a dict `del d[k]` lowers to
+`d.remove(&(<k>));`. The mutability pre-pass gained a `Delete` arm so a popped/
+deleted **local** as well as a **param** gets `let mut`. Multiple targets
+(`del a, b`), whole-name `del x`, and slice deletion are rejected. Lean refuses
+(in-place mutation). One deferred fidelity gap: deleting an absent dict key is a
+silent no-op here, whereas Python raises `KeyError`. rustc round-trip
+`del_item.py`: `drop_at([1,2,3],1) -> 2`, `drop_first([10,20,30]) -> 20`,
+`drop_key({a:1,b:2},"a") -> 1`, `drop_local() -> 3` (local receiver).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.77] — 2026-06-12
 
 Tranche-2 slice PMAT-502as — Python **list pop** `xs.pop()` / `xs.pop(i)`

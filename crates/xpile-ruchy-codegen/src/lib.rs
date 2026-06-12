@@ -114,6 +114,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::IndexAssign { .. } => false,
             // PMAT-466: dict keyed assignment same disposition.
             Stmt::DictSet { .. } => false,
+            // PMAT-502at: del coll[key] introduces no binding.
+            Stmt::DelItem { .. } => false,
             // PMAT-039: see rust-codegen's twin arm — shell commands
             // carry no BigInt operands.
             Stmt::Cmd { .. } => false,
@@ -362,6 +364,19 @@ fn emit_stmt_indented(
             write!(out, "; {dict_name}.insert(")?;
             emit_expr(out, key, mode)?;
             writeln!(out, ".clone(), __xpile_dict_val); }}")?;
+            Ok(())
+        }
+        // PMAT-502at: `del coll[key]`, matching the Rust backend.
+        Stmt::DelItem { name, key, is_dict } => {
+            if *is_dict {
+                write!(out, "{indent}{name}.remove(&(")?;
+                emit_expr(out, key, mode)?;
+                writeln!(out, "));")?;
+            } else {
+                write!(out, "{indent}{name}.remove((")?;
+                emit_expr(out, key, mode)?;
+                writeln!(out, ") as usize);")?;
+            }
             Ok(())
         }
         // PMAT-502ao: `assert cond, msg` → `assert!(cond, "{}", <msg>);`.
