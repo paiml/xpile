@@ -470,10 +470,20 @@ fn lower_function_def(
             let value = ret.value.as_ref().ok_or_else(|| {
                 FrontendError::Lower(format!("function `{}` returns nothing", f.name))
             })?;
-            // PMAT-466: context-aware so `return table[key]`,
-            // `return table.get(k, 0)`, and `return key in table`
-            // lower to the dict variants.
-            lower_expr_in_ctx(&ctx, (**value).clone())?
+            // PMAT-473 (R4): `return [elem for x in xs]` — hoist the
+            // comprehension into the body (build a temp accumulator),
+            // then return the temp.
+            if let ast::Expr::ListComp(comp) = value.as_ref() {
+                let tmp = "__xpile_comp";
+                let comp_stmts = desugar_list_comp(&mut ctx, tmp, comp)?;
+                stmts.extend(comp_stmts);
+                Expr::Ident(tmp.to_string())
+            } else {
+                // PMAT-466: context-aware so `return table[key]`,
+                // `return table.get(k, 0)`, and `return key in table`
+                // lower to the dict variants.
+                lower_expr_in_ctx(&ctx, (**value).clone())?
+            }
         }
         _ => {
             return Err(FrontendError::Lower(format!(
@@ -640,7 +650,20 @@ fn parse_type_annotation(
 ///     statements still error with a clear message.
 fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>, FrontendError> {
     match stmt {
-        ast::Stmt::Assign(asn) => lower_assign(ctx, asn).map(|s| vec![s]),
+        ast::Stmt::Assign(asn) => {
+            // PMAT-473 (R4): `name = [elem for var in iter]` materialises
+            // to `name = []` + a for-append loop (a comprehension is an
+            // expression but the meta-HIR has no block-expression).
+            if asn.targets.len() == 1 {
+                if let (ast::Expr::Name(n), ast::Expr::ListComp(comp)) =
+                    (&asn.targets[0], asn.value.as_ref())
+                {
+                    let name = n.id.to_string();
+                    return desugar_list_comp(ctx, &name, comp);
+                }
+            }
+            lower_assign(ctx, asn).map(|s| vec![s])
+        }
         // PMAT-470 (R1): augmented assignment `x += e` → `x = x <op> e`.
         ast::Stmt::AugAssign(aug) => lower_aug_assign(ctx, aug).map(|s| vec![s]),
         // PMAT-466 (v0.2.0 Track 1.C): annotated local `name: T = value`.
@@ -1485,6 +1508,81 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
         }
     };
     Ok(Stmt::Assign { name, value })
+}
+
+/// PMAT-473 (R4): desugar a list comprehension `[elem for var in iter]`
+/// into the statements that build it: a fresh `let mut <target>: list[T]
+/// = []` followed by `for var in iter { target.append(elem) }`. A
+/// comprehension is an *expression* but the meta-HIR has no
+/// block-expression, so it is materialised at statement level (in
+/// assignment position, or hoisted to a temp in return position).
+///
+/// v0.2.0 slice: single generator, no `if` filter, iterable typing as a
+/// `list[T]` (range/dict iterables and filters are deferred).
+fn desugar_list_comp(
+    ctx: &mut LoweringCtx,
+    target: &str,
+    comp: &ast::ExprListComp,
+) -> Result<Vec<Stmt>, FrontendError> {
+    if comp.generators.len() != 1 {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` uses a multi-generator list comprehension — v0.2.0 supports a single `for` clause",
+            ctx.fn_name
+        )));
+    }
+    let gen = &comp.generators[0];
+    if !gen.ifs.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` uses a filtered list comprehension (`[… for … if …]`) — deferred",
+            ctx.fn_name
+        )));
+    }
+    let var = match &gen.target {
+        ast::Expr::Name(n) => n.id.to_string(),
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` has a non-Name comprehension target (tuple unpacking) — deferred",
+                ctx.fn_name
+            )));
+        }
+    };
+    let iter_expr = lower_expr_in_ctx(ctx, gen.iter.clone())?;
+    let elem_in_ty = match infer_type_in_ctx(ctx, &iter_expr) {
+        Type::List(e) => *e,
+        other => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` comprehends over an iterable typing as {other:?}; v0.2.0 supports `[… for x in <list[T]>]` (range/dict iterables deferred)",
+                ctx.fn_name
+            )));
+        }
+    };
+    // Bind the loop var so the element expression types correctly.
+    ctx.bound.insert(var.clone());
+    ctx.name_types.insert(var.clone(), elem_in_ty.clone());
+    let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
+    let out_ty = infer_type_in_ctx(ctx, &elem);
+    let list_ty = Type::List(Box::new(out_ty));
+    // Register the accumulator so later references type as the list.
+    ctx.bound.insert(target.to_string());
+    ctx.name_types.insert(target.to_string(), list_ty.clone());
+    Ok(vec![
+        Stmt::Let {
+            name: target.to_string(),
+            ty: list_ty,
+            value: Expr::ListLit(Vec::new()),
+            mutable: true,
+        },
+        Stmt::ForEach {
+            var,
+            iter: iter_expr,
+            elem_ty: elem_in_ty,
+            body: vec![Stmt::ListAppend {
+                list_name: target.to_string(),
+                elem,
+            }],
+            over_keys: false,
+        },
+    ])
 }
 
 /// PMAT-466 (v0.2.0 Track 1.C): lower an annotated local assignment

@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.8] — 2026-06-12
+
+Incremental release adding Python **list comprehensions**
+`[elem for var in iter]` (PMAT-473, the post-v0.1.4 audit's R4).
+
+- A comprehension is an *expression*, but the meta-HIR has no
+  block-expression, so it materialises to statements: a fresh
+  `let mut <acc>: list[T] = []` + `for var in iter { acc.append(elem) }`.
+  Handled in **assignment position** (`ys = [x+x for x in xs]`) and
+  **return position** (`return [x*x for x in xs]`, hoisted to a temp).
+- Reuses the shipped `.append()` + for-each machinery; no new IR.
+- Exit (rustc round-trip): `squares` → `[1,4,9,16]`, `doubled` →
+  `[10,20]`, `total_sq` → 14.
+
+Slice: single generator, no `if` filter, iterable typing as `list[T]`
+(range/dict iterables and filters deferred). Substrate unchanged at
+QUORUM. `transpile_e2e` at 80 tests.
+
+Install: `cargo install xpile` upgrades to 0.1.8.
+
 ## [0.1.7] — 2026-06-11
 
 Incremental release adding Python **dict iteration** `for k in d:`
