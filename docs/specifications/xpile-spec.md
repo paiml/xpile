@@ -813,7 +813,7 @@ Tracks 1 and 2 are independent and can run in parallel. Track 3 is small and slo
 | 5 | ~~PMAT-494 tuples~~ — ✅ **COMPLETE** — literals + `tuple[...]` + multiple-return (v0.1.19), unpacking `a, b = f()` (`Stmt::LetTuple`, v0.1.20). `for k, v in …` target unpacking folds into PMAT-495. | — | done | — |
 | 6 | **R6 / PMAT-475** — contract-integrity gap + Diamond-gate grandfather | closes a live "every construct under contract" falsification | days | free |
 | 7 | **PMAT-484** — Track-4 structured `compile_targets.via.role` | honors §29 falsification posture #4 | days | free |
-| 8 | **PMAT-495** — `enumerate()` / `zip()` in `for` loops | high; pairs with PMAT-494 | days | free |
+| 8 | ~~PMAT-495 enumerate/zip~~ — ✅ SHIPPED v0.1.23 (`Stmt::ForEachPair` + `PairIterKind`; 2-name targets over lists). | — | done | — |
 | 9 | ~~PMAT-496 slicing~~ — ✅ SHIPPED v0.1.21 (`Expr::Slice`, bounded `xs[a:b]` for list+str). Open-ended / step / negative deferred. | — | done | — |
 | 10 | **PMAT-485** — Track-4 real general PTX emitter (`nvptx64`) | first real emission | ~1 wk | nightly job |
 | 11 | ~~PMAT-486 DiffExecEngine trait + hook~~ — ✅ SHIPPED v0.1.22 (unblocks GPU `DiffExec`; real engines = needs_hardware PMAT-488/490) | — | done | — |

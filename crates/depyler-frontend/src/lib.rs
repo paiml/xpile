@@ -31,8 +31,8 @@ use std::path::Path;
 use std::rc::Rc;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, SourceLang, Stmt, StrMethodOp,
-    Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, PairIterKind, Param, SourceLang, Stmt,
+    StrMethodOp, Type, UnOp,
 };
 
 use rustpython_parser::ast;
@@ -919,6 +919,62 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
             "function `{}` has a `for ... else:` clause — Python's `else` on loops is not supported at v0.1.0",
             ctx.fn_name
         )));
+    }
+
+    // PMAT-495: paired for-loop `for a, b in enumerate(xs)` /
+    // `for a, b in zip(xs, ys)` → Stmt::ForEachPair.
+    if let ast::Expr::Tuple(tgt) = &*f.target {
+        if tgt.elts.len() == 2 {
+            if let (ast::Expr::Name(a), ast::Expr::Name(b)) = (&tgt.elts[0], &tgt.elts[1]) {
+                if let ast::Expr::Call(call) = &*f.iter {
+                    if let ast::Expr::Name(fname) = call.func.as_ref() {
+                        let fname = fname.id.to_string();
+                        let arity_ok = (fname == "enumerate" && call.args.len() == 1)
+                            || (fname == "zip" && call.args.len() == 2);
+                        if arity_ok {
+                            let first = a.id.to_string();
+                            let second = b.id.to_string();
+                            let iter_expr = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                            let Type::List(elem) = infer_type_in_ctx(ctx, &iter_expr) else {
+                                return Err(FrontendError::Lower(format!(
+                                    "function `{}` uses `{fname}(...)` over a non-list — only list iteration is supported at v0.2.0 first cut",
+                                    ctx.fn_name
+                                )));
+                            };
+                            let kind = if fname == "enumerate" {
+                                ctx.name_types.insert(first.clone(), Type::I64);
+                                ctx.name_types.insert(second.clone(), (*elem).clone());
+                                PairIterKind::Enumerate
+                            } else {
+                                let other = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                                let Type::List(elem2) = infer_type_in_ctx(ctx, &other) else {
+                                    return Err(FrontendError::Lower(format!(
+                                        "function `{}` uses `zip(...)` with a non-list second argument",
+                                        ctx.fn_name
+                                    )));
+                                };
+                                ctx.name_types.insert(first.clone(), (*elem).clone());
+                                ctx.name_types.insert(second.clone(), (*elem2).clone());
+                                PairIterKind::Zip(Box::new(other))
+                            };
+                            ctx.bound.insert(first.clone());
+                            ctx.bound.insert(second.clone());
+                            let mut body: Vec<Stmt> = Vec::new();
+                            for s in f.body {
+                                body.extend(lower_block_stmt(ctx, s)?);
+                            }
+                            return Ok(vec![Stmt::ForEachPair {
+                                first,
+                                second,
+                                iter: iter_expr,
+                                kind,
+                                body,
+                            }]);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     let target_name = match &*f.target {

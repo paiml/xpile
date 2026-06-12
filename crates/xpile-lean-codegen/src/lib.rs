@@ -256,6 +256,14 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-495: paired for-loop inside a while — same gap.
+            Stmt::ForEachPair { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has Stmt::ForEachPair (enumerate/zip) inside a while loop; \
+                     the Lean lane does not support paired for-loops at v0.2.0",
+                    f.name
+                )));
+            }
             // PMAT-460: list.append() inside a while loop — same
             // monadic-encoding gap as ForEach. Deferred.
             Stmt::ListAppend { .. } => {
@@ -686,6 +694,12 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
             "`for x in xs:` (Stmt::ForEach) requires monadic-iteration encoding in Lean — \
              not yet implemented at v0.2.0 first cut (PMAT-458 follow-up); \
              use `--target rust` or `--target ruchy` for iteration"
+                .into(),
+        )),
+        // PMAT-495: paired for-loop (enumerate / zip) — same monadic gap.
+        Stmt::ForEachPair { .. } => Err(LeanCodegenError::Unsupported(
+            "`for a, b in enumerate(xs)`/`zip(...)` (Stmt::ForEachPair) is not supported in \
+             the Lean lane — use `--target rust` or `--target ruchy`"
                 .into(),
         )),
         // PMAT-460 (v0.2.0 Track 1.B): list.append() mutation. Lean

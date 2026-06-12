@@ -123,6 +123,21 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
             }
             body.iter().any(stmt_has_int_arith)
         }
+        // PMAT-495: paired for-loop — recurse into iter, the zip operand
+        // (if any), and the body.
+        Stmt::ForEachPair {
+            iter, kind, body, ..
+        } => {
+            if expr_has_int_arith(iter) {
+                return true;
+            }
+            if let PairIterKind::Zip(other) = kind {
+                if expr_has_int_arith(other) {
+                    return true;
+                }
+            }
+            body.iter().any(stmt_has_int_arith)
+        }
         // PMAT-460: list.append() — recurse into the elem expression.
         Stmt::ListAppend { elem, .. } => expr_has_int_arith(elem),
         // PMAT-461: indexed assignment — recurse into both index and
@@ -443,6 +458,19 @@ pub enum Stmt {
         /// for insertion-order semantics it does NOT yet preserve).
         #[serde(default)]
         over_keys: bool,
+    },
+    /// Paired-target for-loop — Python `for a, b in enumerate(xs)` /
+    /// `for a, b in zip(xs, ys)`. PMAT-495 (sprint). A separate variant
+    /// from [`Stmt::ForEach`] so its tuple target + iterator-adapter emit
+    /// (`.enumerate()` / `.zip()`) don't complicate the single-var path.
+    /// Rust/Ruchy emit `for (a, b) in <adapter> { body }`; Lean refuses.
+    ForEachPair {
+        first: String,
+        second: String,
+        /// The primary list being iterated.
+        iter: Expr,
+        kind: PairIterKind,
+        body: Vec<Stmt>,
     },
     /// `assert cond` — Python `assert cond` (no message form at v0.1.0).
     /// Lowers to `assert!(cond);` in Rust/Ruchy. Lean is skipped (Lean's
@@ -1009,6 +1037,17 @@ pub enum FloatOp {
     Sub,
     Mul,
     Div,
+}
+
+/// PMAT-495 (sprint): the iterator adapter for a [`Stmt::ForEachPair`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PairIterKind {
+    /// `enumerate(iter)` — `first` = index (`i64`), `second` = element of
+    /// `iter`. Emits `.iter().cloned().enumerate().map(|(i,e)| (i as i64, e))`.
+    Enumerate,
+    /// `zip(iter, other)` — `first` = element of `iter`, `second` =
+    /// element of `other`. Emits `.iter().cloned().zip(other.iter().cloned())`.
+    Zip(Box<Expr>),
 }
 
 /// PMAT-492 (sprint): no-argument Python string transform methods,
