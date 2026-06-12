@@ -723,6 +723,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     emit_expr(out, &args[0], mode)?;
                     out.push_str(")[..]).count() as i64");
                 }
+                // PMAT-502bi: `.index(sub)` → byte index or panic (ValueError).
+                StrMethodOp::StrIndex => {
+                    out.push_str(".find(&(");
+                    emit_expr(out, &args[0], mode)?;
+                    out.push_str(")[..]).map(|__i| __i as i64).expect(\"xpile: ValueError: substring not found\")");
+                }
                 StrMethodOp::Join => unreachable!("Join handled above"),
                 StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace => {
                     unreachable!("classification predicates handled above")

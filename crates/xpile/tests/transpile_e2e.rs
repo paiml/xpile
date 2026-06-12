@@ -2647,6 +2647,27 @@ fn main() {
     assert_rustc_runs("str_format", &rust, driver);
 }
 
+/// PMAT-502bi (Tranche 2): `s.index(sub)` → byte index of the first
+/// match, panicking (ValueError) when absent (like `.find` but no `-1`).
+#[test]
+fn str_index() {
+    let rust = xpile_transpile_to_rust("str_index.py");
+    assert!(
+        rust.contains(".find(&(String::from(\"b\"))[..]).map(|__i| __i as i64).expect(")
+            && rust.contains("substring not found"),
+        "str.index emission:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    assert_eq!(find_b("abc".to_string()), 1);
+    assert_eq!(find_lit(), 2);
+    assert!(std::panic::catch_unwind(|| find_b("xyz".to_string())).is_err());
+}
+"#;
+    assert_rustc_runs("str_index", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

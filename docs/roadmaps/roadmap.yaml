@@ -895,6 +895,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::StrFormat { fmt, args }. \"<fmt>\".format(args...) over a STRING-LITERAL receiver lowers to format!(\"<fmt>\", args...) in Rust+Ruchy — Python sequential {} placeholders + {{/}} escapes map one-to-one to Rust format!, so the validated fmt is re-emitted verbatim via {:?} (Rust string-literal escape). New count_simple_placeholders validator: every field must be a bare {} (count == arg count), rejects indexed {0}/named {name}/spec {:.2f} with a precise error. First cut int/str args only (bool True/False vs true/false, whole-number float 2.0->2 in Rust Display both deferred). Lean refuses. rustc round-trip str_format.py (cross-checked vs python3): one(42)->'val=42', two(3,7)->'3 + 7 done', with_str('x',5)->'x: 5', escaped(9)->'{literal} 9'. FREE CI. SHIPPED v0.1.94."
+- id: PMAT-502BI
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bi: [Tranche2] s.index(sub) substring index'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "New StrMethodOp::StrIndex — the str analogue of list.index and the panic-on-absent counterpart of str.find (PMAT-502l). s.index(sub) lowers to (s).find(&(sub)[..]).map(|i| i as i64).expect('xpile: ValueError: substring not found') in Rust+Ruchy: byte index of first match (ASCII = char index), panics if absent = Python ValueError (vs .find -1). Disambiguated from list.index (which lowers to .iter().position(...)) by receiver type. Completes the str search-method family (find/count/index). Lean refuses. rustc round-trip str_index.py (cross-checked vs python3): find_b('abc')->1, find_lit()->2, s.index on absent panics. FREE CI. SHIPPED v0.1.95."
 - id: PMAT-465
   github_issue: 496
   item_type: task

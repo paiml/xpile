@@ -1619,6 +1619,12 @@ pub enum StrMethodOp {
     /// `.count(sub)` → `.matches(&(sub)[..]).count() as i64` (**Int**, 1 arg)
     /// — count of non-overlapping occurrences. PMAT-502l.
     Count,
+    /// `.index(sub)` → byte index of the first match (**Int**, 1 arg).
+    /// PMAT-502bi. Like [`StrMethodOp::Find`] but **panics** when the
+    /// substring is absent (matching Python's `ValueError`, vs `find`'s
+    /// `-1`): `.find(&(sub)[..]).map(|__i| __i as i64).expect(…)`.
+    /// (ASCII subset — byte index = char index.)
+    StrIndex,
     /// `.isdigit()` → `(!(s).is_empty() && (s).chars().all(|c| c.is_ascii_digit()))`
     /// (**Bool**, 0 args). PMAT-502ag. Python returns `False` for the empty
     /// string, so the empty guard is required (a vacuous `.all()` is `true`).

@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.95] — 2026-06-13
+
+Tranche-2 slice PMAT-502bi — Python **`s.index(sub)`** (substring index).
+
+New `StrMethodOp::StrIndex` — the str analogue of `list.index`, and the
+panic-on-absent counterpart of `str.find` (PMAT-502l). `s.index(sub)` lowers to
+`(s).find(&(sub)[..]).map(|__i| __i as i64).expect("xpile: ValueError: substring
+not found")` in Rust + Ruchy: the byte index of the first match (ASCII subset —
+byte index = char index), panicking when the substring is absent, matching
+Python's `ValueError` (vs `.find`'s `-1`). It is disambiguated from `list.index`
+(which lowers to `.iter().position(...)`) by the receiver type. This completes the
+str search-method family (`find` / `count` / `index`). Lean refuses (str methods
+are not in the Lean lane). rustc round-trip `str_index.py` (cross-checked against
+`python3`): `find_b("abc") -> 1`, `find_lit() -> 2`, and `s.index` on an absent
+substring panics.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.94] — 2026-06-13
 
 Tranche-2 slice PMAT-502bh — Python **`str.format`** with sequential `{}`
