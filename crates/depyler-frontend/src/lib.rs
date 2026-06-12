@@ -31,7 +31,7 @@ use std::path::Path;
 use std::rc::Rc;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, Module, NumBuiltinOp, PairIterKind, Param,
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, NumBuiltinOp, PairIterKind, Param, SetOp,
     SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
@@ -2339,6 +2339,8 @@ fn infer_type(e: &Expr) -> Type {
             Type::Set(Box::new(elems.first().map(infer_type).unwrap_or(Type::I64)))
         }
         Expr::SetContains { .. } => Type::Bool,
+        // PMAT-502g: set algebra preserves the operand set type.
+        Expr::SetOp { lhs, .. } => infer_type(lhs),
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => Type::Tuple(elems.iter().map(infer_type).collect()),
         // PMAT-496: a slice has the same type as its collection.
@@ -2485,6 +2487,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
                 .unwrap_or(Type::I64),
         )),
         Expr::SetContains { .. } => Type::Bool,
+        // PMAT-502g: set algebra preserves the operand set type.
+        Expr::SetOp { lhs, .. } => infer_type_in_ctx(ctx, lhs),
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => {
             Type::Tuple(elems.iter().map(|e| infer_type_in_ctx(ctx, e)).collect())
@@ -2881,6 +2885,20 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     });
                 }
             }
+            // PMAT-502g: set algebra — when BOTH operands are sets, `|`/`&`/
+            // `-`/`^` are union/intersection/difference/symmetric-difference
+            // (disambiguated from the int bitwise/arith BinOp by operand type).
+            if matches!(infer_type_in_ctx(ctx, &lhs), Type::Set(_))
+                && matches!(infer_type_in_ctx(ctx, &rhs), Type::Set(_))
+            {
+                if let Some(sop) = set_op_from_ast(&b.op) {
+                    return Ok(Expr::SetOp {
+                        lhs: Box::new(lhs),
+                        op: sop,
+                        rhs: Box::new(rhs),
+                    });
+                }
+            }
             let op = lower_binop(&b.op)?;
             if matches!(op, BinOp::Add)
                 && (infer_type_in_ctx(ctx, &lhs) == Type::Str
@@ -3005,6 +3023,18 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
                     return Ok(Expr::FloatBinOp {
                         op: fop,
                         lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    });
+                }
+            }
+            // PMAT-502g: set algebra (context-free path catches set
+            // *literals*; set-typed params are caught by the ctx path).
+            if matches!(infer_type(&lhs), Type::Set(_)) && matches!(infer_type(&rhs), Type::Set(_))
+            {
+                if let Some(sop) = set_op_from_ast(&b.op) {
+                    return Ok(Expr::SetOp {
+                        lhs: Box::new(lhs),
+                        op: sop,
                         rhs: Box::new(rhs),
                     });
                 }
@@ -3428,6 +3458,20 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         | StrMethodOp::Split
         | StrMethodOp::Join => 1,
         StrMethodOp::Replace => 2,
+    }
+}
+
+/// PMAT-502g: map a Python binary operator to its set-algebra meaning.
+/// `None` for operators with no set interpretation (the caller then treats
+/// the expression as an int [`Expr::BinOp`]). Only consulted when both
+/// operands already typed as [`Type::Set`].
+fn set_op_from_ast(op: &ast::Operator) -> Option<SetOp> {
+    match op {
+        ast::Operator::BitOr => Some(SetOp::Union),
+        ast::Operator::BitAnd => Some(SetOp::Intersection),
+        ast::Operator::Sub => Some(SetOp::Difference),
+        ast::Operator::BitXor => Some(SetOp::SymmetricDifference),
+        _ => None,
     }
 }
 

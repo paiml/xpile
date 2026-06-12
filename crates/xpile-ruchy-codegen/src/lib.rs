@@ -13,8 +13,8 @@
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, Module, NumBuiltinOp, Param, Stmt, StrMethodOp,
-    Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, NumBuiltinOp, Param, SetOp, Stmt,
+    StrMethodOp, Type, UnOp,
 };
 
 /// PMAT-477 (R8): Ruchy → Rust infix symbol for a float arithmetic op.
@@ -687,6 +687,22 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str(".contains(&(");
             emit_expr(out, elem, mode)?;
             out.push_str("))");
+        }
+        // PMAT-502g: set algebra → fresh HashSet via `.cloned().collect()`.
+        Expr::SetOp { lhs, op, rhs } => {
+            let method = match op {
+                SetOp::Union => "union",
+                SetOp::Intersection => "intersection",
+                SetOp::Difference => "difference",
+                SetOp::SymmetricDifference => "symmetric_difference",
+            };
+            out.push('(');
+            emit_expr(out, lhs, mode)?;
+            out.push_str(").");
+            out.push_str(method);
+            out.push_str("(&(");
+            emit_expr(out, rhs, mode)?;
+            out.push_str(")).cloned().collect::<std::collections::HashSet<_>>()");
         }
         // PMAT-459 (v0.2.0 Track 1.B): Ruchy → Rust → `.len() as i64`.
         Expr::Len(inner) => {

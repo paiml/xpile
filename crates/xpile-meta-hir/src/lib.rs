@@ -243,6 +243,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-500: set literal / membership — recurse defensively.
         Expr::SetLit(elems) => elems.iter().any(expr_has_int_arith),
         Expr::SetContains { set, elem } => expr_has_int_arith(set) || expr_has_int_arith(elem),
+        // PMAT-502g: set algebra — recurse into both operands.
+        Expr::SetOp { lhs, rhs, .. } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -914,6 +916,19 @@ pub enum Expr {
     /// Result types as [`Type::Set`]. (Empty `set()` / `.add()` mutation
     /// follow as their own slice; `{}` is an empty *dict*, not a set.)
     SetLit(Vec<Expr>),
+    /// Set algebra — Python `a | b` (union), `a & b` (intersection),
+    /// `a - b` (difference), `a ^ b` (symmetric difference) when **both**
+    /// operands are [`Type::Set`]. PMAT-502g (Tranche 2). The frontend
+    /// disambiguates from the int bitwise/arith [`Expr::BinOp`] by operand
+    /// type. Rust/Ruchy emit `(lhs).union(&(rhs)).cloned().collect::<…>()`
+    /// (and `.intersection`/`.difference`/`.symmetric_difference`), yielding
+    /// a **new** `HashSet`. Result types as the operand `Set` type. Lean
+    /// refuses.
+    SetOp {
+        lhs: Box<Expr>,
+        op: SetOp,
+        rhs: Box<Expr>,
+    },
     /// Tuple literal — Python `(a, b)` / multiple-return `return a, b`.
     /// PMAT-494 (sprint). Elements may be heterogeneous (unlike
     /// [`Expr::ListLit`]). Rust/Ruchy emit `(e0, e1, ...)`; Lean refuses
@@ -1177,6 +1192,21 @@ pub enum UnOp {
     Neg,
     /// Logical not: `not x`, Bool → Bool.
     Not,
+}
+
+/// PMAT-502g (Tranche 2): set-algebra operators carried by [`Expr::SetOp`].
+/// Each maps to a `HashSet` method that returns an iterator of borrows,
+/// materialized via `.cloned().collect()` into a new owned `HashSet`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SetOp {
+    /// `a | b` → `a.union(&b)`.
+    Union,
+    /// `a & b` → `a.intersection(&b)`.
+    Intersection,
+    /// `a - b` → `a.difference(&b)`.
+    Difference,
+    /// `a ^ b` → `a.symmetric_difference(&b)`.
+    SymmetricDifference,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
