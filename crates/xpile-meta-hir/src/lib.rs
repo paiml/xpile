@@ -209,6 +209,10 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-494: tuple literal — recurse into each element (a tuple of
         // computed ints can carry overflow-prone arithmetic).
         Expr::TupleLit(elems) => elems.iter().any(expr_has_int_arith),
+        // PMAT-496: slice — recurse into collection + bound expressions.
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => expr_has_int_arith(collection) || expr_has_int_arith(lo) || expr_has_int_arith(hi),
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -741,6 +745,22 @@ pub enum Expr {
     Index {
         collection: Box<Expr>,
         index: Box<Expr>,
+    },
+    /// Bounded slice — Python `xs[lo:hi]`. PMAT-496 (sprint), first cut:
+    /// both bounds present, non-negative `i64`, step 1. `of_str` (set by
+    /// the frontend from the collection's type) selects the emit shape —
+    /// list (`of_str=false`) emits `<c>[<lo> as usize..<hi> as usize]
+    /// .to_vec()`; str (`of_str=true`) emits the same range with
+    /// `.to_string()`. Result types as the collection's type (List(T) →
+    /// List(T); Str → Str). NOTE str slicing is byte-indexed
+    /// (ASCII-correct; a non-char-boundary index panics, matching the
+    /// existing str byte-length posture). Open-ended (`xs[a:]`/`xs[:b]`),
+    /// step, and negative indices are deferred. Lean refuses.
+    Slice {
+        collection: Box<Expr>,
+        lo: Box<Expr>,
+        hi: Box<Expr>,
+        of_str: bool,
     },
     /// Dictionary literal — Python `{"a": 1, "b": 2}`. PMAT-462,
     /// v0.2.0 Track 1.C foundation.

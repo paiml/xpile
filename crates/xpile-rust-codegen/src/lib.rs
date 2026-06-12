@@ -575,6 +575,22 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             }
             out.push(')');
         }
+        // PMAT-496: Python `xs[lo:hi]` slice → `<c>[(lo) as usize..(hi)
+        // as usize].to_vec()` (list) / `.to_string()` (str).
+        Expr::Slice {
+            collection,
+            lo,
+            hi,
+            of_str,
+        } => {
+            emit_expr(out, collection, mode)?;
+            out.push_str("[(");
+            emit_expr(out, lo, mode)?;
+            out.push_str(") as usize..(");
+            emit_expr(out, hi, mode)?;
+            out.push_str(") as usize]");
+            out.push_str(if *of_str { ".to_string()" } else { ".to_vec()" });
+        }
         // PMAT-462 (v0.2.0 Track 1.C): Python dict literal →
         // Rust `{ let mut m = HashMap::new(); m.insert(k, v); ... m }`
         // block expression returning the owned HashMap.

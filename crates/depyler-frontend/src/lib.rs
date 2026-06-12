@@ -1911,6 +1911,8 @@ fn infer_type(e: &Expr) -> Type {
         }
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => Type::Tuple(elems.iter().map(infer_type).collect()),
+        // PMAT-496: a slice has the same type as its collection.
+        Expr::Slice { collection, .. } => infer_type(collection),
         // PMAT-457 (v0.2.0 Track 1.B): indexed access returns the
         // collection's element type. If the collection types as
         // Type::List(T), the result is T; otherwise fall back to I64
@@ -2030,6 +2032,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::TupleLit(elems) => {
             Type::Tuple(elems.iter().map(|e| infer_type_in_ctx(ctx, e)).collect())
         }
+        // PMAT-496: a slice has the same type as its collection.
+        Expr::Slice { collection, .. } => infer_type_in_ctx(ctx, collection),
         // PMAT-457: indexed access returns the collection element type.
         Expr::Index { collection, .. } => match infer_type_in_ctx(ctx, collection) {
             Type::List(elem_ty) => *elem_ty,
@@ -2151,6 +2155,10 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // dict; otherwise fall through to the context-free list path.
         ast::Expr::Subscript(sub) => {
             let collection = lower_expr_in_ctx(ctx, (*sub.value).clone())?;
+            // PMAT-496: `xs[lo:hi]` slice (the subscript is a Slice node).
+            if let ast::Expr::Slice(slice) = sub.slice.as_ref() {
+                return lower_slice_in_ctx(ctx, collection, slice);
+            }
             if matches!(infer_type_in_ctx(ctx, &collection), Type::Dict(_, _)) {
                 let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
                 return Ok(Expr::DictGet {
@@ -2305,6 +2313,57 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // No dict-specific shape: the context-free path is sufficient.
         other => lower_expr(other),
     }
+}
+
+/// PMAT-496: lower a Python `xs[lo:hi]` slice. First cut requires both
+/// bounds present, `int`-typed, step 1; the collection must type as
+/// `list[T]` or `str` (which selects the `of_str` emit). Open-ended /
+/// stepped / negative slices are deferred.
+fn lower_slice_in_ctx(
+    ctx: &LoweringCtx,
+    collection: Expr,
+    slice: &ast::ExprSlice,
+) -> Result<Expr, FrontendError> {
+    let coll_ty = infer_type_in_ctx(ctx, &collection);
+    let of_str = match coll_ty {
+        Type::Str => true,
+        Type::List(_) => false,
+        other => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` slices a value typing as {other:?}; only `list[T]` and `str` are sliceable at v0.2.0 first cut",
+                ctx.fn_name
+            )));
+        }
+    };
+    if slice.step.is_some() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` uses a slice step (`xs[a:b:c]`) — deferred",
+            ctx.fn_name
+        )));
+    }
+    let (Some(lo), Some(hi)) = (slice.lower.as_ref(), slice.upper.as_ref()) else {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` uses an open-ended slice (`xs[a:]` / `xs[:b]` / `xs[:]`) — v0.2.0 first cut requires both bounds `xs[a:b]`",
+            ctx.fn_name
+        )));
+    };
+    let lo = lower_expr_in_ctx(ctx, (**lo).clone())?;
+    let hi = lower_expr_in_ctx(ctx, (**hi).clone())?;
+    for (b, which) in [(&lo, "lower"), (&hi, "upper")] {
+        let bt = infer_type_in_ctx(ctx, b);
+        if !matches!(bt, Type::I64) {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` has a slice {which} bound typing as {bt:?}; only `int` bounds are supported",
+                ctx.fn_name
+            )));
+        }
+    }
+    Ok(Expr::Slice {
+        collection: Box::new(collection),
+        lo: Box::new(lo),
+        hi: Box::new(hi),
+        of_str,
+    })
 }
 
 fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {

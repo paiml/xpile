@@ -814,7 +814,7 @@ Tracks 1 and 2 are independent and can run in parallel. Track 3 is small and slo
 | 6 | **R6 / PMAT-475** — contract-integrity gap + Diamond-gate grandfather | closes a live "every construct under contract" falsification | days | free |
 | 7 | **PMAT-484** — Track-4 structured `compile_targets.via.role` | honors §29 falsification posture #4 | days | free |
 | 8 | **PMAT-495** — `enumerate()` / `zip()` in `for` loops | high; pairs with PMAT-494 | days | free |
-| 9 | **PMAT-496** — **slicing** `xs[a:b]` | high real-Python prevalence | days | free |
+| 9 | ~~PMAT-496 slicing~~ — ✅ SHIPPED v0.1.21 (`Expr::Slice`, bounded `xs[a:b]` for list+str). Open-ended / step / negative deferred. | — | done | — |
 | 10 | **PMAT-485** — Track-4 real general PTX emitter (`nvptx64`) | first real emission | ~1 wk | nightly job |
 | 11 | **PMAT-486** — Track-4 `DiffExecEngine` trait + hook | unblocks GPU `DiffExec` | days | free |
 | 12 | **PMAT-483** — Track-4 `Strict` golden-text lock | codegen-drift guard (after 485) | hours | free |
