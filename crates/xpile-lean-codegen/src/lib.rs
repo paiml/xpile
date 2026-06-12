@@ -538,6 +538,11 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(set, out);
             collect_idents(elem, out);
         }
+        // PMAT-502an: list membership — recurse into both sides.
+        Expr::ListContains { list, elem } => {
+            collect_idents(list, out);
+            collect_idents(elem, out);
+        }
         // PMAT-502o: str substring containment — recurse into both sides.
         Expr::StrContains { haystack, needle } => {
             collect_idents(haystack, out);
@@ -1125,6 +1130,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             return Err(LeanCodegenError::Unsupported(
                 "Python `sub in s` (string substring containment) is not yet supported in \
                  the Lean lane — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502an: list membership deferred in the Lean lane at first cut.
+        Expr::ListContains { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python `x in xs` (list membership) is not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
         }

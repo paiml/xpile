@@ -875,6 +875,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502ak** — `round(x)` 1-arg (`Expr::RoundToInt`) | float → `((x).round_ties_even() as i64)` (banker's rounding, Python-exact: `round(2.5)==2`); int → identity | ✅ SHIPPED v0.1.69 |
 | **PMAT-502al** — `round(x, n)` 2-arg (`Expr::RoundToDigits`) | n≥0 → `format!("{:.n}", x).parse::<f64>()` (Rust `{:.}` is round-half-to-even = Python's decimal rounding, exact incl. `round(2.675,2)==2.67`); n<0 → scale+`round_ties_even`; → Float; completes `round` | ✅ SHIPPED v0.1.70 |
 | **PMAT-502am** — f-string format specs (`Expr::FormatSpec`; ctx-aware f-string) | static subset `.Nf`/`0Nd`/`Nd`/`>N`/`<N`/`^N` → translated Rust `format!("{:<spec>}", v)`; conversion flags + dynamic + unsupported error | ✅ SHIPPED v0.1.71 |
+| **PMAT-502an** — list membership `x in xs` (`Expr::ListContains`) | `(xs).contains(&(x))`; `not in` → `!(…)`; chosen by RHS type; fills the `in`-operator gap (dict/set/str/list) | ✅ SHIPPED v0.1.72 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |

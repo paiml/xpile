@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.72] — 2026-06-12
+
+Tranche-2 slice PMAT-502an — Python **list membership** `x in xs`.
+
+New meta-HIR `Expr::ListContains { list, elem }`. When the right operand of
+`in` / `not in` is a `List`, `x in xs` lowers to `(<xs>).contains(&(<x>))` (and
+`not in` wraps it in `!`) in Rust + Ruchy; result types as `Bool`. The frontend
+selects this over the set/dict/str membership forms by the RHS type. This fills
+the remaining `in`-operator gap (dict, set, str, and now **list** all supported).
+Lean refuses. rustc round-trip `list_membership.py`: `has([1,2,3], 2) -> true`,
+`has([1,2,3], 9) -> false`, `lacks([1,2,3], 9) -> true`,
+`has_str(["a","b"], "b") -> true`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.71] — 2026-06-12
 
 Tranche-2 slice PMAT-502am — Python **f-string format specs** (`f"{x:.2f}"`).
