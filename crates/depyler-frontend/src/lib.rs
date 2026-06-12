@@ -2883,6 +2883,15 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         }
                     }
                 }
+                // PMAT-502w: ctx-aware `len(x)` — lower the argument through
+                // the context path so a context-dependent collection (e.g.
+                // `len(d.keys())`, `len(sorted(xs))`) is recognized. The
+                // context-free `lower_call` path also handles bare `len(xs)`,
+                // but loses ctx (method calls there error). Same `Expr::Len`.
+                if fname.id.as_str() == "len" && call.keywords.is_empty() && call.args.len() == 1 {
+                    let inner = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    return Ok(Expr::Len(Box::new(inner)));
+                }
                 // PMAT-498b: `sum(xs)` over a numeric list.
                 if fname.id.as_str() == "sum" && call.keywords.is_empty() && call.args.len() == 1 {
                     let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;

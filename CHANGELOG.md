@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.55] — 2026-06-12
+
+Tranche-2 slice PMAT-502w — **context-aware `len(x)`**.
+
+Adds a `len(x)` intercept on the context-aware lowering path that lowers the
+argument via `lower_expr_in_ctx`, so `len()` now works over any
+context-dependent expression — notably `len(d.keys())` / `len(d.values())`
+(dict views, v0.1.54) and `len(sorted(xs))`. Previously these hit the
+context-free `lower_call` path, which can't see the receiver type and errored
+("method calls are not supported"). Same `Expr::Len` node; bare `len(xs)` over a
+list/str/dict param is unchanged. rustc round-trip `len_ctx.py` over
+`{1:10,2:20,3:30}`: `num_keys -> 3`, `num_values -> 3`,
+`len_sorted([5,1,3,2]) -> 4`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.54] — 2026-06-12
 
 Tranche-2 slice PMAT-502v — Python **dict views** `d.keys()` / `d.values()`.

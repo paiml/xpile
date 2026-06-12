@@ -857,7 +857,8 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502s** — negative list index `xs[-k]` (pure desugar) | `xs[len(xs) - k]` reusing `Len`+`Sub`+`Index` (inherits C-PY-INT-ARITH checked sub); list only; str/slice-bound negatives deferred | ✅ SHIPPED v0.1.51 |
 | **PMAT-502t** — reverse-slice idiom `xs[::-1]` (pure desugar) | step −1 + no bounds over a list → `Expr::Reversed` (reuses v0.1.35); other steps + `str[::-1]` deferred | ✅ SHIPPED v0.1.52 |
 | **PMAT-502u** — list query `xs.count(x)`/`xs.index(x)` (`Expr::ListQuery`) | `.iter().filter(…).count() as i64` / `.iter().position(…).map(…).expect(…)`; `list[int]`; `.count` disambiguated from str by recv type | ✅ SHIPPED v0.1.53 |
-| **PMAT-502v** — dict views `d.keys()`/`d.values()` (`Expr::DictView`) | `.keys()/.values().cloned().collect::<Vec<_>>()` → `List(K)`/`List(V)`; composes w/ `sorted`/`sum`; `.items()` + ctx-path `len(d.keys())` follow | ✅ SHIPPED v0.1.54 |
+| **PMAT-502v** — dict views `d.keys()`/`d.values()` (`Expr::DictView`) | `.keys()/.values().cloned().collect::<Vec<_>>()` → `List(K)`/`List(V)`; composes w/ `sorted`/`sum`; `.items()` follows | ✅ SHIPPED v0.1.54 |
+| **PMAT-502w** — context-aware `len(x)` (ctx-path intercept) | lowers the arg via `lower_expr_in_ctx` so `len(d.keys())`/`len(sorted(xs))` work; bare `len(xs)` unchanged | ✅ SHIPPED v0.1.55 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |
