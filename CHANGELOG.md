@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.62] — 2026-06-12
+
+Tranche-2 slice PMAT-502ad — Python **`str(x)`** over an int.
+
+New meta-HIR `Expr::ToStr { value }`. `str(x)` over an `int` lowers to
+`format!("{}", x)` in Rust + Ruchy; result types as `Str`. This unblocks the
+common `"prefix" + str(n)` concatenation idiom (the `str(n)` types as `Str`, so
+`+` becomes `Expr::Concat`). First cut is `int` only — `str(float)` ("2.0" vs
+Rust's "2") and `str(bool)` ("True" vs Rust's "true") differ from Python's
+formatting and follow as their own slice. Lean refuses. rustc round-trip
+`str_of_int.py`: `show(42) -> "count: 42"`, `num_str(7) -> "7"`,
+`neg_str(5) -> "-5"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.61] — 2026-06-12
 
 Tranche-2 slice PMAT-502ac — Python **`map(lambda p: e, xs)`**.

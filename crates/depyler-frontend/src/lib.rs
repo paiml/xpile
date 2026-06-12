@@ -2403,6 +2403,8 @@ fn infer_type(e: &Expr) -> Type {
                 Type::I64
             }
         }
+        // PMAT-502ad: str(x) → Str.
+        Expr::ToStr { .. } => Type::Str,
         // PMAT-502k: seq * n has the same type as the sequence.
         Expr::Repeat { seq, .. } => infer_type(seq),
         // PMAT-502c: sorted(xs) has the same type as its list.
@@ -2594,6 +2596,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
                 Type::I64
             }
         }
+        // PMAT-502ad: str(x) → Str.
+        Expr::ToStr { .. } => Type::Str,
         // PMAT-502k: seq * n has the same type as the sequence.
         Expr::Repeat { seq, .. } => infer_type_in_ctx(ctx, seq),
         // PMAT-502c: sorted(xs) has the same type as its list.
@@ -2972,6 +2976,17 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         return Ok(Expr::NumCast {
                             value: Box::new(value),
                             to_float: fname.id.as_str() == "float",
+                        });
+                    }
+                }
+                // PMAT-502ad: `str(x)` over an `int` → its decimal string
+                // (`format!("{}", x)`). `str(float)`/`str(bool)` differ from
+                // Python's formatting and fall through (deferred).
+                if fname.id.as_str() == "str" && call.keywords.is_empty() && call.args.len() == 1 {
+                    let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    if infer_type_in_ctx(ctx, &value) == Type::I64 {
+                        return Ok(Expr::ToStr {
+                            value: Box::new(value),
                         });
                     }
                 }

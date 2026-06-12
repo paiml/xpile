@@ -865,6 +865,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502aa** — `min/max(xs, key=lambda)` (`ListMinMax.key`) | `.iter().cloned().min_by_key/max_by_key(\|__k\| { let p = __k.clone(); e }).unwrap()`; returns element (any type — only key needs `Ord`) | ✅ SHIPPED v0.1.59 |
 | **PMAT-502ab** — `filter(lambda p: pred, xs)` (`Expr::Filter`) | `.iter().cloned().filter(\|__k\| { let p = __k.clone(); pred }).collect::<Vec<_>>()`; Bool predicate; `list(filter(…))` unwraps; result = input list type | ✅ SHIPPED v0.1.60 |
 | **PMAT-502ac** — `map(lambda p: e, xs)` (`Expr::Map`) | `.iter().cloned().map(\|__k\| { let p = __k.clone(); e }).collect::<Vec<_>>()`; result = `List(<body type>)`; `list(map(…))` unwraps; 5th lambda position | ✅ SHIPPED v0.1.61 |
+| **PMAT-502ad** — `str(x)` over an int (`Expr::ToStr`) | `format!("{}", x)` → `Str`; unblocks `"prefix" + str(n)` concat; `str(float)`/`str(bool)` deferred (formatting diffs) | ✅ SHIPPED v0.1.62 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |
