@@ -649,6 +649,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, value, mode)?;
             out.push_str(if *to_float { ") as f64)" } else { ") as i64)" });
         }
+        // PMAT-502ad: `str(x)` (int) → `format!("{}", <value>)`.
+        Expr::ToStr { value } => {
+            out.push_str("format!(\"{}\", ");
+            emit_expr(out, value, mode)?;
+            out.push(')');
+        }
         // PMAT-502e/h/aa: 1-arg `min(xs)`/`max(xs)`; `key=lambda` →
         // `min_by_key`/`max_by_key`.
         Expr::ListMinMax {

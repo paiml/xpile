@@ -741,6 +741,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, value, mode)?;
             out.push_str(if *to_float { ") as f64)" } else { ") as i64)" });
         }
+        // PMAT-502ad: `str(x)` (int) → `format!("{}", <value>)`.
+        Expr::ToStr { value } => {
+            out.push_str("format!(\"{}\", ");
+            emit_expr(out, value, mode)?;
+            out.push(')');
+        }
         // PMAT-502e: 1-arg `min(xs)`/`max(xs)` reduction over an int list.
         // PMAT-502h: `list[float]` uses a fold (f64 has no `Ord`).
         // PMAT-502aa: `key=lambda p: e` → `min_by_key`/`max_by_key`.

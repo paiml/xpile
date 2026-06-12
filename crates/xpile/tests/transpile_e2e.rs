@@ -1468,6 +1468,25 @@ fn main() {
     assert_rustc_runs("num_cast", &rust, driver);
 }
 
+/// PMAT-502ad (Tranche 2): `str(x)` over an int → `format!("{}", x)`
+/// (unblocks `"prefix" + str(n)` concatenation).
+#[test]
+fn str_of_int() {
+    let rust = xpile_transpile_to_rust("str_of_int.py");
+    assert!(
+        rust.contains("format!(\"{}\", n)"),
+        "expected str(int) emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(show(42), String::from("count: 42"));
+    assert_eq!(num_str(7), String::from("7"));
+    assert_eq!(neg_str(5), String::from("-5"));
+}
+"#;
+    assert_rustc_runs("str_of_int", &rust, driver);
+}
+
 /// PMAT-502n (Tranche 2): `divmod(a, b)` → the tuple `(a // b, a % b)`,
 /// reusing the contract-checked floor-div + mod ops.
 #[test]
