@@ -834,7 +834,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-498** — numeric builtins `abs`/`min`/`max` (`Expr::NumBuiltin`) | `abs(x)`→`(x).abs()`, `min/max(a,b)`→`(a).min/max(b)` | ✅ SHIPPED v0.1.26 |
 | **PMAT-498b** — `sum(xs)` (`Expr::Sum`) | `sum(xs)`→`xs.iter().sum::<i64\|f64>()` | ✅ SHIPPED v0.1.27 (1-arg list min/max still open) |
 | **PMAT-499** — `range(start, stop, step)` | full 3-arg range + **negative steps** (countdown) | ✅ already satisfied (PMAT-008; cond flips `<`/`>` on step sign). Only non-literal steps remain (deferred — needs runtime direction). |
-| **PMAT-500** — sets `{1,2,3}` / `.add()` / `in` / `len` | `HashSet` lane mirroring the dict lane | open |
+| **PMAT-500** — sets: literal `{1,2,3}` + `x in s` + `len` (`Type::Set`/`SetLit`/`SetContains`) | `HashSet` lane | ✅ SHIPPED v0.1.29 (read-side; `set()`/`.add()`/∪∩ → follow-up) |
 | **PMAT-501** — dict/set comprehensions | `{k: v for …}` / `{x for …}` — materialise like list comp | open |
 | **PMAT-502** — `Stmt::If` branch generalization | dispatcher: if-as-let for `name=expr` branches, else a real `Stmt::If` (subscript assigns / `.append` / dict mutation) — unblocks the histogram idiom | ✅ SHIPPED v0.1.28 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | open |

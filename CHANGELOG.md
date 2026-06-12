@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.29] — 2026-06-12
+
+Tranche-2 slice PMAT-500 — Python **sets** (read-side first cut): literal
+`{a, b, c}` + `x in s` / `x not in s` membership.
+
+New meta-HIR `Type::Set(Box<Type>)`, `Expr::SetLit(Vec<Expr>)`, and
+`Expr::SetContains { set, elem }`. `set[T]` annotations parse to `Type::Set`;
+a non-empty `{…}` (no `:`) lowers to `SetLit`; `x in s` over a set-typed RHS
+lowers to `SetContains` (chosen over `DictContains` by the RHS type). Rust +
+Ruchy emit a `HashSet`-init block (`{ let mut s = HashSet::new(); s.insert(e);
+… s }`) and `<set>.contains(&(<elem>))`; `len(s)` reuses the existing `Len`.
+Lean refuses the whole set lane. rustc round-trip `sets.py`: `is_vowel`,
+`is_small`, `not_member`.
+
+Empty `set()` / `.add()` mutation / set operations (∪ ∩) follow as their own
+slices. (`{}` remains an empty *dict*, not a set.)
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.28] — 2026-06-12
 
 Tranche-2 slice PMAT-502 — **general `Stmt::If`** with side-effecting

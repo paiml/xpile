@@ -309,6 +309,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "The Python frontend previously lowered EVERY if/else to the value-producing if-as-let form (let x = if c {..} else {..}), restricting branch statements to name=expr — rejecting the histogram (if w in freq: freq[w] += 1 else: freq[w] = 1). New lower_if_stmt dispatcher: if-as-let when all branches are name=expr (is_if_as_let_shape), else a real Stmt::If { cond, then_body, else_body } (already supported by meta-HIR + backends via the C frontend). elif nests as Stmt::If in else_body. Names assigned in a general branch do not escape it (documented). No regression to existing if-as-let. rustc round-trip histogram_if.py: word_freq([a,b,a]) -> {a:2,b:1}. FREE CI. SHIPPED v0.1.28."
+- id: PMAT-500
+  github_issue: null
+  item_type: task
+  title: 'PMAT-500: [Tranche2] Sets — literal + membership (HashSet lane, read-side)'
+  status: planned
+  priority: high
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Type::Set(Box<Type>), Expr::SetLit(Vec<Expr>), Expr::SetContains { set, elem }. set[T] annotation -> Type::Set; non-empty {..} (no colon) -> SetLit; x in s over a set-typed RHS -> SetContains (chosen over DictContains by RHS type). Rust/Ruchy emit HashSet-init block + <set>.contains(&(<elem>)); len(s) reuses Len. Lean refuses. rustc round-trip sets.py: is_vowel, is_small, not_member. Empty set()/.add()/union-intersection -> follow-up; {} remains an empty dict. FREE CI. SHIPPED v0.1.29."
 - id: PMAT-465
   github_issue: 496
   item_type: task

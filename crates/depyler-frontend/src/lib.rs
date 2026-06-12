@@ -619,6 +619,15 @@ fn parse_type_annotation(
                     )?;
                     Ok(Type::List(Box::new(elem_ty)))
                 }
+                // PMAT-500: `set[T]` annotation.
+                "set" => {
+                    let elem_ty = parse_type_annotation(
+                        fn_name,
+                        &format!("{site} element"),
+                        &sub.slice,
+                    )?;
+                    Ok(Type::Set(Box::new(elem_ty)))
+                }
                 "dict" => {
                     let ast::Expr::Tuple(t) = sub.slice.as_ref() else {
                         return Err(FrontendError::Lower(format!(
@@ -2077,6 +2086,11 @@ fn infer_type(e: &Expr) -> Type {
             let elem_ty = elems.first().map(infer_type).unwrap_or(Type::I64);
             Type::List(Box::new(elem_ty))
         }
+        // PMAT-500: set literal / membership.
+        Expr::SetLit(elems) => {
+            Type::Set(Box::new(elems.first().map(infer_type).unwrap_or(Type::I64)))
+        }
+        Expr::SetContains { .. } => Type::Bool,
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => Type::Tuple(elems.iter().map(infer_type).collect()),
         // PMAT-496: a slice has the same type as its collection.
@@ -2206,6 +2220,14 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
                 .unwrap_or(Type::I64);
             Type::List(Box::new(elem_ty))
         }
+        // PMAT-500: set literal / membership.
+        Expr::SetLit(elems) => Type::Set(Box::new(
+            elems
+                .first()
+                .map(|e| infer_type_in_ctx(ctx, e))
+                .unwrap_or(Type::I64),
+        )),
+        Expr::SetContains { .. } => Type::Bool,
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => {
             Type::Tuple(elems.iter().map(|e| infer_type_in_ctx(ctx, e)).collect())
@@ -2470,6 +2492,22 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     let contains = Expr::DictContains {
                         dict: Box::new(rhs),
                         key: Box::new(key),
+                    };
+                    return Ok(if matches!(c.ops[0], ast::CmpOp::NotIn) {
+                        Expr::UnOp {
+                            op: UnOp::Not,
+                            operand: Box::new(contains),
+                        }
+                    } else {
+                        contains
+                    });
+                }
+                // PMAT-500: `x in s` / `x not in s` over a set.
+                if matches!(infer_type_in_ctx(ctx, &rhs), Type::Set(_)) {
+                    let elem = lower_expr_in_ctx(ctx, (*c.left).clone())?;
+                    let contains = Expr::SetContains {
+                        set: Box::new(rhs),
+                        elem: Box::new(elem),
                     };
                     return Ok(if matches!(c.ops[0], ast::CmpOp::NotIn) {
                         Expr::UnOp {
@@ -2781,6 +2819,33 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
                 elems.push(lowered);
             }
             Ok(Expr::ListLit(elems))
+        }
+        // PMAT-500: Python set literal `{a, b, c}` → `Expr::SetLit`.
+        // `{}` parses as an empty Dict (handled elsewhere); a non-empty
+        // `{...}` with no `:` parses as `ast::Expr::Set`.
+        ast::Expr::Set(set_expr) => {
+            if set_expr.elts.is_empty() {
+                return Err(FrontendError::Lower(
+                    "empty set literal requires `set()` or an annotation — deferred".into(),
+                ));
+            }
+            let mut elems = Vec::with_capacity(set_expr.elts.len());
+            let mut elem_ty: Option<Type> = None;
+            for e in set_expr.elts {
+                let lowered = lower_expr(e)?;
+                let ty = infer_type(&lowered);
+                if let Some(expected) = &elem_ty {
+                    if expected != &ty {
+                        return Err(FrontendError::Lower(format!(
+                            "heterogeneous set literal — element types {expected:?} and {ty:?} mixed"
+                        )));
+                    }
+                } else {
+                    elem_ty = Some(ty);
+                }
+                elems.push(lowered);
+            }
+            Ok(Expr::SetLit(elems))
         }
         // PMAT-452: FormattedValue inside an f-string. We strip the
         // conversion + format_spec at v0.2.0 first cut (only `{expr}`
