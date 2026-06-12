@@ -269,11 +269,12 @@ fn emit_function_with_while_helpers(
             // in-place list mutators (.sort/.reverse/.clear) + .extend + .insert.
             Stmt::ListAppend { .. }
             | Stmt::SetAdd { .. }
+            | Stmt::SetRemove { .. }
             | Stmt::ListMutate { .. }
             | Stmt::ListExtend { .. }
             | Stmt::ListInsert { .. } => {
                 return Err(LeanCodegenError::Unsupported(format!(
-                    "function `{}` has in-place mutation (.append/.add/.sort/.reverse/.clear/.extend/.insert) inside a while loop; \
+                    "function `{}` has in-place mutation (.append/.add/.remove/.discard/.sort/.reverse/.clear/.extend/.insert) inside a while loop; \
                      Lean codegen at v0.2.0 first cut doesn't compose in-place mutation with while",
                     f.name
                 )));
@@ -849,6 +850,11 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         Stmt::SetAdd { set_name, .. } => Err(LeanCodegenError::Unsupported(format!(
             "`{set_name}.add(...)` (Stmt::SetAdd) requires state-monad encoding in Lean — \
              use `--target rust` or `--target ruchy`"
+        ))),
+        // PMAT-502av: set remove/discard — same monadic-encoding gap.
+        Stmt::SetRemove { set_name, .. } => Err(LeanCodegenError::Unsupported(format!(
+            "`{set_name}.remove(x)`/`.discard(x)` (Stmt::SetRemove) requires state-monad \
+             encoding in Lean — use `--target rust` or `--target ruchy`"
         ))),
         // PMAT-502ap: in-place list mutators — same monadic-encoding gap.
         Stmt::ListMutate { list_name, .. } => Err(LeanCodegenError::Unsupported(format!(

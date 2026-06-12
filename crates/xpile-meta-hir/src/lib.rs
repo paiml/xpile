@@ -142,6 +142,8 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         Stmt::ListAppend { elem, .. } => expr_has_int_arith(elem),
         // PMAT-500b: set.add() — recurse into the elem expression.
         Stmt::SetAdd { elem, .. } => expr_has_int_arith(elem),
+        // PMAT-502av: set.remove()/discard() — recurse into the elem.
+        Stmt::SetRemove { elem, .. } => expr_has_int_arith(elem),
         // PMAT-502ap: in-place list mutators carry no sub-expression.
         Stmt::ListMutate { .. } => false,
         // PMAT-502aq: list.extend() — recurse into the other-list expr.
@@ -531,6 +533,20 @@ pub enum Stmt {
     /// [`Stmt::ListAppend`]; Rust/Ruchy emit `<set>.insert(<elem>);` (the
     /// receiver is marked mutable). Lean refuses.
     SetAdd { set_name: String, elem: Expr },
+    /// Set element removal — Python `s.remove(x)` / `s.discard(x)`.
+    /// PMAT-502av (Tranche 2). Both remove `elem` from the receiver
+    /// (marked mutable). They differ only on an absent element:
+    /// `error_if_absent` (Python `remove`) panics, matching `KeyError`;
+    /// `discard` is a silent no-op. Rust `HashSet::remove` returns a
+    /// `bool` (was-present), so:
+    ///   * Rust / Ruchy: `remove` → `assert!(<set>.remove(&(<elem>)),
+    ///     "xpile: KeyError: …");`; `discard` → `<set>.remove(&(<elem>));`.
+    ///   * Lean: refuses (in-place mutation, same gap as `SetAdd`).
+    SetRemove {
+        set_name: String,
+        elem: Expr,
+        error_if_absent: bool,
+    },
     /// In-place, zero-argument list mutation — Python `xs.sort()` /
     /// `xs.reverse()` / `xs.clear()`. PMAT-502ap (Tranche 2). These are
     /// the no-arg, in-place, `None`-returning list methods, lowered to

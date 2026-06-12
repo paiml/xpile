@@ -197,6 +197,8 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                                     | "clear"
                                     | "extend"
                                     | "insert"
+                                    | "remove"
+                                    | "discard"
                             ) {
                                 let bump = if in_loop { 2 } else { 1 };
                                 *counts.entry(recv.id.to_string()).or_insert(0) += bump;
@@ -937,6 +939,35 @@ fn try_lower_list_method_call(
     // through to the next dispatch path's error surface.
     let is_append = method == "append" && matches!(receiver_ty, Some(Type::List(_)));
     let is_add = method == "add" && matches!(receiver_ty, Some(Type::Set(_)));
+    // PMAT-502av: `s.remove(x)` / `s.discard(x)` — 1-arg set element
+    // removal. `remove` raises KeyError on an absent element; `discard`
+    // is a silent no-op. (List `.remove` has different semantics and is a
+    // separate, unimplemented slice; the Set receiver type disambiguates.)
+    if matches!(method, "remove" | "discard") && matches!(receiver_ty, Some(Type::Set(_))) {
+        if !call.keywords.is_empty() || call.args.len() != 1 {
+            return Some(Err(FrontendError::Lower(format!(
+                "function `{}` calls `{receiver_name}.{method}(...)` with {} positional arg(s){}; \
+                 set remove/discard take exactly 1",
+                ctx.fn_name,
+                call.args.len(),
+                if call.keywords.is_empty() {
+                    ""
+                } else {
+                    " plus keyword args"
+                },
+            ))));
+        }
+        let elem = match lower_expr_in_ctx(ctx, call.args[0].clone()) {
+            Ok(e) => e,
+            Err(err) => return Some(Err(err)),
+        };
+        ctx.mutable.insert(receiver_name.to_string());
+        return Some(Ok(Stmt::SetRemove {
+            set_name: receiver_name.to_string(),
+            elem,
+            error_if_absent: method == "remove",
+        }));
+    }
     // PMAT-502ap: no-arg in-place list mutators `xs.sort()/.reverse()/.clear()`.
     let list_mutate_op = match method {
         "sort" => Some(ListMutateOp::Sort),
