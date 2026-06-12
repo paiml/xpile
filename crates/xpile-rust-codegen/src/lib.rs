@@ -14,8 +14,8 @@
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_meta_hir::{
-    BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListQueryOp, Module, NumBuiltinOp,
-    Param, SetOp, SourceLang, Stmt, StrMethodOp, Type, UnOp,
+    BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListMutateOp, ListQueryOp, Module,
+    NumBuiltinOp, Param, SetOp, SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
 /// PMAT-477 (R8): the Rust infix symbol for a float arithmetic op.
@@ -115,8 +115,9 @@ fn function_bigint_mode(f: &Function) -> bool {
                 ..
             } => then_body.iter().any(stmt_has_bigint) || else_body.iter().any(stmt_has_bigint),
             // PMAT-460: list.append() carries no Type::Let, so no
-            // BigInt-mode trigger of its own.
-            Stmt::ListAppend { .. } | Stmt::SetAdd { .. } => false,
+            // BigInt-mode trigger of its own. PMAT-502ap: in-place list
+            // mutators likewise carry no binding.
+            Stmt::ListAppend { .. } | Stmt::SetAdd { .. } | Stmt::ListMutate { .. } => false,
             // PMAT-461: indexed assignment same disposition.
             Stmt::IndexAssign { .. } => false,
             // PMAT-466: dict keyed assignment carries no Type::Let;
@@ -321,6 +322,24 @@ fn emit_stmt_indented(
             write!(out, "{indent}{set_name}.insert(")?;
             emit_expr(out, elem, mode)?;
             writeln!(out, ");")?;
+            Ok(())
+        }
+        // PMAT-502ap: in-place list mutators `xs.sort()/.reverse()/.clear()`.
+        // `Vec<f64>` has no `Ord`, so a float sort uses `sort_by(partial_cmp)`.
+        Stmt::ListMutate {
+            list_name,
+            op,
+            of_float,
+        } => {
+            match op {
+                ListMutateOp::Sort if *of_float => writeln!(
+                    out,
+                    "{indent}{list_name}.sort_by(|a, b| a.partial_cmp(b).unwrap());"
+                )?,
+                ListMutateOp::Sort => writeln!(out, "{indent}{list_name}.sort();")?,
+                ListMutateOp::Reverse => writeln!(out, "{indent}{list_name}.reverse();")?,
+                ListMutateOp::Clear => writeln!(out, "{indent}{list_name}.clear();")?,
+            }
             Ok(())
         }
         // PMAT-461 (v0.2.0 Track 1.B): Python `xs[i] = v` → Rust

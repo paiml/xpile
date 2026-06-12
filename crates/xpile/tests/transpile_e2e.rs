@@ -2030,6 +2030,35 @@ fn main() {
     assert_rustc_runs("assert_msg", &rust, driver);
 }
 
+/// PMAT-502ap (Tranche 2): in-place list mutators `xs.sort()` /
+/// `xs.reverse()` / `xs.clear()` → the matching `Vec` method. A float
+/// list sorts via `.sort_by(partial_cmp)` (no `Ord` on `f64`).
+#[test]
+fn list_mutate() {
+    let rust = xpile_transpile_to_rust("list_mutate.py");
+    assert!(rust.contains("xs.sort();"), "int sort:\n{rust}");
+    assert!(rust.contains("xs.reverse();"), "reverse:\n{rust}");
+    assert!(
+        rust.contains("xs.sort_by(|a, b| a.partial_cmp(b).unwrap());"),
+        "float sort:\n{rust}"
+    );
+    assert!(rust.contains("xs.clear();"), "clear:\n{rust}");
+    // Receivers must be `mut`.
+    assert!(
+        rust.contains("first_sorted(mut xs: Vec<i64>)"),
+        "mut receiver:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(first_sorted(vec![3, 1, 2]), 1);
+    assert_eq!(first_reversed(vec![3, 1, 2]), 2);
+    assert_eq!(first_fsorted(vec![3.0, 1.5, 2.0]), 1.5);
+    assert_eq!(cleared_len(vec![1, 2, 3]), 0);
+}
+"#;
+    assert_rustc_runs("list_mutate", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

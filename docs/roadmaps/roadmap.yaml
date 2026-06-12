@@ -714,6 +714,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Stmt::Assert now carries msg: Option<Expr>. Message form assert cond, \"text\" -> assert!(<cond>, \"{}\", <msg>); bare assert cond unchanged (assert!(<cond>);) in Rust+Ruchy. Frontend lower_assert_stmt validates msg is a Str expression. Lean ignores the message (existing if cond then ... else panic! shape retained). rustc round-trip assert_msg.py: checked(5)->5, bare(5)->5, checked(0)/bare(-1) both panic (caught via catch_unwind). FREE CI. SHIPPED v0.1.73."
+- id: PMAT-502AP
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ap: [Tranche2] in-place list mutators xs.sort()/.reverse()/.clear()'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Stmt::ListMutate { list_name, op, of_float } with ListMutateOp in {Sort, Reverse, Clear}. The no-arg, None-returning in-place list methods (previously rejected as unrecognised expression statements) lower to the matching Vec method in Rust+Ruchy with the receiver marked mut: .sort() for Vec<i64>, .sort_by(|a,b| a.partial_cmp(b).unwrap()) for Vec<f64> (no Ord on f64), .reverse(), .clear(). Frontend try_lower_list_method_call recognises them (0-arg, List receiver); mutability pre-pass walk_counts counts sort/reverse/clear. Lean refuses (in-place mutation gap, same as .append). rustc round-trip list_mutate.py: first_sorted([3,1,2])->1, first_reversed([3,1,2])->2, first_fsorted([3.0,1.5,2.0])->1.5, cleared_len([1,2,3])->0. FREE CI. SHIPPED v0.1.74."
 - id: PMAT-465
   github_issue: 496
   item_type: task
