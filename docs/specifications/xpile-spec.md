@@ -837,6 +837,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-500** — sets: literal + `x in s` + `len` (v0.1.29) + **`.add()`** mutation (`Stmt::SetAdd`, v0.1.31) | `HashSet` lane | ✅ SHIPPED (empty `set()` / ∪∩ → follow-up; set comp now unblocked) |
 | **PMAT-501** — dict comprehensions (v0.1.30) + **set comprehensions** `{e for …}` (v0.1.32) | materialise via for-DictSet / for-SetAdd; no new IR | ✅ SHIPPED — completes list/dict/set comprehensions |
 | **PMAT-502** — `Stmt::If` branch generalization | dispatcher: if-as-let for `name=expr` branches, else a real `Stmt::If` (subscript assigns / `.append` / dict mutation) — unblocks the histogram idiom | ✅ SHIPPED v0.1.28 |
+| **PMAT-502b** — `str.replace(old, new)` (`StrMethodOp::Replace`, 2-arg) | `.replace(&(old)[..], &(new)[..])` | ✅ SHIPPED v0.1.33 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | open |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |

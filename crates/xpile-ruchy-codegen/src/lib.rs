@@ -508,6 +508,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     emit_expr(out, &args[0], mode)?;
                     out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()");
                 }
+                // PMAT-502b: `.replace(old, new)`.
+                StrMethodOp::Replace => {
+                    out.push_str(".replace(&(");
+                    emit_expr(out, &args[0], mode)?;
+                    out.push_str(")[..], &(");
+                    emit_expr(out, &args[1], mode)?;
+                    out.push_str(")[..])");
+                }
                 StrMethodOp::Join => unreachable!("Join handled above"),
             }
         }

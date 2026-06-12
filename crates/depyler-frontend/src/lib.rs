@@ -2260,7 +2260,7 @@ fn infer_type(e: &Expr) -> Type {
             StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
             StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
             StrMethodOp::Split => Type::List(Box::new(Type::Str)),
-            StrMethodOp::Join => Type::Str,
+            StrMethodOp::Join | StrMethodOp::Replace => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
         // type from the first element (frontend ensures homogeneity
@@ -2394,7 +2394,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
             StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
             StrMethodOp::Split => Type::List(Box::new(Type::Str)),
-            StrMethodOp::Join => Type::Str,
+            StrMethodOp::Join | StrMethodOp::Replace => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
         // shape as the context-free `infer_type` arm.
@@ -3260,12 +3260,13 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
         "endswith" => Some(StrMethodOp::EndsWith),
         "split" => Some(StrMethodOp::Split),
         "join" => Some(StrMethodOp::Join),
+        "replace" => Some(StrMethodOp::Replace),
         _ => None,
     }
 }
 
 /// Number of arguments a [`StrMethodOp`] expects: 0 for the transforms,
-/// 1 for the predicates, `split(sep)`, and `sep.join(list)`.
+/// 1 for the predicates / `split` / `join`, 2 for `replace(old, new)`.
 fn str_method_arity(op: StrMethodOp) -> usize {
     match op {
         StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => 0,
@@ -3273,6 +3274,7 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         | StrMethodOp::EndsWith
         | StrMethodOp::Split
         | StrMethodOp::Join => 1,
+        StrMethodOp::Replace => 2,
     }
 }
 

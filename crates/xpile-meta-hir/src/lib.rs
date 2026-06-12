@@ -1127,6 +1127,9 @@ pub enum StrMethodOp {
     /// separator as receiver, but Rust's `[String]::join` has the list as
     /// receiver — so backends emit the arg as the Rust receiver.
     Join,
+    /// `.replace(old, new)` → `.replace(&(old)[..], &(new)[..])`
+    /// (Str, 2 args). PMAT-502b.
+    Replace,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -1203,6 +1203,24 @@ fn main() {
     assert_rustc_runs("slicing", &rust, driver);
 }
 
+/// PMAT-502b (Tranche 2): `str.replace(old, new)` →
+/// `.replace(&(old)[..], &(new)[..])`.
+#[test]
+fn str_replace_method() {
+    let rust = xpile_transpile_to_rust("str_replace.py");
+    assert!(
+        rust.contains(".replace(&("),
+        "expected .replace emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(censor(String::from("a bad word")), String::from("a *** word"));
+    assert_eq!(swap(String::from("foobar"), String::from("o"), String::from("0")), String::from("f00bar"));
+}
+"#;
+    assert_rustc_runs("str_replace", &rust, driver);
+}
+
 /// PMAT-501b (Tranche 2): set comprehension `{e for x in xs}` —
 /// materialises to `s = set()` + `for x in xs { s.add(e) }`.
 #[test]
