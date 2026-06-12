@@ -14,7 +14,8 @@
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, SourceLang, Stmt, Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, SourceLang, Stmt, StrMethodOp,
+    Type, UnOp,
 };
 
 /// PMAT-477 (R8): the Rust infix symbol for a float arithmetic op.
@@ -491,6 +492,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push_str(", ");
             emit_expr(out, rhs, mode)?;
             out.push(')');
+        }
+        // PMAT-492: Python no-arg string transform methods.
+        Expr::StrMethod { recv, op } => {
+            emit_expr(out, recv, mode)?;
+            out.push_str(match op {
+                StrMethodOp::Upper => ".to_uppercase()",
+                StrMethodOp::Lower => ".to_lowercase()",
+                StrMethodOp::Strip => ".trim().to_string()",
+            });
         }
         // PMAT-455 (v0.2.0 Track 1.B): Python list literal → Rust
         // `vec![...]` macro. The element types are guaranteed

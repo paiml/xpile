@@ -1108,6 +1108,28 @@ fn main() {
     assert_rustc_runs("greet_concat", &rust, driver);
 }
 
+/// PMAT-492 (sprint): Python no-arg string transform methods.
+/// `s.upper()`/`s.lower()`/`s.strip()` lower to `Expr::StrMethod`,
+/// emitting `.to_uppercase()`/`.to_lowercase()`/`.trim().to_string()`.
+#[test]
+fn str_methods_emitted_rust_transforms_strings() {
+    let rust = xpile_transpile_to_rust("str_methods.py");
+    assert!(
+        rust.contains(".to_uppercase()")
+            && rust.contains(".to_lowercase()")
+            && rust.contains(".trim().to_string()"),
+        "expected to_uppercase/to_lowercase/trim in emitted Rust, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(shout(String::from("hi")), String::from("HI"));
+    assert_eq!(quiet(String::from("HI")), String::from("hi"));
+    assert_eq!(clean(String::from("  hi  ")), String::from("hi"));
+}
+"#;
+    assert_rustc_runs("str_methods", &rust, driver);
+}
+
 /// PMAT-450 — v0.2.0 Track 1.A: str-typed parameter passthrough.
 /// `def echo(name: str) -> str: return name` transpiles to
 /// `pub fn echo(name: String) -> String { name }`, exercises the

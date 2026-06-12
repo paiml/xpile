@@ -796,7 +796,7 @@ Tracks 1 and 2 are independent and can run in parallel. Track 3 is small and slo
 
 ### 10-day autonomous sprint (2026-06-12 → 2026-06-22) — self-selected, no questions
 
-**Posture:** per [`/CLAUDE.md`](../../CLAUDE.md) + the 2026-06-12 directive, an autonomous session **self-selects the highest-EV open item from the queue below, ships it to a full-CI-green PR → squash-merge → GitHub release tag, then takes the next — without asking.** Target ~1–2 slices/day. R6 and the lowest open Track-4/capability PMAT are co-equal leads (pick the higher EV-per-hour).
+**Posture:** per [`/CLAUDE.md`](../../CLAUDE.md) + the 2026-06-12 directive, an autonomous session **self-selects the highest-EV open item from the queue below, ships it to a full-CI-green PR → squash-merge → GitHub release tag, then takes the next — without asking.** **Cadence is continuous** — ship slices back-to-back, taking the next open item immediately after each merge; do *not* stop at a daily cap (keep going until the queue is exhausted or interrupted). R6 and the lowest open Track-4/capability PMAT are co-equal leads (pick the higher EV-per-hour).
 
 **Release cadence (load-bearing policy):**
 - **GitHub tags — frequent:** every shipped slice gets its own `vX.Y.Z` tag + GitHub release (the proven per-slice cadence used for v0.1.5–v0.1.12).

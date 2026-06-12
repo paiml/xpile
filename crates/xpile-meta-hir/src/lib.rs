@@ -199,6 +199,9 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // case future lowering ever nests an int-arith expression
         // inside a string-typed position (unlikely but cheap).
         Expr::Concat { lhs, rhs } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
+        // PMAT-492: string transform methods are str-domain; recurse
+        // into the receiver defensively (mirrors Concat).
+        Expr::StrMethod { recv, .. } => expr_has_int_arith(recv),
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -813,6 +816,24 @@ pub enum Expr {
     /// generalises to `Vec<Expr>` parts via a `Concat { parts }`
     /// rewrite; the binary form is sufficient for v0.2.0 first cut.
     Concat { lhs: Box<Expr>, rhs: Box<Expr> },
+    /// No-argument Python string transform method — `s.upper()` /
+    /// `s.lower()` / `s.strip()`. PMAT-492 (sprint). Result types as
+    /// `Type::Str`. Distinct from [`Expr::Call`] (a free function
+    /// `callee(args)`) because these are *receiver methods* with bespoke
+    /// per-backend lowering. The receiver must type as `Type::Str`.
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: `Upper` → `<recv>.to_uppercase()`, `Lower` →
+    ///     `<recv>.to_lowercase()`, `Strip` → `<recv>.trim().to_string()`.
+    ///   * Lean: refuses at first cut (string-method encoding deferred,
+    ///     alongside the other str-domain refusals).
+    ///   * Shell: refuses.
+    ///
+    /// Argument-bearing methods (`startswith`/`endswith` predicates,
+    /// `split`/`join` list-interplay) are deliberately out of this first
+    /// slice — they need pattern/list handling and follow as their own
+    /// slices.
+    StrMethod { recv: Box<Expr>, op: StrMethodOp },
     /// Conditional expression — Python's `then if cond else else_`, lowered
     /// from `ast::Expr::IfExp`. Both branches must produce the same type at
     /// v0.1.0 (the frontend rejects branch-type-mismatch; future versions
@@ -940,6 +961,19 @@ pub enum FloatOp {
     Sub,
     Mul,
     Div,
+}
+
+/// PMAT-492 (sprint): no-argument Python string transform methods,
+/// carried by [`Expr::StrMethod`]. Each maps to a fixed Rust/Ruchy
+/// receiver-method form; Lean/Shell refuse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StrMethodOp {
+    /// `.upper()` → `.to_uppercase()`
+    Upper,
+    /// `.lower()` → `.to_lowercase()`
+    Lower,
+    /// `.strip()` → `.trim().to_string()`
+    Strip,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

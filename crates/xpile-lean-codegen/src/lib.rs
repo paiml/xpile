@@ -407,6 +407,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(lhs, out);
             collect_idents(rhs, out);
         }
+        // PMAT-492: string transform method — recurse into the receiver.
+        Expr::StrMethod { recv, .. } => collect_idents(recv, out),
         // PMAT-455: list literal — recurse into each element.
         Expr::ListLit(elems) => {
             for e in elems {
@@ -738,6 +740,16 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             out.push_str(" ++ ");
             emit_expr(out, rhs)?;
             out.push(')');
+        }
+        // PMAT-492: Python string transform methods are deferred in the
+        // Lean lane (no stable String.toUpper / trim model at first cut)
+        // — refuse with a pointer, like the other str-domain refusals.
+        Expr::StrMethod { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python string methods (.upper()/.lower()/.strip()) are not yet \
+                 supported in the Lean lane — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
         }
         // PMAT-455 (v0.2.0 Track 1.B): Lean's built-in `List` literal
         // syntax — `[a, b, c]`.

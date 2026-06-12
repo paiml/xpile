@@ -31,7 +31,8 @@ use std::path::Path;
 use std::rc::Rc;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, SourceLang, Stmt, Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, SourceLang, Stmt, StrMethodOp,
+    Type, UnOp,
 };
 
 use rustpython_parser::ast;
@@ -1846,6 +1847,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::LitStr(_) => Type::Str,
         // PMAT-451: str concatenation is a Type::Str-producing op.
         Expr::Concat { .. } => Type::Str,
+        // PMAT-492: string transform methods (upper/lower/strip) → Str.
+        Expr::StrMethod { .. } => Type::Str,
         // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
         // type from the first element (frontend ensures homogeneity
         // at lowering time). Empty literal is conservatively typed as
@@ -1954,6 +1957,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::LitStr(_) => Type::Str,
         // PMAT-451: str concatenation is Type::Str-producing.
         Expr::Concat { .. } => Type::Str,
+        // PMAT-492: string transform methods (upper/lower/strip) → Str.
+        Expr::StrMethod { .. } => Type::Str,
         // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
         // shape as the context-free `infer_type` arm.
         Expr::ListLit(elems) => {
@@ -2118,6 +2123,26 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             dict: Box::new(recv),
                             key: Box::new(key),
                             default: Box::new(default),
+                        });
+                    }
+                }
+                // PMAT-492: no-arg string transform methods —
+                // `s.upper()` / `s.lower()` / `s.strip()` when the
+                // receiver types as `Type::Str`.
+                if let Some(op) = str_method_op(attr.attr.as_str()) {
+                    let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &recv), Type::Str) {
+                        if !call.keywords.is_empty() || !call.args.is_empty() {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` calls str `.{}(...)` with arguments; \
+                                 the no-arg forms upper/lower/strip take none",
+                                ctx.fn_name,
+                                attr.attr.as_str(),
+                            )));
+                        }
+                        return Ok(Expr::StrMethod {
+                            recv: Box::new(recv),
+                            op,
                         });
                     }
                 }
@@ -2590,6 +2615,20 @@ fn float_op_from_ast(op: &ast::Operator) -> Option<FloatOp> {
         ast::Operator::Sub => Some(FloatOp::Sub),
         ast::Operator::Mult => Some(FloatOp::Mul),
         ast::Operator::Div => Some(FloatOp::Div),
+        _ => None,
+    }
+}
+
+/// PMAT-492 (sprint): map a Python no-arg string method name to its
+/// [`StrMethodOp`]. Returns `None` for any other attribute name (which
+/// then falls through to the normal call-lowering path). Argument-bearing
+/// methods (`startswith`/`endswith`/`split`/`join`) are not handled here —
+/// they are separate follow-up slices.
+fn str_method_op(name: &str) -> Option<StrMethodOp> {
+    match name {
+        "upper" => Some(StrMethodOp::Upper),
+        "lower" => Some(StrMethodOp::Lower),
+        "strip" => Some(StrMethodOp::Strip),
         _ => None,
     }
 }
