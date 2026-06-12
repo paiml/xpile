@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.80] — 2026-06-12
+
+Tranche-2 slice PMAT-502av — Python **set element removal** `s.remove(x)` /
+`s.discard(x)`.
+
+New meta-HIR `Stmt::SetRemove { set_name, elem, error_if_absent }`. Both remove
+`elem` from the receiver (marked `mut`), differing only on an absent element:
+`s.remove(x)` (`error_if_absent = true`) lowers to
+`assert!(<set>.remove(&(<elem>)), "xpile: KeyError: …");` (panics, matching
+Python's `KeyError`); `s.discard(x)` lowers to `<set>.remove(&(<elem>));` (the
+`bool` return is discarded; absent is a silent no-op). The frontend recognises
+both in `try_lower_list_method_call` (set receiver, 1 arg), disambiguated from the
+unrelated `list.remove` by the receiver type, and the mutability pre-pass counts
+them. This completes the set-mutation surface (`add`/`remove`/`discard`). Lean
+refuses (in-place mutation). rustc round-trip `set_remove.py`:
+`drop({1,2,3},2) -> 2`, `disc({1},99) -> 1` (absent no-op), `drop_local() -> 2`
+(local receiver), and `drop({1},99)` panics (caught via `catch_unwind`).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.79] — 2026-06-12
 
 Tranche-2 slice PMAT-502au — Python **dict pop** `d.pop(k)` / `d.pop(k, default)`

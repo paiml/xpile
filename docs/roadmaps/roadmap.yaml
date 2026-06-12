@@ -768,6 +768,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::DictPop { dict, key, default: Option<Box<Expr>> } — the dict analogue of v0.1.77 list pop. d.pop(k) -> (<dict>).remove(&(<key>)).unwrap() (panics if absent = Python KeyError); d.pop(k, default) -> (<dict>).remove(&(<key>)).unwrap_or(<default>). Result types as the dict value type (infer_type + infer_type_in_ctx). Recognised in the expr-context pop block (1 or 2 args; no-arg .pop() is a Python error for dicts), disambiguated from list pop by receiver type. Receiver mut via the same count_pop_receivers pre-pass (params + locals). Lean refuses (in-place mutation). rustc round-trip dict_pop.py: take({a:5},a)->5, take_or({},missing)->0, take_local()->2 (local receiver). FREE CI. SHIPPED v0.1.79."
+- id: PMAT-502AV
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502av: [Tranche2] set element removal s.remove(x) / s.discard(x)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Stmt::SetRemove { set_name, elem, error_if_absent }. Both remove elem from the receiver (marked mut), differing only on an absent element: s.remove(x) (error_if_absent=true) -> assert!(<set>.remove(&(<elem>)), \"xpile: KeyError: ...\"); (panics = Python KeyError); s.discard(x) -> <set>.remove(&(<elem>)); (bool discarded; absent = silent no-op). Frontend recognises both in try_lower_list_method_call (Set receiver, 1 arg), disambiguated from unrelated list.remove by receiver type; mutability pre-pass counts remove/discard. Completes the set-mutation surface (add/remove/discard). Lean refuses (in-place mutation). rustc round-trip set_remove.py: drop({1,2,3},2)->2, disc({1},99)->1 (absent no-op), drop_local()->2 (local receiver), drop({1},99) panics (catch_unwind). FREE CI. SHIPPED v0.1.80."
 - id: PMAT-465
   github_issue: 496
   item_type: task

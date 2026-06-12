@@ -2223,6 +2223,44 @@ fn main() {
     assert_rustc_runs("dict_pop", &rust, driver);
 }
 
+/// PMAT-502av (Tranche 2): set element removal `s.remove(x)` →
+/// `assert!(s.remove(&(x)), "…");` (KeyError if absent) and
+/// `s.discard(x)` → `s.remove(&(x));` (silent no-op).
+#[test]
+fn set_remove() {
+    let rust = xpile_transpile_to_rust("set_remove.py");
+    assert!(
+        rust.contains("assert!(s.remove(&(x)), \"xpile: KeyError: set.remove(x): x not in set\");"),
+        "remove (KeyError):\n{rust}"
+    );
+    assert!(rust.contains("s.remove(&(x));"), "discard (no-op):\n{rust}");
+    assert!(
+        rust.contains("drop(mut s: std::collections::HashSet"),
+        "mut param:\n{rust}"
+    );
+    assert!(
+        rust.contains("let mut s: std::collections::HashSet"),
+        "mut local:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    let mut s = std::collections::HashSet::new();
+    s.insert(1); s.insert(2); s.insert(3);
+    assert_eq!(drop(s, 2), 2);
+    let mut s2 = std::collections::HashSet::new();
+    s2.insert(1);
+    assert_eq!(disc(s2, 99), 1);
+    assert_eq!(drop_local(), 2);
+    // remove of an absent element panics (KeyError).
+    let mut s3 = std::collections::HashSet::new();
+    s3.insert(1);
+    assert!(std::panic::catch_unwind(move || drop(s3, 99)).is_err());
+}
+"#;
+    assert_rustc_runs("set_remove", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

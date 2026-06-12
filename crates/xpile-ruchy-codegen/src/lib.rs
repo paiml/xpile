@@ -107,6 +107,7 @@ fn function_bigint_mode(f: &Function) -> bool {
             // in-place list mutators / extend / insert likewise carry no binding.
             Stmt::ListAppend { .. }
             | Stmt::SetAdd { .. }
+            | Stmt::SetRemove { .. }
             | Stmt::ListMutate { .. }
             | Stmt::ListExtend { .. }
             | Stmt::ListInsert { .. } => false,
@@ -296,6 +297,26 @@ fn emit_stmt_indented(
             write!(out, "{indent}{set_name}.insert(")?;
             emit_expr(out, elem, mode)?;
             writeln!(out, ");")?;
+            Ok(())
+        }
+        // PMAT-502av: `s.remove(x)` / `s.discard(x)`, matching the Rust backend.
+        Stmt::SetRemove {
+            set_name,
+            elem,
+            error_if_absent,
+        } => {
+            if *error_if_absent {
+                write!(out, "{indent}assert!({set_name}.remove(&(")?;
+                emit_expr(out, elem, mode)?;
+                writeln!(
+                    out,
+                    ")), \"xpile: KeyError: set.remove(x): x not in set\");"
+                )?;
+            } else {
+                write!(out, "{indent}{set_name}.remove(&(")?;
+                emit_expr(out, elem, mode)?;
+                writeln!(out, "));")?;
+            }
             Ok(())
         }
         // PMAT-502ap: in-place list mutators, matching the Rust backend.

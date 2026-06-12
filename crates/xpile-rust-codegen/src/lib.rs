@@ -119,6 +119,7 @@ fn function_bigint_mode(f: &Function) -> bool {
             // list mutators / extend / insert likewise carry no binding.
             Stmt::ListAppend { .. }
             | Stmt::SetAdd { .. }
+            | Stmt::SetRemove { .. }
             | Stmt::ListMutate { .. }
             | Stmt::ListExtend { .. }
             | Stmt::ListInsert { .. } => false,
@@ -328,6 +329,28 @@ fn emit_stmt_indented(
             write!(out, "{indent}{set_name}.insert(")?;
             emit_expr(out, elem, mode)?;
             writeln!(out, ");")?;
+            Ok(())
+        }
+        // PMAT-502av: Python `s.remove(x)` panics if absent (KeyError) →
+        // `assert!(s.remove(&(x)), "…");`; `s.discard(x)` is a silent no-op
+        // → `s.remove(&(x));` (the returned bool is discarded).
+        Stmt::SetRemove {
+            set_name,
+            elem,
+            error_if_absent,
+        } => {
+            if *error_if_absent {
+                write!(out, "{indent}assert!({set_name}.remove(&(")?;
+                emit_expr(out, elem, mode)?;
+                writeln!(
+                    out,
+                    ")), \"xpile: KeyError: set.remove(x): x not in set\");"
+                )?;
+            } else {
+                write!(out, "{indent}{set_name}.remove(&(")?;
+                emit_expr(out, elem, mode)?;
+                writeln!(out, "));")?;
+            }
             Ok(())
         }
         // PMAT-502ap: in-place list mutators `xs.sort()/.reverse()/.clear()`.
