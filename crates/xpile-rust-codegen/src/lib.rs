@@ -498,25 +498,35 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // `.starts_with(&(<pat>)[..])` — the `&(..)[..]` reslice yields
         // `&str` uniformly whether the pattern is a `String` or a literal.
         Expr::StrMethod { recv, op, args } => {
-            emit_expr(out, recv, mode)?;
-            match op {
-                StrMethodOp::Upper => out.push_str(".to_uppercase()"),
-                StrMethodOp::Lower => out.push_str(".to_lowercase()"),
-                StrMethodOp::Strip => out.push_str(".trim().to_string()"),
-                StrMethodOp::StartsWith | StrMethodOp::EndsWith => {
-                    out.push_str(if matches!(op, StrMethodOp::StartsWith) {
-                        ".starts_with(&("
-                    } else {
-                        ".ends_with(&("
-                    });
-                    emit_expr(out, &args[0], mode)?;
-                    out.push_str(")[..])");
-                }
-                // PMAT-492c: `.split(sep)` → Vec<String>.
-                StrMethodOp::Split => {
-                    out.push_str(".split(&(");
-                    emit_expr(out, &args[0], mode)?;
-                    out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()");
+            // PMAT-492d: `join` inverts receiver/arg — Python `sep.join(xs)`
+            // is Rust `xs.join(sep)` — so emit the list arg as the receiver.
+            if matches!(op, StrMethodOp::Join) {
+                emit_expr(out, &args[0], mode)?;
+                out.push_str(".join(&(");
+                emit_expr(out, recv, mode)?;
+                out.push_str(")[..])");
+            } else {
+                emit_expr(out, recv, mode)?;
+                match op {
+                    StrMethodOp::Upper => out.push_str(".to_uppercase()"),
+                    StrMethodOp::Lower => out.push_str(".to_lowercase()"),
+                    StrMethodOp::Strip => out.push_str(".trim().to_string()"),
+                    StrMethodOp::StartsWith | StrMethodOp::EndsWith => {
+                        out.push_str(if matches!(op, StrMethodOp::StartsWith) {
+                            ".starts_with(&("
+                        } else {
+                            ".ends_with(&("
+                        });
+                        emit_expr(out, &args[0], mode)?;
+                        out.push_str(")[..])");
+                    }
+                    // PMAT-492c: `.split(sep)` → Vec<String>.
+                    StrMethodOp::Split => {
+                        out.push_str(".split(&(");
+                        emit_expr(out, &args[0], mode)?;
+                        out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()");
+                    }
+                    StrMethodOp::Join => unreachable!("Join handled above"),
                 }
             }
         }

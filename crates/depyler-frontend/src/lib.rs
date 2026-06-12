@@ -1852,6 +1852,7 @@ fn infer_type(e: &Expr) -> Type {
             StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
             StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
             StrMethodOp::Split => Type::List(Box::new(Type::Str)),
+            StrMethodOp::Join => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
         // type from the first element (frontend ensures homogeneity
@@ -1966,6 +1967,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
             StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
             StrMethodOp::Split => Type::List(Box::new(Type::Str)),
+            StrMethodOp::Join => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
         // shape as the context-free `infer_type` arm.
@@ -2643,8 +2645,9 @@ fn float_op_from_ast(op: &ast::Operator) -> Option<FloatOp> {
 
 /// PMAT-492/493b (sprint): map a Python string method name to its
 /// [`StrMethodOp`]. Returns `None` for any other attribute name (which
-/// then falls through to the normal call-lowering path). `split`/`join`
-/// (list-interplay) are not handled here — separate follow-up slices.
+/// then falls through to the normal call-lowering path). The whole
+/// string-method family (upper/lower/strip/startswith/endswith/split/
+/// join) is handled here as of PMAT-492a..d.
 fn str_method_op(name: &str) -> Option<StrMethodOp> {
     match name {
         "upper" => Some(StrMethodOp::Upper),
@@ -2653,16 +2656,20 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
         "startswith" => Some(StrMethodOp::StartsWith),
         "endswith" => Some(StrMethodOp::EndsWith),
         "split" => Some(StrMethodOp::Split),
+        "join" => Some(StrMethodOp::Join),
         _ => None,
     }
 }
 
 /// Number of arguments a [`StrMethodOp`] expects: 0 for the transforms,
-/// 1 for the `startswith`/`endswith` predicates and `split(sep)`.
+/// 1 for the predicates, `split(sep)`, and `sep.join(list)`.
 fn str_method_arity(op: StrMethodOp) -> usize {
     match op {
         StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => 0,
-        StrMethodOp::StartsWith | StrMethodOp::EndsWith | StrMethodOp::Split => 1,
+        StrMethodOp::StartsWith
+        | StrMethodOp::EndsWith
+        | StrMethodOp::Split
+        | StrMethodOp::Join => 1,
     }
 }
 

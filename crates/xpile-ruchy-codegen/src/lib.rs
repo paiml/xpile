@@ -415,6 +415,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         // transforms emit a suffix; startswith/endswith emit
         // `.starts_with(&(<pat>)[..])` (the reslice yields `&str`).
         Expr::StrMethod { recv, op, args } => {
+            // PMAT-492d: `join` inverts receiver/arg (sep.join(xs) → xs.join(sep)).
+            if matches!(op, StrMethodOp::Join) {
+                emit_expr(out, &args[0], mode)?;
+                out.push_str(".join(&(");
+                emit_expr(out, recv, mode)?;
+                out.push_str(")[..])");
+                return Ok(());
+            }
             emit_expr(out, recv, mode)?;
             match op {
                 StrMethodOp::Upper => out.push_str(".to_uppercase()"),
@@ -435,6 +443,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     emit_expr(out, &args[0], mode)?;
                     out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()");
                 }
+                StrMethodOp::Join => unreachable!("Join handled above"),
             }
         }
         // PMAT-455 (v0.2.0 Track 1.B): Ruchy → Rust → `vec![...]`.
