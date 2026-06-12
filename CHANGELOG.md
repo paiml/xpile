@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.16] — 2026-06-12
+
+Sprint slice — Python **`startswith`/`endswith`** string predicates,
+extending v0.1.15's `Expr::StrMethod`.
+
+`s.startswith(p)` / `s.endswith(p)` now lower to `StrMethodOp::{StartsWith,
+EndsWith}` carrying a pattern arg, emitting `<recv>.starts_with(&(<p>)[..])`
+/ `.ends_with(&(<p>)[..])` in Rust + Ruchy (the `&(..)[..]` reslice yields
+`&str` uniformly whether the pattern is a `String` or a literal). These
+type as `Type::Bool`. The `StrMethod` variant gained an `args: Vec<Expr>`
+field (0 args for the transforms, 1 for the predicates). Lean still
+refuses. rustc round-trip fixture `str_methods.py` extended with
+`is_greeting`/`is_question`.
+
+Roadmap correction: **f-strings (queue PMAT-493) were already shipped** as
+PMAT-452 (v0.2.0 Track 1.A) — the queue is updated so the loop doesn't
+re-pick them. `split`/`join` (list-interplay) remain the open string-method
+follow-up.
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.15] — 2026-06-12
 
 Sprint capability slice PMAT-492 — Python **no-argument string transform

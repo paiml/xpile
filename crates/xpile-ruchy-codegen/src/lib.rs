@@ -411,14 +411,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, rhs, mode)?;
             out.push(')');
         }
-        // PMAT-492: Python no-arg string transform methods (Ruchy → Rust).
-        Expr::StrMethod { recv, op } => {
+        // PMAT-492/493b: Python string methods (Ruchy → Rust). No-arg
+        // transforms emit a suffix; startswith/endswith emit
+        // `.starts_with(&(<pat>)[..])` (the reslice yields `&str`).
+        Expr::StrMethod { recv, op, args } => {
             emit_expr(out, recv, mode)?;
-            out.push_str(match op {
-                StrMethodOp::Upper => ".to_uppercase()",
-                StrMethodOp::Lower => ".to_lowercase()",
-                StrMethodOp::Strip => ".trim().to_string()",
-            });
+            match op {
+                StrMethodOp::Upper => out.push_str(".to_uppercase()"),
+                StrMethodOp::Lower => out.push_str(".to_lowercase()"),
+                StrMethodOp::Strip => out.push_str(".trim().to_string()"),
+                StrMethodOp::StartsWith | StrMethodOp::EndsWith => {
+                    out.push_str(if matches!(op, StrMethodOp::StartsWith) {
+                        ".starts_with(&("
+                    } else {
+                        ".ends_with(&("
+                    });
+                    emit_expr(out, &args[0], mode)?;
+                    out.push_str(")[..])");
+                }
+            }
         }
         // PMAT-455 (v0.2.0 Track 1.B): Ruchy → Rust → `vec![...]`.
         Expr::ListLit(elems) => {

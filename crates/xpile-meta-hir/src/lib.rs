@@ -199,9 +199,11 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // case future lowering ever nests an int-arith expression
         // inside a string-typed position (unlikely but cheap).
         Expr::Concat { lhs, rhs } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
-        // PMAT-492: string transform methods are str-domain; recurse
-        // into the receiver defensively (mirrors Concat).
-        Expr::StrMethod { recv, .. } => expr_has_int_arith(recv),
+        // PMAT-492: string methods are str-domain; recurse into the
+        // receiver and any args defensively (mirrors Concat).
+        Expr::StrMethod { recv, args, .. } => {
+            expr_has_int_arith(recv) || args.iter().any(expr_has_int_arith)
+        }
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -829,11 +831,14 @@ pub enum Expr {
     ///     alongside the other str-domain refusals).
     ///   * Shell: refuses.
     ///
-    /// Argument-bearing methods (`startswith`/`endswith` predicates,
-    /// `split`/`join` list-interplay) are deliberately out of this first
-    /// slice — they need pattern/list handling and follow as their own
-    /// slices.
-    StrMethod { recv: Box<Expr>, op: StrMethodOp },
+    /// `args` carries method arguments (empty for the no-arg transforms;
+    /// one pattern expr for `StartsWith`/`EndsWith`). `split`/`join`
+    /// list-interplay still follows as its own slice.
+    StrMethod {
+        recv: Box<Expr>,
+        op: StrMethodOp,
+        args: Vec<Expr>,
+    },
     /// Conditional expression — Python's `then if cond else else_`, lowered
     /// from `ast::Expr::IfExp`. Both branches must produce the same type at
     /// v0.1.0 (the frontend rejects branch-type-mismatch; future versions
@@ -968,12 +973,16 @@ pub enum FloatOp {
 /// receiver-method form; Lean/Shell refuse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StrMethodOp {
-    /// `.upper()` → `.to_uppercase()`
+    /// `.upper()` → `.to_uppercase()` (Str, 0 args)
     Upper,
-    /// `.lower()` → `.to_lowercase()`
+    /// `.lower()` → `.to_lowercase()` (Str, 0 args)
     Lower,
-    /// `.strip()` → `.trim().to_string()`
+    /// `.strip()` → `.trim().to_string()` (Str, 0 args)
     Strip,
+    /// `.startswith(p)` → `.starts_with(&(p)[..])` (Bool, 1 arg). PMAT-493b.
+    StartsWith,
+    /// `.endswith(p)` → `.ends_with(&(p)[..])` (Bool, 1 arg). PMAT-493b.
+    EndsWith,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -1108,23 +1108,30 @@ fn main() {
     assert_rustc_runs("greet_concat", &rust, driver);
 }
 
-/// PMAT-492 (sprint): Python no-arg string transform methods.
-/// `s.upper()`/`s.lower()`/`s.strip()` lower to `Expr::StrMethod`,
-/// emitting `.to_uppercase()`/`.to_lowercase()`/`.trim().to_string()`.
+/// PMAT-492/493b (sprint): Python string methods. `upper/lower/strip`
+/// lower to `Expr::StrMethod` (→ Str: `.to_uppercase()` etc.);
+/// `startswith/endswith` carry a pattern arg (→ Bool: `.starts_with`/
+/// `.ends_with`).
 #[test]
 fn str_methods_emitted_rust_transforms_strings() {
     let rust = xpile_transpile_to_rust("str_methods.py");
     assert!(
         rust.contains(".to_uppercase()")
             && rust.contains(".to_lowercase()")
-            && rust.contains(".trim().to_string()"),
-        "expected to_uppercase/to_lowercase/trim in emitted Rust, got:\n{rust}"
+            && rust.contains(".trim().to_string()")
+            && rust.contains(".starts_with(")
+            && rust.contains(".ends_with("),
+        "expected str-method emissions in Rust, got:\n{rust}"
     );
     let driver = r#"
 fn main() {
     assert_eq!(shout(String::from("hi")), String::from("HI"));
     assert_eq!(quiet(String::from("HI")), String::from("hi"));
     assert_eq!(clean(String::from("  hi  ")), String::from("hi"));
+    assert!(is_greeting(String::from("hello there")));
+    assert!(!is_greeting(String::from("goodbye")));
+    assert!(is_question(String::from("ok?")));
+    assert!(!is_question(String::from("ok")));
 }
 "#;
     assert_rustc_runs("str_methods", &rust, driver);

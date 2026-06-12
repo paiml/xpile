@@ -407,8 +407,13 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(lhs, out);
             collect_idents(rhs, out);
         }
-        // PMAT-492: string transform method — recurse into the receiver.
-        Expr::StrMethod { recv, .. } => collect_idents(recv, out),
+        // PMAT-492: string method — recurse into the receiver + args.
+        Expr::StrMethod { recv, args, .. } => {
+            collect_idents(recv, out);
+            for a in args {
+                collect_idents(a, out);
+            }
+        }
         // PMAT-455: list literal — recurse into each element.
         Expr::ListLit(elems) => {
             for e in elems {

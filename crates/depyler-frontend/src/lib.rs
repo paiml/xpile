@@ -1848,7 +1848,10 @@ fn infer_type(e: &Expr) -> Type {
         // PMAT-451: str concatenation is a Type::Str-producing op.
         Expr::Concat { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
-        Expr::StrMethod { .. } => Type::Str,
+        Expr::StrMethod { op, .. } => match op {
+            StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
+            StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
+        },
         // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
         // type from the first element (frontend ensures homogeneity
         // at lowering time). Empty literal is conservatively typed as
@@ -1958,7 +1961,10 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-451: str concatenation is Type::Str-producing.
         Expr::Concat { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
-        Expr::StrMethod { .. } => Type::Str,
+        Expr::StrMethod { op, .. } => match op {
+            StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
+            StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
+        },
         // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
         // shape as the context-free `infer_type` arm.
         Expr::ListLit(elems) => {
@@ -2126,23 +2132,37 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         });
                     }
                 }
-                // PMAT-492: no-arg string transform methods —
-                // `s.upper()` / `s.lower()` / `s.strip()` when the
+                // PMAT-492/493b: string methods — `s.upper()/.lower()/
+                // .strip()` (0 args, → Str) and `s.startswith(p)/
+                // .endswith(p)` (1 pattern arg, → Bool) — when the
                 // receiver types as `Type::Str`.
                 if let Some(op) = str_method_op(attr.attr.as_str()) {
                     let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
                     if matches!(infer_type_in_ctx(ctx, &recv), Type::Str) {
-                        if !call.keywords.is_empty() || !call.args.is_empty() {
+                        let arity = str_method_arity(op);
+                        if !call.keywords.is_empty() || call.args.len() != arity {
                             return Err(FrontendError::Lower(format!(
-                                "function `{}` calls str `.{}(...)` with arguments; \
-                                 the no-arg forms upper/lower/strip take none",
+                                "function `{}` calls str `.{}(...)` with {} positional arg(s){}; \
+                                 expected exactly {arity}",
                                 ctx.fn_name,
                                 attr.attr.as_str(),
+                                call.args.len(),
+                                if call.keywords.is_empty() {
+                                    ""
+                                } else {
+                                    " plus keyword args"
+                                },
                             )));
                         }
+                        let args = call
+                            .args
+                            .iter()
+                            .map(|a| lower_expr_in_ctx(ctx, a.clone()))
+                            .collect::<Result<Vec<_>, _>>()?;
                         return Ok(Expr::StrMethod {
                             recv: Box::new(recv),
                             op,
+                            args,
                         });
                     }
                 }
@@ -2619,17 +2639,27 @@ fn float_op_from_ast(op: &ast::Operator) -> Option<FloatOp> {
     }
 }
 
-/// PMAT-492 (sprint): map a Python no-arg string method name to its
+/// PMAT-492/493b (sprint): map a Python string method name to its
 /// [`StrMethodOp`]. Returns `None` for any other attribute name (which
-/// then falls through to the normal call-lowering path). Argument-bearing
-/// methods (`startswith`/`endswith`/`split`/`join`) are not handled here —
-/// they are separate follow-up slices.
+/// then falls through to the normal call-lowering path). `split`/`join`
+/// (list-interplay) are not handled here — separate follow-up slices.
 fn str_method_op(name: &str) -> Option<StrMethodOp> {
     match name {
         "upper" => Some(StrMethodOp::Upper),
         "lower" => Some(StrMethodOp::Lower),
         "strip" => Some(StrMethodOp::Strip),
+        "startswith" => Some(StrMethodOp::StartsWith),
+        "endswith" => Some(StrMethodOp::EndsWith),
         _ => None,
+    }
+}
+
+/// Number of arguments a [`StrMethodOp`] expects: 0 for the transforms,
+/// 1 (a pattern) for the `startswith`/`endswith` predicates.
+fn str_method_arity(op: StrMethodOp) -> usize {
+    match op {
+        StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => 0,
+        StrMethodOp::StartsWith | StrMethodOp::EndsWith => 1,
     }
 }
 
