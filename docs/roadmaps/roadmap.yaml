@@ -804,6 +804,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Extends desugar_list_comp (PMAT-473) with an optional single if filter. [elem for v in xs if cond] desugars to let mut t = []; for v in xs { if cond { t.append(elem); } } — the filter becomes a Stmt::If guarding the accumulator append (reuses R9 if/else machinery). Filter must type as Bool (no int-truthiness). Multiple if clauses (... if a if b) deferred -> use ... if a and b. Unfiltered form unchanged. Lean refuses (desugaring contains a for loop, outside the Lean lane). rustc round-trip list_comp_filter.py: positives([-1,2,-3,4])->[2,4], doubled_positives([-1,2,3])->[4,6], assign_form([1,6,7,2])->2. FREE CI. SHIPPED v0.1.83."
+- id: PMAT-502AZ
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502az: [Tranche2] filtered dict + set comprehensions {... if cond}'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Extends desugar_dict_comp (PMAT-501) and desugar_set_comp (PMAT-501b) with the same optional single if filter that v0.1.83 added to list comps. The filter wraps the desugared Stmt::DictSet (dict) / Stmt::SetAdd (set) in an if cond { ... } inside the materialisation loop. Filter must type as Bool; multiple if clauses deferred (use ... if a and b). No meta-HIR or backend change — composes ForEach/If/DictSet/SetAdd. Completes the comprehension-filter family across list/dict/set. Lean refuses (desugaring contains a for loop). rustc round-trip dict_set_comp_filter.py: pos_map([-1,2,3])->{2:4,3:9}, pos_set([-1,2,2,3])->{2,3}, dc_assign([1,6,7,2])->2. FREE CI. SHIPPED v0.1.84."
 - id: PMAT-465
   github_issue: 496
   item_type: task

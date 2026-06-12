@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.84] — 2026-06-12
+
+Tranche-2 slice PMAT-502az — Python **filtered dict + set comprehensions**
+`{k: v for x in xs if cond}` / `{e for x in xs if cond}`.
+
+Extends `desugar_dict_comp` (PMAT-501) and `desugar_set_comp` (PMAT-501b) with the
+same optional single `if` filter that v0.1.83 added to list comprehensions. The
+filter wraps the desugared `Stmt::DictSet` (dict) / `Stmt::SetAdd` (set) in an
+`if cond { … }` inside the materialisation loop. The filter must type as `Bool`;
+multiple `if` clauses remain deferred (use `… if a and b`). No meta-HIR or backend
+change — the desugarings compose existing `ForEach`/`If`/`DictSet`/`SetAdd`. This
+completes the comprehension-filter family across list/dict/set. Lean refuses (the
+desugaring contains a `for` loop). rustc round-trip `dict_set_comp_filter.py`:
+`pos_map([-1,2,3]) -> {2:4, 3:9}`, `pos_set([-1,2,2,3]) -> {2,3}`,
+`dc_assign([1,6,7,2]) -> 2`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.83] — 2026-06-12
 
 Tranche-2 slice PMAT-502ay — Python **filtered list comprehension**
