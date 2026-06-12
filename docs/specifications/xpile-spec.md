@@ -794,6 +794,33 @@ Tracks 1 and 2 are independent and can run in parallel. Track 3 is small and slo
 
 **CI tiers:** (1) **free** GitHub-hosted runners carry PMAT-481..486 (offline `ptxas`/`naga`/structural/quorum-serialization tests + the contained nightly emit job) — run the heavy CUDA-toolkit/`naga` installs as *separate* jobs (like `kani`), never folded into the required fast `gate`/`workspace-test`. (2) **self-hosted** GPU/Vulkan runners (stood up by PMAT-487/489) carry the `DiffExec` execution slices behind a maintainer-approval label, **advisory** in branch protection until proven, then promoted. (3) Lambda H100/B200 + GX10 used **out-of-band** for sm_90/sm_100 advanced-intrinsic kernels. `cudarc` links libcuda at *runtime*, so non-GPU jobs still compile.
 
+### 10-day autonomous sprint (2026-06-12 → 2026-06-22) — self-selected, no questions
+
+**Posture:** per [`/CLAUDE.md`](../../CLAUDE.md) + the 2026-06-12 directive, an autonomous session **self-selects the highest-EV open item from the queue below, ships it to a full-CI-green PR → squash-merge → GitHub release tag, then takes the next — without asking.** Target ~1–2 slices/day. R6 and the lowest open Track-4/capability PMAT are co-equal leads (pick the higher EV-per-hour).
+
+**Release cadence (load-bearing policy):**
+- **GitHub tags — frequent:** every shipped slice gets its own `vX.Y.Z` tag + GitHub release (the proven per-slice cadence used for v0.1.5–v0.1.12).
+- **crates.io — Fridays only, once per week:** publish the accumulated release line to crates.io **only on a Friday** (windows in this sprint: **2026-06-12** and **2026-06-19**). **Never publish to crates.io on a non-Friday.** Gate: full CI green **and** `cargo publish --dry-run` clean for every workspace crate, published **in dependency order**. crates.io publishes are **irreversible** — on any dry-run/publish failure, abort the whole batch and leave it for the next Friday (GitHub tags still ship daily regardless).
+
+**EV-ranked queue (self-select the highest open item):**
+
+| # | Item | Why high-EV | Effort | CI |
+|---|---|---|---|---|
+| 1 | **PMAT-481** — Track-4 offline PTX gate | unblocks the whole GPU lane; zero hardware | hours | free |
+| 2 | **PMAT-482** — Track-4 offline WGSL/SPIR-V gate | second lane, near-zero effort | hours | free |
+| 3 | **PMAT-492** — Python **string methods** (`.upper/.lower/.strip/.split/.join/.startswith/.endswith`) | very high real-Python prevalence; frontend + codegen, `rustc`-verifiable | days | free |
+| 4 | **PMAT-493** — **f-strings** `f"{x}"` → `format!` | very high prevalence; reuses str machinery | days | free |
+| 5 | **PMAT-494** — **tuples** + multiple return + `a, b = f()` unpacking | high; prerequisite for `dict.items()` / `zip` | ~1 wk | free |
+| 6 | **R6 / PMAT-475** — contract-integrity gap + Diamond-gate grandfather | closes a live "every construct under contract" falsification | days | free |
+| 7 | **PMAT-484** — Track-4 structured `compile_targets.via.role` | honors §29 falsification posture #4 | days | free |
+| 8 | **PMAT-495** — `enumerate()` / `zip()` in `for` loops | high; pairs with PMAT-494 | days | free |
+| 9 | **PMAT-496** — **slicing** `xs[a:b]` | high real-Python prevalence | days | free |
+| 10 | **PMAT-485** — Track-4 real general PTX emitter (`nvptx64`) | first real emission | ~1 wk | nightly job |
+| 11 | **PMAT-486** — Track-4 `DiffExecEngine` trait + hook | unblocks GPU `DiffExec` | days | free |
+| 12 | **PMAT-483** — Track-4 `Strict` golden-text lock | codegen-drift guard (after 485) | hours | free |
+
+The Track-4 **GPU-execution** slices (**PMAT-487..491**, `needs_hardware`) are picked up **out-of-band** once the self-hosted runner is stood up (the on-box RTX 4090) — not part of the free-CI daily cadence. The queue is a *guide*, not a straitjacket: a session may reorder by live EV (e.g. take a quick capability win before a `~1 wk` item), but never picks a `needs_hardware` slice into the free-CI loop and never publishes crates.io off-Friday.
+
 **Frozen / deferred (explicitly lower EV — do *not* pick up as default work):**
 
 - **Diamond-depth UNIVERSAL ratchet is frozen at depth-13.** No depth-14+ broadening sweeps as default/background work — diminishing epistemic returns. **New contracts (R6) join at depth-1+ and are NOT forced to the depth-13 floor** — that is the whole point of R6's gate change; the old "a new contract must reach the existing UNIVERSAL floor" rule is **retired** (it *was* the treadmill — it made adding any contract cost 13 Diamond theorems). Depth broadening of *existing* contracts resumes only on explicit user request. See the freeze banner in [`sub/diamond-taxonomy.md`](sub/diamond-taxonomy.md).
