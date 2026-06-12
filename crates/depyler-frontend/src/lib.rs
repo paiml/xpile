@@ -44,6 +44,16 @@ use rustpython_parser::Parse;
 /// and (c) propagate `BigInt` typing through identifier references so
 /// the slow path of `C-PY-INT-ARITH` (PMAT-012) is taken when the user
 /// annotates any param as `BigInt`.
+/// PMAT-471 (R2) + PMAT-474 (R5): a top-level function's signature,
+/// collected in a module pre-pass. `ret` types cross-function calls
+/// (R2); `params` (declared parameter names, in order) lets `f(x=1,
+/// y=2)` keyword calls be reordered to positional at lowering (R5).
+#[derive(Clone)]
+struct FnSig {
+    ret: Type,
+    params: Vec<String>,
+}
+
 struct LoweringCtx {
     fn_name: String,
     /// The declared (or inferred-at-construction) return type of the
@@ -71,7 +81,7 @@ struct LoweringCtx {
     /// return type instead of the old hardcoded `Type::I64` fallback
     /// (which silently emitted `let d: i64` and broke rustc). Shared
     /// across all functions in the module via `Rc`.
-    signatures: Rc<HashMap<String, Type>>,
+    signatures: Rc<HashMap<String, FnSig>>,
 }
 
 impl LoweringCtx {
@@ -80,7 +90,7 @@ impl LoweringCtx {
         fn_return_type: Type,
         params: &[Param],
         body: &[ast::Stmt],
-        signatures: Rc<HashMap<String, Type>>,
+        signatures: Rc<HashMap<String, FnSig>>,
     ) -> Self {
         let bound: HashSet<String> = params.iter().map(|p| p.name.clone()).collect();
         let name_types: HashMap<String, Type> = params
@@ -300,11 +310,13 @@ impl Frontend for PythonFrontend {
         let suite = ast::Suite::parse(source, &source_name)
             .map_err(|e| FrontendError::Parse(format!("{}: {}", source_name, e)))?;
 
-        // PMAT-471 (R2): pre-pass — record every top-level function's
-        // declared return type so cross-function calls type correctly
-        // (a leniently-unparseable annotation falls back to I64; the
-        // real per-function lowering below reports a precise error).
-        let mut sig_map: HashMap<String, Type> = HashMap::new();
+        // PMAT-471 (R2) + PMAT-474 (R5): pre-pass — record every
+        // top-level function's declared return type (so cross-function
+        // calls type correctly) and its ordered parameter names (so
+        // `f(x=1, y=2)` keyword calls reorder to positional). A
+        // leniently-unparseable return annotation falls back to I64;
+        // the per-function lowering below reports a precise error.
+        let mut sig_map: HashMap<String, FnSig> = HashMap::new();
         for stmt in &suite {
             if let ast::Stmt::FunctionDef(f) = stmt {
                 let ret = match f.returns.as_ref() {
@@ -313,7 +325,8 @@ impl Frontend for PythonFrontend {
                         parse_type_annotation(f.name.as_str(), "return", ann).unwrap_or(Type::I64)
                     }
                 };
-                sig_map.insert(f.name.to_string(), ret);
+                let params = f.args.args.iter().map(|a| a.def.arg.to_string()).collect();
+                sig_map.insert(f.name.to_string(), FnSig { ret, params });
             }
         }
         let signatures = Rc::new(sig_map);
@@ -368,7 +381,7 @@ fn is_future_annotations_import(stmt: &ast::Stmt) -> bool {
 
 fn lower_top_level_stmt(
     stmt: ast::Stmt,
-    signatures: Rc<HashMap<String, Type>>,
+    signatures: Rc<HashMap<String, FnSig>>,
 ) -> Result<Function, FrontendError> {
     match stmt {
         ast::Stmt::FunctionDef(f) => lower_function_def(f, signatures),
@@ -381,7 +394,7 @@ fn lower_top_level_stmt(
 
 fn lower_function_def(
     f: ast::StmtFunctionDef,
-    signatures: Rc<HashMap<String, Type>>,
+    signatures: Rc<HashMap<String, FnSig>>,
 ) -> Result<Function, FrontendError> {
     if !f.decorator_list.is_empty() {
         return Err(FrontendError::Lower(format!(
@@ -1585,6 +1598,79 @@ fn desugar_list_comp(
     ])
 }
 
+/// PMAT-474 (R5): rewrite a call with keyword arguments `f(x=1, y=2)`
+/// into a plain positional call using the callee's declared parameter
+/// order (from the module signature table). Calls without keywords pass
+/// through unchanged. Default arguments are not supported, so every
+/// parameter must be supplied (positionally or by keyword).
+fn reorder_kwargs_to_positional(
+    ctx: &LoweringCtx,
+    call: ast::ExprCall,
+) -> Result<ast::ExprCall, FrontendError> {
+    if call.keywords.is_empty() {
+        return Ok(call);
+    }
+    if call.keywords.iter().any(|k| k.arg.is_none()) {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` uses `**kwargs` unpacking in a call — not supported",
+            ctx.fn_name
+        )));
+    }
+    let callee = match call.func.as_ref() {
+        ast::Expr::Name(n) => n.id.to_string(),
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` passes keyword args to a non-Name callee — only `f(x=…)` to a top-level function is supported",
+                ctx.fn_name
+            )));
+        }
+    };
+    let sig = ctx.signatures.get(&callee).ok_or_else(|| {
+        FrontendError::Lower(format!(
+            "function `{}` passes keyword args to unknown function `{callee}` — only top-level functions in this module support keyword calls",
+            ctx.fn_name
+        ))
+    })?;
+    let n_pos = call.args.len();
+    if n_pos > sig.params.len() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` calls `{callee}` with {n_pos} positional args but it declares {} params",
+            ctx.fn_name,
+            sig.params.len()
+        )));
+    }
+    // Positional args fill params[0..n_pos]; each remaining param is
+    // filled from its matching keyword (in declared order).
+    let mut new_args = call.args.clone();
+    for pname in &sig.params[n_pos..] {
+        match call
+            .keywords
+            .iter()
+            .find(|k| k.arg.as_ref().map(|a| a.as_str()) == Some(pname.as_str()))
+        {
+            Some(k) => new_args.push(k.value.clone()),
+            None => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` calls `{callee}` missing argument `{pname}` — default arguments are not supported at v0.2.0 (supply every argument)",
+                    ctx.fn_name
+                )));
+            }
+        }
+    }
+    if call.keywords.len() != sig.params.len() - n_pos {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` calls `{callee}` with a keyword naming an unknown parameter or one already filled positionally",
+            ctx.fn_name
+        )));
+    }
+    Ok(ast::ExprCall {
+        range: call.range,
+        func: call.func,
+        args: new_args,
+        keywords: Vec::new(),
+    })
+}
+
 /// PMAT-466 (v0.2.0 Track 1.C): lower an annotated local assignment
 /// `name: T = value`. The annotation is authoritative for the
 /// binding's type — notably, an annotated empty dict
@@ -1842,13 +1928,17 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // (e.g. `make_dict()` → Type::Dict, not the old I64 fallback
         // that silently emitted `let d: i64`). The table includes the
         // enclosing function, so self-recursion is covered too.
-        Expr::Call { callee, .. } => ctx.signatures.get(callee).cloned().unwrap_or_else(|| {
-            if callee == &ctx.fn_name {
-                ctx.fn_return_type.clone()
-            } else {
-                Type::I64
-            }
-        }),
+        Expr::Call { callee, .. } => ctx
+            .signatures
+            .get(callee)
+            .map(|s| s.ret.clone())
+            .unwrap_or_else(|| {
+                if callee == &ctx.fn_name {
+                    ctx.fn_return_type.clone()
+                } else {
+                    Type::I64
+                }
+            }),
         Expr::UnOp { op, operand } => match op {
             UnOp::Neg => infer_type_in_ctx(ctx, operand),
             UnOp::Not => Type::Bool,
@@ -2026,6 +2116,9 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                 }
             }
+            // PMAT-474 (R5): reorder keyword args to positional using
+            // the module signature table, then lower as a plain call.
+            let call = reorder_kwargs_to_positional(ctx, call)?;
             lower_call(call)
         }
         // `k in d` / `k not in d` → `Expr::DictContains` (wrapped in
