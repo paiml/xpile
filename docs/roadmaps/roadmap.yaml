@@ -931,6 +931,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Type::Unit + Expr::Unit. A -> None function no longer requires a trailing return expr: its last statement is lowered as a regular (side-effecting) statement and the body evaluates to the unit value Expr::Unit. Rust+Ruchy emit fn <name>(...) -> () { ...; () }; the -> None annotation parses (as the None constant / Name) to Type::Unit. In-place-mutation receivers still lifted to mut params (the void early-return path applies the lift too). Lean refuses Type::Unit at emit_type (side-effecting void has no total-function encoding). DEFERRED: caller-visible arg mutation (value semantics takes the arg by value, so a mutation inside the void fn isn't observed by the caller — &mut aliasing is a v0.3.0 sub-track); an explicit return inside a void fn flows through the early-return error path (bare/early returns deferred). Touched Type (emit_type x3) + Expr (int-arith, infer x2, emit x3, lean collect) match sites compiler-guided. rustc round-trip void_fn.py: check_pos(5) returns (), check_pos(-1) panics (assert), put(...) compiles+runs. FREE CI. SHIPPED v0.1.98."
+- id: PMAT-502BM
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bm: [Tranche2] early returns / guard clauses + terminal if/elif/else'
+  status: high
+  priority: high
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "The Python frontend previously required leading-stmts + a single trailing return expr; any earlier return errored (even though meta-HIR Stmt::Return + the backend emit existed for the C frontend). Two additions: (1) GUARD-CLAUSE EARLY RETURNS — a non-last return <expr> (e.g. inside an if) lowers to Stmt::Return -> return <expr>;, with the function's real trailing return after; (2) TERMINAL if/elif/else — when the LAST statement is an exhaustive if/elif/else whose every branch is a single return <expr>, it lowers to the trailing return via a (possibly nested) Expr::IfExpr (new terminal_if_as_expr helper recurses for elif; cond must be Bool; else required). Bare return (no value) deferred. Lean refuses Stmt::Return. rustc round-trip early_return.py (cross-checked vs python3): sign(5/-3/0)->1/-1/0 (if/elif/else), abs_val(-4)->4 (if/else), guard(-2/5)->0/6 (guard clause). FREE CI. SHIPPED v0.1.99."
 - id: PMAT-465
   github_issue: 496
   item_type: task
