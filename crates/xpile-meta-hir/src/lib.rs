@@ -232,6 +232,9 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::NumBuiltin { args, .. } => args.iter().any(expr_has_int_arith),
         // PMAT-498b: sum — recurse into the list expression.
         Expr::Sum { list, .. } => expr_has_int_arith(list),
+        // PMAT-500: set literal / membership — recurse defensively.
+        Expr::SetLit(elems) => elems.iter().any(expr_has_int_arith),
+        Expr::SetContains { set, elem } => expr_has_int_arith(set) || expr_has_int_arith(elem),
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -675,6 +678,10 @@ pub enum Type {
     /// Governing contract: `C-XLATE-PY-LIST-TO-VEC` (already QUORUM
     /// at depth-13).
     List(Box<Type>),
+    /// `Type::Set(Box<Type>)` represents Python `set[T]` and lowers to a
+    /// Rust/Ruchy `std::collections::HashSet<T>`. PMAT-500 (Tranche 2),
+    /// read-side first cut (literal + membership). Lean refuses.
+    Set(Box<Type>),
     /// `Type::Tuple(Vec<Type>)` represents Python `tuple[T0, T1, ...]` and
     /// lowers to a Rust/Ruchy anonymous tuple `(T0, T1, ...)`. PMAT-494
     /// (sprint), first cut: fixed-arity heterogeneous tuples in return /
@@ -858,6 +865,12 @@ pub enum Expr {
     ///   * Lean: refuses at v0.2.0 first cut.
     ///   * Shell: refuses.
     DictContains { dict: Box<Expr>, key: Box<Expr> },
+    /// Set membership — Python `x in s`. PMAT-500 (Tranche 2). Result
+    /// types as `Type::Bool`. Rust/Ruchy emit `<set>.contains(&(<elem>))`;
+    /// Lean refuses. The frontend chooses this over [`Expr::DictContains`]
+    /// by the RHS type (`Type::Set` → `SetContains`, `Type::Dict` →
+    /// `DictContains`).
+    SetContains { set: Box<Expr>, elem: Box<Expr> },
     /// Homogeneous list literal — Python `[1, 2, 3]`. PMAT-455,
     /// v0.2.0 Track 1.B foundation.
     ///
@@ -874,6 +887,12 @@ pub enum Expr {
     ///     `List` literal syntax)
     ///   * Shell refuses (lists aren't a POSIX construct)
     ListLit(Vec<Expr>),
+    /// Set literal — Python `{1, 2, 3}`. PMAT-500 (Tranche 2). All
+    /// elements type identically. Rust/Ruchy emit a `HashSet`-init block
+    /// `{ let mut s = HashSet::new(); s.insert(e); … s }`; Lean refuses.
+    /// Result types as [`Type::Set`]. (Empty `set()` / `.add()` mutation
+    /// follow as their own slice; `{}` is an empty *dict*, not a set.)
+    SetLit(Vec<Expr>),
     /// Tuple literal — Python `(a, b)` / multiple-return `return a, b`.
     /// PMAT-494 (sprint). Elements may be heterogeneous (unlike
     /// [`Expr::ListLit`]). Rust/Ruchy emit `(e0, e1, ...)`; Lean refuses

@@ -1203,6 +1203,28 @@ fn main() {
     assert_rustc_runs("slicing", &rust, driver);
 }
 
+/// PMAT-500 (Tranche 2): sets — literal `{a, b, c}` → `HashSet`-init block,
+/// `x in s` / `x not in s` → `s.contains(&(x))`.
+#[test]
+fn sets_literal_and_membership() {
+    let rust = xpile_transpile_to_rust("sets.py");
+    assert!(
+        rust.contains("HashSet") && rust.contains(".contains(&("),
+        "expected HashSet literal + membership, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert!(is_vowel(String::from("a")));
+    assert!(!is_vowel(String::from("z")));
+    assert!(is_small(2));
+    assert!(!is_small(9));
+    assert!(not_member(5));
+    assert!(!not_member(20));
+}
+"#;
+    assert_rustc_runs("sets", &rust, driver);
+}
+
 /// PMAT-502 (Tranche 2): general `Stmt::If` with side-effecting branches.
 /// The canonical histogram (`if w in freq: freq[w] += 1 else: freq[w] = 1`)
 /// — branches mutate a dict, which the if-as-let form rejected.

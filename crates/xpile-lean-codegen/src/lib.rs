@@ -465,6 +465,16 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 collect_idents(v, out);
             }
         }
+        // PMAT-500: set literal / membership — recurse into sub-exprs.
+        Expr::SetLit(elems) => {
+            for e in elems {
+                collect_idents(e, out);
+            }
+        }
+        Expr::SetContains { set, elem } => {
+            collect_idents(set, out);
+            collect_idents(elem, out);
+        }
         // PMAT-457: indexed access — recurse into both sides.
         Expr::Index { collection, index } => {
             collect_idents(collection, out);
@@ -571,6 +581,14 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), LeanCodegenError> {
             out.push_str(" × ");
             emit_type(out, v_ty)?;
             out.push(')');
+        }
+        // PMAT-500: Python sets deferred in the Lean lane at first cut.
+        Type::Set(_) => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python sets (set[T]) are not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
         }
         // PMAT-494: Python tuples deferred in the Lean lane at first cut
         // (Prod encoding + multi-return shape follow) — refuse with a
@@ -893,6 +911,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         // panic-on-absent lookup or O(1) keyed access; a faithful
         // encoding needs the `Std.HashMap` upgrade that also unblocks
         // Lean iteration/mutation. Deferred to v0.3.0; refuse clearly.
+        // PMAT-500: sets deferred in the Lean lane at first cut.
+        Expr::SetLit(_) | Expr::SetContains { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python sets ({a, b} / `x in s`) are not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
         Expr::DictGet { .. } | Expr::DictGetOr { .. } | Expr::DictContains { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "dict operations (`d[k]`, `d.get(k, default)`, `k in d`) require the \

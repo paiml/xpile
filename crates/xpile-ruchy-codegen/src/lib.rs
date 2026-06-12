@@ -396,6 +396,12 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
             emit_type(out, v_ty)?;
             out.push('>');
         }
+        // PMAT-500: Ruchy → Rust `HashSet<T>`.
+        Type::Set(elem_ty) => {
+            out.push_str("std::collections::HashSet<");
+            emit_type(out, elem_ty)?;
+            out.push('>');
+        }
         // PMAT-494: Ruchy → Rust `(T0, T1, ...)`.
         Type::Tuple(elems) => {
             out.push('(');
@@ -608,6 +614,22 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, dict, mode)?;
             out.push_str(".contains_key(&(");
             emit_expr(out, key, mode)?;
+            out.push_str("))");
+        }
+        // PMAT-500: Ruchy → Rust set literal + membership.
+        Expr::SetLit(elems) => {
+            out.push_str("{ let mut __xset = std::collections::HashSet::new(); ");
+            for e in elems {
+                out.push_str("__xset.insert(");
+                emit_expr(out, e, mode)?;
+                out.push_str("); ");
+            }
+            out.push_str("__xset }");
+        }
+        Expr::SetContains { set, elem } => {
+            emit_expr(out, set, mode)?;
+            out.push_str(".contains(&(");
+            emit_expr(out, elem, mode)?;
             out.push_str("))");
         }
         // PMAT-459 (v0.2.0 Track 1.B): Ruchy → Rust → `.len() as i64`.
