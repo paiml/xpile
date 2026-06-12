@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.9] — 2026-06-12
+
+Incremental release adding Python **keyword arguments** in calls
+(`f(x=1, y=2)`) — PMAT-474, the post-v0.1.4 audit's R5.
+
+- The module signature table (introduced for R2) is extended to record
+  each function's ordered parameter names (`FnSig { ret, params }`).
+  A call with keyword args is reordered to positional at lowering using
+  that order, then emitted as a plain positional call — no backend
+  change. `area(1, 2, h=4, w=3)` → `area(1, 2, 3, 4)`.
+- Exit (rustc round-trip): `mixed()` (`area(1, 2, h=4, w=3)`) → 10 and
+  `all_kw()` (`area(x=10, y=20, w=30, h=40)`) → 100.
+
+Every parameter must be supplied (positionally or by keyword) — default
+arguments and `**kwargs` are not supported (clear errors). Substrate
+unchanged at QUORUM. `transpile_e2e` at 81 tests.
+
+Install: `cargo install xpile` upgrades to 0.1.9.
+
 ## [0.1.8] — 2026-06-12
 
 Incremental release adding Python **list comprehensions**

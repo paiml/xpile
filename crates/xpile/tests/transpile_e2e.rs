@@ -232,6 +232,28 @@ fn xpile_transpile_to_rust(fixture_name: &str) -> String {
     String::from_utf8(out.stdout).expect("stdout is UTF-8")
 }
 
+/// PMAT-474 (R5): keyword arguments `f(x=1, y=2)` reorder to positional
+/// at lowering using the callee's declared parameter order.
+#[test]
+fn keyword_arguments_roundtrip() {
+    let rust = xpile_transpile_to_rust("kwargs.py");
+    assert!(
+        rust.contains("area(1i64, 2i64, 3i64, 4i64)"),
+        "`area(1, 2, h=4, w=3)` should reorder to positional w,h order:\n{rust}"
+    );
+    assert!(
+        rust.contains("area(10i64, 20i64, 30i64, 40i64)"),
+        "all-keyword call should reorder to declared param order:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(mixed(), 10i64);    // 1+2+3+4
+    assert_eq!(all_kw(), 100i64);  // 10+20+30+40
+}
+"#;
+    assert_rustc_runs("kwargs", &rust, driver);
+}
+
 /// PMAT-473 (R4): list comprehensions `[elem for var in iter]`
 /// materialise to `tmp = []` + a for-append loop, in both return
 /// position (hoisted to a temp) and assignment position.
