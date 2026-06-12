@@ -2396,6 +2396,40 @@ fn main() {
     assert_rustc_runs("list_comp_range", &rust, driver);
 }
 
+/// PMAT-502bb (Tranche 2): in-place dict merge `a.update(b)` →
+/// `a.extend((b).iter().map(|(k, v)| (k.clone(), v.clone())));` — merges
+/// `b` into `a` (overwriting), without consuming `b`.
+#[test]
+fn dict_update() {
+    let rust = xpile_transpile_to_rust("dict_update.py");
+    assert!(
+        rust.contains("a.extend((b).iter().map(|(__k, __v)| (__k.clone(), __v.clone())));"),
+        "update emission:\n{rust}"
+    );
+    assert!(
+        rust.contains("merge(mut a: std::collections::HashMap"),
+        "mut param:\n{rust}"
+    );
+    assert!(
+        rust.contains("let mut a: std::collections::HashMap"),
+        "mut local:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let mut a = std::collections::HashMap::new();
+    a.insert("x".to_string(), 1);
+    a.insert("y".to_string(), 2);
+    let mut b = std::collections::HashMap::new();
+    b.insert("y".to_string(), 20);
+    b.insert("z".to_string(), 3);
+    assert_eq!(merge(a, b.clone()), 3);
+    assert_eq!(b.len(), 2); // b not consumed
+    assert_eq!(merge_local(b), 2);
+}
+"#;
+    assert_rustc_runs("dict_update", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

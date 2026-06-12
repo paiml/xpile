@@ -822,6 +822,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Extends desugar_list_comp to accept a range(...) iterable (previously only list[T]). [elem for x in range(start, stop, step)] desugars to a counter loop: let mut t = []; let mut x = start; while (x <cmp> stop) { t.append(elem); x = x + step; } — mirroring the for-over-range desugaring (cmp = < for positive step, > for negative; step must be a non-zero integer literal). The optional if filter (PMAT-502ay) composes, wrapping the append in if cond { ... }. New comp_range_bounds helper extracts the 1-3 range args. List-iterable comps unchanged. Lean refuses (desugaring contains a loop). rustc round-trip list_comp_range.py: squares(4)->[0,1,4,9], odd_squares(4)->[1,4,9], from_one(5)->[1,2,3,4], assign_form(3)->3. FREE CI. SHIPPED v0.1.85."
+- id: PMAT-502BB
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bb: [Tranche2] in-place dict merge a.update(b)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Stmt::DictUpdate { dict_name, other } — the dict analogue of v0.1.75 list extend. a.update(b) (b any dict-typed expr) lowers to a.extend((<b>).iter().map(|(__k, __v)| (__k.clone(), __v.clone()))); in Rust+Ruchy, merging every entry of b into a (overwriting existing keys = Python update + HashMap::extend), receiver marked mut. Cloning each entry keeps b usable (Python update doesn't consume its arg). Frontend recognises it in try_lower_list_method_call (Dict receiver, 1 arg); mutability pre-pass counts update. Rounds out the dict-mutation surface (d[k]=v / del d[k] / pop / setdefault / update). Lean refuses (in-place mutation). rustc round-trip dict_update.py: merge({x:1,y:2},{y:20,z:3})->3 (overwrite+new, b survives), merge_local({y:20,z:3})->2 (local receiver). FREE CI. SHIPPED v0.1.86."
 - id: PMAT-465
   github_issue: 496
   item_type: task

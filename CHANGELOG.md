@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.86] — 2026-06-12
+
+Tranche-2 slice PMAT-502bb — Python **in-place dict merge** `a.update(b)`.
+
+New meta-HIR `Stmt::DictUpdate { dict_name, other }` — the dict analogue of the
+v0.1.75 list `extend`. `a.update(b)` (where `b` is any dict-typed expression)
+lowers to `a.extend((<b>).iter().map(|(__k, __v)| (__k.clone(), __v.clone())));` in
+Rust + Ruchy, merging every entry of `b` into `a` (overwriting existing keys,
+exactly Python `update` + `HashMap::extend`) and marking the receiver `mut`.
+Cloning each entry keeps `b` usable afterwards (Python `update` does not consume
+its argument). The frontend recognises it in `try_lower_list_method_call` (dict
+receiver, 1 arg) and the mutability pre-pass counts `update`. This rounds out the
+dict-mutation surface (`d[k]=v` / `del d[k]` / `pop` / `setdefault` / `update`).
+Lean refuses (in-place mutation). rustc round-trip `dict_update.py`:
+`merge({x:1,y:2},{y:20,z:3}) -> 3` (overwrite + new; `b` survives),
+`merge_local({y:20,z:3}) -> 2` (local receiver).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.85] — 2026-06-12
 
 Tranche-2 slice PMAT-502ba — Python **list comprehension over `range(...)`**

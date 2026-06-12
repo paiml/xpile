@@ -148,6 +148,8 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         Stmt::ListMutate { .. } => false,
         // PMAT-502aq: list.extend() — recurse into the other-list expr.
         Stmt::ListExtend { other, .. } => expr_has_int_arith(other),
+        // PMAT-502bb: dict.update() — recurse into the other-dict expr.
+        Stmt::DictUpdate { other, .. } => expr_has_int_arith(other),
         // PMAT-502ar: list.insert() — recurse into index and elem.
         Stmt::ListInsert { index, elem, .. } => {
             expr_has_int_arith(index) || expr_has_int_arith(elem)
@@ -579,6 +581,16 @@ pub enum Stmt {
     /// (true for every v0.2.0 element type). Lean refuses (in-place
     /// mutation, same gap as `ListAppend`).
     ListExtend { list_name: String, other: Expr },
+    /// In-place dict merge — Python `d.update(other)`. PMAT-502bb
+    /// (Tranche 2). Inserts every entry of `other` (a dict-typed
+    /// expression) into the receiver, overwriting existing keys (exactly
+    /// Python `update` + `HashMap::extend`). The receiver is marked
+    /// mutable. Rust/Ruchy emit
+    /// `<dict>.extend((<other>).iter().map(|(__k, __v)| (__k.clone(), __v.clone())));`
+    /// — cloning each entry keeps `other` usable afterwards (Python
+    /// `update` does not consume its argument). Lean refuses (in-place
+    /// mutation, same gap as `ListAppend`).
+    DictUpdate { dict_name: String, other: Expr },
     /// Positional list insertion — Python `xs.insert(i, x)`. PMAT-502ar
     /// (Tranche 2). Inserts `elem` before index `index`, shifting the
     /// tail right; the receiver is marked mutable. Rust/Ruchy emit
