@@ -1203,6 +1203,25 @@ fn main() {
     assert_rustc_runs("slicing", &rust, driver);
 }
 
+/// PMAT-495 (sprint): enumerate / zip in for-loops → `Stmt::ForEachPair`,
+/// emitting `for (i, x) in xs.iter().cloned().enumerate().map(...)` /
+/// `for (a, b) in xs.iter().cloned().zip(ys.iter().cloned())`.
+#[test]
+fn enumerate_zip_emitted_rust_paired_loops() {
+    let rust = xpile_transpile_to_rust("enumerate_zip.py");
+    assert!(
+        rust.contains(".enumerate().map(") && rust.contains(".zip("),
+        "expected enumerate/zip paired-loop emissions, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sum_indexed(vec![10, 20, 30]), 80);
+    assert_eq!(dot(vec![1, 2, 3], vec![4, 5, 6]), 32);
+}
+"#;
+    assert_rustc_runs("enumerate_zip", &rust, driver);
+}
+
 /// PMAT-450 — v0.2.0 Track 1.A: str-typed parameter passthrough.
 /// `def echo(name: str) -> str: return name` transpiles to
 /// `pub fn echo(name: String) -> String { name }`, exercises the

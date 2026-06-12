@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.23] — 2026-06-12
+
+Sprint slice PMAT-495 — Python **`enumerate` / `zip`** in `for` loops.
+
+New meta-HIR `Stmt::ForEachPair { first, second, iter, kind, body }` +
+`PairIterKind::{Enumerate, Zip(Expr)}`. `for i, x in enumerate(xs)` and
+`for a, b in zip(xs, ys)` (2-name tuple targets over list iterables) lower
+to `ForEachPair`; the frontend types each loop var (enumerate: `first`=`i64`
+index, `second`=elem; zip: elems of each list). Rust + Ruchy emit
+`for (i, x) in xs.iter().cloned().enumerate().map(|(i,e)| (i as i64, e))`
+and `for (a, b) in xs.iter().cloned().zip(ys.iter().cloned())`. Lean refuses.
+rustc round-trip `enumerate_zip.py`: `sum_indexed([10,20,30]) -> 80`,
+`dot([1,2,3],[4,5,6]) -> 32`.
+
+This consumed the last queued **capability** slice — the free-CI sprint
+queue (PMAT-481..486, 492..496) is now complete; **R6** (contract-integrity
++ Diamond-gate grandfather) and the **needs-hardware** Track-4 slices
+(PMAT-487..491) remain.
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.22] — 2026-06-12
 
 Sprint slice PMAT-486 (§30 Track 4) — the **`DiffExecEngine` interface +

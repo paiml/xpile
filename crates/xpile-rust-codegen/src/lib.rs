@@ -102,9 +102,9 @@ fn function_bigint_mode(f: &Function) -> bool {
             // PMAT-479 (R10): an early return introduces no BigInt
             // binding (bigint mode is set by params/lets/return type).
             Stmt::Assign { .. } | Stmt::Assert { .. } | Stmt::Return(_) => false,
-            Stmt::While { body, .. } | Stmt::ForEach { body, .. } => {
-                body.iter().any(stmt_has_bigint)
-            }
+            Stmt::While { body, .. }
+            | Stmt::ForEach { body, .. }
+            | Stmt::ForEachPair { body, .. } => body.iter().any(stmt_has_bigint),
             // PMAT-478 (R9): recurse both branches of an if/else.
             Stmt::If {
                 then_body,
@@ -262,6 +262,37 @@ fn emit_stmt_indented(
             write!(out, "{indent}for {var} in ")?;
             emit_expr(out, iter, mode)?;
             writeln!(out, ".{method}().cloned() {{")?;
+            let inner = format!("{indent}    ");
+            for s in body {
+                emit_stmt_indented(out, s, &inner, mode)?;
+            }
+            writeln!(out, "{indent}}}")?;
+            Ok(())
+        }
+        // PMAT-495: paired for-loop. enumerate → `(i as i64, e)`; zip →
+        // both iterators `.iter().cloned()`.
+        Stmt::ForEachPair {
+            first,
+            second,
+            iter,
+            kind,
+            body,
+        } => {
+            write!(out, "{indent}for ({first}, {second}) in ")?;
+            emit_expr(out, iter, mode)?;
+            match kind {
+                xpile_meta_hir::PairIterKind::Enumerate => {
+                    out.push_str(
+                        ".iter().cloned().enumerate().map(|(__i, __e)| (__i as i64, __e))",
+                    );
+                }
+                xpile_meta_hir::PairIterKind::Zip(other) => {
+                    out.push_str(".iter().cloned().zip(");
+                    emit_expr(out, other, mode)?;
+                    out.push_str(".iter().cloned())");
+                }
+            }
+            writeln!(out, " {{")?;
             let inner = format!("{indent}    ");
             for s in body {
                 emit_stmt_indented(out, s, &inner, mode)?;
