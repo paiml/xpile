@@ -240,6 +240,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::Concat { lhs, rhs } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
         // PMAT-502bg: list concatenation — recurse into both operands.
         Expr::ListConcat { lhs, rhs } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
+        // PMAT-502bh: str.format — recurse into each formatted arg.
+        Expr::StrFormat { args, .. } => args.iter().any(expr_has_int_arith),
         // PMAT-502am: formatted f-string field — recurse into the value.
         Expr::FormatSpec { value, .. } => expr_has_int_arith(value),
         // PMAT-492: string methods are str-domain; recurse into the
@@ -1180,6 +1182,18 @@ pub enum Expr {
     /// where `+` does not mutate either list). The result types as the
     /// list type. Lean refuses.
     ListConcat { lhs: Box<Expr>, rhs: Box<Expr> },
+    /// `"<fmt>".format(args…)` — Python `str.format` with **sequential**
+    /// `{}` placeholders. PMAT-502bh (Tranche 2). `fmt` is the (already
+    /// validated) format string; its `{}` placeholders map one-to-one to
+    /// `args`, and `{{` / `}}` are literal-brace escapes — identical
+    /// semantics to Rust's `format!`. Rust/Ruchy emit
+    /// `format!("<fmt>", <arg0>, …)` (the `fmt` re-escaped as a Rust
+    /// string literal via `{:?}`). First cut: `int` / `str` args only
+    /// (a `bool` formats `True`/`False` in Python vs `true`/`false` in
+    /// Rust, and a whole-number `float` drops its `.0` in Rust's
+    /// `Display` — both deferred). Indexed (`{0}`) / named (`{name}`) /
+    /// spec'd (`{:.2f}`) fields are rejected at the frontend. Lean refuses.
+    StrFormat { fmt: String, args: Vec<Expr> },
     /// A formatted f-string field — Python `{value:spec}` where `spec` is a
     /// static format spec (e.g. `.2f`, `05d`, `>10`). PMAT-502am (Tranche 2).
     /// `rust_spec` is the already-translated Rust format spec (the frontend

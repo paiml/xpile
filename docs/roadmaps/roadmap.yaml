@@ -886,6 +886,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::ListConcat { lhs, rhs } — the list-side companion of Expr::Concat (string +). When both operands of + type as Type::List, the frontend lowers to ListConcat (disambiguated from int + and str + by operand type, in BOTH the ctx-aware and context-free BinOp paths). Rust+Ruchy emit (<lhs>).iter().chain((<rhs>).iter()).cloned().collect::<Vec<_>>() — a fresh Vec consuming neither operand (Python + doesn't mutate either); result types as the list type. Previously xs + ys fell through to a checked-int BinOp typing as I64, failing the -> list[T] return check. Lean refuses. rustc round-trip list_concat.py: cat([1,2],[3,4])->[1,2,3,4], cat_lit()->[1,2,3,4], cat_len([1,2],[3,4,5])->5 (operands survive). FREE CI. SHIPPED v0.1.93."
+- id: PMAT-502BH
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bh: [Tranche2] str.format with sequential {} placeholders'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::StrFormat { fmt, args }. \"<fmt>\".format(args...) over a STRING-LITERAL receiver lowers to format!(\"<fmt>\", args...) in Rust+Ruchy — Python sequential {} placeholders + {{/}} escapes map one-to-one to Rust format!, so the validated fmt is re-emitted verbatim via {:?} (Rust string-literal escape). New count_simple_placeholders validator: every field must be a bare {} (count == arg count), rejects indexed {0}/named {name}/spec {:.2f} with a precise error. First cut int/str args only (bool True/False vs true/false, whole-number float 2.0->2 in Rust Display both deferred). Lean refuses. rustc round-trip str_format.py (cross-checked vs python3): one(42)->'val=42', two(3,7)->'3 + 7 done', with_str('x',5)->'x: 5', escaped(9)->'{literal} 9'. FREE CI. SHIPPED v0.1.94."
 - id: PMAT-465
   github_issue: 496
   item_type: task
