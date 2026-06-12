@@ -842,6 +842,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, elem, mode)?;
             out.push_str("))");
         }
+        // PMAT-502o: Python `sub in s` (str) → `(s).contains(&(sub)[..])`.
+        Expr::StrContains { haystack, needle } => {
+            out.push('(');
+            emit_expr(out, haystack, mode)?;
+            out.push_str(").contains(&(");
+            emit_expr(out, needle, mode)?;
+            out.push_str(")[..])");
+        }
         // PMAT-502g: set algebra → `(lhs).<method>(&(rhs)).cloned().collect()`
         // into a fresh `HashSet`.
         Expr::SetOp { lhs, op, rhs } => {

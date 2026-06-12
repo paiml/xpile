@@ -499,6 +499,11 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(set, out);
             collect_idents(elem, out);
         }
+        // PMAT-502o: str substring containment — recurse into both sides.
+        Expr::StrContains { haystack, needle } => {
+            collect_idents(haystack, out);
+            collect_idents(needle, out);
+        }
         // PMAT-502g: set algebra — recurse into both operands.
         Expr::SetOp { lhs, rhs, .. } => {
             collect_idents(lhs, out);
@@ -1006,6 +1011,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             return Err(LeanCodegenError::Unsupported(
                 "Python sets ({a, b} / `x in s` / `a | b` / `a & b` / `a - b` / `a ^ b`) \
                  are not yet supported in the Lean lane — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502o: str substring containment deferred in the Lean lane.
+        Expr::StrContains { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python `sub in s` (string substring containment) is not yet supported in \
+                 the Lean lane — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
         }

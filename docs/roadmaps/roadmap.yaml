@@ -471,6 +471,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Pure-frontend desugar (no new IR). divmod(a, b) over two ints -> TupleLit([a FloorDiv b, a Mod b]) reusing the existing floor-div + mod ops, so it's consistent with //  / % by construction and both halves inherit C-PY-INT-ARITH (checked_div_euclid / checked_rem_euclid). Works as return (-> tuple[int,int]) and via unpack (q, r = divmod(a, b)). a/b are pure v0.1.0 exprs so double-eval is sound. Float divmod deferred. rustc round-trip divmod_builtin.py: split_div(17,5)->(3,2), combine(17,5)->302. FREE CI. SHIPPED v0.1.46."
+- id: PMAT-502O
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502o: [Tranche2] substring containment sub in s'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::StrContains { haystack, needle }. When RHS of in/not in is Str, sub in s -> (<s>).contains(&(<sub>)[..]) (and not in wraps in !) in Rust+Ruchy; result Bool. Frontend selects over SetContains/DictContains by RHS type. Lean refuses. Fills the last in-operator gap (dict+set already shipped). rustc round-trip str_contains.py: has(hello,ell)->true, has(hello,z)->false, lacks(hello,z)->true, has_literal(hello)->true. FREE CI. SHIPPED v0.1.47."
 - id: PMAT-465
   github_issue: 496
   item_type: task

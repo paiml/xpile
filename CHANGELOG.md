@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.47] — 2026-06-12
+
+Tranche-2 slice PMAT-502o — Python **substring containment** `sub in s`.
+
+New meta-HIR `Expr::StrContains { haystack, needle }`. When the right operand of
+`in` / `not in` is a `Str`, `sub in s` lowers to `(<s>).contains(&(<sub>)[..])`
+(and `not in` wraps it in `!`) in Rust + Ruchy; result types as `Bool`. The
+frontend selects this over `SetContains`/`DictContains` by the RHS type. Lean
+refuses. This fills the last `in`-operator gap (dict + set already shipped).
+rustc round-trip `str_contains.py`: `has("hello","ell") -> true`,
+`has("hello","z") -> false`, `lacks("hello","z") -> true`,
+`has_literal("hello") -> true` (literal `"lo"`).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.46] — 2026-06-12
 
 Tranche-2 slice PMAT-502n — Python **`divmod(a, b)`**.

@@ -249,6 +249,10 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-500: set literal / membership — recurse defensively.
         Expr::SetLit(elems) => elems.iter().any(expr_has_int_arith),
         Expr::SetContains { set, elem } => expr_has_int_arith(set) || expr_has_int_arith(elem),
+        // PMAT-502o: str substring containment — recurse into both sides.
+        Expr::StrContains { haystack, needle } => {
+            expr_has_int_arith(haystack) || expr_has_int_arith(needle)
+        }
         // PMAT-502g: set algebra — recurse into both operands.
         Expr::SetOp { lhs, rhs, .. } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
@@ -900,6 +904,15 @@ pub enum Expr {
     /// by the RHS type (`Type::Set` → `SetContains`, `Type::Dict` →
     /// `DictContains`).
     SetContains { set: Box<Expr>, elem: Box<Expr> },
+    /// String substring containment — Python `needle in haystack` when
+    /// `haystack` is a `Str`. PMAT-502o (Tranche 2). Rust/Ruchy emit
+    /// `(<haystack>).contains(&(<needle>)[..])`; result types as `Bool`.
+    /// The frontend chooses this over [`Expr::SetContains`]/
+    /// [`Expr::DictContains`] by the RHS type (`Type::Str`). Lean refuses.
+    StrContains {
+        haystack: Box<Expr>,
+        needle: Box<Expr>,
+    },
     /// Homogeneous list literal — Python `[1, 2, 3]`. PMAT-455,
     /// v0.2.0 Track 1.B foundation.
     ///

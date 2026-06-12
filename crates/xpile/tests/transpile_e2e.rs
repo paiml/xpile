@@ -1389,6 +1389,28 @@ fn main() {
     assert_rustc_runs("divmod_builtin", &rust, driver);
 }
 
+/// PMAT-502o (Tranche 2): substring containment `sub in s` (str) →
+/// `(s).contains(&(sub)[..])`; `not in` wraps it in `!`.
+#[test]
+fn str_contains_substring() {
+    let rust = xpile_transpile_to_rust("str_contains.py");
+    assert!(
+        rust.contains(".contains(&(") && rust.contains(")[..])"),
+        "expected substring-contains emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert!(has(String::from("hello"), String::from("ell")));
+    assert!(!has(String::from("hello"), String::from("z")));
+    assert!(lacks(String::from("hello"), String::from("z")));
+    assert!(!lacks(String::from("hello"), String::from("ell")));
+    assert!(has_literal(String::from("hello")));
+    assert!(!has_literal(String::from("hi")));
+}
+"#;
+    assert_rustc_runs("str_contains", &rust, driver);
+}
+
 /// PMAT-502h (Tranche 2): 1-arg `min(xs)`/`max(xs)` over a `list[float]` →
 /// a fold (`fold(f64::INFINITY, f64::min)` / `fold(f64::NEG_INFINITY, f64::max)`).
 #[test]
