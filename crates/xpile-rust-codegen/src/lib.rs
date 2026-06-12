@@ -512,6 +512,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     emit_expr(out, &args[0], mode)?;
                     out.push_str(")[..])");
                 }
+                // PMAT-492c: `.split(sep)` → Vec<String>.
+                StrMethodOp::Split => {
+                    out.push_str(".split(&(");
+                    emit_expr(out, &args[0], mode)?;
+                    out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()");
+                }
             }
         }
         // PMAT-455 (v0.2.0 Track 1.B): Python list literal → Rust

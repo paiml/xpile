@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.17] — 2026-06-12
+
+Sprint slice — Python **`str.split(sep)`**, extending `Expr::StrMethod`.
+
+`s.split(sep)` lowers to `StrMethodOp::Split` (1 arg), typing as
+`list[str]` (`Type::List(Str)`) and emitting
+`<recv>.split(&(<sep>)[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()`
+in Rust + Ruchy — owned `Vec<String>` matching the list lane's owned posture.
+Lean still refuses. rustc round-trip fixture `str_methods.py` extended with
+`words("a b c") -> ["a","b","c"]`.
+
+Only **`join`** now remains of the string-method family — deferred because it
+inverts the receiver/arg (`sep.join(xs)` → Rust `xs.join(sep)`), so it gets
+its own slice.
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.16] — 2026-06-12
 
 Sprint slice — Python **`startswith`/`endswith`** string predicates,
