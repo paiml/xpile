@@ -2511,6 +2511,30 @@ fn main() {
     assert_rustc_runs("closure_local", &rust, driver);
 }
 
+/// PMAT-504b (Tranche 2): multi-parameter + nullary closures — `f =
+/// lambda x, y: …` → `let f = |x: i64, y: i64| { … };`; `lambda: 42` → `||`.
+#[test]
+fn closure_multiparam() {
+    let rust = xpile_transpile_to_rust("closure_multiparam.py");
+    assert!(
+        rust.contains("let f = |x: i64, y: i64| {"),
+        "two-param closure:\n{rust}"
+    );
+    assert!(rust.contains("let g = || {"), "nullary closure:\n{rust}");
+    assert!(
+        rust.contains("let h = |x: i64, y: i64, z: i64| {"),
+        "three-param closure:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(add(3, 4), 7);
+    assert_eq!(nullary(), 42);
+    assert_eq!(combine(2, 3, 5), 11);
+}
+"#;
+    assert_rustc_runs("closure_multiparam", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

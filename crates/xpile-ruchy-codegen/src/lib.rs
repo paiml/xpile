@@ -221,15 +221,16 @@ fn emit_stmt_indented(
             writeln!(out, ";")?;
             Ok(())
         }
-        // PMAT-504: closure binding, matching the Rust backend.
-        Stmt::ClosureLet {
-            name,
-            param,
-            param_ty,
-            body,
-        } => {
-            write!(out, "{indent}let {name} = |{param}: ")?;
-            emit_type(out, param_ty)?;
+        // PMAT-504: closure binding (0+ params), matching the Rust backend.
+        Stmt::ClosureLet { name, params, body } => {
+            write!(out, "{indent}let {name} = |")?;
+            for (i, (p, ty)) in params.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                write!(out, "{p}: ")?;
+                emit_type(out, ty)?;
+            }
             out.push_str("| { ");
             emit_expr(out, body, mode)?;
             writeln!(out, " }};")?;

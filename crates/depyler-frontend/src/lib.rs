@@ -2775,43 +2775,52 @@ fn desugar_closure_assign(
     name: &str,
     lam: &ast::ExprLambda,
 ) -> Result<Stmt, FrontendError> {
-    if lam.args.args.len() != 1
-        || !lam.args.posonlyargs.is_empty()
+    if !lam.args.posonlyargs.is_empty()
         || !lam.args.kwonlyargs.is_empty()
         || lam.args.vararg.is_some()
         || lam.args.kwarg.is_some()
     {
         return Err(FrontendError::Lower(format!(
-            "function `{}` binds a lambda with an unsupported parameter list; v0.2.0 supports a single positional parameter (`name = lambda x: …`)",
+            "function `{}` binds a lambda with an unsupported parameter list (posonly/kwonly/*args/**kwargs); v0.2.0 supports plain positional parameters (`name = lambda x, y: …`)",
             ctx.fn_name
         )));
     }
-    let param = lam.args.args[0].def.arg.to_string();
-    // First cut: the parameter types as `i64` (covers arithmetic /
-    // comparison bodies). Bind it for the body's inference, then restore
-    // the prior binding so the closure-local name doesn't leak.
-    let param_ty = Type::I64;
-    let prev_bound = ctx.bound.contains(&param);
-    let prev_ty = ctx.name_types.get(&param).cloned();
-    ctx.bound.insert(param.clone());
-    ctx.name_types.insert(param.clone(), param_ty.clone());
+    // First cut: every parameter types as `i64` (covers arithmetic /
+    // comparison bodies; 0+ params). Bind them for the body's inference,
+    // then restore the prior bindings so the closure-local names don't leak.
+    let param_names: Vec<String> = lam
+        .args
+        .args
+        .iter()
+        .map(|a| a.def.arg.to_string())
+        .collect();
+    let saved: Vec<(bool, Option<Type>)> = param_names
+        .iter()
+        .map(|p| (ctx.bound.contains(p), ctx.name_types.get(p).cloned()))
+        .collect();
+    for p in &param_names {
+        ctx.bound.insert(p.clone());
+        ctx.name_types.insert(p.clone(), Type::I64);
+    }
     let body = lower_expr_in_ctx(ctx, (*lam.body).clone())?;
     let ret_ty = infer_type_in_ctx(ctx, &body);
-    if prev_bound {
-        if let Some(t) = prev_ty {
-            ctx.name_types.insert(param.clone(), t);
+    for (p, (prev_bound, prev_ty)) in param_names.iter().zip(saved.into_iter()) {
+        if prev_bound {
+            if let Some(t) = prev_ty {
+                ctx.name_types.insert(p.clone(), t);
+            }
+        } else {
+            ctx.bound.remove(p);
+            ctx.name_types.remove(p);
         }
-    } else {
-        ctx.bound.remove(&param);
-        ctx.name_types.remove(&param);
     }
-    // Record the closure binding so `name(arg)` types as `ret_ty`.
+    // Record the closure binding so `name(args…)` types as `ret_ty`.
     ctx.closure_returns.insert(name.to_string(), ret_ty);
     ctx.bound.insert(name.to_string());
+    let params: Vec<(String, Type)> = param_names.into_iter().map(|p| (p, Type::I64)).collect();
     Ok(Stmt::ClosureLet {
         name: name.to_string(),
-        param,
-        param_ty,
+        params,
         body,
     })
 }

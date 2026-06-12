@@ -435,20 +435,19 @@ pub enum Stmt {
     /// `name = value;` — reassignment of a name previously introduced
     /// by [`Stmt::Let`]. PMAT-006.
     Assign { name: String, value: Expr },
-    /// `let name = |param: param_ty| { body };` — a first-class closure
+    /// `let name = |p0: t0, p1: t1, …| { body };` — a first-class closure
     /// bound to a local. PMAT-504 (Tranche 2). The Python source is
-    /// `name = lambda param: <body>`. First cut: a single parameter,
-    /// emitted with its inferred type (`param_ty`); the return type is
-    /// left to Rust's inference (no `-> R` annotation). The closure is
-    /// then callable as `name(arg)` via the existing [`Expr::Call`]
-    /// machinery (the frontend records the return type so the call site
-    /// types correctly). Rust/Ruchy emit
-    /// `let <name> = |<param>: <param_ty>| { <body> };`; Lean refuses
-    /// (first-class functions are a v0.3.0 sub-track).
+    /// `name = lambda p0, p1, …: <body>`. Each parameter carries its
+    /// inferred type (`params: Vec<(name, type)>`, possibly empty for a
+    /// nullary `lambda: <body>`); the return type is left to Rust's
+    /// inference (no `-> R` annotation). The closure is then callable as
+    /// `name(args…)` via the existing [`Expr::Call`] machinery (the
+    /// frontend records the return type so the call site types
+    /// correctly). Rust/Ruchy emit `let <name> = |<params>| { <body> };`;
+    /// Lean refuses (first-class functions are a v0.3.0 sub-track).
     ClosureLet {
         name: String,
-        param: String,
-        param_ty: Type,
+        params: Vec<(String, Type)>,
         body: Expr,
     },
     /// Tuple-destructuring binding — Python `a, b = <expr>`. PMAT-494b

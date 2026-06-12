@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.90] — 2026-06-12
+
+Tranche-2 slice PMAT-504b — **multi-parameter + nullary closures**.
+
+Generalizes the v0.1.89 closure binding from a single parameter to any arity. The
+meta-HIR `Stmt::ClosureLet` now carries `params: Vec<(String, Type)>` (replacing
+the single `param`/`param_ty`), so `f = lambda x, y: x + y` emits
+`let f = |x: i64, y: i64| { … };`, `g = lambda: 42` emits `let g = || { 42i64 };`,
+and so on. Each parameter still types as `i64` at this cut; all are bound for the
+body's inference and restored afterwards. The call site (`f(a, b)`) is unchanged —
+it already passes all positional args through `Expr::Call`. Lean refuses. rustc
+round-trip `closure_multiparam.py`: `add(3,4) -> 7`, `nullary() -> 42`,
+`combine(2,3,5) -> 11`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.89] — 2026-06-12
 
 Tranche-2 slice PMAT-504 — Python **first-class closures** (lambda assigned to a
