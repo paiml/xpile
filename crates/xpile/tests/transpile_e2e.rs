@@ -2456,6 +2456,35 @@ fn main() {
     assert_rustc_runs("slice_step", &rust, driver);
 }
 
+/// PMAT-502bd (Tranche 2): dict + set comprehensions over `range(...)` →
+/// a counter while-loop around the dict/set accumulator (same shape as
+/// the list-comp range branch), with optional `if` filter.
+#[test]
+fn dict_set_comp_range() {
+    let rust = xpile_transpile_to_rust("dict_set_comp_range.py");
+    // Range comp desugars to a counter while-loop, not a ForEach.
+    assert!(
+        rust.contains("let mut x: i64 = 0i64;") && rust.contains("while (x < n) {"),
+        "range counter loop:\n{rust}"
+    );
+    assert!(
+        rust.contains("let mut x: i64 = 2i64;"),
+        "range(2, n) start:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let m = sq_map(4);
+    assert_eq!(m.get(&3), Some(&9));
+    assert_eq!(m.len(), 4);
+    let s = even_set(4);
+    assert!(s.contains(&1) && s.contains(&3) && !s.contains(&0));
+    assert_eq!(s.len(), 3);
+    assert_eq!(from_two(5), 3);
+}
+"#;
+    assert_rustc_runs("dict_set_comp_range", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

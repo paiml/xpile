@@ -2485,12 +2485,43 @@ fn desugar_dict_comp(
             )));
         }
     };
+    // PMAT-502bd: `{k: v for x in range(...)}` desugars to a counter loop
+    // around a dict accumulator (same shape as the list-comp range branch).
+    if let Some((start, stop, step_int)) = comp_range_bounds(ctx, &gen.iter)? {
+        ctx.bound.insert(var.clone());
+        ctx.name_types.insert(var.clone(), Type::I64);
+        let filter = comp_filter(ctx, gen, "dict")?;
+        let key = lower_expr_in_ctx(ctx, (*comp.key).clone())?;
+        let value = lower_expr_in_ctx(ctx, (*comp.value).clone())?;
+        let dict_ty = Type::Dict(
+            Box::new(infer_type_in_ctx(ctx, &key)),
+            Box::new(infer_type_in_ctx(ctx, &value)),
+        );
+        ctx.bound.insert(target.to_string());
+        ctx.name_types.insert(target.to_string(), dict_ty.clone());
+        let insert = Stmt::DictSet {
+            dict_name: target.to_string(),
+            key,
+            value,
+        };
+        return Ok(comp_range_stmts(
+            target,
+            dict_ty,
+            Expr::DictLit(Vec::new()),
+            var,
+            start,
+            stop,
+            step_int,
+            filter,
+            insert,
+        ));
+    }
     let iter_expr = lower_expr_in_ctx(ctx, gen.iter.clone())?;
     let elem_in_ty = match infer_type_in_ctx(ctx, &iter_expr) {
         Type::List(e) => *e,
         other => {
             return Err(FrontendError::Lower(format!(
-                "function `{}` dict-comprehends over an iterable typing as {other:?}; v0.2.0 supports `{{… for x in <list[T]>}}`",
+                "function `{}` dict-comprehends over an iterable typing as {other:?}; v0.2.0 supports `{{… for x in <list[T]>}}` or `{{… for x in range(...)}}`",
                 ctx.fn_name
             )));
         }
@@ -2498,19 +2529,7 @@ fn desugar_dict_comp(
     ctx.bound.insert(var.clone());
     ctx.name_types.insert(var.clone(), elem_in_ty.clone());
     // PMAT-502az: lower the optional `if` filter (must type as Bool).
-    let filter = match gen.ifs.first() {
-        None => None,
-        Some(cond) => {
-            let c = lower_expr_in_ctx(ctx, cond.clone())?;
-            if infer_type_in_ctx(ctx, &c) != Type::Bool {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` has a dict-comprehension filter that is not Bool (no int-truthiness at v0.2.0)",
-                    ctx.fn_name
-                )));
-            }
-            Some(c)
-        }
-    };
+    let filter = comp_filter(ctx, gen, "dict")?;
     let key = lower_expr_in_ctx(ctx, (*comp.key).clone())?;
     let value = lower_expr_in_ctx(ctx, (*comp.value).clone())?;
     let k_ty = infer_type_in_ctx(ctx, &key);
@@ -2548,6 +2567,82 @@ fn desugar_dict_comp(
     ])
 }
 
+/// PMAT-502bd: lower a comprehension's optional single `if` filter to a
+/// `Bool` expression (the loop var must already be bound). `kind` names
+/// the comprehension flavour for the error message.
+fn comp_filter(
+    ctx: &mut LoweringCtx,
+    gen: &ast::Comprehension,
+    kind: &str,
+) -> Result<Option<Expr>, FrontendError> {
+    match gen.ifs.first() {
+        None => Ok(None),
+        Some(cond) => {
+            let c = lower_expr_in_ctx(ctx, cond.clone())?;
+            if infer_type_in_ctx(ctx, &c) != Type::Bool {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` has a {kind}-comprehension filter that is not Bool (no int-truthiness at v0.2.0)",
+                    ctx.fn_name
+                )));
+            }
+            Ok(Some(c))
+        }
+    }
+}
+
+/// PMAT-502bd: assemble the statements for a comprehension over `range(...)`:
+/// the accumulator `let`, a counter `let mut var = start`, and a `while
+/// (var <cmp> stop) { <filter-wrapped insert>; var = var + step; }`.
+#[allow(clippy::too_many_arguments)]
+fn comp_range_stmts(
+    target: &str,
+    acc_ty: Type,
+    acc_init: Expr,
+    var: String,
+    start: Expr,
+    stop: Expr,
+    step_int: i64,
+    filter: Option<Expr>,
+    insert: Stmt,
+) -> Vec<Stmt> {
+    let mut body = match filter {
+        None => vec![insert],
+        Some(cond) => vec![Stmt::If {
+            cond,
+            then_body: vec![insert],
+            else_body: Vec::new(),
+        }],
+    };
+    body.push(Stmt::Assign {
+        name: var.clone(),
+        value: Expr::BinOp {
+            op: BinOp::Add,
+            lhs: Box::new(Expr::Ident(var.clone())),
+            rhs: Box::new(Expr::LitInt(step_int)),
+        },
+    });
+    let cond = Expr::BinOp {
+        op: if step_int > 0 { BinOp::Lt } else { BinOp::Gt },
+        lhs: Box::new(Expr::Ident(var.clone())),
+        rhs: Box::new(stop),
+    };
+    vec![
+        Stmt::Let {
+            name: target.to_string(),
+            ty: acc_ty,
+            value: acc_init,
+            mutable: true,
+        },
+        Stmt::Let {
+            name: var,
+            ty: Type::I64,
+            value: start,
+            mutable: true,
+        },
+        Stmt::While { cond, body },
+    ]
+}
+
 /// PMAT-501b: desugar a set comprehension `{e for x in iter}` into
 /// `let mut <target>: set[T] = set()` + `for x in iter { <target>.add(e) }`
 /// — the same materialisation as [`desugar_dict_comp`] but with a
@@ -2579,12 +2674,38 @@ fn desugar_set_comp(
             )));
         }
     };
+    // PMAT-502bd: `{e for x in range(...)}` desugars to a counter loop
+    // around a set accumulator (same shape as the list-comp range branch).
+    if let Some((start, stop, step_int)) = comp_range_bounds(ctx, &gen.iter)? {
+        ctx.bound.insert(var.clone());
+        ctx.name_types.insert(var.clone(), Type::I64);
+        let filter = comp_filter(ctx, gen, "set")?;
+        let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
+        let set_ty = Type::Set(Box::new(infer_type_in_ctx(ctx, &elem)));
+        ctx.bound.insert(target.to_string());
+        ctx.name_types.insert(target.to_string(), set_ty.clone());
+        let insert = Stmt::SetAdd {
+            set_name: target.to_string(),
+            elem,
+        };
+        return Ok(comp_range_stmts(
+            target,
+            set_ty,
+            Expr::SetLit(Vec::new()),
+            var,
+            start,
+            stop,
+            step_int,
+            filter,
+            insert,
+        ));
+    }
     let iter_expr = lower_expr_in_ctx(ctx, gen.iter.clone())?;
     let elem_in_ty = match infer_type_in_ctx(ctx, &iter_expr) {
         Type::List(e) => *e,
         other => {
             return Err(FrontendError::Lower(format!(
-                "function `{}` set-comprehends over an iterable typing as {other:?}; v0.2.0 supports `{{… for x in <list[T]>}}`",
+                "function `{}` set-comprehends over an iterable typing as {other:?}; v0.2.0 supports `{{… for x in <list[T]>}}` or `{{… for x in range(...)}}`",
                 ctx.fn_name
             )));
         }
@@ -2592,19 +2713,7 @@ fn desugar_set_comp(
     ctx.bound.insert(var.clone());
     ctx.name_types.insert(var.clone(), elem_in_ty.clone());
     // PMAT-502az: lower the optional `if` filter (must type as Bool).
-    let filter = match gen.ifs.first() {
-        None => None,
-        Some(cond) => {
-            let c = lower_expr_in_ctx(ctx, cond.clone())?;
-            if infer_type_in_ctx(ctx, &c) != Type::Bool {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` has a set-comprehension filter that is not Bool (no int-truthiness at v0.2.0)",
-                    ctx.fn_name
-                )));
-            }
-            Some(c)
-        }
-    };
+    let filter = comp_filter(ctx, gen, "set")?;
     let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
     let out_ty = infer_type_in_ctx(ctx, &elem);
     let set_ty = Type::Set(Box::new(out_ty));
