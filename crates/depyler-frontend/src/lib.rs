@@ -2357,6 +2357,8 @@ fn infer_type(e: &Expr) -> Type {
         }
         // PMAT-502j: all(xs)/any(xs) reduce a bool list to a Bool.
         Expr::BoolReduce { .. } => Type::Bool,
+        // PMAT-502k: seq * n has the same type as the sequence.
+        Expr::Repeat { seq, .. } => infer_type(seq),
         // PMAT-502c: sorted(xs) has the same type as its list.
         Expr::Sorted { list, .. } => infer_type(list),
         // PMAT-502d: reversed(xs) has the same type as its list.
@@ -2512,6 +2514,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         }
         // PMAT-502j: all(xs)/any(xs) reduce a bool list to a Bool.
         Expr::BoolReduce { .. } => Type::Bool,
+        // PMAT-502k: seq * n has the same type as the sequence.
+        Expr::Repeat { seq, .. } => infer_type_in_ctx(ctx, seq),
         // PMAT-502c: sorted(xs) has the same type as its list.
         Expr::Sorted { list, .. } => infer_type_in_ctx(ctx, list),
         // PMAT-502d: reversed(xs) has the same type as its list.
@@ -2945,6 +2949,17 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     rhs: Box::new(rhs),
                 });
             }
+            // PMAT-502k: `seq * n` / `n * seq` sequence repetition.
+            if matches!(op, BinOp::Mul) {
+                if let Some(rep) = try_repeat(
+                    &infer_type_in_ctx(ctx, &lhs),
+                    &infer_type_in_ctx(ctx, &rhs),
+                    &lhs,
+                    &rhs,
+                ) {
+                    return Ok(rep);
+                }
+            }
             Ok(Expr::BinOp {
                 op,
                 lhs: Box::new(lhs),
@@ -3095,6 +3110,13 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
                 });
+            }
+            // PMAT-502k: `seq * n` / `n * seq` (context-free path catches
+            // literal sequences; param-typed ones via the ctx path).
+            if matches!(op, BinOp::Mul) {
+                if let Some(rep) = try_repeat(&infer_type(&lhs), &infer_type(&rhs), &lhs, &rhs) {
+                    return Ok(rep);
+                }
             }
             Ok(Expr::BinOp {
                 op,
@@ -3494,6 +3516,27 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         | StrMethodOp::Split
         | StrMethodOp::Join => 1,
         StrMethodOp::Replace => 2,
+    }
+}
+
+/// PMAT-502k: detect Python sequence repetition `seq * n` / `n * seq`
+/// (one operand a `Str`/`List`, the other an `Int`). Returns the
+/// `Expr::Repeat`, trying both operand orders, or `None` when the pair
+/// isn't (sequence, int). Caller only invokes this for the `*` operator.
+fn try_repeat(lhs_ty: &Type, rhs_ty: &Type, lhs: &Expr, rhs: &Expr) -> Option<Expr> {
+    let is_seq = |t: &Type| matches!(t, Type::Str | Type::List(_));
+    if is_seq(lhs_ty) && *rhs_ty == Type::I64 {
+        Some(Expr::Repeat {
+            seq: Box::new(lhs.clone()),
+            n: Box::new(rhs.clone()),
+        })
+    } else if *lhs_ty == Type::I64 && is_seq(rhs_ty) {
+        Some(Expr::Repeat {
+            seq: Box::new(rhs.clone()),
+            n: Box::new(lhs.clone()),
+        })
+    } else {
+        None
     }
 }
 

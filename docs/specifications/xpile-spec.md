@@ -846,6 +846,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502h** — `min(xs)`/`max(xs)` over `list[float]` (`Expr::ListMinMax.of_float`) | `xs.iter().copied().fold(f64::INFINITY, f64::min)` / `(f64::NEG_INFINITY, f64::max)` (f64 has no `Ord`) | ✅ SHIPPED v0.1.40 |
 | **PMAT-502i** — empty constructors `set()`/`dict()`/`list()` | pure-frontend → empty `SetLit`/`DictLit`/`ListLit` → `HashSet::new()`/`HashMap::new()`/`vec![]`; element type from annotation or later `.add()`/`.append()` | ✅ SHIPPED v0.1.41 |
 | **PMAT-502j** — `all(xs)`/`any(xs)` over `list[bool]` (`Expr::BoolReduce`) | `xs.iter().all(\|&__b\| __b)` / `.any(…)`; completes the reduction-over-list family (`sum`/`min`/`max`/`all`/`any`) | ✅ SHIPPED v0.1.42 |
+| **PMAT-502k** — sequence repetition `"x"*n` / `[0]*n` (`Expr::Repeat`) | `(seq).repeat(((n).max(0)) as usize)` (str→String, list→Vec; negative clamps to empty); disambiguated from numeric `*` by operand type | ✅ SHIPPED v0.1.43 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |

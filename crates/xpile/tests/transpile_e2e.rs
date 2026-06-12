@@ -1304,6 +1304,27 @@ fn main() {
     assert_rustc_runs("bool_reduce", &rust, driver);
 }
 
+/// PMAT-502k (Tranche 2): sequence repetition `seq * n` / `n * seq` →
+/// `(seq).repeat(((n).max(0)) as usize)` — str → String, list → Vec.
+#[test]
+fn seq_repeat() {
+    let rust = xpile_transpile_to_rust("seq_repeat.py");
+    assert!(
+        rust.contains(").repeat(((") && rust.contains(").max(0)) as usize)"),
+        "expected repeat emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(bar(3), String::from("==="));
+    assert_eq!(left_mul(2), String::from("abab"));
+    assert_eq!(zeros(3), vec![0, 0, 0]);
+    assert_eq!(repeat_pair(2), vec![1, 2, 1, 2]);
+    assert_eq!(clamp_negative(), String::from(""));
+}
+"#;
+    assert_rustc_runs("seq_repeat", &rust, driver);
+}
+
 /// PMAT-502h (Tranche 2): 1-arg `min(xs)`/`max(xs)` over a `list[float]` →
 /// a fold (`fold(f64::INFINITY, f64::min)` / `fold(f64::NEG_INFINITY, f64::max)`).
 #[test]

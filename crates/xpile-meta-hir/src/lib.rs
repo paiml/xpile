@@ -238,6 +238,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::Sum { list, .. } => expr_has_int_arith(list),
         // PMAT-502j: all(xs)/any(xs) — recurse into the bool list.
         Expr::BoolReduce { list, .. } => expr_has_int_arith(list),
+        // PMAT-502k: seq * n — recurse into both the sequence and count.
+        Expr::Repeat { seq, n } => expr_has_int_arith(seq) || expr_has_int_arith(n),
         // PMAT-502c: sorted — recurse into the list expression.
         Expr::Sorted { list, .. } => expr_has_int_arith(list),
         Expr::Reversed { list } => expr_has_int_arith(list),
@@ -1005,6 +1007,13 @@ pub enum Expr {
     /// `Bool`. Like Python, `all([])` is `true` and `any([])` is `false`
     /// (the iterator-adaptor identities). Lean refuses.
     BoolReduce { list: Box<Expr>, is_all: bool },
+    /// Sequence repetition — Python `seq * n` / `n * seq` where `seq` is a
+    /// `Str` or `List` and `n` an `Int`. PMAT-502k (Tranche 2). Rust/Ruchy
+    /// emit `(<seq>).repeat(((<n>).max(0)) as usize)` — one form covers both
+    /// `str::repeat` (→ `String`) and slice `<[T]>::repeat` (→ `Vec<T>`).
+    /// The `.max(0)` clamps a negative count to the empty sequence, matching
+    /// Python (`"x" * -1 == ""`). Result types as `seq`. Lean refuses.
+    Repeat { seq: Box<Expr>, n: Box<Expr> },
     /// `sorted(xs)` / `sorted(xs, reverse=True)` over a list — Python
     /// builtin returning a **new** sorted list (the input is not mutated).
     /// PMAT-502c (Tranche 2); the `reverse` flag is PMAT-502f. Rust/Ruchy

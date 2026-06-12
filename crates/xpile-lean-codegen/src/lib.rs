@@ -463,6 +463,11 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         Expr::Sum { list, .. } => collect_idents(list, out),
         // PMAT-502j: all/any — recurse into the bool list expression.
         Expr::BoolReduce { list, .. } => collect_idents(list, out),
+        // PMAT-502k: seq * n — recurse into both sequence and count.
+        Expr::Repeat { seq, n } => {
+            collect_idents(seq, out);
+            collect_idents(n, out);
+        }
         // PMAT-502c: sorted — recurse into the list expression.
         Expr::Sorted { list, .. } => collect_idents(list, out),
         // PMAT-502d: reversed — recurse into the list expression.
@@ -906,6 +911,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             return Err(LeanCodegenError::Unsupported(
                 "Python all(xs)/any(xs) is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502k: seq * n repetition deferred in the Lean lane.
+        Expr::Repeat { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python seq * n (string/list repetition) is not yet supported in the \
+                 Lean lane — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
         }
