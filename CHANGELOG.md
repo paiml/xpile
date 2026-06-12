@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.27] — 2026-06-12
+
+Tranche-2 slice PMAT-498b — Python **`sum(xs)`** over numeric lists.
+
+New meta-HIR `Expr::Sum { list, of_float }`. `sum(xs)` (1 list arg, element
+typing as `int`/`float`) lowers to `<list>.iter().sum::<i64>()` /
+`::<f64>()` — the turbofish is selected by `of_float`, which the frontend
+sets from the element type so the sum is unambiguous in any position. Result
+types as the element type. Lean refuses. rustc round-trip `sum_builtin.py`:
+`total([1,2,3,4]) -> 10`, `ftotal([1.5,2.5]) -> 4.0`.
+
+Note: full `range(start, stop, step)` (PMAT-499) — incl. negative-literal
+steps (countdown) — was already supported (PMAT-008); only non-literal steps
+remain (deferred, would need runtime direction detection).
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.26] — 2026-06-12
 
 Tranche-2 slice PMAT-498 — Python **scalar numeric builtins** `abs` / `min`

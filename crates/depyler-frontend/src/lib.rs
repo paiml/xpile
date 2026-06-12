@@ -2029,6 +2029,14 @@ fn infer_type(e: &Expr) -> Type {
         Expr::Slice { collection, .. } => infer_type(collection),
         // PMAT-498: numeric builtin types as its first argument.
         Expr::NumBuiltin { args, .. } => args.first().map(infer_type).unwrap_or(Type::I64),
+        // PMAT-498b: sum types as the list's element type.
+        Expr::Sum { of_float, .. } => {
+            if *of_float {
+                Type::F64
+            } else {
+                Type::I64
+            }
+        }
         // PMAT-457 (v0.2.0 Track 1.B): indexed access returns the
         // collection's element type. If the collection types as
         // Type::List(T), the result is T; otherwise fall back to I64
@@ -2155,6 +2163,14 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             .first()
             .map(|a| infer_type_in_ctx(ctx, a))
             .unwrap_or(Type::I64),
+        // PMAT-498b: sum types as the list's element type.
+        Expr::Sum { of_float, .. } => {
+            if *of_float {
+                Type::F64
+            } else {
+                Type::I64
+            }
+        }
         // PMAT-457: indexed access returns the collection element type.
         Expr::Index { collection, .. } => match infer_type_in_ctx(ctx, collection) {
             Type::List(elem_ty) => *elem_ty,
@@ -2366,6 +2382,18 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             .collect::<Result<Vec<_>, _>>()?;
                         if matches!(infer_type_in_ctx(ctx, &args[0]), Type::I64 | Type::F64) {
                             return Ok(Expr::NumBuiltin { op, args });
+                        }
+                    }
+                }
+                // PMAT-498b: `sum(xs)` over a numeric list.
+                if fname.id.as_str() == "sum" && call.keywords.is_empty() && call.args.len() == 1 {
+                    let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
+                        if matches!(*elem, Type::I64 | Type::F64) {
+                            return Ok(Expr::Sum {
+                                list: Box::new(list),
+                                of_float: matches!(*elem, Type::F64),
+                            });
                         }
                     }
                 }

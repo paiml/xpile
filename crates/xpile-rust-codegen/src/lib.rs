@@ -640,6 +640,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 }
             }
         }
+        // PMAT-498b: `sum(xs)` → `<list>.iter().sum::<T>()`.
+        Expr::Sum { list, of_float } => {
+            emit_expr(out, list, mode)?;
+            out.push_str(if *of_float {
+                ".iter().sum::<f64>()"
+            } else {
+                ".iter().sum::<i64>()"
+            });
+        }
         // PMAT-462 (v0.2.0 Track 1.C): Python dict literal →
         // Rust `{ let mut m = HashMap::new(); m.insert(k, v); ... m }`
         // block expression returning the owned HashMap.
