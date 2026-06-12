@@ -706,6 +706,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, value, mode)?;
             out.push_str(").round_ties_even() as i64)");
         }
+        // PMAT-502al: `round(x, n)` (float) → Python's decimal rounding
+        // (format-to-n-decimals for n >= 0, scale for n < 0).
+        Expr::RoundToDigits { value, ndigits } => {
+            out.push_str("{ let __rx = ");
+            emit_expr(out, value, mode)?;
+            out.push_str("; let __rn = ");
+            emit_expr(out, ndigits, mode)?;
+            out.push_str("; if __rn >= 0 { format!(\"{:.1$}\", __rx, __rn as usize).parse::<f64>().unwrap() } else { let __rp = 10f64.powi((-__rn) as i32); (__rx / __rp).round_ties_even() * __rp } }");
+        }
         // PMAT-502e/h/aa: 1-arg `min(xs)`/`max(xs)`; `key=lambda` →
         // `min_by_key`/`max_by_key`.
         Expr::ListMinMax {

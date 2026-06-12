@@ -678,6 +678,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::RoundToInt { value }. round(x) over a float -> ((<value>).round_ties_even() as i64) in Rust+Ruchy (round_ties_even = round-half-to-even = bankers rounding, matches Python's round EXACTLY: round(2.5)==2, round(3.5)==4, round(0.5)==0, vs Rust f64::round half-away gives round(2.5)==3). round(int) is identity (frontend returns value, no node). Result Int. 2-arg round(x,n) (returns float) follows. Lean refuses. round_ties_even stable since Rust 1.77 (workspace 1.93). rustc round-trip round_builtin.py: r(2.5)->2, r(3.5)->4, r(0.5)->0, r(1.5)->2, r(-1.5)->-2, r(2.4)->2, r(2.6)->3, r_int(7)->7. FREE CI. SHIPPED v0.1.69."
+- id: PMAT-502AL
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502al: [Tranche2] round(x, n) 2-arg, completes round'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::RoundToDigits { value, ndigits }. round(x, n) over float x + int n -> a block returning Float. n>=0: format!(\"{:.1$}\", x, n as usize).parse::<f64>().unwrap() (Rust {:.} formatting is round-half-to-even = Python's CORRECT decimal rounding -> matches Python exactly incl float-repr edge round(2.675,2)==2.67). n<0: scale down by 10^|n|, round_ties_even, scale back. CRITICAL: the naive x*10^n/10^n scaling diverges from Python in the last ULP for n>=0 (the e2e assert_eq! caught this) -> use format-parse for n>=0. Lean refuses. rustc round-trip round_digits.py: r2(3.14159,2)->3.14, r2(2.5,0)->2.0, r2(1234.5,-1)->1230.0, half_cent(2.675)->2.67. FREE CI. SHIPPED v0.1.70."
 - id: PMAT-465
   github_issue: 496
   item_type: task

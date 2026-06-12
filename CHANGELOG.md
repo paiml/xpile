@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.70] — 2026-06-12
+
+Tranche-2 slice PMAT-502al — Python **`round(x, n)`** (2-arg), completing `round`.
+
+New meta-HIR `Expr::RoundToDigits { value, ndigits }`. `round(x, n)` over a
+`float` x and `int` n lowers to a block returning a **float** rounded to n
+decimals. For `n >= 0` it formats to n decimals and parses back
+(`format!("{:.1$}", x, n).parse::<f64>().unwrap()`) — Rust's `{:.}` formatting
+is round-half-to-**even**, the *same* correct decimal rounding Python uses, so
+it matches Python **exactly** including the float-repr edge `round(2.675, 2) ==
+2.67`. For `n < 0` it scales down by `10^|n|`, `round_ties_even`s, and scales
+back. (The initial `x * 10^n / 10^n` scaling approach was discarded — it
+diverges from Python in the last ULP for `n >= 0`.) Lean refuses. rustc
+round-trip `round_digits.py`: `r2(3.14159, 2) -> 3.14`, `r2(2.5, 0) -> 2.0`
+(banker's), `r2(1234.5, -1) -> 1230.0`, `half_cent(2.675) -> 2.67`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.69] — 2026-06-12
 
 Tranche-2 slice PMAT-502ak — Python **`round(x)`** (1-arg).

@@ -1584,6 +1584,28 @@ fn main() {
     assert_rustc_runs("round_builtin", &rust, driver);
 }
 
+/// PMAT-502al (Tranche 2): `round(x, n)` → float rounded to n decimals via
+/// banker's rounding after `10^n` scaling, matching Python's float-repr.
+#[test]
+fn round_digits() {
+    let rust = xpile_transpile_to_rust("round_digits.py");
+    assert!(
+        rust.contains("format!(\"{:.1$}\", __rx, __rn as usize).parse::<f64>().unwrap()"),
+        "expected round-to-digits block, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(r2(3.14159, 2), 3.14);
+    assert_eq!(r2(2.5, 0), 2.0);  // banker's: 2.5 -> 2.0
+    assert_eq!(r2(1234.5, -1), 1230.0);  // negative ndigits
+    assert_eq!(half_cent(3.14159), 3.14);
+    // Python float-repr edge: 2.675 isn't exactly representable -> 2.67
+    assert_eq!(half_cent(2.675), 2.67);
+}
+"#;
+    assert_rustc_runs("round_digits", &rust, driver);
+}
+
 /// PMAT-502ad (Tranche 2): `str(x)` over an int → `format!("{}", x)`
 /// (unblocks `"prefix" + str(n)` concatenation).
 #[test]

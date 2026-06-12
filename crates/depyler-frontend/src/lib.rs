@@ -2411,6 +2411,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::ToStr { .. } => Type::Str,
         // PMAT-502ak: round(x) → Int.
         Expr::RoundToInt { .. } => Type::I64,
+        // PMAT-502al: round(x, n) → Float.
+        Expr::RoundToDigits { .. } => Type::F64,
         // PMAT-502k: seq * n has the same type as the sequence.
         Expr::Repeat { seq, .. } => infer_type(seq),
         // PMAT-502c: sorted(xs) has the same type as its list.
@@ -2630,6 +2632,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::ToStr { .. } => Type::Str,
         // PMAT-502ak: round(x) → Int.
         Expr::RoundToInt { .. } => Type::I64,
+        // PMAT-502al: round(x, n) → Float.
+        Expr::RoundToDigits { .. } => Type::F64,
         // PMAT-502k: seq * n has the same type as the sequence.
         Expr::Repeat { seq, .. } => infer_type_in_ctx(ctx, seq),
         // PMAT-502c: sorted(xs) has the same type as its list.
@@ -3062,8 +3066,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 }
                 // PMAT-502ak: `round(x)` (1-arg). Over a `float` → the nearest
                 // int via banker's rounding (`Expr::RoundToInt`); over an
-                // `int` it's the identity (return the value as-is). The 2-arg
-                // `round(x, n)` form (returns a float) follows.
+                // `int` it's the identity (return the value as-is).
                 if fname.id.as_str() == "round" && call.keywords.is_empty() && call.args.len() == 1
                 {
                     let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
@@ -3075,6 +3078,22 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         }
                         Type::I64 => return Ok(value),
                         _ => {}
+                    }
+                }
+                // PMAT-502al: `round(x, n)` (2-arg) over a `float` x and `int`
+                // n → the float rounded to n decimals (`Expr::RoundToDigits`,
+                // returns a `Float`, banker's rounding after `10^n` scaling).
+                if fname.id.as_str() == "round" && call.keywords.is_empty() && call.args.len() == 2
+                {
+                    let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    let ndigits = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                    if infer_type_in_ctx(ctx, &value) == Type::F64
+                        && infer_type_in_ctx(ctx, &ndigits) == Type::I64
+                    {
+                        return Ok(Expr::RoundToDigits {
+                            value: Box::new(value),
+                            ndigits: Box::new(ndigits),
+                        });
                     }
                 }
                 // PMAT-502n: `divmod(a, b)` over two ints → the tuple

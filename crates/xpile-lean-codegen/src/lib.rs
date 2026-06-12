@@ -481,6 +481,11 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         Expr::ToStr { value, .. } => collect_idents(value, out),
         // PMAT-502ak: round(x) — recurse into the rounded value.
         Expr::RoundToInt { value } => collect_idents(value, out),
+        // PMAT-502al: round(x, n) — recurse into value + ndigits.
+        Expr::RoundToDigits { value, ndigits } => {
+            collect_idents(value, out);
+            collect_idents(ndigits, out);
+        }
         // PMAT-502c: sorted — recurse into the list expression.
         Expr::Sorted { list, .. } => collect_idents(list, out),
         // PMAT-502d: reversed — recurse into the list expression.
@@ -989,10 +994,10 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
                     .to_string(),
             ));
         }
-        // PMAT-502ak: round(x) deferred in the Lean lane at first cut.
-        Expr::RoundToInt { .. } => {
+        // PMAT-502ak/al: round(x)/round(x, n) deferred in the Lean lane.
+        Expr::RoundToInt { .. } | Expr::RoundToDigits { .. } => {
             return Err(LeanCodegenError::Unsupported(
-                "Python round(x) is not yet supported in the Lean lane \
+                "Python round(x)/round(x, n) is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
