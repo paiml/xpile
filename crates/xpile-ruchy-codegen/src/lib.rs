@@ -840,6 +840,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 }
             }
         }
+        // PMAT-502au: `d.pop(k)` / `d.pop(k, def)`, matching the Rust backend.
+        Expr::DictPop { dict, key, default } => {
+            out.push('(');
+            emit_expr(out, dict, mode)?;
+            out.push_str(").remove(&(");
+            emit_expr(out, key, mode)?;
+            match default {
+                None => out.push_str(")).unwrap()"),
+                Some(d) => {
+                    out.push_str(")).unwrap_or(");
+                    emit_expr(out, d, mode)?;
+                    out.push(')');
+                }
+            }
+        }
         // PMAT-502c/f/z: clone+sort block; `reverse=True` appends
         // `__xv.reverse();`; `key=lambda p: e` → `sort_by_key`.
         Expr::Sorted { list, reverse, key } => {

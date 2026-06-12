@@ -2744,6 +2744,11 @@ fn infer_type(e: &Expr) -> Type {
             Type::List(elem) => *elem,
             _ => Type::I64,
         },
+        // PMAT-502au: dict.pop() returns the dict's value type.
+        Expr::DictPop { dict, .. } => match infer_type(dict) {
+            Type::Dict(_, v) => *v,
+            _ => Type::I64,
+        },
         // PMAT-502v/502x: d.keys()/d.values()/d.items() materialize to
         // List(K)/List(V)/List(Tuple[K, V]).
         Expr::DictView { dict, kind } => match infer_type(dict) {
@@ -2971,6 +2976,11 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-502as: list.pop() returns the list's element type.
         Expr::ListPop { list, .. } => match infer_type_in_ctx(ctx, list) {
             Type::List(elem) => *elem,
+            _ => Type::I64,
+        },
+        // PMAT-502au: dict.pop() returns the dict's value type.
+        Expr::DictPop { dict, .. } => match infer_type_in_ctx(ctx, dict) {
+            Type::Dict(_, v) => *v,
             _ => Type::I64,
         },
         // PMAT-502v: d.keys()/d.values() materialize to List(K)/List(V).
@@ -3271,7 +3281,8 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // 0 args → remove last; 1 int arg → remove at that index.
                 if attr.attr.as_str() == "pop" {
                     let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
-                    if matches!(infer_type_in_ctx(ctx, &recv), Type::List(_))
+                    let recv_ty = infer_type_in_ctx(ctx, &recv);
+                    if matches!(recv_ty, Type::List(_))
                         && call.keywords.is_empty()
                         && call.args.len() <= 1
                     {
@@ -3296,6 +3307,25 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         return Ok(Expr::ListPop {
                             list: Box::new(recv),
                             index,
+                        });
+                    }
+                    // PMAT-502au: `d.pop(k)` / `d.pop(k, default)` over a
+                    // dict — 1 or 2 positional args (a no-arg `.pop()` is a
+                    // Python error for dicts). The receiver is marked mut by
+                    // the same `count_pop_receivers` pre-pass as list pop.
+                    if matches!(recv_ty, Type::Dict(_, _))
+                        && call.keywords.is_empty()
+                        && (call.args.len() == 1 || call.args.len() == 2)
+                    {
+                        let key = Box::new(lower_expr_in_ctx(ctx, call.args[0].clone())?);
+                        let default = match call.args.get(1) {
+                            None => None,
+                            Some(a) => Some(Box::new(lower_expr_in_ctx(ctx, a.clone())?)),
+                        };
+                        return Ok(Expr::DictPop {
+                            dict: Box::new(recv),
+                            key,
+                            default,
                         });
                     }
                 }
