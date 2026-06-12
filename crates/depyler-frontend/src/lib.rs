@@ -184,7 +184,7 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                             // the receiver in place.
                             if matches!(
                                 attr.attr.as_str(),
-                                "add" | "append" | "sort" | "reverse" | "clear"
+                                "add" | "append" | "sort" | "reverse" | "clear" | "extend"
                             ) {
                                 let bump = if in_loop { 2 } else { 1 };
                                 *counts.entry(recv.id.to_string()).or_insert(0) += bump;
@@ -850,6 +850,36 @@ fn try_lower_list_method_call(
             list_name: receiver_name.to_string(),
             op,
             of_float,
+        }));
+    }
+    // PMAT-502aq: `xs.extend(ys)` — 1-arg in-place list concatenation.
+    if method == "extend" {
+        let Some(Type::List(_)) = receiver_ty.as_ref() else {
+            return None;
+        };
+        if !call.keywords.is_empty() {
+            return Some(Err(FrontendError::Lower(format!(
+                "function `{}` calls `{receiver_name}.extend(...)` with keyword args; \
+                 v0.2.0 takes a single positional list",
+                ctx.fn_name
+            ))));
+        }
+        if call.args.len() != 1 {
+            return Some(Err(FrontendError::Lower(format!(
+                "function `{}` calls `{receiver_name}.extend(...)` with {} positional arg(s); \
+                 v0.2.0 requires exactly 1 (a list)",
+                ctx.fn_name,
+                call.args.len()
+            ))));
+        }
+        let other = match lower_expr_in_ctx(ctx, call.args[0].clone()) {
+            Ok(e) => e,
+            Err(err) => return Some(Err(err)),
+        };
+        ctx.mutable.insert(receiver_name.to_string());
+        return Some(Ok(Stmt::ListExtend {
+            list_name: receiver_name.to_string(),
+            other,
         }));
     }
     if !is_append && !is_add {

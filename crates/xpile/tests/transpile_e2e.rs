@@ -2059,6 +2059,33 @@ fn main() {
     assert_rustc_runs("list_mutate", &rust, driver);
 }
 
+/// PMAT-502aq (Tranche 2): in-place list concatenation `xs.extend(ys)` →
+/// `xs.extend((<ys>).iter().cloned());`.
+#[test]
+fn list_extend() {
+    let rust = xpile_transpile_to_rust("list_extend.py");
+    assert!(
+        rust.contains("xs.extend((ys).iter().cloned());"),
+        "extend(name):\n{rust}"
+    );
+    assert!(
+        rust.contains("xs.extend((vec![4i64, 5i64]).iter().cloned());"),
+        "extend(literal):\n{rust}"
+    );
+    assert!(
+        rust.contains("grow(mut xs: Vec<i64>"),
+        "mut receiver:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(grow(vec![1, 2], vec![3, 4, 5]), 5);
+    assert_eq!(grow_lit(vec![1, 2, 3]), 4);
+    assert_eq!(sum_after(vec![1, 2], vec![3, 4]), 10);
+}
+"#;
+    assert_rustc_runs("list_extend", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

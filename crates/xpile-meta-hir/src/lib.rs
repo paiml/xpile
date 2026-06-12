@@ -144,6 +144,8 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         Stmt::SetAdd { elem, .. } => expr_has_int_arith(elem),
         // PMAT-502ap: in-place list mutators carry no sub-expression.
         Stmt::ListMutate { .. } => false,
+        // PMAT-502aq: list.extend() — recurse into the other-list expr.
+        Stmt::ListExtend { other, .. } => expr_has_int_arith(other),
         // PMAT-461: indexed assignment — recurse into both index and
         // value expressions (either may carry arithmetic).
         Stmt::IndexAssign { index, value, .. } => {
@@ -512,6 +514,15 @@ pub enum Stmt {
         op: ListMutateOp,
         of_float: bool,
     },
+    /// In-place list concatenation — Python `xs.extend(ys)`. PMAT-502aq
+    /// (Tranche 2). Appends every element of `other` (any list-typed
+    /// expression) to the receiver, which is marked mutable. Rust/Ruchy
+    /// emit `<list>.extend((<other>).iter().cloned());` — cloning each
+    /// element keeps `other` usable afterwards (matching Python, where
+    /// `extend` does not consume its argument) and only needs `T: Clone`
+    /// (true for every v0.2.0 element type). Lean refuses (in-place
+    /// mutation, same gap as `ListAppend`).
+    ListExtend { list_name: String, other: Expr },
     /// `for var in iter { body }` — Python `for x in xs:` over a
     /// non-range iterable. PMAT-458, v0.2.0 Track 1.B.
     ///

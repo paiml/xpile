@@ -103,9 +103,12 @@ fn function_bigint_mode(f: &Function) -> bool {
                 else_body,
                 ..
             } => then_body.iter().any(stmt_has_bigint) || else_body.iter().any(stmt_has_bigint),
-            // PMAT-460: list.append() — same disposition. PMAT-502ap:
-            // in-place list mutators likewise carry no binding.
-            Stmt::ListAppend { .. } | Stmt::SetAdd { .. } | Stmt::ListMutate { .. } => false,
+            // PMAT-460: list.append() — same disposition. PMAT-502ap/aq:
+            // in-place list mutators / extend likewise carry no binding.
+            Stmt::ListAppend { .. }
+            | Stmt::SetAdd { .. }
+            | Stmt::ListMutate { .. }
+            | Stmt::ListExtend { .. } => false,
             // PMAT-461: indexed assignment same disposition.
             Stmt::IndexAssign { .. } => false,
             // PMAT-466: dict keyed assignment same disposition.
@@ -307,6 +310,13 @@ fn emit_stmt_indented(
                 ListMutateOp::Reverse => writeln!(out, "{indent}{list_name}.reverse();")?,
                 ListMutateOp::Clear => writeln!(out, "{indent}{list_name}.clear();")?,
             }
+            Ok(())
+        }
+        // PMAT-502aq: `xs.extend(ys)`, matching the Rust backend.
+        Stmt::ListExtend { list_name, other } => {
+            write!(out, "{indent}{list_name}.extend((")?;
+            emit_expr(out, other, mode)?;
+            writeln!(out, ").iter().cloned());")?;
             Ok(())
         }
         // PMAT-461 (v0.2.0 Track 1.B): Ruchy → Rust →

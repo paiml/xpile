@@ -723,6 +723,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Stmt::ListMutate { list_name, op, of_float } with ListMutateOp in {Sort, Reverse, Clear}. The no-arg, None-returning in-place list methods (previously rejected as unrecognised expression statements) lower to the matching Vec method in Rust+Ruchy with the receiver marked mut: .sort() for Vec<i64>, .sort_by(|a,b| a.partial_cmp(b).unwrap()) for Vec<f64> (no Ord on f64), .reverse(), .clear(). Frontend try_lower_list_method_call recognises them (0-arg, List receiver); mutability pre-pass walk_counts counts sort/reverse/clear. Lean refuses (in-place mutation gap, same as .append). rustc round-trip list_mutate.py: first_sorted([3,1,2])->1, first_reversed([3,1,2])->2, first_fsorted([3.0,1.5,2.0])->1.5, cleared_len([1,2,3])->0. FREE CI. SHIPPED v0.1.74."
+- id: PMAT-502AQ
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502aq: [Tranche2] in-place list concatenation xs.extend(ys)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Stmt::ListExtend { list_name, other }. xs.extend(ys) (ys any list-typed expr) lowers to xs.extend((<ys>).iter().cloned()); in Rust+Ruchy with the receiver marked mut. Cloning each element keeps ys usable afterwards (Python extend doesn't consume its arg) and only needs T: Clone (every v0.2.0 elem type). Frontend try_lower_list_method_call recognises it (1-arg, List receiver); mutability pre-pass counts extend. Lean refuses (in-place mutation gap, same as .append). rustc round-trip list_extend.py: grow([1,2],[3,4,5])->5, grow_lit([1,2,3])->4, sum_after([1,2],[3,4])->10 (composes with for). FREE CI. SHIPPED v0.1.75."
 - id: PMAT-465
   github_issue: 496
   item_type: task
