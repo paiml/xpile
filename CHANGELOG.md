@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.36] — 2026-06-12
+
+Tranche-2 slice PMAT-502e — Python 1-arg **`min(xs)`/`max(xs)`** over a list.
+
+New meta-HIR `Expr::ListMinMax { list, is_max }` — the reduction form of the
+Python builtins, distinct from the 2-arg `min(a, b)`/`max(a, b)` (which remain
+`Expr::NumBuiltin`). `min(xs)`/`max(xs)` over a `list[int]` lower to
+`<list>.iter().copied().min().unwrap()` (or `.max()`) in Rust + Ruchy; result
+types as the element type. First cut is `list[int]` only — `f64` lacks `Ord`
+and follows as its own slice. Lean refuses. rustc round-trip
+`list_minmax_builtin.py`: `smallest([3,1,2]) -> 1`, `largest([3,1,2]) -> 3`,
+`span([3,1,2,9,4]) -> 8`.
+
 ## [0.1.35] — 2026-06-12
 
 Tranche-2 slice PMAT-502d — Python **`reversed(xs)`** builtin.

@@ -237,6 +237,7 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-502c: sorted — recurse into the list expression.
         Expr::Sorted { list } => expr_has_int_arith(list),
         Expr::Reversed { list } => expr_has_int_arith(list),
+        Expr::ListMinMax { list, .. } => expr_has_int_arith(list),
         // PMAT-500: set literal / membership — recurse defensively.
         Expr::SetLit(elems) => elems.iter().any(expr_has_int_arith),
         Expr::SetContains { set, elem } => expr_has_int_arith(set) || expr_has_int_arith(elem),
@@ -983,6 +984,14 @@ pub enum Expr {
     /// as the list's type. Lean refuses. (Python's `reversed` yields a lazy
     /// iterator, but the supported subset materializes it as a `Vec`.)
     Reversed { list: Box<Expr> },
+    /// `min(xs)` / `max(xs)` over a list — the 1-arg reduction form of
+    /// the Python builtins (distinct from the 2-arg `min(a, b)` which is
+    /// an [`Expr::NumBuiltin`]). PMAT-502e (Tranche 2). Rust/Ruchy emit
+    /// `<list>.iter().copied().min().unwrap()` (or `.max()`); result types
+    /// as the list's element type. First cut is `list[int]` only — `f64`
+    /// lacks `Ord` and follows as its own slice. Lean refuses. Like
+    /// Python, an empty list is a runtime error (here a `.unwrap()` panic).
+    ListMinMax { list: Box<Expr>, is_max: bool },
     /// Unary operation — `not x` (logical, Bool → Bool) or `-x`
     /// (numeric negate, I64 → I64).
     UnOp { op: UnOp, operand: Box<Expr> },
