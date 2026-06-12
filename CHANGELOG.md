@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.13] — 2026-06-12
+
+First slice of the **§30 Track 4** GPU Runtime-stratum work (PMAT-481)
+— the §29 Layer-5 Multi-Emitter Quorum's offline, free-CI gate.
+
+Adds a pure-Rust **PTX well-formedness validator** in `xpile-ptx-codegen`
+(`validate_ptx`, `ptx_looks_real`, `ptxas_arch`): structural checks on
+emitted PTX text — `.version`, `.target` matching the requested
+`compute_capability`, `.address_size 64`, and at least one `.visible
+.entry`. The `ptxas -arch` is **derived from `compute_capability`**, never
+hard-coded. `ptx_looks_real` classifies the v0.1.0 scaffold's comment-only
+placeholder as *not real* so the gate never false-fails before the real
+`nvptx64` emitter lands (PMAT-485).
+
+This is a **structural** gate, not the model→emission gate (that is the
+on-hardware `DiffExec` slice, PMAT-488) — it executes nothing and needs no
+GPU. The `ptxas`-assembles CI step wires in alongside the real emitter in
+PMAT-485. 6 new unit tests (13 total in the crate).
+
 ## [0.1.12] — 2026-06-12
 
 Incremental release adding **early returns** (guard clauses) —
