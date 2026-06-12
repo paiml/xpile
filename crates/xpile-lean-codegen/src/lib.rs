@@ -462,7 +462,7 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         // PMAT-498b: sum — recurse into the list expression.
         Expr::Sum { list, .. } => collect_idents(list, out),
         // PMAT-502c: sorted — recurse into the list expression.
-        Expr::Sorted { list } => collect_idents(list, out),
+        Expr::Sorted { list, .. } => collect_idents(list, out),
         // PMAT-502d: reversed — recurse into the list expression.
         Expr::Reversed { list } => collect_idents(list, out),
         // PMAT-502e: min/max reduction — recurse into the list expression.

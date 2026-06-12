@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.38] — 2026-06-12
+
+Tranche-2 slice PMAT-502f — Python **`sorted(xs, reverse=True)`**.
+
+Extends `Expr::Sorted` with a `reverse: bool` flag. `sorted(xs, reverse=True)`
+lowers to `{ let mut __xv = xs.clone(); __xv.sort(); __xv.reverse(); __xv }`
+(descending — stable sort then reverse) in Rust + Ruchy; `sorted(xs)` and
+`sorted(xs, reverse=False)` stay ascending. A non-bool `reverse=` or any other
+keyword (e.g. `key=`) leaves the intercept to fall through. Lean refuses.
+rustc round-trip `sorted_reverse.py`: `order_desc([3,1,2]) -> [3,2,1]`,
+`order_asc([3,1,2]) -> [1,2,3]`.
+
+`key=` follows as its own slice.
+
+> GitHub tag only. The **2026-06-12 Friday crates.io batch** already ran once
+> today (publishing the accumulated v0.1.14→v0.1.37 line); per the once-per-day
+> rule, v0.1.38 catches up to crates.io in the next Friday batch (2026-06-19).
+
 ## [0.1.37] — 2026-06-12
 
 Tranche-2 slice PMAT-503a — Python **`raise`** (exceptions sub-slice 1).

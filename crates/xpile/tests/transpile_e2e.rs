@@ -1224,6 +1224,24 @@ fn main() {
     assert_rustc_runs("sorted_builtin", &rust, driver);
 }
 
+/// PMAT-502f (Tranche 2): `sorted(xs, reverse=True)` → descending order
+/// (`__xv.sort(); __xv.reverse();`); `reverse=False` stays ascending.
+#[test]
+fn sorted_reverse_flag() {
+    let rust = xpile_transpile_to_rust("sorted_reverse.py");
+    assert!(
+        rust.contains("__xv.sort(); __xv.reverse();"),
+        "expected sort-then-reverse block, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(order_desc(vec![3, 1, 2]), vec![3, 2, 1]);
+    assert_eq!(order_asc(vec![3, 1, 2]), vec![1, 2, 3]);
+}
+"#;
+    assert_rustc_runs("sorted_reverse", &rust, driver);
+}
+
 /// PMAT-502d (Tranche 2): `reversed(xs)` (and `list(reversed(xs))`) →
 /// a new reversed list (`{ let mut __xv = xs.clone(); __xv.reverse(); __xv }`).
 #[test]
