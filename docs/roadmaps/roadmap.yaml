@@ -669,6 +669,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New StrMethodOp::Title (0-arg, -> Str). s.title() -> { let mut __tr = String::new(); let mut __pa = false; for __c in (s).chars() { if __c.is_alphabetic() { if __pa { __tr.extend(__c.to_lowercase()); } else { __tr.extend(__c.to_uppercase()); } __pa = true; } else { __tr.push(__c); __pa = false; } } __tr } in Rust+Ruchy (special-cased fold before recv-once emit). First alpha of each word upper, rest lower, non-alpha = word boundary. Matches Python EXACTLY incl. apostrophe quirk (\"it's\".title()->It'S). Rounds out case-transform family (upper/lower/capitalize/title). Lean refuses. rustc round-trip str_title.py: t(hello world)->Hello World, t(HELLO)->Hello, t(123abc)->123Abc, t(it's)->It'S, t(\"\")->\"\". FREE CI. SHIPPED v0.1.68."
+- id: PMAT-502AK
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ak: [Tranche2] round(x) 1-arg (bankers rounding)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::RoundToInt { value }. round(x) over a float -> ((<value>).round_ties_even() as i64) in Rust+Ruchy (round_ties_even = round-half-to-even = bankers rounding, matches Python's round EXACTLY: round(2.5)==2, round(3.5)==4, round(0.5)==0, vs Rust f64::round half-away gives round(2.5)==3). round(int) is identity (frontend returns value, no node). Result Int. 2-arg round(x,n) (returns float) follows. Lean refuses. round_ties_even stable since Rust 1.77 (workspace 1.93). rustc round-trip round_builtin.py: r(2.5)->2, r(3.5)->4, r(0.5)->0, r(1.5)->2, r(-1.5)->-2, r(2.4)->2, r(2.6)->3, r_int(7)->7. FREE CI. SHIPPED v0.1.69."
 - id: PMAT-465
   github_issue: 496
   item_type: task

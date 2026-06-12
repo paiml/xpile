@@ -872,6 +872,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502ah** — `s.capitalize()` (`StrMethodOp::Capitalize`) | block: first char `.to_uppercase()` + rest `.to_lowercase()`; empty→""; matches Python | ✅ SHIPPED v0.1.66 |
 | **PMAT-502ai** — standalone `enumerate(xs)`/`zip(a,b)` (`Expr::Enumerate`/`Zip`) | `.iter().cloned().enumerate().map(…).collect()` → `List(Tuple[I64,e])`; `.zip(…).collect()` → `List(Tuple[eL,eR])`; `list(…)` unwraps; composes w/ for-pair loop + `len` | ✅ SHIPPED v0.1.67 |
 | **PMAT-502aj** — `s.title()` (`StrMethodOp::Title`) | fold: first alpha of each word `.to_uppercase()`, rest `.to_lowercase()`, non-alpha = boundary; Python-exact (incl. `"it's"`→`"It'S"`) | ✅ SHIPPED v0.1.68 |
+| **PMAT-502ak** — `round(x)` 1-arg (`Expr::RoundToInt`) | float → `((x).round_ties_even() as i64)` (banker's rounding, Python-exact: `round(2.5)==2`); int → identity; `round(x,n)` follows | ✅ SHIPPED v0.1.69 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |

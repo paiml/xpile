@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.69] — 2026-06-12
+
+Tranche-2 slice PMAT-502ak — Python **`round(x)`** (1-arg).
+
+New meta-HIR `Expr::RoundToInt { value }`. `round(x)` over a `float` lowers to
+`((<value>).round_ties_even() as i64)` in Rust + Ruchy — `round_ties_even` is
+**round-half-to-even** (banker's rounding), so it matches Python's `round`
+*exactly* (`round(2.5) == 2`, `round(3.5) == 4`, `round(0.5) == 0`), unlike
+Rust's `f64::round` (half-away-from-zero, which would give `round(2.5) == 3`).
+`round(int)` is the identity (the frontend returns the value unchanged, no
+node). Result types as `Int`. The 2-arg `round(x, n)` form (returns a float)
+follows as its own slice. Lean refuses. rustc round-trip `round_builtin.py`:
+`r(2.5) -> 2`, `r(3.5) -> 4`, `r(0.5) -> 0`, `r(-1.5) -> -2`, `r(2.6) -> 3`,
+`r_int(7) -> 7`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.68] — 2026-06-12
 
 Tranche-2 slice PMAT-502aj — Python **`s.title()`**.
