@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.33] — 2026-06-12
+
+Tranche-2 slice PMAT-502b — Python **`str.replace(old, new)`**.
+
+Adds `StrMethodOp::Replace` (2 args) to the `Expr::StrMethod` family.
+`s.replace(old, new)` lowers to `<recv>.replace(&(<old>)[..], &(<new>)[..])`
+in Rust + Ruchy (the `&(..)[..]` reslice yields `&str` for both `String` and
+literal args); result types as `Str`. Lean refuses. rustc round-trip
+`str_replace.py`: `censor("a bad word") -> "a *** word"`,
+`swap("foobar","o","0") -> "f00bar"`.
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.32] — 2026-06-12
 
 Tranche-2 slice PMAT-501b — Python **set comprehensions** `{e for x in xs}`,
