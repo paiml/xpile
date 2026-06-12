@@ -251,6 +251,10 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::ToStr { value, .. } => expr_has_int_arith(value),
         // PMAT-502ak: round(x) — recurse into the rounded value.
         Expr::RoundToInt { value } => expr_has_int_arith(value),
+        // PMAT-502al: round(x, n) — recurse into the value and ndigits.
+        Expr::RoundToDigits { value, ndigits } => {
+            expr_has_int_arith(value) || expr_has_int_arith(ndigits)
+        }
         // PMAT-502k: seq * n — recurse into both the sequence and count.
         Expr::Repeat { seq, n } => expr_has_int_arith(seq) || expr_has_int_arith(n),
         // PMAT-502c: sorted — recurse into the list expression.
@@ -1098,6 +1102,18 @@ pub enum Expr {
     /// `round(int)` is the identity (handled in the frontend without this
     /// node); the 2-arg `round(x, n)` form follows. Lean refuses.
     RoundToInt { value: Box<Expr> },
+    /// `round(x, n)` over a **float** `x` and **int** `n` → the float rounded
+    /// to `n` decimal places (**Float**). PMAT-502al (Tranche 2). Rust/Ruchy
+    /// emit a block that, for `n >= 0`, formats to `n` decimals and parses
+    /// back (`format!("{:.1$}", x, n).parse()`) — Rust's float formatting is
+    /// round-half-to-**even**, the same correct decimal rounding Python uses,
+    /// so it matches Python exactly (incl. `round(2.675, 2) == 2.67` from the
+    /// float repr). For `n < 0` it scales down, `round_ties_even`s, and scales
+    /// back. Lean refuses.
+    RoundToDigits {
+        value: Box<Expr>,
+        ndigits: Box<Expr>,
+    },
     /// `sorted(xs)` / `sorted(xs, reverse=True)` / `sorted(xs, key=lambda
     /// p: e)` over a list — Python builtin returning a **new** sorted list
     /// (the input is not mutated). PMAT-502c; `reverse` is PMAT-502f; the

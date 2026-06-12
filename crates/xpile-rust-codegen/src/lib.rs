@@ -797,6 +797,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, value, mode)?;
             out.push_str(").round_ties_even() as i64)");
         }
+        // PMAT-502al: `round(x, n)` (float) → Python's decimal rounding. For
+        // n >= 0, format to n decimals (Rust's `{:.}` is round-half-to-even,
+        // matching Python) and parse back; for n < 0, scale + round_ties_even.
+        Expr::RoundToDigits { value, ndigits } => {
+            out.push_str("{ let __rx = ");
+            emit_expr(out, value, mode)?;
+            out.push_str("; let __rn = ");
+            emit_expr(out, ndigits, mode)?;
+            out.push_str("; if __rn >= 0 { format!(\"{:.1$}\", __rx, __rn as usize).parse::<f64>().unwrap() } else { let __rp = 10f64.powi((-__rn) as i32); (__rx / __rp).round_ties_even() * __rp } }");
+        }
         // PMAT-502e: 1-arg `min(xs)`/`max(xs)` reduction over an int list.
         // PMAT-502h: `list[float]` uses a fold (f64 has no `Ord`).
         // PMAT-502aa: `key=lambda p: e` → `min_by_key`/`max_by_key`.
