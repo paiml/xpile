@@ -995,6 +995,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 }
             }
         }
+        // PMAT-502ax: `d.setdefault(k, default)` →
+        // `(<dict>).entry(<key>.clone()).or_insert(<default>).clone()`.
+        Expr::DictSetDefault { dict, key, default } => {
+            out.push('(');
+            emit_expr(out, dict, mode)?;
+            out.push_str(").entry((");
+            emit_expr(out, key, mode)?;
+            out.push_str(").clone()).or_insert(");
+            emit_expr(out, default, mode)?;
+            out.push_str(").clone()");
+        }
         // PMAT-502c/f/z: `sorted(xs)` → `{ let mut __xv = <list>.clone();
         // __xv.sort(); __xv }`; `reverse=True` appends `__xv.reverse();`;
         // `key=lambda p: e` uses `__xv.sort_by_key(|__k| { let p = __k.clone(); e })`.

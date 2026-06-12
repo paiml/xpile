@@ -892,6 +892,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 }
             }
         }
+        // PMAT-502ax: `d.setdefault(k, default)`, matching the Rust backend.
+        Expr::DictSetDefault { dict, key, default } => {
+            out.push('(');
+            emit_expr(out, dict, mode)?;
+            out.push_str(").entry((");
+            emit_expr(out, key, mode)?;
+            out.push_str(").clone()).or_insert(");
+            emit_expr(out, default, mode)?;
+            out.push_str(").clone()");
+        }
         // PMAT-502c/f/z: clone+sort block; `reverse=True` appends
         // `__xv.reverse();`; `key=lambda p: e` → `sort_by_key`.
         Expr::Sorted { list, reverse, key } => {

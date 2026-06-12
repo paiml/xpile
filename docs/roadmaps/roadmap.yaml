@@ -786,6 +786,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Two new StrMethodOp variants (RJust, LJust), each a 1-arg width method returning Str. s.rjust(w) -> format!(\"{:>1$}\", <s>, (<w>) as usize) (right-justify, space-pad left); s.ljust(w) -> format!(\"{:<1$}\", <s>, (<w>) as usize). Rust format width is a MINIMUM so a string already >= w is returned unchanged = Python (no truncation). Emitted as block-form special case before the recv-once str method match in rust+ruchy (recv and width both inside format!). Non-default fill char (s.rjust(w, '*')) deferred. Lean refuses (str methods not in Lean lane). rustc round-trip str_just.py: pad_r(hi,5)->'   hi', pad_l(hi,5)->'hi   ', pad_r(hello,3)->'hello' (no truncation), lit_pad()->'   hi'. FREE CI. SHIPPED v0.1.81."
+- id: PMAT-502AX
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ax: [Tranche2] dict get-or-insert d.setdefault(k, default)'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::DictSetDefault { dict, key, default }. Expression: present key -> existing value; absent key -> insert default + return it. Lowers to (<dict>).entry((<key>).clone()).or_insert(<default>).clone() in Rust+Ruchy (.entry consumes key so it's cloned to keep the caller binding usable, no-op move for Copy keys; trailing .clone() lifts &mut V to owned). Result types as dict value type (both infer paths). Recognised in the expr-context Call arm next to .get (Dict receiver, 2 args). Receiver mut via the count_pop_receivers pre-pass, GENERALIZED to scan .setdefault as well as .pop (so set-defaulted locals + params get let mut). First cut requires explicit default (1-arg setdefault -> None needs Optional). Lean refuses (in-place mutation). rustc round-trip dict_setdefault.py: getset_present({a:7},a)->7 (no insert), getset({},x)->0 (insert), local_setdefault()->6 (local receiver). FREE CI. SHIPPED v0.1.82."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -279,17 +279,20 @@ fn count_pop_receivers_in_stmt(stmt: &ast::Stmt, counts: &mut HashMap<String, us
 }
 
 /// Recursively walk an expression, bumping the count of every simple-name
-/// receiver of a `.pop(...)` call. Covers the common nestings a popped
-/// value appears in (arithmetic, comparisons, call args, collections);
-/// exotic shapes simply aren't counted (the receiver then stays
-/// immutable, which at worst surfaces a compile error rather than wrong
-/// behaviour).
+/// receiver of an expression-position mutator call — `.pop(...)`
+/// (PMAT-502as/au) or `.setdefault(...)` (PMAT-502ax). Both mutate their
+/// receiver while evaluating to a value, so a receiver popped/set-defaulted
+/// in an `x = …` / `return …` position must be `mut`. Covers the common
+/// nestings the value appears in (arithmetic, comparisons, call args,
+/// collections); exotic shapes simply aren't counted (the receiver then
+/// stays immutable, which at worst surfaces a compile error rather than
+/// wrong behaviour).
 fn count_pop_receivers(e: &ast::Expr, counts: &mut HashMap<String, usize>, bump: usize) {
     use ast::Expr as E;
     match e {
         E::Call(call) => {
             if let E::Attribute(attr) = call.func.as_ref() {
-                if attr.attr.as_str() == "pop" {
+                if matches!(attr.attr.as_str(), "pop" | "setdefault") {
                     if let E::Name(n) = attr.value.as_ref() {
                         *counts.entry(n.id.to_string()).or_insert(0) += bump;
                     }
@@ -2782,6 +2785,11 @@ fn infer_type(e: &Expr) -> Type {
             Type::Dict(_, v) => *v,
             _ => Type::I64,
         },
+        // PMAT-502ax: dict.setdefault() returns the dict's value type.
+        Expr::DictSetDefault { dict, .. } => match infer_type(dict) {
+            Type::Dict(_, v) => *v,
+            _ => Type::I64,
+        },
         // PMAT-502v/502x: d.keys()/d.values()/d.items() materialize to
         // List(K)/List(V)/List(Tuple[K, V]).
         Expr::DictView { dict, kind } => match infer_type(dict) {
@@ -3018,6 +3026,11 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             Type::Dict(_, v) => *v,
             _ => Type::I64,
         },
+        // PMAT-502ax: dict.setdefault() returns the dict's value type.
+        Expr::DictSetDefault { dict, .. } => match infer_type_in_ctx(ctx, dict) {
+            Type::Dict(_, v) => *v,
+            _ => Type::I64,
+        },
         // PMAT-502v: d.keys()/d.values() materialize to List(K)/List(V).
         Expr::DictView { dict, kind } => match infer_type_in_ctx(ctx, dict) {
             Type::Dict(k, v) => Type::List(match kind {
@@ -3230,6 +3243,37 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         let key = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                         let default = lower_expr_in_ctx(ctx, call.args[1].clone())?;
                         return Ok(Expr::DictGetOr {
+                            dict: Box::new(recv),
+                            key: Box::new(key),
+                            default: Box::new(default),
+                        });
+                    }
+                }
+                // PMAT-502ax: `d.setdefault(k, default)` — get-or-insert over
+                // a dict (2 args). Mutates on the absent path, so the receiver
+                // is marked mut by the `count_pop_receivers` pre-pass (which
+                // also scans `.setdefault`).
+                // First cut requires the explicit default (1-arg setdefault,
+                // which defaults to `None`, needs Optional support).
+                if attr.attr.as_str() == "setdefault" {
+                    let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &recv), Type::Dict(_, _)) {
+                        if !call.keywords.is_empty() || call.args.len() != 2 {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` calls dict `.setdefault(...)` with {} positional \
+                                 arg(s){} — v0.2.0 supports exactly `.setdefault(key, default)`",
+                                ctx.fn_name,
+                                call.args.len(),
+                                if call.keywords.is_empty() {
+                                    ""
+                                } else {
+                                    " plus keyword args"
+                                },
+                            )));
+                        }
+                        let key = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                        let default = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                        return Ok(Expr::DictSetDefault {
                             dict: Box::new(recv),
                             key: Box::new(key),
                             default: Box::new(default),

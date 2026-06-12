@@ -302,6 +302,10 @@ fn expr_has_int_arith(e: &Expr) -> bool {
                 || expr_has_int_arith(key)
                 || default.as_ref().is_some_and(|d| expr_has_int_arith(d))
         }
+        // PMAT-502ax: dict.setdefault() — recurse into dict, key, default.
+        Expr::DictSetDefault { dict, key, default } => {
+            expr_has_int_arith(dict) || expr_has_int_arith(key) || expr_has_int_arith(default)
+        }
         // PMAT-500: set literal / membership — recurse defensively.
         Expr::SetLit(elems) => elems.iter().any(expr_has_int_arith),
         Expr::SetContains { set, elem } => expr_has_int_arith(set) || expr_has_int_arith(elem),
@@ -1348,6 +1352,23 @@ pub enum Expr {
         dict: Box<Expr>,
         key: Box<Expr>,
         default: Option<Box<Expr>>,
+    },
+    /// Dict get-or-insert — Python `d.setdefault(k, default)`. PMAT-502ax
+    /// (Tranche 2). An *expression*: if `key` is present, evaluates to its
+    /// value; otherwise inserts `default` under `key` and evaluates to it.
+    /// Because the absent case mutates, the receiver must be mutable (the
+    /// frontend marks it). The result type is the dict's value type.
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: `(<dict>).entry(<key>.clone()).or_insert(<default>).clone()`
+    ///     — `.entry` consumes the key, so it is `.clone()`d to keep the
+    ///     caller's binding usable (a no-op move for `Copy` keys); the
+    ///     trailing `.clone()` lifts the `&mut V` to an owned value.
+    ///   * Lean: refuses (in-place mutation, same gap as `Stmt::ListAppend`).
+    DictSetDefault {
+        dict: Box<Expr>,
+        key: Box<Expr>,
+        default: Box<Expr>,
     },
     /// Unary operation — `not x` (logical, Bool → Bool) or `-x`
     /// (numeric negate, I64 → I64).

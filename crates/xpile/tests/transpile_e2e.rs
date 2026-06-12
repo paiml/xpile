@@ -2288,6 +2288,41 @@ fn main() {
     assert_rustc_runs("str_just", &rust, driver);
 }
 
+/// PMAT-502ax (Tranche 2): dict get-or-insert `d.setdefault(k, default)`
+/// → `(d).entry((k).clone()).or_insert(default).clone()`. Present key
+/// returns the existing value; absent key inserts the default. Covers
+/// param + local receivers.
+#[test]
+fn dict_setdefault() {
+    let rust = xpile_transpile_to_rust("dict_setdefault.py");
+    assert!(
+        rust.contains("(d).entry((k).clone()).or_insert(0i64).clone()"),
+        "setdefault:\n{rust}"
+    );
+    assert!(
+        rust.contains("getset(mut d: std::collections::HashMap"),
+        "mut param:\n{rust}"
+    );
+    // Local receiver marked mut by the count_pop_receivers pre-pass.
+    assert!(
+        rust.contains("let mut d: std::collections::HashMap"),
+        "mut local:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let mut d = std::collections::HashMap::new();
+    d.insert("a".to_string(), 7);
+    // present key → existing value, no insert.
+    assert_eq!(getset_present(d, "a".to_string()), 7);
+    // absent key → inserts default and returns it.
+    let d2 = std::collections::HashMap::new();
+    assert_eq!(getset(d2, "x".to_string()), 0);
+    assert_eq!(local_setdefault(), 6);
+}
+"#;
+    assert_rustc_runs("dict_setdefault", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
