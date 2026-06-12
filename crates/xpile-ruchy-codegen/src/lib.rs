@@ -102,6 +102,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             | Stmt::Return(_)
             | Stmt::LetTuple { .. }
             | Stmt::ClosureLet { .. }
+            | Stmt::Continue
+            | Stmt::Break
             | Stmt::Raise { .. } => false,
             Stmt::While { body, .. }
             | Stmt::ForEach { body, .. }
@@ -197,6 +199,15 @@ fn emit_stmt_indented(
             write!(out, "{indent}return ")?;
             emit_expr(out, e, mode)?;
             writeln!(out, ";")?;
+            Ok(())
+        }
+        // PMAT-502bk: loop-control statements, matching the Rust backend.
+        Stmt::Continue => {
+            writeln!(out, "{indent}continue;")?;
+            Ok(())
+        }
+        Stmt::Break => {
+            writeln!(out, "{indent}break;")?;
             Ok(())
         }
         // PMAT-478 (R9): if/else statement → `if c { … } else { … }`.

@@ -968,6 +968,12 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         ast::Stmt::While(w) => lower_while_stmt(ctx, w).map(|s| vec![s]),
         ast::Stmt::For(f) => lower_for_stmt(ctx, f),
         ast::Stmt::Assert(a) => lower_assert_stmt(ctx, a).map(|s| vec![s]),
+        // PMAT-502bk: `continue` / `break` loop control. A `continue`
+        // inside a `range(...)` for-loop is rejected in `lower_for_stmt`
+        // (that desugars to a while whose tail counter-increment the
+        // `continue` would skip); `break` and list/while `continue` are fine.
+        ast::Stmt::Continue(_) => Ok(vec![Stmt::Continue]),
+        ast::Stmt::Break(_) => Ok(vec![Stmt::Break]),
         // PMAT-502at: `del coll[key]` item deletion (list or dict).
         ast::Stmt::Delete(d) => lower_delete_stmt(ctx, d).map(|s| vec![s]),
         // PMAT-503a: `raise SomeException("msg")` → `Stmt::Raise`. Works
@@ -1601,6 +1607,18 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
     for stmt in f.body {
         body.extend(lower_block_stmt(ctx, stmt)?);
     }
+    // PMAT-502bk: a `continue` belonging to this `range(...)` loop would
+    // skip the tail counter-increment below (an infinite loop). Reject it
+    // (a list iteration or a manual `while` loop is the workaround).
+    // `break` is fine — it exits the loop before the increment.
+    if body_has_top_level_continue(&body) {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` uses `continue` inside a `range(...)` for-loop; v0.2.0 \
+             can't compose it with the loop's counter-increment — iterate a list or \
+             use a `while` loop",
+            ctx.fn_name
+        )));
+    }
     // Tail: target = target + step
     body.push(Stmt::Assign {
         name: target_name.clone(),
@@ -1613,6 +1631,24 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
 
     let while_stmt = Stmt::While { cond, body };
     Ok(vec![init_stmt, while_stmt])
+}
+
+/// PMAT-502bk: does `stmts` contain a `continue` that belongs to *this*
+/// loop — i.e. directly or inside an `if`, but NOT inside a nested loop
+/// (where the `continue` belongs to that inner loop instead)? Used to
+/// reject `continue` in a `range(...)` for-loop, whose desugaring appends
+/// a tail counter-increment that a `continue` would skip.
+fn body_has_top_level_continue(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(|s| match s {
+        Stmt::Continue => true,
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => body_has_top_level_continue(then_body) || body_has_top_level_continue(else_body),
+        // Nested loops own their own `continue`/`break`; don't descend.
+        _ => false,
+    })
 }
 
 /// Lower a Python `while cond: body` into [`Stmt::While`]. Body

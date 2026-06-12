@@ -330,6 +330,14 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-502bk: loop-control inside a while loop is unsupported.
+            Stmt::Continue | Stmt::Break => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` uses `continue`/`break`; loop control is not \
+                     supported in the Lean lane",
+                    f.name
+                )));
+            }
         }
     }
 
@@ -816,6 +824,12 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         // PMAT-479 (R10): early returns need a match/monadic encoding;
         // Lean keeps the single-trailing-return shape. The decy C
         // frontend (which produces these) targets Rust.
+        // PMAT-502bk: loop control has no encoding in the Lean lane.
+        Stmt::Continue | Stmt::Break => Err(LeanCodegenError::Unsupported(
+            "`continue`/`break` (loop control) is not lowered by the Lean backend — \
+             use `--target rust` or `--target ruchy`"
+                .into(),
+        )),
         Stmt::Return(_) => Err(LeanCodegenError::Unsupported(
             "Stmt::Return (early return) is not lowered by the Lean backend — \
              Lean uses a single trailing return; use `--target rust` or `--target ruchy`"

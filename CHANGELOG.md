@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.97] — 2026-06-13
+
+Tranche-2 slice PMAT-502bk — Python **`continue` / `break`** loop control.
+
+New meta-HIR `Stmt::Continue` / `Stmt::Break`, emitting `continue;` / `break;` in
+Rust + Ruchy. They compose with the existing `Stmt::If` / `Stmt::ForEach`
+machinery, so `for x in xs: if cond: continue` and `… break` map directly to the
+emitted Rust `for` loop. One correctness guard: a `continue` belonging to a
+`range(...)` for-loop is **rejected** at the frontend — that loop desugars to a
+`while` with a tail counter-increment that `continue` would skip (an infinite
+loop); `break` in a range-for is fine (it exits before the increment), and both
+work in list/dict iteration. Lean refuses (no loop-control encoding). rustc
+round-trip `loop_control.py`: `sum_pos([1,-2,3,-4,5]) -> 9` (continue),
+`first_neg([1,2,-3,4]) -> -3` (break), `sum_below_three(10) -> 3` (break in a
+range-for).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.96] — 2026-06-13
 
 Tranche-2 slice PMAT-502bj — Python **module-level constants** `NAME = <literal>`.
