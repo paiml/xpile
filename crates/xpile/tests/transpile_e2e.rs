@@ -1454,6 +1454,29 @@ fn main() {
     assert_rustc_runs("tuple_index", &rust, driver);
 }
 
+/// PMAT-502r (Tranche 2): open-ended slices `xs[a:]` / `xs[:b]` / `xs[:]`
+/// (list + str) → half-open / full Rust ranges.
+#[test]
+fn open_slice() {
+    let rust = xpile_transpile_to_rust("open_slice.py");
+    assert!(
+        rust.contains("xs[..(n) as usize].to_vec()")
+            && rust.contains("xs[(n) as usize..].to_vec()")
+            && rust.contains("xs[..].to_vec()"),
+        "expected open-ended slice emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(head(vec![1, 2, 3, 4], 2), vec![1, 2]);
+    assert_eq!(tail(vec![1, 2, 3, 4], 2), vec![3, 4]);
+    assert_eq!(copy_all(vec![1, 2, 3]), vec![1, 2, 3]);
+    assert_eq!(str_prefix(String::from("hello"), 3), String::from("hel"));
+    assert_eq!(str_suffix(String::from("hello"), 3), String::from("lo"));
+}
+"#;
+    assert_rustc_runs("open_slice", &rust, driver);
+}
+
 /// PMAT-502h (Tranche 2): 1-arg `min(xs)`/`max(xs)` over a `list[float]` →
 /// a fold (`fold(f64::INFINITY, f64::min)` / `fold(f64::NEG_INFINITY, f64::max)`).
 #[test]

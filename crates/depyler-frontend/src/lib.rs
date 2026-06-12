@@ -3120,27 +3120,32 @@ fn lower_slice_in_ctx(
             ctx.fn_name
         )));
     }
-    let (Some(lo), Some(hi)) = (slice.lower.as_ref(), slice.upper.as_ref()) else {
-        return Err(FrontendError::Lower(format!(
-            "function `{}` uses an open-ended slice (`xs[a:]` / `xs[:b]` / `xs[:]`) — v0.2.0 first cut requires both bounds `xs[a:b]`",
-            ctx.fn_name
-        )));
-    };
-    let lo = lower_expr_in_ctx(ctx, (**lo).clone())?;
-    let hi = lower_expr_in_ctx(ctx, (**hi).clone())?;
-    for (b, which) in [(&lo, "lower"), (&hi, "upper")] {
-        let bt = infer_type_in_ctx(ctx, b);
-        if !matches!(bt, Type::I64) {
-            return Err(FrontendError::Lower(format!(
-                "function `{}` has a slice {which} bound typing as {bt:?}; only `int` bounds are supported",
-                ctx.fn_name
-            )));
+    // PMAT-502r: an absent bound is an open end (`xs[a:]`, `xs[:b]`, `xs[:]`).
+    // Each present bound must type as `int`.
+    let lower_bound = |which: &str,
+                       b: Option<&Box<ast::Expr>>|
+     -> Result<Option<Box<Expr>>, FrontendError> {
+        match b {
+            None => Ok(None),
+            Some(e) => {
+                let lowered = lower_expr_in_ctx(ctx, (**e).clone())?;
+                let bt = infer_type_in_ctx(ctx, &lowered);
+                if !matches!(bt, Type::I64) {
+                    return Err(FrontendError::Lower(format!(
+                            "function `{}` has a slice {which} bound typing as {bt:?}; only `int` bounds are supported",
+                            ctx.fn_name
+                        )));
+                }
+                Ok(Some(Box::new(lowered)))
+            }
         }
-    }
+    };
+    let lo = lower_bound("lower", slice.lower.as_ref())?;
+    let hi = lower_bound("upper", slice.upper.as_ref())?;
     Ok(Expr::Slice {
         collection: Box::new(collection),
-        lo: Box::new(lo),
-        hi: Box::new(hi),
+        lo,
+        hi,
         of_str,
     })
 }

@@ -448,12 +448,17 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         // PMAT-502q: tuple constant-index — recurse into the tuple expr.
         Expr::TupleIndex { tuple, .. } => collect_idents(tuple, out),
         // PMAT-496: slice — recurse into collection + bound expressions.
+        // PMAT-502r: bounds are optional (open-ended slices).
         Expr::Slice {
             collection, lo, hi, ..
         } => {
             collect_idents(collection, out);
-            collect_idents(lo, out);
-            collect_idents(hi, out);
+            if let Some(lo) = lo {
+                collect_idents(lo, out);
+            }
+            if let Some(hi) = hi {
+                collect_idents(hi, out);
+            }
         }
         // PMAT-498: numeric builtin — recurse into each arg.
         Expr::NumBuiltin { args, .. } => {
