@@ -1347,6 +1347,11 @@ pub enum StrMethodOp {
     /// `.isspace()` → `(!(s).is_empty() && (s).chars().all(|c| c.is_whitespace()))`
     /// (**Bool**, 0 args). PMAT-502ag.
     IsSpace,
+    /// `.capitalize()` → first char upper-cased, the rest lower-cased
+    /// (**Str**, 0 args). PMAT-502ah. Emits a block that pops the first
+    /// char (`to_uppercase`) and lower-cases the remainder; the empty
+    /// string maps to `""` (matching Python).
+    Capitalize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

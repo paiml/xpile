@@ -2357,6 +2357,8 @@ fn infer_type(e: &Expr) -> Type {
             StrMethodOp::Find | StrMethodOp::Count => Type::I64,
             // PMAT-502ag: isdigit/isalpha/isspace → Bool.
             StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace => Type::Bool,
+            // PMAT-502ah: capitalize → Str.
+            StrMethodOp::Capitalize => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
         // type from the first element (frontend ensures homogeneity
@@ -2544,6 +2546,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             StrMethodOp::Find | StrMethodOp::Count => Type::I64,
             // PMAT-502ag: isdigit/isalpha/isspace → Bool.
             StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace => Type::Bool,
+            // PMAT-502ah: capitalize → Str.
+            StrMethodOp::Capitalize => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
         // shape as the context-free `infer_type` arm.
@@ -3942,6 +3946,8 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
         "isdigit" => Some(StrMethodOp::IsDigit),
         "isalpha" => Some(StrMethodOp::IsAlpha),
         "isspace" => Some(StrMethodOp::IsSpace),
+        // PMAT-502ah: capitalize (0-arg).
+        "capitalize" => Some(StrMethodOp::Capitalize),
         _ => None,
     }
 }
@@ -3961,6 +3967,8 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         StrMethodOp::Find | StrMethodOp::Count => 1,
         // PMAT-502ag: classification predicates take no args.
         StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace => 0,
+        // PMAT-502ah: capitalize takes no args.
+        StrMethodOp::Capitalize => 0,
     }
 }
 

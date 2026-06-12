@@ -1474,6 +1474,26 @@ fn main() {
     assert_rustc_runs("str_predicates", &rust, driver);
 }
 
+/// PMAT-502ah (Tranche 2): `s.capitalize()` → first char upper, rest lower
+/// (empty → ""), matching Python.
+#[test]
+fn str_capitalize() {
+    let rust = xpile_transpile_to_rust("str_capitalize.py");
+    assert!(
+        rust.contains("__f.to_uppercase().collect::<String>()"),
+        "expected capitalize block, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(cap(String::from("hELLO")), String::from("Hello"));
+    assert_eq!(cap(String::from("world")), String::from("World"));
+    assert_eq!(cap(String::from("a")), String::from("A"));
+    assert_eq!(cap(String::from("")), String::from(""));
+}
+"#;
+    assert_rustc_runs("str_capitalize", &rust, driver);
+}
+
 /// PMAT-502m (Tranche 2): numeric conversions `int(x)` / `float(x)` →
 /// `((x) as i64)` (truncate toward zero) / `((x) as f64)`.
 #[test]

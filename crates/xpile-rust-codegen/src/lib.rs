@@ -604,6 +604,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     _ => "is_whitespace()",
                 });
                 out.push_str("))");
+            } else if matches!(op, StrMethodOp::Capitalize) {
+                // PMAT-502ah: `.capitalize()` → first char upper, rest lower
+                // (empty → ""), matching Python.
+                out.push_str("{ let __cs = &(");
+                emit_expr(out, recv, mode)?;
+                out.push_str("); let mut __ch = __cs.chars(); match __ch.next() { Some(__f) => __f.to_uppercase().collect::<String>() + &(__ch.as_str().to_lowercase()), None => String::new() } }");
             } else {
                 emit_expr(out, recv, mode)?;
                 match op {
@@ -652,6 +658,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace => {
                         unreachable!("classification predicates handled above")
                     }
+                    StrMethodOp::Capitalize => unreachable!("capitalize handled above"),
                 }
             }
         }
