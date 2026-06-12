@@ -1288,6 +1288,29 @@ fn main() {
     assert_rustc_runs("reversed_builtin", &rust, driver);
 }
 
+/// PMAT-502ab (Tranche 2): `filter(lambda p: pred, xs)` → an order-preserving
+/// materialized list of elements where the Bool predicate holds.
+#[test]
+fn filter_lambda() {
+    let rust = xpile_transpile_to_rust("filter_lambda.py");
+    assert!(
+        rust.contains(".iter().cloned().filter(|__k| { let x = __k.clone();")
+            && rust.contains(").collect::<Vec<_>>()"),
+        "expected filter emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(positives(vec![-1, 2, -3, 4, 0]), vec![2, 4]);
+    assert_eq!(evens(vec![1, 2, 3, 4, 5, 6]), vec![2, 4, 6]);
+    assert_eq!(
+        nonempty(vec![String::from("a"), String::from(""), String::from("bb")]),
+        vec![String::from("a"), String::from("bb")]
+    );
+}
+"#;
+    assert_rustc_runs("filter_lambda", &rust, driver);
+}
+
 /// PMAT-502e (Tranche 2): 1-arg `min(xs)`/`max(xs)` over an int list →
 /// `xs.iter().copied().min().unwrap()` (or `.max()`).
 #[test]

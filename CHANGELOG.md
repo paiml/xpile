@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.60] — 2026-06-12
+
+Tranche-2 slice PMAT-502ab — Python **`filter(lambda p: pred, xs)`**.
+
+New meta-HIR `Expr::Filter { list, lambda }` (the `lambda` reuses `SortKey` —
+param + body). `filter(lambda p: pred, xs)` over a list lowers to
+`xs.iter().cloned().filter(|__k| { let p = __k.clone(); pred }).collect::<Vec<_>>()`
+in Rust + Ruchy — an order-preserving materialized list of the elements where
+the **Bool** predicate holds; result types as the input list type. `list(filter(…))`
+unwraps to the same node. The predicate body is lowered with `p` unbound (same
+as the v0.1.58/59 lambda foothold), and must infer as `Bool` (so comparisons
+work but Python truthiness is deferred). Lean refuses. This extends the lambda
+foothold to its third builtin (after `sorted`/`min`/`max` keys). rustc round-trip
+`filter_lambda.py`: `positives([-1,2,-3,4,0]) -> [2,4]`,
+`evens([1..6]) -> [2,4,6]`, `nonempty(["a","","bb"]) -> ["a","bb"]`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.59] — 2026-06-12
 
 Tranche-2 slice PMAT-502aa — Python **`min(xs, key=lambda)` / `max(xs, key=lambda)`**.
