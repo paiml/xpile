@@ -2817,6 +2817,19 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         return Ok(inner);
                     }
                 }
+                // PMAT-502i: empty collection constructors. `set()`/`dict()`/
+                // `list()` (0 args) → the corresponding empty literal. Like
+                // the empty `{}` dict, the element type comes from a binding
+                // annotation (`s: set[int] = set()`) or a subsequent
+                // `.add()`/`.append()` that lets rustc infer it.
+                if call.keywords.is_empty() && call.args.is_empty() {
+                    match fname.id.as_str() {
+                        "set" => return Ok(Expr::SetLit(Vec::new())),
+                        "dict" => return Ok(Expr::DictLit(Vec::new())),
+                        "list" => return Ok(Expr::ListLit(Vec::new())),
+                        _ => {}
+                    }
+                }
             }
             // PMAT-474 (R5): reorder keyword args to positional using
             // the module signature table, then lower as a plain call.
