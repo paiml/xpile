@@ -2598,6 +2598,30 @@ fn main() {
     assert_rustc_runs("str_parse", &rust, driver);
 }
 
+/// PMAT-502bg (Tranche 2): list concatenation `xs + ys` →
+/// `(xs).iter().chain((ys).iter()).cloned().collect::<Vec<_>>()` (a fresh
+/// `Vec`, consuming neither operand).
+#[test]
+fn list_concat() {
+    let rust = xpile_transpile_to_rust("list_concat.py");
+    assert!(
+        rust.contains("(a).iter().chain((b).iter()).cloned().collect::<Vec<_>>()"),
+        "list concat:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(cat(vec![1, 2], vec![3, 4]), vec![1, 2, 3, 4]);
+    assert_eq!(cat_lit(), vec![1, 2, 3, 4]);
+    assert_eq!(cat_len(vec![1, 2], vec![3, 4, 5]), 5);
+    // operands not consumed:
+    let a = vec![1, 2];
+    let _ = cat(a.clone(), vec![9]);
+    assert_eq!(a.len(), 2);
+}
+"#;
+    assert_rustc_runs("list_concat", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

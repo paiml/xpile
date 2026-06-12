@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.93] — 2026-06-13
+
+Tranche-2 slice PMAT-502bg — Python **list concatenation** `xs + ys`.
+
+New meta-HIR `Expr::ListConcat { lhs, rhs }` — the list-side companion of
+`Expr::Concat` (string `+`). When both operands of `+` type as `Type::List`, the
+frontend now lowers to `ListConcat` (disambiguated from int `+` and str `+` by
+operand type, in both the context-aware and context-free `BinOp` paths). Rust +
+Ruchy emit `(<lhs>).iter().chain((<rhs>).iter()).cloned().collect::<Vec<_>>()` — a
+fresh `Vec` that consumes neither operand (matching Python, where `+` does not
+mutate either list); the result types as the list type. Previously `xs + ys` fell
+through to a checked-int `BinOp` that typed as I64 and failed the `-> list[T]`
+return-type check. Lean refuses. rustc round-trip `list_concat.py`:
+`cat([1,2],[3,4]) -> [1,2,3,4]`, `cat_lit() -> [1,2,3,4]`,
+`cat_len([1,2],[3,4,5]) -> 5` (operands survive).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.92] — 2026-06-12
 
 Tranche-2 slice PMAT-502bf — Python **`int(s)` / `float(s)` string parsing**.

@@ -601,6 +601,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, rhs, mode)?;
             out.push(')');
         }
+        // PMAT-502bg: `xs + ys` (lists), matching the Rust backend.
+        Expr::ListConcat { lhs, rhs } => {
+            out.push('(');
+            emit_expr(out, lhs, mode)?;
+            out.push_str(").iter().chain((");
+            emit_expr(out, rhs, mode)?;
+            out.push_str(").iter()).cloned().collect::<Vec<_>>()");
+        }
         // PMAT-502am: a formatted f-string field → `format!("{:<spec>}", v)`.
         Expr::FormatSpec { value, rust_spec } => {
             write!(out, "format!(\"{{:{rust_spec}}}\", ")?;

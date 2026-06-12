@@ -3073,6 +3073,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::LitStr(_) => Type::Str,
         // PMAT-451: str concatenation is a Type::Str-producing op.
         Expr::Concat { .. } => Type::Str,
+        // PMAT-502bg: list concatenation types as the list (of `lhs`).
+        Expr::ListConcat { lhs, .. } => infer_type(lhs),
         // PMAT-502am: a formatted f-string field produces a Str.
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
@@ -3310,6 +3312,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::LitStr(_) => Type::Str,
         // PMAT-451: str concatenation is Type::Str-producing.
         Expr::Concat { .. } => Type::Str,
+        // PMAT-502bg: list concatenation types as the list (of `lhs`).
+        Expr::ListConcat { lhs, .. } => infer_type_in_ctx(ctx, lhs),
         // PMAT-502am: a formatted f-string field produces a Str.
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
@@ -4356,6 +4360,17 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 }
             }
             let op = lower_binop(&b.op)?;
+            // PMAT-502bg: `xs + ys` over two lists → list concatenation
+            // (disambiguated from int `+` by operand type).
+            if matches!(op, BinOp::Add)
+                && matches!(infer_type_in_ctx(ctx, &lhs), Type::List(_))
+                && matches!(infer_type_in_ctx(ctx, &rhs), Type::List(_))
+            {
+                return Ok(Expr::ListConcat {
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                });
+            }
             if matches!(op, BinOp::Add)
                 && (infer_type_in_ctx(ctx, &lhs) == Type::Str
                     || infer_type_in_ctx(ctx, &rhs) == Type::Str)
@@ -4640,6 +4655,16 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             // recognize `name: str` parameters via the name table.
             // First cut handles `"a" + "b"` and `"prefix" + literal`
             // shapes — sufficient for the greet_concat fixture.
+            // PMAT-502bg: `xs + ys` over two lists → list concatenation.
+            if matches!(op, BinOp::Add)
+                && matches!(infer_type(&lhs), Type::List(_))
+                && matches!(infer_type(&rhs), Type::List(_))
+            {
+                return Ok(Expr::ListConcat {
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                });
+            }
             if matches!(op, BinOp::Add)
                 && (infer_type(&lhs) == Type::Str || infer_type(&rhs) == Type::Str)
             {

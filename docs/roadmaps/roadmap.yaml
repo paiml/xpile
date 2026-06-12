@@ -877,6 +877,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Expr::NumCast gained a from_str: bool flag. int(s)/float(s) over a STRING arg lowers to (<s>).trim().parse::<i64>().expect(...) / .parse::<f64>().expect(...) in Rust+Ruchy — .trim() matches Python whitespace stripping (int('  -7  ')==-7), parse failure panics = Python ValueError. Numeric int(x)/float(x) over int/float still emits the as-cast. Previously a string arg fell through to a non-existent int(...) call emitting uncompilable Rust (silently broken). Lean refuses. rustc round-trip str_parse.py (cross-checked vs python3): to_int('42')->42, to_int('  -7  ')->-7, to_float('3.14')->3.14, add_parsed('10','20')->30, numeric_still(2.9)->2, int('abc') panics. FREE CI. SHIPPED v0.1.92."
+- id: PMAT-502BG
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bg: [Tranche2] list concatenation xs + ys'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::ListConcat { lhs, rhs } — the list-side companion of Expr::Concat (string +). When both operands of + type as Type::List, the frontend lowers to ListConcat (disambiguated from int + and str + by operand type, in BOTH the ctx-aware and context-free BinOp paths). Rust+Ruchy emit (<lhs>).iter().chain((<rhs>).iter()).cloned().collect::<Vec<_>>() — a fresh Vec consuming neither operand (Python + doesn't mutate either); result types as the list type. Previously xs + ys fell through to a checked-int BinOp typing as I64, failing the -> list[T] return check. Lean refuses. rustc round-trip list_concat.py: cat([1,2],[3,4])->[1,2,3,4], cat_lit()->[1,2,3,4], cat_len([1,2],[3,4,5])->5 (operands survive). FREE CI. SHIPPED v0.1.93."
 - id: PMAT-465
   github_issue: 496
   item_type: task
