@@ -1558,6 +1558,32 @@ fn main() {
     assert_rustc_runs("num_cast", &rust, driver);
 }
 
+/// PMAT-502ak (Tranche 2): `round(x)` over a float → nearest int via
+/// banker's rounding (`round_ties_even`), matching Python exactly.
+#[test]
+fn round_builtin() {
+    let rust = xpile_transpile_to_rust("round_builtin.py");
+    assert!(
+        rust.contains(".round_ties_even() as i64)"),
+        "expected round_ties_even emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // banker's rounding: ties go to the even neighbor (matches Python)
+    assert_eq!(r(2.5), 2);
+    assert_eq!(r(3.5), 4);
+    assert_eq!(r(0.5), 0);
+    assert_eq!(r(1.5), 2);
+    assert_eq!(r(-1.5), -2);
+    assert_eq!(r(2.4), 2);
+    assert_eq!(r(2.6), 3);
+    // round(int) is the identity
+    assert_eq!(r_int(7), 7);
+}
+"#;
+    assert_rustc_runs("round_builtin", &rust, driver);
+}
+
 /// PMAT-502ad (Tranche 2): `str(x)` over an int → `format!("{}", x)`
 /// (unblocks `"prefix" + str(n)` concatenation).
 #[test]

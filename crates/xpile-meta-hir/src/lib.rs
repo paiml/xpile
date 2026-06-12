@@ -249,6 +249,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::NumCast { value, .. } => expr_has_int_arith(value),
         // PMAT-502ad: str(x) — recurse into the converted value.
         Expr::ToStr { value, .. } => expr_has_int_arith(value),
+        // PMAT-502ak: round(x) — recurse into the rounded value.
+        Expr::RoundToInt { value } => expr_has_int_arith(value),
         // PMAT-502k: seq * n — recurse into both the sequence and count.
         Expr::Repeat { seq, n } => expr_has_int_arith(seq) || expr_has_int_arith(n),
         // PMAT-502c: sorted — recurse into the list expression.
@@ -1088,6 +1090,14 @@ pub enum Expr {
     /// `format!` prints e.g. `2.0` as `"2"`. Result types as `Str`.
     /// (`str(bool)` desugars to an `IfExpr`, PMAT-502ae.) Lean refuses.
     ToStr { value: Box<Expr>, of_float: bool },
+    /// `round(x)` over a **float** `x` → the nearest integer (**Int**).
+    /// PMAT-502ak (Tranche 2). Rust/Ruchy emit `((<value>).round_ties_even()
+    /// as i64)` — `round_ties_even` is round-half-to-**even** (banker's
+    /// rounding), exactly matching Python's `round` (e.g. `round(2.5) == 2`,
+    /// `round(3.5) == 4`), unlike Rust's `f64::round` (half-away-from-zero).
+    /// `round(int)` is the identity (handled in the frontend without this
+    /// node); the 2-arg `round(x, n)` form follows. Lean refuses.
+    RoundToInt { value: Box<Expr> },
     /// `sorted(xs)` / `sorted(xs, reverse=True)` / `sorted(xs, key=lambda
     /// p: e)` over a list — Python builtin returning a **new** sorted list
     /// (the input is not mutated). PMAT-502c; `reverse` is PMAT-502f; the
