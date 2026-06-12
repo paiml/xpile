@@ -2668,6 +2668,38 @@ fn main() {
     assert_rustc_runs("str_index", &rust, driver);
 }
 
+/// PMAT-502bj (Tranche 2): module-level int/bool/float constants →
+/// `const NAME: TY = VALUE;`, referenceable from function bodies.
+#[test]
+fn module_const() {
+    let rust = xpile_transpile_to_rust("module_const.py");
+    assert!(
+        rust.contains("const MAX: i64 = 100i64;"),
+        "int const:\n{rust}"
+    );
+    assert!(
+        rust.contains("const NEG: i64 = -5i64;"),
+        "negative const:\n{rust}"
+    );
+    assert!(
+        rust.contains("const FLAG: bool = true;"),
+        "bool const:\n{rust}"
+    );
+    assert!(
+        rust.contains("const RATIO: f64 = 2.5f64;"),
+        "float const:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(get_max(), 100);
+    assert_eq!(use_neg(10), 5);
+    assert_eq!(use_flag(), true);
+    assert_eq!(scaled(4.0), 10.0);
+}
+"#;
+    assert_rustc_runs("module_const", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

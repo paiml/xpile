@@ -723,7 +723,9 @@ mod tests {
         let m = lower("int add(int a, int b) { return a + b; }");
         assert_eq!(m.source_lang, SourceLang::C);
         assert_eq!(m.items.len(), 1);
-        let Item::Function(f) = &m.items[0];
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         assert_eq!(f.name, "add");
         assert_eq!(f.params.len(), 2);
         assert!(matches!(
@@ -735,7 +737,9 @@ mod tests {
     #[test]
     fn parses_recursive_factorial_with_ternary() {
         let m = lower("int factorial(int n) { return n <= 1 ? 1 : n * factorial(n - 1); }");
-        let Item::Function(f) = &m.items[0];
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         assert_eq!(f.name, "factorial");
         assert!(matches!(f.body.trailing_return, Expr::IfExpr { .. }));
     }
@@ -743,7 +747,9 @@ mod tests {
     #[test]
     fn parses_local_decls() {
         let m = lower("int f(int x) { int y = x * 2; int z = y + 1; return z; }");
-        let Item::Function(f) = &m.items[0];
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         assert_eq!(f.body.stmts.len(), 2);
         assert!(matches!(f.body.trailing_return, Expr::Ident(ref n) if n == "z"));
     }
@@ -751,7 +757,9 @@ mod tests {
     #[test]
     fn void_params_and_comments() {
         let m = lower("// answer\nint answer(void) { return 42; }");
-        let Item::Function(f) = &m.items[0];
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         assert!(f.params.is_empty());
         assert!(matches!(f.body.trailing_return, Expr::LitInt(42)));
     }
@@ -768,7 +776,9 @@ mod tests {
         let m = lower(
             "int sum_to(int n) { int s = 0; int i = 1; while (i <= n) { s = s + i; i = i + 1; } return s; }",
         );
-        let Item::Function(f) = &m.items[0];
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         // `s` and `i` are reassigned inside the loop → both `let mut`.
         let muts: Vec<bool> = f
             .body
@@ -786,7 +796,9 @@ mod tests {
     #[test]
     fn parses_truncating_div_and_mod() {
         let m = lower("int f(int a, int b) { return a / b % 2; }");
-        let Item::Function(f) = &m.items[0];
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         // `/` and `%` carried as FloorDiv/Mod (C-truncating in the backend).
         assert!(matches!(
             f.body.trailing_return,

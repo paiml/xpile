@@ -46,6 +46,14 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
     for item in &module.items {
         match item {
             Item::Function(f) => emit_function(&mut out, f)?,
+            // PMAT-502bj: module-level constant → `const NAME: TY = VALUE;`.
+            Item::Const { name, ty, value } => {
+                write!(out, "const {name}: ")?;
+                emit_type(&mut out, ty)?;
+                out.push_str(" = ");
+                emit_expr(&mut out, value, /*mode=*/ false)?;
+                out.push_str(";\n");
+            }
         }
     }
     Ok(out)

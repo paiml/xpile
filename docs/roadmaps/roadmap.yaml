@@ -904,6 +904,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "New StrMethodOp::StrIndex — the str analogue of list.index and the panic-on-absent counterpart of str.find (PMAT-502l). s.index(sub) lowers to (s).find(&(sub)[..]).map(|i| i as i64).expect('xpile: ValueError: substring not found') in Rust+Ruchy: byte index of first match (ASCII = char index), panics if absent = Python ValueError (vs .find -1). Disambiguated from list.index (which lowers to .iter().position(...)) by receiver type. Completes the str search-method family (find/count/index). Lean refuses. rustc round-trip str_index.py (cross-checked vs python3): find_b('abc')->1, find_lit()->2, s.index on absent panics. FREE CI. SHIPPED v0.1.95."
+- id: PMAT-502BJ
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bj: [Tranche2] module-level constants NAME = <literal>'
+  status: planned
+  priority: high
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Item::Const { name, ty, value } — the FIRST non-function top-level item (previously only def accepted at module level). NAME = <literal> / NAME: T = <literal> with an int/bool/float literal value (or negated numeric literal, FOLDED to a plain negative literal so it stays const-evaluable — the generic UnOp::Neg emit uses checked_neg().expect() which is NOT a const expr) lowers to a const item. Rust+Ruchy emit const NAME: TY = VALUE;; Lean emits def NAME : TY := VALUE. A pre-pass (try_const_decl) records each const's type so references in fn bodies resolve (LoweringCtx seeds name_types/bound with consts; same-named param shadows). str/collection/computed-expr consts rejected with precise error (str needs &str — deferred). Touched Item match sites across rust/ruchy/lean codegen + bashrs-backend + xpile/main + frontend/decy/bashrs/xpile-core test helpers (else { } / panic arms). rustc round-trip module_const.py: get_max()->100, use_neg(10)->5 (NEG=-5), use_flag()->true, scaled(4.0)->10.0 (RATIO=2.5). FREE CI. SHIPPED v0.1.96."
 - id: PMAT-465
   github_issue: 496
   item_type: task

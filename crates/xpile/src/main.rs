@@ -406,7 +406,10 @@ fn audit(session: &TranspileSession, path: &Path, target_str: &str, json: bool) 
         // refinement — pre-002, the denominator was "every emitted
         // function" which double-penalised comparison-only functions.
         for item in &module.items {
-            let xpile_meta_hir::Item::Function(f) = item;
+            // PMAT-502bj: only functions carry contract citations; skip consts.
+            let xpile_meta_hir::Item::Function(f) = item else {
+                continue;
+            };
             let requires_citation = !f.applicable_contracts().is_empty();
             let cited = function_has_citation(&artifact.primary, &f.name, target);
             report.functions_emitted += 1;

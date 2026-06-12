@@ -856,7 +856,9 @@ pwd
             .parse_and_lower(&PathBuf::from("/tmp/three_lines.sh"), source)
             .expect("lower three-line script");
         assert_eq!(module.items.len(), 1, "expected one synthesised function");
-        let Item::Function(f) = &module.items[0];
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         assert_eq!(f.name, "main");
         assert_eq!(f.body.stmts.len(), 3, "expected 3 Stmt::Cmd entries");
 
@@ -989,7 +991,9 @@ pwd
             .parse_and_lower(&PathBuf::from("/tmp/pipe.sh"), source)
             .expect("parse pipeline");
         assert_eq!(module.items.len(), 1);
-        let Item::Function(f) = &module.items[0];
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         assert_eq!(f.body.stmts.len(), 1);
         let Stmt::Pipeline { stages } = &f.body.stmts[0] else {
             panic!("expected Pipeline at [0], got {:?}", f.body.stmts[0]);
@@ -1019,7 +1023,9 @@ pwd
                 "cat foo | grep bar | wc -l\n",
             )
             .expect("parse 3-stage pipeline");
-        let Item::Function(f) = &module.items[0];
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         let Stmt::Pipeline { stages } = &f.body.stmts[0] else {
             panic!("expected Pipeline");
         };
@@ -1052,7 +1058,9 @@ pwd
         let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/plain.sh"), "echo hi\n")
             .expect("parse plain cmd");
-        let Item::Function(f) = &module.items[0];
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         assert!(
             matches!(&f.body.stmts[0], Stmt::Cmd { .. }),
             "single-token line must remain a Cmd, not a Pipeline: got {:?}",
@@ -1455,7 +1463,9 @@ pwd
         let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/bt.sh"), "echo `date`\n")
             .expect("parse");
-        let Item::Function(f) = &module.items[0];
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
             panic!("expected Cmd");
         };
@@ -1563,7 +1573,9 @@ pwd
         let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/cont.sh"), source)
             .expect("parse");
-        let Item::Function(f) = &module.items[0];
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         assert_eq!(
             f.body.stmts.len(),
             1,
@@ -1674,7 +1686,9 @@ pwd
             let module = BashrsFrontend
                 .parse_and_lower(&PathBuf::from("/tmp/sub.sh"), source)
                 .unwrap_or_else(|e| panic!("parse failed for `{source}`: {e:?}"));
-            let Item::Function(f) = &module.items[0];
+            let Item::Function(f) = &module.items[0] else {
+                unreachable!("test fixture has no module constants")
+            };
             let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
                 panic!(
                     "expected Stmt::Cmd for `{source}`; got {:?}",
@@ -1733,7 +1747,9 @@ pwd
             let module = BashrsFrontend
                 .parse_and_lower(&PathBuf::from("/tmp/semi.sh"), source)
                 .unwrap_or_else(|e| panic!("parse failed for `{source}`: {e:?}"));
-            let Item::Function(f) = &module.items[0];
+            let Item::Function(f) = &module.items[0] else {
+                unreachable!("test fixture has no module constants")
+            };
             let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
                 panic!(
                     "expected Stmt::Cmd for `{source}`; got {:?}",
@@ -1783,7 +1799,9 @@ pwd
             let module = BashrsFrontend
                 .parse_and_lower(&PathBuf::from("/tmp/arith.sh"), source)
                 .unwrap_or_else(|e| panic!("parse failed for `{source}`: {e:?}"));
-            let Item::Function(f) = &module.items[0];
+            let Item::Function(f) = &module.items[0] else {
+                unreachable!("test fixture has no module constants")
+            };
             let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
                 panic!(
                     "expected Stmt::Cmd for `{source}`; got {:?}",
@@ -1804,7 +1822,9 @@ pwd
         let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/a.sh"), "result=$((x * y))\n")
             .expect("parse");
-        let Item::Function(f) = &module.items[0];
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         let Stmt::ShellAssign { name, value } = &f.body.stmts[0] else {
             panic!(
                 "expected Stmt::ShellAssign for `result=...`; got {:?}",
@@ -1850,7 +1870,9 @@ pwd
             let module = BashrsFrontend
                 .parse_and_lower(&PathBuf::from("/tmp/t.sh"), source)
                 .unwrap_or_else(|e| panic!("parse failed for `{source}`: {e:?}"));
-            let Item::Function(f) = &module.items[0];
+            let Item::Function(f) = &module.items[0] else {
+                unreachable!("test fixture has no module constants")
+            };
             let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
                 panic!(
                     "expected Stmt::Cmd for `{source}`; got {:?}",
@@ -1934,7 +1956,9 @@ pwd
             let module = BashrsFrontend
                 .parse_and_lower(&PathBuf::from("/tmp/ao.sh"), source)
                 .expect("parse");
-            let Item::Function(f) = &module.items[0];
+            let Item::Function(f) = &module.items[0] else {
+                unreachable!("test fixture has no module constants")
+            };
             let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
                 panic!(
                     "expected Stmt::Cmd for `{source}`; got {:?}",
@@ -1994,7 +2018,9 @@ pwd
             let module = BashrsFrontend
                 .parse_and_lower(&PathBuf::from("/tmp/r.sh"), source)
                 .expect("parse");
-            let Item::Function(f) = &module.items[0];
+            let Item::Function(f) = &module.items[0] else {
+                unreachable!("test fixture has no module constants")
+            };
             let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
                 panic!(
                     "expected Stmt::Cmd for `{source}`; got {:?}",
@@ -2021,7 +2047,9 @@ pwd
         let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/a.sh"), "LOG=/tmp/build.log\n")
             .expect("parse");
-        let Item::Function(f) = &module.items[0];
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         assert_eq!(f.body.stmts.len(), 1);
         let Stmt::ShellAssign { name, value } = &f.body.stmts[0] else {
             panic!("expected ShellAssign; got {:?}", f.body.stmts[0]);
@@ -2038,7 +2066,9 @@ pwd
         let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/a.sh"), "TODAY=$(date)\n")
             .expect("parse");
-        let Item::Function(f) = &module.items[0];
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         let Stmt::ShellAssign { name, value } = &f.body.stmts[0] else {
             panic!("expected ShellAssign");
         };
@@ -2061,7 +2091,9 @@ pwd
         let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/a.sh"), "NAME=\"Noah Gift\"\n")
             .expect("parse");
-        let Item::Function(f) = &module.items[0];
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         let Stmt::ShellAssign { name, value } = &f.body.stmts[0] else {
             panic!("expected ShellAssign");
         };
@@ -2097,7 +2129,9 @@ pwd
         let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/cs.sh"), "echo today is $(date)\n")
             .expect("parse");
-        let Item::Function(f) = &module.items[0];
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
             panic!("expected Cmd");
         };
@@ -2130,7 +2164,9 @@ pwd
                 "echo \"hello world\" foo 'bar baz'\n",
             )
             .expect("parse");
-        let Item::Function(f) = &module.items[0];
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
             panic!("expected Cmd");
         };
@@ -2161,7 +2197,9 @@ pwd
         let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/v.sh"), "echo $HOME end\n")
             .expect("parse");
-        let Item::Function(f) = &module.items[0];
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         let Stmt::Cmd { program, args } = &f.body.stmts[0] else {
             panic!("expected Cmd");
         };
@@ -2214,7 +2252,9 @@ N=$((counter + 1))\n\
         let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/composite.sh"), source)
             .expect("composite PMAT-085..091 script must parse");
-        let Item::Function(f) = &module.items[0];
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
         // We expect exactly 7 statements — one per source line.
         // The line-continuation splice (PMAT-086) collapses two
         // physical lines into one logical line, leaving 7 total.

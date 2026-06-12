@@ -98,12 +98,20 @@ impl LoweringCtx {
         params: &[Param],
         body: &[ast::Stmt],
         signatures: Rc<HashMap<String, FnSig>>,
+        consts: &HashMap<String, Type>,
     ) -> Self {
-        let bound: HashSet<String> = params.iter().map(|p| p.name.clone()).collect();
-        let name_types: HashMap<String, Type> = params
+        // PMAT-502bj: module-level constants are visible (and immutably
+        // bound) in every function body; a same-named param shadows the
+        // constant (insert consts first, params override).
+        let bound: HashSet<String> = params
             .iter()
-            .map(|p| (p.name.clone(), p.ty.clone()))
+            .map(|p| p.name.clone())
+            .chain(consts.keys().cloned())
             .collect();
+        let mut name_types: HashMap<String, Type> = consts.clone();
+        for p in params {
+            name_types.insert(p.name.clone(), p.ty.clone());
+        }
         let mutable = compute_mutable_names(params, body);
         Self {
             fn_name: fn_name.to_string(),
@@ -477,6 +485,17 @@ impl Frontend for PythonFrontend {
         }
         let signatures = Rc::new(sig_map);
 
+        // PMAT-502bj: pre-pass — collect module-level constants
+        // (`NAME = <int/bool/float-literal>`) and their types, so
+        // references in function bodies type correctly.
+        let mut const_map: HashMap<String, Type> = HashMap::new();
+        for stmt in &suite {
+            if let Some((name, ty, _)) = try_const_decl(stmt) {
+                const_map.insert(name, ty);
+            }
+        }
+        let consts = Rc::new(const_map);
+
         let mut items = Vec::new();
         for stmt in suite {
             // PMAT-036: `from __future__ import annotations` is the
@@ -489,8 +508,8 @@ impl Frontend for PythonFrontend {
             if is_future_annotations_import(&stmt) {
                 continue;
             }
-            let fn_item = lower_top_level_stmt(stmt, signatures.clone())?;
-            items.push(Item::Function(fn_item));
+            let item = lower_top_level_stmt(stmt, signatures.clone(), consts.clone())?;
+            items.push(item);
         }
 
         Ok(Module {
@@ -528,19 +547,74 @@ fn is_future_annotations_import(stmt: &ast::Stmt) -> bool {
 fn lower_top_level_stmt(
     stmt: ast::Stmt,
     signatures: Rc<HashMap<String, FnSig>>,
-) -> Result<Function, FrontendError> {
+    consts: Rc<HashMap<String, Type>>,
+) -> Result<Item, FrontendError> {
+    // PMAT-502bj: a module-level `NAME = <int/bool/float-literal>` is a
+    // constant item (recognised before the `def`-only fallback).
+    if let Some((name, ty, value)) = try_const_decl(&stmt) {
+        return Ok(Item::Const { name, ty, value });
+    }
     match stmt {
-        ast::Stmt::FunctionDef(f) => lower_function_def(f, signatures),
+        ast::Stmt::FunctionDef(f) => {
+            lower_function_def(f, signatures, consts).map(Item::Function)
+        }
+        // A top-level assignment that wasn't a recognised constant.
+        ast::Stmt::Assign(_) | ast::Stmt::AnnAssign(_) => Err(FrontendError::Lower(
+            "unsupported module-level assignment — v0.2.0 supports `NAME = <int/bool/float literal>` constants (str/collection constants deferred)".to_string(),
+        )),
         other => Err(FrontendError::Lower(format!(
-            "unsupported top-level statement: {:?} — only `def` is supported at v0.1.0",
+            "unsupported top-level statement: {:?} — only `def` and `NAME = <literal>` constants are supported at v0.2.0",
             std::mem::discriminant(&other)
         ))),
     }
 }
 
+/// PMAT-502bj: recognise a module-level constant declaration
+/// `NAME = <value>` / `NAME: T = <value>` where the value lowers to an
+/// `int` / `bool` / `float` literal (or a negated numeric literal) — the
+/// forms that map to a Rust `const`. Returns `(name, type, value-expr)`,
+/// or `None` for any other shape (str/collection values, computed
+/// expressions, tuple targets) so the caller can report a precise error.
+fn try_const_decl(stmt: &ast::Stmt) -> Option<(String, Type, Expr)> {
+    let (name, value_ast) = match stmt {
+        ast::Stmt::Assign(a) if a.targets.len() == 1 => match &a.targets[0] {
+            ast::Expr::Name(n) => (n.id.to_string(), a.value.as_ref()),
+            _ => return None,
+        },
+        ast::Stmt::AnnAssign(aa) => match (aa.target.as_ref(), aa.value.as_ref()) {
+            (ast::Expr::Name(n), Some(v)) => (n.id.to_string(), v.as_ref()),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let value = lower_expr(value_ast.clone()).ok()?;
+    // Fold a negated numeric literal (`-5`, `-2.5`) into a single negative
+    // literal so it emits as a plain const-safe `-5i64` / `-2.5f64` (the
+    // generic `UnOp::Neg` emit uses `checked_neg().expect(…)`, which is not
+    // a `const` expression). Only literal numeric / bool values are kept.
+    let value = match value {
+        Expr::UnOp {
+            op: UnOp::Neg,
+            operand,
+        } => match *operand {
+            Expr::LitInt(n) => Expr::LitInt(-n),
+            Expr::LitFloat(f) => Expr::LitFloat(-f),
+            _ => return None,
+        },
+        v @ (Expr::LitInt(_) | Expr::LitBool(_) | Expr::LitFloat(_)) => v,
+        _ => return None,
+    };
+    let ty = match infer_type(&value) {
+        t @ (Type::I64 | Type::Bool | Type::F64) => t,
+        _ => return None,
+    };
+    Some((name, ty, value))
+}
+
 fn lower_function_def(
     f: ast::StmtFunctionDef,
     signatures: Rc<HashMap<String, FnSig>>,
+    consts: Rc<HashMap<String, Type>>,
 ) -> Result<Function, FrontendError> {
     if !f.decorator_list.is_empty() {
         return Err(FrontendError::Lower(format!(
@@ -614,6 +688,7 @@ fn lower_function_def(
         &params,
         &body_stmts,
         signatures,
+        &consts,
     );
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
     for stmt in leading {
@@ -5375,6 +5450,7 @@ mod tests {
     fn function(m: &Module, i: usize) -> &Function {
         match &m.items[i] {
             Item::Function(f) => f,
+            Item::Const { .. } => panic!("expected a function item, found a constant"),
         }
     }
 

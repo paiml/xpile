@@ -44,6 +44,17 @@ pub enum SourceLang {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Item {
     Function(Function),
+    /// A module-level constant — Python `NAME = <literal>`. PMAT-502bj
+    /// (Tranche 2). First cut: `int` / `bool` / `float` values (which map
+    /// to a Rust `const`); `str` constants need `&str` (deferred). Rust/
+    /// Ruchy emit `const <name>: <ty> = <value>;`; Lean refuses. The
+    /// frontend records the constant's type so references in function
+    /// bodies type correctly.
+    Const {
+        name: String,
+        ty: Type,
+        value: Expr,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
