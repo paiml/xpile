@@ -228,6 +228,51 @@ roadmap:
   acceptance_criteria:
   - "Replaces the MatmulSpecialistEmitter mock with the real categorically-independent specialist (hand-tuned MMA templates vs LLVM/NVVM), satisfying the §14.10 anti-correlation guarantee that makes DiffExec divergence high-signal. MULTI-PR by nature (aprender-gpu changes live in another repo); sequenced LAST — only adds value once a real general emitter (PMAT-485) + real engine (PMAT-488) exist to vote against it."
   - "Exit: aprender-gpu implements TargetEmitter, slots into the specialist slot via new_with_specialist with a gemm/mma shape_filter + cross_repo provenance resolving through the fleet manifest; under DiffExec on a matmul_* module both emitters fire and Match within tolerance on the GPU runner; citations resolve cross-repo per the PMAT-484 schema. CI: self-hosted GPU runner (deps PMAT-488, 484) + free ptxas/structural gate."
+- id: PMAT-492
+  github_issue: null
+  item_type: task
+  title: 'PMAT-492: [Sprint] Python string methods (.upper/.lower/.strip/.split/.join/.startswith/.endswith)'
+  status: planned
+  priority: high
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Very high real-Python prevalence. Lower the common str methods in depyler-frontend to Rust equivalents: .upper()->.to_uppercase(), .lower()->.to_lowercase(), .strip()->.trim().to_string(), .startswith(p)->.starts_with(p), .endswith(s)->.ends_with(s), .split(sep)->.split(sep).map(str::to_string).collect::<Vec<_>>(), sep.join(xs)->xs.join(sep). Reuses the shipped str/list machinery; frontend + xpile-rust-codegen; Lean may refuse. rustc round-trip fixtures per method. FREE CI."
+- id: PMAT-493
+  github_issue: null
+  item_type: task
+  title: 'PMAT-493: [Sprint] f-strings f"{x}" -> format!'
+  status: planned
+  priority: high
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Very high prevalence. Lower ast::JoinedStr / FormattedValue to Rust format!(\"...{}...\", args) (or .to_string() for a single bare {x}). Handle literal text segments + {expr} interpolations; defer format specs (:.2f etc.) initially. Reuses str machinery; frontend + codegen. rustc round-trip: greet(name)->\"Hello, <name>!\". FREE CI."
+- id: PMAT-494
+  github_issue: null
+  item_type: task
+  title: 'PMAT-494: [Sprint] Tuples + multiple return + a, b = f() unpacking'
+  status: planned
+  priority: high
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "High EV; prerequisite for dict.items() and zip(). Add Type::Tuple(Vec<Type>) + Expr::TupleLit + tuple-pattern Let to meta-HIR; lower Python `return a, b` and `x, y = f()` / `a, b = t`. Rust emits native tuples + let (x, y) = ...; ripples to backends (explicit Unsupported where needed). rustc round-trip: divmod-style (q, r) = divmod(17, 5) -> (3, 2). FREE CI. ~1wk (genuine meta-HIR addition)."
+- id: PMAT-495
+  github_issue: null
+  item_type: task
+  title: 'PMAT-495: [Sprint] enumerate() / zip() in for-loops'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "High prevalence; pairs with PMAT-494 (tuple unpacking in the loop target). `for i, x in enumerate(xs)` -> for (i, x) in xs.iter().cloned().enumerate(); `for a, b in zip(xs, ys)` -> for (a, b) in xs.iter().cloned().zip(ys.iter().cloned()). Desugar in lower_for_stmt over the new tuple-pattern target. Depends on PMAT-494. rustc round-trip fixtures. FREE CI."
+- id: PMAT-496
+  github_issue: null
+  item_type: task
+  title: 'PMAT-496: [Sprint] Slicing xs[a:b]'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "High prevalence. Lower Python slice ast::Subscript-with-Slice to Rust xs[a..b].to_vec() (list) / s[a..b].to_string() (str), with bounded forms xs[a:]/xs[:b]/xs[:]. Defer step and negative indices initially (document). frontend + codegen. rustc round-trip: head(xs)=xs[:2], tail(xs)=xs[1:]. FREE CI."
 - id: PMAT-465
   github_issue: 496
   item_type: task
