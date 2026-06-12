@@ -1371,6 +1371,24 @@ fn main() {
     assert_rustc_runs("num_cast", &rust, driver);
 }
 
+/// PMAT-502n (Tranche 2): `divmod(a, b)` → the tuple `(a // b, a % b)`,
+/// reusing the contract-checked floor-div + mod ops.
+#[test]
+fn divmod_builtin() {
+    let rust = xpile_transpile_to_rust("divmod_builtin.py");
+    assert!(
+        rust.contains("checked_div_euclid") && rust.contains("checked_rem_euclid"),
+        "expected floor-div + mod tuple emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(split_div(17, 5), (3, 2));
+    assert_eq!(combine(17, 5), 302);
+}
+"#;
+    assert_rustc_runs("divmod_builtin", &rust, driver);
+}
+
 /// PMAT-502h (Tranche 2): 1-arg `min(xs)`/`max(xs)` over a `list[float]` →
 /// a fold (`fold(f64::INFINITY, f64::min)` / `fold(f64::NEG_INFINITY, f64::max)`).
 #[test]

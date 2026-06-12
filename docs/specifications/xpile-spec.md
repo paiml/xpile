@@ -849,6 +849,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-502k** — sequence repetition `"x"*n` / `[0]*n` (`Expr::Repeat`) | `(seq).repeat(((n).max(0)) as usize)` (str→String, list→Vec; negative clamps to empty); disambiguated from numeric `*` by operand type | ✅ SHIPPED v0.1.43 |
 | **PMAT-502l** — more str methods `.lstrip`/`.rstrip`/`.find`/`.count` (`StrMethodOp`) | `.trim_start/.trim_end().to_string()` (Str); `.find(&sub[..]).map(\|i\| i as i64).unwrap_or(-1)` + `.matches(&sub[..]).count() as i64` (Int) | ✅ SHIPPED v0.1.44 |
 | **PMAT-502m** — numeric conversions `int(x)` / `float(x)` (`Expr::NumCast`) | `((x) as i64)` (truncate toward zero) / `((x) as f64)`; numeric args only (`int("..")` parse + `str(x)` → separate slices) | ✅ SHIPPED v0.1.45 |
+| **PMAT-502n** — `divmod(a, b)` (pure desugar) | `(a // b, a % b)` tuple reusing floor-div + mod (consistent with `//`/`%`, inherits C-PY-INT-ARITH); return + unpack forms | ✅ SHIPPED v0.1.46 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |

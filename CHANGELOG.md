@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.46] — 2026-06-12
+
+Tranche-2 slice PMAT-502n — Python **`divmod(a, b)`**.
+
+Pure-frontend desugar (no new IR): `divmod(a, b)` over two ints lowers to the
+tuple `(a // b, a % b)`, reusing the existing floor-div + mod ops — so it is
+consistent with the `//` and `%` operators by construction, and both halves
+inherit the `C-PY-INT-ARITH` contract (`checked_div_euclid` / `checked_rem_euclid`
+with overflow panics). Works both as a return (`-> tuple[int, int]`) and via
+unpacking (`q, r = divmod(a, b)`). `a`/`b` are pure v0.1.0 expressions, so the
+double-evaluation in the desugar is sound. Float `divmod` deferred. rustc
+round-trip `divmod_builtin.py`: `split_div(17, 5) -> (3, 2)`,
+`combine(17, 5) -> 302`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.45] — 2026-06-12
 
 Tranche-2 slice PMAT-502m — Python **numeric conversions** `int(x)` / `float(x)`.
