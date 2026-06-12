@@ -507,6 +507,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Expr::Slice lo/hi become Option<Box<Expr>>. Absent bound -> open Rust range: xs[:n]->xs[..(n) as usize], xs[n:]->xs[(n) as usize..], xs[:]->xs[..], then .to_vec() (list) / .to_string() (str) in Rust+Ruchy. List+str both; bounded xs[a:b] unchanged. Previously open-ended was a hard frontend error. Lean refuses. rustc round-trip open_slice.py: head([1,2,3,4],2)->[1,2], tail([1,2,3,4],2)->[3,4], copy_all([1,2,3])->[1,2,3], str_prefix(hello,3)->hel, str_suffix(hello,3)->lo. FREE CI. SHIPPED v0.1.50."
+- id: PMAT-502S
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502s: [Tranche2] negative list index xs[-k]'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Pure-frontend desugar (no new IR). xs[-k] over a list[T] -> Index { collection: xs, index: Sub(Len(xs), LitInt(k)) } = xs[len(xs) - k] (Python from-the-end). Reuses Len + BinOp::Sub + Index, so the index inherits C-PY-INT-ARITH checked sub: xs[(xs.len() as i64).checked_sub(k).expect(..) as usize].clone(). Collection appears twice (length + target); pure v0.1.0 collections -> sound. Negative literal parses as UnaryOp(USub, Int(k)). Str negative index + negative slice bounds deferred. rustc round-trip neg_index.py: last([10,20,30])->30, second_last([10,20,30])->20, sum_ends([10,20,30])->40 (xs[0]+xs[-1]). FREE CI. SHIPPED v0.1.51."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -1454,6 +1454,25 @@ fn main() {
     assert_rustc_runs("tuple_index", &rust, driver);
 }
 
+/// PMAT-502s (Tranche 2): negative list index `xs[-k]` → `xs[len(xs) - k]`
+/// (Python from-the-end indexing).
+#[test]
+fn neg_index() {
+    let rust = xpile_transpile_to_rust("neg_index.py");
+    assert!(
+        rust.contains("xs.len() as i64).checked_sub("),
+        "expected len-relative negative index, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(last(vec![10, 20, 30]), 30);
+    assert_eq!(second_last(vec![10, 20, 30]), 20);
+    assert_eq!(sum_ends(vec![10, 20, 30]), 40);
+}
+"#;
+    assert_rustc_runs("neg_index", &rust, driver);
+}
+
 /// PMAT-502r (Tranche 2): open-ended slices `xs[a:]` / `xs[:b]` / `xs[:]`
 /// (list + str) → half-open / full Rust ranges.
 #[test]

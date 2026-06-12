@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.51] — 2026-06-12
+
+Tranche-2 slice PMAT-502s — Python **negative list indexing** `xs[-k]`.
+
+Pure-frontend desugar (no new IR): `xs[-k]` over a `list[T]` lowers to
+`xs[len(xs) - k]` — Python's from-the-end indexing — reusing `Expr::Len` +
+`BinOp::Sub` + `Expr::Index`, so the computed index inherits the
+`C-PY-INT-ARITH` checked subtraction (emits
+`xs[(xs.len() as i64).checked_sub(k).expect(…) as usize].clone()`). The
+collection appears twice (length + index target); v0.1.0 collections are pure,
+so the reuse is sound. Negative literals parse as `UnaryOp(USub, Int(k))`.
+String negative indexing and negative slice bounds are deferred. rustc
+round-trip `neg_index.py`: `last([10,20,30]) -> 30`,
+`second_last([10,20,30]) -> 20`, `sum_ends([10,20,30]) -> 40` (`xs[0]+xs[-1]`).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.50] — 2026-06-12
 
 Tranche-2 slice PMAT-502r — Python **open-ended slices** `xs[a:]` / `xs[:b]` / `xs[:]`.
