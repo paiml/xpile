@@ -2209,8 +2209,11 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
 /// block-expression, so it is materialised at statement level (in
 /// assignment position, or hoisted to a temp in return position).
 ///
-/// v0.2.0 slice: single generator, no `if` filter, iterable typing as a
-/// `list[T]` (range/dict iterables and filters are deferred).
+/// v0.2.0 slice: single generator, iterable typing as a `list[T]`
+/// (range/dict iterables deferred). A single `if` filter is supported
+/// (PMAT-502ay): `[elem for var in iter if cond]` wraps the append in an
+/// `if cond { … }`. Multiple `if` clauses (`… if a if b`) are deferred —
+/// use `… if a and b`.
 fn desugar_list_comp(
     ctx: &mut LoweringCtx,
     target: &str,
@@ -2223,9 +2226,9 @@ fn desugar_list_comp(
         )));
     }
     let gen = &comp.generators[0];
-    if !gen.ifs.is_empty() {
+    if gen.ifs.len() > 1 {
         return Err(FrontendError::Lower(format!(
-            "function `{}` uses a filtered list comprehension (`[… for … if …]`) — deferred",
+            "function `{}` uses a list comprehension with multiple `if` clauses — v0.2.0 supports one (combine with `and`)",
             ctx.fn_name
         )));
     }
@@ -2248,15 +2251,41 @@ fn desugar_list_comp(
             )));
         }
     };
-    // Bind the loop var so the element expression types correctly.
+    // Bind the loop var so the element + filter expressions type correctly.
     ctx.bound.insert(var.clone());
     ctx.name_types.insert(var.clone(), elem_in_ty.clone());
+    // PMAT-502ay: lower the optional `if` filter (must type as Bool).
+    let filter = match gen.ifs.first() {
+        None => None,
+        Some(cond) => {
+            let c = lower_expr_in_ctx(ctx, cond.clone())?;
+            if infer_type_in_ctx(ctx, &c) != Type::Bool {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` has a list-comprehension filter that is not Bool (no int-truthiness at v0.2.0)",
+                    ctx.fn_name
+                )));
+            }
+            Some(c)
+        }
+    };
     let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
     let out_ty = infer_type_in_ctx(ctx, &elem);
     let list_ty = Type::List(Box::new(out_ty));
     // Register the accumulator so later references type as the list.
     ctx.bound.insert(target.to_string());
     ctx.name_types.insert(target.to_string(), list_ty.clone());
+    let append = Stmt::ListAppend {
+        list_name: target.to_string(),
+        elem,
+    };
+    let body = match filter {
+        None => vec![append],
+        Some(cond) => vec![Stmt::If {
+            cond,
+            then_body: vec![append],
+            else_body: Vec::new(),
+        }],
+    };
     Ok(vec![
         Stmt::Let {
             name: target.to_string(),
@@ -2268,10 +2297,7 @@ fn desugar_list_comp(
             var,
             iter: iter_expr,
             elem_ty: elem_in_ty,
-            body: vec![Stmt::ListAppend {
-                list_name: target.to_string(),
-                elem,
-            }],
+            body,
             over_keys: false,
         },
     ])

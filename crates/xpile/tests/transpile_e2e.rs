@@ -2323,6 +2323,27 @@ fn main() {
     assert_rustc_runs("dict_setdefault", &rust, driver);
 }
 
+/// PMAT-502ay (Tranche 2): filtered list comprehension
+/// `[elem for v in xs if cond]` → the `if` wraps the accumulator append
+/// inside the desugared for-loop.
+#[test]
+fn list_comp_filter() {
+    let rust = xpile_transpile_to_rust("list_comp_filter.py");
+    // The filter becomes an `if` guarding the push.
+    assert!(
+        rust.contains("if (x > 0i64) {") && rust.contains("__xpile_comp.push(x);"),
+        "filter guards push:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(positives(vec![-1, 2, -3, 4]), vec![2, 4]);
+    assert_eq!(doubled_positives(vec![-1, 2, 3]), vec![4, 6]);
+    assert_eq!(assign_form(vec![1, 6, 7, 2]), 2);
+}
+"#;
+    assert_rustc_runs("list_comp_filter", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

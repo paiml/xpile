@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.83] — 2026-06-12
+
+Tranche-2 slice PMAT-502ay — Python **filtered list comprehension**
+`[elem for v in xs if cond]`.
+
+Extends the existing list-comprehension desugaring (PMAT-473) with an optional
+single `if` filter. `[elem for v in xs if cond]` now desugars to
+`let mut t = []; for v in xs { if cond { t.append(elem); } }` — the filter becomes
+an `if` guarding the accumulator append (reusing the R9 `Stmt::If` machinery). The
+filter must type as `Bool` (no int-truthiness). Multiple `if` clauses
+(`… if a if b`) remain deferred — use `… if a and b`. The unfiltered form is
+unchanged. rustc round-trip `list_comp_filter.py`:
+`positives([-1,2,-3,4]) -> [2,4]`, `doubled_positives([-1,2,3]) -> [4,6]`,
+`assign_form([1,6,7,2]) -> 2`. Lean refuses (the desugaring contains a `for`
+loop, outside the Lean lane).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.82] — 2026-06-12
 
 Tranche-2 slice PMAT-502ax — Python **dict get-or-insert** `d.setdefault(k, default)`.
