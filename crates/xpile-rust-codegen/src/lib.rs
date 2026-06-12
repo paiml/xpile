@@ -595,6 +595,8 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
         // PMAT-477 (R8): Python `float` → Rust `f64`.
         Type::F64 => out.push_str("f64"),
         Type::Bool => out.push_str("bool"),
+        // PMAT-502bl: Python `None` return → Rust unit `()`.
+        Type::Unit => out.push_str("()"),
         // PMAT-012: re-exported from `xpile-bigint` (which wraps
         // `num_bigint::BigInt`). Operator overloads (`+`, `-`, `*`,
         // `<=`, …) work without method calls, matching the i64 codegen
@@ -661,6 +663,8 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
 
 fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError> {
     match e {
+        // PMAT-502bl: the unit value (void function trailing return).
+        Expr::Unit => out.push_str("()"),
         Expr::Ident(name) => {
             // PMAT-013: in BigInt mode, append `.clone()` to every
             // Ident reference. BigInt isn't `Copy`, so an Ident used

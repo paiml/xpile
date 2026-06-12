@@ -2719,6 +2719,35 @@ fn main() {
     assert_rustc_runs("loop_control", &rust, driver);
 }
 
+/// PMAT-502bl (Tranche 2): void functions (`-> None`) → `fn … -> () { …; () }`.
+/// (Arg mutation isn't observed by the caller under value semantics — the
+/// `&mut` aliasing path is a v0.3.0 sub-track — but the function compiles
+/// and its observable effects, e.g. an `assert`, work.)
+#[test]
+fn void_fn() {
+    let rust = xpile_transpile_to_rust("void_fn.py");
+    assert!(
+        rust.contains("pub fn check_pos(x: i64) -> () {") && rust.contains("assert!((x > 0i64));"),
+        "void assert fn:\n{rust}"
+    );
+    assert!(
+        rust.contains("pub fn put(mut d: std::collections::HashMap"),
+        "void mutator fn (mut receiver):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    check_pos(5); // returns () — no panic
+    let mut d = std::collections::HashMap::new();
+    d.insert("seed".to_string(), 0);
+    put(d, "a".to_string(), 1); // compiles + runs
+    // the assert-void's effect is observable: bad input panics.
+    assert!(std::panic::catch_unwind(|| check_pos(-1)).is_err());
+}
+"#;
+    assert_rustc_runs("void_fn", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

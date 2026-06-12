@@ -528,6 +528,8 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
         // PMAT-477 (R8): Ruchy → Rust `f64`.
         Type::F64 => out.push_str("f64"),
         Type::Bool => out.push_str("bool"),
+        // PMAT-502bl: Python `None` return → unit `()`.
+        Type::Unit => out.push_str("()"),
         // Ruchy compiles to Rust → same BigInt re-export. PMAT-012.
         Type::BigInt => out.push_str("xpile_bigint::BigInt"),
         // PMAT-449 (v0.2.0 Track 1.A): Ruchy → Rust → owned `String`,
@@ -578,6 +580,8 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
 
 fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenError> {
     match e {
+        // PMAT-502bl: the unit value (void function trailing return).
+        Expr::Unit => out.push_str("()"),
         Expr::Ident(name) => {
             // PMAT-025: in BigInt mode, append `.clone()` to every
             // Ident reference. BigInt isn't `Copy` (it's

@@ -210,7 +210,7 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
 
 fn expr_has_int_arith(e: &Expr) -> bool {
     match e {
-        Expr::Ident(_) | Expr::LitInt(_) | Expr::LitBool(_) => false,
+        Expr::Ident(_) | Expr::LitInt(_) | Expr::LitBool(_) | Expr::Unit => false,
         // PMAT-477 (R8): float arithmetic is governed by float
         // semantics (IEEE-754 saturation), not C-PY-INT-ARITH's
         // integer-overflow analysis. Literal carries no operands;
@@ -949,10 +949,19 @@ pub enum Type {
     ///
     /// Other backends refuse `Type::ExitCode` via `Unsupported` arms.
     ExitCode,
+    /// The unit type — Python `None` as a return annotation (a void
+    /// function). PMAT-502bl (Tranche 2). Rust/Ruchy emit `()`; Lean
+    /// refuses (a side-effecting void function has no total-function
+    /// encoding). Carried only by `Function::return_type`.
+    Unit,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Expr {
+    /// The unit value `()` — the trailing "return" of a void function
+    /// (Python `-> None`). PMAT-502bl (Tranche 2). Rust/Ruchy emit `()`;
+    /// Lean refuses. Types as [`Type::Unit`].
+    Unit,
     /// Local identifier reference (function parameter or future `let`).
     Ident(String),
     /// Integer literal, lowered as i64 at the boundary.

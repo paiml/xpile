@@ -922,6 +922,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Stmt::Continue / Stmt::Break, emitting continue; / break; in Rust+Ruchy. Compose with existing Stmt::If/Stmt::ForEach so for x in xs: if cond: continue / ... break map directly to the emitted Rust for loop. CORRECTNESS GUARD: a continue belonging to a range(...) for-loop is REJECTED at the frontend (body_has_top_level_continue helper, recurses into If but stops at nested loops) — that loop desugars to a while with a tail counter-increment that continue would skip (infinite loop); break in a range-for is fine (exits before increment); both work in list/dict iteration. Lean refuses (no loop-control encoding). rustc round-trip loop_control.py: sum_pos([1,-2,3,-4,5])->9 (continue), first_neg([1,2,-3,4])->-3 (break), sum_below_three(10)->3 (break in range-for). FREE CI. SHIPPED v0.1.97."
+- id: PMAT-502BL
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bl: [Tranche2] void functions (-> None)'
+  status: high
+  priority: high
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Type::Unit + Expr::Unit. A -> None function no longer requires a trailing return expr: its last statement is lowered as a regular (side-effecting) statement and the body evaluates to the unit value Expr::Unit. Rust+Ruchy emit fn <name>(...) -> () { ...; () }; the -> None annotation parses (as the None constant / Name) to Type::Unit. In-place-mutation receivers still lifted to mut params (the void early-return path applies the lift too). Lean refuses Type::Unit at emit_type (side-effecting void has no total-function encoding). DEFERRED: caller-visible arg mutation (value semantics takes the arg by value, so a mutation inside the void fn isn't observed by the caller — &mut aliasing is a v0.3.0 sub-track); an explicit return inside a void fn flows through the early-return error path (bare/early returns deferred). Touched Type (emit_type x3) + Expr (int-arith, infer x2, emit x3, lean collect) match sites compiler-guided. rustc round-trip void_fn.py: check_pos(5) returns (), check_pos(-1) panics (assert), put(...) compiles+runs. FREE CI. SHIPPED v0.1.98."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -461,7 +461,7 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 out.push(n.clone());
             }
         }
-        Expr::LitInt(_) | Expr::LitBool(_) | Expr::LitFloat(_) => {}
+        Expr::LitInt(_) | Expr::LitBool(_) | Expr::LitFloat(_) | Expr::Unit => {}
         // PMAT-477 (R8): float arithmetic — recurse into operands.
         Expr::FloatBinOp { lhs, rhs, .. } => {
             collect_idents(lhs, out);
@@ -706,6 +706,15 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), LeanCodegenError> {
         Type::Bool => out.push_str("Bool"),
         // Lean's Int is already unbounded — same shape as BigInt.
         Type::BigInt => out.push_str("Int"),
+        // PMAT-502bl: a void (`None`-returning) function is side-effecting
+        // — no total-function encoding in the Lean lane.
+        Type::Unit => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python `None`-returning (void) functions are not supported in the Lean lane — \
+                 use `--target rust` or `--target ruchy`"
+                    .into(),
+            ))
+        }
         // PMAT-449 (v0.2.0 Track 1.A): Lean's built-in String.
         Type::Str => out.push_str("String"),
         // PMAT-455 (v0.2.0 Track 1.B): Lean's built-in `List T`.
@@ -994,6 +1003,13 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
 
 fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
     match e {
+        // PMAT-502bl: void functions are refused at emit_type, so a unit
+        // value should never reach here; refuse defensively.
+        Expr::Unit => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python `None` / unit value is not supported in the Lean lane".into(),
+            ))
+        }
         Expr::Ident(name) => write!(out, "{}", name)?,
         Expr::LitInt(v) => write!(out, "({}: Int)", v)?,
         // PMAT-477 (R8): Python `float` → Lean `Float` literal +
