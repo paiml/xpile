@@ -728,14 +728,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push_str("))");
         }
         // PMAT-500: Python set literal `{a, b, c}` → HashSet-init block.
+        // PMAT-501b: an empty SetLit (the set-comprehension accumulator)
+        // emits a bare `HashSet::new()` (the let annotation supplies T) —
+        // a `{ … }` block with no inserts would trip clippy's unused_mut.
         Expr::SetLit(elems) => {
-            out.push_str("{ let mut __xset = std::collections::HashSet::new(); ");
-            for e in elems {
-                out.push_str("__xset.insert(");
-                emit_expr(out, e, mode)?;
-                out.push_str("); ");
+            if elems.is_empty() {
+                out.push_str("std::collections::HashSet::new()");
+            } else {
+                out.push_str("{ let mut __xset = std::collections::HashSet::new(); ");
+                for e in elems {
+                    out.push_str("__xset.insert(");
+                    emit_expr(out, e, mode)?;
+                    out.push_str("); ");
+                }
+                out.push_str("__xset }");
             }
-            out.push_str("__xset }");
         }
         // PMAT-500: Python `x in s` → `<set>.contains(&(<elem>))`.
         Expr::SetContains { set, elem } => {

@@ -835,7 +835,7 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-498b** — `sum(xs)` (`Expr::Sum`) | `sum(xs)`→`xs.iter().sum::<i64\|f64>()` | ✅ SHIPPED v0.1.27 (1-arg list min/max still open) |
 | **PMAT-499** — `range(start, stop, step)` | full 3-arg range + **negative steps** (countdown) | ✅ already satisfied (PMAT-008; cond flips `<`/`>` on step sign). Only non-literal steps remain (deferred — needs runtime direction). |
 | **PMAT-500** — sets: literal + `x in s` + `len` (v0.1.29) + **`.add()`** mutation (`Stmt::SetAdd`, v0.1.31) | `HashSet` lane | ✅ SHIPPED (empty `set()` / ∪∩ → follow-up; set comp now unblocked) |
-| **PMAT-501** — dict comprehensions `{k: v for …}` (`desugar_dict_comp`, no new IR) | materialise to `acc={}` + for-DictSet | ✅ SHIPPED v0.1.30 (set comp `{x for …}` → after set `.add()`) |
+| **PMAT-501** — dict comprehensions (v0.1.30) + **set comprehensions** `{e for …}` (v0.1.32) | materialise via for-DictSet / for-SetAdd; no new IR | ✅ SHIPPED — completes list/dict/set comprehensions |
 | **PMAT-502** — `Stmt::If` branch generalization | dispatcher: if-as-let for `name=expr` branches, else a real `Stmt::If` (subscript assigns / `.append` / dict mutation) — unblocks the histogram idiom | ✅ SHIPPED v0.1.28 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | open |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |

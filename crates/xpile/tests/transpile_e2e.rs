@@ -1203,6 +1203,21 @@ fn main() {
     assert_rustc_runs("slicing", &rust, driver);
 }
 
+/// PMAT-501b (Tranche 2): set comprehension `{e for x in xs}` —
+/// materialises to `s = set()` + `for x in xs { s.add(e) }`.
+#[test]
+fn set_comprehension_materialises() {
+    let rust = xpile_transpile_to_rust("set_comp.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(distinct_doubles(vec![1, 2, 2, 3]), 3);
+    assert!(has_square(vec![1, 2, 3], 4));
+    assert!(!has_square(vec![1, 2, 3], 5));
+}
+"#;
+    assert_rustc_runs("set_comp", &rust, driver);
+}
+
 /// PMAT-500b (Tranche 2): set `.add()` mutation → `s.insert(x)` (the
 /// receiver is marked `mut` by the pre-pass), straight-line + in a loop.
 #[test]

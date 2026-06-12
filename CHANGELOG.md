@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.32] — 2026-06-12
+
+Tranche-2 slice PMAT-501b — Python **set comprehensions** `{e for x in xs}`,
+completing the comprehension set (list / dict / set).
+
+A new `desugar_set_comp` materialises `{e for x in iter}` to `let mut <acc>:
+set[T] = set()` + `for x in iter { <acc>.add(e) }` — the dict-comp shape with
+a `Stmt::SetAdd` into an **empty `SetLit`** accumulator (which now emits a
+bare `HashSet::new()`, the let annotation supplying `T`). Assignment + return
+position; single generator, no filter, list-typed iterable. No new IR.
+rustc round-trip `set_comp.py`: `distinct_doubles([1,2,2,3]) -> 3`,
+`has_square([1,2,3], 4) -> true`.
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.31] — 2026-06-12
 
 Tranche-2 slice PMAT-500b — Python set **`.add()`** mutation (set
