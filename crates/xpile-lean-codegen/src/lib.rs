@@ -428,6 +428,14 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 collect_idents(e, out);
             }
         }
+        // PMAT-496: slice — recurse into collection + bound expressions.
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => {
+            collect_idents(collection, out);
+            collect_idents(lo, out);
+            collect_idents(hi, out);
+        }
         // PMAT-455: list literal — recurse into each element.
         Expr::ListLit(elems) => {
             for e in elems {
@@ -791,6 +799,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::TupleLit(_) => {
             return Err(LeanCodegenError::Unsupported(
                 "Python tuple literals are not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-496: slicing deferred in the Lean lane at first cut.
+        Expr::Slice { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python slicing (xs[a:b]) is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

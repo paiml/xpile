@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.21] — 2026-06-12
+
+Sprint slice PMAT-496 — Python **bounded slicing** `xs[a:b]` (list + str).
+
+New meta-HIR `Expr::Slice { collection, lo, hi, of_str }`. `xs[a:b]` (both
+bounds, `int`, step 1) lowers to `Slice`; the frontend sets `of_str` from
+the collection's type. Rust + Ruchy emit `<c>[(lo) as usize..(hi) as usize]`
+with `.to_vec()` (list → owned `Vec`) or `.to_string()` (str → `String`,
+byte-indexed / ASCII-correct). Result types as the collection's type. Lean
+refuses. rustc round-trip `slicing.py`: `middle([10,20,30,40]) -> [20,30]`,
+`prefix("hello") -> "hel"`.
+
+Open-ended (`xs[a:]`/`xs[:b]`/`xs[:]`), step, and negative indices are
+deferred.
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.20] — 2026-06-12
 
 Sprint slice PMAT-494b — Python **tuple unpacking** `a, b = <expr>`,

@@ -489,6 +489,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             }
             out.push(')');
         }
+        // PMAT-496: Ruchy → Rust slice (`.to_vec()` / `.to_string()`).
+        Expr::Slice {
+            collection,
+            lo,
+            hi,
+            of_str,
+        } => {
+            emit_expr(out, collection, mode)?;
+            out.push_str("[(");
+            emit_expr(out, lo, mode)?;
+            out.push_str(") as usize..(");
+            emit_expr(out, hi, mode)?;
+            out.push_str(") as usize]");
+            out.push_str(if *of_str { ".to_string()" } else { ".to_vec()" });
+        }
         // PMAT-462 (v0.2.0 Track 1.C): Ruchy → Rust HashMap-init block.
         // PMAT-466: empty literal → bare `HashMap::new()` (see the Rust
         // backend's twin arm — avoids clippy `unused_mut`).

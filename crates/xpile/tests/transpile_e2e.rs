@@ -1183,6 +1183,26 @@ fn main() {
     assert_rustc_runs("tuple_unpack", &rust, driver);
 }
 
+/// PMAT-496 (sprint): bounded slicing `xs[a:b]`. List → `Vec` via
+/// `.to_vec()`, str → `String` via `.to_string()` (byte-indexed).
+#[test]
+fn slicing_emitted_rust_list_and_str() {
+    let rust = xpile_transpile_to_rust("slicing.py");
+    assert!(
+        rust.contains(" as usize..(")
+            && rust.contains(".to_vec()")
+            && rust.contains(".to_string()"),
+        "expected slice emissions in Rust, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(middle(vec![10, 20, 30, 40]), vec![20, 30]);
+    assert_eq!(prefix(String::from("hello")), String::from("hel"));
+}
+"#;
+    assert_rustc_runs("slicing", &rust, driver);
+}
+
 /// PMAT-450 — v0.2.0 Track 1.A: str-typed parameter passthrough.
 /// `def echo(name: str) -> str: return name` transpiles to
 /// `pub fn echo(name: String) -> String { name }`, exercises the
