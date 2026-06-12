@@ -2805,6 +2805,32 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         });
                     }
                 }
+                // PMAT-502n: `divmod(a, b)` over two ints → the tuple
+                // `(a // b, a % b)`. Pure desugar reusing the existing
+                // floor-div + mod ops, so it's consistent with `//`/`%` by
+                // construction (both inherit the C-PY-INT-ARITH contract).
+                // a/b are pure v0.1.0 exprs, so the double-eval is sound.
+                if fname.id.as_str() == "divmod" && call.keywords.is_empty() && call.args.len() == 2
+                {
+                    let a = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    let b = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                    if infer_type_in_ctx(ctx, &a) == Type::I64
+                        && infer_type_in_ctx(ctx, &b) == Type::I64
+                    {
+                        return Ok(Expr::TupleLit(vec![
+                            Expr::BinOp {
+                                op: BinOp::FloorDiv,
+                                lhs: Box::new(a.clone()),
+                                rhs: Box::new(b.clone()),
+                            },
+                            Expr::BinOp {
+                                op: BinOp::Mod,
+                                lhs: Box::new(a),
+                                rhs: Box::new(b),
+                            },
+                        ]));
+                    }
+                }
                 // PMAT-502e/502h: 1-arg `min(xs)`/`max(xs)` over a numeric
                 // list → a reduction. The 2-arg `min(a, b)` form is handled
                 // above by the NumBuiltin intercept (arity 2), so this only
