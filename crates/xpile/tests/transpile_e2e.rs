@@ -2113,6 +2113,39 @@ fn main() {
     assert_rustc_runs("list_insert", &rust, driver);
 }
 
+/// PMAT-502as (Tranche 2): list pop (expression form) `xs.pop()` →
+/// `(xs).pop().unwrap()` and `xs.pop(i)` → `(xs).remove((i) as usize)`.
+/// Covers a param receiver, a local receiver (mutability pre-pass), and
+/// pop inside arithmetic.
+#[test]
+fn list_pop() {
+    let rust = xpile_transpile_to_rust("list_pop.py");
+    assert!(rust.contains("(xs).pop().unwrap()"), "pop last:\n{rust}");
+    assert!(
+        rust.contains("(xs).remove((0i64) as usize)"),
+        "pop at index:\n{rust}"
+    );
+    // Param receiver marked mut.
+    assert!(
+        rust.contains("take_last(mut xs: Vec<i64>"),
+        "mut param:\n{rust}"
+    );
+    // Local receiver marked mut by the count_pop_receivers pre-pass.
+    assert!(
+        rust.contains("let mut xs: Vec<i64> = vec!"),
+        "mut local:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(take_last(vec![1, 2, 3]), 3);
+    assert_eq!(take_at(vec![10, 20, 30]), 10);
+    assert_eq!(local_pop(), 5);
+    assert_eq!(sum_two(vec![1, 2, 3, 4]), 7);
+}
+"#;
+    assert_rustc_runs("list_pop", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
