@@ -3668,15 +3668,9 @@ fn lower_binop(op: &ast::Operator) -> Result<BinOp, FrontendError> {
     })
 }
 
-fn lower_compare(c: ast::ExprCompare) -> Result<Expr, FrontendError> {
-    // Python allows chained compares (`a < b < c`); v0.1.0 supports only a single
-    // comparison.
-    if c.ops.len() != 1 || c.comparators.len() != 1 {
-        return Err(FrontendError::Lower(
-            "chained comparisons (e.g., `a < b < c`) are not supported at v0.1.0".into(),
-        ));
-    }
-    let op = match c.ops[0] {
+/// Map a Python comparison operator to its meta-HIR [`BinOp`].
+fn cmp_binop(op: &ast::CmpOp) -> Result<BinOp, FrontendError> {
+    Ok(match op {
         ast::CmpOp::Eq => BinOp::Eq,
         ast::CmpOp::NotEq => BinOp::NotEq,
         ast::CmpOp::Lt => BinOp::Lt,
@@ -3689,14 +3683,44 @@ fn lower_compare(c: ast::ExprCompare) -> Result<Expr, FrontendError> {
                 other
             )));
         }
-    };
-    let mut comparators = c.comparators;
-    let rhs = comparators.pop().expect("len checked above");
-    Ok(Expr::BinOp {
-        op,
-        lhs: Box::new(lower_expr(*c.left)?),
-        rhs: Box::new(lower_expr(rhs)?),
     })
+}
+
+fn lower_compare(c: ast::ExprCompare) -> Result<Expr, FrontendError> {
+    if c.ops.is_empty() || c.ops.len() != c.comparators.len() {
+        return Err(FrontendError::Lower(
+            "malformed comparison (ops/comparators mismatch) — unreachable Python AST".into(),
+        ));
+    }
+    // PMAT-502p: Python chained comparison `a OP1 b OP2 c` means
+    // `(a OP1 b) and (b OP2 c)` — each adjacent operand pair is compared and
+    // the booleans are `&&`-folded. Lower every operand once into `operands`
+    // ([left, comparators…]); a middle operand is reused (cloned) across the
+    // two comparisons it participates in. v0.1.0 operands are pure, so the
+    // reuse matches Python's evaluate-once semantics observationally. A single
+    // comparison (the common case) folds to exactly one `BinOp`, unchanged.
+    let mut operands: Vec<Expr> = Vec::with_capacity(c.ops.len() + 1);
+    operands.push(lower_expr(*c.left)?);
+    for cmp in c.comparators {
+        operands.push(lower_expr(cmp)?);
+    }
+    let mut acc: Option<Expr> = None;
+    for (i, op) in c.ops.iter().enumerate() {
+        let cmp = Expr::BinOp {
+            op: cmp_binop(op)?,
+            lhs: Box::new(operands[i].clone()),
+            rhs: Box::new(operands[i + 1].clone()),
+        };
+        acc = Some(match acc {
+            None => cmp,
+            Some(prev) => Expr::BinOp {
+                op: BinOp::And,
+                lhs: Box::new(prev),
+                rhs: Box::new(cmp),
+            },
+        });
+    }
+    Ok(acc.expect("ops non-empty (checked above)"))
 }
 
 #[cfg(test)]
