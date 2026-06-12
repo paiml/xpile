@@ -669,12 +669,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             hi,
             of_str,
         } => {
+            // PMAT-502r: an absent bound is an open end (`a..`, `..b`, `..`).
             emit_expr(out, collection, mode)?;
-            out.push_str("[(");
-            emit_expr(out, lo, mode)?;
-            out.push_str(") as usize..(");
-            emit_expr(out, hi, mode)?;
-            out.push_str(") as usize]");
+            out.push('[');
+            if let Some(lo) = lo {
+                out.push('(');
+                emit_expr(out, lo, mode)?;
+                out.push_str(") as usize");
+            }
+            out.push_str("..");
+            if let Some(hi) = hi {
+                out.push('(');
+                emit_expr(out, hi, mode)?;
+                out.push_str(") as usize");
+            }
+            out.push(']');
             out.push_str(if *of_str { ".to_string()" } else { ".to_vec()" });
         }
         // PMAT-498: scalar numeric builtins → receiver-method form.

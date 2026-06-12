@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.50] — 2026-06-12
+
+Tranche-2 slice PMAT-502r — Python **open-ended slices** `xs[a:]` / `xs[:b]` / `xs[:]`.
+
+`Expr::Slice`'s `lo`/`hi` bounds are now `Option` — an absent bound is an open
+end. `xs[:n]` → `xs[..(n) as usize]`, `xs[n:]` → `xs[(n) as usize..]`, `xs[:]` →
+`xs[..]` (then `.to_vec()` for lists / `.to_string()` for str) in Rust + Ruchy.
+Both list and str slicing get the open-ended forms; bounded `xs[a:b]` is
+unchanged. Previously an open-ended slice was a hard frontend error ("v0.2.0
+first cut requires both bounds"). Lean refuses. rustc round-trip
+`open_slice.py`: `head([1,2,3,4],2) -> [1,2]`, `tail([1,2,3,4],2) -> [3,4]`,
+`copy_all([1,2,3]) -> [1,2,3]`, `str_prefix("hello",3) -> "hel"`,
+`str_suffix("hello",3) -> "lo"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.49] — 2026-06-12
 
 Tranche-2 slice PMAT-502q — Python **tuple constant-indexing** `t[N]`.

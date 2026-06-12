@@ -231,9 +231,14 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-502q: tuple constant-index — recurse into the tuple expr.
         Expr::TupleIndex { tuple, .. } => expr_has_int_arith(tuple),
         // PMAT-496: slice — recurse into collection + bound expressions.
+        // PMAT-502r: bounds are optional (open-ended slices).
         Expr::Slice {
             collection, lo, hi, ..
-        } => expr_has_int_arith(collection) || expr_has_int_arith(lo) || expr_has_int_arith(hi),
+        } => {
+            expr_has_int_arith(collection)
+                || lo.as_deref().is_some_and(expr_has_int_arith)
+                || hi.as_deref().is_some_and(expr_has_int_arith)
+        }
         // PMAT-498: numeric builtin — recurse into each arg.
         Expr::NumBuiltin { args, .. } => args.iter().any(expr_has_int_arith),
         // PMAT-498b: sum — recurse into the list expression.
@@ -828,12 +833,14 @@ pub enum Expr {
     /// `.to_string()`. Result types as the collection's type (List(T) →
     /// List(T); Str → Str). NOTE str slicing is byte-indexed
     /// (ASCII-correct; a non-char-boundary index panics, matching the
-    /// existing str byte-length posture). Open-ended (`xs[a:]`/`xs[:b]`),
-    /// step, and negative indices are deferred. Lean refuses.
+    /// existing str byte-length posture). PMAT-502r: `lo`/`hi` are
+    /// `Option` — an absent bound is an open end (`xs[a:]`, `xs[:b]`,
+    /// `xs[:]`), emitting a half-open / full Rust range (`a..`, `..b`,
+    /// `..`). Step and negative indices are still deferred. Lean refuses.
     Slice {
         collection: Box<Expr>,
-        lo: Box<Expr>,
-        hi: Box<Expr>,
+        lo: Option<Box<Expr>>,
+        hi: Option<Box<Expr>>,
         of_str: bool,
     },
     /// Dictionary literal — Python `{"a": 1, "b": 2}`. PMAT-462,

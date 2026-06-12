@@ -498,6 +498,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::TupleIndex { tuple, index }. Over a Tuple-typed t with a compile-time non-negative literal N in range, t[N] -> (<tuple>).N.clone() in Rust+Ruchy (Rust tuple field access, distinct from list/dict Expr::Index; .clone() keeps owned posture). Result types as N-th element type. Out-of-range/non-literal/negative indices fall through to the list-index error. Lean refuses (tuples unsupported). rustc round-trip tuple_index.py: first((10,20))->10, second((10,20))->20, from_local(3,4)->7 (local t=(a,b), t[0]+t[1]). FREE CI. SHIPPED v0.1.49."
+- id: PMAT-502R
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502r: [Tranche2] open-ended slices xs[a:]/xs[:b]/xs[:]'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "Expr::Slice lo/hi become Option<Box<Expr>>. Absent bound -> open Rust range: xs[:n]->xs[..(n) as usize], xs[n:]->xs[(n) as usize..], xs[:]->xs[..], then .to_vec() (list) / .to_string() (str) in Rust+Ruchy. List+str both; bounded xs[a:b] unchanged. Previously open-ended was a hard frontend error. Lean refuses. rustc round-trip open_slice.py: head([1,2,3,4],2)->[1,2], tail([1,2,3,4],2)->[3,4], copy_all([1,2,3])->[1,2,3], str_prefix(hello,3)->hel, str_suffix(hello,3)->lo. FREE CI. SHIPPED v0.1.50."
 - id: PMAT-465
   github_issue: 496
   item_type: task
