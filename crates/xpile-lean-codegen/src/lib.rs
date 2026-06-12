@@ -314,6 +314,14 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-504: a closure binding inside a while loop is unsupported.
+            Stmt::ClosureLet { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` binds a closure inside a while loop; \
+                     first-class functions are not supported in the Lean lane",
+                    f.name
+                )));
+            }
         }
     }
 
@@ -811,6 +819,12 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         Stmt::LetTuple { .. } => Err(LeanCodegenError::Unsupported(
             "Stmt::LetTuple (tuple unpacking) is not lowered by the Lean backend — \
              tuples are unsupported at v0.2.0; use `--target rust` or `--target ruchy`"
+                .into(),
+        )),
+        // PMAT-504: first-class closures are a v0.3.0 Lean sub-track.
+        Stmt::ClosureLet { .. } => Err(LeanCodegenError::Unsupported(
+            "Stmt::ClosureLet (first-class closure) is not lowered by the Lean backend — \
+             use `--target rust` or `--target ruchy`"
                 .into(),
         )),
         Stmt::Let { name, value, .. } | Stmt::Assign { name, value } => {

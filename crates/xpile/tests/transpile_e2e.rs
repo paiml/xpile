@@ -2485,6 +2485,32 @@ fn main() {
     assert_rustc_runs("dict_set_comp_range", &rust, driver);
 }
 
+/// PMAT-504 (Tranche 2): first-class closure — `f = lambda y: <body>`
+/// binds a Rust closure `let f = |y: i64| { <body> };`, callable as
+/// `f(arg)` (the return type is recorded so the call site types right).
+#[test]
+fn closure_local() {
+    let rust = xpile_transpile_to_rust("closure_local.py");
+    assert!(
+        rust.contains("let inc = |y: i64| {") && rust.contains("inc(inc(x))"),
+        "closure bind + nested call:\n{rust}"
+    );
+    // A Bool-returning closure makes the function return `bool`.
+    assert!(
+        rust.contains("is_positive(x: i64) -> bool") && rust.contains("let pos = |y: i64| {"),
+        "bool closure:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(apply_twice(5), 7);
+    assert_eq!(is_positive(3), true);
+    assert_eq!(is_positive(-1), false);
+    assert_eq!(scale(4), 12);
+}
+"#;
+    assert_rustc_runs("closure_local", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

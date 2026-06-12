@@ -99,6 +99,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             // PMAT-494b: tuple unpacking introduces no BigInt binding
             // (tuples aren't BigInt-typed at first cut).
             Stmt::LetTuple { .. } => false,
+            // PMAT-504: a closure binding is never BigInt-typed at v0.2.0.
+            Stmt::ClosureLet { .. } => false,
             // PMAT-479 (R10): an early return introduces no BigInt
             // binding (bigint mode is set by params/lets/return type).
             // PMAT-503a: a raise introduces no BigInt binding.
@@ -203,6 +205,21 @@ fn emit_stmt_indented(
             write!(out, "{indent}{name} = ")?;
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
+            Ok(())
+        }
+        // PMAT-504: `let <name> = |<param>: <ty>| { <body> };` — a
+        // first-class closure. The return type is left to Rust inference.
+        Stmt::ClosureLet {
+            name,
+            param,
+            param_ty,
+            body,
+        } => {
+            write!(out, "{indent}let {name} = |{param}: ")?;
+            emit_type(out, param_ty)?;
+            out.push_str("| { ");
+            emit_expr(out, body, mode)?;
+            writeln!(out, " }};")?;
             Ok(())
         }
         // PMAT-494b: tuple unpacking → `let (a, b, ...) = <value>;`.

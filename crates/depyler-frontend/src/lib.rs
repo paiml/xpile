@@ -83,6 +83,12 @@ struct LoweringCtx {
     /// (which silently emitted `let d: i64` and broke rustc). Shared
     /// across all functions in the module via `Rc`.
     signatures: Rc<HashMap<String, FnSig>>,
+    /// PMAT-504: function-local closure bindings — maps a closure
+    /// variable name (`f` in `f = lambda y: …`) to its inferred return
+    /// type, so a call `f(x)` types correctly (the module signature
+    /// table only covers top-level functions). Populated as
+    /// [`Stmt::ClosureLet`] bindings are lowered.
+    closure_returns: HashMap<String, Type>,
 }
 
 impl LoweringCtx {
@@ -106,6 +112,7 @@ impl LoweringCtx {
             name_types,
             mutable,
             signatures,
+            closure_returns: HashMap::new(),
         }
     }
 }
@@ -867,6 +874,13 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
                 {
                     let name = n.id.to_string();
                     return desugar_set_comp(ctx, &name, comp);
+                }
+                // PMAT-504: `name = lambda param: body` → a closure binding.
+                if let (ast::Expr::Name(n), ast::Expr::Lambda(lam)) =
+                    (&asn.targets[0], asn.value.as_ref())
+                {
+                    let name = n.id.to_string();
+                    return desugar_closure_assign(ctx, &name, lam).map(|s| vec![s]);
                 }
             }
             lower_assign(ctx, asn).map(|s| vec![s])
@@ -2748,6 +2762,60 @@ fn desugar_set_comp(
     ])
 }
 
+/// PMAT-504: lower `name = lambda param: body` to a [`Stmt::ClosureLet`].
+/// First cut: exactly one simple positional parameter, assumed to type as
+/// `i64` (the common case — `lambda y: y + 1`). The body is lowered with
+/// the parameter bound as `i64` (restored afterwards so it doesn't leak
+/// into the enclosing scope), and the closure's inferred return type is
+/// recorded in `ctx.closure_returns` so a later `name(arg)` types
+/// correctly. The closure is then callable via the existing `Expr::Call`
+/// machinery.
+fn desugar_closure_assign(
+    ctx: &mut LoweringCtx,
+    name: &str,
+    lam: &ast::ExprLambda,
+) -> Result<Stmt, FrontendError> {
+    if lam.args.args.len() != 1
+        || !lam.args.posonlyargs.is_empty()
+        || !lam.args.kwonlyargs.is_empty()
+        || lam.args.vararg.is_some()
+        || lam.args.kwarg.is_some()
+    {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` binds a lambda with an unsupported parameter list; v0.2.0 supports a single positional parameter (`name = lambda x: …`)",
+            ctx.fn_name
+        )));
+    }
+    let param = lam.args.args[0].def.arg.to_string();
+    // First cut: the parameter types as `i64` (covers arithmetic /
+    // comparison bodies). Bind it for the body's inference, then restore
+    // the prior binding so the closure-local name doesn't leak.
+    let param_ty = Type::I64;
+    let prev_bound = ctx.bound.contains(&param);
+    let prev_ty = ctx.name_types.get(&param).cloned();
+    ctx.bound.insert(param.clone());
+    ctx.name_types.insert(param.clone(), param_ty.clone());
+    let body = lower_expr_in_ctx(ctx, (*lam.body).clone())?;
+    let ret_ty = infer_type_in_ctx(ctx, &body);
+    if prev_bound {
+        if let Some(t) = prev_ty {
+            ctx.name_types.insert(param.clone(), t);
+        }
+    } else {
+        ctx.bound.remove(&param);
+        ctx.name_types.remove(&param);
+    }
+    // Record the closure binding so `name(arg)` types as `ret_ty`.
+    ctx.closure_returns.insert(name.to_string(), ret_ty);
+    ctx.bound.insert(name.to_string());
+    Ok(Stmt::ClosureLet {
+        name: name.to_string(),
+        param,
+        param_ty,
+        body,
+    })
+}
+
 /// PMAT-474 (R5): rewrite a call with keyword arguments `f(x=1, y=2)`
 /// into a plain positional call using the callee's declared parameter
 /// order (from the module signature table). Calls without keywords pass
@@ -3210,10 +3278,13 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // (e.g. `make_dict()` → Type::Dict, not the old I64 fallback
         // that silently emitted `let d: i64`). The table includes the
         // enclosing function, so self-recursion is covered too.
+        // PMAT-504: a call to a local closure binding gets its recorded
+        // return type; otherwise consult the module signature table (R2).
         Expr::Call { callee, .. } => ctx
-            .signatures
+            .closure_returns
             .get(callee)
-            .map(|s| s.ret.clone())
+            .cloned()
+            .or_else(|| ctx.signatures.get(callee).map(|s| s.ret.clone()))
             .unwrap_or_else(|| {
                 if callee == &ctx.fn_name {
                     ctx.fn_return_type.clone()

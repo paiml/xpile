@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.89] — 2026-06-12
+
+Tranche-2 slice PMAT-504 — Python **first-class closures** (lambda assigned to a
+local, then called).
+
+The first structural step beyond the lambda *foothold* (which only inlined lambda
+bodies into `sorted`/`filter`/`map`): a lambda can now be **bound to a local and
+called**. `f = lambda y: <body>` lowers to a new meta-HIR `Stmt::ClosureLet`,
+emitting `let f = |y: i64| { <body> };` in Rust + Ruchy; the closure is then
+callable as `f(arg)` via the existing `Expr::Call` machinery. First cut: a single
+positional parameter typed as `i64` (the common case); the closure's return type
+is inferred from the body and recorded in a new `ctx.closure_returns` side-table
+so the call site types correctly (e.g. a Bool-returning closure makes its caller
+return `bool`). This is achieved **without** a `Type::Closure` variant — Rust
+infers the closure type, so the `let` carries no annotation. Lean refuses
+(first-class functions are a v0.3.0 sub-track). rustc round-trip
+`closure_local.py`: `apply_twice(5) -> 7` (nested `inc(inc(x))`),
+`is_positive(3) -> true` / `is_positive(-1) -> false`, `scale(4) -> 12`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.88] — 2026-06-12
 
 Tranche-2 slice PMAT-502bd — Python **dict + set comprehensions over `range(...)`**
