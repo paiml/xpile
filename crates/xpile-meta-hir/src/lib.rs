@@ -228,6 +228,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-494: tuple literal — recurse into each element (a tuple of
         // computed ints can carry overflow-prone arithmetic).
         Expr::TupleLit(elems) => elems.iter().any(expr_has_int_arith),
+        // PMAT-502q: tuple constant-index — recurse into the tuple expr.
+        Expr::TupleIndex { tuple, .. } => expr_has_int_arith(tuple),
         // PMAT-496: slice — recurse into collection + bound expressions.
         Expr::Slice {
             collection, lo, hi, ..
@@ -953,6 +955,13 @@ pub enum Expr {
     /// [`Expr::ListLit`]). Rust/Ruchy emit `(e0, e1, ...)`; Lean refuses
     /// at first cut. Result types as [`Type::Tuple`].
     TupleLit(Vec<Expr>),
+    /// Tuple constant-index — Python `t[N]` over a `Tuple`-typed `t` with a
+    /// compile-time non-negative literal `N`. PMAT-502q (Tranche 2). Rust
+    /// tuples use field access (`t.0`), not `[]` indexing, so this is a
+    /// distinct node from [`Expr::Index`] (list/dict subscript). Rust/Ruchy
+    /// emit `(<tuple>).N.clone()`; result types as the N-th element type.
+    /// Lean refuses (tuples unsupported in the Lean lane).
+    TupleIndex { tuple: Box<Expr>, index: usize },
     /// String concatenation — Python `str + str` semantics. PMAT-451,
     /// v0.2.0 Track 1.A. Distinct from `BinOp::Add` because:
     ///   * No overflow concept (strings never overflow).

@@ -565,6 +565,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             }
             out.push(')');
         }
+        // PMAT-502q: Python `t[N]` (tuple) → `(<tuple>).N.clone()`.
+        Expr::TupleIndex { tuple, index } => {
+            out.push('(');
+            emit_expr(out, tuple, mode)?;
+            write!(out, ").{index}.clone()")?;
+        }
         // PMAT-496: Ruchy → Rust slice (`.to_vec()` / `.to_string()`).
         Expr::Slice {
             collection,

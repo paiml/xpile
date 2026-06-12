@@ -489,6 +489,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "Pure-frontend desugar (no new IR). lower_compare folds an N-operator comparison a OP1 b OP2 c... into (a OP1 b) && (b OP2 c) && ... (Python chained-comparison semantics). Each operand lowered once; middle operand reused across the two comparisons it joins (v0.1.0 pure operands -> matches evaluate-once observationally). Single comparison unchanged (one BinOp); previously chained was a hard error. rustc round-trip chained_compare.py: in_range(0,5,10)->true, in_range(0,15,10)->false, in_range(0,10,10)->true (boundary), strictly_increasing(1,2,3)->true, strictly_increasing(1,2,2)->false, triple_eq(7,7,7)->true. FREE CI. SHIPPED v0.1.48."
+- id: PMAT-502Q
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502q: [Tranche2] tuple constant-indexing t[N]'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New meta-HIR Expr::TupleIndex { tuple, index }. Over a Tuple-typed t with a compile-time non-negative literal N in range, t[N] -> (<tuple>).N.clone() in Rust+Ruchy (Rust tuple field access, distinct from list/dict Expr::Index; .clone() keeps owned posture). Result types as N-th element type. Out-of-range/non-literal/negative indices fall through to the list-index error. Lean refuses (tuples unsupported). rustc round-trip tuple_index.py: first((10,20))->10, second((10,20))->20, from_local(3,4)->7 (local t=(a,b), t[0]+t[1]). FREE CI. SHIPPED v0.1.49."
 - id: PMAT-465
   github_issue: 496
   item_type: task

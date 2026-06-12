@@ -1435,6 +1435,25 @@ fn main() {
     assert_rustc_runs("chained_compare", &rust, driver);
 }
 
+/// PMAT-502q (Tranche 2): tuple constant-indexing `t[N]` → `(t).N.clone()`
+/// (Rust tuple field access, not `[]` indexing).
+#[test]
+fn tuple_index() {
+    let rust = xpile_transpile_to_rust("tuple_index.py");
+    assert!(
+        rust.contains("(t).0.clone()") && rust.contains("(t).1.clone()"),
+        "expected tuple field-access emission, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(first((10, 20)), 10);
+    assert_eq!(second((10, 20)), 20);
+    assert_eq!(from_local(3, 4), 7);
+}
+"#;
+    assert_rustc_runs("tuple_index", &rust, driver);
+}
+
 /// PMAT-502h (Tranche 2): 1-arg `min(xs)`/`max(xs)` over a `list[float]` →
 /// a fold (`fold(f64::INFINITY, f64::min)` / `fold(f64::NEG_INFINITY, f64::max)`).
 #[test]
