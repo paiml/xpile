@@ -451,7 +451,9 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(lhs, out);
             collect_idents(rhs, out);
         }
-        Expr::BinOp { lhs, rhs, .. } | Expr::Concat { lhs, rhs } => {
+        Expr::BinOp { lhs, rhs, .. }
+        | Expr::Concat { lhs, rhs }
+        | Expr::ListConcat { lhs, rhs } => {
             collect_idents(lhs, out);
             collect_idents(rhs, out);
         }
@@ -996,6 +998,15 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             out.push_str(" ++ ");
             emit_expr(out, rhs)?;
             out.push(')');
+        }
+        // PMAT-502bg: list concatenation deferred in the Lean lane (list
+        // ops are a v0.3.0 sub-track) — refuse with a pointer.
+        Expr::ListConcat { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python list `+` concatenation is not yet supported in the Lean lane — \
+                 use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
         }
         // PMAT-492: Python string transform methods are deferred in the
         // Lean lane (no stable String.toUpper / trim model at first cut)

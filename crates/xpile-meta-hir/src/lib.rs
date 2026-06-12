@@ -238,6 +238,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // case future lowering ever nests an int-arith expression
         // inside a string-typed position (unlikely but cheap).
         Expr::Concat { lhs, rhs } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
+        // PMAT-502bg: list concatenation — recurse into both operands.
+        Expr::ListConcat { lhs, rhs } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
         // PMAT-502am: formatted f-string field — recurse into the value.
         Expr::FormatSpec { value, .. } => expr_has_int_arith(value),
         // PMAT-492: string methods are str-domain; recurse into the
@@ -1169,6 +1171,15 @@ pub enum Expr {
     /// generalises to `Vec<Expr>` parts via a `Concat { parts }`
     /// rewrite; the binary form is sufficient for v0.2.0 first cut.
     Concat { lhs: Box<Expr>, rhs: Box<Expr> },
+    /// List concatenation — Python `xs + ys` over two lists. PMAT-502bg
+    /// (Tranche 2). The companion of [`Expr::Concat`] (string `+`) on the
+    /// list side; the frontend chooses it when both `+` operands type as
+    /// `Type::List`. Rust/Ruchy emit
+    /// `(<lhs>).iter().chain((<rhs>).iter()).cloned().collect::<Vec<_>>()`
+    /// — a fresh `Vec` that consumes neither operand (matching Python,
+    /// where `+` does not mutate either list). The result types as the
+    /// list type. Lean refuses.
+    ListConcat { lhs: Box<Expr>, rhs: Box<Expr> },
     /// A formatted f-string field — Python `{value:spec}` where `spec` is a
     /// static format spec (e.g. `.2f`, `05d`, `>10`). PMAT-502am (Tranche 2).
     /// `rust_spec` is the already-translated Rust format spec (the frontend
