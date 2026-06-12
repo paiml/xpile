@@ -660,6 +660,15 @@ roadmap:
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
   - "New meta-HIR Expr::Enumerate { list } + Expr::Zip { left, right } — the builtins used OUTSIDE a for header (for-loop forms = PMAT-495). enumerate(xs) -> xs.iter().cloned().enumerate().map(|(__i, __e)| (__i as i64, __e)).collect::<Vec<_>>() (List(Tuple[I64,elem])); zip(a,b) -> a.iter().cloned().zip(b.iter().cloned()).collect::<Vec<_>>() (List(Tuple[eL,eR]), truncates to shorter) in Rust+Ruchy. list(enumerate(..))/list(zip(..)) unwrap. Compose with for k,v in.. pair loop (v0.1.57) + len (v0.1.55). Lean refuses. rustc round-trip enumerate_zip_standalone.py: idx_sum([10,20,30])->80, dot([1,2,3],[4,5,6])->32, n_pairs([1,2,3],[9,9])->2. FREE CI. SHIPPED v0.1.67."
+- id: PMAT-502AJ
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502aj: [Tranche2] s.title()'
+  status: planned
+  priority: medium
+  created: 2026-06-12T00:00:00Z
+  acceptance_criteria:
+  - "New StrMethodOp::Title (0-arg, -> Str). s.title() -> { let mut __tr = String::new(); let mut __pa = false; for __c in (s).chars() { if __c.is_alphabetic() { if __pa { __tr.extend(__c.to_lowercase()); } else { __tr.extend(__c.to_uppercase()); } __pa = true; } else { __tr.push(__c); __pa = false; } } __tr } in Rust+Ruchy (special-cased fold before recv-once emit). First alpha of each word upper, rest lower, non-alpha = word boundary. Matches Python EXACTLY incl. apostrophe quirk (\"it's\".title()->It'S). Rounds out case-transform family (upper/lower/capitalize/title). Lean refuses. rustc round-trip str_title.py: t(hello world)->Hello World, t(HELLO)->Hello, t(123abc)->123Abc, t(it's)->It'S, t(\"\")->\"\". FREE CI. SHIPPED v0.1.68."
 - id: PMAT-465
   github_issue: 496
   item_type: task
