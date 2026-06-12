@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.22] — 2026-06-12
+
+Sprint slice PMAT-486 (§30 Track 4) — the **`DiffExecEngine` interface +
+hook** for the §29 Multi-Emitter Quorum's Runtime stratum.
+
+`xpile-backend` gains a `DiffExecEngine` trait (`execute_and_compare`) and a
+`MultiEmitterBackend::diff_exec_engine: Option<Arc<dyn DiffExecEngine>>`
+field (+ `with_diff_exec_engine` builder). The `QuorumPolicy::DiffExec` arm
+now calls the engine when installed; **with no engine it records the benign
+`NotRun { no-engine }`** (free CI stays green), and **an installed engine
+that errors propagates a hard `BackendError`** — a broken GPU run must not
+masquerade as "not run". Pure interface/wiring (no GPU); the real CUDA /
+Vulkan engines (PMAT-488 / PMAT-490) plug in here out-of-band on the
+self-hosted runners. 3 new unit tests (24 in the crate); existing PMAT-266 /
+280 routing tests stay green.
+
+GitHub-tagged only; crates.io next publishes 2026-06-19.
+
 ## [0.1.21] — 2026-06-12
 
 Sprint slice PMAT-496 — Python **bounded slicing** `xs[a:b]` (list + str).
