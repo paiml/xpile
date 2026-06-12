@@ -907,6 +907,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 }
             }
         }
+        // PMAT-502as: `xs.pop()` → `(<list>).pop().unwrap()` (last; panics
+        // if empty, matching Python IndexError); `xs.pop(i)` →
+        // `(<list>).remove((<i>) as usize)` (panics if out of range).
+        Expr::ListPop { list, index } => {
+            out.push('(');
+            emit_expr(out, list, mode)?;
+            match index {
+                None => out.push_str(").pop().unwrap()"),
+                Some(i) => {
+                    out.push_str(").remove((");
+                    emit_expr(out, i, mode)?;
+                    out.push_str(") as usize)");
+                }
+            }
+        }
         // PMAT-502c/f/z: `sorted(xs)` → `{ let mut __xv = <list>.clone();
         // __xv.sort(); __xv }`; `reverse=True` appends `__xv.reverse();`;
         // `key=lambda p: e` uses `__xv.sort_by_key(|__k| { let p = __k.clone(); e })`.

@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.77] — 2026-06-12
+
+Tranche-2 slice PMAT-502as — Python **list pop** `xs.pop()` / `xs.pop(i)`
+(expression form).
+
+New meta-HIR `Expr::ListPop { list, index }` — the first list mutator that is an
+**expression** (it removes an element and evaluates to it). `xs.pop()` lowers to
+`(<list>).pop().unwrap()` (removes/returns the last element; panics if empty,
+matching Python's `IndexError`); `xs.pop(i)` lowers to
+`(<list>).remove((<i>) as usize)`. The result types as the list's element type.
+The receiver is marked `mut` by a new `count_pop_receivers` pre-pass that scans
+value expressions (`x = xs.pop()`, `return xs.pop()`, arithmetic) — so a popped
+**local** as well as a popped **param** gets `let mut`. Lean refuses (in-place
+mutation). The bare-statement discard form `xs.pop()` is deferred. rustc
+round-trip `list_pop.py`: `take_last([1,2,3]) -> 3`, `take_at([10,20,30]) -> 10`,
+`local_pop() -> 5` (local receiver), `sum_two([1,2,3,4]) -> 7` (pop in arithmetic).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.76] — 2026-06-12
 
 Tranche-2 slice PMAT-502ar — Python **positional list insertion** `xs.insert(i, x)`.

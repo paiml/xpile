@@ -136,6 +136,12 @@ fn compute_mutable_names(params: &[Param], body: &[ast::Stmt]) -> HashSet<String
 fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     for stmt in stmts {
+        // PMAT-502as: `<name>.pop(...)` mutates its receiver even in
+        // expression position (`x = xs.pop()`, `return xs.pop()`), so the
+        // receiver's binding must be `mut`. Scan value expressions for pop
+        // receivers — the param lift handles params, but a popped *local*
+        // is only caught here.
+        count_pop_receivers_in_stmt(stmt, &mut counts, if in_loop { 2 } else { 1 });
         match stmt {
             ast::Stmt::Assign(a) => {
                 let bump = if in_loop { 2 } else { 1 };
@@ -233,6 +239,92 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
         }
     }
     counts
+}
+
+/// PMAT-502as: extract the value expression(s) of a statement and scan
+/// them for `<name>.pop(...)` receivers, bumping each by `bump`. Only the
+/// statement positions that can hold a captured pop result are scanned
+/// (assignment/return values); `If`/`While`/`For` bodies are handled by
+/// the recursive `walk_counts` itself.
+fn count_pop_receivers_in_stmt(stmt: &ast::Stmt, counts: &mut HashMap<String, usize>, bump: usize) {
+    match stmt {
+        ast::Stmt::Assign(a) => count_pop_receivers(&a.value, counts, bump),
+        ast::Stmt::AugAssign(a) => count_pop_receivers(&a.value, counts, bump),
+        ast::Stmt::AnnAssign(aa) => {
+            if let Some(v) = &aa.value {
+                count_pop_receivers(v, counts, bump);
+            }
+        }
+        ast::Stmt::Return(r) => {
+            if let Some(v) = &r.value {
+                count_pop_receivers(v, counts, bump);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Recursively walk an expression, bumping the count of every simple-name
+/// receiver of a `.pop(...)` call. Covers the common nestings a popped
+/// value appears in (arithmetic, comparisons, call args, collections);
+/// exotic shapes simply aren't counted (the receiver then stays
+/// immutable, which at worst surfaces a compile error rather than wrong
+/// behaviour).
+fn count_pop_receivers(e: &ast::Expr, counts: &mut HashMap<String, usize>, bump: usize) {
+    use ast::Expr as E;
+    match e {
+        E::Call(call) => {
+            if let E::Attribute(attr) = call.func.as_ref() {
+                if attr.attr.as_str() == "pop" {
+                    if let E::Name(n) = attr.value.as_ref() {
+                        *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                    }
+                }
+                count_pop_receivers(attr.value.as_ref(), counts, bump);
+            } else {
+                count_pop_receivers(call.func.as_ref(), counts, bump);
+            }
+            for a in &call.args {
+                count_pop_receivers(a, counts, bump);
+            }
+        }
+        E::BinOp(b) => {
+            count_pop_receivers(&b.left, counts, bump);
+            count_pop_receivers(&b.right, counts, bump);
+        }
+        E::UnaryOp(u) => count_pop_receivers(&u.operand, counts, bump),
+        E::BoolOp(b) => {
+            for v in &b.values {
+                count_pop_receivers(v, counts, bump);
+            }
+        }
+        E::Compare(c) => {
+            count_pop_receivers(&c.left, counts, bump);
+            for c2 in &c.comparators {
+                count_pop_receivers(c2, counts, bump);
+            }
+        }
+        E::Subscript(s) => {
+            count_pop_receivers(&s.value, counts, bump);
+            count_pop_receivers(&s.slice, counts, bump);
+        }
+        E::Tuple(t) => {
+            for el in &t.elts {
+                count_pop_receivers(el, counts, bump);
+            }
+        }
+        E::List(l) => {
+            for el in &l.elts {
+                count_pop_receivers(el, counts, bump);
+            }
+        }
+        E::IfExp(i) => {
+            count_pop_receivers(&i.test, counts, bump);
+            count_pop_receivers(&i.body, counts, bump);
+            count_pop_receivers(&i.orelse, counts, bump);
+        }
+        _ => {}
+    }
 }
 
 /// Merge two branch maps by taking the per-name max — only one branch
@@ -2573,6 +2665,11 @@ fn infer_type(e: &Expr) -> Type {
         },
         // PMAT-502u: list.count(x)/index(x) return Int.
         Expr::ListQuery { .. } => Type::I64,
+        // PMAT-502as: list.pop() returns the list's element type.
+        Expr::ListPop { list, .. } => match infer_type(list) {
+            Type::List(elem) => *elem,
+            _ => Type::I64,
+        },
         // PMAT-502v/502x: d.keys()/d.values()/d.items() materialize to
         // List(K)/List(V)/List(Tuple[K, V]).
         Expr::DictView { dict, kind } => match infer_type(dict) {
@@ -2797,6 +2894,11 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         },
         // PMAT-502u: list.count(x)/index(x) return Int.
         Expr::ListQuery { .. } => Type::I64,
+        // PMAT-502as: list.pop() returns the list's element type.
+        Expr::ListPop { list, .. } => match infer_type_in_ctx(ctx, list) {
+            Type::List(elem) => *elem,
+            _ => Type::I64,
+        },
         // PMAT-502v: d.keys()/d.values() materialize to List(K)/List(V).
         Expr::DictView { dict, kind } => match infer_type_in_ctx(ctx, dict) {
             Type::Dict(k, v) => Type::List(match kind {
@@ -3087,6 +3189,39 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 ListQueryOp::Index
                             },
                             arg: Box::new(arg),
+                        });
+                    }
+                }
+                // PMAT-502as: `xs.pop()` / `xs.pop(i)` — an expression that
+                // removes and returns an element (so the receiver mutates).
+                // 0 args → remove last; 1 int arg → remove at that index.
+                if attr.attr.as_str() == "pop" {
+                    let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &recv), Type::List(_))
+                        && call.keywords.is_empty()
+                        && call.args.len() <= 1
+                    {
+                        let index = match call.args.first() {
+                            None => None,
+                            Some(a) => {
+                                let i = lower_expr_in_ctx(ctx, a.clone())?;
+                                if infer_type_in_ctx(ctx, &i) != Type::I64 {
+                                    return Err(FrontendError::Lower(format!(
+                                        "function `{}` calls list `.pop(<index>)` with a \
+                                         non-int index; v0.2.0 requires an int position",
+                                        ctx.fn_name
+                                    )));
+                                }
+                                Some(Box::new(i))
+                            }
+                        };
+                        // Receiver mutability is handled entirely by the
+                        // `count_pop_receivers` pre-pass (a popped param or
+                        // local crosses the `> 1` count → `mut`); this
+                        // expr-lowering path has only `&ctx`.
+                        return Ok(Expr::ListPop {
+                            list: Box::new(recv),
+                            index,
                         });
                     }
                 }

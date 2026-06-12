@@ -288,6 +288,10 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         }
         // PMAT-502u: list query — recurse into the list and the arg.
         Expr::ListQuery { list, arg, .. } => expr_has_int_arith(list) || expr_has_int_arith(arg),
+        // PMAT-502as: list.pop() — recurse into the list and optional index.
+        Expr::ListPop { list, index } => {
+            expr_has_int_arith(list) || index.as_ref().is_some_and(|i| expr_has_int_arith(i))
+        }
         // PMAT-500: set literal / membership — recurse defensively.
         Expr::SetLit(elems) => elems.iter().any(expr_has_int_arith),
         Expr::SetContains { set, elem } => expr_has_int_arith(set) || expr_has_int_arith(elem),
@@ -1268,6 +1272,22 @@ pub enum Expr {
         list: Box<Expr>,
         op: ListQueryOp,
         arg: Box<Expr>,
+    },
+    /// List pop — Python `xs.pop()` / `xs.pop(i)`. PMAT-502as (Tranche 2).
+    /// An *expression* that removes an element from the receiver and
+    /// evaluates to it (so the receiver must be mutable; the frontend
+    /// marks it). With no `index`, removes and returns the **last**
+    /// element; with an `index`, removes and returns the element at that
+    /// position. Both panic when out of range, matching Python's
+    /// `IndexError`. The result type is the list's element type.
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: no index → `(<list>).pop().unwrap()`; with index
+    ///     → `(<list>).remove((<index>) as usize)`.
+    ///   * Lean: refuses (in-place mutation, same gap as `Stmt::ListAppend`).
+    ListPop {
+        list: Box<Expr>,
+        index: Option<Box<Expr>>,
     },
     /// Unary operation — `not x` (logical, Bool → Bool) or `-x`
     /// (numeric negate, I64 → I64).
