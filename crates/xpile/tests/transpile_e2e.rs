@@ -1411,6 +1411,30 @@ fn main() {
     assert_rustc_runs("str_contains", &rust, driver);
 }
 
+/// PMAT-502p (Tranche 2): chained comparison `a OP b OP c` →
+/// `(a OP b) && (b OP c)`.
+#[test]
+fn chained_compare() {
+    let rust = xpile_transpile_to_rust("chained_compare.py");
+    assert!(
+        rust.contains("((lo <= x) && (x <= hi))"),
+        "expected chained-comparison conjunction, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert!(in_range(0, 5, 10));
+    assert!(!in_range(0, 15, 10));
+    assert!(in_range(0, 0, 10));
+    assert!(in_range(0, 10, 10));
+    assert!(strictly_increasing(1, 2, 3));
+    assert!(!strictly_increasing(1, 2, 2));
+    assert!(triple_eq(7, 7, 7));
+    assert!(!triple_eq(7, 7, 8));
+}
+"#;
+    assert_rustc_runs("chained_compare", &rust, driver);
+}
+
 /// PMAT-502h (Tranche 2): 1-arg `min(xs)`/`max(xs)` over a `list[float]` →
 /// a fold (`fold(f64::INFINITY, f64::min)` / `fold(f64::NEG_INFINITY, f64::max)`).
 #[test]

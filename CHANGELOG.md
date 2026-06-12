@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.48] — 2026-06-12
+
+Tranche-2 slice PMAT-502p — Python **chained comparisons** `a < b < c`.
+
+Pure-frontend desugar (no new IR): `lower_compare` now folds an N-operator
+comparison `a OP1 b OP2 c …` into `(a OP1 b) && (b OP2 c) && …`, matching
+Python's chained-comparison semantics. Each operand is lowered once; a middle
+operand is reused across the two comparisons it joins (v0.1.0 operands are pure,
+so this matches Python's evaluate-once observationally). A single comparison
+(the common case) still folds to exactly one `BinOp`, unchanged — previously a
+chained comparison was a hard frontend error. rustc round-trip
+`chained_compare.py`: `in_range(0,5,10) -> true`, `in_range(0,15,10) -> false`,
+boundary `in_range(0,10,10) -> true`, `strictly_increasing(1,2,3) -> true`,
+`strictly_increasing(1,2,2) -> false`, `triple_eq(7,7,7) -> true`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.47] — 2026-06-12
 
 Tranche-2 slice PMAT-502o — Python **substring containment** `sub in s`.
