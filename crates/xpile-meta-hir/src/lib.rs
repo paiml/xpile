@@ -237,7 +237,7 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-498b: sum — recurse into the list expression.
         Expr::Sum { list, .. } => expr_has_int_arith(list),
         // PMAT-502c: sorted — recurse into the list expression.
-        Expr::Sorted { list } => expr_has_int_arith(list),
+        Expr::Sorted { list, .. } => expr_has_int_arith(list),
         Expr::Reversed { list } => expr_has_int_arith(list),
         Expr::ListMinMax { list, .. } => expr_has_int_arith(list),
         // PMAT-500: set literal / membership — recurse defensively.
@@ -982,12 +982,14 @@ pub enum Expr {
     /// the element type — `i64` for `list[int]`, `f64` for `list[float]`).
     /// Result types as the element type. Lean refuses.
     Sum { list: Box<Expr>, of_float: bool },
-    /// `sorted(xs)` over a list — Python builtin returning a **new**
-    /// sorted list (the input is not mutated). PMAT-502c (Tranche 2).
-    /// Rust/Ruchy emit `{ let mut __v = <list>.clone(); __v.sort(); __v }`;
-    /// result types as the list's type. Lean refuses. (Reverse / key=
-    /// follow as their own slice.)
-    Sorted { list: Box<Expr> },
+    /// `sorted(xs)` / `sorted(xs, reverse=True)` over a list — Python
+    /// builtin returning a **new** sorted list (the input is not mutated).
+    /// PMAT-502c (Tranche 2); the `reverse` flag is PMAT-502f. Rust/Ruchy
+    /// emit `{ let mut __v = <list>.clone(); __v.sort(); __v }` (ascending)
+    /// or, when `reverse`, `{ … __v.sort(); __v.reverse(); __v }`
+    /// (descending — stable-sort-then-reverse). Result types as the list's
+    /// type. Lean refuses. (`key=` follows as its own slice.)
+    Sorted { list: Box<Expr>, reverse: bool },
     /// `list(reversed(xs))` / `reversed(xs)` over a list — Python builtin
     /// returning a **new** reversed list (the input is not mutated).
     /// PMAT-502d (Tranche 2). Rust/Ruchy emit

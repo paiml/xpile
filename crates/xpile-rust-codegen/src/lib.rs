@@ -692,10 +692,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             });
         }
         // PMAT-502c: `sorted(xs)` → `{ let mut __xv = <list>.clone(); __xv.sort(); __xv }`.
-        Expr::Sorted { list } => {
+        // PMAT-502f: `sorted(xs, reverse=True)` appends `__xv.reverse();`.
+        Expr::Sorted { list, reverse } => {
             out.push_str("{ let mut __xv = ");
             emit_expr(out, list, mode)?;
-            out.push_str(".clone(); __xv.sort(); __xv }");
+            out.push_str(if *reverse {
+                ".clone(); __xv.sort(); __xv.reverse(); __xv }"
+            } else {
+                ".clone(); __xv.sort(); __xv }"
+            });
         }
         // PMAT-502d: `reversed(xs)` → a new reversed Vec.
         Expr::Reversed { list } => {

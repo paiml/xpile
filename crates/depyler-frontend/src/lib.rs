@@ -2354,7 +2354,7 @@ fn infer_type(e: &Expr) -> Type {
             }
         }
         // PMAT-502c: sorted(xs) has the same type as its list.
-        Expr::Sorted { list } => infer_type(list),
+        Expr::Sorted { list, .. } => infer_type(list),
         // PMAT-502d: reversed(xs) has the same type as its list.
         Expr::Reversed { list } => infer_type(list),
         // PMAT-502e: min(xs)/max(xs) reduce a list to its element type.
@@ -2505,7 +2505,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             }
         }
         // PMAT-502c: sorted(xs) has the same type as its list.
-        Expr::Sorted { list } => infer_type_in_ctx(ctx, list),
+        Expr::Sorted { list, .. } => infer_type_in_ctx(ctx, list),
         // PMAT-502d: reversed(xs) has the same type as its list.
         Expr::Reversed { list } => infer_type_in_ctx(ctx, list),
         // PMAT-502e: min(xs)/max(xs) reduce a list to its element type.
@@ -2759,13 +2759,32 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                 }
                 // PMAT-502c: `sorted(xs)` over a list → a new sorted list.
-                if fname.id.as_str() == "sorted" && call.keywords.is_empty() && call.args.len() == 1
-                {
-                    let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
-                    if matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
-                        return Ok(Expr::Sorted {
-                            list: Box::new(list),
-                        });
+                // PMAT-502f: an optional `reverse=<bool literal>` keyword
+                // selects descending order (sort-then-reverse). Any other
+                // keyword (e.g. `key=`) leaves the intercept to fall through.
+                if fname.id.as_str() == "sorted" && call.args.len() == 1 {
+                    let mut reverse = false;
+                    let mut only_reverse_kw = true;
+                    for kw in &call.keywords {
+                        match (kw.arg.as_ref().map(|a| a.as_str()), &kw.value) {
+                            (Some("reverse"), ast::Expr::Constant(c)) => {
+                                if let ast::Constant::Bool(b) = &c.value {
+                                    reverse = *b;
+                                } else {
+                                    only_reverse_kw = false;
+                                }
+                            }
+                            _ => only_reverse_kw = false,
+                        }
+                    }
+                    if only_reverse_kw {
+                        let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                        if matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
+                            return Ok(Expr::Sorted {
+                                list: Box::new(list),
+                                reverse,
+                            });
+                        }
                     }
                 }
                 // PMAT-502d: `reversed(xs)` over a list → a new reversed

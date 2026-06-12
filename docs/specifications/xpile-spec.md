@@ -838,9 +838,10 @@ verifiable; add `PMAT-497+` tickets as each is taken.
 | **PMAT-501** — dict comprehensions (v0.1.30) + **set comprehensions** `{e for …}` (v0.1.32) | materialise via for-DictSet / for-SetAdd; no new IR | ✅ SHIPPED — completes list/dict/set comprehensions |
 | **PMAT-502** — `Stmt::If` branch generalization | dispatcher: if-as-let for `name=expr` branches, else a real `Stmt::If` (subscript assigns / `.append` / dict mutation) — unblocks the histogram idiom | ✅ SHIPPED v0.1.28 |
 | **PMAT-502b** — `str.replace(old, new)` (`StrMethodOp::Replace`, 2-arg) | `.replace(&(old)[..], &(new)[..])` | ✅ SHIPPED v0.1.33 |
-| **PMAT-502c** — `sorted(xs)` (`Expr::Sorted`) | `{ let mut __xv = xs.clone(); __xv.sort(); __xv }` | ✅ SHIPPED v0.1.34 (`reverse=`/`key=` → follow-up) |
+| **PMAT-502c** — `sorted(xs)` (`Expr::Sorted`) | `{ let mut __xv = xs.clone(); __xv.sort(); __xv }` | ✅ SHIPPED v0.1.34 (`reverse=` → PMAT-502f v0.1.38; `key=` → follow-up) |
 | **PMAT-502d** — `reversed(xs)` (`Expr::Reversed`) | `{ let mut __xv = xs.clone(); __xv.reverse(); __xv }`; `list(reversed(xs))` unwraps to the same | ✅ SHIPPED v0.1.35 |
 | **PMAT-502e** — 1-arg `min(xs)`/`max(xs)` over a list (`Expr::ListMinMax`) | `xs.iter().copied().min().unwrap()` / `.max()`; `list[int]` first cut, `f64` follows | ✅ SHIPPED v0.1.36 |
+| **PMAT-502f** — `sorted(xs, reverse=True)` (`Expr::Sorted.reverse`) | `{ … __xv.sort(); __xv.reverse(); __xv }` (descending); non-bool/`key=` falls through | ✅ SHIPPED v0.1.38 |
 | **PMAT-503** — exceptions `try/except/raise` | map to `Result`/panic; R10 early-return machinery exists | 🔨 in progress — **PMAT-503a** `raise Exc("msg")` → `panic!("{}", msg)` (`Stmt::Raise`) ✅ SHIPPED v0.1.37; `try/except` catch + `Result` propagation follow |
 | **PMAT-504** — closures / `lambda` | first-class fn values | open |
 | **PMAT-505** — `&str` borrowing | param-position borrow optimization | open |
