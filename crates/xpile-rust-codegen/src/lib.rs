@@ -115,6 +115,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::Assign { .. } | Stmt::Assert { .. } | Stmt::Return(_) | Stmt::Raise { .. } => {
                 false
             }
+            // PMAT-502bk: loop-control statements carry no binding.
+            Stmt::Continue | Stmt::Break => false,
             Stmt::While { body, .. }
             | Stmt::ForEach { body, .. }
             | Stmt::ForEachPair { body, .. } => body.iter().any(stmt_has_bigint),
@@ -243,6 +245,15 @@ fn emit_stmt_indented(
             write!(out, "{indent}return ")?;
             emit_expr(out, e, mode)?;
             writeln!(out, ";")?;
+            Ok(())
+        }
+        // PMAT-502bk: loop-control statements.
+        Stmt::Continue => {
+            writeln!(out, "{indent}continue;")?;
+            Ok(())
+        }
+        Stmt::Break => {
+            writeln!(out, "{indent}break;")?;
             Ok(())
         }
         // PMAT-478 (R9): if/else statement → Rust `if c { … } else { … }`.

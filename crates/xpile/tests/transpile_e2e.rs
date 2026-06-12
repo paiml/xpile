@@ -2700,6 +2700,25 @@ fn main() {
     assert_rustc_runs("module_const", &rust, driver);
 }
 
+/// PMAT-502bk (Tranche 2): `continue` / `break` in loops → Rust
+/// `continue;` / `break;`. (`continue` in a `range(...)` for-loop is
+/// rejected separately; `break` there is fine.)
+#[test]
+fn loop_control() {
+    let rust = xpile_transpile_to_rust("loop_control.py");
+    assert!(rust.contains("continue;"), "continue:\n{rust}");
+    assert!(rust.contains("break;"), "break:\n{rust}");
+    let driver = r#"
+fn main() {
+    assert_eq!(sum_pos(vec![1, -2, 3, -4, 5]), 9);
+    assert_eq!(first_neg(vec![1, 2, -3, 4]), -3);
+    assert_eq!(first_neg(vec![1, 2, 3]), 0);
+    assert_eq!(sum_below_three(10), 3);
+}
+"#;
+    assert_rustc_runs("loop_control", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

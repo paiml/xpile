@@ -127,6 +127,8 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
                 || then_body.iter().any(stmt_has_int_arith)
                 || else_body.iter().any(stmt_has_int_arith)
         }
+        // PMAT-502bk: loop-control statements carry no expression.
+        Stmt::Continue | Stmt::Break => false,
         // PMAT-458: for-each over a collection. The `iter` and `body`
         // are recursed; an arithmetic-using collection (e.g.,
         // `for x in [a+b, c*d]:`) propagates the citation requirement.
@@ -435,6 +437,16 @@ pub enum Stmt {
         then_body: Vec<Stmt>,
         else_body: Vec<Stmt>,
     },
+    /// `continue;` — Python `continue`. PMAT-502bk (Tranche 2). Skips to
+    /// the next loop iteration. Rust/Ruchy emit `continue;`. The frontend
+    /// rejects it inside a `range(...)` for-loop (which desugars to a
+    /// `while` with a tail counter-increment that `continue` would skip);
+    /// it is allowed inside list/dict for-loops (real Rust `for`) and
+    /// `while` loops. Lean refuses (no loop-control encoding).
+    Continue,
+    /// `break;` — Python `break`. PMAT-502bk (Tranche 2). Exits the
+    /// nearest loop. Rust/Ruchy emit `break;` (always safe). Lean refuses.
+    Break,
     /// `let [mut] name: ty = value;` — first binding of `name` in this
     /// scope. `mutable` is set by the frontend when the same name is
     /// reassigned later in the function (including inside a [`While`]
