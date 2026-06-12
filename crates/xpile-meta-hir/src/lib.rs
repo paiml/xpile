@@ -150,7 +150,9 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         // PMAT-466 (v0.2.0 Track 1.C): dict keyed assignment — recurse
         // into both key and value expressions.
         Stmt::DictSet { key, value, .. } => expr_has_int_arith(key) || expr_has_int_arith(value),
-        Stmt::Assert { cond } => expr_has_int_arith(cond),
+        Stmt::Assert { cond, msg } => {
+            expr_has_int_arith(cond) || msg.as_ref().is_some_and(expr_has_int_arith)
+        }
         // PMAT-503a: raise — recurse into the panic message expression.
         Stmt::Raise { message } => expr_has_int_arith(message),
         // PMAT-039: shell commands are governed by `C-BASHRS-POSIX-IDEMPOTENCE`,
@@ -539,10 +541,12 @@ pub enum Stmt {
         kind: PairIterKind,
         body: Vec<Stmt>,
     },
-    /// `assert cond` — Python `assert cond` (no message form at v0.1.0).
-    /// Lowers to `assert!(cond);` in Rust/Ruchy. Lean is skipped (Lean's
-    /// assertion machinery requires `Decidable` instances; deferred). PMAT-009.
-    Assert { cond: Expr },
+    /// `assert cond` / `assert cond, msg` — Python assert. PMAT-009; the
+    /// optional `msg` (a `Str` expression) is PMAT-502ao. Lowers to
+    /// `assert!(cond);` (no message) or `assert!(cond, "{}", <msg>);` (with
+    /// message) in Rust/Ruchy. Lean is skipped (Lean's assertion machinery
+    /// requires `Decidable` instances; deferred).
+    Assert { cond: Expr, msg: Option<Expr> },
     /// `raise SomeException("message")` — the first decomposed sub-slice of
     /// PMAT-503 (exceptions). The `message` is the exception constructor's
     /// single string argument (an `Expr::LitStr`, an f-string `Concat`, or

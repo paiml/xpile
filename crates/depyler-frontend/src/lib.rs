@@ -1275,24 +1275,31 @@ fn lower_while_stmt(ctx: &mut LoweringCtx, w: ast::StmtWhile) -> Result<Stmt, Fr
     Ok(Stmt::While { cond, body })
 }
 
-/// Lower `assert cond` (no message form at v0.1.0) to [`Stmt::Assert`].
-/// Python `assert cond, msg` requires the message at runtime and is
-/// deferred. PMAT-009.
+/// Lower `assert cond` / `assert cond, msg` to [`Stmt::Assert`]. PMAT-009;
+/// the optional `msg` (must type as `Str`) is PMAT-502ao.
 fn lower_assert_stmt(ctx: &mut LoweringCtx, a: ast::StmtAssert) -> Result<Stmt, FrontendError> {
-    if a.msg.is_some() {
-        return Err(FrontendError::Lower(format!(
-            "function `{}` uses `assert cond, msg` — message form not supported at v0.1.0",
-            ctx.fn_name
-        )));
-    }
     let cond = lower_expr_in_ctx(ctx, *a.test)?;
-    if infer_type(&cond) != Type::Bool {
+    if infer_type_in_ctx(ctx, &cond) != Type::Bool {
         return Err(FrontendError::Lower(format!(
             "function `{}` has an `assert` whose expression is not Bool (no int-truthiness at v0.1.0)",
             ctx.fn_name
         )));
     }
-    Ok(Stmt::Assert { cond })
+    // PMAT-502ao: `assert cond, msg` — the message must type as a `Str`.
+    let msg = match a.msg {
+        None => None,
+        Some(m) => {
+            let m = lower_expr_in_ctx(ctx, *m)?;
+            if infer_type_in_ctx(ctx, &m) != Type::Str {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` has an `assert cond, msg` whose message is not a `Str`",
+                    ctx.fn_name
+                )));
+            }
+            Some(m)
+        }
+    };
+    Ok(Stmt::Assert { cond, msg })
 }
 
 /// PMAT-503a (first sub-slice of PMAT-503 exceptions): lower
@@ -2271,7 +2278,9 @@ fn stmt_uses_dict(s: &Stmt) -> bool {
         Stmt::ForEach { iter, body, .. } => expr_uses_dict(iter) || body.iter().any(stmt_uses_dict),
         Stmt::ListAppend { elem, .. } => expr_uses_dict(elem),
         Stmt::IndexAssign { index, value, .. } => expr_uses_dict(index) || expr_uses_dict(value),
-        Stmt::Assert { cond } => expr_uses_dict(cond),
+        Stmt::Assert { cond, msg } => {
+            expr_uses_dict(cond) || msg.as_ref().is_some_and(expr_uses_dict)
+        }
         _ => false,
     }
 }

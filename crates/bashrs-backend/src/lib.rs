@@ -667,6 +667,7 @@ mod tests {
         use xpile_meta_hir::{Expr, Stmt};
         let bad = Expr::CommandSubstitution(Box::new(Stmt::Assert {
             cond: Expr::LitInt(1),
+            msg: None,
         }));
         let err = render_arg(&bad).expect_err("non-Cmd inner must error");
         let msg = format!("{err}");
