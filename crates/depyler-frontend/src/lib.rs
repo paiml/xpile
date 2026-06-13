@@ -4419,63 +4419,9 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 if attr.attr.as_str() == "format" && call.keywords.is_empty() {
                     if let ast::Expr::Constant(c) = attr.value.as_ref() {
                         if let ast::Constant::Str(fmt) = &c.value {
-                            // PMAT-502cb: accept automatic `{}` and positional
-                            // `{N}` (both re-emitted verbatim — Rust shares the
-                            // syntax). `{name}`/`{:spec}`/mixed are rejected.
-                            let nargs = call.args.len();
-                            match parse_format_placeholders(fmt).ok_or_else(|| {
-                                FrontendError::Lower(format!(
-                                    "function `{}` uses str.format with unsupported placeholders (`{{name}}`/`{{:spec}}`/mixed `{{}}`+`{{0}}`) — v0.2.0 supports `{{}}` or `{{N}}`",
-                                    ctx.fn_name
-                                ))
-                            })? {
-                                FmtPlaceholders::Sequential(n) => {
-                                    if n != nargs {
-                                        return Err(FrontendError::Lower(format!(
-                                            "function `{}` calls str.format with {n} `{{}}` placeholder(s) but {nargs} arg(s)",
-                                            ctx.fn_name
-                                        )));
-                                    }
-                                }
-                                FmtPlaceholders::Positional(indices) => {
-                                    // Rust's `format!` requires every positional
-                                    // arg be referenced and every index be in
-                                    // range — validate both.
-                                    if let Some(&max) = indices.iter().max() {
-                                        if max >= nargs {
-                                            return Err(FrontendError::Lower(format!(
-                                                "function `{}` uses str.format placeholder `{{{max}}}` but only {nargs} arg(s) were given",
-                                                ctx.fn_name
-                                            )));
-                                        }
-                                    }
-                                    for k in 0..nargs {
-                                        if !indices.contains(&k) {
-                                            return Err(FrontendError::Lower(format!(
-                                                "function `{}` calls str.format with {nargs} arg(s) but never references `{{{k}}}` — Rust's format! requires every positional argument be used",
-                                                ctx.fn_name
-                                            )));
-                                        }
-                                    }
-                                }
-                            }
-                            let mut args = Vec::with_capacity(call.args.len());
-                            for a in &call.args {
-                                let lowered = lower_expr_in_ctx(ctx, a.clone())?;
-                                match infer_type_in_ctx(ctx, &lowered) {
-                                    Type::I64 | Type::Str => args.push(lowered),
-                                    other => {
-                                        return Err(FrontendError::Lower(format!(
-                                            "function `{}` formats a {other:?} value via str.format; v0.2.0 supports int/str args (bool/float deferred — they Display differently than Python)",
-                                            ctx.fn_name
-                                        )))
-                                    }
-                                }
-                            }
-                            return Ok(Expr::StrFormat {
-                                fmt: fmt.clone(),
-                                args,
-                            });
+                            // PMAT-502bh/cb/ch: automatic `{}` / positional `{N}`
+                            // fields, each with an optional spec `{:.2f}`.
+                            return lower_str_format(ctx, fmt, &call.args);
                         }
                     }
                 }
@@ -6052,75 +5998,139 @@ fn num_builtin_op(name: &str) -> Option<(NumBuiltinOp, usize)> {
     }
 }
 
-/// PMAT-502bh: count the sequential `{}` placeholders in a Python
-/// `str.format` template, treating `{{` / `}}` as literal-brace escapes.
-/// Returns `None` if the template uses an unsupported field — an indexed
-/// (`{0}`), named (`{name}`), or spec'd (`{:.2f}`) placeholder, or an
-/// unmatched `{` / `}`. Braces are ASCII, so byte-walking is UTF-8-safe.
-/// PMAT-502cb: the placeholder shape of a `str.format` format string.
-enum FmtPlaceholders {
-    /// All-automatic `{}` placeholders — the `usize` is the count.
-    Sequential(usize),
-    /// All-positional `{N}` placeholders — the indices in order of appearance.
-    Positional(Vec<usize>),
-}
-
-/// PMAT-502bh/cb: classify a `str.format` format string. Returns `None` for
-/// `{name}` / `{:spec}` / lone braces / a mix of `{}` and `{N}` (Python
-/// forbids switching between automatic and manual field numbering). `{{`/`}}`
-/// are brace escapes. Rust's `format!` accepts the same `{}` and `{N}`
-/// syntaxes verbatim, so the format string is re-emitted unchanged.
-fn parse_format_placeholders(fmt: &str) -> Option<FmtPlaceholders> {
+/// PMAT-502bh/cb/ch: lower a Python `"<fmt>".format(args…)` to an
+/// [`Expr::StrFormat`]. Supports automatic `{}` and positional `{N}` fields,
+/// each with an optional format spec `{:.2f}` / `{N:>5}` (PMAT-502ch). The
+/// template is re-built into a Rust format string (`{{`/`}}` escapes and
+/// literal text preserved; each Python spec translated to its Rust form by
+/// the argument's type via [`translate_format_spec`]). Mixing automatic and
+/// manual numbering is rejected (per Python); `{name}` fields are deferred
+/// (they need keyword args). A spec-less field requires an `I64`/`Str` arg
+/// (a `bool`/`float` `Display`s differently than Python); a float arg is
+/// admitted when it carries a `.Nf` spec. Every argument must be referenced
+/// (Rust's `format!` rejects an unused one). Braces are ASCII, so the
+/// byte-walk with string-slice copies is UTF-8-safe.
+fn lower_str_format(
+    ctx: &LoweringCtx,
+    fmt: &str,
+    raw_args: &[ast::Expr],
+) -> Result<Expr, FrontendError> {
+    let fname = ctx.fn_name.clone();
+    // Lower the args first so specs can be translated against their types.
+    let mut args = Vec::with_capacity(raw_args.len());
+    let mut arg_tys = Vec::with_capacity(raw_args.len());
+    for a in raw_args {
+        let lo = lower_expr_in_ctx(ctx, a.clone())?;
+        arg_tys.push(infer_type_in_ctx(ctx, &lo));
+        args.push(lo);
+    }
+    let nargs = args.len();
     let b = fmt.as_bytes();
+    let mut rust_fmt = String::new();
     let mut i = 0;
-    let mut seq_count = 0usize;
-    let mut indices: Vec<usize> = Vec::new();
-    let mut saw_seq = false;
+    let mut lit_start = 0;
+    let mut auto_ctr = 0usize;
+    let mut used = vec![false; nargs];
+    let mut saw_auto = false;
     let mut saw_pos = false;
     while i < b.len() {
-        match b[i] {
-            b'{' => {
-                if i + 1 < b.len() && b[i + 1] == b'{' {
-                    i += 2; // `{{` escape
-                } else if i + 1 < b.len() && b[i + 1] == b'}' {
-                    saw_seq = true;
-                    seq_count += 1;
-                    i += 2; // automatic `{}`
-                } else {
-                    // Try to parse a positional `{N}`.
-                    let start = i + 1;
-                    let mut j = start;
-                    while j < b.len() && b[j].is_ascii_digit() {
-                        j += 1;
-                    }
-                    if j > start && j < b.len() && b[j] == b'}' {
-                        let idx: usize = fmt[start..j].parse().ok()?;
-                        saw_pos = true;
-                        indices.push(idx);
-                        i = j + 1;
-                    } else {
-                        return None; // `{name}` / `{:spec}` / lone `{`
-                    }
+        let c = b[i];
+        if c != b'{' && c != b'}' {
+            i += 1;
+            continue;
+        }
+        rust_fmt.push_str(&fmt[lit_start..i]);
+        // `{{` / `}}` brace escapes.
+        if c == b'{' && b.get(i + 1) == Some(&b'{') {
+            rust_fmt.push_str("{{");
+            i += 2;
+            lit_start = i;
+            continue;
+        }
+        if c == b'}' && b.get(i + 1) == Some(&b'}') {
+            rust_fmt.push_str("}}");
+            i += 2;
+            lit_start = i;
+            continue;
+        }
+        if c == b'}' {
+            return Err(FrontendError::Lower(format!(
+                "function `{fname}` has a lone `}}` in a str.format template — use `}}}}` to emit a literal brace"
+            )));
+        }
+        // A real `{…}` placeholder — find its closing `}`.
+        let close = fmt[i + 1..].find('}').map(|p| i + 1 + p).ok_or_else(|| {
+            FrontendError::Lower(format!(
+                "function `{fname}` has an unmatched `{{` in a str.format template"
+            ))
+        })?;
+        let inner = &fmt[i + 1..close];
+        let (field_str, spec) = match inner.split_once(':') {
+            Some((f, s)) => (f, Some(s)),
+            None => (inner, None),
+        };
+        let arg_idx = if field_str.is_empty() {
+            saw_auto = true;
+            let idx = auto_ctr;
+            auto_ctr += 1;
+            idx
+        } else if let Ok(n) = field_str.parse::<usize>() {
+            saw_pos = true;
+            n
+        } else {
+            return Err(FrontendError::Lower(format!(
+                "function `{fname}` uses a named str.format field `{{{field_str}}}` — keyword `.format(name=…)` is deferred at v0.2.0"
+            )));
+        };
+        if arg_idx >= nargs {
+            return Err(FrontendError::Lower(format!(
+                "function `{fname}` references str.format field `{{{arg_idx}}}` but only {nargs} arg(s) were given"
+            )));
+        }
+        used[arg_idx] = true;
+        rust_fmt.push('{');
+        rust_fmt.push_str(field_str);
+        match spec {
+            None => {
+                if !matches!(arg_tys[arg_idx], Type::I64 | Type::Str) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{fname}` formats a {:?} value via str.format without a spec; v0.2.0 supports int/str (a bool/float needs a spec, e.g. `{{:.2f}}`)",
+                        arg_tys[arg_idx]
+                    )));
                 }
             }
-            b'}' => {
-                if i + 1 < b.len() && b[i + 1] == b'}' {
-                    i += 2; // `}}` escape
-                } else {
-                    return None; // lone `}`
-                }
+            Some(s) => {
+                let rust_spec = translate_format_spec(s, &arg_tys[arg_idx]).ok_or_else(|| {
+                    FrontendError::Lower(format!(
+                        "function `{fname}` uses an unsupported str.format spec `{{:{s}}}` for a {:?} value",
+                        arg_tys[arg_idx]
+                    ))
+                })?;
+                rust_fmt.push(':');
+                rust_fmt.push_str(&rust_spec);
             }
-            _ => i += 1,
+        }
+        rust_fmt.push('}');
+        i = close + 1;
+        lit_start = i;
+    }
+    rust_fmt.push_str(&fmt[lit_start..]);
+    if saw_auto && saw_pos {
+        return Err(FrontendError::Lower(format!(
+            "function `{fname}` mixes automatic `{{}}` and manual `{{0}}` str.format fields — Python forbids switching numbering"
+        )));
+    }
+    for (k, was_used) in used.iter().enumerate() {
+        if !was_used {
+            return Err(FrontendError::Lower(format!(
+                "function `{fname}` calls str.format with {nargs} arg(s) but never references arg {k} — Rust's format! requires every argument be used"
+            )));
         }
     }
-    if saw_seq && saw_pos {
-        return None; // Python forbids mixing `{}` and `{N}`
-    }
-    if saw_pos {
-        Some(FmtPlaceholders::Positional(indices))
-    } else {
-        Some(FmtPlaceholders::Sequential(seq_count))
-    }
+    Ok(Expr::StrFormat {
+        fmt: rust_fmt,
+        args,
+    })
 }
 
 fn str_method_op(name: &str) -> Option<StrMethodOp> {
