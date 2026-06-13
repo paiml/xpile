@@ -3154,6 +3154,31 @@ fn main() {
     assert_rustc_runs("bool_op_var", &rust, driver);
 }
 
+/// PMAT-502cf (Tranche 2): dict comprehension over `d.items()` with a tuple
+/// target → a `ForEachPair(Pairs)` loop building the dict.
+#[test]
+fn dict_comp_items() {
+    let rust = xpile_transpile_to_rust("dict_comp_items.py");
+    assert!(
+        rust.contains("for (k, v) in") && rust.contains(".insert(k.clone()"),
+        "dict comp over items:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let mut m = std::collections::HashMap::new();
+    m.insert(String::from("a"), 3);
+    m.insert(String::from("b"), -1);
+    let d = doubled(m.clone());
+    assert_eq!(d[&String::from("a")], 6);
+    assert_eq!(d[&String::from("b")], -2);
+    let p = positives(m.clone());
+    assert_eq!(p.get(&String::from("a")), Some(&3));
+    assert_eq!(p.get(&String::from("b")), None);
+}
+"#;
+    assert_rustc_runs("dict_comp_items", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
