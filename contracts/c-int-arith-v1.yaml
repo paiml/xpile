@@ -1,0 +1,157 @@
+metadata:
+  id: C-C-INT-ARITH
+  version: "1.0.0"
+  created: "2026-06-13"
+  author: PAIML Engineering
+  kind: kernel
+  status: draft
+  description: |
+    Operational semantics of C `int` arithmetic, as lowered by the
+    decy C frontend + xpile-rust-codegen C path. Distinct from
+    `C-PY-INT-ARITH` (Python int): C's `int` is a platform-fixed-width
+    signed integer (xpile emits Rust `i32` by default), signed overflow
+    is *undefined behavior* in C, and `/` / `%` truncate toward zero
+    (not Python's floor).
+
+    xpile's deliberate modelling commitment — captured here as the
+    load-bearing contract — is to REPLACE C's signed-overflow UB with
+    *defined two's-complement wraparound*: C `int` `+`/`-`/`*` lower to
+    `i32::wrapping_add` / `wrapping_sub` / `wrapping_mul`, and `/`/`%`
+    lower to `wrapping_div` / `wrapping_rem` (C truncation), NEVER to
+    Python's `checked_*` / `div_euclid` / `i64` path. This makes the
+    emitted Rust total and UB-free while preserving C's observable
+    truncating semantics in the defined domain.
+
+    Layer 1 of the xpile contract taxonomy (per-language semantics),
+    the C-language sibling of `C-PY-INT-ARITH`. This contract closes the
+    capability-ahead-of-contract gap recorded in audit-design.md §7.3
+    (R6 / PMAT-475): emitted C cited `C-C-INT-ARITH` with no on-disk
+    contract; the citation now resolves to this YAML. Joins the substrate
+    at depth-1 under the R6-grandfathered Diamond gate (PMAT-475a) — it
+    is NOT forced to the depth-13 floor; deeper tiers ratchet later.
+  references:
+    - "ISO/IEC 9899:2018 (C17) §6.5 (Expressions), §6.2.5 (Types)"
+    - "ISO/IEC 9899:2018 (C17) §6.5.5 (Multiplicative — / and % truncate toward zero)"
+    - "Rust std: i32::wrapping_add / wrapping_sub / wrapping_mul / wrapping_div / wrapping_rem"
+    - "docs/specifications/sub/v0.2.0-decy-merger.md (the substrate work: C-C-INT-ARITH)"
+    - "docs/specifications/audit-design.md §7.3 (R6 falsification)"
+  depends_on: []
+
+equations:
+  # Depth-1 Diamond (PMAT-475b): the single tier-defining equation that
+  # registers C-C-INT-ARITH at depth-1 under the grandfathered gate. It
+  # COMBINES three Platinum-shaped facts (commutativity + associativity +
+  # identity) into the commutative-monoid axiomatization of xpile's chosen
+  # lowering of C `int` `+`, exactly mirroring the Diamond shape of
+  # `C-PY-INT-ARITH.add_dispatch_commutative_monoid_diamond` but over the
+  # finite ring `(Z/2^32, +, 0)` that `i32::wrapping_add` realizes.
+  c_int_wrapping_add_commutative_monoid_diamond:
+    lean_theorem: "XpileContracts.CCIntArith.c_int_wrapping_add_commutative_monoid_diamond"
+    lean_file: "contracts/lean/CIntArith.lean"
+    formula: |
+      ∀ a b c : Int32.
+        (wrapping_add(a, b) = wrapping_add(b, a))                          -- commutativity
+        ∧ (wrapping_add(wrapping_add(a, b), c)                             -- associativity
+             = wrapping_add(a, wrapping_add(b, c)))
+        ∧ (wrapping_add(0, a) = a)                                        -- left identity
+      (commutative monoid (Z/2^32, +, 0))
+    domain: |
+      Any C `int` operands a, b, c. xpile lowers C `int +` to
+      `i32::wrapping_add`; the Diamond captures the FULL commutative-monoid
+      axiomatization of that lowering — total over all i32, with no UB,
+      unlike C's source-level signed-overflow undefined behavior.
+    invariants:
+      - "FIRST Diamond-tier theorem of C-C-INT-ARITH (registers it at depth-1)"
+      - "COMBINED algebraic axiomatization: commutativity + associativity + identity"
+      - "captures the finite commutative monoid (Z/2^32, +, 0) that i32::wrapping_add realizes"
+      - "xpile's chosen lowering is TOTAL: C signed-overflow UB is replaced by defined wraparound"
+    preconditions:
+      - "the operands are C `int` (lowered to Rust i32), not Python int (i64/bigint) and not float"
+    postconditions:
+      - "emitted Rust uses `i32::wrapping_add` — never `checked_add`, `div_euclid`, or an i64 widening"
+      - "the result is bit-identical to C's defined-domain output and total over the wraparound domain"
+    # Refinement proof (Semantic stratum). The statement IS the equation,
+    # formalised over `Int32` two's-complement wraparound; v1.0.0 ships
+    # the claim with `sorry` (Bronze tier) per the v0.2.0 substrate posture.
+    # The monoid laws are mechanically true for `BitVec 32` addition, so the
+    # `sorry`s discharge to `decide`/`bv_decide` at the Silver-tier ratchet.
+
+proof_obligations:
+  - type: postcondition
+    property: C `int` `+` lowers to i32::wrapping_add and the monoid laws hold over BitVec 32
+    formal: "∀ a b : BitVec 32. wrapping_add(a,b) = wrapping_add(b,a) ∧ wrapping_add(0,a) = a"
+    applies_to: c_int_wrapping_add_commutative_monoid_diamond
+  - type: invariant
+    property: the emitted lowering is total — no signed-overflow UB, never checked_*/i64
+    formal: "∀ a b : BitVec 32. defined(wrapping_add(a,b)) ∧ ¬widens_to_i64(emit(a + b))"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-C-INT-ARITH-001
+    rule: |
+      C `int` arithmetic must lower to `i32::wrapping_*`, never to
+      Python's `checked_*` / `div_euclid` / `i64` path.
+    prediction: |
+      The emitted Rust for a C `int` add/mul contains `wrapping_add` /
+      `wrapping_mul` and an `i32` signature, and contains no `checked_` or
+      `i64`.
+    test: |
+      cargo test -p xpile --test transpile_e2e c_int_arith_transpiles_to_rust_and_runs
+    if_fails: |
+      The C path regressed onto Python's int semantics (floor division /
+      bigint promotion / i64 width) — a cross-language semantics leak.
+  - id: FALSIFY-C-INT-ARITH-002
+    rule: |
+      C `int` width is i32, not i64 — the C and Python integer lanes must
+      stay observably distinct.
+    prediction: |
+      A C function signature emits `-> i32` / `: i32`, never `i64`.
+    test: |
+      cargo test -p xpile --test transpile_e2e c_int_arith_transpiles_to_rust_and_runs
+    if_fails: |
+      The C lane silently adopted Python's i64 width.
+
+kani_harnesses:
+  - id: KANI-C-INT-ARITH-001
+    obligation: c_int_wrapping_add_commutative_monoid_diamond
+    bound: 8
+    property: |
+      At i8 bit width (256² pairs, exhaustive), wrapping_add is commutative:
+      wrapping_add(a, b) == wrapping_add(b, a). Lifts to i32 (the C `int`
+      width xpile emits) via the Lean BitVec monoid theorem.
+    harness: |
+      #[kani::proof]
+      fn c_int_wrapping_add_commutative_i8() {
+          let a: i8 = kani::any();
+          let b: i8 = kani::any();
+          assert_eq!(a.wrapping_add(b), b.wrapping_add(a));
+      }
+  - id: KANI-C-INT-ARITH-002
+    obligation: c_int_wrapping_add_commutative_monoid_diamond
+    bound: 8
+    property: |
+      At i8 bit width, 0 is a left identity and wrapping_add is associative:
+      wrapping_add(0, a) == a and wrapping_add(wrapping_add(a,b),c) ==
+      wrapping_add(a, wrapping_add(b,c)). Completes the commutative-monoid
+      laws checked symbolically; lifts to i32 via the Lean theorem.
+    harness: |
+      #[kani::proof]
+      fn c_int_wrapping_add_monoid_i8() {
+          let a: i8 = kani::any();
+          let b: i8 = kani::any();
+          let c: i8 = kani::any();
+          assert_eq!(0i8.wrapping_add(a), a);
+          assert_eq!(
+              a.wrapping_add(b).wrapping_add(c),
+              a.wrapping_add(b.wrapping_add(c))
+          );
+      }
+
+qa_gate:
+  id: QA-C-INT-ARITH
+  name: "C int arithmetic semantics contract"
+  min_coverage: 0.0
+  max_complexity: 20
+  required_tests:
+    - c_int_arith_transpiles_to_rust_and_runs
+    - every_referenced_lean_theorem_exists_in_its_file
