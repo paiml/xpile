@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.203] — 2026-06-13
+
+Classes-epic slice PMAT-506c — **dataclass field assignment** `obj.field = value`.
+
+- New `Stmt::FieldAssign { obj, field, value }` → rust/ruchy emit
+  `(obj).field = value;`; Lean refuses.
+- `lower_assign`'s Attribute-target arm (previously a hard error) builds
+  `FieldAssign` when the receiver is a plain Name typing as a struct and the
+  field is known. The mutability pre-walk (`walk_counts`) counts `obj.field = v`
+  as mutating `obj`, so the binding emits `let mut` (a struct param becomes
+  `mut p: P`).
+- New e2e fixture `dataclass_field_assign.py`, rustc round-trip cross-checked vs
+  python3. e2e 264 → 265.
+- Remaining classes: methods, field defaults, keyword construction, inheritance.
+
 ## [0.1.202] — 2026-06-13
 
 Classes-epic slice PMAT-506b — **dataclass construction + field access** (makes
