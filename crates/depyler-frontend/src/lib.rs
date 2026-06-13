@@ -977,6 +977,18 @@ fn lower_function_def(
                 )));
             }
         },
+        // PMAT-503b: a terminal `try: return <expr> except [E]: return <expr>`
+        // → an `Expr::TryCatch` (catch_unwind over xpile's panic-based
+        // exception model).
+        ast::Stmt::Try(try_stmt) => match terminal_try_as_expr(&ctx, try_stmt)? {
+            Some(expr) => expr,
+            None => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}`'s final `try` is not the supported `try: return <expr> except [E]: return <expr>` shape — v0.2.0 first cut requires a single `except` (no bound name), no `else`/`finally`, and a single `return` in each arm",
+                    f.name
+                )));
+            }
+        },
         _ => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` does not end with `return expr` — required at v0.1.0",
@@ -2571,6 +2583,54 @@ fn terminal_if_as_expr(
         cond: Box::new(cond),
         then_expr: Box::new(then_expr),
         else_expr: Box::new(else_expr),
+    }))
+}
+
+/// PMAT-503b (exceptions epic): if `try_stmt` is the supported value-producing
+/// shape `try: return <body> except [Type]: return <handler>` — a single
+/// `except` (catch-all; a named exception type is *accepted but not matched*,
+/// since Rust panics are untyped), no bound exception name, no `else`/`finally`,
+/// and both the try-body and the handler are a single `return <expr>` — return
+/// the [`Expr::TryCatch`]. Any other shape returns `None` (the caller emits a
+/// clean "unsupported try shape" error). xpile models Python exceptions as Rust
+/// panics, so the `except` catches them via `catch_unwind` in codegen.
+fn terminal_try_as_expr(
+    ctx: &LoweringCtx,
+    try_stmt: &ast::StmtTry,
+) -> Result<Option<Expr>, FrontendError> {
+    // First cut: no `else`/`finally`, exactly one `except`.
+    if !try_stmt.orelse.is_empty() || !try_stmt.finalbody.is_empty() {
+        return Ok(None);
+    }
+    if try_stmt.handlers.len() != 1 {
+        return Ok(None);
+    }
+    // The try-body must be a single `return <expr>`.
+    let [ast::Stmt::Return(body_ret)] = try_stmt.body.as_slice() else {
+        return Ok(None);
+    };
+    let Some(body_val) = body_ret.value.as_deref() else {
+        return Ok(None);
+    };
+    // The handler: catch-all (the type, if any, is not matched), no bound name,
+    // body a single `return <expr>`.
+    let ast::ExceptHandler::ExceptHandler(h) = &try_stmt.handlers[0];
+    if h.name.is_some() {
+        return Ok(None);
+    }
+    let [ast::Stmt::Return(h_ret)] = h.body.as_slice() else {
+        return Ok(None);
+    };
+    let Some(h_val) = h_ret.value.as_deref() else {
+        return Ok(None);
+    };
+    // Both arms are the function's return value — lower them the same way the
+    // trailing `return` is lowered (so `Optional` return wrapping etc. apply).
+    let body = lower_return_value(ctx, body_val)?;
+    let handler = lower_return_value(ctx, h_val)?;
+    Ok(Some(Expr::TryCatch {
+        body: Box::new(body),
+        handler: Box::new(handler),
     }))
 }
 
@@ -4788,6 +4848,8 @@ fn infer_type(e: &Expr) -> Type {
             Type::Optional(t) => *t,
             other => other,
         },
+        // PMAT-503b: try/except types as the body (handler matches it).
+        Expr::TryCatch { body, .. } => infer_type(body),
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => Type::Tuple(elems.iter().map(infer_type).collect()),
         // PMAT-502q: tuple constant-index → the N-th element type.
@@ -5130,6 +5192,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             Type::Optional(t) => *t,
             other => other,
         },
+        // PMAT-503b: try/except types as the body (handler matches it).
+        Expr::TryCatch { body, .. } => infer_type_in_ctx(ctx, body),
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => {
             Type::Tuple(elems.iter().map(|e| infer_type_in_ctx(ctx, e)).collect())

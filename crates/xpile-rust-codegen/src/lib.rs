@@ -1802,6 +1802,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, inner, mode)?;
             out.push_str(").unwrap()");
         }
+        // PMAT-503b: `try: return <body> except: return <handler>` → catch the
+        // panics xpile raises for Python exceptions via `catch_unwind`.
+        Expr::TryCatch { body, handler } => {
+            out.push_str("match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| ");
+            emit_expr(out, body, mode)?;
+            out.push_str(")) { Ok(__xpile_try) => __xpile_try, Err(_) => ");
+            emit_expr(out, handler, mode)?;
+            out.push_str(" }");
+        }
         // PMAT-459 (v0.2.0 Track 1.B): Python `len(x)` → Rust
         // `x.len() as i64`. Vec/String both expose `.len()` returning
         // `usize`; the `as i64` cast brings the result back into

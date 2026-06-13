@@ -687,6 +687,11 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         Expr::IsNone { value, .. } => collect_idents(value, out),
         // PMAT-502ez: flow-narrowed unwrap — recurse into the operand.
         Expr::OptionUnwrap(inner) => collect_idents(inner, out),
+        // PMAT-503b: try/except — recurse into both body and handler.
+        Expr::TryCatch { body, handler } => {
+            collect_idents(body, out);
+            collect_idents(handler, out);
+        }
         // PMAT-457: indexed access — recurse into both sides.
         Expr::Index { collection, index } => {
             collect_idents(collection, out);
@@ -1102,6 +1107,15 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             return Err(LeanCodegenError::Unsupported(
                 "Python `Optional`/`None` values + `is None` tests + flow-narrowed unwraps are not \
                  yet supported in the Lean lane — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-503b: try/except maps to `catch_unwind`, which has no Lean
+        // (panic-free) model — refuse, like the other panic-based constructs.
+        Expr::TryCatch { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python `try`/`except` lowers to Rust `catch_unwind` (a panic-recovery construct) \
+                 with no Lean counterpart — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
         }

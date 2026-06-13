@@ -385,6 +385,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::IsNone { value, .. } => expr_has_int_arith(value),
         // PMAT-502ez: unwrap recurses into the inner operand.
         Expr::OptionUnwrap(inner) => expr_has_int_arith(inner),
+        // PMAT-503b: try/except recurses into both the body and the handler.
+        Expr::TryCatch { body, handler } => expr_has_int_arith(body) || expr_has_int_arith(handler),
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -1310,6 +1312,16 @@ pub enum Expr {
     /// Lean refuses (Optional deferred). Types as the inner type of the operand's
     /// [`Type::Optional`].
     OptionUnwrap(Box<Expr>),
+    /// PMAT-503b (exceptions epic): a value-producing `try`/`except` —
+    /// Python `try: return <body> except [E]: return <handler>`. xpile models
+    /// Python exceptions as Rust panics (KeyError → `.expect`, ZeroDivisionError,
+    /// index-out-of-bounds, …), so the `except` catches those panics: Rust/Ruchy
+    /// emit a `std::panic::catch_unwind(AssertUnwindSafe(|| <body>))` match —
+    /// `Ok(v) => v`, `Err(_) => <handler>`. Lean refuses (no panic model). Types
+    /// as the `body` type (the `handler` must produce the same type). First cut:
+    /// catch-all (the exception type, if named, is not matched — Rust panics are
+    /// untyped) with no bound exception object, no `else`/`finally`.
+    TryCatch { body: Box<Expr>, handler: Box<Expr> },
     /// Tuple literal — Python `(a, b)` / multiple-return `return a, b`.
     /// PMAT-494 (sprint). Elements may be heterogeneous (unlike
     /// [`Expr::ListLit`]). Rust/Ruchy emit `(e0, e1, ...)`; Lean refuses

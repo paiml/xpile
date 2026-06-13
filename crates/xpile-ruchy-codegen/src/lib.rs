@@ -1637,6 +1637,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, inner, mode)?;
             out.push_str(").unwrap()");
         }
+        // PMAT-503b: try/except → catch_unwind match (Ruchy compiles to Rust).
+        Expr::TryCatch { body, handler } => {
+            out.push_str("match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| ");
+            emit_expr(out, body, mode)?;
+            out.push_str(")) { Ok(__xpile_try) => __xpile_try, Err(_) => ");
+            emit_expr(out, handler, mode)?;
+            out.push_str(" }");
+        }
         // PMAT-459 (v0.2.0 Track 1.B): Ruchy → Rust → `.len() as i64`.
         Expr::Len(inner) => {
             emit_expr(out, inner, mode)?;
