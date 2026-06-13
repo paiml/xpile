@@ -4454,6 +4454,35 @@ fn main() {
     assert_rustc_runs("map_filter_typed_param", &rust, driver);
 }
 
+/// PMAT-527 (Tranche 2): container truthiness in boolean conditions — `if xs:`,
+/// `while q:`, `x if xs else y`, `not d`. Python treats a non-empty
+/// list/dict/set/str as truthy; these now lower to `len(c) != 0` (and `not c` →
+/// `len(c) == 0`), reusing `Len` + `BinOp` (no new IR). Cross-checked vs python3.
+#[test]
+fn container_truthiness() {
+    let rust = xpile_transpile_to_rust("container_truthiness.py");
+    assert!(
+        rust.contains(".len() as i64) != 0i64") || rust.contains(".len() as i64 != 0i64"),
+        "a list-truthy condition should lower to a `len(..) != 0` test:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(max_or_zero(vec![3, 1, 2]), 3);
+    assert_eq!(max_or_zero(vec![]), 0);
+    assert_eq!(first_or_default(vec!["a".to_string()]), "a");
+    assert_eq!(first_or_default(vec![]), "none");
+    assert_eq!(sum_drain(vec![1, 2, 3]), 6);
+    let mut d = std::collections::HashMap::new();
+    assert_eq!(is_empty_dict(d.clone()), true);
+    d.insert("a".to_string(), 1);
+    assert_eq!(is_empty_dict(d), false);
+    assert_eq!(has_items("".to_string()), 0);
+    assert_eq!(has_items("x".to_string()), 1);
+}
+"#;
+    assert_rustc_runs("container_truthiness", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)

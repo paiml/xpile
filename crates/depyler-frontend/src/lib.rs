@@ -3001,6 +3001,23 @@ fn body_has_top_level_continue(stmts: &[Stmt]) -> bool {
 /// as the enclosing function. Variables introduced inside a loop
 /// remain "bound" for subsequent loop iterations (that's how Python
 /// works); we don't pop them when leaving the body.
+/// PMAT-527: container truthiness in a boolean condition. Python treats a
+/// non-empty `list`/`dict`/`set`/`str` as truthy; xpile otherwise requires a
+/// Bool condition. Converts a container-typed condition to `len(c) != 0`
+/// (reusing `Expr::Len` + `BinOp::Ne` — no new IR). A Bool (or anything else)
+/// passes through unchanged, so the caller's Bool check still rejects
+/// int/float-truthiness. `if xs:` / `while q:` / `x if xs else y`.
+fn truthy_condition(ctx: &LoweringCtx, cond: Expr) -> Expr {
+    match infer_type_in_ctx(ctx, &cond) {
+        Type::List(_) | Type::Dict(_, _) | Type::Set(_) | Type::Str => Expr::BinOp {
+            op: BinOp::NotEq,
+            lhs: Box::new(Expr::Len(Box::new(cond))),
+            rhs: Box::new(Expr::LitInt(0)),
+        },
+        _ => cond,
+    }
+}
+
 fn lower_while_stmt(ctx: &mut LoweringCtx, w: ast::StmtWhile) -> Result<Stmt, FrontendError> {
     if !w.orelse.is_empty() {
         return Err(FrontendError::Lower(format!(
@@ -3008,7 +3025,7 @@ fn lower_while_stmt(ctx: &mut LoweringCtx, w: ast::StmtWhile) -> Result<Stmt, Fr
             ctx.fn_name
         )));
     }
-    let cond = lower_expr_in_ctx(ctx, *w.test)?;
+    let cond = truthy_condition(ctx, lower_expr_in_ctx(ctx, *w.test)?);
     if infer_type(&cond) != Type::Bool {
         return Err(FrontendError::Lower(format!(
             "function `{}` has a while-condition that is not Bool (no int-truthiness at v0.1.0)",
@@ -3385,7 +3402,7 @@ fn terminal_if_as_expr(
             _ => Ok(None),
         }
     }
-    let cond = lower_expr_in_ctx(ctx, (*if_stmt.test).clone())?;
+    let cond = truthy_condition(ctx, lower_expr_in_ctx(ctx, (*if_stmt.test).clone())?);
     if !matches!(infer_type_in_ctx(ctx, &cond), Type::Bool) {
         return Ok(None);
     }
@@ -3488,7 +3505,7 @@ fn lower_if_stmt(ctx: &mut LoweringCtx, if_stmt: ast::StmtIf) -> Result<Vec<Stmt
     if is_if_as_let_shape(&if_stmt) {
         return lower_if_stmt_as_lets(ctx, if_stmt);
     }
-    let cond = lower_expr_in_ctx(ctx, (*if_stmt.test).clone())?;
+    let cond = truthy_condition(ctx, lower_expr_in_ctx(ctx, (*if_stmt.test).clone())?);
     if !matches!(infer_type_in_ctx(ctx, &cond), Type::Bool) {
         return Err(FrontendError::Lower(format!(
             "function `{}` has an `if` condition that does not type as bool — v0.2.0 requires a boolean condition",
@@ -3624,7 +3641,7 @@ fn lower_if_chain_to_expr(
         )));
     }
 
-    let cond = lower_expr_in_ctx(ctx, (*if_stmt.test).clone())?;
+    let cond = truthy_condition(ctx, lower_expr_in_ctx(ctx, (*if_stmt.test).clone())?);
     if infer_type_in_ctx(ctx, &cond) != Type::Bool {
         return Err(FrontendError::Lower(format!(
             "function `{fn_name}` has an if-condition that is not Bool (no int-truthiness at v0.1.0)"
@@ -8138,13 +8155,18 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // int-truthiness), via the context-free fallback.
         ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::Not) => {
             let operand = lower_expr_in_ctx(ctx, (*u.operand).clone())?;
-            if matches!(infer_type_in_ctx(ctx, &operand), Type::Bool) {
-                Ok(Expr::UnOp {
+            match infer_type_in_ctx(ctx, &operand) {
+                Type::Bool => Ok(Expr::UnOp {
                     op: UnOp::Not,
                     operand: Box::new(operand),
-                })
-            } else {
-                lower_unary_op(u)
+                }),
+                // PMAT-527: `not <container>` → `len(c) == 0` (empty is falsy).
+                Type::List(_) | Type::Dict(_, _) | Type::Set(_) | Type::Str => Ok(Expr::BinOp {
+                    op: BinOp::Eq,
+                    lhs: Box::new(Expr::Len(Box::new(operand))),
+                    rhs: Box::new(Expr::LitInt(0)),
+                }),
+                _ => lower_unary_op(u),
             }
         }
         // PMAT-502fb: context-aware bitwise invert `~x` over an I64. Lowered
@@ -9321,7 +9343,7 @@ fn lower_if_exp(ie: ast::ExprIfExp) -> Result<Expr, FrontendError> {
 /// the type context.
 fn lower_if_exp_in_ctx(ctx: &LoweringCtx, ie: ast::ExprIfExp) -> Result<Expr, FrontendError> {
     // Python AST order is (test, body, orelse) = (cond, then, else).
-    let cond = lower_expr_in_ctx(ctx, *ie.test)?;
+    let cond = truthy_condition(ctx, lower_expr_in_ctx(ctx, *ie.test)?);
     let then_expr = lower_expr_in_ctx(ctx, *ie.body)?;
     let else_expr = lower_expr_in_ctx(ctx, *ie.orelse)?;
 
