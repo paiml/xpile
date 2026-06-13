@@ -7625,10 +7625,16 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             && lam.args.kwarg.is_none()
                         {
                             let list = lower_expr_in_ctx(ctx, call.args[1].clone())?;
-                            if matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
+                            if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
                                 let param = lam.args.args[0].def.arg.to_string();
-                                let body = lower_expr_in_ctx(ctx, (*lam.body).clone())?;
-                                if infer_type_in_ctx(ctx, &body) == Type::Bool {
+                                // PMAT-526: bind the lambda param to the element
+                                // type so e.g. `p[1]` over a tuple element lowers
+                                // to `.1` (was lowered with `p` unbound → I64).
+                                let mut sub = ctx.clone();
+                                sub.bound.insert(param.clone());
+                                sub.name_types.insert(param.clone(), *elem);
+                                let body = lower_expr_in_ctx(&sub, (*lam.body).clone())?;
+                                if infer_type_in_ctx(&sub, &body) == Type::Bool {
                                     return Ok(Expr::Filter {
                                         list: Box::new(list),
                                         lambda: SortKey {
@@ -7654,9 +7660,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             && lam.args.kwarg.is_none()
                         {
                             let list = lower_expr_in_ctx(ctx, call.args[1].clone())?;
-                            if matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
+                            if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
                                 let param = lam.args.args[0].def.arg.to_string();
-                                let body = lower_expr_in_ctx(ctx, (*lam.body).clone())?;
+                                // PMAT-526: bind the lambda param to the element
+                                // type (e.g. `p[0] + p[1]` over a tuple element).
+                                let mut sub = ctx.clone();
+                                sub.bound.insert(param.clone());
+                                sub.name_types.insert(param.clone(), *elem);
+                                let body = lower_expr_in_ctx(&sub, (*lam.body).clone())?;
                                 return Ok(Expr::Map {
                                     list: Box::new(list),
                                     lambda: SortKey {
