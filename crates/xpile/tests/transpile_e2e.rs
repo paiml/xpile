@@ -3550,6 +3550,30 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502eb (Tranche 2): `xs += ys` over a list is Python's in-place list
+/// **extend**, not numeric addition. The augmented-assign handler emitted
+/// `combine_aug`'s `checked_add` on a `Vec` (a silent miscompile — no such
+/// method); it now emits `Stmt::ListExtend` (same as `xs.extend(ys)`). A
+/// non-`+=` augmented op on a list, or `list += <non-list>`, is rejected
+/// cleanly. Cross-checked vs python3.
+#[test]
+fn list_aug_extend() {
+    let rust = xpile_transpile_to_rust("list_aug_extend.py");
+    assert!(
+        rust.contains("xs.extend(") && !rust.contains("checked_add(vec!"),
+        "list `+=` should emit .extend(), never checked_add on a Vec:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(extend_literal(), 4);
+    assert_eq!(extend_var(vec![7, 8, 9]), 5);
+    assert_eq!(extend_sum(), 33); // 1+2+10+20
+    assert_eq!(extend_strings(), 5);
+}
+"#;
+    assert_rustc_runs("list_aug_extend", &rust, driver);
+}
+
 /// PMAT-502ea (Tranche 2): nested **augmented** subscript assignment
 /// `grid[i][j] += v` (2D/ND list grids), desugared to `grid[i][j] = grid[i][j]
 /// <op> v` reusing the nested `IndexAssign` write + nested `Index` read. Also

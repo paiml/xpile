@@ -2963,6 +2963,32 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
                     ctx.fn_name
                 )));
             }
+            // PMAT-502eb: `xs += ys` over a list is Python's in-place list
+            // extend, NOT numeric addition — emit `Stmt::ListExtend` (same as
+            // `xs.extend(ys)`). Otherwise `combine_aug` routes `+` through
+            // `checked_add`, which doesn't exist on `Vec` (silent miscompile).
+            // Any other augmented operator on a list (`*=`, …) is rejected
+            // cleanly rather than miscompiled.
+            if matches!(ctx.name_types.get(&name), Some(Type::List(_))) {
+                if !matches!(aug.op, ast::Operator::Add) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` uses `{name} <op>= …` on a list with an operator other than `+=` (extend) — v0.2.0 supports only list `+=`",
+                        ctx.fn_name
+                    )));
+                }
+                let other_ty = infer_type_in_ctx(ctx, &rhs);
+                if !matches!(other_ty, Type::List(_)) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` augments list `{name}` with `+= <{other_ty:?}>`; v0.2.0 supports `list += list` (in-place extend)",
+                        ctx.fn_name
+                    )));
+                }
+                ctx.mutable.insert(name.clone());
+                return Ok(Stmt::ListExtend {
+                    list_name: name,
+                    other: rhs,
+                });
+            }
             let value = combine_aug(ctx, &aug.op, Expr::Ident(name.clone()), rhs)?;
             Ok(Stmt::Assign { name, value })
         }
