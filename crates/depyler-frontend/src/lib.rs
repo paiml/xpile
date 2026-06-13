@@ -635,13 +635,16 @@ impl Frontend for PythonFrontend {
     }
 }
 
-/// PMAT-502ek: a plain `import <module>` statement (e.g. `import math`). An
-/// import has no runtime effect we model — it just enables a namespace — so we
-/// skip it; whether a given module's *uses* are supported is decided at the
-/// call/attribute site (`math.sqrt(...)` is recognised, an unsupported
-/// `os.getcwd()` errors there with a clear message).
+/// PMAT-502ek/ew: a plain `import <module>` (e.g. `import math`) or a
+/// `from <module> import <names>` (e.g. `from typing import Optional`). An
+/// import has no runtime effect we model — it just enables a namespace / names
+/// — so we skip it; whether a given module's *uses* are supported is decided at
+/// the call/attribute/annotation site (`math.sqrt(...)` and `Optional[int]` are
+/// recognised; an unsupported `os.getcwd()` errors there with a clear message).
+/// (`from __future__ import annotations` is handled separately upstream, but a
+/// blanket `ImportFrom` skip subsumes it harmlessly.)
 fn is_skippable_import(stmt: &ast::Stmt) -> bool {
-    matches!(stmt, ast::Stmt::Import(_))
+    matches!(stmt, ast::Stmt::Import(_) | ast::Stmt::ImportFrom(_))
 }
 
 /// True iff `stmt` is exactly `from __future__ import annotations`.
@@ -894,9 +897,10 @@ fn lower_function_def(
                 // `return table.get(k, 0)`, and `return key in table`
                 // lower to the dict variants.
                 // PMAT-502ec: `return []` / `return {}` take their element /
-                // K-V types from the declared return type (an empty literal
-                // can't self-infer).
-                lower_value_expecting(&ctx, value, &ctx.fn_return_type)?
+                // K-V types from the declared return type. PMAT-502ew: an
+                // `Optional[T]` return wraps `return None`/`return x` in
+                // `OptionExpr`.
+                lower_return_value(&ctx, value)?
             }
         }
         // PMAT-502bm: a terminal `if cond: return A else: return B`
@@ -931,6 +935,9 @@ fn lower_function_def(
             let empty_literal_ok = match (&trailing_return, &declared) {
                 (Expr::ListLit(v), Type::List(_)) => v.is_empty(),
                 (Expr::DictLit(p), Type::Dict(_, _)) => p.is_empty(),
+                // PMAT-502ew: a bare `None` return (`OptionExpr(None)`) has no
+                // payload type to infer — accept it against any `Optional`.
+                (Expr::OptionExpr(None), Type::Optional(_)) => true,
                 _ => false,
             };
             if !empty_literal_ok && declared != inferred_return {
@@ -1045,6 +1052,17 @@ fn parse_type_annotation(
                         &sub.slice,
                     )?;
                     Ok(Type::List(Box::new(elem_ty)))
+                }
+                // PMAT-502ew: `Optional[T]` → `Type::Optional(T)`. First cut
+                // supports it as a function return type only (see the
+                // return-wrapping in the function-body lowering).
+                "Optional" => {
+                    let inner = parse_type_annotation(
+                        fn_name,
+                        &format!("{site} Optional element"),
+                        &sub.slice,
+                    )?;
+                    Ok(Type::Optional(Box::new(inner)))
                 }
                 // PMAT-500: `set[T]` annotation.
                 "set" => {
@@ -1202,8 +1220,9 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         ast::Stmt::Return(ret) => match ret.value.as_ref() {
             Some(value) => {
                 // PMAT-502ec: an early `return []` / `return {}` takes its
-                // element / K-V types from the declared return type.
-                let lowered = lower_value_expecting(ctx, value, &ctx.fn_return_type)?;
+                // element / K-V types from the declared return type. PMAT-502ew:
+                // an `Optional[T]` return wraps the value in `OptionExpr`.
+                let lowered = lower_return_value(ctx, value)?;
                 Ok(vec![Stmt::Return(lowered)])
             }
             None if matches!(ctx.fn_return_type, Type::Unit) => {
@@ -4177,6 +4196,24 @@ fn lower_value_expecting(
     }
 }
 
+/// PMAT-502ew: lower a returned value, wrapping it for an `Optional[T]` return
+/// type — `return None` → `OptionExpr(None)`, `return <x>` → `OptionExpr(Some(x))`
+/// (the body produces concrete `T` values; only the return site wraps). For a
+/// non-Optional return type, falls back to [`lower_value_expecting`] (which also
+/// threads empty `[]`/`{}` against the declared type).
+fn lower_return_value(ctx: &LoweringCtx, value: &ast::Expr) -> Result<Expr, FrontendError> {
+    if matches!(ctx.fn_return_type, Type::Optional(_)) {
+        // A bare `None` return must NOT be lowered as a value (that errors —
+        // `None` has no value-position support yet); produce `OptionExpr(None)`.
+        if matches!(value, ast::Expr::Constant(c) if matches!(c.value, ast::Constant::None)) {
+            return Ok(Expr::OptionExpr(None));
+        }
+        let inner = lower_expr_in_ctx(ctx, value.clone())?;
+        return Ok(Expr::OptionExpr(Some(Box::new(inner))));
+    }
+    lower_value_expecting(ctx, value, &ctx.fn_return_type)
+}
+
 fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stmt, FrontendError> {
     let name = match aa.target.as_ref() {
         ast::Expr::Name(n) => n.id.to_string(),
@@ -4436,6 +4473,12 @@ fn infer_type(e: &Expr) -> Type {
         Expr::SetPred { .. } => Type::Bool,
         // PMAT-502eq: a copy has the same type as the value it clones.
         Expr::Clone(inner) => infer_type(inner),
+        // PMAT-502ew: `Some(e)` types as `Optional(typeof e)`; a bare `None`
+        // has no payload to infer (defaults `I64`; the return-type check
+        // tolerates this against any declared `Optional`).
+        Expr::OptionExpr(inner) => Type::Optional(Box::new(
+            inner.as_deref().map(infer_type).unwrap_or(Type::I64),
+        )),
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => Type::Tuple(elems.iter().map(infer_type).collect()),
         // PMAT-502q: tuple constant-index → the N-th element type.
@@ -4756,6 +4799,14 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::SetPred { .. } => Type::Bool,
         // PMAT-502eq: a copy has the same type as the value it clones.
         Expr::Clone(inner) => infer_type_in_ctx(ctx, inner),
+        // PMAT-502ew: `Some(e)` → `Optional(typeof e)`; bare `None` defaults
+        // I64 (return-type check tolerates it against any declared Optional).
+        Expr::OptionExpr(inner) => Type::Optional(Box::new(
+            inner
+                .as_deref()
+                .map(|e| infer_type_in_ctx(ctx, e))
+                .unwrap_or(Type::I64),
+        )),
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => {
             Type::Tuple(elems.iter().map(|e| infer_type_in_ctx(ctx, e)).collect())

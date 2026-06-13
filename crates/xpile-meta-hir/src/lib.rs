@@ -379,6 +379,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::SetPred { lhs, rhs, .. } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
         // PMAT-502eq: shallow copy — recurse into the cloned value.
         Expr::Clone(inner) => expr_has_int_arith(inner),
+        // PMAT-502ew: Option wrapper — recurse into the `Some(e)` payload.
+        Expr::OptionExpr(inner) => inner.as_deref().is_some_and(expr_has_int_arith),
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -1024,6 +1026,13 @@ pub enum Type {
     /// refuses (a side-effecting void function has no total-function
     /// encoding). Carried only by `Function::return_type`.
     Unit,
+    /// PMAT-502ew: Python `Optional[T]` (a value that may be `None`).
+    /// Rust/Ruchy emit `Option<T>`; Lean emits `Option T`. First cut
+    /// (PMAT-502ew) supports it only as a function *return* type, with the
+    /// returned values wrapped via [`Expr::OptionExpr`] (`Some(x)` / `None`);
+    /// `Optional` parameters / locals and `is None` flow-narrowing are a
+    /// deferred follow-up.
+    Optional(Box<Type>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1271,6 +1280,12 @@ pub enum Expr {
     /// the same type. Rust/Ruchy emit `(<inner>).clone()`; Lean emits the inner
     /// expression directly (Lean values are immutable, so a copy is identity).
     Clone(Box<Expr>),
+    /// PMAT-502ew: an `Option` value — `None` (`OptionExpr(None)`) or
+    /// `Some(e)` (`OptionExpr(Some(e))`). Produced when wrapping the returns of
+    /// an `Optional[T]`-returning function: `return None` → `None`, `return x`
+    /// → `Some(x)`. Rust/Ruchy emit `None` / `Some(<e>)`; Lean `none` / `some
+    /// (<e>)`. Types as [`Type::Optional`].
+    OptionExpr(Option<Box<Expr>>),
     /// Tuple literal — Python `(a, b)` / multiple-return `return a, b`.
     /// PMAT-494 (sprint). Elements may be heterogeneous (unlike
     /// [`Expr::ListLit`]). Rust/Ruchy emit `(e0, e1, ...)`; Lean refuses

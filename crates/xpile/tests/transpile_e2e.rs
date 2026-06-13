@@ -3552,6 +3552,35 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502ew (Tranche 2): `Optional[T]` **return type** (first cut of the
+/// Optional epic). `-> Optional[int]` → Rust `Option<i64>`; the body produces
+/// concrete `T` values and the return site wraps them — `return None` →
+/// `None`, `return x` → `Some(x)` (via `Type::Optional` + `Expr::OptionExpr`).
+/// `from typing import Optional` is accepted+skipped. Optional *parameters* /
+/// locals and `is None` flow-narrowing are a deferred follow-up. Cross-checked
+/// vs python3 (driver matches/unwraps the `Option`).
+#[test]
+fn optional_return() {
+    let rust = xpile_transpile_to_rust("optional_return.py");
+    assert!(
+        rust.contains("-> Option<i64>") && rust.contains("Some(") && rust.contains("None"),
+        "Optional return should emit Option<T> + Some/None:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(find_even(vec![1, 3, 4, 5]), Some(4));
+    assert_eq!(find_even(vec![1, 3, 5]), None);
+    assert_eq!(first_long(vec!["a".to_string(), "abcd".to_string()]), Some("abcd".to_string()));
+    assert_eq!(first_long(vec!["a".to_string()]), None);
+    assert_eq!(maybe_reciprocal(4.0), Some(0.25));
+    assert_eq!(maybe_reciprocal(0.0), None);
+    assert_eq!(always_none(), None);
+    assert_eq!(always_some(7), Some(7));
+}
+"#;
+    assert_rustc_runs("optional_return", &rust, driver);
+}
+
 /// PMAT-502ev (Tranche 2): `sorted(s)` over a str — sorts the characters into a
 /// list of 1-char strings (via `Expr::StrChars`). Completes the `sorted(X)`
 /// family (list / dict-keys / str-chars); `reverse=`/`key=` still apply.
