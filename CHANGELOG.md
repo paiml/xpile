@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.185] — 2026-06-13
+
+Tranche-2 slice PMAT-502eu — **`sorted(d)` over a dict** (sort its keys).
+
+Python iterates a dict as its keys, so `sorted(d)` returns the sorted key
+list. Previously this was a **silent miscompile**: the dict argument fell
+through `sorted`'s list-only gate to an undefined generic `sorted(d)` call
+typed `i64`. It now materializes the keys (`Expr::DictView{Keys}`) and sorts
+them; the `reverse=` / `key=` keywords still apply, and `sorted(xs)` over a
+list is unchanged. New `sorted_dict.py` e2e fixture (first/last key,
+descending, sum of sorted keys), all cross-checked vs python3.
+
 ## [0.1.184] — 2026-06-13
 
 Tranche-2 slice PMAT-502et — **set splat literals** (`{*a, *b}`, `{*a, x}`).
