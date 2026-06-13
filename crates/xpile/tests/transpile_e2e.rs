@@ -3077,6 +3077,26 @@ fn main() {
     assert_rustc_runs("enumerate_start", &rust, driver);
 }
 
+/// PMAT-502cb (Tranche 2): `str.format` positional `{N}` placeholders
+/// (reorder / repeat) — re-emitted verbatim into Rust's `format!`.
+#[test]
+fn format_positional() {
+    let rust = xpile_transpile_to_rust("format_positional.py");
+    assert!(
+        rust.contains(r#"format!("{1} {0}", a, b)"#),
+        "reorder:\n{rust}"
+    );
+    assert!(rust.contains(r#"format!("{0}-{0}", a)"#), "repeat:\n{rust}");
+    let driver = r#"
+fn main() {
+    assert_eq!(swap(String::from("x"), String::from("y")), "y x");
+    assert_eq!(dup(7), "7-7");
+    assert_eq!(seq(String::from("a"), String::from("b")), "a and b");
+}
+"#;
+    assert_rustc_runs("format_positional", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
