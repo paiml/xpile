@@ -58,6 +58,11 @@ struct FnSig {
     /// aligned with `params` (`None` for a parameter without a default).
     /// Used to fill omitted trailing arguments at call sites.
     defaults: Vec<Option<ast::Expr>>,
+    /// PMAT-502dq: the `*args` vararg parameter (name + element type), when
+    /// the function is variadic. `params` holds only the fixed parameters, so
+    /// the vararg starts at index `params.len()`. At a call site the trailing
+    /// positional args are collected into a single `list[elem]` argument.
+    variadic: Option<(String, Type)>,
 }
 
 struct LoweringCtx {
@@ -502,12 +507,25 @@ impl Frontend for PythonFrontend {
                     .iter()
                     .map(|a| a.default.as_deref().cloned())
                     .collect();
+                // PMAT-502dq: record a `*args` vararg (name + element type from
+                // its annotation, defaulting to `int`).
+                let variadic = f.args.vararg.as_ref().map(|v| {
+                    let elem = v
+                        .annotation
+                        .as_ref()
+                        .and_then(|ann| {
+                            parse_type_annotation(f.name.as_str(), v.arg.as_str(), ann).ok()
+                        })
+                        .unwrap_or(Type::I64);
+                    (v.arg.to_string(), elem)
+                });
                 sig_map.insert(
                     f.name.to_string(),
                     FnSig {
                         ret,
                         params,
                         defaults,
+                        variadic,
                     },
                 );
             }
@@ -651,9 +669,9 @@ fn lower_function_def(
             f.name
         )));
     }
-    if !f.args.kwonlyargs.is_empty() || f.args.vararg.is_some() || f.args.kwarg.is_some() {
+    if !f.args.kwonlyargs.is_empty() || f.args.kwarg.is_some() {
         return Err(FrontendError::Lower(format!(
-            "function `{}` uses keyword-only / *args / **kwargs — not supported at v0.1.0",
+            "function `{}` uses keyword-only args / **kwargs — not supported at v0.1.0",
             f.name
         )));
     }
@@ -670,6 +688,21 @@ fn lower_function_def(
         params.push(Param {
             name,
             ty,
+            mutable: false,
+        });
+    }
+    // PMAT-502dq: a `*args` vararg becomes a `list[elem]` parameter (each
+    // collected positional arg is an `elem`). The annotation gives the element
+    // type (default `int`); call sites collect the trailing positional args
+    // into this list.
+    if let Some(v) = f.args.vararg.as_ref() {
+        let elem = match v.annotation.as_ref() {
+            None => Type::I64,
+            Some(ann) => parse_type_annotation(&f.name, v.arg.as_str(), ann)?,
+        };
+        params.push(Param {
+            name: v.arg.to_string(),
+            ty: Type::List(Box::new(elem)),
             mutable: false,
         });
     }
@@ -5451,6 +5484,31 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             // PMAT-474 (R5): reorder keyword args to positional using
             // the module signature table, then lower as a plain call.
             let call = reorder_kwargs_to_positional(ctx, call)?;
+            // PMAT-502dq: a call to a variadic (`*args`) function collects the
+            // trailing positional args (those past the fixed params) into a
+            // single `list` argument, matching the `list[elem]` vararg param.
+            if let ast::Expr::Name(n) = call.func.as_ref() {
+                let is_variadic = ctx
+                    .signatures
+                    .get(n.id.as_str())
+                    .is_some_and(|s| s.variadic.is_some());
+                if is_variadic && call.keywords.is_empty() {
+                    let callee = n.id.to_string();
+                    let fixed = ctx.signatures.get(&callee).map_or(0, |s| s.params.len());
+                    if call.args.len() >= fixed {
+                        let mut lowered: Vec<Expr> = Vec::with_capacity(fixed + 1);
+                        for a in &call.args {
+                            lowered.push(lower_expr_in_ctx(ctx, a.clone())?);
+                        }
+                        let tail = lowered.split_off(fixed);
+                        lowered.push(Expr::ListLit(tail));
+                        return Ok(Expr::Call {
+                            callee,
+                            args: lowered,
+                        });
+                    }
+                }
+            }
             lower_call(call)
         }
         // `k in d` / `k not in d` → `Expr::DictContains` (wrapped in

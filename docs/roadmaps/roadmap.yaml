@@ -1435,6 +1435,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "Completes the printf conversion set. Rust {:x} is TWO'S-COMPLEMENT for negatives but Python %x is SIGN-FIRST ('%x'%-255='-ff'), so wrap the int arg as a NO-PREFIX sign-first radix string and render via {}. Expr::IntRadixStr gains prefixed:bool + upper:bool (hex/oct/bin builtins set prefixed:true,upper:false → unchanged 0x...; printf sets prefixed:false, upper=(conv=='X')). Codegen rust/ruchy: (prefix only if prefixed) + spec {:x}/{:X}/{:o}/{:b}. In lower_percent_format: 'x'|'X'|'o' over I64 → clone arg, replace with IntRadixStr{prefixed:false, upper:conv=='X', radix Oct for 'o' else Hex}; then {} placeholder (width OK via right-align; 0/+/precision REJECTED since they'd diverge on the String). Lean IntRadixStr arms use `..` (unaffected). rustc round-trip percent_format_radix.py (cross-checked vs python3 incl negatives): '%x'%255='ff', '%x'%-255='-ff', '%X'%255='FF', '%o'%8='10', '%o'%-8='-10', '0x%x'%255='0xff'. hex()/oct()/bin() builtins regression-verified unchanged. FREE CI. SHIPPED v0.1.154. **PRINTF %-FORMAT NOW COMPLETE: %s(str/int/bool/float)/%d/%i/%f/%x/%X/%o/%% + flags -/0/+ + width + precision.** Only fmt-string-VARIABLE LHS remains deferred. NEXT: x is None (Option model — structural, needs design); try/except->Result (PMAT-503b); classes; varargs; nested fns."
+- id: PMAT-502DQ
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502dq: [Tranche2] varargs *args (first structural slice)'
+  status: planned
+  priority: high
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "FIRST structural slice past the builtin/str surface. A *args param → a list[elem] parameter (annotation gives elem, default int). lower_function_def no longer rejects vararg (only **kwargs/kwonly rejected); it pushes Param{name, ty:List(elem)}. The sig pre-pass + FnSig gain a variadic:Option<(String,Type)> field (params holds only the FIXED params). Call-side (in the ctx-aware Call arm, after reorder_kwargs_to_positional): if callee is variadic + no kwargs, lower all args ctx-aware, split_off at fixed count, wrap the tail in Expr::ListLit, build Expr::Call{callee, args:[fixed..., ListLit(tail)]}. NO synthetic AST (collection at meta-HIR level). Body uses args as an ordinary list (sum/len/index/iterate). EMPTY case total()/with_prefix(prefix) → vec![] whose elem type rustc INFERS from the fn signature (verified compiles). Mixed fixed+vararg works. **kwargs/keyword-only still rejected. NO new Type variant, NO return-wrapping (lower risk than Optional). rustc round-trip varargs.py (cross-checked vs python3): total(1,2,3)=6, total()=0, total(5)=5, with_prefix(100,1,2)=103, with_prefix(100)=100. FREE CI. SHIPPED v0.1.155. DEFERRED: calling a variadic fn WITH keywords; *args splat at call site f(*xs). NEXT structural: nested fns (→ ClosureLet for single-expr bodies); x is None (Option — needs design); try/except->Result (PMAT-503b)."
 - id: PMAT-465
   github_issue: 496
   item_type: task

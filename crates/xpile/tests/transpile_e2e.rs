@@ -3529,6 +3529,28 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dq (Tranche 2): varargs `*args` → a `list[elem]` param; call sites
+/// collect trailing positional args into a `vec![...]`.
+#[test]
+fn varargs() {
+    let rust = xpile_transpile_to_rust("varargs.py");
+    assert!(
+        rust.contains("fn total(args: Vec<i64>)") && rust.contains("total(vec![1i64, 2i64, 3i64])"),
+        "varargs def + call:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // varargs def + call collection; cross-checked vs python3.
+    assert_eq!(call_total(), 6);
+    assert_eq!(call_empty(), 0);     // total() → vec![]
+    assert_eq!(call_one(), 5);
+    assert_eq!(call_prefix(), 103);  // with_prefix(100, 1, 2)
+    assert_eq!(call_prefix_only(), 100); // with_prefix(100) → vec![]
+}
+"#;
+    assert_rustc_runs("varargs", &rust, driver);
+}
+
 /// PMAT-502dp (Tranche 2): printf `%x`/`%X`/`%o` → no-prefix sign-first radix
 /// string (`{:x}` is two's-complement for negatives; Python is sign-first).
 #[test]
