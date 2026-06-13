@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.105] — 2026-06-13
+
+Tranche-2 slice PMAT-502bs — Python 3 **true division `/`** (always a float).
+
+`/` was rejected outright (`unsupported binary operator: Div`). In Python 3,
+`/` *always* yields a float — even for two ints (`7 / 2 == 3.5`); integer
+division is the separate `//`. Both expression-position `BinOp` lowering paths
+now special-case `/`: emit `Expr::FloatBinOp { Div, .. }` with each non-float
+operand wrapped in an `(x) as f64` cast (`NumCast`). This also fixes mixed
+`float_var / int_literal`, which previously emitted a `f64 / i64` type mismatch
+— the int side is now cast while the float side is left as-is (`float / float`
+stays cast-free). Augmented `/=` on an *int* var stays unsupported (it would
+retype the binding); `/=` on a float var already works (v0.1.103). rustc
+round-trip `true_division.py` (cross-checked vs `python3`): `div(7, 2) -> 3.5`,
+`div(6, 3) -> 2.0`, `avg(3, 4) -> 3.5`, `half(5.0) -> 2.5`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.104] — 2026-06-13
 
 Tranche-2 slice PMAT-502br — Python **float floor-division `//` and modulo `%`**.
