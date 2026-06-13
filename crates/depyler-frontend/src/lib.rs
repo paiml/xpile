@@ -2529,6 +2529,25 @@ fn materialize_iterable_arg(
     }
 }
 
+/// PMAT-522: lower a builtin argument, materialising a `range(...)` into a `Vec`
+/// (`lower_range_list`) since `range` isn't a first-class value. Any other
+/// argument lowers normally. Used by `len`/`sorted`/`reversed` so
+/// `len(range(n))` / `sorted(range(n))` / `reversed(range(n))` don't fall through
+/// to context-free lowering (which emitted an undefined `range(...)` call).
+fn lower_arg_materializing_range(
+    ctx: &LoweringCtx,
+    arg: &ast::Expr,
+) -> Result<Expr, FrontendError> {
+    if let ast::Expr::Call(inner) = arg {
+        if matches!(&*inner.func, ast::Expr::Name(n) if n.id.as_str() == "range")
+            && inner.keywords.is_empty()
+        {
+            return lower_range_list(ctx, inner);
+        }
+    }
+    lower_expr_in_ctx(ctx, arg.clone())
+}
+
 fn lower_range_list(ctx: &LoweringCtx, call: &ast::ExprCall) -> Result<Expr, FrontendError> {
     let (start, stop, step) = match call.args.as_slice() {
         [stop] => (Expr::LitInt(0), lower_expr_in_ctx(ctx, stop.clone())?, 1i64),
@@ -7235,7 +7254,8 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // context-free `lower_call` path also handles bare `len(xs)`,
                 // but loses ctx (method calls there error). Same `Expr::Len`.
                 if fname.id.as_str() == "len" && call.keywords.is_empty() && call.args.len() == 1 {
-                    let inner = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    // PMAT-522: `len(range(n))` materialises the range to a Vec.
+                    let inner = lower_arg_materializing_range(ctx, &call.args[0])?;
                     return Ok(Expr::Len(Box::new(inner)));
                 }
                 // PMAT-498b: `sum(xs)` over a numeric list. PMAT-502cx:
@@ -7538,7 +7558,8 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         }
                     }
                     if kwargs_ok {
-                        let arg = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                        // PMAT-522: `sorted(range(n))` materialises the range.
+                        let arg = lower_arg_materializing_range(ctx, &call.args[0])?;
                         // PMAT-502eu: `sorted(d)` over a dict sorts its KEYS
                         // (Python iterates a dict as its keys) — materialize the
                         // keys list first. PMAT-502ev: `sorted(s)` over a str
@@ -7576,7 +7597,8 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     && call.keywords.is_empty()
                     && call.args.len() == 1
                 {
-                    let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    // PMAT-522: `reversed(range(n))` materialises the range.
+                    let list = lower_arg_materializing_range(ctx, &call.args[0])?;
                     if matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
                         return Ok(Expr::Reversed {
                             list: Box::new(list),
@@ -7705,6 +7727,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     if matches!(infer_type_in_ctx(ctx, &inner), Type::Set(_)) {
                         return Ok(Expr::SetToList {
                             set: Box::new(inner),
+                        });
+                    }
+                    // PMAT-522: `list(d)` over a dict → its keys (Python iterates
+                    // a dict as its keys). Previously a miscompile (`list(...)`).
+                    if matches!(infer_type_in_ctx(ctx, &inner), Type::Dict(_, _)) {
+                        return Ok(Expr::DictView {
+                            dict: Box::new(inner),
+                            kind: DictViewKind::Keys,
                         });
                     }
                 }
