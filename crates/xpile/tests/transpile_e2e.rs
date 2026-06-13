@@ -4121,6 +4121,31 @@ fn main() {
     assert_rustc_runs("match_stmt", &rust, driver);
 }
 
+/// PMAT-512 (Tranche 2): `match` **`|`-patterns** (`case 0 | 1 | 2:`) — an
+/// or-pattern of literal alternatives desugars to an OR of equality tests
+/// (`subject == 0 || subject == 1 || …`), extending the match→if desugar (no
+/// new IR). Works over int and str literals, terminal + statement position.
+/// Cross-checked vs python3 (day_kind 0/0/1/-1, vowel_score 2/1).
+#[test]
+fn match_or_pattern() {
+    let rust = xpile_transpile_to_rust("match_or_pattern.py");
+    assert!(
+        rust.contains("if ((d == 5i64) || (d == 6i64))"),
+        "an `|`-pattern should become an OR of equality tests:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(day_kind(5), 0);
+    assert_eq!(day_kind(6), 0);
+    assert_eq!(day_kind(2), 1);
+    assert_eq!(day_kind(9), -1);
+    assert_eq!(vowel_score("a".to_string()), 2);
+    assert_eq!(vowel_score("z".to_string()), 1);
+}
+"#;
+    assert_rustc_runs("match_or_pattern", &rust, driver);
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators
