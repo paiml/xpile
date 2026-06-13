@@ -821,6 +821,20 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 out.push_str(") as usize)");
                 return Ok(());
             }
+            // PMAT-502cq: `.removeprefix(p)`/`.removesuffix(p)` (block form,
+            // matching the Rust backend).
+            if matches!(op, StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix) {
+                out.push_str("{ let __s = (");
+                emit_expr(out, recv, mode)?;
+                out.push_str(if matches!(op, StrMethodOp::RemovePrefix) {
+                    "); match __s.strip_prefix(&("
+                } else {
+                    "); match __s.strip_suffix(&("
+                });
+                emit_expr(out, &args[0], mode)?;
+                out.push_str(")[..]) { Some(__r) => __r.to_string(), None => __s } }");
+                return Ok(());
+            }
             emit_expr(out, recv, mode)?;
             match op {
                 StrMethodOp::Upper => out.push_str(".to_uppercase()"),
@@ -882,6 +896,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 StrMethodOp::Title => unreachable!("title handled above"),
                 StrMethodOp::RJust | StrMethodOp::LJust => {
                     unreachable!("rjust/ljust handled above")
+                }
+                StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix => {
+                    unreachable!("removeprefix/removesuffix handled above")
                 }
             }
         }

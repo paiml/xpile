@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.129] — 2026-06-13
+
+Tranche-2 slice PMAT-502cq — **`str.removeprefix(p)` / `removesuffix(p)`**
+(Python 3.9+).
+
+Both new `StrMethodOp::RemovePrefix`/`RemoveSuffix` (1-arg, → `str`) map to
+Rust's `str::strip_prefix` / `str::strip_suffix` via a block that returns the
+receiver unchanged when the affix is absent (matching Python): `{ let __s =
+(s); match __s.strip_prefix(&(p)[..]) { Some(__r) => __r.to_string(), None =>
+__s } }`. Lean refuses str methods wholesale. rustc round-trip
+`remove_affix.py` (cross-checked vs `python3`): `strip_pre("foo_bar") ->
+"bar"`, `strip_pre("baz") -> "baz"`, `strip_suf("note.txt") -> "note"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.128] — 2026-06-13
 
 Tranche-2 slice PMAT-502cp — **tuple literals as list elements** (`[(1, 2),
