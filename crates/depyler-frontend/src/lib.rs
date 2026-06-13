@@ -368,6 +368,18 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                     *counts.entry(name).or_insert(0) += c;
                 }
             }
+            // PMAT-510: a `match` desugars to an if/elif/else chain — only one
+            // case runs, so merge the case-body counts by max (like if-branches)
+            // so a name assigned inside the cases is marked `mut` when needed.
+            ast::Stmt::Match(m) => {
+                let mut merged: HashMap<String, usize> = HashMap::new();
+                for case in &m.cases {
+                    merged = merge_branch_counts(merged, walk_counts(&case.body, in_loop));
+                }
+                for (name, c) in merged {
+                    *counts.entry(name).or_insert(0) += c;
+                }
+            }
             ast::Stmt::While(w) => {
                 let inner = walk_counts(&w.body, /*in_loop=*/ true);
                 for (name, c) in inner {
@@ -1501,6 +1513,21 @@ fn lower_function_def(
                 )));
             }
         },
+        // PMAT-510 (Tranche 2): a terminal `match` whose every case is a single
+        // `return <expr>` — desugar to an `if`/`elif`/`else` chain, then reuse
+        // the terminal-if-as-expression path.
+        ast::Stmt::Match(match_stmt) => {
+            let if_stmt = desugar_match_to_if(match_stmt)?;
+            match terminal_if_as_expr(&mut ctx, &if_stmt)? {
+                Some(expr) => expr,
+                None => {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}`'s final `match` does not have a single `return <expr>` in every case — v0.2.0 supports literal `case` patterns + a trailing `case _:`, each returning",
+                        f.name
+                    )));
+                }
+            }
+        }
         _ => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` does not end with `return expr` — required at v0.1.0",
@@ -1781,6 +1808,9 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         // PMAT-466 (v0.2.0 Track 1.C): annotated local `name: T = value`.
         ast::Stmt::AnnAssign(aa) => lower_ann_assign(ctx, aa).map(|s| vec![s]),
         ast::Stmt::If(if_stmt) => lower_if_stmt(ctx, if_stmt),
+        // PMAT-510 (Tranche 2): a `match` statement → desugar to an
+        // `if`/`elif`/`else` chain and lower that (no new IR).
+        ast::Stmt::Match(match_stmt) => lower_if_stmt(ctx, desugar_match_to_if(&match_stmt)?),
         ast::Stmt::While(w) => lower_while_stmt(ctx, w).map(|s| vec![s]),
         ast::Stmt::For(f) => lower_for_stmt(ctx, f),
         ast::Stmt::Assert(a) => lower_assert_stmt(ctx, a).map(|s| vec![s]),
@@ -3067,6 +3097,90 @@ fn is_if_as_let_shape(if_stmt: &ast::StmtIf) -> bool {
 /// escape it (Rust block scoping) — use the `name = expr` form for a
 /// value needed after the `if`. `elif` nests as a `Stmt::If` in `else_body`
 /// via `lower_block_stmt` recursion.
+/// PMAT-510 (Tranche 2): desugar a structural-pattern `match` into an
+/// equivalent `if`/`elif`/`else` chain, reusing all existing `if` lowering (no
+/// new IR). First cut — the common literal-dispatch form:
+///
+/// ```python
+/// match cmd:
+///     case 0: ...
+///     case 1: ...
+///     case _: ...        # required trailing wildcard
+/// ```
+/// becomes `if cmd == 0: … elif cmd == 1: … else: …`.
+///
+/// Constraints (else a clean error): the subject must be a plain **Name** (so
+/// repeating it across comparisons is side-effect-free); each non-wildcard case
+/// is a literal **value** pattern (`case 0`/`case "x"`/`case -1` — int/float/str,
+/// optionally negated); the **last** case must be the wildcard `case _:` (so the
+/// chain is exhaustive); no guards, captures, singletons (`True`/`False`/`None`),
+/// or class/sequence/mapping/or-patterns yet.
+fn desugar_match_to_if(m: &ast::StmtMatch) -> Result<ast::StmtIf, FrontendError> {
+    let ast::Expr::Name(subject) = m.subject.as_ref() else {
+        return Err(FrontendError::Lower(
+            "`match` subject must be a plain variable at v0.2.0 — bind the value to a name first"
+                .to_string(),
+        ));
+    };
+    if m.cases.len() < 2 {
+        return Err(FrontendError::Lower(
+            "`match` must have at least one `case <literal>:` and a trailing `case _:` at v0.2.0"
+                .to_string(),
+        ));
+    }
+    // The wildcard `case _:` must be the last case (and the only wildcard).
+    let (wildcard, value_cases) = m.cases.split_last().expect("len >= 2 checked above");
+    let is_wildcard = |c: &ast::MatchCase| {
+        c.guard.is_none()
+            && matches!(&c.pattern, ast::Pattern::MatchAs(a) if a.pattern.is_none() && a.name.is_none())
+    };
+    if !is_wildcard(wildcard) {
+        return Err(FrontendError::Lower(
+            "`match` must end with a wildcard `case _:` at v0.2.0 (exhaustiveness)".to_string(),
+        ));
+    }
+    // Fold the value cases (in reverse) over the wildcard body, building a nested
+    // `if subject == <lit>: <body> else: <rest>`.
+    let mut orelse: Vec<ast::Stmt> = wildcard.body.clone();
+    for case in value_cases.iter().rev() {
+        if case.guard.is_some() {
+            return Err(FrontendError::Lower(
+                "`match` case guards (`case … if …:`) are not supported at v0.2.0".to_string(),
+            ));
+        }
+        let ast::Pattern::MatchValue(pv) = &case.pattern else {
+            return Err(FrontendError::Lower(
+                "`match` supports only literal value patterns (`case 0:`/`case \"x\":`) and a trailing `case _:` at v0.2.0 — captures/`|`-patterns/class/sequence/mapping/`True`/`False`/`None` patterns are unsupported".to_string(),
+            ));
+        };
+        if !is_literal_default(pv.value.as_ref()) {
+            return Err(FrontendError::Lower(
+                "`match` value patterns must be literals (int/float/str, optionally negated) at v0.2.0".to_string(),
+            ));
+        }
+        let test = ast::Expr::Compare(ast::ExprCompare {
+            range: m.range,
+            left: Box::new(ast::Expr::Name(subject.clone())),
+            ops: vec![ast::CmpOp::Eq],
+            comparators: vec![(*pv.value).clone()],
+        });
+        let if_stmt = ast::StmtIf {
+            range: m.range,
+            test: Box::new(test),
+            body: case.body.clone(),
+            orelse,
+        };
+        orelse = vec![ast::Stmt::If(if_stmt)];
+    }
+    match orelse.pop() {
+        Some(ast::Stmt::If(top)) => Ok(top),
+        _ => Err(FrontendError::Lower(
+            "`match` must have at least one `case <literal>:` before the `case _:` at v0.2.0"
+                .to_string(),
+        )),
+    }
+}
+
 /// PMAT-502bm: convert a terminal `if cond: return A else: return B`
 /// (including `elif` chains) into an `Expr::IfExpr`, so it can be the
 /// function's trailing return. Returns `Ok(None)` if the shape isn't an
