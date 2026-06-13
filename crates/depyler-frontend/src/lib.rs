@@ -6611,7 +6611,7 @@ fn lower_percent_format(
         ast::Expr::Tuple(t) => t.elts.clone(),
         other => vec![other.clone()],
     };
-    let args = raw_args
+    let mut args = raw_args
         .into_iter()
         .map(|a| lower_expr_in_ctx(ctx, a))
         .collect::<Result<Vec<_>, _>>()?;
@@ -6693,6 +6693,25 @@ fn lower_percent_format(
                             ));
                         }
                     }
+                    // PMAT-502do: `%s` over bool/float — str()-convert the arg
+                    // first (bool → "True"/"False", float → Python repr) so the
+                    // `{}` placeholder yields Python's `str(x)`. Width/precision
+                    // then apply to the resulting `String` (matching Python).
+                    's' if matches!(ty, Type::Bool) => {
+                        let v = args[arg_idx].clone();
+                        args[arg_idx] = Expr::IfExpr {
+                            cond: Box::new(v),
+                            then_expr: Box::new(Expr::LitStr("True".to_string())),
+                            else_expr: Box::new(Expr::LitStr("False".to_string())),
+                        };
+                    }
+                    's' if matches!(ty, Type::F64) => {
+                        let v = args[arg_idx].clone();
+                        args[arg_idx] = Expr::ToStr {
+                            value: Box::new(v),
+                            of_float: true,
+                        };
+                    }
                     'd' | 'i' if matches!(ty, Type::I64) => {
                         if precision.is_some() {
                             return Err(FrontendError::Lower(
@@ -6704,7 +6723,7 @@ fn lower_percent_format(
                     's' | 'd' | 'i' | 'f' => {
                         return Err(FrontendError::Lower(format!(
                             "`%{conv}` format expects a different argument type than {ty:?} \
-                             (or `%s` over bool/float, which is deferred)"
+                             (`%s`/`%d`/`%f` support str/bool/float, int, and float respectively)"
                         )));
                     }
                     _ => {

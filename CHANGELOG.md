@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.153] — 2026-06-13
+
+Tranche-2 slice PMAT-502do — **`%s` over `bool`/`float`**.
+
+The v0.1.151 `%`-format slice deferred `%s` on bool/float (Rust's `{}` gives
+`"true"`/`"3"`, not Python's `"True"`/`"3.0"`). It now str()-converts the
+argument first — bool → an `IfExpr("True"/"False")`, float → `ToStr{of_float}`
+(the Python float repr) — so the `{}` placeholder yields Python's `str(x)`.
+Width/precision then apply to the resulting `String`, matching Python. rustc
+round-trip `percent_format_bool_float.py` (cross-checked vs `python3`): `"%s" %
+True` = `"True"`, `"%s" % False` = `"False"`, `"%s" % 3.0` = `"3.0"`, `"%s" %
+3.14` = `"3.14"`, `"[%s|%s]" % (True, 2.5)` = `"[True|2.5]"`, `"%10s" % True` =
+`"      True"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.152] — 2026-06-13
 
 Tranche-2 slice PMAT-502dn — **`%`-format width / precision / flags**.
