@@ -3364,6 +3364,23 @@ fn main() {
     assert_rustc_runs("split_whitespace", &rust, driver);
 }
 
+/// PMAT-502cp (Tranche 2): tuple literals as list elements `[(1, 2), (3, 4)]`.
+#[test]
+fn list_of_tuples() {
+    let rust = xpile_transpile_to_rust("list_of_tuples.py");
+    assert!(
+        rust.contains("vec![(1i64, 2i64), (3i64, 4i64)]"),
+        "list of tuple literals:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(make(), vec![(1, 2), (3, 4)]);
+    assert_eq!(dot(make()), 14);
+}
+"#;
+    assert_rustc_runs("list_of_tuples", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

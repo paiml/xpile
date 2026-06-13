@@ -1192,6 +1192,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "s.split() (no arg) was rejected ('calls str .split(...) with 0 positional arg(s); expected exactly 1') — str_method_op('split') always maps to the 1-arg Split. FIX: new StrMethodOp::SplitWhitespace (0-arg) meta-HIR variant. Frontend special-cases attr=='split' with call.args.is_empty() (and a Str receiver) BEFORE the generic str_method_op dispatch, emitting StrMethod { op: SplitWhitespace, args: [] }; the 1-arg s.split(sep) still goes through the generic path. Codegen rust/ruchy: (s).split_whitespace().map(|__c| __c.to_string()).collect::<Vec<String>>() — Python no-arg split collapses whitespace runs + drops empty fields, exactly like Rust split_whitespace. str_method_arity(SplitWhitespace)=0; both inferers type Split|SplitWhitespace as List(Str); Lean refuses StrMethod wholesale. rustc round-trip split_whitespace.py (cross-checked vs python3): word_count('  hello   world  foo ')=3, first_word('  alpha beta')='alpha'. FREE CI. SHIPPED v0.1.127."
+- id: PMAT-502CP
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cp: [Tranche2] tuple literals as list elements'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "A tuple literal worked in return position (ctx-aware lower_expr_in_ctx_inner has an ast::Expr::Tuple -> TupleLit arm) but was rejected as a list element ('unsupported expression: Discriminant(25)') — list literals lower their elements via the CONTEXT-FREE lower_expr, which lacked a Tuple arm (hit the catch-all). FIX: add the mirror ast::Expr::Tuple -> Expr::TupleLit(elems via lower_expr) arm to lower_expr (before its catch-all). Now [(1,2),(3,4)] lowers to a List(Tuple[I64,I64]) (vec![(1i64,2i64),(3i64,4i64)]), and iterating it (for a,b in <list of 2-tuples>, the ForEachPair Pairs path) works. Heterogeneity check + tuple element types via infer_type. rustc round-trip list_of_tuples.py (cross-checked vs python3): make()=[(1,2),(3,4)], dot(make())=14 (1*2+3*4). FREE CI. SHIPPED v0.1.128."
 - id: PMAT-465
   github_issue: 496
   item_type: task
