@@ -338,6 +338,14 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-502bw: `print(...)` is an IO effect; pure Lean `def`s
+            // have no IO, so the Lean lane refuses it.
+            Stmt::Print(_) => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` calls `print(...)`; the Lean lane has no IO in pure `def`s",
+                    f.name
+                )));
+            }
         }
     }
 
@@ -836,6 +844,13 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         // PMAT-502bk: loop control has no encoding in the Lean lane.
         Stmt::Continue | Stmt::Break => Err(LeanCodegenError::Unsupported(
             "`continue`/`break` (loop control) is not lowered by the Lean backend — \
+             use `--target rust` or `--target ruchy`"
+                .into(),
+        )),
+        // PMAT-502bw: `print(...)` is an IO effect; pure Lean `def`s have no
+        // IO, so the Lean backend refuses it.
+        Stmt::Print(_) => Err(LeanCodegenError::Unsupported(
+            "`print(...)` is not lowered by the Lean backend (no IO in pure `def`s) — \
              use `--target rust` or `--target ruchy`"
                 .into(),
         )),

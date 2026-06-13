@@ -1021,6 +1021,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "A bare `return` (Python return None) was rejected outright ('has a bare return (no value) — deferred at v0.2.0'). FIX: in lower_block_stmt the ast::Stmt::Return arm now matches on ret.value: Some(v) -> Stmt::Return(lower(v)) as before; None when ctx.fn_return_type == Type::Unit -> Stmt::Return(Expr::Unit) -> codegen `return ();` (valid for a -> () fn); None otherwise (value-returning fn) -> clearer error (bare return is Python return None, a type mismatch — add a value or annotate -> None). Enables the ubiquitous early-exit guard-clause shape `if invalid: return` in void functions. No meta-HIR/backend change (Stmt::Return(Expr) + Expr::Unit already exist). rustc round-trip bare_return_guard.py: guard_div(0) returns early so the `100 // 0` floor-div panic is avoided; guard_div(4)/push_pos run normally. FREE CI. SHIPPED v0.1.108."
+- id: PMAT-502BW
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bw: [Tranche2] print(...) builtin -> println!'
+  status: planned
+  priority: high
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "print(...) was rejected (only subprocess.run([...]) recognised as an expr statement). FIX: new Stmt::Print(Vec<Expr>) meta-HIR variant. Frontend: is_print_call detects a Call whose func is Name(\"print\"); lower_print_stmt (gated in lower_block_stmt's ast::Stmt::Expr arm BEFORE try_lower_list_method_call / subprocess) rejects kwargs (sep=/end=/file=) and non-int/str args, lowers positional args. Codegen rust/ruchy: empty -> println!(); else println!(\"{} {} ...\", a, b, ...) with N {} joined by single spaces (Python default sep + trailing newline). f-strings lower to format!(...) (String) so print(f\"...\") works. bool (Python True/False vs Rust true/false) + float (2.0 vs 2) deferred with precise error. Lean refuses (no IO in pure defs). Blast radius: new Stmt variant touched stmt_has_int_arith (meta-hir) + stmt_has_bigint + emit_stmt in rust/ruchy + 2 lean sites (while-scan + emit_stmt). rustc round-trip print_builtin.py produces BYTE-IDENTICAL stdout to python3 (hello / 42 / 'x 42' / blank / x=42). FREE CI. SHIPPED v0.1.109."
 - id: PMAT-465
   github_issue: 496
   item_type: task
