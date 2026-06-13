@@ -4431,6 +4431,29 @@ fn main() {
     assert_rustc_runs("comp_typed_element", &rust, driver);
 }
 
+/// PMAT-526 (Tranche 2 — correctness): `map`/`filter` builtin lambdas indexing a
+/// tuple element. Previously the lambda param was lowered unbound (→ `i64`), so
+/// `map(lambda p: p[0] + p[1], ps)` miscompiled (generic `[..]` indexing on a
+/// Rust tuple). The param now binds to the list's element type, so `p[0]` →
+/// `.0`. Cross-checked vs python3 (12, 2, 5).
+#[test]
+fn map_filter_typed_param() {
+    let rust = xpile_transpile_to_rust("map_filter_typed_param.py");
+    assert!(
+        rust.contains("(p).0") && rust.contains("(p).1") && !rust.contains("p[0i64 as usize]"),
+        "map/filter lambda over tuple elements should lower `p[0]` to `.0`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let d = vec![(3, 9), (1, 2), (2, 5)];
+    assert_eq!(map_pair_sum_first(d.clone()), 12);
+    assert_eq!(filter_big_count(d.clone()), 2);
+    assert_eq!(map_pick_second(d.clone()), 5);
+}
+"#;
+    assert_rustc_runs("map_filter_typed_param", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
