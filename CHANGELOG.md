@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.156] — 2026-06-13
+
+Tranche-2 slice PMAT-502dr — **nested functions** (single-`return` → closure).
+
+A nested `def inner(p: T, …) -> R: return <expr>` now lowers to a `Stmt::ClosureLet`
+(`let inner = |p: T, …| { <expr> };`), reusing the closure machinery. Unlike
+the lambda path, the parameters carry their *annotated* types and the return
+type comes from the `-> R` annotation (else inferred); the closure captures
+enclosing locals (Rust closures capture by default). First cut: the body must
+be a single `return <expr>` (multi-statement bodies need a block-expression and
+are deferred); `*args`/`**kwargs`/keyword-only/pos-only params and decorators
+are rejected. Lean refuses `ClosureLet`. rustc round-trip `nested_fn.py`
+(cross-checked vs `python3`): `add_one(5) == 6`, `double_twice(5) == 20`,
+`shout("hi") == "HI"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.155] — 2026-06-13
 
 Tranche-2 slice PMAT-502dq — **varargs `*args`** (first structural slice past
