@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.183] — 2026-06-13
+
+Tranche-2 slice PMAT-502es — **list splat literals** (`[*a, *b]`, `[x, *a, y]`).
+
+A list literal containing `*`-splat elements is a concatenation. The elements
+fold through `Expr::ListConcat`: each `*e` contributes the list `e` (which must
+type as a list), each plain `x` a singleton `[x]`. The concat chain produces a
+fresh `Vec`; a lone `[*a]` (no concat) is wrapped in `Expr::Clone` so it copies
+(Python `[*a]` is a shallow copy) rather than moving `a`. Plain list literals
+(no splat) are unchanged. New `list_spread.py` e2e fixture (`[*a,*b]`,
+`[x,*a,y]`, lone-spread copy independence, str-list spread), all cross-checked
+vs python3.
+
 ## [0.1.182] — 2026-06-13
 
 Tranche-2 slice PMAT-502er — **`min(xs)` / `max(xs)` over a `list[str]`**.

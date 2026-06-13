@@ -3552,6 +3552,33 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502es (Tranche 2): list splat literals — `[*a, *b]`, `[x, *a, y]`. A
+/// list literal containing `*`-splat elements is a concatenation: each `*e`
+/// contributes the list `e`, each plain `x` a singleton `[x]`, folded through
+/// `Expr::ListConcat` (a fresh `Vec`). A lone `[*a]` is wrapped in
+/// `Expr::Clone` so it copies rather than moving `a`. Cross-checked vs python3.
+#[test]
+fn list_spread() {
+    let rust = xpile_transpile_to_rust("list_spread.py");
+    assert!(
+        rust.contains(".iter().chain("),
+        "list splat should fold to ListConcat (chain):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(concat(vec![1, 2], vec![3, 4, 5]), 5);
+    assert_eq!(spread_sum(vec![1, 2], vec![3, 4]), 10);
+    assert_eq!(with_ends(vec![5, 6]), 99); // [0,5,6,99] -> 0*100 + 99
+    assert_eq!(lone_spread_is_copy(vec![1, 2, 3]), 34); // orig 3, copy 4
+    assert_eq!(
+        str_spread(vec!["x".to_string()], vec!["y".to_string(), "z".to_string()]),
+        3
+    );
+}
+"#;
+    assert_rustc_runs("list_spread", &rust, driver);
+}
+
 /// PMAT-502er (Tranche 2): 1-arg `min(xs)` / `max(xs)` reduction over a
 /// `list[str]` (and `list[bool]`). Previously the reduction was numeric-only;
 /// `str`/`bool` are `Ord`, so the type gate is widened and the codegen uses
