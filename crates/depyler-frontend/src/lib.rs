@@ -6290,14 +6290,21 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
     let value = lower_expr_in_ctx(ctx, (*fv.value).clone())?;
     let Some(spec_expr) = fv.format_spec.as_ref() else {
         // Plain `{expr}` — no spec; Display-coerced by the surrounding format!.
-        // PMAT-502ee: a `bool` field must render Python-style (`True`/`False`),
-        // not Rust's lowercase `Display` — desugar to `"True" if b else
-        // "False"` (the same conversion `str(bool)` uses). This also makes a
-        // lone `f"{flag}"` a `Str` (un-deferring it from PMAT-502ed).
-        if infer_type_in_ctx(ctx, &value) == Type::Bool {
-            return Ok(bool_to_python_str(value));
+        // PMAT-502ee/ef: `bool` and `float` fields must render Python-style,
+        // not Rust's `Display`: `bool` → `True`/`False` (lowercase in Rust),
+        // `float` → Python repr (`3.0`, where Rust's `{}` prints `3`). Both
+        // reuse the same conversions `str(bool)` / `str(float)` use, which also
+        // makes a lone `f"{x}"` a `Str` (un-deferring it from PMAT-502ed).
+        match infer_type_in_ctx(ctx, &value) {
+            Type::Bool => return Ok(bool_to_python_str(value)),
+            Type::F64 => {
+                return Ok(Expr::ToStr {
+                    value: Box::new(value),
+                    of_float: true,
+                })
+            }
+            _ => return Ok(value),
         }
-        return Ok(value);
     };
     let Some(spec) = static_format_spec(spec_expr) else {
         return Err(FrontendError::Lower(

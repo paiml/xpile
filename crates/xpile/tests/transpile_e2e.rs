@@ -3550,6 +3550,30 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502ef (Tranche 2): a `float` field in an f-string must render Python
+/// repr (`3.0`), not Rust's `Display` (`3` for a whole float) — a silent
+/// miscompile (`f"v={x}"` produced "v=3"). A float field now reuses the same
+/// `Expr::ToStr { of_float: true }` conversion `str(float)` uses, which also
+/// un-defers a lone `f"{x}"`. Cross-checked vs python3.
+#[test]
+fn fstring_float() {
+    let rust = xpile_transpile_to_rust("fstring_float.py");
+    assert!(
+        rust.contains(".fract() == 0.0") && rust.contains("{}.0"),
+        "float f-string field should emit the Python-repr conversion:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(value_line(3.0), "v=3.0");
+    assert_eq!(lone_float(2.5), "2.5");
+    assert_eq!(two_floats(1.0, 2.5), "1.0+2.5");
+    assert_eq!(sum_field(1.5, 2.0), "sum=3.5");
+    assert_eq!(with_precision(3.14159), "3.14");
+}
+"#;
+    assert_rustc_runs("fstring_float", &rust, driver);
+}
+
 /// PMAT-502ee (Tranche 2): a `bool` field in an f-string must render
 /// Python-style `True`/`False`, not Rust's lowercase `Display` (`true`/`false`)
 /// — a silent miscompile (`f"flag={flag}"` produced "flag=true"). A bool field
