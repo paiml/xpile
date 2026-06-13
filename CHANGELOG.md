@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.110] — 2026-06-13
+
+Tranche-2 slice PMAT-502bx — **`print` of `bool` / `float` args**.
+
+The v0.1.109 `print` slice admitted only int/str args. A `bool` argument now
+reuses the `str(bool)` desugar (`"True" if b else "False"`) so it prints
+Python's capitalised `True`/`False` (not Rust's `true`/`false`), and a `float`
+argument reuses the `str(float)` block (`Expr::ToStr { of_float: true }`) so
+whole floats print with the `.0` suffix (`3.0`, not Rust's `3`). Multi-arg
+`print(n, f, b)` mixes them correctly. list/dict/set repr stays deferred.
+rustc round-trip `print_bool_float.py` produces **byte-identical stdout to
+`python3`** (`2.5` / `True` / `3.0` / `5 2.5 True` / `2.5 items`).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.109] — 2026-06-13
 
 Tranche-2 slice PMAT-502bw — the **`print` builtin** → `println!`.

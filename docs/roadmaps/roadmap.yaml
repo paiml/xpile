@@ -1030,6 +1030,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "print(...) was rejected (only subprocess.run([...]) recognised as an expr statement). FIX: new Stmt::Print(Vec<Expr>) meta-HIR variant. Frontend: is_print_call detects a Call whose func is Name(\"print\"); lower_print_stmt (gated in lower_block_stmt's ast::Stmt::Expr arm BEFORE try_lower_list_method_call / subprocess) rejects kwargs (sep=/end=/file=) and non-int/str args, lowers positional args. Codegen rust/ruchy: empty -> println!(); else println!(\"{} {} ...\", a, b, ...) with N {} joined by single spaces (Python default sep + trailing newline). f-strings lower to format!(...) (String) so print(f\"...\") works. bool (Python True/False vs Rust true/false) + float (2.0 vs 2) deferred with precise error. Lean refuses (no IO in pure defs). Blast radius: new Stmt variant touched stmt_has_int_arith (meta-hir) + stmt_has_bigint + emit_stmt in rust/ruchy + 2 lean sites (while-scan + emit_stmt). rustc round-trip print_builtin.py produces BYTE-IDENTICAL stdout to python3 (hello / 42 / 'x 42' / blank / x=42). FREE CI. SHIPPED v0.1.109."
+- id: PMAT-502BX
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bx: [Tranche2] print of bool/float args'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "The v0.1.109 print slice admitted only int/str args. EXTEND lower_print_stmt's per-arg match: a Type::Bool arg is wrapped in the str(bool) desugar Expr::IfExpr { cond, then LitStr(\"True\"), else LitStr(\"False\") } (Python capitalises True/False, Rust Display is lowercase); a Type::F64 arg is wrapped in Expr::ToStr { of_float: true } (the Python float-format block — whole floats get a .0 suffix, e.g. 3.0, vs Rust Display's 3). Both become String, printed via {}. int/str still direct. Multi-arg print(n, f, b) mixes them. list/dict/set repr still deferred (precise error). NO new meta-HIR/codegen change — reuses existing ToStr + IfExpr. rustc round-trip print_bool_float.py produces BYTE-IDENTICAL stdout to python3: demo(2.5,True,5) -> 2.5 / True / 3.0 / '5 2.5 True' / '2.5 items'. FREE CI. SHIPPED v0.1.110."
 - id: PMAT-465
   github_issue: 496
   item_type: task
