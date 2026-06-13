@@ -46,11 +46,14 @@ fn float_op_sym(op: FloatOp) -> &'static str {
         FloatOp::Sub => "-",
         FloatOp::Mul => "*",
         FloatOp::Div => "/",
-        // FloorDiv/Mod/Pow are emitted via dedicated formulas, never via
-        // this helper — keep the match exhaustive.
+        // FloorDiv/Mod/Pow + the method-style math ops are emitted via
+        // dedicated formulas, never via this helper — keep the match exhaustive.
         FloatOp::FloorDiv => "//",
         FloatOp::Mod => "%",
         FloatOp::Pow => "**",
+        FloatOp::Hypot => "hypot",
+        FloatOp::Atan2 => "atan2",
+        FloatOp::Log => "log",
     }
 }
 
@@ -806,12 +809,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, rhs, mode)?;
                 out.push_str(").floor())");
             }
-            // PMAT-502bt: Python float power `a ** b` → `(a).powf(b)`
-            // (both operands are f64).
-            FloatOp::Pow => {
+            // PMAT-502bt/em/en: method-style float ops — `(a).<method>(b)`.
+            // Pow → powf; the 2-arg math functions hypot/atan2/log map 1:1.
+            FloatOp::Pow | FloatOp::Hypot | FloatOp::Atan2 | FloatOp::Log => {
+                let method = match op {
+                    FloatOp::Pow => "powf",
+                    FloatOp::Hypot => "hypot",
+                    FloatOp::Atan2 => "atan2",
+                    FloatOp::Log => "log",
+                    _ => unreachable!(),
+                };
                 out.push('(');
                 emit_expr(out, lhs, mode)?;
-                out.push_str(").powf(");
+                write!(out, ").{method}(")?;
                 emit_expr(out, rhs, mode)?;
                 out.push(')');
             }

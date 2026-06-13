@@ -1119,13 +1119,27 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
                 emit_expr(out, rhs)?;
                 out.push_str("))");
             }
+            // PMAT-502en: the 2-arg math float methods are deferred in the Lean
+            // lane (no clean `Float.hypot`/`atan2`/`log`-base mapping).
+            FloatOp::Hypot | FloatOp::Atan2 | FloatOp::Log => {
+                return Err(LeanCodegenError::Unsupported(
+                    "`math.hypot`/`math.atan2`/`math.log(x, base)` are not supported in the \
+                     Lean lane — use `--target rust` or `--target ruchy`"
+                        .to_string(),
+                ));
+            }
             FloatOp::Add | FloatOp::Sub | FloatOp::Mul | FloatOp::Div => {
                 let sym = match op {
                     FloatOp::Add => "+",
                     FloatOp::Sub => "-",
                     FloatOp::Mul => "*",
                     FloatOp::Div => "/",
-                    FloatOp::FloorDiv | FloatOp::Mod | FloatOp::Pow => unreachable!(),
+                    FloatOp::FloorDiv
+                    | FloatOp::Mod
+                    | FloatOp::Pow
+                    | FloatOp::Hypot
+                    | FloatOp::Atan2
+                    | FloatOp::Log => unreachable!(),
                 };
                 out.push('(');
                 emit_expr(out, lhs)?;

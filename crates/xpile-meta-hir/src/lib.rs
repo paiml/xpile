@@ -1774,6 +1774,13 @@ pub enum FloatOp {
     /// PMAT-502bt: Python `a ** b` with a float operand → `(a).powf(b)`
     /// (both operands are f64). Not infix.
     Pow,
+    /// PMAT-502en: `math.hypot(x, y)` → `(x).hypot(y)` (both f64). Not infix.
+    Hypot,
+    /// PMAT-502en: `math.atan2(y, x)` → `(y).atan2(x)` (both f64). Not infix.
+    Atan2,
+    /// PMAT-502en: `math.log(x, base)` (2-arg log) → `(x).log(base)` (both
+    /// f64). Not infix. (1-arg `math.log` is natural log — `NumBuiltinOp::Ln`.)
+    Log,
 }
 
 /// PMAT-498 (Tranche 2): scalar numeric builtins carried by

@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.178] — 2026-06-13
+
+Tranche-2 slice PMAT-502en — **2-arg `math` float methods: `hypot`/`atan2`/`log(x,base)`**.
+
+`math.hypot(x, y)` → `(x).hypot(y)`, `math.atan2(y, x)` → `(y).atan2(x)`, and
+2-arg `math.log(x, base)` → `(x).log(base)`. All three are the same
+method-with-argument shape as `math.pow`'s `(x).powf(y)`, so they reuse
+`Expr::FloatBinOp` (three new `FloatOp` variants) with both operands coerced to
+f64. 1-arg `math.log` remains natural log (`NumBuiltinOp::Ln`); the call's arity
+selects between them. The Lean lane defers these (no clean `Float.hypot`/etc.
+mapping). New `math_2arg.py` e2e fixture (hypot, atan2, log-base, 1-arg ln),
+cross-checked vs python3.
+
 ## [0.1.177] — 2026-06-13
 
 Tranche-2 slice PMAT-502em — **`math.pow(x, y)` and `math.trunc(x)`**.
