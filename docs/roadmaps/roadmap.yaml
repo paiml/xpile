@@ -1012,6 +1012,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "combine_aug's float branch (from PMAT-502bq) passed operands to FloatBinOp UNCAST, so any float aug-assign with an int-literal rhs miscompiled to a mismatched f64 <op> i64: x += 1 -> (x + 1i64), x /= 2 -> (x / 2i64), x //= 2/x %= 2 likewise, and x **= 2 fell through to the int checked_pow path entirely. FIX: (1) combine_aug float branch now casts each operand via to_f64_operand so the int side becomes (1i64) as f64 while a float operand is left as-is; (2) float_op_from_ast maps ast::Operator::Pow -> FloatOp::Pow so x **= 2 lowers to (x).powf((2i64) as f64). Adding Pow to float_op_from_ast is safe for the expr-position arms (their dedicated Div/Pow branches run first and return before float_op_from_ast is consulted), so it only affects combine_aug. NO regression: x += y over two floats stays cast-free (to_f64_operand leaves F64 as-is); int aug-assign still checked_*; str += still format!. Rounds out the float aug-assign surface (+= -= *= /= //= %= **=). rustc round-trip aug_assign_float_int_rhs.py (cross-checked vs python3): run(3.0)=9.0 (x+=1->4,*=3->12,/=2->6,//=2->3,%=5->3,**=2->9), pow_assign(2.0)=8.0. FREE CI. SHIPPED v0.1.107."
+- id: PMAT-502BV
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bv: [Tranche2] bare return (no value) in void function'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "A bare `return` (Python return None) was rejected outright ('has a bare return (no value) — deferred at v0.2.0'). FIX: in lower_block_stmt the ast::Stmt::Return arm now matches on ret.value: Some(v) -> Stmt::Return(lower(v)) as before; None when ctx.fn_return_type == Type::Unit -> Stmt::Return(Expr::Unit) -> codegen `return ();` (valid for a -> () fn); None otherwise (value-returning fn) -> clearer error (bare return is Python return None, a type mismatch — add a value or annotate -> None). Enables the ubiquitous early-exit guard-clause shape `if invalid: return` in void functions. No meta-HIR/backend change (Stmt::Return(Expr) + Expr::Unit already exist). rustc round-trip bare_return_guard.py: guard_div(0) returns early so the `100 // 0` floor-div panic is avoided; guard_div(4)/push_pos run normally. FREE CI. SHIPPED v0.1.108."
 - id: PMAT-465
   github_issue: 496
   item_type: task
