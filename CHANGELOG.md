@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.138] — 2026-06-13
+
+Tranche-2 slice PMAT-502cz — **variadic `min` / `max`** (`max(a, b, c)`).
+
+`min`/`max` accepted exactly 2 args; `max(a, b, c)` fell through to a generic
+call, emitting an undefined Rust `max(...)` function. They are now variadic
+(`>= 2` args) and chain the method form: `max(a, b, c)` → `(a).max(b).max(c)`,
+`min(a, b, c, d)` → `(a).min(b).min(c).min(d)`. `Expr::NumBuiltin` already
+carried `args: Vec<Expr>`, so this is frontend + codegen only (no new variant);
+the 2-arg form emits identically to before. rustc round-trip
+`variadic_minmax.py` (cross-checked vs `python3`): `max(3,7,5) == 7`,
+`min(8,2,6,4) == 2`, `max(1.5,9.0,3.0) == 9.0`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.137] — 2026-06-13
 
 Tranche-2 slice PMAT-502cy — **`pow(a, b)`** builtin.

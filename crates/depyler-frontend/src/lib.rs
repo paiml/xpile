@@ -4768,7 +4768,17 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             // `abs` stays numeric-only.
             if let ast::Expr::Name(fname) = call.func.as_ref() {
                 if let Some((op, arity)) = num_builtin_op(fname.id.as_str()) {
-                    if call.keywords.is_empty() && call.args.len() == arity {
+                    // PMAT-502cz: `min`/`max` are VARIADIC — accept any arity
+                    // `>= 2` (`max(a, b, c)` chains `.max(b).max(c)`). `abs`
+                    // stays exactly 1-arg. Previously `max(a, b, c)` fell to a
+                    // generic call (undefined Rust `max(...)`); now it lowers.
+                    let variadic = matches!(op, NumBuiltinOp::Min | NumBuiltinOp::Max);
+                    let arity_ok = if variadic {
+                        call.args.len() >= arity
+                    } else {
+                        call.args.len() == arity
+                    };
+                    if call.keywords.is_empty() && arity_ok {
                         let args = call
                             .args
                             .iter()

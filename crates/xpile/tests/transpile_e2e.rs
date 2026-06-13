@@ -3529,6 +3529,29 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502cz (Tranche 2): variadic `min`/`max` (`max(a, b, c)`).
+#[test]
+fn variadic_minmax() {
+    let rust = xpile_transpile_to_rust("variadic_minmax.py");
+    assert!(
+        rust.contains("(a).max(b).max(c)"),
+        "max(a, b, c) → chained .max:\n{rust}"
+    );
+    assert!(
+        rust.contains("(a).min(b).min(c).min(d)"),
+        "min(a, b, c, d) → chained .min:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // variadic min/max; cross-checked vs python3.
+    assert_eq!(m3(3, 7, 5), 7);
+    assert_eq!(n4(8, 2, 6, 4), 2);
+    assert_eq!(fm(1.5, 9.0, 3.0), 9.0);
+}
+"#;
+    assert_rustc_runs("variadic_minmax", &rust, driver);
+}
+
 /// PMAT-502cy (Tranche 2): `pow(a, b)` == `a ** b` (reuses the `**` path).
 #[test]
 fn pow_builtin() {

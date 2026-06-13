@@ -1117,13 +1117,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             match op {
                 NumBuiltinOp::Abs => out.push_str(".abs()"),
                 NumBuiltinOp::Min | NumBuiltinOp::Max => {
-                    out.push_str(if matches!(op, NumBuiltinOp::Min) {
+                    // PMAT-502cz: variadic — chain `.min`/`.max` over every
+                    // remaining arg (`max(a, b, c)` → `(a).max(b).max(c)`).
+                    let method = if matches!(op, NumBuiltinOp::Min) {
                         ".min("
                     } else {
                         ".max("
-                    });
-                    emit_expr(out, &args[1], mode)?;
-                    out.push(')');
+                    };
+                    for arg in &args[1..] {
+                        out.push_str(method);
+                        emit_expr(out, arg, mode)?;
+                        out.push(')');
+                    }
                 }
             }
         }
