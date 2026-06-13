@@ -3552,6 +3552,36 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502ex (Tranche 2): Optional epic cut 2+3 — `Optional[T]` **parameters**
+/// and `x is None` / `x is not None` **tests**. An `Optional[T]` param lowers to
+/// a Rust `Option<T>`; `x is None` → `(x).is_none()`, `x is not None` →
+/// `(x).is_some()` (a new `Expr::IsNone`, bool-typed). The operand must type as
+/// `Optional`. This is the narrowing-FREE consuming slice (the param is only
+/// tested, never used as `T`). Cross-checked vs python3.
+#[test]
+fn optional_is_none() {
+    let rust = xpile_transpile_to_rust("optional_is_none.py");
+    assert!(
+        rust.contains(".is_none()") && rust.contains(".is_some()") && rust.contains("Option<i64>"),
+        "Optional params + is-None tests should emit Option<T> + is_none/is_some:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert!(is_absent(None));
+    assert!(!is_absent(Some(5)));
+    assert!(is_present(Some(5)));
+    assert!(!is_present(None));
+    assert_eq!(guard(None), -1);
+    assert_eq!(guard(Some(3)), 0);
+    assert!(both_none(None, None));
+    assert!(!both_none(Some(1), None));
+    assert!(str_present(Some("x".to_string())));
+    assert!(!str_present(None));
+}
+"#;
+    assert_rustc_runs("optional_is_none", &rust, driver);
+}
+
 /// PMAT-502ew (Tranche 2): `Optional[T]` **return type** (first cut of the
 /// Optional epic). `-> Optional[int]` → Rust `Option<i64>`; the body produces
 /// concrete `T` values and the return site wraps them — `return None` →

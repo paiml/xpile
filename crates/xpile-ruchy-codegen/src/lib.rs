@@ -1614,6 +1614,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 out.push(')');
             }
         },
+        // PMAT-502ex: `x is None`/`is not None` → `.is_none()`/`.is_some()`.
+        Expr::IsNone { value, negated } => {
+            out.push('(');
+            emit_expr(out, value, mode)?;
+            out.push_str(if *negated {
+                ").is_some()"
+            } else {
+                ").is_none()"
+            });
+        }
         // PMAT-459 (v0.2.0 Track 1.B): Ruchy → Rust → `.len() as i64`.
         Expr::Len(inner) => {
             emit_expr(out, inner, mode)?;

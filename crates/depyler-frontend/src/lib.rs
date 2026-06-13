@@ -4479,6 +4479,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::OptionExpr(inner) => Type::Optional(Box::new(
             inner.as_deref().map(infer_type).unwrap_or(Type::I64),
         )),
+        // PMAT-502ex: a `None` test yields Bool.
+        Expr::IsNone { .. } => Type::Bool,
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => Type::Tuple(elems.iter().map(infer_type).collect()),
         // PMAT-502q: tuple constant-index → the N-th element type.
@@ -4807,6 +4809,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
                 .map(|e| infer_type_in_ctx(ctx, e))
                 .unwrap_or(Type::I64),
         )),
+        // PMAT-502ex: a `None` test yields Bool.
+        Expr::IsNone { .. } => Type::Bool,
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => {
             Type::Tuple(elems.iter().map(|e| infer_type_in_ctx(ctx, e)).collect())
@@ -8144,6 +8148,28 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
         return Err(FrontendError::Lower(
             "malformed comparison (ops/comparators mismatch) — unreachable Python AST".into(),
         ));
+    }
+    // PMAT-502ex: `x is None` / `x is not None` over an `Optional`-typed value
+    // → `Expr::IsNone` (`.is_none()` / `.is_some()`). A single `is`/`is not`
+    // comparison against the `None` constant; the operand must type as
+    // `Optional` (a `None` test on a non-Optional value is degenerate — Python
+    // always-False — and deferred). Intercepted before the operand loop because
+    // a bare `None` constant has no value-position lowering.
+    if c.ops.len() == 1
+        && matches!(c.ops[0], ast::CmpOp::Is | ast::CmpOp::IsNot)
+        && matches!(&c.comparators[0], ast::Expr::Constant(k) if matches!(k.value, ast::Constant::None))
+    {
+        let value = lower_expr_in_ctx(ctx, (*c.left).clone())?;
+        if matches!(infer_type_in_ctx(ctx, &value), Type::Optional(_)) {
+            return Ok(Expr::IsNone {
+                value: Box::new(value),
+                negated: matches!(c.ops[0], ast::CmpOp::IsNot),
+            });
+        }
+        return Err(FrontendError::Lower(format!(
+            "function `{}` uses `is None` / `is not None` on a non-`Optional` value — v0.2.0 supports the `None` test only on `Optional[T]` values",
+            ctx.fn_name
+        )));
     }
     let mut operands: Vec<Expr> = Vec::with_capacity(c.ops.len() + 1);
     operands.push(lower_expr_in_ctx(ctx, *c.left)?);
