@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.226] — 2026-06-14
+
+Tranche 2 — PMAT-526 (correctness): `map`/`filter` lambda param typed as the
+element.
+
+- The `map()`/`filter()` builtins lowered the lambda body with the param unbound
+  (defaulting to `i64`), so `map(lambda p: p[0] + p[1], ps)` over a
+  `list[tuple[..]]` miscompiled (generic `[..]` indexing on a Rust tuple). The
+  param now binds to the list's element type, so `p[0]`/`p[1]` → `.0`/`.1`.
+  Mirrors PMAT-524/525. **No new IR.**
+- New e2e fixture `map_filter_typed_param.py` (rustc round-trip cross-checked vs
+  python3). e2e 287 → 288. Closes the iterable-param type-propagation cases
+  (comprehension, genexpr, sort/min/max key, map, filter); bare closures remain.
+
 ## [0.1.225] — 2026-06-14
 
 Tranche 2 — PMAT-525 (correctness): comprehension/genexpr loop var typed as the
