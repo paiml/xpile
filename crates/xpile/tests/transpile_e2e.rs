@@ -3758,6 +3758,38 @@ fn main() {
     assert_rustc_runs("list_comp_2gen", &rust, driver);
 }
 
+/// PMAT-502fd (Tranche 2): two-generator **dict and set** comprehensions
+/// `{k: v for x in a for y in b}` / `{e for x in a for y in b}` → nested `for`
+/// loops inserting/adding to the accumulator (mirrors the list 2-gen slice via a
+/// shared `desugar_comp_2gen` helper). Per-generator `if` filters wrap their own
+/// loop. Cross-checked vs python3 (driver sorts the collected entries since
+/// HashMap/HashSet iteration order is nondeterministic).
+#[test]
+fn comp_2gen_dict_set() {
+    let rust = xpile_transpile_to_rust("comp_2gen_dict_set.py");
+    assert!(
+        rust.contains("for x in a.iter().cloned()") && rust.contains("for y in b.iter().cloned()"),
+        "two generators should desugar to nested for loops:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let g = grid(vec![1, 2], vec![3, 4]);
+    let mut gv: Vec<(i64, i64)> = g.into_iter().collect();
+    gv.sort();
+    assert_eq!(gv, vec![(13, 4), (14, 5), (23, 5), (24, 6)]);
+    let s = sums(vec![1, 2], vec![10, 20]);
+    let mut sv: Vec<i64> = s.into_iter().collect();
+    sv.sort();
+    assert_eq!(sv, vec![11, 12, 21, 22]);
+    let f = filtered_set(vec![-1, 2, 3], vec![0, 5]);
+    let mut fv: Vec<i64> = f.into_iter().collect();
+    fv.sort();
+    assert_eq!(fv, vec![10, 15]);
+}
+"#;
+    assert_rustc_runs("comp_2gen_dict_set", &rust, driver);
+}
+
 /// PMAT-502ev (Tranche 2): `sorted(s)` over a str — sorts the characters into a
 /// list of 1-char strings (via `Expr::StrChars`). Completes the `sorted(X)`
 /// family (list / dict-keys / str-chars); `reverse=`/`key=` still apply.
