@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.196] — 2026-06-13
+
+R6/PMAT-475 second sub-slice — **author the `C-C-INT-ARITH` contract at
+depth-1**. Closes half the "every construct under contract" falsification
+(audit-design.md §7.3): emitted C cited `C-C-INT-ARITH` with no on-disk
+contract; that citation now resolves to a real YAML + Lean theorem.
+
+- `contracts/c-int-arith-v1.yaml` — Layer-1 kernel contract for C `int`
+  arithmetic, distinct from `C-PY-INT-ARITH`: C `int` is i32 (not unbounded
+  i64), and xpile lowers C `int` `+`/`-`/`*` to `i32::wrapping_*` (defined
+  two's-complement wraparound, replacing C's signed-overflow UB). One depth-1
+  Diamond equation (`c_int_wrapping_add_commutative_monoid_diamond` — the
+  `(Z/2^32, +, 0)` commutative monoid). proof_obligations, falsification_tests
+  (bound to the live `c_int_arith_transpiles_to_rust_and_runs` e2e test), two
+  inline Kani harnesses, a qa_gate.
+- `contracts/lean/CIntArith.lean` — refinement proof modelling C `int` as
+  `BitVec 32`, proving the monoid laws.
+- **First contract to join after the depth-13 gate was grandfathered** (v0.1.195)
+  — enters at depth-1 without the treadmill. `xpile diamond` → 14 contracts,
+  `C-C-INT-ARITH` at depth-1, depth-2+ still the grandfathered 13. `pv lint`
+  0 errors; diamond/refinement/qa_gate/kani gates green.
+- Remaining R6: author `C-XLATE-PY-DICT-TO-HASHMAP` at depth-1+ (the dict half).
+
 ## [0.1.195] — 2026-06-13
 
 R6/PMAT-475 first sub-slice — **grandfather the Diamond depth-13 gate** (the
