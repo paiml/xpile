@@ -4209,6 +4209,12 @@ fn lower_return_value(ctx: &LoweringCtx, value: &ast::Expr) -> Result<Expr, Fron
             return Ok(Expr::OptionExpr(None));
         }
         let inner = lower_expr_in_ctx(ctx, value.clone())?;
+        // PMAT-502ey: a value that already types as `Optional` (an `Optional`
+        // param, or `d.get(k)`) is passed through verbatim — wrapping it in
+        // `Some(...)` would double-wrap into `Option<Option<T>>`.
+        if matches!(infer_type_in_ctx(ctx, &inner), Type::Optional(_)) {
+            return Ok(inner);
+        }
         return Ok(Expr::OptionExpr(Some(Box::new(inner))));
     }
     lower_value_expecting(ctx, value, &ctx.fn_return_type)
@@ -4327,6 +4333,7 @@ fn expr_uses_dict(e: &Expr) -> bool {
     match e {
         Expr::DictGet { .. }
         | Expr::DictGetOr { .. }
+        | Expr::DictGetOpt { .. }
         | Expr::DictContains { .. }
         | Expr::DictLit(_) => true,
         Expr::BinOp { lhs, rhs, .. } | Expr::Concat { lhs, rhs } => {
@@ -4630,6 +4637,11 @@ fn infer_type(e: &Expr) -> Type {
         Expr::DictGet { dict, .. } | Expr::DictGetOr { dict, .. } => match infer_type(dict) {
             Type::Dict(_, value_ty) => *value_ty,
             _ => Type::I64,
+        },
+        // PMAT-502ey: 1-arg `d.get(k)` → `Optional[V]`.
+        Expr::DictGetOpt { dict, .. } => match infer_type(dict) {
+            Type::Dict(_, value_ty) => Type::Optional(value_ty),
+            _ => Type::Optional(Box::new(Type::I64)),
         },
         Expr::DictContains { .. } => Type::Bool,
         // PMAT-462 (v0.2.0 Track 1.C): dict literal types as
@@ -4963,6 +4975,11 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
                 _ => Type::I64,
             }
         }
+        // PMAT-502ey: 1-arg `d.get(k)` → `Optional[V]`.
+        Expr::DictGetOpt { dict, .. } => match infer_type_in_ctx(ctx, dict) {
+            Type::Dict(_, value_ty) => Type::Optional(value_ty),
+            _ => Type::Optional(Box::new(Type::I64)),
+        },
         Expr::DictContains { .. } => Type::Bool,
         // PMAT-462: dict literal — see twin arm in `infer_type` above.
         Expr::DictLit(pairs) => {
@@ -5027,6 +5044,10 @@ fn rewrite_dict_reads(ctx: &LoweringCtx, e: Expr) -> Expr {
             dict: rwb(dict),
             key: rwb(key),
             default: rwb(default),
+        },
+        Expr::DictGetOpt { dict, key } => Expr::DictGetOpt {
+            dict: rwb(dict),
+            key: rwb(key),
         },
         Expr::BinOp { op, lhs, rhs } => Expr::BinOp {
             op,
@@ -5252,10 +5273,12 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 if attr.attr.as_str() == "get" {
                     let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
                     if matches!(infer_type_in_ctx(ctx, &recv), Type::Dict(_, _)) {
-                        if !call.keywords.is_empty() || call.args.len() != 2 {
+                        if !call.keywords.is_empty()
+                            || (call.args.len() != 1 && call.args.len() != 2)
+                        {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` calls dict `.get(...)` with {} positional arg(s){} \
-                                 — v0.2.0 Track 1.C supports exactly `.get(key, default)`",
+                                 — supports `.get(key)` → Optional[V] or `.get(key, default)`",
                                 ctx.fn_name,
                                 call.args.len(),
                                 if call.keywords.is_empty() {
@@ -5266,6 +5289,13 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             )));
                         }
                         let key = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                        // PMAT-502ey: 1-arg `d.get(k)` → `Option<V>` (no default).
+                        if call.args.len() == 1 {
+                            return Ok(Expr::DictGetOpt {
+                                dict: Box::new(recv),
+                                key: Box::new(key),
+                            });
+                        }
                         let default = lower_expr_in_ctx(ctx, call.args[1].clone())?;
                         return Ok(Expr::DictGetOr {
                             dict: Box::new(recv),

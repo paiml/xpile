@@ -3611,6 +3611,40 @@ fn main() {
     assert_rustc_runs("optional_return", &rust, driver);
 }
 
+/// PMAT-502ey (Tranche 2): 1-arg `d.get(k)` → `Optional[V]` (continuing the
+/// Optional epic). `d.get(k)` (no default) lowers to `Expr::DictGetOpt` →
+/// `(d).get(&(k)).cloned()` : `Option<V>`; the 2-arg `d.get(k, default)` form is
+/// unchanged. Also locks in the no-double-wrap return fix: returning an already
+/// -`Optional` value (an `Optional` param, or another `.get(k)`) passes through
+/// verbatim instead of re-wrapping into `Some(Option<..>)`. Cross-checked vs
+/// python3 (driver matches/unwraps the `Option`).
+#[test]
+fn dict_get_optional() {
+    let rust = xpile_transpile_to_rust("dict_get_optional.py");
+    assert!(
+        rust.contains(".get(&(k)).cloned()\n") && rust.contains("-> Option<i64>"),
+        "1-arg dict get should emit `.get(&(k)).cloned()` : Option<V>:\n{rust}"
+    );
+    // The Optional param must pass through verbatim — not be re-wrapped.
+    assert!(
+        rust.contains("-> Option<i64> {\n    x\n}"),
+        "returning an Optional value must not double-wrap into Some(..):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let mut d = std::collections::HashMap::new();
+    d.insert(String::from("a"), 5i64);
+    assert_eq!(lookup(d.clone(), String::from("a")), Some(5i64));
+    assert_eq!(lookup(d.clone(), String::from("z")), None);
+    assert_eq!(lookup_or(d.clone(), String::from("a")), 5i64);
+    assert_eq!(lookup_or(d.clone(), String::from("z")), -1i64);
+    assert_eq!(passthrough(Some(7)), Some(7));
+    assert_eq!(passthrough(None), None);
+}
+"#;
+    assert_rustc_runs("dict_get_optional", &rust, driver);
+}
+
 /// PMAT-502ev (Tranche 2): `sorted(s)` over a str — sorts the characters into a
 /// list of 1-char strings (via `Expr::StrChars`). Completes the `sorted(X)`
 /// family (list / dict-keys / str-chars); `reverse=`/`key=` still apply.
