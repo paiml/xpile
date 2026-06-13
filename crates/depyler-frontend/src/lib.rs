@@ -4503,6 +4503,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::UnOp { op, .. } => match op {
             UnOp::Neg => Type::I64,
             UnOp::Not => Type::Bool,
+            // PMAT-502fb: bitwise invert yields I64.
+            UnOp::BitNot => Type::I64,
         },
         // PMAT-449 (v0.2.0 Track 1.A): Python `"..."` literal now
         // produces `Expr::LitStr` and is typed as `Type::Str`.
@@ -4838,6 +4840,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::UnOp { op, operand } => match op {
             UnOp::Neg => infer_type_in_ctx(ctx, operand),
             UnOp::Not => Type::Bool,
+            // PMAT-502fb: bitwise invert yields I64.
+            UnOp::BitNot => Type::I64,
         },
         // PMAT-449 (v0.2.0 Track 1.A): Python `"..."` literal is
         // typed as `Type::Str`.
@@ -6566,6 +6570,22 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 lower_unary_op(u)
             }
         }
+        // PMAT-502fb: context-aware bitwise invert `~x` over an I64. Lowered
+        // context-aware so a builtin/typed operand (`~max(a, b)`, `~n`) is
+        // recognized; the context-free path would re-lower and mis-infer it.
+        ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::Invert) => {
+            let operand = lower_expr_in_ctx(ctx, (*u.operand).clone())?;
+            if matches!(infer_type_in_ctx(ctx, &operand), Type::I64) {
+                Ok(Expr::UnOp {
+                    op: UnOp::BitNot,
+                    operand: Box::new(operand),
+                })
+            } else {
+                Err(FrontendError::Lower(
+                    "bitwise `~` requires an I64 operand".into(),
+                ))
+            }
+        }
         // PMAT-502ce: context-aware `a and b` / `a or b`. The context-free
         // path mis-infers a bare Ident as I64 and rejects bool variables.
         ast::Expr::BoolOp(b) => lower_bool_op_in_ctx(ctx, b),
@@ -7517,9 +7537,13 @@ fn lower_unary_op(u: ast::ExprUnaryOp) -> Result<Expr, FrontendError> {
             ));
         }
         ast::UnaryOp::Invert => {
-            return Err(FrontendError::Lower(
-                "bitwise `~` not supported at v0.1.0".into(),
-            ));
+            // PMAT-502fb: Python `~x` == `-(x+1)` == Rust `!x` on a signed int.
+            if infer_type(&operand) != Type::I64 {
+                return Err(FrontendError::Lower(
+                    "bitwise `~` requires an I64 operand".into(),
+                ));
+            }
+            UnOp::BitNot
         }
     };
     Ok(Expr::UnOp {

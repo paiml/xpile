@@ -2044,6 +2044,10 @@ pub enum UnOp {
     Neg,
     /// Logical not: `not x`, Bool → Bool.
     Not,
+    /// PMAT-502fb: bitwise invert: Python `~x`, I64 → I64. Python's `~x` is the
+    /// two's-complement complement `-(x + 1)`, which is exactly Rust's `!x` on a
+    /// signed integer (`~5 == -6` in both). Emits `!(<operand>)`.
+    BitNot,
 }
 
 /// PMAT-502g (Tranche 2): set-algebra operators carried by [`Expr::SetOp`].

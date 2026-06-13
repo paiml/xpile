@@ -1635,13 +1635,21 @@ fn emit_call(out: &mut String, callee: &str, args: &[Expr]) -> Result<(), LeanCo
 }
 
 fn emit_unop(out: &mut String, op: UnOp, operand: &Expr) -> Result<(), LeanCodegenError> {
-    let sym = match op {
-        UnOp::Neg => "-",
-        UnOp::Not => "!",
-    };
-    write!(out, "({sym}")?;
-    emit_expr(out, operand)?;
-    write!(out, ")")?;
+    match op {
+        // PMAT-502fb: Lean's unbounded `Int` has no `~` operator, but Python's
+        // `~x` is the exact identity `-(x + 1)`, which is total over `Int`.
+        UnOp::BitNot => {
+            write!(out, "(-(")?;
+            emit_expr(out, operand)?;
+            write!(out, " + 1))")?;
+        }
+        UnOp::Neg | UnOp::Not => {
+            let sym = if matches!(op, UnOp::Neg) { "-" } else { "!" };
+            write!(out, "({sym}")?;
+            emit_expr(out, operand)?;
+            write!(out, ")")?;
+        }
+    }
     Ok(())
 }
 
