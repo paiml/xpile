@@ -1165,6 +1165,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "for c in s (string iteration) was rejected ('non-collection ... typing as Str'). FIX: new Expr::StrChars { string } meta-HIR variant — the characters of a string as a list[str] (each a 1-char string). The for-loop collection path's elem-type match gains a Type::Str arm: wrap iter_expr in Expr::StrChars, elem_ty = Str, over_keys = false. The existing Stmt::ForEach emit appends .iter().cloned(), so StrChars must produce a Vec<String>: codegen rust/ruchy emit (s).chars().map(|__c| __c.to_string()).collect::<Vec<String>>(). Loop var binds as str. Both inferers type StrChars as List(Str). Lean refuses. Blast radius: new Expr variant touched expr_has_int_arith + 2 inferers + collect_idents(lean) + 3 emit sites. rustc round-trip str_iter.py (cross-checked vs python3): count_vowels('education')=5, reverse_str('abc')='cba'. FREE CI. SHIPPED v0.1.124."
+- id: PMAT-502CM
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cm: [Tranche2] ord(c) / chr(n) builtins'
+  status: planned
+  priority: high
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "ord(c) was SILENTLY MISCOMPILED — lowered as a generic call so codegen emitted an undefined `ord(...)` Rust fn (rustc: cannot find function `ord`); chr(n) likewise. FIX: new Expr::Ord { value } (str -> I64) + Expr::Chr { value } (I64 -> Str) meta-HIR variants. Frontend: in the Name-call handler (next to num_builtin_op), ord(<str>) 1-arg -> Expr::Ord (non-str -> error), chr(<int>) 1-arg -> Expr::Chr (non-int -> error). Codegen rust/ruchy: ord -> ((c).chars().next().expect('...ord expected a single character') as i64) (char as i64 cast is valid); chr -> char::from_u32((n) as u32).expect('...chr arg not in range(0x110000) (ValueError)').to_string() (OOB panics = Python ValueError). Compose: chr(ord(c)+1) works. Inferers: Ord->I64, Chr->Str. Lean refuses. Blast radius: 2 new Expr variants -> expr_has_int_arith + 2 inferers + collect_idents(lean) + 3 emit sites. rustc round-trip ord_chr.py (cross-checked vs python3): code('A')=65, char(97)='a', shift('a')='b'. FREE CI. SHIPPED v0.1.125."
 - id: PMAT-465
   github_issue: 496
   item_type: task

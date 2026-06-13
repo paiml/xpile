@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.125] — 2026-06-13
+
+Tranche-2 slice PMAT-502cm — **`ord(c)` and `chr(n)`** builtins.
+
+`ord(c)` was silently miscompiled (lowered as a generic call → an undefined
+`ord(...)` Rust function); `chr(n)` likewise. They now lower to new
+`Expr::Ord` / `Expr::Chr`: `ord(c)` → `((c).chars().next().expect("…") as
+i64)` (the code point of a 1-char string, → `int`); `chr(n)` →
+`char::from_u32((n) as u32).expect("…").to_string()` (the 1-char string for a
+code point, → `str`; out-of-range panics ≈ Python's `ValueError`). They
+compose (`chr(ord(c) + 1)`). Lean refuses. rustc round-trip `ord_chr.py`
+(cross-checked vs `python3`): `code("A") -> 65`, `char(97) -> "a"`,
+`shift("a") -> "b"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.124] — 2026-06-13
 
 Tranche-2 slice PMAT-502cl — **string iteration `for c in s`**.

@@ -3313,6 +3313,25 @@ fn main() {
     assert_rustc_runs("str_iter", &rust, driver);
 }
 
+/// PMAT-502cm (Tranche 2): `ord(c)` (str → code point) and `chr(n)` (int →
+/// 1-char str) builtins.
+#[test]
+fn ord_chr() {
+    let rust = xpile_transpile_to_rust("ord_chr.py");
+    assert!(
+        rust.contains(".chars().next().expect(") && rust.contains("char::from_u32("),
+        "ord/chr:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(code(String::from("A")), 65);
+    assert_eq!(char(97), "a");
+    assert_eq!(shift(String::from("a")), "b");
+}
+"#;
+    assert_rustc_runs("ord_chr", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
