@@ -4181,6 +4181,33 @@ fn main() {
     assert_rustc_runs("enum_basic", &rust, driver);
 }
 
+/// PMAT-516 (Tranche 2 — correctness): `s.startswith((a, b, …))` /
+/// `.endswith((…))` — Python accepts a tuple of prefixes/suffixes (true if any
+/// matches). Previously this transpiled to `…starts_with(&(a, b)[..])`
+/// (transpile-success-but-INVALID-Rust). Now expands to an OR of per-prefix
+/// `starts_with`/`ends_with` checks. The 1-arg form is unaffected.
+/// Cross-checked vs python3 (url_kind 1/2/0, is_source 1/0, single 1/0).
+#[test]
+fn str_startswith_endswith_tuple() {
+    let rust = xpile_transpile_to_rust("str_startswith_tuple.py");
+    assert!(
+        rust.contains("s.starts_with(&(String::from(\"http://\"))[..]) || s.starts_with(&(String::from(\"https://\"))[..])"),
+        "a tuple of prefixes should expand to an OR of starts_with checks:\n{rust}"
+    );
+    let driver = r##"
+fn main() {
+    assert_eq!(url_kind("https://x".to_string()), 1);
+    assert_eq!(url_kind("ftp://y".to_string()), 2);
+    assert_eq!(url_kind("mailto:z".to_string()), 0);
+    assert_eq!(is_source("a.py".to_string()), 1);
+    assert_eq!(is_source("a.txt".to_string()), 0);
+    assert_eq!(single_prefix("# hi".to_string()), 1);
+    assert_eq!(single_prefix("hi".to_string()), 0);
+}
+"##;
+    assert_rustc_runs("str_startswith_tuple", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)

@@ -6776,6 +6776,46 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         });
                     }
                 }
+                // PMAT-516 (correctness): `s.startswith((a, b, …))` /
+                // `.endswith((…))` — Python accepts a TUPLE of prefixes/suffixes
+                // (true if ANY matches). Rust's `str::starts_with` takes a single
+                // pattern, so a tuple arg previously emitted `…starts_with(&(a,
+                // b)[..])` — transpile-success-but-invalid-Rust. Expand to an OR
+                // of per-prefix checks. (A single non-tuple arg falls through to
+                // the generic 1-arg path below.)
+                if matches!(attr.attr.as_str(), "startswith" | "endswith") {
+                    if let Some(ast::Expr::Tuple(tup)) = call.args.first() {
+                        if call.args.len() == 1 && call.keywords.is_empty() {
+                            let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+                            if matches!(infer_type_in_ctx(ctx, &recv), Type::Str) {
+                                let op = str_method_op(attr.attr.as_str())
+                                    .expect("startswith/endswith map to a StrMethodOp");
+                                // Python: an empty tuple of prefixes is always False.
+                                if tup.elts.is_empty() {
+                                    return Ok(Expr::LitBool(false));
+                                }
+                                let mut acc: Option<Expr> = None;
+                                for elt in &tup.elts {
+                                    let prefix = lower_expr_in_ctx(ctx, elt.clone())?;
+                                    let check = Expr::StrMethod {
+                                        recv: Box::new(recv.clone()),
+                                        op,
+                                        args: vec![prefix],
+                                    };
+                                    acc = Some(match acc {
+                                        None => check,
+                                        Some(prev) => Expr::BinOp {
+                                            op: BinOp::Or,
+                                            lhs: Box::new(prev),
+                                            rhs: Box::new(check),
+                                        },
+                                    });
+                                }
+                                return Ok(acc.expect("tuple is non-empty (checked above)"));
+                            }
+                        }
+                    }
+                }
                 // PMAT-492/493b: string methods — `s.upper()/.lower()/
                 // .strip()` (0 args, → Str) and `s.startswith(p)/
                 // .endswith(p)` (1 pattern arg, → Bool) — when the
