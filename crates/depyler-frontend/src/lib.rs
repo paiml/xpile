@@ -2499,6 +2499,36 @@ fn is_range_like_call(iter: &ast::Expr) -> bool {
 /// 1/2/3-arg `range` forms; the optional step must be a **positive** integer
 /// literal at first cut (negative-step materialisation is deferred). Bounds
 /// are lowered context-aware (so `range(d[k])` works).
+/// PMAT-521: lower a builtin's iterable argument into a *list-typed* `Expr`,
+/// materialising forms that aren't first-class lists: `range(...)` → a `Vec`
+/// (`lower_range_list`), and any set-typed value (`set(...)`/`frozenset(...)`/a
+/// set local) → `Expr::SetToList`. A list-typed value passes through. Returns
+/// `Ok(None)` for anything else, so the caller falls through to its own handling.
+///
+/// Without this, reduction builtins like `sum(range(n))` / `max(set(xs))` fell
+/// through to context-free lowering (which doesn't recognise `range`/`set`) and
+/// emitted undefined `range(...)`/`set(...)` Rust calls — a silent miscompile.
+fn materialize_iterable_arg(
+    ctx: &LoweringCtx,
+    arg: &ast::Expr,
+) -> Result<Option<Expr>, FrontendError> {
+    if let ast::Expr::Call(inner) = arg {
+        if matches!(&*inner.func, ast::Expr::Name(n) if n.id.as_str() == "range")
+            && inner.keywords.is_empty()
+        {
+            return Ok(Some(lower_range_list(ctx, inner)?));
+        }
+    }
+    let lowered = lower_expr_in_ctx(ctx, arg.clone())?;
+    match infer_type_in_ctx(ctx, &lowered) {
+        Type::List(_) => Ok(Some(lowered)),
+        Type::Set(_) => Ok(Some(Expr::SetToList {
+            set: Box::new(lowered),
+        })),
+        _ => Ok(None),
+    }
+}
+
 fn lower_range_list(ctx: &LoweringCtx, call: &ast::ExprCall) -> Result<Expr, FrontendError> {
     let (start, stop, step) = match call.args.as_slice() {
         [stop] => (Expr::LitInt(0), lower_expr_in_ctx(ctx, stop.clone())?, 1i64),
@@ -7216,34 +7246,36 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     && call.keywords.is_empty()
                     && (1..=2).contains(&call.args.len())
                 {
-                    let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
-                    if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
-                        if matches!(*elem, Type::I64 | Type::F64) {
-                            let of_float = matches!(*elem, Type::F64);
-                            let start = if call.args.len() == 2 {
-                                let s = lower_expr_in_ctx(ctx, call.args[1].clone())?;
-                                let sty = infer_type_in_ctx(ctx, &s);
-                                let matches_elem = if of_float {
-                                    matches!(sty, Type::F64)
-                                } else {
-                                    matches!(sty, Type::I64)
-                                };
-                                if !matches_elem {
-                                    return Err(FrontendError::Lower(format!(
-                                        "sum(xs, start): start type {sty:?} must match the \
+                    // PMAT-521: materialise `range(...)` / a set arg into a list.
+                    if let Some(list) = materialize_iterable_arg(ctx, &call.args[0])? {
+                        if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
+                            if matches!(*elem, Type::I64 | Type::F64) {
+                                let of_float = matches!(*elem, Type::F64);
+                                let start = if call.args.len() == 2 {
+                                    let s = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                                    let sty = infer_type_in_ctx(ctx, &s);
+                                    let matches_elem = if of_float {
+                                        matches!(sty, Type::F64)
+                                    } else {
+                                        matches!(sty, Type::I64)
+                                    };
+                                    if !matches_elem {
+                                        return Err(FrontendError::Lower(format!(
+                                            "sum(xs, start): start type {sty:?} must match the \
                                          list element type ({} expected)",
-                                        if of_float { "float" } else { "int" }
-                                    )));
-                                }
-                                Some(Box::new(s))
-                            } else {
-                                None
-                            };
-                            return Ok(Expr::Sum {
-                                list: Box::new(list),
-                                of_float,
-                                start,
-                            });
+                                            if of_float { "float" } else { "int" }
+                                        )));
+                                    }
+                                    Some(Box::new(s))
+                                } else {
+                                    None
+                                };
+                                return Ok(Expr::Sum {
+                                    list: Box::new(list),
+                                    of_float,
+                                    start,
+                                });
+                            }
                         }
                     }
                 }
@@ -7446,23 +7478,28 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         kwargs_ok = false;
                     }
                     if kwargs_ok {
-                        let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
-                        if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
-                            // With a key, any element type works (the key
-                            // supplies the ordering); without, the element must
-                            // be `Ord` (or `f64`, via the fold) — PMAT-502er
-                            // adds `str`/`bool` (both `Ord`) to the int/float
-                            // first cut, so `min(words)`/`max(words)` work.
-                            if key.is_some()
-                                || matches!(*elem, Type::I64 | Type::F64 | Type::Str | Type::Bool)
-                            {
-                                return Ok(Expr::ListMinMax {
-                                    list: Box::new(list),
-                                    is_max: fname.id.as_str() == "max",
-                                    of_float: matches!(*elem, Type::F64),
-                                    key,
-                                    default,
-                                });
+                        // PMAT-521: materialise `range(...)` / a set arg into a list.
+                        if let Some(list) = materialize_iterable_arg(ctx, &call.args[0])? {
+                            if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
+                                // With a key, any element type works (the key
+                                // supplies the ordering); without, the element must
+                                // be `Ord` (or `f64`, via the fold) — PMAT-502er
+                                // adds `str`/`bool` (both `Ord`) to the int/float
+                                // first cut, so `min(words)`/`max(words)` work.
+                                if key.is_some()
+                                    || matches!(
+                                        *elem,
+                                        Type::I64 | Type::F64 | Type::Str | Type::Bool
+                                    )
+                                {
+                                    return Ok(Expr::ListMinMax {
+                                        list: Box::new(list),
+                                        is_max: fname.id.as_str() == "max",
+                                        of_float: matches!(*elem, Type::F64),
+                                        key,
+                                        default,
+                                    });
+                                }
                             }
                         }
                     }

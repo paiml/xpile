@@ -4302,6 +4302,31 @@ fn main() {
     assert_rustc_runs("list_sorted_of_set", &rust, driver);
 }
 
+/// PMAT-521 (Tranche 2 — correctness): reduction builtins over a non-list
+/// iterable — `sum(range(...))`, `sum/max/min(set(...))`. Previously silent
+/// miscompiles: the arg (`range(...)` / `set(...)`) fell through to context-free
+/// lowering and emitted undefined `range(...)`/`set(...)` calls. A shared
+/// `materialize_iterable_arg` now turns `range(...)` into a Vec and a set into
+/// `SetToList` before the reduce. Cross-checked vs python3 (10, 9, 6, 3, 1).
+#[test]
+fn reduce_over_iterable() {
+    let rust = xpile_transpile_to_rust("reduce_over_iterable.py");
+    assert!(
+        !rust.contains("sum(range(") && !rust.contains("(set(") && !rust.contains("max(set"),
+        "reductions over range/set should materialise the iterable, not emit undefined calls:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sum_range(5), 10);
+    assert_eq!(sum_range_from(2, 5), 9);
+    assert_eq!(sum_unique(vec![1, 1, 2, 3, 3]), 6);
+    assert_eq!(max_unique(vec![3, 1, 2, 2]), 3);
+    assert_eq!(min_unique(vec![3, 1, 2]), 1);
+}
+"#;
+    assert_rustc_runs("reduce_over_iterable", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
