@@ -4327,6 +4327,35 @@ fn main() {
     assert_rustc_runs("reduce_over_iterable", &rust, driver);
 }
 
+/// PMAT-522 (Tranche 2 — correctness): builtins over a `range(...)` arg
+/// (`len`/`sorted`/`reversed`) and `list(dict)`. All previously silent
+/// miscompiles (the arg fell through to context-free → undefined `range(...)`/
+/// `list(...)`). `range(...)` now materialises to a Vec via
+/// `lower_arg_materializing_range`; `list(<dict>)` → the dict's keys.
+/// Cross-checked vs python3 (5, 1, 4, 3).
+#[test]
+fn builtins_over_range_dict() {
+    let rust = xpile_transpile_to_rust("builtins_over_range_dict.py");
+    assert!(
+        !rust.contains("len(range(") && !rust.contains("sorted(range(")
+            && !rust.contains("reversed(range(") && !rust.contains("list(d"),
+        "builtins over range/dict should materialise the iterable, not emit undefined calls:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(len_range(5), 5);
+    assert_eq!(sorted_range_desc_first(5), 4);
+    assert_eq!(reversed_range_first(5), 4);
+    let mut d = std::collections::HashMap::new();
+    d.insert("a".to_string(), 1);
+    d.insert("b".to_string(), 2);
+    d.insert("c".to_string(), 3);
+    assert_eq!(dict_keys_count(d), 3);
+}
+"#;
+    assert_rustc_runs("builtins_over_range_dict", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
