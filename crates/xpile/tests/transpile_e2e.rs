@@ -3734,6 +3734,30 @@ fn main() {
     assert_rustc_runs("bit_invert", &rust, driver);
 }
 
+/// PMAT-502fc (Tranche 2): two-generator list comprehension
+/// `[expr for x in a for y in b]` → nested `for` loops appending to the
+/// accumulator (previously a hard "single `for` clause" error). Both generators
+/// must have plain-Name targets over `list[T]` iterables; per-generator `if`
+/// filters wrap their own loop. Works in both return and assignment position.
+/// Cross-checked vs python3.
+#[test]
+fn list_comp_2gen() {
+    let rust = xpile_transpile_to_rust("list_comp_2gen.py");
+    // Nested loops: an inner `for y` appears inside the outer `for x` body.
+    assert!(
+        rust.contains("for x in a.iter().cloned()") && rust.contains("for y in b.iter().cloned()"),
+        "two generators should desugar to nested for loops:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(cartesian(vec![1, 2, 3], vec![10, 20]), vec![10, 20, 20, 40, 30, 60]);
+    assert_eq!(filtered(vec![-1, 2, 3], vec![5, 20, 7]), vec![7, 9, 8, 10]);
+    assert_eq!(pairs(vec![10, 20], vec![1, 2, 3]), vec![9, 8, 7, 19, 18, 17]);
+}
+"#;
+    assert_rustc_runs("list_comp_2gen", &rust, driver);
+}
+
 /// PMAT-502ev (Tranche 2): `sorted(s)` over a str — sorts the characters into a
 /// list of 1-char strings (via `Expr::StrChars`). Completes the `sorted(X)`
 /// family (list / dict-keys / str-chars); `reverse=`/`key=` still apply.

@@ -3332,15 +3332,132 @@ fn comp_range_bounds(
 /// (PMAT-502ay): `[elem for var in iter if cond]` wraps the append in an
 /// `if cond { … }`. Multiple `if` clauses (`… if a if b`) are deferred —
 /// use `… if a and b`. Other iterables (dict, etc.) remain deferred.
+/// PMAT-502fc: desugar a two-generator list comprehension
+/// `[expr for x in a for y in b]` (with optional per-generator single `if`)
+/// into `let mut target = []` + nested `for x in a { for y in b { append } }`.
+/// Both generators must have plain-Name targets over list-typed iterables; the
+/// inner iterable is lowered with the outer var in scope. A per-generator filter
+/// wraps its own loop body. Range / tuple-target multi-generator comps remain a
+/// deferred sub-slice (clean error).
+fn desugar_list_comp_2gen(
+    ctx: &mut LoweringCtx,
+    target: &str,
+    comp: &ast::ExprListComp,
+) -> Result<Vec<Stmt>, FrontendError> {
+    // Capture the name (not `ctx`) so these helpers don't hold a borrow that
+    // would conflict with the `&mut ctx` lowering calls below.
+    let fn_name = ctx.fn_name.clone();
+    let plain_name = |g: &ast::Comprehension| -> Result<String, FrontendError> {
+        match &g.target {
+            ast::Expr::Name(n) => Ok(n.id.to_string()),
+            _ => Err(FrontendError::Lower(format!(
+                "function `{fn_name}` has a multi-generator list comprehension with a tuple/non-Name target — deferred (use plain `for x in … for y in …`)"
+            ))),
+        }
+    };
+    let list_elem = |ty: Type| -> Result<Type, FrontendError> {
+        match ty {
+            Type::List(e) => Ok(*e),
+            other => Err(FrontendError::Lower(format!(
+                "function `{fn_name}` has a multi-generator list comprehension over an iterable typing as {other:?}; v0.2.0 supports two `for` clauses over `list[T]` iterables (range / dict iterables deferred)"
+            ))),
+        }
+    };
+    let outer = &comp.generators[0];
+    let inner = &comp.generators[1];
+    for g in [outer, inner] {
+        if g.ifs.len() > 1 {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` has a list-comprehension generator with multiple `if` clauses — v0.2.0 supports one per generator (combine with `and`)",
+                ctx.fn_name
+            )));
+        }
+    }
+    let outer_var = plain_name(outer)?;
+    let inner_var = plain_name(inner)?;
+
+    // Outer generator: iterable + element type + bound var, then its filter.
+    let outer_iter = lower_expr_in_ctx(ctx, outer.iter.clone())?;
+    let outer_elem_ty = list_elem(infer_type_in_ctx(ctx, &outer_iter))?;
+    ctx.bound.insert(outer_var.clone());
+    ctx.name_types.insert(outer_var.clone(), outer_elem_ty.clone());
+    let outer_filter = comp_filter(ctx, outer, "list")?;
+
+    // Inner generator (lowered with the outer var in scope, so its iterable may
+    // reference the outer binding).
+    let inner_iter = lower_expr_in_ctx(ctx, inner.iter.clone())?;
+    let inner_elem_ty = list_elem(infer_type_in_ctx(ctx, &inner_iter))?;
+    ctx.bound.insert(inner_var.clone());
+    ctx.name_types.insert(inner_var.clone(), inner_elem_ty.clone());
+    let inner_filter = comp_filter(ctx, inner, "list")?;
+
+    let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
+    let out_ty = infer_type_in_ctx(ctx, &elem);
+    let list_ty = Type::List(Box::new(out_ty));
+    ctx.bound.insert(target.to_string());
+    ctx.name_types.insert(target.to_string(), list_ty.clone());
+
+    // Wrap a body in its generator's optional `if` filter.
+    let wrap = |filter: Option<Expr>, body: Vec<Stmt>| -> Vec<Stmt> {
+        match filter {
+            None => body,
+            Some(cond) => vec![Stmt::If {
+                cond,
+                then_body: body,
+                else_body: Vec::new(),
+            }],
+        }
+    };
+
+    let append = Stmt::ListAppend {
+        list_name: target.to_string(),
+        elem,
+    };
+    let inner_body = wrap(inner_filter, vec![append]);
+    let inner_loop = Stmt::ForEach {
+        var: inner_var,
+        iter: inner_iter,
+        elem_ty: inner_elem_ty,
+        body: inner_body,
+        over_keys: false,
+    };
+    let outer_body = wrap(outer_filter, vec![inner_loop]);
+    let outer_loop = Stmt::ForEach {
+        var: outer_var,
+        iter: outer_iter,
+        elem_ty: outer_elem_ty,
+        body: outer_body,
+        over_keys: false,
+    };
+    Ok(vec![
+        Stmt::Let {
+            name: target.to_string(),
+            ty: list_ty,
+            value: Expr::ListLit(Vec::new()),
+            mutable: true,
+        },
+        outer_loop,
+    ])
+}
+
 fn desugar_list_comp(
     ctx: &mut LoweringCtx,
     target: &str,
     comp: &ast::ExprListComp,
 ) -> Result<Vec<Stmt>, FrontendError> {
+    // PMAT-502fc: two-generator list comprehension `[expr for x in a for y in b]`
+    // → nested `for` loops appending to the accumulator. Both generators must
+    // have plain-Name targets over list-typed iterables (range / tuple-target
+    // multi-gen are deferred). Handled by a dedicated path so the single-gen
+    // lowering below is untouched.
+    if comp.generators.len() == 2 {
+        return desugar_list_comp_2gen(ctx, target, comp);
+    }
     if comp.generators.len() != 1 {
         return Err(FrontendError::Lower(format!(
-            "function `{}` uses a multi-generator list comprehension — v0.2.0 supports a single `for` clause",
-            ctx.fn_name
+            "function `{}` uses a list comprehension with {} `for` clauses — v0.2.0 supports one or two",
+            ctx.fn_name,
+            comp.generators.len()
         )));
     }
     let gen = &comp.generators[0];
