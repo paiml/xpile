@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.174] — 2026-06-13
+
+Tranche-2 slice PMAT-502ej — **direct-index of a block-producing collection**
+(`sorted(xs)[0]`, `reversed(xs)[0]`).
+
+`sorted(...)` / `reversed(...)` / block-expressions lower to a Rust block
+`{ let mut __xv = …; __xv }`, and `{block}[i]` mis-parses (Rust reads `{block}`
+as a statement and `[i]` as a separate array literal), so directly indexing
+one was a silent rustc-failure (transpilation succeeded). The `Expr::Index`
+codegen (Rust + Ruchy) now emits the collection to a temp and wraps it in
+parens when it opens with `{` → `({block})[i as usize]`. Plain `xs[i]` and
+nested `g[i][j]` are unchanged (no parens added). New `block_index.py` e2e
+fixture (`sorted(...)[0]`, `[len-1]`, `key=abs`, `reverse=True`,
+`reversed(...)[0]`), all cross-checked vs python3.
+
 ## [0.1.173] — 2026-06-13
 
 Tranche-2 slice PMAT-502ei — **bare callable name as `key=` for
