@@ -2964,6 +2964,24 @@ fn main() {
     assert_rustc_runs("aug_assign_float_int_rhs", &rust, driver);
 }
 
+/// PMAT-502bv (Tranche 2): bare `return` (no value) in a void function — the
+/// early-exit guard-clause shape → `return ();`.
+#[test]
+fn bare_return_guard() {
+    let rust = xpile_transpile_to_rust("bare_return_guard.py");
+    assert!(rust.contains("return ();"), "bare return:\n{rust}");
+    let driver = r#"
+fn main() {
+    // guard prevents the `100 / 0` floor-div panic when v == 0
+    guard_div(0);
+    guard_div(4);
+    push_pos(vec![1, 2], 9);
+    push_pos(vec![1, 2], -1);
+}
+"#;
+    assert_rustc_runs("bare_return_guard", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

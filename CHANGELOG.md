@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.108] — 2026-06-13
+
+Tranche-2 slice PMAT-502bv — **bare `return`** (no value) in a void function.
+
+A bare `return` (Python's `return None`) was rejected outright. In a void
+function (`-> None`, `fn_return_type == Unit`) it now lowers to
+`Stmt::Return(Expr::Unit)` → `return ();`, enabling the ubiquitous early-exit
+guard-clause shape (`if invalid: return`). In a value-returning function a
+bare `return` would produce `None` (a type error), so it stays rejected — now
+with a clearer message pointing at the missing value / `-> None` annotation.
+rustc round-trip `bare_return_guard.py` (the guard prevents a `100 // 0`
+floor-div panic when the argument is 0): `guard_div(0)` and `push_pos(_, -1)`
+return early without panicking.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.107] — 2026-06-13
 
 Tranche-2 slice PMAT-502bu — **float augmented assignment with a non-float

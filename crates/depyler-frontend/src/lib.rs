@@ -1032,17 +1032,26 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         ast::Stmt::Raise(r) => lower_raise_stmt(ctx, r).map(|s| vec![s]),
         // PMAT-502bm: an early `return <expr>` (guard clause) → `Stmt::Return`.
         // The backends already emit `return <expr>;` (the C frontend produces
-        // these). A bare `return` (no value) is deferred.
-        ast::Stmt::Return(ret) => {
-            let value = ret.value.as_ref().ok_or_else(|| {
-                FrontendError::Lower(format!(
-                    "function `{}` has a bare `return` (no value) — deferred at v0.2.0",
-                    ctx.fn_name
-                ))
-            })?;
-            let lowered = lower_expr_in_ctx(ctx, (**value).clone())?;
-            Ok(vec![Stmt::Return(lowered)])
-        }
+        // these).
+        // PMAT-502bv: a bare `return` (no value) is Python's `return None`.
+        // In a void function (`-> None`, `fn_return_type == Unit`) it lowers
+        // to `Stmt::Return(Expr::Unit)` → `return ();` — the early-exit guard
+        // clause shape (`if invalid: return`). In a value-returning function
+        // a bare `return` would yield `None`, a type error, so it stays
+        // rejected (with a clearer message).
+        ast::Stmt::Return(ret) => match ret.value.as_ref() {
+            Some(value) => {
+                let lowered = lower_expr_in_ctx(ctx, (**value).clone())?;
+                Ok(vec![Stmt::Return(lowered)])
+            }
+            None if matches!(ctx.fn_return_type, Type::Unit) => {
+                Ok(vec![Stmt::Return(Expr::Unit)])
+            }
+            None => Err(FrontendError::Lower(format!(
+                "function `{}` has a bare `return` (Python `return None`) but its return type is not `None` — add a return value or annotate `-> None`",
+                ctx.fn_name
+            ))),
+        },
         // PMAT-040 / XPILE-BASHRS-MERGER-001 v0.3.0 falsifier evidence:
         // `subprocess.run([...])` is the first cross-domain producer
         // of `Stmt::Cmd`. Recognising it in depyler-frontend means
