@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.225] — 2026-06-14
+
+Tranche 2 — PMAT-525 (correctness): comprehension/genexpr loop var typed as the
+element.
+
+- Expression-position list/set/dict comprehensions and generator expressions
+  lowered the body with the loop var unbound (defaulting to `i64`), so
+  `[p[1] for p in ps]` / `sum(p[1] for p in ps)` over a `list[tuple[..]]`
+  miscompiled (generic `[1]` indexing on a tuple) and `[p.x for p in ps]` over a
+  `list[struct]` was rejected. `lower_comp_to_map` now takes a body-lowering
+  closure and binds the loop var to the iterable's element type before lowering
+  the filter + body. **No new IR.**
+- New e2e fixture `comp_typed_element.py` (rustc round-trip cross-checked vs
+  python3). e2e 286 → 287. (`map`/`filter` builtins + bare closures still
+  untyped — follow-up.)
+
 ## [0.1.224] — 2026-06-14
 
 Tranche 2 — PMAT-524 (correctness): `sorted`/`min`/`max` `key=` lambda indexing a
