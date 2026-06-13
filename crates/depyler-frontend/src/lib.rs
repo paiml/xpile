@@ -4925,6 +4925,8 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             return Ok(Expr::IntRadixStr {
                                 value: Box::new(value),
                                 radix,
+                                prefixed: true,
+                                upper: false,
                             });
                         }
                         return Err(FrontendError::Lower(format!(
@@ -6720,15 +6722,37 @@ fn lower_percent_format(
                         }
                     }
                     'f' if matches!(ty, Type::F64) => {}
-                    's' | 'd' | 'i' | 'f' => {
+                    // PMAT-502dp: `%x`/`%X`/`%o` over an int — wrap the arg as a
+                    // *no-prefix* sign-first radix string (Rust's `{:x}` is
+                    // two's-complement for negatives; Python is sign-first), then
+                    // render it via `{}`. Only an optional width is allowed —
+                    // `0`/`+`/precision on the resulting `String` would diverge.
+                    'x' | 'X' | 'o' if matches!(ty, Type::I64) => {
+                        if precision.is_some() || flag_zero || flag_plus {
+                            return Err(FrontendError::Lower(
+                                "`%x`/`%X`/`%o` support only an optional width (precision, `0`, \
+                                 and `+` are not yet supported)"
+                                    .into(),
+                            ));
+                        }
+                        let radix = if conv == 'o' { Radix::Oct } else { Radix::Hex };
+                        let v = args[arg_idx].clone();
+                        args[arg_idx] = Expr::IntRadixStr {
+                            value: Box::new(v),
+                            radix,
+                            prefixed: false,
+                            upper: conv == 'X',
+                        };
+                    }
+                    's' | 'd' | 'i' | 'f' | 'x' | 'X' | 'o' => {
                         return Err(FrontendError::Lower(format!(
                             "`%{conv}` format expects a different argument type than {ty:?} \
-                             (`%s`/`%d`/`%f` support str/bool/float, int, and float respectively)"
+                             (`%s` str/bool/float, `%d`/`%x`/`%X`/`%o` int, `%f` float)"
                         )));
                     }
                     _ => {
                         return Err(FrontendError::Lower(format!(
-                            "unsupported `%{conv}` conversion — `%x`/`%X`/`%o` are not yet supported"
+                            "unsupported `%{conv}` conversion"
                         )));
                     }
                 }

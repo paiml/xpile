@@ -869,17 +869,29 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         }
         // PMAT-502cv: hex/oct/bin → radix string, sign-first (magnitude via
         // `unsigned_abs` so i64::MIN is safe).
-        Expr::IntRadixStr { value, radix } => {
+        Expr::IntRadixStr {
+            value,
+            radix,
+            prefixed,
+            upper,
+        } => {
             out.push_str("{ let __n = (");
             emit_expr(out, value, mode)?;
             out.push_str(
                 "); let __m = __n.unsigned_abs(); let __sign = if __n < 0 { \"-\" } else { \"\" }; format!(\"{}",
             );
-            out.push_str(match radix {
-                Radix::Hex => "0x{:x}",
-                Radix::Oct => "0o{:o}",
-                Radix::Bin => "0b{:b}",
-            });
+            // PMAT-502dp: prefix (`0x`/`0o`/`0b`) only when `prefixed`; the
+            // hex spec is `{:X}` when `upper`.
+            let (prefix, spec) = match radix {
+                Radix::Hex if *upper => ("0x", "{:X}"),
+                Radix::Hex => ("0x", "{:x}"),
+                Radix::Oct => ("0o", "{:o}"),
+                Radix::Bin => ("0b", "{:b}"),
+            };
+            if *prefixed {
+                out.push_str(prefix);
+            }
+            out.push_str(spec);
             out.push_str("\", __sign, __m) }");
         }
         // PMAT-502da: `int(s, base)` → `i64::from_str_radix((s).trim(), base)`

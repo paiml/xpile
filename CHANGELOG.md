@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.154] — 2026-06-13
+
+Tranche-2 slice PMAT-502dp — **printf `%x` / `%X` / `%o`**.
+
+Completes the printf conversion set. Rust's `{:x}` uses two's-complement for
+negatives, but Python's `%x` is sign-first (`"%x" % -255` = `"-ff"`), so the
+arg is wrapped as a **no-prefix** sign-first radix string (`Expr::IntRadixStr`
+gains `prefixed`/`upper` flags — `false`/case-dependent for printf, vs the
+`hex`/`oct`/`bin` builtins which stay `0x`-prefixed lower-case) and rendered via
+`{}`. `%X` selects upper-case hex. Only an optional width is allowed (`0`/`+`/
+precision on the resulting `String` would diverge → rejected). rustc round-trip
+`percent_format_radix.py` (cross-checked vs `python3`): `"%x" % 255` = `"ff"`,
+`"%x" % -255` = `"-ff"`, `"%X" % 255` = `"FF"`, `"%o" % 8` = `"10"`, `"%o" %
+-8` = `"-10"`, `"0x%x" % 255` = `"0xff"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.153] — 2026-06-13
 
 Tranche-2 slice PMAT-502do — **`%s` over `bool`/`float`**.

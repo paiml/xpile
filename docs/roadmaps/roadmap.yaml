@@ -1426,6 +1426,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "v0.1.151 deferred %s on bool/float (Rust {} gives 'true'/'3' not Python 'True'/'3.0'). FIX: in lower_percent_format's %s arm, str()-convert the arg in place before the {} placeholder — bool -> Expr::IfExpr{cond, then=LitStr('True'), else=LitStr('False')}; float -> Expr::ToStr{value, of_float:true} (Python float repr). args Vec made mut; arg cloned then replaced. Width/precision then apply to the resulting String (matching Python — e.g. %10s right-pads, %.2s truncates). %s over int/str unchanged ({} direct; int still rejects precision since Rust ignores int precision). rustc round-trip percent_format_bool_float.py (cross-checked vs python3): '%s'%True='True', '%s'%False='False', '%s'%3.0='3.0', '%s'%3.14='3.14', '[%s|%s]'%(True,2.5)='[True|2.5]', '%10s'%True='      True'. FREE CI. SHIPPED v0.1.153. %-FORMAT FOLLOW-UPS remaining: %x/%X/%o (need sign-first no-prefix radix); fmt-string-variable LHS. NEXT: x is None (Option model); str.rsplit; OR decompose try/except->Result (PMAT-503b epic — highest structural EV, needs design)."
+- id: PMAT-502DP
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502dp: [Tranche2] printf %x/%X/%o radix conversions'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "Completes the printf conversion set. Rust {:x} is TWO'S-COMPLEMENT for negatives but Python %x is SIGN-FIRST ('%x'%-255='-ff'), so wrap the int arg as a NO-PREFIX sign-first radix string and render via {}. Expr::IntRadixStr gains prefixed:bool + upper:bool (hex/oct/bin builtins set prefixed:true,upper:false → unchanged 0x...; printf sets prefixed:false, upper=(conv=='X')). Codegen rust/ruchy: (prefix only if prefixed) + spec {:x}/{:X}/{:o}/{:b}. In lower_percent_format: 'x'|'X'|'o' over I64 → clone arg, replace with IntRadixStr{prefixed:false, upper:conv=='X', radix Oct for 'o' else Hex}; then {} placeholder (width OK via right-align; 0/+/precision REJECTED since they'd diverge on the String). Lean IntRadixStr arms use `..` (unaffected). rustc round-trip percent_format_radix.py (cross-checked vs python3 incl negatives): '%x'%255='ff', '%x'%-255='-ff', '%X'%255='FF', '%o'%8='10', '%o'%-8='-10', '0x%x'%255='0xff'. hex()/oct()/bin() builtins regression-verified unchanged. FREE CI. SHIPPED v0.1.154. **PRINTF %-FORMAT NOW COMPLETE: %s(str/int/bool/float)/%d/%i/%f/%x/%X/%o/%% + flags -/0/+ + width + precision.** Only fmt-string-VARIABLE LHS remains deferred. NEXT: x is None (Option model — structural, needs design); try/except->Result (PMAT-503b); classes; varargs; nested fns."
 - id: PMAT-465
   github_issue: 496
   item_type: task

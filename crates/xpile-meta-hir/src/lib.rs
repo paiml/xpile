@@ -1301,7 +1301,15 @@ pub enum Expr {
     /// `{ let __n = (<v>); let __m = __n.unsigned_abs(); let __sign = if
     /// __n < 0 { "-" } else { "" }; format!("{}<prefix>{:<spec>}", __sign,
     /// __m) }` (`__m` is the magnitude so i64::MIN is safe). Lean refuses.
-    IntRadixStr { value: Box<Expr>, radix: Radix },
+    /// PMAT-502dp: `prefixed` controls the `0x`/`0o`/`0b` prefix (`true` for
+    /// the `hex`/`oct`/`bin` builtins; `false` for printf `%x`/`%X`/`%o`, which
+    /// emit bare digits). `upper` selects upper-case hex (`%X`).
+    IntRadixStr {
+        value: Box<Expr>,
+        radix: Radix,
+        prefixed: bool,
+        upper: bool,
+    },
     /// `int(s, base)` — parse a string in the given radix (→ `int`).
     /// PMAT-502da (Tranche 2); the str→int reverse of [`Expr::IntRadixStr`].
     /// `radix` is a literal `2..=36`. Rust/Ruchy emit
