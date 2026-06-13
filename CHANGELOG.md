@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.207] — 2026-06-13
+
+Classes-epic slice PMAT-506g — **dataclass `@staticmethod`** (associated function
++ `Class::method` call dispatch).
+
+- A class `@staticmethod` lowers to a plain associated function (no `self`
+  receiver) inside the `impl` block — it joins the same `methods` vec and emits
+  as `pub fn m(args) -> R { … }` for free. A call `Class.method(args)` (receiver
+  is a known struct *name*, not an instance) lowers to `Class::method(args)`,
+  reusing `Expr::Call` with a qualified callee — **no new IR**.
+- The module pre-pass registers each static method under a qualified signature
+  key `Class::method`, so the static call types via the existing signature table
+  (presence of the key is itself the "this is a static method" signal). An
+  instance method reached via the class name (`Box.get(5)`) errors cleanly rather
+  than emitting an invalid `Box::get(5)` (missing `&self`).
+- New e2e fixtures `dataclass_staticmethod.py` (rustc round-trip cross-checked vs
+  python3 — incl. an instance method calling static methods via the class name)
+  and `staticmethod_instance_via_class_rejected.py` (rejection). e2e 268 → 270.
+
 ## [0.1.206] — 2026-06-13
 
 Classes-epic slice PMAT-506f — **dataclass field defaults** `x: T = <literal>`.
