@@ -232,10 +232,15 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
             }
             // PMAT-470 (R1): `x <op>= e` is a read-modify-write
             // reassignment → mutates `x`, so count it like an Assign.
+            // PMAT-502ea: a subscript target (`xs[i] += v`, `grid[i][j] += v`)
+            // mutates the base collection in place — count the base name too,
+            // at any depth, or a literal-initialised receiver is never `mut`.
             ast::Stmt::AugAssign(a) => {
+                let bump = if in_loop { 2 } else { 1 };
                 if let ast::Expr::Name(n) = a.target.as_ref() {
-                    let bump = if in_loop { 2 } else { 1 };
                     *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                } else if let Some(name) = subscript_chain_base_name(a.target.as_ref()) {
+                    *counts.entry(name).or_insert(0) += bump;
                 }
             }
             // PMAT-466: an annotated local binding counts exactly ONCE,
@@ -490,16 +495,33 @@ fn simple_assign_target_name(a: &ast::StmtAssign) -> Option<String> {
 /// PMAT-466: the base name of a subscript-target assign (`name[k] = v`),
 /// used by the mutability pre-pass — such an assignment mutates `name`
 /// in place, so the binding must be `mut`.
+/// PMAT-502ea: peel a (possibly nested) subscript expression
+/// `base[i]…[k]` to its base Name. Used by the mutability pre-walk so a
+/// subscript assignment / augmented assignment marks the base collection
+/// `let mut` — at any nesting depth (`xs[i] = v`, `grid[i][j] += v`).
+/// Returns None unless the expression is a subscript bottoming at a Name.
+fn subscript_chain_base_name(expr: &ast::Expr) -> Option<String> {
+    let ast::Expr::Subscript(sub) = expr else {
+        return None;
+    };
+    let mut cur = sub.value.as_ref();
+    loop {
+        match cur {
+            ast::Expr::Name(n) => return Some(n.id.to_string()),
+            ast::Expr::Subscript(inner) => cur = inner.value.as_ref(),
+            _ => return None,
+        }
+    }
+}
+
 fn subscript_assign_base_name(a: &ast::StmtAssign) -> Option<String> {
     if a.targets.len() != 1 {
         return None;
     }
-    if let ast::Expr::Subscript(sub) = &a.targets[0] {
-        if let ast::Expr::Name(n) = sub.value.as_ref() {
-            return Some(n.id.to_string());
-        }
-    }
-    None
+    // PMAT-502ea: peel nested chains too (`grid[i][j] = v` → `grid`), not
+    // just single-level `xs[i] = v` — otherwise a literal-initialised nested
+    // grid is never marked `let mut`.
+    subscript_chain_base_name(&a.targets[0])
 }
 
 pub struct PythonFrontend;
@@ -2715,72 +2737,29 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
         // (`Type::List` → `Stmt::IndexAssign`, `Type::Dict` →
         // `Stmt::DictSet`). Either way the receiver is marked mutable.
         ast::Expr::Subscript(sub) => {
-            // PMAT-502dy: peel a (possibly nested) subscript chain bottoming
-            // at a Name — `grid[i][j] = v` → base `grid`, slices `[i, j]`
-            // (base→leaf). A single slice is the existing `xs[i]`/`d[k]` form.
-            let mut slices: Vec<ast::Expr> = vec![*sub.slice];
-            let mut base = *sub.value;
-            let receiver = loop {
-                match base {
-                    ast::Expr::Name(n) => break n.id.to_string(),
-                    ast::Expr::Subscript(inner) => {
-                        slices.push(*inner.slice);
-                        base = *inner.value;
-                    }
-                    _ => {
-                        return Err(FrontendError::Lower(format!(
-                            "function `{}` has a non-Name subscript-assignment target — v0.2.0 supports `<name>[k]…[k] = v`",
-                            ctx.fn_name
-                        )));
-                    }
-                }
-            };
-            slices.reverse();
-            let receiver_ty = ctx.name_types.get(&receiver).cloned();
-            // PMAT-502dy: nested list indexing `grid[i][j] = v` — the base must
-            // type as `list[list[…]]` nested at least as deep as the index
-            // path, and every index must be `int`. (Dict-nested paths and
-            // single-level dict assignment fall through to the cases below.)
-            if slices.len() > 1 {
-                let mut depth_ty = receiver_ty.clone();
-                let mut ok_depth = true;
-                for _ in 0..slices.len() {
-                    match depth_ty {
-                        Some(Type::List(elem)) => depth_ty = Some(*elem),
-                        _ => {
-                            ok_depth = false;
-                            break;
-                        }
-                    }
-                }
-                if ok_depth {
-                    let mut indices = Vec::with_capacity(slices.len());
-                    for s in slices {
-                        let idx = lower_expr_in_ctx(ctx, s)?;
-                        if !matches!(infer_type_in_ctx(ctx, &idx), Type::I64) {
-                            return Err(FrontendError::Lower(format!(
-                                "function `{}` nested-indexed-assigns `{receiver}[…]` with a non-int index — only `int` indices are supported",
-                                ctx.fn_name
-                            )));
-                        }
-                        indices.push(idx);
-                    }
-                    let value = lower_expr_in_ctx(ctx, *asn.value)?;
-                    ctx.mutable.insert(receiver.clone());
-                    return Ok(Stmt::IndexAssign {
-                        list_name: receiver,
-                        indices,
-                        value,
-                    });
-                }
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` nested-subscript-assigns `{receiver}[…][…]` but it is not a nested `list[list[…]]` of matching depth — only nested-list assignment is supported at v0.2.0",
-                    ctx.fn_name
-                )));
+            // PMAT-502dy / PMAT-502ea: nested subscript chain `grid[i][j] = v`
+            // → base `grid` + index path `[i, j]`, validated as a nested
+            // `list[list[…]]`. The peel/validate is shared with augmented
+            // nested assignment (`grid[i][j] += v`). `None` ⇒ single-level
+            // `xs[i]` / `d[k]`, handled below.
+            if let Some((receiver, indices)) = peel_nested_subscript_assign(ctx, &sub)? {
+                let value = lower_expr_in_ctx(ctx, *asn.value)?;
+                ctx.mutable.insert(receiver.clone());
+                return Ok(Stmt::IndexAssign {
+                    list_name: receiver,
+                    indices,
+                    value,
+                });
             }
             // Single subscript: the existing list / dict assignment forms.
-            let single = slices.pop().expect("exactly one slice");
-            match receiver_ty {
+            // The peel above guarantees the base is a Name and exactly one
+            // slice remains.
+            let receiver = match sub.value.as_ref() {
+                ast::Expr::Name(n) => n.id.to_string(),
+                _ => unreachable!("peel_nested_subscript_assign validated a Name base"),
+            };
+            let single = (*sub.slice).clone();
+            match ctx.name_types.get(&receiver).cloned() {
                 Some(Type::List(_)) => {
                     // PMAT-466: ctx-aware so a dict read used as a list
                     // index (`xs[d[k]] = v`) lowers to DictGet, not a
@@ -2910,6 +2889,69 @@ fn combine_aug(
     }
 }
 
+/// PMAT-502ea: peel a subscript-assignment target `base[i]…[k]` to its
+/// Name receiver + lowered index path (base→leaf), shared by plain
+/// (`grid[i][j] = v`, PMAT-502dy) and augmented (`grid[i][j] += v`)
+/// nested assignment. Returns `Ok(None)` for a single-level target
+/// (`xs[i]` / `d[k]`) so the caller applies its own list/dict handling;
+/// returns `Ok(Some((receiver, indices)))` for a genuinely-nested (≥2)
+/// list target after validating the base types as `list[list[…]]` of
+/// matching depth with every index `int`. A non-Name base or a
+/// too-shallow / non-list base / non-int index is a clear error.
+fn peel_nested_subscript_assign(
+    ctx: &mut LoweringCtx,
+    sub: &ast::ExprSubscript,
+) -> Result<Option<(String, Vec<Expr>)>, FrontendError> {
+    let mut slices: Vec<ast::Expr> = vec![(*sub.slice).clone()];
+    let mut base = (*sub.value).clone();
+    let receiver = loop {
+        match base {
+            ast::Expr::Name(n) => break n.id.to_string(),
+            ast::Expr::Subscript(inner) => {
+                slices.push((*inner.slice).clone());
+                base = (*inner.value).clone();
+            }
+            _ => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` has a non-Name subscript-assignment target — v0.2.0 supports `<name>[k]…[k] = v`",
+                    ctx.fn_name
+                )));
+            }
+        }
+    };
+    slices.reverse();
+    // Single subscript: the caller handles the list/dict single-level form.
+    if slices.len() == 1 {
+        return Ok(None);
+    }
+    // Nested list indexing — the base must type as `list[list[…]]` nested at
+    // least as deep as the index path, and every index must be `int`.
+    let mut depth_ty = ctx.name_types.get(&receiver).cloned();
+    for _ in 0..slices.len() {
+        match depth_ty {
+            Some(Type::List(elem)) => depth_ty = Some(*elem),
+            _ => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` nested-subscript-assigns `{receiver}[…][…]` but it is not a nested `list[list[…]]` of matching depth — only nested-list assignment is supported at v0.2.0",
+                    ctx.fn_name
+                )));
+            }
+        }
+    }
+    let mut indices = Vec::with_capacity(slices.len());
+    for s in slices {
+        let idx = lower_expr_in_ctx(ctx, s)?;
+        if !matches!(infer_type_in_ctx(ctx, &idx), Type::I64) {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` nested-indexed-assigns `{receiver}[…]` with a non-int index — only `int` indices are supported",
+                ctx.fn_name
+            )));
+        }
+        indices.push(idx);
+    }
+    Ok(Some((receiver, indices)))
+}
+
 fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<Stmt, FrontendError> {
     let rhs = lower_expr_in_ctx(ctx, (*aug.value).clone())?;
     match aug.target.as_ref() {
@@ -2928,14 +2970,30 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
         // `xs[i] += v` — desugar to `d[k] = d[k] <op> v`, reusing the
         // shipped DictGet/Index reads + DictSet/IndexAssign writes.
         ast::Expr::Subscript(sub) => {
+            // PMAT-502ea: nested augmented subscript `grid[i][j] += v` →
+            // `grid[i][j] = grid[i][j] <op> v`. Peel + validate the index
+            // path (shared with plain `= v`), fold the indices into a nested
+            // `Expr::Index` read for the current value, combine, then emit a
+            // multi-index `IndexAssign`. `None` ⇒ single-level (below).
+            if let Some((receiver, indices)) = peel_nested_subscript_assign(ctx, sub)? {
+                let mut current = Expr::Ident(receiver.clone());
+                for idx in &indices {
+                    current = Expr::Index {
+                        collection: Box::new(current),
+                        index: Box::new(idx.clone()),
+                    };
+                }
+                let value = combine_aug(ctx, &aug.op, current, rhs)?;
+                ctx.mutable.insert(receiver.clone());
+                return Ok(Stmt::IndexAssign {
+                    list_name: receiver,
+                    indices,
+                    value,
+                });
+            }
             let receiver = match sub.value.as_ref() {
                 ast::Expr::Name(n) => n.id.to_string(),
-                _ => {
-                    return Err(FrontendError::Lower(format!(
-                        "function `{}` augments a non-Name subscript target — v0.2.0 supports `<name>[k] <op>= v`",
-                        ctx.fn_name
-                    )));
-                }
+                _ => unreachable!("peel_nested_subscript_assign validated a Name base"),
             };
             match ctx.name_types.get(&receiver).cloned() {
                 Some(Type::Dict(_, _)) => {

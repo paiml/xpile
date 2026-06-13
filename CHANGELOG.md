@@ -7,6 +7,31 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.165] — 2026-06-13
+
+Tranche-2 slice PMAT-502ea — **nested augmented subscript assignment**
+(`grid[i][j] += v`).
+
+The augmented form of nested subscript assignment was rejected (only
+`<name>[k] <op>= v` was supported). `grid[i][j] += v` now desugars to
+`grid[i][j] = grid[i][j] <op> v`, reusing the nested-`IndexAssign` write
+(PMAT-502dy) and folding the index path into a nested `Expr::Index` read
+for the current value. The peel/validate of the index chain is shared with
+plain nested assignment via a new `peel_nested_subscript_assign` helper.
+
+Also fixes a **latent mutability bug** the work surfaced: the
+assignment-count pre-walk only marked a subscript receiver `let mut` when
+the chain was single-level *and* via `subscript_assign_base_name`, and it
+ignored subscript targets in augmented assignments entirely. A
+literal-initialised receiver mutated only through `xs[i] += v` (single-level
+PMAT-497) or `grid[i][j] = v` (plain nested PMAT-502dy) therefore emitted a
+non-`mut` `let` and failed to compile (`cannot borrow as mutable`); it
+worked before only when the receiver was a comprehension result (forced
+`let mut`) or mutated some other way. The pre-walk now peels a subscript
+chain to its base Name at any depth, for both plain and augmented
+assignment. New `nested_aug_assign.py` e2e fixture (2D comp-init, 2D/3D
+literal, single list/dict regressions), all cross-checked vs python3.
+
 ## [0.1.164] — 2026-06-13
 
 Tranche-2 slice PMAT-502dz — **`for _ in range(n)` / `[… for _ in range(n)]`**
