@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.204] — 2026-06-13
+
+Classes-epic slice PMAT-506d — **dataclass methods** (`def m(self, …)` → `impl`
+block + method-call dispatch).
+
+- Methods live in `Item::Struct.methods` (a `Function` whose first param `self`
+  types as `Type::Struct` of the class). Rust/Ruchy emit `impl Name { pub fn
+  m(&self, …) -> R { body } }` (the `self` param renders as `&self`); Lean
+  refuses. New `Expr::MethodCall { obj, method, args }` → `(obj).method(args)`,
+  routed in the ctx-aware `Call(Attribute)` dispatch on struct receivers.
+- `lower_function_def` gains `self_type`; a lightweight `class_def_signature`
+  builds `structs` + a new `struct_methods` registry (method return types) in
+  the pre-pass. Inference: `MethodCall` → the method's declared return type.
+- Read-only first cut: a method assigning `self.field` is rejected (`&mut self`
+  + caller mutability deferred); classmethods/staticmethods rejected.
+- New e2e fixture `dataclass_methods.py` (incl. `self.area()` from another
+  method), rustc round-trip cross-checked vs python3. e2e 265 → 266.
+
 ## [0.1.203] — 2026-06-13
 
 Classes-epic slice PMAT-506c — **dataclass field assignment** `obj.field = value`.
