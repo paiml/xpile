@@ -1713,6 +1713,11 @@ pub enum StrMethodOp {
     /// `.split(sep)` → `.split(&(sep)[..]).map(|s| s.to_string())
     /// .collect::<Vec<String>>()` (List(Str), 1 arg). PMAT-492c.
     Split,
+    /// `.split()` (no arg) → `.split_whitespace().map(|s| s.to_string())
+    /// .collect::<Vec<String>>()` (List(Str), 0 args). PMAT-502co. Python's
+    /// no-arg split runs on any whitespace and drops empty fields, exactly
+    /// like Rust's `split_whitespace`.
+    SplitWhitespace,
     /// `.join(xs)` → `xs.join(&(sep)[..])` (Str, 1 list arg). PMAT-492d.
     /// NOTE the **receiver/arg inversion**: Python `sep.join(xs)` has the
     /// separator as receiver, but Rust's `[String]::join` has the list as

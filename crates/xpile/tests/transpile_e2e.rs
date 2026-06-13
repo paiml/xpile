@@ -3347,6 +3347,23 @@ fn main() {
     assert_rustc_runs("min_max_str", &rust, driver);
 }
 
+/// PMAT-502co (Tranche 2): no-arg `str.split()` → whitespace split.
+#[test]
+fn split_whitespace() {
+    let rust = xpile_transpile_to_rust("split_whitespace.py");
+    assert!(
+        rust.contains(".split_whitespace().map(|__c| __c.to_string()).collect::<Vec<String>>()"),
+        "split():\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(word_count(String::from("  hello   world  foo ")), 3);
+    assert_eq!(first_word(String::from("  alpha beta")), "alpha");
+}
+"#;
+    assert_rustc_runs("split_whitespace", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

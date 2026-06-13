@@ -3887,7 +3887,7 @@ fn infer_type(e: &Expr) -> Type {
         Expr::StrMethod { op, .. } => match op {
             StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
             StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
-            StrMethodOp::Split => Type::List(Box::new(Type::Str)),
+            StrMethodOp::Split | StrMethodOp::SplitWhitespace => Type::List(Box::new(Type::Str)),
             StrMethodOp::Join | StrMethodOp::Replace => Type::Str,
             // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
             StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
@@ -4139,7 +4139,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::StrMethod { op, .. } => match op {
             StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
             StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
-            StrMethodOp::Split => Type::List(Box::new(Type::Str)),
+            StrMethodOp::Split | StrMethodOp::SplitWhitespace => Type::List(Box::new(Type::Str)),
             StrMethodOp::Join | StrMethodOp::Replace => Type::Str,
             // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
             StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
@@ -4565,6 +4565,20 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             // fields, each with an optional spec `{:.2f}`.
                             return lower_str_format(ctx, fmt, &call.args);
                         }
+                    }
+                }
+                // PMAT-502co: `s.split()` (no arg) → whitespace split. Checked
+                // before the generic dispatch (which maps "split" → the 1-arg
+                // `Split`); the 1-arg `s.split(sep)` form is handled there.
+                if attr.attr.as_str() == "split" && call.args.is_empty() && call.keywords.is_empty()
+                {
+                    let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &recv), Type::Str) {
+                        return Ok(Expr::StrMethod {
+                            recv: Box::new(recv),
+                            op: StrMethodOp::SplitWhitespace,
+                            args: Vec::new(),
+                        });
                     }
                 }
                 // PMAT-492/493b: string methods — `s.upper()/.lower()/
@@ -6365,6 +6379,8 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
 fn str_method_arity(op: StrMethodOp) -> usize {
     match op {
         StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => 0,
+        // PMAT-502co: no-arg whitespace split.
+        StrMethodOp::SplitWhitespace => 0,
         StrMethodOp::StartsWith
         | StrMethodOp::EndsWith
         | StrMethodOp::Split
