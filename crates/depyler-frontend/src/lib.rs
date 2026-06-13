@@ -32,8 +32,8 @@ use std::rc::Rc;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
     BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListMutateOp, ListQueryOp, Module,
-    NumBuiltinOp, PairIterKind, Param, Radix, SetOp, SortKey, SourceLang, Stmt, StrMethodOp, Type,
-    UnOp,
+    NumBuiltinOp, PairIterKind, Param, Radix, SetOp, SetPredOp, SortKey, SourceLang, Stmt,
+    StrMethodOp, Type, UnOp,
 };
 
 use rustpython_parser::ast;
@@ -4432,6 +4432,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::StrContains { .. } => Type::Bool,
         // PMAT-502g: set algebra preserves the operand set type.
         Expr::SetOp { lhs, .. } => infer_type(lhs),
+        // PMAT-502ep: set predicates yield Bool.
+        Expr::SetPred { .. } => Type::Bool,
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => Type::Tuple(elems.iter().map(infer_type).collect()),
         // PMAT-502q: tuple constant-index → the N-th element type.
@@ -4748,6 +4750,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::StrContains { .. } => Type::Bool,
         // PMAT-502g: set algebra preserves the operand set type.
         Expr::SetOp { lhs, .. } => infer_type_in_ctx(ctx, lhs),
+        // PMAT-502ep: set predicates yield Bool.
+        Expr::SetPred { .. } => Type::Bool,
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => {
             Type::Tuple(elems.iter().map(|e| infer_type_in_ctx(ctx, e)).collect())
@@ -5140,6 +5144,36 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         return Ok(Expr::SetOp {
                             lhs: Box::new(recv),
                             op: sop,
+                            rhs: Box::new(other),
+                        });
+                    }
+                }
+                // PMAT-502ep: set predicate methods — `a.issubset(b)` /
+                // `a.issuperset(b)` / `a.isdisjoint(b)` → `Expr::SetPred`
+                // (bool). Both receiver and argument must be sets.
+                if let Some(pop) = set_pred_method(attr.attr.as_str()) {
+                    let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &recv), Type::Set(_)) {
+                        if !call.keywords.is_empty() || call.args.len() != 1 {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` calls set `.{}(...)` with {} positional arg(s){}; v0.2.0 takes exactly 1 (a set)",
+                                ctx.fn_name,
+                                attr.attr.as_str(),
+                                call.args.len(),
+                                if call.keywords.is_empty() { "" } else { " plus keyword args" },
+                            )));
+                        }
+                        let other = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                        if !matches!(infer_type_in_ctx(ctx, &other), Type::Set(_)) {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` calls set `.{}(...)` with a non-set argument",
+                                ctx.fn_name,
+                                attr.attr.as_str(),
+                            )));
+                        }
+                        return Ok(Expr::SetPred {
+                            lhs: Box::new(recv),
+                            op: pop,
                             rhs: Box::new(other),
                         });
                     }
@@ -7911,6 +7945,31 @@ fn set_method_op(name: &str) -> Option<SetOp> {
     }
 }
 
+/// PMAT-502ep: map a comparison operator to a set predicate (subset / proper /
+/// superset). `==`/`!=` return `None` (handled by the plain `BinOp`, which
+/// `HashSet` supports via `PartialEq`).
+fn set_pred_from_cmp(op: &ast::CmpOp) -> Option<SetPredOp> {
+    match op {
+        ast::CmpOp::LtE => Some(SetPredOp::Subset),
+        ast::CmpOp::Lt => Some(SetPredOp::ProperSubset),
+        ast::CmpOp::GtE => Some(SetPredOp::Superset),
+        ast::CmpOp::Gt => Some(SetPredOp::ProperSuperset),
+        _ => None,
+    }
+}
+
+/// PMAT-502ep: map a set-predicate *method* name to its [`SetPredOp`]
+/// (`a.issubset(b)` / `a.issuperset(b)` / `a.isdisjoint(b)`). The methods are
+/// non-strict (no proper-subset method in Python). `None` otherwise.
+fn set_pred_method(name: &str) -> Option<SetPredOp> {
+    match name {
+        "issubset" => Some(SetPredOp::Subset),
+        "issuperset" => Some(SetPredOp::Superset),
+        "isdisjoint" => Some(SetPredOp::Disjoint),
+        _ => None,
+    }
+}
+
 fn lower_binop(op: &ast::Operator) -> Result<BinOp, FrontendError> {
     Ok(match op {
         ast::Operator::Add => BinOp::Add,
@@ -8006,10 +8065,25 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
     }
     let mut acc: Option<Expr> = None;
     for (i, op) in c.ops.iter().enumerate() {
-        let cmp = Expr::BinOp {
-            op: cmp_binop(op)?,
-            lhs: Box::new(operands[i].clone()),
-            rhs: Box::new(operands[i + 1].clone()),
+        // PMAT-502ep: `a <= b` / `<` / `>=` / `>` over two sets is a
+        // subset/superset predicate, not an ordering comparison (HashSet has no
+        // `<`). Route to `Expr::SetPred`; `==`/`!=` keep the plain `BinOp`
+        // (HashSet implements `PartialEq`).
+        let cmp = if matches!(infer_type_in_ctx(ctx, &operands[i]), Type::Set(_))
+            && matches!(infer_type_in_ctx(ctx, &operands[i + 1]), Type::Set(_))
+            && set_pred_from_cmp(op).is_some()
+        {
+            Expr::SetPred {
+                lhs: Box::new(operands[i].clone()),
+                op: set_pred_from_cmp(op).expect("checked is_some"),
+                rhs: Box::new(operands[i + 1].clone()),
+            }
+        } else {
+            Expr::BinOp {
+                op: cmp_binop(op)?,
+                lhs: Box::new(operands[i].clone()),
+                rhs: Box::new(operands[i + 1].clone()),
+            }
         };
         acc = Some(match acc {
             None => cmp,

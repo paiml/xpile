@@ -375,6 +375,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         }
         // PMAT-502g: set algebra — recurse into both operands.
         Expr::SetOp { lhs, rhs, .. } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
+        // PMAT-502ep: set predicates — recurse into both operands.
+        Expr::SetPred { lhs, rhs, .. } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -1251,6 +1253,17 @@ pub enum Expr {
         op: SetOp,
         rhs: Box<Expr>,
     },
+    /// PMAT-502ep: set predicate — Python `a <= b` / `a < b` / `a >= b` /
+    /// `a > b` over two sets (subset / proper-subset / superset /
+    /// proper-superset) and the method forms `a.issubset(b)` /
+    /// `a.issuperset(b)` / `a.isdisjoint(b)`. Yields `bool`. Rust/Ruchy emit a
+    /// temp-bound block over `HashSet::is_subset`/`is_superset`/`is_disjoint`
+    /// (proper variants add `&& __l != __r`). Lean refuses.
+    SetPred {
+        lhs: Box<Expr>,
+        op: SetPredOp,
+        rhs: Box<Expr>,
+    },
     /// Tuple literal — Python `(a, b)` / multiple-return `return a, b`.
     /// PMAT-494 (sprint). Elements may be heterogeneous (unlike
     /// [`Expr::ListLit`]). Rust/Ruchy emit `(e0, e1, ...)`; Lean refuses
@@ -2000,6 +2013,23 @@ pub enum SetOp {
     Difference,
     /// `a ^ b` → `a.symmetric_difference(&b)`.
     SymmetricDifference,
+}
+
+/// PMAT-502ep (Tranche 2): set predicates carried by [`Expr::SetPred`]. All
+/// yield `bool`. Each maps to a `HashSet` query method; the proper variants
+/// additionally require the sets to differ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SetPredOp {
+    /// `a <= b` / `a.issubset(b)` → `a.is_subset(&b)`.
+    Subset,
+    /// `a < b` → `a.is_subset(&b) && a != b`.
+    ProperSubset,
+    /// `a >= b` / `a.issuperset(b)` → `a.is_superset(&b)`.
+    Superset,
+    /// `a > b` → `a.is_superset(&b) && a != b`.
+    ProperSuperset,
+    /// `a.isdisjoint(b)` → `a.is_disjoint(&b)`.
+    Disjoint,
 }
 
 /// PMAT-502u (Tranche 2): list query methods carried by [`Expr::ListQuery`].

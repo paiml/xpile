@@ -14,7 +14,7 @@ use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_meta_hir::{
     BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListMutateOp, ListQueryOp, Module,
-    NumBuiltinOp, Param, Radix, SetOp, Stmt, StrMethodOp, Type, UnOp,
+    NumBuiltinOp, Param, Radix, SetOp, SetPredOp, Stmt, StrMethodOp, Type, UnOp,
 };
 
 /// PMAT-477 (R8): Ruchy → Rust infix symbol for a float arithmetic op.
@@ -1574,6 +1574,22 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str("(&(");
             emit_expr(out, rhs, mode)?;
             out.push_str(")).cloned().collect::<std::collections::HashSet<_>>()");
+        }
+        // PMAT-502ep: set predicate — matching the Rust backend.
+        Expr::SetPred { lhs, op, rhs } => {
+            out.push_str("({ let __l = ");
+            emit_expr(out, lhs, mode)?;
+            out.push_str("; let __r = ");
+            emit_expr(out, rhs, mode)?;
+            out.push_str("; ");
+            out.push_str(match op {
+                SetPredOp::Subset => "__l.is_subset(&__r)",
+                SetPredOp::Superset => "__l.is_superset(&__r)",
+                SetPredOp::Disjoint => "__l.is_disjoint(&__r)",
+                SetPredOp::ProperSubset => "__l.is_subset(&__r) && __l != __r",
+                SetPredOp::ProperSuperset => "__l.is_superset(&__r) && __l != __r",
+            });
+            out.push_str(" })");
         }
         // PMAT-459 (v0.2.0 Track 1.B): Ruchy → Rust → `.len() as i64`.
         Expr::Len(inner) => {
