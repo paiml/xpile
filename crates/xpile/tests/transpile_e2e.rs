@@ -3016,6 +3016,29 @@ fn main() { demo(2.5, true, 5); }
     assert_rustc_runs("print_bool_float", &rust, driver);
 }
 
+/// PMAT-502by (Tranche 2): `print(..., sep=…, end=…)` keyword args — `sep`
+/// joins args, a custom `end` switches `println!` → `print!` (no newline).
+#[test]
+fn print_sep_end() {
+    let rust = xpile_transpile_to_rust("print_sep_end.py");
+    assert!(
+        rust.contains(r#"println!("{}, {}", a, b)"#),
+        "sep=', ':\n{rust}"
+    );
+    assert!(
+        rust.contains(r#"print!("{}", String::from("loading"))"#),
+        "end='' → print!:\n{rust}"
+    );
+    assert!(
+        rust.contains(r#"println!("{} | {}", a, b)"#),
+        "sep=' | ':\n{rust}"
+    );
+    let driver = r#"
+fn main() { demo(1, 2); }
+"#;
+    assert_rustc_runs("print_sep_end", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

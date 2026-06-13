@@ -18,6 +18,26 @@ use xpile_meta_hir::{
 };
 
 /// PMAT-477 (R8): Ruchy → Rust infix symbol for a float arithmetic op.
+/// PMAT-502by: escape a string for embedding inside a `println!`/`print!`
+/// format-string literal (see the Rust backend's twin). Used by `print`'s
+/// `sep=`/`end=` kwargs.
+fn escape_format_literal(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '{' => out.push_str("{{"),
+            '}' => out.push_str("}}"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            '\r' => out.push_str("\\r"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 fn float_op_sym(op: FloatOp) -> &'static str {
     match op {
         FloatOp::Add => "+",
@@ -109,7 +129,7 @@ fn function_bigint_mode(f: &Function) -> bool {
             | Stmt::Continue
             | Stmt::Break
             // PMAT-502bw: print() introduces no binding.
-            | Stmt::Print(_)
+            | Stmt::Print { .. }
             | Stmt::Raise { .. } => false,
             Stmt::While { body, .. }
             | Stmt::ForEach { body, .. }
@@ -216,14 +236,23 @@ fn emit_stmt_indented(
             writeln!(out, "{indent}break;")?;
             Ok(())
         }
-        // PMAT-502bw: `print(a, b, …)` → `println!("{} {} …", a, b, …);`.
-        Stmt::Print(args) => {
-            if args.is_empty() {
-                writeln!(out, "{indent}println!();")?;
+        // PMAT-502bw/by: `print(a, b, …, sep=…, end=…)` (see the Rust
+        // backend for the join/end logic).
+        Stmt::Print { args, sep, end } => {
+            let macro_name = if end == "\n" { "println!" } else { "print!" };
+            let sep_esc = escape_format_literal(sep);
+            let mut fmt = (0..args.len())
+                .map(|_| "{}")
+                .collect::<Vec<_>>()
+                .join(&sep_esc);
+            if end != "\n" {
+                fmt.push_str(&escape_format_literal(end));
+            }
+            if args.is_empty() && fmt.is_empty() {
+                writeln!(out, "{indent}{macro_name}();")?;
                 return Ok(());
             }
-            let fmt = vec!["{}"; args.len()].join(" ");
-            write!(out, "{indent}println!(\"{fmt}\"")?;
+            write!(out, "{indent}{macro_name}(\"{fmt}\"")?;
             for a in args {
                 out.push_str(", ");
                 emit_expr(out, a, mode)?;
