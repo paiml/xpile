@@ -5940,6 +5940,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // `Map`/`Filter` machinery (the statement form `name = [comp]` still
         // uses the dedicated for-append desugar, intercepted earlier).
         ast::Expr::ListComp(comp) => lower_list_comp_in_ctx(ctx, comp),
+        // PMAT-502dv: set / dict comprehensions in expr position lower via the
+        // same `Map`/`Filter` form, wrapped in `SetFromList` / `DictFromPairs`
+        // (the statement + return forms keep their own desugars).
+        ast::Expr::SetComp(comp) => lower_set_comp_in_ctx(ctx, comp),
+        ast::Expr::DictComp(comp) => lower_dict_comp_in_ctx(ctx, comp),
         // No dict-specific shape: the context-free path is sufficient.
         other => lower_expr(other),
     }
@@ -7514,7 +7519,8 @@ fn lower_generator_exp_in_ctx(
     ctx: &LoweringCtx,
     ge: ast::ExprGeneratorExp,
 ) -> Result<Expr, FrontendError> {
-    lower_comp_to_map(ctx, &ge.elt, &ge.generators, "generator expression")
+    let body = lower_expr_in_ctx(ctx, (*ge.elt).clone())?;
+    lower_comp_to_map(ctx, &ge.generators, "generator expression", body)
 }
 
 /// PMAT-502du: an expression-position list comprehension (`sum([x for x in
@@ -7527,18 +7533,46 @@ fn lower_list_comp_in_ctx(
     ctx: &LoweringCtx,
     comp: ast::ExprListComp,
 ) -> Result<Expr, FrontendError> {
-    lower_comp_to_map(ctx, &comp.elt, &comp.generators, "list comprehension")
+    let body = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
+    lower_comp_to_map(ctx, &comp.generators, "list comprehension", body)
 }
 
-/// Shared core for generator-expression / expr-position list-comprehension
-/// lowering (PMAT-502df/dg/du): `<elt> for <var> in <iter> [if <cond>]` →
-/// `Expr::Map` (over an optional `Expr::Filter`). Single generator, ≤1 `if`,
-/// plain-Name target; the body + filter are lowered with the loop var unbound.
+/// PMAT-502dv: an expression-position set comprehension (`len({x for x in
+/// xs})`) lowers to `set(<list-comp>)` — i.e. `SetFromList` over the same
+/// `Map`/`Filter` form. The statement / return forms keep their own desugars.
+fn lower_set_comp_in_ctx(ctx: &LoweringCtx, comp: ast::ExprSetComp) -> Result<Expr, FrontendError> {
+    let body = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
+    let list = lower_comp_to_map(ctx, &comp.generators, "set comprehension", body)?;
+    Ok(Expr::SetFromList {
+        list: Box::new(list),
+    })
+}
+
+/// PMAT-502dv: an expression-position dict comprehension (`len({k: v for x in
+/// xs})`) lowers to `dict(<list of (k, v) tuples>)` — i.e. `DictFromPairs`
+/// over a `Map` whose body is the `(key, value)` tuple.
+fn lower_dict_comp_in_ctx(
+    ctx: &LoweringCtx,
+    comp: ast::ExprDictComp,
+) -> Result<Expr, FrontendError> {
+    let key = lower_expr_in_ctx(ctx, (*comp.key).clone())?;
+    let value = lower_expr_in_ctx(ctx, (*comp.value).clone())?;
+    let body = Expr::TupleLit(vec![key, value]);
+    let pairs = lower_comp_to_map(ctx, &comp.generators, "dict comprehension", body)?;
+    Ok(Expr::DictFromPairs {
+        pairs: Box::new(pairs),
+    })
+}
+
+/// Shared core for generator-expression / expr-position comprehension lowering
+/// (PMAT-502df/dg/du/dv): a single generator `for <var> in <iter> [if <cond>]`
+/// over a pre-lowered `body` (with the loop var unbound) → `Expr::Map` (over an
+/// optional `Expr::Filter`). Single generator, ≤1 `if`, plain-Name target.
 fn lower_comp_to_map(
     ctx: &LoweringCtx,
-    elt: &ast::Expr,
     generators: &[ast::Comprehension],
     kind: &str,
+    body: Expr,
 ) -> Result<Expr, FrontendError> {
     if generators.len() != 1 {
         return Err(FrontendError::Lower(format!(
@@ -7596,8 +7630,7 @@ fn lower_comp_to_map(
     } else {
         iter_list
     };
-    // Body lowered with the loop var unbound (matches `map`'s inference).
-    let body = lower_expr_in_ctx(ctx, elt.clone())?;
+    // `body` was lowered by the caller with the loop var unbound.
     Ok(Expr::Map {
         list: Box::new(list),
         lambda: SortKey {
