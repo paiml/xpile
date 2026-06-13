@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.216] — 2026-06-13
+
+Tranche 2 — PMAT-516 (correctness): `str.startswith`/`endswith` with a **tuple**
+of prefixes/suffixes.
+
+- `s.startswith((a, b))` / `s.endswith((…))` previously transpiled to
+  `…starts_with(&(a, b)[..])` — transpile-success-but-**invalid Rust** (can't
+  index a tuple). Python accepts a tuple (true if any matches); now expands to an
+  OR of per-prefix `starts_with`/`ends_with` checks — **no new IR** (reuses
+  `StrMethod` + `BinOp::Or`). The 1-arg form is unaffected; an empty tuple →
+  `false` (Python semantics).
+- New e2e fixture `str_startswith_tuple.py` (rustc round-trip cross-checked vs
+  python3). e2e 277 → 278.
+
 ## [0.1.215] — 2026-06-13
 
 Tranche 2 — PMAT-515: enum **`.name`** member access.
