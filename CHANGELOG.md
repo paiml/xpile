@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.197] — 2026-06-13
+
+R6/PMAT-475 third sub-slice — **author `C-XLATE-PY-DICT-TO-HASHMAP` at depth-1**.
+**This COMPLETES R6.** Together with `C-C-INT-ARITH` (v0.1.196) the
+audit-design.md §7.3 "every construct under contract" falsification is restored
+to TRUE — every emitted construct's contract citation now resolves to an on-disk
+YAML + Lean theorem.
+
+- `contracts/xlate-py-dict-to-hashmap-v1.yaml` — Layer-2 translation kernel
+  contract (dict sibling of `C-XLATE-PY-LIST-TO-VEC`): Python `dict[K, V]`
+  (homogeneous) → `HashMap<K_rust, V_rust>`. One depth-1 Diamond equation
+  `dict_to_hashmap_structure_preserved_diamond` (entry-sequence + cardinality
+  preservation — the lowering is the identity on the abstract finite map).
+  proof_obligations, falsification_tests (bound to the live
+  `dict_counts_emitted_rust_returns_hashmap` e2e test), two inline Kani harnesses,
+  a qa_gate.
+- `contracts/lean/XlatePyDictToHashmap.lean` — models dict/HashMap as entry
+  lists, lowering as identity (`rfl`).
+- `xpile diamond` → **15 contracts**, both new R6 contracts at depth-1, depth-2+
+  still the grandfathered 13. `pv lint` 0 errors; all substrate gates green.
+- **R6 / PMAT-475 complete**: gate grandfathered (475a) + both contracts authored
+  (475b, 475c).
+
 ## [0.1.196] — 2026-06-13
 
 R6/PMAT-475 second sub-slice — **author the `C-C-INT-ARITH` contract at
