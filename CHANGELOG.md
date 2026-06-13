@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.190] — 2026-06-13
+
+Tranche-2 slice PMAT-502ez — **Optional flow-narrowing** (Optional epic cut 4,
+the keystone). Makes `Optional` params usable for the dominant Python idiom.
+
+- After a provably-exiting `if x is None: return …`/`raise` guard, a later read
+  of `x` lowers to a new `Expr::OptionUnwrap` → `(x).unwrap()` : `T` — so
+  guard-then-use transpiles to compilable Rust.
+- Narrowing is **sound by construction**: `register_none_guard_narrowing` only
+  narrows a name that is (a) guarded by an always-exiting `if <name> is None:`
+  (no `else`), and (b) a non-reassigned (`!mutable`) `Optional`. After the guard
+  the name is provably `Some` and can't be rebound. Any other shape is not
+  narrowed (no regression).
+- New `Expr::OptionUnwrap(Box<Expr>)` in meta-HIR; rust/ruchy emit
+  `(<inner>).unwrap()`; Lean refuses (Optional deferred).
+- New e2e fixture `optional_narrow.py` (multiple stacked guards, `str` payloads,
+  `raise`-exiting guards), rustc round-trip cross-checked vs python3. e2e 254 →
+  255.
+
 ## [0.1.189] — 2026-06-13
 
 Tranche-2 slice PMAT-502ey — **1-arg `d.get(k)` → `Optional[V]`** (Optional epic,
