@@ -3550,6 +3550,34 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502ea (Tranche 2): nested **augmented** subscript assignment
+/// `grid[i][j] += v` (2D/ND list grids), desugared to `grid[i][j] = grid[i][j]
+/// <op> v` reusing the nested `IndexAssign` write + nested `Index` read. Also
+/// fixes the mutability pre-walk so a literal-initialised receiver mutated only
+/// through a subscript aug-assign is correctly emitted `let mut` (a latent gap
+/// in single-level PMAT-497 `xs[i] += v` and plain nested PMAT-502dy too).
+/// Cross-checked vs python3.
+#[test]
+fn nested_aug_assign() {
+    let rust = xpile_transpile_to_rust("nested_aug_assign.py");
+    assert!(
+        rust.contains("grid[i as usize][i as usize] =")
+            && rust.contains("let mut counts")
+            && rust.contains("let mut xs"),
+        "nested aug-assign should emit nested IndexAssign + mark literal receivers mut:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(diag_accumulate(3), 5); // grid[2][2]=3 + grid[1][1]=2
+    assert_eq!(histogram(), 16); // 7 + 9
+    assert_eq!(cube_scale(), 7);
+    assert_eq!(single_list_aug(), 25); // 20 + 5
+    assert_eq!(single_dict_aug(), 107); // 100 + 7
+}
+"#;
+    assert_rustc_runs("nested_aug_assign", &rust, driver);
+}
+
 /// PMAT-502dz (Tranche 2): `for _ in range(n)` and `[… for _ in range(n)]` — a
 /// `_` loop/comprehension target can't desugar to `let mut _` (Rust rejects a
 /// bare `_` binding). The frontend mints a fresh `__xpile_idx{N}` counter and
