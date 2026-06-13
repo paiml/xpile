@@ -4252,6 +4252,29 @@ fn main() {
     assert_rustc_runs("str_split_maxsplit", &rust, driver);
 }
 
+/// PMAT-519 (Tranche 2 — correctness): `frozenset(iterable)` — Rust has no
+/// frozen set, so it maps to a `HashSet` (an immutable set is one that's never
+/// mutated), routed through the same `SetFromList` path as `set(...)`. Previously
+/// a silent miscompile (emitted an undefined `frozenset(...)` call). Cross-checked
+/// vs python3 (unique_count 3, has_member true/false, vowels_present 3).
+#[test]
+fn frozenset_basic() {
+    let rust = xpile_transpile_to_rust("frozenset_basic.py");
+    assert!(
+        !rust.contains("frozenset(") && rust.contains("collect::<std::collections::HashSet<_>>"),
+        "frozenset should lower to a HashSet, not an undefined `frozenset(...)` call:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(unique_count(vec![3, 3, 1, 2, 2]), 3);
+    assert_eq!(has_member(vec![1, 2, 3], 2), true);
+    assert_eq!(has_member(vec![1, 2, 3], 9), false);
+    assert_eq!(vowels_present("hello world".to_string()), 3);
+}
+"#;
+    assert_rustc_runs("frozenset_basic", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
