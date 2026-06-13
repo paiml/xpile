@@ -3550,6 +3550,36 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502ed (Tranche 2): f-string fixes — (1) a lone `f"{n}"` field (no
+/// surrounding text or spec) over an `int` was returning the bare value (typed
+/// `i64`, failing the `-> str` check); it now stringifies to `format!("{:}", n)`.
+/// (2) integer format specs `:x` / `:X` / `:b` / `:o` (radix), bare width `:5`,
+/// and zero-pad `:05` / `:04x` / `:08b` now translate (Rust's int spec syntax
+/// matches Python's). Cross-checked vs python3.
+#[test]
+fn fstring_specs() {
+    let rust = xpile_transpile_to_rust("fstring_specs.py");
+    assert!(
+        rust.contains("format!(\"{:}\"") && rust.contains("{:x}") && rust.contains("{:08b}"),
+        "f-string specs should emit stringified lone field + radix/pad specs:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(lone_field(42), "42");
+    assert_eq!(hex_lower(255), "ff");
+    assert_eq!(hex_upper(255), "FF");
+    assert_eq!(binary(5), "101");
+    assert_eq!(octal(8), "10");
+    assert_eq!(width(42), "[   42]");
+    assert_eq!(zero_pad(42), "00042");
+    assert_eq!(zero_pad_hex(255), "00ff");
+    assert_eq!(zero_pad_binary(5), "00000101");
+    assert_eq!(mixed(255), "n=255 hex=0xff");
+}
+"#;
+    assert_rustc_runs("fstring_specs", &rust, driver);
+}
+
 /// PMAT-502ec (Tranche 2): empty list literal `[]` takes its element type from
 /// the declared annotation / return type — `xs: list[int] = []` and
 /// `return []` (any element type, incl. `list[str]` / nested) previously errored

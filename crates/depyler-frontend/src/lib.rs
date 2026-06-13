@@ -6243,7 +6243,27 @@ fn lower_fstring_in_ctx(ctx: &LoweringCtx, values: Vec<ast::Expr>) -> Result<Exp
             rhs: Box::new(rhs),
         };
     }
-    Ok(acc)
+    let ty = infer_type_in_ctx(ctx, &acc);
+    Ok(stringify_lone_fstring_field(acc, ty))
+}
+
+/// PMAT-502ed: a single plain `{x}` field (no literal text, no format spec)
+/// lowers to the bare value — for an `int` that leaves the whole f-string typed
+/// `i64` instead of `Str` (`f"{n}"` returned `n`, failing the `-> str` check).
+/// Wrap a lone `int` field in a `format!("{:}", …)` (an empty `FormatSpec`) so
+/// the f-string is always `Str`. Multi-part chains already stringify via
+/// `Concat`'s `format!`, and a `Str` value is already a string. `float`/`bool`
+/// lone fields stay unwrapped (and so still error) because Rust and Python
+/// disagree on their `Display` repr (`3.0`→`3`, `true`→`True`).
+fn stringify_lone_fstring_field(acc: Expr, ty: Type) -> Expr {
+    if ty == Type::I64 {
+        Expr::FormatSpec {
+            value: Box::new(acc),
+            rust_spec: String::new(),
+        }
+    } else {
+        acc
+    }
 }
 
 /// Lower a single f-string part (a literal `Constant` or a `FormattedValue`)
@@ -6719,7 +6739,9 @@ fn lower_fstring(values: Vec<ast::Expr>) -> Result<Expr, FrontendError> {
             rhs: Box::new(rhs),
         };
     }
-    Ok(acc)
+    // PMAT-502ed: stringify a lone `int` field (see the ctx-aware twin).
+    let ty = infer_type(&acc);
+    Ok(stringify_lone_fstring_field(acc, ty))
 }
 
 /// PMAT-502am: extract a **static** f-string format spec (the common case
@@ -6742,47 +6764,72 @@ fn static_format_spec(spec: &ast::Expr) -> Option<String> {
     }
 }
 
-/// PMAT-502am: translate a static Python format spec to the equivalent Rust
-/// format spec for the supported subset, given the formatted value's type.
-/// Returns `None` for unsupported specs (the caller errors so they aren't
-/// silently mis-formatted). Supported:
-///   * `.Nf` — fixed-point float, N decimals (requires a `float` value) → `.N`
-///   * `0Nd` / `Nd` — integer width / zero-pad (requires `int`) → `0N` / `N`
-///   * `>N` / `<N` / `^N` — alignment within width N (any Display value) → same
+/// PMAT-502am / PMAT-502ed: translate a static Python format spec (the part
+/// after `:` in `{x:...}`) to the equivalent Rust spec (the part after `:` in
+/// `{:...}`), or `None` if unsupported. Python and Rust share nearly identical
+/// fill/align/zero/width/precision/type mini-languages, so most forms pass
+/// through; the exceptions handled here are Python's `.Nf` (Rust `.N`) and `d`
+/// (decimal — Rust has no `d` type letter, so it is dropped). Thousands
+/// separators (comma / underscore), sign flags, and `#` alternate forms are
+/// deferred.
 fn translate_format_spec(spec: &str, ty: &Type) -> Option<String> {
-    // `.Nf` — fixed-point float.
+    // `.Nf` — fixed-point float (float only). A `.`-prefixed spec is
+    // float-specific; never fall through to the integer/width branches (Python
+    // `.2` without `f` means *significant figures*, not Rust's decimal places).
     if let Some(rest) = spec.strip_prefix('.') {
         if let Some(n) = rest.strip_suffix('f') {
-            if *ty == Type::F64 && !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) {
+            if *ty == Type::F64 && digits_only(n) {
                 return Some(format!(".{n}"));
             }
         }
         return None;
     }
-    // `0Nd` / `Nd` — integer width / zero-pad.
-    if let Some(n) = spec.strip_suffix('d') {
-        if *ty == Type::I64 && !n.is_empty() {
-            let (zero, width) = match n.strip_prefix('0') {
-                Some(w) => ("0", w),
-                None => ("", n),
-            };
-            if !width.is_empty() && width.bytes().all(|b| b.is_ascii_digit()) {
-                return Some(format!("{zero}{width}"));
-            }
-        }
-        return None;
-    }
-    // `>N` / `<N` / `^N` — alignment within width (any Display type).
+    // Explicit alignment `[<>^]N` (any Display type) — Rust uses the same
+    // `[align][width]` syntax, so pass it through verbatim.
     if let Some(align) = spec.chars().next() {
         if matches!(align, '<' | '>' | '^') {
             let width = &spec[align.len_utf8()..];
-            if !width.is_empty() && width.bytes().all(|b| b.is_ascii_digit()) {
-                // Rust uses the same `[align][width]` syntax.
-                return Some(spec.to_string());
-            }
+            return digits_only(width).then(|| spec.to_string());
         }
     }
+    // Integer specs (int only — Rust's syntax AND default right-alignment match
+    // Python for ints, and int repr is identical). A radix char `x`/`X`/`b`/`o`
+    // maps 1:1 to Rust, `d` (decimal) is dropped; each takes an optional
+    // `[0]width` pad. A bare `[0]width` (`5`, `05`) is width / zero-pad. Float
+    // bare-width and bool are deferred — Rust and Python disagree on whole-float
+    // repr (`3.0` vs `3`) and bool repr (`true` vs `True`); only `.Nf` (float)
+    // and explicit alignment (above) are safe there.
+    if *ty == Type::I64 {
+        if let Some(last) = spec.chars().last() {
+            if matches!(last, 'x' | 'X' | 'b' | 'o') {
+                let prefix = &spec[..spec.len() - last.len_utf8()];
+                return pad_width(prefix).map(|pad| format!("{pad}{last}"));
+            }
+            if last == 'd' {
+                return pad_width(&spec[..spec.len() - 1]).filter(|p| !p.is_empty());
+            }
+        }
+        return pad_width(spec).filter(|p| !p.is_empty());
+    }
     None
+}
+
+/// `[0][digits]` → the matching Rust pad/width string. Empty input yields
+/// `Some("")` (the "no width" case, valid after a radix char like `:x`); a lone
+/// `0` (zero flag, no width) or any non-digit width yields `None`.
+fn pad_width(s: &str) -> Option<String> {
+    if s.is_empty() {
+        return Some(String::new());
+    }
+    let (zero, width) = match s.strip_prefix('0') {
+        Some(w) => ("0", w),
+        None => ("", s),
+    };
+    digits_only(width).then(|| format!("{zero}{width}"))
+}
+
+fn digits_only(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// Lower Python `a and b and c` / `a or b or c` to a left-folded chain

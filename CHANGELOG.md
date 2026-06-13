@@ -7,6 +7,32 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.168] — 2026-06-13
+
+Tranche-2 slice PMAT-502ed — **f-string fixes: lone `{n}` field + integer
+radix / width specs**.
+
+Two f-string gaps closed:
+
+- **Lone field bug.** The simplest f-string, `f"{n}"` (a single field, no
+  surrounding text and no format spec), lowered to the *bare value* — so for
+  an `int` it typed the whole f-string as `i64` and failed the `-> str` check
+  ("declared return type Str but body produces I64"). A field with text
+  (`f"v={n}"`) or a spec (`f"{n:.2f}"`) already worked because those produce a
+  `Concat` / `FormatSpec` (both `Str`). A lone `int` field is now stringified
+  via `format!("{:}", n)`.
+- **More integer format specs.** `:x` / `:X` (hex), `:b` (binary), `:o`
+  (octal), bare width `:5`, and zero-pad `:05` / `:04x` / `:08b` now translate
+  — Rust's integer spec syntax and default right-alignment match Python's, so
+  they pass through (the existing `.Nf` float and `<`/`>`/`^` alignment specs
+  are unchanged).
+
+Scope is deliberately `int`-only for the new forms: a lone `float`/`bool`
+field and bare width on a float stay deferred because Rust and Python disagree
+on their `Display` repr (`3.0`→`3`, `true`→`True`) — those still error
+cleanly rather than miscompile. New `fstring_specs.py` e2e fixture
+(lone/hex/HEX/binary/octal/width/zero-pad/mixed), all cross-checked vs python3.
+
 ## [0.1.167] — 2026-06-13
 
 Tranche-2 slice PMAT-502ec — **empty list literal `[]` annotation threading**.
