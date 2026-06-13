@@ -3878,6 +3878,9 @@ fn infer_type(e: &Expr) -> Type {
         Expr::StrCharAt { .. } => Type::Str,
         // PMAT-502cl: string chars as a list[str].
         Expr::StrChars { .. } => Type::List(Box::new(Type::Str)),
+        // PMAT-502cm: ord → int code point; chr → 1-char str.
+        Expr::Ord { .. } => Type::I64,
+        Expr::Chr { .. } => Type::Str,
         // PMAT-502am: a formatted f-string field produces a Str.
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
@@ -4127,6 +4130,9 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::StrCharAt { .. } => Type::Str,
         // PMAT-502cl: string chars as a list[str].
         Expr::StrChars { .. } => Type::List(Box::new(Type::Str)),
+        // PMAT-502cm: ord → int code point; chr → 1-char str.
+        Expr::Ord { .. } => Type::I64,
+        Expr::Chr { .. } => Type::Str,
         // PMAT-502am: a formatted f-string field produces a Str.
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
@@ -4687,6 +4693,34 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             return Ok(Expr::NumBuiltin { op, args });
                         }
                     }
+                }
+                // PMAT-502cm: `ord(c)` (str → int code point) and `chr(n)`
+                // (int → 1-char str). 1-arg builtins. (Previously `ord`/`chr`
+                // fell through to a generic call, emitting an undefined
+                // `ord(...)`/`chr(...)` Rust fn.)
+                if fname.id.as_str() == "ord" && call.keywords.is_empty() && call.args.len() == 1 {
+                    let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &value), Type::Str) {
+                        return Ok(Expr::Ord {
+                            value: Box::new(value),
+                        });
+                    }
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` calls `ord(...)` on a non-str argument",
+                        ctx.fn_name
+                    )));
+                }
+                if fname.id.as_str() == "chr" && call.keywords.is_empty() && call.args.len() == 1 {
+                    let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &value), Type::I64) {
+                        return Ok(Expr::Chr {
+                            value: Box::new(value),
+                        });
+                    }
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` calls `chr(...)` on a non-int argument",
+                        ctx.fn_name
+                    )));
                 }
                 // PMAT-502w: ctx-aware `len(x)` — lower the argument through
                 // the context path so a context-dependent collection (e.g.

@@ -750,6 +750,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, string, mode)?;
             out.push_str(").chars().map(|__c| __c.to_string()).collect::<Vec<String>>()");
         }
+        // PMAT-502cm: ord(c) → code point; chr(n) → 1-char string.
+        Expr::Ord { value } => {
+            out.push('(');
+            emit_expr(out, value, mode)?;
+            out.push_str(
+                ".chars().next().expect(\"xpile: ord() expected a single character\") as i64)",
+            );
+        }
+        Expr::Chr { value } => {
+            out.push_str("char::from_u32((");
+            emit_expr(out, value, mode)?;
+            out.push_str(") as u32).expect(\"xpile: chr() arg not in range(0x110000) (ValueError)\").to_string()");
+        }
         // PMAT-492/493b: Python string methods (Ruchy → Rust). No-arg
         // transforms emit a suffix; startswith/endswith emit
         // `.starts_with(&(<pat>)[..])` (the reslice yields `&str`).

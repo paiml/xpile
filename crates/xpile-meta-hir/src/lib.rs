@@ -265,6 +265,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         }
         // PMAT-502cl: string-chars — recurse into the string expr.
         Expr::StrChars { string } => expr_has_int_arith(string),
+        // PMAT-502cm: ord/chr — recurse into the value expr.
+        Expr::Ord { value } | Expr::Chr { value } => expr_has_int_arith(value),
         // PMAT-502am: formatted f-string field — recurse into the value.
         Expr::FormatSpec { value, .. } => expr_has_int_arith(value),
         // PMAT-492: string methods are str-domain; recurse into the
@@ -1272,6 +1274,15 @@ pub enum Expr {
     /// enclosing `Stmt::ForEach`'s `.iter().cloned()` yields `String` items.
     /// Lean refuses.
     StrChars { string: Box<Expr> },
+    /// `ord(c)` — the Unicode code point of a 1-char string (→ `int`).
+    /// PMAT-502cm (Tranche 2). Rust/Ruchy emit `((<c>).chars().next()
+    /// .expect("…") as i64)`. Lean refuses.
+    Ord { value: Box<Expr> },
+    /// `chr(n)` — the 1-char string for a code point (→ `str`). PMAT-502cm.
+    /// Rust/Ruchy emit `char::from_u32((<n>) as u32).expect("…").to_string()`
+    /// (an out-of-range code point panics, ≈ Python's `ValueError`). Lean
+    /// refuses.
+    Chr { value: Box<Expr> },
     /// A formatted f-string field — Python `{value:spec}` where `spec` is a
     /// static format spec (e.g. `.2f`, `05d`, `>10`). PMAT-502am (Tranche 2).
     /// `rust_spec` is the already-translated Rust format spec (the frontend
