@@ -1102,6 +1102,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "a and b / a or b for bool parameters/locals was wrongly rejected ('operands of and/or must be Bool (no int-truthiness)'). ROOT CAUSE (same recurring class as not-bool PMAT-502cc and float-var negation): lower_bool_op runs context-free and infer_type infers a bare Ident as I64. FIX: new lower_bool_op_in_ctx (mirrors lower_bool_op but lowers operands via lower_expr_in_ctx and type-checks via infer_type_in_ctx), dispatched from a new ast::Expr::BoolOp arm in lower_expr_in_ctx_inner. Bool operands fold to a left-assoc chain of Expr::BinOp { And/Or } -> (a && b) / ((a || b) || c). Non-Bool operands still error (preserves no-int-truthiness). Mixed forms (active and x > 0) work since the comparison already types Bool. rustc round-trip bool_op_var.py (cross-checked vs python3): both(true,false)=false, both(true,true)=true, either(false,false,true)=true, gate(5,true)=5, gate(5,false)=0. FREE CI. SHIPPED v0.1.117."
+- id: PMAT-502CF
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cf: [Tranche2] dict comprehension over d.items()'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "{k: f(v) for k, v in d.items()} (tuple-target dict comp) was rejected ('non-Name dict-comprehension target (tuple unpacking) — deferred'). FIX: desugar_dict_comp gains a tuple-target branch (before the Name-target path): when gen.target is a 2-element Tuple of Names and the iterable types as Type::List(Type::Tuple[K,V]) (which d.items() yields), bind both loop names, lower the key+value, and emit a Stmt::Let (empty dict, mut) + Stmt::ForEachPair { first, second, iter, kind: PairIterKind::Pairs, body } where body is the DictSet (guarded by the optional `if` filter). Mirrors the for k,v in d.items() statement form (PMAT-502y). Tuple targets that aren't exactly 2 plain names, and non-2-tuple iterables, error with precise messages. rustc round-trip dict_comp_items.py (cross-checked vs python3, order-independent assertions): doubled({a:3,b:-1})={a:6,b:-2}, positives({a:3,b:-1})={a:3} (filter v>0). FREE CI. SHIPPED v0.1.118."
 - id: PMAT-465
   github_issue: 496
   item_type: task

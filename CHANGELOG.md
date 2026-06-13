@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.118] — 2026-06-13
+
+Tranche-2 slice PMAT-502cf — **dict comprehension over `d.items()`**.
+
+`{k: f(v) for k, v in d.items()}` (a tuple-target dict comprehension) was
+rejected ("non-Name dict-comprehension target"). `desugar_dict_comp` now has a
+tuple-target branch that, given an iterable typing as `list[tuple[K, V]]`
+(which `d.items()` yields), binds both loop names and desugars to a
+`ForEachPair { Pairs }` loop building the dict (mirroring the `for k, v in
+d.items()` statement form). The optional `if` filter composes. Tuple targets
+that aren't exactly two plain names, and non-2-tuple iterables, are rejected
+with precise errors. rustc round-trip `dict_comp_items.py` (cross-checked vs
+`python3`): `doubled({"a":3,"b":-1}) -> {"a":6,"b":-2}`,
+`positives({"a":3,"b":-1}) -> {"a":3}`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.117] — 2026-06-13
 
 Tranche-2 slice PMAT-502ce — context-aware **`and` / `or` over bool variables**.

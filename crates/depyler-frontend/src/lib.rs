@@ -2940,6 +2940,82 @@ fn desugar_dict_comp(
             ctx.fn_name
         )));
     }
+    // PMAT-502cf: tuple-target dict comp `{k: f(v) for k, v in d.items()}`
+    // → a `ForEachPair { Pairs }` loop building the dict (mirrors the
+    // `for k, v in d.items()` statement form, PMAT-502y). The iterable must
+    // type as a `list[tuple[K, V]]` (which `d.items()` yields).
+    if let ast::Expr::Tuple(t) = &gen.target {
+        let (first, second) = match (t.elts.first(), t.elts.get(1), t.elts.len()) {
+            (Some(ast::Expr::Name(a)), Some(ast::Expr::Name(b)), 2) => {
+                (a.id.to_string(), b.id.to_string())
+            }
+            _ => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` has a dict-comprehension tuple target that isn't exactly two plain names — only `for k, v in …` is supported at v0.2.0",
+                    ctx.fn_name
+                )));
+            }
+        };
+        let iter_expr = lower_expr_in_ctx(ctx, gen.iter.clone())?;
+        let (k_in, v_in) = match infer_type_in_ctx(ctx, &iter_expr) {
+            Type::List(elem) => match *elem {
+                Type::Tuple(tys) if tys.len() == 2 => (tys[0].clone(), tys[1].clone()),
+                other => {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` dict-comprehends `for k, v in …` over a list whose element types as {other:?}; expected a list of 2-tuples (e.g. `d.items()`)",
+                        ctx.fn_name
+                    )));
+                }
+            },
+            other => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` dict-comprehends `for k, v in …` over a {other:?}; expected an iterable of 2-tuples (e.g. `d.items()`)",
+                    ctx.fn_name
+                )));
+            }
+        };
+        ctx.bound.insert(first.clone());
+        ctx.bound.insert(second.clone());
+        ctx.name_types.insert(first.clone(), k_in);
+        ctx.name_types.insert(second.clone(), v_in);
+        let filter = comp_filter(ctx, gen, "dict")?;
+        let key = lower_expr_in_ctx(ctx, (*comp.key).clone())?;
+        let value = lower_expr_in_ctx(ctx, (*comp.value).clone())?;
+        let dict_ty = Type::Dict(
+            Box::new(infer_type_in_ctx(ctx, &key)),
+            Box::new(infer_type_in_ctx(ctx, &value)),
+        );
+        ctx.bound.insert(target.to_string());
+        ctx.name_types.insert(target.to_string(), dict_ty.clone());
+        let insert = Stmt::DictSet {
+            dict_name: target.to_string(),
+            key,
+            value,
+        };
+        let body = match filter {
+            None => vec![insert],
+            Some(cond) => vec![Stmt::If {
+                cond,
+                then_body: vec![insert],
+                else_body: Vec::new(),
+            }],
+        };
+        return Ok(vec![
+            Stmt::Let {
+                name: target.to_string(),
+                ty: dict_ty,
+                value: Expr::DictLit(Vec::new()),
+                mutable: true,
+            },
+            Stmt::ForEachPair {
+                first,
+                second,
+                iter: iter_expr,
+                kind: PairIterKind::Pairs,
+                body,
+            },
+        ]);
+    }
     let var = match &gen.target {
         ast::Expr::Name(n) => n.id.to_string(),
         _ => {
