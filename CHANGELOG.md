@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.131] — 2026-06-13
+
+Tranche-2 slice PMAT-502cs — **`str.zfill(width)`** (sign-aware zero-pad).
+
+A new `StrMethodOp::ZFill` (1-arg, → `str`) left-pads with `0` to `width`
+*characters*, sign-aware: a leading `-`/`+` stays first and the zeros are
+inserted after it (`"-42".zfill(5) -> "-0042"`); a string already at least
+`width` long is returned unchanged. Block-form codegen (receiver used several
+times) special-cased like `removeprefix`. Lean refuses. rustc round-trip
+`zfill.py` (cross-checked vs `python3`): `pad("42") -> "00042"`, `pad("-42")
+-> "-0042"`, `pad("+7") -> "+0007"`, `pad("123456") -> "123456"`, `pad("") ->
+"00000"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.130] — 2026-06-13
 
 Tranche-2 slice PMAT-502cr — **`str.swapcase()`**.

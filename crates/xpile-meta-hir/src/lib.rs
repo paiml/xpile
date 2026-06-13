@@ -1791,6 +1791,11 @@ pub enum StrMethodOp {
     /// .collect::<String>()` — non-cased chars are left unchanged, matching
     /// Python.
     SwapCase,
+    /// `.zfill(width)` → left-pad with `0` to `width` chars, **sign-aware**
+    /// (a leading `-`/`+` stays first, zeros are inserted after it)
+    /// (**Str**, 1 int arg). PMAT-502cs. A string already ≥ `width` is
+    /// returned unchanged. Block-form codegen (receiver used several times).
+    ZFill,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

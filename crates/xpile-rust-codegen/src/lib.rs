@@ -936,6 +936,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 });
                 emit_expr(out, &args[0], mode)?;
                 out.push_str(")[..]) { Some(__r) => __r.to_string(), None => __s } }");
+            } else if matches!(op, StrMethodOp::ZFill) {
+                // PMAT-502cs: `.zfill(w)` → sign-aware zero-pad to `w` chars
+                // (a leading -/+ stays first; already-wide strings unchanged).
+                out.push_str("{ let __s = (");
+                emit_expr(out, recv, mode)?;
+                out.push_str("); let __w = (");
+                emit_expr(out, &args[0], mode)?;
+                out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = \"0\".repeat(__w - __n); if __s.starts_with('-') || __s.starts_with('+') { format!(\"{}{}{}\", &__s[..1], __pad, &__s[1..]) } else { format!(\"{}{}\", __pad, __s) } } }");
             } else {
                 emit_expr(out, recv, mode)?;
                 match op {
@@ -1008,6 +1016,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix => {
                         unreachable!("removeprefix/removesuffix handled above")
                     }
+                    StrMethodOp::ZFill => unreachable!("zfill handled above"),
                 }
             }
         }

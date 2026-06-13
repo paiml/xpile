@@ -3902,6 +3902,8 @@ fn infer_type(e: &Expr) -> Type {
             StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix => Type::Str,
             // PMAT-502cr: swapcase → Str.
             StrMethodOp::SwapCase => Type::Str,
+            // PMAT-502cs: zfill → Str.
+            StrMethodOp::ZFill => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
         // type from the first element (frontend ensures homogeneity
@@ -4158,6 +4160,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix => Type::Str,
             // PMAT-502cr: swapcase → Str.
             StrMethodOp::SwapCase => Type::Str,
+            // PMAT-502cs: zfill → Str.
+            StrMethodOp::ZFill => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
         // shape as the context-free `infer_type` arm.
@@ -6395,6 +6399,8 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
         "removesuffix" => Some(StrMethodOp::RemoveSuffix),
         // PMAT-502cr: swapcase (0-arg).
         "swapcase" => Some(StrMethodOp::SwapCase),
+        // PMAT-502cs: zfill (1-arg width).
+        "zfill" => Some(StrMethodOp::ZFill),
         _ => None,
     }
 }
@@ -6424,6 +6430,8 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix => 1,
         // PMAT-502cr: swapcase takes no args.
         StrMethodOp::SwapCase => 0,
+        // PMAT-502cs: zfill takes one width arg.
+        StrMethodOp::ZFill => 1,
     }
 }
 
