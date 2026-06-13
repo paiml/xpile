@@ -4845,14 +4845,41 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     let inner = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                     return Ok(Expr::Len(Box::new(inner)));
                 }
-                // PMAT-498b: `sum(xs)` over a numeric list.
-                if fname.id.as_str() == "sum" && call.keywords.is_empty() && call.args.len() == 1 {
+                // PMAT-498b: `sum(xs)` over a numeric list. PMAT-502cx:
+                // `sum(xs, start)` 2-arg — `start` must match the element
+                // type (`int` for an int list, `float` for a float list);
+                // emitted as `(start) + sum(xs)` (no cast).
+                if fname.id.as_str() == "sum"
+                    && call.keywords.is_empty()
+                    && (1..=2).contains(&call.args.len())
+                {
                     let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                     if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
                         if matches!(*elem, Type::I64 | Type::F64) {
+                            let of_float = matches!(*elem, Type::F64);
+                            let start = if call.args.len() == 2 {
+                                let s = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                                let sty = infer_type_in_ctx(ctx, &s);
+                                let matches_elem = if of_float {
+                                    matches!(sty, Type::F64)
+                                } else {
+                                    matches!(sty, Type::I64)
+                                };
+                                if !matches_elem {
+                                    return Err(FrontendError::Lower(format!(
+                                        "sum(xs, start): start type {sty:?} must match the \
+                                         list element type ({} expected)",
+                                        if of_float { "float" } else { "int" }
+                                    )));
+                                }
+                                Some(Box::new(s))
+                            } else {
+                                None
+                            };
                             return Ok(Expr::Sum {
                                 list: Box::new(list),
-                                of_float: matches!(*elem, Type::F64),
+                                of_float,
+                                start,
                             });
                         }
                     }

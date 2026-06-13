@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.136] — 2026-06-13
+
+Tranche-2 slice PMAT-502cx — **`sum(xs, start)`** 2-arg form.
+
+`sum(xs, start)` was silently miscompiled: the 2-arg form fell through to a
+generic call, emitting an undefined Rust `sum(xs, start)` function (only 1-arg
+`sum(xs)` was handled). `Expr::Sum` gains an optional `start` field; the 2-arg
+form now emits `(start) + xs.iter().sum::<T>()` (Python's `sum(xs, start) ==
+start + sum(xs)`). The frontend requires `start` to match the element type
+(`int` start for an int list, `float` start for a float list) so no cast is
+emitted; a mismatch is a clear error rather than a miscompile. Lean refuses.
+rustc round-trip `sum_start.py` (cross-checked vs `python3`): `sum([1,2,3,4],
+10) == 20`, `sum([], 7) == 7`, `sum([1.5,2.5,3.0], 1.5) == 8.5`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.135] — 2026-06-13
 
 Tranche-2 slice PMAT-502cw — **`set(xs)`** materialization from a list.
