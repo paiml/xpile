@@ -1784,6 +1784,13 @@ pub enum StrMethodOp {
     /// 1 arg). PMAT-502cq. Like [`StrMethodOp::RemovePrefix`] with
     /// `strip_suffix`.
     RemoveSuffix,
+    /// `.swapcase()` → upper↔lower each char (**Str**, 0 args). PMAT-502cr.
+    /// Emits `(<recv>).chars().map(|__c| if __c.is_uppercase() {
+    /// __c.to_lowercase().collect::<String>() } else if __c.is_lowercase() {
+    /// __c.to_uppercase().collect::<String>() } else { __c.to_string() })
+    /// .collect::<String>()` — non-cased chars are left unchanged, matching
+    /// Python.
+    SwapCase,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

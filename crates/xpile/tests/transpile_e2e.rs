@@ -3405,6 +3405,22 @@ fn main() {
     assert_rustc_runs("remove_affix", &rust, driver);
 }
 
+/// PMAT-502cr (Tranche 2): `str.swapcase()` — per-char upper↔lower.
+#[test]
+fn swapcase() {
+    let rust = xpile_transpile_to_rust("swapcase.py");
+    assert!(
+        rust.contains(".chars().map(|__c| if __c.is_uppercase()"),
+        "swapcase:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(swap(String::from("Hello, World! 42")), "hELLO, wORLD! 42");
+}
+"#;
+    assert_rustc_runs("swapcase", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
