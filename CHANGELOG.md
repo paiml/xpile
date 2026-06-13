@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.146] — 2026-06-13
+
+Tranche-2 slice PMAT-502dh — **`min(xs, default=d)` / `max(xs, default=d)`**.
+
+The empty-safe `default=` keyword on `min`/`max` over a list was rejected. It
+now returns `d` on an empty list instead of panicking: `Expr::ListMinMax`
+gains a `default` field, the empty case emits `.unwrap_or(<default>)` (int /
+key branches), and the float branch switches from the non-panicking ±∞ fold to
+`.reduce(f64::min/max).unwrap_or(<default>)`. rustc round-trip
+`minmax_default.py` (cross-checked vs `python3`): `min_or_zero([3,1,2]) == 1` /
+`([]) == 0`, `max_or_neg1([3,1,2]) == 3` / `([]) == -1`, `fmin_or([2.5,1.5]) ==
+1.5` / `([]) == 9.0`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.145] — 2026-06-13
 
 Tranche-2 slice PMAT-502dg — **filtered generator expressions** (`sum(x for x

@@ -590,7 +590,13 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(right, out);
         }
         // PMAT-502e: min/max reduction — recurse into the list expression.
-        Expr::ListMinMax { list, .. } => collect_idents(list, out),
+        // PMAT-502dh: also recurse into the optional `default`.
+        Expr::ListMinMax { list, default, .. } => {
+            collect_idents(list, out);
+            if let Some(d) = default {
+                collect_idents(d, out);
+            }
+        }
         // PMAT-502u: list query — recurse into the list and the arg.
         Expr::ListQuery { list, arg, .. } => {
             collect_idents(list, out);

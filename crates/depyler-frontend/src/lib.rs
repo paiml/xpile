@@ -5121,25 +5121,35 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // any type (only the key needs `Ord`).
                 if matches!(fname.id.as_str(), "min" | "max") && call.args.len() == 1 {
                     let mut key: Option<SortKey> = None;
+                    // PMAT-502dh: optional `default=<expr>` — returned when the
+                    // list is empty (instead of panicking).
+                    let mut default: Option<Box<Expr>> = None;
                     let mut kwargs_ok = true;
                     for kw in &call.keywords {
-                        if kw.arg.as_ref().map(|a| a.as_str()) == Some("key") {
-                            if let ast::Expr::Lambda(lam) = &kw.value {
-                                if lam.args.args.len() == 1
-                                    && lam.args.posonlyargs.is_empty()
-                                    && lam.args.kwonlyargs.is_empty()
-                                    && lam.args.vararg.is_none()
-                                    && lam.args.kwarg.is_none()
-                                {
-                                    let param = lam.args.args[0].def.arg.to_string();
-                                    let body = lower_expr_in_ctx(ctx, (*lam.body).clone())?;
-                                    key = Some(SortKey {
-                                        param,
-                                        body: Box::new(body),
-                                    });
-                                    continue;
+                        match kw.arg.as_ref().map(|a| a.as_str()) {
+                            Some("key") => {
+                                if let ast::Expr::Lambda(lam) = &kw.value {
+                                    if lam.args.args.len() == 1
+                                        && lam.args.posonlyargs.is_empty()
+                                        && lam.args.kwonlyargs.is_empty()
+                                        && lam.args.vararg.is_none()
+                                        && lam.args.kwarg.is_none()
+                                    {
+                                        let param = lam.args.args[0].def.arg.to_string();
+                                        let body = lower_expr_in_ctx(ctx, (*lam.body).clone())?;
+                                        key = Some(SortKey {
+                                            param,
+                                            body: Box::new(body),
+                                        });
+                                        continue;
+                                    }
                                 }
                             }
+                            Some("default") => {
+                                default = Some(Box::new(lower_expr_in_ctx(ctx, kw.value.clone())?));
+                                continue;
+                            }
+                            _ => {}
                         }
                         kwargs_ok = false;
                     }
@@ -5155,6 +5165,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                     is_max: fname.id.as_str() == "max",
                                     of_float: matches!(*elem, Type::F64),
                                     key,
+                                    default,
                                 });
                             }
                         }

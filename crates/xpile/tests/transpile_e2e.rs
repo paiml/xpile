@@ -3529,6 +3529,29 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dh (Tranche 2): `min(xs, default=d)` / `max(xs, default=d)` return
+/// `d` on an empty list instead of panicking (`.unwrap_or(d)`).
+#[test]
+fn minmax_default() {
+    let rust = xpile_transpile_to_rust("minmax_default.py");
+    assert!(
+        rust.contains(".min().unwrap_or(0i64)") && rust.contains("reduce(f64::min).unwrap_or"),
+        "min/max default:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // min/max with default; cross-checked vs python3.
+    assert_eq!(min_or_zero(vec![3, 1, 2]), 1);
+    assert_eq!(min_or_zero(vec![]), 0);
+    assert_eq!(max_or_neg1(vec![3, 1, 2]), 3);
+    assert_eq!(max_or_neg1(vec![]), -1);
+    assert_eq!(fmin_or(vec![2.5, 1.5]), 1.5);
+    assert_eq!(fmin_or(vec![]), 9.0);
+}
+"#;
+    assert_rustc_runs("minmax_default", &rust, driver);
+}
+
 /// PMAT-502dg (Tranche 2): a generator expression with an `if` filter composes
 /// `Filter` → `Map` (`sum(x for x in xs if x > 0)`).
 #[test]

@@ -1121,7 +1121,10 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             is_max,
             of_float,
             key,
+            default,
         } => {
+            // PMAT-502dh: an optional `default` → `.unwrap_or(<default>)` on
+            // the empty case; the float branch uses `.reduce(..)` with default.
             emit_expr(out, list, mode)?;
             match key {
                 Some(k) => {
@@ -1132,14 +1135,35 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                         k.param
                     )?;
                     emit_expr(out, &k.body, mode)?;
-                    out.push_str(" }).unwrap()");
+                    out.push_str(" })");
                 }
-                None => out.push_str(match (*of_float, *is_max) {
-                    (false, true) => ".iter().copied().max().unwrap()",
-                    (false, false) => ".iter().copied().min().unwrap()",
-                    (true, true) => ".iter().copied().fold(f64::NEG_INFINITY, f64::max)",
-                    (true, false) => ".iter().copied().fold(f64::INFINITY, f64::min)",
-                }),
+                None => match (*of_float, default.is_some()) {
+                    (false, _) => out.push_str(if *is_max {
+                        ".iter().copied().max()"
+                    } else {
+                        ".iter().copied().min()"
+                    }),
+                    (true, true) => out.push_str(if *is_max {
+                        ".iter().copied().reduce(f64::max)"
+                    } else {
+                        ".iter().copied().reduce(f64::min)"
+                    }),
+                    (true, false) => out.push_str(if *is_max {
+                        ".iter().copied().fold(f64::NEG_INFINITY, f64::max)"
+                    } else {
+                        ".iter().copied().fold(f64::INFINITY, f64::min)"
+                    }),
+                },
+            }
+            if !(*of_float && default.is_none()) {
+                match default {
+                    Some(d) => {
+                        out.push_str(".unwrap_or(");
+                        emit_expr(out, d, mode)?;
+                        out.push(')');
+                    }
+                    None => out.push_str(".unwrap()"),
+                }
             }
         }
         // PMAT-502u: list query — `xs.count(x)` / `xs.index(x)` (→ i64).
