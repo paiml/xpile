@@ -3550,6 +3550,33 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502ee (Tranche 2): a `bool` field in an f-string must render
+/// Python-style `True`/`False`, not Rust's lowercase `Display` (`true`/`false`)
+/// — a silent miscompile (`f"flag={flag}"` produced "flag=true"). A bool field
+/// now desugars to `"True" if b else "False"` (the same conversion `str(bool)`
+/// already used), which also un-defers a lone `f"{flag}"`. Cross-checked vs
+/// python3.
+#[test]
+fn fstring_bool() {
+    let rust = xpile_transpile_to_rust("fstring_bool.py");
+    assert!(
+        rust.contains("\"True\"") && rust.contains("\"False\"") && !rust.contains("\"flag=true\""),
+        "bool f-string field should render Python-style True/False:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(flag_line(true), "flag=True");
+    assert_eq!(flag_line(false), "flag=False");
+    assert_eq!(lone_bool(true), "True");
+    assert_eq!(two_bools(true, false), "True and False");
+    assert_eq!(comparison_field(3, 3), "eq=True");
+    assert_eq!(comparison_field(3, 4), "eq=False");
+    assert_eq!(mixed(7, true), "n=7 ok=True");
+}
+"#;
+    assert_rustc_runs("fstring_bool", &rust, driver);
+}
+
 /// PMAT-502ed (Tranche 2): f-string fixes — (1) a lone `f"{n}"` field (no
 /// surrounding text or spec) over an `int` was returning the bare value (typed
 /// `i64`, failing the `-> str` check); it now stringifies to `format!("{:}", n)`.
