@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.144] — 2026-06-13
+
+Tranche-2 slice PMAT-502df — **generator expressions** (`sum(i*i for i in
+range(n))`).
+
+A generator expression as a builtin argument (`sum(f(x) for x in xs)`,
+`max(abs(x) for x in xs)`, `list(x*2 for x in xs)`) was rejected. It now
+desugars to the existing `Expr::Map` (the List-producing `map(lambda x: elt,
+iter)` form), so every List-consuming builtin (`sum`, `max`, `min`, `list`,
+…) accepts it for free — frontend-only, no meta-HIR / codegen change. The
+iterable may be a `range(...)` (materialised) or any list-typed expression;
+the body is lowered with the loop var unbound (matching `map`'s element-type
+inference). An `if` filter, multiple `for` clauses, and a tuple target are
+deferred (use a filtered list comprehension assigned to a variable). rustc
+round-trip `generator_expr.py` (cross-checked vs `python3`): `sum_squares(5)
+== 30`, `sum_abs([-1,2,-3]) == 6`, `max_abs([-1,5,-3]) == 5`,
+`doubled([1,2,3]) == [2,4,6]`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.143] — 2026-06-13
 
 Tranche-2 slice PMAT-502de — **context-aware subscript index + unary `-`**

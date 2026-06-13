@@ -3529,6 +3529,27 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502df (Tranche 2): generator expressions desugar to `Expr::Map`, so
+/// `sum`/`max`/`min`/`list` accept them (`sum(i*i for i in range(n))`).
+#[test]
+fn generator_expr() {
+    let rust = xpile_transpile_to_rust("generator_expr.py");
+    assert!(
+        rust.contains(".map(|__k|") && rust.contains(".iter().sum::<i64>()"),
+        "genexpr → map + sum:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // generator expressions into sum/max/list; cross-checked vs python3.
+    assert_eq!(sum_squares(5), 30);
+    assert_eq!(sum_abs(vec![-1, 2, -3]), 6);
+    assert_eq!(max_abs(vec![-1, 5, -3]), 5);
+    assert_eq!(doubled(vec![1, 2, 3]), vec![2, 4, 6]);
+}
+"#;
+    assert_rustc_runs("generator_expr", &rust, driver);
+}
+
 /// PMAT-502de (Tranche 2): builtins in a subscript index and under unary `-`
 /// lower context-aware (`xs[abs(i)]` / `-abs(n)` were silently miscompiled to
 /// an undefined `abs(...)`). Closes the ctx-free-position miscompile class.
