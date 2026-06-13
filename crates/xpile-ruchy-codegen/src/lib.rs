@@ -1117,6 +1117,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 NumBuiltinOp::Sqrt => out.push_str(".sqrt()"),
                 NumBuiltinOp::Floor => out.push_str(".floor() as i64"),
                 NumBuiltinOp::Ceil => out.push_str(".ceil() as i64"),
+                // PMAT-502el: trig / exp / log — matching the Rust backend.
+                NumBuiltinOp::Sin => out.push_str(".sin()"),
+                NumBuiltinOp::Cos => out.push_str(".cos()"),
+                NumBuiltinOp::Tan => out.push_str(".tan()"),
+                NumBuiltinOp::Exp => out.push_str(".exp()"),
+                NumBuiltinOp::Ln => out.push_str(".ln()"),
+                NumBuiltinOp::Log10 => out.push_str(".log10()"),
+                NumBuiltinOp::Log2 => out.push_str(".log2()"),
                 NumBuiltinOp::Min | NumBuiltinOp::Max => {
                     // PMAT-502cz: variadic — chain over every remaining arg.
                     let method = if matches!(op, NumBuiltinOp::Min) {

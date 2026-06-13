@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.176] — 2026-06-13
+
+Tranche-2 slice PMAT-502el — **more `math`: constants + trig/log functions**.
+
+Extends the v0.1.175 `math` first cut:
+
+- **Constants** `math.pi` / `math.e` / `math.tau` — bare attribute reads
+  (`math.<name>`, recognized in the context-aware lowering) → `Expr::LitFloat`
+  with the f64 constant's value (round-trip-precise, the same value CPython
+  holds). `math.inf` / `math.nan` are deferred (they need
+  `f64::INFINITY`/`NAN`, not a finite literal).
+- **Functions** `math.sin` / `cos` / `tan` / `exp` / `log` (natural) /
+  `log10` / `log2` — all single-argument `f64 → f64`, lowered to
+  `Expr::NumBuiltin` (new `NumBuiltinOp` variants) emitting the matching f64
+  method (`.sin()`, …, `.ln()`, `.log10()`, `.log2()`).
+
+New `math_more.py` e2e fixture (`pi`/`e`/`tau` + the seven functions, incl. a
+`pi*r*r` composition), cross-checked vs python3 (value-tolerant for the
+transcendental results). Lean still refuses (`NumBuiltin`).
+
 ## [0.1.175] — 2026-06-13
 
 Tranche-2 slice PMAT-502ek — **`math` module functions (`sqrt`/`floor`/`ceil`)**.
