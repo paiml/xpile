@@ -1219,6 +1219,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "str.swapcase() (0-arg -> str) was rejected. FIX: new StrMethodOp::SwapCase; str_method_op maps 'swapcase'; str_method_arity = 0; both inferers type it Str. RECV-ONCE suffix codegen (rust+ruchy, alongside Upper/Lower/Strip): .chars().map(|__c| if __c.is_uppercase() { __c.to_lowercase().collect::<String>() } else if __c.is_lowercase() { __c.to_uppercase().collect::<String>() } else { __c.to_string() }).collect::<String>() — upper<->lower each char, non-cased chars (digits/punct/space) unchanged (matches Python). Lean refuses StrMethod wholesale. rustc round-trip swapcase.py (cross-checked vs python3): swap('Hello, World! 42')='hELLO, wORLD! 42'. FREE CI. SHIPPED v0.1.130."
+- id: PMAT-502CS
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cs: [Tranche2] str.zfill(width) sign-aware'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "str.zfill(width) was rejected (deferred earlier for sign wrinkle). FIX: new StrMethodOp::ZFill (1-arg -> str); str_method_op maps 'zfill'; arity 1; both inferers Str. BLOCK-FORM codegen (receiver used several times) special-cased before the recv-once emit (like removeprefix): { let __s = (recv); let __w = (width) as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = \"0\".repeat(__w - __n); if __s.starts_with('-') || __s.starts_with('+') { format!(\"{}{}{}\", &__s[..1], __pad, &__s[1..]) } else { format!(\"{}{}\", __pad, __s) } } }. Sign-aware (leading -/+ stays first, zeros after); already-wide unchanged; width counts CHARS (chars().count()), and byte-slicing &__s[..1]/&__s[1..] only runs when the first char is an ASCII sign (safe). recv-once match + ruchy get unreachable/return arms. Lean refuses. rustc round-trip zfill.py (cross-checked vs python3): pad('42')='00042', pad('-42')='-0042', pad('+7')='+0007', pad('123456')='123456', pad('')='00000'. FREE CI. SHIPPED v0.1.131."
 - id: PMAT-465
   github_issue: 496
   item_type: task

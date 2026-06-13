@@ -3421,6 +3421,26 @@ fn main() {
     assert_rustc_runs("swapcase", &rust, driver);
 }
 
+/// PMAT-502cs (Tranche 2): `str.zfill(width)` — sign-aware zero-pad.
+#[test]
+fn zfill() {
+    let rust = xpile_transpile_to_rust("zfill.py");
+    assert!(
+        rust.contains("__s.starts_with('-') || __s.starts_with('+')"),
+        "zfill sign-aware:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(pad(String::from("42")), "00042");
+    assert_eq!(pad(String::from("-42")), "-0042");
+    assert_eq!(pad(String::from("+7")), "+0007");
+    assert_eq!(pad(String::from("123456")), "123456");
+    assert_eq!(pad(String::from("")), "00000");
+}
+"#;
+    assert_rustc_runs("zfill", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
