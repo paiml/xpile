@@ -848,6 +848,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, index, mode)?;
             out.push_str("); let __idx = if __i < 0 { __cs.len() as i64 + __i } else { __i }; __cs[__idx as usize].to_string() }");
         }
+        // PMAT-502cl: string chars as a Vec<String> (for `for c in s`).
+        Expr::StrChars { string } => {
+            out.push('(');
+            emit_expr(out, string, mode)?;
+            out.push_str(").chars().map(|__c| __c.to_string()).collect::<Vec<String>>()");
+        }
         // PMAT-492/493b: Python string methods. No-arg transforms emit a
         // suffix; the startswith/endswith predicates emit
         // `.starts_with(&(<pat>)[..])` — the `&(..)[..]` reslice yields

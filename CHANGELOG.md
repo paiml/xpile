@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.124] — 2026-06-13
+
+Tranche-2 slice PMAT-502cl — **string iteration `for c in s`**.
+
+Iterating a string's characters was rejected ("non-collection … typing as
+Str"). A new `Expr::StrChars` materialises a string's chars as a `list[str]`
+(each a 1-char string) — `(s).chars().map(|c| c.to_string()).collect::<Vec<
+String>>()` — and the for-loop lowers `for c in s` to a `Stmt::ForEach` over
+it (the `.iter().cloned()` then yields `String` items, so the loop var binds as
+`str`). rustc round-trip `str_iter.py` (cross-checked vs `python3`):
+`count_vowels("education") -> 5`, `reverse_str("abc") -> "cba"`. Lean refuses.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.123] — 2026-06-13
 
 Tranche-2 slice PMAT-502ck — **for-loops over a call iterable** (`reversed(xs)`,

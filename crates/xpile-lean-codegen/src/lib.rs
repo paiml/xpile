@@ -494,6 +494,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(string, out);
             collect_idents(index, out);
         }
+        // PMAT-502cl: string chars — recurse into the string expr.
+        Expr::StrChars { string } => collect_idents(string, out),
         // PMAT-492: string method — recurse into the receiver + args.
         Expr::StrMethod { recv, args, .. } => {
             collect_idents(recv, out);
@@ -1121,6 +1123,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::StrCharAt { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python string indexing `s[i]` is not yet supported in the Lean lane — \
+                 use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502cl: string iteration `for c in s` deferred in the Lean lane.
+        Expr::StrChars { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python string iteration `for c in s` is not yet supported in the Lean lane — \
                  use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

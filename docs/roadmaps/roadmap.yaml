@@ -1156,6 +1156,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "for x in reversed(xs) / sorted(xs) / list(range(n)) was rejected ('iterates a non-range(...) call'). ROOT CAUSE: the for-loop collection-iteration early-return was gated behind `if !matches!(&*f.iter, ast::Expr::Call(_))`, so ANY call iterable skipped the collection path and fell to the range matcher. FIX: new is_range_like_call(iter) helper (true for range(...) and reversed(range(...))); the gate becomes `if !is_range_like_call(&f.iter)`. Now only range-like calls drive the counter-while desugar; every other call (reversed(xs)/sorted(xs)/list(range(n))/etc. — all lower to List-typed exprs) goes through the collection path and emits Stmt::ForEach. Plain range(...) + reversed(range(...)) (PMAT-502ci) unchanged; bare list names/literals/d.items() (tuple-target) unchanged. String iteration (for c in s) still deferred (types Str, not List). rustc round-trip for_over_call.py (cross-checked vs python3): rev_fold([1,2,3])=321, sort_fold([3,1,2])=123, range_sum(5)=10. FREE CI. SHIPPED v0.1.123."
+- id: PMAT-502CL
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cl: [Tranche2] string iteration for c in s'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "for c in s (string iteration) was rejected ('non-collection ... typing as Str'). FIX: new Expr::StrChars { string } meta-HIR variant — the characters of a string as a list[str] (each a 1-char string). The for-loop collection path's elem-type match gains a Type::Str arm: wrap iter_expr in Expr::StrChars, elem_ty = Str, over_keys = false. The existing Stmt::ForEach emit appends .iter().cloned(), so StrChars must produce a Vec<String>: codegen rust/ruchy emit (s).chars().map(|__c| __c.to_string()).collect::<Vec<String>>(). Loop var binds as str. Both inferers type StrChars as List(Str). Lean refuses. Blast radius: new Expr variant touched expr_has_int_arith + 2 inferers + collect_idents(lean) + 3 emit sites. rustc round-trip str_iter.py (cross-checked vs python3): count_vowels('education')=5, reverse_str('abc')='cba'. FREE CI. SHIPPED v0.1.124."
 - id: PMAT-465
   github_issue: 496
   item_type: task
