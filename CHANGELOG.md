@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.198] — 2026-06-13
+
+Tranche-2 correctness slice PMAT-502fe — **reject `tuple(<iterable>)` cleanly**
+instead of silently miscompiling.
+
+- `tuple(xs)` previously fell through to a generic call emit, producing an
+  undefined `tuple(xs)` Rust call that fails rustc — a silent miscompile and a
+  violation of the central "transpile-success ⟹ valid Rust" guarantee. Rust
+  tuples are fixed-arity, so a variable-length `tuple(<iterable>)` has no Rust
+  counterpart.
+- Now intercepted in the ctx-aware `Call` arm (alongside `list`/`set`/`dict`)
+  with a clear lowering error pointing at the `(a, b)` literal form (`Type::Tuple`,
+  unaffected) or keeping a `list`. New e2e rejection test
+  `tuple_call_is_rejected_not_miscompiled`. e2e 259 → 260.
+- Docs housekeeping: corrected stale roadmap statuses — PMAT-484 (structured
+  `compile_targets.via_roles` + `contract_via_roles.rs` validator) and PMAT-486
+  (`DiffExecEngine` trait + `Option<Arc<dyn>>` hook + NoopEngine) were already
+  implemented; marked `done`.
+
 ## [0.1.197] — 2026-06-13
 
 R6/PMAT-475 third sub-slice — **author `C-XLATE-PY-DICT-TO-HASHMAP` at depth-1**.
