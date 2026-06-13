@@ -1113,6 +1113,10 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push(')');
             match op {
                 NumBuiltinOp::Abs => out.push_str(".abs()"),
+                // PMAT-502ek: math functions, matching the Rust backend.
+                NumBuiltinOp::Sqrt => out.push_str(".sqrt()"),
+                NumBuiltinOp::Floor => out.push_str(".floor() as i64"),
+                NumBuiltinOp::Ceil => out.push_str(".ceil() as i64"),
                 NumBuiltinOp::Min | NumBuiltinOp::Max => {
                     // PMAT-502cz: variadic — chain over every remaining arg.
                     let method = if matches!(op, NumBuiltinOp::Min) {

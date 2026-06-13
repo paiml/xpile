@@ -619,7 +619,7 @@ impl Frontend for PythonFrontend {
             // file without `NameError: BigInt`. The frontend skips it
             // (no Meta-HIR representation needed — annotations are
             // already treated as Type tokens at lower time).
-            if is_future_annotations_import(&stmt) {
+            if is_future_annotations_import(&stmt) || is_skippable_import(&stmt) {
                 continue;
             }
             let item = lower_top_level_stmt(stmt, signatures.clone(), consts.clone())?;
@@ -633,6 +633,15 @@ impl Frontend for PythonFrontend {
             ffi_boundaries: Vec::new(),
         })
     }
+}
+
+/// PMAT-502ek: a plain `import <module>` statement (e.g. `import math`). An
+/// import has no runtime effect we model — it just enables a namespace — so we
+/// skip it; whether a given module's *uses* are supported is decided at the
+/// call/attribute site (`math.sqrt(...)` is recognised, an unsupported
+/// `os.getcwd()` errors there with a clear message).
+fn is_skippable_import(stmt: &ast::Stmt) -> bool {
+    matches!(stmt, ast::Stmt::Import(_))
 }
 
 /// True iff `stmt` is exactly `from __future__ import annotations`.
@@ -4433,7 +4442,14 @@ fn infer_type(e: &Expr) -> Type {
         // PMAT-496: a slice has the same type as its collection.
         Expr::Slice { collection, .. } => infer_type(collection),
         // PMAT-498: numeric builtin types as its first argument.
-        Expr::NumBuiltin { args, .. } => args.first().map(infer_type).unwrap_or(Type::I64),
+        // PMAT-502ek: `sqrt` is always `float`; `floor`/`ceil` are `int`
+        // (Python `math.floor`/`ceil` return an int); `abs`/`min`/`max` take
+        // the first argument's type.
+        Expr::NumBuiltin { op, args } => match op {
+            NumBuiltinOp::Sqrt => Type::F64,
+            NumBuiltinOp::Floor | NumBuiltinOp::Ceil => Type::I64,
+            _ => args.first().map(infer_type).unwrap_or(Type::I64),
+        },
         // PMAT-498b: sum types as the list's element type.
         Expr::Sum { of_float, .. } => {
             if *of_float {
@@ -4737,10 +4753,15 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-496: a slice has the same type as its collection.
         Expr::Slice { collection, .. } => infer_type_in_ctx(ctx, collection),
         // PMAT-498: numeric builtin types as its first argument.
-        Expr::NumBuiltin { args, .. } => args
-            .first()
-            .map(|a| infer_type_in_ctx(ctx, a))
-            .unwrap_or(Type::I64),
+        // PMAT-502ek: see the context-free twin — op-specific return type.
+        Expr::NumBuiltin { op, args } => match op {
+            NumBuiltinOp::Sqrt => Type::F64,
+            NumBuiltinOp::Floor | NumBuiltinOp::Ceil => Type::I64,
+            _ => args
+                .first()
+                .map(|a| infer_type_in_ctx(ctx, a))
+                .unwrap_or(Type::I64),
+        },
         // PMAT-498b: sum types as the list's element type.
         Expr::Sum { of_float, .. } => {
             if *of_float {
@@ -5069,6 +5090,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // `d.get(k, default)` → `Expr::DictGetOr` when `d` is a dict.
         ast::Expr::Call(call) => {
             if let ast::Expr::Attribute(attr) = call.func.as_ref() {
+                // PMAT-502ek: `math.<fn>(...)` module functions (`import math`
+                // is accepted + skipped at the top level). The receiver is the
+                // bare module name `math`, not a value.
+                if let ast::Expr::Name(recv) = attr.value.as_ref() {
+                    if recv.id.as_str() == "math" {
+                        return lower_math_call(ctx, attr.attr.as_str(), &call);
+                    }
+                }
                 if attr.attr.as_str() == "get" {
                     let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
                     if matches!(infer_type_in_ctx(ctx, &recv), Type::Dict(_, _)) {
@@ -5314,6 +5343,10 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             NumBuiltinOp::Min | NumBuiltinOp::Max => {
                                 matches!(arg0_ty, Type::I64 | Type::F64 | Type::Str | Type::Bool)
                             }
+                            // PMAT-502ek: sqrt/floor/ceil come only from
+                            // `math.<fn>` (lower_math_call), never the bare-name
+                            // `num_builtin_op` dispatch — unreachable here.
+                            NumBuiltinOp::Sqrt | NumBuiltinOp::Floor | NumBuiltinOp::Ceil => false,
                         };
                         if ok {
                             return Ok(Expr::NumBuiltin { op, args });
@@ -6294,6 +6327,46 @@ fn stringify_lone_fstring_field(acc: Expr, ty: Type) -> Expr {
 /// context-aware. A `FormattedValue` with a static, supported format spec
 /// becomes [`Expr::FormatSpec`]; a plain `{expr}` lowers its value; conversion
 /// flags (`!r`/`!s`/`!a`) and unsupported / dynamic specs error.
+/// PMAT-502ek: lower a `math.<fn>(...)` module-function call. First cut covers
+/// the common single-argument float functions `sqrt` / `floor` / `ceil`,
+/// reusing [`Expr::NumBuiltin`] (so all the existing inference / codegen
+/// machinery applies). `sqrt` returns `float`; `floor` / `ceil` return `int`
+/// (matching Python). Other `math.*` names error clearly.
+fn lower_math_call(
+    ctx: &LoweringCtx,
+    fn_name: &str,
+    call: &ast::ExprCall,
+) -> Result<Expr, FrontendError> {
+    let op = match fn_name {
+        "sqrt" => NumBuiltinOp::Sqrt,
+        "floor" => NumBuiltinOp::Floor,
+        "ceil" => NumBuiltinOp::Ceil,
+        other => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `math.{other}(...)` — v0.2.0 supports `math.sqrt`/`math.floor`/`math.ceil` (more `math` functions are a follow-up)",
+                ctx.fn_name
+            )));
+        }
+    };
+    if !call.keywords.is_empty() || call.args.len() != 1 {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` calls `math.{fn_name}(...)` with {} positional arg(s){}; it takes exactly 1",
+            ctx.fn_name,
+            call.args.len(),
+            if call.keywords.is_empty() {
+                ""
+            } else {
+                " plus keyword args"
+            },
+        )));
+    }
+    let arg = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+    Ok(Expr::NumBuiltin {
+        op,
+        args: vec![arg],
+    })
+}
+
 /// PMAT-502ei: parse a `key=` argument for `sorted`/`min`/`max` into a
 /// [`SortKey`]. Two forms: a simple single-param `lambda p: e`, or a bare
 /// callable name (`key=abs`, `key=len`, `key=my_fn`) — the latter is

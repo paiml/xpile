@@ -1228,6 +1228,11 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push(')');
             match op {
                 NumBuiltinOp::Abs => out.push_str(".abs()"),
+                // PMAT-502ek: math functions. `floor`/`ceil` return Python
+                // `int`, so cast the f64 result to i64.
+                NumBuiltinOp::Sqrt => out.push_str(".sqrt()"),
+                NumBuiltinOp::Floor => out.push_str(".floor() as i64"),
+                NumBuiltinOp::Ceil => out.push_str(".ceil() as i64"),
                 NumBuiltinOp::Min | NumBuiltinOp::Max => {
                     // PMAT-502cz: variadic — chain `.min`/`.max` over every
                     // remaining arg (`max(a, b, c)` → `(a).max(b).max(c)`).
