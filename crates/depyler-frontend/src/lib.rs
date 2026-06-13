@@ -5787,9 +5787,13 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                         if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
                             // With a key, any element type works (the key
-                            // supplies the ordering); without, restrict to
-                            // numeric for the `.min()/.max()`/fold form.
-                            if key.is_some() || matches!(*elem, Type::I64 | Type::F64) {
+                            // supplies the ordering); without, the element must
+                            // be `Ord` (or `f64`, via the fold) — PMAT-502er
+                            // adds `str`/`bool` (both `Ord`) to the int/float
+                            // first cut, so `min(words)`/`max(words)` work.
+                            if key.is_some()
+                                || matches!(*elem, Type::I64 | Type::F64 | Type::Str | Type::Bool)
+                            {
                                 return Ok(Expr::ListMinMax {
                                     list: Box::new(list),
                                     is_max: fname.id.as_str() == "max",

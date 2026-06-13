@@ -1381,13 +1381,15 @@ fn main() {
 }
 
 /// PMAT-502e (Tranche 2): 1-arg `min(xs)`/`max(xs)` over an int list →
-/// `xs.iter().copied().min().unwrap()` (or `.max()`).
+/// `xs.iter().cloned().min().unwrap()` (or `.max()`). (PMAT-502er switched the
+/// non-float reduction from `.copied()` to `.cloned()` so `String` works too;
+/// `i64` is `Clone`, so this is semantically identical.)
 #[test]
 fn list_minmax_builtin() {
     let rust = xpile_transpile_to_rust("list_minmax_builtin.py");
     assert!(
-        rust.contains(".iter().copied().min().unwrap()")
-            && rust.contains(".iter().copied().max().unwrap()"),
+        rust.contains(".iter().cloned().min().unwrap()")
+            && rust.contains(".iter().cloned().max().unwrap()"),
         "expected min/max reduction emission, got:\n{rust}"
     );
     let driver = r#"
@@ -3548,6 +3550,32 @@ fn main() {
 }
 "#;
     assert_rustc_runs("nested_index_assign", &rust, driver);
+}
+
+/// PMAT-502er (Tranche 2): 1-arg `min(xs)` / `max(xs)` reduction over a
+/// `list[str]` (and `list[bool]`). Previously the reduction was numeric-only;
+/// `str`/`bool` are `Ord`, so the type gate is widened and the codegen uses
+/// `.iter().cloned().min()/.max()` (not `.copied()`, since `String` isn't
+/// `Copy` — `i64`/`bool` are `Clone` too). Cross-checked vs python3.
+#[test]
+fn min_max_str_list() {
+    let rust = xpile_transpile_to_rust("min_max_str_list.py");
+    assert!(
+        rust.contains(".iter().cloned().min()") || rust.contains(".iter().cloned().max()"),
+        "str-list min/max should use cloned():\n{rust}"
+    );
+    let driver = r#"
+fn w() -> Vec<String> {
+    vec!["banana".to_string(), "apple".to_string(), "cherry".to_string()]
+}
+fn main() {
+    assert_eq!(min_word(w()), "apple");
+    assert_eq!(max_word(w()), "cherry");
+    assert_eq!(min_word_default(vec!["b".to_string(), "a".to_string()]), "a");
+    assert_eq!(min_int_regression(vec![3, 1, 2]), 1);
+}
+"#;
+    assert_rustc_runs("min_max_str_list", &rust, driver);
 }
 
 /// PMAT-502eq (Tranche 2): shallow copy — `xs.copy()` / `d.copy()` / `s.copy()`

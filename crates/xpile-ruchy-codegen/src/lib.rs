@@ -1263,10 +1263,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     out.push_str(" })");
                 }
                 None => match (*of_float, default.is_some()) {
+                    // PMAT-502er: `.cloned()` (not `.copied()`) so non-Copy
+                    // `String` min/max works too; i64/bool are `Clone`.
                     (false, _) => out.push_str(if *is_max {
-                        ".iter().copied().max()"
+                        ".iter().cloned().max()"
                     } else {
-                        ".iter().copied().min()"
+                        ".iter().cloned().min()"
                     }),
                     (true, true) => out.push_str(if *is_max {
                         ".iter().copied().reduce(f64::max)"

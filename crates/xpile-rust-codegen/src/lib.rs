@@ -1386,11 +1386,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     out.push_str(" })");
                 }
                 None => match (*of_float, default.is_some()) {
-                    // i64: Ord → `.min()/.max()` returns Option.
+                    // Ord element (i64 / str / bool): `.min()/.max()` returns
+                    // Option. `.cloned()` (not `.copied()`) so non-Copy
+                    // `String` works too (PMAT-502er); i64/bool are `Clone`.
                     (false, _) => out.push_str(if *is_max {
-                        ".iter().copied().max()"
+                        ".iter().cloned().max()"
                     } else {
-                        ".iter().copied().min()"
+                        ".iter().cloned().min()"
                     }),
                     // f64 with a default → `.reduce(..)` (Option) + unwrap_or.
                     (true, true) => out.push_str(if *is_max {
