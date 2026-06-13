@@ -3529,6 +3529,26 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502ds (Tranche 2): `f(*xs)` splat into a variadic param passes the
+/// list directly (`f(fixed…, *xs)` → `f(fixed…, xs)`).
+#[test]
+fn varargs_splat() {
+    let rust = xpile_transpile_to_rust("varargs_splat.py");
+    assert!(
+        rust.contains("total(xs)") && rust.contains("with_prefix(10i64, xs)"),
+        "f(*xs) splat:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // *-splat into variadic; cross-checked vs python3.
+    assert_eq!(forward(vec![1, 2, 3]), 6);
+    assert_eq!(forward_prefixed(vec![1, 2, 3]), 16);
+    assert_eq!(forward_empty(vec![]), 0);
+}
+"#;
+    assert_rustc_runs("varargs_splat", &rust, driver);
+}
+
 /// PMAT-502dr (Tranche 2): a nested `def inner(...): return <expr>` lowers to
 /// a closure (`Stmt::ClosureLet`), reusing the lambda machinery.
 #[test]

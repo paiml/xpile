@@ -5589,6 +5589,43 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     let callee = n.id.to_string();
                     let fixed = ctx.signatures.get(&callee).map_or(0, |s| s.params.len());
                     if call.args.len() >= fixed {
+                        // PMAT-502ds: `f(fixed…, *xs)` — a `*`-splat covering the
+                        // whole vararg tail passes the list directly (`f(…, xs)`)
+                        // instead of collecting into a fresh `vec![]`.
+                        let tail_is_splat = call.args.len() == fixed + 1
+                            && matches!(call.args.get(fixed), Some(ast::Expr::Starred(_)));
+                        let no_fixed_splat = call.args[..fixed]
+                            .iter()
+                            .all(|a| !matches!(a, ast::Expr::Starred(_)));
+                        if tail_is_splat && no_fixed_splat {
+                            let mut lowered: Vec<Expr> = Vec::with_capacity(fixed + 1);
+                            for a in &call.args[..fixed] {
+                                lowered.push(lower_expr_in_ctx(ctx, a.clone())?);
+                            }
+                            let ast::Expr::Starred(s) = &call.args[fixed] else {
+                                unreachable!("checked Starred above")
+                            };
+                            let list = lower_expr_in_ctx(ctx, (*s.value).clone())?;
+                            if !matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
+                                return Err(FrontendError::Lower(format!(
+                                    "function `{}` splats `*<expr>` into variadic `{callee}`, but the expr is not a list",
+                                    ctx.fn_name
+                                )));
+                            }
+                            lowered.push(list);
+                            return Ok(Expr::Call {
+                                callee,
+                                args: lowered,
+                            });
+                        }
+                        // Any other `*`-splat shape (mixed with positionals, or
+                        // in a fixed slot) is deferred.
+                        if call.args.iter().any(|a| matches!(a, ast::Expr::Starred(_))) {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` uses an unsupported `*`-splat shape calling variadic `{callee}` — only `{callee}(fixed…, *iterable)` is supported",
+                                ctx.fn_name
+                            )));
+                        }
                         let mut lowered: Vec<Expr> = Vec::with_capacity(fixed + 1);
                         for a in &call.args {
                             lowered.push(lower_expr_in_ctx(ctx, a.clone())?);
