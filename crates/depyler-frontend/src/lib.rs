@@ -5859,6 +5859,18 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             }
             lower_expr(*fv.value)
         }
+        // PMAT-502cp: tuple literal in context-free position (e.g. a list
+        // element `[(1, 2), (3, 4)]`) → `Expr::TupleLit`. The ctx-aware path
+        // has its own Tuple arm; this mirror lets tuple literals appear as
+        // list elements (which lower context-free).
+        ast::Expr::Tuple(t) => {
+            let elems = t
+                .elts
+                .into_iter()
+                .map(lower_expr)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Expr::TupleLit(elems))
+        }
         other => Err(FrontendError::Lower(format!(
             "unsupported expression: {:?}",
             std::mem::discriminant(&other)

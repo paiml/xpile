@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.128] — 2026-06-13
+
+Tranche-2 slice PMAT-502cp — **tuple literals as list elements** (`[(1, 2),
+(3, 4)]`).
+
+A tuple literal worked in `return` position but was rejected as a list element
+("unsupported expression") — the context-free `lower_expr` (which lowers list
+elements) lacked an `ast::Expr::Tuple` arm (only the ctx-aware path had one).
+Added the mirror arm to `lower_expr`, so tuple literals lower to `TupleLit`
+anywhere, making `list[tuple[…]]` literals — and iterating them with
+`for a, b in …` — work. rustc round-trip `list_of_tuples.py` (cross-checked vs
+`python3`): `make() -> [(1,2),(3,4)]`, `dot(make()) -> 14`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.127] — 2026-06-13
 
 Tranche-2 slice PMAT-502co — **no-arg `str.split()`** (whitespace split).
