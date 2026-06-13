@@ -3529,6 +3529,29 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502do (Tranche 2): `%s` over bool/float str()-converts the arg first
+/// (bool → "True"/"False", float → Python repr) before `{}`.
+#[test]
+fn percent_format_bool_float() {
+    let rust = xpile_transpile_to_rust("percent_format_bool_float.py");
+    assert!(
+        rust.contains("String::from(\"True\")") && rust.contains("__sf.fract() == 0.0"),
+        "%s bool/float str-conversion:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // %s over bool/float; cross-checked vs python3.
+    assert_eq!(show_bool(true), "True");
+    assert_eq!(show_bool(false), "False");
+    assert_eq!(show_float(3.0), "3.0");
+    assert_eq!(show_float(3.14), "3.14");
+    assert_eq!(both(true, 2.5), "[True|2.5]");
+    assert_eq!(padded_bool(true), "      True");
+}
+"#;
+    assert_rustc_runs("percent_format_bool_float", &rust, driver);
+}
+
 /// PMAT-502dn (Tranche 2): printf `%`-format width/precision/flags (`%.2f`,
 /// `%5d`, `%-5d`, `%05d`, `%5s`, `%+d`) → translated Rust format specs.
 #[test]

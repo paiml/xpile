@@ -1417,6 +1417,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "Extends v0.1.151 %-format with the [flags][width][.precision] mini-language. In lower_percent_format the % arm now parses: flags (- left, 0 zero-pad, + sign; ' '/'#' rejected), width (digits), optional .precision (digits), then the conv char. Builds a Rust spec {:[align][sign][0][width][.prec]}: %.2f->{:.2}, %5d->{:>5}, %-5d->{:<5}, %05d->{:05} (sign-aware), %8.2f->{:>8.2}, %+d->{:+}. KEY CORRECTNESS: Python RIGHT-aligns by default INCLUDING %Ns, but Rust {:N} LEFT-aligns strings → emit explicit > unless - or 0 flag (so %5s->{:>5}). %f defaults precision to 6. STILL REJECTED (Rust ignores integer precision → would diverge): %.Nd and %.Ns-over-int; also ' '/'#' flags and %x/%X/%o. Rust grammar order [align][sign][#][0][width][.prec] respected (zero-pad path emits +0width; left emits <+width; right emits >+width). %% with any flags/width -> error. rustc round-trip percent_format_spec.py (cross-checked vs python3): '$%.2f'%3.14159='$3.14', '[%5d]'%42='[   42]', '[%-5d]'%42='[42   ]', '%05d'%-42='-0042', '[%5s]'%'ab'='[   ab]', '%8.2f'%3.14159='    3.14', '%+d'%5='+5'. FREE CI. SHIPPED v0.1.152. %-FORMAT now: conv set %s/%d/%i/%f/%% + flags -/0/+ + width + precision. FOLLOW-UPS still: %x/%X/%o; %s over bool/float; fmt-string-variable LHS. NEXT: x is None (Option model); str.rsplit; OR decompose try/except->Result (PMAT-503b epic)."
+- id: PMAT-502DO
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502do: [Tranche2] %s over bool/float (str-convert)'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "v0.1.151 deferred %s on bool/float (Rust {} gives 'true'/'3' not Python 'True'/'3.0'). FIX: in lower_percent_format's %s arm, str()-convert the arg in place before the {} placeholder — bool -> Expr::IfExpr{cond, then=LitStr('True'), else=LitStr('False')}; float -> Expr::ToStr{value, of_float:true} (Python float repr). args Vec made mut; arg cloned then replaced. Width/precision then apply to the resulting String (matching Python — e.g. %10s right-pads, %.2s truncates). %s over int/str unchanged ({} direct; int still rejects precision since Rust ignores int precision). rustc round-trip percent_format_bool_float.py (cross-checked vs python3): '%s'%True='True', '%s'%False='False', '%s'%3.0='3.0', '%s'%3.14='3.14', '[%s|%s]'%(True,2.5)='[True|2.5]', '%10s'%True='      True'. FREE CI. SHIPPED v0.1.153. %-FORMAT FOLLOW-UPS remaining: %x/%X/%o (need sign-first no-prefix radix); fmt-string-variable LHS. NEXT: x is None (Option model); str.rsplit; OR decompose try/except->Result (PMAT-503b epic — highest structural EV, needs design)."
 - id: PMAT-465
   github_issue: 496
   item_type: task
