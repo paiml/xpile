@@ -3441,6 +3441,34 @@ fn main() {
     assert_rustc_runs("zfill", &rust, driver);
 }
 
+/// PMAT-502ct (Tranche 2): default parameter values — omitted trailing args
+/// are filled with the declared default at the call site.
+#[test]
+fn default_params() {
+    let rust = xpile_transpile_to_rust("default_params.py");
+    assert!(
+        rust.contains(r#"greet(name, String::from("Hello"))"#),
+        "default filled:\n{rust}"
+    );
+    assert!(
+        rust.contains("add(1i64, 10i64, 100i64)"),
+        "two defaults:\n{rust}"
+    );
+    assert!(
+        rust.contains("add(1i64, 10i64, 5i64)"),
+        "kw override:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(use_default(String::from("Sam")), "Hello, Sam");
+    assert_eq!(with_hi(String::from("Sam")), "Hi, Sam");
+    assert_eq!(call_add(), 111);
+    assert_eq!(call_kw(), 16);
+}
+"#;
+    assert_rustc_runs("default_params", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

@@ -53,6 +53,10 @@ use rustpython_parser::Parse;
 struct FnSig {
     ret: Type,
     params: Vec<String>,
+    /// PMAT-502ct: per-parameter default value (the Python AST expression),
+    /// aligned with `params` (`None` for a parameter without a default).
+    /// Used to fill omitted trailing arguments at call sites.
+    defaults: Vec<Option<ast::Expr>>,
 }
 
 struct LoweringCtx {
@@ -489,7 +493,22 @@ impl Frontend for PythonFrontend {
                     }
                 };
                 let params = f.args.args.iter().map(|a| a.def.arg.to_string()).collect();
-                sig_map.insert(f.name.to_string(), FnSig { ret, params });
+                // PMAT-502ct: capture each param's default value (ruff bundles
+                // it per-arg in `ArgWithDefault.default`).
+                let defaults = f
+                    .args
+                    .args
+                    .iter()
+                    .map(|a| a.default.as_deref().cloned())
+                    .collect();
+                sig_map.insert(
+                    f.name.to_string(),
+                    FnSig {
+                        ret,
+                        params,
+                        defaults,
+                    },
+                );
             }
         }
         let signatures = Rc::new(sig_map);
@@ -3629,24 +3648,33 @@ fn reorder_kwargs_to_positional(
     ctx: &LoweringCtx,
     call: ast::ExprCall,
 ) -> Result<ast::ExprCall, FrontendError> {
-    if call.keywords.is_empty() {
-        return Ok(call);
-    }
     if call.keywords.iter().any(|k| k.arg.is_none()) {
         return Err(FrontendError::Lower(format!(
             "function `{}` uses `**kwargs` unpacking in a call — not supported",
             ctx.fn_name
         )));
     }
-    let callee = match call.func.as_ref() {
-        ast::Expr::Name(n) => n.id.to_string(),
-        _ => {
-            return Err(FrontendError::Lower(format!(
-                "function `{}` passes keyword args to a non-Name callee — only `f(x=…)` to a top-level function is supported",
-                ctx.fn_name
-            )));
-        }
+    // PMAT-502ct: a call to a known top-level function may omit trailing
+    // arguments that have defaults; such a call must still be normalised even
+    // with no keywords. A call with no keywords to an unknown callee (builtin,
+    // method, …) or one already at full arity is left untouched.
+    let callee_name = match call.func.as_ref() {
+        ast::Expr::Name(n) => Some(n.id.to_string()),
+        _ => None,
     };
+    let sig = callee_name.as_ref().and_then(|c| ctx.signatures.get(c));
+    if call.keywords.is_empty() {
+        match sig {
+            Some(s) if call.args.len() < s.params.len() => { /* fill defaults below */ }
+            _ => return Ok(call),
+        }
+    }
+    let callee = callee_name.ok_or_else(|| {
+        FrontendError::Lower(format!(
+            "function `{}` passes keyword args to a non-Name callee — only `f(x=…)` to a top-level function is supported",
+            ctx.fn_name
+        ))
+    })?;
     let sig = ctx.signatures.get(&callee).ok_or_else(|| {
         FrontendError::Lower(format!(
             "function `{}` passes keyword args to unknown function `{callee}` — only top-level functions in this module support keyword calls",
@@ -3661,29 +3689,37 @@ fn reorder_kwargs_to_positional(
             sig.params.len()
         )));
     }
-    // Positional args fill params[0..n_pos]; each remaining param is
-    // filled from its matching keyword (in declared order).
+    // Reject any keyword that doesn't name a parameter in the still-unfilled
+    // tail (unknown name, or one already supplied positionally).
+    for k in &call.keywords {
+        let name = k.arg.as_ref().map(|a| a.as_str()).unwrap_or("");
+        if !sig.params[n_pos..].iter().any(|p| p == name) {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `{callee}` with keyword `{name}` naming an unknown parameter or one already filled positionally",
+                ctx.fn_name
+            )));
+        }
+    }
+    // Positional args fill params[0..n_pos]; each remaining param is filled
+    // from its matching keyword, else its default value (PMAT-502ct), else
+    // it is a genuine missing-argument error.
     let mut new_args = call.args.clone();
-    for pname in &sig.params[n_pos..] {
-        match call
+    for (offset, pname) in sig.params[n_pos..].iter().enumerate() {
+        let param_idx = n_pos + offset;
+        if let Some(k) = call
             .keywords
             .iter()
             .find(|k| k.arg.as_ref().map(|a| a.as_str()) == Some(pname.as_str()))
         {
-            Some(k) => new_args.push(k.value.clone()),
-            None => {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` calls `{callee}` missing argument `{pname}` — default arguments are not supported at v0.2.0 (supply every argument)",
-                    ctx.fn_name
-                )));
-            }
+            new_args.push(k.value.clone());
+        } else if let Some(default) = sig.defaults.get(param_idx).and_then(|d| d.clone()) {
+            new_args.push(default);
+        } else {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `{callee}` missing argument `{pname}` (no value and no default)",
+                ctx.fn_name
+            )));
         }
-    }
-    if call.keywords.len() != sig.params.len() - n_pos {
-        return Err(FrontendError::Lower(format!(
-            "function `{}` calls `{callee}` with a keyword naming an unknown parameter or one already filled positionally",
-            ctx.fn_name
-        )));
     }
     Ok(ast::ExprCall {
         range: call.range,
