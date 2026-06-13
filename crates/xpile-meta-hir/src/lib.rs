@@ -381,6 +381,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::Clone(inner) => expr_has_int_arith(inner),
         // PMAT-502ew: Option wrapper — recurse into the `Some(e)` payload.
         Expr::OptionExpr(inner) => inner.as_deref().is_some_and(expr_has_int_arith),
+        // PMAT-502ex: `is None` test — recurse into the tested value.
+        Expr::IsNone { value, .. } => expr_has_int_arith(value),
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -1286,6 +1288,11 @@ pub enum Expr {
     /// → `Some(x)`. Rust/Ruchy emit `None` / `Some(<e>)`; Lean `none` / `some
     /// (<e>)`. Types as [`Type::Optional`].
     OptionExpr(Option<Box<Expr>>),
+    /// PMAT-502ex: a `None` test over an `Optional` value — Python `x is None`
+    /// (`negated == false`) / `x is not None` (`negated == true`). Yields
+    /// `bool`. Rust/Ruchy emit `(<value>).is_none()` / `.is_some()`; Lean
+    /// refuses (Optional deferred there).
+    IsNone { value: Box<Expr>, negated: bool },
     /// Tuple literal — Python `(a, b)` / multiple-return `return a, b`.
     /// PMAT-494 (sprint). Elements may be heterogeneous (unlike
     /// [`Expr::ListLit`]). Rust/Ruchy emit `(e0, e1, ...)`; Lean refuses

@@ -683,6 +683,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 collect_idents(e, out);
             }
         }
+        // PMAT-502ex: `is None` test — recurse into the tested value.
+        Expr::IsNone { value, .. } => collect_idents(value, out),
         // PMAT-457: indexed access — recurse into both sides.
         Expr::Index { collection, index } => {
             collect_idents(collection, out);
@@ -1090,11 +1092,12 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         // PMAT-502eq: a shallow copy of an immutable Lean value is the value
         // itself — emit the inner expression directly.
         Expr::Clone(inner) => emit_expr(out, inner)?,
-        // PMAT-502ew: `Optional` deferred in the Lean lane (see emit_type).
-        Expr::OptionExpr(_) => {
+        // PMAT-502ew/ex: `Optional` values + `None` tests deferred in the Lean
+        // lane (see emit_type).
+        Expr::OptionExpr(_) | Expr::IsNone { .. } => {
             return Err(LeanCodegenError::Unsupported(
-                "Python `Optional`/`None` values are not yet supported in the Lean lane \
-                 — use `--target rust` or `--target ruchy`"
+                "Python `Optional`/`None` values + `is None` tests are not yet supported in the \
+                 Lean lane — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
         }

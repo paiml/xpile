@@ -1778,6 +1778,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push(')');
             }
         },
+        // PMAT-502ex: `x is None` → `(x).is_none()`; `x is not None` →
+        // `(x).is_some()`.
+        Expr::IsNone { value, negated } => {
+            out.push('(');
+            emit_expr(out, value, mode)?;
+            out.push_str(if *negated {
+                ").is_some()"
+            } else {
+                ").is_none()"
+            });
+        }
         // PMAT-459 (v0.2.0 Track 1.B): Python `len(x)` → Rust
         // `x.len() as i64`. Vec/String both expose `.len()` returning
         // `usize`; the `as i64` cast brings the result back into

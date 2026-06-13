@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.188] — 2026-06-13
+
+Tranche-2 slice PMAT-502ex — **Optional params + `is None` tests** (Optional
+epic cut 2 + 3).
+
+An `Optional[T]` function **parameter** now lowers to a Rust `Option<T>`, and
+`x is None` / `x is not None` over an `Optional`-typed value lowers to a new
+bool-valued `Expr::IsNone` → `(x).is_none()` / `(x).is_some()` (intercepted in
+the comparison lowering before the operands are lowered, since a bare `None`
+constant has no value-position form). A `None` test on a non-`Optional` value is
+a clear error. Rust/Ruchy emit the methods; the Lean lane defers.
+
+This is the **narrowing-free** consuming slice: the Optional param is only
+*tested* (`is None`), never used as a `T` — so `def has(x: Optional[int]) ->
+bool: return x is not None` works without flow-narrowing (which remains the
+deferred next cut). New `optional_is_none.py` e2e fixture (is-absent/present,
+guard, two-param, str), all cross-checked vs python3.
+
 ## [0.1.187] — 2026-06-13
 
 Tranche-2 slice PMAT-502ew — **`Optional[T]` return type** (first cut of the
