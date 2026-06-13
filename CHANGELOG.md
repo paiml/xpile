@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.199] — 2026-06-13
+
+Exceptions-epic slice PMAT-503b — **`try`/`except` (value-with-fallback) via
+`catch_unwind`** (after 503a `raise`→panic).
+
+- xpile models Python exceptions as Rust panics (ZeroDivisionError via the
+  floor-div `.expect`, IndexError via list indexing, KeyError via HashMap
+  indexing), so `try: return <expr> except [E]: return <expr>` now lowers to a
+  new `Expr::TryCatch` →
+  `match catch_unwind(AssertUnwindSafe(|| <body>)) { Ok(v)=>v, Err(_)=><handler> }`.
+  Lean refuses (no panic model); types as the body type.
+- `terminal_try_as_expr` recognizes the terminal try-shape: single `except`
+  (catch-all — a named exception type is accepted but not matched, since Rust
+  panics are untyped), no bound exception name, no `else`/`finally`, a single
+  `return` in each arm. Other shapes get a clean "unsupported try shape" error.
+  Multi-statement bodies, `except E as e`, type-specific dispatch, `else`/`finally`
+  are future sub-slices.
+- New e2e fixture `try_except.py` (ZeroDivisionError / IndexError / KeyError),
+  rustc round-trip cross-checked vs python3. e2e 260 → 261.
+
 ## [0.1.198] — 2026-06-13
 
 Tranche-2 correctness slice PMAT-502fe — **reject `tuple(<iterable>)` cleanly**
