@@ -761,6 +761,8 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
             emit_type(out, inner)?;
             out.push('>');
         }
+        // PMAT-506b: a struct-typed value emits the bare struct name.
+        Type::Struct(name) => out.push_str(name),
     }
     Ok(())
 }
@@ -1812,6 +1814,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push('(');
             emit_expr(out, inner, mode)?;
             out.push_str(").unwrap()");
+        }
+        // PMAT-506b: struct construction `Name { f0: v0, … }`.
+        Expr::StructLit { name, fields } => {
+            out.push_str(name);
+            out.push_str(" { ");
+            for (i, (field, value)) in fields.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                write!(out, "{field}: ")?;
+                emit_expr(out, value, mode)?;
+            }
+            out.push_str(" }");
+        }
+        // PMAT-506b: struct field read `(obj).field`.
+        Expr::FieldAccess { obj, field } => {
+            out.push('(');
+            emit_expr(out, obj, mode)?;
+            write!(out, ").{field}")?;
         }
         // PMAT-503b: `try: return <body> except: return <handler>` → catch the
         // panics xpile raises for Python exceptions via `catch_unwind`.

@@ -93,6 +93,12 @@ struct LoweringCtx {
     /// (which silently emitted `let d: i64` and broke rustc). Shared
     /// across all functions in the module via `Rc`.
     signatures: Rc<HashMap<String, FnSig>>,
+    /// PMAT-506b (classes epic): module-level struct table — every
+    /// `@dataclass`/class's ordered `(field_name, field_type)` list, built in a
+    /// pre-pass. Consulted to lower struct construction (`Name(a, b)` →
+    /// `StructLit`, mapping positional args to field names) and to type field
+    /// access (`obj.field`). Shared across the module via `Rc`.
+    structs: Rc<HashMap<String, Vec<(String, Type)>>>,
     /// PMAT-504: function-local closure bindings — maps a closure
     /// variable name (`f` in `f = lambda y: …`) to its inferred return
     /// type, so a call `f(x)` types correctly (the module signature
@@ -156,6 +162,7 @@ impl LoweringCtx {
         body: &[ast::Stmt],
         signatures: Rc<HashMap<String, FnSig>>,
         consts: &HashMap<String, Type>,
+        structs: Rc<HashMap<String, Vec<(String, Type)>>>,
     ) -> Self {
         // PMAT-502bj: module-level constants are visible (and immutably
         // bound) in every function body; a same-named param shadows the
@@ -177,6 +184,7 @@ impl LoweringCtx {
             name_types,
             mutable,
             signatures,
+            structs,
             closure_returns: HashMap::new(),
             underscore_counter: 0,
             underscore_rename: None,
@@ -637,6 +645,20 @@ impl Frontend for PythonFrontend {
         }
         let consts = Rc::new(const_map);
 
+        // PMAT-506b (classes epic): pre-pass — collect every class/dataclass's
+        // ordered fields into the struct registry, so construction + field
+        // access in function bodies (which may precede the class textually)
+        // type correctly.
+        let mut struct_map: HashMap<String, Vec<(String, Type)>> = HashMap::new();
+        for stmt in &suite {
+            if let ast::Stmt::ClassDef(c) = stmt {
+                if let Ok(Item::Struct { name, fields }) = lower_class_def(c.clone()) {
+                    struct_map.insert(name, fields);
+                }
+            }
+        }
+        let structs = Rc::new(struct_map);
+
         let mut items = Vec::new();
         for stmt in suite {
             // PMAT-036: `from __future__ import annotations` is the
@@ -649,7 +671,8 @@ impl Frontend for PythonFrontend {
             if is_future_annotations_import(&stmt) || is_skippable_import(&stmt) {
                 continue;
             }
-            let item = lower_top_level_stmt(stmt, signatures.clone(), consts.clone())?;
+            let item =
+                lower_top_level_stmt(stmt, signatures.clone(), consts.clone(), structs.clone())?;
             items.push(item);
         }
 
@@ -701,6 +724,7 @@ fn lower_top_level_stmt(
     stmt: ast::Stmt,
     signatures: Rc<HashMap<String, FnSig>>,
     consts: Rc<HashMap<String, Type>>,
+    structs: Rc<HashMap<String, Vec<(String, Type)>>>,
 ) -> Result<Item, FrontendError> {
     // PMAT-502bj: a module-level `NAME = <int/bool/float-literal>` is a
     // constant item (recognised before the `def`-only fallback).
@@ -709,7 +733,7 @@ fn lower_top_level_stmt(
     }
     match stmt {
         ast::Stmt::FunctionDef(f) => {
-            lower_function_def(f, signatures, consts).map(Item::Function)
+            lower_function_def(f, signatures, consts, structs).map(Item::Function)
         }
         // PMAT-505a (classes epic, first cut): a field-only / `@dataclass` class
         // → an `Item::Struct`. Value construction + field access follow.
@@ -861,6 +885,7 @@ fn lower_function_def(
     f: ast::StmtFunctionDef,
     signatures: Rc<HashMap<String, FnSig>>,
     consts: Rc<HashMap<String, Type>>,
+    structs: Rc<HashMap<String, Vec<(String, Type)>>>,
 ) -> Result<Function, FrontendError> {
     if !f.decorator_list.is_empty() {
         return Err(FrontendError::Lower(format!(
@@ -950,6 +975,7 @@ fn lower_function_def(
         &body_stmts,
         signatures,
         &consts,
+        structs,
     );
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
     for stmt in leading {
@@ -1165,8 +1191,16 @@ fn parse_type_annotation(
             "BigInt" => Ok(Type::BigInt),
             "str" => Ok(Type::Str),
             "None" => Ok(Type::Unit),
+            // PMAT-506b (classes epic): an unknown *capitalized* name is taken
+            // as a struct type (Python class-name convention) → `Type::Struct`.
+            // A struct value emits the bare name; if no such class exists the
+            // emitted Rust fails to compile (clean enough). Lowercase unknowns
+            // stay an error (likely a typo or an unsupported builtin).
+            other if other.starts_with(|ch: char| ch.is_ascii_uppercase()) => {
+                Ok(Type::Struct(other.to_string()))
+            }
             other => Err(FrontendError::Lower(format!(
-                "function `{fn_name}` annotates `{site}` with unsupported type `{other}` — only `int`, `bool`, `BigInt`, `str`, `None`, `list[T]` at v0.2.0"
+                "function `{fn_name}` annotates `{site}` with unsupported type `{other}` — only `int`, `bool`, `BigInt`, `str`, `None`, `list[T]`, or a class/dataclass name at v0.2.0"
             ))),
         },
         // PMAT-455/PMAT-462 (v0.2.0 Track 1.B/1.C): list[T] / dict[K, V]
@@ -4857,6 +4891,11 @@ fn infer_type(e: &Expr) -> Type {
         Expr::Ident(_) | Expr::LitInt(_) => Type::I64,
         // PMAT-502bl: the unit value types as Unit (void function return).
         Expr::Unit => Type::Unit,
+        // PMAT-506b: a struct literal types as its named struct. Field access
+        // can't resolve a field type without the struct registry, so the
+        // context-free path falls back to I64 (the ctx path resolves it).
+        Expr::StructLit { name, .. } => Type::Struct(name.clone()),
+        Expr::FieldAccess { .. } => Type::I64,
         // PMAT-502dt: a block-expr types as its trailing expression.
         Expr::Block(b) => infer_type(&b.trailing_return),
         // PMAT-477 (R8): float literal + float arithmetic are Type::F64.
@@ -5178,6 +5217,18 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::Ident(n) => ctx.name_types.get(n).cloned().unwrap_or(Type::I64),
         // PMAT-502bl: the unit value types as Unit (void function return).
         Expr::Unit => Type::Unit,
+        // PMAT-506b: a struct literal types as its named struct; a field read
+        // resolves the field's type from the struct registry (fallback I64).
+        Expr::StructLit { name, .. } => Type::Struct(name.clone()),
+        Expr::FieldAccess { obj, field } => match infer_type_in_ctx(ctx, obj) {
+            Type::Struct(name) => ctx
+                .structs
+                .get(&name)
+                .and_then(|fs| fs.iter().find(|(f, _)| f == field))
+                .map(|(_, ty)| ty.clone())
+                .unwrap_or(Type::I64),
+            _ => Type::I64,
+        },
         // PMAT-502dt: a block-expr types as its trailing expression.
         Expr::Block(b) => infer_type_in_ctx(ctx, &b.trailing_return),
         // PMAT-477 (R8): float literal + float arithmetic are Type::F64.
@@ -6013,6 +6064,39 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             // `min("a", "b")` no longer silently emits an undefined `min(...)`.
             // `abs` stays numeric-only.
             if let ast::Expr::Name(fname) = call.func.as_ref() {
+                // PMAT-506b (classes epic): `Name(a, b)` over a known class →
+                // struct construction (positional args mapped to fields in
+                // declaration order). Keyword construction is a follow-up.
+                if let Some(field_names) = ctx
+                    .structs
+                    .get(fname.id.as_str())
+                    .map(|fs| fs.iter().map(|(f, _)| f.clone()).collect::<Vec<_>>())
+                {
+                    if !call.keywords.is_empty() {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` constructs `{}` with keyword args — v0.2.0 first cut supports positional construction `{}(...)` only",
+                            ctx.fn_name, fname.id, fname.id
+                        )));
+                    }
+                    if call.args.len() != field_names.len() {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` constructs `{}` with {} arg(s) but the class has {} field(s)",
+                            ctx.fn_name,
+                            fname.id,
+                            call.args.len(),
+                            field_names.len()
+                        )));
+                    }
+                    let mut fields = Vec::with_capacity(field_names.len());
+                    for (field, arg) in field_names.into_iter().zip(call.args.iter()) {
+                        let value = lower_expr_in_ctx(ctx, arg.clone())?;
+                        fields.push((field, value));
+                    }
+                    return Ok(Expr::StructLit {
+                        name: fname.id.to_string(),
+                        fields,
+                    });
+                }
                 if let Some((op, arity)) = num_builtin_op(fname.id.as_str()) {
                     // PMAT-502cz: `min`/`max` are VARIADIC — accept any arity
                     // `>= 2` (`max(a, b, c)` chains `.max(b).max(c)`). `abs`
@@ -7047,6 +7131,33 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // otherwise supported).
         ast::Expr::Attribute(attr) if matches!(attr.value.as_ref(), ast::Expr::Name(n) if n.id.as_str() == "math") => {
             lower_math_const(ctx, attr.attr.as_str())
+        }
+        // PMAT-506b (classes epic): `obj.field` over a struct-typed receiver →
+        // field access. (Method calls are `Call(Attribute(...))`, handled in the
+        // Call arm; this fires only on a bare attribute read.)
+        ast::Expr::Attribute(attr) => {
+            let obj = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+            let field = attr.attr.to_string();
+            if let Type::Struct(sname) = infer_type_in_ctx(ctx, &obj) {
+                let known = ctx
+                    .structs
+                    .get(&sname)
+                    .is_some_and(|fs| fs.iter().any(|(f, _)| *f == field));
+                if !known {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` reads field `{field}` of `{sname}`, which has no such field",
+                        ctx.fn_name
+                    )));
+                }
+                return Ok(Expr::FieldAccess {
+                    obj: Box::new(obj),
+                    field,
+                });
+            }
+            Err(FrontendError::Lower(format!(
+                "function `{}` reads attribute `.{field}` of a non-struct value — only struct/dataclass field access is supported at v0.2.0",
+                ctx.fn_name
+            )))
         }
         // No dict-specific shape: the context-free path is sufficient.
         other => lower_expr(other),
