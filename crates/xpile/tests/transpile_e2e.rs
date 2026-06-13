@@ -3970,6 +3970,51 @@ fn main() {
     assert_rustc_runs("dataclass_defaults", &rust, driver);
 }
 
+/// PMAT-506g (classes epic): dataclass **`@staticmethod`** — a method with no
+/// `self` receiver lowers to a plain associated function `pub fn m(args)` inside
+/// the `impl` block, and a call `Class.method(args)` lowers to
+/// `Class::method(args)` (reusing `Expr::Call` with a qualified callee — no new
+/// IR). An instance method may call a static method via the class name.
+/// Cross-checked vs python3 (add=9, triple=21, boosted=40).
+#[test]
+fn dataclass_staticmethod() {
+    let rust = xpile_transpile_to_rust("dataclass_staticmethod.py");
+    assert!(
+        rust.contains("impl MathBox {")
+            && rust.contains("pub fn add(a: i64, b: i64) -> i64")
+            && rust.contains("MathBox::add(a, b)"),
+        "static methods should emit a no-self assoc fn + `Class::method` call sites:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(use_add(4, 5), 9);
+    assert_eq!(use_triple(7), 21);
+    assert_eq!(use_boosted(10), 40);
+}
+"#;
+    assert_rustc_runs("dataclass_staticmethod", &rust, driver);
+}
+
+/// PMAT-506g (classes epic — correctness): calling an *instance* method via the
+/// class name (`Box.get(5)`, Python's unbound-method form) is REJECTED with a
+/// clear diagnostic rather than emitting `Box::get(5)` (an associated fn lacking
+/// the required `&self` receiver). Only `@staticmethod`s are reachable via the
+/// `Class.method(...)` form, upholding "transpile-success ⟹ valid Rust".
+#[test]
+fn staticmethod_instance_via_class_is_rejected() {
+    let py = fixture("staticmethod_instance_via_class_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "calling an instance method via the class name must be refused"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("not a `@staticmethod`"),
+        "the rejection should name the staticmethod requirement:\n{stderr}"
+    );
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators
