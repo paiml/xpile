@@ -958,6 +958,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "lower_unary_op folds UnaryOp(USub, Expr::LitFloat(f)) -> Expr::LitFloat(-f) -> -3.14f64. Previously unary - only accepted an i64 operand (UnOp::Neg emits the i64-only checked_neg().expect(...)), so -3.14 was rejected with 'unary - requires I64 operand'. Fold keeps negative-float module constants (X = -3.14) const-evaluable (try_const_decl sees LitFloat). Negative INT literals unchanged (UnOp::Neg / checked_neg). Float VARIABLE negation (-x for float x) still deferred — the unary lowering is context-free so it can't see x's type; needs ctx-aware unary. rustc round-trip neg_float.py (cross-checked vs python3): pi()->-3.14, offset(2.0)->0.5. FREE CI. SHIPPED v0.1.101."
+- id: PMAT-502BP
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bp: [Tranche2] float-variable negation (-x, x: float)'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "Completes the deferred follow-up to PMAT-502bo. New ctx-aware UnaryOp(USub) arm in lower_expr_in_ctx_inner (before the `other => lower_expr(other)` catch-all): lower the operand ctx-aware, and if it types as Type::F64 AND is not an Expr::LitFloat, lower to Expr::FloatBinOp { op: Sub, lhs: LitFloat(0.0), rhs: operand } -> plain infix (0f64 - x). This avoids UnOp::Neg's i64-only checked_neg().expect(...). Float LITERALS keep the v0.1.101 negative-literal fold (-3.14f64), so -3.14 stays a single literal (the !matches!(operand, Expr::LitFloat(_)) guard). Negative INT negation unchanged (checked_neg). Handles -x and compound -a + b. rustc round-trip neg_float_var.py (cross-checked vs python3): neg(3.5)->-3.5, neg(-2.0)->2.0, diff(1.5,4.0)->2.5. FREE CI. SHIPPED v0.1.102."
 - id: PMAT-465
   github_issue: 496
   item_type: task
