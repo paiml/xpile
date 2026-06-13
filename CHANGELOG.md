@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.205] — 2026-06-13
+
+Classes-epic slice PMAT-506e — **dataclass keyword construction** `Name(x=1, y=2)`.
+
+- Struct construction now accepts keyword args: `Point(x=1, y=2)`, mixed
+  `Point(10, y=20)`, and reordered `Point(y=5, x=3)` all lower to
+  `Point { x: …, y: … }` (fields emitted in declaration order). Positionals fill
+  leading fields; keywords fill the rest by name (Python's rule). Unknown
+  keywords, duplicate (position+keyword) fields, `**`-splat, and arity overflow
+  error clearly. No new IR — reuses `Expr::StructLit`.
+- New e2e fixture `dataclass_kwargs.py`, rustc round-trip cross-checked vs
+  python3. e2e 266 → 267.
+
 ## [0.1.204] — 2026-06-13
 
 Classes-epic slice PMAT-506d — **dataclass methods** (`def m(self, …)` → `impl`
