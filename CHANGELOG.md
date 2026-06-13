@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.113] — 2026-06-13
+
+Tranche-2 slice PMAT-502ca — **`enumerate(xs, start)`** (2-arg).
+
+`enumerate` with a start index was unrecognised (it fell through to the
+generic for-loop, which rejected the `i, v` tuple target). `PairIterKind::
+Enumerate` now carries a `start: i64`; the frontend accepts an optional 2nd
+arg (an integer literal), and the backends offset the index var
+(`__i as i64 + start`, omitted when `start == 0`). `enumerate(xs)` (start 0)
+is unchanged. Non-literal / non-int start is deferred with a precise error.
+rustc round-trip `enumerate_start.py` (cross-checked vs `python3`):
+`weighted([10,20,30]) -> 140` (`enumerate(_, 1)`), `last_index([5,5,5]) -> 12`
+(`enumerate(_, 10)`).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.112] — 2026-06-13
 
 Tranche-2 slice PMAT-502bz — **chained assignment** `x = y = z = <literal>`.

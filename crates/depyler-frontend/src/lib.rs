@@ -1540,7 +1540,10 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
                 if let ast::Expr::Call(call) = &*f.iter {
                     if let ast::Expr::Name(fname) = call.func.as_ref() {
                         let fname = fname.id.to_string();
-                        let arity_ok = (fname == "enumerate" && call.args.len() == 1)
+                        // PMAT-502ca: `enumerate(xs)` or `enumerate(xs, start)`
+                        // (start = int literal); `zip(xs, ys)`.
+                        let arity_ok = (fname == "enumerate"
+                            && (call.args.len() == 1 || call.args.len() == 2))
                             || (fname == "zip" && call.args.len() == 2);
                         if arity_ok {
                             let first = a.id.to_string();
@@ -1553,9 +1556,39 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
                                 )));
                             };
                             let kind = if fname == "enumerate" {
+                                // PMAT-502ca: the optional 2nd arg is the start
+                                // index — an int literal at first cut.
+                                let start = if call.args.len() == 2 {
+                                    match &call.args[1] {
+                                        ast::Expr::Constant(c) => match &c.value {
+                                            ast::Constant::Int(i) => {
+                                                i.to_string().parse::<i64>().map_err(|_| {
+                                                    FrontendError::Lower(format!(
+                                                        "function `{}` uses `enumerate(xs, <start>)` with an out-of-range integer start",
+                                                        ctx.fn_name
+                                                    ))
+                                                })?
+                                            }
+                                            _ => {
+                                                return Err(FrontendError::Lower(format!(
+                                                    "function `{}` uses `enumerate(xs, <start>)` with a non-int start — only an integer literal is supported at v0.2.0",
+                                                    ctx.fn_name
+                                                )));
+                                            }
+                                        },
+                                        _ => {
+                                            return Err(FrontendError::Lower(format!(
+                                                "function `{}` uses `enumerate(xs, <start>)` with a non-literal start — only an integer literal is supported at v0.2.0",
+                                                ctx.fn_name
+                                            )));
+                                        }
+                                    }
+                                } else {
+                                    0
+                                };
                                 ctx.name_types.insert(first.clone(), Type::I64);
                                 ctx.name_types.insert(second.clone(), (*elem).clone());
-                                PairIterKind::Enumerate
+                                PairIterKind::Enumerate { start }
                             } else {
                                 let other = lower_expr_in_ctx(ctx, call.args[1].clone())?;
                                 let Type::List(elem2) = infer_type_in_ctx(ctx, &other) else {
