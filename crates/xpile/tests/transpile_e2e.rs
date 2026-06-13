@@ -3529,6 +3529,34 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502de (Tranche 2): builtins in a subscript index and under unary `-`
+/// lower context-aware (`xs[abs(i)]` / `-abs(n)` were silently miscompiled to
+/// an undefined `abs(...)`). Closes the ctx-free-position miscompile class.
+#[test]
+fn index_unary_builtin() {
+    let rust = xpile_transpile_to_rust("index_unary_builtin.py");
+    assert!(
+        !rust.contains("[abs(") && !rust.contains(" abs(") && !rust.contains("(abs("),
+        "abs must lower to a method, not a bare call:\n{rust}"
+    );
+    assert!(
+        rust.contains("(i).abs() as usize") && rust.contains("((n).abs()).checked_neg()"),
+        "index/unary builtins:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // builtins in subscript index + under unary minus; cross-checked vs python3.
+    assert_eq!(at_abs(vec![10, 20, 30], -1), 20);
+    assert_eq!(at_clamped(vec![10, 20, 30], -5), 10);
+    assert_eq!(at_clamped(vec![10, 20, 30], 2), 30);
+    assert_eq!(neg_abs(-5), -5);
+    assert_eq!(neg_abs(3), -3);
+    assert_eq!(neg_max(2, 9), -9);
+}
+"#;
+    assert_rustc_runs("index_unary_builtin", &rust, driver);
+}
+
 /// PMAT-502dd (Tranche 2): builtins in collection literals lower context-aware
 /// (`[abs(a), abs(b)]` / `{"k": abs(v)}` / `{abs(a), abs(b)}` were silently
 /// miscompiled to an undefined `abs(...)`).

@@ -4544,7 +4544,23 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                 }
             }
-            lower_expr(ast::Expr::Subscript(sub))
+            // PMAT-502de: general list index — lower the index context-aware
+            // so a builtin index (`xs[abs(i)]`, `xs[max(0, i)]`) is recognized;
+            // the context-free `lower_expr` would emit an undefined `abs(...)`.
+            // (Dict / str / tuple / negative-literal indices returned above.)
+            let index = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+            let idx_ty = infer_type_in_ctx(ctx, &index);
+            if !matches!(idx_ty, Type::I64) {
+                return Err(FrontendError::Lower(format!(
+                    "list-index expression types as {idx_ty:?} but only `int` indices are \
+                     supported at v0.2.0 first cut — slicing, negative-step ranges, and \
+                     non-integer keys are deferred to subsequent sub-tracks"
+                )));
+            }
+            Ok(Expr::Index {
+                collection: Box::new(collection),
+                index: Box::new(index),
+            })
         }
         // `d.get(k, default)` → `Expr::DictGetOr` when `d` is a dict.
         ast::Expr::Call(call) => {
@@ -5575,8 +5591,22 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     lhs: Box::new(Expr::LitFloat(0.0)),
                     rhs: Box::new(operand),
                 })
+            } else if let Expr::LitFloat(f) = operand {
+                // PMAT-502bo: negative-float-literal fold.
+                Ok(Expr::LitFloat(-f))
+            } else if matches!(infer_type_in_ctx(ctx, &operand), Type::I64) {
+                // PMAT-502de: i64 negation built from the *context-aware*
+                // operand so a builtin operand (`-abs(n)`, `-max(a, b)`) is
+                // recognized; the context-free `lower_unary_op` would re-lower
+                // it and emit an undefined `abs(...)`.
+                Ok(Expr::UnOp {
+                    op: UnOp::Neg,
+                    operand: Box::new(operand),
+                })
             } else {
-                lower_unary_op(u)
+                Err(FrontendError::Lower(
+                    "unary `-` requires an I64 operand or a float literal (float-variable negation is deferred)".into(),
+                ))
             }
         }
         // PMAT-502cc: context-aware `not <bool var>`. The context-free

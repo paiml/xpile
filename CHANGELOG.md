@@ -7,6 +7,30 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.143] — 2026-06-13
+
+Tranche-2 slice PMAT-502de — **context-aware subscript index + unary `-`**
+(silent-miscompile fix; **closes the ctx-free-position class**).
+
+A builtin in a subscript index (`xs[abs(i)]`, `xs[max(0, i)]`) or under unary
+`-` (`-abs(n)`, `-max(a, b)`) was **silently miscompiled** to an undefined Rust
+function. The general list-index path fell through to the context-free
+`lower_expr`, and the `USub` arm's non-float branch re-lowered the operand via
+the context-free `lower_unary_op`. Both now lower context-aware (frontend-only,
+no meta-HIR / codegen change): the subscript index via `lower_expr_in_ctx`, and
+the unary `-` builds the negation from the already-ctx-lowered operand
+(preserving the negative-float-literal fold). rustc round-trip
+`index_unary_builtin.py` (cross-checked vs `python3`): `at_abs([10,20,30],-1)
+== 20`, `at_clamped([10,20,30],-5) == 10` / `(…,2) == 30`, `neg_abs(-5) == -5`
+/ `(3) == -3`, `neg_max(2,9) == -9`.
+
+This **closes the context-free-position silent-miscompile class** — builtins
+now lower correctly in ternary branches (v0.1.140), comparison operands
+(v0.1.141), collection literals (v0.1.142), and subscript indices + unary `-`
+(this slice); boolop and binop/tuple positions were already correct.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.142] — 2026-06-13
 
 Tranche-2 slice PMAT-502dd — **context-aware collection literals** (silent-
