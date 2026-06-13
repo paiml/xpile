@@ -8285,6 +8285,47 @@ fn lower_set_literal_in_ctx(
             "empty set literal requires `set()` or an annotation — deferred".into(),
         ));
     }
+    // PMAT-502et: a set literal with `*`-splat elements (`{*a, *b}`, `{*a, x}`)
+    // is a union. Fold the elements into a chain of `Expr::SetOp{Union}`: a `*e`
+    // contributes the set `e` (which must type as a set), a plain `x` a
+    // singleton `{x}`. The union chain produces a fresh `HashSet`; a lone `{*a}`
+    // is wrapped in `Expr::Clone` so it copies rather than moving `a`. (Parallels
+    // the list-splat handling, PMAT-502es.)
+    if set_expr
+        .elts
+        .iter()
+        .any(|e| matches!(e, ast::Expr::Starred(_)))
+    {
+        let mut acc: Option<Expr> = None;
+        for elt in set_expr.elts {
+            let part = match elt {
+                ast::Expr::Starred(s) => {
+                    let inner = lower_expr_in_ctx(ctx, (*s.value).clone())?;
+                    if !matches!(infer_type_in_ctx(ctx, &inner), Type::Set(_)) {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` splats a non-set (`{{*x}}` where `x` is not a set) — only set splats are supported at v0.2.0",
+                            ctx.fn_name
+                        )));
+                    }
+                    inner
+                }
+                other => Expr::SetLit(vec![lower_expr_in_ctx(ctx, other)?]),
+            };
+            acc = Some(match acc {
+                None => part,
+                Some(prev) => Expr::SetOp {
+                    lhs: Box::new(prev),
+                    op: SetOp::Union,
+                    rhs: Box::new(part),
+                },
+            });
+        }
+        let result = acc.expect("non-empty (a Starred element guarantees >= 1)");
+        return Ok(match result {
+            Expr::SetOp { .. } => result,
+            other => Expr::Clone(Box::new(other)),
+        });
+    }
     let mut elems = Vec::with_capacity(set_expr.elts.len());
     let mut elem_ty: Option<Type> = None;
     for e in set_expr.elts {

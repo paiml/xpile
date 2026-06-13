@@ -3552,6 +3552,30 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502et (Tranche 2): set splat literals — `{*a, *b}`, `{*a, x}`. A set
+/// literal containing `*`-splat elements is a union: each `*e` contributes the
+/// set `e`, each plain `x` a singleton `{x}`, folded through `Expr::SetOp{Union}`
+/// (a fresh `HashSet`). A lone `{*a}` is wrapped in `Expr::Clone` (shallow
+/// copy, not a move). Parallels the list-splat handling. Cross-checked vs python3.
+#[test]
+fn set_spread() {
+    let rust = xpile_transpile_to_rust("set_spread.py");
+    assert!(
+        rust.contains(".union(") && rust.contains(".clone()"),
+        "set splat should fold to SetOp::Union (+ Clone for a lone splat):\n{rust}"
+    );
+    let driver = r#"
+fn s(xs: &[i64]) -> std::collections::HashSet<i64> { xs.iter().copied().collect() }
+fn main() {
+    assert_eq!(union_splat(s(&[1, 2]), s(&[2, 3])), 3);
+    assert_eq!(splat_with_elem(s(&[1, 2])), 3);
+    assert_eq!(elem_then_splat(s(&[1, 2])), 3);
+    assert_eq!(lone_splat_is_copy(s(&[1, 2, 3])), 34); // orig 3, copy 4
+}
+"#;
+    assert_rustc_runs("set_spread", &rust, driver);
+}
+
 /// PMAT-502es (Tranche 2): list splat literals — `[*a, *b]`, `[x, *a, y]`. A
 /// list literal containing `*`-splat elements is a concatenation: each `*e`
 /// contributes the list `e`, each plain `x` a singleton `[x]`, folded through
