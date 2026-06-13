@@ -4179,6 +4179,11 @@ fn infer_type(e: &Expr) -> Type {
             },
             _ => Type::Dict(Box::new(Type::I64), Box::new(Type::I64)),
         },
+        // PMAT-502dw: dict merge types as the first dict's type.
+        Expr::DictMerge { dicts } => dicts
+            .first()
+            .map(infer_type)
+            .unwrap_or(Type::Dict(Box::new(Type::I64), Box::new(Type::I64))),
         // PMAT-502ab: filter(pred, xs) keeps the input list type.
         Expr::Filter { list, .. } => infer_type(list),
         // PMAT-502ac: map(f, xs) → List of the body's transformed type.
@@ -4479,6 +4484,11 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             },
             _ => Type::Dict(Box::new(Type::I64), Box::new(Type::I64)),
         },
+        // PMAT-502dw: dict merge types as the first dict's type.
+        Expr::DictMerge { dicts } => dicts
+            .first()
+            .map(|d| infer_type_in_ctx(ctx, d))
+            .unwrap_or(Type::Dict(Box::new(Type::I64), Box::new(Type::I64))),
         // PMAT-502ab: filter(pred, xs) keeps the input list type.
         Expr::Filter { list, .. } => infer_type_in_ctx(ctx, list),
         // PMAT-502ac: map(f, xs) → List of the body's transformed type.
@@ -7434,6 +7444,30 @@ fn lower_dict_literal_in_ctx(
             "empty dict literal `{}` requires a type annotation to infer K/V — \
              pass via `def f() -> dict[str, int]: return {}` once empty-literal annotation \
              threading lands in a subsequent v0.2.0 Track 1.C sub-track"
+                .into(),
+        ));
+    }
+    // PMAT-502dw: `{**d1, **d2, …}` (all entries are `**`-splats, key == None)
+    // → a dict merge. Each splatted value must be a dict; the result chains
+    // them so a later dict wins on a key collision (matching Python). A mix of
+    // splats and explicit `k: v` entries is deferred.
+    if dict_expr.keys.iter().all(|k| k.is_none()) {
+        let mut dicts: Vec<Expr> = Vec::with_capacity(dict_expr.values.len());
+        for v in &dict_expr.values {
+            let lv = lower_expr_in_ctx(ctx, v.clone())?;
+            if !matches!(infer_type_in_ctx(ctx, &lv), Type::Dict(_, _)) {
+                return Err(FrontendError::Lower(
+                    "`{**x}` dict-splat requires each spread value to be a dict".into(),
+                ));
+            }
+            dicts.push(lv);
+        }
+        return Ok(Expr::DictMerge { dicts });
+    }
+    if dict_expr.keys.iter().any(|k| k.is_none()) {
+        return Err(FrontendError::Lower(
+            "a dict literal mixing `**`-splats with explicit `k: v` entries is not yet \
+             supported — use all splats (`{**a, **b}`) or all explicit entries"
                 .into(),
         ));
     }

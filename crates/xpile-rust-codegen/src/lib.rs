@@ -1480,6 +1480,22 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, pairs, mode)?;
             out.push_str(".iter().cloned().collect::<std::collections::HashMap<_, _>>()");
         }
+        // PMAT-502dw: `{**d1, **d2, …}` → chain the dicts' iterators (later
+        // wins on a key collision, matching Python) into a fresh HashMap.
+        Expr::DictMerge { dicts } => {
+            out.push('(');
+            for (i, d) in dicts.iter().enumerate() {
+                if i == 0 {
+                    emit_expr(out, d, mode)?;
+                    out.push_str(").iter()");
+                } else {
+                    out.push_str(".chain((");
+                    emit_expr(out, d, mode)?;
+                    out.push_str(").iter())");
+                }
+            }
+            out.push_str(".map(|(__k, __v)| (__k.clone(), __v.clone())).collect::<std::collections::HashMap<_, _>>()");
+        }
         // PMAT-502ab: `filter(pred, xs)` → `.iter().cloned().filter(|__k| {
         // let p = __k.clone(); pred }).collect::<Vec<_>>()`.
         Expr::Filter { list, lambda } => {

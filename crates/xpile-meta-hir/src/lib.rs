@@ -327,6 +327,7 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-502cw: set(xs) — recurse into the list expr.
         Expr::SetFromList { list } => expr_has_int_arith(list),
         Expr::DictFromPairs { pairs } => expr_has_int_arith(pairs),
+        Expr::DictMerge { dicts } => dicts.iter().any(expr_has_int_arith),
         // PMAT-502ab: filter — recurse into the list and predicate body.
         Expr::Filter { list, lambda } => {
             expr_has_int_arith(list) || expr_has_int_arith(&lambda.body)
@@ -1495,6 +1496,13 @@ pub enum Expr {
     /// lists). Lean refuses. (A later key collision keeps the last value,
     /// matching Python's dict-from-pairs semantics.)
     DictFromPairs { pairs: Box<Expr> },
+    /// `{**d1, **d2, …}` — merge several dicts into a new one. PMAT-502dw
+    /// (Tranche 2). Rust/Ruchy emit `(<d1>).iter().chain((<d2>).iter())…
+    /// .map(|(__k, __v)| (__k.clone(), __v.clone())).collect::<HashMap<_,_>>()`
+    /// — chaining iterates left-to-right so a later dict's value wins on a key
+    /// collision, matching Python. Result types as the first dict's type.
+    /// `dicts` has ≥1 element. Lean refuses.
+    DictMerge { dicts: Vec<Expr> },
     /// `filter(lambda p: pred, xs)` over a list — Python builtin. PMAT-502ab
     /// (Tranche 2). The supported subset materializes the lazy `filter`
     /// iterator as a `Vec`. The `lambda` is a [`SortKey`] (param + body) whose
