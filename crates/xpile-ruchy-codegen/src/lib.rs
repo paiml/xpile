@@ -464,12 +464,17 @@ fn emit_stmt_indented(
         // `xs[i as usize] = v;`, matching the Rust backend.
         Stmt::IndexAssign {
             list_name,
-            index,
+            indices,
             value,
         } => {
-            write!(out, "{indent}{list_name}[")?;
-            emit_expr(out, index, mode)?;
-            out.push_str(" as usize] = ");
+            // PMAT-502dy: nested list indexing (`grid[i][j] = v`).
+            write!(out, "{indent}{list_name}")?;
+            for index in indices {
+                out.push('[');
+                emit_expr(out, index, mode)?;
+                out.push_str(" as usize]");
+            }
+            out.push_str(" = ");
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
             Ok(())

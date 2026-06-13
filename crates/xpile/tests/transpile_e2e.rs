@@ -3529,6 +3529,27 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dy (Tranche 2): nested subscript assignment `grid[i][j] = v` (2D/ND
+/// list grids), including the augmented form.
+#[test]
+fn nested_index_assign() {
+    let rust = xpile_transpile_to_rust("nested_index_assign.py");
+    assert!(
+        rust.contains("grid[i as usize][i as usize] =")
+            && rust.contains("g[i as usize][j as usize][k as usize] ="),
+        "nested index assign:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // nested (2D/3D) subscript assignment; cross-checked vs python3.
+    assert_eq!(diag_fill(3), 4); // grid[2][2]=3, grid[0][0]=1 → 4
+    let g = vec![vec![vec![0i64; 2]; 2]; 2];
+    assert_eq!(cube_set(g, 1, 1, 1, 7), 7);
+}
+"#;
+    assert_rustc_runs("nested_index_assign", &rust, driver);
+}
+
 /// PMAT-502dx (Tranche 2): mixed `{**a, "k": v}` dict literals (splats + explicit
 /// entries) — chained `once()`/`.iter().map()`, later entry wins.
 #[test]

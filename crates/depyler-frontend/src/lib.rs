@@ -2663,22 +2663,77 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
         // (`Type::List` → `Stmt::IndexAssign`, `Type::Dict` →
         // `Stmt::DictSet`). Either way the receiver is marked mutable.
         ast::Expr::Subscript(sub) => {
-            let receiver = match sub.value.as_ref() {
-                ast::Expr::Name(n) => n.id.to_string(),
-                _ => {
-                    return Err(FrontendError::Lower(format!(
-                        "function `{}` has a non-Name subscript-assignment target — v0.2.0 supports `<name>[k] = v` only",
-                        ctx.fn_name
-                    )));
+            // PMAT-502dy: peel a (possibly nested) subscript chain bottoming
+            // at a Name — `grid[i][j] = v` → base `grid`, slices `[i, j]`
+            // (base→leaf). A single slice is the existing `xs[i]`/`d[k]` form.
+            let mut slices: Vec<ast::Expr> = vec![*sub.slice];
+            let mut base = *sub.value;
+            let receiver = loop {
+                match base {
+                    ast::Expr::Name(n) => break n.id.to_string(),
+                    ast::Expr::Subscript(inner) => {
+                        slices.push(*inner.slice);
+                        base = *inner.value;
+                    }
+                    _ => {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` has a non-Name subscript-assignment target — v0.2.0 supports `<name>[k]…[k] = v`",
+                            ctx.fn_name
+                        )));
+                    }
                 }
             };
+            slices.reverse();
             let receiver_ty = ctx.name_types.get(&receiver).cloned();
+            // PMAT-502dy: nested list indexing `grid[i][j] = v` — the base must
+            // type as `list[list[…]]` nested at least as deep as the index
+            // path, and every index must be `int`. (Dict-nested paths and
+            // single-level dict assignment fall through to the cases below.)
+            if slices.len() > 1 {
+                let mut depth_ty = receiver_ty.clone();
+                let mut ok_depth = true;
+                for _ in 0..slices.len() {
+                    match depth_ty {
+                        Some(Type::List(elem)) => depth_ty = Some(*elem),
+                        _ => {
+                            ok_depth = false;
+                            break;
+                        }
+                    }
+                }
+                if ok_depth {
+                    let mut indices = Vec::with_capacity(slices.len());
+                    for s in slices {
+                        let idx = lower_expr_in_ctx(ctx, s)?;
+                        if !matches!(infer_type_in_ctx(ctx, &idx), Type::I64) {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` nested-indexed-assigns `{receiver}[…]` with a non-int index — only `int` indices are supported",
+                                ctx.fn_name
+                            )));
+                        }
+                        indices.push(idx);
+                    }
+                    let value = lower_expr_in_ctx(ctx, *asn.value)?;
+                    ctx.mutable.insert(receiver.clone());
+                    return Ok(Stmt::IndexAssign {
+                        list_name: receiver,
+                        indices,
+                        value,
+                    });
+                }
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` nested-subscript-assigns `{receiver}[…][…]` but it is not a nested `list[list[…]]` of matching depth — only nested-list assignment is supported at v0.2.0",
+                    ctx.fn_name
+                )));
+            }
+            // Single subscript: the existing list / dict assignment forms.
+            let single = slices.pop().expect("exactly one slice");
             match receiver_ty {
                 Some(Type::List(_)) => {
                     // PMAT-466: ctx-aware so a dict read used as a list
                     // index (`xs[d[k]] = v`) lowers to DictGet, not a
                     // nested list index.
-                    let index = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+                    let index = lower_expr_in_ctx(ctx, single)?;
                     let idx_ty = infer_type_in_ctx(ctx, &index);
                     if !matches!(idx_ty, Type::I64) {
                         return Err(FrontendError::Lower(format!(
@@ -2690,7 +2745,7 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
                     ctx.mutable.insert(receiver.clone());
                     return Ok(Stmt::IndexAssign {
                         list_name: receiver,
-                        index,
+                        indices: vec![index],
                         value,
                     });
                 }
@@ -2698,7 +2753,7 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
                 // hashable scalar the dict was declared over (str / int
                 // / bool) — no `int`-index constraint as for lists.
                 Some(Type::Dict(_, _)) => {
-                    let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+                    let key = lower_expr_in_ctx(ctx, single)?;
                     let value = lower_expr_in_ctx(ctx, *asn.value)?;
                     ctx.mutable.insert(receiver.clone());
                     return Ok(Stmt::DictSet {
@@ -2861,7 +2916,7 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
                     ctx.mutable.insert(receiver.clone());
                     Ok(Stmt::IndexAssign {
                         list_name: receiver,
-                        index,
+                        indices: vec![index],
                         value,
                     })
                 }
@@ -3967,7 +4022,9 @@ fn stmt_uses_dict(s: &Stmt) -> bool {
         Stmt::While { cond, body } => expr_uses_dict(cond) || body.iter().any(stmt_uses_dict),
         Stmt::ForEach { iter, body, .. } => expr_uses_dict(iter) || body.iter().any(stmt_uses_dict),
         Stmt::ListAppend { elem, .. } => expr_uses_dict(elem),
-        Stmt::IndexAssign { index, value, .. } => expr_uses_dict(index) || expr_uses_dict(value),
+        Stmt::IndexAssign { indices, value, .. } => {
+            indices.iter().any(expr_uses_dict) || expr_uses_dict(value)
+        }
         Stmt::Assert { cond, msg } => {
             expr_uses_dict(cond) || msg.as_ref().is_some_and(expr_uses_dict)
         }

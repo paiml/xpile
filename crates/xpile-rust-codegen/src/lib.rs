@@ -509,12 +509,18 @@ fn emit_stmt_indented(
         // Expr::Index; same param-mut threading as ListAppend.
         Stmt::IndexAssign {
             list_name,
-            index,
+            indices,
             value,
         } => {
-            write!(out, "{indent}{list_name}[")?;
-            emit_expr(out, index, mode)?;
-            out.push_str(" as usize] = ");
+            // PMAT-502dy: a multi-element path is nested list indexing
+            // (`grid[i][j] = v`) — each index is `usize`-coerced.
+            write!(out, "{indent}{list_name}")?;
+            for index in indices {
+                out.push('[');
+                emit_expr(out, index, mode)?;
+                out.push_str(" as usize]");
+            }
+            out.push_str(" = ");
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
             Ok(())
