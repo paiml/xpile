@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.211] — 2026-06-13
+
+Tranche 2 — PMAT-510: the **`match` statement** (literal-dispatch subset).
+
+- The common literal-dispatch `match` form desugars to an `if`/`elif`/`else`
+  chain, reusing all existing `if` lowering — **no new IR, no codegen changes**.
+  `match cmd: case 0: … case 1: … case _: …` → `if cmd == 0 … elif cmd == 1 …
+  else …`.
+- Constraints (each a clean error): Name subject (repeating it is
+  side-effect-free); literal value patterns (`case 0`/`case "x"`/`case -1`,
+  int/float/str, optionally negated); a required trailing wildcard `case _:`
+  (exhaustiveness). Guards, captures, singletons (`True`/`False`/`None`), and
+  class/sequence/mapping/or-patterns are deferred. Works as a terminal (each case
+  returns → an if-expression) and in statement position (`walk_counts` descends
+  into cases so a case-assigned name is `mut`).
+- New e2e fixture `match_stmt.py` (rustc round-trip cross-checked vs python3 —
+  int/negative + str patterns, terminal + statement form). e2e 273 → 274.
+
 ## [0.1.210] — 2026-06-13
 
 Classes-epic slice PMAT-506j — **dataclass `@property`** (read-only computed
