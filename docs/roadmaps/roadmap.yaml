@@ -976,6 +976,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "combine_aug (the read-modify-write helper for x <op>= e / d[k] <op>= e / xs[i] <op>= e) always emitted Expr::BinOp, so float aug-assign miscompiled to the i64-only checked_add/sub/mul().expect(...) (no such method on f64) and /= errored ('unsupported binary operator: Div'). FIX: combine_aug now takes the AST operator (&ast::Operator) instead of a pre-lowered BinOp, and when either operand types as Type::F64 returns Expr::FloatBinOp (plain infix (x + y)) via float_op_from_ast — mirroring the regular ast::Expr::BinOp lowering. The float branch runs BEFORE lower_binop (which rejects Div), so x /= y (true division) works in aug position. lower_aug_assign drops its early lower_binop and passes &aug.op to all three combine_aug call sites (Name + dict-subscript + list-subscript), so list[float]/dict[..,float] subscript aug works too. Int aug-assign unchanged (checked_*); str += still format! concat. rustc round-trip aug_assign_float.py (cross-checked vs python3): accum(3.0,2.0)->2.0 (x+=2->5, x-=1->4, x*=2->8, x/=4->2.0), scale_first([2.5,9.0],4.0)->10.0. FREE CI. SHIPPED v0.1.103."
+- id: PMAT-502BR
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502br: [Tranche2] float floor-division // and modulo %'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "float_op_from_ast returned None for // (FloorDiv) and % (Mod), so float floor-div/modulo fell through to the i64 BinOp path and failed the return-type check ('declared return type F64 but body produces I64'). FIX: two new FloatOp variants FloorDiv + Mod (meta-HIR) carry Python FLOOR semantics; float_op_from_ast maps ast::Operator::FloorDiv/Mod to them. The three codegen FloatBinOp emit sites (rust/ruchy/lean) special-case them with dedicated formulas (NOT plain infix, since Rust's truncating / and dividend-sign % diverge from Python): a // b -> (a / b).floor(); a % b -> a - b * (a / b).floor() (result follows the DIVISOR's sign, matching Python). Works in regular AND augmented (//=, %=) position since both go through float_op_from_ast (combine_aug from PMAT-502bq). Lean emits Float.floor (a / b). Small blast radius: adding FloatOp variants only touches the 3 exhaustive FloatOp matches (no new Expr variant -> no int-arith/bigint-scan arm). rustc round-trip float_floordiv_mod.py (cross-checked vs python3 incl. mixed signs): 7//2=3, -7//2=-4, 7%3=1, -7%3=2, 7%-3=-2, wrap(13,5)=3. FREE CI. SHIPPED v0.1.104."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -2862,6 +2862,31 @@ fn main() {
     assert_rustc_runs("aug_assign_float", &rust, driver);
 }
 
+/// PMAT-502br (Tranche 2): float floor-division `a // b` → `(a / b).floor()`
+/// and modulo `a % b` → `a - b * (a / b).floor()` (Python floor semantics,
+/// result of `%` follows the divisor's sign — verified for mixed signs).
+#[test]
+fn float_floordiv_mod() {
+    let rust = xpile_transpile_to_rust("float_floordiv_mod.py");
+    assert!(rust.contains("(a / b).floor()"), "float // :\n{rust}");
+    assert!(
+        rust.contains("(a - b * (a / b).floor())"),
+        "float % :\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // python3: 7//2=3, -7//2=-4, 7%3=1, -7%3=2, 7%-3=-2
+    assert!((fd(7.0, 2.0) - 3.0).abs() < 1e-9);
+    assert!((fd(-7.0, 2.0) - (-4.0)).abs() < 1e-9);
+    assert!((fmod(7.0, 3.0) - 1.0).abs() < 1e-9);
+    assert!((fmod(-7.0, 3.0) - 2.0).abs() < 1e-9);
+    assert!((fmod(7.0, -3.0) - (-2.0)).abs() < 1e-9);
+    assert!((wrap(13.0, 5.0) - 3.0).abs() < 1e-9);
+}
+"#;
+    assert_rustc_runs("float_floordiv_mod", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

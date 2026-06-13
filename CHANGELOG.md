@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.104] — 2026-06-13
+
+Tranche-2 slice PMAT-502br — Python **float floor-division `//` and modulo `%`**.
+
+`float_op_from_ast` returned `None` for `//`/`%`, so float floor-div/modulo
+fell through to the i64 `BinOp` path and failed the return-type check
+(`F64 but body produces I64`). Two new `FloatOp` variants, `FloorDiv` and
+`Mod`, now carry Python's *floor* semantics, which the codegen emits as
+dedicated formulas (not plain infix, since Rust's `/`/`%` differ):
+
+- `a // b` → `(a / b).floor()`
+- `a % b` → `a - b * (a / b).floor()` (result follows the **divisor's** sign,
+  per Python — Rust's `%` follows the dividend, diverging for mixed signs)
+
+Works in regular and augmented (`//=`, `%=`) position (both route through
+`float_op_from_ast`). rustc round-trip `float_floordiv_mod.py` (cross-checked
+vs `python3`, incl. mixed signs): `7//2=3`, `-7//2=-4`, `7%3=1`, `-7%3=2`,
+`7%-3=-2`. Lean emits `Float.floor (a / b)`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.103] — 2026-06-13
 
 Tranche-2 slice PMAT-502bq — Python **augmented assignment over a float**
