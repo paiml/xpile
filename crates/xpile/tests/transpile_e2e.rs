@@ -3529,6 +3529,35 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dw (Tranche 2): `{**d1, **d2, …}` dict merge — chained iterators,
+/// later dict wins on a key collision (matching Python).
+#[test]
+fn dict_merge() {
+    let rust = xpile_transpile_to_rust("dict_merge.py");
+    assert!(
+        rust.contains(".iter().chain((b).iter())")
+            && rust.contains("collect::<std::collections::HashMap<_, _>>()"),
+        "dict merge:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    use std::collections::HashMap;
+    let mk = |pairs: &[(&str, i64)]| -> HashMap<String, i64> {
+        pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+    };
+    // dict merge; cross-checked vs python3 (later dict wins on collision).
+    let a = mk(&[("x", 1), ("y", 2)]);
+    let b = mk(&[("y", 9), ("z", 3)]);
+    assert_eq!(merged_size(a.clone(), b.clone()), 3);
+    assert_eq!(merged_get(a.clone(), b.clone(), "y".to_string()), 9);
+    assert_eq!(merged_get(a.clone(), b.clone(), "x".to_string()), 1);
+    let c = mk(&[("w", 4)]);
+    assert_eq!(merge3(a, b, c), 4);
+}
+"#;
+    assert_rustc_runs("dict_merge", &rust, driver);
+}
+
 /// PMAT-502dv (Tranche 2): expression-position set/dict comprehensions
 /// (`len({x for x in xs})`, `len({k: v for x in xs})`) via Map+SetFromList /
 /// Map+DictFromPairs.

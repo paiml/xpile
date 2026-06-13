@@ -1489,6 +1489,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "len({x for x in xs}) / len({k: v for x in xs}) (a set/dict comp in a CONSUMER/expr position) was REJECTED (return/stmt forms already worked via their own desugars). FIX (reuses Map+SetFromList+DictFromPairs): refactored lower_comp_to_map to take a PRE-LOWERED body Expr (callers lower elt/key+value first), so set comp passes the single elt and dict comp passes Expr::TupleLit([key, value]). lower_set_comp_in_ctx → Expr::SetFromList{ list: Map }; lower_dict_comp_in_ctx → Expr::DictFromPairs{ pairs: Map-of-tuples }. Wired ast::Expr::SetComp + ast::Expr::DictComp arms in lower_expr_in_ctx_inner. Filter composes (Map over Filter). Statement form name={comp} + return special-case UNCHANGED. Shares loop-var-unbound limitation (str-method/str-key elts need stmt form). rustc round-trip set_dict_comp_expr.py (cross-checked vs python3): n_unique([1,1,2,3,3])=3, n_pairs([1,2,3])=3, n_positive_unique([-1,2,-3,4])=2. FREE CI. SHIPPED v0.1.160. **COMPREHENSIONS NOW FULLY WORK IN EXPRESSION POSITION: list/set/dict comps + genexpr, all via the Map/Filter+collector reuse.** NEXT: x is None (Option, new Type variant — design pass); try/except->Result (PMAT-503b); classes/dataclasses; &str borrowing. These remaining structural items need a new Type variant or return-wrapping (outside the safe filter)."
+- id: PMAT-502DW
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502dw: [Tranche2] {**d1, **d2} dict merge'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "A dict-splat merge literal {**a, **b} was rejected (dict-splat in literals unsupported). NEW Expr::DictMerge { dicts: Vec<Expr> } → (a).iter().chain((b).iter())….map(|(__k,__v)| (__k.clone(), __v.clone())).collect::<HashMap<_,_>>(). KEY: chaining iterates left-to-right so a LATER dict wins on a key collision, matching Python's {**a, **b}. Single-expression (no clone-of-variable / Block needed — .iter() borrows). Frontend: lower_dict_literal_in_ctx detects ALL keys None (all splats, ≥1) → DictMerge (each spread value must type as Dict, else error); a MIX of splats + explicit k:v entries → clear deferred error. Both inferers: DictMerge → first dict's type. Blast radius: new Expr variant → expr_has_int_arith + 2 inferers + 2 codegen + lean collect_idents + lean refuse. rustc round-trip dict_merge.py (cross-checked vs python3 incl. collision): merged_size=3, merged_get(...,'y')=9 (b wins over a), merged_get(...,'x')=1, merge3=4 (3-way chain). FREE CI. SHIPPED v0.1.161. DEFERRED: {k:v, **d} mixed splat+explicit. NEXT: structural — x is None (Option/new Type); try/except (PMAT-503b); classes; &str. All need a Type variant or return-wrapping (outside the safe-structural filter → dedicated design)."
 - id: PMAT-465
   github_issue: 496
   item_type: task

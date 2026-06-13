@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.161] — 2026-06-13
+
+Tranche-2 slice PMAT-502dw — **`{**d1, **d2, …}` dict merge**.
+
+A dict-splat merge literal (`{**a, **b}`) was rejected; it now lowers to a new
+`Expr::DictMerge` emitting `(a).iter().chain((b).iter())….map(|(k,v)|
+(k.clone(), v.clone())).collect::<HashMap<_,_>>()`. Chaining iterates
+left-to-right, so a later dict's value wins on a key collision — matching
+Python's `{**a, **b}`. Two or more all-splat entries are supported; a literal
+mixing `**`-splats with explicit `k: v` entries is deferred (clear error). Lean
+refuses. rustc round-trip `dict_merge.py` (cross-checked vs `python3`):
+`merged_size == 3`, `merged_get(…, "y") == 9` (b wins), `merged_get(…, "x") ==
+1`, `merge3 == 4`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.160] — 2026-06-13
 
 Tranche-2 slice PMAT-502dv — **expression-position set / dict comprehensions**.
