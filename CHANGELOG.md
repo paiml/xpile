@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.179] — 2026-06-13
+
+Tranche-2 slice PMAT-502eo — **set-algebra methods** (`a.union(b)`, …).
+
+The method forms of the set operators — `a.union(b)` / `a.intersection(b)` /
+`a.difference(b)` / `a.symmetric_difference(b)` — now lower to the same
+`Expr::SetOp` the `|`/`&`/`-`/`^` operators already produced (no new IR). The
+attribute-call dispatch recognizes the four method names when the receiver
+types as a set; the single argument must also be a set. New `set_methods.py`
+e2e fixture (union/intersection/difference/symmetric_difference sizes + a
+`x in a.union(b)` membership check), cross-checked vs python3.
+
 ## [0.1.178] — 2026-06-13
 
 Tranche-2 slice PMAT-502en — **2-arg `math` float methods: `hypot`/`atan2`/`log(x,base)`**.

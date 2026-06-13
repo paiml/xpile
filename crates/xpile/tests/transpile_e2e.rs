@@ -3550,6 +3550,31 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502eo (Tranche 2): set-algebra *methods* — `a.union(b)` /
+/// `a.intersection(b)` / `a.difference(b)` / `a.symmetric_difference(b)`, the
+/// method forms of the `|`/`&`/`-`/`^` operators, lowered to the same
+/// `Expr::SetOp`. Both receiver and argument must be sets. Cross-checked vs
+/// python3.
+#[test]
+fn set_methods() {
+    let rust = xpile_transpile_to_rust("set_methods.py");
+    assert!(
+        rust.contains(".union(") || rust.contains("union") || rust.contains("intersection"),
+        "set methods should lower to SetOp:\n{rust}"
+    );
+    let driver = r#"
+fn s(xs: &[i64]) -> std::collections::HashSet<i64> { xs.iter().copied().collect() }
+fn main() {
+    assert_eq!(union_size(s(&[1, 2, 3]), s(&[2, 3, 4])), 4);
+    assert_eq!(intersection_size(s(&[1, 2, 3]), s(&[2, 3, 4])), 2);
+    assert_eq!(difference_size(s(&[1, 2, 3]), s(&[2, 3, 4])), 1);
+    assert_eq!(sym_diff_size(s(&[1, 2, 3]), s(&[2, 3, 4])), 2);
+    assert!(union_contains(s(&[1, 2]), s(&[3, 4]), 4));
+}
+"#;
+    assert_rustc_runs("set_methods", &rust, driver);
+}
+
 /// PMAT-502en (Tranche 2): 2-arg `math` float methods — `math.hypot(x, y)`,
 /// `math.atan2(y, x)`, and 2-arg `math.log(x, base)`. Each reuses
 /// `Expr::FloatBinOp` (new `FloatOp` variants) with both operands coerced to

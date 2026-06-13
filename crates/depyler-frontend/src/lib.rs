@@ -5112,6 +5112,38 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         return lower_math_call(ctx, attr.attr.as_str(), &call);
                     }
                 }
+                // PMAT-502eo: set-algebra methods — `a.union(b)` /
+                // `a.intersection(b)` / `a.difference(b)` /
+                // `a.symmetric_difference(b)` are the method forms of
+                // `|`/`&`/`-`/`^`, reusing `Expr::SetOp`. Both receiver and
+                // argument must be sets; otherwise fall through.
+                if let Some(sop) = set_method_op(attr.attr.as_str()) {
+                    let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &recv), Type::Set(_)) {
+                        if !call.keywords.is_empty() || call.args.len() != 1 {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` calls set `.{}(...)` with {} positional arg(s){}; v0.2.0 takes exactly 1 (a set)",
+                                ctx.fn_name,
+                                attr.attr.as_str(),
+                                call.args.len(),
+                                if call.keywords.is_empty() { "" } else { " plus keyword args" },
+                            )));
+                        }
+                        let other = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                        if !matches!(infer_type_in_ctx(ctx, &other), Type::Set(_)) {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` calls set `.{}(...)` with a non-set argument",
+                                ctx.fn_name,
+                                attr.attr.as_str(),
+                            )));
+                        }
+                        return Ok(Expr::SetOp {
+                            lhs: Box::new(recv),
+                            op: sop,
+                            rhs: Box::new(other),
+                        });
+                    }
+                }
                 if attr.attr.as_str() == "get" {
                     let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
                     if matches!(infer_type_in_ctx(ctx, &recv), Type::Dict(_, _)) {
@@ -7862,6 +7894,19 @@ fn set_op_from_ast(op: &ast::Operator) -> Option<SetOp> {
         ast::Operator::BitAnd => Some(SetOp::Intersection),
         ast::Operator::Sub => Some(SetOp::Difference),
         ast::Operator::BitXor => Some(SetOp::SymmetricDifference),
+        _ => None,
+    }
+}
+
+/// PMAT-502eo: map a set-algebra *method* name to its [`SetOp`] — the method
+/// forms (`a.union(b)`, …) of the `|`/`&`/`-`/`^` operators. `None` for any
+/// other method name.
+fn set_method_op(name: &str) -> Option<SetOp> {
+    match name {
+        "union" => Some(SetOp::Union),
+        "intersection" => Some(SetOp::Intersection),
+        "difference" => Some(SetOp::Difference),
+        "symmetric_difference" => Some(SetOp::SymmetricDifference),
         _ => None,
     }
 }
