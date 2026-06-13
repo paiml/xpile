@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.208] — 2026-06-13
+
+Classes-epic slice PMAT-506h — **dataclass `@classmethod`** (completes the
+decorator trio: static / class / instance methods).
+
+- A class `@classmethod` lowers to a no-receiver associated function (the `cls`
+  param is dropped), and a call `Class.method(args)` lowers to
+  `Class::method(args)` — the same dispatch as `@staticmethod` (PMAT-506g),
+  **no new IR**. Inside the body, `cls(...)` constructs the enclosing class and
+  `cls.method(...)` calls a sibling static/class method, both resolved to the
+  class name.
+- `LoweringCtx` gains a transient `cls_name` (set only while lowering a
+  classmethod body) + `resolve_class_name()`; the construction dispatch and the
+  static-call dispatch consult it. The module pre-pass registers each classmethod
+  under the qualified `Class::method` signature key (excluding the implicit `cls`
+  param).
+- New e2e fixture `dataclass_classmethod.py` (rustc round-trip cross-checked vs
+  python3 — alternate constructors via `cls(...)`, a staticmethod building the
+  class, chained `.manhattan()`). e2e 270 → 271.
+
 ## [0.1.207] — 2026-06-13
 
 Classes-epic slice PMAT-506g — **dataclass `@staticmethod`** (associated function
