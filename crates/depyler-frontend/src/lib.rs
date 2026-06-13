@@ -1418,6 +1418,33 @@ fn try_lower_list_method_call(
             elem,
         }));
     }
+    // PMAT-502eg: `xs.remove(x)` — remove the first element equal to `x`
+    // (raises `ValueError` if absent). The Set receiver case was handled
+    // above; here the receiver must be a list. 1 positional arg, no kwargs.
+    if method == "remove" && matches!(receiver_ty, Some(Type::List(_))) {
+        if !call.keywords.is_empty() || call.args.len() != 1 {
+            return Some(Err(FrontendError::Lower(format!(
+                "function `{}` calls `{receiver_name}.remove(...)` with {} positional arg(s){}; \
+                 list remove takes exactly 1 (a value)",
+                ctx.fn_name,
+                call.args.len(),
+                if call.keywords.is_empty() {
+                    ""
+                } else {
+                    " plus keyword args"
+                },
+            ))));
+        }
+        let value = match lower_expr_in_ctx(ctx, call.args[0].clone()) {
+            Ok(e) => e,
+            Err(err) => return Some(Err(err)),
+        };
+        ctx.mutable.insert(receiver_name.to_string());
+        return Some(Ok(Stmt::ListRemoveValue {
+            list_name: receiver_name.to_string(),
+            value,
+        }));
+    }
     if !is_append && !is_add {
         return None;
     }

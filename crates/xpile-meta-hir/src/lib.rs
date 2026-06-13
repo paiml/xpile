@@ -172,6 +172,8 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         Stmt::ListInsert { index, elem, .. } => {
             expr_has_int_arith(index) || expr_has_int_arith(elem)
         }
+        // PMAT-502eg: list.remove(value) — recurse into the value expr.
+        Stmt::ListRemoveValue { value, .. } => expr_has_int_arith(value),
         // PMAT-461: indexed assignment — recurse into both index and
         // value expressions (either may carry arithmetic).
         Stmt::IndexAssign { indices, value, .. } => {
@@ -704,6 +706,16 @@ pub enum Stmt {
         index: Expr,
         elem: Expr,
     },
+    /// Remove-by-value — Python `xs.remove(x)`. PMAT-502eg (Tranche 2).
+    /// Removes the *first* element equal to `value`, shifting the tail
+    /// left; raises `ValueError` if absent. The receiver is marked
+    /// mutable. Rust/Ruchy emit a position-find + `Vec::remove`, panicking
+    /// (≈ Python `ValueError`) when the value isn't present:
+    /// `{ let __v = <value>; let __p = <list>.iter().position(|__e| *__e == __v).expect("…"); <list>.remove(__p); }`.
+    /// Distinct from set `.remove` ([`Stmt::SetRemove`], which removes by
+    /// key); the frontend's receiver type disambiguates. Lean refuses
+    /// (in-place mutation, same gap as `ListAppend`).
+    ListRemoveValue { list_name: String, value: Expr },
     /// `for var in iter { body }` — Python `for x in xs:` over a
     /// non-range iterable. PMAT-458, v0.2.0 Track 1.B.
     ///

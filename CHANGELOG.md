@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.171] — 2026-06-13
+
+Tranche-2 slice PMAT-502eg — **`xs.remove(x)` list remove-by-value**.
+
+`list.remove(x)` (delete the first element equal to `x`) was the one
+unimplemented sibling of the in-place list mutators — `.append` / `.insert` /
+`.pop` / `.extend` / `.sort` / `.reverse` / `.clear` already shipped. A new
+`Stmt::ListRemoveValue` lowers it to a position-find + `Vec::remove`, panicking
+(≈ Python's `ValueError`) when the value isn't present — matching the existing
+`.pop` / `.index` ValueError convention. It is distinct from set `.remove`
+(which removes by key, and was already handled); the receiver type
+disambiguates. Lean refuses (in-place mutation, same gap as the other list
+mutators). New `list_remove.py` e2e fixture (count, first-only, sum, str-elem,
+param), all cross-checked vs python3.
+
 ## [0.1.170] — 2026-06-13
 
 Tranche-2 slice PMAT-502ef — **`float` in an f-string renders Python repr
