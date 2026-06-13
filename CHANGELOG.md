@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.212] — 2026-06-13
+
+Tranche 2 — PMAT-512: `match` **`|`-patterns** (`case 0 | 1 | 2:`).
+
+- An or-pattern of literal alternatives desugars to an OR of equality tests
+  (`subject == 0 || subject == 1 || …`), extending the `match`→`if` desugar
+  (PMAT-510) — **no new IR**. A plain value pattern still yields a single
+  comparison; non-literal alternatives / captures / nested-or are rejected
+  cleanly. Works over int and str literals, terminal + statement position.
+- New e2e fixture `match_or_pattern.py` (rustc round-trip cross-checked vs
+  python3 — `day_kind` int groups, `vowel_score` str vowels). e2e 274 → 275.
+
 ## [0.1.211] — 2026-06-13
 
 Tranche 2 — PMAT-510: the **`match` statement** (literal-dispatch subset).
