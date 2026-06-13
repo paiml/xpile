@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.192] — 2026-06-13
+
+Tranche-2 slice PMAT-502fb — **bitwise invert `~x`** (previously a hard lowering
+error).
+
+- Python's `~x` is the exact identity `-(x + 1)`, which is precisely Rust's `!x`
+  on a signed integer (`~5 == -6` in both). Lowers to a new `UnOp::BitNot` →
+  Rust/Ruchy `(!(x))`; the C-expr lane emits `!(x)`; Lean (unbounded `Int`, no
+  `~`) emits the total identity `(-(x + 1))`.
+- Handled in both the ctx-aware unary path (so a typed/builtin operand like
+  `~max(a, b)` is recognized) and the context-free `lower_unary_op`. Requires an
+  I64 operand. `BitNot` is not flagged as int-arith (bitwise NOT can't overflow).
+- New e2e fixture `bit_invert.py`, rustc round-trip cross-checked vs python3.
+  e2e 256 → 257.
+
 ## [0.1.191] — 2026-06-13
 
 Tranche-2 slice PMAT-502fa — **Optional intra-branch narrowing** for `if x is
