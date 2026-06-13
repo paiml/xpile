@@ -654,6 +654,44 @@ impl Frontend for PythonFrontend {
                 );
             }
         }
+        // PMAT-506g (classes epic): register each class `@staticmethod` under a
+        // qualified key `Class::method`, so a `Class.method(args)` call reuses
+        // `Expr::Call` (callee = `Class::method`) and types via the signature
+        // table — no instance receiver, no new IR. Presence of the qualified key
+        // is itself the "this is a static method" signal at the call site.
+        for stmt in &suite {
+            if let ast::Stmt::ClassDef(c) = stmt {
+                for member in &c.body {
+                    let ast::Stmt::FunctionDef(m) = member else {
+                        continue;
+                    };
+                    if !is_staticmethod(m) {
+                        continue;
+                    }
+                    let ret = match m.returns.as_ref() {
+                        None => Type::Unit,
+                        Some(ann) => parse_type_annotation(c.name.as_str(), "return", ann)
+                            .unwrap_or(Type::I64),
+                    };
+                    let params = m.args.args.iter().map(|a| a.def.arg.to_string()).collect();
+                    let defaults = m
+                        .args
+                        .args
+                        .iter()
+                        .map(|a| a.default.as_deref().cloned())
+                        .collect();
+                    sig_map.insert(
+                        format!("{}::{}", c.name, m.name),
+                        FnSig {
+                            ret,
+                            params,
+                            defaults,
+                            variadic: None,
+                        },
+                    );
+                }
+            }
+        }
         let signatures = Rc::new(sig_map);
 
         // PMAT-502bj: pre-pass — collect module-level constants
@@ -859,7 +897,13 @@ fn class_def_signature(
             }
             // PMAT-506d: an instance method `def m(self, …) -> R: …`. Record its
             // return type for call typing; the body is lowered later.
+            // PMAT-506g: a `@staticmethod` is NOT an instance method — it is
+            // registered separately under a qualified `Class::method` signature
+            // key (see the module pre-pass), so skip it here.
             ast::Stmt::FunctionDef(m) => {
+                if is_staticmethod(m) {
+                    continue;
+                }
                 let ret = match m.returns.as_ref() {
                     None => Type::Unit,
                     Some(ann) => parse_type_annotation(&name, "<method return>", ann)?,
@@ -877,6 +921,16 @@ fn class_def_signature(
         }
     }
     Ok((name, fields, method_returns, field_defaults))
+}
+
+/// PMAT-506g (classes epic): true if a class method carries a bare
+/// `@staticmethod` decorator. Such a method has no `self` receiver and is
+/// called as `Class.method(args)` → `Class::method(args)` (an associated
+/// function), rather than `obj.method(args)`.
+fn is_staticmethod(m: &ast::StmtFunctionDef) -> bool {
+    m.decorator_list
+        .iter()
+        .any(|d| matches!(d, ast::Expr::Name(n) if n.id.as_str() == "staticmethod"))
 }
 
 /// PMAT-506f: true if `e` is a literal usable as a field default — a constant
@@ -913,8 +967,29 @@ fn lower_class_def(
     let self_ty = Type::Struct(name.clone());
     let mut methods: Vec<Function> = Vec::new();
     for stmt in c.body {
-        if let ast::Stmt::FunctionDef(m) = stmt {
-            // The first param must be `self` (no classmethod/staticmethod yet).
+        if let ast::Stmt::FunctionDef(mut m) = stmt {
+            // PMAT-506g: a `@staticmethod` lowers as a plain associated function
+            // (no `self` receiver). Strip the decorator (lower_function_def
+            // rejects decorators) and lower with `self_type = None`; the emitted
+            // `Function` has no `self` param, so it renders as `pub fn m(args)`
+            // inside the `impl` block. Call sites use `Class.method(args)` →
+            // `Class::method(args)` (an `Expr::Call`, registered in the
+            // pre-pass).
+            if is_staticmethod(&m) {
+                m.decorator_list.clear();
+                let method = lower_function_def(
+                    m,
+                    signatures.clone(),
+                    consts.clone(),
+                    structs.clone(),
+                    struct_methods.clone(),
+                    struct_field_defaults.clone(),
+                    None,
+                )?;
+                methods.push(method);
+                continue;
+            }
+            // The first param must be `self` (classmethods unsupported).
             let first_is_self = m
                 .args
                 .args
@@ -922,7 +997,7 @@ fn lower_class_def(
                 .is_some_and(|a| a.def.arg.as_str() == "self");
             if !first_is_self {
                 return Err(FrontendError::Lower(format!(
-                    "class `{name}` method `{}` has no `self` first parameter — classmethods/staticmethods are not supported at v0.2.0 first cut",
+                    "class `{name}` method `{}` has no `self` first parameter — classmethods are not supported at v0.2.0 first cut (use `@staticmethod` for a method with no `self`)",
                     m.name
                 )));
             }
@@ -6004,6 +6079,34 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 if let ast::Expr::Name(recv) = attr.value.as_ref() {
                     if recv.id.as_str() == "math" {
                         return lower_math_call(ctx, attr.attr.as_str(), &call);
+                    }
+                    // PMAT-506g (classes epic): a `@staticmethod` call
+                    // `Class.method(args)` — the receiver is a class *name*
+                    // (a known struct), not an instance value. Lower to
+                    // `Expr::Call { callee: "Class::method", args }` (registered
+                    // in the module pre-pass under the qualified key). Must run
+                    // BEFORE the instance-method block below, which would
+                    // otherwise try to lower the bare class name as a value.
+                    if ctx.structs.contains_key(recv.id.as_str()) {
+                        let method = attr.attr.as_str();
+                        let key = format!("{}::{}", recv.id, method);
+                        if ctx.signatures.contains_key(&key) {
+                            if !call.keywords.is_empty() {
+                                return Err(FrontendError::Lower(format!(
+                                    "function `{}` calls static method `{key}` with keyword args — v0.2.0 first cut supports positional calls only",
+                                    ctx.fn_name
+                                )));
+                            }
+                            let mut args = Vec::with_capacity(call.args.len());
+                            for a in &call.args {
+                                args.push(lower_expr_in_ctx(ctx, a.clone())?);
+                            }
+                            return Ok(Expr::Call { callee: key, args });
+                        }
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` calls `{}.{method}()`, which is not a `@staticmethod` of `{}` — call an instance method on an instance, not the class",
+                            ctx.fn_name, recv.id, recv.id
+                        )));
                     }
                 }
                 // PMAT-506d (classes epic): struct method call `obj.method(args)`
