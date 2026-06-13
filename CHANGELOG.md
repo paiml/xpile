@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.116] — 2026-06-13
+
+Tranche-2 slice PMAT-502cd — **string indexing `s[i]`**.
+
+`s[i]` over a string was rejected (it typed as `I64` — list/byte semantics —
+failing the `-> str` check). It now lowers to a new `Expr::StrCharAt`
+returning the 1-char string at index `i`. Since Rust's `String` has no
+positional `[]`, the backends materialise the chars and index them, handling
+negative indices from the end (Python semantics) and panicking on
+out-of-range (≈ `IndexError`): `{ let __cs: Vec<char> = (s).chars().collect();
+let __i = (i); let __idx = if __i < 0 { __cs.len() as i64 + __i } else { __i };
+__cs[__idx as usize].to_string() }`. Positive, negative, and variable int
+indices all work. Lean refuses. rustc round-trip `str_char_at.py`
+(cross-checked vs `python3`): `first("hello") -> "h"`, `last("hello") -> "o"`,
+`at("hello", -2) -> "l"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.115] — 2026-06-13
 
 Tranche-2 slice PMAT-502cc — context-aware **`not <bool var>`**.

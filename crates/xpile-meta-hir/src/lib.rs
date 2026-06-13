@@ -258,6 +258,11 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::ListConcat { lhs, rhs } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
         // PMAT-502bh: str.format — recurse into each formatted arg.
         Expr::StrFormat { args, .. } => args.iter().any(expr_has_int_arith),
+        // PMAT-502cd: `s[i]` over a string — recurse into both operands
+        // (the index may be an arithmetic expression).
+        Expr::StrCharAt { string, index } => {
+            expr_has_int_arith(string) || expr_has_int_arith(index)
+        }
         // PMAT-502am: formatted f-string field — recurse into the value.
         Expr::FormatSpec { value, .. } => expr_has_int_arith(value),
         // PMAT-492: string methods are str-domain; recurse into the
@@ -1245,6 +1250,15 @@ pub enum Expr {
     /// `Display` — both deferred). Indexed (`{0}`) / named (`{name}`) /
     /// spec'd (`{:.2f}`) fields are rejected at the frontend. Lean refuses.
     StrFormat { fmt: String, args: Vec<Expr> },
+    /// `s[i]` over a **string** — Python returns the 1-char string at index
+    /// `i`. PMAT-502cd (Tranche 2). Unlike list `Expr::Index`, Rust `String`
+    /// has no positional `[]`, so the backends materialise the chars and
+    /// index that: `{ let __cs: Vec<char> = (s).chars().collect(); let __i =
+    /// (i); let __idx = if __i < 0 { __cs.len() as i64 + __i } else { __i };
+    /// __cs[__idx as usize].to_string() }`. Negative `i` counts from the end
+    /// (Python semantics); an out-of-range index panics (≈ `IndexError`).
+    /// Result types as `Str`. Lean refuses.
+    StrCharAt { string: Box<Expr>, index: Box<Expr> },
     /// A formatted f-string field — Python `{value:spec}` where `spec` is a
     /// static format spec (e.g. `.2f`, `05d`, `>10`). PMAT-502am (Tranche 2).
     /// `rust_spec` is the already-translated Rust format spec (the frontend

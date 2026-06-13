@@ -838,6 +838,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, value, mode)?;
             out.push(')');
         }
+        // PMAT-502cd: `s[i]` over a string — materialise the chars and index
+        // them (Rust `String` has no positional `[]`). Negative `i` counts
+        // from the end; out-of-range panics (≈ Python `IndexError`).
+        Expr::StrCharAt { string, index } => {
+            out.push_str("{ let __cs: Vec<char> = (");
+            emit_expr(out, string, mode)?;
+            out.push_str(").chars().collect(); let __i: i64 = (");
+            emit_expr(out, index, mode)?;
+            out.push_str("); let __idx = if __i < 0 { __cs.len() as i64 + __i } else { __i }; __cs[__idx as usize].to_string() }");
+        }
         // PMAT-492/493b: Python string methods. No-arg transforms emit a
         // suffix; the startswith/endswith predicates emit
         // `.starts_with(&(<pat>)[..])` — the `&(..)[..]` reslice yields
