@@ -3550,6 +3550,34 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502ec (Tranche 2): empty list literal `[]` takes its element type from
+/// the declared annotation / return type — `xs: list[int] = []` and
+/// `return []` (any element type, incl. `list[str]` / nested) previously errored
+/// ("empty list literal requires a type annotation"), while empty `{}` /
+/// `set()` already threaded. The trailing-return equality check tolerates an
+/// empty literal (which `infer_type` defaults to `list[int]`). Cross-checked
+/// vs python3.
+#[test]
+fn empty_list_annotated() {
+    let rust = xpile_transpile_to_rust("empty_list_annotated.py");
+    assert!(
+        rust.contains("let mut xs: Vec<i64> = vec![]") || rust.contains("vec![]"),
+        "annotated empty list should emit `vec![]` with the declared type:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(build_with_append(5), 5);
+    assert_eq!(empty_int_list(), Vec::<i64>::new());
+    assert_eq!(empty_str_list(), Vec::<String>::new());
+    assert_eq!(early_empty(-1), Vec::<i64>::new());
+    assert_eq!(early_empty(9), vec![9i64]);
+    assert!(empty_dict_return().is_empty());
+    assert_eq!(annotated_str_accumulate(), 2);
+}
+"#;
+    assert_rustc_runs("empty_list_annotated", &rust, driver);
+}
+
 /// PMAT-502eb (Tranche 2): `xs += ys` over a list is Python's in-place list
 /// **extend**, not numeric addition. The augmented-assign handler emitted
 /// `combine_aug`'s `checked_add` on a `Vec` (a silent miscompile — no such
