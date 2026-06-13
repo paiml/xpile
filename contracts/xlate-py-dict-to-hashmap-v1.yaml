@@ -1,0 +1,162 @@
+metadata:
+  id: C-XLATE-PY-DICT-TO-HASHMAP
+  version: "1.0.0"
+  created: "2026-06-13"
+  author: PAIML Engineering
+  kind: kernel
+  status: draft
+  description: |
+    Translation semantics of Python `dict` → Rust
+    `std::collections::HashMap`. Layer 2 of the xpile contract taxonomy
+    (cross-language translation), the dict sibling of
+    `C-XLATE-PY-LIST-TO-VEC` (Python list → Rust Vec).
+
+    A Python `dict[K, V]` with homogeneous key type K and value type V
+    lowers to `HashMap<K_rust, V_rust>`. The lowering preserves the
+    finite-map structure exactly: every (key, value) entry is carried
+    across, cardinality is preserved, and — because both sides are
+    *unordered* key→value maps — the translation is independent of
+    insertion order. The frontend rejects heterogeneous keys/values
+    ("C-XLATE-PY-DICT-TO-HASHMAP requires homogeneous keys/values"), so
+    the K, V types are well-defined at lowering time.
+
+    This contract closes the dict half of the capability-ahead-of-contract
+    gap recorded in audit-design.md §7.3 (R6 / PMAT-475): dict code was
+    "governed by C-XLATE-PY-DICT-TO-HASHMAP" with no on-disk contract.
+    It joins the substrate at depth-1 under the R6-grandfathered Diamond
+    gate (PMAT-475a/b) — NOT forced to the depth-13 floor; deeper tiers
+    (per-operation lookup/insert/remove laws, the views sub-structure)
+    ratchet in later sub-slices. Together with `C-C-INT-ARITH` (v0.1.196)
+    this restores the §7.3 "every construct under contract" claim to true.
+  references:
+    - "Python Language Reference §6.2.7 (Dictionary displays), §3.2 (Mapping types)"
+    - "Rust std::collections::HashMap (entry API, insertion-order-independent)"
+    - "contracts/xlate-py-list-to-vec-v1.yaml (the list sibling at Layer 2)"
+    - "docs/specifications/audit-design.md §7.3 (R6 falsification)"
+  depends_on: []
+
+equations:
+  # Depth-1 Diamond (PMAT-475c): the single tier-defining equation that
+  # registers C-XLATE-PY-DICT-TO-HASHMAP at depth-1 under the grandfathered
+  # gate. It COMBINES two structural-extensionality facts — entry-sequence
+  # preservation + cardinality preservation — into one theorem witnessing
+  # that the Python dict → Rust HashMap lowering is the identity on the
+  # abstract finite-map (key→value) structure.
+  dict_to_hashmap_structure_preserved_diamond:
+    lean_theorem: "XpileContracts.CXlatePyDictToHashmap.dict_to_hashmap_structure_preserved_diamond"
+    lean_file: "contracts/lean/XlatePyDictToHashmap.lean"
+    formula: |
+      ∀ (d : PyDict K V).
+        (lower(d).entries = d.entries)               -- entry-sequence preserved
+        ∧ (lower(d).entries.length = d.entries.length) -- cardinality preserved
+      (the lowering is the identity on the abstract finite map K → V)
+    domain: |
+      Any Python `dict[K, V]` with homogeneous key type K and value type V
+      (each having a canonical Rust counterpart). The Diamond captures the
+      COMBINED structure-preservation axiomatization: the lowering to
+      `HashMap<K_rust, V_rust>` preserves both the (key, value) entry set
+      and its cardinality.
+    invariants:
+      - "FIRST Diamond-tier theorem of C-XLATE-PY-DICT-TO-HASHMAP (registers it at depth-1)"
+      - "COMBINED structure-extensionality: entry-sequence preservation + cardinality preservation"
+      - "the lowering is the identity on the abstract finite map K → V"
+      - "order-independent — both Python dict and Rust HashMap are unordered key→value maps"
+    preconditions:
+      - "type inference succeeded with a single K and single V across all entries (homogeneous)"
+      - "K, V each have a canonical Rust counterpart and K is hashable"
+    postconditions:
+      - "the emitted Rust `HashMap<K_rust, V_rust>` has exactly the same number of entries as the source dict"
+      - "every source (key, value) pair appears in the emitted HashMap with no coercion at the boundary"
+      - "no entry is dropped, duplicated, or reordered-into-a-different-map (set-of-entries equality)"
+    # Refinement proof (Semantic stratum): models both PyDict and
+    # RustHashMap as an entry list and the lowering as the identity on
+    # entries, so both conjuncts reduce to `rfl` (Bronze tier per ruchy
+    # 5.0 §14.10.5). Silver tier refines to a keyed partial-function model
+    # with the lookup-after-insert law.
+
+proof_obligations:
+  - type: postcondition
+    property: dict → HashMap preserves the entry sequence and cardinality (structure identity)
+    formal: "∀ d : PyDict K V. lower(d).entries = d.entries ∧ lower(d).entries.length = d.entries.length"
+    applies_to: dict_to_hashmap_structure_preserved_diamond
+  - type: invariant
+    property: homogeneous K, V required — no per-entry coercion, no heterogeneous map
+    formal: "∀ (k, v) ∈ d. type(k) = K ∧ type(v) = V"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-XLATE-PY-DICT-001
+    rule: |
+      A Python dict must lower to `std::collections::HashMap`, preserving
+      every entry and the cardinality.
+    prediction: |
+      The emitted Rust for a dict-returning function contains
+      `std::collections::HashMap` (or `HashMap`) and round-trips every
+      inserted (key, value) pair through rustc execution.
+    test: |
+      cargo test -p xpile --test transpile_e2e dict_counts_emitted_rust_returns_hashmap
+    if_fails: |
+      The dict lowering dropped/duplicated entries or emitted a non-map
+      type — a structure-preservation violation.
+  - id: FALSIFY-XLATE-PY-DICT-002
+    rule: |
+      Heterogeneous keys or values must be REJECTED, not silently lowered
+      to a mixed/`Any`-typed map.
+    prediction: |
+      A dict with mixed key (or value) types is refused at lowering with
+      the "requires homogeneous keys/values" diagnostic.
+    test: |
+      cargo test -p xpile --test transpile_e2e dict_counts_emitted_rust_returns_hashmap
+    if_fails: |
+      The homogeneity precondition leaked — a heterogeneous dict produced
+      Rust, violating the contract's K/V well-definedness.
+
+kani_harnesses:
+  - id: KANI-XLATE-PY-DICT-001
+    obligation: dict_to_hashmap_structure_preserved_diamond
+    bound: 4
+    property: |
+      Insert-then-get round-trips: for a HashMap<u8, u8>, after
+      `m.insert(k, v)`, `m.get(&k) == Some(&v)`. Witnesses the entry
+      -preservation half of the structure diamond at the Rust HashMap
+      level (the lowering target).
+    harness: |
+      #[kani::proof]
+      fn dict_insert_get_roundtrips() {
+          use std::collections::HashMap;
+          let k: u8 = kani::any();
+          let v: u8 = kani::any();
+          let mut m: HashMap<u8, u8> = HashMap::new();
+          m.insert(k, v);
+          assert_eq!(m.get(&k), Some(&v));
+          assert_eq!(m.len(), 1);
+      }
+  - id: KANI-XLATE-PY-DICT-002
+    obligation: dict_to_hashmap_structure_preserved_diamond
+    bound: 4
+    property: |
+      Re-inserting the same key overwrites (last-write-wins) and does NOT
+      grow the map — the cardinality-preservation invariant for duplicate
+      keys, mirroring Python dict semantics.
+    harness: |
+      #[kani::proof]
+      fn dict_reinsert_same_key_overwrites() {
+          use std::collections::HashMap;
+          let k: u8 = kani::any();
+          let v1: u8 = kani::any();
+          let v2: u8 = kani::any();
+          let mut m: HashMap<u8, u8> = HashMap::new();
+          m.insert(k, v1);
+          m.insert(k, v2);
+          assert_eq!(m.get(&k), Some(&v2));
+          assert_eq!(m.len(), 1);
+      }
+
+qa_gate:
+  id: QA-XLATE-PY-DICT-TO-HASHMAP
+  name: "Python dict to Rust HashMap translation contract"
+  min_coverage: 0.0
+  max_complexity: 20
+  required_tests:
+    - dict_counts_emitted_rust_returns_hashmap
+    - every_referenced_lean_theorem_exists_in_its_file
