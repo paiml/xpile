@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.151] — 2026-06-13
+
+Tranche-2 slice PMAT-502dm — **printf-style `"<tmpl>" % args`**.
+
+The `%` operator with a string-literal LHS (`"%d items" % n`, `"%s=%d" % (k,
+v)`) now lowers to a Rust `format!` by translating the `%`-template — reusing
+`Expr::StrFormat`. The RHS is a single value or a tuple, matched
+left-to-right. First cut: `%s` (over `int`/`str`), `%d`/`%i`, `%f` (→ `{:.6}`,
+Python's default precision), and `%%`. Deliberately rejected with a clear error
+(to avoid silent divergence): `%s` over `bool`/`float` (Rust `{}` differs from
+Python's repr), `%x`/`%X`/`%o` (Rust `{:x}` is two's-complement for negatives,
+unlike Python's sign-first), and width/precision/flags. rustc round-trip
+`percent_format.py` (cross-checked vs `python3`): `"%d items" % 5` = `"5
+items"`, `"%s=%d" % ("k",3)` = `"k=3"`, `"%f" % 1.5` = `"1.500000"`, `"100%% of
+%d" % 7` = `"100% of 7"`, `"%s and %s" % ("a","b")` = `"a and b"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.150] — 2026-06-13
 
 Tranche-2 slice PMAT-502dl — **`str.splitlines()`**.

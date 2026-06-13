@@ -3529,6 +3529,28 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dm (Tranche 2): printf-style `"<tmpl>" % args` → `format!` (`%d`,
+/// `%s` over int/str, `%f`, `%%`; single value or tuple).
+#[test]
+fn percent_format() {
+    let rust = xpile_transpile_to_rust("percent_format.py");
+    assert!(
+        rust.contains("format!(\"{} items\", n)") && rust.contains("format!(\"{:.6}\", x)"),
+        "percent format:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // printf-style % formatting; cross-checked vs python3.
+    assert_eq!(items(5), "5 items");
+    assert_eq!(kv("k".to_string(), 3), "k=3");
+    assert_eq!(frac(1.5), "1.500000");
+    assert_eq!(pct(7), "100% of 7");
+    assert_eq!(two("a".to_string(), "b".to_string()), "a and b");
+}
+"#;
+    assert_rustc_runs("percent_format", &rust, driver);
+}
+
 /// PMAT-502dl (Tranche 2): `str.splitlines()` — splits on Python's full line
 /// boundary set (LF/CR/CRLF/…), no trailing empty for a trailing break.
 #[test]

@@ -5535,6 +5535,17 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // str-Concat detection from `lower_expr`, using the
         // context-aware inference.
         ast::Expr::BinOp(b) => {
+            // PMAT-502dm: printf-style `"<template>" % args` — the `%`
+            // operator with a string *literal* LHS. Detected before the
+            // numeric `%` (Mod) path; the template is parsed and translated
+            // into a Rust `format!` string (an `Expr::StrFormat`).
+            if matches!(b.op, ast::Operator::Mod) {
+                if let ast::Expr::Constant(c) = b.left.as_ref() {
+                    if let ast::Constant::Str(tmpl) = &c.value {
+                        return lower_percent_format(ctx, tmpl, &b.right);
+                    }
+                }
+            }
             let lhs = lower_expr_in_ctx(ctx, *b.left)?;
             let rhs = lower_expr_in_ctx(ctx, *b.right)?;
             // PMAT-502bs: Python 3 `/` is ALWAYS true division → f64, even
@@ -6582,6 +6593,84 @@ fn num_builtin_op(name: &str) -> Option<(NumBuiltinOp, usize)> {
 /// admitted when it carries a `.Nf` spec. Every argument must be referenced
 /// (Rust's `format!` rejects an unused one). Braces are ASCII, so the
 /// byte-walk with string-slice copies is UTF-8-safe.
+/// PMAT-502dm: lower printf-style `"<template>" % args` to an
+/// [`Expr::StrFormat`]. The template's `%`-conversions are translated to a
+/// Rust `format!` string. First cut supports `%s` (over `int`/`str` — `bool`
+/// and `float` diverge under Rust's `{}` so they're deferred), `%d`/`%i`
+/// (int), `%f` (float → `{:.6}`, Python's default precision), and `%%`. Width,
+/// precision, flags, and `%x`/`%X`/`%o` (Rust `{:x}` is two's-complement for
+/// negatives, unlike Python's sign-first) are rejected with a clear error. The
+/// RHS is a single value or a tuple of values, matched left-to-right.
+fn lower_percent_format(
+    ctx: &LoweringCtx,
+    tmpl: &str,
+    rhs: &ast::Expr,
+) -> Result<Expr, FrontendError> {
+    // The RHS is either a tuple of values or a single value.
+    let raw_args: Vec<ast::Expr> = match rhs {
+        ast::Expr::Tuple(t) => t.elts.clone(),
+        other => vec![other.clone()],
+    };
+    let args = raw_args
+        .into_iter()
+        .map(|a| lower_expr_in_ctx(ctx, a))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut fmt = String::new();
+    let mut arg_idx = 0usize;
+    let mut chars = tmpl.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            // Escape Rust `format!`'s own metacharacters.
+            '{' => fmt.push_str("{{"),
+            '}' => fmt.push_str("}}"),
+            '%' => {
+                let conv = chars
+                    .next()
+                    .ok_or_else(|| FrontendError::Lower("trailing `%` in format string".into()))?;
+                if conv == '%' {
+                    fmt.push('%');
+                    continue;
+                }
+                if arg_idx >= args.len() {
+                    return Err(FrontendError::Lower(
+                        "not enough arguments for `%` format string".into(),
+                    ));
+                }
+                let ty = infer_type_in_ctx(ctx, &args[arg_idx]);
+                let placeholder = match conv {
+                    // `%s` only over int/str (bool→"True"/"False" and float
+                    // ".0" repr diverge under Rust's `{}` — deferred).
+                    's' if matches!(ty, Type::I64 | Type::Str) => "{}",
+                    'd' | 'i' if matches!(ty, Type::I64) => "{}",
+                    'f' if matches!(ty, Type::F64) => "{:.6}",
+                    's' | 'd' | 'i' | 'f' => {
+                        return Err(FrontendError::Lower(format!(
+                            "`%{conv}` format expects a different argument type than {ty:?} \
+                             (or `%s` over bool/float, which is deferred)"
+                        )));
+                    }
+                    _ => {
+                        return Err(FrontendError::Lower(format!(
+                            "unsupported `%{conv}` conversion — width/precision/flags and \
+                             `%x`/`%X`/`%o` are not yet supported"
+                        )));
+                    }
+                };
+                fmt.push_str(placeholder);
+                arg_idx += 1;
+            }
+            _ => fmt.push(c),
+        }
+    }
+    if arg_idx != args.len() {
+        return Err(FrontendError::Lower(
+            "not all arguments converted during `%` string formatting".into(),
+        ));
+    }
+    Ok(Expr::StrFormat { fmt, args })
+}
+
 fn lower_str_format(
     ctx: &LoweringCtx,
     fmt: &str,
