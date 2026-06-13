@@ -3645,6 +3645,40 @@ fn main() {
     assert_rustc_runs("dict_get_optional", &rust, driver);
 }
 
+/// PMAT-502ez (Tranche 2): Optional **flow-narrowing** (Optional epic cut 4).
+/// After a provably-exiting `if x is None: return …` / `raise` guard, a later
+/// read of `x` lowers to `Expr::OptionUnwrap` → `(x).unwrap()` : `T`, so the
+/// dominant Python Optional idiom (guard-then-use) transpiles to compilable
+/// Rust. Narrowing is sound: only non-reassigned `Optional` params guarded by an
+/// always-exiting None-check are narrowed. Works for multiple stacked guards,
+/// str payloads, and `raise`-exiting guards. Cross-checked vs python3.
+#[test]
+fn optional_narrow() {
+    let rust = xpile_transpile_to_rust("optional_narrow.py");
+    assert!(
+        rust.contains("(x).unwrap()") && rust.contains("(name).unwrap()"),
+        "a narrowed Optional read should emit `(x).unwrap()`:\n{rust}"
+    );
+    // The guard itself still emits the `is_none()` test (cut3), unchanged.
+    assert!(
+        rust.contains("if (x).is_none()"),
+        "the None-guard should still emit `(x).is_none()`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(inc_or_zero(Some(5)), 6);
+    assert_eq!(inc_or_zero(None), 0);
+    assert_eq!(double_guard(Some(3), Some(4)), 7);
+    assert_eq!(double_guard(None, Some(1)), -1);
+    assert_eq!(double_guard(Some(2), None), -2);
+    assert_eq!(label(Some("bob".to_string())), "bob!");
+    assert_eq!(label(None), "anon");
+    assert_eq!(via_raise(Some(7)), 14);
+}
+"#;
+    assert_rustc_runs("optional_narrow", &rust, driver);
+}
+
 /// PMAT-502ev (Tranche 2): `sorted(s)` over a str — sorts the characters into a
 /// list of 1-char strings (via `Expr::StrChars`). Completes the `sorted(X)`
 /// family (list / dict-keys / str-chars); `reverse=`/`key=` still apply.
