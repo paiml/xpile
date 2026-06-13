@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.137] — 2026-06-13
+
+Tranche-2 slice PMAT-502cy — **`pow(a, b)`** builtin.
+
+`pow(a, b)` was silently miscompiled: it fell through to a generic call,
+emitting an undefined Rust `pow(a, b)` function. It now desugars to the same
+machinery as `a ** b` (frontend-only — no new meta-HIR variant): float `powf`
+when either operand is `f64`, integer `checked_pow` otherwise (inheriting the
+existing negative-exponent guard). 3-arg `pow(a, b, mod)` (modular
+exponentiation) is deferred. rustc round-trip `pow_builtin.py` (cross-checked
+vs `python3`): `pow(2,10) == 1024`, `pow(5,3) == 125`, `pow(2.0,3.0) == 8.0`,
+`pow(2.0,0.5) ≈ 1.41421356`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.136] — 2026-06-13
 
 Tranche-2 slice PMAT-502cx — **`sum(xs, start)`** 2-arg form.
