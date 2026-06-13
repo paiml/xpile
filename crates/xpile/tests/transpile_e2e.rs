@@ -3529,6 +3529,26 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502du (Tranche 2): an expression-position list comprehension
+/// (`sum([x for x in xs])`) lowers through the `Map`/`Filter` machinery.
+#[test]
+fn list_comp_expr() {
+    let rust = xpile_transpile_to_rust("list_comp_expr.py");
+    assert!(
+        rust.contains(".map(|__k|") && rust.contains(".iter().sum::<i64>()"),
+        "expr-position list comp → map:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // list comprehensions in consumer positions; cross-checked vs python3.
+    assert_eq!(sum_squares(vec![1, 2, 3]), 14);
+    assert_eq!(max_abs(vec![-1, 5, -3]), 5);
+    assert_eq!(count_positive(vec![-1, 2, -3, 4]), 2);
+}
+"#;
+    assert_rustc_runs("list_comp_expr", &rust, driver);
+}
+
 /// PMAT-502dt (Tranche 2): a multi-statement nested function lowers to a
 /// closure with an `Expr::Block` body (leading stmts + trailing value).
 #[test]

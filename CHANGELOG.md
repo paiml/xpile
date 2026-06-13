@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.159] — 2026-06-13
+
+Tranche-2 slice PMAT-502du — **expression-position list comprehensions**.
+
+A list comprehension in a consumer position (`sum([x*x for x in xs])`,
+`max([abs(x) for x in xs])`, `len([x for x in xs if x>0])`) was rejected; it
+now lowers through the same `Map`/`Filter` machinery as a generator expression
+(both produce the same list, typed correctly as a `List`). The dedicated
+for-append desugar still handles the statement form (`name = [comp]`) and the
+return-statement special-case. Shares the loop-var-unbound limitation with
+`map`/genexpr — str-method element bodies (`[s.upper() for s in strs]`) need
+the statement form. rustc round-trip `list_comp_expr.py` (cross-checked vs
+`python3`): `sum_squares([1,2,3]) == 14`, `max_abs([-1,5,-3]) == 5`,
+`count_positive([-1,2,-3,4]) == 2`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.158] — 2026-06-13
 
 Tranche-2 slice PMAT-502dt — **block expressions** + **multi-statement nested
