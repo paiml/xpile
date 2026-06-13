@@ -1498,6 +1498,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "A dict-splat merge literal {**a, **b} was rejected (dict-splat in literals unsupported). NEW Expr::DictMerge { dicts: Vec<Expr> } → (a).iter().chain((b).iter())….map(|(__k,__v)| (__k.clone(), __v.clone())).collect::<HashMap<_,_>>(). KEY: chaining iterates left-to-right so a LATER dict wins on a key collision, matching Python's {**a, **b}. Single-expression (no clone-of-variable / Block needed — .iter() borrows). Frontend: lower_dict_literal_in_ctx detects ALL keys None (all splats, ≥1) → DictMerge (each spread value must type as Dict, else error); a MIX of splats + explicit k:v entries → clear deferred error. Both inferers: DictMerge → first dict's type. Blast radius: new Expr variant → expr_has_int_arith + 2 inferers + 2 codegen + lean collect_idents + lean refuse. rustc round-trip dict_merge.py (cross-checked vs python3 incl. collision): merged_size=3, merged_get(...,'y')=9 (b wins over a), merged_get(...,'x')=1, merge3=4 (3-way chain). FREE CI. SHIPPED v0.1.161. DEFERRED: {k:v, **d} mixed splat+explicit. NEXT: structural — x is None (Option/new Type); try/except (PMAT-503b); classes; &str. All need a Type variant or return-wrapping (outside the safe-structural filter → dedicated design)."
+- id: PMAT-502DX
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502dx: [Tranche2] mixed {**a, k: v} dict literals'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "Generalizes v0.1.161 dict merge to handle **-splats MIXED with explicit k:v entries ({**defaults, 'override': x}, {'x':1, **a}) — a very common override pattern. CHANGED Expr::DictMerge { dicts: Vec<Expr> } → DictMerge { entries: Vec<(Option<Expr>, Expr)> } (None key = splat-the-value-dict; Some(k) = explicit pair). Codegen chains: explicit pair → std::iter::once((<k>, <v>)); splat → (<d>).iter().map(|(__k,__v)|(__k.clone(),__v.clone())); first fragment starts, rest .chain(...), then .collect::<HashMap<_,_>>(). LATER entry wins on key collision (Python evaluation order). All-splat (v161) unchanged. Frontend: any None key → DictMerge entries path (splat values must be dicts). Inferers: first entry → splat dict's type, or Dict(typeof k, typeof v) for a pair. Updated all DictMerge sites (def + expr_has_int_arith + 2 inferers + 2 codegen + lean collect_idents); fixed v161 dict_merge test assertion for the new emit shape. rustc round-trip dict_merge_mixed.py (cross-checked vs python3): {**a,'x':99}['x']=99 (explicit-after-splat wins), {'x':99,**a}['x']=1 (splat-after-explicit wins), len({**a,'x':1,'y':2})=2. FREE CI. SHIPPED v0.1.162. **DICT LITERAL SURFACE NOW COMPLETE: explicit / all-splat / mixed.** NEXT: structural epics (Optional/is-None, try/except, classes, &str) — all need a new Type variant or return-wrapping/flow-narrowing → dedicated design pass, NOT a rushed slice."
 - id: PMAT-465
   github_issue: 496
   item_type: task

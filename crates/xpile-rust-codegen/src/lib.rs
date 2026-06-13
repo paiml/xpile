@@ -1480,21 +1480,33 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, pairs, mode)?;
             out.push_str(".iter().cloned().collect::<std::collections::HashMap<_, _>>()");
         }
-        // PMAT-502dw: `{**d1, **d2, …}` → chain the dicts' iterators (later
-        // wins on a key collision, matching Python) into a fresh HashMap.
-        Expr::DictMerge { dicts } => {
-            out.push('(');
-            for (i, d) in dicts.iter().enumerate() {
-                if i == 0 {
-                    emit_expr(out, d, mode)?;
-                    out.push_str(").iter()");
-                } else {
-                    out.push_str(".chain((");
-                    emit_expr(out, d, mode)?;
-                    out.push_str(").iter())");
+        // PMAT-502dw/dx: `{k: v, **d, …}` → chain each fragment's iterator
+        // (explicit pair → `once((k, v))`; splat → `(d).iter().map(clone)`)
+        // into a fresh HashMap (a later entry wins, matching Python).
+        Expr::DictMerge { entries } => {
+            for (i, (k, v)) in entries.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(".chain(");
+                }
+                match k {
+                    Some(key) => {
+                        out.push_str("std::iter::once((");
+                        emit_expr(out, key, mode)?;
+                        out.push_str(", ");
+                        emit_expr(out, v, mode)?;
+                        out.push_str("))");
+                    }
+                    None => {
+                        out.push('(');
+                        emit_expr(out, v, mode)?;
+                        out.push_str(").iter().map(|(__k, __v)| (__k.clone(), __v.clone()))");
+                    }
+                }
+                if i > 0 {
+                    out.push(')');
                 }
             }
-            out.push_str(".map(|(__k, __v)| (__k.clone(), __v.clone())).collect::<std::collections::HashMap<_, _>>()");
+            out.push_str(".collect::<std::collections::HashMap<_, _>>()");
         }
         // PMAT-502ab: `filter(pred, xs)` → `.iter().cloned().filter(|__k| {
         // let p = __k.clone(); pred }).collect::<Vec<_>>()`.
