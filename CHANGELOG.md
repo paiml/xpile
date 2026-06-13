@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.217] — 2026-06-13
+
+Tranche 2 — PMAT-517: `str.replace(old, new, count)` (3-arg).
+
+- Python's 3-arg `str.replace` (replace the first `count` occurrences) maps 1:1
+  to Rust `str::replacen`. New `StrMethodOp::ReplaceN` → `.replacen(&(old)[..],
+  &(new)[..], (count) as usize)`; a dedicated frontend branch routes
+  `replace`/3-args (count must be int). The 2-arg form is unchanged.
+- New e2e fixture `str_replace_count.py` (rustc round-trip cross-checked vs
+  python3). e2e 278 → 279.
+
 ## [0.1.216] — 2026-06-13
 
 Tranche 2 — PMAT-516 (correctness): `str.startswith`/`endswith` with a **tuple**
