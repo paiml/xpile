@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.214] — 2026-06-13
+
+Tranche 2 — PMAT-514: `match` on **enums** (`case Color.RED:`).
+
+- Combines `match` (PMAT-510/512) with enums (PMAT-513): a dotted value pattern
+  (`case Color.RED:`) and `|`-patterns of them desugar via the `match`→`if` path
+  to enum-member equality (`c == Color::RED`) — **no new IR**. The value-pattern
+  gate now accepts a `Name.attr` value; the comparator lowers to
+  `Expr::EnumVariant` downstream so the equality type-checks.
+- New e2e fixture `match_enum.py` (rustc round-trip cross-checked vs python3 —
+  terminal, `|`-pattern of members, statement-position with `mut` local).
+  e2e 276 → 277.
+
 ## [0.1.213] — 2026-06-13
 
 Tranche 2 — PMAT-513: Python **`Enum` classes** → Rust enums.
