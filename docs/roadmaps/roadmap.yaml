@@ -1705,6 +1705,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "PROBE-FOUND gap (parallel to list splat PMAT-502es): {*a, *b}/{*a, x} (set literals with Starred elements) TRANSP-FAILed. FIX (REUSE Expr::SetOp{Union} + Expr::Clone — no new IR): in lower_set_literal_in_ctx, if any element is ast::Expr::Starred, fold: each *e → lower e (must type as set), each plain x → singleton Expr::SetLit([x]); chain via SetOp{Union} (emits .union(&b).cloned().collect::<HashSet>() = fresh set). Lone {*a} → Expr::Clone(a) (shallow copy not move). `match result { SetOp{..} => as-is, other => Clone(other) }`. rustc rt set_spread.py vs python3: union_splat({1,2},{2,3})=3, splat_with_elem({1,2})=3, elem_then_splat=3, lone_splat_is_copy({1,2,3})=34 (INDEPENDENCE). FREE CI. SHIPPED v0.1.184. PROBE LESSON (re-confirmed): malformed driver — using a Rust helper `s(&[..])` in the PYTHON print expr gives SyntaxError; verify expected python values via a clean exec()+print on the actual functions. SESSION TODAY: v0.1.166→184 (19 slices, e2e 228→249). DEFERRED: tuple splat (*a,*b) (tuples are fixed-arity, harder); comp 2-generators (cartesian — the main remaining clean-ish gap, moderate); f-string !r/!s; os/sys/random; structural epics (Optional/try-except/classes/&str). NEXT: comp-2-generators (dedicated) OR a structural-epic first sub-slice OR fresh probe."
+- id: PMAT-502EU
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502eu: [Tranche2] sorted(d) over a dict (sort keys)'
+  status: done
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "PROBE-FOUND SILENT MISCOMPILE: sorted(d) over a dict emitted `let ks: i64 = sorted(d);` (undefined fn + wrong type) — the dict arg fell through sorted's list-only gate to a generic call. Python iterates a dict as its KEYS, so sorted(d) = sorted key list. FIX (REUSE Expr::DictView{Keys} + Expr::Sorted — no new IR): in the sorted lowering, match the arg type: List → Sorted(arg); Dict → Sorted(DictView{dict:arg, kind:Keys}); else None (fall through). reverse=/key= keywords still apply. Codegen: `{ let mut __xv = d.keys().cloned().collect::<Vec<_>>().clone(); __xv.sort(); __xv }`. rustc rt sorted_dict.py vs python3: first_key({3:1,1:1,2:1})=1, last_key=3, first_key_desc(reverse)=3, sum_sorted_keys=6. FREE CI. SHIPPED v0.1.185. SESSION TODAY: v0.1.166→185 (20 slices, e2e 228→250). DEFERRED: sorted(str) (sort chars); str.rsplit (1-arg == split, trivial); comp 2-generators (cartesian — MODERATE/risky, touches all comp paths + needs flat_map for expr position); tuple splat; structural epics (Optional/try-except/classes/&str — big EV, dedicated design). NEXT: str.rsplit (trivial alias) OR sorted(str) OR comp-2-gen (dedicated) OR structural epic. NOTE: easy clean gaps now NEARLY EXHAUSTED — remaining are niche-clean or big-risky; consider a structural-epic design pass soon."
 - id: PMAT-465
   github_issue: 496
   item_type: task

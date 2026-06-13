@@ -5839,8 +5839,19 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         }
                     }
                     if kwargs_ok {
-                        let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
-                        if matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
+                        let arg = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                        // PMAT-502eu: `sorted(d)` over a dict sorts its KEYS
+                        // (Python iterates a dict as its keys) — materialize the
+                        // keys list first. `sorted(xs)` over a list is unchanged.
+                        let list = match infer_type_in_ctx(ctx, &arg) {
+                            Type::List(_) => Some(arg),
+                            Type::Dict(_, _) => Some(Expr::DictView {
+                                dict: Box::new(arg),
+                                kind: DictViewKind::Keys,
+                            }),
+                            _ => None,
+                        };
+                        if let Some(list) = list {
                             return Ok(Expr::Sorted {
                                 list: Box::new(list),
                                 reverse,

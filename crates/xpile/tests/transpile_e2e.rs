@@ -3552,6 +3552,36 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502eu (Tranche 2): `sorted(d)` over a dict — Python iterates a dict as
+/// its keys, so `sorted(d)` returns the sorted key list. Previously this was a
+/// silent miscompile (the dict arg fell through to an undefined `sorted(d)`
+/// call typed `i64`). It now materializes the keys (`Expr::DictView{Keys}`) and
+/// sorts them; `reverse=`/`key=` still apply. Cross-checked vs python3.
+#[test]
+fn sorted_dict() {
+    let rust = xpile_transpile_to_rust("sorted_dict.py");
+    assert!(
+        rust.contains(".keys()") && !rust.contains(": i64 = sorted("),
+        "sorted(dict) should sort the keys, not emit an undefined sorted():\n{rust}"
+    );
+    let driver = r#"
+fn d() -> std::collections::HashMap<i64, i64> {
+    let mut m = std::collections::HashMap::new();
+    m.insert(3, 1);
+    m.insert(1, 1);
+    m.insert(2, 1);
+    m
+}
+fn main() {
+    assert_eq!(first_key(d()), 1);
+    assert_eq!(last_key(d()), 3);
+    assert_eq!(first_key_desc(d()), 3);
+    assert_eq!(sum_sorted_keys(d()), 6);
+}
+"#;
+    assert_rustc_runs("sorted_dict", &rust, driver);
+}
+
 /// PMAT-502et (Tranche 2): set splat literals — `{*a, *b}`, `{*a, x}`. A set
 /// literal containing `*`-splat elements is a union: each `*e` contributes the
 /// set `e`, each plain `x` a singleton `{x}`, folded through `Expr::SetOp{Union}`
