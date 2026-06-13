@@ -1687,6 +1687,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "PROBE-FOUND gap: 1-arg min(xs)/max(xs) reduction over a list[str] TRANSP-FAILed — the type gate (PMAT-502aa/dh) only allowed Type::I64|F64. str/bool are Ord, so reduction works. FIX: (1) widen the min/max gate to I64|F64|Str|Bool (the WITH-key path already allowed any type; this is the no-key reduction). (2) codegen non-float (Ord) path: `.iter().copied().min()/.max()` → `.iter().cloned()...` because String is NOT Copy (i64/bool ARE Clone, so identical for them); float fold path unchanged (f64 Copy). Updated the list_minmax_builtin test's static assertion (.copied→.cloned) — a string-assert regression caught by full-workspace-test (LESSON: changing a shared emit shape breaks recent static assertions — always re-run full cargo test --workspace). rustc rt min_max_str_list.py vs python3: min_word(['banana','apple','cherry'])='apple', max_word=='cherry', min_word_default(['b','a'])='a', min_int_regression([3,1,2])=1. FREE CI. SHIPPED v0.1.182. NOTE sum() stays numeric-only (Python sum(strs) is a TypeError — use ''.join). SESSION TODAY: v0.1.166→182 (17 slices, e2e 228→247). DEFERRED: list spread [*a,*b]; comp 2-generators (cartesian); f-string !r/!s conversion; os/sys/random; structural epics (Optional/try-except/classes/&str — dedicated design). NEXT: list spread [*a,*b] (→ chain/concat, may reuse ListConcat) OR comp-2-gen OR structural epic."
+- id: PMAT-502ES
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502es: [Tranche2] list splat literals [*a, *b]'
+  status: done
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "PROBE-FOUND gap: `[*a, *b]` / `[x, *a, y]` (list literals with Starred elements) TRANSP-FAILed. FIX (REUSE Expr::ListConcat + Expr::Clone — no new IR): in lower_list_literal_in_ctx, if any element is ast::Expr::Starred, fold: each `*e` → lower e (must type as list), each plain `x` → singleton Expr::ListLit([x]); chain via ListConcat (which emits `(a).iter().chain((b).iter()).cloned().collect()` = fresh Vec). Lone `[*a]` (single bare splat, no concat) → wrap in Expr::Clone(a) so it COPIES (Python [*a] is shallow copy) not moves. `match result { ListConcat{..} => as-is, other => Clone(other) }`. rustc rt list_spread.py vs python3: concat([1,2],[3,4,5])=5, spread_sum=10, with_ends([5,6])=99 ([0,5,6,99]), lone_spread_is_copy([1,2,3])=34 (orig 3, copy 4 — INDEPENDENCE), str_spread=3. FREE CI. SHIPPED v0.1.183. NOTE this only handles the ctx-aware list-literal path (the main one); context-free lower_expr List still errors on Starred (rare). DEFERRED: dict splat in dict-literal `{**a, *b}` already done (PMAT-502dw/dx merge); tuple/set splat literals (*a in tuple/set); comp 2-generators; f-string !r/!s; os/sys/random; structural epics. SESSION TODAY: v0.1.166→183 (18 slices, e2e 228→248). NEXT: comp-2-generators OR set/tuple splat OR a structural-epic first sub-slice."
 - id: PMAT-465
   github_issue: 496
   item_type: task

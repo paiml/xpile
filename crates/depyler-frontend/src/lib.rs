@@ -8133,6 +8133,48 @@ fn lower_list_literal_in_ctx(
                 .into(),
         ));
     }
+    // PMAT-502es: a list literal with `*`-splat elements (`[*a, *b]`,
+    // `[x, *a, y]`) is a concatenation. Fold the elements into a chain of
+    // `Expr::ListConcat`: a `*e` contributes the list `e` (which must type as a
+    // list), a plain `x` contributes a singleton `[x]`. The fold produces a
+    // fresh `Vec`; a lone `[*a]` (no concat) is wrapped in `Expr::Clone` so it
+    // copies (Python `[*a]` is a shallow copy) rather than moving `a`.
+    if list_expr
+        .elts
+        .iter()
+        .any(|e| matches!(e, ast::Expr::Starred(_)))
+    {
+        let mut acc: Option<Expr> = None;
+        for elt in list_expr.elts {
+            let part = match elt {
+                ast::Expr::Starred(s) => {
+                    let inner = lower_expr_in_ctx(ctx, (*s.value).clone())?;
+                    if !matches!(infer_type_in_ctx(ctx, &inner), Type::List(_)) {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` splats a non-list (`[*x]` where `x` is not a list) — only list splats are supported at v0.2.0",
+                            ctx.fn_name
+                        )));
+                    }
+                    inner
+                }
+                other => Expr::ListLit(vec![lower_expr_in_ctx(ctx, other)?]),
+            };
+            acc = Some(match acc {
+                None => part,
+                Some(prev) => Expr::ListConcat {
+                    lhs: Box::new(prev),
+                    rhs: Box::new(part),
+                },
+            });
+        }
+        let result = acc.expect("non-empty (a Starred element guarantees >= 1)");
+        // A `ListConcat` chain already produces a fresh `Vec`; a lone bare
+        // splat (`[*a]`) would otherwise move `a`, so clone it for a copy.
+        return Ok(match result {
+            Expr::ListConcat { .. } => result,
+            other => Expr::Clone(Box::new(other)),
+        });
+    }
     let mut elems = Vec::with_capacity(list_expr.elts.len());
     let mut elem_ty: Option<Type> = None;
     for e in list_expr.elts {
