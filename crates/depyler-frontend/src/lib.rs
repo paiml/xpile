@@ -711,6 +711,9 @@ fn lower_top_level_stmt(
         ast::Stmt::FunctionDef(f) => {
             lower_function_def(f, signatures, consts).map(Item::Function)
         }
+        // PMAT-505a (classes epic, first cut): a field-only / `@dataclass` class
+        // → an `Item::Struct`. Value construction + field access follow.
+        ast::Stmt::ClassDef(c) => lower_class_def(c),
         // A top-level assignment that wasn't a recognised constant.
         ast::Stmt::Assign(_) | ast::Stmt::AnnAssign(_) => Err(FrontendError::Lower(
             "unsupported module-level assignment — v0.2.0 supports `NAME = <int/bool/float literal>` constants (str/collection constants deferred)".to_string(),
@@ -720,6 +723,47 @@ fn lower_top_level_stmt(
             std::mem::discriminant(&other)
         ))),
     }
+}
+
+/// PMAT-505a (classes epic, first cut): lower a Python class into an
+/// `Item::Struct`. Supported shape: a class whose body is only annotated fields
+/// (`x: int`) and/or `pass`, optionally decorated `@dataclass`. Each `x: T`
+/// becomes a `(name, Type)` pair in declaration order. Methods, base classes,
+/// class-vars with values (defaults), and non-field statements are rejected with
+/// a clear error (follow-up sub-slices). This first cut emits the struct
+/// *definition* only — construction/field-access are deferred.
+fn lower_class_def(c: ast::StmtClassDef) -> Result<Item, FrontendError> {
+    let name = c.name.to_string();
+    if !c.bases.is_empty() || !c.keywords.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "class `{name}` has base classes / keyword bases — v0.2.0 first cut supports only a field-only / `@dataclass` class (no inheritance)"
+        )));
+    }
+    let mut fields: Vec<(String, Type)> = Vec::new();
+    for stmt in &c.body {
+        match stmt {
+            // `x: T` (annotated field, no default).
+            ast::Stmt::AnnAssign(aa) if aa.value.is_none() => {
+                let ast::Expr::Name(field) = aa.target.as_ref() else {
+                    return Err(FrontendError::Lower(format!(
+                        "class `{name}` has a non-Name annotated field target — v0.2.0 first cut supports plain `field: Type` members"
+                    )));
+                };
+                let ty = parse_type_annotation(&name, field.id.as_str(), &aa.annotation)?;
+                fields.push((field.id.to_string(), ty));
+            }
+            // A bare docstring (string-literal expression statement) or `pass`
+            // is allowed and ignored.
+            ast::Stmt::Pass(_) => {}
+            ast::Stmt::Expr(e) if matches!(e.value.as_ref(), ast::Expr::Constant(_)) => {}
+            _ => {
+                return Err(FrontendError::Lower(format!(
+                    "class `{name}` has a non-field member (method / field-with-default / nested statement) — v0.2.0 first cut supports only annotated fields `field: Type`; construction, field access, and methods follow"
+                )));
+            }
+        }
+    }
+    Ok(Item::Struct { name, fields })
 }
 
 /// PMAT-502bj: recognise a module-level constant declaration
@@ -9129,6 +9173,7 @@ mod tests {
         match &m.items[i] {
             Item::Function(f) => f,
             Item::Const { .. } => panic!("expected a function item, found a constant"),
+            Item::Struct { .. } => panic!("expected a function item, found a struct"),
         }
     }
 

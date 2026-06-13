@@ -3819,6 +3819,38 @@ fn main() {
     assert_rustc_runs("try_except_assign", &rust, driver);
 }
 
+/// PMAT-505a (classes epic, first cut): a `@dataclass` / field-only class →
+/// a Rust `#[derive(Clone, Debug, PartialEq)] pub struct` with `pub` fields in
+/// declaration order. This first cut emits the struct *definition* only;
+/// construction (`Point(1, 2)`) and field access (`p.x`) are a follow-up
+/// sub-slice (they need a `Type::Struct`). The driver constructs the emitted
+/// structs in hand-written Rust and exercises the derived traits, verifying the
+/// definition is correct and usable.
+#[test]
+fn dataclass_struct_definition() {
+    let rust = xpile_transpile_to_rust("dataclass_def.py");
+    assert!(
+        rust.contains("#[derive(Clone, Debug, PartialEq)]")
+            && rust.contains("pub struct Point {")
+            && rust.contains("pub x: i64,")
+            && rust.contains("pub items: Vec<i64>,"),
+        "dataclass should emit a derived pub struct with pub fields:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let p = Point { x: 1, y: 2 };
+    assert_eq!(p.x, 1);
+    assert_eq!(p.y, 2);
+    assert_eq!(p.clone(), p);            // Clone + PartialEq
+    let _ = format!("{:?}", p);          // Debug
+    let t = Tagged { label: "k".to_string(), count: 3, ratio: 0.5, items: vec![1, 2] };
+    assert_eq!(t.count, 3);
+    assert_eq!(t.items, vec![1, 2]);
+}
+"#;
+    assert_rustc_runs("dataclass_def", &rust, driver);
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators

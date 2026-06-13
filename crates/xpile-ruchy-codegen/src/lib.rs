@@ -82,6 +82,18 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
                 emit_expr(&mut out, value, /*mode=*/ false)?;
                 out.push_str(";\n");
             }
+            // PMAT-505a (classes epic, first cut): dataclass → derived struct
+            // (Ruchy compiles to Rust — same shape).
+            Item::Struct { name, fields } => {
+                out.push_str("#[derive(Clone, Debug, PartialEq)]\n");
+                writeln!(out, "pub struct {name} {{")?;
+                for (field, ty) in fields {
+                    write!(out, "    pub {field}: ")?;
+                    emit_type(&mut out, ty)?;
+                    out.push_str(",\n");
+                }
+                out.push_str("}\n");
+            }
         }
     }
     Ok(out)

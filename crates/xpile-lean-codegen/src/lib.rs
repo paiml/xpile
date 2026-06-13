@@ -59,6 +59,14 @@ pub fn emit_module(module: &Module) -> Result<String, LeanCodegenError> {
                 emit_expr(&mut out, value)?;
                 out.push('\n');
             }
+            // PMAT-505a: a dataclass→struct has no first-cut Lean encoding (a
+            // Lean `structure` lift is deferred); refuse like other deferred
+            // Lean constructs.
+            Item::Struct { name, .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "class/dataclass `{name}` → Lean `structure` is not yet supported — use `--target rust` or `--target ruchy`"
+                )));
+            }
         }
     }
     Ok(out)

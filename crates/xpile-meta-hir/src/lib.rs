@@ -55,6 +55,17 @@ pub enum Item {
         ty: Type,
         value: Expr,
     },
+    /// PMAT-505a (classes epic, first cut): a Python `@dataclass` / field-only
+    /// class → a Rust struct. `fields` are the annotated members in declaration
+    /// order (`x: int` → `("x", Type::I64)`). Rust/Ruchy emit
+    /// `#[derive(Clone, Debug, PartialEq)] pub struct Name { pub <f>: <ty>, … }`;
+    /// Lean refuses (structure encoding deferred). This first cut emits the
+    /// *definition* only — value construction (`Name(a, b)`) and field access
+    /// (`obj.f`) are a follow-up sub-slice (they need a `Type::Struct` variant).
+    Struct {
+        name: String,
+        fields: Vec<(String, Type)>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
