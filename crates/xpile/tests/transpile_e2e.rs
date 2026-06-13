@@ -3097,6 +3097,24 @@ fn main() {
     assert_rustc_runs("format_positional", &rust, driver);
 }
 
+/// PMAT-502cc (Tranche 2): context-aware `not <bool var>` → `(!b)` (the
+/// context-free path mis-inferred a bare Ident as int and rejected it).
+#[test]
+fn not_bool_var() {
+    let rust = xpile_transpile_to_rust("not_bool_var.py");
+    assert!(rust.contains("(!b)"), "not bool var:\n{rust}");
+    assert!(rust.contains("if (!active)"), "not in guard:\n{rust}");
+    let driver = r#"
+fn main() {
+    assert_eq!(toggle(true), false);
+    assert_eq!(toggle(false), true);
+    assert_eq!(clamp(false, 9), 0);
+    assert_eq!(clamp(true, 9), 9);
+}
+"#;
+    assert_rustc_runs("not_bool_var", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
