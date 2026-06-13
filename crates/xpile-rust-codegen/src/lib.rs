@@ -923,6 +923,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str(", (");
                 emit_expr(out, &args[0], mode)?;
                 out.push_str(") as usize)");
+            } else if matches!(op, StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix) {
+                // PMAT-502cq: `.removeprefix(p)`/`.removesuffix(p)` →
+                // `strip_prefix`/`strip_suffix`, returning the receiver
+                // unchanged when the affix is absent (matching Python).
+                out.push_str("{ let __s = (");
+                emit_expr(out, recv, mode)?;
+                out.push_str(if matches!(op, StrMethodOp::RemovePrefix) {
+                    "); match __s.strip_prefix(&("
+                } else {
+                    "); match __s.strip_suffix(&("
+                });
+                emit_expr(out, &args[0], mode)?;
+                out.push_str(")[..]) { Some(__r) => __r.to_string(), None => __s } }");
             } else {
                 emit_expr(out, recv, mode)?;
                 match op {
@@ -987,6 +1000,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     StrMethodOp::Title => unreachable!("title handled above"),
                     StrMethodOp::RJust | StrMethodOp::LJust => {
                         unreachable!("rjust/ljust handled above")
+                    }
+                    StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix => {
+                        unreachable!("removeprefix/removesuffix handled above")
                     }
                 }
             }

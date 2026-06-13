@@ -1775,6 +1775,15 @@ pub enum StrMethodOp {
     /// (**Str**, 1 int arg). PMAT-502aw. Emits
     /// `format!("{:<1$}", <recv>, (<width>) as usize)`.
     LJust,
+    /// `.removeprefix(p)` → the string with a leading `p` removed, else
+    /// unchanged (**Str**, 1 arg). PMAT-502cq. Emits a block over Rust's
+    /// `str::strip_prefix`: `{ let __s = (recv); match __s.strip_prefix(
+    /// &(p)[..]) { Some(__r) => __r.to_string(), None => __s } }`.
+    RemovePrefix,
+    /// `.removesuffix(p)` → trailing `p` removed, else unchanged (**Str**,
+    /// 1 arg). PMAT-502cq. Like [`StrMethodOp::RemovePrefix`] with
+    /// `strip_suffix`.
+    RemoveSuffix,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

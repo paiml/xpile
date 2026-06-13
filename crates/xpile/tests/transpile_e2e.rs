@@ -3381,6 +3381,30 @@ fn main() {
     assert_rustc_runs("list_of_tuples", &rust, driver);
 }
 
+/// PMAT-502cq (Tranche 2): `str.removeprefix(p)` / `removesuffix(p)` →
+/// `strip_prefix`/`strip_suffix` (unchanged when the affix is absent).
+#[test]
+fn remove_affix() {
+    let rust = xpile_transpile_to_rust("remove_affix.py");
+    assert!(
+        rust.contains("__s.strip_prefix(&("),
+        "removeprefix:\n{rust}"
+    );
+    assert!(
+        rust.contains("__s.strip_suffix(&("),
+        "removesuffix:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(strip_pre(String::from("foo_bar")), "bar");
+    assert_eq!(strip_pre(String::from("baz")), "baz");
+    assert_eq!(strip_suf(String::from("note.txt")), "note");
+    assert_eq!(strip_suf(String::from("note")), "note");
+}
+"#;
+    assert_rustc_runs("remove_affix", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
