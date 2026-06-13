@@ -3949,6 +3949,27 @@ fn main() {
     assert_rustc_runs("dataclass_kwargs", &rust, driver);
 }
 
+/// PMAT-506f (classes epic): dataclass **field defaults** `x: T = <literal>`.
+/// Construction omitting a defaulted field fills it from the literal default
+/// (lowered in the pre-pass): `Config()` → all defaults; `Config(timeout=5)` →
+/// override one, default the rest. Cross-checked vs python3.
+#[test]
+fn dataclass_field_defaults() {
+    let rust = xpile_transpile_to_rust("dataclass_defaults.py");
+    assert!(
+        rust.contains("Config { timeout: 30i64, retries: 3i64, name: String::from(\"default\") }"),
+        "omitted fields should be filled from their literal defaults:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(all_defaults(), 33);
+    assert_eq!(partial(), 8);
+    assert_eq!(named_override(), "custom");
+}
+"#;
+    assert_rustc_runs("dataclass_defaults", &rust, driver);
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators

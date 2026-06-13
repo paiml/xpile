@@ -103,6 +103,11 @@ struct LoweringCtx {
     /// → [(method_name, return_type)]`. Built in the same pre-pass as `structs`.
     /// Consulted to type `obj.method(args)` (`Expr::MethodCall`).
     struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
+    /// PMAT-506f (classes epic): per-struct field defaults — `struct name →
+    /// [(field, lowered default Expr)]`, only for fields with a default
+    /// (`x: int = 30`). Built in the same pre-pass; consulted at construction to
+    /// fill omitted fields.
+    struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
     /// PMAT-504: function-local closure bindings — maps a closure
     /// variable name (`f` in `f = lambda y: …`) to its inferred return
     /// type, so a call `f(x)` types correctly (the module signature
@@ -169,6 +174,7 @@ impl LoweringCtx {
         consts: &HashMap<String, Type>,
         structs: Rc<HashMap<String, Vec<(String, Type)>>>,
         struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
+        struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
     ) -> Self {
         // PMAT-502bj: module-level constants are visible (and immutably
         // bound) in every function body; a same-named param shadows the
@@ -192,6 +198,7 @@ impl LoweringCtx {
             signatures,
             structs,
             struct_methods,
+            struct_field_defaults,
             closure_returns: HashMap::new(),
             underscore_counter: 0,
             underscore_rename: None,
@@ -666,16 +673,19 @@ impl Frontend for PythonFrontend {
         // type correctly.
         let mut struct_map: HashMap<String, Vec<(String, Type)>> = HashMap::new();
         let mut struct_method_map: HashMap<String, Vec<(String, Type)>> = HashMap::new();
+        let mut struct_default_map: HashMap<String, Vec<(String, Expr)>> = HashMap::new();
         for stmt in &suite {
             if let ast::Stmt::ClassDef(c) = stmt {
-                if let Ok((name, fields, method_returns)) = class_def_signature(c) {
+                if let Ok((name, fields, method_returns, field_defaults)) = class_def_signature(c) {
                     struct_map.insert(name.clone(), fields);
-                    struct_method_map.insert(name, method_returns);
+                    struct_method_map.insert(name.clone(), method_returns);
+                    struct_default_map.insert(name, field_defaults);
                 }
             }
         }
         let structs = Rc::new(struct_map);
         let struct_methods = Rc::new(struct_method_map);
+        let struct_field_defaults = Rc::new(struct_default_map);
 
         let mut items = Vec::new();
         for stmt in suite {
@@ -695,6 +705,7 @@ impl Frontend for PythonFrontend {
                 consts.clone(),
                 structs.clone(),
                 struct_methods.clone(),
+                struct_field_defaults.clone(),
             )?;
             items.push(item);
         }
@@ -749,6 +760,7 @@ fn lower_top_level_stmt(
     consts: Rc<HashMap<String, Type>>,
     structs: Rc<HashMap<String, Vec<(String, Type)>>>,
     struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
+    struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
 ) -> Result<Item, FrontendError> {
     // PMAT-502bj: a module-level `NAME = <int/bool/float-literal>` is a
     // constant item (recognised before the `def`-only fallback).
@@ -756,13 +768,26 @@ fn lower_top_level_stmt(
         return Ok(Item::Const { name, ty, value });
     }
     match stmt {
-        ast::Stmt::FunctionDef(f) => {
-            lower_function_def(f, signatures, consts, structs, struct_methods, None)
-                .map(Item::Function)
-        }
+        ast::Stmt::FunctionDef(f) => lower_function_def(
+            f,
+            signatures,
+            consts,
+            structs,
+            struct_methods,
+            struct_field_defaults,
+            None,
+        )
+        .map(Item::Function),
         // PMAT-505a/506d (classes epic): a field-only / `@dataclass` class → an
         // `Item::Struct` (fields + instance methods).
-        ast::Stmt::ClassDef(c) => lower_class_def(c, signatures, consts, structs, struct_methods),
+        ast::Stmt::ClassDef(c) => lower_class_def(
+            c,
+            signatures,
+            consts,
+            structs,
+            struct_methods,
+            struct_field_defaults,
+        ),
         // A top-level assignment that wasn't a recognised constant.
         ast::Stmt::Assign(_) | ast::Stmt::AnnAssign(_) => Err(FrontendError::Lower(
             "unsupported module-level assignment — v0.2.0 supports `NAME = <int/bool/float literal>` constants (str/collection constants deferred)".to_string(),
@@ -789,7 +814,15 @@ fn lower_top_level_stmt(
 #[allow(clippy::type_complexity)]
 fn class_def_signature(
     c: &ast::StmtClassDef,
-) -> Result<(String, Vec<(String, Type)>, Vec<(String, Type)>), FrontendError> {
+) -> Result<
+    (
+        String,
+        Vec<(String, Type)>,
+        Vec<(String, Type)>,
+        Vec<(String, Expr)>,
+    ),
+    FrontendError,
+> {
     let name = c.name.to_string();
     if !c.bases.is_empty() || !c.keywords.is_empty() {
         return Err(FrontendError::Lower(format!(
@@ -798,16 +831,30 @@ fn class_def_signature(
     }
     let mut fields: Vec<(String, Type)> = Vec::new();
     let mut method_returns: Vec<(String, Type)> = Vec::new();
+    let mut field_defaults: Vec<(String, Expr)> = Vec::new();
     for stmt in &c.body {
         match stmt {
-            // `x: T` (annotated field, no default).
-            ast::Stmt::AnnAssign(aa) if aa.value.is_none() => {
+            // `x: T` (field) — optionally with a default `x: T = <literal>`.
+            ast::Stmt::AnnAssign(aa) => {
                 let ast::Expr::Name(field) = aa.target.as_ref() else {
                     return Err(FrontendError::Lower(format!(
                         "class `{name}` has a non-Name annotated field target — v0.2.0 first cut supports plain `field: Type` members"
                     )));
                 };
                 let ty = parse_type_annotation(&name, field.id.as_str(), &aa.annotation)?;
+                // PMAT-506f: a field default `x: T = <expr>`. First cut: the
+                // default must be a literal (lowered context-free) — `field(...)`
+                // / computed defaults are rejected.
+                if let Some(default_ast) = aa.value.as_ref() {
+                    if !is_literal_default(default_ast) {
+                        return Err(FrontendError::Lower(format!(
+                            "class `{name}` field `{}` has a non-literal default — v0.2.0 first cut supports only literal field defaults (int/float/str/bool, optionally negated)",
+                            field.id
+                        )));
+                    }
+                    let default = lower_expr((**default_ast).clone())?;
+                    field_defaults.push((field.id.to_string(), default));
+                }
                 fields.push((field.id.to_string(), ty));
             }
             // PMAT-506d: an instance method `def m(self, …) -> R: …`. Record its
@@ -824,12 +871,27 @@ fn class_def_signature(
             ast::Stmt::Expr(e) if matches!(e.value.as_ref(), ast::Expr::Constant(_)) => {}
             _ => {
                 return Err(FrontendError::Lower(format!(
-                    "class `{name}` has an unsupported member (field-with-default / nested statement) — v0.2.0 first cut supports annotated fields `field: Type` and instance methods `def m(self, …)`"
+                    "class `{name}` has an unsupported member (nested statement) — v0.2.0 first cut supports annotated fields `field: Type [= literal]` and instance methods `def m(self, …)`"
                 )));
             }
         }
     }
-    Ok((name, fields, method_returns))
+    Ok((name, fields, method_returns, field_defaults))
+}
+
+/// PMAT-506f: true if `e` is a literal usable as a field default — a constant
+/// (`30`, `"x"`, `True`, `1.5`) or a negated numeric literal (`-1`). Computed
+/// defaults / `field(...)` factories are rejected (the default is lowered
+/// context-free, so it must not reference function-scope bindings).
+fn is_literal_default(e: &ast::Expr) -> bool {
+    match e {
+        ast::Expr::Constant(_) => true,
+        ast::Expr::UnaryOp(u) => {
+            matches!(u.op, ast::UnaryOp::USub | ast::UnaryOp::UAdd)
+                && matches!(u.operand.as_ref(), ast::Expr::Constant(_))
+        }
+        _ => false,
+    }
 }
 
 /// PMAT-505a/506d: lower a Python class into an `Item::Struct` — its fields plus
@@ -838,14 +900,16 @@ fn class_def_signature(
 /// is rejected (a `&mut self` receiver would need caller-side mutability
 /// inference — deferred). `@dataclass` construction is positional over the
 /// fields; an explicit `__init__` is not supported yet.
+#[allow(clippy::too_many_arguments)]
 fn lower_class_def(
     c: ast::StmtClassDef,
     signatures: Rc<HashMap<String, FnSig>>,
     consts: Rc<HashMap<String, Type>>,
     structs: Rc<HashMap<String, Vec<(String, Type)>>>,
     struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
+    struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
 ) -> Result<Item, FrontendError> {
-    let (name, fields, _) = class_def_signature(&c)?;
+    let (name, fields, _, _) = class_def_signature(&c)?;
     let self_ty = Type::Struct(name.clone());
     let mut methods: Vec<Function> = Vec::new();
     for stmt in c.body {
@@ -868,6 +932,7 @@ fn lower_class_def(
                 consts.clone(),
                 structs.clone(),
                 struct_methods.clone(),
+                struct_field_defaults.clone(),
                 Some(self_ty.clone()),
             )?;
             // First cut: read-only methods. A `self.field = v` (FieldAssign on
@@ -1004,6 +1069,7 @@ fn lower_function_def(
     consts: Rc<HashMap<String, Type>>,
     structs: Rc<HashMap<String, Vec<(String, Type)>>>,
     struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
+    struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
     // PMAT-506d: when lowering a method, the type of the `self` receiver (the
     // enclosing struct). `None` for a top-level function. Decorators are
     // tolerated when set (a `@dataclass` method may be plain, but the class
@@ -1112,6 +1178,7 @@ fn lower_function_def(
         &consts,
         structs,
         struct_methods,
+        struct_field_defaults,
     );
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
     for stmt in leading {
@@ -6325,6 +6392,17 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         }
                         values.insert(kw_name, lower_expr_in_ctx(ctx, kw.value.clone())?);
                     }
+                    // PMAT-506f: fill any still-omitted field from its declared
+                    // default (a literal lowered in the pre-pass).
+                    if values.len() != field_names.len() {
+                        if let Some(defaults) = ctx.struct_field_defaults.get(fname.id.as_str()) {
+                            for (field, default) in defaults {
+                                values
+                                    .entry(field.clone())
+                                    .or_insert_with(|| default.clone());
+                            }
+                        }
+                    }
                     if values.len() != field_names.len() {
                         let missing: Vec<&str> = field_names
                             .iter()
@@ -6332,7 +6410,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             .map(String::as_str)
                             .collect();
                         return Err(FrontendError::Lower(format!(
-                            "function `{}` constructs `{}` missing field(s): {missing:?}",
+                            "function `{}` constructs `{}` missing field(s) with no default: {missing:?}",
                             ctx.fn_name, fname.id
                         )));
                     }
