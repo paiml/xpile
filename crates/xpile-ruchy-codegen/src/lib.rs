@@ -640,6 +640,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
     match e {
         // PMAT-502bl: the unit value (void function trailing return).
         Expr::Unit => out.push_str("()"),
+        // PMAT-502dt: a block-expr — `{ <stmts> <trailing> }`.
+        Expr::Block(b) => {
+            out.push_str("{ ");
+            for stmt in &b.stmts {
+                emit_stmt(out, stmt, mode)?;
+            }
+            emit_expr(out, &b.trailing_return, mode)?;
+            out.push_str(" }");
+        }
         Expr::Ident(name) => {
             // PMAT-025: in BigInt mode, append `.clone()` to every
             // Ident reference. BigInt isn't `Copy` (it's

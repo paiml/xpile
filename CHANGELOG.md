@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.158] — 2026-06-13
+
+Tranche-2 slice PMAT-502dt — **block expressions** + **multi-statement nested
+functions**.
+
+New `Expr::Block` (zero or more statements + a trailing value → Rust `{ <stmts>
+<trailing> }`, typed as the trailing expression) — a reusable primitive. Its
+first producer: a nested `def` body may now be **multiple statements** ending
+in `return <expr>` (v0.1.156 supported only a single `return`). The leading
+statements lower into the block and the trailing return becomes the block's
+value, so the closure body is `|p| { <stmts> <trailing> }`. An early `return`
+inside the nested fn returns from the closure (Rust semantics = Python's
+return-from-nested-fn). The enclosing scope is snapshot/restored so closure
+locals don't leak. Single-`return` bodies stay a bare expression (no `Block`
+wrapper) — unchanged from v0.1.156. Lean refuses block expressions. rustc
+round-trip `nested_fn_block.py` (cross-checked vs `python3`): `sq_plus_one(4)
+== 17`, `clamped(-5) == 0` (early return), `clamped(5) == 5`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.157] — 2026-06-13
 
 Tranche-2 slice PMAT-502ds — **`f(*xs)` splat into a variadic param**.

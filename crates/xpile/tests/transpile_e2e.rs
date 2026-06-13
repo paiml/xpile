@@ -3529,6 +3529,26 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dt (Tranche 2): a multi-statement nested function lowers to a
+/// closure with an `Expr::Block` body (leading stmts + trailing value).
+#[test]
+fn nested_fn_block() {
+    let rust = xpile_transpile_to_rust("nested_fn_block.py");
+    assert!(
+        rust.contains("let helper = |x: i64| { {") && rust.contains("let sq: i64"),
+        "multi-stmt nested fn → block-expr closure:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // multi-statement nested functions (block-expr closures); vs python3.
+    assert_eq!(sq_plus_one(4), 17);
+    assert_eq!(clamped(-5), 0);  // early return from the closure
+    assert_eq!(clamped(5), 5);
+}
+"#;
+    assert_rustc_runs("nested_fn_block", &rust, driver);
+}
+
 /// PMAT-502ds (Tranche 2): `f(*xs)` splat into a variadic param passes the
 /// list directly (`f(fixed…, *xs)` → `f(fixed…, xs)`).
 #[test]

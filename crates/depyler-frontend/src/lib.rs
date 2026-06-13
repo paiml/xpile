@@ -3652,19 +3652,29 @@ fn desugar_nested_fn(
     }
     // First cut: the body must be exactly one `return <expr>` (a closure body
     // is a single expression — multi-statement nested functions are deferred).
-    let body_ast = match f.body.as_slice() {
-        [ast::Stmt::Return(ret)] => match ret.value.as_ref() {
+    // PMAT-502dt: the body is zero or more leading statements followed by a
+    // trailing `return <expr>` (the closure's value). A single-`return` body
+    // stays a bare expression; a multi-statement body becomes an `Expr::Block`.
+    if f.body.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "nested function `{}` has an empty body",
+            f.name
+        )));
+    }
+    let (last, leading) = f.body.split_last().expect("non-empty checked above");
+    let trailing_ast = match last {
+        ast::Stmt::Return(ret) => match ret.value.as_ref() {
             Some(v) => (**v).clone(),
             None => {
                 return Err(FrontendError::Lower(format!(
-                    "nested function `{}` has a bare `return` — only `return <expr>` is supported",
+                    "nested function `{}` ends with a bare `return` — only `return <expr>` is supported",
                     f.name
                 )));
             }
         },
         _ => {
             return Err(FrontendError::Lower(format!(
-                "nested function `{}` has a multi-statement body — only a single `return <expr>` is supported at v0.2.0",
+                "nested function `{}` must end with `return <expr>`",
                 f.name
             )));
         }
@@ -3679,32 +3689,36 @@ fn desugar_nested_fn(
         };
         params.push((pname, ty));
     }
-    // Bind the params (with their real types) for the body's inference, then
-    // restore so the closure-local names don't leak into the enclosing scope.
-    let saved: Vec<(bool, Option<Type>)> = params
-        .iter()
-        .map(|(p, _)| (ctx.bound.contains(p), ctx.name_types.get(p).cloned()))
-        .collect();
+    // Snapshot the enclosing scope so the closure's params + body-locals don't
+    // leak into the enclosing function's type environment (Rust scopes them in
+    // the closure block; the leak would only mislead later type inference).
+    let saved_bound = ctx.bound.clone();
+    let saved_types = ctx.name_types.clone();
     for (p, t) in &params {
         ctx.bound.insert(p.clone());
         ctx.name_types.insert(p.clone(), t.clone());
     }
-    let body = lower_expr_in_ctx(ctx, body_ast)?;
-    // Return type: the `-> R` annotation, else inferred from the body.
+    // Lower the leading statements, then the trailing return expression.
+    let mut stmts: Vec<Stmt> = Vec::new();
+    for s in leading {
+        stmts.extend(lower_block_stmt(ctx, s.clone())?);
+    }
+    let trailing = lower_expr_in_ctx(ctx, trailing_ast)?;
+    // Return type: the `-> R` annotation, else inferred from the trailing expr.
     let ret_ty = match f.returns.as_ref() {
         Some(ann) => parse_type_annotation(&fname, "<return>", ann)?,
-        None => infer_type_in_ctx(ctx, &body),
+        None => infer_type_in_ctx(ctx, &trailing),
     };
-    for ((p, _), (prev_bound, prev_ty)) in params.iter().zip(saved.into_iter()) {
-        if prev_bound {
-            if let Some(t) = prev_ty {
-                ctx.name_types.insert(p.clone(), t);
-            }
-        } else {
-            ctx.bound.remove(p);
-            ctx.name_types.remove(p);
-        }
-    }
+    ctx.bound = saved_bound;
+    ctx.name_types = saved_types;
+    let body = if stmts.is_empty() {
+        trailing
+    } else {
+        Expr::Block(Box::new(Block {
+            stmts,
+            trailing_return: trailing,
+        }))
+    };
     let name = f.name.to_string();
     ctx.closure_returns.insert(name.clone(), ret_ty);
     ctx.bound.insert(name.clone());
@@ -3994,6 +4008,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::Ident(_) | Expr::LitInt(_) => Type::I64,
         // PMAT-502bl: the unit value types as Unit (void function return).
         Expr::Unit => Type::Unit,
+        // PMAT-502dt: a block-expr types as its trailing expression.
+        Expr::Block(b) => infer_type(&b.trailing_return),
         // PMAT-477 (R8): float literal + float arithmetic are Type::F64.
         Expr::LitFloat(_) | Expr::FloatBinOp { .. } => Type::F64,
         // PMAT-456 (v0.2.0 Track 1.B): bool literal is Type::Bool.
@@ -4266,6 +4282,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::Ident(n) => ctx.name_types.get(n).cloned().unwrap_or(Type::I64),
         // PMAT-502bl: the unit value types as Unit (void function return).
         Expr::Unit => Type::Unit,
+        // PMAT-502dt: a block-expr types as its trailing expression.
+        Expr::Block(b) => infer_type_in_ctx(ctx, &b.trailing_return),
         // PMAT-477 (R8): float literal + float arithmetic are Type::F64.
         Expr::LitFloat(_) | Expr::FloatBinOp { .. } => Type::F64,
         // PMAT-456 (v0.2.0 Track 1.B): bool literal is Type::Bool.

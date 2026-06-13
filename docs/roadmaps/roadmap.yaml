@@ -1462,6 +1462,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "Completes the varargs feature (after v0.1.155 def + v0.1.155 call-collection). In the variadic Call branch: if the vararg tail is EXACTLY one ast::Expr::Starred covering all varargs (f(fixed…, *xs), tail_is_splat = args.len()==fixed+1 && args[fixed] is Starred, and no Starred in the fixed slots), pass the splatted list DIRECTLY (lower s.value, require List) instead of wrapping the tail in Expr::ListLit → f(fixed…, xs). Any OTHER *-splat shape (mixed f(1,*xs) needing concat, splat in a fixed slot, or splat into a non-variadic fn) is rejected with a clear error (deferred). rustc round-trip varargs_splat.py (cross-checked vs python3): total(*[1,2,3])=6, with_prefix(10,*[1,2,3])=16, total(*[])=0. FREE CI. SHIPPED v0.1.157. VARARGS NOW COMPLETE: def *args + call-collection f(1,2,3) + splat f(*xs). DEFERRED: mixed f(a, *xs) concat; variadic call WITH keywords. NEXT structural: Expr::Block primitive (unlocks multi-stmt nested fns + expr-position comprehensions — meaty, dedicated effort); x is None (Option, new Type variant — needs design); try/except->Result (PMAT-503b); classes; &str."
+- id: PMAT-502DT
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502dt: [Tranche2] Expr::Block primitive + multi-statement nested functions'
+  status: planned
+  priority: high
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "NEW Expr::Block(Box<Block>) primitive (Block already exists: {stmts, trailing_return}) → Rust/Ruchy `{ <stmts> <trailing> }`, types as the trailing expr. Block needed #[derive(PartialEq)] added (Expr now contains it). Blast radius: expr_has_int_arith (recurse stmts via stmt_has_int_arith + trailing) + 2 inferers (→ infer trailing) + 2 codegen emit (emit_stmt loop + trailing) + lean collect_idents (recurse trailing) + lean refuse. FIRST PRODUCER: desugar_nested_fn now supports MULTI-STATEMENT bodies (v156 was single-return only). Body = leading stmts (lowered via lower_block_stmt) + trailing `return <expr>`; single-return stays a bare expr (no Block wrapper, v156-compatible), multi-stmt → Expr::Block as the ClosureLet body. Early `return` inside the nested fn returns from the Rust CLOSURE = Python return-from-nested-fn (semantics match). Enclosing scope snapshot/restored (clone ctx.bound + ctx.name_types) so closure params+locals don't leak. Lean refuses Block. rustc round-trip nested_fn_block.py (cross-checked vs python3): sq_plus_one(4)=17, clamped(-5)=0 (early return), clamped(5)=5. FREE CI. SHIPPED v0.1.158. **Expr::Block is now available to unlock EXPRESSION-POSITION COMPREHENSIONS next (sum([x for x in xs]), bare [comp] in return/arg position → wrap desugar_list_comp output in Expr::Block returning the accumulator).** NEXT: expr-position list comp via Expr::Block; x is None (Option); try/except->Result (PMAT-503b); classes."
 - id: PMAT-465
   github_issue: 496
   item_type: task
