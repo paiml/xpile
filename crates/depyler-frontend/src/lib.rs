@@ -1524,6 +1524,31 @@ fn lower_expr_stmt_as_cmd(ctx: &LoweringCtx, e: ast::StmtExpr) -> Result<Stmt, F
 /// zero steps would need `target > stop` and a different cond, which
 /// is deferred. Other iterables (lists, generators, dict.items, etc.)
 /// also error: v0.1.0 has no collection types yet.
+/// PMAT-502ck: is this for-loop iterable a `range(...)` or
+/// `reversed(range(...))` call? Such calls drive the counter-`while` desugar;
+/// any *other* call (e.g. `reversed(xs)`, `sorted(xs)`, `list(range(n))`)
+/// lowers to a `List`-typed value and goes through the collection-iteration
+/// path instead.
+fn is_range_like_call(iter: &ast::Expr) -> bool {
+    let ast::Expr::Call(c) = iter else {
+        return false;
+    };
+    let ast::Expr::Name(n) = &*c.func else {
+        return false;
+    };
+    if n.id.as_str() == "range" {
+        return true;
+    }
+    if n.id.as_str() == "reversed" && c.args.len() == 1 {
+        if let ast::Expr::Call(inner) = &c.args[0] {
+            if let ast::Expr::Name(m) = &*inner.func {
+                return m.id.as_str() == "range";
+            }
+        }
+    }
+    false
+}
+
 /// PMAT-502cj: lower `list(range(...))` to [`Expr::RangeList`]. Accepts the
 /// 1/2/3-arg `range` forms; the optional step must be a **positive** integer
 /// literal at first cut (negative-step materialisation is deferred). Bounds
@@ -1706,12 +1731,13 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
     };
 
     // PMAT-458 (v0.2.0 Track 1.B): dispatch on iter shape.
-    //   - `range(...)` call → existing Let+While desugar (below).
-    //   - Otherwise: lower iter as an expression and emit
-    //     `Stmt::ForEach` if it types as Type::List.
-    // The match-on-Call below handles the range case; the early-
-    // return here handles the non-Call (= collection-iter) case.
-    if !matches!(&*f.iter, ast::Expr::Call(_)) {
+    //   - `range(...)` / `reversed(range(...))` call → the Let+While desugar
+    //     below (counter loop).
+    //   - Otherwise (non-call, OR any other call that lowers to a `List` —
+    //     `reversed(xs)`, `sorted(xs)`, `list(range(n))`, `d.items()` …):
+    //     lower the iter and emit a `Stmt::ForEach`. PMAT-502ck generalised
+    //     this from "non-call only" to "non-range-like".
+    if !is_range_like_call(&f.iter) {
         let iter_expr = lower_expr_in_ctx(ctx, (*f.iter).clone())?;
         let iter_ty = infer_type_in_ctx(ctx, &iter_expr);
         // PMAT-472 (R3): a dict iterates its keys (`for k in d:`), so

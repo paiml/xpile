@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.123] — 2026-06-13
+
+Tranche-2 slice PMAT-502ck — **for-loops over a call iterable** (`reversed(xs)`,
+`sorted(xs)`, `list(range(n))`).
+
+The for-loop collection path was gated behind `!matches!(iter, Call(_))`, so
+any call iterable fell through to the range matcher and errored ("non-range
+call"). The gate is now `!is_range_like_call(iter)`: only `range(...)` and
+`reversed(range(...))` drive the counter-`while` desugar, while every other
+call (which lowers to a `List`) goes through the collection-iteration path and
+emits a `Stmt::ForEach`. So `for x in reversed(xs)`, `for x in sorted(xs)`, and
+`for x in list(range(n))` now work (plain `range(...)` and the v0.1.121
+`reversed(range(...))` are unchanged). rustc round-trip `for_over_call.py`
+(cross-checked vs `python3`): `rev_fold([1,2,3]) -> 321`, `sort_fold([3,1,2])
+-> 123`, `range_sum(5) -> 10`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.122] — 2026-06-13
 
 Tranche-2 slice PMAT-502cj — **`list(range(...))`** materialization + **`list(xs)`** copy.
