@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.191] — 2026-06-13
+
+Tranche-2 slice PMAT-502fa — **Optional intra-branch narrowing** for `if x is
+not None:` (Optional epic, complement of the cut-4 early-return guard).
+
+- Inside the body of `if x is not None:`, a read of `x` lowers to
+  `Expr::OptionUnwrap` → `(x).unwrap()` : `T`, so the `if x is not None: <use x>`
+  idiom transpiles to compilable Rust.
+- In `lower_if_stmt`: the condition is lowered first (its own `x` is **not**
+  narrowed), then a bare `<name> is not None` over a non-reassigned `Optional`
+  name temporarily narrows `x` for the then-body only (restored afterwards;
+  removed only if this frame added it, so an outer guard's narrowing survives).
+  Narrowing persists into nested statements within the branch.
+- Scope: the `is not None` then-branch (dominant idiom). The `is None`
+  else-branch and `is not None … else: return` fall-through route through other
+  lowering paths and remain future sub-slices. Other shapes are not narrowed
+  (no regression).
+- New e2e fixture `optional_narrow_branch.py`, rustc round-trip cross-checked vs
+  python3. e2e 255 → 256.
+
 ## [0.1.190] — 2026-06-13
 
 Tranche-2 slice PMAT-502ez — **Optional flow-narrowing** (Optional epic cut 4,
