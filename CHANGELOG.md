@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.180] — 2026-06-13
+
+Tranche-2 slice PMAT-502ep — **set predicates** (`issubset`/`issuperset`/`isdisjoint`
++ `<=`/`<`/`>=`/`>`).
+
+The set predicate methods (`a.issubset(b)`, `a.issuperset(b)`, `a.isdisjoint(b)`)
+and the comparison operators `a <= b` / `a < b` / `a >= b` / `a > b` over two
+sets now lower to a new bool-returning `Expr::SetPred` → a parenthesized
+temp-bound block over `HashSet::is_subset` / `is_superset` / `is_disjoint`
+(the proper variants `<`/`>` add `&& __l != __r`). The temps avoid
+double-evaluating either operand.
+
+The operators were a **silent miscompile**: they previously lowered to a plain
+ordering `BinOp` (`a <= b`), which Rust's `HashSet` doesn't implement, so the
+emitted code failed `rustc` (only the round-trip caught it). `==`/`!=` on sets
+keep the plain `BinOp` (HashSet implements `PartialEq`). Lean refuses. New
+`set_predicates.py` e2e fixture (3 methods + 4 operators + a guard), all
+cross-checked vs python3.
+
 ## [0.1.179] — 2026-06-13
 
 Tranche-2 slice PMAT-502eo — **set-algebra methods** (`a.union(b)`, …).

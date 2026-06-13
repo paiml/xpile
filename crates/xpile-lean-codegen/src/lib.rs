@@ -670,8 +670,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(haystack, out);
             collect_idents(needle, out);
         }
-        // PMAT-502g: set algebra — recurse into both operands.
-        Expr::SetOp { lhs, rhs, .. } => {
+        // PMAT-502g/ep: set algebra / predicates — recurse into both operands.
+        Expr::SetOp { lhs, rhs, .. } | Expr::SetPred { lhs, rhs, .. } => {
             collect_idents(lhs, out);
             collect_idents(rhs, out);
         }
@@ -1478,10 +1478,11 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         // encoding needs the `Std.HashMap` upgrade that also unblocks
         // Lean iteration/mutation. Deferred to v0.3.0; refuse clearly.
         // PMAT-500: sets deferred in the Lean lane at first cut.
-        Expr::SetLit(_) | Expr::SetContains { .. } | Expr::SetOp { .. } => {
+        Expr::SetLit(_) | Expr::SetContains { .. } | Expr::SetOp { .. } | Expr::SetPred { .. } => {
             return Err(LeanCodegenError::Unsupported(
-                "Python sets ({a, b} / `x in s` / `a | b` / `a & b` / `a - b` / `a ^ b`) \
-                 are not yet supported in the Lean lane — use `--target rust` or `--target ruchy`"
+                "Python sets ({a, b} / `x in s` / `a | b` / `a & b` / `a - b` / `a ^ b` / \
+                 subset/superset/disjoint predicates) are not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
         }

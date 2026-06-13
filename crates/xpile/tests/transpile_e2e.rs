@@ -3550,6 +3550,39 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502ep (Tranche 2): set predicates — the methods `a.issubset(b)` /
+/// `a.issuperset(b)` / `a.isdisjoint(b)` AND the operators `a <= b` / `a < b` /
+/// `a >= b` / `a > b` over two sets. The operators were a silent miscompile
+/// (they lowered to a plain ordering `BinOp` → `a <= b` on `HashSet`, which
+/// rustc rejects). All now lower to a bool-returning `Expr::SetPred`
+/// (`is_subset`/`is_superset`/`is_disjoint`; proper variants add `&& a != b`).
+/// `==`/`!=` on sets keep the plain `BinOp` (HashSet `PartialEq`).
+/// Cross-checked vs python3.
+#[test]
+fn set_predicates() {
+    let rust = xpile_transpile_to_rust("set_predicates.py");
+    assert!(
+        rust.contains("is_subset(") && rust.contains("is_disjoint("),
+        "set predicates should emit HashSet query methods:\n{rust}"
+    );
+    let driver = r#"
+fn s(xs: &[i64]) -> std::collections::HashSet<i64> { xs.iter().copied().collect() }
+fn main() {
+    assert!(is_subset(s(&[1, 2]), s(&[1, 2, 3])));
+    assert!(!is_subset(s(&[1, 9]), s(&[1, 2, 3])));
+    assert!(is_superset(s(&[1, 2, 3]), s(&[1, 2])));
+    assert!(is_disjoint(s(&[1, 2]), s(&[3, 4])));
+    assert!(!is_disjoint(s(&[1, 2]), s(&[2, 3])));
+    assert!(subset_op(s(&[1, 2]), s(&[1, 2]))); // <= is non-strict
+    assert!(!proper_subset_op(s(&[1, 2]), s(&[1, 2]))); // < is strict
+    assert!(proper_subset_op(s(&[1, 2]), s(&[1, 2, 3])));
+    assert!(superset_op(s(&[1, 2, 3]), s(&[1, 2])));
+    assert_eq!(guard(s(&[1]), s(&[1, 2])), 1);
+}
+"#;
+    assert_rustc_runs("set_predicates", &rust, driver);
+}
+
 /// PMAT-502eo (Tranche 2): set-algebra *methods* — `a.union(b)` /
 /// `a.intersection(b)` / `a.difference(b)` / `a.symmetric_difference(b)`, the
 /// method forms of the `|`/`&`/`-`/`^` operators, lowered to the same
