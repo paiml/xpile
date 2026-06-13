@@ -3550,6 +3550,35 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502el (Tranche 2): more `math` — the constants `math.pi`/`math.e`/
+/// `math.tau` (bare attribute reads → `Expr::LitFloat`) and the float functions
+/// `sin`/`cos`/`tan`/`exp`/`log`(ln)/`log10`/`log2` (→ `Expr::NumBuiltin`,
+/// emitting the matching f64 method). Cross-checked vs python3 (value-tolerant
+/// for the transcendental functions).
+#[test]
+fn math_more() {
+    let rust = xpile_transpile_to_rust("math_more.py");
+    assert!(
+        rust.contains("3.141592653589793") && rust.contains(".sin()") && rust.contains(".ln()"),
+        "math constants/functions should emit the pi literal + f64 methods:\n{rust}"
+    );
+    let driver = r#"
+fn approx(a: f64, b: f64) -> bool { (a - b).abs() < 1e-9 }
+fn main() {
+    assert_eq!(circle_area(2.0), std::f64::consts::PI * 4.0);
+    assert_eq!(e_const(), std::f64::consts::E);
+    assert_eq!(tau_const(), std::f64::consts::TAU);
+    assert!(approx(sine(0.0), 0.0));
+    assert!(approx(cosine(0.0), 1.0));
+    assert!(approx(exp_of(0.0), 1.0));
+    assert!(approx(ln_of(std::f64::consts::E), 1.0));
+    assert!(approx(log10_of(1000.0), 3.0));
+    assert!(approx(log2_of(8.0), 3.0));
+}
+"#;
+    assert_rustc_runs("math_more", &rust, driver);
+}
+
 /// PMAT-502ek (Tranche 2): `math` module functions — `import math` is accepted
 /// (skipped, like the `__future__` preamble) and `math.sqrt` / `math.floor` /
 /// `math.ceil` lower to `Expr::NumBuiltin` (reusing all the inference/codegen

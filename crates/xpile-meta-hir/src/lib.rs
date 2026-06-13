@@ -1794,6 +1794,20 @@ pub enum NumBuiltinOp {
     Floor,
     /// PMAT-502ek: `math.ceil(x)` → `(x).ceil() as i64` (returns an `int`).
     Ceil,
+    /// PMAT-502el: `math.sin(x)` → `(x).sin()` (`f64`).
+    Sin,
+    /// PMAT-502el: `math.cos(x)` → `(x).cos()` (`f64`).
+    Cos,
+    /// PMAT-502el: `math.tan(x)` → `(x).tan()` (`f64`).
+    Tan,
+    /// PMAT-502el: `math.exp(x)` → `(x).exp()` (`f64`).
+    Exp,
+    /// PMAT-502el: `math.log(x)` (natural log) → `(x).ln()` (`f64`).
+    Ln,
+    /// PMAT-502el: `math.log10(x)` → `(x).log10()` (`f64`).
+    Log10,
+    /// PMAT-502el: `math.log2(x)` → `(x).log2()` (`f64`).
+    Log2,
 }
 
 /// PMAT-495 (sprint): the iterator adapter for a [`Stmt::ForEachPair`].

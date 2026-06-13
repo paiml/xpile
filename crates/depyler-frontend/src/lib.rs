@@ -4446,7 +4446,14 @@ fn infer_type(e: &Expr) -> Type {
         // (Python `math.floor`/`ceil` return an int); `abs`/`min`/`max` take
         // the first argument's type.
         Expr::NumBuiltin { op, args } => match op {
-            NumBuiltinOp::Sqrt => Type::F64,
+            NumBuiltinOp::Sqrt
+            | NumBuiltinOp::Sin
+            | NumBuiltinOp::Cos
+            | NumBuiltinOp::Tan
+            | NumBuiltinOp::Exp
+            | NumBuiltinOp::Ln
+            | NumBuiltinOp::Log10
+            | NumBuiltinOp::Log2 => Type::F64,
             NumBuiltinOp::Floor | NumBuiltinOp::Ceil => Type::I64,
             _ => args.first().map(infer_type).unwrap_or(Type::I64),
         },
@@ -4755,7 +4762,14 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-498: numeric builtin types as its first argument.
         // PMAT-502ek: see the context-free twin — op-specific return type.
         Expr::NumBuiltin { op, args } => match op {
-            NumBuiltinOp::Sqrt => Type::F64,
+            NumBuiltinOp::Sqrt
+            | NumBuiltinOp::Sin
+            | NumBuiltinOp::Cos
+            | NumBuiltinOp::Tan
+            | NumBuiltinOp::Exp
+            | NumBuiltinOp::Ln
+            | NumBuiltinOp::Log10
+            | NumBuiltinOp::Log2 => Type::F64,
             NumBuiltinOp::Floor | NumBuiltinOp::Ceil => Type::I64,
             _ => args
                 .first()
@@ -5343,10 +5357,19 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             NumBuiltinOp::Min | NumBuiltinOp::Max => {
                                 matches!(arg0_ty, Type::I64 | Type::F64 | Type::Str | Type::Bool)
                             }
-                            // PMAT-502ek: sqrt/floor/ceil come only from
+                            // PMAT-502ek/el: the `math.*` ops come only from
                             // `math.<fn>` (lower_math_call), never the bare-name
                             // `num_builtin_op` dispatch — unreachable here.
-                            NumBuiltinOp::Sqrt | NumBuiltinOp::Floor | NumBuiltinOp::Ceil => false,
+                            NumBuiltinOp::Sqrt
+                            | NumBuiltinOp::Floor
+                            | NumBuiltinOp::Ceil
+                            | NumBuiltinOp::Sin
+                            | NumBuiltinOp::Cos
+                            | NumBuiltinOp::Tan
+                            | NumBuiltinOp::Exp
+                            | NumBuiltinOp::Ln
+                            | NumBuiltinOp::Log10
+                            | NumBuiltinOp::Log2 => false,
                         };
                         if ok {
                             return Ok(Expr::NumBuiltin { op, args });
@@ -6278,6 +6301,13 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         ast::Expr::Name(n) if n.id.as_str() == "_" && ctx.underscore_rename.is_some() => Ok(
             Expr::Ident(ctx.underscore_rename.clone().expect("rename is Some")),
         ),
+        // PMAT-502el: `math.<const>` attribute read (`math.pi`/`math.e`/
+        // `math.tau`) → a float literal. Non-`math` attribute reads fall
+        // through to the context-free path (which errors — attributes aren't
+        // otherwise supported).
+        ast::Expr::Attribute(attr) if matches!(attr.value.as_ref(), ast::Expr::Name(n) if n.id.as_str() == "math") => {
+            lower_math_const(ctx, attr.attr.as_str())
+        }
         // No dict-specific shape: the context-free path is sufficient.
         other => lower_expr(other),
     }
@@ -6327,6 +6357,26 @@ fn stringify_lone_fstring_field(acc: Expr, ty: Type) -> Expr {
 /// context-aware. A `FormattedValue` with a static, supported format spec
 /// becomes [`Expr::FormatSpec`]; a plain `{expr}` lowers its value; conversion
 /// flags (`!r`/`!s`/`!a`) and unsupported / dynamic specs error.
+/// PMAT-502el: lower a `math.<const>` attribute read (`math.pi`, `math.e`,
+/// `math.tau`) to an `Expr::LitFloat`. The f64 constant emits as a
+/// round-trip-precise literal (the same value CPython's `math.pi` holds).
+/// `math.inf`/`math.nan` are deferred (they need `f64::INFINITY`/`NAN`, not a
+/// finite literal). Other `math.<name>` reads error clearly.
+fn lower_math_const(ctx: &LoweringCtx, name: &str) -> Result<Expr, FrontendError> {
+    let v = match name {
+        "pi" => std::f64::consts::PI,
+        "e" => std::f64::consts::E,
+        "tau" => std::f64::consts::TAU,
+        other => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` reads `math.{other}` — v0.2.0 supports the constants `math.pi`/`math.e`/`math.tau` (and the `math.<fn>(...)` functions); `math.inf`/`math.nan` are a follow-up",
+                ctx.fn_name
+            )));
+        }
+    };
+    Ok(Expr::LitFloat(v))
+}
+
 /// PMAT-502ek: lower a `math.<fn>(...)` module-function call. First cut covers
 /// the common single-argument float functions `sqrt` / `floor` / `ceil`,
 /// reusing [`Expr::NumBuiltin`] (so all the existing inference / codegen
@@ -6341,9 +6391,17 @@ fn lower_math_call(
         "sqrt" => NumBuiltinOp::Sqrt,
         "floor" => NumBuiltinOp::Floor,
         "ceil" => NumBuiltinOp::Ceil,
+        // PMAT-502el: trig / exp / log — all 1-arg `f64 → f64`.
+        "sin" => NumBuiltinOp::Sin,
+        "cos" => NumBuiltinOp::Cos,
+        "tan" => NumBuiltinOp::Tan,
+        "exp" => NumBuiltinOp::Exp,
+        "log" => NumBuiltinOp::Ln,
+        "log10" => NumBuiltinOp::Log10,
+        "log2" => NumBuiltinOp::Log2,
         other => {
             return Err(FrontendError::Lower(format!(
-                "function `{}` calls `math.{other}(...)` — v0.2.0 supports `math.sqrt`/`math.floor`/`math.ceil` (more `math` functions are a follow-up)",
+                "function `{}` calls `math.{other}(...)` — v0.2.0 supports `math.sqrt`/`floor`/`ceil`/`sin`/`cos`/`tan`/`exp`/`log`/`log10`/`log2` (other `math` functions are a follow-up)",
                 ctx.fn_name
             )));
         }
