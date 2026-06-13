@@ -4380,6 +4380,31 @@ fn main() {
     assert_rustc_runs("range_negative_step", &rust, driver);
 }
 
+/// PMAT-524 (Tranche 2 — correctness): a `sorted`/`min`/`max` `key=` lambda that
+/// indexes a tuple element (`key=lambda p: p[1]` over `list[tuple[..]]`).
+/// Previously a silent miscompile: the key param `p` defaulted to `i64`, so
+/// `p[1]` lowered to generic `[1]` indexing (invalid on a Rust tuple). The key
+/// param now binds to the collection's element type, so `p[1]` → `(p).1`.
+/// Cross-checked vs python3 (1, 3, 2, 3).
+#[test]
+fn sort_key_tuple_index() {
+    let rust = xpile_transpile_to_rust("sort_key_tuple_index.py");
+    assert!(
+        rust.contains("(p).1") && !rust.contains("p[1i64 as usize]"),
+        "a tuple-indexing sort key should lower to a `.1` field access:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let d = vec![(3, 9), (1, 2), (2, 5)];
+    assert_eq!(sorted_by_second(d.clone()), 1);
+    assert_eq!(max_by_second(d.clone()), 3);
+    assert_eq!(min_by_first(d.clone()), 2);
+    assert_eq!(sorted_desc_by_first(d.clone()), 3);
+}
+"#;
+    assert_rustc_runs("sort_key_tuple_index", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
