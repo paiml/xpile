@@ -3255,14 +3255,20 @@ fn desugar_match_to_if(m: &ast::StmtMatch) -> Result<ast::StmtIf, FrontendError>
             comparators: vec![value.clone()],
         })
     };
-    // A literal value pattern → its comparator expr (else a clean error).
+    // A value pattern → its comparator expr (else a clean error). Accepts a
+    // literal (`case 0:`) or a dotted value pattern `Name.attr` — notably a
+    // PMAT-514 enum member (`case Color.RED:`), which lowers to `Expr::EnumVariant`
+    // downstream so `subject == Color::RED` type-checks.
     let literal_value = |pat: &ast::Pattern| -> Result<ast::Expr, FrontendError> {
         match pat {
-            ast::Pattern::MatchValue(pv) if is_literal_default(pv.value.as_ref()) => {
+            ast::Pattern::MatchValue(pv)
+                if is_literal_default(pv.value.as_ref())
+                    || matches!(pv.value.as_ref(), ast::Expr::Attribute(a) if matches!(a.value.as_ref(), ast::Expr::Name(_))) =>
+            {
                 Ok((*pv.value).clone())
             }
             _ => Err(FrontendError::Lower(
-                "`match` supports only literal value patterns (`case 0:`/`case \"x\":`), `|`-patterns of literals, and a trailing `case _:` at v0.2.0 — captures/guards/class/sequence/mapping/`True`/`False`/`None` patterns are unsupported".to_string(),
+                "`match` supports literal value patterns (`case 0:`/`case \"x\":`), dotted value patterns (`case Color.RED:`), `|`-patterns of those, and a trailing `case _:` at v0.2.0 — captures/guards/class/sequence/mapping/`True`/`False`/`None` patterns are unsupported".to_string(),
             )),
         }
     };

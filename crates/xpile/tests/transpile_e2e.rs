@@ -4178,6 +4178,35 @@ fn main() {
     assert_rustc_runs("enum_basic", &rust, driver);
 }
 
+/// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
+/// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
+/// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
+/// with PMAT-513 (enums). No new IR. Cross-checked vs python3 (warmth 2/1/0,
+/// is_primary_pair 1/0/1, label 100/200/300).
+#[test]
+fn match_enum() {
+    let rust = xpile_transpile_to_rust("match_enum.py");
+    assert!(
+        rust.contains("if (c == Color::RED)")
+            && rust.contains("(c == Color::RED) || (c == Color::BLUE)"),
+        "match on an enum should compare against `Color::VARIANT`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(warmth(Color::RED), 2);
+    assert_eq!(warmth(Color::GREEN), 1);
+    assert_eq!(warmth(Color::BLUE), 0);
+    assert_eq!(is_primary_pair(Color::RED), 1);
+    assert_eq!(is_primary_pair(Color::GREEN), 0);
+    assert_eq!(is_primary_pair(Color::BLUE), 1);
+    assert_eq!(label(Color::RED), 100);
+    assert_eq!(label(Color::GREEN), 200);
+    assert_eq!(label(Color::BLUE), 300);
+}
+"#;
+    assert_rustc_runs("match_enum", &rust, driver);
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators
