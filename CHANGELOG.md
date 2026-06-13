@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.170] — 2026-06-13
+
+Tranche-2 slice PMAT-502ef — **`float` in an f-string renders Python repr
+(`3.0`)**.
+
+The float analogue of the v0.1.169 bool fix. A `float` interpolated into an
+f-string (`f"v={x}"`) rendered Rust's `Display` — "v=3" for a whole float
+`3.0` — instead of Python's "v=3.0". A **silent miscompile**. A float field now
+reuses the same `Expr::ToStr { of_float: true }` conversion `str(float)` uses
+(emitting the `nan` / whole-number-`.0` / fractional logic), which also
+**un-defers** a lone `f"{x}"` (left erroring by PMAT-502ed). An explicit
+`.Nf` spec (`f"{x:.2f}"`) still takes the `FormatSpec` path unchanged. This
+completes Python-faithful stringification for all of int / bool / float across
+every implicit path (`str` / `print` / `%s` / f-string). New
+`fstring_float.py` e2e fixture (field-in-text, lone, two-fields, sum-field,
+with-precision), all cross-checked vs python3.
+
 ## [0.1.169] — 2026-06-13
 
 Tranche-2 slice PMAT-502ee — **`bool` in an f-string renders Python-style
