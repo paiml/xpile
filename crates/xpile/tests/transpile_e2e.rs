@@ -3332,6 +3332,21 @@ fn main() {
     assert_rustc_runs("ord_chr", &rust, driver);
 }
 
+/// PMAT-502cn (Tranche 2): 2-arg `min`/`max` over `str` operands (Ord).
+#[test]
+fn min_max_str() {
+    let rust = xpile_transpile_to_rust("min_max_str.py");
+    assert!(rust.contains("(a).min(b)"), "min(str):\n{rust}");
+    assert!(rust.contains("(a).max(b)"), "max(str):\n{rust}");
+    let driver = r#"
+fn main() {
+    assert_eq!(smaller(String::from("apple"), String::from("banana")), "apple");
+    assert_eq!(larger(String::from("apple"), String::from("banana")), "banana");
+}
+"#;
+    assert_rustc_runs("min_max_str", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

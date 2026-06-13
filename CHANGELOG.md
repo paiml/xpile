@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.126] — 2026-06-13
+
+Tranche-2 slice PMAT-502cn — **2-arg `min`/`max` over `str`/`bool`**.
+
+`min(a, b)` / `max(a, b)` only accepted `int`/`float` operands; string
+operands fell through to a generic call (an undefined `min(...)` Rust fn). The
+`NumBuiltin` intercept's type guard is now op-specific: `abs` stays
+numeric-only, but 2-arg `min`/`max` also accept `str`/`bool` (all `Ord`, so the
+existing `(a).min(b)` / `(a).max(b)` codegen resolves for each). rustc
+round-trip `min_max_str.py` (cross-checked vs `python3`): `smaller("apple",
+"banana") -> "apple"`, `larger(...) -> "banana"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.125] — 2026-06-13
 
 Tranche-2 slice PMAT-502cm — **`ord(c)` and `chr(n)`** builtins.

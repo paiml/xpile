@@ -4679,8 +4679,12 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             }
             // PMAT-498: scalar numeric builtins abs/min/max — when the
             // callee is one of these by name + arity and the first arg
-            // types as a number, lower to `Expr::NumBuiltin`. Otherwise
+            // types appropriately, lower to `Expr::NumBuiltin`. Otherwise
             // fall through (e.g. a user fn named `min`).
+            // PMAT-502cn: 2-arg `min`/`max` also accept `str`/`bool` operands
+            // (all `Ord`; the codegen `(a).min(b)` resolves for each), so
+            // `min("a", "b")` no longer silently emits an undefined `min(...)`.
+            // `abs` stays numeric-only.
             if let ast::Expr::Name(fname) = call.func.as_ref() {
                 if let Some((op, arity)) = num_builtin_op(fname.id.as_str()) {
                     if call.keywords.is_empty() && call.args.len() == arity {
@@ -4689,7 +4693,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             .iter()
                             .map(|a| lower_expr_in_ctx(ctx, a.clone()))
                             .collect::<Result<Vec<_>, _>>()?;
-                        if matches!(infer_type_in_ctx(ctx, &args[0]), Type::I64 | Type::F64) {
+                        let arg0_ty = infer_type_in_ctx(ctx, &args[0]);
+                        let ok = match op {
+                            NumBuiltinOp::Abs => matches!(arg0_ty, Type::I64 | Type::F64),
+                            NumBuiltinOp::Min | NumBuiltinOp::Max => {
+                                matches!(arg0_ty, Type::I64 | Type::F64 | Type::Str | Type::Bool)
+                            }
+                        };
+                        if ok {
                             return Ok(Expr::NumBuiltin { op, args });
                         }
                     }

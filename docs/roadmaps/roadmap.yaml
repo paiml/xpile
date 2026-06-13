@@ -1174,6 +1174,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "ord(c) was SILENTLY MISCOMPILED — lowered as a generic call so codegen emitted an undefined `ord(...)` Rust fn (rustc: cannot find function `ord`); chr(n) likewise. FIX: new Expr::Ord { value } (str -> I64) + Expr::Chr { value } (I64 -> Str) meta-HIR variants. Frontend: in the Name-call handler (next to num_builtin_op), ord(<str>) 1-arg -> Expr::Ord (non-str -> error), chr(<int>) 1-arg -> Expr::Chr (non-int -> error). Codegen rust/ruchy: ord -> ((c).chars().next().expect('...ord expected a single character') as i64) (char as i64 cast is valid); chr -> char::from_u32((n) as u32).expect('...chr arg not in range(0x110000) (ValueError)').to_string() (OOB panics = Python ValueError). Compose: chr(ord(c)+1) works. Inferers: Ord->I64, Chr->Str. Lean refuses. Blast radius: 2 new Expr variants -> expr_has_int_arith + 2 inferers + collect_idents(lean) + 3 emit sites. rustc round-trip ord_chr.py (cross-checked vs python3): code('A')=65, char(97)='a', shift('a')='b'. FREE CI. SHIPPED v0.1.125."
+- id: PMAT-502CN
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cn: [Tranche2] 2-arg min/max over str/bool'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "min(a,b)/max(a,b) only accepted int/float operands; str operands fell through to a generic call (undefined min(...) Rust fn — silent miscompile in assignment position, return-type error otherwise). FIX: the NumBuiltin intercept's type guard is now op-specific: NumBuiltinOp::Abs requires I64|F64 (unchanged); Min|Max accept I64|F64|Str|Bool (all Ord; f64 via inherent .min/.max, the rest via Ord::min/max). The codegen ((a).min(b))/((a).max(b)) already resolves for each type — NO codegen change. Result type = infer(args[0]) (Str min -> Str). abs(str) still errors. rustc round-trip min_max_str.py (cross-checked vs python3): smaller('apple','banana')='apple', larger(...)='banana'. FREE CI. SHIPPED v0.1.126."
 - id: PMAT-465
   github_issue: 496
   item_type: task
