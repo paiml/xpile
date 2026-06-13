@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.142] — 2026-06-13
+
+Tranche-2 slice PMAT-502dd — **context-aware collection literals** (silent-
+miscompile fix).
+
+A builtin inside a list, dict, or set literal (`[abs(a), abs(b)]`, `{"k":
+abs(v)}`, `{abs(a), abs(b)}`) was **silently miscompiled** to an undefined Rust
+function. The three collection-literal AST nodes had no ctx-aware arm in
+`lower_expr_in_ctx_inner`, so they fell through to the context-free `lower_expr`
+handlers, which lower elements without the type context needed to recognize a
+builtin. New `lower_{list,dict,set}_literal_in_ctx` mirror the context-free
+handlers but lower each element with `lower_expr_in_ctx` (frontend-only — no
+meta-HIR / codegen change; homogeneity checks preserved). rustc round-trip
+`collection_literal_builtin.py` (cross-checked vs `python3`): `list_mags(-3,4)
+== [3,4]`, `dict_mag(-7)["m"] == 7`, `set_mags(-2,2)` has 1 element containing
+2.
+
+Third slice closing the ctx-free-position silent-miscompile class (after
+v0.1.140 ternary branches and v0.1.141 comparison operands). Remaining
+positions — subscript indices and unary `-` — follow next.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.141] — 2026-06-13
 
 Tranche-2 slice PMAT-502dc — **context-aware comparison operands** (silent-
