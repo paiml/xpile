@@ -1390,6 +1390,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "dict(<list of 2-tuples>) was rejected (only empty 0-arg dict() handled). NEW Expr::DictFromPairs { pairs } (mirror of SetFromList v135). Frontend (after the set(xs) branch): dict 1-arg over a List(Tuple[K,V]) value -> DictFromPairs; non-(list-of-2-tuples) -> clear error. Codegen rust/ruchy: (pairs).iter().cloned().collect::<std::collections::HashMap<_, _>>(). Both inferers: DictFromPairs over List(Tuple[K,V]) -> Dict(K,V). expr_has_int_arith + lean collect_idents recurse pairs; lean refuses. GOOD REACH: zip(a,b)+enumerate(xs) ALREADY produce List(Tuple) so dict(zip(a,b))/dict(enumerate(xs)) work through the SAME path for free. rustc round-trip dict_from_pairs.py (cross-checked vs python3): dict([(1,2),(3,4)])[3]=4, dict(zip([1,2],[10,20]))[2]=20, dict(enumerate([100,200]))[1]=200. FREE CI. SHIPPED v0.1.149. Blast radius: new Expr variant -> expr_has_int_arith + 2 inferers + collect_idents(lean) + lean-refuse + 2 codegen emit. COLLECTION-CONSTRUCTOR family now: list()/list(range)/list(xs), set()/set(xs), dict()/dict(pairs). NEXT: str.splitlines/rsplit; x is None (Option); OR decompose try/except->Result (PMAT-503b)."
+- id: PMAT-502DL
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502dl: [Tranche2] str.splitlines (full Python boundary set)'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "str.splitlines() (0-arg → list[str]) was rejected. Implemented CORRECTLY (not the easy Rust str::lines() which only covers LF/CRLF and would silently DIVERGE on lone-CR / VT / FF / FS-GS-RS / NEL / LS / PS). New StrMethodOp::SplitLines. Codegen rust/ruchy: explicit char-walk block — { let __s=(recv); let mut __lines=Vec::new(); let mut __cur=String::new(); let mut __it=__s.chars().peekable(); while let Some(__c)=__it.next() { match __c { '\\r' => { if __it.peek()==Some(&'\\n') {__it.next();} __lines.push(mem::take(&mut __cur)); } '\\n'|'\\u{0b}'|'\\u{0c}'|'\\u{1c}'|'\\u{1d}'|'\\u{1e}'|'\\u{85}'|'\\u{2028}'|'\\u{2029}' => __lines.push(mem::take(&mut __cur)), _ => __cur.push(__c), } } if !__cur.is_empty() { __lines.push(__cur); } __lines } — NO trailing empty for a trailing break (matches Python). Inferer → List(Str). str_method_arity(0). unreachable! arms (rust+ruchy); Lean refuses StrMethod wholesale. keepends=True deferred. rustc round-trip str_splitlines.py (cross-checked vs python3 incl. edge cases): 'a\\nb'->['a','b'], 'a\\nb\\n'->['a','b'] (no trailing empty), 'a\\r\\nb'->['a','b'], 'a\\rb'->['a','b'], ''->[], 'a\\n\\nb'->['a','','b']. FREE CI. SHIPPED v0.1.150. str-method family ~32. **150 RELEASES total (v0.1.150).** NEXT: str.rsplit; x is None (Option); %-format; OR decompose try/except->Result (PMAT-503b epic — needs design, DON'T ship hacky catch_unwind)."
 - id: PMAT-465
   github_issue: 496
   item_type: task

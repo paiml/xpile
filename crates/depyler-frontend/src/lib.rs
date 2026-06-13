@@ -3956,6 +3956,8 @@ fn infer_type(e: &Expr) -> Type {
             StrMethodOp::Partition | StrMethodOp::RPartition => {
                 Type::Tuple(vec![Type::Str, Type::Str, Type::Str])
             }
+            // PMAT-502dl: splitlines → list[str].
+            StrMethodOp::SplitLines => Type::List(Box::new(Type::Str)),
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
         // type from the first element (frontend ensures homogeneity
@@ -4244,6 +4246,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             StrMethodOp::Partition | StrMethodOp::RPartition => {
                 Type::Tuple(vec![Type::Str, Type::Str, Type::Str])
             }
+            // PMAT-502dl: splitlines → list[str].
+            StrMethodOp::SplitLines => Type::List(Box::new(Type::Str)),
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
         // shape as the context-free `infer_type` arm.
@@ -6729,6 +6733,8 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
         // PMAT-502dj: partition/rpartition (1-arg → 3-tuple).
         "partition" => Some(StrMethodOp::Partition),
         "rpartition" => Some(StrMethodOp::RPartition),
+        // PMAT-502dl: splitlines (0-arg → list[str]).
+        "splitlines" => Some(StrMethodOp::SplitLines),
         // PMAT-502ah: capitalize (0-arg).
         "capitalize" => Some(StrMethodOp::Capitalize),
         "title" => Some(StrMethodOp::Title),
@@ -6784,6 +6790,8 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         StrMethodOp::Center => 1,
         // PMAT-502dj: partition/rpartition take one separator arg.
         StrMethodOp::Partition | StrMethodOp::RPartition => 1,
+        // PMAT-502dl: splitlines takes no args (keepends deferred).
+        StrMethodOp::SplitLines => 0,
     }
 }
 
