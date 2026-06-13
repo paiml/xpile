@@ -1093,6 +1093,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "s[i] over a string was rejected — the read-position subscript built Expr::Index over a Str collection, which infers I64 (list/byte element type) and fails the -> str return check. FIX: new Expr::StrCharAt { string, index } meta-HIR variant. The ctx-aware Subscript arm in lower_expr_in_ctx_inner gains a Str-receiver branch (after the Dict check): str collection + int index -> Expr::StrCharAt. Both inferers type it Str. Codegen rust/ruchy: Rust String has no positional [], so emit a block: { let __cs: Vec<char> = (s).chars().collect(); let __i = (i); let __idx = if __i < 0 { __cs.len() as i64 + __i } else { __i }; __cs[__idx as usize].to_string() } — negative index counts from the end (Python), out-of-range panics (= IndexError). Lean refuses. Blast radius: new Expr variant touched expr_has_int_arith (meta-hir) + 2 inferers + collect_idents (lean) + 3 emit sites (rust/ruchy/lean). rustc round-trip str_char_at.py (cross-checked vs python3): first('hello')='h', last('hello')='o', at('hello',1)='e', at('hello',-2)='l'. FREE CI. SHIPPED v0.1.116."
+- id: PMAT-502CE
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ce: [Tranche2] context-aware and/or over bool vars'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "a and b / a or b for bool parameters/locals was wrongly rejected ('operands of and/or must be Bool (no int-truthiness)'). ROOT CAUSE (same recurring class as not-bool PMAT-502cc and float-var negation): lower_bool_op runs context-free and infer_type infers a bare Ident as I64. FIX: new lower_bool_op_in_ctx (mirrors lower_bool_op but lowers operands via lower_expr_in_ctx and type-checks via infer_type_in_ctx), dispatched from a new ast::Expr::BoolOp arm in lower_expr_in_ctx_inner. Bool operands fold to a left-assoc chain of Expr::BinOp { And/Or } -> (a && b) / ((a || b) || c). Non-Bool operands still error (preserves no-int-truthiness). Mixed forms (active and x > 0) work since the comparison already types Bool. rustc round-trip bool_op_var.py (cross-checked vs python3): both(true,false)=false, both(true,true)=true, either(false,false,true)=true, gate(5,true)=5, gate(5,false)=0. FREE CI. SHIPPED v0.1.117."
 - id: PMAT-465
   github_issue: 496
   item_type: task

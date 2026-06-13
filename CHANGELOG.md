@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.117] — 2026-06-13
+
+Tranche-2 slice PMAT-502ce — context-aware **`and` / `or` over bool variables**.
+
+`a and b` / `a or b` for `bool` parameters/locals was wrongly rejected
+("operands of `and`/`or` must be Bool"): the boolean-operator lowering ran
+context-free, where a bare identifier infers as `I64`. A new
+`lower_bool_op_in_ctx` (dispatched from a `BoolOp` arm in
+`lower_expr_in_ctx_inner`) checks operands with `infer_type_in_ctx`, so
+`bool`-typed operands fold to `(a && b)` / `(a || b)`. This is the same
+recurring fix as `not <bool var>` (v0.1.115) and float-variable negation
+(v0.1.102). Non-Bool operands still error (no int-truthiness); mixed forms
+like `active and x > 0` work. rustc round-trip `bool_op_var.py` (cross-checked
+vs `python3`): `both(true, false) -> false`, `either(false, false, true) ->
+true`, `gate(5, true) -> 5`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.116] — 2026-06-13
 
 Tranche-2 slice PMAT-502cd — **string indexing `s[i]`**.
