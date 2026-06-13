@@ -3755,6 +3755,37 @@ fn main() {
     assert_rustc_runs("bit_invert", &rust, driver);
 }
 
+/// PMAT-503b (exceptions epic): value-producing `try`/`except` →
+/// `catch_unwind`. xpile models Python exceptions as Rust panics
+/// (ZeroDivisionError via the floor-div `.expect`, IndexError via list
+/// indexing, KeyError via HashMap indexing), so `try: return <expr> except
+/// [E]: return <expr>` lowers to `Expr::TryCatch` → a
+/// `std::panic::catch_unwind(AssertUnwindSafe(|| <body>))` match that runs the
+/// handler on `Err`. Cross-checked vs python3 (the driver installs a no-op
+/// panic hook so the expected, caught panics don't spam stderr).
+#[test]
+fn try_except_catches_panics() {
+    let rust = xpile_transpile_to_rust("try_except.py");
+    assert!(
+        rust.contains("catch_unwind") && rust.contains("Err(_) =>"),
+        "try/except should lower to a catch_unwind match:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    assert_eq!(safe_div(10, 3), 3);
+    assert_eq!(safe_div(7, 0), -1);
+    assert_eq!(safe_index(vec![5, 6, 7], 2), 7);
+    assert_eq!(safe_index(vec![5, 6, 7], 99), 0);
+    let mut d = std::collections::HashMap::new();
+    d.insert(String::from("a"), 1i64);
+    assert_eq!(safe_lookup(d.clone(), String::from("a")), 1);
+    assert_eq!(safe_lookup(d.clone(), String::from("z")), -1);
+}
+"#;
+    assert_rustc_runs("try_except", &rust, driver);
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators
