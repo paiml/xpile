@@ -2557,18 +2557,14 @@ fn lower_range_list(ctx: &LoweringCtx, call: &ast::ExprCall) -> Result<Expr, Fro
             1i64,
         ),
         [start, stop, step] => {
+            // PMAT-523: a non-zero integer literal step — positive OR negative.
+            // `extract_step_literal` already rejects a zero / non-literal step.
             let s = extract_step_literal(step).ok_or_else(|| {
                 FrontendError::Lower(format!(
-                    "function `{}` uses `list(range(..., step))` with a non-literal-int or zero step — v0.2.0 requires a positive integer literal",
+                    "function `{}` uses `list(range(..., step))` with a non-literal-int or zero step — v0.2.0 requires a non-zero integer literal",
                     ctx.fn_name
                 ))
             })?;
-            if s < 1 {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` uses `list(range(..., {s}))` with a non-positive step — negative-step materialisation is deferred at v0.2.0 (use `reversed(range(...))` in a loop)",
-                    ctx.fn_name
-                )));
-            }
             (
                 lower_expr_in_ctx(ctx, start.clone())?,
                 lower_expr_in_ctx(ctx, stop.clone())?,

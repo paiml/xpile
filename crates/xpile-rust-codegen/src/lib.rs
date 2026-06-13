@@ -1583,13 +1583,27 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         }
         // PMAT-502cj: `list(range(start, stop, step))` → a collected i64 range.
         Expr::RangeList { start, stop, step } => {
-            out.push('(');
-            emit_expr(out, start, mode)?;
-            out.push_str("..");
-            emit_expr(out, stop, mode)?;
-            out.push(')');
-            if *step != 1 {
-                write!(out, ".step_by({step}usize)")?;
+            if *step > 0 {
+                out.push('(');
+                emit_expr(out, start, mode)?;
+                out.push_str("..");
+                emit_expr(out, stop, mode)?;
+                out.push(')');
+                if *step != 1 {
+                    write!(out, ".step_by({step}usize)")?;
+                }
+            } else {
+                // PMAT-523: negative-step range — Python `range(start, stop,
+                // step<0)` = `((stop)+1 ..= (start)).rev().step_by(|step|)`.
+                out.push_str("(((");
+                emit_expr(out, stop, mode)?;
+                out.push_str(") + 1)..=(");
+                emit_expr(out, start, mode)?;
+                out.push_str(")).rev()");
+                let abs = -*step;
+                if abs != 1 {
+                    write!(out, ".step_by({abs}usize)")?;
+                }
             }
             out.push_str(".collect::<Vec<i64>>()");
         }
