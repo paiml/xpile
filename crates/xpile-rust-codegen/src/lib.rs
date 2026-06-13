@@ -1332,6 +1332,11 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             }
             out.push_str(".collect::<Vec<i64>>()");
         }
+        // PMAT-502cw: `set(xs)` → collect the list into a HashSet.
+        Expr::SetFromList { list } => {
+            emit_expr(out, list, mode)?;
+            out.push_str(".iter().cloned().collect::<std::collections::HashSet<_>>()");
+        }
         // PMAT-502ab: `filter(pred, xs)` → `.iter().cloned().filter(|__k| {
         // let p = __k.clone(); pred }).collect::<Vec<_>>()`.
         Expr::Filter { list, lambda } => {

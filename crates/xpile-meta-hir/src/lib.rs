@@ -317,6 +317,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::RangeList { start, stop, .. } => {
             expr_has_int_arith(start) || expr_has_int_arith(stop)
         }
+        // PMAT-502cw: set(xs) — recurse into the list expr.
+        Expr::SetFromList { list } => expr_has_int_arith(list),
         // PMAT-502ab: filter — recurse into the list and predicate body.
         Expr::Filter { list, lambda } => {
             expr_has_int_arith(list) || expr_has_int_arith(&lambda.body)
@@ -1437,6 +1439,11 @@ pub enum Expr {
         stop: Box<Expr>,
         step: i64,
     },
+    /// `set(xs)` — materialise a list into a `HashSet` (de-duplicating).
+    /// PMAT-502cw (Tranche 2). Rust/Ruchy emit `(<list>).iter().cloned()
+    /// .collect::<std::collections::HashSet<_>>()` (element type inferred).
+    /// Result types as `set[T]` over the list's element type. Lean refuses.
+    SetFromList { list: Box<Expr> },
     /// `filter(lambda p: pred, xs)` over a list — Python builtin. PMAT-502ab
     /// (Tranche 2). The supported subset materializes the lazy `filter`
     /// iterator as a `Vec`. The `lambda` is a [`SortKey`] (param + body) whose

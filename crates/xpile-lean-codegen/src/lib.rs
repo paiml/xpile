@@ -563,6 +563,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(start, out);
             collect_idents(stop, out);
         }
+        // PMAT-502cw: set(xs) — recurse into the list expr.
+        Expr::SetFromList { list } => collect_idents(list, out),
         // PMAT-502ab: filter — recurse into the list and predicate body.
         Expr::Filter { list, lambda } => {
             collect_idents(list, out);
@@ -1275,6 +1277,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::RangeList { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python list(range(...)) is not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502cw: set(xs) deferred in the Lean lane.
+        Expr::SetFromList { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python set(xs) is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

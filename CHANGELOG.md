@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.135] — 2026-06-13
+
+Tranche-2 slice PMAT-502cw — **`set(xs)`** materialization from a list.
+
+`set(xs)` over a list was rejected (only the empty `set()` was handled). A new
+`Expr::SetFromList` now materialises a list into a `HashSet` (de-duplicating):
+`(xs).iter().cloned().collect::<std::collections::HashSet<_>>()`, typing as
+`set[T]` over the list's element type. `tuple(xs)` stays deferred (variable-arity
+tuples don't map to Rust). Lean refuses. rustc round-trip `set_from_list.py`
+(cross-checked vs `python3`): `uniq([1,2,2,3,3,3])` has 3 elements, `has([1,2,3],
+2) -> true`, `has([1,2,3], 9) -> false`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.134] — 2026-06-13
 
 Tranche-2 slice PMAT-502cv — **`hex(n)` / `oct(n)` / `bin(n)`** builtins.
