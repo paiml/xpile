@@ -6618,17 +6618,58 @@ fn lower_percent_format(
 
     let mut fmt = String::new();
     let mut arg_idx = 0usize;
-    let mut chars = tmpl.chars();
+    let mut chars = tmpl.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
             // Escape Rust `format!`'s own metacharacters.
             '{' => fmt.push_str("{{"),
             '}' => fmt.push_str("}}"),
             '%' => {
+                // Parse the optional `[flags][width][.precision]` mini-language
+                // (PMAT-502dn). Flags `-` (left), `0` (zero-pad), `+` (sign).
+                // ` ` and `#` are deferred (rejected).
+                let (mut flag_left, mut flag_zero, mut flag_plus) = (false, false, false);
+                loop {
+                    match chars.peek() {
+                        Some('-') => flag_left = true,
+                        Some('0') => flag_zero = true,
+                        Some('+') => flag_plus = true,
+                        Some(' ') | Some('#') => {
+                            return Err(FrontendError::Lower(
+                                "unsupported `%`-format flag (' '/'#') — not yet supported".into(),
+                            ));
+                        }
+                        _ => break,
+                    }
+                    chars.next();
+                }
+                let mut width = String::new();
+                while matches!(chars.peek(), Some(d) if d.is_ascii_digit()) {
+                    width.push(chars.next().unwrap());
+                }
+                let mut precision: Option<String> = None;
+                if chars.peek() == Some(&'.') {
+                    chars.next();
+                    let mut p = String::new();
+                    while matches!(chars.peek(), Some(d) if d.is_ascii_digit()) {
+                        p.push(chars.next().unwrap());
+                    }
+                    precision = Some(p);
+                }
                 let conv = chars
                     .next()
                     .ok_or_else(|| FrontendError::Lower("trailing `%` in format string".into()))?;
                 if conv == '%' {
+                    if flag_left
+                        || flag_zero
+                        || flag_plus
+                        || !width.is_empty()
+                        || precision.is_some()
+                    {
+                        return Err(FrontendError::Lower(
+                            "`%%` does not take flags/width/precision".into(),
+                        ));
+                    }
                     fmt.push('%');
                     continue;
                 }
@@ -6638,12 +6679,28 @@ fn lower_percent_format(
                     ));
                 }
                 let ty = infer_type_in_ctx(ctx, &args[arg_idx]);
-                let placeholder = match conv {
-                    // `%s` only over int/str (bool→"True"/"False" and float
-                    // ".0" repr diverge under Rust's `{}` — deferred).
-                    's' if matches!(ty, Type::I64 | Type::Str) => "{}",
-                    'd' | 'i' if matches!(ty, Type::I64) => "{}",
-                    'f' if matches!(ty, Type::F64) => "{:.6}",
+                // Validate conversion ↔ argument type, and which conversions
+                // accept a precision (Rust ignores precision on integers, so
+                // `%.Nd` and `%.Ns`-over-int would diverge → rejected).
+                match conv {
+                    's' if matches!(ty, Type::Str) => {}
+                    's' if matches!(ty, Type::I64) => {
+                        if precision.is_some() {
+                            return Err(FrontendError::Lower(
+                                "`%.Ns` over an int is not supported (precision truncation \
+                                 differs from Rust)"
+                                    .into(),
+                            ));
+                        }
+                    }
+                    'd' | 'i' if matches!(ty, Type::I64) => {
+                        if precision.is_some() {
+                            return Err(FrontendError::Lower(
+                                "`%.Nd` (integer precision) is not yet supported".into(),
+                            ));
+                        }
+                    }
+                    'f' if matches!(ty, Type::F64) => {}
                     's' | 'd' | 'i' | 'f' => {
                         return Err(FrontendError::Lower(format!(
                             "`%{conv}` format expects a different argument type than {ty:?} \
@@ -6652,12 +6709,51 @@ fn lower_percent_format(
                     }
                     _ => {
                         return Err(FrontendError::Lower(format!(
-                            "unsupported `%{conv}` conversion — width/precision/flags and \
-                             `%x`/`%X`/`%o` are not yet supported"
+                            "unsupported `%{conv}` conversion — `%x`/`%X`/`%o` are not yet supported"
                         )));
                     }
+                }
+                // `%f` defaults to 6 decimals when no precision is given.
+                let prec = if conv == 'f' {
+                    Some(precision.unwrap_or_else(|| "6".to_string()))
+                } else {
+                    precision
                 };
-                fmt.push_str(placeholder);
+                let bare =
+                    width.is_empty() && prec.is_none() && !flag_left && !flag_zero && !flag_plus;
+                if bare {
+                    fmt.push_str("{}");
+                } else {
+                    // Assemble a Rust spec `{:[align][sign][0][width][.prec]}`.
+                    // Python right-aligns by default (incl. `%Ns`, where Rust
+                    // would left-align) → emit an explicit `>` unless `-`/`0`.
+                    let mut spec = String::from("{:");
+                    if flag_zero && !flag_left {
+                        if flag_plus {
+                            spec.push('+');
+                        }
+                        spec.push('0');
+                    } else if flag_left {
+                        spec.push('<');
+                        if flag_plus {
+                            spec.push('+');
+                        }
+                    } else {
+                        if !width.is_empty() {
+                            spec.push('>');
+                        }
+                        if flag_plus {
+                            spec.push('+');
+                        }
+                    }
+                    spec.push_str(&width);
+                    if let Some(p) = &prec {
+                        spec.push('.');
+                        spec.push_str(p);
+                    }
+                    spec.push('}');
+                    fmt.push_str(&spec);
+                }
                 arg_idx += 1;
             }
             _ => fmt.push(c),
