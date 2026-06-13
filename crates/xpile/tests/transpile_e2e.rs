@@ -3550,6 +3550,30 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502ei (Tranche 2): a bare callable name as the `key=` argument of
+/// `min`/`max`/`sorted` (`key=abs`, `key=len`, `key=user_fn`) — previously only
+/// `key=lambda p: e` was accepted. The bare name is synthesized into the
+/// equivalent `lambda __xpile_k: <name>(__xpile_k)` and lowered through the
+/// same `SortKey` path. Cross-checked vs python3.
+#[test]
+fn sort_key_fn() {
+    let rust = xpile_transpile_to_rust("sort_key_fn.py");
+    assert!(
+        rust.contains("min_by_key") && rust.contains("sort_by_key"),
+        "key=<fn> should lower to *_by_key like the lambda form:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(min_by_abs(vec![-5, 3, -1]), -1);
+    assert_eq!(max_by_abs(vec![-5, 3, -1]), -5);
+    assert_eq!(sorted_by_abs(vec![-5, 3, -1]), -1);
+    assert_eq!(sorted_by_len(vec!["aaa".to_string(), "b".to_string(), "cc".to_string()]), 1);
+    assert_eq!(min_by_user_fn(vec![-3, 2, -1]), -1);
+}
+"#;
+    assert_rustc_runs("sort_key_fn", &rust, driver);
+}
+
 /// PMAT-502eh (Tranche 2): `d.setdefault(k, v)` as a bare statement (the
 /// value-position `x = d.setdefault(...)` already worked). Reuses the same
 /// `Expr::DictSetDefault` lowering, discarding the result via `let _ = …;`; the
