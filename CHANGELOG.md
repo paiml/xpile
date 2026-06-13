@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.193] — 2026-06-13
+
+Tranche-2 slice PMAT-502fc — **two-generator list comprehension**
+`[expr for x in a for y in b]` (previously a hard "single `for` clause" error).
+
+- Desugars to nested `for` loops appending to the accumulator:
+  `let mut t = []; for x in a { for y in b { t.push(expr) } }`.
+- Implemented as a dedicated `desugar_list_comp_2gen` branch, leaving the
+  single-generator path untouched (zero regression). Both generators must have
+  plain-Name targets over `list[T]` iterables; the inner iterable is lowered
+  with the outer var in scope. A per-generator single `if` filter wraps its own
+  loop body. Works in both return and assignment position.
+- Range / tuple-target / 3+-generator multi-gen, and the genexpr/`any`/`all`/
+  `sum` map-path, remain deferred sub-slices with clean errors.
+- New e2e fixture `list_comp_2gen.py`, rustc round-trip cross-checked vs python3.
+  e2e 257 → 258.
+
 ## [0.1.192] — 2026-06-13
 
 Tranche-2 slice PMAT-502fb — **bitwise invert `~x`** (previously a hard lowering

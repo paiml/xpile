@@ -1777,6 +1777,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "Bitwise invert `~x` — previously a hard lowering error ('bitwise `~` not supported at v0.1.0'). Python `~x` is the EXACT mathematical identity -(x+1) (bit-width-independent), which equals Rust's `!x` on a signed integer (~5==-6, ~(-3)==2 in both). NEW UnOp::BitNot in meta-HIR. Rust+Ruchy emit `(!(x))`; the C-expr lane (emit_c_expr) emits `!(x)`; LEAN (unbounded Int, no `~` operator) emits the total identity `(-(x + 1))` — chosen over refusing because the identity is total over Int. FRONTEND: ctx-aware UnaryOp::Invert arm (I64 operand → BitNot; recognizes typed/builtin operands like `~max(a,b)`) PLUS the context-free lower_unary_op Invert arm (was the error site). infer_type + infer_type_in_ctx UnOp arms → I64. expr_has_int_arith: BitNot NOT added to the Neg early-true (bitwise NOT can't overflow → no bigint-contract annotation), just recurses operand. rustc rt bit_invert.py vs python3: invert(5)=-6/(-3)=2, invert_expr(6&3)= -3, double_invert (~~a==a involution), mask_complement(255 & ~7)=248. FREE CI. SHIPPED v0.1.192 (e2e 256→257). NEXT: more Tranche2 numeric/builtin gaps, OR back to Optional cut5 (x=None local), OR try/except epic decomposition."
+- id: PMAT-502FC
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502fc: [Tranche2 comprehensions] two-generator list comprehension'
+  status: done
+  priority: high
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "`[expr for x in a for y in b]` (the long-deferred 2-generator list comp) — was a hard error 'v0.2.0 supports a single for clause'. Now desugars to NESTED for loops appending to the accumulator: `let mut t=[]; for x in a { for y in b { t.push(expr) } }`. IMPL: dedicated early branch desugar_list_comp_2gen dispatched from desugar_list_comp when generators.len()==2 — the single-gen path is COMPLETELY UNTOUCHED (zero regression). Both gens must have plain-Name targets (tuple-target deferred) over list[T] iterables (range/dict iter deferred); the inner iter is lowered with the outer var bound (so it may reference it); a per-generator single `if` wraps ITS OWN loop body (correct Python semantics — filter attaches to its generator). Helpers capture a cloned fn_name (NOT ctx) to avoid borrow conflicts with the &mut ctx lowering calls. Works in RETURN + ASSIGNMENT position (both desugar via desugar_list_comp). The genexpr/any/all/sum MAP-path (lower_comp_to_map, line ~8686) still rejects multi-gen — separate future slice. 3+ generators error cleanly. rustc rt list_comp_2gen.py vs python3: cartesian([1,2,3],[10,20])=[10,20,20,40,30,60], filtered (per-gen filters x>0 / y<10), pairs (assignment position). NOTE: CI caught a `cargo fmt --check` diff I misread locally (multiline ctx.name_types.insert) → fixed with a style commit; LESSON: check fmt exit code explicitly, don't eyeball `| tail`. FREE CI. SHIPPED v0.1.193 (e2e 257→258). NEXT: 2-gen for dict/set comp + the genexpr map-path; OR Optional cut5; OR try/except epic."
 - id: PMAT-465
   github_issue: 496
   item_type: task
