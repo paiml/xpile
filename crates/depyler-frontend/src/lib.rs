@@ -7651,7 +7651,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 }
                 // PMAT-502cw: `set(xs)` materialises a list into a HashSet
                 // (de-duplicating). 1-arg over a list-typed value.
-                if fname.id.as_str() == "set" && call.keywords.is_empty() && call.args.len() == 1 {
+                // PMAT-519: `frozenset(xs)` — Rust has no frozen set; an immutable
+                // set is just a `HashSet` that is never mutated, so route it
+                // through the same `SetFromList` path (previously a silent
+                // miscompile that emitted an undefined `frozenset(...)` call).
+                if matches!(fname.id.as_str(), "set" | "frozenset")
+                    && call.keywords.is_empty()
+                    && call.args.len() == 1
+                {
                     let inner = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                     if matches!(infer_type_in_ctx(ctx, &inner), Type::List(_)) {
                         return Ok(Expr::SetFromList {
@@ -7659,8 +7666,8 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         });
                     }
                     return Err(FrontendError::Lower(format!(
-                        "function `{}` calls `set(<expr>)` over a non-list — v0.2.0 supports `set()` (empty) or `set(<list>)`",
-                        ctx.fn_name
+                        "function `{}` calls `{}(<expr>)` over a non-list — v0.2.0 supports `set()`/`frozenset()` (empty) or over a `<list>`",
+                        ctx.fn_name, fname.id
                     )));
                 }
                 // PMAT-502dk: `dict(pairs)` materialises a list of 2-tuples
@@ -7688,7 +7695,8 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // `.add()`/`.append()` that lets rustc infer it.
                 if call.keywords.is_empty() && call.args.is_empty() {
                     match fname.id.as_str() {
-                        "set" => return Ok(Expr::SetLit(Vec::new())),
+                        // PMAT-519: `frozenset()` maps to an (immutable) HashSet.
+                        "set" | "frozenset" => return Ok(Expr::SetLit(Vec::new())),
                         "dict" => return Ok(Expr::DictLit(Vec::new())),
                         "list" => return Ok(Expr::ListLit(Vec::new())),
                         _ => {}
