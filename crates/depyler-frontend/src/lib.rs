@@ -5403,14 +5403,18 @@ fn lower_if_exp(ie: ast::ExprIfExp) -> Result<Expr, FrontendError> {
 
 /// PMAT-477 (R8): map a Python arithmetic operator to a [`FloatOp`]
 /// for float operands. Returns `None` for non-arithmetic ops
-/// (comparisons stay on `BinOp`) and for `//`/`%`/bitwise/`**` on
-/// floats (deferred).
+/// (comparisons stay on `BinOp`) and for bitwise/`**` on floats
+/// (deferred). PMAT-502br: `//`/`%` now map to the floor-semantics
+/// `FloorDiv`/`Mod` (Python float floor-division + sign-of-divisor
+/// modulo); the codegen emits the `(a / b).floor()` formulas.
 fn float_op_from_ast(op: &ast::Operator) -> Option<FloatOp> {
     match op {
         ast::Operator::Add => Some(FloatOp::Add),
         ast::Operator::Sub => Some(FloatOp::Sub),
         ast::Operator::Mult => Some(FloatOp::Mul),
         ast::Operator::Div => Some(FloatOp::Div),
+        ast::Operator::FloorDiv => Some(FloatOp::FloorDiv),
+        ast::Operator::Mod => Some(FloatOp::Mod),
         _ => None,
     }
 }

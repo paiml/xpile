@@ -25,6 +25,10 @@ fn float_op_sym(op: FloatOp) -> &'static str {
         FloatOp::Sub => "-",
         FloatOp::Mul => "*",
         FloatOp::Div => "/",
+        // FloorDiv/Mod are emitted via dedicated formulas, never via this
+        // helper — keep the match exhaustive.
+        FloatOp::FloorDiv => "//",
+        FloatOp::Mod => "%",
     }
 }
 
@@ -690,13 +694,37 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // PMAT-477 (R8): float literal → `<v>f64`; float arithmetic →
         // plain infix (IEEE-754 saturates, no checked path).
         Expr::LitFloat(v) => write!(out, "{}f64", v)?,
-        Expr::FloatBinOp { op, lhs, rhs } => {
-            out.push('(');
-            emit_expr(out, lhs, mode)?;
-            write!(out, " {} ", float_op_sym(*op))?;
-            emit_expr(out, rhs, mode)?;
-            out.push(')');
-        }
+        Expr::FloatBinOp { op, lhs, rhs } => match op {
+            // PMAT-502br: Python float floor-division `a // b` → `(a / b).floor()`.
+            FloatOp::FloorDiv => {
+                out.push_str("((");
+                emit_expr(out, lhs, mode)?;
+                out.push_str(" / ");
+                emit_expr(out, rhs, mode)?;
+                out.push_str(").floor())");
+            }
+            // PMAT-502br: Python float modulo `a % b` follows the divisor's
+            // sign → `a - b * (a / b).floor()` (Rust's `%` follows the
+            // dividend, which diverges for mixed signs).
+            FloatOp::Mod => {
+                out.push('(');
+                emit_expr(out, lhs, mode)?;
+                out.push_str(" - ");
+                emit_expr(out, rhs, mode)?;
+                out.push_str(" * (");
+                emit_expr(out, lhs, mode)?;
+                out.push_str(" / ");
+                emit_expr(out, rhs, mode)?;
+                out.push_str(").floor())");
+            }
+            FloatOp::Add | FloatOp::Sub | FloatOp::Mul | FloatOp::Div => {
+                out.push('(');
+                emit_expr(out, lhs, mode)?;
+                write!(out, " {} ", float_op_sym(*op))?;
+                emit_expr(out, rhs, mode)?;
+                out.push(')');
+            }
+        },
         // PMAT-456 (v0.2.0 Track 1.B): bool literal — Rust's
         // lowercase `true` / `false`.
         Expr::LitBool(b) => write!(out, "{}", b)?,

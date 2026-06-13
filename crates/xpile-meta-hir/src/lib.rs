@@ -1575,14 +1575,23 @@ pub enum QuotingStrategy {
 }
 
 /// PMAT-477 (R8): float arithmetic operators. Carried by
-/// [`Expr::FloatBinOp`]; all emit plain infix (`f64` saturates, no
-/// `checked_*`). `Div` is IEEE-754 true division.
+/// [`Expr::FloatBinOp`]. `Add`/`Sub`/`Mul`/`Div` emit plain infix (`f64`
+/// saturates, no `checked_*`); `Div` is IEEE-754 true division.
+/// PMAT-502br: `FloorDiv`/`Mod` emit Python-correct *floor* semantics
+/// (`(a / b).floor()` and `a - b * (a / b).floor()`), which differ from
+/// Rust's truncating `/` int-div and sign-of-dividend `%` — so they are
+/// NOT plain infix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FloatOp {
     Add,
     Sub,
     Mul,
     Div,
+    /// Python `a // b` over floats → `(a / b).floor()`.
+    FloorDiv,
+    /// Python `a % b` over floats → `a - b * (a / b).floor()`
+    /// (result follows the divisor's sign, per Python).
+    Mod,
 }
 
 /// PMAT-498 (Tranche 2): scalar numeric builtins carried by

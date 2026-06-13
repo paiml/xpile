@@ -1015,19 +1015,42 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         // PMAT-477 (R8): Python `float` → Lean `Float` literal +
         // plain-infix arithmetic (Lean `Float` supports `+ - * /`).
         Expr::LitFloat(v) => write!(out, "({}: Float)", v)?,
-        Expr::FloatBinOp { op, lhs, rhs } => {
-            let sym = match op {
-                FloatOp::Add => "+",
-                FloatOp::Sub => "-",
-                FloatOp::Mul => "*",
-                FloatOp::Div => "/",
-            };
-            out.push('(');
-            emit_expr(out, lhs)?;
-            write!(out, " {sym} ")?;
-            emit_expr(out, rhs)?;
-            out.push(')');
-        }
+        Expr::FloatBinOp { op, lhs, rhs } => match op {
+            // PMAT-502br: Python float floor-division → `Float.floor (a / b)`.
+            FloatOp::FloorDiv => {
+                out.push_str("(Float.floor (");
+                emit_expr(out, lhs)?;
+                out.push_str(" / ");
+                emit_expr(out, rhs)?;
+                out.push_str("))");
+            }
+            // PMAT-502br: Python float modulo → `a - b * Float.floor (a / b)`.
+            FloatOp::Mod => {
+                out.push('(');
+                emit_expr(out, lhs)?;
+                out.push_str(" - ");
+                emit_expr(out, rhs)?;
+                out.push_str(" * Float.floor (");
+                emit_expr(out, lhs)?;
+                out.push_str(" / ");
+                emit_expr(out, rhs)?;
+                out.push_str("))");
+            }
+            FloatOp::Add | FloatOp::Sub | FloatOp::Mul | FloatOp::Div => {
+                let sym = match op {
+                    FloatOp::Add => "+",
+                    FloatOp::Sub => "-",
+                    FloatOp::Mul => "*",
+                    FloatOp::Div => "/",
+                    FloatOp::FloorDiv | FloatOp::Mod => unreachable!(),
+                };
+                out.push('(');
+                emit_expr(out, lhs)?;
+                write!(out, " {sym} ")?;
+                emit_expr(out, rhs)?;
+                out.push(')');
+            }
+        },
         // PMAT-456 (v0.2.0 Track 1.B): bool literal — Lean
         // capitalises the constructors (`True` / `False`).
         Expr::LitBool(b) => write!(out, "{}", if *b { "True" } else { "False" })?,
