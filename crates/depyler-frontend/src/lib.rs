@@ -4454,7 +4454,7 @@ fn infer_type(e: &Expr) -> Type {
             | NumBuiltinOp::Ln
             | NumBuiltinOp::Log10
             | NumBuiltinOp::Log2 => Type::F64,
-            NumBuiltinOp::Floor | NumBuiltinOp::Ceil => Type::I64,
+            NumBuiltinOp::Floor | NumBuiltinOp::Ceil | NumBuiltinOp::Trunc => Type::I64,
             _ => args.first().map(infer_type).unwrap_or(Type::I64),
         },
         // PMAT-498b: sum types as the list's element type.
@@ -4770,7 +4770,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             | NumBuiltinOp::Ln
             | NumBuiltinOp::Log10
             | NumBuiltinOp::Log2 => Type::F64,
-            NumBuiltinOp::Floor | NumBuiltinOp::Ceil => Type::I64,
+            NumBuiltinOp::Floor | NumBuiltinOp::Ceil | NumBuiltinOp::Trunc => Type::I64,
             _ => args
                 .first()
                 .map(|a| infer_type_in_ctx(ctx, a))
@@ -5363,6 +5363,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             NumBuiltinOp::Sqrt
                             | NumBuiltinOp::Floor
                             | NumBuiltinOp::Ceil
+                            | NumBuiltinOp::Trunc
                             | NumBuiltinOp::Sin
                             | NumBuiltinOp::Cos
                             | NumBuiltinOp::Tan
@@ -6387,6 +6388,35 @@ fn lower_math_call(
     fn_name: &str,
     call: &ast::ExprCall,
 ) -> Result<Expr, FrontendError> {
+    // PMAT-502em: `math.pow(x, y)` — 2-arg, and Python's `math.pow` ALWAYS
+    // returns a float (even for int args), so coerce both operands to f64 and
+    // reuse `FloatBinOp{Pow}` → `(x).powf(y)`. (Distinct from the builtin
+    // `pow(a, b)`, which keeps int args integral.)
+    if fn_name == "pow" {
+        if !call.keywords.is_empty() || call.args.len() != 2 {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `math.pow(...)` with {} positional arg(s){}; it takes exactly 2",
+                ctx.fn_name,
+                call.args.len(),
+                if call.keywords.is_empty() { "" } else { " plus keyword args" },
+            )));
+        }
+        let lhs = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+        let rhs = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+        let lty = infer_type_in_ctx(ctx, &lhs);
+        let rty = infer_type_in_ctx(ctx, &rhs);
+        if !matches!(lty, Type::I64 | Type::F64) || !matches!(rty, Type::I64 | Type::F64) {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `math.pow(...)` with a non-numeric argument ({lty:?}, {rty:?})",
+                ctx.fn_name
+            )));
+        }
+        return Ok(Expr::FloatBinOp {
+            op: FloatOp::Pow,
+            lhs: Box::new(to_f64_operand(ctx, lhs)),
+            rhs: Box::new(to_f64_operand(ctx, rhs)),
+        });
+    }
     let op = match fn_name {
         "sqrt" => NumBuiltinOp::Sqrt,
         "floor" => NumBuiltinOp::Floor,
@@ -6399,9 +6429,11 @@ fn lower_math_call(
         "log" => NumBuiltinOp::Ln,
         "log10" => NumBuiltinOp::Log10,
         "log2" => NumBuiltinOp::Log2,
+        // PMAT-502em: `math.trunc(x)` → `(x).trunc() as i64` (returns int).
+        "trunc" => NumBuiltinOp::Trunc,
         other => {
             return Err(FrontendError::Lower(format!(
-                "function `{}` calls `math.{other}(...)` — v0.2.0 supports `math.sqrt`/`floor`/`ceil`/`sin`/`cos`/`tan`/`exp`/`log`/`log10`/`log2` (other `math` functions are a follow-up)",
+                "function `{}` calls `math.{other}(...)` — v0.2.0 supports `math.sqrt`/`floor`/`ceil`/`trunc`/`sin`/`cos`/`tan`/`exp`/`log`/`log10`/`log2`/`pow` (other `math` functions are a follow-up)",
                 ctx.fn_name
             )));
         }

@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.177] — 2026-06-13
+
+Tranche-2 slice PMAT-502em — **`math.pow(x, y)` and `math.trunc(x)`**.
+
+- `math.pow(x, y)` — Python's `math.pow` always returns a `float` (even for int
+  arguments, `math.pow(2, 3) == 8.0`, unlike the builtin `pow` which keeps int
+  args integral). It reuses `Expr::FloatBinOp { Pow }` with both operands
+  coerced to f64 (`to_f64_operand`) → `(x).powf(y)`. No new IR variant.
+- `math.trunc(x)` — truncates toward zero and returns `int` (unlike `floor`,
+  which rounds down: `trunc(-3.7) == -3` vs `floor(-3.7) == -4`). A new
+  `NumBuiltinOp::Trunc` → `(x).trunc() as i64`.
+
+New `math_pow_trunc.py` e2e fixture (`pow` float/int-arg/composed, `trunc`
+positive/negative), all cross-checked vs python3.
+
 ## [0.1.176] — 2026-06-13
 
 Tranche-2 slice PMAT-502el — **more `math`: constants + trig/log functions**.

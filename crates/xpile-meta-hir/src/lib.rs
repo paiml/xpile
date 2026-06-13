@@ -1808,6 +1808,9 @@ pub enum NumBuiltinOp {
     Log10,
     /// PMAT-502el: `math.log2(x)` → `(x).log2()` (`f64`).
     Log2,
+    /// PMAT-502em: `math.trunc(x)` → `(x).trunc() as i64` (Python `math.trunc`
+    /// truncates toward zero and returns an `int`).
+    Trunc,
 }
 
 /// PMAT-495 (sprint): the iterator adapter for a [`Stmt::ForEachPair`].

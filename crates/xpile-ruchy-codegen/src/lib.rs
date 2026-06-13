@@ -1117,6 +1117,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 NumBuiltinOp::Sqrt => out.push_str(".sqrt()"),
                 NumBuiltinOp::Floor => out.push_str(".floor() as i64"),
                 NumBuiltinOp::Ceil => out.push_str(".ceil() as i64"),
+                // PMAT-502em: `math.trunc`, matching the Rust backend.
+                NumBuiltinOp::Trunc => out.push_str(".trunc() as i64"),
                 // PMAT-502el: trig / exp / log — matching the Rust backend.
                 NumBuiltinOp::Sin => out.push_str(".sin()"),
                 NumBuiltinOp::Cos => out.push_str(".cos()"),
