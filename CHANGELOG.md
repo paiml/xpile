@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.201] — 2026-06-13
+
+Classes-epic first cut PMAT-505a — **`@dataclass` → Rust struct definition**.
+
+- A Python `@dataclass` / field-only class lowers to a new `Item::Struct {
+  name, fields }` → Rust/Ruchy emit `#[derive(Clone, Debug, PartialEq)] pub
+  struct Name { pub <field>: <ty>, … }` (fields in declaration order); Lean
+  refuses (structure lift deferred).
+- `lower_class_def` accepts a class whose body is only annotated fields (`x: T`,
+  no default) + `pass`/docstring; methods, field defaults, base classes, and
+  other statements get clean "first cut" errors.
+- This cut emits the struct **definition only** — value construction
+  (`Name(a, b)`) and field access (`obj.f`) need a `Type::Struct` variant and are
+  the next sub-slice. No `Type` enum change here (bounded blast radius).
+- New e2e fixture `dataclass_def.py`, rustc round-trip (driver constructs the
+  emitted structs + exercises the derived traits). e2e 262 → 263.
+
 ## [0.1.200] — 2026-06-13
 
 Exceptions-epic slice PMAT-503c — **statement-position assignment-form
