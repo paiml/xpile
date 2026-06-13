@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.223] — 2026-06-14
+
+Tranche 2 — PMAT-523: negative-step `range` materialisation.
+
+- `list(range(n, 0, -1))` / `sum(range(n, 0, -1))` etc. with a negative step were
+  rejected (only the counted `for` loop worked). Python `range(start, stop,
+  step<0)` now emits `((stop)+1 ..= (start)).rev().step_by(|step|)
+  .collect::<Vec<i64>>()`. The `s < 1` guard in `lower_range_list` is dropped
+  (`extract_step_literal` already rejects a zero step); the rust+ruchy
+  `RangeList` emit branches on the step sign. **No new IR.**
+- New e2e fixture `range_negative_step.py` (rustc round-trip cross-checked vs
+  python3). e2e 284 → 285.
+
 ## [0.1.222] — 2026-06-14
 
 Tranche 2 — PMAT-522 (correctness): builtins over `range(...)` + `list(dict)`.
