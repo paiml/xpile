@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.219] — 2026-06-13
+
+Tranche 2 — PMAT-519 (correctness): `frozenset(iterable)` → `HashSet`.
+
+- `frozenset(xs)` previously emitted an undefined `frozenset(...)` Rust call (a
+  silent miscompile). Rust has no frozen set; an immutable set is just a
+  `HashSet` that's never mutated, so `frozenset` routes through the same
+  `SetFromList` path as `set` (and `frozenset()` → empty set) — **no new IR**.
+- New e2e fixture `frozenset_basic.py` (rustc round-trip cross-checked vs
+  python3). e2e 280 → 281. (`frozenset`-as-hashable-key remains unsupported.)
+
 ## [0.1.218] — 2026-06-13
 
 Tranche 2 — PMAT-518: `str.split(sep, maxsplit)` (2-arg).
