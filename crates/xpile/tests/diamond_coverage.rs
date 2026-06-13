@@ -63,6 +63,89 @@ fn read_aggregate_field(json: &str, name: &str) -> u64 {
     after[..end].trim().parse().expect("parse aggregate field")
 }
 
+/// PMAT-475 (R6): the contracts that reached **depth-13 UNIVERSAL** before the
+/// gate was grandfathered (the depth-13 broadening completed at PMAT-442). These
+/// 13 are held to the *full* depth they earned at each gate below; a NEW contract
+/// (R6 onward) joins at **depth-1+** and is exempt from depths 2..13 — that is the
+/// whole point of R6's gate change (adding a 14th contract must NOT cost 13
+/// Diamond theorems). Removing/renaming a grandfathered contract is caught by
+/// [`grandfathered_failures`] (the id goes missing → failure).
+const GRANDFATHERED_DEPTH13: [&str; 13] = [
+    "C-PY-INT-ARITH",
+    "C-COMPILE-RUST-TO-PTX-MMA",
+    "C-BASHRS-POSIX-IDEMPOTENCE",
+    "C-FFI-CPYTHON-EXT",
+    "C-NOTATION-LATEX-MATH-TO-EQUATION",
+    "C-XLATE-LEAN-TO-RUST",
+    "C-XLATE-PY-LIST-TO-VEC",
+    "C-XLATE-PY-STR-TO-RUST-STRING",
+    "C-XLATE-RUST-FN-TO-LEAN-THM",
+    "C-XPILE-BACKEND-TRAIT",
+    "C-XPILE-CONTRACT-BACKEND-TRAIT",
+    "C-XPILE-CONTRACT-FRONTEND-TRAIT",
+    "C-XPILE-FRONTEND-TRAIT",
+];
+
+/// Parse the per-contract `"contracts":[{"id":…,"depth":"depth-N+"}]` array into
+/// `id → depth` integers (the `depth` string is `"depth-N"` / `"depth-N+"`).
+fn contract_depths(json: &str) -> std::collections::HashMap<String, u64> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(json).expect("diamond --json is valid JSON");
+    let mut out = std::collections::HashMap::new();
+    for c in parsed["contracts"]
+        .as_array()
+        .expect("`contracts` array in diamond --json")
+    {
+        let id = c["id"]
+            .as_str()
+            .expect("contract id is a string")
+            .to_string();
+        let depth_str = c["depth"].as_str().expect("contract depth is a string");
+        // "depth-13+" / "depth-21" → 13 / 21.
+        let n: u64 = depth_str
+            .trim_start_matches("depth-")
+            .trim_end_matches('+')
+            .parse()
+            .unwrap_or_else(|_| panic!("unparseable depth {depth_str:?} for {id}"));
+        out.insert(id, n);
+    }
+    out
+}
+
+/// PMAT-475 (R6): the grandfathered contracts that FAIL the depth-`floor`
+/// requirement — either missing from the report (removed/renamed) or below the
+/// floor. An empty result means the grandfathered set still meets the floor;
+/// non-grandfathered (new) contracts are intentionally NOT checked here (they
+/// join at depth-1+, enforced only by the depth-1 universal gate). Pure function
+/// of the JSON so the unit tests can exercise it with synthetic reports.
+fn grandfathered_failures(json: &str, floor: u64) -> Vec<String> {
+    let depths = contract_depths(json);
+    let mut fails = Vec::new();
+    for id in GRANDFATHERED_DEPTH13 {
+        match depths.get(id) {
+            None => fails.push(format!("{id} (missing from report)")),
+            Some(&d) if d < floor => {
+                fails.push(format!("{id} (depth-{d} < required depth-{floor})"))
+            }
+            Some(_) => {}
+        }
+    }
+    fails
+}
+
+/// PMAT-475 (R6): assert the grandfathered depth-13 set still meets `floor`.
+/// Shared by the depth-2..13 gates below; replaces the old
+/// `depth_N_plus == contracts_total` aggregate check so a new contract joining
+/// at depth-1+ does not trip the deep gates.
+fn assert_grandfathered_floor(json: &str, floor: u64, milestone: &str) {
+    let fails = grandfathered_failures(json, floor);
+    assert!(
+        fails.is_empty(),
+        "Diamond depth-{floor} UNIVERSAL milestone ({milestone}): every grandfathered \
+         (pre-R6) contract must be at depth-{floor}+, but these are not: {fails:?}\n{json}"
+    );
+}
+
 #[test]
 fn substrate_diamond_depth_1_universal() {
     let json = run_diamond_json();
@@ -78,53 +161,24 @@ fn substrate_diamond_depth_1_universal() {
 #[test]
 fn substrate_diamond_depth_2_universal() {
     let json = run_diamond_json();
-    let contracts_total = read_aggregate_field(&json, "contracts_total");
-    let depth_2_plus = read_aggregate_field(&json, "depth_2_plus");
-    // PMAT-454: PMAT-450's transitional relaxation was lifted once
-    // C-XLATE-PY-STR-TO-RUST-STRING reached depth-13 UNIVERSAL via
-    // PMAT-453 + PMAT-454 broadening sweeps. Gate back at strict
-    // equality.
-    assert_eq!(
-        depth_2_plus, contracts_total,
-        "Diamond depth-2 UNIVERSAL milestone (PMAT-228..250 / PMAT-454): every contract should \
-         have ≥2 distinct Diamond equations, but only {depth_2_plus} of {contracts_total} do.\n{json}"
-    );
+    // PMAT-475 (R6): grandfathered to the depth-13 cohort. The 13 pre-R6
+    // contracts must each still have ≥2 distinct Diamond equations; NEW contracts
+    // join at depth-1+ and are exempt from depths 2..13 (no treadmill).
+    assert_grandfathered_floor(&json, 2, "PMAT-228..250 / PMAT-454");
 }
 
 #[test]
 fn substrate_diamond_depth_3_universal() {
     let json = run_diamond_json();
-    let contracts_total = read_aggregate_field(&json, "contracts_total");
-    let depth_3_plus = read_aggregate_field(&json, "depth_3_plus");
-    // PMAT-241..245 + PMAT-289 + PMAT-331..336 broadening sweep:
-    // depth-3 reached UNIVERSAL across ALL 12 contracts at PMAT-336.
-    // The structure-extensionality pattern (PMAT-311/329/330/331/332/
-    // 333/334/335/336) is now a substrate-wide recurring theme.
-    // PMAT-454: transitional relaxation removed once C-XLATE-PY-STR-TO-RUST-STRING
-    // hit depth-13 UNIVERSAL. Gate back at strict equality.
-    assert_eq!(
-        depth_3_plus, contracts_total,
-        "Diamond depth-3 UNIVERSAL milestone (PMAT-336 / PMAT-454): every contract should have \
-         ≥3 Diamond equations, but only {depth_3_plus} of {contracts_total} do.\n{json}"
-    );
+    // PMAT-475 (R6): grandfathered — the 13 pre-R6 contracts at depth-3+.
+    assert_grandfathered_floor(&json, 3, "PMAT-336 / PMAT-454");
 }
 
 #[test]
 fn substrate_diamond_depth_4_universal() {
     let json = run_diamond_json();
-    let contracts_total = read_aggregate_field(&json, "contracts_total");
-    let depth_4_plus = read_aggregate_field(&json, "depth_4_plus");
-    // PMAT-247..344 sweep: depth-4 reached UNIVERSAL across all 12 contracts at PMAT-344.
-    // The post-PMAT-330 (ALL 5 LAYERS) broadening sweep used the structure-extensionality
-    // template (PMAT-329..336), Array.size template (PMAT-340/341/344), enum-distinctness
-    // template (PMAT-339/342), Nat-structure template (PMAT-343), and reverse-involution
-    // template (PMAT-338) to reach depth-4 on the remaining 7 contracts.
-    // PMAT-454: transitional removed; gate back at strict equality.
-    assert_eq!(
-        depth_4_plus, contracts_total,
-        "Diamond depth-4 UNIVERSAL milestone (PMAT-344 / PMAT-454): every contract should have \
-         ≥4 Diamond equations, but only {depth_4_plus} of {contracts_total} do.\n{json}"
-    );
+    // PMAT-475 (R6): grandfathered — the 13 pre-R6 contracts at depth-4+.
+    assert_grandfathered_floor(&json, 4, "PMAT-344 / PMAT-454");
 }
 
 #[test]
@@ -142,174 +196,69 @@ fn substrate_diamond_aggregate_total_at_least_30() {
 #[test]
 fn substrate_diamond_depth_5_opened() {
     let json = run_diamond_json();
-    let contracts_total = read_aggregate_field(&json, "contracts_total");
-    let depth_5_plus = read_aggregate_field(&json, "depth_5_plus");
-    // PMAT-286 opened depth-5 on C-PY-INT-ARITH (Layer 1).
-    // PMAT-287 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5).
-    // PMAT-328 BROADENED depth-5 to C-FFI-CPYTHON-EXT (Layer 4).
-    // PMAT-346 BROADENED depth-5 to C-BASHRS-POSIX-IDEMPOTENCE (Layer 2).
-    // PMAT-347 BROADENED depth-5 to C-XPILE-FRONTEND-TRAIT (Layer 3) — COMPLETED
-    // depth-5 ACROSS ALL 5 TAXONOMY LAYERS (parallel to PMAT-330 for depth-4).
-    // PMAT-348..353 BROADENED depth-5 to 11 of 12 contracts.
-    // PMAT-354 COMPLETED depth-5 UNIVERSAL via C-XPILE-CONTRACT-BACKEND-TRAIT
-    // (Layer 3) — substrate milestone: every contract has ≥5 Diamond categories.
-    // PMAT-454: transitional removed; gate back at strict equality.
-    assert_eq!(
-        depth_5_plus, contracts_total,
-        "Diamond depth-5 UNIVERSAL milestone (PMAT-354 / PMAT-454): every contract should have \
-         ≥5 Diamond equations, but only {depth_5_plus} of {contracts_total} do.\n{json}"
-    );
+    // PMAT-475 (R6): grandfathered — the 13 pre-R6 contracts at depth-5+.
+    assert_grandfathered_floor(&json, 5, "PMAT-354 / PMAT-454");
 }
 
 #[test]
 fn substrate_diamond_depth_6_opened() {
     let json = run_diamond_json();
-    let contracts_total = read_aggregate_field(&json, "contracts_total");
-    let depth_6_plus = read_aggregate_field(&json, "depth_6_plus");
-    // PMAT-290/291 opened depth-6 on L1 + L5.
-    // PMAT-356..363 BROADENED depth-6 broadly.
-    // PMAT-360 BROADENED depth-6 to C-XLATE-PY-LIST-TO-VEC (Layer 2, 2nd L2).
-    // PMAT-364 BROADENED depth-6 to C-XPILE-CONTRACT-BACKEND-TRAIT (Layer 3).
-    // PMAT-365 COMPLETED depth-6 UNIVERSAL via C-XLATE-RUST-FN-TO-LEAN-THM.
-    // Parallel to PMAT-336/344/354 (depth-3/4/5 UNIVERSAL).
-    assert!(
-        depth_6_plus == contracts_total || depth_6_plus >= 9,
-        "Diamond depth-6 UNIVERSAL milestone (PMAT-365): every contract should have \
-         ≥6 Diamond equations; on this branch the gate accepts ≥9 (interim) or UNIVERSAL. \
-         Got {depth_6_plus} of {contracts_total}.\n{json}"
-    );
+    // PMAT-475 (R6): grandfathered — the 13 pre-R6 contracts at depth-6+ (the
+    // old interim `>= 9` relaxation is subsumed; all 13 reached depth-6 at PMAT-365).
+    assert_grandfathered_floor(&json, 6, "PMAT-365");
 }
 
 #[test]
 fn substrate_diamond_depth_7_opened() {
     let json = run_diamond_json();
-    let contracts_total = read_aggregate_field(&json, "contracts_total");
-    let depth_7_plus = read_aggregate_field(&json, "depth_7_plus");
-    // PMAT-292/293 opened depth-7 on L1 + L5.
-    // PMAT-367..375 BROADENED depth-7 to 11 of 12 contracts.
-    // PMAT-376 COMPLETED depth-7 UNIVERSAL via C-XPILE-CONTRACT-BACKEND-TRAIT —
-    // substrate milestone: every contract has ≥7 Diamond categories.
-    // Parallel to PMAT-336/344/354/365 (depth-3/4/5/6 UNIVERSAL).
-    // Gate accepts UNIVERSAL or ≥11 (interim while parallel PRs land).
-    assert!(
-        depth_7_plus == contracts_total || depth_7_plus >= 11,
-        "Diamond depth-7 UNIVERSAL milestone (PMAT-376): every contract should have \
-         ≥7 Diamond equations; on this branch the gate accepts ≥11 (interim) or UNIVERSAL. \
-         Got {depth_7_plus} of {contracts_total}.\n{json}"
-    );
+    // PMAT-475 (R6): grandfathered — the 13 pre-R6 contracts at depth-7+.
+    assert_grandfathered_floor(&json, 7, "PMAT-376");
 }
 
 #[test]
 fn substrate_diamond_depth_8_opened() {
     let json = run_diamond_json();
-    let contracts_total = read_aggregate_field(&json, "contracts_total");
-    let depth_8_plus = read_aggregate_field(&json, "depth_8_plus");
-    // PMAT-294/295 opened depth-8 on L1 + L5.
-    // PMAT-378..386 BROADENED depth-8 to 11 of 12 contracts.
-    // PMAT-387 COMPLETED depth-8 UNIVERSAL via C-XPILE-CONTRACT-BACKEND-TRAIT —
-    // substrate milestone: every contract has ≥8 Diamond categories.
-    // Parallel to PMAT-336/344/354/365/376 (depth-3/4/5/6/7 UNIVERSAL).
-    assert!(
-        depth_8_plus == contracts_total || depth_8_plus >= 11,
-        "Diamond depth-8 UNIVERSAL milestone (PMAT-387): every contract should have \
-         ≥8 Diamond equations; on this branch gate accepts ≥11 (interim) or UNIVERSAL. \
-         Got {depth_8_plus} of {contracts_total}.\n{json}"
-    );
+    // PMAT-475 (R6): grandfathered — the 13 pre-R6 contracts at depth-8+.
+    assert_grandfathered_floor(&json, 8, "PMAT-387");
 }
 
 #[test]
 fn substrate_diamond_depth_9_opened() {
     let json = run_diamond_json();
-    let depth_9_plus = read_aggregate_field(&json, "depth_9_plus");
-    let contracts_total = read_aggregate_field(&json, "contracts_total");
-    // PMAT-298 opened depth-9 on C-PY-INT-ARITH (Layer 1): linear-order trichotomy.
-    // PMAT-299 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): ordered monoid.
-    // PMAT-389..398 broadening wave pushed all 10 remaining contracts to depth-9
-    // via Template 9 (Gold-tier subtype-extensionality).
-    // PMAT-398: DEPTH-9 UNIVERSAL achieved — gate tightened to == contracts_total.
-    // PMAT-454: transitional removed; gate back at strict equality.
-    assert_eq!(
-        depth_9_plus, contracts_total,
-        "Diamond depth-9 UNIVERSAL milestone (PMAT-398 / PMAT-454): \
-         expected ALL {contracts_total} contracts at depth-9+. \
-         Got {depth_9_plus} of {contracts_total}.\n{json}"
-    );
+    // PMAT-475 (R6): grandfathered — the 13 pre-R6 contracts at depth-9+.
+    assert_grandfathered_floor(&json, 9, "PMAT-398 / PMAT-454");
 }
 
 #[test]
 fn substrate_diamond_depth_10_opened() {
     let json = run_diamond_json();
-    let depth_10_plus = read_aggregate_field(&json, "depth_10_plus");
-    let contracts_total = read_aggregate_field(&json, "contracts_total");
-    // PMAT-300 opened depth-10 on C-PY-INT-ARITH (Layer 1): RING-distributivity.
-    // PMAT-301 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): additive-lattice.
-    // PMAT-400..409 broadening wave pushed all 10 remaining contracts to depth-10
-    // via Template 10 (Tier-projection homomorphism).
-    // PMAT-409: DEPTH-10 UNIVERSAL achieved — gate tightened to == contracts_total.
-    // PMAT-454: transitional removed; gate back at strict equality.
-    assert_eq!(
-        depth_10_plus, contracts_total,
-        "Diamond depth-10 UNIVERSAL milestone (PMAT-409 / PMAT-454): \
-         expected ALL {contracts_total} contracts at depth-10+. \
-         Got {depth_10_plus} of {contracts_total}.\n{json}"
-    );
+    // PMAT-475 (R6): grandfathered — the 13 pre-R6 contracts at depth-10+.
+    assert_grandfathered_floor(&json, 10, "PMAT-409 / PMAT-454");
 }
 
 #[test]
 fn substrate_diamond_depth_11_opened() {
     let json = run_diamond_json();
-    let depth_11_plus = read_aggregate_field(&json, "depth_11_plus");
-    let contracts_total = read_aggregate_field(&json, "contracts_total");
-    // PMAT-302 opened depth-11 on C-PY-INT-ARITH (Layer 1): INTEGRAL DOMAIN.
-    // PMAT-303 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): DISCRETE ORDER.
-    // PMAT-411..420 broadening wave pushed all 10 remaining contracts to depth-11
-    // via Template 11 (Canonical identity element).
-    // PMAT-420: DEPTH-11 UNIVERSAL achieved — gate tightened to == contracts_total.
-    // PMAT-454: transitional removed; gate back at strict equality.
-    assert_eq!(
-        depth_11_plus, contracts_total,
-        "Diamond depth-11 UNIVERSAL milestone (PMAT-420 / PMAT-454): \
-         expected ALL {contracts_total} contracts at depth-11+. \
-         Got {depth_11_plus} of {contracts_total}.\n{json}"
-    );
+    // PMAT-475 (R6): grandfathered — the 13 pre-R6 contracts at depth-11+.
+    assert_grandfathered_floor(&json, 11, "PMAT-420 / PMAT-454");
 }
 
 #[test]
 fn substrate_diamond_depth_12_opened() {
     let json = run_diamond_json();
-    let depth_12_plus = read_aggregate_field(&json, "depth_12_plus");
-    let contracts_total = read_aggregate_field(&json, "contracts_total");
-    // PMAT-305 opened depth-12 on C-PY-INT-ARITH (Layer 1): ORDERED RING.
-    // PMAT-306 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): MAX/MIN MONOTONICITY.
-    // PMAT-422..431 broadening wave pushed all 10 remaining contracts to depth-12
-    // via Template 12 (Bronze→Silver canonical-lift homomorphism).
-    // PMAT-431: DEPTH-12 UNIVERSAL achieved — gate tightened to == contracts_total.
-    // PMAT-454: transitional removed; gate back at strict equality.
-    assert_eq!(
-        depth_12_plus, contracts_total,
-        "Diamond depth-12 UNIVERSAL milestone (PMAT-431 / PMAT-454): \
-         expected ALL {contracts_total} contracts at depth-12+. \
-         Got {depth_12_plus} of {contracts_total}.\n{json}"
-    );
+    // PMAT-475 (R6): grandfathered — the 13 pre-R6 contracts at depth-12+.
+    assert_grandfathered_floor(&json, 12, "PMAT-431 / PMAT-454");
 }
 
 #[test]
 fn substrate_diamond_depth_13_opened() {
     let json = run_diamond_json();
-    let depth_13_plus = read_aggregate_field(&json, "depth_13_plus");
-    let contracts_total = read_aggregate_field(&json, "contracts_total");
-    // PMAT-307 opened depth-13 on C-PY-INT-ARITH (Layer 1): ABSOLUTE VALUE / NORM.
-    // PMAT-308 extended to C-COMPILE-RUST-TO-PTX-MMA (Layer 5): GLB/LUB universal property.
-    // PMAT-433..442 broadening wave pushed all 10 remaining contracts to depth-13
-    // via Template 13 (Bronze→Silver→Bronze round-trip identity).
-    // PMAT-442: DEPTH-13 UNIVERSAL achieved — gate tightened to == contracts_total.
-    // PMAT-454: transitional removed; gate back at strict equality.
-    assert_eq!(
-        depth_13_plus, contracts_total,
-        "Diamond depth-13 UNIVERSAL milestone (PMAT-442 / PMAT-454): \
-         expected ALL {contracts_total} contracts at depth-13+. \
-         Got {depth_13_plus} of {contracts_total}.\n{json}"
-    );
+    // PMAT-475 (R6): grandfathered — the 13 pre-R6 contracts at depth-13+. This is
+    // the depth-13 UNIVERSAL floor of the *grandfathered cohort* (PMAT-442); a NEW
+    // contract joins at depth-1+ and is exempt (the R6 anti-treadmill change). The
+    // `>= 14` "across-layers" gates below are unaffected (they count frontier
+    // contracts, not a universal floor).
+    assert_grandfathered_floor(&json, 13, "PMAT-442 / PMAT-454");
 }
 
 #[test]
@@ -428,5 +377,87 @@ fn substrate_diamond_depth_21_opened() {
         depth_21_plus >= 1,
         "Diamond depth-21 milestone (PMAT-327): expected ≥1 contract at depth-21+, \
          got {depth_21_plus}.\n{json}"
+    );
+}
+
+// ── PMAT-475 (R6): grandfather-gate unit tests ──────────────────────────────
+// These exercise the grandfather logic against SYNTHETIC reports, so the
+// "new contract joins at depth-1+" path and the regression-catch are proven
+// directly — without yet authoring a 14th contract YAML (that is the next R6
+// sub-slice). They are pure-function tests: no `xpile` binary invocation.
+
+/// Build a synthetic `diamond --json` report body from `(id, depth)` pairs.
+fn synthetic_report(contracts: &[(&str, u64)]) -> String {
+    let items: Vec<String> = contracts
+        .iter()
+        .map(|(id, d)| {
+            format!("{{\"id\":\"{id}\",\"diamond_count\":{d},\"depth\":\"depth-{d}+\"}}")
+        })
+        .collect();
+    format!(
+        "{{\"contracts\":[{}],\"contracts_total\":{}}}",
+        items.join(","),
+        contracts.len()
+    )
+}
+
+#[test]
+fn r6_grandfather_allows_new_contract_at_depth_1() {
+    // The 13 grandfathered contracts at depth-13, plus a brand-new R6 contract
+    // at depth-1. The new contract must NOT trip any of the depth-2..13 gates.
+    let mut cs: Vec<(&str, u64)> = GRANDFATHERED_DEPTH13.iter().map(|id| (*id, 13)).collect();
+    cs.push(("C-C-INT-ARITH", 1)); // hypothetical R6 newcomer at the depth-1 floor
+    let json = synthetic_report(&cs);
+    for floor in 2..=13 {
+        assert!(
+            grandfathered_failures(&json, floor).is_empty(),
+            "a new contract at depth-1 must not trip the grandfathered depth-{floor} gate, \
+             but got failures: {:?}",
+            grandfathered_failures(&json, floor)
+        );
+    }
+}
+
+#[test]
+fn r6_grandfather_catches_regressed_grandfathered_contract() {
+    // A grandfathered contract slipping below the depth-13 floor must fail —
+    // the substrate guarantee for the pre-R6 cohort is NOT weakened.
+    let mut cs: Vec<(&str, u64)> = GRANDFATHERED_DEPTH13.iter().map(|id| (*id, 13)).collect();
+    cs[0].1 = 12; // C-PY-INT-ARITH regressed depth-13 → depth-12
+    let json = synthetic_report(&cs);
+    let fails = grandfathered_failures(&json, 13);
+    assert_eq!(
+        fails.len(),
+        1,
+        "exactly one regressed contract expected: {fails:?}"
+    );
+    assert!(fails[0].contains(GRANDFATHERED_DEPTH13[0]));
+}
+
+#[test]
+fn r6_grandfather_catches_removed_grandfathered_contract() {
+    // Dropping a grandfathered contract from the report (removed/renamed) must
+    // fail loudly — the cohort membership is part of the guarantee.
+    let cs: Vec<(&str, u64)> = GRANDFATHERED_DEPTH13
+        .iter()
+        .skip(1)
+        .map(|id| (*id, 13))
+        .collect();
+    let json = synthetic_report(&cs);
+    let fails = grandfathered_failures(&json, 13);
+    assert!(
+        fails.iter().any(|f| f.contains("missing")),
+        "a removed grandfathered contract must be reported missing: {fails:?}"
+    );
+}
+
+/// The live report still contains every grandfathered contract at the full
+/// depth-13 floor — i.e. the R6 change is behavior-preserving at 13 contracts.
+#[test]
+fn r6_grandfather_live_report_meets_depth_13() {
+    let json = run_diamond_json();
+    assert!(
+        grandfathered_failures(&json, 13).is_empty(),
+        "all 13 grandfathered contracts must still be at depth-13+ in the live report"
     );
 }
