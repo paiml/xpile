@@ -293,7 +293,9 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-498: numeric builtin — recurse into each arg.
         Expr::NumBuiltin { args, .. } => args.iter().any(expr_has_int_arith),
         // PMAT-498b: sum — recurse into the list expression.
-        Expr::Sum { list, .. } => expr_has_int_arith(list),
+        Expr::Sum { list, start, .. } => {
+            expr_has_int_arith(list) || start.as_ref().is_some_and(|s| expr_has_int_arith(s))
+        }
         // PMAT-502j: all(xs)/any(xs) — recurse into the bool list.
         Expr::BoolReduce { list, .. } => expr_has_int_arith(list),
         // PMAT-502m: int(x)/float(x) — recurse into the converted value.
@@ -1343,12 +1345,21 @@ pub enum Expr {
     /// refuses at first cut. (`sum`/1-arg `min`/`max` over a list need an
     /// element-type hint and follow as their own slice.)
     NumBuiltin { op: NumBuiltinOp, args: Vec<Expr> },
-    /// `sum(xs)` over a numeric list — Python builtin. PMAT-498b
-    /// (Tranche 2). Rust/Ruchy emit `<list>.iter().sum::<T>()` with the
-    /// turbofish `T` selected by `of_float` (the frontend sets it from
-    /// the element type — `i64` for `list[int]`, `f64` for `list[float]`).
-    /// Result types as the element type. Lean refuses.
-    Sum { list: Box<Expr>, of_float: bool },
+    /// `sum(xs)` / `sum(xs, start)` over a numeric list — Python builtin.
+    /// PMAT-498b (Tranche 2); 2-arg `start` added PMAT-502cx. Rust/Ruchy
+    /// emit `<list>.iter().sum::<T>()` with the turbofish `T` selected by
+    /// `of_float` (the frontend sets it from the element type — `i64` for
+    /// `list[int]`, `f64` for `list[float]`). When `start` is present it is
+    /// prepended: `(<start>) + <list>.iter().sum::<T>()` (Python's
+    /// `sum(xs, start) == start + sum(xs)`); the frontend requires `start`
+    /// to match the element type (`int` start for an int list, `float`
+    /// start for a float list) so no cast is emitted. Result types as the
+    /// element type. Lean refuses.
+    Sum {
+        list: Box<Expr>,
+        of_float: bool,
+        start: Option<Box<Expr>>,
+    },
     /// `all(xs)` / `any(xs)` over a `list[bool]` — Python builtins.
     /// PMAT-502j (Tranche 2). Rust/Ruchy emit
     /// `<list>.iter().all(|&__b| __b)` (or `.any(…)`); result types as

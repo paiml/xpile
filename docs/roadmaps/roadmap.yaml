@@ -1264,6 +1264,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "set(xs) over a list was rejected ('Set(I64) but produces I64') — only the empty 0-arg set() was handled. FIX: new Expr::SetFromList { list } meta-HIR variant. Frontend (after the list(...) 1-arg block): set(<list-typed expr>) 1-arg -> SetFromList (non-list -> error pointing to set()/set(<list>)). Codegen rust/ruchy: (list).iter().cloned().collect::<std::collections::HashSet<_>>() (element type inferred). Both inferers: SetFromList -> Set(elem) over the list's element type. tuple(xs) is NOT added (variable-arity tuples don't map to a fixed Rust tuple). Lean refuses. Blast radius: new Expr variant -> expr_has_int_arith + 2 inferers + collect_idents(lean) + 3 emit sites. rustc round-trip set_from_list.py (cross-checked vs python3): uniq([1,2,2,3,3,3]).len()=3, has([1,2,3],2)=true, has([1,2,3],9)=false. FREE CI. SHIPPED v0.1.135. (200 e2e tests milestone.)"
+- id: PMAT-502CX
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cx: [Tranche2] sum(xs, start) 2-arg form'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "sum(xs, start) (2-arg) was SILENTLY MISCOMPILED: only sum(xs) 1-arg was handled; the 2-arg form fell through to a generic call emitting an undefined Rust sum(xs, start) fn. FIX: Expr::Sum gains an optional start: Option<Box<Expr>> field. Frontend: the sum-builtin block now accepts 1..=2 args; when start is present it must match the list element type (int start for an int list, float start for a float list) else a clear FrontendError::Lower (no silent miscompile). Codegen rust/ruchy: start present -> (start) + <list>.iter().sum::<T>() (Python sum(xs,start)==start+sum(xs); no cast since start matches elem type). Both inferers unchanged (use ..). expr_has_int_arith also scans start; lean collect_idents recurses start; lean refuses Sum wholesale. Blast radius: field add on existing Expr variant -> expr_has_int_arith + 2 rust/ruchy emit sites + lean collect_idents (inferers + lean refusal use .. so unaffected). rustc round-trip sum_start.py (cross-checked vs python3): sum([1,2,3,4],10)=20, sum([],7)=7, sum([1.5,2.5,3.0],1.5)=8.5. FREE CI. SHIPPED v0.1.136."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -3529,6 +3529,29 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502cx (Tranche 2): `sum(xs, start)` prepends `start` to the sum.
+#[test]
+fn sum_start() {
+    let rust = xpile_transpile_to_rust("sum_start.py");
+    assert!(
+        rust.contains("(base) + xs.iter().sum::<i64>()"),
+        "sum(xs, base):\n{rust}"
+    );
+    assert!(
+        rust.contains("(1.5f64) + xs.iter().sum::<f64>()"),
+        "sum(xs, 1.5):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // sum(xs, start) == start + sum(xs); cross-checked vs python3.
+    assert_eq!(tot(vec![1, 2, 3, 4], 10), 20);
+    assert_eq!(tot(vec![], 7), 7);
+    assert_eq!(fsum(vec![1.5, 2.5, 3.0]), 8.5);
+}
+"#;
+    assert_rustc_runs("sum_start", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

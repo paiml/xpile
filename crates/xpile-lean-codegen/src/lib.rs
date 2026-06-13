@@ -535,7 +535,13 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             }
         }
         // PMAT-498b: sum — recurse into the list expression.
-        Expr::Sum { list, .. } => collect_idents(list, out),
+        // PMAT-502cx: also recurse into the optional `start`.
+        Expr::Sum { list, start, .. } => {
+            collect_idents(list, out);
+            if let Some(start) = start {
+                collect_idents(start, out);
+            }
+        }
         // PMAT-502j: all/any — recurse into the bool list expression.
         Expr::BoolReduce { list, .. } => collect_idents(list, out),
         // PMAT-502k: seq * n — recurse into both sequence and count.

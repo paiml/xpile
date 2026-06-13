@@ -1018,7 +1018,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             }
         }
         // PMAT-498b: `sum(xs)` → `<list>.iter().sum::<T>()`.
-        Expr::Sum { list, of_float } => {
+        Expr::Sum {
+            list,
+            of_float,
+            start,
+        } => {
+            // PMAT-502cx: `sum(xs, start)` → `(start) + xs.iter().sum::<T>()`.
+            if let Some(start) = start {
+                out.push('(');
+                emit_expr(out, start, mode)?;
+                out.push_str(") + ");
+            }
             emit_expr(out, list, mode)?;
             out.push_str(if *of_float {
                 ".iter().sum::<f64>()"
