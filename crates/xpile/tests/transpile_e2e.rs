@@ -3550,6 +3550,31 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502ej (Tranche 2): directly indexing a block-producing collection —
+/// `sorted(xs)[0]`, `reversed(xs)[0]` — was a silent rustc-failure: those
+/// lower to a Rust block `{ … }`, and `{block}[i]` mis-parses as a block
+/// statement followed by an array literal. The `Expr::Index` codegen now
+/// parenthesizes a collection that opens with `{` → `({block})[i]`. Plain
+/// `xs[i]` / nested `g[i][j]` are unchanged. Cross-checked vs python3.
+#[test]
+fn block_index() {
+    let rust = xpile_transpile_to_rust("block_index.py");
+    assert!(
+        rust.contains("})["),
+        "a block-producing collection should be parenthesized before indexing:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sorted_first(vec![3, 1, 2]), 1);
+    assert_eq!(sorted_last(vec![3, 1, 2]), 3);
+    assert_eq!(sorted_key_first(vec![-5, 3, -1]), -1);
+    assert_eq!(sorted_reverse_first(vec![3, 1, 2]), 3);
+    assert_eq!(reversed_first(vec![3, 1, 2]), 2);
+}
+"#;
+    assert_rustc_runs("block_index", &rust, driver);
+}
+
 /// PMAT-502ei (Tranche 2): a bare callable name as the `key=` argument of
 /// `min`/`max`/`sorted` (`key=abs`, `key=len`, `key=user_fn`) — previously only
 /// `key=lambda p: e` was accepted. The bare name is synthesized into the

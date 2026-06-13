@@ -1598,7 +1598,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // semantics (Python's negative-index wrap is a v0.3.0+
         // sub-track).
         Expr::Index { collection, index } => {
-            emit_expr(out, collection, mode)?;
+            // PMAT-502ej: a block-producing collection (`sorted(...)`,
+            // `reversed(...)`, a block-expr — all emit `{ … }`) can't be
+            // indexed directly: `{block}[i]` mis-parses as a block statement
+            // followed by an array literal. Emit the collection to a temp and
+            // wrap it in parens when it opens with `{` (parens are always safe;
+            // a plain `xs` / `xs[i]` collection is left unparenthesized).
+            let mut coll = String::new();
+            emit_expr(&mut coll, collection, mode)?;
+            if coll.trim_start().starts_with('{') {
+                write!(out, "({coll})")?;
+            } else {
+                out.push_str(&coll);
+            }
             out.push('[');
             emit_expr(out, index, mode)?;
             out.push_str(" as usize].clone()");
