@@ -3550,6 +3550,30 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502em (Tranche 2): `math.pow(x, y)` and `math.trunc(x)`. `math.pow`
+/// always returns `float` (even for int args, unlike the builtin `pow`), so it
+/// reuses `FloatBinOp{Pow}` with both operands coerced to f64 → `(x).powf(y)`.
+/// `math.trunc` truncates toward zero and returns `int` → `(x).trunc() as i64`
+/// (a new `NumBuiltinOp` variant, like `floor`/`ceil`). Cross-checked vs python3.
+#[test]
+fn math_pow_trunc() {
+    let rust = xpile_transpile_to_rust("math_pow_trunc.py");
+    assert!(
+        rust.contains(".powf(") && rust.contains(".trunc() as i64"),
+        "math.pow → powf, math.trunc → trunc() as i64:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(power(2.0, 10.0), 1024.0);
+    assert_eq!(power_int_args(), 8.0);
+    assert_eq!(power_expr(3.0, 2.0), 10.0);
+    assert_eq!(trunc_pos(3.7), 3);
+    assert_eq!(trunc_neg(-3.7), -3); // toward zero, not floor (-4)
+}
+"#;
+    assert_rustc_runs("math_pow_trunc", &rust, driver);
+}
+
 /// PMAT-502el (Tranche 2): more `math` — the constants `math.pi`/`math.e`/
 /// `math.tau` (bare attribute reads → `Expr::LitFloat`) and the float functions
 /// `sin`/`cos`/`tan`/`exp`/`log`(ln)/`log10`/`log2` (→ `Expr::NumBuiltin`,

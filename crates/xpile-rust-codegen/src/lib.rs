@@ -1233,6 +1233,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 NumBuiltinOp::Sqrt => out.push_str(".sqrt()"),
                 NumBuiltinOp::Floor => out.push_str(".floor() as i64"),
                 NumBuiltinOp::Ceil => out.push_str(".ceil() as i64"),
+                // PMAT-502em: `math.trunc` — truncate toward zero, return int.
+                NumBuiltinOp::Trunc => out.push_str(".trunc() as i64"),
                 // PMAT-502el: trig / exp / log — 1-arg f64 → f64.
                 NumBuiltinOp::Sin => out.push_str(".sin()"),
                 NumBuiltinOp::Cos => out.push_str(".cos()"),
