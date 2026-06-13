@@ -3529,6 +3529,35 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dc (Tranche 2): builtins in a comparison operand lower context-aware
+/// (`abs(n) > 0` was silently miscompiled to an undefined `abs(...)`).
+#[test]
+fn compare_builtin() {
+    let rust = xpile_transpile_to_rust("compare_builtin.py");
+    assert!(
+        !rust.contains("{ abs(") && !rust.contains(" abs(") && !rust.contains("(abs("),
+        "abs must lower to a method, not a bare call:\n{rust}"
+    );
+    assert!(
+        rust.contains("(n).abs() > 0") && rust.contains("(a).max(b) <= c"),
+        "comparison builtins:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // builtins in comparison operands; cross-checked vs python3.
+    assert_eq!(is_positive_mag(-3), true);
+    assert_eq!(is_positive_mag(0), false);
+    assert_eq!(max_le(2, 9, 9), true);
+    assert_eq!(max_le(2, 9, 5), false);
+    assert_eq!(long_enough("abcd".to_string()), true);
+    assert_eq!(long_enough("ab".to_string()), false);
+    assert_eq!(in_range(5), true);
+    assert_eq!(in_range(0), false);
+}
+"#;
+    assert_rustc_runs("compare_builtin", &rust, driver);
+}
+
 /// PMAT-502db (Tranche 2): builtins in a ternary branch lower context-aware
 /// (`abs(n) if … else …` was silently miscompiled to an undefined `abs(...)`).
 #[test]

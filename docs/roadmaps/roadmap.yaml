@@ -1309,6 +1309,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "A builtin inside a ternary branch (abs(n) if cond else x, max(a,b) if .., pow(n,2) if ..) was SILENTLY MISCOMPILED to an undefined Rust fn (abs(...)/max(...)/pow(...)). ROOT CAUSE: lower_expr_in_ctx_inner had no ast::Expr::IfExp arm, so ternaries fell through the `other => lower_expr(other)` catch-all to the CONTEXT-FREE lower_if_exp, which lowers each branch with lower_expr (no type ctx) -> builtins unrecognized -> emitted as bare calls. This is the SAME ctx-free-vs-ctx-aware bug class as float-neg(v102)/not-bool(v115)/and-or(v117)/tuple-list-elem(v128). FIX (FRONTEND-ONLY, reuses Expr::IfExpr, no meta-HIR/codegen change): new lower_if_exp_in_ctx(ctx, ie) lowers cond+then+else via lower_expr_in_ctx and type-checks via infer_type_in_ctx; new ast::Expr::IfExp(ie) arm in lower_expr_in_ctx_inner before the catch-all. Direct/assignment/if-stmt positions already lowered builtins correctly (assignment-ternary now also fixed since RHS routes through the ctx path); ONLY the return-position (and other ctx-free-position) ternary was broken. rustc round-trip ternary_builtin.py (cross-checked vs python3): absval(-5)=5, absval(3)=3, cap(2,9)=9, cap(-1,4)=4, sq_or_zero(3)=9, sq_or_zero(-1)=0. FREE CI. SHIPPED v0.1.140. **LESSON: any context-free-only lowering helper (lower_if_exp, lower_call, lower_bool_op, lower_unary_op) reached via the ctx catch-all is a latent silent-miscompile site for builtins/typed vars — audit each for a ctx-aware twin.**"
+- id: PMAT-502DC
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502dc: [Tranche2] context-aware comparison operands (silent-miscompile fix)'
+  status: planned
+  priority: high
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "A builtin in a comparison operand (abs(n) > 0, len(s) > 3, max(a,b) <= c) was SILENTLY MISCOMPILED to an undefined Rust fn. ROOT CAUSE: the ctx-aware ast::Expr::Compare arm in lower_expr_in_ctx_inner handled ONLY membership (in/not-in) ctx-aware, then delegated regular comparisons to the CONTEXT-FREE lower_compare (which lowers operands via lower_expr -> builtins unrecognized). SECOND instance of the ctx-free-position class after v0.1.140 ternary. FIX (FRONTEND-ONLY, no meta-HIR/codegen change): new lower_compare_in_ctx(ctx, c) mirrors lower_compare but lowers every operand via lower_expr_in_ctx; the Compare arm's fallthrough now calls it. Chained compares (0 < abs(x) < 10) fold correctly (both clones ctx-lowered). rustc round-trip compare_builtin.py (cross-checked vs python3): is_positive_mag(-3)=true/(0)=false, max_le(2,9,9)=true/(2,9,5)=false, long_enough('abcd')=true/('ab')=false, in_range(5)=true/(0)=false. FREE CI. SHIPPED v0.1.141. **REMAINING ctx-free-position silent-miscompile siblings (probed, OPEN): builtin in LIST LITERAL [abs(a),abs(b)] (no ctx-aware List arm); builtin in SUBSCRIPT INDEX xs[abs(i)]; builtin under UNARY MINUS -abs(n) (USub arm falls to context-free lower_unary_op for the int case). Each is its own next slice (PMAT-502dd/de/df).**"
 - id: PMAT-465
   github_issue: 496
   item_type: task
