@@ -5935,6 +5935,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // to `Expr::Map` (the List-producing `map(lambda x: elt, iter)` form),
         // so `sum(...)` / `max(...)` / `min(...)` / `list(...)` accept it.
         ast::Expr::GeneratorExp(ge) => lower_generator_exp_in_ctx(ctx, ge),
+        // PMAT-502du: an expression-position list comprehension (`sum([x for x
+        // in xs])`, `return [x*2 for x in xs]`) lowers through the same
+        // `Map`/`Filter` machinery (the statement form `name = [comp]` still
+        // uses the dedicated for-append desugar, intercepted earlier).
+        ast::Expr::ListComp(comp) => lower_list_comp_in_ctx(ctx, comp),
         // No dict-specific shape: the context-free path is sufficient.
         other => lower_expr(other),
     }
@@ -7509,22 +7514,47 @@ fn lower_generator_exp_in_ctx(
     ctx: &LoweringCtx,
     ge: ast::ExprGeneratorExp,
 ) -> Result<Expr, FrontendError> {
-    if ge.generators.len() != 1 {
-        return Err(FrontendError::Lower(
-            "generator expression with multiple `for` clauses is not supported at v0.2.0".into(),
-        ));
+    lower_comp_to_map(ctx, &ge.elt, &ge.generators, "generator expression")
+}
+
+/// PMAT-502du: an expression-position list comprehension (`sum([x for x in
+/// xs])`, `return [x*2 for x in xs]`) lowers through the same `Map`/`Filter`
+/// machinery as a generator expression (it produces the same List). The
+/// statement form `name = [comp]` still uses the dedicated for-append desugar.
+/// Shares the loop-var-unbound limitation with `map`/genexpr (str-method
+/// element bodies need the statement form).
+fn lower_list_comp_in_ctx(
+    ctx: &LoweringCtx,
+    comp: ast::ExprListComp,
+) -> Result<Expr, FrontendError> {
+    lower_comp_to_map(ctx, &comp.elt, &comp.generators, "list comprehension")
+}
+
+/// Shared core for generator-expression / expr-position list-comprehension
+/// lowering (PMAT-502df/dg/du): `<elt> for <var> in <iter> [if <cond>]` →
+/// `Expr::Map` (over an optional `Expr::Filter`). Single generator, ≤1 `if`,
+/// plain-Name target; the body + filter are lowered with the loop var unbound.
+fn lower_comp_to_map(
+    ctx: &LoweringCtx,
+    elt: &ast::Expr,
+    generators: &[ast::Comprehension],
+    kind: &str,
+) -> Result<Expr, FrontendError> {
+    if generators.len() != 1 {
+        return Err(FrontendError::Lower(format!(
+            "{kind} with multiple `for` clauses is not supported at v0.2.0"
+        )));
     }
-    let gen = &ge.generators[0];
+    let gen = &generators[0];
     if gen.ifs.len() > 1 {
-        return Err(FrontendError::Lower(
-            "generator expression with multiple `if` filters is not supported — combine with `and`"
-                .into(),
-        ));
+        return Err(FrontendError::Lower(format!(
+            "{kind} with multiple `if` filters is not supported — combine with `and`"
+        )));
     }
     let ast::Expr::Name(var) = &gen.target else {
-        return Err(FrontendError::Lower(
-            "generator expression with a tuple target is not yet supported at v0.2.0".into(),
-        ));
+        return Err(FrontendError::Lower(format!(
+            "{kind} with a tuple target is not yet supported at v0.2.0"
+        )));
     };
     let param = var.id.to_string();
     // Materialise the iterable into a list: a bare `range(...)` (not a
@@ -7542,25 +7572,19 @@ fn lower_generator_exp_in_ctx(
         lower_expr_in_ctx(ctx, gen.iter.clone())?
     };
     if !matches!(infer_type_in_ctx(ctx, &iter_list), Type::List(_)) {
-        return Err(FrontendError::Lower(
-            "generator expression iterates over a non-list — only `range(...)` and list-typed \
-             iterables are supported at v0.2.0"
-                .into(),
-        ));
+        return Err(FrontendError::Lower(format!(
+            "{kind} iterates over a non-list — only `range(...)` and list-typed iterables are \
+             supported at v0.2.0"
+        )));
     }
-    // PMAT-502dg: an optional single `if <cond>` filter wraps the iterable in
-    // `Expr::Filter` (the `filter(lambda var: cond, iter)` form), which also
-    // types as a List — so the `Map` below composes over it. The condition is
-    // lowered with the loop var unbound (matching `filter`'s inference) and
-    // must be Bool.
+    // An optional single `if <cond>` wraps the iterable in `Expr::Filter`
+    // (also List-typed, so `Map` composes); cond lowered var-unbound, Bool.
     let list = if let Some(cond_ast) = gen.ifs.first() {
         let cond = lower_expr_in_ctx(ctx, cond_ast.clone())?;
         if infer_type_in_ctx(ctx, &cond) != Type::Bool {
-            return Err(FrontendError::Lower(
-                "generator expression `if` filter must be a Bool condition (no int-truthiness \
-                 at v0.2.0)"
-                    .into(),
-            ));
+            return Err(FrontendError::Lower(format!(
+                "{kind} `if` filter must be a Bool condition (no int-truthiness at v0.2.0)"
+            )));
         }
         Expr::Filter {
             list: Box::new(iter_list),
@@ -7573,7 +7597,7 @@ fn lower_generator_exp_in_ctx(
         iter_list
     };
     // Body lowered with the loop var unbound (matches `map`'s inference).
-    let body = lower_expr_in_ctx(ctx, (*ge.elt).clone())?;
+    let body = lower_expr_in_ctx(ctx, elt.clone())?;
     Ok(Expr::Map {
         list: Box::new(list),
         lambda: SortKey {
