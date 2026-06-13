@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.206] — 2026-06-13
+
+Classes-epic slice PMAT-506f — **dataclass field defaults** `x: T = <literal>`.
+
+- `@dataclass` fields may now declare a literal default: `timeout: int = 30`.
+  `class_def_signature` accepts the `AnnAssign`-with-default form, lowering the
+  default context-free (must be a literal — int/float/str/bool, optionally
+  negated; `field(...)`/computed defaults are rejected). A new
+  `struct_field_defaults` registry (struct → `[(field, default)]`) is threaded
+  through the lowering ctx alongside `structs`/`struct_methods`.
+- At construction, fields still omitted after positional+keyword fill are
+  filled from their defaults in declaration order: `Config()` →
+  `Config { timeout: 30, retries: 3, name: "default" }`, `Config(timeout=5)`
+  overrides one. A field with neither value nor default still errors.
+- New e2e fixture `dataclass_defaults.py` (all-defaults / partial override /
+  named override), rustc round-trip cross-checked vs python3. e2e 267 → 268.
+
 ## [0.1.205] — 2026-06-13
 
 Classes-epic slice PMAT-506e — **dataclass keyword construction** `Name(x=1, y=2)`.
