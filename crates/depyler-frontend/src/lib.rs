@@ -3380,7 +3380,8 @@ fn desugar_list_comp_2gen(
     let outer_iter = lower_expr_in_ctx(ctx, outer.iter.clone())?;
     let outer_elem_ty = list_elem(infer_type_in_ctx(ctx, &outer_iter))?;
     ctx.bound.insert(outer_var.clone());
-    ctx.name_types.insert(outer_var.clone(), outer_elem_ty.clone());
+    ctx.name_types
+        .insert(outer_var.clone(), outer_elem_ty.clone());
     let outer_filter = comp_filter(ctx, outer, "list")?;
 
     // Inner generator (lowered with the outer var in scope, so its iterable may
@@ -3388,7 +3389,8 @@ fn desugar_list_comp_2gen(
     let inner_iter = lower_expr_in_ctx(ctx, inner.iter.clone())?;
     let inner_elem_ty = list_elem(infer_type_in_ctx(ctx, &inner_iter))?;
     ctx.bound.insert(inner_var.clone());
-    ctx.name_types.insert(inner_var.clone(), inner_elem_ty.clone());
+    ctx.name_types
+        .insert(inner_var.clone(), inner_elem_ty.clone());
     let inner_filter = comp_filter(ctx, inner, "list")?;
 
     let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
