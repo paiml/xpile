@@ -5714,7 +5714,7 @@ fn infer_type(e: &Expr) -> Type {
             StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
             StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
             StrMethodOp::Split | StrMethodOp::SplitWhitespace => Type::List(Box::new(Type::Str)),
-            StrMethodOp::Join | StrMethodOp::Replace => Type::Str,
+            StrMethodOp::Join | StrMethodOp::Replace | StrMethodOp::ReplaceN => Type::Str,
             // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
             StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
             StrMethodOp::Find | StrMethodOp::Count | StrMethodOp::StrIndex => Type::I64,
@@ -6077,7 +6077,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
             StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
             StrMethodOp::Split | StrMethodOp::SplitWhitespace => Type::List(Box::new(Type::Str)),
-            StrMethodOp::Join | StrMethodOp::Replace => Type::Str,
+            StrMethodOp::Join | StrMethodOp::Replace | StrMethodOp::ReplaceN => Type::Str,
             // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
             StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
             StrMethodOp::Find | StrMethodOp::Count | StrMethodOp::StrIndex => Type::I64,
@@ -6814,6 +6814,32 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 return Ok(acc.expect("tuple is non-empty (checked above)"));
                             }
                         }
+                    }
+                }
+                // PMAT-517: `s.replace(old, new, count)` (3-arg) → Rust
+                // `s.replacen(...)` (replace the first `count` occurrences). The
+                // 2-arg form falls through to `Replace` in the generic path.
+                if attr.attr.as_str() == "replace"
+                    && call.args.len() == 3
+                    && call.keywords.is_empty()
+                {
+                    let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &recv), Type::Str) {
+                        let mut args = Vec::with_capacity(3);
+                        for a in &call.args {
+                            args.push(lower_expr_in_ctx(ctx, a.clone())?);
+                        }
+                        if !matches!(infer_type_in_ctx(ctx, &args[2]), Type::I64) {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` calls str `.replace(old, new, count)` with a non-int count",
+                                ctx.fn_name
+                            )));
+                        }
+                        return Ok(Expr::StrMethod {
+                            recv: Box::new(recv),
+                            op: StrMethodOp::ReplaceN,
+                            args,
+                        });
                     }
                 }
                 // PMAT-492/493b: string methods — `s.upper()/.lower()/
@@ -9625,6 +9651,9 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         | StrMethodOp::Split
         | StrMethodOp::Join => 1,
         StrMethodOp::Replace => 2,
+        // PMAT-517: `replace(old, new, count)` — routed via a dedicated branch,
+        // but kept here for arity-table completeness.
+        StrMethodOp::ReplaceN => 3,
         // PMAT-502l: lstrip/rstrip take no args; find/count take one.
         StrMethodOp::LStrip | StrMethodOp::RStrip => 0,
         StrMethodOp::Find | StrMethodOp::Count | StrMethodOp::StrIndex => 1,

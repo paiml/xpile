@@ -2019,6 +2019,10 @@ pub enum StrMethodOp {
     /// `.replace(old, new)` → `.replace(&(old)[..], &(new)[..])`
     /// (Str, 2 args). PMAT-502b.
     Replace,
+    /// `.replace(old, new, count)` → `.replacen(&(old)[..], &(new)[..],
+    /// (count) as usize)` — replace the first `count` occurrences (Str, 3 args).
+    /// PMAT-517.
+    ReplaceN,
     /// `.lstrip()` → `.trim_start().to_string()` (Str, 0 args). PMAT-502l.
     LStrip,
     /// `.rstrip()` → `.trim_end().to_string()` (Str, 0 args). PMAT-502l.
