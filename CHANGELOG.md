@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.202] — 2026-06-13
+
+Classes-epic slice PMAT-506b — **dataclass construction + field access** (makes
+dataclasses usable; the v0.1.201 cut emitted the struct definition only).
+
+- New `Type::Struct(String)` (named struct value type) → rust/ruchy emit the
+  bare name; Lean refuses. Threaded through every `match Type`.
+- `Expr::StructLit { name, fields }` — positional `Name(a, b)` maps args to
+  fields in declaration order → `Name { f0: a, f1: b }`.
+- `Expr::FieldAccess { obj, field }` — `obj.field` → `(obj).field`.
+- A module-level struct registry (`ctx.structs`, pre-pass over `ClassDef`s,
+  threaded like `signatures`/`consts`) drives construction field-mapping +
+  arity-check and field-access typing. `parse_type_annotation` maps an unknown
+  capitalized name → `Type::Struct` (struct-typed params/returns/locals work).
+- Construction rejects keyword args + arity mismatch; field access on a
+  non-struct / unknown field errors clearly. Methods, field defaults, and field
+  assignment (`obj.f = v`) remain follow-ups.
+- New e2e fixture `dataclass_use.py`, rustc round-trip cross-checked vs python3.
+  e2e 263 → 264.
+
 ## [0.1.201] — 2026-06-13
 
 Classes-epic first cut PMAT-505a — **`@dataclass` → Rust struct definition**.
