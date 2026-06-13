@@ -1237,6 +1237,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "def f(x, y=10) dropped the default (Rust has no default args), so a caller f(5) failed to compile. FIX: FnSig gains defaults: Vec<Option<ast::Expr>> aligned with params, captured in the sig pre-pass from ruff's per-arg ArgWithDefault.default. reorder_kwargs_to_positional generalised: no longer early-returns on empty keywords when the callee is a known top-level fn called with fewer positional args than params; it fills each unfilled trailing param with its matching keyword, else its default, else a precise missing-arg error. Keyword validation rejects names not in the unfilled tail. Works for keyword calls (add(1, c=5) -> add(1,10,5)) AND short positional calls (add(1) -> add(1,10,100)). The emitted Rust fn keeps every param (default dropped from the signature); defaults are materialised at each call site (literal defaults evaluate identically; non-literal defaults lower in the caller ctx). Only the ctx-aware Call path fills defaults (context-free call path is a follow-up). rustc round-trip default_params.py (cross-checked vs python3): use_default('Sam')='Hello, Sam', with_hi('Sam')='Hi, Sam', call_add()=111, call_kw()=16. FREE CI. SHIPPED v0.1.132."
+- id: PMAT-502CU
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cu: [Tranche2] str.center(width)'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "str.center(width) was deferred (tie-break wrinkle). KEY: Rust's {:^w} right-biases the extra pad ('ab'.center(5) -> ' ab  '), but CPython left-biases for that parity ('  ab '). The exact CPython rule is left = marg//2 + (marg & width & 1). FIX: new StrMethodOp::Center (1-arg -> str); str_method_op maps 'center'; arity 1; both inferers Str. BLOCK-FORM codegen (rust+ruchy, special-cased before recv-once emit like zfill): { let __s = (recv); let __w = (width) as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __marg = __w - __n; let __left = __marg / 2 + (__marg & __w & 1); format!(\"{}{}{}\", \" \".repeat(__left), __s, \" \".repeat(__marg - __left)) } }. Already-wide unchanged; width counts chars. Completes the justify family (rjust/ljust/center). Lean refuses. rustc round-trip center.py (cross-checked vs python3): c('x')='  x  ', c('ab')='  ab ' (CPython bias!), c('abcde')='abcde', c('abcdef')='abcdef'. FREE CI. SHIPPED v0.1.133."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.133] — 2026-06-13
+
+Tranche-2 slice PMAT-502cu — **`str.center(width)`**.
+
+A new `StrMethodOp::Center` (1-arg, → `str`, block-form) space-pads a string
+centred in a field of `width` characters, **matching CPython's
+parity-dependent bias**: `left = marg / 2 + (marg & width & 1)` — so
+`"ab".center(5)` is `"  ab "` (extra pad on the left for that parity), not
+Rust `{:^}`'s right-biased `" ab  "`. A string already at least `width` long
+is returned unchanged. Lean refuses. With this the justify family is complete
+(`rjust`/`ljust`/`center`). rustc round-trip `center.py` (cross-checked vs
+`python3`): `c("x") -> "  x  "`, `c("ab") -> "  ab "`, `c("abcde") -> "abcde"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.132] — 2026-06-13
 
 Tranche-2 slice PMAT-502ct — **default parameter values** (`def f(x, y=10)`).

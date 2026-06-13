@@ -1796,6 +1796,12 @@ pub enum StrMethodOp {
     /// (**Str**, 1 int arg). PMAT-502cs. A string already ≥ `width` is
     /// returned unchanged. Block-form codegen (receiver used several times).
     ZFill,
+    /// `.center(width)` → centre in a field of `width` chars, space-padded
+    /// (**Str**, 1 int arg). PMAT-502cu. Matches CPython's parity-dependent
+    /// bias `left = marg/2 + (marg & width & 1)` (so `"ab".center(5)` →
+    /// `"  ab "`, not Rust `{:^}`'s right-bias). Already-wide → unchanged.
+    /// Block-form codegen.
+    Center,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
