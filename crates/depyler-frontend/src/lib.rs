@@ -1146,6 +1146,9 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
             Some(result) => result.map(|s| vec![s]),
             None => lower_expr_stmt_as_cmd(ctx, e).map(|s| vec![s]),
         },
+        // PMAT-502dr: a nested `def inner(...): return <expr>` → a closure
+        // binding (`Stmt::ClosureLet`), reusing the lambda machinery.
+        ast::Stmt::FunctionDef(f) => desugar_nested_fn(ctx, &f).map(|s| vec![s]),
         other => Err(FrontendError::Lower(format!(
             "function `{}` contains unsupported statement: {:?} — supported: assignment, if/elif/else, while, for-in-range, assert, subprocess.run([...]), then a final `return`",
             ctx.fn_name,
@@ -3618,6 +3621,96 @@ fn desugar_set_comp(
 /// recorded in `ctx.closure_returns` so a later `name(arg)` types
 /// correctly. The closure is then callable via the existing `Expr::Call`
 /// machinery.
+/// PMAT-502dr: lower a nested `def inner(p: T, …) -> R: return <expr>` to a
+/// [`Stmt::ClosureLet`] (a Rust closure `let inner = |p: T, …| { <expr> };`),
+/// reusing the closure machinery. Unlike the lambda path, the parameters carry
+/// their *annotated* types (default `int`), and the return type comes from the
+/// `-> R` annotation (else inferred). First cut: the body must be a single
+/// `return <expr>` (multi-statement bodies need a block-expression and are
+/// deferred); `*args`/`**kwargs`/keyword-only/pos-only params and decorators
+/// are rejected. The closure captures enclosing locals (Rust closures capture
+/// by default). Lean refuses `ClosureLet`.
+fn desugar_nested_fn(
+    ctx: &mut LoweringCtx,
+    f: &ast::StmtFunctionDef,
+) -> Result<Stmt, FrontendError> {
+    if !f.decorator_list.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` has a nested function `{}` with decorators — not supported",
+            ctx.fn_name, f.name
+        )));
+    }
+    if !f.args.posonlyargs.is_empty()
+        || !f.args.kwonlyargs.is_empty()
+        || f.args.vararg.is_some()
+        || f.args.kwarg.is_some()
+    {
+        return Err(FrontendError::Lower(format!(
+            "nested function `{}` uses pos-only / keyword-only / *args / **kwargs — only plain positional parameters are supported",
+            f.name
+        )));
+    }
+    // First cut: the body must be exactly one `return <expr>` (a closure body
+    // is a single expression — multi-statement nested functions are deferred).
+    let body_ast = match f.body.as_slice() {
+        [ast::Stmt::Return(ret)] => match ret.value.as_ref() {
+            Some(v) => (**v).clone(),
+            None => {
+                return Err(FrontendError::Lower(format!(
+                    "nested function `{}` has a bare `return` — only `return <expr>` is supported",
+                    f.name
+                )));
+            }
+        },
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "nested function `{}` has a multi-statement body — only a single `return <expr>` is supported at v0.2.0",
+                f.name
+            )));
+        }
+    };
+    let fname = ctx.fn_name.clone();
+    let mut params: Vec<(String, Type)> = Vec::with_capacity(f.args.args.len());
+    for arg in &f.args.args {
+        let pname = arg.def.arg.to_string();
+        let ty = match arg.def.annotation.as_ref() {
+            None => Type::I64,
+            Some(ann) => parse_type_annotation(&fname, &pname, ann)?,
+        };
+        params.push((pname, ty));
+    }
+    // Bind the params (with their real types) for the body's inference, then
+    // restore so the closure-local names don't leak into the enclosing scope.
+    let saved: Vec<(bool, Option<Type>)> = params
+        .iter()
+        .map(|(p, _)| (ctx.bound.contains(p), ctx.name_types.get(p).cloned()))
+        .collect();
+    for (p, t) in &params {
+        ctx.bound.insert(p.clone());
+        ctx.name_types.insert(p.clone(), t.clone());
+    }
+    let body = lower_expr_in_ctx(ctx, body_ast)?;
+    // Return type: the `-> R` annotation, else inferred from the body.
+    let ret_ty = match f.returns.as_ref() {
+        Some(ann) => parse_type_annotation(&fname, "<return>", ann)?,
+        None => infer_type_in_ctx(ctx, &body),
+    };
+    for ((p, _), (prev_bound, prev_ty)) in params.iter().zip(saved.into_iter()) {
+        if prev_bound {
+            if let Some(t) = prev_ty {
+                ctx.name_types.insert(p.clone(), t);
+            }
+        } else {
+            ctx.bound.remove(p);
+            ctx.name_types.remove(p);
+        }
+    }
+    let name = f.name.to_string();
+    ctx.closure_returns.insert(name.clone(), ret_ty);
+    ctx.bound.insert(name.clone());
+    Ok(Stmt::ClosureLet { name, params, body })
+}
+
 fn desugar_closure_assign(
     ctx: &mut LoweringCtx,
     name: &str,

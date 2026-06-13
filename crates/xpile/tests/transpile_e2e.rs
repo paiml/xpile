@@ -3529,6 +3529,26 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dr (Tranche 2): a nested `def inner(...): return <expr>` lowers to
+/// a closure (`Stmt::ClosureLet`), reusing the lambda machinery.
+#[test]
+fn nested_fn() {
+    let rust = xpile_transpile_to_rust("nested_fn.py");
+    assert!(
+        rust.contains("let inner = |y: i64|") && rust.contains("let up = |t: String|"),
+        "nested fn → closure:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // nested functions as closures; cross-checked vs python3.
+    assert_eq!(add_one(5), 6);
+    assert_eq!(double_twice(5), 20);
+    assert_eq!(shout("hi".to_string()), "HI");
+}
+"#;
+    assert_rustc_runs("nested_fn", &rust, driver);
+}
+
 /// PMAT-502dq (Tranche 2): varargs `*args` → a `list[elem]` param; call sites
 /// collect trailing positional args into a `vec![...]`.
 #[test]

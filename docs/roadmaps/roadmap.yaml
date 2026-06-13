@@ -1444,6 +1444,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "FIRST structural slice past the builtin/str surface. A *args param → a list[elem] parameter (annotation gives elem, default int). lower_function_def no longer rejects vararg (only **kwargs/kwonly rejected); it pushes Param{name, ty:List(elem)}. The sig pre-pass + FnSig gain a variadic:Option<(String,Type)> field (params holds only the FIXED params). Call-side (in the ctx-aware Call arm, after reorder_kwargs_to_positional): if callee is variadic + no kwargs, lower all args ctx-aware, split_off at fixed count, wrap the tail in Expr::ListLit, build Expr::Call{callee, args:[fixed..., ListLit(tail)]}. NO synthetic AST (collection at meta-HIR level). Body uses args as an ordinary list (sum/len/index/iterate). EMPTY case total()/with_prefix(prefix) → vec![] whose elem type rustc INFERS from the fn signature (verified compiles). Mixed fixed+vararg works. **kwargs/keyword-only still rejected. NO new Type variant, NO return-wrapping (lower risk than Optional). rustc round-trip varargs.py (cross-checked vs python3): total(1,2,3)=6, total()=0, total(5)=5, with_prefix(100,1,2)=103, with_prefix(100)=100. FREE CI. SHIPPED v0.1.155. DEFERRED: calling a variadic fn WITH keywords; *args splat at call site f(*xs). NEXT structural: nested fns (→ ClosureLet for single-expr bodies); x is None (Option — needs design); try/except->Result (PMAT-503b)."
+- id: PMAT-502DR
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502dr: [Tranche2] nested functions → ClosureLet'
+  status: planned
+  priority: high
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "A nested `def inner(p: T,…) -> R: return <expr>` (FunctionDef in a fn body) → Stmt::ClosureLet (let inner = |p: T,…| { <expr> };), reusing the closure machinery. New desugar_nested_fn (mirrors desugar_closure_assign but uses ANNOTATED param types not all-i64, and the body comes from the single return stmt). ClosureLet codegen already emits per-param emit_type so non-i64 params (str→String, list→Vec) work. lower_block_stmt gains an ast::Stmt::FunctionDef arm → desugar_nested_fn. Params bound with real types during body inference then restored (no leak); closure_returns[name]=ret_ty (from -> R annotation else inferred) so inner(arg) types correctly; ctx.bound gets name. Captures enclosing locals (Rust closures capture by default). FIRST CUT: body must be a SINGLE `return <expr>` (multi-stmt needs a block-expr → deferred); *args/**kwargs/kwonly/posonly/decorators rejected. Lean refuses ClosureLet. Fits the 'no new Type + no return-wrapping' safe-structural filter. rustc round-trip nested_fn.py (cross-checked vs python3): add_one(5)=6, double_twice(5)=20, shout('hi')='HI'. FREE CI. SHIPPED v0.1.156. DEFERRED: multi-statement nested-fn bodies (need block-expr Expr); recursive nested fns; nested fn passed as an argument. NEXT structural: x is None (Option — needs design, new Type variant); try/except->Result (PMAT-503b); classes/dataclasses; &str borrowing."
 - id: PMAT-465
   github_issue: 496
   item_type: task
