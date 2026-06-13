@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.194] — 2026-06-13
+
+Tranche-2 slice PMAT-502fd — **two-generator dict & set comprehensions**
+`{k: v for x in a for y in b}` / `{e for x in a for y in b}` (both previously a
+"single `for` clause" error).
+
+- Desugar to nested `for` loops inserting/adding to the accumulator, mirroring
+  the list 2-gen slice (PMAT-502fc) via a shared `desugar_comp_2gen` helper. The
+  list/dict/set paths are now thin wrappers over it (`ListAppend` / `DictSet` /
+  `SetAdd`). Single-generator paths untouched (zero regression).
+- Same constraints: plain-Name targets over `list[T]` iterables, per-generator
+  single `if`, inner iterable lowered with the outer var in scope.
+- New e2e fixture `comp_2gen_dict_set.py`, rustc round-trip cross-checked vs
+  python3. e2e 258 → 259.
+
 ## [0.1.193] — 2026-06-13
 
 Tranche-2 slice PMAT-502fc — **two-generator list comprehension**
