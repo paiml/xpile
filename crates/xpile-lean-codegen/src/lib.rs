@@ -470,6 +470,9 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             }
         }
         Expr::LitInt(_) | Expr::LitBool(_) | Expr::LitFloat(_) | Expr::Unit => {}
+        // PMAT-502dt: block-expr — recurse into the trailing value. (Lean
+        // refuses block-exprs at emit; this is only reached by ident scans.)
+        Expr::Block(b) => collect_idents(&b.trailing_return, out),
         // PMAT-477 (R8): float arithmetic — recurse into operands.
         Expr::FloatBinOp { lhs, rhs, .. } => {
             collect_idents(lhs, out);
@@ -1057,6 +1060,15 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::Unit => {
             return Err(LeanCodegenError::Unsupported(
                 "Python `None` / unit value is not supported in the Lean lane".into(),
+            ))
+        }
+        // PMAT-502dt: block-exprs (multi-statement closure bodies) are deferred
+        // in the Lean lane.
+        Expr::Block(_) => {
+            return Err(LeanCodegenError::Unsupported(
+                "block expressions (multi-statement closure bodies) are not supported in the \
+                 Lean lane — use `--target rust` or `--target ruchy`"
+                    .into(),
             ))
         }
         Expr::Ident(name) => write!(out, "{}", name)?,

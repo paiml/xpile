@@ -214,6 +214,10 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
 fn expr_has_int_arith(e: &Expr) -> bool {
     match e {
         Expr::Ident(_) | Expr::LitInt(_) | Expr::LitBool(_) | Expr::Unit => false,
+        // PMAT-502dt: a block-expr recurses into its statements + trailing.
+        Expr::Block(b) => {
+            b.stmts.iter().any(stmt_has_int_arith) || expr_has_int_arith(&b.trailing_return)
+        }
         // PMAT-477 (R8): float arithmetic is governed by float
         // semantics (IEEE-754 saturation), not C-PY-INT-ARITH's
         // integer-overflow analysis. Literal carries no operands;
@@ -424,7 +428,7 @@ fn binop_is_int_arith(op: BinOp) -> bool {
     )
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Block {
     /// Zero or more `let` bindings (and, in the future, control-flow
     /// statements) executed before the trailing return.
@@ -1006,6 +1010,12 @@ pub enum Expr {
     /// (Python `-> None`). PMAT-502bl (Tranche 2). Rust/Ruchy emit `()`;
     /// Lean refuses. Types as [`Type::Unit`].
     Unit,
+    /// A block expression — zero or more statements followed by a trailing
+    /// value. PMAT-502dt (Tranche 2). Rust/Ruchy emit `{ <stmts> <trailing> }`;
+    /// types as the trailing expression's type. The first producer is the
+    /// multi-statement nested-function body (`ClosureLet`'s body). A reusable
+    /// primitive for future expression-position comprehensions. Lean refuses.
+    Block(Box<Block>),
     /// Local identifier reference (function parameter or future `let`).
     Ident(String),
     /// Integer literal, lowered as i64 at the boundary.
