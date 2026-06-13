@@ -322,6 +322,7 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         }
         // PMAT-502cw: set(xs) — recurse into the list expr.
         Expr::SetFromList { list } => expr_has_int_arith(list),
+        Expr::DictFromPairs { pairs } => expr_has_int_arith(pairs),
         // PMAT-502ab: filter — recurse into the list and predicate body.
         Expr::Filter { list, lambda } => {
             expr_has_int_arith(list) || expr_has_int_arith(&lambda.body)
@@ -1468,6 +1469,14 @@ pub enum Expr {
     /// .collect::<std::collections::HashSet<_>>()` (element type inferred).
     /// Result types as `set[T]` over the list's element type. Lean refuses.
     SetFromList { list: Box<Expr> },
+    /// `dict(pairs)` — materialise a list of 2-tuples into a `HashMap`.
+    /// PMAT-502dk (Tranche 2). Rust/Ruchy emit `(<pairs>).iter().cloned()
+    /// .collect::<std::collections::HashMap<_, _>>()`. Result types as
+    /// `dict[K, V]` over the pair list's `tuple[K, V]` element. Also covers
+    /// `dict(zip(a, b))` / `dict(enumerate(xs))` (those produce 2-tuple
+    /// lists). Lean refuses. (A later key collision keeps the last value,
+    /// matching Python's dict-from-pairs semantics.)
+    DictFromPairs { pairs: Box<Expr> },
     /// `filter(lambda p: pred, xs)` over a list — Python builtin. PMAT-502ab
     /// (Tranche 2). The supported subset materializes the lazy `filter`
     /// iterator as a `Vec`. The `lambda` is a [`SortKey`] (param + body) whose

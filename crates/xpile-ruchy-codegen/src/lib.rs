@@ -1313,6 +1313,11 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, list, mode)?;
             out.push_str(".iter().cloned().collect::<std::collections::HashSet<_>>()");
         }
+        // PMAT-502dk: `dict(pairs)` → a HashMap from the list of 2-tuples.
+        Expr::DictFromPairs { pairs } => {
+            emit_expr(out, pairs, mode)?;
+            out.push_str(".iter().cloned().collect::<std::collections::HashMap<_, _>>()");
+        }
         // PMAT-502ab: `filter(pred, xs)` → `.iter().cloned().filter(...).collect()`.
         Expr::Filter { list, lambda } => {
             emit_expr(out, list, mode)?;

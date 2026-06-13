@@ -1446,6 +1446,11 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, list, mode)?;
             out.push_str(".iter().cloned().collect::<std::collections::HashSet<_>>()");
         }
+        // PMAT-502dk: `dict(pairs)` → a HashMap from the list of 2-tuples.
+        Expr::DictFromPairs { pairs } => {
+            emit_expr(out, pairs, mode)?;
+            out.push_str(".iter().cloned().collect::<std::collections::HashMap<_, _>>()");
+        }
         // PMAT-502ab: `filter(pred, xs)` → `.iter().cloned().filter(|__k| {
         // let p = __k.clone(); pred }).collect::<Vec<_>>()`.
         Expr::Filter { list, lambda } => {

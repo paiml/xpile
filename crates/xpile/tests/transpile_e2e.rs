@@ -3529,6 +3529,27 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dk (Tranche 2): `dict(pairs)` materialises a list of 2-tuples into
+/// a HashMap — also covers `dict(zip(..))` / `dict(enumerate(..))`.
+#[test]
+fn dict_from_pairs() {
+    let rust = xpile_transpile_to_rust("dict_from_pairs.py");
+    assert!(
+        rust.contains(".iter().cloned().collect::<std::collections::HashMap<_, _>>()"),
+        "dict(pairs):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // dict from pairs / zip / enumerate; cross-checked vs python3.
+    assert_eq!(from_pairs(3), 4);
+    assert_eq!(from_pairs(1), 2);
+    assert_eq!(from_zip(vec![1, 2], vec![10, 20], 2), 20);
+    assert_eq!(from_enum(vec![100, 200], 1), 200);
+}
+"#;
+    assert_rustc_runs("dict_from_pairs", &rust, driver);
+}
+
 /// PMAT-502dj (Tranche 2): `str.partition(sep)` / `.rpartition(sep)` → the
 /// 3-tuple `(before, sep, after)` (first/last split; absent-case differs).
 #[test]

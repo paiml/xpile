@@ -4025,6 +4025,16 @@ fn infer_type(e: &Expr) -> Type {
             Type::List(elem) => Type::Set(elem),
             _ => Type::Set(Box::new(Type::I64)),
         },
+        // PMAT-502dk: dict(pairs) → Dict(K, V) over the list's tuple[K, V].
+        Expr::DictFromPairs { pairs } => match infer_type(pairs) {
+            Type::List(elem) => match *elem {
+                Type::Tuple(tys) if tys.len() == 2 => {
+                    Type::Dict(Box::new(tys[0].clone()), Box::new(tys[1].clone()))
+                }
+                _ => Type::Dict(Box::new(Type::I64), Box::new(Type::I64)),
+            },
+            _ => Type::Dict(Box::new(Type::I64), Box::new(Type::I64)),
+        },
         // PMAT-502ab: filter(pred, xs) keeps the input list type.
         Expr::Filter { list, .. } => infer_type(list),
         // PMAT-502ac: map(f, xs) → List of the body's transformed type.
@@ -4310,6 +4320,16 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::SetFromList { list } => match infer_type_in_ctx(ctx, list) {
             Type::List(elem) => Type::Set(elem),
             _ => Type::Set(Box::new(Type::I64)),
+        },
+        // PMAT-502dk: dict(pairs) → Dict(K, V) over the list's tuple[K, V].
+        Expr::DictFromPairs { pairs } => match infer_type_in_ctx(ctx, pairs) {
+            Type::List(elem) => match *elem {
+                Type::Tuple(tys) if tys.len() == 2 => {
+                    Type::Dict(Box::new(tys[0].clone()), Box::new(tys[1].clone()))
+                }
+                _ => Type::Dict(Box::new(Type::I64), Box::new(Type::I64)),
+            },
+            _ => Type::Dict(Box::new(Type::I64), Box::new(Type::I64)),
         },
         // PMAT-502ab: filter(pred, xs) keeps the input list type.
         Expr::Filter { list, .. } => infer_type_in_ctx(ctx, list),
@@ -5387,6 +5407,24 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                     return Err(FrontendError::Lower(format!(
                         "function `{}` calls `set(<expr>)` over a non-list — v0.2.0 supports `set()` (empty) or `set(<list>)`",
+                        ctx.fn_name
+                    )));
+                }
+                // PMAT-502dk: `dict(pairs)` materialises a list of 2-tuples
+                // into a HashMap. 1-arg over a `list[tuple[K, V]]` value (so
+                // `dict([(k, v), …])`, `dict(zip(a, b))`, `dict(enumerate(xs))`
+                // all work). The empty 0-arg `dict()` is handled below.
+                if fname.id.as_str() == "dict" && call.keywords.is_empty() && call.args.len() == 1 {
+                    let inner = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    if let Type::List(elem) = infer_type_in_ctx(ctx, &inner) {
+                        if matches!(*elem, Type::Tuple(ref tys) if tys.len() == 2) {
+                            return Ok(Expr::DictFromPairs {
+                                pairs: Box::new(inner),
+                            });
+                        }
+                    }
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` calls `dict(<expr>)` over a non-(list of 2-tuples) — v0.2.0 supports `dict()` (empty) or `dict(<list of (key, value) pairs>)`",
                         ctx.fn_name
                     )));
                 }

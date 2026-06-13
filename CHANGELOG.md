@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.149] — 2026-06-13
+
+Tranche-2 slice PMAT-502dk — **`dict(pairs)`** materialization.
+
+`dict(<list of 2-tuples>)` was rejected (only the empty 0-arg `dict()` was
+handled). A new `Expr::DictFromPairs` materializes a `list[tuple[K, V]]` into a
+`HashMap`: `(<pairs>).iter().cloned().collect::<std::collections::HashMap<_,
+_>>()`, typing as `dict[K, V]`. Because `zip(a, b)` and `enumerate(xs)` already
+produce 2-tuple lists, `dict(zip(a, b))` and `dict(enumerate(xs))` work for free
+through the same path. Lean refuses. rustc round-trip `dict_from_pairs.py`
+(cross-checked vs `python3`): `dict([(1,2),(3,4)])[3] == 4`,
+`dict(zip([1,2],[10,20]))[2] == 20`, `dict(enumerate([100,200]))[1] == 200`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.148] — 2026-06-13
 
 Tranche-2 slice PMAT-502dj — **`str.partition(sep)` / `.rpartition(sep)`**.
