@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.130] — 2026-06-13
+
+Tranche-2 slice PMAT-502cr — **`str.swapcase()`**.
+
+A new `StrMethodOp::SwapCase` (0-arg, → `str`) emits a recv-once suffix:
+`(s).chars().map(|c| if c.is_uppercase() { c.to_lowercase().collect::<String>()
+} else if c.is_lowercase() { c.to_uppercase().collect::<String>() } else {
+c.to_string() }).collect::<String>()` — upper↔lower per character, non-cased
+chars (digits/punctuation/whitespace) unchanged, matching Python. Lean refuses.
+rustc round-trip `swapcase.py` (cross-checked vs `python3`):
+`swap("Hello, World! 42") -> "hELLO, wORLD! 42"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.129] — 2026-06-13
 
 Tranche-2 slice PMAT-502cq — **`str.removeprefix(p)` / `removesuffix(p)`**

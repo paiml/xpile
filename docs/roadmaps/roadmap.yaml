@@ -1210,6 +1210,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "str.removeprefix(p)/removesuffix(p) (Python 3.9+, 1-arg -> str) were rejected ('method calls not supported'). FIX: new StrMethodOp::RemovePrefix/RemoveSuffix; str_method_op maps 'removeprefix'/'removesuffix'; str_method_arity = 1; both inferers type them Str. Block-form codegen (receiver used twice) special-cased before the recv-once str-method emit in rust+ruchy (like capitalize/title): { let __s = (recv); match __s.strip_prefix(&(p)[..]) { Some(__r) => __r.to_string(), None => __s } } (strip_suffix for removesuffix) — returns the receiver unchanged when the affix is absent, matching Python. recv-once match gets unreachable arms. Lean refuses StrMethod wholesale. rustc round-trip remove_affix.py (cross-checked vs python3): strip_pre('foo_bar')='bar', strip_pre('baz')='baz', strip_suf('note.txt')='note', strip_suf('note')='note'. FREE CI. SHIPPED v0.1.129."
+- id: PMAT-502CR
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cr: [Tranche2] str.swapcase()'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "str.swapcase() (0-arg -> str) was rejected. FIX: new StrMethodOp::SwapCase; str_method_op maps 'swapcase'; str_method_arity = 0; both inferers type it Str. RECV-ONCE suffix codegen (rust+ruchy, alongside Upper/Lower/Strip): .chars().map(|__c| if __c.is_uppercase() { __c.to_lowercase().collect::<String>() } else if __c.is_lowercase() { __c.to_uppercase().collect::<String>() } else { __c.to_string() }).collect::<String>() — upper<->lower each char, non-cased chars (digits/punct/space) unchanged (matches Python). Lean refuses StrMethod wholesale. rustc round-trip swapcase.py (cross-checked vs python3): swap('Hello, World! 42')='hELLO, wORLD! 42'. FREE CI. SHIPPED v0.1.130."
 - id: PMAT-465
   github_issue: 496
   item_type: task
