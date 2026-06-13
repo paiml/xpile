@@ -3529,6 +3529,35 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dn (Tranche 2): printf `%`-format width/precision/flags (`%.2f`,
+/// `%5d`, `%-5d`, `%05d`, `%5s`, `%+d`) → translated Rust format specs.
+#[test]
+fn percent_format_spec() {
+    let rust = xpile_transpile_to_rust("percent_format_spec.py");
+    assert!(
+        rust.contains("{:.2}")
+            && rust.contains("{:>5}")
+            && rust.contains("{:<5}")
+            && rust.contains("{:05}")
+            && rust.contains("{:+}"),
+        "percent specs:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // printf width/precision/flags; cross-checked vs python3.
+    assert_eq!(money(3.14159), "$3.14");
+    assert_eq!(rjust_num(42), "[   42]");
+    assert_eq!(ljust_num(42), "[42   ]");
+    assert_eq!(zero_pad(42), "00042");
+    assert_eq!(zero_pad(-42), "-0042"); // sign-aware zero-pad
+    assert_eq!(rjust_str("ab".to_string()), "[   ab]"); // Python right-aligns %Ns
+    assert_eq!(width_prec(3.14159), "    3.14");
+    assert_eq!(signed(5), "+5");
+}
+"#;
+    assert_rustc_runs("percent_format_spec", &rust, driver);
+}
+
 /// PMAT-502dm (Tranche 2): printf-style `"<tmpl>" % args` → `format!` (`%d`,
 /// `%s` over int/str, `%f`, `%%`; single value or tuple).
 #[test]

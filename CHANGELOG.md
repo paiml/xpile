@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.152] — 2026-06-13
+
+Tranche-2 slice PMAT-502dn — **`%`-format width / precision / flags**.
+
+Extends v0.1.151's printf-style `%` formatting with the
+`[flags][width][.precision]` mini-language, translated to Rust format specs:
+`%.2f` → `{:.2}`, `%5d` → `{:>5}`, `%-5d` → `{:<5}`, `%05d` → `{:05}` (sign-
+aware), `%8.2f` → `{:>8.2}`, `%+d` → `{:+}`. Flags `-`/`0`/`+` supported; Python
+right-aligns by default (including `%Ns`, where Rust would left-align strings),
+so an explicit `>` is emitted unless `-`/`0`. Still rejected (correctness):
+`%.Nd` and `%.Ns`-over-int (Rust ignores integer precision), the ` `/`#` flags,
+and `%x`/`%X`/`%o`. rustc round-trip `percent_format_spec.py` (cross-checked vs
+`python3`): `"$%.2f" % 3.14159` = `"$3.14"`, `"[%5d]" % 42` = `"[   42]"`,
+`"[%-5d]" % 42` = `"[42   ]"`, `"%05d" % -42` = `"-0042"`, `"[%5s]" % "ab"` =
+`"[   ab]"`, `"%8.2f" % 3.14159` = `"    3.14"`, `"%+d" % 5` = `"+5"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.151] — 2026-06-13
 
 Tranche-2 slice PMAT-502dm — **printf-style `"<tmpl>" % args`**.
