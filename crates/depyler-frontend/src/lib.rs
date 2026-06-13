@@ -1524,6 +1524,52 @@ fn lower_expr_stmt_as_cmd(ctx: &LoweringCtx, e: ast::StmtExpr) -> Result<Stmt, F
 /// zero steps would need `target > stop` and a different cond, which
 /// is deferred. Other iterables (lists, generators, dict.items, etc.)
 /// also error: v0.1.0 has no collection types yet.
+/// PMAT-502cj: lower `list(range(...))` to [`Expr::RangeList`]. Accepts the
+/// 1/2/3-arg `range` forms; the optional step must be a **positive** integer
+/// literal at first cut (negative-step materialisation is deferred). Bounds
+/// are lowered context-aware (so `range(d[k])` works).
+fn lower_range_list(ctx: &LoweringCtx, call: &ast::ExprCall) -> Result<Expr, FrontendError> {
+    let (start, stop, step) = match call.args.as_slice() {
+        [stop] => (Expr::LitInt(0), lower_expr_in_ctx(ctx, stop.clone())?, 1i64),
+        [start, stop] => (
+            lower_expr_in_ctx(ctx, start.clone())?,
+            lower_expr_in_ctx(ctx, stop.clone())?,
+            1i64,
+        ),
+        [start, stop, step] => {
+            let s = extract_step_literal(step).ok_or_else(|| {
+                FrontendError::Lower(format!(
+                    "function `{}` uses `list(range(..., step))` with a non-literal-int or zero step — v0.2.0 requires a positive integer literal",
+                    ctx.fn_name
+                ))
+            })?;
+            if s < 1 {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` uses `list(range(..., {s}))` with a non-positive step — negative-step materialisation is deferred at v0.2.0 (use `reversed(range(...))` in a loop)",
+                    ctx.fn_name
+                )));
+            }
+            (
+                lower_expr_in_ctx(ctx, start.clone())?,
+                lower_expr_in_ctx(ctx, stop.clone())?,
+                s,
+            )
+        }
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `range(...)` with {} args — Python supports 1-3",
+                ctx.fn_name,
+                call.args.len()
+            )));
+        }
+    };
+    Ok(Expr::RangeList {
+        start: Box::new(start),
+        stop: Box::new(stop),
+        step,
+    })
+}
+
 fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, FrontendError> {
     if !f.orelse.is_empty() {
         return Err(FrontendError::Lower(format!(
@@ -3873,6 +3919,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::Sorted { list, .. } => infer_type(list),
         // PMAT-502d: reversed(xs) has the same type as its list.
         Expr::Reversed { list } => infer_type(list),
+        // PMAT-502cj: list(range(...)) materialises a list[int].
+        Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
         // PMAT-502ab: filter(pred, xs) keeps the input list type.
         Expr::Filter { list, .. } => infer_type(list),
         // PMAT-502ac: map(f, xs) → List of the body's transformed type.
@@ -4126,6 +4174,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::Sorted { list, .. } => infer_type_in_ctx(ctx, list),
         // PMAT-502d: reversed(xs) has the same type as its list.
         Expr::Reversed { list } => infer_type_in_ctx(ctx, list),
+        // PMAT-502cj: list(range(...)) materialises a list[int].
+        Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
         // PMAT-502ab: filter(pred, xs) keeps the input list type.
         Expr::Filter { list, .. } => infer_type_in_ctx(ctx, list),
         // PMAT-502ac: map(f, xs) → List of the body's transformed type.
@@ -4973,6 +5023,16 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // a no-op once the inner `reversed(xs)` already materializes
                 // to a `Vec`. Unwrap a single already-list-typed argument.
                 if fname.id.as_str() == "list" && call.keywords.is_empty() && call.args.len() == 1 {
+                    // PMAT-502cj: `list(range(...))` materialises a range into a
+                    // Vec (`Expr::RangeList`). Detected on the AST before
+                    // lowering (a bare `range(...)` isn't a first-class value).
+                    if let ast::Expr::Call(inner) = &call.args[0] {
+                        if matches!(&*inner.func, ast::Expr::Name(n) if n.id.as_str() == "range")
+                            && inner.keywords.is_empty()
+                        {
+                            return lower_range_list(ctx, inner);
+                        }
+                    }
                     let inner = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                     if matches!(
                         inner,
@@ -4983,6 +5043,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             | Expr::Enumerate { .. }
                             | Expr::Zip { .. }
                     ) {
+                        return Ok(inner);
+                    }
+                    // PMAT-502cj: `list(xs)` over an existing list is a copy —
+                    // value semantics already clones, so return it as-is.
+                    if matches!(infer_type_in_ctx(ctx, &inner), Type::List(_)) {
                         return Ok(inner);
                     }
                 }

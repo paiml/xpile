@@ -1138,6 +1138,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "for i in reversed(range(...)) was rejected ('iterates a non-range(...) call'). FIX: lower_for_stmt detects a reversed(<range call>) wrapper (Call func Name 'reversed', 1 arg, no kwargs, inner is a range(...) Call) and unwraps to the inner range + a reverse_range flag. After computing (start,stop,step) from the range args, if reverse_range: require step==1 and non-BigInt fn (else precise deferral errors), then flip to a descending range — start=stop-1, stop=start-1, step=-1 via BinOp::Sub (bounds stay under C-PY-INT-ARITH). Reuses the existing range-for while-loop desugar. step-1 ranges (range(n)/range(a,b)) reverse correctly: reversed(range(n))=n-1..0, reversed(range(2,5))=4,3,2. reversed over a non-range (e.g. reversed(xs)) is unchanged (still the range-call error path). Plain range(...) unchanged. rustc round-trip reversed_range.py (cross-checked vs python3): digits_desc(4)=3210, mid(0)=432 (reversed(range(2,5))), digits_desc(0)=0 (empty). FREE CI. SHIPPED v0.1.121."
+- id: PMAT-502CJ
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cj: [Tranche2] list(range(...)) materialize + list(xs) copy'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "list(range(n)) (and 2/3-arg) was rejected (the inner range isn't a first-class value, so list(range(n)) typed I64 -> '-> list[int] but produces I64'). FIX: new Expr::RangeList { start, stop, step } meta-HIR variant. The list-1-arg handler detects call.args[0] is a range(...) Call on the AST (before lowering) and calls lower_range_list (1/2/3-arg; positive literal step only via extract_step_literal; negative/zero step deferred with precise error pointing to reversed(range)). Both inferers type RangeList as List(I64). Codegen rust/ruchy: ((start)..(stop)).collect::<Vec<i64>>(), with .step_by(step as usize) for step>1. Also: list(<list-typed expr>) returns the expr as-is (value semantics already copies). Lean refuses. Blast radius: new Expr variant touched expr_has_int_arith + 2 inferers + collect_idents(lean) + 3 emit sites. rustc round-trip list_range.py (cross-checked vs python3): upto(4)=[0,1,2,3], span(2,5)=[2,3,4], evens(10)=[0,2,4,6,8], copy([7,8])=[7,8]. FREE CI. SHIPPED v0.1.122."
 - id: PMAT-465
   github_issue: 496
   item_type: task

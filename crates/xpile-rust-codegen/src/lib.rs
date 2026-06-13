@@ -1242,6 +1242,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, list, mode)?;
             out.push_str(".clone(); __xv.reverse(); __xv }");
         }
+        // PMAT-502cj: `list(range(start, stop, step))` → a collected i64 range.
+        Expr::RangeList { start, stop, step } => {
+            out.push('(');
+            emit_expr(out, start, mode)?;
+            out.push_str("..");
+            emit_expr(out, stop, mode)?;
+            out.push(')');
+            if *step != 1 {
+                write!(out, ".step_by({step}usize)")?;
+            }
+            out.push_str(".collect::<Vec<i64>>()");
+        }
         // PMAT-502ab: `filter(pred, xs)` → `.iter().cloned().filter(|__k| {
         // let p = __k.clone(); pred }).collect::<Vec<_>>()`.
         Expr::Filter { list, lambda } => {

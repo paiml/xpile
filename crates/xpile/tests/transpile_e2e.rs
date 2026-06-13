@@ -3248,6 +3248,28 @@ fn main() {
     assert_rustc_runs("reversed_range", &rust, driver);
 }
 
+/// PMAT-502cj (Tranche 2): `list(range(...))` materialises a range into a Vec
+/// (`.collect::<Vec<i64>>()`, `.step_by` for a positive step); `list(xs)` copies.
+#[test]
+fn list_range() {
+    let rust = xpile_transpile_to_rust("list_range.py");
+    assert!(
+        rust.contains("(0i64..n).collect::<Vec<i64>>()"),
+        "list(range(n)):\n{rust}"
+    );
+    assert!(rust.contains(".step_by(2usize)"), "stepped range:\n{rust}");
+    let driver = r#"
+fn main() {
+    assert_eq!(upto(4), vec![0, 1, 2, 3]);
+    assert_eq!(span(2, 5), vec![2, 3, 4]);
+    assert_eq!(evens(10), vec![0, 2, 4, 6, 8]);
+    assert_eq!(upto(0), Vec::<i64>::new());
+    assert_eq!(copy(vec![7, 8]), vec![7, 8]);
+}
+"#;
+    assert_rustc_runs("list_range", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
