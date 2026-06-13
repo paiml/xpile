@@ -3529,6 +3529,34 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502db (Tranche 2): builtins in a ternary branch lower context-aware
+/// (`abs(n) if … else …` was silently miscompiled to an undefined `abs(...)`).
+#[test]
+fn ternary_builtin() {
+    let rust = xpile_transpile_to_rust("ternary_builtin.py");
+    // The undefined bare calls must be gone — builtins resolve to methods.
+    assert!(
+        !rust.contains("{ abs(") && !rust.contains(" abs("),
+        "abs must lower to a method, not a bare call:\n{rust}"
+    );
+    assert!(
+        rust.contains(".abs()") && rust.contains("(a).max(b)") && rust.contains("checked_pow"),
+        "ternary builtins:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // builtins inside ternary branches; cross-checked vs python3.
+    assert_eq!(absval(-5), 5);
+    assert_eq!(absval(3), 3);
+    assert_eq!(cap(2, 9), 9);
+    assert_eq!(cap(-1, 4), 4);
+    assert_eq!(sq_or_zero(3), 9);
+    assert_eq!(sq_or_zero(-1), 0);
+}
+"#;
+    assert_rustc_runs("ternary_builtin", &rust, driver);
+}
+
 /// PMAT-502da (Tranche 2): `int(s, base)` → `i64::from_str_radix`.
 #[test]
 fn int_from_str_radix() {

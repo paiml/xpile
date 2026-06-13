@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.140] — 2026-06-13
+
+Tranche-2 slice PMAT-502db — **context-aware ternary branches** (silent-
+miscompile fix).
+
+A builtin inside a ternary branch (`abs(n) if … else …`, `max(a, b) if …`,
+`pow(n, 2) if …`) was **silently miscompiled** to an undefined Rust function
+(`abs(...)`, `max(...)`, `pow(...)`). The ternary `IfExp` fell through to the
+context-free `lower_expr`, which lowers each branch without the type context
+needed to recognize a builtin. A new `lower_if_exp_in_ctx` lowers the
+condition and both branches with `lower_expr_in_ctx` (frontend-only — no
+meta-HIR / codegen change; reuses `Expr::IfExpr`). The same builtins already
+lowered correctly in direct, assignment, and if-statement positions; only the
+ternary-expression position was affected. rustc round-trip
+`ternary_builtin.py` (cross-checked vs `python3`): `absval(-5)=5`,
+`absval(3)=3`, `cap(2,9)=9`, `cap(-1,4)=4`, `sq_or_zero(3)=9`,
+`sq_or_zero(-1)=0`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.139] — 2026-06-13
 
 Tranche-2 slice PMAT-502da — **`int(s, base)`** radix string parsing.

@@ -5594,6 +5594,12 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // PMAT-502ce: context-aware `a and b` / `a or b`. The context-free
         // path mis-infers a bare Ident as I64 and rejects bool variables.
         ast::Expr::BoolOp(b) => lower_bool_op_in_ctx(ctx, b),
+        // PMAT-502db: context-aware ternary. The context-free `lower_if_exp`
+        // lowers each branch with `lower_expr`, so a builtin in a branch
+        // (`abs(n) if … else …`, `max(a, b) if …`, `pow(n, 2) if …`) is not
+        // recognized and SILENTLY emits an undefined Rust fn (`abs(...)`).
+        // Lowering the branches context-aware fixes the miscompile.
+        ast::Expr::IfExp(ie) => lower_if_exp_in_ctx(ctx, ie),
         // No dict-specific shape: the context-free path is sufficient.
         other => lower_expr(other),
     }
@@ -6336,6 +6342,39 @@ fn lower_if_exp(ie: ast::ExprIfExp) -> Result<Expr, FrontendError> {
 
     // The condition must be Bool. v0.1.0 doesn't auto-coerce int truthiness.
     if infer_type(&cond) != Type::Bool {
+        return Err(FrontendError::Lower(
+            "ternary condition must be a comparison (Bool); int-truthiness coercion not supported at v0.1.0".into(),
+        ));
+    }
+
+    Ok(Expr::IfExpr {
+        cond: Box::new(cond),
+        then_expr: Box::new(then_expr),
+        else_expr: Box::new(else_expr),
+    })
+}
+
+/// PMAT-502db: context-aware variant of [`lower_if_exp`]. Lowers the
+/// condition + both branches with `lower_expr_in_ctx` so a builtin or a
+/// typed-variable expression in a ternary branch sees its real type — the
+/// context-free version silently miscompiles `abs(n) if … else …` to an
+/// undefined Rust `abs(...)` because it can't recognize the builtin without
+/// the type context.
+fn lower_if_exp_in_ctx(ctx: &LoweringCtx, ie: ast::ExprIfExp) -> Result<Expr, FrontendError> {
+    // Python AST order is (test, body, orelse) = (cond, then, else).
+    let cond = lower_expr_in_ctx(ctx, *ie.test)?;
+    let then_expr = lower_expr_in_ctx(ctx, *ie.body)?;
+    let else_expr = lower_expr_in_ctx(ctx, *ie.orelse)?;
+
+    let then_ty = infer_type_in_ctx(ctx, &then_expr);
+    let else_ty = infer_type_in_ctx(ctx, &else_expr);
+    if then_ty != else_ty {
+        return Err(FrontendError::Lower(format!(
+            "ternary branches have mismatched types ({then_ty:?} vs {else_ty:?}); both must agree at v0.1.0"
+        )));
+    }
+
+    if infer_type_in_ctx(ctx, &cond) != Type::Bool {
         return Err(FrontendError::Lower(
             "ternary condition must be a comparison (Bool); int-truthiness coercion not supported at v0.1.0".into(),
         ));
