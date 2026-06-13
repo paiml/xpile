@@ -331,8 +331,12 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-502ai: enumerate/zip — recurse into the source list(s).
         Expr::Enumerate { list } => expr_has_int_arith(list),
         Expr::Zip { left, right } => expr_has_int_arith(left) || expr_has_int_arith(right),
-        Expr::ListMinMax { list, key, .. } => {
-            expr_has_int_arith(list) || key.as_ref().is_some_and(|k| expr_has_int_arith(&k.body))
+        Expr::ListMinMax {
+            list, key, default, ..
+        } => {
+            expr_has_int_arith(list)
+                || key.as_ref().is_some_and(|k| expr_has_int_arith(&k.body))
+                || default.as_ref().is_some_and(|d| expr_has_int_arith(d))
         }
         // PMAT-502u: list query — recurse into the list and the arg.
         Expr::ListQuery { list, arg, .. } => expr_has_int_arith(list) || expr_has_int_arith(arg),
@@ -1508,11 +1512,16 @@ pub enum Expr {
     /// `<list>.iter().cloned().min_by_key(|__k| { let p = __k.clone(); e })
     /// .unwrap()` (or `max_by_key`); the element can be any type (only the
     /// key needs `Ord`), and the result is still the **element**, not the key.
+    /// PMAT-502dh: an optional `default` (Python `min(xs, default=d)`) makes
+    /// the empty case return `d` instead of panicking — the emit swaps
+    /// `.unwrap()` for `.unwrap_or(<default>)` (and the float branch switches
+    /// from the ±∞ fold to `.reduce(f64::min/max).unwrap_or(<default>)`).
     ListMinMax {
         list: Box<Expr>,
         is_max: bool,
         of_float: bool,
         key: Option<SortKey>,
+        default: Option<Box<Expr>>,
     },
     /// List query method — Python `xs.count(x)` / `xs.index(x)` over a
     /// `list[int]`. PMAT-502u (Tranche 2). Both return **Int**. Rust/Ruchy

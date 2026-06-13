@@ -1354,6 +1354,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "The v0.1.144 genexpr support DEFERRED the `if` filter (sum(x for x in xs if x>0) was rejected). KEY INSIGHT: Expr::Filter ALSO types as List (infer_type(filter.list)) and Map accepts a List, so a filtered genexpr composes as Map(Filter(iter)) — semantically map(lambda var: elt, filter(lambda var: cond, iter)). FIX (FRONTEND-ONLY, no meta-HIR/codegen change, reuses Filter+Map): lower_generator_exp_in_ctx now allows a single `if` clause (>1 still rejected 'combine with and'); wraps iter_list in Expr::Filter{list, lambda: SortKey{param, cond}} when present; cond lowered with the loop var UNBOUND, must be Bool. Then the existing Map wraps the (possibly filtered) list. Consumers (Sum/ListMinMax/list-unwrap) work for free. rustc round-trip generator_expr_filter.py (cross-checked vs python3): sum_positive([-1,2,-3,4])=6, sum_even_squares(6)=20, keep_positive([-1,2,-3,4])=[2,4]. FREE CI. SHIPPED v0.1.145. **GENEXPR FAMILY now: no-filter (v144) + single-if (v145). DEFERRED: multiple-if (combine with and), multi-generator, tuple target, non-i64 element/cond bodies (map/filter unbound-param limit).** NEXT: str.partition/splitlines/rsplit OR decompose try/except->Result (PMAT-503b epic, highest remaining structural EV)."
+- id: PMAT-502DH
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502dh: [Tranche2] min/max(xs, default=) empty-safe reduction'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "min(xs, default=d) / max(xs, default=d) (the empty-safe kwarg) was REJECTED ('passes keyword args to unknown function min' — only key= was handled, default= made kwargs_ok=false -> fell to generic-call error). FIX: Expr::ListMinMax gains default: Option<Box<Expr>>. Frontend: the min/max-over-list kwarg loop now also recognizes default= (lowers the value, stores it). Codegen rust/ruchy: when default present, the empty case emits .unwrap_or(<default>) for the int-Ord and key branches; the FLOAT branch switches from the non-panicking ±∞ fold to .reduce(f64::min/max).unwrap_or(<default>) (so an empty float list returns the default, not ±∞). No-default behavior unchanged (int .unwrap() panic, float ±∞ fold). expr_has_int_arith + lean collect_idents recurse default; both inferers + lean-refuse use `..` (unaffected). rustc round-trip minmax_default.py (cross-checked vs python3): min_or_zero([3,1,2])=1/([])=0, max_or_neg1([3,1,2])=3/([])=-1, fmin_or([2.5,1.5])=1.5/([])=9.0. FREE CI. SHIPPED v0.1.146. NOTE: only the 1-arg-over-list min/max form takes default= (the 2+-arg variadic NumBuiltin form doesn't, matching Python). NEXT: str.partition/splitlines/rsplit OR decompose try/except->Result (PMAT-503b epic)."
 - id: PMAT-465
   github_issue: 496
   item_type: task
