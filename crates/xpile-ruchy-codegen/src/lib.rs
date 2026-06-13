@@ -674,6 +674,8 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
             emit_type(out, inner)?;
             out.push('>');
         }
+        // PMAT-506b: struct-typed value emits the bare struct name.
+        Type::Struct(name) => out.push_str(name),
     }
     Ok(())
 }
@@ -1648,6 +1650,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push('(');
             emit_expr(out, inner, mode)?;
             out.push_str(").unwrap()");
+        }
+        // PMAT-506b: struct construction `Name { f0: v0, … }` (Ruchy → Rust).
+        Expr::StructLit { name, fields } => {
+            out.push_str(name);
+            out.push_str(" { ");
+            for (i, (field, value)) in fields.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                write!(out, "{field}: ")?;
+                emit_expr(out, value, mode)?;
+            }
+            out.push_str(" }");
+        }
+        // PMAT-506b: struct field read `(obj).field`.
+        Expr::FieldAccess { obj, field } => {
+            out.push('(');
+            emit_expr(out, obj, mode)?;
+            write!(out, ").{field}")?;
         }
         // PMAT-503b: try/except → catch_unwind match (Ruchy compiles to Rust).
         Expr::TryCatch { body, handler } => {

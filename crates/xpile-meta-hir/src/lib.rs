@@ -398,6 +398,10 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::OptionUnwrap(inner) => expr_has_int_arith(inner),
         // PMAT-503b: try/except recurses into both the body and the handler.
         Expr::TryCatch { body, handler } => expr_has_int_arith(body) || expr_has_int_arith(handler),
+        // PMAT-506b: a struct literal's field values may contain int arith;
+        // a field read does not by itself.
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_has_int_arith(v)),
+        Expr::FieldAccess { obj, .. } => expr_has_int_arith(obj),
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -1052,6 +1056,12 @@ pub enum Type {
     /// `Optional` parameters / locals and `is None` flow-narrowing are a
     /// deferred follow-up.
     Optional(Box<Type>),
+    /// PMAT-506b (classes epic): a named struct type — a value of a Python
+    /// `@dataclass` / class lowered via [`Item::Struct`]. Carries the struct's
+    /// name; Rust/Ruchy emit the bare name (`Point`); Lean refuses (struct
+    /// values deferred). Produced for struct-typed params/returns/locals,
+    /// [`Expr::StructLit`] construction, and [`Expr::FieldAccess`] receivers.
+    Struct(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1333,6 +1343,18 @@ pub enum Expr {
     /// catch-all (the exception type, if named, is not matched — Rust panics are
     /// untyped) with no bound exception object, no `else`/`finally`.
     TryCatch { body: Box<Expr>, handler: Box<Expr> },
+    /// PMAT-506b (classes epic): struct construction — Python `Name(a, b)` over
+    /// a `@dataclass`/class. `fields` are `(field_name, value)` in declaration
+    /// order. Rust/Ruchy emit `Name { f0: v0, f1: v1, … }`; Lean refuses. Types
+    /// as [`Type::Struct`]`(name)`.
+    StructLit {
+        name: String,
+        fields: Vec<(String, Expr)>,
+    },
+    /// PMAT-506b (classes epic): struct field read — Python `obj.field`. Rust/
+    /// Ruchy emit `(<obj>).<field>`; Lean refuses. Types as the field's type
+    /// (looked up in the struct registry at lowering time).
+    FieldAccess { obj: Box<Expr>, field: String },
     /// Tuple literal — Python `(a, b)` / multiple-return `return a, b`.
     /// PMAT-494 (sprint). Elements may be heterogeneous (unlike
     /// [`Expr::ListLit`]). Rust/Ruchy emit `(e0, e1, ...)`; Lean refuses

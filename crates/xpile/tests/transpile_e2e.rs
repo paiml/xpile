@@ -3851,6 +3851,34 @@ fn main() {
     assert_rustc_runs("dataclass_def", &rust, driver);
 }
 
+/// PMAT-506b (classes epic): dataclass **construction + field access**.
+/// Positional `Name(a, b)` → `Expr::StructLit` (`Name { f0: a, f1: b }`);
+/// `obj.field` → `Expr::FieldAccess` (`(obj).field`); struct-typed params,
+/// returns, and locals via a new `Type::Struct`. Cross-checked vs python3.
+#[test]
+fn dataclass_construction_and_field_access() {
+    let rust = xpile_transpile_to_rust("dataclass_use.py");
+    assert!(
+        rust.contains("Point { x: a, y: b }") && rust.contains("(p).x"),
+        "construction → struct literal + field read → (obj).field:\n{rust}"
+    );
+    assert!(
+        rust.contains("-> Point") && rust.contains("p: Point"),
+        "struct-typed return + param should emit the bare struct name:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let m = make(3, 4);
+    assert_eq!(m.x, 3);
+    assert_eq!(m.y, 4);
+    assert_eq!(dist_sq(m), 25);
+    assert_eq!(origin_sum(), 7);
+    assert_eq!(label_len(Labeled { name: "hi".to_string(), value: 5 }), 7);
+}
+"#;
+    assert_rustc_runs("dataclass_use", &rust, driver);
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators

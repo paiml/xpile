@@ -700,6 +700,13 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(body, out);
             collect_idents(handler, out);
         }
+        // PMAT-506b: struct literal / field access — recurse into the values.
+        Expr::StructLit { fields, .. } => {
+            for (_, v) in fields {
+                collect_idents(v, out);
+            }
+        }
+        Expr::FieldAccess { obj, .. } => collect_idents(obj, out),
         // PMAT-457: indexed access — recurse into both sides.
         Expr::Index { collection, index } => {
             collect_idents(collection, out);
@@ -854,6 +861,13 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), LeanCodegenError> {
                  — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
+        }
+        // PMAT-506b: struct values have no first-cut Lean encoding.
+        Type::Struct(name) => {
+            return Err(LeanCodegenError::Unsupported(format!(
+                "struct type `{name}` (class/dataclass) is not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
+            )));
         }
     }
     Ok(())
@@ -1124,6 +1138,15 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             return Err(LeanCodegenError::Unsupported(
                 "Python `try`/`except` lowers to Rust `catch_unwind` (a panic-recovery construct) \
                  with no Lean counterpart — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-506b: struct construction / field access — no first-cut Lean
+        // encoding (struct values are deferred in the Lean lane).
+        Expr::StructLit { .. } | Expr::FieldAccess { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "struct construction / field access (class/dataclass values) are not yet \
+                 supported in the Lean lane — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
         }
