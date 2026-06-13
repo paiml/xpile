@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.141] — 2026-06-13
+
+Tranche-2 slice PMAT-502dc — **context-aware comparison operands** (silent-
+miscompile fix).
+
+A builtin in a comparison operand (`abs(n) > 0`, `len(s) > 3`, `max(a, b) <=
+c`) was **silently miscompiled** to an undefined Rust function. The ctx-aware
+`Compare` arm handled membership (`in`/`not in`) but delegated regular
+comparisons to the context-free `lower_compare`, which lowers operands without
+the type context needed to recognize a builtin. A new `lower_compare_in_ctx`
+lowers each operand with `lower_expr_in_ctx` (frontend-only — no meta-HIR /
+codegen change). Chained comparisons (`0 < abs(x) < 10`) fold correctly.
+rustc round-trip `compare_builtin.py` (cross-checked vs `python3`):
+`is_positive_mag(-3)=true`/`(0)=false`, `max_le(2,9,9)=true`/`(2,9,5)=false`,
+`long_enough("abcd")=true`/`("ab")=false`, `in_range(5)=true`/`(0)=false`.
+
+This is the second slice closing the ctx-free-position silent-miscompile class
+(after v0.1.140 ternary branches). Known remaining positions — builtins in
+list literals, subscript indices, and under unary `-` — follow in subsequent
+slices.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.140] — 2026-06-13
 
 Tranche-2 slice PMAT-502db — **context-aware ternary branches** (silent-

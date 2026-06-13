@@ -5437,7 +5437,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     });
                 }
             }
-            lower_compare(c)
+            // PMAT-502dc: regular (non-membership) comparisons lower their
+            // operands context-aware so a builtin operand (`abs(n) > 0`,
+            // `len(s) > 3`, `max(a, b) <= c`) is recognized; the context-free
+            // `lower_compare` would emit an undefined Rust `abs(...)` etc.
+            lower_compare_in_ctx(ctx, c)
         }
         // Recurse through `+`/etc. so a dict op on either side (e.g.
         // `counts.get(x, 0) + 1`) is lowered correctly. Mirror the
@@ -6753,6 +6757,41 @@ fn lower_compare(c: ast::ExprCompare) -> Result<Expr, FrontendError> {
     operands.push(lower_expr(*c.left)?);
     for cmp in c.comparators {
         operands.push(lower_expr(cmp)?);
+    }
+    let mut acc: Option<Expr> = None;
+    for (i, op) in c.ops.iter().enumerate() {
+        let cmp = Expr::BinOp {
+            op: cmp_binop(op)?,
+            lhs: Box::new(operands[i].clone()),
+            rhs: Box::new(operands[i + 1].clone()),
+        };
+        acc = Some(match acc {
+            None => cmp,
+            Some(prev) => Expr::BinOp {
+                op: BinOp::And,
+                lhs: Box::new(prev),
+                rhs: Box::new(cmp),
+            },
+        });
+    }
+    Ok(acc.expect("ops non-empty (checked above)"))
+}
+
+/// PMAT-502dc: context-aware variant of [`lower_compare`]. Lowers each
+/// operand with `lower_expr_in_ctx` so a builtin in a comparison operand
+/// (`abs(n) > 0`, `len(s) > 3`, `max(a, b) <= c`) is recognized — the
+/// context-free `lower_compare` emits an undefined Rust `abs(...)` etc.
+/// Membership (`in`/`not in`) is handled by the caller before this point.
+fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, FrontendError> {
+    if c.ops.is_empty() || c.ops.len() != c.comparators.len() {
+        return Err(FrontendError::Lower(
+            "malformed comparison (ops/comparators mismatch) — unreachable Python AST".into(),
+        ));
+    }
+    let mut operands: Vec<Expr> = Vec::with_capacity(c.ops.len() + 1);
+    operands.push(lower_expr_in_ctx(ctx, *c.left)?);
+    for cmp in c.comparators {
+        operands.push(lower_expr_in_ctx(ctx, cmp)?);
     }
     let mut acc: Option<Expr> = None;
     for (i, op) in c.ops.iter().enumerate() {
