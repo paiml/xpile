@@ -3552,6 +3552,28 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502ev (Tranche 2): `sorted(s)` over a str — sorts the characters into a
+/// list of 1-char strings (via `Expr::StrChars`). Completes the `sorted(X)`
+/// family (list / dict-keys / str-chars); `reverse=`/`key=` still apply.
+/// Cross-checked vs python3.
+#[test]
+fn sorted_str() {
+    let rust = xpile_transpile_to_rust("sorted_str.py");
+    assert!(
+        rust.contains(".chars()") && rust.contains(".sort()"),
+        "sorted(str) should sort the chars:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(first_char("cba".to_string()), "a");
+    assert_eq!(sorted_joined("dbca".to_string()), "abcd");
+    assert_eq!(first_char_desc("abc".to_string()), "c");
+    assert_eq!(char_count("hello".to_string()), 5);
+}
+"#;
+    assert_rustc_runs("sorted_str", &rust, driver);
+}
+
 /// PMAT-502eu (Tranche 2): `sorted(d)` over a dict — Python iterates a dict as
 /// its keys, so `sorted(d)` returns the sorted key list. Previously this was a
 /// silent miscompile (the dict arg fell through to an undefined `sorted(d)`
