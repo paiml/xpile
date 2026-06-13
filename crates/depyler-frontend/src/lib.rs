@@ -1065,6 +1065,11 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         // list method calls (`xs.append(v)`); if neither shape
         // matches, fall through to the subprocess.run path's error
         // messages.
+        // PMAT-502bw: `print(a, b, …)` builtin → `Stmt::Print`. Checked
+        // before the list-method / subprocess.run paths.
+        ast::Stmt::Expr(e) if is_print_call(&e) => {
+            lower_print_stmt(ctx, &e).map(|s| vec![s])
+        }
         ast::Stmt::Expr(e) => match try_lower_list_method_call(ctx, &e) {
             Some(result) => result.map(|s| vec![s]),
             None => lower_expr_stmt_as_cmd(ctx, e).map(|s| vec![s]),
@@ -1322,6 +1327,47 @@ fn try_lower_list_method_call(
 ///   subprocess.call([...])                        # different function name
 ///   os.system("echo hi")                          # not subprocess.run
 ///   foo()                                         # not subprocess.run
+/// PMAT-502bw: does this expression statement call the `print` builtin?
+fn is_print_call(e: &ast::StmtExpr) -> bool {
+    if let ast::Expr::Call(call) = e.value.as_ref() {
+        if let ast::Expr::Name(n) = call.func.as_ref() {
+            return n.id.as_str() == "print";
+        }
+    }
+    false
+}
+
+/// PMAT-502bw: lower `print(a, b, …)` → [`Stmt::Print`]. First cut admits
+/// only positional `int`/`str` (incl. f-strings → `String`) arguments; the
+/// `sep=`/`end=`/`file=` keyword args and `bool`/`float` arguments are
+/// deferred with a precise error (Python's `True`/`2.0` formatting differs
+/// from Rust's `Display`). An empty `print()` → `Stmt::Print(vec![])`.
+fn lower_print_stmt(ctx: &mut LoweringCtx, e: &ast::StmtExpr) -> Result<Stmt, FrontendError> {
+    let ast::Expr::Call(call) = e.value.as_ref() else {
+        unreachable!("is_print_call gated this");
+    };
+    if !call.keywords.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` calls `print(...)` with keyword args (`sep=`/`end=`/`file=`) — deferred at v0.2.0 (positional int/str args only)",
+            ctx.fn_name
+        )));
+    }
+    let mut args = Vec::with_capacity(call.args.len());
+    for a in &call.args {
+        let lowered = lower_expr_in_ctx(ctx, a.clone())?;
+        match infer_type_in_ctx(ctx, &lowered) {
+            Type::I64 | Type::Str => args.push(lowered),
+            other => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` calls `print(...)` with a `{other:?}` argument — only int and str (incl. f-strings) are supported at v0.2.0 (bool/float deferred: Python prints `True`/`2.0`, Rust `Display` prints `true`/`2`)",
+                    ctx.fn_name
+                )));
+            }
+        }
+    }
+    Ok(Stmt::Print(args))
+}
+
 fn lower_expr_stmt_as_cmd(ctx: &LoweringCtx, e: ast::StmtExpr) -> Result<Stmt, FrontendError> {
     let ast::Expr::Call(call) = *e.value else {
         return Err(FrontendError::Lower(format!(

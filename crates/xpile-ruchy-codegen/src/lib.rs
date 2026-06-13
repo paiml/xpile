@@ -108,6 +108,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             | Stmt::ClosureLet { .. }
             | Stmt::Continue
             | Stmt::Break
+            // PMAT-502bw: print() introduces no binding.
+            | Stmt::Print(_)
             | Stmt::Raise { .. } => false,
             Stmt::While { body, .. }
             | Stmt::ForEach { body, .. }
@@ -212,6 +214,21 @@ fn emit_stmt_indented(
         }
         Stmt::Break => {
             writeln!(out, "{indent}break;")?;
+            Ok(())
+        }
+        // PMAT-502bw: `print(a, b, …)` → `println!("{} {} …", a, b, …);`.
+        Stmt::Print(args) => {
+            if args.is_empty() {
+                writeln!(out, "{indent}println!();")?;
+                return Ok(());
+            }
+            let fmt = vec!["{}"; args.len()].join(" ");
+            write!(out, "{indent}println!(\"{fmt}\"")?;
+            for a in args {
+                out.push_str(", ");
+                emit_expr(out, a, mode)?;
+            }
+            writeln!(out, ");")?;
             Ok(())
         }
         // PMAT-478 (R9): if/else statement → `if c { … } else { … }`.

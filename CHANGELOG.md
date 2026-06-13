@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.109] — 2026-06-13
+
+Tranche-2 slice PMAT-502bw — the **`print` builtin** → `println!`.
+
+`print(...)` was rejected (only `subprocess.run([...])` was recognised as an
+expression statement). A new `Stmt::Print(Vec<Expr>)` now lowers it: the
+frontend detects the `print` call before the list-method / subprocess paths,
+and the Rust/Ruchy backends emit `println!("{} {} …", a, b, …);` — Python's
+single-space separator and trailing newline. Bare `print()` → `println!();`.
+f-strings (which lower to `String`) print fine. First cut admits only
+positional `int`/`str` args; `bool` (Python `True` vs Rust `true`), `float`
+(`2.0` vs `2`), and the `sep=`/`end=`/`file=` kwargs are deferred with a
+precise error. Lean refuses (pure `def`s have no IO). rustc round-trip
+`print_builtin.py` produces **byte-identical stdout to `python3`**
+(`hello` / `42` / `x 42` / blank / `x=42`).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.108] — 2026-06-13
 
 Tranche-2 slice PMAT-502bv — **bare `return`** (no value) in a void function.
