@@ -67,6 +67,12 @@ pub fn emit_module(module: &Module) -> Result<String, LeanCodegenError> {
                     "class/dataclass `{name}` → Lean `structure` is not yet supported — use `--target rust` or `--target ruchy`"
                 )));
             }
+            // PMAT-513: an `Enum` class → Lean `inductive` is deferred; refuse.
+            Item::Enum { name, .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "enum `{name}` → Lean `inductive` is not yet supported — use `--target rust` or `--target ruchy`"
+                )));
+            }
         }
     }
     Ok(out)
@@ -723,6 +729,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 collect_idents(a, out);
             }
         }
+        // PMAT-513: an enum member access references no local idents.
+        Expr::EnumVariant { .. } => {}
         // PMAT-457: indexed access — recurse into both sides.
         Expr::Index { collection, index } => {
             collect_idents(collection, out);
@@ -1165,9 +1173,12 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         }
         // PMAT-506b: struct construction / field access — no first-cut Lean
         // encoding (struct values are deferred in the Lean lane).
-        Expr::StructLit { .. } | Expr::FieldAccess { .. } | Expr::MethodCall { .. } => {
+        Expr::StructLit { .. }
+        | Expr::FieldAccess { .. }
+        | Expr::MethodCall { .. }
+        | Expr::EnumVariant { .. } => {
             return Err(LeanCodegenError::Unsupported(
-                "struct construction / field access / method calls (class/dataclass values) are not \
+                "struct construction / field access / method calls / enum members (class/dataclass/enum values) are not \
                  yet supported in the Lean lane — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

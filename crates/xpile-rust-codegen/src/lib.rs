@@ -118,6 +118,17 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                     out.push_str("}\n");
                 }
             }
+            // PMAT-513: a Python `Enum` class → a Rust enum. The discriminants
+            // are tracked in the IR but `C.NAME.value` lowers to its literal at
+            // the frontend, so the emitted enum needs no explicit `= disc`.
+            Item::Enum { name, variants } => {
+                out.push_str("#[derive(Clone, Copy, Debug, PartialEq, Eq)]\n");
+                writeln!(out, "pub enum {name} {{")?;
+                for (variant, _disc) in variants {
+                    writeln!(out, "    {variant},")?;
+                }
+                out.push_str("}\n");
+            }
         }
     }
     Ok(out)
@@ -1874,6 +1885,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             }
             out.push(')');
         }
+        // PMAT-513: an enum member access `C::NAME`.
+        Expr::EnumVariant { enum_name, variant } => write!(out, "{enum_name}::{variant}")?,
         // PMAT-503b: `try: return <body> except: return <handler>` → catch the
         // panics xpile raises for Python exceptions via `catch_unwind`.
         Expr::TryCatch { body, handler } => {

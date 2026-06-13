@@ -4146,6 +4146,38 @@ fn main() {
     assert_rustc_runs("match_or_pattern", &rust, driver);
 }
 
+/// PMAT-513 (Tranche 2): a Python `class C(Enum):` with `NAME = <int literal>`
+/// members → a Rust `enum`. Member access `C.NAME` → `C::NAME`
+/// (`Expr::EnumVariant`); the compile-time-known `C.NAME.value` lowers to its
+/// discriminant literal. Enum-typed params/locals + member equality work
+/// (the enum reuses `Type::Struct` at use sites). Cross-checked vs python3
+/// (red=1, blue=3, is_go true/false, passthrough=10).
+#[test]
+fn enum_basic() {
+    let rust = xpile_transpile_to_rust("enum_basic.py");
+    assert!(
+        rust.contains("pub enum Color {")
+            && rust.contains("(s == Signal::GO)")
+            && rust.contains("let c: Color = Color::GREEN"),
+        "an Enum class should emit a Rust enum + `C::NAME` member access:\n{rust}"
+    );
+    // `Color.RED.value` is the compile-time discriminant literal.
+    assert!(
+        rust.contains("pub fn red_value() -> i64 {\n    1i64\n}"),
+        "`C.NAME.value` should lower to the discriminant literal:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(red_value(), 1);
+    assert_eq!(blue_value(), 3);
+    assert_eq!(is_go(Signal::GO), true);
+    assert_eq!(is_go(Signal::STOP), false);
+    assert_eq!(passthrough(), 10);
+}
+"#;
+    assert_rustc_runs("enum_basic", &rust, driver);
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators
