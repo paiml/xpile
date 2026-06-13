@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.209] — 2026-06-13
+
+Classes-epic slice PMAT-506i — **augmented struct field assignment**
+`obj.field <op>= v`.
+
+- `obj.field += v` / `-=` / `*=` … desugar to `obj.field = obj.field <op> v`,
+  reusing the shipped `FieldAccess` read + `FieldAssign` write (PMAT-506c) —
+  **no new IR**. The receiver is marked `mut` by the pre-walk (an Attribute
+  aug-target now counts, mirroring the `obj.field = v` arm). `self.field <op>= v`
+  lowers to a `FieldAssign` on `self` and is rejected by `body_assigns_self`
+  (read-only methods), consistent with `self.f = v`.
+- New e2e fixture `dataclass_aug_field.py` (rustc round-trip cross-checked vs
+  python3 — `+=`/`-=`/`*=` on int fields; 145, 13, 28). e2e 271 → 272.
+
 ## [0.1.208] — 2026-06-13
 
 Classes-epic slice PMAT-506h — **dataclass `@classmethod`** (completes the
