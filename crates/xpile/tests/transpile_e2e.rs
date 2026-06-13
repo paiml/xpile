@@ -3710,6 +3710,30 @@ fn main() {
     assert_rustc_runs("optional_narrow_branch", &rust, driver);
 }
 
+/// PMAT-502fb (Tranche 2): bitwise invert `~x`. Python's `~x` is the exact
+/// identity `-(x + 1)`, which is precisely Rust's `!x` on a signed integer
+/// (`~5 == -6` in both). Lowers to `UnOp::BitNot` → `(!(x))`; requires an I64
+/// operand. Cross-checked vs python3 (including the `~~a == a` involution and a
+/// realistic `n & ~mask`).
+#[test]
+fn bit_invert() {
+    let rust = xpile_transpile_to_rust("bit_invert.py");
+    assert!(
+        rust.contains("(!(a))"),
+        "`~a` should lower to Rust `(!(a))`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(invert(5), -6);
+    assert_eq!(invert(-3), 2);
+    assert_eq!(invert_expr(6, 3), -3);
+    assert_eq!(double_invert(9), 9);
+    assert_eq!(mask_complement(255), 248);
+}
+"#;
+    assert_rustc_runs("bit_invert", &rust, driver);
+}
+
 /// PMAT-502ev (Tranche 2): `sorted(s)` over a str — sorts the characters into a
 /// list of 1-char strings (via `Expr::StrChars`). Completes the `sorted(X)`
 /// family (list / dict-keys / str-chars); `reverse=`/`key=` still apply.

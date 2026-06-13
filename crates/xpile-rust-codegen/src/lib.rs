@@ -1891,6 +1891,12 @@ fn emit_unop(out: &mut String, op: UnOp, operand: &Expr, mode: bool) -> Result<(
             emit_expr(out, operand, mode)?;
             write!(out, ")")?;
         }
+        // PMAT-502fb: Python `~x` == `-(x+1)` == Rust `!x` on a signed integer.
+        UnOp::BitNot => {
+            write!(out, "(!(")?;
+            emit_expr(out, operand, mode)?;
+            write!(out, "))")?;
+        }
     }
     Ok(())
 }
@@ -2250,6 +2256,12 @@ fn emit_c_expr(out: &mut String, e: &Expr) -> Result<(), CodegenError> {
                 write!(out, ").wrapping_neg()")?;
             }
             UnOp::Not => {
+                write!(out, "!(")?;
+                emit_c_expr(out, operand)?;
+                write!(out, ")")?;
+            }
+            // PMAT-502fb: bitwise invert — Rust `!` on a signed integer.
+            UnOp::BitNot => {
                 write!(out, "!(")?;
                 emit_c_expr(out, operand)?;
                 write!(out, ")")?;

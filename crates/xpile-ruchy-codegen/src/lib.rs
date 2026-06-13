@@ -1724,6 +1724,12 @@ fn emit_unop(
             emit_expr(out, operand, mode)?;
             write!(out, ")")?;
         }
+        // PMAT-502fb: Python `~x` == Rust `!x` on a signed integer.
+        UnOp::BitNot => {
+            write!(out, "(!(")?;
+            emit_expr(out, operand, mode)?;
+            write!(out, "))")?;
+        }
     }
     Ok(())
 }
