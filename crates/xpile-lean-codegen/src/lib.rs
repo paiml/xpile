@@ -500,6 +500,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         Expr::Ord { value } | Expr::Chr { value } => collect_idents(value, out),
         // PMAT-502cv: hex/oct/bin — recurse into the value expr.
         Expr::IntRadixStr { value, .. } => collect_idents(value, out),
+        // PMAT-502da: int(s, base) — recurse into the value expr.
+        Expr::IntFromStrRadix { value, .. } => collect_idents(value, out),
         // PMAT-492: string method — recurse into the receiver + args.
         Expr::StrMethod { recv, args, .. } => {
             collect_idents(recv, out);
@@ -1159,6 +1161,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::IntRadixStr { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python hex(n) / oct(n) / bin(n) are not yet supported in the Lean lane — \
+                 use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502da: int(s, base) deferred in the Lean lane.
+        Expr::IntFromStrRadix { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python int(s, base) is not yet supported in the Lean lane — \
                  use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

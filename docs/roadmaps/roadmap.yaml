@@ -1291,6 +1291,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "min/max accepted EXACTLY 2 args; max(a,b,c) (3+) fell through to a generic call emitting an undefined Rust max(...) fn (SILENT MISCOMPILE). FIX: Expr::NumBuiltin already carries args: Vec<Expr>, so this is FRONTEND + CODEGEN only (NO new variant). Frontend: min/max now variadic — arity_ok = (args.len() >= 2) for Min/Max (abs stays ==1); arg0 type guard unchanged (I64/F64/Str/Bool). Codegen rust/ruchy: chain over args[1..] — (a).max(b).max(c), (a).min(b).min(c).min(d). 2-arg form emits IDENTICALLY to before (loop body runs once). Inferer unchanged (result = arg0 type, preserved by chaining). expr_has_int_arith already iter().any over all args; lean collect_idents already iterates all args; lean refuses NumBuiltin wholesale. rustc round-trip variadic_minmax.py (cross-checked vs python3): max(3,7,5)=7, min(8,2,6,4)=2, max(1.5,9.0,3.0)=9.0. FREE CI. SHIPPED v0.1.138. NOTE: homogeneous-arg-type assumed (rustc enforces; 2-arg case already relied on this). STILL-OPEN extra-arg miscompile: int(s, base) 2-arg."
+- id: PMAT-502DA
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502da: [Tranche2] int(s, base) radix string parse'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "int(s, base) (2-arg) was SILENTLY MISCOMPILED: only int(s) 1-arg was handled; the 2-arg form fell through to a generic call emitting an undefined Rust int(s, base) fn. FIX: new Expr::IntFromStrRadix { value: Box<Expr>, radix: u32 } meta-HIR variant (str->int reverse of IntRadixStr). Frontend (BEFORE the 1-arg int/float block): int 2-arg over a str value + an int-LITERAL base in 2..=36 -> IntFromStrRadix; out-of-range base or non-literal base -> clear FrontendError::Lower (no silent miscompile). Codegen rust/ruchy: i64::from_str_radix((value).trim(), <radix>).expect('...ValueError...') (parse failure / out-of-range digit panics ~= Python ValueError; leading -/+ accepted, both hex cases accepted). Both inferers: IntFromStrRadix -> I64. expr_has_int_arith + lean collect_idents recurse value; lean refuses. NOTE/LIMITATION: Rust from_str_radix does NOT accept the 0x/0o/0b prefix, so Python int('0xff',16) is unsupported -> unprefixed digit strings only; variable base + auto-detect int(s,0) deferred. Blast radius: new Expr variant -> expr_has_int_arith + 2 inferers + collect_idents(lean) + lean-refuse + 2 codegen emit. rustc round-trip int_from_str_radix.py (cross-checked vs python3): int('ff',16)=255, int('FF',16)=255, int('101',2)=5, int('-1a',16)=-26. FREE CI. SHIPPED v0.1.139. **EXTRA-ARG SILENT-MISCOMPILE SWEEP (sum/pow/max/int) NOW COMPLETE for the common builtins.**"
 - id: PMAT-465
   github_issue: 496
   item_type: task

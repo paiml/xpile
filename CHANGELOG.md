@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.139] — 2026-06-13
+
+Tranche-2 slice PMAT-502da — **`int(s, base)`** radix string parsing.
+
+`int(s, base)` (2-arg) was silently miscompiled: it fell through to a generic
+call, emitting an undefined Rust `int(s, base)` function (only 1-arg `int(s)`
+was handled). A new `Expr::IntFromStrRadix { value, radix }` lowers it to
+`i64::from_str_radix((s).trim(), base)` — a parse failure or out-of-range digit
+panics, matching Python's `ValueError`. `base` must be an int literal in
+`2..=36` (a variable base or the auto-detect `int(s, 0)` form is a clear
+frontend error). Note: Rust's `from_str_radix` does not accept the `0x`/`0o`/
+`0b` literal prefix, so prefixed strings (Python `int("0xff", 16)`) are not
+supported — pass unprefixed digit strings. Lean refuses. rustc round-trip
+`int_from_str_radix.py` (cross-checked vs `python3`): `int("ff",16) == 255`,
+`int("FF",16) == 255`, `int("101",2) == 5`, `int("-1a",16) == -26`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.138] — 2026-06-13
 
 Tranche-2 slice PMAT-502cz — **variadic `min` / `max`** (`max(a, b, c)`).

@@ -269,6 +269,7 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::Ord { value } | Expr::Chr { value } => expr_has_int_arith(value),
         // PMAT-502cv: hex/oct/bin — recurse into the value expr.
         Expr::IntRadixStr { value, .. } => expr_has_int_arith(value),
+        Expr::IntFromStrRadix { value, .. } => expr_has_int_arith(value),
         // PMAT-502am: formatted f-string field — recurse into the value.
         Expr::FormatSpec { value, .. } => expr_has_int_arith(value),
         // PMAT-492: string methods are str-domain; recurse into the
@@ -1296,6 +1297,14 @@ pub enum Expr {
     /// __n < 0 { "-" } else { "" }; format!("{}<prefix>{:<spec>}", __sign,
     /// __m) }` (`__m` is the magnitude so i64::MIN is safe). Lean refuses.
     IntRadixStr { value: Box<Expr>, radix: Radix },
+    /// `int(s, base)` — parse a string in the given radix (→ `int`).
+    /// PMAT-502da (Tranche 2); the str→int reverse of [`Expr::IntRadixStr`].
+    /// `radix` is a literal `2..=36`. Rust/Ruchy emit
+    /// `i64::from_str_radix((<value>).trim(), <radix>).expect("…")` — a parse
+    /// failure (or an out-of-range digit) panics, ≈ Python's `ValueError`.
+    /// (A non-literal / out-of-range base is rejected in the frontend; the
+    /// auto-detect `int(s, 0)` form is deferred.) Lean refuses.
+    IntFromStrRadix { value: Box<Expr>, radix: u32 },
     /// A formatted f-string field — Python `{value:spec}` where `spec` is a
     /// static format spec (e.g. `.2f`, `05d`, `>10`). PMAT-502am (Tranche 2).
     /// `rust_spec` is the already-translated Rust format spec (the frontend
