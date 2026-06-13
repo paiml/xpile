@@ -967,6 +967,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "Completes the deferred follow-up to PMAT-502bo. New ctx-aware UnaryOp(USub) arm in lower_expr_in_ctx_inner (before the `other => lower_expr(other)` catch-all): lower the operand ctx-aware, and if it types as Type::F64 AND is not an Expr::LitFloat, lower to Expr::FloatBinOp { op: Sub, lhs: LitFloat(0.0), rhs: operand } -> plain infix (0f64 - x). This avoids UnOp::Neg's i64-only checked_neg().expect(...). Float LITERALS keep the v0.1.101 negative-literal fold (-3.14f64), so -3.14 stays a single literal (the !matches!(operand, Expr::LitFloat(_)) guard). Negative INT negation unchanged (checked_neg). Handles -x and compound -a + b. rustc round-trip neg_float_var.py (cross-checked vs python3): neg(3.5)->-3.5, neg(-2.0)->2.0, diff(1.5,4.0)->2.5. FREE CI. SHIPPED v0.1.102."
+- id: PMAT-502BQ
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bq: [Tranche2] float augmented assignment (x += y, -= *= /=)'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "combine_aug (the read-modify-write helper for x <op>= e / d[k] <op>= e / xs[i] <op>= e) always emitted Expr::BinOp, so float aug-assign miscompiled to the i64-only checked_add/sub/mul().expect(...) (no such method on f64) and /= errored ('unsupported binary operator: Div'). FIX: combine_aug now takes the AST operator (&ast::Operator) instead of a pre-lowered BinOp, and when either operand types as Type::F64 returns Expr::FloatBinOp (plain infix (x + y)) via float_op_from_ast — mirroring the regular ast::Expr::BinOp lowering. The float branch runs BEFORE lower_binop (which rejects Div), so x /= y (true division) works in aug position. lower_aug_assign drops its early lower_binop and passes &aug.op to all three combine_aug call sites (Name + dict-subscript + list-subscript), so list[float]/dict[..,float] subscript aug works too. Int aug-assign unchanged (checked_*); str += still format! concat. rustc round-trip aug_assign_float.py (cross-checked vs python3): accum(3.0,2.0)->2.0 (x+=2->5, x-=1->4, x*=2->8, x/=4->2.0), scale_first([2.5,9.0],4.0)->10.0. FREE CI. SHIPPED v0.1.103."
 - id: PMAT-465
   github_issue: 496
   item_type: task

@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.103] — 2026-06-13
+
+Tranche-2 slice PMAT-502bq — Python **augmented assignment over a float**
+`x += y` (and `-= *= /=`).
+
+`combine_aug` (the read-modify-write helper for `x <op>= e`, `d[k] <op>= e`,
+`xs[i] <op>= e`) always emitted the i64 `Expr::BinOp`, so float aug-assign
+miscompiled to the i64-only `checked_add/sub/mul().expect(…)` (no such method on
+`f64`) and `/=` errored outright. It now takes the *AST* operator and, when
+either operand types as `Type::F64`, lowers to `Expr::FloatBinOp` (plain infix
+`(x + y)`) — mirroring the regular `BinOp` lowering. Because the float branch
+runs *before* `lower_binop` (which rejects `/`), `x /= y` (true division) works
+in aug position too. Int aug-assign is unchanged (`checked_*`); str `+=` still
+lowers to `format!` concat. rustc round-trip `aug_assign_float.py` (cross-checked
+vs `python3`): `accum(3.0, 2.0) -> 2.0`, `scale_first([2.5, 9.0], 4.0) -> 10.0`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.102] — 2026-06-13
 
 Tranche-2 slice PMAT-502bp — Python **float-variable negation** `-x` (`x: float`).

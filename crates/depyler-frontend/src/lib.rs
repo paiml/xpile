@@ -2362,28 +2362,49 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
 /// (so overflow checking, str-concat detection, etc. apply uniformly).
 /// No meta-HIR or backend change. Subscript targets (`d[k] += e`) are
 /// not handled here — use the explicit `d[k] = d[k] + e` form.
-/// Combine the current value `lhs` with `rhs` under `op` for an augmented
-/// assignment, mirroring `lower_expr_in_ctx`'s str-concat detection so
-/// `+=` on strings lowers to `Concat` (format!), not a `checked_add`.
-fn combine_aug(ctx: &LoweringCtx, op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
+/// Combine the current value `lhs` with `rhs` under the (AST) operator
+/// `ast_op` for an augmented assignment, mirroring `lower_expr_in_ctx`'s
+/// detections so `+=` on strings lowers to `Concat` (format!), not a
+/// `checked_add`, and `+= -= *= /=` on a *float* lowers to `FloatBinOp`
+/// (plain infix) rather than the i64-only `checked_*` path (PMAT-502bq).
+/// Takes the AST operator (not a pre-lowered `BinOp`) so the float branch
+/// can run *before* `lower_binop`, which rejects `/` — exactly as the
+/// regular `ast::Expr::BinOp` lowering does.
+fn combine_aug(
+    ctx: &LoweringCtx,
+    ast_op: &ast::Operator,
+    lhs: Expr,
+    rhs: Expr,
+) -> Result<Expr, FrontendError> {
+    // PMAT-502bq: float augmented arithmetic → FloatBinOp. Detected before
+    // `lower_binop` (which rejects `/`), so `x /= y` over floats works too.
+    if infer_type_in_ctx(ctx, &lhs) == Type::F64 || infer_type_in_ctx(ctx, &rhs) == Type::F64 {
+        if let Some(fop) = float_op_from_ast(ast_op) {
+            return Ok(Expr::FloatBinOp {
+                op: fop,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            });
+        }
+    }
+    let op = lower_binop(ast_op)?;
     if matches!(op, BinOp::Add)
         && (infer_type_in_ctx(ctx, &lhs) == Type::Str || infer_type_in_ctx(ctx, &rhs) == Type::Str)
     {
-        Expr::Concat {
+        Ok(Expr::Concat {
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
-        }
+        })
     } else {
-        Expr::BinOp {
+        Ok(Expr::BinOp {
             op,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
-        }
+        })
     }
 }
 
 fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<Stmt, FrontendError> {
-    let op = lower_binop(&aug.op)?;
     let rhs = lower_expr_in_ctx(ctx, (*aug.value).clone())?;
     match aug.target.as_ref() {
         ast::Expr::Name(n) => {
@@ -2394,7 +2415,7 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
                     ctx.fn_name
                 )));
             }
-            let value = combine_aug(ctx, op, Expr::Ident(name.clone()), rhs);
+            let value = combine_aug(ctx, &aug.op, Expr::Ident(name.clone()), rhs)?;
             Ok(Stmt::Assign { name, value })
         }
         // PMAT-497: augmented subscript assignment `d[k] += v` /
@@ -2417,7 +2438,7 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
                         dict: Box::new(Expr::Ident(receiver.clone())),
                         key: Box::new(key.clone()),
                     };
-                    let value = combine_aug(ctx, op, current, rhs);
+                    let value = combine_aug(ctx, &aug.op, current, rhs)?;
                     ctx.mutable.insert(receiver.clone());
                     Ok(Stmt::DictSet {
                         dict_name: receiver,
@@ -2437,7 +2458,7 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
                         collection: Box::new(Expr::Ident(receiver.clone())),
                         index: Box::new(index.clone()),
                     };
-                    let value = combine_aug(ctx, op, current, rhs);
+                    let value = combine_aug(ctx, &aug.op, current, rhs)?;
                     ctx.mutable.insert(receiver.clone());
                     Ok(Stmt::IndexAssign {
                         list_name: receiver,
