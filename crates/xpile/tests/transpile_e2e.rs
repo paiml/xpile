@@ -4483,6 +4483,27 @@ fn main() {
     assert_rustc_runs("container_truthiness", &rust, driver);
 }
 
+/// PMAT-528 (Tranche 2): `xs.pop()` / `xs.pop(i)` as a bare statement (discard
+/// the popped value), e.g. `while xs: xs.pop()`. The value-position form already
+/// worked; a bare statement now reuses the same pop lowering wrapped in a
+/// discard `let _ = …;` (receiver auto-`mut`). Cross-checked vs python3 (4,2,32).
+#[test]
+fn list_pop_statement() {
+    let rust = xpile_transpile_to_rust("list_pop_statement.py");
+    assert!(
+        rust.contains("let _: i64 = (xs).pop()"),
+        "a bare `xs.pop()` should lower to a discard `let _`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(drain_count(vec![1, 2, 3, 4]), 4);
+    assert_eq!(pop_front_len(vec![5, 6, 7]), 2);
+    assert_eq!(pop_twice_sum(vec![10, 20, 30, 40]), 32);
+}
+"#;
+    assert_rustc_runs("list_pop_statement", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)

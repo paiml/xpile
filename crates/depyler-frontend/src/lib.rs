@@ -2232,6 +2232,25 @@ fn try_lower_list_method_call(
             mutable: false,
         }));
     }
+    // PMAT-528: `xs.pop()` / `xs.pop(i)` as a bare statement (the value-position
+    // form `x = xs.pop()` already works). Reuse the value-position lowering —
+    // which validates the receiver is a list + the index is an int — then
+    // discard the popped element via `let _ = …;` (the statement is used for the
+    // removal side effect, e.g. `while xs: xs.pop()`).
+    if method == "pop" && matches!(receiver_ty, Some(Type::List(_))) {
+        let expr = match lower_expr_in_ctx(ctx, (*e.value).clone()) {
+            Ok(x) => x,
+            Err(err) => return Some(Err(err)),
+        };
+        let ty = infer_type_in_ctx(ctx, &expr);
+        ctx.mutable.insert(receiver_name.to_string());
+        return Some(Ok(Stmt::Let {
+            name: "_".to_string(),
+            ty,
+            value: expr,
+            mutable: false,
+        }));
+    }
     if !is_append && !is_add {
         return None;
     }
