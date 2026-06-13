@@ -4064,6 +4064,31 @@ fn main() {
     assert_rustc_runs("dataclass_aug_field", &rust, driver);
 }
 
+/// PMAT-506j (classes epic): dataclass **`@property`** — a read-only `self`
+/// method accessed as a bare attribute (`r.area`, no parens) lowers to a no-arg
+/// method call `(r).area()` (an `Expr::MethodCall`; only registered properties
+/// auto-call, so a bare non-property access stays an error). Properties are
+/// usable on `self` from another method too. Cross-checked vs python3
+/// (area=12, perimeter=14, describe=26).
+#[test]
+fn dataclass_property() {
+    let rust = xpile_transpile_to_rust("dataclass_property.py");
+    assert!(
+        rust.contains("pub fn area(&self) -> i64")
+            && rust.contains("(r).area()")
+            && rust.contains("(self).area()"),
+        "a `@property` should emit as a `&self` method and a bare read should call it:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(area_of(3, 4), 12);
+    assert_eq!(perimeter_of(3, 4), 14);
+    assert_eq!(described(3, 4), 26);
+}
+"#;
+    assert_rustc_runs("dataclass_property", &rust, driver);
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators

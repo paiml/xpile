@@ -108,6 +108,12 @@ struct LoweringCtx {
     /// (`x: int = 30`). Built in the same pre-pass; consulted at construction to
     /// fill omitted fields.
     struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
+    /// PMAT-506j (classes epic): per-struct `@property` names — `struct name →
+    /// [property_name]`. Built in the same pre-pass as `structs`. A bare
+    /// attribute read `obj.prop` whose name is a registered property lowers to a
+    /// no-arg method call `(obj).prop()` (`Expr::MethodCall`) rather than a
+    /// field access. The property's return type lives in `struct_methods`.
+    struct_properties: Rc<HashMap<String, Vec<String>>>,
     /// PMAT-504: function-local closure bindings — maps a closure
     /// variable name (`f` in `f = lambda y: …`) to its inferred return
     /// type, so a call `f(x)` types correctly (the module signature
@@ -193,6 +199,7 @@ impl LoweringCtx {
         structs: Rc<HashMap<String, Vec<(String, Type)>>>,
         struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
         struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
+        struct_properties: Rc<HashMap<String, Vec<String>>>,
     ) -> Self {
         // PMAT-502bj: module-level constants are visible (and immutably
         // bound) in every function body; a same-named param shadows the
@@ -217,6 +224,7 @@ impl LoweringCtx {
             structs,
             struct_methods,
             struct_field_defaults,
+            struct_properties,
             closure_returns: HashMap::new(),
             underscore_counter: 0,
             underscore_rename: None,
@@ -738,18 +746,32 @@ impl Frontend for PythonFrontend {
         let mut struct_map: HashMap<String, Vec<(String, Type)>> = HashMap::new();
         let mut struct_method_map: HashMap<String, Vec<(String, Type)>> = HashMap::new();
         let mut struct_default_map: HashMap<String, Vec<(String, Expr)>> = HashMap::new();
+        // PMAT-506j: per-struct `@property` names, so a bare `obj.prop` read
+        // lowers to a no-arg method call. (The property's return type is in
+        // `struct_method_map` — a property is a `self` method.)
+        let mut struct_property_map: HashMap<String, Vec<String>> = HashMap::new();
         for stmt in &suite {
             if let ast::Stmt::ClassDef(c) = stmt {
                 if let Ok((name, fields, method_returns, field_defaults)) = class_def_signature(c) {
+                    let props: Vec<String> = c
+                        .body
+                        .iter()
+                        .filter_map(|m| match m {
+                            ast::Stmt::FunctionDef(f) if is_property(f) => Some(f.name.to_string()),
+                            _ => None,
+                        })
+                        .collect();
                     struct_map.insert(name.clone(), fields);
                     struct_method_map.insert(name.clone(), method_returns);
-                    struct_default_map.insert(name, field_defaults);
+                    struct_default_map.insert(name.clone(), field_defaults);
+                    struct_property_map.insert(name, props);
                 }
             }
         }
         let structs = Rc::new(struct_map);
         let struct_methods = Rc::new(struct_method_map);
         let struct_field_defaults = Rc::new(struct_default_map);
+        let struct_properties = Rc::new(struct_property_map);
 
         let mut items = Vec::new();
         for stmt in suite {
@@ -770,6 +792,7 @@ impl Frontend for PythonFrontend {
                 structs.clone(),
                 struct_methods.clone(),
                 struct_field_defaults.clone(),
+                struct_properties.clone(),
             )?;
             items.push(item);
         }
@@ -825,6 +848,7 @@ fn lower_top_level_stmt(
     structs: Rc<HashMap<String, Vec<(String, Type)>>>,
     struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
     struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
+    struct_properties: Rc<HashMap<String, Vec<String>>>,
 ) -> Result<Item, FrontendError> {
     // PMAT-502bj: a module-level `NAME = <int/bool/float-literal>` is a
     // constant item (recognised before the `def`-only fallback).
@@ -839,6 +863,7 @@ fn lower_top_level_stmt(
             structs,
             struct_methods,
             struct_field_defaults,
+            struct_properties,
             None,
             None,
         )
@@ -852,6 +877,7 @@ fn lower_top_level_stmt(
             structs,
             struct_methods,
             struct_field_defaults,
+            struct_properties,
         ),
         // A top-level assignment that wasn't a recognised constant.
         ast::Stmt::Assign(_) | ast::Stmt::AnnAssign(_) => Err(FrontendError::Lower(
@@ -972,6 +998,16 @@ fn is_classmethod(m: &ast::StmtFunctionDef) -> bool {
         .any(|d| matches!(d, ast::Expr::Name(n) if n.id.as_str() == "classmethod"))
 }
 
+/// PMAT-506j (classes epic): true if a class method carries a bare `@property`
+/// decorator. A property is a read-only `self` method accessed as a bare
+/// attribute (`obj.area`, no parens) — it lowers to `(obj).area()` (an
+/// `Expr::MethodCall` with no args). Setters (`@area.setter`) are not supported.
+fn is_property(m: &ast::StmtFunctionDef) -> bool {
+    m.decorator_list
+        .iter()
+        .any(|d| matches!(d, ast::Expr::Name(n) if n.id.as_str() == "property"))
+}
+
 /// PMAT-506f: true if `e` is a literal usable as a field default — a constant
 /// (`30`, `"x"`, `True`, `1.5`) or a negated numeric literal (`-1`). Computed
 /// defaults / `field(...)` factories are rejected (the default is lowered
@@ -1001,6 +1037,7 @@ fn lower_class_def(
     structs: Rc<HashMap<String, Vec<(String, Type)>>>,
     struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
     struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
+    struct_properties: Rc<HashMap<String, Vec<String>>>,
 ) -> Result<Item, FrontendError> {
     let (name, fields, _, _) = class_def_signature(&c)?;
     let self_ty = Type::Struct(name.clone());
@@ -1023,9 +1060,37 @@ fn lower_class_def(
                     structs.clone(),
                     struct_methods.clone(),
                     struct_field_defaults.clone(),
+                    struct_properties.clone(),
                     None,
                     None,
                 )?;
+                methods.push(method);
+                continue;
+            }
+            // PMAT-506j: a `@property` is a read-only `self` method accessed as a
+            // bare attribute (`obj.prop`). Strip the decorator and lower it as a
+            // normal instance method; the bare-attribute read site turns
+            // `obj.prop` into `(obj).prop()` (the property name is registered in
+            // the pre-pass). Setters / self-mutation are rejected (read-only).
+            if is_property(&m) {
+                m.decorator_list.clear();
+                let method = lower_function_def(
+                    m,
+                    signatures.clone(),
+                    consts.clone(),
+                    structs.clone(),
+                    struct_methods.clone(),
+                    struct_field_defaults.clone(),
+                    struct_properties.clone(),
+                    Some(self_ty.clone()),
+                    None,
+                )?;
+                if body_assigns_self(&method.body.stmts) {
+                    return Err(FrontendError::Lower(format!(
+                        "class `{name}` `@property` `{}` assigns to `self` — properties are read-only at v0.2.0",
+                        method.name
+                    )));
+                }
                 methods.push(method);
                 continue;
             }
@@ -1055,6 +1120,7 @@ fn lower_class_def(
                     structs.clone(),
                     struct_methods.clone(),
                     struct_field_defaults.clone(),
+                    struct_properties.clone(),
                     None,
                     Some(name.clone()),
                 )?;
@@ -1080,6 +1146,7 @@ fn lower_class_def(
                 structs.clone(),
                 struct_methods.clone(),
                 struct_field_defaults.clone(),
+                struct_properties.clone(),
                 Some(self_ty.clone()),
                 None,
             )?;
@@ -1218,6 +1285,7 @@ fn lower_function_def(
     structs: Rc<HashMap<String, Vec<(String, Type)>>>,
     struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
     struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
+    struct_properties: Rc<HashMap<String, Vec<String>>>,
     // PMAT-506d: when lowering a method, the type of the `self` receiver (the
     // enclosing struct). `None` for a top-level function. Decorators are
     // tolerated when set (a `@dataclass` method may be plain, but the class
@@ -1330,6 +1398,7 @@ fn lower_function_def(
         structs,
         struct_methods,
         struct_field_defaults,
+        struct_properties,
     );
     ctx.cls_name = cls_name;
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
@@ -7698,6 +7767,20 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             let obj = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
             let field = attr.attr.to_string();
             if let Type::Struct(sname) = infer_type_in_ctx(ctx, &obj) {
+                // PMAT-506j: a bare read of a registered `@property` lowers to a
+                // no-arg method call `(obj).prop()` (the property is a read-only
+                // `self` method; its return type is in `struct_methods`).
+                let is_prop = ctx
+                    .struct_properties
+                    .get(&sname)
+                    .is_some_and(|ps| ps.contains(&field));
+                if is_prop {
+                    return Ok(Expr::MethodCall {
+                        obj: Box::new(obj),
+                        method: field,
+                        args: Vec::new(),
+                    });
+                }
                 let known = ctx
                     .structs
                     .get(&sname)
