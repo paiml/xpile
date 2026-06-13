@@ -1282,6 +1282,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "pow(a, b) was SILENTLY MISCOMPILED: it fell through to a generic call emitting an undefined Rust pow(a, b) fn. FIX (FRONTEND-ONLY, NO new meta-HIR variant): in the call-lowering, pow 2-arg with no keywords + numeric operands desugars to the SAME machinery as a ** b — Expr::FloatBinOp{Pow} (via to_f64_operand) when either operand is F64, else Expr::BinOp{Pow} (int checked_pow, inheriting the existing negative-exponent u32 guard). 3-arg pow(a,b,mod) (modular exponentiation) deferred. Blast radius: ONE new if-block in lower_expr_in_ctx_inner; no codegen/lean/inferer change (reuses existing Pow emit). rustc round-trip pow_builtin.py (cross-checked vs python3): pow(2,10)=1024, pow(5,3)=125, pow(2.0,3.0)=8.0, pow(2.0,0.5)~=1.41421356. FREE CI. SHIPPED v0.1.137. PROBE NOTE: still-open extra-arg silent miscompiles found same firing — max(a,b,c) 3-arg, int(s,base) 2-arg — candidates for next slices."
+- id: PMAT-502CZ
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cz: [Tranche2] variadic min/max'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "min/max accepted EXACTLY 2 args; max(a,b,c) (3+) fell through to a generic call emitting an undefined Rust max(...) fn (SILENT MISCOMPILE). FIX: Expr::NumBuiltin already carries args: Vec<Expr>, so this is FRONTEND + CODEGEN only (NO new variant). Frontend: min/max now variadic — arity_ok = (args.len() >= 2) for Min/Max (abs stays ==1); arg0 type guard unchanged (I64/F64/Str/Bool). Codegen rust/ruchy: chain over args[1..] — (a).max(b).max(c), (a).min(b).min(c).min(d). 2-arg form emits IDENTICALLY to before (loop body runs once). Inferer unchanged (result = arg0 type, preserved by chaining). expr_has_int_arith already iter().any over all args; lean collect_idents already iterates all args; lean refuses NumBuiltin wholesale. rustc round-trip variadic_minmax.py (cross-checked vs python3): max(3,7,5)=7, min(8,2,6,4)=2, max(1.5,9.0,3.0)=9.0. FREE CI. SHIPPED v0.1.138. NOTE: homogeneous-arg-type assumed (rustc enforces; 2-arg case already relied on this). STILL-OPEN extra-arg miscompile: int(s, base) 2-arg."
 - id: PMAT-465
   github_issue: 496
   item_type: task

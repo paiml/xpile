@@ -1007,13 +1007,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             match op {
                 NumBuiltinOp::Abs => out.push_str(".abs()"),
                 NumBuiltinOp::Min | NumBuiltinOp::Max => {
-                    out.push_str(if matches!(op, NumBuiltinOp::Min) {
+                    // PMAT-502cz: variadic — chain over every remaining arg.
+                    let method = if matches!(op, NumBuiltinOp::Min) {
                         ".min("
                     } else {
                         ".max("
-                    });
-                    emit_expr(out, &args[1], mode)?;
-                    out.push(')');
+                    };
+                    for arg in &args[1..] {
+                        out.push_str(method);
+                        emit_expr(out, arg, mode)?;
+                        out.push(')');
+                    }
                 }
             }
         }

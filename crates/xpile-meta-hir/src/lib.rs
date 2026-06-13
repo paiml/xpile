@@ -1704,7 +1704,8 @@ pub enum FloatOp {
 }
 
 /// PMAT-498 (Tranche 2): scalar numeric builtins carried by
-/// [`Expr::NumBuiltin`]. `Abs` takes 1 arg; `Min`/`Max` take 2.
+/// [`Expr::NumBuiltin`]. `Abs` takes 1 arg; `Min`/`Max` are variadic
+/// (`>= 2` args, PMAT-502cz) and chain `.min`/`.max` over the tail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NumBuiltinOp {
     /// `abs(x)` → `(x).abs()`
