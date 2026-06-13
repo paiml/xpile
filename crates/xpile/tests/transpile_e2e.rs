@@ -3679,6 +3679,37 @@ fn main() {
     assert_rustc_runs("optional_narrow", &rust, driver);
 }
 
+/// PMAT-502fa (Tranche 2): Optional **intra-branch narrowing** for `if x is not
+/// None:` (complement of the cut-4 early-return guard). Inside the then-body, a
+/// read of `x` lowers to `Expr::OptionUnwrap` → `(x).unwrap()` : `T`, so the
+/// `if x is not None: <use x>` idiom transpiles to compilable Rust. Narrowing is
+/// scoped to the then-body (restored afterwards) and only applies to a
+/// non-reassigned `Optional` name; it persists into nested statements (a loop)
+/// within the branch. Cross-checked vs python3.
+#[test]
+fn optional_narrow_branch() {
+    let rust = xpile_transpile_to_rust("optional_narrow_branch.py");
+    assert!(
+        rust.contains("if (x).is_some()") && rust.contains("(x).unwrap()"),
+        "`is not None` then-branch should test is_some() and unwrap x inside:\n{rust}"
+    );
+    assert!(
+        rust.contains("(name).unwrap()"),
+        "narrowing should apply to str payloads too:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(safe_inc(Some(5)), 6);
+    assert_eq!(safe_inc(None), 0);
+    assert_eq!(shout(Some("hi".to_string())), "hi!");
+    assert_eq!(shout(None), "?");
+    assert_eq!(sum_to(Some(4)), 6);
+    assert_eq!(sum_to(None), 0);
+}
+"#;
+    assert_rustc_runs("optional_narrow_branch", &rust, driver);
+}
+
 /// PMAT-502ev (Tranche 2): `sorted(s)` over a str — sorts the characters into a
 /// list of 1-char strings (via `Expr::StrChars`). Completes the `sorted(X)`
 /// family (list / dict-keys / str-chars); `reverse=`/`key=` still apply.
