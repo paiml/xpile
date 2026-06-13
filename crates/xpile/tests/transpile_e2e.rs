@@ -3924,6 +3924,31 @@ fn main() {
     assert_rustc_runs("dataclass_methods", &rust, driver);
 }
 
+/// PMAT-506e (classes epic): dataclass **keyword construction** —
+/// `Point(x=1, y=2)`, mixed `Point(10, y=20)`, and reordered `Point(y=5, x=3)`
+/// all map to `Point { x: …, y: … }` (fields emitted in declaration order).
+/// Cross-checked vs python3.
+#[test]
+fn dataclass_keyword_construction() {
+    let rust = xpile_transpile_to_rust("dataclass_kwargs.py");
+    assert!(
+        rust.contains("P") && rust.contains("Point { x: 1i64, y: 2i64 }"),
+        "keyword construction should emit fields in declaration order:\n{rust}"
+    );
+    assert!(
+        rust.contains("Point { x: 3i64, y: 5i64 }"),
+        "reordered keywords must still emit in field order:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(all_kw(), 3);
+    assert_eq!(mixed(), 30);
+    assert_eq!(reordered(), -2);
+}
+"#;
+    assert_rustc_runs("dataclass_kwargs", &rust, driver);
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators

@@ -6279,33 +6279,67 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             // `min("a", "b")` no longer silently emits an undefined `min(...)`.
             // `abs` stays numeric-only.
             if let ast::Expr::Name(fname) = call.func.as_ref() {
-                // PMAT-506b (classes epic): `Name(a, b)` over a known class →
-                // struct construction (positional args mapped to fields in
-                // declaration order). Keyword construction is a follow-up.
+                // PMAT-506b/506e (classes epic): `Name(...)` over a known class →
+                // struct construction. Positional args fill fields in declaration
+                // order; keyword args (PMAT-506e) fill the rest by name (Python's
+                // rule: positionals first, then keywords). Each field exactly
+                // once; unknown keywords / duplicates / arity mismatch error.
                 if let Some(field_names) = ctx
                     .structs
                     .get(fname.id.as_str())
                     .map(|fs| fs.iter().map(|(f, _)| f.clone()).collect::<Vec<_>>())
                 {
-                    if !call.keywords.is_empty() {
+                    if call.args.len() > field_names.len() {
                         return Err(FrontendError::Lower(format!(
-                            "function `{}` constructs `{}` with keyword args — v0.2.0 first cut supports positional construction `{}(...)` only",
-                            ctx.fn_name, fname.id, fname.id
-                        )));
-                    }
-                    if call.args.len() != field_names.len() {
-                        return Err(FrontendError::Lower(format!(
-                            "function `{}` constructs `{}` with {} arg(s) but the class has {} field(s)",
+                            "function `{}` constructs `{}` with {} positional arg(s) but the class has {} field(s)",
                             ctx.fn_name,
                             fname.id,
                             call.args.len(),
                             field_names.len()
                         )));
                     }
+                    let mut values: HashMap<String, Expr> = HashMap::new();
+                    // Positional args fill the leading fields.
+                    for (field, arg) in field_names.iter().zip(call.args.iter()) {
+                        values.insert(field.clone(), lower_expr_in_ctx(ctx, arg.clone())?);
+                    }
+                    // Keyword args fill the rest by name.
+                    for kw in &call.keywords {
+                        let Some(kw_name) = kw.arg.as_ref().map(|id| id.to_string()) else {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` constructs `{}` with a `**`-splat — not supported at v0.2.0",
+                                ctx.fn_name, fname.id
+                            )));
+                        };
+                        if !field_names.contains(&kw_name) {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` constructs `{}` with unknown field `{kw_name}`",
+                                ctx.fn_name, fname.id
+                            )));
+                        }
+                        if values.contains_key(&kw_name) {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` constructs `{}` giving field `{kw_name}` both positionally and by keyword",
+                                ctx.fn_name, fname.id
+                            )));
+                        }
+                        values.insert(kw_name, lower_expr_in_ctx(ctx, kw.value.clone())?);
+                    }
+                    if values.len() != field_names.len() {
+                        let missing: Vec<&str> = field_names
+                            .iter()
+                            .filter(|f| !values.contains_key(*f))
+                            .map(String::as_str)
+                            .collect();
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` constructs `{}` missing field(s): {missing:?}",
+                            ctx.fn_name, fname.id
+                        )));
+                    }
+                    // Emit fields in declaration order (deterministic).
                     let mut fields = Vec::with_capacity(field_names.len());
-                    for (field, arg) in field_names.into_iter().zip(call.args.iter()) {
-                        let value = lower_expr_in_ctx(ctx, arg.clone())?;
-                        fields.push((field, value));
+                    for f in &field_names {
+                        fields.push((f.clone(), values.remove(f).expect("field covered above")));
                     }
                     return Ok(Expr::StructLit {
                         name: fname.id.to_string(),
