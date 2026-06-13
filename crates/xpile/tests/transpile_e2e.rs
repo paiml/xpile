@@ -3529,6 +3529,27 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dv (Tranche 2): expression-position set/dict comprehensions
+/// (`len({x for x in xs})`, `len({k: v for x in xs})`) via Map+SetFromList /
+/// Map+DictFromPairs.
+#[test]
+fn set_dict_comp_expr() {
+    let rust = xpile_transpile_to_rust("set_dict_comp_expr.py");
+    assert!(
+        rust.contains("HashSet<_>>().len()") && rust.contains("HashMap<_, _>>().len()"),
+        "set/dict comp expr:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // set/dict comprehensions in consumer positions; cross-checked vs python3.
+    assert_eq!(n_unique(vec![1, 1, 2, 3, 3]), 3);
+    assert_eq!(n_pairs(vec![1, 2, 3]), 3);
+    assert_eq!(n_positive_unique(vec![-1, 2, -3, 4]), 2);
+}
+"#;
+    assert_rustc_runs("set_dict_comp_expr", &rust, driver);
+}
+
 /// PMAT-502du (Tranche 2): an expression-position list comprehension
 /// (`sum([x for x in xs])`) lowers through the `Map`/`Filter` machinery.
 #[test]

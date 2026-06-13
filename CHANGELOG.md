@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.160] — 2026-06-13
+
+Tranche-2 slice PMAT-502dv — **expression-position set / dict comprehensions**.
+
+`len({x for x in xs})` / `len({k: v for x in xs})` (a set/dict comprehension in
+a consumer position) were rejected. They now lower through the same
+`Map`/`Filter` machinery as list comps, wrapped in `SetFromList` (set) /
+`DictFromPairs` over a `Map` whose body is the `(key, value)` tuple (dict). The
+statement form (`name = {comp}`) and the return-statement special-case keep
+their dedicated desugars. Shares the loop-var-unbound limitation with
+`map`/genexpr. rustc round-trip `set_dict_comp_expr.py` (cross-checked vs
+`python3`): `n_unique([1,1,2,3,3]) == 3`, `n_pairs([1,2,3]) == 3`,
+`n_positive_unique([-1,2,-3,4]) == 2`. With this, list/set/dict comprehensions
+and generator expressions all work in expression position.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.159] — 2026-06-13
 
 Tranche-2 slice PMAT-502du — **expression-position list comprehensions**.
