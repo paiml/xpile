@@ -3332,17 +3332,22 @@ fn comp_range_bounds(
 /// (PMAT-502ay): `[elem for var in iter if cond]` wraps the append in an
 /// `if cond { … }`. Multiple `if` clauses (`… if a if b`) are deferred —
 /// use `… if a and b`. Other iterables (dict, etc.) remain deferred.
-/// PMAT-502fc: desugar a two-generator list comprehension
-/// `[expr for x in a for y in b]` (with optional per-generator single `if`)
-/// into `let mut target = []` + nested `for x in a { for y in b { append } }`.
-/// Both generators must have plain-Name targets over list-typed iterables; the
-/// inner iterable is lowered with the outer var in scope. A per-generator filter
-/// wraps its own loop body. Range / tuple-target multi-generator comps remain a
-/// deferred sub-slice (clean error).
-fn desugar_list_comp_2gen(
+/// PMAT-502fc/fd: shared two-generator comprehension desugaring. Validates the
+/// two generators (plain-Name targets over `list[T]` iterables, ≤1 `if` each),
+/// binds both loop vars (the inner iterable is lowered with the outer var in
+/// scope, so it may reference it), and lowers each generator's optional filter.
+/// It then calls `build` — with both loop vars bound — to produce the
+/// per-element insert statement plus the accumulator's type and empty-literal
+/// initializer, and assembles `let mut target = init` + nested `for`/`if` loops.
+/// Shared by the list/dict/set 2-generator paths. Range / tuple-target /
+/// 3+-generator comps remain deferred (clean error). The genexpr/`any`/`all`/
+/// `sum` map-path is a separate lowering and still rejects multiple generators.
+fn desugar_comp_2gen(
     ctx: &mut LoweringCtx,
     target: &str,
-    comp: &ast::ExprListComp,
+    generators: &[ast::Comprehension],
+    kind: &str,
+    build: impl FnOnce(&mut LoweringCtx) -> Result<(Stmt, Type, Expr), FrontendError>,
 ) -> Result<Vec<Stmt>, FrontendError> {
     // Capture the name (not `ctx`) so these helpers don't hold a borrow that
     // would conflict with the `&mut ctx` lowering calls below.
@@ -3351,7 +3356,7 @@ fn desugar_list_comp_2gen(
         match &g.target {
             ast::Expr::Name(n) => Ok(n.id.to_string()),
             _ => Err(FrontendError::Lower(format!(
-                "function `{fn_name}` has a multi-generator list comprehension with a tuple/non-Name target — deferred (use plain `for x in … for y in …`)"
+                "function `{fn_name}` has a multi-generator {kind} comprehension with a tuple/non-Name target — deferred (use plain `for x in … for y in …`)"
             ))),
         }
     };
@@ -3359,17 +3364,16 @@ fn desugar_list_comp_2gen(
         match ty {
             Type::List(e) => Ok(*e),
             other => Err(FrontendError::Lower(format!(
-                "function `{fn_name}` has a multi-generator list comprehension over an iterable typing as {other:?}; v0.2.0 supports two `for` clauses over `list[T]` iterables (range / dict iterables deferred)"
+                "function `{fn_name}` has a multi-generator {kind} comprehension over an iterable typing as {other:?}; v0.2.0 supports two `for` clauses over `list[T]` iterables (range / dict iterables deferred)"
             ))),
         }
     };
-    let outer = &comp.generators[0];
-    let inner = &comp.generators[1];
+    let outer = &generators[0];
+    let inner = &generators[1];
     for g in [outer, inner] {
         if g.ifs.len() > 1 {
             return Err(FrontendError::Lower(format!(
-                "function `{}` has a list-comprehension generator with multiple `if` clauses — v0.2.0 supports one per generator (combine with `and`)",
-                ctx.fn_name
+                "function `{fn_name}` has a {kind}-comprehension generator with multiple `if` clauses — v0.2.0 supports one per generator (combine with `and`)"
             )));
         }
     }
@@ -3382,7 +3386,7 @@ fn desugar_list_comp_2gen(
     ctx.bound.insert(outer_var.clone());
     ctx.name_types
         .insert(outer_var.clone(), outer_elem_ty.clone());
-    let outer_filter = comp_filter(ctx, outer, "list")?;
+    let outer_filter = comp_filter(ctx, outer, kind)?;
 
     // Inner generator (lowered with the outer var in scope, so its iterable may
     // reference the outer binding).
@@ -3391,13 +3395,13 @@ fn desugar_list_comp_2gen(
     ctx.bound.insert(inner_var.clone());
     ctx.name_types
         .insert(inner_var.clone(), inner_elem_ty.clone());
-    let inner_filter = comp_filter(ctx, inner, "list")?;
+    let inner_filter = comp_filter(ctx, inner, kind)?;
 
-    let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
-    let out_ty = infer_type_in_ctx(ctx, &elem);
-    let list_ty = Type::List(Box::new(out_ty));
+    // Flavour-specific: lower the payload (with both vars bound) into the insert
+    // statement + accumulator type + empty-literal initializer.
+    let (insert, acc_ty, acc_init) = build(ctx)?;
     ctx.bound.insert(target.to_string());
-    ctx.name_types.insert(target.to_string(), list_ty.clone());
+    ctx.name_types.insert(target.to_string(), acc_ty.clone());
 
     // Wrap a body in its generator's optional `if` filter.
     let wrap = |filter: Option<Expr>, body: Vec<Stmt>| -> Vec<Stmt> {
@@ -3411,11 +3415,7 @@ fn desugar_list_comp_2gen(
         }
     };
 
-    let append = Stmt::ListAppend {
-        list_name: target.to_string(),
-        elem,
-    };
-    let inner_body = wrap(inner_filter, vec![append]);
+    let inner_body = wrap(inner_filter, vec![insert]);
     let inner_loop = Stmt::ForEach {
         var: inner_var,
         iter: inner_iter,
@@ -3434,12 +3434,71 @@ fn desugar_list_comp_2gen(
     Ok(vec![
         Stmt::Let {
             name: target.to_string(),
-            ty: list_ty,
-            value: Expr::ListLit(Vec::new()),
+            ty: acc_ty,
+            value: acc_init,
             mutable: true,
         },
         outer_loop,
     ])
+}
+
+/// PMAT-502fc: two-generator list comprehension `[expr for x in a for y in b]`
+/// → nested loops appending to the accumulator. See [`desugar_comp_2gen`].
+fn desugar_list_comp_2gen(
+    ctx: &mut LoweringCtx,
+    target: &str,
+    comp: &ast::ExprListComp,
+) -> Result<Vec<Stmt>, FrontendError> {
+    desugar_comp_2gen(ctx, target, &comp.generators, "list", |ctx| {
+        let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
+        let acc_ty = Type::List(Box::new(infer_type_in_ctx(ctx, &elem)));
+        let insert = Stmt::ListAppend {
+            list_name: target.to_string(),
+            elem,
+        };
+        Ok((insert, acc_ty, Expr::ListLit(Vec::new())))
+    })
+}
+
+/// PMAT-502fd: two-generator dict comprehension `{k: v for x in a for y in b}`
+/// → nested loops inserting into the accumulator. See [`desugar_comp_2gen`].
+fn desugar_dict_comp_2gen(
+    ctx: &mut LoweringCtx,
+    target: &str,
+    comp: &ast::ExprDictComp,
+) -> Result<Vec<Stmt>, FrontendError> {
+    desugar_comp_2gen(ctx, target, &comp.generators, "dict", |ctx| {
+        let key = lower_expr_in_ctx(ctx, (*comp.key).clone())?;
+        let value = lower_expr_in_ctx(ctx, (*comp.value).clone())?;
+        let acc_ty = Type::Dict(
+            Box::new(infer_type_in_ctx(ctx, &key)),
+            Box::new(infer_type_in_ctx(ctx, &value)),
+        );
+        let insert = Stmt::DictSet {
+            dict_name: target.to_string(),
+            key,
+            value,
+        };
+        Ok((insert, acc_ty, Expr::DictLit(Vec::new())))
+    })
+}
+
+/// PMAT-502fd: two-generator set comprehension `{expr for x in a for y in b}`
+/// → nested loops adding to the accumulator. See [`desugar_comp_2gen`].
+fn desugar_set_comp_2gen(
+    ctx: &mut LoweringCtx,
+    target: &str,
+    comp: &ast::ExprSetComp,
+) -> Result<Vec<Stmt>, FrontendError> {
+    desugar_comp_2gen(ctx, target, &comp.generators, "set", |ctx| {
+        let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
+        let acc_ty = Type::Set(Box::new(infer_type_in_ctx(ctx, &elem)));
+        let insert = Stmt::SetAdd {
+            set_name: target.to_string(),
+            elem,
+        };
+        Ok((insert, acc_ty, Expr::SetLit(Vec::new())))
+    })
 }
 
 fn desugar_list_comp(
@@ -3693,10 +3752,15 @@ fn desugar_dict_comp(
     target: &str,
     comp: &ast::ExprDictComp,
 ) -> Result<Vec<Stmt>, FrontendError> {
+    // PMAT-502fd: two-generator dict comprehension → nested `for` loops.
+    if comp.generators.len() == 2 {
+        return desugar_dict_comp_2gen(ctx, target, comp);
+    }
     if comp.generators.len() != 1 {
         return Err(FrontendError::Lower(format!(
-            "function `{}` uses a multi-generator dict comprehension — v0.2.0 supports a single `for` clause",
-            ctx.fn_name
+            "function `{}` uses a dict comprehension with {} `for` clauses — v0.2.0 supports one or two",
+            ctx.fn_name,
+            comp.generators.len()
         )));
     }
     let gen = &comp.generators[0];
@@ -3962,10 +4026,15 @@ fn desugar_set_comp(
     target: &str,
     comp: &ast::ExprSetComp,
 ) -> Result<Vec<Stmt>, FrontendError> {
+    // PMAT-502fd: two-generator set comprehension → nested `for` loops.
+    if comp.generators.len() == 2 {
+        return desugar_set_comp_2gen(ctx, target, comp);
+    }
     if comp.generators.len() != 1 {
         return Err(FrontendError::Lower(format!(
-            "function `{}` uses a multi-generator set comprehension — v0.2.0 supports a single `for` clause",
-            ctx.fn_name
+            "function `{}` uses a set comprehension with {} `for` clauses — v0.2.0 supports one or two",
+            ctx.fn_name,
+            comp.generators.len()
         )));
     }
     let gen = &comp.generators[0];
