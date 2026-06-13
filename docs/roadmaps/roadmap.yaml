@@ -1696,6 +1696,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "PROBE-FOUND gap: `[*a, *b]` / `[x, *a, y]` (list literals with Starred elements) TRANSP-FAILed. FIX (REUSE Expr::ListConcat + Expr::Clone — no new IR): in lower_list_literal_in_ctx, if any element is ast::Expr::Starred, fold: each `*e` → lower e (must type as list), each plain `x` → singleton Expr::ListLit([x]); chain via ListConcat (which emits `(a).iter().chain((b).iter()).cloned().collect()` = fresh Vec). Lone `[*a]` (single bare splat, no concat) → wrap in Expr::Clone(a) so it COPIES (Python [*a] is shallow copy) not moves. `match result { ListConcat{..} => as-is, other => Clone(other) }`. rustc rt list_spread.py vs python3: concat([1,2],[3,4,5])=5, spread_sum=10, with_ends([5,6])=99 ([0,5,6,99]), lone_spread_is_copy([1,2,3])=34 (orig 3, copy 4 — INDEPENDENCE), str_spread=3. FREE CI. SHIPPED v0.1.183. NOTE this only handles the ctx-aware list-literal path (the main one); context-free lower_expr List still errors on Starred (rare). DEFERRED: dict splat in dict-literal `{**a, *b}` already done (PMAT-502dw/dx merge); tuple/set splat literals (*a in tuple/set); comp 2-generators; f-string !r/!s; os/sys/random; structural epics. SESSION TODAY: v0.1.166→183 (18 slices, e2e 228→248). NEXT: comp-2-generators OR set/tuple splat OR a structural-epic first sub-slice."
+- id: PMAT-502ET
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502et: [Tranche2] set splat literals {*a, *b}'
+  status: done
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "PROBE-FOUND gap (parallel to list splat PMAT-502es): {*a, *b}/{*a, x} (set literals with Starred elements) TRANSP-FAILed. FIX (REUSE Expr::SetOp{Union} + Expr::Clone — no new IR): in lower_set_literal_in_ctx, if any element is ast::Expr::Starred, fold: each *e → lower e (must type as set), each plain x → singleton Expr::SetLit([x]); chain via SetOp{Union} (emits .union(&b).cloned().collect::<HashSet>() = fresh set). Lone {*a} → Expr::Clone(a) (shallow copy not move). `match result { SetOp{..} => as-is, other => Clone(other) }`. rustc rt set_spread.py vs python3: union_splat({1,2},{2,3})=3, splat_with_elem({1,2})=3, elem_then_splat=3, lone_splat_is_copy({1,2,3})=34 (INDEPENDENCE). FREE CI. SHIPPED v0.1.184. PROBE LESSON (re-confirmed): malformed driver — using a Rust helper `s(&[..])` in the PYTHON print expr gives SyntaxError; verify expected python values via a clean exec()+print on the actual functions. SESSION TODAY: v0.1.166→184 (19 slices, e2e 228→249). DEFERRED: tuple splat (*a,*b) (tuples are fixed-arity, harder); comp 2-generators (cartesian — the main remaining clean-ish gap, moderate); f-string !r/!s; os/sys/random; structural epics (Optional/try-except/classes/&str). NEXT: comp-2-generators (dedicated) OR a structural-epic first sub-slice OR fresh probe."
 - id: PMAT-465
   github_issue: 496
   item_type: task

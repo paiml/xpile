@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.184] — 2026-06-13
+
+Tranche-2 slice PMAT-502et — **set splat literals** (`{*a, *b}`, `{*a, x}`).
+
+A set literal containing `*`-splat elements is a union. The elements fold
+through `Expr::SetOp{Union}`: each `*e` contributes the set `e` (which must type
+as a set), each plain `x` a singleton `{x}`. The union chain produces a fresh
+`HashSet`; a lone `{*a}` (no union) is wrapped in `Expr::Clone` so it copies
+rather than moving `a`. Parallels the v0.1.183 list-splat handling (reuses
+existing IR — no new variant). Plain set literals are unchanged. New
+`set_spread.py` e2e fixture (`{*a,*b}`, `{*a,x}`, `{x,*a,y}`, lone-splat copy
+independence), all cross-checked vs python3.
+
 ## [0.1.183] — 2026-06-13
 
 Tranche-2 slice PMAT-502es — **list splat literals** (`[*a, *b]`, `[x, *a, y]`).
