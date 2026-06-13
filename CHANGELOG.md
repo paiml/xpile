@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.182] — 2026-06-13
+
+Tranche-2 slice PMAT-502er — **`min(xs)` / `max(xs)` over a `list[str]`**.
+
+The 1-argument `min`/`max` reduction over a list previously accepted only
+numeric element types (`int`/`float`); `str` and `bool` are also `Ord`, so the
+type gate is now widened to include them — `min(words)` / `max(words)` work.
+The non-float reduction codegen switched from `.iter().copied().min()/.max()`
+to `.iter().cloned()...` so non-`Copy` `String` works (`i64`/`bool` are
+`Clone`, so this is semantically identical). The `key=`, `default=`, and
+`float` reduction paths are unchanged. New `min_max_str_list.py` e2e fixture
+(min/max word, str default, int regression), all cross-checked vs python3.
+
 ## [0.1.181] — 2026-06-13
 
 Tranche-2 slice PMAT-502eq — **collection `.copy()`** (`list`/`dict`/`set`).
