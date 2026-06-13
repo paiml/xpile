@@ -5641,6 +5641,10 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         ast::Expr::List(list_expr) => lower_list_literal_in_ctx(ctx, list_expr),
         ast::Expr::Dict(dict_expr) => lower_dict_literal_in_ctx(ctx, dict_expr),
         ast::Expr::Set(set_expr) => lower_set_literal_in_ctx(ctx, set_expr),
+        // PMAT-502df: a generator expression `<elt> for x in <iter>` desugars
+        // to `Expr::Map` (the List-producing `map(lambda x: elt, iter)` form),
+        // so `sum(...)` / `max(...)` / `min(...)` / `list(...)` accept it.
+        ast::Expr::GeneratorExp(ge) => lower_generator_exp_in_ctx(ctx, ge),
         // No dict-specific shape: the context-free path is sufficient.
         other => lower_expr(other),
     }
@@ -6967,6 +6971,70 @@ fn lower_set_literal_in_ctx(
         elems.push(lowered);
     }
     Ok(Expr::SetLit(elems))
+}
+
+/// PMAT-502df: lower a generator expression `<elt> for <var> in <iter>`
+/// (single generator, no `if` filter, first cut) to `Expr::Map` — the same
+/// List-producing form as `map(lambda <var>: <elt>, <iter>)`. This lets the
+/// common consumers (`sum(...)`, `max(...)`, `min(...)`, `list(...)`) accept a
+/// generator expression. The iterable may be a `range(...)` (materialised via
+/// `lower_range_list`) or any list-typed expression; the body is lowered with
+/// the loop var unbound (matching `map`'s element-type inference). An `if`
+/// filter, multiple generators, and a tuple target are deferred (use a
+/// filtered list comprehension assigned to a variable instead).
+fn lower_generator_exp_in_ctx(
+    ctx: &LoweringCtx,
+    ge: ast::ExprGeneratorExp,
+) -> Result<Expr, FrontendError> {
+    if ge.generators.len() != 1 {
+        return Err(FrontendError::Lower(
+            "generator expression with multiple `for` clauses is not supported at v0.2.0".into(),
+        ));
+    }
+    let gen = &ge.generators[0];
+    if !gen.ifs.is_empty() {
+        return Err(FrontendError::Lower(
+            "generator expression with an `if` filter is not yet supported — use a filtered \
+             list comprehension assigned to a variable"
+                .into(),
+        ));
+    }
+    let ast::Expr::Name(var) = &gen.target else {
+        return Err(FrontendError::Lower(
+            "generator expression with a tuple target is not yet supported at v0.2.0".into(),
+        ));
+    };
+    let param = var.id.to_string();
+    // Materialise the iterable into a list: a bare `range(...)` (not a
+    // first-class value) lowers via `lower_range_list`; anything else must
+    // already be list-typed.
+    let list = if let ast::Expr::Call(inner) = &gen.iter {
+        if matches!(&*inner.func, ast::Expr::Name(n) if n.id.as_str() == "range")
+            && inner.keywords.is_empty()
+        {
+            lower_range_list(ctx, inner)?
+        } else {
+            lower_expr_in_ctx(ctx, gen.iter.clone())?
+        }
+    } else {
+        lower_expr_in_ctx(ctx, gen.iter.clone())?
+    };
+    if !matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
+        return Err(FrontendError::Lower(
+            "generator expression iterates over a non-list — only `range(...)` and list-typed \
+             iterables are supported at v0.2.0"
+                .into(),
+        ));
+    }
+    // Body lowered with the loop var unbound (matches `map`'s inference).
+    let body = lower_expr_in_ctx(ctx, (*ge.elt).clone())?;
+    Ok(Expr::Map {
+        list: Box::new(list),
+        lambda: SortKey {
+            param,
+            body: Box::new(body),
+        },
+    })
 }
 
 #[cfg(test)]
