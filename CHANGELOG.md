@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.220] — 2026-06-14
+
+Tranche 2 — PMAT-520 (correctness): `list(set(...))` / `sorted(set(...))`.
+
+- Both previously emitted undefined `set(...)`/`list(...)` Rust calls (a silent
+  miscompile): the nested `set(...)` fell through to context-free lowering,
+  losing constructor recognition. New `Expr::SetToList { set }` →
+  `(set).iter().cloned().collect::<Vec<_>>()`; the `list(...)` handler (Set arg)
+  and the `sorted(...)` type match (Set arg) now route through it. Infer →
+  `List(elem)`; Lean refuses.
+- New e2e fixture `list_sorted_of_set.py` (rustc round-trip cross-checked vs
+  python3). e2e 281 → 282.
+
 ## [0.1.219] — 2026-06-13
 
 Tranche 2 — PMAT-519 (correctness): `frozenset(iterable)` → `HashSet`.
