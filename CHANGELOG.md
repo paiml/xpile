@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.189] — 2026-06-13
+
+Tranche-2 slice PMAT-502ey — **1-arg `d.get(k)` → `Optional[V]`** (Optional epic,
+continued).
+
+- A `.get` call with **no default** now lowers to a new `Expr::DictGetOpt` →
+  `(d).get(&(k)).cloned()` : `Option<V>`. The 2-arg `d.get(k, default)` form is
+  unchanged (`DictGetOr`). Both inferers type `DictGetOpt` as `Optional[V]` over
+  the dict value type; Lean refuses (Optional encoding deferred).
+- **No-double-wrap return fix.** `lower_return_value` now returns a value that
+  already types as `Optional` (an `Optional` param, or another `.get(k)`)
+  verbatim, instead of re-wrapping it into `Some(Option<..>)`.
+- New e2e fixture `dict_get_optional.py` (lookup / lookup_or / passthrough),
+  rustc round-trip cross-checked vs python3. e2e 253 → 254.
+
 ## [0.1.188] — 2026-06-13
 
 Tranche-2 slice PMAT-502ex — **Optional params + `is None` tests** (Optional
