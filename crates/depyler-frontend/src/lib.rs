@@ -32,7 +32,8 @@ use std::rc::Rc;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
     BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListMutateOp, ListQueryOp, Module,
-    NumBuiltinOp, PairIterKind, Param, SetOp, SortKey, SourceLang, Stmt, StrMethodOp, Type, UnOp,
+    NumBuiltinOp, PairIterKind, Param, Radix, SetOp, SortKey, SourceLang, Stmt, StrMethodOp, Type,
+    UnOp,
 };
 
 use rustpython_parser::ast;
@@ -3917,6 +3918,8 @@ fn infer_type(e: &Expr) -> Type {
         // PMAT-502cm: ord → int code point; chr → 1-char str.
         Expr::Ord { .. } => Type::I64,
         Expr::Chr { .. } => Type::Str,
+        // PMAT-502cv: hex/oct/bin → str.
+        Expr::IntRadixStr { .. } => Type::Str,
         // PMAT-502am: a formatted f-string field produces a Str.
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
@@ -4177,6 +4180,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-502cm: ord → int code point; chr → 1-char str.
         Expr::Ord { .. } => Type::I64,
         Expr::Chr { .. } => Type::Str,
+        // PMAT-502cv: hex/oct/bin → str.
+        Expr::IntRadixStr { .. } => Type::Str,
         // PMAT-502am: a formatted f-string field produces a Str.
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
@@ -4798,6 +4803,28 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         "function `{}` calls `chr(...)` on a non-int argument",
                         ctx.fn_name
                     )));
+                }
+                // PMAT-502cv: `hex(n)` / `oct(n)` / `bin(n)` (int → radix str).
+                if let Some(radix) = match fname.id.as_str() {
+                    "hex" => Some(Radix::Hex),
+                    "oct" => Some(Radix::Oct),
+                    "bin" => Some(Radix::Bin),
+                    _ => None,
+                } {
+                    if call.keywords.is_empty() && call.args.len() == 1 {
+                        let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                        if matches!(infer_type_in_ctx(ctx, &value), Type::I64) {
+                            return Ok(Expr::IntRadixStr {
+                                value: Box::new(value),
+                                radix,
+                            });
+                        }
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` calls `{}(...)` on a non-int argument",
+                            ctx.fn_name,
+                            fname.id.as_str()
+                        )));
+                    }
                 }
                 // PMAT-502w: ctx-aware `len(x)` — lower the argument through
                 // the context path so a context-dependent collection (e.g.

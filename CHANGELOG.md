@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.134] — 2026-06-13
+
+Tranche-2 slice PMAT-502cv — **`hex(n)` / `oct(n)` / `bin(n)`** builtins.
+
+All three were silently miscompiled (lowered as generic calls → undefined
+`hex(...)`/etc. Rust functions). They now lower to a new `Expr::IntRadixStr {
+value, radix }` (a `Radix` enum) emitting the Python-correct radix string with
+the `0x`/`0o`/`0b` prefix and the sign first for negatives — `{ let __n =
+(n); let __m = __n.unsigned_abs(); let __sign = if __n < 0 { "-" } else { "" };
+format!("{}0x{:x}", __sign, __m) }` (the magnitude via `unsigned_abs` so
+`i64::MIN` is safe). Lean refuses. rustc round-trip `int_radix.py`
+(cross-checked vs `python3`): `hex(255) -> "0xff"`, `hex(-255) -> "-0xff"`,
+`hex(0) -> "0x0"`, `bin(5) -> "0b101"`, `bin(-5) -> "-0b101"`, `oct(8) ->
+"0o10"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.133] — 2026-06-13
 
 Tranche-2 slice PMAT-502cu — **`str.center(width)`**.
