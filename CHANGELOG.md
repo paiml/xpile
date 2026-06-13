@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.200] — 2026-06-13
+
+Exceptions-epic slice PMAT-503c — **statement-position assignment-form
+`try`/`except`** (after 503b's value-fallback return-form).
+
+- `try: x = <expr> except [E]: x = <expr>` (same target in both arms) → `let x =
+  match catch_unwind(AssertUnwindSafe(|| <body>)) { Ok(v)=>v, Err(_)=><handler> }`
+  (or `x = …` if `x` is already bound). Reuses the 503b `Expr::TryCatch` — the
+  closure produces the value, so there's no closure-mutation hazard.
+- `lower_assignment_try` recognizes the shape (single `except`, catch-all, no
+  bound name, no `else`/`finally`, one `<name> = <expr>` per arm, same target),
+  wired into `lower_block_stmt`. The mutability pre-walk (`walk_counts`) now
+  descends into `try` arms (body + handlers merged by max) so a reassigned
+  try-target is marked `let mut` — and only then, avoiding spurious `mut`.
+- New e2e fixture `try_except_assign.py` (fresh-binding dict KeyError;
+  reassignment of a `mut` name via IndexError), rustc round-trip cross-checked vs
+  python3. e2e 261 → 262.
+
 ## [0.1.199] — 2026-06-13
 
 Exceptions-epic slice PMAT-503b — **`try`/`except` (value-with-fallback) via
