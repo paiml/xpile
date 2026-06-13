@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.157] — 2026-06-13
+
+Tranche-2 slice PMAT-502ds — **`f(*xs)` splat into a variadic param**.
+
+Completes the varargs feature: a `*`-splat covering the whole vararg tail
+(`f(fixed…, *xs)`) now passes the list directly (`f(fixed…, xs)`) instead of
+collecting into a fresh `vec![]`. The splatted expression must be list-typed.
+Other `*`-splat shapes (mixed `f(1, *xs)`, a splat in a fixed slot, or
+splatting into a non-variadic fn) stay rejected with a clear error. rustc
+round-trip `varargs_splat.py` (cross-checked vs `python3`): `forward([1,2,3])`
+(`total(*xs)`) == 6, `forward_prefixed([1,2,3])` (`with_prefix(10, *xs)`) == 16,
+`forward_empty([])` == 0.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.156] — 2026-06-13
 
 Tranche-2 slice PMAT-502dr — **nested functions** (single-`return` → closure).

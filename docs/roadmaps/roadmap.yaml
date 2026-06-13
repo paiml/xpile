@@ -1453,6 +1453,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "A nested `def inner(p: T,…) -> R: return <expr>` (FunctionDef in a fn body) → Stmt::ClosureLet (let inner = |p: T,…| { <expr> };), reusing the closure machinery. New desugar_nested_fn (mirrors desugar_closure_assign but uses ANNOTATED param types not all-i64, and the body comes from the single return stmt). ClosureLet codegen already emits per-param emit_type so non-i64 params (str→String, list→Vec) work. lower_block_stmt gains an ast::Stmt::FunctionDef arm → desugar_nested_fn. Params bound with real types during body inference then restored (no leak); closure_returns[name]=ret_ty (from -> R annotation else inferred) so inner(arg) types correctly; ctx.bound gets name. Captures enclosing locals (Rust closures capture by default). FIRST CUT: body must be a SINGLE `return <expr>` (multi-stmt needs a block-expr → deferred); *args/**kwargs/kwonly/posonly/decorators rejected. Lean refuses ClosureLet. Fits the 'no new Type + no return-wrapping' safe-structural filter. rustc round-trip nested_fn.py (cross-checked vs python3): add_one(5)=6, double_twice(5)=20, shout('hi')='HI'. FREE CI. SHIPPED v0.1.156. DEFERRED: multi-statement nested-fn bodies (need block-expr Expr); recursive nested fns; nested fn passed as an argument. NEXT structural: x is None (Option — needs design, new Type variant); try/except->Result (PMAT-503b); classes/dataclasses; &str borrowing."
+- id: PMAT-502DS
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ds: [Tranche2] f(*xs) splat into a variadic param'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "Completes the varargs feature (after v0.1.155 def + v0.1.155 call-collection). In the variadic Call branch: if the vararg tail is EXACTLY one ast::Expr::Starred covering all varargs (f(fixed…, *xs), tail_is_splat = args.len()==fixed+1 && args[fixed] is Starred, and no Starred in the fixed slots), pass the splatted list DIRECTLY (lower s.value, require List) instead of wrapping the tail in Expr::ListLit → f(fixed…, xs). Any OTHER *-splat shape (mixed f(1,*xs) needing concat, splat in a fixed slot, or splat into a non-variadic fn) is rejected with a clear error (deferred). rustc round-trip varargs_splat.py (cross-checked vs python3): total(*[1,2,3])=6, with_prefix(10,*[1,2,3])=16, total(*[])=0. FREE CI. SHIPPED v0.1.157. VARARGS NOW COMPLETE: def *args + call-collection f(1,2,3) + splat f(*xs). DEFERRED: mixed f(a, *xs) concat; variadic call WITH keywords. NEXT structural: Expr::Block primitive (unlocks multi-stmt nested fns + expr-position comprehensions — meaty, dedicated effort); x is None (Option, new Type variant — needs design); try/except->Result (PMAT-503b); classes; &str."
 - id: PMAT-465
   github_issue: 496
   item_type: task
