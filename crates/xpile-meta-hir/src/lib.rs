@@ -193,6 +193,8 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         // PMAT-466 (v0.2.0 Track 1.C): dict keyed assignment — recurse
         // into both key and value expressions.
         Stmt::DictSet { key, value, .. } => expr_has_int_arith(key) || expr_has_int_arith(value),
+        // PMAT-506c: field assignment — the assigned value may carry int arith.
+        Stmt::FieldAssign { value, .. } => expr_has_int_arith(value),
         // PMAT-502at: del coll[key] — recurse into the key expression.
         Stmt::DelItem { key, .. } => expr_has_int_arith(key),
         Stmt::Assert { cond, msg } => {
@@ -619,6 +621,15 @@ pub enum Stmt {
     DictSet {
         dict_name: String,
         key: Expr,
+        value: Expr,
+    },
+    /// PMAT-506c (classes epic): struct field assignment — Python `obj.field =
+    /// value`. Rust/Ruchy emit `(<obj>).<field> = <value>;` (the `obj` binding
+    /// must be `mut`, ensured by the mutability pre-walk); Lean refuses. First
+    /// cut: `obj` is a plain bound name (a struct local/param).
+    FieldAssign {
+        obj: String,
+        field: String,
         value: Expr,
     },
     /// `del coll[key]` — Python item deletion over a list or dict.

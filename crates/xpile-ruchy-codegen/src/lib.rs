@@ -170,6 +170,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::IndexAssign { .. } => false,
             // PMAT-466: dict keyed assignment same disposition.
             Stmt::DictSet { .. } => false,
+            // PMAT-506c: field assignment introduces no binding.
+            Stmt::FieldAssign { .. } => false,
             // PMAT-502at: del coll[key] introduces no binding.
             Stmt::DelItem { .. } => false,
             // PMAT-039: see rust-codegen's twin arm — shell commands
@@ -525,6 +527,13 @@ fn emit_stmt_indented(
             write!(out, "; {dict_name}.insert(")?;
             emit_expr(out, key, mode)?;
             writeln!(out, ".clone(), __xpile_dict_val); }}")?;
+            Ok(())
+        }
+        // PMAT-506c: struct field assignment `(obj).field = value;`.
+        Stmt::FieldAssign { obj, field, value } => {
+            write!(out, "{indent}({obj}).{field} = ")?;
+            emit_expr(out, value, mode)?;
+            writeln!(out, ";")?;
             Ok(())
         }
         // PMAT-502at: `del coll[key]`, matching the Rust backend.

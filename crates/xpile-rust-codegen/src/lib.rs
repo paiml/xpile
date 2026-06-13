@@ -184,6 +184,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             // PMAT-466: dict keyed assignment carries no Type::Let;
             // dict values are int/bool/str at v0.2.0, never BigInt.
             Stmt::DictSet { .. } => false,
+            // PMAT-506c: field assignment introduces no binding (no Type::Let).
+            Stmt::FieldAssign { .. } => false,
             // PMAT-502at: del coll[key] introduces no binding.
             Stmt::DelItem { .. } => false,
             // PMAT-039: shell commands carry no BigInt operands. They
@@ -582,6 +584,13 @@ fn emit_stmt_indented(
             write!(out, "; {dict_name}.insert(")?;
             emit_expr(out, key, mode)?;
             writeln!(out, ".clone(), __xpile_dict_val); }}")?;
+            Ok(())
+        }
+        // PMAT-506c: struct field assignment `(obj).field = value;`.
+        Stmt::FieldAssign { obj, field, value } => {
+            write!(out, "{indent}({obj}).{field} = ")?;
+            emit_expr(out, value, mode)?;
+            writeln!(out, ";")?;
             Ok(())
         }
         // PMAT-502at: Python `del coll[key]`. list → `coll.remove((k) as

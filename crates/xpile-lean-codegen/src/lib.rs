@@ -314,6 +314,15 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-506c: struct field assignment — the Lean lane refuses structs
+            // (see emit_stmt); refuse here too.
+            Stmt::FieldAssign { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has Stmt::FieldAssign (struct field assignment) inside a while loop; \
+                     struct values are not supported in the Lean lane",
+                    f.name
+                )));
+            }
             // PMAT-502at: del coll[key] inside a while loop — same gap.
             Stmt::DelItem { .. } => {
                 return Err(LeanCodegenError::Unsupported(format!(
@@ -1066,6 +1075,12 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
             "`{dict_name}[k] = v` (Stmt::DictSet) requires state-monad encoding in Lean — \
              not yet implemented at v0.2.0 first cut (PMAT-466 follow-up); \
              use `--target rust` or `--target ruchy` for in-place mutation"
+        ))),
+        // PMAT-506c: struct field assignment — struct values are deferred in
+        // the Lean lane.
+        Stmt::FieldAssign { obj, field, .. } => Err(LeanCodegenError::Unsupported(format!(
+            "`{obj}.{field} = v` (Stmt::FieldAssign) over a struct/dataclass is not supported \
+             in the Lean lane — use `--target rust` or `--target ruchy`"
         ))),
         // PMAT-502at: del coll[key] — same state-monad encoding gap.
         Stmt::DelItem { name, .. } => Err(LeanCodegenError::Unsupported(format!(
