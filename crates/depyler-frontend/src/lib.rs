@@ -65,6 +65,7 @@ struct FnSig {
     variadic: Option<(String, Type)>,
 }
 
+#[derive(Clone)]
 struct LoweringCtx {
     fn_name: String,
     /// The declared (or inferred-at-construction) return type of the
@@ -7480,7 +7481,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         match kw.arg.as_ref().map(|a| a.as_str()) {
                             // PMAT-502aa/ei: `key=lambda p: e` or `key=<fn>`.
                             Some("key") => {
-                                if let Some(k) = lower_sort_key(ctx, &kw.value)? {
+                                if let Some(k) = lower_sort_key(
+                                    ctx,
+                                    &kw.value,
+                                    sort_target_elem_type(ctx, &call.args[0]),
+                                )? {
                                     key = Some(k);
                                     continue;
                                 }
@@ -7544,7 +7549,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             }
                             // PMAT-502z/ei: `key=lambda p: e` or `key=<fn>`.
                             Some("key") => {
-                                if let Some(k) = lower_sort_key(ctx, &kw.value)? {
+                                if let Some(k) = lower_sort_key(
+                                    ctx,
+                                    &kw.value,
+                                    sort_target_elem_type(ctx, &call.args[0]),
+                                )? {
                                     key = Some(k);
                                     continue;
                                 }
@@ -8437,7 +8446,27 @@ fn lower_math_call(
 /// lowered through the same path (the body is lowered with the param left
 /// unbound, matching the lambda case). Returns `Ok(None)` for an unrecognized
 /// key shape (the caller then rejects the whole call's kwargs).
-fn lower_sort_key(ctx: &LoweringCtx, value: &ast::Expr) -> Result<Option<SortKey>, FrontendError> {
+fn lower_sort_key(
+    ctx: &LoweringCtx,
+    value: &ast::Expr,
+    // PMAT-524: the collection's element type, so the key param types correctly
+    // (e.g. `key=lambda p: p[1]` over a `list[tuple[..]]` — `p[1]` must lower to
+    // a tuple field access `.1`, not generic `[1]` indexing). `None` leaves the
+    // param untyped (defaults to I64, the pre-PMAT-524 behaviour).
+    elem_type: Option<Type>,
+) -> Result<Option<SortKey>, FrontendError> {
+    // Lower the key body with `param` bound to the element type (when known).
+    let lower_body = |param: &str, body: ast::Expr| -> Result<Expr, FrontendError> {
+        match &elem_type {
+            Some(ty) => {
+                let mut sub = ctx.clone();
+                sub.name_types.insert(param.to_string(), ty.clone());
+                sub.bound.insert(param.to_string());
+                lower_expr_in_ctx(&sub, body)
+            }
+            None => lower_expr_in_ctx(ctx, body),
+        }
+    };
     match value {
         ast::Expr::Lambda(lam)
             if lam.args.args.len() == 1
@@ -8447,7 +8476,7 @@ fn lower_sort_key(ctx: &LoweringCtx, value: &ast::Expr) -> Result<Option<SortKey
                 && lam.args.kwarg.is_none() =>
         {
             let param = lam.args.args[0].def.arg.to_string();
-            let body = lower_expr_in_ctx(ctx, (*lam.body).clone())?;
+            let body = lower_body(&param, (*lam.body).clone())?;
             Ok(Some(SortKey {
                 param,
                 body: Box::new(body),
@@ -8467,13 +8496,27 @@ fn lower_sort_key(ctx: &LoweringCtx, value: &ast::Expr) -> Result<Option<SortKey
                 args: vec![arg],
                 keywords: vec![],
             });
-            let body = lower_expr_in_ctx(ctx, synth)?;
+            let body = lower_body(&param, synth)?;
             Ok(Some(SortKey {
                 param,
                 body: Box::new(body),
             }))
         }
         _ => Ok(None),
+    }
+}
+
+/// PMAT-524: infer the element type of a `sorted`/`min`/`max` collection
+/// argument, so a `key=` lambda's parameter types correctly. Mirrors how those
+/// handlers materialise the target (range→list, set→list, dict→its keys,
+/// str→1-char str). Returns `None` if the type isn't a recognised iterable.
+fn sort_target_elem_type(ctx: &LoweringCtx, arg: &ast::Expr) -> Option<Type> {
+    let lowered = lower_arg_materializing_range(ctx, arg).ok()?;
+    match infer_type_in_ctx(ctx, &lowered) {
+        Type::List(e) | Type::Set(e) => Some(*e),
+        Type::Dict(k, _) => Some(*k),
+        Type::Str => Some(Type::Str),
+        _ => None,
     }
 }
 
