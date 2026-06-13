@@ -2999,6 +2999,23 @@ fn main() { demo(String::from("x"), 42); }
     assert_rustc_runs("print_builtin", &rust, driver);
 }
 
+/// PMAT-502bx (Tranche 2): print of `bool`/`float` args — Python prints
+/// `True`/`False` and `3.0` (not Rust's `true`/`3`), via the str() machinery.
+#[test]
+fn print_bool_float() {
+    let rust = xpile_transpile_to_rust("print_bool_float.py");
+    // bool arg → the True/False desugar; float arg → the `.0` format block.
+    assert!(rust.contains(r#""True""#), "bool print desugar:\n{rust}");
+    assert!(
+        rust.contains(r#"format!("{}.0""#),
+        "float print format:\n{rust}"
+    );
+    let driver = r#"
+fn main() { demo(2.5, true, 5); }
+"#;
+    assert_rustc_runs("print_bool_float", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

@@ -1356,10 +1356,24 @@ fn lower_print_stmt(ctx: &mut LoweringCtx, e: &ast::StmtExpr) -> Result<Stmt, Fr
     for a in &call.args {
         let lowered = lower_expr_in_ctx(ctx, a.clone())?;
         match infer_type_in_ctx(ctx, &lowered) {
+            // int / str print directly via `{}`.
             Type::I64 | Type::Str => args.push(lowered),
+            // PMAT-502bx: a float prints with Python formatting (`2.0`, not
+            // Rust's `2`) — reuse the `str(float)` block (`Expr::ToStr`).
+            Type::F64 => args.push(Expr::ToStr {
+                value: Box::new(lowered),
+                of_float: true,
+            }),
+            // PMAT-502bx: a bool prints `True`/`False` (capitalised) — reuse
+            // the `str(bool)` desugar to `"True" if b else "False"`.
+            Type::Bool => args.push(Expr::IfExpr {
+                cond: Box::new(lowered),
+                then_expr: Box::new(Expr::LitStr("True".to_string())),
+                else_expr: Box::new(Expr::LitStr("False".to_string())),
+            }),
             other => {
                 return Err(FrontendError::Lower(format!(
-                    "function `{}` calls `print(...)` with a `{other:?}` argument — only int and str (incl. f-strings) are supported at v0.2.0 (bool/float deferred: Python prints `True`/`2.0`, Rust `Display` prints `true`/`2`)",
+                    "function `{}` calls `print(...)` with a `{other:?}` argument — only int/str/float/bool (incl. f-strings) are supported at v0.2.0 (list/dict/set repr deferred)",
                     ctx.fn_name
                 )));
             }
