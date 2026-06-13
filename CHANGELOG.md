@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.119] — 2026-06-13
+
+Tranche-2 slice PMAT-502cg — **list & set comprehensions over `d.items()`**.
+
+Completing the comprehension-over-`.items()` family (dict-comp was v0.1.118):
+`[f(k, v) for k, v in d.items()]` and `{f(k, v) for k, v in d.items()}` were
+rejected ("non-Name comprehension target"). `desugar_list_comp` and
+`desugar_set_comp` each gain a tuple-target branch that, given an iterable
+typing as `list[tuple[K, V]]`, binds both loop names and desugars to a
+`ForEachPair { Pairs }` loop appending/adding to the accumulator (mirroring
+the dict-comp branch). The optional `if` filter composes. rustc round-trip
+`comp_items.py` (cross-checked vs `python3`): `values({"a":3,"b":-1}) ->
+[-1, 3]` (sorted), `pos_keys(...) -> ["a"]`, `value_set(...) -> {3, -1}`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.118] — 2026-06-13
 
 Tranche-2 slice PMAT-502cf — **dict comprehension over `d.items()`**.

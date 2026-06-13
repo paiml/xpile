@@ -3179,6 +3179,32 @@ fn main() {
     assert_rustc_runs("dict_comp_items", &rust, driver);
 }
 
+/// PMAT-502cg (Tranche 2): list & set comprehensions over `d.items()` with a
+/// tuple target → `ForEachPair(Pairs)` loops (the `if` filter composes).
+#[test]
+fn comp_items() {
+    let rust = xpile_transpile_to_rust("comp_items.py");
+    assert!(
+        rust.contains("for (k, v) in") && rust.contains(".push(v)"),
+        "list comp over items:\n{rust}"
+    );
+    assert!(rust.contains(".insert(v)"), "set comp over items:\n{rust}");
+    let driver = r#"
+fn main() {
+    let mut m = std::collections::HashMap::new();
+    m.insert(String::from("a"), 3);
+    m.insert(String::from("b"), -1);
+    let mut vs = values(m.clone());
+    vs.sort();
+    assert_eq!(vs, vec![-1, 3]);
+    assert_eq!(pos_keys(m.clone()), vec![String::from("a")]);
+    let st = value_set(m.clone());
+    assert!(st.contains(&3) && st.contains(&-1) && st.len() == 2);
+}
+"#;
+    assert_rustc_runs("comp_items", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
