@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.163] — 2026-06-13
+
+Tranche-2 slice PMAT-502dy — **nested subscript assignment** (`grid[i][j] = v`).
+
+2D/ND list-grid assignment (`grid[i][j] = v`, `g[i][j][k] = v`) was rejected
+(the subscript-assign target had to be `<name>[k]`). `Stmt::IndexAssign` now
+carries an index path (`indices: Vec<Expr>`); the frontend peels a nested
+subscript chain bottoming at a Name, requires the base to type as a
+`list[list[…]]` nested at least as deep as the path with all-`int` indices, and
+emits `grid[i as usize][j as usize] = v;`. Single-level `xs[i] = v` and dict
+`d[k] = v` are unchanged. The augmented nested form (`grid[i][j] += v`) and
+dict-nested paths are deferred. rustc round-trip `nested_index_assign.py`
+(cross-checked vs `python3`): `diag_fill(3) == 4` (2D), `cube_set(…) == 7` (3D).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.162] — 2026-06-13
 
 Tranche-2 slice PMAT-502dx — **mixed `{**a, "k": v}` dict literals**.

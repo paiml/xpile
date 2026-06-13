@@ -174,8 +174,8 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         }
         // PMAT-461: indexed assignment — recurse into both index and
         // value expressions (either may carry arithmetic).
-        Stmt::IndexAssign { index, value, .. } => {
-            expr_has_int_arith(index) || expr_has_int_arith(value)
+        Stmt::IndexAssign { indices, value, .. } => {
+            indices.iter().any(expr_has_int_arith) || expr_has_int_arith(value)
         }
         // PMAT-466 (v0.2.0 Track 1.C): dict keyed assignment — recurse
         // into both key and value expressions.
@@ -560,7 +560,10 @@ pub enum Stmt {
     /// assignment preserves all other indices.
     IndexAssign {
         list_name: String,
-        index: Expr,
+        /// The index path, base→leaf. A single index is `xs[i] = v`; a
+        /// multi-element path is nested list indexing (`grid[i][j] = v`,
+        /// PMAT-502dy) — every index is `usize`-coerced (all-list nesting).
+        indices: Vec<Expr>,
         value: Expr,
     },
     /// `dict[key] = value` — Python `d[k] = v` keyed assignment.
