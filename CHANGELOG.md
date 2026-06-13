@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.222] — 2026-06-14
+
+Tranche 2 — PMAT-522 (correctness): builtins over `range(...)` + `list(dict)`.
+
+- `len(range(n))`, `sorted(range(n))`, `reversed(range(n))` previously emitted
+  undefined `range(...)` Rust calls (range isn't first-class, so the arg fell
+  through to context-free lowering). New `lower_arg_materializing_range` turns a
+  `range(...)` arg into a `Vec`; `len`/`sorted`/`reversed` route through it.
+- `list(d)` over a dict previously emitted an undefined `list(...)` — now → the
+  dict's keys (`DictView { Keys }`), matching Python iterating a dict as its keys.
+- **No new IR** (reuses `RangeList` + `DictView`). New e2e fixture
+  `builtins_over_range_dict.py` (rustc round-trip cross-checked vs python3).
+  e2e 283 → 284.
+
 ## [0.1.221] — 2026-06-14
 
 Tranche 2 — PMAT-521 (correctness): reduction builtins over a non-list iterable.
