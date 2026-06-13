@@ -893,6 +893,31 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __marg = __w - __n; let __left = __marg / 2 + (__marg & __w & 1); format!(\"{}{}{}\", \" \".repeat(__left), __s, \" \".repeat(__marg - __left)) } }");
                 return Ok(());
             }
+            // PMAT-502dj: `.partition(sep)` / `.rpartition(sep)` → 3-tuple.
+            if matches!(op, StrMethodOp::Partition | StrMethodOp::RPartition) {
+                let is_r = matches!(op, StrMethodOp::RPartition);
+                out.push_str("match (");
+                emit_expr(out, recv, mode)?;
+                out.push_str(if is_r {
+                    ").rsplit_once(&("
+                } else {
+                    ").split_once(&("
+                });
+                emit_expr(out, &args[0], mode)?;
+                out.push_str(")[..]) { Some((__a, __b)) => (__a.to_string(), (");
+                emit_expr(out, &args[0], mode)?;
+                out.push_str(").to_string(), __b.to_string()), None => ");
+                if is_r {
+                    out.push_str("(String::new(), String::new(), (");
+                    emit_expr(out, recv, mode)?;
+                    out.push_str(").to_string()) }");
+                } else {
+                    out.push('(');
+                    emit_expr(out, recv, mode)?;
+                    out.push_str(".to_string(), String::new(), String::new()) }");
+                }
+                return Ok(());
+            }
             emit_expr(out, recv, mode)?;
             match op {
                 StrMethodOp::Upper => out.push_str(".to_uppercase()"),
@@ -969,6 +994,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 }
                 StrMethodOp::ZFill => unreachable!("zfill handled above"),
                 StrMethodOp::Center => unreachable!("center handled above"),
+                StrMethodOp::Partition | StrMethodOp::RPartition => {
+                    unreachable!("partition/rpartition handled above")
+                }
             }
         }
         // PMAT-455 (v0.2.0 Track 1.B): Ruchy → Rust → `vec![...]`.

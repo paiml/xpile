@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.148] — 2026-06-13
+
+Tranche-2 slice PMAT-502dj — **`str.partition(sep)` / `.rpartition(sep)`**.
+
+Both lower to the 3-tuple `(before, sep, after)` (→ `tuple[str, str, str]`) via
+Rust's `split_once` / `rsplit_once`. When `sep` is absent the two differ,
+matching Python: `partition` → `(s, "", "")`, `rpartition` → `("", "", s)`
+(empty parts first). New `StrMethodOp::Partition`/`RPartition` (1-arg,
+block-form codegen); the inferer returns a `Tuple([Str,Str,Str])`. Lean refuses
+`StrMethod` wholesale. rustc round-trip `str_partition.py` (cross-checked vs
+`python3`): `"a.b.c".partition(".")` = `("a",".","b.c")`, `.rpartition(".")` =
+`("a.b",".","c")`, `"abc".partition(".")` = `("abc","","")`,
+`"abc".rpartition(".")` = `("","","abc")`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.147] — 2026-06-13
 
 Tranche-2 slice PMAT-502di — **`str.isupper()` / `.islower()` / `.isalnum()`**.
