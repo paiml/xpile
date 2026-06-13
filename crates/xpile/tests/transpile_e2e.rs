@@ -4356,6 +4356,30 @@ fn main() {
     assert_rustc_runs("builtins_over_range_dict", &rust, driver);
 }
 
+/// PMAT-523 (Tranche 2): negative-step `range` materialisation —
+/// `list(range(n, 0, -1))` / `sum(range(n, 0, -1))` etc. Python `range(start,
+/// stop, step<0)` → Rust `((stop)+1 ..= (start)).rev().step_by(|step|)`. (The
+/// counted `for i in range(n, 0, -1)` loop already worked; only materialisation
+/// was deferred.) Cross-checked vs python3 (5, 1, 4, 15, 0).
+#[test]
+fn range_negative_step() {
+    let rust = xpile_transpile_to_rust("range_negative_step.py");
+    assert!(
+        rust.contains(").rev().collect::<Vec<i64>>()") && rust.contains(") + 1)..=("),
+        "a negative-step range should materialise via a reversed inclusive range:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(countdown_first(5), 5);
+    assert_eq!(countdown_last(5), 1);
+    assert_eq!(stride_neg3_count(10), 4);
+    assert_eq!(sum_countdown(5), 15);
+    assert_eq!(empty_neg(5), 0);
+}
+"#;
+    assert_rustc_runs("range_negative_step", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
