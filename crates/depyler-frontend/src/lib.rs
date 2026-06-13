@@ -160,7 +160,16 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
         match stmt {
             ast::Stmt::Assign(a) => {
                 let bump = if in_loop { 2 } else { 1 };
-                if let Some(name) = simple_assign_target_name(a) {
+                // PMAT-502bz: a chained assignment `x = y = …` binds every
+                // Name target — count each so a later mutation lifts it to
+                // `let mut`.
+                if a.targets.len() > 1 {
+                    for t in &a.targets {
+                        if let ast::Expr::Name(n) = t {
+                            *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                        }
+                    }
+                } else if let Some(name) = simple_assign_target_name(a) {
                     *counts.entry(name).or_insert(0) += bump;
                 } else if let Some(name) = subscript_assign_base_name(a) {
                     // PMAT-466 (also fixes latent list case): `d[k] = v`
@@ -1002,6 +1011,16 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
                     let name = n.id.to_string();
                     return desugar_closure_assign(ctx, &name, lam).map(|s| vec![s]);
                 }
+            }
+            // PMAT-502bz: chained assignment `x = y = z = <literal>`. Python
+            // evaluates the value once and binds it to every target left to
+            // right. First cut: all targets must be plain Names and the value
+            // a scalar literal (int/float/bool/str), so re-lowering the value
+            // per target is side-effect-free and each target gets an
+            // independent copy (matches Python for scalars; list/dict
+            // aliasing is out of scope under value semantics).
+            if asn.targets.len() > 1 {
+                return lower_chained_assign(ctx, asn);
             }
             lower_assign(ctx, asn).map(|s| vec![s])
         }
@@ -2317,6 +2336,63 @@ fn single_name_target(fn_name: &str, asn: &ast::StmtAssign) -> Result<String, Fr
             "function `{fn_name}` has unsupported assignment target inside if-branch"
         ))),
     }
+}
+
+/// PMAT-502bz: lower a chained assignment `x = y = z = <literal>` to one
+/// `Stmt` per target. Restricted to plain-Name targets and a scalar-literal
+/// value (int/float/bool/str) so re-lowering the value for each target is
+/// side-effect-free and each target gets an independent value (Python's list/
+/// dict aliasing for `a = b = []` is intentionally out of scope here).
+fn lower_chained_assign(
+    ctx: &mut LoweringCtx,
+    asn: ast::StmtAssign,
+) -> Result<Vec<Stmt>, FrontendError> {
+    let names = asn
+        .targets
+        .iter()
+        .map(|t| match t {
+            ast::Expr::Name(n) => Ok(n.id.to_string()),
+            _ => Err(FrontendError::Lower(format!(
+                "function `{}` has a chained assignment with a non-Name target — only `a = b = … = <literal>` (plain names) is supported at v0.2.0",
+                ctx.fn_name
+            ))),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let is_scalar_literal = matches!(
+        asn.value.as_ref(),
+        ast::Expr::Constant(c) if matches!(
+            c.value,
+            ast::Constant::Int(_)
+                | ast::Constant::Float(_)
+                | ast::Constant::Bool(_)
+                | ast::Constant::Str(_)
+        )
+    );
+    if !is_scalar_literal {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` has a chained assignment `a = b = …` with a non-literal value — only a scalar literal (int/float/bool/str) is supported at v0.2.0 (avoids aliasing/move issues)",
+            ctx.fn_name
+        )));
+    }
+    let mut out = Vec::with_capacity(names.len());
+    for name in names {
+        let value = lower_expr_in_ctx(ctx, (*asn.value).clone())?;
+        if ctx.bound.contains(&name) {
+            out.push(Stmt::Assign { name, value });
+        } else {
+            let ty = infer_type_in_ctx(ctx, &value);
+            let mutable = ctx.mutable.contains(&name);
+            ctx.bound.insert(name.clone());
+            ctx.name_types.insert(name.clone(), ty.clone());
+            out.push(Stmt::Let {
+                name,
+                ty,
+                value,
+                mutable,
+            });
+        }
+    }
+    Ok(out)
 }
 
 fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, FrontendError> {

@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.112] — 2026-06-13
+
+Tranche-2 slice PMAT-502bz — **chained assignment** `x = y = z = <literal>`.
+
+A chained assignment was rejected outright. It now desugars to one binding
+per target (`let x = 0; let y = 0; …`). First cut: all targets must be plain
+Names and the value a scalar literal (int/float/bool/str), so re-lowering the
+value per target is side-effect-free and each target gets an independent value
+(Python's list/dict aliasing for `a = b = []` stays out of scope under the
+project's value semantics). The mutability pre-pass now counts every Name
+target, so a later mutation (`a = b = 0; a += 5`) correctly lifts `a` to `let
+mut`. Non-Name targets and non-literal values are deferred with a precise
+error. rustc round-trip `chained_assign.py` (cross-checked vs `python3`):
+`init_sum() -> 8`, `flags() -> 2`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.111] — 2026-06-13
 
 Tranche-2 slice PMAT-502by — **`print(..., sep=…, end=…)`** keyword args.

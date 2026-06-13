@@ -1048,6 +1048,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "Stmt::Print changed from Print(Vec<Expr>) to Print { args, sep: String, end: String }. Frontend lower_print_stmt parses sep=/end= keywords (string literals only; non-literal + file= + **kwargs deferred with precise errors); defaults sep=' ', end='\\n'. Codegen rust/ruchy: build a format string joining N {} with escape_format_literal(sep); if end==\\n use println! (appends newline) else print! with escape_format_literal(end) appended (so end='' concatenates onto the next print). New escape_format_literal helper in both backends escapes {/} (doubled), \"/\\ (backslash), and \\n/\\t/\\r. Bare print() stays println!(). Default case output unchanged (println!(\"{} {}\", a, b)) so existing print tests still pass. Blast radius: the 6 Stmt::Print match sites updated to the struct shape. rustc round-trip print_sep_end.py BYTE-IDENTICAL to python3: '1, 2' / 'loading...done' (end='' concat) / '1 | 2'. FREE CI. SHIPPED v0.1.111."
+- id: PMAT-502BZ
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bz: [Tranche2] chained assignment x = y = z = literal'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "Chained assignment a = b = ... was rejected ('chained assignment not supported'). FIX: new lower_chained_assign, gated in lower_block_stmt's ast::Stmt::Assign arm when asn.targets.len() > 1. Desugars to one Stmt per target (Let on first binding / Assign if already bound), re-lowering the value for EACH target. First cut: all targets must be plain Names and the value a SCALAR LITERAL (ast::Constant::Int/Float/Bool/Str) so per-target re-lowering is side-effect-free and each target gets an independent value. Python's list/dict aliasing for a = b = [] is OUT OF SCOPE (value semantics). walk_counts Assign arm updated: when targets.len() > 1, bump each Name target so a later mutation (a = b = 0; a += 5) lifts a to let mut. Non-Name targets + non-literal values deferred with precise errors. rustc round-trip chained_assign.py (cross-checked vs python3): init_sum()=8 (a=b=c=0; a+=5; b+=3), flags()=2 (x=y=1). FREE CI. SHIPPED v0.1.112."
 - id: PMAT-465
   github_issue: 496
   item_type: task
