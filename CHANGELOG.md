@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.187] — 2026-06-13
+
+Tranche-2 slice PMAT-502ew — **`Optional[T]` return type** (first cut of the
+Optional epic, R6/PMAT-475 decomposition).
+
+A function annotated `-> Optional[T]` now lowers to Rust `Option<T>`. The body
+produces concrete `T` values and the **return site wraps** them: `return None`
+→ `None`, `return x` → `Some(x)`. New `Type::Optional(Box<Type>)` and
+`Expr::OptionExpr(Option<Box<Expr>>)` carry this; `from typing import Optional`
+(and any `from … import …`) is now accepted and skipped, `Optional[T]`
+annotations parse, and the trailing-return type check tolerates a bare `None`
+against any declared `Optional`. Rust/Ruchy emit `Option<T>` + `Some`/`None`;
+the Lean lane defers `Optional`.
+
+This is the **return-position-only** first cut: `Optional` *parameters* and
+*locals*, and `is None` / `is not None` flow-narrowing (consuming an Optional
+as a `T`), are a deferred follow-up. New `optional_return.py` e2e fixture
+(`Optional[int]`/`[str]`/`[float]`, present/absent, trailing-None,
+trailing-Some), all cross-checked vs python3 (the driver matches/unwraps the
+`Option`).
+
 ## [0.1.186] — 2026-06-13
 
 Tranche-2 slice PMAT-502ev — **`sorted(s)` over a str** (sort characters).

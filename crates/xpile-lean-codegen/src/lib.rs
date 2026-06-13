@@ -677,6 +677,12 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         }
         // PMAT-502eq: shallow copy — recurse into the cloned value.
         Expr::Clone(inner) => collect_idents(inner, out),
+        // PMAT-502ew: Option wrapper — recurse into the `Some(e)` payload.
+        Expr::OptionExpr(inner) => {
+            if let Some(e) = inner {
+                collect_idents(e, out);
+            }
+        }
         // PMAT-457: indexed access — recurse into both sides.
         Expr::Index { collection, index } => {
             collect_idents(collection, out);
@@ -819,6 +825,16 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), LeanCodegenError> {
                 "Lean code backend does not lower {t:?} — \
                  contract C-BASHRS-POSIX-IDEMPOTENCE governs the bashrs type domain"
             )));
+        }
+        // PMAT-502ew: `Optional[T]` deferred in the Lean lane at first cut
+        // (the wrapping-returns shape composes with early-return support that
+        // Lean doesn't yet have) — refuse with a pointer.
+        Type::Optional(_) => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python `Optional[T]` is not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
         }
     }
     Ok(())
@@ -1074,6 +1090,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         // PMAT-502eq: a shallow copy of an immutable Lean value is the value
         // itself — emit the inner expression directly.
         Expr::Clone(inner) => emit_expr(out, inner)?,
+        // PMAT-502ew: `Optional` deferred in the Lean lane (see emit_type).
+        Expr::OptionExpr(_) => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python `Optional`/`None` values are not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
         // PMAT-502bl: void functions are refused at emit_type, so a unit
         // value should never reach here; refuse defensively.
         Expr::Unit => {

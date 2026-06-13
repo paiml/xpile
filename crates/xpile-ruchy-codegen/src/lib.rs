@@ -656,6 +656,12 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
                  use `--target shell`"
             )));
         }
+        // PMAT-502ew: Python `Optional[T]` → `Option<T>`, matching Rust.
+        Type::Optional(inner) => {
+            out.push_str("Option<");
+            emit_type(out, inner)?;
+            out.push('>');
+        }
     }
     Ok(())
 }
@@ -1599,6 +1605,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, inner, mode)?;
             out.push_str(").clone()");
         }
+        // PMAT-502ew: `Option` value — `None` / `Some(<e>)`, matching Rust.
+        Expr::OptionExpr(inner) => match inner {
+            None => out.push_str("None"),
+            Some(e) => {
+                out.push_str("Some(");
+                emit_expr(out, e, mode)?;
+                out.push(')');
+            }
+        },
         // PMAT-459 (v0.2.0 Track 1.B): Ruchy → Rust → `.len() as i64`.
         Expr::Len(inner) => {
             emit_expr(out, inner, mode)?;

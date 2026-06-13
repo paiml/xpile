@@ -744,6 +744,12 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
                  use `--target shell` for shell-typed signatures"
             )));
         }
+        // PMAT-502ew: Python `Optional[T]` → Rust `Option<T>`.
+        Type::Optional(inner) => {
+            out.push_str("Option<");
+            emit_type(out, inner)?;
+            out.push('>');
+        }
     }
     Ok(())
 }
@@ -1763,6 +1769,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, inner, mode)?;
             out.push_str(").clone()");
         }
+        // PMAT-502ew: `Option` value — `None` / `Some(<e>)`.
+        Expr::OptionExpr(inner) => match inner {
+            None => out.push_str("None"),
+            Some(e) => {
+                out.push_str("Some(");
+                emit_expr(out, e, mode)?;
+                out.push(')');
+            }
+        },
         // PMAT-459 (v0.2.0 Track 1.B): Python `len(x)` → Rust
         // `x.len() as i64`. Vec/String both expose `.len()` returning
         // `usize`; the `as i64` cast brings the result back into
