@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.221] — 2026-06-14
+
+Tranche 2 — PMAT-521 (correctness): reduction builtins over a non-list iterable.
+
+- `sum(range(n))` (the textbook idiom) and `sum`/`max`/`min` over `set(...)`
+  previously emitted undefined `range(...)`/`set(...)` Rust calls (silent
+  miscompiles): the arg fell through to context-free lowering. A new shared
+  `materialize_iterable_arg` turns `range(...)` into a `Vec` and a set into
+  `SetToList` before the reduce (the `sum`/`min`/`max` handlers route through
+  it). **No new IR** (reuses `RangeList` + `SetToList`).
+- New e2e fixture `reduce_over_iterable.py` (rustc round-trip cross-checked vs
+  python3). e2e 282 → 283.
+
 ## [0.1.220] — 2026-06-14
 
 Tranche 2 — PMAT-520 (correctness): `list(set(...))` / `sorted(set(...))`.
