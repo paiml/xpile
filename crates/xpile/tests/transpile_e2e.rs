@@ -4041,6 +4041,29 @@ fn main() {
     assert_rustc_runs("dataclass_classmethod", &rust, driver);
 }
 
+/// PMAT-506i (classes epic): augmented struct field assignment
+/// `obj.field <op>= v` → `obj.field = obj.field <op> v`, reusing the shipped
+/// `FieldAccess` read + `FieldAssign` write (PMAT-506c). The receiver is marked
+/// `mut` by the pre-walk (an Attribute aug-target now counts). Common as
+/// `account.balance += deposit`. Cross-checked vs python3 (145, 13, 28).
+#[test]
+fn dataclass_augmented_field_assign() {
+    let rust = xpile_transpile_to_rust("dataclass_aug_field.py");
+    assert!(
+        rust.contains("let mut a: Account")
+            && rust.contains("(a).balance = ((a).balance).checked_add(d1)"),
+        "`obj.field += v` should desugar to a FieldAssign of a FieldAccess + op, receiver `mut`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(run_deposits(20, 30), 145);
+    assert_eq!(scale_bonus(4), 13);
+    assert_eq!(combined(10), 28);
+}
+"#;
+    assert_rustc_runs("dataclass_aug_field", &rust, driver);
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators

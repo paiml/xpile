@@ -299,6 +299,12 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                     *counts.entry(n.id.to_string()).or_insert(0) += bump;
                 } else if let Some(name) = subscript_chain_base_name(a.target.as_ref()) {
                     *counts.entry(name).or_insert(0) += bump;
+                } else if let ast::Expr::Attribute(attr) = a.target.as_ref() {
+                    // PMAT-506i: `obj.field <op>= v` mutates `obj` in place →
+                    // mark `obj` mutable (mirrors the `obj.field = v` Assign arm).
+                    if let ast::Expr::Name(n) = attr.value.as_ref() {
+                        *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                    }
                 }
             }
             // PMAT-466: an annotated local binding counts exactly ONCE,
@@ -3874,8 +3880,54 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
                 ))),
             }
         }
+        // PMAT-506i (classes epic): augmented struct field assignment
+        // `obj.field <op>= v` — desugar to `obj.field = obj.field <op> v`,
+        // reusing the shipped `FieldAccess` read + `FieldAssign` write (PMAT-506c).
+        // `obj` must be a plain bound name typing as a struct and `field` a known
+        // member; `obj` is marked mutable by the pre-walk (walk_counts counts an
+        // Attribute aug-target). A `self.field <op>= v` lowers to a
+        // `FieldAssign { obj: "self", … }` and is then rejected by
+        // `body_assigns_self` (read-only methods), consistent with `self.f = v`.
+        ast::Expr::Attribute(attr) => {
+            let ast::Expr::Name(obj) = attr.value.as_ref() else {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` augments a non-Name attribute receiver — only `obj.field <op>= v` over a struct local/param is supported at v0.2.0",
+                    ctx.fn_name
+                )));
+            };
+            let obj_name = obj.id.to_string();
+            let field = attr.attr.to_string();
+            let obj_ty = ctx.name_types.get(&obj_name).cloned().unwrap_or(Type::I64);
+            let Type::Struct(sname) = obj_ty else {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` augments `.{field}` of `{obj_name}`, which is not a struct value",
+                    ctx.fn_name
+                )));
+            };
+            let known = ctx
+                .structs
+                .get(&sname)
+                .is_some_and(|fs| fs.iter().any(|(f, _)| *f == field));
+            if !known {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` augments field `{field}` of `{sname}`, which has no such field",
+                    ctx.fn_name
+                )));
+            }
+            let current = Expr::FieldAccess {
+                obj: Box::new(Expr::Ident(obj_name.clone())),
+                field: field.clone(),
+            };
+            let value = combine_aug(ctx, &aug.op, current, rhs)?;
+            ctx.mutable.insert(obj_name.clone());
+            Ok(Stmt::FieldAssign {
+                obj: obj_name,
+                field,
+                value,
+            })
+        }
         _ => Err(FrontendError::Lower(format!(
-            "function `{}` uses augmented assignment on an unsupported target — supported: `name <op>= e`, `d[k] <op>= e`, `xs[i] <op>= e`",
+            "function `{}` uses augmented assignment on an unsupported target — supported: `name <op>= e`, `d[k] <op>= e`, `xs[i] <op>= e`, `obj.field <op>= e`",
             ctx.fn_name
         ))),
     }
