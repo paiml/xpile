@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.169] — 2026-06-13
+
+Tranche-2 slice PMAT-502ee — **`bool` in an f-string renders Python-style
+`True`/`False`**.
+
+A `bool` interpolated into an f-string (`f"flag={flag}"`) rendered Rust's
+lowercase `Display` — "flag=true" instead of Python's "flag=True". A **silent
+miscompile**: it compiled and ran, just produced the wrong string. (`str(bool)`,
+`print(bool)`, and `%s`-over-bool already handled this correctly; only the
+f-string path didn't.) A bool field now desugars to `"True" if b else "False"`
+— the same `Expr::IfExpr` conversion `str(bool)` uses — extracted into a shared
+`bool_to_python_str` helper. This also **un-defers** a lone `f"{flag}"` (which
+PMAT-502ed left erroring): it now produces a `Str`. New `fstring_bool.py` e2e
+fixture (field-in-text, lone, two-fields, comparison-field, mixed), all
+cross-checked vs python3.
+
 ## [0.1.168] — 2026-06-13
 
 Tranche-2 slice PMAT-502ed — **f-string fixes: lone `{n}` field + integer

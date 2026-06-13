@@ -5499,11 +5499,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             });
                         }
                         Type::Bool => {
-                            return Ok(Expr::IfExpr {
-                                cond: Box::new(value),
-                                then_expr: Box::new(Expr::LitStr("True".to_string())),
-                                else_expr: Box::new(Expr::LitStr("False".to_string())),
-                            });
+                            return Ok(bool_to_python_str(value));
                         }
                         _ => {}
                     }
@@ -6270,6 +6266,18 @@ fn stringify_lone_fstring_field(acc: Expr, ty: Type) -> Expr {
 /// context-aware. A `FormattedValue` with a static, supported format spec
 /// becomes [`Expr::FormatSpec`]; a plain `{expr}` lowers its value; conversion
 /// flags (`!r`/`!s`/`!a`) and unsupported / dynamic specs error.
+/// PMAT-502ae / PMAT-502ee: Python's `bool` stringifies to capitalized
+/// `"True"`/`"False"`, unlike Rust's lowercase `Display`. `str(b)`, a bool in an
+/// f-string, `print(b)`, and `%s` over a bool all desugar to the same
+/// `"True" if b else "False"` (`Expr::IfExpr`).
+fn bool_to_python_str(value: Expr) -> Expr {
+    Expr::IfExpr {
+        cond: Box::new(value),
+        then_expr: Box::new(Expr::LitStr("True".to_string())),
+        else_expr: Box::new(Expr::LitStr("False".to_string())),
+    }
+}
+
 fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr, FrontendError> {
     let ast::Expr::FormattedValue(fv) = part else {
         return lower_expr_in_ctx(ctx, part);
@@ -6282,6 +6290,13 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
     let value = lower_expr_in_ctx(ctx, (*fv.value).clone())?;
     let Some(spec_expr) = fv.format_spec.as_ref() else {
         // Plain `{expr}` — no spec; Display-coerced by the surrounding format!.
+        // PMAT-502ee: a `bool` field must render Python-style (`True`/`False`),
+        // not Rust's lowercase `Display` — desugar to `"True" if b else
+        // "False"` (the same conversion `str(bool)` uses). This also makes a
+        // lone `f"{flag}"` a `Str` (un-deferring it from PMAT-502ed).
+        if infer_type_in_ctx(ctx, &value) == Type::Bool {
+            return Ok(bool_to_python_str(value));
+        }
         return Ok(value);
     };
     let Some(spec) = static_format_spec(spec_expr) else {
