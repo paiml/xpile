@@ -2936,6 +2936,34 @@ fn main() {
     assert_rustc_runs("float_power", &rust, driver);
 }
 
+/// PMAT-502bu (Tranche 2): float augmented assignment with a non-float rhs
+/// casts the int side to f64 (no `f64 <op> i64` mismatch), and `**=` uses
+/// `powf` (not the int `checked_pow` path).
+#[test]
+fn aug_assign_float_int_rhs() {
+    let rust = xpile_transpile_to_rust("aug_assign_float_int_rhs.py");
+    assert!(
+        rust.contains("x = (x + ((1i64) as f64))"),
+        "float += int rhs:\n{rust}"
+    );
+    assert!(
+        rust.contains("(base).powf(((3i64) as f64))"),
+        "float **= int rhs:\n{rust}"
+    );
+    assert!(
+        !rust.contains("checked_pow"),
+        "float **= must not use checked_pow:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // python3: x=3; +=1->4; *=3->12; /=2->6.0; //=2->3.0; %=5->3.0; **=2->9.0
+    assert!((run(3.0) - 9.0).abs() < 1e-9);
+    assert!((pow_assign(2.0) - 8.0).abs() < 1e-9);
+}
+"#;
+    assert_rustc_runs("aug_assign_float_int_rhs", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

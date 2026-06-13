@@ -2378,12 +2378,16 @@ fn combine_aug(
 ) -> Result<Expr, FrontendError> {
     // PMAT-502bq: float augmented arithmetic → FloatBinOp. Detected before
     // `lower_binop` (which rejects `/`), so `x /= y` over floats works too.
+    // PMAT-502bu: cast BOTH operands to f64 (via `to_f64_operand`) so a
+    // non-float rhs — e.g. `x += 1`, `x /= 2`, `x **= 2` on a float `x` —
+    // doesn't emit a mismatched `f64 <op> i64`. `float_op_from_ast` maps
+    // `**` to `FloatOp::Pow` so `**=` lowers to `(x).powf(..)`.
     if infer_type_in_ctx(ctx, &lhs) == Type::F64 || infer_type_in_ctx(ctx, &rhs) == Type::F64 {
         if let Some(fop) = float_op_from_ast(ast_op) {
             return Ok(Expr::FloatBinOp {
                 op: fop,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
+                lhs: Box::new(to_f64_operand(ctx, lhs)),
+                rhs: Box::new(to_f64_operand(ctx, rhs)),
             });
         }
     }
@@ -5461,6 +5465,10 @@ fn float_op_from_ast(op: &ast::Operator) -> Option<FloatOp> {
         ast::Operator::Div => Some(FloatOp::Div),
         ast::Operator::FloorDiv => Some(FloatOp::FloorDiv),
         ast::Operator::Mod => Some(FloatOp::Mod),
+        // PMAT-502bu: `**` over floats. In the expression-position BinOp
+        // arms a dedicated branch handles Pow first (casting operands), so
+        // this mapping is only reached via `combine_aug` (`x **= y`).
+        ast::Operator::Pow => Some(FloatOp::Pow),
         _ => None,
     }
 }
