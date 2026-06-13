@@ -1345,6 +1345,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "Generator expressions as builtin args (sum(f(x) for x in xs), max(abs(x) for x in xs), list(x*2 for x in xs)) were REJECTED ('unsupported expression'); even sum([listcomp]) was rejected because comprehensions only lower in statement position (no value-producing comprehension form). KEY INSIGHT: a no-filter single-generator genexpr `<elt> for <var> in <iter>` is semantically map(lambda <var>: <elt>, <iter>), and Expr::Map ALREADY types as List + the List-consumers (Sum, ListMinMax 1-arg max/min, list()-unwrap) already accept a Map. FIX (FRONTEND-ONLY, NO meta-HIR/codegen change, reuses Map+Sum+ListMinMax): new ast::Expr::GeneratorExp(ge) arm -> lower_generator_exp_in_ctx: validates single generator + no `if` + Name target; lowers iterable (bare range(...) -> lower_range_list, else require List); lowers body with the loop var UNBOUND (matches map's inference); returns Expr::Map { list, lambda: SortKey{param, body} }. Consumers then work for free: sum(genexpr)->Sum, max/min(genexpr)->ListMinMax, list(genexpr)->Map-unwrap. rustc round-trip generator_expr.py (cross-checked vs python3): sum_squares(5)=30, sum_abs([-1,2,-3])=6, max_abs([-1,5,-3])=5, doubled([1,2,3])=[2,4,6]. FREE CI. SHIPPED v0.1.144. DEFERRED (own slices): genexpr with `if` filter (needs filter+map compose or a value-producing comprehension Expr); multi-generator; tuple target; non-i64 element bodies (map's unbound-param limitation). NEXT: genexpr `if` filter, OR str.partition/splitlines, OR decompose try/except->Result (PMAT-503b)."
+- id: PMAT-502DG
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502dg: [Tranche2] filtered generator expressions (if-clause)'
+  status: planned
+  priority: high
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "The v0.1.144 genexpr support DEFERRED the `if` filter (sum(x for x in xs if x>0) was rejected). KEY INSIGHT: Expr::Filter ALSO types as List (infer_type(filter.list)) and Map accepts a List, so a filtered genexpr composes as Map(Filter(iter)) — semantically map(lambda var: elt, filter(lambda var: cond, iter)). FIX (FRONTEND-ONLY, no meta-HIR/codegen change, reuses Filter+Map): lower_generator_exp_in_ctx now allows a single `if` clause (>1 still rejected 'combine with and'); wraps iter_list in Expr::Filter{list, lambda: SortKey{param, cond}} when present; cond lowered with the loop var UNBOUND, must be Bool. Then the existing Map wraps the (possibly filtered) list. Consumers (Sum/ListMinMax/list-unwrap) work for free. rustc round-trip generator_expr_filter.py (cross-checked vs python3): sum_positive([-1,2,-3,4])=6, sum_even_squares(6)=20, keep_positive([-1,2,-3,4])=[2,4]. FREE CI. SHIPPED v0.1.145. **GENEXPR FAMILY now: no-filter (v144) + single-if (v145). DEFERRED: multiple-if (combine with and), multi-generator, tuple target, non-i64 element/cond bodies (map/filter unbound-param limit).** NEXT: str.partition/splitlines/rsplit OR decompose try/except->Result (PMAT-503b epic, highest remaining structural EV)."
 - id: PMAT-465
   github_issue: 496
   item_type: task

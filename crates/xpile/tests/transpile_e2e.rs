@@ -3529,6 +3529,26 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dg (Tranche 2): a generator expression with an `if` filter composes
+/// `Filter` → `Map` (`sum(x for x in xs if x > 0)`).
+#[test]
+fn generator_expr_filter() {
+    let rust = xpile_transpile_to_rust("generator_expr_filter.py");
+    assert!(
+        rust.contains(".filter(|__k|") && rust.contains(".map(|__k|"),
+        "filtered genexpr → filter + map:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // filtered generator expressions; cross-checked vs python3.
+    assert_eq!(sum_positive(vec![-1, 2, -3, 4]), 6);
+    assert_eq!(sum_even_squares(6), 20);
+    assert_eq!(keep_positive(vec![-1, 2, -3, 4]), vec![2, 4]);
+}
+"#;
+    assert_rustc_runs("generator_expr_filter", &rust, driver);
+}
+
 /// PMAT-502df (Tranche 2): generator expressions desugar to `Expr::Map`, so
 /// `sum`/`max`/`min`/`list` accept them (`sum(i*i for i in range(n))`).
 #[test]
