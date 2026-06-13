@@ -2,6 +2,10 @@
 **/*.rs.bk
 Cargo.lock.bak
 
+# Python bytecode (e2e fixtures are run through python3 for cross-checking)
+__pycache__/
+*.pyc
+
 # IDE
 .vscode/
 .idea/
