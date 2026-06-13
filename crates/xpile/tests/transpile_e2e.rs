@@ -4161,15 +4161,18 @@ fn enum_basic() {
             && rust.contains("let c: Color = Color::GREEN"),
         "an Enum class should emit a Rust enum + `C::NAME` member access:\n{rust}"
     );
-    // `Color.RED.value` is the compile-time discriminant literal.
+    // `Color.RED.value` is the compile-time discriminant literal; PMAT-515:
+    // `Color.GREEN.name` is the compile-time variant-name string.
     assert!(
-        rust.contains("pub fn red_value() -> i64 {\n    1i64\n}"),
-        "`C.NAME.value` should lower to the discriminant literal:\n{rust}"
+        rust.contains("pub fn red_value() -> i64 {\n    1i64\n}")
+            && rust.contains("String::from(\"GREEN\")"),
+        "`C.NAME.value`/`.name` should lower to the discriminant / name literal:\n{rust}"
     );
     let driver = r#"
 fn main() {
     assert_eq!(red_value(), 1);
     assert_eq!(blue_value(), 3);
+    assert_eq!(green_name(), "GREEN");
     assert_eq!(is_go(Signal::GO), true);
     assert_eq!(is_go(Signal::STOP), false);
     assert_eq!(passthrough(), 10);
