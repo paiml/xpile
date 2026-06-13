@@ -1702,9 +1702,26 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
         }]);
     }
 
+    // PMAT-502ci: `for i in reversed(range(...))` iterates the range
+    // descending. Unwrap a `reversed(<range call>)` wrapper here; the bounds
+    // are flipped to a step -1 range below. (`reversed` over a non-range is
+    // left to the range-call error path, unchanged.)
+    let (range_call_expr, reverse_range) = match &*f.iter {
+        ast::Expr::Call(c)
+            if matches!(&*c.func, ast::Expr::Name(n) if n.id.as_str() == "reversed")
+                && c.keywords.is_empty()
+                && c.args.len() == 1
+                && matches!(&c.args[0], ast::Expr::Call(inner)
+                    if matches!(&*inner.func, ast::Expr::Name(n) if n.id.as_str() == "range")) =>
+        {
+            (&c.args[0], true)
+        }
+        other => (other, false),
+    };
+
     // Match range(...) call. Anything else (list/tuple/dict iteration)
     // requires collection types and is out of scope at v0.1.0.
-    let call = match &*f.iter {
+    let call = match range_call_expr {
         ast::Expr::Call(c) => c,
         _ => {
             return Err(FrontendError::Lower(format!(
@@ -1765,6 +1782,35 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
                 call.args.len()
             )));
         }
+    };
+
+    // PMAT-502ci: flip a `reversed(range(...))` to a descending range. For a
+    // step-1 range `a..b` the reverse is `b-1, b-2, …, a`, i.e. a range with
+    // start `b-1`, stop `a-1`, step `-1`. Reusing `BinOp::Sub` keeps the
+    // bounds under C-PY-INT-ARITH. A non-default step, or a BigInt-mode
+    // function, is deferred (the general reversed-stride / BigInt bound math
+    // is more involved).
+    let (start_expr, stop_expr, step_int) = if reverse_range {
+        if step_int != 1 {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` uses `reversed(range(..., step))` with a non-default step — deferred at v0.2.0",
+                ctx.fn_name
+            )));
+        }
+        if matches!(ctx.fn_return_type, Type::BigInt) {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` uses `reversed(range(...))` in a BigInt-mode function — deferred at v0.2.0",
+                ctx.fn_name
+            )));
+        }
+        let sub1 = |e: Expr| Expr::BinOp {
+            op: BinOp::Sub,
+            lhs: Box::new(e),
+            rhs: Box::new(Expr::LitInt(1)),
+        };
+        (sub1(stop_expr), sub1(start_expr), -1)
+    } else {
+        (start_expr, stop_expr, step_int)
     };
 
     let step_expr = Expr::LitInt(step_int);

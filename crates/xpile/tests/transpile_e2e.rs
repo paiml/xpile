@@ -3228,6 +3228,26 @@ fn main() {
     assert_rustc_runs("format_spec", &rust, driver);
 }
 
+/// PMAT-502ci (Tranche 2): `for i in reversed(range(...))` — descending range
+/// iteration (desugars to a step -1 range).
+#[test]
+fn reversed_range() {
+    let rust = xpile_transpile_to_rust("reversed_range.py");
+    // start = n - 1, descending (`i > …`).
+    assert!(
+        rust.contains("(n).checked_sub(1i64)") && rust.contains("while (i > "),
+        "reversed range:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(digits_desc(4), 3210);
+    assert_eq!(mid(0), 432);
+    assert_eq!(digits_desc(0), 0);
+}
+"#;
+    assert_rustc_runs("reversed_range", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
