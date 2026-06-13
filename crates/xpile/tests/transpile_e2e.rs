@@ -3529,6 +3529,29 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dp (Tranche 2): printf `%x`/`%X`/`%o` → no-prefix sign-first radix
+/// string (`{:x}` is two's-complement for negatives; Python is sign-first).
+#[test]
+fn percent_format_radix() {
+    let rust = xpile_transpile_to_rust("percent_format_radix.py");
+    assert!(
+        rust.contains("{}{:x}") && rust.contains("{}{:X}") && rust.contains("{}{:o}"),
+        "%x/%X/%o radix:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // printf radix conversions; cross-checked vs python3 (incl. negatives).
+    assert_eq!(to_hex(255), "ff");
+    assert_eq!(to_hex(-255), "-ff"); // sign-first, not two's-complement
+    assert_eq!(to_hex_upper(255), "FF");
+    assert_eq!(to_oct(8), "10");
+    assert_eq!(to_oct(-8), "-10");
+    assert_eq!(prefixed_hex(255), "0xff");
+}
+"#;
+    assert_rustc_runs("percent_format_radix", &rust, driver);
+}
+
 /// PMAT-502do (Tranche 2): `%s` over bool/float str()-converts the arg first
 /// (bool → "True"/"False", float → Python repr) before `{}`.
 #[test]
