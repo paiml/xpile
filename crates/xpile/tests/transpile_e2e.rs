@@ -2840,6 +2840,28 @@ fn main() {
     assert_rustc_runs("neg_float_var", &rust, driver);
 }
 
+/// PMAT-502bq (Tranche 2): augmented assignment over a float `x += y`
+/// (and `-= *= /=`) → plain infix `FloatBinOp`, not the i64-only
+/// `checked_*` path. `/=` (true division) is supported in aug position.
+#[test]
+fn aug_assign_float() {
+    let rust = xpile_transpile_to_rust("aug_assign_float.py");
+    assert!(rust.contains("x = (x + y)"), "float += :\n{rust}");
+    assert!(rust.contains("x = (x / 4f64)"), "float /= :\n{rust}");
+    assert!(
+        !rust.contains("checked_add"),
+        "float aug-assign must not use checked_*:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // python3: x=3.0; x+=2 ->5; x-=1 ->4; x*=2 ->8; x/=4 ->2.0
+    assert!((accum(3.0, 2.0) - 2.0).abs() < 1e-9);
+    assert!((scale_first(vec![2.5, 9.0], 4.0) - 10.0).abs() < 1e-9);
+}
+"#;
+    assert_rustc_runs("aug_assign_float", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
