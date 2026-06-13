@@ -3879,6 +3879,26 @@ fn main() {
     assert_rustc_runs("dataclass_use", &rust, driver);
 }
 
+/// PMAT-506c (classes epic): struct **field assignment** `obj.field = value` →
+/// `Stmt::FieldAssign` → `(obj).field = value;`. The mutated struct binding is
+/// marked `mut` by the pre-walk (a struct param becomes `mut p: P`). Cross-
+/// checked vs python3.
+#[test]
+fn dataclass_field_assignment() {
+    let rust = xpile_transpile_to_rust("dataclass_field_assign.py");
+    assert!(
+        rust.contains("(c).value = ") && rust.contains("mut c: Counter"),
+        "field assignment should emit `(c).field = …` with a `mut` receiver:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(advance(Counter { value: 10, step: 2 }, 3), 16);
+    assert_eq!(reset_and_set(Counter { value: 99, step: 99 }), 1);
+}
+"#;
+    assert_rustc_runs("dataclass_field_assign", &rust, driver);
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators

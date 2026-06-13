@@ -245,6 +245,14 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                     // so the binding must be emitted `mut`. The pre-pass
                     // didn't previously see subscript targets.
                     *counts.entry(name).or_insert(0) += bump;
+                } else if a.targets.len() == 1 {
+                    // PMAT-506c: `obj.field = v` mutates the struct binding in
+                    // place → mark `obj` mutable.
+                    if let ast::Expr::Attribute(attr) = &a.targets[0] {
+                        if let ast::Expr::Name(n) = attr.value.as_ref() {
+                            *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                        }
+                    }
                 }
             }
             // PMAT-470 (R1): `x <op>= e` is a read-modify-write
@@ -3159,11 +3167,42 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
                 }
             }
         }
-        ast::Expr::Attribute(_) => {
-            return Err(FrontendError::Lower(format!(
-                "function `{}` assigns to an attribute — not supported at v0.2.0",
-                ctx.fn_name
-            )));
+        // PMAT-506c (classes epic): struct field assignment `obj.field = value`.
+        // `obj` must be a plain bound name typing as a struct, and `field` a
+        // known member; the value lowers context-aware and `obj` is marked
+        // mutable by the pre-walk.
+        ast::Expr::Attribute(attr) => {
+            let ast::Expr::Name(obj) = attr.value.as_ref() else {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` assigns to a non-Name attribute receiver — only `obj.field = v` over a struct local/param is supported at v0.2.0",
+                    ctx.fn_name
+                )));
+            };
+            let obj_name = obj.id.to_string();
+            let field = attr.attr.to_string();
+            let obj_ty = ctx.name_types.get(&obj_name).cloned().unwrap_or(Type::I64);
+            let Type::Struct(sname) = obj_ty else {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` assigns to `.{field}` of `{obj_name}`, which is not a struct value",
+                    ctx.fn_name
+                )));
+            };
+            let known = ctx
+                .structs
+                .get(&sname)
+                .is_some_and(|fs| fs.iter().any(|(f, _)| *f == field));
+            if !known {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` assigns field `{field}` of `{sname}`, which has no such field",
+                    ctx.fn_name
+                )));
+            }
+            let value = lower_expr_in_ctx(ctx, *asn.value)?;
+            return Ok(Stmt::FieldAssign {
+                obj: obj_name,
+                field,
+                value,
+            });
         }
         other => {
             return Err(FrontendError::Lower(format!(
