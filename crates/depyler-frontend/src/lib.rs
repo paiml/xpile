@@ -5629,22 +5629,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     let mut kwargs_ok = true;
                     for kw in &call.keywords {
                         match kw.arg.as_ref().map(|a| a.as_str()) {
+                            // PMAT-502aa/ei: `key=lambda p: e` or `key=<fn>`.
                             Some("key") => {
-                                if let ast::Expr::Lambda(lam) = &kw.value {
-                                    if lam.args.args.len() == 1
-                                        && lam.args.posonlyargs.is_empty()
-                                        && lam.args.kwonlyargs.is_empty()
-                                        && lam.args.vararg.is_none()
-                                        && lam.args.kwarg.is_none()
-                                    {
-                                        let param = lam.args.args[0].def.arg.to_string();
-                                        let body = lower_expr_in_ctx(ctx, (*lam.body).clone())?;
-                                        key = Some(SortKey {
-                                            param,
-                                            body: Box::new(body),
-                                        });
-                                        continue;
-                                    }
+                                if let Some(k) = lower_sort_key(ctx, &kw.value)? {
+                                    key = Some(k);
+                                    continue;
                                 }
                             }
                             Some("default") => {
@@ -5695,22 +5684,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 }
                                 kwargs_ok = false;
                             }
+                            // PMAT-502z/ei: `key=lambda p: e` or `key=<fn>`.
                             Some("key") => {
-                                if let ast::Expr::Lambda(lam) = &kw.value {
-                                    if lam.args.args.len() == 1
-                                        && lam.args.posonlyargs.is_empty()
-                                        && lam.args.kwonlyargs.is_empty()
-                                        && lam.args.vararg.is_none()
-                                        && lam.args.kwarg.is_none()
-                                    {
-                                        let param = lam.args.args[0].def.arg.to_string();
-                                        let body = lower_expr_in_ctx(ctx, (*lam.body).clone())?;
-                                        key = Some(SortKey {
-                                            param,
-                                            body: Box::new(body),
-                                        });
-                                        continue;
-                                    }
+                                if let Some(k) = lower_sort_key(ctx, &kw.value)? {
+                                    key = Some(k);
+                                    continue;
                                 }
                                 kwargs_ok = false;
                             }
@@ -6316,6 +6294,53 @@ fn stringify_lone_fstring_field(acc: Expr, ty: Type) -> Expr {
 /// context-aware. A `FormattedValue` with a static, supported format spec
 /// becomes [`Expr::FormatSpec`]; a plain `{expr}` lowers its value; conversion
 /// flags (`!r`/`!s`/`!a`) and unsupported / dynamic specs error.
+/// PMAT-502ei: parse a `key=` argument for `sorted`/`min`/`max` into a
+/// [`SortKey`]. Two forms: a simple single-param `lambda p: e`, or a bare
+/// callable name (`key=abs`, `key=len`, `key=my_fn`) — the latter is
+/// synthesized into the equivalent `lambda __xpile_k: <name>(__xpile_k)` and
+/// lowered through the same path (the body is lowered with the param left
+/// unbound, matching the lambda case). Returns `Ok(None)` for an unrecognized
+/// key shape (the caller then rejects the whole call's kwargs).
+fn lower_sort_key(ctx: &LoweringCtx, value: &ast::Expr) -> Result<Option<SortKey>, FrontendError> {
+    match value {
+        ast::Expr::Lambda(lam)
+            if lam.args.args.len() == 1
+                && lam.args.posonlyargs.is_empty()
+                && lam.args.kwonlyargs.is_empty()
+                && lam.args.vararg.is_none()
+                && lam.args.kwarg.is_none() =>
+        {
+            let param = lam.args.args[0].def.arg.to_string();
+            let body = lower_expr_in_ctx(ctx, (*lam.body).clone())?;
+            Ok(Some(SortKey {
+                param,
+                body: Box::new(body),
+            }))
+        }
+        // PMAT-502ei: a bare callable name → `<name>(__xpile_k)`.
+        ast::Expr::Name(name) => {
+            let param = "__xpile_k".to_string();
+            let arg = ast::Expr::Name(ast::ExprName {
+                range: name.range,
+                id: ast::Identifier::new(param.clone()),
+                ctx: ast::ExprContext::Load,
+            });
+            let synth = ast::Expr::Call(ast::ExprCall {
+                range: name.range,
+                func: Box::new(value.clone()),
+                args: vec![arg],
+                keywords: vec![],
+            });
+            let body = lower_expr_in_ctx(ctx, synth)?;
+            Ok(Some(SortKey {
+                param,
+                body: Box::new(body),
+            }))
+        }
+        _ => Ok(None),
+    }
+}
+
 /// PMAT-502ae / PMAT-502ee: Python's `bool` stringifies to capitalized
 /// `"True"`/`"False"`, unlike Rust's lowercase `Display`. `str(b)`, a bool in an
 /// f-string, `print(b)`, and `%s` over a bool all desugar to the same

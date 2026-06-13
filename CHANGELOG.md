@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.173] — 2026-06-13
+
+Tranche-2 slice PMAT-502ei — **bare callable name as `key=` for
+`min`/`max`/`sorted`**.
+
+`min`/`max`/`sorted` accepted only a `key=lambda p: e`; the very common bare
+callable form (`key=abs`, `key=len`, `key=my_fn`) was rejected. A bare-name key
+is now synthesized into the equivalent `lambda __xpile_k: <name>(__xpile_k)`
+(by constructing the call AST and lowering it) and routed through the same
+`SortKey` path — so it composes with the existing `min_by_key` / `max_by_key` /
+`sort_by_key` codegen. The lambda and bare-name forms share a new
+`lower_sort_key` helper. New `sort_key_fn.py` e2e fixture (min/max/sorted with
+`key=abs`, `key=len`, and a user function), all cross-checked vs python3.
+
+Note: directly indexing a `sorted(...)` result (`sorted(xs)[0]`) is a separate
+pre-existing limitation (block-expression-index) — assign first (`ys =
+sorted(...); ys[0]`); a fix is queued.
+
 ## [0.1.172] — 2026-06-13
 
 Tranche-2 slice PMAT-502eh — **`d.setdefault(k, v)` as a bare statement**.
