@@ -25,10 +25,11 @@ fn float_op_sym(op: FloatOp) -> &'static str {
         FloatOp::Sub => "-",
         FloatOp::Mul => "*",
         FloatOp::Div => "/",
-        // FloorDiv/Mod are emitted via dedicated formulas, never via this
-        // helper — keep the match exhaustive.
+        // FloorDiv/Mod/Pow are emitted via dedicated formulas, never via
+        // this helper — keep the match exhaustive.
         FloatOp::FloorDiv => "//",
         FloatOp::Mod => "%",
+        FloatOp::Pow => "**",
     }
 }
 
@@ -716,6 +717,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str(" / ");
                 emit_expr(out, rhs, mode)?;
                 out.push_str(").floor())");
+            }
+            // PMAT-502bt: Python float power `a ** b` → `(a).powf(b)`
+            // (both operands are f64).
+            FloatOp::Pow => {
+                out.push('(');
+                emit_expr(out, lhs, mode)?;
+                out.push_str(").powf(");
+                emit_expr(out, rhs, mode)?;
+                out.push(')');
             }
             FloatOp::Add | FloatOp::Sub | FloatOp::Mul | FloatOp::Div => {
                 out.push('(');

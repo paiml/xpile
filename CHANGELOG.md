@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.106] — 2026-06-13
+
+Tranche-2 slice PMAT-502bt — Python **float power `a ** b`** (`(a).powf(b)`).
+
+`**` with a float operand fell through to the i64 `checked_pow` path and
+failed the return-type check. A new `FloatOp::Pow` variant now carries float
+exponentiation: both expression-position `BinOp` arms special-case `**` when
+either operand types as `F64`, casting non-float operands to f64 (powf needs
+f64) and emitting `(a).powf(b)`. This unlocks negative and fractional
+exponents that integer `**` cannot represent (`2.0 ** -1 == 0.5`,
+`9 ** 0.5 == 3.0`). `int ** int` is unchanged (`checked_pow`). With this the
+float arithmetic family is complete (`+ - * / // % **`, negation,
+comparisons, augmented assignment, true division). rustc round-trip
+`float_power.py` (cross-checked vs `python3`): `square(3.0) -> 9.0`,
+`powf(2.0, 10.0) -> 1024.0`, `root(9) -> 3.0`, `powf(2.0, -1.0) -> 0.5`.
+Lean emits `Float.pow a b`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.105] — 2026-06-13
 
 Tranche-2 slice PMAT-502bs — Python 3 **true division `/`** (always a float).

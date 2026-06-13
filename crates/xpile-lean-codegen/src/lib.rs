@@ -1036,13 +1036,21 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
                 emit_expr(out, rhs)?;
                 out.push_str("))");
             }
+            // PMAT-502bt: Python float power → `Float.pow a b`.
+            FloatOp::Pow => {
+                out.push_str("(Float.pow (");
+                emit_expr(out, lhs)?;
+                out.push_str(") (");
+                emit_expr(out, rhs)?;
+                out.push_str("))");
+            }
             FloatOp::Add | FloatOp::Sub | FloatOp::Mul | FloatOp::Div => {
                 let sym = match op {
                     FloatOp::Add => "+",
                     FloatOp::Sub => "-",
                     FloatOp::Mul => "*",
                     FloatOp::Div => "/",
-                    FloatOp::FloorDiv | FloatOp::Mod => unreachable!(),
+                    FloatOp::FloorDiv | FloatOp::Mod | FloatOp::Pow => unreachable!(),
                 };
                 out.push('(');
                 emit_expr(out, lhs)?;

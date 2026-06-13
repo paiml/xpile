@@ -994,6 +994,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "`/` was rejected outright ('unsupported binary operator: Div'). In Python 3 `/` ALWAYS yields a float, even for two ints (7 / 2 == 3.5) — integer division is the separate //. FIX: both expression-position BinOp lowering arms (ctx-aware lower_expr_in_ctx_inner + context-free lower_expr) special-case ast::Operator::Div BEFORE lower_binop (which rejects it): emit Expr::FloatBinOp { op: Div, .. } with each non-float operand wrapped via to_f64_operand / to_f64_operand_cf in an (x) as f64 NumCast. This also FIXES mixed float_var / int_literal which previously emitted a f64 / i64 mismatch (the int side is now cast, float side left as-is); float / float stays cast-free (no redundant (x as f64)). Augmented /= on an INT var stays unsupported (combine_aug not touched — it would retype the i64 binding to f64 which Rust can't reassign); /= on a float var already works (v0.1.103). rustc round-trip true_division.py (cross-checked vs python3): div(7,2)=3.5, div(6,3)=2.0, avg(3,4)=3.5, half(5.0)=2.5. FREE CI. SHIPPED v0.1.105."
+- id: PMAT-502BT
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bt: [Tranche2] float power a ** b -> powf'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "`**` with a float operand fell through to the i64 checked_pow path and failed the return-type check (F64 but body produces I64). FIX: new FloatOp::Pow variant; both expr-position BinOp arms special-case ast::Operator::Pow when either operand types as F64, cast both operands to f64 via to_f64_operand/_cf (powf needs f64), and emit Expr::FloatBinOp { op: Pow, .. }. Codegen (rust/ruchy) emits (a).powf(b); lean emits Float.pow a b. Unlocks NEGATIVE and FRACTIONAL exponents that integer ** cannot represent (2.0 ** -1 == 0.5; 9 ** 0.5 == 3.0). int ** int unchanged (checked_pow). Completes the float arithmetic family (+ - * / // % **). Small blast radius: adding the FloatOp variant only touches the 3 exhaustive FloatOp matches. rustc round-trip float_power.py (cross-checked vs python3): square(3.0)=9.0, powf(2.0,10.0)=1024.0, root(9)=3.0, powf(2.0,-1.0)=0.5. FREE CI. SHIPPED v0.1.106."
 - id: PMAT-465
   github_issue: 496
   item_type: task

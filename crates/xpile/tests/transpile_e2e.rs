@@ -2913,6 +2913,29 @@ fn main() {
     assert_rustc_runs("true_division", &rust, driver);
 }
 
+/// PMAT-502bt (Tranche 2): Python `**` with a float operand → float power
+/// `(a).powf(b)` (both operands cast to f64). Negative/fractional exponents
+/// work (`2.0 ** -1`, `9 ** 0.5`); `int ** int` stays integer.
+#[test]
+fn float_power() {
+    let rust = xpile_transpile_to_rust("float_power.py");
+    assert!(rust.contains("(x).powf("), "float power:\n{rust}");
+    assert!(
+        rust.contains("(((n) as f64)).powf(0.5f64)"),
+        "int-base float power:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // python3: 3**2=9.0, 2**10=1024.0, 9**0.5=3.0, 2**-1=0.5
+    assert!((square(3.0) - 9.0).abs() < 1e-9);
+    assert!((powf(2.0, 10.0) - 1024.0).abs() < 1e-9);
+    assert!((root(9) - 3.0).abs() < 1e-9);
+    assert!((powf(2.0, -1.0) - 0.5).abs() < 1e-9);
+}
+"#;
+    assert_rustc_runs("float_power", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
