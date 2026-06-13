@@ -3529,6 +3529,34 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dd (Tranche 2): builtins in collection literals lower context-aware
+/// (`[abs(a), abs(b)]` / `{"k": abs(v)}` / `{abs(a), abs(b)}` were silently
+/// miscompiled to an undefined `abs(...)`).
+#[test]
+fn collection_literal_builtin() {
+    let rust = xpile_transpile_to_rust("collection_literal_builtin.py");
+    assert!(
+        !rust.contains("![abs(") && !rust.contains(" abs(") && !rust.contains("(abs("),
+        "abs must lower to a method, not a bare call:\n{rust}"
+    );
+    assert!(
+        rust.contains("(a).abs()") && rust.contains("(n).abs()"),
+        "collection-literal builtins:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // builtins inside list/dict/set literals; cross-checked vs python3.
+    assert_eq!(list_mags(-3, 4), vec![3, 4]);
+    let d = dict_mag(-7);
+    assert_eq!(d["m"], 7);
+    let s = set_mags(-2, 2);
+    assert_eq!(s.len(), 1);
+    assert!(s.contains(&2));
+}
+"#;
+    assert_rustc_runs("collection_literal_builtin", &rust, driver);
+}
+
 /// PMAT-502dc (Tranche 2): builtins in a comparison operand lower context-aware
 /// (`abs(n) > 0` was silently miscompiled to an undefined `abs(...)`).
 #[test]

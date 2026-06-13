@@ -5604,6 +5604,13 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // recognized and SILENTLY emits an undefined Rust fn (`abs(...)`).
         // Lowering the branches context-aware fixes the miscompile.
         ast::Expr::IfExp(ie) => lower_if_exp_in_ctx(ctx, ie),
+        // PMAT-502dd: context-aware collection literals. The context-free
+        // handlers lower each element with `lower_expr`, so a builtin element
+        // (`[abs(a), abs(b)]`, `{"k": abs(v)}`, `{abs(a), abs(b)}`) silently
+        // emits an undefined Rust `abs(...)`. Lower elements context-aware.
+        ast::Expr::List(list_expr) => lower_list_literal_in_ctx(ctx, list_expr),
+        ast::Expr::Dict(dict_expr) => lower_dict_literal_in_ctx(ctx, dict_expr),
+        ast::Expr::Set(set_expr) => lower_set_literal_in_ctx(ctx, set_expr),
         // No dict-specific shape: the context-free path is sufficient.
         other => lower_expr(other),
     }
@@ -6810,6 +6817,126 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
         });
     }
     Ok(acc.expect("ops non-empty (checked above)"))
+}
+
+/// PMAT-502dd: context-aware variant of the context-free list-literal handler.
+/// Lowers each element with `lower_expr_in_ctx` so a builtin element
+/// (`[abs(a), max(a, b)]`) is recognized; the homogeneity check uses
+/// `infer_type_in_ctx`.
+fn lower_list_literal_in_ctx(
+    ctx: &LoweringCtx,
+    list_expr: ast::ExprList,
+) -> Result<Expr, FrontendError> {
+    if list_expr.elts.is_empty() {
+        return Err(FrontendError::Lower(
+            "empty list literal `[]` requires a type annotation to infer the element type \
+             — pass via `def f() -> list[int]: return []` once empty-literal annotation \
+             threading lands in a subsequent v0.2.0 Track 1.B sub-track"
+                .into(),
+        ));
+    }
+    let mut elems = Vec::with_capacity(list_expr.elts.len());
+    let mut elem_ty: Option<Type> = None;
+    for e in list_expr.elts {
+        let lowered = lower_expr_in_ctx(ctx, e)?;
+        let ty = infer_type_in_ctx(ctx, &lowered);
+        if let Some(expected) = &elem_ty {
+            if expected != &ty {
+                return Err(FrontendError::Lower(format!(
+                    "heterogeneous list literal — element types {expected:?} and {ty:?} \
+                     mixed; C-XLATE-PY-LIST-TO-VEC requires homogeneous element types"
+                )));
+            }
+        } else {
+            elem_ty = Some(ty);
+        }
+        elems.push(lowered);
+    }
+    Ok(Expr::ListLit(elems))
+}
+
+/// PMAT-502dd: context-aware variant of the context-free dict-literal handler.
+/// Lowers each key/value with `lower_expr_in_ctx` so a builtin value
+/// (`{"k": abs(v)}`) is recognized.
+fn lower_dict_literal_in_ctx(
+    ctx: &LoweringCtx,
+    dict_expr: ast::ExprDict,
+) -> Result<Expr, FrontendError> {
+    if dict_expr.keys.is_empty() {
+        return Err(FrontendError::Lower(
+            "empty dict literal `{}` requires a type annotation to infer K/V — \
+             pass via `def f() -> dict[str, int]: return {}` once empty-literal annotation \
+             threading lands in a subsequent v0.2.0 Track 1.C sub-track"
+                .into(),
+        ));
+    }
+    let mut pairs: Vec<(Expr, Expr)> = Vec::with_capacity(dict_expr.keys.len());
+    let mut k_ty: Option<Type> = None;
+    let mut v_ty: Option<Type> = None;
+    for (k_opt, v) in dict_expr.keys.into_iter().zip(dict_expr.values.into_iter()) {
+        let Some(k) = k_opt else {
+            return Err(FrontendError::Lower(
+                "dict-splat (`**other`) in literals not supported at v0.2.0".into(),
+            ));
+        };
+        let lk = lower_expr_in_ctx(ctx, k)?;
+        let lv = lower_expr_in_ctx(ctx, v)?;
+        let kt = infer_type_in_ctx(ctx, &lk);
+        let vt = infer_type_in_ctx(ctx, &lv);
+        if let Some(expected) = &k_ty {
+            if expected != &kt {
+                return Err(FrontendError::Lower(format!(
+                    "heterogeneous dict literal — key types {expected:?} and {kt:?} \
+                     mixed; C-XLATE-PY-DICT-TO-HASHMAP requires homogeneous keys"
+                )));
+            }
+        } else {
+            k_ty = Some(kt);
+        }
+        if let Some(expected) = &v_ty {
+            if expected != &vt {
+                return Err(FrontendError::Lower(format!(
+                    "heterogeneous dict literal — value types {expected:?} and {vt:?} \
+                     mixed; C-XLATE-PY-DICT-TO-HASHMAP requires homogeneous values"
+                )));
+            }
+        } else {
+            v_ty = Some(vt);
+        }
+        pairs.push((lk, lv));
+    }
+    Ok(Expr::DictLit(pairs))
+}
+
+/// PMAT-502dd: context-aware variant of the context-free set-literal handler.
+/// Lowers each element with `lower_expr_in_ctx` so a builtin element
+/// (`{abs(a), abs(b)}`) is recognized.
+fn lower_set_literal_in_ctx(
+    ctx: &LoweringCtx,
+    set_expr: ast::ExprSet,
+) -> Result<Expr, FrontendError> {
+    if set_expr.elts.is_empty() {
+        return Err(FrontendError::Lower(
+            "empty set literal requires `set()` or an annotation — deferred".into(),
+        ));
+    }
+    let mut elems = Vec::with_capacity(set_expr.elts.len());
+    let mut elem_ty: Option<Type> = None;
+    for e in set_expr.elts {
+        let lowered = lower_expr_in_ctx(ctx, e)?;
+        let ty = infer_type_in_ctx(ctx, &lowered);
+        if let Some(expected) = &elem_ty {
+            if expected != &ty {
+                return Err(FrontendError::Lower(format!(
+                    "heterogeneous set literal — element types {expected:?} and {ty:?} mixed"
+                )));
+            }
+        } else {
+            elem_ty = Some(ty);
+        }
+        elems.push(lowered);
+    }
+    Ok(Expr::SetLit(elems))
 }
 
 #[cfg(test)]

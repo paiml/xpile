@@ -1318,6 +1318,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "A builtin in a comparison operand (abs(n) > 0, len(s) > 3, max(a,b) <= c) was SILENTLY MISCOMPILED to an undefined Rust fn. ROOT CAUSE: the ctx-aware ast::Expr::Compare arm in lower_expr_in_ctx_inner handled ONLY membership (in/not-in) ctx-aware, then delegated regular comparisons to the CONTEXT-FREE lower_compare (which lowers operands via lower_expr -> builtins unrecognized). SECOND instance of the ctx-free-position class after v0.1.140 ternary. FIX (FRONTEND-ONLY, no meta-HIR/codegen change): new lower_compare_in_ctx(ctx, c) mirrors lower_compare but lowers every operand via lower_expr_in_ctx; the Compare arm's fallthrough now calls it. Chained compares (0 < abs(x) < 10) fold correctly (both clones ctx-lowered). rustc round-trip compare_builtin.py (cross-checked vs python3): is_positive_mag(-3)=true/(0)=false, max_le(2,9,9)=true/(2,9,5)=false, long_enough('abcd')=true/('ab')=false, in_range(5)=true/(0)=false. FREE CI. SHIPPED v0.1.141. **REMAINING ctx-free-position silent-miscompile siblings (probed, OPEN): builtin in LIST LITERAL [abs(a),abs(b)] (no ctx-aware List arm); builtin in SUBSCRIPT INDEX xs[abs(i)]; builtin under UNARY MINUS -abs(n) (USub arm falls to context-free lower_unary_op for the int case). Each is its own next slice (PMAT-502dd/de/df).**"
+- id: PMAT-502DD
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502dd: [Tranche2] context-aware collection literals (silent-miscompile fix)'
+  status: planned
+  priority: high
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "A builtin inside a LIST/DICT/SET literal ([abs(a),abs(b)], {'k':abs(v)}, {abs(a),abs(b)}) was SILENTLY MISCOMPILED to an undefined Rust fn. ROOT CAUSE: ast::Expr::List/Dict/Set had NO ctx-aware arm in lower_expr_in_ctx_inner -> fell through `other => lower_expr(other)` to the context-free literal handlers, which lower elements via lower_expr (no type ctx) -> builtins unrecognized. THIRD instance of the ctx-free-position class (after v140 ternary, v141 comparison). Also confirmed: boolop position is now ALREADY FIXED by v141 (its operands route through lower_expr_in_ctx). FIX (FRONTEND-ONLY, no meta-HIR/codegen change): new lower_list_literal_in_ctx / lower_dict_literal_in_ctx / lower_set_literal_in_ctx mirror the context-free handlers but lower each element/key/value via lower_expr_in_ctx (homogeneity checks via infer_type_in_ctx preserved); three new ast arms route to them. rustc round-trip collection_literal_builtin.py (cross-checked vs python3): list_mags(-3,4)=[3,4], dict_mag(-7)['m']=7, set_mags(-2,2) has 1 elem containing 2. FREE CI. SHIPPED v0.1.142. **REMAINING ctx-free-position siblings (probed, OPEN): SUBSCRIPT INDEX xs[abs(i)] (Subscript arm falls to context-free lower_expr for the general list-index case, line ~4547); UNARY MINUS -abs(n) (USub arm's else re-lowers via context-free lower_unary_op). Next slice PMAT-502de bundles both.**"
 - id: PMAT-465
   github_issue: 496
   item_type: task
