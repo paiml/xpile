@@ -4089,6 +4089,38 @@ fn main() {
     assert_rustc_runs("dataclass_property", &rust, driver);
 }
 
+/// PMAT-510 (Tranche 2): the `match` statement — the literal-dispatch subset
+/// (`case <literal>:` + a trailing `case _:`, Name subject) desugars to an
+/// `if`/`elif`/`else` chain, reusing all existing `if` lowering (no new IR).
+/// Works as a terminal (each case returns → an if-expression) and in statement
+/// position (assignment bodies; `walk_counts` descends into cases so a
+/// case-assigned name is `mut`). Cross-checked vs python3.
+#[test]
+fn match_statement() {
+    let rust = xpile_transpile_to_rust("match_stmt.py");
+    assert!(
+        rust.contains("if (n == 0i64) { 100i64 } else if (n == 1i64)")
+            && rust.contains("letter == String::from(\"A\")")
+            && rust.contains("let mut result"),
+        "match should desugar to an if/elif/else chain (terminal + statement form):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(classify(0), 100);
+    assert_eq!(classify(1), 200);
+    assert_eq!(classify(-1), 300);
+    assert_eq!(classify(7), 0);
+    assert_eq!(grade_points("A".to_string()), 4);
+    assert_eq!(grade_points("B".to_string()), 3);
+    assert_eq!(grade_points("C".to_string()), 0);
+    assert_eq!(step(0, 5), 6);
+    assert_eq!(step(1, 5), 10);
+    assert_eq!(step(9, 5), 5);
+}
+"#;
+    assert_rustc_runs("match_stmt", &rust, driver);
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators
