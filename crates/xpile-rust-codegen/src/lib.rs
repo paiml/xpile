@@ -1176,6 +1176,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                         emit_expr(out, &args[1], mode)?;
                         out.push_str(")[..])");
                     }
+                    // PMAT-517: `.replace(old, new, count)` → `.replacen(...)`.
+                    StrMethodOp::ReplaceN => {
+                        out.push_str(".replacen(&(");
+                        emit_expr(out, &args[0], mode)?;
+                        out.push_str(")[..], &(");
+                        emit_expr(out, &args[1], mode)?;
+                        out.push_str(")[..], (");
+                        emit_expr(out, &args[2], mode)?;
+                        out.push_str(") as usize)");
+                    }
                     // PMAT-502l: lstrip/rstrip → trim_start/trim_end.
                     StrMethodOp::LStrip => out.push_str(".trim_start().to_string()"),
                     StrMethodOp::RStrip => out.push_str(".trim_end().to_string()"),

@@ -4208,6 +4208,28 @@ fn main() {
     assert_rustc_runs("str_startswith_tuple", &rust, driver);
 }
 
+/// PMAT-517 (Tranche 2): `str.replace(old, new, count)` (3-arg) → Rust
+/// `s.replacen(...)` — replace the first `count` occurrences. The 2-arg form is
+/// unchanged. Cross-checked vs python3 ("bXnana", "f00booloo", "ZZZ").
+#[test]
+fn str_replace_count() {
+    let rust = xpile_transpile_to_rust("str_replace_count.py");
+    assert!(
+        rust.contains(
+            ".replacen(&(String::from(\"a\"))[..], &(String::from(\"X\"))[..], (1i64) as usize)"
+        ),
+        "3-arg replace should emit `replacen`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(replace_first("banana".to_string()), "bXnana");
+    assert_eq!(replace_two("foobooloo".to_string()), "f00booloo");
+    assert_eq!(replace_all("zzz".to_string()), "ZZZ");
+}
+"#;
+    assert_rustc_runs("str_replace_count", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
