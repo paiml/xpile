@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.218] — 2026-06-13
+
+Tranche 2 — PMAT-518: `str.split(sep, maxsplit)` (2-arg).
+
+- Python's 2-arg `str.split` caps the number of *splits*, so the part count is
+  `maxsplit + 1` → Rust `s.splitn(maxsplit + 1, sep)`. New `StrMethodOp::SplitN`;
+  a dedicated frontend branch routes `split`/2-args (maxsplit must be int). The
+  1-arg form is unchanged. Mirrors PMAT-517 (`ReplaceN`).
+- New e2e fixture `str_split_maxsplit.py` (rustc round-trip cross-checked vs
+  python3). e2e 279 → 280.
+
 ## [0.1.217] — 2026-06-13
 
 Tranche 2 — PMAT-517: `str.replace(old, new, count)` (3-arg).
