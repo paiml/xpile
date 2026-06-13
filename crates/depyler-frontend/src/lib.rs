@@ -4626,6 +4626,19 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     rhs: Box::new(to_f64_operand(ctx, rhs)),
                 });
             }
+            // PMAT-502bt: Python `a ** b` with a float operand → float power
+            // `(a).powf(b)`. Both operands cast to f64 (powf needs f64).
+            // `int ** int` stays integer (`checked_pow`).
+            if matches!(b.op, ast::Operator::Pow)
+                && (infer_type_in_ctx(ctx, &lhs) == Type::F64
+                    || infer_type_in_ctx(ctx, &rhs) == Type::F64)
+            {
+                return Ok(Expr::FloatBinOp {
+                    op: FloatOp::Pow,
+                    lhs: Box::new(to_f64_operand(ctx, lhs)),
+                    rhs: Box::new(to_f64_operand(ctx, rhs)),
+                });
+            }
             // PMAT-477 (R8): float arithmetic → FloatBinOp (plain infix).
             // Detected before `lower_binop`. Float *comparisons* fall
             // through to BinOp (plain infix is already f64-correct, yields
@@ -4942,6 +4955,17 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             if matches!(b.op, ast::Operator::Div) {
                 return Ok(Expr::FloatBinOp {
                     op: FloatOp::Div,
+                    lhs: Box::new(to_f64_operand_cf(lhs)),
+                    rhs: Box::new(to_f64_operand_cf(rhs)),
+                });
+            }
+            // PMAT-502bt: float power `a ** b` (context-free detects float
+            // *literals*; param-typed floats are caught by the ctx path).
+            if matches!(b.op, ast::Operator::Pow)
+                && (infer_type(&lhs) == Type::F64 || infer_type(&rhs) == Type::F64)
+            {
+                return Ok(Expr::FloatBinOp {
+                    op: FloatOp::Pow,
                     lhs: Box::new(to_f64_operand_cf(lhs)),
                     rhs: Box::new(to_f64_operand_cf(rhs)),
                 });

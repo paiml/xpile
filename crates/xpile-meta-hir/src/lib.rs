@@ -1592,6 +1592,9 @@ pub enum FloatOp {
     /// Python `a % b` over floats → `a - b * (a / b).floor()`
     /// (result follows the divisor's sign, per Python).
     Mod,
+    /// PMAT-502bt: Python `a ** b` with a float operand → `(a).powf(b)`
+    /// (both operands are f64). Not infix.
+    Pow,
 }
 
 /// PMAT-498 (Tranche 2): scalar numeric builtins carried by
