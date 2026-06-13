@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.195] — 2026-06-13
+
+R6/PMAT-475 first sub-slice — **grandfather the Diamond depth-13 gate** (the
+gate change that unblocks adding new contracts at depth-1+ without the
+depth-13 treadmill; per spec §30 the "only sanctioned reason to touch the
+Diamond machinery").
+
+- `diamond_coverage.rs`: the depth-2..13 UNIVERSAL gates previously asserted
+  `depth_N_plus == contracts_total`, so a 14th contract would trip all of
+  depths 2..13 (13 Diamond theorems per new contract). They now assert the **13
+  grandfathered (pre-R6) contracts** are each at depth-N (per-contract check
+  parsing `diamond --json`). `depth-1` stays universal-for-all (the depth-1+
+  join floor); depths 14..21 unchanged (across-layers).
+- Behavior-preserving at the current 13 contracts (all at depth-13+). Four new
+  pure-function unit tests prove the grandfather logic: a new contract at
+  depth-1 trips no deep gate; a regressed/removed grandfathered contract fails;
+  the live report still meets depth-13. Adds `serde_json` as a dev-dep.
+- Subsequent R6 sub-slices author the two missing contract YAMLs
+  (`C-C-INT-ARITH`, `C-XLATE-PY-DICT-TO-HASHMAP`) at depth-1+, now unblocked.
+
 ## [0.1.194] — 2026-06-13
 
 Tranche-2 slice PMAT-502fd — **two-generator dict & set comprehensions**
