@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.102] — 2026-06-13
+
+Tranche-2 slice PMAT-502bp — Python **float-variable negation** `-x` (`x: float`).
+
+The v0.1.101 slice folded negative float *literals*; this completes the
+deferred follow-up: negating a float *expression* (`-x` where `x: float`, or
+`-a + b`). Because `UnOp::Neg` emits the i64-only `checked_neg().expect(…)`,
+unary `-` over a float operand needs context-aware typing. A new ctx-aware
+`UnaryOp(USub)` arm in `lower_expr_in_ctx_inner` lowers such operands to
+`Expr::FloatBinOp { Sub, 0.0, x }` → plain infix `(0f64 - x)`. Float *literals*
+keep the cleaner negative-literal fold (`-3.14f64`); int negation is unchanged
+(`checked_neg`). rustc round-trip `neg_float_var.py` (cross-checked against
+`python3`): `neg(3.5) -> -3.5`, `neg(-2.0) -> 2.0`, `diff(1.5, 4.0) -> 2.5`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.101] — 2026-06-13
 
 Tranche-2 slice PMAT-502bo — Python **negative float literals** `-3.14`.

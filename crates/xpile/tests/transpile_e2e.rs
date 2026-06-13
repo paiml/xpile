@@ -2820,6 +2820,26 @@ fn main() {
     assert_rustc_runs("neg_float", &rust, driver);
 }
 
+/// PMAT-502bp (Tranche 2): negation of a float *variable* `-x` (x: float)
+/// → `0.0 - x` (a `FloatBinOp`, not the i64-only `checked_neg`).
+#[test]
+fn neg_float_var() {
+    let rust = xpile_transpile_to_rust("neg_float_var.py");
+    assert!(rust.contains("(0f64 - x)"), "float-var negation:\n{rust}");
+    assert!(
+        !rust.contains("checked_neg"),
+        "float negation must not use checked_neg:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(neg(3.5), -3.5);
+    assert_eq!(neg(-2.0), 2.0);
+    assert_eq!(diff(1.5, 4.0), 2.5);
+}
+"#;
+    assert_rustc_runs("neg_float_var", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

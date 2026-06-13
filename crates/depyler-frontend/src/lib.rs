@@ -4674,6 +4674,29 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // see the value's type (the context-free path can't, and rejects
         // format specs). Plain `{name}` parts still work via Display.
         ast::Expr::JoinedStr(js) => lower_fstring_in_ctx(ctx, js.values),
+        // PMAT-502bp: context-aware unary `-` over a *float* expression
+        // (`-x` where `x: float`) → `0.0 - x` (a `FloatBinOp`, plain infix),
+        // since the generic `UnOp::Neg` emits the i64-only `checked_neg`.
+        // The context-free path can't see that `x` is a float; everything
+        // else (i64 negation, `not`, the negative-float-literal fold) still
+        // routes through `lower_unary_op`.
+        ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::USub) => {
+            let operand = lower_expr_in_ctx(ctx, (*u.operand).clone())?;
+            // A float *literal* keeps the cleaner negative-literal fold
+            // (PMAT-502bo); only a non-literal float *expression* needs the
+            // `0.0 - x` form.
+            if matches!(infer_type_in_ctx(ctx, &operand), Type::F64)
+                && !matches!(operand, Expr::LitFloat(_))
+            {
+                Ok(Expr::FloatBinOp {
+                    op: FloatOp::Sub,
+                    lhs: Box::new(Expr::LitFloat(0.0)),
+                    rhs: Box::new(operand),
+                })
+            } else {
+                lower_unary_op(u)
+            }
+        }
         // No dict-specific shape: the context-free path is sufficient.
         other => lower_expr(other),
     }
