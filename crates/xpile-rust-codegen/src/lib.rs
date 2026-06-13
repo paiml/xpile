@@ -163,7 +163,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             | Stmt::ListMutate { .. }
             | Stmt::ListExtend { .. }
             | Stmt::DictUpdate { .. }
-            | Stmt::ListInsert { .. } => false,
+            | Stmt::ListInsert { .. }
+            | Stmt::ListRemoveValue { .. } => false,
             // PMAT-461: indexed assignment same disposition.
             Stmt::IndexAssign { .. } => false,
             // PMAT-466: dict keyed assignment carries no Type::Let;
@@ -502,6 +503,20 @@ fn emit_stmt_indented(
             out.push_str(") as usize, ");
             emit_expr(out, elem, mode)?;
             writeln!(out, ");")?;
+            Ok(())
+        }
+        // PMAT-502eg: `xs.remove(x)` → find the first equal element and
+        // remove it, panicking (≈ Python `ValueError`) if it isn't present.
+        Stmt::ListRemoveValue { list_name, value } => {
+            write!(out, "{indent}{{ let __v = ")?;
+            emit_expr(out, value, mode)?;
+            write!(
+                out,
+                "; let __p = {list_name}.iter().position(|__e| *__e == __v)\
+                 .expect(\"xpile: ValueError: list.remove(x): x not in list\"); \
+                 {list_name}.remove(__p); }}"
+            )?;
+            out.push('\n');
             Ok(())
         }
         // PMAT-461 (v0.2.0 Track 1.B): Python `xs[i] = v` → Rust

@@ -3550,6 +3550,30 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502eg (Tranche 2): `xs.remove(x)` — remove the first list element equal
+/// to `x` (a `Stmt::ListRemoveValue`), panicking ≈ Python `ValueError` when
+/// absent. Completes the in-place list-mutator surface alongside
+/// append/insert/pop/extend/sort/reverse/clear. Distinct from set `.remove`
+/// (by key) — the receiver type disambiguates. Cross-checked vs python3.
+#[test]
+fn list_remove() {
+    let rust = xpile_transpile_to_rust("list_remove.py");
+    assert!(
+        rust.contains(".position(|__e| *__e == __v)") && rust.contains(".remove(__p)"),
+        "list.remove should emit position-find + Vec::remove:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(remove_count(), 3);
+    assert_eq!(remove_first_only(), 2); // [1,2,3,2] - first 2 -> [1,3,2], [2]==2
+    assert_eq!(remove_then_sum(), 40);
+    assert_eq!(remove_str(), 2);
+    assert_eq!(remove_param(vec![5, 6, 7], 6), 2);
+}
+"#;
+    assert_rustc_runs("list_remove", &rust, driver);
+}
+
 /// PMAT-502ef (Tranche 2): a `float` field in an f-string must render Python
 /// repr (`3.0`), not Rust's `Display` (`3` for a whole float) — a silent
 /// miscompile (`f"v={x}"` produced "v=3"). A float field now reuses the same

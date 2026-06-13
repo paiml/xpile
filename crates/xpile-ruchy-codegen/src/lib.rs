@@ -148,7 +148,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             | Stmt::ListMutate { .. }
             | Stmt::ListExtend { .. }
             | Stmt::DictUpdate { .. }
-            | Stmt::ListInsert { .. } => false,
+            | Stmt::ListInsert { .. }
+            | Stmt::ListRemoveValue { .. } => false,
             // PMAT-461: indexed assignment same disposition.
             Stmt::IndexAssign { .. } => false,
             // PMAT-466: dict keyed assignment same disposition.
@@ -458,6 +459,20 @@ fn emit_stmt_indented(
             out.push_str(") as usize, ");
             emit_expr(out, elem, mode)?;
             writeln!(out, ");")?;
+            Ok(())
+        }
+        // PMAT-502eg: `xs.remove(x)` → position-find + remove, matching the
+        // Rust backend (panics ≈ Python `ValueError` when absent).
+        Stmt::ListRemoveValue { list_name, value } => {
+            write!(out, "{indent}{{ let __v = ")?;
+            emit_expr(out, value, mode)?;
+            write!(
+                out,
+                "; let __p = {list_name}.iter().position(|__e| *__e == __v)\
+                 .expect(\"xpile: ValueError: list.remove(x): x not in list\"); \
+                 {list_name}.remove(__p); }}"
+            )?;
+            out.push('\n');
             Ok(())
         }
         // PMAT-461 (v0.2.0 Track 1.B): Ruchy → Rust →
