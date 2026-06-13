@@ -944,6 +944,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str("); let __w = (");
                 emit_expr(out, &args[0], mode)?;
                 out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = \"0\".repeat(__w - __n); if __s.starts_with('-') || __s.starts_with('+') { format!(\"{}{}{}\", &__s[..1], __pad, &__s[1..]) } else { format!(\"{}{}\", __pad, __s) } } }");
+            } else if matches!(op, StrMethodOp::Center) {
+                // PMAT-502cu: `.center(w)` → space-pad centred, CPython bias
+                // `left = marg/2 + (marg & w & 1)` (extra padding parity).
+                out.push_str("{ let __s = (");
+                emit_expr(out, recv, mode)?;
+                out.push_str("); let __w = (");
+                emit_expr(out, &args[0], mode)?;
+                out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __marg = __w - __n; let __left = __marg / 2 + (__marg & __w & 1); format!(\"{}{}{}\", \" \".repeat(__left), __s, \" \".repeat(__marg - __left)) } }");
             } else {
                 emit_expr(out, recv, mode)?;
                 match op {
@@ -1017,6 +1025,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                         unreachable!("removeprefix/removesuffix handled above")
                     }
                     StrMethodOp::ZFill => unreachable!("zfill handled above"),
+                    StrMethodOp::Center => unreachable!("center handled above"),
                 }
             }
         }

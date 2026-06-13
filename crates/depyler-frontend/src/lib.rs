@@ -3940,6 +3940,8 @@ fn infer_type(e: &Expr) -> Type {
             StrMethodOp::SwapCase => Type::Str,
             // PMAT-502cs: zfill → Str.
             StrMethodOp::ZFill => Type::Str,
+            // PMAT-502cu: center → Str.
+            StrMethodOp::Center => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
         // type from the first element (frontend ensures homogeneity
@@ -4198,6 +4200,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             StrMethodOp::SwapCase => Type::Str,
             // PMAT-502cs: zfill → Str.
             StrMethodOp::ZFill => Type::Str,
+            // PMAT-502cu: center → Str.
+            StrMethodOp::Center => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
         // shape as the context-free `infer_type` arm.
@@ -6437,6 +6441,8 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
         "swapcase" => Some(StrMethodOp::SwapCase),
         // PMAT-502cs: zfill (1-arg width).
         "zfill" => Some(StrMethodOp::ZFill),
+        // PMAT-502cu: center (1-arg width).
+        "center" => Some(StrMethodOp::Center),
         _ => None,
     }
 }
@@ -6468,6 +6474,8 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         StrMethodOp::SwapCase => 0,
         // PMAT-502cs: zfill takes one width arg.
         StrMethodOp::ZFill => 1,
+        // PMAT-502cu: center takes one width arg.
+        StrMethodOp::Center => 1,
     }
 }
 

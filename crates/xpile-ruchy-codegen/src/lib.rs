@@ -844,6 +844,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = \"0\".repeat(__w - __n); if __s.starts_with('-') || __s.starts_with('+') { format!(\"{}{}{}\", &__s[..1], __pad, &__s[1..]) } else { format!(\"{}{}\", __pad, __s) } } }");
                 return Ok(());
             }
+            // PMAT-502cu: `.center(w)` (block form, matching the Rust backend).
+            if matches!(op, StrMethodOp::Center) {
+                out.push_str("{ let __s = (");
+                emit_expr(out, recv, mode)?;
+                out.push_str("); let __w = (");
+                emit_expr(out, &args[0], mode)?;
+                out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __marg = __w - __n; let __left = __marg / 2 + (__marg & __w & 1); format!(\"{}{}{}\", \" \".repeat(__left), __s, \" \".repeat(__marg - __left)) } }");
+                return Ok(());
+            }
             emit_expr(out, recv, mode)?;
             match op {
                 StrMethodOp::Upper => out.push_str(".to_uppercase()"),
@@ -914,6 +923,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     unreachable!("removeprefix/removesuffix handled above")
                 }
                 StrMethodOp::ZFill => unreachable!("zfill handled above"),
+                StrMethodOp::Center => unreachable!("center handled above"),
             }
         }
         // PMAT-455 (v0.2.0 Track 1.B): Ruchy → Rust → `vec![...]`.

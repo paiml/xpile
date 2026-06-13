@@ -3469,6 +3469,25 @@ fn main() {
     assert_rustc_runs("default_params", &rust, driver);
 }
 
+/// PMAT-502cu (Tranche 2): `str.center(width)` — CPython parity-biased pad.
+#[test]
+fn center() {
+    let rust = xpile_transpile_to_rust("center.py");
+    assert!(
+        rust.contains("__marg / 2 + (__marg & __w & 1)"),
+        "center bias:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(c(String::from("x")), "  x  ");
+    assert_eq!(c(String::from("ab")), "  ab ");
+    assert_eq!(c(String::from("abcde")), "abcde");
+    assert_eq!(c(String::from("abcdef")), "abcdef");
+}
+"#;
+    assert_rustc_runs("center", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
