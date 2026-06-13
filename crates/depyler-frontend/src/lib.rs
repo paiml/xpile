@@ -113,6 +113,14 @@ struct LoweringCtx {
     /// same name instead of an uncompilable bare `_`. Saved/restored around
     /// each construct's body so `_` shadows correctly across nesting.
     underscore_rename: Option<String>,
+    /// PMAT-502ez (Optional epic cut 4): names a preceding provably-exiting
+    /// `if <name> is None: return …` guard has proven `Some`. A later read of
+    /// such a name lowers to `Expr::OptionUnwrap` (`(<name>).unwrap()` : `T`)
+    /// rather than the raw `Option<T>` ident. Populated as the function body's
+    /// leading statements are lowered in order (see `lower_function_def`); only
+    /// non-reassigned (`!mutable`) `Optional`-typed names are eligible, so the
+    /// unwrap is sound (the name cannot become `None` after the guard).
+    narrowed_some: HashSet<String>,
 }
 
 impl LoweringCtx {
@@ -172,6 +180,7 @@ impl LoweringCtx {
             closure_returns: HashMap::new(),
             underscore_counter: 0,
             underscore_rename: None,
+            narrowed_some: HashSet::new(),
         }
     }
 }
@@ -737,6 +746,55 @@ fn try_const_decl(stmt: &ast::Stmt) -> Option<(String, Type, Expr)> {
     Some((name, ty, value))
 }
 
+/// PMAT-502ez (Optional epic cut 4): if `stmt` is a provably-exiting None-guard
+/// `if <name> is None: <body ending in return/raise>` (no `else`), register
+/// `<name>` as flow-narrowed to `Some` for the rest of the function body — later
+/// reads then lower to [`Expr::OptionUnwrap`]. Only non-reassigned (`!mutable`)
+/// `Optional`-typed names are eligible, which keeps the emitted `.unwrap()`
+/// sound: the guard exits on `None`, and the name can't be rebound afterwards,
+/// so every later read is provably `Some`. Any shape outside this narrow,
+/// obviously-sound pattern is simply not narrowed (no regression — the same
+/// code transpiled before, it just rustc-errored if the value was used as `T`).
+fn register_none_guard_narrowing(ctx: &mut LoweringCtx, stmt: &ast::Stmt) {
+    let ast::Stmt::If(if_stmt) = stmt else {
+        return;
+    };
+    // An `else`/`elif` complicates the post-guard fact; defer those shapes.
+    if !if_stmt.orelse.is_empty() {
+        return;
+    }
+    // Condition must be exactly `<name> is None`.
+    let ast::Expr::Compare(cmp) = if_stmt.test.as_ref() else {
+        return;
+    };
+    if cmp.ops.len() != 1
+        || !matches!(cmp.ops[0], ast::CmpOp::Is)
+        || cmp.comparators.len() != 1
+        || !matches!(&cmp.comparators[0], ast::Expr::Constant(k) if matches!(k.value, ast::Constant::None))
+    {
+        return;
+    }
+    let ast::Expr::Name(name) = cmp.left.as_ref() else {
+        return;
+    };
+    let name = name.id.to_string();
+    // The guard body must unconditionally exit (return / raise) so the
+    // fall-through is reached only when the value is `Some`.
+    if !matches!(
+        if_stmt.body.last(),
+        Some(ast::Stmt::Return(_) | ast::Stmt::Raise(_))
+    ) {
+        return;
+    }
+    // Eligible only for a non-reassigned `Optional`-typed name.
+    if ctx.mutable.contains(&name) {
+        return;
+    }
+    if matches!(ctx.name_types.get(&name), Some(Type::Optional(_))) {
+        ctx.narrowed_some.insert(name);
+    }
+}
+
 fn lower_function_def(
     f: ast::StmtFunctionDef,
     signatures: Rc<HashMap<String, FnSig>>,
@@ -838,6 +896,9 @@ fn lower_function_def(
         // each assigned name gets its own `Let` with an `IfExpr` value
         // (PMAT-005), or a `while` whose body lowers to a nested vec.
         stmts.extend(lower_block_stmt(&mut ctx, stmt.clone())?);
+        // PMAT-502ez: after a provably-exiting `if x is None: return …` guard,
+        // narrow `x` to `Some` for the remaining (and trailing) statements.
+        register_none_guard_narrowing(&mut ctx, stmt);
     }
 
     // PMAT-502bl: a void (`-> None`) function has no trailing `return
@@ -4488,6 +4549,11 @@ fn infer_type(e: &Expr) -> Type {
         )),
         // PMAT-502ex: a `None` test yields Bool.
         Expr::IsNone { .. } => Type::Bool,
+        // PMAT-502ez: unwrap yields the inner type of the operand's Optional.
+        Expr::OptionUnwrap(inner) => match infer_type(inner) {
+            Type::Optional(t) => *t,
+            other => other,
+        },
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => Type::Tuple(elems.iter().map(infer_type).collect()),
         // PMAT-502q: tuple constant-index → the N-th element type.
@@ -4823,6 +4889,11 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         )),
         // PMAT-502ex: a `None` test yields Bool.
         Expr::IsNone { .. } => Type::Bool,
+        // PMAT-502ez: unwrap yields the inner type of the operand's Optional.
+        Expr::OptionUnwrap(inner) => match infer_type_in_ctx(ctx, inner) {
+            Type::Optional(t) => *t,
+            other => other,
+        },
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => {
             Type::Tuple(elems.iter().map(|e| infer_type_in_ctx(ctx, e)).collect())
@@ -6486,6 +6557,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // name the enclosing `for _`/`… for _ …` minted (see `enter_loop_var`).
         // Only fires while such a rename is active; an unbound stray `_`
         // elsewhere still falls through to the context-free path unchanged.
+        // PMAT-502ez (Optional epic cut 4): a name a preceding provably-exiting
+        // `if x is None: return …` guard has proven `Some` reads as its unwrapped
+        // value — `(<name>).unwrap()` : `T` — so it can be used where `T` is
+        // expected. Sound because narrowing only registers for non-reassigned
+        // `Optional` names guarded by an always-exiting None-check.
+        ast::Expr::Name(n) if ctx.narrowed_some.contains(n.id.as_str()) => {
+            Ok(Expr::OptionUnwrap(Box::new(Expr::Ident(n.id.to_string()))))
+        }
         ast::Expr::Name(n) if n.id.as_str() == "_" && ctx.underscore_rename.is_some() => Ok(
             Expr::Ident(ctx.underscore_rename.clone().expect("rename is Some")),
         ),
