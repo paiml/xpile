@@ -4985,6 +4985,22 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 lower_unary_op(u)
             }
         }
+        // PMAT-502cc: context-aware `not <bool var>`. The context-free
+        // `lower_unary_op` infers a bare Ident as I64 and so rejects
+        // `not b` for a `bool` parameter/local; using `infer_type_in_ctx`
+        // sees the real type. Non-Bool operands still error (no
+        // int-truthiness), via the context-free fallback.
+        ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::Not) => {
+            let operand = lower_expr_in_ctx(ctx, (*u.operand).clone())?;
+            if matches!(infer_type_in_ctx(ctx, &operand), Type::Bool) {
+                Ok(Expr::UnOp {
+                    op: UnOp::Not,
+                    operand: Box::new(operand),
+                })
+            } else {
+                lower_unary_op(u)
+            }
+        }
         // No dict-specific shape: the context-free path is sufficient.
         other => lower_expr(other),
     }

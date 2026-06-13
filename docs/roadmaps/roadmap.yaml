@@ -1075,6 +1075,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "str.format previously accepted only automatic {} placeholders (count_simple_placeholders). FRONTEND-ONLY change: replaced count_simple_placeholders with parse_format_placeholders -> Option<FmtPlaceholders::{Sequential(usize), Positional(Vec<usize>)}>. Accepts all-automatic {} (count must == nargs) OR all-positional {N} (mixing the two is rejected, matching Python's 'cannot switch from automatic to manual field numbering'). For positional: validate every index < nargs AND every arg index 0..nargs is referenced (Rust's format! errors on an unused positional arg, unlike Python which silently ignores extras). {name}/{:spec}/lone-brace still rejected. The Expr::StrFormat codegen already re-emits fmt verbatim via {fmt:?}, and Rust format! shares the {} and {N} syntaxes, so NO codegen change. Reorder ({1} {0}) + repeat ({0}-{0}) work. rustc round-trip format_positional.py (cross-checked vs python3): swap('x','y')='y x', dup(7)='7-7', seq('a','b')='a and b'. FREE CI. SHIPPED v0.1.114."
+- id: PMAT-502CC
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cc: [Tranche2] context-aware not <bool var>'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "not b for a bool parameter/local was wrongly rejected with 'not requires Bool operand (no int-truthiness)'. ROOT CAUSE: the unary-not lowering ran context-free (lower_unary_op uses infer_type, which infers a bare Ident as I64). FIX: new context-aware arm `ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::Not)` in lower_expr_in_ctx_inner (next to the v0.1.102 USub float-negation arm): lower the operand ctx-aware, and if it types as Type::Bool emit Expr::UnOp { op: UnOp::Not, operand } -> (!b); otherwise fall back to lower_unary_op (still errors for non-Bool, preserving the no-int-truthiness rule). not (x > 0) (comparison operand) was already fine via either path and is unchanged. Same fix SHAPE as float-var negation. rustc round-trip not_bool_var.py (cross-checked vs python3): toggle(true)=false, toggle(false)=true, clamp(false,9)=0, clamp(true,9)=9. FREE CI. SHIPPED v0.1.115."
 - id: PMAT-465
   github_issue: 496
   item_type: task

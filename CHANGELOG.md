@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.115] — 2026-06-13
+
+Tranche-2 slice PMAT-502cc — context-aware **`not <bool var>`**.
+
+`not b` for a `bool` parameter/local was wrongly rejected ("`not` requires
+Bool operand"): the unary-`not` lowering ran context-free, where a bare
+identifier infers as `I64`. A new context-aware `UnaryOp(Not)` arm in
+`lower_expr_in_ctx_inner` consults `infer_type_in_ctx`, so a `bool`-typed
+operand lowers to `(!b)`; non-Bool operands still fall back to the
+context-free path and error (no int-truthiness). This is the same fix shape as
+the v0.1.102 float-variable negation. `not (x > 0)` (a comparison) was already
+fine and is unchanged. rustc round-trip `not_bool_var.py` (cross-checked vs
+`python3`): `toggle(true) -> false`, `clamp(false, 9) -> 0`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.114] — 2026-06-13
 
 Tranche-2 slice PMAT-502cb — **`str.format` positional `{N}`** placeholders.
