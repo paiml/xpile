@@ -1631,9 +1631,11 @@ pub enum NumBuiltinOp {
 /// PMAT-495 (sprint): the iterator adapter for a [`Stmt::ForEachPair`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PairIterKind {
-    /// `enumerate(iter)` — `first` = index (`i64`), `second` = element of
-    /// `iter`. Emits `.iter().cloned().enumerate().map(|(i,e)| (i as i64, e))`.
-    Enumerate,
+    /// `enumerate(iter, start)` — `first` = index (`i64`, offset by `start`,
+    /// default 0), `second` = element of `iter`. Emits
+    /// `.iter().cloned().enumerate().map(|(i,e)| (i as i64 + start, e))`
+    /// (the `+ start` is omitted when `start == 0`). PMAT-502ca added `start`.
+    Enumerate { start: i64 },
     /// `zip(iter, other)` — `first` = element of `iter`, `second` =
     /// element of `other`. Emits `.iter().cloned().zip(other.iter().cloned())`.
     Zip(Box<Expr>),

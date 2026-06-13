@@ -3059,6 +3059,24 @@ fn main() {
     assert_rustc_runs("chained_assign", &rust, driver);
 }
 
+/// PMAT-502ca (Tranche 2): `enumerate(xs, start)` — the optional start index
+/// offsets the index var (`__i as i64 + start`).
+#[test]
+fn enumerate_start() {
+    let rust = xpile_transpile_to_rust("enumerate_start.py");
+    assert!(
+        rust.contains("__i as i64 + 1i64") && rust.contains("__i as i64 + 10i64"),
+        "enumerate start offset:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(weighted(vec![10, 20, 30]), 140);
+    assert_eq!(last_index(vec![5, 5, 5]), 12);
+}
+"#;
+    assert_rustc_runs("enumerate_start", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

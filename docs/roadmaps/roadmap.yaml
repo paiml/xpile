@@ -1057,6 +1057,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "Chained assignment a = b = ... was rejected ('chained assignment not supported'). FIX: new lower_chained_assign, gated in lower_block_stmt's ast::Stmt::Assign arm when asn.targets.len() > 1. Desugars to one Stmt per target (Let on first binding / Assign if already bound), re-lowering the value for EACH target. First cut: all targets must be plain Names and the value a SCALAR LITERAL (ast::Constant::Int/Float/Bool/Str) so per-target re-lowering is side-effect-free and each target gets an independent value. Python's list/dict aliasing for a = b = [] is OUT OF SCOPE (value semantics). walk_counts Assign arm updated: when targets.len() > 1, bump each Name target so a later mutation (a = b = 0; a += 5) lifts a to let mut. Non-Name targets + non-literal values deferred with precise errors. rustc round-trip chained_assign.py (cross-checked vs python3): init_sum()=8 (a=b=c=0; a+=5; b+=3), flags()=2 (x=y=1). FREE CI. SHIPPED v0.1.112."
+- id: PMAT-502CA
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ca: [Tranche2] enumerate(xs, start) 2-arg'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "enumerate(xs, start) (2-arg) was unrecognised — arity_ok required exactly 1 arg, so it fell through to the generic for-loop which rejected the i,v tuple target ('non-Name for target'). FIX: PairIterKind::Enumerate changed from a unit variant to Enumerate { start: i64 }. Frontend accepts call.args.len() == 1 || 2 for enumerate; the optional 2nd arg must be an ast::Constant::Int literal (parsed to i64; non-int/non-literal deferred with precise errors), default start 0. Codegen rust/ruchy: the enumerate map offsets the index — start==0 keeps (__i as i64, __e); else (__i as i64 + {start}i64, __e). enumerate(xs) (no start) unchanged. Lean unaffected (refuses ForEachPair wholesale). 3 PairIterKind::Enumerate sites updated (rust/ruchy codegen + frontend construction). rustc round-trip enumerate_start.py (cross-checked vs python3): weighted([10,20,30])=140 (enumerate(_,1): 1*10+2*20+3*30), last_index([5,5,5])=12 (enumerate(_,10): 10,11,12). FREE CI. SHIPPED v0.1.113."
 - id: PMAT-465
   github_issue: 496
   item_type: task

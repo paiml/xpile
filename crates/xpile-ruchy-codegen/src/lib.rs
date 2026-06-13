@@ -348,10 +348,18 @@ fn emit_stmt_indented(
             write!(out, "{indent}for ({first}, {second}) in ")?;
             emit_expr(out, iter, mode)?;
             match kind {
-                xpile_meta_hir::PairIterKind::Enumerate => {
-                    out.push_str(
-                        ".iter().cloned().enumerate().map(|(__i, __e)| (__i as i64, __e))",
-                    );
+                xpile_meta_hir::PairIterKind::Enumerate { start } => {
+                    // PMAT-502ca: `enumerate(xs, start)` offsets the index.
+                    if *start == 0 {
+                        out.push_str(
+                            ".iter().cloned().enumerate().map(|(__i, __e)| (__i as i64, __e))",
+                        );
+                    } else {
+                        write!(
+                            out,
+                            ".iter().cloned().enumerate().map(|(__i, __e)| (__i as i64 + {start}i64, __e))"
+                        )?;
+                    }
                 }
                 xpile_meta_hir::PairIterKind::Zip(other) => {
                     out.push_str(".iter().cloned().zip(");
