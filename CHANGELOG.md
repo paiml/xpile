@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.215] — 2026-06-13
+
+Tranche 2 — PMAT-515: enum **`.name`** member access.
+
+- `C.NAME.name` → the variant name as a compile-time string literal
+  (`String::from("NAME")`), mirroring PMAT-513 `.value` → the discriminant
+  literal. Both fold in the bare-Attribute arm (`matches!(attr, "value" |
+  "name")` over an `Enum.Variant` receiver → `LitInt`/`LitStr`) — **no new IR**.
+- `enum_basic.py` extended with a `.name` case; rustc round-trip cross-checked
+  vs python3.
+
 ## [0.1.214] — 2026-06-13
 
 Tranche 2 — PMAT-514: `match` on **enums** (`case Color.RED:`).
