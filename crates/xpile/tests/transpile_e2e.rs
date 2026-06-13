@@ -3550,6 +3550,31 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502en (Tranche 2): 2-arg `math` float methods — `math.hypot(x, y)`,
+/// `math.atan2(y, x)`, and 2-arg `math.log(x, base)`. Each reuses
+/// `Expr::FloatBinOp` (new `FloatOp` variants) with both operands coerced to
+/// f64, emitting `(a).hypot(b)` / `(a).atan2(b)` / `(a).log(b)`. 1-arg
+/// `math.log` is still natural log (`Ln`). Cross-checked vs python3.
+#[test]
+fn math_2arg() {
+    let rust = xpile_transpile_to_rust("math_2arg.py");
+    assert!(
+        rust.contains(".hypot(") && rust.contains(".atan2(") && rust.contains(".log("),
+        "2-arg math should emit the f64 2-arg methods:\n{rust}"
+    );
+    let driver = r#"
+fn approx(a: f64, b: f64) -> bool { (a - b).abs() < 1e-9 }
+fn main() {
+    assert_eq!(hypotenuse(3.0, 4.0), 5.0);
+    assert!(approx(angle(1.0, 1.0), std::f64::consts::FRAC_PI_4));
+    assert!(approx(log_base(8.0, 2.0), 3.0));
+    assert!(approx(log_base(100.0, 10.0), 2.0));
+    assert!(approx(natural_log(std::f64::consts::E), 1.0));
+}
+"#;
+    assert_rustc_runs("math_2arg", &rust, driver);
+}
+
 /// PMAT-502em (Tranche 2): `math.pow(x, y)` and `math.trunc(x)`. `math.pow`
 /// always returns `float` (even for int args, unlike the builtin `pow`), so it
 /// reuses `FloatBinOp{Pow}` with both operands coerced to f64 → `(x).powf(y)`.

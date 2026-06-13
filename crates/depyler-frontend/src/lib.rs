@@ -6388,14 +6388,23 @@ fn lower_math_call(
     fn_name: &str,
     call: &ast::ExprCall,
 ) -> Result<Expr, FrontendError> {
-    // PMAT-502em: `math.pow(x, y)` — 2-arg, and Python's `math.pow` ALWAYS
-    // returns a float (even for int args), so coerce both operands to f64 and
-    // reuse `FloatBinOp{Pow}` → `(x).powf(y)`. (Distinct from the builtin
-    // `pow(a, b)`, which keeps int args integral.)
-    if fn_name == "pow" {
+    // PMAT-502em/en: 2-arg float methods — `math.pow(x, y)` → `(x).powf(y)`,
+    // `math.hypot(x, y)` → `(x).hypot(y)`, `math.atan2(y, x)` → `(y).atan2(x)`,
+    // `math.log(x, base)` → `(x).log(base)`. All return float (Python's
+    // `math.pow` is float even for int args), so both operands are coerced to
+    // f64 and reuse `Expr::FloatBinOp`. `math.log` with ONE arg is natural log
+    // (`Ln`, handled in the 1-arg table below); only the 2-arg form is here.
+    let two_arg_op = match (fn_name, call.args.len()) {
+        ("pow", _) => Some(FloatOp::Pow),
+        ("hypot", _) => Some(FloatOp::Hypot),
+        ("atan2", _) => Some(FloatOp::Atan2),
+        ("log", 2) => Some(FloatOp::Log),
+        _ => None,
+    };
+    if let Some(fop) = two_arg_op {
         if !call.keywords.is_empty() || call.args.len() != 2 {
             return Err(FrontendError::Lower(format!(
-                "function `{}` calls `math.pow(...)` with {} positional arg(s){}; it takes exactly 2",
+                "function `{}` calls `math.{fn_name}(...)` with {} positional arg(s){}; it takes exactly 2",
                 ctx.fn_name,
                 call.args.len(),
                 if call.keywords.is_empty() { "" } else { " plus keyword args" },
@@ -6407,12 +6416,12 @@ fn lower_math_call(
         let rty = infer_type_in_ctx(ctx, &rhs);
         if !matches!(lty, Type::I64 | Type::F64) || !matches!(rty, Type::I64 | Type::F64) {
             return Err(FrontendError::Lower(format!(
-                "function `{}` calls `math.pow(...)` with a non-numeric argument ({lty:?}, {rty:?})",
+                "function `{}` calls `math.{fn_name}(...)` with a non-numeric argument ({lty:?}, {rty:?})",
                 ctx.fn_name
             )));
         }
         return Ok(Expr::FloatBinOp {
-            op: FloatOp::Pow,
+            op: fop,
             lhs: Box::new(to_f64_operand(ctx, lhs)),
             rhs: Box::new(to_f64_operand(ctx, rhs)),
         });
@@ -6433,7 +6442,7 @@ fn lower_math_call(
         "trunc" => NumBuiltinOp::Trunc,
         other => {
             return Err(FrontendError::Lower(format!(
-                "function `{}` calls `math.{other}(...)` — v0.2.0 supports `math.sqrt`/`floor`/`ceil`/`trunc`/`sin`/`cos`/`tan`/`exp`/`log`/`log10`/`log2`/`pow` (other `math` functions are a follow-up)",
+                "function `{}` calls `math.{other}(...)` — v0.2.0 supports `math.sqrt`/`floor`/`ceil`/`trunc`/`sin`/`cos`/`tan`/`exp`/`log`/`log10`/`log2`/`pow`/`hypot`/`atan2` (other `math` functions are a follow-up)",
                 ctx.fn_name
             )));
         }

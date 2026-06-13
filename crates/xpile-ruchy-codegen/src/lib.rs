@@ -44,10 +44,14 @@ fn float_op_sym(op: FloatOp) -> &'static str {
         FloatOp::Sub => "-",
         FloatOp::Mul => "*",
         FloatOp::Div => "/",
-        // FloorDiv/Mod/Pow use dedicated formulas — keep the match exhaustive.
+        // FloorDiv/Mod/Pow + math method-ops use dedicated formulas — keep the
+        // match exhaustive.
         FloatOp::FloorDiv => "//",
         FloatOp::Mod => "%",
         FloatOp::Pow => "**",
+        FloatOp::Hypot => "hypot",
+        FloatOp::Atan2 => "atan2",
+        FloatOp::Log => "log",
     }
 }
 
@@ -711,11 +715,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 emit_expr(out, rhs, mode)?;
                 out.push_str(").floor())");
             }
-            // PMAT-502bt: Python float power → `(a).powf(b)`.
-            FloatOp::Pow => {
+            // PMAT-502bt/em/en: method-style float ops — `(a).<method>(b)`,
+            // matching the Rust backend.
+            FloatOp::Pow | FloatOp::Hypot | FloatOp::Atan2 | FloatOp::Log => {
+                let method = match op {
+                    FloatOp::Pow => "powf",
+                    FloatOp::Hypot => "hypot",
+                    FloatOp::Atan2 => "atan2",
+                    FloatOp::Log => "log",
+                    _ => unreachable!(),
+                };
                 out.push('(');
                 emit_expr(out, lhs, mode)?;
-                out.push_str(").powf(");
+                write!(out, ").{method}(")?;
                 emit_expr(out, rhs, mode)?;
                 out.push(')');
             }
