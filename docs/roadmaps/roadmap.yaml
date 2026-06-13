@@ -1273,6 +1273,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "sum(xs, start) (2-arg) was SILENTLY MISCOMPILED: only sum(xs) 1-arg was handled; the 2-arg form fell through to a generic call emitting an undefined Rust sum(xs, start) fn. FIX: Expr::Sum gains an optional start: Option<Box<Expr>> field. Frontend: the sum-builtin block now accepts 1..=2 args; when start is present it must match the list element type (int start for an int list, float start for a float list) else a clear FrontendError::Lower (no silent miscompile). Codegen rust/ruchy: start present -> (start) + <list>.iter().sum::<T>() (Python sum(xs,start)==start+sum(xs); no cast since start matches elem type). Both inferers unchanged (use ..). expr_has_int_arith also scans start; lean collect_idents recurses start; lean refuses Sum wholesale. Blast radius: field add on existing Expr variant -> expr_has_int_arith + 2 rust/ruchy emit sites + lean collect_idents (inferers + lean refusal use .. so unaffected). rustc round-trip sum_start.py (cross-checked vs python3): sum([1,2,3,4],10)=20, sum([],7)=7, sum([1.5,2.5,3.0],1.5)=8.5. FREE CI. SHIPPED v0.1.136."
+- id: PMAT-502CY
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cy: [Tranche2] pow(a, b) builtin'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "pow(a, b) was SILENTLY MISCOMPILED: it fell through to a generic call emitting an undefined Rust pow(a, b) fn. FIX (FRONTEND-ONLY, NO new meta-HIR variant): in the call-lowering, pow 2-arg with no keywords + numeric operands desugars to the SAME machinery as a ** b — Expr::FloatBinOp{Pow} (via to_f64_operand) when either operand is F64, else Expr::BinOp{Pow} (int checked_pow, inheriting the existing negative-exponent u32 guard). 3-arg pow(a,b,mod) (modular exponentiation) deferred. Blast radius: ONE new if-block in lower_expr_in_ctx_inner; no codegen/lean/inferer change (reuses existing Pow emit). rustc round-trip pow_builtin.py (cross-checked vs python3): pow(2,10)=1024, pow(5,3)=125, pow(2.0,3.0)=8.0, pow(2.0,0.5)~=1.41421356. FREE CI. SHIPPED v0.1.137. PROBE NOTE: still-open extra-arg silent miscompiles found same firing — max(a,b,c) 3-arg, int(s,base) 2-arg — candidates for next slices."
 - id: PMAT-465
   github_issue: 496
   item_type: task

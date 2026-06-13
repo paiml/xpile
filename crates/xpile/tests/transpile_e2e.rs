@@ -3529,6 +3529,30 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502cy (Tranche 2): `pow(a, b)` == `a ** b` (reuses the `**` path).
+#[test]
+fn pow_builtin() {
+    let rust = xpile_transpile_to_rust("pow_builtin.py");
+    assert!(
+        rust.contains("(a).checked_pow("),
+        "pow(a, b) int → checked_pow:\n{rust}"
+    );
+    assert!(
+        rust.contains("(a).powf(b)"),
+        "pow(a, b) float → powf:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // pow(a, b) == a ** b; cross-checked vs python3.
+    assert_eq!(ipow(2, 10), 1024);
+    assert_eq!(ipow(5, 3), 125);
+    assert_eq!(fpow(2.0, 3.0), 8.0);
+    assert!((root(2.0) - 1.4142135623730951).abs() < 1e-12);
+}
+"#;
+    assert_rustc_runs("pow_builtin", &rust, driver);
+}
+
 /// PMAT-502cx (Tranche 2): `sum(xs, start)` prepends `start` to the sum.
 #[test]
 fn sum_start() {

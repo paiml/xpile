@@ -4786,6 +4786,32 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         }
                     }
                 }
+                // PMAT-502cy: `pow(a, b)` 2-arg == `a ** b` — reuse the `**`
+                // machinery (float `powf` when either operand is `f64`, else
+                // integer `checked_pow`). Previously `pow` fell through to a
+                // generic call, emitting an undefined Rust `pow(...)` fn.
+                // 3-arg `pow(a, b, mod)` (modular exponentiation) is deferred.
+                if fname.id.as_str() == "pow" && call.keywords.is_empty() && call.args.len() == 2 {
+                    let lhs = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    let rhs = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                    let lty = infer_type_in_ctx(ctx, &lhs);
+                    let rty = infer_type_in_ctx(ctx, &rhs);
+                    if matches!(lty, Type::I64 | Type::F64) && matches!(rty, Type::I64 | Type::F64)
+                    {
+                        if lty == Type::F64 || rty == Type::F64 {
+                            return Ok(Expr::FloatBinOp {
+                                op: FloatOp::Pow,
+                                lhs: Box::new(to_f64_operand(ctx, lhs)),
+                                rhs: Box::new(to_f64_operand(ctx, rhs)),
+                            });
+                        }
+                        return Ok(Expr::BinOp {
+                            op: BinOp::Pow,
+                            lhs: Box::new(lhs),
+                            rhs: Box::new(rhs),
+                        });
+                    }
+                }
                 // PMAT-502cm: `ord(c)` (str → int code point) and `chr(n)`
                 // (int → 1-char str). 1-arg builtins. (Previously `ord`/`chr`
                 // fell through to a generic call, emitting an undefined
