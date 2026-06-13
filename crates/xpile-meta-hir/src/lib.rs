@@ -267,6 +267,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::StrChars { string } => expr_has_int_arith(string),
         // PMAT-502cm: ord/chr — recurse into the value expr.
         Expr::Ord { value } | Expr::Chr { value } => expr_has_int_arith(value),
+        // PMAT-502cv: hex/oct/bin — recurse into the value expr.
+        Expr::IntRadixStr { value, .. } => expr_has_int_arith(value),
         // PMAT-502am: formatted f-string field — recurse into the value.
         Expr::FormatSpec { value, .. } => expr_has_int_arith(value),
         // PMAT-492: string methods are str-domain; recurse into the
@@ -1283,6 +1285,13 @@ pub enum Expr {
     /// (an out-of-range code point panics, ≈ Python's `ValueError`). Lean
     /// refuses.
     Chr { value: Box<Expr> },
+    /// `hex(n)` / `oct(n)` / `bin(n)` — the radix string of an int (→ `str`).
+    /// PMAT-502cv (Tranche 2). Python prefixes `0x`/`0o`/`0b` and puts the
+    /// sign first for negatives (`hex(-255)` = `"-0xff"`). Rust/Ruchy emit
+    /// `{ let __n = (<v>); let __m = __n.unsigned_abs(); let __sign = if
+    /// __n < 0 { "-" } else { "" }; format!("{}<prefix>{:<spec>}", __sign,
+    /// __m) }` (`__m` is the magnitude so i64::MIN is safe). Lean refuses.
+    IntRadixStr { value: Box<Expr>, radix: Radix },
     /// A formatted f-string field — Python `{value:spec}` where `spec` is a
     /// static format spec (e.g. `.2f`, `05d`, `>10`). PMAT-502am (Tranche 2).
     /// `rust_spec` is the already-translated Rust format spec (the frontend
@@ -1640,6 +1649,17 @@ pub enum QuotingStrategy {
     /// for short fragments where surrounding quotes would be
     /// awkward.
     Backslash,
+}
+
+/// PMAT-502cv: the radix for `hex`/`oct`/`bin` (`Expr::IntRadixStr`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Radix {
+    /// `hex(n)` → prefix `0x`, lowercase hex (`{:x}`).
+    Hex,
+    /// `oct(n)` → prefix `0o`, octal (`{:o}`).
+    Oct,
+    /// `bin(n)` → prefix `0b`, binary (`{:b}`).
+    Bin,
 }
 
 /// PMAT-477 (R8): float arithmetic operators. Carried by

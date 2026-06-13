@@ -1246,6 +1246,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "str.center(width) was deferred (tie-break wrinkle). KEY: Rust's {:^w} right-biases the extra pad ('ab'.center(5) -> ' ab  '), but CPython left-biases for that parity ('  ab '). The exact CPython rule is left = marg//2 + (marg & width & 1). FIX: new StrMethodOp::Center (1-arg -> str); str_method_op maps 'center'; arity 1; both inferers Str. BLOCK-FORM codegen (rust+ruchy, special-cased before recv-once emit like zfill): { let __s = (recv); let __w = (width) as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __marg = __w - __n; let __left = __marg / 2 + (__marg & __w & 1); format!(\"{}{}{}\", \" \".repeat(__left), __s, \" \".repeat(__marg - __left)) } }. Already-wide unchanged; width counts chars. Completes the justify family (rjust/ljust/center). Lean refuses. rustc round-trip center.py (cross-checked vs python3): c('x')='  x  ', c('ab')='  ab ' (CPython bias!), c('abcde')='abcde', c('abcdef')='abcdef'. FREE CI. SHIPPED v0.1.133."
+- id: PMAT-502CV
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cv: [Tranche2] hex/oct/bin builtins'
+  status: planned
+  priority: high
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "hex(n)/oct(n)/bin(n) were SILENTLY MISCOMPILED (lowered as generic calls -> undefined hex(...)/oct(...)/bin(...) Rust fns). FIX: new Expr::IntRadixStr { value, radix } meta-HIR variant + Radix enum (Hex/Oct/Bin). Frontend (next to ord/chr): hex/oct/bin 1-arg over an int -> IntRadixStr (non-int -> error). Codegen rust/ruchy: { let __n = (v); let __m = __n.unsigned_abs(); let __sign = if __n < 0 { \"-\" } else { \"\" }; format!(\"{}<prefix>{:<spec>}\", __sign, __m) } where prefix/spec = 0x/{:x}, 0o/{:o}, 0b/{:b}. Sign-FIRST for negatives (Python hex(-255)='-0xff', not two's-complement); magnitude via unsigned_abs so i64::MIN is safe; hex(0)='0x0'. Both inferers type IntRadixStr Str. Lean refuses. Blast radius: new Expr variant + Radix enum -> expr_has_int_arith + 2 inferers + collect_idents(lean) + 3 emit sites + 2 import lines. rustc round-trip int_radix.py (cross-checked vs python3): hex(255)='0xff', hex(-255)='-0xff', hex(0)='0x0', bin(5)='0b101', bin(-5)='-0b101', oct(8)='0o10'. FREE CI. SHIPPED v0.1.134."
 - id: PMAT-465
   github_issue: 496
   item_type: task

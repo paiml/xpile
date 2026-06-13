@@ -14,7 +14,7 @@ use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_meta_hir::{
     BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListMutateOp, ListQueryOp, Module,
-    NumBuiltinOp, Param, SetOp, Stmt, StrMethodOp, Type, UnOp,
+    NumBuiltinOp, Param, Radix, SetOp, Stmt, StrMethodOp, Type, UnOp,
 };
 
 /// PMAT-477 (R8): Ruchy → Rust infix symbol for a float arithmetic op.
@@ -762,6 +762,20 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str("char::from_u32((");
             emit_expr(out, value, mode)?;
             out.push_str(") as u32).expect(\"xpile: chr() arg not in range(0x110000) (ValueError)\").to_string()");
+        }
+        // PMAT-502cv: hex/oct/bin → radix string (see the Rust backend).
+        Expr::IntRadixStr { value, radix } => {
+            out.push_str("{ let __n = (");
+            emit_expr(out, value, mode)?;
+            out.push_str(
+                "); let __m = __n.unsigned_abs(); let __sign = if __n < 0 { \"-\" } else { \"\" }; format!(\"{}",
+            );
+            out.push_str(match radix {
+                Radix::Hex => "0x{:x}",
+                Radix::Oct => "0o{:o}",
+                Radix::Bin => "0b{:b}",
+            });
+            out.push_str("\", __sign, __m) }");
         }
         // PMAT-492/493b: Python string methods (Ruchy → Rust). No-arg
         // transforms emit a suffix; startswith/endswith emit

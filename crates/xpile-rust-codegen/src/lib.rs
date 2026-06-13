@@ -15,7 +15,7 @@ use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_meta_hir::{
     BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListMutateOp, ListQueryOp, Module,
-    NumBuiltinOp, Param, SetOp, SourceLang, Stmt, StrMethodOp, Type, UnOp,
+    NumBuiltinOp, Param, Radix, SetOp, SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
 /// PMAT-502by: escape a string for embedding inside a `format!`/`println!`
@@ -866,6 +866,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push_str("char::from_u32((");
             emit_expr(out, value, mode)?;
             out.push_str(") as u32).expect(\"xpile: chr() arg not in range(0x110000) (ValueError)\").to_string()");
+        }
+        // PMAT-502cv: hex/oct/bin → radix string, sign-first (magnitude via
+        // `unsigned_abs` so i64::MIN is safe).
+        Expr::IntRadixStr { value, radix } => {
+            out.push_str("{ let __n = (");
+            emit_expr(out, value, mode)?;
+            out.push_str(
+                "); let __m = __n.unsigned_abs(); let __sign = if __n < 0 { \"-\" } else { \"\" }; format!(\"{}",
+            );
+            out.push_str(match radix {
+                Radix::Hex => "0x{:x}",
+                Radix::Oct => "0o{:o}",
+                Radix::Bin => "0b{:b}",
+            });
+            out.push_str("\", __sign, __m) }");
         }
         // PMAT-492/493b: Python string methods. No-arg transforms emit a
         // suffix; the startswith/endswith predicates emit

@@ -3488,6 +3488,27 @@ fn main() {
     assert_rustc_runs("center", &rust, driver);
 }
 
+/// PMAT-502cv (Tranche 2): `hex(n)` / `oct(n)` / `bin(n)` → radix strings
+/// (sign-first, `0x`/`0o`/`0b` prefix).
+#[test]
+fn int_radix() {
+    let rust = xpile_transpile_to_rust("int_radix.py");
+    assert!(rust.contains(r#"format!("{}0x{:x}""#), "hex:\n{rust}");
+    assert!(rust.contains(r#"format!("{}0b{:b}""#), "bin:\n{rust}");
+    assert!(rust.contains(r#"format!("{}0o{:o}""#), "oct:\n{rust}");
+    let driver = r#"
+fn main() {
+    assert_eq!(h(255), "0xff");
+    assert_eq!(h(-255), "-0xff");
+    assert_eq!(h(0), "0x0");
+    assert_eq!(b(5), "0b101");
+    assert_eq!(b(-5), "-0b101");
+    assert_eq!(o(8), "0o10");
+}
+"#;
+    assert_rustc_runs("int_radix", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
