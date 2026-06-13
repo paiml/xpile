@@ -716,6 +716,13 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             }
         }
         Expr::FieldAccess { obj, .. } => collect_idents(obj, out),
+        // PMAT-506d: method call — recurse into receiver + args.
+        Expr::MethodCall { obj, args, .. } => {
+            collect_idents(obj, out);
+            for a in args {
+                collect_idents(a, out);
+            }
+        }
         // PMAT-457: indexed access — recurse into both sides.
         Expr::Index { collection, index } => {
             collect_idents(collection, out);
@@ -1158,10 +1165,10 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         }
         // PMAT-506b: struct construction / field access — no first-cut Lean
         // encoding (struct values are deferred in the Lean lane).
-        Expr::StructLit { .. } | Expr::FieldAccess { .. } => {
+        Expr::StructLit { .. } | Expr::FieldAccess { .. } | Expr::MethodCall { .. } => {
             return Err(LeanCodegenError::Unsupported(
-                "struct construction / field access (class/dataclass values) are not yet \
-                 supported in the Lean lane — use `--target rust` or `--target ruchy`"
+                "struct construction / field access / method calls (class/dataclass values) are not \
+                 yet supported in the Lean lane — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
         }

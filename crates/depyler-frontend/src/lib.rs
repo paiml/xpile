@@ -99,6 +99,10 @@ struct LoweringCtx {
     /// `StructLit`, mapping positional args to field names) and to type field
     /// access (`obj.field`). Shared across the module via `Rc`.
     structs: Rc<HashMap<String, Vec<(String, Type)>>>,
+    /// PMAT-506d (classes epic): per-struct method return types — `struct name
+    /// → [(method_name, return_type)]`. Built in the same pre-pass as `structs`.
+    /// Consulted to type `obj.method(args)` (`Expr::MethodCall`).
+    struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
     /// PMAT-504: function-local closure bindings — maps a closure
     /// variable name (`f` in `f = lambda y: …`) to its inferred return
     /// type, so a call `f(x)` types correctly (the module signature
@@ -155,6 +159,7 @@ impl LoweringCtx {
 }
 
 impl LoweringCtx {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         fn_name: &str,
         fn_return_type: Type,
@@ -163,6 +168,7 @@ impl LoweringCtx {
         signatures: Rc<HashMap<String, FnSig>>,
         consts: &HashMap<String, Type>,
         structs: Rc<HashMap<String, Vec<(String, Type)>>>,
+        struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
     ) -> Self {
         // PMAT-502bj: module-level constants are visible (and immutably
         // bound) in every function body; a same-named param shadows the
@@ -185,6 +191,7 @@ impl LoweringCtx {
             mutable,
             signatures,
             structs,
+            struct_methods,
             closure_returns: HashMap::new(),
             underscore_counter: 0,
             underscore_rename: None,
@@ -658,14 +665,17 @@ impl Frontend for PythonFrontend {
         // access in function bodies (which may precede the class textually)
         // type correctly.
         let mut struct_map: HashMap<String, Vec<(String, Type)>> = HashMap::new();
+        let mut struct_method_map: HashMap<String, Vec<(String, Type)>> = HashMap::new();
         for stmt in &suite {
             if let ast::Stmt::ClassDef(c) = stmt {
-                if let Ok(Item::Struct { name, fields }) = lower_class_def(c.clone()) {
-                    struct_map.insert(name, fields);
+                if let Ok((name, fields, method_returns)) = class_def_signature(c) {
+                    struct_map.insert(name.clone(), fields);
+                    struct_method_map.insert(name, method_returns);
                 }
             }
         }
         let structs = Rc::new(struct_map);
+        let struct_methods = Rc::new(struct_method_map);
 
         let mut items = Vec::new();
         for stmt in suite {
@@ -679,8 +689,13 @@ impl Frontend for PythonFrontend {
             if is_future_annotations_import(&stmt) || is_skippable_import(&stmt) {
                 continue;
             }
-            let item =
-                lower_top_level_stmt(stmt, signatures.clone(), consts.clone(), structs.clone())?;
+            let item = lower_top_level_stmt(
+                stmt,
+                signatures.clone(),
+                consts.clone(),
+                structs.clone(),
+                struct_methods.clone(),
+            )?;
             items.push(item);
         }
 
@@ -733,6 +748,7 @@ fn lower_top_level_stmt(
     signatures: Rc<HashMap<String, FnSig>>,
     consts: Rc<HashMap<String, Type>>,
     structs: Rc<HashMap<String, Vec<(String, Type)>>>,
+    struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
 ) -> Result<Item, FrontendError> {
     // PMAT-502bj: a module-level `NAME = <int/bool/float-literal>` is a
     // constant item (recognised before the `def`-only fallback).
@@ -741,11 +757,12 @@ fn lower_top_level_stmt(
     }
     match stmt {
         ast::Stmt::FunctionDef(f) => {
-            lower_function_def(f, signatures, consts, structs).map(Item::Function)
+            lower_function_def(f, signatures, consts, structs, struct_methods, None)
+                .map(Item::Function)
         }
-        // PMAT-505a (classes epic, first cut): a field-only / `@dataclass` class
-        // → an `Item::Struct`. Value construction + field access follow.
-        ast::Stmt::ClassDef(c) => lower_class_def(c),
+        // PMAT-505a/506d (classes epic): a field-only / `@dataclass` class → an
+        // `Item::Struct` (fields + instance methods).
+        ast::Stmt::ClassDef(c) => lower_class_def(c, signatures, consts, structs, struct_methods),
         // A top-level assignment that wasn't a recognised constant.
         ast::Stmt::Assign(_) | ast::Stmt::AnnAssign(_) => Err(FrontendError::Lower(
             "unsupported module-level assignment — v0.2.0 supports `NAME = <int/bool/float literal>` constants (str/collection constants deferred)".to_string(),
@@ -764,7 +781,15 @@ fn lower_top_level_stmt(
 /// class-vars with values (defaults), and non-field statements are rejected with
 /// a clear error (follow-up sub-slices). This first cut emits the struct
 /// *definition* only — construction/field-access are deferred.
-fn lower_class_def(c: ast::StmtClassDef) -> Result<Item, FrontendError> {
+/// PMAT-505a/506d: lightweight class signature — the field `(name, Type)` list
+/// and each method's `(name, return_type)` — WITHOUT lowering method bodies.
+/// Used in the module pre-pass to build the `structs` + `struct_methods`
+/// registries before any function/method body is lowered (so construction,
+/// field access, and method calls type correctly regardless of textual order).
+#[allow(clippy::type_complexity)]
+fn class_def_signature(
+    c: &ast::StmtClassDef,
+) -> Result<(String, Vec<(String, Type)>, Vec<(String, Type)>), FrontendError> {
     let name = c.name.to_string();
     if !c.bases.is_empty() || !c.keywords.is_empty() {
         return Err(FrontendError::Lower(format!(
@@ -772,6 +797,7 @@ fn lower_class_def(c: ast::StmtClassDef) -> Result<Item, FrontendError> {
         )));
     }
     let mut fields: Vec<(String, Type)> = Vec::new();
+    let mut method_returns: Vec<(String, Type)> = Vec::new();
     for stmt in &c.body {
         match stmt {
             // `x: T` (annotated field, no default).
@@ -784,18 +810,100 @@ fn lower_class_def(c: ast::StmtClassDef) -> Result<Item, FrontendError> {
                 let ty = parse_type_annotation(&name, field.id.as_str(), &aa.annotation)?;
                 fields.push((field.id.to_string(), ty));
             }
-            // A bare docstring (string-literal expression statement) or `pass`
-            // is allowed and ignored.
+            // PMAT-506d: an instance method `def m(self, …) -> R: …`. Record its
+            // return type for call typing; the body is lowered later.
+            ast::Stmt::FunctionDef(m) => {
+                let ret = match m.returns.as_ref() {
+                    None => Type::Unit,
+                    Some(ann) => parse_type_annotation(&name, "<method return>", ann)?,
+                };
+                method_returns.push((m.name.to_string(), ret));
+            }
+            // A bare docstring (string-literal expression statement) or `pass`.
             ast::Stmt::Pass(_) => {}
             ast::Stmt::Expr(e) if matches!(e.value.as_ref(), ast::Expr::Constant(_)) => {}
             _ => {
                 return Err(FrontendError::Lower(format!(
-                    "class `{name}` has a non-field member (method / field-with-default / nested statement) — v0.2.0 first cut supports only annotated fields `field: Type`; construction, field access, and methods follow"
+                    "class `{name}` has an unsupported member (field-with-default / nested statement) — v0.2.0 first cut supports annotated fields `field: Type` and instance methods `def m(self, …)`"
                 )));
             }
         }
     }
-    Ok(Item::Struct { name, fields })
+    Ok((name, fields, method_returns))
+}
+
+/// PMAT-505a/506d: lower a Python class into an `Item::Struct` — its fields plus
+/// any instance methods (lowered as [`Function`]s with a `self` receiver typed
+/// as the struct). Read-only methods only: a method that assigns to `self.field`
+/// is rejected (a `&mut self` receiver would need caller-side mutability
+/// inference — deferred). `@dataclass` construction is positional over the
+/// fields; an explicit `__init__` is not supported yet.
+fn lower_class_def(
+    c: ast::StmtClassDef,
+    signatures: Rc<HashMap<String, FnSig>>,
+    consts: Rc<HashMap<String, Type>>,
+    structs: Rc<HashMap<String, Vec<(String, Type)>>>,
+    struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
+) -> Result<Item, FrontendError> {
+    let (name, fields, _) = class_def_signature(&c)?;
+    let self_ty = Type::Struct(name.clone());
+    let mut methods: Vec<Function> = Vec::new();
+    for stmt in c.body {
+        if let ast::Stmt::FunctionDef(m) = stmt {
+            // The first param must be `self` (no classmethod/staticmethod yet).
+            let first_is_self = m
+                .args
+                .args
+                .first()
+                .is_some_and(|a| a.def.arg.as_str() == "self");
+            if !first_is_self {
+                return Err(FrontendError::Lower(format!(
+                    "class `{name}` method `{}` has no `self` first parameter — classmethods/staticmethods are not supported at v0.2.0 first cut",
+                    m.name
+                )));
+            }
+            let method = lower_function_def(
+                m,
+                signatures.clone(),
+                consts.clone(),
+                structs.clone(),
+                struct_methods.clone(),
+                Some(self_ty.clone()),
+            )?;
+            // First cut: read-only methods. A `self.field = v` (FieldAssign on
+            // `self`) would need a `&mut self` receiver + caller mutability —
+            // deferred. Reject so we never emit code that fails to compile.
+            if body_assigns_self(&method.body.stmts) {
+                return Err(FrontendError::Lower(format!(
+                    "class `{name}` method `{}` assigns to `self` (mutating method) — v0.2.0 first cut supports read-only `&self` methods only",
+                    method.name
+                )));
+            }
+            methods.push(method);
+        }
+    }
+    Ok(Item::Struct {
+        name,
+        fields,
+        methods,
+    })
+}
+
+/// PMAT-506d: true if any statement assigns a field of `self` (`self.f = v`).
+/// Used to reject self-mutating methods in the read-only first cut.
+fn body_assigns_self(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(|s| match s {
+        Stmt::FieldAssign { obj, .. } => obj == "self",
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => body_assigns_self(then_body) || body_assigns_self(else_body),
+        Stmt::While { body, .. } | Stmt::ForEach { body, .. } | Stmt::ForEachPair { body, .. } => {
+            body_assigns_self(body)
+        }
+        _ => false,
+    })
 }
 
 /// PMAT-502bj: recognise a module-level constant declaration
@@ -889,11 +997,18 @@ fn register_none_guard_narrowing(ctx: &mut LoweringCtx, stmt: &ast::Stmt) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lower_function_def(
     f: ast::StmtFunctionDef,
     signatures: Rc<HashMap<String, FnSig>>,
     consts: Rc<HashMap<String, Type>>,
     structs: Rc<HashMap<String, Vec<(String, Type)>>>,
+    struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
+    // PMAT-506d: when lowering a method, the type of the `self` receiver (the
+    // enclosing struct). `None` for a top-level function. Decorators are
+    // tolerated when set (a `@dataclass` method may be plain, but the class
+    // itself carried the decorator, not the method).
+    self_type: Option<Type>,
 ) -> Result<Function, FrontendError> {
     if !f.decorator_list.is_empty() {
         return Err(FrontendError::Lower(format!(
@@ -913,9 +1028,21 @@ fn lower_function_def(
     let mut params: Vec<Param> = Vec::with_capacity(f.args.args.len());
     for arg in f.args.args {
         let name = arg.def.arg.to_string();
-        let ty = match arg.def.annotation.as_ref() {
-            None => Type::I64,
-            Some(ann) => parse_type_annotation(&f.name, &name, ann)?,
+        // PMAT-506d: a method's `self` receiver takes the enclosing struct type
+        // (it carries no annotation in Python). A `self` outside a method
+        // context is an error.
+        let ty = if name == "self" {
+            self_type.clone().ok_or_else(|| {
+                FrontendError::Lower(format!(
+                    "function `{}` has a `self` parameter outside a method (class) context",
+                    f.name
+                ))
+            })?
+        } else {
+            match arg.def.annotation.as_ref() {
+                None => Type::I64,
+                Some(ann) => parse_type_annotation(&f.name, &name, ann)?,
+            }
         };
         params.push(Param {
             name,
@@ -984,6 +1111,7 @@ fn lower_function_def(
         signatures,
         &consts,
         structs,
+        struct_methods,
     );
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
     for stmt in leading {
@@ -4935,6 +5063,9 @@ fn infer_type(e: &Expr) -> Type {
         // context-free path falls back to I64 (the ctx path resolves it).
         Expr::StructLit { name, .. } => Type::Struct(name.clone()),
         Expr::FieldAccess { .. } => Type::I64,
+        // PMAT-506d: context-free can't resolve a method's return type (no
+        // registry) — fall back to I64; the ctx path resolves it.
+        Expr::MethodCall { .. } => Type::I64,
         // PMAT-502dt: a block-expr types as its trailing expression.
         Expr::Block(b) => infer_type(&b.trailing_return),
         // PMAT-477 (R8): float literal + float arithmetic are Type::F64.
@@ -5264,6 +5395,16 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
                 .structs
                 .get(&name)
                 .and_then(|fs| fs.iter().find(|(f, _)| f == field))
+                .map(|(_, ty)| ty.clone())
+                .unwrap_or(Type::I64),
+            _ => Type::I64,
+        },
+        // PMAT-506d: a method call types as the method's declared return type.
+        Expr::MethodCall { obj, method, .. } => match infer_type_in_ctx(ctx, obj) {
+            Type::Struct(name) => ctx
+                .struct_methods
+                .get(&name)
+                .and_then(|ms| ms.iter().find(|(m, _)| m == method))
                 .map(|(_, ty)| ty.clone())
                 .unwrap_or(Type::I64),
             _ => Type::I64,
@@ -5796,6 +5937,41 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 if let ast::Expr::Name(recv) = attr.value.as_ref() {
                     if recv.id.as_str() == "math" {
                         return lower_math_call(ctx, attr.attr.as_str(), &call);
+                    }
+                }
+                // PMAT-506d (classes epic): struct method call `obj.method(args)`
+                // over a struct-typed receiver → `Expr::MethodCall`. The type
+                // check disambiguates from the list/dict/str/set method paths
+                // below (those receivers are not `Type::Struct`).
+                {
+                    let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+                    if let Type::Struct(sname) = infer_type_in_ctx(ctx, &recv) {
+                        let method = attr.attr.to_string();
+                        let known = ctx
+                            .struct_methods
+                            .get(&sname)
+                            .is_some_and(|ms| ms.iter().any(|(m, _)| *m == method));
+                        if !known {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` calls `.{method}()` on `{sname}`, which has no such method",
+                                ctx.fn_name
+                            )));
+                        }
+                        if !call.keywords.is_empty() {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` calls method `{sname}.{method}` with keyword args — v0.2.0 first cut supports positional method calls only",
+                                ctx.fn_name
+                            )));
+                        }
+                        let mut args = Vec::with_capacity(call.args.len());
+                        for a in &call.args {
+                            args.push(lower_expr_in_ctx(ctx, a.clone())?);
+                        }
+                        return Ok(Expr::MethodCall {
+                            obj: Box::new(recv),
+                            method,
+                            args,
+                        });
                     }
                 }
                 // PMAT-502eo: set-algebra methods — `a.union(b)` /

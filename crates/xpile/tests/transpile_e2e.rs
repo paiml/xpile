@@ -3899,6 +3899,31 @@ fn main() {
     assert_rustc_runs("dataclass_field_assign", &rust, driver);
 }
 
+/// PMAT-506d (classes epic): dataclass **methods** — `def m(self, …)` →
+/// `impl Name { pub fn m(&self, …) … }`, called as `obj.m(args)` →
+/// `Expr::MethodCall` → `(obj).m(args)`. The `self` receiver emits as `&self`
+/// and types as the struct (so `self.field` / `self.other_method()` work).
+/// Read-only first cut. Cross-checked vs python3.
+#[test]
+fn dataclass_methods() {
+    let rust = xpile_transpile_to_rust("dataclass_methods.py");
+    assert!(
+        rust.contains("impl Rect {")
+            && rust.contains("pub fn area(&self) -> i64")
+            && rust.contains("(r).area()"),
+        "methods should emit an impl block with &self + method-call dispatch:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let r = Rect { w: 3, h: 4 };
+    assert_eq!(r.area(), 12);
+    assert_eq!(r.scaled_area(2), 24);
+    assert_eq!(total(r), 36);
+}
+"#;
+    assert_rustc_runs("dataclass_methods", &rust, driver);
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators
