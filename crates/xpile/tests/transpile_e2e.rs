@@ -3293,6 +3293,26 @@ fn main() {
     assert_rustc_runs("for_over_call", &rust, driver);
 }
 
+/// PMAT-502cl (Tranche 2): string iteration `for c in s` — each char a 1-char
+/// string (lowered via `Expr::StrChars`).
+#[test]
+fn str_iter() {
+    let rust = xpile_transpile_to_rust("str_iter.py");
+    assert!(
+        rust.contains(
+            ".chars().map(|__c| __c.to_string()).collect::<Vec<String>>().iter().cloned()"
+        ),
+        "string iteration:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(count_vowels(String::from("education")), 5);
+    assert_eq!(reverse_str(String::from("abc")), "cba");
+}
+"#;
+    assert_rustc_runs("str_iter", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

@@ -263,6 +263,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::StrCharAt { string, index } => {
             expr_has_int_arith(string) || expr_has_int_arith(index)
         }
+        // PMAT-502cl: string-chars — recurse into the string expr.
+        Expr::StrChars { string } => expr_has_int_arith(string),
         // PMAT-502am: formatted f-string field — recurse into the value.
         Expr::FormatSpec { value, .. } => expr_has_int_arith(value),
         // PMAT-492: string methods are str-domain; recurse into the
@@ -1263,6 +1265,13 @@ pub enum Expr {
     /// (Python semantics); an out-of-range index panics (≈ `IndexError`).
     /// Result types as `Str`. Lean refuses.
     StrCharAt { string: Box<Expr>, index: Box<Expr> },
+    /// The characters of a string as a `list[str]` (each a 1-char string) —
+    /// produced by lowering `for c in s` (string iteration). PMAT-502cl
+    /// (Tranche 2). Rust/Ruchy emit `(<s>).chars().map(|__c| __c.to_string())
+    /// .collect::<Vec<String>>()`; result types as `list[str]`, so the
+    /// enclosing `Stmt::ForEach`'s `.iter().cloned()` yields `String` items.
+    /// Lean refuses.
+    StrChars { string: Box<Expr> },
     /// A formatted f-string field — Python `{value:spec}` where `spec` is a
     /// static format spec (e.g. `.2f`, `05d`, `>10`). PMAT-502am (Tranche 2).
     /// `rust_spec` is the already-translated Rust format spec (the frontend

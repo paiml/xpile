@@ -1742,14 +1742,24 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
         let iter_ty = infer_type_in_ctx(ctx, &iter_expr);
         // PMAT-472 (R3): a dict iterates its keys (`for k in d:`), so
         // bind `target` to the key type and flag `over_keys`.
-        let (elem_ty, over_keys) = match iter_ty {
-            Type::List(elem) => (*elem, false),
-            Type::Dict(key_ty, _) => (*key_ty, true),
+        // PMAT-502cl: `for c in s` iterates a string's characters, each a
+        // 1-char string. Wrap the string in `Expr::StrChars` (→ a
+        // `list[str]`) so the `ForEach` `.iter().cloned()` yields `String`s.
+        let (iter_expr, elem_ty, over_keys) = match iter_ty {
+            Type::List(elem) => (iter_expr, *elem, false),
+            Type::Dict(key_ty, _) => (iter_expr, *key_ty, true),
+            Type::Str => (
+                Expr::StrChars {
+                    string: Box::new(iter_expr),
+                },
+                Type::Str,
+                false,
+            ),
             other => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` iterates a non-collection expression typing as {other:?} — \
                      v0.2.0 supports `for target in range(...)`, `for target in <list[T]>`, \
-                     or `for key in <dict[K, V]>`; other iterables are deferred",
+                     `for key in <dict[K, V]>`, or `for char in <str>`; other iterables are deferred",
                     ctx.fn_name
                 )));
             }
@@ -3866,6 +3876,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::StrFormat { .. } => Type::Str,
         // PMAT-502cd: `s[i]` over a string yields a 1-char string.
         Expr::StrCharAt { .. } => Type::Str,
+        // PMAT-502cl: string chars as a list[str].
+        Expr::StrChars { .. } => Type::List(Box::new(Type::Str)),
         // PMAT-502am: a formatted f-string field produces a Str.
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
@@ -4113,6 +4125,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::StrFormat { .. } => Type::Str,
         // PMAT-502cd: `s[i]` over a string yields a 1-char string.
         Expr::StrCharAt { .. } => Type::Str,
+        // PMAT-502cl: string chars as a list[str].
+        Expr::StrChars { .. } => Type::List(Box::new(Type::Str)),
         // PMAT-502am: a formatted f-string field produces a Str.
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
