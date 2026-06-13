@@ -6434,6 +6434,22 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         _ => {}
                     }
                 }
+                // PMAT-502fe: `tuple(<iterable>)` has no Rust target — Rust
+                // tuples are fixed-arity, so a variable-length `tuple(xs)`
+                // cannot be represented as a Rust tuple type. Reject cleanly
+                // instead of silently emitting an undefined `tuple(...)` call
+                // that fails rustc — this upholds the central "transpile-success
+                // ⟹ valid Rust" guarantee (a silent miscompile is a thesis
+                // violation). Fixed-arity tuples are written as `(a, b)` literals
+                // (Type::Tuple); a growable sequence stays a `list`.
+                if fname.id.as_str() == "tuple" {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` calls `tuple(...)` — Rust tuples are fixed-arity, so a \
+                         variable-length `tuple(<iterable>)` has no Rust counterpart at v0.2.0; \
+                         write a fixed tuple as a `(a, b)` literal, or keep the value as a `list`",
+                        ctx.fn_name
+                    )));
+                }
             }
             // PMAT-474 (R5): reorder keyword args to positional using
             // the module signature table, then lower as a plain call.

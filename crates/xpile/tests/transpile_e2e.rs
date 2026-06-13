@@ -881,6 +881,27 @@ fn dict_reads_refused_by_lean() {
     );
 }
 
+/// PMAT-502fe (Tranche 2 — correctness): `tuple(<iterable>)` is REJECTED with a
+/// clear diagnostic rather than silently emitting an undefined `tuple(...)` call.
+/// Rust tuples are fixed-arity, so a variable-length `tuple(xs)` has no Rust
+/// counterpart; converting the prior silent miscompile into a clean lowering
+/// error upholds the central "transpile-success ⟹ valid Rust" guarantee. (The
+/// `(a, b)` literal-tuple path, `Type::Tuple`, is unaffected.)
+#[test]
+fn tuple_call_is_rejected_not_miscompiled() {
+    let py = fixture("tuple_call_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "tuple(<iterable>) must be refused, not emitted as an undefined call"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("tuple(...)") && stderr.contains("fixed-arity"),
+        "the rejection should name the fixed-arity reason:\n{stderr}"
+    );
+}
+
 /// PMAT-466 regression (adversarial review #11): the Ruchy backend
 /// emits the same HashMap pipeline as Rust (Ruchy compiles to Rust),
 /// including the temp-let DictSet form.
