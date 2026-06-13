@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.228] — 2026-06-14
+
+Tranche 2 — PMAT-528: `xs.pop()` / `xs.pop(i)` as a bare statement.
+
+- A bare `xs.pop()` statement (discarding the popped value) — e.g.
+  `while xs: xs.pop()` — was rejected (only the value-position `x = xs.pop()`
+  worked). Now reuses the value-position pop lowering wrapped in a discard
+  `let _ = …;` (receiver auto-`mut`); mirrors the `d.setdefault` statement form.
+  **No new IR.**
+- New e2e fixture `list_pop_statement.py` (rustc round-trip cross-checked vs
+  python3). e2e 289 → 290.
+
 ## [0.1.227] — 2026-06-14
 
 Tranche 2 — PMAT-527: container truthiness in boolean conditions.
