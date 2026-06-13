@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.121] — 2026-06-13
+
+Tranche-2 slice PMAT-502ci — **`for i in reversed(range(...))`** (descending
+range iteration).
+
+A `reversed(range(...))` for-loop iterable was rejected ("non-`range(...)`
+call"). The for-loop lowering now unwraps a `reversed(<range call>)` wrapper
+and flips the bounds to a descending range: a step-1 range `a..b` reverses to
+start `b-1`, stop `a-1`, step `-1` (reusing `BinOp::Sub`, so the bounds stay
+under `C-PY-INT-ARITH`). Plain `range(...)` is unchanged. A non-default step
+or a BigInt-mode function is deferred with a precise error (the general
+reversed-stride / BigInt bound math is more involved). rustc round-trip
+`reversed_range.py` (cross-checked vs `python3`): `digits_desc(4) -> 3210`
+(`reversed(range(4))` → 3,2,1,0), `mid(0) -> 432` (`reversed(range(2,5))`),
+`digits_desc(0) -> 0` (empty).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.120] — 2026-06-13
 
 Tranche-2 slice PMAT-502ch — **`str.format` with format specs** (`{:.2f}`,

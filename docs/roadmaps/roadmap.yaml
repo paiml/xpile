@@ -1129,6 +1129,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "str.format rejected any spec'd field {:.2f}. FIX: replaced parse_format_placeholders/FmtPlaceholders with lower_str_format, which lowers the args first (for their types), then byte-walks the template (UTF-8-safe via string-slice copies of literal runs) rebuilding a RUST format string: {{/}} escapes + literal text preserved; each placeholder split on ':' into field (empty=auto / digits=positional / else {name} deferred-error) and optional spec; the spec is translated via translate_format_spec(spec, arg_ty) (.2f->.2 for F64, 05d->05 for I64, >N alignment any). Auto vs manual numbering mixing rejected (Python rule). A spec-LESS field still requires I64/Str (bool/float Display-diverge), but a float IS admitted with a .Nf spec. Every arg must be referenced (Rust format! requirement). Codegen unchanged (Expr::StrFormat re-emits the now-Rust fmt via {fmt:?}). rustc round-trip format_spec.py (cross-checked vs python3): money(3.14159)='$3.14', padded(42)='id=00042', both(2.5,7)='2.5 (007)'. FREE CI. SHIPPED v0.1.120."
+- id: PMAT-502CI
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ci: [Tranche2] for i in reversed(range(...)) descending'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "for i in reversed(range(...)) was rejected ('iterates a non-range(...) call'). FIX: lower_for_stmt detects a reversed(<range call>) wrapper (Call func Name 'reversed', 1 arg, no kwargs, inner is a range(...) Call) and unwraps to the inner range + a reverse_range flag. After computing (start,stop,step) from the range args, if reverse_range: require step==1 and non-BigInt fn (else precise deferral errors), then flip to a descending range — start=stop-1, stop=start-1, step=-1 via BinOp::Sub (bounds stay under C-PY-INT-ARITH). Reuses the existing range-for while-loop desugar. step-1 ranges (range(n)/range(a,b)) reverse correctly: reversed(range(n))=n-1..0, reversed(range(2,5))=4,3,2. reversed over a non-range (e.g. reversed(xs)) is unchanged (still the range-call error path). Plain range(...) unchanged. rustc round-trip reversed_range.py (cross-checked vs python3): digits_desc(4)=3210, mid(0)=432 (reversed(range(2,5))), digits_desc(0)=0 (empty). FREE CI. SHIPPED v0.1.121."
 - id: PMAT-465
   github_issue: 496
   item_type: task
