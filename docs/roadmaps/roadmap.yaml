@@ -985,6 +985,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "float_op_from_ast returned None for // (FloorDiv) and % (Mod), so float floor-div/modulo fell through to the i64 BinOp path and failed the return-type check ('declared return type F64 but body produces I64'). FIX: two new FloatOp variants FloorDiv + Mod (meta-HIR) carry Python FLOOR semantics; float_op_from_ast maps ast::Operator::FloorDiv/Mod to them. The three codegen FloatBinOp emit sites (rust/ruchy/lean) special-case them with dedicated formulas (NOT plain infix, since Rust's truncating / and dividend-sign % diverge from Python): a // b -> (a / b).floor(); a % b -> a - b * (a / b).floor() (result follows the DIVISOR's sign, matching Python). Works in regular AND augmented (//=, %=) position since both go through float_op_from_ast (combine_aug from PMAT-502bq). Lean emits Float.floor (a / b). Small blast radius: adding FloatOp variants only touches the 3 exhaustive FloatOp matches (no new Expr variant -> no int-arith/bigint-scan arm). rustc round-trip float_floordiv_mod.py (cross-checked vs python3 incl. mixed signs): 7//2=3, -7//2=-4, 7%3=1, -7%3=2, 7%-3=-2, wrap(13,5)=3. FREE CI. SHIPPED v0.1.104."
+- id: PMAT-502BS
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502bs: [Tranche2] Python 3 true division / (always float)'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "`/` was rejected outright ('unsupported binary operator: Div'). In Python 3 `/` ALWAYS yields a float, even for two ints (7 / 2 == 3.5) — integer division is the separate //. FIX: both expression-position BinOp lowering arms (ctx-aware lower_expr_in_ctx_inner + context-free lower_expr) special-case ast::Operator::Div BEFORE lower_binop (which rejects it): emit Expr::FloatBinOp { op: Div, .. } with each non-float operand wrapped via to_f64_operand / to_f64_operand_cf in an (x) as f64 NumCast. This also FIXES mixed float_var / int_literal which previously emitted a f64 / i64 mismatch (the int side is now cast, float side left as-is); float / float stays cast-free (no redundant (x as f64)). Augmented /= on an INT var stays unsupported (combine_aug not touched — it would retype the i64 binding to f64 which Rust can't reassign); /= on a float var already works (v0.1.103). rustc round-trip true_division.py (cross-checked vs python3): div(7,2)=3.5, div(6,3)=2.0, avg(3,4)=3.5, half(5.0)=2.5. FREE CI. SHIPPED v0.1.105."
 - id: PMAT-465
   github_issue: 496
   item_type: task

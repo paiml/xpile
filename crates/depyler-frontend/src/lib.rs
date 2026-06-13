@@ -4614,10 +4614,22 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         ast::Expr::BinOp(b) => {
             let lhs = lower_expr_in_ctx(ctx, *b.left)?;
             let rhs = lower_expr_in_ctx(ctx, *b.right)?;
-            // PMAT-477 (R8): float arithmetic → FloatBinOp (plain infix,
-            // `/` is true division). Detected before `lower_binop`,
-            // which rejects `/`. Float *comparisons* fall through to
-            // BinOp (plain infix is already f64-correct, yields Bool).
+            // PMAT-502bs: Python 3 `/` is ALWAYS true division → f64, even
+            // for two int operands (`7 / 2 == 3.5`). Cast non-float
+            // operands to f64 and emit `FloatBinOp::Div`. This also fixes
+            // mixed `float_var / int_literal` (the int side gets cast, so
+            // no `f64 / i64` mismatch). Floor-division `//` stays integer.
+            if matches!(b.op, ast::Operator::Div) {
+                return Ok(Expr::FloatBinOp {
+                    op: FloatOp::Div,
+                    lhs: Box::new(to_f64_operand(ctx, lhs)),
+                    rhs: Box::new(to_f64_operand(ctx, rhs)),
+                });
+            }
+            // PMAT-477 (R8): float arithmetic → FloatBinOp (plain infix).
+            // Detected before `lower_binop`. Float *comparisons* fall
+            // through to BinOp (plain infix is already f64-correct, yields
+            // Bool).
             if infer_type_in_ctx(ctx, &lhs) == Type::F64
                 || infer_type_in_ctx(ctx, &rhs) == Type::F64
             {
@@ -4924,6 +4936,16 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
         ast::Expr::BinOp(b) => {
             let lhs = lower_expr(*b.left)?;
             let rhs = lower_expr(*b.right)?;
+            // PMAT-502bs: Python 3 `/` is ALWAYS true division → f64 (see
+            // the ctx-aware arm). Context-free, only float *literals* are
+            // known floats; other operands are cast to f64.
+            if matches!(b.op, ast::Operator::Div) {
+                return Ok(Expr::FloatBinOp {
+                    op: FloatOp::Div,
+                    lhs: Box::new(to_f64_operand_cf(lhs)),
+                    rhs: Box::new(to_f64_operand_cf(rhs)),
+                });
+            }
             // PMAT-477 (R8): float arithmetic (context-free path detects
             // float *literals*; param-typed floats are caught by
             // lower_expr_in_ctx). Checked before `lower_binop` rejects
@@ -5416,6 +5438,35 @@ fn float_op_from_ast(op: &ast::Operator) -> Option<FloatOp> {
         ast::Operator::FloorDiv => Some(FloatOp::FloorDiv),
         ast::Operator::Mod => Some(FloatOp::Mod),
         _ => None,
+    }
+}
+
+/// PMAT-502bs: wrap `e` in an `(e) as f64` cast unless it already types as
+/// `F64`. Used by Python-3 true division `/`, which always yields a float
+/// even for two int operands (`7 / 2 == 3.5`).
+fn to_f64_operand(ctx: &LoweringCtx, e: Expr) -> Expr {
+    if infer_type_in_ctx(ctx, &e) == Type::F64 {
+        e
+    } else {
+        Expr::NumCast {
+            value: Box::new(e),
+            to_float: true,
+            from_str: false,
+        }
+    }
+}
+
+/// Context-free counterpart of [`to_f64_operand`] (uses `infer_type`, so
+/// only float *literals* are recognised as already-`F64`).
+fn to_f64_operand_cf(e: Expr) -> Expr {
+    if infer_type(&e) == Type::F64 {
+        e
+    } else {
+        Expr::NumCast {
+            value: Box::new(e),
+            to_float: true,
+            from_str: false,
+        }
     }
 }
 

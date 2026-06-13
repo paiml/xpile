@@ -2887,6 +2887,32 @@ fn main() {
     assert_rustc_runs("float_floordiv_mod", &rust, driver);
 }
 
+/// PMAT-502bs (Tranche 2): Python 3 true division `/` always yields a float
+/// — `int / int` casts both operands to f64 (`7 / 2 == 3.5`); a mixed
+/// `float / int` casts only the int side (no `f64 / i64` mismatch).
+#[test]
+fn true_division() {
+    let rust = xpile_transpile_to_rust("true_division.py");
+    assert!(
+        rust.contains("(((a) as f64) / ((b) as f64))"),
+        "int/int true division:\n{rust}"
+    );
+    assert!(
+        rust.contains("(x / ((2i64) as f64))"),
+        "mixed float/int division:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // python3: 7/2=3.5, 6/3=2.0, (3+4)/2=3.5, 5.0/2=2.5
+    assert!((div(7, 2) - 3.5).abs() < 1e-9);
+    assert!((div(6, 3) - 2.0).abs() < 1e-9);
+    assert!((avg(3, 4) - 3.5).abs() < 1e-9);
+    assert!((half(5.0) - 2.5).abs() < 1e-9);
+}
+"#;
+    assert_rustc_runs("true_division", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
