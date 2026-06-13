@@ -72,6 +72,18 @@ pub enum Item {
         /// read-only `&self` methods (self-mutating ones are rejected upstream).
         methods: Vec<Function>,
     },
+    /// PMAT-513 (Tranche 2): a Python `class C(Enum):` with `NAME = <int literal>`
+    /// members → a Rust enum. `variants` are `(name, discriminant)` in declaration
+    /// order. Rust/Ruchy emit
+    /// `#[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum C { NAME, … }`;
+    /// member access `C.NAME` → [`Expr::EnumVariant`] (`C::NAME`), and the
+    /// compile-time-known `C.NAME.value` lowers directly to its discriminant
+    /// literal. Enum-typed values reuse [`Type::Struct`] (an enum is just a named
+    /// type at use sites). Lean refuses.
+    Enum {
+        name: String,
+        variants: Vec<(String, i64)>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -413,6 +425,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::MethodCall { obj, args, .. } => {
             expr_has_int_arith(obj) || args.iter().any(expr_has_int_arith)
         }
+        // PMAT-513: an enum member access is a constant — no int arithmetic.
+        Expr::EnumVariant { .. } => false,
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -1383,6 +1397,10 @@ pub enum Expr {
         method: String,
         args: Vec<Expr>,
     },
+    /// PMAT-513 (Tranche 2): an enum member access — Python `C.NAME` where `C` is
+    /// an `Enum` class. Rust/Ruchy emit `C::NAME`; Lean refuses. Types as
+    /// [`Type::Struct`]`(enum_name)` (an enum is a named type at use sites).
+    EnumVariant { enum_name: String, variant: String },
     /// Tuple literal — Python `(a, b)` / multiple-return `return a, b`.
     /// PMAT-494 (sprint). Elements may be heterogeneous (unlike
     /// [`Expr::ListLit`]). Rust/Ruchy emit `(e0, e1, ...)`; Lean refuses

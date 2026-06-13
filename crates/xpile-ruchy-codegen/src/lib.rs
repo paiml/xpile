@@ -106,6 +106,15 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
                     out.push_str("}\n");
                 }
             }
+            // PMAT-513: a Python `Enum` class → a Rust enum (Ruchy → Rust).
+            Item::Enum { name, variants } => {
+                out.push_str("#[derive(Clone, Copy, Debug, PartialEq, Eq)]\n");
+                writeln!(out, "pub enum {name} {{")?;
+                for (variant, _disc) in variants {
+                    writeln!(out, "    {variant},")?;
+                }
+                out.push_str("}\n");
+            }
         }
     }
     Ok(out)
@@ -1709,6 +1718,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             }
             out.push(')');
         }
+        // PMAT-513: an enum member access `C::NAME`.
+        Expr::EnumVariant { enum_name, variant } => write!(out, "{enum_name}::{variant}")?,
         // PMAT-503b: try/except → catch_unwind match (Ruchy compiles to Rust).
         Expr::TryCatch { body, handler } => {
             out.push_str("match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| ");

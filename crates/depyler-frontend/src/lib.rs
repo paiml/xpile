@@ -114,6 +114,11 @@ struct LoweringCtx {
     /// no-arg method call `(obj).prop()` (`Expr::MethodCall`) rather than a
     /// field access. The property's return type lives in `struct_methods`.
     struct_properties: Rc<HashMap<String, Vec<String>>>,
+    /// PMAT-513 (Tranche 2): module-level enum table — `enum name →
+    /// [(variant, discriminant)]`, built in the pre-pass. Consulted to lower a
+    /// member access `C.NAME` → [`Expr::EnumVariant`] and `C.NAME.value` → the
+    /// discriminant literal.
+    enums: Rc<HashMap<String, Vec<(String, i64)>>>,
     /// PMAT-504: function-local closure bindings — maps a closure
     /// variable name (`f` in `f = lambda y: …`) to its inferred return
     /// type, so a call `f(x)` types correctly (the module signature
@@ -200,6 +205,7 @@ impl LoweringCtx {
         struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
         struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
         struct_properties: Rc<HashMap<String, Vec<String>>>,
+        enums: Rc<HashMap<String, Vec<(String, i64)>>>,
     ) -> Self {
         // PMAT-502bj: module-level constants are visible (and immutably
         // bound) in every function body; a same-named param shadows the
@@ -225,6 +231,7 @@ impl LoweringCtx {
             struct_methods,
             struct_field_defaults,
             struct_properties,
+            enums,
             closure_returns: HashMap::new(),
             underscore_counter: 0,
             underscore_rename: None,
@@ -762,8 +769,19 @@ impl Frontend for PythonFrontend {
         // lowers to a no-arg method call. (The property's return type is in
         // `struct_method_map` — a property is a `self` method.)
         let mut struct_property_map: HashMap<String, Vec<String>> = HashMap::new();
+        // PMAT-513: per-enum `(variant, discriminant)` list, so member access
+        // `C.NAME` / `C.NAME.value` in function bodies type/lower correctly.
+        let mut enum_map: HashMap<String, Vec<(String, i64)>> = HashMap::new();
         for stmt in &suite {
             if let ast::Stmt::ClassDef(c) = stmt {
+                // PMAT-513: an `Enum` class goes in the enum registry, NOT the
+                // struct registry (it has variants, not fields).
+                if is_enum_class(c) {
+                    if let Ok(variants) = enum_variants(c) {
+                        enum_map.insert(c.name.to_string(), variants);
+                    }
+                    continue;
+                }
                 if let Ok((name, fields, method_returns, field_defaults)) = class_def_signature(c) {
                     let props: Vec<String> = c
                         .body
@@ -784,6 +802,7 @@ impl Frontend for PythonFrontend {
         let struct_methods = Rc::new(struct_method_map);
         let struct_field_defaults = Rc::new(struct_default_map);
         let struct_properties = Rc::new(struct_property_map);
+        let enums = Rc::new(enum_map);
 
         let mut items = Vec::new();
         for stmt in suite {
@@ -805,6 +824,7 @@ impl Frontend for PythonFrontend {
                 struct_methods.clone(),
                 struct_field_defaults.clone(),
                 struct_properties.clone(),
+                enums.clone(),
             )?;
             items.push(item);
         }
@@ -853,6 +873,7 @@ fn is_future_annotations_import(stmt: &ast::Stmt) -> bool {
         .any(|alias| alias.name.as_str() == "annotations" && alias.asname.is_none())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lower_top_level_stmt(
     stmt: ast::Stmt,
     signatures: Rc<HashMap<String, FnSig>>,
@@ -861,6 +882,7 @@ fn lower_top_level_stmt(
     struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
     struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
     struct_properties: Rc<HashMap<String, Vec<String>>>,
+    enums: Rc<HashMap<String, Vec<(String, i64)>>>,
 ) -> Result<Item, FrontendError> {
     // PMAT-502bj: a module-level `NAME = <int/bool/float-literal>` is a
     // constant item (recognised before the `def`-only fallback).
@@ -876,10 +898,14 @@ fn lower_top_level_stmt(
             struct_methods,
             struct_field_defaults,
             struct_properties,
+            enums,
             None,
             None,
         )
         .map(Item::Function),
+        // PMAT-513: a `class C(Enum):` → an `Item::Enum` (handled before the
+        // struct path, which rejects base classes).
+        ast::Stmt::ClassDef(c) if is_enum_class(&c) => lower_enum_def(&c),
         // PMAT-505a/506d (classes epic): a field-only / `@dataclass` class → an
         // `Item::Struct` (fields + instance methods).
         ast::Stmt::ClassDef(c) => lower_class_def(
@@ -890,6 +916,7 @@ fn lower_top_level_stmt(
             struct_methods,
             struct_field_defaults,
             struct_properties,
+            enums,
         ),
         // A top-level assignment that wasn't a recognised constant.
         ast::Stmt::Assign(_) | ast::Stmt::AnnAssign(_) => Err(FrontendError::Lower(
@@ -1020,6 +1047,71 @@ fn is_property(m: &ast::StmtFunctionDef) -> bool {
         .any(|d| matches!(d, ast::Expr::Name(n) if n.id.as_str() == "property"))
 }
 
+/// PMAT-513 (Tranche 2): true if `c` is an `Enum` class — exactly one base, the
+/// bare name `Enum`, and no keyword bases. (`IntEnum`/`StrEnum`/`Flag` are not
+/// recognised at the first cut.)
+fn is_enum_class(c: &ast::StmtClassDef) -> bool {
+    c.keywords.is_empty()
+        && c.bases.len() == 1
+        && matches!(&c.bases[0], ast::Expr::Name(n) if n.id.as_str() == "Enum")
+}
+
+/// PMAT-513: collect an `Enum` class's `NAME = <int literal>` members into
+/// `(name, discriminant)` pairs (declaration order). Members must be plain
+/// integer-literal assignments (optionally negated); `pass`/docstrings are
+/// allowed. Auto-numbering (`auto()`), methods, and non-int values are rejected.
+fn enum_variants(c: &ast::StmtClassDef) -> Result<Vec<(String, i64)>, FrontendError> {
+    let name = c.name.to_string();
+    let mut variants: Vec<(String, i64)> = Vec::new();
+    for stmt in &c.body {
+        match stmt {
+            ast::Stmt::Assign(a) if a.targets.len() == 1 => {
+                let ast::Expr::Name(member) = &a.targets[0] else {
+                    return Err(FrontendError::Lower(format!(
+                        "enum `{name}` has a non-Name member target — v0.2.0 supports `NAME = <int literal>` members"
+                    )));
+                };
+                let disc = int_literal_value(a.value.as_ref()).ok_or_else(|| {
+                    FrontendError::Lower(format!(
+                        "enum `{name}` member `{}` is not an integer literal — v0.2.0 supports only `NAME = <int>` (no `auto()`/computed/str values)",
+                        member.id
+                    ))
+                })?;
+                variants.push((member.id.to_string(), disc));
+            }
+            ast::Stmt::Pass(_) => {}
+            ast::Stmt::Expr(e) if matches!(e.value.as_ref(), ast::Expr::Constant(_)) => {}
+            _ => {
+                return Err(FrontendError::Lower(format!(
+                    "enum `{name}` has an unsupported member — v0.2.0 supports only `NAME = <int literal>` members (no methods/`auto()`)"
+                )));
+            }
+        }
+    }
+    if variants.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "enum `{name}` has no members — v0.2.0 requires at least one `NAME = <int literal>`"
+        )));
+    }
+    Ok(variants)
+}
+
+/// PMAT-513: the value of an integer literal (`5`) or a negated one (`-1`).
+fn int_literal_value(e: &ast::Expr) -> Option<i64> {
+    match e {
+        ast::Expr::Constant(c) => match &c.value {
+            ast::Constant::Int(i) => i.to_string().parse::<i64>().ok(),
+            _ => None,
+        },
+        ast::Expr::UnaryOp(u) => match u.op {
+            ast::UnaryOp::USub => int_literal_value(u.operand.as_ref()).map(|v| -v),
+            ast::UnaryOp::UAdd => int_literal_value(u.operand.as_ref()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// PMAT-506f: true if `e` is a literal usable as a field default — a constant
 /// (`30`, `"x"`, `True`, `1.5`) or a negated numeric literal (`-1`). Computed
 /// defaults / `field(...)` factories are rejected (the default is lowered
@@ -1033,6 +1125,14 @@ fn is_literal_default(e: &ast::Expr) -> bool {
         }
         _ => false,
     }
+}
+
+/// PMAT-513 (Tranche 2): lower a Python `class C(Enum):` into an `Item::Enum`.
+fn lower_enum_def(c: &ast::StmtClassDef) -> Result<Item, FrontendError> {
+    Ok(Item::Enum {
+        name: c.name.to_string(),
+        variants: enum_variants(c)?,
+    })
 }
 
 /// PMAT-505a/506d: lower a Python class into an `Item::Struct` — its fields plus
@@ -1050,6 +1150,7 @@ fn lower_class_def(
     struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
     struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
     struct_properties: Rc<HashMap<String, Vec<String>>>,
+    enums: Rc<HashMap<String, Vec<(String, i64)>>>,
 ) -> Result<Item, FrontendError> {
     let (name, fields, _, _) = class_def_signature(&c)?;
     let self_ty = Type::Struct(name.clone());
@@ -1073,6 +1174,7 @@ fn lower_class_def(
                     struct_methods.clone(),
                     struct_field_defaults.clone(),
                     struct_properties.clone(),
+                    enums.clone(),
                     None,
                     None,
                 )?;
@@ -1094,6 +1196,7 @@ fn lower_class_def(
                     struct_methods.clone(),
                     struct_field_defaults.clone(),
                     struct_properties.clone(),
+                    enums.clone(),
                     Some(self_ty.clone()),
                     None,
                 )?;
@@ -1133,6 +1236,7 @@ fn lower_class_def(
                     struct_methods.clone(),
                     struct_field_defaults.clone(),
                     struct_properties.clone(),
+                    enums.clone(),
                     None,
                     Some(name.clone()),
                 )?;
@@ -1159,6 +1263,7 @@ fn lower_class_def(
                 struct_methods.clone(),
                 struct_field_defaults.clone(),
                 struct_properties.clone(),
+                enums.clone(),
                 Some(self_ty.clone()),
                 None,
             )?;
@@ -1298,6 +1403,7 @@ fn lower_function_def(
     struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
     struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
     struct_properties: Rc<HashMap<String, Vec<String>>>,
+    enums: Rc<HashMap<String, Vec<(String, i64)>>>,
     // PMAT-506d: when lowering a method, the type of the `self` receiver (the
     // enclosing struct). `None` for a top-level function. Decorators are
     // tolerated when set (a `@dataclass` method may be plain, but the class
@@ -1411,6 +1517,7 @@ fn lower_function_def(
         struct_methods,
         struct_field_defaults,
         struct_properties,
+        enums,
     );
     ctx.cls_name = cls_name;
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
@@ -5531,6 +5638,8 @@ fn infer_type(e: &Expr) -> Type {
         // context-free path falls back to I64 (the ctx path resolves it).
         Expr::StructLit { name, .. } => Type::Struct(name.clone()),
         Expr::FieldAccess { .. } => Type::I64,
+        // PMAT-513: an enum member types as the enum (a named type).
+        Expr::EnumVariant { enum_name, .. } => Type::Struct(enum_name.clone()),
         // PMAT-506d: context-free can't resolve a method's return type (no
         // registry) — fall back to I64; the ctx path resolves it.
         Expr::MethodCall { .. } => Type::I64,
@@ -5858,6 +5967,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-506b: a struct literal types as its named struct; a field read
         // resolves the field's type from the struct registry (fallback I64).
         Expr::StructLit { name, .. } => Type::Struct(name.clone()),
+        // PMAT-513: an enum member types as the enum (a named type).
+        Expr::EnumVariant { enum_name, .. } => Type::Struct(enum_name.clone()),
         Expr::FieldAccess { obj, field } => match infer_type_in_ctx(ctx, obj) {
             Type::Struct(name) => ctx
                 .structs
@@ -7898,6 +8009,37 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // field access. (Method calls are `Call(Attribute(...))`, handled in the
         // Call arm; this fires only on a bare attribute read.)
         ast::Expr::Attribute(attr) => {
+            // PMAT-513: `C.NAME.value` → the variant's discriminant literal
+            // (compile-time known). The receiver is itself `Enum.Variant`.
+            if attr.attr.as_str() == "value" {
+                if let ast::Expr::Attribute(inner) = attr.value.as_ref() {
+                    if let ast::Expr::Name(en) = inner.value.as_ref() {
+                        if let Some(variants) = ctx.enums.get(en.id.as_str()) {
+                            if let Some((_, disc)) =
+                                variants.iter().find(|(v, _)| *v == inner.attr.as_str())
+                            {
+                                return Ok(Expr::LitInt(*disc));
+                            }
+                        }
+                    }
+                }
+            }
+            // PMAT-513: `C.NAME` where `C` is an enum → `Expr::EnumVariant`.
+            if let ast::Expr::Name(en) = attr.value.as_ref() {
+                if let Some(variants) = ctx.enums.get(en.id.as_str()) {
+                    let variant = attr.attr.to_string();
+                    if variants.iter().any(|(v, _)| *v == variant) {
+                        return Ok(Expr::EnumVariant {
+                            enum_name: en.id.to_string(),
+                            variant,
+                        });
+                    }
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` reads `{}.{variant}`, but enum `{}` has no such variant",
+                        ctx.fn_name, en.id, en.id
+                    )));
+                }
+            }
             let obj = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
             let field = attr.attr.to_string();
             if let Type::Struct(sname) = infer_type_in_ctx(ctx, &obj) {
@@ -10061,6 +10203,7 @@ mod tests {
             Item::Function(f) => f,
             Item::Const { .. } => panic!("expected a function item, found a constant"),
             Item::Struct { .. } => panic!("expected a function item, found a struct"),
+            Item::Enum { .. } => panic!("expected a function item, found an enum"),
         }
     }
 
