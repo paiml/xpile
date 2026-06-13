@@ -1670,6 +1670,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, default, mode)?;
             out.push(')');
         }
+        // PMAT-502ey: 1-arg `d.get(k)` → `(d).get(&(k)).cloned()` : Option<V>.
+        Expr::DictGetOpt { dict, key } => {
+            emit_expr(out, dict, mode)?;
+            out.push_str(".get(&(");
+            emit_expr(out, key, mode)?;
+            out.push_str(")).cloned()");
+        }
         // PMAT-466: Python `k in d` → Rust `d.contains_key(&(k))`.
         Expr::DictContains { dict, key } => {
             emit_expr(out, dict, mode)?;

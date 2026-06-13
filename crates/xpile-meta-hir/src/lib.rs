@@ -403,6 +403,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // operations are not themselves arithmetic; recurse into the
         // sub-expressions (a computed key or default may carry it).
         Expr::DictGet { dict, key } => expr_has_int_arith(dict) || expr_has_int_arith(key),
+        // PMAT-502ey: 1-arg dict get — recurse into dict + key.
+        Expr::DictGetOpt { dict, key } => expr_has_int_arith(dict) || expr_has_int_arith(key),
         Expr::DictGetOr { dict, key, default } => {
             expr_has_int_arith(dict) || expr_has_int_arith(key) || expr_has_int_arith(default)
         }
@@ -1194,6 +1196,11 @@ pub enum Expr {
         key: Box<Expr>,
         default: Box<Expr>,
     },
+    /// PMAT-502ey: 1-arg `d.get(k)` (no default) — Python returns the value or
+    /// `None`. Rust/Ruchy emit `(<dict>).get(&(<key>)).cloned()` → `Option<V>`;
+    /// types as [`Type::Optional`] of the value type. Lean refuses (Optional
+    /// deferred). The 2-arg `d.get(k, default)` form stays [`DictGetOr`].
+    DictGetOpt { dict: Box<Expr>, key: Box<Expr> },
     /// Dictionary key membership — Python `k in d`. PMAT-466,
     /// v0.2.0 Track 1.C operations. Result types as `Type::Bool`.
     ///

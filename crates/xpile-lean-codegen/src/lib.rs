@@ -693,7 +693,9 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         // PMAT-466: dict ops — recurse into all sub-expressions so
         // loop-state ident discovery stays correct even though Lean
         // emit refuses these constructs downstream.
-        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
+        Expr::DictGet { dict, key }
+        | Expr::DictContains { dict, key }
+        | Expr::DictGetOpt { dict, key } => {
             collect_idents(dict, out);
             collect_idents(key, out);
         }
@@ -1536,6 +1538,7 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         }
         Expr::DictGet { .. }
         | Expr::DictGetOr { .. }
+        | Expr::DictGetOpt { .. }
         | Expr::DictContains { .. }
         | Expr::DictView { .. } => {
             return Err(LeanCodegenError::Unsupported(
