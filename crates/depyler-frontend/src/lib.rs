@@ -6992,10 +6992,9 @@ fn lower_generator_exp_in_ctx(
         ));
     }
     let gen = &ge.generators[0];
-    if !gen.ifs.is_empty() {
+    if gen.ifs.len() > 1 {
         return Err(FrontendError::Lower(
-            "generator expression with an `if` filter is not yet supported — use a filtered \
-             list comprehension assigned to a variable"
+            "generator expression with multiple `if` filters is not supported — combine with `and`"
                 .into(),
         ));
     }
@@ -7008,7 +7007,7 @@ fn lower_generator_exp_in_ctx(
     // Materialise the iterable into a list: a bare `range(...)` (not a
     // first-class value) lowers via `lower_range_list`; anything else must
     // already be list-typed.
-    let list = if let ast::Expr::Call(inner) = &gen.iter {
+    let iter_list = if let ast::Expr::Call(inner) = &gen.iter {
         if matches!(&*inner.func, ast::Expr::Name(n) if n.id.as_str() == "range")
             && inner.keywords.is_empty()
         {
@@ -7019,13 +7018,37 @@ fn lower_generator_exp_in_ctx(
     } else {
         lower_expr_in_ctx(ctx, gen.iter.clone())?
     };
-    if !matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
+    if !matches!(infer_type_in_ctx(ctx, &iter_list), Type::List(_)) {
         return Err(FrontendError::Lower(
             "generator expression iterates over a non-list — only `range(...)` and list-typed \
              iterables are supported at v0.2.0"
                 .into(),
         ));
     }
+    // PMAT-502dg: an optional single `if <cond>` filter wraps the iterable in
+    // `Expr::Filter` (the `filter(lambda var: cond, iter)` form), which also
+    // types as a List — so the `Map` below composes over it. The condition is
+    // lowered with the loop var unbound (matching `filter`'s inference) and
+    // must be Bool.
+    let list = if let Some(cond_ast) = gen.ifs.first() {
+        let cond = lower_expr_in_ctx(ctx, cond_ast.clone())?;
+        if infer_type_in_ctx(ctx, &cond) != Type::Bool {
+            return Err(FrontendError::Lower(
+                "generator expression `if` filter must be a Bool condition (no int-truthiness \
+                 at v0.2.0)"
+                    .into(),
+            ));
+        }
+        Expr::Filter {
+            list: Box::new(iter_list),
+            lambda: SortKey {
+                param: param.clone(),
+                body: Box::new(cond),
+            },
+        }
+    } else {
+        iter_list
+    };
     // Body lowered with the loop var unbound (matches `map`'s inference).
     let body = lower_expr_in_ctx(ctx, (*ge.elt).clone())?;
     Ok(Expr::Map {

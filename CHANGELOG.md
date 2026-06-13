@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.145] — 2026-06-13
+
+Tranche-2 slice PMAT-502dg — **filtered generator expressions** (`sum(x for x
+in xs if x > 0)`).
+
+The v0.1.144 generator-expression support deferred the `if` filter. A single
+`if <cond>` clause now wraps the iterable in `Expr::Filter` (the
+`filter(lambda var: cond, iter)` form), which also types as a List, so the
+`Map` composes over it: `<elt> for x in <iter> if <cond>` → `Map(Filter(iter))`.
+The condition is lowered with the loop var unbound and must be Bool.
+Frontend-only — no meta-HIR / codegen change; reuses `Filter` + `Map`. Multiple
+`if` clauses (combine with `and`), multiple generators, and tuple targets stay
+deferred. rustc round-trip `generator_expr_filter.py` (cross-checked vs
+`python3`): `sum_positive([-1,2,-3,4]) == 6`, `sum_even_squares(6) == 20`,
+`keep_positive([-1,2,-3,4]) == [2,4]`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.144] — 2026-06-13
 
 Tranche-2 slice PMAT-502df — **generator expressions** (`sum(i*i for i in
