@@ -2574,6 +2574,38 @@ fn terminal_if_as_expr(
     }))
 }
 
+/// PMAT-502fa (Optional epic): if `test` is `<name> is not None` over a
+/// non-reassigned `Optional`-typed name, return that name. Drives intra-branch
+/// narrowing in [`lower_if_stmt`]: inside the `if x is not None:` then-body, a
+/// read of `x` unwraps to `T`. The complementary `is None` else-branch and the
+/// `is not None … else: return` fall-through both route through other lowering
+/// paths (the trailing if-expression / if-as-let) and are a separate sub-slice;
+/// any shape other than a bare `<name> is not None` returns `None` (no narrowing
+/// — conservative, so non-narrowed shapes behave exactly as before).
+fn is_not_none_narrow_target(ctx: &LoweringCtx, test: &ast::Expr) -> Option<String> {
+    let ast::Expr::Compare(cmp) = test else {
+        return None;
+    };
+    if cmp.ops.len() != 1
+        || cmp.comparators.len() != 1
+        || !matches!(cmp.ops[0], ast::CmpOp::IsNot)
+        || !matches!(&cmp.comparators[0], ast::Expr::Constant(k) if matches!(k.value, ast::Constant::None))
+    {
+        return None;
+    }
+    let ast::Expr::Name(name) = cmp.left.as_ref() else {
+        return None;
+    };
+    let name = name.id.to_string();
+    if ctx.mutable.contains(&name) {
+        return None;
+    }
+    if !matches!(ctx.name_types.get(&name), Some(Type::Optional(_))) {
+        return None;
+    }
+    Some(name)
+}
+
 fn lower_if_stmt(ctx: &mut LoweringCtx, if_stmt: ast::StmtIf) -> Result<Vec<Stmt>, FrontendError> {
     if is_if_as_let_shape(&if_stmt) {
         return lower_if_stmt_as_lets(ctx, if_stmt);
@@ -2585,9 +2617,21 @@ fn lower_if_stmt(ctx: &mut LoweringCtx, if_stmt: ast::StmtIf) -> Result<Vec<Stmt
             ctx.fn_name
         )));
     }
+    // PMAT-502fa: intra-branch Optional narrowing for `if x is not None:`. The
+    // condition is already lowered above (so its own `x` is NOT narrowed); for
+    // the then-body we temporarily register `x` as narrowed so reads unwrap to
+    // `T`. Only add the entry if it wasn't already narrowed (by an outer guard),
+    // so the restore afterwards doesn't clobber that outer fact.
+    let narrow = is_not_none_narrow_target(ctx, &if_stmt.test);
+    let added = matches!(&narrow, Some(n) if ctx.narrowed_some.insert(n.clone()));
     let mut then_body = Vec::new();
     for s in if_stmt.body {
         then_body.extend(lower_block_stmt(ctx, s)?);
+    }
+    if added {
+        if let Some(n) = &narrow {
+            ctx.narrowed_some.remove(n);
+        }
     }
     let mut else_body = Vec::new();
     for s in if_stmt.orelse {
