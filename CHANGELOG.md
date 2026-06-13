@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.155] — 2026-06-13
+
+Tranche-2 slice PMAT-502dq — **varargs `*args`** (first structural slice past
+the builtin/str surface).
+
+A `*args` parameter is now accepted: it becomes a `list[elem]` parameter (the
+annotation gives the element type, default `int`), so `def total(*args: int)`
+→ `fn total(args: Vec<i64>)` and the body uses `args` as an ordinary list
+(`sum(args)`, `len(args)`, indexing, iteration). At a call site the trailing
+positional args (those past the fixed params) are collected into a single
+`vec![...]` — `FnSig` gains a `variadic` field consulted by the call-lowering.
+Mixed fixed + vararg works (`def f(prefix: int, *args: int)`), and the empty
+case (`total()` / `f(prefix)`) emits `vec![]` whose element type rustc infers
+from the signature. `**kwargs` and keyword-only params stay rejected. rustc
+round-trip `varargs.py` (cross-checked vs `python3`): `total(1,2,3) == 6`,
+`total() == 0`, `total(5) == 5`, `with_prefix(100,1,2) == 103`,
+`with_prefix(100) == 100`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.154] — 2026-06-13
 
 Tranche-2 slice PMAT-502dp — **printf `%x` / `%X` / `%o`**.
