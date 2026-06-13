@@ -489,6 +489,11 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         }
         // PMAT-502am: formatted f-string field — recurse into the value.
         Expr::FormatSpec { value, .. } => collect_idents(value, out),
+        // PMAT-502cd: `s[i]` over a string — recurse into both operands.
+        Expr::StrCharAt { string, index } => {
+            collect_idents(string, out);
+            collect_idents(index, out);
+        }
         // PMAT-492: string method — recurse into the receiver + args.
         Expr::StrMethod { recv, args, .. } => {
             collect_idents(recv, out);
@@ -1102,6 +1107,15 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::StrFormat { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python str.format(...) is not yet supported in the Lean lane — \
+                 use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502cd: string indexing `s[i]` is deferred in the Lean lane
+        // (no stable char-vec model at first cut) — refuse with a pointer.
+        Expr::StrCharAt { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python string indexing `s[i]` is not yet supported in the Lean lane — \
                  use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

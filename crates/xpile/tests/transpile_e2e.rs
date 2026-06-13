@@ -3115,6 +3115,26 @@ fn main() {
     assert_rustc_runs("not_bool_var", &rust, driver);
 }
 
+/// PMAT-502cd (Tranche 2): string indexing `s[i]` → a 1-char string
+/// (positive / negative-from-end / variable int index).
+#[test]
+fn str_char_at() {
+    let rust = xpile_transpile_to_rust("str_char_at.py");
+    assert!(
+        rust.contains("__cs[__idx as usize].to_string()"),
+        "str char-at:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(first(String::from("hello")), "h");
+    assert_eq!(last(String::from("hello")), "o");
+    assert_eq!(at(String::from("hello"), 1), "e");
+    assert_eq!(at(String::from("hello"), -2), "l");
+}
+"#;
+    assert_rustc_runs("str_char_at", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

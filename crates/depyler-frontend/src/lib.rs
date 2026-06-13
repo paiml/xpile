@@ -3529,6 +3529,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::ListConcat { lhs, .. } => infer_type(lhs),
         // PMAT-502bh: str.format produces a Str.
         Expr::StrFormat { .. } => Type::Str,
+        // PMAT-502cd: `s[i]` over a string yields a 1-char string.
+        Expr::StrCharAt { .. } => Type::Str,
         // PMAT-502am: a formatted f-string field produces a Str.
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
@@ -3772,6 +3774,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::ListConcat { lhs, .. } => infer_type_in_ctx(ctx, lhs),
         // PMAT-502bh: str.format produces a Str.
         Expr::StrFormat { .. } => Type::Str,
+        // PMAT-502cd: `s[i]` over a string yields a 1-char string.
+        Expr::StrCharAt { .. } => Type::Str,
         // PMAT-502am: a formatted f-string field produces a Str.
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
@@ -4043,6 +4047,24 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 return Ok(Expr::DictGet {
                     dict: Box::new(collection),
                     key: Box::new(key),
+                });
+            }
+            // PMAT-502cd: `s[i]` over a string → `Expr::StrCharAt` (a 1-char
+            // string). Handles positive, negative, and variable int indices;
+            // the codegen materialises the chars and indexes them. Rejects a
+            // non-int index.
+            if matches!(infer_type_in_ctx(ctx, &collection), Type::Str) {
+                let index = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+                let idx_ty = infer_type_in_ctx(ctx, &index);
+                if !matches!(idx_ty, Type::I64) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` indexes a string with a {idx_ty:?} index — only `int` is supported",
+                        ctx.fn_name
+                    )));
+                }
+                return Ok(Expr::StrCharAt {
+                    string: Box::new(collection),
+                    index: Box::new(index),
                 });
             }
             // PMAT-502q: `t[N]` over a Tuple-typed `t` with a compile-time

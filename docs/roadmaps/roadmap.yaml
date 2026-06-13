@@ -1084,6 +1084,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "not b for a bool parameter/local was wrongly rejected with 'not requires Bool operand (no int-truthiness)'. ROOT CAUSE: the unary-not lowering ran context-free (lower_unary_op uses infer_type, which infers a bare Ident as I64). FIX: new context-aware arm `ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::Not)` in lower_expr_in_ctx_inner (next to the v0.1.102 USub float-negation arm): lower the operand ctx-aware, and if it types as Type::Bool emit Expr::UnOp { op: UnOp::Not, operand } -> (!b); otherwise fall back to lower_unary_op (still errors for non-Bool, preserving the no-int-truthiness rule). not (x > 0) (comparison operand) was already fine via either path and is unchanged. Same fix SHAPE as float-var negation. rustc round-trip not_bool_var.py (cross-checked vs python3): toggle(true)=false, toggle(false)=true, clamp(false,9)=0, clamp(true,9)=9. FREE CI. SHIPPED v0.1.115."
+- id: PMAT-502CD
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cd: [Tranche2] string indexing s[i]'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "s[i] over a string was rejected — the read-position subscript built Expr::Index over a Str collection, which infers I64 (list/byte element type) and fails the -> str return check. FIX: new Expr::StrCharAt { string, index } meta-HIR variant. The ctx-aware Subscript arm in lower_expr_in_ctx_inner gains a Str-receiver branch (after the Dict check): str collection + int index -> Expr::StrCharAt. Both inferers type it Str. Codegen rust/ruchy: Rust String has no positional [], so emit a block: { let __cs: Vec<char> = (s).chars().collect(); let __i = (i); let __idx = if __i < 0 { __cs.len() as i64 + __i } else { __i }; __cs[__idx as usize].to_string() } — negative index counts from the end (Python), out-of-range panics (= IndexError). Lean refuses. Blast radius: new Expr variant touched expr_has_int_arith (meta-hir) + 2 inferers + collect_idents (lean) + 3 emit sites (rust/ruchy/lean). rustc round-trip str_char_at.py (cross-checked vs python3): first('hello')='h', last('hello')='o', at('hello',1)='e', at('hello',-2)='l'. FREE CI. SHIPPED v0.1.116."
 - id: PMAT-465
   github_issue: 496
   item_type: task
