@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.127] — 2026-06-13
+
+Tranche-2 slice PMAT-502co — **no-arg `str.split()`** (whitespace split).
+
+`s.split()` (no argument) was rejected ("expected exactly 1"). A new
+`StrMethodOp::SplitWhitespace` (0-arg) lowers it to `(s).split_whitespace()
+.map(|c| c.to_string()).collect::<Vec<String>>()` — Python's no-arg split
+collapses runs of whitespace and drops empty fields, exactly like Rust's
+`split_whitespace`. The frontend special-cases `split` with zero args before
+the generic str-method dispatch (which still handles `s.split(sep)`). rustc
+round-trip `split_whitespace.py` (cross-checked vs `python3`):
+`word_count("  hello   world  foo ") -> 3`, `first_word("  alpha beta") ->
+"alpha"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.126] — 2026-06-13
 
 Tranche-2 slice PMAT-502cn — **2-arg `min`/`max` over `str`/`bool`**.
