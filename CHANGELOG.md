@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.166] — 2026-06-13
+
+Tranche-2 slice PMAT-502eb — **`xs += ys` list in-place extend**.
+
+`xs += ys` over a list is Python's in-place list *extend* (equivalent to
+`xs.extend(ys)`), not numeric addition. The augmented-assign handler routed
+`+=` unconditionally through `combine_aug`, which emits `(xs).checked_add(ys)`
+— a method that does not exist on `Vec`, so the code never compiled (a silent
+miscompile, since transpilation succeeded). The Name-target arm now detects a
+list-typed receiver and emits the existing `Stmt::ListExtend` (the same node
+`xs.extend(ys)` lowers to). `list += <non-list>` and any non-`+=` augmented
+operator on a list (`*=`, …) are rejected with a clear error rather than
+miscompiled. Numeric (`x += 1`), string (`s += "!"`), and subscript
+(`d[k] += v`) augmented assignment are unchanged. New `list_aug_extend.py`
+e2e fixture (literal/var/sum/str-list), all cross-checked vs python3. Note:
+`xs = []` (unannotated empty literal) still requires annotation threading
+(a separate pre-existing limit that also affects `.append()`).
+
 ## [0.1.165] — 2026-06-13
 
 Tranche-2 slice PMAT-502ea — **nested augmented subscript assignment**
