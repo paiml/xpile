@@ -10309,8 +10309,9 @@ fn lower_generator_exp_in_ctx(
     ctx: &LoweringCtx,
     ge: ast::ExprGeneratorExp,
 ) -> Result<Expr, FrontendError> {
-    let body = lower_expr_in_ctx(ctx, (*ge.elt).clone())?;
-    lower_comp_to_map(ctx, &ge.generators, "generator expression", body)
+    lower_comp_to_map(ctx, &ge.generators, "generator expression", |sub| {
+        lower_expr_in_ctx(sub, (*ge.elt).clone())
+    })
 }
 
 /// PMAT-502du: an expression-position list comprehension (`sum([x for x in
@@ -10323,16 +10324,18 @@ fn lower_list_comp_in_ctx(
     ctx: &LoweringCtx,
     comp: ast::ExprListComp,
 ) -> Result<Expr, FrontendError> {
-    let body = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
-    lower_comp_to_map(ctx, &comp.generators, "list comprehension", body)
+    lower_comp_to_map(ctx, &comp.generators, "list comprehension", |sub| {
+        lower_expr_in_ctx(sub, (*comp.elt).clone())
+    })
 }
 
 /// PMAT-502dv: an expression-position set comprehension (`len({x for x in
 /// xs})`) lowers to `set(<list-comp>)` — i.e. `SetFromList` over the same
 /// `Map`/`Filter` form. The statement / return forms keep their own desugars.
 fn lower_set_comp_in_ctx(ctx: &LoweringCtx, comp: ast::ExprSetComp) -> Result<Expr, FrontendError> {
-    let body = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
-    let list = lower_comp_to_map(ctx, &comp.generators, "set comprehension", body)?;
+    let list = lower_comp_to_map(ctx, &comp.generators, "set comprehension", |sub| {
+        lower_expr_in_ctx(sub, (*comp.elt).clone())
+    })?;
     Ok(Expr::SetFromList {
         list: Box::new(list),
     })
@@ -10345,10 +10348,11 @@ fn lower_dict_comp_in_ctx(
     ctx: &LoweringCtx,
     comp: ast::ExprDictComp,
 ) -> Result<Expr, FrontendError> {
-    let key = lower_expr_in_ctx(ctx, (*comp.key).clone())?;
-    let value = lower_expr_in_ctx(ctx, (*comp.value).clone())?;
-    let body = Expr::TupleLit(vec![key, value]);
-    let pairs = lower_comp_to_map(ctx, &comp.generators, "dict comprehension", body)?;
+    let pairs = lower_comp_to_map(ctx, &comp.generators, "dict comprehension", |sub| {
+        let key = lower_expr_in_ctx(sub, (*comp.key).clone())?;
+        let value = lower_expr_in_ctx(sub, (*comp.value).clone())?;
+        Ok(Expr::TupleLit(vec![key, value]))
+    })?;
     Ok(Expr::DictFromPairs {
         pairs: Box::new(pairs),
     })
@@ -10362,7 +10366,12 @@ fn lower_comp_to_map(
     ctx: &LoweringCtx,
     generators: &[ast::Comprehension],
     kind: &str,
-    body: Expr,
+    // PMAT-525: lowers the comprehension body given a ctx with the loop var bound
+    // to the iterable's element type (so e.g. a tuple-index `p[1]` lowers to the
+    // `.1` field access, and `p.field` over a struct element resolves). The body
+    // was previously pre-lowered with the var UNBOUND (→ default I64 → tuple/
+    // struct element bodies miscompiled / were rejected).
+    lower_body: impl FnOnce(&LoweringCtx) -> Result<Expr, FrontendError>,
 ) -> Result<Expr, FrontendError> {
     if generators.len() != 1 {
         return Err(FrontendError::Lower(format!(
@@ -10395,17 +10404,25 @@ fn lower_comp_to_map(
     } else {
         lower_expr_in_ctx(ctx, gen.iter.clone())?
     };
-    if !matches!(infer_type_in_ctx(ctx, &iter_list), Type::List(_)) {
-        return Err(FrontendError::Lower(format!(
-            "{kind} iterates over a non-list — only `range(...)` and list-typed iterables are \
-             supported at v0.2.0"
-        )));
-    }
+    let elem_ty = match infer_type_in_ctx(ctx, &iter_list) {
+        Type::List(e) => *e,
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "{kind} iterates over a non-list — only `range(...)` and list-typed iterables are \
+                 supported at v0.2.0"
+            )));
+        }
+    };
+    // PMAT-525: bind the loop var to the element type so the filter + body type
+    // correctly (e.g. `p[1]` over a `tuple` element → `.1`).
+    let mut sub = ctx.clone();
+    sub.bound.insert(param.clone());
+    sub.name_types.insert(param.clone(), elem_ty);
     // An optional single `if <cond>` wraps the iterable in `Expr::Filter`
-    // (also List-typed, so `Map` composes); cond lowered var-unbound, Bool.
+    // (also List-typed, so `Map` composes); cond must type as Bool.
     let list = if let Some(cond_ast) = gen.ifs.first() {
-        let cond = lower_expr_in_ctx(ctx, cond_ast.clone())?;
-        if infer_type_in_ctx(ctx, &cond) != Type::Bool {
+        let cond = lower_expr_in_ctx(&sub, cond_ast.clone())?;
+        if infer_type_in_ctx(&sub, &cond) != Type::Bool {
             return Err(FrontendError::Lower(format!(
                 "{kind} `if` filter must be a Bool condition (no int-truthiness at v0.2.0)"
             )));
@@ -10420,7 +10437,7 @@ fn lower_comp_to_map(
     } else {
         iter_list
     };
-    // `body` was lowered by the caller with the loop var unbound.
+    let body = lower_body(&sub)?;
     Ok(Expr::Map {
         list: Box::new(list),
         lambda: SortKey {

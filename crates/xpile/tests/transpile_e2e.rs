@@ -4405,6 +4405,32 @@ fn main() {
     assert_rustc_runs("sort_key_tuple_index", &rust, driver);
 }
 
+/// PMAT-525 (Tranche 2 — correctness): an expression-position comprehension /
+/// generator / filter whose loop variable is a tuple or struct element. The
+/// body was previously lowered with the loop var UNBOUND (→ default `i64`), so
+/// `p[1]` over a tuple miscompiled and `p.x` over a struct was rejected.
+/// `lower_comp_to_map` now binds the loop var to the iterable's element type
+/// before lowering the body + filter. Cross-checked vs python3 (9, 16, 2, 7).
+#[test]
+fn comp_typed_element() {
+    let rust = xpile_transpile_to_rust("comp_typed_element.py");
+    assert!(
+        rust.contains("(p).1") && !rust.contains("p[1i64 as usize]"),
+        "a comprehension over tuple elements should lower `p[1]` to `.1`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let d = vec![(3, 9), (1, 2), (2, 5)];
+    assert_eq!(seconds_first(d.clone()), 9);
+    assert_eq!(sum_seconds(d.clone()), 16);
+    assert_eq!(count_big(d.clone()), 2);
+    let ps = vec![Point { x: 1, y: 0 }, Point { x: 4, y: 0 }, Point { x: 2, y: 0 }];
+    assert_eq!(sum_x(ps), 7);
+}
+"#;
+    assert_rustc_runs("comp_typed_element", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
