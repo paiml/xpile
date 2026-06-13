@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.107] — 2026-06-13
+
+Tranche-2 slice PMAT-502bu — **float augmented assignment with a non-float
+rhs** (`x += 1`, `x /= 2`, `x **= 2`, …) + float `**=`.
+
+`combine_aug`'s float branch passed operands to `FloatBinOp` uncast, so a
+float aug-assign with an int-literal rhs miscompiled to a mismatched
+`f64 <op> i64` (`x += 1` → `(x + 1i64)`), and `**=` fell through to the int
+`checked_pow` path entirely. Both are fixed: the float branch now casts each
+operand via `to_f64_operand` (so the int side becomes `(1i64) as f64` while a
+float operand is left as-is), and `float_op_from_ast` maps `**` to
+`FloatOp::Pow` so `x **= 2` lowers to `(x).powf((2i64) as f64)`. This rounds
+out the float aug-assign surface (`+= -= *= /= //= %= **=`). No regression:
+`x += y` over two floats stays cast-free, int aug-assign still uses
+`checked_*`. rustc round-trip `aug_assign_float_int_rhs.py` (cross-checked vs
+`python3`): `run(3.0) -> 9.0`, `pow_assign(2.0) -> 8.0`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.106] — 2026-06-13
 
 Tranche-2 slice PMAT-502bt — Python **float power `a ** b`** (`(a).powf(b)`).
