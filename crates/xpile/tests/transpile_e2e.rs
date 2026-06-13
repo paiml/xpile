@@ -3529,6 +3529,30 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502da (Tranche 2): `int(s, base)` → `i64::from_str_radix`.
+#[test]
+fn int_from_str_radix() {
+    let rust = xpile_transpile_to_rust("int_from_str_radix.py");
+    assert!(
+        rust.contains("i64::from_str_radix((s).trim(), 16)"),
+        "int(s, 16) → from_str_radix base 16:\n{rust}"
+    );
+    assert!(
+        rust.contains("i64::from_str_radix((s).trim(), 2)"),
+        "int(s, 2) → from_str_radix base 2:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // int(s, base); cross-checked vs python3 (unprefixed digit strings).
+    assert_eq!(from_hex("ff".to_string()), 255);
+    assert_eq!(from_hex("FF".to_string()), 255);
+    assert_eq!(from_bin("101".to_string()), 5);
+    assert_eq!(signed_hex("-1a".to_string()), -26);
+}
+"#;
+    assert_rustc_runs("int_from_str_radix", &rust, driver);
+}
+
 /// PMAT-502cz (Tranche 2): variadic `min`/`max` (`max(a, b, c)`).
 #[test]
 fn variadic_minmax() {

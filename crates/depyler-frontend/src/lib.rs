@@ -3920,6 +3920,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::Chr { .. } => Type::Str,
         // PMAT-502cv: hex/oct/bin → str.
         Expr::IntRadixStr { .. } => Type::Str,
+        // PMAT-502da: int(s, base) → int.
+        Expr::IntFromStrRadix { .. } => Type::I64,
         // PMAT-502am: a formatted f-string field produces a Str.
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
@@ -4187,6 +4189,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::Chr { .. } => Type::Str,
         // PMAT-502cv: hex/oct/bin → str.
         Expr::IntRadixStr { .. } => Type::Str,
+        // PMAT-502da: int(s, base) → int.
+        Expr::IntFromStrRadix { .. } => Type::I64,
         // PMAT-502am: a formatted f-string field produces a Str.
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
@@ -4935,6 +4939,31 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 is_all: fname.id.as_str() == "all",
                             });
                         }
+                    }
+                }
+                // PMAT-502da: `int(s, base)` — parse a string in the given
+                // radix → `i64::from_str_radix((s).trim(), base)`. `base` must
+                // be an int literal `2..=36` (variable / auto-detect `base=0`
+                // deferred). Previously `int(s, 16)` fell to a generic call,
+                // emitting an undefined Rust `int(s, 16)` fn (silent miscompile).
+                if fname.id.as_str() == "int" && call.keywords.is_empty() && call.args.len() == 2 {
+                    let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &value), Type::Str) {
+                        let radix_expr = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                        if let Expr::LitInt(base) = radix_expr {
+                            if (2..=36).contains(&base) {
+                                return Ok(Expr::IntFromStrRadix {
+                                    value: Box::new(value),
+                                    radix: base as u32,
+                                });
+                            }
+                            return Err(FrontendError::Lower(format!(
+                                "int(s, base): base {base} out of range (must be 2..=36)"
+                            )));
+                        }
+                        return Err(FrontendError::Lower(
+                            "int(s, base): base must be an integer literal (2..=36)".to_string(),
+                        ));
                     }
                 }
                 // PMAT-502m: `int(x)` / `float(x)` numeric conversion over a

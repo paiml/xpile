@@ -882,6 +882,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             });
             out.push_str("\", __sign, __m) }");
         }
+        // PMAT-502da: `int(s, base)` → `i64::from_str_radix((s).trim(), base)`
+        // (a parse failure / out-of-range digit panics ≈ Python ValueError).
+        Expr::IntFromStrRadix { value, radix } => {
+            out.push_str("i64::from_str_radix((");
+            emit_expr(out, value, mode)?;
+            out.push_str(&format!(
+                ").trim(), {radix}).expect(\"xpile: ValueError: invalid literal for int() with base {radix}\")"
+            ));
+        }
         // PMAT-492/493b: Python string methods. No-arg transforms emit a
         // suffix; the startswith/endswith predicates emit
         // `.starts_with(&(<pat>)[..])` — the `&(..)[..]` reslice yields
