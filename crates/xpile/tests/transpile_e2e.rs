@@ -3550,6 +3550,31 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502dz (Tranche 2): `for _ in range(n)` and `[… for _ in range(n)]` — a
+/// `_` loop/comprehension target can't desugar to `let mut _` (Rust rejects a
+/// bare `_` binding). The frontend mints a fresh `__xpile_idx{N}` counter and
+/// resolves body reads of `_` to it. Covers unused, body-read, nested (distinct
+/// counters), and list/set comprehension forms; cross-checked vs python3.
+#[test]
+fn for_underscore() {
+    let rust = xpile_transpile_to_rust("for_underscore.py");
+    assert!(
+        rust.contains("__xpile_idx0") && !rust.contains("let mut _:"),
+        "for-underscore should mint a fresh counter, never `let mut _`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(repeat_count(10), 20);
+    assert_eq!(sum_indices(5), 10); // 0+1+2+3+4
+    assert_eq!(nested_grid_count(3, 4), 12); // distinct nested counters
+    assert_eq!(comp_const(3), vec![7i64, 7, 7]);
+    assert_eq!(comp_read(5), 30); // 0+1+4+9+16
+    assert_eq!(set_comp_size(10), 3); // {0,1,2}
+}
+"#;
+    assert_rustc_runs("for_underscore", &rust, driver);
+}
+
 /// PMAT-502dx (Tranche 2): mixed `{**a, "k": v}` dict literals (splats + explicit
 /// entries) — chained `once()`/`.iter().map()`, later entry wins.
 #[test]

@@ -1,5 +1,5 @@
 def diag_fill(n: int) -> int:
-    grid = [[0] * n for r in range(n)]
+    grid = [[0] * n for _ in range(n)]
     for i in range(n):
         grid[i][i] = i + 1
     return grid[2][2] + grid[0][0]

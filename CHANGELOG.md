@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.164] — 2026-06-13
+
+Tranche-2 slice PMAT-502dz — **`for _ in range(n)` / `[… for _ in range(n)]`**
+(underscore loop targets).
+
+The range-for and comprehension-over-range desugars emit a counter
+`let mut <var>: i64 = …`. When the loop target was `_` (the
+extremely-common Python "unused variable" convention) this produced
+`let mut _: i64`, which Rust rejects — `_` is not a binding, so the
+emitted code never compiled. The frontend now mints a fresh, unique
+`__xpile_idx{N}` counter name for a `_` target and registers it so a body
+read of `_` (legal Python — `_` is an ordinary, if conventionally-unused,
+binding) resolves to the same name. Nested `for _` get distinct counters
+(`__xpile_idx0`/`__xpile_idx1`), so the outer loop's tail increment can't
+accidentally hit the inner shadow. Covers the statement-form
+`for _ in range(n)` and the list/dict/set comprehension range desugars;
+expression-position comprehensions already lowered to `(0..n).map(|_| …)`,
+where `_` is a valid closure parameter, and are unchanged. The
+`nested_index_assign` fixture's `for _`-dodging workaround (`for r`) is
+reverted now that `for _` compiles. New `for_underscore.py` e2e fixture
+(unused / body-read / nested / list-comp / set-comp), all cross-checked
+vs python3.
+
 ## [0.1.163] — 2026-06-13
 
 Tranche-2 slice PMAT-502dy — **nested subscript assignment** (`grid[i][j] = v`).

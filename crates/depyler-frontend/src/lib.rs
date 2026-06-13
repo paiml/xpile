@@ -99,6 +99,45 @@ struct LoweringCtx {
     /// table only covers top-level functions). Populated as
     /// [`Stmt::ClosureLet`] bindings are lowered.
     closure_returns: HashMap<String, Type>,
+    /// PMAT-502dz: monotone counter minting fresh, unique Rust names for
+    /// `_` loop/comprehension targets. Rust forbids `_` as a readable
+    /// `let mut` binding, so `for _ in range(n)` / `[… for _ in range(n)]`
+    /// can't emit `let mut _: i64`. Each `_` target claims `__xpile_idx{N}`.
+    /// Nested `for _` need distinct names (the outer's tail increment would
+    /// otherwise hit the inner shadow), hence a counter rather than a
+    /// constant.
+    underscore_counter: usize,
+    /// PMAT-502dz: the fresh name the innermost enclosing `for _`/`… for _ …`
+    /// minted for its `_` target, so a body read of `_` (legal Python — `_`
+    /// is an ordinary, if conventionally-unused, binding) lowers to that
+    /// same name instead of an uncompilable bare `_`. Saved/restored around
+    /// each construct's body so `_` shadows correctly across nesting.
+    underscore_rename: Option<String>,
+}
+
+impl LoweringCtx {
+    /// PMAT-502dz: claim a Rust counter name for a `for`/comprehension
+    /// target. A named target passes through unchanged (and leaves any
+    /// enclosing `_`-rename in force, so a body read of an *outer* `_`
+    /// still resolves). A `_` target mints a fresh `__xpile_idx{N}` and
+    /// installs it as the active `_`-rename, returning the previous rename
+    /// to restore via [`exit_loop_var`] once the body is lowered.
+    fn enter_loop_var(&mut self, py_name: &str) -> (String, Option<String>) {
+        if py_name == "_" {
+            let fresh = format!("__xpile_idx{}", self.underscore_counter);
+            self.underscore_counter += 1;
+            let saved = self.underscore_rename.clone();
+            self.underscore_rename = Some(fresh.clone());
+            (fresh, saved)
+        } else {
+            (py_name.to_string(), self.underscore_rename.clone())
+        }
+    }
+
+    /// PMAT-502dz: restore the `_`-rename saved by [`enter_loop_var`].
+    fn exit_loop_var(&mut self, saved: Option<String>) {
+        self.underscore_rename = saved;
+    }
 }
 
 impl LoweringCtx {
@@ -131,6 +170,8 @@ impl LoweringCtx {
             mutable,
             signatures,
             closure_returns: HashMap::new(),
+            underscore_counter: 0,
+            underscore_rename: None,
         }
     }
 }
@@ -1968,6 +2009,14 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
     // function's return type; no other inference is needed because the
     // for-range desugaring rebinds `i` each iteration from the step
     // expression which already carries the right type.
+    //
+    // PMAT-502dz: `for _ in range(n)` desugars to a counter `let mut _`,
+    // which Rust rejects (`_` is not a binding). Mint a fresh `__xpile_idx{N}`
+    // for the counter and register it so a body read of `_` resolves to the
+    // same name. Bounds were lowered above (so a bound reading an *outer* `_`
+    // still saw the outer rename); the rename installed here covers only this
+    // loop's body. `saved_rename` is restored once the body is lowered.
+    let (target_name, saved_rename) = ctx.enter_loop_var(&target_name);
     let target_ty = match ctx.fn_return_type {
         Type::BigInt => Type::BigInt,
         _ => Type::I64,
@@ -2004,6 +2053,9 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
     for stmt in f.body {
         body.extend(lower_block_stmt(ctx, stmt)?);
     }
+    // PMAT-502dz: body lowered — pop this loop's `_`-rename (restoring any
+    // outer one). Nothing below lowers Python expressions, so it is safe here.
+    ctx.exit_loop_var(saved_rename);
     // PMAT-502bk: a `continue` belonging to this `range(...)` loop would
     // skip the tail counter-increment below (an infinite loop). Reject it
     // (a list iteration or a manual `while` loop is the workaround).
@@ -3102,6 +3154,9 @@ fn desugar_list_comp(
     // around the accumulator — mirroring the for-over-range desugaring,
     // rather than the list-iterable ForEach below.
     if let Some((start, stop, step_int)) = comp_range_bounds(ctx, &gen.iter)? {
+        // PMAT-502dz: `[elem for _ in range(n)]` would desugar to `let mut _`
+        // — mint a fresh counter name and register it for body reads of `_`.
+        let (var, saved_rename) = ctx.enter_loop_var(&var);
         // The range counter is an `i64`; bind it before lowering elem/filter.
         ctx.bound.insert(var.clone());
         ctx.name_types.insert(var.clone(), Type::I64);
@@ -3149,6 +3204,7 @@ fn desugar_list_comp(
             lhs: Box::new(Expr::Ident(var.clone())),
             rhs: Box::new(stop),
         };
+        ctx.exit_loop_var(saved_rename);
         return Ok(vec![
             Stmt::Let {
                 name: target.to_string(),
@@ -3338,6 +3394,9 @@ fn desugar_dict_comp(
     // PMAT-502bd: `{k: v for x in range(...)}` desugars to a counter loop
     // around a dict accumulator (same shape as the list-comp range branch).
     if let Some((start, stop, step_int)) = comp_range_bounds(ctx, &gen.iter)? {
+        // PMAT-502dz: `{k: v for _ in range(n)}` — mint a fresh counter name
+        // for the `_` target and register it for body reads of `_`.
+        let (var, saved_rename) = ctx.enter_loop_var(&var);
         ctx.bound.insert(var.clone());
         ctx.name_types.insert(var.clone(), Type::I64);
         let filter = comp_filter(ctx, gen, "dict")?;
@@ -3354,6 +3413,7 @@ fn desugar_dict_comp(
             key,
             value,
         };
+        ctx.exit_loop_var(saved_rename);
         return Ok(comp_range_stmts(
             target,
             dict_ty,
@@ -3597,6 +3657,9 @@ fn desugar_set_comp(
     // PMAT-502bd: `{e for x in range(...)}` desugars to a counter loop
     // around a set accumulator (same shape as the list-comp range branch).
     if let Some((start, stop, step_int)) = comp_range_bounds(ctx, &gen.iter)? {
+        // PMAT-502dz: `{e for _ in range(n)}` — mint a fresh counter name for
+        // the `_` target and register it for body reads of `_`.
+        let (var, saved_rename) = ctx.enter_loop_var(&var);
         ctx.bound.insert(var.clone());
         ctx.name_types.insert(var.clone(), Type::I64);
         let filter = comp_filter(ctx, gen, "set")?;
@@ -3608,6 +3671,7 @@ fn desugar_set_comp(
             set_name: target.to_string(),
             elem,
         };
+        ctx.exit_loop_var(saved_rename);
         return Ok(comp_range_stmts(
             target,
             set_ty,
@@ -6018,6 +6082,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // (the statement + return forms keep their own desugars).
         ast::Expr::SetComp(comp) => lower_set_comp_in_ctx(ctx, comp),
         ast::Expr::DictComp(comp) => lower_dict_comp_in_ctx(ctx, comp),
+        // PMAT-502dz: a body read of a `_` loop/comprehension target. Rust
+        // forbids a bare `_` read, so resolve it to the fresh `__xpile_idx{N}`
+        // name the enclosing `for _`/`… for _ …` minted (see `enter_loop_var`).
+        // Only fires while such a rename is active; an unbound stray `_`
+        // elsewhere still falls through to the context-free path unchanged.
+        ast::Expr::Name(n) if n.id.as_str() == "_" && ctx.underscore_rename.is_some() => Ok(
+            Expr::Ident(ctx.underscore_rename.clone().expect("rename is Some")),
+        ),
         // No dict-specific shape: the context-free path is sufficient.
         other => lower_expr(other),
     }
