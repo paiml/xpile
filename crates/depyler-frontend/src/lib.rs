@@ -5713,7 +5713,9 @@ fn infer_type(e: &Expr) -> Type {
         Expr::StrMethod { op, .. } => match op {
             StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
             StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
-            StrMethodOp::Split | StrMethodOp::SplitWhitespace => Type::List(Box::new(Type::Str)),
+            StrMethodOp::Split | StrMethodOp::SplitN | StrMethodOp::SplitWhitespace => {
+                Type::List(Box::new(Type::Str))
+            }
             StrMethodOp::Join | StrMethodOp::Replace | StrMethodOp::ReplaceN => Type::Str,
             // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
             StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
@@ -6076,7 +6078,9 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::StrMethod { op, .. } => match op {
             StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
             StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
-            StrMethodOp::Split | StrMethodOp::SplitWhitespace => Type::List(Box::new(Type::Str)),
+            StrMethodOp::Split | StrMethodOp::SplitN | StrMethodOp::SplitWhitespace => {
+                Type::List(Box::new(Type::Str))
+            }
             StrMethodOp::Join | StrMethodOp::Replace | StrMethodOp::ReplaceN => Type::Str,
             // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
             StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
@@ -6839,6 +6843,28 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             recv: Box::new(recv),
                             op: StrMethodOp::ReplaceN,
                             args,
+                        });
+                    }
+                }
+                // PMAT-518: `s.split(sep, maxsplit)` (2-arg) → Rust
+                // `s.splitn(maxsplit + 1, sep)`. The 1-arg form falls through to
+                // `Split` in the generic path.
+                if attr.attr.as_str() == "split" && call.args.len() == 2 && call.keywords.is_empty()
+                {
+                    let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &recv), Type::Str) {
+                        let sep = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                        let maxsplit = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                        if !matches!(infer_type_in_ctx(ctx, &maxsplit), Type::I64) {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` calls str `.split(sep, maxsplit)` with a non-int maxsplit",
+                                ctx.fn_name
+                            )));
+                        }
+                        return Ok(Expr::StrMethod {
+                            recv: Box::new(recv),
+                            op: StrMethodOp::SplitN,
+                            args: vec![sep, maxsplit],
                         });
                     }
                 }
@@ -9651,9 +9677,10 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         | StrMethodOp::Split
         | StrMethodOp::Join => 1,
         StrMethodOp::Replace => 2,
-        // PMAT-517: `replace(old, new, count)` — routed via a dedicated branch,
-        // but kept here for arity-table completeness.
+        // PMAT-517/518: `replace(old, new, count)` / `split(sep, maxsplit)` —
+        // routed via dedicated branches, but kept here for arity completeness.
         StrMethodOp::ReplaceN => 3,
+        StrMethodOp::SplitN => 2,
         // PMAT-502l: lstrip/rstrip take no args; find/count take one.
         StrMethodOp::LStrip | StrMethodOp::RStrip => 0,
         StrMethodOp::Find | StrMethodOp::Count | StrMethodOp::StrIndex => 1,

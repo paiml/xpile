@@ -1056,6 +1056,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     emit_expr(out, &args[0], mode)?;
                     out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()");
                 }
+                // PMAT-518: `.split(sep, maxsplit)` → `.splitn(maxsplit + 1, sep)`.
+                StrMethodOp::SplitN => {
+                    out.push_str(".splitn(((");
+                    emit_expr(out, &args[1], mode)?;
+                    out.push_str(") as usize) + 1, &(");
+                    emit_expr(out, &args[0], mode)?;
+                    out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()");
+                }
                 // PMAT-502co: no-arg `.split()` → whitespace split.
                 StrMethodOp::SplitWhitespace => {
                     out.push_str(

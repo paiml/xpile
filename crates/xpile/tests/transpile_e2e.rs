@@ -4230,6 +4230,28 @@ fn main() {
     assert_rustc_runs("str_replace_count", &rust, driver);
 }
 
+/// PMAT-518 (Tranche 2): `str.split(sep, maxsplit)` (2-arg) → Rust
+/// `s.splitn(maxsplit + 1, sep)` (Python caps the number of *splits*, so the
+/// part count is `maxsplit + 1`). The 1-arg form is unchanged. Cross-checked vs
+/// python3 ("a"/"b=c", field_count 4, capped_count 3).
+#[test]
+fn str_split_maxsplit() {
+    let rust = xpile_transpile_to_rust("str_split_maxsplit.py");
+    assert!(
+        rust.contains(".splitn(((1i64) as usize) + 1, &(String::from(\"=\"))[..])"),
+        "2-arg split should emit `splitn(maxsplit + 1, sep)`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(key_part("a=b=c".to_string()), "a");
+    assert_eq!(value_part("a=b=c".to_string()), "b=c");
+    assert_eq!(field_count("x,y,z,w".to_string()), 4);
+    assert_eq!(capped_count("x,y,z,w".to_string()), 3);
+}
+"#;
+    assert_rustc_runs("str_split_maxsplit", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
