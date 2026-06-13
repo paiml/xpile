@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.114] — 2026-06-13
+
+Tranche-2 slice PMAT-502cb — **`str.format` positional `{N}`** placeholders.
+
+`str.format` previously accepted only automatic `{}` placeholders. Positional
+`{0}`/`{1}` are now supported — Rust's `format!` shares the syntax, so the
+format string is re-emitted verbatim (frontend-only change). Reordering
+(`"{1} {0}".format(a, b)`) and repetition (`"{0}-{0}".format(a)`) work. A new
+`parse_format_placeholders` classifies the string as all-automatic or
+all-positional (Python forbids mixing the two); for positional it validates
+every index is in range *and* every argument is referenced (Rust's `format!`
+rejects unused positional args). `{name}` / `{:spec}` remain deferred. rustc
+round-trip `format_positional.py` (cross-checked vs `python3`): `swap("x","y")
+-> "y x"`, `dup(7) -> "7-7"`, `seq("a","b") -> "a and b"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.113] — 2026-06-13
 
 Tranche-2 slice PMAT-502ca — **`enumerate(xs, start)`** (2-arg).

@@ -4180,18 +4180,45 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 if attr.attr.as_str() == "format" && call.keywords.is_empty() {
                     if let ast::Expr::Constant(c) = attr.value.as_ref() {
                         if let ast::Constant::Str(fmt) = &c.value {
-                            let n = count_simple_placeholders(fmt).ok_or_else(|| {
+                            // PMAT-502cb: accept automatic `{}` and positional
+                            // `{N}` (both re-emitted verbatim — Rust shares the
+                            // syntax). `{name}`/`{:spec}`/mixed are rejected.
+                            let nargs = call.args.len();
+                            match parse_format_placeholders(fmt).ok_or_else(|| {
                                 FrontendError::Lower(format!(
-                                    "function `{}` uses str.format with non-sequential placeholders (`{{0}}`/`{{name}}`/`{{:spec}}`) — v0.2.0 supports only sequential `{{}}`",
+                                    "function `{}` uses str.format with unsupported placeholders (`{{name}}`/`{{:spec}}`/mixed `{{}}`+`{{0}}`) — v0.2.0 supports `{{}}` or `{{N}}`",
                                     ctx.fn_name
                                 ))
-                            })?;
-                            if n != call.args.len() {
-                                return Err(FrontendError::Lower(format!(
-                                    "function `{}` calls str.format with {n} `{{}}` placeholder(s) but {} arg(s)",
-                                    ctx.fn_name,
-                                    call.args.len()
-                                )));
+                            })? {
+                                FmtPlaceholders::Sequential(n) => {
+                                    if n != nargs {
+                                        return Err(FrontendError::Lower(format!(
+                                            "function `{}` calls str.format with {n} `{{}}` placeholder(s) but {nargs} arg(s)",
+                                            ctx.fn_name
+                                        )));
+                                    }
+                                }
+                                FmtPlaceholders::Positional(indices) => {
+                                    // Rust's `format!` requires every positional
+                                    // arg be referenced and every index be in
+                                    // range — validate both.
+                                    if let Some(&max) = indices.iter().max() {
+                                        if max >= nargs {
+                                            return Err(FrontendError::Lower(format!(
+                                                "function `{}` uses str.format placeholder `{{{max}}}` but only {nargs} arg(s) were given",
+                                                ctx.fn_name
+                                            )));
+                                        }
+                                    }
+                                    for k in 0..nargs {
+                                        if !indices.contains(&k) {
+                                            return Err(FrontendError::Lower(format!(
+                                                "function `{}` calls str.format with {nargs} arg(s) but never references `{{{k}}}` — Rust's format! requires every positional argument be used",
+                                                ctx.fn_name
+                                            )));
+                                        }
+                                    }
+                                }
                             }
                             let mut args = Vec::with_capacity(call.args.len());
                             for a in &call.args {
@@ -5734,20 +5761,50 @@ fn num_builtin_op(name: &str) -> Option<(NumBuiltinOp, usize)> {
 /// Returns `None` if the template uses an unsupported field — an indexed
 /// (`{0}`), named (`{name}`), or spec'd (`{:.2f}`) placeholder, or an
 /// unmatched `{` / `}`. Braces are ASCII, so byte-walking is UTF-8-safe.
-fn count_simple_placeholders(fmt: &str) -> Option<usize> {
+/// PMAT-502cb: the placeholder shape of a `str.format` format string.
+enum FmtPlaceholders {
+    /// All-automatic `{}` placeholders — the `usize` is the count.
+    Sequential(usize),
+    /// All-positional `{N}` placeholders — the indices in order of appearance.
+    Positional(Vec<usize>),
+}
+
+/// PMAT-502bh/cb: classify a `str.format` format string. Returns `None` for
+/// `{name}` / `{:spec}` / lone braces / a mix of `{}` and `{N}` (Python
+/// forbids switching between automatic and manual field numbering). `{{`/`}}`
+/// are brace escapes. Rust's `format!` accepts the same `{}` and `{N}`
+/// syntaxes verbatim, so the format string is re-emitted unchanged.
+fn parse_format_placeholders(fmt: &str) -> Option<FmtPlaceholders> {
     let b = fmt.as_bytes();
-    let mut count = 0usize;
     let mut i = 0;
+    let mut seq_count = 0usize;
+    let mut indices: Vec<usize> = Vec::new();
+    let mut saw_seq = false;
+    let mut saw_pos = false;
     while i < b.len() {
         match b[i] {
             b'{' => {
                 if i + 1 < b.len() && b[i + 1] == b'{' {
                     i += 2; // `{{` escape
                 } else if i + 1 < b.len() && b[i + 1] == b'}' {
-                    count += 1;
-                    i += 2; // sequential `{}`
+                    saw_seq = true;
+                    seq_count += 1;
+                    i += 2; // automatic `{}`
                 } else {
-                    return None; // `{0}` / `{name}` / `{:spec}` / lone `{`
+                    // Try to parse a positional `{N}`.
+                    let start = i + 1;
+                    let mut j = start;
+                    while j < b.len() && b[j].is_ascii_digit() {
+                        j += 1;
+                    }
+                    if j > start && j < b.len() && b[j] == b'}' {
+                        let idx: usize = fmt[start..j].parse().ok()?;
+                        saw_pos = true;
+                        indices.push(idx);
+                        i = j + 1;
+                    } else {
+                        return None; // `{name}` / `{:spec}` / lone `{`
+                    }
                 }
             }
             b'}' => {
@@ -5760,7 +5817,14 @@ fn count_simple_placeholders(fmt: &str) -> Option<usize> {
             _ => i += 1,
         }
     }
-    Some(count)
+    if saw_seq && saw_pos {
+        return None; // Python forbids mixing `{}` and `{N}`
+    }
+    if saw_pos {
+        Some(FmtPlaceholders::Positional(indices))
+    } else {
+        Some(FmtPlaceholders::Sequential(seq_count))
+    }
 }
 
 fn str_method_op(name: &str) -> Option<StrMethodOp> {

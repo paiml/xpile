@@ -1066,6 +1066,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "enumerate(xs, start) (2-arg) was unrecognised — arity_ok required exactly 1 arg, so it fell through to the generic for-loop which rejected the i,v tuple target ('non-Name for target'). FIX: PairIterKind::Enumerate changed from a unit variant to Enumerate { start: i64 }. Frontend accepts call.args.len() == 1 || 2 for enumerate; the optional 2nd arg must be an ast::Constant::Int literal (parsed to i64; non-int/non-literal deferred with precise errors), default start 0. Codegen rust/ruchy: the enumerate map offsets the index — start==0 keeps (__i as i64, __e); else (__i as i64 + {start}i64, __e). enumerate(xs) (no start) unchanged. Lean unaffected (refuses ForEachPair wholesale). 3 PairIterKind::Enumerate sites updated (rust/ruchy codegen + frontend construction). rustc round-trip enumerate_start.py (cross-checked vs python3): weighted([10,20,30])=140 (enumerate(_,1): 1*10+2*20+3*30), last_index([5,5,5])=12 (enumerate(_,10): 10,11,12). FREE CI. SHIPPED v0.1.113."
+- id: PMAT-502CB
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502cb: [Tranche2] str.format positional {N} placeholders'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "str.format previously accepted only automatic {} placeholders (count_simple_placeholders). FRONTEND-ONLY change: replaced count_simple_placeholders with parse_format_placeholders -> Option<FmtPlaceholders::{Sequential(usize), Positional(Vec<usize>)}>. Accepts all-automatic {} (count must == nargs) OR all-positional {N} (mixing the two is rejected, matching Python's 'cannot switch from automatic to manual field numbering'). For positional: validate every index < nargs AND every arg index 0..nargs is referenced (Rust's format! errors on an unused positional arg, unlike Python which silently ignores extras). {name}/{:spec}/lone-brace still rejected. The Expr::StrFormat codegen already re-emits fmt verbatim via {fmt:?}, and Rust format! shares the {} and {N} syntaxes, so NO codegen change. Reorder ({1} {0}) + repeat ({0}-{0}) work. rustc round-trip format_positional.py (cross-checked vs python3): swap('x','y')='y x', dup(7)='7-7', seq('a','b')='a and b'. FREE CI. SHIPPED v0.1.114."
 - id: PMAT-465
   github_issue: 496
   item_type: task
