@@ -153,7 +153,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-484: [Track4] Lift compile_targets.via.role to structured YAML in PTX contract + in-tree validator (free CI)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -174,7 +174,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-486: [Track4] DiffExecEngine trait + Option<Arc<dyn>> hook in MultiEmitterBackend; NoopEngine preserves NotRun (free CI)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -1822,6 +1822,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "FINAL R6 sub-slice — closes the DICT HALF of audit §7.3 'every construct under contract' falsification. With C-C-INT-ARITH (475b/v0.1.196), §7.3 is RESTORED TO TRUE: every emitted construct's contract citation resolves to an on-disk YAML + Lean theorem. AUTHORED: contracts/xlate-py-dict-to-hashmap-v1.yaml — Layer-2 translation kernel contract (dict sibling of C-XLATE-PY-LIST-TO-VEC). Python dict[K,V] homogeneous → Rust std::collections::HashMap<K_rust,V_rust>. ONE depth-1 Diamond eqn dict_to_hashmap_structure_preserved_diamond combining entry-sequence preservation + cardinality preservation (lowering = identity on the abstract finite map K→V). proof_obligations(2), falsification_tests(2, bound to live dict_counts_emitted_rust_returns_hashmap e2e test), kani_harnesses(2 inline: HashMap<u8,u8> insert/get roundtrip + reinsert-overwrites-len-1), qa_gate. contracts/lean/XlatePyDictToHashmap.lean — models PyDict+RustHashMap as entry lists, lowering as identity → both conjuncts rfl (Bronze). Followed the 475b authoring recipe exactly (kind:kernel needs proof_obligations+kani_harnesses; falsification_tests>=proof_obligations; quoted refs with inner colons; lean_theorem resolves to theorem in lean_file; qa_gate.required_tests real #[test]s; top-level inline kani harnesses avoid the file-resolution validator). SECOND contract via the grandfathered gate → xpile diamond now 15 contracts, both new ones depth-1, depth-2+ still grandfathered 13. pv lint 0 errors; diamond_coverage(26)/refinement_proofs(3)/qa_gate(3)/kani(3)/workspace/fmt/clippy green. FREE CI. SHIPPED v0.1.197. **R6/PMAT-475 COMPLETE: 475a grandfather + 475b C-C-INT-ARITH + 475c C-XLATE-PY-DICT-TO-HASHMAP. The entire R-table (R1-R10) is now closed.** NEXT: Track 4 (PMAT-481..486 free-CI offline PTX/WGSL gates) OR Tranche-2 capability gaps OR PMAT-485 nightly emit job."
+- id: PMAT-502FE
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502fe: [Tranche2 correctness] reject tuple(<iterable>) instead of silent miscompile'
+  status: done
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "`tuple(xs)` fell through the ctx-aware Call arm to a generic call emit → undefined `tuple(xs)` Rust → rustc FAIL = SILENT MISCOMPILE (transpile succeeds, compile fails) = violation of the central transpile-success⟹valid-Rust guarantee. Rust tuples are FIXED-ARITY so variable-length tuple(<iterable>) has no Rust target. FIX: intercept `tuple(...)` in lower_expr_in_ctx_inner Call arm (alongside list/set/dict conversion arms, after the empty-constructor block) → clean FrontendError::Lower naming the fixed-arity reason + pointing to `(a,b)` literal (Type::Tuple, UNAFFECTED) or keeping a list. NOTE: the `tuple[T0,T1]` TYPE-ANNOTATION parser (parse_type_annotation line ~1162) is unrelated and untouched. e2e rejection test tuple_call_is_rejected_not_miscompiled (run_xpile asserts !success + stderr names 'tuple(...)' + 'fixed-arity'). Also corrected stale roadmap statuses: PMAT-484 (structured via_roles + contract_via_roles.rs validator) + PMAT-486 (DiffExecEngine trait + Option<Arc<dyn>> hook + NoopEngine) were already implemented → marked done. FREE CI. SHIPPED v0.1.198 (e2e 259→260)."
 - id: PMAT-465
   github_issue: 496
   item_type: task
