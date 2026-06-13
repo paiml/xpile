@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.210] — 2026-06-13
+
+Classes-epic slice PMAT-506j — **dataclass `@property`** (read-only computed
+attributes).
+
+- A class `@property` lowers to a read-only `&self` method (decorator stripped);
+  a bare attribute read `obj.prop` (no parens) lowers to a no-arg
+  `Expr::MethodCall` (`(obj).prop()`) — **no new IR**. Properties are usable on
+  `self` from another method too.
+- A new `struct_properties` registry (per-struct property names) is built in the
+  pre-pass and threaded through the ctx like `struct_field_defaults`; the
+  property's return type lives in `struct_methods`. **Only registered properties
+  auto-call** — a bare access to a non-property method stays a clean error,
+  upholding "transpile-success ⟹ valid Rust". Self-mutation in a property is
+  rejected (read-only).
+- New e2e fixture `dataclass_property.py` (rustc round-trip cross-checked vs
+  python3 — area=12, perimeter=14, describe=26). e2e 272 → 273.
+
 ## [0.1.209] — 2026-06-13
 
 Classes-epic slice PMAT-506i — **augmented struct field assignment**
