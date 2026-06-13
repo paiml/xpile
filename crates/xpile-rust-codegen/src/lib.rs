@@ -96,7 +96,11 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                 out.push_str(";\n");
             }
             // PMAT-505a (classes epic, first cut): dataclass → derived struct.
-            Item::Struct { name, fields } => {
+            Item::Struct {
+                name,
+                fields,
+                methods,
+            } => {
                 out.push_str("#[derive(Clone, Debug, PartialEq)]\n");
                 writeln!(out, "pub struct {name} {{")?;
                 for (field, ty) in fields {
@@ -105,6 +109,14 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                     out.push_str(",\n");
                 }
                 out.push_str("}\n");
+                // PMAT-506d: instance methods → an `impl` block.
+                if !methods.is_empty() {
+                    writeln!(out, "impl {name} {{")?;
+                    for m in methods {
+                        emit_function(&mut out, m)?;
+                    }
+                    out.push_str("}\n");
+                }
             }
         }
     }
@@ -669,6 +681,12 @@ fn emit_stmt_indented(
 }
 
 fn emit_param(out: &mut String, p: &Param) -> Result<(), CodegenError> {
+    // PMAT-506d: a method's `self` receiver emits as `&self` (read-only first
+    // cut) — never `self: StructName`.
+    if p.name == "self" {
+        out.push_str("&self");
+        return Ok(());
+    }
     // PMAT-460: `mut name: T` for params mutated in-place (currently
     // only via xs.append(v)). Required for Rust to type-check the
     // emitted `name.push(v)`.
@@ -1842,6 +1860,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push('(');
             emit_expr(out, obj, mode)?;
             write!(out, ").{field}")?;
+        }
+        // PMAT-506d: struct method call `(obj).method(args)`.
+        Expr::MethodCall { obj, method, args } => {
+            out.push('(');
+            emit_expr(out, obj, mode)?;
+            write!(out, ").{method}(")?;
+            for (i, a) in args.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                emit_expr(out, a, mode)?;
+            }
+            out.push(')');
         }
         // PMAT-503b: `try: return <body> except: return <handler>` → catch the
         // panics xpile raises for Python exceptions via `catch_unwind`.

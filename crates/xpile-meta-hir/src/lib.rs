@@ -65,6 +65,12 @@ pub enum Item {
     Struct {
         name: String,
         fields: Vec<(String, Type)>,
+        /// PMAT-506d (classes epic): instance methods → an `impl` block. Each is
+        /// a [`Function`] whose first param is `self` (typed [`Type::Struct`] of
+        /// this struct). Rust/Ruchy emit `impl Name { pub fn m(&self, …) … }`
+        /// (the `self` param emits as `&self`); Lean refuses. First cut:
+        /// read-only `&self` methods (self-mutating ones are rejected upstream).
+        methods: Vec<Function>,
     },
 }
 
@@ -404,6 +410,9 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // a field read does not by itself.
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_has_int_arith(v)),
         Expr::FieldAccess { obj, .. } => expr_has_int_arith(obj),
+        Expr::MethodCall { obj, args, .. } => {
+            expr_has_int_arith(obj) || args.iter().any(expr_has_int_arith)
+        }
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -1366,6 +1375,14 @@ pub enum Expr {
     /// Ruchy emit `(<obj>).<field>`; Lean refuses. Types as the field's type
     /// (looked up in the struct registry at lowering time).
     FieldAccess { obj: Box<Expr>, field: String },
+    /// PMAT-506d (classes epic): struct method call — Python `obj.method(args)`.
+    /// Rust/Ruchy emit `(<obj>).<method>(<args>)`; Lean refuses. Types as the
+    /// method's return type (from the struct-method registry).
+    MethodCall {
+        obj: Box<Expr>,
+        method: String,
+        args: Vec<Expr>,
+    },
     /// Tuple literal — Python `(a, b)` / multiple-return `return a, b`.
     /// PMAT-494 (sprint). Elements may be heterogeneous (unlike
     /// [`Expr::ListLit`]). Rust/Ruchy emit `(e0, e1, ...)`; Lean refuses
