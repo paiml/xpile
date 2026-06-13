@@ -3933,8 +3933,13 @@ fn infer_type(e: &Expr) -> Type {
             // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
             StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
             StrMethodOp::Find | StrMethodOp::Count | StrMethodOp::StrIndex => Type::I64,
-            // PMAT-502ag: isdigit/isalpha/isspace → Bool.
-            StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace => Type::Bool,
+            // PMAT-502ag/502di: isdigit/isalpha/isspace/isalnum/isupper/islower → Bool.
+            StrMethodOp::IsDigit
+            | StrMethodOp::IsAlpha
+            | StrMethodOp::IsSpace
+            | StrMethodOp::IsAlnum
+            | StrMethodOp::IsUpper
+            | StrMethodOp::IsLower => Type::Bool,
             // PMAT-502ah: capitalize → Str. PMAT-502aj: title → Str.
             StrMethodOp::Capitalize | StrMethodOp::Title => Type::Str,
             // PMAT-502aw: rjust/ljust → Str.
@@ -4202,8 +4207,13 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
             StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
             StrMethodOp::Find | StrMethodOp::Count | StrMethodOp::StrIndex => Type::I64,
-            // PMAT-502ag: isdigit/isalpha/isspace → Bool.
-            StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace => Type::Bool,
+            // PMAT-502ag/502di: isdigit/isalpha/isspace/isalnum/isupper/islower → Bool.
+            StrMethodOp::IsDigit
+            | StrMethodOp::IsAlpha
+            | StrMethodOp::IsSpace
+            | StrMethodOp::IsAlnum
+            | StrMethodOp::IsUpper
+            | StrMethodOp::IsLower => Type::Bool,
             // PMAT-502ah: capitalize → Str. PMAT-502aj: title → Str.
             StrMethodOp::Capitalize | StrMethodOp::Title => Type::Str,
             // PMAT-502aw: rjust/ljust → Str.
@@ -6666,6 +6676,10 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
         "isdigit" => Some(StrMethodOp::IsDigit),
         "isalpha" => Some(StrMethodOp::IsAlpha),
         "isspace" => Some(StrMethodOp::IsSpace),
+        // PMAT-502di: more classification predicates (0-arg).
+        "isalnum" => Some(StrMethodOp::IsAlnum),
+        "isupper" => Some(StrMethodOp::IsUpper),
+        "islower" => Some(StrMethodOp::IsLower),
         // PMAT-502ah: capitalize (0-arg).
         "capitalize" => Some(StrMethodOp::Capitalize),
         "title" => Some(StrMethodOp::Title),
@@ -6700,8 +6714,13 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         // PMAT-502l: lstrip/rstrip take no args; find/count take one.
         StrMethodOp::LStrip | StrMethodOp::RStrip => 0,
         StrMethodOp::Find | StrMethodOp::Count | StrMethodOp::StrIndex => 1,
-        // PMAT-502ag: classification predicates take no args.
-        StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace => 0,
+        // PMAT-502ag/502di: classification predicates take no args.
+        StrMethodOp::IsDigit
+        | StrMethodOp::IsAlpha
+        | StrMethodOp::IsSpace
+        | StrMethodOp::IsAlnum
+        | StrMethodOp::IsUpper
+        | StrMethodOp::IsLower => 0,
         // PMAT-502ah: capitalize takes no args.
         StrMethodOp::Capitalize | StrMethodOp::Title => 0,
         // PMAT-502aw: rjust/ljust take one width arg.

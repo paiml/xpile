@@ -1363,6 +1363,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "min(xs, default=d) / max(xs, default=d) (the empty-safe kwarg) was REJECTED ('passes keyword args to unknown function min' — only key= was handled, default= made kwargs_ok=false -> fell to generic-call error). FIX: Expr::ListMinMax gains default: Option<Box<Expr>>. Frontend: the min/max-over-list kwarg loop now also recognizes default= (lowers the value, stores it). Codegen rust/ruchy: when default present, the empty case emits .unwrap_or(<default>) for the int-Ord and key branches; the FLOAT branch switches from the non-panicking ±∞ fold to .reduce(f64::min/max).unwrap_or(<default>) (so an empty float list returns the default, not ±∞). No-default behavior unchanged (int .unwrap() panic, float ±∞ fold). expr_has_int_arith + lean collect_idents recurse default; both inferers + lean-refuse use `..` (unaffected). rustc round-trip minmax_default.py (cross-checked vs python3): min_or_zero([3,1,2])=1/([])=0, max_or_neg1([3,1,2])=3/([])=-1, fmin_or([2.5,1.5])=1.5/([])=9.0. FREE CI. SHIPPED v0.1.146. NOTE: only the 1-arg-over-list min/max form takes default= (the 2+-arg variadic NumBuiltin form doesn't, matching Python). NEXT: str.partition/splitlines/rsplit OR decompose try/except->Result (PMAT-503b epic)."
+- id: PMAT-502DI
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502di: [Tranche2] str.isupper/islower/isalnum classification predicates'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "Three more 0-arg str classification predicates (-> Bool), extending the isdigit/isalpha/isspace family (v0.1.65). New StrMethodOp::IsAlnum/IsUpper/IsLower. isalnum reuses the empty-guarded all-chars shape: (!(s).is_empty() && (s).chars().all(|c| c.is_alphanumeric())). isupper/islower need Python's CASED-CHAR rule (NOT the simple all-chars form, since 'A1'.isupper()==True though '1' isn't cased): ((s).chars().any(|c| c.is_uppercase()) && !(s).chars().any(|c| c.is_lowercase())) and the lowercase mirror — emitted as a NEW special-case block before the recv-once match (recv used twice; pure-expr so sound), with unreachable! arms added in both rust+ruchy recv-once matches. str_method_op + str_method_arity(0) + both inferers (Bool) updated. Lean refuses StrMethod wholesale (no per-variant change). rustc round-trip str_case_predicates.py (cross-checked vs python3, incl. empty + uncased+digit edge cases): 'ABC'/'A1' isupper=true, 'Abc'/'123'/'' isupper=false, 'abc' islower=true, 'abc123' isalnum=true, 'abc!'/'' isalnum=false. FREE CI. SHIPPED v0.1.147. str-method family now ~29. NEXT: str.partition (3-tuple via split_once) / splitlines (.lines(), exotic-sep divergence) / rsplit; OR decompose try/except->Result (PMAT-503b)."
 - id: PMAT-465
   github_issue: 496
   item_type: task
