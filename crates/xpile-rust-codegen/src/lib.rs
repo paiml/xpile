@@ -18,6 +18,27 @@ use xpile_meta_hir::{
     NumBuiltinOp, Param, SetOp, SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
+/// PMAT-502by: escape a string for embedding inside a `format!`/`println!`
+/// format-string literal — `{`/`}` are doubled (format escapes), `"`/`\`
+/// are backslash-escaped (Rust string-literal escapes), and the common
+/// control chars are emitted as `\n`/`\t`/`\r`. Used for `print(sep=…, end=…)`.
+fn escape_format_literal(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '{' => out.push_str("{{"),
+            '}' => out.push_str("}}"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            '\r' => out.push_str("\\r"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// PMAT-477 (R8): the Rust infix symbol for a float arithmetic op.
 fn float_op_sym(op: FloatOp) -> &'static str {
     match op {
@@ -123,7 +144,7 @@ fn function_bigint_mode(f: &Function) -> bool {
             // PMAT-502bk: loop-control statements carry no binding.
             Stmt::Continue | Stmt::Break => false,
             // PMAT-502bw: print() introduces no binding.
-            Stmt::Print(_) => false,
+            Stmt::Print { .. } => false,
             Stmt::While { body, .. }
             | Stmt::ForEach { body, .. }
             | Stmt::ForEachPair { body, .. } => body.iter().any(stmt_has_bigint),
@@ -263,16 +284,26 @@ fn emit_stmt_indented(
             writeln!(out, "{indent}break;")?;
             Ok(())
         }
-        // PMAT-502bw: `print(a, b, …)` → `println!("{} {} …", a, b, …);`
-        // (Python's single-space separator + trailing newline). Bare
-        // `print()` → `println!();`.
-        Stmt::Print(args) => {
-            if args.is_empty() {
-                writeln!(out, "{indent}println!();")?;
+        // PMAT-502bw/by: `print(a, b, …, sep=…, end=…)`. Args are joined by
+        // `sep` in the format string; `end == "\n"` (Python default) uses
+        // `println!` (which appends the newline), any other `end` uses
+        // `print!` with `end` appended literally. Bare `print()` →
+        // `println!();` (or `print!("…end…")`).
+        Stmt::Print { args, sep, end } => {
+            let macro_name = if end == "\n" { "println!" } else { "print!" };
+            let sep_esc = escape_format_literal(sep);
+            let mut fmt = (0..args.len())
+                .map(|_| "{}")
+                .collect::<Vec<_>>()
+                .join(&sep_esc);
+            if end != "\n" {
+                fmt.push_str(&escape_format_literal(end));
+            }
+            if args.is_empty() && fmt.is_empty() {
+                writeln!(out, "{indent}{macro_name}();")?;
                 return Ok(());
             }
-            let fmt = vec!["{}"; args.len()].join(" ");
-            write!(out, "{indent}println!(\"{fmt}\"")?;
+            write!(out, "{indent}{macro_name}(\"{fmt}\"")?;
             for a in args {
                 out.push_str(", ");
                 emit_expr(out, a, mode)?;

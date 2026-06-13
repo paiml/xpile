@@ -1346,11 +1346,44 @@ fn lower_print_stmt(ctx: &mut LoweringCtx, e: &ast::StmtExpr) -> Result<Stmt, Fr
     let ast::Expr::Call(call) = e.value.as_ref() else {
         unreachable!("is_print_call gated this");
     };
-    if !call.keywords.is_empty() {
-        return Err(FrontendError::Lower(format!(
-            "function `{}` calls `print(...)` with keyword args (`sep=`/`end=`/`file=`) — deferred at v0.2.0 (positional int/str args only)",
-            ctx.fn_name
-        )));
+    // PMAT-502by: `sep=`/`end=` keywords (string literals only). `file=`
+    // and any other keyword are deferred. Defaults match Python.
+    let mut sep = " ".to_string();
+    let mut end = "\n".to_string();
+    for kw in &call.keywords {
+        let Some(name) = kw.arg.as_ref().map(|a| a.as_str()) else {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `print(**kwargs)` — `**` keyword unpacking is not supported",
+                ctx.fn_name
+            )));
+        };
+        match name {
+            "sep" | "end" => {
+                let ast::Expr::Constant(c) = &kw.value else {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` calls `print(..., {name}=<expr>)` with a non-literal — only a string literal is supported at v0.2.0",
+                        ctx.fn_name
+                    )));
+                };
+                let ast::Constant::Str(s) = &c.value else {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` calls `print(..., {name}=<non-str>)` — only a string literal is supported at v0.2.0",
+                        ctx.fn_name
+                    )));
+                };
+                if name == "sep" {
+                    sep = s.to_string();
+                } else {
+                    end = s.to_string();
+                }
+            }
+            other => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` calls `print(..., {other}=…)` — only `sep=`/`end=` string-literal kwargs are supported (`file=` deferred)",
+                    ctx.fn_name
+                )));
+            }
+        }
     }
     let mut args = Vec::with_capacity(call.args.len());
     for a in &call.args {
@@ -1379,7 +1412,7 @@ fn lower_print_stmt(ctx: &mut LoweringCtx, e: &ast::StmtExpr) -> Result<Stmt, Fr
             }
         }
     }
-    Ok(Stmt::Print(args))
+    Ok(Stmt::Print { args, sep, end })
 }
 
 fn lower_expr_stmt_as_cmd(ctx: &LoweringCtx, e: ast::StmtExpr) -> Result<Stmt, FrontendError> {

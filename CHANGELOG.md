@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.111] — 2026-06-13
+
+Tranche-2 slice PMAT-502by — **`print(..., sep=…, end=…)`** keyword args.
+
+`Stmt::Print` now carries `sep`/`end` (string literals; defaults `" "` /
+`"\n"`). The args are joined by `sep` in the format string; when `end ==
+"\n"` (Python's default) the backends emit `println!` (which appends the
+newline), and for any other terminator (e.g. `end=""`) they emit `print!`
+with `end` appended literally — so `print("x", end="")` concatenates onto the
+next `print`. A new `escape_format_literal` helper escapes `sep`/`end` for the
+format-string literal (`{`/`}` doubled, `"`/`\` and control chars escaped).
+Non-literal `sep`/`end` and `file=` are deferred with a precise error. rustc
+round-trip `print_sep_end.py` produces **byte-identical stdout to `python3`**
+(`1, 2` / `loading...done` / `1 | 2`).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.110] — 2026-06-13
 
 Tranche-2 slice PMAT-502bx — **`print` of `bool` / `float` args**.

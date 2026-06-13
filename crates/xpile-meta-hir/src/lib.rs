@@ -131,7 +131,7 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         Stmt::Continue | Stmt::Break => false,
         // PMAT-502bw: `print(a, b, …)` — recurse into the argument exprs
         // (an arithmetic-using arg, e.g. `print(a + b)`, propagates).
-        Stmt::Print(args) => args.iter().any(expr_has_int_arith),
+        Stmt::Print { args, .. } => args.iter().any(expr_has_int_arith),
         // PMAT-458: for-each over a collection. The `iter` and `body`
         // are recursed; an arithmetic-using collection (e.g.,
         // `for x in [a+b, c*d]:`) propagates the citation requirement.
@@ -450,16 +450,22 @@ pub enum Stmt {
     /// `break;` — Python `break`. PMAT-502bk (Tranche 2). Exits the
     /// nearest loop. Rust/Ruchy emit `break;` (always safe). Lean refuses.
     Break,
-    /// `print(a, b, …)` — Python's `print` builtin. PMAT-502bw (Tranche 2).
-    /// Rust/Ruchy emit `println!("{} {} …", a, b, …);` — Python's default
-    /// single-space separator and trailing newline. An empty `args` (bare
-    /// `print()`) emits `println!();`. The frontend admits only `I64`/`Str`
-    /// (incl. f-strings, which lower to a `String`) arguments — `bool`
-    /// (Python prints `True`/`False`, not `true`/`false`), `float`
-    /// (Python's `2.0` vs Rust's `2`), and the `sep=`/`end=`/`file=` kwargs
-    /// are deferred with a precise error. Lean refuses (pure `def`s have no
-    /// `IO`).
-    Print(Vec<Expr>),
+    /// `print(a, b, …, sep=…, end=…)` — Python's `print` builtin.
+    /// PMAT-502bw (Tranche 2); PMAT-502by added `sep`/`end`. Rust/Ruchy
+    /// build a format string joining the args with `sep` and either use
+    /// `println!` (when `end == "\n"`, the Python default) or `print!` with
+    /// `end` appended (any other terminator, e.g. `end=""`). An empty `args`
+    /// (bare `print()`) emits `println!();` (or `print!("…end…")`).
+    /// PMAT-502bx: the frontend admits `I64`/`Str` (incl. f-strings →
+    /// `String`) directly, wraps `F64` via `str(float)` and `Bool` via the
+    /// `str(bool)` desugar, so Python's `2.0`/`True` formatting is matched;
+    /// `sep`/`end` must be string literals (non-literal + `file=` deferred).
+    /// Lean refuses (pure `def`s have no `IO`).
+    Print {
+        args: Vec<Expr>,
+        sep: String,
+        end: String,
+    },
     /// `let [mut] name: ty = value;` — first binding of `name` in this
     /// scope. `mutable` is set by the frontend when the same name is
     /// reassigned later in the function (including inside a [`While`]
