@@ -1871,6 +1871,18 @@ pub enum StrMethodOp {
     /// `"  ab "`, not Rust `{:^}`'s right-bias). Already-wide → unchanged.
     /// Block-form codegen.
     Center,
+    /// `.partition(sep)` → the 3-tuple `(before, sep, after)` split at the
+    /// **first** `sep` (**`tuple[str, str, str]`**, 1 arg). PMAT-502dj. Emits
+    /// `match (recv).split_once(&(sep)[..]) { Some((__a, __b)) =>
+    /// (__a.to_string(), (sep).to_string(), __b.to_string()), None =>
+    /// ((recv).to_string(), String::new(), String::new()) }` — when `sep` is
+    /// absent Python returns `(s, "", "")`. Block-form codegen.
+    Partition,
+    /// `.rpartition(sep)` → the 3-tuple split at the **last** `sep`
+    /// (**`tuple[str, str, str]`**, 1 arg). PMAT-502dj. Like
+    /// [`StrMethodOp::Partition`] but via `rsplit_once`; the absent case
+    /// returns `("", "", s)` (empty parts **first**, unlike `partition`).
+    RPartition,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

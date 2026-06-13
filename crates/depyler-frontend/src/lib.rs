@@ -3952,6 +3952,10 @@ fn infer_type(e: &Expr) -> Type {
             StrMethodOp::ZFill => Type::Str,
             // PMAT-502cu: center → Str.
             StrMethodOp::Center => Type::Str,
+            // PMAT-502dj: partition/rpartition → (str, str, str).
+            StrMethodOp::Partition | StrMethodOp::RPartition => {
+                Type::Tuple(vec![Type::Str, Type::Str, Type::Str])
+            }
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
         // type from the first element (frontend ensures homogeneity
@@ -4226,6 +4230,10 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             StrMethodOp::ZFill => Type::Str,
             // PMAT-502cu: center → Str.
             StrMethodOp::Center => Type::Str,
+            // PMAT-502dj: partition/rpartition → (str, str, str).
+            StrMethodOp::Partition | StrMethodOp::RPartition => {
+                Type::Tuple(vec![Type::Str, Type::Str, Type::Str])
+            }
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
         // shape as the context-free `infer_type` arm.
@@ -6680,6 +6688,9 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
         "isalnum" => Some(StrMethodOp::IsAlnum),
         "isupper" => Some(StrMethodOp::IsUpper),
         "islower" => Some(StrMethodOp::IsLower),
+        // PMAT-502dj: partition/rpartition (1-arg → 3-tuple).
+        "partition" => Some(StrMethodOp::Partition),
+        "rpartition" => Some(StrMethodOp::RPartition),
         // PMAT-502ah: capitalize (0-arg).
         "capitalize" => Some(StrMethodOp::Capitalize),
         "title" => Some(StrMethodOp::Title),
@@ -6733,6 +6744,8 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         StrMethodOp::ZFill => 1,
         // PMAT-502cu: center takes one width arg.
         StrMethodOp::Center => 1,
+        // PMAT-502dj: partition/rpartition take one separator arg.
+        StrMethodOp::Partition | StrMethodOp::RPartition => 1,
     }
 }
 

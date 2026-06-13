@@ -1372,6 +1372,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "Three more 0-arg str classification predicates (-> Bool), extending the isdigit/isalpha/isspace family (v0.1.65). New StrMethodOp::IsAlnum/IsUpper/IsLower. isalnum reuses the empty-guarded all-chars shape: (!(s).is_empty() && (s).chars().all(|c| c.is_alphanumeric())). isupper/islower need Python's CASED-CHAR rule (NOT the simple all-chars form, since 'A1'.isupper()==True though '1' isn't cased): ((s).chars().any(|c| c.is_uppercase()) && !(s).chars().any(|c| c.is_lowercase())) and the lowercase mirror — emitted as a NEW special-case block before the recv-once match (recv used twice; pure-expr so sound), with unreachable! arms added in both rust+ruchy recv-once matches. str_method_op + str_method_arity(0) + both inferers (Bool) updated. Lean refuses StrMethod wholesale (no per-variant change). rustc round-trip str_case_predicates.py (cross-checked vs python3, incl. empty + uncased+digit edge cases): 'ABC'/'A1' isupper=true, 'Abc'/'123'/'' isupper=false, 'abc' islower=true, 'abc123' isalnum=true, 'abc!'/'' isalnum=false. FREE CI. SHIPPED v0.1.147. str-method family now ~29. NEXT: str.partition (3-tuple via split_once) / splitlines (.lines(), exotic-sep divergence) / rsplit; OR decompose try/except->Result (PMAT-503b)."
+- id: PMAT-502DJ
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502dj: [Tranche2] str.partition/rpartition (3-tuple split)'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "str.partition(sep) / str.rpartition(sep) → the 3-tuple (before, sep, after). FIRST str method returning a tuple. New StrMethodOp::Partition/RPartition (1-arg). Both inferers: -> Type::Tuple([Str,Str,Str]) (verified 3-element tuple returns already work). Codegen rust/ruchy (block-form, recv+sep each used twice, pure-expr so sound): match (recv).split_once(&(sep)[..]) { Some((__a,__b)) => (__a.to_string(), (sep).to_string(), __b.to_string()), None => (...) }; rpartition uses rsplit_once. ABSENT-sep case DIFFERS (matching Python): partition None -> (s,'','') ; rpartition None -> ('','',s) (empty parts FIRST). unreachable! arms added in both recv-once matches; Lean refuses StrMethod wholesale. rustc round-trip str_partition.py (cross-checked vs python3): 'a.b.c'.partition('.')=('a','.','b.c'), .rpartition('.')=('a.b','.','c'), 'abc'.partition('.')=('abc','',''), 'abc'.rpartition('.')=('','','abc'). FREE CI. SHIPPED v0.1.148. str-method family ~31. NEXT: str.splitlines (.lines(), note exotic-sep divergence) / rsplit; x is None (Option); OR decompose try/except->Result (PMAT-503b epic, highest remaining structural EV — needs design pass)."
 - id: PMAT-465
   github_issue: 496
   item_type: task

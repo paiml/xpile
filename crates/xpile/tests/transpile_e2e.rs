@@ -3529,6 +3529,39 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dj (Tranche 2): `str.partition(sep)` / `.rpartition(sep)` → the
+/// 3-tuple `(before, sep, after)` (first/last split; absent-case differs).
+#[test]
+fn str_partition() {
+    let rust = xpile_transpile_to_rust("str_partition.py");
+    assert!(
+        rust.contains(".split_once(&(sep)[..])") && rust.contains(".rsplit_once(&(sep)[..])"),
+        "partition/rpartition:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // partition/rpartition; cross-checked vs python3.
+    assert_eq!(
+        part("a.b.c".to_string(), ".".to_string()),
+        ("a".to_string(), ".".to_string(), "b.c".to_string())
+    );
+    assert_eq!(
+        rpart("a.b.c".to_string(), ".".to_string()),
+        ("a.b".to_string(), ".".to_string(), "c".to_string())
+    );
+    assert_eq!(
+        part("abc".to_string(), ".".to_string()),
+        ("abc".to_string(), String::new(), String::new())
+    );
+    assert_eq!(
+        rpart("abc".to_string(), ".".to_string()),
+        (String::new(), String::new(), "abc".to_string())
+    );
+}
+"#;
+    assert_rustc_runs("str_partition", &rust, driver);
+}
+
 /// PMAT-502di (Tranche 2): `str.isupper()` / `.islower()` / `.isalnum()`
 /// classification predicates → Bool.
 #[test]
