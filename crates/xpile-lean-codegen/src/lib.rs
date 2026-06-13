@@ -573,6 +573,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         }
         // PMAT-502cw: set(xs) — recurse into the list expr.
         Expr::SetFromList { list } => collect_idents(list, out),
+        // PMAT-502dk: dict(pairs) — recurse into the pairs list expr.
+        Expr::DictFromPairs { pairs } => collect_idents(pairs, out),
         // PMAT-502ab: filter — recurse into the list and predicate body.
         Expr::Filter { list, lambda } => {
             collect_idents(list, out);
@@ -1307,6 +1309,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::SetFromList { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python set(xs) is not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502dk: dict(pairs) deferred in the Lean lane.
+        Expr::DictFromPairs { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python dict(pairs) is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

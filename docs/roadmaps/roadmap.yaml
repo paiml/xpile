@@ -1381,6 +1381,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "str.partition(sep) / str.rpartition(sep) → the 3-tuple (before, sep, after). FIRST str method returning a tuple. New StrMethodOp::Partition/RPartition (1-arg). Both inferers: -> Type::Tuple([Str,Str,Str]) (verified 3-element tuple returns already work). Codegen rust/ruchy (block-form, recv+sep each used twice, pure-expr so sound): match (recv).split_once(&(sep)[..]) { Some((__a,__b)) => (__a.to_string(), (sep).to_string(), __b.to_string()), None => (...) }; rpartition uses rsplit_once. ABSENT-sep case DIFFERS (matching Python): partition None -> (s,'','') ; rpartition None -> ('','',s) (empty parts FIRST). unreachable! arms added in both recv-once matches; Lean refuses StrMethod wholesale. rustc round-trip str_partition.py (cross-checked vs python3): 'a.b.c'.partition('.')=('a','.','b.c'), .rpartition('.')=('a.b','.','c'), 'abc'.partition('.')=('abc','',''), 'abc'.rpartition('.')=('','','abc'). FREE CI. SHIPPED v0.1.148. str-method family ~31. NEXT: str.splitlines (.lines(), note exotic-sep divergence) / rsplit; x is None (Option); OR decompose try/except->Result (PMAT-503b epic, highest remaining structural EV — needs design pass)."
+- id: PMAT-502DK
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502dk: [Tranche2] dict(pairs) materialization'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "dict(<list of 2-tuples>) was rejected (only empty 0-arg dict() handled). NEW Expr::DictFromPairs { pairs } (mirror of SetFromList v135). Frontend (after the set(xs) branch): dict 1-arg over a List(Tuple[K,V]) value -> DictFromPairs; non-(list-of-2-tuples) -> clear error. Codegen rust/ruchy: (pairs).iter().cloned().collect::<std::collections::HashMap<_, _>>(). Both inferers: DictFromPairs over List(Tuple[K,V]) -> Dict(K,V). expr_has_int_arith + lean collect_idents recurse pairs; lean refuses. GOOD REACH: zip(a,b)+enumerate(xs) ALREADY produce List(Tuple) so dict(zip(a,b))/dict(enumerate(xs)) work through the SAME path for free. rustc round-trip dict_from_pairs.py (cross-checked vs python3): dict([(1,2),(3,4)])[3]=4, dict(zip([1,2],[10,20]))[2]=20, dict(enumerate([100,200]))[1]=200. FREE CI. SHIPPED v0.1.149. Blast radius: new Expr variant -> expr_has_int_arith + 2 inferers + collect_idents(lean) + lean-refuse + 2 codegen emit. COLLECTION-CONSTRUCTOR family now: list()/list(range)/list(xs), set()/set(xs), dict()/dict(pairs). NEXT: str.splitlines/rsplit; x is None (Option); OR decompose try/except->Result (PMAT-503b)."
 - id: PMAT-465
   github_issue: 496
   item_type: task
