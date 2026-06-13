@@ -3786,6 +3786,39 @@ fn main() {
     assert_rustc_runs("try_except", &rust, driver);
 }
 
+/// PMAT-503c (exceptions epic): statement-position **assignment-form**
+/// `try`/`except` — `try: x = <expr> except [E]: x = <expr>` → `let x = match
+/// catch_unwind(|| <body>) { Ok(v)=>v, Err(_)=><handler> }` (reuses
+/// `Expr::TryCatch`; the closure produces the value, so no closure-mutation
+/// hazard). Covers a fresh binding (`v`) and a reassignment of an already-bound
+/// `mut` name (`base`, read inside both arms). The mutability pre-walk now
+/// descends into try arms so the reassigned name is marked `mut`. Cross-checked
+/// vs python3.
+#[test]
+fn try_except_assignment_form() {
+    let rust = xpile_transpile_to_rust("try_except_assign.py");
+    assert!(
+        rust.contains("let v") && rust.contains("catch_unwind"),
+        "fresh-binding try-assign should emit `let v = catch_unwind match`:\n{rust}"
+    );
+    assert!(
+        rust.contains("let mut base"),
+        "a reassigned try-target must be `let mut`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    let mut d = std::collections::HashMap::new();
+    d.insert(String::from("a"), 5i64);
+    assert_eq!(lookup(d.clone(), String::from("a")), 5);
+    assert_eq!(lookup(d.clone(), String::from("z")), -1);
+    assert_eq!(accumulate(vec![7, 8, 9], 1), 18);
+    assert_eq!(accumulate(vec![7, 8, 9], 50), 20);
+}
+"#;
+    assert_rustc_runs("try_except_assign", &rust, driver);
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators

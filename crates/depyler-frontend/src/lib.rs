@@ -339,6 +339,24 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                     }
                 }
             }
+            // PMAT-503c: count assignments inside `try`/`except` arms so an
+            // assignment-form try that reassigns an already-bound name marks it
+            // `mut`. The body + each handler are alternatives (only one runs),
+            // so merge them by max — which marks `mut` exactly when needed and
+            // never spuriously (a name assigned only in the try arms still
+            // counts once, so a fresh `let v = <try>` stays non-`mut`).
+            ast::Stmt::Try(try_stmt) => {
+                let mut merged = walk_counts(&try_stmt.body, in_loop);
+                for handler in &try_stmt.handlers {
+                    let ast::ExceptHandler::ExceptHandler(eh) = handler;
+                    merged = merge_branch_counts(merged, walk_counts(&eh.body, in_loop));
+                }
+                let else_counts = walk_counts(&try_stmt.orelse, in_loop);
+                let finally_counts = walk_counts(&try_stmt.finalbody, in_loop);
+                for (name, c) in merged.into_iter().chain(else_counts).chain(finally_counts) {
+                    *counts.entry(name).or_insert(0) += c;
+                }
+            }
             _ => {}
         }
     }
@@ -1331,6 +1349,11 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         // PMAT-502dr: a nested `def inner(...): return <expr>` → a closure
         // binding (`Stmt::ClosureLet`), reusing the lambda machinery.
         ast::Stmt::FunctionDef(f) => desugar_nested_fn(ctx, &f).map(|s| vec![s]),
+        // PMAT-503c (exceptions epic): statement-position assignment-form
+        // try/except — `try: x = <expr> except [E]: x = <expr>` → a `let`/assign
+        // whose value is `Expr::TryCatch` (catch_unwind). The trailing
+        // return-form try is handled separately in `lower_function_def`.
+        ast::Stmt::Try(try_stmt) => lower_assignment_try(ctx, try_stmt),
         other => Err(FrontendError::Lower(format!(
             "function `{}` contains unsupported statement: {:?} — supported: assignment, if/elif/else, while, for-in-range, assert, subprocess.run([...]), then a final `return`",
             ctx.fn_name,
@@ -3092,6 +3115,80 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
             value,
             mutable,
         })
+    }
+}
+
+/// PMAT-503c (exceptions epic): statement-position assignment-form try/except —
+/// `try: <name> = <body> except [E]: <name> = <handler>` (same target in both
+/// arms) → `let <name> = <Expr::TryCatch>` (or `<name> = …` if already bound).
+/// Reuses the PMAT-503b `TryCatch` machinery: the `catch_unwind` closure
+/// *produces the value*, so there's no closure-mutation hazard. First cut: a
+/// single `except` (catch-all; a named exception type is accepted but not
+/// matched, since Rust panics are untyped) with no bound exception name, no
+/// `else`/`finally`, and exactly one `<name> = <expr>` in each arm.
+fn lower_assignment_try(
+    ctx: &mut LoweringCtx,
+    try_stmt: ast::StmtTry,
+) -> Result<Vec<Stmt>, FrontendError> {
+    let unsupported = |ctx: &LoweringCtx| {
+        FrontendError::Lower(format!(
+            "function `{}`'s `try` is not the supported `try: x = <expr> except [E]: x = <expr>` shape (same target, single `except` without a bound name, no `else`/`finally`, one assignment per arm) — v0.2.0 first cut",
+            ctx.fn_name
+        ))
+    };
+    if !try_stmt.orelse.is_empty() || !try_stmt.finalbody.is_empty() || try_stmt.handlers.len() != 1
+    {
+        return Err(unsupported(ctx));
+    }
+    // Extract `<name> = <expr>` from a single-statement body.
+    fn single_name_assign(body: &[ast::Stmt]) -> Option<(String, &ast::Expr)> {
+        let [ast::Stmt::Assign(a)] = body else {
+            return None;
+        };
+        if a.targets.len() != 1 {
+            return None;
+        }
+        let ast::Expr::Name(n) = &a.targets[0] else {
+            return None;
+        };
+        Some((n.id.to_string(), a.value.as_ref()))
+    }
+    let Some((body_name, body_val)) = single_name_assign(&try_stmt.body) else {
+        return Err(unsupported(ctx));
+    };
+    let ast::ExceptHandler::ExceptHandler(h) = &try_stmt.handlers[0];
+    if h.name.is_some() {
+        return Err(unsupported(ctx));
+    }
+    let Some((handler_name, handler_val)) = single_name_assign(&h.body) else {
+        return Err(unsupported(ctx));
+    };
+    if body_name != handler_name {
+        return Err(FrontendError::Lower(format!(
+            "function `{}`'s try/except assigns different names (`{body_name}` vs `{handler_name}`) — both arms must assign the same target",
+            ctx.fn_name
+        )));
+    }
+    let body = lower_expr_in_ctx(ctx, body_val.clone())?;
+    let handler = lower_expr_in_ctx(ctx, handler_val.clone())?;
+    let value = Expr::TryCatch {
+        body: Box::new(body),
+        handler: Box::new(handler),
+    };
+    let ty = infer_type_in_ctx(ctx, &value);
+    let name = body_name;
+    if ctx.bound.contains(&name) {
+        Ok(vec![Stmt::Assign { name, value }])
+    } else {
+        let mutable = ctx.mutable.contains(&name);
+        ctx.bound.insert(name.clone());
+        ctx.name_types.insert(name.clone(), ty.clone());
+        Ok(vec![Stmt::Let {
+            name,
+            ty,
+            value,
+            mutable,
+        }])
     }
 }
 
