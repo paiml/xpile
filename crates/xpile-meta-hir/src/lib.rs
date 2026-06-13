@@ -1811,6 +1811,18 @@ pub enum StrMethodOp {
     /// `.isspace()` → `(!(s).is_empty() && (s).chars().all(|c| c.is_whitespace()))`
     /// (**Bool**, 0 args). PMAT-502ag.
     IsSpace,
+    /// `.isalnum()` → `(!(s).is_empty() && (s).chars().all(|c| c.is_alphanumeric()))`
+    /// (**Bool**, 0 args). PMAT-502di. Shares the empty-guard "all chars match"
+    /// shape with [`StrMethodOp::IsDigit`].
+    IsAlnum,
+    /// `.isupper()` → `((s).chars().any(|c| c.is_uppercase()) && !(s).chars()
+    /// .any(|c| c.is_lowercase()))` (**Bool**, 0 args). PMAT-502di. Python's
+    /// rule: at least one cased char AND no lowercase among the cased chars
+    /// (so `"A1".isupper()` is `True`, `"".isupper()` is `False`).
+    IsUpper,
+    /// `.islower()` → the lowercase mirror of [`StrMethodOp::IsUpper`]
+    /// (**Bool**, 0 args). PMAT-502di.
+    IsLower,
     /// `.capitalize()` → first char upper-cased, the rest lower-cased
     /// (**Str**, 0 args). PMAT-502ah. Emits a block that pops the first
     /// char (`to_uppercase`) and lower-cases the remainder; the empty

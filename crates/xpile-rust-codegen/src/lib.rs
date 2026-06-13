@@ -905,11 +905,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str(")[..])");
             } else if matches!(
                 op,
-                StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace
+                StrMethodOp::IsDigit
+                    | StrMethodOp::IsAlpha
+                    | StrMethodOp::IsSpace
+                    | StrMethodOp::IsAlnum
             ) {
-                // PMAT-502ag: `.isdigit()`/`.isalpha()`/`.isspace()` →
-                // `(!(s).is_empty() && (s).chars().all(|__c| __c.<pred>()))`.
-                // The empty guard matches Python (`"".isdigit()` is `False`).
+                // PMAT-502ag/502di: `.isdigit()`/`.isalpha()`/`.isspace()`/
+                // `.isalnum()` → `(!(s).is_empty() && (s).chars().all(|__c|
+                // __c.<pred>()))`. The empty guard matches Python.
                 out.push_str("(!(");
                 emit_expr(out, recv, mode)?;
                 out.push_str(").is_empty() && (");
@@ -918,9 +921,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str(match op {
                     StrMethodOp::IsDigit => "is_ascii_digit()",
                     StrMethodOp::IsAlpha => "is_alphabetic()",
+                    StrMethodOp::IsAlnum => "is_alphanumeric()",
                     _ => "is_whitespace()",
                 });
                 out.push_str("))");
+            } else if matches!(op, StrMethodOp::IsUpper | StrMethodOp::IsLower) {
+                // PMAT-502di: `.isupper()` → at least one cased char AND no
+                // lowercase among them: `((s).chars().any(|__c|
+                // __c.is_uppercase()) && !(s).chars().any(|__c|
+                // __c.is_lowercase()))`. `.islower()` is the mirror.
+                let (want, forbid) = if matches!(op, StrMethodOp::IsUpper) {
+                    ("is_uppercase()", "is_lowercase()")
+                } else {
+                    ("is_lowercase()", "is_uppercase()")
+                };
+                out.push_str("((");
+                emit_expr(out, recv, mode)?;
+                write!(out, ").chars().any(|__c| __c.{want}) && !(")?;
+                emit_expr(out, recv, mode)?;
+                write!(out, ").chars().any(|__c| __c.{forbid}))")?;
             } else if matches!(op, StrMethodOp::Capitalize) {
                 // PMAT-502ah: `.capitalize()` → first char upper, rest lower
                 // (empty → ""), matching Python.
@@ -1037,7 +1056,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                         out.push_str(")[..]).map(|__i| __i as i64).expect(\"xpile: ValueError: substring not found\")");
                     }
                     StrMethodOp::Join => unreachable!("Join handled above"),
-                    StrMethodOp::IsDigit | StrMethodOp::IsAlpha | StrMethodOp::IsSpace => {
+                    StrMethodOp::IsDigit
+                    | StrMethodOp::IsAlpha
+                    | StrMethodOp::IsSpace
+                    | StrMethodOp::IsAlnum
+                    | StrMethodOp::IsUpper
+                    | StrMethodOp::IsLower => {
                         unreachable!("classification predicates handled above")
                     }
                     StrMethodOp::Capitalize => unreachable!("capitalize handled above"),

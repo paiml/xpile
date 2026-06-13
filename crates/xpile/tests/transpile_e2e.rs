@@ -3529,6 +3529,33 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502di (Tranche 2): `str.isupper()` / `.islower()` / `.isalnum()`
+/// classification predicates → Bool.
+#[test]
+fn str_case_predicates() {
+    let rust = xpile_transpile_to_rust("str_case_predicates.py");
+    assert!(
+        rust.contains("is_uppercase()") && rust.contains("is_alphanumeric()"),
+        "case predicates:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // str case/alnum predicates; cross-checked vs python3.
+    assert_eq!(is_up("ABC".to_string()), true);
+    assert_eq!(is_up("Abc".to_string()), false);
+    assert_eq!(is_up("A1".to_string()), true);
+    assert_eq!(is_up("123".to_string()), false);
+    assert_eq!(is_up("".to_string()), false);
+    assert_eq!(is_low("abc".to_string()), true);
+    assert_eq!(is_low("Abc".to_string()), false);
+    assert_eq!(is_an("abc123".to_string()), true);
+    assert_eq!(is_an("abc!".to_string()), false);
+    assert_eq!(is_an("".to_string()), false);
+}
+"#;
+    assert_rustc_runs("str_case_predicates", &rust, driver);
+}
+
 /// PMAT-502dh (Tranche 2): `min(xs, default=d)` / `max(xs, default=d)` return
 /// `d` on an empty list instead of panicking (`.unwrap_or(d)`).
 #[test]

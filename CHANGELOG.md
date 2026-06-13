@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.147] — 2026-06-13
+
+Tranche-2 slice PMAT-502di — **`str.isupper()` / `.islower()` / `.isalnum()`**.
+
+Three more 0-arg string classification predicates (→ `Bool`). `.isalnum()`
+follows the existing empty-guarded "all chars match" shape
+(`!(s).is_empty() && (s).chars().all(|c| c.is_alphanumeric())`). `.isupper()` /
+`.islower()` use Python's cased-char rule — at least one cased char AND none of
+the opposite case: `(s).chars().any(|c| c.is_uppercase()) && !(s).chars().any(|c|
+c.is_lowercase())` (and the mirror). Frontend-only `StrMethodOp` additions; Lean
+refuses `StrMethod` wholesale. rustc round-trip `str_case_predicates.py`
+(cross-checked vs `python3`): `"ABC".isupper()`=true, `"A1".isupper()`=true,
+`"Abc".isupper()`=false, `"".isupper()`=false, `"abc".islower()`=true,
+`"abc123".isalnum()`=true, `"abc!".isalnum()`=false.
+
+The string-method family now spans ~29 methods.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.146] — 2026-06-13
 
 Tranche-2 slice PMAT-502dh — **`min(xs, default=d)` / `max(xs, default=d)`**.
