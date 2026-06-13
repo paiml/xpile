@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.224] — 2026-06-14
+
+Tranche 2 — PMAT-524 (correctness): `sorted`/`min`/`max` `key=` lambda indexing a
+tuple element.
+
+- `sorted(ps, key=lambda p: p[1])` over a `list[tuple[..]]` was a silent
+  miscompile: the key param defaulted to `i64`, so `p[1]` lowered to generic
+  `[1]` indexing (invalid on a Rust tuple). `lower_sort_key` now binds the key
+  param to the collection's element type (via a new `sort_target_elem_type`
+  helper + `LoweringCtx: Clone`), so `p[1]` → the `.1` field access. **No new
+  IR**; non-tuple keys unaffected.
+- New e2e fixture `sort_key_tuple_index.py` (rustc round-trip cross-checked vs
+  python3). e2e 285 → 286.
+
 ## [0.1.223] — 2026-06-14
 
 Tranche 2 — PMAT-523: negative-step `range` materialisation.
