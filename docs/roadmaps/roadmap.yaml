@@ -1120,6 +1120,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "[f(k,v) for k,v in d.items()] and {f(k,v) for k,v in d.items()} (tuple-target list/set comps) were rejected ('non-Name comprehension target'). FIX: desugar_list_comp and desugar_set_comp each gain a tuple-target branch (before their Name-target path), mirroring the dict-comp branch (PMAT-502cf): a 2-Name Tuple target + iterable typing Type::List(Type::Tuple[K,V]) -> bind both names, lower elem (+ optional `if` filter via comp_filter), emit Stmt::Let (empty list/set, mut) + Stmt::ForEachPair { kind: PairIterKind::Pairs, body } where body is ListAppend / SetAdd. Completes the comprehension-over-items family (list/dict/set). Non-2-name targets + non-2-tuple iterables error precisely. rustc round-trip comp_items.py (cross-checked vs python3): values({a:3,b:-1})=[-1,3] (sorted), pos_keys=['a'] (filter v>0), value_set={-1,3}. FREE CI. SHIPPED v0.1.119."
+- id: PMAT-502CH
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ch: [Tranche2] str.format with format specs {:.2f}/{:05d}'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "str.format rejected any spec'd field {:.2f}. FIX: replaced parse_format_placeholders/FmtPlaceholders with lower_str_format, which lowers the args first (for their types), then byte-walks the template (UTF-8-safe via string-slice copies of literal runs) rebuilding a RUST format string: {{/}} escapes + literal text preserved; each placeholder split on ':' into field (empty=auto / digits=positional / else {name} deferred-error) and optional spec; the spec is translated via translate_format_spec(spec, arg_ty) (.2f->.2 for F64, 05d->05 for I64, >N alignment any). Auto vs manual numbering mixing rejected (Python rule). A spec-LESS field still requires I64/Str (bool/float Display-diverge), but a float IS admitted with a .Nf spec. Every arg must be referenced (Rust format! requirement). Codegen unchanged (Expr::StrFormat re-emits the now-Rust fmt via {fmt:?}). rustc round-trip format_spec.py (cross-checked vs python3): money(3.14159)='$3.14', padded(42)='id=00042', both(2.5,7)='2.5 (007)'. FREE CI. SHIPPED v0.1.120."
 - id: PMAT-465
   github_issue: 496
   item_type: task

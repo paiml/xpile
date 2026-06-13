@@ -3205,6 +3205,29 @@ fn main() {
     assert_rustc_runs("comp_items", &rust, driver);
 }
 
+/// PMAT-502ch (Tranche 2): `str.format` with format specs `{:.2f}` / `{:05d}`
+/// — translated to Rust specs by the arg's type.
+#[test]
+fn format_spec() {
+    let rust = xpile_transpile_to_rust("format_spec.py");
+    assert!(
+        rust.contains(r#"format!("${:.2}", x)"#),
+        "float spec:\n{rust}"
+    );
+    assert!(
+        rust.contains(r#"format!("id={:05}", n)"#),
+        "int width spec:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(money(3.14159), "$3.14");
+    assert_eq!(padded(42), "id=00042");
+    assert_eq!(both(2.5, 7), "2.5 (007)");
+}
+"#;
+    assert_rustc_runs("format_spec", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]

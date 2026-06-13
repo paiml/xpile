@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.120] — 2026-06-13
+
+Tranche-2 slice PMAT-502ch — **`str.format` with format specs** (`{:.2f}`,
+`{:05d}`).
+
+`str.format` now accepts a format spec on each field. The new
+`lower_str_format` rebuilds the template into a Rust format string, translating
+each Python spec to its Rust form by the corresponding argument's type
+(reusing `translate_format_spec` — `.2f` → `.2`, `05d` → `05`, `>10` → `>10`).
+Automatic `{}`/`{:spec}` and positional `{N}`/`{N:spec}` fields both work
+(mixing the two is rejected, per Python); literal `{{`/`}}` and surrounding
+text are preserved. A spec-less field still requires an int/str arg, but a
+float is now admitted when it carries a `.Nf` spec (so `"{:.2f}".format(x)`
+works). Every arg must be referenced. `{name}` fields stay deferred. rustc
+round-trip `format_spec.py` (cross-checked vs `python3`): `money(3.14159) ->
+"$3.14"`, `padded(42) -> "id=00042"`, `both(2.5, 7) -> "2.5 (007)"`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.119] — 2026-06-13
 
 Tranche-2 slice PMAT-502cg — **list & set comprehensions over `d.items()`**.
