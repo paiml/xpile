@@ -355,6 +355,10 @@ fn count_pop_receivers_in_stmt(stmt: &ast::Stmt, counts: &mut HashMap<String, us
                 count_pop_receivers(v, counts, bump);
             }
         }
+        // PMAT-502eh: a bare `d.setdefault(k, v)` expression-statement also
+        // mutates its receiver (it gets-or-inserts), so the receiver must be
+        // `mut`. Scan the statement's value expression too.
+        ast::Stmt::Expr(e) => count_pop_receivers(&e.value, counts, bump),
         _ => {}
     }
 }
@@ -1443,6 +1447,25 @@ fn try_lower_list_method_call(
         return Some(Ok(Stmt::ListRemoveValue {
             list_name: receiver_name.to_string(),
             value,
+        }));
+    }
+    // PMAT-502eh: `d.setdefault(k, v)` as a bare statement (the value-position
+    // form `x = d.setdefault(...)` already works). Reuse the same
+    // `DictSetDefault` lowering — which validates arity and types — then
+    // discard the result via `let _ = …;` (the get-or-insert side effect is
+    // what the statement is for). The receiver must be a dict.
+    if method == "setdefault" && matches!(receiver_ty, Some(Type::Dict(_, _))) {
+        let expr = match lower_expr_in_ctx(ctx, (*e.value).clone()) {
+            Ok(x) => x,
+            Err(err) => return Some(Err(err)),
+        };
+        let ty = infer_type_in_ctx(ctx, &expr);
+        ctx.mutable.insert(receiver_name.to_string());
+        return Some(Ok(Stmt::Let {
+            name: "_".to_string(),
+            ty,
+            value: expr,
+            mutable: false,
         }));
     }
     if !is_append && !is_add {
