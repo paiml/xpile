@@ -3139,6 +3139,26 @@ fn desugar_match_to_if(m: &ast::StmtMatch) -> Result<ast::StmtIf, FrontendError>
             "`match` must end with a wildcard `case _:` at v0.2.0 (exhaustiveness)".to_string(),
         ));
     }
+    // `subject == <literal>` for one alternative (range/subject captured).
+    let eq = |value: &ast::Expr| {
+        ast::Expr::Compare(ast::ExprCompare {
+            range: m.range,
+            left: Box::new(ast::Expr::Name(subject.clone())),
+            ops: vec![ast::CmpOp::Eq],
+            comparators: vec![value.clone()],
+        })
+    };
+    // A literal value pattern → its comparator expr (else a clean error).
+    let literal_value = |pat: &ast::Pattern| -> Result<ast::Expr, FrontendError> {
+        match pat {
+            ast::Pattern::MatchValue(pv) if is_literal_default(pv.value.as_ref()) => {
+                Ok((*pv.value).clone())
+            }
+            _ => Err(FrontendError::Lower(
+                "`match` supports only literal value patterns (`case 0:`/`case \"x\":`), `|`-patterns of literals, and a trailing `case _:` at v0.2.0 — captures/guards/class/sequence/mapping/`True`/`False`/`None` patterns are unsupported".to_string(),
+            )),
+        }
+    };
     // Fold the value cases (in reverse) over the wildcard body, building a nested
     // `if subject == <lit>: <body> else: <rest>`.
     let mut orelse: Vec<ast::Stmt> = wildcard.body.clone();
@@ -3148,22 +3168,22 @@ fn desugar_match_to_if(m: &ast::StmtMatch) -> Result<ast::StmtIf, FrontendError>
                 "`match` case guards (`case … if …:`) are not supported at v0.2.0".to_string(),
             ));
         }
-        let ast::Pattern::MatchValue(pv) = &case.pattern else {
-            return Err(FrontendError::Lower(
-                "`match` supports only literal value patterns (`case 0:`/`case \"x\":`) and a trailing `case _:` at v0.2.0 — captures/`|`-patterns/class/sequence/mapping/`True`/`False`/`None` patterns are unsupported".to_string(),
-            ));
+        // PMAT-512: an `|`-pattern (`case 0 | 1 | 2:`) → an OR of equality tests;
+        // a plain value pattern → a single equality test.
+        let test = match &case.pattern {
+            ast::Pattern::MatchOr(po) => {
+                let mut values = Vec::with_capacity(po.patterns.len());
+                for alt in &po.patterns {
+                    values.push(eq(&literal_value(alt)?));
+                }
+                ast::Expr::BoolOp(ast::ExprBoolOp {
+                    range: m.range,
+                    op: ast::BoolOp::Or,
+                    values,
+                })
+            }
+            other => eq(&literal_value(other)?),
         };
-        if !is_literal_default(pv.value.as_ref()) {
-            return Err(FrontendError::Lower(
-                "`match` value patterns must be literals (int/float/str, optionally negated) at v0.2.0".to_string(),
-            ));
-        }
-        let test = ast::Expr::Compare(ast::ExprCompare {
-            range: m.range,
-            left: Box::new(ast::Expr::Name(subject.clone())),
-            ops: vec![ast::CmpOp::Eq],
-            comparators: vec![(*pv.value).clone()],
-        });
         let if_stmt = ast::StmtIf {
             range: m.range,
             test: Box::new(test),
