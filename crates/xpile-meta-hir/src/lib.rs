@@ -307,6 +307,10 @@ fn expr_has_int_arith(e: &Expr) -> bool {
             expr_has_int_arith(list) || key.as_ref().is_some_and(|k| expr_has_int_arith(&k.body))
         }
         Expr::Reversed { list } => expr_has_int_arith(list),
+        // PMAT-502cj: list(range(...)) — recurse into the bound exprs.
+        Expr::RangeList { start, stop, .. } => {
+            expr_has_int_arith(start) || expr_has_int_arith(stop)
+        }
         // PMAT-502ab: filter — recurse into the list and predicate body.
         Expr::Filter { list, lambda } => {
             expr_has_int_arith(list) || expr_has_int_arith(&lambda.body)
@@ -1393,6 +1397,17 @@ pub enum Expr {
     /// as the list's type. Lean refuses. (Python's `reversed` yields a lazy
     /// iterator, but the supported subset materializes it as a `Vec`.)
     Reversed { list: Box<Expr> },
+    /// `list(range(start, stop, step))` — materialise a range into a `Vec`.
+    /// PMAT-502cj (Tranche 2). Rust/Ruchy emit `((<start>)..(<stop>))
+    /// .collect::<Vec<i64>>()` for `step == 1`, or `.step_by(<step> as usize)`
+    /// before `collect` for `step > 1`. Result types as `list[int]`. The
+    /// frontend admits a positive literal step only (negative step / non-int
+    /// bounds deferred). Lean refuses.
+    RangeList {
+        start: Box<Expr>,
+        stop: Box<Expr>,
+        step: i64,
+    },
     /// `filter(lambda p: pred, xs)` over a list — Python builtin. PMAT-502ab
     /// (Tranche 2). The supported subset materializes the lazy `filter`
     /// iterator as a `Vec`. The `lambda` is a [`SortKey`] (param + body) whose

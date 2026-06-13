@@ -552,6 +552,11 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         Expr::Sorted { list, .. } => collect_idents(list, out),
         // PMAT-502d: reversed — recurse into the list expression.
         Expr::Reversed { list } => collect_idents(list, out),
+        // PMAT-502cj: list(range(...)) — recurse into the bound exprs.
+        Expr::RangeList { start, stop, .. } => {
+            collect_idents(start, out);
+            collect_idents(stop, out);
+        }
         // PMAT-502ab: filter — recurse into the list and predicate body.
         Expr::Filter { list, lambda } => {
             collect_idents(list, out);
@@ -1232,6 +1237,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::Reversed { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python reversed(xs) is not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-502cj: list(range(...)) deferred in the Lean lane.
+        Expr::RangeList { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python list(range(...)) is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

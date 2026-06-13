@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.122] — 2026-06-13
+
+Tranche-2 slice PMAT-502cj — **`list(range(...))`** materialization + **`list(xs)`** copy.
+
+`list(range(n))` (and the 2-/3-arg forms) was rejected (it typed as `I64`).
+A new `Expr::RangeList { start, stop, step }` now materialises a range into a
+`Vec`: the backends emit `((start)..(stop)).collect::<Vec<i64>>()`, with
+`.step_by(step as usize)` for a positive literal step. The frontend detects
+`list(range(...))` on the AST (a bare `range(...)` isn't a first-class value)
+and admits a positive literal step only (negative-step materialization stays
+deferred — use `reversed(range(...))` in a loop). `list(xs)` over an existing
+list returns it as-is (value semantics already copies). Lean refuses. rustc
+round-trip `list_range.py` (cross-checked vs `python3`): `upto(4) -> [0,1,2,3]`,
+`span(2,5) -> [2,3,4]`, `evens(10) -> [0,2,4,6,8]`, `copy([7,8]) -> [7,8]`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.121] — 2026-06-13
 
 Tranche-2 slice PMAT-502ci — **`for i in reversed(range(...))`** (descending
