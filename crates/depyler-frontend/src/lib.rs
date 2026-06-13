@@ -5023,6 +5023,9 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 lower_unary_op(u)
             }
         }
+        // PMAT-502ce: context-aware `a and b` / `a or b`. The context-free
+        // path mis-infers a bare Ident as I64 and rejects bool variables.
+        ast::Expr::BoolOp(b) => lower_bool_op_in_ctx(ctx, b),
         // No dict-specific shape: the context-free path is sufficient.
         other => lower_expr(other),
     }
@@ -5598,6 +5601,44 @@ fn lower_bool_op(b: ast::ExprBoolOp) -> Result<Expr, FrontendError> {
     for next in iter {
         let rhs = lower_expr(next)?;
         if infer_type(&rhs) != Type::Bool {
+            return Err(FrontendError::Lower(
+                "operands of `and`/`or` must be Bool (no int-truthiness at v0.1.0)".into(),
+            ));
+        }
+        acc = Expr::BinOp {
+            op,
+            lhs: Box::new(acc),
+            rhs: Box::new(rhs),
+        };
+    }
+    Ok(acc)
+}
+
+/// PMAT-502ce: context-aware `a and b` / `a or b`. The context-free
+/// [`lower_bool_op`] infers a bare Ident as I64 and so rejects `a and b` for
+/// `bool` parameters/locals; using `infer_type_in_ctx` sees the real Bool
+/// type. Same recurring fix as `not` (PMAT-502cc) and float-var negation.
+fn lower_bool_op_in_ctx(ctx: &LoweringCtx, b: ast::ExprBoolOp) -> Result<Expr, FrontendError> {
+    if b.values.len() < 2 {
+        return Err(FrontendError::Lower(
+            "boolean operator with fewer than 2 operands — unreachable Python AST".into(),
+        ));
+    }
+    let op = match b.op {
+        ast::BoolOp::And => BinOp::And,
+        ast::BoolOp::Or => BinOp::Or,
+    };
+    let mut iter = b.values.into_iter();
+    let first = lower_expr_in_ctx(ctx, iter.next().expect("len ≥ 2"))?;
+    if infer_type_in_ctx(ctx, &first) != Type::Bool {
+        return Err(FrontendError::Lower(
+            "operands of `and`/`or` must be Bool (no int-truthiness at v0.1.0)".into(),
+        ));
+    }
+    let mut acc = first;
+    for next in iter {
+        let rhs = lower_expr_in_ctx(ctx, next)?;
+        if infer_type_in_ctx(ctx, &rhs) != Type::Bool {
             return Err(FrontendError::Lower(
                 "operands of `and`/`or` must be Bool (no int-truthiness at v0.1.0)".into(),
             ));
