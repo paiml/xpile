@@ -578,9 +578,12 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         Expr::SetFromList { list } => collect_idents(list, out),
         // PMAT-502dk: dict(pairs) — recurse into the pairs list expr.
         Expr::DictFromPairs { pairs } => collect_idents(pairs, out),
-        Expr::DictMerge { dicts } => {
-            for d in dicts {
-                collect_idents(d, out);
+        Expr::DictMerge { entries } => {
+            for (k, v) in entries {
+                if let Some(key) = k {
+                    collect_idents(key, out);
+                }
+                collect_idents(v, out);
             }
         }
         // PMAT-502ab: filter — recurse into the list and predicate body.

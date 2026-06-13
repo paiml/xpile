@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.162] — 2026-06-13
+
+Tranche-2 slice PMAT-502dx — **mixed `{**a, "k": v}` dict literals**.
+
+Generalizes v0.1.161's dict merge to handle `**`-splats mixed with explicit
+`k: v` entries (`{**defaults, "override": x}` and `{"x": 1, **a}`).
+`Expr::DictMerge` now carries `entries: Vec<(Option<Expr>, Expr)>` — each entry
+is a splat (`None` key) or an explicit pair (`Some(k)`); the codegen chains a
+`std::iter::once((k, v))` per pair and a `(d).iter().map(clone)` per splat, so a
+later entry wins on a key collision (matching Python's evaluation order).
+All-splat literals (v0.1.161) are unchanged. rustc round-trip
+`dict_merge_mixed.py` (cross-checked vs `python3`): `{**a, "x": 99}["x"] == 99`
+(explicit-after-splat wins), `{"x": 99, **a}["x"] == 1` (splat-after-explicit
+wins), `len({**a, "x": 1, "y": 2}) == 2`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.161] — 2026-06-13
 
 Tranche-2 slice PMAT-502dw — **`{**d1, **d2, …}` dict merge**.

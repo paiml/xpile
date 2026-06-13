@@ -3529,13 +3529,37 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dx (Tranche 2): mixed `{**a, "k": v}` dict literals (splats + explicit
+/// entries) — chained `once()`/`.iter().map()`, later entry wins.
+#[test]
+fn dict_merge_mixed() {
+    let rust = xpile_transpile_to_rust("dict_merge_mixed.py");
+    assert!(
+        rust.contains("std::iter::once((String::from(\"x\")")
+            && rust.contains(".iter().map(|(__k, __v)|"),
+        "mixed dict merge:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    use std::collections::HashMap;
+    let a: HashMap<String, i64> =
+        [("x", 1), ("y", 2)].iter().map(|(k, v)| (k.to_string(), *v)).collect();
+    // mixed splat + explicit; override order cross-checked vs python3.
+    assert_eq!(override_after(a.clone(), "x".to_string()), 99);  // explicit after splat wins
+    assert_eq!(override_before(a.clone(), "x".to_string()), 1);  // splat after explicit wins
+    assert_eq!(size_with_extra(a), 2);                           // {x,y} (x already present)
+}
+"#;
+    assert_rustc_runs("dict_merge_mixed", &rust, driver);
+}
+
 /// PMAT-502dw (Tranche 2): `{**d1, **d2, …}` dict merge — chained iterators,
 /// later dict wins on a key collision (matching Python).
 #[test]
 fn dict_merge() {
     let rust = xpile_transpile_to_rust("dict_merge.py");
     assert!(
-        rust.contains(".iter().chain((b).iter())")
+        rust.contains(".chain((b).iter().map(|(__k, __v)|")
             && rust.contains("collect::<std::collections::HashMap<_, _>>()"),
         "dict merge:\n{rust}"
     );
