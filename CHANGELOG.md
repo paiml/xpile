@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.132] — 2026-06-13
+
+Tranche-2 slice PMAT-502ct — **default parameter values** (`def f(x, y=10)`).
+
+Rust has no default arguments, so the default was previously dropped — a caller
+relying on it (`f(5)`) wouldn't compile. `FnSig` now records each parameter's
+default (the Python AST expression, captured per-arg from ruff's
+`ArgWithDefault`), and `reorder_kwargs_to_positional` fills omitted trailing
+arguments with the matching keyword, else the default, else a precise
+missing-argument error — for both keyword calls (`add(1, c=5)`) and short
+positional calls (`add(1)`). The emitted Rust function keeps every parameter;
+defaults are materialised at each call site (literal defaults are evaluated
+identically). rustc round-trip `default_params.py` (cross-checked vs `python3`):
+`use_default("Sam") -> "Hello, Sam"`, `call_add() -> 111` (`add(1)`),
+`call_kw() -> 16` (`add(1, c=5)`).
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.131] — 2026-06-13
 
 Tranche-2 slice PMAT-502cs — **`str.zfill(width)`** (sign-aware zero-pad).
