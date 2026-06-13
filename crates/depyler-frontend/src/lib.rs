@@ -8015,16 +8015,21 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // field access. (Method calls are `Call(Attribute(...))`, handled in the
         // Call arm; this fires only on a bare attribute read.)
         ast::Expr::Attribute(attr) => {
-            // PMAT-513: `C.NAME.value` → the variant's discriminant literal
-            // (compile-time known). The receiver is itself `Enum.Variant`.
-            if attr.attr.as_str() == "value" {
+            // PMAT-513: `C.NAME.value` → the variant's discriminant literal;
+            // PMAT-515: `C.NAME.name` → the variant name string. Both are
+            // compile-time known. The receiver is itself `Enum.Variant`.
+            if matches!(attr.attr.as_str(), "value" | "name") {
                 if let ast::Expr::Attribute(inner) = attr.value.as_ref() {
                     if let ast::Expr::Name(en) = inner.value.as_ref() {
                         if let Some(variants) = ctx.enums.get(en.id.as_str()) {
-                            if let Some((_, disc)) =
+                            if let Some((vname, disc)) =
                                 variants.iter().find(|(v, _)| *v == inner.attr.as_str())
                             {
-                                return Ok(Expr::LitInt(*disc));
+                                return Ok(if attr.attr.as_str() == "value" {
+                                    Expr::LitInt(*disc)
+                                } else {
+                                    Expr::LitStr(vname.clone())
+                                });
                             }
                         }
                     }

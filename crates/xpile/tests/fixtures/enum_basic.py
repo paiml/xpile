@@ -21,6 +21,11 @@ def blue_value() -> int:
     return Color.BLUE.value
 
 
+def green_name() -> str:
+    # PMAT-515: `C.NAME.name` → the variant name string (compile-time known).
+    return Color.GREEN.name
+
+
 def is_go(s: Signal) -> bool:
     # Enum-typed param + equality against a member.
     return s == Signal.GO
