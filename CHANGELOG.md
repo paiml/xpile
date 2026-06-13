@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.172] — 2026-06-13
+
+Tranche-2 slice PMAT-502eh — **`d.setdefault(k, v)` as a bare statement**.
+
+The value-position form (`x = d.setdefault(k, v)`) already worked, but a bare
+`d.setdefault(k, v)` statement — the canonical "ensure each key exists" loop
+idiom — was rejected ("calls `d.setdefault` as expression statement — only
+`subprocess.run` is recognised"). It now reuses the same `Expr::DictSetDefault`
+lowering (which validates arity and types), discarding the result via a
+`let _ = …;` since the get-or-insert side effect is the point. The mutability
+pre-walk (`count_pop_receivers_in_stmt`) now also scans bare expression
+statements, so the receiver dict is correctly emitted `let mut`. New
+`dict_setdefault_stmt.py` e2e fixture (insert-absent, keep-present, init-in-loop,
+str-keys), all cross-checked vs python3.
+
 ## [0.1.171] — 2026-06-13
 
 Tranche-2 slice PMAT-502eg — **`xs.remove(x)` list remove-by-value**.

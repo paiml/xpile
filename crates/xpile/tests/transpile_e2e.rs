@@ -3550,6 +3550,29 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502eh (Tranche 2): `d.setdefault(k, v)` as a bare statement (the
+/// value-position `x = d.setdefault(...)` already worked). Reuses the same
+/// `Expr::DictSetDefault` lowering, discarding the result via `let _ = …;`; the
+/// mutability pre-walk now scans bare expr-statements so `d` is `let mut`.
+/// Cross-checked vs python3.
+#[test]
+fn dict_setdefault_stmt() {
+    let rust = xpile_transpile_to_rust("dict_setdefault_stmt.py");
+    assert!(
+        rust.contains("let mut d") && rust.contains(".entry(") && rust.contains(".or_insert("),
+        "setdefault stmt should mark the dict mut and emit entry().or_insert():\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(insert_absent(), 20);
+    assert_eq!(keep_present(), 10); // setdefault must not overwrite
+    assert_eq!(init_in_loop(vec![1, 1, 2, 3]), 4);
+    assert_eq!(str_keys(), 2);
+}
+"#;
+    assert_rustc_runs("dict_setdefault_stmt", &rust, driver);
+}
+
 /// PMAT-502eg (Tranche 2): `xs.remove(x)` — remove the first list element equal
 /// to `x` (a `Stmt::ListRemoveValue`), panicking ≈ Python `ValueError` when
 /// absent. Completes the in-place list-mutator surface alongside
