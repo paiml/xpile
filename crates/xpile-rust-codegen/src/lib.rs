@@ -1755,6 +1755,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             });
             out.push_str(" })");
         }
+        // PMAT-502eq: `xs.copy()` / `d.copy()` / `s.copy()` → `(<inner>).clone()`.
+        Expr::Clone(inner) => {
+            out.push('(');
+            emit_expr(out, inner, mode)?;
+            out.push_str(").clone()");
+        }
         // PMAT-459 (v0.2.0 Track 1.B): Python `len(x)` → Rust
         // `x.len() as i64`. Vec/String both expose `.len()` returning
         // `usize`; the `as i64` cast brings the result back into
