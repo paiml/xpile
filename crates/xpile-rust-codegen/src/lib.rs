@@ -1598,6 +1598,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, list, mode)?;
             out.push_str(".iter().cloned().collect::<std::collections::HashSet<_>>()");
         }
+        // PMAT-520: `list(<set>)` / `sorted(<set>)` → the set's unique elements
+        // as a Vec.
+        Expr::SetToList { set } => {
+            emit_expr(out, set, mode)?;
+            out.push_str(".iter().cloned().collect::<Vec<_>>()");
+        }
         // PMAT-502dk: `dict(pairs)` → a HashMap from the list of 2-tuples.
         Expr::DictFromPairs { pairs } => {
             emit_expr(out, pairs, mode)?;
