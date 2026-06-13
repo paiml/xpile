@@ -1892,6 +1892,13 @@ pub enum StrMethodOp {
     /// [`StrMethodOp::Partition`] but via `rsplit_once`; the absent case
     /// returns `("", "", s)` (empty parts **first**, unlike `partition`).
     RPartition,
+    /// `.splitlines()` → split on line boundaries (**`list[str]`**, 0 args).
+    /// PMAT-502dl. Matches Python's full boundary set (LF, CR, CRLF, VT, FF,
+    /// FS/GS/RS, NEL, LS, PS) — Rust's `str::lines()` only handles LF/CRLF,
+    /// so the codegen emits an explicit char-walk. No trailing empty element
+    /// for a trailing break (matching Python; `keepends=True` is deferred).
+    /// Block-form codegen.
+    SplitLines,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -3529,6 +3529,29 @@ fn main() {
     assert_rustc_runs("set_from_list", &rust, driver);
 }
 
+/// PMAT-502dl (Tranche 2): `str.splitlines()` — splits on Python's full line
+/// boundary set (LF/CR/CRLF/…), no trailing empty for a trailing break.
+#[test]
+fn str_splitlines() {
+    let rust = xpile_transpile_to_rust("str_splitlines.py");
+    assert!(
+        rust.contains("std::mem::take(&mut __cur)") && rust.contains("__it.peek()"),
+        "splitlines char-walk:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // splitlines edge cases; cross-checked vs python3.
+    assert_eq!(lines("a\nb".to_string()), vec!["a", "b"]);
+    assert_eq!(lines("a\nb\n".to_string()), vec!["a", "b"]); // no trailing empty
+    assert_eq!(lines("a\r\nb".to_string()), vec!["a", "b"]); // CRLF
+    assert_eq!(lines("a\rb".to_string()), vec!["a", "b"]);   // lone CR
+    assert_eq!(count_lines("".to_string()), 0);              // empty → []
+    assert_eq!(lines("a\n\nb".to_string()), vec!["a", "", "b"]); // blank line kept
+}
+"#;
+    assert_rustc_runs("str_splitlines", &rust, driver);
+}
+
 /// PMAT-502dk (Tranche 2): `dict(pairs)` materialises a list of 2-tuples into
 /// a HashMap — also covers `dict(zip(..))` / `dict(enumerate(..))`.
 #[test]

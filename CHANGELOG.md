@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.150] — 2026-06-13
+
+Tranche-2 slice PMAT-502dl — **`str.splitlines()`**.
+
+Splits a string on line boundaries (→ `list[str]`). Implemented **correctly**
+for Python's full boundary set (LF, CR, CRLF, VT, FF, FS/GS/RS, NEL, LS, PS) via
+an explicit char-walk — Rust's `str::lines()` only handles LF/CRLF, so it would
+diverge on lone-CR / vertical-tab / Unicode separators. No trailing empty
+element for a trailing break, matching Python (`keepends=True` deferred). New
+`StrMethodOp::SplitLines` (0-arg, block-form codegen); Lean refuses. rustc
+round-trip `str_splitlines.py` (cross-checked vs `python3`): `"a\nb"` →
+`["a","b"]`, `"a\nb\n"` → `["a","b"]` (no trailing empty), `"a\r\nb"` →
+`["a","b"]`, `"a\rb"` → `["a","b"]`, `""` → `[]`, `"a\n\nb"` → `["a","","b"]`.
+
+GitHub tag only (crates.io next Friday 2026-06-19).
+
 ## [0.1.149] — 2026-06-13
 
 Tranche-2 slice PMAT-502dk — **`dict(pairs)`** materialization.
