@@ -7,6 +7,33 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.167] — 2026-06-13
+
+Tranche-2 slice PMAT-502ec — **empty list literal `[]` annotation threading**.
+
+`xs: list[int] = []` and `return []` (the canonical accumulator-initialiser
+and empty-base-case idioms) were rejected with "empty list literal `[]`
+requires a type annotation" — a bare `[]` can't self-infer its element type,
+and unlike empty `{}` / `set()` (which already threaded their annotation) the
+list case had no threading. Now:
+
+- `lower_ann_assign` special-cases an empty `[]` against the declared
+  `list[T]` annotation (mirroring the existing empty-`{}` handling), emitting
+  `ListLit([])` with the binding's declared element type.
+- Both return paths (trailing and early-guard) route empty `[]` / `{}`
+  through a new `lower_value_expecting` helper that uses the function's
+  declared return type — so `return []` works for any element type
+  (`list[str]`, `list[list[int]]`, …) and `return {}` works too.
+- The trailing-return type-equality check now tolerates an empty literal
+  (which `infer_type` defaults to `list[int]`), so `return []` from a
+  `-> list[str]` function is no longer a spurious mismatch.
+
+A non-list/non-dict annotation against an empty literal (`x: int = []`) is
+still a clear error. New `empty_list_annotated.py` e2e fixture
+(append-accumulator, `return []` int/str/early-guard, `return {}`,
+str-accumulator), all cross-checked vs python3. Note: *unannotated* `xs = []`
+(no type to thread) remains unsupported — annotate it.
+
 ## [0.1.166] — 2026-06-13
 
 Tranche-2 slice PMAT-502eb — **`xs += ys` list in-place extend**.

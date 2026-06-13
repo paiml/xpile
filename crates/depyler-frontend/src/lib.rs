@@ -880,7 +880,10 @@ fn lower_function_def(
                 // PMAT-466: context-aware so `return table[key]`,
                 // `return table.get(k, 0)`, and `return key in table`
                 // lower to the dict variants.
-                lower_expr_in_ctx(&ctx, (**value).clone())?
+                // PMAT-502ec: `return []` / `return {}` take their element /
+                // K-V types from the declared return type (an empty literal
+                // can't self-infer).
+                lower_value_expecting(&ctx, value, &ctx.fn_return_type)?
             }
         }
         // PMAT-502bm: a terminal `if cond: return A else: return B`
@@ -908,7 +911,16 @@ fn lower_function_def(
     let return_type = match declared_return_type {
         None => inferred_return,
         Some(declared) => {
-            if declared != inferred_return {
+            // PMAT-502ec: an empty `[]` / `{}` trailing return has no element
+            // type to infer (`infer_type` defaults `[]` to `list[int]`), so it
+            // is compatible with ANY matching collection return type — trust
+            // the declared type rather than the defaulted inference.
+            let empty_literal_ok = match (&trailing_return, &declared) {
+                (Expr::ListLit(v), Type::List(_)) => v.is_empty(),
+                (Expr::DictLit(p), Type::Dict(_, _)) => p.is_empty(),
+                _ => false,
+            };
+            if !empty_literal_ok && declared != inferred_return {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` declared return type {declared:?} but body produces {inferred_return:?}",
                     f.name
@@ -1176,7 +1188,9 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         // rejected (with a clearer message).
         ast::Stmt::Return(ret) => match ret.value.as_ref() {
             Some(value) => {
-                let lowered = lower_expr_in_ctx(ctx, (**value).clone())?;
+                // PMAT-502ec: an early `return []` / `return {}` takes its
+                // element / K-V types from the declared return type.
+                let lowered = lower_value_expecting(ctx, value, &ctx.fn_return_type)?;
                 Ok(vec![Stmt::Return(lowered)])
             }
             None if matches!(ctx.fn_return_type, Type::Unit) => {
@@ -4080,6 +4094,30 @@ fn reorder_kwargs_to_positional(
 /// annotation, the only way to introduce an empty dict (the value
 /// alone can't infer K/V). Non-empty / non-dict values are lowered
 /// through the context-aware path and must agree with the annotation.
+/// PMAT-502ec: lower a value that may be an empty `[]` / `{}` literal needing
+/// an `expected` type to fix its element / key-value types. An empty literal
+/// can't self-infer (`infer_type` defaults `[]` to `list[int]` and `{}` is
+/// ambiguous), so when `value` is an empty list/dict and `expected` is the
+/// matching collection type we emit the empty literal and let the binding's /
+/// return's declared type carry the element types. Any other value (including
+/// a non-empty literal, or an empty literal whose `expected` type doesn't
+/// match) falls through to the normal context-aware lowering.
+fn lower_value_expecting(
+    ctx: &LoweringCtx,
+    value: &ast::Expr,
+    expected: &Type,
+) -> Result<Expr, FrontendError> {
+    match value {
+        ast::Expr::List(l) if l.elts.is_empty() && matches!(expected, Type::List(_)) => {
+            Ok(Expr::ListLit(Vec::new()))
+        }
+        ast::Expr::Dict(d) if d.keys.is_empty() && matches!(expected, Type::Dict(_, _)) => {
+            Ok(Expr::DictLit(Vec::new()))
+        }
+        _ => lower_expr_in_ctx(ctx, value.clone()),
+    }
+}
+
 fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stmt, FrontendError> {
     let name = match aa.target.as_ref() {
         ast::Expr::Name(n) => n.id.to_string(),
@@ -4100,8 +4138,8 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
     // Empty dict literal: the annotation supplies K/V that the value
     // can't. Any other empty-collection / annotation combination is
     // rejected here rather than silently mis-typing.
-    let value = if let ast::Expr::Dict(d) = value_expr.as_ref() {
-        if d.keys.is_empty() {
+    let value = match value_expr.as_ref() {
+        ast::Expr::Dict(d) if d.keys.is_empty() => {
             if !matches!(declared_ty, Type::Dict(_, _)) {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` assigns empty `{{}}` to `{name}` annotated as {declared_ty:?}; an empty literal requires a `dict[K, V]` annotation",
@@ -4109,11 +4147,20 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
                 )));
             }
             Expr::DictLit(Vec::new())
-        } else {
-            lower_expr_in_ctx(ctx, (*value_expr).clone())?
         }
-    } else {
-        lower_expr_in_ctx(ctx, (*value_expr).clone())?
+        // PMAT-502ec: empty list literal — the annotation supplies the element
+        // type the bare `[]` can't (mirrors the empty-dict case). Without this
+        // the context-aware lowering rejects `[]` outright.
+        ast::Expr::List(l) if l.elts.is_empty() => {
+            if !matches!(declared_ty, Type::List(_)) {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` assigns empty `[]` to `{name}` annotated as {declared_ty:?}; an empty literal requires a `list[T]` annotation",
+                    ctx.fn_name
+                )));
+            }
+            Expr::ListLit(Vec::new())
+        }
+        _ => lower_expr_in_ctx(ctx, (*value_expr).clone())?,
     };
     // PMAT-466 (review #3): reject an obvious annotation/initializer
     // KIND mismatch when the value is a literal (kind known exactly) —
