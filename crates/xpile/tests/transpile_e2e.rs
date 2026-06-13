@@ -3550,6 +3550,32 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502ek (Tranche 2): `math` module functions — `import math` is accepted
+/// (skipped, like the `__future__` preamble) and `math.sqrt` / `math.floor` /
+/// `math.ceil` lower to `Expr::NumBuiltin` (reusing all the inference/codegen
+/// machinery): `sqrt` → `(x).sqrt()` (float), `floor`/`ceil` → `(x).floor()/
+/// .ceil() as i64` (Python returns int). Other `math.*` names error clearly.
+/// Cross-checked vs python3.
+#[test]
+fn math_module() {
+    let rust = xpile_transpile_to_rust("math_module.py");
+    assert!(
+        rust.contains(".sqrt()") && rust.contains(".floor() as i64"),
+        "math fns should emit f64 method calls:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // assert on the f64 *value* (Display repr of a whole float differs).
+    assert_eq!(root(16.0), 4.0);
+    assert_eq!(floor_of(3.7), 3);
+    assert_eq!(ceil_of(3.2), 4);
+    assert_eq!(hypot(3.0, 4.0), 5.0);
+    assert_eq!(floor_neg(-2.5), -3);
+}
+"#;
+    assert_rustc_runs("math_module", &rust, driver);
+}
+
 /// PMAT-502ej (Tranche 2): directly indexing a block-producing collection —
 /// `sorted(xs)[0]`, `reversed(xs)[0]` — was a silent rustc-failure: those
 /// lower to a Rust block `{ … }`, and `{block}[i]` mis-parses as a block

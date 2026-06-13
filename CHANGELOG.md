@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.175] — 2026-06-13
+
+Tranche-2 slice PMAT-502ek — **`math` module functions (`sqrt`/`floor`/`ceil`)**.
+
+First cut of Python `math` support — `import math` is now accepted (skipped, an
+import has no runtime effect we model; the same disposition as the
+`from __future__ import annotations` preamble), and `math.sqrt(x)` /
+`math.floor(x)` / `math.ceil(x)` lower to `Expr::NumBuiltin` (reusing all the
+existing inference/codegen machinery): `sqrt` → `(x).sqrt()` (returns `float`),
+`floor`/`ceil` → `(x).floor()`/`.ceil() as i64` (Python's `math.floor`/`ceil`
+return `int`). An unsupported `math.<other>` errors clearly (more `math`
+functions and the `math.pi`/`math.e` constants are follow-ups). Any plain
+`import <module>` is now skipped; whether a module's *uses* are supported is
+decided at the call site. Lean refuses (it already refuses `NumBuiltin`). New
+`math_module.py` e2e fixture (`sqrt`, `floor`, `ceil`, composed `hypot`,
+negative floor), all cross-checked vs python3.
+
 ## [0.1.174] — 2026-06-13
 
 Tranche-2 slice PMAT-502ej — **direct-index of a block-producing collection**

@@ -1787,6 +1787,13 @@ pub enum NumBuiltinOp {
     Min,
     /// `max(a, b)` → `(a).max(b)`
     Max,
+    /// PMAT-502ek: `math.sqrt(x)` → `(x).sqrt()` (always `f64`).
+    Sqrt,
+    /// PMAT-502ek: `math.floor(x)` → `(x).floor() as i64` (Python `math.floor`
+    /// returns an `int`).
+    Floor,
+    /// PMAT-502ek: `math.ceil(x)` → `(x).ceil() as i64` (returns an `int`).
+    Ceil,
 }
 
 /// PMAT-495 (sprint): the iterator adapter for a [`Stmt::ForEachPair`].
