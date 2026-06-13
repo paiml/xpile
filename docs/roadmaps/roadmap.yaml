@@ -1147,6 +1147,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "list(range(n)) (and 2/3-arg) was rejected (the inner range isn't a first-class value, so list(range(n)) typed I64 -> '-> list[int] but produces I64'). FIX: new Expr::RangeList { start, stop, step } meta-HIR variant. The list-1-arg handler detects call.args[0] is a range(...) Call on the AST (before lowering) and calls lower_range_list (1/2/3-arg; positive literal step only via extract_step_literal; negative/zero step deferred with precise error pointing to reversed(range)). Both inferers type RangeList as List(I64). Codegen rust/ruchy: ((start)..(stop)).collect::<Vec<i64>>(), with .step_by(step as usize) for step>1. Also: list(<list-typed expr>) returns the expr as-is (value semantics already copies). Lean refuses. Blast radius: new Expr variant touched expr_has_int_arith + 2 inferers + collect_idents(lean) + 3 emit sites. rustc round-trip list_range.py (cross-checked vs python3): upto(4)=[0,1,2,3], span(2,5)=[2,3,4], evens(10)=[0,2,4,6,8], copy([7,8])=[7,8]. FREE CI. SHIPPED v0.1.122."
+- id: PMAT-502CK
+  github_issue: null
+  item_type: task
+  title: 'PMAT-502ck: [Tranche2] for-loop over a call iterable (reversed/sorted/list)'
+  status: planned
+  priority: medium
+  created: 2026-06-13T00:00:00Z
+  acceptance_criteria:
+  - "for x in reversed(xs) / sorted(xs) / list(range(n)) was rejected ('iterates a non-range(...) call'). ROOT CAUSE: the for-loop collection-iteration early-return was gated behind `if !matches!(&*f.iter, ast::Expr::Call(_))`, so ANY call iterable skipped the collection path and fell to the range matcher. FIX: new is_range_like_call(iter) helper (true for range(...) and reversed(range(...))); the gate becomes `if !is_range_like_call(&f.iter)`. Now only range-like calls drive the counter-while desugar; every other call (reversed(xs)/sorted(xs)/list(range(n))/etc. — all lower to List-typed exprs) goes through the collection path and emits Stmt::ForEach. Plain range(...) + reversed(range(...)) (PMAT-502ci) unchanged; bare list names/literals/d.items() (tuple-target) unchanged. String iteration (for c in s) still deferred (types Str, not List). rustc round-trip for_over_call.py (cross-checked vs python3): rev_fold([1,2,3])=321, sort_fold([3,1,2])=123, range_sum(5)=10. FREE CI. SHIPPED v0.1.123."
 - id: PMAT-465
   github_issue: 496
   item_type: task
