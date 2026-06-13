@@ -600,6 +600,7 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         }
         // PMAT-502cw: set(xs) — recurse into the list expr.
         Expr::SetFromList { list } => collect_idents(list, out),
+        Expr::SetToList { set } => collect_idents(set, out),
         // PMAT-502dk: dict(pairs) — recurse into the pairs list expr.
         Expr::DictFromPairs { pairs } => collect_idents(pairs, out),
         Expr::DictMerge { entries } => {
@@ -1459,10 +1460,10 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
                     .to_string(),
             ));
         }
-        // PMAT-502cw: set(xs) deferred in the Lean lane.
-        Expr::SetFromList { .. } => {
+        // PMAT-502cw/520: set(xs) / list(set) deferred in the Lean lane.
+        Expr::SetFromList { .. } | Expr::SetToList { .. } => {
             return Err(LeanCodegenError::Unsupported(
-                "Python set(xs) is not yet supported in the Lean lane \
+                "Python set(xs) / list(set) is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

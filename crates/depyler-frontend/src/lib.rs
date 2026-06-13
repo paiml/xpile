@@ -5847,6 +5847,11 @@ fn infer_type(e: &Expr) -> Type {
             Type::List(elem) => Type::Set(elem),
             _ => Type::Set(Box::new(Type::I64)),
         },
+        // PMAT-520: list(set) / sorted(set) → List over the set's element type.
+        Expr::SetToList { set } => match infer_type(set) {
+            Type::Set(elem) => Type::List(elem),
+            _ => Type::List(Box::new(Type::I64)),
+        },
         // PMAT-502dk: dict(pairs) → Dict(K, V) over the list's tuple[K, V].
         Expr::DictFromPairs { pairs } => match infer_type(pairs) {
             Type::List(elem) => match *elem {
@@ -6219,6 +6224,11 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::SetFromList { list } => match infer_type_in_ctx(ctx, list) {
             Type::List(elem) => Type::Set(elem),
             _ => Type::Set(Box::new(Type::I64)),
+        },
+        // PMAT-520: list(set) / sorted(set) → List over the set's element type.
+        Expr::SetToList { set } => match infer_type_in_ctx(ctx, set) {
+            Type::Set(elem) => Type::List(elem),
+            _ => Type::List(Box::new(Type::I64)),
         },
         // PMAT-502dk: dict(pairs) → Dict(K, V) over the list's tuple[K, V].
         Expr::DictFromPairs { pairs } => match infer_type_in_ctx(ctx, pairs) {
@@ -7506,6 +7516,10 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             Type::Str => Some(Expr::StrChars {
                                 string: Box::new(arg),
                             }),
+                            // PMAT-520: `sorted(set(...))` / `sorted(<set>)` →
+                            // sort the unique elements (materialise the set to a
+                            // Vec first). Previously fell through to a miscompile.
+                            Type::Set(_) => Some(Expr::SetToList { set: Box::new(arg) }),
                             _ => None,
                         };
                         if let Some(list) = list {
@@ -7647,6 +7661,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     // value semantics already clones, so return it as-is.
                     if matches!(infer_type_in_ctx(ctx, &inner), Type::List(_)) {
                         return Ok(inner);
+                    }
+                    // PMAT-520: `list(set(...))` / `list(<set>)` → the unique
+                    // elements as a Vec. Previously fell through to a miscompile
+                    // (`list(set(...))` with both calls emitted as undefined fns).
+                    if matches!(infer_type_in_ctx(ctx, &inner), Type::Set(_)) {
+                        return Ok(Expr::SetToList {
+                            set: Box::new(inner),
+                        });
                     }
                 }
                 // PMAT-502cw: `set(xs)` materialises a list into a HashSet

@@ -4275,6 +4275,33 @@ fn main() {
     assert_rustc_runs("frozenset_basic", &rust, driver);
 }
 
+/// PMAT-520 (Tranche 2 — correctness): `list(set(...))` / `sorted(set(...))` —
+/// materialise a set back to a `Vec` (`Expr::SetToList`). Previously a silent
+/// miscompile: the nested `set(...)` fell through to context-free lowering and
+/// emitted an undefined `set(...)`/`list(...)` call. Cross-checked vs python3
+/// (unique_count 4, smallest 1, largest 3, desc_first 3).
+#[test]
+fn list_sorted_of_set() {
+    let rust = xpile_transpile_to_rust("list_sorted_of_set.py");
+    assert!(
+        !rust.contains("list(set(")
+            && !rust.contains("sorted(set(")
+            && rust.contains(
+                ".collect::<std::collections::HashSet<_>>().iter().cloned().collect::<Vec<_>>()"
+            ),
+        "list/sorted of a set should materialise to a Vec, not emit undefined calls:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(unique_count(vec![3, 3, 1, 2, 2, 5]), 4);
+    assert_eq!(smallest_unique(vec![3, 3, 1, 2]), 1);
+    assert_eq!(largest_unique(vec![3, 3, 1, 2]), 3);
+    assert_eq!(sorted_desc_first(vec![3, 3, 1, 2]), 3);
+}
+"#;
+    assert_rustc_runs("list_sorted_of_set", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)

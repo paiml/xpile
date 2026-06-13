@@ -359,6 +359,7 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         }
         // PMAT-502cw: set(xs) — recurse into the list expr.
         Expr::SetFromList { list } => expr_has_int_arith(list),
+        Expr::SetToList { set } => expr_has_int_arith(set),
         Expr::DictFromPairs { pairs } => expr_has_int_arith(pairs),
         Expr::DictMerge { entries } => entries
             .iter()
@@ -1655,6 +1656,11 @@ pub enum Expr {
     /// .collect::<std::collections::HashSet<_>>()` (element type inferred).
     /// Result types as `set[T]` over the list's element type. Lean refuses.
     SetFromList { list: Box<Expr> },
+    /// `list(<set>)` / `sorted(<set>)` — materialise a `HashSet` back into a
+    /// `Vec` (the unique elements, arbitrary order). PMAT-520. Rust/Ruchy emit
+    /// `(<set>).iter().cloned().collect::<Vec<_>>()`. Result types as `list[T]`
+    /// over the set's element type. Lean refuses.
+    SetToList { set: Box<Expr> },
     /// `dict(pairs)` — materialise a list of 2-tuples into a `HashMap`.
     /// PMAT-502dk (Tranche 2). Rust/Ruchy emit `(<pairs>).iter().cloned()
     /// .collect::<std::collections::HashMap<_, _>>()`. Result types as
