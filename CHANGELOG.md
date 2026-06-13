@@ -7,6 +7,16 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.186] — 2026-06-13
+
+Tranche-2 slice PMAT-502ev — **`sorted(s)` over a str** (sort characters).
+
+`sorted(s)` over a string sorts its characters, returning a list of 1-char
+strings. It now materializes the chars (`Expr::StrChars`) and sorts them,
+completing the `sorted(X)` family (list / dict-keys / str-chars). The
+`reverse=` / `key=` keywords still apply. New `sorted_str.py` e2e fixture
+(first/last char, joined, descending, char count), all cross-checked vs python3.
+
 ## [0.1.185] — 2026-06-13
 
 Tranche-2 slice PMAT-502eu — **`sorted(d)` over a dict** (sort its keys).

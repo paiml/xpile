@@ -5842,12 +5842,17 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         let arg = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                         // PMAT-502eu: `sorted(d)` over a dict sorts its KEYS
                         // (Python iterates a dict as its keys) — materialize the
-                        // keys list first. `sorted(xs)` over a list is unchanged.
+                        // keys list first. PMAT-502ev: `sorted(s)` over a str
+                        // sorts its characters → a list of 1-char strings
+                        // (`Expr::StrChars`). `sorted(xs)` over a list unchanged.
                         let list = match infer_type_in_ctx(ctx, &arg) {
                             Type::List(_) => Some(arg),
                             Type::Dict(_, _) => Some(Expr::DictView {
                                 dict: Box::new(arg),
                                 kind: DictViewKind::Keys,
+                            }),
+                            Type::Str => Some(Expr::StrChars {
+                                string: Box::new(arg),
                             }),
                             _ => None,
                         };
