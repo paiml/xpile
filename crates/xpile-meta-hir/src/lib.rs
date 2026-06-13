@@ -377,6 +377,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::SetOp { lhs, rhs, .. } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
         // PMAT-502ep: set predicates — recurse into both operands.
         Expr::SetPred { lhs, rhs, .. } => expr_has_int_arith(lhs) || expr_has_int_arith(rhs),
+        // PMAT-502eq: shallow copy — recurse into the cloned value.
+        Expr::Clone(inner) => expr_has_int_arith(inner),
         // PMAT-455 (v0.2.0 Track 1.B): list literal — recurse into
         // each element. An int-typed element (`[1, 2, 3]`) doesn't
         // by itself involve overflow-prone arithmetic, but a list of
@@ -1264,6 +1266,11 @@ pub enum Expr {
         op: SetPredOp,
         rhs: Box<Expr>,
     },
+    /// PMAT-502eq: a shallow copy — Python `xs.copy()` / `d.copy()` /
+    /// `s.copy()` over a list / dict / set. Yields a **new** owned collection of
+    /// the same type. Rust/Ruchy emit `(<inner>).clone()`; Lean emits the inner
+    /// expression directly (Lean values are immutable, so a copy is identity).
+    Clone(Box<Expr>),
     /// Tuple literal — Python `(a, b)` / multiple-return `return a, b`.
     /// PMAT-494 (sprint). Elements may be heterogeneous (unlike
     /// [`Expr::ListLit`]). Rust/Ruchy emit `(e0, e1, ...)`; Lean refuses

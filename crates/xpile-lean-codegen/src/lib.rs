@@ -675,6 +675,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(lhs, out);
             collect_idents(rhs, out);
         }
+        // PMAT-502eq: shallow copy — recurse into the cloned value.
+        Expr::Clone(inner) => collect_idents(inner, out),
         // PMAT-457: indexed access — recurse into both sides.
         Expr::Index { collection, index } => {
             collect_idents(collection, out);
@@ -1069,6 +1071,9 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
 
 fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
     match e {
+        // PMAT-502eq: a shallow copy of an immutable Lean value is the value
+        // itself — emit the inner expression directly.
+        Expr::Clone(inner) => emit_expr(out, inner)?,
         // PMAT-502bl: void functions are refused at emit_type, so a unit
         // value should never reach here; refuse defensively.
         Expr::Unit => {

@@ -4434,6 +4434,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::SetOp { lhs, .. } => infer_type(lhs),
         // PMAT-502ep: set predicates yield Bool.
         Expr::SetPred { .. } => Type::Bool,
+        // PMAT-502eq: a copy has the same type as the value it clones.
+        Expr::Clone(inner) => infer_type(inner),
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => Type::Tuple(elems.iter().map(infer_type).collect()),
         // PMAT-502q: tuple constant-index → the N-th element type.
@@ -4752,6 +4754,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::SetOp { lhs, .. } => infer_type_in_ctx(ctx, lhs),
         // PMAT-502ep: set predicates yield Bool.
         Expr::SetPred { .. } => Type::Bool,
+        // PMAT-502eq: a copy has the same type as the value it clones.
+        Expr::Clone(inner) => infer_type_in_ctx(ctx, inner),
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => {
             Type::Tuple(elems.iter().map(|e| infer_type_in_ctx(ctx, e)).collect())
@@ -5176,6 +5180,18 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             op: pop,
                             rhs: Box::new(other),
                         });
+                    }
+                }
+                // PMAT-502eq: `xs.copy()` / `d.copy()` / `s.copy()` — a shallow
+                // copy of a list / dict / set (0 args) → `Expr::Clone`.
+                if attr.attr.as_str() == "copy" && call.args.is_empty() && call.keywords.is_empty()
+                {
+                    let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+                    if matches!(
+                        infer_type_in_ctx(ctx, &recv),
+                        Type::List(_) | Type::Dict(_, _) | Type::Set(_)
+                    ) {
+                        return Ok(Expr::Clone(Box::new(recv)));
                     }
                 }
                 if attr.attr.as_str() == "get" {

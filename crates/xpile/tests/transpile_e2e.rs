@@ -3550,6 +3550,28 @@ fn main() {
     assert_rustc_runs("nested_index_assign", &rust, driver);
 }
 
+/// PMAT-502eq (Tranche 2): shallow copy — `xs.copy()` / `d.copy()` / `s.copy()`
+/// over a list / dict / set → `Expr::Clone` (`(<inner>).clone()`). The copy is
+/// independent: mutating it leaves the original unchanged. Cross-checked vs
+/// python3.
+#[test]
+fn collection_copy() {
+    let rust = xpile_transpile_to_rust("collection_copy.py");
+    assert!(
+        rust.contains(").clone()"),
+        ".copy() should emit (<inner>).clone():\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(list_copy(), 34); // original len 3, copy len 4
+    assert_eq!(dict_copy(), 12);
+    assert_eq!(set_copy(), 23);
+    assert_eq!(copy_param(vec![1, 2, 3, 4]), 5);
+}
+"#;
+    assert_rustc_runs("collection_copy", &rust, driver);
+}
+
 /// PMAT-502ep (Tranche 2): set predicates — the methods `a.issubset(b)` /
 /// `a.issuperset(b)` / `a.isdisjoint(b)` AND the operators `a <= b` / `a < b` /
 /// `a >= b` / `a > b` over two sets. The operators were a silent miscompile

@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.181] — 2026-06-13
+
+Tranche-2 slice PMAT-502eq — **collection `.copy()`** (`list`/`dict`/`set`).
+
+`xs.copy()` / `d.copy()` / `s.copy()` (a shallow copy of a list / dict / set)
+now lower to a new `Expr::Clone` → `(<inner>).clone()` in the Rust/Ruchy
+backends (Lean emits the inner expression directly, since Lean values are
+immutable so a copy is identity). The copy is independent — mutating it leaves
+the original unchanged, matching Python's shallow copy. Recognized in the
+attribute-call dispatch (0 args, receiver types as list/dict/set). New
+`collection_copy.py` e2e fixture (list/dict/set copy independence + a param
+copy), all cross-checked vs python3.
+
 ## [0.1.180] — 2026-06-13
 
 Tranche-2 slice PMAT-502ep — **set predicates** (`issubset`/`issuperset`/`isdisjoint`
