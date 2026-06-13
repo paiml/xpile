@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.213] — 2026-06-13
+
+Tranche 2 — PMAT-513: Python **`Enum` classes** → Rust enums.
+
+- `class C(Enum): NAME = <int literal>` → `#[derive(Clone, Copy, Debug,
+  PartialEq, Eq)] pub enum C { NAME, … }`. Member access `C.NAME` → `C::NAME`
+  (new `Expr::EnumVariant`); the compile-time-known `C.NAME.value` lowers to its
+  discriminant literal. Enum-typed values **reuse `Type::Struct`** at use sites
+  (an enum is just a named type) — no new `Type` variant.
+- New `Item::Enum { name, variants }`; a module-level `enums` registry built in
+  the pre-pass (enum classes are kept out of the struct registry) and threaded
+  through the lowering ctx. `lower_top_level_stmt` dispatches enum classes before
+  the struct path. Unknown-variant access errors cleanly. Lean refuses.
+  `auto()`/`IntEnum`/methods/`.name`/value-construction/match-on-enum deferred.
+- New e2e fixture `enum_basic.py` (rustc round-trip cross-checked vs python3 —
+  `.value`, enum-typed param + member equality, enum local). e2e 275 → 276.
+
 ## [0.1.212] — 2026-06-13
 
 Tranche 2 — PMAT-512: `match` **`|`-patterns** (`case 0 | 1 | 2:`).
