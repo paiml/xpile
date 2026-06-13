@@ -4009,6 +4009,11 @@ fn infer_type(e: &Expr) -> Type {
         Expr::Reversed { list } => infer_type(list),
         // PMAT-502cj: list(range(...)) materialises a list[int].
         Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
+        // PMAT-502cw: set(xs) → set over the list's element type.
+        Expr::SetFromList { list } => match infer_type(list) {
+            Type::List(elem) => Type::Set(elem),
+            _ => Type::Set(Box::new(Type::I64)),
+        },
         // PMAT-502ab: filter(pred, xs) keeps the input list type.
         Expr::Filter { list, .. } => infer_type(list),
         // PMAT-502ac: map(f, xs) → List of the body's transformed type.
@@ -4279,6 +4284,11 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::Reversed { list } => infer_type_in_ctx(ctx, list),
         // PMAT-502cj: list(range(...)) materialises a list[int].
         Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
+        // PMAT-502cw: set(xs) → set over the list's element type.
+        Expr::SetFromList { list } => match infer_type_in_ctx(ctx, list) {
+            Type::List(elem) => Type::Set(elem),
+            _ => Type::Set(Box::new(Type::I64)),
+        },
         // PMAT-502ab: filter(pred, xs) keeps the input list type.
         Expr::Filter { list, .. } => infer_type_in_ctx(ctx, list),
         // PMAT-502ac: map(f, xs) → List of the body's transformed type.
@@ -5228,6 +5238,20 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     if matches!(infer_type_in_ctx(ctx, &inner), Type::List(_)) {
                         return Ok(inner);
                     }
+                }
+                // PMAT-502cw: `set(xs)` materialises a list into a HashSet
+                // (de-duplicating). 1-arg over a list-typed value.
+                if fname.id.as_str() == "set" && call.keywords.is_empty() && call.args.len() == 1 {
+                    let inner = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &inner), Type::List(_)) {
+                        return Ok(Expr::SetFromList {
+                            list: Box::new(inner),
+                        });
+                    }
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` calls `set(<expr>)` over a non-list — v0.2.0 supports `set()` (empty) or `set(<list>)`",
+                        ctx.fn_name
+                    )));
                 }
                 // PMAT-502i: empty collection constructors. `set()`/`dict()`/
                 // `list()` (0 args) → the corresponding empty literal. Like

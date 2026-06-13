@@ -3509,6 +3509,26 @@ fn main() {
     assert_rustc_runs("int_radix", &rust, driver);
 }
 
+/// PMAT-502cw (Tranche 2): `set(xs)` materialises a list into a HashSet.
+#[test]
+fn set_from_list() {
+    let rust = xpile_transpile_to_rust("set_from_list.py");
+    assert!(
+        rust.contains(".iter().cloned().collect::<std::collections::HashSet<_>>()"),
+        "set(xs):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let u = uniq(vec![1, 2, 2, 3, 3, 3]);
+    assert_eq!(u.len(), 3);
+    assert!(u.contains(&2));
+    assert_eq!(has(vec![1, 2, 3], 2), true);
+    assert_eq!(has(vec![1, 2, 3], 9), false);
+}
+"#;
+    assert_rustc_runs("set_from_list", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
