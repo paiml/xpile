@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.227] — 2026-06-14
+
+Tranche 2 — PMAT-527: container truthiness in boolean conditions.
+
+- `if xs:` / `while q:` / `x if xs else y` / `not d` — Python treats a non-empty
+  `list`/`dict`/`set`/`str` as truthy. A new `truthy_condition` helper converts a
+  container-typed condition to `len(c) != 0` (and `not c` → `len(c) == 0`),
+  applied at the if-stmt, if-as-let, terminal-if-as-expr, `while`, and ternary
+  condition sites. **No new IR** (reuses `Len` + `BinOp`). Bool/int/float
+  conditions pass through unchanged (int-truthiness still rejected).
+- New e2e fixture `container_truthiness.py` (rustc round-trip cross-checked vs
+  python3). e2e 288 → 289.
+
 ## [0.1.226] — 2026-06-14
 
 Tranche 2 — PMAT-526 (correctness): `map`/`filter` lambda param typed as the
