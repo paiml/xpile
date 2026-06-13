@@ -136,6 +136,24 @@ struct LoweringCtx {
     /// non-reassigned (`!mutable`) `Optional`-typed names are eligible, so the
     /// unwrap is sound (the name cannot become `None` after the guard).
     narrowed_some: HashSet<String>,
+    /// PMAT-506h (classes epic): when lowering a `@classmethod` body, the name of
+    /// the enclosing class. A `cls(...)` construction or `cls.method(...)` call in
+    /// the body resolves `cls` to this class name (so it reuses the existing
+    /// struct-construction / static-call dispatch). `None` everywhere else.
+    cls_name: Option<String>,
+}
+
+impl LoweringCtx {
+    /// PMAT-506h: resolve a receiver/callee name, mapping the classmethod
+    /// pseudo-receiver `cls` to the enclosing class name when set. Any other
+    /// name passes through unchanged.
+    fn resolve_class_name<'a>(&'a self, name: &'a str) -> &'a str {
+        if name == "cls" {
+            self.cls_name.as_deref().unwrap_or(name)
+        } else {
+            name
+        }
+    }
 }
 
 impl LoweringCtx {
@@ -203,6 +221,7 @@ impl LoweringCtx {
             underscore_counter: 0,
             underscore_rename: None,
             narrowed_some: HashSet::new(),
+            cls_name: None,
         }
     }
 }
@@ -654,18 +673,22 @@ impl Frontend for PythonFrontend {
                 );
             }
         }
-        // PMAT-506g (classes epic): register each class `@staticmethod` under a
-        // qualified key `Class::method`, so a `Class.method(args)` call reuses
-        // `Expr::Call` (callee = `Class::method`) and types via the signature
-        // table — no instance receiver, no new IR. Presence of the qualified key
-        // is itself the "this is a static method" signal at the call site.
+        // PMAT-506g/506h (classes epic): register each class `@staticmethod` /
+        // `@classmethod` under a qualified key `Class::method`, so a
+        // `Class.method(args)` call reuses `Expr::Call` (callee = `Class::method`)
+        // and types via the signature table — no instance receiver, no new IR.
+        // Presence of the qualified key is itself the "this is a static/class
+        // method" signal at the call site. A classmethod's `cls` first parameter
+        // is implicit at the call site, so it is excluded from the recorded
+        // parameter list (the caller supplies only the explicit args).
         for stmt in &suite {
             if let ast::Stmt::ClassDef(c) = stmt {
                 for member in &c.body {
                     let ast::Stmt::FunctionDef(m) = member else {
                         continue;
                     };
-                    if !is_staticmethod(m) {
+                    let is_cm = is_classmethod(m);
+                    if !is_staticmethod(m) && !is_cm {
                         continue;
                     }
                     let ret = match m.returns.as_ref() {
@@ -673,13 +696,10 @@ impl Frontend for PythonFrontend {
                         Some(ann) => parse_type_annotation(c.name.as_str(), "return", ann)
                             .unwrap_or(Type::I64),
                     };
-                    let params = m.args.args.iter().map(|a| a.def.arg.to_string()).collect();
-                    let defaults = m
-                        .args
-                        .args
-                        .iter()
-                        .map(|a| a.default.as_deref().cloned())
-                        .collect();
+                    // Skip the implicit `cls` receiver for a classmethod.
+                    let args_iter = m.args.args.iter().skip(usize::from(is_cm));
+                    let params = args_iter.clone().map(|a| a.def.arg.to_string()).collect();
+                    let defaults = args_iter.map(|a| a.default.as_deref().cloned()).collect();
                     sig_map.insert(
                         format!("{}::{}", c.name, m.name),
                         FnSig {
@@ -814,6 +834,7 @@ fn lower_top_level_stmt(
             struct_methods,
             struct_field_defaults,
             None,
+            None,
         )
         .map(Item::Function),
         // PMAT-505a/506d (classes epic): a field-only / `@dataclass` class → an
@@ -897,11 +918,12 @@ fn class_def_signature(
             }
             // PMAT-506d: an instance method `def m(self, …) -> R: …`. Record its
             // return type for call typing; the body is lowered later.
-            // PMAT-506g: a `@staticmethod` is NOT an instance method — it is
-            // registered separately under a qualified `Class::method` signature
-            // key (see the module pre-pass), so skip it here.
+            // PMAT-506g/506h: a `@staticmethod` / `@classmethod` is NOT an
+            // instance method — it is registered separately under a qualified
+            // `Class::method` signature key (see the module pre-pass), so skip it
+            // here.
             ast::Stmt::FunctionDef(m) => {
-                if is_staticmethod(m) {
+                if is_staticmethod(m) || is_classmethod(m) {
                     continue;
                 }
                 let ret = match m.returns.as_ref() {
@@ -931,6 +953,17 @@ fn is_staticmethod(m: &ast::StmtFunctionDef) -> bool {
     m.decorator_list
         .iter()
         .any(|d| matches!(d, ast::Expr::Name(n) if n.id.as_str() == "staticmethod"))
+}
+
+/// PMAT-506h (classes epic): true if a class method carries a bare
+/// `@classmethod` decorator. Such a method has a `cls` first parameter (the
+/// class itself) instead of `self`; it is called as `Class.method(args)` →
+/// `Class::method(args)` (an associated function), and any `cls(...)` /
+/// `cls.method(...)` in its body resolves to the enclosing class.
+fn is_classmethod(m: &ast::StmtFunctionDef) -> bool {
+    m.decorator_list
+        .iter()
+        .any(|d| matches!(d, ast::Expr::Name(n) if n.id.as_str() == "classmethod"))
 }
 
 /// PMAT-506f: true if `e` is a literal usable as a field default — a constant
@@ -985,11 +1018,44 @@ fn lower_class_def(
                     struct_methods.clone(),
                     struct_field_defaults.clone(),
                     None,
+                    None,
                 )?;
                 methods.push(method);
                 continue;
             }
-            // The first param must be `self` (classmethods unsupported).
+            // PMAT-506h: a `@classmethod` lowers like a static method but its
+            // `cls` first parameter is dropped (it carries no runtime value — it
+            // is the class itself) and `cls(...)` / `cls.method(...)` in the body
+            // resolve to the enclosing class via `ctx.cls_name`. Require the `cls`
+            // receiver, remove it, then lower with `cls_name = Some(class)`.
+            if is_classmethod(&m) {
+                let first_is_cls = m
+                    .args
+                    .args
+                    .first()
+                    .is_some_and(|a| a.def.arg.as_str() == "cls");
+                if !first_is_cls {
+                    return Err(FrontendError::Lower(format!(
+                        "class `{name}` `@classmethod` `{}` has no `cls` first parameter",
+                        m.name
+                    )));
+                }
+                m.args.args.remove(0);
+                m.decorator_list.clear();
+                let method = lower_function_def(
+                    m,
+                    signatures.clone(),
+                    consts.clone(),
+                    structs.clone(),
+                    struct_methods.clone(),
+                    struct_field_defaults.clone(),
+                    None,
+                    Some(name.clone()),
+                )?;
+                methods.push(method);
+                continue;
+            }
+            // The first param must be `self`.
             let first_is_self = m
                 .args
                 .args
@@ -997,7 +1063,7 @@ fn lower_class_def(
                 .is_some_and(|a| a.def.arg.as_str() == "self");
             if !first_is_self {
                 return Err(FrontendError::Lower(format!(
-                    "class `{name}` method `{}` has no `self` first parameter — classmethods are not supported at v0.2.0 first cut (use `@staticmethod` for a method with no `self`)",
+                    "class `{name}` method `{}` has no `self` first parameter — use `@staticmethod` (no receiver) or `@classmethod` (`cls` receiver)",
                     m.name
                 )));
             }
@@ -1009,6 +1075,7 @@ fn lower_class_def(
                 struct_methods.clone(),
                 struct_field_defaults.clone(),
                 Some(self_ty.clone()),
+                None,
             )?;
             // First cut: read-only methods. A `self.field = v` (FieldAssign on
             // `self`) would need a `&mut self` receiver + caller mutability —
@@ -1150,6 +1217,9 @@ fn lower_function_def(
     // tolerated when set (a `@dataclass` method may be plain, but the class
     // itself carried the decorator, not the method).
     self_type: Option<Type>,
+    // PMAT-506h: when lowering a `@classmethod` body, the enclosing class name
+    // (so `cls(...)` / `cls.method(...)` resolve to it). `None` otherwise.
+    cls_name: Option<String>,
 ) -> Result<Function, FrontendError> {
     if !f.decorator_list.is_empty() {
         return Err(FrontendError::Lower(format!(
@@ -1255,6 +1325,7 @@ fn lower_function_def(
         struct_methods,
         struct_field_defaults,
     );
+    ctx.cls_name = cls_name;
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
     for stmt in leading {
         // A single Python statement may lower to multiple meta-HIR
@@ -6080,16 +6151,19 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     if recv.id.as_str() == "math" {
                         return lower_math_call(ctx, attr.attr.as_str(), &call);
                     }
-                    // PMAT-506g (classes epic): a `@staticmethod` call
-                    // `Class.method(args)` — the receiver is a class *name*
-                    // (a known struct), not an instance value. Lower to
+                    // PMAT-506g/506h (classes epic): a `@staticmethod` /
+                    // `@classmethod` call `Class.method(args)` — the receiver is
+                    // a class *name* (a known struct), not an instance value
+                    // (PMAT-506h: `cls.method(args)` inside a classmethod body
+                    // resolves `cls` to the enclosing class). Lower to
                     // `Expr::Call { callee: "Class::method", args }` (registered
                     // in the module pre-pass under the qualified key). Must run
                     // BEFORE the instance-method block below, which would
                     // otherwise try to lower the bare class name as a value.
-                    if ctx.structs.contains_key(recv.id.as_str()) {
+                    let class = ctx.resolve_class_name(recv.id.as_str());
+                    if ctx.structs.contains_key(class) {
                         let method = attr.attr.as_str();
-                        let key = format!("{}::{}", recv.id, method);
+                        let key = format!("{class}::{method}");
                         if ctx.signatures.contains_key(&key) {
                             if !call.keywords.is_empty() {
                                 return Err(FrontendError::Lower(format!(
@@ -6104,8 +6178,8 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             return Ok(Expr::Call { callee: key, args });
                         }
                         return Err(FrontendError::Lower(format!(
-                            "function `{}` calls `{}.{method}()`, which is not a `@staticmethod` of `{}` — call an instance method on an instance, not the class",
-                            ctx.fn_name, recv.id, recv.id
+                            "function `{}` calls `{class}.{method}()`, which is not a `@staticmethod`/`@classmethod` of `{class}` — call an instance method on an instance, not the class",
+                            ctx.fn_name
                         )));
                     }
                 }
@@ -6454,9 +6528,12 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // order; keyword args (PMAT-506e) fill the rest by name (Python's
                 // rule: positionals first, then keywords). Each field exactly
                 // once; unknown keywords / duplicates / arity mismatch error.
+                // PMAT-506h: inside a `@classmethod` body, `cls(...)` constructs
+                // the enclosing class (resolved via `ctx.cls_name`).
+                let ctor_name = ctx.resolve_class_name(fname.id.as_str());
                 if let Some(field_names) = ctx
                     .structs
-                    .get(fname.id.as_str())
+                    .get(ctor_name)
                     .map(|fs| fs.iter().map(|(f, _)| f.clone()).collect::<Vec<_>>())
                 {
                     if call.args.len() > field_names.len() {
@@ -6498,7 +6575,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     // PMAT-506f: fill any still-omitted field from its declared
                     // default (a literal lowered in the pre-pass).
                     if values.len() != field_names.len() {
-                        if let Some(defaults) = ctx.struct_field_defaults.get(fname.id.as_str()) {
+                        if let Some(defaults) = ctx.struct_field_defaults.get(ctor_name) {
                             for (field, default) in defaults {
                                 values
                                     .entry(field.clone())
@@ -6523,7 +6600,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         fields.push((f.clone(), values.remove(f).expect("field covered above")));
                     }
                     return Ok(Expr::StructLit {
-                        name: fname.id.to_string(),
+                        name: ctor_name.to_string(),
                         fields,
                     });
                 }

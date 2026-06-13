@@ -4015,6 +4015,32 @@ fn staticmethod_instance_via_class_is_rejected() {
     );
 }
 
+/// PMAT-506h (classes epic): dataclass **`@classmethod`** — a method with a
+/// `cls` receiver lowers to a no-receiver associated function (the `cls` param
+/// is dropped); `cls(...)` in the body constructs the enclosing class and
+/// `cls.method(...)` calls a sibling static/class method, both resolved via the
+/// enclosing class name. Called as `Class.method(args)` → `Class::method(args)`
+/// (the same dispatch as `@staticmethod`, no new IR). Cross-checked vs python3
+/// (origin_sum=0, diagonal_sum(5)=10, unit_sum=2).
+#[test]
+fn dataclass_classmethod() {
+    let rust = xpile_transpile_to_rust("dataclass_classmethod.py");
+    assert!(
+        rust.contains("pub fn origin() -> Point")
+            && rust.contains("Point { x: 0i64, y: 0i64 }")
+            && rust.contains("Point::diagonal(1i64)"),
+        "classmethod `cls(...)` should construct the class; `cls.m()` → `Class::m()`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(origin_sum(), 0);
+    assert_eq!(diagonal_sum(5), 10);
+    assert_eq!(unit_sum(), 2);
+}
+"#;
+    assert_rustc_runs("dataclass_classmethod", &rust, driver);
+}
+
 /// PMAT-502fc (Tranche 2): two-generator list comprehension
 /// `[expr for x in a for y in b]` → nested `for` loops appending to the
 /// accumulator (previously a hard "single `for` clause" error). Both generators
