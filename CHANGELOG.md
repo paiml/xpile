@@ -19,6 +19,19 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.288] — 2026-06-14
+
+Tranche 2 — PMAT-589: **correctness** — `int()` of an out-of-i64-range float fails loud.
+
+- Python returns an exact arbitrary-precision integer for an out-of-range finite
+  float (`int(1e30)`), but xpile emitted `((x) as i64)`, and Rust's `as` cast
+  saturates to `i64::MAX` silently. Completes the int-cast fail-loud story
+  (non-finite from PMAT-586 + out-of-range here). Found by the differential hunt.
+- Fix: extend the int-cast guard with a range check — a finite source outside
+  `[i64::MIN, 2^63)` panics rather than returning the wrong value. In-range
+  floats (incl. `9e18 < 2^63`) truncate toward zero as before. Rust + Ruchy.
+- New e2e fixture `int_cast_range.py` cross-checked vs python3. 350 e2e fixtures.
+
 ## [0.1.287] — 2026-06-14
 
 Tranche 2 — PMAT-588: **correctness** — clone reused non-Copy call arguments (E0382).
