@@ -2771,6 +2771,21 @@ fn lower_in_range(
     Ok(and(bounds, reachable))
 }
 
+/// PMAT-546: a comprehension/loop iterable that types as `str` iterates its
+/// characters (each a 1-char string) — materialize via `Expr::StrChars`
+/// (→ `List(Str)`), the same conversion the `for c in s` loop and the
+/// `enumerate`/`zip` paired loops use. A no-op for any non-`str` iterable, so it
+/// is safe to apply at every comprehension iterable site.
+fn str_iter_to_chars(ctx: &LoweringCtx, iter: Expr) -> Expr {
+    if matches!(infer_type_in_ctx(ctx, &iter), Type::Str) {
+        Expr::StrChars {
+            string: Box::new(iter),
+        }
+    } else {
+        iter
+    }
+}
+
 fn lower_range_list(ctx: &LoweringCtx, call: &ast::ExprCall) -> Result<Expr, FrontendError> {
     let (start, stop, step) = match call.args.as_slice() {
         [stop] => (Expr::LitInt(0), lower_expr_in_ctx(ctx, stop.clone())?, 1i64),
@@ -4843,7 +4858,7 @@ fn desugar_list_comp(
                 )));
             }
         };
-        let iter_expr = lower_expr_in_ctx(ctx, gen.iter.clone())?;
+        let iter_expr = str_iter_to_chars(ctx, lower_expr_in_ctx(ctx, gen.iter.clone())?);
         let (k_in, v_in) = match infer_type_in_ctx(ctx, &iter_expr) {
             Type::List(elem) => match *elem {
                 Type::Tuple(tys) if tys.len() == 2 => (tys[0].clone(), tys[1].clone()),
@@ -4979,7 +4994,7 @@ fn desugar_list_comp(
             Stmt::While { cond, body },
         ]);
     }
-    let iter_expr = lower_expr_in_ctx(ctx, gen.iter.clone())?;
+    let iter_expr = str_iter_to_chars(ctx, lower_expr_in_ctx(ctx, gen.iter.clone())?);
     let elem_in_ty = match infer_type_in_ctx(ctx, &iter_expr) {
         Type::List(e) => *e,
         other => {
@@ -5085,7 +5100,7 @@ fn desugar_dict_comp(
                 )));
             }
         };
-        let iter_expr = lower_expr_in_ctx(ctx, gen.iter.clone())?;
+        let iter_expr = str_iter_to_chars(ctx, lower_expr_in_ctx(ctx, gen.iter.clone())?);
         let (k_in, v_in) = match infer_type_in_ctx(ctx, &iter_expr) {
             Type::List(elem) => match *elem {
                 Type::Tuple(tys) if tys.len() == 2 => (tys[0].clone(), tys[1].clone()),
@@ -5189,7 +5204,7 @@ fn desugar_dict_comp(
             insert,
         ));
     }
-    let iter_expr = lower_expr_in_ctx(ctx, gen.iter.clone())?;
+    let iter_expr = str_iter_to_chars(ctx, lower_expr_in_ctx(ctx, gen.iter.clone())?);
     let elem_in_ty = match infer_type_in_ctx(ctx, &iter_expr) {
         Type::List(e) => *e,
         other => {
@@ -5358,7 +5373,7 @@ fn desugar_set_comp(
                 )));
             }
         };
-        let iter_expr = lower_expr_in_ctx(ctx, gen.iter.clone())?;
+        let iter_expr = str_iter_to_chars(ctx, lower_expr_in_ctx(ctx, gen.iter.clone())?);
         let (k_in, v_in) = match infer_type_in_ctx(ctx, &iter_expr) {
             Type::List(elem) => match *elem {
                 Type::Tuple(tys) if tys.len() == 2 => (tys[0].clone(), tys[1].clone()),
@@ -5452,7 +5467,7 @@ fn desugar_set_comp(
             insert,
         ));
     }
-    let iter_expr = lower_expr_in_ctx(ctx, gen.iter.clone())?;
+    let iter_expr = str_iter_to_chars(ctx, lower_expr_in_ctx(ctx, gen.iter.clone())?);
     let elem_in_ty = match infer_type_in_ctx(ctx, &iter_expr) {
         Type::List(e) => *e,
         other => {
@@ -10933,10 +10948,11 @@ fn lower_comp_to_map(
         {
             lower_range_list(ctx, inner)?
         } else {
-            lower_expr_in_ctx(ctx, gen.iter.clone())?
+            str_iter_to_chars(ctx, lower_expr_in_ctx(ctx, gen.iter.clone())?)
         }
     } else {
-        lower_expr_in_ctx(ctx, gen.iter.clone())?
+        // PMAT-546: a `str` iterable comprehends over its chars (1-char strings).
+        str_iter_to_chars(ctx, lower_expr_in_ctx(ctx, gen.iter.clone())?)
     };
     let elem_ty = match infer_type_in_ctx(ctx, &iter_list) {
         Type::List(e) => *e,
