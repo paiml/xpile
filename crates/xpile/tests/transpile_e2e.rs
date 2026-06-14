@@ -3361,14 +3361,47 @@ fn main() {
     assert_rustc_runs("aug_assign_float", &rust, driver);
 }
 
-/// PMAT-502br (Tranche 2): float floor-division `a // b` → `(a / b).floor()`
-/// and modulo `a % b` → `a - b * (a / b).floor()` (Python floor semantics,
-/// result of `%` follows the divisor's sign — verified for mixed signs).
+/// PMAT-614: Python float `//` is CPython `float_divmod` (fmod-based), not
+/// `(a / b).floor()`. The naive floor over-rounds when `a/b` lands just below an
+/// integer in float repr (`1.0 // 0.1` == 9.0, not 10.0) and mishandles infinite
+/// operands (`inf // 2` == nan, `-5.0 // inf` == -1.0). Cross-checked vs python3.
+#[test]
+fn float_floordiv_semantics() {
+    let rust = xpile_transpile_to_rust("float_floordiv_semantics.py");
+    assert!(
+        rust.contains("let __fm = __fa % __fz;") && rust.contains("__fd - __ffl > 0.5"),
+        "float // should be the fmod-based divmod:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let inf = f64::INFINITY;
+    // the textbook float-repr cases (Python floors "down"):
+    assert!((floordiv(1.0, 0.1) - 9.0).abs() < 1e-9);
+    assert!((steps(2.0, 0.1) - 19.0).abs() < 1e-9);
+    assert!((floordiv(5.5, 1.1) - 4.0).abs() < 1e-9);
+    // ordinary + signed cases:
+    assert!((floordiv(10.0, 3.0) - 3.0).abs() < 1e-9);
+    assert!((floordiv(-7.5, 2.0) - (-4.0)).abs() < 1e-9);
+    // infinite operands (CPython float_divmod):
+    assert!(floordiv(inf, 2.0).is_nan());
+    assert!((floordiv(-5.0, inf) - (-1.0)).abs() < 1e-9);
+    assert!((floordiv(5.0, -inf) - (-1.0)).abs() < 1e-9);
+}
+"#;
+    assert_rustc_runs("float_floordiv_semantics", &rust, driver);
+}
+
+/// PMAT-614 (was PMAT-502br): float floor-division `a // b` is CPython
+/// `float_divmod` (fmod-based), not `(a / b).floor()`; modulo `a % b` is
+/// CPython `float_rem` (Python floor semantics, `%` follows the divisor's sign).
 #[test]
 fn float_floordiv_mod() {
     let rust = xpile_transpile_to_rust("float_floordiv_mod.py");
-    // PMAT-581: float `//`/`%` now guard the zero divisor (bind it to `__fz`).
-    assert!(rust.contains("((a) / __fz).floor()"), "float // :\n{rust}");
+    // PMAT-614: float `//` is the fmod-based divmod (binds both operands).
+    assert!(
+        rust.contains("let __fm = __fa % __fz;") && rust.contains("__fd - __ffl > 0.5"),
+        "float // :\n{rust}"
+    );
     // PMAT-591: float `%` is CPython `float_rem` (fmod + sign-adjust).
     assert!(
         rust.contains("let __r = __fn % __fz;") && rust.contains("0.0_f64.copysign(__fz)"),
@@ -3379,6 +3412,12 @@ fn main() {
     // python3: 7//2=3, -7//2=-4, 7%3=1, -7%3=2, 7%-3=-2
     assert!((fd(7.0, 2.0) - 3.0).abs() < 1e-9);
     assert!((fd(-7.0, 2.0) - (-4.0)).abs() < 1e-9);
+    // PMAT-614: the common float-repr case Python floors "down" (1.0//0.1==9).
+    assert!((fd(1.0, 0.1) - 9.0).abs() < 1e-9);
+    assert!((fd(2.0, 0.1) - 19.0).abs() < 1e-9);
+    // infinite operands: inf//2 is nan, -5//inf is -1 (CPython float_divmod).
+    assert!(fd(f64::INFINITY, 2.0).is_nan());
+    assert!((fd(-5.0, f64::INFINITY) - (-1.0)).abs() < 1e-9);
     assert!((fmod(7.0, 3.0) - 1.0).abs() < 1e-9);
     assert!((fmod(-7.0, 3.0) - 2.0).abs() < 1e-9);
     assert!((fmod(7.0, -3.0) - (-2.0)).abs() < 1e-9);
