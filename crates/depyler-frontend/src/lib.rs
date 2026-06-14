@@ -2679,6 +2679,98 @@ fn lower_arg_materializing_range(
     lower_expr_in_ctx(ctx, arg.clone())
 }
 
+/// PMAT-534: lower `x in range(...)` to a bounds check (the range is NOT
+/// materialized — `x in range(10**9)` must not allocate a Vec). `x` must type
+/// as `int`. Builds the equivalent meta-HIR boolean expression directly:
+///   - `range(stop)`:                  `0 <= x && x < stop`
+///   - `range(start, stop)`:           `start <= x && x < stop`
+///   - `range(start, stop, step>0)`:   `start <= x && x < stop && (x - start) % step == 0`
+///   - `range(start, stop, step<0)`:   `start >= x && x > stop && (start - x) % -step == 0`
+///
+/// `x` is reused across the comparisons; v0.2.0 operands are pure, so this
+/// matches Python's evaluate-once semantics observationally, like the chained
+/// comparison `a < x < b` desugar.
+fn lower_in_range(
+    ctx: &LoweringCtx,
+    left: &ast::Expr,
+    call: &ast::ExprCall,
+) -> Result<Expr, FrontendError> {
+    if !call.keywords.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` tests `x in range(..., kw=...)` with keyword args — only positional are supported",
+            ctx.fn_name
+        )));
+    }
+    let x = lower_expr_in_ctx(ctx, left.clone())?;
+    if !matches!(infer_type_in_ctx(ctx, &x), Type::I64) {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` tests `x in range(...)` with a non-int `x` — only int membership is supported at v0.2.0",
+            ctx.fn_name
+        )));
+    }
+    let and = |a: Expr, b: Expr| Expr::BinOp {
+        op: BinOp::And,
+        lhs: Box::new(a),
+        rhs: Box::new(b),
+    };
+    let cmp = |op: BinOp, a: Expr, b: Expr| Expr::BinOp {
+        op,
+        lhs: Box::new(a),
+        rhs: Box::new(b),
+    };
+    let (start, stop, step) = match call.args.as_slice() {
+        [stop] => (Expr::LitInt(0), lower_expr_in_ctx(ctx, stop.clone())?, 1i64),
+        [start, stop] => (
+            lower_expr_in_ctx(ctx, start.clone())?,
+            lower_expr_in_ctx(ctx, stop.clone())?,
+            1i64,
+        ),
+        [start, stop, step] => {
+            let s = extract_step_literal(step).ok_or_else(|| {
+                FrontendError::Lower(format!(
+                    "function `{}` tests `x in range(start, stop, step)` with a non-literal-int or zero step — a non-zero integer literal is required",
+                    ctx.fn_name
+                ))
+            })?;
+            (
+                lower_expr_in_ctx(ctx, start.clone())?,
+                lower_expr_in_ctx(ctx, stop.clone())?,
+                s,
+            )
+        }
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` tests `x in range(...)` with {} args — Python supports 1-3",
+                ctx.fn_name,
+                call.args.len()
+            )))
+        }
+    };
+    let bounds = if step > 0 {
+        and(
+            cmp(BinOp::LtEq, start.clone(), x.clone()),
+            cmp(BinOp::Lt, x.clone(), stop),
+        )
+    } else {
+        and(
+            cmp(BinOp::GtEq, start.clone(), x.clone()),
+            cmp(BinOp::Gt, x.clone(), stop),
+        )
+    };
+    if step == 1 || step == -1 {
+        return Ok(bounds);
+    }
+    // Step reachability: `(x - start) % |step| == 0` (the subtraction is
+    // non-negative under the already-asserted bounds).
+    let (diff, modulus) = if step > 0 {
+        (cmp(BinOp::Sub, x.clone(), start), Expr::LitInt(step))
+    } else {
+        (cmp(BinOp::Sub, start, x.clone()), Expr::LitInt(-step))
+    };
+    let reachable = cmp(BinOp::Eq, cmp(BinOp::Mod, diff, modulus), Expr::LitInt(0));
+    Ok(and(bounds, reachable))
+}
+
 fn lower_range_list(ctx: &LoweringCtx, call: &ast::ExprCall) -> Result<Expr, FrontendError> {
     let (start, stop, step) = match call.args.as_slice() {
         [stop] => (Expr::LitInt(0), lower_expr_in_ctx(ctx, stop.clone())?, 1i64),
@@ -8049,6 +8141,24 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 && c.comparators.len() == 1
                 && matches!(c.ops[0], ast::CmpOp::In | ast::CmpOp::NotIn)
             {
+                // PMAT-534: `x in range(...)` / `x not in range(...)` → a bounds
+                // check (the range is NOT materialized — `x in range(10**9)`
+                // must not allocate a Vec). Detected syntactically before the
+                // rhs is lowered as a value.
+                if let ast::Expr::Call(call) = &c.comparators[0] {
+                    if matches!(call.func.as_ref(), ast::Expr::Name(n) if n.id.as_str() == "range")
+                    {
+                        let in_range = lower_in_range(ctx, c.left.as_ref(), call)?;
+                        return Ok(if matches!(c.ops[0], ast::CmpOp::NotIn) {
+                            Expr::UnOp {
+                                op: UnOp::Not,
+                                operand: Box::new(in_range),
+                            }
+                        } else {
+                            in_range
+                        });
+                    }
+                }
                 let rhs = lower_expr_in_ctx(ctx, c.comparators[0].clone())?;
                 if matches!(infer_type_in_ctx(ctx, &rhs), Type::Dict(_, _)) {
                     let key = lower_expr_in_ctx(ctx, (*c.left).clone())?;
