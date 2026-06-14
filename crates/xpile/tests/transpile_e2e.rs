@@ -1481,7 +1481,7 @@ fn minmax_key_lambda() {
     let rust = xpile_transpile_to_rust("minmax_key.py");
     assert!(
         rust.contains(
-            ".iter().cloned().max_by_key(|__k| { let w = __k.clone(); w.chars().count() as i64 })"
+            ".iter().cloned().rev().max_by_key(|__k| { let w = __k.clone(); w.chars().count() as i64 })"
         ) && rust.contains(".iter().cloned().min_by_key("),
         "expected min/max_by_key emission, got:\n{rust}"
     );
@@ -5909,6 +5909,35 @@ fn main() {
 }
 "#;
     assert_rustc_runs("fstring_specs", &rust, driver);
+}
+
+/// PMAT-568 (Tranche 2): **correctness** — Python tie/stability semantics for
+/// `max(key=)` and `sorted(reverse=True)`. `max(xs, key=)` returns the FIRST
+/// maximal element (Rust `max_by_key` returns the last → reverse the iterator);
+/// `sorted(key=, reverse=True)` is STABLE (equal keys keep original order —
+/// `sort_by_key`+`reverse` flips them → stable descending comparator). `min` is
+/// unchanged. Found by the differential hunt. Cross-checked vs python3
+/// (3, 3, 3, 135246, 8).
+#[test]
+fn minmax_sort_tie() {
+    let rust = xpile_transpile_to_rust("minmax_sort_tie.py");
+    assert!(
+        rust.contains(".cloned().rev().max_by_key(") && rust.contains("__kb.cmp(&__ka)"),
+        "expected reversed max + stable-descending sort:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(max_first_tie(vec![3, -3, 1]), 3);
+    assert_eq!(max_alltie(vec![3, 1, 2]), 3);
+    assert_eq!(min_first_tie(vec![3, 1, 2]), 3);
+    assert_eq!(
+        stable_rev(vec![(1, 1), (1, 3), (1, 5), (0, 2), (0, 4), (0, 6)]),
+        135246
+    );
+    assert_eq!(desc_key(vec![23, 17, 45, 8]), 8);
+}
+"#;
+    assert_rustc_runs("minmax_sort_tie", &rust, driver);
 }
 
 /// PMAT-567 (Tranche 2): **correctness** — str slicing `s[a:b]` indexes by
