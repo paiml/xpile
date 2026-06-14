@@ -5135,6 +5135,34 @@ fn main() {
     assert_rustc_runs("math_comb", &rust, driver);
 }
 
+/// PMAT-554 (Tranche 2): `math.perm(n, k)` — number of `k`-permutations of `n`,
+/// `P(n, k) = n! / (n - k)!`, lowered to an inline descending-product block
+/// (`∏ (n - i)` for `i` in `0..k`); `k > n` yields `0`, and the one-arg form
+/// `math.perm(n)` lowers to `factorial`. Cross-checked vs python3
+/// (20, 720, 120, 0, 1).
+#[test]
+fn math_perm() {
+    let rust = xpile_transpile_to_rust("math_perm.py");
+    assert!(
+        rust.contains("__pr.checked_mul(__pn - __pi)"),
+        "math.perm should lower to a descending product block:\n{rust}"
+    );
+    assert!(
+        rust.contains("__f.checked_mul(__fi)"),
+        "one-arg math.perm(n) should lower to factorial:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(arrange(5, 2), 20);
+    assert_eq!(license_plates(), 720);
+    assert_eq!(all_of(5), 120);
+    assert_eq!(out_of_range(3, 5), 0);
+    assert_eq!(empty_pick(7), 1);
+}
+"#;
+    assert_rustc_runs("math_perm", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)

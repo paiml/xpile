@@ -6205,7 +6205,8 @@ fn infer_type(e: &Expr) -> Type {
         | Expr::Lcm { .. }
         | Expr::Factorial { .. }
         | Expr::Isqrt { .. }
-        | Expr::Comb { .. } => Type::I64,
+        | Expr::Comb { .. }
+        | Expr::Perm { .. } => Type::I64,
         // PMAT-502cj: list(range(...)) materialises a list[int].
         Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
         // PMAT-502cw: set(xs) → set over the list's element type.
@@ -6595,7 +6596,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         | Expr::Lcm { .. }
         | Expr::Factorial { .. }
         | Expr::Isqrt { .. }
-        | Expr::Comb { .. } => Type::I64,
+        | Expr::Comb { .. }
+        | Expr::Perm { .. } => Type::I64,
         // PMAT-502cj: list(range(...)) materialises a list[int].
         Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
         // PMAT-502cw: set(xs) → set over the list's element type.
@@ -8804,6 +8806,40 @@ fn lower_math_call(
             "gcd" => Expr::Gcd { a, b },
             "lcm" => Expr::Lcm { a, b },
             _ => Expr::Comb { n: a, k: b },
+        });
+    }
+    // PMAT-554: `math.perm(n, k)` — k-permutations P(n,k) = n!/(n-k)! (int).
+    // Two-arg form → inline product block (`Expr::Perm`); the one-arg form
+    // `math.perm(n)` equals `n!`, so it lowers to `Expr::Factorial`. Args int.
+    if fn_name == "perm" {
+        if !call.keywords.is_empty() || call.args.is_empty() || call.args.len() > 2 {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `math.perm(...)` with {} positional arg(s){}; takes 1 or 2 ints",
+                ctx.fn_name,
+                call.args.len(),
+                if call.keywords.is_empty() { "" } else { " plus keyword args" },
+            )));
+        }
+        let n = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+        if infer_type_in_ctx(ctx, &n) != Type::I64 {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `math.perm(...)` with a non-int argument — only `int` is supported",
+                ctx.fn_name
+            )));
+        }
+        if call.args.len() == 1 {
+            return Ok(Expr::Factorial { n: Box::new(n) });
+        }
+        let k = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+        if infer_type_in_ctx(ctx, &k) != Type::I64 {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `math.perm(...)` with a non-int argument — only `int` is supported",
+                ctx.fn_name
+            )));
+        }
+        return Ok(Expr::Perm {
+            n: Box::new(n),
+            k: Box::new(k),
         });
     }
     // PMAT-551/552: `math.factorial(n)` / `math.isqrt(n)` — 1-arg int → int
