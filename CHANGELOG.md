@@ -19,6 +19,19 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.309] — 2026-06-15
+
+Tranche 2 — PMAT-610: **correctness** — `int(s)` accepts PEP 515 underscore digit separators.
+
+- `int("1_000")` is `1000` in Python (PEP 515), but `int(str)` lowered to
+  `(s).trim().parse::<i64>()`, and Rust's parser rejects underscores → runtime
+  panic on valid Python. Found by the differential hunt (#5).
+- Fix (rust + ruchy codegen): `int(s)` validates Python's between-digits rule
+  (no leading/trailing/doubled underscore on the post-sign body) then strips and
+  parses; invalid placements still raise (≈ ValueError). `float(s)` and the
+  `int(float)` cast are unchanged. No new IR.
+- New e2e fixture `int_str_underscore.py` cross-checked vs python3. 371 e2e fixtures.
+
 ## [0.1.308] — 2026-06-14
 
 Tranche 2 — PMAT-609: **correctness** — `list.pop(i)` with a runtime negative index removes from the end.
