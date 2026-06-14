@@ -1244,6 +1244,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                         emit_expr(out, &args[0], mode)?;
                         out.push_str(")[..]).map(|__i| __i as i64).expect(\"xpile: ValueError: substring not found\")");
                     }
+                    // PMAT-545: `.rfind(sub)` → byte index of the last match or -1.
+                    StrMethodOp::Rfind => {
+                        out.push_str(".rfind(&(");
+                        emit_expr(out, &args[0], mode)?;
+                        out.push_str(")[..]).map(|__i| __i as i64).unwrap_or(-1)");
+                    }
+                    // PMAT-545: `.rindex(sub)` → last match index or panic.
+                    StrMethodOp::RIndex => {
+                        out.push_str(".rfind(&(");
+                        emit_expr(out, &args[0], mode)?;
+                        out.push_str(")[..]).map(|__i| __i as i64).expect(\"xpile: ValueError: substring not found\")");
+                    }
                     StrMethodOp::Join => unreachable!("Join handled above"),
                     StrMethodOp::IsDigit
                     | StrMethodOp::IsAlpha

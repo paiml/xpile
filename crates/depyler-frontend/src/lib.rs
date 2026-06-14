@@ -6035,7 +6035,11 @@ fn infer_type(e: &Expr) -> Type {
             StrMethodOp::Join | StrMethodOp::Replace | StrMethodOp::ReplaceN => Type::Str,
             // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
             StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
-            StrMethodOp::Find | StrMethodOp::Count | StrMethodOp::StrIndex => Type::I64,
+            StrMethodOp::Find
+            | StrMethodOp::Rfind
+            | StrMethodOp::RIndex
+            | StrMethodOp::Count
+            | StrMethodOp::StrIndex => Type::I64,
             // PMAT-502ag/502di: isdigit/isalpha/isspace/isalnum/isupper/islower → Bool.
             StrMethodOp::IsDigit
             | StrMethodOp::IsAlpha
@@ -6407,7 +6411,11 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             StrMethodOp::Join | StrMethodOp::Replace | StrMethodOp::ReplaceN => Type::Str,
             // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
             StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
-            StrMethodOp::Find | StrMethodOp::Count | StrMethodOp::StrIndex => Type::I64,
+            StrMethodOp::Find
+            | StrMethodOp::Rfind
+            | StrMethodOp::RIndex
+            | StrMethodOp::Count
+            | StrMethodOp::StrIndex => Type::I64,
             // PMAT-502ag/502di: isdigit/isalpha/isspace/isalnum/isupper/islower → Bool.
             StrMethodOp::IsDigit
             | StrMethodOp::IsAlpha
@@ -10255,6 +10263,8 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
         "lstrip" => Some(StrMethodOp::LStrip),
         "rstrip" => Some(StrMethodOp::RStrip),
         "find" => Some(StrMethodOp::Find),
+        "rfind" => Some(StrMethodOp::Rfind),
+        "rindex" => Some(StrMethodOp::RIndex),
         "count" => Some(StrMethodOp::Count),
         // PMAT-502bi: str.index (1-arg, → Int; panics if absent = ValueError).
         "index" => Some(StrMethodOp::StrIndex),
@@ -10308,7 +10318,11 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         StrMethodOp::SplitN => 2,
         // PMAT-502l: lstrip/rstrip take no args; find/count take one.
         StrMethodOp::LStrip | StrMethodOp::RStrip => 0,
-        StrMethodOp::Find | StrMethodOp::Count | StrMethodOp::StrIndex => 1,
+        StrMethodOp::Find
+        | StrMethodOp::Rfind
+        | StrMethodOp::RIndex
+        | StrMethodOp::Count
+        | StrMethodOp::StrIndex => 1,
         // PMAT-502ag/502di: classification predicates take no args.
         StrMethodOp::IsDigit
         | StrMethodOp::IsAlpha
