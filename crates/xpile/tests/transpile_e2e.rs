@@ -1625,6 +1625,30 @@ fn main() {
     assert_rustc_runs("pow_negative_modulus", &rust, driver);
 }
 
+/// PMAT-607: `pow()` with a bool base (Python bool is an int subtype,
+/// `pow(True, n) == pow(1, n)`). The pow builtin only handled int/float bases
+/// and fell through to a bare `pow(...)` call (E0425); the bool operand is now
+/// coerced to i64. Cross-checked vs python3: bp2(True,5)=1, bp2(False,3)=0,
+/// bp3(True,5,7)=1, bp3(False,0,7)=1.
+#[test]
+fn pow_bool_base() {
+    let rust = xpile_transpile_to_rust("pow_bool_base.py");
+    assert!(
+        rust.contains("(((flag) as i64)).checked_pow(")
+            && rust.contains("let __pmb0 = (((flag) as i64))"),
+        "bool base must coerce to i64 in both pow forms:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(bp2(true, 5), 1);
+    assert_eq!(bp2(false, 3), 0);
+    assert_eq!(bp3(true, 5, 7), 1);
+    assert_eq!(bp3(false, 0, 7), 1);
+}
+"#;
+    assert_rustc_runs("pow_bool_base", &rust, driver);
+}
+
 /// PMAT-570 (Tranche 2): **correctness** — negative-literal `xs.pop(-k)` /
 /// `del xs[-k]` remove from the end. Both emitted `remove((-k) as usize)` →
 /// `usize::MAX` → panic; now resolve to `len(xs) - k` with the index bound to a

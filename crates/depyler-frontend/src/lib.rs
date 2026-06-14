@@ -8234,8 +8234,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // generic call, emitting an undefined Rust `pow(...)` fn.
                 // 3-arg `pow(a, b, mod)` (modular exponentiation) is deferred.
                 if fname.id.as_str() == "pow" && call.keywords.is_empty() && call.args.len() == 2 {
-                    let lhs = lower_expr_in_ctx(ctx, call.args[0].clone())?;
-                    let rhs = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                    // PMAT-607: a bool operand is an int in Python (`pow(True, n)`
+                    // == `pow(1, n)`); coerce bool → i64 (no-op for int/float) so
+                    // it expands to checked_pow/powf instead of a bare `pow(...)`.
+                    let lhs = to_i64_operand(ctx, lower_expr_in_ctx(ctx, call.args[0].clone())?);
+                    let rhs = to_i64_operand(ctx, lower_expr_in_ctx(ctx, call.args[1].clone())?);
                     let lty = infer_type_in_ctx(ctx, &lhs);
                     let rty = infer_type_in_ctx(ctx, &rhs);
                     if matches!(lty, Type::I64 | Type::F64) && matches!(rty, Type::I64 | Type::F64)
@@ -8258,9 +8261,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // (all int). Emits an inline square-and-multiply (the previous
                 // bare `pow(a,b,c)` call referenced an undefined Rust fn → E0425).
                 if fname.id.as_str() == "pow" && call.keywords.is_empty() && call.args.len() == 3 {
-                    let base = lower_expr_in_ctx(ctx, call.args[0].clone())?;
-                    let exp = lower_expr_in_ctx(ctx, call.args[1].clone())?;
-                    let modulus = lower_expr_in_ctx(ctx, call.args[2].clone())?;
+                    // PMAT-607: coerce a bool base/exp/mod to i64 (Python int).
+                    let base = to_i64_operand(ctx, lower_expr_in_ctx(ctx, call.args[0].clone())?);
+                    let exp = to_i64_operand(ctx, lower_expr_in_ctx(ctx, call.args[1].clone())?);
+                    let modulus =
+                        to_i64_operand(ctx, lower_expr_in_ctx(ctx, call.args[2].clone())?);
                     if infer_type_in_ctx(ctx, &base) == Type::I64
                         && infer_type_in_ctx(ctx, &exp) == Type::I64
                         && infer_type_in_ctx(ctx, &modulus) == Type::I64
