@@ -550,6 +550,9 @@ fn transpile_in_range_py_uses_logical_and() {
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("pub fn in_range(x: i64, lo: i64, hi: i64) -> bool"));
+    // `in_range.py` uses explicit `lo <= x and x <= hi` — two SINGLE comparisons
+    // joined by `and`, NOT a chained comparison — so it stays the plain
+    // conjunction (PMAT-576's temp-binding only applies to chained `a < b < c`).
     assert!(stdout.contains("((lo <= x) && (x <= hi))"));
 }
 
@@ -1929,9 +1932,11 @@ fn main() {
 #[test]
 fn chained_compare() {
     let rust = xpile_transpile_to_rust("chained_compare.py");
+    // PMAT-576: chained comparison evaluates each operand exactly once — bind
+    // to temps, then AND the sub-comparisons over the temps.
     assert!(
-        rust.contains("((lo <= x) && (x <= hi))"),
-        "expected chained-comparison conjunction, got:\n{rust}"
+        rust.contains("((__cmp0 <= __cmp1) && (__cmp1 <= __cmp2))"),
+        "expected chained-comparison conjunction over temps, got:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -6109,6 +6114,36 @@ fn main() {
 }
 "#;
     assert_rustc_runs("bool_as_int", &rust, driver);
+}
+
+/// PMAT-576 (Tranche 2): **correctness** — a chained comparison
+/// (`a < b < c`, `a == f() == b`) re-evaluated its shared interior operand(s).
+/// The lowering desugars to `(a OP b) && (b OP c)` and previously *cloned* the
+/// lowered middle operand into both sub-comparisons — evaluating it twice,
+/// diverging from Python's evaluate-each-operand-once semantics: a
+/// side-effecting middle (`0 < xs.pop() < 100`) popped twice (wrong result /
+/// empty-pop panic). Now each operand is bound to a temp once inside an
+/// `Expr::Block`, then the sub-comparisons fold over the temps. Single
+/// comparisons are unchanged. Found by the differential hunt. Cross-checked vs
+/// python3 (pop_in_range single-pop, 4-term, eq-chain).
+#[test]
+fn chained_compare_side_effect() {
+    let rust = xpile_transpile_to_rust("chained_compare_side_effect.py");
+    let driver = r#"
+fn main() {
+    // [42] -> pops 42 once: 0 < 42 < 100 == true. Double-eval would pop the
+    // empty list and panic.
+    assert_eq!(pop_in_range(vec![42]), true);
+    // [5, 200] -> pops 200 once: 0 < 200 < 100 == false. Double-eval would
+    // pop 200 then 5 -> (0<200) && (5<100) == true (the bug).
+    assert_eq!(pop_in_range(vec![5, 200]), false);
+    assert!(four_term(1, 2, 3, 4));
+    assert!(!four_term(1, 2, 2, 4));
+    assert!(eq_chain(7, 7, 7));
+    assert!(!eq_chain(7, 8, 7));
+}
+"#;
+    assert_rustc_runs("chained_compare_side_effect", &rust, driver);
 }
 
 /// PMAT-575 (Tranche 2): **correctness / contract integrity** — left-shift
