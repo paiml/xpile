@@ -19,6 +19,27 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.237] — 2026-06-14
+
+Tranche 2 — PMAT-538 (correctness): Python `//` / `%` with a negative divisor.
+
+- The i64 fast path emitted `checked_div_euclid` / `checked_rem_euclid`, which
+  only match Python `//` / `%` for a **positive** divisor. Python `//` floors
+  toward −∞ and `%` takes the sign of the divisor, so for a negative divisor the
+  euclidean ops silently diverged (`-7 // -2` is `3` in Python but `div_euclid`
+  gave `4`; `7 % -3` is `-2` but `rem_euclid` gave `1`).
+- Fix: emit the truncating quotient/remainder (`checked_div` / `checked_rem`,
+  keeping the `i64::MIN/-1` + divide-by-zero panics) plus a floor correction
+  (subtract 1 from the quotient / add the divisor to the remainder when the
+  remainder is non-zero and its sign differs from the divisor's). **For a
+  positive divisor the output is identical to the old euclidean emit**, so
+  existing behavior is unchanged. BigInt slow path (`div_floor`/`mod_floor`) was
+  already correct; the C lane (`wrapping_div`/`wrapping_rem`) is intentionally
+  C-truncating. Mirrored in rust + ruchy backends.
+- Found via a differential python3-vs-rust hunt. New e2e fixture
+  `floordiv_mod_signs.py` cross-checked vs python3 across all sign combinations.
+  e2e 298 → 299.
+
 ## [0.1.236] — 2026-06-14
 
 Tranche 2 — PMAT-536: keyword (named-field) form of `str.format`.
