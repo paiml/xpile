@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.300] — 2026-06-14
+
+Tranche 2 — PMAT-601: **correctness** — 2-arg float `max`/`min` use Python first-argument-wins semantics.
+
+- 2-arg `max(a, b)` / `min(a, b)` over float operands lowered to `f64::max` /
+  `f64::min`, which follow IEEE-754 maxNum/minNum: `+0.0` is treated as greater
+  than `-0.0`, and NaN is silently dropped. Python returns the first argument on
+  a tie / incomparable compare, so `max(-0.0, 0.0)` is `-0.0` (not `0.0`) and
+  `max(nan, 1.0)` is `nan` (not `1.0`). Found by the differential hunt (#4, #24).
+- Fix (rust + ruchy codegen): for float Min/Max, emit a left fold with a strict
+  compare (accumulator starts at args[0]; a later arg replaces it only on
+  `__x > __m` / `__x < __m`), so ties / NaN keep the earlier value. Integer and
+  str min/max keep the total-order `.min`/`.max` chain.
+- New e2e fixture `float_min_max.py` cross-checked vs python3. 362 e2e fixtures.
+
 ## [0.1.299] — 2026-06-14
 
 Tranche 2 — PMAT-600: **correctness** — `isspace()` / `strip` family honor the C0 separators U+001C..U+001F.
