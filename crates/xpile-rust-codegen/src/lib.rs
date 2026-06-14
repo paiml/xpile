@@ -1780,9 +1780,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             if *from_str && *to_float {
                 // PMAT-502bf: `float(s)` → trimmed `.parse()` (panics on bad
                 // input, matching Python's `ValueError`).
-                out.push('(');
+                // PMAT-611: Python `float()` also accepts PEP 515 underscores
+                // BETWEEN digits (`float("1_000.5")` == 1000.5), which Rust's
+                // `parse::<f64>()` rejects → panic. Validate that every `_` has an
+                // ASCII digit on both sides (the exact Python rule, covering the
+                // fractional/exponent parts), then strip + parse; invalid
+                // placements (`1_.5`, `1.5_`, `1_e5`, `_1.0`) still raise.
+                out.push_str("{ let __ps = (");
                 emit_expr(out, value, mode)?;
-                out.push_str(").trim().parse::<f64>().expect(\"xpile: ValueError: could not convert string to float\")");
+                out.push_str(").trim(); let __pe = __ps.as_bytes(); if !__ps.bytes().enumerate().all(|(__k, __c)| __c != b'_' || (__k > 0 && __pe[__k - 1].is_ascii_digit() && __k + 1 < __pe.len() && __pe[__k + 1].is_ascii_digit())) { panic!(\"xpile: ValueError: could not convert string to float\"); } __ps.replace('_', \"\").parse::<f64>().expect(\"xpile: ValueError: could not convert string to float\") }");
             } else if *from_str {
                 // PMAT-610: `int(s)` accepts PEP 515 underscore digit separators
                 // (`int(\"1_000\") == 1000`), which Rust's `parse::<i64>()` rejects
