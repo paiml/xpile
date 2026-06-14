@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.293] — 2026-06-14
+
+Tranche 2 — PMAT-594: **correctness** — `enumerate(xs, start=N)` keyword form honors the start.
+
+- The for-loop `enumerate` lowering read the start index only from the 2nd
+  positional arg (`enumerate(xs, 10)`), so the keyword spelling
+  `enumerate(xs, start=10)` silently dropped it and emitted `+ 0` (Python yields
+  `10,11,12…`; transpiled Rust yielded `0,1,2…`). Found by the differential hunt
+  (#4, finding #7).
+- Fix: resolve the start from the 2nd positional arg **or** a `start=` keyword.
+  Unknown keywords on `enumerate`, a positional+keyword `start` conflict, and any
+  keyword on `zip` (previously silently ignored) are now rejected cleanly. The
+  codegen already honors a nonzero start, so no codegen change.
+- New e2e fixture `enumerate_start_kwarg.py` cross-checked vs python3. 355 e2e fixtures.
+
 ## [0.1.292] — 2026-06-14
 
 Tranche 2 — PMAT-593: **correctness** — PEP 584 dict union `a | b` and `a |= b`.
