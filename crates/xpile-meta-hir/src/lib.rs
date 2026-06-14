@@ -376,6 +376,12 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::RoundToDigits { value, ndigits } => {
             expr_has_int_arith(value) || expr_has_int_arith(ndigits)
         }
+        // PMAT-612: round(int, n) — recurse into the value and ndigits. The
+        // banker's-rounding arithmetic itself is done in `i128` (guarded), so
+        // the node does not need bigint treatment beyond its operands.
+        Expr::RoundIntToDigits { value, ndigits } => {
+            expr_has_int_arith(value) || expr_has_int_arith(ndigits)
+        }
         // PMAT-502k: seq * n — recurse into both the sequence and count.
         Expr::Repeat { seq, n, .. } => expr_has_int_arith(seq) || expr_has_int_arith(n),
         // PMAT-502c: sorted — recurse into the list expression.
@@ -1744,6 +1750,18 @@ pub enum Expr {
         value: Box<Expr>,
         ndigits: Box<Expr>,
     },
+    /// `round(x, n)` over an **int** `x` and **int** `n` → an **int**.
+    /// PMAT-612 (Tranche 2). Python `round(int, n)` is the identity for
+    /// `n >= 0` (an int has no fractional part), and rounds to the nearest
+    /// multiple of `10^(-n)` using round-half-to-**even** (banker's rounding)
+    /// for `n < 0` (`round(12350, -2) == 12400`, `round(12250, -2) == 12200`).
+    /// Rust/Ruchy emit a block doing the arithmetic in `i128` (so the scale
+    /// `10^(-n)` and the products don't overflow), failing loud if the rounded
+    /// result leaves `i64` range. Lean refuses.
+    RoundIntToDigits {
+        value: Box<Expr>,
+        ndigits: Box<Expr>,
+    },
     /// `sorted(xs)` / `sorted(xs, reverse=True)` / `sorted(xs, key=lambda
     /// p: e)` over a list — Python builtin returning a **new** sorted list
     /// (the input is not mutated). PMAT-502c; `reverse` is PMAT-502f; the
@@ -2704,7 +2722,7 @@ fn escape_expr(e: &mut Expr) {
         | Expr::Reversed { list }
         | Expr::SetFromList { list }
         | Expr::Enumerate { list } => escape_expr(list),
-        Expr::RoundToDigits { value, ndigits } => {
+        Expr::RoundToDigits { value, ndigits } | Expr::RoundIntToDigits { value, ndigits } => {
             escape_expr(value);
             escape_expr(ndigits);
         }

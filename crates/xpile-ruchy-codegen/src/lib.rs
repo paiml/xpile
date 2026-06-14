@@ -1630,6 +1630,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, ndigits, mode)?;
             out.push_str("; if __rn >= 0 { format!(\"{:.1$}\", __rx, __rn as usize).parse::<f64>().unwrap() } else { let __rp = 10f64.powi((-__rn) as i32); (__rx / __rp).round_ties_even() * __rp } }");
         }
+        // PMAT-612: `round(int, n)` → int (banker's rounding for n < 0, identity
+        // for n >= 0; i128 arithmetic, fails loud out of i64 range). Mirrors the
+        // Rust backend.
+        Expr::RoundIntToDigits { value, ndigits } => {
+            out.push_str("{ let __rv = (");
+            emit_expr(out, value, mode)?;
+            out.push_str(") as i128; let __rn = (");
+            emit_expr(out, ndigits, mode)?;
+            out.push_str("); if __rn >= 0 { __rv as i64 } else { let __rp = 10i128.checked_pow((-__rn) as u32).expect(\"xpile: OverflowError: round() scale out of range\"); let __rd = __rv.div_euclid(__rp); let __rm = __rv.rem_euclid(__rp); let __r2 = 2i128 * __rm; let __res = if __r2 < __rp { __rd * __rp } else if __r2 > __rp { (__rd + 1) * __rp } else if __rd % 2 == 0 { __rd * __rp } else { (__rd + 1) * __rp }; if __res < (i64::MIN as i128) || __res > (i64::MAX as i128) { panic!(\"xpile: OverflowError: round() result out of i64 range\"); } __res as i64 } }");
+        }
         // PMAT-502e/h/aa: 1-arg `min(xs)`/`max(xs)`; `key=lambda` →
         // `min_by_key`/`max_by_key`.
         Expr::ListMinMax {

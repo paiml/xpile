@@ -1909,6 +1909,44 @@ fn main() {
     assert_rustc_runs("round_digits", &rust, driver);
 }
 
+/// PMAT-612: `round(int, n)` → int. Previously emitted a bare `round(x, n)`
+/// call → E0425 (cannot find function `round`). `n >= 0` is the identity (an
+/// int has no fractional part); `n < 0` rounds to the nearest `10^(-n)` with
+/// round-half-to-even (banker's rounding), done in `i128`. Cross-checked vs
+/// python3: round(12345,-2)=12300, round(12350,-2)=12400 (tie→even),
+/// round(12250,-2)=12200 (tie→even), round(-12350,-2)=-12400, round(7,-1)=10,
+/// round(x,2)=x.
+#[test]
+fn round_int_digits() {
+    let rust = xpile_transpile_to_rust("round_int_digits.py");
+    // n < 0 / non-literal n → the i128 banker's-rounding block.
+    assert!(
+        rust.contains("__rv.div_euclid(__rp)") && rust.contains("as i128"),
+        "expected round-int-to-digits block, got:\n{rust}"
+    );
+    // a non-negative literal ndigits is the identity: `keep` returns `x`
+    // directly with no rounding block (and no bare `round(...)` → no E0425).
+    assert!(
+        rust.contains("pub fn keep(x: i64) -> i64 {\n    x\n}"),
+        "round(int, n>=0) must be the identity (`keep` returns `x`):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    assert_eq!(to_hundred(12345), 12300);
+    assert_eq!(to_hundred(12350), 12400); // tie -> even
+    assert_eq!(to_hundred(12250), 12200); // tie -> even
+    assert_eq!(keep(12345), 12345);       // n >= 0 identity
+    assert_eq!(by_var(12345, -2), 12300);
+    assert_eq!(by_var(-12350, -2), -12400);
+    assert_eq!(by_var(98765, -3), 99000);
+    assert_eq!(by_var(7, -1), 10);
+    assert_eq!(by_var(42, 5), 42);        // runtime n >= 0 identity
+}
+"#;
+    assert_rustc_runs("round_int_digits", &rust, driver);
+}
+
 /// PMAT-502ad (Tranche 2): `str(x)` over an int → `format!("{}", x)`
 /// (unblocks `"prefix" + str(n)` concatenation).
 #[test]
