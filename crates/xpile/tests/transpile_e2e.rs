@@ -6111,6 +6111,28 @@ fn main() {
     assert_rustc_runs("bool_as_int", &rust, driver);
 }
 
+/// PMAT-574 (Tranche 2): **correctness** — a mutating method (`xs.pop()` /
+/// `d.setdefault(...)`) in a *controlling condition* (`while`/`if`/`assert`
+/// test) mutates its receiver, but the mutability pre-walk only scanned
+/// assignment/return/expr-statement values — so the receiver stayed immutable
+/// and `rustc` rejected the emitted code (E0596: cannot borrow `xs` as
+/// mutable). Now `count_pop_receivers_in_stmt` also scans the `while`/`if`/
+/// `for`/`assert` controlling expression (`while` test gets loop bump). Found
+/// by the differential hunt. Cross-checked vs python3 (1, 0, "nine", 2).
+#[test]
+fn mut_receiver_in_condition() {
+    let rust = xpile_transpile_to_rust("mut_receiver_in_condition.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(drain_param(vec![3, 2, 1, -1, 5]), 1);
+    assert_eq!(drain_local(), 0);
+    assert_eq!(check_if(vec![1, 2, 9]), "nine");
+    assert_eq!(assert_pop(vec![5, 6, 7]), 2);
+}
+"#;
+    assert_rustc_runs("mut_receiver_in_condition", &rust, driver);
+}
+
 /// PMAT-573 (Tranche 2): **correctness** — a Python identifier that is a Rust
 /// keyword but NOT a Python keyword (`type`, `match`, `loop`, `move`, `box`,
 /// `final`, `ref`, `do`, `impl`, …) emits as the Rust raw identifier `r#name`

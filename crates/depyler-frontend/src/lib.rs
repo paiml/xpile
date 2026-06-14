@@ -496,6 +496,22 @@ fn count_pop_receivers_in_stmt(stmt: &ast::Stmt, counts: &mut HashMap<String, us
         // mutates its receiver (it gets-or-inserts), so the receiver must be
         // `mut`. Scan the statement's value expression too.
         ast::Stmt::Expr(e) => count_pop_receivers(&e.value, counts, bump),
+        // PMAT-574: an expression-position mutator (`.pop(...)` / `.setdefault(...)`)
+        // in a *controlling condition* — `while xs.pop() >= 0:`, `if d.setdefault(k, v):`,
+        // `assert xs.pop()` — also mutates its receiver, so the receiver must be `mut`.
+        // The statement BODIES are walked by `walk_counts`'s recursion, but the
+        // controlling expression itself was previously unscanned → the receiver
+        // stayed immutable → rustc E0596. A `while` test runs every iteration, so
+        // it carries loop bump semantics (`>= 2`) regardless of the enclosing level.
+        ast::Stmt::While(w) => count_pop_receivers(&w.test, counts, bump.max(2)),
+        ast::Stmt::If(s) => count_pop_receivers(&s.test, counts, bump),
+        ast::Stmt::For(f) => count_pop_receivers(&f.iter, counts, bump),
+        ast::Stmt::Assert(a) => {
+            count_pop_receivers(&a.test, counts, bump);
+            if let Some(m) = &a.msg {
+                count_pop_receivers(m, counts, bump);
+            }
+        }
         _ => {}
     }
 }
