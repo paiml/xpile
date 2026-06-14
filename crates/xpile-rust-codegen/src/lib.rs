@@ -1041,16 +1041,24 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // plain infix (IEEE-754 saturates, no checked path).
         Expr::LitFloat(v) => write!(out, "{}f64", v)?,
         Expr::FloatBinOp { op, lhs, rhs } => match op {
-            // PMAT-502br: Python float floor-division `a // b` → `(a / b).floor()`.
-            // PMAT-581: guard the zero divisor — Python raises ZeroDivisionError
-            // (`1.0 // 0.0` does NOT yield `inf`). Bind the divisor to a temp so
-            // it is evaluated once and tested.
+            // PMAT-614: Python float floor-division `a // b` is CPython
+            // `float_divmod` (Objects/floatobject.c), NOT `(a / b).floor()`.
+            // The naive floor over-rounds whenever `a / b` lands just below an
+            // integer in float (`1.0 // 0.1` is 9.0 in Python but
+            // `(1.0/0.1).floor()` is 10.0), and gives the wrong result for
+            // infinite operands (`inf // 2` is `nan`, `-5.0 // inf` is `-1.0`).
+            // Replicate CPython exactly: `mod = fmod(a, b)` (Rust `%` IS C
+            // `fmod`), `div = (a - mod) / b`, nudge `div` down by 1 when the
+            // remainder's sign differs from the divisor's, then `floor(div)`
+            // with CPython's `div - floor > 0.5` round-up correction.
+            // PMAT-581: guard the zero divisor (Python raises ZeroDivisionError,
+            // not `inf`); both operands bound to temps (evaluate-once).
             FloatOp::FloorDiv => {
-                out.push_str("{ let __fz: f64 = ");
-                emit_expr(out, rhs, mode)?;
-                out.push_str("; if __fz == 0.0 { panic!(\"xpile: ZeroDivisionError: float floor division by zero\"); } ((");
+                out.push_str("{ let __fa: f64 = ");
                 emit_expr(out, lhs, mode)?;
-                out.push_str(") / __fz).floor() }");
+                out.push_str("; let __fz: f64 = ");
+                emit_expr(out, rhs, mode)?;
+                out.push_str("; if __fz == 0.0 { panic!(\"xpile: ZeroDivisionError: float floor division by zero\"); } let __fm = __fa % __fz; let mut __fd = (__fa - __fm) / __fz; if __fm != 0.0 && ((__fz < 0.0) != (__fm < 0.0)) { __fd -= 1.0; } let __ffl = __fd.floor(); if __fd - __ffl > 0.5 { __ffl + 1.0 } else { __ffl } }");
             }
             // PMAT-591: Python float modulo `a % b` is CPython `float_rem`
             // (Objects/floatobject.c): `mod = fmod(a, b)` (Rust's `%` IS C

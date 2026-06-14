@@ -901,14 +901,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         // PMAT-477 (R8): float literal + plain-infix float arithmetic.
         Expr::LitFloat(v) => write!(out, "{}f64", v)?,
         Expr::FloatBinOp { op, lhs, rhs } => match op {
-            // PMAT-502br: Python float floor-division → `(a / b).floor()`.
+            // PMAT-614: Python float floor-division is CPython `float_divmod`,
+            // not `(a / b).floor()` (the naive floor over-rounds `1.0 // 0.1` to
+            // 10.0 vs Python's 9.0, and mishandles infinite operands). Matches
+            // the Rust backend: fmod-based div with sign-adjust + round-up.
             // PMAT-581: guard the zero divisor (Python raises ZeroDivisionError).
             FloatOp::FloorDiv => {
-                out.push_str("{ let __fz: f64 = ");
-                emit_expr(out, rhs, mode)?;
-                out.push_str("; if __fz == 0.0 { panic!(\"xpile: ZeroDivisionError: float floor division by zero\"); } ((");
+                out.push_str("{ let __fa: f64 = ");
                 emit_expr(out, lhs, mode)?;
-                out.push_str(") / __fz).floor() }");
+                out.push_str("; let __fz: f64 = ");
+                emit_expr(out, rhs, mode)?;
+                out.push_str("; if __fz == 0.0 { panic!(\"xpile: ZeroDivisionError: float floor division by zero\"); } let __fm = __fa % __fz; let mut __fd = (__fa - __fm) / __fz; if __fm != 0.0 && ((__fz < 0.0) != (__fm < 0.0)) { __fd -= 1.0; } let __ffl = __fd.floor(); if __fd - __ffl > 0.5 { __ffl + 1.0 } else { __ffl } }");
             }
             // PMAT-591: Python float modulo is CPython `float_rem` —
             // `fmod(a,b)` (Rust `%`) + sign-adjust toward the divisor, else
