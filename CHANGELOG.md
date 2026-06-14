@@ -19,6 +19,20 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.254] — 2026-06-14
+
+Tranche 2 — PMAT-555: in-place `xs.sort(reverse=True)`.
+
+- In-place descending sort `xs.sort(reverse=True)` (and the explicit
+  `reverse=False`, a plain ascending sort). The non-mutating
+  `sorted(xs, reverse=True)` already worked; this adds the mutating form.
+  New `ListMutateOp::SortDesc` emits a reversed comparator —
+  `.sort_by(|a, b| b.cmp(a))` for `Vec<i64>`, `b.partial_cmp(a).unwrap()`
+  for `Vec<f64>`. The frontend's in-place-mutator handler accepts a single
+  `reverse=<bool literal>` kwarg on `sort`; `key=` and every other arg/kwarg
+  remain rejected (no in-place closure support yet). Rippled to meta-HIR +
+  rust/ruchy emit; the Lean lane refuses `ListMutate` as before.
+
 ## [0.1.253] — 2026-06-14
 
 Tranche 2 — PMAT-554: `math.perm(n, k)`.
