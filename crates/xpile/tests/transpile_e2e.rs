@@ -4932,6 +4932,31 @@ fn main() {
     assert_rustc_runs("comp_2gen_range", &rust, driver);
 }
 
+/// PMAT-556 (Tranche 2): expression-position **two-generator** generator
+/// expression / list comprehension — `sum(i*j for i in range(n) for j in
+/// range(n))`, `len([… for i in a for j in b])`. The single-generator
+/// expr-position path is `Map`/`Filter`; a 2-generator one builds its flattened
+/// `Vec` via nested loops inside an `Expr::Block` (reusing the statement-position
+/// `desugar_comp_2gen`), returning the accumulator as the block's trailing
+/// expression. Cross-checked vs python3 (36, 36, 16, 180).
+#[test]
+fn genexpr_2gen() {
+    let rust = xpile_transpile_to_rust("genexpr_2gen.py");
+    assert!(
+        rust.contains("__xcomp2"),
+        "expected a block-built accumulator for the 2-generator genexpr:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(pair_sum(4), 36);
+    assert_eq!(filtered(4), 36);
+    assert_eq!(count_pairs(4), 16);
+    assert_eq!(over_lists(vec![1, 2, 3], vec![10, 20]), 180);
+}
+"#;
+    assert_rustc_runs("genexpr_2gen", &rust, driver);
+}
+
 /// PMAT-544 (Tranche 2): `enumerate(s)` / `zip(s, …)` over a **string** —
 /// iterate its characters (each a 1-char string). The paired-loop handler
 /// required a `list` iterable; a `str` iterable now materializes to a
