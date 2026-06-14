@@ -2232,12 +2232,13 @@ fn try_lower_list_method_call(
             mutable: false,
         }));
     }
-    // PMAT-528: `xs.pop()` / `xs.pop(i)` as a bare statement (the value-position
-    // form `x = xs.pop()` already works). Reuse the value-position lowering —
-    // which validates the receiver is a list + the index is an int — then
-    // discard the popped element via `let _ = …;` (the statement is used for the
-    // removal side effect, e.g. `while xs: xs.pop()`).
-    if method == "pop" && matches!(receiver_ty, Some(Type::List(_))) {
+    // PMAT-528/529: `xs.pop()` / `xs.pop(i)` (list) or `d.pop(k)` / `d.pop(k,
+    // default)` (dict) as a bare statement (the value-position `x = …pop(…)`
+    // already works). Reuse the value-position lowering — which validates the
+    // receiver + args — then discard the popped element via `let _ = …;` (the
+    // statement is used for the removal side effect, e.g. `while xs: xs.pop()`
+    // or `d.pop(stale_key)`).
+    if method == "pop" && matches!(receiver_ty, Some(Type::List(_) | Type::Dict(_, _))) {
         let expr = match lower_expr_in_ctx(ctx, (*e.value).clone()) {
             Ok(x) => x,
             Err(err) => return Some(Err(err)),
