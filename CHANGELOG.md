@@ -19,6 +19,20 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.283] — 2026-06-14
+
+Tranche 2 — PMAT-584: **correctness** — `sum()` over a float list (compensated).
+
+- CPython 3.12+ `sum()` over floats uses Neumaier compensated summation, but
+  xpile emitted naive `.iter().sum::<f64>()`, which diverges on catastrophic
+  cancellation: `sum([1.0, 1e16, 1.0, -1e16])` is `0.0` (naive) vs `2.0`
+  (Python); `sum([0.1]*10)` is `0.9999999999999999` vs `1.0`. Found by the
+  differential hunt.
+- Fix: the float `Sum` codegen (Rust + Ruchy) emits the same compensated fold
+  (seeded with `start` or `0.0`). Int `sum` stays exact `.iter().sum::<i64>()`.
+- New e2e fixture `float_sum_compensated.py` cross-checked vs python3. 345 e2e
+  fixtures.
+
 ## [0.1.282] — 2026-06-14
 
 Tranche 2 — PMAT-583: **correctness** — float scientific notation.
