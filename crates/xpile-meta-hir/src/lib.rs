@@ -815,14 +815,12 @@ pub enum Stmt {
     DictUpdate { dict_name: String, other: Expr },
     /// Positional list insertion — Python `xs.insert(i, x)`. PMAT-502ar
     /// (Tranche 2). Inserts `elem` before index `index`, shifting the
-    /// tail right; the receiver is marked mutable. Rust/Ruchy emit
-    /// `<list>.insert((<index>) as usize, <elem>);` (same `as usize`
-    /// coercion as [`Stmt::IndexAssign`]). First cut covers the in-range
-    /// non-negative index (`0 <= i <= len`, matching `Vec::insert`);
-    /// Python's negative-index and past-the-end clamping semantics are a
-    /// deferred follow-up (same disposition as the negative read-index
-    /// slice PMAT-502s). Lean refuses (in-place mutation, same gap as
-    /// `ListAppend`).
+    /// tail right; the receiver is marked mutable. Rust/Ruchy emit a
+    /// CPython-clamping block (PMAT-590) that normalizes a negative
+    /// `index` to `len + index` (clamped to `0`) and caps `index > len`
+    /// at `len`, matching `list.insert` (listobject.c `ins1`) rather than
+    /// panicking like a bare `Vec::insert`. Lean refuses (in-place
+    /// mutation, same gap as `ListAppend`).
     ListInsert {
         list_name: String,
         index: Expr,

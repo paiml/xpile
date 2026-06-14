@@ -593,18 +593,27 @@ fn emit_stmt_indented(
             )?;
             Ok(())
         }
-        // PMAT-502ar: `xs.insert(i, x)` → `xs.insert((i) as usize, x);`
-        // (same `as usize` coercion as IndexAssign).
+        // PMAT-502ar / PMAT-590: `xs.insert(i, x)` clamps the index to
+        // CPython `list.insert` semantics (listobject.c `ins1`) instead of
+        // emitting a bare `as usize` cast. Python clamps any `i > len` to
+        // `len` (append) and normalizes a negative `i` to `len + i`, clamping
+        // to `0` if still negative — whereas Rust's `Vec::insert` panics for
+        // `i > len` and a negative `i` casts to a huge `usize` that also
+        // panics. The clamp block restores parity.
         Stmt::ListInsert {
             list_name,
             index,
             elem,
         } => {
-            write!(out, "{indent}{list_name}.insert((")?;
+            write!(
+                out,
+                "{indent}{{ let __n = {list_name}.len() as i64; let mut __i = ("
+            )?;
             emit_expr(out, index, mode)?;
-            out.push_str(") as usize, ");
+            out.push_str("); if __i < 0 { __i += __n; if __i < 0 { __i = 0; } } if __i > __n { __i = __n; } ");
+            write!(out, "{list_name}.insert(__i as usize, ")?;
             emit_expr(out, elem, mode)?;
-            writeln!(out, ");")?;
+            writeln!(out, "); }}")?;
             Ok(())
         }
         // PMAT-502eg: `xs.remove(x)` → find the first equal element and

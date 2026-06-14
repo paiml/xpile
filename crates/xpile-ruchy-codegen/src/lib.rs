@@ -546,17 +546,22 @@ fn emit_stmt_indented(
             )?;
             Ok(())
         }
-        // PMAT-502ar: `xs.insert(i, x)`, matching the Rust backend.
+        // PMAT-502ar / PMAT-590: `xs.insert(i, x)` clamps the index to
+        // CPython `list.insert` semantics, matching the Rust backend.
         Stmt::ListInsert {
             list_name,
             index,
             elem,
         } => {
-            write!(out, "{indent}{list_name}.insert((")?;
+            write!(
+                out,
+                "{indent}{{ let __n = {list_name}.len() as i64; let mut __i = ("
+            )?;
             emit_expr(out, index, mode)?;
-            out.push_str(") as usize, ");
+            out.push_str("); if __i < 0 { __i += __n; if __i < 0 { __i = 0; } } if __i > __n { __i = __n; } ");
+            write!(out, "{list_name}.insert(__i as usize, ")?;
             emit_expr(out, elem, mode)?;
-            writeln!(out, ");")?;
+            writeln!(out, "); }}")?;
             Ok(())
         }
         // PMAT-502eg: `xs.remove(x)` → position-find + remove, matching the
