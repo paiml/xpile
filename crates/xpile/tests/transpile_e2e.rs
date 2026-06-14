@@ -4085,6 +4085,28 @@ fn main() {
     assert_rustc_runs("dataclass_def", &rust, driver);
 }
 
+/// PMAT-592 (classes epic): a `@dataclass(frozen=True)` is hashable in Python,
+/// so it may be a set element or dict key. The struct must derive `Eq + Hash`
+/// (a bare `#[derive(Clone, Debug, PartialEq)]` struct is rejected as a
+/// `HashSet` element / `HashMap` key — E0277/E0599). Derived only when every
+/// field is itself Eq+Hash-capable (`i64`/`bool`/`String`). Cross-checked vs
+/// python3: `count_unique()==2` (Coord(1,2) dedupes), `dict_key_lookup()==100`.
+#[test]
+fn dataclass_eq_hash() {
+    let rust = xpile_transpile_to_rust("dataclass_eq_hash.py");
+    assert!(
+        rust.contains("#[derive(Clone, Debug, PartialEq, Eq, Hash)]"),
+        "frozen dataclass with Eq+Hash-capable fields must derive Eq+Hash:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(count_unique(), 2);
+    assert_eq!(dict_key_lookup(), 100);
+}
+"#;
+    assert_rustc_runs("dataclass_eq_hash", &rust, driver);
+}
+
 /// PMAT-506b (classes epic): dataclass **construction + field access**.
 /// Positional `Name(a, b)` → `Expr::StructLit` (`Name { f0: a, f1: b }`);
 /// `obj.field` → `Expr::FieldAccess` (`(obj).field`); struct-typed params,
