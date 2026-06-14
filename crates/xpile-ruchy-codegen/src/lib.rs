@@ -1150,6 +1150,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 StrMethodOp::Upper => out.push_str(".to_uppercase()"),
                 StrMethodOp::Lower => out.push_str(".to_lowercase()"),
                 StrMethodOp::Strip => out.push_str(".trim().to_string()"),
+                // PMAT-564: `len(str)` → Unicode char count (not byte len).
+                StrMethodOp::CharCount => out.push_str(".chars().count() as i64"),
                 // PMAT-530: `s[::-1]` → reverse by Unicode scalar value.
                 StrMethodOp::Reverse => out.push_str(".chars().rev().collect::<String>()"),
                 // PMAT-502cr: `.swapcase()` → per-char upper↔lower.

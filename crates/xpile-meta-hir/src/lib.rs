@@ -2108,6 +2108,11 @@ pub enum PairIterKind {
 /// receiver-method form; Lean/Shell refuse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StrMethodOp {
+    /// PMAT-564: `len(s)` over a **str** → `.chars().count() as i64` (Int, 0
+    /// args). Python `len` counts Unicode code points, not UTF-8 bytes, so a
+    /// str `len` must NOT use `Expr::Len` (which emits `.len()` = byte length).
+    /// Synthesized by the frontend `len()` handler for a str-typed argument.
+    CharCount,
     /// `.upper()` → `.to_uppercase()` (Str, 0 args)
     Upper,
     /// `.lower()` → `.to_lowercase()` (Str, 0 args)

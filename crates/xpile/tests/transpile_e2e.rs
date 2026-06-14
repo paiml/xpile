@@ -1274,7 +1274,7 @@ fn main() {
 fn sorted_key_lambda() {
     let rust = xpile_transpile_to_rust("sorted_key.py");
     assert!(
-        rust.contains("sort_by_key(|__k| { let w = __k.clone(); w.len() as i64 }"),
+        rust.contains("sort_by_key(|__k| { let w = __k.clone(); w.chars().count() as i64 }"),
         "expected sort_by_key emission, got:\n{rust}"
     );
     let driver = r#"
@@ -1478,8 +1478,9 @@ fn main() {
 fn minmax_key_lambda() {
     let rust = xpile_transpile_to_rust("minmax_key.py");
     assert!(
-        rust.contains(".iter().cloned().max_by_key(|__k| { let w = __k.clone(); w.len() as i64 })")
-            && rust.contains(".iter().cloned().min_by_key("),
+        rust.contains(
+            ".iter().cloned().max_by_key(|__k| { let w = __k.clone(); w.chars().count() as i64 })"
+        ) && rust.contains(".iter().cloned().min_by_key("),
         "expected min/max_by_key emission, got:\n{rust}"
     );
     let driver = r#"
@@ -5906,6 +5907,38 @@ fn main() {
 }
 "#;
     assert_rustc_runs("fstring_specs", &rust, driver);
+}
+
+/// PMAT-564 (Tranche 2): **correctness** — `len(str)` counts Unicode code
+/// points, not UTF-8 bytes. Was `s.len()` (byte length → `len("café")` == 5);
+/// now routes to `StrMethodOp::CharCount` → `.chars().count() as i64`. `len()`
+/// of a list/dict is unchanged (`.len()`). Found by the differential hunt.
+/// Cross-checked vs python3 (4, 4, 3, 2, 11, 0).
+#[test]
+fn len_str_unicode() {
+    let rust = xpile_transpile_to_rust("len_str_unicode.py");
+    assert!(
+        rust.contains("chars().count() as i64"),
+        "len(str) should count chars:\n{rust}"
+    );
+    assert!(
+        rust.contains("xs.len() as i64") && rust.contains("d.len() as i64"),
+        "len(list)/len(dict) must stay byte/element .len():\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(slen("café".to_string()), 4);
+    assert_eq!(lit_len(), 4);
+    assert_eq!(list_len(vec![1, 2, 3]), 3);
+    let mut d = std::collections::HashMap::new();
+    d.insert("a".to_string(), 1);
+    d.insert("b".to_string(), 2);
+    assert_eq!(dict_len(d), 2);
+    assert_eq!(len_in_expr("héllo".to_string()), 11);
+    assert_eq!(empty_str(), 0);
+}
+"#;
+    assert_rustc_runs("len_str_unicode", &rust, driver);
 }
 
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
