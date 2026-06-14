@@ -1076,12 +1076,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 emit_expr(out, recv, mode)?;
                 out.push_str(").is_empty() && (");
                 emit_expr(out, recv, mode)?;
-                out.push_str(").chars().all(|__c| __c.");
+                out.push_str(").chars().all(|__c| ");
                 out.push_str(match op {
-                    StrMethodOp::IsDigit => "is_ascii_digit()",
-                    StrMethodOp::IsAlpha => "is_alphabetic()",
-                    StrMethodOp::IsAlnum => "is_alphanumeric()",
-                    _ => "is_whitespace()",
+                    StrMethodOp::IsDigit => "__c.is_ascii_digit()",
+                    StrMethodOp::IsAlpha => "__c.is_alphabetic()",
+                    StrMethodOp::IsAlnum => "__c.is_alphanumeric()",
+                    // PMAT-600: include the C0 separators U+001C..U+001F (Python
+                    // isspace whitespace set; matches the Rust backend).
+                    _ => "(__c.is_whitespace() || matches!(__c, '\\u{1c}'..='\\u{1f}'))",
                 });
                 out.push_str("))");
                 return Ok(());
@@ -1222,7 +1224,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             match op {
                 StrMethodOp::Upper => out.push_str(".to_uppercase()"),
                 StrMethodOp::Lower => out.push_str(".to_lowercase()"),
-                StrMethodOp::Strip => out.push_str(".trim().to_string()"),
+                // PMAT-600: strip the Python whitespace set incl. U+001C..U+001F.
+                StrMethodOp::Strip => out.push_str(".trim_matches(|__c: char| __c.is_whitespace() || matches!(__c, '\\u{1c}'..='\\u{1f}')).to_string()"),
                 // PMAT-564: `len(str)` → Unicode char count (not byte len).
                 StrMethodOp::CharCount => out.push_str(".chars().count() as i64"),
                 // PMAT-530: `s[::-1]` → reverse by Unicode scalar value.
@@ -1279,8 +1282,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     out.push_str(") as usize)");
                 }
                 // PMAT-502l: lstrip/rstrip → trim_start/trim_end; find/count → i64.
-                StrMethodOp::LStrip => out.push_str(".trim_start().to_string()"),
-                StrMethodOp::RStrip => out.push_str(".trim_end().to_string()"),
+                // PMAT-600: against the Python whitespace set (incl. U+001C..U+001F).
+                StrMethodOp::LStrip => out.push_str(".trim_start_matches(|__c: char| __c.is_whitespace() || matches!(__c, '\\u{1c}'..='\\u{1f}')).to_string()"),
+                StrMethodOp::RStrip => out.push_str(".trim_end_matches(|__c: char| __c.is_whitespace() || matches!(__c, '\\u{1c}'..='\\u{1f}')).to_string()"),
                 StrMethodOp::Count => {
                     out.push_str(".matches(&(");
                     emit_expr(out, &args[0], mode)?;

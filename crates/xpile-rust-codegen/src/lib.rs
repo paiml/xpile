@@ -1220,12 +1220,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, recv, mode)?;
                 out.push_str(").is_empty() && (");
                 emit_expr(out, recv, mode)?;
-                out.push_str(").chars().all(|__c| __c.");
+                out.push_str(").chars().all(|__c| ");
                 out.push_str(match op {
-                    StrMethodOp::IsDigit => "is_ascii_digit()",
-                    StrMethodOp::IsAlpha => "is_alphabetic()",
-                    StrMethodOp::IsAlnum => "is_alphanumeric()",
-                    _ => "is_whitespace()",
+                    StrMethodOp::IsDigit => "__c.is_ascii_digit()",
+                    StrMethodOp::IsAlpha => "__c.is_alphabetic()",
+                    StrMethodOp::IsAlnum => "__c.is_alphanumeric()",
+                    // PMAT-600: Python `str.isspace()` also treats the C0
+                    // information separators FS/GS/RS/US (U+001C..U+001F) as
+                    // whitespace, which Rust's `char::is_whitespace()` excludes.
+                    _ => "(__c.is_whitespace() || matches!(__c, '\\u{1c}'..='\\u{1f}'))",
                 });
                 out.push_str("))");
             } else if matches!(op, StrMethodOp::IsUpper | StrMethodOp::IsLower) {
@@ -1364,7 +1367,10 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 match op {
                     StrMethodOp::Upper => out.push_str(".to_uppercase()"),
                     StrMethodOp::Lower => out.push_str(".to_lowercase()"),
-                    StrMethodOp::Strip => out.push_str(".trim().to_string()"),
+                    // PMAT-600: Python `strip()` removes the C0 separators
+                    // U+001C..U+001F too (Rust `trim()` / `char::is_whitespace`
+                    // does not) — trim against the Python whitespace predicate.
+                    StrMethodOp::Strip => out.push_str(".trim_matches(|__c: char| __c.is_whitespace() || matches!(__c, '\\u{1c}'..='\\u{1f}')).to_string()"),
                     // PMAT-564: `len(str)` → Unicode char count (not byte len).
                     StrMethodOp::CharCount => out.push_str(".chars().count() as i64"),
                     // PMAT-530: `s[::-1]` → reverse by Unicode scalar value.
@@ -1423,8 +1429,10 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                         out.push_str(") as usize)");
                     }
                     // PMAT-502l: lstrip/rstrip → trim_start/trim_end.
-                    StrMethodOp::LStrip => out.push_str(".trim_start().to_string()"),
-                    StrMethodOp::RStrip => out.push_str(".trim_end().to_string()"),
+                    // PMAT-600: against the Python whitespace set (incl. the C0
+                    // separators U+001C..U+001F).
+                    StrMethodOp::LStrip => out.push_str(".trim_start_matches(|__c: char| __c.is_whitespace() || matches!(__c, '\\u{1c}'..='\\u{1f}')).to_string()"),
+                    StrMethodOp::RStrip => out.push_str(".trim_end_matches(|__c: char| __c.is_whitespace() || matches!(__c, '\\u{1c}'..='\\u{1f}')).to_string()"),
                     // PMAT-502l: `.count(sub)` → non-overlapping match count (i64).
                     StrMethodOp::Count => {
                         out.push_str(".matches(&(");

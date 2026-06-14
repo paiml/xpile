@@ -1168,7 +1168,7 @@ fn str_methods_emitted_rust_transforms_strings() {
     assert!(
         rust.contains(".to_uppercase()")
             && rust.contains(".to_lowercase()")
-            && rust.contains(".trim().to_string()")
+            && rust.contains(".trim_matches(|__c: char| __c.is_whitespace()")
             && rust.contains(".starts_with(")
             && rust.contains(".ends_with(")
             && rust.contains(".split(&(")
@@ -1675,8 +1675,8 @@ fn main() {
 fn str_methods_more() {
     let rust = xpile_transpile_to_rust("str_methods_more.py");
     assert!(
-        rust.contains(".trim_start().to_string()")
-            && rust.contains(".trim_end().to_string()")
+        rust.contains(".trim_start_matches(|__c: char| __c.is_whitespace()")
+            && rust.contains(".trim_end_matches(|__c: char| __c.is_whitespace()")
             && rust.contains(".map(|__b| __s[..__b].chars().count() as i64).unwrap_or(-1)")
             && rust.contains(".matches(&(")
             && rust.contains(".count() as i64"),
@@ -1719,6 +1719,33 @@ fn main() {
 }
 "#;
     assert_rustc_runs("str_predicates", &rust, driver);
+}
+
+/// PMAT-600: Python treats the C0 information separators FS/GS/RS/US
+/// (U+001C..U+001F) as whitespace for `isspace()` and `strip`/`lstrip`/`rstrip`;
+/// Rust's `char::is_whitespace()` / `trim()` excludes them. The predicate now
+/// augments the Rust whitespace set with that range. Cross-checked vs python3.
+#[test]
+fn c0_whitespace() {
+    let rust = xpile_transpile_to_rust("c0_whitespace.py");
+    assert!(
+        rust.contains("matches!(__c, '\\u{1c}'..='\\u{1f}')"),
+        "C0-separator whitespace predicate:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // C0 separators FS/GS/RS/US are Python whitespace.
+    assert!(is_ws("\u{1c}\u{1d}\u{1e}\u{1f}".to_string()));
+    assert_eq!(stripped("\u{1c}abc\u{1f}".to_string()), "abc");
+    assert_eq!(lstripped("\u{1c}ab".to_string()), "ab");
+    assert_eq!(rstripped("ab\u{1f}".to_string()), "ab");
+    // normal whitespace still works; non-whitespace is not isspace.
+    assert!(is_ws("   ".to_string()));
+    assert_eq!(stripped("  x  ".to_string()), "x");
+    assert!(!is_ws("a b".to_string()));
+}
+"#;
+    assert_rustc_runs("c0_whitespace", &rust, driver);
 }
 
 /// PMAT-502ah (Tranche 2): `s.capitalize()` → first char upper, rest lower
