@@ -6111,6 +6111,33 @@ fn main() {
     assert_rustc_runs("bool_as_int", &rust, driver);
 }
 
+/// PMAT-575 (Tranche 2): **correctness / contract integrity** — left-shift
+/// value overflow. `x << n` lowered to `checked_shl`, which only returns `None`
+/// when the shift *amount* is ≥ 64 — it does NOT detect lost significant bits,
+/// so `1 << 63` silently wrapped to `i64::MIN`, falsifying C-PY-INT-ARITH's
+/// overflow guarantee (Python's `<<` is exact, so the contract promises a panic
+/// until bigint promotion lands). Now emits a reversibility check
+/// `(v << n) >> n == v` and panics on overflow. Valid shifts (incl. `-2 << 62`
+/// == i64::MIN, which fits exactly) are unaffected. Found by the differential
+/// hunt. Cross-checked vs python3.
+#[test]
+fn left_shift_overflow() {
+    let rust = xpile_transpile_to_rust("left_shift_overflow.py");
+    let driver = r#"
+fn main() {
+    // valid shifts — no overflow, must match python3
+    assert_eq!(sh(1, 10), 1024);
+    assert_eq!(sh(3, 20), 3_145_728);
+    assert_eq!(small(), 1024);
+    assert_eq!(fits_exactly(), i64::MIN); // -2 << 62 fits exactly
+    // value overflow — must PANIC (contract), not silently wrap to i64::MIN
+    assert!(std::panic::catch_unwind(|| sh(1, 63)).is_err());
+    assert!(std::panic::catch_unwind(|| sh(3, 62)).is_err());
+}
+"#;
+    assert_rustc_runs("left_shift_overflow", &rust, driver);
+}
+
 /// PMAT-574 (Tranche 2): **correctness** — a mutating method (`xs.pop()` /
 /// `d.setdefault(...)`) in a *controlling condition* (`while`/`if`/`assert`
 /// test) mutates its receiver, but the mutability pre-walk only scanned

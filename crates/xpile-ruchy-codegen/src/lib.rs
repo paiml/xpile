@@ -2293,6 +2293,20 @@ fn emit_checked_shift(
     op_name: &str,
     mode: bool,
 ) -> Result<(), RuchyCodegenError> {
+    // PMAT-575: see the Rust backend's twin — `checked_shl` only guards the
+    // shift amount, not value overflow (`1 << 63` wraps to i64::MIN silently),
+    // falsifying C-PY-INT-ARITH. Emit a reversibility check for left-shift.
+    if method == "checked_shl" && !mode {
+        write!(out, "{{ let __shl_v: i64 = ")?;
+        emit_expr(out, lhs, mode)?;
+        write!(out, "; let __shl_n: u32 = u32::try_from(")?;
+        emit_expr(out, rhs, mode)?;
+        write!(
+            out,
+            ").expect(\"xpile: shift amount out of range for u32 (contract C-PY-INT-ARITH)\"); let __shl_r = __shl_v.checked_shl(__shl_n).expect(\"xpile: i64 left-shift overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"); if (__shl_r >> __shl_n) != __shl_v {{ panic!(\"xpile: i64 left-shift overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"); }} __shl_r }}"
+        )?;
+        return Ok(());
+    }
     write!(out, "(")?;
     emit_expr(out, lhs, mode)?;
     write!(out, ").{method}(u32::try_from(")?;

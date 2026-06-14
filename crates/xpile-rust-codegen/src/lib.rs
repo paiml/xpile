@@ -2530,6 +2530,26 @@ fn emit_checked_shift(
     op_name: &str,
     mode: bool,
 ) -> Result<(), CodegenError> {
+    // PMAT-575: `checked_shl` only validates the shift *amount* (`None` iff the
+    // amount is >= 64); it does NOT detect VALUE overflow. So `1i64 << 63`
+    // returns `Some(i64::MIN)` and the `.expect(... overflow ...)` never fires —
+    // a silent wrap that falsifies C-PY-INT-ARITH's overflow guarantee (Python's
+    // `<<` is exact / arbitrary-precision, so the contract promises a panic until
+    // bigint promotion lands). Emit a reversibility check: a left shift loses no
+    // significant bits iff `(v << n) >> n == v` (arithmetic shift-back, valid for
+    // both signs). Right-shift never value-overflows, and bigint mode is
+    // arbitrary-precision, so both keep the plain checked form.
+    if method == "checked_shl" && !mode {
+        write!(out, "{{ let __shl_v: i64 = ")?;
+        emit_expr(out, lhs, mode)?;
+        write!(out, "; let __shl_n: u32 = u32::try_from(")?;
+        emit_expr(out, rhs, mode)?;
+        write!(
+            out,
+            ").expect(\"xpile: shift amount out of range for u32 (contract C-PY-INT-ARITH)\"); let __shl_r = __shl_v.checked_shl(__shl_n).expect(\"xpile: i64 left-shift overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"); if (__shl_r >> __shl_n) != __shl_v {{ panic!(\"xpile: i64 left-shift overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"); }} __shl_r }}"
+        )?;
+        return Ok(());
+    }
     write!(out, "(")?;
     emit_expr(out, lhs, mode)?;
     write!(out, ").{method}(u32::try_from(")?;
