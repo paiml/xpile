@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.296] — 2026-06-14
+
+Tranche 2 — PMAT-597: **correctness** — the standalone `format(value[, spec])` builtin.
+
+- The standalone `format(x)` / `format(x, spec)` builtin (distinct from
+  `str.format` and `%`-formatting) had no lowering, so it fell through to a
+  generic call emitting a bare `format(...)` — but Rust's `format` is a *macro*,
+  not a function, so rustc rejected it (E0423). A transpile-success ⟹ invalid
+  Rust violation on a documented builtin. Found by the differential hunt (#4,
+  finding #25; structurally identical to the repr() fix in 0.1.281).
+- Fix (frontend, reusing existing machinery): factor the f-string field's
+  spec-application into a shared helper; `format(x)` / `format(x, "")` == `str(x)`;
+  `format(x, "<literal spec>")` reuses the helper. Non-literal / non-string specs
+  rejected cleanly; inference is post-lowering, so the result types as `Str`.
+- New e2e fixture `format_builtin.py` cross-checked vs python3. 358 e2e fixtures.
+
 ## [0.1.295] — 2026-06-14
 
 Tranche 2 — PMAT-596: **correctness** — `reversed(s)` over a `str` reverses its characters.
