@@ -8043,7 +8043,39 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                         ctx.fn_name
                                     )));
                                 }
-                                Some(Box::new(i))
+                                // PMAT-609: a non-literal (runtime) index may be
+                                // negative at runtime — Python `pop(i)` with i<0
+                                // removes from the end (`i + len`). A bare
+                                // `(i) as usize` wraps a negative i to usize::MAX
+                                // → Vec::remove panics. Normalize: bind once, then
+                                // `if __pidx < 0 { len + __pidx } else { __pidx }`.
+                                // A non-negative literal needs no guard; negative
+                                // literals are resolved to `len - k` above.
+                                if matches!(i, Expr::LitInt(_)) {
+                                    Some(Box::new(i))
+                                } else {
+                                    Some(Box::new(Expr::Block(Box::new(Block {
+                                        stmts: vec![Stmt::Let {
+                                            name: "__pidx".to_string(),
+                                            ty: Type::I64,
+                                            value: i,
+                                            mutable: false,
+                                        }],
+                                        trailing_return: Expr::IfExpr {
+                                            cond: Box::new(Expr::BinOp {
+                                                op: BinOp::Lt,
+                                                lhs: Box::new(Expr::Ident("__pidx".to_string())),
+                                                rhs: Box::new(Expr::LitInt(0)),
+                                            }),
+                                            then_expr: Box::new(Expr::BinOp {
+                                                op: BinOp::Add,
+                                                lhs: Box::new(Expr::Len(Box::new(recv.clone()))),
+                                                rhs: Box::new(Expr::Ident("__pidx".to_string())),
+                                            }),
+                                            else_expr: Box::new(Expr::Ident("__pidx".to_string())),
+                                        },
+                                    }))))
+                                }
                             }
                         };
                         // Receiver mutability is handled entirely by the
