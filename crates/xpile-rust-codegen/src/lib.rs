@@ -1655,15 +1655,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     ").trim().parse::<i64>().expect(\"xpile: ValueError: invalid literal for int()\")"
                 });
             } else if !*to_float && *from_float {
-                // PMAT-586: `int(float_x)` — Python raises `OverflowError` for
-                // `int(inf)` and `ValueError` for `int(nan)`, but Rust's
-                // `as i64` saturates (`inf`→`i64::MAX`) / zeroes (`nan`→0)
-                // silently. Guard a non-finite source and panic. (The
-                // out-of-range *finite* case — `int(1e30)` — would need bigint;
-                // it still saturates and is a deferred fidelity gap.)
+                // PMAT-586/589: `int(float_x)` — Python raises `OverflowError`
+                // for `int(inf)` and `ValueError` for `int(nan)`, and returns an
+                // exact (arbitrary-precision) integer for an out-of-i64-range
+                // finite float like `int(1e30)`; Rust's `as i64` saturates
+                // (`inf`/huge → `i64::MAX`) / zeroes (`nan` → 0) silently. Guard
+                // both a non-finite source and an out-of-i64-range one and panic
+                // (the contract's fail-loud posture until bigint promotion lands).
                 out.push_str("{ let __ic = ");
                 emit_expr(out, value, mode)?;
-                out.push_str("; if !__ic.is_finite() { panic!(\"xpile: int() of a non-finite float (Python OverflowError/ValueError)\"); } __ic as i64 }");
+                out.push_str("; if !__ic.is_finite() { panic!(\"xpile: int() of a non-finite float (Python OverflowError/ValueError)\"); } if __ic < (i64::MIN as f64) || __ic >= (i64::MAX as f64) { panic!(\"xpile: int() out of i64 range; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"); } __ic as i64 }");
             } else {
                 out.push_str("((");
                 emit_expr(out, value, mode)?;
