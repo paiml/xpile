@@ -9596,6 +9596,29 @@ fn static_format_spec(spec: &ast::Expr) -> Option<String> {
 /// separators (comma / underscore), sign flags, and `#` alternate forms are
 /// deferred.
 fn translate_format_spec(spec: &str, ty: &Type) -> Option<String> {
+    // PMAT-557: Python sign flag. `+` (always show a sign) maps 1:1 to Rust's
+    // `+` flag, which composes with precision / width / zero-pad / radix exactly
+    // like Python (`{:+}`, `{:+.2}`, `{:+05}`, `{:+x}`). `-` is the default in
+    // both (show only for negatives) → drop it and translate the remainder. A
+    // space flag (` `) has no Rust equivalent → fall through to a reject.
+    //
+    // A *bare* sign (no precision/width following) is only safe for an int: a
+    // bare-`+`/`-` on a float hits the whole-float repr divergence (`+3` vs
+    // Python `+3.0`), the same reason bare float widths are deferred; only an
+    // explicit `.Nf` precision (which forces the decimals) is sound there.
+    if let Some(rest) = spec.strip_prefix('+') {
+        if rest.is_empty() {
+            return (*ty == Type::I64).then(|| "+".to_string());
+        }
+        let inner = translate_format_spec(rest, ty)?;
+        return Some(format!("+{inner}"));
+    }
+    if let Some(rest) = spec.strip_prefix('-') {
+        if rest.is_empty() {
+            return (*ty == Type::I64).then(String::new);
+        }
+        return translate_format_spec(rest, ty);
+    }
     // `.Nf` — fixed-point float (float only). A `.`-prefixed spec is
     // float-specific; never fall through to the integer/width branches (Python
     // `.2` without `f` means *significant figures*, not Rust's decimal places).
@@ -9629,7 +9652,10 @@ fn translate_format_spec(spec: &str, ty: &Type) -> Option<String> {
                 return pad_width(prefix).map(|pad| format!("{pad}{last}"));
             }
             if last == 'd' {
-                return pad_width(&spec[..spec.len() - 1]).filter(|p| !p.is_empty());
+                // PMAT-557: `d` (decimal) is the int default in Rust, so it's
+                // dropped; a bare `:d` (or sign-stripped `:+d`) → an empty spec
+                // (plain `{}`), not a reject.
+                return pad_width(&spec[..spec.len() - 1]);
             }
         }
         return pad_width(spec).filter(|p| !p.is_empty());
