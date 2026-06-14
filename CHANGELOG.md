@@ -19,6 +19,20 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.252] — 2026-06-14
+
+Tranche 2 — PMAT-553: `math.comb(n, k)`.
+
+- `math.comb(n, k)` — binomial coefficient "n choose k". New `Expr::Comb` whose
+  rust/ruchy codegen is an inline incremental-product block (`min(k, n-k)`
+  iterations, `C(n,i+1)=C(n,i)*(n-i)/(i+1)` so each partial stays a true integer
+  binomial). `k > n` → 0; negative `n`/`k` panic (Python `ValueError`); the
+  running `checked_mul` panics on i64 overflow per the int-arith contract.
+  Rippled to meta-HIR (+bigint scan), both inferers (→ `I64`), and rust/ruchy
+  emit; the Lean lane refuses.
+- New e2e fixture `math_comb.py` (`choose`, `poker_hands`, `out_of_range`,
+  `symmetric`) cross-checked vs python3 (120, 2598960, 0, 2). e2e 313 → 314.
+
 ## [0.1.251] — 2026-06-14
 
 Tranche 2 — PMAT-552: `math.isqrt(n)`.
