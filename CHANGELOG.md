@@ -19,6 +19,28 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.275] — 2026-06-14
+
+Tranche 2 — PMAT-576: **correctness** — chained comparison evaluates each operand once.
+
+- A chained comparison (`a < b < c`, `a == f() == b`, `1 < b() < c() < 9`)
+  desugars to `(a OP b) && (b OP c) && …`, where each *interior* operand is
+  shared by two adjacent sub-comparisons. The lowering cloned the lowered
+  operand into both, evaluating it **twice** — diverging from Python, which
+  evaluates every operand exactly once, left to right. A side-effecting middle
+  (`0 < xs.pop() < 100`) popped twice (wrong result, and an empty-pop panic for
+  a 1-element list); an expensive middle ran twice. Found by the differential
+  hunt (three separate findings).
+- Fix: in `lower_compare_in_ctx`, when `ops.len() >= 2`, bind every operand to a
+  fresh temp once inside an `Expr::Block`, then fold the sub-comparisons over the
+  temps. Short-circuit order preserved (`&&` still stops at the first false);
+  only the one-time operand binding is hoisted — observable only for
+  side-effecting operands, which is the bug. Single comparisons share no operand
+  and stay a plain `BinOp`. Per-sub-comparison Set/float-promotion logic factored
+  into `build_chain_cmp`. No new IR.
+- New e2e fixture `chained_compare_side_effect.py` cross-checked vs python3
+  (`pop_in_range` single-pop, 4-term, equality chain). 337 e2e fixtures.
+
 ## [0.1.274] — 2026-06-14
 
 Tranche 2 — PMAT-575: **correctness / contract integrity** — left-shift value overflow.
