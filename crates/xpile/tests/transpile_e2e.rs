@@ -5818,6 +5818,29 @@ fn main() {
     assert_rustc_runs("fstring_sign", &rust, driver);
 }
 
+/// PMAT-558 (Tranche 2): the f-string **percent** spec `:.N%` / `:%` (float) —
+/// Python scales by 100, formats with N decimals (bare `%` → default 6), and
+/// appends a literal `%`. Lowered to `Concat(FormatSpec((x)*100.0, ".N"), "%")`
+/// (no IR change); int receivers reject (whole-int promotion deferred).
+/// Cross-checked vs python3 (12.3%, 100%, 50.000000%, share=7.12%).
+#[test]
+fn fstring_percent() {
+    let rust = xpile_transpile_to_rust("fstring_percent.py");
+    assert!(
+        rust.contains("100f64") && rust.contains("\"%\""),
+        "percent spec should scale by 100 and append a literal %:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(rate1(0.1234), "12.3%");
+    assert_eq!(rate0(0.999), "100%");
+    assert_eq!(rate_default(0.5), "50.000000%");
+    assert_eq!(labeled(0.07125), "share=7.12%");
+}
+"#;
+    assert_rustc_runs("fstring_percent", &rust, driver);
+}
+
 /// PMAT-502ec (Tranche 2): empty list literal `[]` takes its element type from
 /// the declared annotation / return type — `xs: list[int] = []` and
 /// `return []` (any element type, incl. `list[str]` / nested) previously errored
