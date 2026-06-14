@@ -356,7 +356,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-502m: int(x)/float(x) — recurse into the converted value.
         Expr::NumCast { value, .. } => expr_has_int_arith(value),
         // PMAT-502ad: str(x) — recurse into the converted value.
-        Expr::ToStr { value, .. } => expr_has_int_arith(value),
+        // PMAT-582: repr(str) — recurse into the value (a string, no int arith).
+        Expr::ToStr { value, .. } | Expr::ReprStr { value } => expr_has_int_arith(value),
         // PMAT-502ak: round(x) — recurse into the rounded value.
         Expr::RoundToInt { value } => expr_has_int_arith(value),
         // PMAT-502al: round(x, n) — recurse into the value and ndigits.
@@ -1694,6 +1695,17 @@ pub enum Expr {
     /// `format!` prints e.g. `2.0` as `"2"`. Result types as `Str`.
     /// (`str(bool)` desugars to an `IfExpr`, PMAT-502ae.) Lean refuses.
     ToStr { value: Box<Expr>, of_float: bool },
+    /// PMAT-582: Python `repr(s)` over a **string** `s` → its quoted
+    /// representation. `repr` of an int/float/bool equals `str` of it, so the
+    /// frontend lowers those through [`Expr::ToStr`] / the `str(bool)` desugar;
+    /// only the string case (which adds quotes + escapes) needs this node.
+    /// Rust/Ruchy emit an inline block that picks the quote like CPython
+    /// (single quotes, switching to double if the string contains a `'` but no
+    /// `"`) and escapes `\`, the quote, `\n`, `\r`, `\t`. (Other non-printables
+    /// are emitted verbatim — full `\xNN`/`\uNNNN` escaping is deferred.)
+    /// Result types as `Str`. Lean refuses. Container `repr` + f-string `{x!r}`
+    /// are separate, deferred slices.
+    ReprStr { value: Box<Expr> },
     /// `round(x)` over a **float** `x` → the nearest integer (**Int**).
     /// PMAT-502ak (Tranche 2). Rust/Ruchy emit `((<value>).round_ties_even()
     /// as i64)` — `round_ties_even` is round-half-to-**even** (banker's
@@ -2639,6 +2651,7 @@ fn escape_expr(e: &mut Expr) {
         | Expr::FormatSpec { value, .. }
         | Expr::NumCast { value, .. }
         | Expr::ToStr { value, .. }
+        | Expr::ReprStr { value }
         | Expr::RoundToInt { value } => escape_expr(value),
         Expr::StrMethod { recv, args, .. } => {
             escape_expr(recv);

@@ -6122,6 +6122,29 @@ fn main() {
     assert_rustc_runs("bool_as_int", &rust, driver);
 }
 
+/// PMAT-582 (Tranche 2): **correctness** — `repr()`. A `repr(x)` call emitted a
+/// bare `repr(...)` (rustc E0423: `repr` is a built-in attribute, not a fn) /
+/// was rejected as I64. Now `repr(int/float/bool)` reuses the `str()` lowering
+/// and `repr(str)` emits a CPython-style quoted form (single quotes, switching
+/// to double if the string has a `'` but no `"`; escapes `\`, the quote,
+/// `\n`/`\r`/`\t`). Found by the differential hunt. Cross-checked vs python3.
+#[test]
+fn repr_builtin() {
+    let rust = xpile_transpile_to_rust("repr_builtin.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(rs(String::from("hi")), "'hi'");
+    assert_eq!(rs(String::from("a'b")), "\"a'b\"");      // has ' but no " -> double
+    assert_eq!(rs(String::from("say \"hi\"")), "'say \"hi\"'");
+    assert_eq!(rs(String::from("a\nb\tc")), "'a\\nb\\tc'");
+    assert_eq!(rs(String::from("back\\slash")), "'back\\\\slash'");
+    assert_eq!(ri(42), "42");
+    assert_eq!(rf(3.0), "3.0");
+}
+"#;
+    assert_rustc_runs("repr_builtin", &rust, driver);
+}
+
 /// PMAT-581 (Tranche 2): **correctness** — float division by zero. Python raises
 /// `ZeroDivisionError` for `a / b`, `a // b`, `a % b` when `b == 0.0` (and for
 /// int true-division `a / 0`), but xpile emitted bare IEEE ops yielding

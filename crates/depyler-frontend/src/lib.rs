@@ -6514,7 +6514,7 @@ fn infer_type(e: &Expr) -> Type {
             }
         }
         // PMAT-502ad: str(x) → Str.
-        Expr::ToStr { .. } => Type::Str,
+        Expr::ToStr { .. } | Expr::ReprStr { .. } => Type::Str,
         // PMAT-502ak: round(x) → Int.
         Expr::RoundToInt { .. } => Type::I64,
         // PMAT-502al: round(x, n) → Float.
@@ -6918,7 +6918,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             }
         }
         // PMAT-502ad: str(x) → Str.
-        Expr::ToStr { .. } => Type::Str,
+        Expr::ToStr { .. } | Expr::ReprStr { .. } => Type::Str,
         // PMAT-502ak: round(x) → Int.
         Expr::RoundToInt { .. } => Type::I64,
         // PMAT-502al: round(x, n) → Float.
@@ -8197,6 +8197,41 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             return Ok(bool_to_python_str(value));
                         }
                         _ => {}
+                    }
+                }
+                // PMAT-582: `repr(x)`. For an int/float/bool, `repr == str`
+                // (reuse `ToStr` / the `str(bool)` desugar). For a string,
+                // `repr` adds Python-style quotes + escapes → `Expr::ReprStr`.
+                // (Container `repr` + f-string `{x!r}` are deferred.)
+                if fname.id.as_str() == "repr" && call.keywords.is_empty() && call.args.len() == 1 {
+                    let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    match infer_type_in_ctx(ctx, &value) {
+                        Type::I64 => {
+                            return Ok(Expr::ToStr {
+                                value: Box::new(value),
+                                of_float: false,
+                            });
+                        }
+                        Type::F64 => {
+                            return Ok(Expr::ToStr {
+                                value: Box::new(value),
+                                of_float: true,
+                            });
+                        }
+                        Type::Bool => {
+                            return Ok(bool_to_python_str(value));
+                        }
+                        Type::Str => {
+                            return Ok(Expr::ReprStr {
+                                value: Box::new(value),
+                            });
+                        }
+                        other => {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` calls `repr(...)` on a {other:?}; v0.2.0 supports repr over int/float/bool/str (container repr deferred)",
+                                ctx.fn_name
+                            )));
+                        }
                     }
                 }
                 // PMAT-502ak: `round(x)` (1-arg). Over a `float` → the nearest
