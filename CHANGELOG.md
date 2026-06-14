@@ -19,6 +19,24 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.289] — 2026-06-14
+
+Tranche 2 — PMAT-590: **correctness** — `list.insert` clamps out-of-range / negative indices (CPython `ins1` parity).
+
+- `xs.insert(i, x)` emitted a bare `xs.insert((i) as usize, x)`, which panics for
+  any `i > len` and casts a negative `i` to a huge `usize` that also panics —
+  whereas CPython's `list.insert` (listobject.c `ins1`) clamps `i > len` to `len`
+  (append) and normalizes `i < 0` to `len + i`, clamping to `0` if still negative.
+  Transpile succeeded and rustc compiled, so this was a silent transpile-success
+  ⟹ runtime-panic divergence. Found by the differential hunt (#4, two findings).
+- Fix: both the rust and ruchy backends emit a clamp block —
+  `{ let __n = xs.len() as i64; let mut __i = (i); if __i < 0 { __i += __n;
+  if __i < 0 { __i = 0; } } if __i > __n { __i = __n; } xs.insert(__i as usize, x); }`.
+  No new IR. Lean still refuses (in-place mutation).
+- New e2e fixture `list_insert_clamp.py` cross-checked vs python3
+  (`insert(100,88)`/`insert(-1,77)`/`insert(-100,5)`/`insert(3,9)` over `[1,2,3]`
+  → `88`/`77`/`5`/`9`). 351 e2e fixtures.
+
 ## [0.1.288] — 2026-06-14
 
 Tranche 2 — PMAT-589: **correctness** — `int()` of an out-of-i64-range float fails loud.
