@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.290] — 2026-06-14
+
+Tranche 2 — PMAT-591: **correctness** — float `%` uses CPython `float_rem` (fmod + sign-adjust), not the floor formula.
+
+- Python float `a % b` was lowered to `a - b*(a/b).floor()`, whose extra rounding
+  step diverged from CPython in the **last ULP** on ~60% of non-power-of-two
+  divisors, and always produced `+0.0` for a zero remainder — losing CPython's
+  divisor-signed zero (`4.0 % -2.0` should be `-0.0`). Both transpile-success +
+  rustc-clean, i.e. silent miscompiles. Found by the differential hunt (#4,
+  findings #12 + #23 — one rewrite closes both).
+- Fix: both backends emit CPython's `float_rem` — `mod = a % b` (Rust `%` is C
+  `fmod`); if `mod != 0` adjust toward the divisor's sign, else `copysign(0.0, b)`.
+  The `ZeroDivisionError` divisor guard is preserved; float `//` is unchanged.
+  No new IR. Rust + Ruchy.
+- New e2e fixture `float_mod_fmod.py` — **bit-exact** equality vs python3 plus
+  signed-zero parity. 352 e2e fixtures.
+
 ## [0.1.289] — 2026-06-14
 
 Tranche 2 — PMAT-590: **correctness** — `list.insert` clamps out-of-range / negative indices (CPython `ins1` parity).
