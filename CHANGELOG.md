@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.233] — 2026-06-14
+
+Tranche 2 — PMAT-533: in-place `append` on a subscript receiver
+(`g[i].append(e)` / `d[k].append(e)`).
+
+- `g[i].append(e)` (list-of-list) and `d[k].append(e)` (dict-of-list) were
+  rejected — the bare-statement `append` handler required a simple-`Name`
+  receiver, so a subscript receiver fell through to the subprocess-shape error.
+  New `Stmt::IndexAppend { base, index, elem, base_is_dict }`:
+  - list base → `base[(index) as usize].push(elem)` (indexes a mutable place).
+  - dict base → `base.get_mut(&(index)).unwrap().push(elem)` (KeyError parity).
+  Rust + Ruchy emit; Lean refuses (in-place-mutation gap). The mutability
+  pre-walk now recognises a subscript receiver, so the base binding is `mut`.
+- New e2e fixture `subscript_append.py` (`grid_row_append`, `first_row_total`,
+  `bucket_append`) — rustc round-trip cross-checked vs python3 (2, 35, 3).
+  e2e 294 → 295.
+
 ## [0.1.232] — 2026-06-14
 
 Tranche 2 — PMAT-532: in-place set/dict mutators `set.update` / `set.clear` /
