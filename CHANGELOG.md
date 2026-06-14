@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.282] — 2026-06-14
+
+Tranche 2 — PMAT-583: **correctness** — float scientific notation.
+
+- CPython prints a float in scientific notation when its decimal exponent is
+  `< -4` or `>= 16` (`1e16` → `1e+16`, `1e-5` → `1e-05`, `1e100` → `1e+100`), but
+  xpile's float `str`/`repr`/`print`/f-string helper used `format!("{}", x)`,
+  which spells them out (`10000000000000000`). Found by the differential hunt.
+- Fix: the float `ToStr` helper (Rust + Ruchy) reads the decimal exponent from
+  `format!("{:e}", x)` (exact; avoids `log10` rounding error) and reformats to
+  Python's `e±NN` style (signed, ≥2-digit) above the threshold; below it, keeps
+  the fixed `.0`-if-whole shape (small floats unchanged). `inf`/`-inf`/`nan`
+  explicit. All float string paths reuse the helper.
+- New e2e fixture `float_sci_notation.py` — a 19-magnitude diff vs python3 is a
+  perfect match (incl. the exp-15/16 and exp-−4/−5 boundaries, `1e100`,
+  `-3.14e-10`, `-0.0`). 344 e2e fixtures.
+
 ## [0.1.281] — 2026-06-14
 
 Tranche 2 — PMAT-582: **correctness** — `repr()` builtin.
