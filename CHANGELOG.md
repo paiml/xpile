@@ -7,6 +7,36 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Known limitations
+
+- **PMAT-537 (deferred): dict insertion order is not preserved.** The transpiler
+  emits `std::collections::HashMap`, whose iteration order is arbitrary, while
+  Python dicts preserve insertion order (3.7+). So `list(d.keys())`,
+  `list(d.values())`, `list(d.items())`, and bare `for k in d:` can diverge from
+  python3 in *order* (values are correct). Order-independent dict ops (`sum`,
+  `len`, specific-key access, `sorted(d.keys())`) are unaffected. A proper fix
+  needs an insertion-ordered map representation; because the generated Rust
+  compiles standalone via `rustc` (no external crates), `indexmap` can't simply
+  be used — it requires a Vec-backed ordered-map prelude across all backends.
+
+## [0.1.236] — 2026-06-14
+
+Tranche 2 — PMAT-536: keyword (named-field) form of `str.format`.
+
+- `"{x}".format(x=n)` was rejected (`passes keyword args to a non-Name callee`)
+  even though positional `"{}".format(n)` worked. The named form now rewrites
+  each `{name}` placeholder to a positional `{N}` (first-occurrence order; a
+  repeated `{name}` reuses the index, which positional `{N}` supports but auto
+  `{}` does not) and passes the referenced kwarg values positionally to the
+  existing `lower_str_format`, reusing all its spec translation + per-type
+  validation. Handles reordering, repeats, and format specs; tolerates unused
+  kwargs (Python does); rejects `**kwargs`, mixed positional+keyword,
+  auto/positional fields in the keyword form, and unknown field names.
+  **No new IR.**
+- New e2e fixture `str_format_kwargs.py` (`greet`, `coords`, `reorder`,
+  `repeated`, `with_spec`) — rustc round-trip cross-checked vs python3
+  (hello world!, 2,3, 2-1, 7 7 7, 3.14). e2e 297 → 298.
+
 ## [0.1.235] — 2026-06-14
 
 Tranche 2 — PMAT-535: `int(b)` / `float(b)` over a `bool`.
