@@ -6688,6 +6688,28 @@ fn main() {
     assert_rustc_runs("sorted_float", &rust, driver);
 }
 
+/// PMAT-603: sorting by a FLOAT-returning `key=` lambda. The key result is `f64`
+/// (no `Ord`), so `sort_by_key` was rejected (E0277); the float-key sort now
+/// uses `sort_by(partial_cmp)` (ascending, descending-stable, and the in-place
+/// `xs.sort(key=)` form). Distinct from PMAT-578 (a float *list*); here the list
+/// is int but the *key* is float. Cross-checked vs python3 (all → [1, 2, 3]).
+#[test]
+fn sort_float_key() {
+    let rust = xpile_transpile_to_rust("sort_float_key.py");
+    assert!(
+        !rust.contains("sort_by_key") && rust.contains(".partial_cmp(&{ let x = __b"),
+        "a float key must use sort_by(partial_cmp), not sort_by_key:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(by_half(vec![3, 1, 2]), vec![1, 2, 3]);
+    assert_eq!(by_neg_ratio(vec![3, 1, 2]), vec![1, 2, 3]);
+    assert_eq!(in_place_scaled(vec![3, 1, 2]), vec![1, 2, 3]);
+}
+"#;
+    assert_rustc_runs("sort_float_key", &rust, driver);
+}
+
 /// PMAT-577 (Tranche 2): **correctness** — `x >> n` for a shift amount `n >= 64`.
 /// Python defines it (the result saturates to the sign fill: `0` for `x >= 0`,
 /// `-1` for `x < 0`), but `checked_shr` returns `None` for `n >= 64`, so the

@@ -1758,6 +1758,22 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 }
                 (None, false) => out.push_str("sort();"),
                 (None, true) => out.push_str("sort(); __xv.reverse();"),
+                // PMAT-603: float key → partial_cmp (no Ord); matches Rust twin.
+                (Some(k), false) if *of_float => {
+                    write!(
+                        out,
+                        "sort_by(|__a, __b| {{ let {p} = __a.clone(); ",
+                        p = k.param
+                    )?;
+                    emit_expr(out, &k.body, mode)?;
+                    write!(
+                        out,
+                        " }}.partial_cmp(&{{ let {p} = __b.clone(); ",
+                        p = k.param
+                    )?;
+                    emit_expr(out, &k.body, mode)?;
+                    out.push_str(" }).unwrap());");
+                }
                 (Some(k), false) => {
                     write!(out, "sort_by_key(|__k| {{ let {} = __k.clone(); ", k.param)?;
                     emit_expr(out, &k.body, mode)?;
@@ -1776,7 +1792,11 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                         p = k.param
                     )?;
                     emit_expr(out, &k.body, mode)?;
-                    out.push_str(" }; __kb.cmp(&__ka) });");
+                    if *of_float {
+                        out.push_str(" }; __kb.partial_cmp(&__ka).unwrap() });");
+                    } else {
+                        out.push_str(" }; __kb.cmp(&__ka) });");
+                    }
                 }
             }
             out.push_str(" __xv }");

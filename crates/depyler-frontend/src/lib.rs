@@ -2536,10 +2536,15 @@ fn try_lower_list_method_call(
         }
         ctx.mutable.insert(receiver_name.to_string());
         // PMAT-578: a keyless float sort needs `partial_cmp` (f64 has no `Ord`).
-        let of_float = matches!(
-            infer_type_in_ctx(ctx, &Expr::Ident(receiver_name.to_string())),
-            Type::List(elem) if *elem == Type::F64
-        );
+        // PMAT-603: with a `key=`, the comparison values are the KEY results, so
+        // `of_float` tracks whether the key returns float (not the element type).
+        let of_float = match &key {
+            Some(k) => sort_key_is_float(ctx, k, elem_ty.clone()),
+            None => matches!(
+                infer_type_in_ctx(ctx, &Expr::Ident(receiver_name.to_string())),
+                Type::List(elem) if *elem == Type::F64
+            ),
+        };
         return Some(Ok(Stmt::Assign {
             name: receiver_name.to_string(),
             value: Expr::Sorted {
@@ -8801,7 +8806,18 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         if let Some(list) = list {
                             // PMAT-578: a keyless float sort needs `partial_cmp`
                             // (no `Ord` for f64); record the element type.
-                            let of_float = matches!(infer_type_in_ctx(ctx, &list), Type::List(elem) if *elem == Type::F64);
+                            // PMAT-603: with a `key=`, the compared values are the
+                            // key results, so track the KEY's float-ness instead.
+                            let of_float = match &key {
+                                Some(k) => sort_key_is_float(
+                                    ctx,
+                                    k,
+                                    sort_target_elem_type(ctx, &call.args[0]),
+                                ),
+                                None => {
+                                    matches!(infer_type_in_ctx(ctx, &list), Type::List(elem) if *elem == Type::F64)
+                                }
+                            };
                             return Ok(Expr::Sorted {
                                 list: Box::new(list),
                                 reverse,
@@ -9865,6 +9881,21 @@ fn lower_math_call(
 /// lowered through the same path (the body is lowered with the param left
 /// unbound, matching the lambda case). Returns `Ok(None)` for an unrecognized
 /// key shape (the caller then rejects the whole call's kwargs).
+/// PMAT-603: true if a sort `key=` lambda returns a `float`. A float key makes
+/// the comparison values `f64`, which has no `Ord` — the codegen must then use
+/// `sort_by(partial_cmp)` instead of `sort_by_key`/`cmp` (E0277 otherwise). The
+/// key body is inferred with its param bound to the collection's element type
+/// (same binding `lower_sort_key` uses), so e.g. `key=lambda x: x / 2.0` over a
+/// `list[int]` is detected as a float key.
+fn sort_key_is_float(ctx: &LoweringCtx, key: &SortKey, elem_type: Option<Type>) -> bool {
+    let mut sub = ctx.clone();
+    if let Some(ty) = elem_type {
+        sub.name_types.insert(key.param.clone(), ty);
+        sub.bound.insert(key.param.clone());
+    }
+    infer_type_in_ctx(&sub, &key.body) == Type::F64
+}
+
 fn lower_sort_key(
     ctx: &LoweringCtx,
     value: &ast::Expr,
