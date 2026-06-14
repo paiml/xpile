@@ -3334,6 +3334,28 @@ fn main() {
     assert_rustc_runs("enumerate_start", &rust, driver);
 }
 
+/// PMAT-594: `enumerate(xs, start=N)` keyword form must honor the start (it was
+/// only read from the 2nd positional arg, silently dropping the keyword → +0).
+/// Both spellings emit `+ 10i64`. Cross-checked vs python3: sum of indices
+/// 10+11+12 == 33 for a 3-element list.
+#[test]
+fn enumerate_start_kwarg() {
+    let rust = xpile_transpile_to_rust("enumerate_start_kwarg.py");
+    // The keyword form must produce the same `+ 10i64` offset as positional.
+    assert_eq!(
+        rust.matches("__i as i64 + 10i64").count(),
+        2,
+        "both enumerate forms must offset by start:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sum_keyword(vec![1, 2, 3]), 33);
+    assert_eq!(sum_positional(vec![1, 2, 3]), 33);
+}
+"#;
+    assert_rustc_runs("enumerate_start_kwarg", &rust, driver);
+}
+
 /// PMAT-502cb (Tranche 2): `str.format` positional `{N}` placeholders
 /// (reorder / repeat) — re-emitted verbatim into Rust's `format!`.
 #[test]

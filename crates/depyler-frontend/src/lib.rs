@@ -3329,40 +3329,75 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
                                 )));
                             };
                             let kind = if fname == "enumerate" {
-                                // PMAT-502ca: the optional 2nd arg is the start
-                                // index — an int literal at first cut.
-                                let start = if call.args.len() == 2 {
-                                    match &call.args[1] {
-                                        ast::Expr::Constant(c) => match &c.value {
-                                            ast::Constant::Int(i) => {
-                                                i.to_string().parse::<i64>().map_err(|_| {
-                                                    FrontendError::Lower(format!(
-                                                        "function `{}` uses `enumerate(xs, <start>)` with an out-of-range integer start",
-                                                        ctx.fn_name
-                                                    ))
-                                                })?
-                                            }
-                                            _ => {
-                                                return Err(FrontendError::Lower(format!(
-                                                    "function `{}` uses `enumerate(xs, <start>)` with a non-int start — only an integer literal is supported at v0.2.0",
+                                // PMAT-502ca / PMAT-594: the start index may be
+                                // the 2nd positional arg OR a `start=` keyword
+                                // (an int literal at first cut). Reject unknown
+                                // keywords and a positional+keyword conflict so
+                                // other keyword forms produce a clean error
+                                // rather than silently dropping the start.
+                                if let Some(bad) = call
+                                    .keywords
+                                    .iter()
+                                    .find(|k| k.arg.as_deref() != Some("start"))
+                                {
+                                    let kw = bad.arg.as_deref().unwrap_or("**kwargs");
+                                    return Err(FrontendError::Lower(format!(
+                                        "function `{}` uses `enumerate(...)` with an unsupported keyword argument `{kw}` — only `start=` is supported",
+                                        ctx.fn_name
+                                    )));
+                                }
+                                let kw_start = call
+                                    .keywords
+                                    .iter()
+                                    .find(|k| k.arg.as_deref() == Some("start"));
+                                let start_src: Option<&ast::Expr> = if call.args.len() == 2 {
+                                    if kw_start.is_some() {
+                                        return Err(FrontendError::Lower(format!(
+                                            "function `{}` uses `enumerate(xs, <start>, start=…)` giving the start both positionally and by keyword",
+                                            ctx.fn_name
+                                        )));
+                                    }
+                                    Some(&call.args[1])
+                                } else {
+                                    kw_start.map(|k| &k.value)
+                                };
+                                let start = match start_src {
+                                    Some(ast::Expr::Constant(c)) => match &c.value {
+                                        ast::Constant::Int(i) => {
+                                            i.to_string().parse::<i64>().map_err(|_| {
+                                                FrontendError::Lower(format!(
+                                                    "function `{}` uses `enumerate(xs, <start>)` with an out-of-range integer start",
                                                     ctx.fn_name
-                                                )));
-                                            }
-                                        },
+                                                ))
+                                            })?
+                                        }
                                         _ => {
                                             return Err(FrontendError::Lower(format!(
-                                                "function `{}` uses `enumerate(xs, <start>)` with a non-literal start — only an integer literal is supported at v0.2.0",
+                                                "function `{}` uses `enumerate(xs, <start>)` with a non-int start — only an integer literal is supported at v0.2.0",
                                                 ctx.fn_name
                                             )));
                                         }
+                                    },
+                                    Some(_) => {
+                                        return Err(FrontendError::Lower(format!(
+                                            "function `{}` uses `enumerate(xs, <start>)` with a non-literal start — only an integer literal is supported at v0.2.0",
+                                            ctx.fn_name
+                                        )));
                                     }
-                                } else {
-                                    0
+                                    None => 0,
                                 };
                                 ctx.name_types.insert(first.clone(), Type::I64);
                                 ctx.name_types.insert(second.clone(), (*elem).clone());
                                 PairIterKind::Enumerate { start }
                             } else {
+                                // PMAT-594: `zip` takes no keyword arguments —
+                                // reject rather than silently ignore them.
+                                if !call.keywords.is_empty() {
+                                    return Err(FrontendError::Lower(format!(
+                                        "function `{}` uses `zip(...)` with keyword arguments — `zip` takes only positional iterables",
+                                        ctx.fn_name
+                                    )));
+                                }
                                 let mut other = lower_expr_in_ctx(ctx, call.args[1].clone())?;
                                 // PMAT-544: `zip(xs, s)` over a string second arg.
                                 if matches!(infer_type_in_ctx(ctx, &other), Type::Str) {
