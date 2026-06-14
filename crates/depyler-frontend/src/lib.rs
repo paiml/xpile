@@ -9040,40 +9040,40 @@ fn lower_slice_in_ctx(
                 list: Box::new(collection),
             });
         }
-        // PMAT-502bc: a **positive** integer-literal step over a *list*
-        // (`xs[a:b:c]`, `xs[::2]`). A step of 1 is the default (drop it).
-        // Negative steps (other than the `-1` reverse above) and stepped
+        // PMAT-502bc / PMAT-548: an integer-literal step over a *list*. A
+        // positive step keeps `xs[a:b:c]` (1 is the default, dropped). A
+        // **negative** step `xs[::-k]` (k ≥ 2) over a list with NO bounds
+        // reverses then steps (codegen emits `.iter().rev().step_by(|k|)`); the
+        // `xs[::-1]` reverse is the special case handled above. Bounded
+        // negative-step slices (different start/stop defaults) and stepped
         // string slices remain deferred.
-        if let ast::Expr::Constant(c) = step.as_ref() {
-            if let ast::Constant::Int(k) = &c.value {
-                if let Ok(s) = k.to_string().parse::<i64>() {
-                    if s >= 1 && !of_str {
-                        step_lit = if s == 1 { None } else { Some(s) };
-                    } else {
-                        return Err(FrontendError::Lower(format!(
-                            "function `{}` uses a slice step that is not a positive list step; \
-                             v0.2.0 supports `xs[a:b:c]` over a list with a positive literal `c` \
-                             (and the `xs[::-1]` reverse idiom); negative/string steps are deferred",
-                            ctx.fn_name
-                        )));
-                    }
-                } else {
+        match extract_step_literal(step) {
+            Some(s) if s < 0 => {
+                if of_str || slice.lower.is_some() || slice.upper.is_some() {
                     return Err(FrontendError::Lower(format!(
-                        "function `{}` uses a non-`i64` slice step — unsupported",
+                        "function `{}` uses a negative-step slice with bounds or over a `str`; \
+                         v0.2.0 supports only the unbounded list form `xs[::-k]` (and `xs[::-1]`/`s[::-1]`)",
                         ctx.fn_name
                     )));
                 }
-            } else {
+                step_lit = Some(s); // negative → codegen reverses + steps
+            }
+            Some(s) if s >= 1 => {
+                if of_str {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` uses a stepped string slice — deferred at v0.2.0",
+                        ctx.fn_name
+                    )));
+                }
+                step_lit = if s == 1 { None } else { Some(s) };
+            }
+            // s == 0 or non-literal step.
+            _ => {
                 return Err(FrontendError::Lower(format!(
-                    "function `{}` uses a non-integer slice step — unsupported",
+                    "function `{}` uses a zero or non-literal slice step; v0.2.0 requires a non-zero integer literal step",
                     ctx.fn_name
                 )));
             }
-        } else {
-            return Err(FrontendError::Lower(format!(
-                "function `{}` uses a non-literal slice step; v0.2.0 requires a positive integer literal step",
-                ctx.fn_name
-            )));
         }
     }
     // PMAT-502r: an absent bound is an open end (`xs[a:]`, `xs[:b]`, `xs[:]`).

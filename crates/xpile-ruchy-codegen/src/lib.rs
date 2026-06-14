@@ -1247,6 +1247,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             resolve(out, hi, "__n", mode)?;
             out.push_str("; let __lo = __lo_i as usize; let __hi = __hi_i.max(__lo_i) as usize; ");
             match step {
+                // PMAT-548: negative list step `xs[::-k]` reverses then steps.
+                Some(s) if *s < 0 => {
+                    let k = (-s) as usize;
+                    write!(
+                        out,
+                        "__sl[__lo..__hi].iter().rev().step_by({k}).cloned().collect::<Vec<_>>() }}"
+                    )?;
+                }
                 Some(s) => {
                     write!(
                         out,

@@ -4996,6 +4996,28 @@ fn main() {
     assert_rustc_runs("tuple_unpack_augment", &rust, driver);
 }
 
+/// PMAT-548 (Tranche 2): negative-step list slice `xs[::-k]` (k ≥ 2) —
+/// reverse, then take every k-th element. Generalises the `xs[::-1]` reverse;
+/// the unbounded list form lowers to `.iter().rev().step_by(k)` over the
+/// already-clamped range. Bounded negative-step slices (`xs[a:b:-k]`) and
+/// stepped string slices remain deferred. Cross-checked vs python3 (12, 12, 60).
+#[test]
+fn negative_step_slice() {
+    let rust = xpile_transpile_to_rust("negative_step_slice.py");
+    assert!(
+        rust.contains(".iter().rev().step_by(2)"),
+        "`xs[::-2]` should reverse then step:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(every_other_rev(vec![1, 2, 3, 4, 5, 6]), 12);
+    assert_eq!(every_third_rev(vec![1, 2, 3, 4, 5, 6, 7]), 12);
+    assert_eq!(full_reverse(vec![10, 20, 30]), 60);
+}
+"#;
+    assert_rustc_runs("negative_step_slice", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)

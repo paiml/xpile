@@ -1368,6 +1368,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             resolve(out, hi, "__n", mode)?;
             out.push_str("; let __lo = __lo_i as usize; let __hi = __hi_i.max(__lo_i) as usize; ");
             match step {
+                // PMAT-548: a negative list step `xs[::-k]` reverses then steps
+                // (the frontend only sets a negative `step` for the unbounded
+                // form, so `__lo..__hi` spans the whole list).
+                Some(s) if *s < 0 => {
+                    let k = (-s) as usize;
+                    write!(
+                        out,
+                        "__sl[__lo..__hi].iter().rev().step_by({k}).cloned().collect::<Vec<_>>() }}"
+                    )?;
+                }
                 // PMAT-502bc: positive list step → `.iter().step_by(c)
                 // .cloned().collect::<Vec<_>>()` (str steps are rejected
                 // in the frontend, so `step` is only ever set for lists).
