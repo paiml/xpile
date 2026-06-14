@@ -211,6 +211,10 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         // PMAT-466 (v0.2.0 Track 1.C): dict keyed assignment — recurse
         // into both key and value expressions.
         Stmt::DictSet { key, value, .. } => expr_has_int_arith(key) || expr_has_int_arith(value),
+        // PMAT-533: subscript-receiver append — recurse into index + elem.
+        Stmt::IndexAppend { index, elem, .. } => {
+            expr_has_int_arith(index) || expr_has_int_arith(elem)
+        }
         // PMAT-506c: field assignment — the assigned value may carry int arith.
         Stmt::FieldAssign { value, .. } => expr_has_int_arith(value),
         // PMAT-502at: del coll[key] — recurse into the key expression.
@@ -646,6 +650,31 @@ pub enum Stmt {
         dict_name: String,
         key: Expr,
         value: Expr,
+    },
+    /// PMAT-533: in-place `append` on a **subscript receiver** — Python
+    /// `xs[i].append(e)` (list-of-list) or `d[k].append(e)` (dict-of-list).
+    /// The bare-statement `<name>.append(e)` form is [`Stmt::ListAppend`]; this
+    /// is the indexed-receiver companion (the receiver is itself a list reached
+    /// through one subscript).
+    ///
+    /// Constraints:
+    ///   - `base` is a bound name typing as `list[list[T]]` (`base_is_dict =
+    ///     false`) or `dict[K, list[T]]` (`base_is_dict = true`).
+    ///   - The base is marked mutable (the pre-walk recognises a subscript
+    ///     receiver too).
+    ///   - For a list base the index `usize`-coerces (matching `IndexAssign`);
+    ///     for a dict base the value is reached via `get_mut(&k).unwrap()`
+    ///     (KeyError-on-absent parity with Python).
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: `base[(index) as usize].push(elem);` (list) or
+    ///     `base.get_mut(&(index)).unwrap().push(elem);` (dict).
+    ///   * Lean / Shell: refuse (in-place mutation, same gap as `ListAppend`).
+    IndexAppend {
+        base: String,
+        index: Expr,
+        elem: Expr,
+        base_is_dict: bool,
     },
     /// PMAT-506c (classes epic): struct field assignment — Python `obj.field =
     /// value`. Rust/Ruchy emit `(<obj>).<field> = <value>;` (the `obj` binding

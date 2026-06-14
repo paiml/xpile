@@ -365,6 +365,17 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                                 *counts.entry(recv.id.to_string()).or_insert(0) += bump;
                             }
                         }
+                        // PMAT-533: `base[i].append(e)` mutates `base` in place
+                        // (the receiver is a subscript of a Name), so the base
+                        // binding must be `mut`.
+                        if attr.attr.as_str() == "append" {
+                            if let ast::Expr::Subscript(sub) = attr.value.as_ref() {
+                                if let ast::Expr::Name(base) = sub.value.as_ref() {
+                                    let bump = if in_loop { 2 } else { 1 };
+                                    *counts.entry(base.id.to_string()).or_insert(0) += bump;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2019,6 +2030,54 @@ fn try_lower_list_method_call(
     let ast::Expr::Attribute(attr) = call.func.as_ref() else {
         return None;
     };
+    // PMAT-533: `xs[i].append(e)` (list-of-list) / `d[k].append(e)`
+    // (dict-of-list) — `append` on a *subscript* receiver (the receiver is
+    // itself a list reached through one subscript). The plain `<name>.append(e)`
+    // form is handled below; here the receiver is `<name>[<index>]`.
+    if attr.attr.as_str() == "append" {
+        if let ast::Expr::Subscript(sub) = attr.value.as_ref() {
+            if let ast::Expr::Name(base) = sub.value.as_ref() {
+                // A slice receiver (`xs[a:b].append`) is not a place — skip.
+                if !matches!(sub.slice.as_ref(), ast::Expr::Slice(_)) {
+                    let base_name = base.id.to_string();
+                    let base_is_dict = match ctx.name_types.get(&base_name) {
+                        Some(Type::List(inner)) if matches!(inner.as_ref(), Type::List(_)) => {
+                            Some(false)
+                        }
+                        Some(Type::Dict(_, val)) if matches!(val.as_ref(), Type::List(_)) => {
+                            Some(true)
+                        }
+                        _ => None,
+                    };
+                    if let Some(base_is_dict) = base_is_dict {
+                        if call.args.len() != 1 || !call.keywords.is_empty() {
+                            return Some(Err(FrontendError::Lower(format!(
+                                "function `{}` calls `{base_name}[...].append(...)` with {} \
+                                 positional arg(s); append takes exactly 1",
+                                ctx.fn_name,
+                                call.args.len()
+                            ))));
+                        }
+                        let index = match lower_expr_in_ctx(ctx, (*sub.slice).clone()) {
+                            Ok(e) => e,
+                            Err(err) => return Some(Err(err)),
+                        };
+                        let elem = match lower_expr_in_ctx(ctx, call.args[0].clone()) {
+                            Ok(e) => e,
+                            Err(err) => return Some(Err(err)),
+                        };
+                        ctx.mutable.insert(base_name.clone());
+                        return Some(Ok(Stmt::IndexAppend {
+                            base: base_name,
+                            index,
+                            elem,
+                            base_is_dict,
+                        }));
+                    }
+                }
+            }
+        }
+    }
     let ast::Expr::Name(receiver) = attr.value.as_ref() else {
         return None;
     };
