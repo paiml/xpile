@@ -295,10 +295,26 @@ fn emit_stmt_indented(
             value,
             mutable,
         } => {
+            // PMAT-598: a mutable empty `set()` binding must NOT pin its element
+            // type to the guessed-default `HashSet<i64>` — when the set is later
+            // `.add()`ed a non-int element (a struct, str, …) the annotation is
+            // a lie (E0308). Suppress the explicit annotation so rustc infers
+            // the element type from the subsequent `.insert(...)`. Sound only
+            // for an empty `SetLit` (its value is a bare `HashSet::new()`, no
+            // turbofish) that is mutable (⟹ a later insert/reassign rustc can
+            // infer from) and still typed at the guessed `Set(I64)` default
+            // (an explicit `set[str]`/`set[T]` annotation is already correct).
+            let infer_set_elem = *mutable
+                && matches!(value, Expr::SetLit(elems) if elems.is_empty())
+                && matches!(ty, Type::Set(inner) if **inner == Type::I64);
             let kw = if *mutable { "let mut" } else { "let" };
-            write!(out, "{indent}{kw} {name}: ")?;
-            emit_type(out, ty)?;
-            write!(out, " = ")?;
+            if infer_set_elem {
+                write!(out, "{indent}{kw} {name} = ")?;
+            } else {
+                write!(out, "{indent}{kw} {name}: ")?;
+                emit_type(out, ty)?;
+                write!(out, " = ")?;
+            }
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
             Ok(())
