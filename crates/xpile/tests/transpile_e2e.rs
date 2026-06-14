@@ -6125,6 +6125,29 @@ fn main() {
     assert_rustc_runs("bool_as_int", &rust, driver);
 }
 
+/// PMAT-587 (Tranche 2): **correctness** — a class/enum named after a Rust
+/// prelude type that xpile emits (`Vec`/`String`/`Option`/`Some`/`None`/
+/// `HashMap`/`HashSet`) emits a `struct <Name>` that collides with the prelude:
+/// a bare unit struct shadows it, but once the module also uses the generic form
+/// (a `list[int]` → `Vec<i64>`) rustc rejects it (E0107) — a transpile-success →
+/// invalid-Rust break. Now rejected cleanly at lowering with a rename hint,
+/// upholding "transpile-success ⟹ valid Rust". Prelude names xpile does NOT
+/// emit (`Result`/`Box`/…) still work by shadowing. Found by the differential hunt.
+#[test]
+fn prelude_type_name_rejected() {
+    let py = fixture("prelude_type_name_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a class named `Vec` must be refused, not emitted as a colliding struct"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("collides with a Rust prelude type") && stderr.contains("Vec"),
+        "the rejection should name the prelude collision:\n{stderr}"
+    );
+}
+
 /// PMAT-586 (Tranche 2): **correctness** — `int()` of a non-finite float. Python
 /// raises `OverflowError` for `int(inf)` and `ValueError` for `int(nan)`, but
 /// Rust's `as i64` saturates (`inf` → `i64::MAX`) / zeroes (`nan` → 0) silently.
