@@ -4719,6 +4719,32 @@ fn main() {
     assert_rustc_runs("int_float_of_bool", &rust, driver);
 }
 
+/// PMAT-536 (Tranche 2): keyword (named-field) form of `str.format` —
+/// `"{x}".format(x=n)`. Positional `.format(n)` already worked; the named form
+/// rewrites each `{name}` placeholder to a positional `{N}` (first-occurrence
+/// order, repeats reuse the index) and passes the referenced kwargs positionally
+/// to the existing `lower_str_format`. Handles reordering, repeats, format specs,
+/// and tolerates unused kwargs. Cross-checked vs python3 (hello world!, 2,3,
+/// 2-1, 7 7 7, 3.14).
+#[test]
+fn str_format_kwargs() {
+    let rust = xpile_transpile_to_rust("str_format_kwargs.py");
+    assert!(
+        rust.contains(r#"format!("{0}-{1}", b, a)"#),
+        "named fields should rewrite to positional, reordered by template:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(greet(String::from("world")), "hello world!");
+    assert_eq!(coords(2, 3), "2,3");
+    assert_eq!(reorder(1, 2), "2-1");
+    assert_eq!(repeated(7), "7 7 7");
+    assert_eq!(with_spec(3.14159), "3.14");
+}
+"#;
+    assert_rustc_runs("str_format_kwargs", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
