@@ -19,6 +19,19 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.248] — 2026-06-14
+
+Tranche 2 — PMAT-549: `math.gcd(a, b)`.
+
+- `math.gcd(a, b)` (greatest common divisor of two ints) was rejected. New
+  `Expr::Gcd` whose rust/ruchy codegen is an inline Euclidean-algorithm block
+  over the operands' absolute values (`gcd(0, 0) == 0`, always non-negative,
+  negatives via `abs`). It doesn't fit the method-style `NumBuiltin`, so a
+  dedicated `Expr` is cleaner. Rippled to meta-HIR (+bigint scan), both inferers
+  (→ `I64`), and rust/ruchy emit; the Lean lane refuses.
+- New e2e fixture `math_gcd.py` (`gcd2`, `reduce_fraction`, `gcd_negative`)
+  cross-checked vs python3 (12, 1, 7, 2, 4). e2e 309 → 310.
+
 ## [0.1.247] — 2026-06-14
 
 Tranche 2 — PMAT-548: negative-step list slice `xs[::-k]`.
