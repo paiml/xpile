@@ -19,6 +19,25 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.276] — 2026-06-14
+
+Tranche 2 — PMAT-577: **correctness** — right-shift saturates for amount ≥ 64.
+
+- Python defines `x >> n` for any non-negative `n`: once `n` reaches the bit
+  width the result saturates to the sign fill — `0` for `x >= 0`, `-1` for
+  `x < 0` (`>>` is arithmetic on a signed int). Rust's `checked_shr` returns
+  `None` for `n >= 64`, so the emitted `.expect(… overflow …)` panicked where
+  Python returns a value (a panic-mismatch). The right-shift companion to
+  PMAT-575's left-shift overflow fix. Found by the differential hunt.
+- Fix: for right-shift in non-bigint mode, emit a block that clamps the shift
+  amount to 63 when `n >= 64` (which yields exactly that sign fill) and panics
+  on a NEGATIVE amount (Python `ValueError: negative shift count`). Left-shift
+  (value-overflow check) and bigint mode (`xpile_bigint::shr`) are untouched.
+  Rust + Ruchy.
+- New e2e fixture `right_shift_large_amount.py` cross-checked vs python3
+  (`sh(5,64)=0`, `sh(-5,64)=-1`, `sh(-1,200)=-1`, `sh(5,-1)` panics). 338 e2e
+  fixtures.
+
 ## [0.1.275] — 2026-06-14
 
 Tranche 2 — PMAT-576: **correctness** — chained comparison evaluates each operand once.
