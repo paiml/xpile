@@ -12147,12 +12147,44 @@ fn lower_dict_comp_in_ctx(
         lower_comp_to_map(ctx, &comp.generators, "dict comprehension", |sub| {
             let key = lower_expr_in_ctx(sub, (*comp.key).clone())?;
             let value = lower_expr_in_ctx(sub, (*comp.value).clone())?;
+            let key = clone_comp_key_if_binder_reused(sub, &comp, key);
             Ok(Expr::TupleLit(vec![key, value]))
         })?
     };
     Ok(Expr::DictFromPairs {
         pairs: Box::new(pairs),
     })
+}
+
+/// PMAT-599 (ownership): in a single-generator dict comprehension
+/// `{K: V for x in xs}`, if the binder `x` is non-Copy and referenced in BOTH
+/// `K` and `V` (read >1× across the pair), the bare-binder key moves it into
+/// the `(key, value)` tuple before `V` can use it (rustc E0382 — `{w: w …}`,
+/// `{w: w + "!" …}`, `{k: len(k) …}`). Clone the key so the value keeps a live
+/// value. Gated on read-count>1 + non-Copy → existing comprehensions with a
+/// Copy binder (e.g. `{x: x*2 for x in xs}`) or a single-use binder are
+/// byte-identical (zero churn; the clone fires only on previously-failing code).
+fn clone_comp_key_if_binder_reused(sub: &LoweringCtx, comp: &ast::ExprDictComp, key: Expr) -> Expr {
+    let Some(gen) = comp.generators.first() else {
+        return key;
+    };
+    let ast::Expr::Name(n) = &gen.target else {
+        return key;
+    };
+    let binder = n.id.as_str();
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    count_reads_expr(&comp.key, &mut counts);
+    count_reads_expr(&comp.value, &mut counts);
+    let reused = counts.get(binder).copied().unwrap_or(0) > 1;
+    let non_copy = sub
+        .name_types
+        .get(binder)
+        .is_some_and(|t| !matches!(t, Type::I64 | Type::F64 | Type::Bool));
+    if reused && non_copy {
+        Expr::Clone(Box::new(key))
+    } else {
+        key
+    }
 }
 
 /// Shared core for generator-expression / expr-position comprehension lowering
