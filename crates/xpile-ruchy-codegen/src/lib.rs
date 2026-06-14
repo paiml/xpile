@@ -875,24 +875,22 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         Expr::LitFloat(v) => write!(out, "{}f64", v)?,
         Expr::FloatBinOp { op, lhs, rhs } => match op {
             // PMAT-502br: Python float floor-division → `(a / b).floor()`.
+            // PMAT-581: guard the zero divisor (Python raises ZeroDivisionError).
             FloatOp::FloorDiv => {
-                out.push_str("((");
-                emit_expr(out, lhs, mode)?;
-                out.push_str(" / ");
+                out.push_str("{ let __fz: f64 = ");
                 emit_expr(out, rhs, mode)?;
-                out.push_str(").floor())");
+                out.push_str("; if __fz == 0.0 { panic!(\"xpile: ZeroDivisionError: float floor division by zero\"); } ((");
+                emit_expr(out, lhs, mode)?;
+                out.push_str(") / __fz).floor() }");
             }
             // PMAT-502br: Python float modulo → `a - b * (a / b).floor()`.
+            // PMAT-581: guard the zero divisor; bind operands (evaluate-once).
             FloatOp::Mod => {
-                out.push('(');
-                emit_expr(out, lhs, mode)?;
-                out.push_str(" - ");
+                out.push_str("{ let __fz: f64 = ");
                 emit_expr(out, rhs, mode)?;
-                out.push_str(" * (");
+                out.push_str("; if __fz == 0.0 { panic!(\"xpile: ZeroDivisionError: float modulo\"); } let __fn: f64 = ");
                 emit_expr(out, lhs, mode)?;
-                out.push_str(" / ");
-                emit_expr(out, rhs, mode)?;
-                out.push_str(").floor())");
+                out.push_str("; __fn - __fz * (__fn / __fz).floor() }");
             }
             // PMAT-502bt/em/en: method-style float ops — `(a).<method>(b)`,
             // matching the Rust backend.
@@ -910,7 +908,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 emit_expr(out, rhs, mode)?;
                 out.push(')');
             }
-            FloatOp::Add | FloatOp::Sub | FloatOp::Mul | FloatOp::Div => {
+            // PMAT-581: float `/` (and int true-division) raises ZeroDivisionError.
+            FloatOp::Div => {
+                out.push_str("{ let __fz: f64 = ");
+                emit_expr(out, rhs, mode)?;
+                out.push_str("; if __fz == 0.0 { panic!(\"xpile: ZeroDivisionError: float division by zero\"); } (");
+                emit_expr(out, lhs, mode)?;
+                out.push_str(") / __fz }");
+            }
+            FloatOp::Add | FloatOp::Sub | FloatOp::Mul => {
                 out.push('(');
                 emit_expr(out, lhs, mode)?;
                 write!(out, " {} ", float_op_sym(*op))?;

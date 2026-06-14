@@ -290,8 +290,10 @@ fn float_arithmetic_roundtrip() {
         rust.contains("-> f64") && rust.contains(": f64"),
         "float params/returns should be f64:\n{rust}"
     );
+    // PMAT-581: float `/` guards the zero divisor — the `2f64` divisor now
+    // binds to `__fz` (still no `checked_*`; that's the i64 path).
     assert!(
-        !rust.contains("checked_") && rust.contains("/ 2f64"),
+        !rust.contains("checked_") && rust.contains("let __fz: f64 = 2f64"),
         "float arithmetic should be plain infix (no checked_*); `/` is true division:\n{rust}"
     );
     let driver = r#"
@@ -3027,7 +3029,8 @@ fn main() {
 fn aug_assign_float() {
     let rust = xpile_transpile_to_rust("aug_assign_float.py");
     assert!(rust.contains("x = (x + y)"), "float += :\n{rust}");
-    assert!(rust.contains("x = (x / 4f64)"), "float /= :\n{rust}");
+    // PMAT-581: float `/=` guards the zero divisor (divisor binds to `__fz`).
+    assert!(rust.contains("(x) / __fz"), "float /= :\n{rust}");
     assert!(
         !rust.contains("checked_add"),
         "float aug-assign must not use checked_*:\n{rust}"
@@ -3048,9 +3051,10 @@ fn main() {
 #[test]
 fn float_floordiv_mod() {
     let rust = xpile_transpile_to_rust("float_floordiv_mod.py");
-    assert!(rust.contains("(a / b).floor()"), "float // :\n{rust}");
+    // PMAT-581: float `//`/`%` now guard the zero divisor (bind it to `__fz`).
+    assert!(rust.contains("((a) / __fz).floor()"), "float // :\n{rust}");
     assert!(
-        rust.contains("(a - b * (a / b).floor())"),
+        rust.contains("__fn - __fz * (__fn / __fz).floor()"),
         "float % :\n{rust}"
     );
     let driver = r#"
@@ -3073,12 +3077,14 @@ fn main() {
 #[test]
 fn true_division() {
     let rust = xpile_transpile_to_rust("true_division.py");
+    // PMAT-581: true division guards the zero divisor (Python raises
+    // ZeroDivisionError for `1/0`); the divisor binds to `__fz`.
     assert!(
-        rust.contains("(((a) as f64) / ((b) as f64))"),
+        rust.contains("(((a) as f64)) / __fz"),
         "int/int true division:\n{rust}"
     );
     assert!(
-        rust.contains("(x / ((2i64) as f64))"),
+        rust.contains("let __fz: f64 = ((2i64) as f64)"),
         "mixed float/int division:\n{rust}"
     );
     let driver = r#"
@@ -6114,6 +6120,32 @@ fn main() {
 }
 "#;
     assert_rustc_runs("bool_as_int", &rust, driver);
+}
+
+/// PMAT-581 (Tranche 2): **correctness** — float division by zero. Python raises
+/// `ZeroDivisionError` for `a / b`, `a // b`, `a % b` when `b == 0.0` (and for
+/// int true-division `a / 0`), but xpile emitted bare IEEE ops yielding
+/// `inf`/`nan`. Now each binds the divisor to a temp, checks `== 0.0`, and
+/// panics (matching Python's raise). Found by the differential hunt.
+/// Cross-checked vs python3.
+#[test]
+fn float_div_zero() {
+    let rust = xpile_transpile_to_rust("float_div_zero.py");
+    let driver = r#"
+fn main() {
+    // valid ops unaffected
+    assert!((fdiv(7.0, 2.0) - 3.5).abs() < 1e-9);
+    assert!((ffloor(7.0, 2.0) - 3.0).abs() < 1e-9);
+    assert!((fmod(7.0, 3.0) - 1.0).abs() < 1e-9);
+    assert!((idiv(7, 2) - 3.5).abs() < 1e-9);
+    // zero divisor -> ZeroDivisionError -> panic (was inf/nan)
+    assert!(std::panic::catch_unwind(|| fdiv(1.0, 0.0)).is_err());
+    assert!(std::panic::catch_unwind(|| ffloor(1.0, 0.0)).is_err());
+    assert!(std::panic::catch_unwind(|| fmod(1.0, 0.0)).is_err());
+    assert!(std::panic::catch_unwind(|| idiv(1, 0)).is_err());
+}
+"#;
+    assert_rustc_runs("float_div_zero", &rust, driver);
 }
 
 /// PMAT-580 (Tranche 2): **correctness** — `&`/`|`/`^` over two bools returns a
