@@ -66,6 +66,13 @@ pub enum CodegenError {
 }
 
 pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
+    // PMAT-573: escape Rust-keyword identifiers (`type`/`match`/`loop`/…) on
+    // a cloned IR before emission, so a Python local/param/function named
+    // after a Rust keyword produces valid Rust. Rewriting the data once (at
+    // every binding AND reference together) keeps the two from drifting.
+    let mut module = module.clone();
+    xpile_meta_hir::escape_rust_reserved_idents(&mut module);
+    let module = &module;
     let mut out = String::new();
     writeln!(
         out,

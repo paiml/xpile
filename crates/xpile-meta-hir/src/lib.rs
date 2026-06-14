@@ -2454,3 +2454,582 @@ pub struct FfiBoundary {
     pub symbol: String,
     pub signature: String,
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// PMAT-573: reserved-identifier escaping for the Rust-family backends.
+//
+// A Python program may legally name a variable / parameter / function
+// after a word that is a *Rust* keyword but NOT a Python keyword —
+// `type`, `match`, `loop`, `move`, `ref`, `mut`, `box`, `final`, … (and
+// lowercase `true`/`false`, which Python spells `True`/`False`). Emitted
+// verbatim those break `rustc` ("expected identifier, found keyword
+// `type`"), violating the xpile invariant transpile-success ⟹ valid Rust.
+//
+// The fix is a single IR pre-pass (run by the Rust and Ruchy backends on
+// a cloned module before emission) that rewrites every *identifier-
+// position* string to the Rust raw form `r#name`. Doing it on the data —
+// once, at every binding AND every reference — guarantees the two never
+// drift, which a per-emit-site escape could not. The walker is exhaustive
+// (no wildcard arm) so a future `Expr`/`Stmt` variant fails to compile
+// here until its identifier positions are classified — the completeness
+// is compiler-enforced. Raw identifiers are a Rust-family feature (Rust +
+// Ruchy share the keyword set and `r#` syntax); Lean uses a different
+// keyword set and does not call this.
+// ─────────────────────────────────────────────────────────────────────
+
+/// True for Rust 2021 strict + reserved keywords that ARE escapable as a
+/// raw identifier (`r#kw`). Excludes the four keywords that cannot be raw
+/// (`crate`/`self`/`Self`/`super`) — leaving those unescaped also keeps the
+/// special-cased `self` method receiver intact — and the contextual
+/// keywords (`union`/`macro_rules`) that are already valid bare identifiers.
+/// Including the Rust keywords that are *also* Python keywords (`if`, `for`,
+/// `return`, …) is harmless: those can never reach us as a Python
+/// identifier, so the arm is never taken.
+fn is_rust_raw_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "as" | "break"
+            | "const"
+            | "continue"
+            | "dyn"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "fn"
+            | "for"
+            | "if"
+            | "impl"
+            | "in"
+            | "let"
+            | "loop"
+            | "match"
+            | "mod"
+            | "move"
+            | "mut"
+            | "pub"
+            | "ref"
+            | "return"
+            | "static"
+            | "struct"
+            | "trait"
+            | "true"
+            | "type"
+            | "unsafe"
+            | "use"
+            | "where"
+            | "while"
+            | "async"
+            | "await"
+            | "abstract"
+            | "become"
+            | "box"
+            | "do"
+            | "final"
+            | "macro"
+            | "override"
+            | "priv"
+            | "try"
+            | "typeof"
+            | "unsized"
+            | "virtual"
+            | "yield"
+    )
+}
+
+/// Rewrite a single identifier-position string in place: a Rust keyword
+/// becomes its raw form `r#kw`; anything else (the overwhelming common
+/// case) is left untouched. Idempotent — `r#type` is not itself a keyword.
+fn escape_name(name: &mut String) {
+    if is_rust_raw_keyword(name) {
+        *name = format!("r#{name}");
+    }
+}
+
+fn escape_sortkey(k: &mut SortKey) {
+    escape_name(&mut k.param);
+    escape_expr(&mut k.body);
+}
+
+/// Escape every identifier-position string reachable from `e`.
+fn escape_expr(e: &mut Expr) {
+    match e {
+        // The core reference site.
+        Expr::Ident(name) => escape_name(name),
+        // Direct call-by-name — escape the callee so it matches the
+        // (escaped) function definition name.
+        Expr::Call { callee, args } => {
+            escape_name(callee);
+            for a in args {
+                escape_expr(a);
+            }
+        }
+        // Leaves: no sub-expression and no identifier field. (Enum/struct/
+        // method/field names are type-level and left unescaped — a Python
+        // class/field named after a keyword is a separate, rarer case.)
+        Expr::Unit
+        | Expr::LitInt(_)
+        | Expr::LitFloat(_)
+        | Expr::LitBool(_)
+        | Expr::LitStr(_)
+        | Expr::QuotedString { .. }
+        | Expr::ShellVar(_)
+        | Expr::ShellSpecial(_)
+        | Expr::EnumVariant { .. } => {}
+        Expr::Block(b) => {
+            for s in &mut b.stmts {
+                escape_stmt(s);
+            }
+            escape_expr(&mut b.trailing_return);
+        }
+        Expr::FloatBinOp { lhs, rhs, .. }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::Concat { lhs, rhs }
+        | Expr::ListConcat { lhs, rhs }
+        | Expr::SetOp { lhs, rhs, .. }
+        | Expr::SetPred { lhs, rhs, .. } => {
+            escape_expr(lhs);
+            escape_expr(rhs);
+        }
+        Expr::UnOp { operand, .. } => escape_expr(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            escape_expr(cond);
+            escape_expr(then_expr);
+            escape_expr(else_expr);
+        }
+        Expr::StrFormat { args, .. } | Expr::NumBuiltin { args, .. } => {
+            for a in args {
+                escape_expr(a);
+            }
+        }
+        Expr::StrCharAt { string, index } => {
+            escape_expr(string);
+            escape_expr(index);
+        }
+        Expr::StrChars { string } => escape_expr(string),
+        Expr::Ord { value } | Expr::Chr { value } => escape_expr(value),
+        Expr::IntRadixStr { value, .. }
+        | Expr::IntFromStrRadix { value, .. }
+        | Expr::FormatSpec { value, .. }
+        | Expr::NumCast { value, .. }
+        | Expr::ToStr { value, .. }
+        | Expr::RoundToInt { value } => escape_expr(value),
+        Expr::StrMethod { recv, args, .. } => {
+            escape_expr(recv);
+            for a in args {
+                escape_expr(a);
+            }
+        }
+        Expr::TupleLit(elems) | Expr::ListLit(elems) | Expr::SetLit(elems) => {
+            for el in elems {
+                escape_expr(el);
+            }
+        }
+        Expr::TupleIndex { tuple, .. } => escape_expr(tuple),
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => {
+            escape_expr(collection);
+            if let Some(l) = lo {
+                escape_expr(l);
+            }
+            if let Some(h) = hi {
+                escape_expr(h);
+            }
+        }
+        Expr::Sum { list, start, .. } => {
+            escape_expr(list);
+            if let Some(s) = start {
+                escape_expr(s);
+            }
+        }
+        Expr::BoolReduce { list, .. }
+        | Expr::Reversed { list }
+        | Expr::SetFromList { list }
+        | Expr::Enumerate { list } => escape_expr(list),
+        Expr::RoundToDigits { value, ndigits } => {
+            escape_expr(value);
+            escape_expr(ndigits);
+        }
+        Expr::Repeat { seq, n, .. } => {
+            escape_expr(seq);
+            escape_expr(n);
+        }
+        Expr::Sorted { list, key, .. } => {
+            escape_expr(list);
+            if let Some(k) = key {
+                escape_sortkey(k);
+            }
+        }
+        Expr::Gcd { a, b } | Expr::Lcm { a, b } => {
+            escape_expr(a);
+            escape_expr(b);
+        }
+        Expr::Factorial { n } | Expr::Isqrt { n } => escape_expr(n),
+        Expr::Comb { n, k } | Expr::Perm { n, k } => {
+            escape_expr(n);
+            escape_expr(k);
+        }
+        Expr::PowMod { base, exp, modulus } => {
+            escape_expr(base);
+            escape_expr(exp);
+            escape_expr(modulus);
+        }
+        Expr::RangeList { start, stop, .. } => {
+            escape_expr(start);
+            escape_expr(stop);
+        }
+        Expr::SetToList { set } => escape_expr(set),
+        Expr::DictFromPairs { pairs } => escape_expr(pairs),
+        Expr::DictMerge { entries } => {
+            for (k, v) in entries {
+                if let Some(k) = k {
+                    escape_expr(k);
+                }
+                escape_expr(v);
+            }
+        }
+        Expr::Filter { list, lambda } | Expr::Map { list, lambda } => {
+            escape_expr(list);
+            escape_sortkey(lambda);
+        }
+        Expr::Zip { left, right } => {
+            escape_expr(left);
+            escape_expr(right);
+        }
+        Expr::ListMinMax {
+            list, key, default, ..
+        } => {
+            escape_expr(list);
+            if let Some(k) = key {
+                escape_sortkey(k);
+            }
+            if let Some(d) = default {
+                escape_expr(d);
+            }
+        }
+        Expr::ListQuery { list, arg, .. } => {
+            escape_expr(list);
+            escape_expr(arg);
+        }
+        Expr::ListPop { list, index } => {
+            escape_expr(list);
+            if let Some(i) = index {
+                escape_expr(i);
+            }
+        }
+        Expr::DictPop { dict, key, default } => {
+            escape_expr(dict);
+            escape_expr(key);
+            if let Some(d) = default {
+                escape_expr(d);
+            }
+        }
+        Expr::DictSetDefault { dict, key, default } => {
+            escape_expr(dict);
+            escape_expr(key);
+            escape_expr(default);
+        }
+        Expr::SetContains { set, elem } => {
+            escape_expr(set);
+            escape_expr(elem);
+        }
+        Expr::ListContains { list, elem } => {
+            escape_expr(list);
+            escape_expr(elem);
+        }
+        Expr::StrContains { haystack, needle } => {
+            escape_expr(haystack);
+            escape_expr(needle);
+        }
+        Expr::Clone(inner) | Expr::OptionUnwrap(inner) => escape_expr(inner),
+        Expr::OptionExpr(inner) => {
+            if let Some(i) = inner {
+                escape_expr(i);
+            }
+        }
+        Expr::IsNone { value, .. } => escape_expr(value),
+        Expr::TryCatch { body, handler } => {
+            escape_expr(body);
+            escape_expr(handler);
+        }
+        Expr::StructLit { fields, .. } => {
+            for (_, v) in fields {
+                escape_expr(v);
+            }
+        }
+        Expr::FieldAccess { obj, .. } => escape_expr(obj),
+        Expr::MethodCall { obj, args, .. } => {
+            escape_expr(obj);
+            for a in args {
+                escape_expr(a);
+            }
+        }
+        Expr::DictLit(pairs) => {
+            for (k, v) in pairs {
+                escape_expr(k);
+                escape_expr(v);
+            }
+        }
+        Expr::Index { collection, index } => {
+            escape_expr(collection);
+            escape_expr(index);
+        }
+        Expr::DictGet { dict, key }
+        | Expr::DictGetOpt { dict, key }
+        | Expr::DictContains { dict, key } => {
+            escape_expr(dict);
+            escape_expr(key);
+        }
+        Expr::DictGetOr { dict, key, default } => {
+            escape_expr(dict);
+            escape_expr(key);
+            escape_expr(default);
+        }
+        Expr::DictView { dict, .. } => escape_expr(dict),
+        Expr::Len(inner) => escape_expr(inner),
+        Expr::CommandSubstitution(inner) => escape_stmt(inner),
+    }
+}
+
+/// Escape every identifier-position string reachable from `s`.
+fn escape_stmt(s: &mut Stmt) {
+    match s {
+        Stmt::Return(e) => escape_expr(e),
+        Stmt::Let { name, value, .. } | Stmt::Assign { name, value } => {
+            escape_name(name);
+            escape_expr(value);
+        }
+        Stmt::ClosureLet { name, params, body } => {
+            escape_name(name);
+            for (p, _) in params {
+                escape_name(p);
+            }
+            escape_expr(body);
+        }
+        Stmt::LetTuple { names, value, .. } => {
+            for n in names {
+                escape_name(n);
+            }
+            escape_expr(value);
+        }
+        Stmt::While { cond, body } => {
+            escape_expr(cond);
+            for st in body {
+                escape_stmt(st);
+            }
+        }
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            escape_expr(cond);
+            for st in then_body {
+                escape_stmt(st);
+            }
+            for st in else_body {
+                escape_stmt(st);
+            }
+        }
+        Stmt::Continue | Stmt::Break => {}
+        Stmt::Print { args, .. } => {
+            for a in args {
+                escape_expr(a);
+            }
+        }
+        Stmt::ForEach {
+            var, iter, body, ..
+        } => {
+            escape_name(var);
+            escape_expr(iter);
+            for st in body {
+                escape_stmt(st);
+            }
+        }
+        Stmt::ForEachPair {
+            first,
+            second,
+            iter,
+            kind,
+            body,
+        } => {
+            escape_name(first);
+            escape_name(second);
+            escape_expr(iter);
+            if let PairIterKind::Zip(other) = kind {
+                escape_expr(other);
+            }
+            for st in body {
+                escape_stmt(st);
+            }
+        }
+        Stmt::ForEachZip3 {
+            first,
+            second,
+            third,
+            iter1,
+            iter2,
+            iter3,
+            body,
+        } => {
+            escape_name(first);
+            escape_name(second);
+            escape_name(third);
+            escape_expr(iter1);
+            escape_expr(iter2);
+            escape_expr(iter3);
+            for st in body {
+                escape_stmt(st);
+            }
+        }
+        Stmt::ListAppend { list_name, elem }
+        | Stmt::SetAdd {
+            set_name: list_name,
+            elem,
+        } => {
+            escape_name(list_name);
+            escape_expr(elem);
+        }
+        Stmt::SetRemove { set_name, elem, .. } => {
+            escape_name(set_name);
+            escape_expr(elem);
+        }
+        Stmt::ListMutate { list_name, .. } => escape_name(list_name),
+        Stmt::ListExtend {
+            list_name,
+            other: value,
+        }
+        | Stmt::DictUpdate {
+            dict_name: list_name,
+            other: value,
+        }
+        | Stmt::ListRemoveValue { list_name, value } => {
+            escape_name(list_name);
+            escape_expr(value);
+        }
+        Stmt::ListInsert {
+            list_name,
+            index,
+            elem,
+        } => {
+            escape_name(list_name);
+            escape_expr(index);
+            escape_expr(elem);
+        }
+        Stmt::IndexAssign {
+            list_name,
+            indices,
+            value,
+        } => {
+            escape_name(list_name);
+            for i in indices {
+                escape_expr(i);
+            }
+            escape_expr(value);
+        }
+        Stmt::DictSet {
+            dict_name,
+            key,
+            value,
+        } => {
+            escape_name(dict_name);
+            escape_expr(key);
+            escape_expr(value);
+        }
+        Stmt::IndexAppend {
+            base, index, elem, ..
+        } => {
+            escape_name(base);
+            escape_expr(index);
+            escape_expr(elem);
+        }
+        Stmt::FieldAssign { obj, value, .. } => {
+            escape_name(obj);
+            escape_expr(value);
+        }
+        Stmt::DelItem { name, key, .. } => {
+            escape_name(name);
+            escape_expr(key);
+        }
+        Stmt::Assert { cond, msg } => {
+            escape_expr(cond);
+            if let Some(m) = msg {
+                escape_expr(m);
+            }
+        }
+        Stmt::Raise { message } => escape_expr(message),
+        // Shell-domain statements carry POSIX names (`Cmd.program`,
+        // `ShellAssign.name`, `LoopKind::For.var`), not Rust identifiers;
+        // the Rust/Ruchy backends refuse them outright. Leave the names and
+        // recurse into composed sub-statements / exprs for completeness.
+        Stmt::Cmd { args, .. } => {
+            for a in args {
+                escape_expr(a);
+            }
+        }
+        Stmt::Pipeline { stages } => {
+            for st in stages {
+                escape_stmt(st);
+            }
+        }
+        Stmt::ShellAssign { value, .. } => escape_expr(value),
+        Stmt::ShellLoop { kind, body } => {
+            match kind {
+                LoopKind::For { items, .. } => {
+                    for it in items {
+                        escape_expr(it);
+                    }
+                }
+                LoopKind::While { cond } | LoopKind::Until { cond } => escape_expr(cond),
+            }
+            for st in body {
+                escape_stmt(st);
+            }
+        }
+    }
+}
+
+fn escape_function(f: &mut Function, escape_fn_name: bool) {
+    if escape_fn_name {
+        escape_name(&mut f.name);
+    }
+    for p in &mut f.params {
+        escape_name(&mut p.name);
+    }
+    for s in &mut f.body.stmts {
+        escape_stmt(s);
+    }
+    escape_expr(&mut f.body.trailing_return);
+}
+
+/// PMAT-573: rewrite every identifier in `module` that collides with a Rust
+/// keyword to its raw form `r#kw`, so Python locals/params/functions named
+/// `type`/`match`/`loop`/… emit valid Rust (and Ruchy). The Rust-family
+/// backends call this on a *cloned* module before emission. Struct/enum
+/// type names, struct field names, and method names are left unescaped (a
+/// keyword-named class/field/method is a separate, rarer fidelity gap).
+pub fn escape_rust_reserved_idents(module: &mut Module) {
+    for item in &mut module.items {
+        match item {
+            Item::Function(f) => escape_function(f, true),
+            Item::Const { name, value, .. } => {
+                escape_name(name);
+                escape_expr(value);
+            }
+            Item::Struct { methods, .. } => {
+                // Escape locals/params inside each method body; the method's
+                // own name is left alone to stay consistent with the
+                // (also-unescaped) `Expr::MethodCall` callee.
+                for m in methods {
+                    escape_function(m, false);
+                }
+            }
+            Item::Enum { .. } => {}
+        }
+    }
+}
