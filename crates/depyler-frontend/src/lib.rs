@@ -4150,69 +4150,12 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
         // (`Type::List` → `Stmt::IndexAssign`, `Type::Dict` →
         // `Stmt::DictSet`). Either way the receiver is marked mutable.
         ast::Expr::Subscript(sub) => {
-            // PMAT-502dy / PMAT-502ea: nested subscript chain `grid[i][j] = v`
-            // → base `grid` + index path `[i, j]`, validated as a nested
-            // `list[list[…]]`. The peel/validate is shared with augmented
-            // nested assignment (`grid[i][j] += v`). `None` ⇒ single-level
-            // `xs[i]` / `d[k]`, handled below.
-            if let Some((receiver, indices)) = peel_nested_subscript_assign(ctx, &sub)? {
-                let value = lower_expr_in_ctx(ctx, *asn.value)?;
-                ctx.mutable.insert(receiver.clone());
-                return Ok(Stmt::IndexAssign {
-                    list_name: receiver,
-                    indices,
-                    value,
-                });
-            }
-            // Single subscript: the existing list / dict assignment forms.
-            // The peel above guarantees the base is a Name and exactly one
-            // slice remains.
-            let receiver = match sub.value.as_ref() {
-                ast::Expr::Name(n) => n.id.to_string(),
-                _ => unreachable!("peel_nested_subscript_assign validated a Name base"),
-            };
-            let single = (*sub.slice).clone();
-            match ctx.name_types.get(&receiver).cloned() {
-                Some(Type::List(_)) => {
-                    // PMAT-466: ctx-aware so a dict read used as a list
-                    // index (`xs[d[k]] = v`) lowers to DictGet, not a
-                    // nested list index.
-                    let index = lower_expr_in_ctx(ctx, single)?;
-                    let idx_ty = infer_type_in_ctx(ctx, &index);
-                    if !matches!(idx_ty, Type::I64) {
-                        return Err(FrontendError::Lower(format!(
-                            "function `{}` indexed-assigns `{receiver}[<expr>]` where index types as {idx_ty:?}; only `int` indices are supported at v0.2.0",
-                            ctx.fn_name
-                        )));
-                    }
-                    let value = lower_expr_in_ctx(ctx, *asn.value)?;
-                    ctx.mutable.insert(receiver.clone());
-                    return Ok(Stmt::IndexAssign {
-                        list_name: receiver,
-                        indices: vec![index],
-                        value,
-                    });
-                }
-                // PMAT-466: dict keyed assignment. Keys may be any
-                // hashable scalar the dict was declared over (str / int
-                // / bool) — no `int`-index constraint as for lists.
-                Some(Type::Dict(_, _)) => {
-                    let key = lower_expr_in_ctx(ctx, single)?;
-                    let value = lower_expr_in_ctx(ctx, *asn.value)?;
-                    ctx.mutable.insert(receiver.clone());
-                    return Ok(Stmt::DictSet {
-                        dict_name: receiver,
-                        key,
-                        value,
-                    });
-                }
-                _ => {
-                    return Err(FrontendError::Lower(format!(
-                        "function `{}` keyed-assigns to `{receiver}` which doesn't type as list[T] or dict[K, V] — v0.2.0 supports list/dict subscript assignment only",
-                        ctx.fn_name
-                    )));
-                }
-            }
+            // PMAT-559: delegate to the shared subscript-target lowering (also
+            // used by the tuple-unpack/swap path). It handles nested chains
+            // (`grid[i][j] = v` → `IndexAssign`), single list / dict targets,
+            // and PMAT-560 negative-literal indices (`xs[-k] = v`).
+            let value = lower_expr_in_ctx(ctx, *asn.value)?;
+            return lower_subscript_assign_target(ctx, &sub, value);
         }
         // PMAT-506c (classes epic): struct field assignment `obj.field = value`.
         // `obj` must be a plain bound name typing as a struct, and `field` a
@@ -4372,6 +4315,22 @@ fn lower_tuple_unpack_with_subscript(
 /// PMAT-559: build the assignment statement for a subscript target `base[idx]`
 /// (or nested `g[i][j]`) given an already-lowered value. Mirrors the `Subscript`
 /// branch of [`lower_assign`]; shared with the tuple-unpack path.
+/// PMAT-560: if `e` is a negative integer *literal* (`-k`, parsed as
+/// `UnaryOp(USub, Int(k))`), return `k` (the positive magnitude). Used to
+/// desugar `xs[-k]` from-the-end indexing on the assignment side.
+fn neg_literal_int(e: &ast::Expr) -> Option<i64> {
+    if let ast::Expr::UnaryOp(u) = e {
+        if matches!(u.op, ast::UnaryOp::USub) {
+            if let ast::Expr::Constant(c) = u.operand.as_ref() {
+                if let ast::Constant::Int(k) = &c.value {
+                    return k.to_string().parse::<i64>().ok();
+                }
+            }
+        }
+    }
+    None
+}
+
 fn lower_subscript_assign_target(
     ctx: &mut LoweringCtx,
     sub: &ast::ExprSubscript,
@@ -4392,14 +4351,30 @@ fn lower_subscript_assign_target(
     let single = (*sub.slice).clone();
     match ctx.name_types.get(&receiver).cloned() {
         Some(Type::List(_)) => {
-            let index = lower_expr_in_ctx(ctx, single)?;
-            let idx_ty = infer_type_in_ctx(ctx, &index);
-            if !matches!(idx_ty, Type::I64) {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` indexed-assigns `{receiver}[<expr>]` where index types as {idx_ty:?}; only `int` indices are supported at v0.2.0",
-                    ctx.fn_name
-                )));
-            }
+            // PMAT-560: negative-literal index `xs[-k] = v` → `xs[len(xs) - k] = v`
+            // (Python from-the-end assignment), mirroring the read-side desugar
+            // (PMAT-502s). Without this the index emits `(-k) as usize` →
+            // `usize::MAX` → an out-of-bounds panic. A negative literal parses as
+            // `UnaryOp(USub, Int(k))`.
+            let index = if let Some(k) = neg_literal_int(&single) {
+                Expr::BinOp {
+                    op: BinOp::Sub,
+                    lhs: Box::new(Expr::Len(Box::new(Expr::Ident(receiver.clone())))),
+                    rhs: Box::new(Expr::LitInt(k)),
+                }
+            } else {
+                // PMAT-466: ctx-aware so a dict read used as a list index
+                // (`xs[d[k]] = v`) lowers to `DictGet`, not a nested list index.
+                let index = lower_expr_in_ctx(ctx, single)?;
+                let idx_ty = infer_type_in_ctx(ctx, &index);
+                if !matches!(idx_ty, Type::I64) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` indexed-assigns `{receiver}[<expr>]` where index types as {idx_ty:?}; only `int` indices are supported at v0.2.0",
+                        ctx.fn_name
+                    )));
+                }
+                index
+            };
             ctx.mutable.insert(receiver.clone());
             Ok(Stmt::IndexAssign {
                 list_name: receiver,
@@ -4696,13 +4671,25 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
                     })
                 }
                 Some(Type::List(_)) => {
-                    let index = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
-                    if !matches!(infer_type_in_ctx(ctx, &index), Type::I64) {
-                        return Err(FrontendError::Lower(format!(
-                            "function `{}` augments `{receiver}[<expr>]` with a non-int index",
-                            ctx.fn_name
-                        )));
-                    }
+                    // PMAT-560: negative-literal index `xs[-k] += v` resolves to
+                    // `xs[len(xs) - k]` on both the read and write side (same
+                    // desugar as plain `xs[-k] = v`).
+                    let index = if let Some(k) = neg_literal_int(sub.slice.as_ref()) {
+                        Expr::BinOp {
+                            op: BinOp::Sub,
+                            lhs: Box::new(Expr::Len(Box::new(Expr::Ident(receiver.clone())))),
+                            rhs: Box::new(Expr::LitInt(k)),
+                        }
+                    } else {
+                        let index = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+                        if !matches!(infer_type_in_ctx(ctx, &index), Type::I64) {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` augments `{receiver}[<expr>]` with a non-int index",
+                                ctx.fn_name
+                            )));
+                        }
+                        index
+                    };
                     let current = Expr::Index {
                         collection: Box::new(Expr::Ident(receiver.clone())),
                         index: Box::new(index.clone()),
