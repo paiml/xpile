@@ -357,6 +357,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
             expr_has_int_arith(list) || key.as_ref().is_some_and(|k| expr_has_int_arith(&k.body))
         }
         Expr::Reversed { list } => expr_has_int_arith(list),
+        // PMAT-549: gcd carries int operands (the `%` is internal to its emit).
+        Expr::Gcd { a, b } => expr_has_int_arith(a) || expr_has_int_arith(b),
         // PMAT-502cj: list(range(...)) — recurse into the bound exprs.
         Expr::RangeList { start, stop, .. } => {
             expr_has_int_arith(start) || expr_has_int_arith(stop)
@@ -1675,6 +1677,12 @@ pub enum Expr {
     /// as the list's type. Lean refuses. (Python's `reversed` yields a lazy
     /// iterator, but the supported subset materializes it as a `Vec`.)
     Reversed { list: Box<Expr> },
+    /// PMAT-549: `math.gcd(a, b)` — greatest common divisor of two ints (**Int**).
+    /// Rust/Ruchy emit an inline Euclidean-algorithm block over the operands'
+    /// absolute values: `{ let mut __a = (a).abs(); let mut __b = (b).abs();
+    /// while __b != 0 { let __t = __b; __b = __a % __b; __a = __t; } __a }`.
+    /// Always non-negative; `gcd(0, 0) == 0` (matching Python). Lean refuses.
+    Gcd { a: Box<Expr>, b: Box<Expr> },
     /// `list(range(start, stop, step))` — materialise a range into a `Vec`.
     /// PMAT-502cj (Tranche 2). Rust/Ruchy emit `((<start>)..(<stop>))
     /// .collect::<Vec<i64>>()` for `step == 1`, or `.step_by(<step> as usize)`

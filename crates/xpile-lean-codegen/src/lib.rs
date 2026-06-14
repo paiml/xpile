@@ -594,6 +594,11 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         Expr::Sorted { list, .. } => collect_idents(list, out),
         // PMAT-502d: reversed — recurse into the list expression.
         Expr::Reversed { list } => collect_idents(list, out),
+        // PMAT-549: gcd — recurse into both operands.
+        Expr::Gcd { a, b } => {
+            collect_idents(a, out);
+            collect_idents(b, out);
+        }
         // PMAT-502cj: list(range(...)) — recurse into the bound exprs.
         Expr::RangeList { start, stop, .. } => {
             collect_idents(start, out);
@@ -1455,6 +1460,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::Reversed { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python reversed(xs) is not yet supported in the Lean lane \
+                 — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-549: math.gcd deferred in the Lean lane (imperative Euclid loop).
+        Expr::Gcd { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "math.gcd(a, b) is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
