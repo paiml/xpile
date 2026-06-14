@@ -4807,6 +4807,35 @@ fn main() {
     assert_rustc_runs("negative_slice", &rust, driver);
 }
 
+/// PMAT-540 (correctness): mixed `float`/`int` comparison and arithmetic.
+/// Rust rejects `f64 == i64` (E0308) and `f64 + i64` (E0277), so `x == 3`,
+/// `x < n`, `x * 2 + 1` over a float `x` produced non-compiling Rust. The int
+/// operand is now promoted to `f64` (Python promotes numerically). Both the
+/// comparison path (`lower_compare_in_ctx`) and the float-arith path now wrap
+/// the int side in `to_f64_operand`. Cross-checked vs python3
+/// (F/T/T/F/6.0/T/F/7.5).
+#[test]
+fn mixed_float_int() {
+    let rust = xpile_transpile_to_rust("mixed_float_int.py");
+    assert!(
+        rust.contains("x == ((3i64) as f64)") && rust.contains("x * ((2i64) as f64)"),
+        "mixed float/int operands must promote the int to f64:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(at_least(3.0, 5), false);
+    assert_eq!(at_least(5.0, 5), true);
+    assert_eq!(is_whole_three(3.0), true);
+    assert_eq!(is_whole_three(3.5), false);
+    assert_eq!(scaled(2.5), 6.0f64);
+    assert_eq!(half_past(3.5), true);
+    assert_eq!(half_past(15.0), false);
+    assert_eq!(int_times_float(2.5), 7.5f64);
+}
+"#;
+    assert_rustc_runs("mixed_float_int", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
