@@ -4972,6 +4972,19 @@ fn combine_aug(
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
         })
+    } else if matches!(op, BinOp::Add)
+        && matches!(infer_type_in_ctx(ctx, &lhs), Type::List(_))
+        && matches!(infer_type_in_ctx(ctx, &rhs), Type::List(_))
+    {
+        // PMAT-604: `+` over two lists is concatenation, not integer addition.
+        // The flat `xs += [..]` case is special-cased to `ListExtend` before
+        // `combine_aug`, but the SUBSCRIPT aug-assign (`grid[i] += [..]`,
+        // `grid[i][j] += [..]`) routes through here — without this it fell to a
+        // `BinOp::Add` that the backend emits as `Vec::checked_add` (E0599).
+        Ok(Expr::ListConcat {
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        })
     } else {
         Ok(Expr::BinOp {
             op,

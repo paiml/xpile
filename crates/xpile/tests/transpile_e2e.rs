@@ -7998,6 +7998,27 @@ fn main() {
     assert_rustc_runs("aug_subscript", &rust, driver);
 }
 
+/// PMAT-604: `grid[i] += [..]` (and nested `cube[i][j] += [..]`) over a nested
+/// list is list CONCATENATION; the subscript aug-assign routed `+` through
+/// integer `checked_add` on a Vec (E0599). `combine_aug` now emits `ListConcat`
+/// for list+list `+`. Cross-checked vs python3 (append_row→310, extend_inner→3).
+#[test]
+fn subscript_list_concat_aug() {
+    let rust = xpile_transpile_to_rust("subscript_list_concat_aug.py");
+    // The inner-list `+=` concatenates (chain/collect), never checked_add on Vec.
+    assert!(
+        rust.contains(".iter().chain((vec![10i64, 20i64]).iter()).cloned().collect::<Vec<_>>()"),
+        "grid[i] += [..] must concatenate:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(append_row(vec![vec![1], vec![2]]), 310);
+    assert_eq!(extend_inner(vec![vec![vec![0], vec![5]]]), 3);
+}
+"#;
+    assert_rustc_runs("subscript_list_concat_aug", &rust, driver);
+}
+
 /// PMAT-495 (sprint): enumerate / zip in for-loops → `Stmt::ForEachPair`,
 /// emitting `for (i, x) in xs.iter().cloned().enumerate().map(...)` /
 /// `for (a, b) in xs.iter().cloned().zip(ys.iter().cloned())`.
