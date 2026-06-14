@@ -19,6 +19,27 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.274] — 2026-06-14
+
+Tranche 2 — PMAT-575: **correctness / contract integrity** — left-shift value overflow.
+
+- `x << n` lowered to `(x).checked_shl(u32::try_from(n)…).expect("… overflow …")`,
+  but `checked_shl` only returns `None` when the shift *amount* is ≥ 64 — it does
+  NOT detect lost significant bits. So `1i64 << 63` returned `Some(i64::MIN)` and
+  the overflow `.expect()` never fired: a silent wrap that **falsifies
+  C-PY-INT-ARITH's overflow guarantee**. Python's `<<` is exact (arbitrary
+  precision), so the contract promises a panic until bigint promotion lands —
+  the same fail-loud posture as checked add/mul/pow. Found by the differential
+  python3-vs-rustc hunt.
+- Fix: for left-shift in non-bigint mode, emit a reversibility check — a shift
+  loses no significant bits iff `(v << n) >> n == v` (arithmetic shift-back,
+  correct for both signs); panic on mismatch. Right-shift never value-overflows
+  and bigint mode is arbitrary-precision (routes through `xpile_bigint::shl`), so
+  both keep the plain checked form. Rust + Ruchy backends.
+- Valid shifts unaffected, incl. `-2 << 62 == i64::MIN` (fits exactly). New e2e
+  fixture `left_shift_overflow.py`: valid shifts cross-checked vs python3, and
+  `1 << 63` / `3 << 62` now panic (verified via `catch_unwind`). 336 e2e fixtures.
+
 ## [0.1.273] — 2026-06-14
 
 Tranche 2 — PMAT-574: **correctness** — mutating-method receiver in a condition.
