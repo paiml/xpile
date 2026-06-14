@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.284] — 2026-06-14
+
+Tranche 2 — PMAT-585: **correctness** — clone non-Copy field read from `&self` (E0507).
+
+- A method or `@property` returning a non-Copy field by value from a borrowed
+  receiver — `return self.name` over a `String`/list/dict/set/struct field —
+  emitted `(self).name`, which rustc rejects (E0507: cannot move out of a
+  shared reference). First slice of the ownership/borrow cluster. Found by the
+  differential hunt.
+- Fix: when lowering an `obj.field` read whose field type is non-Copy, wrap it
+  in the existing `Expr::Clone` → codegen `(obj).field.clone()`. Copy fields
+  (int/float/bool) read by value unchanged. Cloning unconditionally is sound
+  because a field is never a mutation receiver (`self.items.append(x)` is
+  rejected upstream); LLVM elides the redundant clones at `-O`.
+- New e2e fixture `clone_field_read.py` cross-checked vs python3. 346 e2e
+  fixtures.
+
 ## [0.1.283] — 2026-06-14
 
 Tranche 2 — PMAT-584: **correctness** — `sum()` over a float list (compensated).
