@@ -19,6 +19,24 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.312] — 2026-06-15
+
+Tranche 2 — PMAT-613: **correctness** — f-string radix of a negative int is sign-magnitude.
+
+- Python formats a negative int in an f-string radix spec sign-magnitude
+  (`f"{-255:x}"` == `"-ff"`, `f"{-5:b}"` == `"-101"`), but xpile emitted
+  `format!("{:x}", n)`, which is Rust's two's-complement (`ffffffffffffff01`) →
+  silent wrong output. The `hex`/`bin`/`oct` builtins already emit sign-magnitude;
+  only the f-string radix path lagged. Found by the differential hunt (#4, H4-3).
+- Fix (frontend only, no new IR): a bare radix spec (`x`/`X`/`b`/`o`, no
+  width/fill/precision) over an int now reuses `Expr::IntRadixStr`
+  (`prefixed: false`), which emits `sign + format(unsigned_abs)` — matching Python
+  and the builtins. Radix-with-width keeps the `FormatSpec` path (correct for
+  non-negatives; sign-aware zero-padding of a negative is a deferred follow-up).
+  The standalone `format(x, "x")` builtin shares the path and is fixed too.
+- New e2e fixture `fstring_radix_negative.py` cross-checked vs python3. 374 e2e
+  fixtures.
+
 ## [0.1.311] — 2026-06-15
 
 Tranche 2 — PMAT-612: **correctness** — `round(int, ndigits)` returns an int instead of failing to compile.
