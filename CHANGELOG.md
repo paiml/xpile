@@ -19,6 +19,27 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.313] — 2026-06-15
+
+Tranche 2 — PMAT-614: **correctness** — float `a // b` is CPython `float_divmod`, not `floor(a/b)`.
+
+- Python's float floor-division is CPython `float_divmod` (Objects/floatobject.c),
+  not `(a / b).floor()`. The naive floor over-rounds whenever `a/b` lands just
+  below an integer in float repr — the textbook `1.0 // 0.1` is **9.0** in Python
+  but `(1.0/0.1).floor()` is **10.0** (also `2.0 // 0.1` → 19 not 20,
+  `5.5 // 1.1` → 4 not 5). It also mishandled infinite operands (`inf // 2` is
+  nan, `-5.0 // inf` is -1.0, `1e308 // 1e-308` is inf). Found by the
+  differential hunt (#5, H5-23 — broadened from the inf case after the common
+  finite divergence surfaced).
+- Fix (rust + ruchy codegen, no new IR): replicate CPython exactly —
+  `mod = fmod(a, b)` (Rust `%` is C `fmod`), `div = (a - mod) / b`, nudge `div`
+  down by 1 when the remainder's sign differs from the divisor's, then
+  `floor(div)` with CPython's `div - floor > 0.5` round-up correction. Both
+  operands bound to temps (evaluate-once); the ZeroDivisionError guard
+  (PMAT-581) is preserved. Verified vs python3 across 20 cases.
+- New e2e fixture `float_floordiv_semantics.py`; `float_floordiv_mod` extended.
+  375 e2e fixtures.
+
 ## [0.1.312] — 2026-06-15
 
 Tranche 2 — PMAT-613: **correctness** — f-string radix of a negative int is sign-magnitude.
