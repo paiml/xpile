@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.230] — 2026-06-14
+
+Tranche 2 — PMAT-530: `s[::-1]` reverse-slice over a `str`.
+
+- The list reverse idiom `xs[::-1]` already lowered to `Expr::Reversed`, but the
+  `str` form `s[::-1]` was rejected (`non-literal slice step`). A new
+  `StrMethodOp::Reverse` (0 args) handles the `of_str` branch of the neg-one-step
+  reverse case → emits `.chars().rev().collect::<String>()` (reverse by Unicode
+  scalar value, matching Python's codepoint-wise reversal on the ASCII subset).
+  Reuses the whole `StrMethod` pipeline; the Lean lane refuses generically.
+  **No new `Expr` variant.**
+- New e2e fixture `str_reverse_slice.py` (`reverse`, `is_palindrome`,
+  `reverse_upper`) — composes with `.upper()[::-1]` and works inside larger
+  expressions (`s == s[::-1]`). rustc round-trip cross-checked vs python3
+  (olleh, True, False, CBA). e2e 291 → 292.
+
 ## [0.1.229] — 2026-06-14
 
 Tranche 2 — PMAT-529: bare-statement `d.pop(k)` / `d.pop(k, default)` (dict).
