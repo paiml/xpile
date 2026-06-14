@@ -4985,6 +4985,21 @@ fn combine_aug(
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
         })
+    } else if matches!(infer_type_in_ctx(ctx, &lhs), Type::Set(_))
+        && matches!(infer_type_in_ctx(ctx, &rhs), Type::Set(_))
+        && set_op_from_ast(ast_op).is_some()
+    {
+        // PMAT-615: augmented set algebra `s -= / |= / &= / ^= other` reuses the
+        // binop `SetOp` path (difference / union / intersection /
+        // symmetric_difference), exactly like the non-augmented `s - other`.
+        // Without this it fell through to a `BinOp`, which the backend emits as
+        // `HashSet::checked_sub` (E0599) for `-=` and owned-value `|`/`&`/`^` on
+        // `HashSet` (E0369) for the others — transpile-success → invalid Rust.
+        Ok(Expr::SetOp {
+            op: set_op_from_ast(ast_op).expect("is_some checked above"),
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        })
     } else {
         Ok(Expr::BinOp {
             op,

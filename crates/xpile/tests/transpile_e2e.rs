@@ -2628,6 +2628,34 @@ fn main() {
     assert_rustc_runs("dict_pop", &rust, driver);
 }
 
+/// PMAT-615: augmented set assignment `s -= / |= / &= / ^= other`. Previously
+/// fell through to a numeric/bitwise BinOp — `HashSet::checked_sub` (E0599) for
+/// `-=` and owned-value `|`/`&`/`^` on `HashSet` (E0369) for the others:
+/// transpile succeeded but emitted invalid Rust. Now reuses the binop `SetOp`
+/// path. Cross-checked vs python3 ({1,2,3} op {3,4,5}).
+#[test]
+fn augmented_set_ops() {
+    let rust = xpile_transpile_to_rust("augmented_set_ops.py");
+    // the augmented forms now reassign via the set-op methods, not BinOp.
+    assert!(
+        rust.contains(".difference(") && rust.contains(".symmetric_difference("),
+        "augmented set ops should reuse the SetOp path:\n{rust}"
+    );
+    assert!(
+        !rust.contains("checked_sub") && !rust.contains("(s | "),
+        "augmented set ops must not emit int/bitwise BinOps:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(aug_sub(vec![1, 2, 3], vec![3, 4, 5]), vec![1, 2]);
+    assert_eq!(aug_or(vec![1, 2, 3], vec![3, 4, 5]), vec![1, 2, 3, 4, 5]);
+    assert_eq!(aug_and(vec![1, 2, 3], vec![3, 4, 5]), vec![3]);
+    assert_eq!(aug_xor(vec![1, 2, 3], vec![3, 4, 5]), vec![1, 2, 4, 5]);
+}
+"#;
+    assert_rustc_runs("augmented_set_ops", &rust, driver);
+}
+
 /// PMAT-502av (Tranche 2): set element removal `s.remove(x)` →
 /// `assert!(s.remove(&(x)), "…");` (KeyError if absent) and
 /// `s.discard(x)` → `s.remove(&(x));` (silent no-op).
