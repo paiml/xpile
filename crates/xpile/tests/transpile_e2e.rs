@@ -1522,6 +1522,31 @@ fn main() {
     assert_rustc_runs("bool_reduce", &rust, driver);
 }
 
+/// PMAT-570 (Tranche 2): **correctness** — negative-literal `xs.pop(-k)` /
+/// `del xs[-k]` remove from the end. Both emitted `remove((-k) as usize)` →
+/// `usize::MAX` → panic; now resolve to `len(xs) - k` with the index bound to a
+/// temp before `remove` (E0502). Positive indices unchanged. Found by the
+/// differential hunt. Cross-checked vs python3 (3, 3, 10, 7, 6, 9).
+#[test]
+fn neg_pop_del() {
+    let rust = xpile_transpile_to_rust("neg_pop_del.py");
+    assert!(
+        rust.contains("let __pi =") && rust.contains("let __di ="),
+        "negative pop/del should bind the resolved index to a temp:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(pop_last(vec![1, 2, 3]), 3);
+    assert_eq!(pop_2nd_last(vec![1, 2, 3, 4]), 3);
+    assert_eq!(pop_front(vec![10, 20, 30]), 10);
+    assert_eq!(pop_noarg(vec![5, 6, 7]), 7);
+    assert_eq!(del_last(vec![1, 2, 3, 4]), 6);
+    assert_eq!(del_first(vec![1, 2, 3, 4]), 9);
+}
+"#;
+    assert_rustc_runs("neg_pop_del", &rust, driver);
+}
+
 /// PMAT-569 (Tranche 2): **correctness** — list-of-list repeat `[[0]] * n`.
 /// A list repeat used slice `repeat`, which needs `T: Copy`, so `Vec<Vec<_>>`
 /// failed to compile (E0277). Now a list repeat clones its elements

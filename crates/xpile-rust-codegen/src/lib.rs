@@ -728,6 +728,12 @@ fn emit_stmt_indented(
                 write!(out, "{indent}{name}.remove(&(")?;
                 emit_expr(out, key, mode)?;
                 writeln!(out, "));")?;
+            } else if expr_mentions_ident(key, name) {
+                // PMAT-570: `del xs[-k]` → `xs.remove(len(xs) - k)`; the index
+                // references `xs`, so bind it before the mutable `remove`.
+                write!(out, "{indent}{{ let __di = (")?;
+                emit_expr(out, key, mode)?;
+                writeln!(out, ") as usize; {name}.remove(__di); }}")?;
             } else {
                 write!(out, "{indent}{name}.remove((")?;
                 emit_expr(out, key, mode)?;
@@ -1736,18 +1742,33 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // PMAT-502as: `xs.pop()` → `(<list>).pop().unwrap()` (last; panics
         // if empty, matching Python IndexError); `xs.pop(i)` →
         // `(<list>).remove((<i>) as usize)` (panics if out of range).
-        Expr::ListPop { list, index } => {
-            out.push('(');
-            emit_expr(out, list, mode)?;
-            match index {
-                None => out.push_str(").pop().unwrap()"),
-                Some(i) => {
+        Expr::ListPop { list, index } => match index {
+            None => {
+                out.push('(');
+                emit_expr(out, list, mode)?;
+                out.push_str(").pop().unwrap()");
+            }
+            // PMAT-570: a negative-resolved index (`len(xs) - k`) references the
+            // receiver, conflicting with `remove`'s mutable borrow (E0502) — bind
+            // it first. Positive indices keep the inline form.
+            Some(i) => {
+                let refs_self =
+                    matches!(list.as_ref(), Expr::Ident(n) if expr_mentions_ident(i, n));
+                if refs_self {
+                    out.push_str("{ let __pi = (");
+                    emit_expr(out, i, mode)?;
+                    out.push_str(") as usize; (");
+                    emit_expr(out, list, mode)?;
+                    out.push_str(").remove(__pi) }");
+                } else {
+                    out.push('(');
+                    emit_expr(out, list, mode)?;
                     out.push_str(").remove((");
                     emit_expr(out, i, mode)?;
                     out.push_str(") as usize)");
                 }
             }
-        }
+        },
         // PMAT-502au: `d.pop(k)` → `(<dict>).remove(&(<key>)).unwrap()`
         // (panics if absent, matching Python `KeyError`); `d.pop(k, def)`
         // → `(<dict>).remove(&(<key>)).unwrap_or(<default>)`.

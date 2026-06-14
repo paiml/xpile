@@ -3528,14 +3528,25 @@ fn lower_delete_stmt(ctx: &mut LoweringCtx, d: ast::StmtDelete) -> Result<Stmt, 
     let receiver_ty = ctx.name_types.get(&name).cloned();
     match receiver_ty {
         Some(Type::List(_)) => {
-            let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
-            let idx_ty = infer_type_in_ctx(ctx, &key);
-            if !matches!(idx_ty, Type::I64) {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` deletes `{name}[<expr>]` where index types as {idx_ty:?}; only `int` indices are supported at v0.2.0",
-                    ctx.fn_name
-                )));
-            }
+            // PMAT-570: `del xs[-k]` deletes from the end — resolve the negative
+            // literal to `len(xs) - k` (else `(-k) as usize` → usize::MAX → panic).
+            let key = if let Some(k) = neg_literal_int(sub.slice.as_ref()) {
+                Expr::BinOp {
+                    op: BinOp::Sub,
+                    lhs: Box::new(Expr::Len(Box::new(Expr::Ident(name.clone())))),
+                    rhs: Box::new(Expr::LitInt(k)),
+                }
+            } else {
+                let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+                let idx_ty = infer_type_in_ctx(ctx, &key);
+                if !matches!(idx_ty, Type::I64) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` deletes `{name}[<expr>]` where index types as {idx_ty:?}; only `int` indices are supported at v0.2.0",
+                        ctx.fn_name
+                    )));
+                }
+                key
+            };
             ctx.mutable.insert(name.clone());
             Ok(Stmt::DelItem {
                 name,
@@ -7619,6 +7630,17 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     {
                         let index = match call.args.first() {
                             None => None,
+                            // PMAT-570: `xs.pop(-k)` removes from the end — resolve
+                            // the negative literal to `len(xs) - k` (else it emits
+                            // `(-k) as usize` → usize::MAX → panic).
+                            Some(a) if neg_literal_int(a).is_some() => {
+                                let k = neg_literal_int(a).unwrap();
+                                Some(Box::new(Expr::BinOp {
+                                    op: BinOp::Sub,
+                                    lhs: Box::new(Expr::Len(Box::new(recv.clone()))),
+                                    rhs: Box::new(Expr::LitInt(k)),
+                                }))
+                            }
                             Some(a) => {
                                 let i = lower_expr_in_ctx(ctx, a.clone())?;
                                 if infer_type_in_ctx(ctx, &i) != Type::I64 {
