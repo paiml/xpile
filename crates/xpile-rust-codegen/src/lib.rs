@@ -1677,6 +1677,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, b, mode)?;
             out.push_str(").abs(); while __gb != 0 { let __gt = __gb; __gb = __ga % __gb; __ga = __gt; } __ga }");
         }
+        // PMAT-550: `math.lcm(a, b)` → `(abs(a)/gcd) * abs(b)` (0 if either is 0).
+        Expr::Lcm { a, b } => {
+            out.push_str("{ let __la = (");
+            emit_expr(out, a, mode)?;
+            out.push_str(").abs(); let __lb = (");
+            emit_expr(out, b, mode)?;
+            out.push_str(").abs(); if __la == 0 || __lb == 0 { 0 } else { let mut __ga = __la; let mut __gb = __lb; while __gb != 0 { let __gt = __gb; __gb = __ga % __gb; __ga = __gt; } (__la / __ga) * __lb } }");
+        }
         // PMAT-502cj: `list(range(start, stop, step))` → a collected i64 range.
         Expr::RangeList { start, stop, step } => {
             if *step > 0 {
