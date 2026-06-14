@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.255] — 2026-06-14
+
+Tranche 2 — PMAT-556: expression-position two-generator comprehensions.
+
+- Two-generator generator expressions and expr-position list/set/dict
+  comprehensions — `sum(i*j for i in range(n) for j in range(m))`,
+  `len([… for i in a for j in b])`, etc. The single-generator expr-position
+  path stays `Map`/`Filter`; a 2-generator one builds its flattened `Vec` via
+  nested loops inside an `Expr::Block` (reusing the statement-position
+  `desugar_comp_2gen` machinery on a cloned ctx), returning the accumulator as
+  the block's trailing expression. New helper `lower_comp_2gen_to_block`; set
+  comps wrap in `SetFromList`, dict comps build `(k, v)` tuples →
+  `DictFromPairs`. Block inference now recovers a block-local trailing
+  identifier's type from the block's own `Let`, so `sum`/`max`/`min`/`len`
+  see the accumulator as a list. Three-plus generators remain a clean reject.
+
 ## [0.1.254] — 2026-06-14
 
 Tranche 2 — PMAT-555: in-place `xs.sort(reverse=True)`.
