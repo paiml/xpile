@@ -5220,9 +5220,11 @@ fn main() {
 #[test]
 fn min_max_mixed_numeric() {
     let rust = xpile_transpile_to_rust("min_max_mixed_numeric.py");
+    // PMAT-601: float min/max now use the Python first-arg-wins fold; the int
+    // operand is still promoted to f64.
     assert!(
-        rust.contains("(x).min(((n) as f64))") || rust.contains(".min(((n) as f64))"),
-        "mixed min/max must promote the int operand to f64:\n{rust}"
+        rust.contains("((n) as f64)") && rust.contains("if __x < __m"),
+        "mixed min/max must promote the int operand to f64 (first-arg-wins fold):\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -5235,6 +5237,34 @@ fn main() {
 }
 "#;
     assert_rustc_runs("min_max_mixed_numeric", &rust, driver);
+}
+
+/// PMAT-601: 2-arg `max`/`min` over floats follow Python's first-argument-wins
+/// semantics (and NaN propagation), not `f64::max`/`f64::min` (which treat
+/// `+0.0 > -0.0` and drop NaN). On a tie / incomparable compare the first
+/// argument is kept. Cross-checked vs python3: `max(-0.0,0.0)` is `-0.0`,
+/// `min(-0.0,0.0)` is `-0.0`, `max(0.0,-0.0)` is `0.0`; distinct values normal.
+#[test]
+fn float_min_max() {
+    let rust = xpile_transpile_to_rust("float_min_max.py");
+    assert!(
+        rust.contains("if __x > __m { __m = __x; }")
+            && rust.contains("if __x < __m { __m = __x; }"),
+        "float max/min must use the first-arg-wins fold:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // signed-zero ties keep the first argument.
+    assert!(mx(-0.0, 0.0).is_sign_negative());
+    assert!(mn(-0.0, 0.0).is_sign_negative());
+    assert!(!mx(0.0, -0.0).is_sign_negative());
+    // distinct values behave normally.
+    assert_eq!(mx(2.0, 3.0), 3.0);
+    assert_eq!(mn(2.0, 3.0), 2.0);
+    assert_eq!(mx3(1.0, 5.0, 3.0), 5.0);
+}
+"#;
+    assert_rustc_runs("float_min_max", &rust, driver);
 }
 
 /// PMAT-542 (correctness): mixed `float`/`int` ternary branches. `x if b else 0`

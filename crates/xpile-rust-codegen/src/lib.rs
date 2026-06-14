@@ -1583,6 +1583,31 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         }
         // PMAT-498: scalar numeric builtins → receiver-method form.
         Expr::NumBuiltin { op, args, of_float } => {
+            // PMAT-601: float `max`/`min` must follow Python's first-argument-
+            // wins semantics (and NaN propagation), NOT `f64::max`/`f64::min`
+            // (which treat `+0.0 > -0.0` and silently drop NaN). Emit a left
+            // fold: the accumulator starts at args[0]; a later arg replaces it
+            // only on a STRICT compare, so a tie (`-0.0`/`0.0`) or a NaN compare
+            // (always false) keeps the earlier value, exactly like Python's
+            // `result = a; if b > result: result = b`. Integer min/max keep the
+            // total-order `.min`/`.max` chain (i64 has no signed-zero/NaN).
+            if *of_float && matches!(op, NumBuiltinOp::Min | NumBuiltinOp::Max) {
+                let cmp = if matches!(op, NumBuiltinOp::Min) {
+                    "<"
+                } else {
+                    ">"
+                };
+                out.push_str("{ let mut __m: f64 = ");
+                emit_expr(out, &args[0], mode)?;
+                out.push(';');
+                for arg in &args[1..] {
+                    out.push_str(" { let __x: f64 = ");
+                    emit_expr(out, arg, mode)?;
+                    write!(out, "; if __x {cmp} __m {{ __m = __x; }} }}")?;
+                }
+                out.push_str(" __m }");
+                return Ok(());
+            }
             out.push('(');
             emit_expr(out, &args[0], mode)?;
             out.push(')');
