@@ -6545,6 +6545,21 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
             )));
         }
     }
+    // PMAT-602: reject an annotation/Optional mismatch — a non-Optional
+    // annotation (`x: int`) over an Optional-typed initializer (1-arg
+    // `d.get(k)`, an Optional param) would emit `Option<T>` into a `T`
+    // binding (rustc E0308). Python doesn't enforce annotations
+    // (`x: int = d.get("z")` binds `None`), so unwrapping would diverge on
+    // the None case — reject so transpile fails fast rather than emitting
+    // invalid Rust. Use `Optional[T]` / `d.get(k, default)` instead.
+    if !matches!(declared_ty, Type::Optional(_))
+        && matches!(infer_type_in_ctx(ctx, &value), Type::Optional(_))
+    {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` annotates `{name}` as {declared_ty:?} but its initializer is Optional (e.g. 1-arg `d.get(k)`); use an `Optional[...]` annotation or `d.get(k, default)`",
+            ctx.fn_name
+        )));
+    }
     // Annotation is the source of truth for the binding type (an empty
     // DictLit would otherwise infer the wrong K/V). For non-empty
     // values we trust the annotation and let backend compilation catch
