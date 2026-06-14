@@ -1608,6 +1608,31 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str(" __m }");
                 return Ok(());
             }
+            // PMAT-606: `math.floor`/`ceil`/`trunc` return a Python int, so the
+            // f64 result is cast to i64. A bare `as i64` SATURATES (since Rust
+            // 1.45): `1e30.floor() as i64` → i64::MAX (silent), `inf` → i64::MAX,
+            // `nan` → 0 — but Python returns an exact bignum for a huge float and
+            // raises OverflowError(inf)/ValueError(nan). Guard the rounded value
+            // (finite + i64 range) and fail loud, mirroring the `int(float)`
+            // guard (PMAT-586/589). The suffix arms below stay for match
+            // exhaustiveness but are superseded by this guarded fast-path.
+            if matches!(
+                op,
+                NumBuiltinOp::Floor | NumBuiltinOp::Ceil | NumBuiltinOp::Trunc
+            ) {
+                let round = match op {
+                    NumBuiltinOp::Floor => "floor",
+                    NumBuiltinOp::Ceil => "ceil",
+                    _ => "trunc",
+                };
+                out.push_str("{ let __mf = (");
+                emit_expr(out, &args[0], mode)?;
+                write!(
+                    out,
+                    ").{round}(); if !__mf.is_finite() {{ panic!(\"xpile: math.{round}() of a non-finite float (Python OverflowError/ValueError)\"); }} if __mf < (i64::MIN as f64) || __mf >= (i64::MAX as f64) {{ panic!(\"xpile: math.{round}() out of i64 range; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"); }} __mf as i64 }}"
+                )?;
+                return Ok(());
+            }
             out.push('(');
             emit_expr(out, &args[0], mode)?;
             out.push(')');
