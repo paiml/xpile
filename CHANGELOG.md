@@ -19,6 +19,16 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.257] — 2026-06-14
+
+Tranche 2 — PMAT-558: f-string percent format `:.N%`.
+
+- The f-string percent spec `f"{x:.1%}"` / `f"{x:%}"` (float). Python scales the
+  value by 100, formats with N decimals (bare `%` → Python's default 6), and
+  appends a literal `%`. Lowered to `Concat(FormatSpec((x)*100.0, ".N"), "%")` —
+  no IR change. Int receivers reject (whole-int promotion deferred), matching
+  the float-only `.Nf` precedent.
+
 ## [0.1.256] — 2026-06-14
 
 Tranche 2 — PMAT-557: f-string sign flag `:+`.
