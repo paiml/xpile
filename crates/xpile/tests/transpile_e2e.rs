@@ -4025,6 +4025,40 @@ fn main() {
     assert_rustc_runs("dict_get_optional", &rust, driver);
 }
 
+/// PMAT-602: a non-Optional annotation over an Optional initializer (1-arg
+/// `d.get(k)`) is a type lie that would emit `Option<i64>` into an `i64`
+/// binding (E0308). xpile rejects it cleanly (transpile-success ⟹ valid Rust),
+/// since Python doesn't enforce annotations and unwrapping would diverge on the
+/// None case. The correct forms (`d.get(k, default)` / `Optional[...]`) still
+/// transpile. Cross-checked vs python3: `with_default({"a":7})==7`, `{}` → 0.
+#[test]
+fn ann_optional_mismatch_rejected() {
+    let py = fixture("ann_optional_mismatch.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "`x: int = d.get(k)` (Optional into non-Optional) must be refused"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("initializer is Optional") && stderr.contains("d.get(k, default)"),
+        "the rejection should explain the Optional mismatch:\n{stderr}"
+    );
+    // The correct 2-arg form still transpiles + runs.
+    let rust = xpile_transpile_to_rust("ann_optional_ok.py");
+    let driver = r#"
+fn main() {
+    use std::collections::HashMap;
+    let mut d: HashMap<String, i64> = HashMap::new();
+    d.insert("a".to_string(), 7);
+    assert_eq!(with_default(d), 7);
+    let e: HashMap<String, i64> = HashMap::new();
+    assert_eq!(with_default(e), 0);
+}
+"#;
+    assert_rustc_runs("ann_optional_ok", &rust, driver);
+}
+
 /// PMAT-502ez (Tranche 2): Optional **flow-narrowing** (Optional epic cut 4).
 /// After a provably-exiting `if x is None: return …` / `raise` guard, a later
 /// read of `x` lowers to `Expr::OptionUnwrap` → `(x).unwrap()` : `T`, so the
