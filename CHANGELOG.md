@@ -19,6 +19,19 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.240] — 2026-06-14
+
+Tranche 2 — PMAT-541 (correctness): mixed-numeric `min()` / `max()`.
+
+- `min(x, n)` / `max(x, n)` with `x: float`, `n: int` emitted `f64::min(i64)`
+  (E0308) — the min/max builtin handler lowered the args but never promoted a
+  mixed-numeric set (the same class as PMAT-540 in a different code path).
+- Fix: when any operand of `min`/`max` infers as float, promote every operand
+  to f64 via the existing `to_f64_operand`. Covers `min(x, n)`, `min(n, x)`, and
+  N-arg mixed; homogeneous int/float/str min-max is untouched. **No new IR.**
+- Found via the differential python3-vs-rust hunt. New e2e fixture
+  `min_max_mixed_numeric.py` cross-checked vs python3. e2e 301 → 302.
+
 ## [0.1.239] — 2026-06-14
 
 Tranche 2 — PMAT-540 (correctness): mixed `float`/`int` comparison + arithmetic.
