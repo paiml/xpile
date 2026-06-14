@@ -1501,12 +1501,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, list, mode)?;
             match key {
                 Some(k) => {
-                    write!(
-                        out,
-                        ".iter().cloned().{}(|__k| {{ let {} = __k.clone(); ",
-                        if *is_max { "max_by_key" } else { "min_by_key" },
-                        k.param
-                    )?;
+                    // PMAT-568: Python max(key=) returns the FIRST maximal element
+                    // (Rust max_by_key returns the last) — reverse first. min ok.
+                    if *is_max {
+                        write!(
+                            out,
+                            ".iter().cloned().rev().max_by_key(|__k| {{ let {} = __k.clone(); ",
+                            k.param
+                        )?;
+                    } else {
+                        write!(
+                            out,
+                            ".iter().cloned().min_by_key(|__k| {{ let {} = __k.clone(); ",
+                            k.param
+                        )?;
+                    }
                     emit_expr(out, &k.body, mode)?;
                     out.push_str(" })");
                 }
@@ -1601,16 +1610,30 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str("{ let mut __xv = ");
             emit_expr(out, list, mode)?;
             out.push_str(".clone(); __xv.");
-            match key {
-                None => out.push_str("sort();"),
-                Some(k) => {
+            // PMAT-568: reverse=True + key must be STABLE descending (see Rust twin).
+            match (key, *reverse) {
+                (None, false) => out.push_str("sort();"),
+                (None, true) => out.push_str("sort(); __xv.reverse();"),
+                (Some(k), false) => {
                     write!(out, "sort_by_key(|__k| {{ let {} = __k.clone(); ", k.param)?;
                     emit_expr(out, &k.body, mode)?;
                     out.push_str(" });");
                 }
-            }
-            if *reverse {
-                out.push_str(" __xv.reverse();");
+                (Some(k), true) => {
+                    write!(
+                        out,
+                        "sort_by(|__a, __b| {{ let __ka = {{ let {p} = __a.clone(); ",
+                        p = k.param
+                    )?;
+                    emit_expr(out, &k.body, mode)?;
+                    write!(
+                        out,
+                        " }}; let __kb = {{ let {p} = __b.clone(); ",
+                        p = k.param
+                    )?;
+                    emit_expr(out, &k.body, mode)?;
+                    out.push_str(" }; __kb.cmp(&__ka) });");
+                }
             }
             out.push_str(" __xv }");
         }
