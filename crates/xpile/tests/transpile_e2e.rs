@@ -6125,6 +6125,35 @@ fn main() {
     assert_rustc_runs("bool_as_int", &rust, driver);
 }
 
+/// PMAT-588 (Tranche 2): **correctness** — a non-Copy variable passed by value
+/// to a function call and read more than once was moved into the call, leaving
+/// the other use a use-after-move (rustc E0382 — `helper(xs) + helper(xs)`). Now
+/// such a reused call argument is cloned so the caller's binding survives. Gated
+/// on read-count > 1, so single-use args are byte-identical (no clone, no perf
+/// cost). Second slice of the ownership/borrow cluster. Found by the
+/// differential hunt. Cross-checked vs python3.
+#[test]
+fn call_arg_reuse() {
+    let rust = xpile_transpile_to_rust("call_arg_reuse.py");
+    // reused arg is cloned; single-use is not.
+    assert!(
+        rust.contains("helper((xs).clone())"),
+        "reused call arg should clone:\n{rust}"
+    );
+    assert!(
+        rust.contains("helper(xs)"),
+        "single-use call arg should NOT clone:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(two_calls(vec![1, 2, 3]), 6);
+    assert_eq!(call_then_use(vec![4, 5]), 4); // len 2 + len 2
+    assert_eq!(single_use(vec![7, 8, 9]), 3);
+}
+"#;
+    assert_rustc_runs("call_arg_reuse", &rust, driver);
+}
+
 /// PMAT-587 (Tranche 2): **correctness** — a class/enum named after a Rust
 /// prelude type that xpile emits (`Vec`/`String`/`Option`/`Some`/`None`/
 /// `HashMap`/`HashSet`) emits a `struct <Name>` that collides with the prelude:
