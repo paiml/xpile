@@ -590,9 +590,10 @@ fn transpile_typed_py_honors_explicit_annotations() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     // Annotated `n: int` and `-> bool` should flow through unchanged.
     assert!(stdout.contains("pub fn is_even(n: i64) -> bool"));
-    // Post PMAT-002: Python `%` lowers to checked_rem_euclid (Euclidean
-    // semantics matching Python, plus overflow check).
-    assert!(stdout.contains("(n).checked_rem_euclid(2i64)"));
+    // PMAT-538: Python `%` lowers to a truncating `checked_rem` plus a floor
+    // correction (sign-of-divisor), not `rem_euclid` (which diverges for a
+    // negative divisor). The operand binds to `__fa`/`__fb` temps.
+    assert!(stdout.contains("__fa.checked_rem(__fb)") && stdout.contains("__r + __fb"));
 }
 
 #[test]
@@ -1718,8 +1719,10 @@ fn main() {
 #[test]
 fn divmod_builtin() {
     let rust = xpile_transpile_to_rust("divmod_builtin.py");
+    // PMAT-538: floor-div + floor-mod (truncating op + sign correction), not
+    // the euclidean ops (which diverge from Python for a negative divisor).
     assert!(
-        rust.contains("checked_div_euclid") && rust.contains("checked_rem_euclid"),
+        rust.contains("checked_div") && rust.contains("__q - 1") && rust.contains("__r + __fb"),
         "expected floor-div + mod tuple emission, got:\n{rust}"
     );
     let driver = r#"
@@ -4743,6 +4746,37 @@ fn main() {
 }
 "#;
     assert_rustc_runs("str_format_kwargs", &rust, driver);
+}
+
+/// PMAT-538 (correctness): Python `//` / `%` with a **negative divisor**.
+/// `div_euclid` / `rem_euclid` only match Python for a positive divisor; for a
+/// negative divisor Python `//` floors toward −∞ and `%` takes the sign of the
+/// divisor, so the euclidean ops silently diverge (e.g. `-7 // -2` is 3 in
+/// Python but `div_euclid` gives 4). The emit now uses the truncating
+/// quotient/remainder plus a floor correction. Cross-checked vs python3 across
+/// all sign combinations (3/-4/-4/3, -1/-2/2/1, 1/1).
+#[test]
+fn floordiv_mod_signs() {
+    let rust = xpile_transpile_to_rust("floordiv_mod_signs.py");
+    assert!(
+        !rust.contains("div_euclid") && !rust.contains("rem_euclid"),
+        "must not use euclidean ops (wrong for a negative divisor):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(fdiv(-7, -2), 3);
+    assert_eq!(fdiv(7, -2), -4);
+    assert_eq!(fdiv(-7, 2), -4);
+    assert_eq!(fdiv(7, 2), 3);
+    assert_eq!(fmod(-7, -2), -1);
+    assert_eq!(fmod(7, -3), -2);
+    assert_eq!(fmod(-7, 3), 2);
+    assert_eq!(fmod(7, 2), 1);
+    assert_eq!(clock(13), 1);
+    assert_eq!(clock(25), 1);
+}
+"#;
+    assert_rustc_runs("floordiv_mod_signs", &rust, driver);
 }
 
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
