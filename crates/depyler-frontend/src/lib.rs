@@ -6491,7 +6491,8 @@ fn infer_type(e: &Expr) -> Type {
         | Expr::Factorial { .. }
         | Expr::Isqrt { .. }
         | Expr::Comb { .. }
-        | Expr::Perm { .. } => Type::I64,
+        | Expr::Perm { .. }
+        | Expr::PowMod { .. } => Type::I64,
         // PMAT-502cj: list(range(...)) materialises a list[int].
         Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
         // PMAT-502cw: set(xs) → set over the list's element type.
@@ -6885,7 +6886,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         | Expr::Factorial { .. }
         | Expr::Isqrt { .. }
         | Expr::Comb { .. }
-        | Expr::Perm { .. } => Type::I64,
+        | Expr::Perm { .. }
+        | Expr::PowMod { .. } => Type::I64,
         // PMAT-502cj: list(range(...)) materialises a list[int].
         Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
         // PMAT-502cw: set(xs) → set over the list's element type.
@@ -7852,6 +7854,24 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             op: BinOp::Pow,
                             lhs: Box::new(lhs),
                             rhs: Box::new(rhs),
+                        });
+                    }
+                }
+                // PMAT-571: 3-arg `pow(base, exp, mod)` — modular exponentiation
+                // (all int). Emits an inline square-and-multiply (the previous
+                // bare `pow(a,b,c)` call referenced an undefined Rust fn → E0425).
+                if fname.id.as_str() == "pow" && call.keywords.is_empty() && call.args.len() == 3 {
+                    let base = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    let exp = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                    let modulus = lower_expr_in_ctx(ctx, call.args[2].clone())?;
+                    if infer_type_in_ctx(ctx, &base) == Type::I64
+                        && infer_type_in_ctx(ctx, &exp) == Type::I64
+                        && infer_type_in_ctx(ctx, &modulus) == Type::I64
+                    {
+                        return Ok(Expr::PowMod {
+                            base: Box::new(base),
+                            exp: Box::new(exp),
+                            modulus: Box::new(modulus),
                         });
                     }
                 }

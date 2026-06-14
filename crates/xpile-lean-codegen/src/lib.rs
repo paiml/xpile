@@ -611,6 +611,11 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(n, out);
             collect_idents(k, out);
         }
+        Expr::PowMod { base, exp, modulus } => {
+            collect_idents(base, out);
+            collect_idents(exp, out);
+            collect_idents(modulus, out);
+        }
         Expr::Factorial { n } | Expr::Isqrt { n } => collect_idents(n, out),
         // PMAT-502cj: list(range(...)) — recurse into the bound exprs.
         Expr::RangeList { start, stop, .. } => {
@@ -1489,9 +1494,10 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         | Expr::Factorial { .. }
         | Expr::Isqrt { .. }
         | Expr::Comb { .. }
-        | Expr::Perm { .. } => {
+        | Expr::Perm { .. }
+        | Expr::PowMod { .. } => {
             return Err(LeanCodegenError::Unsupported(
-                "math.gcd/lcm/factorial/isqrt/comb/perm is not yet supported in the Lean lane \
+                "math.gcd/lcm/factorial/isqrt/comb/perm/3-arg-pow is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

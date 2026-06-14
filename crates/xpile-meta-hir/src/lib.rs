@@ -376,6 +376,9 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::Factorial { n } | Expr::Isqrt { n } => expr_has_int_arith(n),
         // PMAT-553/554: comb/perm carry int operands (the loop arith is internal).
         Expr::Comb { n, k } | Expr::Perm { n, k } => expr_has_int_arith(n) || expr_has_int_arith(k),
+        Expr::PowMod { base, exp, modulus } => {
+            expr_has_int_arith(base) || expr_has_int_arith(exp) || expr_has_int_arith(modulus)
+        }
         // PMAT-502cj: list(range(...)) — recurse into the bound exprs.
         Expr::RangeList { start, stop, .. } => {
             expr_has_int_arith(start) || expr_has_int_arith(stop)
@@ -1761,6 +1764,19 @@ pub enum Expr {
     /// one-arg form `math.perm(n)` lowers to [`Expr::Factorial`] at the frontend
     /// (`perm(n) == n!`), so only the two-arg form reaches here. Lean refuses.
     Perm { n: Box<Expr>, k: Box<Expr> },
+    /// PMAT-571: 3-arg `pow(base, exp, modulus)` — modular exponentiation
+    /// `base**exp mod modulus` (**Int**). Rust/Ruchy emit an inline
+    /// square-and-multiply block that reduces modulo `modulus` at each step
+    /// (so it never overflows for a non-negative result), using `i128`
+    /// intermediates for the products. The result is normalised to `[0, m)`
+    /// for a positive modulus (matching Python). A zero modulus or a negative
+    /// exponent panics (`ValueError`; Python's modular-inverse case for a
+    /// negative exponent is not yet supported). Lean refuses.
+    PowMod {
+        base: Box<Expr>,
+        exp: Box<Expr>,
+        modulus: Box<Expr>,
+    },
     /// `list(range(start, stop, step))` — materialise a range into a `Vec`.
     /// PMAT-502cj (Tranche 2). Rust/Ruchy emit `((<start>)..(<stop>))
     /// .collect::<Vec<i64>>()` for `step == 1`, or `.step_by(<step> as usize)`
