@@ -6201,9 +6201,11 @@ fn infer_type(e: &Expr) -> Type {
         // PMAT-502d: reversed(xs) has the same type as its list.
         Expr::Reversed { list } => infer_type(list),
         // PMAT-549: gcd of two ints -> int.
-        Expr::Gcd { .. } | Expr::Lcm { .. } | Expr::Factorial { .. } | Expr::Isqrt { .. } => {
-            Type::I64
-        }
+        Expr::Gcd { .. }
+        | Expr::Lcm { .. }
+        | Expr::Factorial { .. }
+        | Expr::Isqrt { .. }
+        | Expr::Comb { .. } => Type::I64,
         // PMAT-502cj: list(range(...)) materialises a list[int].
         Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
         // PMAT-502cw: set(xs) → set over the list's element type.
@@ -6589,9 +6591,11 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-502d: reversed(xs) has the same type as its list.
         Expr::Reversed { list } => infer_type_in_ctx(ctx, list),
         // PMAT-549: gcd of two ints -> int.
-        Expr::Gcd { .. } | Expr::Lcm { .. } | Expr::Factorial { .. } | Expr::Isqrt { .. } => {
-            Type::I64
-        }
+        Expr::Gcd { .. }
+        | Expr::Lcm { .. }
+        | Expr::Factorial { .. }
+        | Expr::Isqrt { .. }
+        | Expr::Comb { .. } => Type::I64,
         // PMAT-502cj: list(range(...)) materialises a list[int].
         Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
         // PMAT-502cw: set(xs) → set over the list's element type.
@@ -8776,9 +8780,9 @@ fn lower_math_call(
     fn_name: &str,
     call: &ast::ExprCall,
 ) -> Result<Expr, FrontendError> {
-    // PMAT-549/550: `math.gcd(a, b)` / `math.lcm(a, b)` — gcd/lcm of two ints
-    // → `Expr::Gcd` / `Expr::Lcm` (inline blocks). Both args must type as `int`.
-    if fn_name == "gcd" || fn_name == "lcm" {
+    // PMAT-549/550/553: `math.gcd` / `math.lcm` / `math.comb` — 2-arg int → int
+    // (inline blocks). Both args must type as `int`.
+    if fn_name == "gcd" || fn_name == "lcm" || fn_name == "comb" {
         if !call.keywords.is_empty() || call.args.len() != 2 {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `math.{fn_name}(...)` with {} positional arg(s){}; v0.2.0 takes exactly 2 ints",
@@ -8796,10 +8800,10 @@ fn lower_math_call(
             )));
         }
         let (a, b) = (Box::new(a), Box::new(b));
-        return Ok(if fn_name == "gcd" {
-            Expr::Gcd { a, b }
-        } else {
-            Expr::Lcm { a, b }
+        return Ok(match fn_name {
+            "gcd" => Expr::Gcd { a, b },
+            "lcm" => Expr::Lcm { a, b },
+            _ => Expr::Comb { n: a, k: b },
         });
     }
     // PMAT-551/552: `math.factorial(n)` / `math.isqrt(n)` — 1-arg int → int

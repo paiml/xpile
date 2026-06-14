@@ -5112,6 +5112,29 @@ fn main() {
     assert_rustc_runs("math_isqrt", &rust, driver);
 }
 
+/// PMAT-553 (Tranche 2): `math.comb(n, k)` — binomial coefficient. New
+/// `Expr::Comb` → inline incremental-product block (`min(k, n-k)` iterations;
+/// `k > n` → 0; negative args panic = Python `ValueError`; the running
+/// `checked_mul` panics on i64 overflow per the int-arith contract).
+/// Cross-checked vs python3 (120, 2598960, 0, 2).
+#[test]
+fn math_comb() {
+    let rust = xpile_transpile_to_rust("math_comb.py");
+    assert!(
+        rust.contains("__cr.checked_mul(__cn - __ci)"),
+        "math.comb should lower to an incremental binomial product:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(choose(10, 3), 120);
+    assert_eq!(poker_hands(), 2598960);
+    assert_eq!(out_of_range(5, 6), 0);
+    assert_eq!(symmetric(7), 2);
+}
+"#;
+    assert_rustc_runs("math_comb", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
