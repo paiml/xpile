@@ -4861,6 +4861,31 @@ fn main() {
     assert_rustc_runs("min_max_mixed_numeric", &rust, driver);
 }
 
+/// PMAT-542 (correctness): mixed `float`/`int` ternary branches. `x if b else 0`
+/// (float then-branch, int else-branch) was rejected (both arms of a Rust
+/// `if`-expression must share a type) even though Python yields a float when
+/// either branch is float. The int branch is now promoted to f64. Cross-checked
+/// vs python3 (2.5, 0.0, 0.0, 2.5, 1.5, 0.0).
+#[test]
+fn ternary_mixed_float_int() {
+    let rust = xpile_transpile_to_rust("ternary_mixed_float_int.py");
+    assert!(
+        rust.contains("(0i64) as f64") || rust.contains("((0i64) as f64)"),
+        "the int ternary branch must promote to f64:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(or_zero(true, 2.5), 2.5f64);
+    assert_eq!(or_zero(false, 2.5), 0.0f64);
+    assert_eq!(zero_or(true, 2.5), 0.0f64);
+    assert_eq!(zero_or(false, 2.5), 2.5f64);
+    assert_eq!(lit_branches(true), 1.5f64);
+    assert_eq!(lit_branches(false), 0.0f64);
+}
+"#;
+    assert_rustc_runs("ternary_mixed_float_int", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
