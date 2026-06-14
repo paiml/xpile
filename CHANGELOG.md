@@ -19,6 +19,18 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.260] — 2026-06-14
+
+Tranche 2 — PMAT-561: in-place keyed sort `xs.sort(key=lambda)`.
+
+- The in-place keyed sort `xs.sort(key=lambda v: e)` (and `key=` + `reverse=`).
+  Desugars to `xs = sorted(xs, key=…, reverse=…)`, reusing the whole
+  `Expr::Sorted` / `SortKey` machinery (the non-mutating `sorted(...)` form) —
+  so a tuple-element key `p[1]` lowers to a `.1` field access and float keys
+  route through the sort-by-comparator path. Zero new IR/codegen. The receiver
+  is already marked mutable by the pre-walk; only fires when a `key` kwarg is
+  present (bare `sort()` / `sort(reverse=…)` keep the `ListMutate` path).
+
 ## [0.1.259] — 2026-06-14
 
 Tranche 2 — PMAT-560: **correctness** — negative-index assignment `xs[-k] = v`.
