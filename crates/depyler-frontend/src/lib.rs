@@ -10135,6 +10135,31 @@ fn apply_nonempty_format_spec(
         }
         // Non-float receiver or malformed precision → fall through to a reject.
     }
+    // PMAT-613: a BARE radix spec (`x`/`X`/`b`/`o`, no width/fill/precision)
+    // over an int. Python formats negatives **sign-magnitude** (`f"{-255:x}"`
+    // == "-ff"), but Rust's `format!("{:x}", n)` is two's-complement
+    // (`ffffffffffffff01`) → silent wrong output. Reuse `IntRadixStr`
+    // (`prefixed: false`), which emits `sign + format(unsigned_abs)`, matching
+    // Python (and the `hex`/`bin`/`oct` builtins). Radix-WITH-width keeps the
+    // `FormatSpec` path (correct for non-negatives; sign-aware zero-padding of a
+    // negative is a deferred follow-up).
+    if ty == Type::I64 {
+        let radix_upper = match spec {
+            "x" => Some((Radix::Hex, false)),
+            "X" => Some((Radix::Hex, true)),
+            "b" => Some((Radix::Bin, false)),
+            "o" => Some((Radix::Oct, false)),
+            _ => None,
+        };
+        if let Some((radix, upper)) = radix_upper {
+            return Ok(Expr::IntRadixStr {
+                value: Box::new(value),
+                radix,
+                prefixed: false,
+                upper,
+            });
+        }
+    }
     match translate_format_spec(spec, &ty) {
         Some(rust_spec) => Ok(Expr::FormatSpec {
             value: Box::new(value),

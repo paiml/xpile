@@ -3803,7 +3803,10 @@ fn main() {
 fn format_builtin() {
     let rust = xpile_transpile_to_rust("format_builtin.py");
     assert!(
-        rust.contains(r#"format!("{:x}", n)"#) && rust.contains(r#"format!("{:05}", n)"#),
+        // PMAT-613: a bare radix spec now emits the sign-magnitude IntRadixStr
+        // block (correct for negatives) rather than `format!("{:x}", n)`.
+        rust.contains(r#"format!("{}{:x}", __sign, __m)"#)
+            && rust.contains(r#"format!("{:05}", n)"#),
         "format(n, spec) → format! macro:\n{rust}"
     );
     let driver = r#"
@@ -3815,6 +3818,33 @@ fn main() {
 }
 "#;
     assert_rustc_runs("format_builtin", &rust, driver);
+}
+
+/// PMAT-613: an f-string radix spec (`:x`/`:X`/`:b`/`:o`) of a possibly-negative
+/// int. Python formats negatives sign-magnitude (`f"{-255:x}"` == "-ff"), but
+/// `format!("{:x}", n)` is two's-complement (`ffffffffffffff01`) → silent wrong
+/// output. The bare radix now reuses the sign-magnitude `IntRadixStr` path
+/// (prefixed: false), matching Python and the `hex`/`bin`/`oct` builtins.
+/// Cross-checked vs python3 (n = -255, 255, -8, 0).
+#[test]
+fn fstring_radix_negative() {
+    let rust = xpile_transpile_to_rust("fstring_radix_negative.py");
+    assert!(
+        rust.contains(r#"format!("{}{:x}", __sign, __m)"#) && rust.contains("__n.unsigned_abs()"),
+        "f-string radix should emit the sign-magnitude block:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(hexfmt(-255), "-ff");
+    assert_eq!(hexfmt(255), "ff");
+    assert_eq!(hexup(-255), "-FF");
+    assert_eq!(binfmt(-5), "-101");
+    assert_eq!(octfmt(-8), "-10");
+    assert_eq!(hexfmt(0), "0");
+    assert_eq!(labeled(-255), "val=-ff!");
+}
+"#;
+    assert_rustc_runs("fstring_radix_negative", &rust, driver);
 }
 
 /// PMAT-502ci (Tranche 2): `for i in reversed(range(...))` — descending range
