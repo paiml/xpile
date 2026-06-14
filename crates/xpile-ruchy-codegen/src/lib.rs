@@ -533,15 +533,16 @@ fn emit_stmt_indented(
             of_float,
         } => {
             match op {
+                // PMAT-616: NaN-safe float sort (Python doesn't raise on NaN).
                 ListMutateOp::Sort if *of_float => writeln!(
                     out,
-                    "{indent}{list_name}.sort_by(|a, b| a.partial_cmp(b).unwrap());"
+                    "{indent}{list_name}.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));"
                 )?,
                 ListMutateOp::Sort => writeln!(out, "{indent}{list_name}.sort();")?,
                 // PMAT-555: descending in-place sort (`sort(reverse=True)`).
                 ListMutateOp::SortDesc if *of_float => writeln!(
                     out,
-                    "{indent}{list_name}.sort_by(|a, b| b.partial_cmp(a).unwrap());"
+                    "{indent}{list_name}.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));"
                 )?,
                 ListMutateOp::SortDesc => {
                     writeln!(out, "{indent}{list_name}.sort_by(|a, b| b.cmp(a));")?
@@ -1787,12 +1788,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str(".clone(); __xv.");
             // PMAT-568: reverse=True + key must be STABLE descending (see Rust twin).
             // PMAT-578: keyless float sort uses `sort_by(partial_cmp)` (no `Ord`).
+            // PMAT-616: NaN-safe — fall back to `Equal` (Python doesn't raise on NaN).
             match (key, *reverse) {
                 (None, false) if *of_float => {
-                    out.push_str("sort_by(|__a, __b| __a.partial_cmp(__b).unwrap());");
+                    out.push_str("sort_by(|__a, __b| __a.partial_cmp(__b).unwrap_or(std::cmp::Ordering::Equal));");
                 }
                 (None, true) if *of_float => {
-                    out.push_str("sort_by(|__a, __b| __b.partial_cmp(__a).unwrap());");
+                    out.push_str("sort_by(|__a, __b| __b.partial_cmp(__a).unwrap_or(std::cmp::Ordering::Equal));");
                 }
                 (None, false) => out.push_str("sort();"),
                 (None, true) => out.push_str("sort(); __xv.reverse();"),
@@ -1810,7 +1812,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                         p = k.param
                     )?;
                     emit_expr(out, &k.body, mode)?;
-                    out.push_str(" }).unwrap());");
+                    out.push_str(" }).unwrap_or(std::cmp::Ordering::Equal));");
                 }
                 (Some(k), false) => {
                     write!(out, "sort_by_key(|__k| {{ let {} = __k.clone(); ", k.param)?;
@@ -1831,7 +1833,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     )?;
                     emit_expr(out, &k.body, mode)?;
                     if *of_float {
-                        out.push_str(" }; __kb.partial_cmp(&__ka).unwrap() });");
+                        out.push_str(
+                            " }; __kb.partial_cmp(&__ka).unwrap_or(std::cmp::Ordering::Equal) });",
+                        );
                     } else {
                         out.push_str(" }; __kb.cmp(&__ka) });");
                     }

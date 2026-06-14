@@ -582,6 +582,10 @@ fn emit_stmt_indented(
         }
         // PMAT-502ap: in-place list mutators `xs.sort()/.reverse()/.clear()`.
         // `Vec<f64>` has no `Ord`, so a float sort uses `sort_by(partial_cmp)`.
+        // PMAT-616: a NaN element makes `partial_cmp` return `None`; Python's
+        // `sort` does NOT raise on NaN (it produces an undefined-but-non-crashing
+        // order), so fall back to `Equal` instead of `.unwrap()` panicking.
+        // Identical to `.unwrap()` for all finite floats.
         Stmt::ListMutate {
             list_name,
             op,
@@ -590,14 +594,14 @@ fn emit_stmt_indented(
             match op {
                 ListMutateOp::Sort if *of_float => writeln!(
                     out,
-                    "{indent}{list_name}.sort_by(|a, b| a.partial_cmp(b).unwrap());"
+                    "{indent}{list_name}.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));"
                 )?,
                 ListMutateOp::Sort => writeln!(out, "{indent}{list_name}.sort();")?,
                 // PMAT-555: descending in-place sort (`sort(reverse=True)`) — a
                 // reversed comparator.
                 ListMutateOp::SortDesc if *of_float => writeln!(
                     out,
-                    "{indent}{list_name}.sort_by(|a, b| b.partial_cmp(a).unwrap());"
+                    "{indent}{list_name}.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));"
                 )?,
                 ListMutateOp::SortDesc => {
                     writeln!(out, "{indent}{list_name}.sort_by(|a, b| b.cmp(a));")?
@@ -2056,21 +2060,28 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push_str(".clone(); __xv.");
             match (key, *reverse) {
                 // PMAT-578: `Vec<f64>` has no `Ord`, so a keyless float sort uses
-                // `sort_by(partial_cmp)` (NaN panics, like Python); an i64 list
-                // keeps `.sort()`. Mirrors `ListMutateOp::Sort`.
+                // `sort_by(partial_cmp)`; an i64 list keeps `.sort()`. Mirrors
+                // `ListMutateOp::Sort`.
+                // PMAT-616: a NaN element makes `partial_cmp` return `None`;
+                // Python's `sorted` does NOT raise on NaN, so fall back to `Equal`
+                // rather than `.unwrap()` panicking (identical for finite floats).
                 (None, false) if *of_float => {
-                    out.push_str("sort_by(|__a, __b| __a.partial_cmp(__b).unwrap());");
+                    out.push_str(
+                        "sort_by(|__a, __b| __a.partial_cmp(__b).unwrap_or(std::cmp::Ordering::Equal));",
+                    );
                 }
                 (None, true) if *of_float => {
-                    out.push_str("sort_by(|__a, __b| __b.partial_cmp(__a).unwrap());");
+                    out.push_str(
+                        "sort_by(|__a, __b| __b.partial_cmp(__a).unwrap_or(std::cmp::Ordering::Equal));",
+                    );
                 }
                 (None, false) => out.push_str("sort();"),
                 // Equal elements are identical, so reverse() can't disturb order.
                 (None, true) => out.push_str("sort(); __xv.reverse();"),
                 // PMAT-603: a FLOAT-returning key makes the comparison values
                 // `f64` (no `Ord`) — `sort_by_key` is E0277. Compare the
-                // recomputed key with `partial_cmp` (NaN panics, like the
-                // keyless float sort).
+                // recomputed key with `partial_cmp`.
+                // PMAT-616: a NaN key falls back to `Equal` (Python doesn't raise).
                 (Some(k), false) if *of_float => {
                     write!(
                         out,
@@ -2084,7 +2095,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                         p = k.param
                     )?;
                     emit_expr(out, &k.body, mode)?;
-                    out.push_str(" }).unwrap());");
+                    out.push_str(" }).unwrap_or(std::cmp::Ordering::Equal));");
                 }
                 (Some(k), false) => {
                     write!(out, "sort_by_key(|__k| {{ let {} = __k.clone(); ", k.param)?;
@@ -2111,7 +2122,10 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     // PMAT-603: a float key compares with `partial_cmp` (no `Ord`);
                     // integer/str keys use `cmp`. Descending + stable either way.
                     if *of_float {
-                        out.push_str(" }; __kb.partial_cmp(&__ka).unwrap() });");
+                        // PMAT-616: NaN key → `Equal` (Python doesn't raise on NaN).
+                        out.push_str(
+                            " }; __kb.partial_cmp(&__ka).unwrap_or(std::cmp::Ordering::Equal) });",
+                        );
                     } else {
                         out.push_str(" }; __kb.cmp(&__ka) });");
                     }

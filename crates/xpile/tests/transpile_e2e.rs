@@ -1330,7 +1330,8 @@ fn sort_inplace_reverse() {
         "expected a reversed-comparator descending sort, got:\n{rust}"
     );
     assert!(
-        rust.contains("b.partial_cmp(a).unwrap()"),
+        // PMAT-616: NaN-safe comparator (Python doesn't raise on NaN).
+        rust.contains("b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)"),
         "expected a float descending sort, got:\n{rust}"
     );
     let driver = r#"
@@ -2392,7 +2393,8 @@ fn list_mutate() {
     assert!(rust.contains("xs.sort();"), "int sort:\n{rust}");
     assert!(rust.contains("xs.reverse();"), "reverse:\n{rust}");
     assert!(
-        rust.contains("xs.sort_by(|a, b| a.partial_cmp(b).unwrap());"),
+        // PMAT-616: NaN-safe comparator (Python doesn't raise on NaN).
+        rust.contains("xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));"),
         "float sort:\n{rust}"
     );
     assert!(rust.contains("xs.clear();"), "clear:\n{rust}");
@@ -7006,8 +7008,8 @@ fn main() {
 /// so a transpile success produced invalid Rust. Now the keyless float case uses
 /// `sort_by(|a, b| a.partial_cmp(b).unwrap())` (descending: `b.partial_cmp(a)`),
 /// mirroring the in-place `xs.sort()` path; an int list keeps the plain
-/// `.sort()`. (NaN panics, matching Python.) Found by the differential hunt.
-/// Cross-checked vs python3.
+/// `.sort()`. (PMAT-616: NaN is comparator-safe — see `sorted_float_nan`.)
+/// Found by the differential hunt. Cross-checked vs python3.
 #[test]
 fn sorted_float() {
     let rust = xpile_transpile_to_rust("sorted_float.py");
@@ -7019,6 +7021,40 @@ fn main() {
 }
 "#;
     assert_rustc_runs("sorted_float", &rust, driver);
+}
+
+/// PMAT-616: **correctness/robustness** — sorting a float list that contains NaN
+/// emitted `partial_cmp(...).unwrap()`, which PANICS on NaN. Python's `sorted`
+/// does NOT raise on NaN (its order is undefined-but-non-crashing, and not
+/// replicable by any deterministic comparator, since Python's comparator isn't a
+/// valid total order). The comparator now falls back to `Equal`, so the
+/// transpiled code no longer panics. Finite-only sorts are unchanged (identical
+/// to `.unwrap()` for all finite floats) and remain python3-exact; for NaN we
+/// assert only that it does not panic and preserves every element.
+#[test]
+fn sorted_float_nan() {
+    let rust = xpile_transpile_to_rust("sorted_float_nan.py");
+    assert!(
+        rust.contains("partial_cmp(__b).unwrap_or(std::cmp::Ordering::Equal)"),
+        "keyless float sort must use a NaN-safe comparator:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    // finite sorts stay python3-exact:
+    assert_eq!(sort_floats(vec![3.0, 1.0, 2.0]), vec![1.0, 2.0, 3.0]);
+    assert_eq!(sort_desc(vec![3.0, 1.0, 2.0]), vec![3.0, 2.0, 1.0]);
+    assert_eq!(sort_inplace(vec![2.5, 0.5, 1.5]), vec![0.5, 1.5, 2.5]);
+    // a NaN element must NOT panic; all elements preserved, finite part sorted.
+    let r = std::panic::catch_unwind(|| sort_floats(vec![f64::NAN, 3.0, 1.0, 2.0]));
+    let v = r.expect("sorting a float list with NaN must not panic");
+    assert_eq!(v.len(), 4);
+    assert_eq!(v.iter().filter(|x| x.is_nan()).count(), 1);
+    let finite: Vec<f64> = v.into_iter().filter(|x| !x.is_nan()).collect();
+    assert_eq!(finite, vec![1.0, 2.0, 3.0]);
+}
+"#;
+    assert_rustc_runs("sorted_float_nan", &rust, driver);
 }
 
 /// PMAT-603: sorting by a FLOAT-returning `key=` lambda. The key result is `f64`
