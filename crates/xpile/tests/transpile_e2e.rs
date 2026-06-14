@@ -1549,7 +1549,7 @@ fn str_methods_more() {
     assert!(
         rust.contains(".trim_start().to_string()")
             && rust.contains(".trim_end().to_string()")
-            && rust.contains(".map(|__i| __i as i64).unwrap_or(-1)")
+            && rust.contains(".map(|__b| __s[..__b].chars().count() as i64).unwrap_or(-1)")
             && rust.contains(".matches(&(")
             && rust.contains(".count() as i64"),
         "expected lstrip/rstrip/find/count emission, got:\n{rust}"
@@ -2731,7 +2731,7 @@ fn main() {
 fn str_index() {
     let rust = xpile_transpile_to_rust("str_index.py");
     assert!(
-        rust.contains(".find(&(String::from(\"b\"))[..]).map(|__i| __i as i64).expect(")
+        rust.contains(".find(&(String::from(\"b\"))[..]).map(|__b| __s[..__b].chars().count() as i64).expect(")
             && rust.contains("substring not found"),
         "str.index emission:\n{rust}"
     );
@@ -5907,6 +5907,31 @@ fn main() {
 }
 "#;
     assert_rustc_runs("fstring_specs", &rust, driver);
+}
+
+/// PMAT-566 (Tranche 2): **correctness** — `str.find/rfind/index/rindex` return
+/// a Python **character** index, not Rust's byte offset. Was
+/// `.find(...).map(|i| i as i64)` (byte offset → `"αβγδ".find("γ")` == 4); now a
+/// block binds the receiver to a temp and counts chars before the match byte
+/// (`__s[..__b].chars().count()`). Found by the differential hunt. Cross-checked
+/// vs python3 (2, 3, 2, -1, 2).
+#[test]
+fn str_find_char_index() {
+    let rust = xpile_transpile_to_rust("str_find_char_index.py");
+    assert!(
+        rust.contains("__s[..__b].chars().count() as i64"),
+        "find/index should return a char index:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(find_g("αβγδ".to_string(), "γ".to_string()), 2);
+    assert_eq!(rfind_a("αβγα".to_string(), "α".to_string()), 3);
+    assert_eq!(index_g("héllo".to_string(), "llo".to_string()), 2);
+    assert_eq!(not_found("abc".to_string(), "z".to_string()), -1);
+    assert_eq!(ascii_find("hello".to_string(), "l".to_string()), 2);
+}
+"#;
+    assert_rustc_runs("str_find_char_index", &rust, driver);
 }
 
 /// PMAT-565 (Tranche 2): **correctness** — `bool` is an `int` subtype. Bool
