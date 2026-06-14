@@ -1873,6 +1873,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, ndigits, mode)?;
             out.push_str("; if __rn >= 0 { format!(\"{:.1$}\", __rx, __rn as usize).parse::<f64>().unwrap() } else { let __rp = 10f64.powi((-__rn) as i32); (__rx / __rp).round_ties_even() * __rp } }");
         }
+        // PMAT-612: `round(int, n)` → int. For n >= 0 the int is returned
+        // unchanged; for n < 0 it is rounded to the nearest multiple of
+        // `10^(-n)` using round-half-to-EVEN (banker's rounding, like Python).
+        // The arithmetic is done in `i128` so the scale and products can't
+        // overflow; the result fails loud if it leaves `i64` range.
+        Expr::RoundIntToDigits { value, ndigits } => {
+            out.push_str("{ let __rv = (");
+            emit_expr(out, value, mode)?;
+            out.push_str(") as i128; let __rn = (");
+            emit_expr(out, ndigits, mode)?;
+            out.push_str("); if __rn >= 0 { __rv as i64 } else { let __rp = 10i128.checked_pow((-__rn) as u32).expect(\"xpile: OverflowError: round() scale out of range\"); let __rd = __rv.div_euclid(__rp); let __rm = __rv.rem_euclid(__rp); let __r2 = 2i128 * __rm; let __res = if __r2 < __rp { __rd * __rp } else if __r2 > __rp { (__rd + 1) * __rp } else if __rd % 2 == 0 { __rd * __rp } else { (__rd + 1) * __rp }; if __res < (i64::MIN as i128) || __res > (i64::MAX as i128) { panic!(\"xpile: OverflowError: round() result out of i64 range\"); } __res as i64 } }");
+        }
         // PMAT-502e: 1-arg `min(xs)`/`max(xs)` reduction over an int list.
         // PMAT-502h: `list[float]` uses a fold (f64 has no `Ord`).
         // PMAT-502aa: `key=lambda p: e` → `min_by_key`/`max_by_key`.

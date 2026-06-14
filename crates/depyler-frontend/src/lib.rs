@@ -6861,6 +6861,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::RoundToInt { .. } => Type::I64,
         // PMAT-502al: round(x, n) → Float.
         Expr::RoundToDigits { .. } => Type::F64,
+        // PMAT-612: round(int, n) → Int.
+        Expr::RoundIntToDigits { .. } => Type::I64,
         // PMAT-502k: seq * n has the same type as the sequence.
         Expr::Repeat { seq, .. } => infer_type(seq),
         // PMAT-502c: sorted(xs) has the same type as its list.
@@ -7265,6 +7267,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::RoundToInt { .. } => Type::I64,
         // PMAT-502al: round(x, n) → Float.
         Expr::RoundToDigits { .. } => Type::F64,
+        // PMAT-612: round(int, n) → Int.
+        Expr::RoundIntToDigits { .. } => Type::I64,
         // PMAT-502k: seq * n has the same type as the sequence.
         Expr::Repeat { seq, .. } => infer_type_in_ctx(ctx, seq),
         // PMAT-502c: sorted(xs) has the same type as its list.
@@ -8699,6 +8703,24 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         && infer_type_in_ctx(ctx, &ndigits) == Type::I64
                     {
                         return Ok(Expr::RoundToDigits {
+                            value: Box::new(value),
+                            ndigits: Box::new(ndigits),
+                        });
+                    }
+                    // PMAT-612: `round(int, n)` → int (was a bare `round(x, n)`
+                    // call → E0425). A non-negative literal `n` is the identity
+                    // (an int has no fractional part to round); a negative or
+                    // non-literal `n` rounds to the nearest `10^(-n)` with
+                    // banker's rounding at runtime (`Expr::RoundIntToDigits`).
+                    if infer_type_in_ctx(ctx, &value) == Type::I64
+                        && infer_type_in_ctx(ctx, &ndigits) == Type::I64
+                    {
+                        if let Expr::LitInt(k) = &ndigits {
+                            if *k >= 0 {
+                                return Ok(value);
+                            }
+                        }
+                        return Ok(Expr::RoundIntToDigits {
                             value: Box::new(value),
                             ndigits: Box::new(ndigits),
                         });
