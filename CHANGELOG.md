@@ -19,6 +19,20 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.247] — 2026-06-14
+
+Tranche 2 — PMAT-548: negative-step list slice `xs[::-k]`.
+
+- `xs[::-2]` (negative step ≠ -1) was rejected (`non-literal slice step` — a
+  negative literal parses as `UnaryOp`). Generalises the `xs[::-1]` reverse: an
+  unbounded negative-step list slice `xs[::-k]` (k ≥ 2) now lowers to
+  `.iter().rev().step_by(k)` over the clamped range — reusing `Expr::Slice`'s
+  `step` field (set to the negative value; codegen branches on sign). Bounded
+  negative-step slices (`xs[a:b:-k]`) and stepped string slices remain deferred
+  with a clear message. **No new IR.**
+- New e2e fixture `negative_step_slice.py` (`every_other_rev`, `every_third_rev`,
+  `full_reverse`) cross-checked vs python3 (12, 12, 60). e2e 308 → 309.
+
 ## [0.1.246] — 2026-06-14
 
 Tranche 2 — PMAT-547 (correctness): tuple-unpack init then augment.
