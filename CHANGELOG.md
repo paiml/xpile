@@ -19,6 +19,17 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.269] — 2026-06-14
+
+Tranche 2 — PMAT-570: **correctness** — negative `xs.pop(-k)` / `del xs[-k]`.
+
+- `xs.pop(-1)` / `del xs[-1]` emitted `remove((-k) as usize)` → `usize::MAX` →
+  an out-of-bounds panic, where Python removes from the end. Now resolved to
+  `len(xs) - k` with the index bound to a temp before `remove` (the resolved
+  index references `xs`, conflicting with `remove`'s mutable borrow — E0502).
+  Positive indices keep the inline form. Rust + Ruchy. Found by the differential
+  hunt.
+
 ## [0.1.268] — 2026-06-14
 
 Tranche 2 — PMAT-569: **correctness** — list-of-list repeat `[[0]] * n` compiles.
