@@ -265,10 +265,20 @@ fn emit_stmt_indented(
             value,
             mutable,
         } => {
+            // PMAT-598: suppress the element-type annotation on a mutable empty
+            // `set()` so rustc infers it from the later `.insert(...)` (matches
+            // the Rust backend).
+            let infer_set_elem = *mutable
+                && matches!(value, Expr::SetLit(elems) if elems.is_empty())
+                && matches!(ty, Type::Set(inner) if **inner == Type::I64);
             let kw = if *mutable { "let mut" } else { "let" };
-            write!(out, "{indent}{kw} {name}: ")?;
-            emit_type(out, ty)?;
-            write!(out, " = ")?;
+            if infer_set_elem {
+                write!(out, "{indent}{kw} {name} = ")?;
+            } else {
+                write!(out, "{indent}{kw} {name}: ")?;
+                emit_type(out, ty)?;
+                write!(out, " = ")?;
+            }
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
             Ok(())

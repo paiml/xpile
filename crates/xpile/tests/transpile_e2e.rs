@@ -2500,6 +2500,30 @@ fn main() {
     assert_rustc_runs("set_remove", &rust, driver);
 }
 
+/// PMAT-598: a mutable empty `set()` infers its element type from the later
+/// `.add(...)`. It previously defaulted to `HashSet<i64>`, so `s = set();
+/// s.add(Coord(..))` was an i64-vs-struct mismatch (E0308). The element-type
+/// annotation is now suppressed so rustc infers from the insert. Cross-checked
+/// vs python3: each builder dedupes to 2.
+#[test]
+fn empty_set_add() {
+    let rust = xpile_transpile_to_rust("empty_set_add.py");
+    // No `HashSet<i64>` annotation pins the empty set; bare new() infers.
+    assert!(
+        rust.contains("let mut s = std::collections::HashSet::new();")
+            && !rust.contains("let mut s: std::collections::HashSet<i64>"),
+        "empty set() must infer its element type:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(count_unique_coords(), 2);
+    assert_eq!(count_unique_words(), 2);
+    assert_eq!(count_ints(), 2);
+}
+"#;
+    assert_rustc_runs("empty_set_add", &rust, driver);
+}
+
 /// PMAT-502aw (Tranche 2): str padding `s.rjust(w)` →
 /// `format!("{:>1$}", s, (w) as usize)` and `s.ljust(w)` →
 /// `format!("{:<1$}", s, (w) as usize)`. Rust format width is a minimum,
