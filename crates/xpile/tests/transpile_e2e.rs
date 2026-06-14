@@ -5789,6 +5789,35 @@ fn main() {
     assert_rustc_runs("fstring_specs", &rust, driver);
 }
 
+/// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
+/// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
+/// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a
+/// bare float `:+` hits the whole-float repr divergence and is deferred); a
+/// bare `:d` (decimal) now also lowers to a plain field. Cross-checked vs
+/// python3 (+5/-5/+0, +3.14/-2.50, +0042/-0042, [+ff], 7).
+#[test]
+fn fstring_sign() {
+    let rust = xpile_transpile_to_rust("fstring_sign.py");
+    assert!(
+        rust.contains("{:+}") && rust.contains("{:+.2}") && rust.contains("{:+05}"),
+        "f-string sign flag should emit Rust `+` specs:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sign_int(5), "+5");
+    assert_eq!(sign_int(-5), "-5");
+    assert_eq!(sign_int(0), "+0");
+    assert_eq!(sign_float(3.14159), "+3.14");
+    assert_eq!(sign_float(-2.5), "-2.50");
+    assert_eq!(sign_pad(42), "+0042");
+    assert_eq!(sign_pad(-42), "-0042");
+    assert_eq!(sign_hex(255), "[+ff]");
+    assert_eq!(plain_d(7), "7");
+}
+"#;
+    assert_rustc_runs("fstring_sign", &rust, driver);
+}
+
 /// PMAT-502ec (Tranche 2): empty list literal `[]` takes its element type from
 /// the declared annotation / return type — `xs: list[int] = []` and
 /// `return []` (any element type, incl. `list[str]` / nested) previously errored
