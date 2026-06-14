@@ -3085,8 +3085,9 @@ fn float_floordiv_mod() {
     let rust = xpile_transpile_to_rust("float_floordiv_mod.py");
     // PMAT-581: float `//`/`%` now guard the zero divisor (bind it to `__fz`).
     assert!(rust.contains("((a) / __fz).floor()"), "float // :\n{rust}");
+    // PMAT-591: float `%` is CPython `float_rem` (fmod + sign-adjust).
     assert!(
-        rust.contains("__fn - __fz * (__fn / __fz).floor()"),
+        rust.contains("let __r = __fn % __fz;") && rust.contains("0.0_f64.copysign(__fz)"),
         "float % :\n{rust}"
     );
     let driver = r#"
@@ -3101,6 +3102,44 @@ fn main() {
 }
 "#;
     assert_rustc_runs("float_floordiv_mod", &rust, driver);
+}
+
+/// PMAT-591: float `%` must match CPython `float_rem` bit-exactly — fmod
+/// (Rust `%`) + sign-adjust toward the divisor + `copysign(0.0, divisor)`
+/// on a zero remainder. The prior floor formula diverged in the last ULP
+/// (~60% of non-power-of-two divisors) and lost the divisor-signed zero.
+/// Exact-equality (not tolerance) vs python3 repr:
+///   1.0%0.3=0.10000000000000003   0.7%0.2=0.09999999999999992
+///   2.5%0.7=0.40000000000000013   100.0%0.7=0.6000000000000063
+///   -1.0%0.3=0.19999999999999996  1.0%-0.3=-0.19999999999999996
+///   4.0%-2.0=-0.0  -4.0%2.0=+0.0  6.0%3.0=+0.0
+#[test]
+fn float_mod_fmod() {
+    let rust = xpile_transpile_to_rust("float_mod_fmod.py");
+    assert!(
+        rust.contains("let __r = __fn % __fz;") && rust.contains("0.0_f64.copysign(__fz)"),
+        "float % fmod shape:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // last-ULP parity (exact f64 equality vs python3 repr)
+    assert_eq!(rem(1.0, 0.3), 0.10000000000000003);
+    assert_eq!(rem(0.7, 0.2), 0.09999999999999992);
+    assert_eq!(rem(2.5, 0.7), 0.40000000000000013);
+    assert_eq!(rem(100.0, 0.7), 0.6000000000000063);
+    // mixed-sign: result takes the divisor's sign
+    assert_eq!(rem(-1.0, 0.3), 0.19999999999999996);
+    assert_eq!(rem(1.0, -0.3), -0.19999999999999996);
+    // signed zero: a zero remainder carries the divisor's sign
+    let z1 = rem(4.0, -2.0);
+    assert!(z1 == 0.0 && z1.is_sign_negative());
+    let z2 = rem(-4.0, 2.0);
+    assert!(z2 == 0.0 && !z2.is_sign_negative());
+    let z3 = rem(6.0, 3.0);
+    assert!(z3 == 0.0 && !z3.is_sign_negative());
+}
+"#;
+    assert_rustc_runs("float_mod_fmod", &rust, driver);
 }
 
 /// PMAT-502bs (Tranche 2): Python 3 true division `/` always yields a float
