@@ -19,6 +19,25 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.311] — 2026-06-15
+
+Tranche 2 — PMAT-612: **correctness** — `round(int, ndigits)` returns an int instead of failing to compile.
+
+- `round(x, n)` over an int `x` emitted a bare `round(x, n)` call — an undefined
+  function → rustc **E0425** (transpile succeeded, invalid Rust). The 2-arg
+  `round` handler only matched a float value; the int case fell through. Even a
+  defensive `round(count, 2)` failed to compile. Found by the differential hunt
+  (#4, H4-2).
+- Fix (new `Expr::RoundIntToDigits`, rust + ruchy codegen): for `n >= 0` the int
+  is returned unchanged (a non-negative literal `n` folds to the identity at
+  lowering); for `n < 0` it rounds to the nearest multiple of `10^(-n)` using
+  round-half-to-**even** (banker's rounding, matching Python — `round(12350, -2)`
+  == 12400, `round(12250, -2)` == 12200). The arithmetic runs in `i128` so the
+  scale and products can't overflow, and the result **fails loud**
+  (C-PY-INT-ARITH) if it leaves `i64` range. Lean refuses.
+- New e2e fixture `round_int_digits.py` cross-checked vs python3 (halfway ties,
+  negatives, runtime `ndigits`, identity). 373 e2e fixtures.
+
 ## [0.1.310] — 2026-06-15
 
 Tranche 2 — PMAT-611: **correctness** — `float(s)` accepts PEP 515 underscore digit separators.
