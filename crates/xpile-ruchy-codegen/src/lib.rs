@@ -64,6 +64,12 @@ pub enum RuchyCodegenError {
 }
 
 pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
+    // PMAT-573: escape Rust-keyword identifiers on a cloned IR before
+    // emission (Ruchy shares Rust's keyword set + raw-identifier `r#`
+    // syntax). See the Rust backend's twin and `escape_rust_reserved_idents`.
+    let mut module = module.clone();
+    xpile_meta_hir::escape_rust_reserved_idents(&mut module);
+    let module = &module;
     let mut out = String::new();
     writeln!(
         out,

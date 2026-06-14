@@ -6111,6 +6111,30 @@ fn main() {
     assert_rustc_runs("bool_as_int", &rust, driver);
 }
 
+/// PMAT-573 (Tranche 2): **correctness** — a Python identifier that is a Rust
+/// keyword but NOT a Python keyword (`type`, `match`, `loop`, `move`, `box`,
+/// `final`, `ref`, `do`, `impl`, …) emits as the Rust raw identifier `r#name`
+/// instead of breaking `rustc` ("expected identifier, found keyword `type`").
+/// Covers fn name, param, let, reassignment, for-var, comprehension binder,
+/// method receiver (incl. `mut`), and internal call callee — all rewritten
+/// consistently by a single IR pre-pass (`escape_rust_reserved_idents`).
+/// Cross-checked vs python3 (12, 10, [20, 40], 9).
+#[test]
+fn rust_keyword_idents() {
+    let rust = xpile_transpile_to_rust("rust_keyword_idents.py");
+    // The fn `move` itself is `r#move`; everything else is called by its
+    // (escaped) name from within the module.
+    let driver = r#"
+fn main() {
+    assert_eq!(r#move(5), 12);
+    assert_eq!(process(vec![1, 2, 3, 4]), 10);
+    assert_eq!(transform(vec![10, 20]), vec![20, 40]);
+    assert_eq!(mutate(vec![7, 8, 9]), 9);
+}
+"#;
+    assert_rustc_runs("rust_keyword_idents", &rust, driver);
+}
+
 /// PMAT-564 (Tranche 2): **correctness** — `len(str)` counts Unicode code
 /// points, not UTF-8 bytes. Was `s.len()` (byte length → `len("café")` == 5);
 /// now routes to `StrMethodOp::CharCount` → `.chars().count() as i64`. `len()`
