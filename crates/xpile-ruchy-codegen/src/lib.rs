@@ -1419,6 +1419,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         }
         // PMAT-498: scalar numeric builtins → receiver-method form.
         Expr::NumBuiltin { op, args, of_float } => {
+            // PMAT-601: float max/min use Python first-arg-wins semantics
+            // (matches the Rust backend); integer min/max keep `.min`/`.max`.
+            if *of_float && matches!(op, NumBuiltinOp::Min | NumBuiltinOp::Max) {
+                let cmp = if matches!(op, NumBuiltinOp::Min) {
+                    "<"
+                } else {
+                    ">"
+                };
+                out.push_str("{ let mut __m: f64 = ");
+                emit_expr(out, &args[0], mode)?;
+                out.push(';');
+                for arg in &args[1..] {
+                    out.push_str(" { let __x: f64 = ");
+                    emit_expr(out, arg, mode)?;
+                    write!(out, "; if __x {cmp} __m {{ __m = __x; }} }}")?;
+                }
+                out.push_str(" __m }");
+                return Ok(());
+            }
             out.push('(');
             emit_expr(out, &args[0], mode)?;
             out.push(')');
