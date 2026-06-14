@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.305] — 2026-06-14
+
+Tranche 2 — PMAT-606: **correctness** — `math.floor`/`ceil`/`trunc` guard finite + i64 range and fail loud.
+
+- `math.floor`/`ceil`/`trunc` lowered to a bare `(x).floor() as i64`. Since Rust
+  1.45 the `as i64` float cast saturates: a huge float (`1e30`) → `i64::MAX`
+  (silent), `inf` → `i64::MAX`, `nan` → 0 — but Python returns an exact bignum
+  for a huge float and raises OverflowError(inf)/ValueError(nan). The `int(float)`
+  cast already guarded this; the `math.*` paths did not. Found by the differential
+  hunt (#5).
+- Fix (rust + ruchy codegen): guard the rounded value (finite + i64 range) and
+  panic (fail-loud until bigint), mirroring the `int(float)` guard. Ordinary
+  in-range values round as before. No new IR.
+- New e2e fixture `math_round_overflow.py` cross-checked vs python3. 367 e2e fixtures.
+
 ## [0.1.304] — 2026-06-14
 
 Tranche 2 — PMAT-605: **correctness** — `pow(a, b, m)` with a negative modulus takes the modulus sign.
