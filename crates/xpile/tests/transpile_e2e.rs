@@ -1522,6 +1522,27 @@ fn main() {
     assert_rustc_runs("bool_reduce", &rust, driver);
 }
 
+/// PMAT-572 (Tranche 2): **correctness** — tuple-unpack that REASSIGNS
+/// already-bound names (`a, b = b, a % b` / `a, b = b, a + b`) inside a loop/if
+/// body must reassign, not emit a fresh `let (mut a, mut b)` (which only shadows
+/// within the nested block → outer vars never change → **Euclid GCD infinite
+/// loop, iterative Fibonacci all-zeros**). The shared unpack helper evaluates
+/// all RHS into temps first (swap-safe) then `Assign`s each. Found by the
+/// differential hunt. Cross-checked vs python3 (6, 55, 24, 21).
+#[test]
+fn tuple_reassign_loop() {
+    let rust = xpile_transpile_to_rust("tuple_reassign_loop.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(gcd(48, 18), 6);
+    assert_eq!(fib(10), 55);
+    assert_eq!(max_product(vec![-2, 3, -4]), 24);
+    assert_eq!(swap_top(1, 2), 21);
+}
+"#;
+    assert_rustc_runs("tuple_reassign_loop", &rust, driver);
+}
+
 /// PMAT-571 (Tranche 2): 3-arg `pow(base, exp, mod)` — modular exponentiation.
 /// Was a bare `pow(...)` call → undefined Rust fn (E0425, transpile-success →
 /// invalid Rust). Now an inline square-and-multiply that reduces mod m each step
