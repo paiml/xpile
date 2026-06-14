@@ -19,6 +19,36 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.272] — 2026-06-14
+
+Tranche 2 — PMAT-573: **correctness** — Rust-keyword identifiers.
+
+- A Python program may legally name a variable / parameter / function after a
+  word that is a *Rust* keyword but not a Python keyword — `type`, `match`,
+  `loop`, `move`, `ref`, `mut`, `box`, `final`, `do`, `impl`, … (plus lowercase
+  `true`/`false`, which Python spells `True`/`False`). Emitted verbatim those
+  broke `rustc` (`expected identifier, found keyword type`), violating the
+  xpile invariant transpile-success ⟹ valid Rust. Found by the differential
+  python3-vs-rustc hunt.
+- Fix: a single IR pre-pass (`xpile_meta_hir::escape_rust_reserved_idents`), run
+  by the Rust and Ruchy backends on a cloned module before emission, rewrites
+  every identifier-position string to the Rust raw form `r#name`. Rewriting the
+  data once — at every binding *and* every reference together — keeps the two
+  from drifting (a per-emit-site escape could not). The walker is exhaustive
+  (no wildcard arm), so a future `Expr`/`Stmt` variant fails to compile until
+  its identifier positions are classified — completeness is compiler-enforced.
+  Ruchy shares Rust's keyword set + `r#` syntax; Lean uses a different set and
+  does not call it.
+- Covered consistently: fn name, param, `let`, reassignment, for-var,
+  comprehension binder, method receiver (incl. `mut`), and internal
+  call-by-name callee. Struct/enum type names, struct field names, and method
+  names are left unescaped (a keyword-named class/field/method is a separate,
+  rarer fidelity gap); keywords that cannot be raw (`crate`/`self`/`Self`/
+  `super`) are also left alone, which keeps the special-cased `self` method
+  receiver intact.
+- New e2e fixture `rust_keyword_idents.py` cross-checked vs python3
+  (`12, 10, [20, 40], 9`). 334 e2e fixtures.
+
 ## [0.1.271] — 2026-06-14
 
 Tranche 2 — PMAT-572: **correctness** — tuple reassignment in a loop/if body.
