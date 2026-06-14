@@ -6116,6 +6116,30 @@ fn main() {
     assert_rustc_runs("bool_as_int", &rust, driver);
 }
 
+/// PMAT-577 (Tranche 2): **correctness** — `x >> n` for a shift amount `n >= 64`.
+/// Python defines it (the result saturates to the sign fill: `0` for `x >= 0`,
+/// `-1` for `x < 0`), but `checked_shr` returns `None` for `n >= 64`, so the
+/// emitted `.expect` panicked where Python returns a value. Now the amount is
+/// clamped to 63 (which yields exactly that sign fill); a negative amount still
+/// panics, matching Python's `ValueError: negative shift count`. Found by the
+/// differential hunt. Cross-checked vs python3.
+#[test]
+fn right_shift_large_amount() {
+    let rust = xpile_transpile_to_rust("right_shift_large_amount.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(sh(20, 2), 5);     // ordinary
+    assert_eq!(sh(5, 64), 0);     // n >= 64, positive -> 0 (was a panic)
+    assert_eq!(sh(-5, 64), -1);   // n >= 64, negative -> -1 (sign fill)
+    assert_eq!(sh(5, 100), 0);
+    assert_eq!(sh(-1, 200), -1);
+    // negative shift amount -> Python ValueError -> panic
+    assert!(std::panic::catch_unwind(|| sh(5, -1)).is_err());
+}
+"#;
+    assert_rustc_runs("right_shift_large_amount", &rust, driver);
+}
+
 /// PMAT-576 (Tranche 2): **correctness** — a chained comparison
 /// (`a < b < c`, `a == f() == b`) re-evaluated its shared interior operand(s).
 /// The lowering desugars to `(a OP b) && (b OP c)` and previously *cloned* the
@@ -8192,9 +8216,12 @@ fn bits_emitted_rust_computes_correct_values() {
         rust.contains("checked_shl"),
         "expected checked_shl, got:\n{rust}"
     );
+    // PMAT-577: right-shift lowers to a clamp-the-amount block (Python defines
+    // `x >> n` for n >= 64 as the sign fill; `checked_shr` would panic), so the
+    // emitted form is `__shr_v >> __shr_amt`, not a bare `checked_shr`.
     assert!(
-        rust.contains("checked_shr"),
-        "expected checked_shr, got:\n{rust}"
+        rust.contains("__shr_v >> __shr_amt"),
+        "expected right-shift clamp block, got:\n{rust}"
     );
     assert!(
         rust.contains(" & "),

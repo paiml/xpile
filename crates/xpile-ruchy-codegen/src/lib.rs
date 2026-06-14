@@ -2307,6 +2307,19 @@ fn emit_checked_shift(
         )?;
         return Ok(());
     }
+    // PMAT-577: see the Rust backend's twin — Python `x >> n` saturates to the
+    // sign fill for n >= 64 (0 / -1), but `checked_shr` panics; clamp to 63.
+    if method == "checked_shr" && !mode {
+        write!(out, "{{ let __shr_v: i64 = ")?;
+        emit_expr(out, lhs, mode)?;
+        write!(out, "; let __shr_n: i64 = ")?;
+        emit_expr(out, rhs, mode)?;
+        write!(
+            out,
+            "; if __shr_n < 0 {{ panic!(\"xpile: negative shift amount (Python ValueError: negative shift count; contract C-PY-INT-ARITH)\"); }} let __shr_amt: u32 = if __shr_n >= 64 {{ 63 }} else {{ __shr_n as u32 }}; __shr_v >> __shr_amt }}"
+        )?;
+        return Ok(());
+    }
     write!(out, "(")?;
     emit_expr(out, lhs, mode)?;
     write!(out, ").{method}(u32::try_from(")?;
