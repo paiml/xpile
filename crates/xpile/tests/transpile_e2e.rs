@@ -2490,6 +2490,29 @@ fn main() {
     assert_rustc_runs("list_pop", &rust, driver);
 }
 
+/// PMAT-609: `xs.pop(i)` with a RUNTIME negative index removes from the end
+/// (Python `i + len`); a bare `(i) as usize` wrapped a negative i to usize::MAX
+/// → panic. The runtime index is now normalized (`if __pidx < 0 { len + __pidx }`).
+/// Literal pops keep their existing lowering. Cross-checked vs python3:
+/// pop_at([10,20,30,40], -1)=40, -2=30, 0=10, 2=30.
+#[test]
+fn pop_runtime_negative() {
+    let rust = xpile_transpile_to_rust("pop_runtime_negative.py");
+    assert!(
+        rust.contains("let __pidx: i64 = i;") && rust.contains("if (__pidx < 0i64)"),
+        "runtime pop index must be normalized:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(pop_at(vec![10, 20, 30, 40], -1), 40);
+    assert_eq!(pop_at(vec![10, 20, 30, 40], -2), 30);
+    assert_eq!(pop_at(vec![10, 20, 30, 40], 0), 10);
+    assert_eq!(pop_at(vec![10, 20, 30, 40], 2), 30);
+}
+"#;
+    assert_rustc_runs("pop_runtime_negative", &rust, driver);
+}
+
 /// PMAT-502at (Tranche 2): item deletion `del coll[key]` — list →
 /// `coll.remove((k) as usize);`, dict → `coll.remove(&(k));`.
 #[test]

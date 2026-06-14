@@ -979,6 +979,25 @@ fn expr_mentions_ident(e: &Expr, name: &str) -> bool {
         Expr::Index { collection, index } => {
             expr_mentions_ident(collection, name) || expr_mentions_ident(index, name)
         }
+        // PMAT-609: recurse into conditional + block forms so a normalized pop
+        // index that references the receiver (`{ let __pidx = i; if __pidx < 0 {
+        // recv.len() + __pidx } else { __pidx } }`) is detected as
+        // self-referential (must be bound before the mutable `remove`).
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_mentions_ident(cond, name)
+                || expr_mentions_ident(then_expr, name)
+                || expr_mentions_ident(else_expr, name)
+        }
+        Expr::Block(b) => {
+            b.stmts
+                .iter()
+                .any(|s| matches!(s, Stmt::Let { value, .. } if expr_mentions_ident(value, name)))
+                || expr_mentions_ident(&b.trailing_return, name)
+        }
         _ => false,
     }
 }
