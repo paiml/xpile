@@ -294,6 +294,17 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                     // so the binding must be emitted `mut`. The pre-pass
                     // didn't previously see subscript targets.
                     *counts.entry(name).or_insert(0) += bump;
+                } else if a.targets.len() == 1 && matches!(&a.targets[0], ast::Expr::Tuple(_)) {
+                    // PMAT-547: tuple-unpack `a, b = …` binds every Name target —
+                    // count each so a later reassignment/augment lifts it to
+                    // `let (mut a, …)` (mirrors the chained-assign arm above).
+                    if let ast::Expr::Tuple(t) = &a.targets[0] {
+                        for e in &t.elts {
+                            if let ast::Expr::Name(n) = e {
+                                *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                            }
+                        }
+                    }
                 } else if a.targets.len() == 1 {
                     // PMAT-506c: `obj.field = v` mutates the struct binding in
                     // place → mark `obj` mutable.
@@ -4062,6 +4073,10 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
                 Type::Tuple(elem_tys) if elem_tys.len() == names.len() => {
                     for (n, ty) in names.iter().zip(elem_tys.into_iter()) {
                         ctx.name_types.insert(n.clone(), ty);
+                        // PMAT-547: mark each unpacked name bound, so a later
+                        // augmented assignment (`total += i`) recognises it as
+                        // initialised (the plain `Let` path does the same).
+                        ctx.bound.insert(n.clone());
                     }
                 }
                 other => {
@@ -4073,7 +4088,15 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
                     )));
                 }
             }
-            return Ok(Stmt::LetTuple { names, value });
+            // PMAT-547: per-name mutability — an unpacked name later
+            // reassigned/augmented must bind `mut` (the mutability pre-walk
+            // recorded it in `ctx.mutable`).
+            let mutable = names.iter().map(|n| ctx.mutable.contains(n)).collect();
+            return Ok(Stmt::LetTuple {
+                names,
+                mutable,
+                value,
+            });
         }
         // PMAT-461 (v0.2.0 Track 1.B): `xs[i] = v` indexed assignment
         // for lists. PMAT-466 (v0.2.0 Track 1.C): `d[k] = v` keyed

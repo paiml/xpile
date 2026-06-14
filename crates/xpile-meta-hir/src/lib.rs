@@ -591,10 +591,16 @@ pub enum Stmt {
     },
     /// Tuple-destructuring binding — Python `a, b = <expr>`. PMAT-494b
     /// (sprint). `value` types as [`Type::Tuple`] with arity matching
-    /// `names`. Rust/Ruchy emit `let (a, b, ...) = <value>;` (immutable
-    /// first cut); Lean refuses. Nested / starred / subscript patterns
-    /// are not supported at first cut (all targets must be plain names).
-    LetTuple { names: Vec<String>, value: Expr },
+    /// `names`. Rust/Ruchy emit `let (a, b, ...) = <value>;`, marking
+    /// `names[i]` `mut` when `mutable[i]` (PMAT-547: a later
+    /// reassignment/augment of an unpacked name); Lean refuses. Nested /
+    /// starred / subscript patterns are not supported at first cut (all
+    /// targets must be plain names). `mutable` is parallel to `names`.
+    LetTuple {
+        names: Vec<String>,
+        mutable: Vec<bool>,
+        value: Expr,
+    },
     /// `while cond { body }` — Python `while cond: body`. The body is
     /// a list of statements (no trailing return; the loop body is not
     /// an expression). PMAT-006.
