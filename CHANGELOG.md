@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.234] — 2026-06-14
+
+Tranche 2 — PMAT-534: `x in range(...)` / `x not in range(...)` membership.
+
+- `x in range(...)` was rejected (`unsupported comparison operator: In`) — `in`
+  worked for list/set/dict/str but not a `range(...)` operand. Now lowered to a
+  **bounds check**, NOT a materialized Vec (`x in range(10**9)` must not allocate
+  a billion-element Vec):
+  - `range(n)` → `0 <= x && x < n`
+  - `range(a, b)` → `a <= x && x < b`
+  - `range(a, b, step>0)` → `a <= x && x < b && (x - a) % step == 0`
+  - `range(a, b, step<0)` → `a >= x && x > b && (a - x) % -step == 0`
+  Built directly as meta-HIR `BinOp`/`And` (step reachability uses `rem_euclid`
+  = Python floor-mod); detected syntactically before the rhs is lowered (range
+  isn't a value). `x` must type as `int`. Composes inside a genexpr/comprehension
+  filter. **No new IR.**
+- New e2e fixture `in_range_membership.py` (`in_n`, `in_ab`, `not_in_n`,
+  `in_step`, `count_hits`) — a full boundary sweep (incl. stepped + negative-step
+  ranges) differentially cross-checked vs python3. e2e 295 → 296.
+
 ## [0.1.233] — 2026-06-14
 
 Tranche 2 — PMAT-533: in-place `append` on a subscript receiver
