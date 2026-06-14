@@ -1939,14 +1939,26 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
             }
             // PMAT-559: tuple-unpack with a subscript target —
             // `xs[i], xs[j] = xs[j], xs[i]` (the in-place swap idiom) and
-            // general parallel assignment with `base[idx]` targets. The all-Name
-            // tuple form keeps the `Stmt::LetTuple` path in `lower_assign`.
+            // general parallel assignment with `base[idx]` targets.
+            // PMAT-572 (CORRECTNESS): a tuple-unpack that REASSIGNS already-bound
+            // names from a tuple literal (`a, b = b, a + b` / `a, b = b, a % b`)
+            // must reassign — not emit a fresh `let (mut a, mut b)`, which only
+            // SHADOWS inside a nested block (while/for/if body), so the outer
+            // variables never change (→ Euclid GCD infinite loop, iterative
+            // Fibonacci all-zeros). The shared helper evaluates all RHS into temps
+            // first (swap-safe) then `Assign`s each already-bound name. A *fresh*
+            // all-Name unpack keeps the `Stmt::LetTuple` path. A non-tuple-literal
+            // RHS reassign (`a, b = f()`) stays on `LetTuple` (deferred edge).
             if let ast::Expr::Tuple(targets) = &asn.targets[0] {
-                if targets
+                let has_subscript = targets
                     .elts
                     .iter()
-                    .any(|e| matches!(e, ast::Expr::Subscript(_)))
-                {
+                    .any(|e| matches!(e, ast::Expr::Subscript(_)));
+                let reassigns_bound = targets.elts.iter().any(
+                    |e| matches!(e, ast::Expr::Name(n) if ctx.bound.contains(n.id.as_str())),
+                );
+                let rhs_is_tuple_lit = matches!(asn.value.as_ref(), ast::Expr::Tuple(_));
+                if has_subscript || (reassigns_bound && rhs_is_tuple_lit) {
                     return lower_tuple_unpack_with_subscript(ctx, asn);
                 }
             }
