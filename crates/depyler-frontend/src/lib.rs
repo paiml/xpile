@@ -7422,6 +7422,19 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             | NumBuiltinOp::Log2 => false,
                         };
                         if ok {
+                            // PMAT-541: a mixed-numeric `min`/`max` (e.g.
+                            // `min(x, n)` with `x: float`, `n: int`) must
+                            // promote every operand to f64 — Rust's
+                            // `f64::min` / `i64::min` can't mix types. Only when
+                            // at least one operand is float; homogeneous
+                            // int / str / bool min-max is left untouched.
+                            let args = if matches!(op, NumBuiltinOp::Min | NumBuiltinOp::Max)
+                                && args.iter().any(|a| infer_type_in_ctx(ctx, a) == Type::F64)
+                            {
+                                args.into_iter().map(|a| to_f64_operand(ctx, a)).collect()
+                            } else {
+                                args
+                            };
                             return Ok(Expr::NumBuiltin { op, args });
                         }
                     }
