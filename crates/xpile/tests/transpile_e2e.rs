@@ -3535,6 +3535,30 @@ fn main() {
     assert_rustc_runs("format_spec", &rust, driver);
 }
 
+/// PMAT-597: the standalone `format(value[, spec])` builtin (distinct from
+/// `str.format`). `format(x)` == `str(x)`; `format(x, "<spec>")` reuses the
+/// f-string format mini-language. Previously fell through to a bare
+/// `format(...)` call — rustc E0423 (`format` is a macro, not a function).
+/// Cross-checked vs python3: `format(255,"x")=="ff"`, `format(42,"05d")=="00042"`,
+/// `format(7)=="7"`, `format(0.25,".1%")=="25.0%"`.
+#[test]
+fn format_builtin() {
+    let rust = xpile_transpile_to_rust("format_builtin.py");
+    assert!(
+        rust.contains(r#"format!("{:x}", n)"#) && rust.contains(r#"format!("{:05}", n)"#),
+        "format(n, spec) → format! macro:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(hex_of(255), "ff");
+    assert_eq!(padded(42), "00042");
+    assert_eq!(plain(7), "7");
+    assert_eq!(pct(0.25), "25.0%");
+}
+"#;
+    assert_rustc_runs("format_builtin", &rust, driver);
+}
+
 /// PMAT-502ci (Tranche 2): `for i in reversed(range(...))` — descending range
 /// iteration (desugars to a step -1 range).
 #[test]

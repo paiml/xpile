@@ -8513,6 +8513,60 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         _ => {}
                     }
                 }
+                // PMAT-597: the standalone `format(value[, spec])` builtin
+                // (distinct from `str.format` / `%`-formatting). `format(x)` and
+                // `format(x, "")` == `str(x)`; `format(x, "<literal spec>")`
+                // applies the Python format mini-language (shared with f-string
+                // fields). Without this, `format(...)` fell through to a generic
+                // call that inferred I64 and emitted a bare `format(...)` — but
+                // Rust's `format` is a *macro*, so rustc rejected it (E0423).
+                if fname.id.as_str() == "format"
+                    && call.keywords.is_empty()
+                    && (call.args.len() == 1 || call.args.len() == 2)
+                {
+                    let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    let spec = if call.args.len() == 2 {
+                        match &call.args[1] {
+                            ast::Expr::Constant(c) => match &c.value {
+                                ast::Constant::Str(s) => s.clone(),
+                                _ => {
+                                    return Err(FrontendError::Lower(format!(
+                                        "function `{}` calls `format(x, spec)` with a non-string spec",
+                                        ctx.fn_name
+                                    )));
+                                }
+                            },
+                            _ => {
+                                return Err(FrontendError::Lower(format!(
+                                    "function `{}` calls `format(x, spec)` with a non-literal spec — only a string-literal spec is supported at v0.2.0",
+                                    ctx.fn_name
+                                )));
+                            }
+                        }
+                    } else {
+                        String::new()
+                    };
+                    if !spec.is_empty() {
+                        return apply_nonempty_format_spec(ctx, value, &spec);
+                    }
+                    // No spec / empty spec → `str(value)`.
+                    return match infer_type_in_ctx(ctx, &value) {
+                        Type::I64 => Ok(Expr::ToStr {
+                            value: Box::new(value),
+                            of_float: false,
+                        }),
+                        Type::F64 => Ok(Expr::ToStr {
+                            value: Box::new(value),
+                            of_float: true,
+                        }),
+                        Type::Bool => Ok(bool_to_python_str(value)),
+                        Type::Str => Ok(value), // `format(s)` == `s`
+                        other => Err(FrontendError::Lower(format!(
+                            "function `{}` calls `format(...)` on a {other:?}; v0.2.0 supports format over int/float/bool/str",
+                            ctx.fn_name
+                        ))),
+                    };
+                }
                 // PMAT-582: `repr(x)`. For an int/float/bool, `repr == str`
                 // (reuse `ToStr` / the `str(bool)` desugar). For a string,
                 // `repr` adds Python-style quotes + escapes → `Expr::ReprStr`.
@@ -9920,6 +9974,18 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
     if spec.is_empty() {
         return Ok(value); // `{x:}` — empty spec, same as plain.
     }
+    apply_nonempty_format_spec(ctx, value, &spec)
+}
+
+/// PMAT-597: apply a non-empty Python format spec to an already-lowered value,
+/// producing the `Expr::FormatSpec` (or the percent-special). Shared by
+/// f-string fields (`f"{x:spec}"`) and the standalone `format(x, "spec")`
+/// builtin — the spec mini-language is identical.
+fn apply_nonempty_format_spec(
+    ctx: &LoweringCtx,
+    value: Expr,
+    spec: &str,
+) -> Result<Expr, FrontendError> {
     let ty = infer_type_in_ctx(ctx, &value);
     // PMAT-558: percent format `:.N%` / `:%` (float). Python scales the value by
     // 100, formats it with N decimals (bare `%` → Python's default 6), and
@@ -9951,13 +10017,13 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
         }
         // Non-float receiver or malformed precision → fall through to a reject.
     }
-    match translate_format_spec(&spec, &ty) {
+    match translate_format_spec(spec, &ty) {
         Some(rust_spec) => Ok(Expr::FormatSpec {
             value: Box::new(value),
             rust_spec,
         }),
         None => Err(FrontendError::Lower(format!(
-            "unsupported f-string format spec `:{spec}` (for a {ty:?} value) — supported: \
+            "unsupported format spec `:{spec}` (for a {ty:?} value) — supported: \
              `.Nf` (float), `.N%` (float percent), `0Nd`/`Nd` (int), `>N`/`<N`/`^N` (align), \
              `+`/`-` (sign) at v0.2.0"
         ))),
