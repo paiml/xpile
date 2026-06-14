@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.279] — 2026-06-14
+
+Tranche 2 — PMAT-580: **correctness** — `bool & | ^` over two bools stays bool.
+
+- `&`/`|`/`^` over two bools returns a bool in Python (`True & False` is `bool`,
+  not `int`), but xpile inferred the result as `int` and coerced both operands
+  to i64 — so `def f(a: bool, b: bool) -> bool: return a & b` was rejected
+  ("body produces I64"). A valid-Python capability gap + miscompile. Found by
+  the differential hunt.
+- Fix: a both-bool bitwise op infers `Bool` and skips the i64 coercion, keeping
+  `a & b` (Rust's `bool: BitAnd`/`BitOr`/`BitXor` matches). A mixed bool/int op
+  still coerces the bool to i64 (Python `True & 5 == 1`). Touches the two
+  type-inference sites + the two bool-coercion sites; codegen unchanged. Rust +
+  Ruchy.
+- New e2e fixture `bool_bitwise.py` cross-checked vs python3. 341 e2e fixtures.
+
 ## [0.1.278] — 2026-06-14
 
 Tranche 2 — PMAT-579: **correctness / contract integrity** — checked i64 `abs`.
