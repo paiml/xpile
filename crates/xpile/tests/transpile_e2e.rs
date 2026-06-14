@@ -6122,6 +6122,31 @@ fn main() {
     assert_rustc_runs("bool_as_int", &rust, driver);
 }
 
+/// PMAT-585 (Tranche 2): **correctness** — returning a non-Copy field by value
+/// from `&self`. A method/`@property` like `return self.name` (a `String`/list/
+/// dict/set/struct field) emitted `(self).name`, which rustc rejects (E0507:
+/// move out of a shared reference). Now a non-Copy field read clones; Copy
+/// fields (int/float/bool) read by value. Safe to clone unconditionally —
+/// a field is never a mutation receiver (`self.items.append(x)` is rejected),
+/// so it only appears in read positions. First slice of the ownership/borrow
+/// cluster. Found by the differential hunt. Cross-checked vs python3.
+#[test]
+fn clone_field_read() {
+    let rust = xpile_transpile_to_rust("clone_field_read.py");
+    let driver = r#"
+fn main() {
+    let p = P { name: String::from("ab"), tags: vec![1, 2], age: 7 };
+    assert_eq!(p.get_name(), "ab");
+    assert_eq!(p.get_tags(), vec![1, 2]);
+    assert_eq!(p.get_age(), 7);
+    // the struct is still usable — the getters cloned, didn't move
+    assert_eq!(p.name, "ab");
+    assert_eq!(p.tags, vec![1, 2]);
+}
+"#;
+    assert_rustc_runs("clone_field_read", &rust, driver);
+}
+
 /// PMAT-584 (Tranche 2): **correctness** — `sum()` over a float list. CPython
 /// 3.12+ uses Neumaier compensated summation; xpile's naive `.iter().sum()`
 /// diverges on catastrophic cancellation (`sum([1.0, 1e16, 1.0, -1e16])` is
