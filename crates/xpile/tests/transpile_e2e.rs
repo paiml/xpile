@@ -6122,6 +6122,28 @@ fn main() {
     assert_rustc_runs("bool_as_int", &rust, driver);
 }
 
+/// PMAT-584 (Tranche 2): **correctness** — `sum()` over a float list. CPython
+/// 3.12+ uses Neumaier compensated summation; xpile's naive `.iter().sum()`
+/// diverges on catastrophic cancellation (`sum([1.0, 1e16, 1.0, -1e16])` is
+/// `2.0`, not `0.0`; `sum([0.1]*10)` is `1.0`, not `0.9999999999999999`). Now
+/// the float `Sum` codegen emits the same compensated fold (int `sum` stays
+/// exact). Found by the differential hunt. Cross-checked vs python3.
+#[test]
+fn float_sum_compensated() {
+    let rust = xpile_transpile_to_rust("float_sum_compensated.py");
+    let driver = r#"
+fn main() {
+    // compensated -> exact 2.0 (naive would be 0.0)
+    assert_eq!(fsum(vec![1.0, 1e16, 1.0, -1e16]), 2.0);
+    // compensated -> exact 1.0 (naive would be 0.9999999999999999)
+    assert_eq!(fsum_ones(), 1.0);
+    assert_eq!(fsum_start(vec![1.5, 2.5], 10.0), 14.0);
+    assert_eq!(isum(vec![1, 2, 3, 4]), 10);
+}
+"#;
+    assert_rustc_runs("float_sum_compensated", &rust, driver);
+}
+
 /// PMAT-583 (Tranche 2): **correctness** — float scientific notation. CPython
 /// prints a float in scientific notation when its decimal exponent is `< -4` or
 /// `>= 16` (`1e16` → `1e+16`, `1e-5` → `1e-05`), but Rust's `{}` spells them out
@@ -7216,8 +7238,9 @@ fn sum_start() {
         rust.contains("(base) + xs.iter().sum::<i64>()"),
         "sum(xs, base):\n{rust}"
     );
+    // PMAT-584: float sum is now a Neumaier compensated fold seeded with start.
     assert!(
-        rust.contains("(1.5f64) + xs.iter().sum::<f64>()"),
+        rust.contains("let mut __ss: f64 = (1.5f64)"),
         "sum(xs, 1.5):\n{rust}"
     );
     let driver = r#"
@@ -7402,8 +7425,10 @@ fn main() {
 #[test]
 fn sum_builtin_int_and_float() {
     let rust = xpile_transpile_to_rust("sum_builtin.py");
+    // PMAT-584: int sum stays exact `.iter().sum::<i64>()`; float sum is a
+    // Neumaier compensated fold (`__sc += …`), not naive `.iter().sum::<f64>()`.
     assert!(
-        rust.contains(".iter().sum::<i64>()") && rust.contains(".iter().sum::<f64>()"),
+        rust.contains(".iter().sum::<i64>()") && rust.contains("__sc += "),
         "expected typed sum emissions, got:\n{rust}"
     );
     let driver = r#"
