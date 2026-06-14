@@ -2086,6 +2086,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         }
         // PMAT-571: `pow(base, exp, mod)` → modular exponentiation (square &
         // multiply, reduced mod m each step via i128 products → no overflow).
+        // PMAT-605: Python's 3-arg `pow` returns a result with the SIGN of the
+        // modulus (range `(m, 0]` for `m < 0`); the square-multiply loop yields
+        // the non-negative Euclidean residue, so re-sign at the end when `m < 0`.
         Expr::PowMod { base, exp, modulus } => {
             out.push_str("{ let __pmm = (");
             emit_expr(out, modulus, mode)?;
@@ -2093,7 +2096,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, exp, mode)?;
             out.push_str("); if __pme < 0 { panic!(\"xpile: ValueError: pow() 2nd argument cannot be negative when 3rd argument specified\"); } let __pmb0 = (");
             emit_expr(out, base, mode)?;
-            out.push_str("); let mut __pmb = { let __t = __pmb0 % __pmm; if __t < 0 { __t + __pmm } else { __t } }; let mut __pmr = 1i64 % __pmm; let mut __pmk = __pme; while __pmk > 0 { if __pmk & 1 == 1 { __pmr = (((__pmr as i128) * (__pmb as i128)) % (__pmm as i128)) as i64; } __pmk >>= 1; __pmb = (((__pmb as i128) * (__pmb as i128)) % (__pmm as i128)) as i64; } __pmr }");
+            out.push_str("); let mut __pmb = { let __t = __pmb0 % __pmm; if __t < 0 { __t + __pmm } else { __t } }; let mut __pmr = 1i64 % __pmm; let mut __pmk = __pme; while __pmk > 0 { if __pmk & 1 == 1 { __pmr = (((__pmr as i128) * (__pmb as i128)) % (__pmm as i128)) as i64; } __pmk >>= 1; __pmb = (((__pmb as i128) * (__pmb as i128)) % (__pmm as i128)) as i64; } if __pmm < 0 && __pmr != 0 { __pmr += __pmm; } __pmr }");
         }
         // PMAT-502cj: `list(range(start, stop, step))` → a collected i64 range.
         Expr::RangeList { start, stop, step } => {

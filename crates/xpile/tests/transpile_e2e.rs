@@ -1599,6 +1599,32 @@ fn main() {
     assert_rustc_runs("pow_mod", &rust, driver);
 }
 
+/// PMAT-605: 3-arg `pow(a, b, m)` with a NEGATIVE modulus. Python's result takes
+/// the sign of the modulus (range `(m, 0]`); the square-multiply loop produced
+/// the non-negative residue. Now re-signed when `m < 0`. Cross-checked vs
+/// python3: mp(10,2,-3)=-2, mp(2,5,-100)=-68, mp(7,3,-5)=-2, mp(5,3,-7)=-1;
+/// positive modulus unchanged (mp(10,2,3)=1, mp(2,5,100)=32).
+#[test]
+fn pow_negative_modulus() {
+    let rust = xpile_transpile_to_rust("pow_negative_modulus.py");
+    assert!(
+        rust.contains("if __pmm < 0 && __pmr != 0 { __pmr += __pmm; }"),
+        "negative modulus must re-sign the modpow result:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(mp(10, 2, -3), -2);
+    assert_eq!(mp(2, 5, -100), -68);
+    assert_eq!(mp(7, 3, -5), -2);
+    assert_eq!(mp(5, 3, -7), -1);
+    // positive modulus is unchanged.
+    assert_eq!(mp(10, 2, 3), 1);
+    assert_eq!(mp(2, 5, 100), 32);
+}
+"#;
+    assert_rustc_runs("pow_negative_modulus", &rust, driver);
+}
+
 /// PMAT-570 (Tranche 2): **correctness** — negative-literal `xs.pop(-k)` /
 /// `del xs[-k]` remove from the end. Both emitted `remove((-k) as usize)` →
 /// `usize::MAX` → panic; now resolve to `len(xs) - k` with the index bound to a
