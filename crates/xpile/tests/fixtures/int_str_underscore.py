@@ -3,3 +3,9 @@
 # underscore only BETWEEN digits; xpile validates that, strips, then parses.
 def parse(s: str) -> int:
     return int(s)
+
+
+# PMAT-611: a string-LITERAL argument is a temporary `String`; the validation
+# block must keep it alive (temporary lifetime extension), not drop it (E0716).
+def parse_literal() -> int:
+    return int("1_234")

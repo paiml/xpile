@@ -2968,8 +2968,9 @@ fn str_parse() {
         rust.contains(".replace('_', \"\").parse::<i64>().expect("),
         "int(s):\n{rust}"
     );
+    // PMAT-611: float(s) now validates + strips PEP 515 underscores before parse.
     assert!(
-        rust.contains("(s).trim().parse::<f64>().expect("),
+        rust.contains(".replace('_', \"\").parse::<f64>().expect("),
         "float(s):\n{rust}"
     );
     // PMAT-586: `int(float_x)` now guards a non-finite source (`__ic as i64`).
@@ -3011,6 +3012,9 @@ fn main() {
     assert_eq!(parse("1_000_000".to_string()), 1000000);
     assert_eq!(parse("-2_5".to_string()), -25);
     assert_eq!(parse("42".to_string()), 42);
+    // a string-literal operand is a temporary String: the block must keep it
+    // alive (no E0716 temporary-dropped-while-borrowed).
+    assert_eq!(parse_literal(), 1234);
     // invalid underscore placements raise (≈ Python ValueError).
     assert!(std::panic::catch_unwind(|| parse("_1".to_string())).is_err());
     assert!(std::panic::catch_unwind(|| parse("1_".to_string())).is_err());
@@ -3018,6 +3022,40 @@ fn main() {
 }
 "#;
     assert_rustc_runs("int_str_underscore", &rust, driver);
+}
+
+/// PMAT-611: `float(s)` accepts PEP 515 underscore digit separators
+/// (`float("1_000.5") == 1000.5`), which Rust's `parse::<f64>()` rejects.
+/// xpile validates Python's between-digits rule (covering the fractional and
+/// exponent parts), strips, then parses; invalid placements still raise
+/// (≈ ValueError). Cross-checked vs python3: 1_000.5→1000.5,
+/// 1_000_000.0→1000000.0, 1.5e1_0→1.5e10; `1_.5`/`1.5_`/`_1.0`/`1_e5` reject.
+#[test]
+fn float_str_underscore() {
+    let rust = xpile_transpile_to_rust("float_str_underscore.py");
+    assert!(
+        rust.contains(".replace('_', \"\").parse::<f64>()")
+            && rust.contains("__pe[__k - 1].is_ascii_digit()"),
+        "float(s) must validate + strip underscores:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    assert_eq!(parse("1_000.5".to_string()), 1000.5);
+    assert_eq!(parse("1_000_000.0".to_string()), 1000000.0);
+    assert_eq!(parse("1.5e1_0".to_string()), 1.5e10);
+    assert_eq!(parse("3.14".to_string()), 3.14);
+    // a string-literal operand is a temporary String: the block must keep it
+    // alive (no E0716 temporary-dropped-while-borrowed).
+    assert_eq!(parse_literal(), 1234.5);
+    // invalid underscore placements raise (≈ Python ValueError).
+    assert!(std::panic::catch_unwind(|| parse("1_.5".to_string())).is_err());
+    assert!(std::panic::catch_unwind(|| parse("1.5_".to_string())).is_err());
+    assert!(std::panic::catch_unwind(|| parse("_1.0".to_string())).is_err());
+    assert!(std::panic::catch_unwind(|| parse("1_e5".to_string())).is_err());
+}
+"#;
+    assert_rustc_runs("float_str_underscore", &rust, driver);
 }
 
 /// PMAT-502bg (Tranche 2): list concatenation `xs + ys` →
