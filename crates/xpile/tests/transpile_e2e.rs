@@ -5063,6 +5063,29 @@ fn main() {
     assert_rustc_runs("math_lcm", &rust, driver);
 }
 
+/// PMAT-551 (Tranche 2): `math.factorial(n)` — n! of a non-negative int. New
+/// `Expr::Factorial` → inline product loop (`0! == 1`; `checked_mul` overflow
+/// guard; negative `n` panics = Python `ValueError`). Composes in arithmetic
+/// (binomial coefficients). Cross-checked vs python3 (120, 3628800, 1, 10, 20).
+#[test]
+fn math_factorial() {
+    let rust = xpile_transpile_to_rust("math_factorial.py");
+    assert!(
+        rust.contains("__f.checked_mul(__fi)"),
+        "math.factorial should lower to a checked product loop:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(fact(5), 120);
+    assert_eq!(fact(10), 3628800);
+    assert_eq!(fact_zero(0), 1);
+    assert_eq!(binomial(5, 2), 10);
+    assert_eq!(binomial(6, 3), 20);
+}
+"#;
+    assert_rustc_runs("math_factorial", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)

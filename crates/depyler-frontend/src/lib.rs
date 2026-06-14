@@ -6201,7 +6201,7 @@ fn infer_type(e: &Expr) -> Type {
         // PMAT-502d: reversed(xs) has the same type as its list.
         Expr::Reversed { list } => infer_type(list),
         // PMAT-549: gcd of two ints -> int.
-        Expr::Gcd { .. } | Expr::Lcm { .. } => Type::I64,
+        Expr::Gcd { .. } | Expr::Lcm { .. } | Expr::Factorial { .. } => Type::I64,
         // PMAT-502cj: list(range(...)) materialises a list[int].
         Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
         // PMAT-502cw: set(xs) → set over the list's element type.
@@ -6587,7 +6587,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-502d: reversed(xs) has the same type as its list.
         Expr::Reversed { list } => infer_type_in_ctx(ctx, list),
         // PMAT-549: gcd of two ints -> int.
-        Expr::Gcd { .. } | Expr::Lcm { .. } => Type::I64,
+        Expr::Gcd { .. } | Expr::Lcm { .. } | Expr::Factorial { .. } => Type::I64,
         // PMAT-502cj: list(range(...)) materialises a list[int].
         Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
         // PMAT-502cw: set(xs) → set over the list's element type.
@@ -8797,6 +8797,26 @@ fn lower_math_call(
         } else {
             Expr::Lcm { a, b }
         });
+    }
+    // PMAT-551: `math.factorial(n)` — n! of a non-negative int → `Expr::Factorial`
+    // (inline product loop). The arg must type as `int`.
+    if fn_name == "factorial" {
+        if !call.keywords.is_empty() || call.args.len() != 1 {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `math.factorial(...)` with {} positional arg(s){}; v0.2.0 takes exactly 1 int",
+                ctx.fn_name,
+                call.args.len(),
+                if call.keywords.is_empty() { "" } else { " plus keyword args" },
+            )));
+        }
+        let n = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+        if infer_type_in_ctx(ctx, &n) != Type::I64 {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `math.factorial(...)` with a non-int argument — only `int` is supported",
+                ctx.fn_name
+            )));
+        }
+        return Ok(Expr::Factorial { n: Box::new(n) });
     }
     // PMAT-502em/en: 2-arg float methods — `math.pow(x, y)` → `(x).powf(y)`,
     // `math.hypot(x, y)` → `(x).hypot(y)`, `math.atan2(y, x)` → `(y).atan2(x)`,

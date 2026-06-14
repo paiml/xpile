@@ -359,6 +359,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::Reversed { list } => expr_has_int_arith(list),
         // PMAT-549/550: gcd/lcm carry int operands (the `%`/`*` are internal).
         Expr::Gcd { a, b } | Expr::Lcm { a, b } => expr_has_int_arith(a) || expr_has_int_arith(b),
+        // PMAT-551: factorial carries an int operand (the loop `*` is internal).
+        Expr::Factorial { n } => expr_has_int_arith(n),
         // PMAT-502cj: list(range(...)) — recurse into the bound exprs.
         Expr::RangeList { start, stop, .. } => {
             expr_has_int_arith(start) || expr_has_int_arith(stop)
@@ -1689,6 +1691,13 @@ pub enum Expr {
     /// __lb } }` — divide before multiply to limit overflow. `lcm(0, x) == 0`
     /// (matching Python); always non-negative. Lean refuses.
     Lcm { a: Box<Expr>, b: Box<Expr> },
+    /// PMAT-551: `math.factorial(n)` — n! of a non-negative int (**Int**).
+    /// Rust/Ruchy emit `{ let __nf = (n); if __nf < 0 { panic!(…ValueError…) }
+    /// let mut __f = 1i64; let mut __i = 2i64; while __i <= __nf { __f = __f
+    /// .checked_mul(__i).expect(…overflow…); __i += 1; } __f }` — `0! == 1! ==
+    /// 1`; overflow panics under the i64 int-arith contract; a negative `n`
+    /// panics (Python `ValueError`). Lean refuses.
+    Factorial { n: Box<Expr> },
     /// `list(range(start, stop, step))` — materialise a range into a `Vec`.
     /// PMAT-502cj (Tranche 2). Rust/Ruchy emit `((<start>)..(<stop>))
     /// .collect::<Vec<i64>>()` for `step == 1`, or `.step_by(<step> as usize)`
