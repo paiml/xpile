@@ -8318,10 +8318,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 || infer_type_in_ctx(ctx, &rhs) == Type::F64
             {
                 if let Some(fop) = float_op_from_ast(&b.op) {
+                    // PMAT-540: a mixed `float <op> int` must promote the int
+                    // operand to f64 — Rust rejects `f64 + i64` (E0277). Python
+                    // promotes the int. `to_f64_operand` is a no-op when the
+                    // operand is already f64.
                     return Ok(Expr::FloatBinOp {
                         op: fop,
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
+                        lhs: Box::new(to_f64_operand(ctx, lhs)),
+                        rhs: Box::new(to_f64_operand(ctx, rhs)),
                     });
                 }
             }
@@ -10469,10 +10473,23 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
                 rhs: Box::new(operands[i + 1].clone()),
             }
         } else {
+            // PMAT-540: a mixed `float <cmp> int` comparison must promote the
+            // int operand to f64 — Rust rejects `f64 == i64` / `f64 < i64`
+            // (E0308). Python compares numerically. `to_f64_operand` is a no-op
+            // when the operand is already f64.
+            let mut lhs = operands[i].clone();
+            let mut rhs = operands[i + 1].clone();
+            let lt = infer_type_in_ctx(ctx, &lhs);
+            let rt = infer_type_in_ctx(ctx, &rhs);
+            if lt == Type::F64 && rt == Type::I64 {
+                rhs = to_f64_operand(ctx, rhs);
+            } else if lt == Type::I64 && rt == Type::F64 {
+                lhs = to_f64_operand(ctx, lhs);
+            }
             Expr::BinOp {
                 op: cmp_binop(op)?,
-                lhs: Box::new(operands[i].clone()),
-                rhs: Box::new(operands[i + 1].clone()),
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
             }
         };
         acc = Some(match acc {
