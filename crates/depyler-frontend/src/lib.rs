@@ -5041,6 +5041,31 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
                     other: rhs,
                 });
             }
+            // PMAT-593: `a |= b` over two dicts is PEP 584 in-place union —
+            // emit `Stmt::DictUpdate` (identical to `a.update(b)`; b wins on
+            // key conflicts). Other augmented operators on a dict are rejected
+            // cleanly rather than routed through `combine_aug` (which would
+            // emit an invalid `a = (a | b)` over `HashMap`).
+            if matches!(ctx.name_types.get(&name), Some(Type::Dict(_, _))) {
+                if !matches!(aug.op, ast::Operator::BitOr) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` uses `{name} <op>= …` on a dict with an operator other than `|=` (PEP 584 union) — v0.2.0 supports only dict `|=`",
+                        ctx.fn_name
+                    )));
+                }
+                let other_ty = infer_type_in_ctx(ctx, &rhs);
+                if !matches!(other_ty, Type::Dict(_, _)) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` augments dict `{name}` with `|= <{other_ty:?}>`; v0.2.0 supports `dict |= dict` (in-place union)",
+                        ctx.fn_name
+                    )));
+                }
+                ctx.mutable.insert(name.clone());
+                return Ok(Stmt::DictUpdate {
+                    dict_name: name,
+                    other: rhs,
+                });
+            }
             let value = combine_aug(ctx, &aug.op, Expr::Ident(name.clone()), rhs)?;
             Ok(Stmt::Assign { name, value })
         }
@@ -9160,6 +9185,26 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         rhs: Box::new(rhs),
                     });
                 }
+            }
+            // PMAT-593: dict operators. `a | b` over two dicts is PEP 584
+            // union — semantically `{**a, **b}` (b wins on key conflicts), so
+            // reuse `Expr::DictMerge` (chains both iterators into a fresh
+            // HashMap; the later entry wins via `collect`). Python defines no
+            // other binary operator on dicts, so `&`/`-`/`^`/`+`/… over two
+            // dicts are rejected cleanly rather than emitting invalid
+            // `HashMap <op> HashMap` (E0369).
+            if matches!(infer_type_in_ctx(ctx, &lhs), Type::Dict(_, _))
+                && matches!(infer_type_in_ctx(ctx, &rhs), Type::Dict(_, _))
+            {
+                if matches!(b.op, ast::Operator::BitOr) {
+                    return Ok(Expr::DictMerge {
+                        entries: vec![(None, lhs), (None, rhs)],
+                    });
+                }
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` applies `{:?}` to two dicts; Python defines only `|` (PEP 584 union) as a binary dict operator",
+                    ctx.fn_name, b.op
+                )));
             }
             let op = lower_binop(&b.op)?;
             // PMAT-502bg: `xs + ys` over two lists → list concatenation
