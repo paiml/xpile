@@ -1001,9 +1001,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, lhs, mode)?;
                 out.push_str(") / __fz).floor() }");
             }
-            // PMAT-502br: Python float modulo `a % b` follows the divisor's
-            // sign → `a - b * (a / b).floor()` (Rust's `%` follows the
-            // dividend, which diverges for mixed signs).
+            // PMAT-591: Python float modulo `a % b` is CPython `float_rem`
+            // (Objects/floatobject.c): `mod = fmod(a, b)` (Rust's `%` IS C
+            // `fmod`), then if `mod != 0` adjust toward the divisor's sign
+            // (`mod += b` when their signs differ), else `copysign(0.0, b)`.
+            // The earlier floor formula `a - b*(a/b).floor()` (PMAT-502br)
+            // introduced an extra rounding step → last-ULP divergence on
+            // ~60% of non-power-of-two divisors, and always produced `+0.0`
+            // for a zero remainder, losing CPython's divisor-signed zero.
             // PMAT-581: guard the zero divisor (Python raises ZeroDivisionError,
             // not `nan`); bind both operands to temps (evaluate-once).
             FloatOp::Mod => {
@@ -1011,7 +1016,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, rhs, mode)?;
                 out.push_str("; if __fz == 0.0 { panic!(\"xpile: ZeroDivisionError: float modulo\"); } let __fn: f64 = ");
                 emit_expr(out, lhs, mode)?;
-                out.push_str("; __fn - __fz * (__fn / __fz).floor() }");
+                out.push_str("; let __r = __fn % __fz; if __r != 0.0 { if (__fz < 0.0) != (__r < 0.0) { __r + __fz } else { __r } } else { 0.0_f64.copysign(__fz) } }");
             }
             // PMAT-502bt/em/en: method-style float ops — `(a).<method>(b)`.
             // Pow → powf; the 2-arg math functions hypot/atan2/log map 1:1.

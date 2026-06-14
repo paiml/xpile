@@ -888,14 +888,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 emit_expr(out, lhs, mode)?;
                 out.push_str(") / __fz).floor() }");
             }
-            // PMAT-502br: Python float modulo → `a - b * (a / b).floor()`.
+            // PMAT-591: Python float modulo is CPython `float_rem` —
+            // `fmod(a,b)` (Rust `%`) + sign-adjust toward the divisor, else
+            // `copysign(0.0,b)`. Matches the Rust backend (the prior floor
+            // formula diverged in the last ULP and lost the signed zero).
             // PMAT-581: guard the zero divisor; bind operands (evaluate-once).
             FloatOp::Mod => {
                 out.push_str("{ let __fz: f64 = ");
                 emit_expr(out, rhs, mode)?;
                 out.push_str("; if __fz == 0.0 { panic!(\"xpile: ZeroDivisionError: float modulo\"); } let __fn: f64 = ");
                 emit_expr(out, lhs, mode)?;
-                out.push_str("; __fn - __fz * (__fn / __fz).floor() }");
+                out.push_str("; let __r = __fn % __fz; if __r != 0.0 { if (__fz < 0.0) != (__r < 0.0) { __r + __fz } else { __r } } else { 0.0_f64.copysign(__fz) } }");
             }
             // PMAT-502bt/em/en: method-style float ops — `(a).<method>(b)`,
             // matching the Rust backend.
