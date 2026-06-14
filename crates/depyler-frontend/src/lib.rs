@@ -9622,6 +9622,17 @@ fn lower_if_exp(ie: ast::ExprIfExp) -> Result<Expr, FrontendError> {
 
     let then_ty = infer_type(&then_expr);
     let else_ty = infer_type(&else_expr);
+    // PMAT-542: mixed float/int ternary promotes the int branch to f64 (mirrors
+    // the context-aware variant). Here `infer_type` only sees float *literals*.
+    let (then_expr, else_expr) = if then_ty == Type::F64 && else_ty == Type::I64 {
+        (then_expr, to_f64_operand_cf(else_expr))
+    } else if then_ty == Type::I64 && else_ty == Type::F64 {
+        (to_f64_operand_cf(then_expr), else_expr)
+    } else {
+        (then_expr, else_expr)
+    };
+    let then_ty = infer_type(&then_expr);
+    let else_ty = infer_type(&else_expr);
     if then_ty != else_ty {
         return Err(FrontendError::Lower(format!(
             "ternary branches have mismatched types ({then_ty:?} vs {else_ty:?}); both must agree at v0.1.0"
@@ -9654,6 +9665,19 @@ fn lower_if_exp_in_ctx(ctx: &LoweringCtx, ie: ast::ExprIfExp) -> Result<Expr, Fr
     let then_expr = lower_expr_in_ctx(ctx, *ie.body)?;
     let else_expr = lower_expr_in_ctx(ctx, *ie.orelse)?;
 
+    let then_ty = infer_type_in_ctx(ctx, &then_expr);
+    let else_ty = infer_type_in_ctx(ctx, &else_expr);
+    // PMAT-542: a mixed `float`/`int` ternary promotes the int branch to f64 —
+    // Python yields a float when either branch is float (`x if b else 0` over a
+    // float `x`), and Rust requires both arms of an `if`-expression to share a
+    // type. `to_f64_operand` is a no-op when already f64.
+    let (then_expr, else_expr) = if then_ty == Type::F64 && else_ty == Type::I64 {
+        (then_expr, to_f64_operand(ctx, else_expr))
+    } else if then_ty == Type::I64 && else_ty == Type::F64 {
+        (to_f64_operand(ctx, then_expr), else_expr)
+    } else {
+        (then_expr, else_expr)
+    };
     let then_ty = infer_type_in_ctx(ctx, &then_expr);
     let else_ty = infer_type_in_ctx(ctx, &else_expr);
     if then_ty != else_ty {
