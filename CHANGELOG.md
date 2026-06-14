@@ -19,6 +19,18 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.268] — 2026-06-14
+
+Tranche 2 — PMAT-569: **correctness** — list-of-list repeat `[[0]] * n` compiles.
+
+- `[[0]] * n` (any `[...] * n` over a non-Copy element) emitted slice `repeat`,
+  which requires `T: Copy` — `Vec<_>` isn't — so it failed to compile (E0277):
+  transpile-success → invalid Rust. New `of_str` flag on `Expr::Repeat`: str
+  repeat keeps `String::repeat`; list repeat clones its elements
+  (`(0..k).flat_map(|_| __rep.iter().cloned()).collect::<Vec<_>>()`), which works
+  for any `Clone` element and is behavior-identical for `Copy` ones. Rust +
+  Ruchy. Found by the differential hunt.
+
 ## [0.1.267] — 2026-06-14
 
 Tranche 2 — PMAT-568: **correctness** — `max(key=)` first-tie + `sorted(reverse=)` stability.
