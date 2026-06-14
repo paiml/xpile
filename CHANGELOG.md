@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.243] — 2026-06-14
+
+Tranche 2 — PMAT-544: `enumerate()` / `zip()` over a string.
+
+- `for i, c in enumerate(s)` (and `zip(s, …)`) over a string was rejected
+  (`enumerate over a non-list`) — the paired-loop handler required a `list`
+  iterable. A `str` iterable now materializes to a `List(Str)` of 1-char strings
+  via `Expr::StrChars` (the same conversion the single-var `for c in s` loop
+  uses), then proceeds through the existing `ForEachPair` path. Handles
+  `enumerate(s)`, `enumerate(s, start)`, `zip(s, list)`, `zip(list, s)`.
+  **No new IR.**
+- New e2e fixture `enumerate_zip_str.py` (`index_of`, `weighted_ord`,
+  `start_sum`, `zip_str_list`) cross-checked vs python3 (2, 66, 6, 134).
+  e2e 304 → 305.
+
 ## [0.1.242] — 2026-06-14
 
 Tranche 2 — PMAT-543: two-generator comprehensions over `range(...)`.
