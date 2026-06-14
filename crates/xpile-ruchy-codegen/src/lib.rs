@@ -658,6 +658,11 @@ fn emit_stmt_indented(
                 write!(out, "{indent}{name}.remove(&(")?;
                 emit_expr(out, key, mode)?;
                 writeln!(out, "));")?;
+            } else if expr_mentions_ident(key, name) {
+                // PMAT-570: `del xs[-k]` index references `xs` — bind before remove.
+                write!(out, "{indent}{{ let __di = (")?;
+                emit_expr(out, key, mode)?;
+                writeln!(out, ") as usize; {name}.remove(__di); }}")?;
             } else {
                 write!(out, "{indent}{name}.remove((")?;
                 emit_expr(out, key, mode)?;
@@ -1576,18 +1581,32 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             }
         }
         // PMAT-502as: `xs.pop()` / `xs.pop(i)`, matching the Rust backend.
-        Expr::ListPop { list, index } => {
-            out.push('(');
-            emit_expr(out, list, mode)?;
-            match index {
-                None => out.push_str(").pop().unwrap()"),
-                Some(i) => {
+        // PMAT-570: a negative-resolved index (`len-k`) references the receiver —
+        // bind it before remove() (E0502). Positive indices keep the inline form.
+        Expr::ListPop { list, index } => match index {
+            None => {
+                out.push('(');
+                emit_expr(out, list, mode)?;
+                out.push_str(").pop().unwrap()");
+            }
+            Some(i) => {
+                let refs_self =
+                    matches!(list.as_ref(), Expr::Ident(n) if expr_mentions_ident(i, n));
+                if refs_self {
+                    out.push_str("{ let __pi = (");
+                    emit_expr(out, i, mode)?;
+                    out.push_str(") as usize; (");
+                    emit_expr(out, list, mode)?;
+                    out.push_str(").remove(__pi) }");
+                } else {
+                    out.push('(');
+                    emit_expr(out, list, mode)?;
                     out.push_str(").remove((");
                     emit_expr(out, i, mode)?;
                     out.push_str(") as usize)");
                 }
             }
-        }
+        },
         // PMAT-502au: `d.pop(k)` / `d.pop(k, def)`, matching the Rust backend.
         Expr::DictPop { dict, key, default } => {
             out.push('(');
