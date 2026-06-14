@@ -6122,6 +6122,33 @@ fn main() {
     assert_rustc_runs("bool_as_int", &rust, driver);
 }
 
+/// PMAT-583 (Tranche 2): **correctness** — float scientific notation. CPython
+/// prints a float in scientific notation when its decimal exponent is `< -4` or
+/// `>= 16` (`1e16` → `1e+16`, `1e-5` → `1e-05`), but Rust's `{}` spells them out
+/// (`10000000000000000`). The float `str`/`repr`/`print`/f-string helper now
+/// derives the exponent from `{:e}` (exact) and reformats to Python's `e±NN`
+/// style above the threshold, keeping the fixed `.0`-if-whole shape below it.
+/// Found by the differential hunt. Cross-checked vs python3.
+#[test]
+fn float_sci_notation() {
+    let rust = xpile_transpile_to_rust("float_sci_notation.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(s(1e16), "1e+16");
+    assert_eq!(s(1e15), "1000000000000000.0"); // exp 15 -> fixed
+    assert_eq!(s(1.5e16), "1.5e+16");
+    assert_eq!(s(1e-5), "1e-05");
+    assert_eq!(s(1e-4), "0.0001"); // exp -4 -> fixed
+    assert_eq!(s(1e100), "1e+100");
+    assert_eq!(s(-3.14e-10), "-3.14e-10");
+    assert_eq!(s(2.5), "2.5");
+    assert_eq!(s(100.0), "100.0");
+    assert_eq!(s(-0.0), "-0.0");
+}
+"#;
+    assert_rustc_runs("float_sci_notation", &rust, driver);
+}
+
 /// PMAT-582 (Tranche 2): **correctness** — `repr()`. A `repr(x)` call emitted a
 /// bare `repr(...)` (rustc E0423: `repr` is a built-in attribute, not a fn) /
 /// was rejected as I64. Now `repr(int/float/bool)` reuses the `str()` lowering
