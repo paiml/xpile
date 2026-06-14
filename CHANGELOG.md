@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.258] — 2026-06-14
+
+Tranche 2 — PMAT-559: tuple-unpack with subscript targets (swap idiom).
+
+- `xs[i], xs[j] = xs[j], xs[i]` — the in-place element-swap idiom underlying
+  sorting, partitioning, and reversal — plus general parallel assignment with
+  `base[idx]` / `d[k]` targets (lists and dicts). Plain-Name tuple unpacking
+  keeps the existing `Stmt::LetTuple` path. All RHS elements are lowered into
+  temporaries first (so a swap reads both old values before writing either),
+  then each temp is assigned to its target (`Assign`/`Let` for a Name,
+  `IndexAssign`/`DictSet` for a subscript, via a shared
+  `lower_subscript_assign_target` helper). The mutability pre-walk now marks a
+  subscript base inside a tuple target as mutable. RHS must be a tuple literal
+  of matching arity (non-literal tuple RHS deferred). No IR change.
+
 ## [0.1.257] — 2026-06-14
 
 Tranche 2 — PMAT-558: f-string percent format `:.N%`.
