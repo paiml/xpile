@@ -4906,6 +4906,26 @@ fn main() {
     assert_rustc_runs("comp_2gen_range", &rust, driver);
 }
 
+/// PMAT-544 (Tranche 2): `enumerate(s)` / `zip(s, …)` over a **string** —
+/// iterate its characters (each a 1-char string). The paired-loop handler
+/// required a `list` iterable; a `str` iterable now materializes to a
+/// `List(Str)` via `Expr::StrChars` (the same conversion `for c in s` uses).
+/// Supports `enumerate(s, start)` and `zip(s, list)`. Cross-checked vs python3
+/// (2, 66, 6, 134).
+#[test]
+fn enumerate_zip_str() {
+    let rust = xpile_transpile_to_rust("enumerate_zip_str.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(index_of(String::from("hello"), String::from("l")), 2);
+    assert_eq!(weighted_ord(String::from("AB")), 66);
+    assert_eq!(start_sum(String::from("abc")), 6);
+    assert_eq!(zip_str_list(String::from("AB"), vec![1, 2]), 134);
+}
+"#;
+    assert_rustc_runs("enumerate_zip_str", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
