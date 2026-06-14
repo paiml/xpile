@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.302] — 2026-06-14
+
+Tranche 2 — PMAT-603: **correctness** — sort/sorted with a float-returning `key=` uses `partial_cmp`.
+
+- `sorted(xs, key=lambda x: x / 2.0)` / `xs.sort(key=lambda x: x * 1.5)` over an
+  int list lowered to `sort_by_key(|__k| … f64 …)`. The key result is `f64`
+  (no `Ord`), so rustc rejected it with E0277 despite a clean transpile. Found by
+  the differential hunt (#5). Distinct from the float-*list* sort (0.1.277); here
+  the list is int but the *key* is float.
+- Fix (no new IR): `Expr::Sorted.of_float` now tracks whether the *compared*
+  values are float (the key result when keyed, the element type when keyless);
+  the rust + ruchy codegen emit `sort_by(partial_cmp)` for a float key (ascending,
+  descending-stable, and the in-place form). Integer/str keys keep `sort_by_key`/
+  `cmp`. NaN keys panic, like the keyless float sort.
+- New e2e fixture `sort_float_key.py` cross-checked vs python3. 364 e2e fixtures.
+
 ## [0.1.301] — 2026-06-14
 
 Tranche 2 — PMAT-602: **correctness** — reject a non-Optional annotation over an Optional initializer.
