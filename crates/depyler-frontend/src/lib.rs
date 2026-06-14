@@ -86,6 +86,13 @@ struct LoweringCtx {
     /// body count as mutable even if the source has only one assign,
     /// because the runtime executes that assign repeatedly.
     mutable: HashSet<String>,
+    /// PMAT-588 (ownership cluster): per-name source READ count (number of
+    /// `Name`-load occurrences in the function body). A non-Copy value passed
+    /// by value to a function call is MOVED; if the same variable is read more
+    /// than once, the second use fails to compile (rustc E0382 "use of moved
+    /// value", e.g. `helper(xs) + helper(xs)`). Such a call argument is cloned
+    /// so the original survives. Computed once in a pre-walk, like `mutable`.
+    read_counts: HashMap<String, usize>,
     /// PMAT-471 (R2): module-level signature table — every top-level
     /// function's declared return type, built in a pre-pass before any
     /// function is lowered. Consulted when typing `Expr::Call` so a
@@ -221,12 +228,14 @@ impl LoweringCtx {
             name_types.insert(p.name.clone(), p.ty.clone());
         }
         let mutable = compute_mutable_names(params, body);
+        let read_counts = count_name_reads(body);
         Self {
             fn_name: fn_name.to_string(),
             fn_return_type,
             bound,
             name_types,
             mutable,
+            read_counts,
             signatures,
             structs,
             struct_methods,
@@ -259,6 +268,192 @@ fn compute_mutable_names(params: &[Param], body: &[ast::Stmt]) -> HashSet<String
         .into_iter()
         .filter_map(|(name, c)| if c > 1 { Some(name) } else { None })
         .collect()
+}
+
+/// PMAT-588 (ownership cluster): count how many times each name is *read*
+/// (`Name`-load occurrences) across the function body. Used to decide whether a
+/// non-Copy variable passed by value to a call must be cloned: if it is read
+/// more than once, moving it into the call would make the other use a
+/// use-after-move (rustc E0382). Conservative — exotic expression shapes
+/// (comprehensions, lambdas, …) simply aren't recursed, so a name is at most
+/// under-counted, which only ever skips a clone (never inserts a spurious one,
+/// so single-use code is byte-identical). Modeled on `count_pop_receivers`.
+fn count_name_reads(body: &[ast::Stmt]) -> HashMap<String, usize> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for s in body {
+        count_reads_stmt(s, &mut counts);
+    }
+    counts
+}
+
+fn count_reads_stmt(s: &ast::Stmt, counts: &mut HashMap<String, usize>) {
+    use ast::Stmt as S;
+    match s {
+        // Assignment targets are *stores*, not reads — only the value is read.
+        S::Assign(a) => count_reads_expr(&a.value, counts),
+        S::AnnAssign(aa) => {
+            if let Some(v) = &aa.value {
+                count_reads_expr(v, counts);
+            }
+        }
+        // `x <op>= e` reads `x` (and `e`) before writing back.
+        S::AugAssign(a) => {
+            count_reads_expr(&a.target, counts);
+            count_reads_expr(&a.value, counts);
+        }
+        S::Return(r) => {
+            if let Some(v) = &r.value {
+                count_reads_expr(v, counts);
+            }
+        }
+        S::Expr(e) => count_reads_expr(&e.value, counts),
+        S::If(i) => {
+            count_reads_expr(&i.test, counts);
+            for st in &i.body {
+                count_reads_stmt(st, counts);
+            }
+            for st in &i.orelse {
+                count_reads_stmt(st, counts);
+            }
+        }
+        S::While(w) => {
+            count_reads_expr(&w.test, counts);
+            for st in &w.body {
+                count_reads_stmt(st, counts);
+            }
+        }
+        S::For(f) => {
+            count_reads_expr(&f.iter, counts);
+            for st in &f.body {
+                count_reads_stmt(st, counts);
+            }
+        }
+        S::Assert(a) => {
+            count_reads_expr(&a.test, counts);
+            if let Some(m) = &a.msg {
+                count_reads_expr(m, counts);
+            }
+        }
+        S::Delete(d) => {
+            for t in &d.targets {
+                count_reads_expr(t, counts);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn count_reads_expr(e: &ast::Expr, counts: &mut HashMap<String, usize>) {
+    use ast::Expr as E;
+    match e {
+        E::Name(n) => {
+            if matches!(n.ctx, ast::ExprContext::Load) {
+                *counts.entry(n.id.to_string()).or_insert(0) += 1;
+            }
+        }
+        E::Call(c) => {
+            count_reads_expr(&c.func, counts);
+            for a in &c.args {
+                count_reads_expr(a, counts);
+            }
+            for kw in &c.keywords {
+                count_reads_expr(&kw.value, counts);
+            }
+        }
+        E::BinOp(b) => {
+            count_reads_expr(&b.left, counts);
+            count_reads_expr(&b.right, counts);
+        }
+        E::UnaryOp(u) => count_reads_expr(&u.operand, counts),
+        E::BoolOp(b) => {
+            for v in &b.values {
+                count_reads_expr(v, counts);
+            }
+        }
+        E::Compare(c) => {
+            count_reads_expr(&c.left, counts);
+            for c2 in &c.comparators {
+                count_reads_expr(c2, counts);
+            }
+        }
+        E::Subscript(s) => {
+            count_reads_expr(&s.value, counts);
+            count_reads_expr(&s.slice, counts);
+        }
+        E::Attribute(a) => count_reads_expr(&a.value, counts),
+        E::IfExp(i) => {
+            count_reads_expr(&i.test, counts);
+            count_reads_expr(&i.body, counts);
+            count_reads_expr(&i.orelse, counts);
+        }
+        E::List(l) => {
+            for el in &l.elts {
+                count_reads_expr(el, counts);
+            }
+        }
+        E::Tuple(t) => {
+            for el in &t.elts {
+                count_reads_expr(el, counts);
+            }
+        }
+        E::Set(s) => {
+            for el in &s.elts {
+                count_reads_expr(el, counts);
+            }
+        }
+        E::Dict(d) => {
+            for k in d.keys.iter().flatten() {
+                count_reads_expr(k, counts);
+            }
+            for v in &d.values {
+                count_reads_expr(v, counts);
+            }
+        }
+        E::Starred(s) => count_reads_expr(&s.value, counts),
+        E::Slice(s) => {
+            if let Some(l) = &s.lower {
+                count_reads_expr(l, counts);
+            }
+            if let Some(u) = &s.upper {
+                count_reads_expr(u, counts);
+            }
+            if let Some(st) = &s.step {
+                count_reads_expr(st, counts);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// PMAT-588 (ownership cluster): clone a non-Copy variable passed *by value* to
+/// a function call when it is read more than once in the body. Without this, the
+/// move into the call leaves any other use a use-after-move (rustc E0382 — e.g.
+/// `helper(xs) + helper(xs)`, or `helper(xs)` followed by `len(xs)`). The clone
+/// keeps the caller's binding alive. Gated on `read_count > 1`, so a single-use
+/// call argument (the entire existing corpus) is byte-identical — no clone, no
+/// churn, no perf cost — and the clone fires only on code that would otherwise
+/// fail to compile. Copy operands (int/float/bool) are passed by value as before.
+fn clone_reused_call_args(ctx: &LoweringCtx, expr: Expr) -> Expr {
+    let Expr::Call { callee, args } = expr else {
+        return expr;
+    };
+    let args = args
+        .into_iter()
+        .map(|a| {
+            if let Expr::Ident(name) = &a {
+                let reused = ctx.read_counts.get(name).copied().unwrap_or(0) > 1;
+                let non_copy = ctx
+                    .name_types
+                    .get(name)
+                    .is_some_and(|t| !matches!(t, Type::I64 | Type::F64 | Type::Bool));
+                if reused && non_copy {
+                    return Expr::Clone(Box::new(a));
+                }
+            }
+            a
+        })
+        .collect();
+    Expr::Call { callee, args }
 }
 
 /// Recursive count: returns a fresh map of `name → count` produced by
@@ -8760,7 +8955,8 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                 }
             }
-            lower_call(call)
+            // PMAT-588: clone reused non-Copy call args (E0382 fix).
+            lower_call(call).map(|e| clone_reused_call_args(ctx, e))
         }
         // `k in d` / `k not in d` → `Expr::DictContains` (wrapped in
         // `not` for the negated form) when the RHS is a dict.
