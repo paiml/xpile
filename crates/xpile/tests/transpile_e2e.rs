@@ -4690,6 +4690,35 @@ fn main() {
     assert_rustc_runs("in_range_membership", &rust, driver);
 }
 
+/// PMAT-535 (Tranche 2): `int(b)` / `float(b)` over a `bool` — Python
+/// `True`/`False` → `1`/`0` (`1.0`/`0.0`). Previously `int(bool)` emitted a bare
+/// undefined `int(...)` call and `float(bool)` was rejected; the int/float cast
+/// handler only covered int/float/str. Rust allows `bool as i64` but NOT
+/// `bool as f64`, so `float(bool)` casts through `i64` first. Enables the common
+/// `sum(int(b) for b in bs)` boolean-count idiom. Cross-checked vs python3
+/// (1, 0, 3, 2, 1, 0, 2.5, 0.0).
+#[test]
+fn int_float_of_bool() {
+    let rust = xpile_transpile_to_rust("int_float_of_bool.py");
+    assert!(
+        rust.contains("(b) as i64"),
+        "`int(b)` should lower to `(b) as i64`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(bool_to_int(true), 1);
+    assert_eq!(bool_to_int(false), 0);
+    assert_eq!(count_true(vec![true, false, true, true]), 3);
+    assert_eq!(predicate_to_int(15), 2);
+    assert_eq!(predicate_to_int(5), 1);
+    assert_eq!(predicate_to_int(-3), 0);
+    assert_eq!(bool_to_float_scaled(true), 2.5f64);
+    assert_eq!(bool_to_float_scaled(false), 0.0f64);
+}
+"#;
+    assert_rustc_runs("int_float_of_bool", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
