@@ -19,6 +19,19 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.242] — 2026-06-14
+
+Tranche 2 — PMAT-543: two-generator comprehensions over `range(...)`.
+
+- The 2-generator comprehension desugar handled only `list[T]` iterables (nested
+  `ForEach`), so `[i*j for i in range(n) for j in range(n)]` was rejected. A bare
+  `range(...)` generator iterable now materializes to a `Vec` via the existing
+  `lower_range_list` (mirroring the 1-generator range handling) before the
+  nested-loop build. Works for list + dict comps, with per-generator filters, and
+  mixed range/list generators. **No new IR.**
+- New e2e fixture `comp_2gen_range.py` (`products`, `off_diagonal`, `mixed`,
+  `grid_size`) cross-checked vs python3 (9, 22, 90, 9). e2e 303 → 304.
+
 ## [0.1.241] — 2026-06-14
 
 Tranche 2 — PMAT-542 (correctness): mixed `float`/`int` ternary branches.
