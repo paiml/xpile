@@ -19,6 +19,20 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.249] — 2026-06-14
+
+Tranche 2 — PMAT-550: `math.lcm(a, b)`.
+
+- `math.lcm(a, b)` (least common multiple of two ints) — the natural pair with
+  `math.gcd`. New `Expr::Lcm` whose rust/ruchy codegen is an inline
+  `(abs(a)/gcd) * abs(b)` block (divide before multiply to limit overflow;
+  `lcm(0, x) == 0`, always non-negative, negatives via `abs`). The
+  `lower_math_call` `gcd`|`lcm` branch shares arity/type validation. Rippled to
+  meta-HIR (+bigint scan), both inferers (→ `I64`), and rust/ruchy emit; the
+  Lean lane refuses.
+- New e2e fixture `math_lcm.py` (`lcm2`, `lcm_coprime`, `lcm_zero`,
+  `lcm_negative`) cross-checked vs python3 (42, 35, 0, 12). e2e 310 → 311.
+
 ## [0.1.248] — 2026-06-14
 
 Tranche 2 — PMAT-549: `math.gcd(a, b)`.
