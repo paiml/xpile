@@ -19,6 +19,17 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.261] — 2026-06-14
+
+Tranche 2 — PMAT-562: three-way `zip` (`for a, b, c in zip(x, y, z)`).
+
+- Three-way parallel iteration `for a, b, c in zip(x, y, z)`. New
+  `Stmt::ForEachZip3` emits a left-nested `.zip().zip()` chain with a nested
+  `((a, b), c)` destructure (`x.iter().cloned().zip(y.iter().cloned())
+  .zip(z.iter().cloned())`), which stops at the shortest iterable, matching
+  Python `zip`. A `str` arg iterates its chars (via `Expr::StrChars`), like the
+  2-way path. Rippled to meta-HIR + rust/ruchy codegen; the Lean lane refuses.
+
 ## [0.1.260] — 2026-06-14
 
 Tranche 2 — PMAT-561: in-place keyed sort `xs.sort(key=lambda)`.
