@@ -10453,12 +10453,28 @@ fn lower_comp_to_map(
             "{kind} with multiple `if` filters is not supported — combine with `and`"
         )));
     }
-    let ast::Expr::Name(var) = &gen.target else {
-        return Err(FrontendError::Lower(format!(
-            "{kind} with a tuple target is not yet supported at v0.2.0"
-        )));
+    // PMAT-531: the loop target is either a plain Name (`for x in …`) or a
+    // 2-name tuple (`for k, v in d.items()`). The tuple form binds both names
+    // via a Rust tuple-destructure closure param (`|__k| { let (k, v) =
+    // __k.clone(); … }`), mirroring the list-comp tuple branch (PMAT-502cg)
+    // for expression-position comprehensions / generator expressions.
+    let targets: Vec<String> = match &gen.target {
+        ast::Expr::Name(var) => vec![var.id.to_string()],
+        ast::Expr::Tuple(t) => {
+            if let [ast::Expr::Name(a), ast::Expr::Name(b)] = t.elts.as_slice() {
+                vec![a.id.to_string(), b.id.to_string()]
+            } else {
+                return Err(FrontendError::Lower(format!(
+                    "{kind} tuple target must be exactly two plain names at v0.2.0"
+                )));
+            }
+        }
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "{kind} with a non-Name target is not supported at v0.2.0"
+            )));
+        }
     };
-    let param = var.id.to_string();
     // Materialise the iterable into a list: a bare `range(...)` (not a
     // first-class value) lowers via `lower_range_list`; anything else must
     // already be list-typed.
@@ -10483,10 +10499,29 @@ fn lower_comp_to_map(
         }
     };
     // PMAT-525: bind the loop var to the element type so the filter + body type
-    // correctly (e.g. `p[1]` over a `tuple` element → `.1`).
+    // correctly (e.g. `p[1]` over a `tuple` element → `.1`). PMAT-531: a 2-name
+    // tuple target splits the element 2-tuple type and binds both names; the
+    // closure param becomes a Rust destructure pattern `(k, v)`.
     let mut sub = ctx.clone();
-    sub.bound.insert(param.clone());
-    sub.name_types.insert(param.clone(), elem_ty);
+    let param = if targets.len() == 1 {
+        sub.bound.insert(targets[0].clone());
+        sub.name_types.insert(targets[0].clone(), elem_ty);
+        targets[0].clone()
+    } else {
+        let (ta, tb) = match elem_ty {
+            Type::Tuple(tys) if tys.len() == 2 => (tys[0].clone(), tys[1].clone()),
+            other => {
+                return Err(FrontendError::Lower(format!(
+                    "{kind} `for k, v in …` iterates a {other:?}; expected an iterable of 2-tuples (e.g. `d.items()`)"
+                )))
+            }
+        };
+        sub.bound.insert(targets[0].clone());
+        sub.bound.insert(targets[1].clone());
+        sub.name_types.insert(targets[0].clone(), ta);
+        sub.name_types.insert(targets[1].clone(), tb);
+        format!("({}, {})", targets[0], targets[1])
+    };
     // An optional single `if <cond>` wraps the iterable in `Expr::Filter`
     // (also List-typed, so `Map` composes); cond must type as Bool.
     let list = if let Some(cond_ast) = gen.ifs.first() {
