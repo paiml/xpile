@@ -19,6 +19,19 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.262] — 2026-06-14
+
+Tranche 2 — PMAT-563: multiple `if` filters in comprehensions/genexprs.
+
+- Multiple `if` clauses in a comprehension / generator expression are now ANDed
+  (`[x for x in xs if a if b]` == `… if a and b`). Previously each comp form
+  rejected `ifs.len() > 1`, and two sites silently dropped extra filters (a
+  latent miscompile). New shared `combine_comp_filters` folds all clauses into a
+  left-nested `&&` chain (each must type Bool); `comp_filter` and the
+  list-comp / `lower_comp_to_map` filter sites route through it. Works across
+  list/set/dict comps, genexprs, comp-over-range, the 2-generator path, and N
+  filters (3+). Zero new IR.
+
 ## [0.1.261] — 2026-06-14
 
 Tranche 2 — PMAT-562: three-way `zip` (`for a, b, c in zip(x, y, z)`).
