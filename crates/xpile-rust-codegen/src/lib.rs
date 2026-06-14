@@ -1777,16 +1777,23 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             from_str,
             from_float,
         } => {
-            if *from_str {
-                // PMAT-502bf: `int(s)`/`float(s)` → trimmed `.parse()`
-                // (panics on bad input, matching Python's `ValueError`).
+            if *from_str && *to_float {
+                // PMAT-502bf: `float(s)` → trimmed `.parse()` (panics on bad
+                // input, matching Python's `ValueError`).
                 out.push('(');
                 emit_expr(out, value, mode)?;
-                out.push_str(if *to_float {
-                    ").trim().parse::<f64>().expect(\"xpile: ValueError: could not convert string to float\")"
-                } else {
-                    ").trim().parse::<i64>().expect(\"xpile: ValueError: invalid literal for int()\")"
-                });
+                out.push_str(").trim().parse::<f64>().expect(\"xpile: ValueError: could not convert string to float\")");
+            } else if *from_str {
+                // PMAT-610: `int(s)` accepts PEP 515 underscore digit separators
+                // (`int(\"1_000\") == 1000`), which Rust's `parse::<i64>()` rejects
+                // → panic. Python allows a single `_` only BETWEEN digits, so for
+                // an int (digits-only body after an optional sign) that is exactly
+                // "no leading/trailing/doubled underscore"; validate that, then
+                // strip the separators and parse. Invalid placements (or any
+                // other bad literal) still panic ≈ Python `ValueError`.
+                out.push_str("{ let __ps = (");
+                emit_expr(out, value, mode)?;
+                out.push_str(").trim(); let __pb = __ps.strip_prefix('-').or_else(|| __ps.strip_prefix('+')).unwrap_or(__ps); if __pb.starts_with('_') || __pb.ends_with('_') || __pb.contains(\"__\") { panic!(\"xpile: ValueError: invalid literal for int()\"); } __ps.replace('_', \"\").parse::<i64>().expect(\"xpile: ValueError: invalid literal for int()\") }");
             } else if !*to_float && *from_float {
                 // PMAT-586/589: `int(float_x)` — Python raises `OverflowError`
                 // for `int(inf)` and `ValueError` for `int(nan)`, and returns an
