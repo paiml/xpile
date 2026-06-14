@@ -4978,6 +4978,27 @@ fn main() {
     assert_rustc_runs("zip3", &rust, driver);
 }
 
+/// PMAT-563 (Tranche 2): **multiple `if` filters** in a comprehension /
+/// generator expression — Python ANDs them (`[x for x in xs if a if b]` ==
+/// `… if a and b`). The shared `combine_comp_filters` folds all clauses into a
+/// left-nested `&&` chain across list/set/dict comps, genexprs, comp-over-range,
+/// and the 2-generator path. Cross-checked vs python3 (154, 3, 5, 1, 3, 117).
+#[test]
+fn multi_if_comp() {
+    let rust = xpile_transpile_to_rust("multi_if_comp.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(genexpr_2if(vec![5, -3, 50, 200, 99]), 154);
+    assert_eq!(listcomp_2if(vec![1, 2, 3, 4, -6, 8]), 3);
+    assert_eq!(listcomp_range_2if(20), 5);
+    assert_eq!(setcomp_2if(vec![5, 15, 25, 105, -1]), 1);
+    assert_eq!(dictcomp_2if(vec![1, 2, 9, 50, -3]), 3);
+    assert_eq!(three_if(vec![3, 6, 9, 99, 102, 5]), 117);
+}
+"#;
+    assert_rustc_runs("multi_if_comp", &rust, driver);
+}
+
 /// PMAT-556 (Tranche 2): expression-position **two-generator** generator
 /// expression / list comprehension — `sum(i*j for i in range(n) for j in
 /// range(n))`, `len([… for i in a for j in b])`. The single-generator
