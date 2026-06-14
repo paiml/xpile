@@ -1982,6 +1982,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 (None, false) => out.push_str("sort();"),
                 // Equal elements are identical, so reverse() can't disturb order.
                 (None, true) => out.push_str("sort(); __xv.reverse();"),
+                // PMAT-603: a FLOAT-returning key makes the comparison values
+                // `f64` (no `Ord`) — `sort_by_key` is E0277. Compare the
+                // recomputed key with `partial_cmp` (NaN panics, like the
+                // keyless float sort).
+                (Some(k), false) if *of_float => {
+                    write!(
+                        out,
+                        "sort_by(|__a, __b| {{ let {p} = __a.clone(); ",
+                        p = k.param
+                    )?;
+                    emit_expr(out, &k.body, mode)?;
+                    write!(
+                        out,
+                        " }}.partial_cmp(&{{ let {p} = __b.clone(); ",
+                        p = k.param
+                    )?;
+                    emit_expr(out, &k.body, mode)?;
+                    out.push_str(" }).unwrap());");
+                }
                 (Some(k), false) => {
                     write!(out, "sort_by_key(|__k| {{ let {} = __k.clone(); ", k.param)?;
                     emit_expr(out, &k.body, mode)?;
@@ -2004,7 +2023,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                         p = k.param
                     )?;
                     emit_expr(out, &k.body, mode)?;
-                    out.push_str(" }; __kb.cmp(&__ka) });");
+                    // PMAT-603: a float key compares with `partial_cmp` (no `Ord`);
+                    // integer/str keys use `cmp`. Descending + stable either way.
+                    if *of_float {
+                        out.push_str(" }; __kb.partial_cmp(&__ka).unwrap() });");
+                    } else {
+                        out.push_str(" }; __kb.cmp(&__ka) });");
+                    }
                 }
             }
             out.push_str(" __xv }");
