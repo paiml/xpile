@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.286] — 2026-06-14
+
+Tranche 2 — PMAT-587: **correctness** — reject class/enum named after an emitted prelude type.
+
+- A `@dataclass`/class/enum named after a Rust prelude type that xpile emits
+  generically — `Vec`/`String`/`Option`/`Some`/`None`/`HashMap`/`HashSet` —
+  emits a `struct <Name>` that collides with the prelude. A bare unit struct
+  shadows it, but once the module also uses the generic form (e.g. `list[int]`
+  → `Vec<i64>`), rustc rejects it (E0107) — a transpile-success → invalid-Rust
+  break. Found by the differential hunt.
+- Fix: reject such a name at lowering with a clear rename hint, upholding
+  "transpile-success ⟹ valid Rust". Limited to the prelude types xpile emits, so
+  names it does NOT generate (`Result`/`Box`/…) still work by shadowing.
+  (Auto-escaping the type name is a possible follow-up.)
+- New e2e fixture `prelude_type_name_rejected.py`. 348 e2e fixtures.
+
 ## [0.1.285] — 2026-06-14
 
 Tranche 2 — PMAT-586: **correctness** — `int()` of a non-finite float.
