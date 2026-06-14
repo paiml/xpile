@@ -19,6 +19,18 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.306] — 2026-06-14
+
+Tranche 2 — PMAT-607: **correctness** — `pow()` with a bool base coerces to i64.
+
+- Python's `bool` is an int subtype (`pow(True, n)` == `pow(1, n)`), but the
+  `pow()` builtin only handled int/float bases; a bool base fell through to a bare
+  `pow(...)` call (rustc E0425). Found by the differential hunt (#5).
+- Fix (frontend): wrap the pow operands (2-arg and 3-arg) in the existing
+  bool→i64 `to_i64_operand` helper (a no-op for int/float), so a bool base/exp/mod
+  expands to the `checked_pow`/modpow path. No new IR.
+- New e2e fixture `pow_bool_base.py` cross-checked vs python3. 368 e2e fixtures.
+
 ## [0.1.305] — 2026-06-14
 
 Tranche 2 — PMAT-606: **correctness** — `math.floor`/`ceil`/`trunc` guard finite + i64 range and fail loud.
