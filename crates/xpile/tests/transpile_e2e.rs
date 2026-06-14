@@ -2963,8 +2963,9 @@ fn main() {
 #[test]
 fn str_parse() {
     let rust = xpile_transpile_to_rust("str_parse.py");
+    // PMAT-610: int(s) now validates + strips PEP 515 underscores before parse.
     assert!(
-        rust.contains("(s).trim().parse::<i64>().expect("),
+        rust.contains(".replace('_', \"\").parse::<i64>().expect("),
         "int(s):\n{rust}"
     );
     assert!(
@@ -2988,6 +2989,35 @@ fn main() {
 }
 "#;
     assert_rustc_runs("str_parse", &rust, driver);
+}
+
+/// PMAT-610: `int(s)` accepts PEP 515 underscore digit separators
+/// (`int("1_000") == 1000`), which Rust's `parse::<i64>()` rejects. xpile
+/// validates Python's between-digits rule, strips, then parses; invalid
+/// placements still raise (≈ ValueError). Cross-checked vs python3:
+/// 1_000→1000, 1_000_000→1000000, -2_5→-25, 42→42; `_1`/`1_`/`1__0` reject.
+#[test]
+fn int_str_underscore() {
+    let rust = xpile_transpile_to_rust("int_str_underscore.py");
+    assert!(
+        rust.contains(".replace('_', \"\").parse::<i64>()")
+            && rust.contains(r#"__pb.contains("__")"#),
+        "int(s) must validate + strip underscores:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    assert_eq!(parse("1_000".to_string()), 1000);
+    assert_eq!(parse("1_000_000".to_string()), 1000000);
+    assert_eq!(parse("-2_5".to_string()), -25);
+    assert_eq!(parse("42".to_string()), 42);
+    // invalid underscore placements raise (≈ Python ValueError).
+    assert!(std::panic::catch_unwind(|| parse("_1".to_string())).is_err());
+    assert!(std::panic::catch_unwind(|| parse("1_".to_string())).is_err());
+    assert!(std::panic::catch_unwind(|| parse("1__0".to_string())).is_err());
+}
+"#;
+    assert_rustc_runs("int_str_underscore", &rust, driver);
 }
 
 /// PMAT-502bg (Tranche 2): list concatenation `xs + ys` →
