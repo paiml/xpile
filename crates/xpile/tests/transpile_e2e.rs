@@ -3012,6 +3012,9 @@ fn main() {
     assert_eq!(parse("1_000_000".to_string()), 1000000);
     assert_eq!(parse("-2_5".to_string()), -25);
     assert_eq!(parse("42".to_string()), 42);
+    // a string-literal operand is a temporary String: the block must keep it
+    // alive (no E0716 temporary-dropped-while-borrowed).
+    assert_eq!(parse_literal(), 1234);
     // invalid underscore placements raise (≈ Python ValueError).
     assert!(std::panic::catch_unwind(|| parse("_1".to_string())).is_err());
     assert!(std::panic::catch_unwind(|| parse("1_".to_string())).is_err());
@@ -3042,6 +3045,9 @@ fn main() {
     assert_eq!(parse("1_000_000.0".to_string()), 1000000.0);
     assert_eq!(parse("1.5e1_0".to_string()), 1.5e10);
     assert_eq!(parse("3.14".to_string()), 3.14);
+    // a string-literal operand is a temporary String: the block must keep it
+    // alive (no E0716 temporary-dropped-while-borrowed).
+    assert_eq!(parse_literal(), 1234.5);
     // invalid underscore placements raise (≈ Python ValueError).
     assert!(std::panic::catch_unwind(|| parse("1_.5".to_string())).is_err());
     assert!(std::panic::catch_unwind(|| parse("1.5_".to_string())).is_err());

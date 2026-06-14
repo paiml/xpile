@@ -4,3 +4,9 @@
 # exponent parts); xpile validates that, strips, then parses.
 def parse(s: str) -> float:
     return float(s)
+
+
+# A string-LITERAL argument transpiles to a temporary `String`; the validation
+# block must keep it alive (temporary lifetime extension), not drop it (E0716).
+def parse_literal() -> float:
+    return float("1_234.5")

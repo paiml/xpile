@@ -1567,16 +1567,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             // PMAT-502bf: string parse, matching the Rust backend.
             if *from_str && *to_float {
                 // PMAT-611: float(s) accepts PEP 515 underscores between digits
-                // (matches the Rust backend).
-                out.push_str("{ let __ps = (");
+                // (matches the Rust backend). Bind a reference so a temporary
+                // operand survives the block via lifetime extension (E0716).
+                out.push_str("{ let __pf = &(");
                 emit_expr(out, value, mode)?;
-                out.push_str(").trim(); let __pe = __ps.as_bytes(); if !__ps.bytes().enumerate().all(|(__k, __c)| __c != b'_' || (__k > 0 && __pe[__k - 1].is_ascii_digit() && __k + 1 < __pe.len() && __pe[__k + 1].is_ascii_digit())) { panic!(\"xpile: ValueError: could not convert string to float\"); } __ps.replace('_', \"\").parse::<f64>().expect(\"xpile: ValueError: could not convert string to float\") }");
+                out.push_str("); let __ps = __pf.trim(); let __pe = __ps.as_bytes(); if !__ps.bytes().enumerate().all(|(__k, __c)| __c != b'_' || (__k > 0 && __pe[__k - 1].is_ascii_digit() && __k + 1 < __pe.len() && __pe[__k + 1].is_ascii_digit())) { panic!(\"xpile: ValueError: could not convert string to float\"); } __ps.replace('_', \"\").parse::<f64>().expect(\"xpile: ValueError: could not convert string to float\") }");
             } else if *from_str {
                 // PMAT-610: int(s) accepts PEP 515 underscores between digits
-                // (matches the Rust backend).
-                out.push_str("{ let __ps = (");
+                // (matches the Rust backend). Bind a reference so a temporary
+                // operand survives the block via lifetime extension (E0716).
+                out.push_str("{ let __pf = &(");
                 emit_expr(out, value, mode)?;
-                out.push_str(").trim(); let __pb = __ps.strip_prefix('-').or_else(|| __ps.strip_prefix('+')).unwrap_or(__ps); if __pb.starts_with('_') || __pb.ends_with('_') || __pb.contains(\"__\") { panic!(\"xpile: ValueError: invalid literal for int()\"); } __ps.replace('_', \"\").parse::<i64>().expect(\"xpile: ValueError: invalid literal for int()\") }");
+                out.push_str("); let __ps = __pf.trim(); let __pb = __ps.strip_prefix('-').or_else(|| __ps.strip_prefix('+')).unwrap_or(__ps); if __pb.starts_with('_') || __pb.ends_with('_') || __pb.contains(\"__\") { panic!(\"xpile: ValueError: invalid literal for int()\"); } __ps.replace('_', \"\").parse::<i64>().expect(\"xpile: ValueError: invalid literal for int()\") }");
             } else if !*to_float && *from_float {
                 // PMAT-586: `int(float_x)` guards a non-finite source (see Rust twin).
                 out.push_str("{ let __ic = ");

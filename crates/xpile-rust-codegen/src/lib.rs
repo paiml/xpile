@@ -1786,9 +1786,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 // ASCII digit on both sides (the exact Python rule, covering the
                 // fractional/exponent parts), then strip + parse; invalid
                 // placements (`1_.5`, `1.5_`, `1_e5`, `_1.0`) still raise.
-                out.push_str("{ let __ps = (");
+                // Bind a *reference* (not the value) so a temporary-String operand
+                // (`float("inf")`) survives the block via temporary lifetime
+                // extension, and a reused variable operand is not moved (E0716).
+                out.push_str("{ let __pf = &(");
                 emit_expr(out, value, mode)?;
-                out.push_str(").trim(); let __pe = __ps.as_bytes(); if !__ps.bytes().enumerate().all(|(__k, __c)| __c != b'_' || (__k > 0 && __pe[__k - 1].is_ascii_digit() && __k + 1 < __pe.len() && __pe[__k + 1].is_ascii_digit())) { panic!(\"xpile: ValueError: could not convert string to float\"); } __ps.replace('_', \"\").parse::<f64>().expect(\"xpile: ValueError: could not convert string to float\") }");
+                out.push_str("); let __ps = __pf.trim(); let __pe = __ps.as_bytes(); if !__ps.bytes().enumerate().all(|(__k, __c)| __c != b'_' || (__k > 0 && __pe[__k - 1].is_ascii_digit() && __k + 1 < __pe.len() && __pe[__k + 1].is_ascii_digit())) { panic!(\"xpile: ValueError: could not convert string to float\"); } __ps.replace('_', \"\").parse::<f64>().expect(\"xpile: ValueError: could not convert string to float\") }");
             } else if *from_str {
                 // PMAT-610: `int(s)` accepts PEP 515 underscore digit separators
                 // (`int(\"1_000\") == 1000`), which Rust's `parse::<i64>()` rejects
@@ -1797,9 +1800,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 // "no leading/trailing/doubled underscore"; validate that, then
                 // strip the separators and parse. Invalid placements (or any
                 // other bad literal) still panic ≈ Python `ValueError`.
-                out.push_str("{ let __ps = (");
+                // Bind a *reference* (not the value) so a temporary-String operand
+                // (`int("1_000")`) survives the block via temporary lifetime
+                // extension, and a reused variable operand is not moved (E0716).
+                out.push_str("{ let __pf = &(");
                 emit_expr(out, value, mode)?;
-                out.push_str(").trim(); let __pb = __ps.strip_prefix('-').or_else(|| __ps.strip_prefix('+')).unwrap_or(__ps); if __pb.starts_with('_') || __pb.ends_with('_') || __pb.contains(\"__\") { panic!(\"xpile: ValueError: invalid literal for int()\"); } __ps.replace('_', \"\").parse::<i64>().expect(\"xpile: ValueError: invalid literal for int()\") }");
+                out.push_str("); let __ps = __pf.trim(); let __pb = __ps.strip_prefix('-').or_else(|| __ps.strip_prefix('+')).unwrap_or(__ps); if __pb.starts_with('_') || __pb.ends_with('_') || __pb.contains(\"__\") { panic!(\"xpile: ValueError: invalid literal for int()\"); } __ps.replace('_', \"\").parse::<i64>().expect(\"xpile: ValueError: invalid literal for int()\") }");
             } else if !*to_float && *from_float {
                 // PMAT-586/589: `int(float_x)` — Python raises `OverflowError`
                 // for `int(inf)` and `ValueError` for `int(nan)`, and returns an
