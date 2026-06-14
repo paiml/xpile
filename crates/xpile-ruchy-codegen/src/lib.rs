@@ -1544,6 +1544,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, n, mode)?;
             out.push_str("); if __nf < 0 { panic!(\"xpile: ValueError: factorial() not defined for negative values\"); } let mut __f = 1i64; let mut __fi = 2i64; while __fi <= __nf { __f = __f.checked_mul(__fi).expect(\"xpile: i64 multiplication overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"); __fi += 1; } __f }");
         }
+        // PMAT-552: `math.isqrt(n)` → exact integer Newton (no float).
+        Expr::Isqrt { n } => {
+            out.push_str("{ let __sn = (");
+            emit_expr(out, n, mode)?;
+            out.push_str("); if __sn < 0 { panic!(\"xpile: ValueError: isqrt() argument must be nonnegative\"); } if __sn == 0 { 0 } else { let mut __sx = 1i64 << ((64 - __sn.leading_zeros() + 1) / 2); loop { let __sy = (__sx + __sn / __sx) / 2; if __sy >= __sx { break; } __sx = __sy; } __sx } }");
+        }
         // PMAT-502cj: `list(range(start, stop, step))` → a collected i64 range.
         Expr::RangeList { start, stop, step } => {
             if *step > 0 {

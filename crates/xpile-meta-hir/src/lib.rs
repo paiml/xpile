@@ -359,8 +359,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::Reversed { list } => expr_has_int_arith(list),
         // PMAT-549/550: gcd/lcm carry int operands (the `%`/`*` are internal).
         Expr::Gcd { a, b } | Expr::Lcm { a, b } => expr_has_int_arith(a) || expr_has_int_arith(b),
-        // PMAT-551: factorial carries an int operand (the loop `*` is internal).
-        Expr::Factorial { n } => expr_has_int_arith(n),
+        // PMAT-551/552: factorial/isqrt carry an int operand (loop arith internal).
+        Expr::Factorial { n } | Expr::Isqrt { n } => expr_has_int_arith(n),
         // PMAT-502cj: list(range(...)) — recurse into the bound exprs.
         Expr::RangeList { start, stop, .. } => {
             expr_has_int_arith(start) || expr_has_int_arith(stop)
@@ -1698,6 +1698,11 @@ pub enum Expr {
     /// 1`; overflow panics under the i64 int-arith contract; a negative `n`
     /// panics (Python `ValueError`). Lean refuses.
     Factorial { n: Box<Expr> },
+    /// PMAT-552: `math.isqrt(n)` — exact integer square root `⌊√n⌋` of a
+    /// non-negative int (**Int**). Rust/Ruchy emit an inline integer-Newton
+    /// block (no float, so exact for every `i64`); a negative `n` panics (Python
+    /// `ValueError`); `isqrt(0) == 0`. Lean refuses.
+    Isqrt { n: Box<Expr> },
     /// `list(range(start, stop, step))` — materialise a range into a `Vec`.
     /// PMAT-502cj (Tranche 2). Rust/Ruchy emit `((<start>)..(<stop>))
     /// .collect::<Vec<i64>>()` for `step == 1`, or `.step_by(<step> as usize)`
