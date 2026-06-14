@@ -19,6 +19,24 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.246] — 2026-06-14
+
+Tranche 2 — PMAT-547 (correctness): tuple-unpack init then augment.
+
+- `i, total = 0, 0` then `total += i` was rejected (`augments total before it is
+  assigned`) — `Stmt::LetTuple` registered `name_types` but not `ctx.bound`
+  (which `lower_aug_assign` checks). After fixing that, the binding emitted
+  immutable `let (i, total)` → E0384, because the mutability pre-walk didn't
+  count tuple-unpack targets and `LetTuple` carried no per-name mutability.
+- Fix (3 parts): `LetTuple` lowering inserts each name into `ctx.bound`;
+  `walk_counts` counts a tuple-of-Names assign target (each name +bump);
+  `Stmt::LetTuple` gains a per-name `mutable: Vec<bool>` field → emits
+  `let (mut a, b) = …` (only the mutated name is `mut`, so read-only
+  `a, b = f()` stays warning-free).
+- New e2e fixture `tuple_unpack_augment.py` (`two_accumulators`,
+  `while_accumulate`, `one_mut_one_const`) cross-checked vs python3 (18, 10, 31).
+  e2e 307 → 308.
+
 ## [0.1.245] — 2026-06-14
 
 Tranche 2 — PMAT-546: comprehensions / generator expressions over a string.
