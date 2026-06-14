@@ -1378,12 +1378,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             }
         }
         // PMAT-498: scalar numeric builtins → receiver-method form.
-        Expr::NumBuiltin { op, args } => {
+        Expr::NumBuiltin { op, args, of_float } => {
             out.push('(');
             emit_expr(out, &args[0], mode)?;
             out.push(')');
             match op {
-                NumBuiltinOp::Abs => out.push_str(".abs()"),
+                // PMAT-579: checked i64 abs (see Rust twin); f64 abs is exact.
+                NumBuiltinOp::Abs if *of_float => out.push_str(".abs()"),
+                NumBuiltinOp::Abs => out.push_str(
+                    ".checked_abs().expect(\"xpile: i64 abs overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")",
+                ),
                 // PMAT-502ek: math functions, matching the Rust backend.
                 NumBuiltinOp::Sqrt => out.push_str(".sqrt()"),
                 NumBuiltinOp::Floor => out.push_str(".floor() as i64"),

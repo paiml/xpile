@@ -6116,6 +6116,27 @@ fn main() {
     assert_rustc_runs("bool_as_int", &rust, driver);
 }
 
+/// PMAT-579 (Tranche 2): **correctness / contract integrity** — `abs()` of an
+/// i64 wrapped at `i64::MIN`. `(x).abs()` returns `i64::MIN` for `i64::MIN`
+/// (no overflow check under `-O`), silently wrapping where the contract
+/// promises a panic (Python's `abs` is exact). Now an int `abs` emits
+/// `.checked_abs().expect(…)`; an f64 `abs` keeps `.abs()` (never overflows).
+/// Found by the differential hunt. Cross-checked vs python3.
+#[test]
+fn abs_overflow() {
+    let rust = xpile_transpile_to_rust("abs_overflow.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(a_int(-5), 5);
+    assert_eq!(a_int(5), 5);
+    assert!((a_float(-3.5) - 3.5).abs() < 1e-9);
+    // abs(i64::MIN) must PANIC (contract), not wrap to i64::MIN.
+    assert!(std::panic::catch_unwind(|| a_int(i64::MIN)).is_err());
+}
+"#;
+    assert_rustc_runs("abs_overflow", &rust, driver);
+}
+
 /// PMAT-578 (Tranche 2): **correctness** — `sorted()` over a float list emitted
 /// `Vec<f64>::sort()`, which fails to compile (`f64: Ord` not satisfied — E0277),
 /// so a transpile success produced invalid Rust. Now the keyless float case uses
@@ -6903,8 +6924,9 @@ fn index_unary_builtin() {
         !rust.contains("[abs(") && !rust.contains(" abs(") && !rust.contains("(abs("),
         "abs must lower to a method, not a bare call:\n{rust}"
     );
+    // PMAT-579: int `abs` emits `.checked_abs()` (overflow-checked).
     assert!(
-        rust.contains("(i).abs() as usize") && rust.contains("((n).abs()).checked_neg()"),
+        rust.contains("(i).checked_abs()") && rust.contains("(n).checked_abs()"),
         "index/unary builtins:\n{rust}"
     );
     let driver = r#"
@@ -6931,8 +6953,9 @@ fn collection_literal_builtin() {
         !rust.contains("![abs(") && !rust.contains(" abs(") && !rust.contains("(abs("),
         "abs must lower to a method, not a bare call:\n{rust}"
     );
+    // PMAT-579: int `abs` emits `.checked_abs()` (overflow-checked).
     assert!(
-        rust.contains("(a).abs()") && rust.contains("(n).abs()"),
+        rust.contains("(a).checked_abs()") && rust.contains("(n).checked_abs()"),
         "collection-literal builtins:\n{rust}"
     );
     let driver = r#"
@@ -6958,8 +6981,9 @@ fn compare_builtin() {
         !rust.contains("{ abs(") && !rust.contains(" abs(") && !rust.contains("(abs("),
         "abs must lower to a method, not a bare call:\n{rust}"
     );
+    // PMAT-579: int `abs` emits `.checked_abs()` (overflow-checked).
     assert!(
-        rust.contains("(n).abs() > 0") && rust.contains("(a).max(b) <= c"),
+        rust.contains("(n).checked_abs()") && rust.contains("(a).max(b) <= c"),
         "comparison builtins:\n{rust}"
     );
     let driver = r#"
@@ -6988,8 +7012,11 @@ fn ternary_builtin() {
         !rust.contains("{ abs(") && !rust.contains(" abs("),
         "abs must lower to a method, not a bare call:\n{rust}"
     );
+    // PMAT-579: int `abs` emits `.checked_abs()` (overflow-checked).
     assert!(
-        rust.contains(".abs()") && rust.contains("(a).max(b)") && rust.contains("checked_pow"),
+        rust.contains(".checked_abs()")
+            && rust.contains("(a).max(b)")
+            && rust.contains("checked_pow"),
         "ternary builtins:\n{rust}"
     );
     let driver = r#"
@@ -7286,11 +7313,13 @@ fn main() {
 
 /// PMAT-498 (Tranche 2): scalar numeric builtins `abs`/`min`/`max` →
 /// `(x).abs()` / `(a).min(b)` / `(a).max(b)`. `clamp` via `min(max(...))`.
+/// PMAT-579: an `int` `abs` now emits `.checked_abs()` (overflow-panics on
+/// `i64::MIN` per C-PY-INT-ARITH) rather than the wrapping `.abs()`.
 #[test]
 fn num_builtins_abs_min_max() {
     let rust = xpile_transpile_to_rust("num_builtins.py");
     assert!(
-        rust.contains(".abs()") && rust.contains(".min(") && rust.contains(".max("),
+        rust.contains(".checked_abs()") && rust.contains(".min(") && rust.contains(".max("),
         "expected abs/min/max emissions, got:\n{rust}"
     );
     let driver = r#"

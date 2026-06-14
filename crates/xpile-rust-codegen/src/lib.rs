@@ -1517,12 +1517,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             }
         }
         // PMAT-498: scalar numeric builtins → receiver-method form.
-        Expr::NumBuiltin { op, args } => {
+        Expr::NumBuiltin { op, args, of_float } => {
             out.push('(');
             emit_expr(out, &args[0], mode)?;
             out.push(')');
             match op {
-                NumBuiltinOp::Abs => out.push_str(".abs()"),
+                // PMAT-579: `abs` of an i64 must be checked — `i64::MIN.abs()`
+                // wraps to `i64::MIN` silently (no overflow under `-O`), which
+                // falsifies C-PY-INT-ARITH (Python's `abs` is exact). An f64
+                // `abs` never overflows, so it keeps `.abs()`.
+                NumBuiltinOp::Abs if *of_float => out.push_str(".abs()"),
+                NumBuiltinOp::Abs => out.push_str(
+                    ".checked_abs().expect(\"xpile: i64 abs overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")",
+                ),
                 // PMAT-502ek: math functions. `floor`/`ceil` return Python
                 // `int`, so cast the f64 result to i64.
                 NumBuiltinOp::Sqrt => out.push_str(".sqrt()"),
