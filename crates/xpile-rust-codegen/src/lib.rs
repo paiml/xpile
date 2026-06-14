@@ -468,6 +468,8 @@ fn emit_stmt_indented(
             match kind {
                 xpile_meta_hir::PairIterKind::Enumerate { start } => {
                     // PMAT-502ca: `enumerate(xs, start)` offsets the index.
+                    // PMAT-595: the offset add honors C-PY-INT-ARITH (a bare
+                    // `+ start` silently wraps for a start near i64::MAX).
                     if *start == 0 {
                         out.push_str(
                             ".iter().cloned().enumerate().map(|(__i, __e)| (__i as i64, __e))",
@@ -475,7 +477,7 @@ fn emit_stmt_indented(
                     } else {
                         write!(
                             out,
-                            ".iter().cloned().enumerate().map(|(__i, __e)| (__i as i64 + {start}i64, __e))"
+                            ".iter().cloned().enumerate().map(|(__i, __e)| ((__i as i64).checked_add({start}i64).expect(\"xpile: i64 addition overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"), __e))"
                         )?;
                     }
                 }
@@ -1625,14 +1627,24 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, list, mode)?;
                 out.push_str(").iter() { let __st = __ss + __sx; if __ss.abs() >= __sx.abs() { __sc += (__ss - __st) + __sx; } else { __sc += (__sx - __st) + __ss; } __ss = __st; } __ss + __sc }");
             } else {
-                // PMAT-502cx: `sum(xs, start)` → `(start) + xs.iter().sum::<i64>()`.
+                // PMAT-595: integer `sum(xs[, start])` must honor the
+                // C-PY-INT-ARITH overflow contract like every other int-arith
+                // path (`+`, `*`, abs, the shift trio) — a bare
+                // `.iter().sum::<i64>()` silently wraps under `-O` (and panics
+                // with a generic message in debug), bypassing the contract.
+                // Emit a checked fold seeded with `start` (or 0) that fails
+                // loud, folding the start in so the seed is also contract-safe.
+                out.push('(');
+                emit_expr(out, list, mode)?;
+                out.push_str(").iter().fold(");
                 if let Some(start) = start {
                     out.push('(');
                     emit_expr(out, start, mode)?;
-                    out.push_str(") + ");
+                    out.push(')');
+                } else {
+                    out.push_str("0i64");
                 }
-                emit_expr(out, list, mode)?;
-                out.push_str(".iter().sum::<i64>()");
+                out.push_str(", |__a, &__x| __a.checked_add(__x).expect(\"xpile: i64 addition overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"))");
             }
         }
         // PMAT-502j: `all(xs)`/`any(xs)` over a bool list.

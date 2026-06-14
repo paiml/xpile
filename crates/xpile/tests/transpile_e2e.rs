@@ -3317,12 +3317,14 @@ fn main() {
 }
 
 /// PMAT-502ca (Tranche 2): `enumerate(xs, start)` — the optional start index
-/// offsets the index var (`__i as i64 + start`).
+/// offsets the index var via a checked add (`(__i as i64).checked_add(start)`,
+/// C-PY-INT-ARITH, PMAT-595).
 #[test]
 fn enumerate_start() {
     let rust = xpile_transpile_to_rust("enumerate_start.py");
     assert!(
-        rust.contains("__i as i64 + 1i64") && rust.contains("__i as i64 + 10i64"),
+        rust.contains("(__i as i64).checked_add(1i64)")
+            && rust.contains("(__i as i64).checked_add(10i64)"),
         "enumerate start offset:\n{rust}"
     );
     let driver = r#"
@@ -3341,9 +3343,9 @@ fn main() {
 #[test]
 fn enumerate_start_kwarg() {
     let rust = xpile_transpile_to_rust("enumerate_start_kwarg.py");
-    // The keyword form must produce the same `+ 10i64` offset as positional.
+    // The keyword form must produce the same checked offset as positional.
     assert_eq!(
-        rust.matches("__i as i64 + 10i64").count(),
+        rust.matches("(__i as i64).checked_add(10i64)").count(),
         2,
         "both enumerate forms must offset by start:\n{rust}"
     );
@@ -6953,7 +6955,7 @@ fn main() {
 fn list_comp_expr() {
     let rust = xpile_transpile_to_rust("list_comp_expr.py");
     assert!(
-        rust.contains(".map(|__k|") && rust.contains(".iter().sum::<i64>()"),
+        rust.contains(".map(|__k|") && rust.contains(".iter().fold(0i64, |__a, &__x|"),
         "expr-position list comp → map:\n{rust}"
     );
     let driver = r#"
@@ -7299,7 +7301,7 @@ fn main() {
 fn generator_expr() {
     let rust = xpile_transpile_to_rust("generator_expr.py");
     assert!(
-        rust.contains(".map(|__k|") && rust.contains(".iter().sum::<i64>()"),
+        rust.contains(".map(|__k|") && rust.contains(".iter().fold(0i64, |__a, &__x|"),
         "genexpr → map + sum:\n{rust}"
     );
     let driver = r#"
@@ -7508,8 +7510,9 @@ fn main() {
 #[test]
 fn sum_start() {
     let rust = xpile_transpile_to_rust("sum_start.py");
+    // PMAT-595: int sum is a checked fold seeded with `start` (contract-safe).
     assert!(
-        rust.contains("(base) + xs.iter().sum::<i64>()"),
+        rust.contains("(xs).iter().fold((base), |__a, &__x|"),
         "sum(xs, base):\n{rust}"
     );
     // PMAT-584: float sum is now a Neumaier compensated fold seeded with start.
@@ -7694,15 +7697,17 @@ fn main() {
     assert_rustc_runs("histogram_if", &rust, driver);
 }
 
-/// PMAT-498b (Tranche 2): `sum(xs)` over a numeric list →
-/// `xs.iter().sum::<i64>()` / `::<f64>()` (turbofish from the element type).
+/// PMAT-498b (Tranche 2): `sum(xs)` over a numeric list — an int sum is a
+/// checked fold (`.fold(0i64, … checked_add …)`, C-PY-INT-ARITH, PMAT-595); a
+/// float sum is the Neumaier compensated fold (PMAT-584).
 #[test]
 fn sum_builtin_int_and_float() {
     let rust = xpile_transpile_to_rust("sum_builtin.py");
-    // PMAT-584: int sum stays exact `.iter().sum::<i64>()`; float sum is a
-    // Neumaier compensated fold (`__sc += …`), not naive `.iter().sum::<f64>()`.
+    // PMAT-595: int sum is a checked fold (`.fold(0i64, … checked_add …)`,
+    // C-PY-INT-ARITH); PMAT-584: float sum is a Neumaier compensated fold
+    // (`__sc += …`), not naive `.iter().sum::<f64>()`.
     assert!(
-        rust.contains(".iter().sum::<i64>()") && rust.contains("__sc += "),
+        rust.contains(".iter().fold(0i64, |__a, &__x|") && rust.contains("__sc += "),
         "expected typed sum emissions, got:\n{rust}"
     );
     let driver = r#"
@@ -7712,6 +7717,35 @@ fn main() {
 }
 "#;
     assert_rustc_runs("sum_builtin", &rust, driver);
+}
+
+/// PMAT-595: integer `sum()` / `sum(xs, start)` / `enumerate(xs, start)` must
+/// honor the C-PY-INT-ARITH overflow contract (checked add + fail-loud), like
+/// every other int-arith path, instead of a bare `.iter().sum::<i64>()` / `+`
+/// that silently wraps under `-O`. Cross-checked vs python3 for the normal
+/// cases (`sum([1,2,3])==6`, `sum([1,2,3],10)==16`, enumerate start 10 → last
+/// index 12); the overflow cases fail loud (caught via `catch_unwind`).
+#[test]
+fn int_sum_overflow() {
+    let rust = xpile_transpile_to_rust("int_sum_overflow.py");
+    assert!(
+        rust.contains(".iter().fold(0i64, |__a, &__x| __a.checked_add(__x)")
+            && rust.contains(".iter().fold((base), |__a, &__x| __a.checked_add(__x)")
+            && rust.contains("(__i as i64).checked_add(9223372036854775807i64)"),
+        "int sum/enumerate must emit checked adds:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(total(vec![1, 2, 3]), 6);
+    assert_eq!(total_from(vec![1, 2, 3], 10), 16);
+    assert_eq!(enum_last(vec![5, 5, 5]), 12);
+    // i64::MAX + 1 in the running sum must PANIC (contract), not wrap.
+    assert!(std::panic::catch_unwind(|| total(vec![i64::MAX, 1])).is_err());
+    // enumerate start at i64::MAX overflows on the 2nd index -> panic.
+    assert!(std::panic::catch_unwind(|| enum_overflow(vec![0, 0])).is_err());
+}
+"#;
+    assert_rustc_runs("int_sum_overflow", &rust, driver);
 }
 
 /// PMAT-498 (Tranche 2): scalar numeric builtins `abs`/`min`/`max` →
