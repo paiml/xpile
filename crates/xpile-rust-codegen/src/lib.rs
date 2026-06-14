@@ -1669,6 +1669,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, list, mode)?;
             out.push_str(".clone(); __xv.reverse(); __xv }");
         }
+        // PMAT-549: `math.gcd(a, b)` → inline Euclidean algorithm over abs values.
+        Expr::Gcd { a, b } => {
+            out.push_str("{ let mut __ga = (");
+            emit_expr(out, a, mode)?;
+            out.push_str(").abs(); let mut __gb = (");
+            emit_expr(out, b, mode)?;
+            out.push_str(").abs(); while __gb != 0 { let __gt = __gb; __gb = __ga % __gb; __ga = __gt; } __ga }");
+        }
         // PMAT-502cj: `list(range(start, stop, step))` → a collected i64 range.
         Expr::RangeList { start, stop, step } => {
             if *step > 0 {

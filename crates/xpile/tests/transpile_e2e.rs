@@ -5018,6 +5018,29 @@ fn main() {
     assert_rustc_runs("negative_step_slice", &rust, driver);
 }
 
+/// PMAT-549 (Tranche 2): `math.gcd(a, b)` — greatest common divisor of two ints.
+/// Lowers to a new `Expr::Gcd` whose codegen is an inline Euclidean-algorithm
+/// block over the operands' absolute values (`gcd(0, 0) == 0`, always
+/// non-negative). Cross-checked vs python3 (12, 1, 7, 2, 4).
+#[test]
+fn math_gcd() {
+    let rust = xpile_transpile_to_rust("math_gcd.py");
+    assert!(
+        rust.contains("__gb = __ga % __gb"),
+        "math.gcd should lower to an inline Euclidean block:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(gcd2(48, 36), 12);
+    assert_eq!(gcd2(17, 5), 1);
+    assert_eq!(gcd2(0, 7), 7);
+    assert_eq!(reduce_fraction(12, 18), 2);
+    assert_eq!(gcd_negative(-12, 8), 4);
+}
+"#;
+    assert_rustc_runs("math_gcd", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
