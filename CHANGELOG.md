@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.294] — 2026-06-14
+
+Tranche 2 — PMAT-595: **correctness** — integer `sum()` / `enumerate(start)` honor the C-PY-INT-ARITH overflow contract.
+
+- Integer `sum(xs[, start])` emitted a bare `.iter().sum::<i64>()` and
+  `enumerate(xs, start)` emitted a bare `__i as i64 + start` — both bypass the
+  C-PY-INT-ARITH overflow contract every other int-arith path honors (`+`, `*`,
+  `abs`, the shl/shr trio use `checked_*` + a contract-citing `expect`). Under
+  `-O` the bare ops silently wrap (Python promotes to bigint). Found by the
+  differential hunt (#4, findings #14 + #28).
+- Fix: int `sum` → a checked left fold seeded with `start` (or 0);
+  `enumerate(xs, start)` offset → `(__i as i64).checked_add(start).expect(...)`.
+  Float `sum` (Neumaier) and `start == 0` enumerate unchanged. i64 arithmetic is
+  now uniformly fail-loud. Rust + Ruchy. No new IR.
+- New e2e fixture `int_sum_overflow.py` cross-checked vs python3 (normal cases)
+  with overflow cases failing loud via `catch_unwind`. 356 e2e fixtures.
+
 ## [0.1.293] — 2026-06-14
 
 Tranche 2 — PMAT-594: **correctness** — `enumerate(xs, start=N)` keyword form honors the start.
