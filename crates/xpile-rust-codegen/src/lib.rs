@@ -1301,8 +1301,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, tuple, mode)?;
             write!(out, ").{index}.clone()")?;
         }
-        // PMAT-496: Python `xs[lo:hi]` slice → `<c>[(lo) as usize..(hi)
-        // as usize].to_vec()` (list) / `.to_string()` (str).
+        // PMAT-496/539: Python `xs[lo:hi]` slice with full Python bound
+        // semantics — a negative bound counts from the end (`+len`), every
+        // bound clamps to `[0, len]`, and `lo > hi` yields empty. The naive
+        // `(lo) as usize` panicked on a negative bound (wraps to a huge usize)
+        // or an out-of-range bound. Emit a block that binds the collection,
+        // resolves + clamps each bound, then slices.
         Expr::Slice {
             collection,
             lo,
@@ -1310,29 +1314,45 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             of_str,
             step,
         } => {
-            // PMAT-502r: an absent bound is an open end (`a..`, `..b`, `..`).
+            let resolve = |out: &mut String,
+                           bound: &Option<Box<Expr>>,
+                           default: &str,
+                           mode: bool|
+             -> Result<(), CodegenError> {
+                match bound {
+                    Some(b) => {
+                        out.push_str("{ let __b = (");
+                        emit_expr(out, b, mode)?;
+                        out.push_str(
+                            ") as i64; if __b < 0 { (__n + __b).max(0) } else { __b.min(__n) } }",
+                        );
+                    }
+                    None => out.push_str(default),
+                }
+                Ok(())
+            };
+            out.push_str("{ let __sl = &(");
             emit_expr(out, collection, mode)?;
-            out.push('[');
-            if let Some(lo) = lo {
-                out.push('(');
-                emit_expr(out, lo, mode)?;
-                out.push_str(") as usize");
-            }
-            out.push_str("..");
-            if let Some(hi) = hi {
-                out.push('(');
-                emit_expr(out, hi, mode)?;
-                out.push_str(") as usize");
-            }
-            out.push(']');
+            out.push_str("); let __n = __sl.len() as i64; let __lo_i = ");
+            resolve(out, lo, "0", mode)?;
+            out.push_str("; let __hi_i = ");
+            resolve(out, hi, "__n", mode)?;
+            out.push_str("; let __lo = __lo_i as usize; let __hi = __hi_i.max(__lo_i) as usize; ");
             match step {
                 // PMAT-502bc: positive list step → `.iter().step_by(c)
                 // .cloned().collect::<Vec<_>>()` (str steps are rejected
                 // in the frontend, so `step` is only ever set for lists).
                 Some(s) => {
-                    write!(out, ".iter().step_by({s}).cloned().collect::<Vec<_>>()")?;
+                    write!(
+                        out,
+                        "__sl[__lo..__hi].iter().step_by({s}).cloned().collect::<Vec<_>>() }}"
+                    )?;
                 }
-                None => out.push_str(if *of_str { ".to_string()" } else { ".to_vec()" }),
+                None => out.push_str(if *of_str {
+                    "__sl[__lo..__hi].to_string() }"
+                } else {
+                    "__sl[__lo..__hi].to_vec() }"
+                }),
             }
         }
         // PMAT-498: scalar numeric builtins → receiver-method form.
