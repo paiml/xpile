@@ -19,6 +19,17 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.270] — 2026-06-14
+
+Tranche 2 — PMAT-571: 3-arg `pow(a, b, m)` modular exponentiation.
+
+- 3-arg `pow(base, exp, mod)` emitted a bare `pow(...)` (undefined Rust fn,
+  E0425). New `Expr::PowMod` emits an inline square-and-multiply that reduces
+  mod m each step with i128 intermediate products (no overflow even near
+  i64::MAX); base normalised to [0, m) without the overflow-prone `(x%m)+m`;
+  zero modulus / negative exponent panic. Rippled meta-HIR + both inferers +
+  rust/ruchy emit; Lean refuses. Found by the differential hunt.
+
 ## [0.1.269] — 2026-06-14
 
 Tranche 2 — PMAT-570: **correctness** — negative `xs.pop(-k)` / `del xs[-k]`.
