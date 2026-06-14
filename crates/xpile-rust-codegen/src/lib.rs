@@ -1456,9 +1456,20 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 }
                 Ok(())
             };
-            out.push_str("{ let __sl = &(");
-            emit_expr(out, collection, mode)?;
-            out.push_str("); let __n = __sl.len() as i64; let __lo_i = ");
+            // PMAT-567: a str slice indexes by Unicode CHARACTERS, not bytes —
+            // collect to `Vec<char>` so `__n` (char count), the bound clamping,
+            // and `__sl[__lo..__hi]` are all char-based (a byte slice gives wrong
+            // results AND panics on a char boundary for non-ASCII input). A list
+            // slice keeps the by-reference `&Vec` (element-indexed, already right).
+            if *of_str {
+                out.push_str("{ let __sl: Vec<char> = (");
+                emit_expr(out, collection, mode)?;
+                out.push_str(").chars().collect(); let __n = __sl.len() as i64; let __lo_i = ");
+            } else {
+                out.push_str("{ let __sl = &(");
+                emit_expr(out, collection, mode)?;
+                out.push_str("); let __n = __sl.len() as i64; let __lo_i = ");
+            }
             resolve(out, lo, "0", mode)?;
             out.push_str("; let __hi_i = ");
             resolve(out, hi, "__n", mode)?;
@@ -1484,7 +1495,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     )?;
                 }
                 None => out.push_str(if *of_str {
-                    "__sl[__lo..__hi].to_string() }"
+                    // PMAT-567: `__sl` is `Vec<char>` for str — collect the slice
+                    // back into a String.
+                    "__sl[__lo..__hi].iter().collect::<String>() }"
                 } else {
                     "__sl[__lo..__hi].to_vec() }"
                 }),

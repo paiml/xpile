@@ -1233,9 +1233,11 @@ fn main() {
 #[test]
 fn slicing_emitted_rust_list_and_str() {
     let rust = xpile_transpile_to_rust("slicing.py");
-    // PMAT-539: bounded slices now use the resolve+clamp block form.
+    // PMAT-539: bounded slices use the resolve+clamp block form. PMAT-567: a
+    // str slice collects to `Vec<char>` then back to a String (char-indexed).
     assert!(
-        rust.contains("__sl[__lo..__hi].to_vec()") && rust.contains("__sl[__lo..__hi].to_string()"),
+        rust.contains("__sl[__lo..__hi].to_vec()")
+            && rust.contains("__sl[__lo..__hi].iter().collect::<String>()"),
         "expected slice emissions in Rust, got:\n{rust}"
     );
     let driver = r#"
@@ -5907,6 +5909,34 @@ fn main() {
 }
 "#;
     assert_rustc_runs("fstring_specs", &rust, driver);
+}
+
+/// PMAT-567 (Tranche 2): **correctness** — str slicing `s[a:b]` indexes by
+/// Unicode **characters**, not bytes. Was a byte slice → wrong result on
+/// non-ASCII AND a char-boundary **panic** (`s[1:3]` on "αβγδ"). Now collects
+/// the str to a `Vec<char>` and slices that (`__sl[..].iter().collect()`); list
+/// slicing is unchanged. Found by the differential hunt. Cross-checked vs
+/// python3 (βγ, hél, βγ, caf, γδ, éllo, ell, 20).
+#[test]
+fn str_slice_char() {
+    let rust = xpile_transpile_to_rust("str_slice_char.py");
+    assert!(
+        rust.contains("Vec<char> = (") && rust.contains(".iter().collect::<String>()"),
+        "str slice should collect to Vec<char>:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(mid("αβγδ".to_string()), "βγ");
+    assert_eq!(prefix("héllo".to_string(), 3), "hél");
+    assert_eq!(suffix("αβγ".to_string()), "βγ");
+    assert_eq!(drop_last("café".to_string()), "caf");
+    assert_eq!(from_neg("αβγδ".to_string()), "γδ");
+    assert_eq!(oob("héllo".to_string()), "éllo");
+    assert_eq!(ascii_slice("hello".to_string()), "ell");
+    assert_eq!(list_slice(vec![10, 20, 30, 40]), 20);
+}
+"#;
+    assert_rustc_runs("str_slice_char", &rust, driver);
 }
 
 /// PMAT-566 (Tranche 2): **correctness** — `str.find/rfind/index/rindex` return

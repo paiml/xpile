@@ -1327,9 +1327,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 }
                 Ok(())
             };
-            out.push_str("{ let __sl = &(");
-            emit_expr(out, collection, mode)?;
-            out.push_str("); let __n = __sl.len() as i64; let __lo_i = ");
+            // PMAT-567: str slices index by Unicode chars (collect to Vec<char>);
+            // list slices keep the by-reference element-indexed &Vec. Mirrors the
+            // Rust backend.
+            if *of_str {
+                out.push_str("{ let __sl: Vec<char> = (");
+                emit_expr(out, collection, mode)?;
+                out.push_str(").chars().collect(); let __n = __sl.len() as i64; let __lo_i = ");
+            } else {
+                out.push_str("{ let __sl = &(");
+                emit_expr(out, collection, mode)?;
+                out.push_str("); let __n = __sl.len() as i64; let __lo_i = ");
+            }
             resolve(out, lo, "0", mode)?;
             out.push_str("; let __hi_i = ");
             resolve(out, hi, "__n", mode)?;
@@ -1350,7 +1359,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     )?;
                 }
                 None => out.push_str(if *of_str {
-                    "__sl[__lo..__hi].to_string() }"
+                    // PMAT-567: `__sl` is `Vec<char>` for str.
+                    "__sl[__lo..__hi].iter().collect::<String>() }"
                 } else {
                     "__sl[__lo..__hi].to_vec() }"
                 }),
