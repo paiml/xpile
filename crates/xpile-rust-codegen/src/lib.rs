@@ -107,8 +107,22 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                 name,
                 fields,
                 methods,
+                frozen,
             } => {
-                out.push_str("#[derive(Clone, Debug, PartialEq)]\n");
+                // PMAT-592: a frozen dataclass is hashable in Python, so it may
+                // be a dict key / set element — derive `Eq, Hash` (else E0277/
+                // E0599). Only when every field type is itself `Eq + Hash`
+                // (`i64`/`bool`/`String`); a float field disqualifies it (`f64`
+                // is neither `Eq` nor `Hash`).
+                let derive_eq_hash = *frozen
+                    && fields
+                        .iter()
+                        .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool | Type::Str));
+                if derive_eq_hash {
+                    out.push_str("#[derive(Clone, Debug, PartialEq, Eq, Hash)]\n");
+                } else {
+                    out.push_str("#[derive(Clone, Debug, PartialEq)]\n");
+                }
                 writeln!(out, "pub struct {name} {{")?;
                 for (field, ty) in fields {
                     write!(out, "    pub {field}: ")?;

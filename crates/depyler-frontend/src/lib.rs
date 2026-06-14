@@ -1313,6 +1313,25 @@ fn is_property(m: &ast::StmtFunctionDef) -> bool {
         .any(|d| matches!(d, ast::Expr::Name(n) if n.id.as_str() == "property"))
 }
 
+/// PMAT-592 (classes epic): true if a class carries `@dataclass(frozen=True)`.
+/// A frozen dataclass is hashable in Python (it may be a dict key / set
+/// element), so the backend derives `Eq, Hash` for it (when all field types
+/// are Eq+Hash-capable). The decorator parses as a `Call` to `dataclass`
+/// with a `frozen=True` keyword; bare `@dataclass` / `frozen=False` are not
+/// frozen.
+fn class_is_frozen(c: &ast::StmtClassDef) -> bool {
+    c.decorator_list.iter().any(|d| {
+        let ast::Expr::Call(call) = d else { return false };
+        if !matches!(call.func.as_ref(), ast::Expr::Name(n) if n.id.as_str() == "dataclass") {
+            return false;
+        }
+        call.keywords.iter().any(|kw| {
+            kw.arg.as_deref() == Some("frozen")
+                && matches!(&kw.value, ast::Expr::Constant(c) if matches!(c.value, ast::Constant::Bool(true)))
+        })
+    })
+}
+
 /// PMAT-513 (Tranche 2): true if `c` is an `Enum` class — exactly one base, the
 /// bare name `Enum`, and no keyword bases. (`IntEnum`/`StrEnum`/`Flag` are not
 /// recognised at the first cut.)
@@ -1424,6 +1443,8 @@ fn lower_class_def(
     enums: Rc<HashMap<String, Vec<(String, i64)>>>,
 ) -> Result<Item, FrontendError> {
     let (name, fields, _, _) = class_def_signature(&c)?;
+    // PMAT-592: record `@dataclass(frozen=True)` before `c.body` is consumed.
+    let frozen = class_is_frozen(&c);
     let self_ty = Type::Struct(name.clone());
     let mut methods: Vec<Function> = Vec::new();
     for stmt in c.body {
@@ -1554,6 +1575,7 @@ fn lower_class_def(
         name,
         fields,
         methods,
+        frozen,
     })
 }
 

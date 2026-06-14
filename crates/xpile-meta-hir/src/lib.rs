@@ -71,6 +71,18 @@ pub enum Item {
         /// (the `self` param emits as `&self`); Lean refuses. First cut:
         /// read-only `&self` methods (self-mutating ones are rejected upstream).
         methods: Vec<Function>,
+        /// PMAT-592 (classes epic): the class is `@dataclass(frozen=True)` — a
+        /// frozen dataclass is *hashable* in Python, so it may be used as a
+        /// dict key or set element. When this is set AND every field type is
+        /// itself `Eq + Hash`-capable (`i64`/`bool`/`String`), the Rust/Ruchy
+        /// codegen extends the derive list with `Eq, Hash` (a plain
+        /// `#[derive(Clone, Debug, PartialEq)]` struct cannot be a `HashMap`
+        /// key / `HashSet` element — E0277/E0599). Non-frozen dataclasses are
+        /// unhashable in Python, so they keep the bare derive set. A float
+        /// field disqualifies the struct (`f64` is neither `Eq` nor `Hash`),
+        /// matching the codegen guard. `#[serde(default)]` for back-compat.
+        #[serde(default)]
+        frozen: bool,
     },
     /// PMAT-513 (Tranche 2): a Python `class C(Enum):` with `NAME = <int literal>`
     /// members → a Rust enum. `variants` are `(name, discriminant)` in declaration
