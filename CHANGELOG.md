@@ -19,6 +19,20 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.253] — 2026-06-14
+
+Tranche 2 — PMAT-554: `math.perm(n, k)`.
+
+- `math.perm(n, k)` — number of `k`-permutations of `n`, `P(n, k) = n!/(n−k)!`.
+  New `Expr::Perm` whose rust/ruchy codegen is an inline descending-product
+  block (`∏ (n−i)` for `i` in `0..k`, i.e. `k` factors counting down from `n`).
+  `k > n` → 0 (both non-negative); negative `n`/`k` panic (Python `ValueError`);
+  the running `checked_mul` panics on i64 overflow per the int-arith contract.
+  The one-arg form `math.perm(n)` equals `n!` and reuses `Expr::Factorial`.
+  Rippled to meta-HIR (+ `expr_has_int_arith`), both inferers (→ `I64`, joined
+  with `Comb`), and rust/ruchy emit; the Lean lane refuses. Completes the
+  math-int combinatorics pair (`comb`/`perm`).
+
 ## [0.1.252] — 2026-06-14
 
 Tranche 2 — PMAT-553: `math.comb(n, k)`.
