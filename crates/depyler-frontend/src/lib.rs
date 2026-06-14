@@ -5004,13 +5004,7 @@ fn desugar_comp_2gen(
         };
     let outer = &generators[0];
     let inner = &generators[1];
-    for g in [outer, inner] {
-        if g.ifs.len() > 1 {
-            return Err(FrontendError::Lower(format!(
-                "function `{fn_name}` has a {kind}-comprehension generator with multiple `if` clauses — v0.2.0 supports one per generator (combine with `and`)"
-            )));
-        }
-    }
+    // PMAT-563: multiple `if` clauses per generator are ANDed by `comp_filter`.
     let outer_var = plain_name(outer)?;
     let inner_var = plain_name(inner)?;
 
@@ -5156,12 +5150,7 @@ fn desugar_list_comp(
         )));
     }
     let gen = &comp.generators[0];
-    if gen.ifs.len() > 1 {
-        return Err(FrontendError::Lower(format!(
-            "function `{}` uses a list comprehension with multiple `if` clauses — v0.2.0 supports one (combine with `and`)",
-            ctx.fn_name
-        )));
-    }
+    // PMAT-563: multiple `if` clauses are ANDed (see `combine_comp_filters`).
     // PMAT-502cg: tuple-target list comp `[f(k, v) for k, v in d.items()]`
     // → a `ForEachPair { Pairs }` loop appending to the accumulator (mirrors
     // the dict-comp tuple branch, PMAT-502cf). Iterable must type as
@@ -5253,19 +5242,8 @@ fn desugar_list_comp(
         // The range counter is an `i64`; bind it before lowering elem/filter.
         ctx.bound.insert(var.clone());
         ctx.name_types.insert(var.clone(), Type::I64);
-        let filter = match gen.ifs.first() {
-            None => None,
-            Some(cond) => {
-                let c = lower_expr_in_ctx(ctx, cond.clone())?;
-                if infer_type_in_ctx(ctx, &c) != Type::Bool {
-                    return Err(FrontendError::Lower(format!(
-                        "function `{}` has a list-comprehension filter that is not Bool (no int-truthiness at v0.2.0)",
-                        ctx.fn_name
-                    )));
-                }
-                Some(c)
-            }
-        };
+        // PMAT-563: fold all `if` clauses into one Bool filter (ANDed).
+        let filter = combine_comp_filters(ctx, &gen.ifs, "list")?;
         let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
         let out_ty = infer_type_in_ctx(ctx, &elem);
         let list_ty = Type::List(Box::new(out_ty));
@@ -5327,20 +5305,8 @@ fn desugar_list_comp(
     // Bind the loop var so the element + filter expressions type correctly.
     ctx.bound.insert(var.clone());
     ctx.name_types.insert(var.clone(), elem_in_ty.clone());
-    // PMAT-502ay: lower the optional `if` filter (must type as Bool).
-    let filter = match gen.ifs.first() {
-        None => None,
-        Some(cond) => {
-            let c = lower_expr_in_ctx(ctx, cond.clone())?;
-            if infer_type_in_ctx(ctx, &c) != Type::Bool {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` has a list-comprehension filter that is not Bool (no int-truthiness at v0.2.0)",
-                    ctx.fn_name
-                )));
-            }
-            Some(c)
-        }
-    };
+    // PMAT-502ay / PMAT-563: lower the `if` filter(s), ANDed into one Bool.
+    let filter = combine_comp_filters(ctx, &gen.ifs, "list")?;
     let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
     let out_ty = infer_type_in_ctx(ctx, &elem);
     let list_ty = Type::List(Box::new(out_ty));
@@ -5398,12 +5364,7 @@ fn desugar_dict_comp(
         )));
     }
     let gen = &comp.generators[0];
-    if gen.ifs.len() > 1 {
-        return Err(FrontendError::Lower(format!(
-            "function `{}` uses a dict comprehension with multiple `if` clauses — v0.2.0 supports one (combine with `and`)",
-            ctx.fn_name
-        )));
-    }
+    // PMAT-563: multiple `if` clauses are ANDed (see `combine_comp_filters`).
     // PMAT-502cf: tuple-target dict comp `{k: f(v) for k, v in d.items()}`
     // → a `ForEachPair { Pairs }` loop building the dict (mirrors the
     // `for k, v in d.items()` statement form, PMAT-502y). The iterable must
@@ -5583,19 +5544,37 @@ fn comp_filter(
     gen: &ast::Comprehension,
     kind: &str,
 ) -> Result<Option<Expr>, FrontendError> {
-    match gen.ifs.first() {
-        None => Ok(None),
-        Some(cond) => {
-            let c = lower_expr_in_ctx(ctx, cond.clone())?;
-            if infer_type_in_ctx(ctx, &c) != Type::Bool {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` has a {kind}-comprehension filter that is not Bool (no int-truthiness at v0.2.0)",
-                    ctx.fn_name
-                )));
-            }
-            Ok(Some(c))
+    combine_comp_filters(ctx, &gen.ifs, kind)
+}
+
+/// PMAT-563: combine a comprehension generator's `if` clauses into a single Bool
+/// filter. Python ANDs multiple `if`s (`[x for x in xs if a if b]` ==
+/// `… if a and b`). `None` when there are no clauses; each must type as Bool.
+/// The loop var(s) must already be bound in `ctx` so each clause types correctly.
+fn combine_comp_filters(
+    ctx: &LoweringCtx,
+    ifs: &[ast::Expr],
+    kind: &str,
+) -> Result<Option<Expr>, FrontendError> {
+    let mut acc: Option<Expr> = None;
+    for cond_ast in ifs {
+        let cond = lower_expr_in_ctx(ctx, cond_ast.clone())?;
+        if infer_type_in_ctx(ctx, &cond) != Type::Bool {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` has a {kind}-comprehension filter that is not Bool (no int-truthiness at v0.2.0)",
+                ctx.fn_name
+            )));
         }
+        acc = Some(match acc {
+            None => cond,
+            Some(prev) => Expr::BinOp {
+                op: BinOp::And,
+                lhs: Box::new(prev),
+                rhs: Box::new(cond),
+            },
+        });
     }
+    Ok(acc)
 }
 
 /// PMAT-502bd: assemble the statements for a comprehension over `range(...)`:
@@ -5672,12 +5651,7 @@ fn desugar_set_comp(
         )));
     }
     let gen = &comp.generators[0];
-    if gen.ifs.len() > 1 {
-        return Err(FrontendError::Lower(format!(
-            "function `{}` uses a set comprehension with multiple `if` clauses — v0.2.0 supports one (combine with `and`)",
-            ctx.fn_name
-        )));
-    }
+    // PMAT-563: multiple `if` clauses are ANDed (see `combine_comp_filters`).
     // PMAT-502cg: tuple-target set comp `{f(k, v) for k, v in d.items()}`
     // → a `ForEachPair { Pairs }` loop adding to the accumulator (mirrors the
     // dict/list-comp tuple branches). Iterable must type `list[tuple[K, V]]`.
@@ -11441,11 +11415,7 @@ fn lower_comp_to_map(
         )));
     }
     let gen = &generators[0];
-    if gen.ifs.len() > 1 {
-        return Err(FrontendError::Lower(format!(
-            "{kind} with multiple `if` filters is not supported — combine with `and`"
-        )));
-    }
+    // PMAT-563: multiple `if` clauses are ANDed (folded below).
     // PMAT-531: the loop target is either a plain Name (`for x in …`) or a
     // 2-name tuple (`for k, v in d.items()`). The tuple form binds both names
     // via a Rust tuple-destructure closure param (`|__k| { let (k, v) =
@@ -11516,15 +11486,9 @@ fn lower_comp_to_map(
         sub.name_types.insert(targets[1].clone(), tb);
         format!("({}, {})", targets[0], targets[1])
     };
-    // An optional single `if <cond>` wraps the iterable in `Expr::Filter`
-    // (also List-typed, so `Map` composes); cond must type as Bool.
-    let list = if let Some(cond_ast) = gen.ifs.first() {
-        let cond = lower_expr_in_ctx(&sub, cond_ast.clone())?;
-        if infer_type_in_ctx(&sub, &cond) != Type::Bool {
-            return Err(FrontendError::Lower(format!(
-                "{kind} `if` filter must be a Bool condition (no int-truthiness at v0.2.0)"
-            )));
-        }
+    // PMAT-563: the `if <cond>` clauses (ANDed) wrap the iterable in an
+    // `Expr::Filter` (also List-typed, so `Map` composes); each must type as Bool.
+    let list = if let Some(cond) = combine_comp_filters(&sub, &gen.ifs, kind)? {
         Expr::Filter {
             list: Box::new(iter_list),
             lambda: SortKey {
