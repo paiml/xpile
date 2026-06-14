@@ -1656,35 +1656,35 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     emit_expr(out, &k.body, mode)?;
                     out.push_str(" })");
                 }
-                None => match (*of_float, default.is_some()) {
+                None => match *of_float {
                     // PMAT-502er: `.cloned()` (not `.copied()`) so non-Copy
                     // `String` min/max works too; i64/bool are `Clone`.
-                    (false, _) => out.push_str(if *is_max {
+                    false => out.push_str(if *is_max {
                         ".iter().cloned().max()"
                     } else {
                         ".iter().cloned().min()"
                     }),
-                    (true, true) => out.push_str(if *is_max {
-                        ".iter().copied().reduce(f64::max)"
-                    } else {
-                        ".iter().copied().reduce(f64::min)"
-                    }),
-                    (true, false) => out.push_str(if *is_max {
-                        ".iter().copied().fold(f64::NEG_INFINITY, f64::max)"
-                    } else {
-                        ".iter().copied().fold(f64::INFINITY, f64::min)"
-                    }),
+                    // PMAT-608: float min/max = first-arg-wins reduce (matches
+                    // the Rust backend); empty → Option (ValueError, not ±∞).
+                    true => {
+                        let cmp = if *is_max { ">" } else { "<" };
+                        write!(
+                            out,
+                            ".iter().copied().reduce(|__a, __b| if __b {cmp} __a {{ __b }} else {{ __a }})"
+                        )?;
+                    }
                 },
             }
-            if !(*of_float && default.is_none()) {
-                match default {
-                    Some(d) => {
-                        out.push_str(".unwrap_or(");
-                        emit_expr(out, d, mode)?;
-                        out.push(')');
-                    }
-                    None => out.push_str(".unwrap()"),
+            match default {
+                Some(d) => {
+                    out.push_str(".unwrap_or(");
+                    emit_expr(out, d, mode)?;
+                    out.push(')');
                 }
+                None if *of_float => out.push_str(
+                    ".expect(\"xpile: max()/min() of an empty sequence (Python ValueError)\")",
+                ),
+                None => out.push_str(".unwrap()"),
             }
         }
         // PMAT-502u: list query — `xs.count(x)` / `xs.index(x)` (→ i64).

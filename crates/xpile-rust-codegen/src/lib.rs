@@ -1872,40 +1872,42 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     emit_expr(out, &k.body, mode)?;
                     out.push_str(" })");
                 }
-                None => match (*of_float, default.is_some()) {
+                None => match *of_float {
                     // Ord element (i64 / str / bool): `.min()/.max()` returns
                     // Option. `.cloned()` (not `.copied()`) so non-Copy
                     // `String` works too (PMAT-502er); i64/bool are `Clone`.
-                    (false, _) => out.push_str(if *is_max {
+                    false => out.push_str(if *is_max {
                         ".iter().cloned().max()"
                     } else {
                         ".iter().cloned().min()"
                     }),
-                    // f64 with a default → `.reduce(..)` (Option) + unwrap_or.
-                    (true, true) => out.push_str(if *is_max {
-                        ".iter().copied().reduce(f64::max)"
-                    } else {
-                        ".iter().copied().reduce(f64::min)"
-                    }),
-                    // f64, no default → the ±∞ fold (empty → ±∞, first-cut wart).
-                    (true, false) => out.push_str(if *is_max {
-                        ".iter().copied().fold(f64::NEG_INFINITY, f64::max)"
-                    } else {
-                        ".iter().copied().fold(f64::INFINITY, f64::min)"
-                    }),
+                    // PMAT-608: float min/max follow Python's first-argument-wins
+                    // semantics (and NaN propagation), NOT `f64::max`/`f64::min`,
+                    // via a strict-compare `reduce` (→ Option). This also fixes
+                    // the empty case: the old `fold(±∞, …)` returned ±∞ for an
+                    // empty sequence; `reduce` yields `None`, unwrapped below to
+                    // a Python-`ValueError`-style panic (or the default).
+                    true => {
+                        let cmp = if *is_max { ">" } else { "<" };
+                        write!(
+                            out,
+                            ".iter().copied().reduce(|__a, __b| if __b {cmp} __a {{ __b }} else {{ __a }})"
+                        )?;
+                    }
                 },
             }
-            // The float-no-default fold already produced a bare `f64`; every
-            // other branch produced an `Option`, which needs unwrapping.
-            if !(*of_float && default.is_none()) {
-                match default {
-                    Some(d) => {
-                        out.push_str(".unwrap_or(");
-                        emit_expr(out, d, mode)?;
-                        out.push(')');
-                    }
-                    None => out.push_str(".unwrap()"),
+            // Every branch now yields an `Option`; unwrap (empty → Python
+            // ValueError) or substitute the default.
+            match default {
+                Some(d) => {
+                    out.push_str(".unwrap_or(");
+                    emit_expr(out, d, mode)?;
+                    out.push(')');
                 }
+                None if *of_float => out.push_str(
+                    ".expect(\"xpile: max()/min() of an empty sequence (Python ValueError)\")",
+                ),
+                None => out.push_str(".unwrap()"),
             }
         }
         // PMAT-502u: list query — `xs.count(x)` / `xs.index(x)` (→ i64).

@@ -2254,10 +2254,12 @@ fn main() {
 #[test]
 fn list_minmax_float() {
     let rust = xpile_transpile_to_rust("list_minmax_float.py");
+    // PMAT-608: float min/max use a first-arg-wins reduce (empty → ValueError).
     assert!(
-        rust.contains(".fold(f64::INFINITY, f64::min)")
-            && rust.contains(".fold(f64::NEG_INFINITY, f64::max)"),
-        "expected float min/max fold emission, got:\n{rust}"
+        rust.contains(".reduce(|__a, __b| if __b < __a { __b } else { __a })")
+            && rust.contains(".reduce(|__a, __b| if __b > __a { __b } else { __a })")
+            && rust.contains("of an empty sequence"),
+        "expected float min/max first-arg-wins reduce, got:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -2266,6 +2268,32 @@ fn main() {
 }
 "#;
     assert_rustc_runs("list_minmax_float", &rust, driver);
+}
+
+/// PMAT-608: max()/min() over a float sequence that is EMPTY must raise
+/// ValueError (Python), not return the old ±∞ fold sentinel. The float reduce
+/// now yields Option → an empty sequence panics (≈ ValueError) instead of
+/// silently returning ±inf. Cross-checked vs python3: non-empty computes the
+/// extremum (3.0 / 1.0); empty fails loud (caught via catch_unwind).
+#[test]
+fn max_empty_float_gen() {
+    let rust = xpile_transpile_to_rust("max_empty_float_gen.py");
+    assert!(
+        !rust.contains("f64::NEG_INFINITY")
+            && !rust.contains("f64::INFINITY")
+            && rust.contains("of an empty sequence"),
+        "empty float max/min must fail loud, not return ±inf:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(max_pos_ratio(vec![2, 4, 6]), 3.0);
+    assert_eq!(min_pos_ratio(vec![2, 4, 6]), 1.0);
+    // all filtered out -> empty -> ValueError (panic), not -inf/+inf.
+    assert!(std::panic::catch_unwind(|| max_pos_ratio(vec![-1, -2])).is_err());
+    assert!(std::panic::catch_unwind(|| min_pos_ratio(vec![-1, -2])).is_err());
+}
+"#;
+    assert_rustc_runs("max_empty_float_gen", &rust, driver);
 }
 
 /// PMAT-503a (Tranche 2, exceptions sub-slice 1): a `raise Exc("msg")`
@@ -7524,7 +7552,8 @@ fn main() {
 fn minmax_default() {
     let rust = xpile_transpile_to_rust("minmax_default.py");
     assert!(
-        rust.contains(".min().unwrap_or(0i64)") && rust.contains("reduce(f64::min).unwrap_or"),
+        rust.contains(".min().unwrap_or(0i64)")
+            && rust.contains(".reduce(|__a, __b| if __b < __a { __b } else { __a }).unwrap_or"),
         "min/max default:\n{rust}"
     );
     let driver = r#"
