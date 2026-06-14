@@ -973,6 +973,30 @@ fn lower_top_level_stmt(
     }
 }
 
+/// PMAT-587: a user `class`/`@dataclass`/enum whose name is a Rust *prelude
+/// type that xpile actually emits* — `Vec` (lists), `String` (str), `HashMap`
+/// (dict), `HashSet` (set), `Option`/`Some`/`None` (optionals) — emits a
+/// `struct <Name>` that collides with the prelude. A bare unit struct merely
+/// shadows it, but once the module also uses the generic form (e.g. a
+/// `list[int]` → `Vec<i64>`), rustc rejects it (E0107: "struct takes 0 generic
+/// arguments but 1 was supplied") — a transpile-success → invalid-Rust invariant
+/// break. Reject with a clear message instead. (Auto-escaping the type name,
+/// like the `r#` keyword escape, is a possible follow-up.) The set is limited to
+/// what xpile emits, so prelude names it does NOT generate (`Result`/`Box`/…)
+/// still work by shadowing.
+fn rust_prelude_type_collision(name: &str) -> Option<String> {
+    let collides = matches!(
+        name,
+        "Vec" | "String" | "Option" | "Some" | "None" | "HashMap" | "HashSet"
+    );
+    collides.then(|| {
+        format!(
+            "class/enum `{name}` collides with a Rust prelude type that xpile emits — \
+             rename it (e.g. `{name}_`) so the generated code compiles"
+        )
+    })
+}
+
 /// PMAT-505a (classes epic, first cut): lower a Python class into an
 /// `Item::Struct`. Supported shape: a class whose body is only annotated fields
 /// (`x: int`) and/or `pass`, optionally decorated `@dataclass`. Each `x: T`
@@ -998,6 +1022,9 @@ fn class_def_signature(
     FrontendError,
 > {
     let name = c.name.to_string();
+    if let Some(msg) = rust_prelude_type_collision(&name) {
+        return Err(FrontendError::Lower(msg));
+    }
     if !c.bases.is_empty() || !c.keywords.is_empty() {
         return Err(FrontendError::Lower(format!(
             "class `{name}` has base classes / keyword bases — v0.2.0 first cut supports only a field-only / `@dataclass` class (no inheritance)"
@@ -1173,8 +1200,13 @@ fn is_literal_default(e: &ast::Expr) -> bool {
 
 /// PMAT-513 (Tranche 2): lower a Python `class C(Enum):` into an `Item::Enum`.
 fn lower_enum_def(c: &ast::StmtClassDef) -> Result<Item, FrontendError> {
+    let name = c.name.to_string();
+    // PMAT-587: an enum named after a Rust prelude type would collide.
+    if let Some(msg) = rust_prelude_type_collision(&name) {
+        return Err(FrontendError::Lower(msg));
+    }
     Ok(Item::Enum {
-        name: c.name.to_string(),
+        name,
         variants: enum_variants(c)?,
     })
 }
