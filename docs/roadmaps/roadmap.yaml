@@ -1822,6 +1822,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "FINAL R6 sub-slice — closes the DICT HALF of audit §7.3 'every construct under contract' falsification. With C-C-INT-ARITH (475b/v0.1.196), §7.3 is RESTORED TO TRUE: every emitted construct's contract citation resolves to an on-disk YAML + Lean theorem. AUTHORED: contracts/xlate-py-dict-to-hashmap-v1.yaml — Layer-2 translation kernel contract (dict sibling of C-XLATE-PY-LIST-TO-VEC). Python dict[K,V] homogeneous → Rust std::collections::HashMap<K_rust,V_rust>. ONE depth-1 Diamond eqn dict_to_hashmap_structure_preserved_diamond combining entry-sequence preservation + cardinality preservation (lowering = identity on the abstract finite map K→V). proof_obligations(2), falsification_tests(2, bound to live dict_counts_emitted_rust_returns_hashmap e2e test), kani_harnesses(2 inline: HashMap<u8,u8> insert/get roundtrip + reinsert-overwrites-len-1), qa_gate. contracts/lean/XlatePyDictToHashmap.lean — models PyDict+RustHashMap as entry lists, lowering as identity → both conjuncts rfl (Bronze). Followed the 475b authoring recipe exactly (kind:kernel needs proof_obligations+kani_harnesses; falsification_tests>=proof_obligations; quoted refs with inner colons; lean_theorem resolves to theorem in lean_file; qa_gate.required_tests real #[test]s; top-level inline kani harnesses avoid the file-resolution validator). SECOND contract via the grandfathered gate → xpile diamond now 15 contracts, both new ones depth-1, depth-2+ still grandfathered 13. pv lint 0 errors; diamond_coverage(26)/refinement_proofs(3)/qa_gate(3)/kani(3)/workspace/fmt/clippy green. FREE CI. SHIPPED v0.1.197. **R6/PMAT-475 COMPLETE: 475a grandfather + 475b C-C-INT-ARITH + 475c C-XLATE-PY-DICT-TO-HASHMAP. The entire R-table (R1-R10) is now closed.** NEXT: Track 4 (PMAT-481..486 free-CI offline PTX/WGSL gates) OR Tranche-2 capability gaps OR PMAT-485 nightly emit job."
+- id: PMAT-551
+  github_issue: null
+  item_type: task
+  title: 'PMAT-551: [Tranche 2] math.factorial(n)'
+  status: done
+  priority: low
+  created: 2026-06-14T00:00:00Z
+  acceptance_criteria:
+  - "math.factorial(n) — completes the gcd/lcm/factorial math-integer trio. New Expr::Factorial{n}. lower_math_call factorial branch (1 int arg). Codegen (rust+ruchy): { let __nf=(n); if __nf<0 { panic!(ValueError) } let mut __f=1i64; let mut __fi=2i64; while __fi<=__nf { __f=__f.checked_mul(__fi).expect(overflow msg); __fi+=1; } __f }. 0!==1!==1; checked_mul overflow panics under C-PY-INT-ARITH (i64 overflows at 21!); negative n panics (Python ValueError). Composes in arithmetic (binomial). Rippled meta-hir variant + has_int_arith + both inferers (I64, joined w/Gcd|Lcm) + rust/ruchy emit + lean (collect_idents single-arg + emit refuse joined). rustc rt math_factorial.py vs python3 (fact 120/3628800, fact_zero 1, binomial 10/20). FREE CI. SHIPPED v0.1.250 (e2e 311->312)."
 - id: PMAT-550
   github_issue: null
   item_type: task
