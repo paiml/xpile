@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.241] — 2026-06-14
+
+Tranche 2 — PMAT-542 (correctness): mixed `float`/`int` ternary branches.
+
+- A ternary with a float branch and an int branch (`x if b else 0`) was rejected
+  (`ternary branches have mismatched types F64 vs I64`) even though Python yields
+  a float when either branch is float, and Rust requires both arms of an
+  `if`-expression to share a type.
+- Fix: in `lower_if_exp_in_ctx` (and the context-free `lower_if_exp`), promote
+  the int branch to f64 via `to_f64_operand` when the other branch is float,
+  then re-check. **No new IR.** Same-type ternaries unchanged. Completes the
+  mixed-float/int sweep (PMAT-540 compare+arith, 541 min/max, 542 ternary).
+- Found via the differential python3-vs-rust hunt. New e2e fixture
+  `ternary_mixed_float_int.py` cross-checked vs python3. e2e 302 → 303.
+
 ## [0.1.240] — 2026-06-14
 
 Tranche 2 — PMAT-541 (correctness): mixed-numeric `min()` / `max()`.
