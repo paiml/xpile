@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.308] — 2026-06-14
+
+Tranche 2 — PMAT-609: **correctness** — `list.pop(i)` with a runtime negative index removes from the end.
+
+- `xs.pop(i)` with a runtime negative `i` (a variable) emitted `(xs).remove((i)
+  as usize)`; a negative i casts to `usize::MAX` → `Vec::remove` panics, where
+  Python `pop(i)` with i<0 removes from the end (`i+len`). Literal `pop(-1)` was
+  already handled (`len - k`); only the runtime case was broken. Found by the
+  differential hunt (#5).
+- Fix (frontend): a non-literal pop index is normalized at runtime (bind once,
+  then `if __pidx < 0 { len + __pidx } else { __pidx }`); the codegen's
+  self-reference check gained `IfExpr`/`Block` arms so the normalized index is
+  bound before the mutable `remove`. Literal pops unchanged. No new IR.
+- New e2e fixture `pop_runtime_negative.py` cross-checked vs python3. 370 e2e fixtures.
+
 ## [0.1.307] — 2026-06-14
 
 Tranche 2 — PMAT-608: **correctness** — float `max`/`min` over an empty sequence raises ValueError.
