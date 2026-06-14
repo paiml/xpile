@@ -1233,10 +1233,9 @@ fn main() {
 #[test]
 fn slicing_emitted_rust_list_and_str() {
     let rust = xpile_transpile_to_rust("slicing.py");
+    // PMAT-539: bounded slices now use the resolve+clamp block form.
     assert!(
-        rust.contains(" as usize..(")
-            && rust.contains(".to_vec()")
-            && rust.contains(".to_string()"),
+        rust.contains("__sl[__lo..__hi].to_vec()") && rust.contains("__sl[__lo..__hi].to_string()"),
         "expected slice emissions in Rust, got:\n{rust}"
     );
     let driver = r#"
@@ -1970,10 +1969,13 @@ fn main() {
 #[test]
 fn open_slice() {
     let rust = xpile_transpile_to_rust("open_slice.py");
+    // PMAT-539: open-ended slices now use the resolve+clamp block form. An
+    // absent low bound defaults to 0, an absent high bound to `__n` (the len);
+    // present bounds clamp. The runtime values are checked by the driver below.
     assert!(
-        rust.contains("xs[..(n) as usize].to_vec()")
-            && rust.contains("xs[(n) as usize..].to_vec()")
-            && rust.contains("xs[..].to_vec()"),
+        rust.contains("let __lo_i = 0;")
+            && rust.contains("let __hi_i = __n;")
+            && rust.contains("__sl[__lo..__hi].to_vec()"),
         "expected open-ended slice emission, got:\n{rust}"
     );
     let driver = r#"
@@ -2462,14 +2464,14 @@ fn main() {
 #[test]
 fn slice_step() {
     let rust = xpile_transpile_to_rust("slice_step.py");
+    // PMAT-539: the slice range now resolves+clamps via the block form; the
+    // step suffix is unchanged. Runtime values checked by the driver below.
     assert!(
-        rust.contains("xs[..].iter().step_by(2).cloned().collect::<Vec<_>>()"),
+        rust.contains("__sl[__lo..__hi].iter().step_by(2).cloned().collect::<Vec<_>>()"),
         "xs[::2]:\n{rust}"
     );
     assert!(
-        rust.contains(
-            "xs[(1i64) as usize..(8i64) as usize].iter().step_by(3).cloned().collect::<Vec<_>>()"
-        ),
+        rust.contains("__sl[__lo..__hi].iter().step_by(3).cloned().collect::<Vec<_>>()"),
         "xs[1:8:3]:\n{rust}"
     );
     let driver = r#"
@@ -4777,6 +4779,32 @@ fn main() {
 }
 "#;
     assert_rustc_runs("floordiv_mod_signs", &rust, driver);
+}
+
+/// PMAT-539 (correctness): Python slice bounds — negative bounds (`xs[-2:]`,
+/// `xs[:-1]`) count from the end, every bound clamps to `[0, len]`, and
+/// `lo > hi` yields empty. The naive `(lo) as usize` emit panicked on a
+/// negative bound (wraps to a huge usize) or an out-of-range bound — so the
+/// ubiquitous `xs[:-1]` / `xs[-3:]` idioms crashed at runtime. The emit now
+/// resolves + clamps each bound. Cross-checked vs python3 (9, 10, 9, def, 2, 0).
+#[test]
+fn negative_slice() {
+    let rust = xpile_transpile_to_rust("negative_slice.py");
+    assert!(
+        rust.contains("if __b < 0 { (__n + __b).max(0) }"),
+        "negative slice bounds must resolve from the end + clamp:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(last_two(vec![1, 2, 3, 4, 5]), 9);
+    assert_eq!(drop_last(vec![1, 2, 3, 4, 5]), 10);
+    assert_eq!(middle(vec![1, 2, 3, 4, 5]), 9);
+    assert_eq!(tail_str(String::from("abcdef")), "def");
+    assert_eq!(clamp_oob(vec![1, 2, 3]), 2);
+    assert_eq!(reversed_bounds(vec![1, 2, 3, 4, 5]), 0);
+}
+"#;
+    assert_rustc_runs("negative_slice", &rust, driver);
 }
 
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns

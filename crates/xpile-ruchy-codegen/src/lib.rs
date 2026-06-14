@@ -1184,7 +1184,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, tuple, mode)?;
             write!(out, ").{index}.clone()")?;
         }
-        // PMAT-496: Ruchy → Rust slice (`.to_vec()` / `.to_string()`).
+        // PMAT-496/539: Python slice with full bound semantics (negative
+        // bounds count from the end, clamp to `[0, len]`, `lo > hi` → empty).
+        // Mirrors the Rust backend.
         Expr::Slice {
             collection,
             lo,
@@ -1192,27 +1194,42 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             of_str,
             step,
         } => {
-            // PMAT-502r: an absent bound is an open end (`a..`, `..b`, `..`).
+            let resolve = |out: &mut String,
+                           bound: &Option<Box<Expr>>,
+                           default: &str,
+                           mode: bool|
+             -> Result<(), RuchyCodegenError> {
+                match bound {
+                    Some(b) => {
+                        out.push_str("{ let __b = (");
+                        emit_expr(out, b, mode)?;
+                        out.push_str(
+                            ") as i64; if __b < 0 { (__n + __b).max(0) } else { __b.min(__n) } }",
+                        );
+                    }
+                    None => out.push_str(default),
+                }
+                Ok(())
+            };
+            out.push_str("{ let __sl = &(");
             emit_expr(out, collection, mode)?;
-            out.push('[');
-            if let Some(lo) = lo {
-                out.push('(');
-                emit_expr(out, lo, mode)?;
-                out.push_str(") as usize");
-            }
-            out.push_str("..");
-            if let Some(hi) = hi {
-                out.push('(');
-                emit_expr(out, hi, mode)?;
-                out.push_str(") as usize");
-            }
-            out.push(']');
-            // PMAT-502bc: positive list step, matching the Rust backend.
+            out.push_str("); let __n = __sl.len() as i64; let __lo_i = ");
+            resolve(out, lo, "0", mode)?;
+            out.push_str("; let __hi_i = ");
+            resolve(out, hi, "__n", mode)?;
+            out.push_str("; let __lo = __lo_i as usize; let __hi = __hi_i.max(__lo_i) as usize; ");
             match step {
                 Some(s) => {
-                    write!(out, ".iter().step_by({s}).cloned().collect::<Vec<_>>()")?;
+                    write!(
+                        out,
+                        "__sl[__lo..__hi].iter().step_by({s}).cloned().collect::<Vec<_>>() }}"
+                    )?;
                 }
-                None => out.push_str(if *of_str { ".to_string()" } else { ".to_vec()" }),
+                None => out.push_str(if *of_str {
+                    "__sl[__lo..__hi].to_string() }"
+                } else {
+                    "__sl[__lo..__hi].to_vec() }"
+                }),
             }
         }
         // PMAT-498: scalar numeric builtins → receiver-method form.
