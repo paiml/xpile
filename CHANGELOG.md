@@ -19,6 +19,19 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.304] — 2026-06-14
+
+Tranche 2 — PMAT-605: **correctness** — `pow(a, b, m)` with a negative modulus takes the modulus sign.
+
+- Python's 3-arg `pow(a, b, m)` returns a result with the sign of the modulus
+  (range `(m, 0]` for `m < 0`): `pow(10, 2, -3) == -2`. The modpow square-multiply
+  loop normalizes the base and never re-signs, so it returned the non-negative
+  Euclidean residue — a silent miscompile. Found by the differential hunt (#5).
+- Fix (rust + ruchy codegen): re-sign after the loop when the modulus is negative
+  (`if __pmm < 0 && __pmr != 0 { __pmr += __pmm; }`), mirroring the `//`/`%` sign
+  rule. A positive modulus is unchanged. No new IR.
+- New e2e fixture `pow_negative_modulus.py` cross-checked vs python3. 366 e2e fixtures.
+
 ## [0.1.303] — 2026-06-14
 
 Tranche 2 — PMAT-604: **correctness** — `grid[i] += [..]` concatenates instead of integer `checked_add`.
