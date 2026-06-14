@@ -11222,41 +11222,50 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
     for cmp in c.comparators {
         operands.push(lower_expr_in_ctx(ctx, cmp)?);
     }
+    // Each operand was lowered exactly once into `operands`. Precompute each
+    // operand's type so the chained path (which references temps, not the
+    // originals) doesn't need to re-infer for the Set / float-promotion logic.
+    let op_types: Vec<Type> = operands.iter().map(|o| infer_type_in_ctx(ctx, o)).collect();
+
+    // A single comparison shares no operand between sub-comparisons, so emit it
+    // directly (the overwhelmingly common path — keep it a plain `BinOp`).
+    if c.ops.len() == 1 {
+        let rhs = operands.pop().expect("two operands for one op");
+        let lhs = operands.pop().expect("two operands for one op");
+        return build_chain_cmp(ctx, &c.ops[0], lhs, &op_types[0], rhs, &op_types[1]);
+    }
+
+    // PMAT-576: a CHAINED comparison (`a < b < c`, `a == f() == b`) desugars to
+    // `(a OP b) && (b OP c) && …`, where each *interior* operand is SHARED by
+    // two adjacent sub-comparisons. Emitting the lowered operand into both
+    // (the previous `operands[i].clone()`) evaluated it TWICE — diverging from
+    // Python, which evaluates every operand exactly once, left to right: a
+    // side-effecting middle (`0 < xs.pop() < 10`) popped twice, an expensive
+    // one ran twice. Bind every operand to a fresh temp ONCE, then fold the
+    // sub-comparisons over the temps inside an `Expr::Block`. (Short-circuit
+    // order is preserved: `&&` still stops at the first false sub-comparison;
+    // only the one-time *binding* of operands is hoisted, which is observable
+    // only when an operand has a side effect — exactly the bug.)
+    let names: Vec<String> = (0..operands.len()).map(|i| format!("__cmp{i}")).collect();
+    let mut stmts: Vec<Stmt> = Vec::with_capacity(operands.len());
+    for (i, value) in operands.into_iter().enumerate() {
+        stmts.push(Stmt::Let {
+            name: names[i].clone(),
+            ty: op_types[i].clone(),
+            value,
+            mutable: false,
+        });
+    }
     let mut acc: Option<Expr> = None;
     for (i, op) in c.ops.iter().enumerate() {
-        // PMAT-502ep: `a <= b` / `<` / `>=` / `>` over two sets is a
-        // subset/superset predicate, not an ordering comparison (HashSet has no
-        // `<`). Route to `Expr::SetPred`; `==`/`!=` keep the plain `BinOp`
-        // (HashSet implements `PartialEq`).
-        let cmp = if matches!(infer_type_in_ctx(ctx, &operands[i]), Type::Set(_))
-            && matches!(infer_type_in_ctx(ctx, &operands[i + 1]), Type::Set(_))
-            && set_pred_from_cmp(op).is_some()
-        {
-            Expr::SetPred {
-                lhs: Box::new(operands[i].clone()),
-                op: set_pred_from_cmp(op).expect("checked is_some"),
-                rhs: Box::new(operands[i + 1].clone()),
-            }
-        } else {
-            // PMAT-540: a mixed `float <cmp> int` comparison must promote the
-            // int operand to f64 — Rust rejects `f64 == i64` / `f64 < i64`
-            // (E0308). Python compares numerically. `to_f64_operand` is a no-op
-            // when the operand is already f64.
-            let mut lhs = operands[i].clone();
-            let mut rhs = operands[i + 1].clone();
-            let lt = infer_type_in_ctx(ctx, &lhs);
-            let rt = infer_type_in_ctx(ctx, &rhs);
-            if lt == Type::F64 && rt == Type::I64 {
-                rhs = to_f64_operand(ctx, rhs);
-            } else if lt == Type::I64 && rt == Type::F64 {
-                lhs = to_f64_operand(ctx, lhs);
-            }
-            Expr::BinOp {
-                op: cmp_binop(op)?,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            }
-        };
+        let cmp = build_chain_cmp(
+            ctx,
+            op,
+            Expr::Ident(names[i].clone()),
+            &op_types[i],
+            Expr::Ident(names[i + 1].clone()),
+            &op_types[i + 1],
+        )?;
         acc = Some(match acc {
             None => cmp,
             Some(prev) => Expr::BinOp {
@@ -11266,7 +11275,47 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
             },
         });
     }
-    Ok(acc.expect("ops non-empty (checked above)"))
+    Ok(Expr::Block(Box::new(Block {
+        stmts,
+        trailing_return: acc.expect("ops non-empty (checked above)"),
+    })))
+}
+
+/// PMAT-576: build one sub-comparison of a (possibly chained) `Compare`, from
+/// its already-lowered operands and their precomputed types. Two sets become a
+/// subset/superset `SetPred` (HashSet has no `<`; PMAT-502ep); a mixed
+/// `float`/`int` comparison promotes the int side to f64 (PMAT-540, which Rust
+/// requires and Python does numerically); everything else is a plain
+/// ordering/equality `BinOp`.
+fn build_chain_cmp(
+    ctx: &LoweringCtx,
+    op: &ast::CmpOp,
+    lhs: Expr,
+    lt: &Type,
+    rhs: Expr,
+    rt: &Type,
+) -> Result<Expr, FrontendError> {
+    if matches!(lt, Type::Set(_)) && matches!(rt, Type::Set(_)) {
+        if let Some(sp) = set_pred_from_cmp(op) {
+            return Ok(Expr::SetPred {
+                lhs: Box::new(lhs),
+                op: sp,
+                rhs: Box::new(rhs),
+            });
+        }
+    }
+    let mut lhs = lhs;
+    let mut rhs = rhs;
+    if *lt == Type::F64 && *rt == Type::I64 {
+        rhs = to_f64_operand(ctx, rhs);
+    } else if *lt == Type::I64 && *rt == Type::F64 {
+        lhs = to_f64_operand(ctx, lhs);
+    }
+    Ok(Expr::BinOp {
+        op: cmp_binop(op)?,
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs),
+    })
 }
 
 /// PMAT-502dd: context-aware variant of the context-free list-literal handler.
