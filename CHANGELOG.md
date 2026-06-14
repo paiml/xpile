@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.287] — 2026-06-14
+
+Tranche 2 — PMAT-588: **correctness** — clone reused non-Copy call arguments (E0382).
+
+- A non-Copy variable passed by value to a function call is moved; if the same
+  variable is read more than once, the other use is a use-after-move that rustc
+  rejects (E0382) — `helper(xs) + helper(xs)`, or `helper(xs)` then `len(xs)`.
+  Second slice of the ownership/borrow cluster. Found by the differential hunt.
+- Fix: a per-function source read-count pre-walk (`count_name_reads`) on the
+  lowering ctx; a non-Copy `Ident` call argument read more than once is wrapped
+  in `Expr::Clone` so the caller's binding survives. Gated on read-count > 1, so
+  single-use args are byte-identical (no clone, no churn, no perf cost) — the
+  clone fires only on code that previously failed to compile.
+- New e2e fixture `call_arg_reuse.py` cross-checked vs python3. 349 e2e fixtures.
+
 ## [0.1.286] — 2026-06-14
 
 Tranche 2 — PMAT-587: **correctness** — reject class/enum named after an emitted prelude type.
