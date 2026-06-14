@@ -4886,6 +4886,26 @@ fn main() {
     assert_rustc_runs("ternary_mixed_float_int", &rust, driver);
 }
 
+/// PMAT-543 (Tranche 2): two-generator comprehensions over `range(...)` —
+/// `[i*j for i in range(n) for j in range(n)]`. The 2-generator desugar already
+/// handled `list[T]` iterables (nested `ForEach`); a bare `range(...)` generator
+/// iterable now materializes to a `Vec` via `lower_range_list` (mirroring the
+/// 1-generator range handling). Works for list + dict comps, with filters, and
+/// mixed range/list generators. Cross-checked vs python3 (9, 22, 90, 9).
+#[test]
+fn comp_2gen_range() {
+    let rust = xpile_transpile_to_rust("comp_2gen_range.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(products(3), 9);
+    assert_eq!(off_diagonal(4), 22);
+    assert_eq!(mixed(vec![10, 20]), 90);
+    assert_eq!(grid_size(3), 9);
+}
+"#;
+    assert_rustc_runs("comp_2gen_range", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)

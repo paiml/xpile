@@ -4632,10 +4632,25 @@ fn desugar_comp_2gen(
         match ty {
             Type::List(e) => Ok(*e),
             other => Err(FrontendError::Lower(format!(
-                "function `{fn_name}` has a multi-generator {kind} comprehension over an iterable typing as {other:?}; v0.2.0 supports two `for` clauses over `list[T]` iterables (range / dict iterables deferred)"
+                "function `{fn_name}` has a multi-generator {kind} comprehension over an iterable typing as {other:?}; v0.2.0 supports two `for` clauses over `list[T]` / `range(...)` iterables (dict iterables deferred)"
             ))),
         }
     };
+    // PMAT-543: materialize a bare `range(...)` generator iterable to a `Vec`
+    // (the 2-generator path lowers to nested `ForEach` over list-typed iters, so
+    // a range must become a first-class list — exactly like the 1-generator
+    // path's range handling, just via `lower_range_list`).
+    let materialize_iter =
+        |ctx: &mut LoweringCtx, iter: &ast::Expr| -> Result<Expr, FrontendError> {
+            if let ast::Expr::Call(call) = iter {
+                if matches!(call.func.as_ref(), ast::Expr::Name(n) if n.id.as_str() == "range")
+                    && call.keywords.is_empty()
+                {
+                    return lower_range_list(ctx, call);
+                }
+            }
+            lower_expr_in_ctx(ctx, iter.clone())
+        };
     let outer = &generators[0];
     let inner = &generators[1];
     for g in [outer, inner] {
@@ -4649,7 +4664,7 @@ fn desugar_comp_2gen(
     let inner_var = plain_name(inner)?;
 
     // Outer generator: iterable + element type + bound var, then its filter.
-    let outer_iter = lower_expr_in_ctx(ctx, outer.iter.clone())?;
+    let outer_iter = materialize_iter(ctx, &outer.iter)?;
     let outer_elem_ty = list_elem(infer_type_in_ctx(ctx, &outer_iter))?;
     ctx.bound.insert(outer_var.clone());
     ctx.name_types
@@ -4658,7 +4673,7 @@ fn desugar_comp_2gen(
 
     // Inner generator (lowered with the outer var in scope, so its iterable may
     // reference the outer binding).
-    let inner_iter = lower_expr_in_ctx(ctx, inner.iter.clone())?;
+    let inner_iter = materialize_iter(ctx, &inner.iter)?;
     let inner_elem_ty = list_elem(infer_type_in_ctx(ctx, &inner_iter))?;
     ctx.bound.insert(inner_var.clone());
     ctx.name_types
