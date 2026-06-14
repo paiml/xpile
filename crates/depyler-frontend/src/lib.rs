@@ -6350,6 +6350,7 @@ fn infer_type(e: &Expr) -> Type {
             | StrMethodOp::Rfind
             | StrMethodOp::RIndex
             | StrMethodOp::Count
+            | StrMethodOp::CharCount
             | StrMethodOp::StrIndex => Type::I64,
             // PMAT-502ag/502di: isdigit/isalpha/isspace/isalnum/isupper/islower → Bool.
             StrMethodOp::IsDigit
@@ -6735,6 +6736,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             | StrMethodOp::Rfind
             | StrMethodOp::RIndex
             | StrMethodOp::Count
+            | StrMethodOp::CharCount
             | StrMethodOp::StrIndex => Type::I64,
             // PMAT-502ag/502di: isdigit/isalpha/isspace/isalnum/isupper/islower → Bool.
             StrMethodOp::IsDigit
@@ -7891,6 +7893,16 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 if fname.id.as_str() == "len" && call.keywords.is_empty() && call.args.len() == 1 {
                     // PMAT-522: `len(range(n))` materialises the range to a Vec.
                     let inner = lower_arg_materializing_range(ctx, &call.args[0])?;
+                    // PMAT-564: `len(str)` counts Unicode code points, not UTF-8
+                    // bytes — route to `.chars().count()` (NOT `Expr::Len`, which
+                    // emits `.len()` = byte length and is wrong for non-ASCII).
+                    if infer_type_in_ctx(ctx, &inner) == Type::Str {
+                        return Ok(Expr::StrMethod {
+                            recv: Box::new(inner),
+                            op: StrMethodOp::CharCount,
+                            args: vec![],
+                        });
+                    }
                     return Ok(Expr::Len(Box::new(inner)));
                 }
                 // PMAT-498b: `sum(xs)` over a numeric list. PMAT-502cx:
@@ -10116,7 +10128,16 @@ fn lower_call(c: ast::ExprCall) -> Result<Expr, FrontendError> {
             )));
         }
         let mut args = args;
-        return Ok(Expr::Len(Box::new(args.pop().unwrap())));
+        let inner = args.pop().unwrap();
+        // PMAT-564: context-free `len(str-literal)` also counts chars not bytes.
+        if infer_type(&inner) == Type::Str {
+            return Ok(Expr::StrMethod {
+                recv: Box::new(inner),
+                op: StrMethodOp::CharCount,
+                args: vec![],
+            });
+        }
+        return Ok(Expr::Len(Box::new(inner)));
     }
     Ok(Expr::Call { callee, args })
 }
@@ -10774,6 +10795,8 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
 fn str_method_arity(op: StrMethodOp) -> usize {
     match op {
         StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => 0,
+        // PMAT-564: `len(str)` char count takes no args.
+        StrMethodOp::CharCount => 0,
         // PMAT-502co: no-arg whitespace split.
         StrMethodOp::SplitWhitespace => 0,
         StrMethodOp::StartsWith
