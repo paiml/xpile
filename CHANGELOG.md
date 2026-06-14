@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.245] — 2026-06-14
+
+Tranche 2 — PMAT-546: comprehensions / generator expressions over a string.
+
+- `[c.upper() for c in s]` (and set/dict comps + genexprs over a string) was
+  rejected (`comprehends over an iterable typing as Str`). A `str` comprehension
+  iterable now materializes to `List(Str)` of 1-char strings via `Expr::StrChars`,
+  applied uniformly at every comprehension iterable site via a shared
+  `str_iter_to_chars` helper (a no-op for non-str iterables). Works for
+  list/set/dict comprehensions + generator expressions, with filters.
+  **No new IR** (same conversion the `for c in s` loop / `enumerate`/`zip`-over-str
+  use).
+- New e2e fixture `comp_over_str.py` (`ord_sum`, `upper_count`, `distinct_chars`,
+  `char_codes`, `digit_count`) cross-checked vs python3 (294, 3, 3, 3, 3).
+  e2e 306 → 307.
+
 ## [0.1.244] — 2026-06-14
 
 Tranche 2 — PMAT-545: `str.rfind` / `str.rindex`.
