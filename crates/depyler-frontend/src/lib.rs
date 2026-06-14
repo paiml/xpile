@@ -6201,7 +6201,7 @@ fn infer_type(e: &Expr) -> Type {
         // PMAT-502d: reversed(xs) has the same type as its list.
         Expr::Reversed { list } => infer_type(list),
         // PMAT-549: gcd of two ints -> int.
-        Expr::Gcd { .. } => Type::I64,
+        Expr::Gcd { .. } | Expr::Lcm { .. } => Type::I64,
         // PMAT-502cj: list(range(...)) materialises a list[int].
         Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
         // PMAT-502cw: set(xs) → set over the list's element type.
@@ -6587,7 +6587,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-502d: reversed(xs) has the same type as its list.
         Expr::Reversed { list } => infer_type_in_ctx(ctx, list),
         // PMAT-549: gcd of two ints -> int.
-        Expr::Gcd { .. } => Type::I64,
+        Expr::Gcd { .. } | Expr::Lcm { .. } => Type::I64,
         // PMAT-502cj: list(range(...)) materialises a list[int].
         Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
         // PMAT-502cw: set(xs) → set over the list's element type.
@@ -8772,12 +8772,12 @@ fn lower_math_call(
     fn_name: &str,
     call: &ast::ExprCall,
 ) -> Result<Expr, FrontendError> {
-    // PMAT-549: `math.gcd(a, b)` — greatest common divisor of two ints → an
-    // `Expr::Gcd` (inline Euclidean block). Both args must type as `int`.
-    if fn_name == "gcd" {
+    // PMAT-549/550: `math.gcd(a, b)` / `math.lcm(a, b)` — gcd/lcm of two ints
+    // → `Expr::Gcd` / `Expr::Lcm` (inline blocks). Both args must type as `int`.
+    if fn_name == "gcd" || fn_name == "lcm" {
         if !call.keywords.is_empty() || call.args.len() != 2 {
             return Err(FrontendError::Lower(format!(
-                "function `{}` calls `math.gcd(...)` with {} positional arg(s){}; v0.2.0 takes exactly 2 ints",
+                "function `{}` calls `math.{fn_name}(...)` with {} positional arg(s){}; v0.2.0 takes exactly 2 ints",
                 ctx.fn_name,
                 call.args.len(),
                 if call.keywords.is_empty() { "" } else { " plus keyword args" },
@@ -8787,13 +8787,15 @@ fn lower_math_call(
         let b = lower_expr_in_ctx(ctx, call.args[1].clone())?;
         if infer_type_in_ctx(ctx, &a) != Type::I64 || infer_type_in_ctx(ctx, &b) != Type::I64 {
             return Err(FrontendError::Lower(format!(
-                "function `{}` calls `math.gcd(...)` with a non-int argument — only `int` is supported",
+                "function `{}` calls `math.{fn_name}(...)` with a non-int argument — only `int` is supported",
                 ctx.fn_name
             )));
         }
-        return Ok(Expr::Gcd {
-            a: Box::new(a),
-            b: Box::new(b),
+        let (a, b) = (Box::new(a), Box::new(b));
+        return Ok(if fn_name == "gcd" {
+            Expr::Gcd { a, b }
+        } else {
+            Expr::Lcm { a, b }
         });
     }
     // PMAT-502em/en: 2-arg float methods — `math.pow(x, y)` → `(x).powf(y)`,

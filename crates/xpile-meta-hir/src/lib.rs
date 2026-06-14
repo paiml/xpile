@@ -357,8 +357,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
             expr_has_int_arith(list) || key.as_ref().is_some_and(|k| expr_has_int_arith(&k.body))
         }
         Expr::Reversed { list } => expr_has_int_arith(list),
-        // PMAT-549: gcd carries int operands (the `%` is internal to its emit).
-        Expr::Gcd { a, b } => expr_has_int_arith(a) || expr_has_int_arith(b),
+        // PMAT-549/550: gcd/lcm carry int operands (the `%`/`*` are internal).
+        Expr::Gcd { a, b } | Expr::Lcm { a, b } => expr_has_int_arith(a) || expr_has_int_arith(b),
         // PMAT-502cj: list(range(...)) — recurse into the bound exprs.
         Expr::RangeList { start, stop, .. } => {
             expr_has_int_arith(start) || expr_has_int_arith(stop)
@@ -1683,6 +1683,12 @@ pub enum Expr {
     /// while __b != 0 { let __t = __b; __b = __a % __b; __a = __t; } __a }`.
     /// Always non-negative; `gcd(0, 0) == 0` (matching Python). Lean refuses.
     Gcd { a: Box<Expr>, b: Box<Expr> },
+    /// PMAT-550: `math.lcm(a, b)` — least common multiple of two ints (**Int**).
+    /// Rust/Ruchy emit `{ let __la=(a).abs(); let __lb=(b).abs(); if __la==0 ||
+    /// __lb==0 { 0 } else { <Euclid gcd of __la,__lb → __ga>; (__la / __ga) *
+    /// __lb } }` — divide before multiply to limit overflow. `lcm(0, x) == 0`
+    /// (matching Python); always non-negative. Lean refuses.
+    Lcm { a: Box<Expr>, b: Box<Expr> },
     /// `list(range(start, stop, step))` — materialise a range into a `Vec`.
     /// PMAT-502cj (Tranche 2). Rust/Ruchy emit `((<start>)..(<stop>))
     /// .collect::<Vec<i64>>()` for `step == 1`, or `.step_by(<step> as usize)`

@@ -595,7 +595,7 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         // PMAT-502d: reversed — recurse into the list expression.
         Expr::Reversed { list } => collect_idents(list, out),
         // PMAT-549: gcd — recurse into both operands.
-        Expr::Gcd { a, b } => {
+        Expr::Gcd { a, b } | Expr::Lcm { a, b } => {
             collect_idents(a, out);
             collect_idents(b, out);
         }
@@ -1465,9 +1465,9 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             ));
         }
         // PMAT-549: math.gcd deferred in the Lean lane (imperative Euclid loop).
-        Expr::Gcd { .. } => {
+        Expr::Gcd { .. } | Expr::Lcm { .. } => {
             return Err(LeanCodegenError::Unsupported(
-                "math.gcd(a, b) is not yet supported in the Lean lane \
+                "math.gcd/lcm(a, b) is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

@@ -5041,6 +5041,28 @@ fn main() {
     assert_rustc_runs("math_gcd", &rust, driver);
 }
 
+/// PMAT-550 (Tranche 2): `math.lcm(a, b)` — least common multiple of two ints.
+/// New `Expr::Lcm` → inline `(abs(a)/gcd) * abs(b)` block (divide before
+/// multiply; `lcm(0, x) == 0`, always non-negative). Cross-checked vs python3
+/// (42, 35, 0, 12).
+#[test]
+fn math_lcm() {
+    let rust = xpile_transpile_to_rust("math_lcm.py");
+    assert!(
+        rust.contains("(__la / __ga) * __lb"),
+        "math.lcm should lower to (abs(a)/gcd)*abs(b):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(lcm2(21, 6), 42);
+    assert_eq!(lcm_coprime(7, 5), 35);
+    assert_eq!(lcm_zero(0, 9), 0);
+    assert_eq!(lcm_negative(-4, 6), 12);
+}
+"#;
+    assert_rustc_runs("math_lcm", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
