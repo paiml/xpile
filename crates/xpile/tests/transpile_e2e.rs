@@ -2271,16 +2271,17 @@ fn main() {
 }
 
 /// PMAT-502ar (Tranche 2): positional list insertion `xs.insert(i, x)` →
-/// `xs.insert((i) as usize, x);`.
+/// a CPython-clamping insert block (PMAT-590).
 #[test]
 fn list_insert() {
     let rust = xpile_transpile_to_rust("list_insert.py");
+    // PMAT-590: insert now emits a clamp block (CPython `ins1` parity).
     assert!(
-        rust.contains("xs.insert((1i64) as usize, x);"),
+        rust.contains("let mut __i = (1i64);") && rust.contains("xs.insert(__i as usize, x);"),
         "insert(var):\n{rust}"
     );
     assert!(
-        rust.contains("xs.insert((0i64) as usize, 99i64);"),
+        rust.contains("let mut __i = (0i64);") && rust.contains("xs.insert(__i as usize, 99i64);"),
         "insert(front):\n{rust}"
     );
     assert!(
@@ -2295,6 +2296,34 @@ fn main() {
 }
 "#;
     assert_rustc_runs("list_insert", &rust, driver);
+}
+
+/// PMAT-590: `list.insert(i, x)` must clamp out-of-range / negative indices
+/// to CPython `ins1` semantics instead of panicking like raw `Vec::insert`.
+/// Cross-checked vs python3:
+///   xs=[1,2,3]; insert(100,88) -> [1,2,3,88]      xs[3]==88
+///   xs=[1,2,3]; insert(-1,77)  -> [1,2,77,3]      xs[2]==77
+///   xs=[1,2,3]; insert(-100,5) -> [5,1,2,3]       xs[0]==5
+///   xs=[1,2,3]; insert(3,9)    -> [1,2,3,9]       xs[3]==9
+#[test]
+fn list_insert_clamp() {
+    let rust = xpile_transpile_to_rust("list_insert_clamp.py");
+    // The clamp block normalizes negatives and caps high indices at len.
+    assert!(
+        rust.contains(
+            "if __i < 0 { __i += __n; if __i < 0 { __i = 0; } } if __i > __n { __i = __n; }"
+        ),
+        "clamp block:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(ins_oob(vec![1, 2, 3]), 88);
+    assert_eq!(ins_neg(vec![1, 2, 3]), 77);
+    assert_eq!(ins_neg_far(vec![1, 2, 3]), 5);
+    assert_eq!(ins_at_len(vec![1, 2, 3]), 9);
+}
+"#;
+    assert_rustc_runs("list_insert_clamp", &rust, driver);
 }
 
 /// PMAT-502as (Tranche 2): list pop (expression form) `xs.pop()` →
