@@ -9157,19 +9157,32 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         args: Vec::new(),
                     });
                 }
-                let known = ctx
+                let field_ty = ctx
                     .structs
                     .get(&sname)
-                    .is_some_and(|fs| fs.iter().any(|(f, _)| *f == field));
-                if !known {
+                    .and_then(|fs| fs.iter().find(|(f, _)| *f == field).map(|(_, t)| t.clone()));
+                if field_ty.is_none() {
                     return Err(FrontendError::Lower(format!(
                         "function `{}` reads field `{field}` of `{sname}`, which has no such field",
                         ctx.fn_name
                     )));
                 }
-                return Ok(Expr::FieldAccess {
+                let access = Expr::FieldAccess {
                     obj: Box::new(obj),
                     field,
+                };
+                // PMAT-585: reading a NON-Copy field by value out of a (borrowed)
+                // receiver — `return self.name` over a `String`/list/dict/set/
+                // struct field — moves out of a shared reference (rustc E0507).
+                // Clone it. Copy fields (int/float/bool) read by value. Safe to
+                // clone unconditionally: a field is never a mutation receiver
+                // (`self.items.append(x)` is rejected upstream), so a field only
+                // ever appears in a read/value position.
+                return Ok(match field_ty {
+                    Some(ty) if !matches!(ty, Type::I64 | Type::F64 | Type::Bool) => {
+                        Expr::Clone(Box::new(access))
+                    }
+                    _ => access,
                 });
             }
             Err(FrontendError::Lower(format!(
