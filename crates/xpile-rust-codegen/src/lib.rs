@@ -1658,6 +1658,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push(')');
             }
         }
+        // PMAT-582: `repr(str)` — CPython-style quoted form. Pick the quote
+        // (single, or double if the string has a `'` but no `"`), then escape
+        // `\`, the quote, `\n`, `\r`, `\t`. A raw codegen string keeps the
+        // emitted Rust verbatim. (Other non-printables emit verbatim; full
+        // `\xNN` escaping deferred.)
+        Expr::ReprStr { value } => {
+            out.push_str("{ let __rs = &(");
+            emit_expr(out, value, mode)?;
+            out.push_str(
+                r#"); let __q = if __rs.contains('\'') && !__rs.contains('"') { '"' } else { '\'' }; let mut __ro = String::new(); __ro.push(__q); for __rc in __rs.chars() { match __rc { '\\' => { __ro.push('\\'); __ro.push('\\'); } '\n' => { __ro.push('\\'); __ro.push('n'); } '\r' => { __ro.push('\\'); __ro.push('r'); } '\t' => { __ro.push('\\'); __ro.push('t'); } __ec if __ec == __q => { __ro.push('\\'); __ro.push(__ec); } __ec => __ro.push(__ec) } } __ro.push(__q); __ro }"#,
+            );
+        }
         // PMAT-502ak: `round(x)` (float) → `((x).round_ties_even() as i64)`
         // — banker's rounding, matching Python's `round`.
         Expr::RoundToInt { value } => {
