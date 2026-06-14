@@ -6330,18 +6330,24 @@ fn infer_type(e: &Expr) -> Type {
         // PMAT-459 (v0.2.0 Track 1.B): len(x) always returns Type::I64
         // (Python int).
         Expr::Len(_) => Type::I64,
-        Expr::BinOp { op, .. } => match op {
+        Expr::BinOp { op, lhs, rhs } => match op {
             BinOp::Add
             | BinOp::Sub
             | BinOp::Mul
             | BinOp::FloorDiv
             | BinOp::Mod
-            | BinOp::BitAnd
-            | BinOp::BitOr
-            | BinOp::BitXor
             | BinOp::Shl
             | BinOp::Shr
             | BinOp::Pow => Type::I64,
+            // PMAT-580: `&`/`|`/`^` over two bools is a bool (Python); otherwise
+            // an int. (Context-free counterpart of the `infer_type_in_ctx` arm.)
+            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => {
+                if infer_type(lhs) == Type::Bool && infer_type(rhs) == Type::Bool {
+                    Type::Bool
+                } else {
+                    Type::I64
+                }
+            }
             BinOp::Eq | BinOp::NotEq | BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq => {
                 Type::Bool
             }
@@ -6713,7 +6719,16 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             _ => {
                 let lt = infer_type_in_ctx(ctx, lhs);
                 let rt = infer_type_in_ctx(ctx, rhs);
-                if matches!(lt, Type::BigInt) || matches!(rt, Type::BigInt) {
+                // PMAT-580: `&`/`|`/`^` over two bools is a bool in Python
+                // (`True & False` is `bool`, not `int`); Rust's `bool: BitAnd`
+                // matches. Without this the result inferred as I64 and a
+                // `-> bool` function was rejected ("body produces I64").
+                if matches!(op, BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor)
+                    && lt == Type::Bool
+                    && rt == Type::Bool
+                {
+                    Type::Bool
+                } else if matches!(lt, Type::BigInt) || matches!(rt, Type::BigInt) {
                     Type::BigInt
                 } else {
                     Type::I64
@@ -8892,7 +8907,13 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             // operand in integer arithmetic is coerced to i64 — without this the
             // i64-arith lowering emits e.g. `(a).checked_add(b)` on a `bool`
             // (invalid Rust). No-op for non-bool operands and non-arith ops.
-            let (lhs, rhs) = if is_int_arith_binop(op) {
+            // PMAT-580: but `&`/`|`/`^` over TWO bools stays a bool op (Python
+            // returns bool; Rust's `bool: BitAnd` matches), so don't coerce —
+            // the result keeps `Type::Bool`.
+            let both_bool = matches!(op, BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor)
+                && infer_type_in_ctx(ctx, &lhs) == Type::Bool
+                && infer_type_in_ctx(ctx, &rhs) == Type::Bool;
+            let (lhs, rhs) = if is_int_arith_binop(op) && !both_bool {
                 (to_i64_operand(ctx, lhs), to_i64_operand(ctx, rhs))
             } else {
                 (lhs, rhs)
@@ -9779,7 +9800,11 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             }
             // PMAT-565: bool operand in int arithmetic → coerce to i64 (context-
             // free counterpart; recognises bool *literals*).
-            let (lhs, rhs) = if is_int_arith_binop(op) {
+            // PMAT-580: `&`/`|`/`^` over two bools stays a bool op (no coercion).
+            let both_bool = matches!(op, BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor)
+                && infer_type(&lhs) == Type::Bool
+                && infer_type(&rhs) == Type::Bool;
+            let (lhs, rhs) = if is_int_arith_binop(op) && !both_bool {
                 (to_i64_operand_cf(lhs), to_i64_operand_cf(rhs))
             } else {
                 (lhs, rhs)

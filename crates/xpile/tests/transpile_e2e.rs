@@ -6116,6 +6116,28 @@ fn main() {
     assert_rustc_runs("bool_as_int", &rust, driver);
 }
 
+/// PMAT-580 (Tranche 2): **correctness** — `&`/`|`/`^` over two bools returns a
+/// bool in Python (`True & False` is `bool`, not `int`), but xpile inferred the
+/// result as `int` and coerced both operands to i64 — so a `-> bool` function
+/// was REJECTED ("body produces I64"). Now a both-bool bitwise op infers `Bool`
+/// and stays a bool op (`a & b`; Rust's `bool: BitAnd` matches); a mixed
+/// bool/int op still coerces to i64. Found by the differential hunt.
+/// Cross-checked vs python3.
+#[test]
+fn bool_bitwise() {
+    let rust = xpile_transpile_to_rust("bool_bitwise.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(b_and(true, false), false);
+    assert_eq!(b_or(true, false), true);
+    assert_eq!(b_xor(true, true), false);
+    assert_eq!(b_xor(true, false), true);
+    assert_eq!(mixed(true, 5), 1); // bool coerces to i64 in a mixed op
+}
+"#;
+    assert_rustc_runs("bool_bitwise", &rust, driver);
+}
+
 /// PMAT-579 (Tranche 2): **correctness / contract integrity** — `abs()` of an
 /// i64 wrapped at `i64::MIN`. `(x).abs()` returns `i64::MIN` for `i64::MIN`
 /// (no overflow check under `-O`), silently wrapping where the contract
