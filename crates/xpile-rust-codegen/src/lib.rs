@@ -1642,6 +1642,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             value,
             to_float,
             from_str,
+            from_float,
         } => {
             if *from_str {
                 // PMAT-502bf: `int(s)`/`float(s)` → trimmed `.parse()`
@@ -1653,6 +1654,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 } else {
                     ").trim().parse::<i64>().expect(\"xpile: ValueError: invalid literal for int()\")"
                 });
+            } else if !*to_float && *from_float {
+                // PMAT-586: `int(float_x)` — Python raises `OverflowError` for
+                // `int(inf)` and `ValueError` for `int(nan)`, but Rust's
+                // `as i64` saturates (`inf`→`i64::MAX`) / zeroes (`nan`→0)
+                // silently. Guard a non-finite source and panic. (The
+                // out-of-range *finite* case — `int(1e30)` — would need bigint;
+                // it still saturates and is a deferred fidelity gap.)
+                out.push_str("{ let __ic = ");
+                emit_expr(out, value, mode)?;
+                out.push_str("; if !__ic.is_finite() { panic!(\"xpile: int() of a non-finite float (Python OverflowError/ValueError)\"); } __ic as i64 }");
             } else {
                 out.push_str("((");
                 emit_expr(out, value, mode)?;

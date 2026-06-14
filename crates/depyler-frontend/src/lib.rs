@@ -8027,6 +8027,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                             value: Box::new(Expr::Ident("__b".to_string())),
                                             to_float: false,
                                             from_str: false,
+                                            from_float: false,
                                         }),
                                     },
                                 };
@@ -8128,6 +8129,8 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             value: Box::new(value),
                             to_float: fname.id.as_str() == "float",
                             from_str: matches!(vty, Type::Str),
+                            // PMAT-586: `int(float_x)` guards a non-finite source.
+                            from_float: matches!(vty, Type::F64),
                         });
                     }
                     // PMAT-535: `int(b)` / `float(b)` over a `bool` — Python
@@ -8139,12 +8142,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             value: Box::new(value),
                             to_float: false,
                             from_str: false,
+                            from_float: false,
                         };
                         return Ok(if fname.id.as_str() == "float" {
                             Expr::NumCast {
                                 value: Box::new(as_int),
                                 to_float: true,
                                 from_str: false,
+                                from_float: false,
                             }
                         } else {
                             as_int
@@ -10477,6 +10482,7 @@ fn to_f64_operand(ctx: &LoweringCtx, e: Expr) -> Expr {
             value: Box::new(e),
             to_float: true,
             from_str: false,
+            from_float: false,
         }
     }
 }
@@ -10511,6 +10517,7 @@ fn to_i64_operand(ctx: &LoweringCtx, e: Expr) -> Expr {
             value: Box::new(e),
             to_float: false,
             from_str: false,
+            from_float: false,
         }
     } else {
         e
@@ -10524,6 +10531,7 @@ fn to_i64_operand_cf(e: Expr) -> Expr {
             value: Box::new(e),
             to_float: false,
             from_str: false,
+            from_float: false,
         }
     } else {
         e
@@ -10540,6 +10548,7 @@ fn to_f64_operand_cf(e: Expr) -> Expr {
             value: Box::new(e),
             to_float: true,
             from_str: false,
+            from_float: false,
         }
     }
 }

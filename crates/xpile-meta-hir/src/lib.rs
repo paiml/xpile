@@ -1686,6 +1686,14 @@ pub enum Expr {
         to_float: bool,
         #[serde(default)]
         from_str: bool,
+        /// PMAT-586: set when the source operand is a `float` being cast to an
+        /// `int` (`int(float_x)`). Python raises `OverflowError` for `int(inf)`
+        /// and `ValueError` for `int(nan)`, but Rust's `as i64` saturates
+        /// (`inf` → `i64::MAX`) / zeroes (`nan` → 0) silently, so the int-cast
+        /// codegen guards a non-finite source and panics. Irrelevant (false)
+        /// for `int(int)`, `float(_)`, and the `from_str` parse paths.
+        #[serde(default)]
+        from_float: bool,
     },
     /// Python `str(x)` over an **int** or **float** `x` → its string form.
     /// PMAT-502ad (int); `of_float` is PMAT-502af. For int, Rust/Ruchy emit
