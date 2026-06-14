@@ -19,6 +19,29 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.273] — 2026-06-14
+
+Tranche 2 — PMAT-574: **correctness** — mutating-method receiver in a condition.
+
+- A mutating method in a *controlling condition* — `while xs.pop() >= 0:`,
+  `if zs.pop() == 9:`, `assert ws.pop() >= 0` — mutates its receiver, but the
+  mutability pre-walk (`count_pop_receivers_in_stmt`) only scanned the *value*
+  positions of assignments / returns / expression-statements. The `while`/`if`/
+  `for`/`assert` controlling expression was never scanned, so the receiver
+  stayed immutable and `rustc` rejected the emitted code (`error[E0596]: cannot
+  borrow xs as mutable`), violating the invariant transpile-success ⟹ valid
+  Rust. Found by the differential python3-vs-rustc hunt.
+- Fix: add `While`(test, with loop bump ≥2 since the condition runs every
+  iteration), `If`(test), `For`(iter), and `Assert`(test+msg) arms to
+  `count_pop_receivers_in_stmt`. Works for both a popped param (param+1 +
+  pop≥1 > 1) and a popped local (binding+1 + pop). No spurious `mut`:
+  `count_pop_receivers` only counts genuine `.pop`/`.setdefault` receivers, so
+  `clippy -D unused_mut` stays green.
+- New e2e fixture `mut_receiver_in_condition.py` cross-checked vs python3
+  (`1, 0, "nine", 2`). 335 e2e fixtures.
+- Housekeeping: `Cargo.lock` is now regenerated and committed in lockstep with
+  the version bump (it had drifted one patch behind since a prior release).
+
 ## [0.1.272] — 2026-06-14
 
 Tranche 2 — PMAT-573: **correctness** — Rust-keyword identifiers.
