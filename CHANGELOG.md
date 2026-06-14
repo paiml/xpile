@@ -19,6 +19,27 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.310] — 2026-06-15
+
+Tranche 2 — PMAT-611: **correctness** — `float(s)` accepts PEP 515 underscore digit separators.
+
+- `float("1_000.5")` is `1000.5` and `float("1.5e1_0")` is `1.5e10` in Python
+  (PEP 515), but `float(str)` lowered to `(s).trim().parse::<f64>()`, and Rust's
+  parser rejects underscores → runtime panic on valid Python. The float twin of
+  PMAT-610.
+- Fix (rust + ruchy codegen): `float(s)` validates Python's exact rule — every
+  `_` must have an ASCII digit on both sides (which also covers the fractional
+  and exponent parts) — then strips and parses; invalid placements (`1_.5`,
+  `1.5_`, `_1.0`, `1_e5`) still raise (≈ ValueError). No new IR.
+- Also fixes a latent **E0716** in both the new float block and the shipped
+  PMAT-610 int block: the validation block bound the trimmed `&str`, dropping a
+  temporary-`String` operand (`float("inf")`, `int("1_000")`) while still
+  borrowed. Both blocks now bind a *reference* to the operand (temporary
+  lifetime extension keeps it alive; a reused variable operand is not moved).
+- New e2e fixture `float_str_underscore.py` (incl. a string-literal /
+  temporary-operand case) cross-checked vs python3; `int_str_underscore.py` gains
+  the same temporary-operand guard. 372 e2e fixtures.
+
 ## [0.1.309] — 2026-06-15
 
 Tranche 2 — PMAT-610: **correctness** — `int(s)` accepts PEP 515 underscore digit separators.
