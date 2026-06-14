@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.239] — 2026-06-14
+
+Tranche 2 — PMAT-540 (correctness): mixed `float`/`int` comparison + arithmetic.
+
+- A mixed float/int comparison (`x == 3`, `x < n` where `x` is float) emitted
+  `f64 == i64` (E0308); mixed float/int arithmetic (`x * 2 + 1`) emitted
+  `f64 + i64` (E0277). Both produced non-compiling Rust (transpile-success but
+  rustc-reject). Python promotes the int numerically.
+- Fix: promote the int operand to `f64` via the existing `to_f64_operand`
+  (a no-op when already f64). The float-arith branch now wraps both operands
+  (like the `**` path); `lower_compare_in_ctx` promotes whichever side is int
+  when the other is float. **No new IR.** Both-int / both-float paths unchanged.
+- Found via the differential python3-vs-rust hunt. New e2e fixture
+  `mixed_float_int.py` cross-checked vs python3. e2e 300 → 301.
+
 ## [0.1.238] — 2026-06-14
 
 Tranche 2 — PMAT-539 (correctness): Python slice bounds — negatives + clamping.
