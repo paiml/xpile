@@ -364,7 +364,7 @@ fn expr_has_int_arith(e: &Expr) -> bool {
             expr_has_int_arith(value) || expr_has_int_arith(ndigits)
         }
         // PMAT-502k: seq * n — recurse into both the sequence and count.
-        Expr::Repeat { seq, n } => expr_has_int_arith(seq) || expr_has_int_arith(n),
+        Expr::Repeat { seq, n, .. } => expr_has_int_arith(seq) || expr_has_int_arith(n),
         // PMAT-502c: sorted — recurse into the list expression.
         Expr::Sorted { list, key, .. } => {
             expr_has_int_arith(list) || key.as_ref().is_some_and(|k| expr_has_int_arith(&k.body))
@@ -1637,12 +1637,24 @@ pub enum Expr {
     /// (the iterator-adaptor identities). Lean refuses.
     BoolReduce { list: Box<Expr>, is_all: bool },
     /// Sequence repetition — Python `seq * n` / `n * seq` where `seq` is a
-    /// `Str` or `List` and `n` an `Int`. PMAT-502k (Tranche 2). Rust/Ruchy
-    /// emit `(<seq>).repeat(((<n>).max(0)) as usize)` — one form covers both
-    /// `str::repeat` (→ `String`) and slice `<[T]>::repeat` (→ `Vec<T>`).
-    /// The `.max(0)` clamps a negative count to the empty sequence, matching
-    /// Python (`"x" * -1 == ""`). Result types as `seq`. Lean refuses.
-    Repeat { seq: Box<Expr>, n: Box<Expr> },
+    /// `Str` or `List` and `n` an `Int`. PMAT-502k (Tranche 2). The `.max(0)`
+    /// clamps a negative count to the empty sequence, matching Python
+    /// (`"x" * -1 == ""`). Result types as `seq`. Lean refuses.
+    ///
+    /// PMAT-569: `of_str` selects the emit. A **str** repeat uses
+    /// `(<seq>).repeat(...)` (`String::repeat`, no `Copy` bound). A **list**
+    /// repeat must NOT use slice `repeat` — that requires `T: Copy`, so
+    /// `[[0]] * n` (a `Vec<Vec<_>>`) fails to compile (E0277). Instead a list
+    /// clones its elements: `{ let __rep = (<seq>); (0..k).flat_map(|_|
+    /// __rep.iter().cloned()).collect::<Vec<_>>() }`, which works for any
+    /// `Clone` element. (Under xpile's value semantics the repeated rows are
+    /// independent, unlike CPython's aliasing — consistent with how every other
+    /// list copy behaves here.)
+    Repeat {
+        seq: Box<Expr>,
+        n: Box<Expr>,
+        of_str: bool,
+    },
     /// Numeric conversion — Python `int(x)` / `float(x)`. PMAT-502m
     /// (Tranche 2). For a **numeric** `value` (`from_str = false`),
     /// Rust/Ruchy emit `((<value>) as i64)` (for `int`, which truncates

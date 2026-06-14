@@ -10972,11 +10972,13 @@ fn try_repeat(lhs_ty: &Type, rhs_ty: &Type, lhs: &Expr, rhs: &Expr) -> Option<Ex
         Some(Expr::Repeat {
             seq: Box::new(lhs.clone()),
             n: Box::new(rhs.clone()),
+            of_str: *lhs_ty == Type::Str,
         })
     } else if *lhs_ty == Type::I64 && is_seq(rhs_ty) {
         Some(Expr::Repeat {
             seq: Box::new(rhs.clone()),
             n: Box::new(lhs.clone()),
+            of_str: *rhs_ty == Type::Str,
         })
     } else {
         None
