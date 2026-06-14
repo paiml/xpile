@@ -1388,6 +1388,32 @@ fn main() {
     assert_rustc_runs("reversed_builtin", &rust, driver);
 }
 
+/// PMAT-596: `reversed(s)` over a `str` reverses its characters (Python yields
+/// an iterator of 1-char strings → `list[str]`). Lowered to
+/// `Reversed(StrChars(s))` so the textbook idioms compose. Previously
+/// `reversed(str)` fell through to a bare `reversed(...)` call (rustc E0425).
+/// Cross-checked vs python3: `reverse_string("hello")=="olleh"`,
+/// `first_reversed("hello")=="o"`, `reversed_len("hello")==5`.
+#[test]
+fn reversed_str() {
+    let rust = xpile_transpile_to_rust("reversed_str.py");
+    // The str path materializes chars then reverses (no bare `reversed()` call,
+    // which would be E0425 — the rustc round-trip below is the real guard).
+    assert!(
+        rust.contains(".chars().map(|__c| __c.to_string()).collect::<Vec<String>>()")
+            && rust.contains(".reverse();"),
+        "reversed(str) must materialize reversed chars:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(reverse_string("hello".to_string()), "olleh");
+    assert_eq!(first_reversed("hello".to_string()), "o");
+    assert_eq!(reversed_len("hello".to_string()), 5);
+}
+"#;
+    assert_rustc_runs("reversed_str", &rust, driver);
+}
+
 /// PMAT-502ab (Tranche 2): `filter(lambda p: pred, xs)` → an order-preserving
 /// materialized list of elements where the Bool predicate holds.
 #[test]
