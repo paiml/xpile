@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.295] — 2026-06-14
+
+Tranche 2 — PMAT-596: **correctness** — `reversed(s)` over a `str` reverses its characters.
+
+- `reversed(s)` over a `str` fell through to generic call lowering, emitting a
+  bare `reversed(...)` identifier (rustc E0425) — the handler only recognized
+  `Type::List`. So the textbook `"".join(reversed(s))` string-reversal idiom was
+  a transpile-success ⟹ invalid Rust violation. Found by the differential hunt
+  (#4, finding #13).
+- Fix (frontend, reusing existing IR): when the argument infers to `Type::Str`,
+  lower to `Reversed(StrChars(s))` — `StrChars` materializes the chars as
+  `list[str]`, `Reversed` preserves the list type — so `reversed(s)` types as
+  `List(Str)` (matching Python's iterator-of-chars) and composes with
+  `"".join(...)`, `list(...)`, and `for c in reversed(s)`. The `s[::-1]` slice
+  form (which yields a `str`) keeps its separate lowering.
+- New e2e fixture `reversed_str.py` cross-checked vs python3. 357 e2e fixtures.
+
 ## [0.1.294] — 2026-06-14
 
 Tranche 2 — PMAT-595: **correctness** — integer `sum()` / `enumerate(start)` honor the C-PY-INT-ARITH overflow contract.
