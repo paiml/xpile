@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.235] — 2026-06-14
+
+Tranche 2 — PMAT-535: `int(b)` / `float(b)` over a `bool`.
+
+- `int(b)` over a `bool` emitted a bare undefined `int(...)` call (miscompile)
+  and `float(b)` was rejected — the int/float cast handler only covered
+  int/float/str, not bool. Found via a differential python3-vs-rust semantic
+  hunt. The `Type::Bool` case now lowers `True`/`False` → `1`/`0` (`1.0`/`0.0`):
+  Rust allows `bool as i64` (false=0, true=1) but NOT `bool as f64`, so
+  `float(bool)` casts through `i64` first (nested `NumCast`). **No new IR.**
+- Enables the canonical boolean-count idiom `sum(int(b) for b in bs)`.
+- New e2e fixture `int_float_of_bool.py` (`bool_to_int`, `count_true`,
+  `predicate_to_int`, `bool_to_float_scaled`) — rustc round-trip cross-checked
+  vs python3 (1, 0, 3, 2, 1, 0, 2.5, 0.0). e2e 296 → 297.
+
 ## [0.1.234] — 2026-06-14
 
 Tranche 2 — PMAT-534: `x in range(...)` / `x not in range(...)` membership.
