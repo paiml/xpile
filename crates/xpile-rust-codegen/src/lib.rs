@@ -1578,20 +1578,34 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             of_float,
             start,
         } => {
-            // PMAT-502cx: `sum(xs, start)` → `(start) + xs.iter().sum::<T>()`
-            // (Python's `sum(xs, start) == start + sum(xs)`; start matches
-            // the element type so no cast is needed).
-            if let Some(start) = start {
-                out.push('(');
-                emit_expr(out, start, mode)?;
-                out.push_str(") + ");
-            }
-            emit_expr(out, list, mode)?;
-            out.push_str(if *of_float {
-                ".iter().sum::<f64>()"
+            // PMAT-584: CPython's float `sum()` uses Neumaier compensated
+            // summation (Py3.12+) — naive left-to-right `.iter().sum()` diverges
+            // on catastrophic cancellation (`sum([1.0, 1e16, 1.0, -1e16])` is
+            // 2.0, not 0.0; `sum([0.1]*10)` is 1.0, not 0.9999999999999999).
+            // Emit the same compensated fold, seeded with `start` (or 0.0). The
+            // int case stays exact `.iter().sum::<i64>()` (with `start`).
+            if *of_float {
+                out.push_str("{ let mut __ss: f64 = ");
+                if let Some(start) = start {
+                    out.push('(');
+                    emit_expr(out, start, mode)?;
+                    out.push(')');
+                } else {
+                    out.push_str("0.0f64");
+                }
+                out.push_str("; let mut __sc = 0.0f64; for &__sx in (");
+                emit_expr(out, list, mode)?;
+                out.push_str(").iter() { let __st = __ss + __sx; if __ss.abs() >= __sx.abs() { __sc += (__ss - __st) + __sx; } else { __sc += (__sx - __st) + __ss; } __ss = __st; } __ss + __sc }");
             } else {
-                ".iter().sum::<i64>()"
-            });
+                // PMAT-502cx: `sum(xs, start)` → `(start) + xs.iter().sum::<i64>()`.
+                if let Some(start) = start {
+                    out.push('(');
+                    emit_expr(out, start, mode)?;
+                    out.push_str(") + ");
+                }
+                emit_expr(out, list, mode)?;
+                out.push_str(".iter().sum::<i64>()");
+            }
         }
         // PMAT-502j: `all(xs)`/`any(xs)` over a bool list.
         Expr::BoolReduce { list, is_all } => {

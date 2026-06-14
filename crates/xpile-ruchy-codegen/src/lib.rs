@@ -1429,18 +1429,30 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             of_float,
             start,
         } => {
-            // PMAT-502cx: `sum(xs, start)` → `(start) + xs.iter().sum::<T>()`.
-            if let Some(start) = start {
-                out.push('(');
-                emit_expr(out, start, mode)?;
-                out.push_str(") + ");
-            }
-            emit_expr(out, list, mode)?;
-            out.push_str(if *of_float {
-                ".iter().sum::<f64>()"
+            // PMAT-584: CPython float sum() is Neumaier-compensated (see Rust
+            // twin); int stays exact `.iter().sum::<i64>()`.
+            if *of_float {
+                out.push_str("{ let mut __ss: f64 = ");
+                if let Some(start) = start {
+                    out.push('(');
+                    emit_expr(out, start, mode)?;
+                    out.push(')');
+                } else {
+                    out.push_str("0.0f64");
+                }
+                out.push_str("; let mut __sc = 0.0f64; for &__sx in (");
+                emit_expr(out, list, mode)?;
+                out.push_str(").iter() { let __st = __ss + __sx; if __ss.abs() >= __sx.abs() { __sc += (__ss - __st) + __sx; } else { __sc += (__sx - __st) + __ss; } __ss = __st; } __ss + __sc }");
             } else {
-                ".iter().sum::<i64>()"
-            });
+                // PMAT-502cx: `sum(xs, start)` → `(start) + xs.iter().sum::<i64>()`.
+                if let Some(start) = start {
+                    out.push('(');
+                    emit_expr(out, start, mode)?;
+                    out.push_str(") + ");
+                }
+                emit_expr(out, list, mode)?;
+                out.push_str(".iter().sum::<i64>()");
+            }
         }
         // PMAT-502j: `all(xs)`/`any(xs)` over a bool list.
         Expr::BoolReduce { list, is_all } => {
