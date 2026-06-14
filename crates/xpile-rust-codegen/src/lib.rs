@@ -1573,12 +1573,24 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         }
         // PMAT-502k: `seq * n` → `(seq).repeat(((n).max(0)) as usize)`
         // (str → String, slice → Vec; negative count clamps to empty).
-        Expr::Repeat { seq, n } => {
-            out.push('(');
-            emit_expr(out, seq, mode)?;
-            out.push_str(").repeat(((");
-            emit_expr(out, n, mode)?;
-            out.push_str(").max(0)) as usize)");
+        Expr::Repeat { seq, n, of_str } => {
+            if *of_str {
+                // `String::repeat` — no `Copy` bound, unchanged.
+                out.push('(');
+                emit_expr(out, seq, mode)?;
+                out.push_str(").repeat(((");
+                emit_expr(out, n, mode)?;
+                out.push_str(").max(0)) as usize)");
+            } else {
+                // PMAT-569: a list repeat clones its elements (slice `repeat`
+                // needs `T: Copy`, which fails for `[[0]] * n` etc.). Works for
+                // any `Clone` element; `.max(0)` clamps a negative count.
+                out.push_str("{ let __rep = ");
+                emit_expr(out, seq, mode)?;
+                out.push_str("; (0..(((");
+                emit_expr(out, n, mode)?;
+                out.push_str(").max(0)) as usize)).flat_map(|_| __rep.iter().cloned()).collect::<Vec<_>>() }");
+            }
         }
         // PMAT-502m: `int(x)`/`float(x)` → `((x) as i64)` / `((x) as f64)`.
         Expr::NumCast {

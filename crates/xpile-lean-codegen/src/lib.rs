@@ -583,7 +583,7 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         // PMAT-502j: all/any — recurse into the bool list expression.
         Expr::BoolReduce { list, .. } => collect_idents(list, out),
         // PMAT-502k: seq * n — recurse into both sequence and count.
-        Expr::Repeat { seq, n } => {
+        Expr::Repeat { seq, n, .. } => {
             collect_idents(seq, out);
             collect_idents(n, out);
         }

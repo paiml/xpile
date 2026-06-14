@@ -1522,8 +1522,32 @@ fn main() {
     assert_rustc_runs("bool_reduce", &rust, driver);
 }
 
+/// PMAT-569 (Tranche 2): **correctness** — list-of-list repeat `[[0]] * n`.
+/// A list repeat used slice `repeat`, which needs `T: Copy`, so `Vec<Vec<_>>`
+/// failed to compile (E0277). Now a list repeat clones its elements
+/// (`(0..k).flat_map(|_| __rep.iter().cloned()).collect::<Vec<_>>()`); str
+/// repeat keeps `String::repeat`; int-element list repeat unchanged in behavior.
+/// Found by the differential hunt. Cross-checked vs python3 (3, 8, 14, "ababab").
+#[test]
+fn list_of_list_repeat() {
+    let rust = xpile_transpile_to_rust("list_of_list_repeat.py");
+    assert!(
+        rust.contains(".flat_map(|_| __rep.iter().cloned()).collect::<Vec<_>>()"),
+        "list repeat should clone-repeat:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(grid(3), 3);
+    assert_eq!(grid_cells(4), 8);
+    assert_eq!(int_repeat(5), 14);
+    assert_eq!(str_repeat(3), "ababab");
+}
+"#;
+    assert_rustc_runs("list_of_list_repeat", &rust, driver);
+}
+
 /// PMAT-502k (Tranche 2): sequence repetition `seq * n` / `n * seq` →
-/// `(seq).repeat(((n).max(0)) as usize)` — str → String, list → Vec.
+/// str → `String::repeat`; list → clone-repeat (PMAT-569).
 #[test]
 fn seq_repeat() {
     let rust = xpile_transpile_to_rust("seq_repeat.py");

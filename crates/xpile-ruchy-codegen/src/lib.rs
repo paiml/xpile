@@ -1431,12 +1431,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             });
         }
         // PMAT-502k: `seq * n` → `(seq).repeat(((n).max(0)) as usize)`.
-        Expr::Repeat { seq, n } => {
-            out.push('(');
-            emit_expr(out, seq, mode)?;
-            out.push_str(").repeat(((");
-            emit_expr(out, n, mode)?;
-            out.push_str(").max(0)) as usize)");
+        Expr::Repeat { seq, n, of_str } => {
+            if *of_str {
+                out.push('(');
+                emit_expr(out, seq, mode)?;
+                out.push_str(").repeat(((");
+                emit_expr(out, n, mode)?;
+                out.push_str(").max(0)) as usize)");
+            } else {
+                // PMAT-569: list repeat clones elements (see Rust twin).
+                out.push_str("{ let __rep = ");
+                emit_expr(out, seq, mode)?;
+                out.push_str("; (0..(((");
+                emit_expr(out, n, mode)?;
+                out.push_str(").max(0)) as usize)).flat_map(|_| __rep.iter().cloned()).collect::<Vec<_>>() }");
+            }
         }
         // PMAT-502m: `int(x)`/`float(x)` → `((x) as i64)` / `((x) as f64)`.
         Expr::NumCast {
