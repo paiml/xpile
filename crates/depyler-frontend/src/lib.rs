@@ -9108,6 +9108,36 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
         return Ok(value); // `{x:}` — empty spec, same as plain.
     }
     let ty = infer_type_in_ctx(ctx, &value);
+    // PMAT-558: percent format `:.N%` / `:%` (float). Python scales the value by
+    // 100, formats it with N decimals (bare `%` → Python's default 6), and
+    // appends a literal `%`. Lowered to `Concat(FormatSpec((x)*100.0, ".N"),
+    // "%")` — no new IR. Only sound for a float (whole-int promotion deferred).
+    if let Some(prec) = spec.strip_suffix('%') {
+        if ty == Type::F64 {
+            let rust_spec = if prec.is_empty() {
+                Some(".6".to_string())
+            } else if let Some(n) = prec.strip_prefix('.') {
+                digits_only(n).then(|| format!(".{n}"))
+            } else {
+                None
+            };
+            if let Some(rust_spec) = rust_spec {
+                let scaled = Expr::FloatBinOp {
+                    op: FloatOp::Mul,
+                    lhs: Box::new(value),
+                    rhs: Box::new(Expr::LitFloat(100.0)),
+                };
+                return Ok(Expr::Concat {
+                    lhs: Box::new(Expr::FormatSpec {
+                        value: Box::new(scaled),
+                        rust_spec,
+                    }),
+                    rhs: Box::new(Expr::LitStr("%".to_string())),
+                });
+            }
+        }
+        // Non-float receiver or malformed precision → fall through to a reject.
+    }
     match translate_format_spec(&spec, &ty) {
         Some(rust_spec) => Ok(Expr::FormatSpec {
             value: Box::new(value),
@@ -9115,7 +9145,8 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
         }),
         None => Err(FrontendError::Lower(format!(
             "unsupported f-string format spec `:{spec}` (for a {ty:?} value) — supported: \
-             `.Nf` (float), `0Nd`/`Nd` (int), `>N`/`<N`/`^N` (align) at v0.2.0"
+             `.Nf` (float), `.N%` (float percent), `0Nd`/`Nd` (int), `>N`/`<N`/`^N` (align), \
+             `+`/`-` (sign) at v0.2.0"
         ))),
     }
 }
