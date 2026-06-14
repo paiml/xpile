@@ -19,6 +19,19 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.264] — 2026-06-14
+
+Tranche 2 — PMAT-565: **correctness** — `bool` is an `int` subtype.
+
+- Fixed invalid-Rust emission for bool-in-int contexts (Python's `bool` is an
+  `int` subtype, `True == 1`): `a + b` (bool operands) emitted `checked_add` on
+  a `bool` (E0599); `sum(list[bool])` emitted a bare `sum()` (E0425) and
+  `sum(x > 0 for x in xs)` (the counting genexpr) rejected; `True in list[int]`
+  emitted `contains(&true)` (E0308). Now a bool operand coerces to i64
+  (`(b) as i64`) in integer arithmetic / bitwise / shift binops, `sum()` over a
+  bool list maps bool→i64 then sums, and a bool membership needle is coerced.
+  Zero new IR (reuses `Expr::NumCast`). Found by the differential hunt.
+
 ## [0.1.263] — 2026-06-14
 
 Tranche 2 — PMAT-564: **correctness** — `len(str)` counts Unicode chars not bytes.
