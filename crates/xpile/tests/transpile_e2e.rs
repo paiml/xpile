@@ -4603,6 +4603,37 @@ fn main() {
     assert_rustc_runs("genexpr_tuple_target", &rust, driver);
 }
 
+/// PMAT-532 (Tranche 2): in-place set/dict mutators `s.update(other)` /
+/// `s.clear()` / `d.clear()`. `set.update` was rejected even though `dict.update`
+/// worked (an asymmetry); `set.clear`/`dict.clear` were rejected even though
+/// `list.clear` worked. All three reuse existing IR — `set.update` → the
+/// `ListExtend` stmt (`s.extend((other).iter().cloned())`, valid for `HashSet`),
+/// and the clears → `ListMutate { Clear }` (`name.clear();`, valid for
+/// `HashSet`/`HashMap`). No new IR/codegen. Cross-checked vs python3 (5, 4, 0, 0).
+#[test]
+fn set_dict_mutators() {
+    let rust = xpile_transpile_to_rust("set_dict_mutators.py");
+    assert!(
+        rust.contains("s.extend((t).iter().cloned());"),
+        "`s.update(t)` should reuse the list-extend lowering:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let s: std::collections::HashSet<i64> = [1, 2, 3].into_iter().collect();
+    let t: std::collections::HashSet<i64> = [3, 4, 5].into_iter().collect();
+    assert_eq!(merge(s, t), 5);
+    assert_eq!(update_literal(), 4);
+    let s2: std::collections::HashSet<i64> = [1, 2, 3].into_iter().collect();
+    assert_eq!(wipe_set(s2), 0);
+    let mut d = std::collections::HashMap::new();
+    d.insert(String::from("a"), 1i64);
+    d.insert(String::from("b"), 2i64);
+    assert_eq!(wipe_dict(d), 0);
+}
+"#;
+    assert_rustc_runs("set_dict_mutators", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)

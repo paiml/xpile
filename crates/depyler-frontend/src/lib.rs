@@ -2060,6 +2060,57 @@ fn try_lower_list_method_call(
             error_if_absent: method == "remove",
         }));
     }
+    // PMAT-532: `s.update(other)` — 1-arg in-place set union (Python
+    // `set.update`). Reuses `Stmt::ListExtend` (`s.extend((other).iter()
+    // .cloned())`, valid for `HashSet` as well as `Vec`), mirroring the
+    // dict.update branch below. (Placed before the list-clear block, which
+    // early-returns `None` for a non-list receiver.)
+    if method == "update" && matches!(receiver_ty, Some(Type::Set(_))) {
+        if !call.keywords.is_empty() {
+            return Some(Err(FrontendError::Lower(format!(
+                "function `{}` calls `{receiver_name}.update(...)` with keyword args; \
+                 v0.2.0 takes a single positional set",
+                ctx.fn_name
+            ))));
+        }
+        if call.args.len() != 1 {
+            return Some(Err(FrontendError::Lower(format!(
+                "function `{}` calls `{receiver_name}.update(...)` with {} positional arg(s); \
+                 v0.2.0 requires exactly 1 (a set)",
+                ctx.fn_name,
+                call.args.len()
+            ))));
+        }
+        let other = match lower_expr_in_ctx(ctx, call.args[0].clone()) {
+            Ok(e) => e,
+            Err(err) => return Some(Err(err)),
+        };
+        ctx.mutable.insert(receiver_name.to_string());
+        return Some(Ok(Stmt::ListExtend {
+            list_name: receiver_name.to_string(),
+            other,
+        }));
+    }
+    // PMAT-532: `s.clear()` / `d.clear()` — 0-arg in-place container clear.
+    // Reuses `Stmt::ListMutate { Clear }` (emits `<name>.clear();`, valid for
+    // `HashSet`/`HashMap` as well as `Vec`), mirroring the list-clear block
+    // below (which early-returns `None` for a non-list receiver, so the set/
+    // dict forms must be handled here first).
+    if method == "clear" && matches!(receiver_ty, Some(Type::Set(_) | Type::Dict(_, _))) {
+        if !call.args.is_empty() || !call.keywords.is_empty() {
+            return Some(Err(FrontendError::Lower(format!(
+                "function `{}` calls `{receiver_name}.clear(...)` with arguments; \
+                 the in-place container clear takes none at v0.2.0",
+                ctx.fn_name
+            ))));
+        }
+        ctx.mutable.insert(receiver_name.to_string());
+        return Some(Ok(Stmt::ListMutate {
+            list_name: receiver_name.to_string(),
+            op: ListMutateOp::Clear,
+            of_float: false,
+        }));
+    }
     // PMAT-502ap: no-arg in-place list mutators `xs.sort()/.reverse()/.clear()`.
     let list_mutate_op = match method {
         "sort" => Some(ListMutateOp::Sort),
