@@ -1822,6 +1822,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "FINAL R6 sub-slice — closes the DICT HALF of audit §7.3 'every construct under contract' falsification. With C-C-INT-ARITH (475b/v0.1.196), §7.3 is RESTORED TO TRUE: every emitted construct's contract citation resolves to an on-disk YAML + Lean theorem. AUTHORED: contracts/xlate-py-dict-to-hashmap-v1.yaml — Layer-2 translation kernel contract (dict sibling of C-XLATE-PY-LIST-TO-VEC). Python dict[K,V] homogeneous → Rust std::collections::HashMap<K_rust,V_rust>. ONE depth-1 Diamond eqn dict_to_hashmap_structure_preserved_diamond combining entry-sequence preservation + cardinality preservation (lowering = identity on the abstract finite map K→V). proof_obligations(2), falsification_tests(2, bound to live dict_counts_emitted_rust_returns_hashmap e2e test), kani_harnesses(2 inline: HashMap<u8,u8> insert/get roundtrip + reinsert-overwrites-len-1), qa_gate. contracts/lean/XlatePyDictToHashmap.lean — models PyDict+RustHashMap as entry lists, lowering as identity → both conjuncts rfl (Bronze). Followed the 475b authoring recipe exactly (kind:kernel needs proof_obligations+kani_harnesses; falsification_tests>=proof_obligations; quoted refs with inner colons; lean_theorem resolves to theorem in lean_file; qa_gate.required_tests real #[test]s; top-level inline kani harnesses avoid the file-resolution validator). SECOND contract via the grandfathered gate → xpile diamond now 15 contracts, both new ones depth-1, depth-2+ still grandfathered 13. pv lint 0 errors; diamond_coverage(26)/refinement_proofs(3)/qa_gate(3)/kani(3)/workspace/fmt/clippy green. FREE CI. SHIPPED v0.1.197. **R6/PMAT-475 COMPLETE: 475a grandfather + 475b C-C-INT-ARITH + 475c C-XLATE-PY-DICT-TO-HASHMAP. The entire R-table (R1-R10) is now closed.** NEXT: Track 4 (PMAT-481..486 free-CI offline PTX/WGSL gates) OR Tranche-2 capability gaps OR PMAT-485 nightly emit job."
+- id: PMAT-544
+  github_issue: null
+  item_type: task
+  title: 'PMAT-544: [Tranche 2] enumerate()/zip() over a string'
+  status: done
+  priority: low
+  created: 2026-06-14T00:00:00Z
+  acceptance_criteria:
+  - "for i, c in enumerate(s) (and zip(s, ...)) over a string was rejected ('enumerate over a non-list — only list iteration supported'). The paired-loop handler (lower_for_stmt, ~2836) lowered call.args[0] then required Type::List. FIX: if the iterable infers as Type::Str, wrap it in Expr::StrChars (-> List(Str) of 1-char strings; infers as List(Str), same conversion the single-var `for c in s` loop emits via PMAT-502cd) before the List(elem) destructure. Applied to enumerate arg0 AND zip arg1 (so zip(s, list)/zip(list, s) both work). The char var binds to Type::Str. ZERO new IR (reuses Expr::StrChars). rustc rt enumerate_zip_str.py vs python3 (index_of 2, weighted_ord 66, start_sum 6, zip_str_list 134). FREE CI. SHIPPED v0.1.243 (e2e 304->305)."
 - id: PMAT-543
   github_issue: null
   item_type: task
