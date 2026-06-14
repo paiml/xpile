@@ -7728,6 +7728,30 @@ fn main() {
     assert_rustc_runs("dict_comp", &rust, driver);
 }
 
+/// PMAT-599: a dict comprehension reusing a non-Copy loop var in both the key
+/// and the value (`{w: w …}`, `{w: w + "!" …}`, `{k: len(k) …}`) moved it into
+/// the tuple before the value could use it (E0382). The key is now cloned
+/// (gated on read-count>1 + non-Copy). Cross-checked vs python3:
+/// `identity(["a","b","a"])==2`, `with_suffix(["a","b"])=="a!"`,
+/// `key_lengths(["abc","de"])==3`.
+#[test]
+fn dict_comp_key_reuse() {
+    let rust = xpile_transpile_to_rust("dict_comp_key_reuse.py");
+    // The bare-binder key is cloned so the value keeps a live value.
+    assert!(
+        rust.contains("((w).clone(), w)"),
+        "identity dict comp must clone the key:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(identity(vec!["a".to_string(), "b".to_string(), "a".to_string()]), 2);
+    assert_eq!(with_suffix(vec!["a".to_string(), "b".to_string()]), "a!");
+    assert_eq!(key_lengths(vec!["abc".to_string(), "de".to_string()]), 3);
+}
+"#;
+    assert_rustc_runs("dict_comp_key_reuse", &rust, driver);
+}
+
 /// PMAT-500 (Tranche 2): sets — literal `{a, b, c}` → `HashSet`-init block,
 /// `x in s` / `x not in s` → `s.contains(&(x))`.
 #[test]
