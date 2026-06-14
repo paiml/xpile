@@ -19,6 +19,17 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.266] — 2026-06-14
+
+Tranche 2 — PMAT-567: **correctness** — str slicing indexes by char not byte.
+
+- Fixed wrong results / a char-boundary panic on non-ASCII string slices:
+  `s[a:b]` byte-sliced the `String` (`"αβγδ"[1:3]` panicked). Now a str slice
+  collects to `Vec<char>` so the length, Python bound clamping/negatives, and
+  the slice are all char-based, then collects back to a `String`. List slicing
+  is unchanged. Completes the str byte-vs-char family (`len` 0.1.263, `find`
+  0.1.265, slice). Rust + Ruchy. Found by the differential hunt.
+
 ## [0.1.265] — 2026-06-14
 
 Tranche 2 — PMAT-566: **correctness** — `str.find/rfind/index` return char index.
