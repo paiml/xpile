@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.315] — 2026-06-15
+
+Tranche 2 — PMAT-616: **correctness** — sorting a float list containing NaN no longer panics.
+
+- Sorting a float list/key containing NaN lowered to `partial_cmp(...).unwrap()`,
+  which panics (`partial_cmp` returns `None` for NaN). Python's `sorted`/`list.sort`
+  does **not** raise on NaN — it produces an undefined-but-non-crashing order
+  (Python's comparator isn't a valid total order, so no deterministic comparator
+  can replicate it). The transpiled code crashed on valid Python input. Surfaced
+  by differential hunt #6, re-verified on a fresh binary.
+- Fix (rust + ruchy codegen, no new IR): every float-sort comparator — keyless
+  `sorted`, in-place `xs.sort()` / `sort(reverse=True)`, and float-`key=` sorts —
+  now uses `partial_cmp(...).unwrap_or(Equal)`. Identical to `.unwrap()` for all
+  finite floats (finite sorts unchanged and python3-exact), and no crash on NaN.
+- New e2e fixture `sorted_float_nan.py`: finite sorts cross-checked vs python3 +
+  NaN sort asserted no-panic with all elements preserved. 377 e2e fixtures.
+
 ## [0.1.314] — 2026-06-15
 
 Tranche 2 — PMAT-615: **correctness** — augmented set ops `s -= / |= / &= / ^= other` now compile.
