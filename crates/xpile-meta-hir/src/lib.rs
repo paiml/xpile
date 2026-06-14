@@ -2141,6 +2141,13 @@ pub enum StrMethodOp {
     /// for a trailing break (matching Python; `keepends=True` is deferred).
     /// Block-form codegen.
     SplitLines,
+    /// `.chars().rev().collect::<String>()` (**Str**, 0 args). PMAT-530. The
+    /// target of the `s[::-1]` reverse-slice idiom over a `str` (the list form
+    /// `xs[::-1]` already lowers to [`Expr::Reversed`]). Reverses by Unicode
+    /// scalar value (`char`), matching Python's codepoint-wise reversal on the
+    /// ASCII subset; not normalization-aware (grapheme clusters are out of
+    /// scope at v0.2.0, as elsewhere in the string surface).
+    Reverse,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
