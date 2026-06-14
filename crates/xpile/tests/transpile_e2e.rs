@@ -1337,6 +1337,29 @@ fn main() {
     assert_rustc_runs("sort_inplace_reverse", &rust, driver);
 }
 
+/// PMAT-561 (Tranche 2): in-place keyed sort `xs.sort(key=lambda v: e)` (and
+/// `key=` + `reverse=`). Desugars to `xs = sorted(xs, key=…, reverse=…)`,
+/// reusing the `Expr::Sorted` / `SortKey` machinery (`.sort_by_key(|__k| { let
+/// p = __k.clone(); … })`). The receiver is already `mut` (the pre-walk keys on
+/// the `sort` method). Cross-checked vs python3 (9, 1, 1, 8).
+#[test]
+fn sort_inplace_key() {
+    let rust = xpile_transpile_to_rust("sort_inplace_key.py");
+    assert!(
+        rust.contains("sort_by_key(|__k|"),
+        "in-place keyed sort should reuse the sorted() key machinery:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sort_desc_key(vec![3, 1, 4, 1, 5, 9, 2, 6]), 9);
+    assert_eq!(sort_by_square(vec![3, 1, 4, 1, 5]), 1);
+    assert_eq!(sort_pairs_by_second(vec![(1, 5), (2, 1), (3, 3)]), 1);
+    assert_eq!(sort_key_reverse(vec![23, 17, 45, 8]), 8);
+}
+"#;
+    assert_rustc_runs("sort_inplace_key", &rust, driver);
+}
+
 /// PMAT-502d (Tranche 2): `reversed(xs)` (and `list(reversed(xs))`) →
 /// a new reversed list (`{ let mut __xv = xs.clone(); __xv.reverse(); __xv }`).
 #[test]

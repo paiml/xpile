@@ -2199,6 +2199,73 @@ fn try_lower_list_method_call(
             of_float: false,
         }));
     }
+    // PMAT-561: in-place keyed sort `xs.sort(key=lambda v: e [, reverse=True])`
+    // desugars to `xs = sorted(xs, key=…, reverse=…)`, reusing the whole
+    // `Expr::Sorted` / `SortKey` machinery (the non-mutating `sorted(...)` form).
+    // The receiver is already marked mutable by the pre-walk (it keys on the
+    // `sort` method name). Only fires when a `key` kwarg is present; the bare
+    // `sort()` / `sort(reverse=…)` forms keep the `ListMutate` path below.
+    if method == "sort"
+        && matches!(receiver_ty, Some(Type::List(_)))
+        && call.args.is_empty()
+        && call
+            .keywords
+            .iter()
+            .any(|k| k.arg.as_deref() == Some("key"))
+    {
+        let mut reverse = false;
+        let mut key: Option<SortKey> = None;
+        let elem_ty = match receiver_ty.as_ref() {
+            Some(Type::List(inner)) => Some((**inner).clone()),
+            _ => None,
+        };
+        for kw in &call.keywords {
+            match kw.arg.as_deref() {
+                Some("key") => match lower_sort_key(ctx, &kw.value, elem_ty.clone()) {
+                    Ok(Some(k)) => key = Some(k),
+                    Ok(None) => {
+                        return Some(Err(FrontendError::Lower(format!(
+                            "function `{}` calls `{receiver_name}.sort(key=…)` with an unsupported key — only `lambda p: e` and a bare callable name are supported",
+                            ctx.fn_name
+                        ))))
+                    }
+                    Err(e) => return Some(Err(e)),
+                },
+                Some("reverse") => match &kw.value {
+                    ast::Expr::Constant(c) => match &c.value {
+                        ast::Constant::Bool(b) => reverse = *b,
+                        _ => {
+                            return Some(Err(FrontendError::Lower(format!(
+                                "function `{}` calls `{receiver_name}.sort(reverse=…)` with a non-bool value",
+                                ctx.fn_name
+                            ))))
+                        }
+                    },
+                    _ => {
+                        return Some(Err(FrontendError::Lower(format!(
+                            "function `{}` calls `{receiver_name}.sort(reverse=…)` with a non-literal value",
+                            ctx.fn_name
+                        ))))
+                    }
+                },
+                _ => {
+                    return Some(Err(FrontendError::Lower(format!(
+                        "function `{}` calls `{receiver_name}.sort(...)` with an unsupported keyword argument",
+                        ctx.fn_name
+                    ))))
+                }
+            }
+        }
+        ctx.mutable.insert(receiver_name.to_string());
+        return Some(Ok(Stmt::Assign {
+            name: receiver_name.to_string(),
+            value: Expr::Sorted {
+                list: Box::new(Expr::Ident(receiver_name.to_string())),
+                reverse,
+                key,
+            },
+        }));
+    }
     // PMAT-502ap: no-arg in-place list mutators `xs.sort()/.reverse()/.clear()`.
     let list_mutate_op = match method {
         "sort" => Some(ListMutateOp::Sort),
