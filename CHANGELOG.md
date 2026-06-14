@@ -19,6 +19,19 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.263] — 2026-06-14
+
+Tranche 2 — PMAT-564: **correctness** — `len(str)` counts Unicode chars not bytes.
+
+- Fixed a silent miscompile on any non-ASCII string: `len(s)` for a str emitted
+  `s.len() as i64` (UTF-8 **byte** length), so `len("café")` returned 5 instead
+  of Python's 4. New `StrMethodOp::CharCount` → `.chars().count() as i64`; both
+  `len()` lowering sites route a str-typed argument to it. `len()` of a list/dict
+  is unchanged. Found by the 2026-06-14 differential python3-vs-rustc hunt.
+  Incidentally fixes `key=len` over strings (sort/min/max by string length now
+  counts chars). Rippled to meta-HIR + both inferers + rust/ruchy emit; Lean
+  refuses.
+
 ## [0.1.262] — 2026-06-14
 
 Tranche 2 — PMAT-563: multiple `if` filters in comprehensions/genexprs.
