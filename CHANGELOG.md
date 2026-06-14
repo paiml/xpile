@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.278] — 2026-06-14
+
+Tranche 2 — PMAT-579: **correctness / contract integrity** — checked i64 `abs`.
+
+- `abs(x)` over an `int` emitted `(x).abs()`, but `i64::MIN.abs()` wraps to
+  `i64::MIN` (no overflow check under `-O`) — a silent wrap that falsifies
+  C-PY-INT-ARITH's overflow guarantee (Python's `abs` is exact). The
+  contract-integrity sibling to the left/right-shift fixes. Found by the
+  differential hunt.
+- Fix: add `of_float` to `Expr::NumBuiltin` (set by the frontend from the first
+  argument's type, mirroring `ListMutate`/`Sorted`). The `Abs` arm emits
+  `.checked_abs().expect(…)` for an i64 (panics on `i64::MIN`) and keeps
+  `.abs()` for an f64 (never overflows). `min`/`max` and the float math builtins
+  ignore the flag. Rust + Ruchy.
+- New e2e fixture `abs_overflow.py` cross-checked vs python3 (`abs(i64::MIN)`
+  panics via `catch_unwind`). 340 e2e fixtures.
+
 ## [0.1.277] — 2026-06-14
 
 Tranche 2 — PMAT-578: **correctness** — `sorted()` over a float list.
