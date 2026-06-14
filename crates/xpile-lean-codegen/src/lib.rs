@@ -296,6 +296,7 @@ fn emit_function_with_while_helpers(
             | Stmt::ListExtend { .. }
             | Stmt::DictUpdate { .. }
             | Stmt::ListInsert { .. }
+            | Stmt::IndexAppend { .. }
             | Stmt::ListRemoveValue { .. } => {
                 return Err(LeanCodegenError::Unsupported(format!(
                     "function `{}` has in-place mutation (.append/.add/.remove/.discard/.sort/.reverse/.clear/.extend/.insert/.update) inside a while loop; \
@@ -1090,6 +1091,12 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         Stmt::DictSet { dict_name, .. } => Err(LeanCodegenError::Unsupported(format!(
             "`{dict_name}[k] = v` (Stmt::DictSet) requires state-monad encoding in Lean — \
              not yet implemented at v0.2.0 first cut (PMAT-466 follow-up); \
+             use `--target rust` or `--target ruchy` for in-place mutation"
+        ))),
+        // PMAT-533: subscript-receiver append — same in-place-mutation gap.
+        Stmt::IndexAppend { base, .. } => Err(LeanCodegenError::Unsupported(format!(
+            "`{base}[i].append(e)` (Stmt::IndexAppend) requires state-monad encoding in Lean — \
+             not yet implemented at v0.2.0 first cut; \
              use `--target rust` or `--target ruchy` for in-place mutation"
         ))),
         // PMAT-506c: struct field assignment — struct values are deferred in

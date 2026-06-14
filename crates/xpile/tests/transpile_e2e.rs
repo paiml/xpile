@@ -4634,6 +4634,34 @@ fn main() {
     assert_rustc_runs("set_dict_mutators", &rust, driver);
 }
 
+/// PMAT-533 (Tranche 2): in-place `append` on a **subscript receiver** —
+/// `g[i].append(e)` (list-of-list) and `d[k].append(e)` (dict-of-list). The
+/// bare `<name>.append(e)` form already worked; this is the indexed-receiver
+/// companion via the new `Stmt::IndexAppend`. List base indexes a mutable place
+/// directly (`g[(i) as usize].push(e)`); dict base reaches the value via
+/// `get_mut(&(k)).unwrap().push(e)` (KeyError parity). The mutability pre-walk
+/// recognises the subscript receiver, so the base is `mut`. Cross-checked vs
+/// python3 (2, 35, 3).
+#[test]
+fn subscript_append() {
+    let rust = xpile_transpile_to_rust("subscript_append.py");
+    assert!(
+        rust.contains("as usize].push(") && rust.contains(".get_mut(&("),
+        "subscript append should index a place / get_mut the value:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(grid_row_append(vec![vec![1, 2], vec![3]], 1), 2);
+    assert_eq!(first_row_total(vec![vec![5], vec![9]]), 35);
+    let mut d = std::collections::HashMap::new();
+    d.insert(String::from("a"), vec![1i64, 2]);
+    d.insert(String::from("b"), vec![3i64]);
+    assert_eq!(bucket_append(d, String::from("a"), 7), 3);
+}
+"#;
+    assert_rustc_runs("subscript_append", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)

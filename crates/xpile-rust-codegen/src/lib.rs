@@ -204,6 +204,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             | Stmt::ListRemoveValue { .. } => false,
             // PMAT-461: indexed assignment same disposition.
             Stmt::IndexAssign { .. } => false,
+            // PMAT-533: subscript-receiver append carries no Type::Let.
+            Stmt::IndexAppend { .. } => false,
             // PMAT-466: dict keyed assignment carries no Type::Let;
             // dict values are int/bool/str at v0.2.0, never BigInt.
             Stmt::DictSet { .. } => false,
@@ -607,6 +609,29 @@ fn emit_stmt_indented(
             write!(out, "; {dict_name}.insert(")?;
             emit_expr(out, key, mode)?;
             writeln!(out, ".clone(), __xpile_dict_val); }}")?;
+            Ok(())
+        }
+        // PMAT-533: append on a subscript receiver. List base indexes a
+        // mutable place directly (`base[(i) as usize].push(e)`); dict base
+        // reaches the value via `get_mut(&(k)).unwrap()` (panic on absent
+        // key = Python KeyError).
+        Stmt::IndexAppend {
+            base,
+            index,
+            elem,
+            base_is_dict,
+        } => {
+            if *base_is_dict {
+                write!(out, "{indent}{base}.get_mut(&(")?;
+                emit_expr(out, index, mode)?;
+                out.push_str(")).unwrap().push(");
+            } else {
+                write!(out, "{indent}{base}[(")?;
+                emit_expr(out, index, mode)?;
+                out.push_str(") as usize].push(");
+            }
+            emit_expr(out, elem, mode)?;
+            writeln!(out, ");")?;
             Ok(())
         }
         // PMAT-506c: struct field assignment `(obj).field = value;`.
