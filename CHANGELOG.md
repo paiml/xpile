@@ -19,6 +19,24 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.281] — 2026-06-14
+
+Tranche 2 — PMAT-582: **correctness** — `repr()` builtin.
+
+- `repr(x)` had no lowering: it fell through to a generic call inferring I64, so
+  `repr(s) -> str` was rejected ("body produces I64") and elsewhere emitted a
+  bare `repr(...)` which rustc rejects (E0423: `repr` is a built-in attribute,
+  not a function). Found by the differential hunt.
+- Fix: a `repr` dispatch. `repr(int/float/bool)` == `str(...)` (reuses
+  `Expr::ToStr` / the `str(bool)` desugar); `repr(str)` adds quotes + escapes via
+  a new `Expr::ReprStr` variant whose codegen replicates CPython (single quotes,
+  switching to double if the string has a `'` but no `"`; escapes `\`, the quote,
+  `\n`/`\r`/`\t`). Codegen uses a raw string literal so the emitted Rust is
+  verbatim. Container repr + f-string `{x!r}` deferred (clean error). Lean
+  refuses.
+- New e2e fixture `repr_builtin.py` cross-checked vs python3 (quote-choice +
+  escapes). 343 e2e fixtures.
+
 ## [0.1.280] — 2026-06-14
 
 Tranche 2 — PMAT-581: **correctness** — float division by zero raises ZeroDivisionError.
