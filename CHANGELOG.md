@@ -19,6 +19,19 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.267] — 2026-06-14
+
+Tranche 2 — PMAT-568: **correctness** — `max(key=)` first-tie + `sorted(reverse=)` stability.
+
+- `max(xs, key=)` returned the last element with the maximal key (Rust
+  `max_by_key`); Python returns the first. Fixed by reversing the iterator
+  before `max_by_key` (`min` unaffected).
+- `sorted(xs, key=, reverse=True)` used `sort_by_key` + `.reverse()`, which
+  flips equal-key elements; Python's reverse sort is *stable*. Fixed with a
+  stable descending comparator `sort_by(|a, b| key(b).cmp(&key(a)))`. Also
+  covers in-place `xs.sort(key=, reverse=True)`. Rust + Ruchy. Found by the
+  differential hunt.
+
 ## [0.1.266] — 2026-06-14
 
 Tranche 2 — PMAT-567: **correctness** — str slicing indexes by char not byte.
