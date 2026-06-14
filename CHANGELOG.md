@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.238] — 2026-06-14
+
+Tranche 2 — PMAT-539 (correctness): Python slice bounds — negatives + clamping.
+
+- Slices with a negative bound (`xs[-2:]`, `xs[:-1]`) or an out-of-range bound
+  (`xs[1:100]`) **panicked at runtime** — the naive `(lo) as usize` wraps a
+  negative `i64` to a huge `usize` and never clamps, so even the ubiquitous
+  `xs[:-1]` / `xs[-3:]` idioms crashed.
+- Fix: the rust + ruchy Slice emit now binds the collection, computes the
+  length, resolves each bound (negative → `(len + b).max(0)`; non-negative →
+  `b.min(len)`), defaults (lo→0, hi→len), and ensures `hi >= lo` before slicing.
+  Matches Python: from-end negatives, clamp to `[0, len]`, `lo > hi` → empty.
+  The step suffix is preserved over the clamped range. **No new IR.**
+- Found via the differential python3-vs-rust hunt. New e2e fixture
+  `negative_slice.py`; a 13-case differential sweep (negatives / OOB / positives
+  / stepped / lo>hi) matches python3. e2e 299 → 300.
+
 ## [0.1.237] — 2026-06-14
 
 Tranche 2 — PMAT-538 (correctness): Python `//` / `%` with a negative divisor.
