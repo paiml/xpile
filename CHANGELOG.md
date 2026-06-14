@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.277] — 2026-06-14
+
+Tranche 2 — PMAT-578: **correctness** — `sorted()` over a float list.
+
+- `sorted(xs)` over a `list[float]` emitted `{ let mut __xv = xs.clone();
+  __xv.sort(); __xv }`, but `Vec<f64>::sort()` requires `f64: Ord` — not
+  satisfied (E0277). A transpile success thus produced invalid Rust. Found by
+  the differential hunt.
+- Fix: add `of_float` to `Expr::Sorted` (set by the frontend from the list
+  element type, mirroring `ListMutate`). The keyless float case emits
+  `sort_by(|a, b| a.partial_cmp(b).unwrap())` (descending: `b.partial_cmp(a)`),
+  like the in-place `xs.sort()` path; an int list keeps the plain `.sort()`.
+  NaN panics, matching Python. A float-returning `key=` is a separate, deferred
+  case. Rust + Ruchy.
+- New e2e fixture `sorted_float.py` cross-checked vs python3 (asc, reverse, int
+  unchanged). 339 e2e fixtures.
+
 ## [0.1.276] — 2026-06-14
 
 Tranche 2 — PMAT-577: **correctness** — right-shift saturates for amount ≥ 64.
