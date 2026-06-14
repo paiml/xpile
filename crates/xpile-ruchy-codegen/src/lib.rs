@@ -484,6 +484,14 @@ fn emit_stmt_indented(
                     "{indent}{list_name}.sort_by(|a, b| a.partial_cmp(b).unwrap());"
                 )?,
                 ListMutateOp::Sort => writeln!(out, "{indent}{list_name}.sort();")?,
+                // PMAT-555: descending in-place sort (`sort(reverse=True)`).
+                ListMutateOp::SortDesc if *of_float => writeln!(
+                    out,
+                    "{indent}{list_name}.sort_by(|a, b| b.partial_cmp(a).unwrap());"
+                )?,
+                ListMutateOp::SortDesc => {
+                    writeln!(out, "{indent}{list_name}.sort_by(|a, b| b.cmp(a));")?
+                }
                 ListMutateOp::Reverse => writeln!(out, "{indent}{list_name}.reverse();")?,
                 ListMutateOp::Clear => writeln!(out, "{indent}{list_name}.clear();")?,
             }
