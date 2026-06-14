@@ -4504,6 +4504,40 @@ fn main() {
     assert_rustc_runs("list_pop_statement", &rust, driver);
 }
 
+/// PMAT-529 (Tranche 2): bare-statement `d.pop(k)` / `d.pop(k, default)` on a
+/// dict — the value-position forms (`x = d.pop(k)`) already worked; a bare
+/// statement now reuses the same pop lowering wrapped in a discard `let _ = …;`
+/// (receiver auto-`mut`), broadening PMAT-528 (which covered list pop) to dict
+/// receivers. Emits `(d).remove(&…).unwrap()` / `.unwrap_or(default)`.
+/// Cross-checked vs python3 (2, 2, 21).
+#[test]
+fn dict_pop_statement() {
+    let rust = xpile_transpile_to_rust("dict_pop_statement.py");
+    assert!(
+        rust.contains("let _: i64 = (d).remove("),
+        "a bare `d.pop(k)` should lower to a discard `let _` over `.remove`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let mut d1 = std::collections::HashMap::new();
+    d1.insert(String::from("a"), 1i64);
+    d1.insert(String::from("b"), 2i64);
+    d1.insert(String::from("c"), 3i64);
+    assert_eq!(remove_key(d1), 2);
+    let mut d2 = std::collections::HashMap::new();
+    d2.insert(String::from("a"), 1i64);
+    d2.insert(String::from("b"), 2i64);
+    assert_eq!(remove_with_default(d2), 2);
+    let mut d3 = std::collections::HashMap::new();
+    d3.insert(String::from("a"), 1i64);
+    d3.insert(String::from("b"), 20i64);
+    d3.insert(String::from("c"), 3i64);
+    assert_eq!(drain_two(d3), 21);
+}
+"#;
+    assert_rustc_runs("dict_pop_statement", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
