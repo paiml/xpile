@@ -2833,10 +2833,20 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
                         if arity_ok {
                             let first = a.id.to_string();
                             let second = b.id.to_string();
-                            let iter_expr = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                            let mut iter_expr = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                            // PMAT-544: `enumerate(s)` / `zip(s, …)` over a string
+                            // iterate its characters (each a 1-char string) —
+                            // materialize via `Expr::StrChars` (→ `List(Str)`),
+                            // the same conversion the single-var `for c in s` loop
+                            // uses.
+                            if matches!(infer_type_in_ctx(ctx, &iter_expr), Type::Str) {
+                                iter_expr = Expr::StrChars {
+                                    string: Box::new(iter_expr),
+                                };
+                            }
                             let Type::List(elem) = infer_type_in_ctx(ctx, &iter_expr) else {
                                 return Err(FrontendError::Lower(format!(
-                                    "function `{}` uses `{fname}(...)` over a non-list — only list iteration is supported at v0.2.0 first cut",
+                                    "function `{}` uses `{fname}(...)` over a non-list/str — only list and str iteration is supported at v0.2.0 first cut",
                                     ctx.fn_name
                                 )));
                             };
@@ -2875,10 +2885,16 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
                                 ctx.name_types.insert(second.clone(), (*elem).clone());
                                 PairIterKind::Enumerate { start }
                             } else {
-                                let other = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                                let mut other = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                                // PMAT-544: `zip(xs, s)` over a string second arg.
+                                if matches!(infer_type_in_ctx(ctx, &other), Type::Str) {
+                                    other = Expr::StrChars {
+                                        string: Box::new(other),
+                                    };
+                                }
                                 let Type::List(elem2) = infer_type_in_ctx(ctx, &other) else {
                                     return Err(FrontendError::Lower(format!(
-                                        "function `{}` uses `zip(...)` with a non-list second argument",
+                                        "function `{}` uses `zip(...)` with a non-list/str second argument",
                                         ctx.fn_name
                                     )));
                                 };
