@@ -19,6 +19,20 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.285] — 2026-06-14
+
+Tranche 2 — PMAT-586: **correctness** — `int()` of a non-finite float.
+
+- Python raises `OverflowError` for `int(inf)` and `ValueError` for `int(nan)`,
+  but xpile emitted `((x) as i64)`, and Rust's `as` cast saturates (`inf` →
+  `i64::MAX`) / zeroes (`nan` → 0) silently. Found by the differential hunt.
+- Fix: a `from_float` flag on `Expr::NumCast` (set when the `int(...)` source is
+  a float); the int-cast codegen guards a non-finite source and panics.
+  `int(int)` (identity), `float(_)`, and `from_str` parse paths unchanged. The
+  out-of-range *finite* case (`int(1e30)`) still saturates — a deferred bigint gap.
+- New e2e fixture `int_cast_nonfinite.py` cross-checked vs python3. 347 e2e
+  fixtures.
+
 ## [0.1.284] — 2026-06-14
 
 Tranche 2 — PMAT-585: **correctness** — clone non-Copy field read from `&self` (E0507).
