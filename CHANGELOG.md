@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.229] — 2026-06-14
+
+Tranche 2 — PMAT-529: bare-statement `d.pop(k)` / `d.pop(k, default)` (dict).
+
+- Broadens the PMAT-528 bare-statement `pop` handler from `list` receivers to
+  `dict` receivers. The value-position forms (`x = d.pop(k)`) already worked; a
+  bare statement now reuses the same pop lowering wrapped in a discard
+  `let _ = …;` (receiver auto-`mut`). Emits `(d).remove(&k).unwrap()` (one-arg,
+  KeyError-on-missing parity) / `.unwrap_or(default)` (two-arg). **No new IR.**
+- New e2e fixture `dict_pop_statement.py` (rustc round-trip cross-checked vs
+  python3: 2, 2, 21). e2e 290 → 291.
+
 ## [0.1.228] — 2026-06-14
 
 Tranche 2 — PMAT-528: `xs.pop()` / `xs.pop(i)` as a bare statement.
