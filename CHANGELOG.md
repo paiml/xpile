@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.251] — 2026-06-14
+
+Tranche 2 — PMAT-552: `math.isqrt(n)`.
+
+- `math.isqrt(n)` — exact integer square root `⌊√n⌋` of a non-negative int. New
+  `Expr::Isqrt` whose rust/ruchy codegen is an inline integer-Newton block with
+  a **bit-length initial guess** so it is overflow-safe and exact for every
+  `i64` including `i64::MAX` (a naive `x = n` init overflows; `f64::sqrt` loses
+  precision for large `n`). `isqrt(0) == 0`; a negative `n` panics (Python
+  `ValueError`). Rippled to meta-HIR (+bigint scan), both inferers (→ `I64`),
+  and rust/ruchy emit; the Lean lane refuses.
+- New e2e fixture `math_isqrt.py` (`isqrt_floor`, `is_perfect_square`,
+  `isqrt_big`) cross-checked vs python3 (0, 3, 4, 10, true, false, 31622).
+  e2e 312 → 313.
+
 ## [0.1.250] — 2026-06-14
 
 Tranche 2 — PMAT-551: `math.factorial(n)`.
