@@ -1705,6 +1705,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, k, mode)?;
             out.push_str("); if __cn < 0 || __ck < 0 { panic!(\"xpile: ValueError: comb() arguments must be non-negative\"); } if __ck > __cn { 0 } else { let __ck2 = if __ck < __cn - __ck { __ck } else { __cn - __ck }; let mut __cr = 1i64; let mut __ci = 0i64; while __ci < __ck2 { __cr = __cr.checked_mul(__cn - __ci).expect(\"xpile: i64 multiplication overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\") / (__ci + 1); __ci += 1; } __cr } }");
         }
+        // PMAT-554: `math.perm(n, k)` → descending product of k factors (k>n → 0).
+        Expr::Perm { n, k } => {
+            out.push_str("{ let __pn = (");
+            emit_expr(out, n, mode)?;
+            out.push_str("); let __pk = (");
+            emit_expr(out, k, mode)?;
+            out.push_str("); if __pn < 0 || __pk < 0 { panic!(\"xpile: ValueError: perm() arguments must be non-negative\"); } if __pk > __pn { 0 } else { let mut __pr = 1i64; let mut __pi = 0i64; while __pi < __pk { __pr = __pr.checked_mul(__pn - __pi).expect(\"xpile: i64 multiplication overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"); __pi += 1; } __pr } }");
+        }
         // PMAT-502cj: `list(range(start, stop, step))` → a collected i64 range.
         Expr::RangeList { start, stop, step } => {
             if *step > 0 {

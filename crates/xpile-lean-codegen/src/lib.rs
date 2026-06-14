@@ -599,7 +599,7 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(a, out);
             collect_idents(b, out);
         }
-        Expr::Comb { n, k } => {
+        Expr::Comb { n, k } | Expr::Perm { n, k } => {
             collect_idents(n, out);
             collect_idents(k, out);
         }
@@ -1474,9 +1474,10 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         | Expr::Lcm { .. }
         | Expr::Factorial { .. }
         | Expr::Isqrt { .. }
-        | Expr::Comb { .. } => {
+        | Expr::Comb { .. }
+        | Expr::Perm { .. } => {
             return Err(LeanCodegenError::Unsupported(
-                "math.gcd/lcm/factorial is not yet supported in the Lean lane \
+                "math.gcd/lcm/factorial/isqrt/comb/perm is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
