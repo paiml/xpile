@@ -6868,6 +6868,42 @@ fn main() {
     assert_rustc_runs("dict_merge", &rust, driver);
 }
 
+/// PMAT-593: PEP 584 dict union `a | b` (new dict, b wins) and `a |= b`
+/// (in-place update). `a | b` reuses the `{**a, **b}` `DictMerge` lowering;
+/// `a |= b` reuses the `a.update(b)` `DictUpdate` lowering. Previously both
+/// fell through to a generic BitOr → `HashMap | HashMap` (rustc E0369).
+/// Cross-checked vs python3: merged()==3051 (x1+y20+z30 + len3*1000),
+/// in_place()==320 (y20 + len3*100).
+#[test]
+fn dict_union() {
+    let rust = xpile_transpile_to_rust("dict_union.py");
+    assert!(
+        !rust.contains(" | "),
+        "must not emit HashMap BitOr:\n{rust}"
+    );
+    assert!(
+        rust.contains(".chain((b).iter().map(|(__k, __v)|"),
+        "a | b reuses DictMerge:\n{rust}"
+    );
+    assert!(
+        rust.contains("a.extend((b).iter().map(|(__k, __v)|"),
+        "a |= b reuses DictUpdate (extend):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    use std::collections::HashMap;
+    let mk = |pairs: &[(&str, i64)]| -> HashMap<String, i64> {
+        pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+    };
+    let a = mk(&[("x", 1), ("y", 2)]);
+    let b = mk(&[("y", 20), ("z", 30)]);
+    assert_eq!(merged(a.clone(), b.clone()), 3051);
+    assert_eq!(in_place(a, b), 320);
+}
+"#;
+    assert_rustc_runs("dict_union", &rust, driver);
+}
+
 /// PMAT-502dv (Tranche 2): expression-position set/dict comprehensions
 /// (`len({x for x in xs})`, `len({k: v for x in xs})`) via Map+SetFromList /
 /// Map+DictFromPairs.
