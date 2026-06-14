@@ -2304,6 +2304,11 @@ pub enum ListMutateOp {
     /// `xs.sort()` → `.sort()` (`Vec<i64>`) or `.sort_by(|a, b|
     /// a.partial_cmp(b).unwrap())` (`Vec<f64>`, see `Stmt::ListMutate.of_float`).
     Sort,
+    /// PMAT-555: `xs.sort(reverse=True)` — in-place **descending** sort.
+    /// Rust/Ruchy emit `.sort_by(|a, b| b.cmp(a))` (`Vec<i64>`) or
+    /// `.sort_by(|a, b| b.partial_cmp(a).unwrap())` (`Vec<f64>`); the reversed
+    /// comparator gives Python's `list.sort(reverse=True)` ordering directly.
+    SortDesc,
     /// `xs.reverse()` → `.reverse()` (element-type-agnostic).
     Reverse,
     /// `xs.clear()` → `.clear()` (element-type-agnostic).

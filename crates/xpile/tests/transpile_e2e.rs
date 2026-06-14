@@ -1311,6 +1311,32 @@ fn main() {
     assert_rustc_runs("sorted_reverse", &rust, driver);
 }
 
+/// PMAT-555 (Tranche 2): in-place `xs.sort(reverse=True)` → a descending sort
+/// via a reversed comparator (`.sort_by(|a, b| b.cmp(a))` for ints,
+/// `b.partial_cmp(a).unwrap()` for floats); `reverse=False` stays a plain
+/// `.sort()`. Cross-checked vs python3 (9, 1, 3.5, 54).
+#[test]
+fn sort_inplace_reverse() {
+    let rust = xpile_transpile_to_rust("sort_inplace_reverse.py");
+    assert!(
+        rust.contains("sort_by(|a, b| b.cmp(a))"),
+        "expected a reversed-comparator descending sort, got:\n{rust}"
+    );
+    assert!(
+        rust.contains("b.partial_cmp(a).unwrap()"),
+        "expected a float descending sort, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(top_int(vec![3, 1, 4, 1, 5, 9, 2, 6]), 9);
+    assert_eq!(bottom_int(vec![3, 1, 4, 1, 5]), 1);
+    assert_eq!(top_float(vec![1.5, 3.5, 2.5]), 3.5);
+    assert_eq!(desc_concat(vec![3, 1, 4, 1, 5]), 54);
+}
+"#;
+    assert_rustc_runs("sort_inplace_reverse", &rust, driver);
+}
+
 /// PMAT-502d (Tranche 2): `reversed(xs)` (and `list(reversed(xs))`) →
 /// a new reversed list (`{ let mut __xv = xs.clone(); __xv.reverse(); __xv }`).
 #[test]

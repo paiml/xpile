@@ -2188,15 +2188,42 @@ fn try_lower_list_method_call(
         "clear" => Some(ListMutateOp::Clear),
         _ => None,
     };
-    if let Some(op) = list_mutate_op {
+    if let Some(mut op) = list_mutate_op {
         let Some(Type::List(inner)) = receiver_ty.as_ref() else {
             return None;
         };
-        // 0-arg, no kwargs.
-        if !call.args.is_empty() || !call.keywords.is_empty() {
+        // PMAT-555: the only accepted argument on an in-place mutator is
+        // `reverse=<bool literal>` on `sort` — `reverse=True` selects a
+        // descending sort (`SortDesc`), `reverse=False` a plain ascending one.
+        // `key=…` and every other arg/kwarg are rejected (no closure support
+        // for the in-place form yet).
+        let is_sort_reverse_kwarg = matches!(op, ListMutateOp::Sort)
+            && call.args.is_empty()
+            && call.keywords.len() == 1
+            && call.keywords[0].arg.as_ref().map(|a| a.as_str()) == Some("reverse");
+        if is_sort_reverse_kwarg {
+            match &call.keywords[0].value {
+                ast::Expr::Constant(c) => match &c.value {
+                    ast::Constant::Bool(true) => op = ListMutateOp::SortDesc,
+                    ast::Constant::Bool(false) => {}
+                    _ => {
+                        return Some(Err(FrontendError::Lower(format!(
+                            "function `{}` calls `{receiver_name}.sort(reverse=...)` with a non-bool value",
+                            ctx.fn_name
+                        ))))
+                    }
+                },
+                _ => {
+                    return Some(Err(FrontendError::Lower(format!(
+                        "function `{}` calls `{receiver_name}.sort(reverse=...)` with a non-literal value — only `True`/`False` are supported",
+                        ctx.fn_name
+                    ))))
+                }
+            }
+        } else if !call.args.is_empty() || !call.keywords.is_empty() {
             return Some(Err(FrontendError::Lower(format!(
                 "function `{}` calls `{receiver_name}.{method}(...)` with arguments; \
-                 the in-place list mutators sort/reverse/clear take none at v0.2.0",
+                 the in-place list mutators take none, except `sort(reverse=<bool>)`, at v0.2.0",
                 ctx.fn_name
             ))));
         }
