@@ -6116,6 +6116,26 @@ fn main() {
     assert_rustc_runs("bool_as_int", &rust, driver);
 }
 
+/// PMAT-578 (Tranche 2): **correctness** — `sorted()` over a float list emitted
+/// `Vec<f64>::sort()`, which fails to compile (`f64: Ord` not satisfied — E0277),
+/// so a transpile success produced invalid Rust. Now the keyless float case uses
+/// `sort_by(|a, b| a.partial_cmp(b).unwrap())` (descending: `b.partial_cmp(a)`),
+/// mirroring the in-place `xs.sort()` path; an int list keeps the plain
+/// `.sort()`. (NaN panics, matching Python.) Found by the differential hunt.
+/// Cross-checked vs python3.
+#[test]
+fn sorted_float() {
+    let rust = xpile_transpile_to_rust("sorted_float.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(srt(vec![3.5, 1.2, 2.8, 1.2]), vec![1.2, 1.2, 2.8, 3.5]);
+    assert_eq!(srt_rev(vec![3.5, 1.2, 2.8]), vec![3.5, 2.8, 1.2]);
+    assert_eq!(srt_int(vec![3, 1, 2]), vec![1, 2, 3]);
+}
+"#;
+    assert_rustc_runs("sorted_float", &rust, driver);
+}
+
 /// PMAT-577 (Tranche 2): **correctness** — `x >> n` for a shift amount `n >= 64`.
 /// Python defines it (the result saturates to the sign fill: `0` for `x >= 0`,
 /// `-1` for `x < 0`), but `checked_shr` returns `None` for `n >= 64`, so the

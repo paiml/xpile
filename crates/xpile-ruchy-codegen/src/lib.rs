@@ -1640,12 +1640,24 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         }
         // PMAT-502c/f/z: clone+sort block; `reverse=True` appends
         // `__xv.reverse();`; `key=lambda p: e` → `sort_by_key`.
-        Expr::Sorted { list, reverse, key } => {
+        Expr::Sorted {
+            list,
+            reverse,
+            key,
+            of_float,
+        } => {
             out.push_str("{ let mut __xv = ");
             emit_expr(out, list, mode)?;
             out.push_str(".clone(); __xv.");
             // PMAT-568: reverse=True + key must be STABLE descending (see Rust twin).
+            // PMAT-578: keyless float sort uses `sort_by(partial_cmp)` (no `Ord`).
             match (key, *reverse) {
+                (None, false) if *of_float => {
+                    out.push_str("sort_by(|__a, __b| __a.partial_cmp(__b).unwrap());");
+                }
+                (None, true) if *of_float => {
+                    out.push_str("sort_by(|__a, __b| __b.partial_cmp(__a).unwrap());");
+                }
                 (None, false) => out.push_str("sort();"),
                 (None, true) => out.push_str("sort(); __xv.reverse();"),
                 (Some(k), false) => {

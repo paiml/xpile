@@ -1712,10 +1712,20 @@ pub enum Expr {
     /// clone-to-local binds the element by value so the body type-checks
     /// regardless of `sort_by_key`'s `&T` argument; the body must yield an
     /// `Ord` key. Result types as the list's type. Lean refuses.
+    ///
+    /// PMAT-578: `of_float` (set by the frontend from the list element type)
+    /// selects the **keyless** comparator — `Vec<f64>` has no `Ord`, so a float
+    /// list sorts via `sort_by(|a, b| a.partial_cmp(b).unwrap())` (descending:
+    /// `b.partial_cmp(a)`), mirroring [`ListMutateOp::Sort`]; an `i64` list keeps
+    /// `.sort()`. (NaN panics, matching Python's undefined NaN-sort behaviour.)
+    /// Only consulted when `key` is `None`; a float-returning `key` is a
+    /// separate, deferred case.
     Sorted {
         list: Box<Expr>,
         reverse: bool,
         key: Option<SortKey>,
+        #[serde(default)]
+        of_float: bool,
     },
     /// `list(reversed(xs))` / `reversed(xs)` over a list — Python builtin
     /// returning a **new** reversed list (the input is not mutated).

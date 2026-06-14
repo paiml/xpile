@@ -1807,11 +1807,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // PMAT-502c/f/z: `sorted(xs)` → `{ let mut __xv = <list>.clone();
         // __xv.sort(); __xv }`; `reverse=True` appends `__xv.reverse();`;
         // `key=lambda p: e` uses `__xv.sort_by_key(|__k| { let p = __k.clone(); e })`.
-        Expr::Sorted { list, reverse, key } => {
+        Expr::Sorted {
+            list,
+            reverse,
+            key,
+            of_float,
+        } => {
             out.push_str("{ let mut __xv = ");
             emit_expr(out, list, mode)?;
             out.push_str(".clone(); __xv.");
             match (key, *reverse) {
+                // PMAT-578: `Vec<f64>` has no `Ord`, so a keyless float sort uses
+                // `sort_by(partial_cmp)` (NaN panics, like Python); an i64 list
+                // keeps `.sort()`. Mirrors `ListMutateOp::Sort`.
+                (None, false) if *of_float => {
+                    out.push_str("sort_by(|__a, __b| __a.partial_cmp(__b).unwrap());");
+                }
+                (None, true) if *of_float => {
+                    out.push_str("sort_by(|__a, __b| __b.partial_cmp(__a).unwrap());");
+                }
                 (None, false) => out.push_str("sort();"),
                 // Equal elements are identical, so reverse() can't disturb order.
                 (None, true) => out.push_str("sort(); __xv.reverse();"),
