@@ -4836,6 +4836,31 @@ fn main() {
     assert_rustc_runs("mixed_float_int", &rust, driver);
 }
 
+/// PMAT-541 (correctness): mixed-numeric `min`/`max` — `min(x, n)` with
+/// `x: float`, `n: int` emitted `f64::min(i64)` (E0308). When any operand is a
+/// float, every operand is promoted to f64 (Python compares numerically).
+/// Homogeneous int/float/str min-max is untouched. Cross-checked vs python3
+/// (2.5, 2.0, 4.0, 7.5, 2.0, 4.0).
+#[test]
+fn min_max_mixed_numeric() {
+    let rust = xpile_transpile_to_rust("min_max_mixed_numeric.py");
+    assert!(
+        rust.contains("(x).min(((n) as f64))") || rust.contains(".min(((n) as f64))"),
+        "mixed min/max must promote the int operand to f64:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(lo(2.5, 5), 2.5f64);
+    assert_eq!(lo(5.5, 2), 2.0f64);
+    assert_eq!(hi(1.5, 4), 4.0f64);
+    assert_eq!(hi(7.5, 4), 7.5f64);
+    assert_eq!(lo_int_first(2, 3.5), 2.0f64);
+    assert_eq!(clamp_hi(1.5, 4, 2), 4.0f64);
+}
+"#;
+    assert_rustc_runs("min_max_mixed_numeric", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
