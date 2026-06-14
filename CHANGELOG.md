@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.298] — 2026-06-14
+
+Tranche 2 — PMAT-599: **correctness** — clone a dict-comprehension key when a non-Copy binder is reused in the value.
+
+- A dict comprehension reusing a non-Copy loop var in both the key and the value
+  (`{w: w for w in words}`, `{w: w + "!" …}`, `{k: len(k) …}`) lowered to a map
+  closure building `(w, w)` — the bare-binder key *moved* the `String` into the
+  tuple before the value could use it, so rustc rejected it with E0382 despite a
+  clean transpile. Found by the differential hunt (#4, finding #16).
+- Fix (frontend): in the single-generator dict-comp lowering, clone the key
+  expression when the binder is non-Copy and referenced >1× across key+value
+  (reusing `count_reads_expr` + the PMAT-588 non-Copy predicate). Gated on
+  read-count>1 + non-Copy → Copy-binder / single-use comprehensions are
+  byte-identical (zero churn).
+- New e2e fixture `dict_comp_key_reuse.py` cross-checked vs python3. 360 e2e fixtures.
+
 ## [0.1.297] — 2026-06-14
 
 Tranche 2 — PMAT-598: **correctness** — empty `set()` infers its element type from the subsequent `.add(...)`.
