@@ -8746,16 +8746,33 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // list. The supported subset materializes Python's lazy
                 // `reversed` iterator as a `Vec`, so `reversed(xs)` and the
                 // idiomatic `list(reversed(xs))` both produce `Expr::Reversed`.
+                // PMAT-596: `reversed(s)` over a `str` reverses the *characters*
+                // (Python yields an iterator of 1-char strings, materialized as
+                // a `list[str]`). Lower to `Reversed(StrChars(s))` — reusing
+                // both existing nodes — so it types as `List(Str)` and composes
+                // with `"".join(reversed(s))`, `list(reversed(s))`, and
+                // `for c in reversed(s)` exactly like Python (the `s[::-1]`
+                // slice form, which yields a `str`, is a separate lowering).
                 if fname.id.as_str() == "reversed"
                     && call.keywords.is_empty()
                     && call.args.len() == 1
                 {
                     // PMAT-522: `reversed(range(n))` materialises the range.
                     let list = lower_arg_materializing_range(ctx, &call.args[0])?;
-                    if matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
-                        return Ok(Expr::Reversed {
-                            list: Box::new(list),
-                        });
+                    match infer_type_in_ctx(ctx, &list) {
+                        Type::List(_) => {
+                            return Ok(Expr::Reversed {
+                                list: Box::new(list),
+                            });
+                        }
+                        Type::Str => {
+                            return Ok(Expr::Reversed {
+                                list: Box::new(Expr::StrChars {
+                                    string: Box::new(list),
+                                }),
+                            });
+                        }
+                        _ => {}
                     }
                 }
                 // PMAT-502ab: `filter(lambda p: pred, xs)` over a list → a new
