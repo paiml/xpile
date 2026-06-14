@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.232] — 2026-06-14
+
+Tranche 2 — PMAT-532: in-place set/dict mutators `set.update` / `set.clear` /
+`dict.clear`.
+
+- `s.update(other)` was rejected even though `dict.update` worked (an
+  asymmetry); `s.clear()` / `d.clear()` were rejected even though `list.clear()`
+  worked. All three reuse existing IR with **no new variants**:
+  - `set.update` → `Stmt::ListExtend` (`s.extend((other).iter().cloned())`,
+    valid for `HashSet` as well as `Vec`).
+  - `set.clear` / `dict.clear` → `Stmt::ListMutate { Clear }`
+    (`name.clear();`, valid for `HashSet`/`HashMap` as well as `Vec`).
+  The mutability pre-walk already counts `clear`/`update` receivers, so a param
+  gets `mut` automatically.
+- New e2e fixture `set_dict_mutators.py` (`merge`, `update_literal`, `wipe_set`,
+  `wipe_dict`) — rustc round-trip cross-checked vs python3 (5, 4, 0, 0).
+  e2e 293 → 294.
+
 ## [0.1.231] — 2026-06-14
 
 Tranche 2 — PMAT-531: tuple target in an expression-position generator
