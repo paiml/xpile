@@ -4538,6 +4538,30 @@ fn main() {
     assert_rustc_runs("dict_pop_statement", &rust, driver);
 }
 
+/// PMAT-530 (Tranche 2): `s[::-1]` reverse-slice over a `str` — the list form
+/// `xs[::-1]` already lowered to `Expr::Reversed`; the str form now lowers to a
+/// `StrMethod` with the new `Reverse` op → `.chars().rev().collect::<String>()`
+/// (reverse by Unicode scalar value). Composes with other string methods
+/// (`s.upper()[::-1]`) and inside larger expressions (`s == s[::-1]`).
+/// Cross-checked vs python3 (olleh, True, False, CBA).
+#[test]
+fn str_reverse_slice() {
+    let rust = xpile_transpile_to_rust("str_reverse_slice.py");
+    assert!(
+        rust.contains(".chars().rev().collect::<String>()"),
+        "`s[::-1]` should lower to a `.chars().rev().collect`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(reverse(String::from("hello")), "olleh");
+    assert_eq!(is_palindrome(String::from("racecar")), true);
+    assert_eq!(is_palindrome(String::from("hello")), false);
+    assert_eq!(reverse_upper(String::from("abc")), "CBA");
+}
+"#;
+    assert_rustc_runs("str_reverse_slice", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)

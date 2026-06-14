@@ -1037,6 +1037,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 StrMethodOp::Upper => out.push_str(".to_uppercase()"),
                 StrMethodOp::Lower => out.push_str(".to_lowercase()"),
                 StrMethodOp::Strip => out.push_str(".trim().to_string()"),
+                // PMAT-530: `s[::-1]` → reverse by Unicode scalar value.
+                StrMethodOp::Reverse => out.push_str(".chars().rev().collect::<String>()"),
                 // PMAT-502cr: `.swapcase()` → per-char upper↔lower.
                 StrMethodOp::SwapCase => out.push_str(
                     ".chars().map(|__c| if __c.is_uppercase() { __c.to_lowercase().collect::<String>() } else if __c.is_lowercase() { __c.to_uppercase().collect::<String>() } else { __c.to_string() }).collect::<String>()",

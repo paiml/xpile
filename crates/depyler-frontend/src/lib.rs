@@ -5828,6 +5828,8 @@ fn infer_type(e: &Expr) -> Type {
             }
             // PMAT-502dl: splitlines → list[str].
             StrMethodOp::SplitLines => Type::List(Box::new(Type::Str)),
+            // PMAT-530: s[::-1] reverse-slice → Str.
+            StrMethodOp::Reverse => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
         // type from the first element (frontend ensures homogeneity
@@ -6198,6 +6200,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             }
             // PMAT-502dl: splitlines → list[str].
             StrMethodOp::SplitLines => Type::List(Box::new(Type::Str)),
+            // PMAT-530: s[::-1] reverse-slice → Str.
+            StrMethodOp::Reverse => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
         // shape as the context-free `infer_type` arm.
@@ -8671,7 +8675,17 @@ fn lower_slice_in_ctx(
                 }
             }
         }
-        if step_is_neg_one && slice.lower.is_none() && slice.upper.is_none() && !of_str {
+        if step_is_neg_one && slice.lower.is_none() && slice.upper.is_none() {
+            if of_str {
+                // PMAT-530: `s[::-1]` over a `str` → a new reversed string.
+                // Reuses the `StrMethod` pipeline (`Reverse` op → `.chars()
+                // .rev().collect::<String>()`), mirroring the list reverse below.
+                return Ok(Expr::StrMethod {
+                    recv: Box::new(collection),
+                    op: StrMethodOp::Reverse,
+                    args: vec![],
+                });
+            }
             return Ok(Expr::Reversed {
                 list: Box::new(collection),
             });
@@ -9896,6 +9910,8 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         StrMethodOp::Partition | StrMethodOp::RPartition => 1,
         // PMAT-502dl: splitlines takes no args (keepends deferred).
         StrMethodOp::SplitLines => 0,
+        // PMAT-530: s[::-1] reverse — synthesized (no surface method), 0 args.
+        StrMethodOp::Reverse => 0,
     }
 }
 
