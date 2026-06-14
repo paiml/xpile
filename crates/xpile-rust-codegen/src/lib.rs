@@ -596,6 +596,31 @@ fn emit_stmt_indented(
         } => {
             // PMAT-502dy: a multi-element path is nested list indexing
             // (`grid[i][j] = v`) — each index is `usize`-coerced.
+            // PMAT-560: when an index references the receiver (e.g. the
+            // negative-index desugar `xs[len(xs) - k] = v`), the index's
+            // immutable borrow of `xs` conflicts with `index_mut`'s mutable
+            // borrow (E0502: `xs[xs.len() - 1] = v` doesn't compile). Bind each
+            // index to a temp FIRST, then assign — only when needed, so the
+            // common plain-index shape (`xs[i as usize] = v`) is unchanged.
+            let needs_temps = indices.iter().any(|i| expr_mentions_ident(i, list_name));
+            if needs_temps {
+                out.push_str(indent);
+                out.push_str("{ ");
+                for (n, index) in indices.iter().enumerate() {
+                    write!(out, "let __ix{n} = (")?;
+                    emit_expr(out, index, mode)?;
+                    out.push_str(") as usize; ");
+                }
+                write!(out, "{list_name}")?;
+                for n in 0..indices.len() {
+                    write!(out, "[__ix{n}]")?;
+                }
+                out.push_str(" = ");
+                emit_expr(out, value, mode)?;
+                out.push_str("; }");
+                writeln!(out)?;
+                return Ok(());
+            }
             write!(out, "{indent}{list_name}")?;
             for index in indices {
                 out.push('[');
@@ -854,6 +879,26 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
         Type::Struct(name) => out.push_str(name),
     }
     Ok(())
+}
+
+/// PMAT-560: does `e` reference the identifier `name`? Used by `IndexAssign` to
+/// detect a self-referential index (e.g. the `xs[len(xs) - k]` negative-index
+/// desugar), whose immutable borrow of the receiver conflicts with the
+/// `index_mut` mutable borrow — such an index is bound to a temp first.
+fn expr_mentions_ident(e: &Expr, name: &str) -> bool {
+    match e {
+        Expr::Ident(n) => n == name,
+        Expr::Len(inner) => expr_mentions_ident(inner, name),
+        Expr::BinOp { lhs, rhs, .. } | Expr::FloatBinOp { lhs, rhs, .. } => {
+            expr_mentions_ident(lhs, name) || expr_mentions_ident(rhs, name)
+        }
+        Expr::UnOp { operand, .. } => expr_mentions_ident(operand, name),
+        Expr::NumCast { value, .. } => expr_mentions_ident(value, name),
+        Expr::Index { collection, index } => {
+            expr_mentions_ident(collection, name) || expr_mentions_ident(index, name)
+        }
+        _ => false,
+    }
 }
 
 fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError> {

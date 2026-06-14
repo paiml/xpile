@@ -4984,6 +4984,31 @@ fn main() {
     assert_rustc_runs("subscript_swap", &rust, driver);
 }
 
+/// PMAT-560 (Tranche 2): negative-literal index on the **assignment** side —
+/// `xs[-k] = v` / `xs[-k] += v` resolve to `xs[len(xs) - k]` (mirroring the
+/// read-side desugar). The `IndexAssign` codegen binds a self-referential index
+/// (`xs[xs.len() - 1]`) to a temp first, avoiding the `index_mut` borrow
+/// conflict (E0502) that `xs[xs.len() - 1] = v` otherwise hits. Cross-checked
+/// vs python3 (9, 103, 4010, 7, 8).
+#[test]
+fn neg_index_write() {
+    let rust = xpile_transpile_to_rust("neg_index_write.py");
+    assert!(
+        rust.contains("__ix0"),
+        "a self-referential negative index should be staged into a temp:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(set_last(vec![1, 2, 3], 9), 9);
+    assert_eq!(set_2nd_last(vec![1, 2, 3, 4]), 103);
+    assert_eq!(swap_ends(vec![10, 2, 3, 40]), 4010);
+    assert_eq!(rotate_last_to_first(vec![1, 2, 3, 7]), 7);
+    assert_eq!(neg_aug(vec![1, 2, 3]), 8);
+}
+"#;
+    assert_rustc_runs("neg_index_write", &rust, driver);
+}
+
 /// PMAT-544 (Tranche 2): `enumerate(s)` / `zip(s, …)` over a **string** —
 /// iterate its characters (each a 1-char string). The paired-loop handler
 /// required a `list` iterable; a `str` iterable now materializes to a
