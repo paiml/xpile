@@ -4562,6 +4562,47 @@ fn main() {
     assert_rustc_runs("str_reverse_slice", &rust, driver);
 }
 
+/// PMAT-531 (Tranche 2): a **tuple target** in an expression-position
+/// generator expression / comprehension (`sum(v for k, v in d.items())`,
+/// `sum(x * y for x, y in zip(a, b))`). The statement-position list comp
+/// already supported tuple targets (via `ForEachPair`); the shared expr-position
+/// core `lower_comp_to_map` now binds a 2-name tuple target through a Rust
+/// tuple-destructure closure param (`|__k| { let (k, v) = __k.clone(); … }`),
+/// splitting the element 2-tuple type. Works over `d.items()`, `zip(...)`,
+/// `enumerate(...)`, with an `if` filter. No new IR. Cross-checked vs python3
+/// (6, 20, 2, 32, 80).
+#[test]
+fn genexpr_tuple_target() {
+    let rust = xpile_transpile_to_rust("genexpr_tuple_target.py");
+    assert!(
+        rust.contains("let (k, v) = __k.clone();"),
+        "a tuple-target genexpr should destructure the closure param:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let mut d = std::collections::HashMap::new();
+    d.insert(String::from("a"), 1i64);
+    d.insert(String::from("b"), 2i64);
+    d.insert(String::from("c"), 3i64);
+    assert_eq!(sum_values(d.clone()), 6);
+    let mut d2 = std::collections::HashMap::new();
+    d2.insert(String::from("a"), 1i64);
+    d2.insert(String::from("b"), 20i64);
+    d2.insert(String::from("c"), 3i64);
+    assert_eq!(max_value(d2), 20);
+    let mut d3 = std::collections::HashMap::new();
+    d3.insert(String::from("a"), 1i64);
+    d3.insert(String::from("b"), -2i64);
+    d3.insert(String::from("c"), 3i64);
+    d3.insert(String::from("d"), -4i64);
+    assert_eq!(count_positive(d3), 2);
+    assert_eq!(dot(vec![1, 2, 3], vec![4, 5, 6]), 32);
+    assert_eq!(weighted(vec![10, 20, 30]), 80);
+}
+"#;
+    assert_rustc_runs("genexpr_tuple_target", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
