@@ -4949,6 +4949,28 @@ fn main() {
     assert_rustc_runs("str_rfind", &rust, driver);
 }
 
+/// PMAT-546 (Tranche 2): comprehensions / generator expressions over a
+/// **string** — `[c.upper() for c in s]`, `{c for c in s}`, `{c: ord(c) for c
+/// in s}`, `sum(ord(c) for c in s)`. A `str` comprehension iterable now
+/// materializes to `List(Str)` (1-char strings) via `Expr::StrChars` at every
+/// comprehension iterable site (the shared `str_iter_to_chars` helper). Works
+/// for list/set/dict comps + genexprs, with filters. Cross-checked vs python3
+/// (294, 3, 3, 3, 3).
+#[test]
+fn comp_over_str() {
+    let rust = xpile_transpile_to_rust("comp_over_str.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(ord_sum(String::from("abc")), 294);
+    assert_eq!(upper_count(String::from("banana")), 3);
+    assert_eq!(distinct_chars(String::from("banana")), 3);
+    assert_eq!(char_codes(String::from("abca")), 3);
+    assert_eq!(digit_count(String::from("a1b2c3")), 3);
+}
+"#;
+    assert_rustc_runs("comp_over_str", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
