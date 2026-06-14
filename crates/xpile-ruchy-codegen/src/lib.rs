@@ -1145,6 +1145,32 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 out.push_str("); let mut __lines: Vec<String> = Vec::new(); let mut __cur = String::new(); let mut __it = __s.chars().peekable(); while let Some(__c) = __it.next() { match __c { '\\r' => { if __it.peek() == Some(&'\\n') { __it.next(); } __lines.push(std::mem::take(&mut __cur)); } '\\n' | '\\u{0b}' | '\\u{0c}' | '\\u{1c}' | '\\u{1d}' | '\\u{1e}' | '\\u{85}' | '\\u{2028}' | '\\u{2029}' => { __lines.push(std::mem::take(&mut __cur)); } _ => __cur.push(__c), } } if !__cur.is_empty() { __lines.push(__cur); } __lines }");
                 return Ok(());
             }
+            // PMAT-566: find/rfind/index/rindex return a Python CHAR index, not a
+            // byte offset — bind recv to a temp and count chars before the match.
+            if matches!(
+                op,
+                StrMethodOp::Find
+                    | StrMethodOp::Rfind
+                    | StrMethodOp::StrIndex
+                    | StrMethodOp::RIndex
+            ) {
+                let finder = if matches!(op, StrMethodOp::Rfind | StrMethodOp::RIndex) {
+                    "rfind"
+                } else {
+                    "find"
+                };
+                out.push_str("{ let __s = (");
+                emit_expr(out, recv, mode)?;
+                write!(out, "); __s.{finder}(&(")?;
+                emit_expr(out, &args[0], mode)?;
+                out.push_str(")[..]).map(|__b| __s[..__b].chars().count() as i64)");
+                if matches!(op, StrMethodOp::StrIndex | StrMethodOp::RIndex) {
+                    out.push_str(".expect(\"xpile: ValueError: substring not found\") }");
+                } else {
+                    out.push_str(".unwrap_or(-1) }");
+                }
+                return Ok(());
+            }
             emit_expr(out, recv, mode)?;
             match op {
                 StrMethodOp::Upper => out.push_str(".to_uppercase()"),
@@ -1208,32 +1234,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 // PMAT-502l: lstrip/rstrip → trim_start/trim_end; find/count → i64.
                 StrMethodOp::LStrip => out.push_str(".trim_start().to_string()"),
                 StrMethodOp::RStrip => out.push_str(".trim_end().to_string()"),
-                StrMethodOp::Find => {
-                    out.push_str(".find(&(");
-                    emit_expr(out, &args[0], mode)?;
-                    out.push_str(")[..]).map(|__i| __i as i64).unwrap_or(-1)");
-                }
                 StrMethodOp::Count => {
                     out.push_str(".matches(&(");
                     emit_expr(out, &args[0], mode)?;
                     out.push_str(")[..]).count() as i64");
                 }
-                // PMAT-502bi: `.index(sub)` → byte index or panic (ValueError).
-                StrMethodOp::StrIndex => {
-                    out.push_str(".find(&(");
-                    emit_expr(out, &args[0], mode)?;
-                    out.push_str(")[..]).map(|__i| __i as i64).expect(\"xpile: ValueError: substring not found\")");
-                }
-                // PMAT-545: `.rfind(sub)` / `.rindex(sub)` (last-match index).
-                StrMethodOp::Rfind => {
-                    out.push_str(".rfind(&(");
-                    emit_expr(out, &args[0], mode)?;
-                    out.push_str(")[..]).map(|__i| __i as i64).unwrap_or(-1)");
-                }
-                StrMethodOp::RIndex => {
-                    out.push_str(".rfind(&(");
-                    emit_expr(out, &args[0], mode)?;
-                    out.push_str(")[..]).map(|__i| __i as i64).expect(\"xpile: ValueError: substring not found\")");
+                // PMAT-566: find/rfind/index/rindex return a CHAR index — block
+                // form handled above (byte offset → chars().count()).
+                StrMethodOp::Find
+                | StrMethodOp::StrIndex
+                | StrMethodOp::Rfind
+                | StrMethodOp::RIndex => {
+                    unreachable!("find/rfind/index/rindex handled above")
                 }
                 StrMethodOp::Join => unreachable!("Join handled above"),
                 StrMethodOp::IsDigit
