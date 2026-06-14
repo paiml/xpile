@@ -19,6 +19,20 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.271] — 2026-06-14
+
+Tranche 2 — PMAT-572: **correctness** — tuple reassignment in a loop/if body.
+
+- A tuple-unpack that reassigns already-bound names (`a, b = b, a % b` /
+  `a, b = b, a + b`) inside a `while`/`for`/`if` body emitted a fresh
+  `let (mut a, mut b)` — a new *shadowing* binding that dies at the block end,
+  so the outer variables never changed: **Euclid's GCD infinite-looped** and
+  **iterative Fibonacci returned 0**. Now such a reassignment routes through the
+  shared tuple-unpack helper (evaluate all RHS into temps first — swap-safe —
+  then assign each bound name). Fresh all-Name unpacks keep the `LetTuple` path.
+  No IR change. Found by the differential hunt (the single highest-impact bug it
+  surfaced).
+
 ## [0.1.270] — 2026-06-14
 
 Tranche 2 — PMAT-571: 3-arg `pow(a, b, m)` modular exponentiation.
