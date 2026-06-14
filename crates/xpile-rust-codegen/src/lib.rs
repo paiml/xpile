@@ -2161,8 +2161,13 @@ fn emit_binop(
         BinOp::Add => emit_checked(out, lhs, "checked_add", rhs, "addition", mode),
         BinOp::Sub => emit_checked(out, lhs, "checked_sub", rhs, "subtraction", mode),
         BinOp::Mul => emit_checked(out, lhs, "checked_mul", rhs, "multiplication", mode),
-        BinOp::FloorDiv => emit_checked(out, lhs, "checked_div_euclid", rhs, "floor-div", mode),
-        BinOp::Mod => emit_checked(out, lhs, "checked_rem_euclid", rhs, "modulo", mode),
+        // PMAT-538: `div_euclid`/`rem_euclid` only match Python `//`/`%` for a
+        // POSITIVE divisor. Python `//` floors toward −∞ and `%` takes the sign
+        // of the divisor; for a negative divisor the euclidean ops diverge
+        // (e.g. `-7 // -2` is 3 in Python but `div_euclid` gives 4). Emit the
+        // truncating quotient/remainder with a floor correction instead.
+        BinOp::FloorDiv => emit_floor_div(out, lhs, rhs, mode),
+        BinOp::Mod => emit_floor_mod(out, lhs, rhs, mode),
         BinOp::Eq => emit_infix(out, lhs, " == ", rhs, mode),
         BinOp::NotEq => emit_infix(out, lhs, " != ", rhs, mode),
         BinOp::Lt => emit_infix(out, lhs, " < ", rhs, mode),
@@ -2260,6 +2265,60 @@ fn emit_checked(
     write!(
         out,
         ").expect(\"xpile: i64 {op_name} overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")"
+    )?;
+    Ok(())
+}
+
+/// PMAT-538: Python floor-division `a // b` for i64. Rust `/` truncates toward
+/// zero and `div_euclid` keeps a non-negative remainder; neither matches
+/// Python's floor (toward −∞) for a negative divisor. Emit the truncating
+/// quotient plus a floor correction (subtract 1 when the remainder is non-zero
+/// and its sign differs from the divisor's). `checked_div`/`checked_rem` keep
+/// the `i64::MIN / -1` and divide-by-zero panics (same contract posture as the
+/// former `checked_div_euclid`); the `__q - 1` correction is only reached when
+/// the remainder is non-zero, where `__q` is never `i64::MIN`, so it cannot
+/// overflow.
+fn emit_floor_div(
+    out: &mut String,
+    lhs: &Expr,
+    rhs: &Expr,
+    mode: bool,
+) -> Result<(), CodegenError> {
+    let panic_msg = "xpile: i64 floor-div overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented";
+    write!(out, "{{ let __fa = ")?;
+    emit_expr(out, lhs, mode)?;
+    write!(out, "; let __fb = ")?;
+    emit_expr(out, rhs, mode)?;
+    write!(
+        out,
+        "; let __q = __fa.checked_div(__fb).expect(\"{panic_msg}\"); \
+         let __r = __fa.checked_rem(__fb).expect(\"{panic_msg}\"); \
+         if __r != 0 && (__r < 0) != (__fb < 0) {{ __q - 1 }} else {{ __q }} }}"
+    )?;
+    Ok(())
+}
+
+/// PMAT-538: Python modulo `a % b` for i64. Python's result takes the sign of
+/// the divisor; Rust `%` takes the sign of the dividend and `rem_euclid` is
+/// always non-negative — both diverge for a negative divisor. Emit the
+/// truncating remainder plus a floor correction (add the divisor when the
+/// remainder is non-zero and its sign differs). The corrected value has
+/// magnitude < |divisor|, so `__r + __fb` cannot overflow.
+fn emit_floor_mod(
+    out: &mut String,
+    lhs: &Expr,
+    rhs: &Expr,
+    mode: bool,
+) -> Result<(), CodegenError> {
+    let panic_msg = "xpile: i64 modulo overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented";
+    write!(out, "{{ let __fa = ")?;
+    emit_expr(out, lhs, mode)?;
+    write!(out, "; let __fb = ")?;
+    emit_expr(out, rhs, mode)?;
+    write!(
+        out,
+        "; let __r = __fa.checked_rem(__fb).expect(\"{panic_msg}\"); \
+         if __r != 0 && (__r < 0) != (__fb < 0) {{ __r + __fb }} else {{ __r }} }}"
     )?;
     Ok(())
 }
@@ -2567,8 +2626,11 @@ mod tests {
     }
 
     #[test]
-    fn emits_floordiv_as_div_euclid() {
-        // Python `a // b` must NOT lower to Rust `/`.
+    fn emits_floordiv_with_floor_correction() {
+        // PMAT-538: Python `a // b` floors toward −∞ (so the result diverges
+        // from `div_euclid` for a negative divisor). The emit must use the
+        // truncating quotient (`checked_div`) plus a floor correction, NOT
+        // `div_euclid` and NOT a bare Rust `/`.
         let f = Function {
             name: "fdiv".into(),
             params: vec![
@@ -2596,13 +2658,12 @@ mod tests {
         let m = module_with("fixture", vec![Item::Function(f)]);
         let rust = emit_module(&m).expect("emit ok");
         assert!(
-            rust.contains("div_euclid"),
-            "Python floor-div must lower to div_euclid (got: {})",
-            rust
+            rust.contains("checked_div") && rust.contains("__q - 1"),
+            "Python floor-div must lower to checked_div + floor correction (got: {rust})"
         );
         assert!(
-            !rust.contains(" / "),
-            "must not use plain Rust `/` for Python `//`"
+            !rust.contains("div_euclid"),
+            "must not use div_euclid (wrong for a negative divisor): {rust}"
         );
     }
 

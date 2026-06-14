@@ -2278,11 +2278,15 @@ pub enum BinOp {
     Add,
     Sub,
     Mul,
-    /// Python `//`. Rust counterpart for signed: `a.div_euclid(b)` (matches
-    /// Python's floor semantics). Plain `/` truncates toward zero in Rust,
-    /// which diverges from Python for negative operands.
+    /// Python `//` — floor division (rounds toward −∞). Rust `/` truncates
+    /// toward zero and `div_euclid` keeps a non-negative remainder; neither
+    /// matches Python for a **negative divisor** (e.g. `-7 // -2` is 3, not 4).
+    /// The Rust/Ruchy backends emit the truncating quotient plus a floor
+    /// correction (PMAT-538); the BigInt slow path uses `div_floor`.
     FloorDiv,
-    /// Python `%`. Rust counterpart: `a.rem_euclid(b)`. Same reason as FloorDiv.
+    /// Python `%` — the result takes the sign of the **divisor** (not the
+    /// dividend as Rust `%`, nor always-non-negative as `rem_euclid`). Emitted
+    /// as the truncating remainder plus a floor correction (PMAT-538).
     Mod,
     // Comparison — both operands `I64`, result `Bool`.
     Eq,

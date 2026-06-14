@@ -1966,8 +1966,11 @@ fn emit_binop(
         BinOp::Add => emit_checked(out, lhs, "checked_add", rhs, "addition", mode),
         BinOp::Sub => emit_checked(out, lhs, "checked_sub", rhs, "subtraction", mode),
         BinOp::Mul => emit_checked(out, lhs, "checked_mul", rhs, "multiplication", mode),
-        BinOp::FloorDiv => emit_checked(out, lhs, "checked_div_euclid", rhs, "floor-div", mode),
-        BinOp::Mod => emit_checked(out, lhs, "checked_rem_euclid", rhs, "modulo", mode),
+        // PMAT-538: euclidean div/rem only match Python `//`/`%` for a positive
+        // divisor; emit the truncating quotient/remainder with a floor
+        // correction (mirrors the Rust backend).
+        BinOp::FloorDiv => emit_floor_div(out, lhs, rhs, mode),
+        BinOp::Mod => emit_floor_mod(out, lhs, rhs, mode),
         BinOp::Eq => emit_infix(out, lhs, " == ", rhs, mode),
         BinOp::NotEq => emit_infix(out, lhs, " != ", rhs, mode),
         BinOp::Lt => emit_infix(out, lhs, " < ", rhs, mode),
@@ -2054,6 +2057,51 @@ fn emit_checked(
     write!(
         out,
         ").expect(\"xpile: i64 {op_name} overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")"
+    )?;
+    Ok(())
+}
+
+/// PMAT-538: Python floor-division `a // b` for i64 — truncating quotient with a
+/// floor correction (Python floors toward −∞; `div_euclid` diverges for a
+/// negative divisor). Mirrors the Rust backend.
+fn emit_floor_div(
+    out: &mut String,
+    lhs: &Expr,
+    rhs: &Expr,
+    mode: bool,
+) -> Result<(), RuchyCodegenError> {
+    let panic_msg = "xpile: i64 floor-div overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented";
+    write!(out, "{{ let __fa = ")?;
+    emit_expr(out, lhs, mode)?;
+    write!(out, "; let __fb = ")?;
+    emit_expr(out, rhs, mode)?;
+    write!(
+        out,
+        "; let __q = __fa.checked_div(__fb).expect(\"{panic_msg}\"); \
+         let __r = __fa.checked_rem(__fb).expect(\"{panic_msg}\"); \
+         if __r != 0 && (__r < 0) != (__fb < 0) {{ __q - 1 }} else {{ __q }} }}"
+    )?;
+    Ok(())
+}
+
+/// PMAT-538: Python modulo `a % b` for i64 — truncating remainder with a floor
+/// correction (Python's `%` takes the sign of the divisor). Mirrors the Rust
+/// backend.
+fn emit_floor_mod(
+    out: &mut String,
+    lhs: &Expr,
+    rhs: &Expr,
+    mode: bool,
+) -> Result<(), RuchyCodegenError> {
+    let panic_msg = "xpile: i64 modulo overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented";
+    write!(out, "{{ let __fa = ")?;
+    emit_expr(out, lhs, mode)?;
+    write!(out, "; let __fb = ")?;
+    emit_expr(out, rhs, mode)?;
+    write!(
+        out,
+        "; let __r = __fa.checked_rem(__fb).expect(\"{panic_msg}\"); \
+         if __r != 0 && (__r < 0) != (__fb < 0) {{ __r + __fb }} else {{ __r }} }}"
     )?;
     Ok(())
 }
@@ -2162,7 +2210,7 @@ mod tests {
     }
 
     #[test]
-    fn ruchy_floordiv_also_uses_div_euclid() {
+    fn ruchy_floordiv_uses_floor_correction() {
         let f = Function {
             name: "fdiv".into(),
             params: vec![
@@ -2189,7 +2237,8 @@ mod tests {
         };
         let m = module_with("fixture", vec![Item::Function(f)]);
         let ruchy = emit_module(&m).expect("emit ok");
-        assert!(ruchy.contains("div_euclid"));
-        assert!(!ruchy.contains(" / "));
+        // PMAT-538: floor correction, not div_euclid (wrong for a neg divisor).
+        assert!(ruchy.contains("checked_div") && ruchy.contains("__q - 1"));
+        assert!(!ruchy.contains("div_euclid"));
     }
 }
