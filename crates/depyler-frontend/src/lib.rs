@@ -6031,7 +6031,9 @@ fn infer_type(e: &Expr) -> Type {
         // registry) — fall back to I64; the ctx path resolves it.
         Expr::MethodCall { .. } => Type::I64,
         // PMAT-502dt: a block-expr types as its trailing expression.
-        Expr::Block(b) => infer_type(&b.trailing_return),
+        // PMAT-556: when the trailing expr is a block-local `Ident`, recover its
+        // type from the block's own `Let` (the enclosing scope can't see it).
+        Expr::Block(b) => block_result_type(b, infer_type),
         // PMAT-477 (R8): float literal + float arithmetic are Type::F64.
         Expr::LitFloat(_) | Expr::FloatBinOp { .. } => Type::F64,
         // PMAT-456 (v0.2.0 Track 1.B): bool literal is Type::Bool.
@@ -6396,7 +6398,9 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             _ => Type::I64,
         },
         // PMAT-502dt: a block-expr types as its trailing expression.
-        Expr::Block(b) => infer_type_in_ctx(ctx, &b.trailing_return),
+        // PMAT-556: a block-local `Ident` trailing recovers its type from the
+        // block's own `Let` (the enclosing ctx can't see the temp).
+        Expr::Block(b) => block_result_type(b, |e| infer_type_in_ctx(ctx, e)),
         // PMAT-477 (R8): float literal + float arithmetic are Type::F64.
         Expr::LitFloat(_) | Expr::FloatBinOp { .. } => Type::F64,
         // PMAT-456 (v0.2.0 Track 1.B): bool literal is Type::Bool.
@@ -10519,6 +10523,24 @@ fn str_method_arity(op: StrMethodOp) -> usize {
 /// (one operand a `Str`/`List`, the other an `Int`). Returns the
 /// `Expr::Repeat`, trying both operand orders, or `None` when the pair
 /// isn't (sequence, int). Caller only invokes this for the `*` operator.
+/// PMAT-556: a block's result type. When the trailing expression is an `Ident`
+/// bound by a `Let` *inside* the block (e.g. the accumulator built by a
+/// two-generator comprehension), the enclosing scope can't see that local, so
+/// inferring the bare `Ident` would default to `I64`. Recover the type from the
+/// block's own `Let` binding; otherwise infer the trailing expression directly.
+fn block_result_type(b: &Block, infer: impl Fn(&Expr) -> Type) -> Type {
+    if let Expr::Ident(name) = &b.trailing_return {
+        for s in &b.stmts {
+            if let Stmt::Let { name: n, ty, .. } = s {
+                if n == name {
+                    return ty.clone();
+                }
+            }
+        }
+    }
+    infer(&b.trailing_return)
+}
+
 fn try_repeat(lhs_ty: &Type, rhs_ty: &Type, lhs: &Expr, rhs: &Expr) -> Option<Expr> {
     let is_seq = |t: &Type| matches!(t, Type::Str | Type::List(_));
     if is_seq(lhs_ty) && *rhs_ty == Type::I64 {
@@ -10991,6 +11013,13 @@ fn lower_generator_exp_in_ctx(
     ctx: &LoweringCtx,
     ge: ast::ExprGeneratorExp,
 ) -> Result<Expr, FrontendError> {
+    // PMAT-556: a two-generator genexpr (`sum(i*j for i in a for j in b)`)
+    // builds its flattened list via nested loops in an `Expr::Block`.
+    if ge.generators.len() == 2 {
+        return lower_comp_2gen_to_block(ctx, &ge.generators, "generator expression", |sub| {
+            lower_expr_in_ctx(sub, (*ge.elt).clone())
+        });
+    }
     lower_comp_to_map(ctx, &ge.generators, "generator expression", |sub| {
         lower_expr_in_ctx(sub, (*ge.elt).clone())
     })
@@ -11006,6 +11035,12 @@ fn lower_list_comp_in_ctx(
     ctx: &LoweringCtx,
     comp: ast::ExprListComp,
 ) -> Result<Expr, FrontendError> {
+    // PMAT-556: an expr-position two-generator list comp builds via nested loops.
+    if comp.generators.len() == 2 {
+        return lower_comp_2gen_to_block(ctx, &comp.generators, "list comprehension", |sub| {
+            lower_expr_in_ctx(sub, (*comp.elt).clone())
+        });
+    }
     lower_comp_to_map(ctx, &comp.generators, "list comprehension", |sub| {
         lower_expr_in_ctx(sub, (*comp.elt).clone())
     })
@@ -11015,9 +11050,17 @@ fn lower_list_comp_in_ctx(
 /// xs})`) lowers to `set(<list-comp>)` — i.e. `SetFromList` over the same
 /// `Map`/`Filter` form. The statement / return forms keep their own desugars.
 fn lower_set_comp_in_ctx(ctx: &LoweringCtx, comp: ast::ExprSetComp) -> Result<Expr, FrontendError> {
-    let list = lower_comp_to_map(ctx, &comp.generators, "set comprehension", |sub| {
-        lower_expr_in_ctx(sub, (*comp.elt).clone())
-    })?;
+    // PMAT-556: a two-generator set comp builds its underlying list via nested
+    // loops (an `Expr::Block`), then collects into a set.
+    let list = if comp.generators.len() == 2 {
+        lower_comp_2gen_to_block(ctx, &comp.generators, "set comprehension", |sub| {
+            lower_expr_in_ctx(sub, (*comp.elt).clone())
+        })?
+    } else {
+        lower_comp_to_map(ctx, &comp.generators, "set comprehension", |sub| {
+            lower_expr_in_ctx(sub, (*comp.elt).clone())
+        })?
+    };
     Ok(Expr::SetFromList {
         list: Box::new(list),
     })
@@ -11030,11 +11073,21 @@ fn lower_dict_comp_in_ctx(
     ctx: &LoweringCtx,
     comp: ast::ExprDictComp,
 ) -> Result<Expr, FrontendError> {
-    let pairs = lower_comp_to_map(ctx, &comp.generators, "dict comprehension", |sub| {
-        let key = lower_expr_in_ctx(sub, (*comp.key).clone())?;
-        let value = lower_expr_in_ctx(sub, (*comp.value).clone())?;
-        Ok(Expr::TupleLit(vec![key, value]))
-    })?;
+    // PMAT-556: a two-generator dict comp builds a list of `(k, v)` tuples via
+    // nested loops (an `Expr::Block`), then collects into a map.
+    let pairs = if comp.generators.len() == 2 {
+        lower_comp_2gen_to_block(ctx, &comp.generators, "dict comprehension", |sub| {
+            let key = lower_expr_in_ctx(sub, (*comp.key).clone())?;
+            let value = lower_expr_in_ctx(sub, (*comp.value).clone())?;
+            Ok(Expr::TupleLit(vec![key, value]))
+        })?
+    } else {
+        lower_comp_to_map(ctx, &comp.generators, "dict comprehension", |sub| {
+            let key = lower_expr_in_ctx(sub, (*comp.key).clone())?;
+            let value = lower_expr_in_ctx(sub, (*comp.value).clone())?;
+            Ok(Expr::TupleLit(vec![key, value]))
+        })?
+    };
     Ok(Expr::DictFromPairs {
         pairs: Box::new(pairs),
     })
@@ -11163,6 +11216,37 @@ fn lower_comp_to_map(
             body: Box::new(body),
         },
     })
+}
+
+/// PMAT-556: expression-position **two-generator** comprehension / generator
+/// expression → an `Expr::Block` that builds a `Vec` via the statement-position
+/// nested-loop machinery ([`desugar_comp_2gen`], run on a *cloned* ctx so the
+/// loop-var bindings don't leak) and returns the accumulator as its trailing
+/// expression. This is what lets `sum(i*j for i in range(n) for j in range(m))`
+/// and the expr-position `[…]` / `{…}` 2-generator forms lower; the
+/// single-generator path stays [`lower_comp_to_map`]. The block-local
+/// accumulator's type is recovered at use sites by [`block_result_type`].
+fn lower_comp_2gen_to_block(
+    ctx: &LoweringCtx,
+    generators: &[ast::Comprehension],
+    kind: &str,
+    lower_elem: impl FnOnce(&LoweringCtx) -> Result<Expr, FrontendError>,
+) -> Result<Expr, FrontendError> {
+    let target = "__xcomp2";
+    let mut sub = ctx.clone();
+    let stmts = desugar_comp_2gen(&mut sub, target, generators, kind, |c| {
+        let elem = lower_elem(c)?;
+        let acc_ty = Type::List(Box::new(infer_type_in_ctx(c, &elem)));
+        let insert = Stmt::ListAppend {
+            list_name: target.to_string(),
+            elem,
+        };
+        Ok((insert, acc_ty, Expr::ListLit(Vec::new())))
+    })?;
+    Ok(Expr::Block(Box::new(Block {
+        stmts,
+        trailing_return: Expr::Ident(target.to_string()),
+    })))
 }
 
 #[cfg(test)]
