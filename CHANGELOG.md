@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.231] — 2026-06-14
+
+Tranche 2 — PMAT-531: tuple target in an expression-position generator
+expression / comprehension.
+
+- `sum(v for k, v in d.items())` and friends were rejected (`generator
+  expression with a tuple target is not yet supported`) even though the
+  statement-position list comp already supported tuple targets (via
+  `ForEachPair`). The shared expr-position core `lower_comp_to_map` now binds a
+  2-name tuple target through a Rust tuple-destructure closure param
+  (`|__k| { let (k, v) = __k.clone(); … }`), splitting the element 2-tuple type.
+  Works across genexpr / set-comp / expr-position list-comp, over `d.items()`,
+  `zip(...)`, `enumerate(...)`, with an `if` filter. **No new IR.**
+- Enables the common **dot-product** (`sum(x*y for x, y in zip(a, b))`),
+  **weighted-sum** (`sum(i*x for i, x in enumerate(xs))`), and
+  **dict-value-sum** idioms.
+- New e2e fixture `genexpr_tuple_target.py` (`sum_values`, `max_value`,
+  `count_positive`, `dot`, `weighted`) — rustc round-trip cross-checked vs
+  python3 (6, 20, 2, 32, 80). e2e 292 → 293.
+
 ## [0.1.230] — 2026-06-14
 
 Tranche 2 — PMAT-530: `s[::-1]` reverse-slice over a `str`.
