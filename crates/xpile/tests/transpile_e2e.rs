@@ -1741,8 +1741,10 @@ fn main() {
 #[test]
 fn num_cast_int_float() {
     let rust = xpile_transpile_to_rust("num_cast.py");
+    // PMAT-586: `float(int)` stays `((n) as f64)`; `int(float)` now guards a
+    // non-finite source (`__ic as i64` inside the guard block).
     assert!(
-        rust.contains(") as f64)") && rust.contains(") as i64)"),
+        rust.contains(") as f64)") && rust.contains("__ic as i64"),
         "expected numeric cast emission, got:\n{rust}"
     );
     let driver = r#"
@@ -2762,9 +2764,10 @@ fn str_parse() {
         rust.contains("(s).trim().parse::<f64>().expect("),
         "float(s):\n{rust}"
     );
+    // PMAT-586: `int(float_x)` now guards a non-finite source (`__ic as i64`).
     assert!(
-        rust.contains("((x) as i64)"),
-        "numeric still as-cast:\n{rust}"
+        rust.contains("__ic as i64"),
+        "numeric int(float) cast:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -6120,6 +6123,29 @@ fn main() {
 }
 "#;
     assert_rustc_runs("bool_as_int", &rust, driver);
+}
+
+/// PMAT-586 (Tranche 2): **correctness** — `int()` of a non-finite float. Python
+/// raises `OverflowError` for `int(inf)` and `ValueError` for `int(nan)`, but
+/// Rust's `as i64` saturates (`inf` → `i64::MAX`) / zeroes (`nan` → 0) silently.
+/// Now `int(float_x)` (tracked via a new `from_float` flag on `NumCast`) guards
+/// a non-finite source and panics; `int(int)`/`float(_)` unchanged. (The
+/// out-of-range *finite* case `int(1e30)` still saturates — a deferred bigint
+/// gap.) Found by the differential hunt. Cross-checked vs python3.
+#[test]
+fn int_cast_nonfinite() {
+    let rust = xpile_transpile_to_rust("int_cast_nonfinite.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(ic(3.7), 3);   // truncate toward zero
+    assert_eq!(ic(-3.7), -3);
+    assert_eq!(ii(5), 5);     // int(int) identity
+    // non-finite -> Python OverflowError/ValueError -> panic
+    assert!(std::panic::catch_unwind(|| ic(f64::INFINITY)).is_err());
+    assert!(std::panic::catch_unwind(|| ic(f64::NAN)).is_err());
+}
+"#;
+    assert_rustc_runs("int_cast_nonfinite", &rust, driver);
 }
 
 /// PMAT-585 (Tranche 2): **correctness** — returning a non-Copy field by value

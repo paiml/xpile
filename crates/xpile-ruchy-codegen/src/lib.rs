@@ -1485,6 +1485,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             value,
             to_float,
             from_str,
+            from_float,
         } => {
             // PMAT-502bf: string parse, matching the Rust backend.
             if *from_str {
@@ -1495,6 +1496,11 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 } else {
                     ").trim().parse::<i64>().expect(\"xpile: ValueError: invalid literal for int()\")"
                 });
+            } else if !*to_float && *from_float {
+                // PMAT-586: `int(float_x)` guards a non-finite source (see Rust twin).
+                out.push_str("{ let __ic = ");
+                emit_expr(out, value, mode)?;
+                out.push_str("; if !__ic.is_finite() { panic!(\"xpile: int() of a non-finite float (Python OverflowError/ValueError)\"); } __ic as i64 }");
             } else {
                 out.push_str("((");
                 emit_expr(out, value, mode)?;
