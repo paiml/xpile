@@ -1493,9 +1493,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         // Python-matching format block (float).
         Expr::ToStr { value, of_float } => {
             if *of_float {
+                // PMAT-583: match CPython's float repr (sci notation when exp
+                // `< -4` or `>= 16`) — see the Rust backend's twin.
                 out.push_str("{ let __sf = ");
                 emit_expr(out, value, mode)?;
-                out.push_str("; if __sf.is_nan() { String::from(\"nan\") } else if __sf.is_finite() && __sf.fract() == 0.0 { format!(\"{}.0\", __sf) } else { format!(\"{}\", __sf) } }");
+                out.push_str(
+                    r#"; if __sf.is_nan() { String::from("nan") } else if __sf.is_infinite() { String::from(if __sf < 0.0 { "-inf" } else { "inf" }) } else { let __se = format!("{:e}", __sf); let __ep = __se.find('e').unwrap(); let __ex: i32 = __se[__ep + 1..].parse().unwrap(); if __ex < -4 || __ex >= 16 { format!("{}e{}{:02}", &__se[..__ep], if __ex < 0 { "-" } else { "+" }, __ex.abs()) } else if __sf.fract() == 0.0 { format!("{}.0", __sf) } else { format!("{}", __sf) } } }"#,
+                );
             } else {
                 out.push_str("format!(\"{}\", ");
                 emit_expr(out, value, mode)?;
