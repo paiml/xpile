@@ -19,6 +19,19 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.256] — 2026-06-14
+
+Tranche 2 — PMAT-557: f-string sign flag `:+`.
+
+- The f-string sign flag `f"{x:+}"` (always show a sign). Python's `+` maps
+  1:1 to Rust's `{:+}` and composes with precision / width / zero-pad / radix
+  (`{:+.2}`, `{:+05}`, `{:+x}`). The `-` flag (Python's default) is dropped; a
+  space flag has no Rust equivalent and is rejected. A *bare* sign is int-only
+  — a bare float `:+`/`-` would hit the whole-float repr divergence (`+3` vs
+  Python `+3.0`), so it's deferred (only an explicit `.Nf` precision is sound).
+  Incidentally a bare `:d` (decimal) now lowers to a plain field. All in
+  `translate_format_spec` — no IR change.
+
 ## [0.1.255] — 2026-06-14
 
 Tranche 2 — PMAT-556: expression-position two-generator comprehensions.
