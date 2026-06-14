@@ -599,7 +599,7 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(a, out);
             collect_idents(b, out);
         }
-        Expr::Factorial { n } => collect_idents(n, out),
+        Expr::Factorial { n } | Expr::Isqrt { n } => collect_idents(n, out),
         // PMAT-502cj: list(range(...)) — recurse into the bound exprs.
         Expr::RangeList { start, stop, .. } => {
             collect_idents(start, out);
@@ -1466,7 +1466,7 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             ));
         }
         // PMAT-549: math.gcd deferred in the Lean lane (imperative Euclid loop).
-        Expr::Gcd { .. } | Expr::Lcm { .. } | Expr::Factorial { .. } => {
+        Expr::Gcd { .. } | Expr::Lcm { .. } | Expr::Factorial { .. } | Expr::Isqrt { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "math.gcd/lcm/factorial is not yet supported in the Lean lane \
                  — use `--target rust` or `--target ruchy`"

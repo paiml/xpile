@@ -5086,6 +5086,32 @@ fn main() {
     assert_rustc_runs("math_factorial", &rust, driver);
 }
 
+/// PMAT-552 (Tranche 2): `math.isqrt(n)` — exact integer square root `⌊√n⌋`.
+/// New `Expr::Isqrt` → inline integer-Newton block with a bit-length initial
+/// guess (no float, so exact for every `i64` incl. `i64::MAX`; overflow-safe;
+/// `isqrt(0)==0`; negative `n` panics). Cross-checked vs python3
+/// (0, 3, 4, 10, true, false, 31622).
+#[test]
+fn math_isqrt() {
+    let rust = xpile_transpile_to_rust("math_isqrt.py");
+    assert!(
+        rust.contains("__sn.leading_zeros()"),
+        "math.isqrt should lower to an integer-Newton block:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(isqrt_floor(0), 0);
+    assert_eq!(isqrt_floor(15), 3);
+    assert_eq!(isqrt_floor(16), 4);
+    assert_eq!(isqrt_floor(100), 10);
+    assert_eq!(is_perfect_square(49), true);
+    assert_eq!(is_perfect_square(50), false);
+    assert_eq!(isqrt_big(1000000007), 31622);
+}
+"#;
+    assert_rustc_runs("math_isqrt", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
