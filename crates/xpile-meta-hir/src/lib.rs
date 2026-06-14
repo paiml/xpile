@@ -2081,6 +2081,16 @@ pub enum StrMethodOp {
     /// `-1`): `.find(&(sub)[..]).map(|__i| __i as i64).expect(…)`.
     /// (ASCII subset — byte index = char index.)
     StrIndex,
+    /// `.rfind(sub)` → byte index of the **last** match, or `-1` (**Int**, 1
+    /// arg). PMAT-545. The reverse-search mirror of [`StrMethodOp::Find`]:
+    /// `.rfind(&(sub)[..]).map(|__i| __i as i64).unwrap_or(-1)`.
+    /// (ASCII subset — byte index = char index.)
+    Rfind,
+    /// `.rindex(sub)` → byte index of the **last** match, or **panic** on
+    /// absence (Python `ValueError`). PMAT-545. The reverse-search mirror of
+    /// [`StrMethodOp::StrIndex`]: `.rfind(&(sub)[..]).map(|__i| __i as i64)
+    /// .expect(…)`. (ASCII subset — byte index = char index.)
+    RIndex,
     /// `.isdigit()` → `(!(s).is_empty() && (s).chars().all(|c| c.is_ascii_digit()))`
     /// (**Bool**, 0 args). PMAT-502ag. Python returns `False` for the empty
     /// string, so the empty guard is required (a vacuous `.all()` is `true`).

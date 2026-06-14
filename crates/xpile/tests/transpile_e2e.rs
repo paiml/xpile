@@ -4926,6 +4926,29 @@ fn main() {
     assert_rustc_runs("enumerate_zip_str", &rust, driver);
 }
 
+/// PMAT-545 (Tranche 2): `str.rfind` / `str.rindex` — reverse-search mirrors of
+/// `find` / `index`. `rfind(sub)` → byte index of the last match or `-1`;
+/// `rindex(sub)` panics on absence (Python `ValueError`). Both reuse the
+/// `StrMethod` pipeline via Rust's `str::rfind`. Cross-checked vs python3
+/// (5, -1, 3, 5).
+#[test]
+fn str_rfind() {
+    let rust = xpile_transpile_to_rust("str_rfind.py");
+    assert!(
+        rust.contains(".rfind(&("),
+        "`rfind`/`rindex` should lower to Rust `str::rfind`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(last_a(String::from("banana")), 5);
+    assert_eq!(last_missing(String::from("banana")), -1);
+    assert_eq!(last_pair(String::from("banana")), 3);
+    assert_eq!(last_a_index(String::from("banana")), 5);
+}
+"#;
+    assert_rustc_runs("str_rfind", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
