@@ -286,6 +286,14 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-562: three-way zip inside a while — same gap.
+            Stmt::ForEachZip3 { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has Stmt::ForEachZip3 (3-way zip) inside a while loop; \
+                     the Lean lane does not support paired/zip for-loops at v0.2.0",
+                    f.name
+                )));
+            }
             // PMAT-460: list.append() inside a while loop — same
             // monadic-encoding gap as ForEach. Deferred. PMAT-502ap/aq/ar:
             // in-place list mutators (.sort/.reverse/.clear) + .extend + .insert.
@@ -1042,6 +1050,12 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         // PMAT-495: paired for-loop (enumerate / zip) — same monadic gap.
         Stmt::ForEachPair { .. } => Err(LeanCodegenError::Unsupported(
             "`for a, b in enumerate(xs)`/`zip(...)` (Stmt::ForEachPair) is not supported in \
+             the Lean lane — use `--target rust` or `--target ruchy`"
+                .into(),
+        )),
+        // PMAT-562: three-way zip — same monadic gap.
+        Stmt::ForEachZip3 { .. } => Err(LeanCodegenError::Unsupported(
+            "`for a, b, c in zip(x, y, z)` (Stmt::ForEachZip3) is not supported in \
              the Lean lane — use `--target rust` or `--target ruchy`"
                 .into(),
         )),

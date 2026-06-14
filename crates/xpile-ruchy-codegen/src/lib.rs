@@ -170,7 +170,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             | Stmt::Raise { .. } => false,
             Stmt::While { body, .. }
             | Stmt::ForEach { body, .. }
-            | Stmt::ForEachPair { body, .. } => body.iter().any(stmt_has_bigint),
+            | Stmt::ForEachPair { body, .. }
+            | Stmt::ForEachZip3 { body, .. } => body.iter().any(stmt_has_bigint),
             // PMAT-478 (R9): recurse both branches of an if/else.
             Stmt::If {
                 then_body,
@@ -430,6 +431,31 @@ fn emit_stmt_indented(
                     out.push_str(".iter().cloned()");
                 }
             }
+            writeln!(out, " {{")?;
+            let inner = format!("{indent}    ");
+            for s in body {
+                emit_stmt_indented(out, s, &inner, mode)?;
+            }
+            writeln!(out, "{indent}}}")?;
+            Ok(())
+        }
+        // PMAT-562: three-way `zip` → nested `.zip()` chain + `((a, b), c)`.
+        Stmt::ForEachZip3 {
+            first,
+            second,
+            third,
+            iter1,
+            iter2,
+            iter3,
+            body,
+        } => {
+            write!(out, "{indent}for (({first}, {second}), {third}) in ")?;
+            emit_expr(out, iter1, mode)?;
+            out.push_str(".iter().cloned().zip(");
+            emit_expr(out, iter2, mode)?;
+            out.push_str(".iter().cloned()).zip(");
+            emit_expr(out, iter3, mode)?;
+            out.push_str(".iter().cloned())");
             writeln!(out, " {{")?;
             let inner = format!("{indent}    ");
             for s in body {

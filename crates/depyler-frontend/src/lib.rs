@@ -1324,9 +1324,10 @@ fn body_assigns_self(stmts: &[Stmt]) -> bool {
             else_body,
             ..
         } => body_assigns_self(then_body) || body_assigns_self(else_body),
-        Stmt::While { body, .. } | Stmt::ForEach { body, .. } | Stmt::ForEachPair { body, .. } => {
-            body_assigns_self(body)
-        }
+        Stmt::While { body, .. }
+        | Stmt::ForEach { body, .. }
+        | Stmt::ForEachPair { body, .. }
+        | Stmt::ForEachZip3 { body, .. } => body_assigns_self(body),
         _ => false,
     })
 }
@@ -2953,6 +2954,62 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
             "function `{}` has a `for ... else:` clause — Python's `else` on loops is not supported at v0.1.0",
             ctx.fn_name
         )));
+    }
+
+    // PMAT-562: three-way `for a, b, c in zip(x, y, z)` → Stmt::ForEachZip3.
+    // Checked before the 2-tuple branch below (a 3-name target wouldn't match it).
+    if let ast::Expr::Tuple(tgt) = &*f.target {
+        if let [ast::Expr::Name(a), ast::Expr::Name(b), ast::Expr::Name(c)] = tgt.elts.as_slice() {
+            if let ast::Expr::Call(call) = &*f.iter {
+                if let ast::Expr::Name(fname) = call.func.as_ref() {
+                    if fname.id.as_str() == "zip"
+                        && call.keywords.is_empty()
+                        && call.args.len() == 3
+                    {
+                        let names = [a.id.to_string(), b.id.to_string(), c.id.to_string()];
+                        let mut iters = Vec::with_capacity(3);
+                        for arg in &call.args {
+                            // PMAT-544: a `str` arg iterates its chars (1-char strings).
+                            let mut it = lower_expr_in_ctx(ctx, arg.clone())?;
+                            if matches!(infer_type_in_ctx(ctx, &it), Type::Str) {
+                                it = Expr::StrChars {
+                                    string: Box::new(it),
+                                };
+                            }
+                            let Type::List(elem) = infer_type_in_ctx(ctx, &it) else {
+                                return Err(FrontendError::Lower(format!(
+                                    "function `{}` uses `zip(...)` with a non-list/str argument — only list and str iteration is supported at v0.2.0",
+                                    ctx.fn_name
+                                )));
+                            };
+                            iters.push((it, *elem));
+                        }
+                        for (name, (_, elem)) in names.iter().zip(iters.iter()) {
+                            ctx.bound.insert(name.clone());
+                            ctx.name_types.insert(name.clone(), elem.clone());
+                        }
+                        let mut body: Vec<Stmt> = Vec::new();
+                        for s in f.body {
+                            body.extend(lower_block_stmt(ctx, s)?);
+                        }
+                        let [name1, name2, name3] = names;
+                        let mut iters = iters.into_iter();
+                        let (iter1, _) = iters.next().expect("3 args");
+                        let (iter2, _) = iters.next().expect("3 args");
+                        let (iter3, _) = iters.next().expect("3 args");
+                        return Ok(vec![Stmt::ForEachZip3 {
+                            first: name1,
+                            second: name2,
+                            third: name3,
+                            iter1,
+                            iter2,
+                            iter3,
+                            body,
+                        }]);
+                    }
+                }
+            }
+        }
     }
 
     // PMAT-495: paired for-loop `for a, b in enumerate(xs)` /

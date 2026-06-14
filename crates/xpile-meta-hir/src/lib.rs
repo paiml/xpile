@@ -185,6 +185,19 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
             }
             body.iter().any(stmt_has_int_arith)
         }
+        // PMAT-562: three-way zip — recurse into all three iterables + the body.
+        Stmt::ForEachZip3 {
+            iter1,
+            iter2,
+            iter3,
+            body,
+            ..
+        } => {
+            expr_has_int_arith(iter1)
+                || expr_has_int_arith(iter2)
+                || expr_has_int_arith(iter3)
+                || body.iter().any(stmt_has_int_arith)
+        }
         // PMAT-460: list.append() — recurse into the elem expression.
         Stmt::ListAppend { elem, .. } => expr_has_int_arith(elem),
         // PMAT-500b: set.add() — recurse into the elem expression.
@@ -869,6 +882,21 @@ pub enum Stmt {
         /// The primary list being iterated.
         iter: Expr,
         kind: PairIterKind,
+        body: Vec<Stmt>,
+    },
+    /// PMAT-562: three-way `zip` for-loop — Python `for a, b, c in zip(x, y, z)`.
+    /// Rust/Ruchy emit `for ((a, b), c) in x.iter().cloned().zip(y.iter()
+    /// .cloned()).zip(z.iter().cloned()) { body }` (left-nested zip + nested
+    /// destructure; stops at the shortest iterable, like Python `zip`). A
+    /// separate variant from [`Stmt::ForEachPair`] for the third binding. Lean
+    /// refuses.
+    ForEachZip3 {
+        first: String,
+        second: String,
+        third: String,
+        iter1: Expr,
+        iter2: Expr,
+        iter3: Expr,
         body: Vec<Stmt>,
     },
     /// `assert cond` / `assert cond, msg` — Python assert. PMAT-009; the

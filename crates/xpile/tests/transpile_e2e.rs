@@ -4955,6 +4955,29 @@ fn main() {
     assert_rustc_runs("comp_2gen_range", &rust, driver);
 }
 
+/// PMAT-562 (Tranche 2): three-way `zip` — `for a, b, c in zip(x, y, z)`. New
+/// `Stmt::ForEachZip3` emits a left-nested `.zip().zip()` chain with a nested
+/// `((a, b), c)` destructure (stops at the shortest iterable, like Python).
+/// Cross-checked vs python3 (270, 666, 3).
+#[test]
+fn zip3() {
+    let rust = xpile_transpile_to_rust("zip3.py");
+    assert!(
+        rust.contains("for ((x, y), z) in")
+            && rust.contains(".iter().cloned().zip(")
+            && rust.contains(".iter().cloned()).zip("),
+        "zip3 should emit a nested .zip().zip() with ((x, y), z) destructure:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(dot3(vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]), 270);
+    assert_eq!(sum_triples(vec![1, 2, 3], vec![10, 20, 30], vec![100, 200, 300]), 666);
+    assert_eq!(shortest_stops(vec![1, 2, 3, 4, 5], vec![1, 2, 3], vec![1, 2, 3, 4]), 3);
+}
+"#;
+    assert_rustc_runs("zip3", &rust, driver);
+}
+
 /// PMAT-556 (Tranche 2): expression-position **two-generator** generator
 /// expression / list comprehension — `sum(i*j for i in range(n) for j in
 /// range(n))`, `len([… for i in a for j in b])`. The single-generator
