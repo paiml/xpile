@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.301] — 2026-06-14
+
+Tranche 2 — PMAT-602: **correctness** — reject a non-Optional annotation over an Optional initializer.
+
+- `x: int = d.get(key)` (1-arg get) bound an Optional value (`Option<i64>`) to a
+  non-Optional `i64` annotation — the annotation-trusting `let x: i64 = ...` over
+  an Optional RHS emitted `Option<i64>` into an `i64` binding (rustc E0308)
+  despite a clean transpile. Found by the differential hunt (#4, finding #21).
+- Fix (frontend): reject when the declared annotation is non-Optional but the
+  initializer infers to `Optional`. Python doesn't enforce annotations
+  (`x: int = d.get("z")` binds `None`), so unwrapping would diverge on the None
+  case — failing fast is the faithful disposition. The 2-arg `d.get(k, default)`
+  and `Optional[...]` annotation forms still transpile.
+- New reject e2e test + positive control, cross-checked vs python3. 363 e2e fixtures.
+
 ## [0.1.300] — 2026-06-14
 
 Tranche 2 — PMAT-601: **correctness** — 2-arg float `max`/`min` use Python first-argument-wins semantics.
