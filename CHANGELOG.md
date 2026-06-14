@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.314] — 2026-06-15
+
+Tranche 2 — PMAT-615: **correctness** — augmented set ops `s -= / |= / &= / ^= other` now compile.
+
+- Augmented set assignment fell through to a numeric/bitwise `BinOp`, producing
+  invalid Rust on a mainstream idiom (transpile succeeded, rustc rejected):
+  `s -= other` → `HashSet::checked_sub` (E0599); `s |= / &= / ^= other` →
+  owned-value `|`/`&`/`^` on `HashSet` (E0369, which std implements only for
+  references). The non-augmented forms (`s - other`, …) already lowered correctly.
+  Surfaced by differential hunt #6 and re-verified on a fresh binary.
+- Fix (frontend `combine_aug`, no new IR): when both operands are sets and the
+  operator maps to a set operation, reuse the binop `SetOp` path (difference /
+  union / intersection / symmetric_difference) — like `s - other`. Mirrors the
+  existing dict-`|=` and list-`+=` special-casing; mutability handled by the
+  existing reassignment pre-pass.
+- New e2e fixture `augmented_set_ops.py` cross-checked vs python3. 376 e2e fixtures.
+
 ## [0.1.313] — 2026-06-15
 
 Tranche 2 — PMAT-614: **correctness** — float `a // b` is CPython `float_divmod`, not `floor(a/b)`.
