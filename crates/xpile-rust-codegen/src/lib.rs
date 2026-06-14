@@ -1885,6 +1885,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, k, mode)?;
             out.push_str("); if __pn < 0 || __pk < 0 { panic!(\"xpile: ValueError: perm() arguments must be non-negative\"); } if __pk > __pn { 0 } else { let mut __pr = 1i64; let mut __pi = 0i64; while __pi < __pk { __pr = __pr.checked_mul(__pn - __pi).expect(\"xpile: i64 multiplication overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"); __pi += 1; } __pr } }");
         }
+        // PMAT-571: `pow(base, exp, mod)` → modular exponentiation (square &
+        // multiply, reduced mod m each step via i128 products → no overflow).
+        Expr::PowMod { base, exp, modulus } => {
+            out.push_str("{ let __pmm = (");
+            emit_expr(out, modulus, mode)?;
+            out.push_str("); if __pmm == 0 { panic!(\"xpile: ValueError: pow() 3rd argument cannot be 0\"); } let __pme = (");
+            emit_expr(out, exp, mode)?;
+            out.push_str("); if __pme < 0 { panic!(\"xpile: ValueError: pow() 2nd argument cannot be negative when 3rd argument specified\"); } let __pmb0 = (");
+            emit_expr(out, base, mode)?;
+            out.push_str("); let mut __pmb = { let __t = __pmb0 % __pmm; if __t < 0 { __t + __pmm } else { __t } }; let mut __pmr = 1i64 % __pmm; let mut __pmk = __pme; while __pmk > 0 { if __pmk & 1 == 1 { __pmr = (((__pmr as i128) * (__pmb as i128)) % (__pmm as i128)) as i64; } __pmk >>= 1; __pmb = (((__pmb as i128) * (__pmb as i128)) % (__pmm as i128)) as i64; } __pmr }");
+        }
         // PMAT-502cj: `list(range(start, stop, step))` → a collected i64 range.
         Expr::RangeList { start, stop, step } => {
             if *step > 0 {

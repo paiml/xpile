@@ -1522,6 +1522,31 @@ fn main() {
     assert_rustc_runs("bool_reduce", &rust, driver);
 }
 
+/// PMAT-571 (Tranche 2): 3-arg `pow(base, exp, mod)` — modular exponentiation.
+/// Was a bare `pow(...)` call → undefined Rust fn (E0425, transpile-success →
+/// invalid Rust). Now an inline square-and-multiply that reduces mod m each step
+/// with i128 products (no overflow even near i64::MAX); zero modulus / negative
+/// exponent panic. Found by the differential hunt. Cross-checked vs python3
+/// (24, 9, 7269837747581970906, 1, 0).
+#[test]
+fn pow_mod() {
+    let rust = xpile_transpile_to_rust("pow_mod.py");
+    assert!(
+        rust.contains("as i128) * (") && rust.contains("__pmr"),
+        "3-arg pow should emit i128 modular exponentiation:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(modpow(2, 10, 1000), 24);
+    assert_eq!(modpow(7, 256, 13), 9);
+    assert_eq!(big_mod(123456789, 1000), 7269837747581970906);
+    assert_eq!(neg_base(3), 1);
+    assert_eq!(mod_one(5, 3), 0);
+}
+"#;
+    assert_rustc_runs("pow_mod", &rust, driver);
+}
+
 /// PMAT-570 (Tranche 2): **correctness** — negative-literal `xs.pop(-k)` /
 /// `del xs[-k]` remove from the end. Both emitted `remove((-k) as usize)` →
 /// `usize::MAX` → panic; now resolve to `len(xs) - k` with the index bound to a
