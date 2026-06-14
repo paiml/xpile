@@ -19,6 +19,19 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.303] — 2026-06-14
+
+Tranche 2 — PMAT-604: **correctness** — `grid[i] += [..]` concatenates instead of integer `checked_add`.
+
+- `grid[i] += [10, 20]` (and nested `cube[i][j] += [..]`) over a nested list is
+  Python list concatenation, but the subscript aug-assign routed `+` through
+  `combine_aug` → a `BinOp::Add` the backend emits as `Vec::checked_add` (rustc
+  E0599). The flat `xs += [..]` case was already correct (ListExtend); only the
+  indexed/nested form fell through. Found by the differential hunt (#5).
+- Fix (frontend `combine_aug`): add a list+list `Add` → `Expr::ListConcat` case,
+  fixing both the single-level and nested subscript aug-assign paths. No new IR.
+- New e2e fixture `subscript_list_concat_aug.py` cross-checked vs python3. 365 e2e fixtures.
+
 ## [0.1.302] — 2026-06-14
 
 Tranche 2 — PMAT-603: **correctness** — sort/sorted with a float-returning `key=` uses `partial_cmp`.
