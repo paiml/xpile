@@ -4662,6 +4662,34 @@ fn main() {
     assert_rustc_runs("subscript_append", &rust, driver);
 }
 
+/// PMAT-534 (Tranche 2): `x in range(...)` / `x not in range(...)` membership →
+/// a **bounds check**, not a materialized Vec (`x in range(10**9)` must not
+/// allocate). `range(n)` → `0 <= x && x < n`; `range(a, b)` → `a <= x && x < b`;
+/// a 3-arg literal step adds the reachability check `(x - start) % |step| == 0`
+/// (Python floor-mod via `rem_euclid`). Composes inside a genexpr filter.
+/// Cross-checked vs python3 (the full boundary sweep matches).
+#[test]
+fn in_range_membership() {
+    let rust = xpile_transpile_to_rust("in_range_membership.py");
+    assert!(
+        rust.contains("(0i64 <= x) && (x < n)"),
+        "`x in range(n)` should lower to a bounds check, not a Vec:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(in_n(3, 5), true);
+    assert_eq!(in_n(5, 5), false);
+    assert_eq!(in_ab(2), true);
+    assert_eq!(in_ab(10), false);
+    assert_eq!(not_in_n(7, 5), true);
+    assert_eq!(in_step(4), true);
+    assert_eq!(in_step(5), false);
+    assert_eq!(count_hits(vec![1, 3, 4, 6, 7, 5]), 4);
+}
+"#;
+    assert_rustc_runs("in_range_membership", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
