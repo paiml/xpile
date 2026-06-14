@@ -361,6 +361,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::Gcd { a, b } | Expr::Lcm { a, b } => expr_has_int_arith(a) || expr_has_int_arith(b),
         // PMAT-551/552: factorial/isqrt carry an int operand (loop arith internal).
         Expr::Factorial { n } | Expr::Isqrt { n } => expr_has_int_arith(n),
+        // PMAT-553: comb carries int operands (the loop arith is internal).
+        Expr::Comb { n, k } => expr_has_int_arith(n) || expr_has_int_arith(k),
         // PMAT-502cj: list(range(...)) — recurse into the bound exprs.
         Expr::RangeList { start, stop, .. } => {
             expr_has_int_arith(start) || expr_has_int_arith(stop)
@@ -1703,6 +1705,14 @@ pub enum Expr {
     /// block (no float, so exact for every `i64`); a negative `n` panics (Python
     /// `ValueError`); `isqrt(0) == 0`. Lean refuses.
     Isqrt { n: Box<Expr> },
+    /// PMAT-553: `math.comb(n, k)` — binomial coefficient "n choose k" (**Int**).
+    /// Rust/Ruchy emit an inline incremental-product block (`C(n,i+1) =
+    /// C(n,i)*(n-i)/(i+1)`, iterating `min(k, n-k)` times so each partial stays a
+    /// true binomial). `0` when `k < 0` or `k > n`. Like all i64 arithmetic the
+    /// running `checked_mul` panics on overflow (a result whose intermediate
+    /// exceeds i64); negative `n`/`k` handled by the `k>n` / `k<0` guards. Lean
+    /// refuses.
+    Comb { n: Box<Expr>, k: Box<Expr> },
     /// `list(range(start, stop, step))` — materialise a range into a `Vec`.
     /// PMAT-502cj (Tranche 2). Rust/Ruchy emit `((<start>)..(<stop>))
     /// .collect::<Vec<i64>>()` for `step == 1`, or `.step_by(<step> as usize)`
