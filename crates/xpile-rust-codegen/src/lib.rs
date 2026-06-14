@@ -304,8 +304,25 @@ fn emit_stmt_indented(
             Ok(())
         }
         // PMAT-494b: tuple unpacking → `let (a, b, ...) = <value>;`.
-        Stmt::LetTuple { names, value } => {
-            write!(out, "{indent}let ({}) = ", names.join(", "))?;
+        Stmt::LetTuple {
+            names,
+            mutable,
+            value,
+        } => {
+            // PMAT-547: mark each unpacked name `mut` per its `mutable` flag.
+            let pat = names
+                .iter()
+                .enumerate()
+                .map(|(i, n)| {
+                    if mutable.get(i).copied().unwrap_or(false) {
+                        format!("mut {n}")
+                    } else {
+                        n.clone()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            write!(out, "{indent}let ({pat}) = ")?;
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
             Ok(())

@@ -4971,6 +4971,31 @@ fn main() {
     assert_rustc_runs("comp_over_str", &rust, driver);
 }
 
+/// PMAT-547 (correctness): tuple-unpack init + later augment — `i, total = 0, 0`
+/// then `total += i`. The augment was rejected ("augments before assigned"
+/// because `LetTuple` never registered `ctx.bound`); the mutability pre-walk
+/// also didn't count tuple-unpack targets (so a single non-loop augment stayed
+/// immutable → E0384). Now `LetTuple` binds each name + the pre-walk counts
+/// tuple targets, and `LetTuple` carries a per-name `mutable` flag → emits
+/// `let (mut a, b) = …` (only the mutated name gets `mut`). Cross-checked vs
+/// python3 (18, 10, 31).
+#[test]
+fn tuple_unpack_augment() {
+    let rust = xpile_transpile_to_rust("tuple_unpack_augment.py");
+    assert!(
+        rust.contains("let (mut a, b) ="),
+        "only the mutated unpacked name should be `mut`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(two_accumulators(vec![1, 2, 3]), 18);
+    assert_eq!(while_accumulate(5), 10);
+    assert_eq!(one_mut_one_const(), 31);
+}
+"#;
+    assert_rustc_runs("tuple_unpack_augment", &rust, driver);
+}
+
 /// PMAT-514 (Tranche 2): `match` on an **enum** — dotted value patterns
 /// (`case Color.RED:`) and `|`-patterns of them desugar (via the match→if path)
 /// to enum-member equality (`c == Color::RED`), combining PMAT-510/512 (`match`)
