@@ -7598,6 +7598,26 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             from_str: matches!(vty, Type::Str),
                         });
                     }
+                    // PMAT-535: `int(b)` / `float(b)` over a `bool` — Python
+                    // `True`/`False` → `1`/`0` (`1.0`/`0.0`). Rust allows
+                    // `bool as i64` (false=0, true=1) but NOT `bool as f64`, so
+                    // `float(bool)` casts through `i64` first.
+                    if matches!(vty, Type::Bool) {
+                        let as_int = Expr::NumCast {
+                            value: Box::new(value),
+                            to_float: false,
+                            from_str: false,
+                        };
+                        return Ok(if fname.id.as_str() == "float" {
+                            Expr::NumCast {
+                                value: Box::new(as_int),
+                                to_float: true,
+                                from_str: false,
+                            }
+                        } else {
+                            as_int
+                        });
+                    }
                 }
                 // PMAT-502be: `bool(x)` truthiness cast — a pure desugar to a
                 // `!= 0` comparison (no new Expr). int → `x != 0`; str / list /
