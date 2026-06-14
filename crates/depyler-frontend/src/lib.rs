@@ -6477,7 +6477,7 @@ fn infer_type(e: &Expr) -> Type {
         // PMAT-502ek: `sqrt` is always `float`; `floor`/`ceil` are `int`
         // (Python `math.floor`/`ceil` return an int); `abs`/`min`/`max` take
         // the first argument's type.
-        Expr::NumBuiltin { op, args } => match op {
+        Expr::NumBuiltin { op, args, .. } => match op {
             NumBuiltinOp::Sqrt
             | NumBuiltinOp::Sin
             | NumBuiltinOp::Cos
@@ -6869,7 +6869,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::Slice { collection, .. } => infer_type_in_ctx(ctx, collection),
         // PMAT-498: numeric builtin types as its first argument.
         // PMAT-502ek: see the context-free twin — op-specific return type.
-        Expr::NumBuiltin { op, args } => match op {
+        Expr::NumBuiltin { op, args, .. } => match op {
             NumBuiltinOp::Sqrt
             | NumBuiltinOp::Sin
             | NumBuiltinOp::Cos
@@ -7861,7 +7861,13 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             } else {
                                 args
                             };
-                            return Ok(Expr::NumBuiltin { op, args });
+                            // PMAT-579: record whether the operand is float so
+                            // codegen picks `.abs()` (f64) vs `.checked_abs()`
+                            // (i64). Consulted only for `Abs`; harmless for min/max.
+                            let of_float = args
+                                .first()
+                                .is_some_and(|a| infer_type_in_ctx(ctx, a) == Type::F64);
+                            return Ok(Expr::NumBuiltin { op, args, of_float });
                         }
                     }
                 }
@@ -9351,9 +9357,14 @@ fn lower_math_call(
         )));
     }
     let arg = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+    // PMAT-579: `math.*` builtins are float-domain; `of_float` is unused by
+    // codegen for these ops (only `Abs` consults it), but set it from the arg
+    // type for consistency.
+    let of_float = infer_type_in_ctx(ctx, &arg) == Type::F64;
     Ok(Expr::NumBuiltin {
         op,
         args: vec![arg],
+        of_float,
     })
 }
 

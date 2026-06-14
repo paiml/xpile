@@ -1617,7 +1617,19 @@ pub enum Expr {
     /// both `i64` and `f64`. Result types as the first arg's type. Lean
     /// refuses at first cut. (`sum`/1-arg `min`/`max` over a list need an
     /// element-type hint and follow as their own slice.)
-    NumBuiltin { op: NumBuiltinOp, args: Vec<Expr> },
+    ///
+    /// PMAT-579: `of_float` (set by the frontend from the first argument's type)
+    /// is consulted only for [`NumBuiltinOp::Abs`]: an `i64` `abs` emits
+    /// `.checked_abs().expect(…)` so `abs(i64::MIN)` PANICS (per C-PY-INT-ARITH;
+    /// `i64::MIN.abs()` would otherwise wrap to `i64::MIN` silently), while an
+    /// `f64` `abs` keeps `.abs()` (no overflow). `min`/`max` and the float math
+    /// builtins ignore it.
+    NumBuiltin {
+        op: NumBuiltinOp,
+        args: Vec<Expr>,
+        #[serde(default)]
+        of_float: bool,
+    },
     /// `sum(xs)` / `sum(xs, start)` over a numeric list — Python builtin.
     /// PMAT-498b (Tranche 2); 2-arg `start` added PMAT-502cx. Rust/Ruchy
     /// emit `<list>.iter().sum::<T>()` with the turbofish `T` selected by
