@@ -19,6 +19,24 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.291] — 2026-06-14
+
+Tranche 2 — PMAT-592: **correctness** — a frozen dataclass used as a dict key / set element derives `Eq` + `Hash`.
+
+- A `@dataclass(frozen=True)` is hashable in Python, so it may be a `dict` key or
+  `set` element. xpile emitted every dataclass struct with a fixed
+  `#[derive(Clone, Debug, PartialEq)]` (no `Eq`/`Hash`), so a frozen dataclass
+  used as a `HashSet` element (E0277) or `HashMap` key (E0599) produced invalid
+  Rust despite a clean transpile. Found by the differential hunt (#4, findings
+  #10 + #22 — one fix closes both).
+- Fix: track `@dataclass(frozen=True)` on the IR (`Item::Struct.frozen`); the
+  Rust + Ruchy codegen extend the derive list with `Eq, Hash` when the struct is
+  frozen **and** every field type is itself Eq+Hash-capable (`i64`/`bool`/
+  `String`). A float field disqualifies it (`f64` is neither `Eq` nor `Hash`).
+  Non-frozen dataclasses (unhashable in Python) keep the bare derive, so existing
+  output is byte-identical.
+- New e2e fixture `dataclass_eq_hash.py` cross-checked vs python3. 353 e2e fixtures.
+
 ## [0.1.290] — 2026-06-14
 
 Tranche 2 — PMAT-591: **correctness** — float `%` uses CPython `float_rem` (fmod + sign-adjust), not the floor formula.
