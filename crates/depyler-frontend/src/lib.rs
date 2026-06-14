@@ -7916,6 +7916,34 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     // PMAT-521: materialise `range(...)` / a set arg into a list.
                     if let Some(list) = materialize_iterable_arg(ctx, &call.args[0])? {
                         if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
+                            // PMAT-565: `sum(list[bool])` — Python counts True as
+                            // 1 (bool is an int subtype). Map each bool → i64,
+                            // then sum as ints. Fixes both `sum(bs)` over a bool
+                            // list (bare-`sum()` rustc error) and the very common
+                            // `sum(x > 0 for x in xs)` counting genexpr (reject).
+                            if matches!(*elem, Type::Bool) {
+                                let mapped = Expr::Map {
+                                    list: Box::new(list),
+                                    lambda: SortKey {
+                                        param: "__b".to_string(),
+                                        body: Box::new(Expr::NumCast {
+                                            value: Box::new(Expr::Ident("__b".to_string())),
+                                            to_float: false,
+                                            from_str: false,
+                                        }),
+                                    },
+                                };
+                                let start = if call.args.len() == 2 {
+                                    Some(Box::new(lower_expr_in_ctx(ctx, call.args[1].clone())?))
+                                } else {
+                                    None
+                                };
+                                return Ok(Expr::Sum {
+                                    list: Box::new(mapped),
+                                    of_float: false,
+                                    start,
+                                });
+                            }
                             if matches!(*elem, Type::I64 | Type::F64) {
                                 let of_float = matches!(*elem, Type::F64);
                                 let start = if call.args.len() == 2 {
@@ -8636,8 +8664,16 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     });
                 }
                 // PMAT-502an: `x in xs` / `x not in xs` over a list.
-                if matches!(infer_type_in_ctx(ctx, &rhs), Type::List(_)) {
+                if let Type::List(list_elem) = infer_type_in_ctx(ctx, &rhs) {
                     let elem = lower_expr_in_ctx(ctx, (*c.left).clone())?;
+                    // PMAT-565: `True in xs` over a list[int] — coerce the bool
+                    // needle to i64 (bool is an int subtype) so `contains` gets a
+                    // matching element type (else `contains(&true)` on Vec<i64>).
+                    let elem = if *list_elem == Type::I64 {
+                        to_i64_operand(ctx, elem)
+                    } else {
+                        elem
+                    };
                     let contains = Expr::ListContains {
                         list: Box::new(rhs),
                         elem: Box::new(elem),
@@ -8766,6 +8802,15 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     return Ok(rep);
                 }
             }
+            // PMAT-565: Python's `bool` is an `int` subtype (True==1), so a bool
+            // operand in integer arithmetic is coerced to i64 — without this the
+            // i64-arith lowering emits e.g. `(a).checked_add(b)` on a `bool`
+            // (invalid Rust). No-op for non-bool operands and non-arith ops.
+            let (lhs, rhs) = if is_int_arith_binop(op) {
+                (to_i64_operand(ctx, lhs), to_i64_operand(ctx, rhs))
+            } else {
+                (lhs, rhs)
+            };
             Ok(Expr::BinOp {
                 op,
                 lhs: Box::new(lhs),
@@ -9641,6 +9686,13 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
                     return Ok(rep);
                 }
             }
+            // PMAT-565: bool operand in int arithmetic → coerce to i64 (context-
+            // free counterpart; recognises bool *literals*).
+            let (lhs, rhs) = if is_int_arith_binop(op) {
+                (to_i64_operand_cf(lhs), to_i64_operand_cf(rhs))
+            } else {
+                (lhs, rhs)
+            };
             Ok(Expr::BinOp {
                 op,
                 lhs: Box::new(lhs),
@@ -10262,6 +10314,55 @@ fn to_f64_operand(ctx: &LoweringCtx, e: Expr) -> Expr {
             to_float: true,
             from_str: false,
         }
+    }
+}
+
+/// PMAT-565: is `op` an integer-arithmetic / bitwise binary operator (one whose
+/// i64 lowering needs both operands to be `i64`)? Comparisons (`==`,`<`,…) and
+/// the boolean `and`/`or` are excluded — those accept/produce `bool` directly.
+fn is_int_arith_binop(op: BinOp) -> bool {
+    matches!(
+        op,
+        BinOp::Add
+            | BinOp::Sub
+            | BinOp::Mul
+            | BinOp::FloorDiv
+            | BinOp::Mod
+            | BinOp::Pow
+            | BinOp::BitAnd
+            | BinOp::BitOr
+            | BinOp::BitXor
+            | BinOp::Shl
+            | BinOp::Shr
+    )
+}
+
+/// PMAT-565: coerce a `bool` operand to `i64` in an integer context — Python's
+/// `bool` is an `int` subtype (`True == 1`), so `True + True == 2`. Without this
+/// the i64-arith lowering emits `(a).checked_add(b)` on a `bool` (invalid Rust).
+/// A no-op for any non-bool operand. `bool as i64` is a valid Rust cast.
+fn to_i64_operand(ctx: &LoweringCtx, e: Expr) -> Expr {
+    if infer_type_in_ctx(ctx, &e) == Type::Bool {
+        Expr::NumCast {
+            value: Box::new(e),
+            to_float: false,
+            from_str: false,
+        }
+    } else {
+        e
+    }
+}
+
+/// Context-free counterpart of [`to_i64_operand`] (recognises bool *literals*).
+fn to_i64_operand_cf(e: Expr) -> Expr {
+    if infer_type(&e) == Type::Bool {
+        Expr::NumCast {
+            value: Box::new(e),
+            to_float: false,
+            from_str: false,
+        }
+    } else {
+        e
     }
 }
 

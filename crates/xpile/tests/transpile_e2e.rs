@@ -5909,6 +5909,29 @@ fn main() {
     assert_rustc_runs("fstring_specs", &rust, driver);
 }
 
+/// PMAT-565 (Tranche 2): **correctness** — `bool` is an `int` subtype. Bool
+/// operands in integer arithmetic (`a + b`, `bool + int`), `sum(list[bool])` /
+/// `sum(x > 0 for x in xs)` (the counting idiom), and `True in list[int]` all
+/// previously emitted invalid Rust (`checked_add` on `bool`, bare `sum()`,
+/// `contains(&true)`) or rejected. Now bool operands coerce to i64
+/// (`(b) as i64`). Found by the differential hunt. Cross-checked vs python3
+/// (2, 6, 1, 2, 3, true).
+#[test]
+fn bool_as_int() {
+    let rust = xpile_transpile_to_rust("bool_as_int.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(add_bools(true, true), 2);
+    assert_eq!(bool_plus_int(true, 5), 6);
+    assert_eq!(bool_sub(true, false), 1);
+    assert_eq!(count_positive(vec![5, -3, 0, 2, -1]), 2);
+    assert_eq!(sum_bool_list(vec![true, false, true, true]), 3);
+    assert_eq!(has_one(vec![3, 1, 2]), true);
+}
+"#;
+    assert_rustc_runs("bool_as_int", &rust, driver);
+}
+
 /// PMAT-564 (Tranche 2): **correctness** — `len(str)` counts Unicode code
 /// points, not UTF-8 bytes. Was `s.len()` (byte length → `len("café")` == 5);
 /// now routes to `StrMethodOp::CharCount` → `.chars().count() as i64`. `len()`
