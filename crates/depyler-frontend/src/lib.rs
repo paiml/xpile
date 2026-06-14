@@ -2286,12 +2286,18 @@ fn try_lower_list_method_call(
             }
         }
         ctx.mutable.insert(receiver_name.to_string());
+        // PMAT-578: a keyless float sort needs `partial_cmp` (f64 has no `Ord`).
+        let of_float = matches!(
+            infer_type_in_ctx(ctx, &Expr::Ident(receiver_name.to_string())),
+            Type::List(elem) if *elem == Type::F64
+        );
         return Some(Ok(Stmt::Assign {
             name: receiver_name.to_string(),
             value: Expr::Sorted {
                 list: Box::new(Expr::Ident(receiver_name.to_string())),
                 reverse,
                 key,
+                of_float,
             },
         }));
     }
@@ -8354,10 +8360,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             _ => None,
                         };
                         if let Some(list) = list {
+                            // PMAT-578: a keyless float sort needs `partial_cmp`
+                            // (no `Ord` for f64); record the element type.
+                            let of_float = matches!(infer_type_in_ctx(ctx, &list), Type::List(elem) if *elem == Type::F64);
                             return Ok(Expr::Sorted {
                                 list: Box::new(list),
                                 reverse,
                                 key,
+                                of_float,
                             });
                         }
                     }
