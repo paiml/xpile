@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.299] — 2026-06-14
+
+Tranche 2 — PMAT-600: **correctness** — `isspace()` / `strip` family honor the C0 separators U+001C..U+001F.
+
+- Python treats the C0 information separators FS/GS/RS/US (U+001C..U+001F) as
+  whitespace for `str.isspace()` and `strip()`/`lstrip()`/`rstrip()`, but Rust's
+  `char::is_whitespace()` (and `trim`) excludes exactly those four codepoints —
+  so `"\x1c".isspace()` returned `false` and `"\x1cabc".strip()` left the
+  separator (silent ASCII-range miscompiles). Found by the differential hunt
+  (#4, findings #1 + #17).
+- Fix (rust + ruchy codegen): augment the whitespace predicate with
+  `|| matches!(__c, '\u{1c}'..='\u{1f}')` — `isspace` via `.chars().all(...)`,
+  the strip family via `trim_matches`/`trim_start_matches`/`trim_end_matches`
+  against the same closure. isdigit/isalpha/isalnum unchanged.
+- New e2e fixture `c0_whitespace.py` cross-checked vs python3. 361 e2e fixtures.
+
 ## [0.1.298] — 2026-06-14
 
 Tranche 2 — PMAT-599: **correctness** — clone a dict-comprehension key when a non-Copy binder is reused in the value.
