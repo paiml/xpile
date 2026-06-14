@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.280] — 2026-06-14
+
+Tranche 2 — PMAT-581: **correctness** — float division by zero raises ZeroDivisionError.
+
+- Python raises `ZeroDivisionError` for `a / b`, `a // b`, `a % b` when the
+  divisor is zero (and for int true-division `a / 0`), but xpile emitted bare
+  IEEE float ops yielding `inf` / `nan`. Found by the differential hunt.
+- Fix: the float `Div` / `FloorDiv` / `Mod` codegen arms bind the divisor to a
+  temp, check `== 0.0`, and `panic!` with a ZeroDivisionError message (matching
+  Python's raise — caught by a bare `except`). Binding the divisor once also
+  fixes the previous double-evaluation of operands in the `%` lowering. Int
+  true-division (lowers to a float `Div`) is covered by the same guard. Valid
+  divisions unchanged. Rust + Ruchy.
+- New e2e fixture `float_div_zero.py` cross-checked vs python3. 342 e2e fixtures.
+
 ## [0.1.279] — 2026-06-14
 
 Tranche 2 — PMAT-580: **correctness** — `bool & | ^` over two bools stays bool.
