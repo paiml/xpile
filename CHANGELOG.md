@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.292] — 2026-06-14
+
+Tranche 2 — PMAT-593: **correctness** — PEP 584 dict union `a | b` and `a |= b`.
+
+- `a | b` / `a |= b` over two dicts (PEP 584, Python 3.9+) fell through to a
+  generic integer BitOr, so the backend emitted `HashMap | HashMap` → rustc
+  E0369 (HashMap has no `BitOr`). Transpile succeeded, i.e. transpile-success
+  ⟹ invalid Rust. Found by the differential hunt (#4, finding #6).
+- Fix (frontend, reusing existing IR): `a | b` → `Expr::DictMerge` (the same
+  `{**a, **b}` lowering — chains both iterators into a fresh `HashMap`, the
+  later entry `b` winning on key conflicts, matching Python); `a |= b` →
+  `Stmt::DictUpdate` (identical to `a.update(b)` → `a.extend(...)`), in place.
+  Other binary operators between two dicts (`&`/`-`/`^`/…) and non-`|=` dict
+  aug-assigns are now rejected cleanly rather than emitting invalid Rust.
+- New e2e fixture `dict_union.py` cross-checked vs python3. 354 e2e fixtures.
+
 ## [0.1.291] — 2026-06-14
 
 Tranche 2 — PMAT-592: **correctness** — a frozen dataclass used as a dict key / set element derives `Eq` + `Hash`.
