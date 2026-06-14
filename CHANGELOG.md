@@ -19,6 +19,19 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.250] — 2026-06-14
+
+Tranche 2 — PMAT-551: `math.factorial(n)`.
+
+- `math.factorial(n)` — n! of a non-negative int, completing the math-integer
+  trio with gcd/lcm. New `Expr::Factorial` whose rust/ruchy codegen is an inline
+  product loop (`0! == 1`; `checked_mul` overflow guard; a negative `n` panics
+  = Python `ValueError`). Composes in arithmetic (binomial coefficients).
+  Rippled to meta-HIR (+bigint scan), both inferers (→ `I64`), and rust/ruchy
+  emit; the Lean lane refuses.
+- New e2e fixture `math_factorial.py` (`fact`, `fact_zero`, `binomial`)
+  cross-checked vs python3 (120, 3628800, 1, 10, 20). e2e 311 → 312.
+
 ## [0.1.249] — 2026-06-14
 
 Tranche 2 — PMAT-550: `math.lcm(a, b)`.
