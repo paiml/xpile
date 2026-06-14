@@ -19,6 +19,19 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.244] — 2026-06-14
+
+Tranche 2 — PMAT-545: `str.rfind` / `str.rindex`.
+
+- `s.rfind(sub)` / `s.rindex(sub)` were rejected (not in the str-method map).
+  Added `StrMethodOp::Rfind` (last-match byte index or `-1`) and `RIndex`
+  (last-match index or panic on absence = Python `ValueError`) — the
+  reverse-search mirrors of `find` / `index`, reusing Rust's `str::rfind`.
+  Rippled to meta-HIR, the `str_method_op` map, arity, both inferers (→ `I64`),
+  and rust/ruchy codegen; the Lean lane refuses `StrMethod` generically.
+- New e2e fixture `str_rfind.py` (`last_a`, `last_missing`, `last_pair`,
+  `last_a_index`) cross-checked vs python3 (5, -1, 3, 5). e2e 305 → 306.
+
 ## [0.1.243] — 2026-06-14
 
 Tranche 2 — PMAT-544: `enumerate()` / `zip()` over a string.
