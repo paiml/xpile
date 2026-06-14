@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.307] — 2026-06-14
+
+Tranche 2 — PMAT-608: **correctness** — float `max`/`min` over an empty sequence raises ValueError.
+
+- `max`/`min` over a float sequence lowered to `fold(±∞, f64::max/min)`, so an
+  EMPTY sequence (e.g. a generator whose filter excludes everything) silently
+  returned `-inf`/`+inf` instead of raising ValueError like Python. The fold's
+  `f64::max`/`min` also ignore NaN and mishandle signed-zero ties. Found by the
+  differential hunt (#5).
+- Fix (rust + ruchy codegen): float min/max use a strict-compare `reduce`
+  (first-arg-wins, like PMAT-601) → `Option`; an empty sequence unwraps to a
+  ValueError-style panic, or the `default=` substitutes. Fixes the empty case
+  and aligns NaN/tie with Python. Int/str min/max unchanged. No new IR.
+- New e2e fixture `max_empty_float_gen.py` cross-checked vs python3. 369 e2e fixtures.
+
 ## [0.1.306] — 2026-06-14
 
 Tranche 2 — PMAT-607: **correctness** — `pow()` with a bool base coerces to i64.
