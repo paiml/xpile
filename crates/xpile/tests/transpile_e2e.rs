@@ -4957,6 +4957,33 @@ fn main() {
     assert_rustc_runs("genexpr_2gen", &rust, driver);
 }
 
+/// PMAT-559 (Tranche 2): tuple-unpack with a **subscript target** — the in-place
+/// swap idiom `xs[i], xs[j] = xs[j], xs[i]` (and dict keys `d[a], d[b] = …`).
+/// All RHS elements are lowered into temps first (so a swap reads both old
+/// values before writing either), then each temp is assigned to its target
+/// (`IndexAssign` / `DictSet`). The base is marked mutable by the pre-walk.
+/// Cross-checked vs python3 (201, 54001, 1, 210).
+#[test]
+fn subscript_swap() {
+    let rust = xpile_transpile_to_rust("subscript_swap.py");
+    assert!(
+        rust.contains("__unpack0") && rust.contains("__unpack1"),
+        "subscript swap should stage the RHS into temps first:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(swap_first_two(vec![1, 2, 3]), 201);
+    assert_eq!(reverse_inplace(vec![1, 2, 3, 4, 5]), 54001);
+    assert_eq!(bubble_sort_min(vec![5, 3, 1, 4, 2]), 1);
+    let mut d = std::collections::HashMap::new();
+    d.insert(String::from("x"), 10);
+    d.insert(String::from("y"), 20);
+    assert_eq!(dict_swap(d, String::from("x"), String::from("y")), 210);
+}
+"#;
+    assert_rustc_runs("subscript_swap", &rust, driver);
+}
+
 /// PMAT-544 (Tranche 2): `enumerate(s)` / `zip(s, …)` over a **string** —
 /// iterate its characters (each a 1-char string). The paired-loop handler
 /// required a `list` iterable; a `str` iterable now materializes to a

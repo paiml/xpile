@@ -302,6 +302,11 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                         for e in &t.elts {
                             if let ast::Expr::Name(n) = e {
                                 *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                            } else if let Some(base) = subscript_chain_base_name(e) {
+                                // PMAT-559: `xs[i], xs[j] = …` (subscript-target
+                                // swap / parallel assign) mutates the base
+                                // collection in place → count it so it binds `mut`.
+                                *counts.entry(base).or_insert(0) += bump;
                             }
                         }
                     }
@@ -1930,6 +1935,19 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
             // aliasing is out of scope under value semantics).
             if asn.targets.len() > 1 {
                 return lower_chained_assign(ctx, asn);
+            }
+            // PMAT-559: tuple-unpack with a subscript target —
+            // `xs[i], xs[j] = xs[j], xs[i]` (the in-place swap idiom) and
+            // general parallel assignment with `base[idx]` targets. The all-Name
+            // tuple form keeps the `Stmt::LetTuple` path in `lower_assign`.
+            if let ast::Expr::Tuple(targets) = &asn.targets[0] {
+                if targets
+                    .elts
+                    .iter()
+                    .any(|e| matches!(e, ast::Expr::Subscript(_)))
+                {
+                    return lower_tuple_unpack_with_subscript(ctx, asn);
+                }
             }
             lower_assign(ctx, asn).map(|s| vec![s])
         }
@@ -4261,6 +4279,147 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
             value,
             mutable,
         })
+    }
+}
+
+/// PMAT-559: tuple-unpack assignment where at least one target is a subscript —
+/// `xs[i], xs[j] = xs[j], xs[i]` (the in-place swap idiom) and general parallel
+/// assignment with `base[idx]` / `d[k]` targets. The right-hand side must be a
+/// tuple literal of matching arity. All RHS elements are lowered into temporaries
+/// FIRST (so a swap reads both old values before writing either), then each temp
+/// is assigned to its target — a plain Name (`Assign`/`Let`) or a list/dict
+/// subscript (`IndexAssign`/`DictSet`). The all-Name tuple form keeps the
+/// `Stmt::LetTuple` path in [`lower_assign`].
+fn lower_tuple_unpack_with_subscript(
+    ctx: &mut LoweringCtx,
+    asn: ast::StmtAssign,
+) -> Result<Vec<Stmt>, FrontendError> {
+    let ast::Expr::Tuple(target_tuple) = &asn.targets[0] else {
+        unreachable!("caller checked a Tuple target");
+    };
+    let targets = target_tuple.elts.clone();
+    // The RHS must be a tuple literal of equal arity (covers the swap idiom and
+    // parallel assignment). A non-literal tuple RHS with subscript targets is
+    // deferred — it'd need destructuring an arbitrary value into temps.
+    let ast::Expr::Tuple(rhs) = asn.value.as_ref() else {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` unpacks into subscript targets from a non-tuple-literal right-hand side — only `a[i], b[j] = x, y` is supported at v0.2.0",
+            ctx.fn_name
+        )));
+    };
+    if rhs.elts.len() != targets.len() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` unpacks {} targets from a {}-element tuple",
+            ctx.fn_name,
+            targets.len(),
+            rhs.elts.len()
+        )));
+    }
+    let rhs_elts = rhs.elts.clone();
+    let mut stmts: Vec<Stmt> = Vec::new();
+    // 1. Evaluate every RHS element into a temp BEFORE any assignment.
+    let mut temps: Vec<String> = Vec::with_capacity(rhs_elts.len());
+    for (i, rv) in rhs_elts.into_iter().enumerate() {
+        let value = lower_expr_in_ctx(ctx, rv)?;
+        let ty = infer_type_in_ctx(ctx, &value);
+        let tmp = format!("__unpack{i}");
+        ctx.name_types.insert(tmp.clone(), ty.clone());
+        ctx.bound.insert(tmp.clone());
+        stmts.push(Stmt::Let {
+            name: tmp.clone(),
+            ty,
+            value,
+            mutable: false,
+        });
+        temps.push(tmp);
+    }
+    // 2. Assign each temp to its target.
+    for (target, tmp) in targets.into_iter().zip(temps) {
+        let value = Expr::Ident(tmp);
+        match target {
+            ast::Expr::Name(n) => {
+                let name = n.id.to_string();
+                if ctx.bound.contains(&name) {
+                    stmts.push(Stmt::Assign { name, value });
+                } else {
+                    let ty = infer_type_in_ctx(ctx, &value);
+                    let mutable = ctx.mutable.contains(&name);
+                    ctx.bound.insert(name.clone());
+                    ctx.name_types.insert(name.clone(), ty.clone());
+                    stmts.push(Stmt::Let {
+                        name,
+                        ty,
+                        value,
+                        mutable,
+                    });
+                }
+            }
+            ast::Expr::Subscript(sub) => {
+                stmts.push(lower_subscript_assign_target(ctx, &sub, value)?);
+            }
+            other => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` has an unsupported tuple-unpack target {:?} — only names and single-level subscripts are supported at v0.2.0",
+                    ctx.fn_name,
+                    std::mem::discriminant(&other)
+                )));
+            }
+        }
+    }
+    Ok(stmts)
+}
+
+/// PMAT-559: build the assignment statement for a subscript target `base[idx]`
+/// (or nested `g[i][j]`) given an already-lowered value. Mirrors the `Subscript`
+/// branch of [`lower_assign`]; shared with the tuple-unpack path.
+fn lower_subscript_assign_target(
+    ctx: &mut LoweringCtx,
+    sub: &ast::ExprSubscript,
+    value: Expr,
+) -> Result<Stmt, FrontendError> {
+    if let Some((receiver, indices)) = peel_nested_subscript_assign(ctx, sub)? {
+        ctx.mutable.insert(receiver.clone());
+        return Ok(Stmt::IndexAssign {
+            list_name: receiver,
+            indices,
+            value,
+        });
+    }
+    let receiver = match sub.value.as_ref() {
+        ast::Expr::Name(n) => n.id.to_string(),
+        _ => unreachable!("peel_nested_subscript_assign validated a Name base"),
+    };
+    let single = (*sub.slice).clone();
+    match ctx.name_types.get(&receiver).cloned() {
+        Some(Type::List(_)) => {
+            let index = lower_expr_in_ctx(ctx, single)?;
+            let idx_ty = infer_type_in_ctx(ctx, &index);
+            if !matches!(idx_ty, Type::I64) {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` indexed-assigns `{receiver}[<expr>]` where index types as {idx_ty:?}; only `int` indices are supported at v0.2.0",
+                    ctx.fn_name
+                )));
+            }
+            ctx.mutable.insert(receiver.clone());
+            Ok(Stmt::IndexAssign {
+                list_name: receiver,
+                indices: vec![index],
+                value,
+            })
+        }
+        Some(Type::Dict(_, _)) => {
+            let key = lower_expr_in_ctx(ctx, single)?;
+            ctx.mutable.insert(receiver.clone());
+            Ok(Stmt::DictSet {
+                dict_name: receiver,
+                key,
+                value,
+            })
+        }
+        _ => Err(FrontendError::Lower(format!(
+            "function `{}` keyed-assigns to `{receiver}` which doesn't type as list[T] or dict[K, V] — v0.2.0 supports list/dict subscript assignment only",
+            ctx.fn_name
+        ))),
     }
 }
 
