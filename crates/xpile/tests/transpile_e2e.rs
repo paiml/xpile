@@ -6078,8 +6078,8 @@ fn main() {
 fn math_pow_trunc() {
     let rust = xpile_transpile_to_rust("math_pow_trunc.py");
     assert!(
-        rust.contains(".powf(") && rust.contains(".trunc() as i64"),
-        "math.pow → powf, math.trunc → trunc() as i64:\n{rust}"
+        rust.contains(".powf(") && rust.contains(").trunc(); if !__mf.is_finite()"),
+        "math.pow → powf, math.trunc → guarded trunc:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -6132,8 +6132,8 @@ fn main() {
 fn math_module() {
     let rust = xpile_transpile_to_rust("math_module.py");
     assert!(
-        rust.contains(".sqrt()") && rust.contains(".floor() as i64"),
-        "math fns should emit f64 method calls:\n{rust}"
+        rust.contains(".sqrt()") && rust.contains(").floor(); if !__mf.is_finite()"),
+        "math fns should emit f64 method calls (floor guarded):\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -6146,6 +6146,35 @@ fn main() {
 }
 "#;
     assert_rustc_runs("math_module", &rust, driver);
+}
+
+/// PMAT-606: math.floor/ceil/trunc guard the rounded value (finite + i64 range)
+/// and fail loud, instead of the saturating `as i64` cast (since Rust 1.45 a
+/// huge float → i64::MAX, inf → i64::MAX, nan → 0). Python returns a bignum for
+/// a huge float and raises OverflowError(inf)/ValueError(nan). Cross-checked vs
+/// python3: ordinary values round normally; inf/huge inputs fail loud (caught
+/// via catch_unwind), where the old `as i64` silently saturated.
+#[test]
+fn math_round_overflow() {
+    let rust = xpile_transpile_to_rust("math_round_overflow.py");
+    assert!(
+        rust.contains("out of i64 range") && rust.contains("non-finite float"),
+        "floor/ceil/trunc must guard finite + range:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // ordinary values round correctly.
+    assert_eq!(fl(3.7), 3);
+    assert_eq!(ce(3.2), 4);
+    assert_eq!(tr(-3.7), -3);
+    // inf must fail loud (Python OverflowError), not saturate to i64::MAX.
+    assert!(std::panic::catch_unwind(|| fl(mkinf())).is_err());
+    assert!(std::panic::catch_unwind(|| ce(mkinf())).is_err());
+    // a huge finite float must fail loud (Python bignum), not saturate.
+    assert!(std::panic::catch_unwind(|| tr(1e30)).is_err());
+}
+"#;
+    assert_rustc_runs("math_round_overflow", &rust, driver);
 }
 
 /// PMAT-502ej (Tranche 2): directly indexing a block-producing collection —
