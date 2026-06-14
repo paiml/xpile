@@ -7065,6 +7065,22 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         }
                     }
                 }
+                // PMAT-536: `"<fmt>".format(name=val, …)` — keyword (named) field
+                // form. Named `{name}` placeholders are rewritten to positional
+                // `{N}` (in first-occurrence order, repeats allowed) and the
+                // matching kwarg values passed positionally to `lower_str_format`,
+                // reusing all its spec translation / validation. Pure-keyword form
+                // only (mixed positional+keyword and `**kwargs` are deferred).
+                if attr.attr.as_str() == "format"
+                    && call.args.is_empty()
+                    && !call.keywords.is_empty()
+                {
+                    if let ast::Expr::Constant(c) = attr.value.as_ref() {
+                        if let ast::Constant::Str(fmt) = &c.value {
+                            return lower_str_format_kwargs(ctx, fmt, &call.keywords);
+                        }
+                    }
+                }
                 // PMAT-502co: `s.split()` (no arg) → whitespace split. Checked
                 // before the generic dispatch (which maps "split" → the 1-arg
                 // `Split`); the 1-arg `s.split(sep)` form is handled there.
@@ -9707,6 +9723,100 @@ fn num_builtin_op(name: &str) -> Option<(NumBuiltinOp, usize)> {
         "max" => Some((NumBuiltinOp::Max, 2)),
         _ => None,
     }
+}
+
+/// PMAT-536: lower the keyword (named-field) form `"<fmt>".format(name=val, …)`.
+/// Named `{name}` / `{name:spec}` placeholders are rewritten to positional
+/// `{N}` / `{N:spec}` — `N` is the field's index in first-occurrence order, so a
+/// repeated `{name}` reuses the same index (which Rust's positional `{N}`
+/// supports but auto `{}` does not). Only the fields actually referenced by the
+/// template become positional args (Rust's `format!` rejects an unused arg,
+/// while Python tolerates an unused kwarg). The rewritten template + ordered
+/// values are handed to [`lower_str_format`], reusing all its spec translation
+/// and per-type validation. `**kwargs`, auto `{}` / positional `{N}` fields
+/// (no positional args are passed here), and unknown field names are rejected.
+fn lower_str_format_kwargs(
+    ctx: &LoweringCtx,
+    fmt: &str,
+    keywords: &[ast::Keyword],
+) -> Result<Expr, FrontendError> {
+    let mut kw: std::collections::HashMap<String, ast::Expr> = std::collections::HashMap::new();
+    for k in keywords {
+        let Some(name) = k.arg.as_ref().map(|a| a.to_string()) else {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls `.format(**kwargs)` — `**` keyword unpacking is not supported",
+                ctx.fn_name
+            )));
+        };
+        kw.insert(name, k.value.clone());
+    }
+    let mut used: Vec<String> = Vec::new();
+    let mut out = String::new();
+    let mut chars = fmt.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '{' if chars.peek() == Some(&'{') => {
+                chars.next();
+                out.push_str("{{");
+            }
+            '}' if chars.peek() == Some(&'}') => {
+                chars.next();
+                out.push_str("}}");
+            }
+            '}' => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` has an unmatched `}}` in a `.format(...)` template",
+                    ctx.fn_name
+                )));
+            }
+            '{' => {
+                let mut field = String::new();
+                while let Some(&nc) = chars.peek() {
+                    if nc == '}' {
+                        break;
+                    }
+                    field.push(nc);
+                    chars.next();
+                }
+                if chars.next() != Some('}') {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` has an unterminated `{{` in a `.format(...)` template",
+                        ctx.fn_name
+                    )));
+                }
+                let (name, spec) = match field.split_once(':') {
+                    Some((n, s)) => (n, Some(s)),
+                    None => (field.as_str(), None),
+                };
+                if name.is_empty() || name.chars().all(|ch| ch.is_ascii_digit()) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` mixes auto/positional `{{}}` fields with `.format(name=...)` keyword args — use named `{{field}}` placeholders",
+                        ctx.fn_name
+                    )));
+                }
+                if !kw.contains_key(name) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` `.format(...)` template references `{{{name}}}` with no matching keyword arg",
+                        ctx.fn_name
+                    )));
+                }
+                let idx = match used.iter().position(|u| u == name) {
+                    Some(i) => i,
+                    None => {
+                        used.push(name.to_string());
+                        used.len() - 1
+                    }
+                };
+                match spec {
+                    Some(s) => out.push_str(&format!("{{{idx}:{s}}}")),
+                    None => out.push_str(&format!("{{{idx}}}")),
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    let ordered_values: Vec<ast::Expr> = used.iter().map(|n| kw[n].clone()).collect();
+    lower_str_format(ctx, &out, &ordered_values)
 }
 
 /// PMAT-502bh/cb/ch: lower a Python `"<fmt>".format(args…)` to an
