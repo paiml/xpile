@@ -19,6 +19,18 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.265] — 2026-06-14
+
+Tranche 2 — PMAT-566: **correctness** — `str.find/rfind/index` return char index.
+
+- Fixed a silent miscompile on non-ASCII strings: `str.find/rfind/index/rindex`
+  emitted `.find(...).map(|i| i as i64)` (the Rust **byte** offset), so
+  `"αβγδ".find("γ")` returned 4 instead of Python's char index 2. Now a
+  block-form emit binds the receiver to a temp and counts the chars before the
+  match byte (`__s[..__b].chars().count() as i64`); `index`/`rindex` keep their
+  `ValueError` panic, `find`/`rfind` keep `-1`. `.count(sub)` (a match count) is
+  unchanged; ASCII results unchanged. Rust + Ruchy. Found by the differential hunt.
+
 ## [0.1.264] — 2026-06-14
 
 Tranche 2 — PMAT-565: **correctness** — `bool` is an `int` subtype.
