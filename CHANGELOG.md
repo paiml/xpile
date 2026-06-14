@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.259] — 2026-06-14
+
+Tranche 2 — PMAT-560: **correctness** — negative-index assignment `xs[-k] = v`.
+
+- Fixed a runtime panic: `xs[-1] = v` (and `xs[-2] += v`, the swap
+  `xs[0], xs[-1] = …`) emitted `xs[(-1) as usize] = v` → `xs[usize::MAX]` →
+  out-of-bounds. Python assigns from the end. The read side already desugared
+  `xs[-k]` → `xs[len-k]`; this adds the symmetric write-side desugar
+  (`lower_subscript_assign_target` + the aug-assign list branch resolve a
+  negative-literal `-k` to `len(<recv>) - k`; `lower_assign`'s subscript branch
+  now delegates to the shared helper). The `IndexAssign` codegen (rust + ruchy)
+  binds a self-referential index (`xs[xs.len() - 1]`) to a temp before the
+  assignment, avoiding the `index_mut` borrow conflict (E0502); conditional on
+  the index referencing the receiver, so the common `xs[i] = v` shape is
+  unchanged. Variable negative indices (`xs[i]`, `i < 0` at runtime) remain a
+  separate deferred gap.
+
 ## [0.1.258] — 2026-06-14
 
 Tranche 2 — PMAT-559: tuple-unpack with subscript targets (swap idiom).
