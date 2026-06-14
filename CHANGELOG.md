@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.297] — 2026-06-14
+
+Tranche 2 — PMAT-598: **correctness** — empty `set()` infers its element type from the subsequent `.add(...)`.
+
+- `s = set()` lowers to an empty set whose element type defaults to `i64` (no
+  elements to infer from), so the codegen emitted `let mut s: HashSet<i64> = …`.
+  A subsequent `s.add(Coord(..))` / `s.add("x")` was then an i64-vs-actual
+  mismatch (rustc E0308) despite a clean transpile. Found by the differential
+  hunt (#4, finding #11) — also hits the common `set()` + `.add("str")` idiom.
+- Fix (rust + ruchy codegen): for a *mutable* empty set binding still at the
+  guessed `Set(I64)` default, suppress the explicit element-type annotation and
+  emit `let mut s = HashSet::new();`, so rustc infers the element type from the
+  later `.insert(...)`. Non-empty set literals, immutable empty sets, and
+  explicitly-annotated `set[T]` bindings keep their annotation.
+- New e2e fixture `empty_set_add.py` cross-checked vs python3. 359 e2e fixtures.
+
 ## [0.1.296] — 2026-06-14
 
 Tranche 2 — PMAT-597: **correctness** — the standalone `format(value[, spec])` builtin.
