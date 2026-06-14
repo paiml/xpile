@@ -6125,6 +6125,29 @@ fn main() {
     assert_rustc_runs("bool_as_int", &rust, driver);
 }
 
+/// PMAT-589 (Tranche 2): **correctness** — `int()` of an out-of-i64-range finite
+/// float. Python returns an exact arbitrary-precision integer (`int(1e30)`), but
+/// Rust's `as i64` saturates to `i64::MAX` silently. xpile can't represent the
+/// bignum yet, so it now fails loud (panic) instead of returning the wrong
+/// value — extending the PMAT-586 non-finite guard with a range check. In-range
+/// floats truncate toward zero as before. Found by the differential hunt.
+/// Cross-checked vs python3.
+#[test]
+fn int_cast_range() {
+    let rust = xpile_transpile_to_rust("int_cast_range.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(ic(3.7), 3);
+    assert_eq!(ic(-3.7), -3);
+    assert_eq!(ic(9e18), 9_000_000_000_000_000_000); // < 2^63, in range
+    // out of i64 range -> panic (Python returns an exact bignum we can't hold)
+    assert!(std::panic::catch_unwind(|| ic(1e30)).is_err());
+    assert!(std::panic::catch_unwind(|| ic(-1e30)).is_err());
+}
+"#;
+    assert_rustc_runs("int_cast_range", &rust, driver);
+}
+
 /// PMAT-588 (Tranche 2): **correctness** — a non-Copy variable passed by value
 /// to a function call and read more than once was moved into the call, leaving
 /// the other use a use-after-move (rustc E0382 — `helper(xs) + helper(xs)`). Now
