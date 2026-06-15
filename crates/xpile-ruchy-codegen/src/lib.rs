@@ -1087,6 +1087,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             if matches!(
                 op,
                 StrMethodOp::IsDigit
+                    | StrMethodOp::IsNumeric
                     | StrMethodOp::IsAlpha
                     | StrMethodOp::IsSpace
                     | StrMethodOp::IsAlnum
@@ -1098,6 +1099,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 out.push_str(").chars().all(|__c| ");
                 out.push_str(match op {
                     StrMethodOp::IsDigit => "__c.is_ascii_digit()",
+                    // PMAT-643: Unicode Number categories (matches Python isnumeric).
+                    StrMethodOp::IsNumeric => "__c.is_numeric()",
                     StrMethodOp::IsAlpha => "__c.is_alphabetic()",
                     StrMethodOp::IsAlnum => "__c.is_alphanumeric()",
                     // PMAT-600: include the C0 separators U+001C..U+001F (Python
@@ -1346,6 +1349,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 }
                 StrMethodOp::Join => unreachable!("Join handled above"),
                 StrMethodOp::IsDigit
+                | StrMethodOp::IsNumeric
                 | StrMethodOp::IsAlpha
                 | StrMethodOp::IsSpace
                 | StrMethodOp::IsAlnum

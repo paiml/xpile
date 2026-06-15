@@ -1814,6 +1814,31 @@ fn main() {
     assert_rustc_runs("str_predicates", &rust, driver);
 }
 
+/// PMAT-643: `str.isnumeric()` — True iff non-empty and every char is numeric
+/// (Unicode Number categories, via Rust `char::is_numeric()`), broader than
+/// `isdigit` (e.g. `½`, `²` are numeric but not digits). Cross-checked vs python3.
+#[test]
+fn str_isnumeric() {
+    let rust = xpile_transpile_to_rust("str_isnumeric.py");
+    assert!(
+        rust.contains(".chars().all(|__c| __c.is_numeric())"),
+        "isnumeric should use char::is_numeric():\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(is_num(String::from("123")), 1);
+    assert_eq!(is_num(String::from("")), 0);
+    assert_eq!(is_num(String::from("12a")), 0);
+    assert_eq!(is_num(String::from("\u{00BD}")), 1); // ½ is numeric
+    assert_eq!(is_num(String::from("\u{00B2}")), 1); // ² is numeric
+    // isdigit stays distinct: a fraction is numeric but not a digit.
+    assert_eq!(is_dig(String::from("123")), 1);
+    assert_eq!(is_dig(String::from("\u{00BD}")), 0);
+}
+"#;
+    assert_rustc_runs("str_isnumeric", &rust, driver);
+}
+
 /// PMAT-600: Python treats the C0 information separators FS/GS/RS/US
 /// (U+001C..U+001F) as whitespace for `isspace()` and `strip`/`lstrip`/`rstrip`;
 /// Rust's `char::is_whitespace()` / `trim()` excludes them. The predicate now

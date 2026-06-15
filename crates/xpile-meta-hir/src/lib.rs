@@ -2278,6 +2278,12 @@ pub enum StrMethodOp {
     /// (**Bool**, 0 args). PMAT-502ag. Python returns `False` for the empty
     /// string, so the empty guard is required (a vacuous `.all()` is `true`).
     IsDigit,
+    /// `.isnumeric()` → `(!(s).is_empty() && (s).chars().all(|c| c.is_numeric()))`
+    /// (**Bool**, 0 args). PMAT-643. Broader than `isdigit` — Rust's
+    /// `char::is_numeric()` covers the Unicode Number categories (Nd/Nl/No),
+    /// matching Python's `str.isnumeric()`. Shares the empty-guard "all chars
+    /// match" shape with [`StrMethodOp::IsDigit`].
+    IsNumeric,
     /// `.isalpha()` → `(!(s).is_empty() && (s).chars().all(|c| c.is_alphabetic()))`
     /// (**Bool**, 0 args). PMAT-502ag.
     IsAlpha,
