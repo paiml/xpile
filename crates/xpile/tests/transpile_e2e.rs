@@ -8046,6 +8046,39 @@ fn prelude_type_name_rejected() {
     );
 }
 
+/// PMAT-696: a float set element / dict key lowers to `HashSet<f64>` /
+/// `HashMap<f64, _>`, which is invalid Rust (`f64: !Eq`, `!Hash` → E0277) — a
+/// transpile success that fails `rustc`. It is now rejected at lowering with a
+/// clear message instead of emitting uncompilable Rust. (HUNT-V7 item V7-7.)
+#[test]
+fn float_hashed_key_rejected() {
+    let py = fixture("float_hashed_key_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a `set[float]` must be refused (HashSet<f64> is E0277), not emitted"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("float-typed set element") && stderr.contains("not `Eq`/`Hash`"),
+        "the rejection should explain the f64-hash limitation:\n{stderr}"
+    );
+}
+
+/// PMAT-696 (companion): a float dict VALUE (not key) is fine — only the key is
+/// hashed — so `dict[str, float]` must still transpile and run. Locks in that the
+/// float-key reject does not over-reach to values.
+#[test]
+fn float_dict_value_ok() {
+    let rust = xpile_transpile_to_rust("float_dict_value_ok.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(g(), 4.0); // 1.5 + 2.5; cross-checked vs python3
+}
+"#;
+    assert_rustc_runs("float_dict_value_ok", &rust, driver);
+}
+
 /// PMAT-586 (Tranche 2): **correctness** — `int()` of a non-finite float. Python
 /// raises `OverflowError` for `int(inf)` and `ValueError` for `int(nan)`, but
 /// Rust's `as i64` saturates (`inf` → `i64::MAX`) / zeroes (`nan` → 0) silently.

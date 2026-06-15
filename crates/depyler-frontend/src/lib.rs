@@ -2198,6 +2198,11 @@ fn parse_type_annotation(
                         &format!("{site} element"),
                         &sub.slice,
                     )?;
+                    // PMAT-696: a float set element lowers to `HashSet<f64>`,
+                    // which is invalid Rust (`f64: !Eq`, `!Hash`) — a transpile
+                    // success that fails `rustc` (E0277). Reject at lowering with
+                    // a clear message instead of emitting uncompilable Rust.
+                    reject_float_hashed(fn_name, site, "set element", &elem_ty)?;
                     Ok(Type::Set(Box::new(elem_ty)))
                 }
                 "dict" => {
@@ -2222,6 +2227,11 @@ fn parse_type_annotation(
                         &format!("{site} value"),
                         &t.elts[1],
                     )?;
+                    // PMAT-696: a float dict KEY lowers to `HashMap<f64, _>`
+                    // (E0277 — `f64: !Eq`, `!Hash`). Reject cleanly. A float
+                    // VALUE is fine (only the key is hashed), so `v_ty` is not
+                    // checked.
+                    reject_float_hashed(fn_name, site, "dict key", &k_ty)?;
                     Ok(Type::Dict(Box::new(k_ty), Box::new(v_ty)))
                 }
                 // PMAT-494: `tuple[T0, T1, ...]` (or single `tuple[T]`).
@@ -11079,6 +11089,27 @@ fn type_contains_float(ty: &Type) -> bool {
     }
 }
 
+/// PMAT-696: a hashed position (set element / dict key) whose type contains a
+/// `f64` lowers to `HashSet<f64>` / `HashMap<f64, _>`, which is invalid Rust
+/// (`f64: !Eq`, `!Hash` → E0277) — a transpile success that fails `rustc`. Reject
+/// at lowering instead, with a message that names the offending site. (`f64`
+/// directly, or inside a tuple/list element — reuses [`type_contains_float`].)
+fn reject_float_hashed(
+    fn_name: &str,
+    site: &str,
+    position: &str,
+    ty: &Type,
+) -> Result<(), FrontendError> {
+    if type_contains_float(ty) {
+        return Err(FrontendError::Lower(format!(
+            "function `{fn_name}` uses a float-typed {position} at `{site}` ({ty:?}) — \
+             a float can't key a Rust `HashSet`/`HashMap` (`f64` is not `Eq`/`Hash`). \
+             Use an int/str key, round to an int, or key on a string form at v0.2.0"
+        )));
+    }
+    Ok(())
+}
+
 fn sort_key_is_float(ctx: &LoweringCtx, key: &SortKey, elem_type: Option<Type>) -> bool {
     let mut sub = ctx.clone();
     if let Some(ty) = elem_type {
@@ -13794,6 +13825,11 @@ fn lower_dict_literal_in_ctx(
         }
         pairs.push((lk, lv));
     }
+    // PMAT-696: a float dict KEY → `HashMap<f64, _>` (E0277). Reject the
+    // un-annotated literal form (`{1.5: 3}`) too. A float value is fine.
+    if let Some(ty) = &k_ty {
+        reject_float_hashed(&ctx.fn_name, "dict literal", "dict key", ty)?;
+    }
     Ok(Expr::DictLit(pairs))
 }
 
@@ -13865,6 +13901,11 @@ fn lower_set_literal_in_ctx(
             elem_ty = Some(ty);
         }
         elems.push(lowered);
+    }
+    // PMAT-696: a float set element → `HashSet<f64>` (E0277). Reject the
+    // un-annotated literal form (`{1.5, 2.5}`) too, not just `set[float]`.
+    if let Some(ty) = &elem_ty {
+        reject_float_hashed(&ctx.fn_name, "set literal", "set element", ty)?;
     }
     Ok(Expr::SetLit(elems))
 }
