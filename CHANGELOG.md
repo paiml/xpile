@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.401] — 2026-06-16
+
+### Fixed
+
+- **PMAT-702 — `ord()` requires exactly one character.** `ord("ab")` silently returned the
+  first char's code point (`97`) instead of raising `TypeError` like Python; only the
+  empty-string case was guarded (the emit `.chars().next().expect(...)` ignored trailing
+  chars). **Fix**: `Expr::Ord` binds the chars iterator, takes the first char (panic if
+  empty, ≈ Python TypeError), and panics if a second char follows (≈ TypeError for a
+  multi-char string). Emitted as a parenthesized block so it stays a valid expression in any
+  position (`ord(c) + 1`). Mirrored in the rust and ruchy codegens. Differential-verified vs
+  python3 (single char incl. Unicode `é`→233, `ord(c)+1` arithmetic, multi-char + empty →
+  panic). New e2e fixture `ord_single_char.py` (rustc round-trip); existing `ord_chr`
+  regression intact. e2e 459 → 460. Found by HUNT-V8 (item V8-15).
+
 ## [0.1.400] — 2026-06-16
 
 ### Fixed
