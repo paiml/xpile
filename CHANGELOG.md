@@ -19,6 +19,35 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.329] — 2026-06-15
+
+Tranche 2 — PMAT-630: **correctness** — user-function call arguments are lowered context-aware.
+
+- A context-dependent argument to a user-function call — a `bool` `and`/`or`/`not`/
+  ternary like `g(5, c and d)` — was rejected ("operands of `and`/`or` must be
+  Bool"). The context-aware Call lowering delegated to the context-free
+  `lower_call` (args via `lower_expr`), losing the param type bindings, so the
+  bool operands were mis-typed. (Same `lower_call`-is-context-free root as
+  PMAT-627.) Found by differential hunt #9 (H9-15).
+- Fix (frontend, no new IR): a Name-callee user-function call now lowers its args
+  via `lower_expr_in_ctx` and builds `Expr::Call` directly (still cloning reused
+  non-Copy args); `len` / non-Name callees fall back to `lower_call`. Common
+  int/str args are unchanged; only context-dependent args are now typed correctly.
+- New e2e fixture `bool_arg_to_call.py` cross-checked vs python3. 389 e2e fixtures.
+
+## [0.1.328] — 2026-06-15
+
+Tranche 2 — PMAT-629: **correctness** — `s *= n` (str) and `xs *= n` (list) are repetition, not numeric multiply.
+
+- `s *= n` emitted `String::checked_mul` → E0599 (invalid Rust), and `xs *= n`
+  was rejected ("only +="). Both are Python repetition (`s = s * n` / `xs = xs * n`).
+  Found by differential hunt #9 (H9-11).
+- Fix (frontend, no new IR): `combine_aug` routes a `Mult` with a str/list operand
+  through `try_repeat` → `Expr::Repeat` (the same node `s * n` / `xs * n` use); the
+  list aug-assign branch handles `*=` instead of rejecting it. An int `x *= 3`
+  stays numeric (`checked_mul`).
+- New e2e fixture `mul_assign_repeat.py` cross-checked vs python3. 388 e2e fixtures.
+
 ## [0.1.327] — 2026-06-15
 
 Tranche 2 — PMAT-628: **correctness** — clone a reused non-Copy var in a list literal / append.
