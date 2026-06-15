@@ -83,6 +83,17 @@ pub enum Item {
         /// matching the codegen guard. `#[serde(default)]` for back-compat.
         #[serde(default)]
         frozen: bool,
+        /// PMAT-648 (classes epic): the class is `@dataclass(order=True)` — Python
+        /// generates `__lt__`/`__le__`/`__gt__`/`__ge__` comparing the fields as a
+        /// tuple (definition order). The Rust/Ruchy codegen adds `PartialOrd` to
+        /// the derive list (lexicographic by field order, matching Python's tuple
+        /// comparison) so `Inst < Inst` etc. compile. `PartialOrd` is sound for
+        /// any comparable field (incl. `f64`); full `Ord` (sorting instances) is a
+        /// deferred follow-up (a float field can't derive `Ord`). Bare
+        /// `@dataclass` / `order=False` keep the non-comparable derive set.
+        /// `#[serde(default)]` for back-compat.
+        #[serde(default)]
+        order: bool,
     },
     /// PMAT-513 (Tranche 2): a Python `class C(Enum):` with `NAME = <int literal>`
     /// members → a Rust enum. `variants` are `(name, discriminant)` in declaration

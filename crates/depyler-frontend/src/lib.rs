@@ -1401,13 +1401,25 @@ fn is_property(m: &ast::StmtFunctionDef) -> bool {
 /// with a `frozen=True` keyword; bare `@dataclass` / `frozen=False` are not
 /// frozen.
 fn class_is_frozen(c: &ast::StmtClassDef) -> bool {
+    dataclass_kw_true(c, "frozen")
+}
+
+/// PMAT-648: true if a class carries `@dataclass(order=True)`. Python then
+/// generates ordering dunders comparing the fields as a tuple; the codegen adds a
+/// `PartialOrd` derive. Mirrors [`class_is_frozen`].
+fn class_has_order(c: &ast::StmtClassDef) -> bool {
+    dataclass_kw_true(c, "order")
+}
+
+/// Shared: true if some `@dataclass(<kw>=True)` decorator is present.
+fn dataclass_kw_true(c: &ast::StmtClassDef, kw_name: &str) -> bool {
     c.decorator_list.iter().any(|d| {
         let ast::Expr::Call(call) = d else { return false };
         if !matches!(call.func.as_ref(), ast::Expr::Name(n) if n.id.as_str() == "dataclass") {
             return false;
         }
         call.keywords.iter().any(|kw| {
-            kw.arg.as_deref() == Some("frozen")
+            kw.arg.as_deref() == Some(kw_name)
                 && matches!(&kw.value, ast::Expr::Constant(c) if matches!(c.value, ast::Constant::Bool(true)))
         })
     })
@@ -1524,8 +1536,10 @@ fn lower_class_def(
     enums: Rc<HashMap<String, Vec<(String, i64)>>>,
 ) -> Result<Item, FrontendError> {
     let (name, fields, _, _) = class_def_signature(&c)?;
-    // PMAT-592: record `@dataclass(frozen=True)` before `c.body` is consumed.
+    // PMAT-592/648: record `@dataclass(frozen=True)`/`(order=True)` before
+    // `c.body` is consumed.
     let frozen = class_is_frozen(&c);
+    let order = class_has_order(&c);
     let self_ty = Type::Struct(name.clone());
     let mut methods: Vec<Function> = Vec::new();
     for stmt in c.body {
@@ -1657,6 +1671,7 @@ fn lower_class_def(
         fields,
         methods,
         frozen,
+        order,
     })
 }
 

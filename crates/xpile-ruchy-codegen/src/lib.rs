@@ -95,18 +95,24 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
                 fields,
                 methods,
                 frozen,
+                order,
             } => {
-                // PMAT-592: frozen dataclass is hashable → derive Eq, Hash when
-                // all fields are Eq+Hash-capable. Matches the Rust backend.
+                // PMAT-592/648: frozen dataclass → derive Eq, Hash (all fields
+                // Eq+Hash-capable); order=True → derive PartialOrd. Matches the
+                // Rust backend.
                 let derive_eq_hash = *frozen
                     && fields
                         .iter()
                         .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool | Type::Str));
+                let mut derives = vec!["Clone", "Debug", "PartialEq"];
                 if derive_eq_hash {
-                    out.push_str("#[derive(Clone, Debug, PartialEq, Eq, Hash)]\n");
-                } else {
-                    out.push_str("#[derive(Clone, Debug, PartialEq)]\n");
+                    derives.push("Eq");
+                    derives.push("Hash");
                 }
+                if *order {
+                    derives.push("PartialOrd");
+                }
+                writeln!(out, "#[derive({})]", derives.join(", "))?;
                 writeln!(out, "pub struct {name} {{")?;
                 for (field, ty) in fields {
                     write!(out, "    pub {field}: ")?;
