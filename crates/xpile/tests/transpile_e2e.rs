@@ -2900,13 +2900,15 @@ fn main() {
 #[test]
 fn list_comp_range() {
     let rust = xpile_transpile_to_rust("list_comp_range.py");
-    // Range comp desugars to a counter while-loop, not a ForEach.
+    // PMAT-635: range comp desugars to a counter while-loop (not a ForEach),
+    // using a fresh synthetic counter `__forc{N}` so the comprehension variable
+    // does not leak into the enclosing scope.
     assert!(
-        rust.contains("let mut x: i64 = 0i64;") && rust.contains("while (x < n) {"),
+        rust.contains("let mut __forc0: i64 = 0i64;") && rust.contains("while (__forc0 < n) {"),
         "range counter loop:\n{rust}"
     );
     assert!(
-        rust.contains("let mut x: i64 = 1i64;"),
+        rust.contains("let mut __forc0: i64 = 1i64;"),
         "range(1, n) start:\n{rust}"
     );
     let driver = r#"
@@ -2918,6 +2920,31 @@ fn main() {
 }
 "#;
     assert_rustc_runs("list_comp_range", &rust, driver);
+}
+
+/// PMAT-635: **correctness** — a range-comprehension variable is scoped to the
+/// comprehension and must not leak into / clobber an enclosing binding (Python
+/// semantics). Previously `[i for i in range(3)]` desugared to a function-scope
+/// `let mut i` counter that shadowed an outer `i` (param/local). The fix renames
+/// the counter to a fresh `__forc{N}`. Covers list/dict/set comps; cross-checked
+/// vs python3.
+#[test]
+fn comp_var_no_leak() {
+    let rust = xpile_transpile_to_rust("comp_var_no_leak.py");
+    // The counter is synthetic; the user variable `i` is never the loop counter.
+    assert!(
+        rust.contains("__forc0"),
+        "expected synthetic comp counter:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(list_no_leak(99), 102); // param i (99) preserved + len 3
+    assert_eq!(dict_no_leak(99), 102);
+    assert_eq!(set_no_leak(99), 102);
+    assert_eq!(comp_values(), 34);
+}
+"#;
+    assert_rustc_runs("comp_var_no_leak", &rust, driver);
 }
 
 /// PMAT-502bb (Tranche 2): in-place dict merge `a.update(b)` →
@@ -2986,13 +3013,15 @@ fn main() {
 #[test]
 fn dict_set_comp_range() {
     let rust = xpile_transpile_to_rust("dict_set_comp_range.py");
-    // Range comp desugars to a counter while-loop, not a ForEach.
+    // PMAT-635: range comp desugars to a counter while-loop (not a ForEach),
+    // using a fresh synthetic counter `__forc{N}` so the comprehension variable
+    // does not leak into the enclosing scope.
     assert!(
-        rust.contains("let mut x: i64 = 0i64;") && rust.contains("while (x < n) {"),
+        rust.contains("let mut __forc0: i64 = 0i64;") && rust.contains("while (__forc0 < n) {"),
         "range counter loop:\n{rust}"
     );
     assert!(
-        rust.contains("let mut x: i64 = 2i64;"),
+        rust.contains("let mut __forc0: i64 = 2i64;"),
         "range(2, n) start:\n{rust}"
     );
     let driver = r#"
