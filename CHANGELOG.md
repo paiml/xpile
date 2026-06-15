@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.367] — 2026-06-15
+
+Tranche 2 — PMAT-668: **correctness** — `sep.join(d)` over a dict joins its keys.
+
+- `",".join(d)` over a dict emitted `d.join(...)` on a HashMap (no `.join` method
+  → E0599). In Python, iterating a dict yields its keys, so `sep.join(d)` joins
+  the (string) keys.
+- Fix (frontend only, the str-method `.join()` lowering, no IR change):
+  materialize the join argument through `materialize_iterable_arg` (dict→keys,
+  set→list, range→Vec, list→passthrough), mirroring PMAT-656. So `",".join(d)`
+  lowers the same as `",".join(d.keys())`.
+- Differential-verified vs python3 (single-key dict join; set-join bonus; list
+  and `d.keys()` regressions). New e2e fixture `join_dict_keys.py`. 425 e2e
+  fixtures. Found by HUNT-V4. (Multi-key join order is the deferred PMAT-537
+  dict-iteration-order limitation.)
+
 ## [0.1.366] — 2026-06-15
 
 Tranche 2 — PMAT-667: **correctness** — bool-result `and`/`or` with a truthy operand.
