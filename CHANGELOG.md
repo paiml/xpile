@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.362] — 2026-06-15
+
+Tranche 2 — PMAT-663: **correctness** — `not <int>` / `not <float>` truthiness.
+
+- `not n` / `not len(xs)` / `not x` (float) were rejected ("not requires Bool
+  operand"), even though they're everyday Python. Completes PMAT-661 (if/while/
+  elif/ternary int/float truthiness) for the `not` operator.
+- Fix (frontend only, the context-aware `not` arm, no IR change): add int →
+  `n == 0` and float → `x == 0.0` (the container `not` → `len(c) == 0` arm
+  already existed). Float edges match Python: `not -0.0` is true (falsy), `not
+  nan` is false (nan truthy).
+- Differential-verified vs python3 (not int, not len, not float; container and
+  bool `not` regressions). New e2e fixture `not_int_truthiness.py`. 420 e2e
+  fixtures. Found by HUNT-V4.
+
 ## [0.1.361] — 2026-06-15
 
 Tranche 2 — PMAT-662: **correctness** — a `_` discard in tuple-unpack is never `mut`.
