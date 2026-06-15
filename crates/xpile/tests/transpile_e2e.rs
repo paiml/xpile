@@ -8935,6 +8935,34 @@ fn main() {
     assert_rustc_runs("any_all_short_circuit", &rust, driver);
 }
 
+/// PMAT-690: `None` in value positions over `Optional[T]`, previously rejected
+/// ("unsupported constant: Discriminant(0)"). (1) an Optional accumulator
+/// `result: Optional[int] = None` lowers to `let mut result: Option<i64> = None;`
+/// and a later `result = v` wraps in `Some(v)`; (2) `x == None` / `x != None` map
+/// to `.is_none()` / `.is_some()` over an Optional operand. Cross-checked vs python3.
+#[test]
+fn none_value_literal() {
+    let rust = xpile_transpile_to_rust("none_value_literal.py");
+    assert!(
+        rust.contains("let mut result: Option<i64> = None;")
+            && rust.contains("result = Some(x);")
+            && rust.contains("(x).is_none()")
+            && rust.contains("(x).is_some()"),
+        "None value-position lowering:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(first_even(vec![1, 3, 4, 7, 8]), Some(8));   // accumulator, last even
+    assert_eq!(first_even(vec![1, 3, 5]), None);            // never assigned
+    assert_eq!(is_unset(None), true);                        // == None
+    assert_eq!(is_unset(Some(5)), false);
+    assert_eq!(is_set(None), false);                         // != None
+    assert_eq!(is_set(Some(5)), true);
+}
+"#;
+    assert_rustc_runs("none_value_literal", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a

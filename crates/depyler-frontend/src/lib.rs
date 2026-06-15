@@ -5113,6 +5113,19 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
     // `Stmt::Assign` (the backend will write `name = value;` and the
     // earlier `Let` will be `let mut`). Otherwise, fresh `Let`.
     if ctx.bound.contains(&name) {
+        // PMAT-690: reassigning a bare `T` to an `Optional[T]`-typed variable
+        // wraps the value in `Some(..)` (`result = x` where `result:
+        // Optional[int]` → `result = Some(x)`), mirroring the Optional-return
+        // wrapping. A value that already types as `Optional` passes through (no
+        // double-wrap); this is what makes the common `r: Optional[T] = None; …;
+        // r = v` accumulator (PMAT-690 case 1) compile.
+        let value = if matches!(ctx.name_types.get(&name), Some(Type::Optional(_)))
+            && !matches!(ty, Type::Optional(_))
+        {
+            Expr::OptionExpr(Some(Box::new(value)))
+        } else {
+            value
+        };
         Ok(Stmt::Assign { name, value })
     } else {
         let mutable = ctx.mutable.contains(&name);
@@ -7178,6 +7191,19 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
                 )));
             }
             Expr::ListLit(Vec::new())
+        }
+        // PMAT-690: `x: Optional[T] = None` — the annotation supplies the
+        // `Option<T>` type the bare `None` can't (mirrors empty list/dict). Lower
+        // to `OptionExpr(None)` (Rust `None`); the `let`'s annotation types it.
+        // `None` against a non-Optional annotation is a clear mismatch.
+        ast::Expr::Constant(c) if matches!(c.value, ast::Constant::None) => {
+            if !matches!(declared_ty, Type::Optional(_)) {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` assigns `None` to `{name}` annotated as {declared_ty:?}; `None` requires an `Optional[T]` annotation",
+                    ctx.fn_name
+                )));
+            }
+            Expr::OptionExpr(None)
         }
         _ => lower_expr_in_ctx(ctx, (*value_expr).clone())?,
     };
@@ -13367,25 +13393,31 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
             "malformed comparison (ops/comparators mismatch) — unreachable Python AST".into(),
         ));
     }
-    // PMAT-502ex: `x is None` / `x is not None` over an `Optional`-typed value
-    // → `Expr::IsNone` (`.is_none()` / `.is_some()`). A single `is`/`is not`
-    // comparison against the `None` constant; the operand must type as
+    // PMAT-502ex / PMAT-690: `x is None` / `x is not None` — AND `x == None` /
+    // `x != None` — over an `Optional`-typed value → `Expr::IsNone`
+    // (`.is_none()` / `.is_some()`). For `None`, Python's `==`/`!=` coincide with
+    // `is`/`is not` (None is a singleton; an Optional[T] never defines a custom
+    // `__eq__` against None in this subset), so both map to the same check. A
+    // single comparison against the `None` constant; the operand must type as
     // `Optional` (a `None` test on a non-Optional value is degenerate — Python
-    // always-False — and deferred). Intercepted before the operand loop because
-    // a bare `None` constant has no value-position lowering.
+    // always-False — and deferred). Intercepted before the operand loop because a
+    // bare `None` constant has no value-position lowering.
     if c.ops.len() == 1
-        && matches!(c.ops[0], ast::CmpOp::Is | ast::CmpOp::IsNot)
+        && matches!(
+            c.ops[0],
+            ast::CmpOp::Is | ast::CmpOp::IsNot | ast::CmpOp::Eq | ast::CmpOp::NotEq
+        )
         && matches!(&c.comparators[0], ast::Expr::Constant(k) if matches!(k.value, ast::Constant::None))
     {
         let value = lower_expr_in_ctx(ctx, (*c.left).clone())?;
         if matches!(infer_type_in_ctx(ctx, &value), Type::Optional(_)) {
             return Ok(Expr::IsNone {
                 value: Box::new(value),
-                negated: matches!(c.ops[0], ast::CmpOp::IsNot),
+                negated: matches!(c.ops[0], ast::CmpOp::IsNot | ast::CmpOp::NotEq),
             });
         }
         return Err(FrontendError::Lower(format!(
-            "function `{}` uses `is None` / `is not None` on a non-`Optional` value — v0.2.0 supports the `None` test only on `Optional[T]` values",
+            "function `{}` compares against `None` (`is`/`==`) on a non-`Optional` value — v0.2.0 supports the `None` test only on `Optional[T]` values",
             ctx.fn_name
         )));
     }
