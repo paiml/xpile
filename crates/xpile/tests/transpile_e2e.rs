@@ -2212,6 +2212,27 @@ fn main() {
     assert_rustc_runs("divmod_builtin", &rust, driver);
 }
 
+/// PMAT-657: `divmod(float, float)` → `(a // b, a % b)` over the float ops.
+/// The int path inlined the tuple, but a float arg fell through to an undefined
+/// free `divmod(...)` call (E0425). The float floor-div/mod ops already match
+/// CPython (sign follows the divisor). Cross-checked vs python3.
+#[test]
+fn divmod_float() {
+    let rust = xpile_transpile_to_rust("divmod_float.py");
+    assert!(
+        !rust.contains("divmod("),
+        "divmod(float) must not emit a bare divmod() call:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(dm_pos(), 301.5);          // (3.0, 1.5) — was E0425
+    assert_eq!(dm_neg_dividend(), -399.5); // (-4.0, 0.5)
+    assert_eq!(dm_neg_divisor(), -400.5);  // (-4.0, -0.5)
+}
+"#;
+    assert_rustc_runs("divmod_float", &rust, driver);
+}
+
 /// PMAT-502o (Tranche 2): substring containment `sub in s` (str) →
 /// `(s).contains(&(sub)[..])`; `not in` wraps it in `!`.
 #[test]
