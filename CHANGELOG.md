@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.372] — 2026-06-15
+
+### Added
+
+- **PMAT-673 — tuple concatenation `a + b`.** `a + b` over two tuples is
+  CONCATENATION in Python (`(1, 2) + (3, 4)` == `(1, 2, 3, 4)`), not numeric
+  addition. Rust tuples have no `+`, so the old path fell through to the i64-arith
+  lowering — the result mis-typed as `I64` and the body-vs-annotation check
+  rejected it ("body produces I64"), or the backend would have emitted
+  `(a).checked_add(b)` (E0599). **Fix** (frontend only, the context-aware `BinOp`
+  lowering; NO IR change): when `+` is applied to two `Type::Tuple` operands, build
+  a fresh `Expr::TupleLit` reading each field of `a` then `b` via `TupleIndex` over
+  the ORIGINAL operand (so each field type-infers correctly for any element type
+  and, for a name operand, has no side effect). A field-per-operand read duplicates
+  the operand, so the lowering is restricted to side-effect-free operands (a name or
+  a tuple literal); a call-result operand (`f() + g()`) is rejected cleanly with
+  guidance to bind it to a local first. Differential-verified vs python3 (int/str
+  tuples, chained `a + b + c`, local-tuple concat). New e2e fixture
+  `tuple_concat.py` (rustc round-trip). e2e 429 → 430. Found by HUNT-V5
+  (tuple-ops-2-4).
+
 ## [0.1.371] — 2026-06-15
 
 ### Fixed
