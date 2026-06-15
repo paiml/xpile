@@ -2401,6 +2401,30 @@ fn main() {
     assert_rustc_runs("tuple_index", &rust, driver);
 }
 
+/// PMAT-671: `x in t` / `x not in t` over a fixed-arity tuple → a chained-OR of
+/// equalities (`x == t.0 || …`). Was rejected ("unsupported comparison operator:
+/// In") — Rust tuples have no `.contains`. Cross-checked vs python3.
+#[test]
+fn tuple_membership() {
+    let rust = xpile_transpile_to_rust("tuple_membership.py");
+    assert!(
+        rust.contains("(x == (t).0.clone()) || (x == (t).1.clone())"),
+        "x in tuple should be a chained-OR of equalities:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(contains((1, 2, 3), 2), 1);   // was rejected
+    assert_eq!(contains((1, 2, 3), 9), 0);
+    assert_eq!(not_contains((1, 2, 3), 9), 1);
+    assert_eq!(not_contains((1, 2, 3), 2), 0);
+    assert_eq!(contains_str(("a".to_string(), "b".to_string()), "b".to_string()), 1);
+    assert_eq!(contains_str(("a".to_string(), "b".to_string()), "z".to_string()), 0);
+    assert_eq!(list_in_regression(vec![1, 2], 2), 1);
+}
+"#;
+    assert_rustc_runs("tuple_membership", &rust, driver);
+}
+
 /// PMAT-670: a NEGATIVE constant tuple index `t[-k]` resolves at compile time to
 /// the field access `t.(arity - k)` (Python from-the-end). The old path fell to
 /// the list-style runtime wrap (`__lc.len()...`) → E0599 (a tuple has no `.len()`).

@@ -9877,6 +9877,46 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         contains
                     });
                 }
+                // PMAT-671: `x in t` / `x not in t` over a fixed-arity tuple →
+                // a chained-OR of equalities `x == t.0 || x == t.1 || …` (Rust
+                // tuples have no `.contains`). Only for a homogeneous tuple whose
+                // element type matches the needle — a heterogeneous tuple would
+                // type-mismatch under `==` (Python's per-element compare there is
+                // rare; falls through to the existing reject). An empty tuple → `false`.
+                if let Type::Tuple(elem_tys) = infer_type_in_ctx(ctx, &rhs) {
+                    let needle = lower_expr_in_ctx(ctx, (*c.left).clone())?;
+                    let needle_ty = infer_type_in_ctx(ctx, &needle);
+                    if elem_tys.iter().all(|e| *e == needle_ty) {
+                        let mut acc: Option<Expr> = None;
+                        for i in 0..elem_tys.len() {
+                            let eq = Expr::BinOp {
+                                op: BinOp::Eq,
+                                lhs: Box::new(needle.clone()),
+                                rhs: Box::new(Expr::TupleIndex {
+                                    tuple: Box::new(rhs.clone()),
+                                    index: i,
+                                }),
+                            };
+                            acc = Some(match acc {
+                                None => eq,
+                                Some(prev) => Expr::BinOp {
+                                    op: BinOp::Or,
+                                    lhs: Box::new(prev),
+                                    rhs: Box::new(eq),
+                                },
+                            });
+                        }
+                        let contains = acc.unwrap_or(Expr::LitBool(false));
+                        return Ok(if matches!(c.ops[0], ast::CmpOp::NotIn) {
+                            Expr::UnOp {
+                                op: UnOp::Not,
+                                operand: Box::new(contains),
+                            }
+                        } else {
+                            contains
+                        });
+                    }
+                }
             }
             // PMAT-502dc: regular (non-membership) comparisons lower their
             // operands context-aware so a builtin operand (`abs(n) > 0`,
