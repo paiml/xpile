@@ -1986,6 +1986,31 @@ fn main() {
     assert_rustc_runs("str_isnumeric", &rust, driver);
 }
 
+/// PMAT-695: `str.isascii()` → `(s).is_ascii()` (Bool, 0 args). True iff every
+/// char is ASCII (U+0000..=U+007F); the empty string is True in both Python and
+/// Rust, so — unlike the isdigit-family predicates — no empty guard. Cross-checked
+/// vs python3.
+#[test]
+fn str_isascii() {
+    let rust = xpile_transpile_to_rust("str_isascii.py");
+    assert!(
+        rust.contains("(s).is_ascii()"),
+        "isascii should emit `(s).is_ascii()`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(asc("abc".to_string()), true);
+    assert_eq!(asc("café".to_string()), false); // é is non-ASCII
+    assert_eq!(asc("123!".to_string()), true);
+    assert_eq!(asc_empty(), true); // empty is ASCII
+    // isalnum (empty-guarded predicate) stays distinct.
+    assert_eq!(still_alnum("ab12".to_string()), true);
+    assert_eq!(still_alnum("a b".to_string()), false);
+}
+"#;
+    assert_rustc_runs("str_isascii", &rust, driver);
+}
+
 /// PMAT-600: Python treats the C0 information separators FS/GS/RS/US
 /// (U+001C..U+001F) as whitespace for `isspace()` and `strip`/`lstrip`/`rstrip`;
 /// Rust's `char::is_whitespace()` / `trim()` excludes them. The predicate now
