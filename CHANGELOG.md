@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.344] — 2026-06-15
+
+Tranche 2 — PMAT-645: starred unpacking `n0, …, *rest = xs` (star last).
+
+- `a, *rest = xs` (head/tail destructuring) was rejected ("non-Name
+  tuple-unpacking target"). Added the star-LAST form over a list: prefix names +
+  one trailing `*star`.
+- Implementation (frontend desugar, no new IR): a `lower_block_stmt` hook routes
+  a tuple target whose last element is `*name` to `lower_starred_unpack`, which
+  emits `let n_i = xs[i]` (Index) for each prefix name + `let star = xs[p:]`
+  (Slice) for the rest. A plain-variable RHS is indexed/sliced directly (each op
+  borrows, so the source is not moved); any other RHS is bound to a temp first.
+  Star-first (`*init, last`) / star-mid (`a, *mid, b`) deferred.
+- Differential-verified vs python3 (head/tail, multi-prefix, `(*rest,)`, empty
+  tail, from-var not-moved, from-call, str elements); plain tuple unpack
+  unaffected. New e2e fixture `starred_unpack.py`. 404 e2e fixtures.
+
 ## [0.1.343] — 2026-06-15
 
 Tranche 2 — PMAT-644: `str.rsplit(sep, maxsplit)`.
