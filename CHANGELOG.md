@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.350] — 2026-06-15
+
+Tranche 2 — PMAT-651: **correctness** — float floor-division preserves signed zero.
+
+- `-0.0 // 1.0` is `-0.0` in Python, but xpile emitted `+0.0` — a silent
+  value-divergence (the printed repr and any sign-dependent downstream use). The
+  fmod-based float floor-div formula snapped the quotient with `floor(0.0)`,
+  which is `+0.0`, dropping the sign.
+- Fix (both backends, the `FloatOp::FloorDiv` formula, no IR change): mirror
+  CPython's `float_divmod` — when the snapped quotient is zero, return
+  `copysign(0.0, a/b)` (a zero carrying the sign of the true quotient) instead of
+  the bare floor. Completes the signed-zero cluster (PMAT-650 fixed unary `-x`).
+- Differential-verified vs python3 over a broad truth-table (signed-zero
+  dividends/divisors, normal +/-, exact, both-negative, large magnitude) — 11
+  cases, all match; no regression on the fmod-divmod semantics. New e2e fixture
+  `floordiv_signed_zero.py`. 408 e2e fixtures. Found by HUNT-V2.
+
 ## [0.1.349] — 2026-06-15
 
 Tranche 2 — PMAT-650: **correctness** — unary float negation preserves signed zero.
