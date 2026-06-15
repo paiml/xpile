@@ -3649,6 +3649,31 @@ fn main() {
     assert_rustc_runs("float_floordiv_semantics", &rust, driver);
 }
 
+/// PMAT-651: float floor-division preserves the sign of a zero result. CPython's
+/// `float_divmod` returns `copysign(0.0, a/b)` when the snapped quotient is zero,
+/// so `-0.0 // 1.0` is `-0.0`; the fmod-based formula used to `floor(0.0)` →
+/// `+0.0`, dropping the sign. Cross-checked vs python3 (compares the printed
+/// repr, the only place `-0.0` vs `+0.0` is observable).
+#[test]
+fn floordiv_signed_zero() {
+    let rust = xpile_transpile_to_rust("floordiv_signed_zero.py");
+    assert!(
+        rust.contains("(0.0_f64).copysign(__fa / __fz)"),
+        "zero-quotient floor-div should copysign the sign of a/b:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(negzero_pos(), "-0.0");  // was "0.0" before the fix
+    assert_eq!(negzero_var(), "-0.0");  // was "0.0" before the fix
+    assert_eq!(pos_neg(), "-0.0");      // regression guard (already correct)
+    assert_eq!(poszero(), "0.0");
+    assert_eq!(normal_neg(), "-4.0");
+    assert_eq!(small_pos(), "0.0");     // +0.0 zero-quotient
+}
+"#;
+    assert_rustc_runs("floordiv_signed_zero", &rust, driver);
+}
+
 /// PMAT-614 (was PMAT-502br): float floor-division `a // b` is CPython
 /// `float_divmod` (fmod-based), not `(a / b).floor()`; modulo `a % b` is
 /// CPython `float_rem` (Python floor semantics, `%` follows the divisor's sign).
