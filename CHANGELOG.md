@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.341] — 2026-06-15
+
+Tranche 2 — PMAT-642: `enumerate(xs, start)` accepts a negative literal start.
+
+- `enumerate(xs, start=-1)` / `enumerate(xs, -5)` is valid Python but was
+  rejected ("non-literal start") — the start parser only matched a positive
+  `Constant(Int)`, not the `UnaryOp(USub, Int)` form Python uses for `-1`. The
+  codegen already `checked_add`s the start onto the index, so a negative start
+  needs no codegen change. Found by a differential probe.
+- Fix (frontend only, no new IR): new `extract_int_literal` helper (a positive
+  or negated integer literal, allowing 0 — unlike `extract_step_literal`); the
+  enumerate start parser uses it, accepting negative literals and rejecting only
+  genuinely non-literal-int starts.
+- Differential-verified vs python3 (`start=-1` keyword, `-5` positional, 0,
+  positive, default). New e2e fixture `enumerate_neg_start.py`. 401 e2e fixtures.
+
 ## [0.1.340] — 2026-06-15
 
 Tranche 2 — PMAT-641: **correctness** — runtime-negative nested list-index WRITE wraps.
