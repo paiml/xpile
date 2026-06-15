@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.390] — 2026-06-15
+
+### Added
+
+- **PMAT-691 — `str.strip`/`lstrip`/`rstrip` with a char-set arg.** `s.strip(chars)`
+  / `lstrip` / `rstrip` with a char-SET argument was rejected ("expected exactly 0"
+  positional args) — only the 0-arg whitespace form worked. Python strips any
+  leading/trailing char that is IN the set (a set of chars, not a substring).
+  **Fix**: (frontend) relax the str-method arg-count gate (`allows_charset`) so
+  strip/lstrip/rstrip accept an optional 1-arg char set; (codegen, rust + ruchy
+  mirrored) emit `(s).trim_matches(|__c: char| __cs.contains(__c)).to_string()`
+  (`trim_start_matches` / `trim_end_matches` for lstrip/rstrip), binding the set
+  to a temp. The 0-arg whitespace form is unchanged. Differential-verified vs
+  python3 (`"...hi!!".strip(".,!")` → "hi", lstrip/rstrip, 0-arg whitespace
+  regression). New e2e fixture `str_strip_charset.py` (rustc round-trip). e2e
+  447 → 448. Found by HUNT-V7 (item V7-9).
+
 ## [0.1.389] — 2026-06-15
 
 ### Added
