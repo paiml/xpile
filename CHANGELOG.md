@@ -19,6 +19,25 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.351] — 2026-06-15
+
+Tranche 2 — PMAT-652: **correctness** — set relational predicates don't move their operands.
+
+- The set predicates `a <= b` / `>=` / `<` / `>` and `a.issubset(b)` /
+  `issuperset` / `isdisjoint` lowered to `{ let __l = <lhs>; let __r = <rhs>;
+  __l.is_subset(&__r) }` — binding the operands *by value*. That moved a set
+  operand, so comparing a set then reusing it (`a <= b; ... len(a)`) or
+  self-comparing (`a <= a`, `a.isdisjoint(a)`) failed to compile with E0382.
+- Fix (both backends, the `Expr::SetPred` arm, no IR change): bind the operands
+  by reference — `let __l = &(<lhs>); let __r = &(<rhs>); __l.is_subset(__r)`.
+  `&(expr)` borrows an Ident operand and extends a temporary operand via
+  temporary-lifetime-extension; `__l != __r` still works on the references.
+  Fixes both the reuse case and self-comparison.
+- Differential-verified vs python3 (subset/superset/disjoint/proper, reuse, and
+  self-comparison). New e2e fixture `set_predicates_no_move.py`. 409 e2e
+  fixtures. Found by HUNT-V3 (the fresh differential hunt that refilled the
+  backlog with 34 findings).
+
 ## [0.1.350] — 2026-06-15
 
 Tranche 2 — PMAT-651: **correctness** — float floor-division preserves signed zero.
