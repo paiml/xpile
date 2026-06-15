@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.377] — 2026-06-15
+
+### Fixed
+
+- **PMAT-678 — identity comprehension keeps its element type.** An identity
+  comprehension `[w for w in words]` over `list[str]` was mis-typed as `List(I64)`,
+  so `sorted([w for w in words])` / `max([w for w in words])` rejected with
+  "declared return type List(Str) but body produces List(I64)". Root cause: the
+  `Expr::Map { lambda, .. }` type-inference arms inferred the body with the loop var
+  UNBOUND (a bare-var identity body hit the I64 default). Lowering already binds the
+  var (PMAT-525/531); only the later inference pass didn't. **Fix** (frontend only,
+  NO IR change): in `infer_type_in_ctx`'s `Map` arm, infer the iterable's element
+  type and bind the loop var to it in a cloned ctx (new `bind_comp_param` helper —
+  handles a plain name and the `(k, v)` tuple-destructure string) before inferring
+  the body; the context-free `infer_type` arm special-cases the identity body.
+  Flows correctly into `Sorted`/`ListMinMax`/the return-type check.
+  Differential-verified vs python3 (str sort/max, filtered comprehension, int
+  regression, `for k, v in d.items()` tuple target). New e2e fixture
+  `identity_comprehension_str.py` (rustc round-trip). e2e 434 → 435. Found by
+  HUNT-V6 (item C1).
+
 ## [0.1.376] — 2026-06-15
 
 ### Added
