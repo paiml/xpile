@@ -1126,15 +1126,32 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             }
             // PMAT-502aw: `.rjust(w)`/`.ljust(w)`, matching the Rust backend.
             if matches!(op, StrMethodOp::RJust | StrMethodOp::LJust) {
-                out.push_str(if matches!(op, StrMethodOp::RJust) {
-                    "format!(\"{:>1$}\", "
+                let is_r = matches!(op, StrMethodOp::RJust);
+                if args.len() == 2 {
+                    // PMAT-632: optional fill char, matching the Rust backend.
+                    out.push_str("{ let __s = (");
+                    emit_expr(out, recv, mode)?;
+                    out.push_str("); let __w = (");
+                    emit_expr(out, &args[0], mode)?;
+                    out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = (");
+                    emit_expr(out, &args[1], mode)?;
+                    out.push_str(").repeat(__w - __n); ");
+                    out.push_str(if is_r {
+                        "format!(\"{}{}\", __pad, __s) } }"
+                    } else {
+                        "format!(\"{}{}\", __s, __pad) } }"
+                    });
                 } else {
-                    "format!(\"{:<1$}\", "
-                });
-                emit_expr(out, recv, mode)?;
-                out.push_str(", (");
-                emit_expr(out, &args[0], mode)?;
-                out.push_str(") as usize)");
+                    out.push_str(if is_r {
+                        "format!(\"{:>1$}\", "
+                    } else {
+                        "format!(\"{:<1$}\", "
+                    });
+                    emit_expr(out, recv, mode)?;
+                    out.push_str(", (");
+                    emit_expr(out, &args[0], mode)?;
+                    out.push_str(") as usize)");
+                }
                 return Ok(());
             }
             // PMAT-502cq: `.removeprefix(p)`/`.removesuffix(p)` (block form,
@@ -1166,7 +1183,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 emit_expr(out, recv, mode)?;
                 out.push_str("); let __w = (");
                 emit_expr(out, &args[0], mode)?;
-                out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __marg = __w - __n; let __left = __marg / 2 + (__marg & __w & 1); format!(\"{}{}{}\", \" \".repeat(__left), __s, \" \".repeat(__marg - __left)) } }");
+                out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __marg = __w - __n; let __left = __marg / 2 + (__marg & __w & 1); ");
+                if args.len() == 2 {
+                    // PMAT-632: optional fill char, matching the Rust backend.
+                    out.push_str("let __fc = (");
+                    emit_expr(out, &args[1], mode)?;
+                    out.push_str("); format!(\"{}{}{}\", __fc.repeat(__left), __s, __fc.repeat(__marg - __left)) } }");
+                } else {
+                    out.push_str("format!(\"{}{}{}\", \" \".repeat(__left), __s, \" \".repeat(__marg - __left)) } }");
+                }
                 return Ok(());
             }
             // PMAT-502dj: `.partition(sep)` / `.rpartition(sep)` → 3-tuple.

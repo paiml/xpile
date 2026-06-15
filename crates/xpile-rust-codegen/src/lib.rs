@@ -1297,18 +1297,37 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, recv, mode)?;
                 out.push_str(").chars() { if __c.is_alphabetic() { if __pa { __tr.extend(__c.to_lowercase()); } else { __tr.extend(__c.to_uppercase()); } __pa = true; } else { __tr.push(__c); __pa = false; } } __tr }");
             } else if matches!(op, StrMethodOp::RJust | StrMethodOp::LJust) {
-                // PMAT-502aw: `.rjust(w)`/`.ljust(w)` → `format!("{:>1$}", s, w)`
-                // / `format!("{:<1$}", s, w)`. Rust's format width is a minimum,
-                // so a longer string is returned unchanged (matching Python).
-                out.push_str(if matches!(op, StrMethodOp::RJust) {
-                    "format!(\"{:>1$}\", "
+                let is_r = matches!(op, StrMethodOp::RJust);
+                if args.len() == 2 {
+                    // PMAT-632: `.rjust(w, fill)`/`.ljust(w, fill)` — Rust's
+                    // `format!` fill must be a literal, so pad manually by
+                    // repeating the fill string to the deficit char count.
+                    out.push_str("{ let __s = (");
+                    emit_expr(out, recv, mode)?;
+                    out.push_str("); let __w = (");
+                    emit_expr(out, &args[0], mode)?;
+                    out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = (");
+                    emit_expr(out, &args[1], mode)?;
+                    out.push_str(").repeat(__w - __n); ");
+                    out.push_str(if is_r {
+                        "format!(\"{}{}\", __pad, __s) } }"
+                    } else {
+                        "format!(\"{}{}\", __s, __pad) } }"
+                    });
                 } else {
-                    "format!(\"{:<1$}\", "
-                });
-                emit_expr(out, recv, mode)?;
-                out.push_str(", (");
-                emit_expr(out, &args[0], mode)?;
-                out.push_str(") as usize)");
+                    // PMAT-502aw: `.rjust(w)`/`.ljust(w)` → `format!("{:>1$}", s, w)`
+                    // / `format!("{:<1$}", s, w)`. Rust's format width is a minimum,
+                    // so a longer string is returned unchanged (matching Python).
+                    out.push_str(if is_r {
+                        "format!(\"{:>1$}\", "
+                    } else {
+                        "format!(\"{:<1$}\", "
+                    });
+                    emit_expr(out, recv, mode)?;
+                    out.push_str(", (");
+                    emit_expr(out, &args[0], mode)?;
+                    out.push_str(") as usize)");
+                }
             } else if matches!(op, StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix) {
                 // PMAT-502cq: `.removeprefix(p)`/`.removesuffix(p)` →
                 // `strip_prefix`/`strip_suffix`, returning the receiver
@@ -1337,7 +1356,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, recv, mode)?;
                 out.push_str("); let __w = (");
                 emit_expr(out, &args[0], mode)?;
-                out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __marg = __w - __n; let __left = __marg / 2 + (__marg & __w & 1); format!(\"{}{}{}\", \" \".repeat(__left), __s, \" \".repeat(__marg - __left)) } }");
+                out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __marg = __w - __n; let __left = __marg / 2 + (__marg & __w & 1); ");
+                if args.len() == 2 {
+                    // PMAT-632: `.center(w, fill)` — repeat the fill string on
+                    // both sides (same CPython left-bias as the space form).
+                    out.push_str("let __fc = (");
+                    emit_expr(out, &args[1], mode)?;
+                    out.push_str("); format!(\"{}{}{}\", __fc.repeat(__left), __s, __fc.repeat(__marg - __left)) } }");
+                } else {
+                    out.push_str("format!(\"{}{}{}\", \" \".repeat(__left), __s, \" \".repeat(__marg - __left)) } }");
+                }
             } else if matches!(op, StrMethodOp::Partition | StrMethodOp::RPartition) {
                 // PMAT-502dj: `.partition(sep)` / `.rpartition(sep)` → the
                 // 3-tuple `(before, sep, after)` at the first / last `sep`. The
