@@ -2195,7 +2195,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, exp, mode)?;
             out.push_str("); if __pme < 0 { panic!(\"xpile: ValueError: pow() 2nd argument cannot be negative when 3rd argument specified\"); } let __pmb0 = (");
             emit_expr(out, base, mode)?;
-            out.push_str("); let mut __pmb = { let __t = __pmb0 % __pmm; if __t < 0 { __t + __pmm } else { __t } }; let mut __pmr = 1i64 % __pmm; let mut __pmk = __pme; while __pmk > 0 { if __pmk & 1 == 1 { __pmr = (((__pmr as i128) * (__pmb as i128)) % (__pmm as i128)) as i64; } __pmk >>= 1; __pmb = (((__pmb as i128) * (__pmb as i128)) % (__pmm as i128)) as i64; } if __pmm < 0 && __pmr != 0 { __pmr += __pmm; } __pmr }");
+            // PMAT-619: do the whole modexp on the MAGNITUDE `|m|` (in i128, so
+            // `|i64::MIN|` doesn't overflow), then sign-correct the residue to the
+            // modulus's sign at the end. The old base-normalization
+            // `if __t < 0 { __t + __pmm }` and the `% __pmm` reductions assumed a
+            // POSITIVE modulus, so a NEGATIVE modulus (esp. with a negative base)
+            // produced wrong values (`pow(-2,3,-5)` gave 3, Python gives -3).
+            // Python `pow(a,b,m)` with `m<0` returns the residue in `(m, 0]`.
+            out.push_str("); let __pma = (__pmm as i128).abs(); let mut __pmb = { let __t = (__pmb0 as i128) % __pma; if __t < 0 { __t + __pma } else { __t } }; let mut __pmr = 1i128 % __pma; let mut __pmk = __pme; while __pmk > 0 { if __pmk & 1 == 1 { __pmr = (__pmr * __pmb) % __pma; } __pmk >>= 1; __pmb = (__pmb * __pmb) % __pma; } if __pmm < 0 && __pmr != 0 { __pmr -= __pma; } __pmr as i64 }");
         }
         // PMAT-502cj: `list(range(start, stop, step))` → a collected i64 range.
         Expr::RangeList { start, stop, step } => {
