@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.378] — 2026-06-15
+
+### Fixed
+
+- **PMAT-679 — `sum()` of floats with inf no longer poisons to NaN.** `sum()` over
+  floats uses Neumaier compensated summation (matching CPython 3.12+), but once the
+  running total goes non-finite the compensation term computes `inf - inf = NaN`,
+  poisoning the result: xpile returned `NaN` for `sum([1.0, inf, 2.0])` where Python
+  returns `inf`. **Fix** (codegen only, rust + ruchy, NO IR change): guard the
+  Neumaier compensation on `__st.is_finite()` — once the partial total is ±inf/NaN,
+  reset `__sc = 0.0` and skip the compensation add, so the final `__ss + __sc`
+  reflects the (non-finite) running total. The finite catastrophic-cancellation
+  behavior the fold exists for is fully preserved. Differential-verified vs python3:
+  `sum([1.0, inf, 2.0])` → inf, `sum([1e308, 1e308])` → inf, `sum([inf, -inf])` →
+  nan (matches), `sum([1.0, 1e16, 1.0, -1e16])` → 2.0, `sum([0.1]*10)` → 1.0. New
+  e2e fixture `sum_float_inf.py` (rustc round-trip). e2e 435 → 436. Found by HUNT-V6
+  (item A3).
+
 ## [0.1.377] — 2026-06-15
 
 ### Fixed
