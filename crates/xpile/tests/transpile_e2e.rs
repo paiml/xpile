@@ -3664,6 +3664,28 @@ fn main() {
     assert_rustc_runs("float_power", &rust, driver);
 }
 
+/// PMAT-636: `int ** <negative int literal>` is a float in Python
+/// (`2 ** -1 == 0.5`), not an integer. A negative-literal exponent (detected
+/// from the AST, including the `UnaryOp(USub, ...)` form) takes the float-power
+/// path; non-negative integer powers stay integer. Cross-checked vs python3.
+#[test]
+fn neg_int_power() {
+    let rust = xpile_transpile_to_rust("neg_int_power.py");
+    // The negative-exponent forms use `powf`; the positive form stays `checked_pow`.
+    assert!(rust.contains(".powf("), "neg-exp float power:\n{rust}");
+    assert!(rust.contains("checked_pow"), "pos-exp int power:\n{rust}");
+    let driver = r#"
+fn main() {
+    assert!((half() - 0.5).abs() < 1e-12);
+    assert!((milli() - 0.001).abs() < 1e-12);
+    assert!((recip_sq(2) - 0.25).abs() < 1e-12);
+    assert!((sum_neg_powers() - 0.75).abs() < 1e-12);
+    assert_eq!(pos_power(), 1024);
+}
+"#;
+    assert_rustc_runs("neg_int_power", &rust, driver);
+}
+
 /// PMAT-502bu (Tranche 2): float augmented assignment with a non-float rhs
 /// casts the int side to f64 (no `f64 <op> i64` mismatch), and `**=` uses
 /// `powf` (not the int `checked_pow` path).
