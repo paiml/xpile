@@ -9305,6 +9305,24 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                 }
             }
+            // PMAT-630: lower a user-function call's args CONTEXT-AWARE. `lower_call`
+            // lowers args via the context-free `lower_expr`, which loses parameter
+            // type bindings — so a context-dependent argument (a `bool` `and`/`or`/
+            // `not`/ternary like `g(5, c and d)`, a nested call, a dict read) was
+            // mis-typed and rejected ("operands of `and`/`or` must be Bool"). The
+            // callee is a Name here (builtins were handled earlier in this match;
+            // `len` is too, but exclude it defensively and let `lower_call` own it).
+            if let ast::Expr::Name(n) = call.func.as_ref() {
+                let callee = n.id.to_string();
+                if callee != "len" {
+                    let args = call
+                        .args
+                        .iter()
+                        .map(|a| lower_expr_in_ctx(ctx, a.clone()))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    return Ok(clone_reused_call_args(ctx, Expr::Call { callee, args }));
+                }
+            }
             // PMAT-588: clone reused non-Copy call args (E0382 fix).
             lower_call(call).map(|e| clone_reused_call_args(ctx, e))
         }

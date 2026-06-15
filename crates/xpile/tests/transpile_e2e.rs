@@ -4188,6 +4188,29 @@ fn main() {
     assert_rustc_runs("zfill", &rust, driver);
 }
 
+/// PMAT-630: a context-dependent argument to a user-function call — a `bool`
+/// `and`/`or`/`not`/ternary expression — was lowered context-free (`lower_call`
+/// uses `lower_expr`), losing param types, so `g(5, c and d)` was rejected
+/// ("operands of `and`/`or` must be Bool"). User-call args are now lowered
+/// context-aware. Found by hunt #9 (H9-15). Cross-checked vs python3.
+#[test]
+fn bool_arg_to_call() {
+    let rust = xpile_transpile_to_rust("bool_arg_to_call.py");
+    assert!(
+        rust.contains("g(5i64, (c && d))") && rust.contains("g(5i64, (!c))"),
+        "bool and/or/not args to a user call should lower context-aware:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(f_and(true, false), 5);
+    assert_eq!(f_or(true, false), 6);
+    assert_eq!(f_not(false), 6);
+    assert_eq!(f_tern(true), 6);
+}
+"#;
+    assert_rustc_runs("bool_arg_to_call", &rust, driver);
+}
+
 /// PMAT-502ct (Tranche 2): default parameter values — omitted trailing args
 /// are filled with the declared default at the call site.
 #[test]
