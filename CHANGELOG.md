@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.396] — 2026-06-15
+
+### Added
+
+- **PMAT-697 — float truthiness in `and`/`or` operands.** `x or 9.0`, `x and y` over float
+  idents (value-return), and `if x and y > 1.0` (bool context) were all rejected ("operands
+  of and/or must be Bool — no int-truthiness"). A float is truthy iff `!= 0.0`, which
+  IEEE-754 makes exact at the edges: `-0.0 != 0.0` is `false` (falsy), `nan != 0.0` is
+  `true` (truthy) — matching Python's `bool(float)` (cf. the existing `truthy_condition`
+  helper and PMAT-681). **Fix**: a single `F64` arm in `bool_op_operand_truthy` (the only
+  truthiness helper missing it); both the value-return path (ident-lead operands) and the
+  bool-result coercion path then accept floats. `Optional` and non-`Ident`-leading operands
+  stay deferred — the value-return Optional form needs a `filter`, not `unwrap_or`
+  (`Some(0) or 7` == 7, not 0). Differential-verified vs python3 (incl. `-0.0` falsy, `nan`
+  truthy). New e2e fixture `bool_op_float_truthy.py` (rustc round-trip). e2e 454 → 455.
+  Found by HUNT-V7 (item V7-5, float sub-slice).
+
 ## [0.1.395] — 2026-06-15
 
 ### Fixed
