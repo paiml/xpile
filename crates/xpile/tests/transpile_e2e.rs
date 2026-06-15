@@ -1017,6 +1017,34 @@ fn main() {
     assert_rustc_runs("len_str", &rust, driver);
 }
 
+/// PMAT-654: `len(tuple)` folds to the tuple's arity (a compile-time constant).
+/// Rust tuples have no `.len()` method, so the `Expr::Len` emission (`t.len()`)
+/// was E0599. A Python tuple's length is fixed by its type. Cross-checked vs
+/// python3; list `len()` still uses `.len()`.
+#[test]
+fn len_tuple() {
+    let rust = xpile_transpile_to_rust("len_tuple.py");
+    // tuple len folds to a literal; no `t.len()` / `p.len()` on a tuple
+    assert!(
+        !rust.contains("t.len()") && !rust.contains("p.len()"),
+        "len(tuple) must not emit a .len() call on a tuple:\n{rust}"
+    );
+    // list len still emits .len()
+    assert!(
+        rust.contains("xs.len() as i64"),
+        "list len() should still use .len():\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(len_tuple_param((1, 2, 3)), 3);   // was E0599
+    assert_eq!(len_tuple_literal(), 4);
+    assert_eq!(len_tuple_mixed((1, String::from("a"))), 2);
+    assert_eq!(len_list_regression(vec![5, 6, 7, 8, 9]), 5);
+}
+"#;
+    assert_rustc_runs("len_tuple", &rust, driver);
+}
+
 /// PMAT-458 — v0.2.0 Track 1.B: for-each iteration over list[int].
 /// Closes the spec §23 ⏳ entry "`for` over non-range iterables".
 /// The frontend lowers `for x in xs:` (where xs has Type::List) to

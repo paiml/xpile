@@ -8750,12 +8750,20 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     // PMAT-564: `len(str)` counts Unicode code points, not UTF-8
                     // bytes — route to `.chars().count()` (NOT `Expr::Len`, which
                     // emits `.len()` = byte length and is wrong for non-ASCII).
-                    if infer_type_in_ctx(ctx, &inner) == Type::Str {
+                    let inner_ty = infer_type_in_ctx(ctx, &inner);
+                    if inner_ty == Type::Str {
                         return Ok(Expr::StrMethod {
                             recv: Box::new(inner),
                             op: StrMethodOp::CharCount,
                             args: vec![],
                         });
+                    }
+                    // PMAT-654: `len(tuple)` is a COMPILE-TIME constant (the tuple's
+                    // arity). Rust tuples have no `.len()` method, so `Expr::Len`
+                    // (→ `t.len()`) is E0599. A Python tuple's length is fixed by
+                    // its type, so fold to the arity literal.
+                    if let Type::Tuple(elems) = &inner_ty {
+                        return Ok(Expr::LitInt(elems.len() as i64));
                     }
                     return Ok(Expr::Len(Box::new(inner)));
                 }
