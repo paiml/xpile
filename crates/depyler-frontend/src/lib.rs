@@ -11355,6 +11355,30 @@ fn apply_nonempty_format_spec(
     spec: &str,
 ) -> Result<Expr, FrontendError> {
     let ty = infer_type_in_ctx(ctx, &value);
+    // PMAT-693: an int with a FLOAT-presentation spec is coerced to float by
+    // Python (`f"{5:.2f}"` == "5.00", `f"{-3:.1f}"` == "-3.0", `f"{1:.0%}"` ==
+    // "100%"). Cast the int to f64 up front and treat it as a float for the rest
+    // of this function, so the `%` and `.Nf` float paths below handle it.
+    // Int-presentation specs (`d`, radix `x`/`b`/`o`, bare width `N`) end in a
+    // non-float char and keep the int value & path.
+    let (value, ty) = if ty == Type::I64
+        && spec
+            .chars()
+            .last()
+            .is_some_and(|c| matches!(c, 'f' | 'F' | 'e' | 'E' | 'g' | 'G' | '%'))
+    {
+        (
+            Expr::NumCast {
+                value: Box::new(value),
+                to_float: true,
+                from_str: false,
+                from_float: false,
+            },
+            Type::F64,
+        )
+    } else {
+        (value, ty)
+    };
     // PMAT-558: percent format `:.N%` / `:%` (float). Python scales the value by
     // 100, formats it with N decimals (bare `%` → Python's default 6), and
     // appends a literal `%`. Lowered to `Concat(FormatSpec((x)*100.0, ".N"),

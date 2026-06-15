@@ -9430,6 +9430,33 @@ fn main() {
     assert_rustc_runs("percent_format_bool_float", &rust, driver);
 }
 
+/// PMAT-693: an int with a FLOAT-presentation spec (`.Nf`, `.N%`) is coerced to
+/// float by Python (`f"{5:.2f}"` == "5.00", `f"{-3:.1f}"` == "-3.0"). xpile casts
+/// the int to f64 and routes it through the float-format path. Int-presentation
+/// specs (`05d`/radix/width) stay on the int path untouched.
+#[test]
+fn int_float_format_spec() {
+    let rust = xpile_transpile_to_rust("int_float_format_spec.py");
+    assert!(
+        rust.contains("format!(\"{:.2}\", __nf)")
+            && rust.contains("(n) as f64")
+            && rust.contains("format!(\"{:8.3}\", ((n) as f64))")
+            && rust.contains("format!(\"{:05}\", n)"),
+        "int float format spec:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // int coerced to float for `.Nf`/`.N%`; cross-checked vs python3.
+    assert_eq!(fixed(5), "5.00");
+    assert_eq!(one_dp(-3), "-3.0");
+    assert_eq!(pct(1), "100%");
+    assert_eq!(width_fixed(5), "   5.000");
+    assert_eq!(still_int(42), "00042"); // int spec stays int
+}
+"#;
+    assert_rustc_runs("int_float_format_spec", &rust, driver);
+}
+
 /// PMAT-502dn (Tranche 2): printf `%`-format width/precision/flags (`%.2f`,
 /// `%5d`, `%-5d`, `%05d`, `%5s`, `%+d`) → translated Rust format specs.
 #[test]
