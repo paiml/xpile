@@ -3065,12 +3065,13 @@ fn main() {
 #[test]
 fn str_just() {
     let rust = xpile_transpile_to_rust("str_just.py");
+    // PMAT-666: the width is now clamped with `.max(0)` (negative → unchanged).
     assert!(
-        rust.contains("format!(\"{:>1$}\", s, (w) as usize)"),
+        rust.contains("format!(\"{:>1$}\", s, (w).max(0) as usize)"),
         "rjust:\n{rust}"
     );
     assert!(
-        rust.contains("format!(\"{:<1$}\", s, (w) as usize)"),
+        rust.contains("format!(\"{:<1$}\", s, (w).max(0) as usize)"),
         "ljust:\n{rust}"
     );
     let driver = r#"
@@ -3083,6 +3084,30 @@ fn main() {
 }
 "#;
     assert_rustc_runs("str_just", &rust, driver);
+}
+
+/// PMAT-666: zfill/center/ljust/rjust with a NEGATIVE width return the string
+/// unchanged (Python treats width <= len as no padding). The bare `as usize`
+/// cast underflowed a negative width to a huge value → capacity-overflow panic;
+/// the width is now clamped with `.max(0)`. Cross-checked vs python3.
+#[test]
+fn str_width_negative() {
+    let rust = xpile_transpile_to_rust("str_width_negative.py");
+    assert!(
+        rust.contains(".max(0) as usize"),
+        "negative width should be clamped with .max(0):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(zfill_neg("ab".to_string()), "ab");   // was a panic
+    assert_eq!(center_neg("ab".to_string()), "ab");
+    assert_eq!(ljust_neg("ab".to_string()), "ab");
+    assert_eq!(rjust_neg("ab".to_string()), "ab");
+    assert_eq!(ljust_fill_neg("ab".to_string()), "ab");
+    assert_eq!(zfill_pos_regression("ab".to_string()), "000ab");
+}
+"#;
+    assert_rustc_runs("str_width_negative", &rust, driver);
 }
 
 /// PMAT-502ax (Tranche 2): dict get-or-insert `d.setdefault(k, default)`

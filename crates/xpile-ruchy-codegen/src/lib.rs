@@ -1182,7 +1182,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     emit_expr(out, recv, mode)?;
                     out.push_str("); let __w = (");
                     emit_expr(out, &args[0], mode)?;
-                    out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = (");
+                    // PMAT-666: clamp negative width to 0 (see the rust backend).
+                    out.push_str(").max(0) as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = (");
                     emit_expr(out, &args[1], mode)?;
                     out.push_str(").repeat(__w - __n); ");
                     out.push_str(if is_r {
@@ -1199,7 +1200,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     emit_expr(out, recv, mode)?;
                     out.push_str(", (");
                     emit_expr(out, &args[0], mode)?;
-                    out.push_str(") as usize)");
+                    // PMAT-666: clamp negative width to 0 (see the rust backend).
+                    out.push_str(").max(0) as usize)");
                 }
                 return Ok(());
             }
@@ -1223,7 +1225,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 emit_expr(out, recv, mode)?;
                 out.push_str("); let __w = (");
                 emit_expr(out, &args[0], mode)?;
-                out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = \"0\".repeat(__w - __n); if __s.starts_with('-') || __s.starts_with('+') { format!(\"{}{}{}\", &__s[..1], __pad, &__s[1..]) } else { format!(\"{}{}\", __pad, __s) } } }");
+                out.push_str(").max(0) as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = \"0\".repeat(__w - __n); if __s.starts_with('-') || __s.starts_with('+') { format!(\"{}{}{}\", &__s[..1], __pad, &__s[1..]) } else { format!(\"{}{}\", __pad, __s) } } }");
                 return Ok(());
             }
             // PMAT-502cu: `.center(w)` (block form, matching the Rust backend).
@@ -1232,7 +1234,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 emit_expr(out, recv, mode)?;
                 out.push_str("); let __w = (");
                 emit_expr(out, &args[0], mode)?;
-                out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __marg = __w - __n; let __left = __marg / 2 + (__marg & __w & 1); ");
+                out.push_str(").max(0) as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __marg = __w - __n; let __left = __marg / 2 + (__marg & __w & 1); ");
                 if args.len() == 2 {
                     // PMAT-632: optional fill char, matching the Rust backend.
                     out.push_str("let __fc = (");

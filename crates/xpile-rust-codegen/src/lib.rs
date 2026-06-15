@@ -1373,7 +1373,10 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     emit_expr(out, recv, mode)?;
                     out.push_str("); let __w = (");
                     emit_expr(out, &args[0], mode)?;
-                    out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = (");
+                    // PMAT-666: clamp a negative width to 0 (Python returns the
+                    // string unchanged); a bare `as usize` underflowed to a huge
+                    // width → capacity-overflow panic.
+                    out.push_str(").max(0) as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = (");
                     emit_expr(out, &args[1], mode)?;
                     out.push_str(").repeat(__w - __n); ");
                     out.push_str(if is_r {
@@ -1393,7 +1396,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     emit_expr(out, recv, mode)?;
                     out.push_str(", (");
                     emit_expr(out, &args[0], mode)?;
-                    out.push_str(") as usize)");
+                    // PMAT-666: clamp a negative width to 0 (see above).
+                    out.push_str(").max(0) as usize)");
                 }
             } else if matches!(op, StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix) {
                 // PMAT-502cq: `.removeprefix(p)`/`.removesuffix(p)` →
@@ -1415,7 +1419,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, recv, mode)?;
                 out.push_str("); let __w = (");
                 emit_expr(out, &args[0], mode)?;
-                out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = \"0\".repeat(__w - __n); if __s.starts_with('-') || __s.starts_with('+') { format!(\"{}{}{}\", &__s[..1], __pad, &__s[1..]) } else { format!(\"{}{}\", __pad, __s) } } }");
+                // PMAT-666: clamp a negative width to 0 (Python returns unchanged).
+                out.push_str(").max(0) as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = \"0\".repeat(__w - __n); if __s.starts_with('-') || __s.starts_with('+') { format!(\"{}{}{}\", &__s[..1], __pad, &__s[1..]) } else { format!(\"{}{}\", __pad, __s) } } }");
             } else if matches!(op, StrMethodOp::Center) {
                 // PMAT-502cu: `.center(w)` → space-pad centred, CPython bias
                 // `left = marg/2 + (marg & w & 1)` (extra padding parity).
@@ -1423,7 +1428,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, recv, mode)?;
                 out.push_str("); let __w = (");
                 emit_expr(out, &args[0], mode)?;
-                out.push_str(") as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __marg = __w - __n; let __left = __marg / 2 + (__marg & __w & 1); ");
+                // PMAT-666: clamp a negative width to 0 (Python returns unchanged).
+                out.push_str(").max(0) as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __marg = __w - __n; let __left = __marg / 2 + (__marg & __w & 1); ");
                 if args.len() == 2 {
                     // PMAT-632: `.center(w, fill)` — repeat the fill string on
                     // both sides (same CPython left-bias as the space form).
