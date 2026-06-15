@@ -1735,9 +1735,10 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         }
         // PMAT-502ak: `round(x)` (float) → `((x).round_ties_even() as i64)`.
         Expr::RoundToInt { value } => {
-            out.push_str("((");
+            // PMAT-664: guard inf/nan + i64 range (see the rust backend).
+            out.push_str("{ let __rti = (");
             emit_expr(out, value, mode)?;
-            out.push_str(").round_ties_even() as i64)");
+            out.push_str(").round_ties_even(); if !__rti.is_finite() { panic!(\"xpile: round() of a non-finite float (Python OverflowError/ValueError)\"); } if __rti < (i64::MIN as f64) || __rti >= (i64::MAX as f64) { panic!(\"xpile: round() out of i64 range; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"); } __rti as i64 }");
         }
         // PMAT-502al: `round(x, n)` (float) → Python's decimal rounding
         // (format-to-n-decimals for n >= 0, scale for n < 0).
