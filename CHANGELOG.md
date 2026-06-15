@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.386] — 2026-06-15
+
+### Added
+
+- **PMAT-687 — `for … else:` / `while … else:` loop clauses.** Python's loop
+  `else` (which runs iff the loop completed WITHOUT `break`) was a clean reject.
+  Now desugared (frontend only, NO IR change): a fresh `__brokeN` flag is set
+  `true` before each `break` AT THIS LOOP'S LEVEL, and the `else` body runs under
+  `if !__brokeN` after the loop. The break-flag injection recurses into `if`/`else`
+  bodies but NOT into nested loops (a `break` there targets the inner loop); a
+  fresh flag per loop-`else` keeps nested ones independent; a `return` inside the
+  loop exits directly (no else), matching Python. (`lower_while_stmt` now returns
+  `Vec<Stmt>`.) Differential-verified vs python3 (`return` in loop / `break`
+  vs no-break / while-else). New e2e fixture `loop_else.py` (rustc round-trip).
+  e2e 443 → 444. Found by HUNT-V6 (item C10).
+
 ## [0.1.385] — 2026-06-15
 
 ### Fixed
