@@ -11534,6 +11534,14 @@ fn translate_format_spec(spec: &str, ty: &Type) -> Option<String> {
             if digits_only(&width) {
                 return Some(spec.to_string());
             }
+            // PMAT-677: fill+align WITH float precision (`{:*>8.2f}`) — pass the
+            // fill+align prefix through and translate the `[0][width].Nf` tail.
+            if *ty == Type::F64 {
+                if let Some(fp) = float_pad_prec(&width) {
+                    let prefix: String = chars[..2].iter().collect();
+                    return Some(format!("{prefix}{fp}"));
+                }
+            }
         }
     }
     // PMAT-557: Python sign flag. `+` (always show a sign) maps 1:1 to Rust's
@@ -11575,7 +11583,16 @@ fn translate_format_spec(spec: &str, ty: &Type) -> Option<String> {
     if let Some(align) = spec.chars().next() {
         if matches!(align, '<' | '>' | '^') {
             let width = &spec[align.len_utf8()..];
-            return digits_only(width).then(|| spec.to_string());
+            if digits_only(width) {
+                return Some(spec.to_string());
+            }
+            // PMAT-677: explicit align WITH float precision (`{:>8.2f}`).
+            if *ty == Type::F64 {
+                if let Some(fp) = float_pad_prec(width) {
+                    return Some(format!("{align}{fp}"));
+                }
+            }
+            return None;
         }
     }
     // Integer specs (int only — Rust's syntax AND default right-alignment match
@@ -11600,7 +11617,33 @@ fn translate_format_spec(spec: &str, ty: &Type) -> Option<String> {
         }
         return pad_width(spec).filter(|p| !p.is_empty());
     }
+    // PMAT-677: float fixed-point WITH width / zero-pad — `[0][width].Nf`
+    // (`8.3f`, `06.2f`, `10.4f`; a leading `+`/`-` sign and fill+align are peeled
+    // by the branches above and recurse here). Rust's `[0][width].N` matches
+    // Python exactly for floats: the `.Nf` precision forces the decimals, so the
+    // whole-float repr divergence (`3.0` vs `3`) that defers BARE float widths
+    // does not arise. Pure `.Nf` is handled by the `.`-prefixed branch above.
+    if *ty == Type::F64 {
+        if let Some(s) = float_pad_prec(spec) {
+            return Some(s);
+        }
+    }
     None
+}
+
+/// PMAT-677: translate a float fixed-point core `[0][width].Nf` to the Rust spec
+/// `[0][width].N` (`8.3f` → `8.3`, `06.2f` → `06.2`, `10.4f` → `10.4`). Requires
+/// the trailing `.Nf` precision (a bare float width stays deferred — Python/Rust
+/// disagree on whole-float repr); `[0][width]` is validated/translated by
+/// [`pad_width`]. Returns `None` if `core` is not float fixed-point.
+fn float_pad_prec(core: &str) -> Option<String> {
+    let (left, right) = core.split_once('.')?;
+    let n = right.strip_suffix('f')?;
+    if n.is_empty() || !digits_only(n) {
+        return None;
+    }
+    let pad = pad_width(left)?;
+    Some(format!("{pad}.{n}"))
 }
 
 /// `[0][digits]` → the matching Rust pad/width string. Empty input yields
