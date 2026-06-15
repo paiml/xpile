@@ -2401,6 +2401,31 @@ fn main() {
     assert_rustc_runs("tuple_index", &rust, driver);
 }
 
+/// PMAT-670: a NEGATIVE constant tuple index `t[-k]` resolves at compile time to
+/// the field access `t.(arity - k)` (Python from-the-end). The old path fell to
+/// the list-style runtime wrap (`__lc.len()...`) → E0599 (a tuple has no `.len()`).
+/// Works for heterogeneous tuples too. Cross-checked vs python3.
+#[test]
+fn tuple_negative_index() {
+    let rust = xpile_transpile_to_rust("tuple_negative_index.py");
+    assert!(
+        // t[-1] of a 3-tuple → (t).2; t[-2] → (t).1; no `.len()` on a tuple
+        rust.contains("(t).2.clone()")
+            && rust.contains("(t).1.clone()")
+            && !rust.contains("__lc.len()"),
+        "negative tuple index should be a constant field access:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(last((10, 20, 30)), 30);       // was E0599
+    assert_eq!(secondlast((10, 20, 30)), 20);
+    assert_eq!(first_regression((10, 20, 30)), 10);
+    assert_eq!(mixed_neg((7, "hi".to_string())), "hi");
+}
+"#;
+    assert_rustc_runs("tuple_negative_index", &rust, driver);
+}
+
 /// PMAT-502s (Tranche 2): negative list index `xs[-k]` → `xs[len(xs) - k]`
 /// (Python from-the-end indexing).
 #[test]
