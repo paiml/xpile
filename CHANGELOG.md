@@ -19,6 +19,24 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.358] — 2026-06-15
+
+Tranche 2 — PMAT-659: **correctness** — f-string float-precision format of NaN prints "nan".
+
+- A float-precision f-string spec (`f"{x:.2f}"`, `f"{x:.0%}"`) of a NaN printed
+  "NaN" (Rust's `format!` Display) where Python prints "nan" — a silent
+  value-divergence. inf already matched.
+- Fix (both backends, the `Expr::FormatSpec` arm, no IR change): when the spec is
+  a float precision (`.` + a digit, optionally after `+`), guard the emit to
+  return "nan" for a NaN value. A float-precision spec is float-only, so
+  `.is_nan()` is valid; the `.`-fill case (`.<align>`, PMAT-658) is excluded.
+- Scope: the f-string / percent FormatSpec path. The `str.format()` method path
+  (StrFormat, spec embedded inline) shares the deferred arg-remap rework and is
+  not covered here.
+- Differential-verified vs python3 (`.2f` NaN→"nan", inf, normal, `.0%`
+  NaN→"nan%", `+.2f`; `.`-fill str regression untouched). New e2e fixture
+  `format_nan_precision.py`. 416 e2e fixtures. Found by HUNT-V3.
+
 ## [0.1.357] — 2026-06-15
 
 Tranche 2 — PMAT-658: **correctness** — format-spec fill char before alignment.
