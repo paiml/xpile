@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.403] — 2026-06-16
+
+### Added
+
+- **PMAT-704 — variadic `max`/`min` with `key=` (`max(a, b, key=fn)`).** `max(a, b, key=len)`
+  / `min(a, b, c, key=fn)` rejected with "passes keyword args to unknown function max" — the
+  key intercept only fired for the 1-arg iterable form `max(xs, key=fn)`, so the variadic
+  form fell through to the generic keyword-call lowering. `max(a, b)`/`max(a, b, c)` (no key)
+  and `max(xs, key=)` already worked. **Fix**: a new branch handles `(min|max)` with 2+
+  positional args AND a `key=` — the args are the elements, so it lowers each, builds an
+  `Expr::ListLit`, and reuses the `ListMinMax` key path (keeping first-wins-on-tie). Scoped
+  to a `key=` being present; `default=` with explicit args falls through (Python rejects it
+  too). Differential-verified vs python3 (`max`/`min` by `len`/`abs`, 3-arg, key tie → first
+  arg). New e2e fixture `max_min_variadic_key.py` (rustc round-trip); existing `min_max`
+  regressions intact. e2e 461 → 462. Found by HUNT-V8 (item V8-13).
+
 ## [0.1.402] — 2026-06-16
 
 ### Added
