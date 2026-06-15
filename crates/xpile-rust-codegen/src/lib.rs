@@ -1945,13 +1945,43 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             }
         }
         // PMAT-502j: `all(xs)`/`any(xs)` over a bool list.
-        Expr::BoolReduce { list, is_all } => {
-            emit_expr(out, list, mode)?;
-            out.push_str(if *is_all {
-                ".iter().all(|&__b| __b)"
+        Expr::BoolReduce {
+            list,
+            is_all,
+            short_circuit,
+        } => {
+            // PMAT-689: a short-circuiting (generator-expression) `any`/`all` over
+            // a `Map` fuses the predicate into the `any`/`all` closure — Rust's
+            // `any`/`all` short-circuit, matching Python's lazy genexpr, so a
+            // not-yet-needed element is never evaluated (the prior eager
+            // `.map(P).collect().iter().any(..)` panicked on e.g. a div-by-zero
+            // element Python never reaches). The eager (list-comp / plain-list)
+            // form keeps `.iter().any(|&__b| __b)`.
+            if let (
+                true,
+                Expr::Map {
+                    list: inner,
+                    lambda,
+                },
+            ) = (*short_circuit, &**list)
+            {
+                emit_expr(out, inner, mode)?;
+                let method = if *is_all { "all" } else { "any" };
+                write!(
+                    out,
+                    ".iter().cloned().{method}(|__k| {{ let {} = __k.clone(); ",
+                    lambda.param
+                )?;
+                emit_expr(out, &lambda.body, mode)?;
+                out.push_str(" })");
             } else {
-                ".iter().any(|&__b| __b)"
-            });
+                emit_expr(out, list, mode)?;
+                out.push_str(if *is_all {
+                    ".iter().all(|&__b| __b)"
+                } else {
+                    ".iter().any(|&__b| __b)"
+                });
+            }
         }
         // PMAT-502k: `seq * n` → `(seq).repeat(((n).max(0)) as usize)`
         // (str → String, slice → Vec; negative count clamps to empty).

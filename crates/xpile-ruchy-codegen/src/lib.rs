@@ -1685,13 +1685,38 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             }
         }
         // PMAT-502j: `all(xs)`/`any(xs)` over a bool list.
-        Expr::BoolReduce { list, is_all } => {
-            emit_expr(out, list, mode)?;
-            out.push_str(if *is_all {
-                ".iter().all(|&__b| __b)"
+        Expr::BoolReduce {
+            list,
+            is_all,
+            short_circuit,
+        } => {
+            // PMAT-689: short-circuiting (genexpr) any/all over a Map fuses the
+            // predicate into the any/all closure (see the rust backend).
+            if let (
+                true,
+                Expr::Map {
+                    list: inner,
+                    lambda,
+                },
+            ) = (*short_circuit, &**list)
+            {
+                emit_expr(out, inner, mode)?;
+                let method = if *is_all { "all" } else { "any" };
+                write!(
+                    out,
+                    ".iter().cloned().{method}(|__k| {{ let {} = __k.clone(); ",
+                    lambda.param
+                )?;
+                emit_expr(out, &lambda.body, mode)?;
+                out.push_str(" })");
             } else {
-                ".iter().any(|&__b| __b)"
-            });
+                emit_expr(out, list, mode)?;
+                out.push_str(if *is_all {
+                    ".iter().all(|&__b| __b)"
+                } else {
+                    ".iter().any(|&__b| __b)"
+                });
+            }
         }
         // PMAT-502k: `seq * n` → `(seq).repeat(((n).max(0)) as usize)`.
         Expr::Repeat { seq, n, of_str } => {

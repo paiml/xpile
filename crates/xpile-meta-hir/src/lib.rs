@@ -1678,7 +1678,20 @@ pub enum Expr {
     /// `<list>.iter().all(|&__b| __b)` (or `.any(…)`); result types as
     /// `Bool`. Like Python, `all([])` is `true` and `any([])` is `false`
     /// (the iterator-adaptor identities). Lean refuses.
-    BoolReduce { list: Box<Expr>, is_all: bool },
+    ///
+    /// PMAT-689: `short_circuit` is set when the source was a GENERATOR
+    /// expression (`any(P(x) for x in xs)`), which Python evaluates LAZILY — the
+    /// backend then fuses the inner `Map`'s predicate into the `any`/`all` closure
+    /// (`xs.iter().cloned().any(|x| P(x))`) so a not-yet-needed element is never
+    /// evaluated (matching Python's short-circuit; the prior eager
+    /// `.map(P).collect().iter().any(..)` panicked on e.g. a div-by-zero element
+    /// Python never reaches). A LIST comprehension (`any([P(x) for x in xs])`) is
+    /// eager in Python, so it stays `false` (no fusion) and keeps the eager form.
+    BoolReduce {
+        list: Box<Expr>,
+        is_all: bool,
+        short_circuit: bool,
+    },
     /// Sequence repetition — Python `seq * n` / `n * seq` where `seq` is a
     /// `Str` or `List` and `n` an `Int`. PMAT-502k (Tranche 2). The `.max(0)`
     /// clamps a negative count to the empty sequence, matching Python
