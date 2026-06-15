@@ -433,25 +433,32 @@ fn count_reads_expr(e: &ast::Expr, counts: &mut HashMap<String, usize>) {
 /// call argument (the entire existing corpus) is byte-identical — no clone, no
 /// churn, no perf cost — and the clone fires only on code that would otherwise
 /// fail to compile. Copy operands (int/float/bool) are passed by value as before.
+/// PMAT-588/628: if `expr` is a bare `Ident` for a non-Copy variable that is
+/// read more than once in the function, wrap it in `Expr::Clone` so passing /
+/// storing it doesn't move-then-use-after-move (E0382). A no-op for Copy types
+/// (int/float/bool) and single-use bindings, so it never adds a clone to
+/// previously-correct code.
+fn clone_if_reused_non_copy(ctx: &LoweringCtx, expr: Expr) -> Expr {
+    if let Expr::Ident(name) = &expr {
+        let reused = ctx.read_counts.get(name).copied().unwrap_or(0) > 1;
+        let non_copy = ctx
+            .name_types
+            .get(name)
+            .is_some_and(|t| !matches!(t, Type::I64 | Type::F64 | Type::Bool));
+        if reused && non_copy {
+            return Expr::Clone(Box::new(expr));
+        }
+    }
+    expr
+}
+
 fn clone_reused_call_args(ctx: &LoweringCtx, expr: Expr) -> Expr {
     let Expr::Call { callee, args } = expr else {
         return expr;
     };
     let args = args
         .into_iter()
-        .map(|a| {
-            if let Expr::Ident(name) = &a {
-                let reused = ctx.read_counts.get(name).copied().unwrap_or(0) > 1;
-                let non_copy = ctx
-                    .name_types
-                    .get(name)
-                    .is_some_and(|t| !matches!(t, Type::I64 | Type::F64 | Type::Bool));
-                if reused && non_copy {
-                    return Expr::Clone(Box::new(a));
-                }
-            }
-            a
-        })
+        .map(|a| clone_if_reused_non_copy(ctx, a))
         .collect();
     Expr::Call { callee, args }
 }
@@ -2801,6 +2808,9 @@ fn try_lower_list_method_call(
         Ok(e) => e,
         Err(err) => return Some(Err(err)),
     };
+    // PMAT-628: clone a reused non-Copy variable element so `g.append(row);
+    // g.append(row)` (or `row` used after) doesn't move-then-use (E0382).
+    let elem = clone_if_reused_non_copy(ctx, elem);
     // Mark the receiver as mutable (idempotent — the pre-pass also flags
     // it via the `.add`/`.append` walk_counts arm).
     ctx.mutable.insert(receiver_name.to_string());
@@ -12269,7 +12279,12 @@ fn lower_list_literal_in_ctx(
         } else {
             elem_ty = Some(ty);
         }
-        elems.push(lowered);
+        // PMAT-628: clone a reused non-Copy variable element so `[inner, inner]`
+        // (or `inner` also used after the literal) doesn't move-then-use (E0382).
+        // (Python aliases the same inner object; the clone gives independent
+        // copies — the documented PMAT-569 value-semantics divergence, but it now
+        // compiles instead of emitting invalid Rust.)
+        elems.push(clone_if_reused_non_copy(ctx, lowered));
     }
     Ok(Expr::ListLit(elems))
 }
