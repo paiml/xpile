@@ -19,6 +19,27 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.335] — 2026-06-15
+
+Tranche 2 — PMAT-636: `int ** <negative int literal>` yields a float.
+
+- In Python `2 ** -1 == 0.5` — an integer raised to a negative power is a float.
+  xpile lowered `int ** int` to the integer `checked_pow` path unconditionally,
+  so `2 ** -1` failed (the int-pow path can't represent a negative exponent, and
+  typed the body as `I64` against a `-> float` return). Found by a differential
+  probe.
+- Fix (frontend only, no new IR): in both `**` lowering arms (context-aware +
+  context-free) detect a negative integer-literal exponent from the AST (via the
+  existing `extract_step_literal`, which handles the `UnaryOp(USub, Int)` form)
+  before the operands are moved, and route it through the existing float-power
+  path (`FloatBinOp::Pow` → `powf`, operands cast to f64) — reusing the float
+  inference and codegen. A variable / non-literal negative exponent has a
+  runtime-dependent result type that static typing can't represent, so it stays
+  on the integer path.
+- Differential-verified vs python3 (`2 ** -1`=0.5, `10 ** -3`=0.001, `b ** -2`,
+  sums); non-negative int powers stay integer and float powers are unaffected.
+  New e2e fixture `neg_int_power.py`. 395 e2e fixtures.
+
 ## [0.1.334] — 2026-06-15
 
 Tranche 2 — PMAT-635: **correctness** — range-comprehension variables don't leak.
