@@ -8717,8 +8717,15 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         // bound (arity 1 → up to 3 args). Other methods keep their
                         // exact arity.
                         let allows_start_end = matches!(op, StrMethodOp::Find | StrMethodOp::Count);
+                        // PMAT-691: `strip`/`lstrip`/`rstrip` accept an optional
+                        // char-set arg (arity 0 → 0 or 1 args).
+                        let allows_charset = matches!(
+                            op,
+                            StrMethodOp::Strip | StrMethodOp::LStrip | StrMethodOp::RStrip
+                        );
                         let ok_argc = call.args.len() == arity
                             || (allows_fill && call.args.len() == arity + 1)
+                            || (allows_charset && call.args.len() == arity + 1)
                             || (allows_start_end && (arity..=arity + 2).contains(&call.args.len()));
                         if !call.keywords.is_empty() || !ok_argc {
                             return Err(FrontendError::Lower(format!(

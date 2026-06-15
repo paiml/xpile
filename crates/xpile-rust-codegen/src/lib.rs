@@ -1508,6 +1508,30 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 }
             } else if matches!(
                 op,
+                StrMethodOp::Strip | StrMethodOp::LStrip | StrMethodOp::RStrip
+            ) && !args.is_empty()
+            {
+                // PMAT-691: `s.strip(chars)` / `lstrip` / `rstrip` with a char-SET
+                // arg — Python strips any leading/trailing char that is IN `chars`
+                // (NOT a substring). Emit `trim_matches` / `trim_start_matches` /
+                // `trim_end_matches` with a closure testing membership in the
+                // (str) charset (bound once to a temp). The 0-arg whitespace form
+                // is handled by the `match op` arms below.
+                let trim = match op {
+                    StrMethodOp::LStrip => "trim_start_matches",
+                    StrMethodOp::RStrip => "trim_end_matches",
+                    _ => "trim_matches",
+                };
+                out.push_str("{ let __cs = (");
+                emit_expr(out, &args[0], mode)?;
+                out.push_str("); (");
+                emit_expr(out, recv, mode)?;
+                write!(
+                    out,
+                    ").{trim}(|__c: char| __cs.contains(__c)).to_string() }}"
+                )?;
+            } else if matches!(
+                op,
                 StrMethodOp::Find
                     | StrMethodOp::Rfind
                     | StrMethodOp::StrIndex

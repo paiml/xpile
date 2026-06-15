@@ -1309,6 +1309,28 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 }
                 return Ok(());
             }
+            // PMAT-691: `s.strip(chars)`/`lstrip`/`rstrip` with a char-SET arg →
+            // trim_matches/start/end with a membership closure (see rust backend).
+            if matches!(
+                op,
+                StrMethodOp::Strip | StrMethodOp::LStrip | StrMethodOp::RStrip
+            ) && !args.is_empty()
+            {
+                let trim = match op {
+                    StrMethodOp::LStrip => "trim_start_matches",
+                    StrMethodOp::RStrip => "trim_end_matches",
+                    _ => "trim_matches",
+                };
+                out.push_str("{ let __cs = (");
+                emit_expr(out, &args[0], mode)?;
+                out.push_str("); (");
+                emit_expr(out, recv, mode)?;
+                write!(
+                    out,
+                    ").{trim}(|__c: char| __cs.contains(__c)).to_string() }}"
+                )?;
+                return Ok(());
+            }
             // PMAT-566: find/rfind/index/rindex return a Python CHAR index, not a
             // byte offset — bind recv to a temp and count chars before the match.
             if matches!(
