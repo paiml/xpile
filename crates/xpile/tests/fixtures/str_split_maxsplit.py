@@ -15,3 +15,8 @@ def field_count(s: str) -> int:
 def capped_count(s: str) -> int:
     # maxsplit=2 → at most 3 parts.
     return len(s.split(",", 2))
+
+
+def neg_count(s: str) -> int:
+    # PMAT-621: a negative maxsplit means "no limit" (split on every occurrence).
+    return len(s.split(",", -1))

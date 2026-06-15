@@ -1254,10 +1254,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()");
                 }
                 // PMAT-518: `.split(sep, maxsplit)` → `.splitn(maxsplit + 1, sep)`.
+                // PMAT-621: negative maxsplit = "no limit" — `saturating_add(1)`
+                // (not `+ 1`, which wraps to 0 for a negative value). Matches Rust.
                 StrMethodOp::SplitN => {
                     out.push_str(".splitn(((");
                     emit_expr(out, &args[1], mode)?;
-                    out.push_str(") as usize) + 1, &(");
+                    out.push_str(") as usize).saturating_add(1), &(");
                     emit_expr(out, &args[0], mode)?;
                     out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()");
                 }

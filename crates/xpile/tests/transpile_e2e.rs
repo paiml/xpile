@@ -5025,16 +5025,18 @@ fn main() {
     assert_rustc_runs("str_replace_count", &rust, driver);
 }
 
-/// PMAT-518 (Tranche 2): `str.split(sep, maxsplit)` (2-arg) → Rust
+/// PMAT-518 + PMAT-621: `str.split(sep, maxsplit)` (2-arg) → Rust
 /// `s.splitn(maxsplit + 1, sep)` (Python caps the number of *splits*, so the
-/// part count is `maxsplit + 1`). The 1-arg form is unchanged. Cross-checked vs
-/// python3 ("a"/"b=c", field_count 4, capped_count 3).
+/// part count is `maxsplit + 1`). PMAT-621: a NEGATIVE maxsplit means "no limit",
+/// but `(maxsplit as usize) + 1` wrapped to 0 (`usize::MAX + 1`) → zero parts;
+/// `saturating_add(1)` keeps it at `usize::MAX` → all parts. The 1-arg form is
+/// unchanged. Cross-checked vs python3 (incl. `split(",", -1)` → all parts).
 #[test]
 fn str_split_maxsplit() {
     let rust = xpile_transpile_to_rust("str_split_maxsplit.py");
     assert!(
-        rust.contains(".splitn(((1i64) as usize) + 1, &(String::from(\"=\"))[..])"),
-        "2-arg split should emit `splitn(maxsplit + 1, sep)`:\n{rust}"
+        rust.contains(".splitn(((1i64) as usize).saturating_add(1), &(String::from(\"=\"))[..])"),
+        "2-arg split should emit `splitn(maxsplit.saturating_add(1), sep)`:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -5042,6 +5044,8 @@ fn main() {
     assert_eq!(value_part("a=b=c".to_string()), "b=c");
     assert_eq!(field_count("x,y,z,w".to_string()), 4);
     assert_eq!(capped_count("x,y,z,w".to_string()), 3);
+    // PMAT-621: negative maxsplit splits on every occurrence (no limit).
+    assert_eq!(neg_count("x,y,z,w".to_string()), 4);
 }
 "#;
     assert_rustc_runs("str_split_maxsplit", &rust, driver);

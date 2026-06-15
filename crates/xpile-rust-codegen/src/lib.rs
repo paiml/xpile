@@ -1428,10 +1428,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                         out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()");
                     }
                     // PMAT-518: `.split(sep, maxsplit)` → `.splitn(maxsplit + 1, sep)`.
+                    // PMAT-621: a NEGATIVE maxsplit means "no limit" in Python
+                    // (split on every occurrence). `(maxsplit as usize) + 1`
+                    // WRAPPED for a negative value (`usize::MAX + 1 == 0` →
+                    // `splitn(0)` → zero parts); `saturating_add(1)` keeps it at
+                    // `usize::MAX` → all parts, matching Python. Positive maxsplit
+                    // is unchanged.
                     StrMethodOp::SplitN => {
                         out.push_str(".splitn(((");
                         emit_expr(out, &args[1], mode)?;
-                        out.push_str(") as usize) + 1, &(");
+                        out.push_str(") as usize).saturating_add(1), &(");
                         emit_expr(out, &args[0], mode)?;
                         out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()");
                     }
