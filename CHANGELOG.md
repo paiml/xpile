@@ -19,6 +19,20 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.325] — 2026-06-15
+
+Tranche 2 — PMAT-626: **correctness** — `str()`/`print()` of a list or tuple render the Python repr.
+
+- `str(list)` fell through the `str()` dispatch (→ I64 mismatch) and `print(list)`
+  was explicitly declined. Both are now supported by reusing the
+  `build_list_repr`/`build_tuple_repr` desugar built for f-string interpolation
+  (PMAT-623/624) → the Python repr (`[1, 2, 3]`, `(1, 'a')`, nested). Found by
+  differential hunt #8 (H8-3).
+- Fix (frontend, no new IR): the `str()` dispatch gains `List`/`Tuple` arms; the
+  `print()` arg loop gains `List`/`Tuple` arms. Nested handled via the recursive
+  `pyrepr_of`. Completes the list/tuple repr surface (f-string + str + print).
+- New e2e fixture `str_print_list_tuple.py` cross-checked vs python3. 385 e2e fixtures.
+
 ## [0.1.324] — 2026-06-15
 
 Tranche 2 — PMAT-625: **correctness** — a 1-element tuple emits `(T,)` / `(x,)`, not `(T)` / `(x)`.
