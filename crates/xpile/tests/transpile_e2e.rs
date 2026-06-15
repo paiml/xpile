@@ -8553,6 +8553,33 @@ fn main() {
     assert_rustc_runs("str_find_count_startend", &rust, driver);
 }
 
+/// PMAT-676: a bare radix `str.format` spec (`"{:x}".format(n)`) formats
+/// negatives SIGN-MAGNITUDE in Python (`"{:x}".format(-255)` == "-ff"), but
+/// Rust's `{:x}` is two's-complement (`ffffffffffffff01`) → silent wrong output.
+/// Reuse `IntRadixStr` (as the f-string path does) when the arg is referenced
+/// exactly once; multi-reference keeps the embed (correct for non-negatives).
+/// Cross-checked vs python3.
+#[test]
+fn format_radix_neg() {
+    let rust = xpile_transpile_to_rust("format_radix_neg.py");
+    assert!(
+        rust.contains("unsigned_abs()") && rust.contains("if __n < 0 { \"-\" }"),
+        "bare-radix str.format should use sign-magnitude IntRadixStr:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(hexfmt(255), "ff");
+    assert_eq!(hexfmt(-255), "-ff");      // sign-magnitude, NOT two's-complement
+    assert_eq!(octfmt(-255), "-377");
+    assert_eq!(binfmt(-255), "-11111111");
+    assert_eq!(hexup(-255), "-FF");
+    assert_eq!(mixed(-255, -5), "-ff and -101");
+    assert_eq!(with_text(-255), "val=0x-ff!");
+}
+"#;
+    assert_rustc_runs("format_radix_neg", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a
