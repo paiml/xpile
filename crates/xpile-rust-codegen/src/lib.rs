@@ -1192,10 +1192,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // PMAT-502am: a formatted f-string field → `format!("{:<spec>}", v)`.
         Expr::FormatSpec { value, rust_spec } => {
             // PMAT-659: Rust formats NaN as "NaN", but Python prints "nan". A
-            // float-precision spec (`.<digit>`, optionally after a `+`) is
-            // float-only (translate_format_spec gates `.Nf` on F64), so guard
-            // NaN with `.is_nan()`. The `.`-FILL case (`.<align>`, PMAT-658) is
-            // excluded since char-after-`.` is an align char, not a digit. inf
+            // BARE float-precision spec (`.<digit>`, optionally after a `+`) is
+            // float-only (translate_format_spec gates `.Nf` on F64) AND has no
+            // width, so the unpadded `"nan"` matches Python. Guard it with
+            // `.is_nan()`. The `.`-FILL case (`.<align>`, PMAT-658) is excluded
+            // since char-after-`.` is an align char, not a digit. (Width+precision
+            // NaN — `8.2` — would need the width applied to "nan"; deferred.) inf
             // already matches ("inf"/"-inf" in both).
             let bare = rust_spec.strip_prefix('+').unwrap_or(rust_spec).as_bytes();
             let is_float_prec =
