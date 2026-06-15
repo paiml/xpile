@@ -687,6 +687,16 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                     // via that 2× bump.
                     *counts.entry(name).or_insert(0) += c;
                 }
+                // PMAT-698: the `else` clause of a `while…else` runs once when
+                // the loop completes without `break`. A name reassigned there
+                // (e.g. a flag bound before the loop, set in `else`) must count
+                // toward its mutability — the body recursion alone misses it, so
+                // the binding was emitted plain `let` and the else-reassignment
+                // hit rustc E0384. The else body is NOT per-iteration, so it uses
+                // the enclosing `in_loop`, not the loop's own `true`.
+                for (name, c) in walk_counts(&w.orelse, in_loop) {
+                    *counts.entry(name).or_insert(0) += c;
+                }
             }
             ast::Stmt::For(f) => {
                 // The for-target is bound at loop entry AND reassigned
@@ -697,6 +707,12 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                 }
                 let inner = walk_counts(&f.body, /*in_loop=*/ true);
                 for (name, c) in inner {
+                    *counts.entry(name).or_insert(0) += c;
+                }
+                // PMAT-698: count the `for…else` clause too (runs once on
+                // no-break) — see the `While` arm. Without this an else-only
+                // reassignment emits a non-`mut` `let` → E0384.
+                for (name, c) in walk_counts(&f.orelse, in_loop) {
                     *counts.entry(name).or_insert(0) += c;
                 }
             }
