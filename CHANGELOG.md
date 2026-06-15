@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.366] — 2026-06-15
+
+Tranche 2 — PMAT-667: **correctness** — bool-result `and`/`or` with a truthy operand.
+
+- `if xs and xs[0] > i:` (a container/int operand alongside a bool, in a boolean
+  context) was rejected ("operands of `and`/`or` must be Bool"), even though it's
+  a canonical guard idiom.
+- Fix (frontend only, `lower_bool_op_in_ctx`, no IR change): add a bool-result
+  path — coerce each operand to its truthiness (Bool → itself; int/float/str/
+  container → the `!= 0` / `len != 0` test) and fold with `&&`/`||`. Gated to skip
+  the all-same-non-bool-type case (the operand-return form, PMAT-637/638 `x or 5`)
+  so a value-return `and`/`or` never silently becomes a bool.
+- Differential-verified vs python3 (`if xs and cond:`, int-and-bool; all-bool
+  fold and `x or 5` value-return regressions intact). New e2e fixture
+  `bool_op_truthy_operand.py`. 424 e2e fixtures. Found by HUNT-V4.
+
 ## [0.1.365] — 2026-06-15
 
 Tranche 2 — PMAT-666: **correctness** — zfill/center/ljust/rjust clamp negative width.
