@@ -1360,18 +1360,28 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, recv, mode)?;
                 write!(out, ").chars().any(|__c| __c.{forbid}))")?;
             } else if matches!(op, StrMethodOp::Capitalize) {
-                // PMAT-502ah: `.capitalize()` → first char upper, rest lower
-                // (empty → ""), matching Python.
+                // PMAT-502ah: `.capitalize()` → first char TITLECASED, rest
+                // lower (empty → ""), matching Python. PMAT-701: Python uses the
+                // titlecase mapping for the lead, not uppercase — `"ß".capitalize()`
+                // is "Ss" (titlecase), not "SS" (`to_uppercase`). std has no
+                // `char::to_titlecase`, so derive it: keep the first char of the
+                // uppercase EXPANSION and lowercase the rest (`ß`→"SS"→"Ss",
+                // `ﬂ`→"FL"→"Fl"; a 1-char uppercase is unchanged). The tail uses
+                // whole-string `to_lowercase()` (honours the Greek final-sigma rule).
                 out.push_str("{ let __cs = &(");
                 emit_expr(out, recv, mode)?;
-                out.push_str("); let mut __ch = __cs.chars(); match __ch.next() { Some(__f) => __f.to_uppercase().collect::<String>() + &(__ch.as_str().to_lowercase()), None => String::new() } }");
+                out.push_str("); let mut __ch = __cs.chars(); match __ch.next() { Some(__f) => { let __ue: String = __f.to_uppercase().collect(); let mut __uec = __ue.chars(); let __lead = match __uec.next() { Some(__h) => __h.to_string() + &__uec.as_str().to_lowercase(), None => String::new() }; __lead + &(__ch.as_str().to_lowercase()) }, None => String::new() } }");
             } else if matches!(op, StrMethodOp::Title) {
-                // PMAT-502aj: `.title()` → upper the first alpha of each word,
+                // PMAT-502aj: `.title()` → titlecase the first alpha of each word,
                 // lower the rest; any non-alpha is a word boundary (matches
-                // Python, incl. `"it's".title()` → `"It'S"`).
+                // Python, incl. `"it's".title()` → `"It'S"`). PMAT-701: the
+                // word-start titlecases via the uppercase-expansion (see capitalize)
+                // so a titlecase-expanding scalar matches Python (`"ﬂy".title()` →
+                // "Fly", not "FLy"). (The per-char tail lowercase still loses the
+                // Greek medial-vs-final sigma context — a deferred follow-up.)
                 out.push_str("{ let mut __tr = String::new(); let mut __pa = false; for __c in (");
                 emit_expr(out, recv, mode)?;
-                out.push_str(").chars() { if __c.is_alphabetic() { if __pa { __tr.extend(__c.to_lowercase()); } else { __tr.extend(__c.to_uppercase()); } __pa = true; } else { __tr.push(__c); __pa = false; } } __tr }");
+                out.push_str(").chars() { if __c.is_alphabetic() { if __pa { __tr.extend(__c.to_lowercase()); } else { let __ue: String = __c.to_uppercase().collect(); let mut __uec = __ue.chars(); if let Some(__h) = __uec.next() { __tr.push(__h); __tr.push_str(&__uec.as_str().to_lowercase()); } } __pa = true; } else { __tr.push(__c); __pa = false; } } __tr }");
             } else if matches!(op, StrMethodOp::RJust | StrMethodOp::LJust) {
                 let is_r = matches!(op, StrMethodOp::RJust);
                 if args.len() == 2 {
