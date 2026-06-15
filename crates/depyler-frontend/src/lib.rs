@@ -2752,9 +2752,26 @@ fn try_lower_list_method_call(
                 call.args.len()
             ))));
         }
-        let other = match lower_expr_in_ctx(ctx, call.args[0].clone()) {
-            Ok(e) => e,
+        // PMAT-660: the extend arg may be any iterable — materialize it like the
+        // builtin-arg path (range→Vec, set→list, dict→keys, list→passthrough) so
+        // `xs.extend(range(n))` doesn't emit an undefined `range(...)` (E0425).
+        let other = match materialize_iterable_arg(ctx, &call.args[0]) {
+            Ok(Some(e)) => e,
+            // Not list/set/dict/range: a tuple literal becomes a list literal
+            // (Rust tuples have no `.iter()`); anything else lowers as-is.
+            Ok(None) => match lower_expr_in_ctx(ctx, call.args[0].clone()) {
+                Ok(Expr::TupleLit(elems)) => Expr::ListLit(elems),
+                Ok(e) => e,
+                Err(err) => return Some(Err(err)),
+            },
             Err(err) => return Some(Err(err)),
+        };
+        // PMAT-660: `xs.extend(xs)` (self-extend) would immut-borrow `xs` while
+        // `extend` mut-borrows it (E0502) — clone the receiver first.
+        let other = if matches!(&other, Expr::Ident(n) if n == receiver_name) {
+            Expr::Clone(Box::new(other))
+        } else {
+            other
         };
         ctx.mutable.insert(receiver_name.to_string());
         return Some(Ok(Stmt::ListExtend {

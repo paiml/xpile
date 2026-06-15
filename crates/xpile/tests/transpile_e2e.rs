@@ -2677,6 +2677,31 @@ fn main() {
     assert_rustc_runs("list_extend", &rust, driver);
 }
 
+/// PMAT-660: `list.extend()` accepts any iterable. extend(range(n)) emitted an
+/// undefined `range(...)` (E0425), extend((a,b,c)) called `.iter()` on a tuple
+/// (E0599), and extend(xs) (self) hit a borrow conflict (E0502). The arg now
+/// materializes (range→Vec, set→list, tuple→list) and self-extend clones first.
+/// Cross-checked vs python3.
+#[test]
+fn list_extend_iterables() {
+    let rust = xpile_transpile_to_rust("list_extend_iterables.py");
+    assert!(
+        !rust.contains("(range(") && !rust.contains("((7i64, 8i64, 9i64)).iter()"),
+        "extend arg should be materialized, not a bare range/tuple:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(extend_range(vec![1, 2]), 6);   // was E0425
+    assert_eq!(extend_tuple(vec![1, 2]), 27);  // was E0599
+    assert_eq!(extend_self(vec![1, 2, 3]), 12); // was E0502
+    let s: std::collections::HashSet<i64> = [10, 20].into_iter().collect();
+    assert_eq!(extend_set(vec![1, 2], s), 33);  // bonus: set extend
+    assert_eq!(extend_list_regression(vec![1, 2], vec![3, 4]), 10);
+}
+"#;
+    assert_rustc_runs("list_extend_iterables", &rust, driver);
+}
+
 /// PMAT-502ar (Tranche 2): positional list insertion `xs.insert(i, x)` →
 /// a CPython-clamping insert block (PMAT-590).
 #[test]
