@@ -7,6 +7,28 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.374] — 2026-06-15
+
+### Added
+
+- **PMAT-675 — str `.find`/`.count` with start/end slice bounds.**
+  `s.find(sub, start[, end])` and `s.count(sub, start[, end])` were rejected
+  ("expected exactly 1" positional arg). Python searches within the char-slice
+  `s[start:end]`: `find` returns the CHAR index in the ORIGINAL string (or -1);
+  `count` the number of non-overlapping occurrences within the slice. **Fix**:
+  (frontend) relax the str-method arg-count gate so `find`/`count` accept an
+  optional start (+ end) bound (arity 1 → up to 3 args), passed through as
+  `StrMethod` args; (codegen, rust + ruchy mirrored) a multi-arg branch
+  char-slices the receiver to `s[start:end]` (a fresh `String` of the selected
+  chars), then `find` → `__st + chars-before-match` / `unwrap_or(-1)`, `count` →
+  `matches().count()`. start/end are CHAR indices with Python clamping (negative
+  → +len, then clamp to `[0, len]`); end defaults to len for the 2-arg form. The
+  fresh-String slice keeps the byte→char conversion and the `__st` offset correct
+  for non-ASCII. Differential-verified vs python3 (in-range, miss, negative start,
+  2-arg, non-ASCII char indexing — `café au`.find("au", 1) == 5). New e2e fixture
+  `str_find_count_startend.py` (rustc round-trip). e2e 431 → 432. Found by HUNT-V5
+  (str-methods-3-count/find-start-end).
+
 ## [0.1.373] — 2026-06-15
 
 ### Added
