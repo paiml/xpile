@@ -8496,6 +8496,36 @@ fn main() {
     assert_rustc_runs("len_str_unicode", &rust, driver);
 }
 
+/// PMAT-674: `len(s.encode())` is the UTF-8 BYTE length of a str (`s.encode()`
+/// defaults to UTF-8), which equals Rust `String::len()` — distinct from the
+/// code-point count `len(s)` gives. `.encode()` is otherwise an unsupported
+/// method call, so the whole idiom rejected; detected in the `len()` intercept
+/// and routed to `Expr::Len` (which emits `.len() as i64`, byte length).
+/// Cross-checked vs python3 (`café` → 5 bytes / 4 chars, `€` → 3 bytes).
+#[test]
+fn len_encode_bytes() {
+    let rust = xpile_transpile_to_rust("len_encode_bytes.py");
+    assert!(
+        rust.contains("fn byte_len(s: String) -> i64 {\n    s.len() as i64")
+            && rust.contains("fn byte_len_utf8(s: String) -> i64 {\n    s.len() as i64"),
+        "len(s.encode()) should be byte length s.len():\n{rust}"
+    );
+    assert!(
+        rust.contains("fn char_len(s: String) -> i64 {\n    s.chars().count() as i64"),
+        "plain len(s) must still count code points:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(byte_len("café".to_string()), 5);       // 4 chars, 5 UTF-8 bytes
+    assert_eq!(byte_len_utf8("café".to_string()), 5);
+    assert_eq!(char_len("café".to_string()), 4);
+    assert_eq!(byte_len("hello".to_string()), 5);
+    assert_eq!(byte_len("€".to_string()), 3);          // 1 char, 3 UTF-8 bytes
+}
+"#;
+    assert_rustc_runs("len_encode_bytes", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a
