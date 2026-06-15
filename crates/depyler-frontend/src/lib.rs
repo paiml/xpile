@@ -3225,6 +3225,24 @@ fn materialize_iterable_arg(
             dict: Box::new(lowered),
             kind: DictViewKind::Keys,
         })),
+        // PMAT-669: a fixed-arity tuple is iterable — `sum(t)` / `min(t)` /
+        // `max(t)` / `sorted(t)` over a tuple emitted bare undefined `sum(t)`
+        // etc. (E0425). Materialize to a list of its elements: a tuple LITERAL
+        // uses its elements directly; a tuple value/binding indexes each field
+        // (`[t.0, t.1, …]`, the arity from the type). Sound for a homogeneous
+        // tuple (the only kind sum/min/max accept — Python errors on mixed too).
+        Type::Tuple(elems) => {
+            let items = match lowered {
+                Expr::TupleLit(items) => items,
+                other => (0..elems.len())
+                    .map(|i| Expr::TupleIndex {
+                        tuple: Box::new(other.clone()),
+                        index: i,
+                    })
+                    .collect(),
+            };
+            Ok(Some(Expr::ListLit(items)))
+        }
         _ => Ok(None),
     }
 }
