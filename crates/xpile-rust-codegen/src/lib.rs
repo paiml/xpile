@@ -2396,30 +2396,44 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             }
         }
         // PMAT-457 (v0.2.0 Track 1.B): Python `xs[i]` → Rust
-        // `xs[i as usize].clone()`. The `.clone()` produces an
-        // owned value matching the v0.2.0 owned-only ownership
-        // posture (we don't yet emit `&xs[i]` borrowed refs). `i64`
-        // indices coerce to `usize` via `as`; negative indices
-        // would underflow and panic — that's the v0.2.0 first-cut
-        // semantics (Python's negative-index wrap is a v0.3.0+
-        // sub-track).
+        // `xs[i as usize].clone()`. The `.clone()` produces an owned value
+        // matching the v0.2.0 owned-only ownership posture.
+        // PMAT-639: a runtime-negative index must wrap like Python (`i < 0 →
+        // len + i`), mirroring the str-index path — emitting `xs[i as usize]`
+        // for a variable index panicked (`-1 as usize` = usize::MAX) where
+        // Python returns the last element. A NON-NEGATIVE integer LITERAL index
+        // keeps the bare fast path (no wrap needed, no churn); a literal
+        // NEGATIVE index is already resolved to `len - k` in the frontend, so it
+        // never reaches here negative. (`Expr::Index` is list-only — str has its
+        // own char-indexed path, dict uses `DictGet`.)
         Expr::Index { collection, index } => {
-            // PMAT-502ej: a block-producing collection (`sorted(...)`,
-            // `reversed(...)`, a block-expr — all emit `{ … }`) can't be
-            // indexed directly: `{block}[i]` mis-parses as a block statement
-            // followed by an array literal. Emit the collection to a temp and
-            // wrap it in parens when it opens with `{` (parens are always safe;
-            // a plain `xs` / `xs[i]` collection is left unparenthesized).
-            let mut coll = String::new();
-            emit_expr(&mut coll, collection, mode)?;
-            if coll.trim_start().starts_with('{') {
-                write!(out, "({coll})")?;
+            let nonneg_literal = matches!(index.as_ref(), Expr::LitInt(n) if *n >= 0);
+            if nonneg_literal {
+                // PMAT-502ej: parenthesize a block-producing collection
+                // (`sorted(...)`/`reversed(...)`/block-expr) so `{block}[i]`
+                // doesn't mis-parse as a block + array literal.
+                let mut coll = String::new();
+                emit_expr(&mut coll, collection, mode)?;
+                if coll.trim_start().starts_with('{') {
+                    write!(out, "({coll})")?;
+                } else {
+                    out.push_str(&coll);
+                }
+                out.push('[');
+                emit_expr(out, index, mode)?;
+                out.push_str(" as usize].clone()");
             } else {
-                out.push_str(&coll);
+                // PMAT-639: bind the collection (by ref, eval-once — `&(...)`
+                // also handles a block-producing collection) and the index,
+                // then wrap a negative index. An out-of-range result still
+                // panics via the `as usize` cast / bounds check (≈ Python
+                // IndexError).
+                out.push_str("{ let __lc = &(");
+                emit_expr(out, collection, mode)?;
+                out.push_str("); let __li: i64 = (");
+                emit_expr(out, index, mode)?;
+                out.push_str(") as i64; let __lidx = if __li < 0 { __lc.len() as i64 + __li } else { __li }; __lc[__lidx as usize].clone() }");
             }
-            out.push('[');
-            emit_expr(out, index, mode)?;
-            out.push_str(" as usize].clone()");
         }
         // PMAT-466 (v0.2.0 Track 1.C): Python `d[k]` → Rust
         // `d[&(k)].clone()`. HashMap's `Index` panics on an absent key
