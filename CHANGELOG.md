@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.384] — 2026-06-15
+
+### Fixed
+
+- **PMAT-685 — `list.extend(str)` iterates the string's characters.** `xs.extend(s)`
+  over a str argument iterates the string's CHARACTERS in Python (each a 1-char
+  str), appending each; xpile emitted `(s).iter().cloned()` on a `String` (no
+  `.iter()` → rustc E0599). **Fix** (frontend only, the `.extend()` intercept; NO
+  IR change): when the extend arg types as `str`, convert it to its chars list via
+  `Expr::StrChars` (→ `List(Str)`) — the same conversion `for c in s` /
+  `enumerate(s)` use — so the existing `ListExtend` codegen's `.iter().cloned()`
+  operates on a `Vec<String>`. A list/range/set/dict arg is unchanged.
+  Differential-verified vs python3 (`["a"].extend("bcd")`, non-ASCII
+  `extend("héllo")` → 5 chars, list.extend(list) regression). New e2e fixture
+  `list_extend_str.py` (rustc round-trip). e2e 441 → 442. Found by HUNT-V6 (item B2).
+
 ## [0.1.383] — 2026-06-15
 
 ### Added
