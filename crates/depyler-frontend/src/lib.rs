@@ -6885,8 +6885,9 @@ fn infer_type(e: &Expr) -> Type {
             | StrMethodOp::Count
             | StrMethodOp::CharCount
             | StrMethodOp::StrIndex => Type::I64,
-            // PMAT-502ag/502di: isdigit/isalpha/isspace/isalnum/isupper/islower → Bool.
+            // PMAT-502ag/502di/643: isdigit/isnumeric/isalpha/isspace/isalnum/isupper/islower → Bool.
             StrMethodOp::IsDigit
+            | StrMethodOp::IsNumeric
             | StrMethodOp::IsAlpha
             | StrMethodOp::IsSpace
             | StrMethodOp::IsAlnum
@@ -7283,8 +7284,9 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             | StrMethodOp::Count
             | StrMethodOp::CharCount
             | StrMethodOp::StrIndex => Type::I64,
-            // PMAT-502ag/502di: isdigit/isalpha/isspace/isalnum/isupper/islower → Bool.
+            // PMAT-502ag/502di/643: isdigit/isnumeric/isalpha/isspace/isalnum/isupper/islower → Bool.
             StrMethodOp::IsDigit
+            | StrMethodOp::IsNumeric
             | StrMethodOp::IsAlpha
             | StrMethodOp::IsSpace
             | StrMethodOp::IsAlnum
@@ -12007,6 +12009,8 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
         "index" => Some(StrMethodOp::StrIndex),
         // PMAT-502ag: classification predicates (0-arg).
         "isdigit" => Some(StrMethodOp::IsDigit),
+        // PMAT-643: isnumeric (broader than isdigit — Unicode Number categories).
+        "isnumeric" => Some(StrMethodOp::IsNumeric),
         "isalpha" => Some(StrMethodOp::IsAlpha),
         "isspace" => Some(StrMethodOp::IsSpace),
         // PMAT-502di: more classification predicates (0-arg).
@@ -12062,8 +12066,9 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         | StrMethodOp::RIndex
         | StrMethodOp::Count
         | StrMethodOp::StrIndex => 1,
-        // PMAT-502ag/502di: classification predicates take no args.
+        // PMAT-502ag/502di/643: classification predicates take no args.
         StrMethodOp::IsDigit
+        | StrMethodOp::IsNumeric
         | StrMethodOp::IsAlpha
         | StrMethodOp::IsSpace
         | StrMethodOp::IsAlnum

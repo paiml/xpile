@@ -1258,13 +1258,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             } else if matches!(
                 op,
                 StrMethodOp::IsDigit
+                    | StrMethodOp::IsNumeric
                     | StrMethodOp::IsAlpha
                     | StrMethodOp::IsSpace
                     | StrMethodOp::IsAlnum
             ) {
-                // PMAT-502ag/502di: `.isdigit()`/`.isalpha()`/`.isspace()`/
-                // `.isalnum()` → `(!(s).is_empty() && (s).chars().all(|__c|
-                // __c.<pred>()))`. The empty guard matches Python.
+                // PMAT-502ag/502di/643: `.isdigit()`/`.isnumeric()`/`.isalpha()`/
+                // `.isspace()`/`.isalnum()` → `(!(s).is_empty() && (s).chars()
+                // .all(|__c| __c.<pred>()))`. The empty guard matches Python.
                 out.push_str("(!(");
                 emit_expr(out, recv, mode)?;
                 out.push_str(").is_empty() && (");
@@ -1272,6 +1273,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str(").chars().all(|__c| ");
                 out.push_str(match op {
                     StrMethodOp::IsDigit => "__c.is_ascii_digit()",
+                    // PMAT-643: Unicode Number categories (Nd/Nl/No), matching
+                    // Python `str.isnumeric()` (broader than `isdigit`).
+                    StrMethodOp::IsNumeric => "__c.is_numeric()",
                     StrMethodOp::IsAlpha => "__c.is_alphabetic()",
                     StrMethodOp::IsAlnum => "__c.is_alphanumeric()",
                     // PMAT-600: Python `str.isspace()` also treats the C0
@@ -1532,6 +1536,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     }
                     StrMethodOp::Join => unreachable!("Join handled above"),
                     StrMethodOp::IsDigit
+                    | StrMethodOp::IsNumeric
                     | StrMethodOp::IsAlpha
                     | StrMethodOp::IsSpace
                     | StrMethodOp::IsAlnum
