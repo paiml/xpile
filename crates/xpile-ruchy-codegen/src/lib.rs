@@ -827,6 +827,10 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
                 }
                 emit_type(out, t)?;
             }
+            // PMAT-625: 1-element tuple needs `(T,)` (matches the Rust backend).
+            if elems.len() == 1 {
+                out.push(',');
+            }
             out.push(')');
         }
         // PMAT-046: same disposition as the Rust backend.
@@ -1348,6 +1352,10 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     out.push_str(", ");
                 }
                 emit_expr(out, e, mode)?;
+            }
+            // PMAT-625: 1-element tuple literal needs `(x,)` (matches Rust backend).
+            if elems.len() == 1 {
+                out.push(',');
             }
             out.push(')');
         }

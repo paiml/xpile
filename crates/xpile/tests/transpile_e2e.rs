@@ -6658,13 +6658,39 @@ fn main() {
     assert_rustc_runs("list_fstring_repr", &rust, driver);
 }
 
+/// PMAT-625: a 1-element tuple type/value emitted Rust `(T)` / `(x)` — a
+/// parenthesized value, NOT a real 1-tuple `(T,)` / `(x,)` — so `.0`/indexing
+/// failed to compile (E0610). Both the type emitter and the tuple-literal emitter
+/// now add the trailing comma for a single element; multi-element tuples are
+/// unaffected. Also un-blocks 1-tuple f-string repr (PMAT-624). Cross-checked vs
+/// python3.
+#[test]
+fn one_element_tuple() {
+    let rust = xpile_transpile_to_rust("one_element_tuple.py");
+    assert!(
+        // 1-tuple type + literal both carry the trailing comma...
+        rust.contains("(i64,)") && rust.contains("(42i64,)")
+            // ...but a 2-tuple does not.
+            && rust.contains("(i64, i64)"),
+        "1-element tuples need a trailing comma, multi-element must not:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(idx(), 42);
+    assert_eq!(from_param((7,)), 7);
+    assert_eq!(repr1((42,)), "(42,)");
+    assert_eq!(pair((3, 4)), 7);
+}
+"#;
+    assert_rustc_runs("one_element_tuple", &rust, driver);
+}
+
 /// PMAT-624: interpolating a tuple in an f-string. `f"{p}"` over a tuple emitted
 /// `format!("{}", tuple)`, but tuples have no `Display` → E0277. Python renders
 /// the tuple repr; xpile now desugars per-position (heterogeneous) to
 /// `"(" + repr(p.0) + ", " + repr(p.1) + ... + ")"`, binding the tuple once.
 /// Reuses `pyrepr_of` (so nested tuples/lists work). Found by hunt #8 (H8-12).
-/// Cross-checked vs python3. (Single-element tuples are blocked by a separate
-/// `(T)` vs `(T,)` 1-tuple type-emission bug.)
+/// Cross-checked vs python3. PMAT-625 un-blocks the single-element case.
 #[test]
 fn tuple_fstring_repr() {
     let rust = xpile_transpile_to_rust("tuple_fstring_repr.py");
