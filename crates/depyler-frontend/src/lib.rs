@@ -10088,6 +10088,62 @@ fn bool_to_python_str(value: Expr) -> Expr {
     }
 }
 
+/// PMAT-623: Python-style `repr` of a single value of type `ty`, used to render
+/// list elements. int/float reuse `ToStr`, bool → `True`/`False`, str → quoted
+/// `ReprStr`, nested list → recursive list repr. Unsupported element types
+/// (dict/set/tuple inside a list) are declined.
+fn pyrepr_of(value: Expr, ty: &Type) -> Result<Expr, FrontendError> {
+    Ok(match ty {
+        Type::I64 => Expr::ToStr {
+            value: Box::new(value),
+            of_float: false,
+        },
+        Type::F64 => Expr::ToStr {
+            value: Box::new(value),
+            of_float: true,
+        },
+        Type::Bool => bool_to_python_str(value),
+        Type::Str => Expr::ReprStr {
+            value: Box::new(value),
+        },
+        Type::List(inner) => build_list_repr(value, inner)?,
+        other => {
+            return Err(FrontendError::Lower(format!(
+                "f-string interpolation of a list with {other:?} elements is not supported \
+                 — list repr covers int/float/bool/str/nested-list at v0.2.0"
+            )))
+        }
+    })
+}
+
+/// PMAT-623: build `"[" + ", ".join([repr(e) for e in xs]) + "]"` for a
+/// `list[elem_ty]` value — Python's list `str`/`repr`. Desugar reusing
+/// `Map` + `str.join` + `Concat` + the per-element `pyrepr_of`; recursive for
+/// nested lists. NO new IR.
+fn build_list_repr(list_expr: Expr, elem_ty: &Type) -> Result<Expr, FrontendError> {
+    let body = pyrepr_of(Expr::Ident("__re".to_string()), elem_ty)?;
+    let mapped = Expr::Map {
+        list: Box::new(list_expr),
+        lambda: SortKey {
+            param: "__re".to_string(),
+            body: Box::new(body),
+        },
+    };
+    // `", ".join(<Vec<String>>)` → `StrMethod{recv: ", ", Join, args: [list]}`.
+    let joined = Expr::StrMethod {
+        recv: Box::new(Expr::LitStr(", ".to_string())),
+        op: StrMethodOp::Join,
+        args: vec![mapped],
+    };
+    Ok(Expr::Concat {
+        lhs: Box::new(Expr::LitStr("[".to_string())),
+        rhs: Box::new(Expr::Concat {
+            lhs: Box::new(joined),
+            rhs: Box::new(Expr::LitStr("]".to_string())),
+        }),
+    })
+}
+
 fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr, FrontendError> {
     let ast::Expr::FormattedValue(fv) = part else {
         return lower_expr_in_ctx(ctx, part);
@@ -10127,6 +10183,10 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
                     of_float: true,
                 })
             }
+            // PMAT-623: a list interpolates as its Python repr (`[1, 2, 3]`),
+            // not Rust's `Display` (Vec has none → E0277). Desugar to
+            // `"[" + ", ".join([repr(e) for e in xs]) + "]"`.
+            Type::List(elem) => return build_list_repr(value, elem.as_ref()),
             _ => return Ok(value),
         }
     };

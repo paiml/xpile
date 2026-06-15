@@ -6631,6 +6631,33 @@ fn main() {
     assert_rustc_runs("list_remove", &rust, driver);
 }
 
+/// PMAT-623: interpolating a list in an f-string. `f"{xs}"` emitted
+/// `format!("{}", Vec)`, but `Vec` has no `Display` → E0277. Python renders the
+/// list as its repr; xpile now desugars to `"[" + ", ".join([repr(e) for e in
+/// xs]) + "]"` (recursive for nested lists, reusing Map/join/Concat/repr — no new
+/// IR). Correct for int/float/bool/str/nested element types (where Rust's `{:?}`
+/// would diverge — `[true]` vs `[True]`, `["a"]` vs `['a']`). Found by hunt #8
+/// (H8-2). Cross-checked vs python3.
+#[test]
+fn list_fstring_repr() {
+    let rust = xpile_transpile_to_rust("list_fstring_repr.py");
+    assert!(
+        rust.contains(".join(&(String::from(\", \"))[..])") && rust.contains("String::from(\"[\")"),
+        "list f-string should desugar to a join-based Python repr:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(ints(vec![1, 2, 3]), "v=[1, 2, 3]");
+    assert_eq!(floats(vec![1.5, 2.0]), "v=[1.5, 2.0]");
+    assert_eq!(bools(vec![true, false, true]), "v=[True, False, True]");
+    assert_eq!(strs(vec!["a".to_string(), "b".to_string()]), "v=['a', 'b']");
+    assert_eq!(nested(vec![vec![1, 2], vec![3, 4]]), "grid=[[1, 2], [3, 4]]");
+    assert_eq!(empty(vec![]), "[]");
+}
+"#;
+    assert_rustc_runs("list_fstring_repr", &rust, driver);
+}
+
 /// PMAT-502ef (Tranche 2): a `float` field in an f-string must render Python
 /// repr (`3.0`), not Rust's `Display` (`3` for a whole float) — a silent
 /// miscompile (`f"v={x}"` produced "v=3"). A float field now reuses the same
