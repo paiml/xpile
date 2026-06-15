@@ -608,6 +608,23 @@ fn emit_stmt_indented(
             indices,
             value,
         } => {
+            // PMAT-640: single runtime-negative index wraps like Python (mirrors
+            // the Rust backend / the Expr::Index read path).
+            let single_runtime =
+                indices.len() == 1 && !matches!(&indices[0], Expr::LitInt(n) if *n >= 0);
+            if single_runtime {
+                out.push_str(indent);
+                out.push_str("{ let __ai: i64 = (");
+                emit_expr(out, &indices[0], mode)?;
+                write!(
+                    out,
+                    ") as i64; let __aidx = if __ai < 0 {{ {list_name}.len() as i64 + __ai }} else {{ __ai }}; {list_name}[__aidx as usize] = "
+                )?;
+                emit_expr(out, value, mode)?;
+                out.push_str("; }");
+                writeln!(out)?;
+                return Ok(());
+            }
             // PMAT-502dy: nested list indexing (`grid[i][j] = v`).
             // PMAT-560: a self-referential index (`xs[len(xs) - k] = v`, the
             // negative-index desugar) is bound to a temp first to avoid the
