@@ -1153,7 +1153,9 @@ fn main() {
 fn fstring_spec() {
     let rust = xpile_transpile_to_rust("fstring_spec.py");
     assert!(
-        rust.contains("format!(\"{:.2}\", x)")
+        // PMAT-659: the float-precision `.2` now NaN-guards (emits `__nf`); the
+        // int/width/align specs keep the plain `format!` form.
+        rust.contains("format!(\"{:.2}\", __nf)")
             && rust.contains("format!(\"{:05}\", n)")
             && rust.contains("format!(\"{:>8}\", name)")
             && rust.contains("format!(\"{:4}\", n)"),
@@ -4290,6 +4292,30 @@ fn main() {
 }
 "#;
     assert_rustc_runs("format_spec", &rust, driver);
+}
+
+/// PMAT-659: a float-precision f-string spec (`{:.Nf}` / `{:.N%}`) of NaN prints
+/// "nan" in Python, but Rust's `format!` prints "NaN". The FormatSpec emit now
+/// guards NaN (a float-precision spec is float-only). inf already matches; the
+/// `.`-fill str case (PMAT-658) is not a float precision so it's untouched.
+/// Cross-checked vs python3.
+#[test]
+fn format_nan_precision() {
+    let rust = xpile_transpile_to_rust("format_nan_precision.py");
+    assert!(
+        rust.contains("__nf.is_nan()") && rust.contains("String::from(\"nan\")"),
+        "float-precision format must guard NaN:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(fmt_nan(), "nan");      // was "NaN"
+    assert_eq!(fmt_inf(), "inf");
+    assert_eq!(fmt_normal(), "3.14");
+    assert_eq!(fmt_percent_nan(), "nan%");
+    assert_eq!(fmt_sign_prec(), "+3.50");
+}
+"#;
+    assert_rustc_runs("format_nan_precision", &rust, driver);
 }
 
 /// PMAT-658: a format-spec FILL char before an alignment (`{:->10}`, `{:*<8}`,
