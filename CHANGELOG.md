@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.383] — 2026-06-15
+
+### Added
+
+- **PMAT-684 — `enumerate(xs, start)` inside a comprehension.** `enumerate(xs,
+  start)` / `enumerate(xs, start=N)` inside a list comprehension —
+  `[(i, x) for i, x in enumerate(xs, 1)]` — was rejected with a misleading
+  "expected an iterable of 2-tuples" error (the expression-level enumerate handler
+  required exactly one positional arg and no keywords; the for-loop form already
+  supported start). **Fix**: add a `start: i64` field to `Expr::Enumerate` (0 for
+  the bare form) and extract the start in the expr-level intercept — the 2nd
+  positional arg or a `start=` keyword, an int literal (incl. negative), mirroring
+  the for-loop path; other keywords / positional+keyword reject cleanly. Codegen
+  (rust + ruchy) adds the offset to the index via `checked_add` (C-PY-INT-ARITH)
+  when `start != 0`. Differential-verified vs python3 (positional / `start=` /
+  negative / no-start + for-loop regression). New e2e fixture
+  `enumerate_start_comprehension.py` (rustc round-trip). e2e 440 → 441. Found by
+  HUNT-V6 (item C3).
+
 ## [0.1.382] — 2026-06-15
 
 ### Added
