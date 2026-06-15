@@ -4380,8 +4380,17 @@ fn terminal_if_as_expr(
         body: &[ast::Stmt],
     ) -> Result<Option<Expr>, FrontendError> {
         match body {
+            // PMAT-686: lower the branch's return value EXPECTING the function's
+            // declared type, so an int literal in a float-typed function
+            // (`-> float: … return 0`) becomes a float literal — the resulting
+            // `IfExpr` then types as the declared float, not I64 (which made a
+            // mixed-branch `-> float` body reject as "produces I64"). Otherwise
+            // behaves exactly like the bare value lowering.
             [ast::Stmt::Return(ret)] => match ret.value.as_ref() {
-                Some(v) => Ok(Some(lower_expr_in_ctx(ctx, (**v).clone())?)),
+                Some(v) => {
+                    let expected = ctx.fn_return_type.clone();
+                    Ok(Some(lower_value_expecting(ctx, v, &expected)?))
+                }
                 None => Ok(None),
             },
             [ast::Stmt::If(inner)] => terminal_if_as_expr(ctx, inner),
@@ -6892,6 +6901,20 @@ fn lower_value_expecting(
     value: &ast::Expr,
     expected: &Type,
 ) -> Result<Expr, FrontendError> {
+    // PMAT-686: an int LITERAL in a position expecting a float (`def f() -> float:
+    // … return 0`, where another branch returns a float) — emit it as a float
+    // literal so it compiles. Previously `return 0` produced an `I64` value, so a
+    // mixed-branch `-> float` body was rejected ("body produces I64") / would emit
+    // `0i64` from an f64 fn (E0308). Numerically `0 == 0.0`; Python returns the
+    // bare int (a display-only residual for the int branch, vs not compiling).
+    // SCOPED to literals — an int *variable*/expression (`return n`, n: int) is NOT
+    // coerced, since Python does not coerce on return (`-> float: return n` yields
+    // `5`, not `5.0`); that stays a clean reject.
+    if matches!(expected, Type::F64) {
+        if let Some(n) = extract_int_literal(value) {
+            return Ok(Expr::LitFloat(n as f64));
+        }
+    }
     match value {
         ast::Expr::List(l) if l.elts.is_empty() && matches!(expected, Type::List(_)) => {
             Ok(Expr::ListLit(Vec::new()))
