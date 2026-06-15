@@ -2590,17 +2590,22 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // `HashSet::is_subset`/`is_superset`/`is_disjoint` (proper variants add
         // `&& __l != __r`). Temps avoid double-evaluating either operand.
         Expr::SetPred { lhs, op, rhs } => {
-            out.push_str("({ let __l = ");
+            // PMAT-652: bind the operands BY REFERENCE, not by value. Binding
+            // `let __l = <set var>` moves the set, so `a <= b` (and the
+            // self-comparison `a <= a`) failed with E0382 when the operand was
+            // reused. `&(expr)` borrows an Ident operand and extends a temporary
+            // operand (set-union etc.) via temporary-lifetime-extension.
+            out.push_str("({ let __l = &(");
             emit_expr(out, lhs, mode)?;
-            out.push_str("; let __r = ");
+            out.push_str("); let __r = &(");
             emit_expr(out, rhs, mode)?;
-            out.push_str("; ");
+            out.push_str("); ");
             out.push_str(match op {
-                SetPredOp::Subset => "__l.is_subset(&__r)",
-                SetPredOp::Superset => "__l.is_superset(&__r)",
-                SetPredOp::Disjoint => "__l.is_disjoint(&__r)",
-                SetPredOp::ProperSubset => "__l.is_subset(&__r) && __l != __r",
-                SetPredOp::ProperSuperset => "__l.is_superset(&__r) && __l != __r",
+                SetPredOp::Subset => "__l.is_subset(__r)",
+                SetPredOp::Superset => "__l.is_superset(__r)",
+                SetPredOp::Disjoint => "__l.is_disjoint(__r)",
+                SetPredOp::ProperSubset => "__l.is_subset(__r) && __l != __r",
+                SetPredOp::ProperSuperset => "__l.is_superset(__r) && __l != __r",
             });
             out.push_str(" })");
         }
