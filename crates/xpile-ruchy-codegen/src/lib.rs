@@ -2080,20 +2080,31 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         }
         // PMAT-457 (v0.2.0 Track 1.B): Ruchy → Rust →
         // `xs[i as usize].clone()`, matching the Rust backend.
+        // PMAT-639: runtime-negative list index wraps like Python (mirrors the
+        // Rust backend); a non-negative literal index keeps the fast path.
         Expr::Index { collection, index } => {
-            // PMAT-502ej: parenthesize a block-producing collection
-            // (`sorted(...)`/`reversed(...)`/block-expr) so `{block}[i]` doesn't
-            // mis-parse — matching the Rust backend.
-            let mut coll = String::new();
-            emit_expr(&mut coll, collection, mode)?;
-            if coll.trim_start().starts_with('{') {
-                write!(out, "({coll})")?;
+            let nonneg_literal = matches!(index.as_ref(), Expr::LitInt(n) if *n >= 0);
+            if nonneg_literal {
+                // PMAT-502ej: parenthesize a block-producing collection
+                // (`sorted(...)`/`reversed(...)`/block-expr) so `{block}[i]`
+                // doesn't mis-parse — matching the Rust backend.
+                let mut coll = String::new();
+                emit_expr(&mut coll, collection, mode)?;
+                if coll.trim_start().starts_with('{') {
+                    write!(out, "({coll})")?;
+                } else {
+                    out.push_str(&coll);
+                }
+                out.push('[');
+                emit_expr(out, index, mode)?;
+                out.push_str(" as usize].clone()");
             } else {
-                out.push_str(&coll);
+                out.push_str("{ let __lc = &(");
+                emit_expr(out, collection, mode)?;
+                out.push_str("); let __li: i64 = (");
+                emit_expr(out, index, mode)?;
+                out.push_str(") as i64; let __lidx = if __li < 0 { __lc.len() as i64 + __li } else { __li }; __lc[__lidx as usize].clone() }");
             }
-            out.push('[');
-            emit_expr(out, index, mode)?;
-            out.push_str(" as usize].clone()");
         }
         // PMAT-466 (v0.2.0 Track 1.C): dict ops → Rust, matching the
         // Rust backend exactly (Ruchy compiles to Rust).

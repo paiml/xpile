@@ -1686,6 +1686,37 @@ fn main() {
     assert_rustc_runs("neg_pop_del", &rust, driver);
 }
 
+/// PMAT-639: **correctness** — a runtime-negative list index wraps like Python
+/// (`xs[-1]` is the last element) instead of `i as usize` underflowing to
+/// `usize::MAX` and panicking. A variable/computed index gets the wrap; a
+/// non-negative literal index keeps the bare fast path; `Expr::Index` is
+/// list-only (str/dict have their own paths). Found by a differential hunt;
+/// cross-checked vs python3.
+#[test]
+fn neg_runtime_list_index() {
+    let rust = xpile_transpile_to_rust("neg_runtime_list_index.py");
+    // Variable index gets the negative-wrap; literal index stays bare.
+    assert!(
+        rust.contains("if __li < 0 { __lc.len() as i64 + __li }"),
+        "runtime index negative-wrap:\n{rust}"
+    );
+    assert!(
+        rust.contains("[0i64 as usize].clone()"),
+        "non-negative literal index keeps the fast path:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(at(vec![10, 20, 30], -1), 30);
+    assert_eq!(at(vec![10, 20, 30], -2), 20);
+    assert_eq!(at(vec![10, 20, 30], 1), 20);
+    assert_eq!(last_and_first(vec![5, 6, 7]), 12); // 7 + 5
+    assert_eq!(neg_nested(vec![vec![1, 2], vec![3, 4]], -1), 3);
+    assert_eq!(literal(vec![10, 20, 30]), 40);
+}
+"#;
+    assert_rustc_runs("neg_runtime_list_index", &rust, driver);
+}
+
 /// PMAT-569 (Tranche 2): **correctness** — list-of-list repeat `[[0]] * n`.
 /// A list repeat used slice `repeat`, which needs `T: Copy`, so `Vec<Vec<_>>`
 /// failed to compile (E0277). Now a list repeat clones its elements
