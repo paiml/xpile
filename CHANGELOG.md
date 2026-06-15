@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.397] — 2026-06-15
+
+### Fixed
+
+- **PMAT-698 — count `for`/`while`-else assignments for `let mut` inference.** A variable
+  bound before a loop and reassigned ONLY in the loop's `else` clause was emitted `let`
+  (no `mut`) → rustc E0384 ("cannot assign twice to immutable variable") on a common idiom
+  (`r = "found"; for x in xs: …else: r = "missing"; return r`). **Fix**: `walk_counts` (the
+  let-mut pre-pass) recursed into the loop `body` only, never the `orelse`; the `While`/`For`
+  arms now also fold `walk_counts(&orelse, in_loop)`. The else body runs once on loop
+  completion (not per-iteration), so it uses the enclosing `in_loop` flag. No spurious `mut`
+  (a name crosses the `>1` threshold via the else only when genuinely reassigned; confirmed
+  by `clippy -D warnings`). Differential-verified vs python3 (`for…else` + `while…else` flag
+  reassignment). New e2e fixture `loop_else_mut.py` (rustc round-trip); the existing
+  `loop_else` regression is intact. e2e 455 → 456. Found by HUNT-V8 (item V8-1).
+
 ## [0.1.396] — 2026-06-15
 
 ### Added
