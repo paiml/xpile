@@ -1233,10 +1233,11 @@ fn main() {
     assert_rustc_runs("tuple_unpack", &rust, driver);
 }
 
-/// PMAT-645: starred unpacking `n0, …, *star = xs` (star LAST) over a list —
-/// head/tail destructuring. Desugars to `let n_i = xs[i]` + `let star = xs[p:]`
-/// (no new IR; reuses Index + Slice). The source variable is borrowed (not
-/// moved). Cross-checked vs python3.
+/// PMAT-645/646: starred unpacking `n…, *star, m… = xs` (star at ANY position)
+/// over a list. Desugars to prefix `let n_i = xs[i]`, the star `let star =
+/// xs[p:len-s]`, and suffix `let m_j = xs[len-(s-j)]` — no new IR (reuses Index,
+/// Slice, Len). The source variable is borrowed (not moved). Cross-checked vs
+/// python3.
 #[test]
 fn starred_unpack() {
     let rust = xpile_transpile_to_rust("starred_unpack.py");
@@ -1251,6 +1252,10 @@ fn main() {
     assert_eq!(two_prefix(vec![10, 20, 30, 40, 50]), 33); // 10+20+3
     assert_eq!(star_only(vec![1, 2, 3]), 6);
     assert_eq!(keeps_source(vec![5, 6, 7, 8]), 12); // 5 + 3 + 4 (xs not moved)
+    // PMAT-646: star-first and star-mid.
+    assert_eq!(star_first(vec![1, 2, 3, 4]), 406);          // last*100 + sum(init)
+    assert_eq!(star_mid(vec![1, 2, 3, 4, 5]), 1509);        // 1*1000 + 5*100 + (2+3+4)
+    assert_eq!(two_pre_two_suf(vec![1, 2, 3, 4, 5, 6]), 21); // 1+2+5+6 + (3+4)
 }
 "#;
     assert_rustc_runs("starred_unpack", &rust, driver);
