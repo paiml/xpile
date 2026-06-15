@@ -1187,9 +1187,27 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         }
         // PMAT-502am: a formatted f-string field → `format!("{:<spec>}", v)`.
         Expr::FormatSpec { value, rust_spec } => {
-            write!(out, "format!(\"{{:{rust_spec}}}\", ")?;
-            emit_expr(out, value, mode)?;
-            out.push(')');
+            // PMAT-659: Rust formats NaN as "NaN", but Python prints "nan". A
+            // float-precision spec (`.<digit>`, optionally after a `+`) is
+            // float-only (translate_format_spec gates `.Nf` on F64), so guard
+            // NaN with `.is_nan()`. The `.`-FILL case (`.<align>`, PMAT-658) is
+            // excluded since char-after-`.` is an align char, not a digit. inf
+            // already matches ("inf"/"-inf" in both).
+            let bare = rust_spec.strip_prefix('+').unwrap_or(rust_spec).as_bytes();
+            let is_float_prec =
+                bare.first() == Some(&b'.') && bare.get(1).is_some_and(|b| b.is_ascii_digit());
+            if is_float_prec {
+                out.push_str("{ let __nf = ");
+                emit_expr(out, value, mode)?;
+                write!(
+                    out,
+                    "; if __nf.is_nan() {{ String::from(\"nan\") }} else {{ format!(\"{{:{rust_spec}}}\", __nf) }} }}"
+                )?;
+            } else {
+                write!(out, "format!(\"{{:{rust_spec}}}\", ")?;
+                emit_expr(out, value, mode)?;
+                out.push(')');
+            }
         }
         // PMAT-502cd: `s[i]` over a string — materialise the chars and index
         // them (Rust `String` has no positional `[]`). Negative `i` counts
