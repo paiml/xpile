@@ -646,7 +646,7 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(&lambda.body, out);
         }
         // PMAT-502ai: enumerate/zip — recurse into the source list(s).
-        Expr::Enumerate { list } => collect_idents(list, out),
+        Expr::Enumerate { list, .. } => collect_idents(list, out),
         Expr::Zip { left, right } => {
             collect_idents(left, out);
             collect_idents(right, out);

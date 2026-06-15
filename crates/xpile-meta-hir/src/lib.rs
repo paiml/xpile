@@ -427,7 +427,7 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-502ac: map — recurse into the list and transform body.
         Expr::Map { list, lambda } => expr_has_int_arith(list) || expr_has_int_arith(&lambda.body),
         // PMAT-502ai: enumerate/zip — recurse into the source list(s).
-        Expr::Enumerate { list } => expr_has_int_arith(list),
+        Expr::Enumerate { list, .. } => expr_has_int_arith(list),
         Expr::Zip { left, right } => expr_has_int_arith(left) || expr_has_int_arith(right),
         Expr::ListMinMax {
             list, key, default, ..
@@ -1918,8 +1918,11 @@ pub enum Expr {
     /// of `(index, element)` 2-tuples. PMAT-502ai (Tranche 2). Rust/Ruchy
     /// emit `<list>.iter().cloned().enumerate().map(|(__i, __e)| (__i as i64,
     /// __e)).collect::<Vec<_>>()`; result types as `List(Tuple[I64, elem])`.
-    /// (`enumerate(xs, start)` follows.) Lean refuses.
-    Enumerate { list: Box<Expr> },
+    /// PMAT-684: `start` offsets the index (`enumerate(xs, start)` /
+    /// `enumerate(xs, start=N)`); `start == 0` is the bare form. The map adds the
+    /// offset via `checked_add` (honoring C-PY-INT-ARITH), mirroring the for-loop
+    /// `PairIterKind::Enumerate { start }`. Lean refuses.
+    Enumerate { list: Box<Expr>, start: i64 },
     /// `zip(xs, ys)` over two lists — Python builtin, materialized to a `Vec`
     /// of paired 2-tuples (truncated to the shorter). PMAT-502ai (Tranche 2).
     /// Rust/Ruchy emit `<left>.iter().cloned().zip(<right>.iter().cloned())
@@ -2744,7 +2747,7 @@ fn escape_expr(e: &mut Expr) {
         Expr::BoolReduce { list, .. }
         | Expr::Reversed { list }
         | Expr::SetFromList { list }
-        | Expr::Enumerate { list } => escape_expr(list),
+        | Expr::Enumerate { list, .. } => escape_expr(list),
         Expr::RoundToDigits { value, ndigits } | Expr::RoundIntToDigits { value, ndigits } => {
             escape_expr(value);
             escape_expr(ndigits);
