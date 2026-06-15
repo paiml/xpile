@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.382] — 2026-06-15
+
+### Added
+
+- **PMAT-683 — chained assignment over a Copy scalar.** A non-literal chained
+  assignment `a = b = <expr>` was rejected ("only a scalar literal is supported")
+  — `a = b = n + 1`, `x = y = z = n*2`, float/bool chains all failed (the lowering
+  re-lowered the value per target, safe only for an independent literal). **Fix**
+  (frontend only, `lower_chained_assign`; NO IR change): when the value is a COPY
+  scalar (int/float/bool), bind it ONCE to a temp and copy it into each target
+  (`let __chain = EXPR; a = __chain; b = __chain;`). The scalar-literal path is
+  unchanged (re-lowered per target — independent, and the only way to give each
+  `str` target its own owned `String`). A non-Copy / aliasing value (str variable,
+  list, dict, set) still rejects (`a = b = xs` would move or alias, diverging from
+  Python). Differential-verified vs python3 (`a=b=n+1`, `x=y=z=n*2`, `a=b=p*1.5`,
+  `a=b=n>0`, literal regression). New e2e fixture `chained_assign_scalar.py` (rustc
+  round-trip). e2e 439 → 440. Found by HUNT-V6 (item C2).
+
 ## [0.1.381] — 2026-06-15
 
 ### Added
