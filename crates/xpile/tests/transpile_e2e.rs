@@ -4372,6 +4372,39 @@ fn main() {
     assert_rustc_runs("dict_get_compare", &rust, driver);
 }
 
+/// PMAT-620: a no-default `d.get(k)` in an f-string field is `Option<T>`, which
+/// has no `Display` — `f"{d.get(k)}"` emitted `format!("{}", Option)` (E0308:
+/// transpile-success → invalid Rust). `str(d.get(k))` / `print(d.get(k))` already
+/// reject a bare Optional, so the f-string case now rejects too (fail-loud,
+/// consistent). The supported forms (`d.get(k, default)`, `d[k]`) still work.
+/// Found by differential hunt #7 (H7-9). Cross-checked vs python3.
+#[test]
+fn fstring_dict_get_optional_rejected() {
+    let py = fixture("fstring_dict_get_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "f-string interpolation of a bare `d.get(k)` (Optional) must be refused"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("Optional") && stderr.contains("d.get(k, <default>)"),
+        "the rejection should explain the Optional + suggest a default:\n{stderr}"
+    );
+    // The supported forms (`d.get(k, default)`, `d[k]`) still transpile + run.
+    let rust = xpile_transpile_to_rust("fstring_dict_get_ok.py");
+    let driver = r#"
+fn main() {
+    let mut d = std::collections::HashMap::new();
+    d.insert(String::from("a"), 7i64);
+    assert_eq!(with_default(d.clone(), String::from("a")), String::from("val=7"));
+    assert_eq!(with_default(d.clone(), String::from("z")), String::from("val=0"));
+    assert_eq!(index(d.clone(), String::from("a")), String::from("val=7"));
+}
+"#;
+    assert_rustc_runs("fstring_dict_get_ok", &rust, driver);
+}
+
 /// PMAT-602: a non-Optional annotation over an Optional initializer (1-arg
 /// `d.get(k)`) is a type lie that would emit `Option<i64>` into an `i64`
 /// binding (E0308). xpile rejects it cleanly (transpile-success ⟹ valid Rust),

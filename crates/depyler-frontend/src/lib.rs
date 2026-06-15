@@ -10079,6 +10079,20 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
         ));
     }
     let value = lower_expr_in_ctx(ctx, (*fv.value).clone())?;
+    // PMAT-620: a no-default `d.get(k)` in an f-string field is `Option<T>`,
+    // which has no `Display` — `f"{d.get(k)}"` emitted `format!("{}", Option)`
+    // (E0308: transpile-success → invalid Rust). `str(d.get(k))` and
+    // `print(d.get(k))` already reject a bare Optional, so reject the f-string
+    // case too (fail-loud, consistent) instead of emitting uncompilable Rust.
+    // Rendering a bare Optional to "None"/value is a deferred Optional sub-track.
+    if matches!(value, Expr::DictGetOpt { .. }) {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` interpolates a bare `d.get(k)` (an Optional) in an f-string; \
+             rendering an Optional is not supported — use `d.get(k, <default>)`, or guard \
+             with `k in d` and index `d[k]`",
+            ctx.fn_name
+        )));
+    }
     let Some(spec_expr) = fv.format_spec.as_ref() else {
         // Plain `{expr}` — no spec; Display-coerced by the surrounding format!.
         // PMAT-502ee/ef: `bool` and `float` fields must render Python-style,
