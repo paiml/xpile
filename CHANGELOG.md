@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.389] — 2026-06-15
+
+### Added
+
+- **PMAT-690 — `None` in value positions over `Optional[T]`.** Two common Optional
+  idioms rejected with "unsupported constant: Discriminant(0)": (1) an Optional
+  accumulator `result: Optional[int] = None` + later `result = v`, and (2) `x ==
+  None` / `x != None`. **Fix** (frontend only, NO IR change — reuses
+  `Expr::OptionExpr` / `Expr::IsNone`): `lower_ann_assign` lowers a `None`
+  initializer against an `Optional[T]` annotation to `OptionExpr(None)` (Rust
+  `None`; non-Optional annotation is a clear mismatch); a plain `name = value`
+  reassignment wraps a bare-`T` value in `Some(value)` when the bound target types
+  as `Optional[T]` (so `result = v` compiles after the accumulator); and the `is
+  None`/`is not None` compare guard now also matches `== None` / `!= None` →
+  `.is_none()` / `.is_some()`. Differential-verified vs python3 (accumulator →
+  Some(8)/None; `x == None`/`x != None`). New e2e fixture `none_value_literal.py`
+  (rustc round-trip). e2e 446 → 447. Found by HUNT-V7 (item V7-4). (A ternary `v if
+  c else None` branch — needs per-branch Some-wrapping — is a follow-up.)
+
 ## [0.1.388] — 2026-06-15
 
 ### Fixed
