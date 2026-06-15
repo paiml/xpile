@@ -11985,7 +11985,7 @@ fn to_i64_operand(ctx: &LoweringCtx, e: Expr) -> Expr {
 
 /// PMAT-617: unconditionally wrap an expression KNOWN to be `bool` in a
 /// `bool -> i64` cast (`(b) as i64`). Unlike [`to_i64_operand`] this does not
-/// re-infer the type, so it is safe to apply to a `__cmpN` chained-comparison
+/// re-infer the type, so it is safe to apply to a `__tN` chained-comparison
 /// temp that is not registered in the lowering context.
 fn bool_to_i64_cast(e: Expr) -> Expr {
     Expr::NumCast {
@@ -12818,50 +12818,66 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
         return build_chain_cmp(ctx, &c.ops[0], lhs, &op_types[0], rhs, &op_types[1]);
     }
 
-    // PMAT-576: a CHAINED comparison (`a < b < c`, `a == f() == b`) desugars to
-    // `(a OP b) && (b OP c) && …`, where each *interior* operand is SHARED by
-    // two adjacent sub-comparisons. Emitting the lowered operand into both
-    // (the previous `operands[i].clone()`) evaluated it TWICE — diverging from
-    // Python, which evaluates every operand exactly once, left to right: a
-    // side-effecting middle (`0 < xs.pop() < 10`) popped twice, an expensive
-    // one ran twice. Bind every operand to a fresh temp ONCE, then fold the
-    // sub-comparisons over the temps inside an `Expr::Block`. (Short-circuit
-    // order is preserved: `&&` still stops at the first false sub-comparison;
-    // only the one-time *binding* of operands is hoisted, which is observable
-    // only when an operand has a side effect — exactly the bug.)
-    let names: Vec<String> = (0..operands.len()).map(|i| format!("__cmp{i}")).collect();
-    let mut stmts: Vec<Stmt> = Vec::with_capacity(operands.len());
-    for (i, value) in operands.into_iter().enumerate() {
-        stmts.push(Stmt::Let {
-            name: names[i].clone(),
-            ty: op_types[i].clone(),
-            value,
-            mutable: false,
-        });
-    }
-    let mut acc: Option<Expr> = None;
-    for (i, op) in c.ops.iter().enumerate() {
+    // PMAT-576 / PMAT-672: a CHAINED comparison (`a < b < c`) means
+    // `a OP0 b and b OP1 c and …` — each INTERIOR operand is shared by two
+    // adjacent sub-comparisons, and Python evaluates every operand EXACTLY ONCE,
+    // LEFT-TO-RIGHT, with SHORT-CIRCUIT: it stops (and never evaluates the
+    // remaining operands) at the first false sub-comparison. PMAT-576 fixed the
+    // double-eval of the shared middle by hoisting EVERY operand to a `let __cmpN`
+    // temp up front — but that made the trailing operands EAGER (a panic-prone or
+    // side-effecting right operand ran even when an earlier compare was false:
+    // `a < f1() < f2()` with `a` failing the first compare still called `f2()`).
+    // PMAT-672: build a RIGHT-NESTED form instead — each shared operand is bound
+    // to a temp the moment it is first reached, inside the `if` of the prior
+    // sub-comparison, so it evaluates once AND only when Python would:
+    //   { let __t1 = b; if (a OP0 __t1) {
+    //       { let __t2 = c; if (__t1 OP1 __t2) { __t2 OP2 d } else { false } }
+    //     } else { false } }
+    // The first operand is inline in compare 0; the last is inline in the
+    // innermost compare; interior operands 1..n-1 are the temps.
+    let n = c.ops.len(); // operands.len() == n + 1; n >= 2 here (n == 1 returned above)
+    let temp = |i: usize| format!("__t{i}");
+    // Innermost sub-comparison (last op): left is the interior temp __t{n-1}
+    // (n-1 >= 1 since n >= 2); right is the last operand, inline.
+    let last_right = operands[n].clone();
+    let mut inner = build_chain_cmp(
+        ctx,
+        &c.ops[n - 1],
+        Expr::Ident(temp(n - 1)),
+        &op_types[n - 1],
+        last_right,
+        &op_types[n],
+    )?;
+    // Wrap outward from op n-2 down to op 0.
+    for i in (0..n - 1).rev() {
+        let left = if i == 0 {
+            operands[0].clone()
+        } else {
+            Expr::Ident(temp(i))
+        };
         let cmp = build_chain_cmp(
             ctx,
-            op,
-            Expr::Ident(names[i].clone()),
+            &c.ops[i],
+            left,
             &op_types[i],
-            Expr::Ident(names[i + 1].clone()),
+            Expr::Ident(temp(i + 1)),
             &op_types[i + 1],
         )?;
-        acc = Some(match acc {
-            None => cmp,
-            Some(prev) => Expr::BinOp {
-                op: BinOp::And,
-                lhs: Box::new(prev),
-                rhs: Box::new(cmp),
+        inner = Expr::Block(Box::new(Block {
+            stmts: vec![Stmt::Let {
+                name: temp(i + 1),
+                ty: op_types[i + 1].clone(),
+                value: operands[i + 1].clone(),
+                mutable: false,
+            }],
+            trailing_return: Expr::IfExpr {
+                cond: Box::new(cmp),
+                then_expr: Box::new(inner),
+                else_expr: Box::new(Expr::LitBool(false)),
             },
-        });
+        }));
     }
-    Ok(Expr::Block(Box::new(Block {
-        stmts,
-        trailing_return: acc.expect("ops non-empty (checked above)"),
-    })))
+    Ok(inner)
 }
 
 /// PMAT-576: build one sub-comparison of a (possibly chained) `Compare`, from
@@ -12900,7 +12916,7 @@ fn build_chain_cmp(
         // the deferred comparison half of the bool-as-int story (PMAT-565). Use
         // the authoritative `lt`/`rt` to build the cast directly rather than
         // re-inferring via `to_i64_operand`: in a CHAINED comparison the operand
-        // here is a `__cmpN` temp not registered in `ctx`, so re-inference would
+        // here is a `__tN` temp not registered in `ctx`, so re-inference would
         // miss it (the float path's `to_f64_operand` survives that only because a
         // redundant `f64 as f64` is harmless). (bool/bool needs no coercion —
         // Rust `bool: Ord`; bool/float is a separate rarer follow-up.)

@@ -2361,11 +2361,13 @@ fn main() {
 #[test]
 fn chained_compare() {
     let rust = xpile_transpile_to_rust("chained_compare.py");
-    // PMAT-576: chained comparison evaluates each operand exactly once — bind
-    // to temps, then AND the sub-comparisons over the temps.
+    // PMAT-672: chained comparison evaluates each operand exactly once AND
+    // short-circuits like Python — a right-nested form binds each shared operand
+    // to a temp the moment it is reached, inside the `if` of the prior compare,
+    // so the trailing operand is only evaluated when the earlier compare holds.
     assert!(
-        rust.contains("((__cmp0 <= __cmp1) && (__cmp1 <= __cmp2))"),
-        "expected chained-comparison conjunction over temps, got:\n{rust}"
+        rust.contains("if (lo <= __t1) { (__t1 <= hi) } else { false }"),
+        "expected right-nested short-circuiting chained comparison, got:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -8334,6 +8336,32 @@ fn main() {
 }
 "#;
     assert_rustc_runs("chained_compare_side_effect", &rust, driver);
+}
+
+/// PMAT-672 (Tranche 2): **correctness** — a chained comparison must
+/// SHORT-CIRCUIT like Python: when an earlier sub-comparison is false, the
+/// trailing operands are never evaluated. PMAT-576's flat `let __cmpN` + `&&`
+/// fold hoisted EVERY operand up front, so a panic-prone trailing operand ran
+/// even when an earlier compare was false. PMAT-672 emits a right-nested form
+/// (each shared operand bound inside the prior compare's `if`). Cross-checked
+/// vs python3: `guard(2, 0)` short-circuits before `100 // 0` (no panic).
+#[test]
+fn chain_short_circuit() {
+    let rust = xpile_transpile_to_rust("chain_short_circuit.py");
+    let driver = r#"
+fn main() {
+    // 10 < 2 is false -> `100 // dv` never evaluated; dv == 0 does NOT panic.
+    // The old eager lowering hoisted `100 // 0` -> divide-by-zero panic.
+    assert_eq!(guard(2, 0), false);
+    // 10 < 20 true, then 20 < (100 // 5 == 20) -> false.
+    assert_eq!(guard(20, 5), false);
+    // 10 < 15 true, then 15 < (100 // 5 == 20) -> true.
+    assert_eq!(guard(15, 5), true);
+    assert!(all_true(1, 2, 3));
+    assert!(!all_true(1, 2, 2));
+}
+"#;
+    assert_rustc_runs("chain_short_circuit", &rust, driver);
 }
 
 /// PMAT-575 (Tranche 2): **correctness / contract integrity** — left-shift
