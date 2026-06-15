@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.393] — 2026-06-15
+
+### Added
+
+- **PMAT-694 — f-string `!r`/`!s` conversions + the `{x=}` debug form.** `f"{x=}"` and
+  the `!r`/`!s` conversion flags were all rejected ("f-string conversion flags
+  (`!r`/`!s`/`!a`) are not supported"). The parser desugars `f"{x=}"` to
+  `Constant("x=") + FormattedValue(x, conversion=Repr)` — byte-identical to `f"{x!r}"` —
+  so supporting `!r` enables the debug form too. **Fix** (frontend only, NO IR change):
+  `lower_fstring_part_in_ctx` declines only `!a` (ascii) with a clearer message; routes
+  `!r` (repr) through the existing `pyrepr_of` helper (strings gain quotes — `'hi'`;
+  float/bool/list/tuple render as their Python repr); treats `!s` (str) as the plain-field
+  semantics; and for an explicit `{x!r:spec}` applies repr first then formats the resulting
+  string (`{s!r:>10}` right-aligns the quoted repr). Reuses `ReprStr`/`ToStr`/`IfExpr`/
+  `build_list_repr`/`build_tuple_repr`, which both backends already emit. Differential-
+  verified vs python3: `{x=}` for int/str/float/bool (`x=5`, `s='hi'`, `f=3.0`,
+  `b=True done`), `!r`/`!s`, `[{s!r:>10}]` → `[      'ab']`. New e2e fixture
+  `fstring_debug_repr.py` (rustc round-trip). e2e 450 → 451. Found by HUNT-V7 (item V7-11).
+
 ## [0.1.392] — 2026-06-15
 
 ### Added
