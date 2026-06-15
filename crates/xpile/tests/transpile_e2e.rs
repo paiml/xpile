@@ -4498,6 +4498,29 @@ fn main() {
     assert_rustc_runs("bool_op_float_truthy", &rust, driver);
 }
 
+/// PMAT-699: a bare-variable key or value in a dict literal is moved into
+/// `m.insert(...)`; reusing it afterward was rustc E0382. The DictLit codegen now
+/// clones bare idents at insert (literals/temporaries are emitted as-is).
+/// Cross-checked vs python3 (HUNT-V8 item V8-2).
+#[test]
+fn dict_lit_noncopy_clone() {
+    let rust = xpile_transpile_to_rust("dict_lit_noncopy_clone.py");
+    assert!(
+        rust.contains("m.insert(k.clone(), v.clone())")
+            && rust.contains("m.insert(String::from(\"key\"), s.clone())"),
+        "dict literal should clone bare-ident keys/values (literal key untouched):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(kv("x".to_string(), 5), 5);
+    assert_eq!(with_str_val("hello".to_string()), 5);
+    assert_eq!(two_pairs("a".to_string(), "b".to_string()), 2);
+    assert_eq!(int_keys(1, 2), 2); // Copy keys clone fine under rustc
+}
+"#;
+    assert_rustc_runs("dict_lit_noncopy_clone", &rust, driver);
+}
+
 /// PMAT-502cf (Tranche 2): dict comprehension over `d.items()` with a tuple
 /// target → a `ForEachPair(Pairs)` loop building the dict.
 #[test]
