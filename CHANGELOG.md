@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.322] — 2026-06-15
+
+Tranche 2 — PMAT-623: **correctness** — interpolating a list in an f-string renders its Python repr.
+
+- `f"{xs}"` over a list emitted `format!("{}", Vec)`, but `Vec` has no `Display`
+  → E0277 (transpile succeeded, invalid Rust) — a common everyday idiom. Found by
+  differential hunt #8 (H8-2).
+- Fix (frontend, no new IR): desugar a list f-string field to
+  `"[" + ", ".join([repr(e) for e in xs]) + "]"`, reusing the existing `Map` +
+  `str.join` + `Concat` + per-element repr (`ToStr` for int/float, `True`/`False`
+  for bool, quoted `ReprStr` for str). Recursive `build_list_repr`/`pyrepr_of`
+  handle nested lists. Correct for every element type — where Rust's `{:?}` would
+  diverge (`[true]` vs `[True]`, `["a"]` vs `['a']`), the per-element repr matches.
+- New e2e fixture `list_fstring_repr.py` cross-checked vs python3
+  (int/float/bool/str/nested/empty). 382 e2e fixtures.
+
 ## [0.1.321] — 2026-06-15
 
 Tranche 2 — PMAT-622: **correctness** — sorting a list whose element embeds a float (tuple/nested).
