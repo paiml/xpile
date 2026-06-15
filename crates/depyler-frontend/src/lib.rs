@@ -9499,6 +9499,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                 }
             }
+            // PMAT-636: `int ** <negative int literal>` is FLOAT in Python
+            // (`2 ** -1 == 0.5`) — detect the negative-literal exponent from the
+            // AST before the operands are moved/lowered, so the Pow branch below
+            // takes the float path. A variable/non-literal negative exponent has
+            // a runtime-dependent result type (int for ≥0, float for <0) that
+            // static typing can't represent, so it stays on the integer path.
+            let neg_pow_exp = matches!(b.op, ast::Operator::Pow)
+                && extract_step_literal(&b.right).is_some_and(|k| k < 0);
             let lhs = lower_expr_in_ctx(ctx, *b.left)?;
             let rhs = lower_expr_in_ctx(ctx, *b.right)?;
             // PMAT-502bs: Python 3 `/` is ALWAYS true division → f64, even
@@ -9515,9 +9523,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             }
             // PMAT-502bt: Python `a ** b` with a float operand → float power
             // `(a).powf(b)`. Both operands cast to f64 (powf needs f64).
-            // `int ** int` stays integer (`checked_pow`).
+            // `int ** int` stays integer (`checked_pow`). PMAT-636: a negative
+            // integer-literal exponent also takes the float path.
             if matches!(b.op, ast::Operator::Pow)
-                && (infer_type_in_ctx(ctx, &lhs) == Type::F64
+                && (neg_pow_exp
+                    || infer_type_in_ctx(ctx, &lhs) == Type::F64
                     || infer_type_in_ctx(ctx, &rhs) == Type::F64)
             {
                 return Ok(Expr::FloatBinOp {
@@ -10628,6 +10638,10 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             ))),
         },
         ast::Expr::BinOp(b) => {
+            // PMAT-636: `int ** <negative int literal>` → float (see the
+            // ctx-aware arm); detect before the operands are moved.
+            let neg_pow_exp = matches!(b.op, ast::Operator::Pow)
+                && extract_step_literal(&b.right).is_some_and(|k| k < 0);
             let lhs = lower_expr(*b.left)?;
             let rhs = lower_expr(*b.right)?;
             // PMAT-502bs: Python 3 `/` is ALWAYS true division → f64 (see
@@ -10642,8 +10656,9 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             }
             // PMAT-502bt: float power `a ** b` (context-free detects float
             // *literals*; param-typed floats are caught by the ctx path).
+            // PMAT-636: a negative integer-literal exponent also → float.
             if matches!(b.op, ast::Operator::Pow)
-                && (infer_type(&lhs) == Type::F64 || infer_type(&rhs) == Type::F64)
+                && (neg_pow_exp || infer_type(&lhs) == Type::F64 || infer_type(&rhs) == Type::F64)
             {
                 return Ok(Expr::FloatBinOp {
                     op: FloatOp::Pow,
