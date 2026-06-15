@@ -19,6 +19,26 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.347] — 2026-06-15
+
+Tranche 2 — PMAT-648: **correctness** — `@dataclass(order=True)` derives `PartialOrd`.
+
+- `@dataclass(order=True)` generates ordering dunders in Python (instances
+  compared field-by-field as a tuple), but xpile emitted
+  `#[derive(Clone, Debug, PartialEq)]` with no `PartialOrd`, so `Inst < Inst`
+  (and `<=`/`>`/`>=`) failed to compile (rustc E0369) — a transpile→invalid-rust
+  for the common sortable-record pattern.
+- Fix (frontend + both backends): a new `class_has_order` helper (mirrors
+  `class_is_frozen`, both refactored onto a shared `dataclass_kw_true` reader)
+  detects `order=True`; `Item::Struct` gains an `order: bool` field; the codegens
+  append `PartialOrd` to the derive list when set. `PartialOrd` gives
+  lexicographic comparison by field order — matching Python's tuple comparison —
+  and is sound for any comparable field including `f64`. Full `Ord` (to sort
+  instances; a float field can't derive `Ord`) is a deferred follow-up.
+- Differential-verified vs python3 (single/multi-field `<`, `>=`, float-field
+  `<`); plain/non-order dataclasses + frozen Eq+Hash derive unaffected. New e2e
+  fixture `dataclass_order.py`. 405 e2e fixtures. Found by HUNT-V2.
+
 ## [0.1.346] — 2026-06-15
 
 Tranche 2 — PMAT-647: **correctness** — starred-unpack binding is `let mut` when mutated.
