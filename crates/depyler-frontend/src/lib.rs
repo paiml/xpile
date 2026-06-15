@@ -2766,6 +2766,19 @@ fn try_lower_list_method_call(
             },
             Err(err) => return Some(Err(err)),
         };
+        // PMAT-685: `xs.extend(s)` over a STR arg iterates the string's
+        // CHARACTERS in Python (each a 1-char str), appending each. A bare
+        // `str`/`String` has no `.iter()` (the `ListExtend` codegen emits
+        // `(s).iter().cloned()` → E0599), so convert it to its chars list
+        // (`Expr::StrChars` → `List(Str)`), the same conversion `for c in s` /
+        // `enumerate(s)` use; the codegen's `.iter().cloned()` then works.
+        let other = if matches!(infer_type_in_ctx(ctx, &other), Type::Str) {
+            Expr::StrChars {
+                string: Box::new(other),
+            }
+        } else {
+            other
+        };
         // PMAT-660: `xs.extend(xs)` (self-extend) would immut-borrow `xs` while
         // `extend` mut-borrows it (E0502) — clone the receiver first.
         let other = if matches!(&other, Expr::Ident(n) if n == receiver_name) {
