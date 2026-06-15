@@ -8803,6 +8803,33 @@ fn main() {
     assert_rustc_runs("enumerate_start_comprehension", &rust, driver);
 }
 
+/// PMAT-685: `xs.extend(s)` over a str arg iterates the string's CHARACTERS in
+/// Python (each a 1-char str), appending each. It emitted `(s).iter().cloned()`
+/// on a `String` → E0599; now the str arg is converted to its chars list
+/// (`Expr::StrChars`). Cross-checked vs python3 (incl. non-ASCII).
+#[test]
+fn list_extend_str() {
+    let rust = xpile_transpile_to_rust("list_extend_str.py");
+    assert!(
+        rust.contains("(w).chars().map(|__c| __c.to_string())"),
+        "list.extend(str) should iterate the string's chars:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(
+        add_chars(vec!["a".to_string()], "bcd".to_string()),
+        vec!["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()]
+    );
+    assert_eq!(
+        add_chars(vec![], "héllo".to_string()),   // non-ASCII: é is one char
+        vec!["h".to_string(), "é".to_string(), "l".to_string(), "l".to_string(), "o".to_string()]
+    );
+    assert_eq!(list_extend_regression(vec![1, 2], vec![3, 4]), vec![1, 2, 3, 4]);
+}
+"#;
+    assert_rustc_runs("list_extend_str", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a
