@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.402] — 2026-06-16
+
+### Added
+
+- **PMAT-703 — `sum(xs, start)` promotes int+float like Python.** `sum(list[int], 0.0)` and
+  `sum(list[float], 0)` were rejected ("start type must match the list element type"), but
+  Python promotes int+float freely — the result is a float iff EITHER the elements or the
+  start is float. **Fix**: the `sum` 2-arg handler computes
+  `of_float = elem_is_float || start_is_float` and maps whichever side is int up to f64 — an
+  int list with a float start maps each element via `NumCast{to_float}` (reusing the bool→i64
+  machinery's shape); an int start with a float list is cast to f64. Same-type int+int /
+  float+float paths are unchanged; a non-numeric start (str) still rejects with a clearer
+  message. Differential-verified vs python3 (int list + float start → 6.0; float list + int
+  start → 4.0). New e2e fixture `sum_start_promote.py` (rustc round-trip); existing
+  `sum_start`/`sum_builtin_int_and_float` regressions intact. e2e 460 → 461. Found by
+  HUNT-V8 (item V8-14).
+
 ## [0.1.401] — 2026-06-16
 
 ### Fixed
