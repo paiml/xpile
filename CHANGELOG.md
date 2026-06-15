@@ -19,6 +19,20 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.361] — 2026-06-15
+
+Tranche 2 — PMAT-662: **correctness** — a `_` discard in tuple-unpack is never `mut`.
+
+- `a, _, _ = t` (and `_, _, _, _ = ...`) emitted `let (mut a, mut _, mut _)` —
+  `mut _` is invalid Rust ("`mut` must be followed by a named binding"). Repeated
+  `_` discards aggregate the `_` count in the mutability pre-walk, so the 2nd+ `_`
+  crossed the `> 1` mutable threshold and got `mut`. (A single `_` was fine.)
+- Fix (both backends, the `Stmt::LetTuple` pattern emit, no IR change): never
+  prefix the `_` wildcard with `mut`. Named bindings still get `mut` when mutated.
+- Differential-verified vs python3 (two-discard, all-discard, mixed, single-discard
+  regression). New e2e fixture `lettuple_underscore_mut.py`. 419 e2e fixtures.
+  Found by HUNT-V4.
+
 ## [0.1.360] — 2026-06-15
 
 Tranche 2 — PMAT-661: **correctness** — int/float truthiness in if/while/elif conditions.
