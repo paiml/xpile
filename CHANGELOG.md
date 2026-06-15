@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.370] — 2026-06-15
+
+Tranche 2 — PMAT-671: **correctness** — `x in t` over a tuple → chained-OR membership.
+
+- `x in t` / `x not in t` over a fixed-arity tuple was rejected ("unsupported
+  comparison operator: In") — the membership intercept handled list/set/dict/str
+  but not tuples, and Rust tuples have no `.contains`.
+- Fix (frontend only, the `In`/`NotIn` compare intercept, no IR change): add a
+  `Type::Tuple` arm lowering `x in t` to a chained-OR of equalities
+  `x == t.0 || x == t.1 || …` (`not in` → negated). Gated to a homogeneous tuple
+  whose element type matches the needle (a heterogeneous tuple would type-mismatch
+  under `==`; falls through to the existing reject). Empty tuple → `false`.
+- Differential-verified vs python3 (int tuple in/not-in, str tuple;
+  list-membership regression). New e2e fixture `tuple_membership.py`. 428 e2e
+  fixtures. Found by HUNT-V5.
+
 ## [0.1.369] — 2026-06-15
 
 Tranche 2 — PMAT-670: **correctness** — negative constant tuple index `t[-k]`.
