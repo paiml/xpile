@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.357] — 2026-06-15
+
+Tranche 2 — PMAT-658: **correctness** — format-spec fill char before alignment.
+
+- A format-spec fill char preceding an alignment (`"{:->10}"`, `"{:*<8}"`,
+  `"{:.^9}"`) was mishandled: a `-` fill was mistaken for a sign flag and dropped
+  (→ space padding, silent wrong output), and `*`/`.` fills were outright
+  rejected. Python allows any character as a fill when it precedes an align.
+- Fix (frontend only, `translate_format_spec`, no IR change): add a fill+align
+  branch at the top — if the spec's 2nd char is an align char, char[0] is the
+  fill, and Rust's `{:fill<width}` syntax is identical, so pass through verbatim.
+  Placed before the sign-strip so a `-`/`+` fill isn't swallowed. Shared by both
+  `.format()` and f-string paths; the fill-less alignment case is unchanged.
+- Differential-verified vs python3 (`-`/`*`/`.`/`0` fills, left/right/center
+  align, int and str, f-string form, align-only regression). New e2e fixture
+  `format_fill_char.py`. 415 e2e fixtures. Found by HUNT-V3.
+
 ## [0.1.356] — 2026-06-15
 
 Tranche 2 — PMAT-657: **correctness** — `divmod(float, float)` lowers to a float tuple.
