@@ -2287,6 +2287,21 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
             // all-Name unpack keeps the `Stmt::LetTuple` path. A non-tuple-literal
             // RHS reassign (`a, b = f()`) stays on `LetTuple` (deferred edge).
             if let ast::Expr::Tuple(targets) = &asn.targets[0] {
+                // PMAT-645: starred unpacking `n0, …, *star = xs` (star LAST) —
+                // desugar to `let n_i = xs[i]` + `let star = xs[p:]` over a list
+                // (no new IR; reuses Index + Slice). Star-first/mid (`*init,
+                // last` / `a, *mid, b`) remain deferred.
+                if let Some(star_idx) =
+                    targets.elts.iter().position(|e| matches!(e, ast::Expr::Starred(_)))
+                {
+                    if star_idx == targets.elts.len() - 1
+                        && targets.elts[..star_idx]
+                            .iter()
+                            .all(|e| matches!(e, ast::Expr::Name(_)))
+                    {
+                        return lower_starred_unpack(ctx, asn);
+                    }
+                }
                 let has_subscript = targets
                     .elts
                     .iter()
@@ -4782,6 +4797,110 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
             mutable,
         })
     }
+}
+
+/// PMAT-645: starred unpacking `n0, …, *star = xs` (star LAST) over a `list[T]`
+/// — desugars to `let n_i = xs[i]` for each prefix name plus `let star = xs[p:]`
+/// (`p` = prefix count) for the rest. No new IR (reuses `Expr::Index` +
+/// `Expr::Slice`). If the RHS is a plain variable it is indexed/sliced directly
+/// (each op borrows, so it is not moved); otherwise it is bound to a temp first.
+/// Star-first (`*init, last`) and star-mid (`a, *mid, b`) are deferred (they need
+/// `len`-relative suffix indices).
+fn lower_starred_unpack(
+    ctx: &mut LoweringCtx,
+    asn: ast::StmtAssign,
+) -> Result<Vec<Stmt>, FrontendError> {
+    let ast::Expr::Tuple(targets) = &asn.targets[0] else {
+        unreachable!("caller validated a tuple target");
+    };
+    let star_pos = targets.elts.len() - 1; // star is the last element (validated)
+    let prefix_names: Vec<String> = targets.elts[..star_pos]
+        .iter()
+        .map(|e| match e {
+            ast::Expr::Name(n) => n.id.to_string(),
+            _ => unreachable!("caller validated plain-Name prefix"),
+        })
+        .collect();
+    let star_name = match &targets.elts[star_pos] {
+        ast::Expr::Starred(s) => match s.value.as_ref() {
+            ast::Expr::Name(n) => n.id.to_string(),
+            _ => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` has a starred unpacking target that isn't a plain name (`*expr`) — only `*name` is supported",
+                    ctx.fn_name
+                )))
+            }
+        },
+        _ => unreachable!("caller validated a starred last element"),
+    };
+
+    let value = lower_expr_in_ctx(ctx, (*asn.value).clone())?;
+    let elem_ty = match infer_type_in_ctx(ctx, &value) {
+        Type::List(e) => *e,
+        other => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` uses starred unpacking over a value typing as {other:?} — only `list[T]` is supported",
+                ctx.fn_name
+            )));
+        }
+    };
+    let list_ty = Type::List(Box::new(elem_ty.clone()));
+    let p = prefix_names.len();
+
+    let mut stmts: Vec<Stmt> = Vec::with_capacity(p + 2);
+    // The collection to index/slice: a plain variable is used directly (Index /
+    // Slice borrow it, so it is not moved); any other RHS is bound to a temp.
+    let coll = match &value {
+        Expr::Ident(n) => n.clone(),
+        _ => {
+            let tmp = "__starunpack".to_string();
+            ctx.bound.insert(tmp.clone());
+            ctx.name_types.insert(tmp.clone(), list_ty.clone());
+            stmts.push(Stmt::Let {
+                name: tmp.clone(),
+                ty: list_ty.clone(),
+                value,
+                mutable: false,
+            });
+            tmp
+        }
+    };
+
+    for (i, name) in prefix_names.iter().enumerate() {
+        let mutable = ctx.mutable.contains(name);
+        ctx.bound.insert(name.clone());
+        ctx.name_types.insert(name.clone(), elem_ty.clone());
+        stmts.push(Stmt::Let {
+            name: name.clone(),
+            ty: elem_ty.clone(),
+            value: Expr::Index {
+                collection: Box::new(Expr::Ident(coll.clone())),
+                index: Box::new(Expr::LitInt(i as i64)),
+            },
+            mutable,
+        });
+    }
+
+    let star_mutable = ctx.mutable.contains(&star_name);
+    ctx.bound.insert(star_name.clone());
+    ctx.name_types.insert(star_name.clone(), list_ty.clone());
+    stmts.push(Stmt::Let {
+        name: star_name,
+        ty: list_ty,
+        value: Expr::Slice {
+            collection: Box::new(Expr::Ident(coll)),
+            lo: if p == 0 {
+                None
+            } else {
+                Some(Box::new(Expr::LitInt(p as i64)))
+            },
+            hi: None,
+            of_str: false,
+            step: None,
+        },
+        mutable: star_mutable,
+    });
+    Ok(stmts)
 }
 
 /// PMAT-559: tuple-unpack assignment where at least one target is a subscript —
