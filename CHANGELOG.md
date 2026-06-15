@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.331] — 2026-06-15
+
+Tranche 2 — PMAT-632: optional fill-char arg for `str.rjust`/`ljust`/`center`.
+
+- Python's `s.rjust(w, fill)` / `s.ljust(w, fill)` / `s.center(w, fill)` take an
+  optional 2nd argument naming the pad character; xpile refused the 2-arg form
+  (str-method arity was fixed at 1), so `"ab".rjust(5, "*")` failed to transpile.
+  Found by a differential probe (str-method tranche).
+- Fix (frontend + both backends): `ljust`/`rjust`/`center` now accept `arity` OR
+  `arity + 1` positional args; every other str method still requires exactly its
+  arity. With a fill char, the Rust/Ruchy codegen pads manually by repeating the
+  fill string to the deficit char count (`format!` width can't take a dynamic
+  fill); `center` keeps the CPython left-bias. The 1-arg space-fill path is
+  unchanged.
+- Differential-verified vs python3 (fill, odd-width center bias, already-wide
+  no-op, sign/zero fill). New e2e fixture `str_pad_fill.py`. 391 e2e fixtures.
+
 ## [0.1.330] — 2026-06-15
 
 Tranche 2 — PMAT-631: **correctness** — `raise E(msg)` emits a typed panic payload (typed-exceptions sub-slice 1).
