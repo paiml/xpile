@@ -1512,9 +1512,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                         out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>().into_iter().rev().collect::<Vec<String>>()");
                     }
                     // PMAT-502co: no-arg `.split()` → whitespace split.
+                    // PMAT-649: Python `str.split()` (no arg) splits on runs of
+                    // `str.isspace()` whitespace, which INCLUDES the C0 file/group/
+                    // record/unit separators U+001C-1F — but Rust's
+                    // `split_whitespace`/`char::is_whitespace` excludes them. Match
+                    // PMAT-600's strip/isspace predicate and filter empties to keep
+                    // the leading/trailing/consecutive-collapse no-empty semantics.
                     StrMethodOp::SplitWhitespace => {
                         out.push_str(
-                            ".split_whitespace().map(|__c| __c.to_string()).collect::<Vec<String>>()",
+                            ".split(|__c: char| __c.is_whitespace() || matches!(__c, '\\u{1c}'..='\\u{1f}')).filter(|__c| !__c.is_empty()).map(|__c| __c.to_string()).collect::<Vec<String>>()",
                         );
                     }
                     // PMAT-502b: `.replace(old, new)` → `.replace(&(old)[..], &(new)[..])`.
