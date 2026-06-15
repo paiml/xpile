@@ -2017,9 +2017,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // PMAT-502ak: `round(x)` (float) → `((x).round_ties_even() as i64)`
         // — banker's rounding, matching Python's `round`.
         Expr::RoundToInt { value } => {
-            out.push_str("((");
+            // PMAT-664: Python `round(x)` raises OverflowError on inf and
+            // ValueError on nan, and returns an arbitrary-precision int for a
+            // huge magnitude; a bare `as i64` saturated/garbage-cast silently.
+            // Guard finiteness + i64 range (mirrors the int()/math.floor guards,
+            // PMAT-586/589); out-of-range fails loud pending the bigint slow path.
+            out.push_str("{ let __rti = (");
             emit_expr(out, value, mode)?;
-            out.push_str(").round_ties_even() as i64)");
+            out.push_str(").round_ties_even(); if !__rti.is_finite() { panic!(\"xpile: round() of a non-finite float (Python OverflowError/ValueError)\"); } if __rti < (i64::MIN as f64) || __rti >= (i64::MAX as f64) { panic!(\"xpile: round() out of i64 range; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"); } __rti as i64 }");
         }
         // PMAT-502al: `round(x, n)` (float) → Python's decimal rounding. For
         // n >= 0, format to n decimals (Rust's `{:.}` is round-half-to-even,

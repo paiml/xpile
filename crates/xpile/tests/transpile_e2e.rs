@@ -2055,8 +2055,9 @@ fn main() {
 fn round_builtin() {
     let rust = xpile_transpile_to_rust("round_builtin.py");
     assert!(
-        rust.contains(".round_ties_even() as i64)"),
-        "expected round_ties_even emission, got:\n{rust}"
+        // PMAT-664: the emit now guards inf/nan + i64 range before the cast.
+        rust.contains(".round_ties_even();") && rust.contains("__rti as i64"),
+        "expected guarded round_ties_even emission, got:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -2073,6 +2074,29 @@ fn main() {
 }
 "#;
     assert_rustc_runs("round_builtin", &rust, driver);
+}
+
+/// PMAT-664: `round(x)` of a non-finite float raises in Python (OverflowError
+/// on inf, ValueError on nan) and returns a bigint for a huge magnitude; a bare
+/// `as i64` saturated/garbage-cast silently. The emit now guards finiteness +
+/// i64 range (mirrors the int()/math.floor guards), failing loud. Verified vs
+/// python3 (which raises on inf/nan); the guard is asserted in the emitted Rust.
+#[test]
+fn round_nonfinite_guard() {
+    let rust = xpile_transpile_to_rust("round_nonfinite.py");
+    assert!(
+        rust.contains("round() of a non-finite float") && rust.contains("round() out of i64 range"),
+        "round should guard non-finite + out-of-range:\n{rust}"
+    );
+    // the normal-rounding path still compiles and runs
+    let driver = r#"
+fn main() {
+    assert_eq!(round_normal(2.5), 2);
+    assert_eq!(round_normal(3.5), 4);
+    assert_eq!(round_normal(-2.5), -2);
+}
+"#;
+    assert_rustc_runs("round_nonfinite", &rust, driver);
 }
 
 /// PMAT-502al (Tranche 2): `round(x, n)` → float rounded to n decimals via
