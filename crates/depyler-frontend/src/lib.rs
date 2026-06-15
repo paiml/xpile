@@ -8877,19 +8877,58 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                 }
                 // PMAT-502j: `all(xs)`/`any(xs)` over a `list[bool]` →
-                // `.iter().all/any(|&__b| __b)`. (Truthiness over non-bool
-                // lists is deferred — v0.1.0 has no int/str truthiness.)
+                // `.iter().all/any(|&__b| __b)`.
+                // PMAT-665: over a `list[int]`/`[float]`/`[str]`, Python applies
+                // per-element truthiness (nonzero / non-empty). Map each element
+                // to a bool first (int → `!= 0`, float → `!= 0.0`, str → `len != 0`)
+                // then reduce — frontend-only, reusing `Expr::Map` + `BoolReduce`.
                 if matches!(fname.id.as_str(), "all" | "any")
                     && call.keywords.is_empty()
                     && call.args.len() == 1
                 {
                     let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                     if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
-                        if matches!(*elem, Type::Bool) {
-                            return Ok(Expr::BoolReduce {
-                                list: Box::new(list),
-                                is_all: fname.id.as_str() == "all",
-                            });
+                        let is_all = fname.id.as_str() == "all";
+                        let truthy = |body: Expr| Expr::BoolReduce {
+                            list: Box::new(Expr::Map {
+                                list: Box::new(list.clone()),
+                                lambda: SortKey {
+                                    param: "__x".to_string(),
+                                    body: Box::new(body),
+                                },
+                            }),
+                            is_all,
+                        };
+                        let x = || Box::new(Expr::Ident("__x".to_string()));
+                        match *elem {
+                            Type::Bool => {
+                                return Ok(Expr::BoolReduce {
+                                    list: Box::new(list),
+                                    is_all,
+                                })
+                            }
+                            Type::I64 => {
+                                return Ok(truthy(Expr::BinOp {
+                                    op: BinOp::NotEq,
+                                    lhs: x(),
+                                    rhs: Box::new(Expr::LitInt(0)),
+                                }))
+                            }
+                            Type::F64 => {
+                                return Ok(truthy(Expr::BinOp {
+                                    op: BinOp::NotEq,
+                                    lhs: x(),
+                                    rhs: Box::new(Expr::LitFloat(0.0)),
+                                }))
+                            }
+                            Type::Str => {
+                                return Ok(truthy(Expr::BinOp {
+                                    op: BinOp::NotEq,
+                                    lhs: Box::new(Expr::Len(x())),
+                                    rhs: Box::new(Expr::LitInt(0)),
+                                }))
+                            }
+                            _ => {}
                         }
                     }
                 }
