@@ -12455,6 +12455,45 @@ fn lower_str_format(
     }
     let nargs = args.len();
     let b = fmt.as_bytes();
+    // PMAT-676: count how many template fields reference each arg, so a bare-radix
+    // field (`{:x}`) can be safely rewritten to `IntRadixStr` (which replaces the
+    // arg IN PLACE) only when that arg is referenced exactly once. Mirrors the
+    // main loop's field parsing (auto `{}` vs explicit `{N}`; `{{`/`}}` escapes).
+    let ref_count = {
+        let mut rc = vec![0usize; nargs];
+        let mut j = 0usize;
+        let mut auto = 0usize;
+        while j < b.len() {
+            match b[j] {
+                b'{' if b.get(j + 1) == Some(&b'{') => j += 2,
+                b'}' if b.get(j + 1) == Some(&b'}') => j += 2,
+                b'{' => {
+                    if let Some(p) = fmt[j + 1..].find('}') {
+                        let close = j + 1 + p;
+                        let fld = match fmt[j + 1..close].split_once(':') {
+                            Some((f, _)) => f,
+                            None => &fmt[j + 1..close],
+                        };
+                        if fld.is_empty() {
+                            if auto < nargs {
+                                rc[auto] += 1;
+                            }
+                            auto += 1;
+                        } else if let Ok(n) = fld.parse::<usize>() {
+                            if n < nargs {
+                                rc[n] += 1;
+                            }
+                        }
+                        j = close + 1;
+                    } else {
+                        j += 1;
+                    }
+                }
+                _ => j += 1,
+            }
+        }
+        rc
+    };
     let mut rust_fmt = String::new();
     let mut i = 0;
     let mut lit_start = 0;
@@ -12529,14 +12568,45 @@ fn lower_str_format(
                 }
             }
             Some(s) => {
-                let rust_spec = translate_format_spec(s, &arg_tys[arg_idx]).ok_or_else(|| {
-                    FrontendError::Lower(format!(
-                        "function `{fname}` uses an unsupported str.format spec `{{:{s}}}` for a {:?} value",
-                        arg_tys[arg_idx]
-                    ))
-                })?;
-                rust_fmt.push(':');
-                rust_fmt.push_str(&rust_spec);
+                // PMAT-676: a BARE radix spec (`x`/`X`/`b`/`o`) over an int formats
+                // negatives SIGN-MAGNITUDE in Python (`"{:x}".format(-255)` ==
+                // "-ff"), but Rust's `{:x}` is two's-complement
+                // (`ffffffffffffff01`) → silent wrong output. Reuse `IntRadixStr`
+                // (as the f-string path does, PMAT-613) when this arg is referenced
+                // exactly once: replace the arg with the sign-magnitude radix string
+                // and emit a PLAIN field (no spec). Multi-reference (rare) keeps the
+                // `FormatSpec`/embed path unchanged (correct for non-negatives;
+                // in-place replacement would be unsafe across the other references).
+                let bare_radix = if arg_tys[arg_idx] == Type::I64 {
+                    match s {
+                        "x" => Some((Radix::Hex, false)),
+                        "X" => Some((Radix::Hex, true)),
+                        "b" => Some((Radix::Bin, false)),
+                        "o" => Some((Radix::Oct, false)),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+                if let Some((radix, upper)) = bare_radix.filter(|_| ref_count[arg_idx] == 1) {
+                    args[arg_idx] = Expr::IntRadixStr {
+                        value: Box::new(args[arg_idx].clone()),
+                        radix,
+                        prefixed: false,
+                        upper,
+                    };
+                    // emit a plain `{field_str}` field (the arg is now the string)
+                } else {
+                    let rust_spec =
+                        translate_format_spec(s, &arg_tys[arg_idx]).ok_or_else(|| {
+                            FrontendError::Lower(format!(
+                                "function `{fname}` uses an unsupported str.format spec `{{:{s}}}` for a {:?} value",
+                                arg_tys[arg_idx]
+                            ))
+                        })?;
+                    rust_fmt.push(':');
+                    rust_fmt.push_str(&rust_spec);
+                }
             }
         }
         rust_fmt.push('}');
