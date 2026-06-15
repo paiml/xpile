@@ -11095,6 +11095,19 @@ fn to_i64_operand(ctx: &LoweringCtx, e: Expr) -> Expr {
     }
 }
 
+/// PMAT-617: unconditionally wrap an expression KNOWN to be `bool` in a
+/// `bool -> i64` cast (`(b) as i64`). Unlike [`to_i64_operand`] this does not
+/// re-infer the type, so it is safe to apply to a `__cmpN` chained-comparison
+/// temp that is not registered in the lowering context.
+fn bool_to_i64_cast(e: Expr) -> Expr {
+    Expr::NumCast {
+        value: Box::new(e),
+        to_float: false,
+        from_str: false,
+        from_float: false,
+    }
+}
+
 /// Context-free counterpart of [`to_i64_operand`] (recognises bool *literals*).
 fn to_i64_operand_cf(e: Expr) -> Expr {
     if infer_type(&e) == Type::Bool {
@@ -11984,6 +11997,20 @@ fn build_chain_cmp(
         rhs = to_f64_operand(ctx, rhs);
     } else if *lt == Type::I64 && *rt == Type::F64 {
         lhs = to_f64_operand(ctx, lhs);
+    } else if *lt == Type::Bool && *rt == Type::I64 {
+        // PMAT-617: Python bool is an int subtype, so `flag == 1` / `flag < 2`
+        // are valid (`True == 1`). xpile emitted a bare `bool OP i64`, which
+        // rustc rejects (E0308). Coerce the bool side to `i64` (`(b) as i64`),
+        // the deferred comparison half of the bool-as-int story (PMAT-565). Use
+        // the authoritative `lt`/`rt` to build the cast directly rather than
+        // re-inferring via `to_i64_operand`: in a CHAINED comparison the operand
+        // here is a `__cmpN` temp not registered in `ctx`, so re-inference would
+        // miss it (the float path's `to_f64_operand` survives that only because a
+        // redundant `f64 as f64` is harmless). (bool/bool needs no coercion —
+        // Rust `bool: Ord`; bool/float is a separate rarer follow-up.)
+        lhs = bool_to_i64_cast(lhs);
+    } else if *lt == Type::I64 && *rt == Type::Bool {
+        rhs = bool_to_i64_cast(rhs);
     }
     Ok(Expr::BinOp {
         op: cmp_binop(op)?,

@@ -6716,6 +6716,34 @@ fn main() {
     assert_rustc_runs("str_find_char_index", &rust, driver);
 }
 
+/// PMAT-617: **correctness** — `bool` compared with `int`. Python's bool is an
+/// int subtype, so `True == 1` / `True < 2` are valid, but xpile emitted a bare
+/// `bool OP i64`, which rustc rejects (E0308) — the comparison half of the
+/// bool-as-int story (PMAT-565 fixed the arithmetic half). The bool side now
+/// coerces to i64; works for the simple and chained (`a <= b < c`) forms.
+/// Found by differential hunt #7. Cross-checked vs python3.
+#[test]
+fn bool_int_compare() {
+    let rust = xpile_transpile_to_rust("bool_int_compare.py");
+    assert!(
+        // the bool side is cast to i64 in mixed comparisons; both-bool stays bare.
+        rust.contains("((a) as i64) == b") && rust.contains("(a < b)"),
+        "bool/int comparison should coerce the bool side to i64:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(beq(true, 1), true);
+    assert_eq!(beq(true, 0), false);
+    assert_eq!(ieqb(1, true), true);
+    assert_eq!(blt(true, 2), true);
+    assert_eq!(blit(true), true);
+    assert_eq!(chained(true, 1, 5), true);   // True <= 1 < 5
+    assert_eq!(both_bool(false, true), true); // false < true (bool: Ord)
+}
+"#;
+    assert_rustc_runs("bool_int_compare", &rust, driver);
+}
+
 /// PMAT-565 (Tranche 2): **correctness** — `bool` is an `int` subtype. Bool
 /// operands in integer arithmetic (`a + b`, `bool + int`), `sum(list[bool])` /
 /// `sum(x > 0 for x in xs)` (the counting idiom), and `True in list[int]` all
