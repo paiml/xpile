@@ -11580,6 +11580,42 @@ fn lower_bool_op_in_ctx(ctx: &LoweringCtx, b: ast::ExprBoolOp) -> Result<Expr, F
             return Ok(acc);
         }
     }
+    // PMAT-667: a bool-RESULT `and`/`or` — e.g. `if xs and xs[0] > i:` (a
+    // container/int operand alongside a bool, in a boolean context). Coerce each
+    // operand to its truthiness (Bool → itself; int/float/str/container → the
+    // `!= 0` / `len != 0` test) and fold with `&&`/`||`, preserving short-circuit
+    // and matching Python's truthiness-in-condition. Skipped for the
+    // all-same-non-bool-type case — that's the operand-RETURN form (handled
+    // above for ident-leads, else rejected); coercing it to bool would drop the
+    // returned value (`f() or 5` must stay a value, not become a bool).
+    {
+        let ta = infer_type_in_ctx(ctx, &lowered[0]);
+        let all_same = lowered.iter().all(|e| infer_type_in_ctx(ctx, e) == ta);
+        if !(all_same && ta != Type::Bool) {
+            let parts: Option<Vec<Expr>> = lowered
+                .iter()
+                .map(|e| {
+                    if infer_type_in_ctx(ctx, e) == Type::Bool {
+                        Some(e.clone())
+                    } else {
+                        bool_op_operand_truthy(ctx, e)
+                    }
+                })
+                .collect();
+            if let Some(parts) = parts {
+                let mut it = parts.into_iter();
+                let mut acc = it.next().expect("len ≥ 2");
+                for rhs in it {
+                    acc = Expr::BinOp {
+                        op,
+                        lhs: Box::new(acc),
+                        rhs: Box::new(rhs),
+                    };
+                }
+                return Ok(acc);
+            }
+        }
+    }
     let mut iter = lowered.into_iter();
     let first = iter.next().expect("len ≥ 2");
     if infer_type_in_ctx(ctx, &first) != Type::Bool {

@@ -4347,6 +4347,31 @@ fn main() {
     assert_rustc_runs("short_circuit_chain", &rust, driver);
 }
 
+/// PMAT-667: a bool-result `and`/`or` with a container/int operand in a boolean
+/// context — `if xs and xs[0] > i:` — was rejected ("operands must be Bool").
+/// Each operand is coerced to its truthiness and folded with `&&`/`||`. The
+/// operand-RETURN form (`x or 5`, same non-bool type) is unaffected — it still
+/// returns the value, not a bool. Cross-checked vs python3.
+#[test]
+fn bool_op_truthy_operand() {
+    let rust = xpile_transpile_to_rust("bool_op_truthy_operand.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(guard(vec![], 0), 0);      // was rejected
+    assert_eq!(guard(vec![1], 0), 1);
+    assert_eq!(guard(vec![1], 5), 0);
+    assert_eq!(int_and_bool(0, true), 0);
+    assert_eq!(int_and_bool(3, true), 1);
+    assert_eq!(int_and_bool(3, false), 0);
+    assert_eq!(all_bool_regression(true, true), 1);
+    assert_eq!(all_bool_regression(true, false), 0);
+    assert_eq!(or_default_regression(0), 5);  // value-return preserved
+    assert_eq!(or_default_regression(7), 7);
+}
+"#;
+    assert_rustc_runs("bool_op_truthy_operand", &rust, driver);
+}
+
 /// PMAT-502cf (Tranche 2): dict comprehension over `d.items()` with a tuple
 /// target → a `ForEachPair(Pairs)` loop building the dict.
 #[test]
