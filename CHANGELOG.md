@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.392] — 2026-06-15
+
+### Added
+
+- **PMAT-693 — int→float coercion for float-presentation format specs.** An int with a
+  FLOAT-presentation spec (`.Nf`, `.N%`) was rejected ("unsupported format spec `:.2f`
+  (for a I64 value)"), but Python coerces the int to float: `f"{5:.2f}"` == "5.00",
+  `f"{-3:.1f}"` == "-3.0", `f"{1:.0%}"` == "100%". **Fix** (frontend only, NO IR change):
+  `apply_nonempty_format_spec` casts an `I64` value to `f64` up front when the spec's last
+  char is a float-presentation type (`f`/`F`/`e`/`E`/`g`/`G`/`%`), then reuses the existing
+  `%` and `.Nf` float-format paths. Int-presentation specs (`d`, radix `x`/`b`/`o`, bare
+  width `N`) end in a non-float char and keep the int value & path untouched. Differential-
+  verified vs python3 (`5.00` / `-3.0` / `100%` / `"   5.000"` / `00042` regression). New
+  e2e fixture `int_float_format_spec.py` (rustc round-trip). e2e 449 → 450. Found by
+  HUNT-V7 (item V7-8).
+
 ## [0.1.391] — 2026-06-15
 
 ### Added
