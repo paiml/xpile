@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.394] — 2026-06-15
+
+### Added
+
+- **PMAT-695 — `str.isascii()`.** `s.isascii()` was rejected (no dispatch entry). Python
+  returns `True` iff every char is in the ASCII range (`U+0000..=U+007F`); the empty
+  string is `True`. **Fix** (new `StrMethodOp::IsAscii`, Bool/0-arg): Rust's
+  `str::is_ascii()` matches exactly — including the empty case (`"".is_ascii()` is `true`),
+  so the lowering is a bare `(s).is_ascii()` with **no empty guard** (unlike the
+  isdigit-family predicates). Frontend name-map + arity + type-inference (both sites);
+  dedicated codegen arm in rust + ruchy; lean refuses via its wildcard. Differential-
+  verified vs python3 (`"abc"`→true, `"café"`→false, `"123!"`→true, `""`→true; `isalnum`
+  regression intact). New e2e fixture `str_isascii.py` (rustc round-trip). e2e 451 → 452.
+  HUNT-V7 item V7-10. (`casefold` left rejected — `"ß".casefold()` == "ss" but Rust's
+  `to_lowercase()` gives "ß", a silent divergence; `expandtabs` is a separate follow-up.)
+
 ## [0.1.393] — 2026-06-15
 
 ### Added
