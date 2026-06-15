@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.399] — 2026-06-16
+
+### Added
+
+- **PMAT-700 — plain tuple-unpack over a list (`a, b = xs`).** `a, b = xs` over a `list[T]`
+  was rejected ("expected a tuple"), even though the starred form `a, *b = xs` over the same
+  list is accepted. Python unpacks a list by position and raises `ValueError` unless the
+  length matches exactly. **Fix**: the statement dispatch routes an all-plain-Name tuple
+  target whose RHS types as `list[T]` to a new `lower_list_positional_unpack` — binds a
+  non-`Ident` RHS to a temp, emits an always-on length assert (`len == N`, else a
+  ValueError-flavored panic — a too-long list must not silently drop the extras), then
+  `let a = xs[0]; let b = xs[1]; …` reusing `Expr::Index`. No new IR; a tuple-literal RHS
+  still uses the `LetTuple` path. Differential-verified vs python3 (2-/3-element unpack,
+  list-literal RHS via temp, length-mismatch → panic). New e2e fixture
+  `list_positional_unpack.py` (rustc round-trip); existing tuple/starred-unpack regressions
+  intact. e2e 457 → 458. Found by HUNT-V8 (item V8-3).
+
 ## [0.1.398] — 2026-06-16
 
 ### Fixed
