@@ -19,6 +19,24 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.337] — 2026-06-15
+
+Tranche 2 — PMAT-638: short-circuit chains `a or b or c` return the operand.
+
+- Extends PMAT-637 (2-operand `x or default`) to chains `a or b or c` /
+  `a and b and c`, which return the first decisive operand by truthiness — the
+  multi-fallback idiom (`name or env or "default"`).
+- Fix (frontend `lower_bool_op_in_ctx`, no new IR): generalize the 2-operand
+  special case to an N-operand right-to-left `IfExpr` fold. Supported when every
+  operand except the last is a plain variable (`Ident` — borrowed in its
+  truthiness test, cloned in its value branch, never moved); the last operand
+  may be any expression (value position only); and all operands share the same
+  non-bool type with a defined truthiness (int / str / list / dict / set). N=2
+  reduces to the exact PMAT-637 form. Bool operands keep the `||`/`&&` fold; a
+  non-`Ident` non-last operand or mixed types fall through.
+- Differential-verified vs python3; 2-operand and boolean logic unaffected. New
+  e2e fixture `short_circuit_chain.py`. 397 e2e fixtures.
+
 ## [0.1.336] — 2026-06-15
 
 Tranche 2 — PMAT-637: `x or default` / `x and y` return the operand.
