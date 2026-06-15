@@ -4345,11 +4345,12 @@ fn main() {
 }
 
 /// PMAT-502co (Tranche 2): no-arg `str.split()` → whitespace split.
+/// PMAT-649: the emit now uses a C0-inclusive predicate + empty filter.
 #[test]
 fn split_whitespace() {
     let rust = xpile_transpile_to_rust("split_whitespace.py");
     assert!(
-        rust.contains(".split_whitespace().map(|__c| __c.to_string()).collect::<Vec<String>>()"),
+        rust.contains(".split(|__c: char| __c.is_whitespace() || matches!(__c, '\\u{1c}'..='\\u{1f}')).filter(|__c| !__c.is_empty()).map(|__c| __c.to_string()).collect::<Vec<String>>()"),
         "split():\n{rust}"
     );
     let driver = r#"
@@ -4359,6 +4360,28 @@ fn main() {
 }
 "#;
     assert_rustc_runs("split_whitespace", &rust, driver);
+}
+
+/// PMAT-649: Python `str.split()` (no arg) splits on `str.isspace()` whitespace,
+/// which INCLUDES the C0 separators U+001C-1F (FS/GS/RS/US) — Rust's
+/// `split_whitespace` excludes them. The emit now uses the PMAT-600 C0-inclusive
+/// predicate + an empty filter (preserving the leading/trailing/consecutive
+/// no-empty collapse). Cross-checked vs python3.
+#[test]
+fn split_c0_separators() {
+    let rust = xpile_transpile_to_rust("split_c0_separators.py");
+    let driver = r#"
+fn main() {
+    // "a\x1cb\x1dc\x1ed\x1fe" → 5 parts (all four C0 separators split)
+    assert_eq!(count_c0(), 5);
+    // leading/trailing/consecutive C0 + ASCII ws collapse, no empties
+    assert_eq!(count_mixed(), 3);
+    // plain ASCII whitespace still works
+    assert_eq!(count_plain(), 3);
+    assert_eq!(last_part(), "c");
+}
+"#;
+    assert_rustc_runs("split_c0_separators", &rust, driver);
 }
 
 /// PMAT-502cp (Tranche 2): tuple literals as list elements `[(1, 2), (3, 4)]`.
