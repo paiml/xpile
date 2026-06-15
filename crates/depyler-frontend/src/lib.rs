@@ -2915,9 +2915,14 @@ fn lower_print_stmt(ctx: &mut LoweringCtx, e: &ast::StmtExpr) -> Result<Stmt, Fr
                 then_expr: Box::new(Expr::LitStr("True".to_string())),
                 else_expr: Box::new(Expr::LitStr("False".to_string())),
             }),
+            // PMAT-626: `print(list)` / `print(tuple)` render the Python repr,
+            // reusing the same `build_list_repr`/`build_tuple_repr` desugar as
+            // `str()` / f-string interpolation (PMAT-623/624).
+            Type::List(elem) => args.push(build_list_repr(lowered, elem.as_ref())?),
+            Type::Tuple(elems) => args.push(build_tuple_repr(lowered, &elems)?),
             other => {
                 return Err(FrontendError::Lower(format!(
-                    "function `{}` calls `print(...)` with a `{other:?}` argument — only int/str/float/bool (incl. f-strings) are supported at v0.2.0 (list/dict/set repr deferred)",
+                    "function `{}` calls `print(...)` with a `{other:?}` argument — only int/str/float/bool/list/tuple (incl. f-strings) are supported at v0.2.0 (dict/set repr deferred)",
                     ctx.fn_name
                 )));
             }
@@ -8602,6 +8607,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         Type::Bool => {
                             return Ok(bool_to_python_str(value));
                         }
+                        // PMAT-626: `str(list)` / `str(tuple)` → the Python repr,
+                        // reusing the same `build_list_repr`/`build_tuple_repr`
+                        // desugar as f-string interpolation (PMAT-623/624).
+                        Type::List(elem) => return build_list_repr(value, elem.as_ref()),
+                        Type::Tuple(elems) => return build_tuple_repr(value, &elems),
                         _ => {}
                     }
                 }
