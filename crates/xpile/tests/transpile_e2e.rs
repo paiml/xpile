@@ -8526,6 +8526,33 @@ fn main() {
     assert_rustc_runs("len_encode_bytes", &rust, driver);
 }
 
+/// PMAT-675: str `.find(sub, start[, end])` / `.count(sub, start[, end])` — search
+/// within the char-slice `s[start:end]`. `find` returns the CHAR index in the
+/// ORIGINAL string (or -1); `count` the number of non-overlapping occurrences.
+/// start/end are char indices with Python clamping (negative → +len, clamp to
+/// [0, len]); end defaults to len for the 2-arg form. Was rejected (">1 arg").
+/// Cross-checked vs python3 incl. non-ASCII char indexing and negative start.
+#[test]
+fn str_find_count_startend() {
+    let rust = xpile_transpile_to_rust("str_find_count_startend.py");
+    assert!(
+        rust.contains(".chars().skip(__st).take(__en.saturating_sub(__st)).collect()"),
+        "find/count with start/end should char-slice the receiver:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(find2("abcabc".to_string(), "bc".to_string(), 2), 4);
+    assert_eq!(find3("abcabc".to_string(), "bc".to_string(), 0, 3), 1);
+    assert_eq!(find3("abcabc".to_string(), "bc".to_string(), 0, 2), -1); // outside slice
+    assert_eq!(count2("abcabcabc".to_string(), "bc".to_string(), 3), 2);
+    assert_eq!(count3("abcabcabc".to_string(), "bc".to_string(), 0, 6), 2);
+    assert_eq!(find_neg("abcabc".to_string(), "bc".to_string()), 4);     // start = -3
+    assert_eq!(find2("café au".to_string(), "au".to_string(), 1), 5);    // non-ASCII char index
+}
+"#;
+    assert_rustc_runs("str_find_count_startend", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a

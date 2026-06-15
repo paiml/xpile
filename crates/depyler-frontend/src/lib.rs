@@ -8409,8 +8409,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             op,
                             StrMethodOp::RJust | StrMethodOp::LJust | StrMethodOp::Center
                         );
+                        // PMAT-675: `s.find(sub, start[, end])` / `s.count(sub,
+                        // start[, end])` accept an optional start (+ end) slice
+                        // bound (arity 1 → up to 3 args). Other methods keep their
+                        // exact arity.
+                        let allows_start_end = matches!(op, StrMethodOp::Find | StrMethodOp::Count);
                         let ok_argc = call.args.len() == arity
-                            || (allows_fill && call.args.len() == arity + 1);
+                            || (allows_fill && call.args.len() == arity + 1)
+                            || (allows_start_end && (arity..=arity + 2).contains(&call.args.len()));
                         if !call.keywords.is_empty() || !ok_argc {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` calls str `.{}(...)` with {} positional arg(s){}; \
