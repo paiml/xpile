@@ -7923,22 +7923,35 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     index: Box::new(index),
                 });
             }
-            // PMAT-502q: `t[N]` over a Tuple-typed `t` with a compile-time
-            // non-negative literal N in range → field access `t.N` (Rust
-            // tuples don't support `[]` indexing). Out-of-range / non-literal
-            // / negative indices fall through to the list-index path's error.
+            // PMAT-502q / PMAT-670: `t[N]` over a Tuple-typed `t` with a
+            // compile-time INT LITERAL → field access `t.N` (Rust tuples don't
+            // support `[]` indexing). A negative literal `t[-k]` resolves at
+            // compile time to `t.(arity - k)` (Python from-the-end), since the
+            // arity is known. A non-literal (runtime) index is REJECTED cleanly:
+            // a heterogeneous fixed-arity tuple cannot be indexed by a runtime
+            // value in Rust (the old fall-through emitted list-style `.len()`/
+            // `[]` → E0599).
             if let Type::Tuple(elem_tys) = infer_type_in_ctx(ctx, &collection) {
-                if let ast::Expr::Constant(c) = sub.slice.as_ref() {
-                    if let ast::Constant::Int(n) = &c.value {
-                        if let Some(idx) = n.to_string().parse::<i64>().ok().filter(|i| *i >= 0) {
-                            let idx = idx as usize;
-                            if idx < elem_tys.len() {
-                                return Ok(Expr::TupleIndex {
-                                    tuple: Box::new(collection),
-                                    index: idx,
-                                });
-                            }
+                let arity = elem_tys.len() as i64;
+                match extract_int_literal(sub.slice.as_ref()) {
+                    Some(n) => {
+                        let resolved = if n < 0 { arity + n } else { n };
+                        if resolved >= 0 && resolved < arity {
+                            return Ok(Expr::TupleIndex {
+                                tuple: Box::new(collection),
+                                index: resolved as usize,
+                            });
                         }
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` indexes a {arity}-element tuple with out-of-range index {n} (Python IndexError)",
+                            ctx.fn_name
+                        )));
+                    }
+                    None => {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` indexes a tuple with a non-literal index; a heterogeneous fixed-arity tuple supports only constant `t[N]` indexing at v0.2.0",
+                            ctx.fn_name
+                        )));
                     }
                 }
             }
