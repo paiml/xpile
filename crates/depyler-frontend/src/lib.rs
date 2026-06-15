@@ -11276,6 +11276,22 @@ fn static_format_spec(spec: &ast::Expr) -> Option<String> {
 /// separators (comma / underscore), sign flags, and `#` alternate forms are
 /// deferred.
 fn translate_format_spec(spec: &str, ty: &Type) -> Option<String> {
+    // PMAT-658: fill + align — `[fill][<>^]width`. Python lets ANY character be a
+    // fill when it precedes an alignment char; Rust uses the IDENTICAL
+    // `{:fill<width}` syntax, so pass it through verbatim. This MUST come before
+    // the sign-strip below, otherwise a `-` (or `+`) fill (`{:->10}`) is mistaken
+    // for a sign flag and silently dropped (→ space padding); a `*`/`.` fill
+    // (`{:*<8}`/`{:.^9}`) was outright rejected. The fill-less alignment case
+    // (`{:>6}`) is still handled by the alignment branch further down.
+    {
+        let chars: Vec<char> = spec.chars().collect();
+        if chars.len() >= 2 && matches!(chars[1], '<' | '>' | '^') {
+            let width: String = chars[2..].iter().collect();
+            if digits_only(&width) {
+                return Some(spec.to_string());
+            }
+        }
+    }
     // PMAT-557: Python sign flag. `+` (always show a sign) maps 1:1 to Rust's
     // `+` flag, which composes with precision / width / zero-pad / radix exactly
     // like Python (`{:+}`, `{:+.2}`, `{:+05}`, `{:+x}`). `-` is the default in
