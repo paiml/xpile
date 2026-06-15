@@ -2287,18 +2287,27 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
             // all-Name unpack keeps the `Stmt::LetTuple` path. A non-tuple-literal
             // RHS reassign (`a, b = f()`) stays on `LetTuple` (deferred edge).
             if let ast::Expr::Tuple(targets) = &asn.targets[0] {
-                // PMAT-645: starred unpacking `n0, …, *star = xs` (star LAST) —
-                // desugar to `let n_i = xs[i]` + `let star = xs[p:]` over a list
-                // (no new IR; reuses Index + Slice). Star-first/mid (`*init,
-                // last` / `a, *mid, b`) remain deferred.
-                if let Some(star_idx) =
-                    targets.elts.iter().position(|e| matches!(e, ast::Expr::Starred(_)))
-                {
-                    if star_idx == targets.elts.len() - 1
-                        && targets.elts[..star_idx]
-                            .iter()
-                            .all(|e| matches!(e, ast::Expr::Name(_)))
-                    {
+                // PMAT-645/646: starred unpacking `n…, *star, m… = xs` (star at
+                // ANY position) — desugar over a list to `let n_i = xs[i]` for the
+                // prefix, `let star = xs[p:len-s]` for the rest, and `let m_j =
+                // xs[len-s+j]` for the suffix (no new IR; reuses Index + Slice).
+                // Python allows at most one starred target; every other element
+                // must be a plain name.
+                let stars: Vec<usize> = targets
+                    .elts
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, e)| matches!(e, ast::Expr::Starred(_)))
+                    .map(|(i, _)| i)
+                    .collect();
+                if stars.len() == 1 {
+                    let star_idx = stars[0];
+                    let others_names = targets
+                        .elts
+                        .iter()
+                        .enumerate()
+                        .all(|(i, e)| i == star_idx || matches!(e, ast::Expr::Name(_)));
+                    if others_names {
                         return lower_starred_unpack(ctx, asn);
                     }
                 }
@@ -4799,13 +4808,14 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
     }
 }
 
-/// PMAT-645: starred unpacking `n0, …, *star = xs` (star LAST) over a `list[T]`
-/// — desugars to `let n_i = xs[i]` for each prefix name plus `let star = xs[p:]`
-/// (`p` = prefix count) for the rest. No new IR (reuses `Expr::Index` +
-/// `Expr::Slice`). If the RHS is a plain variable it is indexed/sliced directly
-/// (each op borrows, so it is not moved); otherwise it is bound to a temp first.
-/// Star-first (`*init, last`) and star-mid (`a, *mid, b`) are deferred (they need
-/// `len`-relative suffix indices).
+/// PMAT-645/646: starred unpacking `n…, *star, m… = xs` (star at ANY position)
+/// over a `list[T]` — desugars to `let n_i = xs[i]` for each prefix name (`p` of
+/// them), `let star = xs[p : len-s]` for the rest (`s` = suffix count), and
+/// `let m_j = xs[len - (s - j)]` for each suffix name. No new IR (reuses
+/// `Expr::Index`, `Expr::Slice`, `Expr::Len`). If the RHS is a plain variable it
+/// is indexed/sliced directly (each op borrows, so it is not moved); otherwise it
+/// is bound to a temp first. (Too few values → Python ValueError; here a suffix
+/// index would go out of range / a slice empties — an invalid-program edge.)
 fn lower_starred_unpack(
     ctx: &mut LoweringCtx,
     asn: ast::StmtAssign,
@@ -4813,14 +4823,21 @@ fn lower_starred_unpack(
     let ast::Expr::Tuple(targets) = &asn.targets[0] else {
         unreachable!("caller validated a tuple target");
     };
-    let star_pos = targets.elts.len() - 1; // star is the last element (validated)
-    let prefix_names: Vec<String> = targets.elts[..star_pos]
+    let star_pos = targets
+        .elts
         .iter()
-        .map(|e| match e {
-            ast::Expr::Name(n) => n.id.to_string(),
-            _ => unreachable!("caller validated plain-Name prefix"),
-        })
-        .collect();
+        .position(|e| matches!(e, ast::Expr::Starred(_)))
+        .expect("caller validated exactly one starred element");
+    let names_of = |elts: &[ast::Expr]| -> Vec<String> {
+        elts.iter()
+            .map(|e| match e {
+                ast::Expr::Name(n) => n.id.to_string(),
+                _ => unreachable!("caller validated plain-Name prefix/suffix"),
+            })
+            .collect()
+    };
+    let prefix_names = names_of(&targets.elts[..star_pos]);
+    let suffix_names = names_of(&targets.elts[star_pos + 1..]);
     let star_name = match &targets.elts[star_pos] {
         ast::Expr::Starred(s) => match s.value.as_ref() {
             ast::Expr::Name(n) => n.id.to_string(),
@@ -4831,7 +4848,7 @@ fn lower_starred_unpack(
                 )))
             }
         },
-        _ => unreachable!("caller validated a starred last element"),
+        _ => unreachable!("caller validated a starred element"),
     };
 
     let value = lower_expr_in_ctx(ctx, (*asn.value).clone())?;
@@ -4846,8 +4863,9 @@ fn lower_starred_unpack(
     };
     let list_ty = Type::List(Box::new(elem_ty.clone()));
     let p = prefix_names.len();
+    let s = suffix_names.len();
 
-    let mut stmts: Vec<Stmt> = Vec::with_capacity(p + 2);
+    let mut stmts: Vec<Stmt> = Vec::with_capacity(p + s + 2);
     // The collection to index/slice: a plain variable is used directly (Index /
     // Slice borrow it, so it is not moved); any other RHS is bound to a temp.
     let coll = match &value {
@@ -4866,6 +4884,7 @@ fn lower_starred_unpack(
         }
     };
 
+    // Prefix: `let n_i = coll[i]` (i = 0..p), a non-negative literal index.
     for (i, name) in prefix_names.iter().enumerate() {
         let mutable = ctx.mutable.contains(name);
         ctx.bound.insert(name.clone());
@@ -4881,6 +4900,8 @@ fn lower_starred_unpack(
         });
     }
 
+    // Star: `let star = coll[p : len - s]` (open lo when p == 0, open hi when
+    // s == 0 → the prior star-last form).
     let star_mutable = ctx.mutable.contains(&star_name);
     ctx.bound.insert(star_name.clone());
     ctx.name_types.insert(star_name.clone(), list_ty.clone());
@@ -4888,18 +4909,49 @@ fn lower_starred_unpack(
         name: star_name,
         ty: list_ty,
         value: Expr::Slice {
-            collection: Box::new(Expr::Ident(coll)),
+            collection: Box::new(Expr::Ident(coll.clone())),
             lo: if p == 0 {
                 None
             } else {
                 Some(Box::new(Expr::LitInt(p as i64)))
             },
-            hi: None,
+            hi: if s == 0 {
+                None
+            } else {
+                Some(Box::new(Expr::BinOp {
+                    op: BinOp::Sub,
+                    lhs: Box::new(Expr::Len(Box::new(Expr::Ident(coll.clone())))),
+                    rhs: Box::new(Expr::LitInt(s as i64)),
+                }))
+            },
             of_str: false,
             step: None,
         },
         mutable: star_mutable,
     });
+
+    // Suffix: `let m_j = coll[len - (s - j)]` (j = 0..s) → coll[len-s], …,
+    // coll[len-1]. A computed index (the negative-index wrap is a no-op here
+    // since `len - (s - j)` is non-negative for a long-enough list).
+    for (j, name) in suffix_names.iter().enumerate() {
+        let back = (s - j) as i64;
+        let mutable = ctx.mutable.contains(name);
+        ctx.bound.insert(name.clone());
+        ctx.name_types.insert(name.clone(), elem_ty.clone());
+        stmts.push(Stmt::Let {
+            name: name.clone(),
+            ty: elem_ty.clone(),
+            value: Expr::Index {
+                collection: Box::new(Expr::Ident(coll.clone())),
+                index: Box::new(Expr::BinOp {
+                    op: BinOp::Sub,
+                    lhs: Box::new(Expr::Len(Box::new(Expr::Ident(coll.clone())))),
+                    rhs: Box::new(Expr::LitInt(back)),
+                }),
+            },
+            mutable,
+        });
+    }
     Ok(stmts)
 }
 
