@@ -1959,6 +1959,30 @@ fn main() {
     assert_rustc_runs("round_int_digits", &rust, driver);
 }
 
+/// PMAT-626: `str(list)`/`str(tuple)` and `print(list)`/`print(tuple)` were
+/// rejected (str fell through → I64 mismatch; print declined). Both now reuse the
+/// `build_list_repr`/`build_tuple_repr` desugar from f-string interpolation
+/// (PMAT-623/624) → the Python repr. Found by hunt #8 (H8-3). Cross-checked vs
+/// python3.
+#[test]
+fn str_print_list_tuple() {
+    let rust = xpile_transpile_to_rust("str_print_list_tuple.py");
+    assert!(
+        rust.contains(".join(&(String::from(\", \"))[..])") && rust.contains("let __tp"),
+        "str/print of a list & tuple should desugar to the Python repr:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(s_list(vec![1, 2, 3]), "[1, 2, 3]");
+    assert_eq!(s_tuple((1, "a".to_string())), "(1, 'a')");
+    assert_eq!(s_nested(vec![vec![1, 2], vec![3]]), "[[1, 2], [3]]");
+    p_list(vec![1, 2, 3]); // prints [1, 2, 3]
+    p_tuple((4, 5));       // prints (4, 5)
+}
+"#;
+    assert_rustc_runs("str_print_list_tuple", &rust, driver);
+}
+
 /// PMAT-502ad (Tranche 2): `str(x)` over an int → `format!("{}", x)`
 /// (unblocks `"prefix" + str(n)` concatenation).
 #[test]
