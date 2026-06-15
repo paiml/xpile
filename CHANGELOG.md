@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.395] — 2026-06-15
+
+### Fixed
+
+- **PMAT-696 — reject float set elements / dict keys instead of emitting E0277.** A
+  float-typed set element or dict key lowered to `HashSet<f64>` / `HashMap<f64, _>`,
+  which is invalid Rust (`f64: !Eq`, `!Hash`) — a transpile success that fails `rustc`
+  with E0277. **Fix**: new `reject_float_hashed` helper (reuses `type_contains_float`, so
+  a tuple/list element containing `f64` is caught too, e.g. `set[tuple[int, float]]`) gates
+  three sites: `parse_type_annotation` for `set[float]`/`dict[float, _]` (params, returns,
+  local annotations); `lower_set_literal_in_ctx` for un-annotated `{1.5, 2.5}`;
+  `lower_dict_literal_in_ctx` for un-annotated `{1.5: 3}`. A float dict **value** is
+  untouched (only the key is hashed) — `dict[str, float]` still transpiles and runs. Turns
+  uncompilable Rust into a clean compile-time reject. e2e `float_hashed_key_rejected`
+  (reject + message) + `float_dict_value_ok` (positive, rustc round-trip). e2e 452 → 454.
+  Found by HUNT-V7 (item V7-7). Set/dict comprehensions with float keys remain a follow-up
+  (still E0277, no regression — the gate is additive).
+
 ## [0.1.394] — 2026-06-15
 
 ### Added
