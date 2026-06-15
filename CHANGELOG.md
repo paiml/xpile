@@ -19,6 +19,28 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.340] — 2026-06-15
+
+Tranche 2 — PMAT-641: **correctness** — runtime-negative nested list-index WRITE wraps.
+
+- Completes the negative-index work (read PMAT-639, single-index write PMAT-640).
+  A nested subscript write `grid[i][j] = v` emitted `grid[i as usize][j as usize]
+  = ...` with no wrap, so a runtime-negative index at any level panicked, where
+  Python wraps (`grid[-1][-1] = v`).
+- Fix (both backends' `Stmt::IndexAssign`, no new IR): generalize the
+  single-index negative-wrap to N levels. When any index isn't a non-negative
+  literal, stage each level's wrapped index into a temp using the
+  progressively-indexed collection's own `len` (only evaluated when the index is
+  actually negative), then store. Staging the indices first also ends the
+  collection's borrow before the `index_mut` assign, so this subsumes the old
+  `needs_temps` self-referential path (`xs[len(xs)-k] = v`). An
+  all-non-negative-literal write keeps the bare path (no churn).
+- Differential-verified vs python3 (`grid[-1][0]`/`grid[0][-1]`/`grid[-1][-1]`,
+  single-neg, self-referential, literal); positive/literal/loop/nested-literal
+  writes unaffected. New e2e fixture `neg_nested_index_assign.py`; 3 existing
+  shape assertions updated. 400 e2e fixtures. **Negative-indexing now complete:
+  read + single write + nested write.**
+
 ## [0.1.339] — 2026-06-15
 
 Tranche 2 — PMAT-640: **correctness** — runtime-negative list-index WRITE wraps like Python.
