@@ -6137,16 +6137,17 @@ fn main() {
 
 /// PMAT-560 (Tranche 2): negative-literal index on the **assignment** side —
 /// `xs[-k] = v` / `xs[-k] += v` resolve to `xs[len(xs) - k]` (mirroring the
-/// read-side desugar). The `IndexAssign` codegen binds a self-referential index
-/// (`xs[xs.len() - 1]`) to a temp first, avoiding the `index_mut` borrow
-/// conflict (E0502) that `xs[xs.len() - 1] = v` otherwise hits. Cross-checked
-/// vs python3 (9, 103, 4010, 7, 8).
+/// read-side desugar). PMAT-640: a single-index write now stages the (wrapped)
+/// index into an `__aidx` temp first — this both wraps a runtime-negative index
+/// like Python AND avoids the `index_mut` borrow conflict (E0502) that
+/// `xs[xs.len() - 1] = v` otherwise hits. Cross-checked vs python3
+/// (9, 103, 4010, 7, 8).
 #[test]
 fn neg_index_write() {
     let rust = xpile_transpile_to_rust("neg_index_write.py");
     assert!(
-        rust.contains("__ix0"),
-        "a self-referential negative index should be staged into a temp:\n{rust}"
+        rust.contains("__aidx"),
+        "a single-index write should stage the (wrapped) index into a temp:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -6158,6 +6159,31 @@ fn main() {
 }
 "#;
     assert_rustc_runs("neg_index_write", &rust, driver);
+}
+
+/// PMAT-640: **correctness** — a runtime-negative list-index WRITE wraps like
+/// Python (`xs[-1] = v` targets the last element) instead of `(-1) as usize`
+/// panicking — the assign-side companion to PMAT-639's read fix. A non-negative
+/// literal index keeps the bare path; an RHS reading the same list still
+/// compiles (the wrapped index is staged before the `index_mut` assign).
+/// Cross-checked vs python3.
+#[test]
+fn neg_runtime_index_assign() {
+    let rust = xpile_transpile_to_rust("neg_runtime_index_assign.py");
+    assert!(
+        rust.contains("if __ai < 0 { xs.len() as i64 + __ai }"),
+        "runtime-negative write should wrap the index:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(set_at(vec![1, 2, 3], -1, 99), 99);   // xs[-1] = 99
+    assert_eq!(set_at(vec![1, 2, 3], 1, 7), 3);       // positive unaffected
+    assert_eq!(aug_at(vec![1, 2, 3], -1), 103);       // xs[-1] += 100
+    assert_eq!(set_from_self(vec![10, 20, 30], -1), 11); // xs[-1] = xs[0]+1
+    assert_eq!(set_positive(vec![1, 2, 3]), 9);
+}
+"#;
+    assert_rustc_runs("neg_runtime_index_assign", &rust, driver);
 }
 
 /// PMAT-544 (Tranche 2): `enumerate(s)` / `zip(s, …)` over a **string** —

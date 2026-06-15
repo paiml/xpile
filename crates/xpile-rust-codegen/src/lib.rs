@@ -674,6 +674,29 @@ fn emit_stmt_indented(
             indices,
             value,
         } => {
+            // PMAT-640: a single runtime-negative index wraps like Python
+            // (mirrors the `Expr::Index` read path, PMAT-639) — `xs[-1] = v`
+            // targets the last element instead of `(-1) as usize` = usize::MAX
+            // panicking. Bind the wrapped index to a temp FIRST (so `xs.len()`'s
+            // immutable borrow ends before the `index_mut` assign), then store.
+            // A non-negative literal index keeps the plain path below (no churn);
+            // a nested path (`grid[i][j] = v`, each level a different `len`)
+            // stays on the existing path (negative nested-assign is a follow-up).
+            let single_runtime =
+                indices.len() == 1 && !matches!(&indices[0], Expr::LitInt(n) if *n >= 0);
+            if single_runtime {
+                out.push_str(indent);
+                out.push_str("{ let __ai: i64 = (");
+                emit_expr(out, &indices[0], mode)?;
+                write!(
+                    out,
+                    ") as i64; let __aidx = if __ai < 0 {{ {list_name}.len() as i64 + __ai }} else {{ __ai }}; {list_name}[__aidx as usize] = "
+                )?;
+                emit_expr(out, value, mode)?;
+                out.push_str("; }");
+                writeln!(out)?;
+                return Ok(());
+            }
             // PMAT-502dy: a multi-element path is nested list indexing
             // (`grid[i][j] = v`) — each index is `usize`-coerced.
             // PMAT-560: when an index references the receiver (e.g. the
