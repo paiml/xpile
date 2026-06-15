@@ -2382,6 +2382,23 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
                 if has_subscript || (reassigns_bound && rhs_is_tuple_lit) {
                     return lower_tuple_unpack_with_subscript(ctx, asn);
                 }
+                // PMAT-700: a plain (no-star) tuple-unpack over a LIST —
+                // `a, b = xs` — was rejected ("expected a tuple"), though the
+                // starred form `a, *b = xs` over the same list is accepted. Python
+                // unpacks by position with an exact-length check. Route an
+                // all-plain-Name target whose RHS types as `list[T]` to the
+                // positional-index desugar (length assert + `let a = xs[0]; …`).
+                // A tuple-literal RHS is definitely a tuple (handled by
+                // `lower_assign`'s `LetTuple` path), so skip the probe-lower there.
+                let all_plain_names = targets.elts.iter().all(|e| matches!(e, ast::Expr::Name(_)));
+                if all_plain_names && !rhs_is_tuple_lit {
+                    let probe = lower_expr_in_ctx(ctx, (*asn.value).clone())?;
+                    if let Type::List(elem) = infer_type_in_ctx(ctx, &probe) {
+                        return lower_list_positional_unpack(ctx, targets, probe, *elem);
+                    }
+                    // Not a list (e.g. a tuple-typed variable) — fall through to
+                    // `lower_assign` (re-lowered there).
+                }
             }
             lower_assign(ctx, asn).map(|s| vec![s])
         }
@@ -5306,6 +5323,75 @@ fn lower_starred_unpack(
                     lhs: Box::new(Expr::Len(Box::new(Expr::Ident(coll.clone())))),
                     rhs: Box::new(Expr::LitInt(back)),
                 }),
+            },
+            mutable,
+        });
+    }
+    Ok(stmts)
+}
+
+/// PMAT-700: a plain (no-star) tuple-unpack over a LIST — `a, b = xs`. Python
+/// unpacks by position and raises `ValueError` unless `len(xs) == N`. Desugar to
+/// a length assert + `let a = xs[0]; let b = xs[1]; …` (reusing `Expr::Index`,
+/// which clones the element). The caller has validated all-plain-Name targets and
+/// that `value` types as `list[elem_ty]` (and is passed already lowered).
+fn lower_list_positional_unpack(
+    ctx: &mut LoweringCtx,
+    targets: &ast::ExprTuple,
+    value: Expr,
+    elem_ty: Type,
+) -> Result<Vec<Stmt>, FrontendError> {
+    let names: Vec<String> = targets
+        .elts
+        .iter()
+        .map(|e| match e {
+            ast::Expr::Name(n) => n.id.to_string(),
+            _ => unreachable!("caller validated all-plain-Name targets"),
+        })
+        .collect();
+    let n = names.len() as i64;
+    let list_ty = Type::List(Box::new(elem_ty.clone()));
+    let mut stmts: Vec<Stmt> = Vec::with_capacity(names.len() + 2);
+    // A bare variable is indexed directly (Index borrows it); any other RHS is
+    // bound to a temp first (mirrors the starred-unpack path).
+    let coll = match &value {
+        Expr::Ident(nm) => nm.clone(),
+        _ => {
+            let tmp = "__listunpack".to_string();
+            ctx.bound.insert(tmp.clone());
+            ctx.name_types.insert(tmp.clone(), list_ty.clone());
+            stmts.push(Stmt::Let {
+                name: tmp.clone(),
+                ty: list_ty.clone(),
+                value,
+                mutable: false,
+            });
+            tmp
+        }
+    };
+    // PMAT-700: Python raises ValueError unless the length matches EXACTLY (a
+    // too-long list silently dropping the extras would be a divergence). Guard
+    // with an always-on assert before the positional reads.
+    stmts.push(Stmt::Assert {
+        cond: Expr::BinOp {
+            op: BinOp::Eq,
+            lhs: Box::new(Expr::Len(Box::new(Expr::Ident(coll.clone())))),
+            rhs: Box::new(Expr::LitInt(n)),
+        },
+        msg: Some(Expr::LitStr(format!(
+            "xpile: ValueError: expected {n} values to unpack"
+        ))),
+    });
+    for (i, name) in names.iter().enumerate() {
+        let mutable = ctx.mutable.contains(name);
+        ctx.bound.insert(name.clone());
+        ctx.name_types.insert(name.clone(), elem_ty.clone());
+        stmts.push(Stmt::Let {
+            name: name.clone(),
+            ty: elem_ty.clone(),
+            value: Expr::Index {
+                collection: Box::new(Expr::Ident(coll.clone())),
+                index: Box::new(Expr::LitInt(i as i64)),
             },
             mutable,
         });

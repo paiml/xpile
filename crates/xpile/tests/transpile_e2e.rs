@@ -1324,6 +1324,33 @@ fn main() {
     assert_rustc_runs("starred_unpack", &rust, driver);
 }
 
+/// PMAT-700: a plain (no-star) tuple-unpack over a LIST — `a, b = xs` — now
+/// transpiles (it was rejected "expected a tuple", though `a, *b = xs` over the
+/// same list worked). Python unpacks by position with an exact-length check;
+/// xpile emits a length assert + `let a = xs[0]; …`. Cross-checked vs python3
+/// (HUNT-V8 item V8-3).
+#[test]
+fn list_positional_unpack() {
+    let rust = xpile_transpile_to_rust("list_positional_unpack.py");
+    assert!(
+        rust.contains("ValueError: expected 2 values to unpack")
+            && rust.contains("xs[0i64 as usize].clone()")
+            && rust.contains("__listunpack"),
+        "list unpack should length-assert + positionally index:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(two(vec![10, 7]), 17);
+    assert_eq!(three(vec!["x".to_string(), "y".to_string(), "z".to_string()]), "xz");
+    assert_eq!(from_list_lit(5), 15); // RHS list literal → temp-bound, unpacked
+    // length mismatch panics like Python's ValueError
+    let r = std::panic::catch_unwind(|| two(vec![1, 2, 3]));
+    assert!(r.is_err(), "len-mismatch should panic (ValueError)");
+}
+"#;
+    assert_rustc_runs("list_positional_unpack", &rust, driver);
+}
+
 /// PMAT-496 (sprint): bounded slicing `xs[a:b]`. List → `Vec` via
 /// `.to_vec()`, str → `String` via `.to_string()` (byte-indexed).
 #[test]
