@@ -9131,9 +9131,8 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 {
                     let a = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                     let b = lower_expr_in_ctx(ctx, call.args[1].clone())?;
-                    if infer_type_in_ctx(ctx, &a) == Type::I64
-                        && infer_type_in_ctx(ctx, &b) == Type::I64
-                    {
+                    let (ta, tb) = (infer_type_in_ctx(ctx, &a), infer_type_in_ctx(ctx, &b));
+                    if ta == Type::I64 && tb == Type::I64 {
                         return Ok(Expr::TupleLit(vec![
                             Expr::BinOp {
                                 op: BinOp::FloorDiv,
@@ -9142,6 +9141,26 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             },
                             Expr::BinOp {
                                 op: BinOp::Mod,
+                                lhs: Box::new(a),
+                                rhs: Box::new(b),
+                            },
+                        ]));
+                    }
+                    // PMAT-657: `divmod(float, float)` → `(a // b, a % b)` over the
+                    // float ops. The int path inlined a FloorDiv/Mod tuple but a
+                    // float arg fell through to an undefined free `divmod(...)`
+                    // call (E0425). `FloatOp::FloorDiv`/`Mod` already implement
+                    // CPython's float divmod (PMAT-614/591), so the tuple matches
+                    // `divmod` exactly (q = a // b, r = a % b).
+                    if ta == Type::F64 && tb == Type::F64 {
+                        return Ok(Expr::TupleLit(vec![
+                            Expr::FloatBinOp {
+                                op: FloatOp::FloorDiv,
+                                lhs: Box::new(a.clone()),
+                                rhs: Box::new(b.clone()),
+                            },
+                            Expr::FloatBinOp {
+                                op: FloatOp::Mod,
                                 lhs: Box::new(a),
                                 rhs: Box::new(b),
                             },
