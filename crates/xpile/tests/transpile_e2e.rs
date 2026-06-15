@@ -8774,6 +8774,35 @@ fn main() {
     assert_rustc_runs("chained_assign_scalar", &rust, driver);
 }
 
+/// PMAT-684: `enumerate(xs, start)` / `enumerate(xs, start=N)` inside a list
+/// comprehension (`[(i, x) for i, x in enumerate(xs, 1)]`) was rejected (only the
+/// for-loop form handled a start; the expr form fell through to a misleading
+/// "expected an iterable of 2-tuples" error). `Expr::Enumerate` now carries a
+/// start offset, added to the index via `checked_add`. Cross-checked vs python3.
+#[test]
+fn enumerate_start_comprehension() {
+    let rust = xpile_transpile_to_rust("enumerate_start_comprehension.py");
+    assert!(
+        rust.contains("checked_add(1i64)") && rust.contains("checked_add(10i64)"),
+        "enumerate start in a comprehension should offset the index:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(
+        numbered(vec!["a".to_string(), "b".to_string(), "c".to_string()]),
+        vec!["1. a".to_string(), "2. b".to_string(), "3. c".to_string()]
+    );
+    assert_eq!(
+        kw_start(vec!["x".to_string(), "y".to_string()]),
+        vec!["10:x".to_string(), "11:y".to_string()]
+    );
+    assert_eq!(no_start(vec!["p".to_string(), "q".to_string(), "r".to_string()]), vec![0, 1, 2]);
+    assert_eq!(neg_start(vec![5, 6, 7]), vec![4, 6, 8]);   // start = -1
+}
+"#;
+    assert_rustc_runs("enumerate_start_comprehension", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a

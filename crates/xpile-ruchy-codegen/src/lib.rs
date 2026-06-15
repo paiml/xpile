@@ -2171,11 +2171,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str(" }).collect::<Vec<_>>()");
         }
         // PMAT-502ai: `enumerate(xs)` → Vec of (i64, elem) tuples.
-        Expr::Enumerate { list } => {
+        Expr::Enumerate { list, start } => {
             emit_expr(out, list, mode)?;
-            out.push_str(
-                ".iter().cloned().enumerate().map(|(__i, __e)| (__i as i64, __e)).collect::<Vec<_>>()",
-            );
+            // PMAT-684: `start` offsets the index (see the rust backend).
+            if *start == 0 {
+                out.push_str(
+                    ".iter().cloned().enumerate().map(|(__i, __e)| (__i as i64, __e)).collect::<Vec<_>>()",
+                );
+            } else {
+                write!(
+                    out,
+                    ".iter().cloned().enumerate().map(|(__i, __e)| ((__i as i64).checked_add({start}i64).expect(\"xpile: i64 addition overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"), __e)).collect::<Vec<_>>()"
+                )?;
+            }
         }
         // PMAT-502ai: `zip(xs, ys)` → Vec of paired tuples.
         Expr::Zip { left, right } => {

@@ -7344,7 +7344,7 @@ fn infer_type(e: &Expr) -> Type {
         }
         // PMAT-502ai: enumerate(xs) → List(Tuple[I64, elem]); zip(xs, ys) →
         // List(Tuple[elemL, elemR]).
-        Expr::Enumerate { list } => {
+        Expr::Enumerate { list, .. } => {
             let elem = match infer_type(list) {
                 Type::List(e) => *e,
                 _ => Type::I64,
@@ -7769,7 +7769,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             Type::List(Box::new(body_ty))
         }
         // PMAT-502ai: enumerate/zip → List(Tuple[...]).
-        Expr::Enumerate { list } => {
+        Expr::Enumerate { list, .. } => {
             let elem = match infer_type_in_ctx(ctx, list) {
                 Type::List(e) => *e,
                 _ => Type::I64,
@@ -9645,14 +9645,58 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 }
                 // PMAT-502ai: `enumerate(xs)` over a list → a Vec of
                 // (index, element) tuples (materializing the lazy iterator).
-                if fname.id.as_str() == "enumerate"
-                    && call.keywords.is_empty()
-                    && call.args.len() == 1
-                {
+                if fname.id.as_str() == "enumerate" && (1..=2).contains(&call.args.len()) {
+                    // PMAT-684: an expression-position `enumerate(xs[, start])` /
+                    // `enumerate(xs, start=N)` — e.g. inside a list comprehension
+                    // `[(i, x) for i, x in enumerate(xs, 1)]`, which previously
+                    // rejected (only the 1-arg no-keyword form was handled here, so
+                    // a 2-arg/keyword form fell through to a misleading "expected an
+                    // iterable of 2-tuples" error). Carry the start offset on
+                    // `Expr::Enumerate`, mirroring the for-loop path's start
+                    // extraction (PMAT-502ca/594/642): the start is the 2nd
+                    // positional arg OR a `start=` keyword, an int literal (incl.
+                    // negative); any other keyword, or both positional+keyword,
+                    // rejects cleanly.
+                    if let Some(bad) = call
+                        .keywords
+                        .iter()
+                        .find(|k| k.arg.as_deref() != Some("start"))
+                    {
+                        let kw = bad.arg.as_deref().unwrap_or("**kwargs");
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` uses `enumerate(...)` with an unsupported keyword argument `{kw}` — only `start=` is supported",
+                            ctx.fn_name
+                        )));
+                    }
+                    let kw_start = call
+                        .keywords
+                        .iter()
+                        .find(|k| k.arg.as_deref() == Some("start"));
+                    let start_src: Option<&ast::Expr> = if call.args.len() == 2 {
+                        if kw_start.is_some() {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` uses `enumerate(xs, <start>, start=…)` giving the start both positionally and by keyword",
+                                ctx.fn_name
+                            )));
+                        }
+                        Some(&call.args[1])
+                    } else {
+                        kw_start.map(|k| &k.value)
+                    };
+                    let start = match start_src {
+                        None => 0,
+                        Some(e) => extract_int_literal(e).ok_or_else(|| {
+                            FrontendError::Lower(format!(
+                                "function `{}` uses `enumerate(xs, <start>)` with a non-literal-int start — only an integer literal (e.g. `5`, `-1`) is supported at v0.2.0",
+                                ctx.fn_name
+                            ))
+                        })?,
+                    };
                     let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                     if matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
                         return Ok(Expr::Enumerate {
                             list: Box::new(list),
+                            start,
                         });
                     }
                 }
