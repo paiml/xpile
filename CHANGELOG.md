@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.365] — 2026-06-15
+
+Tranche 2 — PMAT-666: **correctness** — zfill/center/ljust/rjust clamp negative width.
+
+- `s.zfill(-3)` / `s.center(-3)` / `s.ljust(-3)` / `s.rjust(-3)` return the
+  string unchanged in Python (width ≤ len means no padding). xpile cast the width
+  via a bare `as usize`, so a negative width underflowed to a huge value → a
+  capacity-overflow panic (or OOM).
+- Fix (both backends, the four str-width arms incl. the with-fill forms, no IR
+  change): clamp the width with `.max(0)` before the `as usize` cast — a negative
+  width becomes 0 and the string is returned unchanged.
+- Differential-verified vs python3 (negative zfill/center/ljust/rjust + `ljust(w,
+  fill)` → unchanged; positive-width regressions intact). New e2e fixture
+  `str_width_negative.py`. 423 e2e fixtures. Found by HUNT-V4.
+
 ## [0.1.364] — 2026-06-15
 
 Tranche 2 — PMAT-665: **correctness** — `any()`/`all()` over int/str/float lists.
