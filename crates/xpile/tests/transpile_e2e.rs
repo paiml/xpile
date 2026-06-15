@@ -8749,6 +8749,31 @@ fn main() {
     assert_rustc_runs("str_width_format", &rust, driver);
 }
 
+/// PMAT-683: a non-literal chained assignment `a = b = <expr>` over a Copy scalar
+/// (int/float/bool) — `a = b = n + 1`, `x = y = z = n * 2` — was rejected ("only a
+/// scalar literal is supported"). Now bound once to a temp and copied into each
+/// target (a Copy scalar assigns to several targets without a move; non-Copy
+/// values still reject). Cross-checked vs python3.
+#[test]
+fn chained_assign_scalar() {
+    let rust = xpile_transpile_to_rust("chained_assign_scalar.py");
+    assert!(
+        rust.contains("let __chain") && rust.contains("let a: i64 = __chain;"),
+        "non-literal chained assign should bind once to a temp:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(chain_int(5), 12);            // a = b = 6 → 12
+    assert_eq!(chain_three(4), 24);          // x = y = z = 8 → 24
+    assert_eq!(chain_float(2.0), 6.0);       // a = b = 3.0 → 6.0
+    assert_eq!(chain_bool(3), true);
+    assert_eq!(chain_bool(-1), false);
+    assert_eq!(chain_literal(10), 20);       // literal still works
+}
+"#;
+    assert_rustc_runs("chained_assign_scalar", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a

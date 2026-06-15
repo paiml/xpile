@@ -4724,15 +4724,44 @@ fn lower_chained_assign(
                 | ast::Constant::Str(_)
         )
     );
-    if !is_scalar_literal {
+    // PMAT-683: a non-literal chained assignment `a = b = <expr>` is allowed when
+    // the value is a COPY scalar (int/float/bool) — bind it ONCE to a temp and copy
+    // it into each target (`let __chain = EXPR; a = __chain; b = __chain;`). This
+    // keeps the value side-effect-free per target without re-evaluating it, and a
+    // Copy scalar can be assigned to several targets without a move. A non-Copy /
+    // aliasing value (str variable, list, dict, set) still rejects — `a = b = xs`
+    // would move/alias and diverge from Python's shared-reference semantics.
+    let value0 = lower_expr_in_ctx(ctx, (*asn.value).clone())?;
+    let ty0 = infer_type_in_ctx(ctx, &value0);
+    let is_copy_scalar = matches!(ty0, Type::I64 | Type::F64 | Type::Bool);
+    if !is_scalar_literal && !is_copy_scalar {
         return Err(FrontendError::Lower(format!(
-            "function `{}` has a chained assignment `a = b = …` with a non-literal value — only a scalar literal (int/float/bool/str) is supported at v0.2.0 (avoids aliasing/move issues)",
+            "function `{}` has a chained assignment `a = b = …` with a non-literal {ty0:?} value — only a scalar literal (int/float/bool/str) or a Copy-scalar expression (int/float/bool) is supported at v0.2.0 (str/list/dict/set would move or alias, diverging from Python)",
             ctx.fn_name
         )));
     }
-    let mut out = Vec::with_capacity(names.len());
+    let mut out = Vec::with_capacity(names.len() + 1);
+    // The value source for each target. A scalar LITERAL is re-lowered per target
+    // (independent + cheap, and the only way to give each `str` target its own
+    // owned `String`). A non-literal Copy scalar is bound once to a temp (`__chain`)
+    // and each target copies it.
+    let use_temp = !is_scalar_literal;
+    if use_temp {
+        ctx.bound.insert("__chain".to_string());
+        ctx.name_types.insert("__chain".to_string(), ty0.clone());
+        out.push(Stmt::Let {
+            name: "__chain".to_string(),
+            ty: ty0.clone(),
+            value: value0,
+            mutable: false,
+        });
+    }
     for name in names {
-        let value = lower_expr_in_ctx(ctx, (*asn.value).clone())?;
+        let value = if use_temp {
+            Expr::Ident("__chain".to_string())
+        } else {
+            lower_expr_in_ctx(ctx, (*asn.value).clone())?
+        };
         if ctx.bound.contains(&name) {
             out.push(Stmt::Assign { name, value });
         } else {
@@ -13832,13 +13861,24 @@ mod tests {
     }
 
     #[test]
-    fn rejects_chained_assignment() {
+    fn chained_assignment_copy_scalar_ok_noncopy_rejects() {
+        // PMAT-683: a Copy-scalar (int/float/bool) chained assignment now lowers
+        // (bound once to a temp, copied to each target).
+        PythonFrontend
+            .parse_and_lower(
+                &PathBuf::from("fixture.py"),
+                "def f(a: int) -> int:\n    x = y = a + 1\n    return x + y\n",
+            )
+            .expect("Copy-scalar chained assignment should lower");
+        // A non-Copy / aliasing value (list/dict/set/str-variable) still rejects —
+        // assigning it to several targets would move or alias, diverging from
+        // Python's shared-reference semantics.
         let err = PythonFrontend
             .parse_and_lower(
                 &PathBuf::from("fixture.py"),
-                "def f(a):\n    x = y = a\n    return x\n",
+                "def g(xs: list[int]) -> int:\n    a = b = xs\n    return len(a)\n",
             )
-            .expect_err("chained assignment should fail");
+            .expect_err("non-Copy chained assignment should fail");
         match err {
             FrontendError::Lower(msg) => {
                 assert!(msg.contains("chained"), "unexpected msg: {}", msg);
