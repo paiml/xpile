@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.373] — 2026-06-15
+
+### Added
+
+- **PMAT-674 — `len(s.encode())` → UTF-8 byte length.** `len(s.encode())` is a
+  common Python idiom for the UTF-8 BYTE length of a string (`s.encode()` defaults
+  to UTF-8), distinct from `len(s)` which counts Unicode code points. `.encode()`
+  is otherwise an unsupported method call, so the whole idiom rejected ("method
+  calls are not supported"). **Fix** (frontend only, the `len()` intercept; NO IR
+  change): detect `len(s.encode())` / `len(s.encode("utf-8"))` BEFORE lowering the
+  argument (which would error on the method call) and route it to `Expr::Len` over
+  the receiver — `Expr::Len` codegen emits `.len() as i64`, the byte length of a
+  Rust `String`, which equals Python's `len(s.encode())` for the default UTF-8
+  encoding. The plain-`len(str)` branch is unchanged (still `.chars().count()`,
+  code-point count). Accepts a bare `.encode()` or an explicit utf-8/utf8 literal
+  arg; any other encoding falls through (rejected). Differential-verified vs
+  python3 (`café` → 5 bytes / 4 chars, `€` → 3 bytes, ASCII unchanged). New e2e
+  fixture `len_encode_bytes.py` (rustc round-trip). e2e 430 → 431. Found by HUNT-V5
+  (encode-bytelen).
+
 ## [0.1.372] — 2026-06-15
 
 ### Added
