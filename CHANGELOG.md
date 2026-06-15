@@ -19,6 +19,20 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.345] — 2026-06-15
+
+Tranche 2 — PMAT-646: starred unpacking at any position (star-first / star-mid).
+
+- Extends PMAT-645 (star-last) to `*init, last = xs` (star-first) and
+  `first, *mid, last = xs` (star-mid), with any prefix/suffix counts.
+- Fix (frontend desugar, no new IR): generalize `lower_starred_unpack` (hook now
+  accepts one starred element with all-Name prefix AND suffix). Emits `let n_i =
+  xs[i]` (prefix), `let star = xs[p:len-s]` (Slice with a computed `len - s` hi
+  via `Expr::Len` + `BinOp::Sub`), and `let m_j = xs[len-(s-j)]` (computed Index)
+  for the suffix. Star-last (s=0 → open hi) reduces to PMAT-645.
+- Differential-verified vs python3; star-last + plain tuple unpack unaffected.
+  Extended e2e fixture `starred_unpack.py`. 404 e2e fixtures.
+
 ## [0.1.344] — 2026-06-15
 
 Tranche 2 — PMAT-645: starred unpacking `n0, …, *rest = xs` (star last).
