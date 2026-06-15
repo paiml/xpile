@@ -9240,6 +9240,13 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     && call.keywords.is_empty()
                     && call.args.len() == 1
                 {
+                    // PMAT-689: a GENERATOR-expression arg (`any(P(x) for x in xs)`)
+                    // is LAZY in Python — the predicate must short-circuit. A list
+                    // comprehension (`any([P(x) for x in xs])`) or a plain list is
+                    // EAGER, so it stays non-short-circuiting (keeps the existing
+                    // semantics — a not-yet-needed element error/side-effect should
+                    // still occur, matching Python's eager list construction).
+                    let short_circuit = matches!(&call.args[0], ast::Expr::GeneratorExp(_));
                     let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                     if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
                         let is_all = fname.id.as_str() == "all";
@@ -9252,6 +9259,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 },
                             }),
                             is_all,
+                            short_circuit,
                         };
                         let x = || Box::new(Expr::Ident("__x".to_string()));
                         match *elem {
@@ -9259,6 +9267,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 return Ok(Expr::BoolReduce {
                                     list: Box::new(list),
                                     is_all,
+                                    short_circuit,
                                 })
                             }
                             Type::I64 => {

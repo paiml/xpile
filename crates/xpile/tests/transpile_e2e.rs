@@ -8903,6 +8903,38 @@ fn main() {
     assert_rustc_runs("walrus_if", &rust, driver);
 }
 
+/// PMAT-689: `any(P(x) for x in xs)` / `all(...)` over a GENERATOR expression must
+/// SHORT-CIRCUIT like Python — the predicate was eagerly `.map()`-ed over every
+/// element then reduced, panicking on a not-yet-needed element (e.g. div-by-zero)
+/// Python never reaches. Fixed by fusing the predicate into the `any`/`all`
+/// closure (Rust's any/all short-circuit). A LIST comprehension `any([...])` is
+/// eager in Python, so it is NOT fused. Cross-checked vs python3.
+#[test]
+fn any_all_short_circuit() {
+    let rust = xpile_transpile_to_rust("any_all_short_circuit.py");
+    assert!(
+        rust.contains("fn has_big(xs: Vec<i64>) -> bool {\n    xs.iter().cloned().any(|__k|"),
+        "genexpr any() should fuse the predicate into a short-circuiting .any():\n{rust}"
+    );
+    assert!(
+        rust.contains("collect::<Vec<_>>().iter().any"),
+        "list-comp any([...]) must stay EAGER (not fused):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(has_big(vec![1, 0]), true);      // short-circuits at x=1 (no div-by-0 panic)
+    assert_eq!(has_big(vec![100, 200]), true);
+    assert_eq!(all_short(vec![5, -1, 0]), false); // short-circuits at -1 (never divides by 0)
+    assert_eq!(all_short(vec![5, 10]), true);
+    assert_eq!(any_truthy(vec![0, 0, 3]), true);
+    assert_eq!(any_truthy(vec![0, 0]), false);
+    assert_eq!(listcomp_eager(vec![3, 9]), true);  // eager list-comp, no erroring element
+    assert_eq!(listcomp_eager(vec![1, 2]), false);
+}
+"#;
+    assert_rustc_runs("any_all_short_circuit", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a
