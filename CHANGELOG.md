@@ -19,6 +19,27 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.338] — 2026-06-15
+
+Tranche 2 — PMAT-639: **correctness** — runtime-negative list index wraps like Python.
+
+- A list subscript `xs[i]` with a runtime-negative `i` emitted `xs[i as usize]`,
+  so `i = -1` cast to `usize::MAX` and panicked, where Python returns the last
+  element (`xs[-1]`). The variable/computed-index case (literal `xs[-1]` was
+  already resolved to `len - k` in the frontend). Found by a differential hunt.
+- Fix (both backends' `Expr::Index` arm, no new IR): mirror the existing
+  str-index negative-wrap. A non-negative integer-literal index keeps the bare
+  fast path `xs[i as usize].clone()`; any other index binds the collection (by
+  ref, eval-once) and the index, then wraps:
+  `if __li < 0 { __lc.len() as i64 + __li } else { __li }`. An out-of-range
+  result still panics via the `as usize` cast / bounds check (≈ IndexError).
+  `Expr::Index` is list-only (str has its own char-indexed path, dict uses
+  `DictGet`).
+- Differential-verified vs python3 (`xs[-1]`/`xs[-2]`, computed `xs[len-1]`/
+  `xs[-len]`, negative nested `grid[i][0]`); positive/literal/loop/nested
+  indices unaffected. New e2e fixture `neg_runtime_list_index.py`. 398 e2e
+  fixtures.
+
 ## [0.1.337] — 2026-06-15
 
 Tranche 2 — PMAT-638: short-circuit chains `a or b or c` return the operand.
