@@ -8959,6 +8959,28 @@ fn main() {
     assert_rustc_runs("loop_else", &rust, driver);
 }
 
+/// PMAT-698: a var bound BEFORE a loop and reassigned ONLY in the loop's `else`
+/// clause must be `let mut` — `walk_counts` recursed only into the loop body, so
+/// the else-reassignment hit rustc E0384. Now it folds the `orelse` counts.
+/// Cross-checked vs python3 (HUNT-V8 item V8-1).
+#[test]
+fn loop_else_mut() {
+    let rust = xpile_transpile_to_rust("loop_else_mut.py");
+    assert!(
+        rust.contains("let mut r"),
+        "an else-clause-reassigned flag must be `let mut`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(find_or(vec![1, 2, 3], 2), "found");   // break → else skipped
+    assert_eq!(find_or(vec![1, 2, 3], 9), "missing"); // no break → else reassigns r
+    assert_eq!(scan(2), "exhausted");                 // while completes → else
+    assert_eq!(scan(10), "ok");                       // break at i==3 → else skipped
+}
+"#;
+    assert_rustc_runs("loop_else_mut", &rust, driver);
+}
+
 /// PMAT-688: a walrus `(t := E)` in an `if` condition (evaluated once) is hoisted
 /// to `let mut t = E;` before the `if` (Python leaks `t` to the enclosing scope),
 /// so the body / following code can use `t`. Was an opaque `Discriminant(1)`
