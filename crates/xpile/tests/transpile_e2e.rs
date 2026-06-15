@@ -8580,6 +8580,34 @@ fn main() {
     assert_rustc_runs("format_radix_neg", &rust, driver);
 }
 
+/// PMAT-677: a float format spec combining WIDTH/zero-pad/sign/align WITH
+/// precision (`f"{x:8.3f}"`, `{:06.2f}`, `{:+8.2f}`, `{:>8.2f}`, `{:*>8.2f}`) was
+/// rejected ("unsupported format spec") — `translate_format_spec` only handled
+/// pure `.Nf`. Rust's `{:8.3}` etc. match Python exactly for floats (the `.Nf`
+/// precision forces the decimals, avoiding the whole-float repr divergence that
+/// defers bare float widths). Fixes both f-string and `.format()`. vs python3.
+#[test]
+fn float_format_width_precision() {
+    let rust = xpile_transpile_to_rust("float_format_width_precision.py");
+    assert!(
+        rust.contains("format!(\"{:8.3}\", x)") && rust.contains("format!(\"{:06.2}\", x)"),
+        "float width+precision spec should translate to Rust {{:8.3}}:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(width(3.14159), "   3.142");
+    assert_eq!(zero_pad(3.14159), "003.14");
+    assert_eq!(sign(3.14159), "   +3.14");
+    assert_eq!(wide(3.14159), "    3.1416");
+    assert_eq!(align(3.14159), "    3.14");
+    assert_eq!(fill_align(3.14159), "****3.14");
+    assert_eq!(via_format(3.14159), "   3.142");
+    assert_eq!(plain(3.14159), "3.14");
+}
+"#;
+    assert_rustc_runs("float_format_width_precision", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a
