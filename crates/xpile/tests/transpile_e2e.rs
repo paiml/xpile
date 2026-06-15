@@ -3403,6 +3403,30 @@ fn main() {
     assert_rustc_runs("neg_float_var", &rust, driver);
 }
 
+/// PMAT-629: `s *= n` (str) and `xs *= n` (list) are repetition, not numeric
+/// multiplication — `s *= n` emitted `String::checked_mul` (E0599) and `xs *= n`
+/// was rejected. Both now route to `Expr::Repeat` (like `s * n` / `xs * n`); an
+/// int `x *= 3` stays numeric. Found by hunt #9 (H9-11). Cross-checked vs python3.
+#[test]
+fn mul_assign_repeat() {
+    let rust = xpile_transpile_to_rust("mul_assign_repeat.py");
+    assert!(
+        // str/list *= use repeat; int *= stays checked_mul.
+        rust.contains("s = (s).repeat(")
+            && rust.contains("flat_map(|_| __rep.iter().cloned())")
+            && rust.contains("x = (x).checked_mul(3i64)"),
+        "str/list *= should repeat; int *= should stay numeric:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(rep_str("ab".to_string(), 3), "ababab");
+    assert_eq!(rep_list(vec![1, 2], 3), vec![1, 2, 1, 2, 1, 2]);
+    assert_eq!(int_mul(4), 12);
+}
+"#;
+    assert_rustc_runs("mul_assign_repeat", &rust, driver);
+}
+
 /// PMAT-502bq (Tranche 2): augmented assignment over a float `x += y`
 /// (and `-= *= /=`) → plain infix `FloatBinOp`, not the i64-only
 /// `checked_*` path. `/=` (true division) is supported in aug position.

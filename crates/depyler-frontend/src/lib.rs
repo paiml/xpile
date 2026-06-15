@@ -4982,6 +4982,17 @@ fn combine_aug(
             });
         }
     }
+    // PMAT-629: `s *= n` (str) / `xs *= n` (list) is REPETITION, not numeric
+    // multiplication — route to `Expr::Repeat` (same as `s * n` / `xs * n`),
+    // else the backend emits `String`/`Vec::checked_mul` (E0599). `try_repeat`
+    // returns `None` for int*int, so `x *= 2` still lowers to `BinOp::Mul`.
+    if matches!(ast_op, ast::Operator::Mult) {
+        let lhs_ty = infer_type_in_ctx(ctx, &lhs);
+        let rhs_ty = infer_type_in_ctx(ctx, &rhs);
+        if let Some(rep) = try_repeat(&lhs_ty, &rhs_ty, &lhs, &rhs) {
+            return Ok(rep);
+        }
+    }
     let op = lower_binop(ast_op)?;
     if matches!(op, BinOp::Add)
         && (infer_type_in_ctx(ctx, &lhs) == Type::Str || infer_type_in_ctx(ctx, &rhs) == Type::Str)
@@ -5108,9 +5119,23 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
             // Any other augmented operator on a list (`*=`, …) is rejected
             // cleanly rather than miscompiled.
             if matches!(ctx.name_types.get(&name), Some(Type::List(_))) {
+                // PMAT-629: `xs *= n` is list repetition (`xs = xs * n`) — route
+                // through `combine_aug` (which returns `Expr::Repeat`) and reassign,
+                // mirroring `s *= n` for strings. (Was rejected as "only +=".)
+                if matches!(aug.op, ast::Operator::Mult) {
+                    if !matches!(infer_type_in_ctx(ctx, &rhs), Type::I64) {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` uses `{name} *= <non-int>` on a list — repetition needs an int count",
+                            ctx.fn_name
+                        )));
+                    }
+                    ctx.mutable.insert(name.clone());
+                    let value = combine_aug(ctx, &aug.op, Expr::Ident(name.clone()), rhs)?;
+                    return Ok(Stmt::Assign { name, value });
+                }
                 if !matches!(aug.op, ast::Operator::Add) {
                     return Err(FrontendError::Lower(format!(
-                        "function `{}` uses `{name} <op>= …` on a list with an operator other than `+=` (extend) — v0.2.0 supports only list `+=`",
+                        "function `{}` uses `{name} <op>= …` on a list with an operator other than `+=` (extend) or `*=` (repeat) — v0.2.0 supports those two",
                         ctx.fn_name
                     )));
                 }
