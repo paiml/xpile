@@ -2395,6 +2395,36 @@ fn main() {
     assert_rustc_runs("raise_guard", &rust, driver);
 }
 
+/// PMAT-631 (typed-exceptions sub-slice 1): `raise E(msg)` now emits a typed
+/// panic payload `xpile: <Type>: <msg>` (matching the builtin convention), so
+/// distinct exception types are distinguishable (was an identical `"msg"`
+/// payload). Groundwork for typed `except` matching. Found by hunt #9 (H9-5..10).
+#[test]
+fn raise_typed_payload() {
+    let rust = xpile_transpile_to_rust("raise_typed_payload.py");
+    assert!(
+        rust.contains("xpile: ValueError: ") && rust.contains("xpile: KeyError: "),
+        "raise should prefix the panic payload with the exception type:\n{rust}"
+    );
+    let driver = r#"
+fn payload(r: std::thread::Result<i64>) -> String {
+    match r {
+        Ok(_) => String::from("ok"),
+        Err(e) => e.downcast_ref::<String>().cloned().unwrap_or_else(|| String::from("?")),
+    }
+}
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    // raised exceptions carry their type in the payload, and differ by type.
+    assert_eq!(payload(std::panic::catch_unwind(|| raise_value(-1))), "xpile: ValueError: neg");
+    assert_eq!(payload(std::panic::catch_unwind(|| raise_key(-1))), "xpile: KeyError: missing");
+    // the non-raising path returns normally.
+    assert_eq!(raise_value(5), 5);
+}
+"#;
+    assert_rustc_runs("raise_typed_payload", &rust, driver);
+}
+
 /// PMAT-502ao (Tranche 2): `assert cond, msg` → `assert!(cond, "{}", msg)`;
 /// the bare `assert cond` form is unchanged.
 #[test]
