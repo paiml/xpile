@@ -9457,6 +9457,28 @@ fn main() {
     assert_rustc_runs("int_float_format_spec", &rust, driver);
 }
 
+/// PMAT-694: f-string `!r` (repr) / `!s` (str) conversions + the `{x=}` debug
+/// form (parser desugars `{x=}` → `"x=" + {x!r}`). `!r` of a string adds quotes
+/// (`'hi'`) via `ReprStr`; `!s` matches the plain field; `{x!r:>10}` formats the
+/// repr string. `!a` (ascii) stays declined.
+#[test]
+fn fstring_debug_repr() {
+    let rust = xpile_transpile_to_rust("fstring_debug_repr.py");
+    let driver = r#"
+fn main() {
+    // f-string repr/str conversions + `{x=}` debug; cross-checked vs python3.
+    assert_eq!(dbg_int(5), "x=5");
+    assert_eq!(dbg_str("hi".to_string()), "s='hi'"); // !r adds quotes
+    assert_eq!(dbg_float(3.0), "f=3.0");
+    assert_eq!(dbg_bool(true), "b=True done");
+    assert_eq!(expl_r("ab".to_string()), "'ab'");
+    assert_eq!(expl_s("ab".to_string()), "ab"); // !s = plain str
+    assert_eq!(r_with_spec("ab".to_string()), "[      'ab']"); // repr then align
+}
+"#;
+    assert_rustc_runs("fstring_debug_repr", &rust, driver);
+}
+
 /// PMAT-502dn (Tranche 2): printf `%`-format width/precision/flags (`%.2f`,
 /// `%5d`, `%-5d`, `%05d`, `%5s`, `%+d`) → translated Rust format specs.
 #[test]
