@@ -3546,6 +3546,34 @@ fn inject_break_flag_into_loop(stmt: &mut Stmt, flag: &str) {
     *body = inject_loop_break_flag(taken, flag);
 }
 
+/// PMAT-706: synthesize `<callee>(<param>)` as a `map`/`filter` body for a bare
+/// callable NAME (`map(len, xs)`, `filter(bool, xs)`, `map(myfunc, xs)`) — mirrors
+/// the sort-key Name handling (PMAT-502ei). Returns the lowered body with `param`
+/// bound to `elem_ty`; the body's type comes from the callee's result (so
+/// `map(str, xs)` → `List(Str)`, `filter(pred, xs)` → a `Bool` predicate).
+fn synth_named_callable_body(
+    ctx: &LoweringCtx,
+    callee: &ast::ExprName,
+    param: &str,
+    elem_ty: Type,
+) -> Result<Expr, FrontendError> {
+    let range = callee.range;
+    let synth = ast::Expr::Call(ast::ExprCall {
+        range,
+        func: Box::new(ast::Expr::Name(callee.clone())),
+        args: vec![ast::Expr::Name(ast::ExprName {
+            range,
+            id: ast::Identifier::new(param.to_string()),
+            ctx: ast::ExprContext::Load,
+        })],
+        keywords: vec![],
+    });
+    let mut sub = ctx.clone();
+    sub.bound.insert(param.to_string());
+    sub.name_types.insert(param.to_string(), elem_ty);
+    lower_expr_in_ctx(&sub, synth)
+}
+
 fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt>, FrontendError> {
     // PMAT-705: desugar a nested-tuple pair target (`for i, (a, b) in
     // enumerate(xs)`, `for k, (a, b) in d.items()`) — the pair-loop below needs
@@ -10112,6 +10140,52 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             }
                         }
                     }
+                    // PMAT-706: `filter(<name>, xs)` — a bare callable predicate
+                    // (`filter(bool, xs)`, `filter(is_even, xs)`). Synthesize
+                    // `<name>(__x)`; the predicate must type as `Bool`.
+                    if let ast::Expr::Name(callee) = &call.args[0] {
+                        let list = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                        if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
+                            let param = "__xpile_f".to_string();
+                            let body =
+                                synth_named_callable_body(ctx, callee, &param, (*elem).clone())?;
+                            let mut sub = ctx.clone();
+                            sub.bound.insert(param.clone());
+                            sub.name_types.insert(param.clone(), *elem);
+                            if infer_type_in_ctx(&sub, &body) == Type::Bool {
+                                return Ok(Expr::Filter {
+                                    list: Box::new(list),
+                                    lambda: SortKey {
+                                        param,
+                                        body: Box::new(body),
+                                    },
+                                });
+                            }
+                        }
+                    }
+                    // PMAT-706: `filter(None, xs)` keeps the TRUTHY elements
+                    // (identity predicate). The predicate is the element's
+                    // truthiness (int `!= 0`, str/list `len != 0`, …).
+                    if matches!(&call.args[0], ast::Expr::Constant(c) if matches!(c.value, ast::Constant::None))
+                    {
+                        let list = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                        if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
+                            let param = "__xpile_f".to_string();
+                            let mut sub = ctx.clone();
+                            sub.bound.insert(param.clone());
+                            sub.name_types.insert(param.clone(), *elem);
+                            let body = truthy_condition(&sub, Expr::Ident(param.clone()));
+                            if infer_type_in_ctx(&sub, &body) == Type::Bool {
+                                return Ok(Expr::Filter {
+                                    list: Box::new(list),
+                                    lambda: SortKey {
+                                        param,
+                                        body: Box::new(body),
+                                    },
+                                });
+                            }
+                        }
+                    }
                 }
                 // PMAT-502ac: `map(lambda p: e, xs)` over a list → a new list
                 // of the transformed elements (materializing the lazy
@@ -10142,6 +10216,24 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                     },
                                 });
                             }
+                        }
+                    }
+                    // PMAT-706: `map(<name>, xs)` — a bare callable
+                    // (`map(len, xs)`, `map(str, xs)`, `map(abs, xs)`,
+                    // `map(myfunc, xs)`). Synthesize `<name>(__x)` as the body;
+                    // the result element type is the callee's return type.
+                    if let ast::Expr::Name(callee) = &call.args[0] {
+                        let list = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                        if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
+                            let param = "__xpile_m".to_string();
+                            let body = synth_named_callable_body(ctx, callee, &param, *elem)?;
+                            return Ok(Expr::Map {
+                                list: Box::new(list),
+                                lambda: SortKey {
+                                    param,
+                                    body: Box::new(body),
+                                },
+                            });
                         }
                     }
                 }
