@@ -4192,6 +4192,30 @@ fn main() {
     assert_rustc_runs("default_params", &rust, driver);
 }
 
+/// PMAT-628: a non-Copy variable used more than once — twice in a list literal
+/// (`[inner, inner]`) or appended twice (`g.append(row); g.append(row)`) —
+/// emitted a move-then-use (E0382). The reused non-Copy var is now cloned
+/// (mirrors PMAT-588 call-arg clone); distinct elements are not cloned. Found by
+/// hunt #8 (H8-0/1). Cross-checked vs python3.
+#[test]
+fn list_reused_var_clone() {
+    let rust = xpile_transpile_to_rust("list_reused_var_clone.py");
+    assert!(
+        // reused vars clone; the literal's emit shows it.
+        rust.contains("vec![(inner).clone(), (inner).clone()]")
+            && rust.contains("g.push((row).clone());"),
+        "reused non-Copy vars in a list literal / append must clone:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(literal(), vec![vec![1, 2, 3], vec![1, 2, 3]]);
+    assert_eq!(appended(), vec![vec![0, 0], vec![0, 0]]);
+    assert_eq!(distinct(), vec![vec![1], vec![2]]);
+}
+"#;
+    assert_rustc_runs("list_reused_var_clone", &rust, driver);
+}
+
 /// PMAT-627: a default-using function called in argument position of another
 /// call (`f(g(x))` where `g` has a default). The outer call was default-filled
 /// but the nested call (lowered context-free by `lower_call`) was left
