@@ -108,6 +108,7 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                 fields,
                 methods,
                 frozen,
+                order,
             } => {
                 // PMAT-592: a frozen dataclass is hashable in Python, so it may
                 // be a dict key / set element — derive `Eq, Hash` (else E0277/
@@ -118,11 +119,19 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                     && fields
                         .iter()
                         .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool | Type::Str));
+                let mut derives = vec!["Clone", "Debug", "PartialEq"];
                 if derive_eq_hash {
-                    out.push_str("#[derive(Clone, Debug, PartialEq, Eq, Hash)]\n");
-                } else {
-                    out.push_str("#[derive(Clone, Debug, PartialEq)]\n");
+                    derives.push("Eq");
+                    derives.push("Hash");
                 }
+                // PMAT-648: `@dataclass(order=True)` → `PartialOrd` (lexicographic
+                // by field order = Python's tuple comparison). Sound for any
+                // comparable field incl. `f64`; full `Ord` (sorting instances) is
+                // deferred (a float field can't derive `Ord`).
+                if *order {
+                    derives.push("PartialOrd");
+                }
+                writeln!(out, "#[derive({})]", derives.join(", "))?;
                 writeln!(out, "pub struct {name} {{")?;
                 for (field, ty) in fields {
                     write!(out, "    pub {field}: ")?;

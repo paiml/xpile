@@ -5041,6 +5041,28 @@ fn main() {
     assert_rustc_runs("dataclass_eq_hash", &rust, driver);
 }
 
+/// PMAT-648: `@dataclass(order=True)` derives `PartialOrd` so instance
+/// comparisons (`<`/`<=`/`>`/`>=`) compile — they were rejected (E0369, no
+/// PartialOrd). Lexicographic by field order = Python's tuple comparison; works
+/// for float fields too (PartialOrd, not Ord). Cross-checked vs python3.
+#[test]
+fn dataclass_order() {
+    let rust = xpile_transpile_to_rust("dataclass_order.py");
+    assert!(
+        rust.contains("#[derive(Clone, Debug, PartialEq, PartialOrd)]"),
+        "order=True dataclass must derive PartialOrd:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(less(1, 2, 1, 3), 1);  // (1,2) < (1,3)
+    assert_eq!(less(2, 0, 1, 9), 0);  // (2,0) < (1,9) is false
+    assert_eq!(ge(5, 3), 1);
+    assert_eq!(float_less(), 1);
+}
+"#;
+    assert_rustc_runs("dataclass_order", &rust, driver);
+}
+
 /// PMAT-506b (classes epic): dataclass **construction + field access**.
 /// Positional `Name(a, b)` → `Expr::StructLit` (`Name { f0: a, f1: b }`);
 /// `obj.field` → `Expr::FieldAccess` (`(obj).field`); struct-typed params,
