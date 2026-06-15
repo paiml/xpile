@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.316] — 2026-06-15
+
+Tranche 2 — PMAT-617: **correctness** — `bool` compared with `int` coerces instead of failing to compile.
+
+- Python's `bool` is an `int` subtype, so `flag == 1` / `flag < 2` are valid
+  (`True == 1`), but xpile emitted a bare `bool OP i64`, which rustc rejects with
+  E0308 — transpile succeeded but produced invalid Rust. The arithmetic path
+  already coerced bool (PMAT-565); only the comparison path lagged (the documented
+  deferred follow-up). Surfaced by differential hunt #7.
+- Fix (frontend `build_chain_cmp`, no new IR): when one comparison operand is bool
+  and the other int, coerce the bool side to `i64` (`(b) as i64`). Uses the
+  authoritative operand types to build the cast directly (rather than re-inferring)
+  so a chained-comparison `__cmpN` temp — which isn't registered in the lowering
+  context — is also coerced. Covers the simple and chained (`a <= b < c`) forms;
+  both-bool needs no coercion (Rust `bool: Ord`).
+- New e2e fixture `bool_int_compare.py` cross-checked vs python3. 378 e2e fixtures.
+
 ## [0.1.315] — 2026-06-15
 
 Tranche 2 — PMAT-616: **correctness** — sorting a float list containing NaN no longer panics.
