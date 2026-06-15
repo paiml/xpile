@@ -9195,6 +9195,31 @@ fn main() {
     assert_rustc_runs("int_radix_prefix", &rust, driver);
 }
 
+/// PMAT-669: `sum(t)` / `min(t)` / `max(t)` over a fixed-arity tuple. These
+/// emitted a bare undefined `sum(t)` call (E0425) — the builtin
+/// argument-materializer had no tuple branch. A tuple now materializes to a list
+/// of its elements (literal: directly; variable: `[t.0, t.1, …]`). Cross-checked
+/// vs python3.
+#[test]
+fn tuple_aggregate() {
+    let rust = xpile_transpile_to_rust("tuple_aggregate.py");
+    assert!(
+        !rust.contains(" sum(t)") && !rust.contains(" min(t)") && !rust.contains(" max(t)"),
+        "sum/min/max over a tuple must not emit a bare free call:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sum_t((3, 7, 2)), 12);   // was E0425
+    assert_eq!(min_t((3, 7, 2)), 2);
+    assert_eq!(max_t((3, 7, 2)), 7);
+    assert_eq!(sum_lit(), 12);
+    assert_eq!(max_float_t((1.5, 2.5)), 1);
+    assert_eq!(sum_list_regression(vec![1, 2, 3, 4]), 10);
+}
+"#;
+    assert_rustc_runs("tuple_aggregate", &rust, driver);
+}
+
 /// PMAT-656: `max(d)` / `min(d)` / `sum(d)` over a dict iterate its KEYS in
 /// Python. A bare dict arg fell through to an undefined free call (`max(d)` →
 /// E0425); it now materializes to the keys list, like `max(d.keys())`.
