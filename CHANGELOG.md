@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.364] — 2026-06-15
+
+Tranche 2 — PMAT-665: **correctness** — `any()`/`all()` over int/str/float lists.
+
+- `any(xs)` / `all(xs)` over a `list[int]`/`[float]`/`[str]` emitted a bare
+  `any(xs)` free call (E0425) — only `list[bool]` was lowered to a reduction.
+  Python applies per-element truthiness (nonzero / non-empty).
+- Fix (frontend only, the all/any intercept, no IR change): for a non-bool
+  element type, map each element to a bool first (int → `!= 0`, float → `!= 0.0`,
+  str → `len != 0`) via `Expr::Map`, then `Expr::BoolReduce`. A `list[bool]`
+  still reduces directly.
+- Differential-verified vs python3 (any/all over int, str, float lists;
+  bool-list regression). New e2e fixture `any_all_truthy.py`. 422 e2e fixtures.
+  Found by HUNT-V4.
+
 ## [0.1.363] — 2026-06-15
 
 Tranche 2 — PMAT-664: **correctness** — `round(x)` guards inf/nan + out-of-i64 range.
