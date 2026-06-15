@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.398] — 2026-06-16
+
+### Fixed
+
+- **PMAT-699 — clone bare-ident keys/values in dict literals.** A bare-variable key or
+  value in a dict literal was moved into `m.insert(k, v)`; reusing it afterward (`d[k]`,
+  `len(s)`, another insert of the same name) was rustc E0382 ("borrow of moved value") —
+  e.g. `def kv(k, v): d = {k: v}; return d[k]`. **Fix**: the `Expr::DictLit` codegen (rust +
+  ruchy, mirrored) now appends `.clone()` to any bare `Expr::Ident` key/value at insert;
+  literals (`"key"`) and temporaries (calls, arithmetic) produce fresh values and are
+  emitted as-is — no redundant clone. Mirrors the existing `DictSet`/dict-comprehension
+  key-clone posture; clone-on-Copy is a clippy-only lint and generated code is compiled with
+  `rustc -A warnings`. Differential-verified vs python3 (str key/value, literal-key +
+  var-value, multi-pair, int keys). New e2e fixture `dict_lit_noncopy_clone.py` (rustc
+  round-trip). e2e 456 → 457. Found by HUNT-V8 (item V8-2).
+
 ## [0.1.397] — 2026-06-15
 
 ### Fixed
