@@ -4840,8 +4840,10 @@ fn main() {
 #[test]
 fn ord_chr() {
     let rust = xpile_transpile_to_rust("ord_chr.py");
+    // PMAT-702: ord asserts exactly one char (`__oc.next().is_some()` panic for a
+    // multi-char string) instead of silently taking the first; chr unchanged.
     assert!(
-        rust.contains(".chars().next().expect(") && rust.contains("char::from_u32("),
+        rust.contains("__oc.next().is_some()") && rust.contains("char::from_u32("),
         "ord/chr:\n{rust}"
     );
     let driver = r#"
@@ -4852,6 +4854,27 @@ fn main() {
 }
 "#;
     assert_rustc_runs("ord_chr", &rust, driver);
+}
+
+/// PMAT-702: `ord()` requires exactly one character — `ord("ab")` / `ord("")` is
+/// a Python TypeError, NOT the first char's code point. xpile now asserts a
+/// single char (was: silently returned the first). The lowering is a parenthesized
+/// block, so it stays valid in any expression position (`ord(c) + 1`).
+/// Cross-checked vs python3 (HUNT-V8 item V8-15).
+#[test]
+fn ord_single_char() {
+    let rust = xpile_transpile_to_rust("ord_single_char.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(code("a".to_string()), 97);
+    assert_eq!(code("é".to_string()), 233); // Unicode code point
+    assert_eq!(code_plus("a".to_string()), 98); // block-expr in arithmetic
+    // multi-char and empty are a Python TypeError -> panic
+    assert!(std::panic::catch_unwind(|| code("ab".to_string())).is_err());
+    assert!(std::panic::catch_unwind(|| code("".to_string())).is_err());
+}
+"#;
+    assert_rustc_runs("ord_single_char", &rust, driver);
 }
 
 /// PMAT-502cn (Tranche 2): 2-arg `min`/`max` over `str` operands (Ord).

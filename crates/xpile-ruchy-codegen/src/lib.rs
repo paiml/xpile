@@ -1051,11 +1051,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str(").chars().map(|__c| __c.to_string()).collect::<Vec<String>>()");
         }
         // PMAT-502cm: ord(c) → code point; chr(n) → 1-char string.
+        // PMAT-702: assert exactly one char (Python `ord("ab")` is a TypeError,
+        // not the first char). Mirrors the rust backend.
         Expr::Ord { value } => {
-            out.push('(');
+            out.push_str("({ let mut __oc = (");
             emit_expr(out, value, mode)?;
             out.push_str(
-                ".chars().next().expect(\"xpile: ord() expected a single character\") as i64)",
+                ").chars(); let __c0 = __oc.next().expect(\"xpile: ord() expected a character, got an empty string (TypeError)\"); if __oc.next().is_some() { panic!(\"xpile: ord() expected a character (TypeError)\"); } __c0 as i64 })",
             );
         }
         Expr::Chr { value } => {
