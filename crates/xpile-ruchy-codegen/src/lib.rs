@@ -1169,16 +1169,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             }
             // PMAT-502ah: `.capitalize()` → first char upper, rest lower.
             if matches!(op, StrMethodOp::Capitalize) {
+                // PMAT-701: titlecase (not uppercase) the lead, matching Python
+                // (`"ß".capitalize()` == "Ss"). std has no char::to_titlecase, so
+                // keep the first char of the uppercase expansion + lowercase the
+                // rest. Mirrors the rust backend.
                 out.push_str("{ let __cs = &(");
                 emit_expr(out, recv, mode)?;
-                out.push_str("); let mut __ch = __cs.chars(); match __ch.next() { Some(__f) => __f.to_uppercase().collect::<String>() + &(__ch.as_str().to_lowercase()), None => String::new() } }");
+                out.push_str("); let mut __ch = __cs.chars(); match __ch.next() { Some(__f) => { let __ue: String = __f.to_uppercase().collect(); let mut __uec = __ue.chars(); let __lead = match __uec.next() { Some(__h) => __h.to_string() + &__uec.as_str().to_lowercase(), None => String::new() }; __lead + &(__ch.as_str().to_lowercase()) }, None => String::new() } }");
                 return Ok(());
             }
             // PMAT-502aj: `.title()` → title-case each word.
             if matches!(op, StrMethodOp::Title) {
+                // PMAT-701: word-start titlecases via the uppercase expansion.
                 out.push_str("{ let mut __tr = String::new(); let mut __pa = false; for __c in (");
                 emit_expr(out, recv, mode)?;
-                out.push_str(").chars() { if __c.is_alphabetic() { if __pa { __tr.extend(__c.to_lowercase()); } else { __tr.extend(__c.to_uppercase()); } __pa = true; } else { __tr.push(__c); __pa = false; } } __tr }");
+                out.push_str(").chars() { if __c.is_alphabetic() { if __pa { __tr.extend(__c.to_lowercase()); } else { let __ue: String = __c.to_uppercase().collect(); let mut __uec = __ue.chars(); if let Some(__h) = __uec.next() { __tr.push(__h); __tr.push_str(&__uec.as_str().to_lowercase()); } } __pa = true; } else { __tr.push(__c); __pa = false; } } __tr }");
                 return Ok(());
             }
             // PMAT-502aw: `.rjust(w)`/`.ljust(w)`, matching the Rust backend.

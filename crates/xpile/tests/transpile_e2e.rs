@@ -2070,9 +2070,12 @@ fn main() {
 #[test]
 fn str_capitalize() {
     let rust = xpile_transpile_to_rust("str_capitalize.py");
+    // PMAT-701: the lead is titlecased via the uppercase expansion (no
+    // `char::to_titlecase` in std), so `let __ue: String = __f.to_uppercase()
+    // .collect()` then keep the first char + lowercase the rest.
     assert!(
-        rust.contains("__f.to_uppercase().collect::<String>()"),
-        "expected capitalize block, got:\n{rust}"
+        rust.contains("let __ue: String = __f.to_uppercase().collect()"),
+        "expected capitalize titlecase-via-expansion block, got:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -2104,6 +2107,28 @@ fn main() {
 }
 "#;
     assert_rustc_runs("str_title", &rust, driver);
+}
+
+/// PMAT-701: capitalize()/title() titlecase the lead char (not uppercase), so a
+/// titlecase-EXPANDING scalar matches Python — `"ßeta".capitalize()` == "Sseta"
+/// (ß→"Ss"), `"ﬂy".title()` == "Fly" (ﬂ→"Fl"). Derived from the uppercase
+/// expansion (std has no `char::to_titlecase`). Cross-checked vs python3
+/// (HUNT-V8 item V8-11).
+#[test]
+fn title_titlecase() {
+    let rust = xpile_transpile_to_rust("title_titlecase.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(cap("ßeta".to_string()), "Sseta");   // ß titlecase = "Ss", not "SS"
+    assert_eq!(cap("hello".to_string()), "Hello");
+    assert_eq!(cap("ABC".to_string()), "Abc");
+    assert_eq!(cap("".to_string()), "");
+    assert_eq!(titl("ﬂy away".to_string()), "Fly Away"); // ﬂ titlecase = "Fl"
+    assert_eq!(titl("hello world".to_string()), "Hello World");
+    assert_eq!(titl("it's".to_string()), "It'S"); // regression: word-boundary
+}
+"#;
+    assert_rustc_runs("title_titlecase", &rust, driver);
 }
 
 /// PMAT-502m (Tranche 2): numeric conversions `int(x)` / `float(x)` →
