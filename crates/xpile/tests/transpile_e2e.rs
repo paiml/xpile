@@ -5994,6 +5994,33 @@ fn main() {
     assert_rustc_runs("int_truthiness", &rust, driver);
 }
 
+/// PMAT-663: `not <int>` / `not <float>` / `not len(xs)` — the inverse of the
+/// PMAT-661 truthiness coercion. `not n` was rejected; it now lowers to `n == 0`
+/// (float → `x == 0.0`). Container `not` and bool `not` are unchanged.
+/// Cross-checked vs python3.
+#[test]
+fn not_int_truthiness() {
+    let rust = xpile_transpile_to_rust("not_int_truthiness.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(not_int(0), 1);
+    assert_eq!(not_int(5), 0);
+    assert_eq!(not_len(vec![]), 1);
+    assert_eq!(not_len(vec![1]), 0);
+    assert_eq!(not_float(0.0), 1);
+    assert_eq!(not_float(2.5), 0);
+    let mut d0 = std::collections::HashMap::new();
+    let mut d1 = std::collections::HashMap::new();
+    d1.insert(1, 1);
+    assert_eq!(not_container_regression(d0), 1);
+    assert_eq!(not_container_regression(d1), 0);
+    assert_eq!(not_bool_regression(true), 0);
+    assert_eq!(not_bool_regression(false), 1);
+}
+"#;
+    assert_rustc_runs("not_int_truthiness", &rust, driver);
+}
+
 /// PMAT-528 (Tranche 2): `xs.pop()` / `xs.pop(i)` as a bare statement (discard
 /// the popped value), e.g. `while xs: xs.pop()`. The value-position form already
 /// worked; a bare statement now reuses the same pop lowering wrapped in a
