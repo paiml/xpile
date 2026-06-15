@@ -10035,6 +10035,21 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     lhs: Box::new(Expr::Len(Box::new(operand))),
                     rhs: Box::new(Expr::LitInt(0)),
                 }),
+                // PMAT-663: `not <int>` → `n == 0`, `not <float>` → `x == 0.0`
+                // (the inverse of the PMAT-661 truthiness coercion). `not len(xs)`
+                // is an int operand, so it's covered too. Float edges match Python:
+                // `not -0.0` is `-0.0 == 0.0` → true (falsy); `not nan` is
+                // `nan == 0.0` → false (nan is truthy).
+                Type::I64 => Ok(Expr::BinOp {
+                    op: BinOp::Eq,
+                    lhs: Box::new(operand),
+                    rhs: Box::new(Expr::LitInt(0)),
+                }),
+                Type::F64 => Ok(Expr::BinOp {
+                    op: BinOp::Eq,
+                    lhs: Box::new(operand),
+                    rhs: Box::new(Expr::LitFloat(0.0)),
+                }),
                 _ => lower_unary_op(u),
             }
         }
