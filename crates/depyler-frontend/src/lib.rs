@@ -10107,13 +10107,55 @@ fn pyrepr_of(value: Expr, ty: &Type) -> Result<Expr, FrontendError> {
             value: Box::new(value),
         },
         Type::List(inner) => build_list_repr(value, inner)?,
+        Type::Tuple(elems) => build_tuple_repr(value, elems)?,
         other => {
             return Err(FrontendError::Lower(format!(
-                "f-string interpolation of a list with {other:?} elements is not supported \
-                 — list repr covers int/float/bool/str/nested-list at v0.2.0"
+                "f-string interpolation of a container with {other:?} elements is not supported \
+                 — container repr covers int/float/bool/str/nested list & tuple at v0.2.0"
             )))
         }
     })
+}
+
+/// PMAT-624: build Python's tuple `repr` — `"(" + repr(e0) + ", " + repr(e1) +
+/// … + ")"`, with the single-element trailing comma (`(42,)`) and `()` for the
+/// empty tuple. Heterogeneous element types (so per-position, not `Map`). The
+/// tuple is bound once in a `Block` so a side-effecting operand isn't
+/// re-evaluated per position. Recursive (a nested tuple/list element reuses
+/// `pyrepr_of`). NO new IR.
+fn build_tuple_repr(tuple_expr: Expr, elems: &[Type]) -> Result<Expr, FrontendError> {
+    let concat = |lhs: Expr, rhs: Expr| Expr::Concat {
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs),
+    };
+    let tmp = "__tp";
+    let let_stmt = Stmt::Let {
+        name: tmp.to_string(),
+        ty: Type::Tuple(elems.to_vec()),
+        value: tuple_expr,
+        mutable: false,
+    };
+    let mut acc = Expr::LitStr("(".to_string());
+    for (i, ty) in elems.iter().enumerate() {
+        if i > 0 {
+            acc = concat(acc, Expr::LitStr(", ".to_string()));
+        }
+        let elem = pyrepr_of(
+            Expr::TupleIndex {
+                tuple: Box::new(Expr::Ident(tmp.to_string())),
+                index: i,
+            },
+            ty,
+        )?;
+        acc = concat(acc, elem);
+    }
+    // A 1-tuple keeps Python's trailing comma: `(x,)`. Empty tuple → `()`.
+    let close = if elems.len() == 1 { ",)" } else { ")" };
+    acc = concat(acc, Expr::LitStr(close.to_string()));
+    Ok(Expr::Block(Box::new(Block {
+        stmts: vec![let_stmt],
+        trailing_return: acc,
+    })))
 }
 
 /// PMAT-623: build `"[" + ", ".join([repr(e) for e in xs]) + "]"` for a
@@ -10187,6 +10229,9 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
             // not Rust's `Display` (Vec has none → E0277). Desugar to
             // `"[" + ", ".join([repr(e) for e in xs]) + "]"`.
             Type::List(elem) => return build_list_repr(value, elem.as_ref()),
+            // PMAT-624: a tuple interpolates as its Python repr (`(1, 2)`, with
+            // the `(x,)` single-element comma); tuples have no `Display` (E0277).
+            Type::Tuple(elems) => return build_tuple_repr(value, &elems),
             _ => return Ok(value),
         }
     };
