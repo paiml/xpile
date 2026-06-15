@@ -8827,6 +8827,34 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // context-free `lower_call` path also handles bare `len(xs)`,
                 // but loses ctx (method calls there error). Same `Expr::Len`.
                 if fname.id.as_str() == "len" && call.keywords.is_empty() && call.args.len() == 1 {
+                    // PMAT-674: `len(s.encode())` is the UTF-8 BYTE length of a str
+                    // (`s.encode()` defaults to UTF-8), which equals Rust
+                    // `String::len()`. `.encode()` is otherwise an unsupported
+                    // method call, so this whole idiom rejected. Detect it BEFORE
+                    // lowering the arg (which would error on the method call) and
+                    // route to `Expr::Len` over the receiver — `Expr::Len` codegen
+                    // emits `.len() as i64` (byte length, NOT the `.chars().count()`
+                    // the str branch below uses for code-point length). Accepts a
+                    // bare `.encode()` or an explicit `.encode("utf-8")`/`"utf8"`.
+                    if let ast::Expr::Call(enc) = &call.args[0] {
+                        if let ast::Expr::Attribute(enc_attr) = enc.func.as_ref() {
+                            let is_utf8_arg = enc.args.is_empty()
+                                || (enc.args.len() == 1
+                                    && matches!(&enc.args[0],
+                                        ast::Expr::Constant(c)
+                                            if matches!(&c.value, ast::Constant::Str(s)
+                                                if matches!(s.to_ascii_lowercase().replace('-', "").as_str(), "utf8"))));
+                            if enc_attr.attr.as_str() == "encode"
+                                && enc.keywords.is_empty()
+                                && is_utf8_arg
+                            {
+                                let recv = lower_expr_in_ctx(ctx, (*enc_attr.value).clone())?;
+                                if infer_type_in_ctx(ctx, &recv) == Type::Str {
+                                    return Ok(Expr::Len(Box::new(recv)));
+                                }
+                            }
+                        }
+                    }
                     // PMAT-522: `len(range(n))` materialises the range to a Vec.
                     let inner = lower_arg_materializing_range(ctx, &call.args[0])?;
                     // PMAT-564: `len(str)` counts Unicode code points, not UTF-8
