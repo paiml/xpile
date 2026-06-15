@@ -19,6 +19,30 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.334] — 2026-06-15
+
+Tranche 2 — PMAT-635: **correctness** — range-comprehension variables don't leak.
+
+- A range comprehension `[i for i in range(n)]` (and the dict/set forms)
+  desugared to a function-scope counter loop, so the comprehension variable
+  LEAKED into the enclosing scope and clobbered a same-named outer binding —
+  but Python comprehension variables are scoped to the comprehension:
+  `def f(i): xs = [i for i in range(3)]; return i` returned 3, not 99.
+  (List-iterable comps and generator expressions were already correct via the
+  Rust-scoped `ForEach`/`Map` paths.) The same class of bug as PMAT-634, in the
+  comprehension desugar (a separate code path).
+- Fix (frontend only, no new IR): generalize the `_`-rename mechanism
+  (`underscore_rename: Option<String>` → `active_rename: Option<(String, String)>`)
+  and add `LoweringCtx::enter_comp_var`, which renames every range-comp counter
+  (named or `_`) to a fresh `__forc{N}`. The element/key/value/filter reads
+  resolve to the fresh name via the rename; the original name is never bound in
+  the function scope, so it can't leak. The three comp range branches now share
+  `comp_range_stmts`.
+- All three forms differential-verified vs python3; comp values, `if` filters,
+  `for _`, list-iterable comps, stepped ranges, and nested comps unaffected. New
+  e2e fixture `comp_var_no_leak.py`; 2 emitted-shape assertions updated. 394 e2e
+  fixtures.
+
 ## [0.1.333] — 2026-06-15
 
 Tranche 2 — PMAT-634: **correctness** — for-range loop-variable semantics.
