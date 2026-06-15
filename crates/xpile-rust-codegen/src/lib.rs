@@ -1491,6 +1491,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                         emit_expr(out, &args[0], mode)?;
                         out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()");
                     }
+                    // PMAT-644: `.rsplit(sep, maxsplit)` → `.rsplitn(maxsplit + 1,
+                    // sep)` (same negative-maxsplit "no limit" via saturating_add)
+                    // — but `rsplitn` yields parts right-to-left, so reverse the
+                    // collected Vec to restore Python's left-to-right order.
+                    StrMethodOp::RSplitN => {
+                        out.push_str(".rsplitn(((");
+                        emit_expr(out, &args[1], mode)?;
+                        out.push_str(") as usize).saturating_add(1), &(");
+                        emit_expr(out, &args[0], mode)?;
+                        out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>().into_iter().rev().collect::<Vec<String>>()");
+                    }
                     // PMAT-502co: no-arg `.split()` → whitespace split.
                     StrMethodOp::SplitWhitespace => {
                         out.push_str(
