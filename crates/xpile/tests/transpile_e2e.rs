@@ -8700,6 +8700,30 @@ fn main() {
     assert_rustc_runs("format_float_nan", &rust, driver);
 }
 
+/// PMAT-681: `bool(x)` over a float is `x != 0.0` — was rejected ("float
+/// deferred") despite the implicit `if x:` float-truthiness path already doing
+/// this. Rust `x != 0.0` matches Python exactly: 0.0 / -0.0 are falsy, NaN/inf
+/// are truthy. Cross-checked vs python3.
+#[test]
+fn bool_float() {
+    let rust = xpile_transpile_to_rust("bool_float.py");
+    assert!(
+        rust.contains("(x != 0f64)"),
+        "bool(float) should lower to x != 0.0:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(is_nonzero(0.0), false);
+    assert_eq!(is_nonzero(-0.0), false);
+    assert_eq!(is_nonzero(1.5), true);
+    assert_eq!(is_nonzero(-2.0), true);
+    assert_eq!(is_nonzero(f64::NAN), true);       // NaN is truthy in Python
+    assert_eq!(is_nonzero(f64::INFINITY), true);
+}
+"#;
+    assert_rustc_runs("bool_float", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a
