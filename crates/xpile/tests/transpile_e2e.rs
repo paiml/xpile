@@ -8963,6 +8963,31 @@ fn main() {
     assert_rustc_runs("none_value_literal", &rust, driver);
 }
 
+/// PMAT-691: `str.strip(chars)` / `lstrip` / `rstrip` with a char-SET arg —
+/// Python strips ANY leading/trailing char that is IN the set (not a substring).
+/// Was rejected ("expected exactly 0" args); lowered to `trim_matches` /
+/// `trim_start_matches` / `trim_end_matches` with a membership closure. The 0-arg
+/// whitespace form is unchanged. Cross-checked vs python3.
+#[test]
+fn str_strip_charset() {
+    let rust = xpile_transpile_to_rust("str_strip_charset.py");
+    assert!(
+        rust.contains(".trim_matches(|__c: char| __cs.contains(__c))")
+            && rust.contains(".trim_start_matches(|__c: char| __cs.contains(__c))")
+            && rust.contains(".trim_end_matches(|__c: char| __cs.contains(__c))"),
+        "charset strip should lower to trim_matches with a membership closure:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(strip_cs("...hi!!".to_string()), "hi");
+    assert_eq!(lstrip_cs("xxhixx".to_string()), "hixx");
+    assert_eq!(rstrip_cs("hi...".to_string()), "hi");
+    assert_eq!(strip_ws("  hi  ".to_string()), "hi");   // 0-arg whitespace (regression)
+}
+"#;
+    assert_rustc_runs("str_strip_charset", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a
