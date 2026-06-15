@@ -239,6 +239,16 @@ impl LoweringCtx {
         self.loop_counter += 1;
         format!("__forc{n}")
     }
+
+    /// PMAT-687: a fresh `__brokeN` flag name for a loop-`else` desugar (the loop
+    /// `else` runs iff the loop completed without `break`). Shares the loop
+    /// counter so it never collides with a `__forcN` range counter, and each
+    /// loop-`else` (incl. nested) gets a distinct name.
+    fn fresh_break_flag(&mut self) -> String {
+        let n = self.loop_counter;
+        self.loop_counter += 1;
+        format!("__broke{n}")
+    }
 }
 
 impl LoweringCtx {
@@ -2357,7 +2367,7 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         // PMAT-510 (Tranche 2): a `match` statement → desugar to an
         // `if`/`elif`/`else` chain and lower that (no new IR).
         ast::Stmt::Match(match_stmt) => lower_if_stmt(ctx, desugar_match_to_if(&match_stmt)?),
-        ast::Stmt::While(w) => lower_while_stmt(ctx, w).map(|s| vec![s]),
+        ast::Stmt::While(w) => lower_while_stmt(ctx, w),
         ast::Stmt::For(f) => lower_for_stmt(ctx, f),
         ast::Stmt::Assert(a) => lower_assert_stmt(ctx, a).map(|s| vec![s]),
         // PMAT-502bk: `continue` / `break` loop control. A `continue`
@@ -3424,12 +3434,91 @@ fn lower_range_list(ctx: &LoweringCtx, call: &ast::ExprCall) -> Result<Expr, Fro
     })
 }
 
-fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, FrontendError> {
+/// PMAT-687: rewrite each `break` AT THIS LOOP'S LEVEL to set `flag` true first
+/// (`flag = true; break;`), recursing into `if`/`else` bodies but NOT into nested
+/// loops (a `break` there targets the inner loop, not ours). Drives the loop-`else`
+/// desugar: the `else` body runs iff the loop completed without `break`.
+fn inject_loop_break_flag(stmts: Vec<Stmt>, flag: &str) -> Vec<Stmt> {
+    let mut out = Vec::with_capacity(stmts.len());
+    for s in stmts {
+        match s {
+            Stmt::Break => {
+                out.push(Stmt::Assign {
+                    name: flag.to_string(),
+                    value: Expr::LitBool(true),
+                });
+                out.push(Stmt::Break);
+            }
+            Stmt::If {
+                cond,
+                then_body,
+                else_body,
+            } => out.push(Stmt::If {
+                cond,
+                then_body: inject_loop_break_flag(then_body, flag),
+                else_body: inject_loop_break_flag(else_body, flag),
+            }),
+            // Nested loops keep their own `break`s — do not descend.
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// PMAT-687: build the `[let mut flag = false; <loop>; if !flag { else }]` triple
+/// for a loop-`else`. `loop_stmts` is the already-lowered loop (with `break`s
+/// flag-rewritten); `else_body` the lowered `else` block.
+fn wrap_loop_else(flag: &str, loop_stmts: Vec<Stmt>, else_body: Vec<Stmt>) -> Vec<Stmt> {
+    let mut out = Vec::with_capacity(loop_stmts.len() + 2);
+    out.push(Stmt::Let {
+        name: flag.to_string(),
+        ty: Type::Bool,
+        value: Expr::LitBool(false),
+        mutable: true,
+    });
+    out.extend(loop_stmts);
+    out.push(Stmt::If {
+        cond: Expr::BinOp {
+            op: BinOp::Eq,
+            lhs: Box::new(Expr::Ident(flag.to_string())),
+            rhs: Box::new(Expr::LitBool(false)),
+        },
+        then_body: else_body,
+        else_body: Vec::new(),
+    });
+    out
+}
+
+/// PMAT-687: rewrite the `break`s inside a single already-lowered loop `Stmt`'s
+/// body (used for the `for` path, whose body is buried in the loop variant).
+fn inject_break_flag_into_loop(stmt: &mut Stmt, flag: &str) {
+    let body = match stmt {
+        Stmt::While { body, .. }
+        | Stmt::ForEach { body, .. }
+        | Stmt::ForEachPair { body, .. }
+        | Stmt::ForEachZip3 { body, .. } => body,
+        _ => return,
+    };
+    let taken = std::mem::take(body);
+    *body = inject_loop_break_flag(taken, flag);
+}
+
+fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt>, FrontendError> {
     if !f.orelse.is_empty() {
-        return Err(FrontendError::Lower(format!(
-            "function `{}` has a `for ... else:` clause — Python's `else` on loops is not supported at v0.1.0",
-            ctx.fn_name
-        )));
+        // PMAT-687: `for … else:` — the `else` runs iff the loop completed WITHOUT
+        // `break`. Lower the loop with `orelse` cleared, set a fresh `__brokeN`
+        // flag before each `break`, then run the `else` under `if !__brokeN`.
+        let orelse = std::mem::take(&mut f.orelse);
+        let flag = ctx.fresh_break_flag();
+        let mut loop_stmts = lower_for_stmt(ctx, f)?;
+        for s in &mut loop_stmts {
+            inject_break_flag_into_loop(s, &flag);
+        }
+        let mut else_body = Vec::new();
+        for s in orelse {
+            else_body.extend(lower_block_stmt(ctx, s)?);
+        }
+        return Ok(wrap_loop_else(&flag, loop_stmts, else_body));
     }
 
     // PMAT-562: three-way `for a, b, c in zip(x, y, z)` → Stmt::ForEachZip3.
@@ -3982,13 +4071,8 @@ fn truthy_condition(ctx: &LoweringCtx, cond: Expr) -> Expr {
     }
 }
 
-fn lower_while_stmt(ctx: &mut LoweringCtx, w: ast::StmtWhile) -> Result<Stmt, FrontendError> {
-    if !w.orelse.is_empty() {
-        return Err(FrontendError::Lower(format!(
-            "function `{}` has a `while ... else:` clause — Python's `else` on loops is not supported at v0.1.0",
-            ctx.fn_name
-        )));
-    }
+fn lower_while_stmt(ctx: &mut LoweringCtx, w: ast::StmtWhile) -> Result<Vec<Stmt>, FrontendError> {
+    let orelse = w.orelse;
     let cond = truthy_condition(ctx, lower_expr_in_ctx(ctx, *w.test)?);
     if infer_type(&cond) != Type::Bool {
         return Err(FrontendError::Lower(format!(
@@ -4000,7 +4084,23 @@ fn lower_while_stmt(ctx: &mut LoweringCtx, w: ast::StmtWhile) -> Result<Stmt, Fr
     for stmt in w.body {
         body.extend(lower_block_stmt(ctx, stmt)?);
     }
-    Ok(Stmt::While { cond, body })
+    if orelse.is_empty() {
+        return Ok(vec![Stmt::While { cond, body }]);
+    }
+    // PMAT-687: `while … else:` — the `else` runs iff the loop exited via its
+    // condition (NOT a `break`). Set a fresh flag before each break, then run the
+    // `else` under `if !flag`.
+    let flag = ctx.fresh_break_flag();
+    let body = inject_loop_break_flag(body, &flag);
+    let mut else_body = Vec::new();
+    for stmt in orelse {
+        else_body.extend(lower_block_stmt(ctx, stmt)?);
+    }
+    Ok(wrap_loop_else(
+        &flag,
+        vec![Stmt::While { cond, body }],
+        else_body,
+    ))
 }
 
 /// Lower `assert cond` / `assert cond, msg` to [`Stmt::Assert`]. PMAT-009;

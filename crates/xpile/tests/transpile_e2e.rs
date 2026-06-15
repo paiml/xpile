@@ -8854,6 +8854,30 @@ fn main() {
     assert_rustc_runs("float_return_int_literal", &rust, driver);
 }
 
+/// PMAT-687: Python's `for … else:` / `while … else:` — the `else` runs iff the
+/// loop completed WITHOUT `break`. Was a clean reject; now desugared via a fresh
+/// `__brokeN` flag set before each break (at this loop's level — not nested
+/// loops), then `if !__brokeN { else }`. Cross-checked vs python3.
+#[test]
+fn loop_else() {
+    let rust = xpile_transpile_to_rust("loop_else.py");
+    assert!(
+        rust.contains("let mut __broke") && rust.contains("__broke") && rust.contains("= true;"),
+        "loop-else should desugar via a __broke flag:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(find(vec![1, 2, 3], 2), "found@2");   // return in loop, no else
+    assert_eq!(find(vec![1, 2], 9), "not found");    // loop completes → else runs
+    assert_eq!(has_break(vec![1, 2, 3], 2), "broke");      // break → else skipped
+    assert_eq!(has_break(vec![1, 2], 9), "completed");     // no break → else runs
+    assert_eq!(while_else(2), "ran out");            // while completes → else
+    assert_eq!(while_else(10), "hit 3");             // break at i==3 → else skipped
+}
+"#;
+    assert_rustc_runs("loop_else", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a
