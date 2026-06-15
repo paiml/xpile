@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.349] — 2026-06-15
+
+Tranche 2 — PMAT-650: **correctness** — unary float negation preserves signed zero.
+
+- Unary `-x` over a float *variable* was lowered to `0.0 - x`. But `0.0 - 0.0`
+  is `+0.0` in IEEE-754, so negating a zero lost the sign — `-x` (x == 0.0)
+  printed "0.0" where Python prints "-0.0" (Python `-x` flips the sign bit). A
+  silent value-divergence wherever signed zero is observable.
+- Fix (frontend only, the context-aware USub-over-float arm, no IR/codegen
+  change): emit `x * -1.0` instead. Multiplication by `-1.0` flips the sign bit
+  for every value (±0.0, ±inf, nan, all finite floats) and is bit-exact with
+  `-x` (multiplication by ±1.0 is exact in IEEE-754).
+- Differential-verified vs python3 (-0.0, -3.5, double-negation back to +0.0,
+  -0.0 + 0.0 == +0.0). New e2e fixture `neg_float_signed_zero.py`; existing
+  `neg_float_var` assertion updated to `(x * -1f64)`. 407 e2e fixtures. Found by
+  HUNT-V2.
+
 ## [0.1.348] — 2026-06-15
 
 Tranche 2 — PMAT-649: **correctness** — `str.split()` no-arg splits on C0 separators.
