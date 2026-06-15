@@ -2755,6 +2755,19 @@ fn emit_binop(
         // truncating quotient/remainder with a floor correction instead.
         BinOp::FloorDiv => emit_floor_div(out, lhs, rhs, mode),
         BinOp::Mod => emit_floor_mod(out, lhs, rhs, mode),
+        // PMAT-618: `d.get(k) == v` / `!= v`. A no-default `d.get(k)` is
+        // `Option<T>`, so comparing it to a bare value `v` is `Option<T> == T`
+        // (E0308). Python's `d.get(k)` is `None` when absent (`None == v` is
+        // False), which Rust models exactly as `Option<T> == Some(v)` — wrap the
+        // NON-Option side in `Some(...)`. Only `==`/`!=` (a `<`/`>` on a
+        // possibly-`None` is a Python `TypeError`); both-Option compares already
+        // typecheck and fall through to the plain infix arm below.
+        BinOp::Eq if is_dict_get_opt(lhs) ^ is_dict_get_opt(rhs) => {
+            emit_opt_eq(out, lhs, " == ", rhs, mode)
+        }
+        BinOp::NotEq if is_dict_get_opt(lhs) ^ is_dict_get_opt(rhs) => {
+            emit_opt_eq(out, lhs, " != ", rhs, mode)
+        }
         BinOp::Eq => emit_infix(out, lhs, " == ", rhs, mode),
         BinOp::NotEq => emit_infix(out, lhs, " != ", rhs, mode),
         BinOp::Lt => emit_infix(out, lhs, " < ", rhs, mode),
@@ -2961,6 +2974,41 @@ fn emit_infix(
     emit_expr(out, rhs, mode)?;
     write!(out, ")")?;
     Ok(())
+}
+
+/// PMAT-618: is this expression a no-default `d.get(k)` (an `Option<T>`)?
+fn is_dict_get_opt(e: &Expr) -> bool {
+    matches!(e, Expr::DictGetOpt { .. })
+}
+
+/// PMAT-618: emit an `==`/`!=` where exactly one operand is a no-default
+/// `d.get(k)` (`Option<T>`). The Option side is emitted as-is; the bare-value
+/// side is wrapped in `Some(...)` so the comparison is `Option<T> == Some(v)`,
+/// matching Python (`None == v` is `False`).
+fn emit_opt_eq(
+    out: &mut String,
+    lhs: &Expr,
+    op: &str,
+    rhs: &Expr,
+    mode: bool,
+) -> Result<(), CodegenError> {
+    write!(out, "(")?;
+    emit_opt_eq_operand(out, lhs, mode)?;
+    out.push_str(op);
+    emit_opt_eq_operand(out, rhs, mode)?;
+    write!(out, ")")?;
+    Ok(())
+}
+
+fn emit_opt_eq_operand(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError> {
+    if is_dict_get_opt(e) {
+        emit_expr(out, e, mode)
+    } else {
+        out.push_str("Some(");
+        emit_expr(out, e, mode)?;
+        out.push(')');
+        Ok(())
+    }
 }
 
 pub struct RustBackend;
