@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.405] — 2026-06-16
+
+### Added
+
+- **PMAT-706 — `map`/`filter` with a bare callable name.** `list(map(len, xs))` /
+  `list(filter(bool, xs))` / `list(filter(None, xs))` / `list(map(myfunc, xs))` rejected with
+  "produces I64" — the map/filter handlers only matched a lambda first arg, so a `Name` (or
+  `None`) callee fell through and the result mis-inferred as the scalar element type.
+  **Fix**: a new `synth_named_callable_body` helper synthesizes `<name>(__x)` (mirroring the
+  sort-key bare-callable handling) and lowers it with the param bound to the element type —
+  map(Name) takes the callee's return type as the result element type; filter(Name) requires
+  the synthesized predicate to type as `Bool`; filter(None) keeps the truthy elements via
+  `truthy_condition`. Differential-verified vs python3 (map `len`/`str`, filter
+  `bool`/`None`/user-predicate). New e2e fixture `map_filter_named.py` (rustc round-trip);
+  existing `map_lambda`/`filter_lambda` regressions intact. e2e 463 → 464. Found by HUNT-V8
+  (item V8-6).
+
 ## [0.1.404] — 2026-06-16
 
 ### Added
