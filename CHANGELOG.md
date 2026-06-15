@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.369] — 2026-06-15
+
+Tranche 2 — PMAT-670: **correctness** — negative constant tuple index `t[-k]`.
+
+- A negative constant tuple index `t[-1]` fell to the list-index runtime-wrap
+  path (`__lc.len() + i`), which is E0599 on a tuple (no `.len()`). Only a
+  non-negative `Constant` index was folded to a field access.
+- Fix (frontend only, the tuple-subscript arm, no IR change): resolve any int
+  literal via `extract_int_literal` — a negative `t[-k]` becomes the field access
+  `t.(arity - k)` at compile time (arity from the type), positive stays `t.N`. An
+  out-of-range literal and a non-literal (runtime) index now reject cleanly (a
+  heterogeneous fixed-arity tuple can't be runtime-indexed) instead of invalid Rust.
+- Differential-verified vs python3 (`t[-1]`/`t[-2]` over int tuple, `t[-1]` over a
+  heterogeneous `tuple[int, str]`, positive regression; runtime-var index rejects).
+  New e2e fixture `tuple_negative_index.py`. 427 e2e fixtures. Found by HUNT-V5.
+
 ## [0.1.368] — 2026-06-15
 
 Tranche 2 — PMAT-669: **correctness** — `sum`/`min`/`max` over a tuple.
