@@ -19,6 +19,28 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.333] — 2026-06-15
+
+Tranche 2 — PMAT-634: **correctness** — for-range loop-variable semantics.
+
+- `for i in range(...)` desugared to a while-loop that used the USER variable as
+  the counter (`let mut i = start; while i <cmp> stop { body; i += step }`),
+  silently miscompiling three cases vs python3: (1) nested same-name loops
+  (`for i: for i:`) — the inner reset the shared counter, so the outer ran only
+  once (`6` → `2`); (2) the post-loop value was `stop`, not the last iteration
+  value Python leaks (`2` → `3`); (3) an empty range clobbered a pre-existing
+  variable to `start` (`99` → `0`). The for-loop-variable cluster (hunt H9-0/2/17).
+- Fix (frontend only, no new IR): drive each loop with a fresh synthetic counter
+  `__forc{N}` (minted per loop, so nested loops get distinct names) and assign
+  the user variable from it at the top of the body (so it takes a value only
+  when the body runs). A fresh user variable is still declared in the enclosing
+  scope (leaks like Python, `start` evaluated once); an already-bound variable
+  gets no declaration, so an empty range leaves it untouched.
+- All three differential-verified vs python3; ordinary / start-stop / step /
+  negative-step / `reversed(range)` / nested-distinct / `for _` / `break` forms
+  unaffected. New e2e fixture `for_loop_var_semantics.py`; 4 emitted-shape
+  assertions updated (rust + lean). 393 e2e fixtures.
+
 ## [0.1.332] — 2026-06-15
 
 Tranche 2 — PMAT-633: stepped string slices `s[a:b:step]`.
