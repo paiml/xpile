@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.352] — 2026-06-15
+
+Tranche 2 — PMAT-653: **correctness** — `max()`/`min()` with a float key compiles.
+
+- `max(xs, key=lambda x: <float>)` / `min(...)` emitted `max_by_key`/`min_by_key`,
+  whose key must be `Ord` — but a float key is `f64`, which isn't `Ord` → E0277
+  (transpile→invalid-rust) for the common "max/min by ratio/score/distance" idiom.
+- Fix (frontend + both backends, no IR change; mirrors the Sorted float-key path,
+  PMAT-603): the frontend sets `ListMinMax.of_float` from the KEY body type when a
+  key is present (via `sort_key_is_float`). When set, the codegens emit
+  `max_by`/`min_by` comparing recomputed keys with `partial_cmp().unwrap_or(Equal)`
+  (NaN-tolerant, matching Python). `max` still reverses first so ties resolve to
+  the FIRST element (PMAT-568); an int/Ord key keeps `max_by_key`/`min_by_key`.
+- Differential-verified vs python3 (max/min by ratio, negated key, all-equal-key
+  tie → first element, int-key regression). New e2e fixture `minmax_float_key.py`.
+  410 e2e fixtures. Found by HUNT-V3.
+
 ## [0.1.351] — 2026-06-15
 
 Tranche 2 — PMAT-652: **correctness** — set relational predicates don't move their operands.
