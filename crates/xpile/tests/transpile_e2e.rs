@@ -1579,6 +1579,29 @@ fn main() {
     assert_rustc_runs("map_lambda", &rust, driver);
 }
 
+/// PMAT-706: `map`/`filter` with a bare callable NAME — `list(map(len, xs))`,
+/// `list(filter(bool, xs))`, `list(filter(None, xs))`, `list(map(myfunc, xs))` —
+/// were rejected ("produces I64"); only the lambda form worked. Synthesizes
+/// `name(__x)` (filter needs a Bool predicate; `filter(None)` keeps truthy).
+/// Cross-checked vs python3 (HUNT-V8 item V8-6).
+#[test]
+fn map_filter_named() {
+    let rust = xpile_transpile_to_rust("map_filter_named.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(lens(vec!["a".into(), "bb".into(), "ccc".into()]), vec![1, 2, 3]);
+    assert_eq!(strs(vec![1, 2, 3]), vec!["1".to_string(), "2".to_string(), "3".to_string()]);
+    assert_eq!(keep_truthy(vec![0, 1, 2, 0, 3]), vec![1, 2, 3]);
+    assert_eq!(
+        keep_none(vec!["a".into(), "".into(), "b".into(), "".into()]),
+        vec!["a".to_string(), "b".to_string()]
+    );
+    assert_eq!(keep_pos(vec![-1, 2, -3, 4]), vec![2, 4]); // user predicate
+}
+"#;
+    assert_rustc_runs("map_filter_named", &rust, driver);
+}
+
 /// PMAT-502ai (Tranche 2): standalone `enumerate(xs)` / `zip(a, b)` →
 /// materialized `Vec`s of tuples (compose with `for`-pair loops and `len`).
 #[test]
