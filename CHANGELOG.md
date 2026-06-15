@@ -19,6 +19,26 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.339] — 2026-06-15
+
+Tranche 2 — PMAT-640: **correctness** — runtime-negative list-index WRITE wraps like Python.
+
+- The assign-side companion to PMAT-639. A list subscript write `xs[i] = v` (and
+  `xs[i] += v`) emitted `xs[i as usize] = ...`, so a runtime-negative `i` cast to
+  `usize::MAX` and panicked, where Python writes the last element (`xs[-1] = v`).
+  (Aug-assign's read side already had the PMAT-639 wrap, but the store side still
+  panicked.)
+- Fix (both backends' `Stmt::IndexAssign`, no new IR): for a single index that
+  isn't a non-negative literal, bind the wrapped index to a temp first (`let __ai
+  = (i) as i64; let __aidx = if __ai < 0 { xs.len() as i64 + __ai } else { __ai
+  }`) then store `xs[__aidx as usize] = value` — the staging also ends
+  `xs.len()`'s borrow before the `index_mut` assign. A non-negative literal index
+  keeps the bare path; a nested `grid[i][j] = v` path stays on the existing path
+  (negative nested-assign is a follow-up).
+- Differential-verified vs python3 (`xs[-1]=v`, `xs[-1]+=100`, `xs[-1]=xs[0]+1`
+  borrow-then-mutate); positive/literal/loop/nested writes unaffected. New e2e
+  fixture `neg_runtime_index_assign.py`. 399 e2e fixtures.
+
 ## [0.1.338] — 2026-06-15
 
 Tranche 2 — PMAT-639: **correctness** — runtime-negative list index wraps like Python.
