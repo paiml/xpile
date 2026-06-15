@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.342] — 2026-06-15
+
+Tranche 2 — PMAT-643: `str.isnumeric()` classification predicate.
+
+- `s.isnumeric()` was rejected (unrecognized str method). Added as a 0-arg Bool
+  predicate alongside isdigit/isalpha/isspace/isalnum/isupper/islower.
+- Implementation (mirrors isdigit, no behavioral risk): new
+  `StrMethodOp::IsNumeric`; both backends emit `(!(s).is_empty() && (s).chars()
+  .all(|__c| __c.is_numeric()))`. Rust's `char::is_numeric()` covers the Unicode
+  Number categories (Nd/Nl/No), matching Python's `str.isnumeric()` — broader
+  than `isdigit`, so `½`/`²` are numeric but not digits (the distinction is
+  preserved). Empty string is False (Python parity).
+- Differential-verified vs python3; `isdigit` unaffected. New e2e fixture
+  `str_isnumeric.py`. 402 e2e fixtures.
+
 ## [0.1.341] — 2026-06-15
 
 Tranche 2 — PMAT-642: `enumerate(xs, start)` accepts a negative literal start.
