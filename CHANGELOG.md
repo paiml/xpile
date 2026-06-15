@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.318] — 2026-06-15
+
+Tranche 2 — PMAT-619: **correctness** — 3-arg `pow()` with a negative base and negative modulus.
+
+- PMAT-605 re-signed the modpow residue for a negative modulus, but the base
+  normalization and the `% m` reductions still assumed a positive modulus, so a
+  negative base with a negative modulus gave a wrong value: `pow(-2, 3, -5)`
+  returned `3`, but Python gives `-3`. Found by differential hunt #7 (H7-18).
+- Fix (rust + ruchy codegen, no new IR): run the entire modular exponentiation on
+  the magnitude `|m|` (in `i128`, so `|i64::MIN|` doesn't overflow) — base reduced
+  into `[0, |m|)`, square-and-multiply mod `|m|` — then sign-correct the residue
+  to the modulus's sign at the end. Verified vs python3 across 17 cases
+  (pos/neg base × pos/neg modulus, exp 0, `0**0`, `|m|==1`).
+- Extended the `pow_negative_modulus` e2e with negative-base cases. Completes the
+  3-arg `pow` correctness story (PMAT-571 / 604 / 605 / 607 / 619). 379 e2e fixtures.
+
 ## [0.1.317] — 2026-06-15
 
 Tranche 2 — PMAT-618: **correctness** — `d.get(k) == v` / `!= v` compiles (Option vs value).
