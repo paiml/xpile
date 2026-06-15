@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.354] — 2026-06-15
+
+Tranche 2 — PMAT-655: **correctness** — `int(s, base)` accepts a radix prefix + underscores.
+
+- Python `int(s, base)` accepts a base-matching radix prefix (`0x`/`0X` for 16,
+  `0o`/`0O` for 8, `0b`/`0B` for 2) and PEP-515 underscore digit grouping. Rust's
+  `from_str_radix` accepts neither, so `int("0xff", 16)` and `int("1_000", 16)`
+  panicked (ValueError-style) instead of parsing.
+- Fix (both backends, the `Expr::IntFromStrRadix` arm, no IR change): normalize
+  the string before parsing — trim, peel the optional leading sign, strip the
+  base-matching prefix (specialized per radix at codegen time), drop `_`, then
+  `from_str_radix`. Fixes both the prefix and the underscore cases.
+- Differential-verified vs python3 (0x/0X/0o/0b prefixes, signed `-0x`/`+0x`,
+  underscore grouping in base 16 and base 10, plus unprefixed regressions). New
+  e2e fixture `int_radix_prefix.py`. 412 e2e fixtures. Found by HUNT-V3.
+
 ## [0.1.353] — 2026-06-15
 
 Tranche 2 — PMAT-654: **correctness** — `len(tuple)` folds to the arity constant.
