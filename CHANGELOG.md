@@ -19,6 +19,25 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.348] — 2026-06-15
+
+Tranche 2 — PMAT-649: **correctness** — `str.split()` no-arg splits on C0 separators.
+
+- Python `str.split()` with no argument splits on runs of `str.isspace()`
+  whitespace, which includes the C0 file/group/record/unit separators U+001C-1F
+  (FS/GS/RS/US). xpile emitted Rust's `.split_whitespace()`, whose
+  `char::is_whitespace` excludes those four code points, so a string containing
+  them split into fewer parts than Python (silent miscompile).
+- Fix (both backends, the `StrMethodOp::SplitWhitespace` arm, no IR change): emit
+  `.split(|c| c.is_whitespace() || matches!(c, '\u{1c}'..='\u{1f}')).filter(non-empty)`.
+  The predicate reuses PMAT-600's strip/isspace C0-inclusive definition; the empty
+  filter preserves no-arg split's leading/trailing/consecutive collapse (no empty
+  strings) that `split_whitespace` provided.
+- Differential-verified vs python3 (C0-only, mixed ASCII-ws + C0 with
+  leading/trailing/consecutive collapse, plain ASCII, indexed part). Plain
+  whitespace splitting unaffected. New e2e fixture `split_c0_separators.py`;
+  existing `split_whitespace` assertion updated. 406 e2e fixtures. Found by HUNT-V2.
+
 ## [0.1.347] — 2026-06-15
 
 Tranche 2 — PMAT-648: **correctness** — `@dataclass(order=True)` derives `PartialOrd`.
