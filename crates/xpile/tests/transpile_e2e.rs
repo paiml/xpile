@@ -5939,6 +5939,35 @@ fn main() {
     assert_rustc_runs("container_truthiness", &rust, driver);
 }
 
+/// PMAT-661: int/float truthiness in if/while/elif conditions. `if n:` /
+/// `if len(xs):` / `while n:` were rejected ("condition does not type as bool");
+/// they now coerce int → `n != 0` and float → `x != 0.0` (Python's float edges:
+/// -0.0 falsy, nan truthy). Bool conditions pass through. Cross-checked vs python3.
+#[test]
+fn int_truthiness() {
+    let rust = xpile_transpile_to_rust("int_truthiness.py");
+    assert!(
+        rust.contains("!= 0i64") && rust.contains("!= 0f64"),
+        "int/float truthiness should lower to `!= 0`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(if_int(5), 1);
+    assert_eq!(if_int(0), 0);
+    assert_eq!(if_len(vec![1, 2]), 1);
+    assert_eq!(if_len(vec![]), 0);
+    assert_eq!(while_int(3), 6);
+    assert_eq!(if_float(2.5), 1);
+    assert_eq!(if_float(0.0), 0);
+    assert_eq!(elif_int(5), 1);
+    assert_eq!(elif_int(0), 0);
+    assert_eq!(elif_int(200), 2);
+    assert_eq!(if_bool_regression(true), 1);  // bool passes through
+}
+"#;
+    assert_rustc_runs("int_truthiness", &rust, driver);
+}
+
 /// PMAT-528 (Tranche 2): `xs.pop()` / `xs.pop(i)` as a bare statement (discard
 /// the popped value), e.g. `while xs: xs.pop()`. The value-position form already
 /// worked; a bare statement now reuses the same pop lowering wrapped in a
