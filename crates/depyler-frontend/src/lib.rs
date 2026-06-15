@@ -11107,26 +11107,79 @@ fn lower_bool_op(b: ast::ExprBoolOp) -> Result<Expr, FrontendError> {
 /// [`lower_bool_op`] infers a bare Ident as I64 and so rejects `a and b` for
 /// `bool` parameters/locals; using `infer_type_in_ctx` sees the real Bool
 /// type. Same recurring fix as `not` (PMAT-502cc) and float-var negation.
+/// PMAT-637: build the Python-truthiness test for a non-bool operand of
+/// `and`/`or` used in value position (`x or default`). Matches Python: an int is
+/// truthy when ≠ 0, a str/list/dict/set when non-empty (reusing `Expr::Len`).
+/// Returns `None` for types without a supported truthiness here (float deferred),
+/// so the caller falls back to the Bool-only path / reject.
+fn bool_op_operand_truthy(ctx: &LoweringCtx, operand: &Expr) -> Option<Expr> {
+    match infer_type_in_ctx(ctx, operand) {
+        Type::I64 => Some(Expr::BinOp {
+            op: BinOp::NotEq,
+            lhs: Box::new(operand.clone()),
+            rhs: Box::new(Expr::LitInt(0)),
+        }),
+        Type::Str | Type::List(_) | Type::Dict(_, _) | Type::Set(_) => Some(Expr::BinOp {
+            op: BinOp::NotEq,
+            lhs: Box::new(Expr::Len(Box::new(operand.clone()))),
+            rhs: Box::new(Expr::LitInt(0)),
+        }),
+        _ => None,
+    }
+}
+
 fn lower_bool_op_in_ctx(ctx: &LoweringCtx, b: ast::ExprBoolOp) -> Result<Expr, FrontendError> {
     if b.values.len() < 2 {
         return Err(FrontendError::Lower(
             "boolean operator with fewer than 2 operands — unreachable Python AST".into(),
         ));
     }
+    let py_op = b.op;
     let op = match b.op {
         ast::BoolOp::And => BinOp::And,
         ast::BoolOp::Or => BinOp::Or,
     };
-    let mut iter = b.values.into_iter();
-    let first = lower_expr_in_ctx(ctx, iter.next().expect("len ≥ 2"))?;
+    let lowered = b
+        .values
+        .into_iter()
+        .map(|v| lower_expr_in_ctx(ctx, v))
+        .collect::<Result<Vec<_>, _>>()?;
+    // PMAT-637: Python `x or default` / `x and y` returns the OPERAND (by
+    // truthiness), not a Bool. Supported for the common form: exactly two
+    // operands, the first a plain variable (an `Ident` — read-only, so it is
+    // never moved: the condition borrows it and the value branch clones it),
+    // both the same non-bool type with a defined truthiness. `a or b` →
+    // `if <a truthy> { a } else { b }`; `a and b` → `if <a truthy> { b } else {
+    // a }`. Bool operands (the guard below) keep the `||`/`&&` fold; other
+    // shapes (chains, non-Ident first operand, mixed types) fall through to the
+    // Bool-only path / reject.
+    if lowered.len() == 2 && matches!(&lowered[0], Expr::Ident(_)) {
+        let ta = infer_type_in_ctx(ctx, &lowered[0]);
+        if ta != Type::Bool && ta == infer_type_in_ctx(ctx, &lowered[1]) {
+            if let Some(cond) = bool_op_operand_truthy(ctx, &lowered[0]) {
+                let first_val = Expr::Clone(Box::new(lowered[0].clone()));
+                let second_val = Expr::Clone(Box::new(lowered[1].clone()));
+                let (then_expr, else_expr) = match py_op {
+                    ast::BoolOp::Or => (first_val, second_val),
+                    ast::BoolOp::And => (second_val, first_val),
+                };
+                return Ok(Expr::IfExpr {
+                    cond: Box::new(cond),
+                    then_expr: Box::new(then_expr),
+                    else_expr: Box::new(else_expr),
+                });
+            }
+        }
+    }
+    let mut iter = lowered.into_iter();
+    let first = iter.next().expect("len ≥ 2");
     if infer_type_in_ctx(ctx, &first) != Type::Bool {
         return Err(FrontendError::Lower(
             "operands of `and`/`or` must be Bool (no int-truthiness at v0.1.0)".into(),
         ));
     }
     let mut acc = first;
-    for next in iter {
-        let rhs = lower_expr_in_ctx(ctx, next)?;
+    for rhs in iter {
         if infer_type_in_ctx(ctx, &rhs) != Type::Bool {
             return Err(FrontendError::Lower(
                 "operands of `and`/`or` must be Bool (no int-truthiness at v0.1.0)".into(),
