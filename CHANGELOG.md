@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.321] — 2026-06-15
+
+Tranche 2 — PMAT-622: **correctness** — sorting a list whose element embeds a float (tuple/nested).
+
+- Sorting a list whose element embeds an `f64` — a tuple with a float
+  (`list[tuple[float, int]]`) or a nested list of floats (`list[list[float]]`) —
+  emitted `Vec::sort()`, which needs `Ord`, but `f64` is not `Ord` → E0277
+  (transpile succeeded, invalid Rust). The keyless float-sort detection only
+  matched a bare `F64` element. Found by differential hunt #8 (H8-13).
+- Fix (frontend, no new IR): new recursive `type_contains_float` (`F64` |
+  tuple-with-float | nested-list-with-float); the three keyless-sort sites
+  (`sorted()`, in-place `.sort()`, `sort(key=)` desugar) route a float-embedding
+  element to the existing `partial_cmp` path (PMAT-578/616), which works on
+  tuples/nested. An int-only tuple still uses `.sort()`. No codegen change.
+- New e2e fixture `sort_float_tuple.py` cross-checked vs python3. 381 e2e fixtures.
+
 ## [0.1.320] — 2026-06-15
 
 Tranche 2 — PMAT-621: **correctness** — `str.split(sep, maxsplit)` with a negative maxsplit splits unlimited.
