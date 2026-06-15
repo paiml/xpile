@@ -8872,15 +8872,17 @@ fn main() {
 }
 
 /// PMAT-502da (Tranche 2): `int(s, base)` → `i64::from_str_radix`.
+/// PMAT-655: the emit now normalizes (prefix + underscores) before parsing.
 #[test]
 fn int_from_str_radix() {
     let rust = xpile_transpile_to_rust("int_from_str_radix.py");
     assert!(
-        rust.contains("i64::from_str_radix((s).trim(), 16)"),
-        "int(s, 16) → from_str_radix base 16:\n{rust}"
+        rust.contains("i64::from_str_radix(&__rc, 16)")
+            && rust.contains("__rb.strip_prefix(\"0x\")"),
+        "int(s, 16) → normalized from_str_radix base 16:\n{rust}"
     );
     assert!(
-        rust.contains("i64::from_str_radix((s).trim(), 2)"),
+        rust.contains("i64::from_str_radix(&__rc, 2)"),
         "int(s, 2) → from_str_radix base 2:\n{rust}"
     );
     let driver = r#"
@@ -8893,6 +8895,27 @@ fn main() {
 }
 "#;
     assert_rustc_runs("int_from_str_radix", &rust, driver);
+}
+
+/// PMAT-655: Python `int(s, base)` accepts a base-matching radix prefix
+/// (`0x`/`0o`/`0b`) and PEP-515 underscore grouping; Rust's `from_str_radix`
+/// accepts neither, so `int("0xff", 16)` / `int("1_000", 16)` panicked. The
+/// emit now strips the prefix and underscores (after the optional sign) before
+/// parsing. Cross-checked vs python3.
+#[test]
+fn int_radix_prefix_and_underscores() {
+    let rust = xpile_transpile_to_rust("int_radix_prefix.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(hex_prefix(), 255);          // "0xff" — was a panic
+    assert_eq!(oct_prefix(), 15);           // "0o17"
+    assert_eq!(bin_prefix(), 5);            // "0b101"
+    assert_eq!(neg_hex_prefix(), -26);      // "-0x1a"
+    assert_eq!(underscore_grouping(), 4096); // "1_000" base 16
+    assert_eq!(no_prefix(), 255);           // "ff" — regression
+}
+"#;
+    assert_rustc_runs("int_radix_prefix", &rust, driver);
 }
 
 /// PMAT-502cz (Tranche 2): variadic `min`/`max` (`max(a, b, c)`).

@@ -1247,13 +1247,29 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push_str(spec);
             out.push_str("\", __sign, __m) }");
         }
-        // PMAT-502da: `int(s, base)` → `i64::from_str_radix((s).trim(), base)`
+        // PMAT-502da: `int(s, base)` → parse via `i64::from_str_radix`
         // (a parse failure / out-of-range digit panics ≈ Python ValueError).
+        // PMAT-655: Python `int(s, base)` accepts a base-matching radix PREFIX
+        // (`0x`/`0X` for 16, `0o`/`0O` for 8, `0b`/`0B` for 2) and PEP-515
+        // underscore digit grouping — Rust's `from_str_radix` accepts neither, so
+        // `int("0xff", 16)` / `int("1_000", 16)` panicked. Normalize the string
+        // first: trim, peel the optional sign, strip the matching prefix, drop
+        // underscores, then parse.
         Expr::IntFromStrRadix { value, radix } => {
-            out.push_str("i64::from_str_radix((");
+            let radix = *radix;
+            out.push_str("{ let __ri = &(");
             emit_expr(out, value, mode)?;
+            out.push_str("); let __rt = __ri.trim(); let (__rsgn, __rb): (&str, &str) = match __rt.strip_prefix('-') { Some(__r) => (\"-\", __r), None => (\"\", __rt.strip_prefix('+').unwrap_or(__rt)) }; ");
+            let prefix_strip = match radix {
+                16 => "let __rb = __rb.strip_prefix(\"0x\").or_else(|| __rb.strip_prefix(\"0X\")).unwrap_or(__rb); ",
+                8 => "let __rb = __rb.strip_prefix(\"0o\").or_else(|| __rb.strip_prefix(\"0O\")).unwrap_or(__rb); ",
+                2 => "let __rb = __rb.strip_prefix(\"0b\").or_else(|| __rb.strip_prefix(\"0B\")).unwrap_or(__rb); ",
+                _ => "",
+            };
+            out.push_str(prefix_strip);
+            out.push_str("let __rc = format!(\"{}{}\", __rsgn, __rb.replace('_', \"\")); i64::from_str_radix(&__rc, ");
             out.push_str(&format!(
-                ").trim(), {radix}).expect(\"xpile: ValueError: invalid literal for int() with base {radix}\")"
+                "{radix}).expect(\"xpile: ValueError: invalid literal for int() with base {radix}\") }}"
             ));
         }
         // PMAT-492/493b: Python string methods. No-arg transforms emit a
