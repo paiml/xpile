@@ -11144,31 +11144,46 @@ fn lower_bool_op_in_ctx(ctx: &LoweringCtx, b: ast::ExprBoolOp) -> Result<Expr, F
         .into_iter()
         .map(|v| lower_expr_in_ctx(ctx, v))
         .collect::<Result<Vec<_>, _>>()?;
-    // PMAT-637: Python `x or default` / `x and y` returns the OPERAND (by
-    // truthiness), not a Bool. Supported for the common form: exactly two
-    // operands, the first a plain variable (an `Ident` — read-only, so it is
-    // never moved: the condition borrows it and the value branch clones it),
-    // both the same non-bool type with a defined truthiness. `a or b` →
-    // `if <a truthy> { a } else { b }`; `a and b` → `if <a truthy> { b } else {
-    // a }`. Bool operands (the guard below) keep the `||`/`&&` fold; other
-    // shapes (chains, non-Ident first operand, mixed types) fall through to the
-    // Bool-only path / reject.
-    if lowered.len() == 2 && matches!(&lowered[0], Expr::Ident(_)) {
+    // PMAT-637 / PMAT-638: Python `x or default` / `x and y` — and chains
+    // `a or b or c` — return the OPERAND by truthiness, not a Bool. Supported
+    // when every operand EXCEPT the last is a plain variable (an `Ident` —
+    // read-only, so never moved: borrowed in its truthiness test, cloned in its
+    // value branch); the last operand may be any expression (used in value
+    // position only); and all operands share the same non-bool type with a
+    // defined truthiness. `a or b or c` → `if t(a) {a} else if t(b) {b} else
+    // {c}`; `a and b and c` → `if t(a) { if t(b) {c} else {b} } else {a}`. Bool
+    // operands (the guard below) keep the `||`/`&&` fold; a non-`Ident`
+    // non-last operand or mixed types fall through to the Bool-only path /
+    // reject.
+    {
+        let n = lowered.len();
         let ta = infer_type_in_ctx(ctx, &lowered[0]);
-        if ta != Type::Bool && ta == infer_type_in_ctx(ctx, &lowered[1]) {
-            if let Some(cond) = bool_op_operand_truthy(ctx, &lowered[0]) {
-                let first_val = Expr::Clone(Box::new(lowered[0].clone()));
-                let second_val = Expr::Clone(Box::new(lowered[1].clone()));
+        let lead_idents = lowered[..n - 1].iter().all(|e| matches!(e, Expr::Ident(_)));
+        let same_type = lowered.iter().all(|e| infer_type_in_ctx(ctx, e) == ta);
+        if ta != Type::Bool
+            && lead_idents
+            && same_type
+            && bool_op_operand_truthy(ctx, &lowered[0]).is_some()
+        {
+            // Fold right-to-left from the last operand (value only); each
+            // leading operand wraps the accumulator in an `IfExpr` on its
+            // truthiness.
+            let mut acc = Expr::Clone(Box::new(lowered[n - 1].clone()));
+            for operand in lowered[..n - 1].iter().rev() {
+                let cond = bool_op_operand_truthy(ctx, operand)
+                    .expect("same non-bool type as the first operand, which has a truthiness");
+                let val = Expr::Clone(Box::new(operand.clone()));
                 let (then_expr, else_expr) = match py_op {
-                    ast::BoolOp::Or => (first_val, second_val),
-                    ast::BoolOp::And => (second_val, first_val),
+                    ast::BoolOp::Or => (val, acc),
+                    ast::BoolOp::And => (acc, val),
                 };
-                return Ok(Expr::IfExpr {
+                acc = Expr::IfExpr {
                     cond: Box::new(cond),
                     then_expr: Box::new(then_expr),
                     else_expr: Box::new(else_expr),
-                });
+                };
             }
+            return Ok(acc);
         }
     }
     let mut iter = lowered.into_iter();

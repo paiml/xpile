@@ -3956,6 +3956,31 @@ fn main() {
     assert_rustc_runs("short_circuit_operand", &rust, driver);
 }
 
+/// PMAT-638: short-circuit CHAINS `a or b or c` / `a and b and c` return the
+/// first decisive operand by truthiness (the multi-fallback idiom). Leading
+/// operands are variables (`Ident`); the last may be any expression. Generalizes
+/// PMAT-637's 2-operand form via a right-to-left `IfExpr` fold. Cross-checked vs
+/// python3.
+#[test]
+fn short_circuit_chain() {
+    let rust = xpile_transpile_to_rust("short_circuit_chain.py");
+    // Nested if-expressions over each operand's truthiness.
+    assert!(rust.contains("if (a != 0i64)"), "chain truthiness:\n{rust}");
+    let driver = r#"
+fn main() {
+    assert_eq!(first_truthy(0, 0, 7), 7);
+    assert_eq!(first_truthy(3, 0, 7), 3);
+    assert_eq!(first_truthy(0, 5, 7), 5);
+    assert_eq!(all_required(3, 5, 7), 7);
+    assert_eq!(all_required(3, 0, 7), 0);
+    assert_eq!(name_with_default(String::from(""), String::from("")), "default");
+    assert_eq!(name_with_default(String::from("x"), String::from("y")), "x");
+    assert_eq!(name_with_default(String::from(""), String::from("e")), "e");
+}
+"#;
+    assert_rustc_runs("short_circuit_chain", &rust, driver);
+}
+
 /// PMAT-502cf (Tranche 2): dict comprehension over `d.items()` with a tuple
 /// target → a `ForEachPair(Pairs)` loop building the dict.
 #[test]
