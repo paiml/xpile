@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.330] — 2026-06-15
+
+Tranche 2 — PMAT-631: **correctness** — `raise E(msg)` emits a typed panic payload (typed-exceptions sub-slice 1).
+
+- `raise ValueError("x")` lowered to `panic!("{}", "x")`, dropping the exception
+  type — so `raise ValueError("x")` and `raise KeyError("x")` produced identical,
+  type-indistinguishable payloads. Found by differential hunt #9 (H9-5..10).
+- Fix (frontend `lower_raise_stmt`, no new IR): prefix the panic payload with the
+  exception type — `xpile: <Type>: <msg>` — matching the convention the builtin
+  panics already use. This identifies the type in the crash (closer to Python's
+  traceback) and is the groundwork first sub-slice of the typed-exceptions epic;
+  a later sub-slice will make `except E` match the payload type and re-raise
+  non-matches (needs a `TryCatch` IR change + typing native panics like
+  OOB→IndexError, so deferred).
+- New e2e fixture `raise_typed_payload.py` (distinct types → distinct payloads,
+  via catch_unwind + downcast). 390 e2e fixtures.
+
 ## [0.1.329] — 2026-06-15
 
 Tranche 2 — PMAT-630: **correctness** — user-function call arguments are lowered context-aware.
