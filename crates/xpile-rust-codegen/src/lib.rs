@@ -1629,24 +1629,40 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             resolve(out, hi, "__n", mode)?;
             out.push_str("; let __lo = __lo_i as usize; let __hi = __hi_i.max(__lo_i) as usize; ");
             match step {
-                // PMAT-548: a negative list step `xs[::-k]` reverses then steps
-                // (the frontend only sets a negative `step` for the unbounded
-                // form, so `__lo..__hi` spans the whole list).
+                // PMAT-548: a negative step `xs[::-k]`/`s[::-k]` reverses then
+                // steps (the frontend only sets a negative `step` for the
+                // unbounded form, so `__lo..__hi` spans the whole sequence).
+                // PMAT-633: for a str, `__sl` is `Vec<char>` — collect the
+                // stepped chars back into a String (no `.cloned()` needed; the
+                // `&char` iterator collects into String directly).
                 Some(s) if *s < 0 => {
                     let k = (-s) as usize;
-                    write!(
-                        out,
-                        "__sl[__lo..__hi].iter().rev().step_by({k}).cloned().collect::<Vec<_>>() }}"
-                    )?;
+                    if *of_str {
+                        write!(
+                            out,
+                            "__sl[__lo..__hi].iter().rev().step_by({k}).collect::<String>() }}"
+                        )?;
+                    } else {
+                        write!(
+                            out,
+                            "__sl[__lo..__hi].iter().rev().step_by({k}).cloned().collect::<Vec<_>>() }}"
+                        )?;
+                    }
                 }
-                // PMAT-502bc: positive list step → `.iter().step_by(c)
-                // .cloned().collect::<Vec<_>>()` (str steps are rejected
-                // in the frontend, so `step` is only ever set for lists).
+                // PMAT-502bc: a positive step → `.iter().step_by(c)...`;
+                // PMAT-633: str collects into String, list into Vec.
                 Some(s) => {
-                    write!(
-                        out,
-                        "__sl[__lo..__hi].iter().step_by({s}).cloned().collect::<Vec<_>>() }}"
-                    )?;
+                    if *of_str {
+                        write!(
+                            out,
+                            "__sl[__lo..__hi].iter().step_by({s}).collect::<String>() }}"
+                        )?;
+                    } else {
+                        write!(
+                            out,
+                            "__sl[__lo..__hi].iter().step_by({s}).cloned().collect::<Vec<_>>() }}"
+                        )?;
+                    }
                 }
                 None => out.push_str(if *of_str {
                     // PMAT-567: `__sl` is `Vec<char>` for str — collect the slice
