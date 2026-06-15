@@ -2,6 +2,13 @@
 **/*.rs.bk
 Cargo.lock.bak
 
+# Stray rustc artifacts from differential-hunt / e2e probes that compile a
+# transpiled lib in-place (a `rustc lib.rs` with no `-o` emits `lib*.rlib` in the
+# CWD). These must never be committed (PMAT-689 leaked one via `git add -A`).
+*.rlib
+*.rmeta
+*.o
+
 # Python bytecode (e2e fixtures are run through python3 for cross-checking)
 __pycache__/
 *.pyc
