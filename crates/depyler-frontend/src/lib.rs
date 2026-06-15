@@ -9894,7 +9894,8 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     let mut kwargs_ok = true;
                     for kw in &call.keywords {
                         if kw.arg.as_deref() == Some("key") {
-                            if let Some(k) = lower_sort_key(ctx, &kw.value, Some(elem_ty.clone()))? {
+                            if let Some(k) = lower_sort_key(ctx, &kw.value, Some(elem_ty.clone()))?
+                            {
                                 key = Some(k);
                                 continue;
                             }
