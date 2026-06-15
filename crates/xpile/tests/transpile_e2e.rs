@@ -4292,6 +4292,28 @@ fn main() {
     assert_rustc_runs("format_spec", &rust, driver);
 }
 
+/// PMAT-658: a format-spec FILL char before an alignment (`{:->10}`, `{:*<8}`,
+/// `{:.^9}`). Python allows any char as a fill when it precedes an align; the
+/// translator dropped a `-` fill (mistaken for a sign → spaces) and rejected
+/// `*`/`.` fills. Rust uses the identical `{:fill<width}` syntax. Both the
+/// `.format()` and f-string paths route through the shared translator.
+/// Cross-checked vs python3.
+#[test]
+fn format_fill_char() {
+    let rust = xpile_transpile_to_rust("format_fill_char.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(fill_dash(), "--------ab");           // '-' fill was dropped
+    assert_eq!(fill_star_left(), "hi******");        // '*' fill was rejected
+    assert_eq!(fill_caret_center(), "...xy....");     // '.' fill was rejected
+    assert_eq!(fill_dash_fstring(), "--------ab");
+    assert_eq!(int_fill(), "****42");
+    assert_eq!(width_no_fill_regression(), "    zz"); // align-only still works
+}
+"#;
+    assert_rustc_runs("format_fill_char", &rust, driver);
+}
+
 /// PMAT-597: the standalone `format(value[, spec])` builtin (distinct from
 /// `str.format`). `format(x)` == `str(x)`; `format(x, "<spec>")` reuses the
 /// f-string format mini-language. Previously fell through to a bare
