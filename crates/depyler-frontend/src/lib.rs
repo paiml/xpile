@@ -10042,6 +10042,49 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     rhs: Box::new(rhs),
                 });
             }
+            // PMAT-673: `a + b` over two tuples is CONCATENATION
+            // (`(1, 2) + (3, 4) == (1, 2, 3, 4)`), not numeric addition — Rust
+            // tuples have no `+`, so without this it fell to the i64-arith path
+            // and the backend emitted `(a).checked_add(b)` (E0599) / the result
+            // mis-typed as I64. Build a fresh `TupleLit` reading each field of
+            // `a` then `b` via `TupleIndex` over the ORIGINAL operand (so each
+            // field type-infers correctly for any element type, and — for a name
+            // operand — has no side effect). A field-per-operand read duplicates
+            // the operand expression, so restrict to side-effect-free operands
+            // (a name, or a tuple literal whose elements are themselves
+            // side-effect-free); a call-result operand (`f() + g()`) would be
+            // re-evaluated once per field, so reject it cleanly with guidance.
+            if matches!(op, BinOp::Add) {
+                if let (Type::Tuple(la), Type::Tuple(rb)) =
+                    (infer_type_in_ctx(ctx, &lhs), infer_type_in_ctx(ctx, &rhs))
+                {
+                    if matches!(lhs, Expr::Ident(_) | Expr::TupleLit(_))
+                        && matches!(rhs, Expr::Ident(_) | Expr::TupleLit(_))
+                    {
+                        let mut items = Vec::with_capacity(la.len() + rb.len());
+                        for i in 0..la.len() {
+                            items.push(Expr::TupleIndex {
+                                tuple: Box::new(lhs.clone()),
+                                index: i,
+                            });
+                        }
+                        for i in 0..rb.len() {
+                            items.push(Expr::TupleIndex {
+                                tuple: Box::new(rhs.clone()),
+                                index: i,
+                            });
+                        }
+                        return Ok(Expr::TupleLit(items));
+                    }
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` concatenates two tuples where an operand is not a \
+                         simple name or tuple literal; tuple `+` reads each field of the \
+                         operand individually, so a call-result operand would be \
+                         re-evaluated per field — bind it to a local first",
+                        ctx.fn_name
+                    )));
+                }
+            }
             if matches!(op, BinOp::Add)
                 && (infer_type_in_ctx(ctx, &lhs) == Type::Str
                     || infer_type_in_ctx(ctx, &rhs) == Type::Str)

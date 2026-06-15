@@ -2427,6 +2427,33 @@ fn main() {
     assert_rustc_runs("tuple_membership", &rust, driver);
 }
 
+/// PMAT-673: `a + b` over two tuples is CONCATENATION (`(1,2)+(3,4) == (1,2,3,4)`),
+/// not numeric addition — Rust tuples have no `+`, so the old path fell to the
+/// i64-arith lowering and mis-typed the result as I64 (the body-vs-annotation
+/// mismatch rejected it). Lowered to a fresh `TupleLit` reading each field of the
+/// operands via `TupleIndex`. Works for str tuples and chained `a + b + c`.
+/// Cross-checked vs python3.
+#[test]
+fn tuple_concat() {
+    let rust = xpile_transpile_to_rust("tuple_concat.py");
+    assert!(
+        rust.contains("((a).0.clone(), (a).1.clone(), (b).0.clone(), (b).1.clone())"),
+        "tuple `+` should build a fresh tuple of all fields:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(concat((1, 2), (3, 4)), (1, 2, 3, 4));
+    assert_eq!(
+        concat_str(("a".to_string(), "b".to_string()), ("c".to_string(),)),
+        ("a".to_string(), "b".to_string(), "c".to_string())
+    );
+    assert_eq!(concat_three((1, 2), (3,), (4, 5)), (1, 2, 3, 4, 5));
+    assert_eq!(concat_local(10, 20), (10, 20, 30));
+}
+"#;
+    assert_rustc_runs("tuple_concat", &rust, driver);
+}
+
 /// PMAT-670: a NEGATIVE constant tuple index `t[-k]` resolves at compile time to
 /// the field access `t.(arity - k)` (Python from-the-end). The old path fell to
 /// the list-style runtime wrap (`__lc.len()...`) → E0599 (a tuple has no `.len()`).
