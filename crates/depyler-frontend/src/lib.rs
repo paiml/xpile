@@ -9348,30 +9348,63 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 });
                             }
                             if matches!(*elem, Type::I64 | Type::F64) {
-                                let of_float = matches!(*elem, Type::F64);
-                                let start = if call.args.len() == 2 {
+                                let elem_is_float = matches!(*elem, Type::F64);
+                                if call.args.len() == 2 {
                                     let s = lower_expr_in_ctx(ctx, call.args[1].clone())?;
                                     let sty = infer_type_in_ctx(ctx, &s);
-                                    let matches_elem = if of_float {
-                                        matches!(sty, Type::F64)
-                                    } else {
-                                        matches!(sty, Type::I64)
-                                    };
-                                    if !matches_elem {
+                                    if !matches!(sty, Type::I64 | Type::F64) {
                                         return Err(FrontendError::Lower(format!(
-                                            "sum(xs, start): start type {sty:?} must match the \
-                                         list element type ({} expected)",
-                                            if of_float { "float" } else { "int" }
+                                            "sum(xs, start): start must be numeric (int/float), \
+                                             got {sty:?}"
                                         )));
                                     }
-                                    Some(Box::new(s))
-                                } else {
-                                    None
-                                };
+                                    // PMAT-703: Python promotes int+float freely —
+                                    // `sum(list[int], 0.0)` is a float, and
+                                    // `sum(list[float], 0)` is a float. The result is
+                                    // float iff EITHER the elements or the start is
+                                    // float; map whichever side is int up to f64.
+                                    let start_is_float = matches!(sty, Type::F64);
+                                    let of_float = elem_is_float || start_is_float;
+                                    let list = if of_float && !elem_is_float {
+                                        // int list + float start → map elements to f64.
+                                        Expr::Map {
+                                            list: Box::new(list),
+                                            lambda: SortKey {
+                                                param: "__se".to_string(),
+                                                body: Box::new(Expr::NumCast {
+                                                    value: Box::new(Expr::Ident(
+                                                        "__se".to_string(),
+                                                    )),
+                                                    to_float: true,
+                                                    from_str: false,
+                                                    from_float: false,
+                                                }),
+                                            },
+                                        }
+                                    } else {
+                                        list
+                                    };
+                                    let start = if of_float && !start_is_float {
+                                        // int start + float list → cast start to f64.
+                                        Expr::NumCast {
+                                            value: Box::new(s),
+                                            to_float: true,
+                                            from_str: false,
+                                            from_float: false,
+                                        }
+                                    } else {
+                                        s
+                                    };
+                                    return Ok(Expr::Sum {
+                                        list: Box::new(list),
+                                        of_float,
+                                        start: Some(Box::new(start)),
+                                    });
+                                }
                                 return Ok(Expr::Sum {
                                     list: Box::new(list),
-                                    of_float,
-                                    start,
+                                    of_float: elem_is_float,
+                                    start: None,
                                 });
                             }
                         }

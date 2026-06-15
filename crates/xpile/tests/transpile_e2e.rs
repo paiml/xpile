@@ -10219,6 +10219,22 @@ fn main() {
     assert_rustc_runs("sum_start", &rust, driver);
 }
 
+/// PMAT-703: `sum(xs, start)` promotes int+float like Python — `sum(list[int],
+/// 0.0)` and `sum(list[float], 0)` are both floats (was rejected: "start type
+/// must match the list element type"). xpile maps whichever side is int up to f64.
+/// Cross-checked vs python3 (HUNT-V8 item V8-14).
+#[test]
+fn sum_start_promote() {
+    let rust = xpile_transpile_to_rust("sum_start_promote.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(int_floatstart(vec![1, 2, 3]), 6.0);   // int list + float start
+    assert_eq!(float_intstart(vec![1.5, 2.5]), 4.0);  // float list + int start
+}
+"#;
+    assert_rustc_runs("sum_start_promote", &rust, driver);
+}
+
 /// PMAT-502b (Tranche 2): `str.replace(old, new)` →
 /// `.replace(&(old)[..], &(new)[..])`.
 #[test]
