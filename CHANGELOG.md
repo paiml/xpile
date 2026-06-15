@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.355] — 2026-06-15
+
+Tranche 2 — PMAT-656: **correctness** — `max`/`min`/`sum` over a dict iterate its keys.
+
+- `max(d)` / `min(d)` (and `sum(d)`) over a dict emitted an undefined free call
+  (`max(d)` → E0425), because the builtin argument-materializer returned `None`
+  for a dict-typed arg. In Python, iterating a dict yields its keys, so these
+  operate over the keys.
+- Fix (frontend only, `materialize_iterable_arg`, no IR change): add a
+  `Type::Dict` branch that yields the keys view (`Expr::DictView { kind: Keys }`)
+  — the same `List(K)` that `max(d.keys())` already produces. Shared by
+  max/min/sum/sorted, so all now accept a bare dict.
+- Differential-verified vs python3 (max/min over an int-keyed dict, sum of keys,
+  max over str keys lexicographically, plus the explicit `max(d.keys())`
+  regression). New e2e fixture `max_min_dict.py`. 413 e2e fixtures. Found by HUNT-V3.
+
 ## [0.1.354] — 2026-06-15
 
 Tranche 2 — PMAT-655: **correctness** — `int(s, base)` accepts a radix prefix + underscores.
