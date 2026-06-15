@@ -1822,6 +1822,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "FINAL R6 sub-slice — closes the DICT HALF of audit §7.3 'every construct under contract' falsification. With C-C-INT-ARITH (475b/v0.1.196), §7.3 is RESTORED TO TRUE: every emitted construct's contract citation resolves to an on-disk YAML + Lean theorem. AUTHORED: contracts/xlate-py-dict-to-hashmap-v1.yaml — Layer-2 translation kernel contract (dict sibling of C-XLATE-PY-LIST-TO-VEC). Python dict[K,V] homogeneous → Rust std::collections::HashMap<K_rust,V_rust>. ONE depth-1 Diamond eqn dict_to_hashmap_structure_preserved_diamond combining entry-sequence preservation + cardinality preservation (lowering = identity on the abstract finite map K→V). proof_obligations(2), falsification_tests(2, bound to live dict_counts_emitted_rust_returns_hashmap e2e test), kani_harnesses(2 inline: HashMap<u8,u8> insert/get roundtrip + reinsert-overwrites-len-1), qa_gate. contracts/lean/XlatePyDictToHashmap.lean — models PyDict+RustHashMap as entry lists, lowering as identity → both conjuncts rfl (Bronze). Followed the 475b authoring recipe exactly (kind:kernel needs proof_obligations+kani_harnesses; falsification_tests>=proof_obligations; quoted refs with inner colons; lean_theorem resolves to theorem in lean_file; qa_gate.required_tests real #[test]s; top-level inline kani harnesses avoid the file-resolution validator). SECOND contract via the grandfathered gate → xpile diamond now 15 contracts, both new ones depth-1, depth-2+ still grandfathered 13. pv lint 0 errors; diamond_coverage(26)/refinement_proofs(3)/qa_gate(3)/kani(3)/workspace/fmt/clippy green. FREE CI. SHIPPED v0.1.197. **R6/PMAT-475 COMPLETE: 475a grandfather + 475b C-C-INT-ARITH + 475c C-XLATE-PY-DICT-TO-HASHMAP. The entire R-table (R1-R10) is now closed.** NEXT: Track 4 (PMAT-481..486 free-CI offline PTX/WGSL gates) OR Tranche-2 capability gaps OR PMAT-485 nightly emit job."
+- id: PMAT-685
+  github_issue: null
+  item_type: task
+  title: 'PMAT-685: [Tranche 2] CORRECTNESS list.extend(str) iterates the chars'
+  status: done
+  priority: medium
+  created: 2026-06-15T00:00:00Z
+  acceptance_criteria:
+  - "`xs.extend(s)` over a str argument iterates the string's CHARACTERS in Python (each a 1-char str), appending each; xpile emitted `(s).iter().cloned()` on a String (no `.iter()` → rustc E0599 — transpile-success → invalid Rust). FIX (frontend ONLY, the .extend() intercept ~2736, NO IR change): after materializing the arg, if it types as Type::Str wrap it in `Expr::StrChars { string }` (→ List(Str)) — the same conversion `for c in s` / `enumerate(s)` use — so the existing ListExtend codegen `.iter().cloned()` operates on a Vec<String>. Placed before the self-extend clone check. list/range/set/dict args unchanged. Differential-verified vs python3: `[\"a\"].extend(\"bcd\")` → ['a','b','c','d'], non-ASCII `extend(\"héllo\")` → 5 chars (é is one), list.extend(list) regression. New e2e list_extend_str.py rustc-rt. FREE CI. e2e 441->442. SHIPPED v0.1.384. FOUND BY HUNT-V6 (list-ops, item B2)."
 - id: PMAT-684
   github_issue: null
   item_type: task
