@@ -19,6 +19,20 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.324] — 2026-06-15
+
+Tranche 2 — PMAT-625: **correctness** — a 1-element tuple emits `(T,)` / `(x,)`, not `(T)` / `(x)`.
+
+- A 1-element tuple type/value emitted Rust `(T)` / `(x)` — a parenthesized value,
+  not a real 1-tuple `(T,)` / `(x,)` — so `.0`/indexing failed to compile (E0610).
+  Any `tuple[T]` param + `p[0]`, or a `(x,)` literal, produced invalid Rust.
+  Discovered while shipping PMAT-624.
+- Fix (rust + ruchy codegen, no new IR): both the `Type::Tuple` emitter and the
+  `TupleLit` value emitter add the trailing comma for a single element;
+  multi-element tuples are unaffected. This also un-blocks the 1-element case of
+  the tuple f-string repr (PMAT-624).
+- New e2e fixture `one_element_tuple.py` cross-checked vs python3. 384 e2e fixtures.
+
 ## [0.1.323] — 2026-06-15
 
 Tranche 2 — PMAT-624: **correctness** — interpolating a tuple in an f-string renders its Python repr.
