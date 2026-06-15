@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.381] — 2026-06-15
+
+### Added
+
+- **PMAT-682 — width-only format spec on a string.** A bare WIDTH format spec on a
+  str — `f"{s:5}"`, `"{:8}".format(s)` — was rejected ("unsupported format spec :5
+  for a Str value"). Python LEFT-aligns strings to the width (`f"{'ab':5}"` ==
+  "ab   "), and Rust's `{:5}` over a `String` is also left-aligned (the `Display`
+  default), so the spec passes through verbatim. **Fix** (frontend only,
+  `translate_format_spec`; NO IR change): add a `Type::Str` arm mapping a plain
+  non-zero-leading width → Rust `{:N}` — crucially NOT reusing the integer width
+  path (ints default RIGHT-aligned). A leading-`0` width (`{:05}`) is Python's
+  zero-pad flag, which Python rejects for a string, so only a plain width is
+  accepted; explicit alignment (`>5`/`<5`/`^5`) was already handled.
+  Differential-verified vs python3 (left-aligned width f-string + `.format()`,
+  explicit right-align regression, overflow → no truncation). New e2e fixture
+  `str_width_format.py` (rustc round-trip). e2e 438 → 439. Found by HUNT-V6
+  (item C5).
+
 ## [0.1.380] — 2026-06-15
 
 ### Fixed
