@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.360] — 2026-06-15
+
+Tranche 2 — PMAT-661: **correctness** — int/float truthiness in if/while/elif conditions.
+
+- `if n:` / `if len(xs):` / `while n:` / `n if c else d` were rejected ("condition
+  does not type as bool — no int-truthiness"), even though they're everyday Python.
+- Fix (frontend only, the shared `truthy_condition` helper, no IR change): extend
+  it — already coerces containers to `len(c) != 0` — to also coerce int → `n != 0`
+  and float → `x != 0.0`. The float form matches Python's edges exactly: `-0.0`
+  is falsy, `nan` is truthy. Bool passes through. Shared by if/while/elif/ternary,
+  so all gain int/float-truthiness at once. (`not n` is a separate path, deferred.)
+- Differential-verified vs python3 (if/while/elif over int, `if len(xs):`, float
+  if, bool regression). New e2e fixture `int_truthiness.py`. 418 e2e fixtures.
+  Found by HUNT-V4.
+
 ## [0.1.359] — 2026-06-15
 
 Tranche 2 — PMAT-660: **correctness** — `list.extend()` accepts any iterable.
