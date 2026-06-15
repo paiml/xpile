@@ -8646,6 +8646,33 @@ fn main() {
     assert_rustc_runs("identity_comprehension_str", &rust, driver);
 }
 
+/// PMAT-679: `sum()` of floats uses Neumaier compensation (CPython 3.12+), but a
+/// non-finite partial poisoned the result — once the running total is ±inf the
+/// compensation term computes `inf - inf = NaN`. Python `sum([1.0, inf, 2.0])` is
+/// `inf`, not `NaN`. Fixed by skipping (resetting) the compensation on a
+/// non-finite partial; the finite catastrophic-cancellation behavior is preserved.
+#[test]
+fn sum_float_inf() {
+    let rust = xpile_transpile_to_rust("sum_float_inf.py");
+    assert!(
+        rust.contains("if __st.is_finite()"),
+        "float sum should guard compensation on a finite partial:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert!(total(vec![1.0, f64::INFINITY, 2.0]).is_infinite());      // was NaN
+    assert!(total(vec![f64::INFINITY, 1.0]).is_infinite());
+    assert!(total(vec![1e308, 1e308]).is_infinite());                 // overflow → inf
+    assert_eq!(total(vec![1.0, 2.0, 3.0]), 6.0);
+    // Neumaier compensation preserved for the finite cancellation case:
+    assert_eq!(total(vec![1.0, 1e16, 1.0, -1e16]), 2.0);
+    assert_eq!(total(vec![0.1; 10]), 1.0);
+    assert!(total(vec![f64::INFINITY, f64::NEG_INFINITY]).is_nan());  // matches Python (nan)
+}
+"#;
+    assert_rustc_runs("sum_float_inf", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a
