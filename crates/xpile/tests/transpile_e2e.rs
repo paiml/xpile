@@ -1263,6 +1263,32 @@ fn main() {
     assert_rustc_runs("tuple_unpack", &rust, driver);
 }
 
+/// PMAT-662: a `_` discard in a tuple-unpack must never be `mut`. Repeated
+/// discards (`a, _, _ = t`) aggregated the `_` count in the mutability pre-walk,
+/// so the 2nd+ `_` was flagged mutable → invalid `mut _`. Cross-checked vs python3.
+#[test]
+fn lettuple_underscore_mut() {
+    let rust = xpile_transpile_to_rust("lettuple_underscore_mut.py");
+    assert!(
+        !rust.contains("mut _"),
+        "a `_` wildcard must never be `mut`:\n{rust}"
+    );
+    // a real mutated binding still gets `mut`
+    assert!(
+        rust.contains("let (mut a, _, _)") && rust.contains("let (_, mut x, _)"),
+        "named mutated bindings should keep `mut`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(two_discard((1, 2, 3)), 2);   // was `mut _` E
+    assert_eq!(all_discard(), 99);            // was 4x `mut _`
+    assert_eq!(mixed((1, 10, 3)), 15);
+    assert_eq!(single_discard_regression((9, 5)), 6);
+}
+"#;
+    assert_rustc_runs("lettuple_underscore_mut", &rust, driver);
+}
+
 /// PMAT-645/646: starred unpacking `n…, *star, m… = xs` (star at ANY position)
 /// over a list. Desugars to prefix `let n_i = xs[i]`, the star `let star =
 /// xs[p:len-s]`, and suffix `let m_j = xs[len-(s-j)]` — no new IR (reuses Index,
