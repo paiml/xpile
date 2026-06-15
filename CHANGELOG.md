@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.317] — 2026-06-15
+
+Tranche 2 — PMAT-618: **correctness** — `d.get(k) == v` / `!= v` compiles (Option vs value).
+
+- A no-default `d.get(k)` is `Option<T>`, so `d.get(k) == 5` emitted
+  `Option<i64> == i64` → rustc E0308 (transpile succeeded, invalid Rust). Python
+  returns `None` when the key is absent (`None == 5` is `False`), which Rust
+  models exactly as `Option<T> == Some(5)`. Surfaced by differential hunt #7.
+- Fix (rust + ruchy codegen, no new IR): for `==`/`!=` where exactly one operand
+  is a `DictGetOpt`, wrap the bare-value side in `Some(...)`. Both-`Option`
+  compares already typecheck (fall through). Scoped to `==`/`!=`: a `<`/`>` on a
+  possibly-`None` is a Python `TypeError`, so ordering is left untouched.
+- New e2e fixture `dict_get_compare.py` cross-checked vs python3 (present-match /
+  present-nomatch / absent). 379 e2e fixtures.
+
 ## [0.1.316] — 2026-06-15
 
 Tranche 2 — PMAT-617: **correctness** — `bool` compared with `int` coerces instead of failing to compile.
