@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.356] — 2026-06-15
+
+Tranche 2 — PMAT-657: **correctness** — `divmod(float, float)` lowers to a float tuple.
+
+- `divmod(a, b)` with float operands emitted an undefined free `divmod(...)` call
+  (E0425) — the intercept only inlined the tuple for int operands; floats fell
+  through.
+- Fix (frontend only, the divmod intercept, no IR change): add an `F64 × F64`
+  branch returning `TupleLit[FloatBinOp::FloorDiv, FloatBinOp::Mod]`, mirroring
+  the int branch. The float floor-div/mod ops already implement CPython's
+  `float_divmod` (PMAT-614/591) — sign follows the divisor — so the tuple equals
+  `divmod` exactly.
+- Differential-verified vs python3 (positive, negative dividend, negative
+  divisor; int divmod regression intact). New e2e fixture `divmod_float.py`. 414
+  e2e fixtures. Found by HUNT-V3.
+
 ## [0.1.355] — 2026-06-15
 
 Tranche 2 — PMAT-656: **correctness** — `max`/`min`/`sum` over a dict iterate its keys.
