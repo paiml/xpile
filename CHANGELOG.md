@@ -19,6 +19,27 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.336] — 2026-06-15
+
+Tranche 2 — PMAT-637: `x or default` / `x and y` return the operand.
+
+- Python `x or default` / `x and y` return the OPERAND by truthiness, not a bool
+  (`0 or 5 == 5`, `"" or "d" == "d"`, `xs or [9, 9]`). xpile required both
+  `and`/`or` operands to be Bool and rejected the very common default-value
+  idiom ("operands of `and`/`or` must be Bool"). Found by a differential probe.
+- Fix (frontend `lower_bool_op_in_ctx`, no new IR): for the common form — exactly
+  two operands, the first a plain variable (`Ident`), both the same non-bool type
+  with a defined truthiness (int / str / list / dict / set) — lower to an
+  if-expression returning the operand: `a or b` → `if <a truthy> { a } else { b }`,
+  `a and b` → `if <a truthy> { b } else { a }`. The `Ident` is never moved (the
+  condition borrows it via the truthiness test, the value branch clones it).
+  Bool operands keep the existing `||`/`&&` fold; chains, a non-`Ident` first
+  operand, mixed types, and float operands fall through to the Bool-only path /
+  reject.
+- Differential-verified vs python3 (int/str/list, truthy + falsy); existing
+  boolean logic is unaffected. New e2e fixture `short_circuit_operand.py`. 396
+  e2e fixtures.
+
 ## [0.1.335] — 2026-06-15
 
 Tranche 2 — PMAT-636: `int ** <negative int literal>` yields a float.
