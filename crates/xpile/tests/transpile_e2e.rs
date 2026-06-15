@@ -3534,11 +3534,12 @@ fn main() {
 }
 
 /// PMAT-502bp (Tranche 2): negation of a float *variable* `-x` (x: float)
-/// → `0.0 - x` (a `FloatBinOp`, not the i64-only `checked_neg`).
+/// → `x * -1.0` (a `FloatBinOp`, not the i64-only `checked_neg`).
+/// PMAT-650: changed from `0.0 - x` so the sign of a zero is preserved.
 #[test]
 fn neg_float_var() {
     let rust = xpile_transpile_to_rust("neg_float_var.py");
-    assert!(rust.contains("(0f64 - x)"), "float-var negation:\n{rust}");
+    assert!(rust.contains("(x * -1f64)"), "float-var negation:\n{rust}");
     assert!(
         !rust.contains("checked_neg"),
         "float negation must not use checked_neg:\n{rust}"
@@ -3551,6 +3552,24 @@ fn main() {
 }
 "#;
     assert_rustc_runs("neg_float_var", &rust, driver);
+}
+
+/// PMAT-650: unary negation of a float variable preserves the sign of a zero.
+/// `-x` (x == 0.0) must print "-0.0" like Python — the old `0.0 - x` emit gave
+/// `+0.0` (`0.0 - 0.0 == +0.0` in IEEE-754); `x * -1.0` flips the sign bit.
+/// Cross-checked vs python3.
+#[test]
+fn neg_float_signed_zero() {
+    let rust = xpile_transpile_to_rust("neg_float_signed_zero.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(neg_zero_str(), "-0.0");   // was "0.0" before the fix
+    assert_eq!(neg_nonzero_str(), "-3.5");
+    assert_eq!(double_neg(), "0.0");      // -(-0.0) flips back to +0.0
+    assert_eq!(neg_in_expr(), "0.0");     // -0.0 + 0.0 == +0.0
+}
+"#;
+    assert_rustc_runs("neg_float_signed_zero", &rust, driver);
 }
 
 /// PMAT-629: `s *= n` (str) and `xs *= n` (list) are repetition, not numeric

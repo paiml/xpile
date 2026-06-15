@@ -9896,23 +9896,28 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // format specs). Plain `{name}` parts still work via Display.
         ast::Expr::JoinedStr(js) => lower_fstring_in_ctx(ctx, js.values),
         // PMAT-502bp: context-aware unary `-` over a *float* expression
-        // (`-x` where `x: float`) → `0.0 - x` (a `FloatBinOp`, plain infix),
+        // (`-x` where `x: float`) → `x * -1.0` (a `FloatBinOp`, plain infix),
         // since the generic `UnOp::Neg` emits the i64-only `checked_neg`.
         // The context-free path can't see that `x` is a float; everything
         // else (i64 negation, `not`, the negative-float-literal fold) still
         // routes through `lower_unary_op`.
+        // PMAT-650: this used to emit `0.0 - x`, but `0.0 - 0.0 == +0.0` in
+        // IEEE-754 — so `-x` lost the sign of a zero (Python `-x` gives `-0.0`
+        // by flipping the sign bit). `x * -1.0` flips the sign bit for every
+        // value (including `±0.0`/`±inf`/`nan`) and is bit-exact with `-x`,
+        // matching python3.
         ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::USub) => {
             let operand = lower_expr_in_ctx(ctx, (*u.operand).clone())?;
             // A float *literal* keeps the cleaner negative-literal fold
             // (PMAT-502bo); only a non-literal float *expression* needs the
-            // `0.0 - x` form.
+            // `x * -1.0` form.
             if matches!(infer_type_in_ctx(ctx, &operand), Type::F64)
                 && !matches!(operand, Expr::LitFloat(_))
             {
                 Ok(Expr::FloatBinOp {
-                    op: FloatOp::Sub,
-                    lhs: Box::new(Expr::LitFloat(0.0)),
-                    rhs: Box::new(operand),
+                    op: FloatOp::Mul,
+                    lhs: Box::new(operand),
+                    rhs: Box::new(Expr::LitFloat(-1.0)),
                 })
             } else if let Expr::LitFloat(f) = operand {
                 // PMAT-502bo: negative-float-literal fold.
