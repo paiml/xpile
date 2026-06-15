@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.400] — 2026-06-16
+
+### Fixed
+
+- **PMAT-701 — `capitalize()`/`title()` titlecase the lead char, not uppercase.**
+  `str.capitalize()` / `str.title()` upper-cased the lead char of each word, so a
+  titlecase-EXPANDING scalar diverged from Python (silent miscompile):
+  `"ßeta".capitalize()` gave "SSeta" (Python "Sseta", ß→"Ss") and `"ﬂy".title()` gave "FLy"
+  (Python "Fly", ﬂ→"Fl"). std has no `char::to_titlecase`, so titlecase is derived from the
+  uppercase EXPANSION — keep the first char and lowercase the rest (`ß`→"SS"→"Ss",
+  `ﬂ`→"FL"→"Fl"; a 1-char uppercase is unchanged). Strictly better than the old
+  `to_uppercase`, and no worse for the rare precomposed digraphs. Applied to `capitalize` +
+  `title` in the rust and ruchy codegens. Capitalize's tail already lowercases the whole
+  segment (final-sigma-correct); title's per-char tail keeps the Greek medial-vs-final-sigma
+  gap (a deferred follow-up). Differential-verified vs python3 (ß/ﬂ expansion, ASCII, empty,
+  `it's` word-boundary). New e2e fixture `title_titlecase.py` (rustc round-trip); existing
+  `str_capitalize`/`str_title` regressions intact. e2e 458 → 459. Found by HUNT-V8 (item V8-11).
+
 ## [0.1.399] — 2026-06-16
 
 ### Added
