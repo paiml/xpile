@@ -9688,11 +9688,15 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 // be `Ord` (or `f64`, via the fold) — PMAT-502er
                                 // adds `str`/`bool` (both `Ord`) to the int/float
                                 // first cut, so `min(words)`/`max(words)` work.
-                                if key.is_some()
-                                    || matches!(
-                                        *elem,
-                                        Type::I64 | Type::F64 | Type::Str | Type::Bool
-                                    )
+                                // PMAT-692: a keyless `max`/`min` needs an `Ord`
+                                // (or `f64`, via the fold) element. `I64`/`Bool`/
+                                // `Str` are `Ord`; a TUPLE of `Ord` elements is also
+                                // `Ord` (Rust derives lexicographic `Ord`, matching
+                                // Python's tuple comparison), so `max(list[tuple[
+                                // int,int]])` works via `.max()`. A tuple containing
+                                // `f64` is NOT `Ord`, so it (and bare F64, handled
+                                // by the fold) is excluded from `elem_is_ord`.
+                                if key.is_some() || matches!(*elem, Type::F64) || elem_is_ord(&elem)
                                 {
                                     // PMAT-653: with a `key=`, the COMPARED values
                                     // are the key results — so track the KEY's
@@ -11146,6 +11150,19 @@ fn lower_sort_key(
 /// argument, so a `key=` lambda's parameter types correctly. Mirrors how those
 /// handlers materialise the target (range→list, set→list, dict→its keys,
 /// str→1-char str). Returns `None` if the type isn't a recognised iterable.
+/// PMAT-692: is `ty` totally-ordered in Rust (`Ord`) for a keyless `max`/`min`
+/// fold? `i64`/`bool`/`str` are `Ord`; a tuple is `Ord` iff every element is
+/// (Rust derives lexicographic `Ord`, matching Python's tuple comparison). `f64`
+/// is NOT `Ord` (it has only `PartialOrd` — handled by the float `max_by` fold),
+/// and `list`/`dict`/`set`/`Optional` aren't ordered for this purpose.
+fn elem_is_ord(ty: &Type) -> bool {
+    match ty {
+        Type::I64 | Type::Bool | Type::Str => true,
+        Type::Tuple(elems) => elems.iter().all(elem_is_ord),
+        _ => false,
+    }
+}
+
 fn sort_target_elem_type(ctx: &LoweringCtx, arg: &ast::Expr) -> Option<Type> {
     let lowered = lower_arg_materializing_range(ctx, arg).ok()?;
     match infer_type_in_ctx(ctx, &lowered) {
