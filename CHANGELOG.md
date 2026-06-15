@@ -7,6 +7,28 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.376] — 2026-06-15
+
+### Added
+
+- **PMAT-677 — float format spec width+precision.** A float format spec combining
+  WIDTH (and/or zero-pad, sign, fill+align) WITH precision — `f"{x:8.3f}"`,
+  `{:06.2f}`, `{:+8.2f}`, `{:10.4f}`, `{:>8.2f}`, `{:*>8.2f}` — was rejected
+  ("unsupported format spec"); only a pure `.Nf` worked. This is the single most
+  common float-formatting idiom (any aligned numeric table). Rust's `{:8.3}` /
+  `{:06.2}` / `{:>8.2}` match Python's output exactly for floats — the `.Nf`
+  precision forces the decimal count, so the whole-float repr divergence (`3.0` vs
+  `3`) that defers BARE float widths does not arise. **Fix** (frontend only,
+  `translate_format_spec`; NO IR change): add a `float_pad_prec` helper translating
+  a float fixed-point core `[0][width].Nf` → Rust `[0][width].N` (strip the trailing
+  `f`; `[0][width]` validated by the existing `pad_width`), wired into a new F64
+  branch plus the fill+align and explicit-align branches; a leading `+`/`-` sign is
+  peeled and recurses. Fixes both the f-string and `.format()` paths.
+  Differential-verified vs python3 (width/zero-pad/sign/wide/align/fill-align/
+  `.format()`/plain-`.Nf` regression). New e2e fixture
+  `float_format_width_precision.py` (rustc round-trip). e2e 433 → 434. Found by
+  HUNT-V6 (item C4).
+
 ## [0.1.375] — 2026-06-15
 
 ### Fixed
