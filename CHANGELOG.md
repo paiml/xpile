@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.327] — 2026-06-15
+
+Tranche 2 — PMAT-628: **correctness** — clone a reused non-Copy var in a list literal / append.
+
+- A non-Copy variable used more than once — twice in a list literal
+  `[inner, inner]`, or appended twice `g.append(row); g.append(row)` — emitted a
+  move-then-use → rustc E0382. Only call-arg reuse was previously cloned
+  (PMAT-588). Found by differential hunt #8 (H8-0/1).
+- Fix (frontend, no new IR): a shared `clone_if_reused_non_copy` helper (`Ident`
+  + read_counts > 1 + non-Copy → `Expr::Clone`) is applied in the list-literal
+  element lowering and the `append`/`add` element lowering. Distinct elements and
+  Copy types are unaffected. Python aliases the same object; the clone gives
+  independent copies (the documented PMAT-569 divergence), but it now compiles.
+- New e2e fixture `list_reused_var_clone.py` cross-checked vs python3. 387 e2e fixtures.
+
 ## [0.1.326] — 2026-06-15
 
 Tranche 2 — PMAT-627: **correctness** — defaults are filled in nested user-calls in argument position.
