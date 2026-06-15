@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.332] — 2026-06-15
+
+Tranche 2 — PMAT-633: stepped string slices `s[a:b:step]`.
+
+- List slicing already supported an integer step (`xs[::2]`, `xs[1:8:2]`,
+  `xs[::-k]`), but the same forms over a `str` were rejected ("stepped string
+  slice — deferred"). Found by a differential probe (the str/list asymmetry).
+- Fix (frontend + both backends): since a str slice is already char-indexed
+  (`Vec<char>`, PMAT-567), the existing step machinery applies. The frontend
+  drops the str rejection (positive step, any bounds) and allows str in the
+  negative-step arm (same unbounded constraint as list); the `s[::-1]` reverse
+  special case is unchanged. The Rust/Ruchy codegen step arms branch on
+  `of_str` — str collects the stepped chars into a `String`, list keeps
+  `.cloned().collect::<Vec<_>>()`. Result: full str/list step parity.
+- Differential-verified vs python3 including Unicode (`"αβγδεζ"[::2]` → `"αγε"`,
+  `[::-2]` → `"ζδβ"`). New e2e fixture `str_stepped_slice.py`. 392 e2e fixtures.
+
 ## [0.1.331] — 2026-06-15
 
 Tranche 2 — PMAT-632: optional fill-char arg for `str.rjust`/`ljust`/`center`.
