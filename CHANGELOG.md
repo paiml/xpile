@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.368] — 2026-06-15
+
+Tranche 2 — PMAT-669: **correctness** — `sum`/`min`/`max` over a tuple.
+
+- `sum(t)` / `min(t)` / `max(t)` over a fixed-arity tuple emitted a bare undefined
+  `sum(t)` (etc.) free call → E0425. A tuple is iterable in Python, but the
+  builtin argument-materializer had no tuple branch.
+- Fix (frontend only, `materialize_iterable_arg`, no IR change): add a
+  `Type::Tuple(elems)` arm — a tuple literal uses its elements directly, a tuple
+  value/binding indexes each field (`[t.0, t.1, …]`, arity from the type) — to a
+  list, mirroring PMAT-656/660. The shared materializer makes sum/min/max over a
+  homogeneous tuple all work at once.
+- Differential-verified vs python3 (sum/min/max over an int tuple var, sum over a
+  tuple literal, max over a float tuple; list-sum regression). New e2e fixture
+  `tuple_aggregate.py`. 426 e2e fixtures. Found by HUNT-V5. (sorted(t) uses a
+  separate intercept — follow-up.)
+
 ## [0.1.367] — 2026-06-15
 
 Tranche 2 — PMAT-668: **correctness** — `sep.join(d)` over a dict joins its keys.
