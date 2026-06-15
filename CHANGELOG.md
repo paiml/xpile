@@ -19,6 +19,20 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.320] — 2026-06-15
+
+Tranche 2 — PMAT-621: **correctness** — `str.split(sep, maxsplit)` with a negative maxsplit splits unlimited.
+
+- Python treats a negative maxsplit as "no limit" (split on every occurrence):
+  `"a,b,c,d".split(",", -1)` == 4 parts. xpile lowered maxsplit via
+  `splitn((maxsplit as usize) + 1, sep)`; for a negative value
+  `(-1 as usize) + 1` == `usize::MAX + 1` wrapped to 0 under `-O` → `splitn(0)`
+  → zero parts (silently wrong). Found by differential hunt #8 (H8-7).
+- Fix (rust + ruchy codegen, no new IR): use `(maxsplit as usize).saturating_add(1)`
+  — a negative maxsplit saturates to `usize::MAX` → all parts (matches Python).
+  Positive maxsplit is unchanged.
+- Extended the `str_split_maxsplit` e2e with a negative-maxsplit case. 380 e2e fixtures.
+
 ## [0.1.319] — 2026-06-15
 
 Tranche 2 — PMAT-620: **correctness** — a no-default `d.get(k)` in an f-string is rejected instead of emitting invalid Rust.
