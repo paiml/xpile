@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.323] — 2026-06-15
+
+Tranche 2 — PMAT-624: **correctness** — interpolating a tuple in an f-string renders its Python repr.
+
+- `f"{p}"` over a tuple emitted `format!("{}", tuple)`, but tuples have no
+  `Display` → E0277 (transpile succeeded, invalid Rust). Python renders the tuple
+  repr (`(1, 2)`, `(1, 'a', True)`, `(1, (2, 3))`). Found by differential hunt #8
+  (H8-12).
+- Fix (frontend, no new IR): tuples are heterogeneous, so a per-position desugar
+  `"(" + repr(p.0) + ", " + repr(p.1) + ... + ")"` (vs the list's `Map`). The
+  tuple is bound once in a `Block` (no re-evaluation per position); each position
+  reuses `pyrepr_of` (extended with a `Tuple` arm) so nested tuples/lists work.
+  The single-element trailing comma `(x,)` and empty `()` are handled, though
+  1-tuples are currently blocked by a separate `(T)`-vs-`(T,)` 1-tuple
+  type-emission bug.
+- New e2e fixture `tuple_fstring_repr.py` cross-checked vs python3. 383 e2e fixtures.
+
 ## [0.1.322] — 2026-06-15
 
 Tranche 2 — PMAT-623: **correctness** — interpolating a list in an f-string renders its Python repr.
