@@ -11287,11 +11287,19 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
     let ast::Expr::FormattedValue(fv) = part else {
         return lower_expr_in_ctx(ctx, part);
     };
-    if fv.conversion != ast::ConversionFlag::None {
+    // PMAT-694: support `!r` (repr) and `!s` (str) conversions — this also enables
+    // the `{x=}` debug form, which the parser desugars to `Constant("x=") +
+    // FormattedValue(x, conversion=Repr)` (byte-identical AST to `{x!r}`). `!s`
+    // matches the plain-field semantics (`str(x)`); `!r` routes through
+    // `pyrepr_of` (strings gain quotes). `!a` (ascii — repr with non-ASCII
+    // backslash-escaped) is still declined.
+    if fv.conversion == ast::ConversionFlag::Ascii {
         return Err(FrontendError::Lower(
-            "f-string conversion flags (`!r` / `!s` / `!a`) are not supported at v0.2.0".into(),
+            "f-string `!a` (ascii) conversion is not supported at v0.2.0 (`!r` and `!s` are)"
+                .into(),
         ));
     }
+    let is_repr = fv.conversion == ast::ConversionFlag::Repr;
     let value = lower_expr_in_ctx(ctx, (*fv.value).clone())?;
     // PMAT-620: a no-default `d.get(k)` in an f-string field is `Option<T>`,
     // which has no `Display` — `f"{d.get(k)}"` emitted `format!("{}", Option)`
@@ -11308,8 +11316,14 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
         )));
     }
     let Some(spec_expr) = fv.format_spec.as_ref() else {
-        // Plain `{expr}` — no spec; Display-coerced by the surrounding format!.
-        // PMAT-502ee/ef: `bool` and `float` fields must render Python-style,
+        // PMAT-694: `{x!r}` / the `{x=}` debug form — Python `repr`; strings gain
+        // quotes (`'hi'`), float/bool/list/tuple render the same as a plain field.
+        if is_repr {
+            let ty = infer_type_in_ctx(ctx, &value);
+            return pyrepr_of(value, &ty);
+        }
+        // Plain `{expr}` / `{expr!s}` — no spec; Display-coerced by the surrounding
+        // format!. PMAT-502ee/ef: `bool` and `float` fields must render Python-style,
         // not Rust's `Display`: `bool` → `True`/`False` (lowercase in Rust),
         // `float` → Python repr (`3.0`, where Rust's `{}` prints `3`). Both
         // reuse the same conversions `str(bool)` / `str(float)` use, which also
@@ -11340,8 +11354,24 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
         ));
     };
     if spec.is_empty() {
-        return Ok(value); // `{x:}` — empty spec, same as plain.
+        // `{x:}` / `{x!r:}` — empty spec. `!r` still applies repr (then no spec).
+        return if is_repr {
+            let ty = infer_type_in_ctx(ctx, &value);
+            pyrepr_of(value, &ty)
+        } else {
+            Ok(value)
+        };
     }
+    // PMAT-694: an explicit `{x!r:spec}` applies repr FIRST, then formats the
+    // resulting string (e.g. `{x!r:>10}` right-aligns the quoted repr). The `{x=}`
+    // debug form never reaches here with `is_repr` (its conversion rides on a
+    // no-spec field), so this only affects explicit `!r` + spec.
+    let value = if is_repr {
+        let ty = infer_type_in_ctx(ctx, &value);
+        pyrepr_of(value, &ty)?
+    } else {
+        value
+    };
     apply_nonempty_format_spec(ctx, value, &spec)
 }
 
