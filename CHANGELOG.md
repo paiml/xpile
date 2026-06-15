@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.359] — 2026-06-15
+
+Tranche 2 — PMAT-660: **correctness** — `list.extend()` accepts any iterable.
+
+- `xs.extend(arg)` lowered its argument context-free, so a non-list iterable
+  broke: `xs.extend(range(n))` emitted an undefined `range(...)` call (E0425),
+  `xs.extend((a,b,c))` called `.iter()` on a Rust tuple (E0599), and
+  `xs.extend(xs)` (self) immut-borrowed `xs` while `extend` mut-borrowed it
+  (E0502). Python's `list.extend` takes any iterable.
+- Fix (frontend only, the `.extend()` method intercept, no IR change): route the
+  arg through `materialize_iterable_arg` (range→Vec, set→list, dict→keys,
+  list→passthrough); convert a tuple literal to a list literal; clone the
+  receiver on self-extend. A plain list/literal arg is unchanged.
+- Differential-verified vs python3 (range, tuple, self, set [bonus], and the
+  list/literal regression). New e2e fixture `list_extend_iterables.py`. 417 e2e
+  fixtures. Found by HUNT-V4.
+
 ## [0.1.358] — 2026-06-15
 
 Tranche 2 — PMAT-659: **correctness** — f-string float-precision format of NaN prints "nan".
