@@ -155,7 +155,15 @@ struct LoweringCtx {
     /// is an ordinary, if conventionally-unused, binding) lowers to that
     /// same name instead of an uncompilable bare `_`. Saved/restored around
     /// each construct's body so `_` shadows correctly across nesting.
-    underscore_rename: Option<String>,
+    ///
+    /// PMAT-635: generalized from `Option<String>` to `(python_name,
+    /// rust_name)`. A `for _`/`for _ in comp` rename has `python_name == "_"`;
+    /// PMAT-635 also renames a *named* comprehension counter variable (`for i in
+    /// range(...)` inside a list/dict/set comp) to a fresh `__forc{N}` so the
+    /// comprehension variable does NOT leak into / clobber an enclosing binding
+    /// (Python comprehension variables are scoped to the comprehension). A body
+    /// read of that name resolves to the fresh name via this rename.
+    active_rename: Option<(String, String)>,
     /// PMAT-502ez (Optional epic cut 4): names a preceding provably-exiting
     /// `if <name> is None: return …` guard has proven `Some`. A later read of
     /// such a name lowers to `Expr::OptionUnwrap` (`(<name>).unwrap()` : `T`)
@@ -191,21 +199,36 @@ impl LoweringCtx {
     /// still resolves). A `_` target mints a fresh `__xpile_idx{N}` and
     /// installs it as the active `_`-rename, returning the previous rename
     /// to restore via [`exit_loop_var`] once the body is lowered.
-    fn enter_loop_var(&mut self, py_name: &str) -> (String, Option<String>) {
+    fn enter_loop_var(&mut self, py_name: &str) -> (String, Option<(String, String)>) {
         if py_name == "_" {
             let fresh = format!("__xpile_idx{}", self.underscore_counter);
             self.underscore_counter += 1;
-            let saved = self.underscore_rename.clone();
-            self.underscore_rename = Some(fresh.clone());
+            let saved = self.active_rename.clone();
+            self.active_rename = Some(("_".to_string(), fresh.clone()));
             (fresh, saved)
         } else {
-            (py_name.to_string(), self.underscore_rename.clone())
+            (py_name.to_string(), self.active_rename.clone())
         }
     }
 
-    /// PMAT-502dz: restore the `_`-rename saved by [`enter_loop_var`].
-    fn exit_loop_var(&mut self, saved: Option<String>) {
-        self.underscore_rename = saved;
+    /// PMAT-635: claim a fresh synthetic counter name for a *comprehension*
+    /// `for <var> in range(...)` generator and install a rename so the
+    /// comprehension's element/key/value/filter reads of `<var>` resolve to it.
+    /// Unlike [`enter_loop_var`] (used by `for` statements, where a named target
+    /// legitimately leaks per Python), a comprehension variable is scoped to the
+    /// comprehension and must NEVER leak into the enclosing function — so EVERY
+    /// target (named or `_`) is renamed to a fresh `__forc{N}`. Returns the fresh
+    /// name and the previous rename to restore via [`exit_loop_var`].
+    fn enter_comp_var(&mut self, py_name: &str) -> (String, Option<(String, String)>) {
+        let fresh = self.fresh_loop_counter();
+        let saved = self.active_rename.clone();
+        self.active_rename = Some((py_name.to_string(), fresh.clone()));
+        (fresh, saved)
+    }
+
+    /// PMAT-502dz: restore the rename saved by [`enter_loop_var`]/[`enter_comp_var`].
+    fn exit_loop_var(&mut self, saved: Option<(String, String)>) {
+        self.active_rename = saved;
     }
 
     /// PMAT-634: mint a fresh, unique synthetic counter name (`__forc{N}`) for a
@@ -263,7 +286,7 @@ impl LoweringCtx {
             closure_returns: HashMap::new(),
             underscore_counter: 0,
             loop_counter: 0,
-            underscore_rename: None,
+            active_rename: None,
             narrowed_some: HashSet::new(),
             cls_name: None,
         }
@@ -5712,12 +5735,12 @@ fn desugar_list_comp(
     // around the accumulator — mirroring the for-over-range desugaring,
     // rather than the list-iterable ForEach below.
     if let Some((start, stop, step_int)) = comp_range_bounds(ctx, &gen.iter)? {
-        // PMAT-502dz: `[elem for _ in range(n)]` would desugar to `let mut _`
-        // — mint a fresh counter name and register it for body reads of `_`.
-        let (var, saved_rename) = ctx.enter_loop_var(&var);
-        // The range counter is an `i64`; bind it before lowering elem/filter.
-        ctx.bound.insert(var.clone());
-        ctx.name_types.insert(var.clone(), Type::I64);
+        // PMAT-635: rename the comprehension counter to a fresh `__forc{N}` so it
+        // does not leak into the enclosing scope (Python comp variables are
+        // scoped to the comprehension); body reads resolve via the active rename.
+        // Shares the `comp_range_stmts` builder with the dict/set comp paths.
+        let (counter, saved_rename) = ctx.enter_comp_var(&var);
+        ctx.name_types.insert(counter.clone(), Type::I64);
         // PMAT-563: fold all `if` clauses into one Bool filter (ANDed).
         let filter = combine_comp_filters(ctx, &gen.ifs, "list")?;
         let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
@@ -5729,44 +5752,18 @@ fn desugar_list_comp(
             list_name: target.to_string(),
             elem,
         };
-        let mut body = match filter {
-            None => vec![append],
-            Some(cond) => vec![Stmt::If {
-                cond,
-                then_body: vec![append],
-                else_body: Vec::new(),
-            }],
-        };
-        // Tail: x = x + step.
-        body.push(Stmt::Assign {
-            name: var.clone(),
-            value: Expr::BinOp {
-                op: BinOp::Add,
-                lhs: Box::new(Expr::Ident(var.clone())),
-                rhs: Box::new(Expr::LitInt(step_int)),
-            },
-        });
-        let cond = Expr::BinOp {
-            op: if step_int > 0 { BinOp::Lt } else { BinOp::Gt },
-            lhs: Box::new(Expr::Ident(var.clone())),
-            rhs: Box::new(stop),
-        };
         ctx.exit_loop_var(saved_rename);
-        return Ok(vec![
-            Stmt::Let {
-                name: target.to_string(),
-                ty: list_ty,
-                value: Expr::ListLit(Vec::new()),
-                mutable: true,
-            },
-            Stmt::Let {
-                name: var,
-                ty: Type::I64,
-                value: start,
-                mutable: true,
-            },
-            Stmt::While { cond, body },
-        ]);
+        return Ok(comp_range_stmts(
+            target,
+            list_ty,
+            Expr::ListLit(Vec::new()),
+            counter,
+            start,
+            stop,
+            step_int,
+            filter,
+            append,
+        ));
     }
     let iter_expr = str_iter_to_chars(ctx, lower_expr_in_ctx(ctx, gen.iter.clone())?);
     let elem_in_ty = match infer_type_in_ctx(ctx, &iter_expr) {
@@ -5929,11 +5926,12 @@ fn desugar_dict_comp(
     // PMAT-502bd: `{k: v for x in range(...)}` desugars to a counter loop
     // around a dict accumulator (same shape as the list-comp range branch).
     if let Some((start, stop, step_int)) = comp_range_bounds(ctx, &gen.iter)? {
-        // PMAT-502dz: `{k: v for _ in range(n)}` — mint a fresh counter name
-        // for the `_` target and register it for body reads of `_`.
-        let (var, saved_rename) = ctx.enter_loop_var(&var);
-        ctx.bound.insert(var.clone());
-        ctx.name_types.insert(var.clone(), Type::I64);
+        // PMAT-635: the comprehension counter variable is renamed to a fresh
+        // `__forc{N}` so it does NOT leak into the enclosing scope (Python comp
+        // variables are scoped to the comprehension). Body reads of the original
+        // name resolve to the fresh counter via the active rename.
+        let (counter, saved_rename) = ctx.enter_comp_var(&var);
+        ctx.name_types.insert(counter.clone(), Type::I64);
         let filter = comp_filter(ctx, gen, "dict")?;
         let key = lower_expr_in_ctx(ctx, (*comp.key).clone())?;
         let value = lower_expr_in_ctx(ctx, (*comp.value).clone())?;
@@ -5953,7 +5951,7 @@ fn desugar_dict_comp(
             target,
             dict_ty,
             Expr::DictLit(Vec::new()),
-            var,
+            counter,
             start,
             stop,
             step_int,
@@ -6210,11 +6208,10 @@ fn desugar_set_comp(
     // PMAT-502bd: `{e for x in range(...)}` desugars to a counter loop
     // around a set accumulator (same shape as the list-comp range branch).
     if let Some((start, stop, step_int)) = comp_range_bounds(ctx, &gen.iter)? {
-        // PMAT-502dz: `{e for _ in range(n)}` — mint a fresh counter name for
-        // the `_` target and register it for body reads of `_`.
-        let (var, saved_rename) = ctx.enter_loop_var(&var);
-        ctx.bound.insert(var.clone());
-        ctx.name_types.insert(var.clone(), Type::I64);
+        // PMAT-635: rename the comprehension counter to a fresh `__forc{N}` so it
+        // does not leak into the enclosing scope (see the list/dict comp paths).
+        let (counter, saved_rename) = ctx.enter_comp_var(&var);
+        ctx.name_types.insert(counter.clone(), Type::I64);
         let filter = comp_filter(ctx, gen, "set")?;
         let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
         let set_ty = Type::Set(Box::new(infer_type_in_ctx(ctx, &elem)));
@@ -6229,7 +6226,7 @@ fn desugar_set_comp(
             target,
             set_ty,
             Expr::SetLit(Vec::new()),
-            var,
+            counter,
             start,
             stop,
             step_int,
@@ -9766,9 +9763,23 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         ast::Expr::Name(n) if ctx.narrowed_some.contains(n.id.as_str()) => {
             Ok(Expr::OptionUnwrap(Box::new(Expr::Ident(n.id.to_string()))))
         }
-        ast::Expr::Name(n) if n.id.as_str() == "_" && ctx.underscore_rename.is_some() => Ok(
-            Expr::Ident(ctx.underscore_rename.clone().expect("rename is Some")),
-        ),
+        // PMAT-502dz / PMAT-635: a name with an active rename (a `for _`/`for _ in
+        // comp` `_`-rename, or a comprehension counter variable renamed to a
+        // fresh `__forc{N}`) resolves to the fresh name.
+        ast::Expr::Name(n)
+            if ctx
+                .active_rename
+                .as_ref()
+                .is_some_and(|(from, _)| from == n.id.as_str()) =>
+        {
+            Ok(Expr::Ident(
+                ctx.active_rename
+                    .as_ref()
+                    .expect("rename is Some")
+                    .1
+                    .clone(),
+            ))
+        }
         // PMAT-502el: `math.<const>` attribute read (`math.pi`/`math.e`/
         // `math.tau`) → a float literal. Non-`math` attribute reads fall
         // through to the context-free path (which errors — attributes aren't
