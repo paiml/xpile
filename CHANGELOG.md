@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.379] — 2026-06-15
+
+### Fixed
+
+- **PMAT-680 — float `.Nf` `.format()`/`%` of NaN prints "nan" not "NaN".** A bare
+  float-precision format spec over NaN must print `nan` (Python), but xpile emitted
+  Rust's `NaN` for the `.format()` and `%` paths (`"{:.2f}".format(nan)`, `"%.2f" %
+  nan`, `"%f" % nan`). The f-string path already guarded this (PMAT-659 —
+  `Expr::FormatSpec` codegen NaN-checks a float-precision spec); `.format()`/`%`
+  inlined the spec into a bare `format!`, bypassing the guard. **Fix** (frontend
+  only, NO IR change): route an F64 arg with a spec through `Expr::FormatSpec`
+  (a separate plain `{}` field) instead of inlining `:{spec}`, so the existing NaN
+  guard fires — `lower_str_format` (F64 arg referenced once, reusing the PMAT-676
+  ref-count pre-scan) and `lower_percent_format` (the `%f` conversion). Behavior is
+  identical for non-NaN values. (Width+precision NaN — `{:8.2f}` — would need the
+  width applied to the literal "nan"; deferred.) Differential-verified vs python3
+  (`.format`/`%.2f`/`%f`/f-string of NaN all → "nan"; normal values + int specs
+  unchanged). New e2e fixture `format_float_nan.py` (rustc round-trip). e2e 436 →
+  437. Found by HUNT-V6 (item A4).
+
 ## [0.1.378] — 2026-06-15
 
 ### Fixed
