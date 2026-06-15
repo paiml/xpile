@@ -6461,6 +6461,31 @@ fn reorder_kwargs_to_positional(
     })
 }
 
+/// PMAT-627: fill default arguments in NESTED user-function calls that appear
+/// directly in argument position (`f(g(x))` where `g` has a default). The
+/// outer call is reordered by [`reorder_kwargs_to_positional`], but it then
+/// lowers via the context-free `lower_call` (whose args use `lower_expr`, not
+/// `lower_expr_in_ctx`), so a nested call's defaults were never filled → E0061.
+/// Recurse through any `Call`-shaped argument, reordering + filling each.
+fn reorder_nested_call_args(
+    ctx: &LoweringCtx,
+    mut call: ast::ExprCall,
+) -> Result<ast::ExprCall, FrontendError> {
+    let mut new_args = Vec::with_capacity(call.args.len());
+    for arg in call.args.into_iter() {
+        match arg {
+            ast::Expr::Call(inner) => {
+                let inner = reorder_kwargs_to_positional(ctx, inner)?;
+                let inner = reorder_nested_call_args(ctx, inner)?;
+                new_args.push(ast::Expr::Call(inner));
+            }
+            other => new_args.push(other),
+        }
+    }
+    call.args = new_args;
+    Ok(call)
+}
+
 /// PMAT-466 (v0.2.0 Track 1.C): lower an annotated local assignment
 /// `name: T = value`. The annotation is authoritative for the
 /// binding's type — notably, an annotated empty dict
@@ -9178,7 +9203,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             }
             // PMAT-474 (R5): reorder keyword args to positional using
             // the module signature table, then lower as a plain call.
+            // PMAT-627: also fill defaults in nested user-calls in argument
+            // position — `lower_call` (used below) lowers args context-free, so a
+            // nested `f(g(x))` would otherwise emit `g(x)` bare (E0061).
             let call = reorder_kwargs_to_positional(ctx, call)?;
+            let call = reorder_nested_call_args(ctx, call)?;
             // PMAT-502dq: a call to a variadic (`*args`) function collects the
             // trailing positional args (those past the fixed params) into a
             // single `list` argument, matching the `list[elem]` vararg param.

@@ -4192,6 +4192,29 @@ fn main() {
     assert_rustc_runs("default_params", &rust, driver);
 }
 
+/// PMAT-627: a default-using function called in argument position of another
+/// call (`f(g(x))` where `g` has a default). The outer call was default-filled
+/// but the nested call (lowered context-free by `lower_call`) was left
+/// under-applied → E0061. Default-filling now recurses into nested user-calls in
+/// argument position. Found by hunt #8 (H8-16). Cross-checked vs python3.
+#[test]
+fn nested_default_call() {
+    let rust = xpile_transpile_to_rust("nested_default_call.py");
+    assert!(
+        // both the outer AND the inner call carry the filled default.
+        rust.contains("inc(inc(x, 1i64), 1i64)"),
+        "nested default-using calls must fill the inner default too:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(into_user(5), 7);          // inc(inc(5)) = inc(6) = 7
+    assert_eq!(deep(5), 8);               // inc(inc(inc(5))) = 8
+    assert_eq!(two_args(5, 10), 17);      // inc(inc(5), inc(10)) = inc(6, 11) = 17
+}
+"#;
+    assert_rustc_runs("nested_default_call", &rust, driver);
+}
+
 /// PMAT-502cu (Tranche 2): `str.center(width)` — CPython parity-biased pad.
 #[test]
 fn center() {
