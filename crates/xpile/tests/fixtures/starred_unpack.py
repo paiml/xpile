@@ -36,3 +36,11 @@ def star_mid(xs: list[int]) -> int:
 def two_pre_two_suf(xs: list[int]) -> int:
     a, b, *mid, y, z = xs
     return a + b + y + z + sum(mid)
+
+
+# PMAT-647: the starred binding must be `let mut` when later mutated.
+def star_then_mutate(xs: list[int]) -> int:
+    a, *rest = xs
+    rest.append(99)
+    rest.sort()
+    return a + rest[0] + len(rest)
