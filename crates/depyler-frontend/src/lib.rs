@@ -3924,15 +3924,28 @@ fn body_has_top_level_continue(stmts: &[Stmt]) -> bool {
 /// PMAT-527: container truthiness in a boolean condition. Python treats a
 /// non-empty `list`/`dict`/`set`/`str` as truthy; xpile otherwise requires a
 /// Bool condition. Converts a container-typed condition to `len(c) != 0`
-/// (reusing `Expr::Len` + `BinOp::Ne` — no new IR). A Bool (or anything else)
-/// passes through unchanged, so the caller's Bool check still rejects
-/// int/float-truthiness. `if xs:` / `while q:` / `x if xs else y`.
+/// (reusing `Expr::Len` + `BinOp::Ne` — no new IR).
+/// PMAT-661: also int-truthiness (`if n:` / `if len(xs):` / `while n:`) → `n != 0`
+/// and float-truthiness (`if x:`) → `x != 0.0`. For floats this matches Python
+/// exactly including the edges: `-0.0 != 0.0` is `false` (falsy), `nan != 0.0` is
+/// `true` (truthy). A Bool (or anything else) passes through unchanged, so the
+/// caller's Bool check still rejects any not-yet-handled type.
 fn truthy_condition(ctx: &LoweringCtx, cond: Expr) -> Expr {
     match infer_type_in_ctx(ctx, &cond) {
         Type::List(_) | Type::Dict(_, _) | Type::Set(_) | Type::Str => Expr::BinOp {
             op: BinOp::NotEq,
             lhs: Box::new(Expr::Len(Box::new(cond))),
             rhs: Box::new(Expr::LitInt(0)),
+        },
+        Type::I64 => Expr::BinOp {
+            op: BinOp::NotEq,
+            lhs: Box::new(cond),
+            rhs: Box::new(Expr::LitInt(0)),
+        },
+        Type::F64 => Expr::BinOp {
+            op: BinOp::NotEq,
+            lhs: Box::new(cond),
+            rhs: Box::new(Expr::LitFloat(0.0)),
         },
         _ => cond,
     }
@@ -13408,20 +13421,15 @@ mod tests {
     }
 
     #[test]
-    fn rejects_ternary_with_non_bool_condition() {
-        let err = PythonFrontend
+    fn accepts_int_truthiness_in_ternary() {
+        // PMAT-661: an int ternary condition is now supported (coerced to `!= 0`),
+        // matching Python. (Was rejected as "no int-truthiness at v0.1.0".)
+        PythonFrontend
             .parse_and_lower(
                 &PathBuf::from("fixture.py"),
-                "def f(a, b):\n    return a if a else b\n",
+                "def f(a: int, b: int) -> int:\n    return a if a else b\n",
             )
-            .expect_err("non-bool ternary cond should fail (no int-truthiness at v0.1.0)");
-        match err {
-            FrontendError::Lower(msg) => assert!(
-                msg.contains("Bool") || msg.contains("truthiness"),
-                "unexpected msg: {msg}"
-            ),
-            _ => panic!("expected Lower error"),
-        }
+            .expect("int ternary condition should now lower (PMAT-661)");
     }
 
     #[test]
