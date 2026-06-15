@@ -7416,14 +7416,15 @@ fn infer_type(e: &Expr) -> Type {
             | StrMethodOp::Count
             | StrMethodOp::CharCount
             | StrMethodOp::StrIndex => Type::I64,
-            // PMAT-502ag/502di/643: isdigit/isnumeric/isalpha/isspace/isalnum/isupper/islower → Bool.
+            // PMAT-502ag/502di/643/695: isdigit/isnumeric/isalpha/isspace/isalnum/isupper/islower/isascii → Bool.
             StrMethodOp::IsDigit
             | StrMethodOp::IsNumeric
             | StrMethodOp::IsAlpha
             | StrMethodOp::IsSpace
             | StrMethodOp::IsAlnum
             | StrMethodOp::IsUpper
-            | StrMethodOp::IsLower => Type::Bool,
+            | StrMethodOp::IsLower
+            | StrMethodOp::IsAscii => Type::Bool,
             // PMAT-502ah: capitalize → Str. PMAT-502aj: title → Str.
             StrMethodOp::Capitalize | StrMethodOp::Title => Type::Str,
             // PMAT-502aw: rjust/ljust → Str.
@@ -7825,14 +7826,15 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             | StrMethodOp::Count
             | StrMethodOp::CharCount
             | StrMethodOp::StrIndex => Type::I64,
-            // PMAT-502ag/502di/643: isdigit/isnumeric/isalpha/isspace/isalnum/isupper/islower → Bool.
+            // PMAT-502ag/502di/643/695: isdigit/isnumeric/isalpha/isspace/isalnum/isupper/islower/isascii → Bool.
             StrMethodOp::IsDigit
             | StrMethodOp::IsNumeric
             | StrMethodOp::IsAlpha
             | StrMethodOp::IsSpace
             | StrMethodOp::IsAlnum
             | StrMethodOp::IsUpper
-            | StrMethodOp::IsLower => Type::Bool,
+            | StrMethodOp::IsLower
+            | StrMethodOp::IsAscii => Type::Bool,
             // PMAT-502ah: capitalize → Str. PMAT-502aj: title → Str.
             StrMethodOp::Capitalize | StrMethodOp::Title => Type::Str,
             // PMAT-502aw: rjust/ljust → Str.
@@ -13210,6 +13212,8 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
         "isalnum" => Some(StrMethodOp::IsAlnum),
         "isupper" => Some(StrMethodOp::IsUpper),
         "islower" => Some(StrMethodOp::IsLower),
+        // PMAT-695: isascii (0-arg → Bool; empty string is True, no guard needed).
+        "isascii" => Some(StrMethodOp::IsAscii),
         // PMAT-502dj: partition/rpartition (1-arg → 3-tuple).
         "partition" => Some(StrMethodOp::Partition),
         "rpartition" => Some(StrMethodOp::RPartition),
@@ -13268,7 +13272,9 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         | StrMethodOp::IsSpace
         | StrMethodOp::IsAlnum
         | StrMethodOp::IsUpper
-        | StrMethodOp::IsLower => 0,
+        | StrMethodOp::IsLower
+        // PMAT-695: isascii takes no args.
+        | StrMethodOp::IsAscii => 0,
         // PMAT-502ah: capitalize takes no args.
         StrMethodOp::Capitalize | StrMethodOp::Title => 0,
         // PMAT-502aw: rjust/ljust take one width arg.

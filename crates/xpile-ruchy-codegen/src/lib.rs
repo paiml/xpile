@@ -1118,6 +1118,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 out.push_str(")[..])");
                 return Ok(());
             }
+            // PMAT-695: `.isascii()` → `(s).is_ascii()` (empty → true, no guard).
+            if matches!(op, StrMethodOp::IsAscii) {
+                out.push('(');
+                emit_expr(out, recv, mode)?;
+                out.push_str(").is_ascii()");
+                return Ok(());
+            }
             // PMAT-502ag: `.isdigit()`/`.isalpha()`/`.isspace()` →
             // `(!(s).is_empty() && (s).chars().all(|__c| __c.<pred>()))`.
             if matches!(
@@ -1457,7 +1464,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 | StrMethodOp::IsSpace
                 | StrMethodOp::IsAlnum
                 | StrMethodOp::IsUpper
-                | StrMethodOp::IsLower => {
+                | StrMethodOp::IsLower
+                | StrMethodOp::IsAscii => {
                     unreachable!("classification predicates handled above")
                 }
                 StrMethodOp::Capitalize => unreachable!("capitalize handled above"),

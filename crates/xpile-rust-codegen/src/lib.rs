@@ -1308,6 +1308,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str(".join(&(");
                 emit_expr(out, recv, mode)?;
                 out.push_str(")[..])");
+            } else if matches!(op, StrMethodOp::IsAscii) {
+                // PMAT-695: `.isascii()` → `(s).is_ascii()`. The empty string is
+                // `true` in both Python and Rust, so no empty guard (unlike the
+                // isdigit-family predicates below).
+                out.push('(');
+                emit_expr(out, recv, mode)?;
+                out.push_str(").is_ascii()");
             } else if matches!(
                 op,
                 StrMethodOp::IsDigit
@@ -1673,7 +1680,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     | StrMethodOp::IsSpace
                     | StrMethodOp::IsAlnum
                     | StrMethodOp::IsUpper
-                    | StrMethodOp::IsLower => {
+                    | StrMethodOp::IsLower
+                    | StrMethodOp::IsAscii => {
                         unreachable!("classification predicates handled above")
                     }
                     StrMethodOp::Capitalize => unreachable!("capitalize handled above"),

@@ -2335,6 +2335,11 @@ pub enum StrMethodOp {
     /// `.islower()` → the lowercase mirror of [`StrMethodOp::IsUpper`]
     /// (**Bool**, 0 args). PMAT-502di.
     IsLower,
+    /// `.isascii()` → `(s).is_ascii()` (**Bool**, 0 args). PMAT-695. True iff
+    /// every char is in the ASCII range (U+0000..=U+007F). The empty string is
+    /// `True` in both Python and Rust (`"".is_ascii()` is `true`), so — unlike
+    /// the `isdigit`-family predicates — no empty guard is needed.
+    IsAscii,
     /// `.capitalize()` → first char upper-cased, the rest lower-cased
     /// (**Str**, 0 args). PMAT-502ah. Emits a block that pops the first
     /// char (`to_uppercase`) and lower-cases the remainder; the empty
