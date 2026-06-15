@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.346] — 2026-06-15
+
+Tranche 2 — PMAT-647: **correctness** — starred-unpack binding is `let mut` when mutated.
+
+- A defect in PMAT-645/646: `a, *rest = xs; rest.append(...)` emitted `let rest`
+  (not `let mut rest`) → rustc E0596 — a transpile→invalid-rust for a common
+  pattern. The mutability pre-walk counted plain-Name tuple targets but skipped
+  the Name inside a `Starred` element, so the star name's binding wasn't counted
+  and a later mutation alone didn't reach the `> 1` mutable threshold.
+- Fix (frontend `walk_counts`): count the `Name` inside a `Starred` tuple target
+  as a binding, mirroring the plain-Name arm.
+- Differential-verified vs python3 (`rest.append`/`rest.sort`/`*mid` mutated);
+  prefix-mut + immutable-star + plain tuple unpack unaffected. Extended e2e
+  fixture `starred_unpack.py`. 404 e2e fixtures. Found by the differential hunt
+  (the corrected baked-in-binary hunt surfaced this defect in just-shipped code).
+
 ## [0.1.345] — 2026-06-15
 
 Tranche 2 — PMAT-646: starred unpacking at any position (star-first / star-mid).
