@@ -1664,7 +1664,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 }
                 out.push_str("; let mut __sc = 0.0f64; for &__sx in (");
                 emit_expr(out, list, mode)?;
-                out.push_str(").iter() { let __st = __ss + __sx; if __ss.abs() >= __sx.abs() { __sc += (__ss - __st) + __sx; } else { __sc += (__sx - __st) + __ss; } __ss = __st; } __ss + __sc }");
+                // PMAT-679: skip compensation on a non-finite running total
+                // (`inf - inf = NaN` would poison the result; Python yields inf).
+                out.push_str(").iter() { let __st = __ss + __sx; if __st.is_finite() { if __ss.abs() >= __sx.abs() { __sc += (__ss - __st) + __sx; } else { __sc += (__sx - __st) + __ss; } } else { __sc = 0.0f64; } __ss = __st; } __ss + __sc }");
             } else {
                 // PMAT-595: integer `sum` honors C-PY-INT-ARITH via a checked
                 // fold seeded with `start` (matches the Rust backend).

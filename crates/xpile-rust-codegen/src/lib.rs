@@ -1914,7 +1914,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 }
                 out.push_str("; let mut __sc = 0.0f64; for &__sx in (");
                 emit_expr(out, list, mode)?;
-                out.push_str(").iter() { let __st = __ss + __sx; if __ss.abs() >= __sx.abs() { __sc += (__ss - __st) + __sx; } else { __sc += (__sx - __st) + __ss; } __ss = __st; } __ss + __sc }");
+                // PMAT-679: skip compensation when the running total is
+                // non-finite. Once `__st` is ±inf/NaN the Neumaier term computes
+                // `inf - inf = NaN`, poisoning `__sc` and the result (Python
+                // `sum([1.0, inf, 2.0])` is `inf`, not `NaN`). CPython resets the
+                // compensation on a non-finite partial; reset `__sc = 0.0` so the
+                // final `__ss + __sc` reflects the (non-finite) running total.
+                out.push_str(").iter() { let __st = __ss + __sx; if __st.is_finite() { if __ss.abs() >= __sx.abs() { __sc += (__ss - __st) + __sx; } else { __sc += (__sx - __st) + __ss; } } else { __sc = 0.0f64; } __ss = __st; } __ss + __sc }");
             } else {
                 // PMAT-595: integer `sum(xs[, start])` must honor the
                 // C-PY-INT-ARITH overflow contract like every other int-arith
