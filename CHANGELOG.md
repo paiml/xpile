@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.391] — 2026-06-15
+
+### Added
+
+- **PMAT-692 — keyless `max()`/`min()` over a list of tuples.** `max(xs)` / `min(xs)`
+  over a `list[tuple[...]]` was rejected ("produces I64") — the keyless lowering only
+  admitted scalar (`I64`/`F64`/`Str`/`Bool`) elements. A tuple of `Ord` elements is
+  itself `Ord` (Rust derives lexicographic `Ord`, matching Python's tuple comparison),
+  so `.iter().cloned().max()` is correct. **Fix** (frontend only, NO IR change): add an
+  `elem_is_ord` helper (`i64`/`bool`/`str` are Ord; a tuple is Ord iff every element is,
+  recursively; `f64`/list/dict/set/Optional are not) and widen the keyless gate to
+  `key.is_some() || f64 || elem_is_ord(elem)`. A tuple containing `f64` stays excluded
+  (would be E0277); bare `f64` keeps the `max_by`/partial_cmp fold. Differential-verified
+  vs python3 (`list[tuple[int,int]]` / `list[tuple[str,int]]` lexicographic + scalar
+  regression). New e2e fixture `max_min_tuple.py` (rustc round-trip). e2e 448 → 449.
+  Found by HUNT-V7 (item V7-6).
+
 ## [0.1.390] — 2026-06-15
 
 ### Added
