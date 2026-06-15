@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.404] — 2026-06-16
+
+### Added
+
+- **PMAT-705 — nested-tuple `for`-pair target (`for i, (a, b) in enumerate(xs)`).** `for i,
+  (a, b) in enumerate(xs)` / `for k, (a, b) in d.items()` rejected with "non-Name for
+  target" — the pair-loop requires both targets to be plain Names. **Fix**: `lower_for_stmt`
+  desugars a 2-tuple target containing a nested tuple — each tuple element is rewritten to a
+  fresh Name (`__xpile_pairN`) and a `(a, b) = __xpile_pairN` unpack is prepended to the loop
+  body. The existing pair-loop then handles `i, __xpile_pairN` (the temp binds to the element
+  tuple) and the standard tuple-unpack (`LetTuple`) destructures it — reusing all existing
+  machinery, no new IR. A nested var may be mutated (per-name `mut` from the pre-walk); works
+  for `enumerate`/`zip`/`d.items()` uniformly. Differential-verified vs python3 (enumerate
+  nested, items nested, nested-var mutation). New e2e fixture `for_nested_pair_target.py`
+  (rustc round-trip); plain `for a, b in xs` regression intact. e2e 462 → 463. Found by
+  HUNT-V8 (item V8-8).
+
 ## [0.1.403] — 2026-06-16
 
 ### Added
