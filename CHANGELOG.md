@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.385] — 2026-06-15
+
+### Fixed
+
+- **PMAT-686 — int literal in a float-return position emits a float.** A `-> float`
+  function with an int LITERAL in one branch — `if factor == 0.0: return 0 else:
+  return x / factor` — was rejected ("declared return type F64 but body produces
+  I64"): the int-literal branch lowered to an `I64` value, so the terminal `IfExpr`
+  typed as I64 (and a bare `return 0` in an f64 fn would emit `0i64` → E0308).
+  **Fix** (frontend only, NO IR change): coerce an int LITERAL to a float literal
+  when the expected type is `F64`, in `lower_value_expecting` (covers the
+  early-`return` path) and via the terminal-if branch lowering (with the declared
+  return type). SCOPED to literals — an int *variable*/expression (`def f(n: int)
+  -> float: return n`) is NOT coerced, since Python does not coerce on return
+  (yields `5`, not `5.0`); that stays a clean reject. Differential-verified vs
+  python3 (terminal-if `return 0` → 0.0, early `return 1` → 1.0, negative `return
+  -3`, int-var reject). New e2e fixture `float_return_int_literal.py` (rustc
+  round-trip). e2e 442 → 443. Found by HUNT-V6 (item C11).
+
 ## [0.1.384] — 2026-06-15
 
 ### Fixed
