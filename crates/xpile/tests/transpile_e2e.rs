@@ -6933,6 +6933,29 @@ fn main() {
     assert_rustc_runs("set_predicates", &rust, driver);
 }
 
+/// PMAT-652: set relational predicates must not MOVE their operands. They bound
+/// `let __l = <set>` (by value), so a set compared and then reused — or
+/// self-compared (`a <= a`) — failed with E0382. The fix binds by reference
+/// (`let __l = &(...)`). Cross-checked vs python3.
+#[test]
+fn set_predicates_no_move() {
+    let rust = xpile_transpile_to_rust("set_predicates_no_move.py");
+    assert!(
+        rust.contains("let __l = &(") && rust.contains("let __r = &("),
+        "set predicates must bind operands by reference:\n{rust}"
+    );
+    let driver = r#"
+fn s(xs: &[i64]) -> std::collections::HashSet<i64> { xs.iter().copied().collect() }
+fn main() {
+    assert_eq!(subset_then_reuse(s(&[1, 2]), s(&[1, 2, 3])), 3); // was E0382
+    assert_eq!(disjoint_self(s(&[1, 2])), 0);                    // was E0382
+    assert_eq!(subset_self(s(&[1, 2])), 1);                      // was E0382
+    assert_eq!(issuperset_then_reuse(s(&[1, 2, 3]), s(&[1, 2])), 3);
+}
+"#;
+    assert_rustc_runs("set_predicates_no_move", &rust, driver);
+}
+
 /// PMAT-502eo (Tranche 2): set-algebra *methods* — `a.union(b)` /
 /// `a.intersection(b)` / `a.difference(b)` / `a.symmetric_difference(b)`, the
 /// method forms of the `|`/`&`/`-`/`^` operators, lowered to the same

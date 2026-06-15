@@ -2237,17 +2237,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         }
         // PMAT-502ep: set predicate — matching the Rust backend.
         Expr::SetPred { lhs, op, rhs } => {
-            out.push_str("({ let __l = ");
+            // PMAT-652: bind operands by reference (see the rust backend) so a
+            // reused / self-compared set operand isn't moved (E0382).
+            out.push_str("({ let __l = &(");
             emit_expr(out, lhs, mode)?;
-            out.push_str("; let __r = ");
+            out.push_str("); let __r = &(");
             emit_expr(out, rhs, mode)?;
-            out.push_str("; ");
+            out.push_str("); ");
             out.push_str(match op {
-                SetPredOp::Subset => "__l.is_subset(&__r)",
-                SetPredOp::Superset => "__l.is_superset(&__r)",
-                SetPredOp::Disjoint => "__l.is_disjoint(&__r)",
-                SetPredOp::ProperSubset => "__l.is_subset(&__r) && __l != __r",
-                SetPredOp::ProperSuperset => "__l.is_superset(&__r) && __l != __r",
+                SetPredOp::Subset => "__l.is_subset(__r)",
+                SetPredOp::Superset => "__l.is_superset(__r)",
+                SetPredOp::Disjoint => "__l.is_disjoint(__r)",
+                SetPredOp::ProperSubset => "__l.is_subset(__r) && __l != __r",
+                SetPredOp::ProperSuperset => "__l.is_superset(__r) && __l != __r",
             });
             out.push_str(" })");
         }
