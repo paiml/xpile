@@ -9182,10 +9182,24 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                         Type::I64 | Type::F64 | Type::Str | Type::Bool
                                     )
                                 {
+                                    // PMAT-653: with a `key=`, the COMPARED values
+                                    // are the key results — so track the KEY's
+                                    // float-ness (a float key needs `max_by`/
+                                    // `min_by`+partial_cmp, since f64 isn't `Ord`),
+                                    // mirroring the Sorted float-key path (PMAT-603).
+                                    // Keyless: the element type drives the fold.
+                                    let of_float = match &key {
+                                        Some(k) => sort_key_is_float(
+                                            ctx,
+                                            k,
+                                            sort_target_elem_type(ctx, &call.args[0]),
+                                        ),
+                                        None => matches!(*elem, Type::F64),
+                                    };
                                     return Ok(Expr::ListMinMax {
                                         list: Box::new(list),
                                         is_max: fname.id.as_str() == "max",
-                                        of_float: matches!(*elem, Type::F64),
+                                        of_float,
                                         key,
                                         default,
                                     });

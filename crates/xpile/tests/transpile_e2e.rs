@@ -1568,6 +1568,35 @@ fn main() {
     assert_rustc_runs("minmax_key", &rust, driver);
 }
 
+/// PMAT-653: `max(xs, key=…)` / `min(xs, key=…)` with a FLOAT-returning key.
+/// The compared values are `f64` (no `Ord`), so the `max_by_key`/`min_by_key`
+/// emission was E0277; a float key now emits `max_by`/`min_by` with
+/// `partial_cmp` (and `max` still reverses so ties resolve to the FIRST
+/// element). An int key keeps the `max_by_key` path. Cross-checked vs python3.
+#[test]
+fn minmax_float_key() {
+    let rust = xpile_transpile_to_rust("minmax_float_key.py");
+    assert!(
+        rust.contains(".iter().cloned().rev().max_by(|__a, __b|")
+            && rust.contains(".partial_cmp(&{ let x = __b.clone();"),
+        "float key should emit max_by/min_by with partial_cmp:\n{rust}"
+    );
+    // the int-key function must still use the max_by_key path
+    assert!(
+        rust.contains(".rev().max_by_key(|__k|"),
+        "int key should keep max_by_key:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(max_by_ratio(vec![1, 5, 3, 2]), 5);  // was E0277
+    assert_eq!(min_by_ratio(vec![1, 5, 3, 2]), 1);
+    assert_eq!(max_tie_first(vec![7, 8, 9]), 7);     // first element on a tie
+    assert_eq!(max_int_key(vec![1, 5, 3, 2]), 1);    // int-key regression
+}
+"#;
+    assert_rustc_runs("minmax_float_key", &rust, driver);
+}
+
 /// PMAT-502j (Tranche 2): `all(xs)`/`any(xs)` over a `list[bool]` →
 /// `xs.iter().all(|&__b| __b)` / `.any(|&__b| __b)`.
 #[test]

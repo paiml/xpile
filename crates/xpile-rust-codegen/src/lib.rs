@@ -2020,6 +2020,35 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             // switches from the ±∞ fold to a `.reduce(..).unwrap_or(<default>)`.
             emit_expr(out, list, mode)?;
             match key {
+                // PMAT-653: a FLOAT-returning key makes the compared values `f64`
+                // (no `Ord`), so `max_by_key`/`min_by_key` is E0277. Compare
+                // recomputed keys with `partial_cmp` (mirrors the Sorted float-key
+                // path, PMAT-603). `max` reverses first so ties resolve to the
+                // FIRST element (Python semantics, PMAT-568); a NaN key falls back
+                // to `Equal` (Python's max/min don't raise on NaN keys, PMAT-616).
+                Some(k) if *of_float => {
+                    if *is_max {
+                        write!(
+                            out,
+                            ".iter().cloned().rev().max_by(|__a, __b| {{ let {p} = __a.clone(); ",
+                            p = k.param
+                        )?;
+                    } else {
+                        write!(
+                            out,
+                            ".iter().cloned().min_by(|__a, __b| {{ let {p} = __a.clone(); ",
+                            p = k.param
+                        )?;
+                    }
+                    emit_expr(out, &k.body, mode)?;
+                    write!(
+                        out,
+                        " }}.partial_cmp(&{{ let {p} = __b.clone(); ",
+                        p = k.param
+                    )?;
+                    emit_expr(out, &k.body, mode)?;
+                    out.push_str(" }).unwrap_or(std::cmp::Ordering::Equal))");
+                }
                 Some(k) => {
                     // PMAT-568: Python `max(key=)` returns the FIRST element with
                     // the maximal key, but Rust's `max_by_key` returns the LAST.

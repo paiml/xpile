@@ -1745,6 +1745,31 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             // the empty case; the float branch uses `.reduce(..)` with default.
             emit_expr(out, list, mode)?;
             match key {
+                // PMAT-653: float-returning key → max_by/min_by + partial_cmp
+                // (f64 isn't Ord). See the rust backend.
+                Some(k) if *of_float => {
+                    if *is_max {
+                        write!(
+                            out,
+                            ".iter().cloned().rev().max_by(|__a, __b| {{ let {p} = __a.clone(); ",
+                            p = k.param
+                        )?;
+                    } else {
+                        write!(
+                            out,
+                            ".iter().cloned().min_by(|__a, __b| {{ let {p} = __a.clone(); ",
+                            p = k.param
+                        )?;
+                    }
+                    emit_expr(out, &k.body, mode)?;
+                    write!(
+                        out,
+                        " }}.partial_cmp(&{{ let {p} = __b.clone(); ",
+                        p = k.param
+                    )?;
+                    emit_expr(out, &k.body, mode)?;
+                    out.push_str(" }).unwrap_or(std::cmp::Ordering::Equal))");
+                }
                 Some(k) => {
                     // PMAT-568: Python max(key=) returns the FIRST maximal element
                     // (Rust max_by_key returns the last) — reverse first. min ok.
