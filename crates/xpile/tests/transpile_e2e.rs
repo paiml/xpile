@@ -8830,6 +8830,30 @@ fn main() {
     assert_rustc_runs("list_extend_str", &rust, driver);
 }
 
+/// PMAT-686: an int LITERAL returned where a float is expected (a `-> float`
+/// function with a float-returning branch) is emitted as a float literal so it
+/// compiles — `return 0` → `0f64`. Previously the mixed-branch body rejected as
+/// "produces I64" / would emit `0i64` from an f64 fn (E0308). An int *variable*
+/// return is NOT coerced (Python doesn't coerce; stays a reject). vs python3.
+#[test]
+fn float_return_int_literal() {
+    let rust = xpile_transpile_to_rust("float_return_int_literal.py");
+    assert!(
+        rust.contains("{ 0f64 }") && rust.contains("return 1f64;"),
+        "int literal in float-return position should emit a float literal:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(safe_div(10.0, 2.0), 5.0);
+    assert_eq!(safe_div(10.0, 0.0), 0.0);   // the `return 0` branch, now 0.0
+    assert_eq!(pick(true), 1.0);            // early `return 1` → 1.0
+    assert_eq!(pick(false), 2.5);
+    assert_eq!(neg_lit(), -3.0);            // negative literal
+}
+"#;
+    assert_rustc_runs("float_return_int_literal", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a
