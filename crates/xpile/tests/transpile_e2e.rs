@@ -8878,6 +8878,31 @@ fn main() {
     assert_rustc_runs("loop_else", &rust, driver);
 }
 
+/// PMAT-688: a walrus `(t := E)` in an `if` condition (evaluated once) is hoisted
+/// to `let mut t = E;` before the `if` (Python leaks `t` to the enclosing scope),
+/// so the body / following code can use `t`. Was an opaque `Discriminant(1)`
+/// reject. Restricted to unconditional positions (single compare / arithmetic) —
+/// short-circuiting `and`/`or` walruses reject cleanly. Cross-checked vs python3.
+#[test]
+fn walrus_if() {
+    let rust = xpile_transpile_to_rust("walrus_if.py");
+    assert!(
+        rust.contains("let t: i64 =") && rust.contains("if (t > 10i64)"),
+        "if-condition walrus should hoist `let t = …` before the if:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(f(20), 21);    // t := 21 > 10 → return t
+    assert_eq!(f(5), 0);      // t := 6, not > 10
+    assert_eq!(bare(7), 14);  // t := 7 truthy → t*2
+    assert_eq!(bare(0), -1);  // t := 0 falsy
+    assert_eq!(arith(10), 10);
+    assert_eq!(arith(1), 0);  // (1)+5 = 6, not > 8
+}
+"#;
+    assert_rustc_runs("walrus_if", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a

@@ -4596,7 +4596,94 @@ fn is_not_none_narrow_target(ctx: &LoweringCtx, test: &ast::Expr) -> Option<Stri
     Some(name)
 }
 
-fn lower_if_stmt(ctx: &mut LoweringCtx, if_stmt: ast::StmtIf) -> Result<Vec<Stmt>, FrontendError> {
+/// PMAT-688: hoist walrus assignments `(t := E)` out of a condition expression.
+/// Recursively replaces each `ast::Expr::NamedExpr` in `expr` with a reference to
+/// its target name and returns the lowered `let mut t = E;` / `t = E;` statements
+/// to emit BEFORE the `if`/`while` — so `t` leaks to the enclosing scope (Python
+/// semantics) and is available in the body and after the loop. Recurses through
+/// the common condition shapes (boolean / comparison / arithmetic / unary); a
+/// walrus in an unhandled position is left in place and hits the clean reject.
+fn hoist_walruses(ctx: &mut LoweringCtx, expr: &mut ast::Expr) -> Result<Vec<Stmt>, FrontendError> {
+    let mut out = Vec::new();
+    hoist_walruses_into(ctx, expr, &mut out)?;
+    Ok(out)
+}
+
+fn hoist_walruses_into(
+    ctx: &mut LoweringCtx,
+    expr: &mut ast::Expr,
+    out: &mut Vec<Stmt>,
+) -> Result<(), FrontendError> {
+    // A `NamedExpr` here: hoist it (after handling any nested walrus in its value)
+    // and replace this node with a reference to the target name.
+    let target: Option<ast::ExprName> = if let ast::Expr::NamedExpr(named) = expr {
+        hoist_walruses_into(ctx, &mut named.value, out)?;
+        let ast::Expr::Name(tgt) = named.target.as_ref() else {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` uses a walrus `:=` whose target is not a plain name — only `(name := expr)` is supported at v0.2.0",
+                ctx.fn_name
+            )));
+        };
+        let tgt = tgt.clone();
+        let value = lower_expr_in_ctx(ctx, (*named.value).clone())?;
+        let name = tgt.id.to_string();
+        if ctx.bound.contains(&name) {
+            out.push(Stmt::Assign { name, value });
+        } else {
+            let ty = infer_type_in_ctx(ctx, &value);
+            let mutable = ctx.mutable.contains(&name);
+            ctx.bound.insert(name.clone());
+            ctx.name_types.insert(name.clone(), ty.clone());
+            out.push(Stmt::Let {
+                name,
+                ty,
+                value,
+                mutable,
+            });
+        }
+        Some(tgt)
+    } else {
+        None
+    };
+    if let Some(tgt) = target {
+        *expr = ast::Expr::Name(tgt);
+        return Ok(());
+    }
+    // Otherwise recurse ONLY into positions that evaluate UNCONDITIONALLY, so
+    // hoisting a walrus out never changes Python's evaluation. A `BoolOp`
+    // (`and`/`or`) short-circuits its operands, and a CHAINED comparison
+    // short-circuits its later operands — a walrus there would be over-evaluated
+    // if hoisted, so we do NOT descend (it stays a `NamedExpr` and hits the clean
+    // reject). A single comparison and arithmetic operands always evaluate both
+    // sides, so they are safe.
+    match expr {
+        ast::Expr::Compare(c) if c.ops.len() == 1 => {
+            hoist_walruses_into(ctx, &mut c.left, out)?;
+            hoist_walruses_into(ctx, &mut c.comparators[0], out)?;
+        }
+        ast::Expr::BinOp(b) => {
+            hoist_walruses_into(ctx, &mut b.left, out)?;
+            hoist_walruses_into(ctx, &mut b.right, out)?;
+        }
+        ast::Expr::UnaryOp(u) => hoist_walruses_into(ctx, &mut u.operand, out)?,
+        _ => {}
+    }
+    Ok(())
+}
+
+fn lower_if_stmt(
+    ctx: &mut LoweringCtx,
+    mut if_stmt: ast::StmtIf,
+) -> Result<Vec<Stmt>, FrontendError> {
+    // PMAT-688: hoist any walrus `(t := E)` in the condition to `let mut t = E;`
+    // before the `if` (Python leaks `t` to the enclosing scope). The if-as-let
+    // shape has no condition-walrus support, so only the general path hoists.
+    let hoisted = hoist_walruses(ctx, &mut if_stmt.test)?;
+    if !hoisted.is_empty() {
+        let mut out = hoisted;
+        out.extend(lower_if_stmt(ctx, if_stmt)?);
+        return Ok(out);
+    }
     if is_if_as_let_shape(&if_stmt) {
         return lower_if_stmt_as_lets(ctx, if_stmt);
     }
@@ -11705,6 +11792,16 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Expr::TupleLit(elems))
         }
+        // PMAT-688: a walrus `(name := expr)` reaching here is in a position the
+        // if-condition hoist (PMAT-688) does not cover — a `while` condition (which
+        // re-evaluates each iteration), a comprehension, or a general expression
+        // position. Name it clearly instead of leaking the opaque AST discriminant.
+        ast::Expr::NamedExpr(_) => Err(FrontendError::Lower(
+            "a walrus assignment `(name := expr)` is only supported inside an `if` \
+             condition at v0.2.0 — in a `while` condition / comprehension / general \
+             expression, assign `name = expr` on a preceding line instead"
+                .to_string(),
+        )),
         other => Err(FrontendError::Lower(format!(
             "unsupported expression: {:?}",
             std::mem::discriminant(&other)
