@@ -2623,10 +2623,24 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             } else {
                 out.push_str("{ let mut m = std::collections::HashMap::new(); ");
                 for (k, v) in pairs {
+                    // PMAT-699: a bare-variable (`Expr::Ident`) key or value is
+                    // MOVED into `m.insert(...)`; reusing it afterward (`d[k]`,
+                    // `len(s)`, another insert of the same name) was E0382. Clone
+                    // bare idents at the insert (mirrors the `DictSet`/dict-comp
+                    // key clone). Literals and temporaries (calls, arithmetic)
+                    // produce fresh values and are emitted as-is — no redundant
+                    // clone. (Clone-on-Copy is clippy-only; generated code is
+                    // compiled with `rustc -A warnings`.)
                     out.push_str("m.insert(");
                     emit_expr(out, k, mode)?;
+                    if matches!(k, Expr::Ident(_)) {
+                        out.push_str(".clone()");
+                    }
                     out.push_str(", ");
                     emit_expr(out, v, mode)?;
+                    if matches!(v, Expr::Ident(_)) {
+                        out.push_str(".clone()");
+                    }
                     out.push_str("); ");
                 }
                 out.push_str("m }");

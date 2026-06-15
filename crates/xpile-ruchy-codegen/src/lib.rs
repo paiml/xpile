@@ -2256,10 +2256,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             } else {
                 out.push_str("{ let mut m = std::collections::HashMap::new(); ");
                 for (k, v) in pairs {
+                    // PMAT-699: clone bare-ident keys/values to avoid the
+                    // move-then-reuse E0382 (mirrors the rust backend).
                     out.push_str("m.insert(");
                     emit_expr(out, k, mode)?;
+                    if matches!(k, Expr::Ident(_)) {
+                        out.push_str(".clone()");
+                    }
                     out.push_str(", ");
                     emit_expr(out, v, mode)?;
+                    if matches!(v, Expr::Ident(_)) {
+                        out.push_str(".clone()");
+                    }
                     out.push_str("); ");
                 }
                 out.push_str("m }");
