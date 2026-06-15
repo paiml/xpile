@@ -7303,7 +7303,16 @@ fn infer_type(e: &Expr) -> Type {
         // PMAT-502ab: filter(pred, xs) keeps the input list type.
         Expr::Filter { list, .. } => infer_type(list),
         // PMAT-502ac: map(f, xs) → List of the body's transformed type.
-        Expr::Map { lambda, .. } => Type::List(Box::new(infer_type(&lambda.body))),
+        Expr::Map { list, lambda } => {
+            // PMAT-678: context-free counterpart — without a ctx we can't bind
+            // the loop var, but the identity body (`[w for w in xs]`, body is the
+            // bare loop var) is exactly the iterable's type.
+            if matches!(&*lambda.body, Expr::Ident(n) if *n == lambda.param) {
+                infer_type(list)
+            } else {
+                Type::List(Box::new(infer_type(&lambda.body)))
+            }
+        }
         // PMAT-502ai: enumerate(xs) → List(Tuple[I64, elem]); zip(xs, ys) →
         // List(Tuple[elemL, elemR]).
         Expr::Enumerate { list } => {
@@ -7713,7 +7722,23 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-502ab: filter(pred, xs) keeps the input list type.
         Expr::Filter { list, .. } => infer_type_in_ctx(ctx, list),
         // PMAT-502ac: map(f, xs) → List of the body's transformed type.
-        Expr::Map { lambda, .. } => Type::List(Box::new(infer_type_in_ctx(ctx, &lambda.body))),
+        // PMAT-678: bind the comprehension loop var to the iterable's ELEMENT
+        // type before inferring the body. An identity body (`[w for w in
+        // words]`) would otherwise infer the unbound-var I64 default, mis-typing
+        // the result List (`List(I64)` vs the real `List(Str)`) and rejecting
+        // `sorted([w for w in words])`. Mirrors the binding `lower_comp_to_map`
+        // applies during lowering (PMAT-525/531).
+        Expr::Map { list, lambda } => {
+            let body_ty = match infer_type_in_ctx(ctx, list) {
+                Type::List(elem) => {
+                    let mut sub = ctx.clone();
+                    bind_comp_param(&mut sub, &lambda.param, *elem);
+                    infer_type_in_ctx(&sub, &lambda.body)
+                }
+                _ => infer_type_in_ctx(ctx, &lambda.body),
+            };
+            Type::List(Box::new(body_ty))
+        }
         // PMAT-502ai: enumerate/zip → List(Tuple[...]).
         Expr::Enumerate { list } => {
             let elem = match infer_type_in_ctx(ctx, list) {
@@ -13483,6 +13508,28 @@ fn clone_comp_key_if_binder_reused(sub: &LoweringCtx, comp: &ast::ExprDictComp, 
 /// (PMAT-502df/dg/du/dv): a single generator `for <var> in <iter> [if <cond>]`
 /// over a pre-lowered `body` (with the loop var unbound) → `Expr::Map` (over an
 /// optional `Expr::Filter`). Single generator, ≤1 `if`, plain-Name target.
+/// PMAT-678: bind a comprehension's loop-var `param` to the iterable's element
+/// type `elem` in `sub`, for body type-inference. `param` is either a plain name
+/// (`x`) or the 2-name tuple-destructure string `(a, b)` that `lower_comp_to_map`
+/// produces for `for k, v in …` (split the element 2-tuple across both names).
+/// Mirrors the binding `lower_comp_to_map` applies during lowering.
+fn bind_comp_param(sub: &mut LoweringCtx, param: &str, elem: Type) {
+    if let Some(inner) = param.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
+        let names: Vec<&str> = inner.split(',').map(str::trim).collect();
+        if let (Type::Tuple(tys), [a, b]) = (&elem, names.as_slice()) {
+            if tys.len() == 2 {
+                sub.bound.insert((*a).to_string());
+                sub.name_types.insert((*a).to_string(), tys[0].clone());
+                sub.bound.insert((*b).to_string());
+                sub.name_types.insert((*b).to_string(), tys[1].clone());
+            }
+        }
+        return;
+    }
+    sub.bound.insert(param.to_string());
+    sub.name_types.insert(param.to_string(), elem);
+}
+
 fn lower_comp_to_map(
     ctx: &LoweringCtx,
     generators: &[ast::Comprehension],
