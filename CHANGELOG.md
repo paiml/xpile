@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.326] — 2026-06-15
+
+Tranche 2 — PMAT-627: **correctness** — defaults are filled in nested user-calls in argument position.
+
+- A default-using function called in argument position of another call —
+  `f(g(x))` where `g` has a default — left the inner call under-applied → rustc
+  E0061. The outer call's defaults were filled, but it then lowered via the
+  context-free `lower_call` (args via `lower_expr`, not the context-aware path),
+  so the nested call never went through default-filling. Found by hunt #8 (H8-16).
+- Fix (frontend, no new IR): new `reorder_nested_call_args` recurses through any
+  `Call`-shaped argument, reordering + default-filling each (and deeper). Covers
+  `f(g(x))`, `f(g(h(x)))`, `f(g(x), h(y))`. A default-call buried in a non-call
+  container (`f(a + g(x))`) remains a loud E0061 (no regression).
+- New e2e fixture `nested_default_call.py` cross-checked vs python3. 386 e2e fixtures.
+
 ## [0.1.325] — 2026-06-15
 
 Tranche 2 — PMAT-626: **correctness** — `str()`/`print()` of a list or tuple render the Python repr.
