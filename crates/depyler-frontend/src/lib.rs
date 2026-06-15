@@ -3930,9 +3930,17 @@ fn lower_raise_stmt(ctx: &mut LoweringCtx, r: ast::StmtRaise) -> Result<Stmt, Fr
             ctx.fn_name
         )));
     };
+    // PMAT-631: prefix the panic payload with the exception TYPE
+    // (`xpile: <Type>: <msg>`), matching the convention the builtin panics
+    // already use (`xpile: ValueError: …`, `xpile: KeyError: …`). Previously
+    // `raise ValueError("x")` and `raise KeyError("x")` produced identical
+    // payloads (`"x"`) — indistinguishable by type. This also identifies the
+    // exception type in the crash (closer to Python's traceback) and is the
+    // groundwork for typed `except` matching (a later sub-slice).
     let message = match *exc {
         // `raise ValueError("msg")` / `raise Exception(<str expr>)`.
         ast::Expr::Call(call) if call.keywords.is_empty() && call.args.len() == 1 => {
+            let type_name = exc_class_name(&call.func);
             let msg = lower_expr_in_ctx(ctx, call.args[0].clone())?;
             if infer_type_in_ctx(ctx, &msg) != Type::Str {
                 return Err(FrontendError::Lower(format!(
@@ -3941,14 +3949,17 @@ fn lower_raise_stmt(ctx: &mut LoweringCtx, r: ast::StmtRaise) -> Result<Stmt, Fr
                     ctx.fn_name
                 )));
             }
-            msg
+            Expr::Concat {
+                lhs: Box::new(Expr::LitStr(format!("xpile: {type_name}: "))),
+                rhs: Box::new(msg),
+            }
         }
-        // `raise ValueError()` — no message → use the exception class name.
+        // `raise ValueError()` — no message → just the typed prefix.
         ast::Expr::Call(call) if call.keywords.is_empty() && call.args.is_empty() => {
-            Expr::LitStr(exc_class_name(&call.func))
+            Expr::LitStr(format!("xpile: {}: ", exc_class_name(&call.func)))
         }
         // `raise StopIteration` — a bare exception class name.
-        ast::Expr::Name(name) => Expr::LitStr(name.id.to_string()),
+        ast::Expr::Name(name) => Expr::LitStr(format!("xpile: {}: ", name.id)),
         other => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` uses an unsupported `raise` form: {:?}",
