@@ -6658,6 +6658,32 @@ fn main() {
     assert_rustc_runs("list_fstring_repr", &rust, driver);
 }
 
+/// PMAT-624: interpolating a tuple in an f-string. `f"{p}"` over a tuple emitted
+/// `format!("{}", tuple)`, but tuples have no `Display` → E0277. Python renders
+/// the tuple repr; xpile now desugars per-position (heterogeneous) to
+/// `"(" + repr(p.0) + ", " + repr(p.1) + ... + ")"`, binding the tuple once.
+/// Reuses `pyrepr_of` (so nested tuples/lists work). Found by hunt #8 (H8-12).
+/// Cross-checked vs python3. (Single-element tuples are blocked by a separate
+/// `(T)` vs `(T,)` 1-tuple type-emission bug.)
+#[test]
+fn tuple_fstring_repr() {
+    let rust = xpile_transpile_to_rust("tuple_fstring_repr.py");
+    assert!(
+        rust.contains("let __tp") && rust.contains("String::from(\"(\")"),
+        "tuple f-string should desugar to a per-position Python repr:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(pair((1, 2)), "p=(1, 2)");
+    assert_eq!(mixed((1, "a".to_string(), true)), "(1, 'a', True)");
+    assert_eq!(floaty((3.5, 2)), "(3.5, 2)");
+    assert_eq!(nested((1, (2, 3))), "(1, (2, 3))");
+    assert_eq!(list_of_pairs(vec![(1, 2), (3, 4)]), "[(1, 2), (3, 4)]");
+}
+"#;
+    assert_rustc_runs("tuple_fstring_repr", &rust, driver);
+}
+
 /// PMAT-502ef (Tranche 2): a `float` field in an f-string must render Python
 /// repr (`3.0`), not Rust's `Display` (`3` for a whole float) — a silent
 /// miscompile (`f"v={x}"` produced "v=3"). A float field now reuses the same
