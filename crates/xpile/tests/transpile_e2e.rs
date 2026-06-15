@@ -1585,7 +1585,8 @@ fn main() {
 fn pow_mod() {
     let rust = xpile_transpile_to_rust("pow_mod.py");
     assert!(
-        rust.contains("as i128) * (") && rust.contains("__pmr"),
+        // PMAT-619: modexp runs on the magnitude |m| in i128.
+        rust.contains("(__pmm as i128).abs()") && rust.contains("__pmr * __pmb"),
         "3-arg pow should emit i128 modular exponentiation:\n{rust}"
     );
     let driver = r#"
@@ -1600,16 +1601,19 @@ fn main() {
     assert_rustc_runs("pow_mod", &rust, driver);
 }
 
-/// PMAT-605: 3-arg `pow(a, b, m)` with a NEGATIVE modulus. Python's result takes
-/// the sign of the modulus (range `(m, 0]`); the square-multiply loop produced
-/// the non-negative residue. Now re-signed when `m < 0`. Cross-checked vs
-/// python3: mp(10,2,-3)=-2, mp(2,5,-100)=-68, mp(7,3,-5)=-2, mp(5,3,-7)=-1;
-/// positive modulus unchanged (mp(10,2,3)=1, mp(2,5,100)=32).
+/// PMAT-605 + PMAT-619: 3-arg `pow(a, b, m)` with a NEGATIVE modulus. Python's
+/// result takes the sign of the modulus (range `(m, 0]`). PMAT-605 re-signed the
+/// residue, but the base-normalization (`if __t < 0 { __t + __pmm }`) and the
+/// `% __pmm` reductions still assumed a positive modulus, so a NEGATIVE base with
+/// a negative modulus (`pow(-2, 3, -5)`) gave a wrong value (hunt #7 H7-18).
+/// PMAT-619 reworks the whole modexp on the magnitude `|m|` (i128) then
+/// sign-corrects. Cross-checked vs python3 incl. negative bases.
 #[test]
 fn pow_negative_modulus() {
     let rust = xpile_transpile_to_rust("pow_negative_modulus.py");
     assert!(
-        rust.contains("if __pmm < 0 && __pmr != 0 { __pmr += __pmm; }"),
+        // PMAT-619: sign-correct by subtracting the magnitude (= `+ m`).
+        rust.contains("if __pmm < 0 && __pmr != 0 { __pmr -= __pma; }"),
         "negative modulus must re-sign the modpow result:\n{rust}"
     );
     let driver = r#"
@@ -1618,6 +1622,13 @@ fn main() {
     assert_eq!(mp(2, 5, -100), -68);
     assert_eq!(mp(7, 3, -5), -2);
     assert_eq!(mp(5, 3, -7), -1);
+    // PMAT-619: NEGATIVE base with a negative modulus (the H7-18 bug).
+    assert_eq!(mp(-2, 3, -5), -3);
+    assert_eq!(mp(-3, 2, -7), -5);
+    assert_eq!(mp(-5, 3, -11), -4);
+    // negative base with a POSITIVE modulus.
+    assert_eq!(mp(-2, 3, 5), 2);
+    assert_eq!(mp(-5, 3, 11), 7);
     // positive modulus is unchanged.
     assert_eq!(mp(10, 2, 3), 1);
     assert_eq!(mp(2, 5, 100), 32);
