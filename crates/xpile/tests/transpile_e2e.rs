@@ -1674,6 +1674,33 @@ fn main() {
     assert_rustc_runs("bool_reduce", &rust, driver);
 }
 
+/// PMAT-665: `any()`/`all()` over a list[int]/[float]/[str] apply Python
+/// per-element truthiness. These emitted a bare `any(xs)` (E0425); each element
+/// is now mapped to a bool (int → `!= 0`, float → `!= 0.0`, str → non-empty)
+/// before the reduce. A list[bool] reduces directly. Cross-checked vs python3.
+#[test]
+fn any_all_truthy() {
+    let rust = xpile_transpile_to_rust("any_all_truthy.py");
+    assert!(
+        !rust.contains("(any(xs)") && !rust.contains("(all(xs)"),
+        "any/all over a non-bool list must not emit a bare free call:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(any_int(vec![0, 0, 3]), 1);
+    assert_eq!(any_int(vec![0, 0]), 0);
+    assert_eq!(all_int(vec![1, 2, 3]), 1);
+    assert_eq!(all_int(vec![1, 0]), 0);
+    assert_eq!(any_str(vec![String::new(), "x".to_string()]), 1);
+    assert_eq!(any_str(vec![String::new(), String::new()]), 0);
+    assert_eq!(all_float(vec![1.0, 2.0]), 1);
+    assert_eq!(all_float(vec![1.0, 0.0]), 0);
+    assert_eq!(any_bool_regression(vec![false, true]), 1);
+}
+"#;
+    assert_rustc_runs("any_all_truthy", &rust, driver);
+}
+
 /// PMAT-572 (Tranche 2): **correctness** — tuple-unpack that REASSIGNS
 /// already-bound names (`a, b = b, a % b` / `a, b = b, a + b`) inside a loop/if
 /// body must reassign, not emit a fresh `let (mut a, mut b)` (which only shadows
