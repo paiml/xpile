@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.343] — 2026-06-15
+
+Tranche 2 — PMAT-644: `str.rsplit(sep, maxsplit)`.
+
+- `s.rsplit(sep, maxsplit)` was unsupported — splits from the RIGHT, capping at
+  `maxsplit` splits (the common idiom for peeling the last component,
+  `name.rsplit(".", 1)`).
+- Implementation (mirrors split(sep, maxsplit)=SplitN): new
+  `StrMethodOp::RSplitN` via a dedicated 2-arg frontend branch; both backends
+  emit `.rsplitn((maxsplit) as usize.saturating_add(1), sep).map(String)
+  .collect::<Vec<_>>()` then `.into_iter().rev().collect()` — Rust's `rsplitn`
+  yields parts right-to-left, so the Vec is reversed to restore Python's
+  left-to-right order. Negative maxsplit = no limit. Bare `rsplit(sep)` maps to
+  `Split`.
+- Differential-verified vs python3; `split(sep, maxsplit)` unaffected. New e2e
+  fixture `str_rsplit_maxsplit.py`. 403 e2e fixtures.
+
 ## [0.1.342] — 2026-06-15
 
 Tranche 2 — PMAT-643: `str.isnumeric()` classification predicate.
