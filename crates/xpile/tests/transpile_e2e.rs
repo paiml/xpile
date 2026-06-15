@@ -8724,6 +8724,31 @@ fn main() {
     assert_rustc_runs("bool_float", &rust, driver);
 }
 
+/// PMAT-682: a bare WIDTH format spec on a str (`f"{s:5}"` / `"{:8}".format(s)`)
+/// LEFT-aligns to the width in Python (`f"{'ab':5}"` == "ab   "); Rust's `{:5}`
+/// over a `String` is also left-aligned (Display default), so it passes through.
+/// Was rejected ("unsupported format spec :5 for a Str value"). Must NOT reuse
+/// the int width path (ints right-align). Cross-checked vs python3.
+#[test]
+fn str_width_format() {
+    let rust = xpile_transpile_to_rust("str_width_format.py");
+    assert!(
+        rust.contains(r#"format!("{:5}", s)"#) && rust.contains(r#"format!("{:8}", s)"#),
+        "str width spec should pass through as left-aligned {{:N}}:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(col("ab".to_string()), "ab   ");          // left-aligned, width 5
+    assert_eq!(col10("ab".to_string()), "ab        ");
+    assert_eq!(via_format("ab".to_string()), "ab      "); // .format() path, width 8
+    assert_eq!(right("ab".to_string()), "   ab");         // explicit right-align (regression)
+    assert_eq!(overflow("ab".to_string()), "ab ");
+    assert_eq!(overflow("hello".to_string()), "hello");   // wider than width → no truncation
+}
+"#;
+    assert_rustc_runs("str_width_format", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a

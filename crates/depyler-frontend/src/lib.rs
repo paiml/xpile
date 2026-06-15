@@ -11664,6 +11664,17 @@ fn translate_format_spec(spec: &str, ty: &Type) -> Option<String> {
             return Some(s);
         }
     }
+    // PMAT-682: a bare WIDTH on a str (`{:5}`) — Python LEFT-aligns strings to the
+    // width (`f"{'ab':5}"` == "ab   "), and Rust's `{:5}` over a `String` is ALSO
+    // left-aligned (the `Display` default), so pass it through verbatim. Crucially
+    // this must NOT reuse the int width path above (ints default RIGHT-aligned). A
+    // leading `0` (`{:05}`) is Python's zero-pad flag, which Python REJECTS for a
+    // string ("'=' alignment not allowed in string format specifier"), so only a
+    // plain non-zero-leading width is accepted; explicit alignment (`>5`/`<5`/`^5`)
+    // is already handled above.
+    if *ty == Type::Str && digits_only(spec) && !spec.starts_with('0') && !spec.is_empty() {
+        return Some(spec.to_string());
+    }
     None
 }
 
