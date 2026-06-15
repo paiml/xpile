@@ -10488,31 +10488,27 @@ fn lower_slice_in_ctx(
                 list: Box::new(collection),
             });
         }
-        // PMAT-502bc / PMAT-548: an integer-literal step over a *list*. A
-        // positive step keeps `xs[a:b:c]` (1 is the default, dropped). A
-        // **negative** step `xs[::-k]` (k ≥ 2) over a list with NO bounds
-        // reverses then steps (codegen emits `.iter().rev().step_by(|k|)`); the
-        // `xs[::-1]` reverse is the special case handled above. Bounded
-        // negative-step slices (different start/stop defaults) and stepped
-        // string slices remain deferred.
+        // PMAT-502bc / PMAT-548: an integer-literal step over a *list* or
+        // *str*. A positive step keeps `xs[a:b:c]` (1 is the default, dropped).
+        // A **negative** step `xs[::-k]` (k ≥ 2) with NO bounds reverses then
+        // steps (codegen emits `.iter().rev().step_by(|k|)`); the `xs[::-1]` /
+        // `s[::-1]` reverse is the special case handled above. PMAT-633: str
+        // gains full step parity with list (was deferred) — a str slice is
+        // char-indexed (`__sl: Vec<char>`), so the same step machinery applies.
+        // Bounded negative-step slices (different start/stop defaults) remain
+        // deferred for both list and str.
         match extract_step_literal(step) {
             Some(s) if s < 0 => {
-                if of_str || slice.lower.is_some() || slice.upper.is_some() {
+                if slice.lower.is_some() || slice.upper.is_some() {
                     return Err(FrontendError::Lower(format!(
-                        "function `{}` uses a negative-step slice with bounds or over a `str`; \
-                         v0.2.0 supports only the unbounded list form `xs[::-k]` (and `xs[::-1]`/`s[::-1]`)",
+                        "function `{}` uses a negative-step slice with bounds; \
+                         v0.2.0 supports only the unbounded form `xs[::-k]`/`s[::-k]` (and `xs[::-1]`/`s[::-1]`)",
                         ctx.fn_name
                     )));
                 }
                 step_lit = Some(s); // negative → codegen reverses + steps
             }
             Some(s) if s >= 1 => {
-                if of_str {
-                    return Err(FrontendError::Lower(format!(
-                        "function `{}` uses a stepped string slice — deferred at v0.2.0",
-                        ctx.fn_name
-                    )));
-                }
                 step_lit = if s == 1 { None } else { Some(s) };
             }
             // s == 0 or non-literal step.

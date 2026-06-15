@@ -7021,6 +7021,35 @@ fn main() {
     assert_rustc_runs("str_slice_char", &rust, driver);
 }
 
+/// PMAT-633: stepped string slices `s[a:b:step]` — str gains full step parity
+/// with list slices (previously deferred / rejected). Char-indexed via the
+/// `Vec<char>` path (Unicode-correct); a positive step `s[::k]`/`s[a:b:k]`
+/// collects every k-th char, an unbounded negative step `s[::-k]` reverses then
+/// steps. The `s[::-1]` reverse special case is unaffected. Cross-checked vs
+/// python3, including Unicode input.
+#[test]
+fn str_stepped_slice() {
+    let rust = xpile_transpile_to_rust("str_stepped_slice.py");
+    // str step collects into String (not Vec) off the Vec<char> path.
+    assert!(
+        rust.contains(".step_by(2usize).collect::<String>()")
+            || rust.contains(".step_by(2).collect::<String>()"),
+        "str step should collect to String:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(every_other("abcdefgh".to_string()), "aceg");
+    assert_eq!(bounded_step("abcdefgh".to_string()), "bdfh");
+    assert_eq!(every_third("abcdefghij".to_string()), "adgj");
+    assert_eq!(rev_every_other("abcdef".to_string()), "fdb");
+    // Unicode: char-indexed, not byte-indexed.
+    assert_eq!(unicode_step("αβγδεζ".to_string()), "αγε");
+    assert_eq!(still_reverse("abcde".to_string()), "edcba");
+}
+"#;
+    assert_rustc_runs("str_stepped_slice", &rust, driver);
+}
+
 /// PMAT-566 (Tranche 2): **correctness** — `str.find/rfind/index/rindex` return
 /// a Python **character** index, not Rust's byte offset. Was
 /// `.find(...).map(|i| i as i64)` (byte offset → `"αβγδ".find("γ")` == 4); now a

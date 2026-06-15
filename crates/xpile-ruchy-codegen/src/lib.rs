@@ -1434,19 +1434,35 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             resolve(out, hi, "__n", mode)?;
             out.push_str("; let __lo = __lo_i as usize; let __hi = __hi_i.max(__lo_i) as usize; ");
             match step {
-                // PMAT-548: negative list step `xs[::-k]` reverses then steps.
+                // PMAT-548/633: negative step `xs[::-k]`/`s[::-k]` reverses then
+                // steps; str collects into String (Vec<char>), list into Vec.
                 Some(s) if *s < 0 => {
                     let k = (-s) as usize;
-                    write!(
-                        out,
-                        "__sl[__lo..__hi].iter().rev().step_by({k}).cloned().collect::<Vec<_>>() }}"
-                    )?;
+                    if *of_str {
+                        write!(
+                            out,
+                            "__sl[__lo..__hi].iter().rev().step_by({k}).collect::<String>() }}"
+                        )?;
+                    } else {
+                        write!(
+                            out,
+                            "__sl[__lo..__hi].iter().rev().step_by({k}).cloned().collect::<Vec<_>>() }}"
+                        )?;
+                    }
                 }
+                // PMAT-633: positive step — str into String, list into Vec.
                 Some(s) => {
-                    write!(
-                        out,
-                        "__sl[__lo..__hi].iter().step_by({s}).cloned().collect::<Vec<_>>() }}"
-                    )?;
+                    if *of_str {
+                        write!(
+                            out,
+                            "__sl[__lo..__hi].iter().step_by({s}).collect::<String>() }}"
+                        )?;
+                    } else {
+                        write!(
+                            out,
+                            "__sl[__lo..__hi].iter().step_by({s}).cloned().collect::<Vec<_>>() }}"
+                        )?;
+                    }
                 }
                 None => out.push_str(if *of_str {
                     // PMAT-567: `__sl` is `Vec<char>` for str.
