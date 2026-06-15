@@ -19,6 +19,22 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.363] — 2026-06-15
+
+Tranche 2 — PMAT-664: **correctness** — `round(x)` guards inf/nan + out-of-i64 range.
+
+- `round(x)` of a non-finite float raises in Python (OverflowError on inf,
+  ValueError on nan) and returns a bigint for a huge magnitude; xpile's
+  `(x).round_ties_even() as i64` saturated inf/huge to i64::MAX and garbage-cast
+  nan to 0 — a silent value/panic divergence.
+- Fix (both backends, the `Expr::RoundToInt` arm, no IR change): bind the rounded
+  value, then guard `!is_finite()` (panic, OverflowError/ValueError) and i64
+  range (fail loud pending the bigint slow path) before the cast. Mirrors the
+  int()/math.floor guards. Normal banker's rounding is unchanged.
+- Differential-verified vs python3 (normal banker's-rounding cases; inf/nan now
+  panic where Python raises). New e2e fixture `round_nonfinite.py`. 421 e2e
+  fixtures. Found by HUNT-V4.
+
 ## [0.1.362] — 2026-06-15
 
 Tranche 2 — PMAT-663: **correctness** — `not <int>` / `not <float>` truthiness.
