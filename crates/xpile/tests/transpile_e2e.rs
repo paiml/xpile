@@ -8608,6 +8608,44 @@ fn main() {
     assert_rustc_runs("float_format_width_precision", &rust, driver);
 }
 
+/// PMAT-678: an identity comprehension `[w for w in words]` over `list[str]`
+/// must keep the element type — it previously inferred `List(I64)` (the loop var
+/// is unbound during the `Expr::Map` body type-inference), mis-typing the result
+/// and rejecting `sorted([w for w in words])` / `max(...)` ("body produces
+/// List(I64)"). Fixed by binding the loop var to the iterable's element type in
+/// the inference arms (mirroring the lowering binding). Cross-checked vs python3.
+#[test]
+fn identity_comprehension_str() {
+    let rust = xpile_transpile_to_rust("identity_comprehension_str.py");
+    assert!(
+        rust.contains("fn echo_sorted(words: Vec<String>) -> Vec<String>"),
+        "identity str comprehension should keep Vec<String>:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    use std::collections::HashMap;
+    assert_eq!(
+        echo_sorted(vec!["pear".to_string(), "apple".to_string(), "kiwi".to_string()]),
+        vec!["apple".to_string(), "kiwi".to_string(), "pear".to_string()]
+    );
+    assert_eq!(
+        echo_max(vec!["pear".to_string(), "apple".to_string(), "kiwi".to_string()]),
+        "pear".to_string()
+    );
+    assert_eq!(
+        filtered(vec!["b".to_string(), "".to_string(), "a".to_string()]),
+        vec!["a".to_string(), "b".to_string()]
+    );
+    assert_eq!(ints_regression(vec![3, 1, 2]), vec![1, 2, 3]);
+    let mut d = HashMap::new();
+    d.insert("b".to_string(), 1);
+    d.insert("a".to_string(), 2);
+    assert_eq!(pairs(d), vec!["a".to_string(), "b".to_string()]);
+}
+"#;
+    assert_rustc_runs("identity_comprehension_str", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a
