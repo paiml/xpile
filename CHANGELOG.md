@@ -7,6 +7,31 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.371] — 2026-06-15
+
+### Fixed
+
+- **PMAT-672 — chained comparison now SHORT-CIRCUITS like Python.** A chained
+  comparison `a < b < c` must evaluate operands left-to-right and STOP at the
+  first false sub-comparison — Python never evaluates the trailing operands once
+  an earlier compare fails. PMAT-576 fixed the *double-eval* of the shared middle
+  operand by hoisting EVERY operand to a `let __cmpN` temp up front, then folding
+  the sub-comparisons over the temps with `&&`. That made `&&` short-circuit the
+  *comparisons* but left operand *evaluation* eager: a panic-prone or
+  side-effecting trailing operand (`10 < n < (100 // dv)` with `dv == 0`) ran even
+  when an earlier compare was false — a divide-by-zero panic / spurious side
+  effect where Python returns `False`. **Fix** (frontend only, the chained-`Compare`
+  lowering; NO IR change): emit a RIGHT-NESTED form — each shared (interior)
+  operand is bound to a temp the moment it is first reached, inside the `if` of the
+  prior sub-comparison (`{ let __t1 = b; if (a OP0 __t1) { { let __t2 = c; if (__t1
+  OP1 __t2) { __t2 OP2 d } else { false } } } else { false } }`). This evaluates
+  every operand exactly once (preserving the PMAT-576 single-pop guarantee) AND
+  only when Python would (restoring short-circuit). Differential-verified vs
+  python3: `guard(2, 0)` short-circuits before `100 // 0` (no panic), all-true /
+  mid-false / 4-term chains, and the pop-once side-effect regression. New e2e
+  fixture `chain_short_circuit.py` (rustc round-trip). e2e 428 → 429. Found by
+  HUNT-V5 (comparison-chains-2-1/2).
+
 ### Known limitations
 
 - **PMAT-537 (deferred): dict insertion order is not preserved.** The transpiler
