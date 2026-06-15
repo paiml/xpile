@@ -3547,6 +3547,48 @@ fn inject_break_flag_into_loop(stmt: &mut Stmt, flag: &str) {
 }
 
 fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt>, FrontendError> {
+    // PMAT-705: desugar a nested-tuple pair target (`for i, (a, b) in
+    // enumerate(xs)`, `for k, (a, b) in d.items()`) — the pair-loop below needs
+    // both targets to be plain Names. Rewrite each tuple element of a 2-tuple
+    // target to a fresh Name and PREPEND a `(a, b) = __xpile_pairN` unpack to the
+    // body; the existing pair-loop then handles `i, __xpile_pairN` and the standard
+    // tuple-unpack destructures each fresh temp (which binds to the element tuple).
+    if let ast::Expr::Tuple(tgt) = f.target.as_ref() {
+        if tgt.elts.len() == 2 && tgt.elts.iter().any(|e| matches!(e, ast::Expr::Tuple(_))) {
+            let rng = tgt.range;
+            let mut new_elts: Vec<ast::Expr> = Vec::with_capacity(2);
+            let mut prepends: Vec<ast::Stmt> = Vec::new();
+            for (idx, elt) in tgt.elts.iter().enumerate() {
+                if matches!(elt, ast::Expr::Tuple(_)) {
+                    let fresh = format!("__xpile_pair{idx}");
+                    prepends.push(ast::Stmt::Assign(ast::StmtAssign {
+                        range: rng,
+                        targets: vec![elt.clone()],
+                        value: Box::new(ast::Expr::Name(ast::ExprName {
+                            range: rng,
+                            id: ast::Identifier::new(fresh.clone()),
+                            ctx: ast::ExprContext::Load,
+                        })),
+                        type_comment: None,
+                    }));
+                    new_elts.push(ast::Expr::Name(ast::ExprName {
+                        range: rng,
+                        id: ast::Identifier::new(fresh),
+                        ctx: ast::ExprContext::Store,
+                    }));
+                } else {
+                    new_elts.push(elt.clone());
+                }
+            }
+            f.target = Box::new(ast::Expr::Tuple(ast::ExprTuple {
+                range: rng,
+                elts: new_elts,
+                ctx: ast::ExprContext::Store,
+            }));
+            prepends.append(&mut f.body);
+            f.body = prepends;
+        }
+    }
     if !f.orelse.is_empty() {
         // PMAT-687: `for … else:` — the `else` runs iff the loop completed WITHOUT
         // `break`. Lower the loop with `orelse` cleared, set a fresh `__brokeN`

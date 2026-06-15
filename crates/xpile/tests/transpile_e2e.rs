@@ -9097,6 +9097,31 @@ fn main() {
     assert_rustc_runs("loop_else_mut", &rust, driver);
 }
 
+/// PMAT-705: a nested-tuple `for`-pair target (`for i, (a, b) in enumerate(xs)`,
+/// `for k, (a, b) in d.items()`) was rejected ("non-Name for target"). Desugared
+/// to a fresh temp + a prepended `(a, b) = __temp` unpack (reusing the pair-loop +
+/// tuple-unpack machinery); a nested var may be mutated. Cross-checked vs python3
+/// (HUNT-V8 item V8-8).
+#[test]
+fn for_nested_pair_target() {
+    let rust = xpile_transpile_to_rust("for_nested_pair_target.py");
+    assert!(
+        rust.contains("__xpile_pair") && rust.contains("let (a, b)"),
+        "nested for target should bind a temp + destructure:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(enum_nested(vec![(1, 2), (3, 4)]), 11); // (0+1+2)+(1+3+4)
+    let mut d = std::collections::HashMap::new();
+    d.insert("x".to_string(), (1, 2));
+    d.insert("y".to_string(), (3, 4));
+    assert_eq!(items_nested(d), 10);
+    assert_eq!(mutate_nested(vec![(1, 2), (3, 4)]), 30); // a += 10 each
+}
+"#;
+    assert_rustc_runs("for_nested_pair_target", &rust, driver);
+}
+
 /// PMAT-688: a walrus `(t := E)` in an `if` condition (evaluated once) is hoisted
 /// to `let mut t = E;` before the `if` (Python leaks `t` to the enclosing scope),
 /// so the body / following code can use `t`. Was an opaque `Discriminant(1)`
