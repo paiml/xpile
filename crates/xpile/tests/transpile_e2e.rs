@@ -1246,6 +1246,11 @@ fn starred_unpack() {
         rust.contains("[0i64 as usize].clone()") && rust.contains("__sl[__lo..__hi].to_vec()"),
         "starred unpack should index the head and slice the tail:\n{rust}"
     );
+    // PMAT-647: a later-mutated starred binding must be `let mut`.
+    assert!(
+        rust.contains("let mut rest:"),
+        "a mutated starred binding should be `let mut`:\n{rust}"
+    );
     let driver = r#"
 fn main() {
     assert_eq!(head_tail(vec![1, 2, 3, 4]), 109);  // 1*100 + (2+3+4)
@@ -1256,6 +1261,8 @@ fn main() {
     assert_eq!(star_first(vec![1, 2, 3, 4]), 406);          // last*100 + sum(init)
     assert_eq!(star_mid(vec![1, 2, 3, 4, 5]), 1509);        // 1*1000 + 5*100 + (2+3+4)
     assert_eq!(two_pre_two_suf(vec![1, 2, 3, 4, 5, 6]), 21); // 1+2+5+6 + (3+4)
+    // PMAT-647: a mutated starred binding must be `let mut`.
+    assert_eq!(star_then_mutate(vec![5, 3, 1, 2]), 10);     // 5 + 1 + 4
 }
 "#;
     assert_rustc_runs("starred_unpack", &rust, driver);

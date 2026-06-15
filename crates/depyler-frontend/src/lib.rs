@@ -546,6 +546,15 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                         for e in &t.elts {
                             if let ast::Expr::Name(n) = e {
                                 *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                            } else if let ast::Expr::Starred(s) = e {
+                                // PMAT-647: the starred target `*rest` in
+                                // `a, *rest = xs` binds `rest` — count it so a
+                                // later mutation (`rest.append(...)`) lifts it to
+                                // `let mut` (the PMAT-645/646 desugar emits a
+                                // plain `let` whose mutability comes from here).
+                                if let ast::Expr::Name(n) = s.value.as_ref() {
+                                    *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                                }
                             } else if let Some(base) = subscript_chain_base_name(e) {
                                 // PMAT-559: `xs[i], xs[j] = …` (subscript-target
                                 // swap / parallel assign) mutates the base
