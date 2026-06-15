@@ -9103,7 +9103,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 }
                 // PMAT-502be: `bool(x)` truthiness cast — a pure desugar to a
                 // `!= 0` comparison (no new Expr). int → `x != 0`; str / list /
-                // dict / set → `len(x) != 0`; bool → identity. (float deferred.)
+                // dict / set → `len(x) != 0`; bool → identity; float → `x != 0.0`.
                 if fname.id.as_str() == "bool" && call.keywords.is_empty() && call.args.len() == 1 {
                     let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                     let ne_zero = |lhs: Expr| Expr::BinOp {
@@ -9114,11 +9114,22 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     return match infer_type_in_ctx(ctx, &value) {
                         Type::Bool => Ok(value),
                         Type::I64 => Ok(ne_zero(value)),
+                        // PMAT-681: `bool(x)` over a float is `x != 0.0` — closes a
+                        // self-inconsistency (the implicit `if x:` float-truthiness
+                        // path already lowers to `x != 0.0`). Rust `x != 0.0`
+                        // matches Python exactly: 0.0 / -0.0 are falsy, NaN is
+                        // truthy (`NaN != 0.0` is true). (Was rejected: "float
+                        // deferred".)
+                        Type::F64 => Ok(Expr::BinOp {
+                            op: BinOp::NotEq,
+                            lhs: Box::new(value),
+                            rhs: Box::new(Expr::LitFloat(0.0)),
+                        }),
                         Type::Str | Type::List(_) | Type::Dict(_, _) | Type::Set(_) => {
                             Ok(ne_zero(Expr::Len(Box::new(value))))
                         }
                         other => Err(FrontendError::Lower(format!(
-                            "function `{}` calls `bool(...)` on a {other:?}; v0.2.0 supports bool over int/bool/str/list/dict/set",
+                            "function `{}` calls `bool(...)` on a {other:?}; v0.2.0 supports bool over int/bool/str/float/list/dict/set",
                             ctx.fn_name
                         ))),
                     };
