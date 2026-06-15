@@ -296,11 +296,12 @@ fn emit_stmt_indented(
             value,
         } => {
             // PMAT-547: mark each unpacked name `mut` per its `mutable` flag.
+            // PMAT-662: never prefix the `_` wildcard with `mut` (see rust backend).
             let pat = names
                 .iter()
                 .enumerate()
                 .map(|(i, n)| {
-                    if mutable.get(i).copied().unwrap_or(false) {
+                    if n != "_" && mutable.get(i).copied().unwrap_or(false) {
                         format!("mut {n}")
                     } else {
                         n.clone()
