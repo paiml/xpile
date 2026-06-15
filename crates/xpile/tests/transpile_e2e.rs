@@ -4475,6 +4475,29 @@ fn main() {
     assert_rustc_runs("bool_op_truthy_operand", &rust, driver);
 }
 
+/// PMAT-697: a float operand of `and`/`or` is truthy iff `!= 0.0` (IEEE-754
+/// exact: `-0.0` falsy, `nan`/`inf` truthy). The value-return forms (`x or 9.0`,
+/// `x and y` over float idents) and the bool-context form (`if x and y > 1.0`)
+/// were rejected. Cross-checked vs python3 (HUNT-V7 item V7-5, float sub-slice).
+#[test]
+fn bool_op_float_truthy() {
+    let rust = xpile_transpile_to_rust("bool_op_float_truthy.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(or_default(0.0), 9.0);  // 0.0 falsy
+    assert_eq!(or_default(-0.0), 9.0); // -0.0 falsy (IEEE-754: -0.0 != 0.0 is false)
+    assert_eq!(or_default(3.0), 3.0);
+    assert!(or_default(f64::NAN).is_nan()); // nan truthy -> returns x
+    assert_eq!(and_val(0.0, 5.0), 0.0);
+    assert_eq!(and_val(2.0, 5.0), 5.0);
+    assert_eq!(in_cond(2.0, 5.0), 5.0);
+    assert_eq!(in_cond(0.0, 5.0), -1.0);
+    assert_eq!(in_cond(2.0, 0.5), -1.0);
+}
+"#;
+    assert_rustc_runs("bool_op_float_truthy", &rust, driver);
+}
+
 /// PMAT-502cf (Tranche 2): dict comprehension over `d.items()` with a tuple
 /// target → a `ForEachPair(Pairs)` loop building the dict.
 #[test]

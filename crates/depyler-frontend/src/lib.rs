@@ -12220,6 +12220,18 @@ fn bool_op_operand_truthy(ctx: &LoweringCtx, operand: &Expr) -> Option<Expr> {
             lhs: Box::new(Expr::Len(Box::new(operand.clone()))),
             rhs: Box::new(Expr::LitInt(0)),
         }),
+        // PMAT-697: a float operand is truthy iff `!= 0.0`. IEEE-754 makes this
+        // exact at the edges — `-0.0 != 0.0` is `false` (falsy), `nan != 0.0` is
+        // `true` (truthy) — matching Python's `bool(float)` (cf. `truthy_condition`
+        // and PMAT-681). Enables `if x and ...` (bool context) and `x or 9.0` /
+        // `x and y` over float idents (value-return). `Optional`/non-`Ident`-lead
+        // operands stay deferred (the value-return Optional form needs a `filter`,
+        // not `unwrap_or`).
+        Type::F64 => Some(Expr::BinOp {
+            op: BinOp::NotEq,
+            lhs: Box::new(operand.clone()),
+            rhs: Box::new(Expr::LitFloat(0.0)),
+        }),
         _ => None,
     }
 }
