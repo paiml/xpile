@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.380] — 2026-06-15
+
+### Fixed
+
+- **PMAT-681 — `bool(float)` lowers to `x != 0.0`.** `bool(x)` over a float was
+  rejected ("v0.2.0 supports bool over int/bool/str/list/dict/set" — "float
+  deferred"), despite the implicit `if x:` float-truthiness path already lowering
+  to `x != 0.0`. **Fix** (frontend only, one arm, NO IR change): the `bool(...)`
+  intercept now has a `Type::F64 => x != 0.0` arm. Rust `x != 0.0` matches Python's
+  float truthiness exactly — `0.0` and `-0.0` are falsy, `NaN` and `inf` are truthy
+  (`NaN != 0.0` is true). Differential-verified vs python3 (`0.0`/`-0.0` → false,
+  `1.5`/`-2.0`/`inf` → true, `nan` → true). New e2e fixture `bool_float.py` (rustc
+  round-trip). e2e 437 → 438. Found by HUNT-V6 (item C7).
+
 ## [0.1.379] — 2026-06-15
 
 ### Fixed
