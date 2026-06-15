@@ -939,6 +939,12 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
                 }
                 emit_type(out, t)?;
             }
+            // PMAT-625: a 1-element tuple needs a trailing comma — `(T,)` — else
+            // `(T)` is just a parenthesized `T` (not a tuple), so `.0`/indexing
+            // fails to compile (E0610).
+            if elems.len() == 1 {
+                out.push(',');
+            }
             out.push(')');
         }
         // PMAT-046: bashrs-domain types. Rust backend refuses — the
@@ -1531,6 +1537,11 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     out.push_str(", ");
                 }
                 emit_expr(out, e, mode)?;
+            }
+            // PMAT-625: a 1-element tuple literal needs a trailing comma — `(x,)`
+            // — else `(x)` is just a parenthesized value, not a tuple.
+            if elems.len() == 1 {
+                out.push(',');
             }
             out.push(')');
         }
