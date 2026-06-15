@@ -7,6 +7,32 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.388] — 2026-06-15
+
+### Fixed
+
+- **PMAT-689 — `any()`/`all()` over a generator short-circuits.** `any(P(x) for x in
+  xs)` / `all(...)` over a GENERATOR expression must short-circuit like Python's lazy
+  genexpr, but xpile lowered it to `.map(P).collect::<Vec>().iter().any(..)` — eager,
+  evaluating P for EVERY element. A not-yet-needed element that errors (`any(1000 // x
+  > 5 for x in [1, 0])`: x=0 divides by zero) panicked at runtime where Python
+  short-circuits at x=1 and returns `True`. **Fix**: add a `short_circuit` field to
+  `Expr::BoolReduce` (set when the arg is a generator expression); the codegen (rust +
+  ruchy) then fuses the inner `Map`'s predicate into the `any`/`all` closure
+  (`xs.iter().cloned().any(|x| P(x))`), and Rust's any/all short-circuit, matching
+  Python. A LIST comprehension (`any([P(x) for x in xs])`) is eager in Python, so it
+  is NOT fused (keeps the eager form — no new divergence). Differential-verified vs
+  python3 (`any(1000//x>5 for x in [1,0])` → True; `all(x>0 and 100//x>0 for x in
+  [5,-1,0])` → False; genexpr truthiness; list-comp stays eager). New e2e fixture
+  `any_all_short_circuit.py` (rustc round-trip). e2e 445 → 446. Found by HUNT-V7
+  (item V7-3).
+
+### Chore
+
+- Removed a stray `libg_lib.rlib` build artifact accidentally committed via `git
+  add -A`, and added `*.rlib`/`*.rmeta`/`*.o` to `.gitignore` so an in-place
+  `rustc` of a transpiled lib (differential-hunt / e2e probes) can never leak again.
+
 ## [0.1.387] — 2026-06-15
 
 ### Added
