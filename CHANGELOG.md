@@ -19,6 +19,21 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.353] — 2026-06-15
+
+Tranche 2 — PMAT-654: **correctness** — `len(tuple)` folds to the arity constant.
+
+- `len(t)` over a tuple emitted `Expr::Len` → `t.len() as i64`, but Rust tuples
+  have no `.len()` method → E0599 (transpile→invalid-rust). A Python tuple's
+  length is fixed by its type and known at compile time.
+- Fix (frontend only, the len() builtin intercept, no IR change): when the
+  operand infers to `Type::Tuple(elems)`, fold `len(t)` to
+  `Expr::LitInt(elems.len())` — the arity constant. List `len()` keeps `.len()`;
+  str `len()` keeps `chars().count()` (PMAT-564).
+- Differential-verified vs python3 (3-elem param tuple, 4-elem literal, mixed
+  int/str pair, plus list/str len regressions). New e2e fixture `len_tuple.py`.
+  411 e2e fixtures. Found by HUNT-V3.
+
 ## [0.1.352] — 2026-06-15
 
 Tranche 2 — PMAT-653: **correctness** — `max()`/`min()` with a float key compiles.
