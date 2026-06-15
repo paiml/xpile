@@ -7438,6 +7438,24 @@ fn main() {
     assert_rustc_runs("min_max_str_list", &rust, driver);
 }
 
+/// PMAT-704: variadic `max(a, b, key=fn)` / `min(a, b, c, key=fn)` — the args are
+/// the elements (not an iterable); was rejected ("passes keyword args to unknown
+/// function max"). Builds a list literal + reuses the `ListMinMax` key path; a key
+/// tie returns the first arg (Python). Cross-checked vs python3 (HUNT-V8 V8-13).
+#[test]
+fn max_min_variadic_key() {
+    let rust = xpile_transpile_to_rust("max_min_variadic_key.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(longest("cd".to_string(), "abc".to_string()), "abc");
+    assert_eq!(shortest3("xy".to_string(), "z".to_string(), "abcd".to_string()), "z");
+    assert_eq!(by_abs(-5, 3), -5); // abs(-5)=5 > abs(3)=3
+    assert_eq!(first_on_tie("ab".to_string(), "cd".to_string()), "ab"); // tie → first
+}
+"#;
+    assert_rustc_runs("max_min_variadic_key", &rust, driver);
+}
+
 /// PMAT-502eq (Tranche 2): shallow copy — `xs.copy()` / `d.copy()` / `s.copy()`
 /// over a list / dict / set → `Expr::Clone` (`(<inner>).clone()`). The copy is
 /// independent: mutating it leaves the original unchanged. Cross-checked vs

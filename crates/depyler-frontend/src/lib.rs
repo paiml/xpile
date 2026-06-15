@@ -9871,6 +9871,49 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         }
                     }
                 }
+                // PMAT-704: variadic `max(a, b, key=fn)` / `min(a, b, c, key=fn)`
+                // (2+ positional args WITH a `key=`). The 1-arg form above takes
+                // an iterable; here the args ARE the elements, so build a list
+                // literal from them and reuse the `ListMinMax` key path. Scoped to
+                // a `key=` being present (variadic WITHOUT a key already lowers via
+                // a separate path); `default=` is meaningless with explicit args
+                // (never empty) and falls through (Python rejects it too).
+                if matches!(fname.id.as_str(), "min" | "max")
+                    && call.args.len() >= 2
+                    && call
+                        .keywords
+                        .iter()
+                        .any(|kw| kw.arg.as_deref() == Some("key"))
+                {
+                    let mut elems: Vec<Expr> = Vec::with_capacity(call.args.len());
+                    for a in &call.args {
+                        elems.push(lower_expr_in_ctx(ctx, a.clone())?);
+                    }
+                    let elem_ty = infer_type_in_ctx(ctx, &elems[0]);
+                    let mut key: Option<SortKey> = None;
+                    let mut kwargs_ok = true;
+                    for kw in &call.keywords {
+                        if kw.arg.as_deref() == Some("key") {
+                            if let Some(k) = lower_sort_key(ctx, &kw.value, Some(elem_ty.clone()))? {
+                                key = Some(k);
+                                continue;
+                            }
+                        }
+                        kwargs_ok = false;
+                    }
+                    if kwargs_ok {
+                        if let Some(k) = key {
+                            let of_float = sort_key_is_float(ctx, &k, Some(elem_ty));
+                            return Ok(Expr::ListMinMax {
+                                list: Box::new(Expr::ListLit(elems)),
+                                is_max: fname.id.as_str() == "max",
+                                of_float,
+                                key: Some(k),
+                                default: None,
+                            });
+                        }
+                    }
+                }
                 // PMAT-502c: `sorted(xs)` over a list → a new sorted list.
                 // PMAT-502f: optional `reverse=<bool literal>` (descending).
                 // PMAT-502z: optional `key=lambda p: e` (sort_by_key). The
