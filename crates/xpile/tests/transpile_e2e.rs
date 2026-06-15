@@ -8918,6 +8918,33 @@ fn main() {
     assert_rustc_runs("int_radix_prefix", &rust, driver);
 }
 
+/// PMAT-656: `max(d)` / `min(d)` / `sum(d)` over a dict iterate its KEYS in
+/// Python. A bare dict arg fell through to an undefined free call (`max(d)` →
+/// E0425); it now materializes to the keys list, like `max(d.keys())`.
+/// Cross-checked vs python3.
+#[test]
+fn max_min_dict() {
+    let rust = xpile_transpile_to_rust("max_min_dict.py");
+    assert!(
+        !rust.contains("    max(d)") && !rust.contains("    min(d)"),
+        "max/min over a dict must not emit a bare free call:\n{rust}"
+    );
+    let driver = r#"
+fn dm(p: &[(i64, i64)]) -> std::collections::HashMap<i64, i64> { p.iter().cloned().collect() }
+fn sm(p: &[(&str, i64)]) -> std::collections::HashMap<String, i64> {
+    p.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+}
+fn main() {
+    assert_eq!(max_dict(dm(&[(5, 1), (2, 2), (8, 3)])), 8);  // was E0425
+    assert_eq!(min_dict(dm(&[(5, 1), (2, 2), (8, 3)])), 2);
+    assert_eq!(sum_dict(dm(&[(5, 1), (2, 2), (8, 3)])), 15); // keys: 5+2+8
+    assert_eq!(max_str_keys(sm(&[("apple", 1), ("pear", 2), ("fig", 3)])), "pear");
+    assert_eq!(max_dict_keys_regression(dm(&[(5, 1), (2, 2), (8, 3)])), 8);
+}
+"#;
+    assert_rustc_runs("max_min_dict", &rust, driver);
+}
+
 /// PMAT-502cz (Tranche 2): variadic `min`/`max` (`max(a, b, c)`).
 #[test]
 fn variadic_minmax() {

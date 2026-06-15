@@ -3199,6 +3199,15 @@ fn materialize_iterable_arg(
         Type::Set(_) => Ok(Some(Expr::SetToList {
             set: Box::new(lowered),
         })),
+        // PMAT-656: iterating a dict yields its KEYS in Python, so `max(d)` /
+        // `min(d)` / `sum(d)` (etc.) operate over the keys. Without this, a bare
+        // dict arg fell through to `None` and emitted an undefined free call
+        // (`max(d)` → E0425). Materialize to the keys view — the same `List(K)`
+        // that `max(d.keys())` already produces.
+        Type::Dict(_, _) => Ok(Some(Expr::DictView {
+            dict: Box::new(lowered),
+            kind: DictViewKind::Keys,
+        })),
         _ => Ok(None),
     }
 }
