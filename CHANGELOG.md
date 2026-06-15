@@ -19,6 +19,23 @@ meta-HIR and the trait surfaces.
   compiles standalone via `rustc` (no external crates), `indexmap` can't simply
   be used — it requires a Vec-backed ordered-map prelude across all backends.
 
+## [0.1.319] — 2026-06-15
+
+Tranche 2 — PMAT-620: **correctness** — a no-default `d.get(k)` in an f-string is rejected instead of emitting invalid Rust.
+
+- A no-default `d.get(k)` is `Option<T>`, which has no `Display`, so
+  `f"{d.get(k)}"` emitted `format!("{}", Option)` → rustc E0308 (transpile
+  succeeded, invalid Rust). `str(d.get(k))` and `print(d.get(k))` already reject a
+  bare Optional; the f-string field path was the lone inconsistency. Found by
+  differential hunt #7 (H7-9).
+- Fix (frontend f-string field lowering, no new IR): reject a `DictGetOpt` value
+  in an f-string field (spec and no-spec forms) with a clear message suggesting
+  `d.get(k, <default>)` or `d[k]` — fail-loud, consistent with str()/print(). The
+  supported forms (`d.get(k, default)`, `d[k]`) are unchanged. Rendering a bare
+  Optional to "None"/value is a deferred Optional sub-track.
+- New e2e `fstring_dict_get_rejected.py` (reject) + `fstring_dict_get_ok.py` (the
+  supported forms, cross-checked vs python3). 380 e2e fixtures.
+
 ## [0.1.318] — 2026-06-15
 
 Tranche 2 — PMAT-619: **correctness** — 3-arg `pow()` with a negative base and negative modulus.
