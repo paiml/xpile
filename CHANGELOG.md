@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.387] — 2026-06-15
+
+### Added
+
+- **PMAT-688 — walrus `:=` in an `if` condition.** `if (t := total + 1) > 10:`
+  was an opaque `unsupported expression: Discriminant(1)` reject. **Fix** (frontend
+  only, NO IR change): hoist the walrus to `let mut t = E;` before the `if` (Python
+  leaks `t` to the enclosing scope, so the body / following code can read it),
+  replacing the `NamedExpr` with a reference to the target name. An `if` condition
+  evaluates ONCE so the hoist is sound — but ONLY in unconditional positions
+  (top-level condition, a single comparison's operands, arithmetic/unary operands).
+  A `BoolOp` (`and`/`or`) and a chained comparison short-circuit their later
+  operands, so a walrus there is NOT hoisted and gets a clean reject (hoisting
+  would over-evaluate, diverging from Python); a `while` condition / comprehension /
+  general expression position likewise now gets a clear named reject instead of
+  the opaque discriminant. Differential-verified vs python3 (`(t := total+1) > 10`,
+  bare `if (t := total):`, arithmetic `(x := a) + 5 > 8`; `and`-walrus rejects).
+  New e2e fixture `walrus_if.py` (rustc round-trip). e2e 444 → 445. Found by
+  HUNT-V6 (item C9).
+
 ## [0.1.386] — 2026-06-15
 
 ### Added
