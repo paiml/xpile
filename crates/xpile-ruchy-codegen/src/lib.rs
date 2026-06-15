@@ -933,7 +933,10 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 emit_expr(out, lhs, mode)?;
                 out.push_str("; let __fz: f64 = ");
                 emit_expr(out, rhs, mode)?;
-                out.push_str("; if __fz == 0.0 { panic!(\"xpile: ZeroDivisionError: float floor division by zero\"); } let __fm = __fa % __fz; let mut __fd = (__fa - __fm) / __fz; if __fm != 0.0 && ((__fz < 0.0) != (__fm < 0.0)) { __fd -= 1.0; } let __ffl = __fd.floor(); if __fd - __ffl > 0.5 { __ffl + 1.0 } else { __ffl } }");
+                // PMAT-651: zero-quotient case returns copysign(0.0, a/b) like
+                // CPython's float_divmod, preserving the sign of a zero result
+                // (`-0.0 // 1.0` → `-0.0`). See the rust backend.
+                out.push_str("; if __fz == 0.0 { panic!(\"xpile: ZeroDivisionError: float floor division by zero\"); } let __fm = __fa % __fz; let mut __fd = (__fa - __fm) / __fz; if __fm != 0.0 && ((__fz < 0.0) != (__fm < 0.0)) { __fd -= 1.0; } if __fd != 0.0 { let __ffl = __fd.floor(); if __fd - __ffl > 0.5 { __ffl + 1.0 } else { __ffl } } else { (0.0_f64).copysign(__fa / __fz) } }");
             }
             // PMAT-591: Python float modulo is CPython `float_rem` —
             // `fmod(a,b)` (Rust `%`) + sign-adjust toward the divisor, else
