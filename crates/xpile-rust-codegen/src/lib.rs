@@ -674,49 +674,38 @@ fn emit_stmt_indented(
             indices,
             value,
         } => {
-            // PMAT-640: a single runtime-negative index wraps like Python
-            // (mirrors the `Expr::Index` read path, PMAT-639) — `xs[-1] = v`
-            // targets the last element instead of `(-1) as usize` = usize::MAX
-            // panicking. Bind the wrapped index to a temp FIRST (so `xs.len()`'s
-            // immutable borrow ends before the `index_mut` assign), then store.
-            // A non-negative literal index keeps the plain path below (no churn);
-            // a nested path (`grid[i][j] = v`, each level a different `len`)
-            // stays on the existing path (negative nested-assign is a follow-up).
-            let single_runtime =
-                indices.len() == 1 && !matches!(&indices[0], Expr::LitInt(n) if *n >= 0);
-            if single_runtime {
-                out.push_str(indent);
-                out.push_str("{ let __ai: i64 = (");
-                emit_expr(out, &indices[0], mode)?;
-                write!(
-                    out,
-                    ") as i64; let __aidx = if __ai < 0 {{ {list_name}.len() as i64 + __ai }} else {{ __ai }}; {list_name}[__aidx as usize] = "
-                )?;
-                emit_expr(out, value, mode)?;
-                out.push_str("; }");
-                writeln!(out)?;
-                return Ok(());
-            }
-            // PMAT-502dy: a multi-element path is nested list indexing
-            // (`grid[i][j] = v`) — each index is `usize`-coerced.
-            // PMAT-560: when an index references the receiver (e.g. the
-            // negative-index desugar `xs[len(xs) - k] = v`), the index's
-            // immutable borrow of `xs` conflicts with `index_mut`'s mutable
-            // borrow (E0502: `xs[xs.len() - 1] = v` doesn't compile). Bind each
-            // index to a temp FIRST, then assign — only when needed, so the
-            // common plain-index shape (`xs[i as usize] = v`) is unchanged.
-            let needs_temps = indices.iter().any(|i| expr_mentions_ident(i, list_name));
-            if needs_temps {
+            // PMAT-640/641: any runtime index (not a non-negative literal) — at
+            // ANY nesting level — wraps like Python (`xs[-1] = v`,
+            // `grid[i][-1] = v`), mirroring the `Expr::Index` read path. Each
+            // level's index is bound to a temp FIRST, using the
+            // progressively-indexed collection's own `len` for the wrap (only
+            // evaluated when the index is actually negative). Staging the indices
+            // first also ends the collection's immutable borrow before the
+            // `index_mut` assign — the E0502 the PMAT-560 self-referential
+            // desugar (`xs[len(xs) - k] = v`) hit (so this subsumes the old
+            // `needs_temps` path). An all-non-negative-literal path (`xs[0] = v`,
+            // `grid[0][1] = v`) keeps the bare form below (no wrap, no churn).
+            let any_runtime = indices
+                .iter()
+                .any(|i| !matches!(i, Expr::LitInt(n) if *n >= 0));
+            if any_runtime {
                 out.push_str(indent);
                 out.push_str("{ ");
                 for (n, index) in indices.iter().enumerate() {
-                    write!(out, "let __ix{n} = (")?;
+                    write!(out, "let __ai{n}: i64 = (")?;
                     emit_expr(out, index, mode)?;
-                    out.push_str(") as usize; ");
+                    write!(
+                        out,
+                        ") as i64; let __aidx{n} = if __ai{n} < 0 {{ {list_name}"
+                    )?;
+                    for p in 0..n {
+                        write!(out, "[__aidx{p} as usize]")?;
+                    }
+                    write!(out, ".len() as i64 + __ai{n} }} else {{ __ai{n} }}; ")?;
                 }
                 write!(out, "{list_name}")?;
                 for n in 0..indices.len() {
-                    write!(out, "[__ix{n}]")?;
+                    write!(out, "[__aidx{n} as usize]")?;
                 }
                 out.push_str(" = ");
                 emit_expr(out, value, mode)?;

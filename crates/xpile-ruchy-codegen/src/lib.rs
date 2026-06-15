@@ -608,39 +608,33 @@ fn emit_stmt_indented(
             indices,
             value,
         } => {
-            // PMAT-640: single runtime-negative index wraps like Python (mirrors
-            // the Rust backend / the Expr::Index read path).
-            let single_runtime =
-                indices.len() == 1 && !matches!(&indices[0], Expr::LitInt(n) if *n >= 0);
-            if single_runtime {
-                out.push_str(indent);
-                out.push_str("{ let __ai: i64 = (");
-                emit_expr(out, &indices[0], mode)?;
-                write!(
-                    out,
-                    ") as i64; let __aidx = if __ai < 0 {{ {list_name}.len() as i64 + __ai }} else {{ __ai }}; {list_name}[__aidx as usize] = "
-                )?;
-                emit_expr(out, value, mode)?;
-                out.push_str("; }");
-                writeln!(out)?;
-                return Ok(());
-            }
-            // PMAT-502dy: nested list indexing (`grid[i][j] = v`).
-            // PMAT-560: a self-referential index (`xs[len(xs) - k] = v`, the
-            // negative-index desugar) is bound to a temp first to avoid the
-            // index_mut borrow conflict (E0502) — mirrors the Rust backend.
-            let needs_temps = indices.iter().any(|i| expr_mentions_ident(i, list_name));
-            if needs_temps {
+            // PMAT-640/641: any runtime index (not a non-negative literal), at
+            // any nesting level, wraps like Python — mirrors the Rust backend.
+            // Each level's index is staged into a temp first (using the
+            // progressively-indexed collection's own `len`), which also ends the
+            // collection's immutable borrow before the `index_mut` assign
+            // (subsumes the old `needs_temps` self-referential path).
+            let any_runtime = indices
+                .iter()
+                .any(|i| !matches!(i, Expr::LitInt(n) if *n >= 0));
+            if any_runtime {
                 out.push_str(indent);
                 out.push_str("{ ");
                 for (n, index) in indices.iter().enumerate() {
-                    write!(out, "let __ix{n} = (")?;
+                    write!(out, "let __ai{n}: i64 = (")?;
                     emit_expr(out, index, mode)?;
-                    out.push_str(") as usize; ");
+                    write!(
+                        out,
+                        ") as i64; let __aidx{n} = if __ai{n} < 0 {{ {list_name}"
+                    )?;
+                    for p in 0..n {
+                        write!(out, "[__aidx{p} as usize]")?;
+                    }
+                    write!(out, ".len() as i64 + __ai{n} }} else {{ __ai{n} }}; ")?;
                 }
                 write!(out, "{list_name}")?;
                 for n in 0..indices.len() {
-                    write!(out, "[__ix{n}]")?;
+                    write!(out, "[__aidx{n} as usize]")?;
                 }
                 out.push_str(" = ");
                 emit_expr(out, value, mode)?;

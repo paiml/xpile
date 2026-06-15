@@ -4542,9 +4542,11 @@ fn main() {
 #[test]
 fn nested_index_assign() {
     let rust = xpile_transpile_to_rust("nested_index_assign.py");
+    // PMAT-641: a runtime (variable) index wraps each level (`__aidx{n}`) like
+    // Python negative indexing; an all-non-negative-literal path stays bare.
     assert!(
-        rust.contains("grid[i as usize][i as usize] =")
-            && rust.contains("g[i as usize][j as usize][k as usize] ="),
+        rust.contains("grid[__aidx0 as usize][__aidx1 as usize] =")
+            && rust.contains("g[__aidx0 as usize][__aidx1 as usize][__aidx2 as usize] ="),
         "nested index assign:\n{rust}"
     );
     let driver = r#"
@@ -6171,7 +6173,7 @@ fn main() {
 fn neg_runtime_index_assign() {
     let rust = xpile_transpile_to_rust("neg_runtime_index_assign.py");
     assert!(
-        rust.contains("if __ai < 0 { xs.len() as i64 + __ai }"),
+        rust.contains("if __ai0 < 0 { xs.len() as i64 + __ai0 }"),
         "runtime-negative write should wrap the index:\n{rust}"
     );
     let driver = r#"
@@ -6184,6 +6186,30 @@ fn main() {
 }
 "#;
     assert_rustc_runs("neg_runtime_index_assign", &rust, driver);
+}
+
+/// PMAT-641: **correctness** — a runtime-negative index at ANY nesting level of
+/// a subscript WRITE wraps like Python (`grid[-1][-1] = v`), each level using
+/// its own `len`. Completes the negative-index work (read 639, single write
+/// 640, nested write here); the assign wrap now also subsumes the old
+/// self-referential `needs_temps` path. Cross-checked vs python3.
+#[test]
+fn neg_nested_index_assign() {
+    let rust = xpile_transpile_to_rust("neg_nested_index_assign.py");
+    // Each level wraps via the progressively-indexed collection's own len.
+    assert!(
+        rust.contains("if __ai1 < 0 { grid[__aidx0 as usize].len() as i64 + __ai1 }"),
+        "inner level wraps via the indexed sub-collection's len:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(set_outer(vec![vec![1, 2], vec![3, 4]], -1), 99);  // grid[-1][0]
+    assert_eq!(set_inner(vec![vec![1, 2], vec![3, 4]], -1), 88);  // grid[0][-1]
+    assert_eq!(set_both_neg(vec![vec![1, 2], vec![3, 4]]), 77);   // grid[-1][-1]
+    assert_eq!(set_literal(vec![vec![1, 2], vec![3, 4]]), 50);
+}
+"#;
+    assert_rustc_runs("neg_nested_index_assign", &rust, driver);
 }
 
 /// PMAT-544 (Tranche 2): `enumerate(s)` / `zip(s, …)` over a **string** —
@@ -7928,8 +7954,10 @@ fn main() {
 #[test]
 fn nested_aug_assign() {
     let rust = xpile_transpile_to_rust("nested_aug_assign.py");
+    // PMAT-641: nested assign with a runtime (variable) index now wraps each
+    // level (`__aidx{n}`) like Python negative indexing.
     assert!(
-        rust.contains("grid[i as usize][i as usize] =")
+        rust.contains("grid[__aidx0 as usize][__aidx1 as usize] =")
             && rust.contains("let mut counts")
             && rust.contains("let mut xs"),
         "nested aug-assign should emit nested IndexAssign + mark literal receivers mut:\n{rust}"
