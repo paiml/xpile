@@ -8061,7 +8061,16 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
                     if matches!(infer_type_in_ctx(ctx, &recv), Type::Str) {
                         let arity = str_method_arity(op);
-                        if !call.keywords.is_empty() || call.args.len() != arity {
+                        // PMAT-632: `ljust`/`rjust`/`center` accept an optional
+                        // fill-char 2nd arg (`"ab".rjust(5, "*")`); every other
+                        // method requires exactly its arity.
+                        let allows_fill = matches!(
+                            op,
+                            StrMethodOp::RJust | StrMethodOp::LJust | StrMethodOp::Center
+                        );
+                        let ok_argc = call.args.len() == arity
+                            || (allows_fill && call.args.len() == arity + 1);
+                        if !call.keywords.is_empty() || !ok_argc {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` calls str `.{}(...)` with {} positional arg(s){}; \
                                  expected exactly {arity}",

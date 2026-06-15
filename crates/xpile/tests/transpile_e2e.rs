@@ -4335,6 +4335,31 @@ fn main() {
     assert_rustc_runs("center", &rust, driver);
 }
 
+/// PMAT-632: optional fill-char arg for `rjust`/`ljust`/`center`
+/// (`"ab".rjust(5, "*")`). Pads by repeating the fill string to the
+/// deficit char count; already-wide strings are returned unchanged. The
+/// `center` left-bias matches the space-fill form. Cross-checked vs python3.
+#[test]
+fn str_pad_fill() {
+    let rust = xpile_transpile_to_rust("str_pad_fill.py");
+    // Manual repeat-pad path (not `format!` width, which can't take a
+    // dynamic fill char).
+    assert!(rust.contains(".repeat(__w - __n)"), "fill repeat:\n{rust}");
+    let driver = r#"
+fn main() {
+    assert_eq!(pad_r("ab".to_string(), 5), "***ab");
+    assert_eq!(pad_l("ab".to_string(), 5), "ab***");
+    assert_eq!(pad_c("ab".to_string(), 6), "--ab--");
+    assert_eq!(pad_c("ab".to_string(), 7), "---ab--"); // CPython left-bias
+    // No padding when already wide enough (Python returns unchanged).
+    assert_eq!(pad_r("abcdef".to_string(), 3), "abcdef");
+    assert_eq!(pad_c("abcdef".to_string(), 3), "abcdef");
+    assert_eq!(lit_pad(), "0005");
+}
+"#;
+    assert_rustc_runs("str_pad_fill", &rust, driver);
+}
+
 /// PMAT-502cv (Tranche 2): `hex(n)` / `oct(n)` / `bin(n)` → radix strings
 /// (sign-first, `0x`/`0o`/`0b` prefix).
 #[test]
