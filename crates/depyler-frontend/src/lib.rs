@@ -141,6 +141,15 @@ struct LoweringCtx {
     /// otherwise hit the inner shadow), hence a counter rather than a
     /// constant.
     underscore_counter: usize,
+    /// PMAT-634: monotone counter minting fresh, unique synthetic loop-counter
+    /// names (`__forc{N}`) for `for i in range(...)` desugaring. The loop must
+    /// NOT use the user's variable as the while-counter: doing so clobbered an
+    /// outer loop's variable in nested same-name loops (`for i: for i:` → outer
+    /// ran once), left the post-loop value at `stop` instead of the last value,
+    /// and overwrote a pre-existing variable even when the range was empty. A
+    /// separate counter per loop (nested loops get distinct names) fixes all
+    /// three; the user variable is assigned from the counter inside the body.
+    loop_counter: usize,
     /// PMAT-502dz: the fresh name the innermost enclosing `for _`/`… for _ …`
     /// minted for its `_` target, so a body read of `_` (legal Python — `_`
     /// is an ordinary, if conventionally-unused, binding) lowers to that
@@ -198,6 +207,15 @@ impl LoweringCtx {
     fn exit_loop_var(&mut self, saved: Option<String>) {
         self.underscore_rename = saved;
     }
+
+    /// PMAT-634: mint a fresh, unique synthetic counter name (`__forc{N}`) for a
+    /// `range(...)` for-loop desugar. Nested loops claim distinct names so an
+    /// inner loop never clobbers an outer loop's counter.
+    fn fresh_loop_counter(&mut self) -> String {
+        let n = self.loop_counter;
+        self.loop_counter += 1;
+        format!("__forc{n}")
+    }
 }
 
 impl LoweringCtx {
@@ -244,6 +262,7 @@ impl LoweringCtx {
             enums,
             closure_returns: HashMap::new(),
             underscore_counter: 0,
+            loop_counter: 0,
             underscore_rename: None,
             narrowed_some: HashSet::new(),
             cls_name: None,
@@ -3663,62 +3682,78 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
 
     let step_expr = Expr::LitInt(step_int);
 
-    // Emit:
-    //   let mut target: i64 = <start>;
-    //   while (target <cmp> <stop>) {        // cmp = `<` (pos step) or `>` (neg step)
+    // PMAT-634: emit, using a SEPARATE synthetic counter `__forc{N}` (NOT the
+    // user variable) to drive the loop:
+    //   let mut __forc: i64 = <start>;
+    //   [let mut target: i64 = __forc;]      // only when `target` is fresh
+    //   while (__forc <cmp> <stop>) {         // cmp = `<` (pos step) / `>` (neg step)
+    //       target = __forc;                   // user var takes a value only when the body runs
     //       <body...>
-    //       target = (target).checked_add(<step>);
+    //       __forc = (__forc).checked_add(<step>);
     //   }
-    // PMAT-036: when the enclosing function is BigInt-mode (return
-    // type is BigInt → all `int` params auto-promoted, all int literals
-    // lifted in the body), the for-target's binding type must also be
-    // BigInt — otherwise the emitted `let mut i: i64 = n.clone()` is a
-    // type error against the BigInt `n` and the BigInt step literal in
-    // the tail. The choice of I64 vs BigInt is purely determined by the
-    // function's return type; no other inference is needed because the
-    // for-range desugaring rebinds `i` each iteration from the step
-    // expression which already carries the right type.
+    // The old desugar used `target` itself as the counter, which (1) clobbered
+    // an outer same-named loop in `for i: for i:` (inner reset the shared
+    // counter → outer ran once), (2) left the post-loop value at `stop` rather
+    // than the last value Python leaks, and (3) overwrote a pre-existing
+    // variable on an empty range (the unconditional `target = start`). Driving a
+    // fresh counter and assigning `target` only inside the body fixes all three.
     //
-    // PMAT-502dz: `for _ in range(n)` desugars to a counter `let mut _`,
-    // which Rust rejects (`_` is not a binding). Mint a fresh `__xpile_idx{N}`
-    // for the counter and register it so a body read of `_` resolves to the
-    // same name. Bounds were lowered above (so a bound reading an *outer* `_`
-    // still saw the outer rename); the rename installed here covers only this
-    // loop's body. `saved_rename` is restored once the body is lowered.
+    // PMAT-036: when the enclosing function is BigInt-mode the counter (and the
+    // fresh-target binding) must also be BigInt — determined purely by the
+    // function's return type.
+    //
+    // PMAT-502dz: `for _ in range(n)` mints a fresh `__xpile_idx{N}` for the `_`
+    // target so a body read of `_` resolves; `saved_rename` is restored once the
+    // body is lowered.
     let (target_name, saved_rename) = ctx.enter_loop_var(&target_name);
     let target_ty = match ctx.fn_return_type {
         Type::BigInt => Type::BigInt,
         _ => Type::I64,
     }
     .clone();
-    let init_stmt = if ctx.bound.contains(&target_name) {
-        Stmt::Assign {
-            name: target_name.clone(),
-            value: start_expr,
-        }
-    } else {
+
+    // The fresh counter — always a new `let mut`, distinct per (possibly nested)
+    // loop.
+    let counter = ctx.fresh_loop_counter();
+    ctx.name_types.insert(counter.clone(), target_ty.clone());
+    let mut stmts = Vec::with_capacity(3);
+    stmts.push(Stmt::Let {
+        name: counter.clone(),
+        ty: target_ty.clone(),
+        value: start_expr,
+        mutable: true,
+    });
+
+    // A fresh user variable is declared in the enclosing scope (initialized from
+    // the counter, so `start` is evaluated exactly once) so it survives the loop
+    // — Python leaks the loop variable. An already-bound variable gets no
+    // declaration, so an empty range leaves its prior value untouched.
+    if !ctx.bound.contains(&target_name) {
         ctx.bound.insert(target_name.clone());
         ctx.name_types
             .insert(target_name.clone(), target_ty.clone());
-        Stmt::Let {
+        stmts.push(Stmt::Let {
             name: target_name.clone(),
-            ty: target_ty,
-            value: start_expr,
-            // for-target is by definition reassigned each iteration —
-            // mutable. The pre-walk also flags it, but we set explicitly
-            // for clarity.
+            ty: target_ty.clone(),
+            value: Expr::Ident(counter.clone()),
             mutable: true,
-        }
-    };
+        });
+    }
 
     let cond_op = if step_int > 0 { BinOp::Lt } else { BinOp::Gt };
     let cond = Expr::BinOp {
         op: cond_op,
-        lhs: Box::new(Expr::Ident(target_name.clone())),
+        lhs: Box::new(Expr::Ident(counter.clone())),
         rhs: Box::new(stop_expr),
     };
 
-    let mut body = Vec::with_capacity(f.body.len() + 1);
+    // Body: assign the user variable from the counter FIRST (so it only takes a
+    // value when the body actually runs), then the lowered body.
+    let mut body = Vec::with_capacity(f.body.len() + 2);
+    body.push(Stmt::Assign {
+        name: target_name.clone(),
+        value: Expr::Ident(counter.clone()),
+    });
     for stmt in f.body {
         body.extend(lower_block_stmt(ctx, stmt)?);
     }
@@ -3737,18 +3772,18 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
             ctx.fn_name
         )));
     }
-    // Tail: target = target + step
+    // Tail: __forc = __forc + step
     body.push(Stmt::Assign {
-        name: target_name.clone(),
+        name: counter.clone(),
         value: Expr::BinOp {
             op: BinOp::Add,
-            lhs: Box::new(Expr::Ident(target_name)),
+            lhs: Box::new(Expr::Ident(counter)),
             rhs: Box::new(step_expr),
         },
     });
 
-    let while_stmt = Stmt::While { cond, body };
-    Ok(vec![init_stmt, while_stmt])
+    stmts.push(Stmt::While { cond, body });
+    Ok(stmts)
 }
 
 /// PMAT-502bk: does `stmts` contain a `continue` that belongs to *this*

@@ -4010,9 +4010,10 @@ fn main() {
 #[test]
 fn reversed_range() {
     let rust = xpile_transpile_to_rust("reversed_range.py");
-    // start = n - 1, descending (`i > …`).
+    // start = n - 1, descending. PMAT-634: a fresh counter `__forc{N}` drives
+    // the loop (`while __forc{N} > …`), not the user variable.
     assert!(
-        rust.contains("(n).checked_sub(1i64)") && rust.contains("while (i > "),
+        rust.contains("(n).checked_sub(1i64)") && rust.contains("while (__forc0 > "),
         "reversed range:\n{rust}"
     );
     let driver = r#"
@@ -9454,25 +9455,26 @@ fn main() {
     assert_rustc_runs("asserted", &rust, driver);
 }
 
-/// PMAT-008 + PMAT-036: validates negative-step `range(...)` under
+/// PMAT-008 + PMAT-036 + PMAT-634: validates negative-step `range(...)` under
 /// BigInt mode. `factorial_iter(n)` counts down via `for i in
 /// range(n, 0, -1): acc *= i`. The lowering must flip the cond from
-/// `<` to `>` AND emit the loop with BigInt-typed `i` (PMAT-036 fix
-/// — the for-target's binding type follows the enclosing function's
-/// return type now). Tail uses BigInt arithmetic.
+/// `<` to `>` AND emit the loop with a BigInt-typed counter (PMAT-036 — the
+/// counter's binding type follows the enclosing function's return type).
+/// PMAT-634: a fresh synthetic counter `__forc{N}` drives the loop, not the
+/// user variable. Tail uses BigInt arithmetic.
 #[test]
 fn for_range_negative_step_emitted_rust_computes_correct_values() {
     let rust = xpile_transpile_to_rust("countdown.py");
     assert!(
-        rust.contains("let mut i: xpile_bigint::BigInt = n"),
-        "expected BigInt for-target init (PMAT-036), got:\n{rust}"
+        rust.contains("let mut __forc0: xpile_bigint::BigInt = n"),
+        "expected BigInt counter init (PMAT-036/634), got:\n{rust}"
     );
     assert!(
-        rust.contains("while (i.clone() > xpile_bigint::BigInt::from(0i64))"),
-        "expected `i > 0` cond comparing BigInt operands, got:\n{rust}"
+        rust.contains("while (__forc0.clone() > xpile_bigint::BigInt::from(0i64))"),
+        "expected `__forc0 > 0` cond comparing BigInt operands, got:\n{rust}"
     );
     assert!(
-        rust.contains("i = (i.clone() + xpile_bigint::BigInt::from(-1i64))"),
+        rust.contains("__forc0 = (__forc0.clone() + xpile_bigint::BigInt::from(-1i64))"),
         "expected BigInt-mode negative-step tail, got:\n{rust}"
     );
     // Inline xpile_bigint shim so the rustc-compiled driver doesn't
@@ -9507,27 +9509,60 @@ fn main() {
     assert_rustc_runs("countdown", &format!("{shim}\n{rust}"), driver);
 }
 
-/// PMAT-007: validates `for i in range(...)` desugaring. The three
-/// `range` shapes (stop, start+stop, start+stop+step) all lower to
-/// a `let mut i` + `while i < <stop>` + `i = i + <step>` tail.
+/// PMAT-634: **correctness** — for-range loop-variable semantics. The desugar
+/// uses a fresh synthetic counter `__forc{N}` (not the user variable), which
+/// fixes three silent miscompiles: (1) nested same-name loops (`for i: for i:`)
+/// no longer clobber the outer counter, (2) the post-loop value is the last
+/// iteration value (Python leak) not `stop`, (3) an empty range leaves a
+/// pre-existing variable untouched. Cross-checked vs python3.
+#[test]
+fn for_loop_var_semantics() {
+    let rust = xpile_transpile_to_rust("for_loop_var_semantics.py");
+    // The counter is synthetic, not the user variable.
+    assert!(
+        rust.contains("__forc0"),
+        "expected synthetic loop counter:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(nested_same_var(), 6);  // was 2 (inner clobbered outer)
+    assert_eq!(postloop_leak(), 2);    // was 3 (counter overran to stop)
+    assert_eq!(empty_range_keep(), 99); // was 0 (empty range clobbered)
+    assert_eq!(nested_diff(), 9);
+}
+"#;
+    assert_rustc_runs("for_loop_var_semantics", &rust, driver);
+}
+
+/// PMAT-007 / PMAT-634: validates `for i in range(...)` desugaring. The three
+/// `range` shapes (stop, start+stop, start+stop+step) all lower to a fresh
+/// synthetic counter `let mut __forc{N}` + `while __forc{N} <cmp> <stop>` +
+/// `__forc{N} = __forc{N} + <step>` tail, with the user variable assigned from
+/// the counter inside the body (PMAT-634 — the counter is no longer the user
+/// variable itself).
 #[test]
 fn for_range_emitted_rust_computes_correct_values() {
     let rust = xpile_transpile_to_rust("for_sum.py");
     assert!(
-        rust.contains("let mut i: i64 = 0i64"),
-        "expected init at 0:\n{rust}"
+        rust.contains("let mut __forc0: i64 = 0i64"),
+        "expected counter init at 0:\n{rust}"
     );
     assert!(
-        rust.contains("let mut i: i64 = a"),
-        "expected init at a:\n{rust}"
+        rust.contains("let mut __forc0: i64 = a"),
+        "expected counter init at a:\n{rust}"
     );
     assert!(
-        rust.contains("i = (i).checked_add(2i64)"),
+        rust.contains("__forc0 = (__forc0).checked_add(2i64)"),
         "expected step=2 tail:\n{rust}"
     );
     assert!(
-        rust.contains("while (i < n)"),
+        rust.contains("while (__forc0 < n)"),
         "expected while-cond:\n{rust}"
+    );
+    // PMAT-634: the user variable is assigned from the counter inside the body.
+    assert!(
+        rust.contains("i = __forc0"),
+        "expected user-var assigned from counter:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -9602,18 +9637,22 @@ fn transpile_countdown_py_to_lean_with_negative_step() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
-    // Free vars: only loop_state, since cond `i > 0` references only i.
+    // PMAT-634: a fresh synthetic counter `__forc0` drives the loop, so the
+    // helper threads `i`, `acc`, and `__forc0`; the cond and increment are on
+    // `__forc0`, and `i` is rebound from it each iteration.
     assert!(
-        stdout.contains("partial def factorial_iter_loop_0 (acc : Int) (i : Int) : Int :="),
-        "expected helper signature (no free vars), got:\n{stdout}"
+        stdout.contains(
+            "partial def factorial_iter_loop_0 (i : Int) (acc : Int) (__forc0 : Int) : Int :="
+        ),
+        "expected helper signature (counter threaded), got:\n{stdout}"
     );
     assert!(
-        stdout.contains("if (i > (0: Int)) then"),
-        "expected negative-step cond, got:\n{stdout}"
+        stdout.contains("if (__forc0 > (0: Int)) then"),
+        "expected negative-step cond on counter, got:\n{stdout}"
     );
     assert!(
-        stdout.contains("let i := (i + (-1: Int))"),
-        "expected negative-step body update, got:\n{stdout}"
+        stdout.contains("let __forc0 := (__forc0 + (-1: Int))"),
+        "expected negative-step counter update, got:\n{stdout}"
     );
 }
 
