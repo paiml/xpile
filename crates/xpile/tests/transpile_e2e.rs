@@ -8988,6 +8988,31 @@ fn main() {
     assert_rustc_runs("str_strip_charset", &rust, driver);
 }
 
+/// PMAT-692: keyless `max()`/`min()` over a `list[tuple[...]]` — a tuple of `Ord`
+/// elements is itself `Ord` (Rust derives lexicographic `Ord`, matching Python's
+/// tuple comparison). Was rejected ("produces I64") because the keyless gate only
+/// admitted scalar (`I64`/`F64`/`Str`/`Bool`) elements. Cross-checked vs python3.
+#[test]
+fn max_min_tuple() {
+    let rust = xpile_transpile_to_rust("max_min_tuple.py");
+    assert!(
+        rust.contains("fn maxpair(xs: Vec<(i64, i64)>) -> (i64, i64) {\n    xs.iter().cloned().max().unwrap()"),
+        "max() over list[tuple] should fold to .max() with the tuple element type:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(maxpair(vec![(1, 9), (3, 1), (3, 0)]), (3, 1));   // lexicographic
+    assert_eq!(minpair(vec![(1, 9), (3, 1), (3, 0)]), (1, 9));
+    assert_eq!(
+        max_str_tuple(vec![("a".to_string(), 2), ("b".to_string(), 1)]),
+        ("b".to_string(), 1)
+    );
+    assert_eq!(max_int_regression(vec![3, 1, 7, 2]), 7);   // scalar regression
+}
+"#;
+    assert_rustc_runs("max_min_tuple", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a
