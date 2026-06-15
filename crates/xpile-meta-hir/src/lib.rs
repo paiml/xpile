@@ -2229,6 +2229,12 @@ pub enum StrMethodOp {
     /// Python's `maxsplit` caps the number of *splits*, so the part count is
     /// `maxsplit + 1` (Rust `splitn` takes the part count). PMAT-518.
     SplitN,
+    /// `.rsplit(sep, maxsplit)` → `.rsplitn((maxsplit) as usize + 1, &(sep)[..])
+    /// .map(|s| s.to_string()).collect::<Vec<String>>()` THEN reversed
+    /// (List(Str), 2 args). PMAT-644. Like [`SplitN`] but splits from the RIGHT,
+    /// capping at `maxsplit` splits; Rust's `rsplitn` yields parts right-to-left,
+    /// so the collected Vec is reversed to restore Python's left-to-right order.
+    RSplitN,
     /// `.split()` (no arg) → `.split_whitespace().map(|s| s.to_string())
     /// .collect::<Vec<String>>()` (List(Str), 0 args). PMAT-502co. Python's
     /// no-arg split runs on any whitespace and drops empty fields, exactly

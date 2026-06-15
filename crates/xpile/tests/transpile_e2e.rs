@@ -5411,6 +5411,28 @@ fn main() {
     assert_rustc_runs("str_split_maxsplit", &rust, driver);
 }
 
+/// PMAT-644: `str.rsplit(sep, maxsplit)` — split from the RIGHT (cap at maxsplit
+/// splits), parts in left-to-right order. Rust `rsplitn` yields right-to-left,
+/// so the codegen reverses the collected Vec. Bare `rsplit(sep)` maps to `split`.
+/// Cross-checked vs python3.
+#[test]
+fn str_rsplit_maxsplit() {
+    let rust = xpile_transpile_to_rust("str_rsplit_maxsplit.py");
+    assert!(
+        rust.contains(".rsplitn(") && rust.contains(".into_iter().rev().collect::<Vec<String>>()"),
+        "rsplit should emit reversed `rsplitn`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(last_two(String::from("a/b/c/d")), "a/b|c|d"); // 2 splits from right
+    assert_eq!(strip_ext(String::from("a.b.c")), "a.b");
+    assert_eq!(no_limit(String::from("a.b.c")), "a|b|c");      // neg maxsplit = all
+    assert_eq!(bare(String::from("a.b.c")), 3);                // bare == split
+}
+"#;
+    assert_rustc_runs("str_rsplit_maxsplit", &rust, driver);
+}
+
 /// PMAT-519 (Tranche 2 — correctness): `frozenset(iterable)` — Rust has no
 /// frozen set, so it maps to a `HashSet` (an immutable set is one that's never
 /// mutated), routed through the same `SetFromList` path as `set(...)`. Previously

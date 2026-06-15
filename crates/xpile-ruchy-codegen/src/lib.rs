@@ -1306,6 +1306,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     emit_expr(out, &args[0], mode)?;
                     out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()");
                 }
+                // PMAT-644: `.rsplit(sep, maxsplit)` → `.rsplitn(...)` reversed
+                // (rsplitn yields right-to-left; restore Python order). Matches
+                // the Rust backend.
+                StrMethodOp::RSplitN => {
+                    out.push_str(".rsplitn(((");
+                    emit_expr(out, &args[1], mode)?;
+                    out.push_str(") as usize).saturating_add(1), &(");
+                    emit_expr(out, &args[0], mode)?;
+                    out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>().into_iter().rev().collect::<Vec<String>>()");
+                }
                 // PMAT-502co: no-arg `.split()` → whitespace split.
                 StrMethodOp::SplitWhitespace => {
                     out.push_str(
