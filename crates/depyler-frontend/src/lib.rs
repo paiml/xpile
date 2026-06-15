@@ -2540,9 +2540,10 @@ fn try_lower_list_method_call(
         // `of_float` tracks whether the key returns float (not the element type).
         let of_float = match &key {
             Some(k) => sort_key_is_float(ctx, k, elem_ty.clone()),
+            // PMAT-622: float anywhere in the element (tuple/nested) → partial_cmp.
             None => matches!(
                 infer_type_in_ctx(ctx, &Expr::Ident(receiver_name.to_string())),
-                Type::List(elem) if *elem == Type::F64
+                Type::List(elem) if type_contains_float(&elem)
             ),
         };
         return Some(Ok(Stmt::Assign {
@@ -2601,7 +2602,9 @@ fn try_lower_list_method_call(
                 ctx.fn_name
             ))));
         }
-        let of_float = matches!(inner.as_ref(), Type::F64);
+        // PMAT-622: a float ANYWHERE in the element (bare, tuple, nested list)
+        // needs the `partial_cmp` sort path, not `Vec::sort` (f64 not `Ord`).
+        let of_float = type_contains_float(inner.as_ref());
         ctx.mutable.insert(receiver_name.to_string());
         return Some(Ok(Stmt::ListMutate {
             list_name: receiver_name.to_string(),
@@ -8901,8 +8904,10 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                     k,
                                     sort_target_elem_type(ctx, &call.args[0]),
                                 ),
+                                // PMAT-622: float anywhere in the element
+                                // (tuple/nested list) → partial_cmp, not Vec::sort.
                                 None => {
-                                    matches!(infer_type_in_ctx(ctx, &list), Type::List(elem) if *elem == Type::F64)
+                                    matches!(infer_type_in_ctx(ctx, &list), Type::List(elem) if type_contains_float(&elem))
                                 }
                             };
                             return Ok(Expr::Sorted {
@@ -9974,6 +9979,20 @@ fn lower_math_call(
 /// key body is inferred with its param bound to the collection's element type
 /// (same binding `lower_sort_key` uses), so e.g. `key=lambda x: x / 2.0` over a
 /// `list[int]` is detected as a float key.
+/// PMAT-622: does this type contain a `float` anywhere a keyless sort would
+/// compare? A keyless `sorted`/`.sort()` over an element type that embeds an
+/// `f64` (a bare float, a tuple with a float, or a nested list of floats) cannot
+/// use `Vec::sort` (`f64` is not `Ord` → E0277) and must use the `partial_cmp`
+/// path (PMAT-578/616). Recurse through `Tuple` and `List`.
+fn type_contains_float(ty: &Type) -> bool {
+    match ty {
+        Type::F64 => true,
+        Type::Tuple(elems) => elems.iter().any(type_contains_float),
+        Type::List(inner) => type_contains_float(inner),
+        _ => false,
+    }
+}
+
 fn sort_key_is_float(ctx: &LoweringCtx, key: &SortKey, elem_type: Option<Type>) -> bool {
     let mut sub = ctx.clone();
     if let Some(ty) = elem_type {

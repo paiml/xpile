@@ -7163,6 +7163,33 @@ fn main() {
     assert_rustc_runs("sorted_float_nan", &rust, driver);
 }
 
+/// PMAT-622: sorting a list whose element *embeds* a float — a tuple with a
+/// float (`list[tuple[float, int]]`) or a nested list of floats
+/// (`list[list[float]]`) — emitted `Vec::sort()`, which needs `Ord`, but `f64`
+/// is not `Ord` → E0277. The keyless float-sort detection now recurses through
+/// `Tuple`/`List`, routing to the `partial_cmp` path; an int-only tuple still
+/// uses `.sort()`. Found by differential hunt #8 (H8-13). Cross-checked vs python3.
+#[test]
+fn sort_float_tuple() {
+    let rust = xpile_transpile_to_rust("sort_float_tuple.py");
+    assert!(
+        // float-embedding sorts use partial_cmp...
+        rust.contains("partial_cmp(__b).unwrap_or(std::cmp::Ordering::Equal)")
+            // ...but the int-only tuple sort stays a plain `.sort()`.
+            && rust.contains("__xv.sort(); __xv"),
+        "float-embedding sorts need partial_cmp; int-only stays .sort():\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(srt_tuple(vec![(2.5, 1), (1.5, 2), (1.5, 0)]), vec![(1.5, 0), (1.5, 2), (2.5, 1)]);
+    assert_eq!(srt_nested(vec![vec![2.0], vec![1.0], vec![1.0, 0.0]]), vec![vec![1.0], vec![1.0, 0.0], vec![2.0]]);
+    assert_eq!(inplace_tuple(vec![(3.0, 1), (1.0, 2)]), vec![(1.0, 2), (3.0, 1)]);
+    assert_eq!(srt_int_tuple(vec![(2, 1), (1, 9), (1, 0)]), vec![(1, 0), (1, 9), (2, 1)]);
+}
+"#;
+    assert_rustc_runs("sort_float_tuple", &rust, driver);
+}
+
 /// PMAT-603: sorting by a FLOAT-returning `key=` lambda. The key result is `f64`
 /// (no `Ord`), so `sort_by_key` was rejected (E0277); the float-key sort now
 /// uses `sort_by(partial_cmp)` (ascending, descending-stable, and the in-place
