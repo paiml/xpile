@@ -1233,6 +1233,29 @@ fn main() {
     assert_rustc_runs("tuple_unpack", &rust, driver);
 }
 
+/// PMAT-645: starred unpacking `n0, …, *star = xs` (star LAST) over a list —
+/// head/tail destructuring. Desugars to `let n_i = xs[i]` + `let star = xs[p:]`
+/// (no new IR; reuses Index + Slice). The source variable is borrowed (not
+/// moved). Cross-checked vs python3.
+#[test]
+fn starred_unpack() {
+    let rust = xpile_transpile_to_rust("starred_unpack.py");
+    // Prefix names index; the star binds a slice (block form) of the tail.
+    assert!(
+        rust.contains("[0i64 as usize].clone()") && rust.contains("__sl[__lo..__hi].to_vec()"),
+        "starred unpack should index the head and slice the tail:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(head_tail(vec![1, 2, 3, 4]), 109);  // 1*100 + (2+3+4)
+    assert_eq!(two_prefix(vec![10, 20, 30, 40, 50]), 33); // 10+20+3
+    assert_eq!(star_only(vec![1, 2, 3]), 6);
+    assert_eq!(keeps_source(vec![5, 6, 7, 8]), 12); // 5 + 3 + 4 (xs not moved)
+}
+"#;
+    assert_rustc_runs("starred_unpack", &rust, driver);
+}
+
 /// PMAT-496 (sprint): bounded slicing `xs[a:b]`. List → `Vec` via
 /// `.to_vec()`, str → `String` via `.to_string()` (byte-indexed).
 #[test]
