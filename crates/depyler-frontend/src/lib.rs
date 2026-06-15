@@ -8394,11 +8394,23 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 },
                             )));
                         }
-                        let args = call
-                            .args
-                            .iter()
-                            .map(|a| lower_expr_in_ctx(ctx, a.clone()))
-                            .collect::<Result<Vec<_>, _>>()?;
+                        // PMAT-668: `sep.join(d)` over a dict joins its KEYS in
+                        // Python (iterating a dict yields keys); a bare dict arg
+                        // emitted `d.join(...)` on a HashMap (no `.join` → E0599).
+                        // Materialize the join arg like the other builtins
+                        // (dict→keys, set→list, range→Vec, list→passthrough),
+                        // mirroring PMAT-656.
+                        let args = if matches!(op, StrMethodOp::Join) && call.args.len() == 1 {
+                            match materialize_iterable_arg(ctx, &call.args[0])? {
+                                Some(e) => vec![e],
+                                None => vec![lower_expr_in_ctx(ctx, call.args[0].clone())?],
+                            }
+                        } else {
+                            call.args
+                                .iter()
+                                .map(|a| lower_expr_in_ctx(ctx, a.clone()))
+                                .collect::<Result<Vec<_>, _>>()?
+                        };
                         return Ok(Expr::StrMethod {
                             recv: Box::new(recv),
                             op,

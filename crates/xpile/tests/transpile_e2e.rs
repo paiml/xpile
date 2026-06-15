@@ -9222,6 +9222,31 @@ fn main() {
     assert_rustc_runs("max_min_dict", &rust, driver);
 }
 
+/// PMAT-668: `sep.join(d)` over a dict joins its KEYS (iterating a dict yields
+/// keys). A bare dict arg emitted `d.join(...)` on a HashMap (E0599); the join
+/// arg now materializes to the keys, like `sep.join(d.keys())`. (Single-key
+/// dict for determinism — multi-key order is the deferred PMAT-537 limitation.)
+/// Cross-checked vs python3.
+#[test]
+fn join_dict_keys() {
+    let rust = xpile_transpile_to_rust("join_dict_keys.py");
+    assert!(
+        rust.contains(".keys().cloned().collect::<Vec<_>>().join("),
+        "join over a dict should iterate its keys:\n{rust}"
+    );
+    let driver = r#"
+fn dm(p: &[(&str, i64)]) -> std::collections::HashMap<String, i64> {
+    p.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+}
+fn main() {
+    assert_eq!(join_one_key(dm(&[("solo", 1)])), "solo");  // was E0599
+    assert_eq!(join_keys_regression(dm(&[("k", 9)])), "k");
+    assert_eq!(join_list_regression(vec!["x".to_string(), "y".to_string()]), "x,y");
+}
+"#;
+    assert_rustc_runs("join_dict_keys", &rust, driver);
+}
+
 /// PMAT-502cz (Tranche 2): variadic `min`/`max` (`max(a, b, c)`).
 #[test]
 fn variadic_minmax() {
