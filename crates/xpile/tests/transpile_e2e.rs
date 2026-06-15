@@ -4506,9 +4506,11 @@ fn main() {
 #[test]
 fn format_spec() {
     let rust = xpile_transpile_to_rust("format_spec.py");
+    // PMAT-680: a float `.Nf` spec now routes through the NaN-guarded FormatSpec
+    // (plain `{}` field + `is_nan()` guard) instead of an inlined `{:.2}`.
     assert!(
-        rust.contains(r#"format!("${:.2}", x)"#),
-        "float spec:\n{rust}"
+        rust.contains(r#"format!("${}", "#) && rust.contains("__nf.is_nan()"),
+        "float spec should route through the NaN-guarded FormatSpec:\n{rust}"
     );
     assert!(
         rust.contains(r#"format!("id={:05}", n)"#),
@@ -8673,6 +8675,31 @@ fn main() {
     assert_rustc_runs("sum_float_inf", &rust, driver);
 }
 
+/// PMAT-680: a bare float-precision format spec over NaN must print "nan"
+/// (Python), not Rust's "NaN". The f-string path already guarded this (PMAT-659);
+/// `.format()` and `%` inlined the spec into a bare `format!`, bypassing it.
+/// Fixed by routing the F64 arg through `Expr::FormatSpec` in both lowering paths
+/// (so the codegen NaN-guard fires). Cross-checked vs python3.
+#[test]
+fn format_float_nan() {
+    let rust = xpile_transpile_to_rust("format_float_nan.py");
+    assert!(
+        rust.contains("if __nf.is_nan() { String::from(\"nan\") }"),
+        ".format()/% float spec should NaN-guard via FormatSpec:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let n = f64::NAN;
+    assert_eq!(via_format(n), "nan");      // was "NaN"
+    assert_eq!(via_percent(n), "nan");     // was "NaN"
+    assert_eq!(pct_default(n), "nan");     // %f default precision
+    assert_eq!(via_fstring(n), "nan");     // already correct (regression)
+    assert_eq!(normal(3.14159), "3.14");   // normal value unaffected
+}
+"#;
+    assert_rustc_runs("format_float_nan", &rust, driver);
+}
+
 /// PMAT-557 (Tranche 2): the f-string **sign flag** `:+` — always show a sign.
 /// Python's `+` maps 1:1 to Rust's `{:+}`, composing with precision / width /
 /// zero-pad / radix (`{:+.2}`, `{:+05}`, `{:+x}`). A bare `:+` is int-only (a
@@ -9124,8 +9151,12 @@ fn main() {
 #[test]
 fn percent_format() {
     let rust = xpile_transpile_to_rust("percent_format.py");
+    // PMAT-680: `%f` now routes the float through the NaN-guarded FormatSpec
+    // (`format!("{:.6}", __nf)` inside an `is_nan()` guard) instead of inlining.
     assert!(
-        rust.contains("format!(\"{} items\", n)") && rust.contains("format!(\"{:.6}\", x)"),
+        rust.contains("format!(\"{} items\", n)")
+            && rust.contains("format!(\"{:.6}\", __nf)")
+            && rust.contains("__nf.is_nan()"),
         "percent format:\n{rust}"
     );
     let driver = r#"

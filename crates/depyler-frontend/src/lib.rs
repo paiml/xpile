@@ -12461,38 +12461,53 @@ fn lower_percent_format(
                 };
                 let bare =
                     width.is_empty() && prec.is_none() && !flag_left && !flag_zero && !flag_plus;
-                if bare {
-                    fmt.push_str("{}");
-                } else {
-                    // Assemble a Rust spec `{:[align][sign][0][width][.prec]}`.
-                    // Python right-aligns by default (incl. `%Ns`, where Rust
-                    // would left-align) → emit an explicit `>` unless `-`/`0`.
-                    let mut spec = String::from("{:");
+                // Assemble the Rust spec CORE `[align][sign][0][width][.prec]`
+                // (without the surrounding `{:` `}`). Python right-aligns by
+                // default (incl. `%Ns`, where Rust would left-align) → emit an
+                // explicit `>` unless `-`/`0`.
+                let mut core = String::new();
+                if !bare {
                     if flag_zero && !flag_left {
                         if flag_plus {
-                            spec.push('+');
+                            core.push('+');
                         }
-                        spec.push('0');
+                        core.push('0');
                     } else if flag_left {
-                        spec.push('<');
+                        core.push('<');
                         if flag_plus {
-                            spec.push('+');
+                            core.push('+');
                         }
                     } else {
                         if !width.is_empty() {
-                            spec.push('>');
+                            core.push('>');
                         }
                         if flag_plus {
-                            spec.push('+');
+                            core.push('+');
                         }
                     }
-                    spec.push_str(&width);
+                    core.push_str(&width);
                     if let Some(p) = &prec {
-                        spec.push('.');
-                        spec.push_str(p);
+                        core.push('.');
+                        core.push_str(p);
                     }
-                    spec.push('}');
-                    fmt.push_str(&spec);
+                }
+                if conv == 'f' {
+                    // PMAT-680: Rust prints NaN as "NaN", Python as "nan". Route
+                    // the float arg through `Expr::FormatSpec` (whose codegen
+                    // NaN-guards a float-precision spec, PMAT-659) and emit a plain
+                    // `{}` field — exactly as the f-string path does — instead of
+                    // inlining `{:.2}` (which would print "NaN"). `%f` always
+                    // carries a precision (default 6), so `core` is a float-prec
+                    // spec. (`%` args are positional, each used once → safe.)
+                    args[arg_idx] = Expr::FormatSpec {
+                        value: Box::new(args[arg_idx].clone()),
+                        rust_spec: core,
+                    };
+                    fmt.push_str("{}");
+                } else if bare {
+                    fmt.push_str("{}");
+                } else {
+                    fmt.push_str(&format!("{{:{core}}}"));
                 }
                 arg_idx += 1;
             }
@@ -12662,6 +12677,28 @@ fn lower_str_format(
                         radix,
                         prefixed: false,
                         upper,
+                    };
+                    // emit a plain `{field_str}` field (the arg is now the string)
+                } else if arg_tys[arg_idx] == Type::F64 && ref_count[arg_idx] == 1 {
+                    // PMAT-680: a float-precision spec inlined as `{:.2}` makes
+                    // Rust print NaN as "NaN", but Python prints "nan". Route the
+                    // F64 arg (referenced exactly once → safe in-place rewrite)
+                    // through `Expr::FormatSpec`, whose codegen NaN-guards a
+                    // float-precision spec (PMAT-659) — exactly as the f-string
+                    // path does — then emit a plain field. `FormatSpec` emits the
+                    // same `format!("{:spec}", v)` for a non-precision spec, so
+                    // this is behavior-preserving otherwise. Multi-reference (rare)
+                    // keeps the inline embed.
+                    let rust_spec =
+                        translate_format_spec(s, &arg_tys[arg_idx]).ok_or_else(|| {
+                            FrontendError::Lower(format!(
+                                "function `{fname}` uses an unsupported str.format spec `{{:{s}}}` for a {:?} value",
+                                arg_tys[arg_idx]
+                            ))
+                        })?;
+                    args[arg_idx] = Expr::FormatSpec {
+                        value: Box::new(args[arg_idx].clone()),
+                        rust_spec,
                     };
                     // emit a plain `{field_str}` field (the arg is now the string)
                 } else {

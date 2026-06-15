@@ -1016,8 +1016,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         }
         // PMAT-502am: a formatted f-string field → `format!("{:<spec>}", v)`.
         Expr::FormatSpec { value, rust_spec } => {
-            // PMAT-659: NaN prints "nan" in Python, "NaN" in Rust — guard a
-            // float-precision spec (see the rust backend).
+            // PMAT-659: NaN prints "nan" in Python, "NaN" in Rust — guard a BARE
+            // float-precision spec (`.<digit>`, no width → unpadded "nan" matches
+            // Python). See rust backend. (Width+precision NaN deferred.)
             let bare = rust_spec.strip_prefix('+').unwrap_or(rust_spec).as_bytes();
             let is_float_prec =
                 bare.first() == Some(&b'.') && bare.get(1).is_some_and(|b| b.is_ascii_digit());
