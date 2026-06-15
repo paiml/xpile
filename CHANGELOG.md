@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.375] — 2026-06-15
+
+### Fixed
+
+- **PMAT-676 — `str.format` bare-radix negatives are sign-magnitude.** A bare
+  radix `str.format` spec — `"{:x}".format(n)` / `{:X}` / `{:o}` / `{:b}` — over
+  an int formats negatives SIGN-MAGNITUDE in Python (`"{:x}".format(-255)` ==
+  "-ff"), but xpile embedded Rust's `{:x}`, which is two's-complement
+  (`ffffffffffffff01`) — silent wrong output for negatives. (The f-string path
+  already fixed this in PMAT-613 via `Expr::IntRadixStr`; `.format()` did not
+  share the guard.) **Fix** (frontend only, `lower_str_format`; NO IR change):
+  when a field's spec is a bare radix over an `I64` arg AND that arg is referenced
+  exactly once in the template, reuse `Expr::IntRadixStr` (sign + radix of
+  `unsigned_abs`, matching Python and the `hex`/`bin`/`oct` builtins) — replace the
+  arg with the radix string and emit a plain field. A small pre-scan counts
+  per-arg references so the in-place replacement is only applied when safe; a
+  multi-reference arg (`"{0} {0:x}"`, rare) keeps the existing embed path unchanged
+  (correct for non-negatives — no regression). Differential-verified vs python3
+  (hex/oct/bin/HEX of -255, mixed two-field, radix surrounded by literal text
+  `"val=0x{:x}!"` == "val=0x-ff!", non-negative regression). New e2e fixture
+  `format_radix_neg.py` (rustc round-trip). e2e 432 → 433. Found by HUNT-V5
+  (string-format-3).
+
 ## [0.1.374] — 2026-06-15
 
 ### Added
