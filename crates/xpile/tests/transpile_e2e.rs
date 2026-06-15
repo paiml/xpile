@@ -3882,6 +3882,30 @@ fn main() {
     assert_rustc_runs("enumerate_start_kwarg", &rust, driver);
 }
 
+/// PMAT-642: `enumerate(xs, start)` accepts a NEGATIVE literal start
+/// (`start=-1`, parsed as `UnaryOp(USub, Int)`) — was rejected as a "non-literal
+/// start". The codegen already `checked_add`s the start, so a negative one
+/// works. Cross-checked vs python3.
+#[test]
+fn enumerate_neg_start() {
+    let rust = xpile_transpile_to_rust("enumerate_neg_start.py");
+    assert!(
+        rust.contains("checked_add(-1i64)") && rust.contains("checked_add(-5i64)"),
+        "negative enumerate start should offset by the negative literal:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // kw_neg: i in {-1,0,1}, x in {10,20,30} -> -10 + 0 + 30 = 20
+    assert_eq!(kw_neg(vec![10, 20, 30]), 20);
+    // positional_neg: i in {-5,-4,-3} -> -12
+    assert_eq!(positional_neg(vec![1, 2, 3]), -12);
+    // pos_start: i in {5,6,7} -> 18
+    assert_eq!(pos_start(vec![1, 2, 3]), 18);
+}
+"#;
+    assert_rustc_runs("enumerate_neg_start", &rust, driver);
+}
+
 /// PMAT-502cb (Tranche 2): `str.format` positional `{N}` placeholders
 /// (reorder / repeat) — re-emitted verbatim into Rust's `format!`.
 #[test]

@@ -879,6 +879,29 @@ fn extract_step_literal(e: &ast::Expr) -> Option<i64> {
     }
 }
 
+/// PMAT-642: extract a signed integer LITERAL — a positive `Int` constant or a
+/// negated one (`-1` parses as `UnaryOp(USub, Int)`), and (unlike
+/// [`extract_step_literal`]) `0` is a valid result. Used where a literal of any
+/// sign incl. zero is legal (e.g. the `enumerate(xs, start=N)` start). Returns
+/// `None` for any non-integer-literal expression.
+fn extract_int_literal(e: &ast::Expr) -> Option<i64> {
+    fn pos_int(e: &ast::Expr) -> Option<i64> {
+        match e {
+            ast::Expr::Constant(c) => match &c.value {
+                ast::Constant::Int(n) => n.to_string().parse::<i64>().ok(),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    match e {
+        ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::USub) => {
+            pos_int(&u.operand).map(|v| -v)
+        }
+        _ => pos_int(e),
+    }
+}
+
 /// Best-effort extract of a simple `name = ...` target, for the mutable
 /// pre-walk only. Returns None for tuple / attribute / subscript
 /// targets; those will produce a proper error later in `lower_assign`.
@@ -3426,30 +3449,21 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, f: ast::StmtFor) -> Result<Vec<Stmt>, F
                                 } else {
                                     kw_start.map(|k| &k.value)
                                 };
+                                // PMAT-642: accept a positive integer literal OR a
+                                // negated one (`-1` parses as `UnaryOp(USub,
+                                // Int)`) for the enumerate start — `enumerate(xs,
+                                // start=-1)` is valid Python and the codegen
+                                // already `checked_add`s the start (negative is
+                                // fine). A non-literal / non-int start still
+                                // rejects.
                                 let start = match start_src {
-                                    Some(ast::Expr::Constant(c)) => match &c.value {
-                                        ast::Constant::Int(i) => {
-                                            i.to_string().parse::<i64>().map_err(|_| {
-                                                FrontendError::Lower(format!(
-                                                    "function `{}` uses `enumerate(xs, <start>)` with an out-of-range integer start",
-                                                    ctx.fn_name
-                                                ))
-                                            })?
-                                        }
-                                        _ => {
-                                            return Err(FrontendError::Lower(format!(
-                                                "function `{}` uses `enumerate(xs, <start>)` with a non-int start — only an integer literal is supported at v0.2.0",
-                                                ctx.fn_name
-                                            )));
-                                        }
-                                    },
-                                    Some(_) => {
-                                        return Err(FrontendError::Lower(format!(
-                                            "function `{}` uses `enumerate(xs, <start>)` with a non-literal start — only an integer literal is supported at v0.2.0",
-                                            ctx.fn_name
-                                        )));
-                                    }
                                     None => 0,
+                                    Some(e) => extract_int_literal(e).ok_or_else(|| {
+                                        FrontendError::Lower(format!(
+                                            "function `{}` uses `enumerate(xs, <start>)` with a non-literal-int start — only an integer literal (e.g. `5`, `-1`) is supported at v0.2.0",
+                                            ctx.fn_name
+                                        ))
+                                    })?,
                                 };
                                 ctx.name_types.insert(first.clone(), Type::I64);
                                 ctx.name_types.insert(second.clone(), (*elem).clone());
