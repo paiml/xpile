@@ -3928,6 +3928,34 @@ fn main() {
     assert_rustc_runs("bool_op_var", &rust, driver);
 }
 
+/// PMAT-637: Python `x or default` / `x and y` over non-bool operands returns
+/// the OPERAND (by truthiness), not a bool — the common default-value idiom.
+/// Supported for `x <op> y` where x is a variable and both operands share a
+/// non-bool type (int / str / list / dict / set). Bool operands keep `||`/`&&`.
+/// Cross-checked vs python3.
+#[test]
+fn short_circuit_operand() {
+    let rust = xpile_transpile_to_rust("short_circuit_operand.py");
+    // Operand-returning forms lower to an if-expression on the truthiness;
+    // the bool form keeps the plain `||`.
+    assert!(rust.contains("if (x != 0i64)"), "int truthiness:\n{rust}");
+    assert!(rust.contains("(a || b)"), "bool form unchanged:\n{rust}");
+    let driver = r#"
+fn main() {
+    assert_eq!(or_default(0), 5);
+    assert_eq!(or_default(7), 7);
+    assert_eq!(and_then(0), 0);
+    assert_eq!(and_then(3), 99);
+    assert_eq!(str_or(String::from("hi")), "hi");
+    assert_eq!(str_or(String::from("")), "fallback");
+    assert_eq!(list_or(vec![1, 2]), 3);
+    assert_eq!(list_or(vec![]), 18);
+    assert_eq!(bool_logic(false, true), true);
+}
+"#;
+    assert_rustc_runs("short_circuit_operand", &rust, driver);
+}
+
 /// PMAT-502cf (Tranche 2): dict comprehension over `d.items()` with a tuple
 /// target → a `ForEachPair(Pairs)` loop building the dict.
 #[test]
