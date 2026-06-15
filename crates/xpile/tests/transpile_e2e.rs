@@ -4331,6 +4331,36 @@ fn main() {
     assert_rustc_runs("dict_get_optional", &rust, driver);
 }
 
+/// PMAT-618: comparing a no-default `d.get(k)` (`Option<T>`) with a bare value.
+/// `d.get(k) == 5` emitted `Option<i64> == i64` (E0308). Python returns `None`
+/// when the key is absent (`None == 5` is `False`), modeled exactly as
+/// `Option<T> == Some(5)` — the bare side is wrapped in `Some`. Found by
+/// differential hunt #7 (H7-7). Cross-checked vs python3.
+#[test]
+fn dict_get_compare() {
+    let rust = xpile_transpile_to_rust("dict_get_compare.py");
+    assert!(
+        rust.contains(".get(&(k)).cloned() == Some(5i64)")
+            && rust.contains(".get(&(k)).cloned() != Some(5i64)"),
+        "d.get(k) ==/!= v should wrap the value side in Some(..):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let mut d = std::collections::HashMap::new();
+    d.insert(String::from("a"), 5i64);
+    d.insert(String::from("b"), 3i64);
+    // present+match, present+nomatch, absent
+    assert_eq!(eq5(d.clone(), String::from("a")), true);
+    assert_eq!(eq5(d.clone(), String::from("b")), false);
+    assert_eq!(eq5(d.clone(), String::from("z")), false);
+    assert_eq!(ne5(d.clone(), String::from("a")), false);
+    assert_eq!(ne5(d.clone(), String::from("b")), true);
+    assert_eq!(ne5(d.clone(), String::from("z")), true);
+}
+"#;
+    assert_rustc_runs("dict_get_compare", &rust, driver);
+}
+
 /// PMAT-602: a non-Optional annotation over an Optional initializer (1-arg
 /// `d.get(k)`) is a type lie that would emit `Option<i64>` into an `i64`
 /// binding (E0308). xpile rejects it cleanly (transpile-success ⟹ valid Rust),
