@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.428] — 2026-06-16
+
+### Changed
+
+- **PMAT-729 — clear rejection messages for bytes literals + slice-assign/del.**
+  Two unsupported constructs leaked an opaque AST discriminant: a `bytes` literal
+  (`b"..."`) → `unsupported constant: Discriminant(3)`, and slice assignment
+  `xs[a:b] = ...` / deletion `del xs[a:b]` → `unsupported expression:
+  Discriminant(26)`. Fix (frontend only, NO IR change; two clear-message arms in
+  `lower_expr`, mirroring the NamedExpr/walrus arm): `ast::Constant::Bytes(_)` →
+  "bytes literals (`b"..."`) are not supported at v0.2.0 …"; `ast::Expr::Slice(_)`
+  (a Slice reaching general expression lowering = a slice in target position;
+  reads go through the Subscript path) → "slice assignment / slice deletion are
+  not supported at v0.2.0 …". Slice READS (`xs[a:b]` as a value) are unaffected.
+  Reject-asserted (new `bytes_literal.py` / `slice_assign.py` / `del_slice.py`
+  fixtures; tests assert the clear message and absence of "Discriminant"). FREE CI.
+  e2e 486→488 (+2 reject tests). FOUND BY HUNT-V10 (items V10-5, V10-6).
+
 ## [0.1.427] — 2026-06-16
 
 ### Fixed
