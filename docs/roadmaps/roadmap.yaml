@@ -1822,6 +1822,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "FINAL R6 sub-slice — closes the DICT HALF of audit §7.3 'every construct under contract' falsification. With C-C-INT-ARITH (475b/v0.1.196), §7.3 is RESTORED TO TRUE: every emitted construct's contract citation resolves to an on-disk YAML + Lean theorem. AUTHORED: contracts/xlate-py-dict-to-hashmap-v1.yaml — Layer-2 translation kernel contract (dict sibling of C-XLATE-PY-LIST-TO-VEC). Python dict[K,V] homogeneous → Rust std::collections::HashMap<K_rust,V_rust>. ONE depth-1 Diamond eqn dict_to_hashmap_structure_preserved_diamond combining entry-sequence preservation + cardinality preservation (lowering = identity on the abstract finite map K→V). proof_obligations(2), falsification_tests(2, bound to live dict_counts_emitted_rust_returns_hashmap e2e test), kani_harnesses(2 inline: HashMap<u8,u8> insert/get roundtrip + reinsert-overwrites-len-1), qa_gate. contracts/lean/XlatePyDictToHashmap.lean — models PyDict+RustHashMap as entry lists, lowering as identity → both conjuncts rfl (Bronze). Followed the 475b authoring recipe exactly (kind:kernel needs proof_obligations+kani_harnesses; falsification_tests>=proof_obligations; quoted refs with inner colons; lean_theorem resolves to theorem in lean_file; qa_gate.required_tests real #[test]s; top-level inline kani harnesses avoid the file-resolution validator). SECOND contract via the grandfathered gate → xpile diamond now 15 contracts, both new ones depth-1, depth-2+ still grandfathered 13. pv lint 0 errors; diamond_coverage(26)/refinement_proofs(3)/qa_gate(3)/kani(3)/workspace/fmt/clippy green. FREE CI. SHIPPED v0.1.197. **R6/PMAT-475 COMPLETE: 475a grandfather + 475b C-C-INT-ARITH + 475c C-XLATE-PY-DICT-TO-HASHMAP. The entire R-table (R1-R10) is now closed.** NEXT: Track 4 (PMAT-481..486 free-CI offline PTX/WGSL gates) OR Tranche-2 capability gaps OR PMAT-485 nightly emit job."
+- id: PMAT-708
+  github_issue: null
+  item_type: task
+  title: 'PMAT-708: [Tranche 2] CORRECTNESS reject bare dict/set in an f-string (E0277)'
+  status: done
+  priority: medium
+  created: 2026-06-16T00:00:00Z
+  acceptance_criteria:
+  - "A bare dict/set interpolated in an f-string (`f\"d = {d}\"`) emitted `format!(\"{}\", hashmap)` → INVALID Rust (HashMap/HashSet have no Display) → E0277 (transpile-success → rustc-fail). FIX (frontend only, NO IR change): the f-string no-spec dispatch match in `lower_fstring_part_in_ctx` (~11716) adds `Type::Dict(_,_) | Type::Set(_) => Err(...)` BEFORE the `_ => Ok(value)` fallthrough — parity with str(d)/print(d)/.format()/% over a dict/set (which already reject); rendering the repr would ALSO diverge (HashMap iteration order non-deterministic = PMAT-537). int/str/float/bool/list/tuple interpolation + `f\"{d[k]}\"` (a dict VALUE via index) UNAFFECTED. Uncompilable-Rust → clean compile-time reject. Verified: f-string dict/set reject w/ clear msg; int/str/list/tuple + d[k] still transpile+run vs python3. New e2e fstring_dict_rejected.py (reject+msg). FREE CI. e2e 465->466. SHIPPED v0.1.407. FOUND BY HUNT-V8 (item V8-10)."
 - id: PMAT-707
   github_issue: null
   item_type: task

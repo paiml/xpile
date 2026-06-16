@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.407] — 2026-06-16
+
+### Fixed
+
+- **PMAT-708 — reject a bare dict/set in an f-string instead of emitting E0277.** A bare dict
+  (or set) interpolated in an f-string — `f"d = {d}"` — emitted `format!("{}", hashmap)`,
+  which is invalid Rust (HashMap/HashSet have no `Display`) → E0277, a transpile success that
+  fails `rustc`. **Fix**: the f-string no-spec dispatch now rejects a `Type::Dict`/`Type::Set`
+  interpoland at lowering — parity with `str(d)`/`print(d)`/`.format()`/`%` over a dict/set
+  (which already reject); rendering the repr would also diverge (HashMap iteration order is
+  non-deterministic, PMAT-537). `int`/`str`/`float`/`bool`/`list`/`tuple` interpolation and
+  `f"{d[k]}"` (a dict value via index) are unaffected. Turns uncompilable Rust into a clean
+  compile-time reject. New e2e fixture `fstring_dict_rejected.py` (reject + message); existing
+  f-string paths verified to still transpile + run vs python3. e2e 465 → 466. Found by
+  HUNT-V8 (item V8-10).
+
 ## [0.1.406] — 2026-06-16
 
 ### Added
