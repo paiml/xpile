@@ -4321,10 +4321,12 @@ fn main() {
 #[test]
 fn float_power() {
     let rust = xpile_transpile_to_rust("float_power.py");
-    assert!(rust.contains("(x).powf("), "float power:\n{rust}");
+    // PMAT-734b: float `**` now lowers to a guarded `{ … __pb.powf(__pe) … }` block
+    // (overflow → OverflowError), so the operands bind to `__pb`/`__pe`.
+    assert!(rust.contains(".powf(__pe)"), "float power:\n{rust}");
     assert!(
-        rust.contains("(((n) as f64)).powf(0.5f64)"),
-        "int-base float power:\n{rust}"
+        rust.contains("let __pb: f64 = ((n) as f64)") && rust.contains("let __pe: f64 = 0.5f64"),
+        "int-base float power (PMAT-734b guarded powf):\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -4371,8 +4373,8 @@ fn aug_assign_float_int_rhs() {
         "float += int rhs:\n{rust}"
     );
     assert!(
-        rust.contains("(base).powf(((3i64) as f64))"),
-        "float **= int rhs:\n{rust}"
+        rust.contains("let __pe: f64 = ((3i64) as f64)") && rust.contains(".powf(__pe)"),
+        "float **= int rhs (PMAT-734b guarded powf):\n{rust}"
     );
     assert!(
         !rust.contains("checked_pow"),
@@ -10441,8 +10443,8 @@ fn pow_builtin() {
         "pow(a, b) int → checked_pow:\n{rust}"
     );
     assert!(
-        rust.contains("(a).powf(b)"),
-        "pow(a, b) float → powf:\n{rust}"
+        rust.contains(".powf(__pe)"),
+        "pow(a, b) float → guarded powf (PMAT-734b):\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -11892,6 +11894,33 @@ fn main() {
 }
 "#;
     assert_rustc_runs("nested_dict_assign", &rust, driver);
+}
+
+/// PMAT-734b (HUNT-V11 V11-10): float `b ** e` overflow now raises OverflowError
+/// (like Python) instead of silently returning `inf`; `0.0 ** <neg>` raises
+/// ZeroDivisionError. Finite results and an already-infinite base are unchanged.
+#[test]
+fn float_pow_overflow_matches_cpython() {
+    let rust = xpile_transpile_to_rust("float_pow_overflow.py");
+    assert!(
+        rust.contains("OverflowError") && rust.contains("is_infinite() && __pb.is_finite()"),
+        "expected the float-pow overflow guard, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(fpow(2.0, 10.0), 1024.0);
+    assert_eq!(fpow(1.5, 3.0), 3.375);
+    assert!(fpow(f64::INFINITY, 2.0).is_infinite()); // inf base stays inf, no panic
+    std::panic::set_hook(Box::new(|_| {}));
+    // finite-base overflow -> OverflowError
+    let r = std::panic::catch_unwind(|| fpow(2.0, 2000.0));
+    assert!(r.is_err());
+    // 0.0 ** negative -> ZeroDivisionError
+    let z = std::panic::catch_unwind(|| fpow(0.0, -1.0));
+    assert!(z.is_err());
+}
+"#;
+    assert_rustc_runs("float_pow_overflow", &rust, driver);
 }
 
 /// PMAT-734 (HUNT-V11 V11-5): `all(d)` / `any(d)` over a dict iterate its KEYS and

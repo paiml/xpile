@@ -1029,9 +1029,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             }
             // PMAT-502bt/em/en: method-style float ops — `(a).<method>(b)`,
             // matching the Rust backend.
-            FloatOp::Pow | FloatOp::Hypot | FloatOp::Atan2 | FloatOp::Log => {
+            // PMAT-734b (HUNT-V11 V11-10): float `**` overflow → OverflowError /
+            // `0.0 ** <neg>` → ZeroDivisionError (mirrors the Rust backend).
+            FloatOp::Pow => {
+                out.push_str("{ let __pb: f64 = ");
+                emit_expr(out, lhs, mode)?;
+                out.push_str("; let __pe: f64 = ");
+                emit_expr(out, rhs, mode)?;
+                out.push_str("; let __pr = __pb.powf(__pe); if __pr.is_infinite() && __pb.is_finite() { if __pb == 0.0 { panic!(\"xpile: ZeroDivisionError: 0.0 cannot be raised to a negative power\"); } panic!(\"xpile: OverflowError: (34, 'Numerical result out of range')\"); } __pr }");
+            }
+            FloatOp::Hypot | FloatOp::Atan2 | FloatOp::Log => {
                 let method = match op {
-                    FloatOp::Pow => "powf",
                     FloatOp::Hypot => "hypot",
                     FloatOp::Atan2 => "atan2",
                     FloatOp::Log => "log",
