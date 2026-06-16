@@ -2924,6 +2924,30 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, body, mode)?;
             out.push(')');
         }
+        // PMAT-724 (HUNT-V9 V9-19): `x or default` over Optional →
+        // `(value).filter(|<param>| <body>).unwrap_or_else(|| <default>)`. `filter`
+        // hands the predicate a `&T`; the param is `&__v` for a Copy inner (so the
+        // value-form body sees `__v: T`) and `__v` for a non-Copy inner (the
+        // `Len`/`&`-borrowing body). `unwrap_or_else` keeps Python's short-circuit.
+        Expr::OptionOrDefault {
+            value,
+            by_ref,
+            body,
+            default,
+        } => {
+            out.push('(');
+            emit_expr(out, value, mode)?;
+            out.push(')');
+            if *by_ref {
+                out.push_str(".filter(|__v| ");
+            } else {
+                out.push_str(".filter(|&__v| ");
+            }
+            emit_expr(out, body, mode)?;
+            out.push_str(").unwrap_or_else(|| ");
+            emit_expr(out, default, mode)?;
+            out.push(')');
+        }
         // PMAT-502ex: `x is None` → `(x).is_none()`; `x is not None` →
         // `(x).is_some()`.
         Expr::IsNone { value, negated } => {

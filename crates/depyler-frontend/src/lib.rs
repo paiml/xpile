@@ -7816,6 +7816,8 @@ fn infer_type(e: &Expr) -> Type {
         )),
         // PMAT-721: Optional truthiness yields Bool.
         Expr::OptionTruthy { .. } => Type::Bool,
+        // PMAT-724: `x or default` over Optional yields the default's type `T`.
+        Expr::OptionOrDefault { default, .. } => infer_type(default),
         // PMAT-502ex: a `None` test yields Bool.
         Expr::IsNone { .. } => Type::Bool,
         // PMAT-502ez: unwrap yields the inner type of the operand's Optional.
@@ -8233,6 +8235,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         )),
         // PMAT-721: Optional truthiness yields Bool.
         Expr::OptionTruthy { .. } => Type::Bool,
+        // PMAT-724: `x or default` over Optional yields the default's type `T`.
+        Expr::OptionOrDefault { default, .. } => infer_type_in_ctx(ctx, default),
         // PMAT-502ex: a `None` test yields Bool.
         Expr::IsNone { .. } => Type::Bool,
         // PMAT-502ez: unwrap yields the inner type of the operand's Optional.
@@ -12862,6 +12866,28 @@ fn lower_bool_op_in_ctx(ctx: &LoweringCtx, b: ast::ExprBoolOp) -> Result<Expr, F
     // operands (the guard below) keep the `||`/`&&` fold; a non-`Ident`
     // non-last operand or mixed types fall through to the Bool-only path /
     // reject.
+    // PMAT-724 (HUNT-V9 V9-19): 2-operand `x or default` where `x` is `Optional[T]`
+    // and `default` is `T` — Python returns the inner value when `x` is truthy,
+    // else `default`. The same-type fold below can't express this (the operands
+    // differ in type and the truthy branch must UNWRAP). Lower to
+    // `(x).filter(|v| truthy(v)).unwrap_or_else(|| default)` via `OptionOrDefault`.
+    // The operand is evaluated once (single method chain — no double-eval), so a
+    // non-`Ident` lead (`d.get(k) or 0`) is fine; `unwrap_or_else` keeps Python's
+    // short-circuit. `x or y` where `y` is also Optional falls through (rare).
+    if matches!(py_op, ast::BoolOp::Or) && lowered.len() == 2 {
+        if let Type::Optional(inner) = infer_type_in_ctx(ctx, &lowered[0]) {
+            if infer_type_in_ctx(ctx, &lowered[1]) == *inner {
+                if let Some((body, by_ref)) = optional_inner_truthy_body(&inner) {
+                    return Ok(Expr::OptionOrDefault {
+                        value: Box::new(lowered[0].clone()),
+                        by_ref,
+                        body: Box::new(body),
+                        default: Box::new(lowered[1].clone()),
+                    });
+                }
+            }
+        }
+    }
     {
         let n = lowered.len();
         let ta = infer_type_in_ctx(ctx, &lowered[0]);

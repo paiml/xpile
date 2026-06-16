@@ -2492,6 +2492,28 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, body, mode)?;
             out.push(')');
         }
+        // PMAT-724 (HUNT-V9 V9-19): `x or default` over Optional →
+        // `(value).filter(|<param>| <body>).unwrap_or_else(|| <default>)` (mirrors
+        // the Rust backend).
+        Expr::OptionOrDefault {
+            value,
+            by_ref,
+            body,
+            default,
+        } => {
+            out.push('(');
+            emit_expr(out, value, mode)?;
+            out.push(')');
+            if *by_ref {
+                out.push_str(".filter(|__v| ");
+            } else {
+                out.push_str(".filter(|&__v| ");
+            }
+            emit_expr(out, body, mode)?;
+            out.push_str(").unwrap_or_else(|| ");
+            emit_expr(out, default, mode)?;
+            out.push(')');
+        }
         // PMAT-502ex: `x is None`/`is not None` → `.is_none()`/`.is_some()`.
         Expr::IsNone { value, negated } => {
             out.push('(');

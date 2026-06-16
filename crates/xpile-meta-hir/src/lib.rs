@@ -472,6 +472,11 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-721: Optional truthiness — recurse into the value (the `__v != 0`
         // body is a comparison, never overflowing int arithmetic).
         Expr::OptionTruthy { value, .. } => expr_has_int_arith(value),
+        // PMAT-724: `x or default` over Optional — recurse into value + default
+        // (the truthiness body is a non-overflowing comparison).
+        Expr::OptionOrDefault { value, default, .. } => {
+            expr_has_int_arith(value) || expr_has_int_arith(default)
+        }
         // PMAT-502ex: `is None` test — recurse into the tested value.
         Expr::IsNone { value, .. } => expr_has_int_arith(value),
         // PMAT-502ez: unwrap recurses into the inner operand.
@@ -1470,6 +1475,21 @@ pub enum Expr {
         value: Box<Expr>,
         by_ref: bool,
         body: Box<Expr>,
+    },
+    /// PMAT-724 (HUNT-V9 V9-19): Python `x or default` where `x` is `Optional[T]`
+    /// and `default` is `T` — returns the inner value when `x` is truthy, else
+    /// `default`. Lowers to `(<value>).filter(|<param>| <body>).unwrap_or_else(||
+    /// <default>)` where `param` is `&__v` for a `Copy` inner (the `body` is the
+    /// value form) and `__v` for a non-`Copy` inner (the `body` is the
+    /// `&`-borrowing `Len` form). `filter` always hands the predicate a `&T`, so
+    /// `by_ref` selects the closure-param pattern (not an `.as_ref()`).
+    /// `unwrap_or_else` keeps Python's short-circuit (the default is lazy). Yields
+    /// `T`.
+    OptionOrDefault {
+        value: Box<Expr>,
+        by_ref: bool,
+        body: Box<Expr>,
+        default: Box<Expr>,
     },
     /// PMAT-502ex: a `None` test over an `Optional` value — Python `x is None`
     /// (`negated == false`) / `x is not None` (`negated == true`). Yields
@@ -2888,6 +2908,17 @@ fn escape_expr(e: &mut Expr) {
         Expr::OptionTruthy { value, body, .. } => {
             escape_expr(value);
             escape_expr(body);
+        }
+        // PMAT-724: recurse into value + default (body is synthetic).
+        Expr::OptionOrDefault {
+            value,
+            body,
+            default,
+            ..
+        } => {
+            escape_expr(value);
+            escape_expr(body);
+            escape_expr(default);
         }
         Expr::IsNone { value, .. } => escape_expr(value),
         Expr::TryCatch { body, handler } => {
