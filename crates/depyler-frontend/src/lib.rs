@@ -9806,6 +9806,20 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     // still occur, matching Python's eager list construction).
                     let short_circuit = matches!(&call.args[0], ast::Expr::GeneratorExp(_));
                     let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    // PMAT-734 (HUNT-V11 V11-5): `all(d)` / `any(d)` iterate the
+                    // dict's KEYS in Python — materialize a dict arg to its keys
+                    // view (→ `List(K)`) so the per-element-truthiness logic below
+                    // applies (the same `DictView{Keys}` `max(d)`/`list(d)` use).
+                    // Without this a dict arg skipped the List arm and emitted an
+                    // undefined `all(d)` (E0425) / mis-typed as I64.
+                    let list = if matches!(infer_type_in_ctx(ctx, &list), Type::Dict(_, _)) {
+                        Expr::DictView {
+                            dict: Box::new(list),
+                            kind: DictViewKind::Keys,
+                        }
+                    } else {
+                        list
+                    };
                     if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
                         let is_all = fname.id.as_str() == "all";
                         let truthy = |body: Expr| Expr::BoolReduce {
