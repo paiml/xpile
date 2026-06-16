@@ -810,8 +810,20 @@ fn count_pop_receivers(e: &ast::Expr, counts: &mut HashMap<String, usize>, bump:
         E::Call(call) => {
             if let E::Attribute(attr) = call.func.as_ref() {
                 if matches!(attr.attr.as_str(), "pop" | "setdefault") {
-                    if let E::Name(n) = attr.value.as_ref() {
-                        *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                    match attr.value.as_ref() {
+                        E::Name(n) => {
+                            *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                        }
+                        // PMAT-715: `xs[i].pop()` mutates the BASE container in
+                        // place (the popped element is removed from `xs[i]`), so
+                        // the base must be `mut`. The receiver here is a Subscript
+                        // of a Name, not a bare Name.
+                        E::Subscript(sub) => {
+                            if let E::Name(base) = sub.value.as_ref() {
+                                *counts.entry(base.id.to_string()).or_insert(0) += bump;
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 count_pop_receivers(attr.value.as_ref(), counts, bump);

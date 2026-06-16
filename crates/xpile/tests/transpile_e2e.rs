@@ -3086,6 +3086,28 @@ fn main() {
     assert_rustc_runs("list_pop", &rust, driver);
 }
 
+/// PMAT-715: `xs[i].pop()` must mutate the inner container IN PLACE — the read
+/// path cloned `xs[i]` and popped the clone, so `xs[i]` kept its length
+/// (silent-wrong: the popped value was right, the side-effect was lost). Now an
+/// l-value pop over a `mut` base, with negative-index wrapping. Cross-checked vs
+/// python3 (HUNT-V9 V9-2).
+#[test]
+fn nested_subscript_pop() {
+    let rust = xpile_transpile_to_rust("nested_subscript_pop.py");
+    assert!(
+        rust.contains("pop_inner(mut xs:") && rust.contains("xs[__pi as usize].pop().unwrap()"),
+        "nested pop should be an l-value over a mut base:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(pop_inner(vec![vec![1, 2, 3], vec![4]]), 32); // pop 3; 3*10 + len 2
+    assert_eq!(pop_neg(vec![vec![1], vec![5, 6, 7]]), 9);    // pop 7; 7 + len 2
+    assert_eq!(plain_pop(vec![10, 20, 30]), 32);             // pop 30; 30 + len 2
+}
+"#;
+    assert_rustc_runs("nested_subscript_pop", &rust, driver);
+}
+
 /// PMAT-609: `xs.pop(i)` with a RUNTIME negative index removes from the end
 /// (Python `i + len`); a bare `(i) as usize` wrapped a negative i to usize::MAX
 /// → panic. The runtime index is now normalized (`if __pidx < 0 { len + __pidx }`).
