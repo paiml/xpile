@@ -11894,6 +11894,38 @@ fn main() {
     assert_rustc_runs("nested_dict_assign", &rust, driver);
 }
 
+/// PMAT-732 (HUNT-V10 V10-4): a function returning a nested function / closure now
+/// rejects with a clear message (it used to silently mis-infer the closure's
+/// call-result type as the return type → rustc E0308), matching the existing
+/// `-> Callable[...]` reject. A nested closure USED locally still transpiles.
+#[test]
+fn return_nested_fn_rejected_with_clear_message() {
+    let py = fixture("return_nested_fn.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !out.status.success(),
+        "returning a closure should be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("returns a nested function / closure") && !stderr.contains("Discriminant"),
+        "expected a clear returned-callable message; got: {stderr}"
+    );
+}
+
+/// PMAT-732 regression: a nested closure used LOCALLY (called, not returned) still
+/// transpiles and computes correctly.
+#[test]
+fn local_closure_used_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("local_closure_used.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(adder(5), 12);
+}
+"#;
+    assert_rustc_runs("local_closure_used", &rust, driver);
+}
+
 /// PMAT-731 (HUNT-V10 typed-exceptions): a SPECIFIC `except T:` no longer swallows
 /// a DIFFERENT exception. `except ValueError:` around `100 // 0` now lets the
 /// ZeroDivisionError propagate (it re-raises non-matching known builtin panics);

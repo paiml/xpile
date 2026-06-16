@@ -2071,6 +2071,22 @@ fn lower_function_def(
         }
     };
 
+    // PMAT-732 (HUNT-V10 V10-4): a function returning a nested function / closure
+    // (`def make(k): def inner(): …; return inner`) was SILENTLY mis-typed — the
+    // trailing `return inner` inferred as the CLOSURE's call-result type, emitting
+    // `fn make(k) -> <inner-ret> { let inner = ||{…}; inner }` (rustc E0308). The
+    // annotated `-> Callable[...]` form already rejects cleanly; route the
+    // unannotated form to the same clean reject (lowering a returned callable to
+    // `impl Fn`/`Box<dyn Fn>` is a deferred feature).
+    if let Expr::Ident(name) = &trailing_return {
+        if ctx.closure_returns.contains_key(name) {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` returns a nested function / closure (`{name}`) — returning a callable is not supported at v0.2.0 (the `-> Callable[...]` annotation is likewise rejected); inline the logic, or call it before returning",
+                f.name
+            )));
+        }
+    }
+
     let inferred_return = infer_type_in_ctx(&ctx, &trailing_return);
     let return_type = match declared_return_type {
         None => inferred_return,
