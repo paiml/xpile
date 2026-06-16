@@ -11896,6 +11896,46 @@ fn main() {
     assert_rustc_runs("nested_dict_assign", &rust, driver);
 }
 
+/// PMAT-739 (HUNT-V12 V12-31): the integer literal `-9223372036854775808`
+/// (exactly `i64::MIN`, fully representable) now transpiles. Python parses it as
+/// `USub(Constant(9223372036854775808))`; the bare magnitude `2^63` doesn't fit
+/// i64, so it was rejected before the unary minus was applied. The frontend now
+/// folds `-<int literal>` in i128 first. Cross-checked vs python3:
+/// `min_val() == -9223372036854775808`, `near_min(5) == -9223372036854775803`.
+#[test]
+fn int_min_literal_transpiles() {
+    let rust = xpile_transpile_to_rust("int_min_literal.py");
+    assert!(
+        rust.contains("-9223372036854775808i64"),
+        "expected the i64::MIN literal folded into a single negative literal, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(min_val(), -9223372036854775808i64);    // i64::MIN
+    assert_eq!(near_min(5), -9223372036854775803i64);  // MIN + 5
+}
+"#;
+    assert_rustc_runs("int_min_literal", &rust, driver);
+}
+
+/// PMAT-739 (HUNT-V12 V12-31): a magnitude past `i64::MIN`
+/// (`-9223372036854775809`) still rejects with the bigint-not-implemented
+/// message — the fold accepts exactly the i64 range, no more.
+#[test]
+fn int_past_min_literal_still_rejected() {
+    let py = fixture("int_past_min_literal.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !out.status.success(),
+        "a literal past i64::MIN should reject"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("does not fit in i64"),
+        "expected a bigint-not-implemented message; got: {stderr}"
+    );
+}
+
 /// PMAT-738 (HUNT-V12 V12-5): a function-local that shadows a module-level
 /// constant (`LIMIT = 6` inside a function with a module `LIMIT`) is rejected
 /// with a clear message instead of emitting a reassignment of the Rust `const`
