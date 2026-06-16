@@ -3356,6 +3356,14 @@ fn materialize_iterable_arg(
     let lowered = lower_expr_in_ctx(ctx, arg.clone())?;
     match infer_type_in_ctx(ctx, &lowered) {
         Type::List(_) => Ok(Some(lowered)),
+        // PMAT-733 (HUNT-V11 V11-3): a `str` is iterable — `max(s)`/`min(s)` (and
+        // any iterable-builtin) operate over its code points (each a 1-char str).
+        // Materialize to the char list via `Expr::StrChars` (→ `List(Str)`), the
+        // same view `sorted(s)` / `for c in s` already use. Without this a bare
+        // str fell through to `None` and the result mis-typed as `I64`.
+        Type::Str => Ok(Some(Expr::StrChars {
+            string: Box::new(lowered),
+        })),
         Type::Set(_) => Ok(Some(Expr::SetToList {
             set: Box::new(lowered),
         })),
@@ -10692,6 +10700,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         return Ok(Expr::DictView {
                             dict: Box::new(inner),
                             kind: DictViewKind::Keys,
+                        });
+                    }
+                    // PMAT-733 (HUNT-V11 V11-4): `list(s)` over a str splits it into
+                    // its code points (`list("héllo")` → ['h','é','l','l','o']) via
+                    // `Expr::StrChars` (→ `List(Str)`), the same view sorted(s) uses.
+                    if matches!(infer_type_in_ctx(ctx, &inner), Type::Str) {
+                        return Ok(Expr::StrChars {
+                            string: Box::new(inner),
                         });
                     }
                 }

@@ -11894,6 +11894,29 @@ fn main() {
     assert_rustc_runs("nested_dict_assign", &rust, driver);
 }
 
+/// PMAT-733 (HUNT-V11 V11-3 + V11-4): a `str` is iterable — `max(s)` / `min(s)`
+/// (over the code points) and `list(s)` (split into 1-char strings) now transpile
+/// (they were rejected as "body produces I64"), via `Expr::StrChars` (→ `List(Str)`),
+/// the same view `sorted(s)` uses.
+#[test]
+fn str_as_iterable_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("str_as_iterable.py");
+    assert!(
+        rust.contains(".chars().map(|__c| __c.to_string()).collect::<Vec<String>>()"),
+        "expected StrChars materialization, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(maxchar("héllo".to_string()), "é");
+    assert_eq!(minchar("héllo".to_string()), "h");
+    assert_eq!(chars("abc".to_string()), vec!["a", "b", "c"]);
+    assert_eq!(joined("xyz".to_string()), "x-y-z");
+    assert_eq!(char_count("héllo".to_string()), 5);
+}
+"#;
+    assert_rustc_runs("str_as_iterable", &rust, driver);
+}
+
 /// PMAT-732 (HUNT-V10 V10-4): a function returning a nested function / closure now
 /// rejects with a clear message (it used to silently mis-infer the closure's
 /// call-result type as the return type → rustc E0308), matching the existing
