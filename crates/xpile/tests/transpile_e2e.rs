@@ -11896,6 +11896,29 @@ fn main() {
     assert_rustc_runs("nested_dict_assign", &rust, driver);
 }
 
+/// PMAT-740 (HUNT-V12 V12-24): `(a * b) % m` no longer panics on the
+/// intermediate product overflow. The product + floor-mod are widened to i128
+/// (the result `(a*b) mod m` fits i64), so the common modular-arithmetic idiom
+/// computes the right value even when `a*b` exceeds i64. Cross-checked vs
+/// python3: `mod_mul(i64::MAX, i64::MAX, 1e9+7) == 737564071`, floor-mod sign
+/// (`mod_mul(-7,3,5) == 4`), non-overflow unchanged (`mod_mul(10,20,7) == 4`).
+#[test]
+fn mod_mul_i128_no_intermediate_overflow() {
+    let rust = xpile_transpile_to_rust("mod_mul_i128.py");
+    assert!(
+        rust.contains("i128") && rust.contains("as i64"),
+        "expected the (a*b)%m product widened to i128, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(mod_mul(9223372036854775807, 9223372036854775807, 1000000007), 737564071);
+    assert_eq!(mod_mul(-7, 3, 5), 4);     // Python floor-mod: -21 % 5 == 4
+    assert_eq!(mod_mul(10, 20, 7), 4);    // non-overflow case unchanged
+}
+"#;
+    assert_rustc_runs("mod_mul_i128", &rust, driver);
+}
+
 /// PMAT-739 (HUNT-V12 V12-31): the integer literal `-9223372036854775808`
 /// (exactly `i64::MIN`, fully representable) now transpiles. Python parses it as
 /// `USub(Constant(9223372036854775808))`; the bare magnitude `2^63` doesn't fit
