@@ -818,14 +818,23 @@ fn emit_stmt_indented(
                 )?;
             } else if expr_mentions_ident(key, name) {
                 // PMAT-570: `del xs[-k]` → `xs.remove(len(xs) - k)`; the index
-                // references `xs`, so bind it before the mutable `remove`.
+                // references `xs`, so bind it before the mutable `remove`. (A
+                // literal negative index is frontend-resolved to `len - k`, so it
+                // is non-negative here.)
                 write!(out, "{indent}{{ let __di = (")?;
                 emit_expr(out, key, mode)?;
                 writeln!(out, ") as usize; {name}.remove(__di); }}")?;
             } else {
-                write!(out, "{indent}{name}.remove((")?;
+                // PMAT-712: a runtime-negative index must wrap like Python
+                // (`i = -1; del xs[i]` removes the last element); the bare
+                // `(i) as usize` underflowed a negative to a huge index → panic.
+                // Bind + normalize, mirroring the read path (PMAT-639).
+                write!(out, "{indent}{{ let __di = (")?;
                 emit_expr(out, key, mode)?;
-                writeln!(out, ") as usize);")?;
+                writeln!(
+                    out,
+                    ") as i64; let __di = if __di < 0 {{ {name}.len() as i64 + __di }} else {{ __di }}; {name}.remove(__di as usize); }}"
+                )?;
             }
             Ok(())
         }

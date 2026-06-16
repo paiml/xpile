@@ -722,9 +722,13 @@ fn emit_stmt_indented(
                 emit_expr(out, key, mode)?;
                 writeln!(out, ") as usize; {name}.remove(__di); }}")?;
             } else {
-                write!(out, "{indent}{name}.remove((")?;
+                // PMAT-712: normalize a runtime-negative index (mirror rust).
+                write!(out, "{indent}{{ let __di = (")?;
                 emit_expr(out, key, mode)?;
-                writeln!(out, ") as usize);")?;
+                writeln!(
+                    out,
+                    ") as i64; let __di = if __di < 0 {{ {name}.len() as i64 + __di }} else {{ __di }}; {name}.remove(__di as usize); }}"
+                )?;
             }
             Ok(())
         }
