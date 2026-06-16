@@ -11896,6 +11896,54 @@ fn main() {
     assert_rustc_runs("nested_dict_assign", &rust, driver);
 }
 
+/// PMAT-738 (HUNT-V12 V12-5): a function-local that shadows a module-level
+/// constant (`LIMIT = 6` inside a function with a module `LIMIT`) is rejected
+/// with a clear message instead of emitting a reassignment of the Rust `const`
+/// (E0070) — Rust can't express the shadow (the name is a constant pattern,
+/// E0005). A parameter sharing a const name (E0530) is likewise rejected.
+#[test]
+fn local_shadows_const_rejected_with_clear_message() {
+    let py = fixture("local_shadows_const.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !out.status.success(),
+        "a local shadowing a const should reject"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("shadows the module-level constant") && stderr.contains("LIMIT"),
+        "expected a clear const-shadow message naming LIMIT; got: {stderr}"
+    );
+}
+
+/// PMAT-738 (HUNT-V12 V12-5, companion): a parameter sharing a name with a
+/// module-level const can't shadow it in Rust (E0530) — rejected with a clear
+/// message.
+#[test]
+fn param_shadows_const_rejected_with_clear_message() {
+    let py = fixture("param_shadows_const.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !out.status.success(),
+        "a param shadowing a const should reject"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("parameter `LIMIT` that shadows the module-level constant"),
+        "expected a clear param-shadow message; got: {stderr}"
+    );
+}
+
+/// PMAT-738 (HUNT-V12 V12-5): a function that only READS a module const is
+/// unaffected — it resolves to the `const` and round-trips. Guards the regression
+/// (the shadow reject must not break ordinary const reads). `scaled(6) == 49`.
+#[test]
+fn const_read_only_still_resolves() {
+    let rust = xpile_transpile_to_rust("const_read_only.py");
+    let driver = "fn main() { assert_eq!(scaled(6), 49); }\n";
+    assert_rustc_runs("const_read_only", &rust, driver);
+}
+
 /// PMAT-737 (HUNT-V12 V12-3): `for x in list(xs): xs.remove(x)` — the canonical
 /// "iterate a copy so I can mutate the original" idiom — now compiles. `list(xs)`
 /// over a list emits an explicit owned clone (`(xs).clone()`) instead of the bare
