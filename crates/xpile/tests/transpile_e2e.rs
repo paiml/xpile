@@ -1263,6 +1263,25 @@ fn main() {
     assert_rustc_runs("tuple_unpack", &rust, driver);
 }
 
+/// PMAT-711: a single-element tuple-unpack `x, = t` / `(x,) = t` emitted
+/// `let (x) = t` (grouping → binds the whole tuple to x) → E0308. Now emits the
+/// 1-tuple destructure `let (x,) = t`. Cross-checked vs python3 (HUNT-V9 V9-12).
+#[test]
+fn single_elem_tuple_unpack() {
+    let rust = xpile_transpile_to_rust("single_elem_tuple_unpack.py");
+    assert!(
+        rust.contains("let (x,) = ") && rust.contains("let (y,) = "),
+        "single-element unpack should have the trailing comma:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(unwrap((42,)), 42);
+    assert_eq!(unwrap_str(("hi".to_string(),)), "hi");
+}
+"#;
+    assert_rustc_runs("single_elem_tuple_unpack", &rust, driver);
+}
+
 /// PMAT-662: a `_` discard in a tuple-unpack must never be `mut`. Repeated
 /// discards (`a, _, _ = t`) aggregated the `_` count in the mutability pre-walk,
 /// so the 2nd+ `_` was flagged mutable → invalid `mut _`. Cross-checked vs python3.
