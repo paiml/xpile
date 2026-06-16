@@ -198,6 +198,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             | Stmt::Return(_)
             | Stmt::LetTuple { .. }
             | Stmt::ClosureLet { .. }
+            // PMAT-736: a named inner fn is never BigInt-typed at v0.2.0.
+            | Stmt::NestedFn { .. }
             | Stmt::Continue
             | Stmt::Break
             // PMAT-502bw: print() introduces no binding.
@@ -415,6 +417,37 @@ fn emit_stmt_indented(
             out.push_str("| { ");
             emit_expr(out, body, mode)?;
             writeln!(out, " }};")?;
+            Ok(())
+        }
+        // PMAT-736: a named inner fn item — `fn <name>(<params>) -> R { <body> }`,
+        // matching the Rust backend. A real `fn` (not a closure) so a self-call
+        // recurses by name. Always i64-mode (mode=false), independent of the
+        // enclosing fn's bigint mode.
+        Stmt::NestedFn {
+            name,
+            params,
+            ret,
+            body,
+        } => {
+            write!(out, "{indent}fn {name}(")?;
+            for (i, (p, ty)) in params.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                write!(out, "{p}: ")?;
+                emit_type(out, ty)?;
+            }
+            write!(out, ") -> ")?;
+            emit_type(out, ret)?;
+            writeln!(out, " {{")?;
+            let inner = format!("{indent}    ");
+            for st in &body.stmts {
+                emit_stmt_indented(out, st, &inner, false)?;
+            }
+            out.push_str(&inner);
+            emit_expr(out, &body.trailing_return, false)?;
+            writeln!(out)?;
+            writeln!(out, "{indent}}}")?;
             Ok(())
         }
         Stmt::While { cond, body } => {

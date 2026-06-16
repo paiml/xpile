@@ -219,6 +219,10 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::LetTuple { .. } => false,
             // PMAT-504: a closure binding is never BigInt-typed at v0.2.0.
             Stmt::ClosureLet { .. } => false,
+            // PMAT-736: a named inner fn is never BigInt-typed at v0.2.0 (its
+            // own i64 params/return drive its arithmetic, independent of the
+            // enclosing fn's bigint mode).
+            Stmt::NestedFn { .. } => false,
             // PMAT-479 (R10): an early return introduces no BigInt
             // binding (bigint mode is set by params/lets/return type).
             // PMAT-503a: a raise introduces no BigInt binding.
@@ -369,6 +373,38 @@ fn emit_stmt_indented(
             out.push_str("| { ");
             emit_expr(out, body, mode)?;
             writeln!(out, " }};")?;
+            Ok(())
+        }
+        // PMAT-736: a named inner fn item — `fn <name>(<params>) -> R { <body> }`.
+        // Emitted as a real Rust `fn` (not a closure) so a self-call recurses by
+        // name (closures can't reference their own binding → E0425). A nested fn
+        // is i64-mode (mode=false): its own params drive its arithmetic, so it
+        // uses checked_* like a top-level fn even inside a bigint parent.
+        Stmt::NestedFn {
+            name,
+            params,
+            ret,
+            body,
+        } => {
+            write!(out, "{indent}fn {name}(")?;
+            for (i, (p, ty)) in params.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                write!(out, "{p}: ")?;
+                emit_type(out, ty)?;
+            }
+            write!(out, ") -> ")?;
+            emit_type(out, ret)?;
+            writeln!(out, " {{")?;
+            let inner_indent = format!("{indent}    ");
+            for st in &body.stmts {
+                emit_stmt_indented(out, st, &inner_indent, false)?;
+            }
+            out.push_str(&inner_indent);
+            emit_expr(out, &body.trailing_return, false)?;
+            writeln!(out)?;
+            writeln!(out, "{indent}}}")?;
             Ok(())
         }
         // PMAT-494b: tuple unpacking → `let (a, b, ...) = <value>;`.

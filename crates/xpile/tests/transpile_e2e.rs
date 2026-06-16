@@ -11896,6 +11896,47 @@ fn main() {
     assert_rustc_runs("nested_dict_assign", &rust, driver);
 }
 
+/// PMAT-736 (HUNT-V11 V11-6): a self-referential nested `def` now lowers to a
+/// NAMED inner `fn` (which can recurse by name) instead of a `let` closure
+/// (which can't reference its own binding → rustc E0425). Cross-checked vs
+/// python3: `fact(6) == 720`, `fib(10) == 55`.
+#[test]
+fn nested_recursive_fn_emits_named_inner_fn() {
+    let rust = xpile_transpile_to_rust("nested_recursive_fn.py");
+    assert!(
+        rust.contains("fn go(k: i64) -> i64") && !rust.contains("let go ="),
+        "expected a named inner `fn go` (not a closure binding), got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(fact(6), 720);   // 6! == 720
+    assert_eq!(fib(10), 55);    // fib(10) == 55
+}
+"#;
+    assert_rustc_runs("nested_recursive_fn", &rust, driver);
+}
+
+/// PMAT-736 (HUNT-V11 V11-6): a recursive nested def that ALSO captures an
+/// enclosing local is rejected with a clear message (a named inner `fn` can
+/// recurse but cannot capture; a closure can capture but cannot self-call) —
+/// not emitted as invalid Rust (E0425/E0434).
+#[test]
+fn nested_recursive_capturing_rejected_with_clear_message() {
+    let py = fixture("nested_recursive_capturing.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !out.status.success(),
+        "a recursive-capturing def should reject"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("recursive nested function")
+            && stderr.contains("captures enclosing variable")
+            && stderr.contains("base"),
+        "expected a clear recursive-capture message naming `base`; got: {stderr}"
+    );
+}
+
 /// PMAT-735 (HUNT-V11 V11-12): a lambda stored in a list / comprehension (a
 /// first-class callable value) is rejected with a clear message naming `lambda`,
 /// not the opaque `unsupported expression: Discriminant(4)`. Supported lambda
