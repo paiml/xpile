@@ -11728,6 +11728,20 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
             // PMAT-624: a tuple interpolates as its Python repr (`(1, 2)`, with
             // the `(x,)` single-element comma); tuples have no `Display` (E0277).
             Type::Tuple(elems) => return build_tuple_repr(value, &elems),
+            // PMAT-708: a bare dict/set in an f-string emitted `format!("{}", map)`
+            // → E0277 (HashMap/HashSet have no `Display`). Reject cleanly — same
+            // posture as `str(d)`/`print(d)`/`.format()`/`%` over a dict/set —
+            // instead of emitting uncompilable Rust. (Rendering the repr is also a
+            // divergence: HashMap iteration order is non-deterministic, PMAT-537.)
+            Type::Dict(_, _) | Type::Set(_) => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` interpolates a bare dict/set in an f-string — a Rust \
+                     HashMap/HashSet has no `Display` and its iteration order is \
+                     non-deterministic; format the contents explicitly (e.g. via a sorted \
+                     comprehension) at v0.2.0",
+                    ctx.fn_name
+                )));
+            }
             _ => return Ok(value),
         }
     };
