@@ -3412,9 +3412,15 @@ fn emit_floor_div(
     emit_expr(out, lhs, mode)?;
     write!(out, "; let __fb = ")?;
     emit_expr(out, rhs, mode)?;
+    // PMAT-728 (HUNT-V10 typed-exceptions sub-slice): guard the zero divisor with
+    // Python's ZeroDivisionError message BEFORE `checked_div` — `checked_div`
+    // returns None for BOTH a zero divisor and the `i64::MIN / -1` overflow, so the
+    // old single `.expect("...overflow...")` reported a misleading "overflow" for
+    // the common `a // 0` (Python raises ZeroDivisionError). Mirrors the float path.
     write!(
         out,
-        "; let __q = __fa.checked_div(__fb).expect(\"{panic_msg}\"); \
+        "; if __fb == 0 {{ panic!(\"xpile: ZeroDivisionError: integer division or modulo by zero\"); }} \
+         let __q = __fa.checked_div(__fb).expect(\"{panic_msg}\"); \
          let __r = __fa.checked_rem(__fb).expect(\"{panic_msg}\"); \
          if __r != 0 && (__r < 0) != (__fb < 0) {{ __q - 1 }} else {{ __q }} }}"
     )?;
@@ -3438,9 +3444,12 @@ fn emit_floor_mod(
     emit_expr(out, lhs, mode)?;
     write!(out, "; let __fb = ")?;
     emit_expr(out, rhs, mode)?;
+    // PMAT-728: guard the zero divisor with Python's ZeroDivisionError message
+    // before `checked_rem` (which also returns None on `i64::MIN % -1` overflow).
     write!(
         out,
-        "; let __r = __fa.checked_rem(__fb).expect(\"{panic_msg}\"); \
+        "; if __fb == 0 {{ panic!(\"xpile: ZeroDivisionError: integer modulo by zero\"); }} \
+         let __r = __fa.checked_rem(__fb).expect(\"{panic_msg}\"); \
          if __r != 0 && (__r < 0) != (__fb < 0) {{ __r + __fb }} else {{ __r }} }}"
     )?;
     Ok(())

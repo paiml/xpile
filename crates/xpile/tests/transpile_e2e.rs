@@ -11870,6 +11870,47 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
     );
 }
 
+/// PMAT-728 (HUNT-V10 typed-exceptions sub-slice): integer `//` / `%` by zero
+/// now panics with a `ZeroDivisionError` message (matching Python) instead of the
+/// misleading `i64 floor-div overflow` — `checked_div`/`checked_rem` return None
+/// for both a zero divisor and the `i64::MIN/-1` overflow, so the divisor is now
+/// guarded first. (Prerequisite for `except ZeroDivisionError:` discrimination.)
+#[test]
+fn int_div_zero_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("int_div_zero.py");
+    assert!(
+        rust.contains("ZeroDivisionError: integer division or modulo by zero")
+            && rust.contains("ZeroDivisionError: integer modulo by zero"),
+        "expected ZeroDivisionError guards, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // Normal values (cross-checked vs python3): Python floor/mod sign follows divisor.
+    assert_eq!(fd(7, 2), 3);
+    assert_eq!(fd(-7, 2), -4);
+    assert_eq!(md(-7, 2), 1);
+    assert_eq!(md(7, 3), 1);
+    std::panic::set_hook(Box::new(|_| {}));
+    for (r, name) in [
+        (std::panic::catch_unwind(|| fd(10, 0)), "fd"),
+        (std::panic::catch_unwind(|| md(10, 0)), "md"),
+    ] {
+        let e = r.expect_err("div/mod by zero must panic");
+        let msg = e
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| e.downcast_ref::<String>().map(|s| s.as_str()))
+            .unwrap_or("");
+        assert!(
+            msg.contains("ZeroDivisionError"),
+            "{name}: expected ZeroDivisionError, got: {msg}"
+        );
+    }
+}
+"#;
+    assert_rustc_runs("int_div_zero", &rust, driver);
+}
+
 /// PMAT-727 (HUNT-V10 V10-8): the grouping idiom `d.setdefault(k, []).append(v)`
 /// now transpiles (was rejected with a misleading subprocess error). Lowers to
 /// `d.entry(k).or_insert_with(|| <default>).push(v)` — creating the key's list on

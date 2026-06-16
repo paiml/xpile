@@ -2911,9 +2911,11 @@ fn emit_floor_div(
     emit_expr(out, lhs, mode)?;
     write!(out, "; let __fb = ")?;
     emit_expr(out, rhs, mode)?;
+    // PMAT-728: zero-divisor → ZeroDivisionError before checked_div (mirrors rust).
     write!(
         out,
-        "; let __q = __fa.checked_div(__fb).expect(\"{panic_msg}\"); \
+        "; if __fb == 0 {{ panic!(\"xpile: ZeroDivisionError: integer division or modulo by zero\"); }} \
+         let __q = __fa.checked_div(__fb).expect(\"{panic_msg}\"); \
          let __r = __fa.checked_rem(__fb).expect(\"{panic_msg}\"); \
          if __r != 0 && (__r < 0) != (__fb < 0) {{ __q - 1 }} else {{ __q }} }}"
     )?;
@@ -2934,9 +2936,11 @@ fn emit_floor_mod(
     emit_expr(out, lhs, mode)?;
     write!(out, "; let __fb = ")?;
     emit_expr(out, rhs, mode)?;
+    // PMAT-728: zero-divisor → ZeroDivisionError before checked_rem (mirrors rust).
     write!(
         out,
-        "; let __r = __fa.checked_rem(__fb).expect(\"{panic_msg}\"); \
+        "; if __fb == 0 {{ panic!(\"xpile: ZeroDivisionError: integer modulo by zero\"); }} \
+         let __r = __fa.checked_rem(__fb).expect(\"{panic_msg}\"); \
          if __r != 0 && (__r < 0) != (__fb < 0) {{ __r + __fb }} else {{ __r }} }}"
     )?;
     Ok(())
