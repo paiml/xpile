@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.439] — 2026-06-16
+
+### Fixed
+
+- **PMAT-739 — the `i64::MIN` integer literal `-9223372036854775808` now
+  transpiles.** It was rejected at transpile ("integer literal does not fit in
+  i64"): Python parses it as `USub(Constant(9223372036854775808))`, and the bare
+  magnitude `2^63` doesn't fit i64, so lowering the operand rejected it before
+  the unary minus was applied. A new `fold_neg_int_literal` helper (called first
+  in both USub lowering arms) folds `-<int literal>` whose magnitude exceeds
+  `i64::MAX` by negating in i128 and range-checking back to i64 — `-(2^63)` lands
+  on `i64::MIN`, anything larger stays a bigint reject. Magnitudes that already
+  fit i64 (`-1`, `-5`) are left to the existing path unchanged. The positive
+  `9223372036854775808` (i64::MAX+1) and `-9223372036854775809` (past i64::MIN)
+  still reject. (HUNT-V12 V12-31.)
+
 ## [0.1.438] — 2026-06-16
 
 ### Fixed
