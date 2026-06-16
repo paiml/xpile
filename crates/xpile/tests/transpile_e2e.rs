@@ -11869,6 +11869,34 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
     );
 }
 
+/// PMAT-718 (HUNT-V9 V9-3): `int(s, base)` now validates PEP-515 underscore
+/// placement before stripping — a leading / trailing / doubled underscore raises
+/// ValueError like Python, instead of silently stripping and returning a wrong
+/// value (`int("1__0", 16)` gave 16). A legal underscore right after the base
+/// prefix (`int("0x_ff", 16)` → 255) and between digits (`int("1_000", 16)` →
+/// 4096) still parse.
+#[test]
+fn radix_underscore_validation_matches_cpython() {
+    let rust = xpile_transpile_to_rust("radix_underscore.py");
+    assert!(
+        rust.contains("contains(\"__\")"),
+        "expected doubled-underscore guard, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(parse_hex("1_000".to_string()), 4096);
+    assert_eq!(parse_hex("0x_ff".to_string()), 255);
+    assert_eq!(parse_hex("ff".to_string()), 255);
+    std::panic::set_hook(Box::new(|_| {}));
+    for bad in ["1__0", "_10", "10_", "0x__ff"] {
+        let r = std::panic::catch_unwind(|| parse_hex(bad.to_string()));
+        assert!(r.is_err(), "expected ValueError panic for {bad}");
+    }
+}
+"#;
+    assert_rustc_runs("radix_underscore", &rust, driver);
+}
+
 /// PMAT-717 (HUNT-V9 V9-20): a non-empty dict/list literal whose declared value
 /// (or element) type is a known collection and at least one value is itself an
 /// empty collection — `{0: [], 1: []}` over `dict[int, list[int]]`, `[[], [1]]`
