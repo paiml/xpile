@@ -10741,10 +10741,22 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     ) {
                         return Ok(inner);
                     }
-                    // PMAT-502cj: `list(xs)` over an existing list is a copy —
-                    // value semantics already clones, so return it as-is.
+                    // PMAT-502cj: `list(xs)` over an existing list is a COPY.
+                    // PMAT-737 (HUNT-V12 V12-3): emit an explicit owned clone
+                    // (`(xs).clone()`), NOT the bare `xs`. Returning `xs` as-is
+                    // relied on "value semantics already clones", but in
+                    // for-loop-iterable position `for x in xs` lowers to
+                    // `xs.iter().cloned()` — an immutable borrow of `xs` that
+                    // lives for the whole loop. A body that mutates the original
+                    // (`for x in list(xs): xs.remove(x)`, the canonical
+                    // safe-iterate-a-copy idiom) then hits rustc E0502
+                    // (mutable borrow while immutably borrowed). An owned clone
+                    // is iterated as a temporary instead, leaving `xs` free to
+                    // mutate — matching both Python (`list(xs)` is a fresh list)
+                    // and the already-correct slice-copy form `xs[:]` (which
+                    // materialises `.to_vec()`).
                     if matches!(infer_type_in_ctx(ctx, &inner), Type::List(_)) {
-                        return Ok(inner);
+                        return Ok(Expr::Clone(Box::new(inner)));
                     }
                     // PMAT-520: `list(set(...))` / `list(<set>)` → the unique
                     // elements as a Vec. Previously fell through to a miscompile
