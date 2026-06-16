@@ -1282,26 +1282,20 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             }
             // PMAT-502dj: `.partition(sep)` / `.rpartition(sep)` → 3-tuple.
             if matches!(op, StrMethodOp::Partition | StrMethodOp::RPartition) {
+                // PMAT-726 (HUNT-V10 V10-1): bind recv+sep once and guard the empty
+                // separator (Python raises ValueError) — mirrors the rust backend.
                 let is_r = matches!(op, StrMethodOp::RPartition);
-                out.push_str("match (");
+                out.push_str("{ let __ps = &(");
                 emit_expr(out, recv, mode)?;
-                out.push_str(if is_r {
-                    ").rsplit_once(&("
-                } else {
-                    ").split_once(&("
-                });
+                out.push_str("); let __psep = &(");
                 emit_expr(out, &args[0], mode)?;
-                out.push_str(")[..]) { Some((__a, __b)) => (__a.to_string(), (");
-                emit_expr(out, &args[0], mode)?;
-                out.push_str(").to_string(), __b.to_string()), None => ");
+                out.push_str("); if __psep.is_empty() { panic!(\"xpile: ValueError: empty separator\"); } match __ps.");
+                out.push_str(if is_r { "rsplit_once" } else { "split_once" });
+                out.push_str("(__psep.as_str()) { Some((__a, __b)) => (__a.to_string(), __psep.to_string(), __b.to_string()), None => ");
                 if is_r {
-                    out.push_str("(String::new(), String::new(), (");
-                    emit_expr(out, recv, mode)?;
-                    out.push_str(").to_string()) }");
+                    out.push_str("(String::new(), String::new(), __ps.to_string()) } }");
                 } else {
-                    out.push('(');
-                    emit_expr(out, recv, mode)?;
-                    out.push_str(".to_string(), String::new(), String::new()) }");
+                    out.push_str("(__ps.to_string(), String::new(), String::new()) } }");
                 }
                 return Ok(());
             }
