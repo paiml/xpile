@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.409] — 2026-06-16
+
+### Fixed
+
+- **PMAT-710 — bool operand into float ops casts through i64.** A bool operand into a
+  float-coercing operator (`/`, `//` over a float, `%` over a float, `**` over a float)
+  emitted `(bool) as f64`, which is rustc E0606 (a bool can't cast directly to f64). Python's
+  bool is an int subtype (`True / 2` == 0.5). **Fix**: `to_f64_operand` now casts a
+  `Type::Bool` operand through i64 first — `((b) as i64) as f64` — via a nested `NumCast`.
+  Every float-coercing op routes operands through `to_f64_operand`, so one change fixes `/`,
+  `//`, `%`, and `**`; f64/i64 operands are unchanged. Differential-verified vs python3
+  (div/floordiv/modulo/power over bool; int-div regression). New e2e fixture
+  `bool_float_ops.py` (rustc round-trip). e2e 467 → 468. Found by HUNT-V9 (item V9-4).
+
 ## [0.1.408] — 2026-06-16
 
 ### Fixed
