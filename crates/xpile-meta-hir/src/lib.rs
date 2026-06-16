@@ -969,6 +969,17 @@ pub enum Stmt {
         /// for insertion-order semantics it does NOT yet preserve).
         #[serde(default)]
         over_keys: bool,
+        /// PMAT-743 (HUNT-V12 V12-8): when set to a dict name, the loop body
+        /// mutates that dict and its keys were materialized to an owned `Vec`
+        /// (PMAT-742) — so a SIZE change (inserting a new key / deleting a key)
+        /// during iteration would silently succeed against the snapshot, whereas
+        /// Python raises `RuntimeError: dictionary changed size during iteration`.
+        /// Rust/Ruchy emit a runtime size guard: capture `<dict>.len()` before the
+        /// loop and, after each iteration's body, panic if the length changed (a
+        /// size-stable VALUE-update — PMAT-742 — leaves it unchanged, so the guard
+        /// is silent there). `None` for a list iteration or a read-only dict loop.
+        #[serde(default)]
+        dict_guard: Option<String>,
     },
     /// Paired-target for-loop — Python `for a, b in enumerate(xs)` /
     /// `for a, b in zip(xs, ys)`. PMAT-495 (sprint). A separate variant
@@ -3096,10 +3107,20 @@ fn escape_stmt(s: &mut Stmt) {
             }
         }
         Stmt::ForEach {
-            var, iter, body, ..
+            var,
+            iter,
+            body,
+            dict_guard,
+            ..
         } => {
             escape_name(var);
             escape_expr(iter);
+            // PMAT-743: the size-guard dict name is a separate String copy of the
+            // iterated dict — escape it too so a keyword-named dict stays consistent
+            // with the (escaped) name inside `iter`.
+            if let Some(g) = dict_guard {
+                escape_name(g);
+            }
             for st in body {
                 escape_stmt(st);
             }

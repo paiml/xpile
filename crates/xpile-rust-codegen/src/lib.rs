@@ -528,12 +528,36 @@ fn emit_stmt_indented(
             iter,
             body,
             over_keys,
-            ..
+            dict_guard,
+            elem_ty: _,
         } => {
             // PMAT-472 (R3): a dict iterates keys (`for k in d:`) via
             // `.keys().cloned()`; a list iterates elements via
             // `.iter().cloned()`. Both yield owned values.
             let method = if *over_keys { "keys" } else { "iter" };
+            // PMAT-743 (HUNT-V12 V12-8): a dict whose keys were materialized
+            // (PMAT-742) because the body mutates it. Guard against a SIZE change
+            // during iteration — capture the dict's length before the loop and,
+            // after each body, panic if it changed (matching Python's
+            // `RuntimeError: dictionary changed size during iteration`). A
+            // size-stable value-update leaves the length unchanged, so the guard
+            // is silent there.
+            if let Some(g) = dict_guard {
+                writeln!(out, "{indent}{{ let __dg_n0 = {g}.len();")?;
+                write!(out, "{indent}for {var} in ")?;
+                emit_expr(out, iter, mode)?;
+                writeln!(out, ".{method}().cloned() {{")?;
+                let inner = format!("{indent}    ");
+                for s in body {
+                    emit_stmt_indented(out, s, &inner, mode)?;
+                }
+                writeln!(
+                    out,
+                    "{inner}if {g}.len() != __dg_n0 {{ panic!(\"xpile: RuntimeError: dictionary changed size during iteration\"); }}"
+                )?;
+                writeln!(out, "{indent}}} }}")?;
+                return Ok(());
+            }
             write!(out, "{indent}for {var} in ")?;
             emit_expr(out, iter, mode)?;
             writeln!(out, ".{method}().cloned() {{")?;

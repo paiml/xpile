@@ -468,10 +468,31 @@ fn emit_stmt_indented(
             iter,
             body,
             over_keys,
-            ..
+            dict_guard,
+            elem_ty: _,
         } => {
             // PMAT-472 (R3): dict iterates keys via `.keys().cloned()`.
             let method = if *over_keys { "keys" } else { "iter" };
+            // PMAT-743 (HUNT-V12 V12-8): dict size-change guard (mirrors Rust) —
+            // a mutated dict whose keys were materialized panics like Python's
+            // RuntimeError if its length changes mid-iteration; a value-update
+            // (size-stable) is silent.
+            if let Some(g) = dict_guard {
+                writeln!(out, "{indent}{{ let __dg_n0 = {g}.len();")?;
+                write!(out, "{indent}for {var} in ")?;
+                emit_expr(out, iter, mode)?;
+                writeln!(out, ".{method}().cloned() {{")?;
+                let inner = format!("{indent}    ");
+                for s in body {
+                    emit_stmt_indented(out, s, &inner, mode)?;
+                }
+                writeln!(
+                    out,
+                    "{inner}if {g}.len() != __dg_n0 {{ panic!(\"xpile: RuntimeError: dictionary changed size during iteration\"); }}"
+                )?;
+                writeln!(out, "{indent}}} }}")?;
+                return Ok(());
+            }
             write!(out, "{indent}for {var} in ")?;
             emit_expr(out, iter, mode)?;
             writeln!(out, ".{method}().cloned() {{")?;
