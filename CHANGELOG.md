@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.431] — 2026-06-16
+
+### Changed
+
+- **PMAT-732 — returning a nested function rejects cleanly (was invalid Rust).** A
+  function returning a nested function / closure (`def make(k): def inner(): …;
+  return inner`) silently mis-inferred its return type as the closure's
+  call-result type, emitting `fn make(k) -> <inner-ret> { let inner = ||{…}; inner }`
+  → rustc E0308. The annotated `-> Callable[...]` form already rejected cleanly. Fix
+  (frontend only, NO IR change): before inferring the function's return type, if
+  the trailing `return <Ident>` names a closure binding (in the existing
+  `ctx.closure_returns` map, populated for `name = lambda` and nested `def`),
+  reject with a clear "returning a callable is not supported at v0.2.0" message. A
+  nested closure USED locally (called, not returned) is unaffected. Differential-
+  checked: `make_const` (returns `inner`) now rejects cleanly; `adder` (calls a
+  local `inc`, returns the int sum) still transpiles, `adder(5)`==12. New e2e
+  `return_nested_fn.py` (reject) + `local_closure_used.py` (rustc round-trip). FREE
+  CI. e2e 490→492. FOUND BY HUNT-V10 (item V10-4).
+
 ## [0.1.430] — 2026-06-16
 
 ### Fixed
