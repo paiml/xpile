@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.443] — 2026-06-16
+
+### Fixed
+
+- **PMAT-743 — a dict size change during iteration panics like Python's
+  `RuntimeError`.** Inserting/deleting keys *during* dict iteration
+  (`for k in d: d[k+100] = 1`) is a size change Python rejects with
+  `RuntimeError: dictionary changed size during iteration`. PMAT-742's
+  key-materialization (v0.1.442) had made this case silently grow the snapshot
+  (a silent-wrong); this restores the loud failure. `Stmt::ForEach` gains an
+  optional `dict_guard` (the iterated dict's name), set when the frontend
+  materializes a mutated dict's keys; Rust/Ruchy emit a runtime size guard
+  (capture `<dict>.len()` before the loop, panic after any body that changes it).
+  A size-stable value-update (PMAT-742) leaves the length unchanged → silent; a
+  size change → panics with the Python RuntimeError message. Verified vs python3
+  (`grow({1:1,2:1})` panics ↔ Python raises; `double_vals == 120` unchanged).
+  (HUNT-V12 V12-8.)
+
 ## [0.1.442] — 2026-06-16
 
 ### Fixed
