@@ -707,9 +707,13 @@ fn emit_stmt_indented(
         // PMAT-502at: `del coll[key]`, matching the Rust backend.
         Stmt::DelItem { name, key, is_dict } => {
             if *is_dict {
-                write!(out, "{indent}{name}.remove(&(")?;
+                // PMAT-709: `del d[k]` raises KeyError on an absent key (mirror rust).
+                write!(out, "{indent}assert!({name}.remove(&(")?;
                 emit_expr(out, key, mode)?;
-                writeln!(out, "));")?;
+                writeln!(
+                    out,
+                    ")).is_some(), \"xpile: KeyError: del d[k]: key not in dict\");"
+                )?;
             } else if expr_mentions_ident(key, name) {
                 // PMAT-570: `del xs[-k]` index references `xs` — bind before remove.
                 write!(out, "{indent}{{ let __di = (")?;

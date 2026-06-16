@@ -799,12 +799,19 @@ fn emit_stmt_indented(
         }
         // PMAT-502at: Python `del coll[key]`. list → `coll.remove((k) as
         // usize);` (shift tail left; panics past end = Python IndexError);
-        // dict → `coll.remove(&(k));` (discards the value).
+        // dict → `coll.remove(&(k));`.
+        // PMAT-709: Python's `del d[k]` raises KeyError on an absent key — the
+        // bare `.remove(&k)` discarded the `Option` and silently succeeded
+        // (silent-wrong). Assert the removal returned `Some`, mirroring the
+        // `Stmt::SetRemove` KeyError assert.
         Stmt::DelItem { name, key, is_dict } => {
             if *is_dict {
-                write!(out, "{indent}{name}.remove(&(")?;
+                write!(out, "{indent}assert!({name}.remove(&(")?;
                 emit_expr(out, key, mode)?;
-                writeln!(out, "));")?;
+                writeln!(
+                    out,
+                    ")).is_some(), \"xpile: KeyError: del d[k]: key not in dict\");"
+                )?;
             } else if expr_mentions_ident(key, name) {
                 // PMAT-570: `del xs[-k]` → `xs.remove(len(xs) - k)`; the index
                 // references `xs`, so bind it before the mutable `remove`.
