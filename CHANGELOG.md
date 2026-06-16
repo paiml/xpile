@@ -7,6 +7,30 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.416] — 2026-06-16
+
+### Fixed
+
+- **PMAT-717 — declared element type threaded into nested empty-collection
+  literals.** A non-empty dict/list literal whose declared value (or element) type
+  is a known collection and at least one value is itself an empty collection was
+  rejected — `d: dict[int, list[int]] = {0: [], 1: []}` failed with "empty list
+  literal `[]` requires a type annotation to infer the element type" despite the
+  binding annotation supplying it; same for `m: list[list[int]] = [[], [1]]`. Fix
+  (frontend only, NO IR change): `lower_value_expecting` gains two arms — a
+  non-empty dict literal (all keys present, ≥1 empty-collection value) recurses
+  each value with the declared value type, and a non-empty list literal (≥1
+  empty-collection element) recurses each element with the declared element type;
+  a new `is_empty_collection_literal` predicate gates the divert so ordinary
+  dicts/lists keep the context-aware path and its homogeneity checks.
+  `lower_ann_assign`'s general value now routes through `lower_value_expecting`
+  with the declared type. `**spread` keys and non-collection element types fall
+  through unchanged; `None` values need no threading (PMAT-716 already lowers bare
+  `None`). Differential-verified vs python3: `groups()` is `{0:[5],1:[9,8]}`,
+  `matrix()` is `[[7],[1],[]]`, `str_groups()` is `{"a":["hello"],"b":["x"]}`. New
+  e2e `nested_empty_literal.py` rustc round-trip. FREE CI. e2e 474→475. FOUND BY
+  HUNT-V9 (item V9-20).
+
 ## [0.1.415] — 2026-06-16
 
 ### Fixed
