@@ -10308,6 +10308,45 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         });
                     }
                 }
+                // PMAT-707: 3-way `zip(a, b, c)` in expression position → flatten
+                // a nested `Zip{a, Zip{b, c}}` (each a 2-tuple) via a `Map` that
+                // re-tuples `(a, (b, c))` → `(a, b, c)`. Mirrors the 3-way for-zip
+                // (PMAT-562); reuses Zip/Map/TupleLit/TupleIndex, no new IR. (4+-way
+                // is deferred — rare; falls through as before.)
+                if fname.id.as_str() == "zip" && call.keywords.is_empty() && call.args.len() == 3 {
+                    let a = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    let b = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                    let c = lower_expr_in_ctx(ctx, call.args[2].clone())?;
+                    if matches!(infer_type_in_ctx(ctx, &a), Type::List(_))
+                        && matches!(infer_type_in_ctx(ctx, &b), Type::List(_))
+                        && matches!(infer_type_in_ctx(ctx, &c), Type::List(_))
+                    {
+                        let nested = Expr::Zip {
+                            left: Box::new(a),
+                            right: Box::new(Expr::Zip {
+                                left: Box::new(b),
+                                right: Box::new(c),
+                            }),
+                        };
+                        let p = "__z3".to_string();
+                        let idx = |t: Expr, i: usize| Expr::TupleIndex {
+                            tuple: Box::new(t),
+                            index: i,
+                        };
+                        let body = Expr::TupleLit(vec![
+                            idx(Expr::Ident(p.clone()), 0),
+                            idx(idx(Expr::Ident(p.clone()), 1), 0),
+                            idx(idx(Expr::Ident(p.clone()), 1), 1),
+                        ]);
+                        return Ok(Expr::Map {
+                            list: Box::new(nested),
+                            lambda: SortKey {
+                                param: p,
+                                body: Box::new(body),
+                            },
+                        });
+                    }
+                }
                 // PMAT-502d: `list(reversed(xs))` — the `list(...)` wrapper is
                 // a no-op once the inner `reversed(xs)` already materializes
                 // to a `Vec`. Unwrap a single already-list-typed argument.
