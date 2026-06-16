@@ -11423,6 +11423,12 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // value (including `±0.0`/`±inf`/`nan`) and is bit-exact with `-x`,
         // matching python3.
         ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::USub) => {
+            // PMAT-739 (HUNT-V12 V12-31): fold `-<int literal>` before lowering
+            // the operand, so `-9223372036854775808` (i64::MIN) parses (the bare
+            // magnitude 2^63 doesn't fit i64 → the operand lowering would reject).
+            if let Some(folded) = fold_neg_int_literal(u.operand.as_ref()) {
+                return folded;
+            }
             let operand = lower_expr_in_ctx(ctx, (*u.operand).clone())?;
             // A float *literal* keeps the cleaner negative-literal fold
             // (PMAT-502bo); only a non-literal float *expression* needs the
@@ -13295,7 +13301,54 @@ fn lower_bool_op_in_ctx(ctx: &LoweringCtx, b: ast::ExprBoolOp) -> Result<Expr, F
     Ok(acc)
 }
 
+/// PMAT-739 (HUNT-V12 V12-31): fold a unary minus over an integer *literal* into
+/// a single `LitInt`, negating in i128 so `-2^63` (= `i64::MIN`, fully
+/// representable) is accepted. Python parses `-9223372036854775808` as
+/// `USub(Constant(9223372036854775808))` — the bare magnitude `2^63` does NOT fit
+/// i64, so lowering the operand first rejects it ("does not fit in i64") before
+/// the minus is applied. Returns `Some(Ok(LitInt))` for a folded literal,
+/// `Some(Err(..))` for a magnitude past `i64::MIN` (still a bigint reject), or
+/// `None` when the operand is not a bare integer literal (caller proceeds
+/// normally — `-x`, `-abs(n)`, `-3.14`, …).
+fn fold_neg_int_literal(operand: &ast::Expr) -> Option<Result<Expr, FrontendError>> {
+    let ast::Expr::Constant(c) = operand else {
+        return None;
+    };
+    let ast::Constant::Int(big) = &c.value else {
+        return None;
+    };
+    // Only intervene when the positive magnitude does NOT fit i64 — i.e. the
+    // normal "lower the operand, then negate" path would reject it ("does not
+    // fit in i64"). A magnitude that fits i64 (≤ `i64::MAX`) is left to the
+    // existing path unchanged (so `-1`/`-5` keep their established emit). The
+    // only newly-foldable case is exactly `-(2^63)` = `i64::MIN`.
+    if i64::try_from(big.clone()).is_ok() {
+        return None;
+    }
+    let reject = || {
+        Err(FrontendError::Lower(
+            "negated integer literal does not fit in i64 — bigint promotion not implemented at v0.1.0".into(),
+        ))
+    };
+    // The magnitude exceeds `i64::MAX`; negate in i128 and range-check back to
+    // i64. Only `2^63` lands on `i64::MIN`; anything larger stays a bigint reject.
+    match i128::try_from(big.clone()) {
+        Ok(mag) => Some(match i64::try_from(-mag) {
+            Ok(v) => Ok(Expr::LitInt(v)),
+            Err(_) => reject(),
+        }),
+        Err(_) => Some(reject()),
+    }
+}
+
 fn lower_unary_op(u: ast::ExprUnaryOp) -> Result<Expr, FrontendError> {
+    // PMAT-739: fold `-<int literal>` first so `-9223372036854775808` (i64::MIN)
+    // parses (the operand-first lowering below would reject the bare 2^63).
+    if matches!(u.op, ast::UnaryOp::USub) {
+        if let Some(folded) = fold_neg_int_literal(u.operand.as_ref()) {
+            return folded;
+        }
+    }
     let operand = lower_expr(*u.operand)?;
     let op = match u.op {
         ast::UnaryOp::USub => {
