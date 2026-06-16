@@ -2908,14 +2908,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             } else {
                 // PMAT-639: bind the collection (by ref, eval-once — `&(...)`
                 // also handles a block-producing collection) and the index,
-                // then wrap a negative index. An out-of-range result still
-                // panics via the `as usize` cast / bounds check (≈ Python
-                // IndexError).
+                // then wrap a negative index.
+                // PMAT-744 (HUNT-V13 exc-flow-01/02): emit an explicit bounds
+                // check that panics with the `xpile: IndexError:` TAG, instead of
+                // relying on the native `Vec` `[i]` panic (whose message carries
+                // no `xpile:` prefix). The typed-`except` discrimination
+                // (PMAT-731) only re-raises panics tagged `xpile: <KnownExc>:`, so
+                // an untagged native bounds panic was being SILENTLY SWALLOWED by
+                // an unrelated `except ValueError:` (etc.) — Python propagates the
+                // IndexError. Tagging makes `except IndexError` catch it and every
+                // other typed `except` correctly re-raise it.
                 out.push_str("{ let __lc = &(");
                 emit_expr(out, collection, mode)?;
                 out.push_str("); let __li: i64 = (");
                 emit_expr(out, index, mode)?;
-                out.push_str(") as i64; let __lidx = if __li < 0 { __lc.len() as i64 + __li } else { __li }; __lc[__lidx as usize].clone() }");
+                out.push_str(") as i64; let __lidx = if __li < 0 { __lc.len() as i64 + __li } else { __li }; if __lidx < 0 || __lidx as usize >= __lc.len() { panic!(\"xpile: IndexError: list index out of range\"); } __lc[__lidx as usize].clone() }");
             }
         }
         // PMAT-466 (v0.2.0 Track 1.C): Python `d[k]` → Rust
