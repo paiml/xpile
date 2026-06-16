@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.437] — 2026-06-16
+
+### Fixed
+
+- **PMAT-737 — `for x in list(xs): xs.remove(x)` (iterate-a-copy idiom) now compiles.**
+  The canonical "iterate a copy so I can safely mutate the original" idiom hit
+  rustc **E0502**. `list(xs)` over a list returned the bare `xs` (relying on
+  "value semantics already clones"), but in for-loop-iterable position
+  `for x in xs` lowers to `xs.iter().cloned()` — an immutable borrow of `xs`
+  that lives for the whole loop — so an in-body `xs.remove()` (mutable borrow)
+  conflicted. `list(xs)` over a list now lowers to an explicit owned clone
+  (`Expr::Clone` → `(xs).clone()`): the loop iterates a temporary and `xs` stays
+  free to mutate, matching both Python (`list(xs)` is a fresh list) and the
+  already-correct slice-copy form `xs[:]` (`.to_vec()`). Verified vs python3
+  (`evens_removed([1,2,3,4,5]) == 3`; `ys = list(xs)` stays an independent copy).
+  (HUNT-V12 V12-3.)
+
 ## [0.1.436] — 2026-06-16
 
 ### Added / Fixed
