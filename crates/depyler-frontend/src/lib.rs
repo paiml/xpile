@@ -86,6 +86,12 @@ struct LoweringCtx {
     /// body count as mutable even if the source has only one assign,
     /// because the runtime executes that assign repeatedly.
     mutable: HashSet<String>,
+    /// PMAT-738 (HUNT-V12 V12-5): module consts assigned (→ shadowed by a
+    /// function-local of the same name) in this body. A `let`/assign to such a
+    /// name is rejected (Rust can't express the shadow — the name is a constant
+    /// pattern, E0005). Excludes consts that are only read, and consts shadowed
+    /// by a same-named param (a normal param reassignment).
+    shadowed_consts: HashSet<String>,
     /// PMAT-588 (ownership cluster): per-name source READ count (number of
     /// `Name`-load occurrences in the function body). A non-Copy value passed
     /// by value to a function call is MOVED; if the same variable is read more
@@ -278,6 +284,27 @@ impl LoweringCtx {
         for p in params {
             name_types.insert(p.name.clone(), p.ty.clone());
         }
+        // PMAT-738 (HUNT-V12 V12-5): a name ASSIGNED in a function body that
+        // collides with a module-level `const` of the same name. In Python that
+        // name is a function-local (assignment makes it local for the whole
+        // scope, shadowing the const); xpile previously emitted a reassignment of
+        // the Rust `const` (E0070: cannot assign to a const). Faithfully
+        // shadowing it is not expressible: a `let LIMIT = …` whose name matches an
+        // in-scope `const LIMIT` is a *constant pattern*, not a fresh binding
+        // (E0005), and every read / for-loop var / tuple target would need a
+        // function-wide rename. So such a binding is rejected with a clear message
+        // (see `lower_assign`). Precompute the set here: a const that is assigned
+        // somewhere in the body AND is not shadowed by a same-named param. A const
+        // that is only READ stays bound and resolves to the module const.
+        let shadowed_consts: HashSet<String> = {
+            let param_names: HashSet<&str> = params.iter().map(|p| p.name.as_str()).collect();
+            let assigned = walk_counts(body, false);
+            consts
+                .keys()
+                .filter(|c| !param_names.contains(c.as_str()) && assigned.contains_key(*c))
+                .cloned()
+                .collect()
+        };
         let mutable = compute_mutable_names(params, body);
         let read_counts = count_name_reads(body);
         Self {
@@ -286,6 +313,7 @@ impl LoweringCtx {
             bound,
             name_types,
             mutable,
+            shadowed_consts,
             read_counts,
             signatures,
             structs,
@@ -1895,6 +1923,21 @@ fn lower_function_def(
             ty: Type::List(Box::new(elem)),
             mutable: false,
         });
+    }
+
+    // PMAT-738 (HUNT-V12 V12-5, companion): a parameter sharing a name with a
+    // module-level const cannot shadow it in Rust either (E0530: function
+    // parameters cannot shadow constants). Reject with the same clear message as
+    // the local-shadow case rather than emit invalid Rust.
+    for p in &params {
+        if consts.contains_key(&p.name) {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` has a parameter `{}` that shadows the module-level constant `{}` — \
+                 Rust forbids this (a parameter cannot shadow a constant). Rename the parameter \
+                 or the module constant.",
+                f.name, p.name, p.name
+            )));
+        }
     }
 
     // Body: zero or more leading `let`s, then a final `return expr`.
@@ -5409,6 +5452,22 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
             )));
         }
     };
+    // PMAT-738 (HUNT-V12 V12-5): a plain `name = …` whose `name` is a
+    // module-level const assigned in this body (→ a Python function-local that
+    // shadows the const) is rejected with a clear message — Rust cannot emit a
+    // `let name` that shadows an in-scope `const name` (it is a constant
+    // pattern, E0005; previously this emitted a reassignment of the const,
+    // E0070). Rename the local. (A same-named param is excluded in
+    // `LoweringCtx::new`, so a normal param reassignment is unaffected.)
+    if ctx.shadowed_consts.contains(&name) {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` assigns `{name}`, which shadows the module-level constant `{name}` — \
+             in Python this would create a function-local, but xpile cannot emit a Rust binding \
+             that shadows the `const {name}` (the name resolves to a constant pattern, not a fresh \
+             binding). Rename the local (e.g. `{name}_local`) or the module constant.",
+            ctx.fn_name
+        )));
+    }
     // PMAT-466: route the RHS through the context-aware path so a
     // dict op on the right of a plain `name = ...` (e.g.
     // `result = table.get(k, 0)`) lowers correctly.
