@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.442] — 2026-06-16
+
+### Fixed
+
+- **PMAT-742 — `for k in d: d[k] = …` (dict value-update during iteration) now
+  compiles.** Updating dict *values* during iteration (size-stable, legal Python)
+  hit rustc E0502: the lazy `d.keys().cloned()` borrows `d` for the whole loop,
+  conflicting with the in-body `d.insert(...)`. In `lower_for_stmt`, when the
+  iterated dict is mutated (it's in `ctx.mutable`), its keys are now materialized
+  to an owned `Vec` (`DictView::Keys`, iterated as a `List(K)`) so `d` is free to
+  mutate — matching Python's key-iteration for the size-stable value-update case.
+  A read-only dict iteration keeps the lazy `keys().cloned()` (no extra alloc).
+  Verified vs python3 (`double_vals({1:10,2:20,3:30}) == 120`). (HUNT-V12 V12-2.)
+
 ## [0.1.441] — 2026-06-16
 
 ### Fixed
