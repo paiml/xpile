@@ -3114,13 +3114,17 @@ fn main() {
 #[test]
 fn del_item() {
     let rust = xpile_transpile_to_rust("del_item.py");
+    // PMAT-712: a plain-index list del now normalizes a runtime-negative index
+    // (bind + `if __di < 0 { len + __di }`) before `remove`.
     assert!(
-        rust.contains("xs.remove((i) as usize);"),
-        "list del (var):\n{rust}"
+        rust.contains("let __di = (i) as i64;")
+            && rust.contains("if __di < 0")
+            && rust.contains("xs.remove(__di as usize);"),
+        "list del (var) normalized:\n{rust}"
     );
     assert!(
-        rust.contains("xs.remove((0i64) as usize);"),
-        "list del (literal):\n{rust}"
+        rust.contains("let __di = (0i64) as i64;"),
+        "list del (literal) normalized:\n{rust}"
     );
     // PMAT-709: dict del now asserts the key was present (KeyError parity).
     assert!(
@@ -3152,6 +3156,24 @@ fn main() {
 }
 "#;
     assert_rustc_runs("del_item", &rust, driver);
+}
+
+/// PMAT-712: `del xs[i]` with a runtime-negative index emitted `xs.remove((i) as
+/// usize)` → the negative underflowed to a huge index → panic. It now wraps like
+/// Python (`del xs[-1]` removes the last element). Cross-checked vs python3
+/// (HUNT-V9 V9-11).
+#[test]
+fn del_list_runtime_negidx() {
+    let rust = xpile_transpile_to_rust("del_list_runtime_negidx.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(del_idx(vec![10, 20, 30], -1), 30); // removes 30 -> [10,20] -> 10+20
+    assert_eq!(del_idx(vec![10, 20, 30], -2), 40); // removes 20 -> [10,30] -> 10+30
+    assert_eq!(del_pos(vec![10, 20, 30], 1), 2);   // positive index unchanged
+    assert_eq!(del_pos(vec![10, 20, 30], 0), 2);
+}
+"#;
+    assert_rustc_runs("del_list_runtime_negidx", &rust, driver);
 }
 
 /// PMAT-709: `del d[k]` on an absent key raises KeyError in Python — xpile's bare
