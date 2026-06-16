@@ -1975,9 +1975,30 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         // bind it before remove() (E0502). Positive indices keep the inline form.
         Expr::ListPop { list, index } => match index {
             None => {
-                out.push('(');
-                emit_expr(out, list, mode)?;
-                out.push_str(").pop().unwrap()");
+                // PMAT-715: `xs[i].pop()` → l-value pop (mirror rust); the read
+                // path clones the inner container, popping a throwaway clone.
+                let lvalue_base = match list.as_ref() {
+                    Expr::Index {
+                        collection,
+                        index: idx,
+                    } => match collection.as_ref() {
+                        Expr::Ident(base) => Some((base.clone(), idx.as_ref())),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some((base, idx)) = lvalue_base {
+                    out.push_str("{ let __pi = (");
+                    emit_expr(out, idx, mode)?;
+                    write!(
+                        out,
+                        ") as i64; let __pi = if __pi < 0 {{ {base}.len() as i64 + __pi }} else {{ __pi }}; {base}[__pi as usize].pop().unwrap() }}"
+                    )?;
+                } else {
+                    out.push('(');
+                    emit_expr(out, list, mode)?;
+                    out.push_str(").pop().unwrap()");
+                }
             }
             Some(i) => {
                 let refs_self =

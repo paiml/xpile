@@ -2316,9 +2316,35 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // `(<list>).remove((<i>) as usize)` (panics if out of range).
         Expr::ListPop { list, index } => match index {
             None => {
-                out.push('(');
-                emit_expr(out, list, mode)?;
-                out.push_str(").pop().unwrap()");
+                // PMAT-715: `xs[i].pop()` must mutate the element IN PLACE. The
+                // read path (`emit_expr`) clones the inner container, so the pop
+                // mutated a throwaway clone (silent-wrong — `xs[i]` kept its
+                // length). When the receiver is `Ident[index]`, emit an l-value
+                // place `base[norm(i)].pop().unwrap()` (the base is marked `mut`
+                // by `count_pop_receivers`); a normalized negative index wraps like
+                // Python. Deeper/other receivers keep the (read-clone) form.
+                let lvalue_base = match list.as_ref() {
+                    Expr::Index {
+                        collection,
+                        index: idx,
+                    } => match collection.as_ref() {
+                        Expr::Ident(base) => Some((base.clone(), idx.as_ref())),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some((base, idx)) = lvalue_base {
+                    out.push_str("{ let __pi = (");
+                    emit_expr(out, idx, mode)?;
+                    write!(
+                        out,
+                        ") as i64; let __pi = if __pi < 0 {{ {base}.len() as i64 + __pi }} else {{ __pi }}; {base}[__pi as usize].pop().unwrap() }}"
+                    )?;
+                } else {
+                    out.push('(');
+                    emit_expr(out, list, mode)?;
+                    out.push_str(").pop().unwrap()");
+                }
             }
             // PMAT-570: a negative-resolved index (`len(xs) - k`) references the
             // receiver, conflicting with `remove`'s mutable borrow (E0502) — bind
