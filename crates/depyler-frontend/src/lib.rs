@@ -1882,6 +1882,16 @@ fn lower_function_def(
         )));
     }
 
+    // PMAT-741 (HUNT-V12 V12-9/10/11): capture each param's default AST before
+    // the args are consumed below, so a mutable-collection default mutated in the
+    // body can be rejected after the mutability pre-pass runs (see below).
+    let param_defaults: Vec<(String, Option<ast::Expr>)> = f
+        .args
+        .args
+        .iter()
+        .map(|a| (a.def.arg.to_string(), a.default.as_deref().cloned()))
+        .collect();
+
     // Parse explicit param annotations (`a: int`). Default to I64 when
     // unannotated — Python lets that mean "any int" so it's safe.
     let mut params: Vec<Param> = Vec::with_capacity(f.args.args.len());
@@ -1991,6 +2001,36 @@ fn lower_function_def(
         enums,
     );
     ctx.cls_name = cls_name;
+
+    // PMAT-741 (HUNT-V12 V12-9/10/11): reject a mutable-collection-literal default
+    // (`[..]` / `{k: v}` / `{..}`) on a param that is MUTATED in the body. Python
+    // evaluates a default ONCE at definition and SHARES that one instance across
+    // calls (so mutations accumulate — the famous gotcha); xpile fills the default
+    // expression at each call site (a fresh value per call), which silently
+    // diverges. A read-only mutable default is unaffected (a fresh copy per call
+    // is observably identical, so it still transpiles). The mutability pre-pass
+    // (`ctx.mutable`) has run by now, so `.append()`/subscript-assign/reassign of
+    // the param are all detected.
+    for (name, default) in &param_defaults {
+        let Some(d) = default else { continue };
+        let kind = match d {
+            ast::Expr::List(_) => "list",
+            ast::Expr::Dict(_) => "dict",
+            ast::Expr::Set(_) => "set",
+            _ => continue,
+        };
+        if ctx.mutable.contains(name) {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` has a mutable default argument `{name}` (a {kind}) that is mutated in \
+                 its body. Python evaluates a default ONCE at definition and shares that single \
+                 instance across every call (so the mutations accumulate); xpile gives each call a \
+                 fresh value, which would silently diverge. Use `{name}: Optional[...] = None` and \
+                 initialize it in the body (`if {name} is None: {name} = ...`).",
+                f.name
+            )));
+        }
+    }
+
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
     for stmt in leading {
         // A single Python statement may lower to multiple meta-HIR
