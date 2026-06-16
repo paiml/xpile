@@ -1625,6 +1625,27 @@ fn main() {
     assert_rustc_runs("enumerate_zip_standalone", &rust, driver);
 }
 
+/// PMAT-707: 3-way `zip(a, b, c)` in EXPRESSION position — `list(zip(a, b, c))` —
+/// was rejected/mis-typed as I64 (only 2-way worked in expr position; 3-way only
+/// in a for-loop). Flattened via a nested `Zip` + a re-tupling `Map` → a flat
+/// list of 3-tuples. Cross-checked vs python3 (HUNT-V8 item V8-12).
+#[test]
+fn zip3_expr() {
+    let rust = xpile_transpile_to_rust("zip3_expr.py");
+    assert!(
+        rust.contains("Vec<(i64, String, i64)>"),
+        "3-way zip should produce a flat 3-tuple list type:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(z3_len(vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]), 3);
+    assert_eq!(z3_first(vec![1, 2], vec!["x".into(), "y".into()], vec![3, 4]), "x");
+    assert_eq!(z2_regression(vec![1, 2], vec![3, 4]), 2); // 2-way regression
+}
+"#;
+    assert_rustc_runs("zip3_expr", &rust, driver);
+}
+
 /// PMAT-502e (Tranche 2): 1-arg `min(xs)`/`max(xs)` over an int list →
 /// `xs.iter().cloned().min().unwrap()` (or `.max()`). (PMAT-502er switched the
 /// non-float reduction from `.copied()` to `.cloned()` so `String` works too;
