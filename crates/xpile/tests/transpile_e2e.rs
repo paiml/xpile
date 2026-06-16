@@ -3435,6 +3435,29 @@ fn main() {
     assert_rustc_runs("list_comp_filter", &rust, driver);
 }
 
+/// PMAT-713: a comprehension filter `[x for x in xs if x]` and `assert x` use
+/// Python truthiness (like `if x:`, which already works) — they were rejected
+/// ("filter/assert not Bool"). Coerced via `truthy_condition`. Cross-checked vs
+/// python3 (HUNT-V9 items V9-16 + V9-17).
+#[test]
+fn truthiness_comp_assert() {
+    let rust = xpile_transpile_to_rust("truthiness_comp_assert.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(nonzero_ints(vec![0, 1, 2, 0, 3]), vec![1, 2, 3]);
+    assert_eq!(
+        nonempty_strs(vec!["a".into(), "".into(), "b".into()]),
+        vec!["a".to_string(), "b".to_string()]
+    );
+    assert_eq!(assert_int(6), 12);
+    assert_eq!(assert_list(vec![1, 2]), 2);
+    // assert on a falsy value panics (AssertionError)
+    assert!(std::panic::catch_unwind(|| assert_int(0)).is_err());
+}
+"#;
+    assert_rustc_runs("truthiness_comp_assert", &rust, driver);
+}
+
 /// PMAT-502az (Tranche 2): filtered dict + set comprehensions
 /// `{k: v for x in xs if cond}` / `{e for x in xs if cond}` — the `if`
 /// guards the desugared insert/add.
