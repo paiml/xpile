@@ -11896,6 +11896,31 @@ fn main() {
     assert_rustc_runs("nested_dict_assign", &rust, driver);
 }
 
+/// PMAT-742 (HUNT-V12 V12-2): `for k in d: d[k] = d[k] * 2` — updating dict
+/// *values* during iteration (size-stable, legal Python) — now compiles. The
+/// lazy `d.keys().cloned()` borrowed `d` for the whole loop, conflicting with the
+/// in-body `d.insert(...)` (rustc E0502); when the iterated dict is mutated, its
+/// keys are now materialized to an owned `Vec` first, leaving `d` free to mutate.
+/// Cross-checked vs python3: `double_vals({1:10,2:20,3:30}) == 120`.
+#[test]
+fn dict_iter_value_update_compiles_and_runs() {
+    let rust = xpile_transpile_to_rust("dict_iter_value_update.py");
+    assert!(
+        rust.contains("d.keys().cloned().collect::<Vec<_>>()"),
+        "expected the mutated dict's keys materialized to an owned Vec, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let mut d = std::collections::HashMap::new();
+    d.insert(1i64, 10i64);
+    d.insert(2i64, 20i64);
+    d.insert(3i64, 30i64);
+    assert_eq!(double_vals(d), 120);   // (20 + 40 + 60)
+}
+"#;
+    assert_rustc_runs("dict_iter_value_update", &rust, driver);
+}
+
 /// PMAT-741 (HUNT-V12 V12-9/10/11): a mutable-collection default (`[..]` / `{k:v}`
 /// / `{..}`) that is MUTATED in the body is rejected with a clear message. Python
 /// shares the def-time instance across calls (mutations accumulate); xpile fills

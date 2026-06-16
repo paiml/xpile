@@ -4044,6 +4044,28 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
         // `list[str]`) so the `ForEach` `.iter().cloned()` yields `String`s.
         let (iter_expr, elem_ty, over_keys) = match iter_ty {
             Type::List(elem) => (iter_expr, *elem, false),
+            // PMAT-742 (HUNT-V12 V12-2): `for k in d:` over a dict normally
+            // iterates `d.keys().cloned()` (a lazy view that borrows `d` for the
+            // whole loop). When the body MUTATES `d` — the common size-stable
+            // value-update `for k in d: d[k] = …` — that borrow conflicts with the
+            // in-body `d.insert(...)` (rustc E0502). If `d` is mutated anywhere in
+            // the function (so it is in `ctx.mutable`), materialize the keys to an
+            // owned `Vec` (`DictView::Keys`) and iterate THAT (a `List(K)`,
+            // `over_keys = false`), leaving `d` free to mutate — matching Python's
+            // key-iteration for the size-stable value-update case. A read-only dict
+            // iteration keeps the lazy `keys().cloned()` (no extra allocation).
+            // (Over-materializing a dict that is mutated only outside this loop is
+            // harmless — correctness-preserving, one extra keys-Vec.)
+            Type::Dict(key_ty, _) if matches!(&iter_expr, Expr::Ident(n) if ctx.mutable.contains(n)) => {
+                (
+                    Expr::DictView {
+                        dict: Box::new(iter_expr),
+                        kind: DictViewKind::Keys,
+                    },
+                    *key_ty,
+                    false,
+                )
+            }
             Type::Dict(key_ty, _) => (iter_expr, *key_ty, true),
             Type::Str => (
                 Expr::StrChars {
