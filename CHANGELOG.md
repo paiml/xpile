@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.413] — 2026-06-16
+
+### Added
+
+- **PMAT-714 — `str.format("{}")` accepts a float/bool arg.** `"{}".format(x)` over a float
+  (or bool) was rejected ("a bool/float needs a spec"), even though `f"{x}"` and `str(x)`
+  already produce the correct Python repr (`3.0`, `3.14`, `True`/`False`). **Fix**: the no-spec
+  `{}` branch of `lower_str_format` wraps a `Type::F64` arg in `ToStr{of_float:true}` and a
+  `Type::Bool` arg in `bool_to_python_str` (the same conversions the f-string path uses), so
+  `{}` formats the resulting String correctly — `3.0` not Rust's `3`, `True` not `true`.
+  Applied only when the arg is referenced exactly once (mirroring the radix in-place rewrite);
+  a float/bool shared with a `:spec` field still needs the spec; int/str args and spec'd
+  fields are unchanged. Differential-verified vs python3 (float, bool, whole-float `3.0`,
+  mixed). New e2e fixture `str_format_float_default.py`; `str_format`/`format_spec`
+  regressions intact. e2e 471 → 472. Found by HUNT-V9 (item V9-26).
+
 ## [0.1.412] — 2026-06-16
 
 ### Added
