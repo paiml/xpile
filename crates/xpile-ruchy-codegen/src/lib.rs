@@ -2467,11 +2467,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 emit_expr(out, index, mode)?;
                 out.push_str(" as usize].clone()");
             } else {
+                // PMAT-744 (HUNT-V13 exc-flow-01/02): tag the out-of-bounds panic
+                // as `xpile: IndexError:` (mirrors Rust) so typed-`except`
+                // discrimination re-raises/catches it correctly instead of an
+                // untagged native bounds panic being silently swallowed.
                 out.push_str("{ let __lc = &(");
                 emit_expr(out, collection, mode)?;
                 out.push_str("); let __li: i64 = (");
                 emit_expr(out, index, mode)?;
-                out.push_str(") as i64; let __lidx = if __li < 0 { __lc.len() as i64 + __li } else { __li }; __lc[__lidx as usize].clone() }");
+                out.push_str(") as i64; let __lidx = if __li < 0 { __lc.len() as i64 + __li } else { __li }; if __lidx < 0 || __lidx as usize >= __lc.len() { panic!(\"xpile: IndexError: list index out of range\"); } __lc[__lidx as usize].clone() }");
             }
         }
         // PMAT-466 (v0.2.0 Track 1.C): dict ops → Rust, matching the

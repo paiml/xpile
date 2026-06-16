@@ -11896,6 +11896,34 @@ fn main() {
     assert_rustc_runs("nested_dict_assign", &rust, driver);
 }
 
+/// PMAT-744 (HUNT-V13 exc-flow-01/02): a typed `except ValueError:` no longer
+/// silently swallows an out-of-bounds list IndexError. A runtime list-index read
+/// now panics with the `xpile: IndexError:` TAG, so the typed-`except`
+/// discrimination (PMAT-731) re-raises it from a non-matching except (Python
+/// propagates the IndexError) and catches it under `except IndexError:`. Was a
+/// silent-wrong: native untagged bounds panics matched no re-raise pattern.
+#[test]
+fn except_wrong_type_does_not_swallow_index_error() {
+    let rust = xpile_transpile_to_rust("except_wrong_type_index.py");
+    assert!(
+        rust.contains("xpile: IndexError: list index out of range"),
+        "expected a tagged IndexError on list-index OOB, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let xs = vec![1i64, 2, 3];
+    // except IndexError catches it (returns -1), like Python:
+    assert_eq!(right_except(xs.clone(), 0), 1);
+    assert_eq!(right_except(xs.clone(), 99), -1);
+    // except ValueError must NOT catch it — the IndexError propagates (panics):
+    std::panic::set_hook(Box::new(|_| {}));
+    let r = std::panic::catch_unwind(move || wrong_except(xs, 99));
+    assert!(r.is_err(), "except ValueError must not swallow IndexError (Python propagates)");
+}
+"#;
+    assert_rustc_runs("except_wrong_type_index", &rust, driver);
+}
+
 /// PMAT-743 (HUNT-V12 V12-8): inserting a NEW key during dict iteration
 /// (`for k in d: d[k+100] = 1`) — a size change — now panics like Python's
 /// `RuntimeError: dictionary changed size during iteration`, instead of silently
