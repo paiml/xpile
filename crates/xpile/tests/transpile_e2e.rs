@@ -11870,6 +11870,33 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
     );
 }
 
+/// PMAT-727 (HUNT-V10 V10-8): the grouping idiom `d.setdefault(k, []).append(v)`
+/// now transpiles (was rejected with a misleading subprocess error). Lowers to
+/// `d.entry(k).or_insert_with(|| <default>).push(v)` — creating the key's list on
+/// first use. The empty-list default threads its element type (PMAT-717).
+#[test]
+fn setdefault_append_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("setdefault_append.py");
+    assert!(
+        rust.contains(".entry(k).or_insert_with(|| ") && rust.contains(").push(v)"),
+        "expected entry().or_insert_with().push() lowering, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let g = group(vec![
+        ("a".to_string(), 1),
+        ("b".to_string(), 2),
+        ("a".to_string(), 3),
+    ]);
+    assert_eq!(g.get("a"), Some(&vec![1, 3]));
+    assert_eq!(g.get("b"), Some(&vec![2]));
+    let g2 = group_nonempty(vec![("a".to_string(), 1), ("a".to_string(), 2)]);
+    assert_eq!(g2.get("a"), Some(&vec![0, 1, 2]));
+}
+"#;
+    assert_rustc_runs("setdefault_append", &rust, driver);
+}
+
 /// PMAT-726 (HUNT-V10 V10-1): `s.partition(sep)` / `s.rpartition(sep)` with an
 /// EMPTY separator now raises ValueError at the call (like Python) instead of
 /// silently returning a bogus 3-tuple (the old `split_once("")` returned

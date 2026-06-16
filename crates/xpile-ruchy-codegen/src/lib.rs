@@ -215,6 +215,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::IndexAssign { .. } => false,
             // PMAT-533: subscript-receiver append carries no Type::Let.
             Stmt::IndexAppend { .. } => false,
+            // PMAT-727: setdefault-append carries no Type::Let.
+            Stmt::DictSetdefaultAppend { .. } => false,
             // PMAT-466: dict keyed assignment same disposition.
             Stmt::DictSet { .. } => false,
             // PMAT-506c: field assignment introduces no binding.
@@ -695,6 +697,23 @@ fn emit_stmt_indented(
                 emit_expr(out, index, mode)?;
                 out.push_str(") as usize].push(");
             }
+            emit_expr(out, elem, mode)?;
+            writeln!(out, ");")?;
+            Ok(())
+        }
+        // PMAT-727 (HUNT-V10 V10-8): `d.setdefault(k, default).append(elem)` →
+        // `d.entry(k).or_insert_with(|| default).push(elem);` (mirrors rust backend).
+        Stmt::DictSetdefaultAppend {
+            dict,
+            key,
+            default,
+            elem,
+        } => {
+            write!(out, "{indent}{dict}.entry(")?;
+            emit_expr(out, key, mode)?;
+            out.push_str(").or_insert_with(|| ");
+            emit_expr(out, default, mode)?;
+            out.push_str(").push(");
             emit_expr(out, elem, mode)?;
             writeln!(out, ");")?;
             Ok(())
