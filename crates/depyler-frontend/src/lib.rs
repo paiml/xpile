@@ -11177,6 +11177,22 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     lhs: Box::new(operand),
                     rhs: Box::new(Expr::LitFloat(0.0)),
                 }),
+                // PMAT-722 (HUNT-V9 V9-18 follow-up): `not x` over `Optional[T]` is
+                // the negation of its truthiness — `not None` is True, `not Some(v)`
+                // is `not <truthy(v)>`. Reuse the `OptionTruthy` lowering and wrap in
+                // `UnOp::Not`. A truthiness-unsupported inner falls through to the
+                // context-free reject.
+                Type::Optional(inner) => match optional_inner_truthy_body(&inner) {
+                    Some((body, by_ref)) => Ok(Expr::UnOp {
+                        op: UnOp::Not,
+                        operand: Box::new(Expr::OptionTruthy {
+                            value: Box::new(operand),
+                            by_ref,
+                            body: Box::new(body),
+                        }),
+                    }),
+                    None => lower_unary_op(u),
+                },
                 _ => lower_unary_op(u),
             }
         }
