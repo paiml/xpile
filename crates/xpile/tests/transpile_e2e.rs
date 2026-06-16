@@ -11896,6 +11896,23 @@ fn main() {
     assert_rustc_runs("nested_dict_assign", &rust, driver);
 }
 
+/// PMAT-735 (HUNT-V11 V11-12): a lambda stored in a list / comprehension (a
+/// first-class callable value) is rejected with a clear message naming `lambda`,
+/// not the opaque `unsupported expression: Discriminant(4)`. Supported lambda
+/// positions (`name = lambda`, `key=`/`map`/`filter`) are unaffected.
+#[test]
+fn lambda_in_comprehension_rejected_with_clear_message() {
+    let py = fixture("lambda_in_comprehension.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(!out.status.success(), "a lambda value should be rejected");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("lambda expressions are only supported")
+            && !stderr.contains("Discriminant"),
+        "expected a clear lambda message (no opaque discriminant); got: {stderr}"
+    );
+}
+
 /// PMAT-734b (HUNT-V11 V11-10): float `b ** e` overflow now raises OverflowError
 /// (like Python) instead of silently returning `inf`; `0.0 ** <neg>` raises
 /// ZeroDivisionError. Finite results and an already-infinite base are unchanged.
