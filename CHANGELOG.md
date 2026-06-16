@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.422] — 2026-06-16
+
+### Added
+
+- **PMAT-723 — `if x:` narrows `Optional[T]` to `Some` in the then-body.** `if x:`
+  over an `Optional[T]` lowered the *condition* (PMAT-721) but did not narrow `x`
+  in the then-body, so using the value there — `if x: return x + "!"` — still
+  failed (`x` was `Option<String>`). A truthy Optional is necessarily `Some`, so
+  the then-body can soundly unwrap. Fix (frontend only, NO IR change): new
+  `if_truthy_narrow_target` (the truthiness companion to
+  `is_not_none_narrow_target`) detects a bare `if <name>:` over a non-reassigned
+  Optional-typed name; `lower_if_stmt` OR-combines it with the existing `is not
+  None` narrowing so the then-body registers `x` as narrowed-to-Some and reads
+  unwrap to `T`. The condition is still lowered before narrowing (stays
+  `(x)[.as_ref()].is_some_and(...)`); the else-body is not narrowed; mutable /
+  reassigned names stay un-narrowed (sound). Differential-verified vs python3:
+  `use_after_str` none/none/hi!, `use_after_int` −1/−1/105, `double_use` 0/0/16.
+  New e2e `if_truthy_narrow.py` rustc round-trip. FREE CI. e2e 480→481. FOUND BY
+  HUNT-V9 (item V9-18 follow-up).
+
 ## [0.1.421] — 2026-06-16
 
 ### Added
