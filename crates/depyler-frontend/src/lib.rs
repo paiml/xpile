@@ -5722,13 +5722,8 @@ fn lower_subscript_assign_target(
     sub: &ast::ExprSubscript,
     value: Expr,
 ) -> Result<Stmt, FrontendError> {
-    if let Some((receiver, indices)) = peel_nested_subscript_assign(ctx, sub)? {
-        ctx.mutable.insert(receiver.clone());
-        return Ok(Stmt::IndexAssign {
-            list_name: receiver,
-            indices,
-            value,
-        });
+    if let Some((receiver, steps)) = peel_nested_subscript_assign(ctx, sub)? {
+        return Ok(nested_subscript_write_stmt(ctx, receiver, steps, value));
     }
     let receiver = match sub.value.as_ref() {
         ast::Expr::Name(n) => n.id.to_string(),
@@ -5957,10 +5952,14 @@ fn combine_aug(
 /// list target after validating the base types as `list[list[…]]` of
 /// matching depth with every index `int`. A non-Name base or a
 /// too-shallow / non-list base / non-int index is a clear error.
+/// PMAT-730: a peeled nested-subscript-assign path — `(receiver, [(index,
+/// is_dict)…])`, base→leaf. `is_dict` is the container kind at each level.
+type NestedSubscriptPath = (String, Vec<(Expr, bool)>);
+
 fn peel_nested_subscript_assign(
     ctx: &mut LoweringCtx,
     sub: &ast::ExprSubscript,
-) -> Result<Option<(String, Vec<Expr>)>, FrontendError> {
+) -> Result<Option<NestedSubscriptPath>, FrontendError> {
     let mut slices: Vec<ast::Expr> = vec![(*sub.slice).clone()];
     let mut base = (*sub.value).clone();
     let receiver = loop {
@@ -5983,32 +5982,67 @@ fn peel_nested_subscript_assign(
     if slices.len() == 1 {
         return Ok(None);
     }
-    // Nested list indexing — the base must type as `list[list[…]]` nested at
-    // least as deep as the index path, and every index must be `int`.
-    let mut depth_ty = ctx.name_types.get(&receiver).cloned();
-    for _ in 0..slices.len() {
-        match depth_ty {
-            Some(Type::List(elem)) => depth_ty = Some(*elem),
+    // PMAT-730: walk the container type per level, recording each step's
+    // (lowered-index, is_dict). A `list` level requires an `int` index and
+    // descends into its element type; a `dict` level lowers the key and descends
+    // into its value type. Both list[list[…]] and dict-bearing nests are accepted
+    // (the all-list case still routes to `IndexAssign`; a dict level routes to
+    // `NestedSubscriptAssign`). A non-list/dict container at any level rejects.
+    let mut container_ty = ctx.name_types.get(&receiver).cloned();
+    let mut steps: Vec<(Expr, bool)> = Vec::with_capacity(slices.len());
+    for s in slices {
+        match container_ty {
+            Some(Type::List(elem)) => {
+                let idx = lower_expr_in_ctx(ctx, s)?;
+                if !matches!(infer_type_in_ctx(ctx, &idx), Type::I64) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` nested-indexed-assigns `{receiver}[…]` with a non-int list index — only `int` list indices are supported",
+                        ctx.fn_name
+                    )));
+                }
+                steps.push((idx, false));
+                container_ty = Some(*elem);
+            }
+            Some(Type::Dict(_, val)) => {
+                let key = lower_expr_in_ctx(ctx, s)?;
+                steps.push((key, true));
+                container_ty = Some(*val);
+            }
             _ => {
                 return Err(FrontendError::Lower(format!(
-                    "function `{}` nested-subscript-assigns `{receiver}[…][…]` but it is not a nested `list[list[…]]` of matching depth — only nested-list assignment is supported at v0.2.0",
+                    "function `{}` nested-subscript-assigns `{receiver}[…][…]` but it is not a nested `list`/`dict` of matching depth — supported nests are `list[list[…]]` and `dict`-bearing (`d[a][b]`, `dm[k][i]`) at v0.2.0",
                     ctx.fn_name
                 )));
             }
         }
     }
-    let mut indices = Vec::with_capacity(slices.len());
-    for s in slices {
-        let idx = lower_expr_in_ctx(ctx, s)?;
-        if !matches!(infer_type_in_ctx(ctx, &idx), Type::I64) {
-            return Err(FrontendError::Lower(format!(
-                "function `{}` nested-indexed-assigns `{receiver}[…]` with a non-int index — only `int` indices are supported",
-                ctx.fn_name
-            )));
+    Ok(Some((receiver, steps)))
+}
+
+/// Build a write [`Stmt`] from a peeled nested-subscript path: all-`list` levels
+/// stay on `IndexAssign` (the existing nested-list codegen); a path containing a
+/// `dict` level uses `NestedSubscriptAssign` (per-level kind). Marks `receiver`
+/// mutable.
+fn nested_subscript_write_stmt(
+    ctx: &mut LoweringCtx,
+    receiver: String,
+    steps: Vec<(Expr, bool)>,
+    value: Expr,
+) -> Stmt {
+    ctx.mutable.insert(receiver.clone());
+    if steps.iter().all(|(_, is_dict)| !is_dict) {
+        Stmt::IndexAssign {
+            list_name: receiver,
+            indices: steps.into_iter().map(|(i, _)| i).collect(),
+            value,
         }
-        indices.push(idx);
+    } else {
+        Stmt::NestedSubscriptAssign {
+            base: receiver,
+            steps,
+            value,
+        }
     }
-    Ok(Some((receiver, indices)))
 }
 
 fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<Stmt, FrontendError> {
@@ -6099,7 +6133,17 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
             // path (shared with plain `= v`), fold the indices into a nested
             // `Expr::Index` read for the current value, combine, then emit a
             // multi-index `IndexAssign`. `None` ⇒ single-level (below).
-            if let Some((receiver, indices)) = peel_nested_subscript_assign(ctx, sub)? {
+            if let Some((receiver, steps)) = peel_nested_subscript_assign(ctx, sub)? {
+                // PMAT-730: augmented nested assign supports the all-LIST nest
+                // (`grid[i][j] += v`). A dict level in the path needs a read +
+                // get_mut write and is deferred — reject cleanly.
+                if steps.iter().any(|(_, is_dict)| *is_dict) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` uses an augmented nested-subscript assignment with a dict level (`d[a][b] <op>= v`) — not supported at v0.2.0 (plain `d[a][b] = v` is)",
+                        ctx.fn_name
+                    )));
+                }
+                let indices: Vec<Expr> = steps.into_iter().map(|(i, _)| i).collect();
                 let mut current = Expr::Ident(receiver.clone());
                 for idx in &indices {
                     current = Expr::Index {

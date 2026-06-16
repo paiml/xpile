@@ -255,6 +255,10 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         Stmt::DictSetdefaultAppend {
             key, default, elem, ..
         } => expr_has_int_arith(key) || expr_has_int_arith(default) || expr_has_int_arith(elem),
+        // PMAT-730: nested subscript assign — recurse into each step index + value.
+        Stmt::NestedSubscriptAssign { steps, value, .. } => {
+            steps.iter().any(|(i, _)| expr_has_int_arith(i)) || expr_has_int_arith(value)
+        }
         // PMAT-506c: field assignment — the assigned value may carry int arith.
         Stmt::FieldAssign { value, .. } => expr_has_int_arith(value),
         // PMAT-502at: del coll[key] — recurse into the key expression.
@@ -758,6 +762,20 @@ pub enum Stmt {
         key: Expr,
         default: Expr,
         elem: Expr,
+    },
+    /// PMAT-730 (HUNT-V10 V10-7): a nested subscript assignment where at least one
+    /// level is a DICT — `d[a][b] = v` over `dict[K, dict[K2, V]]`, or a mixed
+    /// `dm[k][i] = v` over `dict[K, list[T]]`. Each `(index, is_dict)` step is the
+    /// container kind at that level, base→leaf. Rust/Ruchy navigate the
+    /// intermediate levels with `get_mut(&k).unwrap()` (dict) / `[i as usize]`
+    /// (list) and assign at the leaf with `.insert(k, v)` (dict) / `[i as usize] =
+    /// v` (list). Lean refuses (in-place nested mutation). All-LIST nesting stays
+    /// on [`Stmt::IndexAssign`]; this carries the per-level kind a dict level needs.
+    NestedSubscriptAssign {
+        base: String,
+        /// `(index, is_dict)` per level, base→leaf; `len >= 2`.
+        steps: Vec<(Expr, bool)>,
+        value: Expr,
     },
     /// PMAT-506c (classes epic): struct field assignment — Python `obj.field =
     /// value`. Rust/Ruchy emit `(<obj>).<field> = <value>;` (the `obj` binding
@@ -3143,6 +3161,13 @@ fn escape_stmt(s: &mut Stmt) {
             escape_expr(key);
             escape_expr(default);
             escape_expr(elem);
+        }
+        Stmt::NestedSubscriptAssign { base, steps, value } => {
+            escape_name(base);
+            for (i, _) in steps {
+                escape_expr(i);
+            }
+            escape_expr(value);
         }
         Stmt::FieldAssign { obj, value, .. } => {
             escape_name(obj);
