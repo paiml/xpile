@@ -11894,6 +11894,38 @@ fn main() {
     assert_rustc_runs("nested_dict_assign", &rust, driver);
 }
 
+/// PMAT-731 (HUNT-V10 typed-exceptions): a SPECIFIC `except T:` no longer swallows
+/// a DIFFERENT exception. `except ValueError:` around `100 // 0` now lets the
+/// ZeroDivisionError propagate (it re-raises non-matching known builtin panics);
+/// `except Exception:` stays catch-all; `except KeyError:` catches the KeyError.
+#[test]
+fn typed_except_discrimination_matches_cpython() {
+    let rust = xpile_transpile_to_rust("typed_except.py");
+    assert!(
+        rust.contains("resume_unwind") && rust.contains("xpile: ZeroDivisionError: "),
+        "expected re-raise discrimination for the typed except, got:\n{rust}"
+    );
+    let driver = r#"
+use std::collections::HashMap;
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    assert_eq!(catch_value(5), 20);
+    assert_eq!(catch_value(-1), -1); // ValueError caught
+    // ZeroDivisionError must NOT be caught by `except ValueError:` — it propagates.
+    assert!(std::panic::catch_unwind(|| catch_value(0)).is_err());
+    // `except Exception:` is catch-all.
+    assert_eq!(catch_all(0), -99);
+    assert_eq!(catch_all(-1), -99);
+    // `except KeyError:` catches the missing-key panic.
+    let mut a = HashMap::new();
+    a.insert("a".to_string(), 7);
+    assert_eq!(lookup(a, "a".to_string()), 7);
+    assert_eq!(lookup(HashMap::new(), "z".to_string()), -1);
+}
+"#;
+    assert_rustc_runs("typed_except", &rust, driver);
+}
+
 /// PMAT-728 (HUNT-V10 typed-exceptions sub-slice): integer `//` / `%` by zero
 /// now panics with a `ZeroDivisionError` message (matching Python) instead of the
 /// misleading `i64 floor-div overflow` — `checked_div`/`checked_rem` return None

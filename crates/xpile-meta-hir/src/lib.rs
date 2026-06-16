@@ -490,7 +490,9 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-502ez: unwrap recurses into the inner operand.
         Expr::OptionUnwrap(inner) => expr_has_int_arith(inner),
         // PMAT-503b: try/except recurses into both the body and the handler.
-        Expr::TryCatch { body, handler } => expr_has_int_arith(body) || expr_has_int_arith(handler),
+        Expr::TryCatch { body, handler, .. } => {
+            expr_has_int_arith(body) || expr_has_int_arith(handler)
+        }
         // PMAT-506b: a struct literal's field values may contain int arith;
         // a field read does not by itself.
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_has_int_arith(v)),
@@ -1545,10 +1547,21 @@ pub enum Expr {
     /// index-out-of-bounds, …), so the `except` catches those panics: Rust/Ruchy
     /// emit a `std::panic::catch_unwind(AssertUnwindSafe(|| <body>))` match —
     /// `Ok(v) => v`, `Err(_) => <handler>`. Lean refuses (no panic model). Types
-    /// as the `body` type (the `handler` must produce the same type). First cut:
-    /// catch-all (the exception type, if named, is not matched — Rust panics are
-    /// untyped) with no bound exception object, no `else`/`finally`.
-    TryCatch { body: Box<Expr>, handler: Box<Expr> },
+    /// as the `body` type (the `handler` must produce the same type).
+    ///
+    /// PMAT-731 (HUNT-V10 typed-exceptions): `except_type` carries the handler's
+    /// SPECIFIC exception type (`Some("ValueError")`), or `None` for a bare
+    /// `except:` / `except Exception:` / `except BaseException:` (catch-all). When
+    /// `Some(T)`, the `Err` arm RE-RAISES (resume_unwind) a panic whose payload
+    /// names a *different* known builtin exception (`xpile: <Other>:`), so e.g.
+    /// `except ValueError:` no longer swallows a `ZeroDivisionError`. Conservative:
+    /// an unrecognized payload is still caught (no regression). No bound exception
+    /// object, no `else`/`finally`.
+    TryCatch {
+        body: Box<Expr>,
+        handler: Box<Expr>,
+        except_type: Option<String>,
+    },
     /// PMAT-506b (classes epic): struct construction — Python `Name(a, b)` over
     /// a `@dataclass`/class. `fields` are `(field_name, value)` in declaration
     /// order. Rust/Ruchy emit `Name { f0: v0, f1: v1, … }`; Lean refuses. Types
@@ -2956,7 +2969,7 @@ fn escape_expr(e: &mut Expr) {
             escape_expr(default);
         }
         Expr::IsNone { value, .. } => escape_expr(value),
-        Expr::TryCatch { body, handler } => {
+        Expr::TryCatch { body, handler, .. } => {
             escape_expr(body);
             escape_expr(handler);
         }
