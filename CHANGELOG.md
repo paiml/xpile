@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.419] — 2026-06-16
+
+### Fixed
+
+- **PMAT-720 — dict-literal accumulator renamed `__xpile_map` (user-var collision).**
+  A dict literal whose key/value is a bare variable named the same as the codegen
+  accumulator — `{m: 1, m + 1: 2}` where the param is `m` — emitted `{ let mut m =
+  HashMap::new(); m.insert(m.clone(), 1); ... }`. The inner `let mut m` shadowed
+  the user's `m`, so the bare-ident key `m.clone()` referenced the HashMap
+  (inserting the map into itself → rustc E0275, and a wrong key binding). Fix
+  (codegen only, NO IR change; both rust + ruchy `Expr::DictLit`, mirrored): rename
+  the accumulator `m` → `__xpile_map` (xpile's reserved `__xpile_*` temp namespace),
+  so it can never collide with a user identifier. Empty-literal path (bare
+  `HashMap::new()`) unchanged. Differential-verified vs python3: f(5)=3, g("x",7)=9.
+  New e2e `dict_literal_var_key.py` rustc round-trip. FREE CI. e2e 477→478. FOUND BY
+  HUNT-V8 (item V8-EXTRA).
+
 ## [0.1.418] — 2026-06-16
 
 ### Fixed
