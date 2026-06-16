@@ -11869,6 +11869,32 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
     );
 }
 
+/// PMAT-722 (HUNT-V9 V9-18 follow-up): `not x` over an `Optional[T]` is the
+/// negation of its truthiness — `not None` is True, `not Some(v)` is
+/// `not <truthy(v)>`. Reuses the `OptionTruthy` lowering wrapped in `UnOp::Not`.
+#[test]
+fn not_optional_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("not_optional.py");
+    assert!(
+        rust.contains("!(x).is_some_and") || rust.contains("!(x).as_ref().is_some_and"),
+        "expected negated is_some_and, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(not_int(None), true);
+    assert_eq!(not_int(Some(0)), true);
+    assert_eq!(not_int(Some(5)), false);
+    assert_eq!(not_str(None), true);
+    assert_eq!(not_str(Some("".to_string())), true);
+    assert_eq!(not_str(Some("hi".to_string())), false);
+    assert_eq!(not_list(None), true);
+    assert_eq!(not_list(Some(vec![])), true);
+    assert_eq!(not_list(Some(vec![1])), false);
+}
+"#;
+    assert_rustc_runs("not_optional", &rust, driver);
+}
+
 /// PMAT-721 (HUNT-V9 V9-18): Python truthiness of an `Optional[T]` value in a
 /// boolean context — `if x:`, `while x:`, `assert x`, a ternary condition — now
 /// transpiles (was rejected as "condition does not type as bool"). None is falsy;
