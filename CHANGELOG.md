@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.434] — 2026-06-16
+
+### Fixed
+
+- **PMAT-734b — float `**` overflow raises OverflowError.** Float-base `b ** e`
+  returned `inf` on overflow (e.g. `2.0 ** 2000`) instead of raising OverflowError
+  like Python; `0.0 ** <neg>` returned `inf` instead of ZeroDivisionError. Fix
+  (codegen only, NO IR change; both rust + ruchy `FloatOp::Pow`, split out of the
+  shared method arm): bind both operands and guard the powf result —
+  `if __pr.is_infinite() && __pb.is_finite() { if __pb == 0.0 {
+  panic!(ZeroDivisionError) } panic!(OverflowError) }`. A finite base with an
+  infinite result is the overflow (or `0**neg`) case; an already-infinite base
+  (`inf ** 2`) keeps `inf`; finite results (`2**10`, `1.5**3`) are unchanged.
+  Differential-verified vs python3: `fpow(2,2000)`→OverflowError,
+  `fpow(0,-1)`→ZeroDivisionError, normal powers unchanged. New e2e
+  `float_pow_overflow.py` rustc round-trip. FREE CI. e2e 494→495. FOUND BY
+  HUNT-V11 (item V11-10).
+
 ## [0.1.433] — 2026-06-16
 
 ### Fixed
