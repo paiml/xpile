@@ -4042,8 +4042,8 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
         // PMAT-502cl: `for c in s` iterates a string's characters, each a
         // 1-char string. Wrap the string in `Expr::StrChars` (→ a
         // `list[str]`) so the `ForEach` `.iter().cloned()` yields `String`s.
-        let (iter_expr, elem_ty, over_keys) = match iter_ty {
-            Type::List(elem) => (iter_expr, *elem, false),
+        let (iter_expr, elem_ty, over_keys, dict_guard) = match iter_ty {
+            Type::List(elem) => (iter_expr, *elem, false, None),
             // PMAT-742 (HUNT-V12 V12-2): `for k in d:` over a dict normally
             // iterates `d.keys().cloned()` (a lazy view that borrows `d` for the
             // whole loop). When the body MUTATES `d` — the common size-stable
@@ -4056,7 +4056,16 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
             // iteration keeps the lazy `keys().cloned()` (no extra allocation).
             // (Over-materializing a dict that is mutated only outside this loop is
             // harmless — correctness-preserving, one extra keys-Vec.)
-            Type::Dict(key_ty, _) if matches!(&iter_expr, Expr::Ident(n) if ctx.mutable.contains(n)) => {
+            Type::Dict(key_ty, _) if matches!(&iter_expr, Expr::Ident(n) if ctx.mutable.contains(n)) =>
+            {
+                // PMAT-743 (HUNT-V12 V12-8): carry the dict name so the codegen
+                // emits a size-change guard — a mutated dict whose keys are
+                // materialized would otherwise silently grow/shrink against the
+                // snapshot, where Python raises RuntimeError on a size change.
+                let dict_name = match &iter_expr {
+                    Expr::Ident(n) => n.clone(),
+                    _ => unreachable!("matched Expr::Ident above"),
+                };
                 (
                     Expr::DictView {
                         dict: Box::new(iter_expr),
@@ -4064,15 +4073,17 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                     },
                     *key_ty,
                     false,
+                    Some(dict_name),
                 )
             }
-            Type::Dict(key_ty, _) => (iter_expr, *key_ty, true),
+            Type::Dict(key_ty, _) => (iter_expr, *key_ty, true, None),
             Type::Str => (
                 Expr::StrChars {
                     string: Box::new(iter_expr),
                 },
                 Type::Str,
                 false,
+                None,
             ),
             other => {
                 return Err(FrontendError::Lower(format!(
@@ -4100,6 +4111,7 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
             elem_ty,
             body,
             over_keys,
+            dict_guard,
         }]);
     }
 
@@ -6606,6 +6618,7 @@ fn desugar_comp_2gen(
         elem_ty: inner_elem_ty,
         body: inner_body,
         over_keys: false,
+        dict_guard: None,
     };
     let outer_body = wrap(outer_filter, vec![inner_loop]);
     let outer_loop = Stmt::ForEach {
@@ -6614,6 +6627,7 @@ fn desugar_comp_2gen(
         elem_ty: outer_elem_ty,
         body: outer_body,
         over_keys: false,
+        dict_guard: None,
     };
     Ok(vec![
         Stmt::Let {
@@ -6868,6 +6882,7 @@ fn desugar_list_comp(
             elem_ty: elem_in_ty,
             body,
             over_keys: false,
+            dict_guard: None,
         },
     ])
 }
@@ -7063,6 +7078,7 @@ fn desugar_dict_comp(
             elem_ty: elem_in_ty,
             body,
             over_keys: false,
+            dict_guard: None,
         },
     ])
 }
@@ -7340,6 +7356,7 @@ fn desugar_set_comp(
             elem_ty: elem_in_ty,
             body,
             over_keys: false,
+            dict_guard: None,
         },
     ])
 }

@@ -11896,6 +11896,33 @@ fn main() {
     assert_rustc_runs("nested_dict_assign", &rust, driver);
 }
 
+/// PMAT-743 (HUNT-V12 V12-8): inserting a NEW key during dict iteration
+/// (`for k in d: d[k+100] = 1`) — a size change — now panics like Python's
+/// `RuntimeError: dictionary changed size during iteration`, instead of silently
+/// growing the snapshot (the silent-wrong that PMAT-742's key-materialization
+/// would otherwise have introduced). A runtime size guard captures `d.len()`
+/// before the loop and panics after any body that changes it. (A size-stable
+/// value-update — PMAT-742 — leaves the length unchanged, so it stays silent.)
+#[test]
+fn dict_insert_during_iter_panics_like_runtimeerror() {
+    let rust = xpile_transpile_to_rust("dict_insert_during_iter.py");
+    assert!(
+        rust.contains("__dg_n0") && rust.contains("changed size during iteration"),
+        "expected a dict size-change guard, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let mut d = std::collections::HashMap::new();
+    d.insert(1i64, 1i64);
+    d.insert(2i64, 1i64);
+    std::panic::set_hook(Box::new(|_| {}));
+    let r = std::panic::catch_unwind(move || grow(d));
+    assert!(r.is_err(), "size change during iteration must panic (Python RuntimeError)");
+}
+"#;
+    assert_rustc_runs("dict_insert_during_iter", &rust, driver);
+}
+
 /// PMAT-742 (HUNT-V12 V12-2): `for k in d: d[k] = d[k] * 2` — updating dict
 /// *values* during iteration (size-stable, legal Python) — now compiles. The
 /// lazy `d.keys().cloned()` borrowed `d` for the whole loop, conflicting with the
