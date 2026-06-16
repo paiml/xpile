@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.411] — 2026-06-16
+
+### Fixed
+
+- **PMAT-712 — `del xs[i]` normalizes a runtime-negative index.** `del xs[i]` with a
+  runtime-negative `i` emitted `xs.remove((i) as usize)`, which underflowed the negative to
+  `usize::MAX` → a removal-index panic; Python wraps (`del xs[-1]` removes the last element).
+  **Fix**: the `Stmt::DelItem` list `else` arm (a plain index not referencing the receiver)
+  now binds + normalizes — `let __di = (i) as i64; let __di = if __di < 0 { xs.len() as i64 +
+  __di } else { __di }; xs.remove(__di as usize);` — mirroring the read path (PMAT-639). The
+  `expr_mentions_ident` arm is unchanged (a literal negative is frontend-resolved to `len -
+  k`, already non-negative); positive indices unaffected. Mirrored in rust + ruchy.
+  Differential-verified vs python3 (i=-1, i=-2, positive). New e2e fixture
+  `del_list_runtime_negidx.py`; `del_item` shape assertions updated. e2e 469 → 470. Found by
+  HUNT-V9 (item V9-11).
+
 ## [0.1.410] — 2026-06-16
 
 ### Fixed
