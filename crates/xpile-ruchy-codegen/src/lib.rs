@@ -1064,10 +1064,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         // PMAT-702: assert exactly one char (Python `ord("ab")` is a TypeError,
         // not the first char). Mirrors the rust backend.
         Expr::Ord { value } => {
-            out.push_str("({ let mut __oc = (");
+            // PMAT-725 (HUNT-V10 V10-2): bind the operand in `let __os = &(...)`
+            // before `.chars()` to avoid E0716 on `ord(s[0])` (mirrors rust backend).
+            out.push_str("({ let __os = &(");
             emit_expr(out, value, mode)?;
             out.push_str(
-                ").chars(); let __c0 = __oc.next().expect(\"xpile: ord() expected a character, got an empty string (TypeError)\"); if __oc.next().is_some() { panic!(\"xpile: ord() expected a character (TypeError)\"); } __c0 as i64 })",
+                "); let mut __oc = __os.chars(); let __c0 = __oc.next().expect(\"xpile: ord() expected a character, got an empty string (TypeError)\"); if __oc.next().is_some() { panic!(\"xpile: ord() expected a character (TypeError)\"); } __c0 as i64 })",
             );
         }
         Expr::Chr { value } => {
