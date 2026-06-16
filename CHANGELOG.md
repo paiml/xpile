@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.430] — 2026-06-16
+
+### Fixed
+
+- **PMAT-731 — typed `except T:` no longer swallows a different exception.** A
+  specific `except T:` caught EVERY panic (`catch_unwind`'s `Err(_)` catches all),
+  so `except ValueError:` around `100 // 0` caught the ZeroDivisionError instead of
+  letting it propagate (silent-wrong; Python propagates). Built on PMAT-728 (int
+  div-by-zero now carries the correct `xpile: ZeroDivisionError:` prefix). Fix
+  (`Expr::TryCatch` gains `except_type: Option<String>`): `except_type_name`
+  captures the handler's specific type (bare `except:` / `except Exception:` /
+  `except BaseException:` and the base classes `LookupError`/`ArithmeticError` →
+  catch-all `None`, no regression); rust + ruchy codegen re-raise (`resume_unwind`)
+  a payload prefixed `xpile: <Other>: ` for any Other in the KNOWN leaf set
+  {ValueError, KeyError, IndexError, ZeroDivisionError, OverflowError, TypeError}
+  with Other != T (downcasting both `String` + `&str`); an unrecognized payload is
+  still caught (conservative); lean refuses. The six KNOWN types are mutually
+  non-subclass, so cross-re-raising is always correct. Differential-verified vs
+  python3: `catch_value(0)` propagates the ZeroDivisionError, `except Exception:`
+  is catch-all, `except KeyError:` catches the missing-key panic. New e2e
+  `typed_except.py` rustc round-trip. FREE CI. e2e +1. FOUND BY HUNT-V10
+  (typed-exceptions epic — the key discrimination sub-slice).
+
 ## [0.1.429] — 2026-06-16
 
 ### Added
