@@ -11869,6 +11869,36 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
     );
 }
 
+/// PMAT-719 (HUNT-V9 V9-13): set algebra over dict key views — `a.keys() & b.keys()`
+/// (and `|`/`-`/`^`, plus a key-view against a plain set) now transpiles to a Rust
+/// `HashSet` set operation instead of `Vec & Vec` (E0369). The result agrees with
+/// CPython (the views are materialized as sets, then intersected / unioned / etc.).
+#[test]
+fn dict_view_setops_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("dict_view_setops.py");
+    assert!(
+        rust.contains(".intersection(") && rust.contains(".union("),
+        "expected HashSet set ops, got:\n{rust}"
+    );
+    let driver = r#"
+use std::collections::{HashMap, HashSet};
+fn d(p: &[(&str, i64)]) -> HashMap<String, i64> {
+    p.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+}
+fn main() {
+    let a = d(&[("x", 1), ("y", 2), ("z", 3)]);
+    let b = d(&[("y", 3), ("z", 4), ("w", 5)]);
+    let s: HashSet<String> = ["x", "w"].iter().map(|x| x.to_string()).collect();
+    assert_eq!(inter(a.clone(), b.clone()), 2);
+    assert_eq!(uni(a.clone(), b.clone()), 4);
+    assert_eq!(diff(a.clone(), b.clone()), 1);
+    assert_eq!(sym(a.clone(), b.clone()), 2);
+    assert_eq!(key_vs_set(a.clone(), s), 1);
+}
+"#;
+    assert_rustc_runs("dict_view_setops", &rust, driver);
+}
+
 /// PMAT-718 (HUNT-V9 V9-3): `int(s, base)` now validates PEP-515 underscore
 /// placement before stripping — a leading / trailing / doubled underscore raises
 /// ValueError like Python, instead of silently stripping and returning a wrong

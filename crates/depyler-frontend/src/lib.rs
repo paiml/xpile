@@ -10852,6 +10852,54 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     });
                 }
             }
+            // PMAT-719 (HUNT-V9 V9-13): set algebra over dict KEY views. Python's
+            // `a.keys() & b.keys()` (and `|`/`-`/`^`) returns a set. A `.keys()`
+            // view lowers to `DictView{Keys}` which infers as `List(K)`, so the
+            // all-Set routing below misses it and the int-bitwise fall-through
+            // emits `Vec & Vec` (E0369). Wrap each key-view operand in
+            // `SetFromList` (materialize the keys as a HashSet) so it routes to
+            // `SetOp`; the other operand may be a set or another key-view. Only
+            // rewrite when BOTH operands end up sets — `d.keys() & <list>` is a
+            // TypeError in Python anyway, so it falls through unchanged.
+            if let Some(sop) = set_op_from_ast(&b.op) {
+                let lhs_view = matches!(
+                    lhs,
+                    Expr::DictView {
+                        kind: DictViewKind::Keys,
+                        ..
+                    }
+                );
+                let rhs_view = matches!(
+                    rhs,
+                    Expr::DictView {
+                        kind: DictViewKind::Keys,
+                        ..
+                    }
+                );
+                let lhs_ok = lhs_view || matches!(infer_type_in_ctx(ctx, &lhs), Type::Set(_));
+                let rhs_ok = rhs_view || matches!(infer_type_in_ctx(ctx, &rhs), Type::Set(_));
+                if (lhs_view || rhs_view) && lhs_ok && rhs_ok {
+                    let lhs_s = if lhs_view {
+                        Expr::SetFromList {
+                            list: Box::new(lhs),
+                        }
+                    } else {
+                        lhs
+                    };
+                    let rhs_s = if rhs_view {
+                        Expr::SetFromList {
+                            list: Box::new(rhs),
+                        }
+                    } else {
+                        rhs
+                    };
+                    return Ok(Expr::SetOp {
+                        op: sop,
+                        lhs: Box::new(lhs_s),
+                        rhs: Box::new(rhs_s),
+                    });
+                }
+            }
             // PMAT-502g: set algebra — when BOTH operands are sets, `|`/`&`/
             // `-`/`^` are union/intersection/difference/symmetric-difference
             // (disambiguated from the int bitwise/arith BinOp by operand type).
