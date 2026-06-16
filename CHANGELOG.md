@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.427] — 2026-06-16
+
+### Fixed
+
+- **PMAT-728 — integer `//` / `%` by zero raises ZeroDivisionError (not
+  "overflow").** `a // 0` / `a % 0` panicked with the misleading `xpile: i64
+  floor-div overflow; bigint promotion...` message — `checked_div`/`checked_rem`
+  return None for both a zero divisor and the `i64::MIN / -1` overflow, and the
+  single `.expect("...overflow...")` conflated them. Python raises
+  `ZeroDivisionError("integer division or modulo by zero")`. Fix (codegen only, NO
+  IR change; both rust + ruchy `emit_floor_div`/`emit_floor_mod`, mirrored): guard
+  the divisor first — `if __fb == 0 { panic!("xpile: ZeroDivisionError: integer
+  division or modulo by zero") }` (floor-div) / `"...integer modulo by zero"`
+  (mod) — before the checked_div/rem (which still handles the i64::MIN/-1
+  overflow). Mirrors the existing float div/mod guards, and is a prerequisite for
+  `except ZeroDivisionError:` type discrimination (typed-exceptions epic).
+  Differential-verified vs python3: fd(7,2)=3, fd(-7,2)=-4, md(-7,2)=1, md(7,3)=1;
+  fd(10,0)/md(10,0)→ZeroDivisionError. New e2e `int_div_zero.py` rustc round-trip.
+  FREE CI. e2e 485→486. FOUND BY HUNT-V10 (typed-exceptions sub-slice).
+
 ## [0.1.426] — 2026-06-16
 
 ### Added
