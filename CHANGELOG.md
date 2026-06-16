@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.418] — 2026-06-16
+
+### Fixed
+
+- **PMAT-719 — set algebra over dict key views (`a.keys() & b.keys()`).** A set
+  operation over dict key views — `a.keys() & b.keys()` (and `|`/`-`/`^`, plus a
+  key-view against a plain `set`) — emitted `Vec & Vec` (rustc E0369): a `.keys()`
+  view lowers to `DictView{Keys}` which infers as `List(K)`, so the all-Set binop
+  routing missed it and it fell through to the int-bitwise BinOp. Fix (frontend
+  only, NO IR change; ctx-aware BinOp arm): when the op is a set-op (`&|-^`) and an
+  operand is a `DictView{Keys}`, wrap each key-view operand in `Expr::SetFromList`
+  (materialize the keys as a HashSet) and emit `Expr::SetOp`. Only rewrites when
+  BOTH operands end up sets (the other may be a set or another key-view);
+  `d.keys() & <list>` is a Python TypeError anyway, so it falls through unchanged.
+  `.values()` (not set-able in Python) and `.items()` are out of scope.
+  Differential-verified vs python3 over a={x,y,z} b={y,z,w} s={x,w}: inter=2,
+  uni=4, diff=1, sym=2, key_vs_set=1. New e2e `dict_view_setops.py` rustc round-trip.
+  FREE CI. e2e 476→477. FOUND BY HUNT-V9 (item V9-13).
+
 ## [0.1.417] — 2026-06-16
 
 ### Fixed
