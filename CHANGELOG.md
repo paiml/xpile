@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.426] — 2026-06-16
+
+### Added
+
+- **PMAT-727 — `d.setdefault(k, []).append(v)` grouping idiom.** The standard
+  grouping idiom (`.append` whose receiver is `d.setdefault(k, default)`) was
+  rejected with a misleading "subprocess" error. New IR node
+  `Stmt::DictSetdefaultAppend { dict, key, default, elem }`: `try_lower_list_method_call`
+  recognizes `<name>.setdefault(k, default).append(elem)` over a `dict[K, list[T]]`
+  (2-arg setdefault, 1-arg append), threading the dict's value type into the
+  default via `lower_value_expecting` (so an empty `[]` default infers its element
+  type, PMAT-717); rust + ruchy emit `d.entry(k).or_insert_with(|| default).push(elem);`
+  (creates the entry on first use, unlike `d[k].append` which panics KeyError);
+  lean refuses. Differential-verified vs python3:
+  `group([("a",1),("b",2),("a",3)])`={"a":[1,3],"b":[2]}, `[0]`-default case =
+  {"a":[0,1,2]}. New e2e `setdefault_append.py` rustc round-trip. FREE CI. e2e
+  484→485. FOUND BY HUNT-V10 (item V10-8).
+
 ## [0.1.425] — 2026-06-16
 
 ### Fixed
