@@ -251,6 +251,10 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         Stmt::IndexAppend { index, elem, .. } => {
             expr_has_int_arith(index) || expr_has_int_arith(elem)
         }
+        // PMAT-727: setdefault-append — recurse into key, default, and elem.
+        Stmt::DictSetdefaultAppend {
+            key, default, elem, ..
+        } => expr_has_int_arith(key) || expr_has_int_arith(default) || expr_has_int_arith(elem),
         // PMAT-506c: field assignment — the assigned value may carry int arith.
         Stmt::FieldAssign { value, .. } => expr_has_int_arith(value),
         // PMAT-502at: del coll[key] — recurse into the key expression.
@@ -741,6 +745,19 @@ pub enum Stmt {
         index: Expr,
         elem: Expr,
         base_is_dict: bool,
+    },
+    /// PMAT-727 (HUNT-V10 V10-8): the grouping idiom `d.setdefault(k,
+    /// <default>).append(elem)` — get-or-insert the key's list then append. Unlike
+    /// [`Stmt::IndexAppend`] (`d[k].append` panics KeyError on an absent key), this
+    /// CREATES the entry when absent. Rust/Ruchy emit
+    /// `d.entry(<key>).or_insert_with(|| <default>).push(<elem>);`; Lean refuses
+    /// (in-place dict mutation). `default` is the setdefault default (typically an
+    /// empty list, threaded to the dict's value type).
+    DictSetdefaultAppend {
+        dict: String,
+        key: Expr,
+        default: Expr,
+        elem: Expr,
     },
     /// PMAT-506c (classes epic): struct field assignment — Python `obj.field =
     /// value`. Rust/Ruchy emit `(<obj>).<field> = <value>;` (the `obj` binding
@@ -3114,6 +3131,17 @@ fn escape_stmt(s: &mut Stmt) {
         } => {
             escape_name(base);
             escape_expr(index);
+            escape_expr(elem);
+        }
+        Stmt::DictSetdefaultAppend {
+            dict,
+            key,
+            default,
+            elem,
+        } => {
+            escape_name(dict);
+            escape_expr(key);
+            escape_expr(default);
             escape_expr(elem);
         }
         Stmt::FieldAssign { obj, value, .. } => {

@@ -305,6 +305,7 @@ fn emit_function_with_while_helpers(
             | Stmt::DictUpdate { .. }
             | Stmt::ListInsert { .. }
             | Stmt::IndexAppend { .. }
+            | Stmt::DictSetdefaultAppend { .. }
             | Stmt::ListRemoveValue { .. } => {
                 return Err(LeanCodegenError::Unsupported(format!(
                     "function `{}` has in-place mutation (.append/.add/.remove/.discard/.sort/.reverse/.clear/.extend/.insert/.update) inside a while loop; \
@@ -1135,6 +1136,11 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
             "`{base}[i].append(e)` (Stmt::IndexAppend) requires state-monad encoding in Lean — \
              not yet implemented at v0.2.0 first cut; \
              use `--target rust` or `--target ruchy` for in-place mutation"
+        ))),
+        // PMAT-727: setdefault-append — same in-place-mutation gap.
+        Stmt::DictSetdefaultAppend { dict, .. } => Err(LeanCodegenError::Unsupported(format!(
+            "`{dict}.setdefault(k, d).append(e)` (Stmt::DictSetdefaultAppend) requires state-monad \
+             encoding in Lean — not yet implemented at v0.2.0; use `--target rust`/`--target ruchy`"
         ))),
         // PMAT-506c: struct field assignment — struct values are deferred in
         // the Lean lane.

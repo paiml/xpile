@@ -2570,6 +2570,55 @@ fn try_lower_list_method_call(
             }
         }
     }
+    // PMAT-727 (HUNT-V10 V10-8): the grouping idiom `d.setdefault(k,
+    // <default>).append(elem)` — `.append` whose receiver is itself a
+    // `d.setdefault(k, default)` call. Lower to `Stmt::DictSetdefaultAppend`
+    // (`d.entry(k).or_insert_with(|| default).push(elem)`), which creates the
+    // entry when absent (unlike `d[k].append`, which panics KeyError). Requires a
+    // `Name` dict of type `dict[K, list[T]]` and a 2-arg setdefault.
+    if attr.attr.as_str() == "append" {
+        if let ast::Expr::Call(inner) = attr.value.as_ref() {
+            if let ast::Expr::Attribute(sd) = inner.func.as_ref() {
+                if sd.attr.as_str() == "setdefault" {
+                    if let ast::Expr::Name(dict) = sd.value.as_ref() {
+                        let dict_name = dict.id.to_string();
+                        if let Some(Type::Dict(_, val)) = ctx.name_types.get(&dict_name).cloned() {
+                            if matches!(val.as_ref(), Type::List(_))
+                                && inner.args.len() == 2
+                                && inner.keywords.is_empty()
+                                && call.args.len() == 1
+                                && call.keywords.is_empty()
+                            {
+                                let key = match lower_expr_in_ctx(ctx, inner.args[0].clone()) {
+                                    Ok(e) => e,
+                                    Err(err) => return Some(Err(err)),
+                                };
+                                // Thread the dict's value type into the default so
+                                // an empty-list default (`setdefault(k, [])`) infers
+                                // its element type (reuses PMAT-717 threading).
+                                let default = match lower_value_expecting(ctx, &inner.args[1], &val)
+                                {
+                                    Ok(e) => e,
+                                    Err(err) => return Some(Err(err)),
+                                };
+                                let elem = match lower_expr_in_ctx(ctx, call.args[0].clone()) {
+                                    Ok(e) => e,
+                                    Err(err) => return Some(Err(err)),
+                                };
+                                ctx.mutable.insert(dict_name.clone());
+                                return Some(Ok(Stmt::DictSetdefaultAppend {
+                                    dict: dict_name,
+                                    key,
+                                    default,
+                                    elem,
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     let ast::Expr::Name(receiver) = attr.value.as_ref() else {
         return None;
     };
