@@ -11869,6 +11869,37 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
     );
 }
 
+/// PMAT-717 (HUNT-V9 V9-20): a non-empty dict/list literal whose declared value
+/// (or element) type is a known collection and at least one value is itself an
+/// empty collection — `{0: [], 1: []}` over `dict[int, list[int]]`, `[[], [1]]`
+/// over `list[list[int]]`. The declared type is threaded into the empty values so
+/// they get their element type instead of rejecting ("empty list literal requires
+/// a type annotation"). The emitted Rust agrees with CPython.
+#[test]
+fn nested_empty_literal_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("nested_empty_literal.py");
+    assert!(
+        rust.contains("HashMap<i64, Vec<i64>>"),
+        "expected dict-of-lists binding, got:\n{rust}"
+    );
+    assert!(
+        rust.contains("vec![vec![], vec![1i64], vec![]]"),
+        "expected threaded list-of-lists literal, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let g = groups();
+    assert_eq!(g.get(&0), Some(&vec![5]));
+    assert_eq!(g.get(&1), Some(&vec![9, 8]));
+    assert_eq!(matrix(), vec![vec![7], vec![1], vec![]]);
+    let s = str_groups();
+    assert_eq!(s.get("a"), Some(&vec!["hello".to_string()]));
+    assert_eq!(s.get("b"), Some(&vec!["x".to_string()]));
+}
+"#;
+    assert_rustc_runs("nested_empty_literal", &rust, driver);
+}
+
 /// PMAT-716 (HUNT-V9 V9-38): a bare `None` literal in value position — a tuple
 /// element `(a, None)`, an all-`None` tuple, or a dict value — lowers to
 /// `Option::None` instead of rejecting with "unsupported constant:
