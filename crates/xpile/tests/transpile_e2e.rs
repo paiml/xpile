@@ -4623,6 +4623,28 @@ fn main() {
     assert_rustc_runs("bool_op_float_truthy", &rust, driver);
 }
 
+/// PMAT-710: a bool operand into a float-coercing op (`/` `//` `%` `**`) emitted
+/// `(bool) as f64` → rustc E0606. Python's bool is an int subtype (`True/2`==0.5),
+/// so xpile casts through i64 (`((b) as i64) as f64`). One `to_f64_operand` fix
+/// covers all four operators. Cross-checked vs python3 (HUNT-V9 item V9-4).
+#[test]
+fn bool_float_ops() {
+    let rust = xpile_transpile_to_rust("bool_float_ops.py");
+    assert!(
+        rust.contains("as i64)) as f64"),
+        "bool operand should cast through i64 to f64:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(div(true, 2), 0.5);
+    assert_eq!(floordiv(true, 2.0), 0.0);
+    assert_eq!(modulo(true, 2.0), 1.0);
+    assert_eq!(power(true, 3.0), 1.0);
+}
+"#;
+    assert_rustc_runs("bool_float_ops", &rust, driver);
+}
+
 /// PMAT-699: a bare-variable key or value in a dict literal is moved into
 /// `m.insert(...)`; reusing it afterward was rustc E0382. The DictLit codegen now
 /// clones bare idents at insert (literals/temporaries are emitted as-is).
