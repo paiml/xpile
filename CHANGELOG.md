@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.425] — 2026-06-16
+
+### Fixed
+
+- **PMAT-726 — `partition`/`rpartition` empty separator raises ValueError.**
+  `s.partition("")` / `s.rpartition("")` (and a dynamic separator empty at runtime)
+  silently returned a bogus 3-tuple — the lowering used `split_once("")` which
+  returns `Some(("", s))`, so the program ran clean and printed wrong output.
+  Python raises `ValueError('empty separator')` at the call. Fix (codegen only, NO
+  IR change; both rust + ruchy partition/rpartition arm, mirrored): bind the
+  receiver + separator once (`let __ps = &(recv); let __psep = &(sep);`) and emit a
+  runtime guard `if __psep.is_empty() { panic!("xpile: ValueError: empty
+  separator") }` before the split_once/rsplit_once — matching Python's runtime
+  ValueError for both a literal and a dynamic empty sep (binding also dedups the
+  previously double-emitted separator). Differential-verified vs python3:
+  `part("a-b-c","-")`=("a","-","b-c"), `rpart`=("a-b","-","c"), `part_absent`=("abc","",""),
+  empty-sep→ValueError. New e2e `partition_empty_sep.py` rustc round-trip. FREE CI.
+  e2e 483→484. FOUND BY HUNT-V10 (item V10-1).
+
 ## [0.1.424] — 2026-06-16
 
 ### Fixed
