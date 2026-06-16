@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.435] — 2026-06-16
+
+### Fixed
+
+- **PMAT-735 — clear message for a lambda stored as a value.** A lambda reaching
+  general expression lowering — a list/comprehension element like
+  `[lambda x: x+1, …]` or `[lambda: i for i in range(3)]` — leaked the opaque
+  `unsupported expression: Discriminant(4)` from the AST catch-all. `lower_expr`
+  now has an `ast::Expr::Lambda(_)` arm that names the case: lambdas are supported
+  as a `name = lambda …` binding and as a `key=`/`map`/`filter`/`sorted`/`min`/`max`
+  argument; a lambda stored as a first-class callable value in a collection /
+  general expression is not. Supported lambda positions (sort-key, `map`, `filter`,
+  assign) are verified unaffected. (HUNT-V11 V11-12.)
+
 ## [0.1.434] — 2026-06-16
 
 ### Fixed
