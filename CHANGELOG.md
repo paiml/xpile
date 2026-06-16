@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.415] — 2026-06-16
+
+### Fixed
+
+- **PMAT-716 — bare `None` literal in value position → `Option::None`.** A `None`
+  literal reaching general expression lowering (a tuple element `(a, None)` over
+  `tuple[int, Optional[int]]`, an all-`None` tuple `(None, None)`, or a dict value
+  `{"a": None}`) previously fell through to the context-free constant catch-all and
+  rejected with the cryptic `unsupported constant: Discriminant(0)`. Fix
+  (frontend only, NO IR change): a `Constant::None` arm in `lower_expr` returns
+  `Expr::OptionExpr(None)`; the backends already emit it as Rust `None`.
+  `return None`, `x is None`, and `x = None` are handled by earlier dedicated
+  paths, so this only fires for `None` in compound-literal value position. Mixed
+  Optional slots that need auto-`Some`-wrapping of a non-None value (`(a, a*2)`
+  over `tuple[int, Optional[int]]`) remain a separate coercion epic — they still
+  error, but now with the clear declared-vs-produced return-type message rather
+  than the Discriminant reject. Differential-verified vs python3: `pair_none(5)`
+  is `(5, None)`, `all_none()` is `(None, None)`, `dict_none()` is `{"a": None}`.
+  New e2e `none_in_tuple.py` rustc round-trip. FREE CI. e2e 473→474. FOUND BY
+  HUNT-V9 (item V9-38).
+
 ## [0.1.414] — 2026-06-16
 
 ### Fixed
