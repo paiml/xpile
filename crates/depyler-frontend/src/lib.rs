@@ -31,9 +31,9 @@ use std::path::Path;
 use std::rc::Rc;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
-    BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListMutateOp, ListQueryOp, Module,
-    NumBuiltinOp, PairIterKind, Param, Radix, SetOp, SetPredOp, SortKey, SourceLang, Stmt,
-    StrMethodOp, Type, UnOp,
+    collect_block_idents, BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListMutateOp,
+    ListQueryOp, Module, NumBuiltinOp, PairIterKind, Param, Radix, SetOp, SetPredOp, SortKey,
+    SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
 use rustpython_parser::ast;
@@ -7319,19 +7319,65 @@ fn desugar_nested_fn(
         Some(ann) => parse_type_annotation(&fname, "<return>", ann)?,
         None => infer_type_in_ctx(ctx, &trailing),
     };
+    let name = f.name.to_string();
+    let block = Block {
+        stmts,
+        trailing_return: trailing,
+    };
+
+    // PMAT-736 (HUNT-V11 V11-6): decide closure vs named inner fn. A nested def
+    // whose body calls its own name is RECURSIVE; a Rust closure cannot
+    // reference its own binding while it is being defined (`let go = |k| …
+    // go(…)` → E0425), so a recursive nested def must lower to a NAMED inner
+    // `fn` (in scope for its whole body). A named fn, unlike a closure, cannot
+    // capture an enclosing local (E0434) — so the conversion is sound only when
+    // the recursive body captures nothing. `saved_bound` is the enclosing scope
+    // at the snapshot point: the nested params + the own name were inserted
+    // *after* it, so they are already excluded; any referenced name still in it
+    // is a genuine capture. (Top-level functions are not in `bound`, so a
+    // recursive helper that also calls a module-level fn is not flagged.)
+    let mut referenced = HashSet::new();
+    collect_block_idents(&block, &mut referenced);
+    let self_recursive = referenced.contains(&name);
+    let mut captures: Vec<String> = saved_bound
+        .iter()
+        .filter(|n| referenced.contains(*n))
+        .cloned()
+        .collect();
+
     ctx.bound = saved_bound;
     ctx.name_types = saved_types;
-    let body = if stmts.is_empty() {
-        trailing
-    } else {
-        Expr::Block(Box::new(Block {
-            stmts,
-            trailing_return: trailing,
-        }))
-    };
-    let name = f.name.to_string();
-    ctx.closure_returns.insert(name.clone(), ret_ty);
+    ctx.closure_returns.insert(name.clone(), ret_ty.clone());
     ctx.bound.insert(name.clone());
+
+    if self_recursive {
+        if !captures.is_empty() {
+            captures.sort();
+            return Err(FrontendError::Lower(format!(
+                "recursive nested function `{name}` also captures enclosing variable(s) `{}` — \
+                 not supported at v0.2.0: a named inner `fn` can recurse but cannot capture an \
+                 outer variable, and a closure can capture but cannot call itself by name. Pass \
+                 the captured value(s) to `{name}` as parameters, or inline the recursion.",
+                captures.join("`, `")
+            )));
+        }
+        // A self-referential nested def with no captures → a named inner fn that
+        // recurses by name. Rust/Ruchy emit a real `fn`; Lean refuses.
+        return Ok(Stmt::NestedFn {
+            name,
+            params,
+            ret: ret_ty,
+            body: block,
+        });
+    }
+
+    // Non-recursive: keep the closure binding (it may capture the enclosing
+    // scope, which a closure does fine — the original PMAT-502dr behaviour).
+    let body = if block.stmts.is_empty() {
+        block.trailing_return
+    } else {
+        Expr::Block(Box::new(block))
+    };
     Ok(Stmt::ClosureLet { name, params, body })
 }
 

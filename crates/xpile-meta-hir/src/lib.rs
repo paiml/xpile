@@ -161,6 +161,11 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         Stmt::Let { value, .. } | Stmt::Assign { value, .. } => expr_has_int_arith(value),
         // PMAT-504: a closure binding — recurse into the body expression.
         Stmt::ClosureLet { body, .. } => expr_has_int_arith(body),
+        // PMAT-736: a named inner fn — recurse into its body block (stmts +
+        // trailing). Its own int arithmetic still cites C-PY-INT-ARITH.
+        Stmt::NestedFn { body, .. } => {
+            body.stmts.iter().any(stmt_has_int_arith) || expr_has_int_arith(&body.trailing_return)
+        }
         // PMAT-494b: tuple unpacking — recurse into the unpacked value.
         Stmt::LetTuple { value, .. } => expr_has_int_arith(value),
         Stmt::While { cond, body } => {
@@ -658,6 +663,24 @@ pub enum Stmt {
         name: String,
         params: Vec<(String, Type)>,
         body: Expr,
+    },
+    /// PMAT-736 (HUNT-V11 V11-6): a **named** inner function item — Python
+    /// `def inner(p: T, …) -> R: …` nested in a function body, lowered to a
+    /// named Rust `fn` (NOT a closure) so it can **recurse by name**. A closure
+    /// (`Stmt::ClosureLet`) cannot reference its own binding while it is being
+    /// defined, so a self-call `inner(k-1)` inside a `let inner = |k| …` is an
+    /// E0425; a named inner `fn` is in scope for its whole body and recurses
+    /// cleanly. Unlike a closure, a named inner fn **cannot capture** enclosing
+    /// variables (Rust E0434) — the frontend only emits this variant when the
+    /// nested def is self-referential AND captures nothing (else it stays a
+    /// `ClosureLet`, or — recursive + capturing — is rejected with a clear
+    /// message). Rust/Ruchy emit `fn <name>(<params>) -> R { <body> }`; Lean
+    /// refuses (first-class / nested functions are a v0.3.0 sub-track).
+    NestedFn {
+        name: String,
+        params: Vec<(String, Type)>,
+        ret: Type,
+        body: Block,
     },
     /// Tuple-destructuring binding — Python `a, b = <expr>`. PMAT-494b
     /// (sprint). `value` types as [`Type::Tuple`] with arity matching
@@ -3027,6 +3050,20 @@ fn escape_stmt(s: &mut Stmt) {
             }
             escape_expr(body);
         }
+        // PMAT-736: a named inner fn — escape its name + param names, then walk
+        // its body block (stmts + trailing return).
+        Stmt::NestedFn {
+            name, params, body, ..
+        } => {
+            escape_name(name);
+            for (p, _) in params {
+                escape_name(p);
+            }
+            for st in &mut body.stmts {
+                escape_stmt(st);
+            }
+            escape_expr(&mut body.trailing_return);
+        }
         Stmt::LetTuple { names, value, .. } => {
             for n in names {
                 escape_name(n);
@@ -3223,6 +3260,503 @@ fn escape_stmt(s: &mut Stmt) {
             }
             for st in body {
                 escape_stmt(st);
+            }
+        }
+    }
+}
+
+/// PMAT-736 (HUNT-V11 V11-6): collect every identifier-position name reachable
+/// from `block` into `acc` — both value references (`Expr::Ident`, a `Call`
+/// callee) and receiver names (`xs.append(...)`'s `xs`, `d[k] = v`'s `d`, …),
+/// plus binding names (a `let`, a loop var). It is the read-only mirror of the
+/// `escape_*` walker above: every `escape_name(x)` there becomes
+/// `acc.insert(x)` here, so the two stay structurally identical (both are
+/// compiler-checked exhaustive over `Stmt`/`Expr`). Used by the frontend's
+/// nested-function lowering to decide whether a nested `def` is self-recursive
+/// and whether it captures an enclosing local — over-collection (a binding name,
+/// a lambda param) is harmless there, since the caller only intersects the
+/// result with the enclosing scope.
+pub fn collect_block_idents(block: &Block, acc: &mut std::collections::HashSet<String>) {
+    for s in &block.stmts {
+        collect_idents_stmt(s, acc);
+    }
+    collect_idents_expr(&block.trailing_return, acc);
+}
+
+fn collect_idents_sortkey(k: &SortKey, acc: &mut std::collections::HashSet<String>) {
+    acc.insert(k.param.clone());
+    collect_idents_expr(&k.body, acc);
+}
+
+fn collect_idents_expr(e: &Expr, acc: &mut std::collections::HashSet<String>) {
+    match e {
+        Expr::Ident(name) => {
+            acc.insert(name.clone());
+        }
+        Expr::Call { callee, args } => {
+            acc.insert(callee.clone());
+            for a in args {
+                collect_idents_expr(a, acc);
+            }
+        }
+        Expr::Unit
+        | Expr::LitInt(_)
+        | Expr::LitFloat(_)
+        | Expr::LitBool(_)
+        | Expr::LitStr(_)
+        | Expr::QuotedString { .. }
+        | Expr::ShellVar(_)
+        | Expr::ShellSpecial(_)
+        | Expr::EnumVariant { .. } => {}
+        Expr::Block(b) => collect_block_idents(b, acc),
+        Expr::FloatBinOp { lhs, rhs, .. }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::Concat { lhs, rhs }
+        | Expr::ListConcat { lhs, rhs }
+        | Expr::SetOp { lhs, rhs, .. }
+        | Expr::SetPred { lhs, rhs, .. } => {
+            collect_idents_expr(lhs, acc);
+            collect_idents_expr(rhs, acc);
+        }
+        Expr::UnOp { operand, .. } => collect_idents_expr(operand, acc),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            collect_idents_expr(cond, acc);
+            collect_idents_expr(then_expr, acc);
+            collect_idents_expr(else_expr, acc);
+        }
+        Expr::StrFormat { args, .. } | Expr::NumBuiltin { args, .. } => {
+            for a in args {
+                collect_idents_expr(a, acc);
+            }
+        }
+        Expr::StrCharAt { string, index } => {
+            collect_idents_expr(string, acc);
+            collect_idents_expr(index, acc);
+        }
+        Expr::StrChars { string } => collect_idents_expr(string, acc),
+        Expr::Ord { value } | Expr::Chr { value } => collect_idents_expr(value, acc),
+        Expr::IntRadixStr { value, .. }
+        | Expr::IntFromStrRadix { value, .. }
+        | Expr::FormatSpec { value, .. }
+        | Expr::NumCast { value, .. }
+        | Expr::ToStr { value, .. }
+        | Expr::ReprStr { value }
+        | Expr::RoundToInt { value } => collect_idents_expr(value, acc),
+        Expr::StrMethod { recv, args, .. } => {
+            collect_idents_expr(recv, acc);
+            for a in args {
+                collect_idents_expr(a, acc);
+            }
+        }
+        Expr::TupleLit(elems) | Expr::ListLit(elems) | Expr::SetLit(elems) => {
+            for el in elems {
+                collect_idents_expr(el, acc);
+            }
+        }
+        Expr::TupleIndex { tuple, .. } => collect_idents_expr(tuple, acc),
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => {
+            collect_idents_expr(collection, acc);
+            if let Some(l) = lo {
+                collect_idents_expr(l, acc);
+            }
+            if let Some(h) = hi {
+                collect_idents_expr(h, acc);
+            }
+        }
+        Expr::Sum { list, start, .. } => {
+            collect_idents_expr(list, acc);
+            if let Some(s) = start {
+                collect_idents_expr(s, acc);
+            }
+        }
+        Expr::BoolReduce { list, .. }
+        | Expr::Reversed { list }
+        | Expr::SetFromList { list }
+        | Expr::Enumerate { list, .. } => collect_idents_expr(list, acc),
+        Expr::RoundToDigits { value, ndigits } | Expr::RoundIntToDigits { value, ndigits } => {
+            collect_idents_expr(value, acc);
+            collect_idents_expr(ndigits, acc);
+        }
+        Expr::Repeat { seq, n, .. } => {
+            collect_idents_expr(seq, acc);
+            collect_idents_expr(n, acc);
+        }
+        Expr::Sorted { list, key, .. } => {
+            collect_idents_expr(list, acc);
+            if let Some(k) = key {
+                collect_idents_sortkey(k, acc);
+            }
+        }
+        Expr::Gcd { a, b } | Expr::Lcm { a, b } => {
+            collect_idents_expr(a, acc);
+            collect_idents_expr(b, acc);
+        }
+        Expr::Factorial { n } | Expr::Isqrt { n } => collect_idents_expr(n, acc),
+        Expr::Comb { n, k } | Expr::Perm { n, k } => {
+            collect_idents_expr(n, acc);
+            collect_idents_expr(k, acc);
+        }
+        Expr::PowMod { base, exp, modulus } => {
+            collect_idents_expr(base, acc);
+            collect_idents_expr(exp, acc);
+            collect_idents_expr(modulus, acc);
+        }
+        Expr::RangeList { start, stop, .. } => {
+            collect_idents_expr(start, acc);
+            collect_idents_expr(stop, acc);
+        }
+        Expr::SetToList { set } => collect_idents_expr(set, acc),
+        Expr::DictFromPairs { pairs } => collect_idents_expr(pairs, acc),
+        Expr::DictMerge { entries } => {
+            for (k, v) in entries {
+                if let Some(k) = k {
+                    collect_idents_expr(k, acc);
+                }
+                collect_idents_expr(v, acc);
+            }
+        }
+        Expr::Filter { list, lambda } | Expr::Map { list, lambda } => {
+            collect_idents_expr(list, acc);
+            collect_idents_sortkey(lambda, acc);
+        }
+        Expr::Zip { left, right } => {
+            collect_idents_expr(left, acc);
+            collect_idents_expr(right, acc);
+        }
+        Expr::ListMinMax {
+            list, key, default, ..
+        } => {
+            collect_idents_expr(list, acc);
+            if let Some(k) = key {
+                collect_idents_sortkey(k, acc);
+            }
+            if let Some(d) = default {
+                collect_idents_expr(d, acc);
+            }
+        }
+        Expr::ListQuery { list, arg, .. } => {
+            collect_idents_expr(list, acc);
+            collect_idents_expr(arg, acc);
+        }
+        Expr::ListPop { list, index } => {
+            collect_idents_expr(list, acc);
+            if let Some(i) = index {
+                collect_idents_expr(i, acc);
+            }
+        }
+        Expr::DictPop { dict, key, default } => {
+            collect_idents_expr(dict, acc);
+            collect_idents_expr(key, acc);
+            if let Some(d) = default {
+                collect_idents_expr(d, acc);
+            }
+        }
+        Expr::DictSetDefault { dict, key, default } => {
+            collect_idents_expr(dict, acc);
+            collect_idents_expr(key, acc);
+            collect_idents_expr(default, acc);
+        }
+        Expr::SetContains { set, elem } => {
+            collect_idents_expr(set, acc);
+            collect_idents_expr(elem, acc);
+        }
+        Expr::ListContains { list, elem } => {
+            collect_idents_expr(list, acc);
+            collect_idents_expr(elem, acc);
+        }
+        Expr::StrContains { haystack, needle } => {
+            collect_idents_expr(haystack, acc);
+            collect_idents_expr(needle, acc);
+        }
+        Expr::Clone(inner) | Expr::OptionUnwrap(inner) => collect_idents_expr(inner, acc),
+        Expr::OptionExpr(inner) => {
+            if let Some(i) = inner {
+                collect_idents_expr(i, acc);
+            }
+        }
+        Expr::OptionTruthy { value, body, .. } => {
+            collect_idents_expr(value, acc);
+            collect_idents_expr(body, acc);
+        }
+        Expr::OptionOrDefault {
+            value,
+            body,
+            default,
+            ..
+        } => {
+            collect_idents_expr(value, acc);
+            collect_idents_expr(body, acc);
+            collect_idents_expr(default, acc);
+        }
+        Expr::IsNone { value, .. } => collect_idents_expr(value, acc),
+        Expr::TryCatch { body, handler, .. } => {
+            collect_idents_expr(body, acc);
+            collect_idents_expr(handler, acc);
+        }
+        Expr::StructLit { fields, .. } => {
+            for (_, v) in fields {
+                collect_idents_expr(v, acc);
+            }
+        }
+        Expr::FieldAccess { obj, .. } => collect_idents_expr(obj, acc),
+        Expr::MethodCall { obj, args, .. } => {
+            collect_idents_expr(obj, acc);
+            for a in args {
+                collect_idents_expr(a, acc);
+            }
+        }
+        Expr::DictLit(pairs) => {
+            for (k, v) in pairs {
+                collect_idents_expr(k, acc);
+                collect_idents_expr(v, acc);
+            }
+        }
+        Expr::Index { collection, index } => {
+            collect_idents_expr(collection, acc);
+            collect_idents_expr(index, acc);
+        }
+        Expr::DictGet { dict, key }
+        | Expr::DictGetOpt { dict, key }
+        | Expr::DictContains { dict, key } => {
+            collect_idents_expr(dict, acc);
+            collect_idents_expr(key, acc);
+        }
+        Expr::DictGetOr { dict, key, default } => {
+            collect_idents_expr(dict, acc);
+            collect_idents_expr(key, acc);
+            collect_idents_expr(default, acc);
+        }
+        Expr::DictView { dict, .. } => collect_idents_expr(dict, acc),
+        Expr::Len(inner) => collect_idents_expr(inner, acc),
+        Expr::CommandSubstitution(inner) => collect_idents_stmt(inner, acc),
+    }
+}
+
+fn collect_idents_stmt(s: &Stmt, acc: &mut std::collections::HashSet<String>) {
+    match s {
+        Stmt::Return(e) => collect_idents_expr(e, acc),
+        Stmt::Let { name, value, .. } | Stmt::Assign { name, value } => {
+            acc.insert(name.clone());
+            collect_idents_expr(value, acc);
+        }
+        Stmt::ClosureLet { name, params, body } => {
+            acc.insert(name.clone());
+            for (p, _) in params {
+                acc.insert(p.clone());
+            }
+            collect_idents_expr(body, acc);
+        }
+        Stmt::NestedFn {
+            name, params, body, ..
+        } => {
+            acc.insert(name.clone());
+            for (p, _) in params {
+                acc.insert(p.clone());
+            }
+            collect_block_idents(body, acc);
+        }
+        Stmt::LetTuple { names, value, .. } => {
+            for n in names {
+                acc.insert(n.clone());
+            }
+            collect_idents_expr(value, acc);
+        }
+        Stmt::While { cond, body } => {
+            collect_idents_expr(cond, acc);
+            for st in body {
+                collect_idents_stmt(st, acc);
+            }
+        }
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            collect_idents_expr(cond, acc);
+            for st in then_body {
+                collect_idents_stmt(st, acc);
+            }
+            for st in else_body {
+                collect_idents_stmt(st, acc);
+            }
+        }
+        Stmt::Continue | Stmt::Break => {}
+        Stmt::Print { args, .. } => {
+            for a in args {
+                collect_idents_expr(a, acc);
+            }
+        }
+        Stmt::ForEach {
+            var, iter, body, ..
+        } => {
+            acc.insert(var.clone());
+            collect_idents_expr(iter, acc);
+            for st in body {
+                collect_idents_stmt(st, acc);
+            }
+        }
+        Stmt::ForEachPair {
+            first,
+            second,
+            iter,
+            kind,
+            body,
+        } => {
+            acc.insert(first.clone());
+            acc.insert(second.clone());
+            collect_idents_expr(iter, acc);
+            if let PairIterKind::Zip(other) = kind {
+                collect_idents_expr(other, acc);
+            }
+            for st in body {
+                collect_idents_stmt(st, acc);
+            }
+        }
+        Stmt::ForEachZip3 {
+            first,
+            second,
+            third,
+            iter1,
+            iter2,
+            iter3,
+            body,
+        } => {
+            acc.insert(first.clone());
+            acc.insert(second.clone());
+            acc.insert(third.clone());
+            collect_idents_expr(iter1, acc);
+            collect_idents_expr(iter2, acc);
+            collect_idents_expr(iter3, acc);
+            for st in body {
+                collect_idents_stmt(st, acc);
+            }
+        }
+        Stmt::ListAppend { list_name, elem }
+        | Stmt::SetAdd {
+            set_name: list_name,
+            elem,
+        } => {
+            acc.insert(list_name.clone());
+            collect_idents_expr(elem, acc);
+        }
+        Stmt::SetRemove { set_name, elem, .. } => {
+            acc.insert(set_name.clone());
+            collect_idents_expr(elem, acc);
+        }
+        Stmt::ListMutate { list_name, .. } => {
+            acc.insert(list_name.clone());
+        }
+        Stmt::ListExtend {
+            list_name,
+            other: value,
+        }
+        | Stmt::DictUpdate {
+            dict_name: list_name,
+            other: value,
+        }
+        | Stmt::ListRemoveValue { list_name, value } => {
+            acc.insert(list_name.clone());
+            collect_idents_expr(value, acc);
+        }
+        Stmt::ListInsert {
+            list_name,
+            index,
+            elem,
+        } => {
+            acc.insert(list_name.clone());
+            collect_idents_expr(index, acc);
+            collect_idents_expr(elem, acc);
+        }
+        Stmt::IndexAssign {
+            list_name,
+            indices,
+            value,
+        } => {
+            acc.insert(list_name.clone());
+            for i in indices {
+                collect_idents_expr(i, acc);
+            }
+            collect_idents_expr(value, acc);
+        }
+        Stmt::DictSet {
+            dict_name,
+            key,
+            value,
+        } => {
+            acc.insert(dict_name.clone());
+            collect_idents_expr(key, acc);
+            collect_idents_expr(value, acc);
+        }
+        Stmt::IndexAppend {
+            base, index, elem, ..
+        } => {
+            acc.insert(base.clone());
+            collect_idents_expr(index, acc);
+            collect_idents_expr(elem, acc);
+        }
+        Stmt::DictSetdefaultAppend {
+            dict,
+            key,
+            default,
+            elem,
+        } => {
+            acc.insert(dict.clone());
+            collect_idents_expr(key, acc);
+            collect_idents_expr(default, acc);
+            collect_idents_expr(elem, acc);
+        }
+        Stmt::NestedSubscriptAssign { base, steps, value } => {
+            acc.insert(base.clone());
+            for (i, _) in steps {
+                collect_idents_expr(i, acc);
+            }
+            collect_idents_expr(value, acc);
+        }
+        Stmt::FieldAssign { obj, value, .. } => {
+            acc.insert(obj.clone());
+            collect_idents_expr(value, acc);
+        }
+        Stmt::DelItem { name, key, .. } => {
+            acc.insert(name.clone());
+            collect_idents_expr(key, acc);
+        }
+        Stmt::Assert { cond, msg } => {
+            collect_idents_expr(cond, acc);
+            if let Some(m) = msg {
+                collect_idents_expr(m, acc);
+            }
+        }
+        Stmt::Raise { message } => collect_idents_expr(message, acc),
+        Stmt::Cmd { args, .. } => {
+            for a in args {
+                collect_idents_expr(a, acc);
+            }
+        }
+        Stmt::Pipeline { stages } => {
+            for st in stages {
+                collect_idents_stmt(st, acc);
+            }
+        }
+        Stmt::ShellAssign { value, .. } => collect_idents_expr(value, acc),
+        Stmt::ShellLoop { kind, body } => {
+            match kind {
+                LoopKind::For { items, .. } => {
+                    for it in items {
+                        collect_idents_expr(it, acc);
+                    }
+                }
+                LoopKind::While { cond } | LoopKind::Until { cond } => {
+                    collect_idents_expr(cond, acc)
+                }
+            }
+            for st in body {
+                collect_idents_stmt(st, acc);
             }
         }
     }

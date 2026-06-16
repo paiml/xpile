@@ -365,6 +365,14 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-736: a named inner fn inside a while loop is unsupported.
+            Stmt::NestedFn { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` defines a nested function inside a while loop; \
+                     nested functions are not supported in the Lean lane",
+                    f.name
+                )));
+            }
             // PMAT-502bk: loop-control inside a while loop is unsupported.
             Stmt::Continue | Stmt::Break => {
                 return Err(LeanCodegenError::Unsupported(format!(
@@ -1034,6 +1042,12 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         // PMAT-504: first-class closures are a v0.3.0 Lean sub-track.
         Stmt::ClosureLet { .. } => Err(LeanCodegenError::Unsupported(
             "Stmt::ClosureLet (first-class closure) is not lowered by the Lean backend — \
+             use `--target rust` or `--target ruchy`"
+                .into(),
+        )),
+        // PMAT-736: named inner fns (nested functions) are a v0.3.0 Lean sub-track.
+        Stmt::NestedFn { .. } => Err(LeanCodegenError::Unsupported(
+            "Stmt::NestedFn (named inner function) is not lowered by the Lean backend — \
              use `--target rust` or `--target ruchy`"
                 .into(),
         )),
