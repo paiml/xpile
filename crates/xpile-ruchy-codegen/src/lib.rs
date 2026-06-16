@@ -309,7 +309,9 @@ fn emit_stmt_indented(
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            write!(out, "{indent}let ({pat}) = ")?;
+            // PMAT-711: single-element unpack needs the trailing comma (mirror rust).
+            let trailing = if names.len() == 1 { "," } else { "" };
+            write!(out, "{indent}let ({pat}{trailing}) = ")?;
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
             Ok(())

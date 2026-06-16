@@ -373,7 +373,11 @@ fn emit_stmt_indented(
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            write!(out, "{indent}let ({pat}) = ")?;
+            // PMAT-711: a single-element tuple-unpack (`x, = t`) needs the trailing
+            // comma so `let (x,) = …` is a 1-tuple DESTRUCTURE, not `let (x) = …`
+            // (mere grouping, which binds the whole tuple to `x` → E0308).
+            let trailing = if names.len() == 1 { "," } else { "" };
+            write!(out, "{indent}let ({pat}{trailing}) = ")?;
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
             Ok(())
