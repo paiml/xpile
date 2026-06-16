@@ -4192,7 +4192,61 @@ fn truthy_condition(ctx: &LoweringCtx, cond: Expr) -> Expr {
             lhs: Box::new(cond),
             rhs: Box::new(Expr::LitFloat(0.0)),
         },
+        // PMAT-721 (HUNT-V9 V9-18): Python truthiness of an `Optional[T]` —
+        // None is falsy, `Some(v)` is truthy iff `v` is. Build the inner
+        // truthiness over a bound `__v` and wrap in `OptionTruthy`. A
+        // truthiness-unsupported inner (e.g. `Optional[tuple]`) passes through
+        // unchanged and still fails the caller's Bool check (clean reject).
+        Type::Optional(inner) => match optional_inner_truthy_body(&inner) {
+            Some((body, by_ref)) => Expr::OptionTruthy {
+                value: Box::new(cond),
+                by_ref,
+                body: Box::new(body),
+            },
+            None => cond,
+        },
         _ => cond,
+    }
+}
+
+/// PMAT-721: the inner-type truthiness body for [`Expr::OptionTruthy`], evaluated
+/// over the closure-bound `__v`, plus whether the value must be taken by reference
+/// (`.as_ref()` — for a non-`Copy` inner that the body must not consume). Returns
+/// `None` for an inner type with no defined truthiness here (caller passes the
+/// value through, which then rejects). `Expr::Len` codegen emits a uniform
+/// `.len()`, so the `Str`/`List`/`Dict`/`Set` body works on `&__v` too.
+fn optional_inner_truthy_body(inner: &Type) -> Option<(Expr, bool)> {
+    let v = || Expr::Ident("__v".to_string());
+    match inner {
+        // Copy inners — take the value directly (no `.as_ref()`).
+        Type::I64 => Some((
+            Expr::BinOp {
+                op: BinOp::NotEq,
+                lhs: Box::new(v()),
+                rhs: Box::new(Expr::LitInt(0)),
+            },
+            false,
+        )),
+        Type::F64 => Some((
+            Expr::BinOp {
+                op: BinOp::NotEq,
+                lhs: Box::new(v()),
+                rhs: Box::new(Expr::LitFloat(0.0)),
+            },
+            false,
+        )),
+        // A bool's value IS its truthiness.
+        Type::Bool => Some((v(), false)),
+        // Non-Copy inners — borrow via `.as_ref()` so the value is not consumed.
+        Type::Str | Type::List(_) | Type::Dict(_, _) | Type::Set(_) => Some((
+            Expr::BinOp {
+                op: BinOp::NotEq,
+                lhs: Box::new(Expr::Len(Box::new(v()))),
+                rhs: Box::new(Expr::LitInt(0)),
+            },
+            true,
+        )),
+        _ => None,
     }
 }
 
@@ -7738,6 +7792,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::OptionExpr(inner) => Type::Optional(Box::new(
             inner.as_deref().map(infer_type).unwrap_or(Type::I64),
         )),
+        // PMAT-721: Optional truthiness yields Bool.
+        Expr::OptionTruthy { .. } => Type::Bool,
         // PMAT-502ex: a `None` test yields Bool.
         Expr::IsNone { .. } => Type::Bool,
         // PMAT-502ez: unwrap yields the inner type of the operand's Optional.
@@ -8153,6 +8209,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
                 .map(|e| infer_type_in_ctx(ctx, e))
                 .unwrap_or(Type::I64),
         )),
+        // PMAT-721: Optional truthiness yields Bool.
+        Expr::OptionTruthy { .. } => Type::Bool,
         // PMAT-502ex: a `None` test yields Bool.
         Expr::IsNone { .. } => Type::Bool,
         // PMAT-502ez: unwrap yields the inner type of the operand's Optional.

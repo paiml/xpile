@@ -2475,6 +2475,23 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 out.push(')');
             }
         },
+        // PMAT-721 (HUNT-V9 V9-18): Optional truthiness →
+        // `(<value>)[.as_ref()].is_some_and(|__v| <body>)` (mirrors the Rust backend).
+        Expr::OptionTruthy {
+            value,
+            by_ref,
+            body,
+        } => {
+            out.push('(');
+            emit_expr(out, value, mode)?;
+            out.push(')');
+            if *by_ref {
+                out.push_str(".as_ref()");
+            }
+            out.push_str(".is_some_and(|__v| ");
+            emit_expr(out, body, mode)?;
+            out.push(')');
+        }
         // PMAT-502ex: `x is None`/`is not None` → `.is_none()`/`.is_some()`.
         Expr::IsNone { value, negated } => {
             out.push('(');
