@@ -3103,7 +3103,11 @@ fn del_item() {
         rust.contains("xs.remove((0i64) as usize);"),
         "list del (literal):\n{rust}"
     );
-    assert!(rust.contains("d.remove(&(k));"), "dict del:\n{rust}");
+    // PMAT-709: dict del now asserts the key was present (KeyError parity).
+    assert!(
+        rust.contains("assert!(d.remove(&(k)).is_some(), \"xpile: KeyError"),
+        "dict del KeyError assert:\n{rust}"
+    );
     assert!(
         rust.contains("drop_at(mut xs: Vec<i64>"),
         "mut list param:\n{rust}"
@@ -3129,6 +3133,31 @@ fn main() {
 }
 "#;
     assert_rustc_runs("del_item", &rust, driver);
+}
+
+/// PMAT-709: `del d[k]` on an absent key raises KeyError in Python — xpile's bare
+/// `d.remove(&k)` discarded the `Option` and silently succeeded (silent-wrong).
+/// Now it asserts the key was present. Cross-checked vs python3 (HUNT-V9 V9-1).
+#[test]
+fn del_dict_keyerror() {
+    let rust = xpile_transpile_to_rust("del_dict_keyerror.py");
+    let driver = r#"
+fn main() {
+    let mut a = std::collections::HashMap::new();
+    a.insert("a".to_string(), 1);
+    a.insert("b".to_string(), 2);
+    assert_eq!(drop_present(a), 1);
+    let mut b = std::collections::HashMap::new();
+    b.insert("x".to_string(), 1);
+    b.insert("y".to_string(), 2);
+    assert_eq!(drop_var(b, "x".to_string()), 1);
+    // missing key -> Python KeyError -> panic
+    let mut c = std::collections::HashMap::new();
+    c.insert("a".to_string(), 1);
+    assert!(std::panic::catch_unwind(move || drop_var(c, "z".to_string())).is_err());
+}
+"#;
+    assert_rustc_runs("del_dict_keyerror", &rust, driver);
 }
 
 /// PMAT-502au (Tranche 2): dict pop (expression form) `d.pop(k)` →
