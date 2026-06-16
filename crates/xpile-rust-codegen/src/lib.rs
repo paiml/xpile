@@ -1214,11 +1214,23 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, lhs, mode)?;
                 out.push_str("; let __r = __fn % __fz; if __r != 0.0 { if (__fz < 0.0) != (__r < 0.0) { __r + __fz } else { __r } } else { 0.0_f64.copysign(__fz) } }");
             }
+            // PMAT-734b (HUNT-V11 V11-10): float `b ** e` (`powf`) — CPython raises
+            // OverflowError when a FINITE base overflows the float range (e.g.
+            // `2.0 ** 2000`), not `inf`; and ZeroDivisionError for `0.0 ** <neg>`
+            // (`0.0 ** -1` → inf in Rust). Bind both operands, compute powf, then
+            // guard: an infinite result from a finite base is the overflow (or the
+            // 0**neg) case. An already-infinite base (`inf ** 2`) keeps `inf`.
+            FloatOp::Pow => {
+                out.push_str("{ let __pb: f64 = ");
+                emit_expr(out, lhs, mode)?;
+                out.push_str("; let __pe: f64 = ");
+                emit_expr(out, rhs, mode)?;
+                out.push_str("; let __pr = __pb.powf(__pe); if __pr.is_infinite() && __pb.is_finite() { if __pb == 0.0 { panic!(\"xpile: ZeroDivisionError: 0.0 cannot be raised to a negative power\"); } panic!(\"xpile: OverflowError: (34, 'Numerical result out of range')\"); } __pr }");
+            }
             // PMAT-502bt/em/en: method-style float ops — `(a).<method>(b)`.
-            // Pow → powf; the 2-arg math functions hypot/atan2/log map 1:1.
-            FloatOp::Pow | FloatOp::Hypot | FloatOp::Atan2 | FloatOp::Log => {
+            // The 2-arg math functions hypot/atan2/log map 1:1.
+            FloatOp::Hypot | FloatOp::Atan2 | FloatOp::Log => {
                 let method = match op {
-                    FloatOp::Pow => "powf",
                     FloatOp::Hypot => "hypot",
                     FloatOp::Atan2 => "atan2",
                     FloatOp::Log => "log",
