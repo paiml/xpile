@@ -11896,6 +11896,37 @@ fn main() {
     assert_rustc_runs("nested_dict_assign", &rust, driver);
 }
 
+/// PMAT-741 (HUNT-V12 V12-9/10/11): a mutable-collection default (`[..]` / `{k:v}`
+/// / `{..}`) that is MUTATED in the body is rejected with a clear message. Python
+/// shares the def-time instance across calls (mutations accumulate); xpile fills
+/// a fresh value per call site, which silently diverges. (dict/set use the same
+/// path as this list case.)
+#[test]
+fn mutable_default_mutated_rejected_with_clear_message() {
+    let py = fixture("mutable_default_mutated.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !out.status.success(),
+        "a mutated mutable default should reject"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("mutable default argument") && stderr.contains("acc"),
+        "expected a clear mutable-default message naming `acc`; got: {stderr}"
+    );
+}
+
+/// PMAT-741 (HUNT-V12 V12-9/10/11): a READ-ONLY mutable default is unaffected —
+/// a fresh copy per call is observably identical to Python's shared instance when
+/// never mutated, so it still transpiles. Guards against over-rejection.
+/// `run() == pick(1) + pick(2) == 20 + 30 == 50` (cross-checked vs python3).
+#[test]
+fn readonly_mutable_default_still_transpiles() {
+    let rust = xpile_transpile_to_rust("readonly_default.py");
+    let driver = "fn main() { assert_eq!(run(), 50); }\n";
+    assert_rustc_runs("readonly_default", &rust, driver);
+}
+
 /// PMAT-740 (HUNT-V12 V12-24): `(a * b) % m` no longer panics on the
 /// intermediate product overflow. The product + floor-mod are widened to i128
 /// (the result `(a*b) mod m` fits i64), so the common modular-arithmetic idiom
