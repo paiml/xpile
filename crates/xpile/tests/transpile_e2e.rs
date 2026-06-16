@@ -5415,6 +5415,25 @@ fn main() {
     assert_rustc_runs("fstring_dict_get_ok", &rust, driver);
 }
 
+/// PMAT-708: a bare dict (or set) interpolated in an f-string emitted
+/// `format!("{}", hashmap)` → E0277 (HashMap/HashSet have no Display). It is now
+/// rejected at lowering — parity with `str()`/`print()`/`.format()`/`%` over a
+/// dict/set; iteration order is also non-deterministic (PMAT-537). (HUNT-V8 V8-10.)
+#[test]
+fn fstring_dict_rejected() {
+    let py = fixture("fstring_dict_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a bare dict in an f-string must be refused (HashMap has no Display)"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("dict/set in an f-string") && stderr.contains("non-deterministic"),
+        "the rejection should explain the no-Display / order issue:\n{stderr}"
+    );
+}
+
 /// PMAT-602: a non-Optional annotation over an Optional initializer (1-arg
 /// `d.get(k)`) is a type lie that would emit `Option<i64>` into an `i64`
 /// binding (E0308). xpile rejects it cleanly (transpile-success ⟹ valid Rust),
