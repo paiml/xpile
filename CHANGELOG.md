@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.438] — 2026-06-16
+
+### Fixed
+
+- **PMAT-738 — clear reject for a local/param that shadows a module constant.**
+  `LIMIT = 6` inside a function with a module-level `LIMIT` emitted a
+  reassignment of the Rust `const` (E0070). In Python the name is a
+  function-local (assignment makes it local for the whole scope), but Rust
+  cannot express the shadow: a `let LIMIT` whose name matches an in-scope
+  `const LIMIT` is a *constant pattern*, not a fresh binding (E0005), and a
+  parameter cannot shadow a constant either (E0530). xpile now rejects such a
+  binding with a clear, actionable message (rename the local / param / const)
+  instead of emitting invalid Rust. `LoweringCtx` precomputes the shadowed-const
+  set (a module const assigned in the body, not shadowed by a same-named param —
+  so a normal param reassignment is unaffected); a function that only READS a
+  module const is unchanged (resolves to the `const`). (HUNT-V12 V12-5.)
+
 ## [0.1.437] — 2026-06-16
 
 ### Fixed
