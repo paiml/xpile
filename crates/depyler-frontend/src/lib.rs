@@ -7326,7 +7326,60 @@ fn lower_value_expecting(
         ast::Expr::Dict(d) if d.keys.is_empty() && matches!(expected, Type::Dict(_, _)) => {
             Ok(Expr::DictLit(Vec::new()))
         }
+        // PMAT-717 (HUNT-V9 V9-20): a NON-empty dict literal whose declared value
+        // type is known and at least one value is itself an empty collection —
+        // `{0: [], 1: []}` over `dict[int, list[int]]`. Thread the declared value
+        // type into each value via this helper so the empty `[]`/`{}` values get
+        // their element type instead of rejecting ("empty list literal requires a
+        // type annotation"). Keys lower normally. `**spread` keys (a `None` AST key)
+        // fall through to the context-aware path (which rejects them clearly).
+        ast::Expr::Dict(d)
+            if !d.keys.is_empty()
+                && d.keys.iter().all(Option::is_some)
+                && d.values.iter().any(is_empty_collection_literal) =>
+        {
+            if let Type::Dict(_, vt) = expected {
+                let mut pairs = Vec::with_capacity(d.keys.len());
+                for (k, v) in d.keys.iter().zip(d.values.iter()) {
+                    let key = lower_expr_in_ctx(ctx, k.clone().expect("key is_some checked"))?;
+                    let val = lower_value_expecting(ctx, v, vt)?;
+                    pairs.push((key, val));
+                }
+                Ok(Expr::DictLit(pairs))
+            } else {
+                lower_expr_in_ctx(ctx, value.clone())
+            }
+        }
+        // PMAT-717 (HUNT-V9 V9-20): a non-empty list literal whose declared element
+        // type is a known collection and at least one element is itself an empty
+        // collection — `[[], [1]]` over `list[list[int]]`. Thread the element type.
+        ast::Expr::List(l)
+            if !l.elts.is_empty() && l.elts.iter().any(is_empty_collection_literal) =>
+        {
+            if let Type::List(et) = expected {
+                let mut elems = Vec::with_capacity(l.elts.len());
+                for e in l.elts.iter() {
+                    elems.push(lower_value_expecting(ctx, e, et)?);
+                }
+                Ok(Expr::ListLit(elems))
+            } else {
+                lower_expr_in_ctx(ctx, value.clone())
+            }
+        }
         _ => lower_expr_in_ctx(ctx, value.clone()),
+    }
+}
+
+/// PMAT-717: an empty collection literal (`[]` or `{}`) — the value kinds that
+/// can't self-infer an element type and so need the declared type threaded into
+/// them (see [`lower_value_expecting`]). A `None` literal is excluded: it already
+/// lowers to `OptionExpr(None)` everywhere (PMAT-716), so a dict/list of `None`
+/// values does not need the threading path.
+fn is_empty_collection_literal(e: &ast::Expr) -> bool {
+    match e {
+        ast::Expr::List(l) => l.elts.is_empty(),
+        ast::Expr::Dict(d) => d.keys.is_empty(),
+        _ => false,
     }
 }
 
@@ -7409,7 +7462,12 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
             }
             Expr::OptionExpr(None)
         }
-        _ => lower_expr_in_ctx(ctx, (*value_expr).clone())?,
+        // PMAT-717: route the general value through `lower_value_expecting` with the
+        // declared type so a non-empty dict/list literal containing empty-collection
+        // values (`d: dict[int, list[int]] = {0: [], 1: []}`) threads the element
+        // type into them. Ordinary values fall through to the context-aware path
+        // (and an int literal in a `float` binding coerces to a float literal).
+        _ => lower_value_expecting(ctx, value_expr.as_ref(), &declared_ty)?,
     };
     // PMAT-466 (review #3): reject an obvious annotation/initializer
     // KIND mismatch when the value is a literal (kind known exactly) —
