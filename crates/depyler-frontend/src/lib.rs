@@ -12300,6 +12300,15 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             // (the wrap-optional and comparison paths); this only fires for `None`
             // reaching general expression lowering.
             ast::Constant::None => Ok(Expr::OptionExpr(None)),
+            // PMAT-729 (HUNT-V10 V10-5): a `bytes` literal (`b"..."`) — name it
+            // clearly instead of leaking the opaque AST discriminant
+            // (`unsupported constant: Discriminant(3)`), which never mentioned
+            // `bytes`. `bytes`/`bytearray` are a deferred feature.
+            ast::Constant::Bytes(_) => Err(FrontendError::Lower(
+                "bytes literals (`b\"...\"`) are not supported at v0.2.0 — \
+                 `bytes`/`bytearray` (indexing, iteration, `.decode()`) is a deferred feature"
+                    .to_string(),
+            )),
             other => Err(FrontendError::Lower(format!(
                 "unsupported constant: {:?}",
                 std::mem::discriminant(&other)
@@ -12598,6 +12607,17 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             "a walrus assignment `(name := expr)` is only supported inside an `if` \
              condition at v0.2.0 — in a `while` condition / comprehension / general \
              expression, assign `name = expr` on a preceding line instead"
+                .to_string(),
+        )),
+        // PMAT-729 (HUNT-V10 V10-6): a `Slice` node reaching general expression
+        // lowering means a slice in TARGET position — `xs[a:b] = ...` or `del
+        // xs[a:b]`. Slice READS (`xs[a:b]` as a value) are lowered via the
+        // Subscript path and never arrive here. Name it clearly instead of leaking
+        // the opaque AST discriminant (`unsupported expression: Discriminant(26)`).
+        ast::Expr::Slice(_) => Err(FrontendError::Lower(
+            "slice assignment (`xs[a:b] = ...`) and slice deletion (`del xs[a:b]`) \
+             are not supported at v0.2.0 — assign/delete a single index (`xs[i] = ...`, \
+             `del xs[i]`), or rebuild the list; slice READS (`xs[a:b]`) do work"
                 .to_string(),
         )),
         other => Err(FrontendError::Lower(format!(

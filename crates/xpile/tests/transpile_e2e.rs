@@ -12249,3 +12249,39 @@ fn main() {
 "#;
     assert_rustc_runs("none_in_tuple", &rust, driver);
 }
+
+/// PMAT-729 (HUNT-V10 V10-5): a `bytes` literal (`b"..."`) is rejected with a
+/// clear message naming `bytes`, not the opaque `unsupported constant:
+/// Discriminant(3)`. (python3 accepts bytes; xpile defers them — a clearly
+/// messaged capability gap.)
+#[test]
+fn bytes_literal_rejected_with_clear_message() {
+    let py = fixture("bytes_literal.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(!out.status.success(), "bytes literal should be rejected");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("bytes literals") && !stderr.contains("Discriminant"),
+        "expected a clear bytes message (no opaque discriminant); got: {stderr}"
+    );
+}
+
+/// PMAT-729 (HUNT-V10 V10-6): slice assignment (`xs[a:b] = ...`) and slice
+/// deletion (`del xs[a:b]`) are rejected with a clear message, not the opaque
+/// `unsupported expression: Discriminant(26)`. Slice READS still transpile.
+#[test]
+fn slice_assign_and_del_rejected_with_clear_message() {
+    for fx in ["slice_assign.py", "del_slice.py"] {
+        let py = fixture(fx);
+        let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+        assert!(
+            !out.status.success(),
+            "{fx}: slice target should be rejected"
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("slice assignment") && !stderr.contains("Discriminant"),
+            "{fx}: expected a clear slice message (no opaque discriminant); got: {stderr}"
+        );
+    }
+}
