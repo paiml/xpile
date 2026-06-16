@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.424] — 2026-06-16
+
+### Fixed
+
+- **PMAT-725 — `ord(s[0])` compiles (E0716 fix).** `ord` of a string-index
+  expression (`ord(s[0])`, `ord(c[0]) - ord('a')`) transpiled but rustc rejected
+  it with E0716: the string-index lowering ends in a `.to_string()` temporary, and
+  `.chars()` borrowed a value dropped at the end of the `let __oc = ...` statement.
+  Fix (codegen only, NO IR change; both rust + ruchy `Expr::Ord`, mirrored): bind
+  the operand first — `let __os = &(<value>); let mut __oc = __os.chars(); ...`.
+  The `&(...)` lifetime-extends an owned temporary to the block AND borrows (does
+  not move) a `String` variable, so `ord(s[0])`, `ord(s)`, and later uses of `s`
+  all compile. Differential-verified vs python3: `ord_first("Z")`=90,
+  `ord_first("é")`=233, `ord_arith("c")`=2, `ord_var("A")`=65, `ord_reuse("hi")`=106.
+  New e2e `ord_index.py` rustc round-trip. FREE CI. e2e 482→483. FOUND BY HUNT-V10
+  (item V10-2).
+
 ## [0.1.423] — 2026-06-16
 
 ### Added
