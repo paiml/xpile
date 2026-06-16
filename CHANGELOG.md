@@ -7,6 +7,28 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.420] — 2026-06-16
+
+### Added
+
+- **PMAT-721 — Python truthiness of `Optional[T]` in a boolean context.** `if x:` /
+  `while x:` / `assert x` / a ternary condition over an `Optional[T]` value was
+  rejected ("condition does not type as bool"), though plain int/str/list
+  truthiness already worked. Python: None is falsy, `Some(v)` is truthy iff `v` is.
+  New IR node `Expr::OptionTruthy { value, by_ref, body }`: `truthy_condition`
+  gains a `Type::Optional(inner)` arm that builds the inner-type truthiness over a
+  bound `__v` (`by_ref` set for a non-Copy str/list/dict/set inner so the value is
+  borrowed); rust + ruchy codegen emit
+  `(value)[.as_ref()].is_some_and(|__v| <body>)` (a uniform `Expr::Len`→`.len()`
+  makes the str/list body work on `&__v`); lean refuses (Optional deferred there).
+  Benefits every site routing through `truthy_condition` (if/while/assert/ternary/
+  comprehension filter). Differential-verified vs python3 over int/str/list inners
+  (None/empty/nonempty), ternary, while, assert-raises. New e2e
+  `optional_truthiness.py` rustc round-trip. FREE CI. e2e 478→479. FOUND BY HUNT-V9
+  (item V9-18). Scope: covers the condition; using the *narrowed* value inside the
+  truthy branch (`if x: return x + …`) needs Optional flow-narrowing on `if x:`
+  (follow-up), and `not x` over Optional routes through a separate path (follow-up).
+
 ## [0.1.419] — 2026-06-16
 
 ### Fixed
