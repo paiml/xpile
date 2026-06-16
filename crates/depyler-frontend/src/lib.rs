@@ -12036,6 +12036,15 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             // `true` / `false` (Rust/Ruchy) and `True` / `False`
             // (Lean — capitalised).
             ast::Constant::Bool(b) => Ok(Expr::LitBool(b)),
+            // PMAT-716 (HUNT-V9 V9-38): a bare `None` literal in value
+            // position (e.g. a tuple element `(a, None)` over
+            // `tuple[int, Optional[int]]`, or a list element) → `OptionExpr(None)`,
+            // which the backends emit as Rust `None`. Previously this fell through
+            // to the catch-all and rejected with "unsupported constant:
+            // Discriminant(0)". `return None` and `x is None` are handled earlier
+            // (the wrap-optional and comparison paths); this only fires for `None`
+            // reaching general expression lowering.
+            ast::Constant::None => Ok(Expr::OptionExpr(None)),
             other => Err(FrontendError::Lower(format!(
                 "unsupported constant: {:?}",
                 std::mem::discriminant(&other)

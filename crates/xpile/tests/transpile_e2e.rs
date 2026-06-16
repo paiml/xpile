@@ -11868,3 +11868,31 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
         "error should explain the supported shape; got: {stderr}"
     );
 }
+
+/// PMAT-716 (HUNT-V9 V9-38): a bare `None` literal in value position — a tuple
+/// element `(a, None)`, an all-`None` tuple, or a dict value — lowers to
+/// `Option::None` instead of rejecting with "unsupported constant:
+/// Discriminant(0)". The emitted Rust agrees with CPython:
+///   pair_none(5) == (5, None); all_none() == (None, None);
+///   dict_none() == {"a": None}.
+#[test]
+fn none_literal_in_tuple_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("none_in_tuple.py");
+    assert!(
+        rust.contains("(a, None)"),
+        "expected bare `None` tuple element, got:\n{rust}"
+    );
+    assert!(
+        rust.contains("(None, None)"),
+        "expected all-`None` tuple, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(pair_none(5), (5, None));
+    assert_eq!(all_none(), (None, None));
+    let d = dict_none();
+    assert_eq!(d.get("a"), Some(&None));
+}
+"#;
+    assert_rustc_runs("none_in_tuple", &rust, driver);
+}
