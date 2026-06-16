@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.441] — 2026-06-16
+
+### Fixed
+
+- **PMAT-741 — reject a mutated mutable default argument.** `def f(x, acc=[0]):
+  acc.append(x)` silently diverged: Python evaluates a default ONCE at definition
+  and shares that one instance across every call (mutations accumulate — the
+  famous mutable-default gotcha), but xpile fills the default expression at each
+  call site (a fresh value per call). The mutated case produced wrong output with
+  no error. `lower_function_def` now rejects a param whose default is a
+  mutable-collection literal (`[..]` / `{k: v}` / `{..}`) AND that is mutated in
+  the body (via the existing `ctx.mutable` pre-pass), pointing to the
+  `Optional[...] = None` + initialize-in-body idiom. A READ-ONLY mutable default
+  is unaffected (a fresh copy per call is observably identical), and a mutated
+  param without a default is unaffected. (HUNT-V12 V12-9/10/11.)
+
 ## [0.1.440] — 2026-06-16
 
 ### Fixed
