@@ -1822,6 +1822,15 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "FINAL R6 sub-slice — closes the DICT HALF of audit §7.3 'every construct under contract' falsification. With C-C-INT-ARITH (475b/v0.1.196), §7.3 is RESTORED TO TRUE: every emitted construct's contract citation resolves to an on-disk YAML + Lean theorem. AUTHORED: contracts/xlate-py-dict-to-hashmap-v1.yaml — Layer-2 translation kernel contract (dict sibling of C-XLATE-PY-LIST-TO-VEC). Python dict[K,V] homogeneous → Rust std::collections::HashMap<K_rust,V_rust>. ONE depth-1 Diamond eqn dict_to_hashmap_structure_preserved_diamond combining entry-sequence preservation + cardinality preservation (lowering = identity on the abstract finite map K→V). proof_obligations(2), falsification_tests(2, bound to live dict_counts_emitted_rust_returns_hashmap e2e test), kani_harnesses(2 inline: HashMap<u8,u8> insert/get roundtrip + reinsert-overwrites-len-1), qa_gate. contracts/lean/XlatePyDictToHashmap.lean — models PyDict+RustHashMap as entry lists, lowering as identity → both conjuncts rfl (Bronze). Followed the 475b authoring recipe exactly (kind:kernel needs proof_obligations+kani_harnesses; falsification_tests>=proof_obligations; quoted refs with inner colons; lean_theorem resolves to theorem in lean_file; qa_gate.required_tests real #[test]s; top-level inline kani harnesses avoid the file-resolution validator). SECOND contract via the grandfathered gate → xpile diamond now 15 contracts, both new ones depth-1, depth-2+ still grandfathered 13. pv lint 0 errors; diamond_coverage(26)/refinement_proofs(3)/qa_gate(3)/kani(3)/workspace/fmt/clippy green. FREE CI. SHIPPED v0.1.197. **R6/PMAT-475 COMPLETE: 475a grandfather + 475b C-C-INT-ARITH + 475c C-XLATE-PY-DICT-TO-HASHMAP. The entire R-table (R1-R10) is now closed.** NEXT: Track 4 (PMAT-481..486 free-CI offline PTX/WGSL gates) OR Tranche-2 capability gaps OR PMAT-485 nightly emit job."
+- id: PMAT-722
+  github_issue: null
+  item_type: task
+  title: 'PMAT-722: [Tranche 2] CORRECTNESS not x over Optional[T]'
+  status: done
+  priority: medium
+  created: 2026-06-16T00:00:00Z
+  acceptance_criteria:
+  - "`not x` over an `Optional[T]` was REJECTED ('not requires Bool operand') — the ctx-aware `not` arm (~11152) had no Optional case (`_ => lower_unary_op` rejects). PMAT-721 made `if x:` over Optional work; this is the `not` companion. Python: `not None`=True, `not Some(v)`=`not <truthy(v)>`. FIX (frontend only, NO IR change): add a `Type::Optional(inner)` arm to the ctx-aware `not` match — reuse `optional_inner_truthy_body(inner)` (the PMAT-721 helper) to build the inner truthiness over `__v`, wrap in `Expr::OptionTruthy{value,by_ref,body}`, then wrap THAT in `Expr::UnOp{op:Not}` → codegen `!(value)[.as_ref()].is_some_and(|__v| <body>)`. A truthiness-unsupported inner → `lower_unary_op(u)` (clean reject). Differential-verified vs python3 over int/str/list inners: not_int/not_str/not_list all True/True/False over None/empty/nonempty. New e2e not_optional.py rustc-rt. FREE CI. e2e 479->480. SHIPPED v0.1.421. FOUND BY HUNT-V9 (item V9-18 follow-up)."
 - id: PMAT-721
   github_issue: null
   item_type: task

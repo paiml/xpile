@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.421] — 2026-06-16
+
+### Added
+
+- **PMAT-722 — `not x` over `Optional[T]`.** `not x` over an `Optional[T]` was
+  rejected ("not requires Bool operand"), even though `if x:` over Optional now
+  works (PMAT-721) and `not` over int/str/list already worked. Python: `not None`
+  is True, `not Some(v)` is `not <truthy(v)>`. Fix (frontend only, NO IR change):
+  the ctx-aware `not` arm gains a `Type::Optional(inner)` case that reuses the
+  `OptionTruthy` lowering and wraps it in `UnOp::Not` →
+  `!(value)[.as_ref()].is_some_and(|__v| <body>)`; a truthiness-unsupported inner
+  falls through to the context-free reject. Differential-verified vs python3 over
+  int/str/list inners (None/empty/nonempty): `not_int`/`not_str`/`not_list` →
+  True/True/False. New e2e `not_optional.py` rustc round-trip. FREE CI. e2e
+  479→480. FOUND BY HUNT-V9 (item V9-18 follow-up).
+
 ## [0.1.420] — 2026-06-16
 
 ### Added
