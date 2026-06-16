@@ -7,6 +7,28 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.423] — 2026-06-16
+
+### Added
+
+- **PMAT-724 — `x or default` over `Optional[T]`.** `x or default` where `x` is
+  `Optional[T]` and `default` is `T` was rejected ("operands of and/or must be
+  Bool"). Python returns the inner value when `x` is truthy, else `default` (the
+  `config.get(k) or "x"` idiom). New IR node `Expr::OptionOrDefault { value,
+  by_ref, body, default }`: `lower_bool_op_in_ctx` gains a 2-operand `or` branch
+  (lead Optional[T], default typing as T) that reuses `optional_inner_truthy_body`;
+  rust + ruchy codegen emit `(value).filter(|<param>| <body>).unwrap_or_else(||
+  <default>)` — `filter` always hands the predicate `&T`, so `by_ref` selects the
+  closure-param pattern (`&__v` for a Copy inner / `__v` for non-Copy), and
+  `unwrap_or_else` keeps Python's short-circuit; lean refuses. The operand is a
+  single method chain (evaluated once), so a non-Ident lead (`d.get(k) or 0`) is
+  fine; `x or y` where `y` is also Optional falls through. Differential-verified vs
+  python3: `or_int(None/0/5)`=−1/−1/5, `or_str`=default/default/hi, `or_via_get`
+  over {a:7}/{a:0}/{}=7/99/99. New e2e `or_default_optional.py` rustc round-trip.
+  FREE CI. e2e 481→482. FOUND BY HUNT-V9 (item V9-19). Completes the
+  Optional-truthiness cluster (condition v0.1.420 + `not` v0.1.421 + if-narrowing
+  v0.1.422 + value-returning `or` here).
+
 ## [0.1.422] — 2026-06-16
 
 ### Added
