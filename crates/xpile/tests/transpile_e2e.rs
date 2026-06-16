@@ -11869,6 +11869,30 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
     );
 }
 
+/// PMAT-725 (HUNT-V10 V10-2): `ord(s[0])` (ord of a string-index expression) now
+/// compiles. The index lowering ends in a `.to_string()` temporary; calling
+/// `.chars()` directly on it borrowed a value dropped at statement end (rustc
+/// E0716). Binding `let __os = &(...)` lifetime-extends the temporary (and borrows
+/// — not moves — a String variable, so `ord(s)` and later uses of `s` still work).
+#[test]
+fn ord_index_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("ord_index.py");
+    assert!(
+        rust.contains("let __os = &("),
+        "expected the bound-temp ord lowering, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(ord_first("Z".to_string()), 90);
+    assert_eq!(ord_first("é".to_string()), 233);
+    assert_eq!(ord_arith("c".to_string()), 2);
+    assert_eq!(ord_var("A".to_string()), 65);
+    assert_eq!(ord_reuse("hi".to_string()), 106);
+}
+"#;
+    assert_rustc_runs("ord_index", &rust, driver);
+}
+
 /// PMAT-724 (HUNT-V9 V9-19): `x or default` where `x` is `Optional[T]` and
 /// `default` is `T` returns the inner value when `x` is truthy, else `default` —
 /// `config.get(k) or "x"`. Lowers to `(x).filter(|v| truthy(v)).unwrap_or_else(||
