@@ -12737,6 +12737,20 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
              `del xs[i]`), or rebuild the list; slice READS (`xs[a:b]`) do work"
                 .to_string(),
         )),
+        // PMAT-735 (HUNT-V11 V11-12): a lambda reaching general expression lowering
+        // — e.g. a list/comprehension element `[lambda x: x+1, …]` / `[lambda: i
+        // for i in …]`. Name it clearly instead of leaking the opaque AST
+        // discriminant (`unsupported expression: Discriminant(4)`). Lambdas ARE
+        // supported as a `name = lambda …` binding and as a `key=` / `map` /
+        // `filter` / `sorted`/`min`/`max` argument — a callable VALUE in a
+        // collection / general expression position is the unsupported case.
+        ast::Expr::Lambda(_) => Err(FrontendError::Lower(
+            "lambda expressions are only supported as `name = lambda …` or a \
+             `key=`/`map`/`filter`/`sorted`/`min`/`max` argument at v0.2.0 — a \
+             lambda stored in a list / comprehension / general expression (a \
+             first-class callable value) is not supported"
+                .to_string(),
+        )),
         other => Err(FrontendError::Lower(format!(
             "unsupported expression: {:?}",
             std::mem::discriminant(&other)
