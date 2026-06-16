@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.417] — 2026-06-16
+
+### Fixed
+
+- **PMAT-718 — `int(s, base)` raises ValueError on illegal PEP-515 underscore
+  placement.** `int(s, base)` stripped all underscores before parsing, so a
+  leading / trailing / doubled underscore (`int("1__0", 16)`, `int("_10", 16)`,
+  `int("10_", 16)`) silently parsed to a WRONG value (`int("1__0", 16)` returned
+  16) instead of raising ValueError like Python. Fix (codegen only, NO IR change;
+  both rust + ruchy `Expr::IntFromStrRadix`, mirrored): before the blanket
+  `replace('_', "")`, validate placement on the post-sign, pre-prefix string —
+  panic (xpile's ValueError) if it `starts_with('_') || ends_with('_') ||
+  contains("__")`. Running the check pre-prefix preserves a legal underscore right
+  after the base prefix (`int("0x_ff", 16)` → 255, since the string starts with
+  `0`); a between-digits underscore (`int("1_000", 16)` → 4096) and base-36
+  (`int("z_z", 36)` → 1295) still parse. Mirrors the existing decimal `int(s)`
+  PEP-515 guard. Differential-verified vs python3: 1_000→4096, 0x_ff→255,
+  0x1_f→31, ff→255 (parse); 1__0 / _10 / 10_ / 0x__ff → ValueError. New e2e
+  `radix_underscore.py` rustc round-trip. FREE CI. e2e 475→476. FOUND BY HUNT-V9
+  (item V9-3).
+
 ## [0.1.416] — 2026-06-16
 
 ### Fixed
