@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.440] — 2026-06-16
+
+### Fixed
+
+- **PMAT-740 — `(a * b) % m` widens the product to i128 (no false overflow).**
+  The ubiquitous modular-arithmetic idiom (hashing, `% MOD`) panicked on the
+  intermediate product overflow (`a*b` exceeds i64) even when the modular result
+  fits i64; Python computes it exactly. Both backends' `emit_floor_mod` now, when
+  the dividend is a `*` tree, widen the whole product AND the floor-mod to i128
+  (new `emit_mul_tree_as_i128` helper, recursing through nested `*`); the result
+  `(a*b) mod m` lies in `(-|m|, |m|) ⊆ i64`, so the final `as i64` is exact —
+  mirroring the i128 widening the 3-arg `pow(b,e,m)` path already uses. Bigint
+  mode already promotes; the non-overflow case computes the same value; the
+  zero-divisor still raises ZeroDivisionError. Verified vs python3
+  (`mod_mul(i64::MAX, i64::MAX, 1e9+7) == 737564071`, was a panic). (HUNT-V12
+  V12-24; the contained extract from the bigint-runtime epic.)
+
 ## [0.1.439] — 2026-06-16
 
 ### Fixed
