@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.414] — 2026-06-16
+
+### Fixed
+
+- **PMAT-715 — `xs[i].pop()` mutates the inner container in place.** `xs[i].pop()` cloned the
+  inner container (the read-path `.clone()`) and popped the clone, so `xs[i]` kept its length
+  — a silent-wrong miscompile (`xs[0].pop()` on `[[1,2,3],[4]]` left `len(xs[0])==3` instead
+  of 2; the popped value was correct). **Fix** (two parts): the frontend `count_pop_receivers`
+  now marks a `Subscript`-of-Name pop/setdefault receiver's base `mut` (was Name-only); the
+  `Expr::ListPop` no-index codegen (rust + ruchy) emits an l-value
+  `base[norm(i)].pop().unwrap()` (with negative-index wrapping) when the receiver is an
+  `Ident[index]` place, instead of the read-path clone. Deeper/other receivers and plain
+  `xs.pop()` / pop-at-index are unchanged. Differential-verified vs python3 (nested pop in
+  place, negative index, plain-pop regression). New e2e fixture `nested_subscript_pop.py`;
+  `list_pop`/`pop_runtime_negative`/`dict_pop` regressions intact. e2e 472 → 473. Found by
+  HUNT-V9 (item V9-2).
+
 ## [0.1.413] — 2026-06-16
 
 ### Added
