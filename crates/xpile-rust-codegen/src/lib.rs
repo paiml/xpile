@@ -1504,26 +1504,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 // 3-tuple `(before, sep, after)` at the first / last `sep`. The
                 // absent case differs: partition → `(s, "", "")`, rpartition →
                 // `("", "", s)` (matching Python).
+                // PMAT-726 (HUNT-V10 V10-1): bind receiver + separator once and
+                // guard the empty separator. Python `s.partition("")` raises
+                // ValueError('empty separator') at the call (runtime); the old
+                // `split_once("")` silently returned `("", "abc")` → wrong 3-tuple
+                // with no error (silent-wrong). The runtime guard matches Python's
+                // runtime ValueError for both a literal and a dynamic empty sep, and
+                // binding `&(...)` avoids re-emitting the separator twice.
                 let is_r = matches!(op, StrMethodOp::RPartition);
-                out.push_str("match (");
+                out.push_str("{ let __ps = &(");
                 emit_expr(out, recv, mode)?;
-                out.push_str(if is_r {
-                    ").rsplit_once(&("
-                } else {
-                    ").split_once(&("
-                });
+                out.push_str("); let __psep = &(");
                 emit_expr(out, &args[0], mode)?;
-                out.push_str(")[..]) { Some((__a, __b)) => (__a.to_string(), (");
-                emit_expr(out, &args[0], mode)?;
-                out.push_str(").to_string(), __b.to_string()), None => ");
+                out.push_str("); if __psep.is_empty() { panic!(\"xpile: ValueError: empty separator\"); } match __ps.");
+                out.push_str(if is_r { "rsplit_once" } else { "split_once" });
+                out.push_str("(__psep.as_str()) { Some((__a, __b)) => (__a.to_string(), __psep.to_string(), __b.to_string()), None => ");
                 if is_r {
-                    out.push_str("(String::new(), String::new(), (");
-                    emit_expr(out, recv, mode)?;
-                    out.push_str(").to_string()) }");
+                    out.push_str("(String::new(), String::new(), __ps.to_string()) } }");
                 } else {
-                    out.push('(');
-                    emit_expr(out, recv, mode)?;
-                    out.push_str(".to_string(), String::new(), String::new()) }");
+                    out.push_str("(__ps.to_string(), String::new(), String::new()) } }");
                 }
             } else if matches!(op, StrMethodOp::SplitLines) {
                 // PMAT-502dl: `.splitlines()` → split on Python's full line

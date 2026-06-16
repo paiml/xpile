@@ -10046,7 +10046,8 @@ fn main() {
 fn str_partition() {
     let rust = xpile_transpile_to_rust("str_partition.py");
     assert!(
-        rust.contains(".split_once(&(sep)[..])") && rust.contains(".rsplit_once(&(sep)[..])"),
+        rust.contains("__ps.split_once(__psep.as_str())")
+            && rust.contains("__ps.rsplit_once(__psep.as_str())"),
         "partition/rpartition:\n{rust}"
     );
     let driver = r#"
@@ -11867,6 +11868,30 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
         stderr.contains("subprocess.run") && stderr.contains("list literal"),
         "error should explain the supported shape; got: {stderr}"
     );
+}
+
+/// PMAT-726 (HUNT-V10 V10-1): `s.partition(sep)` / `s.rpartition(sep)` with an
+/// EMPTY separator now raises ValueError at the call (like Python) instead of
+/// silently returning a bogus 3-tuple (the old `split_once("")` returned
+/// `Some(("", s))`). Valid separators and the absent case are unchanged.
+#[test]
+fn partition_empty_sep_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("partition_empty_sep.py");
+    assert!(
+        rust.contains("__psep.is_empty()") && rust.contains("empty separator"),
+        "expected the empty-separator ValueError guard, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(part_ok("a-b-c".to_string()), "a|-|b-c");
+    assert_eq!(rpart_ok("a-b-c".to_string()), "a-b|-|c");
+    assert_eq!(part_absent("abc".to_string()), "abc||");
+    std::panic::set_hook(Box::new(|_| {}));
+    let r = std::panic::catch_unwind(|| part_empty("abc".to_string(), "".to_string()));
+    assert!(r.is_err(), "empty separator must raise (ValueError)");
+}
+"#;
+    assert_rustc_runs("partition_empty_sep", &rust, driver);
 }
 
 /// PMAT-725 (HUNT-V10 V10-2): `ord(s[0])` (ord of a string-index expression) now
