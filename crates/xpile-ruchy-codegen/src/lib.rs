@@ -1106,6 +1106,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str("{ let __ri = &(");
             emit_expr(out, value, mode)?;
             out.push_str("); let __rt = __ri.trim(); let (__rsgn, __rb): (&str, &str) = match __rt.strip_prefix('-') { Some(__r) => (\"-\", __r), None => (\"\", __rt.strip_prefix('+').unwrap_or(__rt)) }; ");
+            // PMAT-718 (HUNT-V9 V9-3): validate PEP-515 underscore placement before
+            // the blanket `replace('_', "")` — Python raises ValueError on a leading,
+            // trailing, or doubled underscore. Check runs on the post-sign, pre-prefix
+            // string so a legal underscore after the base prefix (`int("0x_ff", 16)`)
+            // survives. Mirrors the Rust backend.
+            out.push_str(&format!(
+                "if __rb.starts_with('_') || __rb.ends_with('_') || __rb.contains(\"__\") {{ panic!(\"xpile: ValueError: invalid literal for int() with base {radix}\"); }} "
+            ));
             let prefix_strip = match radix {
                 16 => "let __rb = __rb.strip_prefix(\"0x\").or_else(|| __rb.strip_prefix(\"0X\")).unwrap_or(__rb); ",
                 8 => "let __rb = __rb.strip_prefix(\"0o\").or_else(|| __rb.strip_prefix(\"0O\")).unwrap_or(__rb); ",
