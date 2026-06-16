@@ -4220,6 +4220,11 @@ fn lower_while_stmt(ctx: &mut LoweringCtx, w: ast::StmtWhile) -> Result<Vec<Stmt
 /// the optional `msg` (must type as `Str`) is PMAT-502ao.
 fn lower_assert_stmt(ctx: &mut LoweringCtx, a: ast::StmtAssert) -> Result<Stmt, FrontendError> {
     let cond = lower_expr_in_ctx(ctx, *a.test)?;
+    // PMAT-713: `assert n` / `assert s` / `assert xs` use Python truthiness, just
+    // like `if`/`while`/`not` (which already accept these). Coerce the operand to
+    // its truthiness (`int != 0`, `len != 0`, `float != 0.0`); a Bool passes
+    // through unchanged, and a genuinely unsupported type still fails the check.
+    let cond = truthy_condition(ctx, cond);
     if infer_type_in_ctx(ctx, &cond) != Type::Bool {
         return Err(FrontendError::Lower(format!(
             "function `{}` has an `assert` whose expression is not Bool (no int-truthiness at v0.1.0)",
@@ -6732,6 +6737,11 @@ fn combine_comp_filters(
     let mut acc: Option<Expr> = None;
     for cond_ast in ifs {
         let cond = lower_expr_in_ctx(ctx, cond_ast.clone())?;
+        // PMAT-713: a comprehension filter `[x for x in xs if x]` uses Python
+        // truthiness, like an `if x:` statement. Coerce the operand to its
+        // truthiness (`int != 0`, `len != 0`, `float != 0.0`); a Bool passes
+        // through; a genuinely unsupported type still fails the Bool check.
+        let cond = truthy_condition(ctx, cond);
         if infer_type_in_ctx(ctx, &cond) != Type::Bool {
             return Err(FrontendError::Lower(format!(
                 "function `{}` has a {kind}-comprehension filter that is not Bool (no int-truthiness at v0.2.0)",
