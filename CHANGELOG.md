@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.436] — 2026-06-16
+
+### Added / Fixed
+
+- **PMAT-736 — recursive nested function → named inner `fn`.** A self-referential
+  nested `def` (`def fact(n): def go(k): … go(k-1) …; return go(n)`) lowered to a
+  `let go = |k| …` closure, and the self-call inside it hit rustc **E0425** (a
+  closure can't reference its own binding while being defined). New
+  `Stmt::NestedFn` IR node emits a real named inner `fn` (which is in scope for
+  its whole body and recurses cleanly). The frontend's `desugar_nested_fn` does a
+  capture / self-reference analysis (new exhaustive `collect_block_idents` walker,
+  the read-only mirror of the `escape_*` walker): self-referential + captures
+  nothing → named `fn`; self-referential + captures an enclosing local → clear
+  reject (a named fn can recurse but can't capture; a closure can capture but
+  can't self-call); not self-referential → unchanged closure. Rust/Ruchy emit
+  `fn <name>(<params>) -> R { <body> }`; Lean refuses. Verified vs python3
+  (`fact(6) == 720`, `fib(10) == 55`). (HUNT-V11 V11-6.)
+
 ## [0.1.435] — 2026-06-16
 
 ### Fixed
