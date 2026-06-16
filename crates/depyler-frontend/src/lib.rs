@@ -4780,6 +4780,25 @@ fn is_not_none_narrow_target(ctx: &LoweringCtx, test: &ast::Expr) -> Option<Stri
     Some(name)
 }
 
+/// PMAT-723 (HUNT-V9 V9-18 follow-up): `if x:` over a non-reassigned `Optional`
+/// narrows `x` to `Some` in the then-body — a truthy Optional is necessarily
+/// `Some` (the inner non-zero/non-empty fact is irrelevant to unwrap soundness),
+/// so later reads of `x` in the body unwrap to `T`. The truthiness companion to
+/// [`is_not_none_narrow_target`]; any non-bare-Name condition returns `None`.
+fn if_truthy_narrow_target(ctx: &LoweringCtx, test: &ast::Expr) -> Option<String> {
+    let ast::Expr::Name(name) = test else {
+        return None;
+    };
+    let name = name.id.to_string();
+    if ctx.mutable.contains(&name) {
+        return None;
+    }
+    if !matches!(ctx.name_types.get(&name), Some(Type::Optional(_))) {
+        return None;
+    }
+    Some(name)
+}
+
 /// PMAT-688: hoist walrus assignments `(t := E)` out of a condition expression.
 /// Recursively replaces each `ast::Expr::NamedExpr` in `expr` with a reference to
 /// its target name and returns the lowered `let mut t = E;` / `t = E;` statements
@@ -4883,7 +4902,10 @@ fn lower_if_stmt(
     // the then-body we temporarily register `x` as narrowed so reads unwrap to
     // `T`. Only add the entry if it wasn't already narrowed (by an outer guard),
     // so the restore afterwards doesn't clobber that outer fact.
-    let narrow = is_not_none_narrow_target(ctx, &if_stmt.test);
+    // PMAT-723: also narrow `if x:` (truthiness over a non-reassigned Optional) —
+    // a truthy Optional is `Some`, so the then-body unwraps reads of `x`.
+    let narrow = is_not_none_narrow_target(ctx, &if_stmt.test)
+        .or_else(|| if_truthy_narrow_target(ctx, &if_stmt.test));
     let added = matches!(&narrow, Some(n) if ctx.narrowed_some.insert(n.clone()));
     let mut then_body = Vec::new();
     for s in if_stmt.body {
