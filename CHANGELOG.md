@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.408] — 2026-06-16
+
+### Fixed
+
+- **PMAT-709 — `del d[k]` raises KeyError on an absent key.** `del d[k]` on a missing key
+  silently succeeded — the emit `d.remove(&(k));` discarded the returned `Option`, so a
+  Python `KeyError` became a no-op (silent-wrong: `del d["z"]` on `{"a":1}` returned the dict
+  unchanged instead of raising). **Fix**: the `Stmt::DelItem` dict arm now asserts the removal
+  returned `Some` — `assert!(d.remove(&(k)).is_some(), "xpile: KeyError: del d[k]: key not in
+  dict");` — mirroring the existing `Stmt::SetRemove` KeyError assert (rust + ruchy). Present
+  / variable-key deletion unchanged; list deletion untouched. Differential-verified vs python3
+  (present + var-key del succeed; missing-key panics). New e2e fixture `del_dict_keyerror.py`;
+  existing `del_item` regression updated. e2e 466 → 467. Found by HUNT-V9 (item V9-1).
+
 ## [0.1.407] — 2026-06-16
 
 ### Fixed
