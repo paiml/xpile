@@ -12931,15 +12931,29 @@ fn float_op_from_ast(op: &ast::Operator) -> Option<FloatOp> {
 /// `F64`. Used by Python-3 true division `/`, which always yields a float
 /// even for two int operands (`7 / 2 == 3.5`).
 fn to_f64_operand(ctx: &LoweringCtx, e: Expr) -> Expr {
-    if infer_type_in_ctx(ctx, &e) == Type::F64 {
-        e
-    } else {
-        Expr::NumCast {
+    match infer_type_in_ctx(ctx, &e) {
+        Type::F64 => e,
+        // PMAT-710: a `bool` operand can't cast straight to f64 (`(bool) as f64`
+        // is rustc E0606). Python's `bool` is an int subtype (`True / 2` == 0.5),
+        // so cast through i64 first: `((b) as i64) as f64`. This routes through
+        // every float-coercing op (`/`, `//`, `%`, `**`) which all call here.
+        Type::Bool => Expr::NumCast {
+            value: Box::new(Expr::NumCast {
+                value: Box::new(e),
+                to_float: false,
+                from_str: false,
+                from_float: false,
+            }),
+            to_float: true,
+            from_str: false,
+            from_float: false,
+        },
+        _ => Expr::NumCast {
             value: Box::new(e),
             to_float: true,
             from_str: false,
             from_float: false,
-        }
+        },
     }
 }
 
