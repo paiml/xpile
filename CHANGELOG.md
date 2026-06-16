@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.429] — 2026-06-16
+
+### Added
+
+- **PMAT-730 — nested subscript assignment with a dict level (`d[a][b] = v`).**
+  Nested subscript assignment was only supported for `list[list[…]]`; a dict level
+  rejected — `d["a"]["b"] = v` (nested dict), `dm[k][i] = v` (dict-then-list),
+  `d["a"]["b"][0] = v` (3-level) all failed with "not a nested list[list[…]]". New
+  IR `Stmt::NestedSubscriptAssign { base, steps: Vec<(Expr, bool)>, value }`:
+  `peel_nested_subscript_assign` walks the container type per level recording each
+  step's `(index, is_dict)`; `nested_subscript_write_stmt` dispatches all-list →
+  `IndexAssign` (unchanged), any-dict-level → `NestedSubscriptAssign`. Rust + ruchy
+  emit a progressive `&mut` navigation (`get_mut(&k).unwrap()` for a dict level
+  (KeyError-on-absent) / a neg-index-wrapped `&mut t[idx]` for a list level) then
+  the leaf assign (`.insert(k, v)` / `t[idx] = v`); lean refuses. Negative list
+  indices in the path wrap like Python; augmented nested assign with a dict level
+  rejects cleanly. Differential-verified vs python3: dict_dict(99)=99,
+  dict_list(50)=50, dict_list_neg(7)=7, three_level(42)=42, list_list(8)=8. New e2e
+  `nested_dict_assign.py` rustc round-trip. FREE CI. e2e +1. FOUND BY HUNT-V10
+  (item V10-7).
+
 ## [0.1.428] — 2026-06-16
 
 ### Changed
