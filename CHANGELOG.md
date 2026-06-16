@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.432] — 2026-06-16
+
+### Added
+
+- **PMAT-733 — `str` as iterable: `max`/`min`/`list` over a str.** A `str` is
+  iterable in Python, but `max(s)` / `min(s)` (over the code points) and `list(s)`
+  (split into 1-char strings) were rejected with "body produces I64":
+  `materialize_iterable_arg` and the 1-arg `list()` block had List/Set/Dict/Tuple
+  arms but no `Type::Str` arm. Fix (frontend only, NO IR change): both gain a
+  `Type::Str` arm reusing the existing `Expr::StrChars` → `List(Str)` view that
+  `sorted(s)` / `for c in s` already use. Differential-verified vs python3:
+  `max("héllo")`='é', `min`="h", `list("abc")`=['a','b','c'],
+  `"-".join(list("xyz"))`="x-y-z", `len(list("héllo"))`=5. New e2e
+  `str_as_iterable.py` rustc round-trip. FREE CI. e2e 492→493. FOUND BY HUNT-V11
+  (items V11-3, V11-4). (`sum(str)` is a separate pre-existing invalid-rust — emits
+  a bare `sum(s)` — out of scope; logged as a follow-up.)
+
 ## [0.1.431] — 2026-06-16
 
 ### Changed
