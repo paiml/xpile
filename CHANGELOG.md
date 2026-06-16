@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.406] — 2026-06-16
+
+### Added
+
+- **PMAT-707 — 3-way `zip` in expression position (`list(zip(a, b, c))`).** `list(zip(a, b,
+  c))` was rejected/mis-typed as `I64` — the expr-position `zip` handler was 2-way only
+  (3-way only worked in a `for`-loop via `ForEachZip3`), so `len(list(zip(a,b,c)))`, indexing,
+  and assignment all failed. **Fix**: the 3-way case desugars to a flatten `Map` over a
+  nested `Zip{a, Zip{b, c}}` (each a 2-tuple), re-tupling `(a, (b, c))` → `(a, b, c)` via
+  `TupleLit[p.0, p.1.0, p.1.1]` — reuses `Zip`/`Map`/`TupleLit`/`TupleIndex`, no new IR; the
+  result types as a flat `List(Tuple[A, B, C])`. 4+-way is deferred (rare). Mirrors the 3-way
+  for-zip (PMAT-562). Differential-verified vs python3 (`len`, `pairs[0][1]` over mixed
+  int/str, 2-way regression). New e2e fixture `zip3_expr.py` (rustc round-trip); for-loop
+  3-way + 2-way regressions intact. e2e 464 → 465. Found by HUNT-V8 (item V8-12).
+
 ## [0.1.405] — 2026-06-16
 
 ### Added
