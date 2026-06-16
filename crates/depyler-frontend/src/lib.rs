@@ -13519,11 +13519,30 @@ fn lower_str_format(
         rust_fmt.push_str(field_str);
         match spec {
             None => {
-                if !matches!(arg_tys[arg_idx], Type::I64 | Type::Str) {
-                    return Err(FrontendError::Lower(format!(
-                        "function `{fname}` formats a {:?} value via str.format without a spec; v0.2.0 supports int/str (a bool/float needs a spec, e.g. `{{:.2f}}`)",
-                        arg_tys[arg_idx]
-                    )));
+                match arg_tys[arg_idx] {
+                    Type::I64 | Type::Str => {}
+                    // PMAT-714: a no-spec `{}` over a float/bool uses Python `str()`
+                    // — `3.14`, `True` — not Rust's `Display` (which prints `3` for
+                    // `3.0` and `true`/`false`). Wrap the arg in the SAME conversion
+                    // the f-string path uses (`ToStr{of_float}` / `bool_to_python_str`)
+                    // so `{}` formats the resulting String. Only when the arg is
+                    // referenced exactly once (a field that shares it with a `:spec`
+                    // form would then mis-format the String) — else still reject.
+                    Type::F64 if ref_count[arg_idx] == 1 => {
+                        args[arg_idx] = Expr::ToStr {
+                            value: Box::new(args[arg_idx].clone()),
+                            of_float: true,
+                        };
+                    }
+                    Type::Bool if ref_count[arg_idx] == 1 => {
+                        args[arg_idx] = bool_to_python_str(args[arg_idx].clone());
+                    }
+                    _ => {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{fname}` formats a {:?} value via str.format without a spec; v0.2.0 supports int/str and a float/bool referenced once (a float/bool shared with a `:spec` field needs the spec, e.g. `{{:.2f}}`)",
+                            arg_tys[arg_idx]
+                        )));
+                    }
                 }
             }
             Some(s) => {

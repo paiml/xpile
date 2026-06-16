@@ -3859,6 +3859,24 @@ fn main() {
     assert_rustc_runs("str_format", &rust, driver);
 }
 
+/// PMAT-714: `"{}".format(x)` over a float/bool was rejected ("needs a spec"),
+/// though `f"{x}"`/`str(x)` produce the right Python repr. The no-spec `{}` now
+/// wraps a float/bool arg in the f-string display conversion (float → `3.0`/`3.14`,
+/// bool → `True`/`False`) when referenced once. Cross-checked vs python3 (V9-26).
+#[test]
+fn str_format_float_default() {
+    let rust = xpile_transpile_to_rust("str_format_float_default.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(show_float(3.14), "val=3.14");
+    assert_eq!(show_bool(true), "flag=True");      // Python bool repr
+    assert_eq!(whole_float(3.0), "3.0");           // not Rust's "3"
+    assert_eq!(mixed(1, 2.5, "hi".to_string()), "1 2.5 hi");
+}
+"#;
+    assert_rustc_runs("str_format_float_default", &rust, driver);
+}
+
 /// PMAT-502bi (Tranche 2): `s.index(sub)` → byte index of the first
 /// match, panicking (ValueError) when absent (like `.find` but no `-1`).
 #[test]
