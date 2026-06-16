@@ -2300,11 +2300,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             if pairs.is_empty() {
                 out.push_str("std::collections::HashMap::new()");
             } else {
-                out.push_str("{ let mut m = std::collections::HashMap::new(); ");
+                // PMAT-720 (HUNT-V8 V8-EXTRA): accumulator named `__xpile_map`,
+                // not `m` — a user variable `m` would otherwise be shadowed and the
+                // bare-ident key/value would reference the HashMap (mirrors rust).
+                out.push_str("{ let mut __xpile_map = std::collections::HashMap::new(); ");
                 for (k, v) in pairs {
                     // PMAT-699: clone bare-ident keys/values to avoid the
                     // move-then-reuse E0382 (mirrors the rust backend).
-                    out.push_str("m.insert(");
+                    out.push_str("__xpile_map.insert(");
                     emit_expr(out, k, mode)?;
                     if matches!(k, Expr::Ident(_)) {
                         out.push_str(".clone()");
@@ -2316,7 +2319,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     }
                     out.push_str("); ");
                 }
-                out.push_str("m }");
+                out.push_str("__xpile_map }");
             }
         }
         // PMAT-457 (v0.2.0 Track 1.B): Ruchy → Rust →
