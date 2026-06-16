@@ -11896,6 +11896,28 @@ fn main() {
     assert_rustc_runs("nested_dict_assign", &rust, driver);
 }
 
+/// PMAT-737 (HUNT-V12 V12-3): `for x in list(xs): xs.remove(x)` — the canonical
+/// "iterate a copy so I can mutate the original" idiom — now compiles. `list(xs)`
+/// over a list emits an explicit owned clone (`(xs).clone()`) instead of the bare
+/// `xs`, so the loop iterates a temporary and the body is free to mutate `xs`
+/// (was rustc E0502: mutable borrow while immutably borrowed). Cross-checked vs
+/// python3: `evens_removed([1,2,3,4,5]) == 3`, `copy_independent([1,2,3]) == 7`.
+#[test]
+fn list_copy_iter_mutate_compiles_and_runs() {
+    let rust = xpile_transpile_to_rust("list_copy_iter_mutate.py");
+    assert!(
+        rust.contains("(xs).clone().iter().cloned()"),
+        "expected `list(xs)` to emit an owned clone in iterable position, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(evens_removed(vec![1, 2, 3, 4, 5]), 3);   // 2 and 4 removed
+    assert_eq!(copy_independent(vec![1, 2, 3]), 7);      // 3 + 4 (independent copy)
+}
+"#;
+    assert_rustc_runs("list_copy_iter_mutate", &rust, driver);
+}
+
 /// PMAT-736 (HUNT-V11 V11-6): a self-referential nested `def` now lowers to a
 /// NAMED inner `fn` (which can recurse by name) instead of a `let` closure
 /// (which can't reference its own binding → rustc E0425). Cross-checked vs
