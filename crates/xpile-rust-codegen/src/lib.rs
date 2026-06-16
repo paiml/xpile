@@ -3569,6 +3569,30 @@ fn emit_floor_div(
 /// truncating remainder plus a floor correction (add the divisor when the
 /// remainder is non-zero and its sign differs). The corrected value has
 /// magnitude < |divisor|, so `__r + __fb` cannot overflow.
+/// PMAT-740 (HUNT-V12 V12-24): emit an i64-typed expression cast up to `i128`,
+/// recursing through a `*` tree so the *whole* product is computed in i128 (no
+/// intermediate i64 `checked_mul`). A leaf is `(<expr> as i128)`; a `Mul`
+/// becomes `(<a_i128> * <b_i128>)`. Used by `emit_floor_mod` to widen `(a*b) % m`.
+fn emit_mul_tree_as_i128(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError> {
+    if let Expr::BinOp {
+        op: BinOp::Mul,
+        lhs,
+        rhs,
+    } = e
+    {
+        out.push('(');
+        emit_mul_tree_as_i128(out, lhs, mode)?;
+        out.push_str(" * ");
+        emit_mul_tree_as_i128(out, rhs, mode)?;
+        out.push(')');
+    } else {
+        out.push('(');
+        emit_expr(out, e, mode)?;
+        out.push_str(" as i128)");
+    }
+    Ok(())
+}
+
 fn emit_floor_mod(
     out: &mut String,
     lhs: &Expr,
@@ -3576,6 +3600,26 @@ fn emit_floor_mod(
     mode: bool,
 ) -> Result<(), CodegenError> {
     let panic_msg = "xpile: i64 modulo overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented";
+    // PMAT-740 (HUNT-V12 V12-24): `(a * b) % m` — the product a*b commonly
+    // overflows i64 even when the modular result fits (modular arithmetic,
+    // rolling hashes, `(a*b) % MOD`). Widen the whole product AND the floor-mod
+    // to i128 so the intermediate never overflows. `(a*b) mod m` lies in
+    // (-|m|, |m|) ⊆ i64, so the final `as i64` is exact (mirrors the 3-arg pow
+    // i128 path). Bigint mode already promotes, so only the non-bigint i64 path
+    // needs this.
+    if !mode && matches!(lhs, Expr::BinOp { op: BinOp::Mul, .. }) {
+        write!(out, "{{ let __mm: i128 = ")?;
+        emit_mul_tree_as_i128(out, lhs, mode)?;
+        write!(out, "; let __md: i128 = (")?;
+        emit_expr(out, rhs, mode)?;
+        write!(
+            out,
+            ") as i128; if __md == 0 {{ panic!(\"xpile: ZeroDivisionError: integer modulo by zero\"); }} \
+             let __r = __mm % __md; \
+             (if __r != 0 && (__r < 0) != (__md < 0) {{ __r + __md }} else {{ __r }}) as i64 }}"
+        )?;
+        return Ok(());
+    }
     write!(out, "{{ let __fa = ")?;
     emit_expr(out, lhs, mode)?;
     write!(out, "; let __fb = ")?;

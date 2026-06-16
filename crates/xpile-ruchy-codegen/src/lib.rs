@@ -3041,6 +3041,28 @@ fn emit_floor_div(
 /// PMAT-538: Python modulo `a % b` for i64 — truncating remainder with a floor
 /// correction (Python's `%` takes the sign of the divisor). Mirrors the Rust
 /// backend.
+/// PMAT-740 (HUNT-V12 V12-24): widen an i64-typed `*` tree to i128 (mirrors the
+/// Rust backend) so `(a*b) % m` doesn't overflow the intermediate product.
+fn emit_mul_tree_as_i128(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenError> {
+    if let Expr::BinOp {
+        op: BinOp::Mul,
+        lhs,
+        rhs,
+    } = e
+    {
+        out.push('(');
+        emit_mul_tree_as_i128(out, lhs, mode)?;
+        out.push_str(" * ");
+        emit_mul_tree_as_i128(out, rhs, mode)?;
+        out.push(')');
+    } else {
+        out.push('(');
+        emit_expr(out, e, mode)?;
+        out.push_str(" as i128)");
+    }
+    Ok(())
+}
+
 fn emit_floor_mod(
     out: &mut String,
     lhs: &Expr,
@@ -3048,6 +3070,21 @@ fn emit_floor_mod(
     mode: bool,
 ) -> Result<(), RuchyCodegenError> {
     let panic_msg = "xpile: i64 modulo overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented";
+    // PMAT-740 (HUNT-V12 V12-24): `(a*b) % m` — widen the product + floor-mod to
+    // i128 so the intermediate doesn't overflow (matches the Rust backend).
+    if !mode && matches!(lhs, Expr::BinOp { op: BinOp::Mul, .. }) {
+        write!(out, "{{ let __mm: i128 = ")?;
+        emit_mul_tree_as_i128(out, lhs, mode)?;
+        write!(out, "; let __md: i128 = (")?;
+        emit_expr(out, rhs, mode)?;
+        write!(
+            out,
+            ") as i128; if __md == 0 {{ panic!(\"xpile: ZeroDivisionError: integer modulo by zero\"); }} \
+             let __r = __mm % __md; \
+             (if __r != 0 && (__r < 0) != (__md < 0) {{ __r + __md }} else {{ __r }}) as i64 }}"
+        )?;
+        return Ok(());
+    }
     write!(out, "{{ let __fa = ")?;
     emit_expr(out, lhs, mode)?;
     write!(out, "; let __fb = ")?;
