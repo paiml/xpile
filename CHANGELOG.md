@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.412] — 2026-06-16
+
+### Added
+
+- **PMAT-713 — Python truthiness in comprehension filters and `assert`.** A comprehension
+  filter `[x for x in xs if x]` and `assert x` over a non-bool operand (int/str/list/dict/
+  set/float) were rejected ("filter/assert not Bool"), even though `if x:` / `while x:` /
+  `not x` already apply Python truthiness. **Fix**: both sites (`combine_comp_filters` and
+  `lower_assert_stmt`) now wrap the lowered condition with the existing `truthy_condition`
+  helper before the Bool check — int → `x != 0`, str/list/dict/set → `len != 0`, float →
+  `x != 0.0`; a Bool predicate passes through unchanged and a genuinely unsupported type still
+  fails the check. Frontend-only, no IR change. Differential-verified vs python3 (`if x`/`if
+  s` filters, `assert n`/`assert xs`, falsy-assert panic). New e2e fixture
+  `truthiness_comp_assert.py`; `list_comp_filter`/`assert_msg` regressions intact. e2e 470 →
+  471. Found by HUNT-V9 (items V9-16 + V9-17).
+
 ## [0.1.411] — 2026-06-16
 
 ### Fixed
