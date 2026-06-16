@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.433] — 2026-06-16
+
+### Fixed
+
+- **PMAT-734 — `all(d)` / `any(d)` over a dict iterate its keys.** `all(d)` /
+  `any(d)` over a dict should iterate the dict's KEYS and apply per-key truthiness
+  (Python). The all/any recognizer only matched `Type::List`, so a dict arg
+  skipped it — bool-annotated rejected ("body produces I64"), int-annotated emitted
+  an undefined `all(d)` free call (rustc E0425). Fix (frontend only, NO IR
+  change): if the arg infers as `Type::Dict`, materialize it to its keys view
+  (`Expr::DictView{Keys}` → the `List(K)` `max(d)`/`list(d)` already use) before the
+  `Type::List(elem)` branch, so the existing per-element-truthiness `Map`+`BoolReduce`
+  machinery applies (int keys → `!= 0`, str keys → `len != 0`).
+  Differential-verified vs python3: `all_keys(0)`=False, `all_keys(5)`=True,
+  `any_keys(7)`=True, `any_keys(0)`=False, `all_str_keys("")`=False,
+  `all_str_keys("y")`=True. New e2e `all_any_dict.py` rustc round-trip. FREE CI.
+  e2e 493→494. FOUND BY HUNT-V11 (item V11-5).
+
 ## [0.1.432] — 2026-06-16
 
 ### Added
