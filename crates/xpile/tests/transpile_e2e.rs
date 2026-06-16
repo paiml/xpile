@@ -11894,6 +11894,27 @@ fn main() {
     assert_rustc_runs("nested_dict_assign", &rust, driver);
 }
 
+/// PMAT-734 (HUNT-V11 V11-5): `all(d)` / `any(d)` over a dict iterate its KEYS and
+/// apply per-key truthiness (matching Python), instead of being rejected (bool-
+/// annotated) or emitting an undefined `all(d)` (int-annotated). The dict arg is
+/// materialized to its keys view (→ `List(K)`) and routed through the existing
+/// `BoolReduce` path.
+#[test]
+fn all_any_dict_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("all_any_dict.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(all_keys(0), false); // a key is 0 -> falsy
+    assert_eq!(all_keys(5), true);
+    assert_eq!(any_keys(7), true);
+    assert_eq!(any_keys(0), false); // both keys 0 -> falsy
+    assert_eq!(all_str_keys("".to_string()), false); // an empty-string key
+    assert_eq!(all_str_keys("y".to_string()), true);
+}
+"#;
+    assert_rustc_runs("all_any_dict", &rust, driver);
+}
+
 /// PMAT-733 (HUNT-V11 V11-3 + V11-4): a `str` is iterable — `max(s)` / `min(s)`
 /// (over the code points) and `list(s)` (split into 1-char strings) now transpile
 /// (they were rejected as "body produces I64"), via `Expr::StrChars` (→ `List(Str)`),
