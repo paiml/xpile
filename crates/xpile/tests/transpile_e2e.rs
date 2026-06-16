@@ -4757,8 +4757,8 @@ fn main() {
 fn dict_lit_noncopy_clone() {
     let rust = xpile_transpile_to_rust("dict_lit_noncopy_clone.py");
     assert!(
-        rust.contains("m.insert(k.clone(), v.clone())")
-            && rust.contains("m.insert(String::from(\"key\"), s.clone())"),
+        rust.contains("__xpile_map.insert(k.clone(), v.clone())")
+            && rust.contains("__xpile_map.insert(String::from(\"key\"), s.clone())"),
         "dict literal should clone bare-ident keys/values (literal key untouched):\n{rust}"
     );
     let driver = r#"
@@ -11867,6 +11867,27 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
         stderr.contains("subprocess.run") && stderr.contains("list literal"),
         "error should explain the supported shape; got: {stderr}"
     );
+}
+
+/// PMAT-720 (HUNT-V8 V8-EXTRA): a dict literal whose key/value is a bare variable
+/// named the same as the codegen accumulator (`{m: 1}` where the param is `m`) now
+/// compiles and binds the right key. The accumulator is `__xpile_map`, not `m`, so
+/// the inner `let mut` no longer shadows the user's `m` (which made the key
+/// reference the HashMap — inserting the map into itself, E0275).
+#[test]
+fn dict_literal_var_key_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("dict_literal_var_key.py");
+    assert!(
+        rust.contains("__xpile_map"),
+        "expected collision-proof accumulator name, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(f(5), 3);
+    assert_eq!(g("x".to_string(), 7), 9);
+}
+"#;
+    assert_rustc_runs("dict_literal_var_key", &rust, driver);
 }
 
 /// PMAT-719 (HUNT-V9 V9-13): set algebra over dict key views — `a.keys() & b.keys()`

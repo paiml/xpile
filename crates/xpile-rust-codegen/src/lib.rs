@@ -2687,22 +2687,28 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         Expr::DictLit(pairs) => {
             // PMAT-466: the empty literal emits a bare `HashMap::new()`
             // (the surrounding `let`'s annotation supplies K/V). A
-            // `{ let mut m = …; m }` block with no inserts would trip
-            // clippy's `unused_mut` under `-D warnings`.
+            // `{ let mut __xpile_map = …; __xpile_map }` block with no inserts
+            // would trip clippy's `unused_mut` under `-D warnings`.
             if pairs.is_empty() {
                 out.push_str("std::collections::HashMap::new()");
             } else {
-                out.push_str("{ let mut m = std::collections::HashMap::new(); ");
+                // PMAT-720 (HUNT-V8 V8-EXTRA): the accumulator is named
+                // `__xpile_map`, not `m` — a user variable named `m` (`{m: 1}`)
+                // would otherwise be shadowed by the inner `let mut m`, so the
+                // bare-ident key/value `m.clone()` referenced the HashMap, not the
+                // user's `m` (inserting the map into itself → E0275 / a wrong key).
+                // The `__xpile_*` prefix is xpile's reserved temp namespace.
+                out.push_str("{ let mut __xpile_map = std::collections::HashMap::new(); ");
                 for (k, v) in pairs {
                     // PMAT-699: a bare-variable (`Expr::Ident`) key or value is
-                    // MOVED into `m.insert(...)`; reusing it afterward (`d[k]`,
-                    // `len(s)`, another insert of the same name) was E0382. Clone
-                    // bare idents at the insert (mirrors the `DictSet`/dict-comp
+                    // MOVED into `__xpile_map.insert(...)`; reusing it afterward
+                    // (`d[k]`, `len(s)`, another insert of the same name) was E0382.
+                    // Clone bare idents at the insert (mirrors the `DictSet`/dict-comp
                     // key clone). Literals and temporaries (calls, arithmetic)
                     // produce fresh values and are emitted as-is — no redundant
                     // clone. (Clone-on-Copy is clippy-only; generated code is
                     // compiled with `rustc -A warnings`.)
-                    out.push_str("m.insert(");
+                    out.push_str("__xpile_map.insert(");
                     emit_expr(out, k, mode)?;
                     if matches!(k, Expr::Ident(_)) {
                         out.push_str(".clone()");
@@ -2714,7 +2720,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     }
                     out.push_str("); ");
                 }
-                out.push_str("m }");
+                out.push_str("__xpile_map }");
             }
         }
         // PMAT-457 (v0.2.0 Track 1.B): Python `xs[i]` → Rust
