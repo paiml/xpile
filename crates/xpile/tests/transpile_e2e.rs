@@ -11869,6 +11869,38 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
     );
 }
 
+/// PMAT-724 (HUNT-V9 V9-19): `x or default` where `x` is `Optional[T]` and
+/// `default` is `T` returns the inner value when `x` is truthy, else `default` —
+/// `config.get(k) or "x"`. Lowers to `(x).filter(|v| truthy(v)).unwrap_or_else(||
+/// default)` (the operand is evaluated once; the default stays lazy). Was rejected.
+#[test]
+fn or_default_optional_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("or_default_optional.py");
+    assert!(
+        rust.contains(".filter(|") && rust.contains(".unwrap_or_else(|| "),
+        "expected filter+unwrap_or_else lowering, got:\n{rust}"
+    );
+    let driver = r#"
+use std::collections::HashMap;
+fn main() {
+    assert_eq!(or_int(None), -1);
+    assert_eq!(or_int(Some(0)), -1);
+    assert_eq!(or_int(Some(5)), 5);
+    assert_eq!(or_str(None), "default");
+    assert_eq!(or_str(Some("".to_string())), "default");
+    assert_eq!(or_str(Some("hi".to_string())), "hi");
+    let mut a = HashMap::new();
+    a.insert("a".to_string(), 7);
+    let mut b = HashMap::new();
+    b.insert("a".to_string(), 0);
+    assert_eq!(or_via_get(a, "a".to_string()), 7);
+    assert_eq!(or_via_get(b, "a".to_string()), 99);
+    assert_eq!(or_via_get(HashMap::new(), "z".to_string()), 99);
+}
+"#;
+    assert_rustc_runs("or_default_optional", &rust, driver);
+}
+
 /// PMAT-723 (HUNT-V9 V9-18 follow-up): `if x:` over a non-reassigned `Optional[T]`
 /// now narrows `x` to `Some` in the then-body, so a read of `x` there unwraps to
 /// `T` (`if x: return x + "!"`). A truthy Optional is necessarily `Some`. Mirrors
