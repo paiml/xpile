@@ -17,6 +17,18 @@ use xpile_meta_hir::{
     NumBuiltinOp, Param, Radix, SetOp, SetPredOp, Stmt, StrMethodOp, Type, UnOp,
 };
 
+/// PMAT-731 (HUNT-V10 typed-exceptions): builtin exception types tagged
+/// `xpile: <Type>: …` in panic payloads — a specific `except T:` re-raises a
+/// different one of these (mirrors the Rust backend).
+const KNOWN_EXC: &[&str] = &[
+    "ValueError",
+    "KeyError",
+    "IndexError",
+    "ZeroDivisionError",
+    "OverflowError",
+    "TypeError",
+];
+
 /// PMAT-477 (R8): Ruchy → Rust infix symbol for a float arithmetic op.
 /// PMAT-502by: escape a string for embedding inside a `println!`/`print!`
 /// format-string literal (see the Rust backend's twin). Used by `print`'s
@@ -2615,11 +2627,39 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         // PMAT-513: an enum member access `C::NAME`.
         Expr::EnumVariant { enum_name, variant } => write!(out, "{enum_name}::{variant}")?,
         // PMAT-503b: try/except → catch_unwind match (Ruchy compiles to Rust).
-        Expr::TryCatch { body, handler } => {
+        Expr::TryCatch {
+            body,
+            handler,
+            except_type,
+        } => {
+            // PMAT-731: typed `except T:` re-raises a different known builtin
+            // exception payload (mirrors the Rust backend).
             out.push_str("match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| ");
             emit_expr(out, body, mode)?;
-            out.push_str(")) { Ok(__xpile_try) => __xpile_try, Err(_) => ");
-            emit_expr(out, handler, mode)?;
+            out.push_str(")) { Ok(__xpile_try) => __xpile_try, ");
+            let others: Vec<&str> = match except_type {
+                Some(t) => KNOWN_EXC
+                    .iter()
+                    .copied()
+                    .filter(|k| *k != t.as_str())
+                    .collect(),
+                None => Vec::new(),
+            };
+            if others.is_empty() {
+                out.push_str("Err(_) => ");
+                emit_expr(out, handler, mode)?;
+            } else {
+                out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if ");
+                for (i, k) in others.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(" || ");
+                    }
+                    write!(out, "__xpile_m.starts_with(\"xpile: {k}: \")")?;
+                }
+                out.push_str(" { ::std::panic::resume_unwind(__xpile_e) } else { ");
+                emit_expr(out, handler, mode)?;
+                out.push_str(" } }");
+            }
             out.push_str(" }");
         }
         // PMAT-459 (v0.2.0 Track 1.B): Ruchy → Rust → `.len() as i64`.

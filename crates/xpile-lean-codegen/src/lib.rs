@@ -746,7 +746,7 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         // PMAT-502ez: flow-narrowed unwrap — recurse into the operand.
         Expr::OptionUnwrap(inner) => collect_idents(inner, out),
         // PMAT-503b: try/except — recurse into both body and handler.
-        Expr::TryCatch { body, handler } => {
+        Expr::TryCatch { body, handler, .. } => {
             collect_idents(body, out);
             collect_idents(handler, out);
         }

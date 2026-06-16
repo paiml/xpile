@@ -4757,6 +4757,31 @@ fn terminal_if_as_expr(
 /// the [`Expr::TryCatch`]. Any other shape returns `None` (the caller emits a
 /// clean "unsupported try shape" error). xpile models Python exceptions as Rust
 /// panics, so the `except` catches them via `catch_unwind` in codegen.
+/// PMAT-731 (HUNT-V10 typed-exceptions): the SPECIFIC exception type an `except`
+/// handler catches, or `None` for a catch-all — a bare `except:`, `except
+/// Exception:` / `except BaseException:`, or a non-`Name` type (e.g. a tuple
+/// `except (A, B):`, conservatively treated as catch-all = no regression). A
+/// `Some(name)` drives re-raise-on-mismatch discrimination in codegen.
+fn except_type_name(ty: Option<&ast::Expr>) -> Option<String> {
+    let ast::Expr::Name(n) = ty? else {
+        return None;
+    };
+    let name = n.id.to_string();
+    // Catch-all handlers stay catch-all (codegen emits `Err(_) => handler`): the
+    // top base classes, and the two intermediate base classes whose subclasses are
+    // among the discriminated leaves (`LookupError` ⊃ KeyError/IndexError,
+    // `ArithmeticError` ⊃ ZeroDivisionError/OverflowError) — discriminating those
+    // would wrongly re-raise a caught subclass.
+    if matches!(
+        name.as_str(),
+        "Exception" | "BaseException" | "LookupError" | "ArithmeticError"
+    ) {
+        None
+    } else {
+        Some(name)
+    }
+}
+
 fn terminal_try_as_expr(
     ctx: &LoweringCtx,
     try_stmt: &ast::StmtTry,
@@ -4794,6 +4819,7 @@ fn terminal_try_as_expr(
     Ok(Some(Expr::TryCatch {
         body: Box::new(body),
         handler: Box::new(handler),
+        except_type: except_type_name(h.type_.as_deref()),
     }))
 }
 
@@ -5835,6 +5861,7 @@ fn lower_assignment_try(
     let value = Expr::TryCatch {
         body: Box::new(body),
         handler: Box::new(handler),
+        except_type: except_type_name(h.type_.as_deref()),
     };
     let ty = infer_type_in_ctx(ctx, &value);
     let name = body_name;

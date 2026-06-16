@@ -18,6 +18,23 @@ use xpile_meta_hir::{
     NumBuiltinOp, Param, Radix, SetOp, SetPredOp, SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
+/// PMAT-731 (HUNT-V10 typed-exceptions): builtin exception types xpile's panic
+/// payloads tag as `xpile: <Type>: …` (from a runtime guard or a user `raise
+/// <Type>(…)`). A specific `except T:` re-raises any payload prefixed with a
+/// DIFFERENT one of these, so it catches only its own type (plus unrecognized
+/// payloads, conservatively). All six are leaf types with no subclass relation
+/// among them, so cross-re-raising is always correct. `TypeError` is included for
+/// user `raise TypeError(…)` (the builtin ord-TypeError uses a `(TypeError)`
+/// suffix, not this prefix, so it is conservatively still caught).
+const KNOWN_EXC: &[&str] = &[
+    "ValueError",
+    "KeyError",
+    "IndexError",
+    "ZeroDivisionError",
+    "OverflowError",
+    "TypeError",
+];
+
 /// PMAT-502by: escape a string for embedding inside a `format!`/`println!`
 /// format-string literal — `{`/`}` are doubled (format escapes), `"`/`\`
 /// are backslash-escaped (Rust string-literal escapes), and the common
@@ -3067,11 +3084,43 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         Expr::EnumVariant { enum_name, variant } => write!(out, "{enum_name}::{variant}")?,
         // PMAT-503b: `try: return <body> except: return <handler>` → catch the
         // panics xpile raises for Python exceptions via `catch_unwind`.
-        Expr::TryCatch { body, handler } => {
+        Expr::TryCatch {
+            body,
+            handler,
+            except_type,
+        } => {
             out.push_str("match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| ");
             emit_expr(out, body, mode)?;
-            out.push_str(")) { Ok(__xpile_try) => __xpile_try, Err(_) => ");
-            emit_expr(out, handler, mode)?;
+            out.push_str(")) { Ok(__xpile_try) => __xpile_try, ");
+            // PMAT-731 (HUNT-V10 typed-exceptions): a SPECIFIC `except T:` re-raises
+            // (resume_unwind) a panic whose payload names a DIFFERENT known builtin
+            // exception (`xpile: <Other>: …`), so `except ValueError:` no longer
+            // swallows a ZeroDivisionError. An unrecognized payload is still caught
+            // (conservative — no regression). A bare/base-class handler (except_type
+            // None) keeps the catch-all `Err(_)`.
+            let others: Vec<&str> = match except_type {
+                Some(t) => KNOWN_EXC
+                    .iter()
+                    .copied()
+                    .filter(|k| *k != t.as_str())
+                    .collect(),
+                None => Vec::new(),
+            };
+            if others.is_empty() {
+                out.push_str("Err(_) => ");
+                emit_expr(out, handler, mode)?;
+            } else {
+                out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if ");
+                for (i, k) in others.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(" || ");
+                    }
+                    write!(out, "__xpile_m.starts_with(\"xpile: {k}: \")")?;
+                }
+                out.push_str(" { ::std::panic::resume_unwind(__xpile_e) } else { ");
+                emit_expr(out, handler, mode)?;
+                out.push_str(" } }");
+            }
             out.push_str(" }");
         }
         // PMAT-459 (v0.2.0 Track 1.B): Python `len(x)` → Rust
