@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.410] — 2026-06-16
+
+### Fixed
+
+- **PMAT-711 — single-element tuple-unpack emits a 1-tuple destructure.** `x, = t` (and
+  `(x,) = t`) over a 1-tuple emitted `let (x) = t;` — the parens are mere grouping, so `x`
+  bound to the whole tuple `(T,)` instead of its element → rustc E0308. **Fix**:
+  `Stmt::LetTuple` codegen appends a trailing comma when `names.len() == 1`, emitting
+  `let (x,) = t;` (a genuine 1-tuple destructure); multi-element unpacks are unchanged.
+  Mirrored in the rust and ruchy codegens. Differential-verified vs python3 (`x, = t` over
+  `tuple[int]`, `(y,) = t` over `tuple[str]`). New e2e fixture `single_elem_tuple_unpack.py`
+  (rustc round-trip); existing 2-element `tuple_unpack` regression intact. e2e 468 → 469.
+  Found by HUNT-V9 (item V9-12).
+
 ## [0.1.409] — 2026-06-16
 
 ### Fixed
