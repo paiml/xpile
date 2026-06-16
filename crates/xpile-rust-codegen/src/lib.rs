@@ -235,6 +235,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             | Stmt::ListRemoveValue { .. } => false,
             // PMAT-461: indexed assignment same disposition.
             Stmt::IndexAssign { .. } => false,
+            // PMAT-730: nested subscript assign carries no Type::Let.
+            Stmt::NestedSubscriptAssign { .. } => false,
             // PMAT-533: subscript-receiver append carries no Type::Let.
             Stmt::IndexAppend { .. } => false,
             // PMAT-727: setdefault-append carries no Type::Let.
@@ -741,6 +743,43 @@ fn emit_stmt_indented(
             out.push_str(" = ");
             emit_expr(out, value, mode)?;
             writeln!(out, ";")?;
+            Ok(())
+        }
+        // PMAT-730 (HUNT-V10 V10-7): nested subscript assign with a dict level —
+        // `d[a][b] = v`, `dm[k][i] = v`. Navigate intermediate levels with a
+        // progressive `&mut` reborrow (`get_mut(&k).unwrap()` for dict / a
+        // neg-index-wrapped `&mut t[idx]` for list), then assign at the leaf
+        // (`.insert(k, v)` for dict / `t[idx] = v` for list). KeyError-on-absent
+        // (dict) and Python negative-index wrap (list) are preserved.
+        Stmt::NestedSubscriptAssign { base, steps, value } => {
+            let n = steps.len();
+            write!(out, "{indent}{{ let __t0 = &mut {base}; ")?;
+            for (i, (idx, is_dict)) in steps[..n - 1].iter().enumerate() {
+                if *is_dict {
+                    write!(out, "let __t{} = __t{i}.get_mut(&(", i + 1)?;
+                    emit_expr(out, idx, mode)?;
+                    out.push_str(")).unwrap(); ");
+                } else {
+                    write!(out, "let __li{i} = (")?;
+                    emit_expr(out, idx, mode)?;
+                    write!(out, ") as i64; let __lx{i} = if __li{i} < 0 {{ __t{i}.len() as i64 + __li{i} }} else {{ __li{i} }}; let __t{} = &mut __t{i}[__lx{i} as usize]; ", i + 1)?;
+                }
+            }
+            let (leaf_idx, leaf_is_dict) = &steps[n - 1];
+            if *leaf_is_dict {
+                write!(out, "__t{}.insert(", n - 1)?;
+                emit_expr(out, leaf_idx, mode)?;
+                out.push_str(", ");
+                emit_expr(out, value, mode)?;
+                out.push_str("); }");
+            } else {
+                write!(out, "let __ll = (")?;
+                emit_expr(out, leaf_idx, mode)?;
+                write!(out, ") as i64; let __lx = if __ll < 0 {{ __t{}.len() as i64 + __ll }} else {{ __ll }}; __t{}[__lx as usize] = ", n - 1, n - 1)?;
+                emit_expr(out, value, mode)?;
+                out.push_str("; }");
+            }
+            writeln!(out)?;
             Ok(())
         }
         // PMAT-466 (v0.2.0 Track 1.C): Python `d[k] = v` → Rust

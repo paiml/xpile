@@ -11870,6 +11870,30 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
     );
 }
 
+/// PMAT-730 (HUNT-V10 V10-7): nested subscript assignment with a dict level —
+/// `d["a"]["b"] = v`, `d["a"][i] = v` (mixed), `d["a"]["b"][0] = v` (3-level) —
+/// now transpiles (was rejected; only `list[list[…]]` nesting was supported). The
+/// all-list nest still routes through `IndexAssign` (regression-checked). Negative
+/// list indices in the path wrap like Python.
+#[test]
+fn nested_dict_assign_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("nested_dict_assign.py");
+    assert!(
+        rust.contains("get_mut(&(String::from(\"a\"))).unwrap()"),
+        "expected get_mut navigation for the dict level, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(dict_dict(99), 99);
+    assert_eq!(dict_list(50), 50);
+    assert_eq!(dict_list_neg(7), 7);
+    assert_eq!(three_level(42), 42);
+    assert_eq!(list_list_regression(8), 8);
+}
+"#;
+    assert_rustc_runs("nested_dict_assign", &rust, driver);
+}
+
 /// PMAT-728 (HUNT-V10 typed-exceptions sub-slice): integer `//` / `%` by zero
 /// now panics with a `ZeroDivisionError` message (matching Python) instead of the
 /// misleading `i64 floor-div overflow` — `checked_div`/`checked_rem` return None

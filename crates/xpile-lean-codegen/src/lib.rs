@@ -313,8 +313,9 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
-            // PMAT-461: indexed assignment inside a while loop — same.
-            Stmt::IndexAssign { .. } => {
+            // PMAT-461/730: indexed / nested-subscript assignment inside a while
+            // loop — same in-place-mutation gap.
+            Stmt::IndexAssign { .. } | Stmt::NestedSubscriptAssign { .. } => {
                 return Err(LeanCodegenError::Unsupported(format!(
                     "function `{}` has Stmt::IndexAssign inside a while loop; \
                      Lean codegen at v0.2.0 first cut doesn't compose in-place mutation with while",
@@ -1123,6 +1124,11 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
             "`{list_name}[i] = v` (Stmt::IndexAssign) requires state-monad encoding in Lean — \
              not yet implemented at v0.2.0 first cut (PMAT-461 follow-up); \
              use `--target rust` or `--target ruchy` for in-place mutation"
+        ))),
+        // PMAT-730: nested subscript assign — same in-place-mutation gap.
+        Stmt::NestedSubscriptAssign { base, .. } => Err(LeanCodegenError::Unsupported(format!(
+            "`{base}[a][b] = v` (Stmt::NestedSubscriptAssign) requires state-monad encoding in \
+             Lean — not yet implemented; use `--target rust` or `--target ruchy`"
         ))),
         // PMAT-466 (v0.2.0 Track 1.C): dict keyed assignment — same
         // state-monad encoding gap as IndexAssign / ListAppend.
