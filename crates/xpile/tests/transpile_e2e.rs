@@ -11869,6 +11869,33 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
     );
 }
 
+/// PMAT-723 (HUNT-V9 V9-18 follow-up): `if x:` over a non-reassigned `Optional[T]`
+/// now narrows `x` to `Some` in the then-body, so a read of `x` there unwraps to
+/// `T` (`if x: return x + "!"`). A truthy Optional is necessarily `Some`. Mirrors
+/// the existing `if x is not None:` then-body narrowing.
+#[test]
+fn if_truthy_narrow_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("if_truthy_narrow.py");
+    assert!(
+        rust.contains("(x).unwrap()"),
+        "expected then-body unwrap of the narrowed Optional, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(use_after_str(None), "none");
+    assert_eq!(use_after_str(Some("".to_string())), "none");
+    assert_eq!(use_after_str(Some("hi".to_string())), "hi!");
+    assert_eq!(use_after_int(None), -1);
+    assert_eq!(use_after_int(Some(0)), -1);
+    assert_eq!(use_after_int(Some(5)), 105);
+    assert_eq!(double_use(None), 0);
+    assert_eq!(double_use(Some(0)), 0);
+    assert_eq!(double_use(Some(4)), 16);
+}
+"#;
+    assert_rustc_runs("if_truthy_narrow", &rust, driver);
+}
+
 /// PMAT-722 (HUNT-V9 V9-18 follow-up): `not x` over an `Optional[T]` is the
 /// negation of its truthiness — `not None` is True, `not Some(v)` is
 /// `not <truthy(v)>`. Reuses the `OptionTruthy` lowering wrapped in `UnOp::Not`.
