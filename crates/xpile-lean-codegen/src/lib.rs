@@ -731,6 +731,9 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
                 collect_idents(e, out);
             }
         }
+        // PMAT-721: Optional truthiness — recurse into the tested value (the body
+        // is synthetic `__v`/literals). Lean refuses Optional at emit anyway.
+        Expr::OptionTruthy { value, .. } => collect_idents(value, out),
         // PMAT-502ex: `is None` test — recurse into the tested value.
         Expr::IsNone { value, .. } => collect_idents(value, out),
         // PMAT-502ez: flow-narrowed unwrap — recurse into the operand.
@@ -1192,7 +1195,10 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::Clone(inner) => emit_expr(out, inner)?,
         // PMAT-502ew/ex: `Optional` values + `None` tests deferred in the Lean
         // lane (see emit_type).
-        Expr::OptionExpr(_) | Expr::IsNone { .. } | Expr::OptionUnwrap(_) => {
+        Expr::OptionExpr(_)
+        | Expr::OptionTruthy { .. }
+        | Expr::IsNone { .. }
+        | Expr::OptionUnwrap(_) => {
             return Err(LeanCodegenError::Unsupported(
                 "Python `Optional`/`None` values + `is None` tests + flow-narrowed unwraps are not \
                  yet supported in the Lean lane — use `--target rust` or `--target ruchy`"

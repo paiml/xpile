@@ -11869,6 +11869,47 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
     );
 }
 
+/// PMAT-721 (HUNT-V9 V9-18): Python truthiness of an `Optional[T]` value in a
+/// boolean context — `if x:`, `while x:`, `assert x`, a ternary condition — now
+/// transpiles (was rejected as "condition does not type as bool"). None is falsy;
+/// `Some(v)` is truthy iff `v` is, via `(x)[.as_ref()].is_some_and(|__v| <truthy>)`.
+/// (Using the *narrowed* value inside the truthy branch — `if x: return x + …` —
+/// still needs flow-narrowing, a separate follow-up; this covers the condition.)
+#[test]
+fn optional_truthiness_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("optional_truthiness.py");
+    assert!(
+        rust.contains("is_some_and(|__v|"),
+        "expected is_some_and truthiness lowering, got:\n{rust}"
+    );
+    assert!(
+        rust.contains(".as_ref().is_some_and"),
+        "expected as_ref() for the non-Copy str/list inners, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(if_int(None), "F");
+    assert_eq!(if_int(Some(0)), "F");
+    assert_eq!(if_int(Some(5)), "T");
+    assert_eq!(if_str(None), "F");
+    assert_eq!(if_str(Some("".to_string())), "F");
+    assert_eq!(if_str(Some("hi".to_string())), "T");
+    assert_eq!(if_list(None), "F");
+    assert_eq!(if_list(Some(vec![])), "F");
+    assert_eq!(if_list(Some(vec![1])), "T");
+    assert_eq!(ternary(None), -1);
+    assert_eq!(ternary(Some(0)), -1);
+    assert_eq!(ternary(Some(7)), 100);
+    assert_eq!(while_opt(None), 0);
+    assert_eq!(while_opt(Some(7)), 1);
+    std::panic::set_hook(Box::new(|_| {}));
+    assert!(std::panic::catch_unwind(|| assert_opt(Some(0))).is_err());
+    assert_eq!(assert_opt(Some(9)), 42);
+}
+"#;
+    assert_rustc_runs("optional_truthiness", &rust, driver);
+}
+
 /// PMAT-720 (HUNT-V8 V8-EXTRA): a dict literal whose key/value is a bare variable
 /// named the same as the codegen accumulator (`{m: 1}` where the param is `m`) now
 /// compiles and binds the right key. The accumulator is `__xpile_map`, not `m`, so

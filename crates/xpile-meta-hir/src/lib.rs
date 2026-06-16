@@ -469,6 +469,9 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::Clone(inner) => expr_has_int_arith(inner),
         // PMAT-502ew: Option wrapper — recurse into the `Some(e)` payload.
         Expr::OptionExpr(inner) => inner.as_deref().is_some_and(expr_has_int_arith),
+        // PMAT-721: Optional truthiness — recurse into the value (the `__v != 0`
+        // body is a comparison, never overflowing int arithmetic).
+        Expr::OptionTruthy { value, .. } => expr_has_int_arith(value),
         // PMAT-502ex: `is None` test — recurse into the tested value.
         Expr::IsNone { value, .. } => expr_has_int_arith(value),
         // PMAT-502ez: unwrap recurses into the inner operand.
@@ -1455,6 +1458,19 @@ pub enum Expr {
     /// → `Some(x)`. Rust/Ruchy emit `None` / `Some(<e>)`; Lean `none` / `some
     /// (<e>)`. Types as [`Type::Optional`].
     OptionExpr(Option<Box<Expr>>),
+    /// PMAT-721 (HUNT-V9 V9-18): Python truthiness of an `Optional[T]` value in a
+    /// boolean context (`if x:`, `while x:`, `assert x`, a ternary/comprehension
+    /// condition). None is falsy; `Some(v)` is truthy iff `v` is truthy. Lowers to
+    /// `(<value>)[.as_ref()].is_some_and(|__v| <body>)`, where `body` is the inner
+    /// type's truthiness over the bound `__v` (built by `truthy_condition`).
+    /// `by_ref` is set for a non-`Copy` inner (`str`/`list`/`dict`/`set`) so the
+    /// value is not consumed (`.as_ref()` first); a `Copy` inner (`int`/`float`/
+    /// `bool`) takes the value directly. Yields `bool`.
+    OptionTruthy {
+        value: Box<Expr>,
+        by_ref: bool,
+        body: Box<Expr>,
+    },
     /// PMAT-502ex: a `None` test over an `Optional` value — Python `x is None`
     /// (`negated == false`) / `x is not None` (`negated == true`). Yields
     /// `bool`. Rust/Ruchy emit `(<value>).is_none()` / `.is_some()`; Lean
@@ -2866,6 +2882,12 @@ fn escape_expr(e: &mut Expr) {
             if let Some(i) = inner {
                 escape_expr(i);
             }
+        }
+        // PMAT-721: recurse into the tested value (the body is synthetic — only
+        // `__v` + literals — but recurse defensively).
+        Expr::OptionTruthy { value, body, .. } => {
+            escape_expr(value);
+            escape_expr(body);
         }
         Expr::IsNone { value, .. } => escape_expr(value),
         Expr::TryCatch { body, handler } => {

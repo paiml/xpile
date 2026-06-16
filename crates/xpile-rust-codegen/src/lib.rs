@@ -2905,6 +2905,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push(')');
             }
         },
+        // PMAT-721 (HUNT-V9 V9-18): Optional truthiness →
+        // `(<value>)[.as_ref()].is_some_and(|__v| <body>)`. `as_ref()` is used for
+        // a non-Copy inner so the value is borrowed, not consumed; `Expr::Len`
+        // emits a uniform `.len()` that works on the `&__v` the closure receives.
+        Expr::OptionTruthy {
+            value,
+            by_ref,
+            body,
+        } => {
+            out.push('(');
+            emit_expr(out, value, mode)?;
+            out.push(')');
+            if *by_ref {
+                out.push_str(".as_ref()");
+            }
+            out.push_str(".is_some_and(|__v| ");
+            emit_expr(out, body, mode)?;
+            out.push(')');
+        }
         // PMAT-502ex: `x is None` → `(x).is_none()`; `x is not None` →
         // `(x).is_some()`.
         Expr::IsNone { value, negated } => {
