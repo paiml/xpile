@@ -13104,3 +13104,29 @@ fn main() {
 "#;
     assert_rustc_runs("aug_subscript_index_once", &rust, driver);
 }
+
+/// PMAT-756 (HUNT-V15 #9 STR-MOVE-RECEIVER): a str method that moves the
+/// receiver in codegen (zfill/center/rjust/removeprefix/…) made reusing the
+/// source variable a use-after-move (rustc E0382). The receiver is now cloned
+/// when reused; a single use and borrow-only methods are unchanged.
+/// Cross-checked vs python3.
+#[test]
+fn str_method_move_receiver() {
+    let rust = xpile_transpile_to_rust("str_method_move_receiver.py");
+    assert!(
+        // a reused receiver is cloned…
+        rust.contains("let __s = ((s).clone())")
+            // …while a single-use receiver stays bare (no churn).
+            && rust.contains("{ let __s = (s); let __w"),
+        "a reused move-receiver str method must clone; a single use must not:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(pad_and_len("12".to_string()), 10);
+    assert_eq!(strip_prefix_reuse("foobar".to_string()), 9);
+    assert_eq!(count_reuse("banana".to_string()), 3 + 6);
+    assert_eq!(single_use("12".to_string()), 8);
+}
+"#;
+    assert_rustc_runs("str_method_move_receiver", &rust, driver);
+}

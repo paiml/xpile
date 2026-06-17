@@ -9623,6 +9623,15 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 if let Some(op) = str_method_op(attr.attr.as_str()) {
                     let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
                     if matches!(infer_type_in_ctx(ctx, &recv), Type::Str) {
+                        // PMAT-756 (HUNT-V15 #9): a move-the-receiver method
+                        // (zfill/center/rjust/removeprefix/…) consumes the source
+                        // var; clone it when reused so `len(s.zfill(8)) + len(s)`
+                        // doesn't use-after-move (E0382). No-op for a single use.
+                        let recv = if str_method_moves_receiver(op) {
+                            clone_if_reused_non_copy(ctx, recv)
+                        } else {
+                            recv
+                        };
                         let arity = str_method_arity(op);
                         // PMAT-632: `ljust`/`rjust`/`center` accept an optional
                         // fill-char 2nd arg (`"ab".rjust(5, "*")`); every other
@@ -14658,6 +14667,27 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
 
 /// Number of arguments a [`StrMethodOp`] expects: 0 for the transforms,
 /// 1 for the predicates / `split` / `join`, 2 for `replace(old, new)`.
+/// PMAT-756 (HUNT-V15 #9): str methods whose codegen binds `let __s = (<recv>)`
+/// — i.e. MOVE the receiver into the emitted block. Reusing the source variable
+/// after such a call (`len(s.zfill(8)) + len(s)`) is a use-after-move (rustc
+/// E0382), so the receiver is cloned when it's a reused non-Copy variable.
+/// Borrow-only methods (`.upper()`, `.startswith()`, …) keep the bare receiver.
+fn str_method_moves_receiver(op: StrMethodOp) -> bool {
+    matches!(
+        op,
+        StrMethodOp::ZFill
+            | StrMethodOp::Center
+            | StrMethodOp::RJust
+            | StrMethodOp::RemovePrefix
+            | StrMethodOp::RemoveSuffix
+            | StrMethodOp::Count
+            | StrMethodOp::Find
+            | StrMethodOp::Rfind
+            | StrMethodOp::RIndex
+            | StrMethodOp::SplitLines
+    )
+}
+
 fn str_method_arity(op: StrMethodOp) -> usize {
     match op {
         StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => 0,
