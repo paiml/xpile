@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.448] — 2026-06-17
+
+### Fixed
+
+- **PMAT-748 — control bytes in string literals are escaped.** A Python string
+  literal containing control bytes was emitted with the RAW bytes inside the
+  Rust `String::from("...")` literal. A bare CR (`"\r"`) is a hard rustc error
+  (`bare CR not allowed in string`) → transpile-success → invalid Rust; a raw
+  CRLF is normalized by Rust's lexer to a lone LF, silently DROPPING the CR
+  (wrong `len`, wrong bytes for Windows/CRLF/protocol strings) → silent-wrong.
+  Both backends now escape the common control chars by name (`\n`/`\r`/`\t`/
+  `\0`) and every other C0/DEL char via `\u{..}`, in both plain literals
+  (`escape_rust_str`/`escape_ruchy_str`) and f-string / `format!` literal
+  segments (`escape_format_literal`), so the emitted literal is always valid
+  ASCII source carrying the exact code points. HUNT-V14 (#3).
+
 ## [0.1.447] — 2026-06-17
 
 ### Fixed
