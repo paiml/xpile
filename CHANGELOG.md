@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.458] — 2026-06-17
+
+### Fixed
+
+- **PMAT-758 — string forward-reference type annotation.** A string
+  forward-reference annotation (`-> "Counter"`, `x: "Counter"`) — the idiomatic
+  way to annotate a method returning its own class — was rejected ("non-trivial
+  type expression"), so the common alternative-constructor classmethod
+  (`@classmethod def zero(cls) -> "Counter": return Counter(0)`) couldn't be
+  used (`c = Counter.zero(); c.n` failed). `parse_type_annotation` now resolves
+  a string-constant annotation whose content is a bare identifier via the same
+  name→Type mapping as a `Name` annotation (in any position — return / param /
+  local), so `"Counter"` → the struct type, `"int"` → int, etc. A complex
+  string annotation (`"list[int]"`) is still deferred. HUNT-V15 (CME-2).
+
 ## [0.1.457] — 2026-06-17
 
 ### Fixed
