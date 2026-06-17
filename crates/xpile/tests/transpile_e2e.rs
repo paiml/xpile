@@ -13130,3 +13130,28 @@ fn main() {
 "#;
     assert_rustc_runs("str_method_move_receiver", &rust, driver);
 }
+
+/// PMAT-757 (HUNT-V15 #8): `isinstance(x, T)` was emitted verbatim → rustc E0425
+/// (`isinstance`/`int` undefined). xpile is statically typed, so it now folds to
+/// a const bool (incl. Python's `bool`-is-a-`int` rule and the type-tuple form).
+/// Cross-checked vs python3.
+#[test]
+fn isinstance_fold() {
+    let rust = xpile_transpile_to_rust("isinstance_fold.py");
+    assert!(
+        // folded to const bools — no bare `isinstance(` / `int)` call remains.
+        !rust.contains("isinstance("),
+        "isinstance must fold to a const bool, not emit verbatim:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(check_int(5), 1);
+    assert_eq!(str_is_not_int("x".to_string()), 0);
+    assert_eq!(bool_is_int(true), 1);    // bool is-a int (Python)
+    assert_eq!(int_is_not_bool(5), 0);   // int is NOT bool
+    assert_eq!(tuple_types(1.5), 1);     // float matches (int, float)
+    assert_eq!(list_check(vec![1, 2]), 1);
+}
+"#;
+    assert_rustc_runs("isinstance_fold", &rust, driver);
+}

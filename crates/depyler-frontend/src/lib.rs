@@ -7911,6 +7911,53 @@ fn reorder_nested_call_args(
 /// return's declared type carry the element types. Any other value (including
 /// a non-empty literal, or an empty literal whose `expected` type doesn't
 /// match) falls through to the normal context-aware lowering.
+/// PMAT-757 (HUNT-V15 #8): does a value of static type `vty` satisfy
+/// `isinstance(_, <name>)`? `Some(true/false)` when the type-name resolves;
+/// `None` when it isn't a concrete type xpile can fold (→ caller rejects).
+/// Python's `bool` is a subclass of `int`, so `isinstance(<bool>, int)` is true.
+fn type_matches_name(ctx: &LoweringCtx, vty: &Type, name: &str) -> Option<bool> {
+    Some(match name {
+        "int" => matches!(vty, Type::I64 | Type::Bool),
+        "float" => matches!(vty, Type::F64),
+        "bool" => matches!(vty, Type::Bool),
+        "str" => matches!(vty, Type::Str),
+        "list" => matches!(vty, Type::List(_)),
+        "dict" => matches!(vty, Type::Dict(_, _)),
+        "set" => matches!(vty, Type::Set(_)),
+        "tuple" => matches!(vty, Type::Tuple(_)),
+        other => {
+            if ctx.structs.contains_key(other) {
+                matches!(vty, Type::Struct(s) if s == other)
+            } else {
+                return None;
+            }
+        }
+    })
+}
+
+/// PMAT-757: fold `isinstance(x, T)` to a const bool given x's static type
+/// `vty` and the type argument AST `type_arg` (a name or a tuple of names).
+/// `None` ⇒ unresolvable (Optional operand, or an unknown type name) → reject.
+fn isinstance_const(ctx: &LoweringCtx, vty: &Type, type_arg: &ast::Expr) -> Option<bool> {
+    // An `Optional[T]` value is runtime-dependent (None vs Some) — don't fold.
+    if matches!(vty, Type::Optional(_)) {
+        return None;
+    }
+    match type_arg {
+        ast::Expr::Name(n) => type_matches_name(ctx, vty, n.id.as_str()),
+        // `isinstance(x, (A, B, …))` — true if x matches ANY; all must resolve.
+        ast::Expr::Tuple(t) => {
+            let mut any = false;
+            for e in &t.elts {
+                let ast::Expr::Name(n) = e else { return None };
+                any |= type_matches_name(ctx, vty, n.id.as_str())?;
+            }
+            Some(any)
+        }
+        _ => None,
+    }
+}
+
 fn lower_value_expecting(
     ctx: &LoweringCtx,
     value: &ast::Expr,
@@ -10522,6 +10569,25 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             )));
                         }
                     }
+                }
+                // PMAT-757 (HUNT-V15 #8): `isinstance(x, T)` — xpile is
+                // statically typed, so the result is known at compile time. Fold
+                // to a const bool by comparing x's static type to the named type
+                // T (or a tuple of types). A bare `isinstance(x, int)` otherwise
+                // emitted verbatim → rustc E0425 (`isinstance`/`int` undefined).
+                if fname.id.as_str() == "isinstance"
+                    && call.keywords.is_empty()
+                    && call.args.len() == 2
+                {
+                    let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    let vty = infer_type_in_ctx(ctx, &value);
+                    if let Some(result) = isinstance_const(ctx, &vty, &call.args[1]) {
+                        return Ok(Expr::LitBool(result));
+                    }
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` uses `isinstance(x, T)` where T (or x's type) isn't a resolvable concrete type — v0.2.0 folds isinstance over int/float/bool/str/list/dict/set/tuple/<dataclass> (and a tuple of those); Optional/Union operands are deferred",
+                        ctx.fn_name
+                    )));
                 }
                 // PMAT-502ak: `round(x)` (1-arg). Over a `float` → the nearest
                 // int via banker's rounding (`Expr::RoundToInt`); over an
