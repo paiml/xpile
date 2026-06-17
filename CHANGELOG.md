@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.455] — 2026-06-17
+
+### Fixed
+
+- **PMAT-755 — augmented subscript assignment evaluates a side-effecting index
+  once.** `coll[INDEX] <op>= v` lowered to `coll[INDEX] = coll[INDEX] <op> v`,
+  so the index appeared in BOTH the write target and the implicit current-value
+  read. A side-effecting index (`xs[q.pop(0)] += 100`) therefore ran TWICE —
+  the read slot and write slot diverged (silent-wrong; Python evaluates the
+  subscript exactly once) — and the index's pop-receiver was never marked `mut`
+  (rustc E0596). `lower_aug_assign` now binds an impure index/key to a single
+  temp (reused for the read and the write); a pure index stays inline. The
+  augmented-assign mutability pre-walk now also scans the target, so a `.pop()`
+  in the index marks its receiver `mut`. HUNT-V15 (#2).
+
 ## [0.1.454] — 2026-06-17
 
 ### Fixed
