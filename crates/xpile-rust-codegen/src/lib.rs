@@ -139,21 +139,36 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                 // E0599). Only when every field type is itself `Eq + Hash`
                 // (`i64`/`bool`/`String`); a float field disqualifies it (`f64`
                 // is neither `Eq` nor `Hash`).
-                let derive_eq_hash = *frozen
-                    && fields
-                        .iter()
-                        .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool | Type::Str));
+                // PMAT-592: a frozen dataclass is hashable → derive `Eq, Hash`
+                // when every field is itself `Eq + Hash` (`i64`/`bool`/`String`);
+                // a float field disqualifies it.
+                let all_ord_fields = fields
+                    .iter()
+                    .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool | Type::Str));
+                let derive_eq_hash = *frozen && all_ord_fields;
+                // PMAT-750 (HUNT-V14 #6): `@dataclass(order=True)` over all-Ord-able
+                // fields also derives `Ord` (+ `Eq`) so instances can be
+                // `.sort()`ed / `sorted()` — `Vec::sort` needs `Ord`, and
+                // `PartialOrd` alone is rustc E0277. A float field can't derive
+                // `Ord` (`f64: !Ord`), so a float-field `order=True` dataclass keeps
+                // `PartialOrd` only (sorting it stays deferred — needs a
+                // `sort_by(partial_cmp)` path).
+                let derive_ord = *order && all_ord_fields;
                 let mut derives = vec!["Clone", "Debug", "PartialEq"];
-                if derive_eq_hash {
+                if derive_eq_hash || derive_ord {
                     derives.push("Eq");
+                }
+                if derive_eq_hash {
                     derives.push("Hash");
                 }
-                // PMAT-648: `@dataclass(order=True)` → `PartialOrd` (lexicographic
-                // by field order = Python's tuple comparison). Sound for any
-                // comparable field incl. `f64`; full `Ord` (sorting instances) is
-                // deferred (a float field can't derive `Ord`).
+                // PMAT-648: `order=True` → `PartialOrd` (lexicographic by field
+                // order = Python's tuple comparison). Sound for any comparable
+                // field incl. `f64`.
                 if *order {
                     derives.push("PartialOrd");
+                }
+                if derive_ord {
+                    derives.push("Ord");
                 }
                 writeln!(out, "#[derive({})]", derives.join(", "))?;
                 writeln!(out, "pub struct {name} {{")?;

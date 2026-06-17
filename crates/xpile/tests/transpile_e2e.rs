@@ -12945,3 +12945,26 @@ fn main() {
 "#;
     assert_rustc_runs("nested_fn_reassign_mut", &rust, driver);
 }
+
+/// PMAT-750 (HUNT-V14 #6 dc-order-sort-no-ord): `@dataclass(order=True)` derived
+/// only `PartialOrd`, but `.sort()`/`sorted()` need `Ord` → rustc E0277. When
+/// every field is Ord-able (int/bool/str) the dataclass now also derives `Ord`
+/// (+`Eq`); a float field keeps `PartialOrd` only (f64 is not `Ord`).
+/// Cross-checked vs python3.
+#[test]
+fn dataclass_order_sort() {
+    let rust = xpile_transpile_to_rust("dataclass_order_sort.py");
+    assert!(
+        // an all-int order=True dataclass now derives Ord (+ Eq) so it can sort.
+        rust.contains("#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]"),
+        "order=True dataclass with Ord-able fields must derive Ord:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(first_after_sort(), 2);  // (1,2) sorts first → y == 2
+    assert_eq!(sorted_builtin(), 1);    // x sorted ascending → first x == 1
+    assert_eq!(compare_still_works(), 1);
+}
+"#;
+    assert_rustc_runs("dataclass_order_sort", &rust, driver);
+}

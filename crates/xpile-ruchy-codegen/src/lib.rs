@@ -117,17 +117,26 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
                 // PMAT-592/648: frozen dataclass → derive Eq, Hash (all fields
                 // Eq+Hash-capable); order=True → derive PartialOrd. Matches the
                 // Rust backend.
-                let derive_eq_hash = *frozen
-                    && fields
-                        .iter()
-                        .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool | Type::Str));
+                let all_ord_fields = fields
+                    .iter()
+                    .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool | Type::Str));
+                let derive_eq_hash = *frozen && all_ord_fields;
+                // PMAT-750 (HUNT-V14 #6): order=True over all-Ord-able fields also
+                // derives Ord (+ Eq) so instances can be .sort()ed (Vec::sort needs
+                // Ord; PartialOrd alone is E0277). A float field can't derive Ord.
+                let derive_ord = *order && all_ord_fields;
                 let mut derives = vec!["Clone", "Debug", "PartialEq"];
-                if derive_eq_hash {
+                if derive_eq_hash || derive_ord {
                     derives.push("Eq");
+                }
+                if derive_eq_hash {
                     derives.push("Hash");
                 }
                 if *order {
                     derives.push("PartialOrd");
+                }
+                if derive_ord {
+                    derives.push("Ord");
                 }
                 writeln!(out, "#[derive({})]", derives.join(", "))?;
                 writeln!(out, "pub struct {name} {{")?;
