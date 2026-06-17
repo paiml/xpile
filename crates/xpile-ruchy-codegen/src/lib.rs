@@ -44,6 +44,11 @@ fn escape_format_literal(s: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\t' => out.push_str("\\t"),
             '\r' => out.push_str("\\r"),
+            '\0' => out.push_str("\\0"),
+            // PMAT-748 (HUNT-V14 #3): other C0/DEL control chars → `\u{..}`.
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                out.push_str(&format!("\\u{{{:x}}}", c as u32));
+            }
             _ => out.push(c),
         }
     }
@@ -921,12 +926,23 @@ fn emit_param(out: &mut String, p: &Param) -> Result<(), RuchyCodegenError> {
 
 /// Escape a string for emission inside a Ruchy `"..."` literal.
 /// PMAT-449 — Ruchy compiles to Rust, so identical escape semantics.
+/// PMAT-748 (HUNT-V14 #3): escape control bytes when emitting a `str` literal
+/// (mirror of the rust backend). A bare CR is a rustc error and a raw CRLF is
+/// normalized to LF (CR silently dropped); escape the common control chars by
+/// name and every other C0/DEL char via `\u{..}`.
 fn escape_ruchy_str(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
             '\\' => out.push_str("\\\\"),
             '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\0' => out.push_str("\\0"),
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                out.push_str(&format!("\\u{{{:x}}}", c as u32));
+            }
             other => out.push(other),
         }
     }

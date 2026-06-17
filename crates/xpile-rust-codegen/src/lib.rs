@@ -50,6 +50,13 @@ fn escape_format_literal(s: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\t' => out.push_str("\\t"),
             '\r' => out.push_str("\\r"),
+            '\0' => out.push_str("\\0"),
+            // PMAT-748 (HUNT-V14 #3): other C0/DEL control chars → `\u{..}` so a
+            // bare CR-class byte in an f-string literal segment can't break the
+            // lexer or be normalized away (mirrors `escape_rust_str`).
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                out.push_str(&format!("\\u{{{:x}}}", c as u32));
+            }
             _ => out.push(c),
         }
     }
@@ -1058,12 +1065,27 @@ fn emit_param(out: &mut String, p: &Param) -> Result<(), CodegenError> {
 /// PMAT-449 (v0.2.0 Track 1.A): minimal escape set for the first
 /// `Type::Str` pass — `\` and `"`. Newlines / tabs / unicode escapes
 /// land in subsequent sub-tracks alongside f-string lowering.
+/// PMAT-747-followup / PMAT-748 (HUNT-V14 #3): escape a Python `str` for
+/// emission inside a Rust `"..."` literal. Control bytes MUST be escaped, not
+/// passed through raw: a bare CR (`"\r"`) is a hard rustc error ("bare CR not
+/// allowed in string"), and a raw CRLF is normalized by Rust's lexer to a lone
+/// LF — silently dropping the CR (wrong `len`, wrong bytes for protocol/Windows
+/// strings). Emit the named escapes for the common control chars and a
+/// `\u{..}` escape for every other C0/DEL control char so the emitted literal
+/// is always valid ASCII source carrying the exact code points.
 fn escape_rust_str(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
             '\\' => out.push_str("\\\\"),
             '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\0' => out.push_str("\\0"),
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                out.push_str(&format!("\\u{{{:x}}}", c as u32));
+            }
             other => out.push(other),
         }
     }
