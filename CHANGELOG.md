@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.446] — 2026-06-17
+
+### Fixed
+
+- **PMAT-746 — augmented assignment coerces a bool RHS to int.** Python's
+  `bool` is an `int` subtype, so an augmented assignment with a bool operand
+  into an int accumulator is ordinary integer arithmetic — `count += a == b`
+  counts how many times `a == b`, `n -= flag`, `xs[i] += b`. The plain
+  `total + (a == b)` path already cast the bool to `i64` (PMAT-565), but the
+  augmented path emitted `(count).checked_add(<bool>)` with no cast → rustc
+  E0308 (transpile succeeded → invalid Rust). The fix mirrors the plain `BinOp`
+  arm's coercion in `combine_aug`: both operands are coerced via
+  `to_i64_operand` when the operator is integer arithmetic, except `&`/`|`/`^`
+  over two bools, which stays a bool op (PMAT-580 — `flag &= other` keeps
+  `bool`). Covers `+=`/`-=`/`*=` and Name/Subscript/Attribute targets; the
+  float-augmented and str/list/set augmented paths are unchanged.
+  HUNT-V14 (rank 1).
+
 ## [0.1.445] — 2026-06-17
 
 ### Fixed
