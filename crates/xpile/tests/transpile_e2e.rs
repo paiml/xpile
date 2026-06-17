@@ -12918,3 +12918,30 @@ fn main() {
 "#;
     assert_rustc_runs("str_control_byte_escape", &rust, driver);
 }
+
+/// PMAT-749 (HUNT-V14 #4 nf-reassign-immutable): a nested function reassigning
+/// a local, an accumulator, or a parameter emitted an immutable `let` /
+/// closure-arg → rustc E0384. The outer mutability analysis doesn't descend
+/// into nested defs, so the nested scope's reassigned names were never marked
+/// `mut` (though the same code at top level works). The fix computes the nested
+/// scope's mutable set: reassigned locals get `let mut`, a reassigned parameter
+/// gets `|mut p|`. Cross-checked vs python3.
+#[test]
+fn nested_fn_reassign_mut() {
+    let rust = xpile_transpile_to_rust("nested_fn_reassign_mut.py");
+    assert!(
+        // a reassigned nested local is now `let mut`…
+        rust.contains("let mut r: i64 = n")
+            // …and a reassigned nested parameter is now `|mut n|`.
+            && rust.contains("|mut n: i64|"),
+        "nested-fn reassigned local/param must be mut:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(doubler(), 42);
+    assert_eq!(accumulate(vec![1, 2, 3, 4]), 10);
+    assert_eq!(reassign_param(), 6);
+}
+"#;
+    assert_rustc_runs("nested_fn_reassign_mut", &rust, driver);
+}

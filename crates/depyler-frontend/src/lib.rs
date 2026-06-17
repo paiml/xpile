@@ -7443,23 +7443,46 @@ fn desugar_nested_fn(
         }
     };
     let fname = ctx.fn_name.clone();
-    let mut params: Vec<(String, Type)> = Vec::with_capacity(f.args.args.len());
+    let mut param_pairs: Vec<(String, Type)> = Vec::with_capacity(f.args.args.len());
     for arg in &f.args.args {
         let pname = arg.def.arg.to_string();
         let ty = match arg.def.annotation.as_ref() {
             None => Type::I64,
             Some(ann) => parse_type_annotation(&fname, &pname, ann)?,
         };
-        params.push((pname, ty));
+        param_pairs.push((pname, ty));
     }
+    // PMAT-749 (HUNT-V14 #4): the nested-fn body has its OWN mutability scope.
+    // The outer function's `compute_mutable_names` does not descend into nested
+    // defs (`walk_counts` has no `FunctionDef` arm), so a reassigned body-local
+    // (`r = n; r = r * 2`) or accumulator (`acc += x`) was emitted as an
+    // immutable `let` (rustc E0384), and a reassigned parameter (`n = n + 1`) as
+    // an immutable closure/fn arg (E0384). Compute the nested scope's mutable
+    // names — reassigned body-locals AND reassigned params — exactly as
+    // `compute_mutable_names` does (count > 1), then (a) carry a per-param `mut`
+    // flag into the IR so the backend emits `|mut p|` / `mut p`, and (b) merge
+    // them into `ctx.mutable` while lowering the body so each reassigned local's
+    // `Stmt::Let` is marked mutable.
+    let mut nested_counts = walk_counts(&f.body, /*in_loop=*/ false);
+    for (pn, _) in &param_pairs {
+        *nested_counts.entry(pn.clone()).or_insert(0) += 1;
+    }
+    let nested_mut: HashSet<String> = nested_counts
+        .into_iter()
+        .filter_map(|(n, c)| if c > 1 { Some(n) } else { None })
+        .collect();
     // Snapshot the enclosing scope so the closure's params + body-locals don't
     // leak into the enclosing function's type environment (Rust scopes them in
     // the closure block; the leak would only mislead later type inference).
     let saved_bound = ctx.bound.clone();
     let saved_types = ctx.name_types.clone();
-    for (p, t) in &params {
+    let saved_mutable = ctx.mutable.clone();
+    for (p, t) in &param_pairs {
         ctx.bound.insert(p.clone());
         ctx.name_types.insert(p.clone(), t.clone());
+    }
+    for n in &nested_mut {
+        ctx.mutable.insert(n.clone());
     }
     // Lower the leading statements, then the trailing return expression.
     let mut stmts: Vec<Stmt> = Vec::new();
@@ -7467,6 +7490,11 @@ fn desugar_nested_fn(
         stmts.extend(lower_block_stmt(ctx, s.clone())?);
     }
     let trailing = lower_expr_in_ctx(ctx, trailing_ast)?;
+    // The nested params carry their `mut` flag into the IR (closure/fn arg).
+    let params: Vec<(String, Type, bool)> = param_pairs
+        .iter()
+        .map(|(p, t)| (p.clone(), t.clone(), nested_mut.contains(p)))
+        .collect();
     // Return type: the `-> R` annotation, else inferred from the trailing expr.
     let ret_ty = match f.returns.as_ref() {
         Some(ann) => parse_type_annotation(&fname, "<return>", ann)?,
@@ -7500,6 +7528,7 @@ fn desugar_nested_fn(
 
     ctx.bound = saved_bound;
     ctx.name_types = saved_types;
+    ctx.mutable = saved_mutable;
     ctx.closure_returns.insert(name.clone(), ret_ty.clone());
     ctx.bound.insert(name.clone());
 
@@ -7581,7 +7610,12 @@ fn desugar_closure_assign(
     // Record the closure binding so `name(args…)` types as `ret_ty`.
     ctx.closure_returns.insert(name.to_string(), ret_ty);
     ctx.bound.insert(name.to_string());
-    let params: Vec<(String, Type)> = param_names.into_iter().map(|p| (p, Type::I64)).collect();
+    // A lambda body is a single expression — a lambda parameter is never
+    // reassigned, so the `mut` flag (PMAT-749) is always false here.
+    let params: Vec<(String, Type, bool)> = param_names
+        .into_iter()
+        .map(|p| (p, Type::I64, false))
+        .collect();
     Ok(Stmt::ClosureLet {
         name: name.to_string(),
         params,
