@@ -2356,6 +2356,10 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, ndigits, mode)?;
             out.push_str("); if __rn >= 0 { __rv as i64 } else { let __rp = 10i128.checked_pow((-__rn) as u32).expect(\"xpile: OverflowError: round() scale out of range\"); let __rd = __rv.div_euclid(__rp); let __rm = __rv.rem_euclid(__rp); let __r2 = 2i128 * __rm; let __res = if __r2 < __rp { __rd * __rp } else if __r2 > __rp { (__rd + 1) * __rp } else if __rd % 2 == 0 { __rd * __rp } else { (__rd + 1) * __rp }; if __res < (i64::MIN as i128) || __res > (i64::MAX as i128) { panic!(\"xpile: OverflowError: round() result out of i64 range\"); } __res as i64 } }");
         }
+        // PMAT-745 (HUNT-V13): exact int↔float comparison (`int OP float`).
+        Expr::MixedIntFloatCmp { int, float, op } => {
+            emit_mixed_int_float_cmp(out, int, float, *op, mode)?
+        }
         // PMAT-502e: 1-arg `min(xs)`/`max(xs)` reduction over an int list.
         // PMAT-502h: `list[float]` uses a fold (f64 has no `Ord`).
         // PMAT-502aa: `key=lambda p: e` → `min_by_key`/`max_by_key`.
@@ -3663,6 +3667,51 @@ fn emit_floor_mod(
          let __r = __fa.checked_rem(__fb).expect(\"{panic_msg}\"); \
          if __r != 0 && (__r < 0) != (__fb < 0) {{ __r + __fb }} else {{ __r }} }}"
     )?;
+    Ok(())
+}
+
+/// PMAT-745 (HUNT-V13 intfloat-cmp-precision): emit an EXACT `int OP float`
+/// comparison. Python never rounds the int operand to `f64`, so a magnitude
+/// above 2^53 (where consecutive integers are no longer distinct in `f64`) must
+/// not be conflated with its rounded image. The block binds the int (`__cn`)
+/// and float (`__cf`) once, then compares `__cn as f64` (`__cnf`) against
+/// `__cf` for STRICT ordering — reliable because a rounded integer `t` lands
+/// within half a ULP of `__cnf`, so `__cnf < __cf` (as floats) implies `t <
+/// __cf` too (and symmetrically for `>`) — and breaks the `__cnf == __cf` tie
+/// in `i128`, which exactly holds every integral `f64` an `i64` cast can reach
+/// (up to 2^63), so the boundary cases (`i64::MAX` vs `2^63`, `2**53 + 1` vs
+/// `2^53`) resolve correctly. NaN falls through every arm (Python: `n != nan`
+/// is `True`, the rest `False`). The `op` is pre-normalised by the frontend to
+/// the int-on-left form, so only the six comparison operators appear here.
+fn emit_mixed_int_float_cmp(
+    out: &mut String,
+    int: &Expr,
+    float: &Expr,
+    op: BinOp,
+    mode: bool,
+) -> Result<(), CodegenError> {
+    let body = match op {
+        BinOp::Eq => "__cnf == __cf && (__cn as i128) == (__cf as i128)",
+        BinOp::NotEq => "__cnf != __cf || (__cn as i128) != (__cf as i128)",
+        BinOp::Lt => "__cnf < __cf || (__cnf == __cf && (__cn as i128) < (__cf as i128))",
+        BinOp::LtEq => "__cnf < __cf || (__cnf == __cf && (__cn as i128) <= (__cf as i128))",
+        BinOp::Gt => "__cnf > __cf || (__cnf == __cf && (__cn as i128) > (__cf as i128))",
+        BinOp::GtEq => "__cnf > __cf || (__cnf == __cf && (__cn as i128) >= (__cf as i128))",
+        other => {
+            return Err(CodegenError::Unsupported(format!(
+                "MixedIntFloatCmp with non-comparison operator {other:?} (frontend bug)"
+            )))
+        }
+    };
+    // A `let` RHS is a full expression up to `;`, so no operand parens are
+    // needed (and they would warn `unused_parens` for a bare ident operand).
+    out.push_str("{ let __cn = ");
+    emit_expr(out, int, mode)?;
+    out.push_str("; let __cf = ");
+    emit_expr(out, float, mode)?;
+    out.push_str("; let __cnf = __cn as f64; ");
+    out.push_str(body);
+    out.push_str(" }");
     Ok(())
 }
 

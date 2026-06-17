@@ -527,6 +527,11 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
             collect_idents(lhs, out);
             collect_idents(rhs, out);
         }
+        // PMAT-745: int/float exact comparison — recurse into both operands.
+        Expr::MixedIntFloatCmp { int, float, .. } => {
+            collect_idents(int, out);
+            collect_idents(float, out);
+        }
         // PMAT-502bh: str.format — recurse into each formatted arg.
         Expr::StrFormat { args, .. } => {
             for a in args {
@@ -1341,6 +1346,16 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         // capitalises the constructors (`True` / `False`).
         Expr::LitBool(b) => write!(out, "{}", if *b { "True" } else { "False" })?,
         Expr::BinOp { op, lhs, rhs } => emit_binop(out, *op, lhs, rhs)?,
+        // PMAT-745: the exact int/float comparison lowers to an `i128`-tiebreak
+        // block in the Rust/Ruchy lanes; the Lean lane has no `f64`/`i128`
+        // bit-level model, so refuse with a pointer (mirrors FloatBinOp's posture).
+        Expr::MixedIntFloatCmp { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "exact int/float comparison is not supported in the Lean lane — \
+                 use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
         // PMAT-451 (v0.2.0 Track 1.A): Lean's `String` concatenation
         // is the `++` operator (`String.append`). Strings are
         // unbounded in Lean — no overflow concept, mirrors the proof-

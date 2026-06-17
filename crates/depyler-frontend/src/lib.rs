@@ -8134,6 +8134,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::SetOp { lhs, .. } => infer_type(lhs),
         // PMAT-502ep: set predicates yield Bool.
         Expr::SetPred { .. } => Type::Bool,
+        // PMAT-745: an int/float exact comparison yields a bool.
+        Expr::MixedIntFloatCmp { .. } => Type::Bool,
         // PMAT-502eq: a copy has the same type as the value it clones.
         Expr::Clone(inner) => infer_type(inner),
         // PMAT-502ew: `Some(e)` types as `Optional(typeof e)`; a bare `None`
@@ -8551,6 +8553,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::SetOp { lhs, .. } => infer_type_in_ctx(ctx, lhs),
         // PMAT-502ep: set predicates yield Bool.
         Expr::SetPred { .. } => Type::Bool,
+        // PMAT-745: an int/float exact comparison yields a bool.
+        Expr::MixedIntFloatCmp { .. } => Type::Bool,
         // PMAT-502eq: a copy has the same type as the value it clones.
         Expr::Clone(inner) => infer_type_in_ctx(ctx, inner),
         // PMAT-502ew: `Some(e)` → `Optional(typeof e)`; bare `None` defaults
@@ -8862,6 +8866,12 @@ fn rewrite_dict_reads(ctx: &LoweringCtx, e: Expr) -> Expr {
         Expr::DictLit(pairs) => {
             Expr::DictLit(pairs.into_iter().map(|(k, v)| (rw(k), rw(v))).collect())
         }
+        // PMAT-745: rewrite dict reads inside an int/float comparison's operands.
+        Expr::MixedIntFloatCmp { int, float, op } => Expr::MixedIntFloatCmp {
+            int: rwb(int),
+            float: rwb(float),
+            op,
+        },
         // Leaves + shell-domain variants carry no nested dict reads.
         other => other,
     }
@@ -14562,6 +14572,20 @@ fn lower_binop(op: &ast::Operator) -> Result<BinOp, FrontendError> {
 }
 
 /// Map a Python comparison operator to its meta-HIR [`BinOp`].
+/// PMAT-745: reflect a comparison operator across its operands so that
+/// `a OP b` ⟺ `b flip(OP) a`. Used to normalise an int/float comparison
+/// written float-first (`f < n`) into the int-first form (`n > f`) that
+/// [`Expr::MixedIntFloatCmp`] codegen expects. `==`/`!=` are symmetric.
+fn flip_cmp(op: BinOp) -> BinOp {
+    match op {
+        BinOp::Lt => BinOp::Gt,
+        BinOp::Gt => BinOp::Lt,
+        BinOp::LtEq => BinOp::GtEq,
+        BinOp::GtEq => BinOp::LtEq,
+        other => other, // Eq / NotEq are symmetric
+    }
+}
+
 fn cmp_binop(op: &ast::CmpOp) -> Result<BinOp, FrontendError> {
     Ok(match op {
         ast::CmpOp::Eq => BinOp::Eq,
@@ -14738,11 +14762,12 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
 /// PMAT-576: build one sub-comparison of a (possibly chained) `Compare`, from
 /// its already-lowered operands and their precomputed types. Two sets become a
 /// subset/superset `SetPred` (HashSet has no `<`; PMAT-502ep); a mixed
-/// `float`/`int` comparison promotes the int side to f64 (PMAT-540, which Rust
-/// requires and Python does numerically); everything else is a plain
+/// `float`/`int` comparison becomes an `Expr::MixedIntFloatCmp` that compares
+/// the operands EXACTLY (PMAT-745, superseding the old PMAT-540 cast-to-f64
+/// path, which lost precision above 2^53); everything else is a plain
 /// ordering/equality `BinOp`.
 fn build_chain_cmp(
-    ctx: &LoweringCtx,
+    _ctx: &LoweringCtx,
     op: &ast::CmpOp,
     lhs: Expr,
     lt: &Type,
@@ -14758,13 +14783,32 @@ fn build_chain_cmp(
             });
         }
     }
+    let cmp = cmp_binop(op)?;
+    // PMAT-745 (HUNT-V13 intfloat-cmp-precision): an int↔float comparison must
+    // be EXACT. The old path cast the int operand to `f64` (`(n) as f64 == f`),
+    // which silently lost precision above 2^53 and could even invert the
+    // ordering (`9007199254740993 == 9007199254740992.0` became `true`).
+    // Emit a dedicated node that compares without rounding the int. Normalise
+    // so the int is the conceptual left operand (flip the operator when the
+    // float was written on the left) — one codegen template then covers all six
+    // comparison operators in either operand order.
+    if *lt == Type::I64 && *rt == Type::F64 {
+        return Ok(Expr::MixedIntFloatCmp {
+            int: Box::new(lhs),
+            float: Box::new(rhs),
+            op: cmp,
+        });
+    }
+    if *lt == Type::F64 && *rt == Type::I64 {
+        return Ok(Expr::MixedIntFloatCmp {
+            int: Box::new(rhs),
+            float: Box::new(lhs),
+            op: flip_cmp(cmp),
+        });
+    }
     let mut lhs = lhs;
     let mut rhs = rhs;
-    if *lt == Type::F64 && *rt == Type::I64 {
-        rhs = to_f64_operand(ctx, rhs);
-    } else if *lt == Type::I64 && *rt == Type::F64 {
-        lhs = to_f64_operand(ctx, lhs);
-    } else if *lt == Type::Bool && *rt == Type::I64 {
+    if *lt == Type::Bool && *rt == Type::I64 {
         // PMAT-617: Python bool is an int subtype, so `flag == 1` / `flag < 2`
         // are valid (`True == 1`). xpile emitted a bare `bool OP i64`, which
         // rustc rejects (E0308). Coerce the bool side to `i64` (`(b) as i64`),
@@ -14780,7 +14824,7 @@ fn build_chain_cmp(
         rhs = bool_to_i64_cast(rhs);
     }
     Ok(Expr::BinOp {
-        op: cmp_binop(op)?,
+        op: cmp,
         lhs: Box::new(lhs),
         rhs: Box::new(rhs),
     })

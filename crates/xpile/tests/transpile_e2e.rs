@@ -6889,17 +6889,21 @@ fn main() {
 
 /// PMAT-540 (correctness): mixed `float`/`int` comparison and arithmetic.
 /// Rust rejects `f64 == i64` (E0308) and `f64 + i64` (E0277), so `x == 3`,
-/// `x < n`, `x * 2 + 1` over a float `x` produced non-compiling Rust. The int
-/// operand is now promoted to `f64` (Python promotes numerically). Both the
-/// comparison path (`lower_compare_in_ctx`) and the float-arith path now wrap
-/// the int side in `to_f64_operand`. Cross-checked vs python3
+/// `x < n`, `x * 2 + 1` over a float `x` produced non-compiling Rust. The
+/// float-ARITHMETIC path promotes the int operand to `f64` (Python promotes
+/// numerically). PMAT-745 superseded the comparison half: an int↔float
+/// comparison is now EXACT (no f64 cast that would lose precision above 2^53),
+/// emitting an `i128`-tiebreak block instead. Cross-checked vs python3
 /// (F/T/T/F/6.0/T/F/7.5).
 #[test]
 fn mixed_float_int() {
     let rust = xpile_transpile_to_rust("mixed_float_int.py");
     assert!(
-        rust.contains("x == ((3i64) as f64)") && rust.contains("x * ((2i64) as f64)"),
-        "mixed float/int operands must promote the int to f64:\n{rust}"
+        // PMAT-745: the comparison `x == 3` is now EXACT (i128 tiebreak), not a
+        // lossy `((3i64) as f64)` cast; float ARITHMETIC still promotes the int.
+        rust.contains("(__cn as i128) == (__cf as i128)")
+            && rust.contains("x * ((2i64) as f64)"),
+        "mixed float/int: comparison must be exact (PMAT-745) and float arithmetic must promote the int to f64:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -12747,4 +12751,56 @@ fn slice_assign_and_del_rejected_with_clear_message() {
             "{fx}: expected a clear slice message (no opaque discriminant); got: {stderr}"
         );
     }
+}
+
+/// PMAT-745 (HUNT-V13 intfloat-cmp-precision): Python compares an `int` and a
+/// `float` EXACTLY — it never rounds the int operand to `f64`. xpile used to
+/// cast the int side to f64 before comparing (`(n) as f64 == f`), losing
+/// precision above 2^53 and able to invert the ordering. The fix emits an exact
+/// comparison (strict ordering via `n as f64`, equality tie broken in `i128`).
+/// One node covers all six operators in either operand order. Cross-checked vs
+/// python3 (the boundary cases below print exactly what CPython does).
+#[test]
+fn intfloat_cmp_precision() {
+    let rust = xpile_transpile_to_rust("intfloat_cmp_precision.py");
+    assert!(
+        // the int operand is no longer rounded — it appears in an i128 tiebreak.
+        rust.contains("(__cn as i128)") && rust.contains("__cnf = __cn as f64"),
+        "int/float comparison should be exact (i128 tiebreak), not a lossy f64 cast:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // 2^53 + 1 vs 2^53.0: the int is NOT representable in f64, so a lossy cast
+    // would conflate them. Python: 993 != 992.0, 993 > 992.0.
+    let big: i64 = 9007199254740993;     // 2^53 + 1
+    let bigf: f64 = 9007199254740992.0;  // 2^53
+    assert_eq!(eq_if(big, bigf), 0);     // not equal
+    assert_eq!(ne_if(big, bigf), 1);
+    assert_eq!(lt_if(big, bigf), 0);
+    assert_eq!(gt_if(big, bigf), 1);
+    assert_eq!(ge_if(big, bigf), 1);
+    // i64::MAX (= 2^63 - 1) vs 2^63.0 — the int rounds UP to 2^63 in f64.
+    let mx: i64 = 9223372036854775807;
+    let p63: f64 = 9223372036854775808.0;
+    assert_eq!(lt_if(mx, p63), 1);       // i64::MAX < 2^63
+    assert_eq!(eq_if(mx, p63), 0);
+    assert_eq!(gt_if(mx, p63), 0);
+    // exact small values still agree
+    assert_eq!(eq_if(5, 5.0), 1);
+    assert_eq!(lt_if(5, 6.0), 1);
+    // float-on-left flips correctly: f <= n
+    assert_eq!(fle_n(5.0, 5), 1);
+    assert_eq!(fle_n(5.5, 5), 0);
+    // NaN: Python `n != nan` is True, all others False.
+    assert_eq!(eq_if(5, f64::NAN), 0);
+    assert_eq!(ne_if(5, f64::NAN), 1);
+    assert_eq!(lt_if(5, f64::NAN), 0);
+    assert_eq!(gt_if(5, f64::NAN), 0);
+    assert_eq!(ge_if(5, f64::NAN), 0);
+    // infinities
+    assert_eq!(lt_if(5, f64::INFINITY), 1);
+    assert_eq!(gt_if(5, f64::NEG_INFINITY), 1);
+}
+"#;
+    assert_rustc_runs("intfloat_cmp_precision", &rust, driver);
 }
