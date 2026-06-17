@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.449] — 2026-06-17
+
+### Fixed
+
+- **PMAT-749 — nested-function body mutability.** A nested function whose body
+  reassigns a local (`r = n; r = r * 2`), an accumulator (`acc += x`), or a
+  parameter (`n = n + 1`) emitted an immutable `let` / immutable closure-arg →
+  rustc E0384. The outer function's mutability analysis
+  (`compute_mutable_names`) does not descend into nested defs (`walk_counts`
+  has no `FunctionDef` arm), so the nested scope's reassigned names were never
+  marked `mut` — even though the IDENTICAL code at top level compiles.
+  `desugar_nested_fn` now computes the nested scope's mutable set (reassigned
+  body-locals AND params), merges it into the lowering context while lowering
+  the body (so each reassigned local's `let` is `mut`), and carries a per-param
+  `mut` flag into the IR (`ClosureLet`/`NestedFn` `params` is now
+  `Vec<(String, Type, bool)>`) so a reassigned parameter emits `|mut p|` /
+  `mut p`. Lambda params (single-expression body) are never reassigned. Both
+  backends emit the `mut` prefix; Lean refuses both variants. HUNT-V14 (#4).
+
 ## [0.1.448] — 2026-06-17
 
 ### Fixed
