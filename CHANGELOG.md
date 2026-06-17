@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.444] — 2026-06-16
+
+### Fixed
+
+- **PMAT-744 — a typed `except` no longer swallows a list IndexError.**
+  `try: return xs[i] except ValueError: return -1` silently returned -1 on an
+  out-of-bounds access, where Python propagates the IndexError. A runtime
+  list-index read emitted a *native* `Vec[i]` bounds panic with no `xpile:`
+  prefix, so the typed-`except` re-raise filter (PMAT-731) matched nothing and
+  the handler ran. Both backends' runtime/negative list-index read now panic with
+  the `xpile: IndexError: list index out of range` tag, so the discrimination
+  re-raises it from a non-matching except (Python propagates) and catches it
+  under `except IndexError:`. Verified vs python3. (HUNT-V13 exc-flow-01/02. The
+  non-negative-literal index fast path and the i64-overflow-swallow case remain
+  follow-ups.)
+
 ## [0.1.443] — 2026-06-16
 
 ### Fixed
