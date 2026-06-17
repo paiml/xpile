@@ -13053,3 +13053,28 @@ fn main() {
 "#;
     assert_rustc_runs("optional_some_wrap", &rust, driver);
 }
+
+/// PMAT-754 (HUNT-V15 #1 COMP-SHADOW-RANGE-LIST): a nested comprehension whose
+/// inner loop-var shadows an enclosing comp var of the same name resolved to the
+/// leaked outer `__forcN` while-counter instead of the inner binding —
+/// `[[x for x in range(5)] for x in range(2)]` made every inner row `[counter;
+/// 5]` (sum 5 vs Python 20, silent-wrong; rustc warned `unused variable: x`).
+/// The fix clears the active rename when an inner comp re-binds the shadowed
+/// name. Cross-checked vs python3.
+#[test]
+fn nested_comp_shadow() {
+    let rust = xpile_transpile_to_rust("nested_comp_shadow.py");
+    assert!(
+        // the inner element now returns the local binding `x`, not `__forc0`.
+        rust.contains("let x = __k.clone(); x }"),
+        "inner comp element must resolve to its own binding, not the outer counter:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(nested_sum(), 20);
+    assert_eq!(distinct_names(), 6);
+    assert_eq!(shadow_over_list(), 50);
+}
+"#;
+    assert_rustc_runs("nested_comp_shadow", &rust, driver);
+}
