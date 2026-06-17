@@ -1998,6 +1998,10 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             emit_expr(out, ndigits, mode)?;
             out.push_str("); if __rn >= 0 { __rv as i64 } else { let __rp = 10i128.checked_pow((-__rn) as u32).expect(\"xpile: OverflowError: round() scale out of range\"); let __rd = __rv.div_euclid(__rp); let __rm = __rv.rem_euclid(__rp); let __r2 = 2i128 * __rm; let __res = if __r2 < __rp { __rd * __rp } else if __r2 > __rp { (__rd + 1) * __rp } else if __rd % 2 == 0 { __rd * __rp } else { (__rd + 1) * __rp }; if __res < (i64::MIN as i128) || __res > (i64::MAX as i128) { panic!(\"xpile: OverflowError: round() result out of i64 range\"); } __res as i64 } }");
         }
+        // PMAT-745 (HUNT-V13): exact int↔float comparison (`int OP float`).
+        Expr::MixedIntFloatCmp { int, float, op } => {
+            emit_mixed_int_float_cmp(out, int, float, *op, mode)?
+        }
         // PMAT-502e/h/aa: 1-arg `min(xs)`/`max(xs)`; `key=lambda` →
         // `min_by_key`/`max_by_key`.
         Expr::ListMinMax {
@@ -3136,6 +3140,45 @@ fn emit_infix(
     out.push_str(op);
     emit_expr(out, rhs, mode)?;
     write!(out, ")")?;
+    Ok(())
+}
+
+/// PMAT-745 (HUNT-V13 intfloat-cmp-precision): emit an EXACT `int OP float`
+/// comparison (mirror of the rust-codegen helper). Python never rounds the int
+/// operand to `f64`; the block compares `__cn as f64` against `__cf` for strict
+/// ordering and breaks the equality tie in `i128` (which exactly holds every
+/// integral `f64` an `i64` can reach, up to 2^63). NaN falls through every arm
+/// (Python: `n != nan` is `True`, the rest `False`). The frontend normalises
+/// `op` to the int-on-left form, so only the six comparison operators appear.
+fn emit_mixed_int_float_cmp(
+    out: &mut String,
+    int: &Expr,
+    float: &Expr,
+    op: BinOp,
+    mode: bool,
+) -> Result<(), RuchyCodegenError> {
+    let body = match op {
+        BinOp::Eq => "__cnf == __cf && (__cn as i128) == (__cf as i128)",
+        BinOp::NotEq => "__cnf != __cf || (__cn as i128) != (__cf as i128)",
+        BinOp::Lt => "__cnf < __cf || (__cnf == __cf && (__cn as i128) < (__cf as i128))",
+        BinOp::LtEq => "__cnf < __cf || (__cnf == __cf && (__cn as i128) <= (__cf as i128))",
+        BinOp::Gt => "__cnf > __cf || (__cnf == __cf && (__cn as i128) > (__cf as i128))",
+        BinOp::GtEq => "__cnf > __cf || (__cnf == __cf && (__cn as i128) >= (__cf as i128))",
+        other => {
+            return Err(RuchyCodegenError::Unsupported(format!(
+                "MixedIntFloatCmp with non-comparison operator {other:?} (frontend bug)"
+            )))
+        }
+    };
+    // A `let` RHS is a full expression up to `;`, so no operand parens are
+    // needed (and they would warn `unused_parens` for a bare ident operand).
+    out.push_str("{ let __cn = ");
+    emit_expr(out, int, mode)?;
+    out.push_str("; let __cf = ");
+    emit_expr(out, float, mode)?;
+    out.push_str("; let __cnf = __cn as f64; ");
+    out.push_str(body);
+    out.push_str(" }");
     Ok(())
 }
 

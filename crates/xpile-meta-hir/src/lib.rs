@@ -317,6 +317,11 @@ fn expr_has_int_arith(e: &Expr) -> bool {
             }
             expr_has_int_arith(lhs) || expr_has_int_arith(rhs)
         }
+        // PMAT-745: the comparison itself is not int *arithmetic* (it yields a
+        // bool), but its int operand may carry arithmetic — recurse into both.
+        Expr::MixedIntFloatCmp { int, float, .. } => {
+            expr_has_int_arith(int) || expr_has_int_arith(float)
+        }
         Expr::UnOp { op, operand } => {
             if matches!(op, UnOp::Neg) {
                 return true;
@@ -1904,6 +1909,27 @@ pub enum Expr {
         value: Box<Expr>,
         ndigits: Box<Expr>,
     },
+    /// A comparison (`==`/`!=`/`<`/`<=`/`>`/`>=`) between an **int** operand and
+    /// a **float** operand. PMAT-745 (HUNT-V13 intfloat-cmp-precision). Python
+    /// compares an `int` and a `float` *exactly* — no rounding — so a large
+    /// integer beyond 2^53 is never conflated with its rounded `f64` image
+    /// (`2**53 + 1 == 9007199254740992.0` is `False`, not `True`; `2**53 + 1 >
+    /// 9007199254740992.0` is `True`). xpile previously cast the int operand to
+    /// `f64` before comparing, silently losing that precision and even able to
+    /// *invert* the ordering. The `op` is normalised so the **int** is the
+    /// conceptual left operand (the frontend flips the operator when the float
+    /// was written on the left), so codegen always expresses `int OP float`.
+    /// Rust/Ruchy emit a block that compares `int as f64` against `float`
+    /// (reliable for *strict* ordering — a rounded integer can't cross a
+    /// distinct float) and breaks the `==` tie in `i128`, which holds the full
+    /// 2^63 magnitude an integral `f64` can reach. NaN falls through every arm
+    /// (matching Python: `n != nan` is `True`, all others `False`). Lean
+    /// refuses.
+    MixedIntFloatCmp {
+        int: Box<Expr>,
+        float: Box<Expr>,
+        op: BinOp,
+    },
     /// `sorted(xs)` / `sorted(xs, reverse=True)` / `sorted(xs, key=lambda
     /// p: e)` over a list — Python builtin returning a **new** sorted list
     /// (the input is not mutated). PMAT-502c; `reverse` is PMAT-502f; the
@@ -2823,6 +2849,11 @@ fn escape_expr(e: &mut Expr) {
             escape_expr(lhs);
             escape_expr(rhs);
         }
+        // PMAT-745: int/float exact comparison — escape both operands.
+        Expr::MixedIntFloatCmp { int, float, .. } => {
+            escape_expr(int);
+            escape_expr(float);
+        }
         Expr::UnOp { operand, .. } => escape_expr(operand),
         Expr::IfExpr {
             cond,
@@ -3338,6 +3369,11 @@ fn collect_idents_expr(e: &Expr, acc: &mut std::collections::HashSet<String>) {
         | Expr::SetPred { lhs, rhs, .. } => {
             collect_idents_expr(lhs, acc);
             collect_idents_expr(rhs, acc);
+        }
+        // PMAT-745: int/float exact comparison — both operands carry idents.
+        Expr::MixedIntFloatCmp { int, float, .. } => {
+            collect_idents_expr(int, acc);
+            collect_idents_expr(float, acc);
         }
         Expr::UnOp { operand, .. } => collect_idents_expr(operand, acc),
         Expr::IfExpr {
