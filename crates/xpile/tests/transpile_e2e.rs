@@ -13078,3 +13078,29 @@ fn main() {
 "#;
     assert_rustc_runs("nested_comp_shadow", &rust, driver);
 }
+
+/// PMAT-755 (HUNT-V15 #2 AUG-1): an augmented subscript assignment with a
+/// side-effecting index/key double-evaluated it (once for the write target,
+/// once for the implicit current-value read) → a `.pop()` index ran twice
+/// (wrong slot, silent-wrong); it also missed marking the index's pop-receiver
+/// `mut` (E0596). The index/key is now bound to one temp and reused; a pure
+/// index is unchanged. Cross-checked vs python3.
+#[test]
+fn aug_subscript_index_once() {
+    let rust = xpile_transpile_to_rust("aug_subscript_index_once.py");
+    assert!(
+        // the side-effecting index is bound to one `__augi` temp (evaluated once)…
+        rust.contains("let __augi0: i64 = (q).remove(")
+            // …while a pure index `i + 1` is duplicated inline (no temp).
+            && rust.contains("(i).checked_add(1i64)"),
+        "side-effecting subscript-aug index must be bound once; a pure index stays inline:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(list_idx(), 110);
+    assert_eq!(dict_key(), 101);
+    assert_eq!(pure_idx(0), 25);
+}
+"#;
+    assert_rustc_runs("aug_subscript_index_once", &rust, driver);
+}
