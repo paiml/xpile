@@ -7,6 +7,30 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.445] — 2026-06-17
+
+### Fixed
+
+- **PMAT-745 — exact int↔float comparison (no precision loss above 2^53).**
+  Python compares an `int` and a `float` *exactly* — it never rounds the int
+  operand. xpile cast the int side to `f64` before comparing (`(n) as f64 ==
+  f`), which silently lost precision above 2^53 (where consecutive integers
+  stop being distinct in `f64`) and could even *invert* the ordering:
+  `9007199254740993 == 9007199254740992.0` wrongly became `True` and
+  `9007199254740993 > 9007199254740992.0` wrongly became `False`. A new
+  `Expr::MixedIntFloatCmp` node now compares without rounding the int: the
+  frontend normalises the operator so the int is the conceptual left operand
+  (so one template covers all six operators in either order), and both backends
+  emit a block that compares `n as f64` against `f` for *strict* ordering
+  (reliable — a rounded integer can't cross a distinct float) and breaks the
+  equality tie in `i128`, which exactly holds every integral `f64` an `i64` cast
+  can reach (up to 2^63), so the boundary cases (`i64::MAX` vs `2^63`, `2^53+1`
+  vs `2^53`) resolve correctly. NaN falls through every arm (Python: `n != nan`
+  is `True`, the rest `False`). Float *arithmetic* still promotes the int (Rust
+  has no mixed `f64`/`i64` ops); only the comparison path changed. Verified by a
+  differential fuzz of 4320 `(n, f)` pairs × 11 comparison forms vs python3 (0
+  mismatches). HUNT-V13 intfloat-cmp-precision.
+
 ## [0.1.444] — 2026-06-16
 
 ### Fixed
