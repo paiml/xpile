@@ -12148,6 +12148,19 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
 /// left-associative [`Expr::Concat`] chain, lowering each part with `ctx` so a
 /// `FormattedValue` with a static format spec (`{x:.2f}`) can be type-checked
 /// and translated. Mirrors [`lower_fstring`] but ctx-aware.
+/// PMAT-760 (HUNT-V15 #6): a dataclass is renderable in an f-string / `str()` /
+/// `print()` iff the backend generates a `Display` for it — i.e. every field is
+/// `int` or `bool` (where Rust `{}` / a `True`/`False` map equals Python's
+/// `repr`). A str field needs quoting, a float its own repr, a nested struct its
+/// own `Display` — those are deferred. Must mirror the codegen eligibility.
+fn struct_display_eligible(ctx: &LoweringCtx, name: &str) -> bool {
+    ctx.structs.get(name).is_some_and(|fields| {
+        fields
+            .iter()
+            .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool))
+    })
+}
+
 fn lower_fstring_in_ctx(ctx: &LoweringCtx, values: Vec<ast::Expr>) -> Result<Expr, FrontendError> {
     let mut parts = values.into_iter();
     let Some(first) = parts.next() else {
@@ -12711,6 +12724,29 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
                      HashMap/HashSet has no `Display` and its iteration order is \
                      non-deterministic; format the contents explicitly (e.g. via a sorted \
                      comprehension) at v0.2.0",
+                    ctx.fn_name
+                )));
+            }
+            // PMAT-760 (HUNT-V15 #6): a dataclass instance interpolates as its
+            // Python repr `ClassName(f1=v1, …)`. The backend now generates a
+            // `Display` for an all-int/bool dataclass (where Rust `{}` matches
+            // Python repr), so render it via an empty-spec `format!` (which uses
+            // that `Display` and types the part as `Str`, fixing both the lone
+            // `f"{p}"` and the multi-part `f"pt={p}"` forms). A dataclass with
+            // str/float/nested fields needs per-field repr (quoting, etc.) — not
+            // yet generated, so reject it cleanly instead of emitting a struct
+            // into `format!("{}", …)` (rustc E0277).
+            Type::Struct(sname) => {
+                if struct_display_eligible(ctx, &sname) {
+                    return Ok(Expr::FormatSpec {
+                        value: Box::new(value),
+                        rust_spec: String::new(),
+                    });
+                }
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` interpolates a dataclass `{sname}` with non-int/bool fields in \
+                     an f-string — only an all-int/bool dataclass renders (as `{sname}(f=v, …)`) \
+                     at v0.2.0; format the fields explicitly (str/float/nested repr is deferred)",
                     ctx.fn_name
                 )));
             }

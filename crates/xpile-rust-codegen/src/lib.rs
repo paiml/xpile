@@ -178,6 +178,44 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                     out.push_str(",\n");
                 }
                 out.push_str("}\n");
+                // PMAT-760 (HUNT-V15 #6): a dataclass instance in an f-string /
+                // `str()` / `print()` emitted `format!("{}", obj)`, but the struct
+                // only derives `Debug` → rustc E0277 (no `Display`). Python's
+                // dataclass `__repr__` is `ClassName(f1=v1, f2=v2)`. Generate a
+                // matching `Display` when every field formats the same in Rust
+                // `{}` as Python `repr` — i.e. all fields are `int` (i64 `{}` ==
+                // Python int) or `bool` (mapped to `True`/`False`). A field of
+                // another type (str needs quotes, float its own repr, nested its
+                // own Display) is deferred — such a dataclass stays without
+                // `Display` (its f-string use keeps the loud E0277 reject).
+                let display_eligible = fields
+                    .iter()
+                    .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool));
+                if display_eligible {
+                    let mut fmt_str = format!("{name}(");
+                    let mut args = String::new();
+                    for (i, (field, ty)) in fields.iter().enumerate() {
+                        if i > 0 {
+                            fmt_str.push_str(", ");
+                        }
+                        write!(fmt_str, "{field}={{}}")?;
+                        match ty {
+                            Type::Bool => write!(
+                                args,
+                                ", if self.{field} {{ \"True\" }} else {{ \"False\" }}"
+                            )?,
+                            _ => write!(args, ", self.{field}")?,
+                        }
+                    }
+                    fmt_str.push(')');
+                    writeln!(out, "impl std::fmt::Display for {name} {{")?;
+                    writeln!(
+                        out,
+                        "    fn fmt(&self, __f: &mut std::fmt::Formatter) -> std::fmt::Result {{"
+                    )?;
+                    writeln!(out, "        write!(__f, \"{fmt_str}\"{args})")?;
+                    out.push_str("    }\n}\n");
+                }
                 // PMAT-506d: instance methods → an `impl` block.
                 if !methods.is_empty() {
                     writeln!(out, "impl {name} {{")?;
