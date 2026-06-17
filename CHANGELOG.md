@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.457] — 2026-06-17
+
+### Fixed
+
+- **PMAT-757 — `isinstance(x, T)` folds to a compile-time bool.** It was emitted
+  verbatim — `isinstance` and the type name (`int`, `str`, …) are undefined in
+  Rust → rustc E0425. xpile is statically typed, so the result is known at
+  compile time: `isinstance` now folds to a `bool` literal by comparing `x`'s
+  static type to the named type `T` (int/float/bool/str/list/dict/set/tuple and
+  user dataclasses, plus the type-tuple form `isinstance(x, (A, B))`). Python's
+  `bool`-is-a-`int` subclass rule is honored (`isinstance(<bool>, int)` is
+  `True`, `isinstance(<int>, bool)` is `False`). An `Optional` operand
+  (runtime-dependent) or an unresolvable type name is rejected with a clear
+  message rather than mis-folded. HUNT-V15 (#8).
+
 ## [0.1.456] — 2026-06-17
 
 ### Fixed
