@@ -2338,6 +2338,31 @@ fn lower_function_def(
 /// `BigInt` is intentionally not a real Python type — this is xpile-specific
 /// nomenclature for the slow path. A future PR will infer it from `int`
 /// when the function can overflow.
+/// PMAT-758: resolve a bare type/class NAME to a `Type`. Shared by the `Name`
+/// annotation arm and the string-forward-ref arm of [`parse_type_annotation`].
+/// A capitalized unknown is taken as a class (`Type::Struct`, Python convention).
+fn resolve_type_name(fn_name: &str, site: &str, name: &str) -> Result<Type, FrontendError> {
+    match name {
+        "int" => Ok(Type::I64),
+        "bool" => Ok(Type::Bool),
+        // PMAT-477 (R8): Python `float` → IEEE-754 `f64`.
+        "float" => Ok(Type::F64),
+        "BigInt" => Ok(Type::BigInt),
+        "str" => Ok(Type::Str),
+        "None" => Ok(Type::Unit),
+        // PMAT-506b (classes epic): an unknown *capitalized* name is taken as a
+        // struct type (Python class-name convention) → `Type::Struct`. A struct
+        // value emits the bare name; if no such class exists the emitted Rust
+        // fails to compile (clean enough). Lowercase unknowns stay an error.
+        other if other.starts_with(|ch: char| ch.is_ascii_uppercase()) => {
+            Ok(Type::Struct(other.to_string()))
+        }
+        other => Err(FrontendError::Lower(format!(
+            "function `{fn_name}` annotates `{site}` with unsupported type `{other}` — only `int`, `bool`, `BigInt`, `str`, `None`, `list[T]`, or a class/dataclass name at v0.2.0"
+        ))),
+    }
+}
+
 fn parse_type_annotation(
     fn_name: &str,
     site: &str,
@@ -2348,26 +2373,30 @@ fn parse_type_annotation(
         // annotation parses as the `None` constant (and, defensively, a
         // bare `None` name).
         ast::Expr::Constant(c) if matches!(c.value, ast::Constant::None) => Ok(Type::Unit),
-        ast::Expr::Name(n) => match n.id.as_str() {
-            "int" => Ok(Type::I64),
-            "bool" => Ok(Type::Bool),
-            // PMAT-477 (R8): Python `float` → IEEE-754 `f64`.
-            "float" => Ok(Type::F64),
-            "BigInt" => Ok(Type::BigInt),
-            "str" => Ok(Type::Str),
-            "None" => Ok(Type::Unit),
-            // PMAT-506b (classes epic): an unknown *capitalized* name is taken
-            // as a struct type (Python class-name convention) → `Type::Struct`.
-            // A struct value emits the bare name; if no such class exists the
-            // emitted Rust fails to compile (clean enough). Lowercase unknowns
-            // stay an error (likely a typo or an unsupported builtin).
-            other if other.starts_with(|ch: char| ch.is_ascii_uppercase()) => {
-                Ok(Type::Struct(other.to_string()))
+        ast::Expr::Name(n) => resolve_type_name(fn_name, site, n.id.as_str()),
+        // PMAT-758 (HUNT-V15 CME-2): a STRING forward-reference annotation
+        // (`-> "Counter"`, `x: "MyClass"`) — idiomatic for a method returning its
+        // own class (the name isn't yet bound at def time). Resolve a bare
+        // identifier string via the same name→Type mapping; a complex string
+        // (e.g. `"list[int]"`) is deferred (rejected). Without this, a classmethod
+        // `def make(cls) -> "Counter"` was rejected, and an unannotated one
+        // defaulted to `()` → the result couldn't be used as the class (E0308).
+        ast::Expr::Constant(c) => {
+            if let ast::Constant::Str(s) = &c.value {
+                let name = s.to_string();
+                let name = name.trim();
+                if !name.is_empty()
+                    && name
+                        .chars()
+                        .all(|ch| ch.is_alphanumeric() || ch == '_')
+                {
+                    return resolve_type_name(fn_name, site, name);
+                }
             }
-            other => Err(FrontendError::Lower(format!(
-                "function `{fn_name}` annotates `{site}` with unsupported type `{other}` — only `int`, `bool`, `BigInt`, `str`, `None`, `list[T]`, or a class/dataclass name at v0.2.0"
-            ))),
-        },
+            Err(FrontendError::Lower(format!(
+                "function `{fn_name}` annotates `{site}` with an unsupported constant type annotation — a string forward-reference must be a simple type/class name (`\"Counter\"`); complex string annotations (`\"list[int]\"`) are deferred"
+            )))
+        }
         // PMAT-455/PMAT-462 (v0.2.0 Track 1.B/1.C): list[T] / dict[K, V]
         // annotations parse as Python Subscript expressions. The
         // outer name selects the collection kind; the slice is either
