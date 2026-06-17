@@ -5105,6 +5105,26 @@ fn is_not_none_narrow_target(ctx: &LoweringCtx, test: &ast::Expr) -> Option<Stri
     Some(name)
 }
 
+/// PMAT-759 (HUNT-V15 ONF-4): the narrow target for an `if` whose condition is
+/// `x is not None` OR a compound `x is not None and <rest>` — in both, the
+/// then-body runs only when `x` is not None, so `x` is `Some` there and reads
+/// unwrap to `T`. Without the compound case, `if x is not None and …: return x
+/// + 1` left `x` an `Option<i64>` in the body (`Option` has no `checked_add`).
+fn if_body_none_narrow_target(ctx: &LoweringCtx, test: &ast::Expr) -> Option<String> {
+    if let Some(name) = is_not_none_narrow_target(ctx, test) {
+        return Some(name);
+    }
+    // `x is not None and <rest>` — the leading conjunct guards the whole body.
+    if let ast::Expr::BoolOp(b) = test {
+        if matches!(b.op, ast::BoolOp::And) {
+            if let Some(first) = b.values.first() {
+                return is_not_none_narrow_target(ctx, first);
+            }
+        }
+    }
+    None
+}
+
 /// PMAT-723 (HUNT-V9 V9-18 follow-up): `if x:` over a non-reassigned `Optional`
 /// narrows `x` to `Some` in the then-body — a truthy Optional is necessarily
 /// `Some` (the inner non-zero/non-empty fact is irrelevant to unwrap soundness),
@@ -5229,7 +5249,7 @@ fn lower_if_stmt(
     // so the restore afterwards doesn't clobber that outer fact.
     // PMAT-723: also narrow `if x:` (truthiness over a non-reassigned Optional) —
     // a truthy Optional is `Some`, so the then-body unwraps reads of `x`.
-    let narrow = is_not_none_narrow_target(ctx, &if_stmt.test)
+    let narrow = if_body_none_narrow_target(ctx, &if_stmt.test)
         .or_else(|| if_truthy_narrow_target(ctx, &if_stmt.test));
     let added = matches!(&narrow, Some(n) if ctx.narrowed_some.insert(n.clone()));
     let mut then_body = Vec::new();
@@ -13608,11 +13628,31 @@ fn lower_bool_op_in_ctx(ctx: &LoweringCtx, b: ast::ExprBoolOp) -> Result<Expr, F
         ast::BoolOp::And => BinOp::And,
         ast::BoolOp::Or => BinOp::Or,
     };
-    let lowered = b
-        .values
-        .into_iter()
-        .map(|v| lower_expr_in_ctx(ctx, v))
-        .collect::<Result<Vec<_>, _>>()?;
+    // PMAT-759 (HUNT-V15 ONF-4): in an `and` chain, an `x is not None` conjunct
+    // NARROWS `x` for the operands that follow it — Python short-circuits, so the
+    // rest runs only when `x` is not None, and Rust `&&` short-circuits the same
+    // way (so an `x.unwrap()` after the `is_some()` guard never panics). Lower the
+    // `and` operands sequentially against a ctx that accumulates the narrowing,
+    // so `if x is not None and x > 0:` lowers `x > 0` as `x.unwrap() > 0` instead
+    // of comparing an `Option<i64>` to an `i64` (rustc E0308). `or` / non-guarded
+    // operands are unaffected (the guard only ADDS narrowing for later operands).
+    let lowered: Vec<Expr> = if matches!(py_op, ast::BoolOp::And) {
+        let mut sub = ctx.clone();
+        let mut acc = Vec::with_capacity(b.values.len());
+        for v in b.values {
+            let lo = lower_expr_in_ctx(&sub, v.clone())?;
+            if let Some(name) = is_not_none_narrow_target(&sub, &v) {
+                sub.narrowed_some.insert(name);
+            }
+            acc.push(lo);
+        }
+        acc
+    } else {
+        b.values
+            .into_iter()
+            .map(|v| lower_expr_in_ctx(ctx, v))
+            .collect::<Result<Vec<_>, _>>()?
+    };
     // PMAT-637 / PMAT-638: Python `x or default` / `x and y` — and chains
     // `a or b or c` — return the OPERAND by truthiness, not a Bool. Supported
     // when every operand EXCEPT the last is a plain variable (an `Ident` —
