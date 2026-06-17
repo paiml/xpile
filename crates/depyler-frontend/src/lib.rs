@@ -6119,6 +6119,21 @@ fn combine_aug(
             rhs: Box::new(rhs),
         })
     } else {
+        // PMAT-746 (HUNT-V14): mirror the plain `BinOp` arm's bool→i64 coercion.
+        // Python's `bool` is an `int` subtype, so an augmented assignment with a
+        // bool operand into an int accumulator — `count += a == b`, `n -= flag`,
+        // `xs[i] += b` — must cast the bool to i64, else the backend emits
+        // `(count).checked_add(<bool>)` (rustc E0308). The plain `a + (x>3)` path
+        // already does this via `to_i64_operand`; the augmented path didn't.
+        // `&`/`|`/`^` over TWO bools stays a bool op (PMAT-580) — not coerced.
+        let both_bool = matches!(op, BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor)
+            && infer_type_in_ctx(ctx, &lhs) == Type::Bool
+            && infer_type_in_ctx(ctx, &rhs) == Type::Bool;
+        let (lhs, rhs) = if is_int_arith_binop(op) && !both_bool {
+            (to_i64_operand(ctx, lhs), to_i64_operand(ctx, rhs))
+        } else {
+            (lhs, rhs)
+        };
         Ok(Expr::BinOp {
             op,
             lhs: Box::new(lhs),

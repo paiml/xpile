@@ -12804,3 +12804,34 @@ fn main() {
 "#;
     assert_rustc_runs("intfloat_cmp_precision", &rust, driver);
 }
+
+/// PMAT-746 (HUNT-V14 bool-augadd-i64-coerce): Python's `bool` is an `int`
+/// subtype, so an augmented assignment with a bool operand into an int
+/// accumulator is integer arithmetic (`count += a == b` counts matches). The
+/// plain `total + (a == b)` path coerced the bool to i64 (PMAT-565), but the
+/// AUGMENTED path emitted `(count).checked_add(<bool>)` with no cast → rustc
+/// E0308. The fix mirrors the plain arm's `to_i64_operand` coercion; `&`/`|`/`^`
+/// over two bools stays a bool op (PMAT-580). Cross-checked vs python3.
+#[test]
+fn bool_augassign_int() {
+    let rust = xpile_transpile_to_rust("bool_augassign_int.py");
+    assert!(
+        // the bool RHS is now cast to i64 inside the checked op…
+        rust.contains("checked_add((((ch == String::from(\" \"))) as i64))")
+            // …while bitwise &= over two bools stays a bare bool op (no cast).
+            && rust.contains("flag = (flag & c)"),
+        "bool augmented-assign into an int must coerce the bool to i64; bool &= bool must stay bool:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(count_spaces("a b c d".to_string()), 3);
+    assert_eq!(acc_mul(7, true), 7);
+    assert_eq!(acc_mul(7, false), 0);
+    assert_eq!(sub_bool(10, true), 9);
+    assert_eq!(subscript_bool(true), 11);
+    assert_eq!(bool_and(true, false), false);
+    assert_eq!(bool_and(true, true), true);
+}
+"#;
+    assert_rustc_runs("bool_augassign_int", &rust, driver);
+}
