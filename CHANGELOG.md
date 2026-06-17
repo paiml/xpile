@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.450] — 2026-06-17
+
+### Fixed
+
+- **PMAT-750 — sortable `@dataclass(order=True)`.** An `order=True` dataclass
+  derived only `PartialOrd` (PMAT-648), but `Vec::sort()` / `sorted()` require
+  `Ord`, so sorting dataclass instances was rustc E0277 (transpile-success →
+  invalid Rust). When `order=True` AND every field is Ord-able
+  (`i64`/`bool`/`String`), both backends now also derive `Ord` (+ `Eq`) —
+  lexicographic by field order, matching Python's tuple comparison — so
+  `.sort()`/`sorted()` compile. A float field can't derive `Ord` (`f64: !Ord`),
+  so a float-field `order=True` dataclass keeps `PartialOrd` only (comparisons
+  still work; sorting it stays deferred). HUNT-V14 (#6).
+
 ## [0.1.449] — 2026-06-17
 
 ### Fixed
