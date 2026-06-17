@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.456] — 2026-06-17
+
+### Fixed
+
+- **PMAT-756 — clone a reused str-method receiver that codegen moves.** The str
+  methods whose codegen binds `let __s = (<recv>)` (zfill / center / rjust /
+  removeprefix / removesuffix / count / find / rfind / rindex / splitlines)
+  MOVE the receiver into the emitted block, so reusing the source variable after
+  such a call (`len(s.zfill(8)) + len(s)`) was a use-after-move → rustc E0382.
+  The generic str-method lowering now wraps a move-the-receiver method's
+  receiver in `clone_if_reused_non_copy` (PMAT-588) — it clones only when the
+  receiver is a reused non-Copy variable, so a single use is byte-identical and
+  borrow-only methods (`.upper()`, `.startswith()`, …) are untouched.
+  HUNT-V15 (#9).
+
 ## [0.1.455] — 2026-06-17
 
 ### Fixed
