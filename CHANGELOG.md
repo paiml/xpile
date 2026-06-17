@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.459] — 2026-06-17
+
+### Fixed
+
+- **PMAT-759 — narrow an `Optional` through `x is not None and …`.** Optional
+  flow-narrowing didn't propagate through a compound condition: in `if x is not
+  None and x > 0:` the `x > 0` operand kept `x` an `Option<i64>` → rustc E0308
+  (comparing `Option` to `i64`), and the then-body kept `x` un-narrowed (`x + 1`
+  → `Option` has no `checked_add`). The simple `if x is not None:` already
+  narrowed the body. Now `lower_bool_op_in_ctx` lowers `and` operands
+  sequentially so an `x is not None` conjunct narrows `x` for the operands that
+  follow it (sound — `&&` short-circuits, so `x.unwrap()` never runs on `None`),
+  and the `if` then-body narrow detector also matches a compound `x is not None
+  and <rest>`. `or` and non-guarded operands are unaffected. HUNT-V15 (ONF-4).
+
 ## [0.1.458] — 2026-06-17
 
 ### Fixed
