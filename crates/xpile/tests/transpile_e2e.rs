@@ -839,7 +839,9 @@ fn dict_ops_edge_positions_roundtrip() {
     // for the mis-dispatch pattern directly rather than the absence of
     // `as usize`.)
     assert!(
-        rust.contains("(d).get(&(k)).cloned().unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))"),
+        rust.contains(
+            "(d).get(&(k)).cloned().unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))"
+        ),
         "dict reads should lower to keyed access:\n{rust}"
     );
     assert!(
@@ -3099,7 +3101,9 @@ fn nested_subscript_pop() {
     let rust = xpile_transpile_to_rust("nested_subscript_pop.py");
     assert!(
         rust.contains("pop_inner(mut xs:")
-            && rust.contains("xs[__pi as usize].pop().expect(\"xpile: IndexError: pop from empty list\")"),
+            && rust.contains(
+                "xs[__pi as usize].pop().expect(\"xpile: IndexError: pop from empty list\")"
+            ),
         "nested pop should be an l-value over a mut base:\n{rust}"
     );
     let driver = r#"
@@ -3234,7 +3238,9 @@ fn main() {
 fn dict_pop() {
     let rust = xpile_transpile_to_rust("dict_pop.py");
     assert!(
-        rust.contains("(d).remove(&(k)).unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))"),
+        rust.contains(
+            "(d).remove(&(k)).unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))"
+        ),
         "pop (no default):\n{rust}"
     );
     assert!(
