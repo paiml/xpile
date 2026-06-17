@@ -725,7 +725,7 @@ fn histogram_dict_ops_roundtrip() {
         "d.get(k, default) should emit get/cloned/unwrap_or:\n{rust}"
     );
     assert!(
-        rust.contains("table[&(key)].clone()"),
+        rust.contains("(table).get(&(key)).cloned().unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))"),
         "d[k] read should emit indexed clone:\n{rust}"
     );
     assert!(
@@ -839,7 +839,7 @@ fn dict_ops_edge_positions_roundtrip() {
     // for the mis-dispatch pattern directly rather than the absence of
     // `as usize`.)
     assert!(
-        rust.contains("d[&(k)].clone()"),
+        rust.contains("(d).get(&(k)).cloned().unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))"),
         "dict reads should lower to keyed access:\n{rust}"
     );
     assert!(
@@ -3060,7 +3060,10 @@ fn main() {
 #[test]
 fn list_pop() {
     let rust = xpile_transpile_to_rust("list_pop.py");
-    assert!(rust.contains("(xs).pop().unwrap()"), "pop last:\n{rust}");
+    assert!(
+        rust.contains("(xs).pop().expect(\"xpile: IndexError: pop from empty list\")"),
+        "pop last:\n{rust}"
+    );
     assert!(
         rust.contains("(xs).remove((0i64) as usize)"),
         "pop at index:\n{rust}"
@@ -3095,7 +3098,8 @@ fn main() {
 fn nested_subscript_pop() {
     let rust = xpile_transpile_to_rust("nested_subscript_pop.py");
     assert!(
-        rust.contains("pop_inner(mut xs:") && rust.contains("xs[__pi as usize].pop().unwrap()"),
+        rust.contains("pop_inner(mut xs:")
+            && rust.contains("xs[__pi as usize].pop().expect(\"xpile: IndexError: pop from empty list\")"),
         "nested pop should be an l-value over a mut base:\n{rust}"
     );
     let driver = r#"
@@ -3230,7 +3234,7 @@ fn main() {
 fn dict_pop() {
     let rust = xpile_transpile_to_rust("dict_pop.py");
     assert!(
-        rust.contains("(d).remove(&(k)).unwrap()"),
+        rust.contains("(d).remove(&(k)).unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))"),
         "pop (no default):\n{rust}"
     );
     assert!(
@@ -12834,4 +12838,44 @@ fn main() {
 }
 "#;
     assert_rustc_runs("bool_augassign_int", &rust, driver);
+}
+
+/// PMAT-747 (HUNT-V14 #2 exc-untagged-panic-swallowed): a dict-index miss
+/// (KeyError), an empty `list.pop()` / absent `dict.pop(k)` emitted UNTAGGED
+/// native panics (HashMap `Index`, `Option::unwrap`), so the typed-`except`
+/// re-raise filter (PMAT-731 — only re-raises `xpile: <KnownExc>:`-tagged
+/// panics) let an unrelated `except` SILENTLY SWALLOW them where Python
+/// propagates. Each container-access panic is now tagged; the matching `except`
+/// catches it. Cross-checked vs python3 (continues PMAT-743/744).
+#[test]
+fn container_panic_typed() {
+    let rust = xpile_transpile_to_rust("container_panic_typed.py");
+    assert!(
+        // dict-index miss is now a tagged KeyError (no bare `d[&(...)]` Index)…
+        rust.contains("panic!(\"xpile: KeyError: key not found\")")
+            // …and an empty list.pop() is a tagged IndexError.
+            && rust.contains("xpile: IndexError: pop from empty list"),
+        "container access must panic with an xpile: tag for typed-except discrimination:\n{rust}"
+    );
+    let driver = r#"
+use std::collections::HashMap;
+fn main() {
+    let mut d: HashMap<String, i64> = HashMap::new();
+    d.insert("a".to_string(), 5);
+    assert_eq!(dict_miss_right(d.clone()), -7);
+    assert_eq!(empty_pop_right(vec![]), -3);
+    assert_eq!(dict_pop_miss_right(d.clone()), -9);
+    assert_eq!(dict_hit(d.clone()), 5);
+    // an unrelated `except ValueError` must NOT swallow the KeyError — the
+    // GENERATED discrimination must re-raise it (Python propagates), so calling
+    // dict_miss_wrong panics rather than returning -1.
+    let propagated = std::panic::catch_unwind(|| {
+        let mut d2: HashMap<String, i64> = HashMap::new();
+        d2.insert("a".to_string(), 5);
+        dict_miss_wrong(d2)
+    });
+    assert!(propagated.is_err(), "KeyError must propagate through except ValueError, not be swallowed");
+}
+"#;
+    assert_rustc_runs("container_panic_typed", &rust, driver);
 }

@@ -2507,12 +2507,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     emit_expr(out, idx, mode)?;
                     write!(
                         out,
-                        ") as i64; let __pi = if __pi < 0 {{ {base}.len() as i64 + __pi }} else {{ __pi }}; {base}[__pi as usize].pop().unwrap() }}"
+                        ") as i64; let __pi = if __pi < 0 {{ {base}.len() as i64 + __pi }} else {{ __pi }}; {base}[__pi as usize].pop().expect(\"xpile: IndexError: pop from empty list\") }}"
                     )?;
                 } else {
+                    // PMAT-747 (HUNT-V14 #2): `xs.pop()` on an empty list raises
+                    // Python IndexError — tag the panic (`xpile: IndexError:`) so
+                    // a typed `except` discriminates it instead of swallowing the
+                    // untagged native `Option::unwrap` panic.
                     out.push('(');
                     emit_expr(out, list, mode)?;
-                    out.push_str(").pop().unwrap()");
+                    out.push_str(").pop().expect(\"xpile: IndexError: pop from empty list\")");
                 }
             }
             // PMAT-570: a negative-resolved index (`len(xs) - k`) references the
@@ -2545,7 +2549,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push_str(").remove(&(");
             emit_expr(out, key, mode)?;
             match default {
-                None => out.push_str(")).unwrap()"),
+                // PMAT-747 (HUNT-V14 #2): `d.pop(k)` on an absent key raises
+                // Python KeyError — tag the panic so a typed `except`
+                // discriminates it (the untagged native `unwrap` was swallowed).
+                None => {
+                    out.push_str(")).unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))")
+                }
                 Some(d) => {
                     out.push_str(")).unwrap_or(");
                     emit_expr(out, d, mode)?;
@@ -2929,16 +2938,24 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str(") as i64; let __lidx = if __li < 0 { __lc.len() as i64 + __li } else { __li }; if __lidx < 0 || __lidx as usize >= __lc.len() { panic!(\"xpile: IndexError: list index out of range\"); } __lc[__lidx as usize].clone() }");
             }
         }
-        // PMAT-466 (v0.2.0 Track 1.C): Python `d[k]` → Rust
-        // `d[&(k)].clone()`. HashMap's `Index` panics on an absent key
-        // (matches Python `KeyError`); `.clone()` yields an owned value
-        // (the v0.2.0 owned-only posture); `&(k)` borrows the key for
-        // the `Index<&Q>` impl.
+        // PMAT-466 (v0.2.0 Track 1.C): Python `d[k]` → Rust dict-index read.
+        // PMAT-747 (HUNT-V14 #2): an absent key must panic with the
+        // `xpile: KeyError:` TAG, not HashMap's native `Index` panic ("no entry
+        // found for key") — the typed-`except` re-raise filter (PMAT-731) only
+        // re-raises panics tagged `xpile: <KnownExc>:`, so an untagged native
+        // KeyError was being SILENTLY SWALLOWED by an unrelated `except
+        // ValueError:` (Python propagates the KeyError). Emit `.get(&k).cloned()`
+        // + a tagged `unwrap_or_else` panic so `except KeyError` catches it and
+        // every other typed `except` re-raises it. `.cloned()` keeps the owned
+        // value (v0.2.0 owned-only posture).
         Expr::DictGet { dict, key } => {
+            out.push('(');
             emit_expr(out, dict, mode)?;
-            out.push_str("[&(");
+            out.push_str(").get(&(");
             emit_expr(out, key, mode)?;
-            out.push_str(")].clone()");
+            out.push_str(
+                ")).cloned().unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))",
+            );
         }
         // PMAT-466: Python `d.get(k, default)` → Rust
         // `d.get(&(k)).cloned().unwrap_or(default)`. Total: never
