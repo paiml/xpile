@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.451] — 2026-06-17
+
+### Fixed
+
+- **PMAT-751 — bool key into an int-keyed dict.** Indexing an int-keyed dict
+  with a bool (`d[True]` over `dict[int, int]`) emitted `.get(&true)` over a
+  `HashMap<i64, _>` → rustc E0308. Python's `bool` is an `int` subtype and
+  `hash(True) == hash(1)`, so `d[True]` is `d[1]`. The frontend's `DictGet`
+  lowering now coerces a `Bool` key to `i64` when the dict's key type is `I64`
+  (mirroring the arithmetic/augmented-assign bool→i64 coercions); a genuinely
+  `dict[bool, V]` keeps its bool key. The dict-literal key form (`{flag: v}`
+  over an annotated int dict) is a separate annotation-driven follow-up.
+  HUNT-V14 (#5).
+
 ## [0.1.450] — 2026-06-17
 
 ### Fixed
