@@ -128,6 +128,11 @@ struct LoweringCtx {
     /// no-arg method call `(obj).prop()` (`Expr::MethodCall`) rather than a
     /// field access. The property's return type lives in `struct_methods`.
     struct_properties: Rc<HashMap<String, Vec<String>>>,
+    /// PMAT-752 (HUNT-V14 #16): set of `@dataclass(frozen=True)` struct names,
+    /// built in the same pre-pass as `structs`. A field assignment
+    /// `frozen_instance.field = v` is rejected (Python raises
+    /// `FrozenInstanceError`); without this it compiled and silently mutated.
+    frozen_structs: Rc<HashSet<String>>,
     /// PMAT-513 (Tranche 2): module-level enum table — `enum name →
     /// [(variant, discriminant)]`, built in the pre-pass. Consulted to lower a
     /// member access `C.NAME` → [`Expr::EnumVariant`] and `C.NAME.value` → the
@@ -270,6 +275,7 @@ impl LoweringCtx {
         struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
         struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
         struct_properties: Rc<HashMap<String, Vec<String>>>,
+        frozen_structs: Rc<HashSet<String>>,
         enums: Rc<HashMap<String, Vec<(String, i64)>>>,
     ) -> Self {
         // PMAT-502bj: module-level constants are visible (and immutably
@@ -320,6 +326,7 @@ impl LoweringCtx {
             struct_methods,
             struct_field_defaults,
             struct_properties,
+            frozen_structs,
             enums,
             closure_returns: HashMap::new(),
             underscore_counter: 0,
@@ -1155,6 +1162,10 @@ impl Frontend for PythonFrontend {
         // lowers to a no-arg method call. (The property's return type is in
         // `struct_method_map` — a property is a `self` method.)
         let mut struct_property_map: HashMap<String, Vec<String>> = HashMap::new();
+        // PMAT-752 (HUNT-V14 #16): names of `@dataclass(frozen=True)` structs, so
+        // a `frozen_instance.field = v` can be rejected (Python raises
+        // `FrozenInstanceError`) instead of compiling + silently mutating.
+        let mut frozen_set: HashSet<String> = HashSet::new();
         // PMAT-513: per-enum `(variant, discriminant)` list, so member access
         // `C.NAME` / `C.NAME.value` in function bodies type/lower correctly.
         let mut enum_map: HashMap<String, Vec<(String, i64)>> = HashMap::new();
@@ -1177,6 +1188,9 @@ impl Frontend for PythonFrontend {
                             _ => None,
                         })
                         .collect();
+                    if class_is_frozen(c) {
+                        frozen_set.insert(name.clone());
+                    }
                     struct_map.insert(name.clone(), fields);
                     struct_method_map.insert(name.clone(), method_returns);
                     struct_default_map.insert(name.clone(), field_defaults);
@@ -1188,6 +1202,7 @@ impl Frontend for PythonFrontend {
         let struct_methods = Rc::new(struct_method_map);
         let struct_field_defaults = Rc::new(struct_default_map);
         let struct_properties = Rc::new(struct_property_map);
+        let frozen_structs = Rc::new(frozen_set);
         let enums = Rc::new(enum_map);
 
         let mut items = Vec::new();
@@ -1210,6 +1225,7 @@ impl Frontend for PythonFrontend {
                 struct_methods.clone(),
                 struct_field_defaults.clone(),
                 struct_properties.clone(),
+                frozen_structs.clone(),
                 enums.clone(),
             )?;
             items.push(item);
@@ -1268,6 +1284,7 @@ fn lower_top_level_stmt(
     struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
     struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
     struct_properties: Rc<HashMap<String, Vec<String>>>,
+    frozen_structs: Rc<HashSet<String>>,
     enums: Rc<HashMap<String, Vec<(String, i64)>>>,
 ) -> Result<Item, FrontendError> {
     // PMAT-502bj: a module-level `NAME = <int/bool/float-literal>` is a
@@ -1284,6 +1301,7 @@ fn lower_top_level_stmt(
             struct_methods,
             struct_field_defaults,
             struct_properties,
+            frozen_structs,
             enums,
             None,
             None,
@@ -1302,6 +1320,7 @@ fn lower_top_level_stmt(
             struct_methods,
             struct_field_defaults,
             struct_properties,
+            frozen_structs,
             enums,
         ),
         // A top-level assignment that wasn't a recognised constant.
@@ -1599,6 +1618,7 @@ fn lower_class_def(
     struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
     struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
     struct_properties: Rc<HashMap<String, Vec<String>>>,
+    frozen_structs: Rc<HashSet<String>>,
     enums: Rc<HashMap<String, Vec<(String, i64)>>>,
 ) -> Result<Item, FrontendError> {
     let (name, fields, _, _) = class_def_signature(&c)?;
@@ -1627,6 +1647,7 @@ fn lower_class_def(
                     struct_methods.clone(),
                     struct_field_defaults.clone(),
                     struct_properties.clone(),
+                    frozen_structs.clone(),
                     enums.clone(),
                     None,
                     None,
@@ -1649,6 +1670,7 @@ fn lower_class_def(
                     struct_methods.clone(),
                     struct_field_defaults.clone(),
                     struct_properties.clone(),
+                    frozen_structs.clone(),
                     enums.clone(),
                     Some(self_ty.clone()),
                     None,
@@ -1689,6 +1711,7 @@ fn lower_class_def(
                     struct_methods.clone(),
                     struct_field_defaults.clone(),
                     struct_properties.clone(),
+                    frozen_structs.clone(),
                     enums.clone(),
                     None,
                     Some(name.clone()),
@@ -1716,6 +1739,7 @@ fn lower_class_def(
                 struct_methods.clone(),
                 struct_field_defaults.clone(),
                 struct_properties.clone(),
+                frozen_structs.clone(),
                 enums.clone(),
                 Some(self_ty.clone()),
                 None,
@@ -1859,6 +1883,7 @@ fn lower_function_def(
     struct_methods: Rc<HashMap<String, Vec<(String, Type)>>>,
     struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
     struct_properties: Rc<HashMap<String, Vec<String>>>,
+    frozen_structs: Rc<HashSet<String>>,
     enums: Rc<HashMap<String, Vec<(String, i64)>>>,
     // PMAT-506d: when lowering a method, the type of the `self` receiver (the
     // enclosing struct). `None` for a top-level function. Decorators are
@@ -1998,6 +2023,7 @@ fn lower_function_def(
         struct_methods,
         struct_field_defaults,
         struct_properties,
+        frozen_structs,
         enums,
     );
     ctx.cls_name = cls_name;
@@ -5508,6 +5534,19 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
             if !known {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` assigns field `{field}` of `{sname}`, which has no such field",
+                    ctx.fn_name
+                )));
+            }
+            // PMAT-752 (HUNT-V14 #16): a `@dataclass(frozen=True)` instance is
+            // immutable — Python raises `FrozenInstanceError` on `p.field = v`.
+            // xpile compiled the assignment and SILENTLY mutated; reject it with a
+            // clear message so the divergence fails loud at transpile time.
+            if ctx.frozen_structs.contains(&sname) {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` assigns field `{field}` of `{obj_name}`, a frozen dataclass \
+                     `{sname}` — Python raises FrozenInstanceError (a `@dataclass(frozen=True)` \
+                     instance is immutable). Drop `frozen=True`, or build a new instance instead \
+                     of mutating",
                     ctx.fn_name
                 )));
             }
