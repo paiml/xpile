@@ -12968,3 +12968,29 @@ fn main() {
 "#;
     assert_rustc_runs("dataclass_order_sort", &rust, driver);
 }
+
+/// PMAT-751 (HUNT-V14 #5 bool-dict-key-int-keyed): indexing an INT-keyed dict
+/// with a bool (`d[True]`) emitted `.get(&true)` over a `HashMap<i64, _>` →
+/// rustc E0308. Python's `bool` is an `int` subtype (`hash(True) == hash(1)`),
+/// so the bool key is now coerced to i64 when the dict key type is int; a
+/// genuinely `dict[bool, V]` keeps its bool key. Cross-checked vs python3.
+#[test]
+fn bool_dict_key() {
+    let rust = xpile_transpile_to_rust("bool_dict_key.py");
+    assert!(
+        // bool key into an int dict is coerced…
+        rust.contains("get(&(((true) as i64)))")
+            // …while a bool-keyed dict keeps the bare bool key.
+            && rust.contains("get(&(b))"),
+        "bool key into an int dict must coerce to i64; a bool-keyed dict must not:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(idx_true(), 100);
+    assert_eq!(idx_false(), 200);
+    assert_eq!(bool_keyed(true), 5);
+    assert_eq!(bool_keyed(false), 9);
+}
+"#;
+    assert_rustc_runs("bool_dict_key", &rust, driver);
+}

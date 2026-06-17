@@ -8936,8 +8936,19 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             if let ast::Expr::Slice(slice) = sub.slice.as_ref() {
                 return lower_slice_in_ctx(ctx, collection, slice);
             }
-            if matches!(infer_type_in_ctx(ctx, &collection), Type::Dict(_, _)) {
+            if let Type::Dict(k_ty, _) = infer_type_in_ctx(ctx, &collection) {
                 let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+                // PMAT-751 (HUNT-V14 #5): a bool key into an INT-keyed dict
+                // (`d[True]`) — Python's `bool` is an `int` subtype and
+                // `hash(True) == hash(1)`, so `d[True]` is `d[1]`. Coerce the bool
+                // key to `i64`, else the backend emits `.get(&true)` over a
+                // `HashMap<i64, _>` (rustc E0308). A genuinely `bool`-keyed dict
+                // (`dict[bool, V]`) keeps its bool key.
+                let key = if *k_ty == Type::I64 {
+                    to_i64_operand(ctx, key)
+                } else {
+                    key
+                };
                 return Ok(Expr::DictGet {
                     dict: Box::new(collection),
                     key: Box::new(key),
