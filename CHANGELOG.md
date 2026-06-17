@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.452] — 2026-06-17
+
+### Fixed
+
+- **PMAT-752 — reject mutating a frozen dataclass field.** A
+  `@dataclass(frozen=True)` instance is immutable — Python raises
+  `FrozenInstanceError` on a field assignment. xpile compiled `p.x = 99` and
+  SILENTLY mutated (silent-wrong divergence). It is now rejected at transpile
+  time with a clear message. A new `LoweringCtx.frozen_structs` set records the
+  frozen-dataclass names (built in the same module pre-pass as `structs`, via
+  `class_is_frozen`); the attribute-assignment lowering rejects when the target
+  object's struct is frozen. A frozen field READ and a non-frozen dataclass
+  mutation are unaffected (no over-rejection). HUNT-V14 (#16).
+
 ## [0.1.451] — 2026-06-17
 
 ### Fixed
