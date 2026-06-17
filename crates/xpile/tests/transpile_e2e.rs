@@ -13155,3 +13155,26 @@ fn main() {
 "#;
     assert_rustc_runs("isinstance_fold", &rust, driver);
 }
+
+/// PMAT-758 (HUNT-V15 CME-2): a string forward-reference annotation
+/// (`-> "Counter"`, `x: "Counter"`) — idiomatic for a method returning its own
+/// class — was rejected, so a classmethod alternative-constructor's result
+/// couldn't be used (E0308 / non-struct). A bare-identifier string annotation
+/// now resolves via the name→Type mapping. Cross-checked vs python3.
+#[test]
+fn string_forward_ref_annotation() {
+    let rust = xpile_transpile_to_rust("string_forward_ref_annotation.py");
+    assert!(
+        // the classmethod's `-> "Counter"` resolved to the struct type.
+        rust.contains("fn zero() -> Counter") && rust.contains("let c: Counter = Counter::zero()"),
+        "a string forward-ref annotation must resolve to the class type:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(make_zero(), 0);
+    assert_eq!(make_of(), 7);
+    assert_eq!(takes_fwdref(Counter { n: 3 }), 3);
+}
+"#;
+    assert_rustc_runs("string_forward_ref_annotation", &rust, driver);
+}
