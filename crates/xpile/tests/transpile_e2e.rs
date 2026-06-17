@@ -13178,3 +13178,31 @@ fn main() {
 "#;
     assert_rustc_runs("string_forward_ref_annotation", &rust, driver);
 }
+
+/// PMAT-759 (HUNT-V15 ONF-4): Optional flow-narrowing through a compound
+/// `x is not None and <rest>` — `<rest>` kept x as Option (E0308) and the body
+/// kept x un-narrowed. The `is not None` conjunct now narrows x for the later
+/// `and` operands and the then-body. Cross-checked vs python3.
+#[test]
+fn optional_narrow_compound() {
+    let rust = xpile_transpile_to_rust("optional_narrow_compound.py");
+    assert!(
+        // x narrowed in the `and` operand and in the body.
+        rust.contains("(x).is_some() && ((x).unwrap() > 0i64)")
+            && rust.contains("((x).unwrap()).checked_add(1i64)"),
+        "Optional must narrow through `is not None and ...` in both the condition and body:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(guard_and_use(Some(5)), 6);
+    assert_eq!(guard_and_use(Some(-3)), -1);
+    assert_eq!(guard_and_use(None), -1);
+    assert_eq!(guard_chain(Some(5)), 10);
+    assert_eq!(guard_chain(Some(200)), -1);
+    assert_eq!(guard_chain(None), -1);
+    assert_eq!(simple_still_works(Some(5)), 15);
+    assert_eq!(simple_still_works(None), 0);
+}
+"#;
+    assert_rustc_runs("optional_narrow_compound", &rust, driver);
+}
