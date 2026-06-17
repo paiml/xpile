@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.454] — 2026-06-17
+
+### Fixed
+
+- **PMAT-754 — nested-comprehension variable shadowing.** A nested comprehension
+  whose inner loop-var shadows an enclosing comprehension var of the SAME name
+  resolved to the leaked outer `__forcN` while-counter instead of the inner
+  binding: `[[x for x in range(5)] for x in range(2)]` emitted `.map(|__k| {
+  let x = __k; __forc0 })` — the inner element returned the OUTER counter (rustc
+  warns `unused variable: x`), so every inner row became `[counter; n]`
+  (`[[0,0,0,0,0],[1,1,1,1,1]]`, sum 5) vs Python `[[0,1,2,3,4],…]` (sum 20).
+  Silent-wrong. `active_rename` is a single slot; the outer statement-position
+  range-comp renamed `x → __forc0` (the PMAT-334 leak fix), and the inner
+  expression-position `.map` comp — which re-binds `x` by its actual name —
+  lowered its body without clearing that rename. The fix clears the active
+  rename in `lower_comp_to_map` when an inner comp re-binds the shadowed name;
+  distinct names and non-shadowing comps are unaffected. HUNT-V15 (#1).
+
 ## [0.1.453] — 2026-06-17
 
 ### Fixed
