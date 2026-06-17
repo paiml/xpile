@@ -12994,3 +12994,36 @@ fn main() {
 "#;
     assert_rustc_runs("bool_dict_key", &rust, driver);
 }
+
+/// PMAT-752 (HUNT-V14 #16 dc-frozen-mutation-not-enforced): a `@dataclass(
+/// frozen=True)` instance is immutable — Python raises FrozenInstanceError on a
+/// field assignment. xpile compiled `p.x = 99` and silently mutated. It's now
+/// rejected at transpile time with a clear message.
+#[test]
+fn frozen_dataclass_mutation_rejected() {
+    let py = fixture("frozen_dataclass_mutation.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "mutating a frozen dataclass field must be rejected, not silently emitted"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("frozen dataclass") && stderr.contains("FrozenInstanceError"),
+        "the rejection should name the frozen-dataclass divergence:\n{stderr}"
+    );
+}
+
+/// PMAT-752 companion: the reject must not over-reject — a frozen field READ
+/// and a NON-frozen dataclass mutation still transpile. Cross-checked vs python3.
+#[test]
+fn frozen_dataclass_read_ok() {
+    let rust = xpile_transpile_to_rust("frozen_dataclass_read_ok.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(mut_ok(), 5);
+    assert_eq!(frozen_read(), 7);
+}
+"#;
+    assert_rustc_runs("frozen_dataclass_read_ok", &rust, driver);
+}
