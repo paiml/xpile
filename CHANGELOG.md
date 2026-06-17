@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.460] — 2026-06-17
+
+### Fixed
+
+- **PMAT-760 — render an int/bool dataclass in an f-string.** A dataclass
+  instance in an f-string emitted `format!("{}", obj)`, but the struct only
+  derives `Debug` → rustc E0277 (no `Display`). Python's dataclass `__repr__`
+  is `ClassName(f1=v1, …)`. Both backends now generate an `impl Display` for a
+  dataclass whose every field is `int` or `bool` (where Rust `{}` / a
+  `True`/`False` map equals Python `repr`), and the f-string lowering renders
+  an eligible struct interpolation via an empty-spec `format!` (fixing the lone
+  `f"{p}"` and multi-part `f"pt={p}"` forms) while rejecting an ineligible
+  struct (str/float/nested fields) cleanly instead of emitting E0277. (`str()`/
+  `print()` of a struct and str/float/nested-field repr are follow-ups.)
+  HUNT-V15 (#6).
+
 ## [0.1.459] — 2026-06-17
 
 ### Fixed
