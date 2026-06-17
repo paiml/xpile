@@ -54,6 +54,12 @@ use rustpython_parser::Parse;
 struct FnSig {
     ret: Type,
     params: Vec<String>,
+    /// PMAT-753 (HUNT-V15 ONF-1): per-parameter declared type, aligned with
+    /// `params` (a missing annotation defaults to `I64`). Used at the call site
+    /// to coerce an argument to its parameter type — e.g. wrapping a concrete
+    /// value passed to an `Optional[T]` parameter in `Some(...)` (else rustc
+    /// E0308: `f(5)` over an `Option<i64>` param emitted a bare `5i64`).
+    param_types: Vec<Type>,
     /// PMAT-502ct: per-parameter default value (the Python AST expression),
     /// aligned with `params` (`None` for a parameter without a default).
     /// Used to fill omitted trailing arguments at call sites.
@@ -1068,6 +1074,21 @@ impl Frontend for PythonFrontend {
                     }
                 };
                 let params = f.args.args.iter().map(|a| a.def.arg.to_string()).collect();
+                // PMAT-753: per-param declared type (default I64 when unannotated).
+                let param_types = f
+                    .args
+                    .args
+                    .iter()
+                    .map(|a| {
+                        a.def
+                            .annotation
+                            .as_ref()
+                            .and_then(|ann| {
+                                parse_type_annotation(f.name.as_str(), a.def.arg.as_str(), ann).ok()
+                            })
+                            .unwrap_or(Type::I64)
+                    })
+                    .collect();
                 // PMAT-502ct: capture each param's default value (ruff bundles
                 // it per-arg in `ArgWithDefault.default`).
                 let defaults = f
@@ -1093,6 +1114,7 @@ impl Frontend for PythonFrontend {
                     FnSig {
                         ret,
                         params,
+                        param_types,
                         defaults,
                         variadic,
                     },
@@ -1125,12 +1147,27 @@ impl Frontend for PythonFrontend {
                     // Skip the implicit `cls` receiver for a classmethod.
                     let args_iter = m.args.args.iter().skip(usize::from(is_cm));
                     let params = args_iter.clone().map(|a| a.def.arg.to_string()).collect();
+                    // PMAT-753: per-param declared type (default I64).
+                    let param_types = args_iter
+                        .clone()
+                        .map(|a| {
+                            a.def
+                                .annotation
+                                .as_ref()
+                                .and_then(|ann| {
+                                    parse_type_annotation(c.name.as_str(), a.def.arg.as_str(), ann)
+                                        .ok()
+                                })
+                                .unwrap_or(Type::I64)
+                        })
+                        .collect();
                     let defaults = args_iter.map(|a| a.default.as_deref().cloned()).collect();
                     sig_map.insert(
                         format!("{}::{}", c.name, m.name),
                         FnSig {
                             ret,
                             params,
+                            param_types,
                             defaults,
                             variadic: None,
                         },
@@ -7811,6 +7848,21 @@ fn lower_value_expecting(
             return Ok(Expr::LitFloat(n as f64));
         }
     }
+    // PMAT-753 (HUNT-V15 ONF-1): a value in a position expecting `Optional[T]`
+    // — an annotated local (`y: Optional[int] = 5`), an Optional-typed return
+    // branch, or (via the call path) an Optional parameter — must be wrapped in
+    // `Some(...)`. Without this the backend emitted a bare `T` against an
+    // `Option<T>` slot (rustc E0308). A bare `None` already lowers to
+    // `OptionExpr(None)`, and an already-`Optional` value (an Optional param /
+    // `d.get(k)`) is passed through to avoid `Option<Option<T>>`. Mirrors
+    // `lower_return_value`'s wrapping.
+    if matches!(expected, Type::Optional(_)) {
+        let inner = lower_expr_in_ctx(ctx, value.clone())?;
+        if matches!(infer_type_in_ctx(ctx, &inner), Type::Optional(_)) {
+            return Ok(inner);
+        }
+        return Ok(Expr::OptionExpr(Some(Box::new(inner))));
+    }
     match value {
         ast::Expr::List(l) if l.elts.is_empty() && matches!(expected, Type::List(_)) => {
             Ok(Expr::ListLit(Vec::new()))
@@ -11179,11 +11231,20 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             if let ast::Expr::Name(n) = call.func.as_ref() {
                 let callee = n.id.to_string();
                 if callee != "len" {
+                    // PMAT-753: the callee's declared param types, to coerce a
+                    // concrete arg passed to an `Optional[T]` param into `Some(..)`
+                    // (else a bare `T` against an `Option<T>` slot → rustc E0308).
+                    let param_types = ctx.signatures.get(&callee).map(|s| s.param_types.clone());
                     let args = call
                         .args
                         .iter()
-                        .map(|a| lower_expr_in_ctx(ctx, a.clone()))
-                        .collect::<Result<Vec<_>, _>>()?;
+                        .enumerate()
+                        .map(|(i, a)| {
+                            let lowered = lower_expr_in_ctx(ctx, a.clone())?;
+                            let target = param_types.as_ref().and_then(|pts| pts.get(i));
+                            Ok(coerce_lowered_to_optional(ctx, lowered, target))
+                        })
+                        .collect::<Result<Vec<_>, FrontendError>>()?;
                     return Ok(clone_reused_call_args(ctx, Expr::Call { callee, args }));
                 }
             }
@@ -13821,6 +13882,22 @@ fn bool_to_i64_cast(e: Expr) -> Expr {
         to_float: false,
         from_str: false,
         from_float: false,
+    }
+}
+
+/// PMAT-753 (HUNT-V15 ONF-1): wrap an already-lowered argument in `Some(...)`
+/// when the parameter it's being passed to is `Optional[T]` and the argument is
+/// a concrete (non-`Optional`) value. A bare `None` (which lowers to
+/// `OptionExpr(None)`) and an already-`Optional` argument both type as
+/// `Optional`, so they pass through unchanged (no `Option<Option<T>>`). Mirrors
+/// the wrapping in `lower_value_expecting` / `lower_return_value`.
+fn coerce_lowered_to_optional(ctx: &LoweringCtx, inner: Expr, target: Option<&Type>) -> Expr {
+    if matches!(target, Some(Type::Optional(_)))
+        && !matches!(infer_type_in_ctx(ctx, &inner), Type::Optional(_))
+    {
+        Expr::OptionExpr(Some(Box::new(inner)))
+    } else {
+        inner
     }
 }
 
