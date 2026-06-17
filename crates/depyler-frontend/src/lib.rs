@@ -15488,6 +15488,19 @@ fn lower_comp_to_map(
         sub.name_types.insert(targets[1].clone(), tb);
         format!("({}, {})", targets[0], targets[1])
     };
+    // PMAT-754 (HUNT-V15 #1 COMP-SHADOW): this comprehension RE-BINDS its target
+    // name(s) by their ACTUAL name (the `.map` closure is `|__k| { let <t> =
+    // __k; … }`), so a reference to `<t>` in the filter/body must resolve to that
+    // binding — NOT to an ENCLOSING comprehension's active rename of the SAME
+    // name. A nested `[x for x in range(5)]` inside `[… for x in range(2)]` (the
+    // outer `x` renamed to a `__forcN` while-counter for the leak fix PMAT-334)
+    // otherwise lowered the inner element `x` to the OUTER counter — rustc warns
+    // `unused variable: x`, and every inner row became `[counter; n]`
+    // (silent-wrong). Clearing the active rename when this comp shadows its name
+    // makes the inner reference resolve to the local binding.
+    if matches!(&sub.active_rename, Some((n, _)) if targets.iter().any(|t| t == n)) {
+        sub.active_rename = None;
+    }
     // PMAT-563: the `if <cond>` clauses (ANDed) wrap the iterable in an
     // `Expr::Filter` (also List-typed, so `Map` composes); each must type as Bool.
     let list = if let Some(cond) = combine_comp_filters(&sub, &gen.ifs, kind)? {
