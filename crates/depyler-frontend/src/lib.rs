@@ -261,6 +261,16 @@ impl LoweringCtx {
     /// `else` runs iff the loop completed without `break`). Shares the loop
     /// counter so it never collides with a `__forcN` range counter, and each
     /// loop-`else` (incl. nested) gets a distinct name.
+    /// PMAT-755: a fresh `__augiN` name for binding a subscript augmented-assign
+    /// index/key ONCE (so a side-effecting index — `xs[q.pop(0)] += v` — is
+    /// evaluated a single time, not duplicated across the read and the write).
+    /// Shares the loop counter so it never collides with a `__forcN`/`__brokeN`.
+    fn fresh_aug_index(&mut self) -> String {
+        let n = self.loop_counter;
+        self.loop_counter += 1;
+        format!("__augi{n}")
+    }
+
     fn fresh_break_flag(&mut self) -> String {
         let n = self.loop_counter;
         self.loop_counter += 1;
@@ -801,7 +811,14 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
 fn count_pop_receivers_in_stmt(stmt: &ast::Stmt, counts: &mut HashMap<String, usize>, bump: usize) {
     match stmt {
         ast::Stmt::Assign(a) => count_pop_receivers(&a.value, counts, bump),
-        ast::Stmt::AugAssign(a) => count_pop_receivers(&a.value, counts, bump),
+        ast::Stmt::AugAssign(a) => {
+            count_pop_receivers(&a.value, counts, bump);
+            // PMAT-755: a `.pop()` (etc.) in the augmented TARGET's subscript
+            // index — `xs[q.pop(0)] += v` — mutates its receiver, so that
+            // receiver's binding must be `mut`. The target was not scanned, so
+            // `q` stayed immutable → rustc E0596 once the index is evaluated.
+            count_pop_receivers(&a.target, counts, bump);
+        }
         ast::Stmt::AnnAssign(aa) => {
             if let Some(v) = &aa.value {
                 count_pop_receivers(v, counts, bump);
@@ -2577,7 +2594,7 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
             lower_assign(ctx, asn).map(|s| vec![s])
         }
         // PMAT-470 (R1): augmented assignment `x += e` → `x = x <op> e`.
-        ast::Stmt::AugAssign(aug) => lower_aug_assign(ctx, aug).map(|s| vec![s]),
+        ast::Stmt::AugAssign(aug) => lower_aug_assign(ctx, aug),
         // PMAT-466 (v0.2.0 Track 1.C): annotated local `name: T = value`.
         ast::Stmt::AnnAssign(aa) => lower_ann_assign(ctx, aa).map(|s| vec![s]),
         ast::Stmt::If(if_stmt) => lower_if_stmt(ctx, if_stmt),
@@ -6320,7 +6337,50 @@ fn nested_subscript_write_stmt(
     }
 }
 
-fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<Stmt, FrontendError> {
+/// PMAT-755: is a subscript index/key expression safe to DUPLICATE (no side
+/// effect, same value each time)? An augmented subscript assign `coll[i] <op>= v`
+/// reads `coll[i]` and writes `coll[i]`, so a pure index can appear in both. A
+/// side-effecting index (a `.pop()`, a call, …) must instead be bound to a temp
+/// and evaluated once. Conservative: only obvious pure shapes are reusable;
+/// anything else (calls, pops, indexing, …) is treated as impure → gets a temp.
+fn is_pure_index(e: &Expr) -> bool {
+    match e {
+        Expr::Ident(_) | Expr::LitInt(_) | Expr::LitBool(_) | Expr::LitFloat(_) => true,
+        Expr::Len(inner) => is_pure_index(inner),
+        Expr::UnOp { operand, .. } => is_pure_index(operand),
+        Expr::BinOp { lhs, rhs, .. } | Expr::FloatBinOp { lhs, rhs, .. } => {
+            is_pure_index(lhs) && is_pure_index(rhs)
+        }
+        _ => false,
+    }
+}
+
+/// PMAT-755: if `index` is impure (would be unsafe to evaluate twice), bind it
+/// to a fresh `__augiN` temp and return `(Some(let-stmt), Ident(temp))`; the
+/// caller emits the let BEFORE the assignment and uses the returned `Ident` for
+/// both the current-value read and the write. A pure index is returned as-is
+/// (no temp, byte-identical to the prior emission — no churn for `xs[i]`/`xs[0]`).
+fn bind_if_impure(ctx: &mut LoweringCtx, index: Expr) -> (Option<Stmt>, Expr) {
+    if is_pure_index(&index) {
+        return (None, index);
+    }
+    let tmp = ctx.fresh_aug_index();
+    let ty = infer_type_in_ctx(ctx, &index);
+    ctx.bound.insert(tmp.clone());
+    ctx.name_types.insert(tmp.clone(), ty.clone());
+    let let_stmt = Stmt::Let {
+        name: tmp.clone(),
+        ty,
+        value: index,
+        mutable: false,
+    };
+    (Some(let_stmt), Expr::Ident(tmp))
+}
+
+fn lower_aug_assign(
+    ctx: &mut LoweringCtx,
+    aug: ast::StmtAugAssign,
+) -> Result<Vec<Stmt>, FrontendError> {
     let rhs = lower_expr_in_ctx(ctx, (*aug.value).clone())?;
     match aug.target.as_ref() {
         ast::Expr::Name(n) => {
@@ -6350,7 +6410,7 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
                     }
                     ctx.mutable.insert(name.clone());
                     let value = combine_aug(ctx, &aug.op, Expr::Ident(name.clone()), rhs)?;
-                    return Ok(Stmt::Assign { name, value });
+                    return Ok(vec![Stmt::Assign { name, value }]);
                 }
                 if !matches!(aug.op, ast::Operator::Add) {
                     return Err(FrontendError::Lower(format!(
@@ -6366,10 +6426,10 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
                     )));
                 }
                 ctx.mutable.insert(name.clone());
-                return Ok(Stmt::ListExtend {
+                return Ok(vec![Stmt::ListExtend {
                     list_name: name,
                     other: rhs,
-                });
+                }]);
             }
             // PMAT-593: `a |= b` over two dicts is PEP 584 in-place union —
             // emit `Stmt::DictUpdate` (identical to `a.update(b)`; b wins on
@@ -6391,13 +6451,13 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
                     )));
                 }
                 ctx.mutable.insert(name.clone());
-                return Ok(Stmt::DictUpdate {
+                return Ok(vec![Stmt::DictUpdate {
                     dict_name: name,
                     other: rhs,
-                });
+                }]);
             }
             let value = combine_aug(ctx, &aug.op, Expr::Ident(name.clone()), rhs)?;
-            Ok(Stmt::Assign { name, value })
+            Ok(vec![Stmt::Assign { name, value }])
         }
         // PMAT-497: augmented subscript assignment `d[k] += v` /
         // `xs[i] += v` — desugar to `d[k] = d[k] <op> v`, reusing the
@@ -6418,7 +6478,20 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
                         ctx.fn_name
                     )));
                 }
-                let indices: Vec<Expr> = steps.into_iter().map(|(i, _)| i).collect();
+                // PMAT-755: bind each impure index to a temp ONCE — a
+                // side-effecting index (`grid[q.pop(0)][j] += v`) is read AND
+                // written, so it must be evaluated a single time.
+                let mut pre: Vec<Stmt> = Vec::new();
+                let indices: Vec<Expr> = steps
+                    .into_iter()
+                    .map(|(i, _)| {
+                        let (let_stmt, idx) = bind_if_impure(ctx, i);
+                        if let Some(s) = let_stmt {
+                            pre.push(s);
+                        }
+                        idx
+                    })
+                    .collect();
                 let mut current = Expr::Ident(receiver.clone());
                 for idx in &indices {
                     current = Expr::Index {
@@ -6428,11 +6501,12 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
                 }
                 let value = combine_aug(ctx, &aug.op, current, rhs)?;
                 ctx.mutable.insert(receiver.clone());
-                return Ok(Stmt::IndexAssign {
+                pre.push(Stmt::IndexAssign {
                     list_name: receiver,
                     indices,
                     value,
                 });
+                return Ok(pre);
             }
             let receiver = match sub.value.as_ref() {
                 ast::Expr::Name(n) => n.id.to_string(),
@@ -6440,18 +6514,22 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
             };
             match ctx.name_types.get(&receiver).cloned() {
                 Some(Type::Dict(_, _)) => {
-                    let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+                    let key0 = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+                    // PMAT-755: bind a side-effecting key once (read + write).
+                    let (let_stmt, key) = bind_if_impure(ctx, key0);
                     let current = Expr::DictGet {
                         dict: Box::new(Expr::Ident(receiver.clone())),
                         key: Box::new(key.clone()),
                     };
                     let value = combine_aug(ctx, &aug.op, current, rhs)?;
                     ctx.mutable.insert(receiver.clone());
-                    Ok(Stmt::DictSet {
+                    let mut out: Vec<Stmt> = let_stmt.into_iter().collect();
+                    out.push(Stmt::DictSet {
                         dict_name: receiver,
                         key,
                         value,
-                    })
+                    });
+                    Ok(out)
                 }
                 Some(Type::List(_)) => {
                     // PMAT-560: negative-literal index `xs[-k] += v` resolves to
@@ -6473,17 +6551,21 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
                         }
                         index
                     };
+                    // PMAT-755: bind a side-effecting index once (read + write).
+                    let (let_stmt, index) = bind_if_impure(ctx, index);
                     let current = Expr::Index {
                         collection: Box::new(Expr::Ident(receiver.clone())),
                         index: Box::new(index.clone()),
                     };
                     let value = combine_aug(ctx, &aug.op, current, rhs)?;
                     ctx.mutable.insert(receiver.clone());
-                    Ok(Stmt::IndexAssign {
+                    let mut out: Vec<Stmt> = let_stmt.into_iter().collect();
+                    out.push(Stmt::IndexAssign {
                         list_name: receiver,
                         indices: vec![index],
                         value,
-                    })
+                    });
+                    Ok(out)
                 }
                 _ => Err(FrontendError::Lower(format!(
                     "function `{}` augments `{receiver}[...]` which doesn't type as list[T] or dict[K, V]",
@@ -6531,11 +6613,11 @@ fn lower_aug_assign(ctx: &mut LoweringCtx, aug: ast::StmtAugAssign) -> Result<St
             };
             let value = combine_aug(ctx, &aug.op, current, rhs)?;
             ctx.mutable.insert(obj_name.clone());
-            Ok(Stmt::FieldAssign {
+            Ok(vec![Stmt::FieldAssign {
                 obj: obj_name,
                 field,
                 value,
-            })
+            }])
         }
         _ => Err(FrontendError::Lower(format!(
             "function `{}` uses augmented assignment on an unsupported target — supported: `name <op>= e`, `d[k] <op>= e`, `xs[i] <op>= e`, `obj.field <op>= e`",
