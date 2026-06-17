@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.453] — 2026-06-17
+
+### Fixed
+
+- **PMAT-753 — `Some`-wrap a concrete value into an `Optional` slot.** A
+  concrete (non-None) value passed to an `Optional[T]` parameter (`f(5)`) or
+  assigned to an `Optional[T]`-annotated local (`y: Optional[int] = 5`) was
+  emitted as a bare `T` against a Rust `Option<T>` slot → rustc E0308 (rustc
+  itself suggests `Some(..)`). `None` already lowered correctly; this blocked
+  ~every Optional-param call with a literal. `lower_value_expecting` now wraps a
+  non-Optional value in `Some(..)` when the expected type is `Optional(T)`
+  (fixing annotated-local inits and Optional return branches), and `FnSig`
+  gained `param_types` so the context-aware call lowering coerces each argument
+  to its parameter type. An already-Optional value passes through (no
+  `Option<Option<T>>`). HUNT-V15 (ONF-1/ONF-2).
+
 ## [0.1.452] — 2026-06-17
 
 ### Fixed
