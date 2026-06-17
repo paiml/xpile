@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.447] — 2026-06-17
+
+### Fixed
+
+- **PMAT-747 — container-access panics carry a typed-exception tag.** A
+  dict-index miss (`d[k]`), an empty `list.pop()`, and an absent `dict.pop(k)`
+  emitted UNTAGGED native panics (HashMap's `Index` "no entry found for key",
+  `Option::unwrap`). The typed-`except` re-raise filter (PMAT-731) only
+  re-raises panics tagged `xpile: <KnownExc>:`, so an untagged native
+  KeyError/IndexError was being SILENTLY SWALLOWED by an unrelated `except`
+  (e.g. `except ValueError:` around `d[k]`), where Python propagates the
+  exception. Both backends now tag these panics: `d[k]` →
+  `(d).get(&(k)).cloned().unwrap_or_else(|| panic!("xpile: KeyError: …"))`,
+  empty `list.pop()` → `.pop().expect("xpile: IndexError: pop from empty
+  list")`, no-default `d.pop(k)` → `.unwrap_or_else(|| panic!("xpile:
+  KeyError: …"))`. So `except KeyError`/`except IndexError` catch them and
+  every other typed `except` re-raises them. In-bounds access is unchanged.
+  Continues the PMAT-743/744 line. HUNT-V14 (#2).
+
 ## [0.1.446] — 2026-06-17
 
 ### Fixed
