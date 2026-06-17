@@ -370,9 +370,13 @@ fn emit_stmt_indented(
         // closure (0+ params). The return type is left to Rust inference.
         Stmt::ClosureLet { name, params, body } => {
             write!(out, "{indent}let {name} = |")?;
-            for (i, (p, ty)) in params.iter().enumerate() {
+            for (i, (p, ty, is_mut)) in params.iter().enumerate() {
                 if i > 0 {
                     out.push_str(", ");
+                }
+                // PMAT-749: a reassigned closure parameter needs `mut` (E0384).
+                if *is_mut {
+                    out.push_str("mut ");
                 }
                 write!(out, "{p}: ")?;
                 emit_type(out, ty)?;
@@ -394,9 +398,13 @@ fn emit_stmt_indented(
             body,
         } => {
             write!(out, "{indent}fn {name}(")?;
-            for (i, (p, ty)) in params.iter().enumerate() {
+            for (i, (p, ty, is_mut)) in params.iter().enumerate() {
                 if i > 0 {
                     out.push_str(", ");
+                }
+                // PMAT-749: a reassigned fn parameter needs `mut` (E0384).
+                if *is_mut {
+                    out.push_str("mut ");
                 }
                 write!(out, "{p}: ")?;
                 emit_type(out, ty)?;

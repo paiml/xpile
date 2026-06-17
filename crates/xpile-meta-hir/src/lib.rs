@@ -666,7 +666,10 @@ pub enum Stmt {
     /// Lean refuses (first-class functions are a v0.3.0 sub-track).
     ClosureLet {
         name: String,
-        params: Vec<(String, Type)>,
+        /// `(name, type, mutable)` — `mutable` is `true` when the parameter is
+        /// reassigned in the body (PMAT-749), so the backend emits `|mut p: T|`
+        /// (else rustc E0384 "cannot assign to immutable argument").
+        params: Vec<(String, Type, bool)>,
         body: Expr,
     },
     /// PMAT-736 (HUNT-V11 V11-6): a **named** inner function item — Python
@@ -683,7 +686,9 @@ pub enum Stmt {
     /// refuses (first-class / nested functions are a v0.3.0 sub-track).
     NestedFn {
         name: String,
-        params: Vec<(String, Type)>,
+        /// `(name, type, mutable)` — `mutable` true when the parameter is
+        /// reassigned in the body (PMAT-749), so the backend emits `mut p: T`.
+        params: Vec<(String, Type, bool)>,
         ret: Type,
         body: Block,
     },
@@ -3087,7 +3092,7 @@ fn escape_stmt(s: &mut Stmt) {
         }
         Stmt::ClosureLet { name, params, body } => {
             escape_name(name);
-            for (p, _) in params {
+            for (p, _, _) in params {
                 escape_name(p);
             }
             escape_expr(body);
@@ -3098,7 +3103,7 @@ fn escape_stmt(s: &mut Stmt) {
             name, params, body, ..
         } => {
             escape_name(name);
-            for (p, _) in params {
+            for (p, _, _) in params {
                 escape_name(p);
             }
             for st in &mut body.stmts {
@@ -3604,7 +3609,7 @@ fn collect_idents_stmt(s: &Stmt, acc: &mut std::collections::HashSet<String>) {
         }
         Stmt::ClosureLet { name, params, body } => {
             acc.insert(name.clone());
-            for (p, _) in params {
+            for (p, _, _) in params {
                 acc.insert(p.clone());
             }
             collect_idents_expr(body, acc);
@@ -3613,7 +3618,7 @@ fn collect_idents_stmt(s: &Stmt, acc: &mut std::collections::HashSet<String>) {
             name, params, body, ..
         } => {
             acc.insert(name.clone());
-            for (p, _) in params {
+            for (p, _, _) in params {
                 acc.insert(p.clone());
             }
             collect_block_idents(body, acc);
