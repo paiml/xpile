@@ -146,6 +146,38 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
                     out.push_str(",\n");
                 }
                 out.push_str("}\n");
+                // PMAT-760 (HUNT-V15 #6): generate a Python-repr `Display` for an
+                // all-int/bool dataclass (mirror of the Rust backend) so an
+                // instance renders in an f-string / str() / print() instead of
+                // E0277 (struct derives only Debug).
+                let display_eligible = fields
+                    .iter()
+                    .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool));
+                if display_eligible {
+                    let mut fmt_str = format!("{name}(");
+                    let mut args = String::new();
+                    for (i, (field, ty)) in fields.iter().enumerate() {
+                        if i > 0 {
+                            fmt_str.push_str(", ");
+                        }
+                        write!(fmt_str, "{field}={{}}")?;
+                        match ty {
+                            Type::Bool => write!(
+                                args,
+                                ", if self.{field} {{ \"True\" }} else {{ \"False\" }}"
+                            )?,
+                            _ => write!(args, ", self.{field}")?,
+                        }
+                    }
+                    fmt_str.push(')');
+                    writeln!(out, "impl std::fmt::Display for {name} {{")?;
+                    writeln!(
+                        out,
+                        "    fn fmt(&self, __f: &mut std::fmt::Formatter) -> std::fmt::Result {{"
+                    )?;
+                    writeln!(out, "        write!(__f, \"{fmt_str}\"{args})")?;
+                    out.push_str("    }\n}\n");
+                }
                 // PMAT-506d: instance methods → an `impl` block (Ruchy → Rust).
                 if !methods.is_empty() {
                     writeln!(out, "impl {name} {{")?;

@@ -13206,3 +13206,27 @@ fn main() {
 "#;
     assert_rustc_runs("optional_narrow_compound", &rust, driver);
 }
+
+/// PMAT-760 (HUNT-V15 #6): a dataclass instance in an f-string emitted
+/// `format!("{}", obj)` but the struct only derives Debug → rustc E0277. The
+/// backend now generates a Python-repr `Display` for an all-int/bool dataclass,
+/// so it renders as `ClassName(f=v, …)`. Cross-checked vs python3.
+#[test]
+fn dataclass_fstring_repr() {
+    let rust = xpile_transpile_to_rust("dataclass_fstring_repr.py");
+    assert!(
+        rust.contains("impl std::fmt::Display for P")
+            && rust.contains("write!(__f, \"P(x={}, y={})\", self.x, self.y)")
+            // bool field renders True/False (Python repr), not Rust true/false.
+            && rust.contains("if self.a { \"True\" } else { \"False\" }"),
+        "an all-int/bool dataclass must generate a Python-repr Display:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(lone(), "P(x=1, y=2)");
+    assert_eq!(multi(), "pt=P(x=3, y=4)");
+    assert_eq!(with_bool(), "flags=Flags(a=True, n=5)");
+}
+"#;
+    assert_rustc_runs("dataclass_fstring_repr", &rust, driver);
+}
