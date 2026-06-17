@@ -12885,3 +12885,36 @@ fn main() {
 "#;
     assert_rustc_runs("container_panic_typed", &rust, driver);
 }
+
+/// PMAT-748 (HUNT-V14 #3 str-literal-control-byte-escape): a Python string
+/// literal with control bytes must round-trip exactly. xpile emitted the raw
+/// bytes into the Rust literal — a bare CR is a rustc error and a raw CRLF gets
+/// normalized to LF (the CR silently dropped, wrong `len`). Control bytes are
+/// now escaped in both plain literals and f-string literal segments.
+/// Cross-checked vs python3.
+#[test]
+fn str_control_byte_escape() {
+    let rust = xpile_transpile_to_rust("str_control_byte_escape.py");
+    assert!(
+        // the CR is now an escape sequence, never a raw byte…
+        rust.contains("String::from(\"data\\r\")")
+            // …and an f-string literal segment escapes its CRLF too.
+            && rust.contains("String::from(\"row\\r\\n\")"),
+        "string-literal control bytes must be escaped (not raw):\n{rust}"
+    );
+    // belt-and-braces: no RAW CR byte (0x0d) leaked into the emitted source.
+    assert!(
+        !rust.contains('\r'),
+        "emitted Rust must contain no raw CR byte:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(cr_len(), 5);    // "data\r" — 5 chars (was a compile error)
+    assert_eq!(crlf_len(), 4);  // "x\r\ny" — CR preserved (was 3)
+    assert_eq!(tab_len(), 3);
+    assert_eq!(nul_len(), 3);
+    assert_eq!(esc_in_fstring_len(7), 6);  // "row\r\n7"
+}
+"#;
+    assert_rustc_runs("str_control_byte_escape", &rust, driver);
+}
