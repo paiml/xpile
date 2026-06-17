@@ -13027,3 +13027,29 @@ fn main() {
 "#;
     assert_rustc_runs("frozen_dataclass_read_ok", &rust, driver);
 }
+
+/// PMAT-753 (HUNT-V15 ONF-1/ONF-2): a concrete value passed to an `Optional[T]`
+/// parameter (`f(5)`), or assigned to an `Optional[T]` local (`y: Optional[int]
+/// = 5`), was emitted as a bare `T` against a Rust `Option<T>` slot → rustc
+/// E0308. The value is now wrapped in `Some(...)` (via the callee's param types
+/// at the call site, and the declared type at a let-init); `None` and an
+/// already-Optional value pass through. Cross-checked vs python3.
+#[test]
+fn optional_some_wrap() {
+    let rust = xpile_transpile_to_rust("optional_some_wrap.py");
+    assert!(
+        // a literal call arg is wrapped, and an annotated-local init is wrapped…
+        rust.contains("f(Some(5i64))") && rust.contains("let y: Option<i64> = Some(5i64)")
+            // …while None passes through unwrapped.
+            && rust.contains("f(None)"),
+        "concrete value into an Optional slot must be Some-wrapped; None passes through:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(via_lit(), 5);
+    assert_eq!(via_none(), 0);
+    assert_eq!(local_init(), 5);
+}
+"#;
+    assert_rustc_runs("optional_some_wrap", &rust, driver);
+}
