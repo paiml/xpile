@@ -2128,12 +2128,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     emit_expr(out, idx, mode)?;
                     write!(
                         out,
-                        ") as i64; let __pi = if __pi < 0 {{ {base}.len() as i64 + __pi }} else {{ __pi }}; {base}[__pi as usize].pop().unwrap() }}"
+                        ") as i64; let __pi = if __pi < 0 {{ {base}.len() as i64 + __pi }} else {{ __pi }}; {base}[__pi as usize].pop().expect(\"xpile: IndexError: pop from empty list\") }}"
                     )?;
                 } else {
+                    // PMAT-747 (HUNT-V14 #2): tag the empty-list-pop panic.
                     out.push('(');
                     emit_expr(out, list, mode)?;
-                    out.push_str(").pop().unwrap()");
+                    out.push_str(").pop().expect(\"xpile: IndexError: pop from empty list\")");
                 }
             }
             Some(i) => {
@@ -2161,7 +2162,10 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str(").remove(&(");
             emit_expr(out, key, mode)?;
             match default {
-                None => out.push_str(")).unwrap()"),
+                // PMAT-747 (HUNT-V14 #2): tag the absent-key dict-pop panic.
+                None => {
+                    out.push_str(")).unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))")
+                }
                 Some(d) => {
                     out.push_str(")).unwrap_or(");
                     emit_expr(out, d, mode)?;
@@ -2485,10 +2489,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         // PMAT-466 (v0.2.0 Track 1.C): dict ops → Rust, matching the
         // Rust backend exactly (Ruchy compiles to Rust).
         Expr::DictGet { dict, key } => {
+            // PMAT-747 (HUNT-V14 #2): tag an absent-key dict-index miss with
+            // `xpile: KeyError:` so typed-`except` discrimination works (mirrors
+            // the rust backend); HashMap's native `Index` panic was untagged.
+            out.push('(');
             emit_expr(out, dict, mode)?;
-            out.push_str("[&(");
+            out.push_str(").get(&(");
             emit_expr(out, key, mode)?;
-            out.push_str(")].clone()");
+            out.push_str(
+                ")).cloned().unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))",
+            );
         }
         Expr::DictGetOr { dict, key, default } => {
             emit_expr(out, dict, mode)?;
