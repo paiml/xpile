@@ -14026,3 +14026,28 @@ fn main() {
 "#;
     assert_rustc_runs("tuple_repeat_literal", &rust, driver);
 }
+
+/// PMAT-793 (HUNT-V18 EXC-002): the int() of a non-finite float panicked with a
+/// combined non-finite tag that matched no typed except (so under the PMAT-789
+/// allowlist it was uncatchable by the right handler). Python: int(±inf) →
+/// OverflowError, int(nan) → ValueError; both backends now tag those exactly.
+/// Cross-checked vs python3.
+#[test]
+fn int_nonfinite_tag() {
+    let rust = xpile_transpile_to_rust("int_nonfinite_tag.py");
+    assert!(
+        rust.contains("xpile: OverflowError: cannot convert float infinity to integer")
+            && rust.contains("xpile: ValueError: cannot convert float NaN to integer"),
+        "int() of a non-finite float must carry the exact Python exception tag:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(catch_inf(), -1);   // except OverflowError catches int(inf)
+    assert_eq!(catch_nan(), -2);   // except ValueError catches int(nan)
+    // an OverflowError must NOT be caught by except ValueError → propagate.
+    let w = std::panic::catch_unwind(|| wrong_handler_inf());
+    assert!(w.is_err(), "int(inf) OverflowError must propagate past except ValueError");
+}
+"#;
+    assert_rustc_runs("int_nonfinite_tag", &rust, driver);
+}
