@@ -13488,3 +13488,26 @@ fn main() {
 "#;
     assert_rustc_runs("dunder_contains", &rust, driver);
 }
+
+/// PMAT-772 (HUNT-V16 GEN-01/02): `list(enumerate(range(n)))` and
+/// `list(zip(range(n), xs))` emitted raw `enumerate`/`zip`/`range` free calls
+/// (rustc E0425) — a bare `range(...)` isn't a first-class value, so the
+/// enumerate/zip arg wasn't materialized. The expression lowering now
+/// materializes a range arg into a Vec. Cross-checked vs python3.
+#[test]
+fn gen_enum_zip_range() {
+    let rust = xpile_transpile_to_rust("gen_enum_zip_range.py");
+    assert!(
+        // no raw enumerate(/zip( with a bare range — the range is materialized.
+        !rust.contains("enumerate(range(") && !rust.contains("zip(range("),
+        "enumerate/zip over range must materialize the range:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(enum_len(), 4);
+    assert_eq!(zip_len(), 3);
+    assert_eq!(zip3_len(), 2);
+}
+"#;
+    assert_rustc_runs("gen_enum_zip_range", &rust, driver);
+}
