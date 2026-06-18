@@ -10237,6 +10237,26 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             .map(|a| lower_expr_in_ctx(ctx, a.clone()))
                             .collect::<Result<Vec<_>, _>>()?;
                         let arg0_ty = infer_type_in_ctx(ctx, &args[0]);
+                        // PMAT-790 (HUNT-V18 #8): `abs(obj)` over a user class that
+                        // defines `__abs__` dispatches to that method — Python's
+                        // `abs()` calls `obj.__abs__()`. Without this it fell to a
+                        // generic free call `abs(v)` (rustc E0425). Mirrors the
+                        // `len()`→`__len__` dispatch (PMAT-766).
+                        if matches!(op, NumBuiltinOp::Abs) {
+                            if let Type::Struct(sname) = &arg0_ty {
+                                if ctx
+                                    .struct_methods
+                                    .get(sname)
+                                    .is_some_and(|ms| ms.iter().any(|(m, _)| m == "__abs__"))
+                                {
+                                    return Ok(Expr::MethodCall {
+                                        obj: Box::new(args[0].clone()),
+                                        method: "__abs__".to_string(),
+                                        args: vec![],
+                                    });
+                                }
+                            }
+                        }
                         let ok = match op {
                             NumBuiltinOp::Abs => matches!(arg0_ty, Type::I64 | Type::F64),
                             NumBuiltinOp::Min | NumBuiltinOp::Max => {
@@ -10674,6 +10694,29 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 {
                     let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                     let vty = infer_type_in_ctx(ctx, &value);
+                    // PMAT-790 (HUNT-V18 #9/#10): `int(obj)` / `float(obj)` over a
+                    // user class defining `__int__` / `__float__` dispatches to
+                    // that method — Python's `int()`/`float()` call the dunder.
+                    // Without this it fell to a generic free call `int(v)`/`float(v)`
+                    // (rustc E0425). Mirrors the `len()`→`__len__` dispatch.
+                    if let Type::Struct(sname) = &vty {
+                        let dunder = if fname.id.as_str() == "float" {
+                            "__float__"
+                        } else {
+                            "__int__"
+                        };
+                        if ctx
+                            .struct_methods
+                            .get(sname)
+                            .is_some_and(|ms| ms.iter().any(|(m, _)| m == dunder))
+                        {
+                            return Ok(Expr::MethodCall {
+                                obj: Box::new(value),
+                                method: dunder.to_string(),
+                                args: vec![],
+                            });
+                        }
+                    }
                     if matches!(vty, Type::I64 | Type::F64 | Type::Str) {
                         return Ok(Expr::NumCast {
                             value: Box::new(value),
