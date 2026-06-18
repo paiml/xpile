@@ -13376,3 +13376,24 @@ fn main() {
 "#;
     assert_rustc_runs("dunder_len", &rust, driver);
 }
+
+/// PMAT-767 (HUNT-V16 DD-04): `obj[i]` over a class defining `__getitem__` fell
+/// through to the list-index path (struct can't be indexed → rustc E0608),
+/// where Python calls `obj.__getitem__(i)`. The subscript-read lowering now
+/// dispatches to that method. Cross-checked vs python3.
+#[test]
+fn dunder_getitem() {
+    let rust = xpile_transpile_to_rust("dunder_getitem.py");
+    assert!(
+        rust.contains("(r).__getitem__(0i64)"),
+        "obj[i] with __getitem__ must dispatch to the user method:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(use_index(), 30);
+    assert_eq!(index_var(0), 7);
+    assert_eq!(index_var(1), 8);
+}
+"#;
+    assert_rustc_runs("dunder_getitem", &rust, driver);
+}

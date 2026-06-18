@@ -9282,6 +9282,26 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     key: Box::new(key),
                 });
             }
+            // PMAT-767 (HUNT-V16 DD-04): `obj[i]` over a user class that defines
+            // `__getitem__` dispatches to that method — Python's subscript calls
+            // `obj.__getitem__(i)`. Without this the struct fell through to the
+            // list-index path (`obj[i]` over a struct → rustc E0608, and `.len()`
+            // → E0599). Route to the method when the struct registers a
+            // `__getitem__`.
+            if let Type::Struct(sname) = infer_type_in_ctx(ctx, &collection) {
+                if ctx
+                    .struct_methods
+                    .get(&sname)
+                    .is_some_and(|ms| ms.iter().any(|(m, _)| m == "__getitem__"))
+                {
+                    let index = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+                    return Ok(Expr::MethodCall {
+                        obj: Box::new(collection),
+                        method: "__getitem__".to_string(),
+                        args: vec![index],
+                    });
+                }
+            }
             // PMAT-502cd: `s[i]` over a string → `Expr::StrCharAt` (a 1-char
             // string). Handles positive, negative, and variable int indices;
             // the codegen materialises the chars and indexes them. Rejects a
