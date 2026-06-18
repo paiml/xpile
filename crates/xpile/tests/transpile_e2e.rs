@@ -14236,3 +14236,28 @@ fn main() {
 "#;
     assert_rustc_runs("str_index_oob", &rust, driver);
 }
+
+/// PMAT-802 (HUNT-V19 CHAIN-2): `x in d` where x's type can never match the
+/// dict's key type (`1 in dict[str,V]`) is always False in Python, but emitted
+/// `contains_key(&x)` with a mismatched needle type → E0308. It now folds to the
+/// constant (`not in` → true); int/bool stay tower-compatible. vs python3.
+#[test]
+fn cross_type_dict_membership() {
+    let rust = xpile_transpile_to_rust("cross_type_dict_membership.py");
+    assert!(
+        // the two incompatible cases fold (no contains_key for them); the two
+        // str-keyed real lookups keep contains_key → exactly 2 occurrences.
+        rust.matches("contains_key").count() == 2,
+        "incompatible-type membership must fold to a constant:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(int_in_strdict(), false);
+    assert_eq!(str_in_intdict(), false);
+    assert_eq!(str_notin_intdict(), true);
+    assert_eq!(real_hit(), true);
+    assert_eq!(real_miss(), false);
+}
+"#;
+    assert_rustc_runs("cross_type_dict_membership", &rust, driver);
+}

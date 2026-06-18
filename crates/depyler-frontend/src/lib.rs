@@ -11902,8 +11902,23 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                 }
                 let rhs = lower_expr_in_ctx(ctx, c.comparators[0].clone())?;
-                if matches!(infer_type_in_ctx(ctx, &rhs), Type::Dict(_, _)) {
+                if let Type::Dict(key_ty, _) = infer_type_in_ctx(ctx, &rhs) {
                     let key = lower_expr_in_ctx(ctx, (*c.left).clone())?;
+                    // PMAT-802 (HUNT-V19 CHAIN-2): `x in d` where `x`'s type can
+                    // never match the dict's key type (`1 in dict[str, …]`, `"k"
+                    // in dict[int, …]`) is ALWAYS False in Python (no error) — but
+                    // a `d.contains_key(&x)` over a `HashMap<K, _>` with a
+                    // different-typed needle is rustc E0308. Fold to the constant
+                    // (`not in` → `true`). Int/bool are the one tower-compatible
+                    // pair (Python `True`/`1` hash-equal — PMAT-451), so they're
+                    // NOT folded; an equal needle/key type goes the normal path.
+                    let needle_ty = infer_type_in_ctx(ctx, &key);
+                    let key_ty = *key_ty;
+                    let intish = |t: &Type| matches!(t, Type::I64 | Type::Bool);
+                    let compatible = needle_ty == key_ty || (intish(&needle_ty) && intish(&key_ty));
+                    if !compatible {
+                        return Ok(Expr::LitBool(matches!(c.ops[0], ast::CmpOp::NotIn)));
+                    }
                     let contains = Expr::DictContains {
                         dict: Box::new(rhs),
                         key: Box::new(key),
