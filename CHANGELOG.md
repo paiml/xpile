@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.490] — 2026-06-18
+
+### Fixed
+
+- **PMAT-790 — dispatch `abs()`/`int()`/`float()` over a struct to
+  `__abs__`/`__int__`/`__float__`.** Each emitted a generic free call (`abs(v)` /
+  `int(v)` / `float(v)`) over a user class defining the matching dunder → rustc
+  E0425, where Python's builtins resolve to the dunder. The frontend now routes
+  `abs(obj)` (in the num-builtin arm) and `int(obj)`/`float(obj)` (in the 1-arg
+  cast arm) to the method when the operand types as a `Type::Struct` defining it,
+  mirroring the `len()`→`__len__` dispatch (PMAT-766). Plain numeric/str/bool
+  args are unchanged. HUNT-V18 (#8/#9/#10).
+
 ## [0.1.489] — 2026-06-18
 
 ### Fixed
