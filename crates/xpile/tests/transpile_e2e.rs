@@ -14003,3 +14003,26 @@ fn main() {
 "#;
     assert_rustc_runs("gt_ge_le_dunder", &rust, driver);
 }
+
+/// PMAT-792 (HUNT-V18 #12): a tuple literal repeated by an int literal (`(0,) *
+/// 3`) mis-lowered as scalar int multiplication → rustc E0599 (checked_mul on a
+/// tuple). A Python tuple repeat is a fixed-arity tuple, now expanded at
+/// lowering for a literal count. Cross-checked vs python3.
+#[test]
+fn tuple_repeat_literal() {
+    let rust = xpile_transpile_to_rust("tuple_repeat_literal.py");
+    assert!(
+        // expanded to fixed-arity tuples (no checked_mul on a tuple).
+        rust.contains("pub fn zeros() -> (i64, i64, i64) {")
+            && rust.contains("pub fn pair_rep() -> (i64, i64, i64, i64) {"),
+        "a tuple literal repeated by an int literal must expand to a fixed-arity tuple:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(zeros(), (0, 0, 0));
+    assert_eq!(pair_rep(), (1, 2, 1, 2));
+    assert_eq!(sum_zeros(), 0);
+}
+"#;
+    assert_rustc_runs("tuple_repeat_literal", &rust, driver);
+}

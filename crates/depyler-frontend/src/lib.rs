@@ -15378,6 +15378,27 @@ fn block_result_type(b: &Block, infer: impl Fn(&Expr) -> Type) -> Type {
 }
 
 fn try_repeat(lhs_ty: &Type, rhs_ty: &Type, lhs: &Expr, rhs: &Expr) -> Option<Expr> {
+    // PMAT-792 (HUNT-V18 #12): a tuple literal repeated by an INT LITERAL —
+    // `(x,) * 3` → `(x, x, x)`, `(1, 2) * 2` → `(1, 2, 1, 2)`. A Python tuple
+    // repeat is a fixed-arity tuple, so it can only be expanded when the count
+    // is a compile-time literal (Rust tuples aren't variadic); a non-literal
+    // count falls through to the i64 path (a documented limitation — Rust can't
+    // express a runtime-arity tuple). Without this it emitted `checked_mul` on a
+    // tuple (rustc E0599). Handles both operand orders; a count <= 0 → `()`.
+    let tuple_repeat = |elems: &Vec<Expr>, n: i64| -> Expr {
+        let reps = n.max(0) as usize;
+        let mut out = Vec::with_capacity(elems.len().saturating_mul(reps));
+        for _ in 0..reps {
+            out.extend(elems.iter().cloned());
+        }
+        Expr::TupleLit(out)
+    };
+    match (lhs, rhs) {
+        (Expr::TupleLit(elems), Expr::LitInt(n)) | (Expr::LitInt(n), Expr::TupleLit(elems)) => {
+            return Some(tuple_repeat(elems, *n));
+        }
+        _ => {}
+    }
     let is_seq = |t: &Type| matches!(t, Type::Str | Type::List(_));
     if is_seq(lhs_ty) && *rhs_ty == Type::I64 {
         Some(Expr::Repeat {
