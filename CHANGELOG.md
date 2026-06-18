@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.501] — 2026-06-18
+
+### Fixed
+
+- **PMAT-801 — tag a string index out of range as `xpile: IndexError`.** `s[i]`
+  with `i` beyond the end lowered to a bare `__cs[__idx as usize]`, which panics
+  with Rust's untagged "index out of bounds"; under the allowlist `except`
+  (PMAT-789) that matches no handler, so a typed `except IndexError` could not
+  catch it (it wrongly propagated). The string-index read now bounds-checks the
+  normalized index and panics with `xpile: IndexError: string index out of
+  range`, mirroring the list-index tagging (PMAT-444/464). In-range and
+  negative-from-end indexing are unchanged. HUNT-V19 (STR-IDX-OOB).
+
 ## [0.1.500] — 2026-06-18
 
 ### Fixed
