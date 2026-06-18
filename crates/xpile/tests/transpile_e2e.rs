@@ -8164,8 +8164,14 @@ fn main() {
 fn fstring_specs() {
     let rust = xpile_transpile_to_rust("fstring_specs.py");
     assert!(
-        rust.contains("format!(\"{:}\"") && rust.contains("{:x}") && rust.contains("{:08b}"),
-        "f-string specs should emit stringified lone field + radix/pad specs:\n{rust}"
+        // PMAT-773: a bare radix `:x` stays sign-magnitude min_width-0
+        // (`{:x}` over the magnitude); a zero-padded radix `:08b` now also goes
+        // sign-magnitude with a sign-aware pad (no longer a bare `{:08b}` over
+        // the two's-complement). `:08d` (decimal) keeps the plain FormatSpec.
+        rust.contains("format!(\"{:}\"")
+            && rust.contains("{:x}")
+            && rust.contains("saturating_sub(__sign.len()"),
+        "f-string specs should emit stringified lone field + sign-magnitude radix:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -13510,4 +13516,30 @@ fn main() {
 }
 "#;
     assert_rustc_runs("gen_enum_zip_range", &rust, driver);
+}
+
+/// PMAT-773 (HUNT-V16 #12): a negative int with a zero-padded radix f-string
+/// spec (`f"{-255:08x}"`) emitted `format!("{:08x}", -255)`, zero-padding Rust's
+/// two's-complement (`ffffffffffffff01`) — silent-wrong; Python is sign-magnitude
+/// with the sign in the width (`-00000ff`). The radix format now carries a
+/// sign-aware zero-pad width. Cross-checked vs python3.
+#[test]
+fn fstr_neg_radix_zeropad() {
+    let rust = xpile_transpile_to_rust("fstr_neg_radix_zeropad.py");
+    assert!(
+        // sign-magnitude radix (unsigned_abs) with a sign-aware pad — no bare
+        // `format!("{:08x}", …)` two's-complement spec.
+        rust.contains("__m = __n.unsigned_abs()") && rust.contains("saturating_sub(__sign.len()"),
+        "zero-padded radix must be sign-magnitude with a sign-aware pad:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(hexpad_neg(), "-00000ff");
+    assert_eq!(binpad_neg(), "-0000101");
+    assert_eq!(octpad_neg(), "-00011");
+    assert_eq!(hexpad_pos(), "000000ff");
+    assert_eq!(bare_neg(), "-ff");
+}
+"#;
+    assert_rustc_runs("fstr_neg_radix_zeropad", &rust, driver);
 }
