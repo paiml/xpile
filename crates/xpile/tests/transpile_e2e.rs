@@ -13251,3 +13251,29 @@ fn main() {
 "#;
     assert_rustc_runs("len_cmp_paren", &rust, driver);
 }
+
+/// PMAT-762 (HUNT-V16 DD-01): a dataclass with a custom `__eq__` got
+/// `#[derive(PartialEq)]` AND a dead `__eq__`, so `==` used the structural
+/// derive (all fields) — silently overriding the user's semantics. The
+/// structural derive is now suppressed and `==` delegates to `__eq__`; this
+/// also makes `x in list` use the right equality. Cross-checked vs python3.
+#[test]
+fn dataclass_custom_eq() {
+    let rust = xpile_transpile_to_rust("dataclass_custom_eq.py");
+    assert!(
+        // no structural PartialEq derive…
+        rust.contains("#[derive(Clone, Debug)]")
+            // …a delegating impl instead.
+            && rust.contains("impl PartialEq for Pt")
+            && rust.contains("self.__eq__(__other.clone())"),
+        "a custom __eq__ must suppress the derive and delegate via impl PartialEq:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(cmp_eq(), 1);   // (1,2)==(1,9) true (only .x)
+    assert_eq!(cmp_ne(), 0);   // (1,2)==(2,2) false
+    assert_eq!(in_list(), 1);  // Pt(1,99) in [Pt(1,5), Pt(3,7)] via custom ==
+}
+"#;
+    assert_rustc_runs("dataclass_custom_eq", &rust, driver);
+}

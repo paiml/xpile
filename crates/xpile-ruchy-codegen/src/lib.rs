@@ -125,12 +125,19 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
                 // derives Ord (+ Eq) so instances can be .sort()ed (Vec::sort needs
                 // Ord; PartialOrd alone is E0277). A float field can't derive Ord.
                 let derive_ord = *order && all_ord_fields;
-                let mut derives = vec!["Clone", "Debug", "PartialEq"];
-                if derive_eq_hash || derive_ord {
-                    derives.push("Eq");
-                }
-                if derive_eq_hash {
-                    derives.push("Hash");
+                // PMAT-762 (HUNT-V16 DD-01): a custom `__eq__` overrides `==` via
+                // an `impl PartialEq` (below); suppress the structural derives
+                // (mirror of the Rust backend).
+                let has_custom_eq = methods.iter().any(|m| m.name == "__eq__");
+                let mut derives = vec!["Clone", "Debug"];
+                if !has_custom_eq {
+                    derives.push("PartialEq");
+                    if derive_eq_hash || derive_ord {
+                        derives.push("Eq");
+                    }
+                    if derive_eq_hash {
+                        derives.push("Hash");
+                    }
                 }
                 if *order {
                     derives.push("PartialOrd");
@@ -185,6 +192,14 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
                         emit_function(&mut out, m)?;
                     }
                     out.push_str("}\n");
+                }
+                // PMAT-762 (HUNT-V16 DD-01): delegate `==` to a custom `__eq__`
+                // (mirror of the Rust backend).
+                if has_custom_eq {
+                    writeln!(out, "impl PartialEq for {name} {{")?;
+                    writeln!(out, "    fn eq(&self, __other: &Self) -> bool {{")?;
+                    writeln!(out, "        self.__eq__(__other.clone())")?;
+                    out.push_str("    }\n}\n");
                 }
             }
             // PMAT-513: a Python `Enum` class → a Rust enum (Ruchy → Rust).
