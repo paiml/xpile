@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.461] — 2026-06-18
+
+### Fixed
+
+- **PMAT-761 — parenthesize the `len()` cast so `len(x) < N` parses.** `len(x) <
+  N` emitted `x.len() as i64 < N`, and rustc reads `i64 <` as the start of
+  generic arguments (a turbofish) → a hard parse error (no binary). Only `<`
+  triggered it; `<=`/`>`/`==` parsed fine — yet `if/while len(x) < N` is among
+  the most common Python idioms. Both backends now wrap the `Expr::Len` cast as
+  `(x.len() as i64)` (exactly as the `int()`-cast arm already does), which
+  disambiguates the `i64 <` in every position. HUNT-V16 (#1 CFD-3).
+
 ## [0.1.460] — 2026-06-17
 
 ### Fixed
