@@ -13397,3 +13397,29 @@ fn main() {
 "#;
     assert_rustc_runs("dunder_getitem", &rust, driver);
 }
+
+/// PMAT-768 (HUNT-V16 DD-05): an arithmetic operator over a class defining the
+/// matching dunder (`+`→__add__, `-`→__sub__, `*`→__mul__) emitted the i64
+/// `(a).checked_add(b)` (rustc E0599 — a struct has no checked_add), where
+/// Python resolves `a + b` to `a.__add__(b)`. The binop lowering now dispatches
+/// to the dunder when the LHS is a struct that defines it; plain int arithmetic
+/// is unchanged. Cross-checked vs python3.
+#[test]
+fn dunder_arith() {
+    let rust = xpile_transpile_to_rust("dunder_arith.py");
+    assert!(
+        rust.contains(".__add__(") && rust.contains(".__sub__(") && rust.contains(".__mul__(")
+            // plain int arithmetic still uses checked_add.
+            && rust.contains("(a).checked_add(b)"),
+        "struct arithmetic must dispatch to the dunder; int arithmetic stays checked:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(add_use(), 150);
+    assert_eq!(sub_use(), 70);
+    assert_eq!(mul_use(), 20);
+    assert_eq!(plain_int(2, 3), 5);
+}
+"#;
+    assert_rustc_runs("dunder_arith", &rust, driver);
+}

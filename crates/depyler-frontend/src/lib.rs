@@ -11725,6 +11725,29 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 && extract_step_literal(&b.right).is_some_and(|k| k < 0);
             let lhs = lower_expr_in_ctx(ctx, *b.left)?;
             let rhs = lower_expr_in_ctx(ctx, *b.right)?;
+            // PMAT-768 (HUNT-V16 DD-05): an arithmetic operator over a user class
+            // that defines the matching dunder (`obj1 + obj2` → `__add__`, `-` →
+            // `__sub__`, `*` → `__mul__`) dispatches to that method — Python
+            // resolves `a + b` to `a.__add__(b)`. Without this the struct LHS fell
+            // into the i64 path → `(a).checked_add(b)` (rustc E0599: a user struct
+            // has no `checked_add`). Gate on the LHS typing as a `Type::Struct`
+            // whose methods include the dunder; the RHS lowers normally (the
+            // method takes it by value, matching the generated dunder signature).
+            if let Some(dunder) = arith_dunder_name(&b.op) {
+                if let Type::Struct(sname) = infer_type_in_ctx(ctx, &lhs) {
+                    if ctx
+                        .struct_methods
+                        .get(&sname)
+                        .is_some_and(|ms| ms.iter().any(|(m, _)| m == dunder))
+                    {
+                        return Ok(Expr::MethodCall {
+                            obj: Box::new(lhs),
+                            method: dunder.to_string(),
+                            args: vec![rhs],
+                        });
+                    }
+                }
+            }
             // PMAT-502bs: Python 3 `/` is ALWAYS true division → f64, even
             // for two int operands (`7 / 2 == 3.5`). Cast non-float
             // operands to f64 and emit `FloatBinOp::Div`. This also fixes
@@ -15139,6 +15162,19 @@ fn flip_cmp(op: BinOp) -> BinOp {
         BinOp::LtEq => BinOp::GtEq,
         BinOp::GtEq => BinOp::LtEq,
         other => other, // Eq / NotEq are symmetric
+    }
+}
+
+/// PMAT-768 (HUNT-V16 DD-05): the Python dunder method an arithmetic operator
+/// resolves to over a user class — `+`→`__add__`, `-`→`__sub__`, `*`→`__mul__`.
+/// `None` for operators whose dunder dispatch isn't supported yet (the operand
+/// then stays on the numeric path / clean reject).
+fn arith_dunder_name(op: &ast::Operator) -> Option<&'static str> {
+    match op {
+        ast::Operator::Add => Some("__add__"),
+        ast::Operator::Sub => Some("__sub__"),
+        ast::Operator::Mult => Some("__mul__"),
+        _ => None,
     }
 }
 
