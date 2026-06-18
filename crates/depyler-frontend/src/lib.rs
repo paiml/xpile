@@ -257,6 +257,15 @@ impl LoweringCtx {
         format!("__forc{n}")
     }
 
+    /// PMAT-765: a fresh `__forstop{N}` name for snapshotting a `range(...)` stop
+    /// bound ONCE before the while (Python evaluates range args at loop entry).
+    /// Shares the loop counter so it never collides with `__forc{N}`/`__broke{N}`.
+    fn fresh_range_stop(&mut self) -> String {
+        let n = self.loop_counter;
+        self.loop_counter += 1;
+        format!("__forstop{n}")
+    }
+
     /// PMAT-687: a fresh `__brokeN` flag name for a loop-`else` desugar (the loop
     /// `else` runs iff the loop completed without `break`). Shares the loop
     /// counter so it never collides with a `__forcN` range counter, and each
@@ -4395,11 +4404,33 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
         });
     }
 
+    // PMAT-765 (HUNT-V16 #5 CFD-1/CFD-2): Python evaluates `range(...)` arguments
+    // ONCE at loop entry (the range object is frozen). The desugar used
+    // `stop_expr` directly in the `while` condition, so it was RE-EVALUATED every
+    // iteration — `for i in range(len(xs)): xs.append(..)` re-read `xs.len()` as
+    // the body grew `xs`, outpacing the counter → infinite loop; likewise a
+    // body-mutated int bound (`for i in range(n): n += 10`). Snapshot a
+    // non-constant stop into a `__forstop{N}` temp before the loop and compare
+    // against that. A literal stop (`range(5)`) can't change → left inline (no
+    // churn). `start` is already evaluated once (into the counter `let`); `step`
+    // is a parsed literal.
+    let mut stop_operand = stop_expr;
+    if !matches!(stop_operand, Expr::LitInt(_)) {
+        let stop_name = ctx.fresh_range_stop();
+        ctx.name_types.insert(stop_name.clone(), target_ty.clone());
+        stmts.push(Stmt::Let {
+            name: stop_name.clone(),
+            ty: target_ty.clone(),
+            value: stop_operand,
+            mutable: false,
+        });
+        stop_operand = Expr::Ident(stop_name);
+    }
     let cond_op = if step_int > 0 { BinOp::Lt } else { BinOp::Gt };
     let cond = Expr::BinOp {
         op: cond_op,
         lhs: Box::new(Expr::Ident(counter.clone())),
-        rhs: Box::new(stop_expr),
+        rhs: Box::new(stop_operand),
     };
 
     // Body: assign the user variable from the counter FIRST (so it only takes a
