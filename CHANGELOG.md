@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.471] — 2026-06-18
+
+### Fixed
+
+- **PMAT-771 — `x in obj` dispatches to a user `__contains__` method.** It was
+  rejected ("unsupported comparison operator: In"), where Python's membership
+  test calls `obj.__contains__(x)`. The In/NotIn comparison lowering now
+  dispatches to that method (negated for `not in`) when the RHS is a
+  `Type::Struct` whose registered methods include `__contains__`; the dict / str
+  / set / list membership forms are unchanged. Completes the dunder-dispatch
+  cluster (`__eq__`, `__len__`, `__getitem__`, `__add__`/`__sub__`/`__mul__`,
+  `__lt__`, `__call__`, `__contains__`). HUNT-V16 (DD-08).
+
 ## [0.1.470] — 2026-06-18
 
 ### Fixed
