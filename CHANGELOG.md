@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.469] — 2026-06-18
+
+### Fixed
+
+- **PMAT-769 — generate `impl PartialOrd` from a custom `__lt__`.** A dataclass
+  with a custom `__lt__` emitted `a < b` over a struct deriving only `PartialEq`
+  → rustc E0369 (no `PartialOrd`), with a dead `__lt__` method. Both backends
+  now generate an `impl PartialOrd` whose `partial_cmp` delegates to `__lt__`
+  (`a < b` ⟺ `a.__lt__(b)` → Less, `b.__lt__(a)` → Greater, else Equal), giving
+  `<`/`>`/`<=`/`>=`. The `order=True` structural PartialOrd/Ord/Eq derive is
+  suppressed when a custom `__lt__` is present (avoiding two conflicting impls).
+  HUNT-V16 (DD-07).
+
 ## [0.1.468] — 2026-06-18
 
 ### Fixed
