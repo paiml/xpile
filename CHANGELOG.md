@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.467] — 2026-06-18
+
+### Fixed
+
+- **PMAT-767 — `obj[i]` dispatches to a user `__getitem__` method.** Over a user
+  class defining `__getitem__`, `obj[i]` fell through to the list-index path — a
+  struct can't be indexed (rustc E0608) — where Python calls `obj.__getitem__(i)`.
+  The frontend subscript-read lowering now dispatches to that method when the
+  indexed collection is a `Type::Struct` whose registered methods include
+  `__getitem__`. Dict/str/list subscripts and slices are unchanged. HUNT-V16
+  (DD-04).
+
 ## [0.1.466] — 2026-06-18
 
 ### Fixed
