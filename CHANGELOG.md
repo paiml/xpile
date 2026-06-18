@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.511] — 2026-06-18
+
+### Fixed
+
+- **PMAT-811 — lower the `dict(a=1, b=2)` keyword constructor to a dict literal.**
+  `dict(a=1, b=2)` was rejected ("passes keyword args to unknown function
+  `dict`") — the keyword-call normalizer only handles top-level user functions.
+  Python's `dict(**kwargs)` builds `{"a": 1, "b": 2}` (string keys from the kwarg
+  names); the call lowering now intercepts `dict(<all keyword args>)` and lowers
+  it to a string-keyed dict literal (each kwarg name → an `Expr::LitStr` key). A
+  `**`-splat is rejected with a clear message; the 1-arg `dict(pairs)` and empty
+  `dict()` forms are unchanged. HUNT-V22 (#9).
+
 ## [0.1.510] — 2026-06-18
 
 ### Fixed
