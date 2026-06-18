@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.475] — 2026-06-18
+
+### Fixed
+
+- **PMAT-775 — `map()`/`filter()` over a `range(...)` materialize the range.**
+  `list(map(lambda v: v*2, range(n)))` and `list(filter(lambda v: …, range(n)))`
+  were rejected with a misleading "lambda stored in a general expression"
+  message: the map/filter iterable argument was lowered plainly, so a bare
+  `range(...)` (not a first-class value) didn't type as a `List` and the
+  lambda/bare-callable path was skipped. The `map`/`filter` lowerings now lower
+  the iterable via the range-materializing helper (the one enumerate/zip and
+  len/sum use), covering all five iterable sites (map lambda + bare-callable,
+  filter lambda + bare-callable + `filter(None, …)`). HUNT-V16 (GEN-03).
+
 ## [0.1.474] — 2026-06-18
 
 ### Fixed
