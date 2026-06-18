@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.489] — 2026-06-18
+
+### Fixed
+
+- **PMAT-789 — typed `except` is an allowlist (re-raise non-matching exceptions).**
+  The typed-`except` discriminator was a blocklist: it re-raised only a panic
+  whose `xpile: <Type>:` tag named one of the OTHER cataloged builtins
+  (`KNOWN_EXC` minus the caught set) and caught everything else, so `except
+  ValueError:` silently swallowed a RuntimeError (e.g. a dict-size-change), any
+  non-cataloged exception, and any untagged panic — returning the handler value
+  where Python propagates (the live remainder of the typed-exceptions epic). Both
+  backends now use an allowlist: a non-empty `except` catches iff the payload
+  names one of its OWN listed types, else re-raises; a bare `except:` /
+  base-class catch-all still catches everything. Consequently a RuntimeError /
+  custom / untagged exception propagates past a non-matching `except`, and
+  `except RuntimeError` now catches the dict-size-change RuntimeError (previously
+  uncatchable). `KNOWN_EXC` removed. HUNT-V18 (EXC-001).
+
 ## [0.1.488] — 2026-06-18
 
 ### Fixed
