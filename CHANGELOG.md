@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.505] — 2026-06-18
+
+### Fixed
+
+- **PMAT-805 — comprehension tuple loop vars no longer pollute function scope.** A
+  comprehension's tuple loop vars (`k, v` in `{k: v*2 for k, v in d.items()}` /
+  list / set comp) were registered in `ctx.bound`, so a later real `for k in
+  …:` over the same name hit the leak path (PMAT-784) — emitting a bare `k =
+  __fe0` to a never-`let` name → rustc E0425. Comp tuple loop vars are now marked
+  `loop_scoped` (scoped to the comp's own Rust block), so the later for-loop
+  binds a fresh `for k`. The `for k, v in d.items():` statement form is untouched
+  (Python genuinely leaks there). HUNT-V20 (#3).
+
 ## [0.1.504] — 2026-06-18
 
 ### Fixed
