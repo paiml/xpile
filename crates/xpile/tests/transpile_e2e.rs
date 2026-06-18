@@ -14396,3 +14396,28 @@ fn main() {
 "#;
     assert_rustc_runs("hash_dunder_set", &rust, driver);
 }
+
+/// PMAT-809 (HUNT-V22 CA-1): a walrus-bound name reassigned once emitted an
+/// immutable `let` → E0384 — the walrus lives in the if-condition expression so
+/// the mut-inference missed its binding. walk_counts now counts walrus targets
+/// in the condition, so a reassigned walrus binding is `let mut` (a
+/// never-reassigned one stays plain `let`). Cross-checked vs python3.
+#[test]
+fn walrus_reassign_mut() {
+    let rust = xpile_transpile_to_rust("walrus_reassign_mut.py");
+    assert!(
+        // reassigned walrus → mut; non-reassigned walrus → plain let (no spurious mut).
+        rust.contains("let mut n: i64 = 10i64;")
+            && rust.contains("let m: i64 = 7i64;")
+            && rust.contains("let mut k: i64 = 2i64;"),
+        "a reassigned walrus binding must be `let mut` (non-reassigned plain):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(reassign(), 99);          // n:=10, then n=99
+    assert_eq!(no_reassign(), 7);        // m:=7, never reassigned
+    assert_eq!(reassign_in_else(), 50);  // k:=2 (>5 false), else k=50
+}
+"#;
+    assert_rustc_runs("walrus_reassign_mut", &rust, driver);
+}
