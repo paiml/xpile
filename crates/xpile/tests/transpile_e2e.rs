@@ -14288,3 +14288,25 @@ fn main() {
 "#;
     assert_rustc_runs("except_base_class", &rust, driver);
 }
+
+/// PMAT-804 (HUNT-V20 SET-BOOL-MEMBERSHIP): a bool needle in an int set (`True
+/// in {1,2,3}`) emitted `s.contains(&true)` over a `HashSet<i64>` → E0308, where
+/// Python's bool is an int subtype (True==1). The needle is now coerced to i64.
+/// Cross-checked vs python3.
+#[test]
+fn set_bool_membership() {
+    let rust = xpile_transpile_to_rust("set_bool_membership.py");
+    assert!(
+        rust.contains("contains(&(((true) as i64)))")
+            && rust.contains("contains(&(((false) as i64)))"),
+        "a bool needle in an int set must coerce to i64:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(bool_in_intset(), true);    // True==1, 1 in {1,2,3}
+    assert_eq!(false_in_intset(), true);   // False==0, 0 in {0,5}
+    assert_eq!(bool_notin(), true);        // False==0, 0 not in {2,3}
+}
+"#;
+    assert_rustc_runs("set_bool_membership", &rust, driver);
+}
