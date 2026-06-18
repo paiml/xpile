@@ -7187,6 +7187,13 @@ fn desugar_list_comp(
         };
         ctx.bound.insert(first.clone());
         ctx.bound.insert(second.clone());
+        // PMAT-805 (HUNT-V20): a comprehension's tuple loop vars are scoped to
+        // the comprehension's own Rust block, NOT durable function bindings —
+        // mark them `loop_scoped` so a LATER same-named real `for`-loop doesn't
+        // treat them as a leaked outer binding (PMAT-784) and emit a bare `k =
+        // …` assign to a never-`let` name (rustc E0425).
+        ctx.loop_scoped.insert(first.clone());
+        ctx.loop_scoped.insert(second.clone());
         ctx.name_types.insert(first.clone(), k_in);
         ctx.name_types.insert(second.clone(), v_in);
         let filter = comp_filter(ctx, gen, "list")?;
@@ -7376,6 +7383,10 @@ fn desugar_dict_comp(
         };
         ctx.bound.insert(first.clone());
         ctx.bound.insert(second.clone());
+        // PMAT-805 (HUNT-V20): comp tuple loop vars are comp-block-scoped, not
+        // durable — mark loop_scoped so a later same-named for-loop binds fresh.
+        ctx.loop_scoped.insert(first.clone());
+        ctx.loop_scoped.insert(second.clone());
         ctx.name_types.insert(first.clone(), k_in);
         ctx.name_types.insert(second.clone(), v_in);
         let filter = comp_filter(ctx, gen, "dict")?;
@@ -7669,6 +7680,10 @@ fn desugar_set_comp(
         };
         ctx.bound.insert(first.clone());
         ctx.bound.insert(second.clone());
+        // PMAT-805 (HUNT-V20): comp tuple loop vars are comp-block-scoped, not
+        // durable — mark loop_scoped so a later same-named for-loop binds fresh.
+        ctx.loop_scoped.insert(first.clone());
+        ctx.loop_scoped.insert(second.clone());
         ctx.name_types.insert(first.clone(), k_in);
         ctx.name_types.insert(second.clone(), v_in);
         let filter = comp_filter(ctx, gen, "set")?;

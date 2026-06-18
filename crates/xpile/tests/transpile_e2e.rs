@@ -14310,3 +14310,24 @@ fn main() {
 "#;
     assert_rustc_runs("set_bool_membership", &rust, driver);
 }
+
+/// PMAT-805 (HUNT-V20): a comprehension's tuple loop vars (`k, v` in
+/// `d.items()`) polluted function scope, so a later same-named real for-loop
+/// emitted a bare `k = __fe0` to a never-`let` name → E0425. Comp loop vars are
+/// now loop-scoped, so the later for-loop binds a fresh `for k`. vs python3.
+#[test]
+fn comp_var_scope() {
+    let rust = xpile_transpile_to_rust("comp_var_scope.py");
+    assert!(
+        // the reuse loop now binds a fresh native `for k`, not a bare assign.
+        rust.contains("for k in vec!") && !rust.contains("        k = __fe"),
+        "a comp loop var must not leak into a later for-loop's binding:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(dict_comp_then_loop(), 6);   // doubled = {a:2,b:4}; 2+4
+    assert_eq!(list_comp_then_loop(), 4);   // len("a")+len("b") + len(pairs=2)
+}
+"#;
+    assert_rustc_runs("comp_var_scope", &rust, driver);
+}
