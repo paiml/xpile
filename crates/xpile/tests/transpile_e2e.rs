@@ -13467,3 +13467,24 @@ fn main() {
 "#;
     assert_rustc_runs("dunder_call", &rust, driver);
 }
+
+/// PMAT-771 (HUNT-V16 DD-08): `x in obj` over a class defining `__contains__`
+/// was rejected ("unsupported comparison operator: In"), where Python calls
+/// `obj.__contains__(x)`. The In/NotIn lowering now dispatches to that method
+/// (negated for `not in`). Cross-checked vs python3.
+#[test]
+fn dunder_contains() {
+    let rust = xpile_transpile_to_rust("dunder_contains.py");
+    assert!(
+        rust.contains(".__contains__(5i64)"),
+        "x in obj with __contains__ must dispatch to the user method:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(inside(), 1);
+    assert_eq!(outside(), 0);
+    assert_eq!(not_in(), 1);
+}
+"#;
+    assert_rustc_runs("dunder_contains", &rust, driver);
+}
