@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.492] — 2026-06-18
+
+### Fixed
+
+- **PMAT-792 — expand a tuple literal repeated by an int literal (`(x,) * 3`).** A
+  tuple literal repeated by an int literal (`(0,) * 3`, `(1, 2) * 2`) mis-lowered
+  as scalar int multiplication → rustc E0599 (`checked_mul` on a tuple). A Python
+  tuple repeat is a fixed-arity tuple, so Rust (no variadic tuples) can only
+  express it for a compile-time literal count; the frontend's `try_repeat` now
+  expands `(x,) * 3` → `(x, x, x)` (both operand orders, count ≤ 0 → `()`). A
+  non-literal count falls through to the i64 path (documented limitation — a
+  runtime-arity tuple is inexpressible in Rust). HUNT-V18 (#12).
+
 ## [0.1.491] — 2026-06-18
 
 ### Fixed
