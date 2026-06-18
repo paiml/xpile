@@ -2294,6 +2294,30 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 )?;
                 return Ok(());
             }
+            // PMAT-794 (HUNT-V18 EXC-003): Python raises `ValueError("math domain
+            // error")` for `math.sqrt` of a negative and `math.log*` of a
+            // non-positive; Rust's f64 `.sqrt()`/`.ln()`/`.log*()` return NaN/-inf
+            // SILENTLY, so a guarding `except ValueError:` was dead code (no panic
+            // ever fired). Guard the domain and panic with the tagged ValueError so
+            // the allowlist `except` (PMAT-789) catches it, matching CPython.
+            if matches!(
+                op,
+                NumBuiltinOp::Sqrt | NumBuiltinOp::Ln | NumBuiltinOp::Log10 | NumBuiltinOp::Log2
+            ) {
+                let (method, bad) = match op {
+                    NumBuiltinOp::Sqrt => ("sqrt", "< 0.0"),
+                    NumBuiltinOp::Ln => ("ln", "<= 0.0"),
+                    NumBuiltinOp::Log10 => ("log10", "<= 0.0"),
+                    _ => ("log2", "<= 0.0"),
+                };
+                out.push_str("{ let __ms = (");
+                emit_expr(out, &args[0], mode)?;
+                write!(
+                    out,
+                    "); if __ms {bad} {{ panic!(\"xpile: ValueError: math domain error\"); }} __ms.{method}() }}"
+                )?;
+                return Ok(());
+            }
             out.push('(');
             emit_expr(out, &args[0], mode)?;
             out.push(')');

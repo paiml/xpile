@@ -13782,8 +13782,9 @@ fn main() {
 fn math_fn_int_arg() {
     let rust = xpile_transpile_to_rust("math_fn_int_arg.py");
     assert!(
-        // int arg widened to f64 before .sqrt(); float arg unchanged.
-        rust.contains("(((n) as f64)).sqrt()") && rust.contains("(x).sqrt()"),
+        // int arg widened to f64 inside the PMAT-794 domain-guard block; float
+        // arg unchanged (both now `{ let __ms = (..); if __ms < 0.0 {..} __ms.sqrt() }`).
+        rust.contains("let __ms = (((n) as f64));") && rust.contains("let __ms = (x);"),
         "a math.* int arg must widen to f64:\n{rust}"
     );
     let driver = r#"
@@ -14050,4 +14051,30 @@ fn main() {
 }
 "#;
     assert_rustc_runs("int_nonfinite_tag", &rust, driver);
+}
+
+/// PMAT-794 (HUNT-V18 EXC-003): math.sqrt of a negative (and math.log* of a
+/// non-positive) returned NaN/-inf silently — never panicked — so a guarding
+/// `except ValueError:` was dead, where Python raises ValueError("math domain
+/// error"). Both backends now guard the domain + tagged panic. vs python3.
+#[test]
+fn math_domain_error() {
+    let rust = xpile_transpile_to_rust("math_domain_error.py");
+    assert!(
+        rust.contains("panic!(\"xpile: ValueError: math domain error\")")
+            && rust.contains("__ms < 0.0")
+            && rust.contains("__ms <= 0.0"),
+        "math.sqrt/log domain errors must guard + panic with the tagged ValueError:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(guarded_sqrt(), -1.0);   // except ValueError catches sqrt(-1)
+    assert_eq!(guarded_log(), -2.0);    // except ValueError catches log(0)
+    assert_eq!(ok_sqrt(), 4.0);
+    // the ValueError must NOT be caught by except KeyError → propagate.
+    let w = std::panic::catch_unwind(|| wrong_handler());
+    assert!(w.is_err(), "math domain ValueError must propagate past except KeyError");
+}
+"#;
+    assert_rustc_runs("math_domain_error", &rust, driver);
 }

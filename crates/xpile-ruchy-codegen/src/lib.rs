@@ -1934,6 +1934,27 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 )?;
                 return Ok(());
             }
+            // PMAT-794 (HUNT-V18 EXC-003): sqrt(neg)/log*(non-positive) raise
+            // ValueError("math domain error") in Python; Rust returns NaN/-inf
+            // silently. Guard + tagged panic (mirror of the Rust backend).
+            if matches!(
+                op,
+                NumBuiltinOp::Sqrt | NumBuiltinOp::Ln | NumBuiltinOp::Log10 | NumBuiltinOp::Log2
+            ) {
+                let (method, bad) = match op {
+                    NumBuiltinOp::Sqrt => ("sqrt", "< 0.0"),
+                    NumBuiltinOp::Ln => ("ln", "<= 0.0"),
+                    NumBuiltinOp::Log10 => ("log10", "<= 0.0"),
+                    _ => ("log2", "<= 0.0"),
+                };
+                out.push_str("{ let __ms = (");
+                emit_expr(out, &args[0], mode)?;
+                write!(
+                    out,
+                    "); if __ms {bad} {{ panic!(\"xpile: ValueError: math domain error\"); }} __ms.{method}() }}"
+                )?;
+                return Ok(());
+            }
             out.push('(');
             emit_expr(out, &args[0], mode)?;
             out.push(')');
