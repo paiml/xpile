@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.493] — 2026-06-18
+
+### Fixed
+
+- **PMAT-793 — tag `int(±inf)`→OverflowError / `int(nan)`→ValueError.** `int()` of
+  a non-finite float panicked with a combined `xpile: int() of a non-finite
+  float` tag that matched no typed `except`, so under the PMAT-789 allowlist it
+  was uncatchable by the correct handler. Python raises `OverflowError` for
+  `int(±inf)` and `ValueError` for `int(nan)`; both backends now emit those exact
+  tags (`xpile: OverflowError: cannot convert float infinity to integer` /
+  `xpile: ValueError: cannot convert float NaN to integer`), so the matching
+  `except` catches them and a wrong handler re-raises. HUNT-V18 (EXC-002).
+
 ## [0.1.492] — 2026-06-18
 
 ### Fixed
