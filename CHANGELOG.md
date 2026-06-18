@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.464] — 2026-06-18
+
+### Fixed
+
+- **PMAT-764 — tag a literal-index OOB panic as `xpile: IndexError:`.** A
+  non-negative literal list index out of bounds (`data[10]`) emitted a bare
+  `data[10i64 as usize].clone()` that panics with Rust's native "index out of
+  bounds" message (no `xpile:` prefix). Inside a `try`, the typed-`except`
+  re-raise filter (PMAT-731) only re-raises `xpile: <KnownExc>:`-tagged panics,
+  so the native IndexError was silently swallowed by an unrelated handler
+  (`except KeyError:` caught it), where Python propagates it. The
+  runtime/negative path was already tagged (PMAT-744); this closes the literal
+  fast-path gap — both backends now bounds-check the literal index with the
+  tagged panic. In-range access is behaviorally identical. HUNT-V16 (#4).
+
 ## [0.1.463] — 2026-06-18
 
 ### Fixed
