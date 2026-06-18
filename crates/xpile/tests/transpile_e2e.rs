@@ -13717,3 +13717,25 @@ fn main() {
         "the rejection should name the nested return-type mismatch:\n{stderr}"
     );
 }
+
+/// PMAT-781 (HUNT-V17 #10 IFM-1): an int argument to a float parameter
+/// (`scale(2, 3)`) emitted a bare `2i64` against the f64 slot → rustc E0308.
+/// The call-arg coercion now casts an int/bool arg to f64 for a float param; a
+/// float arg / int param is unchanged. Cross-checked vs python3.
+#[test]
+fn int_arg_float_param() {
+    let rust = xpile_transpile_to_rust("int_arg_float_param.py");
+    assert!(
+        // int arg widened to f64 for the float param; float literal unchanged.
+        rust.contains("scale(((2i64) as f64), 3i64)") && rust.contains("scale(2.5f64, 4i64)"),
+        "an int arg to a float param must widen to f64:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(use_int_arg(), 6.0);
+    assert_eq!(use_all_int(), 10.0);
+    assert_eq!(use_float_arg(), 10.0);
+}
+"#;
+    assert_rustc_runs("int_arg_float_param", &rust, driver);
+}
