@@ -13641,3 +13641,25 @@ fn main() {
 "#;
     assert_rustc_runs("dunder_ne", &rust, driver);
 }
+
+/// PMAT-778 (HUNT-V17 #6): repr() of a string with non-printable control chars
+/// pushed them raw — silent-wrong; Python escapes them as `\xNN`. The repr
+/// escaper now emits `\xNN` for ASCII controls / DEL / C1. Cross-checked vs
+/// python3.
+#[test]
+fn repr_control_escape() {
+    let rust = xpile_transpile_to_rust("repr_control_escape.py");
+    assert!(
+        // the \xNN escape arm is present in the repr lowering.
+        rust.contains("__ro.push('x'); __ro.push_str(&format!(\"{:02x}\", __ec as u32))"),
+        "repr must escape control chars as \\xNN:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(r_ctrl(), "'a\\r\\x00b'");      // \r named, \x00 hex-escaped
+    assert_eq!(r_esc(), "'x\\x1b\\x07y'");     // ESC + BEL hex-escaped
+    assert_eq!(r_plain(), "'hello\\tworld'");  // \t named (unchanged)
+}
+"#;
+    assert_rustc_runs("repr_control_escape", &rust, driver);
+}
