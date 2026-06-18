@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.462] — 2026-06-18
+
+### Fixed
+
+- **PMAT-762 — delegate `==` to a custom dataclass `__eq__`.** A dataclass that
+  defines its own `__eq__` got `#[derive(PartialEq)]` AND a dead `__eq__`
+  method, so `==` dispatched to the structural derive (compares all fields),
+  silently overriding the user's equality (e.g. `__eq__` comparing only
+  `self.x`) — a wrong boolean with no diagnostic, also through `if a == b` and
+  `x in list`. Both backends now suppress the structural `PartialEq` (and
+  `Eq`/`Hash` — a custom `__eq__` isn't guaranteed reflexive, and a Python class
+  with `__eq__` but no `__hash__` is itself unhashable, so dropping them matches
+  Python) and emit an `impl PartialEq` whose `eq` delegates to the user method.
+  This also makes `x in list` (`Vec::contains`) use the correct equality with no
+  `in`-lowering change. HUNT-V16 (#2 DD-01).
+
 ## [0.1.461] — 2026-06-18
 
 ### Fixed
