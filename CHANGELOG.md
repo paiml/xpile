@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.478] — 2026-06-18
+
+### Fixed
+
+- **PMAT-778 — escape control chars in `repr()` as `\xNN`.** `repr(s)` over a
+  string with non-printable control chars pushed them raw — the escaper only
+  handled `\\`, `\n`, `\r`, `\t`, and the quote, so `repr("a\r\x00b")` leaked a
+  raw NUL (and `\x07`/`\x1b`/`\x7f`/C1 likewise) where Python escapes them as
+  `\xNN` (silent-wrong). Both backends (the `ReprStr` escaper, shared by the
+  f-string `!r` form) now escape a char as `\xNN` when its code point is `< 0x20`
+  (beyond the named `\n`/`\r`/`\t`), `0x7f` (DEL), or `0x80..=0x9f` (C1) — a
+  fixed always-non-printable set needing no Unicode tables. HUNT-V17 (#6).
+
 ## [0.1.477] — 2026-06-18
 
 ### Fixed
