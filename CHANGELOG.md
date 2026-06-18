@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.499] — 2026-06-18
+
+### Fixed
+
+- **PMAT-799 — allow `continue` inside a `range(...)` for-loop.** `for i in
+  range(n): if cond: continue` (a ubiquitous idiom) was rejected — the range
+  desugars to a `while __forc <op> stop { i = __forc; <body>; __forc += step }`,
+  and a bare `continue` would skip the tail counter-increment (infinite loop).
+  Each such `continue` is now rewritten to `{ __forc = __forc + step; continue }`
+  so the increment still runs; the rewrite descends `if` arms but not nested
+  loops (their `continue` keeps its own counter). `break` is unaffected. HUNT-V19
+  (CF-1).
+
 ## [0.1.498] — 2026-06-18
 
 ### Fixed
