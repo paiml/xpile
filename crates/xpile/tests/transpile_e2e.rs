@@ -13862,3 +13862,30 @@ fn main() {
 "#;
     assert_rustc_runs("dataclass_opt_field_ctor", &rust, driver);
 }
+
+/// PMAT-787 (HUNT-V17 #24): a `dict[int, V]` literal with bool keys emitted
+/// `insert(true, …)` into a `HashMap<i64, V>` (E0308; a bool/int mix even
+/// rejected). Python's bool is an int subtype, so the keys are 1/0. The let-init
+/// type-threading now coerces a bool key to i64 for an int-keyed dict; a genuine
+/// `dict[bool, V]` keeps bool keys. Cross-checked vs python3.
+#[test]
+fn dict_bool_key_literal() {
+    let rust = xpile_transpile_to_rust("dict_bool_key_literal.py");
+    assert!(
+        // int-keyed dict coerces the bool key…
+        rust.contains("HashMap<i64, i64> = { let mut __xpile_map")
+            && rust.contains("__xpile_map.insert(((true) as i64), 10i64)")
+            // …a genuine bool-keyed dict keeps the bool key.
+            && rust.contains("HashMap<bool, i64> = { let mut __xpile_map")
+            && rust.contains("__xpile_map.insert(true, 1i64)"),
+        "a bool key in an int-keyed dict must coerce; a bool-keyed dict is unchanged:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(all_bool(), 30);
+    assert_eq!(mixed_bool_int(), 40);
+    assert_eq!(genuine_bool_dict(), 1);
+}
+"#;
+    assert_rustc_runs("dict_bool_key_literal", &rust, driver);
+}
