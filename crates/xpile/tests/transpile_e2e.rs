@@ -13663,3 +13663,25 @@ fn main() {
 "#;
     assert_rustc_runs("repr_control_escape", &rust, driver);
 }
+
+/// PMAT-779 (HUNT-V17 #19): `str(s)` over a str-typed value mistyped as I64 /
+/// emitted a bare `str(...)` free call (rustc E0425); Python `str(s)` is the
+/// identity. The str() builtin now returns the str arg unchanged. Cross-checked
+/// vs python3.
+#[test]
+fn str_of_str_identity() {
+    let rust = xpile_transpile_to_rust("str_of_str_identity.py");
+    assert!(
+        // no bare `str(` free call survives for the str-identity case.
+        !rust.contains("str(s)"),
+        "str(s) over a str must be the identity, not a free str(...) call:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(echo("hi".to_string()), "hi");
+    assert_eq!(echo_concat("hi".to_string()), "hi!");
+    assert_eq!(echo_len("hello".to_string()), 5);
+}
+"#;
+    assert_rustc_runs("str_of_str_identity", &rust, driver);
+}

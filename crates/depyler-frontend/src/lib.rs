@@ -10625,6 +10625,12 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         // desugar as f-string interpolation (PMAT-623/624).
                         Type::List(elem) => return build_list_repr(value, elem.as_ref()),
                         Type::Tuple(elems) => return build_tuple_repr(value, &elems),
+                        // PMAT-779 (HUNT-V17 #19): `str(s)` over a str-typed value
+                        // is the identity (Python `str(s) is s`). Without this it
+                        // fell through to a generic call that inferred I64 / emitted
+                        // a bare `str(...)` free call (rustc E0425). Mirrors the
+                        // `format(s)` identity arm already present below.
+                        Type::Str => return Ok(value),
                         _ => {}
                     }
                 }
