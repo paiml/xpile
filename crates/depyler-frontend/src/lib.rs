@@ -11989,8 +11989,18 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     });
                 }
                 // PMAT-500: `x in s` / `x not in s` over a set.
-                if matches!(infer_type_in_ctx(ctx, &rhs), Type::Set(_)) {
-                    let elem = lower_expr_in_ctx(ctx, (*c.left).clone())?;
+                if let Type::Set(set_elem_ty) = infer_type_in_ctx(ctx, &rhs) {
+                    let mut elem = lower_expr_in_ctx(ctx, (*c.left).clone())?;
+                    // PMAT-804 (HUNT-V20 SET-BOOL-MEMBERSHIP): a bool needle in an
+                    // int set — Python's `bool` is an `int` subtype (`True == 1`),
+                    // so `True in {1, 2}` is True. The needle emitted
+                    // `s.contains(&true)` over a `HashSet<i64>` (rustc E0308);
+                    // coerce the bool to i64 (mirrors the dict bool-key coercion,
+                    // PMAT-451/787). (A float-vs-int needle is a separate
+                    // numeric-tower-exactness case, left as-is.)
+                    if *set_elem_ty == Type::I64 && infer_type_in_ctx(ctx, &elem) == Type::Bool {
+                        elem = to_i64_operand(ctx, elem);
+                    }
                     let contains = Expr::SetContains {
                         set: Box::new(rhs),
                         elem: Box::new(elem),
