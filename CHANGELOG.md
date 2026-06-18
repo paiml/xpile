@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.466] — 2026-06-18
+
+### Fixed
+
+- **PMAT-766 — `len(obj)` dispatches to a user `__len__` method.** Over a user
+  class defining `__len__`, `len(obj)` emitted `obj.len()`, but a user struct
+  has no `.len()` method → rustc E0599. Python's `len()` calls `obj.__len__()`;
+  the frontend `len()` dispatch now routes to that method when the argument is a
+  `Type::Struct` whose registered methods include `__len__`. Containers
+  (list/dict/set/str), tuple-arity, and `len(s.encode())` byte-length are
+  unchanged. First of the dunder-dispatch cluster. HUNT-V16 (DD-03).
+
 ## [0.1.465] — 2026-06-18
 
 ### Fixed
