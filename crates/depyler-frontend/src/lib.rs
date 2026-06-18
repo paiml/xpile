@@ -274,6 +274,14 @@ impl LoweringCtx {
         format!("__fe{n}")
     }
 
+    /// PMAT-798: a fresh `__unpack{N}` name for the loop var of an N-arity
+    /// tuple-unpack `for`-target desugar. Shares the loop counter (never collides).
+    fn fresh_unpack(&mut self) -> String {
+        let n = self.loop_counter;
+        self.loop_counter += 1;
+        format!("__unpack{n}")
+    }
+
     /// PMAT-765: a fresh `__forstop{N}` name for snapshotting a `range(...)` stop
     /// bound ONCE before the while (Python evaluates range args at loop entry).
     /// Shares the loop counter so it never collides with `__forc{N}`/`__broke{N}`.
@@ -4149,6 +4157,46 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // PMAT-798 (HUNT-V19 ND-04): an N-arity (>= 3) tuple `for`-target over a
+    // `list[tuple[...]]` — `for a, b, c in triples:`. The enumerate/zip/zip3 and
+    // 2-tuple-pairs paths above handle their shapes and `return`; a plain
+    // all-Name tuple of arity 3+ fell through to the reject below, even though
+    // the identical 2-element form works and assignment-unpack already handles
+    // any arity. Desugar to a fresh single loop var + a prepended tuple-unpack
+    // assignment (`for __unpackN in it: a, b, c = __unpackN; <body>`), then fall
+    // through to the normal Name-target ForEach lowering.
+    if let ast::Expr::Tuple(tgt) = f.target.as_ref() {
+        if tgt.elts.len() >= 3 && tgt.elts.iter().all(|e| matches!(e, ast::Expr::Name(_))) {
+            let iter_probe = lower_expr_in_ctx(ctx, (*f.iter).clone())?;
+            let arity_ok = matches!(
+                infer_type_in_ctx(ctx, &iter_probe),
+                Type::List(ref el) if matches!(&**el, Type::Tuple(tys) if tys.len() == tgt.elts.len())
+            );
+            if arity_ok {
+                let rng = tgt.range;
+                let fresh = ctx.fresh_unpack();
+                let unpack = ast::Stmt::Assign(ast::StmtAssign {
+                    range: rng,
+                    targets: vec![f.target.as_ref().clone()],
+                    value: Box::new(ast::Expr::Name(ast::ExprName {
+                        range: rng,
+                        id: ast::Identifier::new(fresh.clone()),
+                        ctx: ast::ExprContext::Load,
+                    })),
+                    type_comment: None,
+                });
+                f.target = Box::new(ast::Expr::Name(ast::ExprName {
+                    range: rng,
+                    id: ast::Identifier::new(fresh),
+                    ctx: ast::ExprContext::Store,
+                }));
+                let mut new_body = vec![unpack];
+                new_body.append(&mut f.body);
+                f.body = new_body;
             }
         }
     }
