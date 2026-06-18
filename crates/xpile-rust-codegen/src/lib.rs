@@ -167,11 +167,21 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                 // generated `impl PartialOrd` (below) — suppress the structural
                 // `order=True` PartialOrd/Ord derive (a user `__lt__` + the derived
                 // lexicographic order would be two conflicting impls).
-                let has_custom_lt = methods.iter().any(|m| m.name == "__lt__");
+                // PMAT-791 (HUNT-V18 #11): a custom `__gt__`/`__ge__`/`__le__`
+                // defined WITHOUT `__lt__` ALSO needs a generated `impl PartialOrd`
+                // (below) — otherwise `>`/`>=`/`<=` over the struct emit a raw Rust
+                // operator on a `PartialEq`-only type (rustc E0369). Pick the
+                // highest-priority dunder the class actually defines; any of them
+                // suppresses the structural `order=True`/Ord derive (a hand impl +
+                // the derived lexicographic order would conflict).
+                let order_dunder = ["__lt__", "__gt__", "__ge__", "__le__"]
+                    .into_iter()
+                    .find(|d| methods.iter().any(|m| m.name == *d));
+                let has_order_dunder = order_dunder.is_some();
                 let mut derives = vec!["Clone", "Debug"];
                 if !custom_eq_impl {
                     derives.push("PartialEq");
-                    if derive_eq_hash || (derive_ord && !has_custom_lt) {
+                    if derive_eq_hash || (derive_ord && !has_order_dunder) {
                         derives.push("Eq");
                     }
                     if derive_eq_hash {
@@ -180,12 +190,12 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                 }
                 // PMAT-648: `order=True` → `PartialOrd` (lexicographic by field
                 // order = Python's tuple comparison). Sound for any comparable
-                // field incl. `f64`. Skipped when a custom `__lt__` provides its
-                // own `impl PartialOrd` (PMAT-769).
-                if *order && !has_custom_lt {
+                // field incl. `f64`. Skipped when a custom order dunder provides its
+                // own `impl PartialOrd` (PMAT-769/791).
+                if *order && !has_order_dunder {
                     derives.push("PartialOrd");
                 }
-                if derive_ord && !has_custom_lt {
+                if derive_ord && !has_order_dunder {
                     derives.push("Ord");
                 }
                 writeln!(out, "#[derive({})]", derives.join(", "))?;
@@ -298,19 +308,31 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                     }
                     out.push_str("}\n");
                 }
-                // PMAT-769 (HUNT-V16 DD-07): a custom `__lt__` becomes the `<`/`>`/
-                // `<=`/`>=` ordering via a generated `impl PartialOrd` delegating
-                // to it (the `order=True` structural derive was suppressed above).
-                // `a < b` ⟺ `a.__lt__(b)`; `a > b` ⟺ `b.__lt__(a)`; else equal —
-                // matching Python's `<`. The dunder takes `other` by value, so
-                // clone the borrowed operand.
-                if has_custom_lt {
+                // PMAT-769/791 (HUNT-V16 DD-07 / HUNT-V18 #11): a custom order
+                // dunder becomes the `<`/`>`/`<=`/`>=` ordering via a generated
+                // `impl PartialOrd` (the structural derive was suppressed above).
+                // Rust derives all four operators from `partial_cmp`, so one
+                // consistent body suffices; build it from the highest-priority
+                // dunder the class defines (Python resolves the missing operators
+                // by reflection, so a class with all of `__gt__`/`__ge__`/`__le__`
+                // is well-ordered). The dunder takes `other` by value → clone.
+                if let Some(d) = order_dunder {
+                    let body = match d {
+                        // a < b ⟺ a.__lt__(b); a > b ⟺ b.__lt__(a); else equal.
+                        "__lt__" => "if self.__lt__(__other.clone()) { Some(std::cmp::Ordering::Less) } else if __other.__lt__(self.clone()) { Some(std::cmp::Ordering::Greater) } else { Some(std::cmp::Ordering::Equal) }",
+                        // a > b ⟺ a.__gt__(b); a < b ⟺ b.__gt__(a); else equal.
+                        "__gt__" => "if self.__gt__(__other.clone()) { Some(std::cmp::Ordering::Greater) } else if __other.__gt__(self.clone()) { Some(std::cmp::Ordering::Less) } else { Some(std::cmp::Ordering::Equal) }",
+                        // a >= b both ways ⟺ equal; only a >= b ⟺ greater; else less.
+                        "__ge__" => "if self.__ge__(__other.clone()) { if __other.__ge__(self.clone()) { Some(std::cmp::Ordering::Equal) } else { Some(std::cmp::Ordering::Greater) } } else { Some(std::cmp::Ordering::Less) }",
+                        // a <= b both ways ⟺ equal; only a <= b ⟺ less; else greater.
+                        _ => "if self.__le__(__other.clone()) { if __other.__le__(self.clone()) { Some(std::cmp::Ordering::Equal) } else { Some(std::cmp::Ordering::Less) } } else { Some(std::cmp::Ordering::Greater) }",
+                    };
                     writeln!(out, "impl PartialOrd for {name} {{")?;
                     writeln!(
                         out,
                         "    fn partial_cmp(&self, __other: &Self) -> Option<std::cmp::Ordering> {{"
                     )?;
-                    writeln!(out, "        if self.__lt__(__other.clone()) {{ Some(std::cmp::Ordering::Less) }} else if __other.__lt__(self.clone()) {{ Some(std::cmp::Ordering::Greater) }} else {{ Some(std::cmp::Ordering::Equal) }}")?;
+                    writeln!(out, "        {body}")?;
                     out.push_str("    }\n}\n");
                 }
             }
