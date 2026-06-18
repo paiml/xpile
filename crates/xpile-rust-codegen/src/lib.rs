@@ -207,9 +207,27 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                 // another type (str needs quotes, float its own repr, nested its
                 // own Display) is deferred — such a dataclass stays without
                 // `Display` (its f-string use keeps the loud E0277 reject).
-                let display_eligible = fields
-                    .iter()
-                    .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool));
+                // PMAT-776 (HUNT-V17 #2): when the dataclass defines its own
+                // `__str__`, that IS its `str()`/`print()`/f-string rendering —
+                // generate a `Display` delegating to it, NOT the PMAT-760
+                // field-repr (which silently printed `ClassName(f=v)` and left
+                // `__str__` dead code). Takes precedence over the field-repr
+                // (and works for ANY field types, since `__str__` owns the
+                // formatting). The `__str__` body is emitted in the methods impl.
+                let has_str = methods.iter().any(|m| m.name == "__str__");
+                if has_str {
+                    writeln!(out, "impl std::fmt::Display for {name} {{")?;
+                    writeln!(
+                        out,
+                        "    fn fmt(&self, __f: &mut std::fmt::Formatter) -> std::fmt::Result {{"
+                    )?;
+                    writeln!(out, "        write!(__f, \"{{}}\", self.__str__())")?;
+                    out.push_str("    }\n}\n");
+                }
+                let display_eligible = !has_str
+                    && fields
+                        .iter()
+                        .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool));
                 if display_eligible {
                     let mut fmt_str = format!("{name}(");
                     let mut args = String::new();
