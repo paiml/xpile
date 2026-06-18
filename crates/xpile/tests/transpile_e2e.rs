@@ -13763,3 +13763,25 @@ fn main() {
 "#;
     assert_rustc_runs("int_literal_float_list", &rust, driver);
 }
+
+/// PMAT-783 (HUNT-V17 #12): a math.* builtin over an int arg emitted
+/// `(n).sqrt()`, which an i64 doesn't have (rustc E0599). Python widens
+/// int→float into these. The math-call lowering now coerces an int/bool arg to
+/// f64; a float arg is unchanged. Cross-checked vs python3.
+#[test]
+fn math_fn_int_arg() {
+    let rust = xpile_transpile_to_rust("math_fn_int_arg.py");
+    assert!(
+        // int arg widened to f64 before .sqrt(); float arg unchanged.
+        rust.contains("(((n) as f64)).sqrt()") && rust.contains("(x).sqrt()"),
+        "a math.* int arg must widen to f64:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(root(16), 4.0);
+    assert_eq!(floor_int(5), 5);
+    assert_eq!(root_float(9.0), 3.0);
+}
+"#;
+    assert_rustc_runs("math_fn_int_arg", &rust, driver);
+}

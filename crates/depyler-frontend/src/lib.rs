@@ -12632,10 +12632,12 @@ fn lower_math_call(
             },
         )));
     }
-    let arg = lower_expr_in_ctx(ctx, call.args[0].clone())?;
-    // PMAT-579: `math.*` builtins are float-domain; `of_float` is unused by
-    // codegen for these ops (only `Abs` consults it), but set it from the arg
-    // type for consistency.
+    // PMAT-783 (HUNT-V17 #12): `math.*` builtins are float-domain — the codegen
+    // emits `(arg).sqrt()` / `(arg).floor()`, which an `i64`/`bool` arg doesn't
+    // have (rustc E0599). Python widens int→float into these (`math.sqrt(16)` ==
+    // 4.0, `math.floor(5)` == 5). Coerce an int/bool arg to `f64` so the float
+    // method resolves; a float arg is unchanged.
+    let arg = to_f64_operand(ctx, lower_expr_in_ctx(ctx, call.args[0].clone())?);
     let of_float = infer_type_in_ctx(ctx, &arg) == Type::F64;
     Ok(Expr::NumBuiltin {
         op,
