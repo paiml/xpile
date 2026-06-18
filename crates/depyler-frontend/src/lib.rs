@@ -10274,6 +10274,24 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     if let Type::Tuple(elems) = &inner_ty {
                         return Ok(Expr::LitInt(elems.len() as i64));
                     }
+                    // PMAT-766 (HUNT-V16 DD-03): `len(obj)` over a user class that
+                    // defines `__len__` dispatches to that method — Python's
+                    // `len()` calls `obj.__len__()`. `Expr::Len` emits `.len()`,
+                    // which a user struct doesn't have (rustc E0599). Route to the
+                    // method call when the struct registers a `__len__`.
+                    if let Type::Struct(sname) = &inner_ty {
+                        if ctx
+                            .struct_methods
+                            .get(sname)
+                            .is_some_and(|ms| ms.iter().any(|(m, _)| m == "__len__"))
+                        {
+                            return Ok(Expr::MethodCall {
+                                obj: Box::new(inner),
+                                method: "__len__".to_string(),
+                                args: vec![],
+                            });
+                        }
+                    }
                     return Ok(Expr::Len(Box::new(inner)));
                 }
                 // PMAT-498b: `sum(xs)` over a numeric list. PMAT-502cx:

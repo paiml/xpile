@@ -13357,3 +13357,22 @@ fn main() {
 "#;
     assert_rustc_runs("range_stop_snapshot", &rust, driver);
 }
+
+/// PMAT-766 (HUNT-V16 DD-03): `len(obj)` over a class defining `__len__` emitted
+/// `obj.len()`, which a user struct doesn't have (rustc E0599). It now
+/// dispatches to `obj.__len__()`. Cross-checked vs python3.
+#[test]
+fn dunder_len() {
+    let rust = xpile_transpile_to_rust("dunder_len.py");
+    assert!(
+        rust.contains("(b).__len__()"),
+        "len(obj) with __len__ must dispatch to the user method:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(use_len(), 5);
+    assert_eq!(len_in_expr(), 4);
+}
+"#;
+    assert_rustc_runs("dunder_len", &rust, driver);
+}
