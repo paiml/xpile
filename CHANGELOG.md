@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.496] — 2026-06-18
+
+### Fixed
+
+- **PMAT-796 — accept a bool repeat-count for list/str repetition.** A list/str
+  repeat with a bool count (`[x] * b`) fell to the int-multiply path → rustc
+  E0599 (`checked_mul` on a Vec) / a "body produces I64" reject, where Python's
+  `bool` is an `int` subtype (`[x] * True == [x]`, `[x] * False == []`).
+  `try_repeat` now accepts a Bool count (either operand order) and coerces it to
+  i64. Plain int-count repeat is unchanged. HUNT-V18 (BIC-02).
+
 ## [0.1.495] — 2026-06-18
 
 ### Fixed
