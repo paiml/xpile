@@ -10231,6 +10231,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 radix,
                                 prefixed: true,
                                 upper: false,
+                                min_width: 0,
                             });
                         }
                         return Err(FrontendError::Lower(format!(
@@ -13051,7 +13052,37 @@ fn apply_nonempty_format_spec(
                 radix,
                 prefixed: false,
                 upper,
+                min_width: 0,
             });
+        }
+        // PMAT-773 (HUNT-V16 #12): a ZERO-PADDED radix spec `0<width><radix>`
+        // (`f"{-255:08x}"`). Python formats sign-magnitude with the sign counted
+        // in the width (`"-00000ff"`); Rust's `format!("{:08x}", n)` zero-pads
+        // the two's-complement → silent wrong for negatives. Route to a
+        // width-carrying `IntRadixStr`. (A non-zero-padded width `<width><radix>`
+        // — space padding — stays on the FormatSpec path for now, a follow-up.)
+        if let Some(rest) = spec.strip_suffix(['x', 'X', 'b', 'o']) {
+            let radix_char = spec.chars().last().expect("suffix matched");
+            if let Some(width_str) = rest.strip_prefix('0') {
+                if !width_str.is_empty() && width_str.bytes().all(|b| b.is_ascii_digit()) {
+                    if let Ok(min_width) = width_str.parse::<u32>() {
+                        let (radix, upper) = match radix_char {
+                            'x' => (Radix::Hex, false),
+                            'X' => (Radix::Hex, true),
+                            'b' => (Radix::Bin, false),
+                            'o' => (Radix::Oct, false),
+                            _ => unreachable!("matched [xXbo]"),
+                        };
+                        return Ok(Expr::IntRadixStr {
+                            value: Box::new(value),
+                            radix,
+                            prefixed: false,
+                            upper,
+                            min_width,
+                        });
+                    }
+                }
+            }
         }
     }
     match translate_format_spec(spec, &ty) {
@@ -14644,6 +14675,7 @@ fn lower_percent_format(
                             radix,
                             prefixed: false,
                             upper: conv == 'X',
+                            min_width: 0,
                         };
                     }
                     's' | 'd' | 'i' | 'f' | 'x' | 'X' | 'o' => {
@@ -14901,6 +14933,7 @@ fn lower_str_format(
                         radix,
                         prefixed: false,
                         upper,
+                        min_width: 0,
                     };
                     // emit a plain `{field_str}` field (the arg is now the string)
                 } else if arg_tys[arg_idx] == Type::F64 && ref_count[arg_idx] == 1 {

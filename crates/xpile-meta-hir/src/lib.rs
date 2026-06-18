@@ -1726,6 +1726,13 @@ pub enum Expr {
         radix: Radix,
         prefixed: bool,
         upper: bool,
+        /// PMAT-773 (HUNT-V16 #12): a sign-aware ZERO-PAD width for an f-string
+        /// `f"{-255:08x}"` — Python pads the magnitude with zeros so `len(sign) +
+        /// len(digits) == min_width` (`"-00000ff"`), counting the sign in the
+        /// width. `0` = no padding (the bare-radix / builtin case). Without this
+        /// a `format!("{:08x}", n)` zero-padded the Rust two's-complement form.
+        #[serde(default)]
+        min_width: u32,
     },
     /// `int(s, base)` — parse a string in the given radix (→ `int`).
     /// PMAT-502da (Tranche 2); the str→int reverse of [`Expr::IntRadixStr`].

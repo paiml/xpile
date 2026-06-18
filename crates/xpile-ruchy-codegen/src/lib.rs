@@ -1305,11 +1305,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             radix,
             prefixed,
             upper,
+            min_width,
         } => {
             out.push_str("{ let __n = (");
             emit_expr(out, value, mode)?;
             out.push_str(
-                "); let __m = __n.unsigned_abs(); let __sign = if __n < 0 { \"-\" } else { \"\" }; format!(\"{}",
+                "); let __m = __n.unsigned_abs(); let __sign = if __n < 0 { \"-\" } else { \"\" }; ",
             );
             let (prefix, spec) = match radix {
                 Radix::Hex if *upper => ("0x", "{:X}"),
@@ -1317,11 +1318,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 Radix::Oct => ("0o", "{:o}"),
                 Radix::Bin => ("0b", "{:b}"),
             };
-            if *prefixed {
-                out.push_str(prefix);
+            let pfx = if *prefixed { prefix } else { "" };
+            if *min_width == 0 {
+                write!(out, "format!(\"{{}}{pfx}{spec}\", __sign, __m) }}")?;
+            } else {
+                // PMAT-773: sign-aware zero-pad (mirror of the Rust backend).
+                write!(
+                    out,
+                    "let __body = format!(\"{spec}\", __m); let __pad = ({min_width}usize).saturating_sub(__sign.len() + {pfx_len}); format!(\"{{0}}{pfx}{{1:0>2$}}\", __sign, __body, __pad) }}",
+                    pfx_len = pfx.len()
+                )?;
             }
-            out.push_str(spec);
-            out.push_str("\", __sign, __m) }");
         }
         // PMAT-502da: `int(s, base)`. PMAT-655: accept a base-matching radix
         // prefix (0x/0o/0b) + PEP-515 underscores (see the rust backend).
