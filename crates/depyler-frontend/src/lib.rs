@@ -11786,6 +11786,26 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         ctx.fn_name, fname.id
                     )));
                 }
+                // PMAT-811 (HUNT-V22 #9 CC-1): `dict(a=1, b=2)` keyword
+                // constructor — Python builds `{"a": 1, "b": 2}` (string keys
+                // from the kwarg names). It hit the keyword-normalize reject
+                // ("dict is not a top-level function"); lower it instead to a
+                // string-keyed dict literal. A `**`-splat is unsupported.
+                if fname.id.as_str() == "dict" && call.args.is_empty() && !call.keywords.is_empty()
+                {
+                    let mut pairs: Vec<(Expr, Expr)> = Vec::with_capacity(call.keywords.len());
+                    for kw in &call.keywords {
+                        let Some(key) = kw.arg.as_ref() else {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` calls `dict(**…)` with a `**`-splat — only the `dict(a=1, …)` keyword form is supported at v0.2.0",
+                                ctx.fn_name
+                            )));
+                        };
+                        let value = lower_expr_in_ctx(ctx, kw.value.clone())?;
+                        pairs.push((Expr::LitStr(key.to_string()), value));
+                    }
+                    return Ok(Expr::DictLit(pairs));
+                }
                 // PMAT-502dk: `dict(pairs)` materialises a list of 2-tuples
                 // into a HashMap. 1-arg over a `list[tuple[K, V]]` value (so
                 // `dict([(k, v), …])`, `dict(zip(a, b))`, `dict(enumerate(xs))`

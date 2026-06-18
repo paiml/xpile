@@ -14445,3 +14445,23 @@ fn main() {
 "#;
     assert_rustc_runs("dataclass_keyword_field", &rust, driver);
 }
+
+/// PMAT-811 (HUNT-V22 #9 CC-1): the `dict(a=1, b=2)` keyword constructor was
+/// rejected (the keyword-normalizer: "dict is not a top-level function"); Python
+/// builds `{"a": 1, "b": 2}` (string keys from kwarg names). It now lowers to a
+/// string-keyed dict literal. Cross-checked vs python3.
+#[test]
+fn dict_kwarg_ctor() {
+    let rust = xpile_transpile_to_rust("dict_kwarg_ctor.py");
+    assert!(
+        rust.contains("HashMap<String, i64>") && rust.contains("insert(String::from(\"a\"), 1i64)"),
+        "dict(a=1, …) must lower to a string-keyed dict literal:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(int_vals(), 6);             // 1 + 2 + 3
+    assert_eq!(str_vals(), "local:8080");
+}
+"#;
+    assert_rustc_runs("dict_kwarg_ctor", &rust, driver);
+}
