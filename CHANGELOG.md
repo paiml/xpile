@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.474] — 2026-06-18
+
+### Fixed
+
+- **PMAT-774 — tag the empty `max()`/`min()` panic as `xpile: ValueError`.**
+  `max()`/`min()` over an empty sequence (e.g. an empty filtered comprehension)
+  raises Python `ValueError: max() arg is an empty sequence`. The int/Ord branch
+  emitted a bare `.unwrap()` (native panic), and the float branch's message
+  lacked the `xpile: ValueError:` prefix — so neither was caught by a typed
+  `except ValueError:` (same swallow class as PMAT-744/764). Both backends now
+  emit the canonical tagged message `xpile: ValueError: <max|min>() arg is an
+  empty sequence`. HUNT-V16 (CG-5).
+
 ## [0.1.473] — 2026-06-18
 
 ### Fixed
