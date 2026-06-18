@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.506] — 2026-06-18
+
+### Fixed
+
+- **PMAT-806 — materialize a bare `range(...)` in value position to a `Vec`.** A
+  `range(...)` bound to a variable (`r = range(5)`) or used as a value emitted an
+  undefined `range(5i64)` free call typed i64 → rustc E0425. A value-position
+  `range(...)` now materializes to a `Vec<i64>` via `lower_range_list` (the same
+  `RangeList` `list(range(...))` produces) and types the binding `list[int]`, so
+  `sum(list(r))`, `len(r)`, and `for x in r:` work — consistent with how
+  `reversed`/`enumerate`/`map` bindings already materialize. The for-loop /
+  `list()` / `sum()` / `len()` range paths are unchanged (they intercept
+  earlier). HUNT-V21 (#2).
+
 ## [0.1.505] — 2026-06-18
 
 ### Fixed
