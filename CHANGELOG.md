@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.508] — 2026-06-18
+
+### Fixed
+
+- **PMAT-808 — a custom `__hash__` makes a dataclass usable as a set/dict key.** A
+  dataclass with a custom `__hash__` used as a HashSet element / HashMap key
+  derived neither `Hash` nor `Eq` (and `__hash__` was dead code) → rustc
+  E0277/E0599. When the class defines `__hash__` (and every field is `Eq`-able),
+  it now derives `Eq` and emits an `impl std::hash::Hash` delegating to the user
+  `__hash__` (mirroring the PMAT-762/769/791 `PartialEq`/`PartialOrd`
+  delegation); the structural `Hash` derive is suppressed so the user method
+  wins, and a custom-`__eq__` class gets a hand marker `impl Eq`. A float-field
+  class (not `Eq`) is left as-is. HUNT-V22 (HASH-01).
+
 ## [0.1.507] — 2026-06-18
 
 ### Fixed
