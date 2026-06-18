@@ -4550,19 +4550,17 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
     // PMAT-502dz: body lowered — pop this loop's `_`-rename (restoring any
     // outer one). Nothing below lowers Python expressions, so it is safe here.
     ctx.exit_loop_var(saved_rename);
-    // PMAT-502bk: a `continue` belonging to this `range(...)` loop would
-    // skip the tail counter-increment below (an infinite loop). Reject it
-    // (a list iteration or a manual `while` loop is the workaround).
-    // `break` is fine — it exits the loop before the increment.
+    // PMAT-799 (HUNT-V19 CF-1): a `continue` belonging to this `range(...)` loop
+    // would skip the tail counter-increment below (an infinite loop), so it used
+    // to be rejected. Instead, rewrite each such `continue` to `{ __forc = __forc
+    // + step; continue }` so the increment still runs before re-entering the
+    // loop — making the ubiquitous `for i in range(n): if …: continue` idiom
+    // compile and match Python. `break` is unaffected (it exits before the
+    // increment). Nested loops keep their own `continue` (not descended into).
     if body_has_top_level_continue(&body) {
-        return Err(FrontendError::Lower(format!(
-            "function `{}` uses `continue` inside a `range(...)` for-loop; v0.2.0 \
-             can't compose it with the loop's counter-increment — iterate a list or \
-             use a `while` loop",
-            ctx.fn_name
-        )));
+        body = inject_continue_increment(body, &counter, &step_expr);
     }
-    // Tail: __forc = __forc + step
+    // Tail: __forc = __forc + step (the fall-through path)
     body.push(Stmt::Assign {
         name: counter.clone(),
         value: Expr::BinOp {
@@ -4592,6 +4590,42 @@ fn body_has_top_level_continue(stmts: &[Stmt]) -> bool {
         // Nested loops own their own `continue`/`break`; don't descend.
         _ => false,
     })
+}
+
+/// PMAT-799 (HUNT-V19 CF-1): rewrite each `continue` that belongs to *this*
+/// `range(...)` loop into `{ <counter> = <counter> + <step>; continue }`, so the
+/// tail counter-increment (which a bare `continue` would skip → infinite loop)
+/// still runs before re-entering the loop. Mirrors `body_has_top_level_continue`
+/// traversal: descends `if` arms but NOT nested loops (a `continue` there belongs
+/// to that inner loop, whose own increment it must not perturb).
+fn inject_continue_increment(stmts: Vec<Stmt>, counter: &str, step: &Expr) -> Vec<Stmt> {
+    let mut out = Vec::with_capacity(stmts.len());
+    for s in stmts {
+        match s {
+            Stmt::Continue => {
+                out.push(Stmt::Assign {
+                    name: counter.to_string(),
+                    value: Expr::BinOp {
+                        op: BinOp::Add,
+                        lhs: Box::new(Expr::Ident(counter.to_string())),
+                        rhs: Box::new(step.clone()),
+                    },
+                });
+                out.push(Stmt::Continue);
+            }
+            Stmt::If {
+                cond,
+                then_body,
+                else_body,
+            } => out.push(Stmt::If {
+                cond,
+                then_body: inject_continue_increment(then_body, counter, step),
+                else_body: inject_continue_increment(else_body, counter, step),
+            }),
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// Lower a Python `while cond: body` into [`Stmt::While`]. Body

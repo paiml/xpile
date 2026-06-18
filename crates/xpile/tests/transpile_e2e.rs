@@ -14164,3 +14164,26 @@ fn main() {
 "#;
     assert_rustc_runs("tuple_unpack_arity3", &rust, driver);
 }
+
+/// PMAT-799 (HUNT-V19 CF-1): `continue` inside a `for i in range(...)` loop was
+/// rejected (the range desugars to while+counter; a bare continue skips the tail
+/// increment → infinite loop). Each such continue is now rewritten to `{ counter
+/// += step; continue }`. Nested-loop continues keep their own counter.
+/// Cross-checked vs python3.
+#[test]
+fn continue_in_range() {
+    let rust = xpile_transpile_to_rust("continue_in_range.py");
+    assert!(
+        // the continue path increments the counter before `continue;`.
+        rust.contains("continue;"),
+        "continue in a range-for must transpile:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(odd_sum(), 9);     // 1+3+5
+    assert_eq!(rev_skip(), 37);   // 10..1 skipping multiples of 3
+    assert_eq!(nested(), 66);     // inner continue skips j==1
+}
+"#;
+    assert_rustc_runs("continue_in_range", &rust, driver);
+}
