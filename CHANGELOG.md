@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.498] — 2026-06-18
+
+### Fixed
+
+- **PMAT-798 — support an N-arity (≥3) tuple `for`-target over a list of tuples.**
+  `for a, b, c in triples:` over a `list[tuple[int, int, int]]` was rejected
+  ("non-Name `for` target") while the identical 2-element form worked. The
+  for-target was hard-capped to arity 2; an all-Name tuple of arity ≥ 3 whose
+  iterable types as `list[tuple<same arity>]` now desugars to a fresh single loop
+  var + a prepended tuple-unpack assignment (`for __unpackN in it: a, b, c =
+  __unpackN; …`), reusing the N-arity assignment unpack. Arity 2 and the
+  enumerate/zip/items paths are untouched. HUNT-V19 (ND-04).
+
 ## [0.1.497] — 2026-06-18
 
 ### Fixed
