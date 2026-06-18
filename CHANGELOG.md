@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.491] — 2026-06-18
+
+### Fixed
+
+- **PMAT-791 — synthesize `PartialOrd` from `__gt__`/`__ge__`/`__le__` defined
+  without `__lt__`.** A class defining `__gt__`/`__ge__`/`__le__` but not `__lt__`
+  emitted raw Rust comparison operators over a `PartialEq`-only struct → rustc
+  E0369, where Python resolves all of `<`/`>`/`<=`/`>=` via reflection. The
+  PMAT-769 `__lt__`→`impl PartialOrd` synthesis now generalizes to the
+  highest-priority order dunder the class defines (`__lt__` > `__gt__` > `__ge__`
+  > `__le__`), building one consistent `partial_cmp` (Rust derives all four
+  operators from it). Any order dunder now suppresses the structural
+  `order=True`/`Ord` derive. HUNT-V18 (#11).
+
 ## [0.1.490] — 2026-06-18
 
 ### Fixed
