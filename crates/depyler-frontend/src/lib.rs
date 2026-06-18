@@ -189,6 +189,13 @@ struct LoweringCtx {
     /// non-reassigned (`!mutable`) `Optional`-typed names are eligible, so the
     /// unwrap is sound (the name cannot become `None` after the guard).
     narrowed_some: HashSet<String>,
+    /// PMAT-784 (HUNT-V17 #13): names whose ONLY binding is a (non-leaked) loop
+    /// target — they're in `bound` for frontend type resolution but have NO
+    /// durable outer Rust `let`/param binding (a native `for x in iter` scopes
+    /// `x` to the loop). The loop-var-leak rewrite (which assigns the outer var
+    /// each iteration) must NOT fire for these, else it references a nonexistent
+    /// binding (rustc E0425) — e.g. two `for k in d:` loops in one function.
+    loop_scoped: HashSet<String>,
     /// PMAT-506h (classes epic): when lowering a `@classmethod` body, the name of
     /// the enclosing class. A `cls(...)` construction or `cls.method(...)` call in
     /// the body resolves `cls` to this class name (so it reuses the existing
@@ -255,6 +262,16 @@ impl LoweringCtx {
         let n = self.loop_counter;
         self.loop_counter += 1;
         format!("__forc{n}")
+    }
+
+    /// PMAT-784: a fresh `__fe{N}` name for the leak-preserving rename of a
+    /// list/str/dict `ForEach` loop binding (so the user's loop var, declared in
+    /// the enclosing scope, takes the last element — Python leaks the loop var).
+    /// Shares the loop counter so it never collides with `__forc{N}`/`__forstop{N}`.
+    fn fresh_foreach_leak(&mut self) -> String {
+        let n = self.loop_counter;
+        self.loop_counter += 1;
+        format!("__fe{n}")
     }
 
     /// PMAT-765: a fresh `__forstop{N}` name for snapshotting a `range(...)` stop
@@ -358,6 +375,7 @@ impl LoweringCtx {
             loop_counter: 0,
             active_rename: None,
             narrowed_some: HashSet::new(),
+            loop_scoped: HashSet::new(),
             cls_name: None,
         }
     }
@@ -4213,18 +4231,56 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
             }
         };
 
+        // PMAT-784 (HUNT-V17 #13 CR-01): Python LEAKS the loop variable — after
+        // `for x in xs:`, `x` holds the last element (or its pre-loop value if
+        // `xs` is empty). Rust's `for x in iter` scopes `x` to the loop, so a
+        // post-loop read of `x` saw its pre-loop value instead (silent-wrong:
+        // `x = 0; for x in xs: pass; return x` returned 0, not the leaked last
+        // elem). When the target is ALREADY bound in the enclosing scope with the
+        // SAME type as the element (the common, sound case — e.g. an earlier
+        // `x = 0` / a fn param), rename the loop binding to a fresh `__fe{N}` and
+        // assign `x = __fe{N}` at the top of the body, so the loop updates the
+        // OUTER (already `let mut`) `x` each iteration (an empty iter leaves its
+        // pre-loop value — matching Python). The range-for desugar already leaks
+        // this way (PMAT-634); this extends it to list/str/dict ForEach. A
+        // fresh-then-leaked var (no pre-binding) keeps the native binding (a
+        // post-loop read is then E0425 — a loud follow-up, not silent-wrong).
+        // Leak only when the target has a DURABLE outer binding (a param or a
+        // non-loop `let`/assign) of the element's type — `bound && !loop_scoped`.
+        // A name bound only by a sibling loop is in `bound` but has no outer Rust
+        // `let` to assign to (it would be E0425).
+        let leak_to_outer = ctx.bound.contains(&target_name)
+            && !ctx.loop_scoped.contains(&target_name)
+            && ctx.name_types.get(&target_name) == Some(&elem_ty);
+        let loop_var = if leak_to_outer {
+            ctx.fresh_foreach_leak()
+        } else {
+            // A fresh (or non-durably-bound) loop var keeps the native `for x`
+            // binding — record it as loop-scoped so a later loop over the same
+            // name doesn't wrongly try to leak into a nonexistent outer binding.
+            ctx.loop_scoped.insert(target_name.clone());
+            target_name.clone()
+        };
+
         // Bind the loop variable in ctx so the body's typed accesses
-        // resolve.
+        // resolve. (When leaking, `target_name` stays bound as the outer var; the
+        // fresh `loop_var` is an internal temp the body never references.)
         ctx.bound.insert(target_name.clone());
         ctx.name_types.insert(target_name.clone(), elem_ty.clone());
 
         let mut body: Vec<Stmt> = Vec::new();
+        if leak_to_outer {
+            body.push(Stmt::Assign {
+                name: target_name.clone(),
+                value: Expr::Ident(loop_var.clone()),
+            });
+        }
         for s in f.body {
             let lowered = lower_block_stmt(ctx, s)?;
             body.extend(lowered);
         }
         return Ok(vec![Stmt::ForEach {
-            var: target_name,
+            var: loop_var,
             iter: iter_expr,
             elem_ty,
             body,

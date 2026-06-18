@@ -13785,3 +13785,30 @@ fn main() {
 "#;
     assert_rustc_runs("math_fn_int_arg", &rust, driver);
 }
+
+/// PMAT-784 (HUNT-V17 #13 CR-01): Python leaks the loop variable; Rust's `for x
+/// in iter` scoped it to the loop, so a post-loop read saw the pre-loop value
+/// (silent-wrong). When the target is already bound with the element's type, the
+/// loop binding is renamed to a fresh temp + `x = temp` assigned at the body
+/// top, so the outer x leaks the last element. Cross-checked vs python3.
+#[test]
+fn loop_var_leak() {
+    let rust = xpile_transpile_to_rust("loop_var_leak.py");
+    assert!(
+        // pre-bound list/str target leaks via the __fe temp + body-assign…
+        rust.contains("for __fe0 in xs.iter().cloned() {\n        x = __fe0;")
+            // …a fresh (non-pre-bound) target keeps the native binding (no leak).
+            && rust.contains("for y in xs.iter().cloned() {"),
+        "a pre-bound loop var must leak via a temp; a fresh var stays native:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(last_seen(vec![3, 7, 9]), 9);
+    assert_eq!(last_char("abc".to_string()), "c");
+    assert_eq!(empty_keeps_prior(vec![]), -1);
+    assert_eq!(body_uses_var(vec![3, 7]), 17);
+    assert_eq!(fresh_var_unaffected(vec![1, 2, 3]), 6);
+}
+"#;
+    assert_rustc_runs("loop_var_leak", &rust, driver);
+}
