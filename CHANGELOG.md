@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.487] — 2026-06-18
+
+### Fixed
+
+- **PMAT-787 — coerce a bool key in an int-keyed dict literal to i64.** A dict
+  literal declared `dict[int, V]` with bool keys (`{True: 10, False: 20}`)
+  emitted `insert(true, …)` into a `HashMap<i64, V>` → rustc E0308, and a `{True:
+  …, 2: …}` mix even rejected as "heterogeneous". Python's `bool` is an `int`
+  subtype (`hash(True) == hash(1)`), so those keys are 1/0. The let-init
+  type-threading now lowers each key of a `dict[int, V]` literal with
+  `to_i64_operand` (bool→i64, int unchanged) — extending PMAT-751 (the index
+  read `d[True]`) to the literal key; a genuine `dict[bool, V]` keeps its bool
+  keys. HUNT-V17 (#24).
+
 ## [0.1.486] — 2026-06-18
 
 ### Fixed
