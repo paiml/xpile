@@ -13812,3 +13812,29 @@ fn main() {
 "#;
     assert_rustc_runs("loop_var_leak", &rust, driver);
 }
+
+/// PMAT-785 (HUNT-V17 #22/26/27): arith/bitwise operators beyond +/-/* over a
+/// class defining the matching dunder (`//`/`%`/`**`/`<<`/`&`/…) emitted the
+/// int-divmod / checked_pow / bit-op codegen on a struct (E0599/E0308). The
+/// binop lowering now dispatches each to the user method. Cross-checked vs
+/// python3.
+#[test]
+fn dunder_arith_ext() {
+    let rust = xpile_transpile_to_rust("dunder_arith_ext.py");
+    assert!(
+        rust.contains(".__floordiv__(") && rust.contains(".__mod__(")
+            && rust.contains(".__and__(") && rust.contains(".__pow__(")
+            && rust.contains(".__lshift__(")
+            // plain int arithmetic still uses the numeric codegen.
+            && rust.contains("checked_rem"),
+        "struct arith/bitwise must dispatch to dunders; int arith unchanged:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(use_divmod_and(), 6);   // 3 + 2 + 1
+    assert_eq!(use_pow_shift(), 19);   // 7 + 12
+    assert_eq!(plain_int_arith(17, 5), 6);
+}
+"#;
+    assert_rustc_runs("dunder_arith_ext", &rust, driver);
+}
