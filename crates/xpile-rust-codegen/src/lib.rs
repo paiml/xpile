@@ -3311,8 +3311,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // `usize`; the `as i64` cast brings the result back into
         // Python's signed-int domain.
         Expr::Len(inner) => {
+            // PMAT-761 (HUNT-V16 CFD-3): parenthesize the cast. A bare
+            // `x.len() as i64` in a comparison — `if len(x) < N` — makes rustc
+            // read `i64 <` as the start of generic arguments (a turbofish), a
+            // hard parse error. Wrapping as `(x.len() as i64)` disambiguates it
+            // in every position (the int()-cast arm already parenthesizes).
+            out.push('(');
             emit_expr(out, inner, mode)?;
-            out.push_str(".len() as i64");
+            out.push_str(".len() as i64)");
         }
         Expr::IfExpr {
             cond,

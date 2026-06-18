@@ -2627,7 +2627,7 @@ fn main() {
 fn neg_index() {
     let rust = xpile_transpile_to_rust("neg_index.py");
     assert!(
-        rust.contains("xs.len() as i64).checked_sub("),
+        rust.contains("xs.len() as i64)).checked_sub("),
         "expected len-relative negative index, got:\n{rust}"
     );
     let driver = r#"
@@ -3718,11 +3718,11 @@ fn bool_cast() {
     let rust = xpile_transpile_to_rust("bool_cast.py");
     assert!(rust.contains("(x != 0i64)"), "int cast:\n{rust}");
     assert!(
-        rust.contains("(s.len() as i64 != 0i64)"),
+        rust.contains("((s.len() as i64) != 0i64)"),
         "str cast:\n{rust}"
     );
     assert!(
-        rust.contains("(xs.len() as i64 != 0i64)"),
+        rust.contains("((xs.len() as i64) != 0i64)"),
         "list cast:\n{rust}"
     );
     let driver = r#"
@@ -8939,8 +8939,8 @@ fn main() {
 fn len_encode_bytes() {
     let rust = xpile_transpile_to_rust("len_encode_bytes.py");
     assert!(
-        rust.contains("fn byte_len(s: String) -> i64 {\n    s.len() as i64")
-            && rust.contains("fn byte_len_utf8(s: String) -> i64 {\n    s.len() as i64"),
+        rust.contains("fn byte_len(s: String) -> i64 {\n    (s.len() as i64)")
+            && rust.contains("fn byte_len_utf8(s: String) -> i64 {\n    (s.len() as i64)"),
         "len(s.encode()) should be byte length s.len():\n{rust}"
     );
     assert!(
@@ -13229,4 +13229,25 @@ fn main() {
 }
 "#;
     assert_rustc_runs("dataclass_fstring_repr", &rust, driver);
+}
+
+/// PMAT-761 (HUNT-V16 CFD-3): `len(x) < N` emitted `x.len() as i64 < N`, and
+/// rustc reads `i64 <` as a turbofish → a hard parse error (only `<` triggered
+/// it). Parenthesizing the cast — `(x.len() as i64)` — disambiguates it
+/// everywhere. Cross-checked vs python3.
+#[test]
+fn len_cmp_paren() {
+    let rust = xpile_transpile_to_rust("len_cmp_paren.py");
+    assert!(
+        rust.contains("((xs.len() as i64) < 6i64)"),
+        "the len() cast must be parenthesized so `< N` isn't read as a turbofish:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(count_while_small(vec![1, 2, 3]), 3);
+    assert_eq!(while_len_lt(4), 4);
+    assert_eq!(len_le_and_gt(vec![1, 2]), 11);
+}
+"#;
+    assert_rustc_runs("len_cmp_paren", &rust, driver);
 }
