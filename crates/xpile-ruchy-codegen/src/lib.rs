@@ -17,19 +17,10 @@ use xpile_meta_hir::{
     NumBuiltinOp, Param, Radix, SetOp, SetPredOp, Stmt, StrMethodOp, Type, UnOp,
 };
 
-/// PMAT-731 (HUNT-V10 typed-exceptions): builtin exception types tagged
-/// `xpile: <Type>: …` in panic payloads — a specific `except T:` re-raises a
-/// different one of these (mirrors the Rust backend).
-const KNOWN_EXC: &[&str] = &[
-    "ValueError",
-    "KeyError",
-    "IndexError",
-    "ZeroDivisionError",
-    "OverflowError",
-    "TypeError",
-    // PMAT-788 (HUNT-V17 #4): assert panics carry an `xpile: AssertionError:` tag.
-    "AssertionError",
-];
+// PMAT-789 (HUNT-V18 EXC-001): the typed-`except` discriminator is now an
+// allowlist (matches the handler's own listed types, re-raises everything else),
+// so the `KNOWN_EXC` blocklist roster (PMAT-731) is no longer needed (mirror of
+// the Rust backend).
 
 /// PMAT-477 (R8): Ruchy → Rust infix symbol for a float arithmetic op.
 /// PMAT-502by: escape a string for embedding inside a `println!`/`print!`
@@ -2859,35 +2850,29 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             handler,
             except_types,
         } => {
-            // PMAT-731/763: a typed `except T:` / tuple `except (A, B):` re-raises
-            // a known builtin exception NOT in the listed set (mirrors the Rust
-            // backend); a catch-all (empty set) keeps `Err(_)`.
+            // PMAT-789 (HUNT-V18 EXC-001): a typed `except T:` / tuple `except (A,
+            // B):` catches ONLY a panic whose payload names one of the LISTED types
+            // (`xpile: <T>: …`) and re-raises everything else — an ALLOWLIST
+            // (inversion of the prior blocklist, which swallowed RuntimeError / any
+            // non-cataloged or untagged panic). Mirrors the Rust backend. A
+            // catch-all (empty set) keeps `Err(_)`.
             out.push_str("match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| ");
             emit_expr(out, body, mode)?;
             out.push_str(")) { Ok(__xpile_try) => __xpile_try, ");
-            let others: Vec<&str> = if except_types.is_empty() {
-                Vec::new()
-            } else {
-                KNOWN_EXC
-                    .iter()
-                    .copied()
-                    .filter(|k| !except_types.iter().any(|t| t == k))
-                    .collect()
-            };
-            if others.is_empty() {
+            if except_types.is_empty() {
                 out.push_str("Err(_) => ");
                 emit_expr(out, handler, mode)?;
             } else {
                 out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if ");
-                for (i, k) in others.iter().enumerate() {
+                for (i, k) in except_types.iter().enumerate() {
                     if i > 0 {
                         out.push_str(" || ");
                     }
                     write!(out, "__xpile_m.starts_with(\"xpile: {k}: \")")?;
                 }
-                out.push_str(" { ::std::panic::resume_unwind(__xpile_e) } else { ");
+                out.push_str(" { ");
                 emit_expr(out, handler, mode)?;
-                out.push_str(" } }");
+                out.push_str(" } else { ::std::panic::resume_unwind(__xpile_e) } }");
             }
             out.push_str(" }");
         }
