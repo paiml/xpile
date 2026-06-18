@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.465] — 2026-06-18
+
+### Fixed
+
+- **PMAT-765 — snapshot a `range()` stop bound once at loop entry.** Python
+  evaluates `range(...)` arguments once at loop entry (the range is frozen). The
+  range-for desugar used the stop expression directly in the `while` condition,
+  re-evaluating it every iteration: `for i in range(len(xs)): xs.append(..)`
+  re-read `xs.len()` as the body grew `xs` (the bound outpaced the counter →
+  infinite loop), and `for i in range(n): n += 10` likewise looped forever. The
+  frontend now snapshots a non-constant stop into a `__forstop` temp before the
+  loop; a literal stop (`range(5)`) is left inline. HUNT-V16 (#5 CFD-1/CFD-2).
+
 ## [0.1.464] — 2026-06-18
 
 ### Fixed
