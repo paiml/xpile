@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.495] — 2026-06-18
+
+### Fixed
+
+- **PMAT-795 — coerce a bool arg to `abs()`/`round()` to i64.** `abs(b)` /
+  `round(b)` over a bool emitted a bare free call → rustc E0425 (the `abs`
+  num-builtin arm only accepted I64/F64, and `round`'s match had no bool arm),
+  where Python's `bool` is an `int` subtype (`abs(True) == 1`, `round(True) ==
+  1`). The frontend now coerces a bool arg to i64 (abs takes the checked i64
+  path; round returns the cast value). HUNT-V18 (BIC-01).
+
 ## [0.1.494] — 2026-06-18
 
 ### Fixed
