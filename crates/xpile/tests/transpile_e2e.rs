@@ -13956,3 +13956,26 @@ fn main() {
 "#;
     assert_rustc_runs("except_allowlist", &rust, driver);
 }
+
+/// PMAT-790 (HUNT-V18 #8/#9/#10): abs(obj)/int(obj)/float(obj) over a class
+/// defining __abs__/__int__/__float__ emitted a generic free call → rustc E0425,
+/// where Python's builtins call the dunder. Each now dispatches to the method
+/// (mirror of len()→__len__). Cross-checked vs python3.
+#[test]
+fn abs_int_float_dunder() {
+    let rust = xpile_transpile_to_rust("abs_int_float_dunder.py");
+    assert!(
+        rust.contains("(v).__abs__()")
+            && rust.contains("(v).__int__()")
+            && rust.contains("(v).__float__()"),
+        "abs/int/float over a struct must dispatch to the dunder:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(use_abs(), 7);
+    assert_eq!(use_int(), 42);
+    assert_eq!(use_float(), 5.0);
+}
+"#;
+    assert_rustc_runs("abs_int_float_dunder", &rust, driver);
+}
