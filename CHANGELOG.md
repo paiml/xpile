@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.463] — 2026-06-18
+
+### Fixed
+
+- **PMAT-763 — a tuple `except (A, B):` discriminates instead of catch-all.** It
+  emitted a bare `Err(_) => body` with no type guard, so it swallowed ANY
+  exception — including one not listed in the tuple (e.g. `except (KeyError,
+  ValueError):` caught a ZeroDivisionError) — where Python only catches the
+  listed types. The single-named `except E:` already built a `xpile: <T>:`
+  re-raise denylist (PMAT-731). The `TryCatch` IR's `except_type:
+  Option<String>` is now `except_types: Vec<String>` (empty = catch-all); the
+  frontend returns the discriminated set (a base class anywhere in the tuple
+  makes the whole handler catch-all), and both backends re-raise a known
+  exception not in the set. HUNT-V16 (#3).
+
 ## [0.1.462] — 2026-06-18
 
 ### Fixed
