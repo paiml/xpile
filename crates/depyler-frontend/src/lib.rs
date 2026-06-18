@@ -11910,6 +11910,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         .get(&sname)
                         .is_some_and(|ms| ms.iter().any(|(m, _)| m == dunder))
                     {
+                        // PMAT-785: clone the RHS when it's a reused non-Copy
+                        // operand — the dunder takes `other` by value, and the
+                        // same struct var passed to several dunder calls (`(a // b)
+                        // + (a % b)`) would otherwise move on the first (E0382).
+                        let rhs = clone_if_reused_non_copy(ctx, rhs);
                         return Ok(Expr::MethodCall {
                             obj: Box::new(lhs),
                             method: dunder.to_string(),
@@ -15395,15 +15400,27 @@ fn flip_cmp(op: BinOp) -> BinOp {
     }
 }
 
-/// PMAT-768 (HUNT-V16 DD-05): the Python dunder method an arithmetic operator
-/// resolves to over a user class — `+`→`__add__`, `-`→`__sub__`, `*`→`__mul__`.
-/// `None` for operators whose dunder dispatch isn't supported yet (the operand
-/// then stays on the numeric path / clean reject).
+/// PMAT-768 (HUNT-V16 DD-05) / PMAT-785 (HUNT-V17 #22/26/27): the Python dunder
+/// method an arithmetic / bitwise operator resolves to over a user class. The
+/// BinOp lowering routes `a <op> b` to `a.<dunder>(b)` when `a` types as a
+/// struct that defines the dunder; otherwise the operand stays on the numeric
+/// path (or a clean reject). `**`→`__pow__`, `//`→`__floordiv__`, `%`→`__mod__`,
+/// `<<`/`>>`→`__lshift__`/`__rshift__`, `&`/`|`/`^`→`__and__`/`__or__`/`__xor__`,
+/// `/`→`__truediv__` — joining `+`/`-`/`*`. (`@`/matmul isn't supported.)
 fn arith_dunder_name(op: &ast::Operator) -> Option<&'static str> {
     match op {
         ast::Operator::Add => Some("__add__"),
         ast::Operator::Sub => Some("__sub__"),
         ast::Operator::Mult => Some("__mul__"),
+        ast::Operator::Div => Some("__truediv__"),
+        ast::Operator::FloorDiv => Some("__floordiv__"),
+        ast::Operator::Mod => Some("__mod__"),
+        ast::Operator::Pow => Some("__pow__"),
+        ast::Operator::LShift => Some("__lshift__"),
+        ast::Operator::RShift => Some("__rshift__"),
+        ast::Operator::BitAnd => Some("__and__"),
+        ast::Operator::BitOr => Some("__or__"),
+        ast::Operator::BitXor => Some("__xor__"),
         _ => None,
     }
 }
