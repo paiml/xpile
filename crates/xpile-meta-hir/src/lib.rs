@@ -1604,7 +1604,17 @@ pub enum Expr {
     TryCatch {
         body: Box<Expr>,
         handler: Box<Expr>,
-        except_type: Option<String>,
+        /// PMAT-763 (HUNT-V16 #3): the exception type name(s) this handler
+        /// catches — `["ValueError"]` for `except ValueError:`, `["KeyError",
+        /// "ValueError"]` for the tuple `except (KeyError, ValueError):`, and
+        /// EMPTY for a catch-all (bare `except:` / `except Exception:` / a base
+        /// class). The backend re-raises (resume_unwind) any panic whose
+        /// `xpile: <T>:` payload names a known exception NOT in this set, so a
+        /// tuple-except no longer swallows an unlisted exception (previously it
+        /// emitted a bare `Err(_)` catch-all). `#[serde(default)]` so older
+        /// serialized IR (single `except_type`) still deserializes as catch-all.
+        #[serde(default)]
+        except_types: Vec<String>,
     },
     /// PMAT-506b (classes epic): struct construction — Python `Name(a, b)` over
     /// a `@dataclass`/class. `fields` are `(field_name, value)` in declaration

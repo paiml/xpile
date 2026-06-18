@@ -3295,24 +3295,26 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         Expr::TryCatch {
             body,
             handler,
-            except_type,
+            except_types,
         } => {
             out.push_str("match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| ");
             emit_expr(out, body, mode)?;
             out.push_str(")) { Ok(__xpile_try) => __xpile_try, ");
-            // PMAT-731 (HUNT-V10 typed-exceptions): a SPECIFIC `except T:` re-raises
-            // (resume_unwind) a panic whose payload names a DIFFERENT known builtin
-            // exception (`xpile: <Other>: …`), so `except ValueError:` no longer
-            // swallows a ZeroDivisionError. An unrecognized payload is still caught
-            // (conservative — no regression). A bare/base-class handler (except_type
-            // None) keeps the catch-all `Err(_)`.
-            let others: Vec<&str> = match except_type {
-                Some(t) => KNOWN_EXC
+            // PMAT-731/763 (typed-exceptions): a handler discriminating a NON-EMPTY
+            // set of types re-raises (resume_unwind) a panic whose payload names a
+            // known builtin exception NOT in that set (`xpile: <Other>: …`), so
+            // `except ValueError:` / `except (KeyError, ValueError):` no longer
+            // swallow a ZeroDivisionError. An unrecognized payload is still caught
+            // (conservative). A catch-all handler (`except_types` empty) keeps
+            // `Err(_)`.
+            let others: Vec<&str> = if except_types.is_empty() {
+                Vec::new()
+            } else {
+                KNOWN_EXC
                     .iter()
                     .copied()
-                    .filter(|k| *k != t.as_str())
-                    .collect(),
-                None => Vec::new(),
+                    .filter(|k| !except_types.iter().any(|t| t == k))
+                    .collect()
             };
             if others.is_empty() {
                 out.push_str("Err(_) => ");
