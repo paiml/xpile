@@ -11533,6 +11533,34 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             // `len` is too, but exclude it defensively and let `lower_call` own it).
             if let ast::Expr::Name(n) = call.func.as_ref() {
                 let callee = n.id.to_string();
+                // PMAT-770 (HUNT-V16 DD-06): a call whose callee is a VARIABLE
+                // typing as a user class that defines `__call__` is Python's
+                // callable-instance protocol — `a(x)` is `a.__call__(x)`. Without
+                // this it emitted a free `a(5)` call (rustc E0425: no such fn / a
+                // struct isn't callable, E0618). Route to the method when the
+                // callee name is bound and its struct registers a `__call__`.
+                // (Checked before the user-function path: a local var shadows a
+                // module fn of the same name, and a function name isn't in `bound`.)
+                if ctx.bound.contains(&callee) {
+                    if let Some(Type::Struct(sname)) = ctx.name_types.get(&callee).cloned() {
+                        if ctx
+                            .struct_methods
+                            .get(&sname)
+                            .is_some_and(|ms| ms.iter().any(|(m, _)| m == "__call__"))
+                        {
+                            let args = call
+                                .args
+                                .iter()
+                                .map(|a| lower_expr_in_ctx(ctx, a.clone()))
+                                .collect::<Result<Vec<_>, _>>()?;
+                            return Ok(Expr::MethodCall {
+                                obj: Box::new(Expr::Ident(callee)),
+                                method: "__call__".to_string(),
+                                args,
+                            });
+                        }
+                    }
+                }
                 if callee != "len" {
                     // PMAT-753: the callee's declared param types, to coerce a
                     // concrete arg passed to an `Optional[T]` param into `Some(..)`
