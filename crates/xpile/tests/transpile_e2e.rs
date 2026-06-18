@@ -1320,7 +1320,7 @@ fn starred_unpack() {
     let rust = xpile_transpile_to_rust("starred_unpack.py");
     // Prefix names index; the star binds a slice (block form) of the tail.
     assert!(
-        rust.contains("[0i64 as usize].clone()") && rust.contains("__sl[__lo..__hi].to_vec()"),
+        rust.contains("let __li = (0i64) as usize") && rust.contains("__sl[__lo..__hi].to_vec()"),
         "starred unpack should index the head and slice the tail:\n{rust}"
     );
     // PMAT-647: a later-mutated starred binding must be `let mut`.
@@ -1355,7 +1355,7 @@ fn list_positional_unpack() {
     let rust = xpile_transpile_to_rust("list_positional_unpack.py");
     assert!(
         rust.contains("ValueError: expected 2 values to unpack")
-            && rust.contains("xs[0i64 as usize].clone()")
+            && rust.contains("let __li = (0i64) as usize")
             && rust.contains("__listunpack"),
         "list unpack should length-assert + positionally index:\n{rust}"
     );
@@ -1940,8 +1940,8 @@ fn neg_runtime_list_index() {
         "runtime index negative-wrap:\n{rust}"
     );
     assert!(
-        rust.contains("[0i64 as usize].clone()"),
-        "non-negative literal index keeps the fast path:\n{rust}"
+        rust.contains("let __li = (0i64) as usize"),
+        "non-negative literal index is bounds-checked (PMAT-764):\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -7936,8 +7936,10 @@ fn main() {
 fn block_index() {
     let rust = xpile_transpile_to_rust("block_index.py");
     assert!(
-        rust.contains("})["),
-        "a block-producing collection should be parenthesized before indexing:\n{rust}"
+        // PMAT-764: a block-producing collection is bound by-ref before the
+        // tagged bounds-check (`&({ …sort block… })`), then indexed via `__lc`.
+        rust.contains("__lc = &({") && rust.contains("__lc[__li].clone()"),
+        "a block-producing collection should be bound before indexing:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -13302,4 +13304,29 @@ fn main() {
 }
 "#;
     assert_rustc_runs("tuple_except_typed", &rust, driver);
+}
+
+/// PMAT-764 (HUNT-V16 #4): a non-negative LITERAL list index OOB (`data[10]`)
+/// panicked with Rust's native message, not `xpile: IndexError:`, so inside a
+/// try it was silently swallowed by an unrelated typed except. The literal-index
+/// path now bounds-checks with the tagged panic. Cross-checked vs python3.
+#[test]
+fn const_index_indexerror() {
+    let rust = xpile_transpile_to_rust("const_index_indexerror.py");
+    assert!(
+        // literal index now tagged (no bare `data[10i64 as usize].clone()`).
+        rust.contains("panic!(\"xpile: IndexError: list index out of range\")")
+            && !rust.contains("data[10i64 as usize].clone()"),
+        "a literal-index OOB must panic with the xpile: IndexError tag:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // IndexError not caught by `except KeyError` → propagates (panics).
+    let w = std::panic::catch_unwind(|| wrong_except());
+    assert!(w.is_err(), "IndexError must propagate past except KeyError");
+    assert_eq!(right_except(), -2);   // except IndexError catches it
+    assert_eq!(in_bounds(), 20);      // in-bounds literal index unchanged
+}
+"#;
+    assert_rustc_runs("const_index_indexerror", &rust, driver);
 }

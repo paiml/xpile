@@ -2541,19 +2541,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         Expr::Index { collection, index } => {
             let nonneg_literal = matches!(index.as_ref(), Expr::LitInt(n) if *n >= 0);
             if nonneg_literal {
-                // PMAT-502ej: parenthesize a block-producing collection
-                // (`sorted(...)`/`reversed(...)`/block-expr) so `{block}[i]`
-                // doesn't mis-parse — matching the Rust backend.
-                let mut coll = String::new();
-                emit_expr(&mut coll, collection, mode)?;
-                if coll.trim_start().starts_with('{') {
-                    write!(out, "({coll})")?;
-                } else {
-                    out.push_str(&coll);
-                }
-                out.push('[');
+                // PMAT-764 (HUNT-V16 #4): tag the literal-index OOB panic with
+                // `xpile: IndexError:` (mirror of the Rust backend) so a typed
+                // `except` discriminates it instead of swallowing the native panic.
+                out.push_str("{ let __lc = &(");
+                emit_expr(out, collection, mode)?;
+                out.push_str("); let __li = (");
                 emit_expr(out, index, mode)?;
-                out.push_str(" as usize].clone()");
+                out.push_str(") as usize; if __li >= __lc.len() { panic!(\"xpile: IndexError: list index out of range\"); } __lc[__li].clone() }");
             } else {
                 // PMAT-744 (HUNT-V13 exc-flow-01/02): tag the out-of-bounds panic
                 // as `xpile: IndexError:` (mirrors Rust) so typed-`except`
