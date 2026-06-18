@@ -129,20 +129,23 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
                 // an `impl PartialEq` (below); suppress the structural derives
                 // (mirror of the Rust backend).
                 let has_custom_eq = methods.iter().any(|m| m.name == "__eq__");
+                // PMAT-769 (HUNT-V16 DD-07): a custom __lt__ → generated impl
+                // PartialOrd (below); suppress the order=True structural derive.
+                let has_custom_lt = methods.iter().any(|m| m.name == "__lt__");
                 let mut derives = vec!["Clone", "Debug"];
                 if !has_custom_eq {
                     derives.push("PartialEq");
-                    if derive_eq_hash || derive_ord {
+                    if derive_eq_hash || (derive_ord && !has_custom_lt) {
                         derives.push("Eq");
                     }
                     if derive_eq_hash {
                         derives.push("Hash");
                     }
                 }
-                if *order {
+                if *order && !has_custom_lt {
                     derives.push("PartialOrd");
                 }
-                if derive_ord {
+                if derive_ord && !has_custom_lt {
                     derives.push("Ord");
                 }
                 writeln!(out, "#[derive({})]", derives.join(", "))?;
@@ -199,6 +202,17 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
                     writeln!(out, "impl PartialEq for {name} {{")?;
                     writeln!(out, "    fn eq(&self, __other: &Self) -> bool {{")?;
                     writeln!(out, "        self.__eq__(__other.clone())")?;
+                    out.push_str("    }\n}\n");
+                }
+                // PMAT-769 (HUNT-V16 DD-07): delegate `<` to a custom __lt__ via a
+                // generated impl PartialOrd (mirror of the Rust backend).
+                if has_custom_lt {
+                    writeln!(out, "impl PartialOrd for {name} {{")?;
+                    writeln!(
+                        out,
+                        "    fn partial_cmp(&self, __other: &Self) -> Option<std::cmp::Ordering> {{"
+                    )?;
+                    writeln!(out, "        if self.__lt__(__other.clone()) {{ Some(std::cmp::Ordering::Less) }} else if __other.__lt__(self.clone()) {{ Some(std::cmp::Ordering::Greater) }} else {{ Some(std::cmp::Ordering::Equal) }}")?;
                     out.push_str("    }\n}\n");
                 }
             }
