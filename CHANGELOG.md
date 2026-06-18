@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.476] — 2026-06-18
+
+### Fixed
+
+- **PMAT-776 — drive `Display` from a custom dataclass `__str__`.** A dataclass
+  defining its own `__str__` rendered as the hard-coded PMAT-760 field-repr
+  (`ClassName(f=v)`) in f-strings/print, with the `__str__` method dead code —
+  silently wrong (e.g. `f"{a}"` printed `C(v=5)` where Python prints `XYZ`). Both
+  backends now generate an `impl Display` delegating to `__str__` when present,
+  taking precedence over the field-repr and working for any field types; the
+  frontend f-string eligibility check also accepts a struct with `__str__`, so a
+  str-building `__str__` enables f-string rendering of an otherwise-ineligible
+  struct. (`str(obj)` — the builtin over a struct — remains a separate
+  follow-up.) HUNT-V17 (#2).
+
 ## [0.1.475] — 2026-06-18
 
 ### Fixed
