@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.502] — 2026-06-18
+
+### Fixed
+
+- **PMAT-802 — fold incompatible-type dict membership to a constant.** `x in d`
+  where `x`'s type can never match the dict's key type (`1 in dict[str, …]`, `"k"
+  in dict[int, …]`) is always `False` in Python (no error), but xpile emitted
+  `d.contains_key(&x)` over a `HashMap<K, _>` with a different-typed needle →
+  rustc E0308. The membership lowering now folds an incompatible needle/key pair
+  to the constant (`in` → `false`, `not in` → `true`); an equal or int/bool
+  tower-compatible needle takes the normal `DictContains` path. HUNT-V19
+  (CHAIN-2).
+
 ## [0.1.501] — 2026-06-18
 
 ### Fixed
