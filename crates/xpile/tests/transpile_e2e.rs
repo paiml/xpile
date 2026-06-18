@@ -14465,3 +14465,20 @@ fn main() {
 "#;
     assert_rustc_runs("dict_kwarg_ctor", &rust, driver);
 }
+
+/// PMAT-812 (HUNT-V22 #10 CC-2): set()/frozenset() only accepted a list arg —
+/// set("abc") / set((1,2,3)) were rejected. The ctor now materialises a string
+/// to its chars and a tuple literal to a list of its elements before
+/// SetFromList. Cross-checked vs python3.
+#[test]
+fn set_ctor_str_tuple() {
+    let rust = xpile_transpile_to_rust("set_ctor_str_tuple.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(from_str(), 4);    // {'h','e','l','o'}
+    assert_eq!(from_tuple(), 3);  // {1,2,3}
+    assert_eq!(frozen_str(), 3);  // {'a','b','c'}
+}
+"#;
+    assert_rustc_runs("set_ctor_str_tuple", &rust, driver);
+}
