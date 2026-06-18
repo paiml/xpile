@@ -5012,16 +5012,13 @@ fn terminal_if_as_expr(
 /// Exception:` / `except BaseException:`, or a non-`Name` type (e.g. a tuple
 /// `except (A, B):`, conservatively treated as catch-all = no regression). A
 /// `Some(name)` drives re-raise-on-mismatch discrimination in codegen.
-fn except_type_name(ty: Option<&ast::Expr>) -> Option<String> {
-    let ast::Expr::Name(n) = ty? else {
-        return None;
-    };
+/// A single exception type name, unless it is a base class that should stay a
+/// catch-all (discriminating it would wrongly re-raise a caught subclass).
+fn discriminated_exc_name(n: &ast::ExprName) -> Option<String> {
     let name = n.id.to_string();
-    // Catch-all handlers stay catch-all (codegen emits `Err(_) => handler`): the
-    // top base classes, and the two intermediate base classes whose subclasses are
-    // among the discriminated leaves (`LookupError` ⊃ KeyError/IndexError,
-    // `ArithmeticError` ⊃ ZeroDivisionError/OverflowError) — discriminating those
-    // would wrongly re-raise a caught subclass.
+    // Catch-all base classes: the top ones, and the two intermediate base
+    // classes whose subclasses are among the discriminated leaves (`LookupError`
+    // ⊃ KeyError/IndexError, `ArithmeticError` ⊃ ZeroDivisionError/OverflowError).
     if matches!(
         name.as_str(),
         "Exception" | "BaseException" | "LookupError" | "ArithmeticError"
@@ -5029,6 +5026,37 @@ fn except_type_name(ty: Option<&ast::Expr>) -> Option<String> {
         None
     } else {
         Some(name)
+    }
+}
+
+/// PMAT-731/763: the set of exception type names an `except` handler discriminates.
+/// EMPTY = catch-all (bare `except:`, `except Exception:` / a base class, or a
+/// non-Name/non-tuple type). A single `except E:` → `[E]`; a tuple `except (A,
+/// B):` → `[A, B]`. If ANY listed type is a catch-all base class, the whole
+/// handler is a catch-all (it would catch everything anyway). The backend
+/// re-raises a panic whose `xpile: <T>:` payload names a known exception NOT in
+/// this set — so a tuple-except catches only its listed types (PMAT-763), not
+/// everything (the prior bare `Err(_)`).
+fn except_type_names(ty: Option<&ast::Expr>) -> Vec<String> {
+    match ty {
+        Some(ast::Expr::Name(n)) => discriminated_exc_name(n).into_iter().collect(),
+        Some(ast::Expr::Tuple(t)) => {
+            let mut names = Vec::with_capacity(t.elts.len());
+            for e in &t.elts {
+                let ast::Expr::Name(n) = e else {
+                    // A non-Name element → can't discriminate → catch-all.
+                    return Vec::new();
+                };
+                match discriminated_exc_name(n) {
+                    // A base class in the tuple makes the whole handler catch-all.
+                    None => return Vec::new(),
+                    Some(name) => names.push(name),
+                }
+            }
+            names
+        }
+        // Bare `except:` or a non-Name/non-tuple type → catch-all.
+        _ => Vec::new(),
     }
 }
 
@@ -5069,7 +5097,7 @@ fn terminal_try_as_expr(
     Ok(Some(Expr::TryCatch {
         body: Box::new(body),
         handler: Box::new(handler),
-        except_type: except_type_name(h.type_.as_deref()),
+        except_types: except_type_names(h.type_.as_deref()),
     }))
 }
 
@@ -6160,7 +6188,7 @@ fn lower_assignment_try(
     let value = Expr::TryCatch {
         body: Box::new(body),
         handler: Box::new(handler),
-        except_type: except_type_name(h.type_.as_deref()),
+        except_types: except_type_names(h.type_.as_deref()),
     };
     let ty = infer_type_in_ctx(ctx, &value);
     let name = body_name;

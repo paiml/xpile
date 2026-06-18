@@ -2790,20 +2790,22 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         Expr::TryCatch {
             body,
             handler,
-            except_type,
+            except_types,
         } => {
-            // PMAT-731: typed `except T:` re-raises a different known builtin
-            // exception payload (mirrors the Rust backend).
+            // PMAT-731/763: a typed `except T:` / tuple `except (A, B):` re-raises
+            // a known builtin exception NOT in the listed set (mirrors the Rust
+            // backend); a catch-all (empty set) keeps `Err(_)`.
             out.push_str("match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| ");
             emit_expr(out, body, mode)?;
             out.push_str(")) { Ok(__xpile_try) => __xpile_try, ");
-            let others: Vec<&str> = match except_type {
-                Some(t) => KNOWN_EXC
+            let others: Vec<&str> = if except_types.is_empty() {
+                Vec::new()
+            } else {
+                KNOWN_EXC
                     .iter()
                     .copied()
-                    .filter(|k| *k != t.as_str())
-                    .collect(),
-                None => Vec::new(),
+                    .filter(|k| !except_types.iter().any(|t| t == k))
+                    .collect()
             };
             if others.is_empty() {
                 out.push_str("Err(_) => ");

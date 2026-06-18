@@ -13277,3 +13277,29 @@ fn main() {
 "#;
     assert_rustc_runs("dataclass_custom_eq", &rust, driver);
 }
+
+/// PMAT-763 (HUNT-V16 #3): a tuple `except (A, B):` emitted a bare `Err(_)`
+/// catch-all (no type guard), swallowing ANY exception where Python only
+/// catches the listed types. The tuple form now builds the same `xpile: <T>:`
+/// re-raise denylist the single-named arm has. Cross-checked vs python3.
+#[test]
+fn tuple_except_typed() {
+    let rust = xpile_transpile_to_rust("tuple_except_typed.py");
+    assert!(
+        // the tuple-except now discriminates (re-raises ZeroDivisionError, not in
+        // the (KeyError, ValueError) set) instead of a bare catch-all.
+        rust.contains("starts_with(\"xpile: ZeroDivisionError: \")")
+            && !rust.contains("Ok(__xpile_try) => __xpile_try, Err(_) =>"),
+        "tuple-except must re-raise an unlisted exception, not catch-all:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // ZeroDivisionError not in (KeyError, ValueError) → propagates (panics).
+    let w = std::panic::catch_unwind(|| wrong_tuple());
+    assert!(w.is_err(), "ZeroDivisionError must propagate past except (KeyError, ValueError)");
+    // ValueError is listed → caught.
+    assert_eq!(right_tuple(), -7);
+}
+"#;
+    assert_rustc_runs("tuple_except_typed", &rust, driver);
+}
