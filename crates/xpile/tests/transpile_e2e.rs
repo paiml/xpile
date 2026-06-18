@@ -13838,3 +13838,27 @@ fn main() {
 "#;
     assert_rustc_runs("dunder_arith_ext", &rust, driver);
 }
+
+/// PMAT-786 (HUNT-V17 #18 DC-OPT-CTOR): a non-None value to an `Optional[T]`
+/// dataclass field in the constructor (`Node(5, 10)` over `next_id:
+/// Optional[int]`) emitted a bare `10i64` against the `Option<i64>` slot →
+/// E0308. The ctor lowering now coerces each arg to the field's declared type
+/// (Some-wrapping a non-None Optional). Cross-checked vs python3.
+#[test]
+fn dataclass_opt_field_ctor() {
+    let rust = xpile_transpile_to_rust("dataclass_opt_field_ctor.py");
+    assert!(
+        rust.contains("Node { val: 5i64, next_id: Some(10i64) }")
+            && rust.contains("Node { val: 7i64, next_id: None }")
+            && rust.contains("Node { val: 3i64, next_id: Some(8i64) }"),
+        "an Optional dataclass field must Some-wrap a non-None ctor arg:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(make_pos(), 1);
+    assert_eq!(make_none(), 0);
+    assert_eq!(make_kw(), 1);
+}
+"#;
+    assert_rustc_runs("dataclass_opt_field_ctor", &rust, driver);
+}

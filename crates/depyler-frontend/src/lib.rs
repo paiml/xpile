@@ -10109,6 +10109,18 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     .get(ctor_name)
                     .map(|fs| fs.iter().map(|(f, _)| f.clone()).collect::<Vec<_>>())
                 {
+                    // PMAT-786 (HUNT-V17 #18 DC-OPT-CTOR): the field's declared
+                    // type, to coerce a ctor arg to it — a non-None value passed
+                    // to an `Optional[T]` field (`Node(5, 10)` over `next_id:
+                    // Optional[int]`) must be `Some(10)` (else a bare `T` against
+                    // the `Option<T>` slot → rustc E0308), and an int literal to a
+                    // `float` field widens. Same `coerce_lowered_to_optional` the
+                    // call-arg/let-init paths use (PMAT-753/781).
+                    let field_types: HashMap<String, Type> = ctx
+                        .structs
+                        .get(ctor_name)
+                        .map(|fs| fs.iter().cloned().collect())
+                        .unwrap_or_default();
                     if call.args.len() > field_names.len() {
                         return Err(FrontendError::Lower(format!(
                             "function `{}` constructs `{}` with {} positional arg(s) but the class has {} field(s)",
@@ -10121,7 +10133,9 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     let mut values: HashMap<String, Expr> = HashMap::new();
                     // Positional args fill the leading fields.
                     for (field, arg) in field_names.iter().zip(call.args.iter()) {
-                        values.insert(field.clone(), lower_expr_in_ctx(ctx, arg.clone())?);
+                        let v = lower_expr_in_ctx(ctx, arg.clone())?;
+                        let v = coerce_lowered_to_optional(ctx, v, field_types.get(field));
+                        values.insert(field.clone(), v);
                     }
                     // Keyword args fill the rest by name.
                     for kw in &call.keywords {
@@ -10143,7 +10157,9 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 ctx.fn_name, fname.id
                             )));
                         }
-                        values.insert(kw_name, lower_expr_in_ctx(ctx, kw.value.clone())?);
+                        let v = lower_expr_in_ctx(ctx, kw.value.clone())?;
+                        let v = coerce_lowered_to_optional(ctx, v, field_types.get(&kw_name));
+                        values.insert(kw_name, v);
                     }
                     // PMAT-506f: fill any still-omitted field from its declared
                     // default (a literal lowered in the pre-pass).
