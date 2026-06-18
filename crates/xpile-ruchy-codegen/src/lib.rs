@@ -2087,7 +2087,10 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 // PMAT-586: `int(float_x)` guards a non-finite source (see Rust twin).
                 out.push_str("{ let __ic = ");
                 emit_expr(out, value, mode)?;
-                out.push_str("; if !__ic.is_finite() { panic!(\"xpile: int() of a non-finite float (Python OverflowError/ValueError)\"); } if __ic < (i64::MIN as f64) || __ic >= (i64::MAX as f64) { panic!(\"xpile: int() out of i64 range; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"); } __ic as i64 }");
+                // PMAT-793 (HUNT-V18 EXC-002): tag the non-finite panics with the
+                // exact Python exception (nan → ValueError, ±inf → OverflowError)
+                // so the allowlist `except` discriminates them (mirror Rust backend).
+                out.push_str("; if __ic.is_nan() { panic!(\"xpile: ValueError: cannot convert float NaN to integer\"); } if __ic.is_infinite() { panic!(\"xpile: OverflowError: cannot convert float infinity to integer\"); } if __ic < (i64::MIN as f64) || __ic >= (i64::MAX as f64) { panic!(\"xpile: int() out of i64 range; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"); } __ic as i64 }");
             } else {
                 out.push_str("((");
                 emit_expr(out, value, mode)?;
