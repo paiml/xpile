@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.473] — 2026-06-18
+
+### Fixed
+
+- **PMAT-773 — sign-magnitude zero-pad for a negative-int radix f-string.** A
+  negative int with a zero-padded radix spec (`f"{-255:08x}"`) emitted
+  `format!("{:08x}", -255)`, zero-padding Rust's two's-complement
+  (`ffffffffffffff01`) — silent-wrong; Python is sign-magnitude with the sign
+  counted in the width (`-00000ff`). PMAT-613/375 fixed the bare-radix neg case;
+  this adds the width+zero-pad combo. `Expr::IntRadixStr` gains a `min_width`;
+  the frontend parses a `0<width><radix>` spec into a width-carrying
+  `IntRadixStr`, and both backends format the unsigned magnitude in the radix
+  then left-pad with `0` to `min_width − len(sign) − len(prefix)`. A
+  space-padded `<width><radix>` stays on the existing path (follow-up).
+  HUNT-V16 (#12).
+
 ## [0.1.472] — 2026-06-18
 
 ### Fixed
