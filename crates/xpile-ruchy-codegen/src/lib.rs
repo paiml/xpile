@@ -1316,11 +1316,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         // PMAT-502cd: `s[i]` over a string (see the Rust backend's twin) —
         // materialise the chars and index them (negative counts from the end).
         Expr::StrCharAt { string, index } => {
+            // PMAT-801 (HUNT-V19 STR-IDX-OOB): tag the out-of-range panic
+            // `xpile: IndexError:` so a typed except catches it (mirror Rust backend).
             out.push_str("{ let __cs: Vec<char> = (");
             emit_expr(out, string, mode)?;
             out.push_str(").chars().collect(); let __i: i64 = (");
             emit_expr(out, index, mode)?;
-            out.push_str("); let __idx = if __i < 0 { __cs.len() as i64 + __i } else { __i }; __cs[__idx as usize].to_string() }");
+            out.push_str("); let __idx = if __i < 0 { __cs.len() as i64 + __i } else { __i }; if __idx < 0 || __idx as usize >= __cs.len() { panic!(\"xpile: IndexError: string index out of range\"); } __cs[__idx as usize].to_string() }");
         }
         // PMAT-502cl: string chars as a Vec<String> (for `for c in s`).
         Expr::StrChars { string } => {
