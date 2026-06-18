@@ -13444,3 +13444,26 @@ fn main() {
 "#;
     assert_rustc_runs("dunder_lt", &rust, driver);
 }
+
+/// PMAT-770 (HUNT-V16 DD-06): calling an instance of a class defining `__call__`
+/// (`a(x)`) emitted a free `a(x)` call, but `a` is a variable not a function
+/// (rustc E0425/E0618). Python resolves `a(x)` to `a.__call__(x)`; the call
+/// lowering now dispatches to that method when the callee is a bound
+/// struct-with-`__call__` variable. Cross-checked vs python3.
+#[test]
+fn dunder_call() {
+    let rust = xpile_transpile_to_rust("dunder_call.py");
+    assert!(
+        rust.contains("(a).__call__(5i64)")
+            // a real function call is still a free call.
+            && rust.contains("helper(7i64)"),
+        "instance call must dispatch to __call__; a function call stays free:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(call_instance(), 15);
+    assert_eq!(plain_call(), 14);
+}
+"#;
+    assert_rustc_runs("dunder_call", &rust, driver);
+}
