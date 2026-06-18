@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.494] — 2026-06-18
+
+### Fixed
+
+- **PMAT-794 — raise `ValueError` on `math.sqrt`/`math.log*` domain errors.**
+  `math.sqrt` of a negative (and `math.log`/`log10`/`log2` of a non-positive)
+  lowered to Rust's f64 `.sqrt()`/`.ln()`/`.log*()`, which return NaN/-inf
+  silently — never panic — so a guarding `except ValueError:` was dead code and
+  `math.sqrt(-4.0)` printed NaN where Python raises `ValueError("math domain
+  error")`. Both backends now guard the domain (`sqrt` arg `< 0.0`, logs `<=
+  0.0`) and panic with the tagged `xpile: ValueError: math domain error`, so the
+  allowlist `except` catches it and a wrong handler re-raises. A valid-domain
+  call is unchanged. HUNT-V18 (EXC-003).
+
 ## [0.1.493] — 2026-06-18
 
 ### Fixed
