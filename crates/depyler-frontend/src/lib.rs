@@ -13388,6 +13388,43 @@ fn apply_nonempty_format_spec(
                 }
             }
         }
+        // PMAT-800 (HUNT-V19 FS-1): a plain-WIDTH radix spec `<width><radix>`
+        // (`f"{-255:8x}"`, no leading `0` → space pad). Python right-aligns the
+        // SIGN-MAGNITUDE form (`"     -ff"`), but the FormatSpec path emitted
+        // `format!("{:8x}", n)` = the raw two's-complement bits
+        // (`ffffffffffffff01`, width dropped) for a negative — silent wrong.
+        // Build the sign-magnitude body via `IntRadixStr` (the bare-radix path),
+        // then space-pad it to the width with `{:>W}`. A non-negative is
+        // unaffected (Rust already right-aligns numeric, and `>W` over the
+        // unsigned body matches).
+        if let Some(rest) = spec.strip_suffix(['x', 'X', 'b', 'o']) {
+            let radix_char = spec.chars().last().expect("suffix matched");
+            if !rest.is_empty()
+                && !rest.starts_with('0')
+                && rest.bytes().all(|b| b.is_ascii_digit())
+            {
+                if let Ok(width) = rest.parse::<u32>() {
+                    let (radix, upper) = match radix_char {
+                        'x' => (Radix::Hex, false),
+                        'X' => (Radix::Hex, true),
+                        'b' => (Radix::Bin, false),
+                        'o' => (Radix::Oct, false),
+                        _ => unreachable!("matched [xXbo]"),
+                    };
+                    let body = Expr::IntRadixStr {
+                        value: Box::new(value),
+                        radix,
+                        prefixed: false,
+                        upper,
+                        min_width: 0,
+                    };
+                    return Ok(Expr::FormatSpec {
+                        value: Box::new(body),
+                        rust_spec: format!(">{width}"),
+                    });
+                }
+            }
+        }
     }
     match translate_format_spec(spec, &ty) {
         Some(rust_spec) => Ok(Expr::FormatSpec {
