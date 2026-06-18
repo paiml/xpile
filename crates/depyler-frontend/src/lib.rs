@@ -11776,13 +11776,32 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     && call.args.len() == 1
                 {
                     let inner = lower_expr_in_ctx(ctx, call.args[0].clone())?;
-                    if matches!(infer_type_in_ctx(ctx, &inner), Type::List(_)) {
+                    // PMAT-812 (HUNT-V22 #10 CC-2): materialise the iterable to a
+                    // list before SetFromList. A list passes through; a STRING
+                    // becomes its chars (`set("abc")` → {'a','b','c'}, like
+                    // `sorted(s)`/`list(s)`); a TUPLE LITERAL becomes a list of
+                    // its elements (`set((1, 2, 2, 3))` → {1,2,3}). Previously
+                    // only a list was accepted (str/tuple were rejected).
+                    let list_arg = match infer_type_in_ctx(ctx, &inner) {
+                        Type::List(_) => Some(inner),
+                        Type::Str => Some(Expr::StrChars {
+                            string: Box::new(inner),
+                        }),
+                        Type::Tuple(_) if matches!(inner, Expr::TupleLit(_)) => {
+                            let Expr::TupleLit(elems) = inner else {
+                                unreachable!("matched TupleLit")
+                            };
+                            Some(Expr::ListLit(elems))
+                        }
+                        _ => None,
+                    };
+                    if let Some(list) = list_arg {
                         return Ok(Expr::SetFromList {
-                            list: Box::new(inner),
+                            list: Box::new(list),
                         });
                     }
                     return Err(FrontendError::Lower(format!(
-                        "function `{}` calls `{}(<expr>)` over a non-list — v0.2.0 supports `set()`/`frozenset()` (empty) or over a `<list>`",
+                        "function `{}` calls `{}(<expr>)` over an unsupported iterable — v0.2.0 supports `set()`/`frozenset()` (empty), a `<list>`, a `str`, or a tuple literal",
                         ctx.fn_name, fname.id
                     )));
                 }
