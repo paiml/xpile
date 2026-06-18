@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.470] — 2026-06-18
+
+### Fixed
+
+- **PMAT-770 — `obj(args)` dispatches to a user `__call__` method.** Calling an
+  instance of a class defining `__call__` (`a(x)`) emitted a free `a(x)` call,
+  but `a` is a variable, not a function (rustc E0425/E0618). Python's callable
+  protocol resolves `a(x)` to `a.__call__(x)`; the frontend call lowering now
+  dispatches to that method when the callee name is bound and types as a
+  `Type::Struct` whose registered methods include `__call__`. Checked before the
+  user-function path, so a real function call is unaffected. HUNT-V16 (DD-06).
+
 ## [0.1.469] — 2026-06-18
 
 ### Fixed
