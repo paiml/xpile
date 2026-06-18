@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.468] — 2026-06-18
+
+### Fixed
+
+- **PMAT-768 — `obj1 + obj2` dispatches to a user `__add__`/`__sub__`/`__mul__`.**
+  An arithmetic operator over a user class defining the matching dunder emitted
+  the i64 path `(a).checked_add(b)` (rustc E0599 — a struct has no
+  `checked_add`), where Python resolves `a + b` to `a.__add__(b)`. The
+  context-aware binop lowering now dispatches to the dunder method when the
+  operator maps to `__add__`/`__sub__`/`__mul__` and the LHS is a `Type::Struct`
+  whose registered methods include it; plain int/float and str/list `+` are
+  unchanged. HUNT-V16 (DD-05).
+
 ## [0.1.467] — 2026-06-18
 
 ### Fixed
