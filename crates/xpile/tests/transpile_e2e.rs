@@ -14144,3 +14144,23 @@ fn main() {
 "#;
     assert_rustc_runs("dict_subscript_pop", &rust, driver);
 }
+
+/// PMAT-798 (HUNT-V19 ND-04): an N-arity (>=3) tuple for-target over a
+/// list[tuple[...]] (`for a, b, c in triples`) was rejected while arity 2
+/// transpiled. Arity 3+ now desugars to a fresh loop var + a tuple-unpack
+/// assignment (any arity). Cross-checked vs python3.
+#[test]
+fn tuple_unpack_arity3() {
+    let rust = xpile_transpile_to_rust("tuple_unpack_arity3.py");
+    assert!(
+        rust.contains("let (a, b, c) =") && rust.contains("let (a, b, c, d) ="),
+        "an arity-3+ tuple for-target must desugar to a tuple-unpack:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sum_triples(), 21);   // (1+2+3)+(4+5+6)
+    assert_eq!(use4(), 191);         // (1*2+3-4)+(10*20+30-40)
+}
+"#;
+    assert_rustc_runs("tuple_unpack_arity3", &rust, driver);
+}
