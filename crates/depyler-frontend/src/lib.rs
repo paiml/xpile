@@ -7762,9 +7762,36 @@ fn desugar_nested_fn(
         .map(|(p, t)| (p.clone(), t.clone(), nested_mut.contains(p)))
         .collect();
     // Return type: the `-> R` annotation, else inferred from the trailing expr.
+    // PMAT-780 (HUNT-V17 #5): when the annotation is present, CHECK it against
+    // the inferred body type — exactly as the top-level/method path does (the
+    // `declared != inferred` reject). The nested-def path previously trusted the
+    // annotation blindly, so `def f(x: int) -> int: return x > 0` lowered to a
+    // closure whose body is `bool` while the registered return type said `int`
+    // — `str(f(5))` then rendered Rust's `true` (silent-wrong; Python `True`),
+    // even though the IDENTICAL code at top level cleanly REJECTS. Make nested
+    // defs reject for symmetry (fail-loud over silent-wrong).
+    let inferred_ret = infer_type_in_ctx(ctx, &trailing);
     let ret_ty = match f.returns.as_ref() {
-        Some(ann) => parse_type_annotation(&fname, "<return>", ann)?,
-        None => infer_type_in_ctx(ctx, &trailing),
+        Some(ann) => {
+            let declared = parse_type_annotation(&fname, "<return>", ann)?;
+            // Same empty-literal / bare-None exception as the top-level check:
+            // an empty `[]`/`{}`/`None` trailing return has no element type to
+            // infer, so trust the declared type.
+            let empty_literal_ok = match (&trailing, &declared) {
+                (Expr::ListLit(v), Type::List(_)) => v.is_empty(),
+                (Expr::DictLit(p), Type::Dict(_, _)) => p.is_empty(),
+                (Expr::OptionExpr(None), Type::Optional(_)) => true,
+                _ => false,
+            };
+            if !empty_literal_ok && declared != inferred_ret {
+                return Err(FrontendError::Lower(format!(
+                    "nested function `{name}` declared return type {declared:?} but body produces {inferred_ret:?}",
+                    name = f.name
+                )));
+            }
+            declared
+        }
+        None => inferred_ret,
     };
     let name = f.name.to_string();
     let block = Block {

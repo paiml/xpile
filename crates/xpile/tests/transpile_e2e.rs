@@ -13685,3 +13685,35 @@ fn main() {
 "#;
     assert_rustc_runs("str_of_str_identity", &rust, driver);
 }
+
+/// PMAT-780 (HUNT-V17 #5): a nested `def f(x: int) -> int: return x > 0` lowered
+/// to a bool-bodied closure with an int-declared return (str(f(5)) → "true",
+/// silent-wrong vs Python "True") while the top-level form rejects. The
+/// nested-def path now applies the same declared-vs-body check. A correct
+/// nested def (matching annotation) is unaffected. Cross-checked vs python3.
+#[test]
+fn nested_def_bool_return() {
+    // the int/bool-correct nested defs transpile + run.
+    let rust = xpile_transpile_to_rust("nested_def_bool_return.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(correct_int(5), 10);
+    assert_eq!(correct_bool(5), 1);
+    assert_eq!(correct_bool(-3), 0);
+}
+"#;
+    assert_rustc_runs("nested_def_bool_return", &rust, driver);
+
+    // the int-declared-but-bool-body nested def now REJECTS (was silent-wrong).
+    let py = fixture("nested_def_bool_return_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "an int-declared nested def with a bool body must be refused"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("nested function `f` declared return type I64 but body produces Bool"),
+        "the rejection should name the nested return-type mismatch:\n{stderr}"
+    );
+}
