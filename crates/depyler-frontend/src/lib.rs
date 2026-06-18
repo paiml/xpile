@@ -11623,6 +11623,34 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         contains
                     });
                 }
+                // PMAT-771 (HUNT-V16 DD-08): `x in obj` / `x not in obj` over a
+                // user class that defines `__contains__` dispatches to that
+                // method — Python's membership test calls `obj.__contains__(x)`.
+                // Without this the struct RHS fell through to "unsupported
+                // comparison operator: In". Route to the method (negated for `not
+                // in`) when the struct registers a `__contains__`.
+                if let Type::Struct(sname) = infer_type_in_ctx(ctx, &rhs) {
+                    if ctx
+                        .struct_methods
+                        .get(&sname)
+                        .is_some_and(|ms| ms.iter().any(|(m, _)| m == "__contains__"))
+                    {
+                        let elem = lower_expr_in_ctx(ctx, (*c.left).clone())?;
+                        let contains = Expr::MethodCall {
+                            obj: Box::new(rhs),
+                            method: "__contains__".to_string(),
+                            args: vec![elem],
+                        };
+                        return Ok(if matches!(c.ops[0], ast::CmpOp::NotIn) {
+                            Expr::UnOp {
+                                op: UnOp::Not,
+                                operand: Box::new(contains),
+                            }
+                        } else {
+                            contains
+                        });
+                    }
+                }
                 // PMAT-502o: `sub in s` / `sub not in s` over a Str →
                 // substring containment.
                 if infer_type_in_ctx(ctx, &rhs) == Type::Str {
