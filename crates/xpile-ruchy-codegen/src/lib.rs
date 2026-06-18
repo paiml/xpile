@@ -128,21 +128,27 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
                 let custom_eq_impl = has_custom_eq || has_custom_ne;
                 // PMAT-769 (HUNT-V16 DD-07): a custom __lt__ → generated impl
                 // PartialOrd (below); suppress the order=True structural derive.
-                let has_custom_lt = methods.iter().any(|m| m.name == "__lt__");
+                // PMAT-791 (HUNT-V18 #11): a custom order dunder (lt/gt/ge/le)
+                // suppresses the structural order derive and gets a hand
+                // `impl PartialOrd` (mirror of the Rust backend).
+                let order_dunder = ["__lt__", "__gt__", "__ge__", "__le__"]
+                    .into_iter()
+                    .find(|d| methods.iter().any(|m| m.name == *d));
+                let has_order_dunder = order_dunder.is_some();
                 let mut derives = vec!["Clone", "Debug"];
                 if !custom_eq_impl {
                     derives.push("PartialEq");
-                    if derive_eq_hash || (derive_ord && !has_custom_lt) {
+                    if derive_eq_hash || (derive_ord && !has_order_dunder) {
                         derives.push("Eq");
                     }
                     if derive_eq_hash {
                         derives.push("Hash");
                     }
                 }
-                if *order && !has_custom_lt {
+                if *order && !has_order_dunder {
                     derives.push("PartialOrd");
                 }
-                if derive_ord && !has_custom_lt {
+                if derive_ord && !has_order_dunder {
                     derives.push("Ord");
                 }
                 writeln!(out, "#[derive({})]", derives.join(", "))?;
@@ -234,15 +240,22 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
                     }
                     out.push_str("}\n");
                 }
-                // PMAT-769 (HUNT-V16 DD-07): delegate `<` to a custom __lt__ via a
-                // generated impl PartialOrd (mirror of the Rust backend).
-                if has_custom_lt {
+                // PMAT-769/791 (HUNT-V16 DD-07 / HUNT-V18 #11): delegate ordering to
+                // a custom order dunder (lt/gt/ge/le) via a generated impl
+                // PartialOrd (mirror of the Rust backend).
+                if let Some(d) = order_dunder {
+                    let body = match d {
+                        "__lt__" => "if self.__lt__(__other.clone()) { Some(std::cmp::Ordering::Less) } else if __other.__lt__(self.clone()) { Some(std::cmp::Ordering::Greater) } else { Some(std::cmp::Ordering::Equal) }",
+                        "__gt__" => "if self.__gt__(__other.clone()) { Some(std::cmp::Ordering::Greater) } else if __other.__gt__(self.clone()) { Some(std::cmp::Ordering::Less) } else { Some(std::cmp::Ordering::Equal) }",
+                        "__ge__" => "if self.__ge__(__other.clone()) { if __other.__ge__(self.clone()) { Some(std::cmp::Ordering::Equal) } else { Some(std::cmp::Ordering::Greater) } } else { Some(std::cmp::Ordering::Less) }",
+                        _ => "if self.__le__(__other.clone()) { if __other.__le__(self.clone()) { Some(std::cmp::Ordering::Equal) } else { Some(std::cmp::Ordering::Less) } } else { Some(std::cmp::Ordering::Greater) }",
+                    };
                     writeln!(out, "impl PartialOrd for {name} {{")?;
                     writeln!(
                         out,
                         "    fn partial_cmp(&self, __other: &Self) -> Option<std::cmp::Ordering> {{"
                     )?;
-                    writeln!(out, "        if self.__lt__(__other.clone()) {{ Some(std::cmp::Ordering::Less) }} else if __other.__lt__(self.clone()) {{ Some(std::cmp::Ordering::Greater) }} else {{ Some(std::cmp::Ordering::Equal) }}")?;
+                    writeln!(out, "        {body}")?;
                     out.push_str("    }\n}\n");
                 }
             }

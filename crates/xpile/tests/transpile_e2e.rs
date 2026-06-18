@@ -13979,3 +13979,27 @@ fn main() {
 "#;
     assert_rustc_runs("abs_int_float_dunder", &rust, driver);
 }
+
+/// PMAT-791 (HUNT-V18 #11): a class defining __gt__/__ge__/__le__ WITHOUT __lt__
+/// emitted raw Rust operators over a PartialEq-only struct → E0369, where Python
+/// resolves all comparisons via reflection. The PMAT-769 __lt__→PartialOrd
+/// synthesis now generalizes to the highest-priority order dunder, driving all
+/// four operators from one partial_cmp. Cross-checked vs python3.
+#[test]
+fn gt_ge_le_dunder() {
+    let rust = xpile_transpile_to_rust("gt_ge_le_dunder.py");
+    assert!(
+        rust.contains("impl PartialOrd for P {") && rust.contains("self.__gt__(__other.clone())"),
+        "a __gt__/__ge__/__le__ struct must get a generated PartialOrd:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert!(gt());        // P(5) > P(3)
+    assert!(lt());        // P(3) < P(5)  (via reflected __gt__)
+    assert!(ge());        // P(5) >= P(5)
+    assert!(le());        // P(2) <= P(9)
+    assert!(!gt_false());  // P(1) > P(8) is false
+}
+"#;
+    assert_rustc_runs("gt_ge_le_dunder", &rust, driver);
+}
