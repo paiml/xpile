@@ -5183,18 +5183,26 @@ fn terminal_if_as_expr(
 /// `Some(name)` drives re-raise-on-mismatch discrimination in codegen.
 /// A single exception type name, unless it is a base class that should stay a
 /// catch-all (discriminating it would wrongly re-raise a caught subclass).
-fn discriminated_exc_name(n: &ast::ExprName) -> Option<String> {
+/// PMAT-803 (HUNT-V20 EXC-1): expand an `except` type name to the set of
+/// discriminated leaf-exception tags it catches. `Exception`/`BaseException` →
+/// `None` = a TRUE catch-all (catches everything). The two intermediate base
+/// classes whose subclasses xpile actually tags EXPAND to their members so they
+/// catch ONLY those: `LookupError` → KeyError/IndexError, `ArithmeticError` →
+/// ZeroDivisionError/OverflowError. Any other name is a leaf → itself.
+/// (Previously LookupError/ArithmeticError were lumped with Exception as a
+/// catch-all, so `except LookupError:` silently SWALLOWED a ValueError /
+/// anything else Python would propagate — the allowlist re-raise [PMAT-789] now
+/// makes the expanded member set catch only its own and re-raise the rest.)
+fn expand_exc_name(n: &ast::ExprName) -> Option<Vec<String>> {
     let name = n.id.to_string();
-    // Catch-all base classes: the top ones, and the two intermediate base
-    // classes whose subclasses are among the discriminated leaves (`LookupError`
-    // ⊃ KeyError/IndexError, `ArithmeticError` ⊃ ZeroDivisionError/OverflowError).
-    if matches!(
-        name.as_str(),
-        "Exception" | "BaseException" | "LookupError" | "ArithmeticError"
-    ) {
-        None
-    } else {
-        Some(name)
+    match name.as_str() {
+        "Exception" | "BaseException" => None,
+        "LookupError" => Some(vec!["KeyError".to_string(), "IndexError".to_string()]),
+        "ArithmeticError" => Some(vec![
+            "ZeroDivisionError".to_string(),
+            "OverflowError".to_string(),
+        ]),
+        _ => Some(vec![name]),
     }
 }
 
@@ -5208,7 +5216,10 @@ fn discriminated_exc_name(n: &ast::ExprName) -> Option<String> {
 /// everything (the prior bare `Err(_)`).
 fn except_type_names(ty: Option<&ast::Expr>) -> Vec<String> {
     match ty {
-        Some(ast::Expr::Name(n)) => discriminated_exc_name(n).into_iter().collect(),
+        // `None` (Exception/BaseException) → empty = catch-all; otherwise the
+        // expanded member set (a leaf expands to itself; LookupError /
+        // ArithmeticError to their tagged subclasses — PMAT-803).
+        Some(ast::Expr::Name(n)) => expand_exc_name(n).unwrap_or_default(),
         Some(ast::Expr::Tuple(t)) => {
             let mut names = Vec::with_capacity(t.elts.len());
             for e in &t.elts {
@@ -5216,10 +5227,10 @@ fn except_type_names(ty: Option<&ast::Expr>) -> Vec<String> {
                     // A non-Name element → can't discriminate → catch-all.
                     return Vec::new();
                 };
-                match discriminated_exc_name(n) {
-                    // A base class in the tuple makes the whole handler catch-all.
+                match expand_exc_name(n) {
+                    // Exception/BaseException in the tuple makes it catch-all.
                     None => return Vec::new(),
-                    Some(name) => names.push(name),
+                    Some(mut ns) => names.append(&mut ns),
                 }
             }
             names

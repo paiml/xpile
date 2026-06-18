@@ -14261,3 +14261,30 @@ fn main() {
 "#;
     assert_rustc_runs("cross_type_dict_membership", &rust, driver);
 }
+
+/// PMAT-803 (HUNT-V20 EXC-1): `except LookupError:`/`except ArithmeticError:`
+/// compiled as an unconditional catch-all (Err(_)), silently swallowing
+/// unrelated exceptions. They now expand to their tagged subclasses so the
+/// allowlist except catches only those and re-raises the rest. vs python3.
+#[test]
+fn except_base_class() {
+    let rust = xpile_transpile_to_rust("except_base_class.py");
+    assert!(
+        // LookupError → KeyError|IndexError; ArithmeticError → ZeroDiv|Overflow.
+        rust.contains("starts_with(\"xpile: KeyError: \")")
+            && rust.contains("starts_with(\"xpile: IndexError: \")")
+            && rust.contains("starts_with(\"xpile: ZeroDivisionError: \")")
+            && rust.contains("starts_with(\"xpile: OverflowError: \")"),
+        "LookupError/ArithmeticError must expand to their member tags:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(lookup_catches_key(), -1);       // KeyError is a LookupError
+    assert_eq!(arith_catches_zerodiv(), -3);    // ZeroDivisionError is an ArithmeticError
+    // a ValueError is NOT a LookupError → must propagate past `except LookupError`.
+    let w = std::panic::catch_unwind(|| lookup_reraises_value());
+    assert!(w.is_err(), "ValueError must propagate past except LookupError");
+}
+"#;
+    assert_rustc_runs("except_base_class", &rust, driver);
+}
