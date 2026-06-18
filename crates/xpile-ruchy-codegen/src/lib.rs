@@ -2303,7 +2303,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     },
                     _ => None,
                 };
-                if let Some((base, idx)) = lvalue_base {
+                if let Expr::DictGet { dict, key } = list.as_ref() {
+                    // PMAT-797 (HUNT-V19 ND-01): `d[k].pop()` mutates the stored
+                    // list in place via get_mut (the dict read clones); mirror of
+                    // the Rust backend.
+                    out.push('(');
+                    emit_expr(out, dict, mode)?;
+                    out.push_str(").get_mut(&(");
+                    emit_expr(out, key, mode)?;
+                    out.push_str(")).unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\")).pop().expect(\"xpile: IndexError: pop from empty list\")");
+                } else if let Some((base, idx)) = lvalue_base {
                     out.push_str("{ let __pi = (");
                     emit_expr(out, idx, mode)?;
                     write!(

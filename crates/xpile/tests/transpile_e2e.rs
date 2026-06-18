@@ -14122,3 +14122,25 @@ fn main() {
 "#;
     assert_rustc_runs("list_repeat_bool", &rust, driver);
 }
+
+/// PMAT-797 (HUNT-V19 ND-01): a value-returning mutating method on a
+/// dict-subscript receiver (`d[k].pop()`) cloned the value — the dict read
+/// lowers to `.get(&k).cloned()`, so the pop hit a clone and the stored list
+/// kept its length (silent-wrong). The ListPop codegen now reaches the value
+/// mutably via `get_mut(&k)` for a dict-subscript receiver. vs python3.
+#[test]
+fn dict_subscript_pop() {
+    let rust = xpile_transpile_to_rust("dict_subscript_pop.py");
+    assert!(
+        rust.contains(".get_mut(&(String::from(\"a\")))")
+            && rust.contains(").pop().expect(\"xpile: IndexError:"),
+        "d[k].pop() must mutate the stored list via get_mut, not a clone:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(pop_mutates(), 32);   // pop removes 3, len becomes 2 → 30 + 2
+    assert_eq!(pop_twice(), 17);     // pops 8 then 7, len becomes 2 → 8 + 7 + 2
+}
+"#;
+    assert_rustc_runs("dict_subscript_pop", &rust, driver);
+}

@@ -2762,7 +2762,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     },
                     _ => None,
                 };
-                if let Some((base, idx)) = lvalue_base {
+                if let Expr::DictGet { dict, key } = list.as_ref() {
+                    // PMAT-797 (HUNT-V19 ND-01): `d[k].pop()` must mutate the
+                    // stored list IN PLACE. The dict read (`emit_expr` of
+                    // `DictGet`) clones the value (`.get(&k).cloned()`), so the pop
+                    // hit a throwaway clone and the stored list kept its length
+                    // (silent-wrong — `len(d[k])` unchanged). Reach the value
+                    // mutably via `get_mut(&k)` instead (the dict base is marked
+                    // `mut` by `count_pop_receivers`); a missing key still raises
+                    // the tagged KeyError, an empty list the tagged IndexError.
+                    out.push('(');
+                    emit_expr(out, dict, mode)?;
+                    out.push_str(").get_mut(&(");
+                    emit_expr(out, key, mode)?;
+                    out.push_str(")).unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\")).pop().expect(\"xpile: IndexError: pop from empty list\")");
+                } else if let Some((base, idx)) = lvalue_base {
                     out.push_str("{ let __pi = (");
                     emit_expr(out, idx, mode)?;
                     write!(
