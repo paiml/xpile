@@ -14078,3 +14078,25 @@ fn main() {
 "#;
     assert_rustc_runs("math_domain_error", &rust, driver);
 }
+
+/// PMAT-795 (HUNT-V18 BIC-01): abs()/round() over a bool emitted a bare
+/// `abs(b)`/`round(b)` free call → rustc E0425, where Python's bool is an int
+/// subtype (abs(True)==1). The frontend now coerces the bool arg to i64.
+/// Cross-checked vs python3.
+#[test]
+fn abs_round_bool() {
+    let rust = xpile_transpile_to_rust("abs_round_bool.py");
+    assert!(
+        // bool coerced to i64; abs goes through the checked i64 path.
+        rust.contains("(((b) as i64)).checked_abs()") && rust.contains("((b) as i64)"),
+        "abs/round over a bool must coerce to i64:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(abs_true(), 1);
+    assert_eq!(abs_false(), 0);
+    assert_eq!(round_true(), 1);
+}
+"#;
+    assert_rustc_runs("abs_round_bool", &rust, driver);
+}
