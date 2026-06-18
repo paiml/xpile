@@ -3013,19 +3013,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         Expr::Index { collection, index } => {
             let nonneg_literal = matches!(index.as_ref(), Expr::LitInt(n) if *n >= 0);
             if nonneg_literal {
-                // PMAT-502ej: parenthesize a block-producing collection
-                // (`sorted(...)`/`reversed(...)`/block-expr) so `{block}[i]`
-                // doesn't mis-parse as a block + array literal.
-                let mut coll = String::new();
-                emit_expr(&mut coll, collection, mode)?;
-                if coll.trim_start().starts_with('{') {
-                    write!(out, "({coll})")?;
-                } else {
-                    out.push_str(&coll);
-                }
-                out.push('[');
+                // PMAT-764 (HUNT-V16 #4): even a non-negative LITERAL index needs
+                // an `xpile: IndexError:`-tagged bounds check. A bare `coll[N]`
+                // panics with Rust's NATIVE "index out of bounds" message, which
+                // carries no `xpile:` prefix — so an OOB literal index inside a
+                // `try` was SILENTLY SWALLOWED by an unrelated typed `except`
+                // (e.g. `except KeyError:` caught it), where Python propagates the
+                // IndexError. Bind + bounds-check with the tag (mirrors the
+                // runtime/negative path, PMAT-744). `&(...)` also handles a
+                // block-producing collection (sorted/reversed). LLVM elides the
+                // redundant check for an in-range literal under -O.
+                out.push_str("{ let __lc = &(");
+                emit_expr(out, collection, mode)?;
+                out.push_str("); let __li = (");
                 emit_expr(out, index, mode)?;
-                out.push_str(" as usize].clone()");
+                out.push_str(") as usize; if __li >= __lc.len() { panic!(\"xpile: IndexError: list index out of range\"); } __lc[__li].clone() }");
             } else {
                 // PMAT-639: bind the collection (by ref, eval-once — `&(...)`
                 // also handles a block-producing collection) and the index,
