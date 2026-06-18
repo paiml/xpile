@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.477] — 2026-06-18
+
+### Fixed
+
+- **PMAT-777 — dispatch `!=` to a custom dataclass `__ne__`.** A dataclass
+  defining `__ne__` never had it dispatched — the PMAT-762 `impl PartialEq` only
+  set `fn eq`, so `!=` used Rust's default `!eq()` and the user `__ne__` was dead
+  code (silently wrong). `__ne__` is independent of `__eq__` in Python, so it
+  also requires a hand `impl PartialEq` (you can't add `fn ne` to a derive): a
+  custom `__ne__` now suppresses the structural derive and the generated impl
+  emits `fn ne` delegating to `__ne__` alongside `eq` (which delegates to
+  `__eq__` when present, else the dataclass structural equality emitted by hand).
+  HUNT-V17 (#3).
+
 ## [0.1.476] — 2026-06-18
 
 ### Fixed
