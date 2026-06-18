@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.503] — 2026-06-18
+
+### Fixed
+
+- **PMAT-803 — `except LookupError`/`ArithmeticError` catch only their member
+  exceptions.** Both compiled as an unconditional catch-all (`Err(_)`), silently
+  swallowing any exception (e.g. a ValueError under `except LookupError:`) that
+  Python propagates. `expand_exc_name` now expands the intermediate base classes
+  to the tagged leaves — `LookupError` → {KeyError, IndexError},
+  `ArithmeticError` → {ZeroDivisionError, OverflowError} — so the allowlist
+  except (PMAT-789) catches only those and re-raises the rest. `Exception`/
+  `BaseException` and bare `except:` stay a true catch-all. HUNT-V20 (EXC-1).
+
 ## [0.1.502] — 2026-06-18
 
 ### Fixed
