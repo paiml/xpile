@@ -13570,3 +13570,27 @@ fn main() {
 "#;
     assert_rustc_runs("minmax_empty_valueerror", &rust, driver);
 }
+
+/// PMAT-775 (HUNT-V16 GEN-03): `list(map(lambda, range(n)))` /
+/// `list(filter(lambda, range(n)))` were rejected (misleading "lambda in a
+/// general expression") — the map/filter iterable arg was lowered plainly, so a
+/// bare `range(...)` didn't type as a list. The map/filter lowering now
+/// materializes a range arg (like PMAT-772). Cross-checked vs python3.
+#[test]
+fn map_filter_range() {
+    let rust = xpile_transpile_to_rust("map_filter_range.py");
+    assert!(
+        // the range is materialized — no raw `map(`/`filter(` over a bare range,
+        // and a real `.map(`/`.filter(` iterator chain is emitted.
+        !rust.contains("map(range(") && !rust.contains("filter(range("),
+        "map/filter over range must materialize the range:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(map_lambda_range(), 12);       // (0+2+4+6)
+    assert_eq!(filter_lambda_range(), 6);      // 0+2+4
+    assert_eq!(map_bare_callable_range(), 3);  // 0+1+2
+}
+"#;
+    assert_rustc_runs("map_filter_range", &rust, driver);
+}

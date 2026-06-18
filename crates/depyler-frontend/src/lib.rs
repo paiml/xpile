@@ -11089,7 +11089,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             && lam.args.vararg.is_none()
                             && lam.args.kwarg.is_none()
                         {
-                            let list = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                            let list = lower_arg_materializing_range(ctx, &call.args[1])?;
                             if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
                                 let param = lam.args.args[0].def.arg.to_string();
                                 // PMAT-526: bind the lambda param to the element
@@ -11115,7 +11115,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     // (`filter(bool, xs)`, `filter(is_even, xs)`). Synthesize
                     // `<name>(__x)`; the predicate must type as `Bool`.
                     if let ast::Expr::Name(callee) = &call.args[0] {
-                        let list = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                        let list = lower_arg_materializing_range(ctx, &call.args[1])?;
                         if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
                             let param = "__xpile_f".to_string();
                             let body =
@@ -11139,7 +11139,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     // truthiness (int `!= 0`, str/list `len != 0`, …).
                     if matches!(&call.args[0], ast::Expr::Constant(c) if matches!(c.value, ast::Constant::None))
                     {
-                        let list = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                        let list = lower_arg_materializing_range(ctx, &call.args[1])?;
                         if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
                             let param = "__xpile_f".to_string();
                             let mut sub = ctx.clone();
@@ -11170,7 +11170,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             && lam.args.vararg.is_none()
                             && lam.args.kwarg.is_none()
                         {
-                            let list = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                            let list = lower_arg_materializing_range(ctx, &call.args[1])?;
                             if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
                                 let param = lam.args.args[0].def.arg.to_string();
                                 // PMAT-526: bind the lambda param to the element
@@ -11194,7 +11194,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     // `map(myfunc, xs)`). Synthesize `<name>(__x)` as the body;
                     // the result element type is the callee's return type.
                     if let ast::Expr::Name(callee) = &call.args[0] {
-                        let list = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                        let list = lower_arg_materializing_range(ctx, &call.args[1])?;
                         if let Type::List(elem) = infer_type_in_ctx(ctx, &list) {
                             let param = "__xpile_m".to_string();
                             let body = synth_named_callable_body(ctx, callee, &param, *elem)?;
