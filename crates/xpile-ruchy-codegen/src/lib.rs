@@ -2107,7 +2107,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str("{ let __rs = &(");
             emit_expr(out, value, mode)?;
             out.push_str(
-                r#"); let __q = if __rs.contains('\'') && !__rs.contains('"') { '"' } else { '\'' }; let mut __ro = String::new(); __ro.push(__q); for __rc in __rs.chars() { match __rc { '\\' => { __ro.push('\\'); __ro.push('\\'); } '\n' => { __ro.push('\\'); __ro.push('n'); } '\r' => { __ro.push('\\'); __ro.push('r'); } '\t' => { __ro.push('\\'); __ro.push('t'); } __ec if __ec == __q => { __ro.push('\\'); __ro.push(__ec); } __ec => __ro.push(__ec) } } __ro.push(__q); __ro }"#,
+                // PMAT-778 (HUNT-V17 #6): escape control chars as `\xNN` (mirror
+                // of the Rust backend); the catch-all used to push them raw.
+                r#"); let __q = if __rs.contains('\'') && !__rs.contains('"') { '"' } else { '\'' }; let mut __ro = String::new(); __ro.push(__q); for __rc in __rs.chars() { match __rc { '\\' => { __ro.push('\\'); __ro.push('\\'); } '\n' => { __ro.push('\\'); __ro.push('n'); } '\r' => { __ro.push('\\'); __ro.push('r'); } '\t' => { __ro.push('\\'); __ro.push('t'); } __ec if __ec == __q => { __ro.push('\\'); __ro.push(__ec); } __ec if (__ec as u32) < 0x20 || (__ec as u32) == 0x7f || ((__ec as u32) >= 0x80 && (__ec as u32) <= 0x9f) => { __ro.push('\\'); __ro.push('x'); __ro.push_str(&format!("{:02x}", __ec as u32)); } __ec => __ro.push(__ec) } } __ro.push(__q); __ro }"#,
             );
         }
         // PMAT-502ak: `round(x)` (float) → `((x).round_ties_even() as i64)`.
