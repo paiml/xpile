@@ -605,6 +605,46 @@ fn clone_reused_call_args(ctx: &LoweringCtx, expr: Expr) -> Expr {
 /// `stmts`. If-branches merge by taking the max per name (alternatives,
 /// not sequential). While bodies count assignments as 2× (executed
 /// repeatedly). Sequential statements add counts per name.
+/// PMAT-809 (HUNT-V22 CA-1): count the binding introduced by a walrus
+/// `(name := expr)` toward `name`'s assignment total. A walrus lives in an
+/// EXPRESSION (an `if`/`while` condition), not a `Stmt::Assign`, so `walk_counts`
+/// missed it — the hoisted `let name` then wasn't `mut`, and a later `name = …`
+/// reassignment was rustc E0384. Scans the common condition-expression shapes
+/// for `NamedExpr` targets and bumps each.
+fn count_walrus_targets(expr: &ast::Expr, counts: &mut HashMap<String, usize>, bump: usize) {
+    match expr {
+        ast::Expr::NamedExpr(named) => {
+            if let ast::Expr::Name(n) = named.target.as_ref() {
+                *counts.entry(n.id.to_string()).or_insert(0) += bump;
+            }
+            count_walrus_targets(&named.value, counts, bump);
+        }
+        ast::Expr::BoolOp(b) => {
+            for v in &b.values {
+                count_walrus_targets(v, counts, bump);
+            }
+        }
+        ast::Expr::BinOp(b) => {
+            count_walrus_targets(&b.left, counts, bump);
+            count_walrus_targets(&b.right, counts, bump);
+        }
+        ast::Expr::UnaryOp(u) => count_walrus_targets(&u.operand, counts, bump),
+        ast::Expr::Compare(c) => {
+            count_walrus_targets(&c.left, counts, bump);
+            for cc in &c.comparators {
+                count_walrus_targets(cc, counts, bump);
+            }
+        }
+        ast::Expr::Call(call) => {
+            count_walrus_targets(&call.func, counts, bump);
+            for a in &call.args {
+                count_walrus_targets(a, counts, bump);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     for stmt in stmts {
@@ -745,6 +785,9 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                 }
             }
             ast::Stmt::If(if_stmt) => {
+                // PMAT-809: a walrus in the condition (`if (n := e) > 5:`) binds
+                // `n` — count it so a reassignment in the body lifts it to `mut`.
+                count_walrus_targets(&if_stmt.test, &mut counts, if in_loop { 2 } else { 1 });
                 let then_counts = walk_counts(&if_stmt.body, in_loop);
                 let else_counts = walk_counts(&if_stmt.orelse, in_loop);
                 let merged = merge_branch_counts(then_counts, else_counts);
@@ -765,6 +808,9 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                 }
             }
             ast::Stmt::While(w) => {
+                // PMAT-809: a walrus in the while condition (`while (n := f()) > 0:`)
+                // binds `n` per iteration — count it (2× like the loop body).
+                count_walrus_targets(&w.test, &mut counts, 2);
                 let inner = walk_counts(&w.body, /*in_loop=*/ true);
                 for (name, c) in inner {
                     // `c` is already bumped 2× by in_loop=true; add it
