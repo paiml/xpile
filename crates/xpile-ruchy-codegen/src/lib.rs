@@ -2809,8 +2809,11 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         }
         // PMAT-459 (v0.2.0 Track 1.B): Ruchy → Rust → `.len() as i64`.
         Expr::Len(inner) => {
+            // PMAT-761 (HUNT-V16 CFD-3): parenthesize the cast so `len(x) < N`
+            // doesn't make rustc read `i64 <` as a turbofish (parse error).
+            out.push('(');
             emit_expr(out, inner, mode)?;
-            out.push_str(".len() as i64");
+            out.push_str(".len() as i64)");
         }
         Expr::IfExpr {
             cond,
