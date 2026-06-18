@@ -10231,12 +10231,12 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         call.args.len() == arity
                     };
                     if call.keywords.is_empty() && arity_ok {
-                        let args = call
+                        let mut args = call
                             .args
                             .iter()
                             .map(|a| lower_expr_in_ctx(ctx, a.clone()))
                             .collect::<Result<Vec<_>, _>>()?;
-                        let arg0_ty = infer_type_in_ctx(ctx, &args[0]);
+                        let mut arg0_ty = infer_type_in_ctx(ctx, &args[0]);
                         // PMAT-790 (HUNT-V18 #8): `abs(obj)` over a user class that
                         // defines `__abs__` dispatches to that method — Python's
                         // `abs()` calls `obj.__abs__()`. Without this it fell to a
@@ -10256,6 +10256,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                     });
                                 }
                             }
+                        }
+                        // PMAT-795 (HUNT-V18 BIC-01): `abs()` over a bool — Python's
+                        // `bool` is an `int` subtype (`abs(True) == 1`). Coerce the
+                        // bool arg to i64 so the i64 abs path applies; without this
+                        // it fell to a generic free call `abs(b)` (rustc E0425).
+                        if matches!(op, NumBuiltinOp::Abs) && arg0_ty == Type::Bool {
+                            args[0] = to_i64_operand(ctx, args[0].clone());
+                            arg0_ty = Type::I64;
                         }
                         let ok = match op {
                             NumBuiltinOp::Abs => matches!(arg0_ty, Type::I64 | Type::F64),
@@ -10940,6 +10948,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             });
                         }
                         Type::I64 => return Ok(value),
+                        // PMAT-795 (HUNT-V18 BIC-01): `round()` over a bool —
+                        // Python's `bool` is an `int` subtype (`round(True) == 1`).
+                        // Coerce to i64 (it was a bare `round(b)` free call →
+                        // rustc E0425).
+                        Type::Bool => return Ok(to_i64_operand(ctx, value)),
                         _ => {}
                     }
                 }
