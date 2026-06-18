@@ -14354,3 +14354,23 @@ fn main() {
 "#;
     assert_rustc_runs("range_var_materialize", &rust, driver);
 }
+
+/// PMAT-807 (HUNT-V21 FS): a float with an align/width-only spec (`f"{3.0:>6}"`,
+/// `f"{3.0:8}"`) used Rust's bare f64 Display, dropping Python's trailing `.0`
+/// (silent-wrong; bare-width even rejected). The float is now rendered to its
+/// Python repr string first and padded (bare width forces right-align).
+/// Precision specs unchanged. Cross-checked vs python3.
+#[test]
+fn float_width_noprec() {
+    let rust = xpile_transpile_to_rust("float_width_noprec.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(bare_w(), "     3.0");
+    assert_eq!(right_a(), "   3.0");
+    assert_eq!(left_a(), "2.5   ");
+    assert_eq!(center_a(), "  2.5  ");
+    assert_eq!(prec_unchanged(), "3.14");
+}
+"#;
+    assert_rustc_runs("float_width_noprec", &rust, driver);
+}

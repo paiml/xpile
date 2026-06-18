@@ -13491,6 +13491,29 @@ fn apply_nonempty_format_spec(
             }
         }
     }
+    // PMAT-807 (HUNT-V21 FS): a FLOAT with an align/width-ONLY spec (no precision)
+    // — `f"{3.0:>6}"`, `f"{3.0:8}"`. Rust's `format!("{:>6}", 3.0f64)` uses the
+    // bare f64 Display (`3`, no `.0`) → "     3" where Python keeps the repr's
+    // trailing `.0` and right-aligns → "   3.0" (a silent-wrong drop, and the
+    // bare-width form was even rejected). Render the float to its Python repr
+    // STRING first (`ToStr{of_float}`, the `str(float)`/`{x}` path) and pad THAT.
+    // A bare width has no align char → Python right-aligns a number, so force `>`
+    // (Rust left-aligns a string by default); an explicit `<`/`>`/`^` is kept.
+    if ty == Type::F64 {
+        let (align, width_str) = match spec.strip_prefix(['<', '>', '^']) {
+            Some(rest) => (&spec[..1], rest),
+            None => (">", spec),
+        };
+        if !width_str.is_empty() && width_str.bytes().all(|b| b.is_ascii_digit()) {
+            return Ok(Expr::FormatSpec {
+                value: Box::new(Expr::ToStr {
+                    value: Box::new(value),
+                    of_float: true,
+                }),
+                rust_spec: format!("{align}{width_str}"),
+            });
+        }
+    }
     match translate_format_spec(spec, &ty) {
         Some(rust_spec) => Ok(Expr::FormatSpec {
             value: Box::new(value),
