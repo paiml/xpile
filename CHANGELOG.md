@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.485] — 2026-06-18
+
+### Fixed
+
+- **PMAT-785 — dispatch `//`/`%`/`**`/`<<`/`&`/… to user arith/bitwise dunders.**
+  Operators beyond `+`/`-`/`*` over a user class defining the matching dunder
+  emitted the i64 numeric codegen on a struct (int floor-div / mod /
+  `checked_pow` / bit-op) → rustc E0599/E0308. `arith_dunder_name` (PMAT-768) is
+  extended to `/`→`__truediv__`, `//`→`__floordiv__`, `%`→`__mod__`,
+  `**`→`__pow__`, `<<`/`>>`→`__lshift__`/`__rshift__`,
+  `&`/`|`/`^`→`__and__`/`__or__`/`__xor__`, so the BinOp dispatch routes `a <op>
+  b` to `a.<dunder>(b)` when the LHS is such a struct (RHS cloned when reused).
+  Plain int/float arithmetic and the `%`-format / Div-true-division paths are
+  unchanged. HUNT-V17 (#22/26/27).
+
 ## [0.1.484] — 2026-06-18
 
 ### Fixed
