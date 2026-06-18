@@ -2185,10 +2185,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     emit_expr(out, d, mode)?;
                     out.push(')');
                 }
-                None if *of_float => out.push_str(
-                    ".expect(\"xpile: max()/min() of an empty sequence (Python ValueError)\")",
-                ),
-                None => out.push_str(".unwrap()"),
+                // PMAT-774 (HUNT-V16 CG-5): tag the empty-sequence panic with the
+                // canonical `xpile: ValueError: <fn>() arg is an empty sequence`
+                // (mirror of the Rust backend) so a typed `except ValueError`
+                // catches it; the int branch was a bare `.unwrap()`.
+                None => {
+                    let fname = if *is_max { "max" } else { "min" };
+                    write!(
+                        out,
+                        ".expect(\"xpile: ValueError: {fname}() arg is an empty sequence\")"
+                    )?;
+                }
             }
         }
         // PMAT-502u: list query — `xs.count(x)` / `xs.index(x)` (→ i64).
