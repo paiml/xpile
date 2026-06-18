@@ -14415,10 +14415,25 @@ fn coerce_lowered_to_optional(ctx: &LoweringCtx, inner: Expr, target: Option<&Ty
     if matches!(target, Some(Type::Optional(_)))
         && !matches!(infer_type_in_ctx(ctx, &inner), Type::Optional(_))
     {
-        Expr::OptionExpr(Some(Box::new(inner)))
-    } else {
-        inner
+        return Expr::OptionExpr(Some(Box::new(inner)));
     }
+    // PMAT-781 (HUNT-V17 #10 IFM-1): an `int` argument passed to a `float`
+    // parameter is implicitly widened by Python (`scale(2, 3)` over `factor:
+    // float`), but xpile emitted a bare `2i64` against the Rust `f64` slot →
+    // rustc E0308. Coerce an `int`/`bool` argument to `f64` when the declared
+    // param type is `float` (`bool` is an int subtype, so it widens too). A
+    // `float`/other-typed arg is unchanged.
+    if matches!(target, Some(Type::F64))
+        && matches!(infer_type_in_ctx(ctx, &inner), Type::I64 | Type::Bool)
+    {
+        return Expr::NumCast {
+            value: Box::new(inner),
+            to_float: true,
+            from_str: false,
+            from_float: false,
+        };
+    }
+    inner
 }
 
 /// Context-free counterpart of [`to_i64_operand`] (recognises bool *literals*).
