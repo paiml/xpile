@@ -14187,3 +14187,27 @@ fn main() {
 "#;
     assert_rustc_runs("continue_in_range", &rust, driver);
 }
+
+/// PMAT-800 (HUNT-V19 FS-1): a plain-width radix format on a negative int
+/// (`f"{-255:8x}"`) emitted two's-complement bits (width dropped) instead of
+/// Python's sign-magnitude, right-aligned (`'     -ff'`). The plain-width arm
+/// now builds the sign-magnitude `IntRadixStr` body and space-pads to the width.
+/// Cross-checked vs python3.
+#[test]
+fn neg_radix_width() {
+    let rust = xpile_transpile_to_rust("neg_radix_width.py");
+    assert!(
+        // sign-magnitude body (unsigned_abs) then a right-align space pad.
+        rust.contains("unsigned_abs()") && rust.contains("{:>8}"),
+        "a plain-width neg radix must be sign-magnitude + space-padded:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(hex_w(), "     -ff");
+    assert_eq!(bin_w(), "    -101");
+    assert_eq!(upper_w(), "   -FF");
+    assert_eq!(pos_w(), "      ff");
+}
+"#;
+    assert_rustc_runs("neg_radix_width", &rust, driver);
+}
