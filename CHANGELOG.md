@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.483] — 2026-06-18
+
+### Fixed
+
+- **PMAT-783 — coerce an int argument to a `math.*` builtin to f64.** A `math.*`
+  builtin over an int argument (`math.sqrt(n)` with `n: int`) emitted
+  `(n).sqrt()`, which an `i64` doesn't have (rustc E0599); Python widens
+  int→float into these (`math.sqrt(16)` == 4.0, `math.floor(5)` == 5). The
+  math-call lowering now coerces the argument to `f64` before building the
+  `NumBuiltin`, so the float method resolves; a float argument is unchanged.
+  HUNT-V17 (#12).
+
 ## [0.1.482] — 2026-06-18
 
 ### Fixed
