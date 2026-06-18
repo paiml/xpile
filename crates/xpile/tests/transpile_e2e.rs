@@ -13423,3 +13423,24 @@ fn main() {
 "#;
     assert_rustc_runs("dunder_arith", &rust, driver);
 }
+
+/// PMAT-769 (HUNT-V16 DD-07): a dataclass with a custom `__lt__` emitted `a < b`
+/// over a struct deriving only PartialEq → rustc E0369 (no PartialOrd), with a
+/// dead `__lt__`. A generated `impl PartialOrd` now delegates to `__lt__`, so
+/// `<`/`>`/`<=`/`>=` use the user's ordering. Cross-checked vs python3.
+#[test]
+fn dunder_lt() {
+    let rust = xpile_transpile_to_rust("dunder_lt.py");
+    assert!(
+        rust.contains("impl PartialOrd for P") && rust.contains("self.__lt__(__other.clone())"),
+        "a custom __lt__ must generate an impl PartialOrd delegating to it:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(lt(), 1);            // 1 < 2 on .x
+    assert_eq!(gt(), 1);            // 3 > 2 on .x
+    assert_eq!(le_equal_x(), 1);    // equal .x → <= true
+}
+"#;
+    assert_rustc_runs("dunder_lt", &rust, driver);
+}

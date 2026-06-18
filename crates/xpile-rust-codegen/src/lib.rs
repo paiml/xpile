@@ -164,10 +164,15 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                 // unhashable — so dropping the derives matches Python (and a real
                 // use as a dict key then fails loud rather than silently wrong).
                 let has_custom_eq = methods.iter().any(|m| m.name == "__eq__");
+                // PMAT-769 (HUNT-V16 DD-07): a custom `__lt__` overrides `<` via a
+                // generated `impl PartialOrd` (below) — suppress the structural
+                // `order=True` PartialOrd/Ord derive (a user `__lt__` + the derived
+                // lexicographic order would be two conflicting impls).
+                let has_custom_lt = methods.iter().any(|m| m.name == "__lt__");
                 let mut derives = vec!["Clone", "Debug"];
                 if !has_custom_eq {
                     derives.push("PartialEq");
-                    if derive_eq_hash || derive_ord {
+                    if derive_eq_hash || (derive_ord && !has_custom_lt) {
                         derives.push("Eq");
                     }
                     if derive_eq_hash {
@@ -176,11 +181,12 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                 }
                 // PMAT-648: `order=True` → `PartialOrd` (lexicographic by field
                 // order = Python's tuple comparison). Sound for any comparable
-                // field incl. `f64`.
-                if *order {
+                // field incl. `f64`. Skipped when a custom `__lt__` provides its
+                // own `impl PartialOrd` (PMAT-769).
+                if *order && !has_custom_lt {
                     derives.push("PartialOrd");
                 }
-                if derive_ord {
+                if derive_ord && !has_custom_lt {
                     derives.push("Ord");
                 }
                 writeln!(out, "#[derive({})]", derives.join(", "))?;
@@ -247,6 +253,21 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                     writeln!(out, "impl PartialEq for {name} {{")?;
                     writeln!(out, "    fn eq(&self, __other: &Self) -> bool {{")?;
                     writeln!(out, "        self.__eq__(__other.clone())")?;
+                    out.push_str("    }\n}\n");
+                }
+                // PMAT-769 (HUNT-V16 DD-07): a custom `__lt__` becomes the `<`/`>`/
+                // `<=`/`>=` ordering via a generated `impl PartialOrd` delegating
+                // to it (the `order=True` structural derive was suppressed above).
+                // `a < b` ⟺ `a.__lt__(b)`; `a > b` ⟺ `b.__lt__(a)`; else equal —
+                // matching Python's `<`. The dunder takes `other` by value, so
+                // clone the borrowed operand.
+                if has_custom_lt {
+                    writeln!(out, "impl PartialOrd for {name} {{")?;
+                    writeln!(
+                        out,
+                        "    fn partial_cmp(&self, __other: &Self) -> Option<std::cmp::Ordering> {{"
+                    )?;
+                    writeln!(out, "        if self.__lt__(__other.clone()) {{ Some(std::cmp::Ordering::Less) }} else if __other.__lt__(self.clone()) {{ Some(std::cmp::Ordering::Greater) }} else {{ Some(std::cmp::Ordering::Equal) }}")?;
                     out.push_str("    }\n}\n");
                 }
             }
