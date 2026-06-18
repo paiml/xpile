@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.472] — 2026-06-18
+
+### Fixed
+
+- **PMAT-772 — `list(enumerate(range(n)))` / `list(zip(range(n), xs))` materialize
+  the range.** They emitted raw `enumerate`/`zip`/`range`/`list` free calls →
+  rustc E0425, with the whole expression mistyped — a bare `range(...)` isn't a
+  first-class value, so the enumerate/zip argument was left an undefined
+  `range(n)` call. The expression-position `enumerate(...)` / `zip(...)`
+  lowerings now lower each iterable argument via the range-materializing helper
+  (the same one `len()`/`sum()` use), so the composition with the
+  already-supported `list(...)` works (2-way and 3-way zip). HUNT-V16
+  (GEN-01/02).
+
 ## [0.1.471] — 2026-06-18
 
 ### Fixed
