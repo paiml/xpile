@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.488] — 2026-06-18
+
+### Fixed
+
+- **PMAT-788 — tag a failed `assert` as `xpile: AssertionError`.** A failed
+  `assert` raises Python `AssertionError`, but a bare `assert!(cond, "{}", msg)`
+  panicked with an untagged message, so the typed-`except` re-raise filter let
+  an unrelated `except ValueError:` around an asserting helper swallow it (the
+  handler value was returned) where Python propagates — silent-wrong (the same
+  class as the PMAT-744/747/764 native-panic swallows). Both backends now emit
+  `if !(cond) { panic!("xpile: AssertionError: {}", <msg>) }` and add
+  `AssertionError` to `KNOWN_EXC`, so `except AssertionError` catches it and any
+  other typed `except` re-raises it. HUNT-V17 (#4).
+
 ## [0.1.487] — 2026-06-18
 
 ### Fixed
