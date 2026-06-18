@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.510] — 2026-06-18
+
+### Fixed
+
+- **PMAT-810 — escape dataclass field names that are Rust keywords.** A dataclass
+  field named after a Rust keyword (`type`, `match`, `ref`, `move`, …) emitted
+  verbatim — `pub type: i64`, `Event { type: .. }`, `(e).type`, `self.type` — so
+  rustc failed with a keyword parse error (PMAT-573's escape pass had left field
+  names unescaped). The reserved-ident escape now escapes struct field names,
+  `FieldAccess` fields, and `StructLit` keys to the `r#` raw form; the Display
+  field-repr label strips the `r#` back off so the repr still shows the Python
+  name (the access keeps `r#`). Method names stay unescaped (separate case).
+  HUNT-V21 (#1).
+
 ## [0.1.509] — 2026-06-18
 
 ### Fixed
