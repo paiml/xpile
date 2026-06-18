@@ -129,11 +129,15 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
                 // an `impl PartialEq` (below); suppress the structural derives
                 // (mirror of the Rust backend).
                 let has_custom_eq = methods.iter().any(|m| m.name == "__eq__");
+                // PMAT-777 (HUNT-V17 #3): a custom __ne__ also needs a hand impl
+                // PartialEq (to set `fn ne`); suppress the derive when either present.
+                let has_custom_ne = methods.iter().any(|m| m.name == "__ne__");
+                let custom_eq_impl = has_custom_eq || has_custom_ne;
                 // PMAT-769 (HUNT-V16 DD-07): a custom __lt__ → generated impl
                 // PartialOrd (below); suppress the order=True structural derive.
                 let has_custom_lt = methods.iter().any(|m| m.name == "__lt__");
                 let mut derives = vec!["Clone", "Debug"];
-                if !has_custom_eq {
+                if !custom_eq_impl {
                     derives.push("PartialEq");
                     if derive_eq_hash || (derive_ord && !has_custom_lt) {
                         derives.push("Eq");
@@ -212,11 +216,30 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
                 }
                 // PMAT-762 (HUNT-V16 DD-01): delegate `==` to a custom `__eq__`
                 // (mirror of the Rust backend).
-                if has_custom_eq {
+                if custom_eq_impl {
                     writeln!(out, "impl PartialEq for {name} {{")?;
                     writeln!(out, "    fn eq(&self, __other: &Self) -> bool {{")?;
-                    writeln!(out, "        self.__eq__(__other.clone())")?;
-                    out.push_str("    }\n}\n");
+                    if has_custom_eq {
+                        writeln!(out, "        self.__eq__(__other.clone())")?;
+                    } else if fields.is_empty() {
+                        out.push_str("        true\n");
+                    } else {
+                        out.push_str("        ");
+                        for (i, (field, _)) in fields.iter().enumerate() {
+                            if i > 0 {
+                                out.push_str(" && ");
+                            }
+                            write!(out, "self.{field} == __other.{field}")?;
+                        }
+                        out.push('\n');
+                    }
+                    out.push_str("    }\n");
+                    if has_custom_ne {
+                        writeln!(out, "    fn ne(&self, __other: &Self) -> bool {{")?;
+                        writeln!(out, "        self.__ne__(__other.clone())")?;
+                        out.push_str("    }\n");
+                    }
+                    out.push_str("}\n");
                 }
                 // PMAT-769 (HUNT-V16 DD-07): delegate `<` to a custom __lt__ via a
                 // generated impl PartialOrd (mirror of the Rust backend).
