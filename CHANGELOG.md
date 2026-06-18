@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.481] — 2026-06-18
+
+### Fixed
+
+- **PMAT-781 — widen an int argument to a float parameter.** An int argument
+  passed to a float parameter (`scale(2, 3)` over `factor: float`) emitted a
+  bare `2i64` against the Rust `f64` slot → rustc E0308, where Python implicitly
+  widens int→float at the call. The context-aware call-arg coercion (already
+  used for concrete→Optional) now casts an `int`/`bool` argument to `f64` when
+  the declared param type is `float`; a float argument and an int parameter are
+  unchanged. First of the int→float coercion cluster. HUNT-V17 (#10 IFM-1).
+
 ## [0.1.480] — 2026-06-18
 
 ### Fixed
