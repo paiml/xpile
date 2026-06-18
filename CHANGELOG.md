@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.504] — 2026-06-18
+
+### Fixed
+
+- **PMAT-804 — coerce a bool needle in an int-set membership test to i64.** `True
+  in {1, 2, 3}` emitted `s.contains(&true)` over a `HashSet<i64>` → rustc E0308,
+  where Python's `bool` is an `int` subtype (`True == 1`) so the membership is
+  True. The set-membership lowering now coerces a bool needle to i64 when the set
+  element type is i64 (mirroring the dict bool-key coercion, PMAT-451/787). A
+  float-vs-int needle (numeric-tower exactness) is a separate follow-up.
+  HUNT-V20 (SET-BOOL-MEMBERSHIP).
+
 ## [0.1.503] — 2026-06-18
 
 ### Fixed
