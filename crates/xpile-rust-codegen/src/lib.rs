@@ -1589,13 +1589,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         }
         // PMAT-502cd: `s[i]` over a string — materialise the chars and index
         // them (Rust `String` has no positional `[]`). Negative `i` counts
-        // from the end; out-of-range panics (≈ Python `IndexError`).
+        // from the end. PMAT-801 (HUNT-V19 STR-IDX-OOB): an out-of-range index
+        // is Python `IndexError` — bounds-check and panic with the `xpile:
+        // IndexError:` tag (a bare `__cs[i]` panics with Rust's untagged "index
+        // out of bounds", which the allowlist `except IndexError` can't catch →
+        // it wrongly propagated). Mirrors the list-index tagging (PMAT-444/464).
         Expr::StrCharAt { string, index } => {
             out.push_str("{ let __cs: Vec<char> = (");
             emit_expr(out, string, mode)?;
             out.push_str(").chars().collect(); let __i: i64 = (");
             emit_expr(out, index, mode)?;
-            out.push_str("); let __idx = if __i < 0 { __cs.len() as i64 + __i } else { __i }; __cs[__idx as usize].to_string() }");
+            out.push_str("); let __idx = if __i < 0 { __cs.len() as i64 + __i } else { __i }; if __idx < 0 || __idx as usize >= __cs.len() { panic!(\"xpile: IndexError: string index out of range\"); } __cs[__idx as usize].to_string() }");
         }
         // PMAT-502cl: string chars as a Vec<String> (for `for c in s`).
         Expr::StrChars { string } => {

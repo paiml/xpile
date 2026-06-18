@@ -14211,3 +14211,28 @@ fn main() {
 "#;
     assert_rustc_runs("neg_radix_width", &rust, driver);
 }
+
+/// PMAT-801 (HUNT-V19 STR-IDX-OOB): a string index out of range panicked with
+/// Rust's raw "index out of bounds" message, not the tagged `xpile: IndexError:`,
+/// so under the allowlist except a typed `except IndexError` couldn't catch it
+/// (it propagated). The string-index read now bounds-checks with the tagged
+/// panic. Cross-checked vs python3.
+#[test]
+fn str_index_oob() {
+    let rust = xpile_transpile_to_rust("str_index_oob.py");
+    assert!(
+        rust.contains("panic!(\"xpile: IndexError: string index out of range\")"),
+        "a string-index OOB must carry the xpile: IndexError: tag:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(catch_oob(String::from("ab"), 5), "OOB");   // except IndexError catches it
+    assert_eq!(normal(String::from("hello"), 1), "e");
+    assert_eq!(neg_ok(String::from("xyz")), "z");
+    // an out-of-range index must still raise (propagate) when not caught.
+    let w = std::panic::catch_unwind(|| normal(String::from("ab"), 9));
+    assert!(w.is_err(), "string index OOB must raise IndexError");
+}
+"#;
+    assert_rustc_runs("str_index_oob", &rust, driver);
+}
