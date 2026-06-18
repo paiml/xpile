@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.512] — 2026-06-18
+
+### Fixed
+
+- **PMAT-812 — `set()`/`frozenset()` over a string or tuple literal.** `set("abc")`
+  and `set((1, 2, 3))` were rejected — the `set(<expr>)` constructor only
+  accepted a list-typed argument, where Python iterates any iterable (a string
+  yields its chars, a tuple its elements). The ctor now materialises the iterable
+  to a list before `SetFromList`: a list passes through, a `str` becomes its
+  chars (`Expr::StrChars`), and a tuple literal becomes a list of its elements. A
+  non-literal tuple value stays a documented reject. HUNT-V22 (#10).
+
 ## [0.1.511] — 2026-06-18
 
 ### Fixed
