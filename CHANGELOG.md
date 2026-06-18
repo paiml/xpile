@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.480] — 2026-06-18
+
+### Fixed
+
+- **PMAT-780 — check a nested def's declared return type against its body.** A
+  nested `def f(x: int) -> int: return x > 0` lowered to a closure whose body is
+  `bool` while the registered return type said `int`, so `str(f(5))` rendered
+  Rust's `true` (silent-wrong; Python `True`) — even though the identical code
+  at top level cleanly rejects. The nested-def path trusted the annotation
+  blindly; it now applies the same `declared != inferred` check (with the
+  empty-`[]`/`{}`/bare-`None` exception) the top-level and method paths use,
+  rejecting the mismatch. Correct nested defs are unaffected. HUNT-V17 (#5).
+
 ## [0.1.479] — 2026-06-18
 
 ### Fixed
