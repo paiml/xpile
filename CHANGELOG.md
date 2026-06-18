@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.497] — 2026-06-18
+
+### Fixed
+
+- **PMAT-797 — `d[k].pop()` mutates the stored list in place, not a clone.** A
+  value-returning mutating method on a dict-subscript receiver (`x = d[k].pop()`)
+  cloned the value — the dict read lowers to `.get(&k).cloned().unwrap()`, so the
+  pop hit a throwaway clone and the stored list kept its length (silent-wrong:
+  `len(d[k])` unchanged). The `ListPop` codegen now reaches the value mutably via
+  `(d).get_mut(&k).unwrap_or_else(|| KeyError).pop().expect(IndexError)` when the
+  popped list is an `Expr::DictGet`, mirroring the existing list-subscript
+  in-place pop (PMAT-715). HUNT-V19 (ND-01, top-EV finding).
+
 ## [0.1.496] — 2026-06-18
 
 ### Fixed
