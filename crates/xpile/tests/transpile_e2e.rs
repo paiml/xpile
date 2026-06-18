@@ -2902,8 +2902,8 @@ fn main() {
 fn assert_msg() {
     let rust = xpile_transpile_to_rust("assert_msg.py");
     assert!(
-        rust.contains("assert!((x > 0i64), \"{}\", String::from(\"x must be positive\"))")
-            && rust.contains("assert!((x > 0i64));"),
+        rust.contains("if !((x > 0i64)) { panic!(\"xpile: AssertionError: {}\", String::from(\"x must be positive\"));")
+            && rust.contains("if !((x > 0i64)) { panic!(\"xpile: AssertionError: {}\", \"assertion failed\");"),
         "expected assert with + without message, got:\n{rust}"
     );
     let driver = r#"
@@ -3992,7 +3992,10 @@ fn main() {
 fn void_fn() {
     let rust = xpile_transpile_to_rust("void_fn.py");
     assert!(
-        rust.contains("pub fn check_pos(x: i64) -> () {") && rust.contains("assert!((x > 0i64));"),
+        rust.contains("pub fn check_pos(x: i64) -> () {")
+            && rust.contains(
+                "if !((x > 0i64)) { panic!(\"xpile: AssertionError: {}\", \"assertion failed\");"
+            ),
         "void assert fn:\n{rust}"
     );
     assert!(
@@ -11458,11 +11461,15 @@ fn while_function_citation_appears_on_helper_too_lean() {
 fn assert_emitted_rust_panics_on_violation() {
     let rust = xpile_transpile_to_rust("asserted.py");
     assert!(
-        rust.contains("assert!((b != 0i64));"),
+        rust.contains(
+            "if !((b != 0i64)) { panic!(\"xpile: AssertionError: {}\", \"assertion failed\");"
+        ),
         "expected b != 0 assert, got:\n{rust}"
     );
     assert!(
-        rust.contains("assert!((a >= 0i64));"),
+        rust.contains(
+            "if !((a >= 0i64)) { panic!(\"xpile: AssertionError: {}\", \"assertion failed\");"
+        ),
         "expected a >= 0 assert, got:\n{rust}"
     );
     let driver = r#"
@@ -13888,4 +13895,31 @@ fn main() {
 }
 "#;
     assert_rustc_runs("dict_bool_key_literal", &rust, driver);
+}
+
+/// PMAT-788 (HUNT-V17 #4): a failed `assert` raises Python AssertionError; a
+/// bare `assert!` panicked with an untagged message that an unrelated typed
+/// `except` swallowed (silent-wrong). The assert now emits a tagged `xpile:
+/// AssertionError:` panic + AssertionError is in KNOWN_EXC, so `except
+/// AssertionError` catches it and any other typed except re-raises it.
+/// Cross-checked vs python3.
+#[test]
+fn assert_tagged_panic() {
+    let rust = xpile_transpile_to_rust("assert_tagged_panic.py");
+    assert!(
+        rust.contains("panic!(\"xpile: AssertionError: {}\", String::from(\"neg\"))")
+            && rust.contains("starts_with(\"xpile: AssertionError: \")"),
+        "assert must emit a tagged AssertionError panic + be in the re-raise denylist:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(caught_by_assert(-1), -2);    // except AssertionError catches it
+    assert_eq!(caught_by_assert(5), 5);
+    // an unrelated except ValueError must re-raise (propagate) the AssertionError.
+    let w = std::panic::catch_unwind(|| wrong_except(-1));
+    assert!(w.is_err(), "AssertionError must propagate past except ValueError");
+    assert_eq!(wrong_except(5), 5);
+}
+"#;
+    assert_rustc_runs("assert_tagged_panic", &rust, driver);
 }

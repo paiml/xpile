@@ -33,6 +33,10 @@ const KNOWN_EXC: &[&str] = &[
     "ZeroDivisionError",
     "OverflowError",
     "TypeError",
+    // PMAT-788 (HUNT-V17 #4): a failed `assert` panics with an `xpile:
+    // AssertionError:` tag, so it's a discriminated exception — `except
+    // AssertionError` catches it and any other typed `except` re-raises it.
+    "AssertionError",
 ];
 
 /// PMAT-502by: escape a string for embedding inside a `format!`/`println!`
@@ -1144,13 +1148,21 @@ fn emit_stmt_indented(
         }
         // PMAT-502ao: `assert cond, msg` → `assert!(cond, "{}", <msg>);`.
         Stmt::Assert { cond, msg } => {
-            write!(out, "{indent}assert!(")?;
+            // PMAT-788 (HUNT-V17 #4): a failed `assert` raises Python
+            // `AssertionError`. A bare `assert!(cond, "{}", msg)` panics with an
+            // UNTAGGED message, so the typed-`except` re-raise filter (which only
+            // re-raises `xpile: <KnownExc>:`-prefixed payloads) let an unrelated
+            // `except ValueError:` SWALLOW it (silent-wrong; Python propagates).
+            // Emit a tagged panic so `except AssertionError` catches it and every
+            // other typed `except` re-raises it (AssertionError is in KNOWN_EXC).
+            write!(out, "{indent}if !(")?;
             emit_expr(out, cond, mode)?;
-            if let Some(msg) = msg {
-                out.push_str(", \"{}\", ");
-                emit_expr(out, msg, mode)?;
+            out.push_str(") { panic!(\"xpile: AssertionError: {}\", ");
+            match msg {
+                Some(m) => emit_expr(out, m, mode)?,
+                None => out.push_str("\"assertion failed\""),
             }
-            writeln!(out, ");")?;
+            writeln!(out, "); }}")?;
             Ok(())
         }
         // PMAT-503a: `raise Exc("msg")` → `panic!("{}", <message>);`. The

@@ -27,6 +27,8 @@ const KNOWN_EXC: &[&str] = &[
     "ZeroDivisionError",
     "OverflowError",
     "TypeError",
+    // PMAT-788 (HUNT-V17 #4): assert panics carry an `xpile: AssertionError:` tag.
+    "AssertionError",
 ];
 
 /// PMAT-477 (R8): Ruchy → Rust infix symbol for a float arithmetic op.
@@ -974,13 +976,16 @@ fn emit_stmt_indented(
         }
         // PMAT-502ao: `assert cond, msg` → `assert!(cond, "{}", <msg>);`.
         Stmt::Assert { cond, msg } => {
-            write!(out, "{indent}assert!(")?;
+            // PMAT-788 (HUNT-V17 #4): emit a tagged `xpile: AssertionError:`
+            // panic (mirror of the Rust backend) so a typed except discriminates it.
+            write!(out, "{indent}if !(")?;
             emit_expr(out, cond, mode)?;
-            if let Some(msg) = msg {
-                out.push_str(", \"{}\", ");
-                emit_expr(out, msg, mode)?;
+            out.push_str(") { panic!(\"xpile: AssertionError: {}\", ");
+            match msg {
+                Some(m) => emit_expr(out, m, mode)?,
+                None => out.push_str("\"assertion failed\""),
             }
-            writeln!(out, ");")?;
+            writeln!(out, "); }}")?;
             Ok(())
         }
         // PMAT-503a: `raise Exc("msg")` → `panic!("{}", <message>);` (Ruchy
