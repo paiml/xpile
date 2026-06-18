@@ -11568,7 +11568,9 @@ fn for_range_emitted_rust_computes_correct_values() {
         "expected step=2 tail:\n{rust}"
     );
     assert!(
-        rust.contains("while (__forc0 < n)"),
+        // PMAT-765: the non-constant stop `n` is snapshotted into a __forstop
+        // temp before the loop (Python freezes range args at entry).
+        rust.contains("__forstop") && rust.contains("= n;") && rust.contains("< __forstop"),
         "expected while-cond:\n{rust}"
     );
     // PMAT-634: the user variable is assigned from the counter inside the body.
@@ -13329,4 +13331,29 @@ fn main() {
 }
 "#;
     assert_rustc_runs("const_index_indexerror", &rust, driver);
+}
+
+/// PMAT-765 (HUNT-V16 #5 CFD-1/CFD-2): Python evaluates `range(...)` args once at
+/// loop entry. xpile re-read the stop bound every iteration in the while cond,
+/// so `for i in range(len(xs)): xs.append(..)` (and a body-mutated int bound)
+/// looped forever. The stop is now snapshotted into a `__forstop` temp before
+/// the loop; a literal `range(5)` is unchanged. Cross-checked vs python3.
+#[test]
+fn range_stop_snapshot() {
+    let rust = xpile_transpile_to_rust("range_stop_snapshot.py");
+    assert!(
+        // a non-constant stop is snapshotted before the loop…
+        rust.contains("__forstop") && rust.contains("= (xs.len() as i64)")
+            // …while a literal stop stays inline (no temp, no churn).
+            && rust.contains("while (__forc0 < 5i64)"),
+        "a non-constant range stop must be snapshotted; a literal stays inline:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(grow_while_iter(), 3);  // would hang if len re-evaluated
+    assert_eq!(mutable_bound(), 3);    // would hang if n re-evaluated
+    assert_eq!(literal_range(), 10);
+}
+"#;
+    assert_rustc_runs("range_stop_snapshot", &rust, driver);
 }
