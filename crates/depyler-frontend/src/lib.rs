@@ -15413,16 +15413,35 @@ fn try_repeat(lhs_ty: &Type, rhs_ty: &Type, lhs: &Expr, rhs: &Expr) -> Option<Ex
         _ => {}
     }
     let is_seq = |t: &Type| matches!(t, Type::Str | Type::List(_));
-    if is_seq(lhs_ty) && *rhs_ty == Type::I64 {
+    // PMAT-796 (HUNT-V18 BIC-02): a list/str repeat count may be a bool —
+    // Python's `bool` is an `int` subtype, so `[x] * True` == `[x]` and `* False`
+    // == `[]`. Accept a Bool count and coerce it to i64; without this `[x] * b`
+    // fell to the int-multiply path (rustc E0599 `checked_mul` on a Vec, or a
+    // "body produces I64" reject). `try_repeat` has no `ctx`, so emit the
+    // `bool as i64` cast directly (a no-op `NumCast`, like `int(b)` PMAT-535).
+    let is_count = |t: &Type| matches!(t, Type::I64 | Type::Bool);
+    let count_i64 = |e: &Expr, t: &Type| -> Expr {
+        if *t == Type::Bool {
+            Expr::NumCast {
+                value: Box::new(e.clone()),
+                to_float: false,
+                from_str: false,
+                from_float: false,
+            }
+        } else {
+            e.clone()
+        }
+    };
+    if is_seq(lhs_ty) && is_count(rhs_ty) {
         Some(Expr::Repeat {
             seq: Box::new(lhs.clone()),
-            n: Box::new(rhs.clone()),
+            n: Box::new(count_i64(rhs, rhs_ty)),
             of_str: *lhs_ty == Type::Str,
         })
-    } else if *lhs_ty == Type::I64 && is_seq(rhs_ty) {
+    } else if is_count(lhs_ty) && is_seq(rhs_ty) {
         Some(Expr::Repeat {
             seq: Box::new(rhs.clone()),
-            n: Box::new(lhs.clone()),
+            n: Box::new(count_i64(lhs, lhs_ty)),
             of_str: *rhs_ty == Type::Str,
         })
     } else {

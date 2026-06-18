@@ -14100,3 +14100,25 @@ fn main() {
 "#;
     assert_rustc_runs("abs_round_bool", &rust, driver);
 }
+
+/// PMAT-796 (HUNT-V18 BIC-02): a list/str repeat with a bool count (`[x] * b`)
+/// fell to the int-multiply path (E0599 / "body produces I64" reject), where
+/// Python's bool is an int subtype ([x]*True==[x], *False==[]). try_repeat now
+/// coerces a Bool count to i64. Cross-checked vs python3.
+#[test]
+fn list_repeat_bool() {
+    let rust = xpile_transpile_to_rust("list_repeat_bool.py");
+    assert!(
+        // the bool count is cast to i64 inside the repeat (no checked_mul on a Vec).
+        rust.contains("as i64") && !rust.contains("checked_mul"),
+        "a list/str repeat with a bool count must coerce the count to i64:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(rep_true(), vec![1, 2]);
+    assert_eq!(rep_false(), Vec::<i64>::new());
+    assert_eq!(str_rep_true(), "ab");
+}
+"#;
+    assert_rustc_runs("list_repeat_bool", &rust, driver);
+}
