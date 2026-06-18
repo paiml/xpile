@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.479] — 2026-06-18
+
+### Fixed
+
+- **PMAT-779 — `str(s)` over a str is the identity.** `str(s)` over a str-typed
+  value fell through the `str()` builtin's type match (int/float/bool/list/tuple
+  but not `Str`) to a generic call that inferred I64 / emitted a bare `str(...)`
+  free call → rustc E0425. Python `str(s)` returns `s` unchanged; the frontend
+  now adds a `Type::Str => Ok(value)` identity arm (mirroring the existing
+  `format(s)` identity). (`str(obj)` over a struct remains the separate PMAT-776
+  follow-up.) HUNT-V17 (#19).
+
 ## [0.1.478] — 2026-06-18
 
 ### Fixed
