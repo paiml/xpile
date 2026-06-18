@@ -11256,7 +11256,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             ))
                         })?,
                     };
-                    let list = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    // PMAT-772 (HUNT-V16 GEN-01): materialize a `range(...)` arg
+                    // into a Vec so `list(enumerate(range(n)))` works — a bare
+                    // `range` isn't a first-class value, so plain lowering left it
+                    // an undefined `range(n)` free call (E0425) and a non-list type.
+                    let list = lower_arg_materializing_range(ctx, &call.args[0])?;
                     if matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
                         return Ok(Expr::Enumerate {
                             list: Box::new(list),
@@ -11267,8 +11271,10 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // PMAT-502ai: `zip(xs, ys)` over two lists → a Vec of paired
                 // tuples (truncated to the shorter).
                 if fname.id.as_str() == "zip" && call.keywords.is_empty() && call.args.len() == 2 {
-                    let left = lower_expr_in_ctx(ctx, call.args[0].clone())?;
-                    let right = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                    // PMAT-772 (HUNT-V16 GEN-02): materialize `range(...)` args so
+                    // `list(zip(range(n), xs))` works (a bare range → E0425).
+                    let left = lower_arg_materializing_range(ctx, &call.args[0])?;
+                    let right = lower_arg_materializing_range(ctx, &call.args[1])?;
                     if matches!(infer_type_in_ctx(ctx, &left), Type::List(_))
                         && matches!(infer_type_in_ctx(ctx, &right), Type::List(_))
                     {
@@ -11284,9 +11290,10 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // (PMAT-562); reuses Zip/Map/TupleLit/TupleIndex, no new IR. (4+-way
                 // is deferred — rare; falls through as before.)
                 if fname.id.as_str() == "zip" && call.keywords.is_empty() && call.args.len() == 3 {
-                    let a = lower_expr_in_ctx(ctx, call.args[0].clone())?;
-                    let b = lower_expr_in_ctx(ctx, call.args[1].clone())?;
-                    let c = lower_expr_in_ctx(ctx, call.args[2].clone())?;
+                    // PMAT-772: materialize `range(...)` args in 3-way zip too.
+                    let a = lower_arg_materializing_range(ctx, &call.args[0])?;
+                    let b = lower_arg_materializing_range(ctx, &call.args[1])?;
+                    let c = lower_arg_materializing_range(ctx, &call.args[2])?;
                     if matches!(infer_type_in_ctx(ctx, &a), Type::List(_))
                         && matches!(infer_type_in_ctx(ctx, &b), Type::List(_))
                         && matches!(infer_type_in_ctx(ctx, &c), Type::List(_))
