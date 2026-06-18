@@ -14374,3 +14374,25 @@ fn main() {
 "#;
     assert_rustc_runs("float_width_noprec", &rust, driver);
 }
+
+/// PMAT-808 (HUNT-V22 HASH-01): a dataclass with a custom __hash__ used as a set
+/// element / dict key derived neither Hash nor Eq (dead __hash__) → E0277/E0599.
+/// It now derives Eq + emits an `impl Hash` delegating to __hash__ (a custom
+/// __eq__ adds a hand `impl Eq`). Cross-checked vs python3.
+#[test]
+fn hash_dunder_set() {
+    let rust = xpile_transpile_to_rust("hash_dunder_set.py");
+    assert!(
+        rust.contains("impl std::hash::Hash for Pt {")
+            && rust.contains("self.__hash__().hash(__state)")
+            && rust.contains("impl Eq for Key {}"),
+        "a custom __hash__ must produce an impl Hash (+ Eq):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(set_dedup(), 2);   // Pt(1,2) dedups → {Pt(1,2), Pt(3,4)}
+    assert_eq!(dict_key(), 100);  // Key __eq__ on `a`, hash on `a` → Key(1,5) hits Key(1,9)
+}
+"#;
+    assert_rustc_runs("hash_dunder_set", &rust, driver);
+}
