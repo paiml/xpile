@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.507] — 2026-06-18
+
+### Fixed
+
+- **PMAT-807 — a float with an align/width-only spec keeps Python's trailing
+  `.0`.** A float with an align/width-ONLY format spec (`f"{3.0:>6}"`,
+  `f"{3.0:8}"`) lowered to `format!("{:>6}", x_f64)`, using Rust's bare f64
+  Display (`3`, no `.0`) — dropping the `.0` (`"     3"` vs Python's `"   3.0"`);
+  the bare-width form was even rejected. The float is now rendered to its Python
+  repr string first (via `ToStr { of_float: true }`, the `str(float)` path) and
+  padded; a bare width forces right-align (Python right-aligns numbers; Rust
+  left-aligns strings). Precision (`.Nf`/`.N%`) and int specs are unaffected.
+  HUNT-V21 (FS).
+
 ## [0.1.506] — 2026-06-18
 
 ### Fixed
