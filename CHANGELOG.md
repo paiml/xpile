@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.509] — 2026-06-18
+
+### Fixed
+
+- **PMAT-809 — a reassigned walrus-bound name gets `let mut`.** A walrus-bound
+  name reassigned once (`if (n := 10) > 5: n = 99`) emitted an immutable `let n`
+  → rustc E0384. The walrus binds `n` in the if-condition expression, but the
+  mut-inference (`walk_counts`) only counted assignment statements, so it missed
+  the walrus binding (one reassignment looked like the first write — an
+  off-by-one; two worked). `walk_counts` now scans the `if`/`while` condition for
+  walrus targets, so a reassigned walrus binding becomes `let mut` while a
+  never-reassigned one stays a plain `let`. HUNT-V22 (CA-1).
+
 ## [0.1.508] — 2026-06-18
 
 ### Fixed
