@@ -164,13 +164,21 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                 // unhashable — so dropping the derives matches Python (and a real
                 // use as a dict key then fails loud rather than silently wrong).
                 let has_custom_eq = methods.iter().any(|m| m.name == "__eq__");
+                // PMAT-777 (HUNT-V17 #3): a custom `__ne__` overrides `!=`. The
+                // PMAT-762 `impl PartialEq` only set `fn eq`, so `!=` used the
+                // default `!eq()` and the user `__ne__` was dead. `__ne__` is
+                // independent of `__eq__` in Python, so it ALSO requires a hand
+                // `impl PartialEq` (you can't add `fn ne` to a derive) — suppress
+                // the structural derive when either is present.
+                let has_custom_ne = methods.iter().any(|m| m.name == "__ne__");
+                let custom_eq_impl = has_custom_eq || has_custom_ne;
                 // PMAT-769 (HUNT-V16 DD-07): a custom `__lt__` overrides `<` via a
                 // generated `impl PartialOrd` (below) — suppress the structural
                 // `order=True` PartialOrd/Ord derive (a user `__lt__` + the derived
                 // lexicographic order would be two conflicting impls).
                 let has_custom_lt = methods.iter().any(|m| m.name == "__lt__");
                 let mut derives = vec!["Clone", "Debug"];
-                if !has_custom_eq {
+                if !custom_eq_impl {
                     derives.push("PartialEq");
                     if derive_eq_hash || (derive_ord && !has_custom_lt) {
                         derives.push("Eq");
@@ -267,11 +275,37 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                 // The generated `__eq__` takes `other` by value, so clone the
                 // borrowed RHS. This also makes `x in list` (Vec::contains) use
                 // the correct equality (DD-02) with no `in`-lowering change.
-                if has_custom_eq {
+                if custom_eq_impl {
                     writeln!(out, "impl PartialEq for {name} {{")?;
                     writeln!(out, "    fn eq(&self, __other: &Self) -> bool {{")?;
-                    writeln!(out, "        self.__eq__(__other.clone())")?;
-                    out.push_str("    }\n}\n");
+                    if has_custom_eq {
+                        writeln!(out, "        self.__eq__(__other.clone())")?;
+                    } else {
+                        // PMAT-777: `__ne__` without `__eq__` — Python's `==` is
+                        // still the dataclass's structural equality (all fields),
+                        // emitted by hand since the derive was suppressed.
+                        if fields.is_empty() {
+                            out.push_str("        true\n");
+                        } else {
+                            out.push_str("        ");
+                            for (i, (field, _)) in fields.iter().enumerate() {
+                                if i > 0 {
+                                    out.push_str(" && ");
+                                }
+                                write!(out, "self.{field} == __other.{field}")?;
+                            }
+                            out.push('\n');
+                        }
+                    }
+                    out.push_str("    }\n");
+                    // PMAT-777: delegate `!=` to a custom `__ne__` when present
+                    // (else the default `!eq()` is correct).
+                    if has_custom_ne {
+                        writeln!(out, "    fn ne(&self, __other: &Self) -> bool {{")?;
+                        writeln!(out, "        self.__ne__(__other.clone())")?;
+                        out.push_str("    }\n");
+                    }
+                    out.push_str("}\n");
                 }
                 // PMAT-769 (HUNT-V16 DD-07): a custom `__lt__` becomes the `<`/`>`/
                 // `<=`/`>=` ordering via a generated `impl PartialOrd` delegating

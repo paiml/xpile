@@ -13616,3 +13616,28 @@ fn main() {
 "#;
     assert_rustc_runs("dunder_str_display", &rust, driver);
 }
+
+/// PMAT-777 (HUNT-V17 #3): a custom `__ne__` was never dispatched — the PMAT-762
+/// `impl PartialEq` only set `fn eq`, so `!=` used the default `!eq()` and the
+/// user `__ne__` was dead. Both backends now emit `fn ne` delegating to it (and
+/// a hand structural `eq` when `__ne__` is defined without `__eq__`).
+/// Cross-checked vs python3.
+#[test]
+fn dunder_ne() {
+    let rust = xpile_transpile_to_rust("dunder_ne.py");
+    assert!(
+        rust.contains("fn ne(&self, __other: &Self) -> bool")
+            && rust.contains("self.__ne__(__other.clone())")
+            // the __ne__-without-__eq__ struct gets a hand structural eq.
+            && rust.contains("self.a == __other.a && self.b == __other.b"),
+        "a custom __ne__ must drive `fn ne` (and a hand structural eq):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(ne_always_false(), 222);
+    assert_eq!(ne_only_struct_eq(), 0);
+    assert_eq!(ne_only_custom_ne(), 0);
+}
+"#;
+    assert_rustc_runs("dunder_ne", &rust, driver);
+}
