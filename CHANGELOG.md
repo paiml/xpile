@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.484] — 2026-06-18
+
+### Fixed
+
+- **PMAT-784 — leak a list/str/dict loop variable to the enclosing scope.**
+  Python leaks the loop variable (after `for x in xs:`, `x` holds the last
+  element, or its pre-loop value if `xs` is empty), but Rust's `for x in iter`
+  scopes `x` to the loop, so a post-loop read saw the pre-loop value
+  (silent-wrong: `x = 0; for x in xs: pass; return x` returned 0). The range-for
+  desugar already leaks; the list/str/dict `ForEach` path now does too — when
+  the target has a durable outer binding of the element's type (a param or
+  non-loop `let`/assign), the loop binding is renamed to a fresh `__fe{N}` and
+  `x = __fe{N}` is assigned at the body top so the outer `x` is updated each
+  iteration (a `loop_scoped` set excludes vars bound only by a sibling loop,
+  which have no durable binding). A truly fresh loop var keeps the native
+  binding (a post-loop read stays a loud follow-up). HUNT-V17 (#13 CR-01).
+
 ## [0.1.483] — 2026-06-18
 
 ### Fixed
