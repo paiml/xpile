@@ -178,13 +178,23 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                     .into_iter()
                     .find(|d| methods.iter().any(|m| m.name == *d));
                 let has_order_dunder = order_dunder.is_some();
+                // PMAT-808 (HUNT-V22 HASH-01): a class with a custom `__hash__` is
+                // used as a set element / dict key / `in` test — those need Rust
+                // `Hash` + `Eq`, but the struct derived neither and `__hash__` was
+                // dead code (rustc E0277/E0599). Emit an `impl Hash` delegating to
+                // the user method (below), and ensure `Eq` (Hash requires it). Only
+                // when every field is itself `Eq` (`all_ord_fields` — a float field
+                // disqualifies it, like the frozen/derive case). Suppress the
+                // structural `Hash` derive so the user method wins.
+                let has_custom_hash =
+                    methods.iter().any(|m| m.name == "__hash__") && all_ord_fields;
                 let mut derives = vec!["Clone", "Debug"];
                 if !custom_eq_impl {
                     derives.push("PartialEq");
-                    if derive_eq_hash || (derive_ord && !has_order_dunder) {
+                    if derive_eq_hash || (derive_ord && !has_order_dunder) || has_custom_hash {
                         derives.push("Eq");
                     }
-                    if derive_eq_hash {
+                    if derive_eq_hash && !has_custom_hash {
                         derives.push("Hash");
                     }
                 }
@@ -333,6 +343,24 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                         "    fn partial_cmp(&self, __other: &Self) -> Option<std::cmp::Ordering> {{"
                     )?;
                     writeln!(out, "        {body}")?;
+                    out.push_str("    }\n}\n");
+                }
+                // PMAT-808 (HUNT-V22 HASH-01): a custom `__hash__` becomes the
+                // struct's `Hash` via a generated impl delegating to it, so the
+                // type is usable as a `HashSet` element / `HashMap` key (Eq was
+                // arranged above). When `==` is also hand-impl'd (custom
+                // `__eq__`/`__ne__`), `Eq` couldn't be derived (no derived
+                // `PartialEq`) — emit the marker `impl Eq` by hand.
+                if has_custom_hash {
+                    if custom_eq_impl {
+                        writeln!(out, "impl Eq for {name} {{}}")?;
+                    }
+                    writeln!(out, "impl std::hash::Hash for {name} {{")?;
+                    writeln!(
+                        out,
+                        "    fn hash<__H: std::hash::Hasher>(&self, __state: &mut __H) {{"
+                    )?;
+                    writeln!(out, "        self.__hash__().hash(__state);")?;
                     out.push_str("    }\n}\n");
                 }
             }
