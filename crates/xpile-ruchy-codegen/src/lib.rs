@@ -160,9 +160,23 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
                 // all-int/bool dataclass (mirror of the Rust backend) so an
                 // instance renders in an f-string / str() / print() instead of
                 // E0277 (struct derives only Debug).
-                let display_eligible = fields
-                    .iter()
-                    .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool));
+                // PMAT-776 (HUNT-V17 #2): a custom `__str__` becomes the Display
+                // (delegating), taking precedence over the field-repr (mirror of
+                // the Rust backend).
+                let has_str = methods.iter().any(|m| m.name == "__str__");
+                if has_str {
+                    writeln!(out, "impl std::fmt::Display for {name} {{")?;
+                    writeln!(
+                        out,
+                        "    fn fmt(&self, __f: &mut std::fmt::Formatter) -> std::fmt::Result {{"
+                    )?;
+                    writeln!(out, "        write!(__f, \"{{}}\", self.__str__())")?;
+                    out.push_str("    }\n}\n");
+                }
+                let display_eligible = !has_str
+                    && fields
+                        .iter()
+                        .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool));
                 if display_eligible {
                     let mut fmt_str = format!("{name}(");
                     let mut args = String::new();

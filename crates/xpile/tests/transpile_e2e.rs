@@ -13594,3 +13594,25 @@ fn main() {
 "#;
     assert_rustc_runs("map_filter_range", &rust, driver);
 }
+
+/// PMAT-776 (HUNT-V17 #2): a dataclass with a custom `__str__` rendered as the
+/// hard-coded PMAT-760 field-repr in f-strings/print, with `__str__` dead —
+/// silently wrong. The generated `Display` now delegates to `__str__` when
+/// present (any field types). Cross-checked vs python3.
+#[test]
+fn dunder_str_display() {
+    let rust = xpile_transpile_to_rust("dunder_str_display.py");
+    assert!(
+        // Display delegates to __str__, not the field-repr `C(v={})`.
+        rust.contains("write!(__f, \"{}\", self.__str__())")
+            && !rust.contains("write!(__f, \"C(v={})\""),
+        "a custom __str__ must drive Display (not the field-repr):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(fstr_c(), "val=XYZ");
+    assert_eq!(fstr_pt(), "pt=(3,4)");
+}
+"#;
+    assert_rustc_runs("dunder_str_display", &rust, driver);
+}

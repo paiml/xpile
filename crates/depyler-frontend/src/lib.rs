@@ -12338,6 +12338,17 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
 /// `repr`). A str field needs quoting, a float its own repr, a nested struct its
 /// own `Display` — those are deferred. Must mirror the codegen eligibility.
 fn struct_display_eligible(ctx: &LoweringCtx, name: &str) -> bool {
+    // PMAT-776 (HUNT-V17 #2): a struct that defines `__str__` renders via its
+    // generated `Display` (delegating to `__str__`) for ANY field types, so it's
+    // f-string-eligible regardless of field kinds. Otherwise (PMAT-760) only an
+    // all-int/bool dataclass has a generated field-repr `Display`.
+    if ctx
+        .struct_methods
+        .get(name)
+        .is_some_and(|ms| ms.iter().any(|(m, _)| m == "__str__"))
+    {
+        return true;
+    }
     ctx.structs.get(name).is_some_and(|fields| {
         fields
             .iter()
