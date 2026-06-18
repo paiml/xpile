@@ -10230,6 +10230,20 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             // `min("a", "b")` no longer silently emits an undefined `min(...)`.
             // `abs` stays numeric-only.
             if let ast::Expr::Name(fname) = call.func.as_ref() {
+                // PMAT-806 (HUNT-V21): a bare `range(...)` in VALUE position — `r =
+                // range(5)`, `return range(n)` — emitted an undefined `range(5i64)`
+                // free call typed i64 (rustc E0425, mis-typed). The for-loop iter,
+                // `list(range(…))`, and reduction-builtin (`sum`/`len(range(…))`)
+                // paths all intercept `range` BEFORE this value-call lowering and
+                // return, so any `range(...)` reaching here is genuinely a value:
+                // materialize it to a `Vec<i64>` (the same `RangeList` `list(...)`
+                // produces), giving the binding `list[int]` so `sum/len/iter` work.
+                if fname.id.as_str() == "range"
+                    && call.keywords.is_empty()
+                    && (1..=3).contains(&call.args.len())
+                {
+                    return lower_range_list(ctx, &call);
+                }
                 // PMAT-506b/506e (classes epic): `Name(...)` over a known class →
                 // struct construction. Positional args fill fields in declaration
                 // order; keyword args (PMAT-506e) fill the rest by name (Python's

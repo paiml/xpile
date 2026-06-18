@@ -14331,3 +14331,26 @@ fn main() {
 "#;
     assert_rustc_runs("comp_var_scope", &rust, driver);
 }
+
+/// PMAT-806 (HUNT-V21): a bare `range(...)` bound to a variable (`r = range(5)`)
+/// emitted an undefined `range(5i64)` free call typed i64 (E0425). A
+/// value-position range now materializes to a `Vec<i64>` (like
+/// `list(range(...))`), so the binding is list[int]. Cross-checked vs python3.
+#[test]
+fn range_var_materialize() {
+    let rust = xpile_transpile_to_rust("range_var_materialize.py");
+    assert!(
+        // the binding is a materialized Vec<i64>, not a raw `range(..)` call.
+        rust.contains("let r: Vec<i64> = (0i64..5i64).collect")
+            && rust.contains(".step_by(2usize)"),
+        "a value-position range must materialize to a Vec<i64>:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(from_range(), 10);     // sum(0..5)
+    assert_eq!(with_step(), 25);      // sum(1,3,5,7,9)
+    assert_eq!(iterate_bound(), 6);   // sum(0..4)
+}
+"#;
+    assert_rustc_runs("range_var_materialize", &rust, driver);
+}
