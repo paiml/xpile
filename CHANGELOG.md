@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.486] — 2026-06-18
+
+### Fixed
+
+- **PMAT-786 — Some-wrap a non-None value into an Optional dataclass field.** A
+  non-None value passed to an `Optional[T]` dataclass field in the constructor
+  (`Node(5, 10)` over `next_id: Optional[int]`) emitted a bare `10i64` against
+  the `Option<i64>` field slot → rustc E0308. The coerce-to-optional (PMAT-753)
+  covered call-args/let-init but not struct-literal field values; the ctor
+  lowering now coerces each positional/keyword arg to the field's declared type
+  (Some-wrapping a non-None Optional, widening an int literal to a float field).
+  `None` and an already-Optional value pass through. HUNT-V17 (#18).
+
 ## [0.1.485] — 2026-06-18
 
 ### Fixed
