@@ -154,12 +154,25 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                 // `PartialOrd` only (sorting it stays deferred — needs a
                 // `sort_by(partial_cmp)` path).
                 let derive_ord = *order && all_ord_fields;
-                let mut derives = vec!["Clone", "Debug", "PartialEq"];
-                if derive_eq_hash || derive_ord {
-                    derives.push("Eq");
-                }
-                if derive_eq_hash {
-                    derives.push("Hash");
+                // PMAT-762 (HUNT-V16 DD-01): when the dataclass defines its own
+                // `__eq__`, do NOT `#[derive(PartialEq)]` — the structural derive
+                // (all fields) silently overrode the user's `==` semantics (e.g.
+                // comparing only `self.x`). Emit an `impl PartialEq` that
+                // delegates to the user method instead. Also suppress `Eq`/`Hash`:
+                // a custom `__eq__` is not guaranteed reflexive/consistent, and a
+                // Python class with `__eq__` but no `__hash__` is itself
+                // unhashable — so dropping the derives matches Python (and a real
+                // use as a dict key then fails loud rather than silently wrong).
+                let has_custom_eq = methods.iter().any(|m| m.name == "__eq__");
+                let mut derives = vec!["Clone", "Debug"];
+                if !has_custom_eq {
+                    derives.push("PartialEq");
+                    if derive_eq_hash || derive_ord {
+                        derives.push("Eq");
+                    }
+                    if derive_eq_hash {
+                        derives.push("Hash");
+                    }
                 }
                 // PMAT-648: `order=True` → `PartialOrd` (lexicographic by field
                 // order = Python's tuple comparison). Sound for any comparable
@@ -223,6 +236,18 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                         emit_function(&mut out, m)?;
                     }
                     out.push_str("}\n");
+                }
+                // PMAT-762 (HUNT-V16 DD-01): a custom `__eq__` becomes the `==`
+                // semantics via an `impl PartialEq` delegating to the user method
+                // (the structural `#[derive(PartialEq)]` was suppressed above).
+                // The generated `__eq__` takes `other` by value, so clone the
+                // borrowed RHS. This also makes `x in list` (Vec::contains) use
+                // the correct equality (DD-02) with no `in`-lowering change.
+                if has_custom_eq {
+                    writeln!(out, "impl PartialEq for {name} {{")?;
+                    writeln!(out, "    fn eq(&self, __other: &Self) -> bool {{")?;
+                    writeln!(out, "        self.__eq__(__other.clone())")?;
+                    out.push_str("    }\n}\n");
                 }
             }
             // PMAT-513: a Python `Enum` class → a Rust enum. The discriminants
