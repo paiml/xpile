@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.482] — 2026-06-18
+
+### Fixed
+
+- **PMAT-782 — coerce int literals in a `list[float]` to f64.** A list literal
+  declared `list[float]` with int-literal elements (`xs: list[float] = [1, 2,
+  3]`) emitted `vec![1i64, …]` against the Rust `Vec<f64>` slot → rustc E0308.
+  The let-init type-threading (`lower_value_expecting`) now threads `float` into
+  each element of a non-empty `list[float]` literal, so an int literal becomes a
+  float literal (the same literal-only coercion `-> float: return 0` uses); a
+  float element and an `int`-typed list are unchanged, and an int *variable*
+  element stays i64 (matching Python's non-coercion of non-literals). HUNT-V17
+  (#11 IFM-2).
+
 ## [0.1.481] — 2026-06-18
 
 ### Fixed
