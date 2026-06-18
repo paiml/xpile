@@ -1675,8 +1675,11 @@ fn main() {
 fn list_minmax_builtin() {
     let rust = xpile_transpile_to_rust("list_minmax_builtin.py");
     assert!(
-        rust.contains(".iter().cloned().min().unwrap()")
-            && rust.contains(".iter().cloned().max().unwrap()"),
+        rust.contains(
+            ".iter().cloned().min().expect(\"xpile: ValueError: min() arg is an empty sequence\")"
+        ) && rust.contains(
+            ".iter().cloned().max().expect(\"xpile: ValueError: max() arg is an empty sequence\")"
+        ),
         "expected min/max reduction emission, got:\n{rust}"
     );
     let driver = r#"
@@ -2800,7 +2803,7 @@ fn list_minmax_float() {
     assert!(
         rust.contains(".reduce(|__a, __b| if __b < __a { __b } else { __a })")
             && rust.contains(".reduce(|__a, __b| if __b > __a { __b } else { __a })")
-            && rust.contains("of an empty sequence"),
+            && rust.contains("arg is an empty sequence"),
         "expected float min/max first-arg-wins reduce, got:\n{rust}"
     );
     let driver = r#"
@@ -2823,7 +2826,7 @@ fn max_empty_float_gen() {
     assert!(
         !rust.contains("f64::NEG_INFINITY")
             && !rust.contains("f64::INFINITY")
-            && rust.contains("of an empty sequence"),
+            && rust.contains("arg is an empty sequence"),
         "empty float max/min must fail loud, not return ±inf:\n{rust}"
     );
     let driver = r#"
@@ -9482,7 +9485,7 @@ fn main() {
 fn max_min_tuple() {
     let rust = xpile_transpile_to_rust("max_min_tuple.py");
     assert!(
-        rust.contains("fn maxpair(xs: Vec<(i64, i64)>) -> (i64, i64) {\n    xs.iter().cloned().max().unwrap()"),
+        rust.contains("fn maxpair(xs: Vec<(i64, i64)>) -> (i64, i64) {\n    xs.iter().cloned().max().expect(\"xpile: ValueError: max() arg is an empty sequence\")"),
         "max() over list[tuple] should fold to .max() with the tuple element type:\n{rust}"
     );
     let driver = r#"
@@ -13542,4 +13545,28 @@ fn main() {
 }
 "#;
     assert_rustc_runs("fstr_neg_radix_zeropad", &rust, driver);
+}
+
+/// PMAT-774 (HUNT-V16 CG-5): max()/min() over an empty sequence raises Python
+/// `ValueError`. The int branch emitted a bare `.unwrap()` (native panic) and
+/// the float branch's message lacked the `xpile: ValueError:` prefix — so a
+/// typed `except ValueError` didn't catch it. Both branches now emit the
+/// canonical tagged message. Cross-checked vs python3.
+#[test]
+fn minmax_empty_valueerror() {
+    let rust = xpile_transpile_to_rust("minmax_empty_valueerror.py");
+    assert!(
+        rust.contains("xpile: ValueError: max() arg is an empty sequence"),
+        "empty max() must panic with the tagged ValueError message:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(max_empty_caught(), -1);   // except ValueError catches it
+    // a non-matching except must re-raise (propagate) → panics.
+    let p = std::panic::catch_unwind(|| max_empty_wrong_except());
+    assert!(p.is_err(), "empty-max ValueError must propagate past except KeyError");
+    assert_eq!(min_nonempty(), 1);
+}
+"#;
+    assert_rustc_runs("minmax_empty_valueerror", &rust, driver);
 }

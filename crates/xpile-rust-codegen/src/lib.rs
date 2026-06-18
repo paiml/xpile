@@ -2597,10 +2597,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     emit_expr(out, d, mode)?;
                     out.push(')');
                 }
-                None if *of_float => out.push_str(
-                    ".expect(\"xpile: max()/min() of an empty sequence (Python ValueError)\")",
-                ),
-                None => out.push_str(".unwrap()"),
+                // PMAT-774 (HUNT-V16 CG-5): `max()`/`min()` over an empty sequence
+                // (e.g. an empty filtered comprehension) raises Python
+                // `ValueError: max() arg is an empty sequence`. The int/Ord branch
+                // emitted a bare `.unwrap()` (native "Option::unwrap on None"
+                // panic), and the float branch's message lacked the `xpile:
+                // ValueError: ` prefix — so neither was caught by a typed `except
+                // ValueError:` (the PMAT-731 re-raise filter matches that prefix).
+                // Emit the canonical tagged message in BOTH branches.
+                None => {
+                    let fname = if *is_max { "max" } else { "min" };
+                    write!(
+                        out,
+                        ".expect(\"xpile: ValueError: {fname}() arg is an empty sequence\")"
+                    )?;
+                }
             }
         }
         // PMAT-502u: list query — `xs.count(x)` / `xs.index(x)` (→ i64).
