@@ -8247,6 +8247,32 @@ fn lower_value_expecting(
                 lower_expr_in_ctx(ctx, value.clone())
             }
         }
+        // PMAT-787 (HUNT-V17 #24): a dict literal declared `dict[int, V]` with
+        // BOOL keys — `d: dict[int, int] = {True: 10, False: 20}`. Python's `bool`
+        // is an `int` subtype (`hash(True) == hash(1)`), so `{True: …}` is
+        // `{1: …}`; but the keys lowered as `true`/`false` into a `HashMap<i64,
+        // V>` (rustc E0308), and a `{True: …, 2: …}` mix even rejected as
+        // "heterogeneous". Coerce each bool key to i64 (via `to_i64_operand`)
+        // when the declared key type is int, threading the value type too. (The
+        // index-read `d[True]` was already coerced, PMAT-751; this is the literal
+        // KEY.) A genuinely `dict[bool, V]` keeps its bool keys (kt != I64).
+        ast::Expr::Dict(d)
+            if !d.keys.is_empty()
+                && d.keys.iter().all(Option::is_some)
+                && matches!(expected, Type::Dict(kt, _) if **kt == Type::I64) =>
+        {
+            let Type::Dict(_, vt) = expected else {
+                unreachable!("matched Type::Dict above");
+            };
+            let mut pairs = Vec::with_capacity(d.keys.len());
+            for (k, v) in d.keys.iter().zip(d.values.iter()) {
+                let key = lower_expr_in_ctx(ctx, k.clone().expect("key is_some checked"))?;
+                let key = to_i64_operand(ctx, key);
+                let val = lower_value_expecting(ctx, v, vt)?;
+                pairs.push((key, val));
+            }
+            Ok(Expr::DictLit(pairs))
+        }
         _ => lower_expr_in_ctx(ctx, value.clone()),
     }
 }
