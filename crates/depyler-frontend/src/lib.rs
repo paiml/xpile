@@ -8158,6 +8158,23 @@ fn lower_value_expecting(
                 lower_expr_in_ctx(ctx, value.clone())
             }
         }
+        // PMAT-782 (HUNT-V17 #11 IFM-2): a list literal declared `list[float]`
+        // whose elements include int literals — `xs: list[float] = [1, 2, 3]`.
+        // Python's annotation is non-enforcing, but the declared `Vec<f64>` slot
+        // rejects `vec![1i64, …]` (rustc E0308). Thread `float` into each element
+        // so an int literal becomes a float literal (the same literal-only
+        // coercion `-> float: return 0` uses); a float literal / float expr is
+        // unchanged. (An int *variable* element stays i64 — same scoping as the
+        // return coercion, matching Python's non-coercion of non-literals.)
+        ast::Expr::List(l)
+            if !l.elts.is_empty() && matches!(expected, Type::List(et) if **et == Type::F64) =>
+        {
+            let mut elems = Vec::with_capacity(l.elts.len());
+            for e in l.elts.iter() {
+                elems.push(lower_value_expecting(ctx, e, &Type::F64)?);
+            }
+            Ok(Expr::ListLit(elems))
+        }
         // PMAT-717 (HUNT-V9 V9-20): a non-empty list literal whose declared element
         // type is a known collection and at least one element is itself an empty
         // collection — `[[], [1]]` over `list[list[int]]`. Thread the element type.

@@ -13739,3 +13739,27 @@ fn main() {
 "#;
     assert_rustc_runs("int_arg_float_param", &rust, driver);
 }
+
+/// PMAT-782 (HUNT-V17 #11 IFM-2): a `list[float]` literal with int literals
+/// (`[1, 2, 3]`) emitted `vec![1i64, …]` against the `Vec<f64>` slot → rustc
+/// E0308. The let-init type-threading now coerces int-literal elements to float;
+/// a float element and an int-typed list are unchanged. Cross-checked vs python3.
+#[test]
+fn int_literal_float_list() {
+    let rust = xpile_transpile_to_rust("int_literal_float_list.py");
+    assert!(
+        // float-list int literals widened; mixed preserved; int list unchanged.
+        rust.contains("let xs: Vec<f64> = vec![1f64, 2f64, 3f64];")
+            && rust.contains("let xs: Vec<f64> = vec![1f64, 2.5f64, 3f64];")
+            && rust.contains("let xs: Vec<i64> = vec![1i64, 2i64, 3i64];"),
+        "int literals in a float list must widen to f64; int list unchanged:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(weights(), 6.0);
+    assert_eq!(mixed(), 6.5);
+    assert_eq!(int_list_unchanged(), 6);
+}
+"#;
+    assert_rustc_runs("int_literal_float_list", &rust, driver);
+}
