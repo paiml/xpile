@@ -18,26 +18,13 @@ use xpile_meta_hir::{
     NumBuiltinOp, Param, Radix, SetOp, SetPredOp, SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
-/// PMAT-731 (HUNT-V10 typed-exceptions): builtin exception types xpile's panic
-/// payloads tag as `xpile: <Type>: …` (from a runtime guard or a user `raise
-/// <Type>(…)`). A specific `except T:` re-raises any payload prefixed with a
-/// DIFFERENT one of these, so it catches only its own type (plus unrecognized
-/// payloads, conservatively). All six are leaf types with no subclass relation
-/// among them, so cross-re-raising is always correct. `TypeError` is included for
-/// user `raise TypeError(…)` (the builtin ord-TypeError uses a `(TypeError)`
-/// suffix, not this prefix, so it is conservatively still caught).
-const KNOWN_EXC: &[&str] = &[
-    "ValueError",
-    "KeyError",
-    "IndexError",
-    "ZeroDivisionError",
-    "OverflowError",
-    "TypeError",
-    // PMAT-788 (HUNT-V17 #4): a failed `assert` panics with an `xpile:
-    // AssertionError:` tag, so it's a discriminated exception — `except
-    // AssertionError` catches it and any other typed `except` re-raises it.
-    "AssertionError",
-];
+// PMAT-789 (HUNT-V18 EXC-001): the typed-`except` discriminator is now an
+// ALLOWLIST (it matches the handler's OWN listed types and re-raises everything
+// else), so it no longer needs a roster of "known" builtin exceptions — the
+// blocklist `KNOWN_EXC` it consulted (PMAT-731) has been removed. Each `xpile:
+// <Type>:` panic prefix is matched directly against the `except` clause's named
+// types, so a non-cataloged exception (RuntimeError, a custom error) and an
+// untagged panic now correctly propagate past a non-matching `except`.
 
 /// PMAT-502by: escape a string for embedding inside a `format!`/`println!`
 /// format-string literal — `{`/`}` are doubled (format escapes), `"`/`\`
@@ -1150,11 +1137,11 @@ fn emit_stmt_indented(
         Stmt::Assert { cond, msg } => {
             // PMAT-788 (HUNT-V17 #4): a failed `assert` raises Python
             // `AssertionError`. A bare `assert!(cond, "{}", msg)` panics with an
-            // UNTAGGED message, so the typed-`except` re-raise filter (which only
-            // re-raises `xpile: <KnownExc>:`-prefixed payloads) let an unrelated
-            // `except ValueError:` SWALLOW it (silent-wrong; Python propagates).
-            // Emit a tagged panic so `except AssertionError` catches it and every
-            // other typed `except` re-raises it (AssertionError is in KNOWN_EXC).
+            // UNTAGGED message, so the typed-`except` discriminator let an
+            // unrelated `except ValueError:` SWALLOW it (silent-wrong; Python
+            // propagates). Emit a tagged panic so the allowlist discriminator
+            // (PMAT-789) lets `except AssertionError` catch it and every other
+            // typed `except` re-raise it.
             write!(out, "{indent}if !(")?;
             emit_expr(out, cond, mode)?;
             out.push_str(") { panic!(\"xpile: AssertionError: {}\", ");
@@ -3415,36 +3402,31 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push_str("match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| ");
             emit_expr(out, body, mode)?;
             out.push_str(")) { Ok(__xpile_try) => __xpile_try, ");
-            // PMAT-731/763 (typed-exceptions): a handler discriminating a NON-EMPTY
-            // set of types re-raises (resume_unwind) a panic whose payload names a
-            // known builtin exception NOT in that set (`xpile: <Other>: …`), so
-            // `except ValueError:` / `except (KeyError, ValueError):` no longer
-            // swallow a ZeroDivisionError. An unrecognized payload is still caught
-            // (conservative). A catch-all handler (`except_types` empty) keeps
-            // `Err(_)`.
-            let others: Vec<&str> = if except_types.is_empty() {
-                Vec::new()
-            } else {
-                KNOWN_EXC
-                    .iter()
-                    .copied()
-                    .filter(|k| !except_types.iter().any(|t| t == k))
-                    .collect()
-            };
-            if others.is_empty() {
+            // PMAT-789 (HUNT-V18 EXC-001): a handler discriminating a NON-EMPTY set
+            // of types catches a panic ONLY when its payload names one of THAT set
+            // (`xpile: <T>: …` for some `T` in `except_types`) and RE-RAISES
+            // (resume_unwind) anything else. This is an ALLOWLIST — the inversion of
+            // the prior blocklist (PMAT-731/763), which re-raised only the OTHER
+            // cataloged builtins and so CAUGHT any non-cataloged exception
+            // (RuntimeError, a custom error) and any untagged panic — silently
+            // swallowing what Python propagates (`except ValueError:` ate a
+            // RuntimeError). Now an unmatched payload propagates, matching CPython.
+            // A catch-all handler (`except_types` empty — a bare `except:` or a
+            // base-class `except Exception:`) keeps `Err(_)` and catches everything.
+            if except_types.is_empty() {
                 out.push_str("Err(_) => ");
                 emit_expr(out, handler, mode)?;
             } else {
                 out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if ");
-                for (i, k) in others.iter().enumerate() {
+                for (i, k) in except_types.iter().enumerate() {
                     if i > 0 {
                         out.push_str(" || ");
                     }
                     write!(out, "__xpile_m.starts_with(\"xpile: {k}: \")")?;
                 }
-                out.push_str(" { ::std::panic::resume_unwind(__xpile_e) } else { ");
+                out.push_str(" { ");
                 emit_expr(out, handler, mode)?;
-                out.push_str(" } }");
+                out.push_str(" } else { ::std::panic::resume_unwind(__xpile_e) } }");
             }
             out.push_str(" }");
         }

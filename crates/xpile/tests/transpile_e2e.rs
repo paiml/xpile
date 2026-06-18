@@ -13306,11 +13306,14 @@ fn main() {
 fn tuple_except_typed() {
     let rust = xpile_transpile_to_rust("tuple_except_typed.py");
     assert!(
-        // the tuple-except now discriminates (re-raises ZeroDivisionError, not in
-        // the (KeyError, ValueError) set) instead of a bare catch-all.
-        rust.contains("starts_with(\"xpile: ZeroDivisionError: \")")
+        // PMAT-789: the tuple-except is an ALLOWLIST — it catches only the listed
+        // (KeyError, ValueError) tags and re-raises anything else (so a
+        // ZeroDivisionError propagates), not a bare catch-all.
+        rust.contains("starts_with(\"xpile: KeyError: \")")
+            && rust.contains("starts_with(\"xpile: ValueError: \")")
+            && rust.contains("else { ::std::panic::resume_unwind(__xpile_e) }")
             && !rust.contains("Ok(__xpile_try) => __xpile_try, Err(_) =>"),
-        "tuple-except must re-raise an unlisted exception, not catch-all:\n{rust}"
+        "tuple-except must catch only its listed types and re-raise the rest:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -13922,4 +13925,34 @@ fn main() {
 }
 "#;
     assert_rustc_runs("assert_tagged_panic", &rust, driver);
+}
+
+/// PMAT-789 (HUNT-V18 EXC-001): the typed-`except` discriminator was a blocklist
+/// (catch everything not in the 6 OTHER cataloged builtins), so `except
+/// ValueError:` silently swallowed a RuntimeError / any non-cataloged exception
+/// where Python propagates. It is now an allowlist: catch iff the panic tag
+/// names one of the handler's own listed types, else re-raise. Cross-checked vs
+/// python3.
+#[test]
+fn except_allowlist() {
+    let rust = xpile_transpile_to_rust("except_allowlist.py");
+    assert!(
+        // the `except ValueError` arm catches only ValueError and re-raises the rest…
+        rust.contains("if __xpile_m.starts_with(\"xpile: ValueError: \") {")
+            && rust.contains("else { ::std::panic::resume_unwind(__xpile_e) }")
+            // …and `except RuntimeError` now discriminates on the RuntimeError tag.
+            && rust.contains("if __xpile_m.starts_with(\"xpile: RuntimeError: \") {"),
+        "typed except must be an allowlist (catch own type, re-raise rest):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // RuntimeError must propagate past `except ValueError` (not be swallowed).
+    let w = std::panic::catch_unwind(|| swallow_attempt());
+    assert!(w.is_err(), "RuntimeError must propagate past except ValueError");
+    assert_eq!(runtime_caught(), 77);   // except RuntimeError now catches it
+    assert_eq!(zde_caught(), -99);      // matching handler still catches its type
+    assert_eq!(bare_catch(), -5);       // bare except: still catches everything
+}
+"#;
+    assert_rustc_runs("except_allowlist", &rust, driver);
 }
