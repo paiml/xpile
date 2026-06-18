@@ -14421,3 +14421,27 @@ fn main() {
 "#;
     assert_rustc_runs("walrus_reassign_mut", &rust, driver);
 }
+
+/// PMAT-810 (HUNT-V21 #1): a dataclass field named after a Rust keyword
+/// (`type`/`match`) emitted unescaped (`pub type: i64`, `(e).type`) — a rustc
+/// keyword parse error. The reserved-ident escape now escapes field names /
+/// accesses / struct-lit keys to `r#`, and the Display field-repr LABEL strips
+/// the `r#` back. Cross-checked vs python3.
+#[test]
+fn dataclass_keyword_field() {
+    let rust = xpile_transpile_to_rust("dataclass_keyword_field.py");
+    assert!(
+        // identifier sites use r#; the repr label shows the Python name.
+        rust.contains("pub r#type: i64")
+            && rust.contains("self.r#type")
+            && rust.contains("\"Event(type={}, match={})\""),
+        "a keyword field name must be r#-escaped at idents but plain in the repr label:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(field_access(), 12);                // 5 + 7
+    assert_eq!(repr_label(), "Event(type=3, match=4)");
+}
+"#;
+    assert_rustc_runs("dataclass_keyword_field", &rust, driver);
+}

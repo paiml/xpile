@@ -254,7 +254,11 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                         if i > 0 {
                             fmt_str.push_str(", ");
                         }
-                        write!(fmt_str, "{field}={{}}")?;
+                        // PMAT-810: the repr LABEL shows the Python field name —
+                        // strip the `r#` a keyword-named field carries in the IR
+                        // (the `self.{field}` ACCESS keeps the raw form).
+                        let label = field.strip_prefix("r#").unwrap_or(field);
+                        write!(fmt_str, "{label}={{}}")?;
                         match ty {
                             Type::Bool => write!(
                                 args,

@@ -3061,11 +3061,18 @@ fn escape_expr(e: &mut Expr) {
             escape_expr(handler);
         }
         Expr::StructLit { fields, .. } => {
-            for (_, v) in fields {
+            // PMAT-810: escape each field KEY (matches the keyword-escaped struct
+            // decl) plus the value expression.
+            for (k, v) in fields {
+                escape_name(k);
                 escape_expr(v);
             }
         }
-        Expr::FieldAccess { obj, .. } => escape_expr(obj),
+        // PMAT-810: escape the accessed field name (`obj.r#type`).
+        Expr::FieldAccess { obj, field } => {
+            escape_expr(obj);
+            escape_name(field);
+        }
         Expr::MethodCall { obj, args, .. } => {
             escape_expr(obj);
             for a in args {
@@ -3868,10 +3875,22 @@ pub fn escape_rust_reserved_idents(module: &mut Module) {
                 escape_name(name);
                 escape_expr(value);
             }
-            Item::Struct { methods, .. } => {
-                // Escape locals/params inside each method body; the method's
-                // own name is left alone to stay consistent with the
-                // (also-unescaped) `Expr::MethodCall` callee.
+            Item::Struct {
+                fields, methods, ..
+            } => {
+                // PMAT-810 (HUNT-V21 #1): escape struct FIELD names that collide
+                // with a Rust keyword (`type`/`match`/`ref`/`move`/…) — emitted
+                // verbatim, `pub type: i64` is a rustc parse error. The struct
+                // decl, every field-access (`Expr::FieldAccess`), and every
+                // struct-literal key (`Expr::StructLit`) are all escaped here +
+                // in `escape_expr` so they use the `r#` raw form consistently;
+                // the backend strips the `r#` back off in the Display field-repr
+                // LABEL so the repr still shows the Python name. (Method names
+                // stay unescaped — that's a separate case, kept consistent with
+                // the also-unescaped `Expr::MethodCall` callee.)
+                for (fname, _) in fields {
+                    escape_name(fname);
+                }
                 for m in methods {
                     escape_function(m, false);
                 }
