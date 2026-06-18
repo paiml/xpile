@@ -7,6 +7,27 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.500] — 2026-06-18
+
+### Fixed
+
+- **PMAT-800 — plain-width radix of a negative int is sign-magnitude, not
+  two's-complement.** A plain-width radix format on a negative int (`f"{-255:8x}"`,
+  `f"{-5:8b}"`) emitted Rust's two's-complement bits (`ffffffffffffff01`, width
+  dropped) instead of Python's sign-magnitude, right-aligned (`'     -ff'`) —
+  silent-wrong. The bare-radix (PMAT-613) and zero-pad (PMAT-773) arms already
+  used sign-magnitude; the plain-width arm now builds the sign-magnitude
+  `IntRadixStr` body and space-pads it to the width (`{:>W}`). A non-negative is
+  unaffected; fill/align radix specs still take the FormatSpec path. HUNT-V19
+  (FS-1).
+
+### Notes
+
+- **Milestone: 500th patch release.** v0.1.500 caps a sustained correctness
+  campaign — 232+ consecutive differential fixes (HUNT-V14…V19) bringing the
+  transpiled Rust into exact agreement with CPython across exceptions, dunder
+  dispatch, numeric edges, control flow, and container semantics.
+
 ## [0.1.499] — 2026-06-18
 
 ### Fixed
