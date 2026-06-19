@@ -11838,8 +11838,15 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             });
                         }
                     }
+                    // PMAT-814 (HUNT-V22 #11 CC-3): `dict(d)` over an existing
+                    // dict is a COPY — emit an owned clone (mirrors `list(xs)` →
+                    // `(xs).clone()`, PMAT-737), so the copy is independent of the
+                    // original (Python `dict(d)` is a fresh dict).
+                    if matches!(infer_type_in_ctx(ctx, &inner), Type::Dict(_, _)) {
+                        return Ok(Expr::Clone(Box::new(inner)));
+                    }
                     return Err(FrontendError::Lower(format!(
-                        "function `{}` calls `dict(<expr>)` over a non-(list of 2-tuples) — v0.2.0 supports `dict()` (empty) or `dict(<list of (key, value) pairs>)`",
+                        "function `{}` calls `dict(<expr>)` over a non-(list of 2-tuples) — v0.2.0 supports `dict()` (empty), `dict(<list of (key, value) pairs>)`, or `dict(<dict>)` (copy)",
                         ctx.fn_name
                     )));
                 }

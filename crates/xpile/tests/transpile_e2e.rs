@@ -14503,3 +14503,22 @@ fn main() {
 "#;
     assert_rustc_runs("method_keyword_name", &rust, driver);
 }
+
+/// PMAT-814 (HUNT-V22 #11 CC-3): dict(d) over an existing dict was rejected.
+/// Python dict(d) is a fresh independent copy; it now emits an owned clone
+/// (mirrors list(xs) -> (xs).clone()). Cross-checked vs python3.
+#[test]
+fn dict_copy_ctor() {
+    let rust = xpile_transpile_to_rust("dict_copy_ctor.py");
+    assert!(
+        rust.contains("(a).clone()"),
+        "dict(d) must emit an owned clone:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // a stays len 2 (independent); b becomes len 3 → 2*100 + 3
+    assert_eq!(copy_independent(), 203);
+}
+"#;
+    assert_rustc_runs("dict_copy_ctor", &rust, driver);
+}
