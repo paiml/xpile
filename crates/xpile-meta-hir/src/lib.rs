@@ -3073,8 +3073,12 @@ fn escape_expr(e: &mut Expr) {
             escape_expr(obj);
             escape_name(field);
         }
-        Expr::MethodCall { obj, args, .. } => {
+        Expr::MethodCall { obj, method, args } => {
             escape_expr(obj);
+            // PMAT-813: escape a user method callee named a Rust keyword
+            // (`.type()` → `.r#type()`) to agree with the escaped def. Builtin
+            // method names aren't keywords, so this no-ops on them.
+            escape_name(method);
             for a in args {
                 escape_expr(a);
             }
@@ -3885,14 +3889,21 @@ pub fn escape_rust_reserved_idents(module: &mut Module) {
                 // struct-literal key (`Expr::StructLit`) are all escaped here +
                 // in `escape_expr` so they use the `r#` raw form consistently;
                 // the backend strips the `r#` back off in the Display field-repr
-                // LABEL so the repr still shows the Python name. (Method names
-                // stay unescaped — that's a separate case, kept consistent with
-                // the also-unescaped `Expr::MethodCall` callee.)
+                // LABEL so the repr still shows the Python name.
                 for (fname, _) in fields {
                     escape_name(fname);
                 }
+                // PMAT-813 (HUNT-V22 DEC-1): escape a METHOD name that collides
+                // with a Rust keyword (`def type(self)` → `fn type` is a parse
+                // error) — pass `true` so `escape_function` escapes the method's
+                // own name too. The matching `Expr::MethodCall` callee is escaped
+                // in `escape_expr` so call and def agree. Builtin method names
+                // (`.append`/`.upper`/`.__hash__`) aren't keywords, so
+                // `escape_name` no-ops on them — only a user keyword-method is
+                // rewritten. (Dunder detection in the backends keys off names
+                // like `__str__`/`__hash__`, which are likewise never keywords.)
                 for m in methods {
-                    escape_function(m, false);
+                    escape_function(m, true);
                 }
             }
             Item::Enum { .. } => {}

@@ -14482,3 +14482,24 @@ fn main() {
 "#;
     assert_rustc_runs("set_ctor_str_tuple", &rust, driver);
 }
+
+/// PMAT-813 (HUNT-V22 DEC-1): a method named after a Rust keyword (`type`,
+/// `match`) emitted `pub fn type` and `(r).type()` verbatim — a rustc keyword
+/// parse error. The reserved-ident escape now escapes the method name at the
+/// def AND the MethodCall callee (incl. internal self-calls); builtin/dunder
+/// names aren't keywords so they're untouched. Cross-checked vs python3.
+#[test]
+fn method_keyword_name() {
+    let rust = xpile_transpile_to_rust("method_keyword_name.py");
+    assert!(
+        rust.contains("pub fn r#type(&self)") && rust.contains("(self).r#type()"),
+        "a keyword method name must be r#-escaped at def and call:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // r.type()=10, r.match(3)=8, r.combined()=10+8=18 → 36
+    assert_eq!(probe(), 36);
+}
+"#;
+    assert_rustc_runs("method_keyword_name", &rust, driver);
+}
