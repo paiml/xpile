@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.531] — 2026-06-19
+
+### Fixed
+
+- **PMAT-831 — a bool with a format spec formats as an int.** Python's
+  `bool.__format__` delegates to `int` for any non-empty spec — `f"{True:>7}"` is
+  "      1", `"{:^7}".format(False)` is "   0   " — but xpile emitted Rust's bool
+  Display (`true`/`false`) through the spec (silent-wrong). A no-spec `f"{flag}"`
+  correctly keeps "True"/"False". Both spec paths (`apply_nonempty_format_spec`
+  for f-strings, `lower_str_format` for `str.format`) now coerce a bool to i64
+  before applying the spec. HUNT-V25 (#10).
+
 ## [0.1.530] — 2026-06-19
 
 ### Fixed
