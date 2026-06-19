@@ -3421,8 +3421,12 @@ fn main() {
 #[test]
 fn dict_setdefault() {
     let rust = xpile_transpile_to_rust("dict_setdefault.py");
+    // PMAT-843: the default is hoisted into a temp before `.entry()` (so a
+    // dict-reading default doesn't E0502).
     assert!(
-        rust.contains("(d).entry((k).clone()).or_insert(0i64).clone()"),
+        rust.contains(
+            "{ let __sd_def = 0i64; (d).entry((k).clone()).or_insert(__sd_def).clone() }"
+        ),
         "setdefault:\n{rust}"
     );
     assert!(
@@ -14989,4 +14993,26 @@ fn main() {
 }
 "#;
     assert_rustc_runs("dataclass_display_str", &rust, driver);
+}
+
+/// PMAT-843 (HUNT-V27 #1): d.setdefault(k, EXPR) where EXPR reads d (d[x]/d.get/
+/// len(d)) emitted or_insert(EXPR) borrowing d immutably under the live entry()
+/// mutable borrow → E0502. The default is now hoisted into a temp before
+/// .entry() (Python evaluates it eagerly anyway). Cross-checked vs python3.
+#[test]
+fn setdefault_self_default() {
+    let rust = xpile_transpile_to_rust("setdefault_self_default.py");
+    assert!(
+        rust.contains("__sd_def"),
+        "the setdefault default must be hoisted:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(reads_dict(), 7);       // insert d["a"]=5 → v=5, len=2
+    assert_eq!(len_default(), 203);    // insert len=2 → v=2, len=3 → 203
+    assert_eq!(present_key(), 9);      // key present → existing 9
+    assert_eq!(literal_default(), 6);  // insert 5 → 5, len=1 → 6
+}
+"#;
+    assert_rustc_runs("setdefault_self_default", &rust, driver);
 }
