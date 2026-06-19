@@ -14522,3 +14522,23 @@ fn main() {
 "#;
     assert_rustc_runs("dict_copy_ctor", &rust, driver);
 }
+
+/// PMAT-815 (HUNT-V22 DNI): a unary operator over a struct now dispatches to the
+/// user dunder — `-obj` → obj.__neg__(), `~obj` → obj.__invert__() — instead of
+/// being rejected. Plain int unary ops are unaffected. Cross-checked vs python3.
+#[test]
+fn unary_dunder_dispatch() {
+    let rust = xpile_transpile_to_rust("unary_dunder_dispatch.py");
+    assert!(
+        rust.contains("(a).__neg__()") && rust.contains("(a).__invert__()"),
+        "unary op over a struct must dispatch to the dunder:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // -V(5)=V(-5), ~V(5)=V(-6) → -5*100 + -6 = -506
+    assert_eq!(probe(), -506);
+    assert_eq!(plain_int(7), -7 + !7i64);  // plain int path intact
+}
+"#;
+    assert_rustc_runs("unary_dunder_dispatch", &rust, driver);
+}
