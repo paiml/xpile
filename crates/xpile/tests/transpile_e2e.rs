@@ -14675,3 +14675,21 @@ fn main() {
 "#;
     assert_rustc_runs("default_param_type", &rust, driver);
 }
+
+/// PMAT-822 (HUNT-V24 SF-1): str.format() with an align/width-only spec on a
+/// float dropped Python's trailing .0 (Rust bare f64 Display). The float is now
+/// rendered to its Python repr string (ToStr) and padded; a bare width forces
+/// right-align. Precision specs keep the NaN-guarded path. Mirrors PMAT-807. vs python3.
+#[test]
+fn strformat_float_align() {
+    let rust = xpile_transpile_to_rust("strformat_float_align.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(right(), "   3.0");
+    assert_eq!(bare(), "     2.5");
+    assert_eq!(left(), "2.5   ");
+    assert_eq!(prec(), "3.14");
+}
+"#;
+    assert_rustc_runs("strformat_float_align", &rust, driver);
+}
