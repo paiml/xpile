@@ -11340,6 +11340,19 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         // a bare `str(...)` free call (rustc E0425). Mirrors the
                         // `format(s)` identity arm already present below.
                         Type::Str => return Ok(value),
+                        // PMAT-830 (HUNT-V25 #6): `str(<dataclass>)` → its Display
+                        // repr (`P(x=3, y=4)`), the SAME path an f-string field
+                        // `f"{p}"` already uses (`format!("{:}", p)`). Without it
+                        // the result mis-inferred as I64 and the function's `->
+                        // str` return rejected ("body produces I64"). A struct
+                        // without a generated Display impl is exactly as
+                        // (un)supported here as in an f-string.
+                        Type::Struct(_) => {
+                            return Ok(Expr::FormatSpec {
+                                value: Box::new(value),
+                                rust_spec: String::new(),
+                            });
+                        }
                         _ => {}
                     }
                 }
