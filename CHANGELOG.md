@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.515] — 2026-06-19
+
+### Fixed
+
+- **PMAT-815 — dispatch unary `-`/`~` over a struct to `__neg__`/`__invert__`.** A
+  unary operator over a struct operand (`-obj`, `~obj`) was rejected ("unary `-`
+  requires an I64 operand"). Python dispatches these to the dunders `__neg__` /
+  `__invert__` — the unary analog of the binop dunder cluster. A new
+  `struct_unary_dunder` helper now lowers `-obj` to `obj.__neg__()` and `~obj` to
+  `obj.__invert__()` when the operand's struct defines the dunder; the i64/float
+  numeric paths are unchanged, and a struct without the dunder still rejects.
+  HUNT-V22 (DNI).
+
 ## [0.1.514] — 2026-06-19
 
 ### Fixed
