@@ -14831,3 +14831,20 @@ fn main() {
 "#;
     assert_rustc_runs("str_dataclass", &rust, driver);
 }
+
+/// PMAT-831 (HUNT-V25 #10): a bool with a non-empty format spec formats as an int
+/// in Python (bool.__format__ delegates to int) — f"{True:>7}" is "      1", not
+/// Rust's "true". A no-spec f"{flag}" keeps "True"/"False". The f-string +
+/// str.format spec paths now coerce a bool to i64 first. Cross-checked vs python3.
+#[test]
+fn bool_format_spec() {
+    let rust = xpile_transpile_to_rust("bool_format_spec.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(fstring_align(), "[      1]");
+    assert_eq!(format_center(), "   0   ");
+    assert_eq!(mixed(), "True 1");
+}
+"#;
+    assert_rustc_runs("bool_format_spec", &rust, driver);
+}
