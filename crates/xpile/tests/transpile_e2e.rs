@@ -14933,3 +14933,24 @@ fn main() {
 "#;
     assert_rustc_runs("tuple_diff_arity_cmp", &rust, driver);
 }
+
+/// PMAT-838 (HUNT-V26 #1): Python leaks a for-loop variable into the enclosing
+/// scope; a collection loop over a FRESH var kept the body-scoped binding, so a
+/// post-loop read was rustc E0425. A fresh primitive-element loop var read after
+/// the loop is now pre-declared `let mut` + assigned each iteration. A loop var
+/// NOT read after stays native (no spurious hoist); a pre-bound var keeps the
+/// existing leak path (PMAT-784). Cross-checked vs python3.
+#[test]
+fn loop_var_leak_collection() {
+    let rust = xpile_transpile_to_rust("loop_var_leak_collection.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(leaked_int(vec![10, 20, 30]), 30);
+    assert_eq!(leaked_str(vec![String::from("a"), String::from("bb"), String::from("ccc")]), "ccc");
+    assert_eq!(not_read_after(vec![1, 2, 3]), 6);
+    assert_eq!(find_prebound(vec![3, 5, 12, 20]), 12);
+    assert_eq!(find_prebound(vec![1, 2, 3]), 3);
+}
+"#;
+    assert_rustc_runs("loop_var_leak_collection", &rust, driver);
+}
