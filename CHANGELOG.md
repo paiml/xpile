@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.536] — 2026-06-19
+
+### Fixed
+
+- **PMAT-836 — fold a different-arity tuple `==`/`!=` to a constant.** Two tuples of
+  statically-different arity are never equal in Python (`(1, 2) == (1, 2, 3)` is
+  `False`, `!=` is `True`), but Rust cannot compare the mismatched tuple types
+  (`(i64, i64)` vs `(i64, i64, i64)`) → rustc E0308. A single `==`/`!=` whose
+  operands type as tuples of different arity now folds to `false` / `true`;
+  same-arity tuples keep the structural derived comparison. HUNT-V26 (#6).
+
 ## [0.1.535] — 2026-06-19
 
 ### Fixed
