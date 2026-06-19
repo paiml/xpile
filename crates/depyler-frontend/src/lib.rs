@@ -3757,7 +3757,32 @@ fn lower_arg_materializing_range(
             return lower_range_list(ctx, inner);
         }
     }
-    lower_expr_in_ctx(ctx, arg.clone())
+    let lowered = lower_expr_in_ctx(ctx, arg.clone())?;
+    // PMAT-825 (HUNT-V24 SF-2): materialize a HOMOGENEOUS tuple to a list so an
+    // iterating consumer (`map(str, t)`, `sum`, `filter`, …) sees a `List` —
+    // otherwise the tuple fell through the `Type::List` guard and emitted a bogus
+    // free call (`map(str, t)` — invalid Rust). A tuple LITERAL reuses its
+    // elements; a tuple VARIABLE indexes each field (`t.0`, `t.1`, …). A complex
+    // tuple expression is left alone (avoid re-evaluating it per element); a
+    // heterogeneous tuple can't be a `Vec<T>`, so it is left for the caller.
+    if let Type::Tuple(tys) = infer_type_in_ctx(ctx, &lowered) {
+        if !tys.is_empty() && tys.iter().all(|t| *t == tys[0]) {
+            match &lowered {
+                Expr::TupleLit(elems) => return Ok(Expr::ListLit(elems.clone())),
+                Expr::Ident(_) => {
+                    let elems = (0..tys.len())
+                        .map(|i| Expr::TupleIndex {
+                            tuple: Box::new(lowered.clone()),
+                            index: i,
+                        })
+                        .collect();
+                    return Ok(Expr::ListLit(elems));
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(lowered)
 }
 
 /// PMAT-534: lower `x in range(...)` to a bounds check (the range is NOT

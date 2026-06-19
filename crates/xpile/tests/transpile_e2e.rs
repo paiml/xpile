@@ -14725,3 +14725,20 @@ fn main() {
 "#;
     assert_rustc_runs("sibling_nested_loop_var", &rust, driver);
 }
+
+/// PMAT-825 (HUNT-V24 SF-2): map(str, X)/sum/filter over a homogeneous TUPLE
+/// emitted a bogus free `map(str, t)` call (the tuple fell through the List
+/// guard). lower_arg_materializing_range now materializes a homogeneous tuple to
+/// a list (literal → elements; variable → field accesses). Cross-checked vs python3.
+#[test]
+fn join_map_str_tuple() {
+    let rust = xpile_transpile_to_rust("join_map_str_tuple.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(join_tuple_var(), "1,2,3");
+    assert_eq!(join_list(), "4-5-6");
+    assert_eq!(sum_tuple(), 30);
+}
+"#;
+    assert_rustc_runs("join_map_str_tuple", &rust, driver);
+}
