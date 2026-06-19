@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.529] — 2026-06-19
+
+### Fixed
+
+- **PMAT-829 — coerce a bool subscript key to i64 on the dict set path.** `d[True]
+  = v` into an int-keyed dict emitted `d.insert(true, …)` into a `HashMap<i64,
+  _>` → rustc E0308. Python `True == 1` (and `hash(True) == hash(1)`), so the key
+  is 1. The subscript-assign lowering now coerces a bool key to i64
+  (`(true) as i64`) when the dict's key type is `I64`, mirroring the already-
+  shipped get-path coercion (PMAT-751). HUNT-V25 (#4).
+
 ## [0.1.528] — 2026-06-19
 
 ### Fixed
