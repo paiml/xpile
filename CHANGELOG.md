@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.513] — 2026-06-19
+
+### Fixed
+
+- **PMAT-813 — escape method names that are Rust keywords.** A method named after
+  a Rust keyword (`type`, `match`, `ref`, `move`, …) emitted `pub fn type(&self)`
+  and the call `(r).type()` verbatim — a rustc keyword parse error. The
+  reserved-ident escape now escapes each method's own name
+  (`escape_function(m, true)`) and the `Expr::MethodCall` callee, so the
+  definition and every call (including an internal `self.type()`) agree.
+  Builtin/library method names (`.append`/`.upper`/`.__hash__`) aren't keywords,
+  so `escape_name` no-ops on them; dunder detection in the backends keys off
+  names that are never keywords. Complements the field-name escape (PMAT-810).
+  HUNT-V22 (DEC-1).
+
 ## [0.1.512] — 2026-06-18
 
 ### Fixed
