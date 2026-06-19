@@ -14693,3 +14693,18 @@ fn main() {
 "#;
     assert_rustc_runs("strformat_float_align", &rust, driver);
 }
+
+/// PMAT-823 (HUNT-V24 PROP-CM-02): a @staticmethod named after a Rust keyword had
+/// its def escaped (PMAT-813) but the qualified call site Class::method left the
+/// keyword unescaped → keyword error. The escape pass now escapes the method
+/// segment of a Class::method callee, so call and def agree. vs python3.
+#[test]
+fn assoc_keyword_name() {
+    let rust = xpile_transpile_to_rust("assoc_keyword_name.py");
+    assert!(
+        rust.contains("Reg::r#match(") && rust.contains("pub fn r#match("),
+        "a keyword static method must be r#-escaped at the call AND def:\n{rust}"
+    );
+    let driver = "fn main() { assert_eq!(probe(), 42); }\n";
+    assert_rustc_runs("assoc_keyword_name", &rust, driver);
+}
