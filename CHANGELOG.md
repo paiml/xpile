@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.516] — 2026-06-19
+
+### Fixed
+
+- **PMAT-816 — a for-loop mutating each element in place uses `iter_mut`.** A loop
+  that mutates each element (`for row in grid: row.append(x)` / `row[i] = v`)
+  emitted `for row in grid.iter().cloned()`, binding `row` to an owned clone — the
+  mutation hit the throwaway clone (never reaching `grid`) and `row` was not
+  `mut`, so it failed rustc E0596. A new `ForEach.mutate_elems` flag now detects
+  an in-place mutation of the loop var over a plain list-typed iterable and emits
+  `grid.iter_mut()` (the iterable marked `mut`), so `row` is `&mut Vec<…>` and the
+  mutation reaches the original. Bounded-risk — only fires on loops that
+  currently fail E0596; read-only loops keep the cloned form. HUNT-V21 (#3/4/8).
+
 ## [0.1.515] — 2026-06-19
 
 ### Fixed
