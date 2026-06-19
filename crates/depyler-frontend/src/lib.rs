@@ -674,6 +674,34 @@ fn count_walrus_targets(expr: &ast::Expr, counts: &mut HashMap<String, usize>, b
 /// `ctx.mutable.insert` lands after a local's `let` is already emitted, so a
 /// local `pts` in `for p in pts: p.x = …` would otherwise stay non-`mut` →
 /// rustc E0596 / E0594 under the `iter_mut` the lowering then chooses).
+/// PMAT-835 (HUNT-V26 #15): build the Python `range` repr string from a range's
+/// lowered 1..=3 args. `range(stop)` → `"range(0, {stop})"`, `range(a, b)` →
+/// `"range({a}, {b})"`, `range(a, b, c)` → `"range({a}, {b}, {c})"` — a
+/// `Concat` chain of literal pieces and `ToStr` of each int arg.
+fn range_repr_expr(args: Vec<Expr>) -> Expr {
+    let (start, stop, step) = match args.len() {
+        1 => (Expr::LitInt(0), args[0].clone(), None),
+        2 => (args[0].clone(), args[1].clone(), None),
+        _ => (args[0].clone(), args[1].clone(), Some(args[2].clone())),
+    };
+    let to_str = |e: Expr| Expr::ToStr {
+        value: Box::new(e),
+        of_float: false,
+    };
+    let cat = |a: Expr, b: Expr| Expr::Concat {
+        lhs: Box::new(a),
+        rhs: Box::new(b),
+    };
+    let mut out = cat(Expr::LitStr("range(".to_string()), to_str(start));
+    out = cat(out, Expr::LitStr(", ".to_string()));
+    out = cat(out, to_str(stop));
+    if let Some(st) = step {
+        out = cat(out, Expr::LitStr(", ".to_string()));
+        out = cat(out, to_str(st));
+    }
+    cat(out, Expr::LitStr(")".to_string()))
+}
+
 fn for_target_mutated_ast(stmts: &[ast::Stmt], target: &str) -> bool {
     fn base_is(t: &ast::Expr, target: &str) -> bool {
         match t {
@@ -11331,6 +11359,26 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // `"True" if b else "False"` (an `IfExpr`) — Python capitalizes
                 // (`"True"`/`"False"`), unlike Rust's lowercase `format!`.
                 if fname.id.as_str() == "str" && call.keywords.is_empty() && call.args.len() == 1 {
+                    // PMAT-835 (HUNT-V26 #15): `str(range(...))` is Python's
+                    // `range` repr — `"range(0, 5)"` / `"range(2, 10)"` /
+                    // `"range(2, 20, 3)"` — NOT the materialized list. Without this
+                    // the arg lowered to a `Vec<i64>` and `str()` rendered the list
+                    // (`"[0, 1, 2, 3, 4]"`), silent-wrong. Match the `range(...)`
+                    // call syntactically (before it materializes) and build the
+                    // repr from its 1..=3 args (a 1-arg range shows start 0).
+                    if let ast::Expr::Call(inner) = &call.args[0] {
+                        if matches!(inner.func.as_ref(), ast::Expr::Name(n) if n.id.as_str() == "range")
+                            && inner.keywords.is_empty()
+                            && (1..=3).contains(&inner.args.len())
+                        {
+                            let lowered = inner
+                                .args
+                                .iter()
+                                .map(|a| lower_expr_in_ctx(ctx, a.clone()))
+                                .collect::<Result<Vec<_>, _>>()?;
+                            return Ok(range_repr_expr(lowered));
+                        }
+                    }
                     let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                     match infer_type_in_ctx(ctx, &value) {
                         Type::I64 => {

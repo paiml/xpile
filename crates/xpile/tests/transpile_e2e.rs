@@ -14899,3 +14899,21 @@ fn zeroarg_ctor() {
     let driver = "fn main() { assert_eq!(probe(), 7); }\n"; // 0 + len("abc")=3 + int(0.0+4.0)=4
     assert_rustc_runs("zeroarg_ctor", &rust, driver);
 }
+
+/// PMAT-835 (HUNT-V26 #15): str(range(...)) is Python's range repr, but xpile
+/// materialized the range to a list and rendered "[0, 1, 2, 3, 4]" (silent-wrong).
+/// The str() builtin now matches range(...) syntactically and builds the repr
+/// from its 1..=3 args. Cross-checked vs python3.
+#[test]
+fn str_range() {
+    let rust = xpile_transpile_to_rust("str_range.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(one(), "range(0, 5)");
+    assert_eq!(two(), "range(2, 10)");
+    assert_eq!(three(), "range(2, 20, 3)");
+    assert_eq!(with_var(7), "range(0, 7)");
+}
+"#;
+    assert_rustc_runs("str_range", &rust, driver);
+}
