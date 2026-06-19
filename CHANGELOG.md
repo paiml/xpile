@@ -7,6 +7,16 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.534] — 2026-06-19
+
+### Fixed
+
+- **PMAT-834 — zero-arg `int()`/`str()`/`float()` lower to the Python defaults.** The
+  zero-arg builtin constructors are Python's defaults `0` / `""` / `0.0`, but fell
+  through to a generic call and emitted bare `int()`/`str()`/`float()` free calls
+  (rustc E0425), mis-typed as i64. A no-arg, no-keyword call named `int`/`str`/
+  `float` now lowers to `LitInt(0)` / `LitStr("")` / `LitFloat(0.0)`. HUNT-V26 (#7).
+
 ## [0.1.533] — 2026-06-19
 
 ### Fixed
