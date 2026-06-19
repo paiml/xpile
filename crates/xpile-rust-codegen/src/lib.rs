@@ -1059,7 +1059,16 @@ fn emit_stmt_indented(
         // (dict) and Python negative-index wrap (list) are preserved.
         Stmt::NestedSubscriptAssign { base, steps, value } => {
             let n = steps.len();
-            write!(out, "{indent}{{ let __t0 = &mut {base}; ")?;
+            // PMAT-833 (HUNT-V26 #3): evaluate the RHS into a temp BEFORE taking
+            // `&mut base`. A read-modify-write on a nested dict cell
+            // (`d["a"]["x"] = d["a"]["x"] + 5`) reads `base` immutably in the RHS
+            // while the `&mut base` borrow is still live → rustc E0502. Binding
+            // `__rhs` first ends the RHS's immutable borrow before the mutable
+            // walk begins (the single-level `DictSet` and nested-list paths
+            // already sequence the value first; this mirrors them).
+            write!(out, "{indent}{{ let __rhs = ")?;
+            emit_expr(out, value, mode)?;
+            write!(out, "; let __t0 = &mut {base}; ")?;
             for (i, (idx, is_dict)) in steps[..n - 1].iter().enumerate() {
                 if *is_dict {
                     write!(out, "let __t{} = __t{i}.get_mut(&(", i + 1)?;
@@ -1075,15 +1084,11 @@ fn emit_stmt_indented(
             if *leaf_is_dict {
                 write!(out, "__t{}.insert(", n - 1)?;
                 emit_expr(out, leaf_idx, mode)?;
-                out.push_str(", ");
-                emit_expr(out, value, mode)?;
-                out.push_str("); }");
+                out.push_str(", __rhs); }");
             } else {
                 write!(out, "let __ll = (")?;
                 emit_expr(out, leaf_idx, mode)?;
-                write!(out, ") as i64; let __lx = if __ll < 0 {{ __t{}.len() as i64 + __ll }} else {{ __ll }}; __t{}[__lx as usize] = ", n - 1, n - 1)?;
-                emit_expr(out, value, mode)?;
-                out.push_str("; }");
+                write!(out, ") as i64; let __lx = if __ll < 0 {{ __t{}.len() as i64 + __ll }} else {{ __ll }}; __t{}[__lx as usize] = __rhs; }}", n - 1, n - 1)?;
             }
             writeln!(out)?;
             Ok(())

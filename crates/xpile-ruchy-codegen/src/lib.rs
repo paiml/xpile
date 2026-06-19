@@ -880,7 +880,13 @@ fn emit_stmt_indented(
         // progressive `&mut` navigation then leaf assign (mirrors the Rust backend).
         Stmt::NestedSubscriptAssign { base, steps, value } => {
             let n = steps.len();
-            write!(out, "{indent}{{ let __t0 = &mut {base}; ")?;
+            // PMAT-833 (HUNT-V26 #3): bind the RHS BEFORE `&mut base` so a nested
+            // read-modify-write (`d["a"]["x"] = d["a"]["x"] + 5`) doesn't read
+            // `base` immutably under the live `&mut base` borrow (E0502). Mirrors
+            // the Rust backend.
+            write!(out, "{indent}{{ let __rhs = ")?;
+            emit_expr(out, value, mode)?;
+            write!(out, "; let __t0 = &mut {base}; ")?;
             for (i, (idx, is_dict)) in steps[..n - 1].iter().enumerate() {
                 if *is_dict {
                     write!(out, "let __t{} = __t{i}.get_mut(&(", i + 1)?;
@@ -896,15 +902,11 @@ fn emit_stmt_indented(
             if *leaf_is_dict {
                 write!(out, "__t{}.insert(", n - 1)?;
                 emit_expr(out, leaf_idx, mode)?;
-                out.push_str(", ");
-                emit_expr(out, value, mode)?;
-                out.push_str("); }");
+                out.push_str(", __rhs); }");
             } else {
                 write!(out, "let __ll = (")?;
                 emit_expr(out, leaf_idx, mode)?;
-                write!(out, ") as i64; let __lx = if __ll < 0 {{ __t{}.len() as i64 + __ll }} else {{ __ll }}; __t{}[__lx as usize] = ", n - 1, n - 1)?;
-                emit_expr(out, value, mode)?;
-                out.push_str("; }");
+                write!(out, ") as i64; let __lx = if __ll < 0 {{ __t{}.len() as i64 + __ll }} else {{ __ll }}; __t{}[__lx as usize] = __rhs; }}", n - 1, n - 1)?;
             }
             writeln!(out)?;
             Ok(())

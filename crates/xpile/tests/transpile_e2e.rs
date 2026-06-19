@@ -14868,3 +14868,24 @@ fn main() {
 "#;
     assert_rustc_runs("comp_over_dict", &rust, driver);
 }
+
+/// PMAT-833 (HUNT-V26 #3): a nested-subscript read-modify-write whose RHS reads
+/// the same container (`d["a"]["x"] = d["a"]["x"] + 5`) emitted the RHS while the
+/// `&mut d` borrow was live → E0502. The RHS is now hoisted into a temp before
+/// `&mut d` (mirrors the single-level/nested-list paths). Cross-checked vs python3.
+#[test]
+fn nested_dict_rmw() {
+    let rust = xpile_transpile_to_rust("nested_dict_rmw.py");
+    assert!(
+        rust.contains("let __rhs ="),
+        "the nested-RMW RHS must be hoisted:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(nested_rmw(), 6);       // 1 + 5
+    assert_eq!(loop_accum(), 3);       // +1 thrice
+    assert_eq!(dict_of_list(), 101);   // 1 + 100
+}
+"#;
+    assert_rustc_runs("nested_dict_rmw", &rust, driver);
+}
