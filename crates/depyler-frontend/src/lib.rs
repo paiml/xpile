@@ -1234,16 +1234,20 @@ impl Frontend for PythonFrontend {
                         continue;
                     };
                     let is_cm = is_classmethod(m);
-                    if !is_staticmethod(m) && !is_cm {
-                        continue;
-                    }
+                    let is_sm = is_staticmethod(m);
                     let ret = match m.returns.as_ref() {
                         None => Type::Unit,
                         Some(ann) => parse_type_annotation(c.name.as_str(), "return", ann)
                             .unwrap_or(Type::I64),
                     };
-                    // Skip the implicit `cls` receiver for a classmethod.
-                    let args_iter = m.args.args.iter().skip(usize::from(is_cm));
+                    // Skip the implicit receiver: `cls` (classmethod) / `self`
+                    // (instance) — a `@staticmethod` has none. PMAT-820 (HUNT-V24
+                    // MDA): instance methods are now registered too (so the call
+                    // site can fill omitted default args), but under a DISTINCT
+                    // `Class#method` key — the `Class::method` key doubles as the
+                    // static/classmethod CALL marker (see the `Class.method(...)`
+                    // dispatch), so an instance method must not collide with it.
+                    let args_iter = m.args.args.iter().skip(usize::from(!is_sm));
                     let params = args_iter.clone().map(|a| a.def.arg.to_string()).collect();
                     // PMAT-753: per-param declared type (default I64).
                     let param_types = args_iter
@@ -1260,8 +1264,13 @@ impl Frontend for PythonFrontend {
                         })
                         .collect();
                     let defaults = args_iter.map(|a| a.default.as_deref().cloned()).collect();
+                    let key = if is_sm || is_cm {
+                        format!("{}::{}", c.name, m.name)
+                    } else {
+                        format!("{}#{}", c.name, m.name)
+                    };
                     sig_map.insert(
-                        format!("{}::{}", c.name, m.name),
+                        key,
                         FnSig {
                             ret,
                             params,
@@ -9798,9 +9807,37 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                     ctx.fn_name
                                 )));
                             }
+                            // PMAT-820 (HUNT-V24 MDA): fill omitted trailing args
+                            // with the static/classmethod's defaults + coerce to
+                            // param types (the early `Expr::Call` return bypasses
+                            // the generic free-fn default-fill, so do it here).
+                            let ssig = ctx.signatures.get(&key);
                             let mut args = Vec::with_capacity(call.args.len());
-                            for a in &call.args {
-                                args.push(lower_expr_in_ctx(ctx, a.clone())?);
+                            for (i, a) in call.args.iter().enumerate() {
+                                let v = lower_expr_in_ctx(ctx, a.clone())?;
+                                let v = match ssig {
+                                    Some(s) => {
+                                        coerce_lowered_to_optional(ctx, v, s.param_types.get(i))
+                                    }
+                                    None => v,
+                                };
+                                args.push(v);
+                            }
+                            if let Some(s) = ssig {
+                                for i in call.args.len()..s.params.len() {
+                                    match s.defaults.get(i) {
+                                        Some(Some(def)) => {
+                                            let v = lower_expr_in_ctx(ctx, def.clone())?;
+                                            let v = coerce_lowered_to_optional(
+                                                ctx,
+                                                v,
+                                                s.param_types.get(i),
+                                            );
+                                            args.push(v);
+                                        }
+                                        _ => break,
+                                    }
+                                }
                             }
                             return Ok(Expr::Call { callee: key, args });
                         }
@@ -9834,9 +9871,40 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 ctx.fn_name
                             )));
                         }
+                        // PMAT-820 (HUNT-V24 MDA): fill omitted trailing args with
+                        // the method's defaults (the free-fn / static path already
+                        // does; instance methods are registered under `Class#method`).
+                        // Each supplied AND defaulted arg is coerced to its declared
+                        // param type (Some-wrap for an `Optional[T]` param, int→f64
+                        // widening), matching the free-fn call site.
+                        let msig = ctx.signatures.get(&format!("{sname}#{method}"));
                         let mut args = Vec::with_capacity(call.args.len());
-                        for a in &call.args {
-                            args.push(lower_expr_in_ctx(ctx, a.clone())?);
+                        for (i, a) in call.args.iter().enumerate() {
+                            let v = lower_expr_in_ctx(ctx, a.clone())?;
+                            let v = match msig {
+                                Some(s) => coerce_lowered_to_optional(ctx, v, s.param_types.get(i)),
+                                None => v,
+                            };
+                            args.push(v);
+                        }
+                        if let Some(s) = msig {
+                            for i in call.args.len()..s.params.len() {
+                                match s.defaults.get(i) {
+                                    Some(Some(def)) => {
+                                        let v = lower_expr_in_ctx(ctx, def.clone())?;
+                                        let v = coerce_lowered_to_optional(
+                                            ctx,
+                                            v,
+                                            s.param_types.get(i),
+                                        );
+                                        args.push(v);
+                                    }
+                                    // an omitted param with no default — leave the
+                                    // call under-supplied (a loud rustc arity error,
+                                    // matching the prior behaviour for that case).
+                                    _ => break,
+                                }
+                            }
                         }
                         return Ok(Expr::MethodCall {
                             obj: Box::new(recv),
