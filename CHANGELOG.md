@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.520] — 2026-06-19
+
+### Fixed
+
+- **PMAT-820 — fill method/staticmethod default arguments at the call site.** A
+  method/`@staticmethod`/`@classmethod` default argument was dropped and an
+  omitted-arg call site left under-supplied (`def m(self, x=5, y=10)` then `c.m()`
+  → rustc E0061). The free-function default-fill machinery existed but wasn't
+  routed through method calls. Instance methods now register in the signature
+  table under a distinct `Class#method` key (the `Class::method` key doubles as
+  the static-call marker); both the instance `MethodCall` and the static/class
+  `Call` sites fill omitted trailing args from the recorded defaults and coerce
+  each arg to its declared param type (`Some`-wrap for `Optional[T]`, int→f64
+  widening). A truly missing arg with no default stays a loud arity error.
+  HUNT-V24 (MDA).
+
 ## [0.1.519] — 2026-06-19
 
 ### Fixed
