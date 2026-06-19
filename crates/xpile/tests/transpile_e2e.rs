@@ -14609,3 +14609,24 @@ fn main() {
 "#;
     assert_rustc_runs("ternary_optional_narrow", &rust, driver);
 }
+
+/// PMAT-819 (HUNT-V22 INDEX): a list index typing as a struct with __index__ was
+/// rejected. Python calls i.__index__() to coerce an object index to an int; the
+/// index now dispatches to that method (mirrors abs/len dunder dispatch).
+/// Cross-checked vs python3.
+#[test]
+fn index_dunder() {
+    let rust = xpile_transpile_to_rust("index_dunder.py");
+    assert!(
+        rust.contains("(i).__index__()") || rust.contains(".__index__()"),
+        "a struct index must dispatch to __index__:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(at(0), 10);
+    assert_eq!(at(2), 30);
+    assert_eq!(at(3), 40);
+}
+"#;
+    assert_rustc_runs("index_dunder", &rust, driver);
+}
