@@ -6575,8 +6575,19 @@ fn lower_subscript_assign_target(
                 value,
             })
         }
-        Some(Type::Dict(_, _)) => {
+        Some(Type::Dict(key_ty, _)) => {
             let key = lower_expr_in_ctx(ctx, single)?;
+            // PMAT-829 (HUNT-V25 #4): a bool key into an INT-keyed dict —
+            // `d[True] = v` — coerce bool→i64 (Python `True == 1`), mirroring the
+            // already-shipped get-path coercion (PMAT-751). Without it the insert
+            // emitted `d.insert(true, …)` into a `HashMap<i64, _>` → rustc E0308.
+            let key = if matches!(*key_ty, Type::I64)
+                && matches!(infer_type_in_ctx(ctx, &key), Type::Bool)
+            {
+                to_i64_operand(ctx, key)
+            } else {
+                key
+            };
             ctx.mutable.insert(receiver.clone());
             Ok(Stmt::DictSet {
                 dict_name: receiver,

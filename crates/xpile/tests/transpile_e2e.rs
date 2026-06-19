@@ -14800,3 +14800,18 @@ fn foreach_field_mut() {
     let driver = "fn main() { assert_eq!(scale_and_sum(), 60); }\n"; // 10+20+30
     assert_rustc_runs("foreach_field_mut", &rust, driver);
 }
+
+/// PMAT-829 (HUNT-V25 #4): a bool subscript key into an int-keyed dict
+/// (`d[True] = v`) emitted `insert(true, …)` into a `HashMap<i64,_>` → E0308.
+/// Python `True == 1`, so the key coerces to 1; the set path now coerces a bool
+/// key to i64 (mirrors the get-path PMAT-751). Cross-checked vs python3.
+#[test]
+fn dictset_bool_key() {
+    let rust = xpile_transpile_to_rust("dictset_bool_key.py");
+    assert!(
+        rust.contains("(true) as i64"),
+        "a bool key into an int-keyed dict must coerce to i64 on insert:\n{rust}"
+    );
+    let driver = "fn main() { assert_eq!(probe(), 199); }\n"; // True overwrites key 1 → len 1, d[1]=99
+    assert_rustc_runs("dictset_bool_key", &rust, driver);
+}
