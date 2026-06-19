@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.535] — 2026-06-19
+
+### Fixed
+
+- **PMAT-835 — `str(range(...))` emits the Python range repr.** `str(range(...))` is
+  Python's `range` repr (`"range(0, 5)"`, `"range(2, 20, 3)"`), but the argument
+  lowered to a `Vec<i64>` and `str()` rendered the materialized list
+  (`"[0, 1, 2, 3, 4]"`), silent-wrong. The `str()` builtin now matches a
+  `range(...)` argument syntactically (before it materializes) and builds the repr
+  from its 1..=3 args (a 1-arg `range(stop)` shows start `0`). A real list is
+  untouched. HUNT-V26 (#15).
+
 ## [0.1.534] — 2026-06-19
 
 ### Fixed
