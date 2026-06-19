@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.518] — 2026-06-19
+
+### Fixed
+
+- **PMAT-818 — narrow `x` in the `is not None` branch of a ternary.** The
+  ubiquitous `x if x is not None else default` Optional-fallback idiom was
+  rejected ("ternary branches have mismatched types (Optional(I64) vs I64)") —
+  the `is not None` branch of a ternary didn't narrow `x` to its inner `T` (the
+  `if`-statement path already does). `lower_if_exp_in_ctx` now captures the
+  narrow target and lowers the then-branch with `x` registered as
+  narrowed-to-`Some` (in a cloned ctx), so reads of `x` unwrap to `T`; the
+  condition and else keep `x` as `Optional`. Works for a bare `x` and for an
+  expression using it. HUNT-V19.
+
 ## [0.1.517] — 2026-06-19
 
 ### Fixed
