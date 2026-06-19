@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.521] — 2026-06-19
+
+### Fixed
+
+- **PMAT-821 — infer an unannotated parameter's type from its default literal.** A
+  parameter with a default value but no annotation was hardcoded to i64
+  (`def greet(name="world")` → `name: i64`, so the body's `"hi " + name` was
+  rustc E0308). A new `default_literal_type` helper now infers the param type
+  from a literal default (`str`/`bool`/`int`/`float`, including a negated numeric)
+  before falling back to `I64`, applied at the function-def param type and both
+  signature-table sites so the emitted type, body typing, and call-site coercion
+  all agree. HUNT-V24 (#5).
+
 ## [0.1.520] — 2026-06-19
 
 ### Fixed
