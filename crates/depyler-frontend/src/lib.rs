@@ -9735,8 +9735,27 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             // so a builtin index (`xs[abs(i)]`, `xs[max(0, i)]`) is recognized;
             // the context-free `lower_expr` would emit an undefined `abs(...)`.
             // (Dict / str / tuple / negative-literal indices returned above.)
-            let index = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
-            let idx_ty = infer_type_in_ctx(ctx, &index);
+            let mut index = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+            let mut idx_ty = infer_type_in_ctx(ctx, &index);
+            // PMAT-819 (HUNT-V22 INDEX): an index typing as a struct with
+            // `__index__` dispatches to that method — Python calls `i.__index__()`
+            // to coerce an object index to an int (mirrors the abs/len dunder
+            // dispatch). The resulting i64 then flows through the normal path
+            // (usize-coercion in `Expr::Index`).
+            if let Type::Struct(sname) = &idx_ty {
+                if ctx
+                    .struct_methods
+                    .get(sname)
+                    .is_some_and(|ms| ms.iter().any(|(m, _)| m == "__index__"))
+                {
+                    index = Expr::MethodCall {
+                        obj: Box::new(index),
+                        method: "__index__".to_string(),
+                        args: vec![],
+                    };
+                    idx_ty = infer_type_in_ctx(ctx, &index);
+                }
+            }
             if !matches!(idx_ty, Type::I64) {
                 return Err(FrontendError::Lower(format!(
                     "list-index expression types as {idx_ty:?} but only `int` indices are \
