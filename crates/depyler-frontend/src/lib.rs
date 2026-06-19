@@ -702,6 +702,21 @@ fn range_repr_expr(args: Vec<Expr>) -> Expr {
     cat(out, Expr::LitStr(")".to_string()))
 }
 
+/// PMAT-838 (HUNT-V26 #1): the Python default value for a primitive type, used to
+/// pre-declare a `let mut` for a collection loop variable that is read AFTER the
+/// loop (`for x in xs: …` then `return x` — Python leaks the last-iterated value).
+/// Only primitives have a sound zero-value; a non-primitive element type returns
+/// `None` (such a post-loop read stays the loud E0425, never silent-wrong).
+fn primitive_default(ty: &Type) -> Option<Expr> {
+    match ty {
+        Type::I64 => Some(Expr::LitInt(0)),
+        Type::F64 => Some(Expr::LitFloat(0.0)),
+        Type::Bool => Some(Expr::LitBool(false)),
+        Type::Str => Some(Expr::LitStr(String::new())),
+        _ => None,
+    }
+}
+
 fn for_target_mutated_ast(stmts: &[ast::Stmt], target: &str) -> bool {
     fn base_is(t: &ast::Expr, target: &str) -> bool {
         match t {
@@ -2380,7 +2395,50 @@ fn lower_function_def(
     }
 
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
-    for stmt in leading {
+    for (i, stmt) in leading.iter().enumerate() {
+        // PMAT-838 (HUNT-V26 #1): Python leaks a `for` loop variable into the
+        // enclosing scope — `for x in xs: …` then `return x` reads the last
+        // iterated value. A range loop already leaks via the while-rewrite
+        // (PMAT-634); a COLLECTION loop over a fresh var kept the native
+        // body-scoped `for x` binding, so a post-loop read was rustc E0425. If a
+        // top-level `for x in <list-typed var>` has a fresh, primitive-element `x`
+        // that is READ in the following statements, pre-declare `let mut x: T =
+        // <default>` here and register it — the existing ForEach leak path
+        // (`bound && type-match`, PMAT-784) then assigns `x` each iteration, so
+        // the post-loop read sees the last value (an empty iterable leaves the
+        // default, matching the range path; Python would NameError on that
+        // degenerate case).
+        if let ast::Stmt::For(forst) = stmt {
+            if forst.orelse.is_empty() {
+                if let ast::Expr::Name(tgt) = forst.target.as_ref() {
+                    let name = tgt.id.to_string();
+                    if !ctx.bound.contains(&name) && !ctx.loop_scoped.contains(&name) {
+                        if let ast::Expr::Name(it) = forst.iter.as_ref() {
+                            if let Some(Type::List(elem)) = ctx.name_types.get(it.id.as_str()) {
+                                if let Some(default) = primitive_default(elem) {
+                                    let elem = (**elem).clone();
+                                    let mut after = HashMap::new();
+                                    for s in &leading[i + 1..] {
+                                        count_reads_stmt(s, &mut after);
+                                    }
+                                    count_reads_stmt(last, &mut after);
+                                    if after.get(&name).copied().unwrap_or(0) > 0 {
+                                        stmts.push(Stmt::Let {
+                                            name: name.clone(),
+                                            ty: elem.clone(),
+                                            value: default,
+                                            mutable: true,
+                                        });
+                                        ctx.bound.insert(name.clone());
+                                        ctx.name_types.insert(name.clone(), elem);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         // A single Python statement may lower to multiple meta-HIR
         // statements — most notably a multi-assignment `if/else`, where
         // each assigned name gets its own `Let` with an `IfExpr` value
