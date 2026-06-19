@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.540] — 2026-06-19
+
+### Fixed
+
+- **PMAT-841 — generate `Display` for a dataclass with str fields.** Completes
+  PMAT-840: a dataclass with a `str` field still had no generated `Display`
+  (eligibility was int/bool/float), so `str()` / an f-string / `print()` of it was
+  rustc E0277. Python's dataclass `repr` quotes a str field (`P(name='hi')`,
+  switching to double quotes when the value contains a single quote). A str field
+  now emits the CPython-faithful `repr(str)` block (quote selection + escaping) via
+  a new `py_str_repr_block`; both backends' `display_eligible` and the frontend's
+  `struct_display_eligible` accept `Str` in lock-step. Int/bool/float/str dataclass
+  repr is now complete. HUNT-V26 (#9).
+
 ## [0.1.539] — 2026-06-19
 
 ### Fixed
