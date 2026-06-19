@@ -2859,7 +2859,21 @@ fn escape_expr(e: &mut Expr) {
         // Direct call-by-name — escape the callee so it matches the
         // (escaped) function definition name.
         Expr::Call { callee, args } => {
-            escape_name(callee);
+            // PMAT-823 (HUNT-V24 PROP-CM-02): a qualified static/classmethod
+            // callee `Class::method` — escape only the METHOD segment if it is a
+            // Rust keyword (the def was escaped by `escape_function`, so the call
+            // must agree: `Reg::r#match`). `escape_name` on the whole `Reg::match`
+            // is a no-op (it isn't a bare keyword). A non-qualified callee (a
+            // free fn) is escaped whole, as before.
+            match callee.rsplit_once("::") {
+                Some((class, method)) => {
+                    let class = class.to_string();
+                    let mut method = method.to_string();
+                    escape_name(&mut method);
+                    *callee = format!("{class}::{method}");
+                }
+                None => escape_name(callee),
+            }
             for a in args {
                 escape_expr(a);
             }
