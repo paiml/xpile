@@ -14917,3 +14917,19 @@ fn main() {
 "#;
     assert_rustc_runs("str_range", &rust, driver);
 }
+
+/// PMAT-836 (HUNT-V26 #6): two tuples of statically-different arity are never
+/// equal in Python ((1,2) == (1,2,3) is False, != is True), but Rust can't
+/// compare the mismatched tuple types → E0308. A single ==/!= between
+/// different-arity tuples now folds to the constant; same-arity stays structural.
+#[test]
+fn tuple_diff_arity_cmp() {
+    let rust = xpile_transpile_to_rust("tuple_diff_arity_cmp.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(diff_arity(), 10);  // ==false, !=true
+    assert_eq!(same_arity(), 101); // a==b true, a==c false, a!=c true
+}
+"#;
+    assert_rustc_runs("tuple_diff_arity_cmp", &rust, driver);
+}

@@ -16506,6 +16506,18 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
     // A single comparison shares no operand between sub-comparisons, so emit it
     // directly (the overwhelmingly common path — keep it a plain `BinOp`).
     if c.ops.len() == 1 {
+        // PMAT-836 (HUNT-V26 #6): two tuples of statically-different arity are
+        // never equal in Python (`(1, 2) == (1, 2, 3)` is `False`, `!=` is
+        // `True`), but Rust cannot compare the mismatched tuple types → E0308.
+        // Fold a single `==`/`!=` between different-arity tuples to the constant
+        // result. (Same-arity tuples fall through to the structural `==`.)
+        if matches!(c.ops[0], ast::CmpOp::Eq | ast::CmpOp::NotEq) {
+            if let (Type::Tuple(la), Type::Tuple(lb)) = (&op_types[0], &op_types[1]) {
+                if la.len() != lb.len() {
+                    return Ok(Expr::LitBool(matches!(c.ops[0], ast::CmpOp::NotEq)));
+                }
+            }
+        }
         let rhs = operands.pop().expect("two operands for one op");
         let lhs = operands.pop().expect("two operands for one op");
         return build_chain_cmp(ctx, &c.ops[0], lhs, &op_types[0], rhs, &op_types[1]);
