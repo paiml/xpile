@@ -2175,28 +2175,23 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         // Python-matching format block (float).
         Expr::ToStr { value, of_float } => {
             if *of_float {
-                // PMAT-583: match CPython's float repr (sci notation when exp
-                // `< -4` or `>= 16`) — see the Rust backend's twin.
-                out.push_str("{ let __sf = ");
-                emit_expr(out, value, mode)?;
-                out.push_str(
-                    r#"; if __sf.is_nan() { String::from("nan") } else if __sf.is_infinite() { String::from(if __sf < 0.0 { "-inf" } else { "inf" }) } else { let __se = format!("{:e}", __sf); let __ep = __se.find('e').unwrap(); let __ex: i32 = __se[__ep + 1..].parse().unwrap(); if __ex < -4 || __ex >= 16 { format!("{}e{}{:02}", &__se[..__ep], if __ex < 0 { "-" } else { "+" }, __ex.abs()) } else if __sf.fract() == 0.0 { format!("{}.0", __sf) } else { format!("{}", __sf) } } }"#,
-                );
+                // PMAT-583/842: CPython float repr — shared with the dataclass
+                // Display path via `py_float_repr_block` (see the Rust twin).
+                let mut v = String::new();
+                emit_expr(&mut v, value, mode)?;
+                out.push_str(&py_float_repr_block(&v));
             } else {
                 out.push_str("format!(\"{}\", ");
                 emit_expr(out, value, mode)?;
                 out.push(')');
             }
         }
-        // PMAT-582: `repr(str)` — CPython-style quoted form (see Rust twin).
+        // PMAT-582/778/842: `repr(str)` — shared with the dataclass Display path
+        // via `py_str_repr_block` (see the Rust twin).
         Expr::ReprStr { value } => {
-            out.push_str("{ let __rs = &(");
-            emit_expr(out, value, mode)?;
-            out.push_str(
-                // PMAT-778 (HUNT-V17 #6): escape control chars as `\xNN` (mirror
-                // of the Rust backend); the catch-all used to push them raw.
-                r#"); let __q = if __rs.contains('\'') && !__rs.contains('"') { '"' } else { '\'' }; let mut __ro = String::new(); __ro.push(__q); for __rc in __rs.chars() { match __rc { '\\' => { __ro.push('\\'); __ro.push('\\'); } '\n' => { __ro.push('\\'); __ro.push('n'); } '\r' => { __ro.push('\\'); __ro.push('r'); } '\t' => { __ro.push('\\'); __ro.push('t'); } __ec if __ec == __q => { __ro.push('\\'); __ro.push(__ec); } __ec if (__ec as u32) < 0x20 || (__ec as u32) == 0x7f || ((__ec as u32) >= 0x80 && (__ec as u32) <= 0x9f) => { __ro.push('\\'); __ro.push('x'); __ro.push_str(&format!("{:02x}", __ec as u32)); } __ec => __ro.push(__ec) } } __ro.push(__q); __ro }"#,
-            );
+            let mut v = String::new();
+            emit_expr(&mut v, value, mode)?;
+            out.push_str(&py_str_repr_block(&v));
         }
         // PMAT-502ak: `round(x)` (float) → `((x).round_ties_even() as i64)`.
         Expr::RoundToInt { value } => {
