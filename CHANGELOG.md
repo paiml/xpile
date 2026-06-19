@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.514] — 2026-06-19
+
+### Fixed
+
+- **PMAT-814 — `dict(d)` over an existing dict is an independent copy.** `dict(d)`
+  over a dict value was rejected ("non-(list of 2-tuples)") — the 1-arg
+  `dict(<expr>)` constructor only handled a list of pairs. Python's `dict(d)` is
+  a fresh, independent copy; when the argument is a `Type::Dict` it now emits an
+  owned clone (`Expr::Clone`), mirroring `list(xs)` → `(xs).clone()`. HUNT-V22
+  (#11, CC-3).
+
 ## [0.1.513] — 2026-06-19
 
 ### Fixed
