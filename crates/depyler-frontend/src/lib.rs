@@ -10303,6 +10303,28 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             });
                         }
                         let default = lower_expr_in_ctx(ctx, call.args[1].clone())?;
+                        // PMAT-844 (HUNT-V27 #4): a `dict[_, float]` with an INT
+                        // default — `d.get(k, 0)` — must coerce the default to f64.
+                        // `DictGetOr` types as the dict's value type (f64), so an
+                        // i64 default emitted `unwrap_or(0i64)` on an `Option<f64>`
+                        // → rustc E0308 (and Python promotes the 0 to 0.0 anyway in
+                        // the float arithmetic that follows).
+                        let dict_val_is_float = matches!(
+                            infer_type_in_ctx(ctx, &recv),
+                            Type::Dict(_, v) if matches!(*v, Type::F64)
+                        );
+                        let default = if dict_val_is_float
+                            && matches!(infer_type_in_ctx(ctx, &default), Type::I64)
+                        {
+                            Expr::NumCast {
+                                value: Box::new(default),
+                                to_float: true,
+                                from_str: false,
+                                from_float: false,
+                            }
+                        } else {
+                            default
+                        };
                         return Ok(Expr::DictGetOr {
                             dict: Box::new(recv),
                             key: Box::new(key),

@@ -15016,3 +15016,23 @@ fn main() {
 "#;
     assert_rustc_runs("setdefault_self_default", &rust, driver);
 }
+
+/// PMAT-844 (HUNT-V27 #4): d.get(k, 0) against a dict[_, float] emitted
+/// unwrap_or(0i64) on an Option<f64> → E0308. An int default now coerces to f64
+/// (Python promotes 0→0.0 in the float arithmetic); an int-valued dict default
+/// stays i64 (the d.get(w,0)+1 counter is unaffected). Cross-checked vs python3.
+#[test]
+fn dictget_default_float() {
+    let rust = xpile_transpile_to_rust("dictget_default_float.py");
+    assert!(
+        rust.contains("(0i64) as f64"),
+        "the float-dict get-default must coerce:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(float_accum(vec![1.5, 2.5]), 4.0);
+    assert_eq!(int_counter(vec![String::from("a"), String::from("b"), String::from("a")]), 21);
+}
+"#;
+    assert_rustc_runs("dictget_default_float", &rust, driver);
+}
