@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.537] — 2026-06-19
+
+### Fixed
+
+- **PMAT-838 — leak a collection loop variable read after the loop.** Python leaks a
+  `for` loop variable into the enclosing scope, so reading it after the loop
+  (`for x in xs: …` then `return x`) yields the last-iterated value. Range loops
+  already leak (while-rewrite) and pre-bound collection targets leak (PMAT-784),
+  but a FRESH collection loop var kept the body-scoped `for x` binding → rustc
+  E0425. When a top-level `for x in <list-typed var>` has a fresh,
+  primitive-element `x` read in the following statements, it is now pre-declared
+  `let mut x: T = <default>` so the existing leak path assigns it each iteration.
+  Gated on read-after liveness (no spurious `let mut` for non-read-after vars) and
+  primitive element types only. HUNT-V26 (#1).
+
 ## [0.1.536] — 2026-06-19
 
 ### Fixed
