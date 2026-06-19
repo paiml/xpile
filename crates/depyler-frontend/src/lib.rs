@@ -13804,6 +13804,17 @@ fn apply_nonempty_format_spec(
     spec: &str,
 ) -> Result<Expr, FrontendError> {
     let ty = infer_type_in_ctx(ctx, &value);
+    // PMAT-831 (HUNT-V25 #10): Python's `bool.__format__` delegates to `int` for
+    // any NON-EMPTY spec — `f"{True:>7}"` formats `1` ("      1"), `f"{True:b}"`
+    // is "1", etc. — NOT Rust's `true`/`false` Display. (A no-spec `f"{flag}"`
+    // keeps the "True"/"False" str via the bool path elsewhere; this function
+    // only ever sees a non-empty spec.) Coerce a bool to i64 up front so the int
+    // spec paths below format 1/0.
+    let (value, ty) = if ty == Type::Bool {
+        (to_i64_operand(ctx, value), Type::I64)
+    } else {
+        (value, ty)
+    };
     // PMAT-693: an int with a FLOAT-presentation spec is coerced to float by
     // Python (`f"{5:.2f}"` == "5.00", `f"{-3:.1f}"` == "-3.0", `f"{1:.0%}"` ==
     // "100%"). Cast the int to f64 up front and treat it as a float for the rest
@@ -15850,6 +15861,15 @@ fn lower_str_format(
                 }
             }
             Some(s) => {
+                // PMAT-831 (HUNT-V25 #10): a bool with a spec formats as an INT
+                // in Python (`bool.__format__` delegates to `int` — `"{:>7}"
+                // .format(True)` is "      1"), not Rust's `true`/`false`. Coerce
+                // the bool arg to i64 (referenced once → safe in-place rewrite) so
+                // the int spec paths below format 1/0. Mirrors the f-string path.
+                if arg_tys[arg_idx] == Type::Bool && ref_count[arg_idx] == 1 {
+                    args[arg_idx] = to_i64_operand(ctx, args[arg_idx].clone());
+                    arg_tys[arg_idx] = Type::I64;
+                }
                 // PMAT-676: a BARE radix spec (`x`/`X`/`b`/`o`) over an int formats
                 // negatives SIGN-MAGNITUDE in Python (`"{:x}".format(-255)` ==
                 // "-ff"), but Rust's `{:x}` is two's-complement
