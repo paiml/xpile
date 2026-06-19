@@ -14819,8 +14819,25 @@ fn lower_if_exp(ie: ast::ExprIfExp) -> Result<Expr, FrontendError> {
 /// the type context.
 fn lower_if_exp_in_ctx(ctx: &LoweringCtx, ie: ast::ExprIfExp) -> Result<Expr, FrontendError> {
     // Python AST order is (test, body, orelse) = (cond, then, else).
+    // PMAT-818 (HUNT-V19): the ubiquitous `x if x is not None else default`
+    // Optional-fallback idiom — the `is not None` branch narrows `x` to its
+    // inner `T` (Python does this for the ternary just like the `if` statement,
+    // PMAT-502fa). Without it the then-branch read of `x` stayed `Optional[T]`
+    // and the branches mismatched (`Optional(I64)` vs `I64` reject). Capture the
+    // narrow target from the test BEFORE it is consumed, then lower the
+    // THEN-branch with `x` registered as narrowed-to-`Some` (a cloned ctx, since
+    // expr-lowering is `&ctx`), so reads of `x` unwrap to `T`. The condition and
+    // else-branch keep `x` as `Optional` (the cond checks `is_some`).
+    let narrow = is_not_none_narrow_target(ctx, &ie.test);
     let cond = truthy_condition(ctx, lower_expr_in_ctx(ctx, *ie.test)?);
-    let then_expr = lower_expr_in_ctx(ctx, *ie.body)?;
+    let then_expr = match &narrow {
+        Some(name) => {
+            let mut nctx = ctx.clone();
+            nctx.narrowed_some.insert(name.clone());
+            lower_expr_in_ctx(&nctx, *ie.body)?
+        }
+        None => lower_expr_in_ctx(ctx, *ie.body)?,
+    };
     let else_expr = lower_expr_in_ctx(ctx, *ie.orelse)?;
 
     let then_ty = infer_type_in_ctx(ctx, &then_expr);
