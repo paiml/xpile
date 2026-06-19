@@ -2638,41 +2638,27 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // Python-matching format block (float: `nan` + `".0"` whole-number suffix).
         Expr::ToStr { value, of_float } => {
             if *of_float {
-                // PMAT-583: match CPython's float repr — scientific notation when
-                // the decimal exponent is `< -4` or `>= 16` (else fixed). The
-                // exponent is read from Rust's `{:e}` (exact; avoids `log10`
-                // rounding error), and reformatted to Python's `e±NN` style
-                // (signed, ≥2-digit). Mantissa digits already match (both use
-                // shortest round-trip). Fixed path keeps the `.0`-if-whole shape.
-                out.push_str("{ let __sf = ");
-                emit_expr(out, value, mode)?;
-                out.push_str(
-                    r#"; if __sf.is_nan() { String::from("nan") } else if __sf.is_infinite() { String::from(if __sf < 0.0 { "-inf" } else { "inf" }) } else { let __se = format!("{:e}", __sf); let __ep = __se.find('e').unwrap(); let __ex: i32 = __se[__ep + 1..].parse().unwrap(); if __ex < -4 || __ex >= 16 { format!("{}e{}{:02}", &__se[..__ep], if __ex < 0 { "-" } else { "+" }, __ex.abs()) } else if __sf.fract() == 0.0 { format!("{}.0", __sf) } else { format!("{}", __sf) } } }"#,
-                );
+                // PMAT-583: CPython float repr — scientific for decimal exponent
+                // `< -4` or `>= 16`, else fixed (`.0`-if-whole). PMAT-842: the
+                // block is shared with the dataclass-Display float-field path via
+                // `py_float_repr_block` (single source — was duplicated).
+                let mut v = String::new();
+                emit_expr(&mut v, value, mode)?;
+                out.push_str(&py_float_repr_block(&v));
             } else {
                 out.push_str("format!(\"{}\", ");
                 emit_expr(out, value, mode)?;
                 out.push(')');
             }
         }
-        // PMAT-582: `repr(str)` — CPython-style quoted form. Pick the quote
-        // (single, or double if the string has a `'` but no `"`), then escape
-        // `\`, the quote, `\n`, `\r`, `\t`. A raw codegen string keeps the
-        // emitted Rust verbatim. (Other non-printables emit verbatim; full
-        // `\xNN` escaping deferred.)
+        // PMAT-582/778: `repr(str)` — CPython-style quoted form (single quote, or
+        // double if the string has a `'` but no `"`), with `\\`/quote/`\n`/`\r`/
+        // `\t` + control-char `\xNN` escaping. PMAT-842: the block is shared with
+        // the dataclass-Display str-field path via `py_str_repr_block`.
         Expr::ReprStr { value } => {
-            out.push_str("{ let __rs = &(");
-            emit_expr(out, value, mode)?;
-            out.push_str(
-                // PMAT-778 (HUNT-V17 #6): escape non-printable control chars as
-                // `\xNN` (Python repr) — the catch-all used to push them raw, so
-                // `\x00`/`\x07`/`\x1b`/`\x7f`/C1 leaked as raw bytes. Covers the
-                // ASCII controls (`< 0x20`, after the named `\n`/`\r`/`\t`) and
-                // DEL + the C1 block (`0x7f`, `0x80..=0x9f`) — a fixed,
-                // always-non-printable set (no Unicode tables); higher
-                // non-printable code points are the deferred Unicode-data case.
-                r#"); let __q = if __rs.contains('\'') && !__rs.contains('"') { '"' } else { '\'' }; let mut __ro = String::new(); __ro.push(__q); for __rc in __rs.chars() { match __rc { '\\' => { __ro.push('\\'); __ro.push('\\'); } '\n' => { __ro.push('\\'); __ro.push('n'); } '\r' => { __ro.push('\\'); __ro.push('r'); } '\t' => { __ro.push('\\'); __ro.push('t'); } __ec if __ec == __q => { __ro.push('\\'); __ro.push(__ec); } __ec if (__ec as u32) < 0x20 || (__ec as u32) == 0x7f || ((__ec as u32) >= 0x80 && (__ec as u32) <= 0x9f) => { __ro.push('\\'); __ro.push('x'); __ro.push_str(&format!("{:02x}", __ec as u32)); } __ec => __ro.push(__ec) } } __ro.push(__q); __ro }"#,
-            );
+            let mut v = String::new();
+            emit_expr(&mut v, value, mode)?;
+            out.push_str(&py_str_repr_block(&v));
         }
         // PMAT-502ak: `round(x)` (float) → `((x).round_ties_even() as i64)`
         // — banker's rounding, matching Python's `round`.
