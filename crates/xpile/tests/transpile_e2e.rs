@@ -14742,3 +14742,25 @@ fn main() {
 "#;
     assert_rustc_runs("join_map_str_tuple", &rust, driver);
 }
+
+/// PMAT-826 (HUNT-V25 #1): a dict comprehension `{KEY(w): w for w in words}`
+/// where the value is the bare binder and the key re-reads it (`w[0]`) — the
+/// DictSet codegen bound the value first, MOVING the non-Copy `w` before the key
+/// re-read it → E0382. The bare-binder value is now cloned (transformed values /
+/// Copy binders unaffected). Cross-checked vs python3.
+#[test]
+fn dictcomp_key_reads_binder() {
+    let rust = xpile_transpile_to_rust("dictcomp_key_reads_binder.py");
+    assert!(
+        rust.contains("__xpile_dict_val = (w).clone()"),
+        "the bare-binder dict-comp value must be cloned:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(first_char_keys(), 3);   // a,b,c (avocado overwrites apple)
+    assert_eq!(transformed_value(), 2);
+    assert_eq!(int_binder(), 9);
+}
+"#;
+    assert_rustc_runs("dictcomp_key_reads_binder", &rust, driver);
+}
