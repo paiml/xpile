@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.523] — 2026-06-19
+
+### Fixed
+
+- **PMAT-823 — escape the method segment of a `Class::method` keyword callee.** A
+  `@staticmethod`/`@classmethod` named after a Rust keyword had its definition
+  escaped (PMAT-813 → `pub fn r#match`), but the qualified call site emitted
+  `Reg::match(...)` verbatim — the `match` segment unescaped — so call and def
+  disagreed (rustc keyword error). The reserved-ident escape now splits a
+  qualified callee and escapes only the method segment (`Reg::r#match`); a bare
+  callee is still escaped whole. HUNT-V24 (PROP-CM-02).
+
 ## [0.1.522] — 2026-06-19
 
 ### Fixed
