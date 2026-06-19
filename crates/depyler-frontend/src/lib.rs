@@ -15510,6 +15510,29 @@ fn lower_percent_format(
     Ok(Expr::StrFormat { fmt, args })
 }
 
+/// PMAT-822 (HUNT-V24 SF-1): is `spec` a pure align/width spec (`>6`, `<8`,
+/// `^10`, or a bare width `6`) with no precision/type/sign/fill? Returns the
+/// `(align, width)` to apply to a STRING — a bare width forces `>` (Python
+/// right-aligns a number; Rust left-aligns a string). Used to render a float to
+/// its Python repr string (keeping the trailing `.0`) and then pad it.
+fn str_format_float_align_width(spec: &str) -> Option<(&'static str, &str)> {
+    let (align, width) = match spec.strip_prefix(['<', '>', '^']) {
+        Some(rest) => (&spec[..1], rest),
+        None => (">", spec),
+    };
+    if !width.is_empty() && width.bytes().all(|b| b.is_ascii_digit()) {
+        // normalise the borrowed align char to a 'static str
+        let a = match align {
+            "<" => "<",
+            "^" => "^",
+            _ => ">",
+        };
+        Some((a, width))
+    } else {
+        None
+    }
+}
+
 fn lower_str_format(
     ctx: &LoweringCtx,
     fmt: &str,
@@ -15685,6 +15708,27 @@ fn lower_str_format(
                         prefixed: false,
                         upper,
                         min_width: 0,
+                    };
+                    // emit a plain `{field_str}` field (the arg is now the string)
+                } else if arg_tys[arg_idx] == Type::F64
+                    && ref_count[arg_idx] == 1
+                    && str_format_float_align_width(s).is_some()
+                {
+                    // PMAT-822 (HUNT-V24 SF-1): a float with an align/width-ONLY
+                    // spec (`"{:>6}".format(3.0)`) — Rust's `format!("{:>6}", f64)`
+                    // uses the bare f64 Display (`3`, no `.0`), dropping Python's
+                    // trailing `.0` (silent-wrong "     3" vs "   3.0"). Render the
+                    // float to its Python repr STRING first (`ToStr`) and pad THAT;
+                    // a bare width forces right-align (Python right-aligns numbers).
+                    // Mirrors the f-string path (PMAT-807). A precision spec
+                    // (`.2f`) keeps the NaN-guarded FormatSpec path below.
+                    let (align, width) = str_format_float_align_width(s).expect("checked");
+                    args[arg_idx] = Expr::FormatSpec {
+                        value: Box::new(Expr::ToStr {
+                            value: Box::new(args[arg_idx].clone()),
+                            of_float: true,
+                        }),
+                        rust_spec: format!("{align}{width}"),
                     };
                     // emit a plain `{field_str}` field (the arg is now the string)
                 } else if arg_tys[arg_idx] == Type::F64 && ref_count[arg_idx] == 1 {
