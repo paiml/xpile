@@ -12540,6 +12540,9 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     op: UnOp::Neg,
                     operand: Box::new(operand),
                 })
+            } else if let Some(call) = struct_unary_dunder(ctx, &operand, "__neg__") {
+                // PMAT-815 (HUNT-V22 DNI): `-obj` over a struct with `__neg__`.
+                Ok(call)
             } else {
                 Err(FrontendError::Lower(
                     "unary `-` requires an I64 operand or a float literal (float-variable negation is deferred)".into(),
@@ -12608,6 +12611,9 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     op: UnOp::BitNot,
                     operand: Box::new(operand),
                 })
+            } else if let Some(call) = struct_unary_dunder(ctx, &operand, "__invert__") {
+                // PMAT-815 (HUNT-V22 DNI): `~obj` over a struct with `__invert__`.
+                Ok(call)
             } else {
                 Err(FrontendError::Lower(
                     "bitwise `~` requires an I64 operand".into(),
@@ -15844,6 +15850,29 @@ fn flip_cmp(op: BinOp) -> BinOp {
 /// path (or a clean reject). `**`→`__pow__`, `//`→`__floordiv__`, `%`→`__mod__`,
 /// `<<`/`>>`→`__lshift__`/`__rshift__`, `&`/`|`/`^`→`__and__`/`__or__`/`__xor__`,
 /// `/`→`__truediv__` — joining `+`/`-`/`*`. (`@`/matmul isn't supported.)
+/// PMAT-815 (HUNT-V22 DNI): dispatch a unary operator over a struct operand to
+/// the user dunder (`-obj` → `obj.__neg__()`, `~obj` → `obj.__invert__()`,
+/// `+obj` → `obj.__pos__()`) — mirrors the binop dunder dispatch (PMAT-785).
+/// Returns the `MethodCall` when `operand` types as a `Type::Struct` whose
+/// methods include `dunder`; `None` otherwise (callers keep their numeric
+/// path / reject).
+fn struct_unary_dunder(ctx: &LoweringCtx, operand: &Expr, dunder: &str) -> Option<Expr> {
+    if let Type::Struct(sname) = infer_type_in_ctx(ctx, operand) {
+        if ctx
+            .struct_methods
+            .get(&sname)
+            .is_some_and(|ms| ms.iter().any(|(m, _)| m == dunder))
+        {
+            return Some(Expr::MethodCall {
+                obj: Box::new(operand.clone()),
+                method: dunder.to_string(),
+                args: vec![],
+            });
+        }
+    }
+    None
+}
+
 fn arith_dunder_name(op: &ast::Operator) -> Option<&'static str> {
     match op {
         ast::Operator::Add => Some("__add__"),
