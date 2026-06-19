@@ -14630,3 +14630,25 @@ fn main() {
 "#;
     assert_rustc_runs("index_dunder", &rust, driver);
 }
+
+/// PMAT-820 (HUNT-V24 MDA): method/staticmethod default arguments were dropped
+/// and omitted-arg call sites left under-supplied → E0061. Instance methods now
+/// register under a distinct Class#method signature key; both instance and
+/// static call sites fill omitted trailing args with the defaults (coerced to
+/// the param type). Cross-checked vs python3.
+#[test]
+fn method_default_args() {
+    let rust = xpile_transpile_to_rust("method_default_args.py");
+    assert!(
+        rust.contains("m(5i64, 10i64)") && rust.contains("make(3i64, 4i64)"),
+        "omitted method args must be padded with defaults:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(methods(), 329);       // 115 + 111 + 103
+    assert_eq!(statics(), 108);       // 34 + 74
+    assert_eq!(float_default(), 50.0);// 20.0 + 30.0
+}
+"#;
+    assert_rustc_runs("method_default_args", &rust, driver);
+}
