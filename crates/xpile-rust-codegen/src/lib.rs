@@ -243,10 +243,18 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                     writeln!(out, "        write!(__f, \"{{}}\", self.__str__())")?;
                     out.push_str("    }\n}\n");
                 }
+                // PMAT-840 (HUNT-V26 #9): a `float` field also formats the same in
+                // the Python dataclass `repr` as `str(float)` does — generate a
+                // `Display` for an int/bool/FLOAT dataclass (a `str` field, which
+                // needs Python's quoted-and-escaped repr, is still deferred — it
+                // keeps the loud E0277). The float field reuses the same
+                // CPython-faithful float-repr block as `ToStr{of_float}` (`.0` for
+                // whole values, scientific for large/small), via a raw-string
+                // template so the embedded Rust needs no escaping.
                 let display_eligible = !has_str
                     && fields
                         .iter()
-                        .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool));
+                        .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool | Type::F64));
                 if display_eligible {
                     let mut fmt_str = format!("{name}(");
                     let mut args = String::new();
@@ -264,6 +272,10 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                                 args,
                                 ", if self.{field} {{ \"True\" }} else {{ \"False\" }}"
                             )?,
+                            Type::F64 => {
+                                let blk = py_float_repr_block(&format!("self.{field}"));
+                                write!(args, ", {blk}")?;
+                            }
                             _ => write!(args, ", self.{field}")?,
                         }
                     }
@@ -489,6 +501,18 @@ fn function_bigint_mode(f: &Function) -> bool {
         }
     }
     f.body.stmts.iter().any(stmt_has_bigint)
+}
+
+/// PMAT-840 (HUNT-V26 #9): the CPython-faithful `repr`/`str` of an f64 as a Rust
+/// expression block over `accessor` (the field/value access). Mirrors the
+/// `Expr::ToStr { of_float: true }` emission — `.0` for whole values, `e±NN`
+/// scientific for exponent `< -4` or `>= 16`, `nan`/`inf`/`-inf` for non-finite.
+/// A raw-string template (no brace/quote escaping) with `__ACC__` substituted, so
+/// it round-trips the same Rust the str(float) path emits. Used by the dataclass
+/// `Display` generator for a float field.
+fn py_float_repr_block(accessor: &str) -> String {
+    let tmpl = r##"{ let __sf = __ACC__; if __sf.is_nan() { String::from("nan") } else if __sf.is_infinite() { String::from(if __sf < 0.0 { "-inf" } else { "inf" }) } else { let __se = format!("{:e}", __sf); let __ep = __se.find('e').unwrap(); let __ex: i32 = __se[__ep + 1..].parse().unwrap(); if __ex < -4 || __ex >= 16 { format!("{}e{}{:02}", &__se[..__ep], if __ex < 0 { "-" } else { "+" }, __ex.abs()) } else if __sf.fract() == 0.0 { format!("{}.0", __sf) } else { format!("{}", __sf) } } }"##;
+    tmpl.replace("__ACC__", accessor)
 }
 
 /// PMAT-011: emit one `// xpile-contract: <ID>` comment line per

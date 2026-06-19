@@ -14955,3 +14955,21 @@ fn main() {
 "#;
     assert_rustc_runs("loop_var_leak_collection", &rust, driver);
 }
+
+/// PMAT-840 (HUNT-V26 #9): a dataclass with a float field had no Display impl
+/// (display_eligible was int/bool-only) → str()/f-string was E0277. A float field
+/// formats the same in the dataclass repr as str(float); Display now covers
+/// int/bool/float dataclasses (a str field stays deferred). Cross-checked vs python3.
+#[test]
+fn dataclass_display_float() {
+    let rust = xpile_transpile_to_rust("dataclass_display_float.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(pt_repr(), "Pt(x=1.5, y=2.0, n=3)");
+    assert_eq!(pt_whole(), "Pt(x=4.0, y=0.0, n=1)");
+    assert_eq!(pt_fstring(), "here: Pt(x=1.5, y=2.5, n=9)");
+    assert_eq!(intbool_repr(), "IntBool(a=5, b=True)");
+}
+"#;
+    assert_rustc_runs("dataclass_display_float", &rust, driver);
+}
