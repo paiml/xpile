@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.543] — 2026-06-19
+
+### Fixed
+
+- **PMAT-845 — `set.update` over a str/tuple materializes the iterable.**
+  `s.update("abc")` / `s.update((3, 4))` is valid Python (a str iterates its
+  chars, a tuple its elements), but the `set.update` lowering reused
+  `Stmt::ListExtend` — `s.extend((<arg>).iter().cloned())` — and `.iter()` on a
+  `String`/tuple is rustc E0599. A str argument now materializes to its
+  chars-as-strings list, a homogeneous tuple to a list of its elements (the same
+  materialization `max(s)` / `sum(t)` use). A set/list arg is unchanged. HUNT-V27
+  (#5).
+
 ## [0.1.542] — 2026-06-19
 
 ### Fixed
