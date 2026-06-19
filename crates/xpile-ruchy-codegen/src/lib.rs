@@ -2915,6 +2915,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             body,
             handler,
             except_types,
+            bound_name,
         } => {
             // PMAT-789 (HUNT-V18 EXC-001): a typed `except T:` / tuple `except (A,
             // B):` catches ONLY a panic whose payload names one of the LISTED types
@@ -2922,12 +2923,27 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             // (inversion of the prior blocklist, which swallowed RuntimeError / any
             // non-cataloged or untagged panic). Mirrors the Rust backend. A
             // catch-all (empty set) keeps `Err(_)`.
+            // PMAT-817 (HUNT-V20 EXC-4): `except E as e:` binds the prefix-stripped
+            // exception message to a `String` local `e` (mirrors the Rust backend).
+            let bind = |out: &mut String, name: &str| {
+                write!(
+                    out,
+                    "let {name} = __xpile_m.strip_prefix(\"xpile: \").and_then(|__s| __s.splitn(2, \": \").nth(1)).unwrap_or(__xpile_m).to_string(); "
+                )
+            };
             out.push_str("match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| ");
             emit_expr(out, body, mode)?;
             out.push_str(")) { Ok(__xpile_try) => __xpile_try, ");
             if except_types.is_empty() {
-                out.push_str("Err(_) => ");
-                emit_expr(out, handler, mode)?;
+                if let Some(name) = bound_name {
+                    out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); ");
+                    bind(out, name)?;
+                    emit_expr(out, handler, mode)?;
+                    out.push_str(" }");
+                } else {
+                    out.push_str("Err(_) => ");
+                    emit_expr(out, handler, mode)?;
+                }
             } else {
                 out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if ");
                 for (i, k) in except_types.iter().enumerate() {
@@ -2937,6 +2953,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     write!(out, "__xpile_m.starts_with(\"xpile: {k}: \")")?;
                 }
                 out.push_str(" { ");
+                if let Some(name) = bound_name {
+                    bind(out, name)?;
+                }
                 emit_expr(out, handler, mode)?;
                 out.push_str(" } else { ::std::panic::resume_unwind(__xpile_e) } }");
             }

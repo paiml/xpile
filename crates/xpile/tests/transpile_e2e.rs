@@ -14564,3 +14564,24 @@ fn main() {
 "#;
     assert_rustc_runs("foreach_iter_mut", &rust, driver);
 }
+
+/// PMAT-817 (HUNT-V20 EXC-4): `except E as e:` was rejected; the caught
+/// exception's message is now bound to a String local `e` (the panic payload's
+/// <msg>, prefix-stripped), so str(e)/f"{e}" see it. xpile's messages match
+/// CPython for the common types. Cross-checked vs python3.
+#[test]
+fn except_as_bind() {
+    let rust = xpile_transpile_to_rust("except_as_bind.py");
+    assert!(
+        rust.contains("let e = __xpile_m.strip_prefix"),
+        "except ... as e must bind the message:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(safe_div(6, 2), "3");
+    assert_eq!(safe_div(6, 0), "err: integer division or modulo by zero");
+    assert_eq!(at(vec![1,2], 5), "oob: list index out of range");
+}
+"#;
+    assert_rustc_runs("except_as_bind", &rust, driver);
+}
