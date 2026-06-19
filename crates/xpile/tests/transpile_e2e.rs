@@ -14973,3 +14973,20 @@ fn main() {
 "#;
     assert_rustc_runs("dataclass_display_float", &rust, driver);
 }
+
+/// PMAT-841 (HUNT-V26 #9): a dataclass with a str field now gets a generated
+/// Display — Python's repr quotes str fields (P(name='hi'), switching to double
+/// quotes when the value has a single quote), via the repr(str) escaping. This
+/// completes int/bool/float/str dataclass repr. Cross-checked vs python3.
+#[test]
+fn dataclass_display_str() {
+    let rust = xpile_transpile_to_rust("dataclass_display_str.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(mixed_repr(), "P(name='Ann', age=30, score=1.5)");
+    assert_eq!(mixed_fstring(), "<P(name='Bo', age=7, score=2.0)>");
+    assert_eq!(embedded_quote(), "P(name=\"a'b\", age=1, score=0.5)");
+}
+"#;
+    assert_rustc_runs("dataclass_display_str", &rust, driver);
+}

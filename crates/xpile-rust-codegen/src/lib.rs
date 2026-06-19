@@ -251,10 +251,13 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                 // CPython-faithful float-repr block as `ToStr{of_float}` (`.0` for
                 // whole values, scientific for large/small), via a raw-string
                 // template so the embedded Rust needs no escaping.
+                // PMAT-841 (HUNT-V26 #9): a `str` field also renders in the
+                // dataclass repr (Python quotes it: `P(name='hi')`), via the same
+                // `repr(str)` escaping the `ReprStr` path uses.
                 let display_eligible = !has_str
-                    && fields
-                        .iter()
-                        .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool | Type::F64));
+                    && fields.iter().all(|(_, ty)| {
+                        matches!(ty, Type::I64 | Type::Bool | Type::F64 | Type::Str)
+                    });
                 if display_eligible {
                     let mut fmt_str = format!("{name}(");
                     let mut args = String::new();
@@ -274,6 +277,10 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                             )?,
                             Type::F64 => {
                                 let blk = py_float_repr_block(&format!("self.{field}"));
+                                write!(args, ", {blk}")?;
+                            }
+                            Type::Str => {
+                                let blk = py_str_repr_block(&format!("self.{field}"));
                                 write!(args, ", {blk}")?;
                             }
                             _ => write!(args, ", self.{field}")?,
@@ -512,6 +519,19 @@ fn function_bigint_mode(f: &Function) -> bool {
 /// `Display` generator for a float field.
 fn py_float_repr_block(accessor: &str) -> String {
     let tmpl = r##"{ let __sf = __ACC__; if __sf.is_nan() { String::from("nan") } else if __sf.is_infinite() { String::from(if __sf < 0.0 { "-inf" } else { "inf" }) } else { let __se = format!("{:e}", __sf); let __ep = __se.find('e').unwrap(); let __ex: i32 = __se[__ep + 1..].parse().unwrap(); if __ex < -4 || __ex >= 16 { format!("{}e{}{:02}", &__se[..__ep], if __ex < 0 { "-" } else { "+" }, __ex.abs()) } else if __sf.fract() == 0.0 { format!("{}.0", __sf) } else { format!("{}", __sf) } } }"##;
+    tmpl.replace("__ACC__", accessor)
+}
+
+/// PMAT-841 (HUNT-V26 #9): the CPython-faithful `repr` of a `str` as a Rust block
+/// over `accessor` — mirrors `Expr::ReprStr`: single-quoted (double if the string
+/// has a `'` but no `"`), with `\\`/quote/`\n`/`\r`/`\t` and control-char `\xNN`
+/// escaping. Raw-string template with `__ACC__` substituted. Used by the dataclass
+/// `Display` generator for a str field — Python's dataclass `repr` quotes them
+/// (`P(name='hi')`).
+/// TODO(DRY): `emit_expr`'s `ReprStr` / `ToStr{of_float}` inline the same logic;
+/// consolidate onto these helpers in a follow-up.
+fn py_str_repr_block(accessor: &str) -> String {
+    let tmpl = r##"{ let __rs = &(__ACC__); let __q = if __rs.contains('\'') && !__rs.contains('"') { '"' } else { '\'' }; let mut __ro = String::new(); __ro.push(__q); for __rc in __rs.chars() { match __rc { '\\' => { __ro.push('\\'); __ro.push('\\'); } '\n' => { __ro.push('\\'); __ro.push('n'); } '\r' => { __ro.push('\\'); __ro.push('r'); } '\t' => { __ro.push('\\'); __ro.push('t'); } __ec if __ec == __q => { __ro.push('\\'); __ro.push(__ec); } __ec if (__ec as u32) < 0x20 || (__ec as u32) == 0x7f || ((__ec as u32) >= 0x80 && (__ec as u32) <= 0x9f) => { __ro.push('\\'); __ro.push('x'); __ro.push_str(&format!("{:02x}", __ec as u32)); } __ec => __ro.push(__ec) } } __ro.push(__q); __ro }"##;
     tmpl.replace("__ACC__", accessor)
 }
 
