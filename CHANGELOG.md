@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.528] — 2026-06-19
+
+### Fixed
+
+- **PMAT-828 — a dataclass field mutation in a for-loop uses `iter_mut`.** A loop
+  mutating a dataclass field (`for p in pts: p.x = …`) emitted
+  `for p in pts.iter().cloned()` with `p` not `mut` → rustc E0594, and the clone
+  discarded the mutation (silent-wrong). The PMAT-816 `iter_mut` detection now
+  also matches a `FieldAssign` on the loop var and accepts a `Type::Struct`
+  element, and a new AST-level pass marks a local iterable `mut` (the
+  lowering-time mark lands after a local's `let`). HUNT-V25 (#5).
+
 ## [0.1.527] — 2026-06-19
 
 ### Fixed
