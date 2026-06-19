@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.517] — 2026-06-19
+
+### Fixed
+
+- **PMAT-817 — bind `except E as e:` to the exception message.** A terminal `try:
+  return … except E as e: return …` with an `as <name>` binding was rejected
+  ("no bound name"). The handler now binds `<name>` to a `String` holding the
+  exception MESSAGE — the `<msg>` of xpile's `xpile: <T>: <msg>` panic payload,
+  prefix-stripped — via a new `TryCatch.bound_name` field. `str(e)`/`f"{e}"`
+  agree with CPython for the common types (ZeroDivisionError "integer division or
+  modulo by zero", IndexError "list index out of range"). Richer uses (`e.args`,
+  `raise e`) stay deferred; the statement-form try/except-assign keeps no
+  binding. HUNT-V20 (EXC-4).
+
 ## [0.1.516] — 2026-06-19
 
 ### Fixed
