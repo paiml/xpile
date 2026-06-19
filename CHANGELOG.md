@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.522] — 2026-06-19
+
+### Fixed
+
+- **PMAT-822 — `str.format()` float with an align/width-only spec keeps the
+  trailing `.0`.** `"{:>6}".format(3.0)` lowered the float field to
+  `format!("{:>6}", 3f64)`, using Rust's bare f64 Display (`3`, no `.0`) —
+  dropping Python's trailing `.0` (`"     3"` vs `"   3.0"`). The str.format()
+  analog of PMAT-807 (str.format uses its own `lower_str_format` spec path). A
+  float field with a pure align/width spec now renders the float to its Python
+  repr string first (`ToStr`) and pads that; a bare width forces right-align. A
+  precision spec (`.2f`) keeps the NaN-guarded path. HUNT-V24 (SF-1).
+
 ## [0.1.521] — 2026-06-19
 
 ### Fixed
