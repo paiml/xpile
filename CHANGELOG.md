@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.533] — 2026-06-19
+
+### Fixed
+
+- **PMAT-833 — hoist the RHS of a nested-dict read-modify-write before `&mut`.** A
+  nested-subscript assignment whose RHS reads the same container
+  (`d["a"]["x"] = d["a"]["x"] + 5`, the 2D-dict / Counter accumulation idiom) read
+  `d` immutably while the `&mut d` borrow was still live → rustc E0502. Both
+  backends now bind the RHS into a temp before `let __t0 = &mut base`, so the
+  RHS's immutable borrow ends before the mutable walk (mirroring the single-level
+  `DictSet` and nested-list paths). HUNT-V26 (#3).
+
 ## [0.1.532] — 2026-06-19
 
 ### Fixed
