@@ -7569,11 +7569,16 @@ fn desugar_list_comp(
         ));
     }
     let iter_expr = str_iter_to_chars(ctx, lower_expr_in_ctx(ctx, gen.iter.clone())?);
-    let elem_in_ty = match infer_type_in_ctx(ctx, &iter_expr) {
-        Type::List(e) => *e,
+    let (elem_in_ty, over_keys) = match infer_type_in_ctx(ctx, &iter_expr) {
+        Type::List(e) => (*e, false),
+        // PMAT-832 (HUNT-V25 #14): a comprehension over a bare DICT iterates its
+        // KEYS (`[k for k in d]`, Python `for k in d`), exactly like the for-loop
+        // ForEach `over_keys` path — the element type is the key type and the
+        // backend emits `d.keys().cloned()`.
+        Type::Dict(k, _) => (*k, true),
         other => {
             return Err(FrontendError::Lower(format!(
-                "function `{}` comprehends over an iterable typing as {other:?}; v0.2.0 supports `[… for x in <list[T]>]` or `[… for x in range(...)]` (dict iterables deferred)",
+                "function `{}` comprehends over an iterable typing as {other:?}; v0.2.0 supports `[… for x in <list[T]>]`, `[… for x in range(...)]`, or `[… for k in <dict>]`",
                 ctx.fn_name
             )));
         }
@@ -7613,7 +7618,7 @@ fn desugar_list_comp(
             iter: iter_expr,
             elem_ty: elem_in_ty,
             body,
-            over_keys: false,
+            over_keys,
             dict_guard: None,
             mutate_elems: false,
         },
@@ -17026,12 +17031,25 @@ fn lower_comp_to_map(
         // PMAT-546: a `str` iterable comprehends over its chars (1-char strings).
         str_iter_to_chars(ctx, lower_expr_in_ctx(ctx, gen.iter.clone())?)
     };
+    // PMAT-832 (HUNT-V25 #14): a comprehension over a bare DICT iterates its KEYS
+    // (`sum([d[k] for k in d])`), like the statement-form comp / the for-loop
+    // `over_keys` path. Re-wrap a dict iterable into its owned keys `Vec`
+    // (`DictView::Keys`, which types as `List(K)`), so the closure-chain below
+    // iterates that list.
+    let iter_list = if matches!(infer_type_in_ctx(ctx, &iter_list), Type::Dict(_, _)) {
+        Expr::DictView {
+            dict: Box::new(iter_list),
+            kind: DictViewKind::Keys,
+        }
+    } else {
+        iter_list
+    };
     let elem_ty = match infer_type_in_ctx(ctx, &iter_list) {
         Type::List(e) => *e,
         _ => {
             return Err(FrontendError::Lower(format!(
-                "{kind} iterates over a non-list — only `range(...)` and list-typed iterables are \
-                 supported at v0.2.0"
+                "{kind} iterates over a non-list — only `range(...)`, list-typed, and dict (keys) \
+                 iterables are supported at v0.2.0"
             )));
         }
     };

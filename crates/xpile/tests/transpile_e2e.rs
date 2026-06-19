@@ -14848,3 +14848,23 @@ fn main() {
 "#;
     assert_rustc_runs("bool_format_spec", &rust, driver);
 }
+
+/// PMAT-832 (HUNT-V25 #14): a comprehension over a bare dict (`[k for k in d]`)
+/// was rejected though the for-loop works. Python iterates a dict as its keys.
+/// Both comp paths (statement desugar + value-position closure-chain) now iterate
+/// the keys. Cross-checked vs python3.
+#[test]
+fn comp_over_dict() {
+    let rust = xpile_transpile_to_rust("comp_over_dict.py");
+    let driver = r#"
+fn main() {
+    let mut d = std::collections::HashMap::new();
+    d.insert(String::from("a"), 10i64);
+    d.insert(String::from("b"), 20i64);
+    d.insert(String::from("c"), 30i64);
+    assert_eq!(keys_len(d.clone()), 3);
+    assert_eq!(sum_values(d), 60);
+}
+"#;
+    assert_rustc_runs("comp_over_dict", &rust, driver);
+}
