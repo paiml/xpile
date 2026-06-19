@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.519] — 2026-06-19
+
+### Fixed
+
+- **PMAT-819 — dispatch a struct list-index to `__index__`.** A list index typing
+  as a struct with `__index__` was rejected ("only int indices supported").
+  Python calls `i.__index__()` to coerce an object index to an int; the
+  context-aware subscript lowering now wraps such an index in `obj.__index__()`
+  (returning i64) and lets it flow through the normal int-index path (negative
+  normalization + bounds + usize coercion), mirroring the abs/len dunder
+  dispatch. A struct without `__index__` still rejects. HUNT-V22 (INDEX).
+
 ## [0.1.518] — 2026-06-19
 
 ### Fixed
