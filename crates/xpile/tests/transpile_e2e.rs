@@ -14542,3 +14542,25 @@ fn main() {
 "#;
     assert_rustc_runs("unary_dunder_dispatch", &rust, driver);
 }
+
+/// PMAT-816 (HUNT-V21 #3/4/8): a for-loop mutating each element in place
+/// (row.append/row[i]=) emitted `grid.iter().cloned()` — the mutation hit a
+/// discarded clone AND row was not mut (E0596). It now binds row by &mut via
+/// `grid.iter_mut()` (grid marked mut); a read-only loop keeps the cloned form.
+/// Cross-checked vs python3.
+#[test]
+fn foreach_iter_mut() {
+    let rust = xpile_transpile_to_rust("foreach_iter_mut.py");
+    assert!(
+        rust.contains("grid.iter_mut()") && rust.contains("mut grid"),
+        "an element-mutating for-loop must use iter_mut() over a mut collection:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(grow(vec![vec![1,2],vec![3]]), 5);          // append 0 to each → lens 3+2
+    assert_eq!(set_first(vec![vec![1,2],vec![3,4]]), 198); // row[0]=99 each → 99+99
+    assert_eq!(read_only(vec![vec![1,2],vec![3]]), 3);     // lens 2+1, unmutated
+}
+"#;
+    assert_rustc_runs("foreach_iter_mut", &rust, driver);
+}

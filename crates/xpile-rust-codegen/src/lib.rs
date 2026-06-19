@@ -741,7 +741,25 @@ fn emit_stmt_indented(
             over_keys,
             dict_guard,
             elem_ty: _,
+            mutate_elems,
         } => {
+            // PMAT-816 (HUNT-V21 #3/4/8): when the body mutates each element in
+            // place, bind `var` by `&mut` via `iter_mut()` (no `.cloned()`) so
+            // the mutation reaches the original collection (which the frontend
+            // marked `mut`). Takes precedence over the cloned path; not combined
+            // with `over_keys`/`dict_guard` (the frontend only sets it for a
+            // plain list iterable).
+            if *mutate_elems {
+                write!(out, "{indent}for {var} in ")?;
+                emit_expr(out, iter, mode)?;
+                writeln!(out, ".iter_mut() {{")?;
+                let inner = format!("{indent}    ");
+                for s in body {
+                    emit_stmt_indented(out, s, &inner, mode)?;
+                }
+                writeln!(out, "{indent}}}")?;
+                return Ok(());
+            }
             // PMAT-472 (R3): a dict iterates keys (`for k in d:`) via
             // `.keys().cloned()`; a list iterates elements via
             // `.iter().cloned()`. Both yield owned values.
