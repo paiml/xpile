@@ -14950,6 +14950,7 @@ fn main() {
     assert_eq!(not_read_after(vec![1, 2, 3]), 6);
     assert_eq!(find_prebound(vec![3, 5, 12, 20]), 12);
     assert_eq!(find_prebound(vec![1, 2, 3]), 3);
+    assert_eq!(leaked_char(String::from("xyz")), "z");
 }
 "#;
     assert_rustc_runs("loop_var_leak_collection", &rust, driver);

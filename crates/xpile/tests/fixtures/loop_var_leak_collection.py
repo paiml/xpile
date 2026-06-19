@@ -32,3 +32,9 @@ def find_prebound(xs: list[int]) -> int:
         if x > 10:
             break
     return x
+
+
+def leaked_char(s: str) -> str:
+    for ch in s:
+        pass
+    return ch
