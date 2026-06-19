@@ -2927,14 +2927,22 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         }
         // PMAT-502ax: `d.setdefault(k, default)` →
         // `(<dict>).entry(<key>.clone()).or_insert(<default>).clone()`.
+        // PMAT-843 (HUNT-V27 #1): bind the default into a temp BEFORE `.entry()`.
+        // A default that READS the dict (`d.setdefault(k, d[x])` / `d.get(...)` /
+        // `len(d)`) borrowed `d` immutably inside `or_insert(...)` while the
+        // `entry()` mutable borrow was live → rustc E0502. Python evaluates the
+        // default eagerly regardless (it's a plain argument), and `or_insert`
+        // already takes it eagerly, so hoisting only moves the borrow earlier — no
+        // behaviour change. (The key in `.entry(...)` is fine via two-phase
+        // borrow.) Mirrors the nested-dict RMW RHS hoist (PMAT-833).
         Expr::DictSetDefault { dict, key, default } => {
-            out.push('(');
+            out.push_str("{ let __sd_def = ");
+            emit_expr(out, default, mode)?;
+            out.push_str("; (");
             emit_expr(out, dict, mode)?;
             out.push_str(").entry((");
             emit_expr(out, key, mode)?;
-            out.push_str(").clone()).or_insert(");
-            emit_expr(out, default, mode)?;
-            out.push_str(").clone()");
+            out.push_str(").clone()).or_insert(__sd_def).clone() }");
         }
         // PMAT-502c/f/z: `sorted(xs)` → `{ let mut __xv = <list>.clone();
         // __xv.sort(); __xv }`; `reverse=True` appends `__xv.reverse();`;

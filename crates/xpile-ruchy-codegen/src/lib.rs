@@ -2410,15 +2410,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 }
             }
         }
-        // PMAT-502ax: `d.setdefault(k, default)`, matching the Rust backend.
+        // PMAT-502ax / PMAT-843: `d.setdefault(k, default)` — bind the default
+        // before `.entry()` so a dict-reading default doesn't E0502 (mirror Rust).
         Expr::DictSetDefault { dict, key, default } => {
-            out.push('(');
+            out.push_str("{ let __sd_def = ");
+            emit_expr(out, default, mode)?;
+            out.push_str("; (");
             emit_expr(out, dict, mode)?;
             out.push_str(").entry((");
             emit_expr(out, key, mode)?;
-            out.push_str(").clone()).or_insert(");
-            emit_expr(out, default, mode)?;
-            out.push_str(").clone()");
+            out.push_str(").clone()).or_insert(__sd_def).clone() }");
         }
         // PMAT-502c/f/z: clone+sort block; `reverse=True` appends
         // `__xv.reverse();`; `key=lambda p: e` → `sort_by_key`.
