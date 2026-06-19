@@ -14784,3 +14784,19 @@ fn main() {
 "#;
     assert_rustc_runs("try_arg_clone", &rust, driver);
 }
+
+/// PMAT-828 (HUNT-V25 #5): a dataclass field mutation in a for-loop
+/// (`for p in pts: p.x = …`) emitted `pts.iter().cloned()` with p not mut →
+/// E0594, the clone discarding the mutation. iter_mut detection now covers
+/// attribute-assign + a Struct element, and the mut-inference marks a local
+/// iterable mut. Cross-checked vs python3.
+#[test]
+fn foreach_field_mut() {
+    let rust = xpile_transpile_to_rust("foreach_field_mut.py");
+    assert!(
+        rust.contains("let mut pts") && rust.contains("pts.iter_mut()"),
+        "a field-mutating loop must iter_mut a mut iterable:\n{rust}"
+    );
+    let driver = "fn main() { assert_eq!(scale_and_sum(), 60); }\n"; // 10+20+30
+    assert_rustc_runs("foreach_field_mut", &rust, driver);
+}
