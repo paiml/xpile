@@ -13304,7 +13304,7 @@ fn struct_display_eligible(ctx: &LoweringCtx, name: &str) -> bool {
     ctx.structs.get(name).is_some_and(|fields| {
         fields
             .iter()
-            .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool | Type::F64))
+            .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool | Type::F64 | Type::Str))
     })
 }
 
