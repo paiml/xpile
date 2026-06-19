@@ -2414,24 +2414,32 @@ fn lower_function_def(
                     let name = tgt.id.to_string();
                     if !ctx.bound.contains(&name) && !ctx.loop_scoped.contains(&name) {
                         if let ast::Expr::Name(it) = forst.iter.as_ref() {
-                            if let Some(Type::List(elem)) = ctx.name_types.get(it.id.as_str()) {
-                                if let Some(default) = primitive_default(elem) {
-                                    let elem = (**elem).clone();
-                                    let mut after = HashMap::new();
-                                    for s in &leading[i + 1..] {
-                                        count_reads_stmt(s, &mut after);
-                                    }
-                                    count_reads_stmt(last, &mut after);
-                                    if after.get(&name).copied().unwrap_or(0) > 0 {
-                                        stmts.push(Stmt::Let {
-                                            name: name.clone(),
-                                            ty: elem.clone(),
-                                            value: default,
-                                            mutable: true,
-                                        });
-                                        ctx.bound.insert(name.clone());
-                                        ctx.name_types.insert(name.clone(), elem);
-                                    }
+                            // The leaked element type + its zero default: a
+                            // `list[prim]` iterates its element; a `str` iterates
+                            // 1-char `String`s (PMAT-838 follow-up — `for c in s:
+                            // …; return c` was equally E0425).
+                            let elem_default = match ctx.name_types.get(it.id.as_str()) {
+                                Some(Type::List(elem)) => {
+                                    primitive_default(elem).map(|d| ((**elem).clone(), d))
+                                }
+                                Some(Type::Str) => Some((Type::Str, Expr::LitStr(String::new()))),
+                                _ => None,
+                            };
+                            if let Some((elem, default)) = elem_default {
+                                let mut after = HashMap::new();
+                                for s in &leading[i + 1..] {
+                                    count_reads_stmt(s, &mut after);
+                                }
+                                count_reads_stmt(last, &mut after);
+                                if after.get(&name).copied().unwrap_or(0) > 0 {
+                                    stmts.push(Stmt::Let {
+                                        name: name.clone(),
+                                        ty: elem.clone(),
+                                        value: default,
+                                        mutable: true,
+                                    });
+                                    ctx.bound.insert(name.clone());
+                                    ctx.name_types.insert(name.clone(), elem);
                                 }
                             }
                         }
