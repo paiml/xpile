@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.542] — 2026-06-19
+
+### Fixed
+
+- **PMAT-844 — coerce an int `d.get(k, default)` default to f64 for a float-valued
+  dict.** `d.get(k, 0)` against a `dict[_, float]` emitted `unwrap_or(0i64)` on an
+  `Option<f64>` → rustc E0308. `DictGetOr` types as the dict's value type (f64),
+  and Python promotes the `0` to `0.0` in the float arithmetic that follows
+  (`d[k] = d.get(k, 0) + <float>`), so an int default is now coerced to f64. An
+  int-valued dict keeps its i64 default (the `d.get(w, 0) + 1` counter is
+  unaffected). HUNT-V27 (#4).
+
 ## [0.1.541] — 2026-06-19
 
 ### Fixed
