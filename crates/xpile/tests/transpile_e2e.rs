@@ -14652,3 +14652,26 @@ fn main() {
 "#;
     assert_rustc_runs("method_default_args", &rust, driver);
 }
+
+/// PMAT-821 (HUNT-V24 #5): a parameter with a default value but no annotation was
+/// hardcoded to i64, ignoring the default's type (`def greet(name="x")` → `name:
+/// i64` → E0308). The param type is now inferred from the default literal at the
+/// function def and the signature table. Cross-checked vs python3.
+#[test]
+fn default_param_type() {
+    let rust = xpile_transpile_to_rust("default_param_type.py");
+    assert!(
+        rust.contains("fn greet(name: String)")
+            && rust.contains("fn flag(on: bool)")
+            && rust.contains("fn scale(factor: f64)"),
+        "an unannotated param's type must come from its default:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(probe(), "hi world / hi bob");
+    assert_eq!(flags(), 10);       // 1*10 + 0
+    assert_eq!(scaled(), 7.0);     // 3.0 + 4.0
+}
+"#;
+    assert_rustc_runs("default_param_type", &rust, driver);
+}

@@ -1184,6 +1184,8 @@ impl Frontend for PythonFrontend {
                             .and_then(|ann| {
                                 parse_type_annotation(f.name.as_str(), a.def.arg.as_str(), ann).ok()
                             })
+                            // PMAT-821: fall back to the default literal's type.
+                            .or_else(|| a.default.as_deref().and_then(default_literal_type))
                             .unwrap_or(Type::I64)
                     })
                     .collect();
@@ -1260,6 +1262,8 @@ impl Frontend for PythonFrontend {
                                     parse_type_annotation(c.name.as_str(), a.def.arg.as_str(), ann)
                                         .ok()
                                 })
+                                // PMAT-821: fall back to the default literal's type.
+                                .or_else(|| a.default.as_deref().and_then(default_literal_type))
                                 .unwrap_or(Type::I64)
                         })
                         .collect();
@@ -2045,6 +2049,30 @@ fn register_none_guard_narrowing(ctx: &mut LoweringCtx, stmt: &ast::Stmt) {
     }
 }
 
+/// PMAT-821 (HUNT-V24 #5): infer a parameter's type from its DEFAULT value when
+/// the parameter has no annotation — Python's `def f(name="x")` makes `name` a
+/// `str`, `def f(on=True)` a `bool`, etc. Without this the param was hardcoded
+/// `i64` (rustc E0308 the moment the body used it as the real type). Only
+/// literal defaults (and a negated numeric literal) yield a type; anything else
+/// returns `None` (caller falls back to the historic `I64`).
+fn default_literal_type(expr: &ast::Expr) -> Option<Type> {
+    match expr {
+        ast::Expr::Constant(c) => match &c.value {
+            ast::Constant::Str(_) => Some(Type::Str),
+            // `bool` before `int`: Python `True`/`False` are `Constant::Bool`.
+            ast::Constant::Bool(_) => Some(Type::Bool),
+            ast::Constant::Int(_) => Some(Type::I64),
+            ast::Constant::Float(_) => Some(Type::F64),
+            _ => None,
+        },
+        // `def f(x=-1)` — a negated numeric literal keeps the inner type.
+        ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::USub) => {
+            default_literal_type(&u.operand)
+        }
+        _ => None,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn lower_function_def(
     f: ast::StmtFunctionDef,
@@ -2105,7 +2133,13 @@ fn lower_function_def(
             })?
         } else {
             match arg.def.annotation.as_ref() {
-                None => Type::I64,
+                // PMAT-821: no annotation — infer from the default literal
+                // (`name="x"` → str) before falling back to `I64`.
+                None => arg
+                    .default
+                    .as_deref()
+                    .and_then(default_literal_type)
+                    .unwrap_or(Type::I64),
                 Some(ann) => parse_type_annotation(&f.name, &name, ann)?,
             }
         };
