@@ -7,6 +7,16 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.538] — 2026-06-19
+
+### Fixed
+
+- **PMAT-839 — leak a string-iteration loop variable read after the loop.** Follow-up
+  to PMAT-838: the same loop-var leak over a `str` (`for c in s: …` then
+  `return c`, Python's last char) was equally rustc E0425, because the
+  leading-statement hoist only matched a `list` iterable. A `str` iterable now
+  also qualifies (element is a 1-char `String`, default `""`). HUNT-V26 (#1).
+
 ## [0.1.537] — 2026-06-19
 
 ### Fixed
