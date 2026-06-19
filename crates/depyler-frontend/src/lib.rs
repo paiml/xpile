@@ -7679,7 +7679,25 @@ fn desugar_dict_comp(
     // PMAT-502az: lower the optional `if` filter (must type as Bool).
     let filter = comp_filter(ctx, gen, "dict")?;
     let key = lower_expr_in_ctx(ctx, (*comp.key).clone())?;
-    let value = lower_expr_in_ctx(ctx, (*comp.value).clone())?;
+    // PMAT-826 (HUNT-V25 #1): `{KEY(w): w for w in …}` — the `DictSet` codegen
+    // binds the value first, MOVING a bare non-Copy binder `w`, before the key
+    // re-reads `w` (`w[0]`, `w[-1]`, …) → rustc E0382. When the value IS the bare
+    // loop binder, clone it so binding it doesn't consume the binder before the
+    // key. The binder is a per-iteration `.iter().cloned()` copy already, so the
+    // extra clone (when the key doesn't read it) is harmless; a Copy binder
+    // (int/bool/float) is left alone (move == copy, no borrow issue).
+    let value = {
+        let v = lower_expr_in_ctx(ctx, (*comp.value).clone())?;
+        let binder_non_copy = !matches!(
+            ctx.name_types.get(&var),
+            Some(Type::I64 | Type::F64 | Type::Bool)
+        );
+        if binder_non_copy && matches!(&v, Expr::Ident(n) if *n == var) {
+            Expr::Clone(Box::new(v))
+        } else {
+            v
+        }
+    };
     let k_ty = infer_type_in_ctx(ctx, &key);
     let v_ty = infer_type_in_ctx(ctx, &value);
     let dict_ty = Type::Dict(Box::new(k_ty), Box::new(v_ty));
