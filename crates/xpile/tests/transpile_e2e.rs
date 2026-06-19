@@ -14764,3 +14764,23 @@ fn main() {
 "#;
     assert_rustc_runs("dictcomp_key_reads_binder", &rust, driver);
 }
+
+/// PMAT-827 (HUNT-V25 #2): a try body passing a non-Copy arg to a helper and
+/// reusing it in the except handler moved the arg into the catch_unwind closure,
+/// then the handler read the moved value → E0382. count_name_reads now descends
+/// into try/except so the arg is seen as reused and the body call clones it. vs python3.
+#[test]
+fn try_arg_clone() {
+    let rust = xpile_transpile_to_rust("try_arg_clone.py");
+    assert!(
+        rust.contains("parse_it((s).clone())"),
+        "the try-body call arg reused in the except must be cloned:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(probe(String::from("42")), 42);
+    assert_eq!(probe(String::from("xyz")), 3);  // len("xyz")
+}
+"#;
+    assert_rustc_runs("try_arg_clone", &rust, driver);
+}

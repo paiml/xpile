@@ -477,6 +477,28 @@ fn count_reads_stmt(s: &ast::Stmt, counts: &mut HashMap<String, usize>) {
                 count_reads_expr(t, counts);
             }
         }
+        // PMAT-827 (HUNT-V25 #2): descend into try/except so a name read in BOTH
+        // the try body and the except handler is counted as reused. Without this,
+        // `try: return f(s) except E: return len(s)` left `s`'s read-count too
+        // low, so the body call `f(s)` was not clone-guarded — `s` moved into the
+        // `catch_unwind` closure, then the handler's `len(s)` saw it moved (E0382).
+        S::Try(t) => {
+            for st in &t.body {
+                count_reads_stmt(st, counts);
+            }
+            for h in &t.handlers {
+                let ast::ExceptHandler::ExceptHandler(eh) = h;
+                for st in &eh.body {
+                    count_reads_stmt(st, counts);
+                }
+            }
+            for st in &t.orelse {
+                count_reads_stmt(st, counts);
+            }
+            for st in &t.finalbody {
+                count_reads_stmt(st, counts);
+            }
+        }
         _ => {}
     }
 }
