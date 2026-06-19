@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.524] — 2026-06-19
+
+### Fixed
+
+- **PMAT-824 — re-declare a range loop variable reused across sibling nested
+  loops.** Two sibling nested `range()` loops reusing the same inner
+  loop-variable name emitted the inner `let mut j` inside the first outer loop's
+  block, then `j = …` (assignment) in the second nest against an out-of-scope
+  `j` → rustc E0425. A range loop var is now marked `loop_scoped` and its
+  declaration re-fires (`let mut`, shadowing into its own scope) when reused; a
+  durable outer binding still gets no re-declaration (an empty range leaves its
+  prior value). HUNT-V24 (#6).
+
 ## [0.1.523] — 2026-06-19
 
 ### Fixed
