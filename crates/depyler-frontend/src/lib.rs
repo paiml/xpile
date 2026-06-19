@@ -3227,6 +3227,31 @@ fn try_lower_list_method_call(
             Ok(e) => e,
             Err(err) => return Some(Err(err)),
         };
+        // PMAT-845 (HUNT-V27 #5): a str/tuple argument to `set.update` is iterable
+        // in Python (a str over its chars, a tuple over its elements) but isn't a
+        // `Vec` in Rust, so `Stmt::ListExtend`'s `(other).iter().cloned()` was
+        // `.iter()` on a `String`/tuple → rustc E0599. Materialize a str to its
+        // chars-as-strings list (`StrChars`) and a homogeneous tuple to a list of
+        // its elements (mirrors `materialize_iterable_arg`). A set/list arg already
+        // iterates directly, so it's left unchanged.
+        let other = match infer_type_in_ctx(ctx, &other) {
+            Type::Str => Expr::StrChars {
+                string: Box::new(other),
+            },
+            Type::Tuple(elems) => {
+                let items = match other {
+                    Expr::TupleLit(items) => items,
+                    other => (0..elems.len())
+                        .map(|i| Expr::TupleIndex {
+                            tuple: Box::new(other.clone()),
+                            index: i,
+                        })
+                        .collect(),
+                };
+                Expr::ListLit(items)
+            }
+            _ => other,
+        };
         ctx.mutable.insert(receiver_name.to_string());
         return Some(Ok(Stmt::ListExtend {
             list_name: receiver_name.to_string(),
