@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.525] — 2026-06-19
+
+### Fixed
+
+- **PMAT-825 — materialize a homogeneous tuple to a list for iterating
+  consumers.** `",".join(map(str, t))` over a tuple emitted a bogus free
+  `map(str, t)` call (invalid Rust) — the tuple fell through the `Type::List`
+  guard in the map/filter/sum lowering. `lower_arg_materializing_range` now
+  materializes a homogeneous tuple to a list (a literal reuses its elements; a
+  variable indexes each field, `[t.0, t.1, …]`); a complex tuple expression /
+  heterogeneous tuple is left for the caller. Fixes `map`/`filter`/`sum` over a
+  tuple uniformly. HUNT-V24 (SF-2).
+
 ## [0.1.524] — 2026-06-19
 
 ### Fixed
