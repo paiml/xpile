@@ -4630,8 +4630,17 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
     // the counter, so `start` is evaluated exactly once) so it survives the loop
     // — Python leaks the loop variable. An already-bound variable gets no
     // declaration, so an empty range leaves its prior value untouched.
-    if !ctx.bound.contains(&target_name) {
+    // PMAT-824 (HUNT-V24 #6): a variable bound ONLY by a prior LOOP (in
+    // `loop_scoped`) must be RE-DECLARED here, not just reassigned — its `let`
+    // lived in that prior loop's (possibly nested, now-exited) block, so two
+    // sibling nested `range` loops reusing the same inner name `j` emitted `j =
+    // …` against an out-of-scope `j` (rustc E0425). Re-declaring `let mut j`
+    // shadows into THIS loop's scope. A DURABLE outer binding (a param / a
+    // non-loop `let`, i.e. `bound && !loop_scoped`) still gets no declaration, so
+    // an empty range leaves its prior value untouched (Python semantics).
+    if !ctx.bound.contains(&target_name) || ctx.loop_scoped.contains(&target_name) {
         ctx.bound.insert(target_name.clone());
+        ctx.loop_scoped.insert(target_name.clone());
         ctx.name_types
             .insert(target_name.clone(), target_ty.clone());
         stmts.push(Stmt::Let {

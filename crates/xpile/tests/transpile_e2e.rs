@@ -14708,3 +14708,20 @@ fn assoc_keyword_name() {
     let driver = "fn main() { assert_eq!(probe(), 42); }\n";
     assert_rustc_runs("assoc_keyword_name", &rust, driver);
 }
+
+/// PMAT-824 (HUNT-V24 #6): two sibling nested range() loops reusing the same
+/// inner loop-var name emitted the inner `let mut j` inside the FIRST outer
+/// loop's block, then `j = …` in the second nest against an out-of-scope `j` →
+/// E0425. A range loop var is now loop-scoped and re-declared when reused.
+/// Cross-checked vs python3.
+#[test]
+fn sibling_nested_loop_var() {
+    let rust = xpile_transpile_to_rust("sibling_nested_loop_var.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(probe(), 13);      // 9 (sum i*j) + 4 (sum i+j)
+    assert_eq!(leak_after(), 3);  // k leaks → last = 3
+}
+"#;
+    assert_rustc_runs("sibling_nested_loop_var", &rust, driver);
+}
