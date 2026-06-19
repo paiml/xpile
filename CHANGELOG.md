@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.527] — 2026-06-19
+
+### Fixed
+
+- **PMAT-827 — count try/except reads so a reused try-body call argument is
+  cloned.** A terminal `try: return parse_it(s) except E: return len(s)` moved
+  the non-Copy `s` into the `catch_unwind` closure, then the except handler read
+  the moved `s` → rustc E0382. `count_name_reads` never descended into a
+  `try`/`except`, so `s`'s read-count was too low to trigger the body call's
+  reuse-clone guard. A `Stmt::Try` arm now recurses into the try body, every
+  except-handler body, the `else`, and the `finally`, so a reused argument is
+  cloned (`parse_it((s).clone())`), leaving `s` for the handler. HUNT-V25 (#2).
+
 ## [0.1.526] — 2026-06-19
 
 ### Fixed
