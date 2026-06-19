@@ -15054,3 +15054,20 @@ fn main() {
 "#;
     assert_rustc_runs("set_update_str_tuple", &rust, driver);
 }
+
+/// PMAT-846 (HUNT-V27 #6): s.split(None) is an explicit whitespace split (Python
+/// treats None as any whitespace run), but None lowered to &(None)[..] → E0608.
+/// It now routes to the same whitespace-split path as the no-arg s.split().
+/// Cross-checked vs python3.
+#[test]
+fn split_none_sep() {
+    let rust = xpile_transpile_to_rust("split_none_sep.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(split_none(), 3);   // ["a","b","c"]
+    assert_eq!(split_noarg(), 3);  // unchanged
+    assert_eq!(split_sep(), 3);    // unchanged
+}
+"#;
+    assert_rustc_runs("split_none_sep", &rust, driver);
+}
