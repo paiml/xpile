@@ -667,6 +667,61 @@ fn count_walrus_targets(expr: &ast::Expr, counts: &mut HashMap<String, usize>, b
     }
 }
 
+/// PMAT-828 (HUNT-V25 #5): AST-level check — does `stmts` mutate the for-loop
+/// target `t` IN PLACE (`t.field = …`, `t[i] = …`, or a mutating method
+/// `t.append(...)`/etc.)? Mirrors the lowering-time `foreach_elem_mutated` so the
+/// mut-inference pre-pass can mark a LOCAL iterable `mut` (the lowering-time
+/// `ctx.mutable.insert` lands after a local's `let` is already emitted, so a
+/// local `pts` in `for p in pts: p.x = …` would otherwise stay non-`mut` →
+/// rustc E0596 / E0594 under the `iter_mut` the lowering then chooses).
+fn for_target_mutated_ast(stmts: &[ast::Stmt], target: &str) -> bool {
+    fn base_is(t: &ast::Expr, target: &str) -> bool {
+        match t {
+            ast::Expr::Attribute(a) => {
+                matches!(a.value.as_ref(), ast::Expr::Name(n) if n.id.as_str() == target)
+            }
+            ast::Expr::Subscript(s) => {
+                matches!(s.value.as_ref(), ast::Expr::Name(n) if n.id.as_str() == target)
+            }
+            _ => false,
+        }
+    }
+    fn mutating_method(e: &ast::Expr, target: &str) -> bool {
+        if let ast::Expr::Call(c) = e {
+            if let ast::Expr::Attribute(a) = c.func.as_ref() {
+                if matches!(a.value.as_ref(), ast::Expr::Name(n) if n.id.as_str() == target) {
+                    return matches!(
+                        a.attr.as_str(),
+                        "append"
+                            | "extend"
+                            | "insert"
+                            | "remove"
+                            | "sort"
+                            | "reverse"
+                            | "clear"
+                            | "pop"
+                            | "add"
+                            | "update"
+                            | "discard"
+                    );
+                }
+            }
+        }
+        false
+    }
+    stmts.iter().any(|s| match s {
+        ast::Stmt::Assign(a) => a.targets.iter().any(|t| base_is(t, target)),
+        ast::Stmt::AugAssign(a) => base_is(&a.target, target),
+        ast::Stmt::Expr(e) => mutating_method(&e.value, target),
+        ast::Stmt::If(i) => {
+            for_target_mutated_ast(&i.body, target) || for_target_mutated_ast(&i.orelse, target)
+        }
+        ast::Stmt::While(w) => for_target_mutated_ast(&w.body, target),
+        ast::Stmt::For(f) => for_target_mutated_ast(&f.body, target),
+        _ => false,
+    })
+}
+
 fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     for stmt in stmts {
@@ -858,6 +913,15 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                 // is examined. Body counts use in_loop=true (same as while).
                 if let ast::Expr::Name(n) = &*f.target {
                     *counts.entry(n.id.to_string()).or_insert(0) += 2;
+                    // PMAT-828: if the body mutates the loop target in place
+                    // (`for p in pts: p.x = …`), the lowering emits
+                    // `pts.iter_mut()`, so mark a Name iterable `mut` here (the
+                    // lowering-time insert is too late for a local's `let`).
+                    if let ast::Expr::Name(it) = &*f.iter {
+                        if for_target_mutated_ast(&f.body, n.id.as_str()) {
+                            *counts.entry(it.id.to_string()).or_insert(0) += 2;
+                        }
+                    }
                 }
                 let inner = walk_counts(&f.body, /*in_loop=*/ true);
                 for (name, c) in inner {
@@ -1951,6 +2015,9 @@ fn foreach_elem_mutated(stmts: &[Stmt], var: &str) -> bool {
         | Stmt::ListRemoveValue { list_name, .. }
         | Stmt::ListMutate { list_name, .. }
         | Stmt::IndexAssign { list_name, .. } => list_name == var,
+        // PMAT-828 (HUNT-V25 #5): a dataclass FIELD assignment `p.x = …` on the
+        // loop var mutates the element in place too — `for p in pts: p.x = v`.
+        Stmt::FieldAssign { obj, .. } => obj == var,
         Stmt::If {
             then_body,
             else_body,
@@ -4498,8 +4565,12 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
         // (so `iter_mut` propagates) and a non-leaked loop var (the leak path
         // assigns a clone to the outer var, where `&mut` semantics don't apply).
         // The iterable is marked `mut` so `<grid>.iter_mut()` borrows it.
+        // PMAT-828 (HUNT-V25 #5): a `Type::Struct` element also qualifies — a
+        // dataclass field assignment in the body (`for p in pts: p.x = …`) needs
+        // `iter_mut` so the field write reaches the original struct, not a
+        // discarded clone (E0594 + silent-wrong otherwise).
         let mutate_elems = !leak_to_outer
-            && matches!(elem_ty, Type::List(_))
+            && matches!(elem_ty, Type::List(_) | Type::Struct(_))
             && matches!(iter_expr, Expr::Ident(_))
             && foreach_elem_mutated(&body, &loop_var);
         if mutate_elems {
