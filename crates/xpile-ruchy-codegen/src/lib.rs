@@ -599,7 +599,22 @@ fn emit_stmt_indented(
             over_keys,
             dict_guard,
             elem_ty: _,
+            mutate_elems,
         } => {
+            // PMAT-816 (HUNT-V21 #3/4/8): in-place element mutation → bind `var`
+            // by `&mut` via `iter_mut()` so the mutation reaches the original
+            // collection (mirrors the Rust backend).
+            if *mutate_elems {
+                write!(out, "{indent}for {var} in ")?;
+                emit_expr(out, iter, mode)?;
+                writeln!(out, ".iter_mut() {{")?;
+                let inner = format!("{indent}    ");
+                for s in body {
+                    emit_stmt_indented(out, s, &inner, mode)?;
+                }
+                writeln!(out, "{indent}}}")?;
+                return Ok(());
+            }
             // PMAT-472 (R3): dict iterates keys via `.keys().cloned()`.
             let method = if *over_keys { "keys" } else { "iter" };
             // PMAT-743 (HUNT-V12 V12-8): dict size-change guard (mirrors Rust) —

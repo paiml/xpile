@@ -1902,6 +1902,33 @@ fn lower_class_def(
 
 /// PMAT-506d: true if any statement assigns a field of `self` (`self.f = v`).
 /// Used to reject self-mutating methods in the read-only first cut.
+/// PMAT-816 (HUNT-V21 #3/4/8): does `body` mutate the loop element `var` IN
+/// PLACE — `var.append/extend/insert/remove/sort/reverse/clear(...)` or
+/// `var[i] = …`? Recurses into nested statement bodies (mirrors
+/// `body_assigns_self`). When true, the enclosing `ForEach` is emitted with
+/// `iter_mut()` so the mutation reaches the original collection (instead of an
+/// owned clone, which discards it AND leaves `var` non-`mut` → rustc E0596).
+fn foreach_elem_mutated(stmts: &[Stmt], var: &str) -> bool {
+    stmts.iter().any(|s| match s {
+        Stmt::ListAppend { list_name, .. }
+        | Stmt::ListExtend { list_name, .. }
+        | Stmt::ListInsert { list_name, .. }
+        | Stmt::ListRemoveValue { list_name, .. }
+        | Stmt::ListMutate { list_name, .. }
+        | Stmt::IndexAssign { list_name, .. } => list_name == var,
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => foreach_elem_mutated(then_body, var) || foreach_elem_mutated(else_body, var),
+        Stmt::While { body, .. }
+        | Stmt::ForEach { body, .. }
+        | Stmt::ForEachPair { body, .. }
+        | Stmt::ForEachZip3 { body, .. } => foreach_elem_mutated(body, var),
+        _ => false,
+    })
+}
+
 fn body_assigns_self(stmts: &[Stmt]) -> bool {
     stmts.iter().any(|s| match s {
         Stmt::FieldAssign { obj, .. } => obj == "self",
@@ -4373,6 +4400,23 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
             let lowered = lower_block_stmt(ctx, s)?;
             body.extend(lowered);
         }
+        // PMAT-816 (HUNT-V21 #3/4/8): if the body mutates each element IN PLACE
+        // (`for row in grid: row.append(x)`, `row[i] = …`), bind `row` by `&mut`
+        // via `iter_mut()` so the mutation reaches `grid` — the default
+        // `iter().cloned()` mutates a discarded clone AND leaves `row` non-`mut`
+        // (rustc E0596). Only for a list-typed iterable that is a plain variable
+        // (so `iter_mut` propagates) and a non-leaked loop var (the leak path
+        // assigns a clone to the outer var, where `&mut` semantics don't apply).
+        // The iterable is marked `mut` so `<grid>.iter_mut()` borrows it.
+        let mutate_elems = !leak_to_outer
+            && matches!(elem_ty, Type::List(_))
+            && matches!(iter_expr, Expr::Ident(_))
+            && foreach_elem_mutated(&body, &loop_var);
+        if mutate_elems {
+            if let Expr::Ident(base) = &iter_expr {
+                ctx.mutable.insert(base.clone());
+            }
+        }
         return Ok(vec![Stmt::ForEach {
             var: loop_var,
             iter: iter_expr,
@@ -4380,6 +4424,7 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
             body,
             over_keys,
             dict_guard,
+            mutate_elems,
         }]);
     }
 
@@ -7095,6 +7140,7 @@ fn desugar_comp_2gen(
         body: inner_body,
         over_keys: false,
         dict_guard: None,
+        mutate_elems: false,
     };
     let outer_body = wrap(outer_filter, vec![inner_loop]);
     let outer_loop = Stmt::ForEach {
@@ -7104,6 +7150,7 @@ fn desugar_comp_2gen(
         body: outer_body,
         over_keys: false,
         dict_guard: None,
+        mutate_elems: false,
     };
     Ok(vec![
         Stmt::Let {
@@ -7366,6 +7413,7 @@ fn desugar_list_comp(
             body,
             over_keys: false,
             dict_guard: None,
+            mutate_elems: false,
         },
     ])
 }
@@ -7566,6 +7614,7 @@ fn desugar_dict_comp(
             body,
             over_keys: false,
             dict_guard: None,
+            mutate_elems: false,
         },
     ])
 }
@@ -7848,6 +7897,7 @@ fn desugar_set_comp(
             body,
             over_keys: false,
             dict_guard: None,
+            mutate_elems: false,
         },
     ])
 }

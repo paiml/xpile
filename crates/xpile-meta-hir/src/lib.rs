@@ -990,6 +990,16 @@ pub enum Stmt {
         /// is silent there). `None` for a list iteration or a read-only dict loop.
         #[serde(default)]
         dict_guard: Option<String>,
+        /// PMAT-816 (HUNT-V21 #3/4/8): the loop body mutates each element IN
+        /// PLACE (`for row in grid: row.append(x)`, `row[i] = …`). The default
+        /// `iter().cloned()` binds `var` to an owned clone, so the mutation was
+        /// discarded AND `var` is not `mut` (rustc E0596). When set, the backend
+        /// emits `iter.iter_mut()` so `var` is `&mut elem` and the mutation
+        /// propagates to the original collection (which is marked `mut`). Only
+        /// set for a list-typed iterable that is a plain lvalue and a body that
+        /// mutates `var` via a known mutating method / subscript-assign.
+        #[serde(default)]
+        mutate_elems: bool,
     },
     /// Paired-target for-loop — Python `for a, b in enumerate(xs)` /
     /// `for a, b in zip(xs, ys)`. PMAT-495 (sprint). A separate variant
