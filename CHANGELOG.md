@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.532] — 2026-06-19
+
+### Fixed
+
+- **PMAT-832 — a comprehension over a bare dict iterates its keys.** `[k for k in
+  d]` / `sum([d[k] for k in d])` over a dict were rejected ("dict iterables
+  deferred") even though the for-loop form already iterates the dict's keys.
+  Python iterates a dict as its keys; both comprehension paths now do too — the
+  statement-form desugar emits a `ForEach` with `over_keys = true`, and the
+  value-position closure-chain re-wraps the dict in `DictView::Keys` (which types
+  as `List(K)`). HUNT-V25 (#14).
+
 ## [0.1.531] — 2026-06-19
 
 ### Fixed
