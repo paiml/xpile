@@ -14889,3 +14889,13 @@ fn main() {
 "#;
     assert_rustc_runs("nested_dict_rmw", &rust, driver);
 }
+
+/// PMAT-834 (HUNT-V26 #7): the zero-arg builtin constructors int()/str()/float()
+/// are Python's defaults 0/""/0.0, but emitted bare free calls (E0425) mis-typed
+/// as i64. They now lower to the default literals. Cross-checked vs python3.
+#[test]
+fn zeroarg_ctor() {
+    let rust = xpile_transpile_to_rust("zeroarg_ctor.py");
+    let driver = "fn main() { assert_eq!(probe(), 7); }\n"; // 0 + len("abc")=3 + int(0.0+4.0)=4
+    assert_rustc_runs("zeroarg_ctor", &rust, driver);
+}

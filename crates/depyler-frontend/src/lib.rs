@@ -11188,6 +11188,20 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         }
                     }
                 }
+                // PMAT-834 (HUNT-V26 #7): the zero-arg builtin constructors
+                // `int()` / `str()` / `float()` are the Python defaults `0` / `""`
+                // / `0.0`. Without this they fell through to a generic call,
+                // emitting an undefined Rust `int()` / `str()` / `float()` fn
+                // (rustc E0425) mis-typed as i64. Handle BEFORE the arity-N
+                // builtin paths below.
+                if call.keywords.is_empty() && call.args.is_empty() {
+                    match fname.id.as_str() {
+                        "int" => return Ok(Expr::LitInt(0)),
+                        "str" => return Ok(Expr::LitStr(String::new())),
+                        "float" => return Ok(Expr::LitFloat(0.0)),
+                        _ => {}
+                    }
+                }
                 // PMAT-502da: `int(s, base)` — parse a string in the given
                 // radix → `i64::from_str_radix((s).trim(), base)`. `base` must
                 // be an int literal `2..=36` (variable / auto-detect `base=0`
