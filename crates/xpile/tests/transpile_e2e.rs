@@ -15036,3 +15036,21 @@ fn main() {
 "#;
     assert_rustc_runs("dictget_default_float", &rust, driver);
 }
+
+/// PMAT-845 (HUNT-V27 #5): set.update(<str>) / set.update(<tuple>) emitted .iter()
+/// on a String / tuple → E0599. A str arg now materializes to chars-as-strings, a
+/// homogeneous tuple to a list of elements; set/list args unchanged. vs python3.
+#[test]
+fn set_update_str_tuple() {
+    let rust = xpile_transpile_to_rust("set_update_str_tuple.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(from_str(), 4);                 // {x,a,b,c}
+    assert_eq!(from_tuple(), 4);               // {1,2,3,4}
+    let mut o = std::collections::HashSet::new(); o.insert(3); o.insert(4);
+    assert_eq!(from_set(o), 4);                // {1,2,3,4}
+    assert_eq!(from_list(), 4);                // {1,2,5,6}
+}
+"#;
+    assert_rustc_runs("set_update_str_tuple", &rust, driver);
+}
