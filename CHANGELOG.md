@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.539] — 2026-06-19
+
+### Fixed
+
+- **PMAT-840 — generate `Display` for a dataclass with float fields.** A dataclass
+  with a `float` field had no generated `Display` impl (eligibility was
+  int/bool-only), so `str()` / an f-string / `print()` of it was rustc E0277. A
+  float field formats the same in the Python dataclass `repr` as `str(float)`
+  does; both backends now emit the CPython-faithful float-repr block (`.0`-aware)
+  for a float field, and the frontend's `struct_display_eligible` gate (str() +
+  f-string) accepts `F64` in lock-step. A `str` field, which needs Python's
+  quoted-and-escaped repr, stays deferred. HUNT-V26 (#9).
+
 ## [0.1.538] — 2026-06-19
 
 ### Fixed
