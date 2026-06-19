@@ -13288,8 +13288,12 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
 fn struct_display_eligible(ctx: &LoweringCtx, name: &str) -> bool {
     // PMAT-776 (HUNT-V17 #2): a struct that defines `__str__` renders via its
     // generated `Display` (delegating to `__str__`) for ANY field types, so it's
-    // f-string-eligible regardless of field kinds. Otherwise (PMAT-760) only an
-    // all-int/bool dataclass has a generated field-repr `Display`.
+    // f-string-eligible regardless of field kinds. Otherwise (PMAT-760) a
+    // dataclass has a generated field-repr `Display` when every field formats the
+    // same in the repr as Rust does — int, bool, and (PMAT-840) FLOAT (the
+    // `.0`-aware float-repr block). A `str` field needs Python's quoted-escaped
+    // repr, still deferred. MUST stay in lock-step with the codegen
+    // `display_eligible` gate (rust-/ruchy-codegen).
     if ctx
         .struct_methods
         .get(name)
@@ -13300,7 +13304,7 @@ fn struct_display_eligible(ctx: &LoweringCtx, name: &str) -> bool {
     ctx.structs.get(name).is_some_and(|fields| {
         fields
             .iter()
-            .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool))
+            .all(|(_, ty)| matches!(ty, Type::I64 | Type::Bool | Type::F64))
     })
 }
 
