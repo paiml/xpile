@@ -10440,7 +10440,19 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // PMAT-502co: `s.split()` (no arg) → whitespace split. Checked
                 // before the generic dispatch (which maps "split" → the 1-arg
                 // `Split`); the 1-arg `s.split(sep)` form is handled there.
-                if attr.attr.as_str() == "split" && call.args.is_empty() && call.keywords.is_empty()
+                // PMAT-846 (HUNT-V27 #6): `s.split(None)` is the SAME explicit
+                // whitespace split (Python treats `None` as "any whitespace run").
+                // Without this, `None` lowered to `&(None)[..]` → rustc E0608.
+                // (The `s.split(None, n)` maxsplit form — whitespace split with a
+                // bound — is a separate, deferred case.)
+                let split_none_sep = attr.attr.as_str() == "split"
+                    && call.keywords.is_empty()
+                    && call.args.len() == 1
+                    && matches!(&call.args[0],
+                        ast::Expr::Constant(c) if matches!(c.value, ast::Constant::None));
+                if attr.attr.as_str() == "split"
+                    && call.keywords.is_empty()
+                    && (call.args.is_empty() || split_none_sep)
                 {
                     let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
                     if matches!(infer_type_in_ctx(ctx, &recv), Type::Str) {
