@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.526] — 2026-06-19
+
+### Fixed
+
+- **PMAT-826 — clone a bare-binder dict-comprehension value so the key can re-read
+  it.** A dict comprehension `{KEY(w): w for w in words}` where the value is the
+  bare loop binder and the key re-reads it (`w[0]`, `w[-1]`, …) bound the value
+  first — MOVING the non-Copy `w` — before the key borrowed it → rustc E0382.
+  When the value IS the bare non-Copy binder, the single-target dict-comp
+  lowering now clones it (the binder is a per-iteration clone, so the extra clone
+  is harmless); a transformed value (`w.upper()`) or a Copy binder is unchanged,
+  and the statement-form `d[w] = …` path is untouched. HUNT-V25 (#1).
+
 ## [0.1.525] — 2026-06-19
 
 ### Fixed
