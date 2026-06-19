@@ -14815,3 +14815,19 @@ fn dictset_bool_key() {
     let driver = "fn main() { assert_eq!(probe(), 199); }\n"; // True overwrites key 1 → len 1, d[1]=99
     assert_rustc_runs("dictset_bool_key", &rust, driver);
 }
+
+/// PMAT-830 (HUNT-V25 #6): str(<dataclass>) mis-inferred as I64 — a function
+/// returning it was rejected. The dataclass has a Display impl (the field-repr,
+/// used by an f-string field); str(p) now routes through the same Display path.
+/// Cross-checked vs python3.
+#[test]
+fn str_dataclass() {
+    let rust = xpile_transpile_to_rust("str_dataclass.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(bare(), "P(x=3, y=4)");
+    assert_eq!(in_concat(), "pt=P(x=1, y=2)");
+}
+"#;
+    assert_rustc_runs("str_dataclass", &rust, driver);
+}
