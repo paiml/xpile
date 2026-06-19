@@ -2310,7 +2310,7 @@ fn lower_function_def(
         // PMAT-503b: a terminal `try: return <expr> except [E]: return <expr>`
         // → an `Expr::TryCatch` (catch_unwind over xpile's panic-based
         // exception model).
-        ast::Stmt::Try(try_stmt) => match terminal_try_as_expr(&ctx, try_stmt)? {
+        ast::Stmt::Try(try_stmt) => match terminal_try_as_expr(&mut ctx, try_stmt)? {
             Some(expr) => expr,
             None => {
                 return Err(FrontendError::Lower(format!(
@@ -5332,7 +5332,7 @@ fn except_type_names(ty: Option<&ast::Expr>) -> Vec<String> {
 }
 
 fn terminal_try_as_expr(
-    ctx: &LoweringCtx,
+    ctx: &mut LoweringCtx,
     try_stmt: &ast::StmtTry,
 ) -> Result<Option<Expr>, FrontendError> {
     // First cut: no `else`/`finally`, exactly one `except`.
@@ -5349,12 +5349,11 @@ fn terminal_try_as_expr(
     let Some(body_val) = body_ret.value.as_deref() else {
         return Ok(None);
     };
-    // The handler: catch-all (the type, if any, is not matched), no bound name,
-    // body a single `return <expr>`.
+    // The handler: body a single `return <expr>`. PMAT-817 (HUNT-V20 EXC-4): an
+    // `as <name>` binding is now supported — the caught exception's message is
+    // bound to a `String` local for the handler.
     let ast::ExceptHandler::ExceptHandler(h) = &try_stmt.handlers[0];
-    if h.name.is_some() {
-        return Ok(None);
-    }
+    let bound_name = h.name.as_ref().map(|n| n.to_string());
     let [ast::Stmt::Return(h_ret)] = h.body.as_slice() else {
         return Ok(None);
     };
@@ -5364,11 +5363,30 @@ fn terminal_try_as_expr(
     // Both arms are the function's return value — lower them the same way the
     // trailing `return` is lowered (so `Optional` return wrapping etc. apply).
     let body = lower_return_value(ctx, body_val)?;
-    let handler = lower_return_value(ctx, h_val)?;
+    // PMAT-817: bind `<name>: str` (the exception message) while lowering the
+    // handler, so `str(e)`/`f"{e}"` resolve. Save/restore the binding — `e` is
+    // scoped to the handler, not the enclosing function.
+    let handler = if let Some(name) = &bound_name {
+        let had = ctx.bound.contains(name);
+        let prev_ty = ctx.name_types.get(name).cloned();
+        ctx.bound.insert(name.clone());
+        ctx.name_types.insert(name.clone(), Type::Str);
+        let lowered = lower_return_value(ctx, h_val);
+        if !had {
+            ctx.bound.remove(name);
+            ctx.name_types.remove(name);
+        } else if let Some(t) = prev_ty {
+            ctx.name_types.insert(name.clone(), t);
+        }
+        lowered?
+    } else {
+        lower_return_value(ctx, h_val)?
+    };
     Ok(Some(Expr::TryCatch {
         body: Box::new(body),
         handler: Box::new(handler),
         except_types: except_type_names(h.type_.as_deref()),
+        bound_name,
     }))
 }
 
@@ -6460,6 +6478,9 @@ fn lower_assignment_try(
         body: Box::new(body),
         handler: Box::new(handler),
         except_types: except_type_names(h.type_.as_deref()),
+        // PMAT-817: the statement-form try/except-assign does not bind `as e`
+        // yet (scoped to the terminal `try: return … except E as e: return …`).
+        bound_name: None,
     };
     let ty = infer_type_in_ctx(ctx, &value);
     let name = body_name;

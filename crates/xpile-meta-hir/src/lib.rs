@@ -1625,6 +1625,16 @@ pub enum Expr {
         /// serialized IR (single `except_type`) still deserializes as catch-all.
         #[serde(default)]
         except_types: Vec<String>,
+        /// PMAT-817 (HUNT-V20 EXC-4): the `as <name>` binding of `except E as e:`
+        /// — `Some("e")` binds the caught exception's MESSAGE (the `<msg>` of the
+        /// `xpile: <T>: <msg>` panic payload, prefix-stripped) to a `String` local
+        /// `e` in the handler, so `str(e)`/`print(e)`/`f"{e}"` see Python's
+        /// message (which matches CPython for the common types — e.g.
+        /// ZeroDivisionError "integer division or modulo by zero", IndexError
+        /// "list index out of range"). `None` for a handler with no `as`. Richer
+        /// uses (`e.args`, `raise e`) stay deferred — `e` is the message string.
+        #[serde(default)]
+        bound_name: Option<String>,
     },
     /// PMAT-506b (classes epic): struct construction — Python `Name(a, b)` over
     /// a `@dataclass`/class. `fields` are `(field_name, value)` in declaration
