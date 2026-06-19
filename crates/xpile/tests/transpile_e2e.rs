@@ -14585,3 +14585,27 @@ fn main() {
 "#;
     assert_rustc_runs("except_as_bind", &rust, driver);
 }
+
+/// PMAT-818 (HUNT-V19): the `x if x is not None else default` Optional-fallback
+/// idiom was rejected — the `is not None` branch of a TERNARY didn't narrow `x`
+/// to its inner T (the then-branch stayed Optional[int], mismatching the else).
+/// The ternary now narrows the named Optional in the then-branch. vs python3.
+#[test]
+fn ternary_optional_narrow() {
+    let rust = xpile_transpile_to_rust("ternary_optional_narrow.py");
+    assert!(
+        rust.contains("(v).is_some()") && rust.contains("(v).unwrap()"),
+        "the is-not-None ternary branch must narrow + unwrap the Optional:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let mut d = std::collections::HashMap::new();
+    d.insert(String::from("a"), 5i64);
+    assert_eq!(fallback(d.clone(), String::from("a")), 5);
+    assert_eq!(fallback(d.clone(), String::from("z")), 0);
+    assert_eq!(fallback_expr(d.clone(), String::from("a")), 105);
+    assert_eq!(fallback_expr(d, String::from("z")), -1);
+}
+"#;
+    assert_rustc_runs("ternary_optional_narrow", &rust, driver);
+}
