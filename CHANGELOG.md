@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.541] — 2026-06-19
+
+### Fixed
+
+- **PMAT-843 — hoist a self-reading `setdefault` default before the entry borrow.**
+  `d.setdefault(k, EXPR)` where EXPR reads `d` (`d[x]`, `d.get(...)`, `len(d)`)
+  emitted `(d).entry(k).or_insert(EXPR).clone()`, evaluating EXPR (an immutable
+  borrow of `d`) inside `or_insert(...)` while the `entry()` mutable borrow was
+  live → rustc E0502. The default is now bound to a temp before `.entry()`; Python
+  (and `or_insert`) evaluate it eagerly regardless, so this only moves the borrow
+  earlier (mirrors PMAT-833). HUNT-V27 (#1).
+
+### Internal
+
+- **PMAT-842 — consolidate the CPython float/str repr blocks.** `emit_expr`'s
+  `ToStr{of_float}` / `ReprStr` and the dataclass-Display float/str field paths now
+  share the single `py_float_repr_block` / `py_str_repr_block` helpers per backend
+  (byte-identical output; removes the duplication introduced by PMAT-840/841).
+
 ## [0.1.540] — 2026-06-19
 
 ### Fixed

@@ -1822,6 +1822,24 @@ roadmap:
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
   - "FINAL R6 sub-slice — closes the DICT HALF of audit §7.3 'every construct under contract' falsification. With C-C-INT-ARITH (475b/v0.1.196), §7.3 is RESTORED TO TRUE: every emitted construct's contract citation resolves to an on-disk YAML + Lean theorem. AUTHORED: contracts/xlate-py-dict-to-hashmap-v1.yaml — Layer-2 translation kernel contract (dict sibling of C-XLATE-PY-LIST-TO-VEC). Python dict[K,V] homogeneous → Rust std::collections::HashMap<K_rust,V_rust>. ONE depth-1 Diamond eqn dict_to_hashmap_structure_preserved_diamond combining entry-sequence preservation + cardinality preservation (lowering = identity on the abstract finite map K→V). proof_obligations(2), falsification_tests(2, bound to live dict_counts_emitted_rust_returns_hashmap e2e test), kani_harnesses(2 inline: HashMap<u8,u8> insert/get roundtrip + reinsert-overwrites-len-1), qa_gate. contracts/lean/XlatePyDictToHashmap.lean — models PyDict+RustHashMap as entry lists, lowering as identity → both conjuncts rfl (Bronze). Followed the 475b authoring recipe exactly (kind:kernel needs proof_obligations+kani_harnesses; falsification_tests>=proof_obligations; quoted refs with inner colons; lean_theorem resolves to theorem in lean_file; qa_gate.required_tests real #[test]s; top-level inline kani harnesses avoid the file-resolution validator). SECOND contract via the grandfathered gate → xpile diamond now 15 contracts, both new ones depth-1, depth-2+ still grandfathered 13. pv lint 0 errors; diamond_coverage(26)/refinement_proofs(3)/qa_gate(3)/kani(3)/workspace/fmt/clippy green. FREE CI. SHIPPED v0.1.197. **R6/PMAT-475 COMPLETE: 475a grandfather + 475b C-C-INT-ARITH + 475c C-XLATE-PY-DICT-TO-HASHMAP. The entire R-table (R1-R10) is now closed.** NEXT: Track 4 (PMAT-481..486 free-CI offline PTX/WGSL gates) OR Tranche-2 capability gaps OR PMAT-485 nightly emit job."
+- id: PMAT-843
+  github_issue: null
+  item_type: task
+  title: 'PMAT-843: [Tranche 2] CORRECTNESS hoist a self-reading setdefault default before the entry borrow (HUNT-V27 #1)'
+  status: done
+  priority: high
+  created: 2026-06-19T00:00:00Z
+  acceptance_criteria:
+  - "d.setdefault(k, EXPR) where EXPR reads d (d[x]/d.get/len(d)) emitted (d).entry(k.clone()).or_insert(EXPR).clone() — EXPR (immutable borrow of d) inside or_insert while entry() mutable borrow live → E0502. literal/arith default compiled; only dict-reading default broke. FIX (both backends Expr::DictSetDefault ~2930 rust / ~2414 ruchy): emit { let __sd_def = EXPR; (d).entry((k).clone()).or_insert(__sd_def).clone() } — bind default BEFORE .entry(). Python + or_insert eval default eagerly anyway → no behaviour change, just moves borrow earlier. Key in .entry() is fine (two-phase borrow). Mirrors PMAT-833. Verified vs python3: d.setdefault('b',d['a'])=7, len(d) default=203, present key=existing, literal=unchanged. New e2e setdefault_self_default.py; updated stale dict_setdefault assertion. FREE CI. e2e 606->607. SHIPPED v0.1.541 (bundled PMAT-842 DRY refactor). FOUND BY HUNT-V27 (#1). REMAINING V27 TOP: #2 tuple-arith t*n/t+=/concat (invalid-rust/common, merges 4), #3 AUG-FLOAT-WIDENING total=0;total+=float (invalid-rust/common, binding-type inference promotion — moderate), #4 AUG-FLOAT-DICTGET d.get(k,0)+float (one default-literal site), #5 set.update(str/tuple), #6 split(None), + many common clean-rejects (#11-23). V27 catalog (23 ranked) in project-correctness-hunt-backlog.md."
+- id: PMAT-842
+  github_issue: null
+  item_type: task
+  title: 'PMAT-842: [Tranche 2] REFACTOR consolidate CPython float/str repr blocks (py_float_repr_block / py_str_repr_block)'
+  status: done
+  priority: low
+  created: 2026-06-19T00:00:00Z
+  acceptance_criteria:
+  - "PMAT-840/841 copied emit_expr's ToStr{of_float}/ReprStr inline blocks into py_*_repr_block helpers for the dataclass-Display paths. Consolidated: both backends' emit_expr now render value to a temp + call the helpers (single source per backend). Byte-identical output (verbatim copies) → pure refactor, full gate green (606 e2e). SHIPPED v0.1.541 (bundled with PMAT-843)."
 - id: PMAT-841
   github_issue: null
   item_type: task
