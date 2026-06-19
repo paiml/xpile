@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.530] — 2026-06-19
+
+### Fixed
+
+- **PMAT-830 — `str(<dataclass>)` routes through the Display repr.** `str(p)` over a
+  dataclass instance had no arm in the `str()` builtin, so it mis-inferred as I64
+  and a function `-> str: return str(p)` was rejected ("body produces I64"). The
+  dataclass already has a Display impl (the field-repr) that an f-string field
+  `f"{p}"` uses; `str(p)` now lowers to the same `format!("{:}", p)` Display path,
+  typing as `str`. A struct without a generated Display impl is as
+  (un)supported here as in an f-string. HUNT-V25 (#6).
+
 ## [0.1.529] — 2026-06-19
 
 ### Fixed
