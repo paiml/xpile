@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.544] — 2026-06-19
+
+### Fixed
+
+- **PMAT-846 — `s.split(None)` is a whitespace split.** `s.split(None)` is an
+  explicit whitespace split — Python treats `None` as "any whitespace run",
+  identical to the no-arg `s.split()` — but the `None` argument lowered to
+  `&(None)[..]` (an index into `Option`), so `s.split(&(None)[..])` was rustc
+  E0608. The no-arg whitespace-split handler now also matches a single `None`
+  argument. (The `s.split(None, n)` maxsplit form is deferred.) HUNT-V27 (#6).
+
 ## [0.1.543] — 2026-06-19
 
 ### Fixed
