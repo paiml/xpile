@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.546] — 2026-06-20
+
+### Fixed
+
+- **PMAT-848 — a comprehension over a set or tuple iterates its elements.**
+  Completes PMAT-847 for the comprehension form: `sum([x*2 for x in s])` /
+  `[x for x in (5, 6, 7)]` was rejected while the for-loop form already worked.
+  Both comprehension lowering paths (the statement-form desugar and the
+  value-position closure-chain) now iterate a `Type::Set`'s elements
+  (`SetToList` / `ForEach` over the set) and materialize a homogeneous
+  `Type::Tuple` to a list of its elements. HUNT-V27 (#12).
+
 ## [0.1.545] — 2026-06-20
 
 ### Fixed
