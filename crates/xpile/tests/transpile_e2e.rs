@@ -15071,3 +15071,22 @@ fn main() {
 "#;
     assert_rustc_runs("split_none_sep", &rust, driver);
 }
+
+/// PMAT-847 (HUNT-V27 #12): a for-loop over a set or tuple was clean-rejected
+/// though both are everyday Python iterables. A set iterates its elements
+/// (HashSet .iter().cloned()); a homogeneous tuple materializes to a list.
+/// Cross-checked vs python3.
+#[test]
+fn for_over_set_tuple() {
+    let rust = xpile_transpile_to_rust("for_over_set_tuple.py");
+    let driver = r#"
+fn main() {
+    let mut s = std::collections::HashSet::new();
+    s.insert(1); s.insert(2); s.insert(3);
+    assert_eq!(over_set(s), 6);
+    assert_eq!(over_tuple(), 60);
+    assert_eq!(over_str_tuple(), "abbccc");
+}
+"#;
+    assert_rustc_runs("for_over_set_tuple", &rust, driver);
+}
