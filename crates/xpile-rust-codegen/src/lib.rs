@@ -1162,9 +1162,14 @@ fn emit_stmt_indented(
         } => {
             write!(out, "{indent}{{ let __xpile_dict_val = ")?;
             emit_expr(out, value, mode)?;
-            write!(out, "; {dict_name}.insert(")?;
+            // PMAT-852 (HUNT-V28 #4): parenthesize the key before `.clone()`. A
+            // bare-cast key — `len(w)` → `w.chars().count() as i64` — otherwise
+            // emitted `… as i64.clone()`, which rustc parses as `as (i64.clone())`
+            // ("cast cannot be followed by a method call"). The parens bind the
+            // cast first. (Covers both `d[k] = v` and the dict-comp desugar.)
+            write!(out, "; {dict_name}.insert((")?;
             emit_expr(out, key, mode)?;
-            writeln!(out, ".clone(), __xpile_dict_val); }}")?;
+            writeln!(out, ").clone(), __xpile_dict_val); }}")?;
             Ok(())
         }
         // PMAT-533: append on a subscript receiver. List base indexes a

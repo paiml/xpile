@@ -954,9 +954,12 @@ fn emit_stmt_indented(
         } => {
             write!(out, "{indent}{{ let __xpile_dict_val = ")?;
             emit_expr(out, value, mode)?;
-            write!(out, "; {dict_name}.insert(")?;
+            // PMAT-852 (HUNT-V28 #4): parenthesize the key before `.clone()` so a
+            // bare-cast key (`len(w)` → `… as i64`) doesn't become `… as
+            // i64.clone()` (mirror the Rust backend).
+            write!(out, "; {dict_name}.insert((")?;
             emit_expr(out, key, mode)?;
-            writeln!(out, ".clone(), __xpile_dict_val); }}")?;
+            writeln!(out, ").clone(), __xpile_dict_val); }}")?;
             Ok(())
         }
         // PMAT-533: append on a subscript receiver (mirrors the Rust twin).
