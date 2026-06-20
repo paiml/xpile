@@ -2001,7 +2001,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str("{ let __s = (");
                 emit_expr(out, recv, mode)?;
                 out.push_str("); let mut __lines: Vec<String> = Vec::new(); let mut __cur = String::new(); let mut __it = __s.chars().peekable(); while let Some(__c) = __it.next() { match __c { '\\r' => { if __it.peek() == Some(&'\\n') { __it.next(); } __lines.push(std::mem::take(&mut __cur)); } '\\n' | '\\u{0b}' | '\\u{0c}' | '\\u{1c}' | '\\u{1d}' | '\\u{1e}' | '\\u{85}' | '\\u{2028}' | '\\u{2029}' => { __lines.push(std::mem::take(&mut __cur)); } _ => __cur.push(__c), } } if !__cur.is_empty() { __lines.push(__cur); } __lines }");
-            } else if matches!(op, StrMethodOp::Find | StrMethodOp::Count) && args.len() >= 2 {
+            } else if matches!(
+                op,
+                StrMethodOp::Find
+                    | StrMethodOp::Count
+                    | StrMethodOp::StrIndex
+                    | StrMethodOp::RIndex
+                    | StrMethodOp::Rfind
+            ) && args.len() >= 2
+            {
                 // PMAT-675: `s.find(sub, start[, end])` / `s.count(sub, start[,
                 // end])` search within the char-slice `s[start:end]`. `find`
                 // returns the CHAR index in the ORIGINAL string (or -1); `count`
@@ -2028,10 +2036,23 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     out.push_str("__len as usize");
                 }
                 out.push_str("; let __slice: String = __s.chars().skip(__st).take(__en.saturating_sub(__st)).collect(); ");
-                if matches!(op, StrMethodOp::Find) {
-                    out.push_str("__slice.find(&__sub[..]).map(|__b| __st as i64 + __slice[..__b].chars().count() as i64).unwrap_or(-1) }");
-                } else {
+                // PMAT-854 (HUNT-V28 #11): index/rindex/rfind reuse the same
+                // slice+offset; `r*` use `rfind` (rightmost) and `*index` raise
+                // ValueError (`.expect`) where `find`/`rfind` return -1.
+                if matches!(op, StrMethodOp::Count) {
                     out.push_str("__slice.matches(&__sub[..]).count() as i64 }");
+                } else {
+                    let finder = if matches!(op, StrMethodOp::Rfind | StrMethodOp::RIndex) {
+                        "rfind"
+                    } else {
+                        "find"
+                    };
+                    let not_found = if matches!(op, StrMethodOp::StrIndex | StrMethodOp::RIndex) {
+                        ".expect(\"xpile: ValueError: substring not found\")"
+                    } else {
+                        ".unwrap_or(-1)"
+                    };
+                    write!(out, "__slice.{finder}(&__sub[..]).map(|__b| __st as i64 + __slice[..__b].chars().count() as i64){not_found} }}")?;
                 }
             } else if matches!(
                 op,
