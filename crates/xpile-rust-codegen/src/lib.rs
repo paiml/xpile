@@ -2827,13 +2827,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         Expr::ListQuery { list, op, arg } => {
             emit_expr(out, list, mode)?;
             match op {
+                // PMAT-853: compare by place (`**__e == arg`) rather than
+                // destructuring by copy (`|&&__e|`), so a non-Copy element type
+                // (`String`, …) works as well as `i64`/`bool`.
                 ListQueryOp::Count => {
-                    out.push_str(".iter().filter(|&&__e| __e == ");
+                    out.push_str(".iter().filter(|__e| **__e == ");
                     emit_expr(out, arg, mode)?;
                     out.push_str(").count() as i64");
                 }
                 ListQueryOp::Index => {
-                    out.push_str(".iter().position(|&__e| __e == ");
+                    // `position` yields `&T` (one ref) — single deref, unlike
+                    // `filter`'s `&&T`.
+                    out.push_str(".iter().position(|__e| *__e == ");
                     emit_expr(out, arg, mode)?;
                     out.push_str(").map(|__i| __i as i64).expect(\"xpile: ValueError: list.index(x): x not in list\")");
                 }
