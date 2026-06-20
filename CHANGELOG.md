@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.551] — 2026-06-20
+
+### Fixed
+
+- **PMAT-853 — `list.count`/`index` over str/float/bool elements.** `xs.count(x)` /
+  `xs.index(x)` were gated to `list[int]`, so a list of str/float/bool was
+  clean-rejected. The gate now accepts any scalar element type, and the `ListQuery`
+  codegen compares by place — `filter(|__e| **__e == x)` (filter yields `&&T`) and
+  `position(|__e| *__e == x)` (position yields `&T`) — so a non-Copy `String`
+  element works as well as `i64`/`bool`. HUNT-V28 (#13).
+
 ## [0.1.550] — 2026-06-20
 
 ### Fixed
