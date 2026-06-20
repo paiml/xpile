@@ -7,6 +7,16 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.553] — 2026-06-20
+
+### Fixed
+
+- **PMAT-855 — coerce a bool needle to i64 in `list.count`/`index`.** A bool needle
+  into an int list — `[1, 2].count(True)` / `xs.index(True)` — emitted
+  `**__e == true` (i64 == bool) → rustc E0308. Python `True == 1`, so the bool
+  coerces to 1 (the membership `in` path already did this); `count`/`index` now
+  coerce a `Bool` needle to i64 when the element type is `I64`. HUNT-V28 (#8).
+
 ## [0.1.552] — 2026-06-20
 
 ### Fixed
