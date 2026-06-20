@@ -15109,3 +15109,20 @@ fn main() {
 "#;
     assert_rustc_runs("comp_over_set_tuple", &rust, driver);
 }
+
+/// PMAT-849 (HUNT-V27 #11): "%d"/"%i" over a float truncates toward zero in
+/// Python (like int(float)), but it was rejected. The float is now cast to i64
+/// (truncating toward zero) before the %d path. Cross-checked vs python3.
+#[test]
+fn percent_d_float() {
+    let rust = xpile_transpile_to_rust("percent_d_float.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(pos(), "3");
+    assert_eq!(neg(), "-2");
+    assert_eq!(mixed(), "3 apples, 2.5 kg");
+    assert_eq!(int_unchanged(), "5 items at 1.50");
+}
+"#;
+    assert_rustc_runs("percent_d_float", &rust, driver);
+}

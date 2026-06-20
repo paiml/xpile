@@ -15827,6 +15827,25 @@ fn lower_percent_format(
                             ));
                         }
                     }
+                    // PMAT-849 (HUNT-V27 #11): `%d` / `%i` over a FLOAT truncates
+                    // toward zero in Python (`"%d" % 3.7` == "3", `"%d" % -2.9` ==
+                    // "-2"), exactly like `int(float)`. Was rejected. Cast the
+                    // float to i64 (the guarded int-from-float cast, which truncates
+                    // toward zero), then the int `%d` path formats it.
+                    'd' | 'i' if matches!(ty, Type::F64) => {
+                        if precision.is_some() {
+                            return Err(FrontendError::Lower(
+                                "`%.Nd` (integer precision) is not yet supported".into(),
+                            ));
+                        }
+                        let v = args[arg_idx].clone();
+                        args[arg_idx] = Expr::NumCast {
+                            value: Box::new(v),
+                            to_float: false,
+                            from_str: false,
+                            from_float: true,
+                        };
+                    }
                     'f' if matches!(ty, Type::F64) => {}
                     // PMAT-502dp: `%x`/`%X`/`%o` over an int — wrap the arg as a
                     // *no-prefix* sign-first radix string (Rust's `{:x}` is
