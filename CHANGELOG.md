@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.548] — 2026-06-20
+
+### Fixed
+
+- **PMAT-850 — support the `d.update(a=1, b=2)` keyword form.** `d.update(a=1, b=2)`
+  — Python's keyword form, where the kwarg names become string keys (like
+  `dict(a=1)`) — was clean-rejected. For a str-keyed dict, the keyword form now
+  builds a dict literal from the kwargs (`{"a": 1, "b": 2}`) and `DictUpdate`-
+  merges it (only when the key type is `Str` and there's no positional arg or
+  `**`-splat). The positional `d.update(<dict>)` form is unchanged. HUNT-V27
+  (#18).
+
 ## [0.1.547] — 2026-06-20
 
 ### Fixed
