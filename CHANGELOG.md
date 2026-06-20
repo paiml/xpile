@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.545] — 2026-06-20
+
+### Fixed
+
+- **PMAT-847 — a for-loop over a set or tuple iterates its elements.** `for x in
+  <set>` / `for x in (a, b, c)` was clean-rejected ("other iterables are
+  deferred") even though both are everyday Python iterables. A `Type::Set`
+  iterable now feeds the existing `ForEach` path directly (`HashSet::iter()
+  .cloned()` works like `Vec`, with the set's element type); a homogeneous
+  `Type::Tuple` materializes to a list of its elements (the same materialization
+  `max(t)` / `set.update(t)` use). A heterogeneous tuple still rejects (can't be a
+  `Vec<T>`). A comprehension over a set/tuple remains a separate, deferred path.
+  HUNT-V27 (#12).
+
 ## [0.1.544] — 2026-06-19
 
 ### Fixed
