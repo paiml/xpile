@@ -1701,9 +1701,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 } else {
                     "find"
                 };
-                out.push_str("{ let __s = (");
+                // PMAT-851 (HUNT-V28 #2): clone the receiver so `index`/`find`/…
+                // don't MOVE a non-Copy String (E0382 on `i = s.index(sep); s[i:]`).
+                // Mirrors the Rust backend.
+                out.push_str("{ let __s = ((");
                 emit_expr(out, recv, mode)?;
-                write!(out, "); __s.{finder}(&(")?;
+                write!(out, ").clone()); __s.{finder}(&(")?;
                 emit_expr(out, &args[0], mode)?;
                 out.push_str(")[..]).map(|__b| __s[..__b].chars().count() as i64)");
                 if matches!(op, StrMethodOp::StrIndex | StrMethodOp::RIndex) {
