@@ -15214,3 +15214,21 @@ fn main() {
 "#;
     assert_rustc_runs("rfind_index_startend", &rust, driver);
 }
+
+/// PMAT-855 (HUNT-V28 #8): a bool needle into an int list — [1,2].count(True) /
+/// xs.index(True) — emitted `**__e == true` (i64 == bool) → E0308. Python True==1
+/// (the `in` path already coerced); count/index now coerce a bool needle to i64.
+/// Cross-checked vs python3.
+#[test]
+fn membership_needle_coerce() {
+    let rust = xpile_transpile_to_rust("membership_needle_coerce.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(count_bool(vec![1, 2, 1]), 2);
+    assert_eq!(index_bool(vec![3, 1, 2]), 1);
+    assert_eq!(int_needle(vec![2, 2, 3]), 2);
+    assert_eq!(bool_list(vec![true, false, true]), 2);
+}
+"#;
+    assert_rustc_runs("membership_needle_coerce", &rust, driver);
+}
