@@ -15197,3 +15197,20 @@ fn main() {
 "#;
     assert_rustc_runs("list_count_nonint", &rust, driver);
 }
+
+/// PMAT-854 (HUNT-V28 #11): str.index/rindex/rfind rejected start[/end] args
+/// while find/count accepted them. They now reuse the slice+offset path (r* →
+/// rfind rightmost; *index → ValueError where find/rfind return -1). vs python3.
+#[test]
+fn rfind_index_startend() {
+    let rust = xpile_transpile_to_rust("rfind_index_startend.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(index_start(String::from("banana")), 3);
+    assert_eq!(rfind_start(String::from("banana")), 5);
+    assert_eq!(index_start_end(String::from("banana")), 1);
+    assert_eq!(rindex_start(String::from("banana")), 5);
+}
+"#;
+    assert_rustc_runs("rfind_index_startend", &rust, driver);
+}

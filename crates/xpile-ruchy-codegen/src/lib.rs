@@ -1643,7 +1643,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             // index in the ORIGINAL string (or -1), count the # of non-overlapping
             // occurrences. start/end are char indices with Python clamping; end
             // defaults to len for the 2-arg form. (Mirrors the Rust backend.)
-            if matches!(op, StrMethodOp::Find | StrMethodOp::Count) && args.len() >= 2 {
+            if matches!(
+                op,
+                StrMethodOp::Find
+                    | StrMethodOp::Count
+                    | StrMethodOp::StrIndex
+                    | StrMethodOp::RIndex
+                    | StrMethodOp::Rfind
+            ) && args.len() >= 2
+            {
                 out.push_str("{ let __s = (");
                 emit_expr(out, recv, mode)?;
                 out.push_str("); let __sub = (");
@@ -1661,10 +1669,22 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     out.push_str("__len as usize");
                 }
                 out.push_str("; let __slice: String = __s.chars().skip(__st).take(__en.saturating_sub(__st)).collect(); ");
-                if matches!(op, StrMethodOp::Find) {
-                    out.push_str("__slice.find(&__sub[..]).map(|__b| __st as i64 + __slice[..__b].chars().count() as i64).unwrap_or(-1) }");
-                } else {
+                // PMAT-854 (HUNT-V28 #11): index/rindex/rfind reuse the slice; r*
+                // use rfind, *index raise ValueError (mirror the Rust backend).
+                if matches!(op, StrMethodOp::Count) {
                     out.push_str("__slice.matches(&__sub[..]).count() as i64 }");
+                } else {
+                    let finder = if matches!(op, StrMethodOp::Rfind | StrMethodOp::RIndex) {
+                        "rfind"
+                    } else {
+                        "find"
+                    };
+                    let not_found = if matches!(op, StrMethodOp::StrIndex | StrMethodOp::RIndex) {
+                        ".expect(\"xpile: ValueError: substring not found\")"
+                    } else {
+                        ".unwrap_or(-1)"
+                    };
+                    write!(out, "__slice.{finder}(&__sub[..]).map(|__b| __st as i64 + __slice[..__b].chars().count() as i64){not_found} }}")?;
                 }
                 return Ok(());
             }

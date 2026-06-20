@@ -10672,9 +10672,18 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         );
                         // PMAT-675: `s.find(sub, start[, end])` / `s.count(sub,
                         // start[, end])` accept an optional start (+ end) slice
-                        // bound (arity 1 → up to 3 args). Other methods keep their
+                        // bound (arity 1 → up to 3 args). PMAT-854 (HUNT-V28 #11):
+                        // `index`/`rindex`/`rfind` accept the same start/end (they
+                        // were the asymmetric reject). Other methods keep their
                         // exact arity.
-                        let allows_start_end = matches!(op, StrMethodOp::Find | StrMethodOp::Count);
+                        let allows_start_end = matches!(
+                            op,
+                            StrMethodOp::Find
+                                | StrMethodOp::Count
+                                | StrMethodOp::StrIndex
+                                | StrMethodOp::RIndex
+                                | StrMethodOp::Rfind
+                        );
                         // PMAT-691: `strip`/`lstrip`/`rstrip` accept an optional
                         // char-set arg (arity 0 → 0 or 1 args).
                         let allows_charset = matches!(
