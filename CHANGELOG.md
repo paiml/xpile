@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.547] — 2026-06-20
+
+### Fixed
+
+- **PMAT-849 — `%d`/`%i` over a float truncates toward zero.** `"%d" % 3.7` is "3"
+  and `"%d" % -2.9` is "-2" in Python (`%d` truncates a float toward zero, like
+  `int(float)`), but the percent-format lowering rejected a float argument for
+  `%d`/`%i`. Such an argument is now cast to i64 via the guarded float→int cast
+  (truncate toward zero) before the int `%d` path. `%x`/`%X`/`%o` on a float still
+  rejects (Python raises TypeError there too). HUNT-V27 (#11).
+
 ## [0.1.546] — 2026-06-20
 
 ### Fixed
