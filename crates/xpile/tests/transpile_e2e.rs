@@ -2669,9 +2669,11 @@ fn main() {
 #[test]
 fn list_query() {
     let rust = xpile_transpile_to_rust("list_query.py");
+    // PMAT-853: count/index now compare by place (`**__e == x`) so non-Copy
+    // element types work too.
     assert!(
-        rust.contains(".iter().filter(|&&__e| __e ==")
-            && rust.contains(".iter().position(|&__e| __e =="),
+        rust.contains(".iter().filter(|__e| **__e ==")
+            && rust.contains(".iter().position(|__e| *__e =="),
         "expected count/index emission, got:\n{rust}"
     );
     let driver = r#"
@@ -15177,4 +15179,21 @@ fn main() {
 }
 "#;
     assert_rustc_runs("dict_key_cast", &rust, driver);
+}
+
+/// PMAT-853 (HUNT-V28 #13): xs.count(x) / xs.index(x) were gated to list[int]. The
+/// ListQuery codegen now compares by place (**__e == x) instead of destructuring
+/// by copy, so str/float/bool element lists work too. Cross-checked vs python3.
+#[test]
+fn list_count_nonint() {
+    let rust = xpile_transpile_to_rust("list_count_nonint.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(count_str(vec![String::from("a"), String::from("b"), String::from("a")], String::from("a")), 2);
+    assert_eq!(count_float(vec![1.5, 2.5, 1.5]), 2);
+    assert_eq!(index_str(vec![String::from("a"), String::from("b"), String::from("c")], String::from("b")), 1);
+    assert_eq!(count_int(vec![2, 2, 3]), 2);
+}
+"#;
+    assert_rustc_runs("list_count_nonint", &rust, driver);
 }

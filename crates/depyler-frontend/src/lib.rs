@@ -10729,7 +10729,12 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // check disambiguates.
                 if matches!(attr.attr.as_str(), "count" | "index") {
                     let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
-                    if matches!(infer_type_in_ctx(ctx, &recv), Type::List(elem) if *elem == Type::I64)
+                    // PMAT-853 (HUNT-V28 #13): `xs.count(x)` / `xs.index(x)` over any
+                    // scalar element type (int/str/float/bool), not just `list[int]`
+                    // — the `ListQuery` codegen now compares by place (`**__e == x`),
+                    // valid for a non-Copy `String` too.
+                    if matches!(infer_type_in_ctx(ctx, &recv),
+                        Type::List(elem) if matches!(*elem, Type::I64 | Type::Str | Type::F64 | Type::Bool))
                         && call.keywords.is_empty()
                         && call.args.len() == 1
                     {
