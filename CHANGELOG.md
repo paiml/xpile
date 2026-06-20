@@ -7,6 +7,16 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.549] — 2026-06-20
+
+### Fixed
+
+- **PMAT-851 — clone the receiver in `str.index`/`find`/`rfind`/`rindex`.** These
+  ops bound `let __s = (s)`, MOVING a non-Copy `String` receiver, so the everyday
+  `i = s.index(sep); s[i:]` idiom failed rustc E0382 (`s` used after move). All
+  four share the single-arg char-index path, so all were affected. The receiver is
+  now cloned (these ops only read it). HUNT-V28 (#2).
+
 ## [0.1.548] — 2026-06-20
 
 ### Fixed
