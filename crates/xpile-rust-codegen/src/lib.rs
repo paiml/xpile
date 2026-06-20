@@ -2070,9 +2070,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 } else {
                     "find"
                 };
-                out.push_str("{ let __s = (");
+                // PMAT-851 (HUNT-V28 #2): bind a CLONE of the receiver — `find`/
+                // `rfind`/`index`/`rindex` only read it, but binding `let __s =
+                // (recv)` MOVED a non-Copy `String`, so the common `i =
+                // s.index(sep); s[i:]` idiom failed rustc E0382 (`s` used after
+                // move). The clone keeps the receiver available for later use.
+                out.push_str("{ let __s = ((");
                 emit_expr(out, recv, mode)?;
-                write!(out, "); __s.{finder}(&(")?;
+                write!(out, ").clone()); __s.{finder}(&(")?;
                 emit_expr(out, &args[0], mode)?;
                 out.push_str(")[..]).map(|__b| __s[..__b].chars().count() as i64)");
                 if matches!(op, StrMethodOp::StrIndex | StrMethodOp::RIndex) {

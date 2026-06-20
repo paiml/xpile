@@ -15144,3 +15144,19 @@ fn main() {
 "#;
     assert_rustc_runs("dict_update_kwargs", &rust, driver);
 }
+
+/// PMAT-851 (HUNT-V28 #2): s.index(sep)/find/rindex moved a non-Copy String
+/// receiver (let __s = (s)), so `i = s.index(sep); s[i:]` failed rustc E0382. The
+/// receiver is now cloned (all four ops shared the path). Cross-checked vs python3.
+#[test]
+fn str_index_clone() {
+    let rust = xpile_transpile_to_rust("str_index_clone.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(index_then_slice(), "value");
+    assert_eq!(find_then_reuse(), 6);
+    assert_eq!(rindex_then_slice(), "x.y");
+}
+"#;
+    assert_rustc_runs("str_index_clone", &rust, driver);
+}
