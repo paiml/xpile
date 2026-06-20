@@ -7711,7 +7711,25 @@ fn desugar_list_comp(
             append,
         ));
     }
-    let iter_expr = str_iter_to_chars(ctx, lower_expr_in_ctx(ctx, gen.iter.clone())?);
+    let mut iter_expr = str_iter_to_chars(ctx, lower_expr_in_ctx(ctx, gen.iter.clone())?);
+    // PMAT-848 (HUNT-V27 #12): a comprehension over a homogeneous TUPLE
+    // materializes it to a list of its elements first (a set iterates directly via
+    // `.iter().cloned()` — handled in the match below). Completes the for-loop
+    // set/tuple support (PMAT-847) for the comprehension form.
+    if let Type::Tuple(elems) = infer_type_in_ctx(ctx, &iter_expr) {
+        if !elems.is_empty() && elems.iter().all(|t| *t == elems[0]) {
+            let items = match iter_expr {
+                Expr::TupleLit(items) => items,
+                other => (0..elems.len())
+                    .map(|i| Expr::TupleIndex {
+                        tuple: Box::new(other.clone()),
+                        index: i,
+                    })
+                    .collect(),
+            };
+            iter_expr = Expr::ListLit(items);
+        }
+    }
     let (elem_in_ty, over_keys) = match infer_type_in_ctx(ctx, &iter_expr) {
         Type::List(e) => (*e, false),
         // PMAT-832 (HUNT-V25 #14): a comprehension over a bare DICT iterates its
@@ -7719,9 +7737,13 @@ fn desugar_list_comp(
         // ForEach `over_keys` path — the element type is the key type and the
         // backend emits `d.keys().cloned()`.
         Type::Dict(k, _) => (*k, true),
+        // PMAT-848 (HUNT-V27 #12): a SET iterates its elements — the `ForEach`
+        // path emits `(s).iter().cloned()`, valid for a `HashSet` (like the
+        // for-loop, PMAT-847).
+        Type::Set(e) => (*e, false),
         other => {
             return Err(FrontendError::Lower(format!(
-                "function `{}` comprehends over an iterable typing as {other:?}; v0.2.0 supports `[… for x in <list[T]>]`, `[… for x in range(...)]`, or `[… for k in <dict>]`",
+                "function `{}` comprehends over an iterable typing as {other:?}; v0.2.0 supports `[… for x in <list[T]>]`, `[… for x in range(...)]`, `[… for k in <dict>]`, `[… for x in <set>]`, or `[… for x in <tuple>]`",
                 ctx.fn_name
             )));
         }
@@ -17263,20 +17285,37 @@ fn lower_comp_to_map(
     // `over_keys` path. Re-wrap a dict iterable into its owned keys `Vec`
     // (`DictView::Keys`, which types as `List(K)`), so the closure-chain below
     // iterates that list.
-    let iter_list = if matches!(infer_type_in_ctx(ctx, &iter_list), Type::Dict(_, _)) {
-        Expr::DictView {
+    // PMAT-848 (HUNT-V27 #12): likewise a SET (`SetToList`) and a homogeneous
+    // TUPLE (list of its elements) — completes the for-loop set/tuple support
+    // (PMAT-847) for the comprehension form (`sum([x*2 for x in s])`).
+    let iter_list = match infer_type_in_ctx(ctx, &iter_list) {
+        Type::Dict(_, _) => Expr::DictView {
             dict: Box::new(iter_list),
             kind: DictViewKind::Keys,
+        },
+        Type::Set(_) => Expr::SetToList {
+            set: Box::new(iter_list),
+        },
+        Type::Tuple(elems) if !elems.is_empty() && elems.iter().all(|t| *t == elems[0]) => {
+            let items = match iter_list {
+                Expr::TupleLit(items) => items,
+                other => (0..elems.len())
+                    .map(|i| Expr::TupleIndex {
+                        tuple: Box::new(other.clone()),
+                        index: i,
+                    })
+                    .collect(),
+            };
+            Expr::ListLit(items)
         }
-    } else {
-        iter_list
+        _ => iter_list,
     };
     let elem_ty = match infer_type_in_ctx(ctx, &iter_list) {
         Type::List(e) => *e,
         _ => {
             return Err(FrontendError::Lower(format!(
-                "{kind} iterates over a non-list — only `range(...)`, list-typed, and dict (keys) \
-                 iterables are supported at v0.2.0"
+                "{kind} iterates over a non-list — only `range(...)`, list-typed, dict (keys), \
+                 set, and tuple iterables are supported at v0.2.0"
             )));
         }
     };
