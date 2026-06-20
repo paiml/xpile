@@ -3476,9 +3476,32 @@ fn try_lower_list_method_call(
     // PMAT-502bb: `d.update(other)` — 1-arg in-place dict merge.
     if method == "update" && matches!(receiver_ty, Some(Type::Dict(_, _))) {
         if !call.keywords.is_empty() {
+            // PMAT-850 (HUNT-V27 #18): `d.update(a=1, b=2)` keyword form — Python
+            // uses the kwarg NAMES as string keys (like `dict(a=1)`, PMAT-811).
+            // Build a dict literal from the kwargs and `DictUpdate`-merge it. Only
+            // for a str-keyed dict (the keys are strings); a `**`-splat or a
+            // positional+kwargs mix is deferred.
+            let key_is_str = matches!(&receiver_ty, Some(Type::Dict(k, _)) if **k == Type::Str);
+            if call.args.is_empty() && key_is_str && call.keywords.iter().all(|kw| kw.arg.is_some())
+            {
+                let mut entries = Vec::with_capacity(call.keywords.len());
+                for kw in &call.keywords {
+                    let key = Expr::LitStr(kw.arg.as_ref().unwrap().to_string());
+                    let val = match lower_expr_in_ctx(ctx, kw.value.clone()) {
+                        Ok(e) => e,
+                        Err(err) => return Some(Err(err)),
+                    };
+                    entries.push((key, val));
+                }
+                ctx.mutable.insert(receiver_name.to_string());
+                return Some(Ok(Stmt::DictUpdate {
+                    dict_name: receiver_name.to_string(),
+                    other: Expr::DictLit(entries),
+                }));
+            }
             return Some(Err(FrontendError::Lower(format!(
                 "function `{}` calls `{receiver_name}.update(...)` with keyword args; \
-                 v0.2.0 takes a single positional dict",
+                 v0.2.0 supports `.update(<dict>)` or `.update(a=1, b=2)` over a str-keyed dict",
                 ctx.fn_name
             ))));
         }

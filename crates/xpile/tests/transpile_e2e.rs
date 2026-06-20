@@ -15126,3 +15126,21 @@ fn main() {
 "#;
     assert_rustc_runs("percent_d_float", &rust, driver);
 }
+
+/// PMAT-850 (HUNT-V27 #18): d.update(a=1, b=2) keyword form (Python uses the kwarg
+/// names as string keys, like dict(a=1)) was clean-rejected. It now builds a dict
+/// literal from the kwargs and merges it (str-keyed dicts only); a positional
+/// d.update(<dict>) is unchanged. Cross-checked vs python3.
+#[test]
+fn dict_update_kwargs() {
+    let rust = xpile_transpile_to_rust("dict_update_kwargs.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(kwargs_update(), 1023);  // a=10, b=2, c=3
+    let mut d = std::collections::HashMap::new(); d.insert(String::from("a"), 1i64);
+    let mut o = std::collections::HashMap::new(); o.insert(String::from("b"), 2i64); o.insert(String::from("c"), 3i64);
+    assert_eq!(positional_update(d, o), 3);
+}
+"#;
+    assert_rustc_runs("dict_update_kwargs", &rust, driver);
+}
