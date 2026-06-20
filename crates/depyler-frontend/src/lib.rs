@@ -10747,7 +10747,18 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         && call.keywords.is_empty()
                         && call.args.len() == 1
                     {
-                        let arg = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                        let mut arg = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                        // PMAT-855 (HUNT-V28 #8): a BOOL needle into an int-keyed
+                        // list — `[1, 2].count(True)` — coerce bool→i64 (Python
+                        // `True == 1`), like the membership (`in`) path and the
+                        // bool dict-key coercion (PMAT-829). Without it the
+                        // `ListQuery` compare was `**__e == true` (i64 == bool) →
+                        // rustc E0308.
+                        if matches!(infer_type_in_ctx(ctx, &recv), Type::List(e) if *e == Type::I64)
+                            && matches!(infer_type_in_ctx(ctx, &arg), Type::Bool)
+                        {
+                            arg = to_i64_operand(ctx, arg);
+                        }
                         return Ok(Expr::ListQuery {
                             list: Box::new(recv),
                             op: if attr.attr.as_str() == "count" {
