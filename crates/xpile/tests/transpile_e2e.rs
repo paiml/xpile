@@ -4799,8 +4799,9 @@ fn main() {
 #[test]
 fn dict_comp_items() {
     let rust = xpile_transpile_to_rust("dict_comp_items.py");
+    // PMAT-852: the dict-insert key is now parenthesized before `.clone()`.
     assert!(
-        rust.contains("for (k, v) in") && rust.contains(".insert(k.clone()"),
+        rust.contains("for (k, v) in") && rust.contains(".insert((k).clone()"),
         "dict comp over items:\n{rust}"
     );
     let driver = r#"
@@ -15159,4 +15160,21 @@ fn main() {
 }
 "#;
     assert_rustc_runs("str_index_clone", &rust, driver);
+}
+
+/// PMAT-852 (HUNT-V28 #4): a dict key that lowers to a bare cast (len(w) →
+/// w.chars().count() as i64) emitted insert(... as i64.clone(), ...), which rustc
+/// parses as `as (i64.clone())`. The key is now parenthesized before .clone().
+/// Covers the dict-comp and d[k]=v forms. Cross-checked vs python3.
+#[test]
+fn dict_key_cast() {
+    let rust = xpile_transpile_to_rust("dict_key_cast.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(comp_len_key(), 2);       // len("hi")==len("yo")==2 collide → {2,3}
+    assert_eq!(subscript_len_key(), 3);  // keys 1,2,3
+    assert_eq!(abs_key(), 1);
+}
+"#;
+    assert_rustc_runs("dict_key_cast", &rust, driver);
 }
