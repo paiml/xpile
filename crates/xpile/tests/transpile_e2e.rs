@@ -15090,3 +15090,22 @@ fn main() {
 "#;
     assert_rustc_runs("for_over_set_tuple", &rust, driver);
 }
+
+/// PMAT-848 (HUNT-V27 #12): a comprehension over a set or tuple was rejected;
+/// completes the for-loop set/tuple support (PMAT-847) for the comprehension
+/// form. Both comp paths iterate a set's elements and a homogeneous tuple's
+/// elements. Cross-checked vs python3.
+#[test]
+fn comp_over_set_tuple() {
+    let rust = xpile_transpile_to_rust("comp_over_set_tuple.py");
+    let driver = r#"
+fn main() {
+    let mut s = std::collections::HashSet::new();
+    s.insert(1); s.insert(2); s.insert(3);
+    assert_eq!(comp_set(s.clone()), 12);
+    assert_eq!(comp_tuple(), 18);
+    assert_eq!(stmt_set(s), 9);
+}
+"#;
+    assert_rustc_runs("comp_over_set_tuple", &rust, driver);
+}
