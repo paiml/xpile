@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.550] — 2026-06-20
+
+### Fixed
+
+- **PMAT-852 — parenthesize a dict key before `.clone()`.** A dict key that lowers
+  to a bare cast — `len(w)` → `w.chars().count() as i64` — emitted
+  `insert(... as i64.clone(), ...)`, which rustc parses as `as (i64.clone())`
+  ("cast cannot be followed by a method call"). The key is now parenthesized
+  before `.clone()` (`insert((<key>).clone(), ...)`), covering both the
+  `{len(w): w}` dict-comprehension and the `d[len(w)] = v` subscript-assign. HUNT-V28
+  (#4).
+
 ## [0.1.549] — 2026-06-20
 
 ### Fixed
