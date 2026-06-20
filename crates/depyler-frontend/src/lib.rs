@@ -4618,11 +4618,35 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                 false,
                 None,
             ),
+            // PMAT-847 (HUNT-V27 #12): `for x in <set>` iterates the set's
+            // elements — a `HashSet` supports `.iter().cloned()` exactly like a
+            // `Vec`, so the `ForEach` path works unchanged with the element type.
+            // (Python set iteration order is unspecified, matching the HashMap-
+            // backed set; a body that depends on order is already non-portable.)
+            Type::Set(elem) => (iter_expr, *elem, false, None),
+            // PMAT-847 (HUNT-V27 #12): `for x in (a, b, c)` over a HOMOGENEOUS
+            // tuple materializes to a list of its elements (a literal reuses its
+            // elements; a binding indexes each field) — the same materialization
+            // `max(t)` / `sum(t)` / `set.update(t)` use. A heterogeneous tuple
+            // can't be a `Vec<T>`, so it falls through to the reject below.
+            Type::Tuple(elems) if !elems.is_empty() && elems.iter().all(|t| *t == elems[0]) => {
+                let items = match iter_expr {
+                    Expr::TupleLit(items) => items,
+                    other => (0..elems.len())
+                        .map(|i| Expr::TupleIndex {
+                            tuple: Box::new(other.clone()),
+                            index: i,
+                        })
+                        .collect(),
+                };
+                (Expr::ListLit(items), elems[0].clone(), false, None)
+            }
             other => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` iterates a non-collection expression typing as {other:?} — \
                      v0.2.0 supports `for target in range(...)`, `for target in <list[T]>`, \
-                     `for key in <dict[K, V]>`, or `for char in <str>`; other iterables are deferred",
+                     `for key in <dict[K, V]>`, `for x in <set[T]>`, `for x in <tuple>`, \
+                     or `for char in <str>`; other iterables are deferred",
                     ctx.fn_name
                 )));
             }
