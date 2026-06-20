@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.552] — 2026-06-20
+
+### Fixed
+
+- **PMAT-854 — `str.index`/`rindex`/`rfind` accept start/end args.** `find`/`count`
+  accepted the optional `(sub, start[, end])` slice bounds (PMAT-675), but
+  `index`/`rindex`/`rfind` rejected them ("expected exactly 1") — an asymmetry, as
+  these are the same search. They now share the start/end slice+offset path: the
+  `r*` forms search rightmost (`rfind`); the `*index` forms raise ValueError where
+  `find`/`rfind` return -1. HUNT-V28 (#11).
+
 ## [0.1.551] — 2026-06-20
 
 ### Fixed
