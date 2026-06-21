@@ -1018,7 +1018,7 @@ fn emit_stmt_indented(
         Stmt::DelItem { name, key, is_dict } => {
             if *is_dict {
                 // PMAT-709: `del d[k]` raises KeyError on an absent key (mirror rust).
-                write!(out, "{indent}assert!({name}.remove(&(")?;
+                write!(out, "{indent}assert!({name}.shift_remove(&(")?;
                 emit_expr(out, key, mode)?;
                 writeln!(
                     out,
@@ -1156,7 +1156,7 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
         }
         // PMAT-462 (v0.2.0 Track 1.C): Ruchy → Rust HashMap<K, V>.
         Type::Dict(k_ty, v_ty) => {
-            out.push_str("std::collections::HashMap<");
+            out.push_str("indexmap::IndexMap<");
             emit_type(out, k_ty)?;
             out.push_str(", ");
             emit_type(out, v_ty)?;
@@ -2478,7 +2478,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         Expr::DictPop { dict, key, default } => {
             out.push('(');
             emit_expr(out, dict, mode)?;
-            out.push_str(").remove(&(");
+            out.push_str(").shift_remove(&(");
             emit_expr(out, key, mode)?;
             match default {
                 // PMAT-747 (HUNT-V14 #2): tag the absent-key dict-pop panic.
@@ -2672,7 +2672,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         // PMAT-502dk: `dict(pairs)` → a HashMap from the list of 2-tuples.
         Expr::DictFromPairs { pairs } => {
             emit_expr(out, pairs, mode)?;
-            out.push_str(".iter().cloned().collect::<std::collections::HashMap<_, _>>()");
+            out.push_str(".iter().cloned().collect::<indexmap::IndexMap<_, _>>()");
         }
         // PMAT-502dw/dx: `{k: v, **d, …}` → chain each fragment's iterator into
         // a fresh HashMap (a later entry wins, matching Python).
@@ -2699,7 +2699,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     out.push(')');
                 }
             }
-            out.push_str(".collect::<std::collections::HashMap<_, _>>()");
+            out.push_str(".collect::<indexmap::IndexMap<_, _>>()");
         }
         // PMAT-502ab: `filter(pred, xs)` → `.iter().cloned().filter(...).collect()`.
         Expr::Filter { list, lambda } => {
@@ -2750,12 +2750,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         // backend's twin arm — avoids clippy `unused_mut`).
         Expr::DictLit(pairs) => {
             if pairs.is_empty() {
-                out.push_str("std::collections::HashMap::new()");
+                out.push_str("indexmap::IndexMap::new()");
             } else {
                 // PMAT-720 (HUNT-V8 V8-EXTRA): accumulator named `__xpile_map`,
                 // not `m` — a user variable `m` would otherwise be shadowed and the
                 // bare-ident key/value would reference the HashMap (mirrors rust).
-                out.push_str("{ let mut __xpile_map = std::collections::HashMap::new(); ");
+                out.push_str("{ let mut __xpile_map = indexmap::IndexMap::new(); ");
                 for (k, v) in pairs {
                     // PMAT-699: clone bare-ident keys/values to avoid the
                     // move-then-reuse E0382 (mirrors the rust backend).

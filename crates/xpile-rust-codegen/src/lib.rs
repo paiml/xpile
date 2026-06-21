@@ -1240,7 +1240,7 @@ fn emit_stmt_indented(
         // `Stmt::SetRemove` KeyError assert.
         Stmt::DelItem { name, key, is_dict } => {
             if *is_dict {
-                write!(out, "{indent}assert!({name}.remove(&(")?;
+                write!(out, "{indent}assert!({name}.shift_remove(&(")?;
                 emit_expr(out, key, mode)?;
                 writeln!(
                     out,
@@ -1412,11 +1412,11 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
             out.push('>');
         }
         // PMAT-462: v0.2.0 Track 1.C — Python `dict[K, V]` → Rust
-        // `std::collections::HashMap<K, V>`. Owned-first. The
+        // `indexmap::IndexMap<K, V>`. Owned-first. The
         // fully-qualified path avoids requiring callers to add a
         // `use` statement.
         Type::Dict(k_ty, v_ty) => {
-            out.push_str("std::collections::HashMap<");
+            out.push_str("indexmap::IndexMap<");
             emit_type(out, k_ty)?;
             out.push_str(", ");
             emit_type(out, v_ty)?;
@@ -3004,7 +3004,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         Expr::DictPop { dict, key, default } => {
             out.push('(');
             emit_expr(out, dict, mode)?;
-            out.push_str(").remove(&(");
+            out.push_str(").shift_remove(&(");
             emit_expr(out, key, mode)?;
             match default {
                 // PMAT-747 (HUNT-V14 #2): `d.pop(k)` on an absent key raises
@@ -3237,7 +3237,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // PMAT-502dk: `dict(pairs)` → a HashMap from the list of 2-tuples.
         Expr::DictFromPairs { pairs } => {
             emit_expr(out, pairs, mode)?;
-            out.push_str(".iter().cloned().collect::<std::collections::HashMap<_, _>>()");
+            out.push_str(".iter().cloned().collect::<indexmap::IndexMap<_, _>>()");
         }
         // PMAT-502dw/dx: `{k: v, **d, …}` → chain each fragment's iterator
         // (explicit pair → `once((k, v))`; splat → `(d).iter().map(clone)`)
@@ -3265,7 +3265,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     out.push(')');
                 }
             }
-            out.push_str(".collect::<std::collections::HashMap<_, _>>()");
+            out.push_str(".collect::<indexmap::IndexMap<_, _>>()");
         }
         // PMAT-502ab: `filter(pred, xs)` → `.iter().cloned().filter(|__k| {
         // let p = __k.clone(); pred }).collect::<Vec<_>>()`.
@@ -3324,7 +3324,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             // `{ let mut __xpile_map = …; __xpile_map }` block with no inserts
             // would trip clippy's `unused_mut` under `-D warnings`.
             if pairs.is_empty() {
-                out.push_str("std::collections::HashMap::new()");
+                out.push_str("indexmap::IndexMap::new()");
             } else {
                 // PMAT-720 (HUNT-V8 V8-EXTRA): the accumulator is named
                 // `__xpile_map`, not `m` — a user variable named `m` (`{m: 1}`)
@@ -3332,7 +3332,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 // bare-ident key/value `m.clone()` referenced the HashMap, not the
                 // user's `m` (inserting the map into itself → E0275 / a wrong key).
                 // The `__xpile_*` prefix is xpile's reserved temp namespace.
-                out.push_str("{ let mut __xpile_map = std::collections::HashMap::new(); ");
+                out.push_str("{ let mut __xpile_map = indexmap::IndexMap::new(); ");
                 for (k, v) in pairs {
                     // PMAT-699: a bare-variable (`Expr::Ident`) key or value is
                     // MOVED into `__xpile_map.insert(...)`; reusing it afterward
