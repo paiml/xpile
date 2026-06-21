@@ -9034,6 +9034,21 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
         // (and an int literal in a `float` binding coerces to a float literal).
         _ => lower_value_expecting(ctx, value_expr.as_ref(), &declared_ty)?,
     };
+    // PMAT-868 (HUNT-V31 #1): a bool initializer in an EXPLICITLY int-annotated
+    // local (`n: int = True`) widens bool->i64 — Python's `True` is an int
+    // subtype. Safe HERE because the annotation is explicit; the shared return
+    // path must NOT coerce (an unannotated `def le(a,b): return a<=b` has a
+    // defaulted-I64 return but a genuine bool body). Without it the backend
+    // emitted `let n: i64 = true` (rustc E0308). Call-arg/default/container
+    // positions are a separate follow-up (they need the explicit-vs-defaulted
+    // int distinction the param-type table currently flattens).
+    let value = if matches!(declared_ty, Type::I64)
+        && matches!(infer_type_in_ctx(ctx, &value), Type::Bool)
+    {
+        bool_to_i64_cast(value)
+    } else {
+        value
+    };
     // PMAT-466 (review #3): reject an obvious annotation/initializer
     // KIND mismatch when the value is a literal (kind known exactly) —
     // e.g. `x: dict[int,int] = 5`, `x: int = [1, 2]`. Non-literal values
