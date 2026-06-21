@@ -15424,3 +15424,20 @@ fn main() {
 "#;
     assert_rustc_runs("typing_capitalized_generics", &rust, driver);
 }
+
+/// PMAT-865 (HUNT-V30 #13): pow(int, negative_int) is float in Python
+/// (pow(2,-1)==0.5); xpile's pow() stayed integer and a -> float return rejected.
+/// pow() now mirrors the ** operator's negative-exponent float rule. vs python3.
+#[test]
+fn pow_negative_exp() {
+    let rust = xpile_transpile_to_rust("pow_negative_exp.py");
+    let driver = r#"
+fn main() {
+    assert!((recip() - 0.5).abs() < 1e-12);
+    assert!((neg_exp2() - 0.0625).abs() < 1e-12);
+    assert_eq!(pos_pow(), 1024);
+    assert!((float_pow() - 8.0).abs() < 1e-12);
+}
+"#;
+    assert_rustc_runs("pow_negative_exp", &rust, driver);
+}
