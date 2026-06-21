@@ -15249,3 +15249,25 @@ fn main() {
 "#;
     assert_rustc_runs("inferred_bool_callsite", &rust, driver);
 }
+
+/// PMAT-857 (HUNT-V28 #1): str() over an Optional — str(None), str(d.get(k)) — was
+/// a lowering reject ("body produces I64"). It now lowers to
+/// `if opt.is_none() { "None" } else { <str of opt.unwrap()> }`. vs python3.
+#[test]
+fn str_of_optional() {
+    let rust = xpile_transpile_to_rust("str_of_optional.py");
+    let driver = r#"
+fn main() {
+    use std::collections::HashMap;
+    assert_eq!(from_none_lit(), "None");
+    assert_eq!(get_int_absent(HashMap::new()), "v=None");
+    let mut i = HashMap::new(); i.insert(String::from("a"), 7i64);
+    assert_eq!(get_int_present(i), "7");
+    let mut s = HashMap::new(); s.insert(String::from("a"), String::from("hi"));
+    assert_eq!(get_str(s), "hi");
+    let mut f = HashMap::new(); f.insert(String::from("a"), 1.5f64);
+    assert_eq!(get_float(f), "1.5");
+}
+"#;
+    assert_rustc_runs("str_of_optional", &rust, driver);
+}
