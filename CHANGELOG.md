@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.570] — 2026-06-21
+
+### Fixed
+
+- **PMAT-871 — leak tuple-unpack for-loop targets into the enclosing scope.** Python
+  leaks `for a, b in zip/enumerate/items` targets (a post-loop read sees the last
+  iteration's value, or the pre-loop value if empty). xpile bound `for (a, b)` as a
+  fresh pattern, shadowing pre-declared `a`/`b` → stale post-loop reads (silent data
+  corruption). The 2-tuple `ForEachPair` now applies the single-var ForEach leak
+  rewrite. HUNT-V31 (#16).
+
 ## [0.1.569] — 2026-06-21
 
 ### Fixed
