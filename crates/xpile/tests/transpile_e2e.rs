@@ -15530,3 +15530,22 @@ fn main() {
 "#;
     assert_rustc_runs("bool_to_int_positions", &rust, driver);
 }
+
+/// PMAT-870 (HUNT-V31 #9): round(x, n) with n <= -309 returned NaN (10f64.powi(-n)
+/// overflows to +inf → 0.0 * inf = NaN). Python rounds to 0; the emit now guards
+/// the overflow and returns a sign-preserving zero. vs python3.
+#[test]
+fn round_huge_negative_ndigits() {
+    let rust = xpile_transpile_to_rust("round_huge_negative_ndigits.py");
+    let driver = r#"
+fn main() {
+    assert!(huge_neg(123.456).is_finite(), "round(x, -400) must not be NaN/inf");
+    assert_eq!(huge_neg(123.456), 0.0);
+    assert!(huge_neg(-123.456).is_sign_negative(), "round(-x, -400) keeps -0.0");
+    assert_eq!(huge_neg(-123.456), 0.0);
+    assert_eq!(normal_neg(123.456), 100.0);
+    assert!((normal_pos(2.567) - 2.6).abs() < 1e-9);
+}
+"#;
+    assert_rustc_runs("round_huge_negative_ndigits", &rust, driver);
+}

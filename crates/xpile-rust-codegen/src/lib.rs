@@ -2761,12 +2761,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // PMAT-502al: `round(x, n)` (float) → Python's decimal rounding. For
         // n >= 0, format to n decimals (Rust's `{:.}` is round-half-to-even,
         // matching Python) and parse back; for n < 0, scale + round_ties_even.
+        // PMAT-870 (HUNT-V31 #9): for n <= -309, `10f64.powi(-n)` overflows to
+        // +inf, so `(x / inf).round() * inf` is `0.0 * inf` = NaN. Python rounds
+        // to the nearest 10^|n| (== 0 for huge |n|), so guard the overflow and
+        // return a sign-preserving zero (`__rx * 0.0` keeps -0.0 for negative x).
         Expr::RoundToDigits { value, ndigits } => {
             out.push_str("{ let __rx = ");
             emit_expr(out, value, mode)?;
             out.push_str("; let __rn = ");
             emit_expr(out, ndigits, mode)?;
-            out.push_str("; if __rn >= 0 { format!(\"{:.1$}\", __rx, __rn as usize).parse::<f64>().unwrap() } else { let __rp = 10f64.powi((-__rn) as i32); (__rx / __rp).round_ties_even() * __rp } }");
+            out.push_str("; if __rn >= 0 { format!(\"{:.1$}\", __rx, __rn as usize).parse::<f64>().unwrap() } else { let __rp = 10f64.powi((-__rn) as i32); if __rp.is_infinite() { __rx * 0.0 } else { (__rx / __rp).round_ties_even() * __rp } } }");
         }
         // PMAT-612: `round(int, n)` → int. For n >= 0 the int is returned
         // unchanged; for n < 0 it is rounded to the nearest multiple of
