@@ -7,6 +7,16 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.563] — 2026-06-21
+
+### Fixed
+
+- **PMAT-864 — accept capitalized `typing` generics.** `List[T]` / `Dict[K,V]` /
+  `Tuple[...]` / `Set[T]` / `FrozenSet[T]` (the older, common Python style) were
+  rejected; only lowercase builtin generics were accepted. The annotation parser
+  now normalizes them to the lowercase builtins (pure parsing, no codegen change).
+  HUNT-V30 (#10).
+
 ## [0.1.562] — 2026-06-21
 
 ### Fixed
