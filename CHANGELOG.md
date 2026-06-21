@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.558] — 2026-06-21
+
+### Fixed
+
+- **PMAT-858 — `expr or default` / `expr and y` with a non-name lead.** The
+  operand-return fold required every leading operand to be a bare name; the common
+  `d.get(k, 0) or default` / `s.strip() or default` (a method/call lead) was
+  rejected. A non-name lead is now bound to a typed temp for single evaluation
+  (matching Python's short-circuit). HUNT-V29 (#3).
+- **PMAT-859 — tuple-typed variable repeated by an int literal.** `a * 3` where
+  `a: tuple[..]` emitted `checked_mul` on a tuple (rustc E0599); `try_repeat` only
+  handled a tuple literal. A tuple-typed value × compile-time int literal now
+  expands element-wise (a runtime count remains unsupported — Rust tuples aren't
+  variadic). HUNT-V29 (#4).
+
+### Changed
+
+- R6 contract-integrity tooling: `docs/roadmaps/queue.yaml` autonomous work-queue
+  (next-pick source of truth) + the citation→contract CI gate now in place.
+
 ## [0.1.557] — 2026-06-21
 
 ### Added
