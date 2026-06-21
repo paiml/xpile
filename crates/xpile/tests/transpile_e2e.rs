@@ -15487,3 +15487,21 @@ fn main() {
 "#;
     assert_rustc_runs("chained_compare_eval_order", &rust, driver);
 }
+
+/// PMAT-868 (HUNT-V31 #1, narrow): a bool initializer in an EXPLICITLY
+/// int-annotated local (`n: int = True`, `flag: int = x > 0`) widens to i64
+/// (Python True is an int subtype); xpile emitted `let n: i64 = true` (E0308).
+/// Done at the annotated-assign site (explicit annotation). vs python3.
+#[test]
+fn bool_int_annotated_local() {
+    let rust = xpile_transpile_to_rust("bool_int_annotated_local.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(from_true(), 2);
+    assert_eq!(from_false(), 10);
+    assert_eq!(from_compare(5), 1);
+    assert_eq!(from_compare(-5), 0);
+}
+"#;
+    assert_rustc_runs("bool_int_annotated_local", &rust, driver);
+}
