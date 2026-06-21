@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.559] — 2026-06-21
+
+### Added
+
+- **PMAT-860 (R6 contract-integrity, slice 3) — `C-PY-FLOAT-ARITH` authored; float
+  code now cited.** `float` shipped emitting `f64` with no on-disk contract (the
+  last core scalar emitting uncited). New `contracts/py-float-arith-v1.yaml` +
+  `contracts/lean/PyFloatArith.lean` (a sorry-free STRUCTURAL Diamond over the
+  IEEE-754 bit pattern — Lean's `Float` is opaque, so arithmetic Diamonds are
+  deferred). `applicable_contracts()` now cites `C-PY-FLOAT-ARITH` for float-typed
+  code, and the citation-integrity gate requires it. 16 contracts; depth-1
+  universal holds (16==16).
+
 ## [0.1.558] — 2026-06-21
 
 ### Fixed

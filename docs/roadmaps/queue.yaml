@@ -17,7 +17,7 @@ invariant: "never (queue has OPEN items AND main loop idle); a turn ends only on
 queue:
   # ---- R6 contract-integrity (the differentiator; finish before breadth) ----
   - id: R6-slice3
-    status: open
+    status: done
     title: "Author C-PY-FLOAT-ARITH contract (Lean theorem + Kani harness + QUORUM, depth-1 Diamond) so float stops emitting uncited; wire float citation in applicable_contracts()"
     tier: R6
     notes: "BIG/multi-file (refinement_proofs.rs + kani_verify.rs iterate all contracts). The depth gate already allows a new contract at depth-1 (assert_grandfathered_floor). Reuse c-int-arith-v1.yaml as template. = R8/PMAT-477 too."
