@@ -885,6 +885,14 @@ fn emit_stmt_indented(
                         write!(out, "[__aidx{p} as usize]")?;
                     }
                     write!(out, ".len() as i64 + __ai{n} }} else {{ __ai{n} }}; ")?;
+                    // PMAT-863 (HUNT-V30 #3): bounds-check the WRITE path (mirror
+                    // the Rust backend) — out-of-range subscript-assign otherwise
+                    // silently wrote a wrong slot. Python IndexError.
+                    write!(out, "if __aidx{n} < 0 || __aidx{n} as usize >= {list_name}")?;
+                    for p in 0..n {
+                        write!(out, "[__aidx{p} as usize]")?;
+                    }
+                    write!(out, ".len() {{ panic!(\"xpile: IndexError: list assignment index out of range\"); }} ")?;
                 }
                 write!(out, "{list_name}")?;
                 for n in 0..indices.len() {

@@ -6740,17 +6740,15 @@ fn lower_subscript_assign_target(
     let single = (*sub.slice).clone();
     match ctx.name_types.get(&receiver).cloned() {
         Some(Type::List(_)) => {
-            // PMAT-560: negative-literal index `xs[-k] = v` → `xs[len(xs) - k] = v`
-            // (Python from-the-end assignment), mirroring the read-side desugar
-            // (PMAT-502s). Without this the index emits `(-k) as usize` →
-            // `usize::MAX` → an out-of-bounds panic. A negative literal parses as
-            // `UnaryOp(USub, Int(k))`.
+            // PMAT-560/PMAT-863 (HUNT-V30 #3): negative-literal index `xs[-k] = v`
+            // is Python from-the-end assignment. Pass the RAW negative literal —
+            // the codegen's any-runtime path does the single `len + neg`
+            // normalization AND (PMAT-863) the bounds check. (Previously this
+            // pre-folded to `len - k`, which codegen then wrapped a SECOND time:
+            // `xs[-5]` on a len-3 list became `len + (len-5)` = 1, silently
+            // writing an in-bounds slot instead of raising IndexError.)
             let index = if let Some(k) = neg_literal_int(&single) {
-                Expr::BinOp {
-                    op: BinOp::Sub,
-                    lhs: Box::new(Expr::Len(Box::new(Expr::Ident(receiver.clone())))),
-                    rhs: Box::new(Expr::LitInt(k)),
-                }
+                Expr::LitInt(-k)
             } else {
                 // PMAT-466: ctx-aware so a dict read used as a list index
                 // (`xs[d[k]] = v`) lowers to `DictGet`, not a nested list index.
