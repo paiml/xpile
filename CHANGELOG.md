@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.554] — 2026-06-21
+
+### Fixed
+
+- **PMAT-856 — infer an unannotated predicate return as bool at call sites.** A
+  function with an inferred (unannotated) bool return — `def gt0(x): return x > 0`
+  — emitted `-> bool` in its signature, but the call-site `FnSig` defaulted to
+  i64. So `r = gt0(5)` bound i64 (E0308), `if gt0(5)` added `!= 0i64` (E0308), and
+  `str(gt0(5))` printed "true" not "True" (silent-wrong). The `FnSig` pre-pass now
+  infers a return type of `bool` from a trailing `return <comparison / not /
+  bool-literal>` (matching the emitted signature) instead of the blanket I64
+  default; arithmetic returns keep I64. HUNT-V28 (#3).
+
 ## [0.1.553] — 2026-06-20
 
 ### Fixed
