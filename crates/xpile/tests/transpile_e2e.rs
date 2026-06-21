@@ -15682,3 +15682,28 @@ fn main() {
 "#;
     assert_rustc_runs("dict_insertion_order", &rust, driver);
 }
+
+/// PMAT-875 (integration regression): realistic MULTI-FEATURE programs that
+/// exercise feature interactions the single-feature micro-fixtures miss. Confirmed
+/// vs python3; locks in integration-level correctness (HUNT-V32 found the
+/// micro-surface clean, so this raises coverage to realistic programs).
+#[test]
+fn integ_word_freq() {
+    let rust = xpile_transpile_to_rust("integ_word_freq.py");
+    let driver = r#"fn main() { assert_eq!(top_word("a b a c a b a".to_string()), "a:4"); }"#;
+    assert_rustc_runs("integ_word_freq", &rust, driver);
+}
+
+#[test]
+fn integ_float_stats() {
+    let rust = xpile_transpile_to_rust("integ_float_stats.py");
+    let driver = r#"fn main() { assert_eq!(stats(vec![3.0, 1.0, 4.0, 1.5]), "1.0/4.0/2.375"); }"#;
+    assert_rustc_runs("integ_float_stats", &rust, driver);
+}
+
+#[test]
+fn integ_paren_balance() {
+    let rust = xpile_transpile_to_rust("integ_paren_balance.py");
+    let driver = r#"fn main() { assert_eq!(balance("(()(()))".to_string()), 30); }"#;
+    assert_rustc_runs("integ_paren_balance", &rust, driver);
+}
