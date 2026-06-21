@@ -965,6 +965,23 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                             *counts.entry(it.id.to_string()).or_insert(0) += 2;
                         }
                     }
+                } else if let ast::Expr::Tuple(tup) = &*f.target {
+                    if tup.elts.len() == 2 {
+                        // PMAT-871 (HUNT-V31 #16): a 2-tuple for-target
+                        // (`for a, b in zip/enumerate/items`) lowers to a
+                        // `ForEachPair` that LEAKS each target into the enclosing
+                        // scope (reassigns it per iteration). Count each Name so a
+                        // pre-declared outer var becomes `let mut` (else rustc
+                        // E0384 on the leak assign); a fresh target has no `Let` to
+                        // mark, so this is harmless. NOT the arity-3+ path — that
+                        // desugars to a fresh `let (a, b, c) = …` per iteration (no
+                        // leak), and marking it mut would corrupt the pattern.
+                        for elt in &tup.elts {
+                            if let ast::Expr::Name(n) = elt {
+                                *counts.entry(n.id.to_string()).or_insert(0) += 2;
+                            }
+                        }
+                    }
                 }
                 let inner = walk_counts(&f.body, /*in_loop=*/ true);
                 for (name, c) in inner {
@@ -2238,6 +2255,36 @@ fn infer_unannotated_return(body: &[ast::Stmt]) -> Type {
         }
     }
     Type::I64
+}
+
+/// PMAT-871 (HUNT-V31 #16): the tuple-unpack analogue of the single-var ForEach
+/// loop-var leak (PMAT-784/838). Python leaks `for a, b in …` targets into the
+/// enclosing scope (a post-loop read sees the LAST iteration's value). When a
+/// target has a DURABLE outer binding of the element's type (`was_leakable` AND
+/// its pre-loop type equals the element type now recorded for it), rename the loop
+/// binding to a fresh `__fe{N}` and return an `Assign` copying it into the outer
+/// var each iteration; otherwise keep the native binding and mark it loop-scoped.
+/// `pre_ty` is the target's name_type captured BEFORE the loop's own inserts.
+fn pair_leak_decision(
+    ctx: &mut LoweringCtx,
+    target: &str,
+    was_leakable: bool,
+    pre_ty: &Option<Type>,
+) -> (String, Option<Stmt>) {
+    let leak = was_leakable && pre_ty.is_some() && *pre_ty == ctx.name_types.get(target).cloned();
+    if leak {
+        let tmp = ctx.fresh_foreach_leak();
+        (
+            tmp.clone(),
+            Some(Stmt::Assign {
+                name: target.to_string(),
+                value: Expr::Ident(tmp),
+            }),
+        )
+    } else {
+        ctx.loop_scoped.insert(target.to_string());
+        (target.to_string(), None)
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4448,6 +4495,17 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                         if arity_ok {
                             let first = a.id.to_string();
                             let second = b.id.to_string();
+                            // PMAT-871 (HUNT-V31 #16): capture each target's
+                            // pre-loop binding state BEFORE the loop's own
+                            // name_types inserts, so the leak decision below can
+                            // tell a durable outer var (`a: int = 0; for a, b …`)
+                            // from a fresh loop-local.
+                            let first_leakable =
+                                ctx.bound.contains(&first) && !ctx.loop_scoped.contains(&first);
+                            let second_leakable =
+                                ctx.bound.contains(&second) && !ctx.loop_scoped.contains(&second);
+                            let pre_first_ty = ctx.name_types.get(&first).cloned();
+                            let pre_second_ty = ctx.name_types.get(&second).cloned();
                             let mut iter_expr = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                             // PMAT-544: `enumerate(s)` / `zip(s, …)` over a string
                             // iterate its characters (each a 1-char string) —
@@ -4543,15 +4601,30 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                                 ctx.name_types.insert(second.clone(), (*elem2).clone());
                                 PairIterKind::Zip(Box::new(other))
                             };
+                            // PMAT-871: leak the targets into the enclosing scope
+                            // (rename to a fresh temp + assign the outer var each
+                            // iteration) when they have a durable outer binding —
+                            // `name_types.get` is the element type the kind block
+                            // just recorded. Mirrors the single-var ForEach leak.
+                            let (first_loop, first_assign) =
+                                pair_leak_decision(ctx, &first, first_leakable, &pre_first_ty);
+                            let (second_loop, second_assign) =
+                                pair_leak_decision(ctx, &second, second_leakable, &pre_second_ty);
                             ctx.bound.insert(first.clone());
                             ctx.bound.insert(second.clone());
                             let mut body: Vec<Stmt> = Vec::new();
+                            if let Some(s) = first_assign {
+                                body.push(s);
+                            }
+                            if let Some(s) = second_assign {
+                                body.push(s);
+                            }
                             for s in f.body {
                                 body.extend(lower_block_stmt(ctx, s)?);
                             }
                             return Ok(vec![Stmt::ForEachPair {
-                                first,
-                                second,
+                                first: first_loop,
+                                second: second_loop,
                                 iter: iter_expr,
                                 kind,
                                 body,
@@ -4569,17 +4642,36 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                         if tys.len() == 2 {
                             let first = a.id.to_string();
                             let second = b.id.to_string();
+                            // PMAT-871 (HUNT-V31 #16): leak loop-var support, as in
+                            // the enumerate/zip branch — capture pre-loop state
+                            // BEFORE the inserts.
+                            let first_leakable =
+                                ctx.bound.contains(&first) && !ctx.loop_scoped.contains(&first);
+                            let second_leakable =
+                                ctx.bound.contains(&second) && !ctx.loop_scoped.contains(&second);
+                            let pre_first_ty = ctx.name_types.get(&first).cloned();
+                            let pre_second_ty = ctx.name_types.get(&second).cloned();
                             ctx.name_types.insert(first.clone(), tys[0].clone());
                             ctx.name_types.insert(second.clone(), tys[1].clone());
+                            let (first_loop, first_assign) =
+                                pair_leak_decision(ctx, &first, first_leakable, &pre_first_ty);
+                            let (second_loop, second_assign) =
+                                pair_leak_decision(ctx, &second, second_leakable, &pre_second_ty);
                             ctx.bound.insert(first.clone());
                             ctx.bound.insert(second.clone());
                             let mut body: Vec<Stmt> = Vec::new();
+                            if let Some(s) = first_assign {
+                                body.push(s);
+                            }
+                            if let Some(s) = second_assign {
+                                body.push(s);
+                            }
                             for s in f.body {
                                 body.extend(lower_block_stmt(ctx, s)?);
                             }
                             return Ok(vec![Stmt::ForEachPair {
-                                first,
-                                second,
+                                first: first_loop,
+                                second: second_loop,
                                 iter: iter_expr,
                                 kind: PairIterKind::Pairs,
                                 body,
