@@ -1,0 +1,60 @@
+metadata:
+  id: C-PY-FLOAT-ARITH
+  version: "1.0.0"
+  created: "2026-06-21"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Python `float` (IEEE-754 double) as xpile lowers it to Rust `f64`
+    (`Type::F64`, `Expr::LitFloat`, `Expr::FloatBinOp` — plain infix, IEEE-754
+    saturating, true `/` division). Layer 1 of the contract taxonomy, the
+    float sibling of `C-PY-INT-ARITH`.
+
+    This contract closes the capability-ahead-of-contract gap recorded in
+    audit-design.md §6/§7.3 (R6 / PMAT-475 / PMAT-477): `float` shipped at
+    v0.1.10 emitting `f64`, and after PMAT-475 slice 1 str/list/dict each cite
+    their type-translation contract — but `float` had NO on-disk contract, so
+    float code emitted UNCITED. The citation now resolves to this YAML
+    (`Function::applicable_contracts()` cites `C-PY-FLOAT-ARITH` whenever a
+    float is in play). It joins the substrate at depth-1 under the
+    R6-grandfathered Diamond gate (PMAT-475a) — NOT forced to the depth-13
+    floor; deeper tiers ratchet later.
+
+    Modelling note: Lean's `Float` is opaque, so float arithmetic carries no
+    provable algebraic structure (the reason this was deferred). Mirroring
+    `C-XLATE-PY-STR-TO-RUST-STRING` (whose Diamonds are STRUCTURAL, not
+    arithmetic), the tier-defining theorem is structure-extensionality over the
+    IEEE-754 bit-pattern model — genuinely provable, sorry-free.
+  references:
+    - "IEEE 754-2019 (binary64)"
+    - "CPython: float is IEEE-754 double; repr() shortest round-trip"
+    - "Rust std: f64 (IEEE-754 binary64); plain infix +,-,*,/ (saturating, true division)"
+    - "contracts/xlate-py-str-to-rust-string-v1.yaml (the structural-Diamond template)"
+    - "docs/specifications/audit-design.md §6 (Capability-vs-Contract Drift), §7.3"
+  depends_on: []
+
+equations:
+  # Depth-1 Diamond (PMAT-475/477): the single tier-defining equation that
+  # registers C-PY-FLOAT-ARITH at depth-1. Structural (bit-pattern
+  # extensionality), mirroring the str contract's structural Diamonds — Lean's
+  # Float is opaque so arithmetic Diamonds are not yet provable.
+  py_float_structure_extensionality_diamond:
+    lean_theorem: "XpileContracts.CPyFloatArith.py_float_structure_extensionality_diamond"
+    lean_file: "contracts/lean/PyFloatArith.lean"
+    formula: |
+      ∀ a b : PyFloat.
+        a.bits = b.bits → a = b
+      (a Python float is determined by its IEEE-754 bit pattern; xpile emits f64)
+    domain: |
+      Any Python `float` values. xpile lowers `float` to Rust `f64`; the Diamond
+      captures structure-extensionality of the IEEE-754 bit-pattern model.
+    invariants:
+      - "FIRST Diamond-tier theorem of C-PY-FLOAT-ARITH (registers it at depth-1)"
+      - "structure extensionality on the IEEE-754 bit pattern (sorry-free)"
+      - "float is modelled by its bits because Lean's Float is opaque"
+    preconditions:
+      - "the operands are Python float (lowered to Rust f64), not int (i64/bigint)"
+    postconditions:
+      - "emitted Rust uses f64; float-typed code carries // xpile-contract: C-PY-FLOAT-ARITH"
+      - "float and int integer lanes stay observably distinct (f64 vs i64)"
