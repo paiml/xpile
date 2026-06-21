@@ -15232,3 +15232,20 @@ fn main() {
 "#;
     assert_rustc_runs("membership_needle_coerce", &rust, driver);
 }
+
+/// PMAT-856 (HUNT-V28 #3): a function with an inferred (unannotated) bool return
+/// got `-> bool` in its signature, but the call-site FnSig defaulted to i64 → a
+/// let-bind/condition was E0308 and str() printed "true" not "True". The pre-pass
+/// now infers bool for a trailing comparison/not/bool-literal. Cross-checked vs python3.
+#[test]
+fn inferred_bool_callsite() {
+    let rust = xpile_transpile_to_rust("inferred_bool_callsite.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(use_let(), 1);
+    assert_eq!(use_cond(), 7);
+    assert_eq!(use_str(), "True,False");
+}
+"#;
+    assert_rustc_runs("inferred_bool_callsite", &rust, driver);
+}
