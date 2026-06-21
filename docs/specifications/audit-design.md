@@ -140,6 +140,31 @@ kani_harnesses:
 
 By completing this cycle, `xpile` transforms a stochastic hallucination (an LLM forgetting a C macro) into a deterministic compiler guarantee. The pipeline now hard-fails at the Kani step if this memory safety invariant is violated, permanently falsifying Hypothesis 2 (Semantic Equivalence vs. Memory Safety) for this specific edge case.
 
+### Case Study: Capability-vs-Contract Drift (root-caused 2026-06-21)
+**The Problem:** A multi-month autonomous run shipped ~900 correctness slices (PMAT-470..857, the R1..R10 "Tranche 2" ledger) that brought a broad real-world Python subset into exact agreement with CPython. Yet `str`/`list`/`dict`/`float`/`set` constructs transpile to Rust carrying **no `// xpile-contract:` citation** (`len(s)` and `x + 1.0` emit zero), `C-PY-FLOAT-ARITH` was never authored, and the substrate holds **15 contracts against 925 roadmap items**. The project's *differentiator* — "every emitted construct is under a provable contract" — is **falsified in practice (R6)**, and the *north-star* — hybrid Python+C FFI transpilation (rollout Phase 5) — remains unbuilt. Effort flowed to the two goals that least define xpile (idiom breadth; the now-frozen Diamond-depth grind) while the two that *do* define it starved. A human flagged it ("wrong!"), not a gate.
+
+#### The Five-Whys Analysis
+1.  **Why is the every-construct-under-contract claim false?**
+    New capability ships without citing a contract: `Function::applicable_contracts()` (`crates/xpile-meta-hir/src/lib.rs:135`) returns `["C-PY-INT-ARITH"]` only when int arithmetic is present and `[]` otherwise — it never detects `str`/`list`/`dict`/`float`/`set`, so those constructs emit uncited code even though `C-XLATE-PY-{STR,LIST,DICT}` contracts already exist on disk.
+2.  **Why does `applicable_contracts()` under-detect?**
+    The per-slice definition-of-done was "the idiom compiles and matches CPython" (the differential `python3`-vs-`rustc` hunt loop). Authoring or wiring a contract was never part of shipping a slice.
+3.  **Why was contract-coverage left out of the slice DoD?**
+    No gate enforced it. There is no citation→contract CI check; the *only* contract-quality gate, `diamond_coverage.rs`, measures Diamond *depth*, not capability *coverage*.
+4.  **Why didn't the depth gate catch the drift?**
+    The Diamond ratchet was frozen at depth-13 (PMAT-465) after ~80% of that work was judged "mechanical broadening against a narrow surface," AND its `depth_N_plus == contracts_total` invariant actively *penalizes* adding contracts (a new YAML trips the gate). The project removed its contract-growth pressure without installing a replacement integrity gate.
+5.  **Why did freezing leave no replacement? (ROOT CAUSE)**
+    The operational "roadmap" had become a flat correctness-slice ledger that optimizes a *proxy* metric — Python-idiom coverage — with **no artifact linking shipped capability → required contract → project goal**. With nothing tying the proxy to the goal hierarchy, the path of least resistance (grind idioms) silently diverged from the project's defining goals, and only out-of-band human review surfaced it.
+
+#### The Provable-Contract Fix (R6 / PMAT-475, elevated)
+The backstop is a **citation-integrity CI gate** — the deterministic replacement for the frozen depth pressure:
+1.  Transpile a representative corpus; assert (a) every emitted `// xpile-contract: X` resolves to a `contracts/*.yaml`, and (b) every contract-bearing construct (`int`/`str`/`list`/`dict`/`float`/`set`) *does* cite its contract. This fails any future contractless slice.
+2.  Extend `applicable_contracts()` with `uses_str`/`uses_list`/`uses_dict`/`uses_float`/`uses_set` body-walkers.
+3.  Author `C-PY-FLOAT-ARITH` (R8/PMAT-477).
+4.  Decouple `diamond_coverage.rs` from `contracts_total` so new contracts can land without the treadmill.
+5.  Make the per-slice DoD "carries/cites a real contract," and record the goal hierarchy (north-star → provability → consolidation) in `docs` + memory so the proxy metric cannot silently diverge again.
+
+This converts a process drift (optimizing breadth because breadth was the only thing measured) into a deterministic compiler guarantee: after the gate lands, a construct *cannot* ship without a resolving contract, and the "every construct under contract" claim becomes CI-enforced rather than aspirational.
+
 ---
 
 ## 7. 2026-Q3 SOTA-Gap Dossier (XPILE-SOTA-001, published 2026-06-12)
