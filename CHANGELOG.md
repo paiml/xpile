@@ -7,6 +7,15 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.569] — 2026-06-21
+
+### Fixed
+
+- **PMAT-870 — guard `round(x, n)` overflow for `n <= -309`.** `10f64.powi(-n)`
+  overflows to +inf, so `(x / inf).round() * inf` was `0.0 * inf` = NaN. Python
+  rounds to the nearest 10^|n| (== 0 for huge |n|); both backends now guard the
+  overflow and return a sign-preserving zero (`-0.0` for negative x). HUNT-V31 (#9).
+
 ## [0.1.568] — 2026-06-21
 
 ### Fixed
