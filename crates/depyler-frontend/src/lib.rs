@@ -16960,7 +16960,14 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
     // Wrap outward from op n-2 down to op 0.
     for i in (0..n - 1).rev() {
         let left = if i == 0 {
-            operands[0].clone()
+            // PMAT-867 (HUNT-V31 #3): bind the FIRST operand to `__t0` (below) so
+            // it evaluates BEFORE `let __t1 = operands[1]` — Python is strict
+            // left-to-right. The old inline form ran the `let __t1 = M()` stmt
+            // before the `if (L() < __t1)` condition, so `a < b < c` evaluated b
+            // before a (wrong stdout order, and a wrong boolean under shared
+            // mutable state). Both __t0 and __t1 are eager (Python evaluates the
+            // first two operands unconditionally); operands 2.. stay lazy.
+            Expr::Ident(temp(0))
         } else {
             Expr::Ident(temp(i))
         };
@@ -16972,13 +16979,25 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
             Expr::Ident(temp(i + 1)),
             &op_types[i + 1],
         )?;
+        let mut stmts = vec![Stmt::Let {
+            name: temp(i + 1),
+            ty: op_types[i + 1].clone(),
+            value: operands[i + 1].clone(),
+            mutable: false,
+        }];
+        if i == 0 {
+            stmts.insert(
+                0,
+                Stmt::Let {
+                    name: temp(0),
+                    ty: op_types[0].clone(),
+                    value: operands[0].clone(),
+                    mutable: false,
+                },
+            );
+        }
         inner = Expr::Block(Box::new(Block {
-            stmts: vec![Stmt::Let {
-                name: temp(i + 1),
-                ty: op_types[i + 1].clone(),
-                value: operands[i + 1].clone(),
-                mutable: false,
-            }],
+            stmts,
             trailing_return: Expr::IfExpr {
                 cond: Box::new(cmp),
                 then_expr: Box::new(inner),

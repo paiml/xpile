@@ -2506,13 +2506,14 @@ fn main() {
 #[test]
 fn chained_compare() {
     let rust = xpile_transpile_to_rust("chained_compare.py");
-    // PMAT-672: chained comparison evaluates each operand exactly once AND
-    // short-circuits like Python — a right-nested form binds each shared operand
-    // to a temp the moment it is reached, inside the `if` of the prior compare,
-    // so the trailing operand is only evaluated when the earlier compare holds.
+    // PMAT-672 / PMAT-867: chained comparison evaluates each operand exactly once,
+    // STRICTLY LEFT-TO-RIGHT, AND short-circuits like Python — a right-nested form
+    // binds each shared operand to a temp the moment it is reached, inside the `if`
+    // of the prior compare. PMAT-867: the FIRST operand is bound to `__t0` BEFORE
+    // `__t1` (the middle), so `a <= b <= c` evaluates `a` before `b`.
     assert!(
-        rust.contains("if (lo <= __t1) { (__t1 <= hi) } else { false }"),
-        "expected right-nested short-circuiting chained comparison, got:\n{rust}"
+        rust.contains("if (__t0 <= __t1) { (__t1 <= hi) } else { false }"),
+        "expected left-to-right right-nested short-circuiting chained comparison, got:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -15459,4 +15460,30 @@ fn main() {
 }
 "#;
     assert_rustc_runs("inf_float_literal", &rust, driver);
+}
+
+/// PMAT-867 (HUNT-V31 #3): a chained comparison must evaluate operands strictly
+/// left-to-right; the right-nested lowering bound the middle (__t1) before the
+/// left, so `a < b < c` ran `b` before `a`. The first operand now binds to __t0
+/// before __t1. Asserts the emit order + runtime boolean correctness vs python3.
+#[test]
+fn chained_compare_eval_order() {
+    let rust = xpile_transpile_to_rust("chained_compare_eval_order.py");
+    let i0 = rust.find("let __t0").expect("first operand bound to __t0");
+    let i1 = rust.find("let __t1").expect("middle operand bound to __t1");
+    assert!(
+        i0 < i1,
+        "first operand (__t0) must bind before the middle (__t1):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(in_range(4), true);
+    assert_eq!(in_range(11), false);
+    assert_eq!(strict(4), true);
+    assert_eq!(strict(3), false);
+    assert_eq!(triple(1, 2, 3), true);
+    assert_eq!(triple(3, 2, 1), false);
+}
+"#;
+    assert_rustc_runs("chained_compare_eval_order", &rust, driver);
 }
