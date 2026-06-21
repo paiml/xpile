@@ -7,6 +7,15 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.561] — 2026-06-21
+
+### Fixed
+
+- **PMAT-862 — `ZeroDivisionError` messages match CPython.** float `%` by zero
+  emitted "float modulo" (CPython: "float modulo by zero"); int/int true division
+  `1/0` emitted "float division by zero" (CPython: "division by zero" — only a
+  genuinely-float operand yields the "float ..." form). HUNT-V29 (#9).
+
 ## [0.1.560] — 2026-06-21
 
 ### Added
