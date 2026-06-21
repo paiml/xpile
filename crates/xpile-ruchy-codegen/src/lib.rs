@@ -2277,13 +2277,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str(").round_ties_even(); if !__rti.is_finite() { panic!(\"xpile: round() of a non-finite float (Python OverflowError/ValueError)\"); } if __rti < (i64::MIN as f64) || __rti >= (i64::MAX as f64) { panic!(\"xpile: round() out of i64 range; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"); } __rti as i64 }");
         }
         // PMAT-502al: `round(x, n)` (float) → Python's decimal rounding
-        // (format-to-n-decimals for n >= 0, scale for n < 0).
+        // (format-to-n-decimals for n >= 0, scale for n < 0). PMAT-870
+        // (HUNT-V31 #9): guard the n <= -309 overflow (`10f64.powi(-n)` → +inf →
+        // `0.0 * inf` = NaN); Python rounds to 0, so return a sign-preserving
+        // zero (mirror the Rust backend).
         Expr::RoundToDigits { value, ndigits } => {
             out.push_str("{ let __rx = ");
             emit_expr(out, value, mode)?;
             out.push_str("; let __rn = ");
             emit_expr(out, ndigits, mode)?;
-            out.push_str("; if __rn >= 0 { format!(\"{:.1$}\", __rx, __rn as usize).parse::<f64>().unwrap() } else { let __rp = 10f64.powi((-__rn) as i32); (__rx / __rp).round_ties_even() * __rp } }");
+            out.push_str("; if __rn >= 0 { format!(\"{:.1$}\", __rx, __rn as usize).parse::<f64>().unwrap() } else { let __rp = 10f64.powi((-__rn) as i32); if __rp.is_infinite() { __rx * 0.0 } else { (__rx / __rp).round_ties_even() * __rp } } }");
         }
         // PMAT-612: `round(int, n)` → int (banker's rounding for n < 0, identity
         // for n >= 0; i128 arithmetic, fails loud out of i64 range). Mirrors the
