@@ -7,6 +7,16 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.564] — 2026-06-21
+
+### Fixed
+
+- **PMAT-865 — `pow(int, negative_int)` takes the float path.** Python
+  `pow(2, -1)` == 0.5, but xpile's `pow()` kept int operands on the integer path
+  (`checked_pow`), so a `-> float` return rejected — asymmetric with the `**`
+  operator, which already floats a negative exponent. `pow()` now mirrors that
+  rule (statically-negative exponent → `powf`). HUNT-V30 (#13).
+
 ## [0.1.563] — 2026-06-21
 
 ### Fixed
