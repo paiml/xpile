@@ -11,7 +11,7 @@
 # contract-carrying fidelity ahead of contractless breadth). Pulled from the
 # corrected roadmap (memory project-roadmap-goals) + HUNT-V29 (34 confirmed).
 
-updated: 2026-06-21
+updated: 2026-06-21 (V29-3 expr-or-default + V29-4 tuple-repeat shipped; R6-slice3 float-contract deferred — needs 1 Lean theorem + diamond eq + quorum entry, dedicated slice)
 invariant: "never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched"
 
 queue:
@@ -32,7 +32,7 @@ queue:
 
   # ---- HUNT-V29 contract-carrying fidelity (cited+gated by construction) ----
   - id: V29-4
-    status: open
+    status: done
     title: "Tuple */+=  lowered as scalar checked_mul/checked_add on a tuple (E0599 / wrong arity); extend try_repeat + lower_aug_assign to element-wise tuple expand"
     severity: silent-wrong/invalid-rust
   - id: V29-5
