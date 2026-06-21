@@ -15271,3 +15271,47 @@ fn main() {
 "#;
     assert_rustc_runs("str_of_optional", &rust, driver);
 }
+
+/// PMAT-475 (R6): str/list/dict constructs must cite their already-on-disk
+/// type-translation contracts. applicable_contracts() previously cited only
+/// C-PY-INT-ARITH, so str/list/dict code shipped uncited — the capability-vs-
+/// contract drift (audit-design.md §6). The signal is the types in play
+/// (params + return + local let/loop bindings, recursing compound types).
+#[test]
+fn contract_citation_types() {
+    let rust = xpile_transpile_to_rust("contract_citation_types.py");
+    assert!(
+        rust.contains("// xpile-contract: C-XLATE-PY-STR-TO-RUST-STRING\npub fn uses_str"),
+        "str fn must cite the str contract:\n{rust}"
+    );
+    assert!(
+        rust.contains("// xpile-contract: C-XLATE-PY-LIST-TO-VEC\npub fn uses_list"),
+        "list fn must cite the list contract:\n{rust}"
+    );
+    assert!(
+        rust.contains("// xpile-contract: C-XLATE-PY-DICT-TO-HASHMAP\npub fn uses_dict_param"),
+        "dict-param fn must cite the dict contract:\n{rust}"
+    );
+    // local-only dict (not in the signature) is detected via the body let-type walk
+    assert!(
+        rust.contains("// xpile-contract: C-XLATE-PY-DICT-TO-HASHMAP\npub fn uses_dict_local"),
+        "dict-local fn must cite the dict contract:\n{rust}"
+    );
+    // int-only fn keeps citing exactly the int-arith contract (no spurious extras)
+    assert!(
+        rust.contains("// xpile-contract: C-PY-INT-ARITH\npub fn uses_int_only"),
+        "int-only fn must cite only the int-arith contract:\n{rust}"
+    );
+    // it must compile and run
+    let driver = r#"
+fn main() {
+    assert_eq!(uses_str(String::from("abc")), 3);
+    assert_eq!(uses_list(vec![7, 8]), 7);
+    let mut m = std::collections::HashMap::new(); m.insert(0i64, 9i64);
+    assert_eq!(uses_dict_param(m), 9);
+    assert_eq!(uses_dict_local(0), 0);
+    assert_eq!(uses_int_only(2, 3), 5);
+}
+"#;
+    assert_rustc_runs("contract_citation_types", &rust, driver);
+}

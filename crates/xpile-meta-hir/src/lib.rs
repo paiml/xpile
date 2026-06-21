@@ -133,11 +133,38 @@ impl Function {
     /// Comparisons (`==`, `<`, etc.), logicals (`&&`, `!`), and
     /// constant-only / call-only bodies don't trigger the citation.
     pub fn applicable_contracts(&self) -> Vec<&'static str> {
+        let mut ids = Vec::new();
         if self.uses_int_arithmetic() {
-            vec!["C-PY-INT-ARITH"]
-        } else {
-            Vec::new()
+            ids.push("C-PY-INT-ARITH");
         }
+        // PMAT-475 (R6): cite the type-translation contracts when the function
+        // takes, returns, or binds a str / list / dict. These contracts exist
+        // on disk (xlate-py-{str,list,dict}-*.yaml) but were never wired into
+        // citation emission, so str/list/dict code shipped UNCITED — the
+        // capability-vs-contract drift (audit-design.md §6). The signal is the
+        // TYPES in play (params + return + body `let`/loop bindings, recursing
+        // into compound types) because these contracts govern the type
+        // translation itself. Float/set are deferred: C-PY-FLOAT-ARITH and a
+        // set contract are not yet authored (cite only contracts that exist).
+        let mut tys: Vec<&Type> = self.params.iter().map(|p| &p.ty).collect();
+        tys.push(&self.return_type);
+        collect_block_let_types(&self.body.stmts, &mut tys);
+        if tys.iter().any(|t| type_any(t, &|x| matches!(x, Type::Str))) {
+            ids.push("C-XLATE-PY-STR-TO-RUST-STRING");
+        }
+        if tys
+            .iter()
+            .any(|t| type_any(t, &|x| matches!(x, Type::List(_))))
+        {
+            ids.push("C-XLATE-PY-LIST-TO-VEC");
+        }
+        if tys
+            .iter()
+            .any(|t| type_any(t, &|x| matches!(x, Type::Dict(_, _))))
+        {
+            ids.push("C-XLATE-PY-DICT-TO-HASHMAP");
+        }
+        ids
     }
 
     /// True if any expression in the function body uses an op that
@@ -151,6 +178,48 @@ impl Function {
             }
         }
         expr_has_int_arith(&self.body.trailing_return)
+    }
+}
+
+/// PMAT-475 (R6): true if any node in the type tree satisfies `f`, recursing
+/// into element / key / value / member types of compound types. Lets a
+/// `dict[str, list[int]]` trigger the str, list, AND dict contracts.
+fn type_any(t: &Type, f: &dyn Fn(&Type) -> bool) -> bool {
+    if f(t) {
+        return true;
+    }
+    match t {
+        Type::List(inner) | Type::Set(inner) | Type::Optional(inner) => type_any(inner, f),
+        Type::Dict(k, v) => type_any(k, f) || type_any(v, f),
+        Type::Tuple(elems) => elems.iter().any(|e| type_any(e, f)),
+        _ => false,
+    }
+}
+
+/// PMAT-475 (R6): collect the declared type of every `let` binding (and loop
+/// element type) reachable in a statement list, recursing nested blocks — so a
+/// str/list/dict used only in a local still triggers its contract citation.
+fn collect_block_let_types<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Type>) {
+    for s in stmts {
+        match s {
+            Stmt::Let { ty, .. } => out.push(ty),
+            Stmt::ForEach { elem_ty, body, .. } => {
+                out.push(elem_ty);
+                collect_block_let_types(body, out);
+            }
+            Stmt::ForEachPair { body, .. } => collect_block_let_types(body, out),
+            Stmt::While { body, .. } => collect_block_let_types(body, out),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_block_let_types(then_body, out);
+                collect_block_let_types(else_body, out);
+            }
+            Stmt::NestedFn { body, .. } => collect_block_let_types(&body.stmts, out),
+            _ => {}
+        }
     }
 }
 
