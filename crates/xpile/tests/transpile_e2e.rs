@@ -15441,3 +15441,22 @@ fn main() {
 "#;
     assert_rustc_runs("pow_negative_exp", &rust, driver);
 }
+
+/// PMAT-866 (HUNT-V30 #17): a non-finite float literal (1e400 -> inf) emitted the
+/// invalid Rust token `inff64`; it now emits the f64 constant. vs python3.
+#[test]
+fn inf_float_literal() {
+    let rust = xpile_transpile_to_rust("inf_float_literal.py");
+    assert!(
+        rust.contains("f64::INFINITY") && rust.contains("f64::NEG_INFINITY"),
+        "non-finite float literal must emit the f64 constant:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert!(big().is_infinite() && big() > 0.0);
+    assert!(neg_big().is_infinite() && neg_big() < 0.0);
+    assert!((normal() - 3.14).abs() < 1e-12);
+}
+"#;
+    assert_rustc_runs("inf_float_literal", &rust, driver);
+}

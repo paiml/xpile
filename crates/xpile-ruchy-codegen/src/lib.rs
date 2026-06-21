@@ -1254,7 +1254,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             }
         }
         // PMAT-477 (R8): float literal + plain-infix float arithmetic.
-        Expr::LitFloat(v) => write!(out, "{}f64", v)?,
+        Expr::LitFloat(v) => {
+            // PMAT-866 (HUNT-V30 #17): non-finite float literal → f64 constant
+            // (mirror the Rust backend; `{}f64` emitted invalid `inff64`).
+            if v.is_infinite() {
+                out.push_str(if *v < 0.0 {
+                    "f64::NEG_INFINITY"
+                } else {
+                    "f64::INFINITY"
+                });
+            } else if v.is_nan() {
+                out.push_str("f64::NAN");
+            } else {
+                write!(out, "{v}f64")?;
+            }
+        }
         Expr::FloatBinOp { op, lhs, rhs } => match op {
             // PMAT-614: Python float floor-division is CPython `float_divmod`,
             // not `(a / b).floor()` (the naive floor over-rounds `1.0 // 0.1` to

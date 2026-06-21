@@ -1547,7 +1547,22 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         }
         // PMAT-477 (R8): float literal → `<v>f64`; float arithmetic →
         // plain infix (IEEE-754 saturates, no checked path).
-        Expr::LitFloat(v) => write!(out, "{}f64", v)?,
+        Expr::LitFloat(v) => {
+            // PMAT-866 (HUNT-V30 #17): a non-finite float literal (`1e400` →
+            // inf, also nan) must emit the f64 constant — `{}f64` produced the
+            // invalid token `inff64`/`nanf64`. Also unblocks `math.inf`/`nan`.
+            if v.is_infinite() {
+                out.push_str(if *v < 0.0 {
+                    "f64::NEG_INFINITY"
+                } else {
+                    "f64::INFINITY"
+                });
+            } else if v.is_nan() {
+                out.push_str("f64::NAN");
+            } else {
+                write!(out, "{v}f64")?;
+            }
+        }
         Expr::FloatBinOp { op, lhs, rhs } => match op {
             // PMAT-614: Python float floor-division `a // b` is CPython
             // `float_divmod` (Objects/floatobject.c), NOT `(a / b).floor()`.
