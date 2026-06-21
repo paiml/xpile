@@ -15315,3 +15315,23 @@ fn main() {
 "#;
     assert_rustc_runs("contract_citation_types", &rust, driver);
 }
+
+/// PMAT-858 (HUNT-V29 #3): `expr or default` with a non-name lead (a method/call)
+/// was rejected; the lead is now bound to a typed temp for single-eval. The fold
+/// becomes a Block; pure-name leads keep the bare fold. Cross-checked vs python3.
+#[test]
+fn expr_or_default() {
+    let rust = xpile_transpile_to_rust("expr_or_default.py");
+    let driver = r#"
+fn main() {
+    let mut m = std::collections::HashMap::new(); m.insert(String::from("k"), 5i64);
+    assert_eq!(via_call(m), 5);
+    assert_eq!(via_call(std::collections::HashMap::new()), 99);
+    assert_eq!(via_method(String::from("  hi ")), "hi");
+    assert_eq!(via_method(String::from("   ")), "empty");
+    assert_eq!(via_name(0, 7), 7);
+    assert_eq!(via_name(3, 7), 3);
+}
+"#;
+    assert_rustc_runs("expr_or_default", &rust, driver);
+}
