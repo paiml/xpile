@@ -1295,7 +1295,10 @@ impl Frontend for PythonFrontend {
         for stmt in &suite {
             if let ast::Stmt::FunctionDef(f) = stmt {
                 let ret = match f.returns.as_ref() {
-                    None => Type::I64,
+                    // PMAT-856 (HUNT-V28 #3): infer an unannotated predicate
+                    // return as `bool` so the call site agrees with the emitted
+                    // `-> bool` signature (was the I64 default → E0308).
+                    None => infer_unannotated_return(f),
                     Some(ann) => {
                         parse_type_annotation(f.name.as_str(), "return", ann).unwrap_or(Type::I64)
                     }
@@ -2203,6 +2206,33 @@ fn default_literal_type(expr: &ast::Expr) -> Option<Type> {
         }
         _ => None,
     }
+}
+
+/// PMAT-856 (HUNT-V28 #3): a lightweight return-type inference for a function with
+/// NO `->` annotation, so the call-site `FnSig` agrees with the EMITTED signature.
+/// A trailing `return <comparison / not / bool-literal>` is a predicate returning
+/// `bool` — the common case the I64 default mis-typed, so the caller bound the
+/// result as i64 / added `!= 0i64` / printed `true` not `True` (E0308 +
+/// silent-wrong). Everything else keeps the I64 default (matches the existing
+/// behaviour for arithmetic returns). Conservative: only the shapes whose lowered
+/// type is unambiguously `bool` (the signature emission infers the same).
+fn infer_unannotated_return(f: &ast::StmtFunctionDef) -> Type {
+    fn returns_bool(e: &ast::Expr) -> bool {
+        match e {
+            ast::Expr::Compare(_) => true,
+            ast::Expr::UnaryOp(u) => matches!(u.op, ast::UnaryOp::Not),
+            ast::Expr::Constant(c) => matches!(c.value, ast::Constant::Bool(_)),
+            _ => false,
+        }
+    }
+    if let Some(ast::Stmt::Return(r)) = f.body.last() {
+        if let Some(val) = r.value.as_deref() {
+            if returns_bool(val) {
+                return Type::Bool;
+            }
+        }
+    }
+    Type::I64
 }
 
 #[allow(clippy::too_many_arguments)]
