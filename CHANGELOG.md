@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.562] — 2026-06-21
+
+### Fixed
+
+- **PMAT-863 — bounds-check subscript assignment (was silent data corruption).**
+  `xs[i] = v` had no write-path bounds check (only reads guarded), so an
+  out-of-range index silently wrote a wrong slot; a negative literal also
+  double-normalized (`xs[-5]` on a len-3 list wrote slot 1). The frontend now
+  passes the raw negative literal (single normalization) and both backends add
+  the read-path bounds guard before the write → `IndexError`, catchable. HUNT-V30
+  (#3).
+
 ## [0.1.561] — 2026-06-21
 
 ### Fixed
