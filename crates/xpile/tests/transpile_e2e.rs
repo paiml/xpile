@@ -15567,3 +15567,22 @@ fn main() {
 "#;
     assert_rustc_runs("zip_tuple_unpack_leak", &rust, driver);
 }
+
+/// PMAT-872 (HUNT-V31 #4): an f-string `{x!s:spec}` applies str() FIRST, then
+/// formats the resulting STRING (left-align default), not the value's numeric
+/// spec; xpile emitted `format!("{:5}", x)` ignoring the `!s`. vs python3.
+#[test]
+fn fstring_str_conversion_spec() {
+    let rust = xpile_transpile_to_rust("fstring_str_conversion_spec.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(s_width(42), "[42   ]");
+    assert_eq!(s_fill(42), "[42***]");
+    assert_eq!(s_float(3.14), "[3.14    ]");
+    assert_eq!(num_width(42), "[   42]");
+    assert_eq!(r_width(42), "[    42]");
+    assert_eq!(s_str("hi".to_string()), "[hi   ]");
+}
+"#;
+    assert_rustc_runs("fstring_str_conversion_spec", &rust, driver);
+}
