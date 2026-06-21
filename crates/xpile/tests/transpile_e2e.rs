@@ -15378,3 +15378,28 @@ fn main() {
 "#;
     assert_rustc_runs("float_zerodiv_messages", &rust, driver);
 }
+
+/// PMAT-863 (HUNT-V30 #3): subscript ASSIGN had no write-path bounds check, so an
+/// out-of-range index silently wrote a wrong slot (and a negative literal
+/// double-normalized). Now a single normalization + bounds guard → IndexError.
+#[test]
+fn subscript_assign_bounds() {
+    let rust = xpile_transpile_to_rust("subscript_assign_bounds.py");
+    let driver = r#"
+fn caught(f: impl FnOnce() + std::panic::UnwindSafe) -> String {
+    std::panic::set_hook(Box::new(|_| {}));
+    match std::panic::catch_unwind(f) {
+        Ok(_) => "no panic".to_string(),
+        Err(e) => e.downcast_ref::<String>().cloned()
+            .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default(),
+    }
+}
+fn main() {
+    assert_eq!(valid_neg(), 9);
+    assert_eq!(valid_pos(), 9);
+    assert_eq!(caught(|| { oob_neg(); }), "xpile: IndexError: list assignment index out of range");
+    assert_eq!(caught(|| { oob_runtime(10); }), "xpile: IndexError: list assignment index out of range");
+}
+"#;
+    assert_rustc_runs("subscript_assign_bounds", &rust, driver);
+}
