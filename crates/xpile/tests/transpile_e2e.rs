@@ -256,6 +256,9 @@ fn assert_rustc_accepts(name: &str, source: &str) {
         .arg("--out-dir")
         .arg(&dir)
         .arg(&file)
+        // PMAT-873/874: link the workspace `indexmap` so dict code (now
+        // `indexmap::IndexMap`) type-checks in the round-trip harness too.
+        .args(indexmap_rustc_args())
         .output()
         .expect("spawn rustc");
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -400,7 +403,7 @@ fn main() {
 
 /// PMAT-472 (R3): dict iteration `for k in d:` lowers to
 /// `for k in d.keys().cloned()` (the loop var is the key type).
-/// Assertions are order-independent — HashMap key order is unspecified.
+/// Assertions are order-independent — IndexMap key order is unspecified.
 #[test]
 fn dict_iteration_roundtrip() {
     let rust = xpile_transpile_to_rust("dict_iter.py");
@@ -410,7 +413,7 @@ fn dict_iteration_roundtrip() {
     );
     let driver = r#"
 fn main() {
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(1i64, 10i64);
     d.insert(2i64, 20i64);
     d.insert(3i64, 30i64);
@@ -429,7 +432,7 @@ fn main() {
 fn cross_function_return_type_inference_roundtrip() {
     let rust = xpile_transpile_to_rust("cross_fn_dict.py");
     assert!(
-        rust.contains("let s: std::collections::HashMap<String, i64> = make_scores()"),
+        rust.contains("let s: indexmap::IndexMap<String, i64> = make_scores()"),
         "`s = make_scores()` should type s as the callee's dict return, not i64:\n{rust}"
     );
     assert!(
@@ -726,7 +729,7 @@ fn main() {
 
 /// PMAT-462 — v0.2.0 Track 1.C foundation: `dict[str, int]` literal.
 /// First Track 1.C sub-PR. Rust emits a block expression returning
-/// an owned `HashMap<String, i64>` populated via `.insert(...)` calls.
+/// an owned `IndexMap<String, i64>` populated via `.insert(...)` calls.
 #[test]
 fn dict_counts_emitted_rust_returns_hashmap() {
     let rust = xpile_transpile_to_rust("dict_counts.py");
@@ -747,22 +750,22 @@ fn main() {
 /// API. `histogram` builds a frequency map from an empty annotated
 /// literal using `d[k] = d.get(k, 0) + 1` inside a `for` loop;
 /// `lookup` reads `d[k]`; `has_key` tests `k in d`; `size` is
-/// `len(d)`. The emitted Rust must compile (HashMap insert / get /
+/// `len(d)`. The emitted Rust must compile (IndexMap insert / get /
 /// index / contains_key / len) and compute the correct frequencies.
 #[test]
 fn histogram_dict_ops_roundtrip() {
     let rust = xpile_transpile_to_rust("histogram.py");
-    // Emission shape: empty literal → bare HashMap::new() (no
+    // Emission shape: empty literal → bare IndexMap::new() (no
     // `let mut m` block that would trip clippy unused_mut), insert
     // for the keyed assign, get/cloned/unwrap_or for get-with-default,
     // index+clone for the read, contains_key for membership.
     assert!(
-        rust.contains("std::collections::HashMap::new()"),
-        "empty dict literal should emit a bare HashMap::new():\n{rust}"
+        rust.contains("indexmap::IndexMap::new()"),
+        "empty dict literal should emit a bare IndexMap::new():\n{rust}"
     );
     assert!(
         rust.contains("counts.insert("),
-        "d[k] = v should emit HashMap::insert:\n{rust}"
+        "d[k] = v should emit IndexMap::insert:\n{rust}"
     );
     assert!(
         rust.contains(".cloned().unwrap_or("),
@@ -822,7 +825,7 @@ fn main() {
 
 /// PMAT-466 regression (adversarial review #2/#4/#7): dict reads in
 /// call args, relational operands, ternary branches, and `len(...)`
-/// args all lower to HashMap keyed access (`d[&(k)].clone()`), never a
+/// args all lower to IndexMap keyed access (`d[&(k)].clone()`), never a
 /// list `usize` index. The `rewrite_dict_reads` post-pass repairs them
 /// in every position, not just the few `lower_expr_in_ctx` recurses.
 #[test]
@@ -834,13 +837,13 @@ fn dict_reads_in_nested_positions_roundtrip() {
     );
     let driver = r#"
 fn main() {
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(1i64, 5i64);
     assert_eq!(via_call(d.clone(), 1i64), 5i64);
     assert_eq!(is_positive(d.clone(), 1i64), true);
     assert_eq!(pick(d.clone(), 1i64, 3i64), 5i64);
     assert_eq!(pick(d.clone(), 9i64, -1i64), 0i64);
-    let mut s = std::collections::HashMap::new();
+    let mut s = indexmap::IndexMap::new();
     s.insert(2i64, String::from("hello"));
     assert_eq!(val_len(s, 2i64), 5i64);
     // Dict read inside an if/else branch (lookup-with-fallback).
@@ -898,14 +901,14 @@ fn dict_ops_edge_positions_roundtrip() {
     );
     let driver = r#"
 fn main() {
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(2i64, 4i64);
     assert_eq!(range_bound(d.clone(), 2i64), 6i64); // 0+1+2+3
     assert_eq!(append_val(vec![], d.clone(), 2i64), 1i64);
-    let mut t = std::collections::HashMap::new();
+    let mut t = indexmap::IndexMap::new();
     t.insert(5i64, 0i64);
     assert_eq!(index_target(vec![1i64, 2], t, 5i64, 9i64), 9i64);
-    let mut s = std::collections::HashMap::new();
+    let mut s = indexmap::IndexMap::new();
     s.insert(String::from("a"), 5i64);
     assert_eq!(readback(s, String::from("a")), 6i64);
 }
@@ -955,7 +958,7 @@ fn tuple_call_is_rejected_not_miscompiled() {
 }
 
 /// PMAT-466 regression (adversarial review #11): the Ruchy backend
-/// emits the same HashMap pipeline as Rust (Ruchy compiles to Rust),
+/// emits the same IndexMap pipeline as Rust (Ruchy compiles to Rust),
 /// including the temp-let DictSet form.
 #[test]
 fn dict_ops_ruchy_target_emits_hashmap() {
@@ -2743,9 +2746,9 @@ fn dict_views() {
         "expected dict view emission, got:\n{rust}"
     );
     let driver = r#"
-use std::collections::HashMap;
+use indexmap::IndexMap;
 fn main() {
-    let d: HashMap<i64, i64> = [(1, 10), (2, 20), (3, 30)].into_iter().collect();
+    let d: IndexMap<i64, i64> = [(1, 10), (2, 20), (3, 30)].into_iter().collect();
     assert_eq!(sorted_keys(d.clone()), vec![1, 2, 3]);
     assert_eq!(sorted_values(d.clone()), vec![10, 20, 30]);
     assert_eq!(total_values(d.clone()), 60);
@@ -2764,9 +2767,9 @@ fn len_ctx() {
         "expected len over a dict view, got:\n{rust}"
     );
     let driver = r#"
-use std::collections::HashMap;
+use indexmap::IndexMap;
 fn main() {
-    let d: HashMap<i64, i64> = [(1, 10), (2, 20), (3, 30)].into_iter().collect();
+    let d: IndexMap<i64, i64> = [(1, 10), (2, 20), (3, 30)].into_iter().collect();
     assert_eq!(num_keys(d.clone()), 3);
     assert_eq!(num_values(d.clone()), 3);
     assert_eq!(len_sorted(vec![5, 1, 3, 2]), 4);
@@ -2785,9 +2788,9 @@ fn dict_items() {
         "expected dict items emission, got:\n{rust}"
     );
     let driver = r#"
-use std::collections::HashMap;
+use indexmap::IndexMap;
 fn main() {
-    let d: HashMap<i64, i64> = [(3, 30), (1, 10), (2, 20)].into_iter().collect();
+    let d: IndexMap<i64, i64> = [(3, 30), (1, 10), (2, 20)].into_iter().collect();
     assert_eq!(sorted_items(d.clone()), vec![(1, 10), (2, 20), (3, 30)]);
     assert_eq!(num_items(d.clone()), 3);
 }
@@ -2805,9 +2808,9 @@ fn for_items() {
         "expected destructuring pair loop, got:\n{rust}"
     );
     let driver = r#"
-use std::collections::HashMap;
+use indexmap::IndexMap;
 fn main() {
-    let d: HashMap<i64, i64> = [(1, 10), (2, 20), (3, 30)].into_iter().collect();
+    let d: IndexMap<i64, i64> = [(1, 10), (2, 20), (3, 30)].into_iter().collect();
     assert_eq!(sum_kv(d.clone()), 66);
     assert_eq!(sum_values(d.clone()), 60);
 }
@@ -3208,7 +3211,7 @@ fn del_item() {
     );
     // PMAT-709: dict del now asserts the key was present (KeyError parity).
     assert!(
-        rust.contains("assert!(d.remove(&(k)).is_some(), \"xpile: KeyError"),
+        rust.contains("assert!(d.shift_remove(&(k)).is_some(), \"xpile: KeyError"),
         "dict del KeyError assert:\n{rust}"
     );
     assert!(
@@ -3216,7 +3219,7 @@ fn del_item() {
         "mut list param:\n{rust}"
     );
     assert!(
-        rust.contains("mut d: std::collections::HashMap"),
+        rust.contains("mut d: indexmap::IndexMap"),
         "mut dict param:\n{rust}"
     );
     // Local receiver marked mut by the walk_counts Delete arm.
@@ -3228,7 +3231,7 @@ fn del_item() {
 fn main() {
     assert_eq!(drop_at(vec![1, 2, 3], 1), 2);
     assert_eq!(drop_first(vec![10, 20, 30]), 20);
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert("a".to_string(), 1);
     d.insert("b".to_string(), 2);
     assert_eq!(drop_key(d, "a".to_string()), 1);
@@ -3264,16 +3267,16 @@ fn del_dict_keyerror() {
     let rust = xpile_transpile_to_rust("del_dict_keyerror.py");
     let driver = r#"
 fn main() {
-    let mut a = std::collections::HashMap::new();
+    let mut a = indexmap::IndexMap::new();
     a.insert("a".to_string(), 1);
     a.insert("b".to_string(), 2);
     assert_eq!(drop_present(a), 1);
-    let mut b = std::collections::HashMap::new();
+    let mut b = indexmap::IndexMap::new();
     b.insert("x".to_string(), 1);
     b.insert("y".to_string(), 2);
     assert_eq!(drop_var(b, "x".to_string()), 1);
     // missing key -> Python KeyError -> panic
-    let mut c = std::collections::HashMap::new();
+    let mut c = indexmap::IndexMap::new();
     c.insert("a".to_string(), 1);
     assert!(std::panic::catch_unwind(move || drop_var(c, "z".to_string())).is_err());
 }
@@ -3282,36 +3285,36 @@ fn main() {
 }
 
 /// PMAT-502au (Tranche 2): dict pop (expression form) `d.pop(k)` →
-/// `(d).remove(&(k)).unwrap()` and `d.pop(k, default)` →
-/// `(d).remove(&(k)).unwrap_or(default)`. Covers param + local receivers.
+/// `(d).shift_remove(&(k)).unwrap()` and `d.pop(k, default)` →
+/// `(d).shift_remove(&(k)).unwrap_or(default)`. Covers param + local receivers.
 #[test]
 fn dict_pop() {
     let rust = xpile_transpile_to_rust("dict_pop.py");
     assert!(
         rust.contains(
-            "(d).remove(&(k)).unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))"
+            "(d).shift_remove(&(k)).unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))"
         ),
         "pop (no default):\n{rust}"
     );
     assert!(
-        rust.contains("(d).remove(&(k)).unwrap_or(0i64)"),
+        rust.contains("(d).shift_remove(&(k)).unwrap_or(0i64)"),
         "pop (default):\n{rust}"
     );
     assert!(
-        rust.contains("take(mut d: std::collections::HashMap"),
+        rust.contains("take(mut d: indexmap::IndexMap"),
         "mut param:\n{rust}"
     );
     // Local receiver marked mut by the count_pop_receivers pre-pass.
     assert!(
-        rust.contains("let mut d: std::collections::HashMap"),
+        rust.contains("let mut d: indexmap::IndexMap"),
         "mut local:\n{rust}"
     );
     let driver = r#"
 fn main() {
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert("a".to_string(), 5);
     assert_eq!(take(d, "a".to_string()), 5);
-    let d2 = std::collections::HashMap::new();
+    let d2 = indexmap::IndexMap::new();
     assert_eq!(take_or(d2, "missing".to_string()), 0);
     assert_eq!(take_local(), 2);
 }
@@ -3477,22 +3480,22 @@ fn dict_setdefault() {
         "setdefault:\n{rust}"
     );
     assert!(
-        rust.contains("getset(mut d: std::collections::HashMap"),
+        rust.contains("getset(mut d: indexmap::IndexMap"),
         "mut param:\n{rust}"
     );
     // Local receiver marked mut by the count_pop_receivers pre-pass.
     assert!(
-        rust.contains("let mut d: std::collections::HashMap"),
+        rust.contains("let mut d: indexmap::IndexMap"),
         "mut local:\n{rust}"
     );
     let driver = r#"
 fn main() {
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert("a".to_string(), 7);
     // present key → existing value, no insert.
     assert_eq!(getset_present(d, "a".to_string()), 7);
     // absent key → inserts default and returns it.
-    let d2 = std::collections::HashMap::new();
+    let d2 = indexmap::IndexMap::new();
     assert_eq!(getset(d2, "x".to_string()), 0);
     assert_eq!(local_setdefault(), 6);
 }
@@ -3634,19 +3637,19 @@ fn dict_update() {
         "update emission:\n{rust}"
     );
     assert!(
-        rust.contains("merge(mut a: std::collections::HashMap"),
+        rust.contains("merge(mut a: indexmap::IndexMap"),
         "mut param:\n{rust}"
     );
     assert!(
-        rust.contains("let mut a: std::collections::HashMap"),
+        rust.contains("let mut a: indexmap::IndexMap"),
         "mut local:\n{rust}"
     );
     let driver = r#"
 fn main() {
-    let mut a = std::collections::HashMap::new();
+    let mut a = indexmap::IndexMap::new();
     a.insert("x".to_string(), 1);
     a.insert("y".to_string(), 2);
-    let mut b = std::collections::HashMap::new();
+    let mut b = indexmap::IndexMap::new();
     b.insert("y".to_string(), 20);
     b.insert("z".to_string(), 3);
     assert_eq!(merge(a, b.clone()), 3);
@@ -4050,14 +4053,14 @@ fn void_fn() {
         "void assert fn:\n{rust}"
     );
     assert!(
-        rust.contains("pub fn put(mut d: std::collections::HashMap"),
+        rust.contains("pub fn put(mut d: indexmap::IndexMap"),
         "void mutator fn (mut receiver):\n{rust}"
     );
     let driver = r#"
 fn main() {
     std::panic::set_hook(Box::new(|_| {}));
     check_pos(5); // returns () — no panic
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert("seed".to_string(), 0);
     put(d, "a".to_string(), 1); // compiles + runs
     // the assert-void's effect is observable: bad input panics.
@@ -4853,7 +4856,7 @@ fn dict_comp_items() {
     );
     let driver = r#"
 fn main() {
-    let mut m = std::collections::HashMap::new();
+    let mut m = indexmap::IndexMap::new();
     m.insert(String::from("a"), 3);
     m.insert(String::from("b"), -1);
     let d = doubled(m.clone());
@@ -4879,7 +4882,7 @@ fn comp_items() {
     assert!(rust.contains(".insert(v)"), "set comp over items:\n{rust}");
     let driver = r#"
 fn main() {
-    let mut m = std::collections::HashMap::new();
+    let mut m = indexmap::IndexMap::new();
     m.insert(String::from("a"), 3);
     m.insert(String::from("b"), -1);
     let mut vs = values(m.clone());
@@ -5564,7 +5567,7 @@ fn dict_get_optional() {
     );
     let driver = r#"
 fn main() {
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(String::from("a"), 5i64);
     assert_eq!(lookup(d.clone(), String::from("a")), Some(5i64));
     assert_eq!(lookup(d.clone(), String::from("z")), None);
@@ -5592,7 +5595,7 @@ fn dict_get_compare() {
     );
     let driver = r#"
 fn main() {
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(String::from("a"), 5i64);
     d.insert(String::from("b"), 3i64);
     // present+match, present+nomatch, absent
@@ -5630,7 +5633,7 @@ fn fstring_dict_get_optional_rejected() {
     let rust = xpile_transpile_to_rust("fstring_dict_get_ok.py");
     let driver = r#"
 fn main() {
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(String::from("a"), 7i64);
     assert_eq!(with_default(d.clone(), String::from("a")), String::from("val=7"));
     assert_eq!(with_default(d.clone(), String::from("z")), String::from("val=0"));
@@ -5641,7 +5644,7 @@ fn main() {
 }
 
 /// PMAT-708: a bare dict (or set) interpolated in an f-string emitted
-/// `format!("{}", hashmap)` → E0277 (HashMap/HashSet have no Display). It is now
+/// `format!("{}", hashmap)` → E0277 (IndexMap/HashSet have no Display). It is now
 /// rejected at lowering — parity with `str()`/`print()`/`.format()`/`%` over a
 /// dict/set; iteration order is also non-deterministic (PMAT-537). (HUNT-V8 V8-10.)
 #[test]
@@ -5650,7 +5653,7 @@ fn fstring_dict_rejected() {
     let out = run_xpile(&["transpile", py.to_str().unwrap()]);
     assert!(
         !out.status.success(),
-        "a bare dict in an f-string must be refused (HashMap has no Display)"
+        "a bare dict in an f-string must be refused (IndexMap has no Display)"
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -5682,11 +5685,11 @@ fn ann_optional_mismatch_rejected() {
     let rust = xpile_transpile_to_rust("ann_optional_ok.py");
     let driver = r#"
 fn main() {
-    use std::collections::HashMap;
-    let mut d: HashMap<String, i64> = HashMap::new();
+    use indexmap::IndexMap;
+    let mut d: IndexMap<String, i64> = IndexMap::new();
     d.insert("a".to_string(), 7);
     assert_eq!(with_default(d), 7);
-    let e: HashMap<String, i64> = HashMap::new();
+    let e: IndexMap<String, i64> = IndexMap::new();
     assert_eq!(with_default(e), 0);
 }
 "#;
@@ -5785,7 +5788,7 @@ fn main() {
 /// PMAT-503b (exceptions epic): value-producing `try`/`except` →
 /// `catch_unwind`. xpile models Python exceptions as Rust panics
 /// (ZeroDivisionError via the floor-div `.expect`, IndexError via list
-/// indexing, KeyError via HashMap indexing), so `try: return <expr> except
+/// indexing, KeyError via IndexMap indexing), so `try: return <expr> except
 /// [E]: return <expr>` lowers to `Expr::TryCatch` → a
 /// `std::panic::catch_unwind(AssertUnwindSafe(|| <body>))` match that runs the
 /// handler on `Err`. Cross-checked vs python3 (the driver installs a no-op
@@ -5804,7 +5807,7 @@ fn main() {
     assert_eq!(safe_div(7, 0), -1);
     assert_eq!(safe_index(vec![5, 6, 7], 2), 7);
     assert_eq!(safe_index(vec![5, 6, 7], 99), 0);
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(String::from("a"), 1i64);
     assert_eq!(safe_lookup(d.clone(), String::from("a")), 1);
     assert_eq!(safe_lookup(d.clone(), String::from("z")), -1);
@@ -5835,7 +5838,7 @@ fn try_except_assignment_form() {
     let driver = r#"
 fn main() {
     std::panic::set_hook(Box::new(|_| {}));
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(String::from("a"), 5i64);
     assert_eq!(lookup(d.clone(), String::from("a")), 5);
     assert_eq!(lookup(d.clone(), String::from("z")), -1);
@@ -5881,7 +5884,7 @@ fn main() {
 /// PMAT-592 (classes epic): a `@dataclass(frozen=True)` is hashable in Python,
 /// so it may be a set element or dict key. The struct must derive `Eq + Hash`
 /// (a bare `#[derive(Clone, Debug, PartialEq)]` struct is rejected as a
-/// `HashSet` element / `HashMap` key — E0277/E0599). Derived only when every
+/// `HashSet` element / `IndexMap` key — E0277/E0599). Derived only when every
 /// field is itself Eq+Hash-capable (`i64`/`bool`/`String`). Cross-checked vs
 /// python3: `count_unique()==2` (Coord(1,2) dedupes), `dict_key_lookup()==100`.
 #[test]
@@ -6443,7 +6446,7 @@ fn main() {
     assert_eq!(len_range(5), 5);
     assert_eq!(sorted_range_desc_first(5), 4);
     assert_eq!(reversed_range_first(5), 4);
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert("a".to_string(), 1);
     d.insert("b".to_string(), 2);
     d.insert("c".to_string(), 3);
@@ -6569,7 +6572,7 @@ fn main() {
     assert_eq!(first_or_default(vec!["a".to_string()]), "a");
     assert_eq!(first_or_default(vec![]), "none");
     assert_eq!(sum_drain(vec![1, 2, 3]), 6);
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     assert_eq!(is_empty_dict(d.clone()), true);
     d.insert("a".to_string(), 1);
     assert_eq!(is_empty_dict(d), false);
@@ -6624,8 +6627,8 @@ fn main() {
     assert_eq!(not_len(vec![1]), 0);
     assert_eq!(not_float(0.0), 1);
     assert_eq!(not_float(2.5), 0);
-    let mut d0 = std::collections::HashMap::new();
-    let mut d1 = std::collections::HashMap::new();
+    let mut d0 = indexmap::IndexMap::new();
+    let mut d1 = indexmap::IndexMap::new();
     d1.insert(1, 1);
     assert_eq!(not_container_regression(d0), 1);
     assert_eq!(not_container_regression(d1), 0);
@@ -6661,27 +6664,27 @@ fn main() {
 /// dict — the value-position forms (`x = d.pop(k)`) already worked; a bare
 /// statement now reuses the same pop lowering wrapped in a discard `let _ = …;`
 /// (receiver auto-`mut`), broadening PMAT-528 (which covered list pop) to dict
-/// receivers. Emits `(d).remove(&…).unwrap()` / `.unwrap_or(default)`.
+/// receivers. Emits `(d).shift_remove(&…).unwrap()` / `.unwrap_or(default)`.
 /// Cross-checked vs python3 (2, 2, 21).
 #[test]
 fn dict_pop_statement() {
     let rust = xpile_transpile_to_rust("dict_pop_statement.py");
     assert!(
-        rust.contains("let _: i64 = (d).remove("),
+        rust.contains("let _: i64 = (d).shift_remove("),
         "a bare `d.pop(k)` should lower to a discard `let _` over `.remove`:\n{rust}"
     );
     let driver = r#"
 fn main() {
-    let mut d1 = std::collections::HashMap::new();
+    let mut d1 = indexmap::IndexMap::new();
     d1.insert(String::from("a"), 1i64);
     d1.insert(String::from("b"), 2i64);
     d1.insert(String::from("c"), 3i64);
     assert_eq!(remove_key(d1), 2);
-    let mut d2 = std::collections::HashMap::new();
+    let mut d2 = indexmap::IndexMap::new();
     d2.insert(String::from("a"), 1i64);
     d2.insert(String::from("b"), 2i64);
     assert_eq!(remove_with_default(d2), 2);
-    let mut d3 = std::collections::HashMap::new();
+    let mut d3 = indexmap::IndexMap::new();
     d3.insert(String::from("a"), 1i64);
     d3.insert(String::from("b"), 20i64);
     d3.insert(String::from("c"), 3i64);
@@ -6733,17 +6736,17 @@ fn genexpr_tuple_target() {
     );
     let driver = r#"
 fn main() {
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(String::from("a"), 1i64);
     d.insert(String::from("b"), 2i64);
     d.insert(String::from("c"), 3i64);
     assert_eq!(sum_values(d.clone()), 6);
-    let mut d2 = std::collections::HashMap::new();
+    let mut d2 = indexmap::IndexMap::new();
     d2.insert(String::from("a"), 1i64);
     d2.insert(String::from("b"), 20i64);
     d2.insert(String::from("c"), 3i64);
     assert_eq!(max_value(d2), 20);
-    let mut d3 = std::collections::HashMap::new();
+    let mut d3 = indexmap::IndexMap::new();
     d3.insert(String::from("a"), 1i64);
     d3.insert(String::from("b"), -2i64);
     d3.insert(String::from("c"), 3i64);
@@ -6762,7 +6765,7 @@ fn main() {
 /// `list.clear` worked. All three reuse existing IR — `set.update` → the
 /// `ListExtend` stmt (`s.extend((other).iter().cloned())`, valid for `HashSet`),
 /// and the clears → `ListMutate { Clear }` (`name.clear();`, valid for
-/// `HashSet`/`HashMap`). No new IR/codegen. Cross-checked vs python3 (5, 4, 0, 0).
+/// `HashSet`/`IndexMap`). No new IR/codegen. Cross-checked vs python3 (5, 4, 0, 0).
 #[test]
 fn set_dict_mutators() {
     let rust = xpile_transpile_to_rust("set_dict_mutators.py");
@@ -6778,7 +6781,7 @@ fn main() {
     assert_eq!(update_literal(), 4);
     let s2: std::collections::HashSet<i64> = [1, 2, 3].into_iter().collect();
     assert_eq!(wipe_set(s2), 0);
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(String::from("a"), 1i64);
     d.insert(String::from("b"), 2i64);
     assert_eq!(wipe_dict(d), 0);
@@ -6806,7 +6809,7 @@ fn subscript_append() {
 fn main() {
     assert_eq!(grid_row_append(vec![vec![1, 2], vec![3]], 1), 2);
     assert_eq!(first_row_total(vec![vec![5], vec![9]]), 35);
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(String::from("a"), vec![1i64, 2]);
     d.insert(String::from("b"), vec![3i64]);
     assert_eq!(bucket_append(d, String::from("a"), 7), 3);
@@ -7175,7 +7178,7 @@ fn main() {
     assert_eq!(swap_first_two(vec![1, 2, 3]), 201);
     assert_eq!(reverse_inplace(vec![1, 2, 3, 4, 5]), 54001);
     assert_eq!(bubble_sort_min(vec![5, 3, 1, 4, 2]), 1);
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(String::from("x"), 10);
     d.insert(String::from("y"), 20);
     assert_eq!(dict_swap(d, String::from("x"), String::from("y")), 210);
@@ -7574,7 +7577,7 @@ fn main() {
 /// loops inserting/adding to the accumulator (mirrors the list 2-gen slice via a
 /// shared `desugar_comp_2gen` helper). Per-generator `if` filters wrap their own
 /// loop. Cross-checked vs python3 (driver sorts the collected entries since
-/// HashMap/HashSet iteration order is nondeterministic).
+/// IndexMap/HashSet iteration order is nondeterministic).
 #[test]
 fn comp_2gen_dict_set() {
     let rust = xpile_transpile_to_rust("comp_2gen_dict_set.py");
@@ -7636,8 +7639,8 @@ fn sorted_dict() {
         "sorted(dict) should sort the keys, not emit an undefined sorted():\n{rust}"
     );
     let driver = r#"
-fn d() -> std::collections::HashMap<i64, i64> {
-    let mut m = std::collections::HashMap::new();
+fn d() -> indexmap::IndexMap<i64, i64> {
+    let mut m = indexmap::IndexMap::new();
     m.insert(3, 1);
     m.insert(1, 1);
     m.insert(2, 1);
@@ -8464,7 +8467,7 @@ fn main() {
 
 /// PMAT-587 (Tranche 2): **correctness** — a class/enum named after a Rust
 /// prelude type that xpile emits (`Vec`/`String`/`Option`/`Some`/`None`/
-/// `HashMap`/`HashSet`) emits a `struct <Name>` that collides with the prelude:
+/// `IndexMap`/`HashSet`) emits a `struct <Name>` that collides with the prelude:
 /// a bare unit struct shadows it, but once the module also uses the generic form
 /// (a `list[int]` → `Vec<i64>`) rustc rejects it (E0107) — a transpile-success →
 /// invalid-Rust break. Now rejected cleanly at lowering with a rename hint,
@@ -8486,7 +8489,7 @@ fn prelude_type_name_rejected() {
 }
 
 /// PMAT-696: a float set element / dict key lowers to `HashSet<f64>` /
-/// `HashMap<f64, _>`, which is invalid Rust (`f64: !Eq`, `!Hash` → E0277) — a
+/// `IndexMap<f64, _>`, which is invalid Rust (`f64: !Eq`, `!Hash` → E0277) — a
 /// transpile success that fails `rustc`. It is now rejected at lowering with a
 /// clear message instead of emitting uncompilable Rust. (HUNT-V7 item V7-7.)
 #[test]
@@ -8984,7 +8987,7 @@ fn main() {
     assert_eq!(slen("café".to_string()), 4);
     assert_eq!(lit_len(), 4);
     assert_eq!(list_len(vec![1, 2, 3]), 3);
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert("a".to_string(), 1);
     d.insert("b".to_string(), 2);
     assert_eq!(dict_len(d), 2);
@@ -9122,7 +9125,7 @@ fn identity_comprehension_str() {
     );
     let driver = r#"
 fn main() {
-    use std::collections::HashMap;
+    use indexmap::IndexMap;
     assert_eq!(
         echo_sorted(vec!["pear".to_string(), "apple".to_string(), "kiwi".to_string()]),
         vec!["apple".to_string(), "kiwi".to_string(), "pear".to_string()]
@@ -9136,7 +9139,7 @@ fn main() {
         vec!["a".to_string(), "b".to_string()]
     );
     assert_eq!(ints_regression(vec![3, 1, 2]), vec![1, 2, 3]);
-    let mut d = HashMap::new();
+    let mut d = IndexMap::new();
     d.insert("b".to_string(), 1);
     d.insert("a".to_string(), 2);
     assert_eq!(pairs(d), vec!["a".to_string(), "b".to_string()]);
@@ -9412,7 +9415,7 @@ fn for_nested_pair_target() {
     let driver = r#"
 fn main() {
     assert_eq!(enum_nested(vec![(1, 2), (3, 4)]), 11); // (0+1+2)+(1+3+4)
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert("x".to_string(), (1, 2));
     d.insert("y".to_string(), (3, 4));
     assert_eq!(items_nested(d), 10);
@@ -9728,8 +9731,8 @@ fn dict_merge_mixed() {
     );
     let driver = r#"
 fn main() {
-    use std::collections::HashMap;
-    let a: HashMap<String, i64> =
+    use indexmap::IndexMap;
+    let a: IndexMap<String, i64> =
         [("x", 1), ("y", 2)].iter().map(|(k, v)| (k.to_string(), *v)).collect();
     // mixed splat + explicit; override order cross-checked vs python3.
     assert_eq!(override_after(a.clone(), "x".to_string()), 99);  // explicit after splat wins
@@ -9747,13 +9750,13 @@ fn dict_merge() {
     let rust = xpile_transpile_to_rust("dict_merge.py");
     assert!(
         rust.contains(".chain((b).iter().map(|(__k, __v)|")
-            && rust.contains("collect::<std::collections::HashMap<_, _>>()"),
+            && rust.contains("collect::<indexmap::IndexMap<_, _>>()"),
         "dict merge:\n{rust}"
     );
     let driver = r#"
 fn main() {
-    use std::collections::HashMap;
-    let mk = |pairs: &[(&str, i64)]| -> HashMap<String, i64> {
+    use indexmap::IndexMap;
+    let mk = |pairs: &[(&str, i64)]| -> IndexMap<String, i64> {
         pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
     };
     // dict merge; cross-checked vs python3 (later dict wins on collision).
@@ -9772,7 +9775,7 @@ fn main() {
 /// PMAT-593: PEP 584 dict union `a | b` (new dict, b wins) and `a |= b`
 /// (in-place update). `a | b` reuses the `{**a, **b}` `DictMerge` lowering;
 /// `a |= b` reuses the `a.update(b)` `DictUpdate` lowering. Previously both
-/// fell through to a generic BitOr → `HashMap | HashMap` (rustc E0369).
+/// fell through to a generic BitOr → `IndexMap | IndexMap` (rustc E0369).
 /// Cross-checked vs python3: merged()==3051 (x1+y20+z30 + len3*1000),
 /// in_place()==320 (y20 + len3*100).
 #[test]
@@ -9780,7 +9783,7 @@ fn dict_union() {
     let rust = xpile_transpile_to_rust("dict_union.py");
     assert!(
         !rust.contains(" | "),
-        "must not emit HashMap BitOr:\n{rust}"
+        "must not emit IndexMap BitOr:\n{rust}"
     );
     assert!(
         rust.contains(".chain((b).iter().map(|(__k, __v)|"),
@@ -9792,8 +9795,8 @@ fn dict_union() {
     );
     let driver = r#"
 fn main() {
-    use std::collections::HashMap;
-    let mk = |pairs: &[(&str, i64)]| -> HashMap<String, i64> {
+    use indexmap::IndexMap;
+    let mk = |pairs: &[(&str, i64)]| -> IndexMap<String, i64> {
         pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
     };
     let a = mk(&[("x", 1), ("y", 2)]);
@@ -9812,7 +9815,7 @@ fn main() {
 fn set_dict_comp_expr() {
     let rust = xpile_transpile_to_rust("set_dict_comp_expr.py");
     assert!(
-        rust.contains("HashSet<_>>().len()") && rust.contains("HashMap<_, _>>().len()"),
+        rust.contains("HashSet<_>>().len()") && rust.contains("IndexMap<_, _>>().len()"),
         "set/dict comp expr:\n{rust}"
     );
     let driver = r#"
@@ -10102,12 +10105,12 @@ fn main() {
 }
 
 /// PMAT-502dk (Tranche 2): `dict(pairs)` materialises a list of 2-tuples into
-/// a HashMap — also covers `dict(zip(..))` / `dict(enumerate(..))`.
+/// a IndexMap — also covers `dict(zip(..))` / `dict(enumerate(..))`.
 #[test]
 fn dict_from_pairs() {
     let rust = xpile_transpile_to_rust("dict_from_pairs.py");
     assert!(
-        rust.contains(".iter().cloned().collect::<std::collections::HashMap<_, _>>()"),
+        rust.contains(".iter().cloned().collect::<indexmap::IndexMap<_, _>>()"),
         "dict(pairs):\n{rust}"
     );
     let driver = r#"
@@ -10451,8 +10454,8 @@ fn max_min_dict() {
         "max/min over a dict must not emit a bare free call:\n{rust}"
     );
     let driver = r#"
-fn dm(p: &[(i64, i64)]) -> std::collections::HashMap<i64, i64> { p.iter().cloned().collect() }
-fn sm(p: &[(&str, i64)]) -> std::collections::HashMap<String, i64> {
+fn dm(p: &[(i64, i64)]) -> indexmap::IndexMap<i64, i64> { p.iter().cloned().collect() }
+fn sm(p: &[(&str, i64)]) -> indexmap::IndexMap<String, i64> {
     p.iter().map(|(k, v)| (k.to_string(), *v)).collect()
 }
 fn main() {
@@ -10467,7 +10470,7 @@ fn main() {
 }
 
 /// PMAT-668: `sep.join(d)` over a dict joins its KEYS (iterating a dict yields
-/// keys). A bare dict arg emitted `d.join(...)` on a HashMap (E0599); the join
+/// keys). A bare dict arg emitted `d.join(...)` on a IndexMap (E0599); the join
 /// arg now materializes to the keys, like `sep.join(d.keys())`. (Single-key
 /// dict for determinism — multi-key order is the deferred PMAT-537 limitation.)
 /// Cross-checked vs python3.
@@ -10479,7 +10482,7 @@ fn join_dict_keys() {
         "join over a dict should iterate its keys:\n{rust}"
     );
     let driver = r#"
-fn dm(p: &[(&str, i64)]) -> std::collections::HashMap<String, i64> {
+fn dm(p: &[(&str, i64)]) -> indexmap::IndexMap<String, i64> {
     p.iter().map(|(k, v)| (k.to_string(), *v)).collect()
 }
 fn main() {
@@ -10639,14 +10642,14 @@ fn main() {
 }
 
 /// PMAT-502i (Tranche 2): empty collection constructors `set()` / `dict()` /
-/// `list()` → empty `HashSet::new()` / `HashMap::new()` / `vec![]`, typed by
+/// `list()` → empty `HashSet::new()` / `IndexMap::new()` / `vec![]`, typed by
 /// a binding annotation or a subsequent `.add()`/`.append()`.
 #[test]
 fn empty_constructors() {
     let rust = xpile_transpile_to_rust("empty_constructors.py");
     assert!(
         rust.contains("std::collections::HashSet::new()")
-            && rust.contains("std::collections::HashMap::new()")
+            && rust.contains("indexmap::IndexMap::new()")
             && rust.contains("Vec<i64> = vec![]"),
         "expected empty-constructor emission, got:\n{rust}"
     );
@@ -12026,7 +12029,7 @@ fn dict_insert_during_iter_panics_like_runtimeerror() {
     );
     let driver = r#"
 fn main() {
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(1i64, 1i64);
     d.insert(2i64, 1i64);
     std::panic::set_hook(Box::new(|_| {}));
@@ -12052,7 +12055,7 @@ fn dict_iter_value_update_compiles_and_runs() {
     );
     let driver = r#"
 fn main() {
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(1i64, 10i64);
     d.insert(2i64, 20i64);
     d.insert(3i64, 30i64);
@@ -12399,7 +12402,7 @@ fn typed_except_discrimination_matches_cpython() {
         "expected re-raise discrimination for the typed except, got:\n{rust}"
     );
     let driver = r#"
-use std::collections::HashMap;
+use indexmap::IndexMap;
 fn main() {
     std::panic::set_hook(Box::new(|_| {}));
     assert_eq!(catch_value(5), 20);
@@ -12410,10 +12413,10 @@ fn main() {
     assert_eq!(catch_all(0), -99);
     assert_eq!(catch_all(-1), -99);
     // `except KeyError:` catches the missing-key panic.
-    let mut a = HashMap::new();
+    let mut a = IndexMap::new();
     a.insert("a".to_string(), 7);
     assert_eq!(lookup(a, "a".to_string()), 7);
-    assert_eq!(lookup(HashMap::new(), "z".to_string()), -1);
+    assert_eq!(lookup(IndexMap::new(), "z".to_string()), -1);
 }
 "#;
     assert_rustc_runs("typed_except", &rust, driver);
@@ -12547,7 +12550,7 @@ fn or_default_optional_emitted_rust_matches_cpython() {
         "expected filter+unwrap_or_else lowering, got:\n{rust}"
     );
     let driver = r#"
-use std::collections::HashMap;
+use indexmap::IndexMap;
 fn main() {
     assert_eq!(or_int(None), -1);
     assert_eq!(or_int(Some(0)), -1);
@@ -12555,13 +12558,13 @@ fn main() {
     assert_eq!(or_str(None), "default");
     assert_eq!(or_str(Some("".to_string())), "default");
     assert_eq!(or_str(Some("hi".to_string())), "hi");
-    let mut a = HashMap::new();
+    let mut a = IndexMap::new();
     a.insert("a".to_string(), 7);
-    let mut b = HashMap::new();
+    let mut b = IndexMap::new();
     b.insert("a".to_string(), 0);
     assert_eq!(or_via_get(a, "a".to_string()), 7);
     assert_eq!(or_via_get(b, "a".to_string()), 99);
-    assert_eq!(or_via_get(HashMap::new(), "z".to_string()), 99);
+    assert_eq!(or_via_get(IndexMap::new(), "z".to_string()), 99);
 }
 "#;
     assert_rustc_runs("or_default_optional", &rust, driver);
@@ -12665,7 +12668,7 @@ fn main() {
 /// named the same as the codegen accumulator (`{m: 1}` where the param is `m`) now
 /// compiles and binds the right key. The accumulator is `__xpile_map`, not `m`, so
 /// the inner `let mut` no longer shadows the user's `m` (which made the key
-/// reference the HashMap — inserting the map into itself, E0275).
+/// reference the IndexMap — inserting the map into itself, E0275).
 #[test]
 fn dict_literal_var_key_emitted_rust_matches_cpython() {
     let rust = xpile_transpile_to_rust("dict_literal_var_key.py");
@@ -12694,8 +12697,9 @@ fn dict_view_setops_emitted_rust_matches_cpython() {
         "expected HashSet set ops, got:\n{rust}"
     );
     let driver = r#"
-use std::collections::{HashMap, HashSet};
-fn d(p: &[(&str, i64)]) -> HashMap<String, i64> {
+use indexmap::IndexMap;
+    use std::collections::HashSet;
+fn d(p: &[(&str, i64)]) -> IndexMap<String, i64> {
     p.iter().map(|(k, v)| (k.to_string(), *v)).collect()
 }
 fn main() {
@@ -12750,7 +12754,7 @@ fn main() {
 fn nested_empty_literal_emitted_rust_matches_cpython() {
     let rust = xpile_transpile_to_rust("nested_empty_literal.py");
     assert!(
-        rust.contains("HashMap<i64, Vec<i64>>"),
+        rust.contains("IndexMap<i64, Vec<i64>>"),
         "expected dict-of-lists binding, got:\n{rust}"
     );
     assert!(
@@ -12920,7 +12924,7 @@ fn main() {
 
 /// PMAT-747 (HUNT-V14 #2 exc-untagged-panic-swallowed): a dict-index miss
 /// (KeyError), an empty `list.pop()` / absent `dict.pop(k)` emitted UNTAGGED
-/// native panics (HashMap `Index`, `Option::unwrap`), so the typed-`except`
+/// native panics (IndexMap `Index`, `Option::unwrap`), so the typed-`except`
 /// re-raise filter (PMAT-731 — only re-raises `xpile: <KnownExc>:`-tagged
 /// panics) let an unrelated `except` SILENTLY SWALLOW them where Python
 /// propagates. Each container-access panic is now tagged; the matching `except`
@@ -12936,9 +12940,9 @@ fn container_panic_typed() {
         "container access must panic with an xpile: tag for typed-except discrimination:\n{rust}"
     );
     let driver = r#"
-use std::collections::HashMap;
+use indexmap::IndexMap;
 fn main() {
-    let mut d: HashMap<String, i64> = HashMap::new();
+    let mut d: IndexMap<String, i64> = IndexMap::new();
     d.insert("a".to_string(), 5);
     assert_eq!(dict_miss_right(d.clone()), -7);
     assert_eq!(empty_pop_right(vec![]), -3);
@@ -12948,7 +12952,7 @@ fn main() {
     // GENERATED discrimination must re-raise it (Python propagates), so calling
     // dict_miss_wrong panics rather than returning -1.
     let propagated = std::panic::catch_unwind(|| {
-        let mut d2: HashMap<String, i64> = HashMap::new();
+        let mut d2: IndexMap<String, i64> = IndexMap::new();
         d2.insert("a".to_string(), 5);
         dict_miss_wrong(d2)
     });
@@ -13042,7 +13046,7 @@ fn main() {
 }
 
 /// PMAT-751 (HUNT-V14 #5 bool-dict-key-int-keyed): indexing an INT-keyed dict
-/// with a bool (`d[True]`) emitted `.get(&true)` over a `HashMap<i64, _>` →
+/// with a bool (`d[True]`) emitted `.get(&true)` over a `IndexMap<i64, _>` →
 /// rustc E0308. Python's `bool` is an `int` subtype (`hash(True) == hash(1)`),
 /// so the bool key is now coerced to i64 when the dict key type is int; a
 /// genuinely `dict[bool, V]` keeps its bool key. Cross-checked vs python3.
@@ -13927,7 +13931,7 @@ fn main() {
 }
 
 /// PMAT-787 (HUNT-V17 #24): a `dict[int, V]` literal with bool keys emitted
-/// `insert(true, …)` into a `HashMap<i64, V>` (E0308; a bool/int mix even
+/// `insert(true, …)` into a `IndexMap<i64, V>` (E0308; a bool/int mix even
 /// rejected). Python's bool is an int subtype, so the keys are 1/0. The let-init
 /// type-threading now coerces a bool key to i64 for an int-keyed dict; a genuine
 /// `dict[bool, V]` keeps bool keys. Cross-checked vs python3.
@@ -13936,10 +13940,10 @@ fn dict_bool_key_literal() {
     let rust = xpile_transpile_to_rust("dict_bool_key_literal.py");
     assert!(
         // int-keyed dict coerces the bool key…
-        rust.contains("HashMap<i64, i64> = { let mut __xpile_map")
+        rust.contains("IndexMap<i64, i64> = { let mut __xpile_map")
             && rust.contains("__xpile_map.insert(((true) as i64), 10i64)")
             // …a genuine bool-keyed dict keeps the bool key.
-            && rust.contains("HashMap<bool, i64> = { let mut __xpile_map")
+            && rust.contains("IndexMap<bool, i64> = { let mut __xpile_map")
             && rust.contains("__xpile_map.insert(true, 1i64)"),
         "a bool key in an int-keyed dict must coerce; a bool-keyed dict is unchanged:\n{rust}"
     );
@@ -14506,7 +14510,8 @@ fn main() {
 fn dict_kwarg_ctor() {
     let rust = xpile_transpile_to_rust("dict_kwarg_ctor.py");
     assert!(
-        rust.contains("HashMap<String, i64>") && rust.contains("insert(String::from(\"a\"), 1i64)"),
+        rust.contains("IndexMap<String, i64>")
+            && rust.contains("insert(String::from(\"a\"), 1i64)"),
         "dict(a=1, …) must lower to a string-keyed dict literal:\n{rust}"
     );
     let driver = r#"
@@ -14651,7 +14656,7 @@ fn ternary_optional_narrow() {
     );
     let driver = r#"
 fn main() {
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(String::from("a"), 5i64);
     assert_eq!(fallback(d.clone(), String::from("a")), 5);
     assert_eq!(fallback(d.clone(), String::from("z")), 0);
@@ -14854,7 +14859,7 @@ fn foreach_field_mut() {
 }
 
 /// PMAT-829 (HUNT-V25 #4): a bool subscript key into an int-keyed dict
-/// (`d[True] = v`) emitted `insert(true, …)` into a `HashMap<i64,_>` → E0308.
+/// (`d[True] = v`) emitted `insert(true, …)` into a `IndexMap<i64,_>` → E0308.
 /// Python `True == 1`, so the key coerces to 1; the set path now coerces a bool
 /// key to i64 (mirrors the get-path PMAT-751). Cross-checked vs python3.
 #[test]
@@ -14910,7 +14915,7 @@ fn comp_over_dict() {
     let rust = xpile_transpile_to_rust("comp_over_dict.py");
     let driver = r#"
 fn main() {
-    let mut d = std::collections::HashMap::new();
+    let mut d = indexmap::IndexMap::new();
     d.insert(String::from("a"), 10i64);
     d.insert(String::from("b"), 20i64);
     d.insert(String::from("c"), 30i64);
@@ -15185,8 +15190,8 @@ fn dict_update_kwargs() {
     let driver = r#"
 fn main() {
     assert_eq!(kwargs_update(), 1023);  // a=10, b=2, c=3
-    let mut d = std::collections::HashMap::new(); d.insert(String::from("a"), 1i64);
-    let mut o = std::collections::HashMap::new(); o.insert(String::from("b"), 2i64); o.insert(String::from("c"), 3i64);
+    let mut d = indexmap::IndexMap::new(); d.insert(String::from("a"), 1i64);
+    let mut o = indexmap::IndexMap::new(); o.insert(String::from("b"), 2i64); o.insert(String::from("c"), 3i64);
     assert_eq!(positional_update(d, o), 3);
 }
 "#;
@@ -15303,14 +15308,14 @@ fn str_of_optional() {
     let rust = xpile_transpile_to_rust("str_of_optional.py");
     let driver = r#"
 fn main() {
-    use std::collections::HashMap;
+    use indexmap::IndexMap;
     assert_eq!(from_none_lit(), "None");
-    assert_eq!(get_int_absent(HashMap::new()), "v=None");
-    let mut i = HashMap::new(); i.insert(String::from("a"), 7i64);
+    assert_eq!(get_int_absent(IndexMap::new()), "v=None");
+    let mut i = IndexMap::new(); i.insert(String::from("a"), 7i64);
     assert_eq!(get_int_present(i), "7");
-    let mut s = HashMap::new(); s.insert(String::from("a"), String::from("hi"));
+    let mut s = IndexMap::new(); s.insert(String::from("a"), String::from("hi"));
     assert_eq!(get_str(s), "hi");
-    let mut f = HashMap::new(); f.insert(String::from("a"), 1.5f64);
+    let mut f = IndexMap::new(); f.insert(String::from("a"), 1.5f64);
     assert_eq!(get_float(f), "1.5");
 }
 "#;
@@ -15352,7 +15357,7 @@ fn contract_citation_types() {
 fn main() {
     assert_eq!(uses_str(String::from("abc")), 3);
     assert_eq!(uses_list(vec![7, 8]), 7);
-    let mut m = std::collections::HashMap::new(); m.insert(0i64, 9i64);
+    let mut m = indexmap::IndexMap::new(); m.insert(0i64, 9i64);
     assert_eq!(uses_dict_param(m), 9);
     assert_eq!(uses_dict_local(0), 0);
     assert_eq!(uses_int_only(2, 3), 5);
@@ -15369,9 +15374,9 @@ fn expr_or_default() {
     let rust = xpile_transpile_to_rust("expr_or_default.py");
     let driver = r#"
 fn main() {
-    let mut m = std::collections::HashMap::new(); m.insert(String::from("k"), 5i64);
+    let mut m = indexmap::IndexMap::new(); m.insert(String::from("k"), 5i64);
     assert_eq!(via_call(m), 5);
-    assert_eq!(via_call(std::collections::HashMap::new()), 99);
+    assert_eq!(via_call(indexmap::IndexMap::new()), 99);
     assert_eq!(via_method(String::from("  hi ")), "hi");
     assert_eq!(via_method(String::from("   ")), "empty");
     assert_eq!(via_name(0, 7), 7);
@@ -15455,13 +15460,13 @@ fn main() {
 fn typing_capitalized_generics() {
     let rust = xpile_transpile_to_rust("typing_capitalized_generics.py");
     assert!(
-        rust.contains("xs: Vec<i64>") && rust.contains("HashMap<String, i64>"),
+        rust.contains("xs: Vec<i64>") && rust.contains("IndexMap<String, i64>"),
         "capitalized generics must lower like lowercase:\n{rust}"
     );
     let driver = r#"
 fn main() {
     assert_eq!(total(vec![1, 2, 3]), 6);
-    let mut m = std::collections::HashMap::new(); m.insert(String::from("a"), 1i64);
+    let mut m = indexmap::IndexMap::new(); m.insert(String::from("a"), 1i64);
     assert_eq!(count(m), 1);
     assert_eq!(pair(), (1, 2));
     assert_eq!(uniq(vec![1, 2, 2, 3]), 3);
@@ -15633,7 +15638,7 @@ fn main() {
 
 /// PMAT-873 (dict-order migration prep): prove the bare-`rustc` e2e harness can
 /// compile + RUN generated code that uses `indexmap::IndexMap` — the enabler for
-/// the Python dict insertion-order fix (HashMap iteration order is
+/// the Python dict insertion-order fix (IndexMap iteration order is
 /// non-deterministic; IndexMap preserves insertion order, and `shift_remove`
 /// preserves order on delete). This de-risks the codegen migration by verifying
 /// the `--extern indexmap` mechanism works in CI before any emit site changes.
@@ -15651,4 +15656,29 @@ pub fn ordered() -> String {
 "#;
     let driver = r#"fn main() { assert_eq!(ordered(), "zm"); }"#;
     assert_rustc_runs("indexmap_harness_smoke", src, driver);
+}
+
+/// PMAT-874 (dict-order migration): Python dicts iterate in INSERTION order; xpile
+/// emitted HashMap (non-deterministic) → now indexmap::IndexMap. Asserts the
+/// emitted type + the runtime order (build, del-preserves-order, overwrite-keeps
+/// -position) vs python3.
+#[test]
+fn dict_insertion_order() {
+    let rust = xpile_transpile_to_rust("dict_insertion_order.py");
+    assert!(
+        rust.contains("indexmap::IndexMap"),
+        "dict must lower to IndexMap:\n{rust}"
+    );
+    assert!(
+        !rust.contains("std::collections::HashMap"),
+        "no HashMap for dicts:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(build_order(), "zamb");
+    assert_eq!(del_keeps_order(), "zm");
+    assert_eq!(overwrite_keeps_pos(), "za");
+}
+"#;
+    assert_rustc_runs("dict_insertion_order", &rust, driver);
 }
