@@ -7,6 +7,15 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.574] — 2026-06-21
+
+### Documentation
+
+- **PMAT-874 (slice 3) — document the `indexmap` dependency for dict output.** Since
+  v0.1.573 the generated Rust uses `indexmap::IndexMap` for Python dicts (insertion
+  order). README now states that dict-using output needs `indexmap = "2"` in its
+  `Cargo.toml`; dict-free output stays std-only.
+
 ## [0.1.573] — 2026-06-21
 
 ### Fixed
