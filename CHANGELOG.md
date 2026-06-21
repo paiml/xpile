@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.572] — 2026-06-21
+
+### Changed
+
+- **PMAT-873 — e2e harness links `indexmap` (dict-order migration prep).** The
+  bare-`rustc` e2e harness now discovers and links the workspace `indexmap` rlib
+  (`--extern indexmap`, via the test binary's own deps dir), with a smoke test
+  proving the mechanism in CI. This is the enabler for the upcoming
+  `HashMap`→`IndexMap` codegen migration that fixes Python dict insertion-order
+  (currently non-deterministic). No codegen change yet.
+
 ## [0.1.571] — 2026-06-21
 
 ### Fixed
