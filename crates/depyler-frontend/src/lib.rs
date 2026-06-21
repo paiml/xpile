@@ -11145,7 +11145,13 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     let rty = infer_type_in_ctx(ctx, &rhs);
                     if matches!(lty, Type::I64 | Type::F64) && matches!(rty, Type::I64 | Type::F64)
                     {
-                        if lty == Type::F64 || rty == Type::F64 {
+                        // PMAT-865 (HUNT-V30 #13): a statically-negative integer
+                        // exponent takes the float path — Python `pow(2, -1)` ==
+                        // 0.5 — mirroring the `**` operator's PMAT-636 rule.
+                        // Previously `pow(int, neg)` stayed integer (checked_pow)
+                        // so a `-> float` return rejected ("body produces I64").
+                        let neg_exp = extract_step_literal(&call.args[1]).is_some_and(|k| k < 0);
+                        if lty == Type::F64 || rty == Type::F64 || neg_exp {
                             return Ok(Expr::FloatBinOp {
                                 op: FloatOp::Pow,
                                 lhs: Box::new(to_f64_operand(ctx, lhs)),
