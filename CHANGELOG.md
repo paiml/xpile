@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.560] — 2026-06-21
+
+### Added
+
+- **PMAT-861 (R6 contract-integrity, slice 4) — `C-XLATE-PY-SET-TO-HASHSET`
+  authored; set code now cited.** The last container construct emitting uncited.
+  New `contracts/xlate-py-set-to-hashset-v1.yaml` + `contracts/lean/XlatePySetToHashset.lean`
+  (sorry-free structural Diamond). `applicable_contracts()` now cites it for
+  set-typed code. **int/str/list/dict/float/set all cite their on-disk contract**
+  — the "every construct under contract" differentiator restored across the core
+  type system, CI-enforced. 17 contracts; depth-1 universal 17==17.
+
 ## [0.1.559] — 2026-06-21
 
 ### Added
