@@ -15351,3 +15351,30 @@ fn main() {
 "#;
     assert_rustc_runs("tuple_var_repeat", &rust, driver);
 }
+
+/// PMAT-862 (HUNT-V29 #9): ZeroDivisionError messages match CPython — float `%`
+/// is "float modulo by zero" (was truncated "float modulo"), and int/int true
+/// division is "division by zero" (was "float division by zero"). vs python3.
+#[test]
+fn float_zerodiv_messages() {
+    let rust = xpile_transpile_to_rust("float_zerodiv_messages.py");
+    let driver = r#"
+fn caught(f: impl FnOnce() + std::panic::UnwindSafe) -> String {
+    std::panic::set_hook(Box::new(|_| {}));
+    match std::panic::catch_unwind(f) {
+        Ok(_) => String::new(),
+        Err(e) => e
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_default(),
+    }
+}
+fn main() {
+    assert_eq!(caught(|| { float_mod(1.0, 0.0); }), "xpile: ZeroDivisionError: float modulo by zero");
+    assert_eq!(caught(|| { int_div(1, 0); }), "xpile: ZeroDivisionError: division by zero");
+    assert_eq!(caught(|| { float_div(1.0, 0.0); }), "xpile: ZeroDivisionError: float division by zero");
+}
+"#;
+    assert_rustc_runs("float_zerodiv_messages", &rust, driver);
+}
