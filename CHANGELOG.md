@@ -7,6 +7,16 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.566] — 2026-06-21
+
+### Fixed
+
+- **PMAT-867 — chained comparison evaluates operands left-to-right.** `a OP b OP c`
+  bound the middle operand before the left, so `b` evaluated before `a` (contra
+  Python's strict left-to-right) — wrong stdout order and a wrong boolean under
+  shared mutable state. The first operand is now bound before the middle;
+  operands 2.. stay lazily nested (short-circuit preserved). HUNT-V31 (#3).
+
 ## [0.1.565] — 2026-06-21
 
 ### Fixed
