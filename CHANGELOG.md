@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.573] — 2026-06-21
+
+### Fixed
+
+- **PMAT-874 — Python dicts lower to `IndexMap` for insertion order.** Python dicts
+  iterate in insertion order (guaranteed since 3.7), but xpile emitted
+  `std::collections::HashMap` whose iteration order is non-deterministic — a
+  silent-wrong divergence on any dict iteration (`for k in d`, `.keys()`/`.values()`
+  /`.items()`, `list(d)`, repr). Both backends now emit `indexmap::IndexMap` for
+  dicts (and `.shift_remove` for `del`/`pop`, preserving order). Sets stay
+  `HashSet`. The highest-severity open correctness divergence, recurring across
+  HUNT-V29/V30/V31. (Transpiled output now depends on the `indexmap` crate for any
+  dict — a deliberate correctness-over-zero-deps trade.)
+
 ## [0.1.572] — 2026-06-21
 
 ### Changed
