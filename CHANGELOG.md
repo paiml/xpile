@@ -7,6 +7,15 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.565] — 2026-06-21
+
+### Fixed
+
+- **PMAT-866 — non-finite float literals emit f64 constants.** A non-finite float
+  literal (`1e400` → inf, also nan) emitted the invalid Rust token `inff64` (the
+  `{}f64` formatter). Both backends now emit `f64::INFINITY` / `f64::NEG_INFINITY`
+  / `f64::NAN`; this also unblocks `math.inf`/`math.nan`. HUNT-V30 (#17).
+
 ## [0.1.564] — 2026-06-21
 
 ### Fixed
