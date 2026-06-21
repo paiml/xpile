@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.567] — 2026-06-21
+
+### Fixed
+
+- **PMAT-868 — widen bool to i64 in an explicitly int-annotated local.** `n: int =
+  True` (and the common `flag: int = x > 0` count idiom) emitted `let n: i64 =
+  true` (rustc E0308). The annotated-assign site now widens a bool initializer to
+  i64 when the annotation is explicitly `int`. (Done only where the int target is
+  explicit; call-arg / parameter-default / container-element bool positions are a
+  follow-up.) HUNT-V31 (#1).
+
 ## [0.1.566] — 2026-06-21
 
 ### Fixed
