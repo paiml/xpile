@@ -26,7 +26,7 @@ queue:
     title: "Citation-integrity gate part (b): per-fixture EXPECTED-contracts so a contract-bearing construct that MISSES its citation fails (currently only no-phantom + slice-1-live are enforced)"
     tier: R6
   - id: R6-slice4
-    status: open
+    status: done
     title: "Author a set type-translation contract (C-XLATE-PY-SET-*) + wire set citation"
     tier: R6
 
