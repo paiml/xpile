@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.555] — 2026-06-21
+
+### Fixed
+
+- **PMAT-857 — `str()` over an Optional → "None" / `str(inner)`.** `str(None)` and
+  `str(d.get(k))` were lowering rejects ("declared return type Str but body
+  produces I64") — the `str()` builtin had no Option arm, so the Optional fell
+  through mis-typed as I64. A bare `str(None)` now lowers to `"None"`, and
+  `str(<optional>)` lowers to `if opt.is_none() { "None" } else { <str of
+  opt.unwrap()> }`, reusing the per-inner-type str conversion. Consolidates three
+  findings (None literal, Optional variable, `d.get(...)` result). HUNT-V28 (#1).
+
 ## [0.1.554] — 2026-06-21
 
 ### Fixed
