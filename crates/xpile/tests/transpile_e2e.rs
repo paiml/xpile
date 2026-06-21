@@ -15505,3 +15505,28 @@ fn main() {
 "#;
     assert_rustc_runs("bool_int_annotated_local", &rust, driver);
 }
+
+/// PMAT-869 (HUNT-V31 #1): a bool in an int-expecting position (explicit `-> int`
+/// return of a comparison, call arg, parameter default) widens to i64; xpile
+/// emitted a bare bool against an i64 slot (E0308). Made safe by inferring an
+/// unannotated comparison return as bool (so `le` stays `-> bool`). vs python3.
+#[test]
+fn bool_to_int_positions() {
+    let rust = xpile_transpile_to_rust("bool_to_int_positions.py");
+    assert!(
+        rust.contains("pub fn le(a: bool, b: bool) -> bool")
+            || rust.contains("fn le(a: bool, b: bool) -> bool")
+            || rust.contains("-> bool"),
+        "unannotated comparison-return `le` must stay -> bool:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(ret_compare(5), 1);
+    assert_eq!(ret_compare(-5), 0);
+    assert_eq!(via_call(), 11);
+    assert_eq!(use_default(), 1);
+    assert_eq!(uses_le(), true);
+}
+"#;
+    assert_rustc_runs("bool_to_int_positions", &rust, driver);
+}

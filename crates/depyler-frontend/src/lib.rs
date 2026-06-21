@@ -1298,7 +1298,7 @@ impl Frontend for PythonFrontend {
                     // PMAT-856 (HUNT-V28 #3): infer an unannotated predicate
                     // return as `bool` so the call site agrees with the emitted
                     // `-> bool` signature (was the I64 default → E0308).
-                    None => infer_unannotated_return(f),
+                    None => infer_unannotated_return(&f.body),
                     Some(ann) => {
                         parse_type_annotation(f.name.as_str(), "return", ann).unwrap_or(Type::I64)
                     }
@@ -2216,16 +2216,21 @@ fn default_literal_type(expr: &ast::Expr) -> Option<Type> {
 /// silent-wrong). Everything else keeps the I64 default (matches the existing
 /// behaviour for arithmetic returns). Conservative: only the shapes whose lowered
 /// type is unambiguously `bool` (the signature emission infers the same).
-fn infer_unannotated_return(f: &ast::StmtFunctionDef) -> Type {
+fn infer_unannotated_return(body: &[ast::Stmt]) -> Type {
     fn returns_bool(e: &ast::Expr) -> bool {
         match e {
             ast::Expr::Compare(_) => true,
             ast::Expr::UnaryOp(u) => matches!(u.op, ast::UnaryOp::Not),
             ast::Expr::Constant(c) => matches!(c.value, ast::Constant::Bool(_)),
+            // PMAT-869: `a and b` / `a or b` whose operands are ALL bool-returning
+            // is itself bool (`lo <= x and x <= hi`). An `and`/`or` over non-bool
+            // operands returns the last operand's type (value-dependent) — NOT
+            // classified as bool here, so it keeps the I64 default.
+            ast::Expr::BoolOp(b) => b.values.iter().all(returns_bool),
             _ => false,
         }
     }
-    if let Some(ast::Stmt::Return(r)) = f.body.last() {
+    if let Some(ast::Stmt::Return(r)) = body.last() {
         if let Some(val) = r.value.as_deref() {
             if returns_bool(val) {
                 return Type::Bool;
@@ -2360,7 +2365,17 @@ fn lower_function_def(
         None => None,
         Some(ann) => Some(parse_type_annotation(&f.name, "<return>", ann)?),
     };
-    let ctx_return_type = declared_return_type.clone().unwrap_or(Type::I64);
+    // PMAT-869 (HUNT-V31 #1): an UNANNOTATED function's lowering-ctx return type
+    // uses the same inference as its FnSig (PMAT-856) — a trailing
+    // comparison/not/bool-literal return types as `bool`, not the blanket I64
+    // default. This makes ctx.fn_return_type AGREE with the emitted `-> bool`
+    // signature (removing a latent inconsistency) and, crucially, lets the
+    // bool→i64 coercion below distinguish a genuine bool return (`def le(a,b):
+    // return a<=b`) from an explicitly-int target — so the coercion no longer
+    // corrupts comparison-returns.
+    let ctx_return_type = declared_return_type
+        .clone()
+        .unwrap_or_else(|| infer_unannotated_return(&body_stmts));
 
     // PMAT-013: implicit BigInt promotion. When the user declares the
     // return type as BigInt, every `int`-typed param is promoted to
@@ -8840,6 +8855,19 @@ fn lower_value_expecting(
             return Ok(inner);
         }
         return Ok(Expr::OptionExpr(Some(Box::new(inner))));
+    }
+    // PMAT-869 (HUNT-V31 #1): a bool value in an int-EXPECTING position — an
+    // explicitly `-> int` return whose body is a comparison (`def f() -> int:
+    // return x > 0`), or an int-annotated local — widens bool→i64 (Python's
+    // `True` is an int subtype). Safe now that an UNANNOTATED comparison-return
+    // types as Bool (the ctx_return_type inference above), so a remaining I64
+    // expectation here is a GENUINE int target, not a defaulted one.
+    if matches!(expected, Type::I64) {
+        let inner = lower_expr_in_ctx(ctx, value.clone())?;
+        if matches!(infer_type_in_ctx(ctx, &inner), Type::Bool) {
+            return Ok(bool_to_i64_cast(inner));
+        }
+        return Ok(inner);
     }
     match value {
         ast::Expr::List(l) if l.elts.is_empty() && matches!(expected, Type::List(_)) => {
@@ -15742,6 +15770,13 @@ fn coerce_lowered_to_optional(ctx: &LoweringCtx, inner: Expr, target: Option<&Ty
             from_str: false,
             from_float: false,
         };
+    }
+    // PMAT-869 (HUNT-V31 #1): a `bool` argument/default passed to an `int`
+    // parameter — Python's `True` is an int subtype (`f(True)` over `n: int`,
+    // `def f(n: int = True)`). Widen bool→i64; without it the backend emitted a
+    // `bool` against an `i64` slot (rustc E0308).
+    if matches!(target, Some(Type::I64)) && matches!(infer_type_in_ctx(ctx, &inner), Type::Bool) {
+        return bool_to_i64_cast(inner);
     }
     inner
 }
