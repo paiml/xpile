@@ -144,8 +144,8 @@ impl Function {
         // capability-vs-contract drift (audit-design.md §6). The signal is the
         // TYPES in play (params + return + body `let`/loop bindings, recursing
         // into compound types) because these contracts govern the type
-        // translation itself. Float is now wired (PMAT-860); a set contract is
-        // still deferred (not yet authored — cite only contracts that exist).
+        // translation itself. All core scalars + containers are now wired —
+        // int/str/list/dict/float/set each cite their on-disk contract.
         let mut tys: Vec<&Type> = self.params.iter().map(|p| &p.ty).collect();
         tys.push(&self.return_type);
         collect_block_let_types(&self.body.stmts, &mut tys);
@@ -169,6 +169,15 @@ impl Function {
         // instead of emitting uncited (the last core scalar to be wired).
         if tys.iter().any(|t| type_any(t, &|x| matches!(x, Type::F64))) {
             ids.push("C-PY-FLOAT-ARITH");
+        }
+        // PMAT-861 (R6 slice 4): set now has its on-disk contract
+        // (contracts/xlate-py-set-to-hashset-v1.yaml) — the last container wired,
+        // so int/str/list/dict/float/set all cite their translation contract.
+        if tys
+            .iter()
+            .any(|t| type_any(t, &|x| matches!(x, Type::Set(_))))
+        {
+            ids.push("C-XLATE-PY-SET-TO-HASHSET");
         }
         ids
     }

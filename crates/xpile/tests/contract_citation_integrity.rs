@@ -113,6 +113,7 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
         "C-XLATE-PY-LIST-TO-VEC",
         "C-XLATE-PY-DICT-TO-HASHMAP",
         "C-PY-FLOAT-ARITH",
+        "C-XLATE-PY-SET-TO-HASHSET",
     ] {
         assert!(
             cited.contains(required),
