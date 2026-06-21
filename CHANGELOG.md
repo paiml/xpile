@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.568] — 2026-06-21
+
+### Fixed
+
+- **PMAT-869 — widen bool to i64 across int-expecting positions.** A bool in an
+  int-expecting position (an explicit `-> int` return of a comparison, a call
+  argument, a parameter default) now widens to i64 — Python's `True` is an int
+  subtype; xpile emitted a bare bool against an i64 slot (rustc E0308). Made safe
+  by inferring an UNANNOTATED comparison / `and`/`or`-of-bools return as `bool`
+  (so `def le(a,b): return a<=b` and `in_range` stay `-> bool`). Extends the
+  v0.1.567 annotated-local fix to returns, call args, and defaults. HUNT-V31 (#1).
+
 ## [0.1.567] — 2026-06-21
 
 ### Fixed
