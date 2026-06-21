@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.556] — 2026-06-21
+
+### Fixed
+
+- **PMAT-475 (R6 contract-integrity, slice 1) — str/list/dict constructs now cite
+  their type-translation contracts.** `Function::applicable_contracts()` previously
+  cited only `C-PY-INT-ARITH`, so str/list/dict code transpiled to *uncited* Rust
+  even though `C-XLATE-PY-{STR-TO-RUST-STRING,LIST-TO-VEC,DICT-TO-HASHMAP}` already
+  exist on disk — the capability-vs-contract drift (five-whys in
+  `audit-design.md §6`). The citation logic now emits these contracts when a
+  str/list/dict is in play (params + return + local `let`/loop bindings, recursing
+  compound types). First step toward the citation-integrity CI gate. Float/set are
+  deferred (their contracts are not yet authored).
+
 ## [0.1.555] — 2026-06-21
 
 ### Fixed
