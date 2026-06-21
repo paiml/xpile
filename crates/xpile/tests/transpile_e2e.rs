@@ -161,6 +161,46 @@ fn rust_target_dir(name: &str) -> std::path::PathBuf {
     dir
 }
 
+/// PMAT-873 (dict-order migration): locate the workspace `indexmap` rlib + its
+/// deps dir so the bare-`rustc` e2e harness can link generated code that uses
+/// `indexmap::IndexMap` (Python dict insertion-order). The test binary itself
+/// lives in `<target>/debug/deps/`, alongside `libindexmap-<hash>.rlib`, so we
+/// discover the dir from `current_exe()` — robust across local and CI (no
+/// hardcoded paths). `indexmap` is already a transitive workspace dependency (via
+/// `serde_yaml`), so the rlib is built whenever the e2e tests build. Returns the
+/// extra rustc args (`--extern indexmap=… -L dependency=…`), or empty if the rlib
+/// isn't found (then indexmap-using compiles fail loudly rather than silently
+/// skipping). When multiple `libindexmap-*.rlib` exist (different feature hashes)
+/// every one is offered; rustc picks the matching metadata.
+fn indexmap_rustc_args() -> Vec<std::ffi::OsString> {
+    use std::ffi::OsString;
+    let Ok(exe) = std::env::current_exe() else {
+        return Vec::new();
+    };
+    let Some(deps) = exe.parent() else {
+        return Vec::new();
+    };
+    let mut rlibs: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(deps) {
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if let Some(name) = p.file_name().and_then(|s| s.to_str()) {
+                if name.starts_with("libindexmap-") && name.ends_with(".rlib") {
+                    rlibs.push(p.clone());
+                }
+            }
+        }
+    }
+    let Some(rlib) = rlibs.into_iter().next() else {
+        return Vec::new();
+    };
+    let mut dep = OsString::from("dependency=");
+    dep.push(deps);
+    let mut ext = OsString::from("indexmap=");
+    ext.push(rlib);
+    vec!["-L".into(), dep, "--extern".into(), ext]
+}
+
 /// Stronger than `assert_rustc_accepts`: actually compiles + runs the
 /// emitted Rust, with the supplied `driver_main` appended (which calls
 /// the transpiled functions and `assert!`s the expected results).
@@ -182,6 +222,10 @@ fn assert_rustc_runs(name: &str, transpiled: &str, driver_main: &str) {
         .arg("-o")
         .arg(&bin)
         .arg(&file)
+        // PMAT-873: link the workspace `indexmap` so generated code that uses
+        // `indexmap::IndexMap` (Python dict insertion-order) compiles. Harmless
+        // for the (current) majority of fixtures that don't reference it.
+        .args(indexmap_rustc_args())
         .output()
         .expect("spawn rustc");
     assert!(
@@ -15585,4 +15629,26 @@ fn main() {
 }
 "#;
     assert_rustc_runs("fstring_str_conversion_spec", &rust, driver);
+}
+
+/// PMAT-873 (dict-order migration prep): prove the bare-`rustc` e2e harness can
+/// compile + RUN generated code that uses `indexmap::IndexMap` — the enabler for
+/// the Python dict insertion-order fix (HashMap iteration order is
+/// non-deterministic; IndexMap preserves insertion order, and `shift_remove`
+/// preserves order on delete). This de-risks the codegen migration by verifying
+/// the `--extern indexmap` mechanism works in CI before any emit site changes.
+#[test]
+fn indexmap_harness_smoke() {
+    let src = r#"
+pub fn ordered() -> String {
+    let mut m: indexmap::IndexMap<String, i64> = indexmap::IndexMap::new();
+    m.insert("z".to_string(), 1);
+    m.insert("a".to_string(), 2);
+    m.insert("m".to_string(), 3);
+    m.shift_remove("a");
+    m.keys().cloned().collect()
+}
+"#;
+    let driver = r#"fn main() { assert_eq!(ordered(), "zm"); }"#;
+    assert_rustc_runs("indexmap_harness_smoke", src, driver);
 }
