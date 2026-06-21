@@ -16584,6 +16584,35 @@ fn try_repeat(lhs_ty: &Type, rhs_ty: &Type, lhs: &Expr, rhs: &Expr) -> Option<Ex
         }
         _ => {}
     }
+    // PMAT-859 (HUNT-V29 #4): a tuple-TYPED VALUE (a variable, not a literal)
+    // repeated by an int LITERAL — `a * 3` where `a: tuple[..]`. Expand to a
+    // fixed-arity tuple of per-element reads (Rust tuples aren't variadic, so the
+    // count must be a compile-time literal — a runtime count still falls through
+    // to the documented i64-path limitation). Each element is cloned because it
+    // is read `arity * reps` times (sound for non-Copy element types too).
+    // Without this it fell to the i64 multiply path → `checked_mul` on a tuple
+    // (rustc E0599). The tuple-LITERAL forms are handled above.
+    let tuple_value_repeat = |tup: &Expr, arity: usize, n: i64| -> Expr {
+        let reps = n.max(0) as usize;
+        let mut out = Vec::with_capacity(arity.saturating_mul(reps));
+        for _ in 0..reps {
+            for i in 0..arity {
+                // `TupleIndex` codegen already emits `(tup).i.clone()`, so the
+                // element survives being read `arity * reps` times (non-Copy safe).
+                out.push(Expr::TupleIndex {
+                    tuple: Box::new(tup.clone()),
+                    index: i,
+                });
+            }
+        }
+        Expr::TupleLit(out)
+    };
+    if let (Type::Tuple(elems), Expr::LitInt(n)) = (lhs_ty, rhs) {
+        return Some(tuple_value_repeat(lhs, elems.len(), *n));
+    }
+    if let (Type::Tuple(elems), Expr::LitInt(n)) = (rhs_ty, lhs) {
+        return Some(tuple_value_repeat(rhs, elems.len(), *n));
+    }
     let is_seq = |t: &Type| matches!(t, Type::Str | Type::List(_));
     // PMAT-796 (HUNT-V18 BIC-02): a list/str repeat count may be a bool —
     // Python's `bool` is an `int` subtype, so `[x] * True` == `[x]` and `* False`

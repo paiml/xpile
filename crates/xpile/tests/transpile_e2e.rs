@@ -15335,3 +15335,19 @@ fn main() {
 "#;
     assert_rustc_runs("expr_or_default", &rust, driver);
 }
+
+/// PMAT-859 (HUNT-V29 #4): a tuple-typed variable repeated by an int literal
+/// (`a * 3`) emitted checked_mul on a tuple (E0599); try_repeat only handled a
+/// tuple literal. It now expands a tuple-typed value element-wise. vs python3.
+#[test]
+fn tuple_var_repeat() {
+    let rust = xpile_transpile_to_rust("tuple_var_repeat.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(var_repeat(), 6);
+    assert_eq!(left_count(), 4);
+    assert_eq!(lit_repeat_regression(), 4);
+}
+"#;
+    assert_rustc_runs("tuple_var_repeat", &rust, driver);
+}
