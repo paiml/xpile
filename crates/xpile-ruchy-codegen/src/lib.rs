@@ -1271,7 +1271,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             FloatOp::Mod => {
                 out.push_str("{ let __fz: f64 = ");
                 emit_expr(out, rhs, mode)?;
-                out.push_str("; if __fz == 0.0 { panic!(\"xpile: ZeroDivisionError: float modulo\"); } let __fn: f64 = ");
+                // PMAT-862 (HUNT-V29 #9): CPython says "float modulo by zero".
+                out.push_str("; if __fz == 0.0 { panic!(\"xpile: ZeroDivisionError: float modulo by zero\"); } let __fn: f64 = ");
                 emit_expr(out, lhs, mode)?;
                 out.push_str("; let __r = __fn % __fz; if __r != 0.0 { if (__fz < 0.0) != (__r < 0.0) { __r + __fz } else { __r } } else { 0.0_f64.copysign(__fz) } }");
             }
@@ -1301,9 +1302,36 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             }
             // PMAT-581: float `/` (and int true-division) raises ZeroDivisionError.
             FloatOp::Div => {
+                // PMAT-862 (HUNT-V29 #9): int/int true division → "division by
+                // zero"; only a float operand → "float division by zero".
+                let both_int = matches!(
+                    &**lhs,
+                    Expr::NumCast {
+                        to_float: true,
+                        from_float: false,
+                        from_str: false,
+                        ..
+                    }
+                ) && matches!(
+                    &**rhs,
+                    Expr::NumCast {
+                        to_float: true,
+                        from_float: false,
+                        from_str: false,
+                        ..
+                    }
+                );
+                let zmsg = if both_int {
+                    "division by zero"
+                } else {
+                    "float division by zero"
+                };
                 out.push_str("{ let __fz: f64 = ");
                 emit_expr(out, rhs, mode)?;
-                out.push_str("; if __fz == 0.0 { panic!(\"xpile: ZeroDivisionError: float division by zero\"); } (");
+                write!(
+                    out,
+                    "; if __fz == 0.0 {{ panic!(\"xpile: ZeroDivisionError: {zmsg}\"); }} ("
+                )?;
                 emit_expr(out, lhs, mode)?;
                 out.push_str(") / __fz }");
             }
