@@ -7,6 +7,16 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.571] — 2026-06-21
+
+### Fixed
+
+- **PMAT-872 — f-string `{x!s:spec}` applies `str()` before the spec.** An explicit
+  `!s` conversion must convert to a string FIRST, then format with string-spec
+  semantics (left-align default) — `f"{42!s:5}"` is `"42   "`. xpile dropped the
+  `!s` and emitted the value's numeric spec (`"   42"`). The `!r` and plain-field
+  paths are unchanged. HUNT-V31 (#4).
+
 ## [0.1.570] — 2026-06-21
 
 ### Fixed
