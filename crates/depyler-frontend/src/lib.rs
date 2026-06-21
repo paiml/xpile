@@ -11628,6 +11628,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             return Ok(range_repr_expr(lowered));
                         }
                     }
+                    // PMAT-857 (HUNT-V28 #1): `str(None)` → "None" (the bare
+                    // literal has no inner type to dispatch on; without this it
+                    // fell through to a generic call that mis-inferred I64 → the
+                    // `-> str` return rejected "body produces I64").
+                    if matches!(&call.args[0], ast::Expr::Constant(c) if matches!(c.value, ast::Constant::None))
+                    {
+                        return Ok(Expr::LitStr(String::from("None")));
+                    }
                     let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
                     match infer_type_in_ctx(ctx, &value) {
                         Type::I64 => {
@@ -11668,6 +11676,44 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 value: Box::new(value),
                                 rust_spec: String::new(),
                             });
+                        }
+                        // PMAT-857 (HUNT-V28 #1): `str(<optional>)` — e.g.
+                        // `str(d.get(k))` — is Python "None" for the absent case
+                        // and `str(inner)` otherwise. Lower to `if opt.is_none() {
+                        // "None" } else { <str of opt.unwrap()> }`, reusing the
+                        // per-inner-type str conversion above. Without it the result
+                        // mis-inferred I64 and a `-> str` return rejected ("body
+                        // produces I64"). Consolidates str(None)/str(Optional var)/
+                        // str(d.get(...)).
+                        Type::Optional(inner) => {
+                            let unwrapped = Expr::OptionUnwrap(Box::new(value.clone()));
+                            let inner_str = match *inner {
+                                Type::I64 => Some(Expr::ToStr {
+                                    value: Box::new(unwrapped),
+                                    of_float: false,
+                                }),
+                                Type::F64 => Some(Expr::ToStr {
+                                    value: Box::new(unwrapped),
+                                    of_float: true,
+                                }),
+                                Type::Bool => Some(bool_to_python_str(unwrapped)),
+                                Type::Str => Some(unwrapped),
+                                Type::Struct(_) => Some(Expr::FormatSpec {
+                                    value: Box::new(unwrapped),
+                                    rust_spec: String::new(),
+                                }),
+                                _ => None,
+                            };
+                            if let Some(inner_str) = inner_str {
+                                return Ok(Expr::IfExpr {
+                                    cond: Box::new(Expr::IsNone {
+                                        value: Box::new(value),
+                                        negated: false,
+                                    }),
+                                    then_expr: Box::new(Expr::LitStr(String::from("None"))),
+                                    else_expr: Box::new(inner_str),
+                                });
+                            }
                         }
                         _ => {}
                     }
