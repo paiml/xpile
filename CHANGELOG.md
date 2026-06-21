@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.557] — 2026-06-21
+
+### Added
+
+- **PMAT-475 (R6 contract-integrity, slice 2) — the citation→contract CI gate.** A
+  new integration test transpiles the whole fixture corpus and (a) fails if any
+  emitted `// xpile-contract: <ID>` references a contract absent from
+  `contracts/*.yaml` (no phantom citations — the exact original sin that falsified
+  the every-construct-under-contract claim), and (b) regression-guards that the
+  slice-1 str/list/dict + int-arith citations stay actively emitted. This is the
+  deterministic replacement for the frozen Diamond-depth pressure: a construct can
+  no longer ship citing a contract that does not exist.
+
 ## [0.1.556] — 2026-06-21
 
 ### Fixed
