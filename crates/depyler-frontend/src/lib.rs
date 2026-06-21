@@ -2771,7 +2771,20 @@ fn parse_type_annotation(
                     "function `{fn_name}` annotates `{site}` with non-Name subscripted type — only `list[T]` / `dict[K, V]` at v0.2.0"
                 )));
             };
-            match outer.id.as_str() {
+            // PMAT-864 (HUNT-V30 #10): accept the capitalized `typing` generics
+            // (`List[T]`/`Dict[K,V]`/`Tuple[...]`/`Set[T]`/`FrozenSet[T]`) as
+            // aliases of the lowercase builtin generics — the older Python style
+            // is extremely common. They behave identically to the lowercase form
+            // thereafter. (`Optional` is handled by its own arm below.)
+            let outer_id = match outer.id.as_str() {
+                "List" => "list",
+                "Dict" => "dict",
+                "Tuple" => "tuple",
+                "Set" => "set",
+                "FrozenSet" => "frozenset",
+                other => other,
+            };
+            match outer_id {
                 "list" => {
                     let elem_ty = parse_type_annotation(
                         fn_name,
