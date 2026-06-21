@@ -15403,3 +15403,24 @@ fn main() {
 "#;
     assert_rustc_runs("subscript_assign_bounds", &rust, driver);
 }
+
+/// PMAT-864 (HUNT-V30 #10): capitalized typing generics (List/Dict/Tuple/Set)
+/// were rejected; they now normalize to the lowercase builtin generics. vs python3.
+#[test]
+fn typing_capitalized_generics() {
+    let rust = xpile_transpile_to_rust("typing_capitalized_generics.py");
+    assert!(
+        rust.contains("xs: Vec<i64>") && rust.contains("HashMap<String, i64>"),
+        "capitalized generics must lower like lowercase:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(total(vec![1, 2, 3]), 6);
+    let mut m = std::collections::HashMap::new(); m.insert(String::from("a"), 1i64);
+    assert_eq!(count(m), 1);
+    assert_eq!(pair(), (1, 2));
+    assert_eq!(uniq(vec![1, 2, 2, 3]), 3);
+}
+"#;
+    assert_rustc_runs("typing_capitalized_generics", &rust, driver);
+}
