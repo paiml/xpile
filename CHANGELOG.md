@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.575] — 2026-06-21
+
+### Testing
+
+- **PMAT-875 — realistic multi-feature integration regression tests.** HUNT-V32
+  found the micro-feature differential surface clean (0 findings vs python3); a
+  manual spot-check confirmed realistic multi-feature programs agree too. Added
+  three integration e2e tests exercising feature interactions the single-feature
+  fixtures miss (word-frequency via dict.get/.items(); float min/max/avg stats;
+  parenthesis-balance string scan). All compile + run + match CPython.
+
 ## [0.1.574] — 2026-06-21
 
 ### Documentation
