@@ -14126,6 +14126,19 @@ fn pyrepr_of(value: Expr, ty: &Type) -> Result<Expr, FrontendError> {
     })
 }
 
+/// PMAT-872 (HUNT-V31 #4): Python's `str(x)` of a value, for the f-string `!s`
+/// conversion. Identical to [`pyrepr_of`] EXCEPT a string is itself (no quotes) —
+/// for int/float/bool/list/tuple Python's `str` and `repr` agree. Used so an
+/// explicit `{x!s:spec}` applies `str()` FIRST and then formats the resulting
+/// STRING (string-spec semantics: left-align default), rather than applying the
+/// value's numeric spec semantics.
+fn pystr_of(value: Expr, ty: &Type) -> Result<Expr, FrontendError> {
+    match ty {
+        Type::Str => Ok(value),
+        _ => pyrepr_of(value, ty),
+    }
+}
+
 /// PMAT-624: build Python's tuple `repr` — `"(" + repr(e0) + ", " + repr(e1) +
 /// … + ")"`, with the single-element trailing comma (`(42,)`) and `()` for the
 /// empty tuple. Heterogeneous element types (so per-position, not `Map`). The
@@ -14315,9 +14328,15 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
     // resulting string (e.g. `{x!r:>10}` right-aligns the quoted repr). The `{x=}`
     // debug form never reaches here with `is_repr` (its conversion rides on a
     // no-spec field), so this only affects explicit `!r` + spec.
+    // PMAT-872 (HUNT-V31 #4): an explicit `{x!s:spec}` likewise applies `str()`
+    // FIRST, so the spec formats the resulting STRING with string semantics
+    // (left-align default) — `f"{42!s:5}"` is "42   ", not the numeric "   42".
     let value = if is_repr {
         let ty = infer_type_in_ctx(ctx, &value);
         pyrepr_of(value, &ty)?
+    } else if fv.conversion == ast::ConversionFlag::Str {
+        let ty = infer_type_in_ctx(ctx, &value);
+        pystr_of(value, &ty)?
     } else {
         value
     };
