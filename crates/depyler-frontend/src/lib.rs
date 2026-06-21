@@ -9543,9 +9543,21 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             _ => Type::I64,
         },
         // PMAT-502dt: a block-expr types as its trailing expression.
-        // PMAT-556: a block-local `Ident` trailing recovers its type from the
-        // block's own `Let` (the enclosing ctx can't see the temp).
-        Expr::Block(b) => block_result_type(b, |e| infer_type_in_ctx(ctx, e)),
+        // PMAT-556 / PMAT-858: infer the trailing in a ctx that knows the
+        // block's own `let` bindings, so a trailing that is NOT a bare Ident
+        // (e.g. an `IfExpr` returning a block-local temp — the `a or default`
+        // single-eval fold) infers correctly. The enclosing ctx can't see the
+        // temp; registering the block's Let types subsumes the old bare-Ident
+        // special-case.
+        Expr::Block(b) => {
+            let mut sub = ctx.clone();
+            for s in &b.stmts {
+                if let Stmt::Let { name, ty, .. } = s {
+                    sub.name_types.insert(name.clone(), ty.clone());
+                }
+            }
+            infer_type_in_ctx(&sub, &b.trailing_return)
+        }
         // PMAT-477 (R8): float literal + float arithmetic are Type::F64.
         Expr::LitFloat(_) | Expr::FloatBinOp { .. } => Type::F64,
         // PMAT-456 (v0.2.0 Track 1.B): bool literal is Type::Bool.
@@ -15204,19 +15216,41 @@ fn lower_bool_op_in_ctx(ctx: &LoweringCtx, b: ast::ExprBoolOp) -> Result<Expr, F
     {
         let n = lowered.len();
         let ta = infer_type_in_ctx(ctx, &lowered[0]);
-        let lead_idents = lowered[..n - 1].iter().all(|e| matches!(e, Expr::Ident(_)));
         let same_type = lowered.iter().all(|e| infer_type_in_ctx(ctx, e) == ta);
-        if ta != Type::Bool
-            && lead_idents
-            && same_type
-            && bool_op_operand_truthy(ctx, &lowered[0]).is_some()
-        {
-            // Fold right-to-left from the last operand (value only); each
-            // leading operand wraps the accumulator in an `IfExpr` on its
-            // truthiness.
+        if ta != Type::Bool && same_type && bool_op_operand_truthy(ctx, &lowered[0]).is_some() {
+            // PMAT-858 (HUNT-V29 #3): the operand-RETURN fold (`a or b` / `a and
+            // b` returning the operand by truthiness) previously required every
+            // LEADING operand to be a bare `Ident` (read-only → safe to evaluate
+            // twice: once in its truthiness test, once in its value branch). That
+            // rejected the extremely common `d.get(k, 0) or default` /
+            // `s.strip() or default` (a method/call lead). Now a non-`Ident` lead
+            // is bound to a typed temp ONCE, so it is read twice without being
+            // re-evaluated (matching Python's single evaluation + short-circuit).
+            // The whole fold becomes a `Block { let __xpile_boolN = <lead>; …;
+            // <IfExpr over the temps> }`; pure-`Ident` leads keep the bare fold.
+            let mut prelude: Vec<Stmt> = Vec::new();
+            let mut resolved: Vec<Expr> = Vec::with_capacity(n - 1);
+            let mut sub = ctx.clone();
+            for (i, operand) in lowered[..n - 1].iter().enumerate() {
+                if matches!(operand, Expr::Ident(_)) {
+                    resolved.push(operand.clone());
+                } else {
+                    let tmp = format!("__xpile_bool{i}");
+                    prelude.push(Stmt::Let {
+                        name: tmp.clone(),
+                        ty: ta.clone(),
+                        value: operand.clone(),
+                        mutable: false,
+                    });
+                    sub.name_types.insert(tmp.clone(), ta.clone());
+                    resolved.push(Expr::Ident(tmp));
+                }
+            }
+            // Fold right-to-left from the last operand (value only); each leading
+            // operand wraps the accumulator in an `IfExpr` on its truthiness.
             let mut acc = Expr::Clone(Box::new(lowered[n - 1].clone()));
-            for operand in lowered[..n - 1].iter().rev() {
-                let cond = bool_op_operand_truthy(ctx, operand)
+            for operand in resolved.iter().rev() {
+                let cond = bool_op_operand_truthy(&sub, operand)
                     .expect("same non-bool type as the first operand, which has a truthiness");
                 let val = Expr::Clone(Box::new(operand.clone()));
                 let (then_expr, else_expr) = match py_op {
@@ -15229,7 +15263,13 @@ fn lower_bool_op_in_ctx(ctx: &LoweringCtx, b: ast::ExprBoolOp) -> Result<Expr, F
                     else_expr: Box::new(else_expr),
                 };
             }
-            return Ok(acc);
+            if prelude.is_empty() {
+                return Ok(acc);
+            }
+            return Ok(Expr::Block(Box::new(Block {
+                stmts: prelude,
+                trailing_return: acc,
+            })));
         }
     }
     // PMAT-667: a bool-RESULT `and`/`or` — e.g. `if xs and xs[0] > i:` (a
