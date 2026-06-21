@@ -1,0 +1,47 @@
+metadata:
+  id: C-XLATE-PY-SET-TO-HASHSET
+  version: "1.0.0"
+  created: "2026-06-21"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Translation of Python `set[T]` to Rust `std::collections::HashSet<T>`
+    (`Type::Set`; `Expr::SetLit`/`SetOp`/`SetPred`/`SetFromList`; `.add`/`.remove`/
+    `.discard`; union/intersection/difference/symmetric-difference; subset/
+    superset/disjoint predicates; set comprehensions). Layer 2 of the contract
+    taxonomy (translation), the set sibling of `C-XLATE-PY-LIST-TO-VEC` and
+    `C-XLATE-PY-DICT-TO-HASHMAP`.
+
+    Closes the last container in the capability-ahead-of-contract gap recorded in
+    audit-design.md §6 (R6 / PMAT-475): after the scalar (int/str/float) and
+    list/dict contracts, `set`-typed code was the remaining construct emitting
+    UNCITED. `Function::applicable_contracts()` now cites
+    `C-XLATE-PY-SET-TO-HASHSET` whenever a set is in play. Joins at depth-1 under
+    the R6-grandfathered Diamond gate (PMAT-475a); set-algebra tiers ratchet later.
+  references:
+    - "CPython: set is an unordered hash collection of distinct hashable elements"
+    - "Rust std: std::collections::HashSet<T>"
+    - "contracts/xlate-py-list-to-vec-v1.yaml / xlate-py-dict-to-hashmap-v1.yaml (sibling translation contracts)"
+    - "docs/specifications/audit-design.md §6 (Capability-vs-Contract Drift)"
+  depends_on: []
+
+equations:
+  py_set_structure_extensionality_diamond:
+    lean_theorem: "XpileContracts.CXlatePySetToHashset.py_set_structure_extensionality_diamond"
+    lean_file: "contracts/lean/XlatePySetToHashset.lean"
+    formula: |
+      ∀ a b : PySet.
+        a.repr = b.repr → a = b
+      (a Python set is determined by its canonical element representation; xpile emits HashSet)
+    domain: |
+      Any Python `set` values. xpile lowers `set[T]` to Rust `HashSet<T>`; the
+      Diamond captures structure-extensionality of the canonical-representation model.
+    invariants:
+      - "FIRST Diamond-tier theorem of C-XLATE-PY-SET-TO-HASHSET (registers it at depth-1)"
+      - "structure extensionality on the canonical element representation (sorry-free)"
+      - "set algebra (union/intersection/idempotence/membership) is deferred to later tiers"
+    preconditions:
+      - "the operands are Python set (lowered to Rust HashSet), not list/dict"
+    postconditions:
+      - "emitted Rust uses HashSet; set-typed code carries // xpile-contract: C-XLATE-PY-SET-TO-HASHSET"
