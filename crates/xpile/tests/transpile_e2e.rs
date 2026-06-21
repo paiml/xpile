@@ -15549,3 +15549,21 @@ fn main() {
 "#;
     assert_rustc_runs("round_huge_negative_ndigits", &rust, driver);
 }
+
+/// PMAT-871 (HUNT-V31 #16): Python leaks `for a, b in zip/enumerate/items` targets
+/// into the enclosing scope (post-loop read = last iteration's value, or the
+/// pre-loop value if empty). xpile shadowed pre-declared a/b → stale reads. The
+/// targets now leak like the single-var ForEach. vs python3.
+#[test]
+fn zip_tuple_unpack_leak() {
+    let rust = xpile_transpile_to_rust("zip_tuple_unpack_leak.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(last_pair(vec![1, 2, 3], vec![10, 20, 30]), 33);
+    assert_eq!(enum_leak(vec![5, 6, 7]), 207);
+    assert_eq!(sum_uses(vec![1, 2, 3], vec![10, 20, 30]), 66);
+    assert_eq!(empty_keeps_pre(vec![], vec![]), 187);
+}
+"#;
+    assert_rustc_runs("zip_tuple_unpack_leak", &rust, driver);
+}
