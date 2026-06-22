@@ -1392,6 +1392,70 @@ fn main() {
     assert_rustc_runs("starred_unpack", &rust, driver);
 }
 
+/// PMAT-876 (breadth): `f(*xs)` splatting a list across ALL N positional params
+/// of a FIXED-arity (non-variadic) callee — Python `add3(*xs)`. Expands to a
+/// block `{ let __u = xs; assert!(__u.len() == N, "TypeError…"); f(__u[0], …,
+/// __u[N-1]) }`. The length assert is REQUIRED for fidelity: Python raises a
+/// `TypeError` on arity mismatch, so a `len != N` splat must fail loud (not
+/// silently drop/panic-opaque). Handled BEFORE `reorder_kwargs_to_positional`,
+/// which would otherwise reject the sole `*xs` arg as "missing argument".
+/// Cross-checked vs python3.
+#[test]
+fn star_unpack_fixed_call() {
+    let rust = xpile_transpile_to_rust("star_unpack_fixed_call.py");
+    // A LITERAL/call source binds a temp; a bare VARIABLE source is indexed
+    // directly (borrow, not move) so it stays usable after the splat.
+    assert!(
+        rust.contains("let __xpile_splat")
+            && rust.contains("TypeError: add3() takes 3 positional arguments"),
+        "f(*<non-var>) into a fixed callee should bind a temp + length-assert:\n{rust}"
+    );
+    // PMAT-876 move-bug guard: a bare-variable splat source must NOT be moved
+    // into a temp — `splat_then_reuse(xs)` indexes `xs` directly so `len(xs)` /
+    // `xs[0]` after the splat still compile. The bind only appears for the
+    // literal/call sources, never for the `xs` param.
+    assert!(
+        rust.contains("let __xpile_splat: Vec<i64> = vec!"),
+        "a fresh (literal/call) splat source is temp-bound:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(call_add3(1, 2, 3), 6);
+    assert_eq!(call_join2(), "left-right");
+    assert_eq!(call_take_one(), 70);   // arity-1 splat
+    assert_eq!(sum_pair(vec![4, 5, 6]), 15);
+    // PMAT-876 move-bug regression: reuse the list after splatting it.
+    assert_eq!(splat_then_reuse(vec![1, 2, 3]), 10); // (1+2+3) + 3 + 1
+    assert_eq!(splat_twice(vec![10, 20, 30]), 120);  // 60 + 60
+    assert_eq!(splat_literal(), 6);                  // literal source (temp path)
+    // arity mismatch must panic (Python raises TypeError) — checked below.
+    let bad = std::panic::catch_unwind(|| sum_pair(vec![1, 2]));
+    assert!(bad.is_err(), "len-mismatch splat must fail loud, not silently");
+}
+"#;
+    assert_rustc_runs("star_unpack_fixed_call", &rust, driver);
+}
+
+/// PMAT-876 (fidelity guard): `f(*xs)` into a callee WITH defaults is DEFERRED
+/// (fail-loud at transpile). Python `def f(a, b=2)` accepts both `f(*[1])` (b
+/// defaults) and `f(*[1, 2])` — the accepted arity is a runtime-decided range,
+/// so a fixed `len == N` assert would diverge from python3. Rejecting at
+/// transpile time is correct-by-construction (never silently wrong).
+#[test]
+fn star_unpack_defaults_deferred() {
+    let py = fixture("star_unpack_defaults_deferred.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !out.status.success(),
+        "f(*xs) into a callee with defaults must be deferred, not transpiled"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("default parameters"),
+        "deferral message should explain the default-parameter limitation:\n{stderr}"
+    );
+}
+
 /// PMAT-700: a plain (no-star) tuple-unpack over a LIST — `a, b = xs` — now
 /// transpiles (it was rejected "expected a tuple", though `a, *b = xs` over the
 /// same list worked). Python unpacks by position with an exact-length check;
