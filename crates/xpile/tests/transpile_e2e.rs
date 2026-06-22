@@ -1562,6 +1562,35 @@ fn main() {
     assert_rustc_runs("class_to_struct_contract", &rust, driver);
 }
 
+/// PMAT-880 (R6 contract-integrity): a Python fixed-arity `tuple` lowers to a
+/// Rust tuple under the `C-XLATE-PY-TUPLE-TO-RUST-TUPLE` contract. Tuple code
+/// (`(i64, i64)`) shipped UNCITED before this; `Type::Tuple` is now wired into
+/// `Function::applicable_contracts()`. Pins the citation (R6) and the behavior —
+/// arity + position preserved (swap actually swaps) + per-element types
+/// preserved. Cross-checked vs python3.
+#[test]
+fn tuple_cites_contract() {
+    let rust = xpile_transpile_to_rust("tuple_contract.py");
+    assert!(
+        rust.contains("// xpile-contract: C-XLATE-PY-TUPLE-TO-RUST-TUPLE"),
+        "a tuple-touching function must cite C-XLATE-PY-TUPLE-TO-RUST-TUPLE:\n{rust}"
+    );
+    // Per-element types preserved: `labelled` returns (i64, String).
+    assert!(
+        rust.contains("(i64, String)"),
+        "tuple per-element types must be preserved (i64, String):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(swap(3, 4), (4, 3));        // position actually swaps
+    assert_eq!(first((10, 20)), 10);       // index reads slot 0
+    assert_eq!(labelled(7, "x".to_string()), (7, "x".to_string()));
+    assert_eq!(sum_pair((5, 6)), 11);      // a, b = p destructuring
+}
+"#;
+    assert_rustc_runs("tuple_contract", &rust, driver);
+}
+
 /// PMAT-700: a plain (no-star) tuple-unpack over a LIST — `a, b = xs` — now
 /// transpiles (it was rejected "expected a tuple", though `a, *b = xs` over the
 /// same list worked). Python unpacks by position with an exact-length check;

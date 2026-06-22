@@ -1,0 +1,155 @@
+metadata:
+  id: C-XLATE-PY-TUPLE-TO-RUST-TUPLE
+  version: "1.0.0"
+  created: "2026-06-22"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Translation contract: how a Python fixed-arity `tuple` lowers to a Rust
+    tuple `(T0, T1, …, Tn)` (`Type::Tuple`; `Expr::TupleLit`; `Expr::TupleIndex`;
+    tuple-typed params / returns; `a, b = pair` destructuring; `a, b = b, a` swap).
+
+    The naïve "tuple → tuple" mapping has two load-bearing boundaries:
+      1. Arity + position — a Python tuple's element count and order ARE its
+         type. `(b, a)` and `(a, b)` are distinct values; the emitted Rust tuple
+         must preserve element count and index-by-index position, or a swap /
+         destructuring silently reads the wrong slot.
+      2. Per-element types — each position's Python type lowers to its canonical
+         Rust counterpart with no coercion at the element boundary.
+
+    PMAT-880 (R6 contract-integrity): wired into
+    `Function::applicable_contracts()` so any function taking, returning, or
+    binding a `Type::Tuple` cites it — the tuple sibling of the list/dict/set
+    translation contracts, closing another previously-uncited core construct
+    (`(i64, i64)` shipped with no citation).
+
+    Layer 2 of the xpile contract taxonomy (translation).
+  references:
+    - "Python Language Reference §3.3.7 (Sequence types — tuple is an immutable fixed-arity sequence)"
+    - "contracts/xlate-py-list-to-vec-v1.yaml (sibling sequence-translation contract)"
+    - "docs/specifications/audit-design.md §6 (Capability-vs-Contract Drift)"
+  depends_on: []
+
+equations:
+  arity_and_position_preserved:
+    formula: |
+      xlate((e0, e1, …, en) : tuple[T0, T1, …, Tn])
+        == (lower(e0), lower(e1), …, lower(en)) : (lower(T0), …, lower(Tn))
+      WITH element count and index position preserved exactly.
+    domain: |
+      A Python fixed-arity tuple literal / tuple-typed binding whose elements
+      each have a concrete type with a canonical Rust counterpart.
+    invariants:
+      - "element count (arity) is preserved exactly"
+      - "element order is preserved index-by-index — `(b, a)` ≠ `(a, b)`"
+      - "tuple indexing `t[i]` reads the same element position as the source"
+    preconditions:
+      - "the tuple has a statically-known arity with concretely-typed elements"
+    postconditions:
+      - "the emitted Rust tuple has the same arity and per-position elements"
+      - "an emitter that reordered or dropped a position would swap/lose values on destructuring — falsified here"
+
+  per_element_types_preserved:
+    formula: |
+      for each position i: emitted_type(i) == lower(T_i)
+    domain: |
+      Same as arity_and_position_preserved — a concretely-typed fixed-arity tuple.
+    invariants:
+      - "each position's Rust type is the canonical lowering of its Python element type"
+      - "no implicit coercion at the element boundary (an int slot stays i64)"
+    preconditions:
+      - "type inference resolved each element to a supported Type"
+    postconditions:
+      - "the Rust tuple's per-position types match the lowered Python element types"
+
+  py_tuple_structure_extensionality_diamond:
+    # PMAT-880: FIRST (tier-defining) Diamond equation — registers
+    # C-XLATE-PY-TUPLE-TO-RUST-TUPLE at depth-1 under the R6-grandfathered
+    # Diamond gate (PMAT-475a), mirroring the str/list/float/set/class structural
+    # Diamonds. A tuple is determined by its ordered element list; tuple-algebra
+    # tiers ratchet in later.
+    lean_theorem: "XpileContracts.CXlatePyTupleToRustTuple.py_tuple_structure_extensionality_diamond"
+    lean_file: "contracts/lean/XlatePyTupleToRustTuple.lean"
+    formula: |
+      ∀ a b : PyTuple.
+        a.elems = b.elems → a = b
+      (a Python tuple is determined by its ordered element list; xpile emits a Rust tuple)
+    domain: |
+      Any Python fixed-arity tuple values. xpile lowers `tuple[…]` to a Rust
+      tuple; the Diamond captures structure-extensionality of the ordered-element
+      model (the same arity+order invariant `arity_and_position_preserved` governs
+      at the emit level).
+    invariants:
+      - "FIRST Diamond-tier theorem of C-XLATE-PY-TUPLE-TO-RUST-TUPLE (registers it at depth-1)"
+      - "structure extensionality on the ordered element list (sorry-free)"
+      - "tuple-algebra (concatenation, projection laws) deferred to later tiers"
+    preconditions:
+      - "the operand is a Python tuple (lowered to a Rust tuple), not a list/set"
+    postconditions:
+      - "emitted Rust uses a tuple; tuple-typed code carries // xpile-contract: C-XLATE-PY-TUPLE-TO-RUST-TUPLE"
+
+proof_obligations:
+  - type: precondition
+    property: meta-HIR carries a tuple type with a fixed arity and typed elements
+    formal: "item.type == Tuple ∧ ∀ i: item.elems[i].type ∈ SupportedTypes"
+    applies_to: arity_and_position_preserved
+  - type: postcondition
+    property: arity and element order are preserved
+    formal: "len(emit) == len(src) ∧ ∀ i: emit[i] ≡ lower(src[i])"
+    applies_to: arity_and_position_preserved
+  - type: frame
+    property: no mutation of the meta-HIR module during translation
+    formal: "modifies() == ∅"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-XLATE-TUPLE-001
+    rule: |
+      A tuple swap `a, b = b, a` MUST preserve element positions through the Rust
+      tuple — the values must actually swap, not stay or duplicate.
+    prediction: |
+      `def swap(a:int,b:int)->tuple[int,int]: return (b, a)` then unpacking the
+      result yields (b, a) — position-swapped.
+    test: |
+      cargo test -p xpile --test transpile_e2e tuple_cites_contract
+    if_fails: |
+      Tuple position diverged — destructuring reads the wrong slot.
+    ship_blocking: true
+    counter_example_classes:
+      - element_reorder
+
+  - id: FALSIFY-XLATE-TUPLE-002
+    rule: |
+      Every function touching a tuple type MUST cite this contract.
+    prediction: |
+      Transpiling a tuple-returning fixture emits `// xpile-contract: C-XLATE-PY-TUPLE-TO-RUST-TUPLE`.
+    test: |
+      cargo test -p xpile --test contract_citation_integrity every_emitted_citation_resolves_to_an_on_disk_contract
+    if_fails: |
+      The tuple wiring in applicable_contracts() regressed — tuple code ships uncited.
+    ship_blocking: true
+    counter_example_classes:
+      - uncited_construct
+
+  - id: FALSIFY-XLATE-TUPLE-003
+    rule: |
+      Per-element types MUST be preserved (no coercion at the element boundary).
+    prediction: |
+      A `tuple[int, str]` emits a Rust `(i64, String)`, not a widened/coerced form.
+    test: |
+      cargo test -p xpile --test transpile_e2e tuple_cites_contract
+    if_fails: |
+      An element type was coerced — the tuple's per-position type contract broke.
+    ship_blocking: true
+    counter_example_classes:
+      - element_coercion
+
+qa_gate:
+  id: QA-XLATE-PY-TUPLE-TO-RUST-TUPLE
+  name: "Python tuple → Rust tuple translation contract"
+  min_coverage: 0.50
+  max_complexity: 20
+  required_tests:
+    - tuple_cites_contract
+    - every_emitted_citation_resolves_to_an_on_disk_contract
