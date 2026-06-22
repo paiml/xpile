@@ -10,11 +10,16 @@
 //!   (b) regression-guards that the slice-1 type-translation citations
 //!       (str/list/dict + int-arith) stay actively emitted, so the wiring
 //!       cannot silently regress to int-arith-only.
+//!   (c) [R6-slice5] per-fixture EXPECTED-contracts: corpus-wide (b) cannot
+//!       catch a single contract-bearing fixture that silently drops its
+//!       citation — another fixture keeps the corpus set satisfied. (c) pins
+//!       canonical witness fixtures to the citation their construct must emit,
+//!       so severing one fixture's citation FAILS even if (b) still passes.
 //!
 //! It is the deterministic replacement for the frozen Diamond-depth pressure:
 //! a construct can no longer ship citing a contract that does not exist.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -55,6 +60,8 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
     let mut total_citations = 0usize;
     let mut cited: HashSet<String> = HashSet::new();
     let mut phantom: Vec<String> = Vec::new();
+    // Per-fixture emitted citations (filename -> cited ids) for the (c) gate.
+    let mut per_fixture: HashMap<String, HashSet<String>> = HashMap::new();
 
     for entry in fs::read_dir(&fixtures).expect("tests/fixtures dir readable") {
         let path = entry.unwrap().path();
@@ -71,18 +78,17 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
             continue;
         }
         transpiled += 1;
+        let fname = path.file_name().unwrap().to_string_lossy().to_string();
+        let fixture_cited = per_fixture.entry(fname.clone()).or_default();
         let rust = String::from_utf8_lossy(&out.stdout);
         for line in rust.lines() {
             if let Some(rest) = line.trim_start().strip_prefix("// xpile-contract:") {
                 let id = rest.trim().to_string();
                 total_citations += 1;
                 if !ids.contains(&id) {
-                    phantom.push(format!(
-                        "{} cites non-existent contract `{}`",
-                        path.file_name().unwrap().to_string_lossy(),
-                        id
-                    ));
+                    phantom.push(format!("{fname} cites non-existent contract `{id}`"));
                 }
+                fixture_cited.insert(id.clone());
                 cited.insert(id);
             }
         }
@@ -127,4 +133,69 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
              regressed?). Cited contracts: {cited:?}"
         );
     }
+
+    // (c) [R6-slice5] Per-fixture EXPECTED-contracts. Each entry is a canonical
+    // witness fixture whose construct is contract-bearing; the listed contract
+    // id(s) MUST appear in THAT fixture's emitted citations. Unlike (b) — which
+    // only requires a contract be cited somewhere corpus-wide — this fails the
+    // moment one witness fixture silently drops its citation. Verified against
+    // the live transpiler when authored; if a fixture is legitimately retired,
+    // move the witness to another fixture that exercises the same construct.
+    const EXPECTED: &[(&str, &[&str])] = &[
+        ("add.py", &["C-PY-INT-ARITH"]),
+        ("center.py", &["C-XLATE-PY-STR-TO-RUST-STRING"]),
+        ("append_demo.py", &["C-XLATE-PY-LIST-TO-VEC"]),
+        ("bool_dict_key.py", &["C-XLATE-PY-DICT-TO-HASHMAP"]),
+        ("augmented_set_ops.py", &["C-XLATE-PY-SET-TO-HASHSET"]),
+        ("bool_float.py", &["C-PY-FLOAT-ARITH"]),
+        (
+            "class_to_struct_contract.py",
+            &["C-XLATE-PY-CLASS-TO-STRUCT"],
+        ),
+        ("tuple_contract.py", &["C-XLATE-PY-TUPLE-TO-RUST-TUPLE"]),
+        ("optional_return.py", &["C-XLATE-PY-OPTIONAL-TO-OPTION"]),
+        // Multi-contract witnesses — EVERY listed id must co-occur in the one
+        // fixture (exercises the all-expected-present path, not just any-cited).
+        (
+            "comp_typed_element.py",
+            &[
+                "C-XLATE-PY-CLASS-TO-STRUCT",
+                "C-XLATE-PY-LIST-TO-VEC",
+                "C-XLATE-PY-TUPLE-TO-RUST-TUPLE",
+            ],
+        ),
+        (
+            "contract_citation_types.py",
+            &[
+                "C-XLATE-PY-DICT-TO-HASHMAP",
+                "C-XLATE-PY-LIST-TO-VEC",
+                "C-XLATE-PY-STR-TO-RUST-STRING",
+            ],
+        ),
+    ];
+    let mut missing_expected: Vec<String> = Vec::new();
+    for (fixture, required_ids) in EXPECTED {
+        match per_fixture.get(*fixture) {
+            None => missing_expected.push(format!(
+                "{fixture}: expected to transpile and cite {required_ids:?}, but it \
+                 did not transpile successfully"
+            )),
+            Some(got) => {
+                for rid in *required_ids {
+                    if !got.contains(*rid) {
+                        missing_expected.push(format!(
+                            "{fixture}: must cite `{rid}` (per-fixture expected-contract) \
+                             but did not — emitted {got:?}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        missing_expected.is_empty(),
+        "R6-slice5: per-fixture expected-contract citation(s) missing — a \
+         contract-bearing construct dropped its citation:\n{}",
+        missing_expected.join("\n")
+    );
 }

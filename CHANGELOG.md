@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.581] — 2026-06-22
+
+### Added
+
+- **PMAT-882 (R6 contract-integrity, slice 5) — per-fixture EXPECTED-contract
+  citation gate.** The citation-integrity gate (PMAT-475) enforced (a) no phantom
+  citations and (b) corpus-wide slice-1 liveness. But (b) is corpus-wide: a single
+  contract-bearing fixture that silently drops its `// xpile-contract:` line still
+  passes because another fixture keeps the corpus set satisfied. Adds gate (c): a
+  curated table of canonical witness fixtures pinned to the contract id(s) their
+  construct must emit, so severing one fixture's citation now FAILS even when (b)
+  still passes. Two multi-contract witnesses (`comp_typed_element`,
+  `contract_citation_types`) exercise the all-expected-present path; entries were
+  verified against the live transpiler and the gate confirmed RED-capable.
+
 ## [0.1.580] — 2026-06-22
 
 ### Added
