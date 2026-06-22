@@ -9494,6 +9494,27 @@ fn lower_value_expecting(
             }
             Ok(Expr::ListLit(elems))
         }
+        // PMAT-892 (surfaced by the differential oracle): a list literal declared
+        // `list[Optional[T]]` whose elements mix bare `T` values and `None` —
+        // `xs: list[Optional[int]] = [5, None, 3]`. Python's annotation makes the
+        // whole literal Optional-typed, but xpile's element inference saw `I64`
+        // (from `5`) vs `Optional(I64)` (from `None`) and rejected it as
+        // "heterogeneous". Thread `Optional[T]` into each element via the Optional
+        // arm above: a bare `T` becomes `Some(T)`, a `None` stays `Option::None`,
+        // and an already-Optional element passes through (no `Some(Some(..))`).
+        ast::Expr::List(l)
+            if !l.elts.is_empty()
+                && matches!(expected, Type::List(et) if matches!(**et, Type::Optional(_))) =>
+        {
+            let Type::List(et) = expected else {
+                unreachable!("matched List(Optional(_)) above")
+            };
+            let mut elems = Vec::with_capacity(l.elts.len());
+            for e in l.elts.iter() {
+                elems.push(lower_value_expecting(ctx, e, et)?);
+            }
+            Ok(Expr::ListLit(elems))
+        }
         // PMAT-717 (HUNT-V9 V9-20): a non-empty list literal whose declared element
         // type is a known collection and at least one element is itself an empty
         // collection — `[[], [1]]` over `list[list[int]]`. Thread the element type.
