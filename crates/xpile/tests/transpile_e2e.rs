@@ -1696,6 +1696,33 @@ fn main() {
     assert_rustc_runs("struct_partialord_sort", &rust, driver);
 }
 
+/// PMAT-889 (HUNT-V33 #4, invalid-rust→fixed): `max()`/`min()` over a struct list
+/// whose class defines a custom `__lt__` now folds via `max_by(partial_cmp)`. Such
+/// a struct is PartialOrd-not-Ord AND not Copy, so neither the `Ord` `.max()` path
+/// nor the float `.copied().reduce(..)` path applies — it was rustc E0425 (bare
+/// `max(xs)`). New `of_struct_cmp` flag on `ListMinMax` selects a `.cloned()
+/// .max_by(partial_cmp)` branch (`max` reverses first for Python first-max-wins
+/// ties). Companion to PMAT-888 (sort). Cross-checked vs python3.
+#[test]
+fn struct_minmax_partialcmp() {
+    let rust = xpile_transpile_to_rust("struct_minmax_partialcmp.py");
+    assert!(
+        rust.contains("max_by(") && rust.contains("partial_cmp") && !rust.contains("max((items"),
+        "struct max/min must fold via max_by(partial_cmp), not a bare call:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let v = || vec![Item { pri: 3, tag: "a".to_string() },
+                    Item { pri: 1, tag: "z".to_string() },
+                    Item { pri: 3, tag: "b".to_string() }];
+    assert_eq!(max_tag(v()), "a");   // first of the two pri=3 (Python tie → first)
+    assert_eq!(min_tag(v()), "z");
+    assert_eq!(max_pri(v()), 3);
+}
+"#;
+    assert_rustc_runs("struct_minmax_partialcmp", &rust, driver);
+}
+
 /// PMAT-700: a plain (no-star) tuple-unpack over a LIST — `a, b = xs` — now
 /// transpiles (it was rejected "expected a tuple", though `a, *b = xs` over the
 /// same list worked). Python unpacks by position with an exact-length check;

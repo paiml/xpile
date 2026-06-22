@@ -12640,7 +12640,16 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 // int,int]])` works via `.max()`. A tuple containing
                                 // `f64` is NOT `Ord`, so it (and bare F64, handled
                                 // by the fold) is excluded from `elem_is_ord`.
-                                if key.is_some() || matches!(*elem, Type::F64) || elem_is_ord(&elem)
+                                // PMAT-889 (HUNT-V33 #4): a keyless `max`/`min`
+                                // over a struct list with a custom `__lt__`
+                                // (PartialOrd, not Ord) is also accepted — it
+                                // emits a `max_by(partial_cmp)` fold below.
+                                let keyless_struct_cmp = key.is_none()
+                                    && type_contains_custom_lt_struct(&elem, &ctx.struct_methods);
+                                if key.is_some()
+                                    || matches!(*elem, Type::F64)
+                                    || elem_is_ord(&elem)
+                                    || keyless_struct_cmp
                                 {
                                     // PMAT-653: with a `key=`, the COMPARED values
                                     // are the key results — so track the KEY's
@@ -12660,6 +12669,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                         list: Box::new(list),
                                         is_max: fname.id.as_str() == "max",
                                         of_float,
+                                        of_struct_cmp: keyless_struct_cmp,
                                         key,
                                         default,
                                     });
@@ -12706,6 +12716,9 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 list: Box::new(Expr::ListLit(elems)),
                                 is_max: fname.id.as_str() == "max",
                                 of_float,
+                                // This is the keyed variadic path (always has a
+                                // `key=`); the struct-partial_cmp fold is keyless.
+                                of_struct_cmp: false,
                                 key: Some(k),
                                 default: None,
                             });

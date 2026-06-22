@@ -2308,6 +2308,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             list,
             is_max,
             of_float,
+            of_struct_cmp,
             key,
             default,
         } => {
@@ -2358,6 +2359,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     }
                     emit_expr(out, &k.body, mode)?;
                     out.push_str(" })");
+                }
+                // PMAT-889 (HUNT-V33 #4): struct element w/ custom __lt__
+                // (PartialOrd, not Ord, not Copy) → `.cloned().max_by(partial_cmp)`
+                // (`max` reverses first for first-wins ties). See the rust backend.
+                None if *of_struct_cmp => {
+                    if *is_max {
+                        out.push_str(".iter().cloned().rev().max_by(|__a, __b| __a.partial_cmp(__b).unwrap_or(std::cmp::Ordering::Equal))");
+                    } else {
+                        out.push_str(".iter().cloned().min_by(|__a, __b| __a.partial_cmp(__b).unwrap_or(std::cmp::Ordering::Equal))");
+                    }
                 }
                 None => match *of_float {
                     // PMAT-502er: `.cloned()` (not `.copied()`) so non-Copy
