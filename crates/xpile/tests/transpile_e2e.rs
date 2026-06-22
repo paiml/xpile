@@ -1690,6 +1690,31 @@ fn main() {
     assert_rustc_runs("optional_list_literal", &rust, driver);
 }
 
+/// PMAT-893 (HUNT-V33 #1, invalid-rust→fixed): an `if x is None: continue` (or
+/// `break`) guard inside a `for` loop narrows the `Optional` loop var to `Some`
+/// for the rest of the iteration, so post-guard reads unwrap. It was E0308 — the
+/// guard-clause narrowing (`register_none_guard_narrowing`) ran only at fn-body
+/// level and only accepted return/raise; it now runs inside loop bodies, accepts
+/// continue/break, and respects `loop_pure_vars` (PMAT-887). Completes the
+/// dominant None-filter idiom. Cross-checked vs python3.
+#[test]
+fn optional_guard_continue() {
+    let rust = xpile_transpile_to_rust("optional_guard_continue.py");
+    assert!(
+        rust.contains("continue") && rust.contains(".unwrap()"),
+        "guard-continue must narrow the loop var (unwrap after the guard):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sum_skip_none(vec![Some(5), None, Some(3)]), 8);
+    assert_eq!(sum_skip_none(vec![None, None]), 0);
+    assert_eq!(first_present_or_zero(vec![None, Some(7), Some(9)]), 7);
+    assert_eq!(first_present_or_zero(vec![None, None]), 0);
+}
+"#;
+    assert_rustc_runs("optional_guard_continue", &rust, driver);
+}
+
 /// PMAT-888 (HUNT-V33 #5, invalid-rust→fixed): `.sort()`/`.sort(reverse=True)`
 /// and `sorted(...)`/`sorted(..., reverse=True)` over a struct list whose class
 /// defines a custom `__lt__` now sort via `sort_by(partial_cmp)`. Such a struct

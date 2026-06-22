@@ -2511,7 +2511,7 @@ fn try_const_decl(stmt: &ast::Stmt) -> Option<(String, Type, Expr)> {
 /// so every later read is provably `Some`. Any shape outside this narrow,
 /// obviously-sound pattern is simply not narrowed (no regression — the same
 /// code transpiled before, it just rustc-errored if the value was used as `T`).
-fn register_none_guard_narrowing(ctx: &mut LoweringCtx, stmt: &ast::Stmt) {
+fn register_none_guard_narrowing(ctx: &mut LoweringCtx, stmt: &ast::Stmt, in_loop: bool) {
     let ast::Stmt::If(if_stmt) = stmt else {
         return;
     };
@@ -2534,16 +2534,27 @@ fn register_none_guard_narrowing(ctx: &mut LoweringCtx, stmt: &ast::Stmt) {
         return;
     };
     let name = name.id.to_string();
-    // The guard body must unconditionally exit (return / raise) so the
-    // fall-through is reached only when the value is `Some`.
-    if !matches!(
+    // The guard body must unconditionally exit so the fall-through is reached
+    // only when the value is `Some`: `return`/`raise` always; `continue`/`break`
+    // also exit the current iteration's remaining body, but ONLY count them when
+    // we are lowering a loop body (PMAT-893 — `for x in xs: if x is None:
+    // continue; use(x)`). A bare `continue` outside a loop is invalid Python.
+    let exits = matches!(
         if_stmt.body.last(),
         Some(ast::Stmt::Return(_) | ast::Stmt::Raise(_))
-    ) {
+    ) || (in_loop
+        && matches!(
+            if_stmt.body.last(),
+            Some(ast::Stmt::Continue(_) | ast::Stmt::Break(_))
+        ));
+    if !exits {
         return;
     }
-    // Eligible only for a non-reassigned `Optional`-typed name.
-    if ctx.mutable.contains(&name) {
+    // Eligible only for a non-reassigned `Optional`-typed name. PMAT-893: a loop
+    // var is prescan-`mutable` only for the per-iteration rebind; if it is in
+    // `loop_pure_vars` (registered by `lower_for_stmt` when the body doesn't
+    // reassign it) it is sound to narrow, exactly like a non-mutable local.
+    if ctx.mutable.contains(&name) && !ctx.loop_pure_vars.contains(&name) {
         return;
     }
     if matches!(ctx.name_types.get(&name), Some(Type::Optional(_))) {
@@ -2896,7 +2907,9 @@ fn lower_function_def(
         stmts.extend(lower_block_stmt(&mut ctx, stmt.clone())?);
         // PMAT-502ez: after a provably-exiting `if x is None: return …` guard,
         // narrow `x` to `Some` for the remaining (and trailing) statements.
-        register_none_guard_narrowing(&mut ctx, stmt);
+        // (Function-body level — not inside a loop, so `continue`/`break` don't
+        // count as guard exits here.)
+        register_none_guard_narrowing(&mut ctx, stmt, /*in_loop=*/ false);
     }
 
     // PMAT-502bl: a void (`-> None`) function has no trailing `return
@@ -5234,10 +5247,19 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                 value: Expr::Ident(loop_var.clone()),
             });
         }
+        // PMAT-893: apply `if x is None: continue` guard-narrowing INSIDE the loop
+        // body (the dominant None-filter idiom). After such a provably-exiting
+        // guard, the loop var is `Some` for the rest of this iteration, so reads
+        // unwrap. Mirror the fn-body pattern (lower stmt, then register), with
+        // `in_loop=true` so `continue`/`break` count as exits. Snapshot/restore
+        // `narrowed_some` so the in-body narrowings don't leak past the loop.
+        let saved_narrowed = ctx.narrowed_some.clone();
         for s in f.body {
-            let lowered = lower_block_stmt(ctx, s)?;
+            let lowered = lower_block_stmt(ctx, s.clone())?;
             body.extend(lowered);
+            register_none_guard_narrowing(ctx, &s, /*in_loop=*/ true);
         }
+        ctx.narrowed_some = saved_narrowed;
         if pure_added {
             ctx.loop_pure_vars.remove(&target_name);
         }
