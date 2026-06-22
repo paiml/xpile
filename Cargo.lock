@@ -1014,6 +1014,7 @@ dependencies = [
  "xpile-contracts",
  "xpile-core",
  "xpile-meta-hir",
+ "xpile-oracle",
 ]
 
 [[package]]

@@ -37,6 +37,9 @@ serde_json              = { workspace = true }
 xpile-contract-backend  = { workspace = true }
 xpile-contract-frontend = { workspace = true }
 xpile-contracts         = { workspace = true }
+# PMAT-890 (Sprint-2 Tier 1): oracle_differential.rs uses the PythonOracle to
+# auto-diff CPython vs transpiled-Rust stdout over self-contained oracle fixtures.
+xpile-oracle            = { workspace = true }
 # PMAT-274: notation_runtime.rs parses notation_demo.tex through the
 # real LatexContractFrontend (the test asserts the C-NOTATION three-
 # form equivalence claim against on-disk evidence).
