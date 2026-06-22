@@ -12768,6 +12768,102 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     )));
                 }
             }
+            // PMAT-876 (breadth): `f(*xs)` into a FIXED-arity (non-variadic)
+            // callee splats a list across all N positional params — Python
+            // `add3(*xs)`. Handled HERE, BEFORE `reorder_kwargs_to_positional`,
+            // which would otherwise reject the sole `*xs` arg as "missing
+            // argument" (it counts 1 positional < N declared params). Expand to
+            // `{ let __u = xs; assert!(__u.len() == N, "TypeError…"); f(__u[0],
+            // …, __u[N-1]) }`. The length assert is REQUIRED: without it
+            // `len > N` silently drops args (silent-wrong) and `len < N` panics
+            // on an opaque index. Only the sole-arg `f(*xs)` shape; mixed
+            // positional+splat into a fixed callee is still deferred. (Variadic
+            // callees are handled further below, after reorder leaves them
+            // untouched.)
+            if let ast::Expr::Name(n) = call.func.as_ref() {
+                let sig = ctx.signatures.get(n.id.as_str());
+                let is_variadic = sig.is_some_and(|s| s.variadic.is_some());
+                if !is_variadic
+                    && call.keywords.is_empty()
+                    && call.args.len() == 1
+                    && matches!(call.args.first(), Some(ast::Expr::Starred(_)))
+                {
+                    // A callee with defaults accepts a RANGE of arities
+                    // (`def f(a, b=2)` takes `f(*[1])` AND `f(*[1,2])`), but the
+                    // splat list's length is only known at runtime — picking how
+                    // many defaults to fill would need a runtime `match` on
+                    // `len`. Defer that shape (fail-loud at transpile) rather
+                    // than emit a fixed `len == N` assert that diverges from
+                    // python3 (which fills the default). The common no-default
+                    // case is handled below.
+                    if sig.is_some_and(|s| s.defaults.iter().any(|d| d.is_some())) {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` splats `*<expr>` into `{}` which has default \
+                             parameters — `f(*xs)` into a callee with defaults accepts a range of \
+                             arities decided at runtime and is not supported at v0.2.0; pass the \
+                             arguments positionally instead",
+                            ctx.fn_name, n.id
+                        )));
+                    }
+                    if let Some(arity) = sig.map(|s| s.params.len()) {
+                        let callee = n.id.to_string();
+                        let ast::Expr::Starred(s) = &call.args[0] else {
+                            unreachable!("checked Starred above")
+                        };
+                        let list = lower_expr_in_ctx(ctx, (*s.value).clone())?;
+                        let Type::List(elem_ty) = infer_type_in_ctx(ctx, &list) else {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` splats `*<expr>` into `{callee}`, but the expr is not a list",
+                                ctx.fn_name
+                            )));
+                        };
+                        // Mirror `lower_list_positional_unpack`: a bare-variable
+                        // source is indexed DIRECTLY (both `Index` and `Len`
+                        // borrow it), so it is NOT moved and stays usable after
+                        // the splat — matching Python, where `f(*xs)` iterates
+                        // `xs` without consuming it (PMAT-876 move-bug fix). Any
+                        // other source (literal, call, comprehension) is a fresh
+                        // value bound to a temp; moving the temp is safe since
+                        // nothing else aliases it. (A fixed temp name is fine:
+                        // each splat lowers to its own `Expr::Block`, so a nested
+                        // `f(*g(*ys))` shadows per-block. `ctx` is `&` here.)
+                        let mut stmts: Vec<Stmt> = Vec::with_capacity(2);
+                        let coll = match &list {
+                            Expr::Ident(nm) => nm.clone(),
+                            _ => {
+                                let tmp = "__xpile_splat".to_string();
+                                stmts.push(Stmt::Let {
+                                    name: tmp.clone(),
+                                    ty: Type::List(elem_ty),
+                                    value: list,
+                                    mutable: false,
+                                });
+                                tmp
+                            }
+                        };
+                        stmts.push(Stmt::Assert {
+                            cond: Expr::BinOp {
+                                op: BinOp::Eq,
+                                lhs: Box::new(Expr::Len(Box::new(Expr::Ident(coll.clone())))),
+                                rhs: Box::new(Expr::LitInt(arity as i64)),
+                            },
+                            msg: Some(Expr::LitStr(format!(
+                                "xpile: TypeError: {callee}() takes {arity} positional arguments"
+                            ))),
+                        });
+                        let args: Vec<Expr> = (0..arity)
+                            .map(|i| Expr::Index {
+                                collection: Box::new(Expr::Ident(coll.clone())),
+                                index: Box::new(Expr::LitInt(i as i64)),
+                            })
+                            .collect();
+                        return Ok(Expr::Block(Box::new(Block {
+                            stmts,
+                            trailing_return: Expr::Call { callee, args },
+                        })));
+                    }
+                }
+            }
             // PMAT-474 (R5): reorder keyword args to positional using
             // the module signature table, then lower as a plain call.
             // PMAT-627: also fill defaults in nested user-calls in argument
