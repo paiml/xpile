@@ -179,6 +179,18 @@ impl Function {
         {
             ids.push("C-XLATE-PY-SET-TO-HASHSET");
         }
+        // PMAT-879 (R6): cite the class-translation contract when the function
+        // takes, returns, or binds a class/dataclass (`Type::Struct`). Class
+        // translation was the largest core construct still shipping uncited —
+        // `pub struct Point { … }` emitted with ZERO `// xpile-contract:` line.
+        // The contract (contracts/xlate-py-class-to-struct-v1.yaml) governs
+        // field-order + field-type preservation and read-only `&self` dispatch.
+        if tys
+            .iter()
+            .any(|t| type_any(t, &|x| matches!(x, Type::Struct(_))))
+        {
+            ids.push("C-XLATE-PY-CLASS-TO-STRUCT");
+        }
         ids
     }
 

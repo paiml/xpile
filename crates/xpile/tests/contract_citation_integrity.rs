@@ -114,6 +114,8 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
         "C-XLATE-PY-DICT-TO-HASHMAP",
         "C-PY-FLOAT-ARITH",
         "C-XLATE-PY-SET-TO-HASHSET",
+        // PMAT-879 (R6): class/dataclass translation is now wired + cited.
+        "C-XLATE-PY-CLASS-TO-STRUCT",
     ] {
         assert!(
             cited.contains(required),

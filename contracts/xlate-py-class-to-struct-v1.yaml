@@ -1,0 +1,177 @@
+metadata:
+  id: C-XLATE-PY-CLASS-TO-STRUCT
+  version: "1.0.0"
+  created: "2026-06-22"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Translation contract: how a Python class / `@dataclass` lowers to a Rust
+    `struct` (plus an `impl` block for its methods).
+
+    The naïve "class → struct" mapping has three load-bearing semantic
+    boundaries the translation must hold:
+      1. Field order — Python constructs a dataclass positionally in
+         declaration order (`Point(1, 2)` ⇒ x=1, y=2). The emitted Rust
+         positional construction (`StructLit`) MUST bind fields in the same
+         order, or call sites silently swap values.
+      2. Field types — each annotated field's Python type lowers to its
+         canonical Rust counterpart; no implicit coercion at the field
+         boundary.
+      3. Method receiver — a non-mutating method lowers to `&self` (a shared
+         borrow), matching Python's by-reference `self` for read-only access;
+         the translation must not silently take ownership or `&mut`.
+
+    PMAT-879 (R6 contract-integrity): this contract is wired into
+    `Function::applicable_contracts()` so any function taking, returning, or
+    binding a `Type::Struct` cites it — closing the largest previously
+    uncontracted core construct (class translation shipped uncited).
+
+    Layer 2 of the xpile contract taxonomy (translation).
+  references:
+    - "Python Language Reference §3.3 (Special method names) / dataclasses"
+    - contracts/xlate-py-list-to-vec-v1.yaml
+    - docs/specifications/xpile-contract-driven-design-v1.md
+  depends_on:
+    - C-PY-INT-ARITH
+
+equations:
+  field_order_preserved:
+    formula: |
+      xlate(class C: f0: T0; f1: T1; …; fn: Tn)
+        == struct C { f0: lower(T0), f1: lower(T1), …, fn: lower(Tn) }
+      WITH the emitted field sequence in source declaration order.
+    domain: |
+      A Python class / @dataclass whose fields are declared via class-level
+      annotated assignments (or, for a hand-written __init__, in the order the
+      `self.f = …` bindings appear).
+    invariants:
+      - "field declaration order is preserved exactly (position-by-position)"
+      - "positional construction `C(a0, …, an)` binds a_i to field f_i — same index"
+      - "no field is dropped, reordered, or duplicated"
+    preconditions:
+      - "the class fields each carry a concrete annotated type with a canonical Rust counterpart"
+    postconditions:
+      - "the emitted `struct C` lists fields in source declaration order"
+      - "an emitter that sorts fields (e.g. alphabetically) would swap positional-construction values — falsified by field_order_preserved"
+
+  field_types_preserved:
+    formula: |
+      for each field f_i: T_i,  emitted_type(f_i) == lower(T_i)
+    domain: |
+      Same as field_order_preserved — a class with concretely-typed fields.
+    invariants:
+      - "each field's Rust type is the canonical lowering of its Python annotation"
+      - "no implicit coercion at the field boundary (an int field stays i64, not f64)"
+    preconditions:
+      - "type inference resolved each field annotation to a supported Type"
+    postconditions:
+      - "the struct field types match the per-field lowered annotations"
+      - "an emitter that widens int→float fields would be caught by field_types_preserved"
+
+  readonly_method_borrows_self:
+    formula: |
+      xlate(def m(self, …) -> R: <no self.f = …>) == fn m(&self, …) -> lower(R)
+    domain: |
+      A non-mutating instance method (its body does not assign to `self.f`).
+    invariants:
+      - "a read-only method takes `&self` (shared borrow), matching Python's by-reference self"
+      - "the receiver is never taken by value (would move the instance) nor `&mut` (read-only)"
+    preconditions:
+      - "the method body performs no `self.<field> = …` assignment"
+    postconditions:
+      - "the emitted method signature is `fn m(&self, …)`"
+      - "an emitter taking `self` by value would make the instance unusable after one call — falsified here"
+
+  py_struct_structure_extensionality_diamond:
+    # PMAT-879: FIRST (tier-defining) Diamond equation — registers
+    # C-XLATE-PY-CLASS-TO-STRUCT at depth-1 under the R6-grandfathered Diamond
+    # gate (PMAT-475a), mirroring the str/list/float/set structural Diamonds. A
+    # struct is determined by its ordered field list; field-algebra tiers ratchet
+    # in later.
+    lean_theorem: "XpileContracts.CXlatePyClassToStruct.py_struct_structure_extensionality_diamond"
+    lean_file: "contracts/lean/XlatePyClassToStruct.lean"
+    formula: |
+      ∀ a b : PyStruct.
+        a.fields = b.fields → a = b
+      (a class/dataclass is determined by its ordered field list; xpile emits a Rust struct)
+    domain: |
+      Any Python class / @dataclass values. xpile lowers a class to a Rust
+      `struct`; the Diamond captures structure-extensionality of the ordered-field
+      model (the same field-order invariant `field_order_preserved` governs at the
+      emit level).
+    invariants:
+      - "FIRST Diamond-tier theorem of C-XLATE-PY-CLASS-TO-STRUCT (registers it at depth-1)"
+      - "structure extensionality on the ordered field list (sorry-free)"
+      - "field-algebra (method dispatch, inheritance) deferred to later tiers"
+    preconditions:
+      - "the operand is a Python class/dataclass (lowered to a Rust struct)"
+    postconditions:
+      - "emitted Rust uses a struct; class-typed code carries // xpile-contract: C-XLATE-PY-CLASS-TO-STRUCT"
+
+proof_obligations:
+  - type: precondition
+    property: meta-HIR carries a struct type with named, typed fields
+    formal: "item.type == Struct ∧ ∀ f ∈ fields: f.type ∈ SupportedTypes"
+    applies_to: field_order_preserved
+  - type: postcondition
+    property: field order and field types are preserved
+    formal: "∀ i: emit.fields[i].name == src.fields[i].name ∧ emit.fields[i].type == lower(src.fields[i].type)"
+    applies_to: field_order_preserved
+  - type: frame
+    property: no mutation of the meta-HIR module during translation
+    formal: "modifies() == ∅"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-XLATE-CLASS-001
+    rule: |
+      A dataclass MUST emit struct fields in source declaration order, and
+      positional construction MUST bind by that order.
+    prediction: |
+      `@dataclass class Point: x:int; y:int` then `Point(1, 2)` produces a value
+      whose x==1 and y==2 (not swapped).
+    test: |
+      cargo test -p xpile --test transpile_e2e class_to_struct_cites_contract
+    if_fails: |
+      Field ordering diverged — positional construction silently swaps values.
+    ship_blocking: true
+    counter_example_classes:
+      - field_reorder
+
+  - id: FALSIFY-XLATE-CLASS-002
+    rule: |
+      Every function touching a struct type MUST cite this contract.
+    prediction: |
+      Transpiling a dataclass-using fixture emits `// xpile-contract: C-XLATE-PY-CLASS-TO-STRUCT`.
+    test: |
+      cargo test -p xpile --test contract_citation_integrity every_emitted_citation_resolves_to_an_on_disk_contract
+    if_fails: |
+      The struct wiring in applicable_contracts() regressed — class code ships uncited.
+    ship_blocking: true
+    counter_example_classes:
+      - uncited_construct
+
+  - id: FALSIFY-XLATE-CLASS-003
+    rule: |
+      A read-only instance method MUST lower to a `&self` receiver (shared
+      borrow), not by-value or `&mut`.
+    prediction: |
+      `@dataclass class Counter: n:int; def get(self)->int: return self.n` then
+      two consecutive `c.get()` calls both succeed (the instance is not moved).
+    test: |
+      cargo test -p xpile --test transpile_e2e class_to_struct_cites_contract
+    if_fails: |
+      The method receiver took ownership — the instance is unusable after one call.
+    ship_blocking: true
+    counter_example_classes:
+      - self_by_value
+
+qa_gate:
+  id: QA-XLATE-PY-CLASS-TO-STRUCT
+  name: "Python class → Rust struct translation contract"
+  min_coverage: 0.50
+  max_complexity: 20
+  required_tests:
+    - class_to_struct_cites_contract
+    - every_emitted_citation_resolves_to_an_on_disk_contract
