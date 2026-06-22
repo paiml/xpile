@@ -6,7 +6,7 @@
 //! the single source of truth for that mapping within a session.
 
 use serde::{Deserialize, Serialize};
-use xpile_meta_hir::{FfiBoundary, Module, SourceLang};
+use xpile_meta_hir::{FfiBoundary, Item, Module, SourceLang};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FfiManifest {
@@ -50,6 +50,18 @@ impl std::error::Error for FfiReconcileError {}
 /// identifying fields). Stable across runs so a manifest entry — and the shim it
 /// names — is reproducible. (The spec's sha256 is a later hardening; FNV-1a is
 /// sufficient for in-session uniqueness and is std-only.)
+/// PMAT-895 (Sprint-2 Tier 2): the externally-callable name a module item
+/// exports — what an incoming FFI boundary's `symbol` must match. A callable FFI
+/// symbol is a function; a module-level constant is also addressable. Structs/
+/// enums are types, not call targets, so they don't export an FFI symbol.
+fn item_exported_name(item: &Item) -> Option<&str> {
+    match item {
+        Item::Function(f) => Some(&f.name),
+        Item::Const { name, .. } => Some(name),
+        _ => None,
+    }
+}
+
 fn shim_id(b: &FfiBoundary) -> String {
     let key = format!(
         "{:?}->{:?}:{}:{}",
@@ -84,9 +96,11 @@ impl FfiManifest {
     /// reconciliation (the `manifest_completeness` invariant of
     /// `C-FFI-CPYTHON-EXT`). Same-language boundaries (`from == to`) are no-ops.
     ///
-    /// First increment: resolution is at the LANGUAGE level (target-lang module
-    /// present). Symbol-level export matching (the target module must DEFINE the
-    /// symbol) is the next increment — `Item::Function`/`Const` name lookup.
+    /// PMAT-895: resolution is SYMBOL-LEVEL — a boundary resolves only when a
+    /// module of `to_lang` actually DEFINES an item (function/const) named
+    /// `symbol`. A target-language module that is present but does NOT export the
+    /// symbol still fails reconciliation (the `manifest_completeness` invariant is
+    /// about the symbol crossing the line, not just the language being present).
     pub fn reconcile(modules: &[Module]) -> Result<FfiManifest, FfiReconcileError> {
         let mut manifest = FfiManifest::new();
         let mut unresolved = Vec::new();
@@ -95,8 +109,14 @@ impl FfiManifest {
                 if b.from_lang == b.to_lang {
                     continue; // not a cross-language boundary
                 }
-                let target_present = modules.iter().any(|m| m.source_lang == b.to_lang);
-                if target_present {
+                let lang_present = modules.iter().any(|m| m.source_lang == b.to_lang);
+                let symbol_defined = modules.iter().any(|m| {
+                    m.source_lang == b.to_lang
+                        && m.items
+                            .iter()
+                            .any(|it| item_exported_name(it) == Some(b.symbol.as_str()))
+                });
+                if symbol_defined {
                     manifest.register(FfiEntry {
                         symbol: b.symbol.clone(),
                         from_lang: b.from_lang,
@@ -109,9 +129,17 @@ impl FfiManifest {
                         shim_id: shim_id(b),
                     });
                 } else {
+                    // Distinguish "no target-language module at all" from "module
+                    // present but symbol not exported" — both block the hybrid
+                    // build, but the diagnostic should point at the right fix.
+                    let reason = if lang_present {
+                        format!("no {:?} module defines `{}`", b.to_lang, b.symbol)
+                    } else {
+                        format!("no {:?} module in the dispatched set", b.to_lang)
+                    };
                     unresolved.push(format!(
-                        "{:?}->{:?} `{}` ({}): no {:?} module in the dispatched set",
-                        b.from_lang, b.to_lang, b.symbol, b.signature, b.to_lang
+                        "{:?}->{:?} `{}` ({}): {}",
+                        b.from_lang, b.to_lang, b.symbol, b.signature, reason
                     ));
                 }
             }
@@ -128,12 +156,33 @@ impl FfiManifest {
 mod tests {
     use super::*;
 
+    use xpile_meta_hir::{Block, Expr, Function, Type};
+
     fn module(name: &str, lang: SourceLang, boundaries: Vec<FfiBoundary>) -> Module {
         Module {
             name: name.to_string(),
             source_lang: lang,
             items: Vec::new(),
             ffi_boundaries: boundaries,
+        }
+    }
+
+    /// A module of `lang` that DEFINES (exports) `symbol` as a nullary function —
+    /// the FFI export side that symbol-level reconciliation requires.
+    fn module_defining(name: &str, lang: SourceLang, symbol: &str) -> Module {
+        Module {
+            name: name.to_string(),
+            source_lang: lang,
+            items: vec![Item::Function(Function {
+                name: symbol.to_string(),
+                params: Vec::new(),
+                return_type: Type::I64,
+                body: Block {
+                    stmts: Vec::new(),
+                    trailing_return: Expr::LitInt(0),
+                },
+            })],
+            ffi_boundaries: Vec::new(),
         }
     }
 
@@ -147,14 +196,14 @@ mod tests {
     }
 
     #[test]
-    fn reconcile_pairs_boundary_when_target_lang_present() {
+    fn reconcile_pairs_boundary_when_target_defines_symbol() {
         let modules = vec![
             module(
                 "foo",
                 SourceLang::Python,
                 vec![boundary(SourceLang::Python, SourceLang::C, "sum")],
             ),
-            module("_foo_core", SourceLang::C, vec![]),
+            module_defining("_foo_core", SourceLang::C, "sum"),
         ];
         let manifest = FfiManifest::reconcile(&modules).expect("resolves");
         assert_eq!(manifest.entries.len(), 1);
@@ -174,6 +223,25 @@ mod tests {
         let err = FfiManifest::reconcile(&modules).expect_err("unresolved");
         assert_eq!(err.unresolved.len(), 1);
         assert!(err.to_string().contains("sum"));
+        assert!(err.to_string().contains("dispatched set"));
+    }
+
+    #[test]
+    fn reconcile_fails_when_symbol_not_defined() {
+        // The C module is PRESENT but does not export `sum` (it defines `other`)
+        // — symbol-level reconciliation must still fail, with a symbol-specific
+        // diagnostic distinct from the language-absent case.
+        let modules = vec![
+            module(
+                "foo",
+                SourceLang::Python,
+                vec![boundary(SourceLang::Python, SourceLang::C, "sum")],
+            ),
+            module_defining("_foo_core", SourceLang::C, "other"),
+        ];
+        let err = FfiManifest::reconcile(&modules).expect_err("symbol not defined");
+        assert_eq!(err.unresolved.len(), 1);
+        assert!(err.to_string().contains("defines `sum`"));
     }
 
     #[test]
