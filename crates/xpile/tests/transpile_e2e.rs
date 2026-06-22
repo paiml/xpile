@@ -1669,6 +1669,27 @@ fn main() {
     assert_rustc_runs("optional_loop_narrow", &rust, driver);
 }
 
+/// PMAT-892 (surfaced by the differential oracle): a `list[Optional[T]]` literal
+/// mixing bare `T` values and `None` — `xs: list[Optional[int]] = [5, None, 3]` —
+/// was rejected as a "heterogeneous list literal" (I64 vs Optional(I64)). Now each
+/// element is coerced against the declared `Optional[T]` element type: a bare `T`
+/// becomes `Some(T)`, a `None` stays `Option::None`. Cross-checked vs python3.
+#[test]
+fn optional_list_literal_coerce() {
+    let rust = xpile_transpile_to_rust("optional_list_literal.py");
+    assert!(
+        rust.contains("Some(5i64)") && rust.contains("None"),
+        "Optional-list literal must coerce bare ints to Some + keep None:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sum_present(3), 9);   // 5 + 3 + 1 (None skipped)
+    assert_eq!(count_none(), 3);
+}
+"#;
+    assert_rustc_runs("optional_list_literal", &rust, driver);
+}
+
 /// PMAT-888 (HUNT-V33 #5, invalid-rust→fixed): `.sort()`/`.sort(reverse=True)`
 /// and `sorted(...)`/`sorted(..., reverse=True)` over a struct list whose class
 /// defines a custom `__lt__` now sort via `sort_by(partial_cmp)`. Such a struct
