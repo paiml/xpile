@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.592] — 2026-06-22
+
+### Fixed
+
+- **PMAT-893 (HUNT-V33 #1, invalid-rust) — narrow an `Optional` loop var after an
+  `if x is None: continue` guard.** The dominant None-filter idiom
+  (`for x in xs: if x is None: continue; use(x)`) left the loop var as
+  `Option<i64>` after the guard → rustc E0308. Completes PMAT-887 (which covered
+  the `if x is not None:` form). `register_none_guard_narrowing` gains an `in_loop`
+  flag (accepts `continue`/`break` exits + respects `loop_pure_vars`), and
+  `lower_for_stmt` applies guard-narrowing per-statement inside the body
+  (snapshot/restoring `narrowed_some`). Verified vs python3.
+
 ## [0.1.591] — 2026-06-22
 
 ### Fixed
