@@ -1669,6 +1669,33 @@ fn main() {
     assert_rustc_runs("optional_loop_narrow", &rust, driver);
 }
 
+/// PMAT-888 (HUNT-V33 #5, invalid-rust→fixed): `.sort()`/`.sort(reverse=True)`
+/// and `sorted(...)`/`sorted(..., reverse=True)` over a struct list whose class
+/// defines a custom `__lt__` now sort via `sort_by(partial_cmp)`. Such a struct
+/// gets a synthesized `impl PartialOrd` (from `__lt__`) but NO `Ord` (only
+/// `@dataclass(order=True)` derives Ord, and that path defines no `__lt__`), so
+/// `Vec::sort` was rustc E0277. Reuses the existing float `of_float` (use-
+/// partial_cmp) flag, extended to PartialOrd-not-Ord struct elements. (max()/min()
+/// over such a list is a deferred follow-up — its codegen path needs a new branch.)
+/// Cross-checked vs python3.
+#[test]
+fn struct_partialord_sort() {
+    let rust = xpile_transpile_to_rust("struct_partialord_sort.py");
+    assert!(
+        rust.contains("partial_cmp"),
+        "struct sort must use sort_by(partial_cmp), not Vec::sort:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sorted_asc_first(vec![Item { pri: 3 }, Item { pri: 1 }, Item { pri: 2 }]), 1);
+    assert_eq!(sorted_desc_first(vec![Item { pri: 1 }, Item { pri: 3 }, Item { pri: 2 }]), 3);
+    assert_eq!(sorted_builtin_first(vec![Item { pri: 3 }, Item { pri: 1 }, Item { pri: 2 }]), 1);
+    assert_eq!(sorted_builtin_desc_first(vec![Item { pri: 3 }, Item { pri: 1 }, Item { pri: 2 }]), 3);
+}
+"#;
+    assert_rustc_runs("struct_partialord_sort", &rust, driver);
+}
+
 /// PMAT-700: a plain (no-star) tuple-unpack over a LIST — `a, b = xs` — now
 /// transpiles (it was rejected "expected a tuple", though `a, *b = xs` over the
 /// same list worked). Python unpacks by position with an exact-length check;
