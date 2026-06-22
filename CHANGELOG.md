@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.585] — 2026-06-22
+
+### Added
+
+- **PMAT-886 — `as e` binding in the assignment-form `try`/`except`.** The
+  assignment-form `try: x = … except E as e: x = …` now binds `as e` — the caught
+  exception's message becomes a `String` local usable in the handler (`str(e)`,
+  `f"{e}"`). It was rejected ("single `except` without a bound name"); the
+  terminal-return form already supported it (PMAT-817), so this mirrors that path
+  (bind `<name>: str` while lowering the handler, save/restore — `e` is
+  handler-scoped). No IR/codegen change — `Expr::TryCatch` already carries
+  `bound_name`. Verified vs python3.
+
 ## [0.1.584] — 2026-06-22
 
 ### Fixed
