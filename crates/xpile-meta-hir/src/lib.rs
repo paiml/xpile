@@ -191,6 +191,18 @@ impl Function {
         {
             ids.push("C-XLATE-PY-CLASS-TO-STRUCT");
         }
+        // PMAT-880 (R6): cite the tuple-translation contract when the function
+        // takes, returns, or binds a fixed-arity tuple (`Type::Tuple`). Tuple
+        // code (`(i64, i64)`) shipped uncited — the tuple sibling of the
+        // list/dict/set translation contracts. The contract
+        // (contracts/xlate-py-tuple-to-rust-tuple-v1.yaml) governs arity +
+        // per-position element preservation.
+        if tys
+            .iter()
+            .any(|t| type_any(t, &|x| matches!(x, Type::Tuple(_))))
+        {
+            ids.push("C-XLATE-PY-TUPLE-TO-RUST-TUPLE");
+        }
         ids
     }
 
