@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.577] — 2026-06-22
+
+### Added
+
+- **PMAT-877 — `g(*xs)` splat nested in a user-fn call arg.** `double(add3(*xs))`
+  — a fixed-arity splat nested as an argument to a *user-defined* outer function —
+  now transpiles. It was rejected with a misleading "missing argument" because
+  `reorder_nested_call_args` ran `reorder_kwargs_to_positional` on the nested splat
+  call (counting the sole `*xs` as 1 positional < N params); a builtin outer like
+  `str(add3(*xs))` already worked. A splat-shaped nested call is now left untouched
+  so the PMAT-876 splat handler lowers it when the outer call's args are lowered
+  context-aware. Verified vs python3: nested-in-user-fn, deep nesting, sibling
+  splats, nested-then-reuse. (Follow-up flagged by the PMAT-876 differential hunt.)
+
 ## [0.1.576] — 2026-06-22
 
 ### Added
