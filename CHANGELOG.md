@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.576] — 2026-06-22
+
+### Added
+
+- **PMAT-876 — `f(*xs)` splat into a fixed-arity callee.** `f(*xs)` splatting a
+  list across all N positional params of a fixed-arity (non-variadic) user
+  function — Python `add3(*xs)` — now transpiles to `{ assert!(xs.len() == N,
+  "TypeError…"); f(xs[0], …, xs[N-1]) }`. Handled before
+  `reorder_kwargs_to_positional`, which would otherwise reject the sole `*xs` arg
+  as a "missing argument". No new IR (reuses `Block`/`Assert`/`Index`/`Len`/`Call`).
+
+### Fixed
+
+- **PMAT-876 (move bug, caught by a differential python3-vs-rustc hunt).** The
+  first cut bound the splat source by value (`let __u = xs;`), so any reuse of the
+  list after the splat — a second splat, `len(xs)`, `xs[0]`, `print(xs)` — failed
+  rustc with `E0382`, while python3 keeps the list usable. A bare-variable source
+  is now indexed directly (`Index`/`Len` borrow it, no move); only fresh sources
+  (literals/calls) are temp-bound, where moving is safe. Mirrors
+  `lower_list_positional_unpack`. A callee with default params is deferred
+  (fail-loud at transpile): its accepted arity is a runtime-decided range, so a
+  fixed `len == N` assert would diverge from python3.
+
 ## [0.1.575] — 2026-06-21
 
 ### Testing
