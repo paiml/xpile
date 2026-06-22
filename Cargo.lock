@@ -112,7 +112,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "bashrs-backend"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "xpile-backend",
  "xpile-contracts",
@@ -121,7 +121,7 @@ dependencies = [
 
 [[package]]
 name = "bashrs-frontend"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "xpile-frontend",
  "xpile-meta-hir",
@@ -215,7 +215,7 @@ dependencies = [
 
 [[package]]
 name = "decy-frontend"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "xpile-frontend",
  "xpile-meta-hir",
@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "depyler-frontend"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "rustpython-parser",
  "thiserror 1.0.69",
@@ -382,7 +382,7 @@ checksum = "507460a910eb7b32ee961886ff48539633b788a36b65692b95f225b844c82553"
 
 [[package]]
 name = "latex-contract-frontend"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "xpile-contract-frontend",
  "xpile-contracts",
@@ -642,7 +642,7 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
 name = "ruchy-frontend"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "xpile-frontend",
  "xpile-meta-hir",
@@ -1001,7 +1001,7 @@ dependencies = [
 
 [[package]]
 name = "xpile"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "anyhow",
  "clap",
@@ -1019,7 +1019,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-agent"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "thiserror 1.0.69",
  "xpile-frontend",
@@ -1030,7 +1030,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-backend"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "serde",
  "serde_json",
@@ -1041,7 +1041,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-bigint"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "num-bigint",
  "num-integer",
@@ -1050,7 +1050,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-contract-backend"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "serde",
  "thiserror 1.0.69",
@@ -1059,7 +1059,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-contract-frontend"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "serde",
  "thiserror 1.0.69",
@@ -1068,7 +1068,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-contracts"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "aprender-contracts",
  "serde",
@@ -1078,7 +1078,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-core"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "anyhow",
  "bashrs-backend",
@@ -1107,7 +1107,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-ffi-manifest"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "serde",
  "xpile-meta-hir",
@@ -1115,7 +1115,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-frontend"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "thiserror 1.0.69",
  "xpile-meta-hir",
@@ -1123,7 +1123,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-latex-contract-backend"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "xpile-contract-backend",
  "xpile-contracts",
@@ -1131,7 +1131,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-lean-codegen"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "thiserror 1.0.69",
  "xpile-backend",
@@ -1140,7 +1140,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-lean-contract-backend"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "xpile-contract-backend",
  "xpile-contracts",
@@ -1148,7 +1148,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-llm"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "hex",
  "serde",
@@ -1158,7 +1158,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-mcp"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "anyhow",
  "xpile-agent",
@@ -1166,14 +1166,14 @@ dependencies = [
 
 [[package]]
 name = "xpile-meta-hir"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "xpile-oracle"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "serde",
  "serde_json",
@@ -1182,7 +1182,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-ptx-codegen"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "xpile-backend",
  "xpile-contracts",
@@ -1191,7 +1191,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-ruchy-codegen"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "thiserror 1.0.69",
  "xpile-backend",
@@ -1200,7 +1200,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-rust-codegen"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "thiserror 1.0.69",
  "xpile-backend",
@@ -1209,7 +1209,7 @@ dependencies = [
 
 [[package]]
 name = "xpile-wgsl-codegen"
-version = "0.1.590"
+version = "0.1.591"
 dependencies = [
  "xpile-backend",
  "xpile-meta-hir",
