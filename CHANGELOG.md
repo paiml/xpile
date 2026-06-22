@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.580] — 2026-06-22
+
+### Added
+
+- **PMAT-880 (R6 contract-integrity) — `C-XLATE-PY-TUPLE-TO-RUST-TUPLE` authored
+  + wired.** After int/str/list/dict/float/set/class, fixed-arity tuple was the
+  next core construct still shipping UNCITED (`(i64, i64)` with no
+  `// xpile-contract:` line). This authors the Layer-2 translation contract
+  (governing arity + per-position element preservation — `(b, a)` ≠ `(a, b)`) plus
+  its sorry-free Lean theorem (`py_tuple_structure_extensionality_diamond`,
+  depth-1), and wires `Type::Tuple` into `Function::applicable_contracts()`.
+  Diamond depth-1 UNIVERSAL milestone 19 == 19; citation-integrity gate guards the
+  wiring. New e2e pins swap-position + per-element-type behavior vs python3.
+
 ## [0.1.579] — 2026-06-22
 
 ### Added
