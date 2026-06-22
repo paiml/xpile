@@ -3860,7 +3860,11 @@ fn try_lower_list_method_call(
         }
         // PMAT-622: a float ANYWHERE in the element (bare, tuple, nested list)
         // needs the `partial_cmp` sort path, not `Vec::sort` (f64 not `Ord`).
-        let of_float = type_contains_float(inner.as_ref());
+        // PMAT-888 (HUNT-V33 #5): a struct element with a custom `__lt__` is
+        // PartialOrd-but-not-Ord, so it ALSO needs the `sort_by(partial_cmp)`
+        // path (else `Vec::sort` → rustc E0277). Same `of_float` flag drives it.
+        let of_float = type_contains_float(inner.as_ref())
+            || type_contains_custom_lt_struct(inner.as_ref(), &ctx.struct_methods);
         ctx.mutable.insert(receiver_name.to_string());
         return Some(Ok(Stmt::ListMutate {
             list_name: receiver_name.to_string(),
@@ -12781,8 +12785,13 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 ),
                                 // PMAT-622: float anywhere in the element
                                 // (tuple/nested list) → partial_cmp, not Vec::sort.
+                                // PMAT-888 (HUNT-V33 #5): a struct element with a
+                                // custom `__lt__` is PartialOrd-not-Ord → also
+                                // needs the partial_cmp path (else E0277).
                                 None => {
-                                    matches!(infer_type_in_ctx(ctx, &list), Type::List(elem) if type_contains_float(&elem))
+                                    matches!(infer_type_in_ctx(ctx, &list), Type::List(elem)
+                                        if type_contains_float(&elem)
+                                            || type_contains_custom_lt_struct(&elem, &ctx.struct_methods))
                                 }
                             };
                             return Ok(Expr::Sorted {
@@ -14553,6 +14562,28 @@ fn type_contains_float(ty: &Type) -> bool {
         Type::F64 => true,
         Type::Tuple(elems) => elems.iter().any(type_contains_float),
         Type::List(inner) => type_contains_float(inner),
+        _ => false,
+    }
+}
+
+/// PMAT-888 (HUNT-V33 #5): true if `ty` is (or nests) a `Struct` whose class
+/// defines a custom `__lt__` — such a struct gets a synthesized `impl PartialOrd`
+/// (from `__lt__`) but NO `Ord` (only `@dataclass(order=True)` derives Ord, and
+/// that path defines no `__lt__` method). `Vec::sort` needs `Ord`, so a list of
+/// such structs must sort via `sort_by(partial_cmp)` — the same path floats use.
+/// Drives the `of_float` (use-partial_cmp) flag for `.sort()`/`sorted()`.
+fn type_contains_custom_lt_struct(
+    ty: &Type,
+    struct_methods: &HashMap<String, Vec<(String, Type)>>,
+) -> bool {
+    match ty {
+        Type::Struct(name) => struct_methods
+            .get(name)
+            .is_some_and(|ms| ms.iter().any(|(m, _)| m == "__lt__")),
+        Type::Tuple(elems) => elems
+            .iter()
+            .any(|e| type_contains_custom_lt_struct(e, struct_methods)),
+        Type::List(inner) => type_contains_custom_lt_struct(inner, struct_methods),
         _ => false,
     }
 }
