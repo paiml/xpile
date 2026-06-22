@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.590] — 2026-06-22
+
+### Testing
+
+- **PMAT-891 (Sprint-2 Tier 1) — grow the differential-oracle corpus to 15
+  fixtures.** Exercises the PMAT-890 CPython oracle by growing its auto-verified
+  set from 5 to 15 self-contained fixtures (no hand-written expected values): set
+  ops, tuple swap/destructuring, recursion, dict.get + char-frequency counting,
+  str strip/split/join/replace, enumerate+zip, float fmt, try/except, @dataclass
+  methods, Collatz while-loop. All agree with CPython.
+
 ## [0.1.589] — 2026-06-22
 
 ### Added
