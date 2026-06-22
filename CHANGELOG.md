@@ -7,6 +7,24 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.579] — 2026-06-22
+
+### Added
+
+- **PMAT-879 (R6 contract-integrity) — `C-XLATE-PY-CLASS-TO-STRUCT` authored +
+  wired.** Class/dataclass translation was the largest core construct still
+  shipping UNCITED (`pub struct Point { … }` emitted with zero `// xpile-contract:`
+  line — the capability-vs-contract drift the R6 audit names). After
+  int/str/list/dict/float/set, `Type::Struct` was the remaining uncontracted core
+  type. This authors the Layer-2 translation contract
+  (`contracts/xlate-py-class-to-struct-v1.yaml`, governing field-order + field-type
+  preservation and read-only `&self` dispatch) plus its sorry-free Lean theorem
+  (`py_struct_structure_extensionality_diamond`, registering it at depth-1), and
+  wires `Type::Struct` into `Function::applicable_contracts()` so any function
+  touching a class now cites the contract. Diamond depth-1 UNIVERSAL milestone is
+  back to full coverage (18 == 18); the citation-integrity gate regression-guards
+  the new wiring.
+
 ## [0.1.578] — 2026-06-22
 
 ### Fixed
