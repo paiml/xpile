@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.586] — 2026-06-22
+
+### Fixed
+
+- **PMAT-887 (HUNT-V33, invalid-rust) — narrow an `Optional` for-loop variable in
+  `if x is not None:` / `if x:`.** A `for x in xs` loop var typed `Optional[T]` was
+  not Some-narrowed inside an `is not None` / truthy body, so a read like `total +=
+  x` emitted a bare `Option<i64>` where `i64` was expected — transpile succeeded
+  but rustc rejected it (E0308) on the very-common None-filter-in-a-loop idiom.
+  Root cause: `walk_counts` marks the loop var `mutable` for the per-iteration
+  rebind, and the narrow gates reject mutable names — but a loop var not reassigned
+  in the body is sound to narrow. New `loop_pure_vars` set marks such vars
+  non-mutable for the narrow gates. Verified vs python3. (Guard-clause `if x is
+  None: continue` and `while x is not None:` narrowing are deferred follow-ups.)
+
 ## [0.1.585] — 2026-06-22
 
 ### Added
