@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.589] — 2026-06-22
+
+### Added
+
+- **PMAT-890 (Sprint-2 Tier 1) — real CPython differential ORACLE, wired into CI.**
+  Promotes the manual `python3`-vs-transpiled-`rustc` hunt methodology into an
+  automated gate with NO hand-written expected values. `xpile-oracle` gains a
+  concrete `PythonOracle` (runs `python3` on a module's `main()`, captures stdout)
+  + `diff_stdout`; `xpile/tests/oracle_differential.rs` auto-diffs CPython vs
+  transpiled-Rust stdout over self-contained `tests/oracle_fixtures/*.py` (the
+  transpiled `def main()` → `pub fn main()` runs directly — no driver), gated on
+  python3 + rustc. 5 seed fixtures (arith/floor-div, list+comprehension+sort, dict
+  insertion order, str/f-string, Optional for-loop narrowing) verified == CPython.
+  Force-multiplier: every future fixture auto-verifies against CPython.
+
 ## [0.1.588] — 2026-06-22
 
 ### Fixed
