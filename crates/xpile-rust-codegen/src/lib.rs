@@ -2795,6 +2795,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             list,
             is_max,
             of_float,
+            of_struct_cmp,
             key,
             default,
         } => {
@@ -2853,6 +2854,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     }
                     emit_expr(out, &k.body, mode)?;
                     out.push_str(" })");
+                }
+                // PMAT-889 (HUNT-V33 #4): a struct element with a custom `__lt__`
+                // is PartialOrd-but-not-Ord AND not Copy, so neither the `Ord`
+                // `.max()` path nor the float `.copied().reduce(..)` path applies.
+                // Use `.cloned().max_by(partial_cmp)`; `max` reverses first so
+                // ties resolve to the FIRST element (Python semantics, like the
+                // keyed-float path); a `None` partial_cmp falls back to `Equal`.
+                None if *of_struct_cmp => {
+                    if *is_max {
+                        out.push_str(".iter().cloned().rev().max_by(|__a, __b| __a.partial_cmp(__b).unwrap_or(std::cmp::Ordering::Equal))");
+                    } else {
+                        out.push_str(".iter().cloned().min_by(|__a, __b| __a.partial_cmp(__b).unwrap_or(std::cmp::Ordering::Equal))");
+                    }
                 }
                 None => match *of_float {
                     // Ord element (i64 / str / bool): `.min()/.max()` returns

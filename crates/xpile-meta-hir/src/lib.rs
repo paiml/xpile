@@ -2271,6 +2271,13 @@ pub enum Expr {
         list: Box<Expr>,
         is_max: bool,
         of_float: bool,
+        /// PMAT-889 (HUNT-V33 #4): keyless `max`/`min` over a list whose element
+        /// is a struct with a custom `__lt__` (PartialOrd, NOT Ord, NOT Copy).
+        /// Such an element can't use the `Ord` `.max()` path NOR the float
+        /// `.copied().reduce(…)` path (a struct isn't `Copy`); it emits
+        /// `.iter().cloned().max_by(|a, b| a.partial_cmp(b).unwrap()).expect(…)`.
+        /// Mutually exclusive with `of_float` (a type is float XOR struct).
+        of_struct_cmp: bool,
         key: Option<SortKey>,
         default: Option<Box<Expr>>,
     },
