@@ -6,7 +6,7 @@
 //! the single source of truth for that mapping within a session.
 
 use serde::{Deserialize, Serialize};
-use xpile_meta_hir::SourceLang;
+use xpile_meta_hir::{FfiBoundary, Module, SourceLang};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FfiManifest {
@@ -23,6 +23,46 @@ pub struct FfiEntry {
     pub shim_id: String,
 }
 
+/// PMAT-894 (Sprint-2 Tier 2): a cross-language FFI boundary could not be paired
+/// with a defining module during [`FfiManifest::reconcile`]. This is the
+/// manifest-completeness failure of `C-FFI-CPYTHON-EXT` (the contract's
+/// `manifest_completeness` equation): in a hybrid transpile EVERY boundary that
+/// crosses a language line must resolve, or the hybrid build cannot be emitted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FfiReconcileError {
+    pub unresolved: Vec<String>,
+}
+
+impl std::fmt::Display for FfiReconcileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "FFI reconciliation failed — {} unresolved boundary(ies): {}",
+            self.unresolved.len(),
+            self.unresolved.join("; ")
+        )
+    }
+}
+
+impl std::error::Error for FfiReconcileError {}
+
+/// Deterministic, dependency-free shim id (FNV-1a hex over the boundary's
+/// identifying fields). Stable across runs so a manifest entry — and the shim it
+/// names — is reproducible. (The spec's sha256 is a later hardening; FNV-1a is
+/// sufficient for in-session uniqueness and is std-only.)
+fn shim_id(b: &FfiBoundary) -> String {
+    let key = format!(
+        "{:?}->{:?}:{}:{}",
+        b.from_lang, b.to_lang, b.symbol, b.signature
+    );
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in key.as_bytes() {
+        h ^= *byte as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("shim_{h:016x}")
+}
+
 impl FfiManifest {
     pub fn new() -> Self {
         Self::default()
@@ -30,5 +70,127 @@ impl FfiManifest {
 
     pub fn register(&mut self, entry: FfiEntry) {
         self.entries.push(entry);
+    }
+
+    /// Phase 2 of the hybrid transpile flow (`hybrid-transpile-flow.md` §16):
+    /// reconcile every cross-language FFI boundary across the dispatched modules
+    /// into a single manifest, or fail listing the unresolved boundaries.
+    ///
+    /// A boundary `{from_lang, to_lang, symbol, signature}` is a call that
+    /// crosses from `from_lang` into `to_lang`. It RESOLVES when a sibling module
+    /// of `to_lang` is present in the dispatched set (the target language was
+    /// actually transpiled). Each resolved boundary becomes an [`FfiEntry`] with a
+    /// deterministic `shim_id`; any boundary whose target language is absent fails
+    /// reconciliation (the `manifest_completeness` invariant of
+    /// `C-FFI-CPYTHON-EXT`). Same-language boundaries (`from == to`) are no-ops.
+    ///
+    /// First increment: resolution is at the LANGUAGE level (target-lang module
+    /// present). Symbol-level export matching (the target module must DEFINE the
+    /// symbol) is the next increment — `Item::Function`/`Const` name lookup.
+    pub fn reconcile(modules: &[Module]) -> Result<FfiManifest, FfiReconcileError> {
+        let mut manifest = FfiManifest::new();
+        let mut unresolved = Vec::new();
+        for module in modules {
+            for b in &module.ffi_boundaries {
+                if b.from_lang == b.to_lang {
+                    continue; // not a cross-language boundary
+                }
+                let target_present = modules.iter().any(|m| m.source_lang == b.to_lang);
+                if target_present {
+                    manifest.register(FfiEntry {
+                        symbol: b.symbol.clone(),
+                        from_lang: b.from_lang,
+                        to_lang: b.to_lang,
+                        source_signature: b.signature.clone(),
+                        // First-cut shim signature: the real C/PyObject → Rust
+                        // lowering is a later increment; record a stable placeholder
+                        // that names the symbol so downstream emission can key on it.
+                        rust_shim_signature: format!("fn {}(/* {} */)", b.symbol, b.signature),
+                        shim_id: shim_id(b),
+                    });
+                } else {
+                    unresolved.push(format!(
+                        "{:?}->{:?} `{}` ({}): no {:?} module in the dispatched set",
+                        b.from_lang, b.to_lang, b.symbol, b.signature, b.to_lang
+                    ));
+                }
+            }
+        }
+        if unresolved.is_empty() {
+            Ok(manifest)
+        } else {
+            Err(FfiReconcileError { unresolved })
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn module(name: &str, lang: SourceLang, boundaries: Vec<FfiBoundary>) -> Module {
+        Module {
+            name: name.to_string(),
+            source_lang: lang,
+            items: Vec::new(),
+            ffi_boundaries: boundaries,
+        }
+    }
+
+    fn boundary(from: SourceLang, to: SourceLang, symbol: &str) -> FfiBoundary {
+        FfiBoundary {
+            from_lang: from,
+            to_lang: to,
+            symbol: symbol.to_string(),
+            signature: format!("{symbol}(...)"),
+        }
+    }
+
+    #[test]
+    fn reconcile_pairs_boundary_when_target_lang_present() {
+        let modules = vec![
+            module(
+                "foo",
+                SourceLang::Python,
+                vec![boundary(SourceLang::Python, SourceLang::C, "sum")],
+            ),
+            module("_foo_core", SourceLang::C, vec![]),
+        ];
+        let manifest = FfiManifest::reconcile(&modules).expect("resolves");
+        assert_eq!(manifest.entries.len(), 1);
+        assert_eq!(manifest.entries[0].symbol, "sum");
+        assert_eq!(manifest.entries[0].from_lang, SourceLang::Python);
+        assert_eq!(manifest.entries[0].to_lang, SourceLang::C);
+        assert!(manifest.entries[0].shim_id.starts_with("shim_"));
+    }
+
+    #[test]
+    fn reconcile_fails_when_target_lang_absent() {
+        let modules = vec![module(
+            "foo",
+            SourceLang::Python,
+            vec![boundary(SourceLang::Python, SourceLang::C, "sum")],
+        )];
+        let err = FfiManifest::reconcile(&modules).expect_err("unresolved");
+        assert_eq!(err.unresolved.len(), 1);
+        assert!(err.to_string().contains("sum"));
+    }
+
+    #[test]
+    fn reconcile_ignores_same_language_boundaries_and_empty() {
+        let modules = vec![module(
+            "foo",
+            SourceLang::Python,
+            vec![boundary(SourceLang::Python, SourceLang::Python, "local")],
+        )];
+        let manifest = FfiManifest::reconcile(&modules).expect("no cross-lang boundary");
+        assert!(manifest.entries.is_empty());
+        assert!(FfiManifest::reconcile(&[]).unwrap().entries.is_empty());
+    }
+
+    #[test]
+    fn shim_id_is_deterministic() {
+        let b = boundary(SourceLang::Python, SourceLang::C, "sum");
+        assert_eq!(shim_id(&b), shim_id(&b));
     }
 }
