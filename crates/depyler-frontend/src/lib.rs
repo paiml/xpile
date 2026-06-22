@@ -1528,12 +1528,353 @@ impl Frontend for PythonFrontend {
             items.push(item);
         }
 
+        // V29-2 (PMAT-884, contained stopgap): clean-reject the arg-clone-drops-
+        // mutation object-reference miscompile before it reaches a backend. The
+        // full Rc<RefCell> reference layer is architectural (out of scope); this
+        // pass catches the single clearest *silent* miscompile and refuses it.
+        reject_alias_then_mutate(&items)?;
+
         Ok(Module {
             name: module_name,
             source_lang: SourceLang::Python,
             items,
             ffi_boundaries: Vec::new(),
         })
+    }
+}
+
+/// V29-2 (PMAT-884, contained stopgap for the object-reference-semantics gap):
+/// CLEAN-REJECT the `arg-clone-drops-mutation` miscompile instead of emitting
+/// Rust that silently computes the wrong answer.
+///
+/// Python passes objects by reference, so a function that mutates a mutable
+/// collection parameter in place (`def f(lst): lst.append(x)`) mutates the
+/// CALLER's object. xpile lowers parameters by *value*, and when the caller
+/// re-reads the same variable after the call, the ownership pre-pass (PMAT-588,
+/// `clone_if_reused_non_copy`) wraps the argument in a `.clone()` so the move
+/// doesn't leave a use-after-move (E0382). That clone is correct for a *read-
+/// only* callee, but when the callee MUTATES the parameter the clone makes the
+/// mutation land on the throwaway copy — the caller's object is never touched.
+/// The emitted Rust compiles and runs, but prints the pre-call value (a silent
+/// wrong answer), the worst miscompile class. The full fix is an `Rc<RefCell>`
+/// reference layer + escape/aliasing analysis (architectural, V29-2 proper).
+///
+/// CONSERVATISM: the trigger is the *narrow conjunction* of two facts that are
+/// both already proven by lowering, so it cannot fire on a valid program:
+///   1. the argument is `Clone(Ident(_))` — i.e. the ownership pre-pass already
+///      decided the variable is non-`Copy` AND re-read after the call (the only
+///      situation where the dropped mutation is observable); a single-use arg
+///      (a bare `Ident`, never re-read) is NOT flagged, and
+///   2. the called function mutates THAT positional parameter in place
+///      (`Param::mutable`, set only by an in-place `.append`/`.sort`/`d[k]=v`/…
+///      on the parameter name).
+///
+/// A call into a non-mutating helper (e.g. `helper(xs) + helper(xs)` in
+/// `call_arg_reuse.py`) leaves `Param::mutable == false`, so it is untouched.
+fn reject_alias_then_mutate(items: &[Item]) -> Result<(), FrontendError> {
+    // Map each top-level / method function name → its per-parameter in-place
+    // mutation flags (parallel to its parameter list).
+    let mut mutating: HashMap<String, Vec<bool>> = HashMap::new();
+    for item in items {
+        match item {
+            Item::Function(f) => {
+                mutating.insert(f.name.clone(), f.params.iter().map(|p| p.mutable).collect());
+            }
+            Item::Struct { methods, .. } => {
+                for m in methods {
+                    mutating.insert(m.name.clone(), m.params.iter().map(|p| p.mutable).collect());
+                }
+            }
+            Item::Const { .. } | Item::Enum { .. } => {}
+        }
+    }
+
+    for item in items {
+        let bodies: Vec<&Block> = match item {
+            Item::Function(f) => vec![&f.body],
+            Item::Struct { methods, .. } => methods.iter().map(|m| &m.body).collect(),
+            Item::Const { .. } | Item::Enum { .. } => Vec::new(),
+        };
+        for body in bodies {
+            check_block_children(body, &mut |e| check_expr_for_alias_mutate(e, &mutating))?;
+        }
+    }
+    Ok(())
+}
+
+/// Check one expression for the flagged call, then recurse into its children.
+/// The single trigger: a direct call into a parameter-mutating function whose
+/// i-th argument is `Clone(Ident(_))` (a re-read non-`Copy` variable — the only
+/// case where the dropped mutation is observable) AND whose i-th parameter is
+/// mutated in place (`Param::mutable`).
+fn check_expr_for_alias_mutate(
+    expr: &Expr,
+    mutating: &HashMap<String, Vec<bool>>,
+) -> Result<(), FrontendError> {
+    if let Expr::Call { callee, args } = expr {
+        if let Some(param_mut) = mutating.get(callee) {
+            for (i, arg) in args.iter().enumerate() {
+                if !param_mut.get(i).copied().unwrap_or(false) {
+                    continue;
+                }
+                let Expr::Clone(inner) = arg else { continue };
+                let Expr::Ident(name) = inner.as_ref() else {
+                    continue;
+                };
+                return Err(FrontendError::Lower(format!(
+                    "object reference semantics not yet supported — `{callee}` mutates its \
+                     parameter #{} in place, but `{name}` is passed by value and re-used \
+                     afterwards, so xpile clones it and the mutation is silently dropped (the \
+                     caller never sees it). Python's pass-by-reference here needs the Rc<RefCell> \
+                     reference layer (V29-2, architectural); until then this alias-then-mutate \
+                     pattern is REFUSED rather than miscompiled — see C-XLATE-PY-LIST-TO-VEC \
+                     alias_observation_inserts_clone",
+                    i + 1
+                )));
+            }
+        }
+    }
+    walk_expr_children(expr, &mut |e| check_expr_for_alias_mutate(e, mutating))
+}
+
+/// Apply `f` to every direct child `Expr` of `expr`, short-circuiting on the
+/// first `Err`. Used by [`check_expr_for_alias_mutate`] to reach calls nested in
+/// any expression position without re-implementing the full match per caller.
+fn walk_expr_children(
+    expr: &Expr,
+    f: &mut dyn FnMut(&Expr) -> Result<(), FrontendError>,
+) -> Result<(), FrontendError> {
+    match expr {
+        Expr::Block(b) => check_block_children(b, f),
+        Expr::FloatBinOp { lhs, rhs, .. }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::Concat { lhs, rhs }
+        | Expr::ListConcat { lhs, rhs } => {
+            f(lhs)?;
+            f(rhs)
+        }
+        Expr::Len(e)
+        | Expr::Clone(e)
+        | Expr::OptionUnwrap(e)
+        | Expr::TupleIndex { tuple: e, .. }
+        | Expr::FieldAccess { obj: e, .. }
+        | Expr::IsNone { value: e, .. } => f(e),
+        Expr::OptionExpr(Some(e)) => f(e),
+        Expr::OptionExpr(None) => Ok(()),
+        Expr::Index { collection, index } => {
+            f(collection)?;
+            f(index)
+        }
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => {
+            f(collection)?;
+            for o in [lo, hi].into_iter().flatten() {
+                f(o)?;
+            }
+            Ok(())
+        }
+        Expr::DictGet { dict, key }
+        | Expr::DictGetOpt { dict, key }
+        | Expr::DictContains { dict, key } => {
+            f(dict)?;
+            f(key)
+        }
+        Expr::DictGetOr { dict, key, default } => {
+            f(dict)?;
+            f(key)?;
+            f(default)
+        }
+        Expr::DictView { dict, .. } => f(dict),
+        Expr::SetContains { set, elem } => {
+            f(set)?;
+            f(elem)
+        }
+        Expr::ListContains { list, elem } => {
+            f(list)?;
+            f(elem)
+        }
+        Expr::StrContains { haystack, needle } => {
+            f(haystack)?;
+            f(needle)
+        }
+        Expr::ListLit(es) | Expr::SetLit(es) | Expr::TupleLit(es) => {
+            for e in es {
+                f(e)?;
+            }
+            Ok(())
+        }
+        Expr::DictLit(pairs) => {
+            for (k, v) in pairs {
+                f(k)?;
+                f(v)?;
+            }
+            Ok(())
+        }
+        Expr::SetOp { lhs, rhs, .. } => {
+            f(lhs)?;
+            f(rhs)
+        }
+        Expr::SetPred { lhs, rhs, .. } => {
+            f(lhs)?;
+            f(rhs)
+        }
+        Expr::OptionTruthy { value, .. } => f(value),
+        Expr::OptionOrDefault {
+            value,
+            body,
+            default,
+            ..
+        } => {
+            f(value)?;
+            f(body)?;
+            f(default)
+        }
+        Expr::TryCatch { body, handler, .. } => {
+            f(body)?;
+            f(handler)
+        }
+        Expr::StructLit { fields, .. } => {
+            for (_, v) in fields {
+                f(v)?;
+            }
+            Ok(())
+        }
+        Expr::StrFormat { args, .. } => {
+            for a in args {
+                f(a)?;
+            }
+            Ok(())
+        }
+        Expr::StrCharAt { string, index } => {
+            f(string)?;
+            f(index)
+        }
+        Expr::StrChars { string } => f(string),
+        Expr::Ord { value } | Expr::Chr { value } => f(value),
+        Expr::IntRadixStr { value, .. } | Expr::IntFromStrRadix { value, .. } => f(value),
+        Expr::FormatSpec { value, .. } => f(value),
+        Expr::StrMethod { recv, args, .. } => {
+            f(recv)?;
+            for a in args {
+                f(a)?;
+            }
+            Ok(())
+        }
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            f(cond)?;
+            f(then_expr)?;
+            f(else_expr)
+        }
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => {
+            for a in args {
+                f(a)?;
+            }
+            Ok(())
+        }
+        Expr::Sum { list, start, .. } => {
+            f(list)?;
+            if let Some(s) = start {
+                f(s)?;
+            }
+            Ok(())
+        }
+        Expr::BoolReduce { list, .. } => f(list),
+        Expr::Repeat { seq, n, .. } => {
+            f(seq)?;
+            f(n)
+        }
+        Expr::NumCast { value, .. } => f(value),
+        // Leaves / variants whose payload cannot host a flagged `Expr::Call`.
+        _ => Ok(()),
+    }
+}
+
+fn check_block_children(
+    block: &Block,
+    f: &mut dyn FnMut(&Expr) -> Result<(), FrontendError>,
+) -> Result<(), FrontendError> {
+    for s in &block.stmts {
+        // A nested block's statements may host the flagged call too; route them
+        // through the statement walker via a fresh map-free closure is not
+        // possible here, so recurse on the expressions the statement exposes by
+        // delegating to the shared statement checker through `f`-reachable exprs.
+        walk_stmt_exprs(s, f)?;
+    }
+    f(&block.trailing_return)
+}
+
+/// Visit each `Expr` directly held by `stmt` (and recurse into nested blocks),
+/// applying `f`. Mirrors [`check_stmt_for_alias_mutate`]'s structure but is
+/// parameterised on the visitor so the block walker can reuse it.
+fn walk_stmt_exprs(
+    stmt: &Stmt,
+    f: &mut dyn FnMut(&Expr) -> Result<(), FrontendError>,
+) -> Result<(), FrontendError> {
+    match stmt {
+        Stmt::Return(e) => f(e),
+        Stmt::Print { args, .. } => {
+            for a in args {
+                f(a)?;
+            }
+            Ok(())
+        }
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::LetTuple { value, .. } => {
+            f(value)
+        }
+        Stmt::ListAppend { elem, .. }
+        | Stmt::SetAdd { elem, .. }
+        | Stmt::ListExtend { other: elem, .. }
+        | Stmt::DictUpdate { other: elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. }
+        | Stmt::SetRemove { elem, .. } => f(elem),
+        Stmt::ListInsert { index, elem, .. } => {
+            f(index)?;
+            f(elem)
+        }
+        Stmt::IndexAssign { value, indices, .. } => {
+            for i in indices {
+                f(i)?;
+            }
+            f(value)
+        }
+        Stmt::DictSet { key, value, .. } => {
+            f(key)?;
+            f(value)
+        }
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            f(cond)?;
+            for s in then_body.iter().chain(else_body) {
+                walk_stmt_exprs(s, f)?;
+            }
+            Ok(())
+        }
+        Stmt::While { cond, body } => {
+            f(cond)?;
+            for s in body {
+                walk_stmt_exprs(s, f)?;
+            }
+            Ok(())
+        }
+        Stmt::Assert { cond, msg } => {
+            f(cond)?;
+            if let Some(m) = msg {
+                f(m)?;
+            }
+            Ok(())
+        }
+        Stmt::Raise { message } => f(message),
+        Stmt::ClosureLet { body, .. } => f(body),
+        Stmt::NestedFn { body, .. } => check_block_children(body, f),
+        _ => Ok(()),
     }
 }
 

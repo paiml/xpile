@@ -7328,6 +7328,41 @@ fn listcomp_ternary_int_float_reject() {
     );
 }
 
+/// V29-2 (PMAT-884, silent-wrong, contained stopgap): the arg-clone-drops-
+/// mutation object-reference miscompile. Python passes objects by reference, so
+/// `add_item(nums)` over a function that does `lst.append(99)` mutates the
+/// CALLER's `nums` ([1, 2, 3] → [1, 2, 3, 99]). xpile lowers params by value and,
+/// because `nums` is re-read after the call, the PMAT-588 ownership pre-pass
+/// clones the argument (to dodge E0382) — so the mutation lands on the throwaway
+/// copy and the caller's `nums` is never touched. The emitted Rust COMPILES but
+/// prints `[1, 2, 3]` (a silent wrong answer). The full fix is the Rc<RefCell>
+/// reference layer (architectural, out of scope); the contained stopgap is to
+/// CLEAN-REJECT this alias-then-mutate pattern rather than miscompile it,
+/// mirroring `tuple_call_is_rejected_not_miscompiled`. CONSERVATISM: the trigger
+/// is the narrow conjunction of (1) the arg is a `Clone(Ident)` (a re-read
+/// non-Copy variable — the only observable case) and (2) the callee mutates that
+/// positional parameter in place, so a reused arg into a NON-mutating helper
+/// (`call_arg_reuse.py`) and a single-use mutating call are both untouched.
+#[test]
+fn alias_arg_mutate_is_rejected_not_miscompiled() {
+    let py = fixture("alias_arg_mutate_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "passing a re-used list to a function that mutates the parameter in place \
+         must be REFUSED (non-zero exit), not silently miscompiled to drop the \
+         mutation on a clone"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("object reference semantics not yet supported")
+            && stderr.contains("add_item")
+            && stderr.contains("silently dropped"),
+        "the rejection should name the object-reference-semantics gap and the \
+         dropped mutation, mirroring the tuple-call / heterogeneous-list rejects:\n{stderr}"
+    );
+}
+
 /// PMAT-543 (Tranche 2): two-generator comprehensions over `range(...)` —
 /// `[i*j for i in range(n) for j in range(n)]`. The 2-generator desugar already
 /// handled `list[T]` iterables (nested `ForEach`); a bare `range(...)` generator
