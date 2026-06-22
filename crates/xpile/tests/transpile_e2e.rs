@@ -1528,6 +1528,40 @@ fn type_bare_rejected() {
     );
 }
 
+/// PMAT-879 (R6 contract-integrity): a Python class / `@dataclass` lowers to a
+/// Rust `struct` under the `C-XLATE-PY-CLASS-TO-STRUCT` contract. Class
+/// translation was the largest core construct still shipping UNCITED (`pub
+/// struct Point { … }` emitted with zero `// xpile-contract:` line); it is now
+/// wired into `Function::applicable_contracts()` so any function taking,
+/// returning, or binding a struct cites the contract. This test pins both the
+/// citation (R6) and the behavior — field order preserved + read-only `&self`
+/// dispatch (the instance stays usable across calls). Cross-checked vs python3.
+#[test]
+fn class_to_struct_cites_contract() {
+    let rust = xpile_transpile_to_rust("class_to_struct_contract.py");
+    // R6: every function touching the struct cites the class-translation contract.
+    assert!(
+        rust.contains("// xpile-contract: C-XLATE-PY-CLASS-TO-STRUCT"),
+        "a struct-touching function must cite C-XLATE-PY-CLASS-TO-STRUCT:\n{rust}"
+    );
+    // Field order is preserved in the emitted struct (x before y).
+    let xi = rust.find("x:").expect("field x emitted");
+    let yi = rust.find("y:").expect("field y emitted");
+    assert!(
+        xi < yi,
+        "struct field order must be preserved (x before y):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let p = make_point(3, 4);
+    assert_eq!(point_x(p.clone()), 3);     // positional construction: x=3, not swapped
+    assert_eq!(p.sum(), 7);
+    assert_eq!(point_sum_twice(p), 14);    // &self: instance usable across two calls
+}
+"#;
+    assert_rustc_runs("class_to_struct_contract", &rust, driver);
+}
+
 /// PMAT-700: a plain (no-star) tuple-unpack over a LIST — `a, b = xs` — now
 /// transpiles (it was rejected "expected a tuple", though `a, *b = xs` over the
 /// same list worked). Python unpacks by position with an exact-length check;
