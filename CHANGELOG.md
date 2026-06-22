@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.591] — 2026-06-22
+
+### Fixed
+
+- **PMAT-892 (surfaced by the differential oracle) — coerce `list[Optional[T]]`
+  literal elements.** `xs: list[Optional[int]] = [5, None, 3]` was rejected as a
+  "heterogeneous list literal" (I64 vs Optional(I64)); Python's annotation makes
+  it Optional-typed. A new `lower_value_expecting` arm threads `Optional[T]` into
+  each element (bare `T` → `Some(T)`, `None` → `Option::None`), emitting
+  `vec![Some(5i64), None, Some(3i64)]`. Contract-carrying. The oracle's first
+  find→fix→verify loop: it found the divergence, this fixes it, and a new oracle
+  fixture verifies it continuously.
+
 ## [0.1.590] — 2026-06-22
 
 ### Testing
