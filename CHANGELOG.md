@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.588] — 2026-06-22
+
+### Fixed
+
+- **PMAT-889 (HUNT-V33 #4, invalid-rust) — `max()`/`min()` over a struct list with
+  a custom `__lt__`.** Emitted a bare `max(xs)` call (rustc E0425): such a struct
+  is PartialOrd-but-not-Ord AND not Copy, so neither the `Ord` `.max()` nor the
+  float `.copied().reduce(..)` path applies. New `of_struct_cmp` flag on
+  `ListMinMax` routes a keyless struct-`__lt__` element to `.iter().cloned()
+  .max_by(partial_cmp)` (`max` reverses first for Python's first-max-wins ties).
+  Companion to PMAT-888 (struct sort). Verified vs python3.
+
 ## [0.1.587] — 2026-06-22
 
 ### Fixed
