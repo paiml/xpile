@@ -7296,9 +7296,10 @@ fn lower_assignment_try(
         return Err(unsupported(ctx));
     };
     let ast::ExceptHandler::ExceptHandler(h) = &try_stmt.handlers[0];
-    if h.name.is_some() {
-        return Err(unsupported(ctx));
-    }
+    // PMAT-886: an `as <name>` binding is supported (mirrors the terminal-return
+    // form, PMAT-817) — the caught exception's message is bound to a `String`
+    // local for the handler, so `str(e)` / `f"{e}"` resolve.
+    let bound_name = h.name.as_ref().map(|n| n.to_string());
     let Some((handler_name, handler_val)) = single_name_assign(&h.body) else {
         return Err(unsupported(ctx));
     };
@@ -7309,14 +7310,30 @@ fn lower_assignment_try(
         )));
     }
     let body = lower_expr_in_ctx(ctx, body_val.clone())?;
-    let handler = lower_expr_in_ctx(ctx, handler_val.clone())?;
+    // PMAT-886: bind `<name>: str` (the exception message) while lowering the
+    // handler value, then save/restore — `e` is scoped to the handler, not the
+    // enclosing function. Mirrors the terminal-return form's binding.
+    let handler = if let Some(name) = &bound_name {
+        let had = ctx.bound.contains(name);
+        let prev_ty = ctx.name_types.get(name).cloned();
+        ctx.bound.insert(name.clone());
+        ctx.name_types.insert(name.clone(), Type::Str);
+        let lowered = lower_expr_in_ctx(ctx, handler_val.clone());
+        if !had {
+            ctx.bound.remove(name);
+            ctx.name_types.remove(name);
+        } else if let Some(t) = prev_ty {
+            ctx.name_types.insert(name.clone(), t);
+        }
+        lowered?
+    } else {
+        lower_expr_in_ctx(ctx, handler_val.clone())?
+    };
     let value = Expr::TryCatch {
         body: Box::new(body),
         handler: Box::new(handler),
         except_types: except_type_names(h.type_.as_deref()),
-        // PMAT-817: the statement-form try/except-assign does not bind `as e`
-        // yet (scoped to the terminal `try: return … except E as e: return …`).
-        bound_name: None,
+        bound_name,
     };
     let ty = infer_type_in_ctx(ctx, &value);
     let name = body_name;

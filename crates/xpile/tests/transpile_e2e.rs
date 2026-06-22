@@ -1622,6 +1622,26 @@ fn main() {
     assert_rustc_runs("optional_contract", &rust, driver);
 }
 
+/// PMAT-886 (breadth): the assignment-form `try: x = … except E as e: x = …`
+/// now binds `as e` (the caught exception's message as a `String` local usable in
+/// the handler, e.g. `str(e)` / `f"{e}"`). It was rejected "single `except`
+/// without a bound name"; the terminal-return form already supported `as e`
+/// (PMAT-817), so this mirrors that — `Expr::TryCatch` already carries
+/// `bound_name`, no IR/codegen change. Cross-checked vs python3.
+#[test]
+fn try_assign_bound_exception() {
+    let rust = xpile_transpile_to_rust("try_assign_bound_exc.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(safe_div(10, 2), "5");
+    assert_eq!(safe_div(10, 0), "err: integer division or modulo by zero");
+    assert_eq!(parse_or_zero("42".to_string()), 42);
+    assert_eq!(parse_or_zero("abc".to_string()), 0);  // `e` used in f-string handler
+}
+"#;
+    assert_rustc_runs("try_assign_bound_exc", &rust, driver);
+}
+
 /// PMAT-700: a plain (no-star) tuple-unpack over a LIST — `a, b = xs` — now
 /// transpiles (it was rejected "expected a tuple", though `a, *b = xs` over the
 /// same list worked). Python unpacks by position with an exact-length check;
