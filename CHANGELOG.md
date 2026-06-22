@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.593] — 2026-06-22
+
+### Added
+
+- **PMAT-894 (Sprint-2 Tier 2 — Phase-5 hybrid) — `FfiManifest::reconcile`.** The
+  first real piece of the hybrid transpile flow (§16): Phase 2 (FFI Manifest
+  Reconciliation). `xpile-ffi-manifest::reconcile(modules)` walks every module's
+  cross-language `FfiBoundary` and pairs it into the manifest, or fails listing
+  unresolved boundaries — the `manifest_completeness` invariant of
+  `C-FFI-CPYTHON-EXT`. Resolution at the language level (target-lang module
+  present); deterministic dependency-free `shim_id` (FNV-1a); new
+  `FfiReconcileError`. Symbol-level export matching is the next increment.
+
 ## [0.1.592] — 2026-06-22
 
 ### Fixed
