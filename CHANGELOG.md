@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.594] — 2026-06-22
+
+### Added
+
+- **PMAT-895 (Sprint-2 Tier 2 — Phase-5 hybrid) — symbol-level FFI reconciliation.**
+  Tightens `FfiManifest::reconcile` from language-level to SYMBOL-level: a
+  cross-language boundary resolves only when a module of `to_lang` actually
+  defines (exports) an item named `symbol` (function/const, via
+  `item_exported_name`). A present-but-non-exporting module still fails, with a
+  symbol-specific diagnostic distinct from the language-absent case — the real
+  `manifest_completeness` invariant of `C-FFI-CPYTHON-EXT` (the symbol must cross
+  the line, not just the language being present).
+
 ## [0.1.593] — 2026-06-22
 
 ### Added
