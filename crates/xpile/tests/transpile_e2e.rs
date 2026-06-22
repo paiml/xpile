@@ -7301,6 +7301,33 @@ fn main() {
     assert_rustc_runs("ternary_mixed_float_int", &rust, driver);
 }
 
+/// V29-5 (PMAT-883, silent-wrong): the int/float ternary promotion (PMAT-542)
+/// is CORRECT for a standalone ternary (its *result* is one float value) but
+/// silently widens int elements to f64 inside a LIST-COMPREHENSION element —
+/// `[x if x > 0 else 1.0 for x in xs]` over an `int` `x` produced a heterogeneous
+/// int/float list where every int element prints as `N.0`. xpile now
+/// CLEAN-REJECTS this, exactly as it rejects a heterogeneous list LITERAL
+/// (`[1, 2.0]`): heterogeneous lists are out of scope for C-XLATE-PY-LIST-TO-VEC.
+/// Scoped to the comp-element ternary case — the standalone-ternary promotion
+/// (`ternary_mixed_float_int`) and homogeneous comp ternaries are untouched.
+#[test]
+fn listcomp_ternary_int_float_reject() {
+    let py = fixture("listcomp_ternary_int_float_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "an int/float ternary in a list-comp element must be REFUSED (non-zero \
+         exit), not silently widened to a heterogeneous f64 list"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("heterogeneous list comprehension")
+            && stderr.contains("C-XLATE-PY-LIST-TO-VEC"),
+        "the rejection should name the heterogeneous-list reason, mirroring the \
+         list-literal reject:\n{stderr}"
+    );
+}
+
 /// PMAT-543 (Tranche 2): two-generator comprehensions over `range(...)` —
 /// `[i*j for i in range(n) for j in range(n)]`. The 2-generator desugar already
 /// handled `list[T]` iterables (nested `ForEach`); a bare `range(...)` generator
