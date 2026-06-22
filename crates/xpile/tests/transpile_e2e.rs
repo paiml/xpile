@@ -1591,6 +1591,37 @@ fn main() {
     assert_rustc_runs("tuple_contract", &rust, driver);
 }
 
+/// PMAT-881 (R6 contract-integrity): Python `Optional[T]` lowers to Rust
+/// `Option<T>` under the `C-XLATE-PY-OPTIONAL-TO-OPTION` contract. The Option
+/// mapping (None → Option::None, Some-wrapping at observation, `is None` →
+/// `.is_none()`) shipped uncited for its Optional-ness; `Type::Optional` is now
+/// wired into `Function::applicable_contracts()`. Pins the citation (R6) and the
+/// behavior — Some-wrapping + None-test fidelity. Cross-checked vs python3.
+#[test]
+fn optional_cites_contract() {
+    let rust = xpile_transpile_to_rust("optional_contract.py");
+    assert!(
+        rust.contains("// xpile-contract: C-XLATE-PY-OPTIONAL-TO-OPTION"),
+        "an Optional-touching function must cite C-XLATE-PY-OPTIONAL-TO-OPTION:\n{rust}"
+    );
+    // Some-wrapping at the return + `.is_none()` None test are emitted.
+    assert!(
+        rust.contains("Some(") && rust.contains(".is_none()"),
+        "Optional lowering must Some-wrap + use .is_none():\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(find_positive(5), Some(5));   // concrete value Some-wrapped
+    assert_eq!(find_positive(-1), None);     // None → Option::None
+    assert!(is_absent(None));                // is None → .is_none()
+    assert!(!is_absent(Some(3)));
+    assert_eq!(or_default(Some(7), 0), 7);
+    assert_eq!(or_default(None, 9), 9);
+}
+"#;
+    assert_rustc_runs("optional_contract", &rust, driver);
+}
+
 /// PMAT-700: a plain (no-star) tuple-unpack over a LIST — `a, b = xs` — now
 /// transpiles (it was rejected "expected a tuple", though `a, *b = xs` over the
 /// same list worked). Python unpacks by position with an exact-length check;

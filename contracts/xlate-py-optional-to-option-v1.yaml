@@ -1,0 +1,163 @@
+metadata:
+  id: C-XLATE-PY-OPTIONAL-TO-OPTION
+  version: "1.0.0"
+  created: "2026-06-22"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Translation contract: how Python `Optional[T]` (a value that is either a `T`
+    or `None`) lowers to Rust `Option<T>` (`Type::Optional`; `None` constant;
+    `Some(..)` wrapping at assignment/return/argument; `x is None` / `x == None`
+    → `.is_none()` / `.is_some()` via `Expr::IsNone`).
+
+    The naïve "Optional → Option" mapping has two load-bearing boundaries:
+      1. Some-wrapping — a concrete `T` value flowing into an `Optional[T]`
+         position (return, annotated local, `Optional`-typed parameter) MUST be
+         wrapped in `Some(..)`; emitting a bare `T` against an `Option<T>` slot is
+         rustc E0308. `None` lowers to `Option::None`; an already-`Option` value
+         is passed through (no `Option<Option<T>>`).
+      2. None-test fidelity — Python `x is None` / `x == None` over an Optional
+         lowers to `.is_none()` (and the negations to `.is_some()`), matching
+         CPython's singleton-None semantics; the test must not be a structural
+         `== None` against a non-Option.
+
+    PMAT-881 (R6 contract-integrity): wired into
+    `Function::applicable_contracts()` so any function taking, returning, or
+    binding an `Optional[T]` cites it — closing the Optional wrapper, the last
+    core type still emitting uncited for its Optional-ness (`Optional[str]`
+    already cited str via its inner type, but the Option mapping itself did not).
+
+    Layer 2 of the xpile contract taxonomy (translation).
+  references:
+    - "Python typing: Optional[T] == Union[T, None]; None is a singleton"
+    - "Rust std: Option<T> (Some / None)"
+    - "contracts/xlate-py-list-to-vec-v1.yaml (sibling translation contract)"
+    - "docs/specifications/audit-design.md §6 (Capability-vs-Contract Drift)"
+  depends_on: []
+
+equations:
+  some_wrapping_at_observation:
+    formula: |
+      xlate(v : T  →  position expecting Optional[T])  == Some(lower(v))
+      xlate(None : Optional[T])                        == Option::None
+      xlate(o : Optional[T]  →  Optional[T] position)  == lower(o)   (no re-wrap)
+    domain: |
+      A concrete `T`, a `None` constant, or an already-Optional value flowing into
+      an `Optional[T]` position (return / annotated local / Optional parameter).
+    invariants:
+      - "a concrete T into an Optional[T] slot is wrapped in Some(..)"
+      - "None lowers to Option::None"
+      - "an already-Optional value is passed through (never Some(Some(..)))"
+    preconditions:
+      - "type inference identified the target position as Optional[T] with a supported T"
+    postconditions:
+      - "the emitted Rust value has type Option<T_rust> at the slot (no bare T against Option<T>)"
+      - "an emitter that drops the Some wrapper would produce rustc E0308 — falsified here"
+
+  none_test_fidelity:
+    formula: |
+      xlate(x is None)      == x.is_none()
+      xlate(x is not None)  == x.is_some()
+      (and `x == None` / `x != None` coincide for the singleton None)
+    domain: |
+      A `None` identity/equality test on an `Optional[T]`-typed value.
+    invariants:
+      - "`is None` / `== None` over an Optional lowers to `.is_none()`"
+      - "the negations lower to `.is_some()`"
+      - "a None test on a non-Optional value is degenerate and rejected (not silently False)"
+    preconditions:
+      - "the tested operand types as Optional[T]"
+    postconditions:
+      - "the emitted Rust uses `.is_none()` / `.is_some()`, matching CPython's None-singleton test"
+
+  py_optional_structure_extensionality_diamond:
+    # PMAT-881: FIRST (tier-defining) Diamond equation — registers
+    # C-XLATE-PY-OPTIONAL-TO-OPTION at depth-1 under the R6-grandfathered Diamond
+    # gate (PMAT-475a), mirroring the str/list/float/set/class/tuple structural
+    # Diamonds. An Optional is determined by its present-flag + payload model;
+    # Option-algebra (map/and_then laws) ratchets in later.
+    lean_theorem: "XpileContracts.CXlatePyOptionalToOption.py_optional_structure_extensionality_diamond"
+    lean_file: "contracts/lean/XlatePyOptionalToOption.lean"
+    formula: |
+      ∀ a b : PyOptional.
+        a.present = b.present → a.payload = b.payload → a = b
+      (a Python Optional is determined by its present-flag and payload; xpile emits Option)
+    domain: |
+      Any Python `Optional[T]` values. xpile lowers `Optional[T]` to Rust
+      `Option<T>`; the Diamond captures structure-extensionality of the
+      present-flag + payload model (the same Some/None distinction
+      `some_wrapping_at_observation` governs at the emit level).
+    invariants:
+      - "FIRST Diamond-tier theorem of C-XLATE-PY-OPTIONAL-TO-OPTION (registers it at depth-1)"
+      - "structure extensionality on the (present, payload) model (sorry-free)"
+      - "Option-algebra (map/and_then/unwrap_or laws) deferred to later tiers"
+    preconditions:
+      - "the operand is a Python Optional (lowered to a Rust Option)"
+    postconditions:
+      - "emitted Rust uses Option<T>; Optional-typed code carries // xpile-contract: C-XLATE-PY-OPTIONAL-TO-OPTION"
+
+proof_obligations:
+  - type: precondition
+    property: meta-HIR carries an Optional type with a supported inner type
+    formal: "item.type == Optional(T) ∧ T ∈ SupportedTypes"
+    applies_to: some_wrapping_at_observation
+  - type: postcondition
+    property: a concrete value flowing into an Optional slot is Some-wrapped
+    formal: "slot.type == Optional(T) ∧ v.type == T ⟹ emit(v) == Some(lower(v))"
+    applies_to: some_wrapping_at_observation
+  - type: frame
+    property: no mutation of the meta-HIR module during translation
+    formal: "modifies() == ∅"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-XLATE-OPT-001
+    rule: |
+      A concrete value returned/bound into an Optional[T] position MUST be
+      Some-wrapped (a bare T against Option<T> is rustc E0308).
+    prediction: |
+      `def find(x:int) -> Optional[int]: if x>0: return x; return None` compiles —
+      the `return x` is emitted as `Some(x)`, `return None` as `None`.
+    test: |
+      cargo test -p xpile --test transpile_e2e optional_cites_contract
+    if_fails: |
+      The Some wrapper was dropped — bare T against Option<T> won't compile.
+    ship_blocking: true
+    counter_example_classes:
+      - missing_some_wrap
+
+  - id: FALSIFY-XLATE-OPT-002
+    rule: |
+      Every function touching an Optional type MUST cite this contract.
+    prediction: |
+      Transpiling an Optional-returning fixture emits `// xpile-contract: C-XLATE-PY-OPTIONAL-TO-OPTION`.
+    test: |
+      cargo test -p xpile --test contract_citation_integrity every_emitted_citation_resolves_to_an_on_disk_contract
+    if_fails: |
+      The Optional wiring in applicable_contracts() regressed — Optional code ships uncited.
+    ship_blocking: true
+    counter_example_classes:
+      - uncited_construct
+
+  - id: FALSIFY-XLATE-OPT-003
+    rule: |
+      A `None` test on an Optional MUST lower to `.is_none()` / `.is_some()`.
+    prediction: |
+      `x is None` over an Optional[int] emits `.is_none()`, not a structural `== None`.
+    test: |
+      cargo test -p xpile --test transpile_e2e optional_cites_contract
+    if_fails: |
+      The None test diverged from CPython's singleton-None semantics.
+    ship_blocking: true
+    counter_example_classes:
+      - structural_none_eq
+
+qa_gate:
+  id: QA-XLATE-PY-OPTIONAL-TO-OPTION
+  name: "Python Optional → Rust Option translation contract"
+  min_coverage: 0.50
+  max_complexity: 20
+  required_tests:
+    - optional_cites_contract
+    - every_emitted_citation_resolves_to_an_on_disk_contract
