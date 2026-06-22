@@ -7687,6 +7687,7 @@ fn desugar_list_comp_2gen(
     comp: &ast::ExprListComp,
 ) -> Result<Vec<Stmt>, FrontendError> {
     desugar_comp_2gen(ctx, target, &comp.generators, "list", |ctx| {
+        reject_intfloat_ternary_comp_elem(ctx, &comp.elt, "list")?;
         let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
         let acc_ty = Type::List(Box::new(infer_type_in_ctx(ctx, &elem)));
         let insert = Stmt::ListAppend {
@@ -7806,6 +7807,7 @@ fn desugar_list_comp(
         ctx.name_types.insert(first.clone(), k_in);
         ctx.name_types.insert(second.clone(), v_in);
         let filter = comp_filter(ctx, gen, "list")?;
+        reject_intfloat_ternary_comp_elem(ctx, &comp.elt, "list")?;
         let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
         let list_ty = Type::List(Box::new(infer_type_in_ctx(ctx, &elem)));
         ctx.bound.insert(target.to_string());
@@ -7860,6 +7862,7 @@ fn desugar_list_comp(
         ctx.name_types.insert(counter.clone(), Type::I64);
         // PMAT-563: fold all `if` clauses into one Bool filter (ANDed).
         let filter = combine_comp_filters(ctx, &gen.ifs, "list")?;
+        reject_intfloat_ternary_comp_elem(ctx, &comp.elt, "list")?;
         let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
         let out_ty = infer_type_in_ctx(ctx, &elem);
         let list_ty = Type::List(Box::new(out_ty));
@@ -7924,6 +7927,7 @@ fn desugar_list_comp(
     ctx.name_types.insert(var.clone(), elem_in_ty.clone());
     // PMAT-502ay / PMAT-563: lower the `if` filter(s), ANDed into one Bool.
     let filter = combine_comp_filters(ctx, &gen.ifs, "list")?;
+    reject_intfloat_ternary_comp_elem(ctx, &comp.elt, "list")?;
     let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
     let out_ty = infer_type_in_ctx(ctx, &elem);
     let list_ty = Type::List(Box::new(out_ty));
@@ -15951,6 +15955,48 @@ fn lower_if_exp_in_ctx(ctx: &LoweringCtx, ie: ast::ExprIfExp) -> Result<Expr, Fr
     })
 }
 
+/// V29-5 (PMAT-883, silent-wrong): a list-comprehension whose element is an
+/// `int`/`float`-mismatched ternary (`[x if cond else 1.0 for x in xs]` over an
+/// `int` `x`) is CLEAN-REJECTED here — exactly as a heterogeneous list literal
+/// `[1, 2.0]` is rejected in [`lower_list_literal_in_ctx`].
+///
+/// In a *standalone* ternary (`x if b else 0` returning a `float`) PMAT-542
+/// deliberately promotes the int branch to `f64`, because the ternary's *result*
+/// is a single float value — that is correct Python. But in the comp-element
+/// position the same promotion silently widens every int element of the produced
+/// list to `f64` (so an int prints `N.0`), yielding a heterogeneous `int`/`float`
+/// list that is out of scope for `C-XLATE-PY-LIST-TO-VEC`. Rather than emit
+/// silently-wrong Rust we reject, mirroring the list-literal reject.
+///
+/// Scoped to the *direct* comp element being an `IfExp` with `int`/`float`-mixed
+/// arms; a ternary NESTED inside arithmetic (`(a if c else b) + 1`) or any other
+/// element shape is untouched (its promotion is consumed by the surrounding
+/// expression, not the list's element type).
+fn reject_intfloat_ternary_comp_elem(
+    ctx: &LoweringCtx,
+    elt: &ast::Expr,
+    kind: &str,
+) -> Result<(), FrontendError> {
+    let ast::Expr::IfExp(ie) = elt else {
+        return Ok(());
+    };
+    // Lower both arms with the loop-var-bound ctx (side-effect-free: lowering
+    // returns fresh `Expr`s) and inspect their *pre-promotion* inferred types.
+    let then_ty = infer_type_in_ctx(ctx, &lower_expr_in_ctx(ctx, (*ie.body).clone())?);
+    let else_ty = infer_type_in_ctx(ctx, &lower_expr_in_ctx(ctx, (*ie.orelse).clone())?);
+    let mixed = (then_ty == Type::I64 && else_ty == Type::F64)
+        || (then_ty == Type::F64 && else_ty == Type::I64);
+    if mixed {
+        return Err(FrontendError::Lower(format!(
+            "heterogeneous {kind} comprehension — the `int`/`float` ternary element \
+             ({then_ty:?} vs {else_ty:?}) would silently widen the int branch to f64 \
+             (an int element prints as `N.0`); C-XLATE-PY-LIST-TO-VEC requires \
+             homogeneous element types — make both ternary branches the same type"
+        )));
+    }
+    Ok(())
+}
+
 /// PMAT-477 (R8): map a Python arithmetic operator to a [`FloatOp`]
 /// for float operands. Returns `None` for non-arithmetic ops
 /// (comparisons stay on `BinOp`) and for bitwise/`**` on floats
@@ -17774,10 +17820,12 @@ fn lower_list_comp_in_ctx(
     // PMAT-556: an expr-position two-generator list comp builds via nested loops.
     if comp.generators.len() == 2 {
         return lower_comp_2gen_to_block(ctx, &comp.generators, "list comprehension", |sub| {
+            reject_intfloat_ternary_comp_elem(sub, &comp.elt, "list")?;
             lower_expr_in_ctx(sub, (*comp.elt).clone())
         });
     }
     lower_comp_to_map(ctx, &comp.generators, "list comprehension", |sub| {
+        reject_intfloat_ternary_comp_elem(sub, &comp.elt, "list")?;
         lower_expr_in_ctx(sub, (*comp.elt).clone())
     })
 }
