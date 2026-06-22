@@ -203,6 +203,18 @@ impl Function {
         {
             ids.push("C-XLATE-PY-TUPLE-TO-RUST-TUPLE");
         }
+        // PMAT-881 (R6): cite the Optional-translation contract when the function
+        // takes, returns, or binds an `Optional[T]`. The Option mapping (None →
+        // Option::None, Some-wrapping at observation, `is None` → `.is_none()`)
+        // is a real semantic boundary that shipped uncited for its Optional-ness
+        // (Optional[str] cited str via its inner type, but not the Option map).
+        // The contract is contracts/xlate-py-optional-to-option-v1.yaml.
+        if tys
+            .iter()
+            .any(|t| type_any(t, &|x| matches!(x, Type::Optional(_))))
+        {
+            ids.push("C-XLATE-PY-OPTIONAL-TO-OPTION");
+        }
         ids
     }
 

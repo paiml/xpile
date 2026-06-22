@@ -118,6 +118,8 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
         "C-XLATE-PY-CLASS-TO-STRUCT",
         // PMAT-880 (R6): fixed-arity tuple translation is now wired + cited.
         "C-XLATE-PY-TUPLE-TO-RUST-TUPLE",
+        // PMAT-881 (R6): Optional → Option translation is now wired + cited.
+        "C-XLATE-PY-OPTIONAL-TO-OPTION",
     ] {
         assert!(
             cited.contains(required),
