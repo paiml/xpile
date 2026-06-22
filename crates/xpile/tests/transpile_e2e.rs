@@ -1456,6 +1456,28 @@ fn star_unpack_defaults_deferred() {
     );
 }
 
+/// PMAT-877 (breadth): a `g(*xs)` splat nested as an argument to a USER-defined
+/// outer function — `double(add3(*xs))` — now transpiles. It was rejected with a
+/// misleading "function `main` calls `add3` missing argument" because
+/// `reorder_nested_call_args` ran `reorder_kwargs_to_positional` on the nested
+/// splat call (which counts the sole `*xs` as 1 positional < N params). A
+/// splat-shaped nested call is now left untouched so the splat handler lowers it
+/// when the outer call's args are lowered context-aware. (Builtin-outer like
+/// `str(add3(*xs))` already worked.) Cross-checked vs python3.
+#[test]
+fn nested_splat_arg() {
+    let rust = xpile_transpile_to_rust("nested_splat_arg.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(nested_in_user_fn(vec![1, 2, 3]), 12);       // double(add3(*xs))
+    assert_eq!(deep_nest(vec![1, 2, 3]), 24);               // double(double(...))
+    assert_eq!(sibling_splats(vec![1, 2, 3], vec![10, 20]), 36); // two splats
+    assert_eq!(nested_then_reuse(vec![1, 2, 3]), 21);       // 12 + 6 + len 3
+}
+"#;
+    assert_rustc_runs("nested_splat_arg", &rust, driver);
+}
+
 /// PMAT-700: a plain (no-star) tuple-unpack over a LIST — `a, b = xs` — now
 /// transpiles (it was rejected "expected a tuple", though `a, *b = xs` over the
 /// same list worked). Python unpacks by position with an exact-length check;
