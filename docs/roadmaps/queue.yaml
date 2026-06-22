@@ -11,7 +11,7 @@
 # contract-carrying fidelity ahead of contractless breadth). Pulled from the
 # corrected roadmap (memory project-roadmap-goals) + HUNT-V29 (34 confirmed).
 
-updated: 2026-06-22 (R6-slice5 per-fixture EXPECTED-contract citation gate shipped → v0.1.581 / PR #1477; R6-slice3 float-contract still deferred — needs 1 Lean theorem + diamond eq + quorum entry, dedicated slice)
+updated: 2026-06-22 (V29-5 list-comp int/float ternary clean-reject shipped → v0.1.582; R6-slice3 float-contract still deferred — needs 1 Lean theorem + diamond eq + quorum entry, dedicated slice)
 invariant: "never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched"
 
 queue:
@@ -36,7 +36,7 @@ queue:
     title: "Tuple */+=  lowered as scalar checked_mul/checked_add on a tuple (E0599 / wrong arity); extend try_repeat + lower_aug_assign to element-wise tuple expand"
     severity: silent-wrong/invalid-rust
   - id: V29-5
-    status: open
+    status: done
     title: "int/float ternary inside a list-comp silently widens int elements to f64 (prints N.0); CLEAN-REJECT in comp-element position (heterogeneous list out of scope), consistent with the heterogeneous-list-literal reject"
     severity: silent-wrong
   - id: V29-1
