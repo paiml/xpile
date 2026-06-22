@@ -7,6 +7,30 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.584] — 2026-06-22
+
+### Fixed
+
+- **V29-1 (PMAT-885, silent-wrong) — dict insertion-order iteration verified +
+  locked end-to-end.** Python dicts iterate in insertion order (guaranteed since
+  CPython 3.7); a `std::collections::HashMap` target is silently-wrong on any
+  dict iteration (nondeterministic / sorted-looking order). V29-1 was marked
+  BLOCKED on the rustc-direct e2e harness (no external-crate link). An ASSESS
+  pass found the FIX already in place: every dict-producing path lowers to the
+  insertion-ordered `indexmap::IndexMap`, never `HashMap`. Only the E2E
+  verification was blocked — the in-tree `cargo test` harness (`assert_rustc_runs`)
+  links the workspace `indexmap`, so the emitted Rust compiles and runs. This
+  slice adds `dict_insertion_order_all_paths`, a falsifier that pins CPython
+  insertion order across EVERY dict path using a deliberately non-sorted
+  insertion order (keys 3, 1, 2): dict-literal `.keys()`/`.values()`/`.items()`,
+  insert + append + update-keeps-position, dict comprehension, and `{**a, **b}`
+  merge — each compiled with `rustc` + `indexmap` and asserted against the
+  python3 outputs. Also tightens `C-XLATE-PY-DICT-TO-HASHMAP`: the draft claimed
+  the lowering was "order-independent" against a `HashMap` target (a
+  capability-vs-contract drift); prose, equation invariants/postconditions, and
+  a new falsifier (`FALSIFY-XLATE-PY-DICT-003`) now state insertion-order
+  preservation against the real `IndexMap` target.
+
 ## [0.1.583] — 2026-06-22
 
 ### Fixed
