@@ -7,6 +7,33 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.583] — 2026-06-22
+
+### Fixed
+
+- **V29-2 (PMAT-884, silent-wrong) — clean-reject the alias-then-mutate
+  object-reference miscompile.** Python passes objects by reference, so a
+  function that mutates a mutable-collection parameter in place
+  (`def f(lst): lst.append(x)`) mutates the *caller's* object. xpile lowers
+  parameters by value, and when the caller re-reads the same variable after the
+  call, the PMAT-588 ownership pre-pass (`clone_if_reused_non_copy`) wraps the
+  argument in `.clone()` to avoid a use-after-move (E0382). That clone is correct
+  for a read-only callee, but when the callee MUTATES the parameter the clone
+  makes the mutation land on the throwaway copy — the caller's object is never
+  touched, so `n = add_item(nums); print(nums)` over `[1, 2, 3]` prints
+  `[1, 2, 3]` instead of Python's `[1, 2, 3, 99]` (a silent wrong answer). The
+  full fix is an `Rc<RefCell>` reference layer + escape/aliasing analysis
+  (architectural, V29-2 proper); this is the contained stopgap — `xpile` now
+  CLEAN-REJECTS this pattern (`object reference semantics not yet supported`,
+  non-zero exit) rather than miscompiling, mirroring the heterogeneous-list /
+  tuple-call rejects. CONSERVATIVE by construction: the trigger is the narrow
+  conjunction of (1) the arg is a `Clone(Ident)` (a re-read non-`Copy` variable,
+  the only observable case) and (2) the callee mutates that positional parameter
+  in place (`Param::mutable`), so a reused arg into a non-mutating helper, a
+  single-use mutating call, and a `Copy`-typed reused arg are all untouched (the
+  entire existing test suite stays green). Fixture `alias_arg_mutate_reject.py`
+  + e2e test `alias_arg_mutate_is_rejected_not_miscompiled`.
+
 ## [0.1.582] — 2026-06-22
 
 ### Fixed
