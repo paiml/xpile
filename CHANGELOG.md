@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.578] — 2026-06-22
+
+### Fixed
+
+- **PMAT-878 — `type(x) == T` folds to a static check; bare `type(x)` rejected.**
+  The `type(x) == T` idiom (and `type(x) != T`, the symmetric `T == type(x)`, and
+  `type(x) == type(y)`) now folds to a const bool — xpile is statically typed, so
+  the EXACT type of `x` is known at compile time. Previously the frontend silently
+  accepted it and emitted uncompilable `r#type(x)` (rustc E0425) — a
+  silent-accept→broken-codegen bug surfaced by the breadth-frontier hunt. Uses
+  EXACT matching, not isinstance's subclass rule: `type(True) == int` is `False`.
+  An `Optional` operand (runtime-dependent) and a bare `type(x)` (reflective type
+  object) are rejected with clear messages. No new IR. Verified vs python3.
+
 ## [0.1.577] — 2026-06-22
 
 ### Added
