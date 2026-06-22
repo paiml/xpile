@@ -7,18 +7,34 @@ metadata:
   status: draft
   description: |
     Translation semantics of Python `dict` → Rust
-    `std::collections::HashMap`. Layer 2 of the xpile contract taxonomy
+    `indexmap::IndexMap`. Layer 2 of the xpile contract taxonomy
     (cross-language translation), the dict sibling of
     `C-XLATE-PY-LIST-TO-VEC` (Python list → Rust Vec).
 
     A Python `dict[K, V]` with homogeneous key type K and value type V
-    lowers to `HashMap<K_rust, V_rust>`. The lowering preserves the
+    lowers to `IndexMap<K_rust, V_rust>`. The lowering preserves the
     finite-map structure exactly: every (key, value) entry is carried
-    across, cardinality is preserved, and — because both sides are
-    *unordered* key→value maps — the translation is independent of
-    insertion order. The frontend rejects heterogeneous keys/values
+    across, cardinality is preserved, and — because a Python dict
+    GUARANTEES insertion-order iteration (CPython ≥ 3.7) — the lowering
+    target is the *insertion-ordered* `indexmap::IndexMap`, NOT the
+    unordered `std::collections::HashMap`. Iterating the emitted map
+    (`for k in d`, `.keys()`, `.values()`, `.items()`), building it by
+    comprehension, and merging it (`{**a, **b}`) all reproduce the source
+    dict's insertion order; updating an existing key keeps its position
+    while overwriting its value, and a deletion (`shift_remove`) preserves
+    the order of the remaining entries — exactly the Python contract. The
+    frontend rejects heterogeneous keys/values
     ("C-XLATE-PY-DICT-TO-HASHMAP requires homogeneous keys/values"), so
     the K, V types are well-defined at lowering time.
+
+    HISTORY (V29-1 / PMAT-885): an earlier draft of this contract claimed
+    the translation was "order-independent" against an `std HashMap`
+    target. That was a capability-vs-contract drift — the codegen already
+    emits insertion-ordered `IndexMap` (PMAT-874), and a `HashMap` target
+    is silently-wrong on any dict iteration. This revision aligns the
+    prose, the equation invariants, and the falsification suite to the
+    insertion-order-preserving reality and pins it end-to-end
+    (FALSIFY-XLATE-PY-DICT-003).
 
     This contract closes the dict half of the capability-ahead-of-contract
     gap recorded in audit-design.md §7.3 (R6 / PMAT-475): dict code was
@@ -29,8 +45,8 @@ metadata:
     ratchet in later sub-slices. Together with `C-C-INT-ARITH` (v0.1.196)
     this restores the §7.3 "every construct under contract" claim to true.
   references:
-    - "Python Language Reference §6.2.7 (Dictionary displays), §3.2 (Mapping types)"
-    - "Rust std::collections::HashMap (entry API, insertion-order-independent)"
+    - "Python Language Reference §6.2.7 (Dictionary displays), §3.2 (Mapping types); CPython ≥ 3.7 insertion-order guarantee"
+    - "Rust indexmap::IndexMap (insertion-ordered entry API; shift_remove preserves order)"
     - "contracts/xlate-py-list-to-vec-v1.yaml (the list sibling at Layer 2)"
     - "docs/specifications/audit-design.md §7.3 (R6 falsification)"
   depends_on: []
@@ -54,20 +70,21 @@ equations:
       Any Python `dict[K, V]` with homogeneous key type K and value type V
       (each having a canonical Rust counterpart). The Diamond captures the
       COMBINED structure-preservation axiomatization: the lowering to
-      `HashMap<K_rust, V_rust>` preserves both the (key, value) entry set
-      and its cardinality.
+      `IndexMap<K_rust, V_rust>` preserves both the (key, value) entry
+      SEQUENCE (insertion order) and its cardinality.
     invariants:
       - "FIRST Diamond-tier theorem of C-XLATE-PY-DICT-TO-HASHMAP (registers it at depth-1)"
       - "COMBINED structure-extensionality: entry-sequence preservation + cardinality preservation"
-      - "the lowering is the identity on the abstract finite map K → V"
-      - "order-independent — both Python dict and Rust HashMap are unordered key→value maps"
+      - "the lowering is the identity on the abstract finite map K → V, stated over the entry SEQUENCE"
+      - "insertion-order-preserving — both Python dict and the Rust IndexMap iterate in insertion order (V29-1/PMAT-885)"
     preconditions:
       - "type inference succeeded with a single K and single V across all entries (homogeneous)"
       - "K, V each have a canonical Rust counterpart and K is hashable"
     postconditions:
-      - "the emitted Rust `HashMap<K_rust, V_rust>` has exactly the same number of entries as the source dict"
-      - "every source (key, value) pair appears in the emitted HashMap with no coercion at the boundary"
-      - "no entry is dropped, duplicated, or reordered-into-a-different-map (set-of-entries equality)"
+      - "the emitted Rust `IndexMap<K_rust, V_rust>` has exactly the same number of entries as the source dict"
+      - "every source (key, value) pair appears in the emitted IndexMap with no coercion at the boundary"
+      - "no entry is dropped, duplicated, or reordered (entry-SEQUENCE equality — insertion order preserved)"
+      - "iteration / .keys() / .values() / .items() / comprehension / merge all yield entries in source insertion order"
     # Refinement proof (Semantic stratum): models both PyDict and
     # RustHashMap as an entry list and the lowering as the identity on
     # entries, so both conjuncts reduce to `rfl` (Bronze tier per ruchy
@@ -110,6 +127,23 @@ falsification_tests:
     if_fails: |
       The homogeneity precondition leaked — a heterogeneous dict produced
       Rust, violating the contract's K/V well-definedness.
+  - id: FALSIFY-XLATE-PY-DICT-003
+    rule: |
+      A Python dict must lower to the insertion-ordered `indexmap::IndexMap`
+      (never `std::collections::HashMap`), and EVERY dict path — literal
+      iteration, `.keys()`/`.values()`/`.items()`, comprehension, and
+      `{**a, **b}` merge — must reproduce CPython insertion order.
+    prediction: |
+      For keys inserted out of sort order (3, 1, 2), the emitted Rust
+      iterates 3, 1, 2 (not sorted, not nondeterministic) across all dict
+      paths; updating an existing key keeps its position. The emitted code
+      contains `indexmap::IndexMap` and no `std::collections::HashMap` for
+      dicts, and the program output matches python3.
+    test: |
+      cargo test -p xpile --test transpile_e2e dict_insertion_order_all_paths
+    if_fails: |
+      A dict path regressed to an unordered/nondeterministic map (HashMap)
+      or otherwise lost insertion order — the V29-1 silent-wrong defect.
 
 kani_harnesses:
   - id: KANI-XLATE-PY-DICT-001
@@ -159,4 +193,5 @@ qa_gate:
   max_complexity: 20
   required_tests:
     - dict_counts_emitted_rust_returns_hashmap
+    - dict_insertion_order_all_paths
     - every_referenced_lean_theorem_exists_in_its_file

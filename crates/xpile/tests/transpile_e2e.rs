@@ -15975,6 +15975,54 @@ fn main() {
     assert_rustc_runs("dict_insertion_order", &rust, driver);
 }
 
+/// V29-1 (PMAT-885): lock CPython dict INSERTION-order across EVERY dict path,
+/// end-to-end, using a deliberately NON-SORTED insertion order (keys 3, 1, 2) so
+/// any HashMap regression (small-int sorting / nondeterministic reorder) is
+/// falsified immediately. The `dict_insertion_order` test (PMAT-874) covers
+/// `for k in d` after build/del/overwrite; THIS test extends the lock to the
+/// view methods (`.keys()` / `.values()` / `.items()`), the dict-comprehension
+/// path, the insert-then-update/append path, and the `{**a, **b}` merge path —
+/// the paths V29-1 flagged but couldn't E2E-verify under the rustc-direct harness
+/// (no external-crate link). The in-tree `assert_rustc_runs` links the workspace
+/// `indexmap`, so the emitted Rust compiles + runs; the driver's expected values
+/// are the python3 outputs (cross-checked):
+///   lit_keys "312"  lit_values "301020"  lit_items "3:30,1:10,2:20,"
+///   insert_then_update "3:30,1:99,2:20,4:40,"  comp_keys "312"
+///   merge_kv "3=30,1=99,2=20,"
+#[test]
+fn dict_insertion_order_all_paths() {
+    let rust = xpile_transpile_to_rust("dict_order_paths.py");
+    // Every dict-producing path must lower to the insertion-ordered IndexMap,
+    // never std HashMap (the V29-1 silent-wrong type).
+    assert!(
+        rust.contains("indexmap::IndexMap"),
+        "dicts must lower to IndexMap:\n{rust}"
+    );
+    assert!(
+        !rust.contains("std::collections::HashMap"),
+        "no std HashMap on any dict path:\n{rust}"
+    );
+    // Spot-check the view methods iterate the IndexMap (order-preserving) rather
+    // than collecting into an unordered container.
+    assert!(
+        rust.contains(".keys().cloned()") && rust.contains(".values().cloned()"),
+        "dict views must iterate the ordered map:\n{rust}"
+    );
+    // Runtime: each emitted fn must reproduce CPython's insertion-order output
+    // for keys deliberately inserted out of sort order (3, 1, 2).
+    let driver = r#"
+fn main() {
+    assert_eq!(lit_keys(), "312", "dict-literal .keys() insertion order");
+    assert_eq!(lit_values(), "301020", "dict-literal .values() insertion order");
+    assert_eq!(lit_items(), "3:30,1:10,2:20,", "dict-literal .items() insertion order");
+    assert_eq!(insert_then_update(), "3:30,1:99,2:20,4:40,", "insert+append+update keeps positions");
+    assert_eq!(comp_keys(), "312", "dict-comprehension preserves source order");
+    assert_eq!(merge_kv(), "3=30,1=99,2=20,", "merge: later value wins, position preserved");
+}
+"#;
+    assert_rustc_runs("dict_order_paths", &rust, driver);
+}
+
 /// PMAT-875 (integration regression): realistic MULTI-FEATURE programs that
 /// exercise feature interactions the single-feature micro-fixtures miss. Confirmed
 /// vs python3; locks in integration-level correctness (HUNT-V32 found the
