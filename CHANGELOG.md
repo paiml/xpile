@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.587] — 2026-06-22
+
+### Fixed
+
+- **PMAT-888 (HUNT-V33 #5, invalid-rust) — sort a struct list with a custom
+  `__lt__` via `partial_cmp`.** `.sort()`/`.sort(reverse=True)` and
+  `sorted(...)`/`sorted(..., reverse=True)` over a list of structs whose class
+  defines a custom `__lt__` were rustc E0277: such a struct has a synthesized
+  `impl PartialOrd` (from `__lt__`) but no `Ord` (only `@dataclass(order=True)`
+  derives Ord), yet codegen emitted `Vec::sort`. Fix reuses the float `of_float`
+  (use-`sort_by(partial_cmp)`) flag, extended to PartialOrd-not-Ord struct
+  elements via a new `type_contains_custom_lt_struct` helper, at both the
+  in-place `.sort()` and `sorted()` sites. Verified vs python3. (`max()`/`min()`
+  over such a list is a deferred follow-up — its codegen path needs a new branch.)
+
 ## [0.1.586] — 2026-06-22
 
 ### Fixed
