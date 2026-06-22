@@ -196,6 +196,14 @@ struct LoweringCtx {
     /// each iteration) must NOT fire for these, else it references a nonexistent
     /// binding (rustc E0425) — e.g. two `for k in d:` loops in one function.
     loop_scoped: HashSet<String>,
+    /// PMAT-887 (HUNT-V33): loop targets that are NOT reassigned inside their loop
+    /// body. Such a name is marked `mutable` by the prescan (`walk_counts` counts a
+    /// for-target `+= 2` for the per-iteration rebind), which would otherwise
+    /// disqualify it from `Optional` Some-narrowing — but a loop var that is only
+    /// rebound by the loop header (never reassigned in the body) is sound to narrow
+    /// inside an `if x is not None:` / `if x:` body, exactly like a non-mutable
+    /// local. The narrow-target gates treat a name in this set as non-mutable.
+    loop_pure_vars: HashSet<String>,
     /// PMAT-506h (classes epic): when lowering a `@classmethod` body, the name of
     /// the enclosing class. A `cls(...)` construction or `cls.method(...)` call in
     /// the body resolves `cls` to this class name (so it reuses the existing
@@ -383,6 +391,7 @@ impl LoweringCtx {
             loop_counter: 0,
             active_rename: None,
             narrowed_some: HashSet::new(),
+            loop_pure_vars: HashSet::new(),
             loop_scoped: HashSet::new(),
             cls_name: None,
         }
@@ -5203,6 +5212,17 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
         ctx.bound.insert(target_name.clone());
         ctx.name_types.insert(target_name.clone(), elem_ty.clone());
 
+        // PMAT-887 (HUNT-V33): if the loop body never REASSIGNS the loop var
+        // (no `x = …` / `x op= …` / nested rebind — `walk_counts` counts exactly
+        // those), it is "pure": the prescan marks it mutable only for the
+        // per-iteration rebind, but within the body an `Optional` loop var can be
+        // Some-narrowed (`for x in xs: if x is not None: use(x)`). Register it so
+        // the narrow gates treat it as non-mutable; restore after the body.
+        let pure_loop_var = !leak_to_outer
+            && matches!(elem_ty, Type::Optional(_))
+            && !walk_counts(&f.body, false).contains_key(&target_name);
+        let pure_added = pure_loop_var && ctx.loop_pure_vars.insert(target_name.clone());
+
         let mut body: Vec<Stmt> = Vec::new();
         if leak_to_outer {
             body.push(Stmt::Assign {
@@ -5213,6 +5233,9 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
         for s in f.body {
             let lowered = lower_block_stmt(ctx, s)?;
             body.extend(lowered);
+        }
+        if pure_added {
+            ctx.loop_pure_vars.remove(&target_name);
         }
         // PMAT-816 (HUNT-V21 #3/4/8): if the body mutates each element IN PLACE
         // (`for row in grid: row.append(x)`, `row[i] = …`), bind `row` by `&mut`
@@ -6240,7 +6263,10 @@ fn is_not_none_narrow_target(ctx: &LoweringCtx, test: &ast::Expr) -> Option<Stri
         return None;
     };
     let name = name.id.to_string();
-    if ctx.mutable.contains(&name) {
+    // PMAT-887: a non-reassigned loop var is `mutable` in the prescan only because
+    // of the per-iteration rebind; it's sound to narrow (it can't become None
+    // mid-body). Treat such a name as non-mutable here.
+    if ctx.mutable.contains(&name) && !ctx.loop_pure_vars.contains(&name) {
         return None;
     }
     if !matches!(ctx.name_types.get(&name), Some(Type::Optional(_))) {
@@ -6279,7 +6305,9 @@ fn if_truthy_narrow_target(ctx: &LoweringCtx, test: &ast::Expr) -> Option<String
         return None;
     };
     let name = name.id.to_string();
-    if ctx.mutable.contains(&name) {
+    // PMAT-887: see `is_not_none_narrow_target` — a non-reassigned loop var is
+    // sound to narrow despite the prescan marking it mutable.
+    if ctx.mutable.contains(&name) && !ctx.loop_pure_vars.contains(&name) {
         return None;
     }
     if !matches!(ctx.name_types.get(&name), Some(Type::Optional(_))) {

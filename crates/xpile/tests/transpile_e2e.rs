@@ -1642,6 +1642,33 @@ fn main() {
     assert_rustc_runs("try_assign_bound_exc", &rust, driver);
 }
 
+/// PMAT-887 (HUNT-V33, invalid-rust→fixed): an `Optional[T]` for-loop variable is
+/// now Some-narrowed inside an `if x is not None:` / `if x:` body, so reads unwrap
+/// to `T`. It was E0308 (transpile-success → invalid-rust): the loop var is
+/// prescan-`mutable` (the per-iteration rebind counts `+= 2` in `walk_counts`),
+/// which disqualified narrowing — but a loop var NOT reassigned in the body is
+/// sound to narrow. A `loop_pure_vars` set marks such vars non-mutable for the
+/// narrow gates. Cross-checked vs python3. (Guard-clause `if x is None: continue`
+/// and `while x is not None:` narrowing are deferred follow-ups.)
+#[test]
+fn optional_loop_narrow() {
+    let rust = xpile_transpile_to_rust("optional_loop_narrow.py");
+    // Inside the narrowed body the loop var unwraps (no bare Option<i64> in the add).
+    assert!(
+        rust.contains(".unwrap()"),
+        "narrowed Optional loop var must unwrap inside the if-body:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sum_present(vec![Some(5), None, Some(3)]), 8);
+    assert_eq!(sum_present(vec![None, None]), 0);
+    assert_eq!(sum_truthy(vec![Some(5), None, Some(3)]), 8);
+    assert_eq!(sum_truthy(vec![Some(0), Some(4)]), 4);  // 0 is falsy, skipped
+}
+"#;
+    assert_rustc_runs("optional_loop_narrow", &rust, driver);
+}
+
 /// PMAT-700: a plain (no-star) tuple-unpack over a LIST — `a, b = xs` — now
 /// transpiles (it was rejected "expected a tuple", though `a, *b = xs` over the
 /// same list worked). Python unpacks by position with an exact-length check;
