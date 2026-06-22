@@ -1478,6 +1478,56 @@ fn main() {
     assert_rustc_runs("nested_splat_arg", &rust, driver);
 }
 
+/// PMAT-878 (breadth + correctness): the `type(x) == T` idiom now folds to a
+/// const bool (xpile is statically typed, so the EXACT type is known at compile
+/// time). Previously the frontend silently accepted it and emitted uncompilable
+/// `r#type(x)` (rustc E0425) — a silent-accept→broken-codegen bug. Uses EXACT
+/// matching, not isinstance's subclass rule: `type(True) == int` is `False`.
+/// Covers `type(x) == type(y)`, the symmetric `T == type(x)`, and `!=`. A bare
+/// `type(x)` and an `Optional` operand are rejected with a clear message.
+/// Cross-checked vs python3.
+#[test]
+fn type_compare() {
+    let rust = xpile_transpile_to_rust("type_compare.py");
+    // The comparison is compile-time folded, so the body is a const bool.
+    assert!(
+        rust.contains("pub fn is_int") && !rust.contains("r#type"),
+        "type(x)==T must fold to a const (no emitted `r#type` call):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert!(is_int(5));
+    assert!(!bool_is_not_int(true));  // type(True) == int is False (exact)
+    assert!(is_bool(true));
+    assert!(is_str("x".to_string()));
+    assert!(not_str(5));              // != str
+    assert!(name_on_left(5));         // int == type(x)
+    assert!(same_type(1, 2));         // type==type
+    assert!(!diff_type(1, "x".to_string()));
+    assert!(is_list(vec![1, 2, 3]));
+}
+"#;
+    assert_rustc_runs("type_compare", &rust, driver);
+}
+
+/// PMAT-878: a bare `type(x)` (outside a `type(x) == T` comparison) is rejected
+/// with a clear message — reflective type objects have no Rust counterpart. It
+/// previously emitted uncompilable `r#type(x)`.
+#[test]
+fn type_bare_rejected() {
+    let py = fixture("type_bare_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !out.status.success(),
+        "a bare type(x) must be rejected, not emit uncompilable code"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("reflective type objects"),
+        "reject message should explain the bare-type() limitation:\n{stderr}"
+    );
+}
+
 /// PMAT-700: a plain (no-star) tuple-unpack over a LIST — `a, b = xs` — now
 /// transpiles (it was rejected "expected a tuple", though `a, *b = xs` over the
 /// same list worked). Python unpacks by position with an exact-length check;

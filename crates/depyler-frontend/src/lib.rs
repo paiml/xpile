@@ -8930,6 +8930,81 @@ fn isinstance_const(ctx: &LoweringCtx, vty: &Type, type_arg: &ast::Expr) -> Opti
     }
 }
 
+/// PMAT-878: is `e` a `type(<arg>)` builtin call (Name `type`, one positional
+/// arg, no keywords)? Returns the inner argument when so. Used to fold the
+/// `type(x) == T` idiom — xpile is statically typed, so the EXACT type is known
+/// at compile time. (Bare `type(x)` outside a comparison has no Rust counterpart
+/// and is rejected with a clear message in the call path.)
+fn as_type_call(e: &ast::Expr) -> Option<&ast::Expr> {
+    let ast::Expr::Call(call) = e else {
+        return None;
+    };
+    let ast::Expr::Name(f) = call.func.as_ref() else {
+        return None;
+    };
+    if f.id.as_str() == "type" && call.keywords.is_empty() && call.args.len() == 1 {
+        Some(&call.args[0])
+    } else {
+        None
+    }
+}
+
+/// PMAT-878: does x's static type `vty` EXACTLY equal the named type `name`?
+/// Unlike [`type_matches_name`] (isinstance, subclass-aware), this is exact:
+/// Python `type(True) == int` is `False` (its type is `bool`, a subclass of
+/// `int`), whereas `isinstance(True, int)` is `True`. `None` ⇒ the name isn't a
+/// concrete type xpile can fold.
+fn type_exact_matches_name(ctx: &LoweringCtx, vty: &Type, name: &str) -> Option<bool> {
+    // An `Optional[T]` value is runtime-dependent (None vs Some) — its exact type
+    // (NoneType vs T) isn't known statically, so don't fold (mirrors
+    // [`isinstance_const`]). The caller rejects with a clear message.
+    if matches!(vty, Type::Optional(_)) {
+        return None;
+    }
+    Some(match name {
+        "int" => matches!(vty, Type::I64),
+        "bool" => matches!(vty, Type::Bool),
+        "float" => matches!(vty, Type::F64),
+        "str" => matches!(vty, Type::Str),
+        "list" => matches!(vty, Type::List(_)),
+        "dict" => matches!(vty, Type::Dict(_, _)),
+        "set" => matches!(vty, Type::Set(_)),
+        "tuple" => matches!(vty, Type::Tuple(_)),
+        other => {
+            if ctx.structs.contains_key(other) {
+                matches!(vty, Type::Struct(s) if s == other)
+            } else {
+                return None;
+            }
+        }
+    })
+}
+
+/// PMAT-878: are two static types EXACTLY the same Python type? Used to fold
+/// `type(x) == type(y)`. Conservative — only the concrete types xpile models;
+/// `None` ⇒ at least one side isn't foldable (e.g. Optional).
+fn types_exact_equal(a: &Type, b: &Type) -> Option<bool> {
+    fn tag(t: &Type) -> Option<u8> {
+        Some(match t {
+            Type::I64 => 0,
+            Type::Bool => 1,
+            Type::F64 => 2,
+            Type::Str => 3,
+            Type::List(_) => 4,
+            Type::Dict(_, _) => 5,
+            Type::Set(_) => 6,
+            Type::Tuple(_) => 7,
+            Type::Struct(_) => 8,
+            _ => return None, // Optional / unit / unresolved → don't fold
+        })
+    }
+    match (a, b) {
+        // Two structs are the same Python type iff they name the same class.
+        (Type::Struct(sa), Type::Struct(sb)) => Some(sa == sb),
+        _ => Some(tag(a)? == tag(b)?),
+    }
+}
+
 fn lower_value_expecting(
     ctx: &LoweringCtx,
     value: &ast::Expr,
@@ -12003,6 +12078,18 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                     return Err(FrontendError::Lower(format!(
                         "function `{}` uses `isinstance(x, T)` where T (or x's type) isn't a resolvable concrete type — v0.2.0 folds isinstance over int/float/bool/str/list/dict/set/tuple/<dataclass> (and a tuple of those); Optional/Union operands are deferred",
+                        ctx.fn_name
+                    )));
+                }
+                // PMAT-878: a bare `type(x)` (outside a `type(x) == T` comparison,
+                // which is folded in `lower_compare_in_ctx`) is a reflective type
+                // object with no Rust counterpart at v0.2.0. Reject clearly — it
+                // previously fell through to a generic name-call and emitted
+                // `r#type(x)` (rustc E0425: undefined). Use `type(x) == T` /
+                // `type(x) == type(y)` for runtime type checks.
+                if fname.id.as_str() == "type" && call.keywords.is_empty() && call.args.len() == 1 {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` uses a bare `type(x)` — reflective type objects aren't supported at v0.2.0; use `type(x) == T` (folded to a static check) or `isinstance(x, T)` instead",
                         ctx.fn_name
                     )));
                 }
@@ -17169,6 +17256,60 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
             "function `{}` compares against `None` (`is`/`==`) on a non-`Optional` value — v0.2.0 supports the `None` test only on `Optional[T]` values",
             ctx.fn_name
         )));
+    }
+    // PMAT-878: `type(x) == T` / `type(x) != T` (and the symmetric `T == type(x)`
+    // and `type(x) == type(y)`) — xpile is statically typed, so the EXACT type of
+    // x is known at compile time. Fold to a const bool. Intercepted BEFORE the
+    // operand loop because a bare `type(...)` call has no value-position lowering
+    // (it would otherwise emit `r#type(x)` → rustc E0425). Exact match, NOT
+    // isinstance's subclass rule: `type(True) == int` is `False`.
+    if c.ops.len() == 1 && matches!(c.ops[0], ast::CmpOp::Eq | ast::CmpOp::NotEq) {
+        let negate = matches!(c.ops[0], ast::CmpOp::NotEq);
+        let left_ty_arg = as_type_call(&c.left);
+        let right_ty_arg = as_type_call(&c.comparators[0]);
+        // The comparand that is a bare type NAME (`int`, `str`, a dataclass, …),
+        // present only when exactly one side is a `type(...)` call.
+        let name_side = |e: &ast::Expr| match e {
+            ast::Expr::Name(n) => Some(n.id.to_string()),
+            _ => None,
+        };
+        let folded: Option<bool> = match (left_ty_arg, right_ty_arg) {
+            // `type(x) == type(y)` — same exact Python type?
+            (Some(lx), Some(ry)) => {
+                let lt = infer_type_in_ctx(ctx, &lower_expr_in_ctx(ctx, lx.clone())?);
+                let rt = infer_type_in_ctx(ctx, &lower_expr_in_ctx(ctx, ry.clone())?);
+                types_exact_equal(&lt, &rt)
+            }
+            // `type(x) == T`
+            (Some(lx), None) => match name_side(&c.comparators[0]) {
+                Some(name) => {
+                    let lt = infer_type_in_ctx(ctx, &lower_expr_in_ctx(ctx, lx.clone())?);
+                    type_exact_matches_name(ctx, &lt, &name)
+                }
+                None => None,
+            },
+            // `T == type(x)`
+            (None, Some(rx)) => match name_side(&c.left) {
+                Some(name) => {
+                    let rt = infer_type_in_ctx(ctx, &lower_expr_in_ctx(ctx, rx.clone())?);
+                    type_exact_matches_name(ctx, &rt, &name)
+                }
+                None => None,
+            },
+            (None, None) => None,
+        };
+        if let Some(result) = folded {
+            return Ok(Expr::LitBool(result ^ negate));
+        }
+        // A `type(...)` comparison we recognise but can't fold (Optional operand,
+        // or an unknown/non-type comparand) → reject clearly rather than emitting
+        // the uncompilable bare `type(...)` call.
+        if left_ty_arg.is_some() || right_ty_arg.is_some() {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` uses `type(x)` in a comparison that isn't a resolvable concrete-type check — v0.2.0 folds `type(x) == T` / `type(x) == type(y)` over int/float/bool/str/list/dict/set/tuple/<dataclass>; Optional/Union operands and reflective `type()` objects are not supported",
+                ctx.fn_name
+            )));
+        }
     }
     let mut operands: Vec<Expr> = Vec::with_capacity(c.ops.len() + 1);
     operands.push(lower_expr_in_ctx(ctx, *c.left)?);
