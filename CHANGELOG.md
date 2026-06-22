@@ -7,6 +7,26 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.582] — 2026-06-22
+
+### Fixed
+
+- **V29-5 (PMAT-883, silent-wrong) — clean-reject an `int`/`float` ternary in a
+  list-comprehension element.** The PMAT-542 int/float ternary promotion is
+  correct for a *standalone* ternary (its result is a single float value), but
+  inside a LIST-COMPREHENSION element it silently widened every int element to
+  `f64`: `[x if x > 0 else 1.0 for x in xs]` over an `int` `x` lowered the int
+  branch to `((x) as f64)`, so each int element printed as `N.0` — a
+  heterogeneous int/float list, out of scope for `C-XLATE-PY-LIST-TO-VEC`. xpile
+  now CLEAN-REJECTS this (non-zero exit + a clear error naming the homogeneity
+  requirement), exactly mirroring the heterogeneous list-LITERAL reject
+  (`[1, 2.0]`). Scoped to the comp-element ternary case: the standalone-ternary
+  promotion, homogeneous comp ternaries, and a ternary nested inside arithmetic
+  (`(x if c else 1.0) + 2.0`, whose promotion is consumed by the surrounding
+  expression) are untouched. Wired at all six list-comp element-lowering sites;
+  fixture + e2e test `listcomp_ternary_int_float_reject` assert the non-zero exit
+  and the heterogeneous-list reject message.
+
 ## [0.1.581] — 2026-06-22
 
 ### Added
