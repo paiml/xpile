@@ -8840,6 +8840,22 @@ fn reorder_nested_call_args(
     let mut new_args = Vec::with_capacity(call.args.len());
     for arg in call.args.into_iter() {
         match arg {
+            // PMAT-877: a nested `g(*xs)` splat call (sole `*`-arg) is left
+            // UNTOUCHED here — `reorder_kwargs_to_positional` would reject it as
+            // a "missing argument" (it counts 1 positional < N params), which is
+            // exactly why `double(add3(*xs))` failed while `str(add3(*xs))`
+            // worked (a builtin outer skips reorder). The splat is lowered later
+            // by the splat handler in `lower_expr_in_ctx` when the outer call's
+            // args are lowered context-aware. We still recurse to fill defaults
+            // in any DEEPER nested calls.
+            ast::Expr::Call(inner)
+                if inner.keywords.is_empty()
+                    && inner.args.len() == 1
+                    && matches!(inner.args.first(), Some(ast::Expr::Starred(_))) =>
+            {
+                let inner = reorder_nested_call_args(ctx, inner)?;
+                new_args.push(ast::Expr::Call(inner));
+            }
             ast::Expr::Call(inner) => {
                 let inner = reorder_kwargs_to_positional(ctx, inner)?;
                 let inner = reorder_nested_call_args(ctx, inner)?;
