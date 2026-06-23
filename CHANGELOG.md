@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.595] — 2026-06-23
+
+### Added
+
+- **PMAT-896 (Sprint-2 Tier 2 — Phase-5 hybrid) — populate Python→C FFI boundary
+  from relative imports.** The first time any frontend writes a real `FfiBoundary`,
+  making the hybrid symbol-resolution path run end-to-end through two frontends +
+  reconcile. depyler-frontend's `detect_ffi_boundaries` emits one `Python→C`
+  boundary per relative sibling import (`from ._core import square_sum`); non-
+  relative imports stay dropped as items (no single-file regression). End-to-end
+  test: the Python boundary resolves against decy's C `Item::Function` export via
+  `FfiManifest::reconcile` (and fails loud when the symbol is absent). Contract-
+  carrying (`C-FFI-CPYTHON-EXT` manifest_completeness). Designed via a verified
+  multi-agent design workflow.
+
 ## [0.1.594] — 2026-06-22
 
 ### Added
