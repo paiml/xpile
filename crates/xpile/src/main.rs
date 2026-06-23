@@ -19,7 +19,7 @@ use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use xpile_backend::{BackendConfig, Profile, Target};
 use xpile_core::TranspileSession;
-use xpile_ffi_manifest::FfiManifest;
+use xpile_ffi_manifest::{resolve_boundary_to_langs, FfiManifest};
 
 #[derive(Parser)]
 #[command(name = "xpile", version, about = "Polyglot transpile workbench")]
@@ -194,6 +194,12 @@ fn hybrid(session: &TranspileSession, path: &Path) -> Result<()> {
         modules.len(),
         path.display()
     );
+    // PMAT-898: with the full module set in hand, rewrite each boundary's
+    // provisional `to_lang` (hardcoded C by the single-file frontend) to the
+    // language of the sibling that actually defines the symbol — so a relative
+    // import of a Python sibling becomes Python→Python (dropped by reconcile),
+    // not a false Python→C FFI boundary.
+    resolve_boundary_to_langs(&mut modules);
     match FfiManifest::reconcile(&modules) {
         Ok(manifest) => {
             if manifest.entries.is_empty() {

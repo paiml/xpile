@@ -6,6 +6,7 @@
 //! the single source of truth for that mapping within a session.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use xpile_meta_hir::{FfiBoundary, Item, Module, SourceLang};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -152,6 +153,39 @@ impl FfiManifest {
     }
 }
 
+/// PMAT-898 (Sprint-2 Tier 2): resolve each module's FFI-boundary `to_lang` from
+/// the full dispatched module set. A single-file frontend can't see its siblings,
+/// so `depyler-frontend::detect_ffi_boundaries` records a PROVISIONAL `to_lang`
+/// (C, the canonical CPython-extension shape) for every relative import. With the
+/// whole `Vec<Module>` in hand (the `xpile hybrid` CLI), rewrite each boundary's
+/// `to_lang` to the `source_lang` of whichever sibling module actually DEFINES
+/// the symbol. Consequences once `reconcile` runs:
+///   - a relative import of a *Python* sibling becomes `Python → Python`, which
+///     reconcile drops via its same-language skip (NOT a false FFI boundary);
+///   - a relative import of a *C* sibling stays `Python → C` and resolves;
+///   - a symbol no module defines is left as-is, so reconcile reports it
+///     unresolved (the `manifest_completeness` invariant of C-FFI-CPYTHON-EXT).
+///
+/// Call this BEFORE [`FfiManifest::reconcile`].
+pub fn resolve_boundary_to_langs(modules: &mut [Module]) {
+    // symbol -> source_lang of the first module that exports it.
+    let mut exporters: HashMap<String, SourceLang> = HashMap::new();
+    for m in modules.iter() {
+        for it in &m.items {
+            if let Some(name) = item_exported_name(it) {
+                exporters.entry(name.to_string()).or_insert(m.source_lang);
+            }
+        }
+    }
+    for m in modules.iter_mut() {
+        for b in &mut m.ffi_boundaries {
+            if let Some(&lang) = exporters.get(&b.symbol) {
+                b.to_lang = lang;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,5 +294,58 @@ mod tests {
     fn shim_id_is_deterministic() {
         let b = boundary(SourceLang::Python, SourceLang::C, "sum");
         assert_eq!(shim_id(&b), shim_id(&b));
+    }
+
+    #[test]
+    fn resolve_to_python_sibling_drops_false_boundary() {
+        // A relative import of a PYTHON sibling is mislabeled Python->C by the
+        // single-file frontend; after resolution it becomes Python->Python, which
+        // reconcile drops (not a real FFI boundary).
+        let mut modules = vec![
+            module(
+                "app",
+                SourceLang::Python,
+                vec![boundary(SourceLang::Python, SourceLang::C, "helper")],
+            ),
+            module_defining("helpers", SourceLang::Python, "helper"),
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        assert_eq!(modules[0].ffi_boundaries[0].to_lang, SourceLang::Python);
+        let manifest = FfiManifest::reconcile(&modules).expect("same-lang drops");
+        assert!(manifest.entries.is_empty());
+    }
+
+    #[test]
+    fn resolve_to_c_sibling_keeps_cross_language_boundary() {
+        let mut modules = vec![
+            module(
+                "app",
+                SourceLang::Python,
+                vec![boundary(SourceLang::Python, SourceLang::C, "square_sum")],
+            ),
+            module_defining("_core", SourceLang::C, "square_sum"),
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        assert_eq!(modules[0].ffi_boundaries[0].to_lang, SourceLang::C);
+        let manifest = FfiManifest::reconcile(&modules).expect("resolves");
+        assert_eq!(manifest.entries.len(), 1);
+        assert_eq!(manifest.entries[0].to_lang, SourceLang::C);
+    }
+
+    #[test]
+    fn resolve_leaves_undefined_symbol_unchanged() {
+        // No module defines `missing` → to_lang stays as the provisional C, so
+        // reconcile reports it unresolved.
+        let mut modules = vec![
+            module(
+                "app",
+                SourceLang::Python,
+                vec![boundary(SourceLang::Python, SourceLang::C, "missing")],
+            ),
+            module_defining("_core", SourceLang::C, "present"),
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        assert_eq!(modules[0].ffi_boundaries[0].to_lang, SourceLang::C);
+        assert!(FfiManifest::reconcile(&modules).is_err());
     }
 }
