@@ -131,6 +131,10 @@ enum Cmd {
         /// Path to the hybrid module directory (e.g. a dir with `app.py` +
         /// `_core.c`). Source files are detected by extension.
         path: PathBuf,
+        /// Phase 4: write the reconciled Rust FFI shims (`extern "C"` + safe
+        /// wrappers) to this path. Omit to only report the manifest.
+        #[arg(long)]
+        emit_shims: Option<PathBuf>,
     },
 }
 
@@ -158,18 +162,20 @@ fn main() -> Result<()> {
             contracts_dir,
             json,
         } => diamond(&contracts_dir, json),
-        Cmd::Hybrid { path } => hybrid(&session, &path),
+        Cmd::Hybrid { path, emit_shims } => hybrid(&session, &path, emit_shims.as_deref()),
     }
 }
 
-/// PMAT-897 (Sprint-2 Tier 2): the `xpile hybrid <dir>` command — Phase 1
+/// PMAT-897/899 (Sprint-2 Tier 2): the `xpile hybrid <dir>` command — Phase 1
 /// (dispatch every source file in the directory to its frontend, collecting a
 /// `Vec<Module>`) + Phase 2 (reconcile the modules' cross-language FFI
-/// boundaries into a manifest). Reports each resolved boundary, or the
-/// unresolved ones with a non-zero exit (the `manifest_completeness` invariant
-/// of `C-FFI-CPYTHON-EXT`). Shim emission (Phase 4) + oracle execution (Phase
-/// 3/5) are later increments.
-fn hybrid(session: &TranspileSession, path: &Path) -> Result<()> {
+/// boundaries into a manifest) + Phase 4 (with `--emit-shims`, lower the
+/// manifest to a per-paradigm Rust FFI shim file — `extern "C"` for C, a
+/// `Command` wrapper for Shell, a mechanism-named gap for the rest). Reports
+/// each resolved boundary, or the unresolved ones with a non-zero exit (the
+/// `manifest_completeness` invariant of `C-FFI-CPYTHON-EXT`). Oracle execution
+/// (Phase 3/5) is a later increment.
+fn hybrid(session: &TranspileSession, path: &Path, emit_shims: Option<&Path>) -> Result<()> {
     let sources = collect_source_files(session, path);
     if sources.is_empty() {
         bail!("no source files xpile recognises under {}", path.display());
@@ -211,6 +217,35 @@ fn hybrid(session: &TranspileSession, path: &Path) -> Result<()> {
                         "    {} : {:?} → {:?}  [{}]",
                         e.symbol, e.from_lang, e.to_lang, e.shim_id
                     );
+                }
+            }
+            // PMAT-899 Phase 4: with `--emit-shims <path>`, lower the reconciled
+            // manifest to a self-contained Rust FFI shim file (per-paradigm: real
+            // `extern "C"` for C, `Command` for Shell; a mechanism-named gap for
+            // the rest). All-or-nothing — any unshimmable boundary fails loud, so
+            // a half-shimmed hybrid build never reaches disk.
+            if let Some(out_path) = emit_shims {
+                if manifest.entries.is_empty() {
+                    println!("  --emit-shims: no FFI boundaries — nothing to emit");
+                    return Ok(());
+                }
+                match manifest.emit_rust_shims(&modules) {
+                    Ok(src) => {
+                        std::fs::write(out_path, &src)
+                            .with_context(|| format!("writing shims to {}", out_path.display()))?;
+                        println!(
+                            "  emitted {} FFI shim(s) → {}",
+                            manifest.entries.len(),
+                            out_path.display()
+                        );
+                    }
+                    Err(err) => {
+                        eprintln!("xpile hybrid: shim emission FAILED");
+                        for u in &err.unsupported {
+                            eprintln!("    {u}");
+                        }
+                        bail!("{} unshimmable FFI boundary(ies)", err.unsupported.len());
+                    }
                 }
             }
             Ok(())
