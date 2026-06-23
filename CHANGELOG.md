@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.596] — 2026-06-23
+
+### Added
+
+- **PMAT-897 (Sprint-2 Tier 2 — Phase-5 hybrid) — `xpile hybrid <dir>` command.**
+  Wires the hybrid path into the CLI: Phase 1 (walk a module dir, dispatch each
+  source file to its frontend, collect a `Vec<Module>`) + Phase 2
+  (`FfiManifest::reconcile`). Prints each resolved boundary (symbol, from→to,
+  shim_id), or the unresolved boundaries to stderr with a non-zero exit — the
+  `manifest_completeness` gate of `C-FFI-CPYTHON-EXT`. Non-hollow (PMAT-896
+  populates real boundaries from relative imports). Two fixture dirs + a CLI
+  integration test (resolved exit-0 / unresolved exit-1). xpile-ffi-manifest
+  promoted to a regular dependency.
+
 ## [0.1.595] — 2026-06-23
 
 ### Added
