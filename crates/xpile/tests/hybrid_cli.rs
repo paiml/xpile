@@ -40,6 +40,27 @@ fn hybrid_cli_reconciles_resolved_boundary() {
 }
 
 #[test]
+fn hybrid_cli_python_sibling_is_not_a_boundary() {
+    // PMAT-898: a relative import of a PYTHON sibling (`from .helpers import
+    // greet`) is resolved to Python→Python and dropped — not a false Python→C
+    // FFI boundary. Two modules dispatch, zero boundaries, exit 0.
+    let out = Command::new(env!("CARGO_BIN_EXE_xpile"))
+        .arg("hybrid")
+        .arg(fixture("hybrid_pysibling"))
+        .output()
+        .expect("run xpile hybrid");
+    assert!(
+        out.status.success(),
+        "same-language imports are not FFI failures"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("2 module(s) dispatched") && stdout.contains("no cross-language FFI"),
+        "expected zero FFI boundaries:\n{stdout}"
+    );
+}
+
+#[test]
 fn hybrid_cli_fails_on_unresolved_boundary() {
     let out = Command::new(env!("CARGO_BIN_EXE_xpile"))
         .arg("hybrid")
