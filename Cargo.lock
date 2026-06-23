@@ -1005,6 +1005,8 @@ version = "0.1.594"
 dependencies = [
  "anyhow",
  "clap",
+ "decy-frontend",
+ "depyler-frontend",
  "latex-contract-frontend",
  "serde_json",
  "serde_yaml",
@@ -1013,6 +1015,8 @@ dependencies = [
  "xpile-contract-frontend",
  "xpile-contracts",
  "xpile-core",
+ "xpile-ffi-manifest",
+ "xpile-frontend",
  "xpile-meta-hir",
  "xpile-oracle",
 ]
