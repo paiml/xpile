@@ -31,9 +31,9 @@ use std::path::Path;
 use std::rc::Rc;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
-    collect_block_idents, BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListMutateOp,
-    ListQueryOp, Module, NumBuiltinOp, PairIterKind, Param, Radix, SetOp, SetPredOp, SortKey,
-    SourceLang, Stmt, StrMethodOp, Type, UnOp,
+    collect_block_idents, BinOp, Block, DictViewKind, Expr, FfiBoundary, FloatOp, Function, Item,
+    ListMutateOp, ListQueryOp, Module, NumBuiltinOp, PairIterKind, Param, Radix, SetOp, SetPredOp,
+    SortKey, SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
 use rustpython_parser::ast;
@@ -1511,6 +1511,10 @@ impl Frontend for PythonFrontend {
         let frozen_structs = Rc::new(frozen_set);
         let enums = Rc::new(enum_map);
 
+        // PMAT-896: detect cross-language FFI boundaries (relative sibling
+        // imports) BEFORE the loop consumes `suite`. Borrow now, move below.
+        let ffi_boundaries = detect_ffi_boundaries(&suite);
+
         let mut items = Vec::new();
         for stmt in suite {
             // PMAT-036: `from __future__ import annotations` is the
@@ -1547,7 +1551,7 @@ impl Frontend for PythonFrontend {
             name: module_name,
             source_lang: SourceLang::Python,
             items,
-            ffi_boundaries: Vec::new(),
+            ffi_boundaries,
         })
     }
 }
@@ -1920,6 +1924,44 @@ fn is_future_annotations_import(stmt: &ast::Stmt) -> bool {
     imp.names
         .iter()
         .any(|alias| alias.name.as_str() == "annotations" && alias.asname.is_none())
+}
+
+/// PMAT-896 (Sprint-2 Tier 2 — hybrid Phase-1 boundary population): detect the
+/// cross-language FFI boundaries a Python module declares. The first recognised
+/// shape is a RELATIVE sibling import — `from ._core import square_sum` — which,
+/// in a hybrid module directory, names a symbol the Python side calls across into
+/// a sibling C extension. Each imported name becomes a `Python -> C` [`FfiBoundary`]
+/// that [`FfiManifest::reconcile`](xpile_ffi_manifest) pairs against the C module's
+/// exported `Item::Function` — the `manifest_completeness` invariant of
+/// `C-FFI-CPYTHON-EXT`.
+///
+/// Non-relative imports (`import math`, `from typing import Optional`; level 0 /
+/// None) are NOT boundaries and are unaffected — they stay dropped as items by
+/// [`is_skippable_import`], so single-file fixtures don't regress. First cut
+/// hardcodes `to_lang = C` (the canonical CPython-extension demo shape); a later
+/// increment resolves `to_lang` against the actually-dispatched sibling module.
+fn detect_ffi_boundaries(suite: &[ast::Stmt]) -> Vec<FfiBoundary> {
+    let mut boundaries = Vec::new();
+    for stmt in suite {
+        let ast::Stmt::ImportFrom(imp) = stmt else {
+            continue;
+        };
+        // `level` is the leading-dot count of a `from`-import; >= 1 is a relative
+        // (sibling/package) import — the cross-language hybrid shape.
+        let is_relative = imp.level.as_ref().is_some_and(|lvl| lvl.to_u32() >= 1);
+        if !is_relative {
+            continue;
+        }
+        for alias in &imp.names {
+            boundaries.push(FfiBoundary {
+                from_lang: SourceLang::Python,
+                to_lang: SourceLang::C,
+                symbol: alias.name.to_string(),
+                signature: format!("{}(...)", alias.name),
+            });
+        }
+    }
+    boundaries
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -18602,6 +18644,34 @@ mod tests {
         PythonFrontend
             .parse_and_lower(&PathBuf::from("fixture.py"), src)
             .expect("parse should succeed")
+    }
+
+    #[test]
+    fn relative_import_populates_ffi_boundary() {
+        // PMAT-896: `from ._core import square_sum` (relative sibling import) is a
+        // Python->C hybrid FFI boundary; non-relative imports are not.
+        let m = parse(
+            "from ._core import square_sum\ndef use(x: int) -> int:\n    return square_sum(x)\n",
+        );
+        assert_eq!(m.ffi_boundaries.len(), 1);
+        let b = &m.ffi_boundaries[0];
+        assert_eq!(b.symbol, "square_sum");
+        assert_eq!(b.from_lang, SourceLang::Python);
+        assert_eq!(b.to_lang, SourceLang::C);
+    }
+
+    #[test]
+    fn relative_import_multiple_names() {
+        let m = parse("from .mathx import a, b, c\ndef main() -> None:\n    pass\n");
+        let syms: Vec<&str> = m.ffi_boundaries.iter().map(|b| b.symbol.as_str()).collect();
+        assert_eq!(syms, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn non_relative_import_is_not_a_boundary() {
+        // Absolute imports (level 0) are dropped as items, never boundaries.
+        let m = parse("from typing import Optional\nimport math\ndef main() -> None:\n    pass\n");
+        assert!(m.ffi_boundaries.is_empty());
     }
 
     fn function(m: &Module, i: usize) -> &Function {
