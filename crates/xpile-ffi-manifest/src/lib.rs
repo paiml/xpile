@@ -239,7 +239,12 @@ impl FfiManifest {
         }
         out.push_str("#![allow(dead_code)]\n");
         if !extern_lines.is_empty() {
-            out.push_str("\nextern \"C\" {\n");
+            // `unsafe extern "C"` (not bare `extern "C"`): a bare extern block is
+            // a hard error under Rust edition 2024 (`extern blocks must be
+            // unsafe`), and `cargo new` has defaulted to edition 2024 since Rust
+            // 1.85. `unsafe extern` compiles cleanly under 2021 AND 2024, so the
+            // emitted file stays valid in whatever crate the user drops it into.
+            out.push_str("\nunsafe extern \"C\" {\n");
             out.push_str(&extern_lines.join("\n"));
             out.push('\n');
             out.push_str("}\n");
@@ -662,10 +667,14 @@ mod tests {
         assert!(out0.contains("fn now() -> ::std::os::raw::c_int;"));
     }
 
-    /// Compile `src` as a standalone Rust lib under `-D warnings`. Returns `true`
-    /// if rustc is unavailable (constrained CI skips the gate) or the source
-    /// compiles. `tag` keeps concurrent compile-gate tests off each other's temp
-    /// files (a bare pid collides when tests run in parallel threads).
+    /// Compile `src` as a standalone Rust lib under `-D warnings`, on BOTH
+    /// edition 2021 and edition 2024. Returns `true` if rustc is unavailable
+    /// (constrained CI skips the gate) or the source compiles under every
+    /// edition. The emitted shim is meant to be dropped into a user crate of
+    /// unknown edition — and `cargo new` defaults to 2024 — so a 2021-only gate
+    /// would mask the bare-`extern "C"` regression (a hard error in 2024). `tag`
+    /// keeps concurrent compile-gate tests off each other's temp files (a bare
+    /// pid collides when tests run in parallel threads).
     fn rustc_lib_compiles(tag: &str, src: &str) -> bool {
         if std::process::Command::new("rustc")
             .arg("--version")
@@ -677,19 +686,32 @@ mod tests {
         }
         let dir = std::env::temp_dir();
         let pid = std::process::id();
-        let src_path = dir.join(format!("xpile_shim_gate_{tag}_{pid}.rs"));
-        let rlib = dir.join(format!("libxpile_shim_gate_{tag}_{pid}.rlib"));
-        std::fs::write(&src_path, src).expect("write shim");
-        let status = std::process::Command::new("rustc")
-            .args(["--crate-type", "lib", "--edition", "2021", "-D", "warnings"])
-            .arg(&src_path)
-            .arg("-o")
-            .arg(&rlib)
-            .status()
-            .expect("spawn rustc");
-        let _ = std::fs::remove_file(&src_path);
-        let _ = std::fs::remove_file(&rlib);
-        status.success()
+        for edition in ["2021", "2024"] {
+            let src_path = dir.join(format!("xpile_shim_gate_{tag}_{edition}_{pid}.rs"));
+            let rlib = dir.join(format!("libxpile_shim_gate_{tag}_{edition}_{pid}.rlib"));
+            std::fs::write(&src_path, src).expect("write shim");
+            let status = std::process::Command::new("rustc")
+                .args([
+                    "--crate-type",
+                    "lib",
+                    "--edition",
+                    edition,
+                    "-D",
+                    "warnings",
+                ])
+                .arg(&src_path)
+                .arg("-o")
+                .arg(&rlib)
+                .status()
+                .expect("spawn rustc");
+            let _ = std::fs::remove_file(&src_path);
+            let _ = std::fs::remove_file(&rlib);
+            if !status.success() {
+                eprintln!("emitted shim failed to compile under edition {edition}");
+                return false;
+            }
+        }
+        true
     }
 
     #[test]
@@ -768,6 +790,63 @@ mod tests {
     fn emit_shims_lean_boundary_is_proof_lane_not_shim() {
         let err = emit_cross(SourceLang::Python, SourceLang::Lean, "thm").expect_err("refused");
         assert!(err.to_string().contains("proof lane"), "{err}");
+    }
+
+    #[test]
+    fn emit_shims_ruchy_boundary_is_same_crate_direct_call() {
+        let err = emit_cross(SourceLang::Python, SourceLang::Ruchy, "helper").expect_err("refused");
+        assert!(err.to_string().contains("same-crate"), "{err}");
+    }
+
+    #[test]
+    fn emit_shims_rust_boundary_is_same_crate_direct_call() {
+        let err = emit_cross(SourceLang::Python, SourceLang::Rust, "helper").expect_err("refused");
+        assert!(err.to_string().contains("same-crate"), "{err}");
+    }
+
+    #[test]
+    fn emit_shims_f64_boundary_maps_c_double() {
+        // The only non-integer ABI slot + the only f64 wrapper-native branch:
+        // c_double extern, f64 wrapper, `__r as f64` return. Compiles end-to-end.
+        let out = emit_for("scale", vec![("x", Type::F64)], Type::F64).expect("emits");
+        assert!(out.contains("fn scale(x: ::std::os::raw::c_double) -> ::std::os::raw::c_double;"));
+        assert!(out.contains("pub fn scale_shim(x: f64) -> f64 {"));
+        assert!(out.contains("__r as f64"));
+        assert!(
+            rustc_lib_compiles("f64", &out),
+            "emitted f64 shim must compile under -D warnings"
+        );
+    }
+
+    #[test]
+    fn emit_shims_c_symbol_that_is_a_const_is_refused() {
+        // A C module can export the symbol as an Item::Const — reconcile resolves
+        // it (item_exported_name matches consts), but it is not callable, so the C
+        // arm surfaces the gap rather than emitting a bogus extern fn.
+        let mut modules = vec![
+            module(
+                "app",
+                SourceLang::Python,
+                vec![boundary(SourceLang::Python, SourceLang::C, "TABLE")],
+            ),
+            Module {
+                name: "cmod".to_string(),
+                source_lang: SourceLang::C,
+                items: vec![Item::Const {
+                    name: "TABLE".to_string(),
+                    ty: Type::I64,
+                    value: Expr::LitInt(0),
+                }],
+                ffi_boundaries: Vec::new(),
+            },
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        let manifest = FfiManifest::reconcile(&modules).expect("const symbol reconciles");
+        let err = manifest
+            .emit_rust_shims(&modules)
+            .expect_err("a const is not a callable shim target");
+        assert!(err.to_string().contains("TABLE"));
+        assert!(err.to_string().contains("not a function"), "{err}");
     }
 
     #[test]

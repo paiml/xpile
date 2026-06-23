@@ -95,21 +95,33 @@ fn hybrid_cli_emit_shims_writes_compilable_file() {
     assert!(emitted.contains("pub fn square_sum_shim(x: i64) -> i64 {"));
 
     // The load-bearing gate: the emitted file actually compiles (extern symbol
-    // stays unresolved at lib build — no C object needed). Skipped if no rustc.
+    // stays unresolved at lib build — no C object needed). Compiled under BOTH
+    // edition 2021 and 2024, since `cargo new` defaults to 2024 and a bare
+    // `extern "C"` block is a hard error there. Skipped if no rustc.
     if Command::new("rustc").arg("--version").output().is_ok() {
-        let rlib = std::env::temp_dir().join(format!("libxpile_emit_shims_cli_{pid}.rlib"));
-        let status = Command::new("rustc")
-            .args(["--crate-type", "lib", "--edition", "2021", "-D", "warnings"])
-            .arg(&out_path)
-            .arg("-o")
-            .arg(&rlib)
-            .status()
-            .expect("spawn rustc");
-        let _ = std::fs::remove_file(&rlib);
-        assert!(
-            status.success(),
-            "emitted shim file must compile under -D warnings"
-        );
+        for edition in ["2021", "2024"] {
+            let rlib =
+                std::env::temp_dir().join(format!("libxpile_emit_shims_cli_{edition}_{pid}.rlib"));
+            let status = Command::new("rustc")
+                .args([
+                    "--crate-type",
+                    "lib",
+                    "--edition",
+                    edition,
+                    "-D",
+                    "warnings",
+                ])
+                .arg(&out_path)
+                .arg("-o")
+                .arg(&rlib)
+                .status()
+                .expect("spawn rustc");
+            let _ = std::fs::remove_file(&rlib);
+            assert!(
+                status.success(),
+                "emitted shim file must compile under edition {edition} -D warnings"
+            );
+        }
     }
     let _ = std::fs::remove_file(&out_path);
 }
