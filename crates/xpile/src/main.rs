@@ -19,6 +19,7 @@ use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use xpile_backend::{BackendConfig, Profile, Target};
 use xpile_core::TranspileSession;
+use xpile_ffi_manifest::FfiManifest;
 
 #[derive(Parser)]
 #[command(name = "xpile", version, about = "Polyglot transpile workbench")]
@@ -120,6 +121,17 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Hybrid transpile — Phase 1 + Phase 2 of the hybrid flow (§16). Walks a
+    /// module directory, dispatches each source file to its frontend, collects
+    /// the resulting modules, and reconciles their cross-language FFI boundaries
+    /// (`FfiManifest::reconcile`) into a manifest. Prints one line per resolved
+    /// boundary (symbol, from→to, shim_id) or the unresolved boundaries and
+    /// exits non-zero (the `manifest_completeness` gate of C-FFI-CPYTHON-EXT).
+    Hybrid {
+        /// Path to the hybrid module directory (e.g. a dir with `app.py` +
+        /// `_core.c`). Source files are detected by extension.
+        path: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -146,6 +158,65 @@ fn main() -> Result<()> {
             contracts_dir,
             json,
         } => diamond(&contracts_dir, json),
+        Cmd::Hybrid { path } => hybrid(&session, &path),
+    }
+}
+
+/// PMAT-897 (Sprint-2 Tier 2): the `xpile hybrid <dir>` command — Phase 1
+/// (dispatch every source file in the directory to its frontend, collecting a
+/// `Vec<Module>`) + Phase 2 (reconcile the modules' cross-language FFI
+/// boundaries into a manifest). Reports each resolved boundary, or the
+/// unresolved ones with a non-zero exit (the `manifest_completeness` invariant
+/// of `C-FFI-CPYTHON-EXT`). Shim emission (Phase 4) + oracle execution (Phase
+/// 3/5) are later increments.
+fn hybrid(session: &TranspileSession, path: &Path) -> Result<()> {
+    let sources = collect_source_files(session, path);
+    if sources.is_empty() {
+        bail!("no source files xpile recognises under {}", path.display());
+    }
+    let mut modules = Vec::new();
+    for src in sources {
+        let contents =
+            std::fs::read_to_string(&src).with_context(|| format!("reading {}", src.display()))?;
+        // PMAT-038 dispatch (same as transpile/audit): collect_source_files
+        // already filtered by registered extension, so this is never None.
+        let Some(frontend) = session.frontends.iter().find(|f| f.matches_path(&src)) else {
+            continue;
+        };
+        let module = frontend
+            .parse_and_lower(&src, &contents)
+            .with_context(|| format!("parse_and_lower failed for {}", src.display()))?;
+        modules.push(module);
+    }
+
+    println!(
+        "xpile hybrid: {} module(s) dispatched from {}",
+        modules.len(),
+        path.display()
+    );
+    match FfiManifest::reconcile(&modules) {
+        Ok(manifest) => {
+            if manifest.entries.is_empty() {
+                println!("  no cross-language FFI boundaries");
+            } else {
+                println!("  {} FFI boundary(ies) reconciled:", manifest.entries.len());
+                for e in &manifest.entries {
+                    println!(
+                        "    {} : {:?} → {:?}  [{}]",
+                        e.symbol, e.from_lang, e.to_lang, e.shim_id
+                    );
+                }
+            }
+            Ok(())
+        }
+        Err(err) => {
+            eprintln!("xpile hybrid: FFI reconciliation FAILED");
+            for u in &err.unresolved {
+                eprintln!("    {u}");
+            }
+            // Non-zero exit: an unresolved boundary blocks the hybrid build.
+            bail!("{} unresolved FFI boundary(ies)", err.unresolved.len())
+        }
     }
 }
 
