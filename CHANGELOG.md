@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.597] — 2026-06-23
+
+### Added
+
+- **PMAT-898 (Sprint-2 Tier 2 — Phase-5 hybrid) — resolve FFI `to_lang` from the
+  dispatched sibling.** Closes the hardcoded-`to_lang=C` caveat from PMAT-896.
+  New `xpile_ffi_manifest::resolve_boundary_to_langs(&mut [Module])` — run by the
+  `xpile hybrid` CLI once the full module set is collected — rewrites each
+  boundary's `to_lang` to the `source_lang` of whichever sibling actually defines
+  the symbol. A relative import of a Python sibling becomes `Python→Python` and is
+  dropped (no false `Python→C` boundary); a C sibling stays `Python→C` and
+  resolves; an undefined symbol is reported unresolved. Contract-carrying
+  (`C-FFI-CPYTHON-EXT` manifest_completeness). 3 ffi-manifest unit tests + a
+  `hybrid_pysibling/` fixture and CLI test (two-Python-file dir → zero FFI
+  boundaries, exit 0).
+
 ## [0.1.596] — 2026-06-23
 
 ### Added
