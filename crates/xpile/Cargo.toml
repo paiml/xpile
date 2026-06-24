@@ -24,6 +24,9 @@ xpile-meta-hir = { workspace = true }
 # PMAT-897 (Sprint-2 Tier 2): the `xpile hybrid <dir>` command reconciles the
 # dispatched modules' FFI boundaries into a manifest (Phase 1 + Phase 2).
 xpile-ffi-manifest = { workspace = true }
+# PMAT-902 (Sprint Day 3): `xpile hybrid --verify` differential-checks the
+# executed hybrid artifact against the CPython reference (ctypes-bound C).
+xpile-oracle       = { workspace = true }
 anyhow         = { workspace = true }
 clap           = { version = "4", features = ["derive"] }
 
@@ -42,7 +45,7 @@ xpile-contract-frontend = { workspace = true }
 xpile-contracts         = { workspace = true }
 # PMAT-890 (Sprint-2 Tier 1): oracle_differential.rs uses the PythonOracle to
 # auto-diff CPython vs transpiled-Rust stdout over self-contained oracle fixtures.
-xpile-oracle            = { workspace = true }
+# (xpile-oracle is a regular dependency above — used by main.rs `--verify` too.)
 # PMAT-896 (Sprint-2 Tier 2): hybrid_reconcile.rs drives the Python + C frontends
 # through FfiManifest::reconcile end-to-end (Phase 1 boundary detection → Phase 2).
 # (xpile-ffi-manifest is a regular dependency above — used by main.rs too.)

@@ -10952,7 +10952,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-900: [hybrid Phase 3] CExtensionOracle — gcc/cc-compile + run the C side as the differential reference'
-  status: planned
+  status: done
   priority: critical
   created: 2026-06-23T00:00:00Z
   acceptance_criteria:
@@ -10961,7 +10961,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-901: [hybrid Phase 5a] emit_hybrid_workspace — buildable Cargo workspace (build.rs cc-compiles + links the emitted shim)'
-  status: planned
+  status: done
   priority: critical
   created: 2026-06-23T00:00:00Z
   acceptance_criteria:
@@ -10970,11 +10970,12 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-902: [hybrid NORTH STAR] xpile hybrid --verify — compile+link+run+differential-check the hybrid artifact vs CPython'
-  status: planned
+  status: done
   priority: critical
   created: 2026-06-23T00:00:00Z
   acceptance_criteria:
   - "Make hybrid_sum semantically real (_core.c -> x*x, app.py prints) then add --verify running Phase 1-2-4 + Phase 3 (capture CPython ref) + Phase 5 (emit workspace, cargo build, run linked C+shim binary) + diff; Match -> exit 0. The unbuilt north star BUILT for the C paradigm. Sprint Day 3."
+  - "DONE: hybrid_sum is now real (_core.c -> x*x; app.py main() prints square_sum(7)). `xpile hybrid <dir> --verify` emits the workspace to a temp dir, cargo-builds it (build.rs cc-compiles + links the emitted unsafe extern \"C\" shim), runs the linked artifact, and byte-compares its stdout against the CPython reference — the SAME cc-compiled square_sum bound via ctypes, driven by app.py's real main(): '49' == '49' -> MATCH, exit 0. Implementation: capture_cpython_hybrid_ref + CtypesBinding in xpile-oracle; emit_hybrid_workspace now emits `use ffi_shims::<sym>_shim as <sym>` so lowered boundary calls resolve to the shims; verify_hybrid + ctypes_binding_for in main.rs; cc/python3/cargo graceful-skip. Tests: hybrid_verify.rs e2e golden-lock (MATCH on \"49\") + xpile-oracle ctypes unit test; full gate green. Shipped via PR (feat/hybrid-verify-north-star)."
 - id: PMAT-903
   github_issue: null
   item_type: task

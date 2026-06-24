@@ -155,6 +155,115 @@ impl Oracle for PythonOracle {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PMAT-902 (Sprint Day 3 — NORTH STAR): the CPython hybrid reference.
+//
+// For a hybrid Python+C module the differential reference is "what CPython prints
+// when it runs the program against the real C extension". We get that without
+// building a Python C-extension module by `cc`-compiling the C source(s) into a
+// shared object and binding each boundary symbol via `ctypes` — the exact
+// foreign-call mechanism a CPython C extension uses at runtime. The Python entry
+// (`app.py`) has its C-extension relative import stripped (the ctypes prologue
+// supplies those names) and its `main()` is run under `python3`; stdout is the
+// reference the executed Rust+linked-C hybrid artifact is checked against. If the
+// emitted FFI shim mis-marshals the ABI, the two stdouts diverge.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One boundary symbol's `ctypes` ABI for the CPython hybrid reference.
+/// `argtypes`/`restype` are bare `ctypes` type names (e.g. `"c_int"`,
+/// `"c_double"`); `restype == None` binds a `void` callee (`restype = None`).
+#[derive(Debug, Clone)]
+pub struct CtypesBinding {
+    pub symbol: String,
+    pub argtypes: Vec<&'static str>,
+    pub restype: Option<&'static str>,
+}
+
+/// Capture the CPython reference for a hybrid Python+C module: `cc`-compile
+/// `c_sources` into a shared object, bind each `CtypesBinding` symbol via
+/// `ctypes`, strip the C-extension relative import from `py_source`, and run its
+/// `main()` under `python3`, returning stdout (trailing newline trimmed).
+/// Requires `cc` + `python3`; callers should graceful-skip when either is absent
+/// (mirror [`PythonOracle::available`] / [`CExtensionOracle::available`]).
+pub fn capture_cpython_hybrid_ref(
+    py_source: &str,
+    c_sources: &[(String, String)],
+    bindings: &[CtypesBinding],
+) -> Result<String, OracleError> {
+    let dir = std::env::temp_dir();
+    let pid = std::process::id();
+
+    // 1) Materialize the C sources and cc-compile them into one shared object.
+    let mut c_paths = Vec::new();
+    for (i, (name, content)) in c_sources.iter().enumerate() {
+        let p = dir.join(format!("xpile_hybref_{pid}_{i}_{name}"));
+        std::fs::write(&p, content)
+            .map_err(|e| OracleError::Capture(format!("writing C source {name}: {e}")))?;
+        c_paths.push(p);
+    }
+    let so = dir.join(format!("libxpile_hybref_{pid}.so"));
+    let mut cc = std::process::Command::new("cc");
+    cc.arg("-shared").arg("-fPIC");
+    for p in &c_paths {
+        cc.arg(p);
+    }
+    cc.arg("-o").arg(&so);
+    let compiled = cc.output();
+    for p in &c_paths {
+        let _ = std::fs::remove_file(p);
+    }
+    let compiled = compiled.map_err(|e| OracleError::Capture(format!("spawning cc: {e}")))?;
+    if !compiled.status.success() {
+        let _ = std::fs::remove_file(&so);
+        return Err(OracleError::Capture(format!(
+            "cc -shared failed: {}",
+            String::from_utf8_lossy(&compiled.stderr).trim()
+        )));
+    }
+
+    // 2) Build the ctypes prologue binding every boundary symbol.
+    let mut prologue = String::new();
+    prologue.push_str("import ctypes as _ct\n");
+    prologue.push_str(&format!("_lib = _ct.CDLL({:?})\n", so.to_string_lossy()));
+    for b in bindings {
+        prologue.push_str(&format!("{0} = _lib.{0}\n", b.symbol));
+        let args: Vec<String> = b.argtypes.iter().map(|t| format!("_ct.{t}")).collect();
+        prologue.push_str(&format!("{}.argtypes = [{}]\n", b.symbol, args.join(", ")));
+        let rt = match b.restype {
+            Some(t) => format!("_ct.{t}"),
+            None => "None".to_string(),
+        };
+        prologue.push_str(&format!("{}.restype = {}\n", b.symbol, rt));
+    }
+
+    // 3) Strip the C-extension relative imports (`from ._core import …`); the
+    //    ctypes prologue supplies those names. Keep every other line verbatim.
+    let stripped: String = py_source
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("from ."))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // 4) Run the composed program under python3 and capture stdout.
+    let program = format!("{prologue}\n{stripped}\nmain()\n");
+    let run = std::process::Command::new("python3")
+        .arg("-c")
+        .arg(&program)
+        .output();
+    let _ = std::fs::remove_file(&so);
+    let run = run.map_err(|e| OracleError::Capture(format!("spawning python3: {e}")))?;
+    if !run.status.success() {
+        return Err(OracleError::Capture(format!(
+            "python3 exited {}: {}",
+            run.status,
+            String::from_utf8_lossy(&run.stderr).trim()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&run.stdout)
+        .trim_end_matches('\n')
+        .to_string())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PMAT-900 (Sprint-2 Day 1): the concrete C-extension oracle.
 //
 // In a hybrid Python+C module the C side is the semantic reference for the FFI
@@ -407,5 +516,28 @@ mod tests {
             oracle.compare(&a, &short),
             ComparisonResult::Divergence { .. }
         ));
+    }
+
+    #[test]
+    fn cpython_hybrid_ref_binds_c_via_ctypes() {
+        // The Day-3 reference path: CPython runs `app.py`'s real `main()` against
+        // the cc-compiled C extension bound via ctypes. Proves EXECUTION (x*x),
+        // not an echo: square_sum(7) = 49. Gated on cc + python3.
+        if !CExtensionOracle::available() || !PythonOracle::available() {
+            eprintln!("cc/python3 unavailable — skipping CPython hybrid-ref test");
+            return;
+        }
+        let py = "from ._core import square_sum\ndef main() -> None:\n    print(square_sum(7))";
+        let c = vec![(
+            "_core.c".to_string(),
+            "int square_sum(int x){return x*x;}\n".to_string(),
+        )];
+        let bindings = vec![CtypesBinding {
+            symbol: "square_sum".to_string(),
+            argtypes: vec!["c_int"],
+            restype: Some("c_int"),
+        }];
+        let out = capture_cpython_hybrid_ref(py, &c, &bindings).expect("captures CPython ref");
+        assert_eq!(out, "49");
     }
 }
