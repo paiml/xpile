@@ -7373,26 +7373,31 @@ fn main() {
 /// float, every operand is promoted to f64 (Python compares numerically).
 /// Homogeneous int/float/str min-max is untouched. Cross-checked vs python3
 /// (2.5, 2.0, 4.0, 7.5, 2.0, 4.0).
+/// PMAT-917 (HUNT BM-01 / V14-#9 / V16-#10): a `min`/`max` over a MIX of
+/// int-like and `float` operands is REJECTED at lowering, not silently widened
+/// to f64. Python compares numerically but returns the WINNING operand with its
+/// OWN type — `min(5.5, 2)` is the int `2` (prints `2`, not `2.0`), `max(7.5, 4)`
+/// is the float `7.5` — and ties resolve to the FIRST arg. The prior PMAT-601/541
+/// path promoted every operand to f64, so the int-wins case Display-diverged
+/// (`2.0` vs CPython's `2`) AND leaked the wrong type into arithmetic. Faithfully
+/// preserving the winner's type needs a tagged numeric (out of scope), so we fail
+/// loud instead of miscompiling. Homogeneous int / float min/max are unaffected
+/// (see the `min_max_homogeneous` oracle fixture, which differential-matches
+/// CPython).
 #[test]
-fn min_max_mixed_numeric() {
-    let rust = xpile_transpile_to_rust("min_max_mixed_numeric.py");
-    // PMAT-601: float min/max now use the Python first-arg-wins fold; the int
-    // operand is still promoted to f64.
+fn min_max_mixed_numeric_is_rejected_not_widened() {
+    let py = fixture("min_max_mixed_numeric.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
     assert!(
-        rust.contains("((n) as f64)") && rust.contains("if __x < __m"),
-        "mixed min/max must promote the int operand to f64 (first-arg-wins fold):\n{rust}"
+        !out.status.success(),
+        "mixed int/float min/max must be refused, not silently widened to f64"
     );
-    let driver = r#"
-fn main() {
-    assert_eq!(lo(2.5, 5), 2.5f64);
-    assert_eq!(lo(5.5, 2), 2.0f64);
-    assert_eq!(hi(1.5, 4), 4.0f64);
-    assert_eq!(hi(7.5, 4), 7.5f64);
-    assert_eq!(lo_int_first(2, 3.5), 2.0f64);
-    assert_eq!(clamp_hi(1.5, 4, 2), 4.0f64);
-}
-"#;
-    assert_rustc_runs("min_max_mixed_numeric", &rust, driver);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("mix of `int`/`bool` and `float`")
+            && (stderr.contains("min()") || stderr.contains("max()")),
+        "the mixed-numeric min/max refusal should name the int/float mix:\n{stderr}"
+    );
 }
 
 /// PMAT-601: 2-arg `max`/`min` over floats follow Python's first-argument-wins

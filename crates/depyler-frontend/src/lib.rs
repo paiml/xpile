@@ -11852,19 +11852,51 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             | NumBuiltinOp::Log2 => false,
                         };
                         if ok {
-                            // PMAT-541: a mixed-numeric `min`/`max` (e.g.
-                            // `min(x, n)` with `x: float`, `n: int`) must
-                            // promote every operand to f64 — Rust's
-                            // `f64::min` / `i64::min` can't mix types. Only when
-                            // at least one operand is float; homogeneous
-                            // int / str / bool min-max is left untouched.
-                            let args = if matches!(op, NumBuiltinOp::Min | NumBuiltinOp::Max)
-                                && args.iter().any(|a| infer_type_in_ctx(ctx, a) == Type::F64)
-                            {
-                                args.into_iter().map(|a| to_f64_operand(ctx, a)).collect()
-                            } else {
-                                args
-                            };
+                            // PMAT-917 (HUNT BM-01 / V14-#9 / V16-#10): a
+                            // mixed-numeric `min`/`max` — at least one `float`
+                            // operand AND at least one int-like (`int`/`bool`)
+                            // operand — is REJECTED, not silently widened.
+                            //
+                            // Python's `max`/`min` compares numerically but
+                            // returns the WINNING OPERAND with its OWN type:
+                            // `max(3, 2.5)` → `3` (int 3), `max(3.5, 2)` → `3.5`
+                            // (float), with ties resolving to the FIRST arg
+                            // (`max(3, 3.0)` → `3`, `max(3.0, 3)` → `3.0`). The
+                            // old PMAT-541 path coerced every operand to f64, so
+                            // the int-wins case printed `3.0` (silent-wrong) and
+                            // even leaked into arithmetic (`max(3,2.5)+1` → `4.0`
+                            // not `4`). Faithfully preserving the winner's type
+                            // needs a tagged numeric (`enum PyNum{I(i64),F(f64)}`)
+                            // threaded through the whole type lattice — out of
+                            // scope here — so we fail loud instead of lying.
+                            // Homogeneous int / bool / str (no float) and
+                            // homogeneous float (every operand already f64) min/max
+                            // stay fully supported and correct.
+                            let arg_tys: Vec<Type> =
+                                args.iter().map(|a| infer_type_in_ctx(ctx, a)).collect();
+                            if matches!(op, NumBuiltinOp::Min | NumBuiltinOp::Max) {
+                                let has_float = arg_tys.contains(&Type::F64);
+                                let has_int_like =
+                                    arg_tys.iter().any(|t| matches!(t, Type::I64 | Type::Bool));
+                                if has_float && has_int_like {
+                                    let fname = if matches!(op, NumBuiltinOp::Max) {
+                                        "max"
+                                    } else {
+                                        "min"
+                                    };
+                                    return Err(FrontendError::Lower(format!(
+                                        "function `{}` calls `{fname}()` over a mix of `int`/`bool` and `float` arguments — \
+                                         Python returns the winning operand with its own type (e.g. `{fname}(3, 2.5)` is the int `3`, \
+                                         `{fname}(3.5, 2)` is the float `3.5`), which a single Rust numeric type cannot represent; \
+                                         use all-int or all-float arguments (cast with `float(...)`/`int(...)`) — \
+                                         a tagged-numeric result is not yet supported (contract C-PY-INT-ARITH / C-PY-FLOAT-ARITH)",
+                                        ctx.fn_name
+                                    )));
+                                }
+                            }
+                            // Homogeneous float (every operand already f64): keep
+                            // them as-is; the float reduce in codegen is correct.
+                            // Homogeneous int / bool / str: left untouched.
                             // PMAT-579: record whether the operand is float so
                             // codegen picks `.abs()` (f64) vs `.checked_abs()`
                             // (i64). Consulted only for `Abs`; harmless for min/max.
@@ -18843,6 +18875,48 @@ mod tests {
                 assert!(msg.contains("decorator"), "unexpected msg: {}", msg);
             }
             _ => panic!("expected Lower error"),
+        }
+    }
+
+    #[test]
+    fn rejects_mixed_numeric_min_max_but_keeps_homogeneous() {
+        // PMAT-917 (HUNT BM-01 / V14-#9 / V16-#10): a `min`/`max` over a MIX of
+        // int-like and float operands is rejected, not silently widened to f64.
+        // Python returns the winning operand with its OWN type (`max(3, 2.5)` is
+        // the int `3`, `max(3.5, 2)` is the float `3.5`) — un-representable as a
+        // single Rust numeric — so the old f64-coercion was silent-wrong
+        // (`3` → `3.0`) and even leaked into arithmetic.
+        for src in [
+            "def f() -> float:\n    return max(3, 2.5)\n",
+            "def f() -> float:\n    return min(2, 3.5)\n",
+            // bool is an int subtype in Python, so bool+float is also a mix.
+            "def f() -> float:\n    return max(True, 0.5)\n",
+        ] {
+            let err = PythonFrontend
+                .parse_and_lower(&PathBuf::from("fixture.py"), src)
+                .expect_err("mixed-numeric min/max should be rejected");
+            match err {
+                FrontendError::Lower(msg) => {
+                    assert!(
+                        msg.contains("mix of `int`/`bool` and `float`")
+                            && (msg.contains("max()") || msg.contains("min()")),
+                        "unexpected msg: {msg}"
+                    );
+                }
+                other => panic!("expected Lower error, got {other:?}"),
+            }
+        }
+
+        // Homogeneous int / bool / float min/max stay fully supported.
+        for src in [
+            "def f() -> int:\n    return max(3, 7, 2)\n",
+            "def f() -> int:\n    return min(-4, -9, -1)\n",
+            "def f() -> float:\n    return max(3.5, 7.5, 2.5)\n",
+            "def f() -> float:\n    return min(3.5, 7.5, 2.5)\n",
+        ] {
+            PythonFrontend
+                .parse_and_lower(&PathBuf::from("fixture.py"), src)
+                .unwrap_or_else(|e| panic!("homogeneous min/max should lower: {src:?} -> {e:?}"));
         }
     }
 
