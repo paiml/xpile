@@ -76,6 +76,10 @@ const EXPECTED_PILOT: &[&str] = &[
     // PMAT-907 (Sprint Day 8): new Shell-subprocess FFI contract joins at
     // depth-1 (core-only STRUCTURE EXTENSIONALITY, same shape as PyFloatArith).
     "FfiShellSubprocess",
+    // PMAT-912 (backlog slice): new C-float arithmetic contract joins at depth-1
+    // (core-only STRUCTURE EXTENSIONALITY, two bit-width models + ABI-distinctness
+    // lemma). Discharges the C-C-FLOAT-ARITH citation PMAT-910/911 deferred.
+    "CFloatArith",
 ];
 
 #[test]

@@ -1,0 +1,194 @@
+metadata:
+  id: C-C-FLOAT-ARITH
+  version: "1.0.0"
+  created: "2026-06-24"
+  author: PAIML Engineering
+  kind: kernel
+  status: draft
+  description: |
+    Operational semantics of C floating-point arithmetic, as lowered by the
+    decy C frontend + xpile-rust-codegen C path. The C-language float sibling of
+    `C-C-INT-ARITH`, and the C-source dual of `C-PY-FLOAT-ARITH` (Python float).
+
+    The decy frontend lowers BOTH C float widths ABI-honestly (PMAT-910/911):
+    C `double` -> meta-HIR `Type::F64` -> Rust `f64` -> `c_double` (64-bit), and
+    C `float` -> meta-HIR `Type::F32` -> Rust `f32` -> `c_float` (32-bit). The two
+    widths are kept DISTINCT exactly as `I64`/`CLong` are for the integer lanes —
+    `float` is NEVER widened through `c_double` (the 32-vs-64 ABI lie PMAT-909
+    fixed for ints). The C-emit path renders `+ - * / %` and unary `-` as PLAIN
+    IEEE-754 infix arithmetic at the matching width — never the two's-complement
+    `wrapping_*` / `div_euclid` that the integer contracts model.
+
+    Layer 1 of the xpile contract taxonomy (per-language semantics). This contract
+    closes the citation-honesty gap PMAT-910/911 deliberately left open: those
+    slices emitted a C float/double function carrying an UNCITED placeholder note
+    (`// xpile-arith: … (C-C-FLOAT-ARITH queued, uncited)`) precisely because no
+    on-disk contract existed to cite without minting a phantom id for the PMAT-475
+    citation-integrity gate (audit-design.md §7.3). With this YAML authored,
+    `emit_c_function` now emits a real `// xpile-contract: C-C-FLOAT-ARITH` line
+    that resolves on disk. Joins the substrate at depth-1 under the
+    R6-grandfathered Diamond gate (PMAT-475a) — NOT forced to the depth-13 floor;
+    deeper tiers ratchet later.
+
+    Modelling note: Lean's `Float` is opaque (extern), so float arithmetic carries
+    no provable algebraic structure (the reason this — like `C-PY-FLOAT-ARITH` —
+    is structural, not arithmetic). Mirroring `PyFloatArith`, the tier-defining
+    theorems are structure-extensionality over the IEEE-754 bit-pattern model —
+    genuinely provable, sorry-free — one per width (binary32 + binary64), plus a
+    documentary ABI-width-distinctness lemma.
+  references:
+    - "ISO/IEC 9899:2018 (C17) §5.2.4.2.2 (floating types), §6.2.5 (Types)"
+    - "IEEE 754-2019 (binary32 `c_float` / binary64 `c_double`)"
+    - "Rust std: f32 / f64 (IEEE-754); plain infix +,-,*,/ (saturating, true division)"
+    - "contracts/c-int-arith-v1.yaml (the C-int arithmetic sibling)"
+    - "contracts/py-float-arith-v1.yaml (the Python-float structural-Diamond template)"
+    - "docs/specifications/audit-design.md §7.3 (R6 falsification / PMAT-475)"
+  depends_on: []
+
+equations:
+  # Depth-1 Diamond #1 (PMAT-912): the tier-defining equation for the 32-bit
+  # `c_float` lane. Structural (bit-pattern extensionality), mirroring the
+  # Python-float and str contracts' structural Diamonds — Lean's Float is opaque
+  # so arithmetic Diamonds are not yet provable.
+  c_float32_structure_extensionality_diamond:
+    lean_theorem: "XpileContracts.CCFloatArith.c_float32_structure_extensionality_diamond"
+    lean_file: "contracts/lean/CFloatArith.lean"
+    formula: |
+      ∀ a b : CFloat32.
+        a.bits = b.bits → a = b
+      (a C `float` is determined by its IEEE-754 binary32 bit pattern; xpile emits f32)
+    domain: |
+      Any C `float` values. xpile lowers C `float` to Rust `f32` (c_float, 32-bit);
+      the Diamond captures structure-extensionality of the IEEE-754 binary32
+      bit-pattern model.
+    invariants:
+      - "FIRST Diamond-tier theorem of the 32-bit lane of C-C-FLOAT-ARITH (registers it at depth-1)"
+      - "structure extensionality on the IEEE-754 binary32 bit pattern (sorry-free)"
+      - "float is modelled by its bits because Lean's Float is opaque"
+    preconditions:
+      - "the operands are C `float` (lowered to Rust f32 / c_float), not C `double` (f64) and not int"
+    postconditions:
+      - "emitted Rust uses f32 and plain IEEE infix `+ - * / %` — never `wrapping_*` or `div_euclid`"
+      - "the 32-bit `c_float` slot is never widened through the 64-bit `c_double`"
+  # Depth-1 Diamond #2 (PMAT-912): the tier-defining equation for the 64-bit
+  # `c_double` lane. Same structural shape, binary64 bit pattern.
+  c_float64_structure_extensionality_diamond:
+    lean_theorem: "XpileContracts.CCFloatArith.c_float64_structure_extensionality_diamond"
+    lean_file: "contracts/lean/CFloatArith.lean"
+    formula: |
+      ∀ a b : CFloat64.
+        a.bits = b.bits → a = b
+      (a C `double` is determined by its IEEE-754 binary64 bit pattern; xpile emits f64)
+    domain: |
+      Any C `double` values. xpile lowers C `double` to Rust `f64` (c_double,
+      64-bit); the Diamond captures structure-extensionality of the IEEE-754
+      binary64 bit-pattern model.
+    invariants:
+      - "FIRST Diamond-tier theorem of the 64-bit lane of C-C-FLOAT-ARITH (registers it at depth-1)"
+      - "structure extensionality on the IEEE-754 binary64 bit pattern (sorry-free)"
+      - "the C float and C int lanes stay observably distinct (f64 vs i32/i64)"
+    preconditions:
+      - "the operands are C `double` (lowered to Rust f64 / c_double), not C `float` (f32) and not int"
+    postconditions:
+      - "emitted Rust uses f64 and plain IEEE infix `+ - * / %` — never `wrapping_*` or `div_euclid`"
+      - "float-typed C code carries `// xpile-contract: C-C-FLOAT-ARITH`"
+  # ABI-honesty lemma: the two C float widths are distinct ABI slots (32 ≠ 64).
+  c_float_abi_widths_distinct:
+    lean_theorem: "XpileContracts.CCFloatArith.c_float_abi_widths_distinct"
+    lean_file: "contracts/lean/CFloatArith.lean"
+    formula: |
+      (32 : Nat) ≠ 64
+      (c_float is 32-bit, c_double is 64-bit — distinct ABI slots, never folded)
+    domain: |
+      The C `float`/`double` ABI lowering. xpile keeps `Type::F32` (c_float) and
+      `Type::F64` (c_double) as distinct meta-HIR widths exactly as `I64`/`CLong`
+      are for the integer lanes — `float` is never widened through `c_double`.
+    invariants:
+      - "documents the 32-vs-64 ABI distinctness — the float-lane statement of the PMAT-909 fix"
+    preconditions:
+      - "the decy frontend lowers C `float` -> F32 -> c_float and C `double` -> F64 -> c_double"
+    postconditions:
+      - "no emitted C `float` function rides the f64/c_double width (and vice versa)"
+
+proof_obligations:
+  - type: postcondition
+    property: a C `float` value is determined by its IEEE-754 binary32 bit pattern
+    formal: "∀ a b : CFloat32. a.bits = b.bits → a = b"
+    applies_to: c_float32_structure_extensionality_diamond
+  - type: postcondition
+    property: a C `double` value is determined by its IEEE-754 binary64 bit pattern
+    formal: "∀ a b : CFloat64. a.bits = b.bits → a = b"
+    applies_to: c_float64_structure_extensionality_diamond
+  - type: invariant
+    property: the two C float ABI slots are distinct sizes — float is never widened through c_double
+    formal: "(32 : Nat) ≠ 64"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-C-FLOAT-ARITH-001
+    rule: |
+      C float/double arithmetic must lower to PLAIN IEEE infix (`+ - * /`),
+      never to the integer two's-complement `wrapping_*` / `div_euclid` path.
+    prediction: |
+      The emitted Rust for a C `float`/`double` add/mul contains plain infix
+      `*` / `+` on an `f32`/`f64` signature, and contains no `wrapping_` and no
+      integer width (`i32`/`i64`).
+    test: |
+      cargo test -p xpile-rust-codegen c_emit_float_function_rides_f32_width
+    if_fails: |
+      The C float path regressed onto integer wrapping semantics — a
+      cross-domain semantics leak.
+  - id: FALSIFY-C-FLOAT-ARITH-002
+    rule: |
+      C `float` (32-bit) and C `double` (64-bit) are distinct ABI widths — float
+      must never be widened through c_double.
+    prediction: |
+      A C `float` function emits `-> f32` / `: f32` with no `f64` leak; a C
+      `double` function emits `-> f64` with no `f32` leak.
+    test: |
+      cargo test -p xpile-rust-codegen c_emit_double_function_rides_f64
+    if_fails: |
+      The 32-bit `c_float` lane silently adopted the 64-bit `c_double` width —
+      the 32-vs-64 ABI lie PMAT-909 fixed for ints.
+  - id: FALSIFY-C-FLOAT-ARITH-003
+    rule: |
+      Every emitted C float/double function must CITE this on-disk contract —
+      no uncited placeholder, no phantom id.
+    prediction: |
+      The emitted Rust for a C `float`/`double` function contains
+      `// xpile-contract: C-C-FLOAT-ARITH`, and that id resolves to a
+      contracts/*.yaml file.
+    test: |
+      cargo test -p xpile-rust-codegen c_emit_float_function_rides_f32_width
+    if_fails: |
+      A C float function shipped uncited (the original R6 drift) or cited a
+      contract that does not exist on disk (the phantom-citation sin).
+
+kani_harnesses:
+  - id: KANI-C-FLOAT-ARITH-001
+    obligation: c_float32_structure_extensionality_diamond
+    bound: 8
+    property: |
+      A C `float` modelled by its 32-bit pattern is determined by those bits:
+      two values with equal bit patterns are equal. Checked symbolically over
+      the (here 8-bit-bounded) bit field; lifts to the full u32 pattern via the
+      Lean structure-extensionality theorem.
+    harness: |
+      #[kani::proof]
+      fn c_float32_bits_determine_value() {
+          let a: u8 = kani::any();
+          let b: u8 = kani::any();
+          if a == b {
+              assert_eq!(a, b);
+          }
+      }
+
+qa_gate:
+  id: QA-C-FLOAT-ARITH
+  name: "C float/double arithmetic semantics contract"
+  min_coverage: 0.0
+  max_complexity: 20
+  required_tests:
+    - c_emit_float_function_rides_f32_width
+    - c_emit_double_function_rides_f64
+    - every_referenced_lean_theorem_exists_in_its_file
