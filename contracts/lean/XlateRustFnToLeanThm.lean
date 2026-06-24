@@ -623,10 +623,21 @@ theorem silver_module_hash_preserved (inputs : LiftInputsSilver) :
 def NonEmptyPreconditionList :=
   { pl : PreconditionListSilver // pl.source_indices.size > 0 }
 
-/-- Extract the underlying Silver precondition list. -/
+/-- Extract the underlying Silver precondition list.
+
+    NOTE (PMAT-914): the body MUST use the positional `.1` projection,
+    NOT `n.val`. Because this very function is named
+    `NonEmptyPreconditionList.val`, writing `n.val` here resolves by
+    dot-notation to *this function itself* — a non-terminating recursive
+    call ("fail to show termination", since `n` is unchanged in the
+    call). `.1` is the genuine `Subtype.val` field projection and breaks
+    the self-reference. The same shadowing made every downstream `n.val`
+    point at this broken function, cascading into the `n.property` and
+    `Subtype.ext` type mismatches; with the projection fixed here those
+    occurrences resolve to the real `Subtype.val` and elaborate. -/
 def NonEmptyPreconditionList.val (n : NonEmptyPreconditionList) :
     PreconditionListSilver :=
-  n.val
+  n.1
 
 /-- Gold-tier lowering: extracts the structural data, the
     non-emptiness witness is carried into the typed output. -/

@@ -24,10 +24,10 @@ open Lake DSL
   — so this job is exactly the check that makes "provable" un-falsifiable by
   `grep sorry`.
 
-  PILOT = the 14 modules that elaborate clean under bare core with
+  PILOT = the 15 modules that elaborate clean under bare core with
   warnings-as-errors (9 from PMAT-903 + 2 PMAT-904 + FfiShellSubprocess/907 +
-  CFloatArith/912 + XpileFrontendTrait/913).
-  The known-incomplete remainder is 8 modules with REAL elaboration errors
+  CFloatArith/912 + XpileFrontendTrait/913 + XlateRustFnToLeanThm/914).
+  The known-incomplete remainder is 7 modules with REAL elaboration errors
   (termination / type-mismatch / synthesis failures — NOT sorries), enumerated
   honestly in `PROVABILITY-INVENTORY.md` and deliberately EXCLUDED here so this
   advisory job is GREEN without overstating what is proven. Discharging the
@@ -80,5 +80,14 @@ lean_lib «XpileContractsPilot» where
     -- a `∀`, not an inductive); (b) `source_lang_enum_completeness_diamond`
     -- used Mathlib-only `tauto` over the decidable `SourceLang` disjunction →
     -- core `decide`. Layer-3 frontend trait now machine-checked, not excluded.
-    `XpileFrontendTrait           -- C-XPILE-FRONTEND-TRAIT       (PMAT-913)
+    `XpileFrontendTrait,          -- C-XPILE-FRONTEND-TRAIT       (PMAT-913)
+    -- PMAT-914 (backlog slice): discharged the cheapest termination-led head.
+    -- The fault was NOT a genuine missing termination argument but a NAME
+    -- SHADOWING bug: `def NonEmptyPreconditionList.val (n) := n.val` resolved
+    -- `n.val` by dot-notation to *itself* (a non-terminating recursive call,
+    -- `n` unchanged), and that broken `.val` then poisoned every downstream
+    -- `n.val`, cascading into the `n.property` and `Subtype.ext` type
+    -- mismatches. Fix = use the positional `.1` Subtype projection in the body
+    -- (`n.1`), breaking the self-reference; all three errors clear at once.
+    `XlateRustFnToLeanThm          -- C-XLATE-RUST-FN-TO-LEAN-THM (PMAT-914)
   ]
