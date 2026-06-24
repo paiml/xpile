@@ -12,7 +12,7 @@
 //! lakefile `roots` and pins the pilot at the modules that elaborate today
 //! (9 from PMAT-903 + 2 from PMAT-904 + FfiShellSubprocess/PMAT-907 +
 //! CFloatArith/PMAT-912 + XpileFrontendTrait/PMAT-913 +
-//! XlateRustFnToLeanThm/PMAT-914 = 15), and asserts
+//! XlateRustFnToLeanThm/PMAT-914 + XlateLeanToRust/PMAT-915 = 16), and asserts
 //! the `PROVABILITY-INVENTORY.md` PILOT count stays in lockstep. It does
 //! NOT re-prove anything — only that the bookkeeping the Lean job relies on
 //! can't drift behind the Rust gate's back.
@@ -93,6 +93,15 @@ const EXPECTED_PILOT: &[&str] = &[
     // downstream `n.val` into the `n.property` / `Subtype.ext` mismatches. Fix =
     // use the positional `.1` Subtype projection (`n.1`) in the body.
     "XlateRustFnToLeanThm",
+    // PMAT-915 (backlog slice): discharged the next cheapest termination-led
+    // head — again the PMAT-914 NAME-SHADOWING class, not a real termination
+    // argument: `def WarningLineCount.val (w) := w.val` resolved `w.val` to
+    // itself (non-terminating self-call), poisoning the derived `DecidableEq`,
+    // the `.property` refinement theorems, and the `Subtype.ext` proof. Fix =
+    // positional `.1` projection in the body + an explicit `DecidableEq
+    // WarningLineCount` instance (`unfold` + `infer_instance`) for the two
+    // structures `deriving DecidableEq` over that opaque-`def` subtype field.
+    "XlateLeanToRust",
 ];
 
 #[test]

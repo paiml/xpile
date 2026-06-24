@@ -39,10 +39,10 @@ elaborates to `sorryAx`) **cannot survive a green `lake build`**. That is the
 check that makes "provable" un-falsifiable by `grep sorry` for the pilot
 contracts — the actual machine-checked guarantee, not a string scan.
 
-## PILOT — machine-checked (15 modules, in `lakefile.lean` roots)
+## PILOT — machine-checked (16 modules, in `lakefile.lean` roots)
 
 These elaborate clean under bare Lean 4 core **with warnings-as-errors** — no
-`sorry`, no `axiom`, no Mathlib. `lake build` is green iff all fifteen still do.
+`sorry`, no `axiom`, no Mathlib. `lake build` is green iff all sixteen still do.
 
 | Module | Contract |
 |--------|----------|
@@ -61,6 +61,7 @@ These elaborate clean under bare Lean 4 core **with warnings-as-errors** — no
 | `CFloatArith` | `C-C-FLOAT-ARITH` (PMAT-912: depth-1 `CFloat32`/`CFloat64` STRUCTURE EXTENSIONALITY + ABI-width-distinctness) |
 | `XpileFrontendTrait` | `C-XPILE-FRONTEND-TRAIT` (PMAT-913: precedence-paren on `parse_and_lower_function_diamond` clause (c) + `tauto`→`decide` on `source_lang_enum_completeness_diamond`) |
 | `XlateRustFnToLeanThm` | `C-XLATE-RUST-FN-TO-LEAN-THM` (PMAT-914: name-shadowing fix — `NonEmptyPreconditionList.val` body used `n.val` (self-recursion) → positional `.1` Subtype projection) |
+| `XlateLeanToRust` | `C-XLATE-LEAN-TO-RUST` (PMAT-915: same name-shadowing class — `WarningLineCount.val` body used `w.val` (self-recursion) → positional `.1` projection + explicit `DecidableEq WarningLineCount` instance for the two `deriving DecidableEq` structs) |
 
 **PMAT-904 (Sprint Day 5) discharged the two cheapest non-elaborating files** —
 both with *real* errors, not sorries, confirming the reframed debt model:
@@ -83,7 +84,7 @@ both with *real* errors, not sorries, confirming the reframed debt model:
 Rewording to "NaN and signed-zero" restores elaboration; the theorem is now
 genuinely machine-checked.
 
-## KNOWN-INCOMPLETE — 7 modules with REAL elaboration errors (excluded)
+## KNOWN-INCOMPLETE — 6 modules with REAL elaboration errors (excluded)
 
 These do **not** elaborate today. The cause is genuine proof debt — NOT
 sorries. The dominant failure is unproved **termination** of recursive
@@ -92,8 +93,8 @@ definitions (`fail to show termination`, needing `termination_by` /
 errors downstream. Counts are `error:` lines from `lean <file>` on v4.15.0
 (the smallest non-termination cases — `XpileBackendTrait` 3 +
 `XpileContractFrontendTrait` 2 in PMAT-904, `XpileFrontendTrait` 5 in PMAT-913,
-`XlateRustFnToLeanThm` 4 in PMAT-914 — were discharged and are now in the pilot
-above):
+`XlateRustFnToLeanThm` 4 in PMAT-914, `XlateLeanToRust` 7 in PMAT-915 — were
+discharged and are now in the pilot above):
 
 | Module | `error:` count | Representative first error |
 |--------|---------------:|----------------------------|
@@ -103,26 +104,30 @@ above):
 | `XlatePyListToVec` | 8 | fail to show termination (`:593`) + type mismatch |
 | `Bashrs` | 7 | fail to show termination (`:213`) |
 | `Notation` | 7 | fail to show termination (`:816`) — *not* the `\| sorry` ctor |
-| `XlateLeanToRust` | 7 | fail to show termination (`:1014`) |
 
 **This is the real provability debt** the machine-checked lane exposes — and it
 is honest debt, not hidden `sorry`s. PMAT-904 cleared the two cheapest
 (unknown-tactic / synthesis / `rw`-through-`def`), PMAT-913 cleared
-`XpileFrontendTrait` (precedence-paren + `tauto`→`decide`), and PMAT-914 cleared
-`XlateRustFnToLeanThm` — whose "fail to show termination (`:627`) + type
-mismatch" turned out NOT to be a genuine missing termination argument but a
-**name-shadowing bug**: `def NonEmptyPreconditionList.val (n) := n.val` resolved
-`n.val` by dot-notation to *itself* (a non-terminating recursive call, `n`
-unchanged), and that broken `.val` poisoned every downstream `n.val`, cascading
-into the `n.property` and `Subtype.ext` mismatches. The one-line fix is the
-positional `.1` Subtype projection in the body. The remaining 7 are genuinely
-termination-led and are ongoing work — `Bashrs`/`Notation`/`XlateLeanToRust`
-(7 each) are now the cheapest heads.
+`XpileFrontendTrait` (precedence-paren + `tauto`→`decide`), PMAT-914 cleared
+`XlateRustFnToLeanThm`, and PMAT-915 cleared `XlateLeanToRust` — the last two
+whose `fail to show termination` first-errors turned out NOT to be genuine
+missing termination arguments but the **name-shadowing class**: a
+`def Subtype.val (x) := x.val` body resolves `x.val` by dot-notation to *itself*
+(a non-terminating recursive call, `x` unchanged), and that broken `.val`
+poisons every downstream `.val`, cascading into the `.property` /
+`Subtype.ext` / derived-`DecidableEq` failures. The fix is the positional `.1`
+Subtype projection in the body (PMAT-915 also needed an explicit
+`DecidableEq WarningLineCount` instance for two structs `deriving DecidableEq`
+over the now-fixed subtype field). The remaining 6 are genuinely
+termination-led and are ongoing work — `Bashrs`/`Notation` (7 each) are now the
+cheapest heads. **Lesson (repeated): a `fail to show termination` first error is
+not proof the fault is termination — check for a self-naming `.val`/projection
+helper first.**
 
 ## Relationship to `audit-design.md`
 
 Day 10 (PMAT-909) truths-up `audit-design.md` to state: the Lean lane is now
-`lake`-machine-checked over a (now 15-module) pilot, the `grep sorry`/`grep
+`lake`-machine-checked over a (now 16-module) pilot, the `grep sorry`/`grep
 axiom` debt figures were a measurement artifact, and the real remaining debt is
-7 non-elaborating modules (termination-led). No over-claim: "provable" applies
+6 non-elaborating modules (termination-led). No over-claim: "provable" applies
 to the pilot contracts, verified by `lake build`, not by string scan.

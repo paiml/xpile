@@ -1010,8 +1010,31 @@ def warning_lines_floor : Nat := 5
     system rules it out at compile time. -/
 def WarningLineCount := { n : Nat // n ≥ warning_lines_floor }
 
-/-- Extract the underlying line count. -/
-def WarningLineCount.val (w : WarningLineCount) : Nat := w.val
+/-- Extract the underlying line count.
+
+    NOTE: the body MUST use the positional Subtype projection `w.1`, NOT
+    `w.val`. `WarningLineCount` is a `Subtype`, so `w.val` resolves by
+    dot-notation to *this very function* (a non-terminating self-call,
+    `w` unchanged across the recursion) rather than to `Subtype.val`.
+    That self-reference makes the definition fail termination and then
+    poisons every downstream `.val` use (the derived `DecidableEq`, the
+    `.property` refinement theorems, and the `Subtype.ext` extensionality
+    proof) — the PMAT-914 name-shadowing class. `w.1` is the literal
+    structure-eta projection and is defeq to `Subtype.val`, so all of
+    those discharge cleanly. -/
+def WarningLineCount.val (w : WarningLineCount) : Nat := w.1
+
+/-- Decidable equality on the `WarningLineCount` refinement subtype.
+
+    `WarningLineCount := { n : Nat // n ≥ warning_lines_floor }` is an
+    opaque `def`, so the `deriving DecidableEq` handler on the structures
+    below cannot peer through it to the underlying `Subtype`. Unfolding it
+    here recovers `Subtype.instDecidableEq` (the bound lives in `Prop`, so
+    only the carrying `Nat` matters for equality), which the derived
+    `DecidableEq LeanAxiomGold` / `RustExternGold` then synthesize from. -/
+instance : DecidableEq WarningLineCount := by
+  unfold WarningLineCount
+  infer_instance
 
 /-- Gold-tier model of a Lean axiom declaration. The
     warning_lines field is now type-level bounded. -/
