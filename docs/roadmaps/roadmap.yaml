@@ -10999,11 +10999,12 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-905: [paradigm-fill] Ruchy/Rust same-crate direct-call shim — real emitter for 2 of the 4 remaining arms'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-23T00:00:00Z
   acceptance_criteria:
   - "Replace shim_part_for's SourceLang::Ruchy and SourceLang::Rust Err arms with a real same-crate direct-call forwarder (no unsafe, no extern); 4 of 6 arms now real (C, Shell, Ruchy, Rust); exhaustive-match invariant preserved; Cpp/Cuda/Python/Lean remain explicit named gaps. Sprint Day 6."
+  - "DONE: the Ruchy|Rust arm now resolves the defining Function (same path as the C arm) and emits via new emit_direct_shim — a thin `pub fn <sym>_shim(..) -> .. { <sym>(..) }` forwarder with extern_decl: None, contract: None (capability-ahead-of-contract, like Shell). New direct_native_type maps each meta-HIR Type to its dependency-free std Rust type (i64/f64/bool/String/Vec/HashSet/Option/tuple), refusing dep-requiring lowerings (BigInt->xpile_bigint, Dict->indexmap) and Struct/bashrs types with named reasons rather than emitting an unbuildable shim, since the emitted hybrid workspace pins [dependencies] empty. Four new tests (forwarder shape + native param/return mapping + non-std-dep refusal + a rustc -D warnings compile gate prepending the same-crate callee); the two old expect_err gap tests flipped to assert the forwarder. Sprint Day 6."
 - id: PMAT-906
   github_issue: null
   item_type: task
