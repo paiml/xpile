@@ -256,10 +256,12 @@ impl FfiManifest {
     ///     wrapper confining `unsafe`, citing `C-FFI-CPYTHON-EXT`.
     ///   - **Shell** → a real `std::process::Command`-based wrapper (shell speaks
     ///     argv + exit codes — no C ABI, no `unsafe`).
-    ///   - **Cpp / Cuda / Python / Ruchy / Rust / Lean** → a specific,
-    ///     mechanism-named [`FfiEmitError`] (pybind11 / cuda_kernel / pyo3 /
-    ///     same-crate direct call / proof-lane) so the gap is actionable, never
-    ///     silently dropped or mis-emitted.
+    ///   - **Ruchy / Rust** → a real same-crate direct-call forwarder (both lower
+    ///     to native Rust in the same crate — a plain in-crate call, no `unsafe`,
+    ///     no `extern`). Four of six arms are now real (C, Shell, Ruchy, Rust).
+    ///   - **Cpp / Cuda / Python / Lean** → a specific, mechanism-named
+    ///     [`FfiEmitError`] (pybind11 / cuda_kernel / pyo3 / proof-lane) so the
+    ///     remaining gaps stay actionable, never silently dropped or mis-emitted.
     ///
     /// All-or-nothing (mirrors `reconcile`'s `manifest_completeness`): if ANY
     /// boundary cannot be shimmed, nothing is emitted and the gaps are returned —
@@ -427,16 +429,19 @@ fn shim_part_for(entry: &FfiEntry, modules: &[Module]) -> Result<ShimPart, Vec<S
              embedding) — roadmap Phase 6",
             entry.symbol
         )]),
-        SourceLang::Ruchy => Err(vec![format!(
-            "{}: Ruchy boundary → Ruchy lowers to Rust, so this is a same-crate \
-             direct call, not FFI; direct-call shim emission pending",
-            entry.symbol
-        )]),
-        SourceLang::Rust => Err(vec![format!(
-            "{}: Rust boundary → same-crate direct call, not FFI; direct-call shim \
-             emission pending",
-            entry.symbol
-        )]),
+        // Real same-crate direct-call forwarder. Ruchy lowers to Rust and a Rust
+        // boundary is already Rust, so both land in the SAME emitted crate — a
+        // boundary call is a plain in-crate call, not FFI (no C ABI, no `unsafe`,
+        // no `extern` block). A missing defining function is the same internal
+        // invariant violation `reconcile` guards as for the C arm.
+        SourceLang::Ruchy | SourceLang::Rust => match defining_function(modules, entry) {
+            Some(f) => emit_direct_shim(entry, f),
+            None => Err(vec![format!(
+                "{}: resolved to a {:?} symbol that is not a function — cannot emit \
+                 a direct-call shim",
+                entry.symbol, entry.to_lang
+            )]),
+        },
         SourceLang::Lean => Err(vec![format!(
             "{}: Lean is the proof lane, not a runtime FFI target — a Lean boundary \
              is a proof obligation, not a runtime shim",
@@ -541,6 +546,130 @@ fn emit_shell_shim(entry: &FfiEntry) -> ShimPart {
         wrapper,
         contract: None,
     }
+}
+
+/// Emit a real **same-crate direct-call forwarder** for a Ruchy or Rust
+/// boundary. Ruchy lowers to Rust and a Rust boundary is already Rust, so both
+/// callees are native Rust functions in the SAME emitted crate — a boundary here
+/// is a plain in-crate call, not FFI. The shim is therefore a thin, safe wrapper
+/// that forwards to `symbol` with its native Rust signature: **no `extern "C"`
+/// block, no `unsafe`, no ABI marshalling** (contrast [`emit_c_shim`], which must
+/// cross the C ABI). Returns every non-native-mappable param/return reason
+/// together so the caller reports them all at once (mirrors [`emit_c_shim`]).
+/// Capability-ahead-of-contract — a direct call needs no FFI substrate, so
+/// `contract` is `None` (like the shell arm).
+fn emit_direct_shim(entry: &FfiEntry, f: &Function) -> Result<ShimPart, Vec<String>> {
+    let mut unsupported = Vec::new();
+    let mut params = Vec::new();
+    let mut args = Vec::new();
+    for p in &f.params {
+        match direct_native_type(&p.ty) {
+            Ok(rty) => {
+                params.push(format!("{}: {}", p.name, rty));
+                args.push(p.name.clone());
+            }
+            Err(reason) => {
+                unsupported.push(format!("{}: parameter `{}` {reason}", entry.symbol, p.name))
+            }
+        }
+    }
+
+    // Return position: `Type::Unit` is a bare `()` (no `-> T`), matching the rust
+    // backend; anything else must map to a native Rust type or the boundary is
+    // refused.
+    let ret_sig = match &f.return_type {
+        Type::Unit => String::new(),
+        ty => match direct_native_type(ty) {
+            Ok(rty) => format!(" -> {rty}"),
+            Err(reason) => {
+                unsupported.push(format!("{}: return type {reason}", entry.symbol));
+                String::new()
+            }
+        },
+    };
+
+    if !unsupported.is_empty() {
+        return Err(unsupported);
+    }
+
+    let wrapper = format!(
+        "/// Same-crate direct-call forwarder for `{0}` ({1:?} lowers to Rust — a\n\
+         /// boundary here is a plain in-crate call, not a foreign-function call).\n\
+         pub fn {0}_shim({2}){3} {{\n    {0}({4})\n}}\n",
+        entry.symbol,
+        entry.to_lang,
+        params.join(", "),
+        ret_sig,
+        args.join(", ")
+    );
+    Ok(ShimPart {
+        extern_decl: None,
+        wrapper,
+        contract: None,
+    })
+}
+
+/// Native Rust type a **same-crate direct-call** shim speaks for a meta-HIR
+/// [`Type`]. Unlike [`c_abi_type`] there is NO C ABI to honor (the callee is
+/// native Rust in the same crate), so the accepted set is wider — it mirrors what
+/// `xpile-rust-codegen` emits for a signature, but only for the **dependency-free
+/// std** types, because the emitted hybrid workspace pins `[dependencies]` empty.
+/// Types whose Rust lowering needs an external crate (`BigInt` →
+/// `xpile_bigint`, `Dict` → `indexmap`) or a co-emitted definition (`Struct`) are
+/// refused with a named reason rather than emitting an unbuildable forwarder; the
+/// bashrs-domain types are refused as the rust backend refuses them. A `Unit`
+/// parameter is nonsensical (Unit is a return-only shape, handled by the caller).
+fn direct_native_type(ty: &Type) -> Result<String, String> {
+    Ok(match ty {
+        Type::I64 => "i64".to_string(),
+        Type::F64 => "f64".to_string(),
+        Type::Bool => "bool".to_string(),
+        Type::Str => "String".to_string(),
+        Type::List(elem) => format!("Vec<{}>", direct_native_type(elem)?),
+        Type::Set(elem) => format!("std::collections::HashSet<{}>", direct_native_type(elem)?),
+        Type::Optional(inner) => format!("Option<{}>", direct_native_type(inner)?),
+        Type::Tuple(elems) => {
+            let mut parts = Vec::with_capacity(elems.len());
+            for e in elems {
+                parts.push(direct_native_type(e)?);
+            }
+            // A 1-tuple needs the trailing comma — `(T,)` — to stay a tuple.
+            if parts.len() == 1 {
+                format!("({},)", parts[0])
+            } else {
+                format!("({})", parts.join(", "))
+            }
+        }
+        Type::Unit => {
+            return Err("type `()` is only valid in return position".to_string());
+        }
+        Type::BigInt => {
+            return Err(
+                "type BigInt lowers to xpile_bigint::BigInt — a non-std dep the \
+                        hybrid workspace does not pin; direct-call shim refuses it"
+                    .to_string(),
+            );
+        }
+        Type::Dict(_, _) => {
+            return Err(
+                "type Dict lowers to indexmap::IndexMap — a non-std dep the \
+                        hybrid workspace does not pin; direct-call shim refuses it"
+                    .to_string(),
+            );
+        }
+        Type::Struct(name) => {
+            return Err(format!(
+                "struct type `{name}` needs its definition co-emitted into the shim crate \
+                 — direct-call shim refuses it until struct re-export lands"
+            ));
+        }
+        Type::ShellString | Type::ExitCode => {
+            return Err(format!(
+                "type {ty:?} is a bashrs-domain type (contract C-BASHRS-POSIX-IDEMPOTENCE) \
+                 — not a direct-call shim target"
+            ));
+        }
+    })
 }
 
 /// Recover the real defining [`Function`] for a reconciled entry, mirroring
@@ -922,15 +1051,129 @@ mod tests {
     }
 
     #[test]
-    fn emit_shims_ruchy_boundary_is_same_crate_direct_call() {
-        let err = emit_cross(SourceLang::Python, SourceLang::Ruchy, "helper").expect_err("refused");
-        assert!(err.to_string().contains("same-crate"), "{err}");
+    fn emit_shims_ruchy_boundary_emits_direct_call_forwarder() {
+        // PMAT-905: a Ruchy boundary lowers to a real same-crate direct-call
+        // forwarder — no extern block, no `unsafe`, no contract citation, just a
+        // plain in-crate call (Ruchy → Rust). `module_defining` exports `helper`
+        // as a nullary `-> i64`.
+        let out = emit_cross(SourceLang::Python, SourceLang::Ruchy, "helper").expect("emits");
+        assert!(out.contains("pub fn helper_shim() -> i64 {"), "{out}");
+        assert!(out.contains("helper()"), "{out}");
+        assert!(
+            !out.contains("extern \"C\""),
+            "a direct call is not FFI: {out}"
+        );
+        assert!(
+            !out.contains("unsafe"),
+            "a direct call needs no unsafe: {out}"
+        );
+        assert!(
+            !out.contains("xpile-contract:"),
+            "direct call is capability-ahead-of-contract (no citation): {out}"
+        );
+        // Compiles when the same-crate callee is in scope (the real workspace
+        // context: main.rs defines `helper`, the shim forwards to it). Appended
+        // AFTER the shim so the file's `#![allow(dead_code)]` inner attribute
+        // stays at the top.
+        let with_callee = format!("{out}\nfn helper() -> i64 {{ 0 }}\n");
+        assert!(
+            rustc_lib_compiles("ruchy", &with_callee),
+            "emitted direct-call shim must compile under -D warnings"
+        );
     }
 
     #[test]
-    fn emit_shims_rust_boundary_is_same_crate_direct_call() {
-        let err = emit_cross(SourceLang::Python, SourceLang::Rust, "helper").expect_err("refused");
-        assert!(err.to_string().contains("same-crate"), "{err}");
+    fn emit_shims_rust_boundary_emits_direct_call_forwarder() {
+        let out = emit_cross(SourceLang::Python, SourceLang::Rust, "helper").expect("emits");
+        assert!(out.contains("pub fn helper_shim() -> i64 {"), "{out}");
+        assert!(out.contains("helper()"), "{out}");
+        assert!(!out.contains("extern \"C\""), "{out}");
+        assert!(!out.contains("unsafe"), "{out}");
+    }
+
+    #[test]
+    fn emit_direct_shim_maps_native_param_and_return_types() {
+        // A Rust boundary with native (non-C-ABI) param + return types: the
+        // forwarder speaks them verbatim (i64/f64/String/bool) — no `as c_int`
+        // marshalling, unlike the C arm.
+        let mut modules = vec![
+            module(
+                "driver",
+                SourceLang::Python,
+                vec![boundary(SourceLang::Python, SourceLang::Rust, "mix")],
+            ),
+            Module {
+                name: "lib".into(),
+                source_lang: SourceLang::Rust,
+                items: vec![Item::Function(Function {
+                    name: "mix".into(),
+                    params: vec![
+                        xpile_meta_hir::Param {
+                            name: "a".into(),
+                            ty: Type::I64,
+                            mutable: false,
+                        },
+                        xpile_meta_hir::Param {
+                            name: "b".into(),
+                            ty: Type::F64,
+                            mutable: false,
+                        },
+                        xpile_meta_hir::Param {
+                            name: "s".into(),
+                            ty: Type::Str,
+                            mutable: false,
+                        },
+                    ],
+                    return_type: Type::Bool,
+                    body: Block {
+                        stmts: Vec::new(),
+                        trailing_return: Expr::LitInt(0),
+                    },
+                })],
+                ffi_boundaries: Vec::new(),
+            },
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
+        let out = manifest.emit_rust_shims(&modules).expect("emits");
+        assert!(
+            out.contains("pub fn mix_shim(a: i64, b: f64, s: String) -> bool {"),
+            "{out}"
+        );
+        assert!(out.contains("mix(a, b, s)"), "{out}");
+    }
+
+    #[test]
+    fn emit_direct_shim_refuses_non_std_dep_type() {
+        // A Rust boundary returning BigInt: its native lowering needs the
+        // xpile_bigint dep the hybrid workspace does not pin, so the forwarder is
+        // refused with a named reason rather than emitting an unbuildable shim.
+        let mut modules = vec![
+            module(
+                "driver",
+                SourceLang::Python,
+                vec![boundary(SourceLang::Python, SourceLang::Rust, "big")],
+            ),
+            Module {
+                name: "lib".into(),
+                source_lang: SourceLang::Rust,
+                items: vec![Item::Function(Function {
+                    name: "big".into(),
+                    params: Vec::new(),
+                    return_type: Type::BigInt,
+                    body: Block {
+                        stmts: Vec::new(),
+                        trailing_return: Expr::LitInt(0),
+                    },
+                })],
+                ffi_boundaries: Vec::new(),
+            },
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
+        let err = manifest.emit_rust_shims(&modules).expect_err("refused");
+        assert!(err.to_string().contains("BigInt"), "{err}");
+        assert!(err.to_string().contains("big"), "{err}");
     }
 
     #[test]
