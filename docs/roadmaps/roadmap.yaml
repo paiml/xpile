@@ -11356,6 +11356,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-934
+  github_issue: null
+  item_type: task
+  title: 'PMAT-934: [correctness-hunt] the 2-arg fill form `s.ljust(w, c)` moved its receiver in codegen but `LJust` was missing from `str_method_moves_receiver`, so reusing the source string after the call failed rustc with E0382 (use-after-move) where CPython runs fine — an invalid-rust divergence; add `LJust` to the move-receiver set so the reused receiver is cloned'
+  status: done
+  priority: high
+  created: 2026-06-24T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (PMAT-900..933 all merged, sprint window 2026-06-23..07-02 still open). VARIES THE AXIS off the last slice (PMAT-933 hybrid agent-repair) back onto the prompt's preferred axis — a genuinely-open correctness-hunt python3-vs-rustc divergence found by a FRESH differential probe over string/format/set/comprehension constructs not recently tested. Found via `print(s.ljust(6, \".\")); print(s)`: CPython prints `ab....` then `ab`, but the transpiled Rust failed to compile (rustc E0382 borrow-of-moved-value `s`)."
+  - "ROOT CAUSE: the 2-arg fill form `s.ljust(w, c)` lowers to codegen that binds `let __s = (recv)` — a MOVE of the receiver into the emitted block — exactly like the already-covered `rjust`/`center`/`zfill`. But `str_method_moves_receiver` (depyler-frontend, PMAT-756) listed `RJust` and NOT `LJust`, so `clone_if_reused_non_copy` never fired and a reused non-Copy receiver moved-then-use-after-moved. The 1-arg form `s.ljust(w)` borrows via `format!(\"{:<1$}\", s, w)` and never needed the clone; the now-included clone is still gated on `read_count > 1` so single-use emission is byte-identical (no churn)."
+  - "FIX: one-line — add `StrMethodOp::LJust` to `str_method_moves_receiver`, making it symmetric with `RJust`. Reused receiver now emits `let __s = ((s).clone())`; the 4-method `str_pad` differential (zfill/center/ljust/rjust on one reused `s`) and the isolated `ljust(w,c)`+reuse cases all compile and byte-match CPython after the fix."
+  - "REGRESSION GUARDS: new e2e fixture `str_ljust_fill_reuse.py` + `str_ljust_fill_reuse` test (asserts the reused receiver clones and a single use stays bare, then rustc-runs against CPython-derived expected values 8/8/6/14); new differential-oracle fixture `oracle_fixtures/str_ljust_fill_reuse.py` (a printing `main()` the oracle compiles+runs and byte-compares to CPython — catches the divergence with NO hand-authored expected)."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors/0 warnings), cargo-deny advisories, `cargo test -p depyler-frontend` + `cargo test -p xpile` (e2e + oracle_differential). No new contract authored: `ljust` already cites C-XLATE-PY-STR-TO-RUST-STRING (the str contract) and no emitted-construct surface changes for already-correct code, so contract_citation_integrity is unaffected. Backlog correctness-hunt slice, sprint 2026-06-24."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-131
   github_issue: null
   item_type: task

@@ -17574,12 +17574,20 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
 /// after such a call (`len(s.zfill(8)) + len(s)`) is a use-after-move (rustc
 /// E0382), so the receiver is cloned when it's a reused non-Copy variable.
 /// Borrow-only methods (`.upper()`, `.startswith()`, …) keep the bare receiver.
+/// PMAT-934 (HUNT differential): `LJust` was missing here even though its
+/// codegen for the 2-arg fill form (`s.ljust(w, c)`) binds `let __s = (<recv>)`
+/// exactly like `RJust`/`Center` — so a reused receiver after a 2-arg `ljust`
+/// (`print(s.ljust(6, ".")); print(s)`) moved `s` and failed rustc with E0382,
+/// where CPython runs fine. The 1-arg form (`s.ljust(w)`) borrows via
+/// `format!("{:<1$}", s, w)` and never needed the clone; the over-broad clone is
+/// a no-op there (still gated on `read_count > 1`). Now symmetric with `RJust`.
 fn str_method_moves_receiver(op: StrMethodOp) -> bool {
     matches!(
         op,
         StrMethodOp::ZFill
             | StrMethodOp::Center
             | StrMethodOp::RJust
+            | StrMethodOp::LJust
             | StrMethodOp::RemovePrefix
             | StrMethodOp::RemoveSuffix
             | StrMethodOp::Count
