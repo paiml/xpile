@@ -4325,32 +4325,53 @@ impl Backend for RustBackend {
 // This mirrors the standalone-decy → C-C-INT-ARITH plan in
 // `sub/v0.2.0-decy-merger.md`; the contract substrate is queued.
 
-/// PMAT-909: the Rust integer width a C function is emitted at. C `int`
+/// PMAT-909/910: the Rust scalar width a C function is emitted at. C `int`
 /// (`Type::I64`) → `i32` (fixed-width, wrapping); C `long`/`int64_t`
-/// (`Type::CLong`) → `i64`. A single function is emitted at ONE width —
-/// "widest wins": if its return, any param, or any local is `CLong`, the
-/// whole function rides `i64` (value-preserving — `int` values fit in
-/// `i64`; the only difference is the overflow-wrap width, and widening
-/// never truncates). A pure-`int` function stays `i32`.
+/// (`Type::CLong`) → `i64`; C `double` (`Type::F64`) → `f64` (IEEE
+/// arithmetic, no wrapping). A single function is emitted at ONE width —
+/// "widest wins" with precedence `f64 > i64 > i32`: if its return, any
+/// param, or any local is `F64`, the whole function rides `f64`; else if
+/// any is `CLong`, it rides `i64`; else `i32`. For the integer widths this
+/// is value-preserving (int fits in i64, only the wrap width changes). The
+/// float case targets the uniformly-`double` C functions decy currently
+/// produces; a mixed int/double function (C usual-arithmetic promotion) is
+/// a deferred edge — decy has no fixture for one yet.
 #[derive(Clone, Copy)]
 struct CWidth {
     rust_ty: &'static str,
     lit_suffix: &'static str,
+    /// `true` for the `f64` width: arithmetic is plain infix IEEE
+    /// (`+ - * / %`), NOT the integer `wrapping_*` methods, and unary
+    /// minus is `-(x)` not `wrapping_neg`.
+    is_float: bool,
 }
 
 const C_WIDTH_I32: CWidth = CWidth {
     rust_ty: "i32",
     lit_suffix: "i32",
+    is_float: false,
 };
 const C_WIDTH_I64: CWidth = CWidth {
     rust_ty: "i64",
     lit_suffix: "i64",
+    is_float: false,
+};
+const C_WIDTH_F64: CWidth = CWidth {
+    rust_ty: "f64",
+    lit_suffix: "f64",
+    is_float: true,
 };
 
 fn c_function_width(f: &Function) -> CWidth {
+    let any_f64 = matches!(f.return_type, Type::F64)
+        || f.params.iter().any(|p| matches!(p.ty, Type::F64))
+        || c_stmts_have_ty(&f.body.stmts, &Type::F64);
+    if any_f64 {
+        return C_WIDTH_F64;
+    }
     let any_clong = matches!(f.return_type, Type::CLong)
         || f.params.iter().any(|p| matches!(p.ty, Type::CLong))
-        || c_stmts_have_clong(&f.body.stmts);
+        || c_stmts_have_ty(&f.body.stmts, &Type::CLong);
     if any_clong {
         C_WIDTH_I64
     } else {
@@ -4358,24 +4379,37 @@ fn c_function_width(f: &Function) -> CWidth {
     }
 }
 
-fn c_stmts_have_clong(stmts: &[Stmt]) -> bool {
+/// Does any `let` in `stmts` (recursing into `while`/`if` bodies) declare a
+/// local of type `want`? Drives the PMAT-909/910 "widest wins" width pick.
+fn c_stmts_have_ty(stmts: &[Stmt], want: &Type) -> bool {
     stmts.iter().any(|s| match s {
-        Stmt::Let { ty, .. } => matches!(ty, Type::CLong),
-        Stmt::While { body, .. } => c_stmts_have_clong(body),
+        Stmt::Let { ty, .. } => ty == want,
+        Stmt::While { body, .. } => c_stmts_have_ty(body, want),
         Stmt::If {
             then_body,
             else_body,
             ..
-        } => c_stmts_have_clong(then_body) || c_stmts_have_clong(else_body),
+        } => c_stmts_have_ty(then_body, want) || c_stmts_have_ty(else_body, want),
         _ => false,
     })
 }
 
 fn emit_c_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
-    // Forward-reference citation (substrate queued, same posture as the
-    // dict lane citing C-XLATE-PY-DICT-TO-HASHMAP before it existed).
-    writeln!(out, "// xpile-contract: C-C-INT-ARITH")?;
     let w = c_function_width(f);
+    if w.is_float {
+        // PMAT-910: a C `double` function uses IEEE f64 arithmetic, NOT the
+        // two's-complement wrapping `C-C-INT-ARITH` models. Its governing
+        // contract (C-C-FLOAT-ARITH) is a queued R6 head — deliberately NOT
+        // emitted as a `// xpile-contract:` line so the citation-integrity
+        // gate (PMAT-475) never sees a phantom id. Plain comment only.
+        writeln!(
+            out,
+            "// xpile-arith: C double -> IEEE f64 (C-C-FLOAT-ARITH queued, uncited)"
+        )?;
+    } else {
+        // C int/long arithmetic is governed by the on-disk C-C-INT-ARITH.
+        writeln!(out, "// xpile-contract: C-C-INT-ARITH")?;
+    }
     write!(out, "pub fn {}(", f.name)?;
     for (i, p) in f.params.iter().enumerate() {
         if i > 0 {
@@ -4465,15 +4499,25 @@ fn emit_c_stmt(out: &mut String, stmt: &Stmt, indent: &str, w: CWidth) -> Result
 
 fn emit_c_expr(out: &mut String, e: &Expr, w: CWidth) -> Result<(), CodegenError> {
     match e {
-        // PMAT-909: the literal suffix tracks the function width (`i32`
-        // for C `int`, `i64` for `long`/`int64_t`) so a wider-int body
-        // is internally type-consistent.
+        // PMAT-909/910: the literal suffix tracks the function width (`i32`
+        // for C `int`, `i64` for `long`/`int64_t`, `f64` for `double`) so
+        // the body is internally type-consistent. An int literal in a
+        // float-width function emits as `<v>f64` (valid Rust, e.g. `2f64`).
         Expr::LitInt(v) => write!(out, "{v}{}", w.lit_suffix)?,
+        // PMAT-910: a C float literal renders as a Rust f64 literal. `{}`
+        // of a whole-valued f64 (`2.0`) prints `2`, so suffix with `f64`.
+        Expr::LitFloat(v) => write!(out, "{v}f64")?,
         Expr::Ident(name) => write!(out, "{name}")?,
         Expr::BinOp { op, lhs, rhs } => emit_c_binop(out, *op, lhs, rhs, w)?,
         Expr::UnOp { op, operand } => match op {
             // C unary minus on `int` is wrapping (INT_MIN negation is UB
             // in C; `wrapping_neg` is the sound deterministic discharge).
+            // PMAT-910: on `double` it is plain IEEE negation `-(x)`.
+            UnOp::Neg if w.is_float => {
+                write!(out, "-(")?;
+                emit_c_expr(out, operand, w)?;
+                write!(out, ")")?;
+            }
             UnOp::Neg => {
                 write!(out, "(")?;
                 emit_c_expr(out, operand, w)?;
@@ -4552,6 +4596,15 @@ fn emit_c_binop(
         Ok(())
     };
     match op {
+        // PMAT-910: on the `double` width, C arithmetic is plain IEEE
+        // infix (`+ - * /`) — f64 has no `wrapping_*` and never wraps. C
+        // double `/` is true division (Rust f64 `/` matches); `%` on
+        // doubles is not valid C, but if it appears f64 `%` is fmod-like.
+        BinOp::Add if w.is_float => infix(out, "+")?,
+        BinOp::Sub if w.is_float => infix(out, "-")?,
+        BinOp::Mul if w.is_float => infix(out, "*")?,
+        BinOp::FloorDiv if w.is_float => infix(out, "/")?,
+        BinOp::Mod if w.is_float => infix(out, "%")?,
         BinOp::Add => wrapping(out, "wrapping_add")?,
         BinOp::Sub => wrapping(out, "wrapping_sub")?,
         BinOp::Mul => wrapping(out, "wrapping_mul")?,
@@ -4818,6 +4871,66 @@ mod tests {
         assert!(
             !rust.contains("i64"),
             "no i64 widening for a pure-int fn: {rust}"
+        );
+    }
+
+    #[test]
+    fn c_emit_double_function_rides_f64() {
+        // PMAT-910: a `double`-typed C function emits at f64 width — f64
+        // signature, IEEE infix arithmetic (NOT wrapping_*), f64 literals.
+        let scale = Function {
+            name: "scale".into(),
+            params: vec![Param {
+                name: "x".into(),
+                ty: Type::F64,
+                mutable: false,
+            }],
+            return_type: Type::F64,
+            body: Block {
+                stmts: vec![Stmt::Let {
+                    name: "y".into(),
+                    ty: Type::F64,
+                    value: Expr::BinOp {
+                        op: BinOp::Mul,
+                        lhs: Box::new(Expr::Ident("x".into())),
+                        rhs: Box::new(Expr::LitFloat(2.0)),
+                    },
+                    mutable: false,
+                }],
+                trailing_return: Expr::BinOp {
+                    op: BinOp::Add,
+                    lhs: Box::new(Expr::Ident("y".into())),
+                    rhs: Box::new(Expr::LitFloat(0.5)),
+                },
+            },
+        };
+        let rust = emit_module(&c_module("s", scale)).expect("emit ok");
+        assert!(
+            rust.contains("pub fn scale(x: f64) -> f64"),
+            "double C fn must ride f64 width: {rust}"
+        );
+        assert!(rust.contains("let y: f64 ="), "double local is f64: {rust}");
+        assert!(rust.contains("2f64"), "f64 literal suffix: {rust}");
+        assert!(rust.contains("0.5f64"), "fractional f64 literal: {rust}");
+        // IEEE infix, NOT integer wrapping.
+        assert!(
+            rust.contains("x * 2f64") && rust.contains("y + 0.5f64"),
+            "float arithmetic is plain infix: {rust}"
+        );
+        assert!(
+            !rust.contains("wrapping_"),
+            "no integer wrapping in an f64 fn: {rust}"
+        );
+        assert!(
+            !rust.contains("i32") && !rust.contains("i64"),
+            "no int width leak: {rust}"
+        );
+        // PMAT-910 honesty: a double fn obeys IEEE semantics, not the
+        // int-wrapping C-C-INT-ARITH — so it must cite NO contract (and
+        // never emit a phantom `// xpile-contract:` id for the gate).
+        assert!(
+            !rust.contains("// xpile-contract:"),
+            "double fn must emit no contract citation (C-C-FLOAT-ARITH queued): {rust}"
         );
     }
 }

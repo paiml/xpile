@@ -307,10 +307,13 @@ impl FfiManifest {
             out.push_str("// ABI note: C `int` lowers to meta-HIR Type::I64 -> c_int (32-bit),\n");
             out.push_str("//   while `long`/`int64_t` lower to the distinct Type::CLong width\n");
             out.push_str(
-                "//   -> c_longlong (64-bit), not narrowed to c_int (PMAT-909). Float /\n",
+                "//   -> c_longlong (64-bit), not narrowed to c_int (PMAT-909), and `double`\n",
             );
             out.push_str(
-                "//   pointer / string ABI tokens are the remaining decy lexer ceiling.\n",
+                "//   -> Type::F64 -> c_double (64-bit, PMAT-910). C `float` (32-bit c_float),\n",
+            );
+            out.push_str(
+                "//   pointer, and string ABI tokens are the remaining decy lexer ceiling.\n",
             );
         }
         out.push_str("#![allow(dead_code)]\n");
@@ -709,14 +712,17 @@ pub fn defining_function<'a>(modules: &'a [Module], entry: &FfiEntry) -> Option<
 /// Returns `None` for types the first cut refuses (pointer/string/container/
 /// struct) rather than mis-marshal.
 ///
-/// DECY-FIDELITY CEILING (PMAT-909 partial lift): decy models C `int` (a
+/// DECY-FIDELITY CEILING (PMAT-909/910 partial lift): decy models C `int` (a
 /// 32-bit type) as `Type::I64`, so `I64 → c_int` keeps that boundary
 /// 32-bit-honest. A genuine C `long`/`int64_t` now parses to the DISTINCT
 /// `Type::CLong` width (decy-frontend, PMAT-909) and maps to `c_longlong` —
-/// no longer narrowed to `c_int`. The remaining ceiling is float/pointer/
-/// string ABI tokens (decy's lexer still lacks them). `Bool → c_int` is a
-/// lossy forward guard (decy never produces `Bool`); `Type::Unit` is handled
-/// at the return position.
+/// no longer narrowed to `c_int`. C `double` parses to `Type::F64` and maps
+/// to `c_double` (PMAT-910), the FFI boundary having been F64-ready ahead of
+/// the decy lexer. The remaining ceiling is C `float` (32-bit, `c_float`) and
+/// pointer/string ABI tokens (decy's lexer still lacks them — and `float` is
+/// deliberately rejected rather than narrowed through the c_double slot).
+/// `Bool → c_int` is a lossy forward guard (decy never produces `Bool`);
+/// `Type::Unit` is handled at the return position.
 fn c_abi_type(ty: &Type) -> Option<&'static str> {
     match ty {
         Type::I64 | Type::Bool => Some("::std::os::raw::c_int"),
