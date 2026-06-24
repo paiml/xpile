@@ -4414,12 +4414,15 @@ fn c_stmts_have_ty(stmts: &[Stmt], want: &Type) -> bool {
 fn emit_c_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
     let w = c_function_width(f);
     if w.is_float {
-        // PMAT-910/911: a C `double`/`float` function uses IEEE f64/f32
+        // PMAT-912: a C `double`/`float` function obeys IEEE f64/f32
         // arithmetic, NOT the two's-complement wrapping `C-C-INT-ARITH`
-        // models. Its governing contract (C-C-FLOAT-ARITH) is a queued R6
-        // head — deliberately NOT emitted as a `// xpile-contract:` line so
-        // the citation-integrity gate (PMAT-475) never sees a phantom id.
-        // Plain comment only, width-named.
+        // models — so it cites its OWN on-disk contract, `C-C-FLOAT-ARITH`
+        // (authored PMAT-912; structure-extensionality Diamonds, the float
+        // sibling of C-C-INT-ARITH). PMAT-910/911 emitted an UNCITED
+        // placeholder here precisely because no on-disk contract existed to
+        // cite without minting a phantom id for the PMAT-475 gate; with the
+        // YAML now on disk, the width-named note documents the IEEE width and
+        // the `// xpile-contract:` line is what the gate resolves.
         let c_name = if w.rust_ty == "f32" {
             "float"
         } else {
@@ -4427,9 +4430,10 @@ fn emit_c_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
         };
         writeln!(
             out,
-            "// xpile-arith: C {c_name} -> IEEE {} (C-C-FLOAT-ARITH queued, uncited)",
+            "// xpile-arith: C {c_name} -> IEEE {} (governed by C-C-FLOAT-ARITH)",
             w.rust_ty
         )?;
+        writeln!(out, "// xpile-contract: C-C-FLOAT-ARITH")?;
     } else {
         // C int/long arithmetic is governed by the on-disk C-C-INT-ARITH.
         writeln!(out, "// xpile-contract: C-C-INT-ARITH")?;
@@ -4956,12 +4960,17 @@ mod tests {
             !rust.contains("i32") && !rust.contains("i64"),
             "no int width leak: {rust}"
         );
-        // PMAT-910 honesty: a double fn obeys IEEE semantics, not the
-        // int-wrapping C-C-INT-ARITH — so it must cite NO contract (and
-        // never emit a phantom `// xpile-contract:` id for the gate).
+        // PMAT-912 citation honesty: a double fn obeys IEEE semantics, not the
+        // int-wrapping C-C-INT-ARITH — so it cites its OWN on-disk contract,
+        // C-C-FLOAT-ARITH (NOT C-C-INT-ARITH, and never a phantom id). The
+        // PMAT-475 gate resolves this line to contracts/c-c-float-arith-v1.yaml.
         assert!(
-            !rust.contains("// xpile-contract:"),
-            "double fn must emit no contract citation (C-C-FLOAT-ARITH queued): {rust}"
+            rust.contains("// xpile-contract: C-C-FLOAT-ARITH"),
+            "double fn must cite C-C-FLOAT-ARITH: {rust}"
+        );
+        assert!(
+            !rust.contains("// xpile-contract: C-C-INT-ARITH"),
+            "double fn must NOT cite the int-arith contract: {rust}"
         );
     }
 
@@ -5024,11 +5033,16 @@ mod tests {
             rust.contains("C float -> IEEE f32"),
             "arith comment names the f32 width: {rust}"
         );
-        // Same citation honesty as double: C-C-FLOAT-ARITH is queued, so a
-        // float fn cites NO contract (no phantom id for the gate).
+        // Same citation honesty as double (PMAT-912): a float fn cites its OWN
+        // on-disk contract C-C-FLOAT-ARITH — resolves to contracts/, never the
+        // int-arith contract, never a phantom id.
         assert!(
-            !rust.contains("// xpile-contract:"),
-            "float fn must emit no contract citation (C-C-FLOAT-ARITH queued): {rust}"
+            rust.contains("// xpile-contract: C-C-FLOAT-ARITH"),
+            "float fn must cite C-C-FLOAT-ARITH: {rust}"
+        );
+        assert!(
+            !rust.contains("// xpile-contract: C-C-INT-ARITH"),
+            "float fn must NOT cite the int-arith contract: {rust}"
         );
     }
 }

@@ -66,5 +66,10 @@ lean_lib «XpileContractsPilot» where
     -- pilot at depth-1 — a core-only, import-free STRUCTURE EXTENSIONALITY proof
     -- (same shape as PyFloatArith), machine-checked here so the contract's
     -- depth-1 Diamond is not a string claim.
-    `FfiShellSubprocess          -- C-FFI-SHELL-SUBPROCESS       (PMAT-907)
+    `FfiShellSubprocess,         -- C-FFI-SHELL-SUBPROCESS       (PMAT-907)
+    -- PMAT-912 (backlog slice): the new C-float arithmetic contract joins the
+    -- pilot at depth-1 — core-only STRUCTURE EXTENSIONALITY with TWO bit-width
+    -- models (binary32 c_float + binary64 c_double) + an ABI-distinctness lemma,
+    -- same shape as PyFloatArith. Discharges the citation PMAT-910/911 deferred.
+    `CFloatArith                 -- C-C-FLOAT-ARITH              (PMAT-912)
   ]
