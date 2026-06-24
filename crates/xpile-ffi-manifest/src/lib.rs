@@ -255,7 +255,8 @@ impl FfiManifest {
     ///   - **C** → a real `extern "C"` foreign declaration + a safe `*_shim`
     ///     wrapper confining `unsafe`, citing `C-FFI-CPYTHON-EXT`.
     ///   - **Shell** → a real `std::process::Command`-based wrapper (shell speaks
-    ///     argv + exit codes — no C ABI, no `unsafe`).
+    ///     argv + exit codes — no C ABI, no `unsafe`), citing
+    ///     `C-FFI-SHELL-SUBPROCESS`.
     ///   - **Ruchy / Rust** → a real same-crate direct-call forwarder (both lower
     ///     to native Rust in the same crate — a plain in-crate call, no `unsafe`,
     ///     no `extern`). Four of six arms are now real (C, Shell, Ruchy, Rust).
@@ -533,9 +534,10 @@ fn emit_c_shim(entry: &FfiEntry, f: &Function) -> Result<ShimPart, Vec<String>> 
 /// exit code — exactly `std::process::Command`'s model — so the shim is a safe,
 /// `unsafe`-free wrapper that runs the transpiled POSIX symbol as a subprocess
 /// (the bashrs lane emits the script; this is the calling site that crosses into
-/// it). No `extern "C"` block: shell is not a C-ABI callee. Capability-ahead-of-
-/// contract — a `C-FFI-SHELL-SUBPROCESS` substrate is queued, so `contract` is
-/// `None` today (mirroring how `f64` shipped before `C-PY-FLOAT-ARITH`).
+/// it). No `extern "C"` block: shell is not a C-ABI callee. Cites
+/// `C-FFI-SHELL-SUBPROCESS` (PMAT-907) — the argv-passthrough + exit-code-
+/// propagation contract governing this strategy, the calling-site companion of
+/// `C-BASHRS-POSIX-IDEMPOTENCE` (which governs the emitted shell *script*).
 fn emit_shell_shim(entry: &FfiEntry) -> ShimPart {
     let wrapper = format!(
         "/// Shell boundary `{0}` — runs the transpiled POSIX symbol as a subprocess.\n/// Shell speaks argv + exit codes, so the shim takes `&[&str]` args and returns\n/// the captured `Output` (no `unsafe`, no C ABI).\npub fn {0}_shim(args: &[&str]) -> ::std::io::Result<::std::process::Output> {{\n    ::std::process::Command::new(\"{0}\").args(args).output()\n}}\n",
@@ -544,7 +546,7 @@ fn emit_shell_shim(entry: &FfiEntry) -> ShimPart {
     ShimPart {
         extern_decl: None,
         wrapper,
-        contract: None,
+        contract: Some("C-FFI-SHELL-SUBPROCESS"),
     }
 }
 
@@ -1017,6 +1019,13 @@ mod tests {
         assert!(
             !out.contains("extern \"C\""),
             "shell is not a C-ABI callee: {out}"
+        );
+        // PMAT-907: the shell shim now cites its governing contract — the
+        // argv-passthrough + exit-code-propagation strategy is no longer
+        // capability-ahead-of-contract.
+        assert!(
+            out.contains("// xpile-contract: C-FFI-SHELL-SUBPROCESS"),
+            "shell shim must cite C-FFI-SHELL-SUBPROCESS: {out}"
         );
         assert!(
             rustc_lib_compiles("shell", &out),
