@@ -7,6 +7,47 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.601] — 2026-06-24
+
+Sprint Day-4/Day-5 **provability** rollup: the Lean proof lane goes from a
+`grep sorry` claim to a machine-checked `lake build`, and the first real
+elaboration-error debt is discharged. Rolls up PMAT-903 + PMAT-904 since
+v0.1.600.
+
+### Added
+
+- **PMAT-903 (Sprint Day 4) — machine-checked Lean proof lane.**
+  `contracts/lean/lakefile.lean` + a pinned `lean-toolchain`
+  (`leanprover/lean4:v4.15.0`) turn the proof lane into a **separate advisory
+  CI `lake build` job** (mirrors the kani posture — never folded into the
+  blocking publish gate, so Lean/Mathlib weight cannot stall the fast gate or
+  the crates.io window). `warningAsError := true`, so a real `sorry`
+  (→ `sorryAx`) cannot survive a green build. Ground-truth correction: the
+  long-quoted "6 `sorry` across 5 files / ~34 axiom lines" debt was a
+  naive-`grep` artifact — **zero** `sorry` tactics, **zero** `axiom`
+  declarations, **zero** `import`s tree-wide (the hits are docstring prose + a
+  `ProofStubReason.sorry` *constructor*). `PROVABILITY-INVENTORY.md` enumerates
+  the honest state; the real debt is non-elaborating modules.
+
+- **PMAT-904 (Sprint Day 5) — discharge the two cheapest real elaboration
+  errors; pilot 9 → 11.** Reframed by PMAT-903's ground truth (no sorries to
+  discharge — discharge *elaboration errors*):
+  - `XpileBackendTrait` — `target_enum_completeness_diamond` used the
+    Mathlib-only `tauto` tactic; with no `import Mathlib` it was an unknown
+    tactic. Replaced with core `decide` (each post-`cases t` goal is a
+    decidable disjunction over the `Target` enum).
+  - `XpileContractFrontendTrait` — `[0]!` needed `Inhabited EquationsBlock`
+    (added to the `deriving` clause); `frame_safety_transitive_platinum`'s
+    `rw [t1.property, …]` couldn't see through the `before`/`after` `def`s, so
+    it is re-proved as a defeq `calc`.
+
+  Both re-added to the `lakefile.lean` roots; `lake build` is **green at 11
+  modules**, known-incomplete 11 → 9 (termination-led). New `lean_pilot_roots.rs`
+  is a *lean-free* Rust regression guard that pins the lakefile roots + the
+  inventory PILOT count in sync, so the blocking `workspace-test` gate (no
+  `lean` in PATH) catches a pilot regression the advisory Lean job would
+  otherwise catch alone.
+
 ## [0.1.600] — 2026-06-24
 
 The 10-day autonomous sprint's **north star, executed.** This release rolls up
