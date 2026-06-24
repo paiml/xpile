@@ -1317,6 +1317,21 @@ pub enum Type {
     /// methods are the exact C semantics. Governed by the same on-disk
     /// `C-C-INT-ARITH` (the two's-complement modular-arithmetic family).
     CUInt,
+    /// A C `unsigned long` / `unsigned long long` / `uint64_t` — a 64-bit
+    /// UNSIGNED integer modeled DISTINCTLY from both the 32-bit-unsigned
+    /// [`Type::CUInt`] (PMAT-918) and the 64-bit-SIGNED [`Type::CLong`]
+    /// (PMAT-909) (PMAT-921). It is the 64-bit dual of `CUInt` exactly as
+    /// `CLong` is the 64-bit dual of the 32-bit-signed-`int`-backed `I64`.
+    /// decy-frontend produces it for `unsigned long` / `unsigned long long` /
+    /// `uint64_t` declarations; the FFI manifest maps it to the UNSIGNED
+    /// `c_ulonglong` ABI slot (NEVER the signed `c_longlong` — a value ≥ 2⁶³
+    /// would otherwise be reinterpreted as negative at the boundary — and
+    /// NEVER the 32-bit `c_uint`, which would truncate), and the Rust/Ruchy
+    /// backends render it as `u64` (Lean: `Nat`, the non-negative shape).
+    /// Like `CUInt`, unsigned arithmetic is DEFINED-MODULAR by the C standard
+    /// (not overflow UB), so the `u64` C-emit path's `wrapping_*` methods are
+    /// the exact C semantics. Governed by the same on-disk `C-C-INT-ARITH`.
+    CULong,
     /// Boolean — produced by comparison ops in [`Expr::BinOp`].
     Bool,
     /// IEEE-754 double — Python `float`. PMAT-477 (R8). Rust/Ruchy emit
