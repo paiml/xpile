@@ -7,6 +7,53 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.600] — 2026-06-24
+
+The 10-day autonomous sprint's **north star, executed.** This release rolls up
+the hybrid Phase-3/4/5 series (PMAT-899..902) that landed since v0.1.597 and
+culminates in the first *executing, differentially-checked* hybrid artifact.
+
+### Added
+
+- **PMAT-902 (Sprint Day 3 — NORTH STAR) — `xpile hybrid <dir> --verify`.**
+  Converts the static dispatch+reconcile+emit pipeline into an *executing oracle
+  on the C path*. The `hybrid_sum` fixture is now semantically real (`_core.c`
+  → `square_sum(x) = x*x`; `app.py` `main()` prints `square_sum(7)`). `--verify`
+  runs Phase 3 (capture the CPython reference: cc-compile the C source to a
+  shared object, bind each boundary symbol via `ctypes` — the exact CPython
+  C-extension call mechanism — and run the original `main()` under `python3`) +
+  Phase 5 (emit the workspace, `cargo build`, run the linked C+shim binary) and
+  byte-compares the two stdouts. `49 == 49` → **✓ MATCH, exit 0**: two host
+  languages (`Rust→shim→extern "C"→linked C` and `CPython→ctypes→linked C`)
+  calling one cc-compiled `square_sum` agree — proving the emitted FFI shim is
+  ABI-faithful, not merely that the workspace links. New
+  `xpile_oracle::capture_cpython_hybrid_ref` + `CtypesBinding`;
+  `emit_hybrid_workspace` now emits `use ffi_shims::<sym>_shim as <sym>;` aliases
+  so lowered boundary calls resolve to the shims; `defining_function` made `pub`.
+  `cc`/`python3`/`cargo` graceful-skip. `hybrid_verify.rs` e2e golden-lock
+  (MATCH on `"49"`) + an `xpile-oracle` ctypes unit test.
+
+- **PMAT-901 (Sprint Day 2 — Phase 5a) — `emit_hybrid_workspace`.** Emits a
+  self-contained, buildable Cargo workspace for a hybrid module: `Cargo.toml`,
+  a `build.rs` that cc-compiles each `csrc/*.c` and links it, the C sources
+  verbatim, the reconciled `unsafe extern "C"` shims, and the non-C modules
+  lowered to Rust. `xpile hybrid --emit-workspace <dir>` produces a dir that
+  `cargo build` compiles + links and whose binary runs. cc+cargo-gated
+  integration test.
+
+- **PMAT-900 (Sprint Day 1 — Phase 3) — `CExtensionOracle`.** The cc-compiled C
+  reference oracle: given a dispatched C source + an integer-vector fixture,
+  generate a driver, `cc`-compile, run per input, return the captured outputs —
+  the differential reference for the executed C+shim artifact. `cc`-presence
+  graceful-skip mirroring `PythonOracle::available()`.
+
+- **PMAT-899 (Sprint Day 1 — Phase 4) — `xpile hybrid --emit-shims`.** Lowers
+  the reconciled manifest to a per-paradigm Rust FFI shim file (real
+  `unsafe extern "C"` for C, a `Command` wrapper for Shell, a mechanism-named
+  gap for the rest), all-or-nothing so a half-shimmed hybrid build never reaches
+  disk. Sprint roadmap registration (PMAT-899..909) cleared the pre-commit
+  roadmap-completeness warning.
+
 ## [0.1.597] — 2026-06-23
 
 ### Added
