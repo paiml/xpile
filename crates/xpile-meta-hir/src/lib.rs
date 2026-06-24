@@ -1303,6 +1303,20 @@ pub enum Type {
     /// (both ride an `i64` native wrapper) — the only distinction is the C
     /// ABI width preserved at a foreign boundary.
     CLong,
+    /// A C `unsigned` / `unsigned int` / `uint32_t` — a 32-bit UNSIGNED
+    /// integer modeled DISTINCTLY from the signed-`int`-backed [`Type::I64`]
+    /// (PMAT-918), exactly as [`Type::CLong`] is kept apart from `I64` for the
+    /// 64-bit width and [`Type::F32`] from [`Type::F64`] for the float widths.
+    /// decy-frontend produces it for `unsigned` / `unsigned int` / `uint32_t`
+    /// declarations; the FFI manifest maps it to the UNSIGNED `c_uint` ABI slot
+    /// (NEVER the signed `c_int` — a value ≥ 2³¹ would otherwise be
+    /// reinterpreted as negative at the boundary), and the Rust/Ruchy backends
+    /// render it as `u32` (Lean: `Nat`, the non-negative shape). Unlike the
+    /// signed C widths, unsigned arithmetic is DEFINED-MODULAR by the C
+    /// standard (not overflow UB), so the `u32` C-emit path's `wrapping_*`
+    /// methods are the exact C semantics. Governed by the same on-disk
+    /// `C-C-INT-ARITH` (the two's-complement modular-arithmetic family).
+    CUInt,
     /// Boolean — produced by comparison ops in [`Expr::BinOp`].
     Bool,
     /// IEEE-754 double — Python `float`. PMAT-477 (R8). Rust/Ruchy emit

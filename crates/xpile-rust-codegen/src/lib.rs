@@ -1392,6 +1392,10 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
         // rendered as Rust `i64` (value-compatible with I64; the C ABI
         // distinction lives in xpile-ffi-manifest's `c_abi_type`).
         Type::CLong => out.push_str("i64"),
+        // PMAT-918: a C `unsigned`/`uint32_t` — a distinct 32-bit UNSIGNED
+        // width, rendered as Rust `u32` (the C ABI distinction lives in
+        // `c_abi_type` -> c_uint; the signedness is preserved end to end).
+        Type::CUInt => out.push_str("u32"),
         // PMAT-477 (R8): Python `float` → Rust `f64`.
         Type::F64 => out.push_str("f64"),
         // PMAT-911: a C `float` — a distinct 32-bit-ABI width, rendered as
@@ -4328,18 +4332,22 @@ impl Backend for RustBackend {
 // This mirrors the standalone-decy → C-C-INT-ARITH plan in
 // `sub/v0.2.0-decy-merger.md`; the contract substrate is queued.
 
-/// PMAT-909/910/911: the Rust scalar width a C function is emitted at. C `int`
-/// (`Type::I64`) → `i32` (fixed-width, wrapping); C `long`/`int64_t`
-/// (`Type::CLong`) → `i64`; C `double` (`Type::F64`) → `f64` and C `float`
-/// (`Type::F32`) → `f32` (both IEEE arithmetic, no wrapping). A single
-/// function is emitted at ONE width — "widest wins" with precedence
-/// `f64 > f32 > i64 > i32`: if its return, any param, or any local is `F64`
-/// the whole function rides `f64`; else if any is `F32` it rides `f32`; else
-/// if any is `CLong` it rides `i64`; else `i32`. For the integer widths this
-/// is value-preserving (int fits in i64, only the wrap width changes). The
-/// float cases target the uniformly-`double` / uniformly-`float` C functions
-/// decy currently produces; a mixed-width function (C usual-arithmetic
-/// promotion) is a deferred edge — decy has no fixture for one yet.
+/// PMAT-909/910/911/918: the Rust scalar width a C function is emitted at. C
+/// `int` (`Type::I64`) → `i32` (fixed-width, wrapping); C `long`/`int64_t`
+/// (`Type::CLong`) → `i64`; C `unsigned`/`uint32_t` (`Type::CUInt`) → `u32`
+/// (fixed-width, DEFINED-modular wrapping — unsigned overflow is specified, not
+/// UB); C `double` (`Type::F64`) → `f64` and C `float` (`Type::F32`) → `f32`
+/// (both IEEE arithmetic, no wrapping). A single function is emitted at ONE
+/// width — "widest wins" with precedence `f64 > f32 > u32 > i64 > i32`: if its
+/// return, any param, or any local is `F64` the whole function rides `f64`;
+/// else if any is `F32` it rides `f32`; else if any is `CUInt` it rides `u32`;
+/// else if any is `CLong` it rides `i64`; else `i32`. For the signed integer
+/// widths this is value-preserving (int fits in i64, only the wrap width
+/// changes); `u32` is signedness-distinct and decy produces uniformly-unsigned
+/// functions for it. The float cases target the uniformly-`double` /
+/// uniformly-`float` C functions decy currently produces; a mixed-width
+/// function (C usual-arithmetic promotion) is a deferred edge — decy has no
+/// fixture for one yet.
 #[derive(Clone, Copy)]
 struct CWidth {
     rust_ty: &'static str,
@@ -4370,6 +4378,15 @@ const C_WIDTH_F32: CWidth = CWidth {
     lit_suffix: "f32",
     is_float: true,
 };
+// PMAT-918: a C `unsigned`/`uint32_t` function rides `u32`. Like the signed
+// integer widths it is NOT a float (arithmetic is the `wrapping_*` methods),
+// but here wrapping is the DEFINED C semantics for unsigned overflow — not the
+// UB-conservative discharge the signed `i32`/`i64` widths use.
+const C_WIDTH_U32: CWidth = CWidth {
+    rust_ty: "u32",
+    lit_suffix: "u32",
+    is_float: false,
+};
 
 fn c_function_width(f: &Function) -> CWidth {
     let any_f64 = matches!(f.return_type, Type::F64)
@@ -4385,6 +4402,15 @@ fn c_function_width(f: &Function) -> CWidth {
         || c_stmts_have_ty(&f.body.stmts, &Type::F32);
     if any_f32 {
         return C_WIDTH_F32;
+    }
+    // PMAT-918: an `unsigned`/`uint32_t` function rides `u32` (signedness-
+    // distinct from the signed integer widths; decy produces uniform-width
+    // functions, so a CUInt presence keys the whole function unsigned).
+    let any_cuint = matches!(f.return_type, Type::CUInt)
+        || f.params.iter().any(|p| matches!(p.ty, Type::CUInt))
+        || c_stmts_have_ty(&f.body.stmts, &Type::CUInt);
+    if any_cuint {
+        return C_WIDTH_U32;
     }
     let any_clong = matches!(f.return_type, Type::CLong)
         || f.params.iter().any(|p| matches!(p.ty, Type::CLong))
@@ -4893,6 +4919,62 @@ mod tests {
         assert!(rust.contains("1i64"), "literal suffix tracks width: {rust}");
         assert!(rust.contains("wrapping_add"), "C arithmetic stays wrapping");
         assert!(!rust.contains("i32"), "no i32 leaks into a long fn: {rust}");
+    }
+
+    #[test]
+    fn c_emit_unsigned_function_rides_u32_modular_width() {
+        // PMAT-918: an `unsigned`-typed C function emits at u32 width — u32
+        // signature, u32-suffixed literals, and `wrapping_*` arithmetic (which
+        // for u32 is the DEFINED modular C semantics, not a UB discharge). It
+        // cites C-C-INT-ARITH (the modular-arithmetic family) and leaks no
+        // signed-int type.
+        let uwrap = Function {
+            name: "uwrap".into(),
+            params: vec![Param {
+                name: "x".into(),
+                ty: Type::CUInt,
+                mutable: false,
+            }],
+            return_type: Type::CUInt,
+            body: Block {
+                stmts: vec![Stmt::Let {
+                    name: "acc".into(),
+                    ty: Type::CUInt,
+                    value: Expr::BinOp {
+                        op: BinOp::Add,
+                        lhs: Box::new(Expr::Ident("x".into())),
+                        rhs: Box::new(Expr::LitInt(1)),
+                    },
+                    mutable: false,
+                }],
+                trailing_return: Expr::Ident("acc".into()),
+            },
+        };
+        let rust = emit_module(&c_module("u", uwrap)).expect("emit ok");
+        assert!(
+            rust.contains("pub fn uwrap(x: u32) -> u32"),
+            "unsigned C fn must ride u32 width: {rust}"
+        );
+        assert!(
+            rust.contains("let acc: u32 ="),
+            "unsigned local is u32: {rust}"
+        );
+        assert!(
+            rust.contains("1u32"),
+            "literal suffix tracks the u32 width: {rust}"
+        );
+        assert!(
+            rust.contains("wrapping_add"),
+            "unsigned C arithmetic is the DEFINED-modular wrapping_*: {rust}"
+        );
+        assert!(
+            rust.contains("// xpile-contract: C-C-INT-ARITH"),
+            "unsigned C fn cites the modular-arithmetic contract: {rust}"
+        );
+        assert!(
+            !rust.contains("i32") && !rust.contains("i64"),
+            "no signed-int type leaks into an unsigned fn: {rust}"
+        );
     }
 
     #[test]

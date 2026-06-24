@@ -1141,6 +1141,10 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
         // PMAT-909: a C `long`/`int64_t` (distinct 64-bit-ABI width) → `i64`
         // (Ruchy compiles to Rust; value-compatible with I64).
         Type::CLong => out.push_str("i64"),
+        // PMAT-918: a C `unsigned`/`uint32_t` (distinct 32-bit UNSIGNED width)
+        // → `u32` (Ruchy compiles to Rust; the C ABI distinction lives in
+        // `c_abi_type` -> c_uint).
+        Type::CUInt => out.push_str("u32"),
         // PMAT-477 (R8): Ruchy → Rust `f64`.
         Type::F64 => out.push_str("f64"),
         // PMAT-911: a C `float` (distinct 32-bit-ABI width) → `f32` (Ruchy
