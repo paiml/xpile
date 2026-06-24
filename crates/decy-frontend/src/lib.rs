@@ -5,12 +5,15 @@
 //! replaces the v0.1.0 35-line stub that returned an empty module.
 //!
 //! Supported subset (slice 1):
-//!   - `int` / `long` / `int64_t` function definitions with `int` / `long`
-//!     parameters (PMAT-909: `long`/`int64_t` lower to the distinct 64-bit
-//!     `Type::CLong` width, kept apart from the 32-bit-`int`-backed `I64`)
-//!   - local `int` / `long` declarations (`int x = <expr>;`)
+//!   - `int` / `long` / `int64_t` / `double` function definitions with
+//!     matching parameters (PMAT-909: `long`/`int64_t` lower to the distinct
+//!     64-bit `Type::CLong` width, kept apart from the 32-bit-`int`-backed
+//!     `I64`; PMAT-910: `double` lowers to `Type::F64`, ABI `c_double`. C
+//!     `float` (32-bit, `c_float`) is an explicit gap — it parses-errors
+//!     rather than narrowing through the 64-bit double slot.)
+//!   - local `int` / `long` / `double` declarations (`int x = <expr>;`)
 //!   - a trailing `return <expr>;`
-//!   - expressions: integer literals, identifiers, calls (recursion),
+//!   - expressions: integer and float literals, identifiers, calls (recursion),
 //!     `+ - *`, comparisons (`< <= > >= == !=`), `&& ||`, unary `- !`,
 //!     the ternary `c ? a : b`, and parentheses
 //!
@@ -67,10 +70,12 @@ impl Frontend for CFrontend {
 enum Tok {
     Int,    // `int` keyword (C 32-bit int → meta-HIR I64, ABI c_int)
     Long, // `long` / `long long` / `int64_t` (PMAT-909): 64-bit C int → meta-HIR CLong, ABI c_longlong
+    Double, // `double` keyword (PMAT-910): 64-bit C double → meta-HIR F64, ABI c_double
     Return, // `return` keyword
     Void, // `void` keyword
     Ident(String),
     Num(i64),
+    FNum(f64), // float literal (PMAT-910): `<digits>.<digits>` → Expr::LitFloat
     LParen,
     RParen,
     LBrace,
@@ -222,11 +227,27 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
                 while i < bytes.len() && (bytes[i] as char).is_ascii_digit() {
                     i += 1;
                 }
-                let s = &src[start..i];
-                let v: i64 = s
-                    .parse()
-                    .map_err(|_| format!("integer literal `{s}` does not fit in i64"))?;
-                toks.push(Tok::Num(v));
+                // PMAT-910: a `.` (followed by zero or more digits) makes this a
+                // C floating-point literal (`2.0`, `2.`, `0.5`) → Tok::FNum. `.`
+                // is otherwise never lexed (decy has no member access), so this
+                // is unambiguous.
+                if i < bytes.len() && bytes[i] == b'.' {
+                    i += 1;
+                    while i < bytes.len() && (bytes[i] as char).is_ascii_digit() {
+                        i += 1;
+                    }
+                    let s = &src[start..i];
+                    let v: f64 = s
+                        .parse()
+                        .map_err(|_| format!("float literal `{s}` is not a valid f64"))?;
+                    toks.push(Tok::FNum(v));
+                } else {
+                    let s = &src[start..i];
+                    let v: i64 = s
+                        .parse()
+                        .map_err(|_| format!("integer literal `{s}` does not fit in i64"))?;
+                    toks.push(Tok::Num(v));
+                }
             }
             c if c.is_ascii_alphabetic() || c == '_' => {
                 let start = i;
@@ -243,6 +264,13 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
                     // `Long` token; the parser folds a following `long`
                     // (`long long`) into the same width.
                     "long" | "int64_t" | "int_least64_t" | "int_fast64_t" => Tok::Long,
+                    // PMAT-910: C `double` (64-bit) → meta-HIR F64, ABI c_double
+                    // — ABI-consistent (C double = Rust f64 = c_double = 64-bit).
+                    // C `float` (32-bit, c_float) is DELIBERATELY NOT a keyword:
+                    // it falls through to an Ident and fails to parse cleanly,
+                    // rather than silently narrowing through the 64-bit c_double
+                    // slot (the 32↔64 ABI lie PMAT-909 fixed for ints).
+                    "double" => Tok::Double,
                     "return" => Tok::Return,
                     "void" => Tok::Void,
                     "while" => Tok::While,
@@ -303,9 +331,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function(&mut self) -> Result<Function, String> {
-        // `<int|long> NAME ( params ) { body }` — PMAT-909: the return
-        // type carries its own width (`long sq(...)` returns `CLong`).
-        let return_type = self.parse_c_int_type()?;
+        // `<int|long|double> NAME ( params ) { body }` — PMAT-909/910: the
+        // return type carries its own width (`long sq(...)` → `CLong`;
+        // `double sq(...)` → `F64`).
+        let return_type = self.parse_c_type()?;
         let name = self.parse_ident()?;
         self.eat(&Tok::LParen)?;
         let params = self.parse_params()?;
@@ -332,7 +361,7 @@ impl<'a> Parser<'a> {
             return Ok(params);
         }
         loop {
-            let ty = self.parse_c_int_type()?;
+            let ty = self.parse_c_type()?;
             let name = self.parse_ident()?;
             params.push(Param {
                 name,
@@ -383,10 +412,11 @@ impl<'a> Parser<'a> {
     /// body is rejected since the meta-HIR has a single trailing return).
     fn parse_stmt(&mut self, fn_name: &str) -> Result<Stmt, String> {
         match self.peek() {
-            // PMAT-909: a local decl begins with a C integer type token
-            // (`int x = …;` or `long x = …;`), carrying its own width.
-            Some(Tok::Int) | Some(Tok::Long) => {
-                let ty = self.parse_c_int_type()?;
+            // PMAT-909/910: a local decl begins with a C scalar type token
+            // (`int x = …;`, `long x = …;`, or `double x = …;`), carrying
+            // its own width.
+            Some(Tok::Int) | Some(Tok::Long) | Some(Tok::Double) => {
+                let ty = self.parse_c_type()?;
                 let name = self.parse_ident()?;
                 self.eat(&Tok::Assign)?;
                 let value = self.parse_expr()?;
@@ -408,7 +438,7 @@ impl<'a> Parser<'a> {
                 Ok(Stmt::Assign { name, value })
             }
             other => Err(format!(
-                "function `{fn_name}`: unexpected token {other:?} — supported statements: `int x = e;`, `long x = e;`, `x = e;`, `if (c) {{ … }} else {{ … }}`, `while (c) {{ … }}`, then a final `return e;`"
+                "function `{fn_name}`: unexpected token {other:?} — supported statements: `int x = e;`, `long x = e;`, `double x = e;`, `x = e;`, `if (c) {{ … }} else {{ … }}`, `while (c) {{ … }}`, then a final `return e;`"
             )),
         }
     }
@@ -491,13 +521,16 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// PMAT-909: consume a C integer type token and return its distinct
+    /// PMAT-909/910: consume a C scalar type token and return its distinct
     /// meta-HIR width. `int` → [`Type::I64`] (the 32-bit C `int`, which
     /// the C emit path narrows to `i32` and the FFI ABI maps to `c_int`).
     /// `long` / `int64_t` → [`Type::CLong`] (a 64-bit C integer the FFI
     /// ABI maps to `c_longlong` instead of narrowing to `c_int`). A
     /// trailing second `long` (`long long`) folds into the same width.
-    fn parse_c_int_type(&mut self) -> Result<Type, String> {
+    /// `double` → [`Type::F64`] (a 64-bit C double the FFI ABI maps to
+    /// `c_double`). C `float` (32-bit) is intentionally absent — it lexes
+    /// to an `Ident` and lands in the error arm rather than narrowing.
+    fn parse_c_type(&mut self) -> Result<Type, String> {
         match self.peek() {
             Some(Tok::Int) => {
                 self.bump();
@@ -511,8 +544,12 @@ impl<'a> Parser<'a> {
                 }
                 Ok(Type::CLong)
             }
+            Some(Tok::Double) => {
+                self.bump();
+                Ok(Type::F64)
+            }
             other => Err(format!(
-                "expected a C integer type (`int`, `long`, or `int64_t`), found {other:?}"
+                "expected a C scalar type (`int`, `long`, `int64_t`, or `double`), found {other:?}"
             )),
         }
     }
@@ -652,6 +689,8 @@ impl<'a> Parser<'a> {
     fn parse_primary(&mut self) -> Result<Expr, String> {
         match self.bump().cloned() {
             Some(Tok::Num(v)) => Ok(Expr::LitInt(v)),
+            // PMAT-910: a C float literal (`2.0`) → meta-HIR Expr::LitFloat.
+            Some(Tok::FNum(v)) => Ok(Expr::LitFloat(v)),
             Some(Tok::LParen) => {
                 let e = self.parse_expr()?;
                 self.eat(&Tok::RParen)?;
@@ -871,6 +910,75 @@ mod tests {
         assert_eq!(f.return_type, Type::CLong, "int64_t return → CLong");
         assert_eq!(f.params.len(), 1);
         assert_eq!(f.params[0].ty, Type::CLong, "`long long` param → CLong");
+    }
+
+    #[test]
+    fn parses_double_as_f64() {
+        // PMAT-910: `double` lowers to the meta-HIR F64 width (params +
+        // return + local), the ABI-honest 64-bit float token.
+        let m = lower("double square(double x) { double y = x; return y * x; }");
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
+        assert_eq!(f.return_type, Type::F64, "double return → F64");
+        assert_eq!(f.params[0].ty, Type::F64, "double param → F64");
+        let Stmt::Let { ty, .. } = &f.body.stmts[0] else {
+            unreachable!("first stmt is the `double y` decl")
+        };
+        assert_eq!(*ty, Type::F64, "double local → F64");
+        assert!(matches!(
+            f.body.trailing_return,
+            Expr::BinOp { op: BinOp::Mul, .. }
+        ));
+    }
+
+    #[test]
+    fn parses_double_float_literal() {
+        // PMAT-910: a `<digits>.<digits>` C float literal → Expr::LitFloat,
+        // distinct from the integer-literal path.
+        let m = lower("double scale(double x) { return x * 2.0 + 0.5; }");
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
+        // `x * 2.0 + 0.5` → Add( Mul(x, 2.0), 0.5 )
+        let Expr::BinOp {
+            op: BinOp::Add,
+            lhs,
+            rhs,
+        } = &f.body.trailing_return
+        else {
+            unreachable!("trailing return is an addition")
+        };
+        assert!(
+            matches!(**rhs, Expr::LitFloat(v) if v == 0.5),
+            "0.5 → LitFloat"
+        );
+        let Expr::BinOp {
+            op: BinOp::Mul,
+            rhs: mul_rhs,
+            ..
+        } = &**lhs
+        else {
+            unreachable!("lhs is a multiplication")
+        };
+        assert!(
+            matches!(**mul_rhs, Expr::LitFloat(v) if v == 2.0),
+            "2.0 → LitFloat"
+        );
+    }
+
+    #[test]
+    fn rejects_c_float_token() {
+        // PMAT-910 ABI-honesty: C `float` (32-bit, c_float) is NOT lifted —
+        // it lexes to an Ident and fails to parse, never silently narrowing
+        // through the 64-bit c_double slot.
+        let err = CFrontend
+            .parse_and_lower(&PathBuf::from("x.c"), "float halve(float x) { return x; }")
+            .unwrap_err();
+        assert!(
+            format!("{err:?}").contains("expected a C scalar type"),
+            "C `float` must parse-error, got: {err:?}"
+        );
     }
 
     #[test]
