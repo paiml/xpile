@@ -11029,11 +11029,12 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-908: [hybrid Phase 6] fail-closed deterministic agent-repair loop on the hybrid artifact'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-23T00:00:00Z
   acceptance_criteria:
   - "Flesh crates/xpile-agent into a bounded RepairLoop: run cargo build + the Day-3 oracle, read diagnostics/Divergence, apply ONE deterministic repair rule, re-run to Match or budget exhaustion; FAIL CLOSED (never write partial Rust). Deterministic only (no LLM). Sprint Day 9 (riskiest unknown last)."
+  - "DONE: fleshed crates/xpile-agent/src/repair.rs into a bounded, fail-closed, deterministic RepairLoop (no LLM). Structured Symptom (BuildError{stderr} | Divergence{index,expected,actual}); RepairRule trait; Probe trait abstracting build+run+differential. The real failure class is a C-FFI shim MISSING its ABI casts (x as c_int / __r as i64) -> rustc E0308; two narrow idempotent rules FfiArgCastRepair + FfiReturnCastRepair read the diagnostic and re-insert the casts one per iteration, converging in 2 steps. FAIL-CLOSED BY CONSTRUCTION: RepairOutcome::Exhausted has NO source field, so run_and_commit cannot write a partial artifact (test asserts the destination is untouched on exhaustion); termination guaranteed by per-rule idempotence (when no rule applies, fail closed). HybridCcRustcProbe is the EXECUTING Phase-6 probe: cc-compiles _core.c, rustc-compiles+links the candidate, runs it, differential-checks vs the Day-3 CPython hybrid reference (xpile_oracle::capture_cpython_hybrid_ref bound via ctypes). End-to-end gated test (cc+rustc+python3, graceful-skip) starts from the ABI-broken square_sum shim, proves it fails before repair, then proves the loop converges in exactly 2 iterations to an artifact whose stdout (49) is byte-identical to CPython. 8 pure unit tests + 1 executing witness. Sprint Day 9 (riskiest unknown last) — landed clean."
 - id: PMAT-909
   github_issue: null
   item_type: task
