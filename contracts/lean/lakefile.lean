@@ -113,5 +113,23 @@ lean_lib «XpileContractsPilot» where
     -- (b) the PMAT-904/913 Mathlib-only `tauto` — `cases k <;> tauto` over the
     --     decidable `LatexDisplayKind` enum (:1387) → core `cases k <;> decide`.
     -- Layer-5 LaTeX-math notation contract now machine-checked, not excluded.
-    `Notation                      -- C-NOTATION-LATEX-MATH-TO-EQUATION (PMAT-916)
+    `Notation,                     -- C-NOTATION-LATEX-MATH-TO-EQUATION (PMAT-916)
+    -- PMAT-928 (backlog slice): discharged the `Bashrs` head — a MIXED
+    -- head, as the inventory flagged. Two faults, one already-known and one
+    -- genuinely new territory:
+    -- (a) the PMAT-914/915/916 NAME SHADOWING — `def SuccessfulOutcome.val
+    --     (s) := s.val` resolved `s.val` by dot-notation to *itself* (a
+    --     non-terminating self-call, `s` unchanged → `:213` `fail to show
+    --     termination`), poisoning the `:233` Gold equality, the `:243`/`:244`
+    --     `.property` witnesses, and the `:827` `Subtype.ext`; fix = positional
+    --     `.1` Subtype projection in the body.
+    -- (b) NEW — a GENUINE Mathlib gap (not a name-shadow): the
+    --     `outcome_exit_code_int_sign_diamond` Diamond used Mathlib's `|·|`
+    --     absolute-value notation (`:683` `unexpected token '|'`) + `abs_nonneg`
+    --     + `simp`, none of which resolve with no `import Mathlib`. Restated
+    --     over CORE `Int.natAbs : Int → Nat`: non-negativity is now type-level
+    --     (`Nat.zero_le`, no lemma), zero-abs-of-zero is `rw`+`rfl`, and the
+    --     trichotomy uses core `Int.lt_trichotomy` (bare `lt_trichotomy` is the
+    --     PMAT-904/913 Mathlib alias). Same Int-sign Diamond claim, core-only.
+    `Bashrs                         -- C-BASHRS-POSIX-IDEMPOTENCE (PMAT-928)
   ]
