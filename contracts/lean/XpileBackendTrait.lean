@@ -738,7 +738,7 @@ theorem target_enum_completeness_diamond (t : Target) :
     ∧ (t = Target.rust ∨ t ≠ Target.rust)
     ∧ (Target.rust ≠ Target.shell) := by
   refine ⟨?_, ?_, ?_, ?_⟩
-  · cases t <;> tauto
+  · cases t <;> decide  -- core `decide` (was Mathlib-only `tauto`): each enum case is a decidable disjunction
   · rfl
   · by_cases h : t = Target.rust
     · exact Or.inl h
