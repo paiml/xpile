@@ -1478,8 +1478,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str(
                 "); let __m = __n.unsigned_abs(); let __sign = if __n < 0 { \"-\" } else { \"\" }; ",
             );
+            // PMAT-923: Python's `#X` alt-form uppercases the prefix letter too
+            // (`"0XFF"`); the upper-hex prefix is `0X` (mirror of the Rust
+            // backend). Only `%X` (prefix suppressed) and `#X` reach upper-hex,
+            // so the `hex()` builtin (`upper: false`) is unaffected.
             let (prefix, spec) = match radix {
-                Radix::Hex if *upper => ("0x", "{:X}"),
+                Radix::Hex if *upper => ("0X", "{:X}"),
                 Radix::Hex => ("0x", "{:x}"),
                 Radix::Oct => ("0o", "{:o}"),
                 Radix::Bin => ("0b", "{:b}"),

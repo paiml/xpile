@@ -1821,8 +1821,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             );
             // PMAT-502dp: prefix (`0x`/`0o`/`0b`) only when `prefixed`; the
             // hex spec is `{:X}` when `upper`.
+            // PMAT-923: Python's `#X` alt-form uppercases the prefix LETTER too
+            // (`f"{255:#X}"` == `"0XFF"`), so the upper-hex prefix is `0X`. The
+            // only paths reaching `Radix::Hex` with `upper: true` are `%X`
+            // (printf, `prefixed: false` → prefix suppressed anyway) and the new
+            // `#X` spec, so this never alters the `hex()` builtin (`upper: false`).
             let (prefix, spec) = match radix {
-                Radix::Hex if *upper => ("0x", "{:X}"),
+                Radix::Hex if *upper => ("0X", "{:X}"),
                 Radix::Hex => ("0x", "{:x}"),
                 Radix::Oct => ("0o", "{:o}"),
                 Radix::Bin => ("0b", "{:b}"),

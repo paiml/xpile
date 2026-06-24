@@ -14745,6 +14745,40 @@ fn main() {
     assert_rustc_runs("neg_radix_width", &rust, driver);
 }
 
+/// PMAT-923 (correctness-hunt): the `#` ALTERNATE-FORM radix format spec
+/// (`f"{255:#x}"` == `"0xff"`, `#X` == `"0XFF"`, `#o` == `"0o377"`, `#b` ==
+/// `"0b11111111"`) was a clean reject. Python emits the same `0x`/`0o`/`0b`
+/// prefix as the `hex`/`oct`/`bin` builtins with the sign first for negatives
+/// (`f"{-255:#x}"` == `"-0xff"`); `#X` also uppercases the prefix letter
+/// (`"0XFF"`). The spec now routes to the prefixed sign-magnitude
+/// `IntRadixStr`. Cross-checked vs python3.
+#[test]
+fn fstr_alt_form_radix() {
+    let rust = xpile_transpile_to_rust("fstr_alt_form_radix.py");
+    assert!(
+        // prefixed sign-magnitude block, and the upper-hex prefix is `0X`.
+        rust.contains("__n.unsigned_abs()")
+            && rust.contains(r#"format!("{}0x{:x}", __sign, __m)"#)
+            && rust.contains(r#"format!("{}0X{:X}", __sign, __m)"#),
+        "alt-form radix must emit the prefixed sign-magnitude block (0X for #X):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(hx(255), "0xff");
+    assert_eq!(hx(-255), "-0xff");
+    assert_eq!(hX(255), "0XFF");
+    assert_eq!(hX(-255), "-0XFF");
+    assert_eq!(oc(255), "0o377");
+    assert_eq!(oc(-8), "-0o10");
+    assert_eq!(bi(255), "0b11111111");
+    assert_eq!(bi(-5), "-0b101");
+    assert_eq!(hx(0), "0x0");
+    assert_eq!(labeled(-255), "v=-0xff!");
+}
+"#;
+    assert_rustc_runs("fstr_alt_form_radix", &rust, driver);
+}
+
 /// PMAT-801 (HUNT-V19 STR-IDX-OOB): a string index out of range panicked with
 /// Rust's raw "index out of bounds" message, not the tagged `xpile: IndexError:`,
 /// so under the allowlist except a typed `except IndexError` couldn't catch it
