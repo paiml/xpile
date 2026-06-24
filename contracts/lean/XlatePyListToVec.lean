@@ -589,10 +589,19 @@ theorem silver_length_preserved (vec_len : Nat) (target : CastTarget) :
 def NonEmptyHomogeneousList (α : Type) :=
   { l : HomogeneousListSilver α // l.elements ≠ [] }
 
-/-- Extract the underlying Silver homogeneous list. -/
+/-- Extract the underlying Silver homogeneous list.
+
+    PMAT-936: the body uses the POSITIONAL `.1` Subtype projection, NOT
+    `n.val`. Dot-notation `n.val` here resolves to *this very definition*
+    (`NonEmptyHomogeneousList.val`), a non-terminating self-call with `n`
+    unchanged → `fail to show termination` (:593), and that broken `.val`
+    then poisons every downstream `.val`/`.property`/`Subtype.ext`
+    (cascading type mismatches). The positional `.1` is the actual
+    `Subtype.val` field projection and breaks the self-reference. Same
+    name-shadowing class as PMAT-914/915/916/928. -/
 def NonEmptyHomogeneousList.val {α : Type} (n : NonEmptyHomogeneousList α) :
     HomogeneousListSilver α :=
-  n.val
+  n.1
 
 /-- Gold-tier lowering: extracts the structural data; the
     non-emptiness witness is carried into the typed output. -/
@@ -793,7 +802,11 @@ theorem list_free_monoid_diamond {α : Type}
   · rfl
   · exact List.append_assoc l1.elems l2.elems l3.elems
   · rfl
-  · simp [List.length_append]
+  -- PMAT-936: `simp [List.length_append]` makes no progress here because the
+  -- goal is `(lower {…}).elems.length = …` and `simp` cannot fold through the
+  -- `def lower_py_list_to_rust_vec_silver` without an `unfold`. Reuse the
+  -- already-discharged Platinum companion, which unfolds then `simp`s.
+  · exact lower_length_homomorphism_platinum l1 l2
 
 /-! ## PMAT-229 — SECOND Diamond on C-XLATE-PY-LIST-TO-VEC
     (XPILE-REFINE-XLATE-PY-LIST-006): NonEmpty section-retraction
@@ -961,8 +974,9 @@ theorem length_monoid_homomorphism_diamond {α : Type}
   (c) Reverse of empty is empty: `([] : List α).reverse = []`
   (d) Reverse of singleton is itself: `[a].reverse = [a]`
 
-  Uses Mathlib's `List.reverse_reverse`, `List.length_reverse`,
-  `List.reverse_nil`. The singleton case is by `rfl`.
+  Uses CORE Lean `List.reverse_reverse` and `List.length_reverse` (both
+  take the list as an explicit argument in v4.15.0 — NOT Mathlib). The
+  empty and singleton cases are by `rfl`.
 
   Status: **discharged at v0.1.0 (PMAT-338)**. Tier: DIAMOND.
 -/
@@ -977,7 +991,10 @@ theorem list_reverse_involution_diamond {α : Type} (l : PyListSilver α) :
     ∧ (∀ a : α, [a].reverse = [a]) := by
   refine ⟨?_, ?_, ?_, ?_⟩
   · exact List.reverse_reverse l.elems
-  · exact List.length_reverse
+  -- PMAT-936: core `List.length_reverse` in Lean v4.15.0 takes the list as an
+  -- EXPLICIT argument (`List.length_reverse l.elems`); the bare term left the
+  -- metavariable open → type mismatch. Core lemma, no Mathlib needed.
+  · exact List.length_reverse l.elems
   · rfl
   · intro a; rfl
 
@@ -1356,7 +1373,10 @@ theorem py_list_bronze_to_silver_u8_lift_diamond (l : PyList) :
     ∧ (py_list_bronze_to_silver_u8 l = py_list_bronze_to_silver_u8 l) := by
   refine ⟨?_, ?_, ?_, ?_⟩
   · rfl
-  · simp [Array.toList_length]
+  -- PMAT-936: `Array.toList_length` is not a real constant; the core lemma is
+  -- `Array.length_toList : a.toList.length = a.size`. The goal reduces
+  -- definitionally through `py_list_bronze_to_silver_u8`, so `exact` closes it.
+  · exact Array.length_toList
   · rfl
   · rfl
 

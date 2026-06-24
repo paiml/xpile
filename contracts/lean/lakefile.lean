@@ -24,11 +24,12 @@ open Lake DSL
   — so this job is exactly the check that makes "provable" un-falsifiable by
   `grep sorry`.
 
-  PILOT = the 16 modules that elaborate clean under bare core with
+  PILOT = the 20 modules that elaborate clean under bare core with
   warnings-as-errors (9 from PMAT-903 + 2 PMAT-904 + FfiShellSubprocess/907 +
   CFloatArith/912 + XpileFrontendTrait/913 + XlateRustFnToLeanThm/914 +
-  XlateLeanToRust/915).
-  The known-incomplete remainder is 6 modules with REAL elaboration errors
+  XlateLeanToRust/915 + Notation/916 + Bashrs/928 + XlatePyBoolToRustBool/935 +
+  XlatePyListToVec/936).
+  The known-incomplete remainder is 3 modules with REAL elaboration errors
   (termination / type-mismatch / synthesis failures — NOT sorries), enumerated
   honestly in `PROVABILITY-INVENTORY.md` and deliberately EXCLUDED here so this
   advisory job is GREEN without overstating what is proven. Discharging the
@@ -137,5 +138,29 @@ lean_lib «XpileContractsPilot» where
     -- proof (same shape as PyFloatArith / the str/list/set/tuple/Optional
     -- structural Diamonds): a Python bool is determined by its single truth-flag,
     -- so the lowering's polarity is pinned. Closes the last uncited core scalar.
-    `XlatePyBoolToRustBool          -- C-XLATE-PY-BOOL-TO-RUST-BOOL (PMAT-935)
+    `XlatePyBoolToRustBool,         -- C-XLATE-PY-BOOL-TO-RUST-BOOL (PMAT-935)
+    -- PMAT-936 (backlog slice): discharged the `XlatePyListToVec` head — a
+    -- MIXED head, exactly as the inventory flagged (8 errors). Four distinct
+    -- classes, all sound, NO new termination territory:
+    -- (a) the PMAT-914/915/916/928 NAME SHADOWING — `def
+    --     NonEmptyHomogeneousList.val (n) := n.val` resolved `n.val` by
+    --     dot-notation to *itself* (a non-terminating self-call, `n` unchanged
+    --     → `:593` `fail to show termination`), poisoning the `:632`
+    --     `n.property` witness and the `:1257` `Subtype.ext` extensionality;
+    --     fix = positional `.1` Subtype projection in the body — all three
+    --     cascade errors clear at once.
+    -- (b) `:796` — `list_free_monoid_diamond`'s 4th bullet used
+    --     `simp [List.length_append]` with no preceding `unfold`, so `simp`
+    --     could not fold through the `def` (`simp made no progress`). Reused
+    --     the already-discharged Platinum companion
+    --     `lower_length_homomorphism_platinum` (which unfolds then simps).
+    -- (c) `:980` — core `List.length_reverse` in v4.15.0 takes the list as an
+    --     EXPLICIT argument; the bare term left the metavar open (type
+    --     mismatch). `List.length_reverse l.elems`. CORE lemma, not Mathlib —
+    --     the docstring's "Mathlib's" framing was inaccurate (corrected).
+    -- (d) `:1359` — `Array.toList_length` is not a real constant; the core
+    --     lemma is `Array.length_toList : a.toList.length = a.size`. `exact
+    --     Array.length_toList` (the goal reduces definitionally). Layer-2
+    --     Python-list → Rust-Vec contract now machine-checked, not excluded.
+    `XlatePyListToVec               -- C-XLATE-PY-LIST-TO-VEC      (PMAT-936)
   ]

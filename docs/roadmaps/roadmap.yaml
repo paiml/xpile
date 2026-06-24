@@ -11392,6 +11392,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-936
+  github_issue: null
+  item_type: task
+  title: 'PMAT-936: [provability] discharge the `XlatePyListToVec` Lean head into the lake pilot (19 -> 20 modules) — a MIXED 8-error head: the PMAT-914/915/916/928 name-shadowing `.val` self-projection cascade PLUS three core-lemma fixes (simp-through-def, explicit `List.length_reverse` arg, non-existent `Array.toList_length` -> core `Array.length_toList`)'
+  status: done
+  priority: high
+  created: 2026-06-24T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (PMAT-900..935 all merged, sprint window 2026-06-23..07-02 still open). STAYS on the Lean proof-lane axis (prompt path b) — the user chose the HARD LEAN TAIL as the direction. `XlatePyListToVec` (C-XLATE-PY-LIST-TO-VEC, Layer-2) was the cheapest non-elaborating module by `error:` count (8) and the inventory had flagged it as a MIXED head (`fail to show termination :593 + type mismatch`). Investigated each of the 8 errors with `lean <file>` / `lake build` rather than assuming termination at face value — all 8 turned out to be SOUNDLY dischargeable in one slice with NO new structural-recursion territory. Moves the lake pilot from 19 (PMAT-935) to 20 machine-checked modules, KNOWN-INCOMPLETE from 4 to 3 (the remaining 3 — FfiCpythonExt 20, CompileRustToPtxMma 38, PyIntArith 45 — are the genuinely high-count termination-led tail)."
+  - "ROOT CAUSE — four distinct classes across the 8 errors, all sound, none requiring `sorry`/`axiom`/`import Mathlib`: (a) the PMAT-914/915/916/928 NAME-SHADOWING class — `def NonEmptyHomogeneousList.val (n) := n.val` resolved `n.val` by dot-notation to *this very definition* (a non-terminating self-call, `n` unchanged), so `:593` reported `fail to show termination`; that broken `.val` then poisoned the `:632` `n.property` witness and the `:1257` `Subtype.ext` extensionality (both printing identical-looking expected/actual types — the cascade hallmark). Fix = the positional `.1` Subtype projection in the body; all THREE cascade errors clear at once. (b) `:796` — `list_free_monoid_diamond`'s 4th bullet used `simp [List.length_append]` with no preceding `unfold`, so `simp` could not fold through the `def lower_py_list_to_rust_vec_silver` (`simp made no progress`); reused the already-discharged Platinum companion `lower_length_homomorphism_platinum` (which unfolds then simps). (c) `:980` — core `List.length_reverse` in Lean v4.15.0 takes the list as an EXPLICIT argument; the bare term left the metavar open → type mismatch; `List.length_reverse l.elems`. This is a CORE lemma, NOT Mathlib (the docstring's 'Uses Mathlib's …' framing was inaccurate, corrected). (d) `:1359` — `Array.toList_length` is not a real constant; the core lemma is `Array.length_toList : a.toList.length = a.size`; `exact Array.length_toList` (the goal reduces definitionally through `py_list_bronze_to_silver_u8`)."
+  - "FIX (four edits in contracts/lean/XlatePyListToVec.lean): (1) `NonEmptyHomogeneousList.val` body `n.val` -> `n.1`; (2) `list_free_monoid_diamond` 4th bullet `simp [List.length_append]` -> `exact lower_length_homomorphism_platinum l1 l2`; (3) `list_reverse_involution_diamond` `exact List.length_reverse` -> `exact List.length_reverse l.elems` (+ corrected the 'Mathlib' docstring to 'CORE Lean'); (4) `py_list_bronze_to_silver_u8_lift_diamond` 2nd bullet `simp [Array.toList_length]` -> `exact Array.length_toList`. Verified the full file elaborates clean with `lean XlatePyListToVec.lean` (rc=0) AND under `lean -DwarningAsError=true` (no lingering warnings that would fail the pilot's `warningAsError := true`). Added `XlatePyListToVec` to lakefile.lean roots (19 -> 20); `cd contracts/lean && lake build` GREEN."
+  - "REGRESSION GUARDS: bumped EXPECTED_PILOT in crates/xpile/tests/lean_pilot_roots.rs (the lean-free Rust guard that pins the lakefile roots count + the PROVABILITY-INVENTORY.md PILOT header in lockstep, for the blocking workspace-test gate which has no `lean` in PATH) from 19 to 20; updated PROVABILITY-INVENTORY.md (moved XlatePyListToVec into the PILOT table, KNOWN-INCOMPLETE table 4 -> 3 rows + header 4 -> 3, prose) and the lakefile header comment (16/6 stale counts -> 20/3)."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors, 0 warnings preserved), cargo-deny advisories, `cargo test -p xpile --test lean_pilot_roots`, `lake build` (Lean touched). Lake pilot 19 -> 20 machine-checked modules; KNOWN-INCOMPLETE 4 -> 3. Backlog provability slice, sprint 2026-06-24."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-131
   github_issue: null
   item_type: task
