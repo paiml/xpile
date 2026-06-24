@@ -191,16 +191,22 @@ pub fn capture_cpython_hybrid_ref(
 ) -> Result<String, OracleError> {
     let dir = std::env::temp_dir();
     let pid = std::process::id();
+    // PMAT-933: a process-wide counter so CONCURRENT captures in the same process
+    // (e.g. two `#[test]`s in one test binary, which share `pid`) never collide on
+    // the `.so` / C-source temp names — without it, one capture's shared object
+    // overwrote another's, surfacing as a spurious `undefined symbol` ctypes error.
+    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     // 1) Materialize the C sources and cc-compile them into one shared object.
     let mut c_paths = Vec::new();
     for (i, (name, content)) in c_sources.iter().enumerate() {
-        let p = dir.join(format!("xpile_hybref_{pid}_{i}_{name}"));
+        let p = dir.join(format!("xpile_hybref_{pid}_{seq}_{i}_{name}"));
         std::fs::write(&p, content)
             .map_err(|e| OracleError::Capture(format!("writing C source {name}: {e}")))?;
         c_paths.push(p);
     }
-    let so = dir.join(format!("libxpile_hybref_{pid}.so"));
+    let so = dir.join(format!("libxpile_hybref_{pid}_{seq}.so"));
     let mut cc = std::process::Command::new("cc");
     cc.arg("-shared").arg("-fPIC");
     for p in &c_paths {

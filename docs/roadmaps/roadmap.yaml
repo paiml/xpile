@@ -11337,6 +11337,25 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-933
+  github_issue: null
+  item_type: task
+  title: 'PMAT-933: [hybrid/agent-repair] a SECOND deterministic RepairLoop rule for the executing-divergence class — `FloatReprRepair` repairs the whole-number-float repr divergence (artifact prints `10`, CPython `10.0`) the PMAT-931 FFI-float-type-flow class actually hits, with an executing witness against the real toolchain + CPython oracle'
+  status: done
+  priority: high
+  created: 2026-06-24T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (PMAT-900..932 all merged, sprint window 2026-06-23..07-02 still open). VARIES THE AXIS off PMAT-932 (Python→Shell producer) onto the prompt's FIRST-named differentiator: flesh `xpile-agent`'s `RepairLoop` (PMAT-908) with another REAL deterministic repair rule for a failure class the hybrid path can actually hit — the FFI-float-type-flow class from PMAT-931 — with a test injecting the defect and asserting fail-closed repair to a passing build+oracle."
+  - "KEY FINDING (corrects the obvious-but-wrong framing): the float boundary does NOT fail with `E0308`. Rust's `c_double` IS `f64`, so a `double`-returning FFI shim with the ABI casts dropped compiles and runs cleanly — the ABI-cast rules (PMAT-908) never fire. The genuine float failure class PMAT-931 fixed is a `Symptom::Divergence`, NOT a `BuildError`: a whole `f64` printed as Rust's plain `println!(\"{}\", x)` emits `10`, while CPython-via-ctypes (`restype = c_double`) prints Python's `10.0`. So the slice targets the DIVERGENCE class the existing E0308-only loop did not cover."
+  - "ADDED: `Symptom::is_whole_float_repr` (narrow: `actual` parses as an integer AND `expected == \"{actual}.0\"`); `FloatReprRepair` rule firing only on that divergence, rewriting the artifact's plain `println!(\"{}\", expr)` into the CPython-faithful `.0`-suffix repr block (bind once, `if v.fract()==0.0 { \"{}.0\" } else { \"{}\" }`) — the same transform `Expr::ToStr { of_float: true }` performs (xpile-rust-codegen `py_float_repr_block`); `RepairLoop::ffi_float_repr` constructor. Idempotent (the repr block has no bare `\"{}\", expr` print) so the loop converges in one step then fails closed; it declines on a real value mismatch (`7` vs `49`) and on a non-whole float (`10.5`) so it never papers over an actually-wrong result. Also generalized `insert_arg_cast` to cast EACH top-level argument (per-param, matching emit_c_shim `Marshal::ScalarCast`) so a multi-arg int boundary is repairable, not just one-arg (new `split_top_level_args`)."
+  - "EXECUTING WITNESS (gated cc+rustc+python3, graceful-skip): `repair_loop_converges_the_whole_float_repr_divergence_to_cpython` captures the Day-3 CPython hybrid reference for `double scale2(double,double)` bound via ctypes (`restype=c_double`) → `10.0`; asserts the plain-print shim BUILDS+RUNS but yields a `Divergence{expected:\"10.0\", actual:\"10\"}` through the real `HybridCcRustcProbe`; drives `ffi_float_repr` to a 1-iteration `Repaired` whose re-run is byte-identical `10.0`. Broadens the agent-repair witness from the build-error class to the executing-divergence class."
+  - "BONUS (race fix exposed by the second e2e test): `xpile_oracle::capture_cpython_hybrid_ref` named its temp `.so`/C-sources by `pid` only, so two `#[test]`s in one binary (sharing `pid`) collided — one capture's shared object overwrote another's, surfacing as a spurious `undefined symbol` ctypes error. Added a process-wide `AtomicUsize` sequence to the temp names; both e2e witnesses now pass deterministically in parallel."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors/0 warnings), cargo-deny advisories, `cargo test -p xpile-agent` (16 lib + 2 e2e) + `cargo test -p xpile-oracle` (6). No new contract authored (the rule restores an EXISTING contract-cited construct — the C-FFI-CPYTHON-EXT shim + C-PY-FLOAT-ARITH float-repr path PMAT-931 already cite); no emitted construct changes, so contract_citation_integrity is unaffected. Backlog slice, sprint 2026-06-24."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-131
   github_issue: null
   item_type: task

@@ -20,8 +20,8 @@
 pub mod repair;
 
 pub use repair::{
-    FfiArgCastRepair, FfiReturnCastRepair, HybridCcRustcProbe, Probe, RepairLoop, RepairOutcome,
-    RepairRule, Symptom,
+    FfiArgCastRepair, FfiReturnCastRepair, FloatReprRepair, HybridCcRustcProbe, Probe, RepairLoop,
+    RepairOutcome, RepairRule, Symptom,
 };
 
 use std::time::Duration;
