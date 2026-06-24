@@ -102,5 +102,16 @@ lean_lib «XpileContractsPilot» where
     -- `DecidableEq WarningLineCount` instance (`unfold` + `infer_instance`) so
     -- the two structures `deriving DecidableEq` over that opaque-`def` subtype
     -- field synthesize. Layer-2 Lean→Rust translation now machine-checked.
-    `XlateLeanToRust               -- C-XLATE-LEAN-TO-RUST       (PMAT-915)
+    `XlateLeanToRust,              -- C-XLATE-LEAN-TO-RUST       (PMAT-915)
+    -- PMAT-916 (backlog slice): discharged a 7-error head whose two faults are
+    -- BOTH already-established classes (no new termination territory):
+    -- (a) the PMAT-914/915 NAME SHADOWING — `def NonEmptyDefinition.val (n) :=
+    --     n.val` resolved `n.val` by dot-notation to *itself* (a non-terminating
+    --     self-call, `n` unchanged → `fail to show termination` at :816),
+    --     poisoning the `.property` (:858) and `Subtype.ext` (:1477) proofs;
+    --     fix = positional `.1` Subtype projection in the body.
+    -- (b) the PMAT-904/913 Mathlib-only `tauto` — `cases k <;> tauto` over the
+    --     decidable `LatexDisplayKind` enum (:1387) → core `cases k <;> decide`.
+    -- Layer-5 LaTeX-math notation contract now machine-checked, not excluded.
+    `Notation                      -- C-NOTATION-LATEX-MATH-TO-EQUATION (PMAT-916)
   ]

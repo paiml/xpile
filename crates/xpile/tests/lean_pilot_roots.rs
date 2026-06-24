@@ -12,7 +12,8 @@
 //! lakefile `roots` and pins the pilot at the modules that elaborate today
 //! (9 from PMAT-903 + 2 from PMAT-904 + FfiShellSubprocess/PMAT-907 +
 //! CFloatArith/PMAT-912 + XpileFrontendTrait/PMAT-913 +
-//! XlateRustFnToLeanThm/PMAT-914 + XlateLeanToRust/PMAT-915 = 16), and asserts
+//! XlateRustFnToLeanThm/PMAT-914 + XlateLeanToRust/PMAT-915 +
+//! Notation/PMAT-916 = 17), and asserts
 //! the `PROVABILITY-INVENTORY.md` PILOT count stays in lockstep. It does
 //! NOT re-prove anything — only that the bookkeeping the Lean job relies on
 //! can't drift behind the Rust gate's back.
@@ -102,6 +103,15 @@ const EXPECTED_PILOT: &[&str] = &[
     // WarningLineCount` instance (`unfold` + `infer_instance`) for the two
     // structures `deriving DecidableEq` over that opaque-`def` subtype field.
     "XlateLeanToRust",
+    // PMAT-916 (backlog slice): discharged a 7-error head whose two faults are
+    // both ALREADY-ESTABLISHED classes (no new termination territory):
+    // (a) the PMAT-914/915 NAME-SHADOWING — `def NonEmptyDefinition.val (n) :=
+    //     n.val` resolved `n.val` to itself (non-terminating self-call) →
+    //     `fail to show termination`, poisoning the `.property`/`Subtype.ext`
+    //     proofs; fix = positional `.1` projection in the body.
+    // (b) the PMAT-904/913 Mathlib-only `tauto` — `cases k <;> tauto` over the
+    //     decidable `LatexDisplayKind` enum → core `cases k <;> decide`.
+    "Notation",
 ];
 
 #[test]
