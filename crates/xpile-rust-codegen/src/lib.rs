@@ -1482,6 +1482,19 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
         }
         // PMAT-506b: a struct-typed value emits the bare struct name.
         Type::Struct(name) => out.push_str(name),
+        // PMAT-924: a C `char` (8-bit) renders as Rust `i8` in a data-bearing
+        // signature (the platform-signedness-honest `c_char` lives on the FFI
+        // ABI path; the code-emit lane uses the concrete `i8` byte). It appears
+        // only as a pointer pointee.
+        Type::CChar => out.push_str("i8"),
+        // PMAT-924: a C pointer `T*` renders as a raw Rust pointer
+        // `*mut`/`*const <pointee>` — sound to DECLARE in a signature (only a
+        // deref is `unsafe`); the ABI-honest FFI rendering lives in
+        // xpile-ffi-manifest's `c_abi_render`.
+        Type::Ptr { mutable, pointee } => {
+            out.push_str(if *mutable { "*mut " } else { "*const " });
+            emit_type(out, pointee)?;
+        }
     }
     Ok(())
 }
@@ -4486,6 +4499,27 @@ fn c_stmts_have_ty(stmts: &[Stmt], want: &Type) -> bool {
 }
 
 fn emit_c_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
+    // PMAT-924: the C-arithmetic emit path renders every param at the function's
+    // UNIFORM scalar width (`w.rust_ty`) — it has no per-param type rendering and
+    // decy's expression grammar has no pointer ops (deref / address-of). A
+    // pointer param/return is therefore meaningless on this DATA-BEARING path
+    // (pointers are an FFI-BOUNDARY concern, handled ABI-honestly by
+    // xpile-ffi-manifest's `c_abi_render`). REFUSE rather than silently render a
+    // `*mut c_int` param as the function's integer width (a mis-emit). A bare
+    // `char` (`CChar`) likewise has no arithmetic width here.
+    let has_ptr = matches!(f.return_type, Type::Ptr { .. } | Type::CChar)
+        || f.params
+            .iter()
+            .any(|p| matches!(p.ty, Type::Ptr { .. } | Type::CChar));
+    if has_ptr {
+        return Err(CodegenError::Unsupported(format!(
+            "C function `{}` has a pointer / `char` param or return — the C→Rust \
+             arithmetic emit path lowers only scalar-width bodies (decy has no \
+             pointer ops); a pointer boundary is an FFI-manifest shim concern \
+             (xpile-ffi-manifest emits the ABI-honest `*mut`/`*const` shim)",
+            f.name
+        )));
+    }
     let w = c_function_width(f);
     if w.is_float {
         // PMAT-912: a C `double`/`float` function obeys IEEE f64/f32
@@ -5228,6 +5262,63 @@ mod tests {
         assert!(
             !rust.contains("// xpile-contract: C-C-INT-ARITH"),
             "float fn must NOT cite the int-arith contract: {rust}"
+        );
+    }
+
+    #[test]
+    fn emit_type_renders_raw_pointer() {
+        // PMAT-924: the (FFI-path) type renderer emits a raw Rust pointer for a
+        // C pointer — `*mut`/`*const <pointee>`. `char*` -> `*mut i8`.
+        let mut out = String::new();
+        emit_type(
+            &mut out,
+            &Type::Ptr {
+                mutable: true,
+                pointee: Box::new(Type::I64),
+            },
+        )
+        .expect("renders");
+        assert_eq!(out, "*mut i64");
+
+        let mut out2 = String::new();
+        emit_type(
+            &mut out2,
+            &Type::Ptr {
+                mutable: false,
+                pointee: Box::new(Type::CChar),
+            },
+        )
+        .expect("renders");
+        assert_eq!(out2, "*const i8", "const char* -> *const i8");
+    }
+
+    #[test]
+    fn c_emit_pointer_function_is_refused() {
+        // PMAT-924: the C→Rust arithmetic path renders every param at the
+        // function's UNIFORM scalar width and has no pointer ops — so a pointer
+        // param is REFUSED rather than silently rendered as the integer width
+        // (a mis-emit). The ABI-honest pointer shim lives in xpile-ffi-manifest.
+        let f = Function {
+            name: "scan".into(),
+            params: vec![Param {
+                name: "s".into(),
+                ty: Type::Ptr {
+                    mutable: true,
+                    pointee: Box::new(Type::CChar),
+                },
+                mutable: false,
+            }],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::LitInt(0),
+            },
+        };
+        let err = emit_module(&c_module("s", f)).expect_err("pointer C fn refused");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("pointer") && msg.contains("scan"),
+            "refusal names the pointer gap: {msg}"
         );
     }
 }

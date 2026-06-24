@@ -84,6 +84,7 @@ enum Tok {
     ULong, // `uint64_t` / `unsigned long` (`unsigned`+`long`) (PMAT-921): 64-bit UNSIGNED C int → meta-HIR CULong, ABI c_ulonglong
     Double, // `double` keyword (PMAT-910): 64-bit C double → meta-HIR F64, ABI c_double
     Float, // `float` keyword (PMAT-911): 32-bit C float → meta-HIR F32, ABI c_float
+    Char,  // `char` keyword (PMAT-924): 8-bit C char → meta-HIR CChar, ABI c_char (pointee-only)
     Return, // `return` keyword
     Void,  // `void` keyword
     Ident(String),
@@ -296,6 +297,10 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
                     // the 64-bit c_double slot (the 32↔64 ABI honesty PMAT-909
                     // established for ints, now held for floats too).
                     "float" => Tok::Float,
+                    // PMAT-924: C `char` (8-bit). Only valid as a pointer
+                    // pointee (`char*`) — a bare `char` value has no meta-HIR
+                    // scalar (refused in `parse_c_type`).
+                    "char" => Tok::Char,
                     "return" => Tok::Return,
                     "void" => Tok::Void,
                     "while" => Tok::While,
@@ -573,10 +578,56 @@ impl<'a> Parser<'a> {
     /// values ≥ 2⁶³ negative); a trailing `long` after `unsigned` PROMOTES
     /// `CUInt` → `CULong`.
     fn parse_c_type(&mut self) -> Result<Type, String> {
+        // PMAT-924: parse the base scalar, then fold any trailing `*` into a
+        // `Type::Ptr` (the first address-carrying ABI token). A `char` base is
+        // pointee-ONLY — `char*` is a pointer (valid), a bare `char` value is
+        // refused (no 8-bit meta-HIR scalar). Only a SINGLE level of indirection
+        // over an ABI-mappable scalar is accepted; `int**` (pointer-to-pointer)
+        // is refused rather than mis-emitted, mirroring how the scalar lifts
+        // refused non-mappable types.
+        let base = self.parse_c_base_type()?;
+        if matches!(self.peek(), Some(Tok::Star)) {
+            self.bump();
+            if matches!(self.peek(), Some(Tok::Star)) {
+                return Err(
+                    "pointer-to-pointer (`T**`) is not supported — decy lifts a single \
+                     level of pointer indirection over a scalar pointee at v0.2.0 (PMAT-924)"
+                        .to_string(),
+                );
+            }
+            // A bare `int*` is a `*mut` pointer (the C default — the pointee is
+            // not `const`-qualified). `const`-pointer (`*const`) is a deferred
+            // refinement (decy has no `const` keyword yet).
+            return Ok(Type::Ptr {
+                mutable: true,
+                pointee: Box::new(base),
+            });
+        }
+        // A non-pointer `char` is refused — `char` has no standalone meta-HIR
+        // scalar (it only exists as a pointer pointee).
+        if matches!(base, Type::CChar) {
+            return Err(
+                "bare `char` is not a supported value type — only `char*` (a pointer) is \
+                 lifted at v0.2.0 (PMAT-924); a scalar `char` has no meta-HIR width"
+                    .to_string(),
+            );
+        }
+        Ok(base)
+    }
+
+    /// PMAT-924: parse just the base scalar type token (no pointer suffix). The
+    /// pointer `*` is folded by the caller [`parse_c_type`]. `char` lexes to the
+    /// pointee-only [`Type::CChar`] here; the caller refuses it unless a `*`
+    /// follows.
+    fn parse_c_base_type(&mut self) -> Result<Type, String> {
         match self.peek() {
             Some(Tok::Int) => {
                 self.bump();
                 Ok(Type::I64)
+            }
+            Some(Tok::Char) => {
+                self.bump();
+                Ok(Type::CChar)
             }
             Some(Tok::Long) => {
                 self.bump();
@@ -624,7 +675,7 @@ impl<'a> Parser<'a> {
                 Ok(Type::F32)
             }
             other => Err(format!(
-                "expected a C scalar type (`int`, `long`, `int64_t`, `unsigned`, `unsigned int`, `uint32_t`, `unsigned long`, `uint64_t`, `float`, or `double`), found {other:?}"
+                "expected a C scalar type (`int`, `long`, `int64_t`, `unsigned`, `unsigned int`, `uint32_t`, `unsigned long`, `uint64_t`, `float`, `double`, or a pointer `int*`/`char*`/`double*`), found {other:?}"
             )),
         }
     }
@@ -1163,5 +1214,85 @@ mod tests {
                 "int f(int n) { while (n > 0) { return n; } return 0; }"
             )
             .is_err());
+    }
+
+    #[test]
+    fn parses_int_pointer_param_as_ptr() {
+        // PMAT-924: a C `int*` param lifts to the first address-carrying
+        // meta-HIR token — Type::Ptr { mutable: true } over the scalar pointee.
+        let m = lower("int deref0(int* p) { return 0; }");
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!()
+        };
+        assert_eq!(
+            f.params[0].ty,
+            Type::Ptr {
+                mutable: true,
+                pointee: Box::new(Type::I64),
+            },
+            "`int*` param → Ptr over I64 (a bare `int*` is `*mut`)"
+        );
+        assert_eq!(f.return_type, Type::I64, "scalar return unchanged");
+    }
+
+    #[test]
+    fn parses_char_pointer_as_ptr_over_cchar() {
+        // PMAT-924: `char*` is the canonical C-string pointer — Ptr over the
+        // pointee-only CChar. `char` lexes (Tok::Char) but is valid only behind
+        // a `*`.
+        let m = lower("int len(char* s) { return 0; }");
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!()
+        };
+        assert_eq!(
+            f.params[0].ty,
+            Type::Ptr {
+                mutable: true,
+                pointee: Box::new(Type::CChar),
+            },
+            "`char*` param → Ptr over CChar"
+        );
+    }
+
+    #[test]
+    fn parses_pointer_return_type() {
+        // PMAT-924: a pointer in RETURN position lifts the same way (the FFI
+        // boundary surface is params + return).
+        let m = lower("double* identity(double* p) { return p; }");
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!()
+        };
+        let ptr_f64 = Type::Ptr {
+            mutable: true,
+            pointee: Box::new(Type::F64),
+        };
+        assert_eq!(f.return_type, ptr_f64, "`double*` return → Ptr over F64");
+        assert_eq!(f.params[0].ty, ptr_f64, "`double*` param → Ptr over F64");
+    }
+
+    #[test]
+    fn rejects_pointer_to_pointer() {
+        // PMAT-924: only a SINGLE level of indirection is lifted — `int**`
+        // (pointer-to-pointer) is refused rather than mis-emitted.
+        let err = CFrontend
+            .parse_and_lower(&PathBuf::from("x.c"), "int f(int** pp) { return 0; }")
+            .expect_err("int** refused");
+        assert!(
+            format!("{err:?}").contains("pointer-to-pointer"),
+            "error names the pointer-to-pointer gap: {err:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_bare_char_value() {
+        // PMAT-924: a bare `char` (non-pointer) has no meta-HIR scalar width —
+        // it is valid ONLY as a `char*` pointee. A `char c` param is refused.
+        let err = CFrontend
+            .parse_and_lower(&PathBuf::from("x.c"), "int f(char c) { return 0; }")
+            .expect_err("bare char refused");
+        assert!(
+            format!("{err:?}").contains("char"),
+            "error names the bare-char gap: {err:?}"
+        );
     }
 }

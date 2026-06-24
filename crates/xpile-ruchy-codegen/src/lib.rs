@@ -1213,6 +1213,16 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
         }
         // PMAT-506b: struct-typed value emits the bare struct name.
         Type::Struct(name) => out.push_str(name),
+        // PMAT-924: a C `char` (8-bit) → `i8` (Ruchy compiles to Rust; matches
+        // the Rust backend). Pointer-pointee only.
+        Type::CChar => out.push_str("i8"),
+        // PMAT-924: a C pointer `T*` → a raw Rust pointer `*mut`/`*const
+        // <pointee>` (Ruchy compiles to Rust; the ABI-honest FFI rendering lives
+        // in xpile-ffi-manifest's `c_abi_render`).
+        Type::Ptr { mutable, pointee } => {
+            out.push_str(if *mutable { "*mut " } else { "*const " });
+            emit_type(out, pointee)?;
+        }
     }
     Ok(())
 }

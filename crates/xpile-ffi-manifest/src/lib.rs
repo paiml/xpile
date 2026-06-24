@@ -323,9 +323,18 @@ impl FfiManifest {
                 "//   and `unsigned long`/`uint64_t` -> the distinct Type::CULong -> c_ulonglong\n",
             );
             out.push_str(
-                "//   (64-bit UNSIGNED, PMAT-921), neither the 32-bit c_uint nor the signed c_longlong.\n",
+                "//   (64-bit UNSIGNED, PMAT-921), neither the 32-bit c_uint nor the signed c_longlong,\n",
             );
-            out.push_str("//   Pointer/string ABI tokens are the remaining decy ceiling.\n");
+            out.push_str(
+                "//   and a C pointer `T*` -> the distinct Type::Ptr -> a raw `*mut`/`*const <pointee>`\n",
+            );
+            out.push_str(
+                "//   (PMAT-924, the first address-carrying ABI token; `char*` -> `*mut c_char`),\n",
+            );
+            out.push_str(
+                "//   the pointee restricted to an ABI-mappable scalar (pointer-to-pointer/container\n",
+            );
+            out.push_str("//   /struct refused). String marshalling remains the decy ceiling.\n");
         }
         out.push_str("#![allow(dead_code)]\n");
         if !extern_lines.is_empty() {
@@ -479,11 +488,18 @@ fn emit_c_shim(entry: &FfiEntry, f: &Function) -> Result<ShimPart, Vec<String>> 
     let mut wrap_params = Vec::new();
     let mut call_args = Vec::new();
     for p in &f.params {
-        match c_abi_type(&p.ty) {
-            Some(cty) => {
-                extern_params.push(format!("{}: {}", p.name, cty));
-                wrap_params.push(format!("{}: {}", p.name, wrapper_native(&p.ty)));
-                call_args.push(format!("{} as {}", p.name, cty));
+        // PMAT-924: `c_abi_render` covers scalars AND pointers; a pointer's
+        // native form IS its ABI form, so no `as`-cast is emitted (avoids a
+        // `clippy::unnecessary_cast` self-cast).
+        match c_abi_render(&p.ty) {
+            Some(abi) => {
+                extern_params.push(format!("{}: {}", p.name, abi.abi));
+                wrap_params.push(format!("{}: {}", p.name, abi.native));
+                if abi.needs_cast {
+                    call_args.push(format!("{} as {}", p.name, abi.abi));
+                } else {
+                    call_args.push(p.name.clone());
+                }
             }
             None => unsupported.push(format!(
                 "{}: parameter `{}` type {:?} is not ABI-mappable to C",
@@ -496,13 +512,19 @@ fn emit_c_shim(entry: &FfiEntry, f: &Function) -> Result<ShimPart, Vec<String>> 
     // map, or the boundary is refused.
     let (extern_ret, wrap_ret_sig, wrap_ret_expr) = match &f.return_type {
         Type::Unit => (String::new(), String::new(), None),
-        ty => match c_abi_type(ty) {
-            Some(cty) => {
-                let nat = wrapper_native(ty);
+        ty => match c_abi_render(ty) {
+            Some(abi) => {
+                let ret_expr = if abi.needs_cast {
+                    format!("__r as {}", abi.native)
+                } else {
+                    // A raw pointer return needs no cast — `__r` is already the
+                    // native (= ABI) pointer type.
+                    "__r".to_string()
+                };
                 (
-                    format!(" -> {cty}"),
-                    format!(" -> {nat}"),
-                    Some(format!("__r as {nat}")),
+                    format!(" -> {}", abi.abi),
+                    format!(" -> {}", abi.native),
+                    Some(ret_expr),
                 )
             }
             None => {
@@ -700,6 +722,19 @@ fn direct_native_type(ty: &Type) -> Result<String, String> {
                  — not a direct-call shim target"
             ));
         }
+        // PMAT-924: a raw C pointer in a same-crate direct call renders as a raw
+        // Rust pointer `*mut`/`*const <native-pointee>` — sound to DECLARE in a
+        // forwarder signature (only a deref would be `unsafe`). The pointee must
+        // itself be a native-mappable scalar; a `char` pointee (`CChar`) becomes
+        // `*mut i8` (the platform-honest `c_char` already lives on the C-ABI
+        // path; in a NATIVE direct call there is no C ABI, so `CChar` is the
+        // `i8` byte). A bare `CChar` (non-pointer) is refused.
+        Type::Ptr { mutable, pointee } => {
+            let inner = direct_native_type(pointee)?;
+            let qualifier = if *mutable { "mut" } else { "const" };
+            format!("*{qualifier} {inner}")
+        }
+        Type::CChar => "i8".to_string(),
     })
 }
 
@@ -744,11 +779,17 @@ pub fn defining_function<'a>(modules: &'a [Module], entry: &FfiEntry) -> Option<
 /// UNSIGNED `c_uint` slot — never the signed `c_int`. C `unsigned long`/`unsigned
 /// long long`/`uint64_t` now parses to the DISTINCT `Type::CULong` width
 /// (decy-frontend, PMAT-921) and maps to the UNSIGNED 64-bit `c_ulonglong` slot —
-/// never the 32-bit `c_uint` (truncation) nor the signed `c_longlong`. The
-/// remaining ceiling is pointer/string ABI tokens (decy's lexer still lacks
-/// them).
+/// never the 32-bit `c_uint` (truncation) nor the signed `c_longlong`. A C
+/// pointer `T*` now parses to the DISTINCT `Type::Ptr` (decy-frontend, PMAT-924)
+/// — the first address-carrying ABI token — and `c_abi_render` (NOT this
+/// `&'static str` function, which can't express a formatted `*mut <abi>`) maps
+/// it to a raw `*mut`/`*const <pointee-ABI>`; an 8-bit `char` pointee maps to
+/// the `c_char` slot here. The remaining ceiling is now only string MARSHALLING
+/// (a `char*` is ABI-honest as a raw pointer, but a Rust `String` round-trip
+/// needs a `CStr` copy the first cut does not perform).
 /// `Bool → c_int` is a lossy forward guard (decy never produces `Bool`);
-/// `Type::Unit` is handled at the return position.
+/// `Type::Unit` is handled at the return position; `Type::Ptr` is `None` here
+/// (handled by `c_abi_render`).
 fn c_abi_type(ty: &Type) -> Option<&'static str> {
     match ty {
         Type::I64 | Type::Bool => Some("::std::os::raw::c_int"),
@@ -770,6 +811,11 @@ fn c_abi_type(ty: &Type) -> Option<&'static str> {
         // never widened through `c_double` (the 32↔64 ABI honesty held for
         // floats as PMAT-909 held it for ints).
         Type::F32 => Some("::std::os::raw::c_float"),
+        // PMAT-924: an 8-bit C `char` rides the platform-signedness-honest
+        // `c_char` ABI slot. It reaches a boundary ONLY as a pointer pointee
+        // (`char*` -> `*mut c_char`); a bare `char` value never appears (decy
+        // refuses it). The pointer wrapping is handled by `c_abi_render`.
+        Type::CChar => Some("::std::os::raw::c_char"),
         _ => None,
     }
 }
@@ -793,6 +839,56 @@ fn wrapper_native(ty: &Type) -> &'static str {
         // `i64` native wrapper (CLong casts to/from `c_longlong`; I64 to/from
         // `c_int`).
         _ => "i64",
+    }
+}
+
+/// PMAT-924: the ABI-honest rendering of a meta-HIR [`Type`] at a C boundary —
+/// the `extern "C"` ABI type, the native type the safe wrapper speaks, and
+/// whether a cast is needed between them. A SCALAR delegates to
+/// [`c_abi_type`]/[`wrapper_native`] (caller speaks i64/f64, so a cast to/from
+/// the c_int/c_double ABI slot is required). A POINTER ([`Type::Ptr`]) renders
+/// `*mut`/`*const <pointee-ABI>`; the wrapper speaks the SAME raw-pointer type
+/// (there is no "nicer" native pointer form at first cut), so NO cast is emitted
+/// (a `p as *mut c_int` self-cast would trip `clippy::unnecessary_cast`). The
+/// pointee MUST itself be an ABI-mappable scalar — a pointer to a
+/// container/struct/another pointer returns `None` (refuse-rather-than-mis-
+/// marshal, the same posture as the scalar arms). Returns `None` for any
+/// non-ABI-mappable type.
+struct CAbi {
+    /// The `extern "C"` ABI type (e.g. `::std::os::raw::c_int`, `*mut c_char`).
+    abi: String,
+    /// The native type the safe wrapper's signature speaks.
+    native: String,
+    /// Whether the wrapper must cast `native` → `abi` (false when they coincide,
+    /// e.g. a raw pointer that is its own native form).
+    needs_cast: bool,
+}
+
+fn c_abi_render(ty: &Type) -> Option<CAbi> {
+    match ty {
+        Type::Ptr { mutable, pointee } => {
+            // The pointee must be a directly-ABI-mappable scalar; a pointer to a
+            // non-mappable type (container/struct/another pointer) is refused —
+            // decy never produces such a pointee, but the emitter is the last
+            // ABI-honesty gate.
+            let inner = c_abi_type(pointee)?;
+            let qualifier = if *mutable { "mut" } else { "const" };
+            let ptr = format!("*{qualifier} {inner}");
+            Some(CAbi {
+                abi: ptr.clone(),
+                // The wrapper speaks the same raw-pointer type — no cast.
+                native: ptr,
+                needs_cast: false,
+            })
+        }
+        scalar => {
+            let abi = c_abi_type(scalar)?.to_string();
+            Some(CAbi {
+                native: wrapper_native(scalar).to_string(),
+                needs_cast: true,
+                abi,
+            })
+        }
     }
 }
 
@@ -1025,6 +1121,129 @@ mod tests {
         ] {
             assert_eq!(c_abi_type(&ty), None, "{ty:?} must be refused");
         }
+    }
+
+    #[test]
+    fn c_abi_render_pointer_is_abi_honest_no_cast() {
+        // PMAT-924: a C `int*` renders as a raw `*mut c_int` whose native form
+        // IS the ABI form (no cast — a self-cast would trip
+        // clippy::unnecessary_cast). A bare `int` still casts (i64 -> c_int).
+        let p = c_abi_render(&Type::Ptr {
+            mutable: true,
+            pointee: Box::new(Type::I64),
+        })
+        .expect("int* is ABI-mappable");
+        assert_eq!(p.abi, "*mut ::std::os::raw::c_int");
+        assert_eq!(p.native, "*mut ::std::os::raw::c_int");
+        assert!(
+            !p.needs_cast,
+            "a raw pointer is its own native form — no cast"
+        );
+
+        // `char*` -> `*mut c_char` (the canonical C-string pointer).
+        let pc = c_abi_render(&Type::Ptr {
+            mutable: true,
+            pointee: Box::new(Type::CChar),
+        })
+        .expect("char* is ABI-mappable");
+        assert_eq!(pc.abi, "*mut ::std::os::raw::c_char");
+
+        // A scalar still needs the i64 -> c_int cast.
+        let s = c_abi_render(&Type::I64).expect("scalar");
+        assert!(s.needs_cast, "a scalar param casts to its C ABI slot");
+
+        // Refuse-rather-than-mis-marshal: a pointer to a NON-mappable pointee
+        // (a container) is refused (None), not silently emitted.
+        assert!(
+            c_abi_render(&Type::Ptr {
+                mutable: true,
+                pointee: Box::new(Type::Str),
+            })
+            .is_none(),
+            "pointer to a non-ABI-mappable pointee must be refused"
+        );
+    }
+
+    #[test]
+    fn emit_shims_pointer_param_compiles_abi_honest() {
+        // PMAT-924 end-to-end: a C `char*` param + `int*` param emit ABI-honest
+        // raw-pointer extern decls and a NO-CAST safe wrapper that compiles
+        // under -D warnings (the load-bearing gate — no unnecessary self-cast).
+        let out = emit_for(
+            "scan",
+            vec![
+                (
+                    "s",
+                    Type::Ptr {
+                        mutable: true,
+                        pointee: Box::new(Type::CChar),
+                    },
+                ),
+                (
+                    "out",
+                    Type::Ptr {
+                        mutable: true,
+                        pointee: Box::new(Type::I64),
+                    },
+                ),
+            ],
+            Type::I64,
+        )
+        .expect("emits");
+        assert!(
+            out.contains(
+                "fn scan(s: *mut ::std::os::raw::c_char, out: *mut ::std::os::raw::c_int) -> ::std::os::raw::c_int;"
+            ),
+            "ABI-honest raw-pointer extern decl: {out}"
+        );
+        assert!(
+            out.contains("pub fn scan_shim(s: *mut ::std::os::raw::c_char, out: *mut ::std::os::raw::c_int) -> i64 {"),
+            "wrapper speaks the raw pointer types directly: {out}"
+        );
+        // No `as *mut` self-cast (would trip clippy::unnecessary_cast).
+        assert!(
+            !out.contains("as *mut"),
+            "a raw pointer arg must not be self-cast: {out}"
+        );
+        assert!(
+            rustc_lib_compiles("ptr", &out),
+            "emitted pointer shim must compile under -D warnings"
+        );
+    }
+
+    #[test]
+    fn emit_shims_pointer_return_compiles() {
+        // PMAT-924: a pointer in RETURN position — `__r` is already the native
+        // (= ABI) pointer type, so the wrapper returns it WITHOUT a cast.
+        let out = emit_for(
+            "identity",
+            vec![(
+                "p",
+                Type::Ptr {
+                    mutable: true,
+                    pointee: Box::new(Type::F64),
+                },
+            )],
+            Type::Ptr {
+                mutable: true,
+                pointee: Box::new(Type::F64),
+            },
+        )
+        .expect("emits");
+        assert!(
+            out.contains(
+                "fn identity(p: *mut ::std::os::raw::c_double) -> *mut ::std::os::raw::c_double;"
+            ),
+            "{out}"
+        );
+        assert!(
+            out.contains("-> *mut ::std::os::raw::c_double {"),
+            "wrapper returns the raw pointer: {out}"
+        );
+        assert!(
+            rustc_lib_compiles("ptrret", &out),
+            "emitted pointer-return shim must compile under -D warnings"
+        );
     }
 
     #[test]
