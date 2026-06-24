@@ -13,9 +13,11 @@
 //!     `Type::F32`, ABI `c_float` — never widened through the 64-bit double
 //!     slot; PMAT-918: `unsigned`/`unsigned int`/`uint32_t` lower to the
 //!     DISTINCT 32-bit-unsigned `Type::CUInt`, ABI `c_uint` — never the signed
-//!     `c_int`. Pointer/string + `unsigned long` tokens are the remaining ABI
-//!     ceiling.)
-//!   - local `int` / `long` / `unsigned` / `double` / `float` declarations (`int x = <expr>;`)
+//!     `c_int`; PMAT-921: `unsigned long`/`unsigned long long`/`uint64_t` lower
+//!     to the DISTINCT 64-bit-unsigned `Type::CULong`, ABI `c_ulonglong` —
+//!     never the 32-bit `c_uint` (truncation) nor the signed `c_longlong`.
+//!     Pointer/string tokens are the remaining ABI ceiling.)
+//!   - local `int` / `long` / `unsigned` / `unsigned long` / `double` / `float` declarations (`int x = <expr>;`)
 //!   - a trailing `return <expr>;`
 //!   - expressions: integer and float literals, identifiers, calls (recursion),
 //!     `+ - *`, comparisons (`< <= > >= == !=`), `&& ||`, unary `- !`,
@@ -30,9 +32,11 @@
 //! `Type::I64`, the backend narrows to `i32`; PMAT-909 `long`/`int64_t`
 //! → `Type::CLong`, which the C emit path keeps at `i64`; PMAT-918
 //! `unsigned`/`uint32_t` → `Type::CUInt`, which the C emit path renders
-//! `u32` with DEFINED-modular `wrapping_*` arithmetic). The governing
+//! `u32` with DEFINED-modular `wrapping_*` arithmetic; PMAT-921 `unsigned
+//! long`/`uint64_t` → `Type::CULong`, which the C emit path renders `u64`
+//! with the same DEFINED-modular `wrapping_*` arithmetic). The governing
 //! contract `C-C-INT-ARITH` is on disk (the modular-arithmetic family
-//! covers both the signed and the unsigned widths).
+//! covers both the signed and the unsigned widths, at both widths).
 
 use std::path::Path;
 use xpile_frontend::{Frontend, FrontendError};
@@ -77,10 +81,11 @@ enum Tok {
     Int,      // `int` keyword (C 32-bit int → meta-HIR I64, ABI c_int)
     Long, // `long` / `long long` / `int64_t` (PMAT-909): 64-bit C int → meta-HIR CLong, ABI c_longlong
     Unsigned, // `unsigned` / `unsigned int` / `uint32_t` (PMAT-918): 32-bit UNSIGNED C int → meta-HIR CUInt, ABI c_uint
-    Double,   // `double` keyword (PMAT-910): 64-bit C double → meta-HIR F64, ABI c_double
-    Float,    // `float` keyword (PMAT-911): 32-bit C float → meta-HIR F32, ABI c_float
-    Return,   // `return` keyword
-    Void,     // `void` keyword
+    ULong, // `uint64_t` / `unsigned long` (`unsigned`+`long`) (PMAT-921): 64-bit UNSIGNED C int → meta-HIR CULong, ABI c_ulonglong
+    Double, // `double` keyword (PMAT-910): 64-bit C double → meta-HIR F64, ABI c_double
+    Float, // `float` keyword (PMAT-911): 32-bit C float → meta-HIR F32, ABI c_float
+    Return, // `return` keyword
+    Void,  // `void` keyword
     Ident(String),
     Num(i64),
     FNum(f64), // float literal (PMAT-910): `<digits>.<digits>` → Expr::LitFloat
@@ -277,6 +282,12 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
                     // token; the parser folds a following `int` (`unsigned int`)
                     // into the same 32-bit-unsigned width.
                     "unsigned" | "uint32_t" | "uint_least32_t" | "uint_fast32_t" => Tok::Unsigned,
+                    // PMAT-921: a 64-bit UNSIGNED C integer. `unsigned long` /
+                    // `unsigned long long` lex as `unsigned` (`Tok::Unsigned`)
+                    // followed by `long` (`Tok::Long`) — folded in `parse_c_type`.
+                    // The fixed-width `<stdint.h>` 64-bit unsigned aliases lex
+                    // directly to one `ULong` token.
+                    "uint64_t" | "uint_least64_t" | "uint_fast64_t" => Tok::ULong,
                     // PMAT-910: C `double` (64-bit) → meta-HIR F64, ABI c_double
                     // — ABI-consistent (C double = Rust f64 = c_double = 64-bit).
                     "double" => Tok::Double,
@@ -426,12 +437,15 @@ impl<'a> Parser<'a> {
     /// body is rejected since the meta-HIR has a single trailing return).
     fn parse_stmt(&mut self, fn_name: &str) -> Result<Stmt, String> {
         match self.peek() {
-            // PMAT-909/910/911/918: a local decl begins with a C scalar type
-            // token (`int x = …;`, `long x = …;`, `unsigned x = …;`,
-            // `double x = …;`, or `float x = …;`), each carrying its own width.
+            // PMAT-909/910/911/918/921: a local decl begins with a C scalar
+            // type token (`int x = …;`, `long x = …;`, `unsigned x = …;`,
+            // `uint64_t x = …;`, `double x = …;`, or `float x = …;`), each
+            // carrying its own width. (`unsigned long` begins with `Tok::Unsigned`,
+            // already covered.)
             Some(Tok::Int)
             | Some(Tok::Long)
             | Some(Tok::Unsigned)
+            | Some(Tok::ULong)
             | Some(Tok::Double)
             | Some(Tok::Float) => {
                 let ty = self.parse_c_type()?;
@@ -552,7 +566,12 @@ impl<'a> Parser<'a> {
     /// floats as for ints). PMAT-918: `unsigned` / `unsigned int` / `uint32_t`
     /// → [`Type::CUInt`] (a 32-bit UNSIGNED C int the FFI ABI maps to the
     /// `c_uint` slot, never the signed `c_int`); a trailing `int`
-    /// (`unsigned int`) folds into the same width.
+    /// (`unsigned int`) folds into the same width. PMAT-921: `unsigned long` /
+    /// `unsigned long long` / `uint64_t` → [`Type::CULong`] (a 64-bit UNSIGNED
+    /// C int the FFI ABI maps to the `c_ulonglong` slot — never the 32-bit
+    /// `c_uint`, which truncates, nor the signed `c_longlong`, which flips
+    /// values ≥ 2⁶³ negative); a trailing `long` after `unsigned` PROMOTES
+    /// `CUInt` → `CULong`.
     fn parse_c_type(&mut self) -> Result<Type, String> {
         match self.peek() {
             Some(Tok::Int) => {
@@ -567,16 +586,34 @@ impl<'a> Parser<'a> {
                 }
                 Ok(Type::CLong)
             }
-            // PMAT-918: `unsigned` / `unsigned int` / `uint32_t` → the DISTINCT
-            // 32-bit-unsigned `Type::CUInt`. A trailing `int` (`unsigned int`)
-            // folds into the same width. (`unsigned long` — 64-bit unsigned — is
-            // a separate width, deferred with pointer/string tokens.)
+            // PMAT-918/921: `unsigned` / `unsigned int` / `uint32_t` → the
+            // DISTINCT 32-bit-unsigned `Type::CUInt`; a trailing `int`
+            // (`unsigned int`) folds into that width. PMAT-921: a trailing
+            // `long` (`unsigned long` / `unsigned long long`) PROMOTES to the
+            // DISTINCT 64-bit-unsigned `Type::CULong` instead — never folded
+            // into the 32-bit `CUInt` (that would truncate) nor the 64-bit
+            // SIGNED `CLong` (that would flip values ≥ 2⁶³ negative).
             Some(Tok::Unsigned) => {
                 self.bump();
+                if matches!(self.peek(), Some(Tok::Long)) {
+                    self.bump();
+                    // `unsigned long long` — fold the optional second `long`.
+                    if matches!(self.peek(), Some(Tok::Long)) {
+                        self.bump();
+                    }
+                    return Ok(Type::CULong);
+                }
                 if matches!(self.peek(), Some(Tok::Int)) {
                     self.bump();
                 }
                 Ok(Type::CUInt)
+            }
+            // PMAT-921: the fixed-width `<stdint.h>` 64-bit unsigned aliases
+            // (`uint64_t` / `uint_least64_t` / `uint_fast64_t`) lex straight to
+            // `Tok::ULong` → the DISTINCT 64-bit-unsigned `Type::CULong`.
+            Some(Tok::ULong) => {
+                self.bump();
+                Ok(Type::CULong)
             }
             Some(Tok::Double) => {
                 self.bump();
@@ -587,7 +624,7 @@ impl<'a> Parser<'a> {
                 Ok(Type::F32)
             }
             other => Err(format!(
-                "expected a C scalar type (`int`, `long`, `int64_t`, `unsigned`, `unsigned int`, `uint32_t`, `float`, or `double`), found {other:?}"
+                "expected a C scalar type (`int`, `long`, `int64_t`, `unsigned`, `unsigned int`, `uint32_t`, `unsigned long`, `uint64_t`, `float`, or `double`), found {other:?}"
             )),
         }
     }
@@ -980,6 +1017,50 @@ mod tests {
         assert_eq!(f.return_type, Type::CUInt, "bare unsigned return → CUInt");
         assert_eq!(f.params.len(), 1);
         assert_eq!(f.params[0].ty, Type::CUInt, "uint32_t param → CUInt");
+    }
+
+    #[test]
+    fn parses_unsigned_long_as_distinct_culong_width() {
+        // PMAT-921: `unsigned long` lowers to the distinct 64-bit UNSIGNED
+        // CULong width (params + return + local), kept apart from BOTH the
+        // 32-bit-unsigned `unsigned int` → CUInt AND the 64-bit-SIGNED
+        // `long` → CLong. The `unsigned long` two-keyword form folds to one
+        // width; a sibling `unsigned int` param stays 32-bit CUInt.
+        let m = lower(
+            "unsigned long wrap(unsigned long x, unsigned int n) { unsigned long acc = x; return acc; }",
+        );
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
+        assert_eq!(f.return_type, Type::CULong, "unsigned long return → CULong");
+        assert_eq!(f.params[0].ty, Type::CULong, "unsigned long param → CULong");
+        assert_eq!(
+            f.params[1].ty,
+            Type::CUInt,
+            "unsigned int param stays 32-bit CUInt"
+        );
+        let Stmt::Let { ty, .. } = &f.body.stmts[0] else {
+            unreachable!("first stmt is the `unsigned long acc` decl")
+        };
+        assert_eq!(*ty, Type::CULong, "unsigned long local → CULong");
+    }
+
+    #[test]
+    fn uint64_t_and_unsigned_long_long_alias_to_culong() {
+        // PMAT-921: `uint64_t` and `unsigned long long` both fold to the single
+        // 64-bit-unsigned CULong width — distinct from the signed `int64_t`/
+        // `long long` (CLong) and the 32-bit `uint32_t` (CUInt).
+        let m = lower("uint64_t f(unsigned long long x) { return x; }");
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
+        assert_eq!(f.return_type, Type::CULong, "uint64_t return → CULong");
+        assert_eq!(f.params.len(), 1);
+        assert_eq!(
+            f.params[0].ty,
+            Type::CULong,
+            "`unsigned long long` param → CULong"
+        );
     }
 
     #[test]

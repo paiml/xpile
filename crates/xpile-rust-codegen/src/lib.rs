@@ -1396,6 +1396,10 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
         // width, rendered as Rust `u32` (the C ABI distinction lives in
         // `c_abi_type` -> c_uint; the signedness is preserved end to end).
         Type::CUInt => out.push_str("u32"),
+        // PMAT-921: a C `unsigned long`/`uint64_t` — a distinct 64-bit UNSIGNED
+        // width, rendered as Rust `u64` (the C ABI distinction lives in
+        // `c_abi_type` -> c_ulonglong; both width and signedness preserved).
+        Type::CULong => out.push_str("u64"),
         // PMAT-477 (R8): Python `float` → Rust `f64`.
         Type::F64 => out.push_str("f64"),
         // PMAT-911: a C `float` — a distinct 32-bit-ABI width, rendered as
@@ -4332,19 +4336,21 @@ impl Backend for RustBackend {
 // This mirrors the standalone-decy → C-C-INT-ARITH plan in
 // `sub/v0.2.0-decy-merger.md`; the contract substrate is queued.
 
-/// PMAT-909/910/911/918: the Rust scalar width a C function is emitted at. C
+/// PMAT-909/910/911/918/921: the Rust scalar width a C function is emitted at. C
 /// `int` (`Type::I64`) → `i32` (fixed-width, wrapping); C `long`/`int64_t`
-/// (`Type::CLong`) → `i64`; C `unsigned`/`uint32_t` (`Type::CUInt`) → `u32`
+/// (`Type::CLong`) → `i64`; C `unsigned`/`uint32_t` (`Type::CUInt`) → `u32` and
+/// C `unsigned long`/`uint64_t` (`Type::CULong`) → `u64`
 /// (fixed-width, DEFINED-modular wrapping — unsigned overflow is specified, not
 /// UB); C `double` (`Type::F64`) → `f64` and C `float` (`Type::F32`) → `f32`
 /// (both IEEE arithmetic, no wrapping). A single function is emitted at ONE
-/// width — "widest wins" with precedence `f64 > f32 > u32 > i64 > i32`: if its
-/// return, any param, or any local is `F64` the whole function rides `f64`;
-/// else if any is `F32` it rides `f32`; else if any is `CUInt` it rides `u32`;
+/// width — "widest wins" with precedence `f64 > f32 > u64 > u32 > i64 > i32`: if
+/// its return, any param, or any local is `F64` the whole function rides `f64`;
+/// else if any is `F32` it rides `f32`; else if any is `CULong` it rides `u64`;
+/// else if any is `CUInt` it rides `u32`;
 /// else if any is `CLong` it rides `i64`; else `i32`. For the signed integer
 /// widths this is value-preserving (int fits in i64, only the wrap width
-/// changes); `u32` is signedness-distinct and decy produces uniformly-unsigned
-/// functions for it. The float cases target the uniformly-`double` /
+/// changes); `u32`/`u64` are signedness-distinct and decy produces
+/// uniformly-unsigned functions for them. The float cases target the uniformly-`double` /
 /// uniformly-`float` C functions decy currently produces; a mixed-width
 /// function (C usual-arithmetic promotion) is a deferred edge — decy has no
 /// fixture for one yet.
@@ -4387,6 +4393,15 @@ const C_WIDTH_U32: CWidth = CWidth {
     lit_suffix: "u32",
     is_float: false,
 };
+// PMAT-921: a C `unsigned long`/`uint64_t` function rides `u64` — the 64-bit
+// dual of the `u32` C_WIDTH_U32, exactly as C_WIDTH_I64 is the 64-bit dual of
+// the signed C_WIDTH_I32. Wrapping is the DEFINED C semantics for unsigned
+// overflow (not the UB-conservative discharge the signed widths use).
+const C_WIDTH_U64: CWidth = CWidth {
+    rust_ty: "u64",
+    lit_suffix: "u64",
+    is_float: false,
+};
 
 fn c_function_width(f: &Function) -> CWidth {
     let any_f64 = matches!(f.return_type, Type::F64)
@@ -4402,6 +4417,16 @@ fn c_function_width(f: &Function) -> CWidth {
         || c_stmts_have_ty(&f.body.stmts, &Type::F32);
     if any_f32 {
         return C_WIDTH_F32;
+    }
+    // PMAT-921: an `unsigned long`/`uint64_t` function rides `u64` — the 64-bit
+    // unsigned width, checked before the 32-bit `CUInt` so the wider unsigned
+    // width wins under the "widest wins" precedence (decy produces uniform-width
+    // functions, so a CULong presence keys the whole function u64).
+    let any_culong = matches!(f.return_type, Type::CULong)
+        || f.params.iter().any(|p| matches!(p.ty, Type::CULong))
+        || c_stmts_have_ty(&f.body.stmts, &Type::CULong);
+    if any_culong {
+        return C_WIDTH_U64;
     }
     // PMAT-918: an `unsigned`/`uint32_t` function rides `u32` (signedness-
     // distinct from the signed integer widths; decy produces uniform-width
@@ -4974,6 +4999,61 @@ mod tests {
         assert!(
             !rust.contains("i32") && !rust.contains("i64"),
             "no signed-int type leaks into an unsigned fn: {rust}"
+        );
+    }
+
+    #[test]
+    fn c_emit_unsigned_long_function_rides_u64_modular_width() {
+        // PMAT-921: an `unsigned long`-typed C function emits at u64 width — u64
+        // signature, u64-suffixed literals, and `wrapping_*` arithmetic (the
+        // DEFINED modular C semantics for the 64-bit unsigned width). It cites
+        // C-C-INT-ARITH and leaks neither a signed-int type nor the narrower u32.
+        let ulwrap = Function {
+            name: "ulwrap".into(),
+            params: vec![Param {
+                name: "x".into(),
+                ty: Type::CULong,
+                mutable: false,
+            }],
+            return_type: Type::CULong,
+            body: Block {
+                stmts: vec![Stmt::Let {
+                    name: "acc".into(),
+                    ty: Type::CULong,
+                    value: Expr::BinOp {
+                        op: BinOp::Add,
+                        lhs: Box::new(Expr::Ident("x".into())),
+                        rhs: Box::new(Expr::LitInt(1)),
+                    },
+                    mutable: false,
+                }],
+                trailing_return: Expr::Ident("acc".into()),
+            },
+        };
+        let rust = emit_module(&c_module("ul", ulwrap)).expect("emit ok");
+        assert!(
+            rust.contains("pub fn ulwrap(x: u64) -> u64"),
+            "unsigned long C fn must ride u64 width: {rust}"
+        );
+        assert!(
+            rust.contains("let acc: u64 ="),
+            "unsigned long local is u64: {rust}"
+        );
+        assert!(
+            rust.contains("1u64"),
+            "literal suffix tracks the u64 width: {rust}"
+        );
+        assert!(
+            rust.contains("wrapping_add"),
+            "unsigned long C arithmetic is the DEFINED-modular wrapping_*: {rust}"
+        );
+        assert!(
+            rust.contains("// xpile-contract: C-C-INT-ARITH"),
+            "unsigned long C fn cites the modular-arithmetic contract: {rust}"
+        );
+        assert!(
+            !rust.contains("i32") && !rust.contains("i64") && !rust.contains("u32"),
+            "no signed-int nor narrower u32 type leaks into an unsigned-long fn: {rust}"
         );
     }
 
