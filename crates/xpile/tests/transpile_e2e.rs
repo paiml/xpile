@@ -13687,6 +13687,35 @@ fn main() {
     assert_rustc_runs("str_method_move_receiver", &rust, driver);
 }
 
+/// PMAT-934 (HUNT differential STR-LJUST-FILL-MOVE): the 2-arg fill form
+/// `s.ljust(w, c)` binds `let __s = (recv)` in codegen (a MOVE) exactly like
+/// `rjust`/`center`/`zfill`, but `LJust` was missing from
+/// `str_method_moves_receiver`, so reusing the source variable after a 2-arg
+/// `ljust` was a use-after-move (rustc E0382) where CPython runs fine. The
+/// receiver is now cloned when reused; the 1-arg form (borrowed) and single-use
+/// emission are unchanged. Cross-checked vs python3.
+#[test]
+fn str_ljust_fill_reuse() {
+    let rust = xpile_transpile_to_rust("str_ljust_fill_reuse.py");
+    assert!(
+        // a reused 2-arg-ljust receiver is now cloned (was a bare move = E0382)…
+        rust.contains("let __s = ((s).clone())")
+            // …while a single-use 2-arg-ljust receiver stays bare (no churn).
+            && rust.contains("{ let __s = (s); let __w"),
+        "a reused 2-arg ljust receiver must clone; a single use must not:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(ljust_fill_reuse("ab".to_string()), 8);
+    assert_eq!(ljust_one_arg_reuse("ab".to_string()), 8);
+    assert_eq!(ljust_fill_single_use("ab".to_string()), 6);
+    // ljust no-op when already wide enough: 7 + 7 = 14.
+    assert_eq!(ljust_fill_reuse("abcdefg".to_string()), 14);
+}
+"#;
+    assert_rustc_runs("str_ljust_fill_reuse", &rust, driver);
+}
+
 /// PMAT-757 (HUNT-V15 #8): `isinstance(x, T)` was emitted verbatim → rustc E0425
 /// (`isinstance`/`int` undefined). xpile is statically typed, so it now folds to
 /// a const bool (incl. Python's `bool`-is-a-`int` rule and the type-tuple form).
