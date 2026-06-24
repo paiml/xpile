@@ -1287,7 +1287,22 @@ pub struct Param {
 pub enum Type {
     /// 64-bit signed integer. The fast path for Python `int` — covers
     /// every case where the frontend can prove the value fits.
+    ///
+    /// NOTE: `decy-frontend` also lowers C `int` (a 32-bit type) to `I64`
+    /// — the backend narrows it to `i32` on the `SourceLang::C` emit path,
+    /// and `c_abi_type` maps it back to `c_int` at an FFI boundary. A
+    /// genuinely 64-bit C integer is modeled distinctly as [`Type::CLong`]
+    /// (PMAT-909) so the FFI ABI is not forced to narrow it.
     I64,
+    /// A C `long` / `int64_t` — a 64-bit-ABI integer modeled DISTINCTLY
+    /// from the 32-bit-`int`-backed [`Type::I64`] (PMAT-909). decy-frontend
+    /// produces it for `long` / `long long` / `int64_t` declarations; the
+    /// FFI manifest maps it to `c_longlong` (a 64-bit C ABI slot) instead
+    /// of narrowing every C integer to `c_int`, and the Rust/Ruchy backends
+    /// render it as `i64` (Lean: `Int`). It is value-compatible with `I64`
+    /// (both ride an `i64` native wrapper) — the only distinction is the C
+    /// ABI width preserved at a foreign boundary.
+    CLong,
     /// Boolean — produced by comparison ops in [`Expr::BinOp`].
     Bool,
     /// IEEE-754 double — Python `float`. PMAT-477 (R8). Rust/Ruchy emit

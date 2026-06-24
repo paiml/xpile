@@ -11039,11 +11039,12 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-909: [decy] lift the I64->c_int ABI ceiling — parse one wider C integer type'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-23T00:00:00Z
   acceptance_criteria:
   - "Grow decy-frontend to parse one wider C integer (long / int64_t) -> a distinct meta-HIR width; extend c_abi_type + wrapper_native to honor it (int64_t -> c_longlong) instead of narrowing every int to c_int; correct the stale ceiling comments. Sprint Day 10 + sprint-close truth-up of audit-design.md (machine-checked Lean + Run>=1 hybrid witness)."
+  - "DONE: added the DISTINCT meta-HIR width Type::CLong (xpile-meta-hir), kept apart from the 32-bit-int-backed I64. decy-frontend now lexes `long` / `long long` / `int64_t` (+ int_least64_t / int_fast64_t) to one Long token and parses them at every type position (return, params, local decls) via a new parse_c_int_type helper -> Type::CLong; `int` stays I64. xpile-ffi-manifest c_abi_type maps CLong -> ::std::os::raw::c_longlong (a 64-bit ABI slot, always >=64-bit unlike platform-variable `long`) instead of narrowing to c_int; wrapper_native CLong -> i64; direct_native_type CLong -> i64. The emitted ffi_shims.rs ABI-note + the c_abi_type ceiling comment are rewritten (ceiling now only float/pointer/string tokens). The rust-codegen C-emit path is width-aware (PMAT-909): c_function_width picks i64 if return/any-param/any-local is CLong ('widest wins', value-preserving — never truncates int), else i32; the literal suffix + let-type + signature track the width; pure-int functions stay i32 (regression-guarded). emit_type renders CLong as i64 (Rust/Ruchy) / Int (Lean). Tests: decy parses_long_as_distinct_clong_width + int64_t_and_long_long_alias_to_clong; ffi-manifest c_abi_type_table asserts c_longlong + an end-to-end emit_shims_clong_boundary_maps_c_longlong (rustc-compiles, no c_int leak); rust-codegen c_emit_long_function_rides_i64_width + c_emit_int_function_stays_i32. Exit criterion 7 met. Sprint Day 10 — final roadmap sweep + audit-design truth-up."
 - id: PMAT-131
   github_issue: null
   item_type: task

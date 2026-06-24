@@ -861,6 +861,9 @@ fn escape_lean_str(s: &str) -> String {
 fn emit_type(out: &mut String, t: &Type) -> Result<(), LeanCodegenError> {
     match t {
         Type::I64 => out.push_str("Int"),
+        // PMAT-909: a C `long`/`int64_t` (distinct 64-bit-ABI width). Lean's
+        // `Int` is unbounded — same total-function shape as I64.
+        Type::CLong => out.push_str("Int"),
         // PMAT-477 (R8): Python `float` → Lean `Float`.
         Type::F64 => out.push_str("Float"),
         Type::Bool => out.push_str("Bool"),

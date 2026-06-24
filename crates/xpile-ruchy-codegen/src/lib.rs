@@ -1138,6 +1138,9 @@ fn escape_ruchy_str(s: &str) -> String {
 fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
     match t {
         Type::I64 => out.push_str("i64"),
+        // PMAT-909: a C `long`/`int64_t` (distinct 64-bit-ABI width) → `i64`
+        // (Ruchy compiles to Rust; value-compatible with I64).
+        Type::CLong => out.push_str("i64"),
         // PMAT-477 (R8): Ruchy → Rust `f64`.
         Type::F64 => out.push_str("f64"),
         Type::Bool => out.push_str("bool"),
