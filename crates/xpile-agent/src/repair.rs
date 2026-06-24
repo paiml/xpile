@@ -27,6 +27,31 @@
 //! per iteration, converging the loop in two steps. Each rule is idempotent (it
 //! will not re-fire once its cast is present), which is what makes the loop
 //! *terminate*: when no rule applies, the loop fails closed.
+//!
+//! ## A second, DIVERGENCE-class failure: whole-float repr (PMAT-933)
+//!
+//! The ABI-cast rules above handle a `BuildError`/`E0308`. The float boundary
+//! exposes a *different* class the loop must also cover — one that **builds and
+//! runs** yet diverges. A `double`-returning FFI boundary (the `hybrid_scale2`
+//! shape, PMAT-930/931) printed as Rust's plain `println!("{}", x)` emits `10`
+//! for a whole-number `f64`, but CPython-via-ctypes (`restype = c_double`)
+//! prints Python's `10.0`. Note `c_double` *is* `f64` in Rust, so **no ABI cast
+//! is missing and there is no compile error** — the symptom is a
+//! [`Symptom::Divergence`] (`expected: "10.0"`, `actual: "10"`), exactly what
+//! PMAT-931 fixed in the production reconciliation seam.
+//!
+//! [`FloatReprRepair`] is the deterministic rule for that class: on a divergence
+//! whose `expected` is a whole-number float (`N.0`) and whose `actual` is the
+//! bare integer (`N`), it rewrites the artifact's plain float print into the
+//! CPython-faithful `.0`-suffix repr block — the same transform the codegen's
+//! `Expr::ToStr { of_float: true }` performs. [`RepairLoop::ffi_float_repr`]
+//! wires it. It fires only on that divergence shape and is idempotent (once the
+//! repr block is present, the plain print is gone), so the loop terminates.
+//!
+//! [`FfiArgCastRepair`] also casts **each** top-level call argument independently
+//! (`f(a, b)` → `f(a as <abi>, b as <abi>)`), mirroring `emit_c_shim`'s
+//! per-parameter `Marshal::ScalarCast`, so a multi-argument int boundary is
+//! repairable, not just the one-argument case.
 
 use crate::{AgentError, Budget};
 use std::path::Path;
@@ -56,6 +81,16 @@ impl Symptom {
     fn is_type_mismatch(&self) -> bool {
         matches!(self, Symptom::BuildError { stderr }
             if stderr.contains("E0308") || stderr.contains("mismatched types"))
+    }
+
+    /// Is this the whole-number-float repr divergence (PMAT-931/933)? True iff
+    /// the artifact printed the bare integer `N` (`actual`) where CPython prints
+    /// Python's `N.0` (`expected`) for the SAME integer `N` — i.e. `expected ==
+    /// "{actual}.0"` and `actual` parses as an integer. Narrow by construction so
+    /// the float-repr rule never fires on an unrelated value mismatch.
+    fn is_whole_float_repr(&self) -> bool {
+        matches!(self, Symptom::Divergence { expected, actual, .. }
+            if actual.parse::<i64>().is_ok() && *expected == format!("{actual}.0"))
     }
 }
 
@@ -138,6 +173,23 @@ impl RepairLoop {
                     native: "i64".to_string(),
                 }),
             ],
+        )
+    }
+
+    /// The repair loop for the whole-number-float repr divergence (PMAT-933):
+    /// a single [`FloatReprRepair`] rule over the printed expression `print_expr`
+    /// (e.g. `scale2_shim(2.0, 5.0)`). A `double`-returning FFI boundary built
+    /// and ran but printed `10` where CPython prints `10.0`; this loop rewrites
+    /// the plain print into the CPython-faithful repr block and converges in one
+    /// iteration. This is the FFI-float-type-flow failure class PMAT-931 fixed in
+    /// the production seam, expressed as a deterministic agent-repair rule over
+    /// the EXECUTED artifact's [`Symptom::Divergence`].
+    pub fn ffi_float_repr(budget: Budget, print_expr: impl Into<String>) -> Self {
+        Self::new(
+            budget,
+            vec![Box::new(FloatReprRepair {
+                print_expr: print_expr.into(),
+            })],
         )
     }
 
@@ -252,9 +304,61 @@ impl RepairRule for FfiReturnCastRepair {
     }
 }
 
-/// Rewrite the single-scalar-argument call `symbol(arg)` to `symbol(arg as abi)`,
-/// skipping the `extern` declaration (`fn symbol(...)`). Returns `None` when no
-/// un-cast call site exists (idempotent) or the call shape is unexpected.
+/// PMAT-933: repair the whole-number-float repr divergence. Fires ONLY on a
+/// [`Symptom::is_whole_float_repr`] divergence; rewrites the artifact's plain
+/// `println!("{}", <print_expr>)` into the CPython-faithful repr block (`.0` for
+/// whole values), the same transform `Expr::ToStr { of_float: true }` performs.
+/// Idempotent — once the repr block is present the plain print is gone — so the
+/// loop converges in one step and then fails closed if anything still diverges.
+pub struct FloatReprRepair {
+    /// The exact float-valued expression being printed (e.g. `scale2_shim(2.0,
+    /// 5.0)`), so the rewrite targets the right `println!` and binds it once to a
+    /// temporary before formatting (the expression may have side effects / not be
+    /// `Copy`-trivial to evaluate twice).
+    pub print_expr: String,
+}
+
+impl RepairRule for FloatReprRepair {
+    fn name(&self) -> &'static str {
+        "float-repr"
+    }
+
+    fn apply(&self, symptom: &Symptom, candidate: &str) -> Option<String> {
+        if !symptom.is_whole_float_repr() {
+            return None;
+        }
+        rewrite_plain_float_print(candidate, &self.print_expr)
+    }
+}
+
+/// Rewrite `println!("{}", <expr>);` into a CPython-faithful float-repr print:
+/// bind the value once, then print `format!("{}.0", v)` for a whole `f64` else
+/// `format!("{}", v)`. Returns `None` when the plain print is absent (idempotent
+/// — the repr block uses `.fract()`, not a bare `"{}"` of `expr`), so the rule
+/// fires at most once.
+fn rewrite_plain_float_print(src: &str, expr: &str) -> Option<String> {
+    let plain = format!("println!(\"{{}}\", {expr});");
+    let pos = src.find(&plain)?;
+    // The replacement mirrors `Expr::ToStr { of_float: true }`'s whole-number
+    // `.0` suffix (the non-scientific, finite path the hybrid fixture exercises).
+    let repr = format!(
+        "{{ let __rv = {expr}; if __rv.fract() == 0.0 {{ println!(\"{{}}.0\", __rv) }} else {{ println!(\"{{}}\", __rv) }} }}"
+    );
+    Some(format!(
+        "{}{}{}",
+        &src[..pos],
+        repr,
+        &src[pos + plain.len()..]
+    ))
+}
+
+/// Rewrite the call `symbol(a, b, …)` so EACH top-level argument carries its C
+/// ABI cast — `symbol(a as abi, b as abi)` — skipping the `extern` declaration
+/// (`fn symbol(...)`). This mirrors `emit_c_shim`'s per-parameter
+/// `Marshal::ScalarCast`, so a multi-argument boundary (the `scale2(double,
+/// double)` shape) is repaired in one pass, not just the single-argument case.
+/// Returns `None` when every argument is already cast (idempotent) or the call
+/// shape is unexpected, so the rule fires at most once per call site.
 fn insert_arg_cast(src: &str, symbol: &str, abi: &str) -> Option<String> {
     let needle = format!("{symbol}(");
     let bytes = src.as_bytes();
@@ -290,19 +394,59 @@ fn insert_arg_cast(src: &str, symbol: &str, abi: &str) -> Option<String> {
         if args.trim().is_empty() {
             return None;
         }
-        // Idempotence: already cast → nothing to do.
-        if args.trim_end().ends_with(&format!("as {abi}")) {
-            return None;
+        let suffix = format!("as {abi}");
+        // Cast each top-level argument that is not already cast. Idempotence: if
+        // every argument already ends in `as <abi>`, there is nothing to do.
+        let mut changed = false;
+        let rebuilt: Vec<String> = split_top_level_args(args)
+            .into_iter()
+            .map(|arg| {
+                let t = arg.trim();
+                if t.ends_with(&suffix) {
+                    arg.to_string()
+                } else {
+                    changed = true;
+                    format!("{arg} {suffix}")
+                }
+            })
+            .collect();
+        if !changed {
+            // This call site is fully cast; keep scanning for any later one.
+            search = idx + 1;
+            continue;
         }
         return Some(format!(
-            "{}{} as {}{}",
+            "{}{}{}",
             &src[..args_start],
-            args,
-            abi,
+            rebuilt.join(","),
             &src[idx..]
         ));
     }
     None
+}
+
+/// Split a call's argument list at TOP-LEVEL commas only (commas inside nested
+/// parens/brackets/angle-brackets — e.g. a turbofish or an inner call — stay
+/// with their argument). Returns each argument slice verbatim (with its original
+/// surrounding whitespace) so the rewrite preserves formatting.
+fn split_top_level_args(args: &str) -> Vec<&str> {
+    let bytes = args.as_bytes();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    let mut out = Vec::new();
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' | b'[' | b'<' => depth += 1,
+            b')' | b']' | b'>' => depth -= 1,
+            b',' if depth == 0 => {
+                out.push(&args[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push(&args[start..]);
+    out
 }
 
 /// Rewrite the wrapper's tail return expression (a line that is exactly `__r`)
@@ -479,6 +623,21 @@ mod tests {
     /// rejects it with two `E0308`s (argument + return).
     const BROKEN: &str = "unsafe extern \"C\" {\n    fn square_sum(x: ::std::os::raw::c_int) -> ::std::os::raw::c_int;\n}\npub fn square_sum_shim(x: i64) -> i64 {\n    let __r = unsafe { square_sum(x) };\n    __r\n}\nfn main() {\n    println!(\"{}\", square_sum_shim(7));\n}\n";
 
+    /// A `scale2(double,double)->double` shim that BUILDS and RUNS but prints
+    /// `10` for the whole-number `f64` (the FFI-float-type-flow class, PMAT-933).
+    /// `c_double` *is* `f64`, so there is no ABI cast missing — the bug is the
+    /// plain `println!("{}", …)` of a whole float. The repair rewrites the print.
+    const FLOAT_PLAIN_PRINT: &str = "unsafe extern \"C\" {\n    fn scale2(a: ::std::os::raw::c_double, b: ::std::os::raw::c_double) -> ::std::os::raw::c_double;\n}\npub fn scale2_shim(a: f64, b: f64) -> f64 {\n    let __r = unsafe { scale2(a as ::std::os::raw::c_double, b as ::std::os::raw::c_double) };\n    __r as f64\n}\nfn main() {\n    println!(\"{}\", scale2_shim(2.0, 5.0));\n}\n";
+
+    /// The whole-number-float repr divergence: artifact prints `10`, CPython `10.0`.
+    fn float_repr_divergence() -> Symptom {
+        Symptom::Divergence {
+            index: 0,
+            expected: "10.0".to_string(),
+            actual: "10".to_string(),
+        }
+    }
+
     fn build_err() -> Symptom {
         Symptom::BuildError {
             stderr: "error[E0308]: mismatched types".to_string(),
@@ -501,6 +660,31 @@ mod tests {
     fn arg_cast_is_idempotent() {
         // CORRECT already has the arg cast → the rule declines to re-fire.
         assert!(insert_arg_cast(CORRECT, "square_sum", "::std::os::raw::c_int").is_none());
+    }
+
+    #[test]
+    fn arg_cast_casts_every_argument_of_a_multiarg_call() {
+        // PMAT-933: a two-argument int boundary (the `sum_of_squares(a,b)` shape
+        // from PMAT-930) — BOTH args must be cast in one pass (the old whole-list
+        // cast would have cast only the tail).
+        let two_arg = "unsafe extern \"C\" {\n    fn sos(a: ::std::os::raw::c_int, b: ::std::os::raw::c_int) -> ::std::os::raw::c_int;\n}\nfn f(a: i64, b: i64) -> i64 { unsafe { sos(a, b) as i64 } }\n";
+        let out = insert_arg_cast(two_arg, "sos", "::std::os::raw::c_int").unwrap();
+        assert!(out.contains("sos(a as ::std::os::raw::c_int, b as ::std::os::raw::c_int)"));
+        // The extern declaration is untouched (it already names the ABI type).
+        assert!(out.contains("fn sos(a: ::std::os::raw::c_int, b: ::std::os::raw::c_int)"));
+        // Exactly two casts inserted at the call (one per argument).
+        assert_eq!(out.matches("as ::std::os::raw::c_int)").count(), 1);
+        assert_eq!(out.matches("as ::std::os::raw::c_int,").count(), 1);
+        // Idempotent: re-running on the now-cast call declines.
+        assert!(insert_arg_cast(&out, "sos", "::std::os::raw::c_int").is_none());
+    }
+
+    #[test]
+    fn split_top_level_args_ignores_nested_commas() {
+        // A comma inside an inner call or turbofish stays with its argument.
+        assert_eq!(split_top_level_args("a, b"), vec!["a", " b"]);
+        assert_eq!(split_top_level_args("f(x, y), b"), vec!["f(x, y)", " b"]);
+        assert_eq!(split_top_level_args("x"), vec!["x"]);
     }
 
     #[test]
@@ -566,6 +750,110 @@ mod tests {
             }
             other => panic!("expected Repaired, got {other:?}"),
         }
+    }
+
+    // ── The whole-float repr divergence rule (PMAT-933) ─────────────────────
+
+    #[test]
+    fn float_repr_rule_fires_only_on_whole_float_divergence() {
+        let rule = FloatReprRepair {
+            print_expr: "scale2_shim(2.0, 5.0)".to_string(),
+        };
+        // Fires on `10` vs `10.0`.
+        assert!(rule
+            .apply(&float_repr_divergence(), FLOAT_PLAIN_PRINT)
+            .is_some());
+        // Declines on a build error (wrong class).
+        assert!(rule.apply(&build_err(), FLOAT_PLAIN_PRINT).is_none());
+        // Declines on a genuine value mismatch (`7` vs `49`), not a repr issue.
+        let value_div = Symptom::Divergence {
+            index: 0,
+            expected: "49".to_string(),
+            actual: "7".to_string(),
+        };
+        assert!(rule.apply(&value_div, FLOAT_PLAIN_PRINT).is_none());
+        // Declines on a NON-whole float (`10.5`): not the `N` vs `N.0` shape.
+        let frac_div = Symptom::Divergence {
+            index: 0,
+            expected: "10.5".to_string(),
+            actual: "10".to_string(),
+        };
+        assert!(rule.apply(&frac_div, FLOAT_PLAIN_PRINT).is_none());
+    }
+
+    #[test]
+    fn float_repr_rewrite_is_cpython_faithful_and_idempotent() {
+        let repaired =
+            rewrite_plain_float_print(FLOAT_PLAIN_PRINT, "scale2_shim(2.0, 5.0)").unwrap();
+        // The plain print is gone, replaced by the `.fract()`-guarded repr block.
+        assert!(!repaired.contains("println!(\"{}\", scale2_shim(2.0, 5.0));"));
+        assert!(repaired.contains(".fract() == 0.0"));
+        assert!(repaired.contains("println!(\"{}.0\", __rv)"));
+        // The ABI casts (already correct for `c_double` == `f64`) are untouched.
+        assert!(repaired
+            .contains("scale2(a as ::std::os::raw::c_double, b as ::std::os::raw::c_double)"));
+        // Idempotent: the plain print no longer exists, so the rule declines.
+        assert!(rewrite_plain_float_print(&repaired, "scale2_shim(2.0, 5.0)").is_none());
+    }
+
+    /// A probe modelling the float boundary: the plain-print artifact "runs" and
+    /// diverges (`10` vs `10.0`); the repr-block artifact "matches".
+    struct FloatReprProbe;
+    impl Probe for FloatReprProbe {
+        fn evaluate(&self, candidate: &str) -> Result<(), Symptom> {
+            if candidate.contains(".fract() == 0.0") {
+                Ok(())
+            } else {
+                Err(float_repr_divergence())
+            }
+        }
+    }
+
+    #[test]
+    fn float_repr_loop_converges_in_one_iteration() {
+        let budget = Budget {
+            max_iterations: 8,
+            max_tokens: 0,
+            max_wall_clock: Duration::from_secs(60),
+        };
+        let outcome = RepairLoop::ffi_float_repr(budget, "scale2_shim(2.0, 5.0)")
+            .run(&FloatReprProbe, FLOAT_PLAIN_PRINT);
+        match outcome {
+            RepairOutcome::Repaired { iterations, source } => {
+                assert_eq!(iterations, 1, "one float-repr rewrite");
+                assert!(source.contains("println!(\"{}.0\", __rv)"));
+            }
+            other => panic!("expected Repaired, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn float_repr_loop_fails_closed_on_a_real_value_divergence() {
+        // A genuine value mismatch (NOT a repr issue) → no rule applies → the loop
+        // fails closed at iteration 0 with no source. The float-repr rule must not
+        // paper over an actually-wrong result.
+        struct ValueDivProbe;
+        impl Probe for ValueDivProbe {
+            fn evaluate(&self, _candidate: &str) -> Result<(), Symptom> {
+                Err(Symptom::Divergence {
+                    index: 0,
+                    expected: "49".to_string(),
+                    actual: "7".to_string(),
+                })
+            }
+        }
+        let budget = Budget {
+            max_iterations: 8,
+            max_tokens: 0,
+            max_wall_clock: Duration::from_secs(60),
+        };
+        let outcome = RepairLoop::ffi_float_repr(budget, "scale2_shim(2.0, 5.0)")
+            .run(&ValueDivProbe, FLOAT_PLAIN_PRINT);
+        assert!(matches!(outcome, RepairOutcome::Exhausted { .. }));
+        assert!(
+            outcome.source().is_none(),
+            "fail-closed: no source on a real divergence"
+        );
     }
 
     #[test]
