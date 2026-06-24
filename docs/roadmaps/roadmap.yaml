@@ -11009,11 +11009,12 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-906: [correctness] float-annotation-as-coercion epic (#8-#11) — type assertion, not runtime cast'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-23T00:00:00Z
   acceptance_criteria:
   - "A Python `: float` annotation is currently lowered as a runtime `as f64` cast -> silent-wrong / E0308; make it a TYPE assertion in depyler-frontend + xpile-rust-codegen; add a CPython-vs-Rust oracle fixture asserting Match. Sprint Day 7 (re-arm the never-idle cron mid-sprint)."
+  - "DONE: lower_ann_assign now treats a `: float` annotation as a NON-ENFORCING assertion — when the initializer is genuinely int-typed it re-lowers the value without the f64 expectation and rebinds the local to its real int type, so `y: float = 5` keeps the int (`print(y)` -> \"5\", was a silent \"5.0\") and `y: float = n` (n:int) compiles (was rustc E0308). A genuinely-float initializer (3.14, a float expr/param, a list[float] element, a true-division result) is untouched. lower_return_value gained a regression-guard: a non-literal int VALUE returned from a `-> float` fn coerces via to_f64_operand (`(y) as f64`) so a returned `: float` local still compiles (strict improvement — that case never compiled before; the `return 0` literal path stays PMAT-686's `0f64`). New oracle fixture float_annot_assertion.py (local-use) differential-matches CPython byte-for-byte (5/7/12/14/3.5/3.5/2.5); all 657 xpile e2e + oracle tests green. Sprint Day 7."
 - id: PMAT-907
   github_issue: null
   item_type: task
