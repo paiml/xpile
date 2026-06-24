@@ -1250,7 +1250,9 @@ fn str_methods_emitted_rust_transforms_strings() {
             && rust.contains(".trim_matches(|__c: char| __c.is_whitespace()")
             && rust.contains(".starts_with(")
             && rust.contains(".ends_with(")
-            && rust.contains(".split(&(")
+            // PMAT-922: 1-arg split now binds the separator + guards the empty
+            // case, emitting `__ssrc.split(__ssep.as_str())`.
+            && rust.contains(".split(__ssep.as_str())")
             && rust.contains(".join(&("),
         "expected str-method emissions in Rust, got:\n{rust}"
     );
@@ -6687,12 +6689,15 @@ fn main() {
 /// but `(maxsplit as usize) + 1` wrapped to 0 (`usize::MAX + 1`) → zero parts;
 /// `saturating_add(1)` keeps it at `usize::MAX` → all parts. The 1-arg form is
 /// unchanged. Cross-checked vs python3 (incl. `split(",", -1)` → all parts).
+/// PMAT-922: the separator is now bound once (`let __ssep = &(...)`) and the
+/// empty-separator ValueError guard runs before the `splitn`.
 #[test]
 fn str_split_maxsplit() {
     let rust = xpile_transpile_to_rust("str_split_maxsplit.py");
     assert!(
-        rust.contains(".splitn(((1i64) as usize).saturating_add(1), &(String::from(\"=\"))[..])"),
-        "2-arg split should emit `splitn(maxsplit.saturating_add(1), sep)`:\n{rust}"
+        rust.contains(".splitn(((1i64) as usize).saturating_add(1), __ssep.as_str())")
+            && rust.contains("__ssep.is_empty()"),
+        "2-arg split should emit `splitn(maxsplit.saturating_add(1), sep)` behind the empty-separator guard:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -12956,6 +12961,34 @@ fn main() {
 }
 "#;
     assert_rustc_runs("partition_empty_sep", &rust, driver);
+}
+
+/// PMAT-922 (HUNT-V16 #29): `s.split("")` / `s.split("", n)` / `s.rsplit("", n)`
+/// with an EMPTY separator now raises ValueError at the call (Python's
+/// `ValueError: empty separator`) instead of silently returning a bogus list (the
+/// old `str::split("")` yielded `["", "a", "b", "c", ""]` for `"abc"` — a
+/// 5-element list, silent-wrong). Valid separators are unchanged. Mirrors the
+/// PMAT-726 partition empty-separator guard.
+#[test]
+fn split_empty_sep_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("split_empty_sep.py");
+    assert!(
+        rust.contains("__ssep.is_empty()") && rust.contains("empty separator"),
+        "expected the empty-separator ValueError guard, got:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // Valid separators are unchanged (split / splitn / rsplitn).
+    assert_eq!(split_ok("a-b-c".to_string()), 3);
+    assert_eq!(splitn_ok("a-b-c".to_string()), 2);
+    assert_eq!(rsplit_ok("a-b-c".to_string()), "a-b");
+    // An empty separator (literal or dynamic) raises ValueError, like Python.
+    std::panic::set_hook(Box::new(|_| {}));
+    let r = std::panic::catch_unwind(|| split_empty("abc".to_string(), "".to_string()));
+    assert!(r.is_err(), "empty separator must raise (ValueError)");
+}
+"#;
+    assert_rustc_runs("split_empty_sep", &rust, driver);
 }
 
 /// PMAT-725 (HUNT-V10 V10-2): `ord(s[0])` (ord of a string-index expression) now
