@@ -697,7 +697,8 @@ equations:
       - "ELEVENTH Diamond category on C-XLATE-RUST-FN-TO-LEAN-THM — BROADENS DEPTH-11 substrate-wide"
       - "CANONICAL IDENTITY ELEMENT — ninth instance of Template 11"
       - "Closes Rust↔Lean canonical-element symmetry pair with PMAT-418 (empty_lean_def_silver)"
-    preconditions: []
+    preconditions:
+      - "no input precondition — `empty_rust_fn_silver` is the nullary canonical element (all 5 Array UInt8 fields are the empty array `#[]`), so the theorem holds unconditionally; the only obligation is that `RustFnSilver` admits the all-empty record as a value (it does — every field is an `Array UInt8`, whose identity is `#[]`)"
     postconditions:
       - "Diamond depth-11 broadened: second L5 contract at depth-11"
 
@@ -720,7 +721,8 @@ equations:
       - "TWELFTH Diamond category on C-XLATE-RUST-FN-TO-LEAN-THM — BROADENS DEPTH-12 substrate-wide"
       - "BRONZE→SILVER LIFT HOMOMORPHISM — ninth instance of Template 12"
       - "Closes Rust↔Lean canonical-lift Template 12 pair with PMAT-429"
-    preconditions: []
+    preconditions:
+      - "one Bronze `RustFn` record (the lift's input); `rust_fn_bronze_to_silver` is total over `RustFn` — every Bronze record has a `body : Array UInt8`, which is the one field the lift carries forward, so no well-formedness side-condition is needed"
     postconditions:
       - "Diamond depth-12 broadened: second L5 contract at depth-12"
 
@@ -738,7 +740,8 @@ equations:
       - "THIRTEENTH Diamond category on C-XLATE-RUST-FN-TO-LEAN-THM — BROADENS DEPTH-13"
       - "ROUND-TRIP IDENTITY — ninth instance of Template 13"
       - "Closes Rust↔Lean Template 13 pair with PMAT-440"
-    preconditions: []
+    preconditions:
+      - "one Bronze `RustFn` record (the round-trip's input); the identity `rust_fn_silver_to_bronze ∘ rust_fn_bronze_to_silver = id` holds for every `RustFn` because the lift records `body` and the projection reads it back unchanged — no constraint on the input value is required"
     postconditions:
       - "Diamond depth-13 broadened: second L5 contract at depth-13"
 

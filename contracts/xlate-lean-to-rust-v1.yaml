@@ -868,7 +868,8 @@ equations:
     invariants:
       - "ELEVENTH Diamond category on C-XLATE-LEAN-TO-RUST — BROADENS DEPTH-11 substrate-wide"
       - "CANONICAL IDENTITY ELEMENT — eighth instance of Template 11"
-    preconditions: []
+    preconditions:
+      - "no input precondition — `empty_lean_def_silver` is the nullary canonical element (all `Array UInt8` fields are `#[]`), so the theorem holds unconditionally; the only obligation is that `LeanDefSilver` admits the all-empty record as a value (it does — each field's identity is `#[]`)"
     postconditions:
       - "Diamond depth-11 broadened: first L5 contract at depth-11 in broadening wave"
 
@@ -889,7 +890,8 @@ equations:
     invariants:
       - "TWELFTH Diamond category on C-XLATE-LEAN-TO-RUST — BROADENS DEPTH-12 substrate-wide"
       - "BRONZE→SILVER LIFT HOMOMORPHISM — eighth instance of Template 12"
-    preconditions: []
+    preconditions:
+      - "one Bronze `LeanDef` record (the lift's input); `lean_def_bronze_to_silver` is total over `LeanDef` — every Bronze record carries a `body : Array UInt8` (the field the lift preserves), so no well-formedness side-condition is needed"
     postconditions:
       - "Diamond depth-12 broadened: first L5 contract at depth-12 in broadening wave"
 
@@ -905,7 +907,8 @@ equations:
     invariants:
       - "THIRTEENTH Diamond category on C-XLATE-LEAN-TO-RUST — BROADENS DEPTH-13"
       - "ROUND-TRIP IDENTITY — eighth instance of Template 13"
-    preconditions: []
+    preconditions:
+      - "one Bronze `LeanDef` record (the round-trip's input); the identity `lean_def_silver_to_bronze ∘ lean_def_bronze_to_silver = id` holds for every `LeanDef` because the lift records `body` and the projection reads it back unchanged — no constraint on the input value is required"
     postconditions:
       - "Diamond depth-13 broadened: first L5 contract at depth-13"
 
