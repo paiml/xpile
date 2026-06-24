@@ -4208,7 +4208,6 @@ fn emit_floor_mod(
     rhs: &Expr,
     mode: bool,
 ) -> Result<(), CodegenError> {
-    let panic_msg = "xpile: i64 modulo overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented";
     // PMAT-740 (HUNT-V12 V12-24): `(a * b) % m` — the product a*b commonly
     // overflows i64 even when the modular result fits (modular arithmetic,
     // rolling hashes, `(a*b) % MOD`). Widen the whole product AND the floor-mod
@@ -4234,11 +4233,21 @@ fn emit_floor_mod(
     write!(out, "; let __fb = ")?;
     emit_expr(out, rhs, mode)?;
     // PMAT-728: guard the zero divisor with Python's ZeroDivisionError message
-    // before `checked_rem` (which also returns None on `i64::MIN % -1` overflow).
+    // before the remainder. PMAT-929 (HUNT-V17 ND-1): use `wrapping_rem` instead
+    // of `checked_rem(..).expect("overflow")`. `checked_rem` returns `None` for
+    // exactly two inputs — `__fb == 0` (handled above) and `i64::MIN % -1` — but
+    // the latter is NOT a genuine bignum overflow: any integer is exactly
+    // divisible by ±1, so `i64::MIN % -1` is mathematically `0` (Python agrees).
+    // The old `.expect("…modulo overflow…bigint…")` panicked on this in-range
+    // result, diverging from CPython (which returns `0`). `wrapping_rem` yields
+    // `0` for `i64::MIN % -1` and is identical to `checked_rem` on every other
+    // (non-zero-divisor) input, so the floor correction below stays exact and no
+    // valid Python modulo can spuriously panic. (Floor-div `i64::MIN // -1` DOES
+    // genuinely overflow i64 → `2**63`, so `emit_floor_div` keeps its panic.)
     write!(
         out,
         "; if __fb == 0 {{ panic!(\"xpile: ZeroDivisionError: integer modulo by zero\"); }} \
-         let __r = __fa.checked_rem(__fb).expect(\"{panic_msg}\"); \
+         let __r = __fa.wrapping_rem(__fb); \
          if __r != 0 && (__r < 0) != (__fb < 0) {{ __r + __fb }} else {{ __r }} }}"
     )?;
     Ok(())
@@ -4872,6 +4881,59 @@ mod tests {
         assert!(
             !rust.contains("div_euclid"),
             "must not use div_euclid (wrong for a negative divisor): {rust}"
+        );
+    }
+
+    #[test]
+    fn modulo_uses_wrapping_rem_not_panicking_checked_rem() {
+        // PMAT-929 (HUNT-V17 ND-1): `i64::MIN % -1` is `0` in Python, not an
+        // overflow. The lowering must use `wrapping_rem` (which yields `0` there
+        // and is identical to `checked_rem` on every other non-zero divisor) and
+        // must NOT keep the old `checked_rem(..).expect("…modulo overflow…")` that
+        // panicked on this in-range result. The ZeroDivisionError guard stays.
+        let f = Function {
+            name: "fmod".into(),
+            params: vec![
+                Param {
+                    name: "a".into(),
+                    ty: Type::I64,
+                    mutable: false,
+                },
+                Param {
+                    name: "b".into(),
+                    ty: Type::I64,
+                    mutable: false,
+                },
+            ],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::BinOp {
+                    op: BinOp::Mod,
+                    lhs: Box::new(Expr::Ident("a".into())),
+                    rhs: Box::new(Expr::Ident("b".into())),
+                },
+            },
+        };
+        let m = module_with("fixture", vec![Item::Function(f)]);
+        let rust = emit_module(&m).expect("emit ok");
+        assert!(
+            rust.contains("wrapping_rem"),
+            "modulo must lower to wrapping_rem so `i64::MIN % -1` is 0, not a panic (got: {rust})"
+        );
+        assert!(
+            !rust.contains("modulo overflow"),
+            "modulo must NOT keep the spurious bigint-overflow panic for `i64::MIN % -1`: {rust}"
+        );
+        // The genuine divide-by-zero guard must remain.
+        assert!(
+            rust.contains("ZeroDivisionError: integer modulo by zero"),
+            "modulo must still guard the zero divisor: {rust}"
+        );
+        // The sign-aware floor correction must remain intact.
+        assert!(
+            rust.contains("__r + __fb"),
+            "modulo must keep the divisor-sign floor correction: {rust}"
         );
     }
 

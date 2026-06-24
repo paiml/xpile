@@ -642,10 +642,13 @@ fn transpile_typed_py_honors_explicit_annotations() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     // Annotated `n: int` and `-> bool` should flow through unchanged.
     assert!(stdout.contains("pub fn is_even(n: i64) -> bool"));
-    // PMAT-538: Python `%` lowers to a truncating `checked_rem` plus a floor
+    // PMAT-538: Python `%` lowers to a truncating remainder plus a floor
     // correction (sign-of-divisor), not `rem_euclid` (which diverges for a
     // negative divisor). The operand binds to `__fa`/`__fb` temps.
-    assert!(stdout.contains("__fa.checked_rem(__fb)") && stdout.contains("__r + __fb"));
+    // PMAT-929 (HUNT-V17 ND-1): the remainder is `wrapping_rem`, not a
+    // panicking `checked_rem(..).expect("overflow")` — `i64::MIN % -1` is the
+    // mathematically-exact `0`, not a bignum overflow (CPython returns `0`).
+    assert!(stdout.contains("__fa.wrapping_rem(__fb)") && stdout.contains("__r + __fb"));
 }
 
 #[test]

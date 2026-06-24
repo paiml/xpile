@@ -11269,6 +11269,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-929
+  github_issue: null
+  item_type: task
+  title: 'PMAT-929: [correctness] `i64::MIN % -1` returns `0` (Python) instead of spuriously panicking — the modulo overflow guard was over-broad (HUNT-V17 ND-1)'
+  status: done
+  priority: high
+  created: 2026-06-24T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (PMAT-900..928 all merged, sprint window 2026-06-23..07-02 still open). VARIES THE AXIS off the last slice (PMAT-928 Lean/Bashrs proof-lane) back onto the correctness-hunt, as the prompt directs: a genuinely-open python3-vs-rustc panic-divergence with an oracle fixture. A fresh differential probe (python3 vs xpile->rustc) CONFIRMED the HUNT-V17 ND-1 finding still open: `def f(): a=-9223372036854775808; b=-1; return a % b` prints `0` under CPython but the transpiled Rust PANICKED `xpile: i64 modulo overflow; bigint promotion … not yet implemented`. C-PY-INT-ARITH contract path (the emitted fn carries `// xpile-contract: C-PY-INT-ARITH`)."
+  - "ROOT CAUSE: `emit_floor_mod` lowered `a % b` as `__fa.checked_rem(__fb).expect(\"…modulo overflow…bigint…\")`. `i64::checked_rem` returns `None` for EXACTLY two inputs — `__fb == 0` (already handled by the preceding ZeroDivisionError guard) and `i64::MIN % -1`. But the latter is NOT a genuine bignum overflow: every integer is exactly divisible by ±1, so `i64::MIN % -1` is mathematically `0` (CPython agrees), an entirely in-i64-range result. The `.expect` panicked on it anyway — an over-broad guard. (Contrast floor-DIV: `i64::MIN // -1` IS `2**63`, a real i64 overflow, so `emit_floor_div` correctly KEEPS its panic — left untouched.)"
+  - "FIX (one spot, closed-form): swap `checked_rem(__fb).expect(panic_msg)` for `wrapping_rem(__fb)` in `emit_floor_mod` (crates/xpile-rust-codegen). Verified: `wrapping_rem` yields `0` for `i64::MIN % -1` and is byte-identical to `checked_rem` on every other non-zero-divisor input, so the divisor-sign floor correction (`__r + __fb`) stays exact and no valid Python modulo can spuriously panic. The `panic_msg` binding (now unused in the main arm) was removed; the i128 `(a*b) % m` fast-path (PMAT-740) already computed in i128 and was already correct (untouched). The ZeroDivisionError guard is preserved."
+  - "DONE: edit to emit_floor_mod in crates/xpile-rust-codegen/src/lib.rs (wrapping_rem + comment). Tests: new unit test modulo_uses_wrapping_rem_not_panicking_checked_rem (asserts wrapping_rem present, no `modulo overflow` panic, ZeroDivisionError guard kept, `__r + __fb` floor correction kept); new oracle fixture crates/xpile/tests/oracle_fixtures/int_mod_min_neg_one.py (i64::MIN % -1, i64::MIN % 1, + 7 sign-aware regression cases) — auto-picked up by oracle_differential.rs, which compiles + runs it and byte-diffs vs CPython (GREEN). Full gate green: fmt, check --workspace, clippy -D warnings, pv lint 0 errors/0 warnings, cargo-deny advisories, xpile-rust-codegen lib + xpile oracle_differential tests. Backlog slice, sprint 2026-06-24."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-131
   github_issue: null
   item_type: task
