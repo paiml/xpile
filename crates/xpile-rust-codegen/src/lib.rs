@@ -2064,6 +2064,42 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 } else {
                     out.push_str("(__ps.to_string(), String::new(), String::new()) } }");
                 }
+            } else if matches!(
+                op,
+                StrMethodOp::Split | StrMethodOp::SplitN | StrMethodOp::RSplitN
+            ) {
+                // PMAT-492c/518/644 + PMAT-922 (HUNT-V16 #29): the explicit-separator
+                // split family `s.split(sep)` / `s.split(sep, maxsplit)` /
+                // `s.rsplit(sep, maxsplit)`. Python raises `ValueError: empty
+                // separator` at the call when `sep == ""` — the old `str::split("")`
+                // silently yielded `["", ..chars.., ""]` (a 5-element list for
+                // `"abc"`) with no error (silent-wrong). Bind the separator once and
+                // guard the empty case (literal OR dynamic), mirroring the PMAT-726
+                // partition guard. `splitn`/`rsplitn` apply the same negative-maxsplit
+                // "no limit" via `saturating_add(1)`; `rsplitn` yields right-to-left,
+                // so the Vec is reversed to restore Python's left-to-right order.
+                out.push_str("{ let __ssrc = &(");
+                emit_expr(out, recv, mode)?;
+                out.push_str("); let __ssep = &(");
+                emit_expr(out, &args[0], mode)?;
+                out.push_str(
+                    "); if __ssep.is_empty() { panic!(\"xpile: ValueError: empty separator\"); } __ssrc.",
+                );
+                match op {
+                    StrMethodOp::Split => {
+                        out.push_str("split(__ssep.as_str()).map(|__c| __c.to_string()).collect::<Vec<String>>() }");
+                    }
+                    StrMethodOp::SplitN => {
+                        out.push_str("splitn(((");
+                        emit_expr(out, &args[1], mode)?;
+                        out.push_str(") as usize).saturating_add(1), __ssep.as_str()).map(|__c| __c.to_string()).collect::<Vec<String>>() }");
+                    }
+                    _ => {
+                        out.push_str("rsplitn(((");
+                        emit_expr(out, &args[1], mode)?;
+                        out.push_str(") as usize).saturating_add(1), __ssep.as_str()).map(|__c| __c.to_string()).collect::<Vec<String>>().into_iter().rev().collect::<Vec<String>>() }");
+                    }
+                }
             } else if matches!(op, StrMethodOp::SplitLines) {
                 // PMAT-502dl: `.splitlines()` → split on Python's full line
                 // boundary set (Rust's `str::lines()` only covers LF/CRLF), with
@@ -2209,36 +2245,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                         emit_expr(out, &args[0], mode)?;
                         out.push_str(")[..])");
                     }
-                    // PMAT-492c: `.split(sep)` → Vec<String>.
+                    // PMAT-492c: `.split(sep)` → Vec<String>. The empty-separator
+                    // ValueError guard lives in the dedicated `else if` block above
+                    // (PMAT-922) — this arm is unreachable for the explicit-separator
+                    // split forms.
                     StrMethodOp::Split => {
-                        out.push_str(".split(&(");
-                        emit_expr(out, &args[0], mode)?;
-                        out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()");
+                        unreachable!("split/splitn/rsplitn handled above")
                     }
-                    // PMAT-518: `.split(sep, maxsplit)` → `.splitn(maxsplit + 1, sep)`.
-                    // PMAT-621: a NEGATIVE maxsplit means "no limit" in Python
-                    // (split on every occurrence). `(maxsplit as usize) + 1`
-                    // WRAPPED for a negative value (`usize::MAX + 1 == 0` →
-                    // `splitn(0)` → zero parts); `saturating_add(1)` keeps it at
-                    // `usize::MAX` → all parts, matching Python. Positive maxsplit
-                    // is unchanged.
-                    StrMethodOp::SplitN => {
-                        out.push_str(".splitn(((");
-                        emit_expr(out, &args[1], mode)?;
-                        out.push_str(") as usize).saturating_add(1), &(");
-                        emit_expr(out, &args[0], mode)?;
-                        out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>()");
-                    }
-                    // PMAT-644: `.rsplit(sep, maxsplit)` → `.rsplitn(maxsplit + 1,
-                    // sep)` (same negative-maxsplit "no limit" via saturating_add)
-                    // — but `rsplitn` yields parts right-to-left, so reverse the
-                    // collected Vec to restore Python's left-to-right order.
-                    StrMethodOp::RSplitN => {
-                        out.push_str(".rsplitn(((");
-                        emit_expr(out, &args[1], mode)?;
-                        out.push_str(") as usize).saturating_add(1), &(");
-                        emit_expr(out, &args[0], mode)?;
-                        out.push_str(")[..]).map(|__c| __c.to_string()).collect::<Vec<String>>().into_iter().rev().collect::<Vec<String>>()");
+                    // PMAT-518/644: `.split(sep, maxsplit)` / `.rsplit(sep,
+                    // maxsplit)` — handled in the PMAT-922 `else if` block above so
+                    // the empty-separator ValueError guard applies to them too.
+                    StrMethodOp::SplitN | StrMethodOp::RSplitN => {
+                        unreachable!("split/splitn/rsplitn handled above")
                     }
                     // PMAT-502co: no-arg `.split()` → whitespace split.
                     // PMAT-649: Python `str.split()` (no arg) splits on runs of
