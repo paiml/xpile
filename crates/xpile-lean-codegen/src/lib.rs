@@ -957,6 +957,16 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), LeanCodegenError> {
                  — use `--target rust` or `--target ruchy`"
             )));
         }
+        // PMAT-924: a raw C pointer / C `char` has no total-function Lean model
+        // — a pointer is an address (mutable, aliasable runtime state), not a
+        // pure value. Refuse, like the other capability-ahead-of-Lean types.
+        Type::Ptr { .. } | Type::CChar => {
+            return Err(LeanCodegenError::Unsupported(format!(
+                "C pointer / `char` type {t:?} has no total-function Lean encoding \
+                 (a pointer is mutable aliasable runtime state) — use `--target rust` \
+                 or `--target ruchy`"
+            )));
+        }
     }
     Ok(())
 }

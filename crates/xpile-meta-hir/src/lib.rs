@@ -241,6 +241,9 @@ fn type_any(t: &Type, f: &dyn Fn(&Type) -> bool) -> bool {
     }
     match t {
         Type::List(inner) | Type::Set(inner) | Type::Optional(inner) => type_any(inner, f),
+        // PMAT-924: a pointer recurses into its pointee, so a contract keyed on
+        // the pointee type still triggers through a pointer wrapper.
+        Type::Ptr { pointee, .. } => type_any(pointee, f),
         Type::Dict(k, v) => type_any(k, f) || type_any(v, f),
         Type::Tuple(elems) => elems.iter().any(|e| type_any(e, f)),
         _ => false,
@@ -1472,6 +1475,35 @@ pub enum Type {
     /// values deferred). Produced for struct-typed params/returns/locals,
     /// [`Expr::StructLit`] construction, and [`Expr::FieldAccess`] receivers.
     Struct(String),
+    /// PMAT-924: an 8-bit C `char` — modeled DISTINCTLY because it is neither
+    /// the 32-bit-`int`-backed [`Type::I64`] nor any other integer width. It has
+    /// no Python analogue, so it appears ONLY as the pointee of a [`Type::Ptr`]
+    /// (`char*`, the canonical C-string / byte-buffer pointer); a bare `char`
+    /// value is refused by `decy-frontend`. The FFI manifest maps it to the
+    /// platform-signedness-honest `c_char` ABI slot. It is not a standalone
+    /// value type in any code-emit lane (Rust/Ruchy/Lean), only an ABI pointee.
+    CChar,
+    /// PMAT-924: a C pointer — the FIRST address-carrying (non-value) ABI token
+    /// in the meta-HIR, lifting the last decy scalar ceiling
+    /// (PMAT-909/911/918/921 lifted every integer/float WIDTH; this lifts the
+    /// pointer INDIRECTION). `decy-frontend` produces it for a trailing `*` on a
+    /// scalar base type (`int*`, `char*`, `double*`, …); the pointee is
+    /// restricted to an ABI-mappable scalar (the integer/float widths + `CChar`)
+    /// — pointer-to-pointer, pointer-to-container, and pointer-to-struct are
+    /// REFUSED rather than mis-emitted, exactly as the scalar lifts refused
+    /// non-ABI-mappable types. `mutable` distinguishes `int*` (`*mut`, the bare
+    /// default) from a future `const int*` (`*const`); the FFI manifest maps it
+    /// to `*mut`/`*const <pointee-ABI-type>` and the Rust/Ruchy backends render
+    /// the raw pointer type (sound to DECLARE in a signature — only deref is
+    /// `unsafe`). Lean refuses (no total-function pointer model). Carries no
+    /// governing contract yet (capability-ahead-of-contract, like F32/F64).
+    Ptr {
+        /// `true` for a `*mut` pointer (a bare C `int*`); `false` for a `*const`
+        /// pointer (a `const`-qualified pointee, a deferred refinement).
+        mutable: bool,
+        /// The pointed-to type — restricted to an ABI-mappable scalar.
+        pointee: Box<Type>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
