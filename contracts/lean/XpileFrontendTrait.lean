@@ -522,8 +522,10 @@ theorem parse_and_lower_function_diamond
     -- (b) Reflexivity: same input → same output (rfl)
     ∧ parse_and_lower_silver f p s = parse_and_lower_silver f p s
     -- (c) Frontend congruence: equal frontends → equal outputs
-    ∧ ∀ (f' : Frontend), f = f' →
-        parse_and_lower_silver f p s = parse_and_lower_silver f' p s
+    -- (parenthesized: without it `∀ f'` right-extends and swallows clause (d),
+    --  collapsing the intended 4-way conjunction to 3 — PMAT-913)
+    ∧ (∀ (f' : Frontend), f = f' →
+        parse_and_lower_silver f p s = parse_and_lower_silver f' p s)
     -- (d) Input congruence: equal inputs → equal outputs
     ∧ ∀ (p' s' : Array UInt8), p = p' → s = s' →
         parse_and_lower_silver f p s = parse_and_lower_silver f p' s' := by
@@ -869,7 +871,10 @@ theorem source_lang_enum_completeness_diamond (l : SourceLang) :
     ∧ (l = SourceLang.python ∨ l ≠ SourceLang.python)
     ∧ (SourceLang.python ≠ SourceLang.rust) := by
   refine ⟨?_, ?_, ?_, ?_⟩
-  · cases l <;> tauto
+  -- core `decide` over the decidable SourceLang disjunction (Mathlib `tauto`
+  -- is unavailable under bare core — same fix as PMAT-904, cf. line 877's
+  -- already-green `decide` on `SourceLang.python ≠ SourceLang.rust`) — PMAT-913
+  · cases l <;> decide
   · rfl
   · by_cases h : l = SourceLang.python
     · exact Or.inl h

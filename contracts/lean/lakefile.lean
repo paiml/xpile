@@ -24,9 +24,10 @@ open Lake DSL
   — so this job is exactly the check that makes "provable" un-falsifiable by
   `grep sorry`.
 
-  PILOT = the 11 modules that elaborate clean under bare core with
-  warnings-as-errors (9 from PMAT-903 + the 2 PMAT-904 discharged on Day 5).
-  The known-incomplete remainder is 9 modules with REAL elaboration errors
+  PILOT = the 14 modules that elaborate clean under bare core with
+  warnings-as-errors (9 from PMAT-903 + 2 PMAT-904 + FfiShellSubprocess/907 +
+  CFloatArith/912 + XpileFrontendTrait/913).
+  The known-incomplete remainder is 8 modules with REAL elaboration errors
   (termination / type-mismatch / synthesis failures — NOT sorries), enumerated
   honestly in `PROVABILITY-INVENTORY.md` and deliberately EXCLUDED here so this
   advisory job is GREEN without overstating what is proven. Discharging the
@@ -71,5 +72,13 @@ lean_lib «XpileContractsPilot» where
     -- pilot at depth-1 — core-only STRUCTURE EXTENSIONALITY with TWO bit-width
     -- models (binary32 c_float + binary64 c_double) + an ABI-distinctness lemma,
     -- same shape as PyFloatArith. Discharges the citation PMAT-910/911 deferred.
-    `CFloatArith                 -- C-C-FLOAT-ARITH              (PMAT-912)
+    `CFloatArith,                -- C-C-FLOAT-ARITH              (PMAT-912)
+    -- PMAT-913 (backlog slice): discharged the cheapest non-elaborating
+    -- module — NOT a termination error but the PMAT-904 class: (a) clause (c)
+    -- of `parse_and_lower_function_diamond` lacked parens, so its `∀ f'`
+    -- right-extended and swallowed clause (d) (the 4-way `refine ⟨…⟩` then hit
+    -- a `∀`, not an inductive); (b) `source_lang_enum_completeness_diamond`
+    -- used Mathlib-only `tauto` over the decidable `SourceLang` disjunction →
+    -- core `decide`. Layer-3 frontend trait now machine-checked, not excluded.
+    `XpileFrontendTrait           -- C-XPILE-FRONTEND-TRAIT       (PMAT-913)
   ]
