@@ -13,6 +13,16 @@
 //!
 //! Exit condition: `cargo_build` && `cargo_test --oracle` pass.
 //! Failure mode: budget exhaustion (iterations / tokens / wall-clock).
+//!
+//! PMAT-908 (Sprint Day 9) lands the first *executing* increment: a bounded,
+//! fail-closed, deterministic [`repair`] loop. See [`repair::RepairLoop`].
+
+pub mod repair;
+
+pub use repair::{
+    FfiArgCastRepair, FfiReturnCastRepair, HybridCcRustcProbe, Probe, RepairLoop, RepairOutcome,
+    RepairRule, Symptom,
+};
 
 use std::time::Duration;
 
@@ -54,4 +64,6 @@ pub enum AgentError {
     BudgetExhausted(String),
     #[error("oracle failure: {0}")]
     Oracle(String),
+    #[error("io failure: {0}")]
+    Io(String),
 }
