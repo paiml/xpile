@@ -9,8 +9,9 @@
 //! the Lean job.
 //!
 //! This test is the cheap, lean-free guard for that: it parses the
-//! lakefile `roots` and pins the pilot at the 11 modules that elaborate
-//! today (the 9 from PMAT-903 + the 2 discharged in PMAT-904), and asserts
+//! lakefile `roots` and pins the pilot at the modules that elaborate today
+//! (9 from PMAT-903 + 2 from PMAT-904 + FfiShellSubprocess/PMAT-907 +
+//! CFloatArith/PMAT-912 + XpileFrontendTrait/PMAT-913 = 14), and asserts
 //! the `PROVABILITY-INVENTORY.md` PILOT count stays in lockstep. It does
 //! NOT re-prove anything — only that the bookkeeping the Lean job relies on
 //! can't drift behind the Rust gate's back.
@@ -80,6 +81,10 @@ const EXPECTED_PILOT: &[&str] = &[
     // (core-only STRUCTURE EXTENSIONALITY, two bit-width models + ABI-distinctness
     // lemma). Discharges the C-C-FLOAT-ARITH citation PMAT-910/911 deferred.
     "CFloatArith",
+    // PMAT-913 (backlog slice): discharged the Layer-3 frontend trait — NOT a
+    // termination error but the PMAT-904 class (a missing-parens precedence bug
+    // collapsing a 4-way conjunction, and Mathlib-only `tauto` → core `decide`).
+    "XpileFrontendTrait",
 ];
 
 #[test]

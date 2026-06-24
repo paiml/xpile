@@ -39,10 +39,10 @@ elaborates to `sorryAx`) **cannot survive a green `lake build`**. That is the
 check that makes "provable" un-falsifiable by `grep sorry` for the pilot
 contracts — the actual machine-checked guarantee, not a string scan.
 
-## PILOT — machine-checked (13 modules, in `lakefile.lean` roots)
+## PILOT — machine-checked (14 modules, in `lakefile.lean` roots)
 
 These elaborate clean under bare Lean 4 core **with warnings-as-errors** — no
-`sorry`, no `axiom`, no Mathlib. `lake build` is green iff all thirteen still do.
+`sorry`, no `axiom`, no Mathlib. `lake build` is green iff all fourteen still do.
 
 | Module | Contract |
 |--------|----------|
@@ -59,6 +59,7 @@ These elaborate clean under bare Lean 4 core **with warnings-as-errors** — no
 | `XpileContractFrontendTrait` | `C-XPILE-CONTRACT-FRONTEND-TRAIT` (PMAT-904: `Inhabited` + defeq `calc`) |
 | `FfiShellSubprocess` | `C-FFI-SHELL-SUBPROCESS` (PMAT-907: depth-1 `ShellInvocation` STRUCTURE EXTENSIONALITY) |
 | `CFloatArith` | `C-C-FLOAT-ARITH` (PMAT-912: depth-1 `CFloat32`/`CFloat64` STRUCTURE EXTENSIONALITY + ABI-width-distinctness) |
+| `XpileFrontendTrait` | `C-XPILE-FRONTEND-TRAIT` (PMAT-913: precedence-paren on `parse_and_lower_function_diamond` clause (c) + `tauto`→`decide` on `source_lang_enum_completeness_diamond`) |
 
 **PMAT-904 (Sprint Day 5) discharged the two cheapest non-elaborating files** —
 both with *real* errors, not sorries, confirming the reframed debt model:
@@ -81,15 +82,16 @@ both with *real* errors, not sorries, confirming the reframed debt model:
 Rewording to "NaN and signed-zero" restores elaboration; the theorem is now
 genuinely machine-checked.
 
-## KNOWN-INCOMPLETE — 9 modules with REAL elaboration errors (excluded)
+## KNOWN-INCOMPLETE — 8 modules with REAL elaboration errors (excluded)
 
 These do **not** elaborate today. The cause is genuine proof debt — NOT
 sorries. The dominant failure is unproved **termination** of recursive
 definitions (`fail to show termination`, needing `termination_by` /
 `decreasing_by`), with cascading type-mismatch / synthesis / unknown-tactic
 errors downstream. Counts are `error:` lines from `lean <file>` on v4.15.0
-(the two smallest — `XpileBackendTrait` 3, `XpileContractFrontendTrait` 2 —
-were discharged in PMAT-904 and are now in the pilot above):
+(the smallest non-termination cases — `XpileBackendTrait` 3 +
+`XpileContractFrontendTrait` 2 in PMAT-904, `XpileFrontendTrait` 5 in PMAT-913
+— were discharged and are now in the pilot above):
 
 | Module | `error:` count | Representative first error |
 |--------|---------------:|----------------------------|
@@ -100,13 +102,14 @@ were discharged in PMAT-904 and are now in the pilot above):
 | `Bashrs` | 7 | fail to show termination (`:213`) |
 | `Notation` | 7 | fail to show termination (`:816`) — *not* the `\| sorry` ctor |
 | `XlateLeanToRust` | 7 | fail to show termination (`:1014`) |
-| `XpileFrontendTrait` | 5 | invalid constructor `⟨…⟩` (`:530`) + unknown tactic |
 | `XlateRustFnToLeanThm` | 4 | fail to show termination (`:627`) + type mismatch |
 
 **This is the real provability debt** the machine-checked lane exposes — and it
 is honest debt, not hidden `sorry`s. PMAT-904 cleared the two cheapest
-(unknown-tactic / synthesis / `rw`-through-`def`); the rest (termination-led)
-is ongoing work.
+(unknown-tactic / synthesis / `rw`-through-`def`) and PMAT-913 cleared
+`XpileFrontendTrait` (precedence-paren + `tauto`→`decide`); the remaining 8 are
+termination-led and are ongoing work — the `XlateRustFnToLeanThm` 4-error case
+is now the cheapest head.
 
 ## Relationship to `audit-design.md`
 
