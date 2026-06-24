@@ -39,10 +39,10 @@ elaborates to `sorryAx`) **cannot survive a green `lake build`**. That is the
 check that makes "provable" un-falsifiable by `grep sorry` for the pilot
 contracts — the actual machine-checked guarantee, not a string scan.
 
-## PILOT — machine-checked (18 modules, in `lakefile.lean` roots)
+## PILOT — machine-checked (19 modules, in `lakefile.lean` roots)
 
 These elaborate clean under bare Lean 4 core **with warnings-as-errors** — no
-`sorry`, no `axiom`, no Mathlib. `lake build` is green iff all eighteen still do.
+`sorry`, no `axiom`, no Mathlib. `lake build` is green iff all nineteen still do.
 
 | Module | Contract |
 |--------|----------|
@@ -64,6 +64,7 @@ These elaborate clean under bare Lean 4 core **with warnings-as-errors** — no
 | `XlateLeanToRust` | `C-XLATE-LEAN-TO-RUST` (PMAT-915: same name-shadowing class — `WarningLineCount.val` body used `w.val` (self-recursion) → positional `.1` projection + explicit `DecidableEq WarningLineCount` instance for the two `deriving DecidableEq` structs) |
 | `Notation` | `C-NOTATION-LATEX-MATH-TO-EQUATION` (PMAT-916: two already-established classes — `NonEmptyDefinition.val` body used `n.val` (name-shadowing self-recursion, PMAT-914/915) → positional `.1`; and `cases k <;> tauto` over the decidable `LatexDisplayKind` enum (Mathlib-only, PMAT-904/913) → core `cases k <;> decide`) |
 | `Bashrs` | `C-BASHRS-POSIX-IDEMPOTENCE` (PMAT-928: MIXED head — (a) PMAT-914/915/916 name-shadowing `SuccessfulOutcome.val` body used `s.val` (self-recursion) → positional `.1`; (b) NEW genuine Mathlib gap — the Int-sign Diamond's `\|·\|`/`abs_nonneg`/`simp` (no `import Mathlib`) restated over CORE `Int.natAbs` (`Nat.zero_le` non-negativity + `rw`+`rfl` zero-abs) + core `Int.lt_trichotomy`) |
+| `XlatePyBoolToRustBool` | `C-XLATE-PY-BOOL-TO-RUST-BOOL` (PMAT-935: NEW R6 contract joins at depth-1 — core-only `PyBool` single-truth-flag STRUCTURE EXTENSIONALITY, same shape as PyFloatArith; closes the last uncited core scalar) |
 
 **PMAT-904 (Sprint Day 5) discharged the two cheapest non-elaborating files** —
 both with *real* errors, not sorries, confirming the reframed debt model:

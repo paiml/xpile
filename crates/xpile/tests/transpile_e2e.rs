@@ -1627,6 +1627,50 @@ fn main() {
     assert_rustc_runs("optional_contract", &rust, driver);
 }
 
+/// PMAT-935 (R6 contract-integrity): pure Python boolean logic over `bool` lowers
+/// to Rust `bool` under the `C-XLATE-PY-BOOL-TO-RUST-BOOL` contract. `a and b` →
+/// `a && b`, `a or b` → `a || b`, `not a` → `!a` (the short-circuiting forms,
+/// never the eager bitwise `&`/`|`). Pure-bool functions were the LAST core scalar
+/// still shipping UNCITED (`pub fn both(a: bool, b: bool) -> bool { (a && b) }`
+/// emitted with no citation); `Type::Bool` is now wired into
+/// `Function::applicable_contracts()`. Pins the citation (R6) and the behavior —
+/// short-circuit operator + polarity preserved across nesting. Cross-checked vs
+/// python3 over all input assignments.
+#[test]
+fn bool_cites_contract() {
+    let rust = xpile_transpile_to_rust("bool_contract.py");
+    assert!(
+        rust.contains("// xpile-contract: C-XLATE-PY-BOOL-TO-RUST-BOOL"),
+        "a bool-touching function must cite C-XLATE-PY-BOOL-TO-RUST-BOOL:\n{rust}"
+    );
+    // Short-circuit (lazy) operators emitted, NOT the eager bitwise forms.
+    assert!(
+        rust.contains("a && b") && rust.contains("a || b"),
+        "boolean `and`/`or` must lower to the short-circuiting `&&`/`||`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // Truth-table cross-check (== CPython): both/either/negate + nested polarity.
+    assert_eq!(both(true, true), true);
+    assert_eq!(both(true, false), false);
+    assert_eq!(either(false, false), false);
+    assert_eq!(either(true, false), true);
+    assert_eq!(negate(false), true);
+    assert_eq!(negate(true), false);
+    // mixed = (a and not b) or c — full 8-row truth table.
+    for a in [false, true] {
+        for b in [false, true] {
+            for c in [false, true] {
+                let expect = (a && !b) || c;
+                assert_eq!(mixed(a, b, c), expect, "mixed({a},{b},{c})");
+            }
+        }
+    }
+}
+"#;
+    assert_rustc_runs("bool_contract", &rust, driver);
+}
+
 /// PMAT-886 (breadth): the assignment-form `try: x = … except E as e: x = …`
 /// now binds `as e` (the caught exception's message as a `String` local usable in
 /// the handler, e.g. `str(e)` / `f"{e}"`). It was rejected "single `except`
@@ -11934,15 +11978,23 @@ fn arithmetic_function_emits_contract_citation_lean() {
 }
 
 #[test]
-fn comparison_only_function_omits_contract_citation() {
-    // `le(a, b) -> bool` uses only BinOp::LtEq — a comparison, not under
-    // the C-PY-INT-ARITH contract — so codegen should NOT emit the
-    // citation. This is the negative test that proves
-    // `applicable_contracts()` is data-driven, not unconditional.
+fn comparison_only_function_omits_int_arith_citation() {
+    // `le(a, b) -> bool` uses only BinOp::LtEq — a comparison, NOT
+    // overflow-prone arithmetic — so codegen must NOT spuriously emit the
+    // C-PY-INT-ARITH citation. This is the negative test that proves
+    // `applicable_contracts()` is data-driven, not unconditional int-arith.
+    // PMAT-935 (R6): the function's `bool` return DOES now cite the
+    // C-XLATE-PY-BOOL-TO-RUST-BOOL translation contract (a bool result was the
+    // last uncited core scalar) — that is correct, contract-carrying behavior,
+    // not the unconditional int-arith citation this test guards against.
     let rust = xpile_transpile_to_rust("cmp.py");
     assert!(
-        !rust.contains("xpile-contract:"),
-        "comparison-only fn should have no citation, got:\n{rust}"
+        !rust.contains("xpile-contract: C-PY-INT-ARITH"),
+        "comparison-only fn must NOT carry the int-arith citation, got:\n{rust}"
+    );
+    assert!(
+        rust.contains("// xpile-contract: C-XLATE-PY-BOOL-TO-RUST-BOOL"),
+        "a bool-returning fn cites the bool translation contract (PMAT-935):\n{rust}"
     );
 }
 

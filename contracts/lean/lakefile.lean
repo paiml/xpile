@@ -131,5 +131,11 @@ lean_lib «XpileContractsPilot» where
     --     (`Nat.zero_le`, no lemma), zero-abs-of-zero is `rw`+`rfl`, and the
     --     trichotomy uses core `Int.lt_trichotomy` (bare `lt_trichotomy` is the
     --     PMAT-904/913 Mathlib alias). Same Int-sign Diamond claim, core-only.
-    `Bashrs                         -- C-BASHRS-POSIX-IDEMPOTENCE (PMAT-928)
+    `Bashrs,                        -- C-BASHRS-POSIX-IDEMPOTENCE (PMAT-928)
+    -- PMAT-935 (R6 backlog slice): the new pure-`bool` translation contract joins
+    -- the pilot at depth-1 — a core-only, import-free STRUCTURE EXTENSIONALITY
+    -- proof (same shape as PyFloatArith / the str/list/set/tuple/Optional
+    -- structural Diamonds): a Python bool is determined by its single truth-flag,
+    -- so the lowering's polarity is pinned. Closes the last uncited core scalar.
+    `XlatePyBoolToRustBool          -- C-XLATE-PY-BOOL-TO-RUST-BOOL (PMAT-935)
   ]

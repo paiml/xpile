@@ -11374,6 +11374,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-935
+  github_issue: null
+  item_type: task
+  title: 'PMAT-935: [R6/contract-integrity] author `C-XLATE-PY-BOOL-TO-RUST-BOOL` + wire `Type::Bool` into `applicable_contracts()` — pure-boolean logic (`a and b` → `a && b`, `not a` → `!a`) was the LAST core scalar still shipping UNCITED (zero `// xpile-contract:` line); closes the scalar set and stops the capability-vs-contract drift'
+  status: done
+  priority: high
+  created: 2026-06-24T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (PMAT-900..934 all merged, sprint window 2026-06-23..07-02 still open). VARIES THE AXIS off the last slice (PMAT-934 correctness-hunt str.ljust) onto the prompt's named DIFFERENTIATOR — a real R6/contract-integrity item. A fresh differential correctness-hunt over untouched construct families (str/list slicing incl. negative-step + OOB, set ops, nested/dict comprehensions, f-string specs incl. percent + zero-pad, bitwise shifts incl. >>64 clamp + <<63 two's-complement, round() banker's rounding, int()/float() parsing, str.count('')/find('')/rfind(''), list pop/index/insert negative-index, str/list `*` negative-count) found ZERO silent-wrong divergences — the correctness vein is genuinely thin. So pivoted to the R6 differentiator instead, per the re-prioritized roadmap (a thin correctness vein falls back to the contract-integrity tier)."
+  - "ROOT CAUSE (R6 capability-vs-contract drift, audit-design.md §6): `Function::applicable_contracts()` (crates/xpile-meta-hir/src/lib.rs) was wired for int/str/list/dict/float/set/class/tuple/Optional (PMAT-475/860/861/879/880/881) but NOT pure `bool`. A function whose only governed construct is boolean logic — `def both(a: bool, b: bool) -> bool: return a and b` — emitted `pub fn both(a: bool, b: bool) -> bool { (a && b) }` with ZERO `// xpile-contract:` line. The roadmap memory project-roadmap-goals.md explicitly named `bool` as a remaining uncontracted core construct; this closes it (the scalar set int/str/float/bool is now complete)."
+  - "FIX (the proven PMAT-880/881 4-touchpoint recipe): (1) authored contracts/xlate-py-bool-to-rust-bool-v1.yaml (`kind: pattern`, 2 emit equations short_circuit_preserved + operator_polarity_preserved governing `and`→`&&`/`or`→`||` short-circuit-not-eager-bitwise + `not`→`!` polarity, 1 depth-1 `py_bool_structure_extensionality_diamond` equation, 3 falsification_tests); (2) authored contracts/lean/XlatePyBoolToRustBool.lean — a core-only import-free `PyBool` single-truth-flag STRUCTURE EXTENSIONALITY theorem (`a.truth = b.truth → a = b`, `simp_all`, sorry-free), same shape as PyFloatArith; added to lakefile.lean roots (18 → 19 machine-checked modules); (3) wired `Type::Bool` into applicable_contracts() so any bool-touching fn cites C-XLATE-PY-BOOL-TO-RUST-BOOL; (4) added the id to contract_citation_integrity's required-cited list + the per-fixture EXPECTED map (bool_contract.py)."
+  - "REGRESSION GUARDS: new e2e fixture bool_contract.py (both/either/negate/mixed) + `bool_cites_contract` test (asserts the citation + short-circuit `&&`/`||` emission, then rustc-runs the FULL 8-row truth table of `(a and not b) or c` against the Rust-computed reference — polarity preserved across nesting); contract_citation_integrity now requires C-XLATE-PY-BOOL-TO-RUST-BOOL be cited corpus-wide AND in bool_contract.py specifically; diamond depth-1 UNIVERSAL gate now sees the new contract's depth-1 Diamond (depth_1_plus == contracts_total holds; the new contract is NOT grandfathered so is exempt from depths 2..13)."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors/0 warnings), cargo-deny advisories, `cargo test -p xpile` (e2e bool_cites_contract + contract_citation_integrity + diamond_coverage), `cargo test -p xpile-meta-hir`, `lake build` (Lean touched). 22 → 23 on-disk contracts; 18 → 19 machine-checked Lean modules. Backlog R6 slice, sprint 2026-06-24."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-131
   github_issue: null
   item_type: task

@@ -13,7 +13,8 @@
 //! (9 from PMAT-903 + 2 from PMAT-904 + FfiShellSubprocess/PMAT-907 +
 //! CFloatArith/PMAT-912 + XpileFrontendTrait/PMAT-913 +
 //! XlateRustFnToLeanThm/PMAT-914 + XlateLeanToRust/PMAT-915 +
-//! Notation/PMAT-916 + Bashrs/PMAT-928 = 18), and asserts
+//! Notation/PMAT-916 + Bashrs/PMAT-928 +
+//! XlatePyBoolToRustBool/PMAT-935 = 19), and asserts
 //! the `PROVABILITY-INVENTORY.md` PILOT count stays in lockstep. It does
 //! NOT re-prove anything — only that the bookkeeping the Lean job relies on
 //! can't drift behind the Rust gate's back.
@@ -125,6 +126,13 @@ const EXPECTED_PILOT: &[&str] = &[
     //     non-negativity, `rw`+`rfl` for zero-abs-of-zero) + core
     //     `Int.lt_trichotomy`. Same Int-sign Diamond claim, no `import Mathlib`.
     "Bashrs",
+    // PMAT-935 (R6 backlog slice): the NEW pure-`bool` translation contract joins
+    // the pilot at depth-1 — a core-only, import-free `PyBool` single-truth-flag
+    // STRUCTURE EXTENSIONALITY proof (same shape as PyFloatArith / the
+    // str/list/set/tuple/Optional structural Diamonds). This is a NEW contract
+    // (not a discharge of a previously-excluded module), so the pilot grows
+    // 18 → 19 and closes the last uncited core scalar.
+    "XlatePyBoolToRustBool",
 ];
 
 #[test]
