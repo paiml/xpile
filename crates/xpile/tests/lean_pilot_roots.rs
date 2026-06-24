@@ -14,7 +14,7 @@
 //! CFloatArith/PMAT-912 + XpileFrontendTrait/PMAT-913 +
 //! XlateRustFnToLeanThm/PMAT-914 + XlateLeanToRust/PMAT-915 +
 //! Notation/PMAT-916 + Bashrs/PMAT-928 +
-//! XlatePyBoolToRustBool/PMAT-935 = 19), and asserts
+//! XlatePyBoolToRustBool/PMAT-935 + XlatePyListToVec/PMAT-936 = 20), and asserts
 //! the `PROVABILITY-INVENTORY.md` PILOT count stays in lockstep. It does
 //! NOT re-prove anything — only that the bookkeeping the Lean job relies on
 //! can't drift behind the Rust gate's back.
@@ -133,6 +133,23 @@ const EXPECTED_PILOT: &[&str] = &[
     // (not a discharge of a previously-excluded module), so the pilot grows
     // 18 → 19 and closes the last uncited core scalar.
     "XlatePyBoolToRustBool",
+    // PMAT-936 (backlog slice): discharged the `XlatePyListToVec` MIXED head
+    // (8 errors), exactly as the inventory flagged — four sound classes, no new
+    // termination territory:
+    // (a) the PMAT-914/915/916/928 NAME-SHADOWING — `def
+    //     NonEmptyHomogeneousList.val (n) := n.val` resolved `n.val` to itself
+    //     (non-terminating self-call) → `:593 fail to show termination`,
+    //     poisoning the `:632` `n.property` witness and the `:1257`
+    //     `Subtype.ext` proof; fix = positional `.1` projection in the body.
+    // (b) `:796` — `simp [List.length_append]` with no preceding `unfold` could
+    //     not fold through the `def` → reused the discharged Platinum companion
+    //     `lower_length_homomorphism_platinum`.
+    // (c) `:980` — core `List.length_reverse` now takes the list explicitly →
+    //     `List.length_reverse l.elems` (CORE lemma, not Mathlib).
+    // (d) `:1359` — `Array.toList_length` is not a constant; core lemma is
+    //     `Array.length_toList` → `exact Array.length_toList`. Layer-2
+    //     Python-list → Rust-Vec contract now machine-checked. Pilot 19 → 20.
+    "XlatePyListToVec",
 ];
 
 #[test]
