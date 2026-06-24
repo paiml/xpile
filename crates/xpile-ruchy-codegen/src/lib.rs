@@ -1143,6 +1143,9 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
         Type::CLong => out.push_str("i64"),
         // PMAT-477 (R8): Ruchy → Rust `f64`.
         Type::F64 => out.push_str("f64"),
+        // PMAT-911: a C `float` (distinct 32-bit-ABI width) → `f32` (Ruchy
+        // compiles to Rust; the C ABI distinction lives in `c_abi_type`).
+        Type::F32 => out.push_str("f32"),
         Type::Bool => out.push_str("bool"),
         // PMAT-502bl: Python `None` return → unit `()`.
         Type::Unit => out.push_str("()"),

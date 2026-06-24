@@ -1313,6 +1313,18 @@ pub enum Type {
     /// `Bool`). No governing contract yet (capability-ahead-of-
     /// contract); a `C-PY-FLOAT-ARITH` substrate is queued.
     F64,
+    /// A C `float` — a 32-bit single-precision IEEE-754 float, modeled
+    /// DISTINCTLY from the 64-bit [`Type::F64`] (PMAT-911), exactly as
+    /// [`Type::CLong`] is kept apart from [`Type::I64`] for the integer
+    /// widths. decy-frontend produces it for `float` declarations; the FFI
+    /// manifest maps it to `c_float` (a 32-bit C ABI slot) instead of
+    /// narrowing every C float to `c_double`, and the Rust/Ruchy backends
+    /// render it as `f32` (Lean: `Float`, its only float shape). The C emit
+    /// path rides `f32` IEEE arithmetic. Like F64 it has no governing
+    /// contract yet — C float arithmetic cites the queued `C-C-FLOAT-ARITH`
+    /// (uncited until authored), NOT the Python `C-PY-FLOAT-ARITH` (which a
+    /// C-sourced `float` must never claim).
+    F32,
     /// Unbounded integer — Python `int`'s native shape. The slow path
     /// of contract `C-PY-INT-ARITH`. Rust/Ruchy emit
     /// `xpile_bigint::BigInt`; Lean emits `Int` (which is already
