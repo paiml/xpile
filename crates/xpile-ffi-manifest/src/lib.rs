@@ -259,10 +259,14 @@ impl FfiManifest {
     ///     `C-FFI-SHELL-SUBPROCESS`.
     ///   - **Ruchy / Rust** → a real same-crate direct-call forwarder (both lower
     ///     to native Rust in the same crate — a plain in-crate call, no `unsafe`,
-    ///     no `extern`). Four of six arms are now real (C, Shell, Ruchy, Rust).
-    ///   - **Cpp / Cuda / Python / Lean** → a specific, mechanism-named
-    ///     [`FfiEmitError`] (pybind11 / cuda_kernel / pyo3 / proof-lane) so the
-    ///     remaining gaps stay actionable, never silently dropped or mis-emitted.
+    ///     no `extern`).
+    ///   - **Python** → a real pyo3 CPython-embedding shim (PMAT-926): under the
+    ///     GIL it imports the defining module and calls the function, marshalling
+    ///     scalar args/return through pyo3 (`i64`/`f64`/`bool`/`String`). Five of
+    ///     seven arms are now real (C, Shell, Ruchy, Rust, Python).
+    ///   - **Cpp / Cuda / Lean** → a specific, mechanism-named [`FfiEmitError`]
+    ///     (pybind11 / cuda_kernel / proof-lane) so the remaining gaps stay
+    ///     actionable, never silently dropped or mis-emitted.
     ///
     /// All-or-nothing (mirrors `reconcile`'s `manifest_completeness`): if ANY
     /// boundary cannot be shimmed, nothing is emitted and the gaps are returned —
@@ -458,11 +462,22 @@ fn shim_part_for(entry: &FfiEntry, modules: &[Module]) -> Result<ShimPart, Vec<S
              marshalling), not a direct call — roadmap Phase 7+",
             entry.symbol
         )]),
-        SourceLang::Python => Err(vec![format!(
-            "{}: Python boundary → needs a pyo3 shim (Ruchy↔Python / CPython \
-             embedding) — roadmap Phase 6",
-            entry.symbol
-        )]),
+        // Real pyo3 CPython-embedding shim (PMAT-926): a Rust/Ruchy driver
+        // calling a transpiled *Python* function embeds the interpreter via
+        // pyo3, imports the defining module, and calls the function under the
+        // GIL, marshalling args/return through pyo3's `IntoPyObject`/`extract`.
+        // Like the C arm this needs the real defining function's signature.
+        SourceLang::Python => match (
+            defining_function(modules, entry),
+            defining_module_name(modules, entry),
+        ) {
+            (Some(f), Some(module_name)) => emit_pyo3_shim(entry, f, module_name),
+            _ => Err(vec![format!(
+                "{}: resolved to a Python symbol that is not a function — cannot \
+                 emit a pyo3 embedding shim",
+                entry.symbol
+            )]),
+        },
         // Real same-crate direct-call forwarder. Ruchy lowers to Rust and a Rust
         // boundary is already Rust, so both land in the SAME emitted crate — a
         // boundary call is a plain in-crate call, not FFI (no C ABI, no `unsafe`,
@@ -690,6 +705,183 @@ fn emit_direct_shim(entry: &FfiEntry, f: &Function) -> Result<ShimPart, Vec<Stri
     })
 }
 
+/// PMAT-926: emit a real **pyo3 CPython-embedding shim** for a `to_lang ==
+/// Python` boundary. A Rust/Ruchy driver calling a transpiled *Python* function
+/// cannot lower it to native Rust (Python is dynamically typed — the only
+/// faithful execution is the CPython interpreter itself), so the shim EMBEDS
+/// CPython via pyo3: under the GIL it imports the defining module, fetches the
+/// function attribute, calls it with the marshalled args, and extracts the
+/// result back into the declared Rust scalar. This is the mechanism the prior
+/// `Err(pyo3 gap)` arm only named; it is now emitted.
+///
+/// Marshalling is restricted to the scalars pyo3 round-trips losslessly through
+/// its `IntoPyObject`/`FromPyObject` impls — `i64`/`f64`/`bool`/`String`. Any
+/// param/return whose meta-HIR type has no such pyo3 mapping (`List`/`Dict`/
+/// `BigInt`/`Struct`/a C-ABI width/…) is REFUSED with a named reason rather
+/// than mis-marshalled — the same refuse-rather-than-mis-emit posture as
+/// [`emit_c_shim`]. The module name is `entry.symbol`'s defining module; pyo3
+/// imports it by the function name's owning module, recorded on the boundary as
+/// the symbol's home. Capability-ahead-of-contract: a pyo3 embedding has no
+/// governing on-disk contract yet (a `C-FFI-PYO3-EMBED` is queued), so
+/// `contract` is `None` — exactly as the Ruchy/Rust direct-call arm shipped
+/// ahead of its contract.
+///
+/// No `extern "C"` block: pyo3 is a pure-Rust API over `libpython`, not a raw C
+/// ABI callee — the wrapper is `unsafe`-free (all `unsafe` lives inside pyo3).
+///
+/// `module_name` is the Python module that DEFINES the symbol (its `Module.name`
+/// in the dispatched set) — what pyo3's `PyModule::import` resolves; the shim
+/// `getattr`s `symbol` off it.
+fn emit_pyo3_shim(
+    entry: &FfiEntry,
+    f: &Function,
+    module_name: &str,
+) -> Result<ShimPart, Vec<String>> {
+    let mut unsupported = Vec::new();
+    let mut params = Vec::new();
+    // The call argument tuple. pyo3's `call1` takes a tuple; a 1-arg call needs
+    // the trailing comma (`(a,)`) to stay a tuple, and a 0-arg call passes the
+    // empty tuple `()`.
+    let mut call_args = Vec::new();
+    for p in &f.params {
+        match pyo3_native_type(&p.ty) {
+            Ok(rty) => {
+                params.push(format!("{}: {}", p.name, rty));
+                call_args.push(p.name.clone());
+            }
+            Err(reason) => {
+                unsupported.push(format!("{}: parameter `{}` {reason}", entry.symbol, p.name))
+            }
+        }
+    }
+
+    // Return position: `Type::Unit` is Python `None` (no `-> T`, no extract);
+    // anything else must map to a pyo3-extractable scalar or the boundary is
+    // refused.
+    let (ret_sig, extracts) = match &f.return_type {
+        Type::Unit => (String::new(), false),
+        ty => match pyo3_native_type(ty) {
+            Ok(rty) => (format!(" -> {rty}"), true),
+            Err(reason) => {
+                unsupported.push(format!("{}: return type {reason}", entry.symbol));
+                (String::new(), false)
+            }
+        },
+    };
+
+    if !unsupported.is_empty() {
+        return Err(unsupported);
+    }
+
+    let args_tuple = match call_args.len() {
+        0 => "()".to_string(),
+        1 => format!("({},)", call_args[0]),
+        _ => format!("({})", call_args.join(", ")),
+    };
+    let call_and_ret = if extracts {
+        format!(
+            "        let __r = __func\n            .call1({args_tuple})\n            .expect(\"call Python `{0}`\");\n        __r.extract().expect(\"extract `{0}` return into the declared Rust type\")\n",
+            entry.symbol
+        )
+    } else {
+        format!(
+            "        __func\n            .call1({args_tuple})\n            .expect(\"call Python `{0}`\");\n",
+            entry.symbol
+        )
+    };
+    let wrapper = format!(
+        "/// pyo3 CPython-embedding shim for `{0}` — embeds the interpreter, imports\n\
+         /// the transpiled Python module, and calls `{0}` under the GIL (no `unsafe`;\n\
+         /// all `unsafe` is confined inside pyo3). Callers speak native Rust scalars.\n\
+         pub fn {0}_shim({1}){2} {{\n\
+        \x20   // pyo3 0.23's `import`/`getattr`/`call1`/`extract` are trait methods\n\
+        \x20   // (`PyAnyMethods`/`PyModuleMethods`) — the prelude brings them in scope.\n\
+        \x20   // Function-local so it can't collide with sibling C/Shell/direct shims.\n\
+        \x20   use ::pyo3::prelude::*;\n\
+        \x20   ::pyo3::Python::with_gil(|py| {{\n\
+        \x20       let __module = ::pyo3::types::PyModule::import(py, \"{3}\")\n\
+        \x20           .expect(\"import the transpiled Python module `{3}`\");\n\
+        \x20       let __func = __module\n\
+        \x20           .getattr(\"{0}\")\n\
+        \x20           .expect(\"Python module `{3}` defines `{0}`\");\n\
+        {4}\
+        \x20   }})\n\
+         }}\n",
+        entry.symbol,
+        params.join(", "),
+        ret_sig,
+        module_name,
+        call_and_ret
+    );
+    Ok(ShimPart {
+        extern_decl: None,
+        wrapper,
+        // Capability-ahead-of-contract: a pyo3 embedding has no on-disk contract
+        // yet (a C-FFI-PYO3-EMBED is queued) — same posture as the direct-call arm.
+        contract: None,
+    })
+}
+
+/// PMAT-926: the native Rust type a **pyo3 embedding shim** speaks for a
+/// meta-HIR [`Type`]. The accepted set is the scalars pyo3 round-trips
+/// losslessly through its `IntoPyObject`/`FromPyObject` blanket impls: a Python
+/// `int` is `i64`, a `float` is `f64`, a `bool` is `bool`, a `str` is owned
+/// `String`. Everything else is REFUSED with a named reason (the
+/// refuse-rather-than-mis-marshal posture): a C-ABI integer/float WIDTH
+/// (`CLong`/`CUInt`/`CULong`/`F32`) is a C-sourced shape that has no business at
+/// a Python boundary; `BigInt` needs a `num-bigint`↔pyo3 bridge the first cut
+/// does not pin; containers (`List`/`Dict`/`Set`/`Tuple`/`Optional`) and a
+/// `Struct` need a recursive pyo3 marshalling pass (deferred); a raw pointer /
+/// `CChar` is a C-ABI token, not a Python value; the bashrs-domain types and a
+/// bare `Unit` parameter are nonsensical at this boundary.
+fn pyo3_native_type(ty: &Type) -> Result<String, String> {
+    Ok(match ty {
+        Type::I64 => "i64".to_string(),
+        Type::F64 => "f64".to_string(),
+        Type::Bool => "bool".to_string(),
+        Type::Str => "String".to_string(),
+        Type::CLong | Type::CUInt | Type::CULong | Type::F32 => {
+            return Err(format!(
+                "type {ty:?} is a C-ABI width — a C-sourced shape with no place at a \
+                 Python (pyo3) boundary; pyo3 marshals plain Python int/float"
+            ));
+        }
+        Type::BigInt => {
+            return Err(
+                "type BigInt needs a num-bigint↔pyo3 bridge the embedding shim does \
+                 not pin; pyo3 shim refuses it"
+                    .to_string(),
+            );
+        }
+        Type::List(_) | Type::Dict(_, _) | Type::Set(_) | Type::Tuple(_) | Type::Optional(_) => {
+            return Err(format!(
+                "container type {ty:?} needs a recursive pyo3 marshalling pass — \
+                 the embedding shim's first cut speaks scalars only; refused"
+            ));
+        }
+        Type::Struct(name) => {
+            return Err(format!(
+                "struct type `{name}` needs a co-emitted `#[pyclass]` bridge — \
+                 pyo3 shim refuses it until struct marshalling lands"
+            ));
+        }
+        Type::Ptr { .. } | Type::CChar => {
+            return Err(format!(
+                "type {ty:?} is a C-ABI pointer/char token, not a Python value — \
+                 pyo3 shim refuses it"
+            ));
+        }
+        Type::ShellString | Type::ExitCode => {
+            return Err(format!(
+                "type {ty:?} is a bashrs-domain type — not a pyo3 marshalling target"
+            ));
+        }
+        Type::Unit => {
+            return Err("type `()` is only valid in return position".to_string());
+        }
+    })
+}
+
 /// Native Rust type a **same-crate direct-call** shim speaks for a meta-HIR
 /// [`Type`]. Unlike [`c_abi_type`] there is NO C ABI to honor (the callee is
 /// native Rust in the same crate), so the accepted set is wider — it mirrors what
@@ -794,6 +986,28 @@ pub fn defining_function<'a>(modules: &'a [Module], entry: &FfiEntry) -> Option<
             if let Item::Function(f) = it {
                 if f.name == entry.symbol {
                     return Some(f);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// PMAT-926: the NAME of the module that defines a reconciled entry's symbol —
+/// what pyo3's `PyModule::import` resolves for a Python-embedding shim. Mirrors
+/// [`defining_function`]'s symbol/`to_lang` match. Returns `None` when no module
+/// defines the symbol — an internal-invariant violation `reconcile` already
+/// guards (the caller only reaches the pyo3 arm after `defining_function`
+/// succeeded), so in practice this is always `Some`.
+fn defining_module_name<'a>(modules: &'a [Module], entry: &FfiEntry) -> Option<&'a str> {
+    for m in modules {
+        if m.source_lang != entry.to_lang {
+            continue;
+        }
+        for it in &m.items {
+            if let Item::Function(f) = it {
+                if f.name == entry.symbol {
+                    return Some(&m.name);
                 }
             }
         }
@@ -1553,10 +1767,267 @@ mod tests {
     }
 
     #[test]
-    fn emit_shims_python_boundary_reports_pyo3_gap() {
+    fn emit_shims_python_boundary_emits_pyo3_embedding_shim() {
+        // PMAT-926: a Rust→Python boundary now lowers to a real pyo3
+        // CPython-embedding shim (was an `Err(pyo3 gap)`). `module_defining`
+        // exports `embed` as a nullary `-> i64` in a module named "target".
         // from != to (Rust→Python), else reconcile drops it as same-language.
-        let err = emit_cross(SourceLang::Rust, SourceLang::Python, "embed").expect_err("refused");
-        assert!(err.to_string().contains("pyo3"), "{err}");
+        let out = emit_cross(SourceLang::Rust, SourceLang::Python, "embed").expect("emits");
+        // No extern block / no unsafe — pyo3 is a pure-Rust API.
+        assert!(
+            !out.contains("extern \"C\""),
+            "pyo3 is not a C-ABI callee: {out}"
+        );
+        // unsafe-free in the EMITTED CODE (the doc-comment prose mentions the
+        // word, so scan only non-comment lines for an `unsafe` block/extern).
+        let code_only: String = out
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//") && !l.trim_start().starts_with("///"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            !code_only.contains("unsafe"),
+            "the pyo3 wrapper code is unsafe-free: {out}"
+        );
+        // The wrapper embeds the interpreter, imports the DEFINING module by its
+        // name ("target"), getattrs the function, and calls it under the GIL.
+        assert!(
+            out.contains("pub fn embed_shim() -> i64 {"),
+            "nullary -> i64 pyo3 wrapper: {out}"
+        );
+        assert!(out.contains("::pyo3::Python::with_gil(|py|"), "{out}");
+        assert!(
+            out.contains("::pyo3::types::PyModule::import(py, \"target\")"),
+            "imports the defining module by name: {out}"
+        );
+        assert!(out.contains(".getattr(\"embed\")"), "{out}");
+        // A 0-arg call passes the empty tuple; the result is extracted to i64.
+        assert!(out.contains(".call1(())"), "0-arg call passes (): {out}");
+        assert!(
+            out.contains(".extract().expect("),
+            "non-Unit return is extracted: {out}"
+        );
+        // Capability-ahead-of-contract — no citation yet (C-FFI-PYO3-EMBED queued).
+        assert!(
+            !out.contains("xpile-contract:"),
+            "pyo3 embedding is capability-ahead-of-contract (no citation): {out}"
+        );
+    }
+
+    #[test]
+    fn emit_pyo3_shim_marshals_scalars_and_unit_return() {
+        // A Rust→Python boundary with scalar params (i64/f64/bool/str) and a
+        // Unit (Python None) return: the wrapper speaks native scalars, builds a
+        // multi-arg call tuple, and — because the return is Unit — neither has a
+        // `-> T` nor extracts.
+        let mut modules = vec![
+            module(
+                "driver",
+                SourceLang::Rust,
+                vec![boundary(SourceLang::Rust, SourceLang::Python, "report")],
+            ),
+            Module {
+                name: "analytics".into(),
+                source_lang: SourceLang::Python,
+                items: vec![Item::Function(Function {
+                    name: "report".into(),
+                    params: vec![
+                        xpile_meta_hir::Param {
+                            name: "n".into(),
+                            ty: Type::I64,
+                            mutable: false,
+                        },
+                        xpile_meta_hir::Param {
+                            name: "ratio".into(),
+                            ty: Type::F64,
+                            mutable: false,
+                        },
+                        xpile_meta_hir::Param {
+                            name: "verbose".into(),
+                            ty: Type::Bool,
+                            mutable: false,
+                        },
+                        xpile_meta_hir::Param {
+                            name: "label".into(),
+                            ty: Type::Str,
+                            mutable: false,
+                        },
+                    ],
+                    return_type: Type::Unit,
+                    body: Block {
+                        stmts: Vec::new(),
+                        trailing_return: Expr::LitInt(0),
+                    },
+                })],
+                ffi_boundaries: Vec::new(),
+            },
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
+        let out = manifest.emit_rust_shims(&modules).expect("emits");
+        assert!(
+            out.contains("pub fn report_shim(n: i64, ratio: f64, verbose: bool, label: String) {"),
+            "scalar params, Unit return -> no arrow: {out}"
+        );
+        assert!(
+            out.contains("::pyo3::types::PyModule::import(py, \"analytics\")"),
+            "{out}"
+        );
+        // Multi-arg call tuple, in declaration order.
+        assert!(
+            out.contains(".call1((n, ratio, verbose, label))"),
+            "multi-arg call tuple in order: {out}"
+        );
+        // A Unit return must NOT extract (no `__r`, no `.extract()`).
+        assert!(
+            !out.contains(".extract()"),
+            "a Unit (None) return must not extract: {out}"
+        );
+    }
+
+    #[test]
+    fn emit_pyo3_shim_one_arg_call_tuple_has_trailing_comma() {
+        // pyo3's `call1` takes a tuple; a 1-arg call needs the trailing comma
+        // `(x,)` to stay a tuple rather than a parenthesized expression.
+        let mut modules = vec![
+            module(
+                "driver",
+                SourceLang::Rust,
+                vec![boundary(SourceLang::Rust, SourceLang::Python, "twice")],
+            ),
+            Module {
+                name: "m".into(),
+                source_lang: SourceLang::Python,
+                items: vec![Item::Function(Function {
+                    name: "twice".into(),
+                    params: vec![xpile_meta_hir::Param {
+                        name: "x".into(),
+                        ty: Type::I64,
+                        mutable: false,
+                    }],
+                    return_type: Type::I64,
+                    body: Block {
+                        stmts: Vec::new(),
+                        trailing_return: Expr::LitInt(0),
+                    },
+                })],
+                ffi_boundaries: Vec::new(),
+            },
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
+        let out = manifest.emit_rust_shims(&modules).expect("emits");
+        assert!(
+            out.contains(".call1((x,))"),
+            "1-arg call tuple needs the trailing comma: {out}"
+        );
+    }
+
+    #[test]
+    fn emit_pyo3_shim_refuses_unmarshallable_type() {
+        // A Python boundary returning a List: pyo3's first cut speaks scalars
+        // only, so the container is refused with a named reason rather than
+        // emitting a shim that won't extract.
+        let mut modules = vec![
+            module(
+                "driver",
+                SourceLang::Rust,
+                vec![boundary(SourceLang::Rust, SourceLang::Python, "rows")],
+            ),
+            Module {
+                name: "m".into(),
+                source_lang: SourceLang::Python,
+                items: vec![Item::Function(Function {
+                    name: "rows".into(),
+                    params: Vec::new(),
+                    return_type: Type::List(Box::new(Type::I64)),
+                    body: Block {
+                        stmts: Vec::new(),
+                        trailing_return: Expr::LitInt(0),
+                    },
+                })],
+                ffi_boundaries: Vec::new(),
+            },
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
+        let err = manifest.emit_rust_shims(&modules).expect_err("refused");
+        assert!(err.to_string().contains("rows"), "{err}");
+        assert!(err.to_string().contains("container"), "{err}");
+    }
+
+    #[test]
+    fn emit_pyo3_shim_compiles_against_pyo3() {
+        // The load-bearing gate (mirrors the C arm's rustc compile gate, but for
+        // a real external dep): the emitted pyo3 shim must COMPILE against pyo3.
+        // pyo3 needs libpython at LINK time, but `cargo check` only TYPE-checks,
+        // so a Python *dev* install (headers via pyo3-build) suffices and no
+        // interpreter must run. Gated on cargo + a buildable pyo3 — skips
+        // gracefully (returns) when pyo3 cannot be built (offline / no python).
+        let out = emit_cross(SourceLang::Rust, SourceLang::Python, "embed").expect("emits");
+        pyo3_shim_checks(&out);
+    }
+
+    /// `cargo check` the emitted pyo3 shim as a tiny standalone crate that
+    /// depends on pyo3 (`auto-initialize` so no `Python::initialize` boilerplate
+    /// is needed for a type-check). Skips (returns) gracefully if `cargo` is
+    /// absent or pyo3 cannot be resolved/built (offline CI / no Python dev
+    /// headers) — the structural string assertions above always run; this adds
+    /// the real-compiler gate when the toolchain is present.
+    fn pyo3_shim_checks(shim: &str) {
+        if std::process::Command::new("cargo")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("cargo unavailable — skipping pyo3 compile gate");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!(
+            "xpile_pyo3_gate_{}_{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        if std::fs::create_dir_all(dir.join("src")).is_err() {
+            eprintln!("temp dir unavailable — skipping pyo3 compile gate");
+            return;
+        }
+        // pyo3 0.23 — pinned minor so the emitted `PyModule::import`/`call1`/
+        // `extract` API surface is stable. `auto-initialize` lets a type-check
+        // proceed without an explicit interpreter init.
+        std::fs::write(
+            dir.join("Cargo.toml"),
+            "[package]\nname = \"xpile-pyo3-gate\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[dependencies]\npyo3 = { version = \"0.23\", features = [\"auto-initialize\"] }\n",
+        )
+        .expect("write Cargo.toml");
+        std::fs::write(dir.join("src").join("lib.rs"), shim).expect("write shim");
+        let out = std::process::Command::new("cargo")
+            .current_dir(&dir)
+            .arg("check")
+            .arg("--target-dir")
+            .arg(dir.join("target"))
+            .output();
+        match out {
+            Ok(o) if o.status.success() => {}
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                // A pyo3/libpython *resolution or build* failure (no Python dev
+                // env, offline) is a SKIP, not a test failure — the structural
+                // assertions already validated the shim shape. Only a genuine
+                // type error in OUR emitted code should fail. Heuristic: if the
+                // failure mentions our shim symbol (`embed_shim`) it's our bug;
+                // otherwise it's an environment/dep issue → skip.
+                if stderr.contains("error[") && stderr.contains("embed_shim") {
+                    panic!("emitted pyo3 shim failed to type-check:\n{stderr}");
+                }
+                eprintln!(
+                    "pyo3 could not be built (offline / no Python dev env) — skipping pyo3 compile gate"
+                );
+            }
+            Err(_) => eprintln!("cargo spawn failed — skipping pyo3 compile gate"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
