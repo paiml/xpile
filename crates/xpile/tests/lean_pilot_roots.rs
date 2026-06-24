@@ -14,7 +14,8 @@
 //! CFloatArith/PMAT-912 + XpileFrontendTrait/PMAT-913 +
 //! XlateRustFnToLeanThm/PMAT-914 + XlateLeanToRust/PMAT-915 +
 //! Notation/PMAT-916 + Bashrs/PMAT-928 +
-//! XlatePyBoolToRustBool/PMAT-935 + XlatePyListToVec/PMAT-936 = 20), and asserts
+//! XlatePyBoolToRustBool/PMAT-935 + XlatePyListToVec/PMAT-936 +
+//! FfiCpythonExt/PMAT-937 = 21), and asserts
 //! the `PROVABILITY-INVENTORY.md` PILOT count stays in lockstep. It does
 //! NOT re-prove anything — only that the bookkeeping the Lean job relies on
 //! can't drift behind the Rust gate's back.
@@ -150,6 +151,25 @@ const EXPECTED_PILOT: &[&str] = &[
     //     `Array.length_toList` → `exact Array.length_toList`. Layer-2
     //     Python-list → Rust-Vec contract now machine-checked. Pilot 19 → 20.
     "XlatePyListToVec",
+    // PMAT-937 (backlog slice): discharged the `FfiCpythonExt` head — the
+    // Layer-4 hybrid CPython-extension contract, cheapest of the three
+    // remaining non-elaborating modules by `error:` count (20). FOUR sound
+    // classes, no new termination territory:
+    // (a) the PMAT-914/915/916/928/936 NAME-SHADOWING — `def
+    //     BoundedRefcountDelta.val (b) := b.val` resolved `b.val` to itself
+    //     (non-terminating self-call) → `:979 fail to show termination`,
+    //     poisoning the `:987`/`:993` `deriving DecidableEq`, the `:1037`
+    //     `.property`, the `:1750` `Subtype.ext`, and the `:1786`-`:1788`
+    //     canonical `rfl`/`decide`s; fix = positional `.1` projection in the
+    //     body + an explicit `DecidableEq BoundedRefcountDelta` instance.
+    // (b) `:1235`/`:1236` — Mathlib-only `use` tactic → core `refine ⟨_, ?_⟩`.
+    // (c) `:1466` — Mathlib `|·|`/`lt_trichotomy`/`abs_of_pos`/`Int.sign_mul_abs`
+    //     restated over CORE `Int.natAbs` (PMAT-928 lesson).
+    // (d) `:1808`+ — `lift_ffi_call_bronze_to_silver` was annotated the wrong
+    //     structure (`FfiCallSilver`, which lacks `symbol`/…) → retargeted to
+    //     `FfiCallStructuredSilver`. Layer-4 contract now machine-checked.
+    //     Pilot 20 → 21; KNOWN-INCOMPLETE 3 → 2.
+    "FfiCpythonExt",
 ];
 
 #[test]

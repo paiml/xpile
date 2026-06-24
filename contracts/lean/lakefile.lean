@@ -24,12 +24,12 @@ open Lake DSL
   — so this job is exactly the check that makes "provable" un-falsifiable by
   `grep sorry`.
 
-  PILOT = the 20 modules that elaborate clean under bare core with
+  PILOT = the 21 modules that elaborate clean under bare core with
   warnings-as-errors (9 from PMAT-903 + 2 PMAT-904 + FfiShellSubprocess/907 +
   CFloatArith/912 + XpileFrontendTrait/913 + XlateRustFnToLeanThm/914 +
   XlateLeanToRust/915 + Notation/916 + Bashrs/928 + XlatePyBoolToRustBool/935 +
-  XlatePyListToVec/936).
-  The known-incomplete remainder is 3 modules with REAL elaboration errors
+  XlatePyListToVec/936 + FfiCpythonExt/937).
+  The known-incomplete remainder is 2 modules with REAL elaboration errors
   (termination / type-mismatch / synthesis failures — NOT sorries), enumerated
   honestly in `PROVABILITY-INVENTORY.md` and deliberately EXCLUDED here so this
   advisory job is GREEN without overstating what is proven. Discharging the
@@ -162,5 +162,39 @@ lean_lib «XpileContractsPilot» where
     --     lemma is `Array.length_toList : a.toList.length = a.size`. `exact
     --     Array.length_toList` (the goal reduces definitionally). Layer-2
     --     Python-list → Rust-Vec contract now machine-checked, not excluded.
-    `XlatePyListToVec               -- C-XLATE-PY-LIST-TO-VEC      (PMAT-936)
+    `XlatePyListToVec,              -- C-XLATE-PY-LIST-TO-VEC      (PMAT-936)
+    -- PMAT-937 (backlog slice): discharged the `FfiCpythonExt` head — the
+    -- Layer-4 hybrid CPython-extension contract, the cheapest of the three
+    -- remaining non-elaborating modules by `error:` count (20). FOUR distinct
+    -- classes across the errors, all sound, NO new termination territory:
+    -- (a) the PMAT-914/915/916/928/936 NAME SHADOWING — `def
+    --     BoundedRefcountDelta.val (b) := b.val` resolved `b.val` by
+    --     dot-notation to *itself* (a non-terminating self-call, `b` unchanged
+    --     → `:979` `fail to show termination`), poisoning the `:987`/`:993`
+    --     `deriving DecidableEq` synthesis, the `:1037` `.property` witness,
+    --     the `:1750` `Subtype.ext`, and the `:1786`-`:1788` canonical-zero
+    --     `rfl`/`decide`s; fix = positional `.1` Subtype projection in the body
+    --     PLUS an explicit `DecidableEq BoundedRefcountDelta` instance (the
+    --     `deriving` handler can't peer through the opaque `def` subtype — same
+    --     fix PMAT-915 needed for `WarningLineCount`).
+    -- (b) `:1235`/`:1236` — `refcount_inverse_diamond` used the Mathlib-only
+    --     `use` tactic for the existential witness → unknown tactic with no
+    --     `import Mathlib`; replaced with core `refine ⟨witness, ?_⟩`.
+    -- (c) `:1466` — `refcount_delta_sign_decomp_diamond` used Mathlib's `|·|`
+    --     absolute-value notation (`unexpected token '|'`) + `lt_trichotomy` +
+    --     `abs_of_pos`/`abs_of_neg` + `Int.sign_mul_abs`; restated over CORE
+    --     `Int.natAbs` (PMAT-928 lesson): magnitude `(·.natAbs : Int)`,
+    --     trichotomy `Int.lt_trichotomy`, magnitude facts
+    --     `Int.natAbs_of_nonneg`/`Int.natAbs_neg`, reconstruction
+    --     `Int.sign_mul_natAbs`. Same sign-decomposition claim, core-only.
+    -- (d) `:1808`/`:1817`/`:1821`/`:1849` — `lift_ffi_call_bronze_to_silver`
+    --     was annotated `: FfiCallSilver` (a 2-field record) but constructed
+    --     the SIX structured fields (`symbol`/`from_lang`/…), which only exist
+    --     on `FfiCallStructuredSilver`; the annotation made every field
+    --     reference an unknown field, cascading into the `:1826`/`:1862`-`:1864`
+    --     round-trip `rfl`s. Fix = retarget the lift/projection to
+    --     `FfiCallStructuredSilver` (the docstring already described it).
+    -- Layer-4 hybrid CPython-extension contract now machine-checked, not
+    -- excluded. KNOWN-INCOMPLETE 3 → 2 (CompileRustToPtxMma 38, PyIntArith 45).
+    `FfiCpythonExt                  -- C-FFI-CPYTHON-EXT           (PMAT-937)
   ]
