@@ -1394,6 +1394,9 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
         Type::CLong => out.push_str("i64"),
         // PMAT-477 (R8): Python `float` → Rust `f64`.
         Type::F64 => out.push_str("f64"),
+        // PMAT-911: a C `float` — a distinct 32-bit-ABI width, rendered as
+        // Rust `f32` (the C ABI distinction lives in `c_abi_type` -> c_float).
+        Type::F32 => out.push_str("f32"),
         Type::Bool => out.push_str("bool"),
         // PMAT-502bl: Python `None` return → Rust unit `()`.
         Type::Unit => out.push_str("()"),
@@ -4325,17 +4328,18 @@ impl Backend for RustBackend {
 // This mirrors the standalone-decy → C-C-INT-ARITH plan in
 // `sub/v0.2.0-decy-merger.md`; the contract substrate is queued.
 
-/// PMAT-909/910: the Rust scalar width a C function is emitted at. C `int`
+/// PMAT-909/910/911: the Rust scalar width a C function is emitted at. C `int`
 /// (`Type::I64`) → `i32` (fixed-width, wrapping); C `long`/`int64_t`
-/// (`Type::CLong`) → `i64`; C `double` (`Type::F64`) → `f64` (IEEE
-/// arithmetic, no wrapping). A single function is emitted at ONE width —
-/// "widest wins" with precedence `f64 > i64 > i32`: if its return, any
-/// param, or any local is `F64`, the whole function rides `f64`; else if
-/// any is `CLong`, it rides `i64`; else `i32`. For the integer widths this
+/// (`Type::CLong`) → `i64`; C `double` (`Type::F64`) → `f64` and C `float`
+/// (`Type::F32`) → `f32` (both IEEE arithmetic, no wrapping). A single
+/// function is emitted at ONE width — "widest wins" with precedence
+/// `f64 > f32 > i64 > i32`: if its return, any param, or any local is `F64`
+/// the whole function rides `f64`; else if any is `F32` it rides `f32`; else
+/// if any is `CLong` it rides `i64`; else `i32`. For the integer widths this
 /// is value-preserving (int fits in i64, only the wrap width changes). The
-/// float case targets the uniformly-`double` C functions decy currently
-/// produces; a mixed int/double function (C usual-arithmetic promotion) is
-/// a deferred edge — decy has no fixture for one yet.
+/// float cases target the uniformly-`double` / uniformly-`float` C functions
+/// decy currently produces; a mixed-width function (C usual-arithmetic
+/// promotion) is a deferred edge — decy has no fixture for one yet.
 #[derive(Clone, Copy)]
 struct CWidth {
     rust_ty: &'static str,
@@ -4361,6 +4365,11 @@ const C_WIDTH_F64: CWidth = CWidth {
     lit_suffix: "f64",
     is_float: true,
 };
+const C_WIDTH_F32: CWidth = CWidth {
+    rust_ty: "f32",
+    lit_suffix: "f32",
+    is_float: true,
+};
 
 fn c_function_width(f: &Function) -> CWidth {
     let any_f64 = matches!(f.return_type, Type::F64)
@@ -4368,6 +4377,14 @@ fn c_function_width(f: &Function) -> CWidth {
         || c_stmts_have_ty(&f.body.stmts, &Type::F64);
     if any_f64 {
         return C_WIDTH_F64;
+    }
+    // PMAT-911: a C `float` function rides `f32` IEEE arithmetic — its own
+    // 32-bit width, below `f64` but above the integer widths in precedence.
+    let any_f32 = matches!(f.return_type, Type::F32)
+        || f.params.iter().any(|p| matches!(p.ty, Type::F32))
+        || c_stmts_have_ty(&f.body.stmts, &Type::F32);
+    if any_f32 {
+        return C_WIDTH_F32;
     }
     let any_clong = matches!(f.return_type, Type::CLong)
         || f.params.iter().any(|p| matches!(p.ty, Type::CLong))
@@ -4397,14 +4414,21 @@ fn c_stmts_have_ty(stmts: &[Stmt], want: &Type) -> bool {
 fn emit_c_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
     let w = c_function_width(f);
     if w.is_float {
-        // PMAT-910: a C `double` function uses IEEE f64 arithmetic, NOT the
-        // two's-complement wrapping `C-C-INT-ARITH` models. Its governing
-        // contract (C-C-FLOAT-ARITH) is a queued R6 head — deliberately NOT
-        // emitted as a `// xpile-contract:` line so the citation-integrity
-        // gate (PMAT-475) never sees a phantom id. Plain comment only.
+        // PMAT-910/911: a C `double`/`float` function uses IEEE f64/f32
+        // arithmetic, NOT the two's-complement wrapping `C-C-INT-ARITH`
+        // models. Its governing contract (C-C-FLOAT-ARITH) is a queued R6
+        // head — deliberately NOT emitted as a `// xpile-contract:` line so
+        // the citation-integrity gate (PMAT-475) never sees a phantom id.
+        // Plain comment only, width-named.
+        let c_name = if w.rust_ty == "f32" {
+            "float"
+        } else {
+            "double"
+        };
         writeln!(
             out,
-            "// xpile-arith: C double -> IEEE f64 (C-C-FLOAT-ARITH queued, uncited)"
+            "// xpile-arith: C {c_name} -> IEEE {} (C-C-FLOAT-ARITH queued, uncited)",
+            w.rust_ty
         )?;
     } else {
         // C int/long arithmetic is governed by the on-disk C-C-INT-ARITH.
@@ -4499,14 +4523,21 @@ fn emit_c_stmt(out: &mut String, stmt: &Stmt, indent: &str, w: CWidth) -> Result
 
 fn emit_c_expr(out: &mut String, e: &Expr, w: CWidth) -> Result<(), CodegenError> {
     match e {
-        // PMAT-909/910: the literal suffix tracks the function width (`i32`
-        // for C `int`, `i64` for `long`/`int64_t`, `f64` for `double`) so
-        // the body is internally type-consistent. An int literal in a
-        // float-width function emits as `<v>f64` (valid Rust, e.g. `2f64`).
+        // PMAT-909/910/911: the literal suffix tracks the function width
+        // (`i32` for C `int`, `i64` for `long`/`int64_t`, `f64` for `double`,
+        // `f32` for `float`) so the body is internally type-consistent. An
+        // int literal in a float-width function emits as `<v>f64`/`<v>f32`
+        // (valid Rust, e.g. `2f64`, `2f32`).
         Expr::LitInt(v) => write!(out, "{v}{}", w.lit_suffix)?,
-        // PMAT-910: a C float literal renders as a Rust f64 literal. `{}`
-        // of a whole-valued f64 (`2.0`) prints `2`, so suffix with `f64`.
-        Expr::LitFloat(v) => write!(out, "{v}f64")?,
+        // PMAT-910/911: a C float literal renders at the function's float
+        // width — `f64` in a `double` function, `f32` in a `float` one. `{}`
+        // of a whole-valued float (`2.0`) prints `2`, so a suffix is always
+        // needed to keep it a float literal. (An integer-width function never
+        // carries a float literal; `f64` is the harmless fallback.)
+        Expr::LitFloat(v) => {
+            let suffix = if w.is_float { w.lit_suffix } else { "f64" };
+            write!(out, "{v}{suffix}")?
+        }
         Expr::Ident(name) => write!(out, "{name}")?,
         Expr::BinOp { op, lhs, rhs } => emit_c_binop(out, *op, lhs, rhs, w)?,
         Expr::UnOp { op, operand } => match op {
@@ -4931,6 +4962,73 @@ mod tests {
         assert!(
             !rust.contains("// xpile-contract:"),
             "double fn must emit no contract citation (C-C-FLOAT-ARITH queued): {rust}"
+        );
+    }
+
+    #[test]
+    fn c_emit_float_function_rides_f32_width() {
+        // PMAT-911: a `float`-typed C function emits at f32 width — f32
+        // signature, IEEE infix arithmetic (NOT wrapping_*), f32 literals.
+        // Distinct from the f64 `double` width: no f64 must leak in.
+        let scale = Function {
+            name: "scalef".into(),
+            params: vec![Param {
+                name: "x".into(),
+                ty: Type::F32,
+                mutable: false,
+            }],
+            return_type: Type::F32,
+            body: Block {
+                stmts: vec![Stmt::Let {
+                    name: "y".into(),
+                    ty: Type::F32,
+                    value: Expr::BinOp {
+                        op: BinOp::Mul,
+                        lhs: Box::new(Expr::Ident("x".into())),
+                        rhs: Box::new(Expr::LitFloat(2.0)),
+                    },
+                    mutable: false,
+                }],
+                trailing_return: Expr::BinOp {
+                    op: BinOp::Add,
+                    lhs: Box::new(Expr::Ident("y".into())),
+                    rhs: Box::new(Expr::LitFloat(0.5)),
+                },
+            },
+        };
+        let rust = emit_module(&c_module("s", scale)).expect("emit ok");
+        assert!(
+            rust.contains("pub fn scalef(x: f32) -> f32"),
+            "float C fn must ride f32 width: {rust}"
+        );
+        assert!(rust.contains("let y: f32 ="), "float local is f32: {rust}");
+        assert!(rust.contains("2f32"), "f32 literal suffix: {rust}");
+        assert!(rust.contains("0.5f32"), "fractional f32 literal: {rust}");
+        // IEEE infix, NOT integer wrapping.
+        assert!(
+            rust.contains("x * 2f32") && rust.contains("y + 0.5f32"),
+            "float arithmetic is plain infix: {rust}"
+        );
+        assert!(
+            !rust.contains("wrapping_"),
+            "no integer wrapping in an f32 fn: {rust}"
+        );
+        // The 32↔64 ABI honesty: an f32 fn must NOT leak the f64/double width
+        // (nor any int width).
+        assert!(
+            !rust.contains("f64") && !rust.contains("i32") && !rust.contains("i64"),
+            "no f64/int width leak in an f32 fn: {rust}"
+        );
+        // The arith comment names the float width.
+        assert!(
+            rust.contains("C float -> IEEE f32"),
+            "arith comment names the f32 width: {rust}"
+        );
+        // Same citation honesty as double: C-C-FLOAT-ARITH is queued, so a
+        // float fn cites NO contract (no phantom id for the gate).
+        assert!(
+            !rust.contains("// xpile-contract:"),
+            "float fn must emit no contract citation (C-C-FLOAT-ARITH queued): {rust}"
         );
     }
 }

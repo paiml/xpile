@@ -866,6 +866,9 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), LeanCodegenError> {
         Type::CLong => out.push_str("Int"),
         // PMAT-477 (R8): Python `float` → Lean `Float`.
         Type::F64 => out.push_str("Float"),
+        // PMAT-911: a C `float` (32-bit). Lean's `Float` is its only float
+        // shape (64-bit IEEE) — same total-function encoding as F64.
+        Type::F32 => out.push_str("Float"),
         Type::Bool => out.push_str("Bool"),
         // Lean's Int is already unbounded — same shape as BigInt.
         Type::BigInt => out.push_str("Int"),

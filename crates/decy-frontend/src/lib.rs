@@ -5,13 +5,14 @@
 //! replaces the v0.1.0 35-line stub that returned an empty module.
 //!
 //! Supported subset (slice 1):
-//!   - `int` / `long` / `int64_t` / `double` function definitions with
-//!     matching parameters (PMAT-909: `long`/`int64_t` lower to the distinct
-//!     64-bit `Type::CLong` width, kept apart from the 32-bit-`int`-backed
-//!     `I64`; PMAT-910: `double` lowers to `Type::F64`, ABI `c_double`. C
-//!     `float` (32-bit, `c_float`) is an explicit gap — it parses-errors
-//!     rather than narrowing through the 64-bit double slot.)
-//!   - local `int` / `long` / `double` declarations (`int x = <expr>;`)
+//!   - `int` / `long` / `int64_t` / `double` / `float` function definitions
+//!     with matching parameters (PMAT-909: `long`/`int64_t` lower to the
+//!     distinct 64-bit `Type::CLong` width, kept apart from the
+//!     32-bit-`int`-backed `I64`; PMAT-910: `double` lowers to `Type::F64`,
+//!     ABI `c_double`; PMAT-911: `float` lowers to the DISTINCT 32-bit
+//!     `Type::F32`, ABI `c_float` — never widened through the 64-bit double
+//!     slot. Pointer/string tokens are the remaining ABI ceiling.)
+//!   - local `int` / `long` / `double` / `float` declarations (`int x = <expr>;`)
 //!   - a trailing `return <expr>;`
 //!   - expressions: integer and float literals, identifiers, calls (recursion),
 //!     `+ - *`, comparisons (`< <= > >= == !=`), `&& ||`, unary `- !`,
@@ -71,6 +72,7 @@ enum Tok {
     Int,    // `int` keyword (C 32-bit int → meta-HIR I64, ABI c_int)
     Long, // `long` / `long long` / `int64_t` (PMAT-909): 64-bit C int → meta-HIR CLong, ABI c_longlong
     Double, // `double` keyword (PMAT-910): 64-bit C double → meta-HIR F64, ABI c_double
+    Float, // `float` keyword (PMAT-911): 32-bit C float → meta-HIR F32, ABI c_float
     Return, // `return` keyword
     Void, // `void` keyword
     Ident(String),
@@ -266,11 +268,12 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
                     "long" | "int64_t" | "int_least64_t" | "int_fast64_t" => Tok::Long,
                     // PMAT-910: C `double` (64-bit) → meta-HIR F64, ABI c_double
                     // — ABI-consistent (C double = Rust f64 = c_double = 64-bit).
-                    // C `float` (32-bit, c_float) is DELIBERATELY NOT a keyword:
-                    // it falls through to an Ident and fails to parse cleanly,
-                    // rather than silently narrowing through the 64-bit c_double
-                    // slot (the 32↔64 ABI lie PMAT-909 fixed for ints).
                     "double" => Tok::Double,
+                    // PMAT-911: C `float` (32-bit) → meta-HIR F32, ABI c_float
+                    // — its own DISTINCT width, never narrowed/widened through
+                    // the 64-bit c_double slot (the 32↔64 ABI honesty PMAT-909
+                    // established for ints, now held for floats too).
+                    "float" => Tok::Float,
                     "return" => Tok::Return,
                     "void" => Tok::Void,
                     "while" => Tok::While,
@@ -412,10 +415,10 @@ impl<'a> Parser<'a> {
     /// body is rejected since the meta-HIR has a single trailing return).
     fn parse_stmt(&mut self, fn_name: &str) -> Result<Stmt, String> {
         match self.peek() {
-            // PMAT-909/910: a local decl begins with a C scalar type token
-            // (`int x = …;`, `long x = …;`, or `double x = …;`), carrying
-            // its own width.
-            Some(Tok::Int) | Some(Tok::Long) | Some(Tok::Double) => {
+            // PMAT-909/910/911: a local decl begins with a C scalar type
+            // token (`int x = …;`, `long x = …;`, `double x = …;`, or
+            // `float x = …;`), each carrying its own width.
+            Some(Tok::Int) | Some(Tok::Long) | Some(Tok::Double) | Some(Tok::Float) => {
                 let ty = self.parse_c_type()?;
                 let name = self.parse_ident()?;
                 self.eat(&Tok::Assign)?;
@@ -438,7 +441,7 @@ impl<'a> Parser<'a> {
                 Ok(Stmt::Assign { name, value })
             }
             other => Err(format!(
-                "function `{fn_name}`: unexpected token {other:?} — supported statements: `int x = e;`, `long x = e;`, `double x = e;`, `x = e;`, `if (c) {{ … }} else {{ … }}`, `while (c) {{ … }}`, then a final `return e;`"
+                "function `{fn_name}`: unexpected token {other:?} — supported statements: `int x = e;`, `long x = e;`, `double x = e;`, `float x = e;`, `x = e;`, `if (c) {{ … }} else {{ … }}`, `while (c) {{ … }}`, then a final `return e;`"
             )),
         }
     }
@@ -528,8 +531,10 @@ impl<'a> Parser<'a> {
     /// ABI maps to `c_longlong` instead of narrowing to `c_int`). A
     /// trailing second `long` (`long long`) folds into the same width.
     /// `double` → [`Type::F64`] (a 64-bit C double the FFI ABI maps to
-    /// `c_double`). C `float` (32-bit) is intentionally absent — it lexes
-    /// to an `Ident` and lands in the error arm rather than narrowing.
+    /// `c_double`). `float` → [`Type::F32`] (PMAT-911), a 32-bit C float the
+    /// FFI ABI maps to the DISTINCT `c_float` slot — its own width, not
+    /// narrowed/widened through `c_double` (the 32↔64 ABI honesty held for
+    /// floats as for ints).
     fn parse_c_type(&mut self) -> Result<Type, String> {
         match self.peek() {
             Some(Tok::Int) => {
@@ -548,8 +553,12 @@ impl<'a> Parser<'a> {
                 self.bump();
                 Ok(Type::F64)
             }
+            Some(Tok::Float) => {
+                self.bump();
+                Ok(Type::F32)
+            }
             other => Err(format!(
-                "expected a C scalar type (`int`, `long`, `int64_t`, or `double`), found {other:?}"
+                "expected a C scalar type (`int`, `long`, `int64_t`, `float`, or `double`), found {other:?}"
             )),
         }
     }
@@ -968,17 +977,40 @@ mod tests {
     }
 
     #[test]
-    fn rejects_c_float_token() {
-        // PMAT-910 ABI-honesty: C `float` (32-bit, c_float) is NOT lifted —
-        // it lexes to an Ident and fails to parse, never silently narrowing
-        // through the 64-bit c_double slot.
-        let err = CFrontend
-            .parse_and_lower(&PathBuf::from("x.c"), "float halve(float x) { return x; }")
-            .unwrap_err();
-        assert!(
-            format!("{err:?}").contains("expected a C scalar type"),
-            "C `float` must parse-error, got: {err:?}"
-        );
+    fn parses_float_as_distinct_f32_width() {
+        // PMAT-911: `float` lowers to the meta-HIR F32 width (params +
+        // return + local) — the ABI-honest 32-bit float token, kept DISTINCT
+        // from the 64-bit `double`/F64 (which it must never fold into).
+        let m = lower("float square(float x) { float y = x; return y * x; }");
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
+        assert_eq!(f.return_type, Type::F32, "float return → F32");
+        assert_eq!(f.params[0].ty, Type::F32, "float param → F32");
+        let Stmt::Let { ty, .. } = &f.body.stmts[0] else {
+            unreachable!("first stmt is the `float y` decl")
+        };
+        assert_eq!(*ty, Type::F32, "float local → F32");
+        // The 32↔64 ABI honesty: `float` is F32, never widened to F64.
+        assert_ne!(f.return_type, Type::F64, "float must NOT fold into F64");
+    }
+
+    #[test]
+    fn float_and_double_lower_to_distinct_widths() {
+        // PMAT-911 regression: `float` → F32 and `double` → F64 are kept
+        // apart, exactly as `int`/`long` (I64/CLong) are for the integer
+        // widths — one C float type per meta-HIR width.
+        let ff = lower("float f(float x) { return x; }");
+        let dd = lower("double g(double x) { return x; }");
+        let Item::Function(f) = &ff.items[0] else {
+            unreachable!()
+        };
+        let Item::Function(g) = &dd.items[0] else {
+            unreachable!()
+        };
+        assert_eq!(f.params[0].ty, Type::F32);
+        assert_eq!(g.params[0].ty, Type::F64);
+        assert_ne!(f.params[0].ty, g.params[0].ty, "F32 and F64 are distinct");
     }
 
     #[test]

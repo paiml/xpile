@@ -310,10 +310,13 @@ impl FfiManifest {
                 "//   -> c_longlong (64-bit), not narrowed to c_int (PMAT-909), and `double`\n",
             );
             out.push_str(
-                "//   -> Type::F64 -> c_double (64-bit, PMAT-910). C `float` (32-bit c_float),\n",
+                "//   -> Type::F64 -> c_double (64-bit, PMAT-910), and `float` -> the distinct\n",
             );
             out.push_str(
-                "//   pointer, and string ABI tokens are the remaining decy lexer ceiling.\n",
+                "//   Type::F32 -> c_float (32-bit, PMAT-911), not widened through c_double.\n",
+            );
+            out.push_str(
+                "//   Pointer and string ABI tokens are the remaining decy lexer ceiling.\n",
             );
         }
         out.push_str("#![allow(dead_code)]\n");
@@ -635,6 +638,8 @@ fn direct_native_type(ty: &Type) -> Result<String, String> {
         // native (no-C-ABI) direct call — both speak `i64`.
         Type::CLong => "i64".to_string(),
         Type::F64 => "f64".to_string(),
+        // PMAT-911: a C `float` direct-call shim speaks native `f32`.
+        Type::F32 => "f32".to_string(),
         Type::Bool => "bool".to_string(),
         Type::Str => "String".to_string(),
         Type::List(elem) => format!("Vec<{}>", direct_native_type(elem)?),
@@ -718,9 +723,10 @@ pub fn defining_function<'a>(modules: &'a [Module], entry: &FfiEntry) -> Option<
 /// `Type::CLong` width (decy-frontend, PMAT-909) and maps to `c_longlong` —
 /// no longer narrowed to `c_int`. C `double` parses to `Type::F64` and maps
 /// to `c_double` (PMAT-910), the FFI boundary having been F64-ready ahead of
-/// the decy lexer. The remaining ceiling is C `float` (32-bit, `c_float`) and
-/// pointer/string ABI tokens (decy's lexer still lacks them — and `float` is
-/// deliberately rejected rather than narrowed through the c_double slot).
+/// the decy lexer. C `float` now parses to the DISTINCT `Type::F32` width
+/// (decy-frontend, PMAT-911) and maps to `c_float` (a 32-bit ABI slot) — never
+/// widened through `c_double`. The remaining ceiling is pointer/string ABI
+/// tokens (decy's lexer still lacks them).
 /// `Bool → c_int` is a lossy forward guard (decy never produces `Bool`);
 /// `Type::Unit` is handled at the return position.
 fn c_abi_type(ty: &Type) -> Option<&'static str> {
@@ -731,6 +737,10 @@ fn c_abi_type(ty: &Type) -> Option<&'static str> {
         // narrowed to `c_int`.
         Type::CLong => Some("::std::os::raw::c_longlong"),
         Type::F64 => Some("::std::os::raw::c_double"),
+        // PMAT-911: a 32-bit C float rides the DISTINCT `c_float` ABI slot —
+        // never widened through `c_double` (the 32↔64 ABI honesty held for
+        // floats as PMAT-909 held it for ints).
+        Type::F32 => Some("::std::os::raw::c_float"),
         _ => None,
     }
 }
@@ -740,6 +750,8 @@ fn c_abi_type(ty: &Type) -> Option<&'static str> {
 fn wrapper_native(ty: &Type) -> &'static str {
     match ty {
         Type::F64 => "f64",
+        // PMAT-911: a C `float` wrapper speaks `f32` (casts to/from `c_float`).
+        Type::F32 => "f32",
         // I64, the Bool forward-guard, and the PMAT-909 CLong all ride an
         // `i64` native wrapper (CLong casts to/from `c_longlong`; I64 to/from
         // `c_int`).
@@ -902,6 +914,19 @@ mod tests {
         assert_eq!(c_abi_type(&Type::I64), Some("::std::os::raw::c_int"));
         assert_eq!(c_abi_type(&Type::Bool), Some("::std::os::raw::c_int"));
         assert_eq!(c_abi_type(&Type::F64), Some("::std::os::raw::c_double"));
+        // PMAT-911: a 32-bit C float rides the DISTINCT c_float slot — never
+        // widened through the 64-bit c_double.
+        assert_eq!(
+            c_abi_type(&Type::F32),
+            Some("::std::os::raw::c_float"),
+            "float must ride the 32-bit c_float ABI slot, not c_double"
+        );
+        assert_ne!(
+            c_abi_type(&Type::F32),
+            c_abi_type(&Type::F64),
+            "F32 and F64 must map to distinct C ABI slots"
+        );
+        assert_eq!(wrapper_native(&Type::F32), "f32");
         // PMAT-909: a wider C integer is NOT narrowed to c_int.
         assert_eq!(
             c_abi_type(&Type::CLong),
@@ -1223,6 +1248,36 @@ mod tests {
         assert!(
             rustc_lib_compiles("f64", &out),
             "emitted f64 shim must compile under -D warnings"
+        );
+    }
+
+    #[test]
+    fn emit_shims_f32_boundary_maps_c_float() {
+        // PMAT-911: a C `float` boundary rides the DISTINCT 32-bit c_float
+        // ABI slot with an f32 wrapper — never widened through c_double.
+        // Compiles end-to-end under -D warnings on both editions.
+        let out = emit_for("scalef", vec![("x", Type::F32)], Type::F32).expect("emits");
+        assert!(
+            out.contains("fn scalef(x: ::std::os::raw::c_float) -> ::std::os::raw::c_float;"),
+            "float boundary must use c_float, not c_double:\n{out}"
+        );
+        assert!(out.contains("pub fn scalef_shim(x: f32) -> f32 {"));
+        assert!(out.contains("__r as f32"));
+        // The 32↔64 ABI honesty: an f32 boundary must NEVER widen to c_double.
+        let extern_block = out
+            .split("extern \"C\" {")
+            .nth(1)
+            .unwrap()
+            .split('}')
+            .next()
+            .unwrap();
+        assert!(
+            !extern_block.contains("c_double"),
+            "an F32 boundary must not widen to c_double:\n{extern_block}"
+        );
+        assert!(
+            rustc_lib_compiles("f32", &out),
+            "emitted f32 shim must compile under -D warnings"
         );
     }
 
