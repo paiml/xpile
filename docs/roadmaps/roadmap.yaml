@@ -11303,6 +11303,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-931
+  github_issue: null
+  item_type: task
+  title: 'PMAT-931: [correctness/hybrid] a whole-number `c_double` FFI return printed `10` from the executed hybrid artifact while CPython prints `10.0` — re-type the `double`-returning FFI call sites after reconciliation so the float-repr path is selected (the PMAT-930 deferred divergence)'
+  status: done
+  priority: high
+  created: 2026-06-24T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (PMAT-900..930 all merged, sprint window 2026-06-23..07-02 still open). Discharges the divergence PMAT-930 explicitly DEFERRED (\"that whole-number `c_double` divergence stays a separate correctness item, deliberately not entangled here\"). A fresh `xpile hybrid --verify` probe on a NEW `c_double` two-arg boundary CONFIRMED it open: `double scale2(double a, double b)` called as `print(scale2(2.0, 5.0))` — CPython-via-ctypes printed `10.0` (ctypes returns a Python `float`; `str(10.0)=='10.0'`) but the executed Rust+linked-C artifact printed `10`. Also a captured `r: float = scale2(...)` emitted `let r: i64 = …` (rustc E0308). The general `float`/`str(float)`/`print(float)` path was verified ALREADY CORRECT (the CPython-faithful float-repr block appends `.0` for whole values) — the bug was specific to the hybrid FFI call sites."
+  - "ROOT CAUSE: the Python frontend lowers `app.py` BEFORE the C sibling is dispatched + reconciled, so a call to a `double`-returning FFI symbol is typed with the unknown-callee `Type::I64` default (`infer_type_in_ctx`'s `Expr::Call` fallthrough). That mis-selected the downstream type-driven lowering: `lower_print_stmt` chose the integer `{}` `Stmt::Print` arm (no `Expr::ToStr{of_float:true}` wrap, so no trailing `.0`), and an annotated `let r: float` was overridden to the I64-inferred RHS type."
+  - "FIX (correctness-first, at the reconciliation seam): new `xpile_meta_hir::retype_ffi_float_call_sites(module, float_ffi_symbols)` + `xpile_ffi_manifest::retype_float_ffi_sites(manifest, modules)`, called ONCE from the `xpile hybrid` flow (`main.rs`) right after `FfiManifest::reconcile`, when the FFI symbols' real C return types are known (via `defining_function`). It computes the set of reconciled symbols whose `to_lang` definition returns `Type::F64` and walks each calling (non-C) module: a `print(ffi_call())` arg → wrapped in `Expr::ToStr{of_float:true}`; a `let r: i64 = ffi_call()` → re-typed to `Type::F64` AND the name recorded so a later `print(r)` of that float local is wrapped too; a bare-`return ffi_call()` function widens its I64-default return to F64. Exhaustive `Stmt` match (compiler-checked completeness), recurses into block-bearing statements. No-op when no reconciled symbol returns F64 (the common non-hybrid path) — int boundaries (`square_sum`/`sum_of_squares`) are provably untouched."
+  - "DONE: new fixture `crates/xpile/tests/fixtures/hybrid_scale2/` (`double scale2(double a, double b)`, `print(scale2(2.0, 5.0))`) verified end-to-end through `xpile hybrid --verify`: dispatch -> reconcile `scale2 : Python -> C` -> ctypes bind two `c_double` -> CPython ref `10.0` -> emit workspace -> cargo build -> run -> byte-compare -> MATCH on `10.0` (pre-fix: `10`, divergent). New gated oracle test `crates/xpile/tests/hybrid_verify_float.rs` (cc+python3+cargo graceful-skip; asserts exit 0 + MATCH verdict on \"10.0\" not \"10\"). Two `xpile-ffi-manifest` unit tests: `retype_float_ffi_sites_fixes_print_and_let` (print-call + let + print-of-local all re-typed) and `retype_float_ffi_sites_leaves_int_boundary_untouched` (int boundary's print arg stays a bare Call). Contract path: C-FFI-CPYTHON-EXT (the hybrid boundary) + C-PY-FLOAT-ARITH (the float-repr emission). Full gate green: fmt, check --workspace, clippy -D warnings, pv lint 0 errors/0 warnings, cargo-deny advisories, xpile-meta-hir + xpile-ffi-manifest + xpile hybrid_verify_float tests. Backlog slice, sprint 2026-06-24."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-131
   github_issue: null
   item_type: task

@@ -20,7 +20,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use xpile_backend::{BackendConfig, Profile, Target};
 use xpile_core::TranspileSession;
-use xpile_ffi_manifest::{defining_function, resolve_boundary_to_langs, FfiEntry, FfiManifest};
+use xpile_ffi_manifest::{
+    defining_function, resolve_boundary_to_langs, retype_float_ffi_sites, FfiEntry, FfiManifest,
+};
 use xpile_meta_hir::{Module, SourceLang, Type};
 use xpile_oracle::{capture_cpython_hybrid_ref, diff_stdout, ComparisonResult, CtypesBinding};
 
@@ -262,6 +264,12 @@ fn hybrid(
     resolve_boundary_to_langs(&mut modules);
     match FfiManifest::reconcile(&modules) {
         Ok(manifest) => {
+            // PMAT-931: re-type the FFI call sites of reconciled `double`-
+            // returning C symbols in the calling (Python) module — the Python
+            // frontend lowered them with the unknown-callee I64 default before
+            // the C side was known, mis-rendering a whole double (`10` vs
+            // Python's `10.0`) and mistyping `let r: float` (rustc E0308).
+            retype_float_ffi_sites(&manifest, &mut modules);
             if manifest.entries.is_empty() {
                 println!("  no cross-language FFI boundaries");
             } else {

@@ -4159,3 +4159,181 @@ pub fn escape_rust_reserved_idents(module: &mut Module) {
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// PMAT-931 (HUNT correctness): re-type FFI float call sites after hybrid
+// reconciliation.
+//
+// In a hybrid transpile the Python frontend lowers `app.py` BEFORE the C
+// sibling is dispatched + reconciled, so a call to an FFI symbol whose C
+// return type is `double` (`Type::F64`) is typed with the unknown-callee
+// I64 default. That mistypes every downstream site:
+//   * `print(scale2(...))` chose the bare-`{}` (int) `Stmt::Print` arm, so
+//     a whole-valued double printed `10` not Python's `10.0` — the
+//     `c_double` two-arg divergence PMAT-930 surfaced (CPython's ctypes
+//     returns a `float`; `str(10.0) == "10.0"`).
+//   * `let r: float = scale2(...)` emitted `let r: i64 = …` → rustc E0308.
+//
+// The fix runs ONCE after `FfiManifest::reconcile`, when the FFI symbols'
+// real C return types are known. The caller (the hybrid flow) passes the
+// set of FFI symbols whose reconciled `to_lang` definition returns F64;
+// this pass re-types each call site to that symbol so the existing
+// float-repr machinery (`Expr::ToStr { of_float: true }`, the F64 `Let`
+// annotation) is selected exactly as it is for a native float. It is a
+// no-op when the set is empty (the common non-hybrid path).
+// ─────────────────────────────────────────────────────────────────────
+
+/// True when `e` is a direct `Call` to a symbol in `float_ffi`.
+fn is_float_ffi_call(e: &Expr, float_ffi: &std::collections::HashSet<String>) -> bool {
+    matches!(e, Expr::Call { callee, .. } if float_ffi.contains(callee))
+}
+
+/// Re-type the call sites of `float_ffi` FFI symbols in `module` to F64 so the
+/// float-repr path (print `.0`, `let: f64`, float return) is selected. See the
+/// PMAT-931 block above. No-op when `float_ffi` is empty.
+pub fn retype_ffi_float_call_sites(
+    module: &mut Module,
+    float_ffi: &std::collections::HashSet<String>,
+) {
+    if float_ffi.is_empty() {
+        return;
+    }
+    for item in &mut module.items {
+        match item {
+            Item::Function(f) => retype_function(f, float_ffi),
+            Item::Struct { methods, .. } => {
+                for m in methods {
+                    retype_function(m, float_ffi);
+                }
+            }
+            Item::Const { value, ty, .. } => {
+                // A module-level `const X: float = c_call()` is unusual but
+                // honest to re-type for consistency.
+                if *ty == Type::I64 && is_float_ffi_call(value, float_ffi) {
+                    *ty = Type::F64;
+                }
+            }
+            Item::Enum { .. } => {}
+        }
+    }
+}
+
+fn retype_function(f: &mut Function, float_ffi: &std::collections::HashSet<String>) {
+    // A bare `return c_call()` whose declared return was the I64 default is the
+    // float function's return — widen it so the F64 emit path is taken.
+    if f.return_type == Type::I64 && is_float_ffi_call(&f.body.trailing_return, float_ffi) {
+        f.return_type = Type::F64;
+    }
+    // Locals re-typed to F64 (bound to a float-FFI call) — a later `print(name)`
+    // of one of these must take the float-repr arm too (it was lowered with the
+    // pre-reconcile I64 type, so its `print` arg is a bare `{}` Ident).
+    let mut float_locals = std::collections::HashSet::new();
+    for s in &mut f.body.stmts {
+        retype_stmt(s, float_ffi, &mut float_locals);
+    }
+}
+
+fn retype_stmt(
+    s: &mut Stmt,
+    float_ffi: &std::collections::HashSet<String>,
+    float_locals: &mut std::collections::HashSet<String>,
+) {
+    match s {
+        // The PMAT-930 divergence: a bare `Call` print-arg to a float FFI symbol
+        // (or a print of a local re-typed to that call's F64) was lowered into the
+        // int `{}` arm. Wrap it in the float-repr block so a whole value prints
+        // `10.0` (Python repr), matching CPython's ctypes `float`.
+        Stmt::Print { args, .. } => {
+            for a in args {
+                let is_float = is_float_ffi_call(a, float_ffi)
+                    || matches!(a, Expr::Ident(n) if float_locals.contains(n));
+                if is_float {
+                    *a = Expr::ToStr {
+                        value: Box::new(std::mem::replace(a, Expr::LitInt(0))),
+                        of_float: true,
+                    };
+                }
+            }
+        }
+        // `let r: float = c_call()` mistyped its annotation to the I64 default
+        // (rustc E0308). Re-type the binding so it emits `let r: f64`, and record
+        // the name so a later `print(r)` takes the float-repr arm.
+        Stmt::Let {
+            name, ty, value, ..
+        } => {
+            if is_float_ffi_call(value, float_ffi) {
+                if *ty == Type::I64 {
+                    *ty = Type::F64;
+                }
+                float_locals.insert(name.clone());
+            }
+        }
+        // Block-bearing statements: recurse so a float FFI call nested in a
+        // branch / loop body is re-typed too.
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => {
+            for st in then_body {
+                retype_stmt(st, float_ffi, float_locals);
+            }
+            for st in else_body {
+                retype_stmt(st, float_ffi, float_locals);
+            }
+        }
+        Stmt::While { body, .. }
+        | Stmt::ForEach { body, .. }
+        | Stmt::ForEachPair { body, .. }
+        | Stmt::ForEachZip3 { body, .. } => {
+            for st in body {
+                retype_stmt(st, float_ffi, float_locals);
+            }
+        }
+        Stmt::NestedFn { body, .. } => {
+            for st in &mut body.stmts {
+                retype_stmt(st, float_ffi, float_locals);
+            }
+        }
+        Stmt::Pipeline { stages } => {
+            for st in stages {
+                retype_stmt(st, float_ffi, float_locals);
+            }
+        }
+        Stmt::ShellLoop { body, .. } => {
+            for st in body {
+                retype_stmt(st, float_ffi, float_locals);
+            }
+        }
+        // Leaf / non-print / non-let-binding statements carry no float-FFI
+        // print-arg or float-`let` annotation site this pass corrects. (A
+        // float FFI value assigned/returned without a float annotation already
+        // types correctly through the call expr; only the I64-default sites
+        // above mis-render.)
+        Stmt::Return(_)
+        | Stmt::Continue
+        | Stmt::Break
+        | Stmt::Assign { .. }
+        | Stmt::ClosureLet { .. }
+        | Stmt::LetTuple { .. }
+        | Stmt::ListAppend { .. }
+        | Stmt::ListExtend { .. }
+        | Stmt::ListInsert { .. }
+        | Stmt::ListMutate { .. }
+        | Stmt::ListRemoveValue { .. }
+        | Stmt::IndexAssign { .. }
+        | Stmt::IndexAppend { .. }
+        | Stmt::DictSet { .. }
+        | Stmt::DictUpdate { .. }
+        | Stmt::DictSetdefaultAppend { .. }
+        | Stmt::NestedSubscriptAssign { .. }
+        | Stmt::FieldAssign { .. }
+        | Stmt::DelItem { .. }
+        | Stmt::SetAdd { .. }
+        | Stmt::SetRemove { .. }
+        | Stmt::Assert { .. }
+        | Stmt::Raise { .. }
+        | Stmt::Cmd { .. }
+        | Stmt::ShellAssign { .. } => {}
+    }
+}

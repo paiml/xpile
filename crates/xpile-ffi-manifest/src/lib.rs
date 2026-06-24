@@ -1195,6 +1195,44 @@ pub fn defining_function<'a>(modules: &'a [Module], entry: &FfiEntry) -> Option<
     None
 }
 
+/// PMAT-931 (HUNT correctness — the PMAT-930 `c_double` two-arg divergence):
+/// after reconciliation, re-type the FFI call sites of every reconciled symbol
+/// whose `to_lang` definition returns `Type::F64` so the float-repr path is
+/// selected in the calling (Python) module.
+///
+/// The Python frontend lowers `app.py` BEFORE the C sibling is dispatched, so a
+/// call to a `double`-returning C symbol is typed with the unknown-callee I64
+/// default. That makes `print(scale2(...))` print a whole double as `10` (not
+/// Python's `10.0`) and `let r: float = scale2(...)` emit `let r: i64` (rustc
+/// E0308). This walks each non-`to_lang` module and corrects those sites via
+/// [`xpile_meta_hir::retype_ffi_float_call_sites`]. Idempotent / no-op when no
+/// reconciled symbol returns F64.
+pub fn retype_float_ffi_sites(manifest: &FfiManifest, modules: &mut [Module]) {
+    // The set of reconciled FFI symbols whose defining (to_lang) function
+    // returns F64 — these are the call sites the calling module mistyped.
+    let float_symbols: std::collections::HashSet<String> = manifest
+        .entries
+        .iter()
+        .filter(|e| defining_function(modules, e).is_some_and(|f| f.return_type == Type::F64))
+        .map(|e| e.symbol.clone())
+        .collect();
+    if float_symbols.is_empty() {
+        return;
+    }
+    for m in modules.iter_mut() {
+        // Only the calling-side modules need correction; a defining `to_lang`
+        // (C) module has no Python print/let sites and is skipped by the emit
+        // path anyway.
+        if matches!(
+            m.source_lang,
+            SourceLang::C | SourceLang::Cpp | SourceLang::Cuda
+        ) {
+            continue;
+        }
+        xpile_meta_hir::retype_ffi_float_call_sites(m, &float_symbols);
+    }
+}
+
 /// PMAT-926: the NAME of the module that defines a reconciled entry's symbol —
 /// what pyo3's `PyModule::import` resolves for a Python-embedding shim. Mirrors
 /// [`defining_function`]'s symbol/`to_lang` match. Returns `None` when no module
@@ -2937,5 +2975,132 @@ mod tests {
             .expect_err("cuda boundary is unshimmable");
         assert!(matches!(err, WorkspaceEmitError::Shims(_)));
         assert!(err.to_string().contains("cudaLaunchKernel"));
+    }
+
+    // PMAT-931: after reconciliation, a Python module calling a `double`-returning
+    // C symbol must have its mistyped (I64-default) FFI call sites re-typed to F64,
+    // so `print(scale2(...))` takes the float-repr arm (a whole double prints
+    // `10.0`, not `10`) and a captured `let r: float = scale2(...)` emits `f64`.
+    #[test]
+    fn retype_float_ffi_sites_fixes_print_and_let() {
+        use xpile_meta_hir::Stmt;
+
+        // app.py: `print(scale2())` then `let r: i64 = scale2()` (the I64 the
+        // frontend defaulted before the C side was known) then `print(r)`.
+        let call = || Expr::Call {
+            callee: "scale2".to_string(),
+            args: Vec::new(),
+        };
+        let mut app = module(
+            "app",
+            SourceLang::Python,
+            vec![boundary(SourceLang::Python, SourceLang::C, "scale2")],
+        );
+        app.items.push(Item::Function(Function {
+            name: "main".to_string(),
+            params: Vec::new(),
+            return_type: Type::Unit,
+            body: Block {
+                stmts: vec![
+                    Stmt::Print {
+                        args: vec![call()],
+                        sep: " ".to_string(),
+                        end: "\n".to_string(),
+                    },
+                    Stmt::Let {
+                        name: "r".to_string(),
+                        ty: Type::I64,
+                        value: call(),
+                        mutable: false,
+                    },
+                    Stmt::Print {
+                        args: vec![Expr::Ident("r".to_string())],
+                        sep: " ".to_string(),
+                        end: "\n".to_string(),
+                    },
+                ],
+                trailing_return: Expr::Unit,
+            },
+        }));
+
+        // The C side returns `double` (Type::F64).
+        let mut modules = vec![app, c_fn("scale2", vec![("a", Type::F64)], Type::F64)];
+        resolve_boundary_to_langs(&mut modules);
+        let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
+        retype_float_ffi_sites(&manifest, &mut modules);
+
+        let Item::Function(main) = &modules[0].items[0] else {
+            panic!("expected main fn");
+        };
+        // print(scale2()) → wrapped in the float-repr ToStr block.
+        match &main.body.stmts[0] {
+            Stmt::Print { args, .. } => assert!(
+                matches!(&args[0], Expr::ToStr { of_float: true, .. }),
+                "first print arg must become ToStr{{of_float:true}}, got {:?}",
+                args[0]
+            ),
+            other => panic!("expected Print, got {other:?}"),
+        }
+        // let r: i64 = scale2()  →  let r: f64.
+        match &main.body.stmts[1] {
+            Stmt::Let { ty, .. } => assert_eq!(*ty, Type::F64, "let r must be re-typed to F64"),
+            other => panic!("expected Let, got {other:?}"),
+        }
+        // print(r) where r is now a float local → wrapped too.
+        match &main.body.stmts[2] {
+            Stmt::Print { args, .. } => assert!(
+                matches!(&args[0], Expr::ToStr { of_float: true, .. }),
+                "print(r) of a re-typed float local must become ToStr{{of_float:true}}, got {:?}",
+                args[0]
+            ),
+            other => panic!("expected Print, got {other:?}"),
+        }
+    }
+
+    // PMAT-931: an INT-returning C boundary must NOT trigger the float re-typing —
+    // the int hybrid fixtures (square_sum/sum_of_squares) stay byte-identical.
+    #[test]
+    fn retype_float_ffi_sites_leaves_int_boundary_untouched() {
+        use xpile_meta_hir::Stmt;
+
+        let mut app = module(
+            "app",
+            SourceLang::Python,
+            vec![boundary(SourceLang::Python, SourceLang::C, "square_sum")],
+        );
+        app.items.push(Item::Function(Function {
+            name: "main".to_string(),
+            params: Vec::new(),
+            return_type: Type::Unit,
+            body: Block {
+                stmts: vec![Stmt::Print {
+                    args: vec![Expr::Call {
+                        callee: "square_sum".to_string(),
+                        args: Vec::new(),
+                    }],
+                    sep: " ".to_string(),
+                    end: "\n".to_string(),
+                }],
+                trailing_return: Expr::Unit,
+            },
+        }));
+
+        let mut modules = vec![app, c_fn("square_sum", vec![("x", Type::I64)], Type::I64)];
+        resolve_boundary_to_langs(&mut modules);
+        let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
+        retype_float_ffi_sites(&manifest, &mut modules);
+
+        let Item::Function(main) = &modules[0].items[0] else {
+            panic!("expected main fn");
+        };
+        // The int boundary's print arg stays a bare Call (the `{}` int arm).
+        match &main.body.stmts[0] {
+            Stmt::Print { args, .. } => assert!(
+                matches!(&args[0], Expr::Call { .. }),
+                "an int boundary's print arg must stay a bare Call, got {:?}",
+                args[0]
+            ),
+            other => panic!("expected Print, got {other:?}"),
+        }
     }
 }
