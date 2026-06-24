@@ -26,6 +26,11 @@ __pycache__/
 .pmat/
 .pv/
 
+# Lean / Lake build artifacts (PMAT-903 proof-lane `lake build`). The
+# `lakefile.lean`, `lean-toolchain`, and `lake-manifest.json` ARE committed
+# (they pin the build); the compiled `.lake/` output tree is not.
+.lake/
+
 # Local config
 .env
 .env.local

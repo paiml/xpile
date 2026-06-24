@@ -10980,11 +10980,12 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-903: [provability] machine-checked Lean — lakefile + lean-toolchain + lake-build advisory CI job + golden-lock'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-23T00:00:00Z
   acceptance_criteria:
   - "Add contracts/lean/lakefile.lean + pinned lean-toolchain; run `lake build` as a SEPARATE advisory CI job; pilot-then-expand from sorry-free files; per-file Mathlib decision; enumerate the 5 sorry files + axiom lines as known-incomplete. Golden-lock test pins the Day-3 verdict. Sprint Day 4 (Fri; crates.io batch rides v0.1.600)."
+  - "DONE: contracts/lean/{lakefile.lean,lean-toolchain (leanprover/lean4:v4.15.0)} added; `lake build` wired as a SEPARATE ADVISORY ci.yml job (mirrors the kani posture; never in the blocking gate/publish path). PILOT = 9 modules that elaborate clean under bare core with `warningAsError := true` (CIntArith, PyFloatArith, XlatePyDictToHashmap, XlatePyStrToRustString, XpileContractBackendTrait, XlatePyClassToStruct, XlatePyOptionalToOption, XlatePySetToHashset, XlatePyTupleToRustTuple). Per-file Mathlib decision: NONE — verified zero `import` statements tree-wide, so no Mathlib dep / cache. TRUTH-UP (supersedes the plan's ground truth): the '6 sorry across 5 files' + '~34 axiom lines' debt was a naive-grep artifact — ZERO `sorry` tactics (5 docstring mentions + 1 `ProofStubReason.sorry` enum ctor) and ZERO `axiom` declarations (all prose). The real debt is 11 modules with genuine elaboration errors (termination-led: PyIntArith 45, CompileRustToPtxMma 38, FfiCpythonExt 20, XlatePyListToVec 8, Bashrs 7, Notation 7, XlateLeanToRust 7, XpileFrontendTrait 5, XlateRustFnToLeanThm 4, XpileBackendTrait 3, XpileContractFrontendTrait 2) — enumerated in contracts/lean/PROVABILITY-INVENTORY.md; no discharge today. Also fixed a real bug: PyFloatArith.lean's `NaN/-0.0` opened a nested block comment that swallowed the file (theorem never elaborated) — reworded, now machine-checked. Golden-lock: crates/xpile/tests/hybrid_golden_lock.rs byte-pins the Day-3 verdict line `✓ MATCH — stdout byte-identical (1 line(s)): \"49\"`. Shipped via PR (feat/lean-lakefile-advisory-ci)."
 - id: PMAT-904
   github_issue: null
   item_type: task

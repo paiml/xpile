@@ -105,3 +105,39 @@ jobs:
 
       - name: cargo test -p xpile --test kani_verify
         run: cargo test -p xpile --test kani_verify -- --nocapture
+
+  # ── Optional check: lake-build (Proof lane / PMAT-903) ────────
+  # Elaborates the machine-checked PILOT set in `contracts/lean/`
+  # via `lake build` against the pinned `lean-toolchain` (v4.15.0).
+  #
+  # Kept as a SEPARATE ADVISORY job (mirroring `kani`), deliberately
+  # NOT folded into the blocking `gate`/publish path, so Lean weight
+  # can never stall the fast gate or the crates.io window
+  # (sprint cadence rule).
+  #
+  # Hermetic + fast: PMAT-903 verified NOT ONE contracts/lean module
+  # imports Mathlib (the "Mathlib" mentions are docstring lemma
+  # names), so there is no Mathlib cache to fetch. The lakefile sets
+  # `warningAsError := true`, so a real `sorry` (→ `sorryAx`) cannot
+  # survive a green build — this job is the check that makes
+  # "provable" un-falsifiable by `grep sorry` for the pilot contracts.
+  # NOT a required status check at the branch-protection layer (yet).
+  lake-build:
+    name: lake-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # elan is the Lean toolchain manager (the rustup of Lean). With
+      # `--default-toolchain none` it installs nothing up front; the
+      # first `lake` invocation reads contracts/lean/lean-toolchain and
+      # pulls exactly the pinned v4.15.0.
+      - name: Install elan (Lean toolchain manager)
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: lake build (advisory proof lane)
+        working-directory: contracts/lean
+        run: lake build
