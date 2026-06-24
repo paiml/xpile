@@ -360,9 +360,23 @@ impl FfiManifest {
             std::fs::write(out_dir.join("csrc").join(name), content)?;
         }
         std::fs::write(out_dir.join("src").join("ffi_shims.rs"), &shims)?;
+        // PMAT-902: bridge the lowered call names to the emitted shims. The Python
+        // frontend lowers a boundary call `square_sum(7)` to a plain `square_sum(7)`,
+        // but the safe wrapper is `ffi_shims::square_sum_shim`. A per-boundary
+        // `use ffi_shims::<sym>_shim as <sym>;` makes the lowered call resolve to
+        // the shim, so an `app.py` `main()` that actually invokes the C side links
+        // and runs (the executing north-star artifact). `allow(unused_imports)`
+        // keeps a `pass`-bodied `main()` (no boundary call) warning-free.
+        let mut aliases = String::new();
+        for e in &self.entries {
+            aliases.push_str(&format!(
+                "#[allow(unused_imports)]\nuse ffi_shims::{0}_shim as {0};\n",
+                e.symbol
+            ));
+        }
         std::fs::write(
             out_dir.join("src").join("main.rs"),
-            format!("{rust_src}\nmod ffi_shims;\n"),
+            format!("mod ffi_shims;\n{aliases}\n{rust_src}\n"),
         )?;
         Ok(())
     }
@@ -533,7 +547,11 @@ fn emit_shell_shim(entry: &FfiEntry) -> ShimPart {
 /// [`FfiManifest::reconcile`]'s symbol/`to_lang` match. `reconcile` guarantees an
 /// entry exists only when the symbol is defined, so a miss here is an internal
 /// invariant violation (surfaced as an unsupported boundary by the caller).
-fn defining_function<'a>(modules: &'a [Module], entry: &FfiEntry) -> Option<&'a Function> {
+/// The defining function for a reconciled boundary: the `Item::Function` named
+/// `entry.symbol` in the module whose `source_lang` is `entry.to_lang`. Public so
+/// the `--verify` flow (PMAT-902) can read the C callee's param/return types to
+/// build the CPython-side ctypes ABI binding for the differential reference.
+pub fn defining_function<'a>(modules: &'a [Module], entry: &FfiEntry) -> Option<&'a Function> {
     for m in modules {
         if m.source_lang != entry.to_lang {
             continue;

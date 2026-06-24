@@ -1,1 +1,1 @@
-int square_sum(int x) { return x; }
+int square_sum(int x) { return x * x; }

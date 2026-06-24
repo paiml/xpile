@@ -17,10 +17,12 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use xpile_backend::{BackendConfig, Profile, Target};
 use xpile_core::TranspileSession;
-use xpile_ffi_manifest::{resolve_boundary_to_langs, FfiManifest};
-use xpile_meta_hir::SourceLang;
+use xpile_ffi_manifest::{defining_function, resolve_boundary_to_langs, FfiEntry, FfiManifest};
+use xpile_meta_hir::{Module, SourceLang, Type};
+use xpile_oracle::{capture_cpython_hybrid_ref, diff_stdout, ComparisonResult, CtypesBinding};
 
 #[derive(Parser)]
 #[command(name = "xpile", version, about = "Polyglot transpile workbench")]
@@ -142,6 +144,13 @@ enum Cmd {
         /// compile + link the hybrid artifact.
         #[arg(long)]
         emit_workspace: Option<PathBuf>,
+        /// NORTH STAR (Phase 3 + 5): emit the workspace to a temp dir,
+        /// `cargo build` + run the linked C+shim artifact, and differential-check
+        /// its stdout against the CPython reference (the C extension bound via
+        /// ctypes). Exit 0 on Match, non-zero on Divergence. Graceful-skips
+        /// (exit 0) when `cc`/`python3`/`cargo` are unavailable.
+        #[arg(long)]
+        verify: bool,
     },
 }
 
@@ -173,11 +182,13 @@ fn main() -> Result<()> {
             path,
             emit_shims,
             emit_workspace,
+            verify,
         } => hybrid(
             &session,
             &path,
             emit_shims.as_deref(),
             emit_workspace.as_deref(),
+            verify,
         ),
     }
 }
@@ -189,13 +200,18 @@ fn main() -> Result<()> {
 /// manifest to a per-paradigm Rust FFI shim file — `extern "C"` for C, a
 /// `Command` wrapper for Shell, a mechanism-named gap for the rest). Reports
 /// each resolved boundary, or the unresolved ones with a non-zero exit (the
-/// `manifest_completeness` invariant of `C-FFI-CPYTHON-EXT`). Oracle execution
-/// (Phase 3/5) is a later increment.
+/// `manifest_completeness` invariant of `C-FFI-CPYTHON-EXT`).
+///
+/// PMAT-902 (NORTH STAR): with `--verify`, runs the executing differential —
+/// Phase 5 (emit the workspace to a temp dir, `cargo build` + run the linked
+/// C+shim artifact) compared against Phase 3 (the CPython reference, the C
+/// extension bound via ctypes) — and prints a Match/Divergent verdict.
 fn hybrid(
     session: &TranspileSession,
     path: &Path,
     emit_shims: Option<&Path>,
     emit_workspace: Option<&Path>,
+    verify: bool,
 ) -> Result<()> {
     let sources = collect_source_files(session, path);
     if sources.is_empty() {
@@ -206,6 +222,9 @@ fn hybrid(
     // write it into the workspace for `build.rs` to cc-compile — the Module IR
     // does not carry the original source text.
     let mut c_sources: Vec<(String, String)> = Vec::new();
+    // PMAT-902: retain each Python file's (filename, source) so `--verify` can run
+    // the original `main()` under CPython as the differential reference.
+    let mut py_sources: Vec<(String, String)> = Vec::new();
     for src in sources {
         let contents =
             std::fs::read_to_string(&src).with_context(|| format!("reading {}", src.display()))?;
@@ -217,13 +236,15 @@ fn hybrid(
         let module = frontend
             .parse_and_lower(&src, &contents)
             .with_context(|| format!("parse_and_lower failed for {}", src.display()))?;
-        if module.source_lang == SourceLang::C {
-            let fname = src
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(String::from)
-                .unwrap_or_else(|| "source.c".to_string());
-            c_sources.push((fname, contents));
+        let fname = src
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(String::from)
+            .unwrap_or_else(|| "source".to_string());
+        match module.source_lang {
+            SourceLang::C => c_sources.push((fname, contents.clone())),
+            SourceLang::Python => py_sources.push((fname, contents.clone())),
+            _ => {}
         }
         modules.push(module);
     }
@@ -287,29 +308,7 @@ fn hybrid(
             // wiring them together. `cargo build` it for the first executing
             // hybrid artifact.
             if let Some(ws_dir) = emit_workspace {
-                let rust_backend = session
-                    .backends
-                    .iter()
-                    .find(|b| b.targets().contains(&Target::Rust))
-                    .context("no Rust backend registered")?;
-                let config = BackendConfig {
-                    target: Target::Rust,
-                    profile: Profile::RustOut,
-                    hardware: None,
-                };
-                let mut rust_src = String::new();
-                for m in &modules {
-                    // The C side becomes the linked object; Shell can't lower to
-                    // Rust. Everything else (Python/Ruchy/Rust/Lean) is the Rust src.
-                    if matches!(m.source_lang, SourceLang::C | SourceLang::Shell) {
-                        continue;
-                    }
-                    let artifact = rust_backend
-                        .lower(m, &config)
-                        .with_context(|| format!("lowering module `{}` to Rust", m.name))?;
-                    rust_src.push_str(&artifact.primary);
-                    rust_src.push('\n');
-                }
+                let rust_src = lower_hybrid_rust(session, &modules)?;
                 match manifest.emit_hybrid_workspace(&modules, &c_sources, &rust_src, ws_dir) {
                     Ok(()) => println!(
                         "  emitted hybrid workspace → {} (run `cargo build` to compile + link)",
@@ -321,6 +320,10 @@ fn hybrid(
                     }
                 }
             }
+            // PMAT-902 NORTH STAR: `--verify` runs the executing differential.
+            if verify {
+                return verify_hybrid(session, &manifest, &modules, &c_sources, &py_sources);
+            }
             Ok(())
         }
         Err(err) => {
@@ -330,6 +333,190 @@ fn hybrid(
             }
             // Non-zero exit: an unresolved boundary blocks the hybrid build.
             bail!("{} unresolved FFI boundary(ies)", err.unresolved.len())
+        }
+    }
+}
+
+/// Lower the non-C, non-Shell modules to one Rust source string — the body of
+/// the emitted hybrid workspace's `main.rs`. The C side becomes the linked
+/// object and Shell can't lower to Rust, so both are skipped; everything else
+/// (Python/Ruchy/Rust/Lean) is the Rust the artifact runs. Shared by
+/// `--emit-workspace` and `--verify`.
+fn lower_hybrid_rust(session: &TranspileSession, modules: &[Module]) -> Result<String> {
+    let rust_backend = session
+        .backends
+        .iter()
+        .find(|b| b.targets().contains(&Target::Rust))
+        .context("no Rust backend registered")?;
+    let config = BackendConfig {
+        target: Target::Rust,
+        profile: Profile::RustOut,
+        hardware: None,
+    };
+    let mut rust_src = String::new();
+    for m in modules {
+        if matches!(m.source_lang, SourceLang::C | SourceLang::Shell) {
+            continue;
+        }
+        let artifact = rust_backend
+            .lower(m, &config)
+            .with_context(|| format!("lowering module `{}` to Rust", m.name))?;
+        rust_src.push_str(&artifact.primary);
+        rust_src.push('\n');
+    }
+    Ok(rust_src)
+}
+
+/// Is `tool --version` spawnable? Lets `--verify` graceful-skip on a runner
+/// without a C compiler / Python / cargo (mirrors the oracle presence gates).
+fn tool_available(tool: &str) -> bool {
+    Command::new(tool).arg("--version").output().is_ok()
+}
+
+/// Meta-HIR type → `ctypes` type name, matching the FFI shim's C-ABI mapping
+/// (`I64`/`Bool` → `c_int`, `F64` → `c_double`). `None` for non-ABI types.
+fn ctypes_name(ty: &Type) -> Option<&'static str> {
+    match ty {
+        Type::I64 | Type::Bool => Some("c_int"),
+        Type::F64 => Some("c_double"),
+        _ => None,
+    }
+}
+
+/// Build the `ctypes` ABI binding for a C boundary symbol from its defining
+/// function's meta-HIR types. `None` if a param/return type is not ABI-mappable
+/// (the caller then skips verification — capability honesty over a wrong bind).
+fn ctypes_binding_for(entry: &FfiEntry, modules: &[Module]) -> Option<CtypesBinding> {
+    let f = defining_function(modules, entry)?;
+    let mut argtypes = Vec::new();
+    for p in &f.params {
+        argtypes.push(ctypes_name(&p.ty)?);
+    }
+    let restype = match &f.return_type {
+        Type::Unit => None,
+        ty => Some(ctypes_name(ty)?),
+    };
+    Some(CtypesBinding {
+        symbol: entry.symbol.clone(),
+        argtypes,
+        restype,
+    })
+}
+
+/// PMAT-902 NORTH STAR — the executing hybrid differential. Builds the CPython
+/// reference (the C extension bound via `ctypes`, running the original `app.py`
+/// `main()`), emits + `cargo build`s the hybrid workspace, runs the linked
+/// C+shim artifact, and compares the two stdouts. Match → `Ok(())`; Divergence →
+/// non-zero exit. Graceful-skips (`Ok`) when a toolchain or fixture shape the
+/// check needs is absent, so a constrained CI stays green.
+fn verify_hybrid(
+    session: &TranspileSession,
+    manifest: &FfiManifest,
+    modules: &[Module],
+    c_sources: &[(String, String)],
+    py_sources: &[(String, String)],
+) -> Result<()> {
+    // Only the C boundary path is executed this slice. No C boundary → nothing
+    // to differentially verify.
+    let c_entries: Vec<&FfiEntry> = manifest
+        .entries
+        .iter()
+        .filter(|e| e.to_lang == SourceLang::C)
+        .collect();
+    if c_entries.is_empty() {
+        println!("  --verify: no C FFI boundary to execute — nothing to verify");
+        return Ok(());
+    }
+
+    // Toolchain gate — graceful-skip so a constrained runner stays green.
+    if !tool_available("cc") || !tool_available("python3") || !tool_available("cargo") {
+        println!("  --verify: cc/python3/cargo unavailable — skipping execution");
+        return Ok(());
+    }
+
+    // The Python entry: the dispatched Python source that defines `main()`.
+    let Some((py_name, py_source)) = py_sources.iter().find(|(_, s)| s.contains("def main")) else {
+        println!("  --verify: no Python `main()` entry — nothing to run");
+        return Ok(());
+    };
+
+    // ctypes bindings for every C boundary; skip if any type isn't ABI-mappable.
+    let mut bindings = Vec::new();
+    for e in &c_entries {
+        match ctypes_binding_for(e, modules) {
+            Some(b) => bindings.push(b),
+            None => {
+                println!(
+                    "  --verify: boundary `{}` has a non-ABI-mappable type — skipping",
+                    e.symbol
+                );
+                return Ok(());
+            }
+        }
+    }
+
+    // Phase 3 — capture the CPython reference (the C extension bound via ctypes).
+    let reference = capture_cpython_hybrid_ref(py_source, c_sources, &bindings)
+        .context("capturing the CPython reference")?;
+
+    // Phase 5 — emit the workspace to a temp dir, build, run the linked artifact.
+    let ws = std::env::temp_dir().join(format!("xpile_verify_ws_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&ws);
+    let rust_src = lower_hybrid_rust(session, modules)?;
+    manifest
+        .emit_hybrid_workspace(modules, c_sources, &rust_src, &ws)
+        .map_err(|e| anyhow::anyhow!("workspace emit failed: {e}"))?;
+
+    let target = ws.join("target");
+    let build = Command::new("cargo")
+        .current_dir(&ws)
+        .arg("build")
+        .arg("--target-dir")
+        .arg(&target)
+        .output()
+        .context("cargo build of the hybrid workspace")?;
+    if !build.status.success() {
+        let _ = std::fs::remove_dir_all(&ws);
+        bail!(
+            "hybrid artifact failed to build:\n{}",
+            String::from_utf8_lossy(&build.stderr)
+        );
+    }
+    let bin = target.join("debug").join("xpile-hybrid-artifact");
+    let run = Command::new(&bin)
+        .output()
+        .context("running the hybrid artifact")?;
+    let _ = std::fs::remove_dir_all(&ws);
+    if !run.status.success() {
+        bail!(
+            "hybrid artifact exited {}:\n{}",
+            run.status,
+            String::from_utf8_lossy(&run.stderr)
+        );
+    }
+    let actual = String::from_utf8_lossy(&run.stdout)
+        .trim_end_matches('\n')
+        .to_string();
+
+    // Differential verdict.
+    println!("  --verify: CPython reference (from {py_name}) vs executed C+shim artifact:");
+    match diff_stdout(&reference, &actual) {
+        ComparisonResult::Match => {
+            println!(
+                "  ✓ MATCH — stdout byte-identical ({} line(s)): {reference:?}",
+                reference.lines().count().max(1)
+            );
+            Ok(())
+        }
+        ComparisonResult::Divergence {
+            index,
+            expected,
+            actual: diverged,
+        } => {
+            eprintln!("  ✗ DIVERGENT at line {index}:");
+            eprintln!("      CPython:  {expected}");
+            eprintln!("      artifact: {diverged}");
+            bail!("hybrid verify: artifact diverged from the CPython reference")
         }
     }
 }
