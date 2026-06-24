@@ -8,7 +8,7 @@ Reproduce everything below with:
 
 ```sh
 cd contracts/lean
-lake build                          # builds the PILOT (green ⇔ all 20 elaborate)
+lake build                          # builds the PILOT (green ⇔ all 21 elaborate)
 for f in *.lean; do lean "$f"; echo "$f rc=$?"; done   # full per-file status
 ```
 
@@ -39,7 +39,7 @@ elaborates to `sorryAx`) **cannot survive a green `lake build`**. That is the
 check that makes "provable" un-falsifiable by `grep sorry` for the pilot
 contracts — the actual machine-checked guarantee, not a string scan.
 
-## PILOT — machine-checked (20 modules, in `lakefile.lean` roots)
+## PILOT — machine-checked (21 modules, in `lakefile.lean` roots)
 
 These elaborate clean under bare Lean 4 core **with warnings-as-errors** — no
 `sorry`, no `axiom`, no Mathlib. `lake build` is green iff all twenty still do.
@@ -66,6 +66,7 @@ These elaborate clean under bare Lean 4 core **with warnings-as-errors** — no
 | `Bashrs` | `C-BASHRS-POSIX-IDEMPOTENCE` (PMAT-928: MIXED head — (a) PMAT-914/915/916 name-shadowing `SuccessfulOutcome.val` body used `s.val` (self-recursion) → positional `.1`; (b) NEW genuine Mathlib gap — the Int-sign Diamond's `\|·\|`/`abs_nonneg`/`simp` (no `import Mathlib`) restated over CORE `Int.natAbs` (`Nat.zero_le` non-negativity + `rw`+`rfl` zero-abs) + core `Int.lt_trichotomy`) |
 | `XlatePyBoolToRustBool` | `C-XLATE-PY-BOOL-TO-RUST-BOOL` (PMAT-935: NEW R6 contract joins at depth-1 — core-only `PyBool` single-truth-flag STRUCTURE EXTENSIONALITY, same shape as PyFloatArith; closes the last uncited core scalar) |
 | `XlatePyListToVec` | `C-XLATE-PY-LIST-TO-VEC` (PMAT-936: MIXED head, 8 errors, four sound classes — (a) PMAT-914/915/916/928 name-shadowing `NonEmptyHomogeneousList.val` body used `n.val` (self-recursion) → positional `.1`, clearing the `:593` termination + `:632` `.property` + `:1257` `Subtype.ext` cascade; (b) `:796` `simp [List.length_append]` w/o `unfold` → reuse Platinum `lower_length_homomorphism_platinum`; (c) `:980` core `List.length_reverse l.elems` now needs the explicit arg; (d) `:1359` non-existent `Array.toList_length` → core `Array.length_toList`) |
+| `FfiCpythonExt` | `C-FFI-CPYTHON-EXT` (PMAT-937: Layer-4 hybrid CPython-extension head, 20 errors, FOUR sound classes, no new termination territory — (a) PMAT-914/915/916/928/936 name-shadowing `BoundedRefcountDelta.val` body used `b.val` (self-recursion) → positional `.1` + an explicit `DecidableEq BoundedRefcountDelta` instance, clearing the `:979` termination + `:987`/`:993` `deriving DecidableEq` + `:1037` `.property` + `:1750` `Subtype.ext` + `:1786`-`:1788` canonical cascade; (b) `:1235`/`:1236` Mathlib-only `use` tactic → core `refine ⟨_, ?_⟩`; (c) `:1466` Mathlib `\|·\|`/`lt_trichotomy`/`abs_of_pos`/`Int.sign_mul_abs` → CORE `Int.natAbs`/`Int.lt_trichotomy`/`Int.natAbs_of_nonneg`/`Int.sign_mul_natAbs` (PMAT-928 lesson); (d) `:1808`+ `lift_ffi_call_bronze_to_silver` annotated the wrong structure `FfiCallSilver` (no `symbol` field) → retargeted lift+projection to `FfiCallStructuredSilver`) |
 
 **PMAT-904 (Sprint Day 5) discharged the two cheapest non-elaborating files** —
 both with *real* errors, not sorries, confirming the reframed debt model:
@@ -88,7 +89,7 @@ both with *real* errors, not sorries, confirming the reframed debt model:
 Rewording to "NaN and signed-zero" restores elaboration; the theorem is now
 genuinely machine-checked.
 
-## KNOWN-INCOMPLETE — 3 modules with REAL elaboration errors (excluded)
+## KNOWN-INCOMPLETE — 2 modules with REAL elaboration errors (excluded)
 
 These do **not** elaborate today. The cause is genuine proof debt — NOT
 sorries. The dominant failure is unproved **termination** of recursive
@@ -99,31 +100,38 @@ errors downstream. Counts are `error:` lines from `lean <file>` on v4.15.0
 `XpileContractFrontendTrait` 2 in PMAT-904, `XpileFrontendTrait` 5 in PMAT-913,
 `XlateRustFnToLeanThm` 4 in PMAT-914, `XlateLeanToRust` 7 in PMAT-915,
 `Notation` 7 in PMAT-916, `Bashrs` 7 in PMAT-928, `XlatePyListToVec` 8 in
-PMAT-936 — were discharged and are now in the pilot above):
+PMAT-936, `FfiCpythonExt` 20 in PMAT-937 — were discharged and are now in the
+pilot above):
 
 | Module | `error:` count | Representative first error |
 |--------|---------------:|----------------------------|
 | `PyIntArith` | 45 | fail to show termination (`:892`) |
 | `CompileRustToPtxMma` | 38 | fail to show termination (`:240`) + failed to synthesize |
-| `FfiCpythonExt` | 20 | fail to show termination (`:979`) |
 
 **This is the real provability debt** the machine-checked lane exposes — and it
 is honest debt, not hidden `sorry`s. PMAT-904 cleared the two cheapest
 (unknown-tactic / synthesis / `rw`-through-`def`), PMAT-913 cleared
 `XpileFrontendTrait` (precedence-paren + `tauto`→`decide`), PMAT-914 cleared
 `XlateRustFnToLeanThm`, PMAT-915 cleared `XlateLeanToRust`, PMAT-916 cleared
-`Notation`, PMAT-928 cleared `Bashrs`, and PMAT-936 cleared `XlatePyListToVec`
+`Notation`, PMAT-928 cleared `Bashrs`, PMAT-936 cleared `XlatePyListToVec`
 (MIXED head: name-shadow `.val`→`.1` clearing the `:593`/`:632`/`:1257`
 cascade + three core-lemma fixes — `simp`-through-`def` → Platinum reuse,
 `List.length_reverse l.elems` explicit arg, `Array.toList_length` →
-`Array.length_toList`) — their `fail to show termination`
+`Array.length_toList`), and PMAT-937 cleared `FfiCpythonExt` (MIXED head, 20
+errors, four sound classes: the name-shadow `BoundedRefcountDelta.val`→`.1` +
+explicit `DecidableEq BoundedRefcountDelta` clearing the
+`:979`/`:987`/`:993`/`:1037`/`:1750`/`:1786`-`:1788` cascade; Mathlib-only `use`
+→ core `refine ⟨_, ?_⟩`; the Mathlib `|·|`/`abs`/`Int.sign_mul_abs` sign-decomp
+→ core `Int.natAbs`/`Int.sign_mul_natAbs`; and a wrong-structure annotation
+`FfiCallSilver`→`FfiCallStructuredSilver` on the Bronze→Silver lift/projection)
+— their `fail to show termination`
 first-errors turned out NOT to be genuine missing termination arguments but the
 **name-shadowing class**: a `def Subtype.val (x) := x.val` body resolves `x.val`
 by dot-notation to *itself* (a non-terminating recursive call, `x` unchanged),
 and that broken `.val` poisons every downstream `.val`, cascading into the
 `.property` / `Subtype.ext` / derived-`DecidableEq` failures. The fix is the
-positional `.1` Subtype projection in the body (PMAT-915 also needed an explicit
-`DecidableEq WarningLineCount` instance for two structs `deriving DecidableEq`
+positional `.1` Subtype projection in the body (PMAT-915/937 also needed an
+explicit `DecidableEq` instance for structs `deriving DecidableEq`
 over the now-fixed subtype field; PMAT-916's `Notation` ALSO carried a
 PMAT-904/913-class Mathlib-only `cases k <;> tauto` over the decidable
 `LatexDisplayKind` enum → core `cases k <;> decide`).
@@ -144,24 +152,27 @@ zero Mathlib dependency. The lesson: a real Mathlib `abs`/`|·|` use over `Int`
 restates cleanly via `Int.natAbs`; you do NOT need to define `|·|` or import
 Mathlib for non-negativity (it is the codomain) or zero-abs (it is defeq).
 
-The remaining 3 are genuinely termination-led and are ongoing work —
-`FfiCpythonExt` (20) is now the cheapest by `error:` count, then
-`CompileRustToPtxMma` (38), `PyIntArith` (45). **Lesson (repeated, now SEVEN
-times PMAT-914/915/916/928/936): a `fail to show termination` first error is
-not proof the fault is termination — check for a self-naming `.val`/projection
-helper first.** PMAT-936's `XlatePyListToVec` was the last cheap mixed head
-where the `:593` termination error was a name-shadow, not a real measure;
-`FfiCpythonExt`/`CompileRustToPtxMma`/`PyIntArith` have NOT yet been ruled out
-as name-shadows — sanity-check each first, but their high error counts (20/38/45)
-suggest at least some carry genuine structural-recursion debt needing a real
-`termination_by`/`decreasing_by` measure (new territory).
+The remaining 2 are ongoing work — `CompileRustToPtxMma` (38) is now the
+cheapest by `error:` count, then `PyIntArith` (45). **Lesson (repeated, now
+EIGHT times PMAT-914/915/916/928/936/937): a `fail to show termination` first
+error is not proof the fault is termination — check for a self-naming
+`.val`/projection helper first.** PMAT-937's `FfiCpythonExt` was the last of the
+three previously-presumed-termination heads where the `:979` termination error
+was actually a name-shadow (NOT a real measure) — its 20 errors broke into the
+name-shadow cascade + three Mathlib-class fixes (`use`→`refine`, `|·|`/`abs`
+sign-decomp → `Int.natAbs`, and a wrong-structure annotation), with ZERO new
+structural-recursion territory. `CompileRustToPtxMma`/`PyIntArith` have NOT yet
+been ruled out as name-shadows — sanity-check each first, but their high error
+counts (38/45) suggest at least some carry genuine structural-recursion debt
+needing a real `termination_by`/`decreasing_by` measure (new territory).
 
 ## Relationship to `audit-design.md`
 
 Day 10 (PMAT-909) truths-up `audit-design.md` to state: the Lean lane is now
-`lake`-machine-checked over a (now 18-module) pilot, the `grep sorry`/`grep
+`lake`-machine-checked over a (now 21-module) pilot, the `grep sorry`/`grep
 axiom` debt figures were a measurement artifact, and the real remaining debt is
-4 non-elaborating modules (all genuinely termination-led — the name-shadow and
-the Mathlib-`abs` heads are now discharged through PMAT-928). No over-claim:
+2 non-elaborating modules (`CompileRustToPtxMma`, `PyIntArith` — the
+name-shadow, Mathlib-`abs`, and wrong-structure heads are now discharged through
+PMAT-937; what remains may carry genuine termination measures). No over-claim:
 "provable" applies to the pilot contracts, verified by `lake build`, not by
 string scan.

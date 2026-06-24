@@ -975,8 +975,23 @@ def refcount_delta_bound : Int := 8
 def BoundedRefcountDelta :=
   { d : Int // -refcount_delta_bound ≤ d ∧ d ≤ refcount_delta_bound }
 
-/-- Extract the underlying delta value. -/
-def BoundedRefcountDelta.val (b : BoundedRefcountDelta) : Int := b.val
+/-- Extract the underlying delta value. PMAT-937: the body MUST be the
+    positional `.1` Subtype projection, NOT `b.val` — `b.val` resolves by
+    dot-notation to *this very definition* (a non-terminating self-call,
+    `b` unchanged → `fail to show termination`), poisoning every downstream
+    `.val` (the `deriving DecidableEq` synthesis, the `.property` witness,
+    the `Subtype.ext` extensionality, and the canonical-zero `rfl`/`decide`s).
+    Same name-shadowing class as PMAT-914/915/916/928/936. -/
+def BoundedRefcountDelta.val (b : BoundedRefcountDelta) : Int := b.1
+
+/-- PMAT-937: explicit `DecidableEq` for the opaque-`def` subtype. The two
+    structures `FfiCallGold` / `FfiManifestEntryGold` carry a
+    `BoundedRefcountDelta` field and `deriving DecidableEq`, but the derive
+    handler cannot peer through the `def BoundedRefcountDelta := { d : Int // … }`
+    to the underlying `Subtype` to synthesize the instance — so provide it
+    explicitly (same fix PMAT-915 needed for `WarningLineCount`). -/
+instance : DecidableEq BoundedRefcountDelta := by
+  unfold BoundedRefcountDelta; infer_instance
 
 /-- Gold-tier model of a CPython FFI call with bounded delta.
     Replaces Silver's FfiCallSilver.refcount_delta (raw Int) with
@@ -1233,7 +1248,9 @@ theorem refcount_abelian_group_diamond
 theorem refcount_inverse_diamond (c : FfiCallSilver) :
     ∃ c_inv : FfiCallSilver,
       (compose_ffi_calls_silver c c_inv).refcount_delta = 0 := by
-  use { payload := c.payload, refcount_delta := -c.refcount_delta }
+  -- PMAT-937: `use` is a Mathlib tactic; with no `import Mathlib` it is an
+  -- unknown tactic. Provide the existential witness via core `refine ⟨_, ?_⟩`.
+  refine ⟨{ payload := c.payload, refcount_delta := -c.refcount_delta }, ?_⟩
   unfold compose_ffi_calls_silver
   exact Int.add_right_neg c.refcount_delta
 
@@ -1448,8 +1465,16 @@ theorem zero_copy_pointer_functor_diamond
   `refcount_delta` — distinguishing net-incref (positive),
   net-balanced (zero), and net-decref (negative) sequences.
 
-  Uses Mathlib's `lt_trichotomy`, `Int.sign_mul_abs`, plus
-  absolute-value facts.
+  PMAT-937: restated over CORE `Int.natAbs : Int → Nat` (the
+  PMAT-928 lesson) — Mathlib's `|·|` notation, `lt_trichotomy`,
+  `abs_of_pos`/`abs_of_neg`, and `Int.sign_mul_abs` do NOT resolve
+  with no `import Mathlib` (`|` is an undefined token; the bare
+  lemma aliases are Mathlib). The absolute value is `(·.natAbs : Int)`
+  (`Nat`-valued magnitude coerced back to `Int`), trichotomy is core
+  `Int.lt_trichotomy`, the magnitude facts are core
+  `Int.natAbs_of_nonneg`/`Int.natAbs_neg`, and sign-magnitude
+  reconstruction is core `Int.sign_mul_natAbs`. Same sign-decomposition
+  claim, zero Mathlib dependency.
 
   An emitter that confused refcount sign (e.g., used unsigned
   arithmetic) would falsify (a) and (d). The abelian-group
@@ -1462,20 +1487,26 @@ theorem zero_copy_pointer_functor_diamond
 theorem refcount_delta_sign_decomp_diamond (c : FfiCallSilver) :
     -- (a) Sign trichotomy on refcount_delta
     (0 < c.refcount_delta ∨ c.refcount_delta = 0 ∨ c.refcount_delta < 0)
-    -- (b) Positive delta equals its absolute value
-    ∧ (0 < c.refcount_delta → c.refcount_delta = |c.refcount_delta|)
-    -- (c) Negative delta's negation equals its absolute value
-    ∧ (c.refcount_delta < 0 → -c.refcount_delta = |c.refcount_delta|)
-    -- (d) Sign-magnitude reconstruction
-    ∧ (Int.sign c.refcount_delta * |c.refcount_delta| = c.refcount_delta) := by
+    -- (b) Positive delta equals its absolute value (core Int.natAbs)
+    ∧ (0 < c.refcount_delta → c.refcount_delta = (c.refcount_delta.natAbs : Int))
+    -- (c) Negative delta's negation equals its absolute value (core Int.natAbs)
+    ∧ (c.refcount_delta < 0 → -c.refcount_delta = (c.refcount_delta.natAbs : Int))
+    -- (d) Sign-magnitude reconstruction (core Int.sign_mul_natAbs)
+    ∧ (Int.sign c.refcount_delta * (c.refcount_delta.natAbs : Int) = c.refcount_delta) := by
   refine ⟨?_, ?_, ?_, ?_⟩
-  · rcases lt_trichotomy c.refcount_delta 0 with h | h | h
+  · rcases Int.lt_trichotomy c.refcount_delta 0 with h | h | h
     · exact Or.inr (Or.inr h)
     · exact Or.inr (Or.inl h)
     · exact Or.inl h
-  · intro h; exact (abs_of_pos h).symm
-  · intro h; exact (abs_of_neg h).symm
-  · exact Int.sign_mul_abs c.refcount_delta
+  · intro h
+    have hle : 0 ≤ c.refcount_delta := by omega
+    exact (Int.natAbs_of_nonneg hle).symm
+  · intro h
+    have hneg : 0 ≤ -c.refcount_delta := by omega
+    have hk := Int.natAbs_of_nonneg hneg
+    rw [Int.natAbs_neg] at hk
+    exact hk.symm
+  · exact Int.sign_mul_natAbs c.refcount_delta
 
 /-! ## PMAT-356 — SIXTH Diamond on C-FFI-CPYTHON-EXT (Layer 4 OPENS
     DEPTH-6 ACROSS 3 LAYERS):
@@ -1804,7 +1835,15 @@ theorem balanced_refcount_delta_canonical_diamond :
   contract at depth-12. **Opens Diamond depth-12 ACROSS 3 LAYERS**
   (L1 PyIntArith + L4 FfiCpythonExt + L5 CompileRustToPtxMma).
 -/
-def lift_ffi_call_bronze_to_silver (c : FfiCall) : FfiCallSilver :=
+-- PMAT-937: the lift's target is `FfiCallStructuredSilver` (the 6-field
+-- structured Silver record with `symbol`/`from_lang`/`to_lang`/`args`/
+-- `return_type`/`refcount_delta`), NOT the 2-field `FfiCallSilver`
+-- (`payload`/`refcount_delta`). The body constructs `symbol := …` + the four
+-- default byte-array fields, which only exist on `FfiCallStructuredSilver`;
+-- the prior `: FfiCallSilver` annotation made every `symbol`/`from_lang`/…
+-- reference an unknown field. The docstring ("default values for the other
+-- fields") already describes the structured target.
+def lift_ffi_call_bronze_to_silver (c : FfiCall) : FfiCallStructuredSilver :=
   { symbol := c.payload
     from_lang := #[]
     to_lang := #[]
@@ -1845,7 +1884,10 @@ theorem lift_ffi_call_bronze_to_silver_diamond (c : FfiCall) :
   depth-13 ACROSS 3 LAYERS** (L1 PyIntArith + L4 FfiCpythonExt
   + L5 CompileRustToPtxMma).
 -/
-def ffi_call_silver_to_bronze (c : FfiCallSilver) : FfiCall :=
+-- PMAT-937: the forgetful projection takes a `FfiCallStructuredSilver`
+-- (so that `c.symbol` is a real field — `FfiCallSilver` has no `symbol`)
+-- and drops all but the symbol back to a Bronze `FfiCall.payload`.
+def ffi_call_silver_to_bronze (c : FfiCallStructuredSilver) : FfiCall :=
   { payload := c.symbol }
 
 theorem ffi_call_roundtrip_identity_diamond (c : FfiCall) :
