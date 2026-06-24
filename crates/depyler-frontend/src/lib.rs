@@ -9659,6 +9659,22 @@ fn lower_return_value(ctx: &LoweringCtx, value: &ast::Expr) -> Result<Expr, Fron
         }
         return Ok(Expr::OptionExpr(Some(Box::new(inner))));
     }
+    // PMAT-906: an int-typed VALUE (non-literal) returned from a `-> float`
+    // function — e.g. `def f() -> float: y: float = 5; return y`, where the
+    // `: float` local is now bound to its real int type (non-coercing
+    // assertion), or a bare `return n` with `n: int`. Python returns the bare
+    // int; coerce to f64 so the f64-typed function still COMPILES (was rustc
+    // E0308 — this is a strict improvement, the case never compiled before).
+    // The widening is a display-only residual on the returned value, consistent
+    // with PMAT-686's literal `return 0` widening. An int LITERAL return
+    // (`return 0`) is excluded here so it keeps flowing through
+    // `lower_value_expecting` below into its `0f64` form (PMAT-686 golden).
+    if matches!(ctx.fn_return_type, Type::F64) && extract_int_literal(value).is_none() {
+        let inner = lower_expr_in_ctx(ctx, value.clone())?;
+        if matches!(infer_type_in_ctx(ctx, &inner), Type::I64) {
+            return Ok(to_f64_operand(ctx, inner));
+        }
+    }
     lower_value_expecting(ctx, value, &ctx.fn_return_type)
 }
 
@@ -9672,7 +9688,7 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
             )));
         }
     };
-    let declared_ty = parse_type_annotation(&ctx.fn_name, &name, &aa.annotation)?;
+    let mut declared_ty = parse_type_annotation(&ctx.fn_name, &name, &aa.annotation)?;
     let value_expr = aa.value.ok_or_else(|| {
         FrontendError::Lower(format!(
             "function `{}` declares `{name}: {declared_ty:?}` without an initializer — v0.2.0 requires `name: T = value`",
@@ -9723,6 +9739,30 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
         // type into them. Ordinary values fall through to the context-aware path
         // (and an int literal in a `float` binding coerces to a float literal).
         _ => lower_value_expecting(ctx, value_expr.as_ref(), &declared_ty)?,
+    };
+    // PMAT-906 (correctness epic #8–#11): a `: float` annotation is a
+    // NON-ENFORCING assertion, not a runtime coercion. Python's `y: float = 5`
+    // keeps `y` an int — `print(y)` → "5", NOT "5.0" — and `y: float = n` with
+    // `n: int` likewise keeps the int value. Forcing the f64 binding type either
+    // silently widens an int literal to `5f64` (display diverges from CPython)
+    // or emits `let y: f64 = <i64>` (rustc E0308). So when the initializer is
+    // genuinely int-typed, DROP the float coercion: re-lower the value without
+    // the float expectation and rebind the local to its real int type. A
+    // genuinely-float initializer (`3.14`, a float expr/param, a `list[float]`
+    // element, a true-division result) is untouched. SCOPED to annotated locals
+    // — the `-> float: return 0` return widening (PMAT-686) and the
+    // `list[float]` element widening stay; the value-vs-annotation KIND check
+    // below now sees the rebound int type, so no spurious mismatch fires.
+    let value = if matches!(declared_ty, Type::F64) {
+        let natural = lower_expr_in_ctx(ctx, value_expr.as_ref().clone())?;
+        if matches!(infer_type_in_ctx(ctx, &natural), Type::I64) {
+            declared_ty = Type::I64;
+            natural
+        } else {
+            value
+        }
+    } else {
+        value
     };
     // PMAT-868 (HUNT-V31 #1): a bool initializer in an EXPLICITLY int-annotated
     // local (`n: int = True`) widens bool->i64 — Python's `True` is an int
