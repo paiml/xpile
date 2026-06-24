@@ -13,7 +13,7 @@
 //! (9 from PMAT-903 + 2 from PMAT-904 + FfiShellSubprocess/PMAT-907 +
 //! CFloatArith/PMAT-912 + XpileFrontendTrait/PMAT-913 +
 //! XlateRustFnToLeanThm/PMAT-914 + XlateLeanToRust/PMAT-915 +
-//! Notation/PMAT-916 = 17), and asserts
+//! Notation/PMAT-916 + Bashrs/PMAT-928 = 18), and asserts
 //! the `PROVABILITY-INVENTORY.md` PILOT count stays in lockstep. It does
 //! NOT re-prove anything — only that the bookkeeping the Lean job relies on
 //! can't drift behind the Rust gate's back.
@@ -112,6 +112,19 @@ const EXPECTED_PILOT: &[&str] = &[
     // (b) the PMAT-904/913 Mathlib-only `tauto` — `cases k <;> tauto` over the
     //     decidable `LatexDisplayKind` enum → core `cases k <;> decide`.
     "Notation",
+    // PMAT-928 (backlog slice): discharged the `Bashrs` MIXED head — one
+    // already-known fault and one genuinely new (the inventory had flagged it):
+    // (a) the PMAT-914/915/916 NAME-SHADOWING — `def SuccessfulOutcome.val (s)
+    //     := s.val` resolved `s.val` to itself (non-terminating self-call) →
+    //     `:213 fail to show termination`, poisoning the Gold equality, the
+    //     `.property` witnesses, and the `Subtype.ext` proof; fix = positional
+    //     `.1` projection in the body.
+    // (b) NEW — a genuine Mathlib gap (not a name-shadow): the Int-sign Diamond
+    //     used Mathlib's `|·|` notation (`:683` parse error) + `abs_nonneg` +
+    //     `simp`; restated over CORE `Int.natAbs` (`Nat.zero_le` for
+    //     non-negativity, `rw`+`rfl` for zero-abs-of-zero) + core
+    //     `Int.lt_trichotomy`. Same Int-sign Diamond claim, no `import Mathlib`.
+    "Bashrs",
 ];
 
 #[test]

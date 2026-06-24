@@ -11253,6 +11253,22 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-928
+  github_issue: null
+  item_type: task
+  title: 'PMAT-928: [provability] discharge the `Bashrs` Lean head into the lake pilot (17 -> 18 modules) — clears the FIRST genuinely-mixed head: a name-shadowing `.val` self-projection PLUS a real Mathlib `|·|`/`abs_nonneg` absolute-value gap restated over core `Int.natAbs`'
+  status: done
+  priority: high
+  created: 2026-06-24T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (PMAT-900..927 all merged, sprint window 2026-06-23..07-02 still open). VARIES THE AXIS off the last two paradigm-fill slices (PMAT-926 pyo3, PMAT-927 pybind11) back onto the Lean proof-lane, as the prompt directs: a non-elaborating Lean module discharge into the lake pilot. `Bashrs` (C-BASHRS-POSIX-IDEMPOTENCE) was the inventory's flagged MIXED head — the one remaining non-elaborating module that carries GENUINELY NEW territory (a real Mathlib absolute-value gap), not just the name-shadowing class that PMAT-914/915/916 exhausted. Moves the lake pilot from 17 modules (PMAT-916) to 18, and KNOWN-INCOMPLETE from 5 to 4 (all 4 remaining now genuinely termination-led: XlatePyListToVec 8, FfiCpythonExt 20, CompileRustToPtxMma 38, PyIntArith 45)."
+  - "STRATEGY — two faults, one known + one new: (a) the PMAT-914/915/916 NAME SHADOWING — `def SuccessfulOutcome.val (s : SuccessfulOutcome) : OutcomeSilver := s.val` resolved `s.val` by dot-notation to *itself* (a non-terminating self-call, `s` unchanged), producing the `:213` `fail to show termination` and cascading into the `:233` Gold equality, the `:243`/`:244` `.property` witnesses, and the `:827` `Subtype.ext`; fix = positional `.1` Subtype projection in the body (`s.1`), clearing all five at once. (b) NEW — a GENUINE Mathlib gap, NOT a name-shadow: `outcome_exit_code_int_sign_diamond` stated its absolute-value clauses with Mathlib's `|o.exit_code|` NOTATION (the `:683` `unexpected token '|'` parse error — the symbol is simply undefined with no `import Mathlib`) and discharged them with `abs_nonneg`/`simp`. Restated over CORE `Int.natAbs : Int -> Nat`: clause (b) `0 <= exit_code.natAbs` is now TYPE-LEVEL non-negativity (`Nat.zero_le`, no lemma — `natAbs` lands in `Nat`); clause (c) `exit_code = 0 -> exit_code.natAbs = 0` is `rw [h]; rfl` (`(0 : Int).natAbs = 0` definitionally); the sign trichotomy (a) uses core `Int.lt_trichotomy` (bare `lt_trichotomy` is the PMAT-904/913 Mathlib alias). The Diamond's claim — sign trichotomy + |·| non-negativity + zero-abs-of-zero + reflexivity on the `exit_code : Int` field — is UNCHANGED; only the encoding moved from Mathlib to core."
+  - "DONE: two edits to contracts/lean/Bashrs.lean (name-shadow `.1` fix at SuccessfulOutcome.val; core-`Int.natAbs` restatement of the two abs clauses + core `Int.lt_trichotomy` in outcome_exit_code_int_sign_diamond), `Bashrs` added to lakefile.lean roots (18-module pilot). `cd contracts/lean && lake build` GREEN at 18 modules (Bashrs builds clean, warnings-as-errors). Bookkeeping kept in lockstep: crates/xpile/tests/lean_pilot_roots.rs EXPECTED_PILOT += Bashrs (17 -> 18) + header comment; PROVABILITY-INVENTORY.md PILOT header 17 -> 18, Bashrs row moved from KNOWN-INCOMPLETE (now 5 -> 4) into the PILOT table, prose updated to record Bashrs as the first genuine-Mathlib-`abs` head discharged + the reusable lesson (an `Int` `|·|`/`abs` use restates via `Int.natAbs` — non-negativity is the codomain, zero-abs is defeq, no Mathlib import needed). Full gate green: fmt, check --workspace, clippy -D warnings, pv lint 0 errors/0 warnings, cargo-deny advisories, lean_pilot_roots guard tests, lake build. Backlog slice, sprint 2026-06-24."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-131
   github_issue: null
   item_type: task

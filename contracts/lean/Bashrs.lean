@@ -209,8 +209,16 @@ theorem subprocess_run_eq_shell_run_silver
     on the success path (exit_code = 0). -/
 def SuccessfulOutcome := { o : OutcomeSilver // o.exit_code = 0 }
 
-/-- Extract the underlying Silver outcome. -/
-def SuccessfulOutcome.val (s : SuccessfulOutcome) : OutcomeSilver := s.val
+/-- Extract the underlying Silver outcome.
+
+    PMAT-928: the body uses the positional `.1` Subtype projection,
+    NOT `s.val`. Writing `s.val` resolves by dot-notation to *this
+    very function* (a non-terminating self-call, `s` unchanged) —
+    the same name-shadowing class fixed in PMAT-914/915/916. The
+    `.1` projection breaks the self-reference; the `:213`
+    `fail to show termination` and its downstream `:233`/`:243`/
+    `:244`/`:827` cascades all clear at once. -/
+def SuccessfulOutcome.val (s : SuccessfulOutcome) : OutcomeSilver := s.1
 
 /-- Gold-tier Python-subprocess lift on the success path. -/
 def python_subprocess_run_gold (program : String) (args : List String) :
@@ -673,25 +681,40 @@ theorem outcome_observable_length_nat_diamond (o : OutcomeSilver) :
   the sign-structure pattern captures the load-bearing semantic
   invariants.
 
+  PMAT-928 — core-only restatement (no `import Mathlib`): the
+  absolute-value clauses (b)/(c) originally used Mathlib's `|·|`
+  notation + `abs_nonneg`/`simp`, which do not resolve under bare
+  Lean 4 core (the `:683` `unexpected token '|'` parse error). They
+  are restated over `Int.natAbs : Int → Nat` — a CORE function that
+  carries the exact same absolute-value content: (b) becomes
+  `0 ≤ exit_code.natAbs`, true by `Nat.zero_le` since `natAbs` lands
+  in `Nat` (the non-negativity is now type-level, not a lemma); (c)
+  becomes `exit_code = 0 → exit_code.natAbs = 0`, closed by `rw`+`rfl`
+  (`(0 : Int).natAbs = 0` definitionally). Trichotomy (a) uses the
+  core `Int.lt_trichotomy` (the bare `lt_trichotomy` alias is
+  Mathlib-only, the PMAT-904/913/916 class). The DIAMOND claim —
+  sign trichotomy + |·| non-negativity + zero-abs-of-zero +
+  reflexivity on the `exit_code : Int` field — is unchanged.
+
   Status: **discharged at v0.1.0 (PMAT-357)**. Tier: DIAMOND.
   Broadens DEPTH-6 from 3 to 4 LAYERS.
 -/
 theorem outcome_exit_code_int_sign_diamond (o : OutcomeSilver) :
     -- (a) Sign trichotomy
     (0 < o.exit_code ∨ o.exit_code = 0 ∨ o.exit_code < 0)
-    -- (b) Absolute value non-negativity
-    ∧ (0 ≤ |o.exit_code|)
+    -- (b) Absolute value non-negativity (core `Int.natAbs`, lands in Nat)
+    ∧ (0 ≤ o.exit_code.natAbs)
     -- (c) Zero exit_code has zero absolute value
-    ∧ (o.exit_code = 0 → |o.exit_code| = 0)
+    ∧ (o.exit_code = 0 → o.exit_code.natAbs = 0)
     -- (d) Self-equality (reflexivity)
     ∧ (o.exit_code = o.exit_code) := by
   refine ⟨?_, ?_, ?_, ?_⟩
-  · rcases lt_trichotomy o.exit_code 0 with h | h | h
+  · rcases Int.lt_trichotomy o.exit_code 0 with h | h | h
     · exact Or.inr (Or.inr h)
     · exact Or.inr (Or.inl h)
     · exact Or.inl h
-  · exact abs_nonneg _
-  · intro h; rw [h]; simp
+  · exact Nat.zero_le _
+  · intro h; rw [h]; rfl
   · rfl
 
 /-! ## PMAT-368 — SEVENTH Diamond on C-BASHRS-POSIX-IDEMPOTENCE
