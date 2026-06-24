@@ -11320,6 +11320,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-932
+  github_issue: null
+  item_type: task
+  title: 'PMAT-932: [hybrid] wire the Python→Shell producer — a relative import of a sibling shell tool (`from ._tool import _tool`) now reconciles by the shell PROGRAM name, making the long-built but producerless `emit_shell_shim` arm LIVE end-to-end through `xpile hybrid`'
+  status: done
+  priority: high
+  created: 2026-06-24T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (PMAT-900..931 all merged, sprint window 2026-06-23..07-02 still open). VARIES THE AXIS off the last slice (PMAT-931 hybrid float-FFI correctness) onto the prompt's named differentiator: `emit_shell_shim` (the `std::process::Command` subprocess wrapper citing `C-FFI-SHELL-SUBPROCESS`, shipped PMAT-907) had NO PRODUCER — nothing emitted a `Python → Shell` `FfiBoundary` for it to consume, so the arm was reachable only by hand-building a manifest. The `contract_citation_integrity.rs` note even said it would fire \"once a Shell-frontend producer lands.\" This lands it."
+  - "ROOT CAUSE of the producer gap: reconciliation resolved a boundary `to_lang` only when a sibling module exported a meta-HIR ITEM named `symbol`. But a `bashrs-frontend` shell module's only item is the synthetic `main` placeholder; its REAL callable surface — the program a subprocess spawns — is the file stem, recorded as `Module::name`, not as an item. So a Python `from ._tool import _tool` boundary (symbol `_tool`) could never pair with the `_tool.sh` sibling (module name `_tool`, item `main`); it stayed the provisional Python→C default and failed reconciliation."
+  - "FIX (honest, surgical, at the reconciliation seam — no change to the universal bashrs `main` naming, so every existing shell round-trip golden is untouched): new `module_exports_symbol(module, symbol)` in xpile-ffi-manifest — for a Shell module the export surface is `module.name == symbol` (the program name a subprocess shim spawns), for every other lang it stays the named-item check. Wired into BOTH `FfiManifest::reconcile` (symbol-resolution) and `resolve_boundary_to_langs` (which now also registers a Shell module's program name as an exporter). A Python relative import of a sibling shell tool therefore resolves Python→Shell and flows through the existing `emit_shell_shim` arm — a `Command::new(\"_tool\").args(args).output()` wrapper, no `unsafe`, no `extern \"C\"`, citing C-FFI-SHELL-SUBPROCESS."
+  - "DONE: producer verified end-to-end through `xpile hybrid <dir> --emit-shims` on the new committed fixture `crates/xpile/tests/fixtures/hybrid_shell/` (`app.py` = `from ._tool import _tool`, `_tool.sh` = `echo \"running tool\"`): dispatch -> 2 modules -> resolve `_tool` to the Shell sibling by program name -> reconcile `_tool : Python -> Shell` -> emit the live `_tool_shim` (the emitted shim rustc-compiles as a lib). New gated test `crates/xpile/tests/hybrid_shell_producer.rs` (2 cases: crate-level reconcile-by-program-name through the real Python+bashrs frontends; CLI-level `xpile hybrid --emit-shims` writes the live `Command`-based shim citing C-FFI-SHELL-SUBPROCESS). Updated the `module_defining` test helper to be Shell-aware (module name = program, item = synthetic `main`, mirroring real bashrs). Contract path: C-FFI-SHELL-SUBPROCESS (the argv-passthrough + exit-code companion of C-BASHRS-POSIX-IDEMPOTENCE). Full gate green: fmt, check --workspace, clippy -D warnings, pv lint 0 errors/0 warnings, cargo-deny advisories, xpile-ffi-manifest lib + xpile hybrid_shell_producer/contract_citation_integrity/hybrid_reconcile tests. Backlog slice, sprint 2026-06-24."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-131
   github_issue: null
   item_type: task
