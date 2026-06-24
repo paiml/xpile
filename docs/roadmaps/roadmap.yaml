@@ -11286,6 +11286,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-930
+  github_issue: null
+  item_type: task
+  title: 'PMAT-930: [hybrid] a SECOND executing hybrid differential — broaden the north star past the one-argument `square_sum` fixture to a MULTI-argument C boundary (`int sum_of_squares(int a, int b)`), proving the emitted `extern "C"` shim marshals two `i64/c_int` arg slots ABI-faithfully'
+  status: done
+  priority: high
+  created: 2026-06-24T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (PMAT-900..929 all merged, sprint window 2026-06-23..07-02 still open). VARIES THE AXIS off the last slice (PMAT-929 correctness-hunt) back onto the hybrid north-star flow, as the prompt directs: a SECOND hybrid fixture exercised through `xpile hybrid --verify` (a different Python+C boundary than `hybrid_sum`). The roadmap memory's honest caveat on the Day-3 north-star witness was \"the differential is C-path + SINGLE-FIXTURE only ... wider-than-`square_sum(int)->int` ABI [is still scaffold]\". This closes the multi-argument half of that caveat without over-claiming."
+  - "WHAT WAS UNTESTED: the Day-3 witness (`hybrid_verify.rs`) + golden lock (`hybrid_golden_lock.rs`) only ever drove a ONE-argument boundary (`square_sum(int)->int`). Nothing exercised the emitted `extern \"C\"` shim's MULTI-argument path: the per-param `i64 -> c_int` cast LOOP in `emit_c_shim` (`for p in &f.params`), the matching multi-element `ctypes` `argtypes` list built by `ctypes_binding_for`, the multi-binding `capture_cpython_hybrid_ref` prologue, and a transpiled `main()` that forwards TWO call arguments across the boundary. A regression that mis-ordered the two args, dropped one, or mis-marshalled the second `i64/c_int` slot would have stayed green under the existing one-arg locks."
+  - "FIXTURE: new `crates/xpile/tests/fixtures/hybrid_dot2/` — `_core.c` = `int sum_of_squares(int a, int b) { return a*a + b*b; }`, `app.py` `main()` prints `sum_of_squares(3, 4)`. Mixed-term arithmetic (`a*a + b*b`) so a swapped/dropped arg is observable. CPython-via-ctypes reference and the executed Rust+linked-C artifact must both produce `3*3 + 4*4 = 25`. Deterministic integer MATCH (no float-repr fidelity concern — that whole-number `c_double` divergence stays a separate correctness item, deliberately not entangled here)."
+  - "DONE: fixture dir hybrid_dot2 (verified end-to-end: dispatch -> 1 FFI boundary `sum_of_squares : Python -> C` reconciled -> ctypes bind two `c_int` args -> CPython ref -> emit workspace -> cargo build (build.rs cc-compiles + links the emitted `unsafe extern \"C\"` shim) -> run -> byte-compare `25 == 25` -> MATCH, exit 0). New gated test `crates/xpile/tests/hybrid_verify_multiarg.rs` (cc+python3+cargo graceful-skip; asserts exit 0, the two-arg boundary reconciles, and the MATCH verdict on \"25\"). No production code changed — the generic per-param marshalling already supported it; this slice proves + locks it. Full gate green: fmt, check --workspace, clippy -D warnings, pv lint 0 errors/0 warnings, cargo-deny advisories, xpile hybrid_verify_multiarg test. Backlog slice, sprint 2026-06-24."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-131
   github_issue: null
   item_type: task
