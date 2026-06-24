@@ -15302,6 +15302,33 @@ fn apply_nonempty_format_spec(
                 min_width: 0,
             });
         }
+        // PMAT-923 (correctness-hunt): the `#` ALTERNATE-FORM radix spec
+        // (`f"{255:#x}"` → `"0xff"`, `#X` → `"0XFF"`, `#o` → `"0o377"`,
+        // `#b` → `"0b11111111"`) was rejected. Python emits the same `0x`/
+        // `0o`/`0b` prefix as the `hex`/`oct`/`bin` builtins but puts the sign
+        // FIRST for negatives (`f"{-255:#x}"` == `"-0xff"`) — which is exactly
+        // the `IntRadixStr` with `prefixed: true` shape (the builtin path).
+        // The ONLY divergence from `hex()` is `#X`, where Python uppercases the
+        // prefix letter too (`"0XFF"`, not `"0xFF"`) — handled in codegen
+        // (`Radix::Hex if upper` → `0X`). A `#` COMBINED with width/zero-pad
+        // (`#08x`) stays a documented reject (a follow-up, like PMAT-613 scoped
+        // the bare radix before the width forms).
+        let alt_radix_upper = match spec {
+            "#x" => Some((Radix::Hex, false)),
+            "#X" => Some((Radix::Hex, true)),
+            "#b" => Some((Radix::Bin, false)),
+            "#o" => Some((Radix::Oct, false)),
+            _ => None,
+        };
+        if let Some((radix, upper)) = alt_radix_upper {
+            return Ok(Expr::IntRadixStr {
+                value: Box::new(value),
+                radix,
+                prefixed: true,
+                upper,
+                min_width: 0,
+            });
+        }
         // PMAT-773 (HUNT-V16 #12): a ZERO-PADDED radix spec `0<width><radix>`
         // (`f"{-255:08x}"`). Python formats sign-magnitude with the sign counted
         // in the width (`"-00000ff"`); Rust's `format!("{:08x}", n)` zero-pads
