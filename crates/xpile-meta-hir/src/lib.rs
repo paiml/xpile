@@ -215,6 +215,19 @@ impl Function {
         {
             ids.push("C-XLATE-PY-OPTIONAL-TO-OPTION");
         }
+        // PMAT-935 (R6): cite the bool-translation contract when the function
+        // takes, returns, or binds a `bool` (`Type::Bool`). Pure-boolean logic
+        // (`a and b` → `a && b`, `not a` → `!a`) shipped UNCITED — the last core
+        // scalar still emitting with no `// xpile-contract:` line (int/str/float
+        // were already wired; bool closes the scalar set). The contract
+        // (contracts/xlate-py-bool-to-rust-bool-v1.yaml) governs short-circuit
+        // (`&&`/`||`, never the eager `&`/`|`) + operator polarity.
+        if tys
+            .iter()
+            .any(|t| type_any(t, &|x| matches!(x, Type::Bool)))
+        {
+            ids.push("C-XLATE-PY-BOOL-TO-RUST-BOOL");
+        }
         ids
     }
 

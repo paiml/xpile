@@ -1,0 +1,169 @@
+metadata:
+  id: C-XLATE-PY-BOOL-TO-RUST-BOOL
+  version: "1.0.0"
+  created: "2026-06-24"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Translation contract: how Python boolean logic over `bool` values lowers to
+    Rust `bool` (`Type::Bool`; `a and b` → `a && b`; `a or b` → `a || b`;
+    `not a` → `!a`; the literals `True`/`False` → `true`/`false`).
+
+    The naïve "bool → bool" mapping has two load-bearing boundaries:
+      1. Short-circuit semantics — Python `and`/`or` are short-circuiting (the
+         right operand is NOT evaluated when the left already decides the value),
+         and Rust's `&&`/`||` are too. The emitter MUST map `and`→`&&` and
+         `or`→`||` (the short-circuiting forms), never the eager bitwise `&`/`|`
+         which would force-evaluate both sides and change effect/divergence
+         behaviour when an operand panics or has side effects.
+      2. Operator polarity — `not`/`and`/`or` must map to the matching Rust
+         operator with no polarity flip: an emitter that swapped `and`↔`or` or
+         dropped a `!` would silently compute the negation/dual of the intended
+         predicate. Over pure-`bool` operands the result type is `bool`, with no
+         truthiness coercion (that is a separate `bool(x)`-over-non-bool path).
+
+    PMAT-935 (R6 contract-integrity): wired into
+    `Function::applicable_contracts()` so any function taking, returning, or
+    binding a `Type::Bool` cites it. Pure-boolean functions (`a and b`, `not a`)
+    were the last core scalar still shipping UNCITED — `pub fn both(a: bool, b:
+    bool) -> bool { (a && b) }` emitted with ZERO `// xpile-contract:` line, the
+    capability-vs-contract drift the audit names (audit-design.md §6). The
+    int/str/float scalars and the list/dict/set/tuple/Optional/class constructs
+    were already wired (PMAT-475/860/861/879/880/881); `bool` closes the scalar
+    set.
+
+    Layer 2 of the xpile contract taxonomy (translation).
+  references:
+    - "Python Language Reference §6.11 (Boolean operations — `and`/`or` short-circuit; `not`)"
+    - "Rust Reference: lazy boolean operators `&&` / `||` (short-circuiting), unary `!`"
+    - "contracts/xlate-py-tuple-to-rust-tuple-v1.yaml (sibling translation contract)"
+    - "docs/specifications/audit-design.md §6 (Capability-vs-Contract Drift)"
+  depends_on: []
+
+equations:
+  short_circuit_preserved:
+    formula: |
+      xlate(a and b) == (lower(a) && lower(b))
+      xlate(a or b)  == (lower(a) || lower(b))
+      xlate(not a)   == (!lower(a))
+      WITH the short-circuit (lazy) operator, never the eager bitwise `&`/`|`.
+    domain: |
+      Python boolean expressions whose operands are `bool`-typed (the result of
+      comparisons / `bool` params / `bool` locals).
+    invariants:
+      - "`and` lowers to `&&` (short-circuiting), `or` to `||` (short-circuiting)"
+      - "`not` lowers to unary `!`"
+      - "the eager bitwise `&`/`|` is NEVER substituted (would force-evaluate the right operand)"
+    preconditions:
+      - "the boolean operation's operands type as `Type::Bool`"
+    postconditions:
+      - "the emitted Rust uses `&&`/`||`/`!`; the right operand of `&&`/`||` is not evaluated when the left decides the value"
+      - "an emitter substituting `&`/`|` would change divergence/effect behaviour on a panicking right operand — falsified here"
+
+  operator_polarity_preserved:
+    formula: |
+      polarity(emit(op)) == polarity(op)   for op ∈ {and, or, not}
+    domain: |
+      Same as short_circuit_preserved — a pure-boolean expression tree.
+    invariants:
+      - "`and`↔`or` are not swapped (dual not silently computed)"
+      - "every `not` keeps its `!` (negation not dropped)"
+      - "no truthiness coercion over pure-bool operands (result stays `bool`)"
+    preconditions:
+      - "type inference resolved the operands to `Type::Bool`"
+    postconditions:
+      - "the emitted Rust predicate computes the same boolean function as the source"
+
+  py_bool_structure_extensionality_diamond:
+    # PMAT-935: FIRST (tier-defining) Diamond equation — registers
+    # C-XLATE-PY-BOOL-TO-RUST-BOOL at depth-1 under the R6-grandfathered Diamond
+    # gate (PMAT-475a), mirroring the str/list/float/set/class/tuple/Optional
+    # structural Diamonds. A Python bool is determined by its truth-flag; xpile
+    # emits a Rust bool. Boolean-algebra tiers (de Morgan, distributivity laws)
+    # ratchet in later.
+    lean_theorem: "XpileContracts.CXlatePyBoolToRustBool.py_bool_structure_extensionality_diamond"
+    lean_file: "contracts/lean/XlatePyBoolToRustBool.lean"
+    formula: |
+      ∀ a b : PyBool.
+        a.truth = b.truth → a = b
+      (a Python bool is determined by its truth-flag; xpile emits a Rust bool)
+    domain: |
+      Any Python `bool` values. xpile lowers `bool` to Rust `bool`; the Diamond
+      captures structure-extensionality of the single-truth-flag model (the same
+      polarity invariant `operator_polarity_preserved` governs at the emit level).
+    invariants:
+      - "FIRST Diamond-tier theorem of C-XLATE-PY-BOOL-TO-RUST-BOOL (registers it at depth-1)"
+      - "structure extensionality on the truth-flag model (sorry-free)"
+      - "boolean-algebra (de Morgan, idempotence, distributivity) deferred to later tiers"
+    preconditions:
+      - "the operand is a Python bool (lowered to a Rust bool), not an int/Optional"
+    postconditions:
+      - "emitted Rust uses bool; bool-typed code carries // xpile-contract: C-XLATE-PY-BOOL-TO-RUST-BOOL"
+
+proof_obligations:
+  - type: precondition
+    property: meta-HIR carries a bool type / boolean operation with bool operands
+    formal: "item.type == Bool ∧ op ∈ {And, Or, Not}"
+    applies_to: short_circuit_preserved
+  - type: postcondition
+    property: and/or/not map to the short-circuiting &&/||/! forms
+    formal: "emit(And) == `&&` ∧ emit(Or) == `||` ∧ emit(Not) == `!`"
+    applies_to: short_circuit_preserved
+  - type: frame
+    property: no mutation of the meta-HIR module during translation
+    formal: "modifies() == ∅"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-XLATE-BOOL-001
+    rule: |
+      Python `and`/`or` MUST lower to the short-circuiting `&&`/`||` (not the
+      eager bitwise `&`/`|`), and `not` to `!`.
+    prediction: |
+      `def both(a:bool,b:bool)->bool: return a and b` emits `a && b`, and the
+      emitted Rust contains no eager `a & b` for the boolean `and`.
+    test: |
+      cargo test -p xpile --test transpile_e2e bool_cites_contract
+    if_fails: |
+      A boolean op lowered to the wrong operator — short-circuit / polarity broke.
+    ship_blocking: true
+    counter_example_classes:
+      - eager_bitwise_substitution
+      - operator_polarity_flip
+
+  - id: FALSIFY-XLATE-BOOL-002
+    rule: |
+      Every function touching a bool type MUST cite this contract.
+    prediction: |
+      Transpiling a pure-bool fixture emits `// xpile-contract: C-XLATE-PY-BOOL-TO-RUST-BOOL`.
+    test: |
+      cargo test -p xpile --test contract_citation_integrity every_emitted_citation_resolves_to_an_on_disk_contract
+    if_fails: |
+      The bool wiring in applicable_contracts() regressed — bool code ships uncited.
+    ship_blocking: true
+    counter_example_classes:
+      - uncited_construct
+
+  - id: FALSIFY-XLATE-BOOL-003
+    rule: |
+      Operator polarity MUST be preserved (and↔or not swapped, `not` not dropped).
+    prediction: |
+      `(a and not b) or c` evaluates to the same boolean function as the source
+      across all 8 input assignments.
+    test: |
+      cargo test -p xpile --test transpile_e2e bool_cites_contract
+    if_fails: |
+      A boolean operator's polarity flipped — the predicate computes the dual.
+    ship_blocking: true
+    counter_example_classes:
+      - operator_polarity_flip
+
+qa_gate:
+  id: QA-XLATE-PY-BOOL-TO-RUST-BOOL
+  name: "Python bool → Rust bool translation contract"
+  min_coverage: 0.50
+  max_complexity: 20
+  required_tests:
+    - bool_cites_contract
+    - every_emitted_citation_resolves_to_an_on_disk_contract

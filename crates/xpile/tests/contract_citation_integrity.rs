@@ -126,6 +126,8 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
         "C-XLATE-PY-TUPLE-TO-RUST-TUPLE",
         // PMAT-881 (R6): Optional → Option translation is now wired + cited.
         "C-XLATE-PY-OPTIONAL-TO-OPTION",
+        // PMAT-935 (R6): pure-bool translation is now wired + cited.
+        "C-XLATE-PY-BOOL-TO-RUST-BOOL",
     ] {
         assert!(
             cited.contains(required),
@@ -154,6 +156,7 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
         ),
         ("tuple_contract.py", &["C-XLATE-PY-TUPLE-TO-RUST-TUPLE"]),
         ("optional_return.py", &["C-XLATE-PY-OPTIONAL-TO-OPTION"]),
+        ("bool_contract.py", &["C-XLATE-PY-BOOL-TO-RUST-BOOL"]),
         // Multi-contract witnesses — EVERY listed id must co-occur in the one
         // fixture (exercises the all-expected-present path, not just any-cited).
         (
