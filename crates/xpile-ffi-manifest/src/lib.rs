@@ -262,11 +262,15 @@ impl FfiManifest {
     ///     no `extern`).
     ///   - **Python** → a real pyo3 CPython-embedding shim (PMAT-926): under the
     ///     GIL it imports the defining module and calls the function, marshalling
-    ///     scalar args/return through pyo3 (`i64`/`f64`/`bool`/`String`). Five of
-    ///     seven arms are now real (C, Shell, Ruchy, Rust, Python).
-    ///   - **Cpp / Cuda / Lean** → a specific, mechanism-named [`FfiEmitError`]
-    ///     (pybind11 / cuda_kernel / proof-lane) so the remaining gaps stay
-    ///     actionable, never silently dropped or mis-emitted.
+    ///     scalar args/return through pyo3 (`i64`/`f64`/`bool`/`String`).
+    ///   - **Cpp** → a real pybind11 C++ shim (PMAT-927): the C++ symbol is
+    ///     name-mangled, so this calls the pybind11-registered binding by its
+    ///     Python-visible name through the embedded interpreter (the same path
+    ///     Python uses), refusing rather than guessing a mangled `extern "C"`.
+    ///     Six of seven arms are now real (C, Shell, Ruchy, Rust, Python, Cpp).
+    ///   - **Cuda / Lean** → a specific, mechanism-named [`FfiEmitError`]
+    ///     (cuda_kernel / proof-lane) so the remaining gaps stay actionable,
+    ///     never silently dropped or mis-emitted.
     ///
     /// All-or-nothing (mirrors `reconcile`'s `manifest_completeness`): if ANY
     /// boundary cannot be shimmed, nothing is emitted and the gaps are returned —
@@ -450,13 +454,26 @@ fn shim_part_for(entry: &FfiEntry, modules: &[Module]) -> Result<ShimPart, Vec<S
         // Real subprocess shim — shell speaks argv + exit codes, which
         // std::process::Command models exactly (no C ABI, no `unsafe`).
         SourceLang::Shell => Ok(emit_shell_shim(entry)),
-        // Recognized boundaries whose binding mechanism is not yet emitted. Each
-        // names the real mechanism + roadmap phase so the gap is actionable.
-        SourceLang::Cpp => Err(vec![format!(
-            "{}: C++ boundary → needs a pybind11 shim (the symbol is name-mangled; \
-             raw `extern \"C\"` would mis-link) — roadmap Phase 7+",
-            entry.symbol
-        )]),
+        // Real pybind11 C++ shim (PMAT-927): a pybind11 extension exposes its
+        // C++ function to Python by a REGISTERED binding (`m.def("name", &fn)`),
+        // not as a flat C symbol — the underlying C++ symbol is name-mangled
+        // (`_Z...`), so a raw `extern "C"` of it would mis-link. The honest call
+        // path is the SAME one Python itself uses: embed CPython via pyo3, import
+        // the pybind11 module, and call the function by its Python-visible name.
+        // Like the C/pyo3 arms this needs the real defining function's signature.
+        SourceLang::Cpp => match (
+            defining_function(modules, entry),
+            defining_module_name(modules, entry),
+        ) {
+            (Some(f), Some(module_name)) => emit_pybind11_shim(entry, f, module_name),
+            _ => Err(vec![format!(
+                "{}: resolved to a C++ symbol that is not a function — cannot \
+                 emit a pybind11 shim",
+                entry.symbol
+            )]),
+        },
+        // Recognized boundary whose binding mechanism is not yet emitted. Names
+        // the real mechanism + roadmap phase so the gap is actionable.
         SourceLang::Cuda => Err(vec![format!(
             "{}: CUDA boundary → needs a host-launch shim (cudaLaunchKernel \
              marshalling), not a direct call — roadmap Phase 7+",
@@ -874,6 +891,191 @@ fn pyo3_native_type(ty: &Type) -> Result<String, String> {
         Type::ShellString | Type::ExitCode => {
             return Err(format!(
                 "type {ty:?} is a bashrs-domain type — not a pyo3 marshalling target"
+            ));
+        }
+        Type::Unit => {
+            return Err("type `()` is only valid in return position".to_string());
+        }
+    })
+}
+
+/// PMAT-927: emit a real **pybind11 C++ shim** for a `to_lang == Cpp` boundary.
+///
+/// Name-mangling reality, handled honestly. A pybind11 extension does NOT export
+/// its C++ function as a flat C symbol: the C++ symbol is name-mangled by the
+/// Itanium ABI (`_Z<len><name>...` — `&square_sum` becomes `_Z10square_sumi`),
+/// so a raw `extern "C" { fn square_sum(...) }` would fail to link against the
+/// real `.so`. What pybind11 publishes instead is a Python-callable *binding*
+/// registered at module-init (`m.def("square_sum", &square_sum)`), keyed by the
+/// Python-VISIBLE name (the string literal), not the mangled symbol. The only
+/// link-honest way to invoke it is the SAME path Python uses: go through the
+/// registered binding. So this shim EMBEDS CPython via pyo3 (a pybind11 module
+/// IS a CPython extension module), imports it, and calls the function by its
+/// Python name — refusing rather than mis-emitting a guessed mangled `extern`.
+///
+/// This is mechanically the pyo3-embedding path ([`emit_pyo3_shim`]) — the
+/// difference is the boundary's PROVENANCE (a C++ pybind11 `.so`, not a `.py`),
+/// recorded in the doc comment and the marshalling rules: pybind11's automatic
+/// type casters round-trip Python `int`/`float`/`bool`/`str` to C++
+/// `long`/`double`/`bool`/`std::string`, so the accepted Rust scalar set is the
+/// same `i64`/`f64`/`bool`/`String` ([`pybind11_native_type`]). Any type
+/// pybind11's *automatic* casters don't carry losslessly (a C-ABI width, a
+/// container needing `pybind11/stl.h`, a `BigInt`, a struct needing
+/// `py::class_`) is REFUSED with a named reason rather than mis-marshalled.
+///
+/// No `extern "C"` block, no `unsafe` in the emitted wrapper: all the `unsafe`
+/// lives inside pyo3. Capability-ahead-of-contract: a pybind11 embedding has no
+/// governing on-disk contract yet (a `C-FFI-PYBIND11-EMBED` is queued), so
+/// `contract` is `None` — exactly as the pyo3 and direct-call arms shipped ahead
+/// of theirs. `module_name` is the pybind11 module that registers the binding
+/// (its `Module.name` in the dispatched set) — what `PyModule::import` resolves.
+fn emit_pybind11_shim(
+    entry: &FfiEntry,
+    f: &Function,
+    module_name: &str,
+) -> Result<ShimPart, Vec<String>> {
+    let mut unsupported = Vec::new();
+    let mut params = Vec::new();
+    // pybind11's bound function is invoked through pyo3's `call1`, which takes a
+    // tuple: a 1-arg call needs the trailing comma (`(a,)`) to stay a tuple; a
+    // 0-arg call passes the empty tuple `()`.
+    let mut call_args = Vec::new();
+    for p in &f.params {
+        match pybind11_native_type(&p.ty) {
+            Ok(rty) => {
+                params.push(format!("{}: {}", p.name, rty));
+                call_args.push(p.name.clone());
+            }
+            Err(reason) => {
+                unsupported.push(format!("{}: parameter `{}` {reason}", entry.symbol, p.name))
+            }
+        }
+    }
+
+    // Return position: `Type::Unit` is C++ `void` / Python `None` (no `-> T`, no
+    // extract); anything else must map to a pybind11-castable scalar or refuse.
+    let (ret_sig, extracts) = match &f.return_type {
+        Type::Unit => (String::new(), false),
+        ty => match pybind11_native_type(ty) {
+            Ok(rty) => (format!(" -> {rty}"), true),
+            Err(reason) => {
+                unsupported.push(format!("{}: return type {reason}", entry.symbol));
+                (String::new(), false)
+            }
+        },
+    };
+
+    if !unsupported.is_empty() {
+        return Err(unsupported);
+    }
+
+    let args_tuple = match call_args.len() {
+        0 => "()".to_string(),
+        1 => format!("({},)", call_args[0]),
+        _ => format!("({})", call_args.join(", ")),
+    };
+    let call_and_ret = if extracts {
+        format!(
+            "        let __r = __func\n            .call1({args_tuple})\n            .expect(\"call pybind11-bound `{0}`\");\n        __r.extract().expect(\"extract `{0}` return into the declared Rust type\")\n",
+            entry.symbol
+        )
+    } else {
+        format!(
+            "        __func\n            .call1({args_tuple})\n            .expect(\"call pybind11-bound `{0}`\");\n",
+            entry.symbol
+        )
+    };
+    let wrapper = format!(
+        "/// pybind11 C++ shim for `{0}` — the C++ symbol is name-mangled, so this\n\
+         /// calls the pybind11-registered binding (`m.def(\"{0}\", ...)`) by its\n\
+         /// Python-visible name through the embedded interpreter, NOT a guessed\n\
+         /// `extern \"C\"` (which would mis-link). No `unsafe` (it is confined inside\n\
+         /// pyo3); callers speak native Rust scalars.\n\
+         pub fn {0}_shim({1}){2} {{\n\
+        \x20   // A pybind11 extension IS a CPython extension module; pyo3 imports it\n\
+        \x20   // and `call1`s the bound function exactly as the Python interpreter would.\n\
+        \x20   use ::pyo3::prelude::*;\n\
+        \x20   ::pyo3::Python::with_gil(|py| {{\n\
+        \x20       let __module = ::pyo3::types::PyModule::import(py, \"{3}\")\n\
+        \x20           .expect(\"import the pybind11 extension module `{3}`\");\n\
+        \x20       let __func = __module\n\
+        \x20           .getattr(\"{0}\")\n\
+        \x20           .expect(\"pybind11 module `{3}` binds `{0}`\");\n\
+        {4}\
+        \x20   }})\n\
+         }}\n",
+        entry.symbol,
+        params.join(", "),
+        ret_sig,
+        module_name,
+        call_and_ret
+    );
+    Ok(ShimPart {
+        extern_decl: None,
+        wrapper,
+        // Capability-ahead-of-contract: a pybind11 embedding has no on-disk
+        // contract yet (a C-FFI-PYBIND11-EMBED is queued) — same posture as the
+        // pyo3 and direct-call arms.
+        contract: None,
+    })
+}
+
+/// PMAT-927: the native Rust type a **pybind11 C++ shim** speaks for a meta-HIR
+/// [`Type`]. The accepted set is the scalars pybind11's AUTOMATIC type casters
+/// round-trip through the embedded interpreter without an extra header/binding:
+/// a C++ `long`/`int` is Python `int` is Rust `i64`, a `double`/`float` is
+/// Python `float` is `f64`, a `bool` is `bool`, a `std::string`/`const char*` is
+/// Python `str` is owned `String`. Everything else is REFUSED with a named
+/// reason (the refuse-rather-than-mis-emit posture): a C-ABI integer/float WIDTH
+/// (`CLong`/`CUInt`/`CULong`/`F32`) is a decy C-sourced shape, not a pybind11
+/// boundary token (pybind11 carries plain Python int/float); `BigInt` needs a
+/// `py::int_`↔num-bigint bridge the first cut does not pin; a container
+/// (`List`/`Dict`/`Set`/`Tuple`/`Optional`) needs `#include <pybind11/stl.h>`
+/// PLUS a recursive marshalling pass (deferred); a `Struct` needs a co-emitted
+/// `py::class_<T>` binding; a raw pointer / `CChar` is a flat-C-ABI token, not a
+/// pybind11 value; the bashrs-domain types and a bare `Unit` parameter are
+/// nonsensical at this boundary.
+fn pybind11_native_type(ty: &Type) -> Result<String, String> {
+    Ok(match ty {
+        Type::I64 => "i64".to_string(),
+        Type::F64 => "f64".to_string(),
+        Type::Bool => "bool".to_string(),
+        Type::Str => "String".to_string(),
+        Type::CLong | Type::CUInt | Type::CULong | Type::F32 => {
+            return Err(format!(
+                "type {ty:?} is a C-ABI width — a decy C-sourced shape with no place \
+                 at a pybind11 boundary; pybind11 carries plain Python int/float"
+            ));
+        }
+        Type::BigInt => {
+            return Err(
+                "type BigInt needs a py::int_↔num-bigint bridge the pybind11 shim \
+                 does not pin; pybind11 shim refuses it"
+                    .to_string(),
+            );
+        }
+        Type::List(_) | Type::Dict(_, _) | Type::Set(_) | Type::Tuple(_) | Type::Optional(_) => {
+            return Err(format!(
+                "container type {ty:?} needs `#include <pybind11/stl.h>` plus a \
+                 recursive marshalling pass — the pybind11 shim's first cut speaks \
+                 scalars only; refused"
+            ));
+        }
+        Type::Struct(name) => {
+            return Err(format!(
+                "struct type `{name}` needs a co-emitted `py::class_<{name}>` binding \
+                 — pybind11 shim refuses it until struct marshalling lands"
+            ));
+        }
+        Type::Ptr { .. } | Type::CChar => {
+            return Err(format!(
+                "type {ty:?} is a flat-C-ABI pointer/char token, not a pybind11 value \
+                 — pybind11 shim refuses it"
+            ));
+        }
+        Type::ShellString | Type::ExitCode => {
+            return Err(format!(
+                "type {ty:?} is a bashrs-domain type — not a pybind11 marshalling target"
             ));
         }
         Type::Unit => {
@@ -1754,10 +1956,198 @@ mod tests {
     }
 
     #[test]
-    fn emit_shims_cpp_boundary_reports_pybind11_gap() {
-        let err = emit_cross(SourceLang::Python, SourceLang::Cpp, "g").expect_err("refused");
-        assert!(err.to_string().contains("pybind11"), "{err}");
-        assert!(err.to_string().contains('g'));
+    fn emit_shims_cpp_boundary_emits_pybind11_shim() {
+        // PMAT-927: a Rust→C++ boundary now lowers to a real pybind11 shim (was
+        // an `Err(pybind11 gap)`). The C++ symbol is name-mangled, so the shim
+        // calls the pybind11-registered binding by its Python-visible name
+        // through the embedded interpreter — never a guessed `extern "C"`.
+        // `module_defining` exports `kernel` as a nullary `-> i64` in module
+        // "target"; from != to (Rust→Cpp) so reconcile keeps the boundary.
+        let out = emit_cross(SourceLang::Rust, SourceLang::Cpp, "kernel").expect("emits");
+        // No extern block / no unsafe in the EMITTED CODE: a mangled C++ symbol
+        // must NOT be declared as a flat C symbol (it would mis-link), and the
+        // honest path goes through pybind11. The doc-comment prose names both
+        // `extern "C"` and `unsafe` to explain WHY they are absent, so scan only
+        // non-comment lines for the actual tokens.
+        let code_only: String = out
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//") && !l.trim_start().starts_with("///"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            !code_only.contains("extern \"C\""),
+            "a name-mangled C++ symbol must not be declared extern \"C\": {out}"
+        );
+        assert!(
+            !code_only.contains("unsafe"),
+            "the pybind11 wrapper code is unsafe-free: {out}"
+        );
+        assert!(
+            out.contains("pub fn kernel_shim() -> i64 {"),
+            "nullary -> i64 pybind11 wrapper: {out}"
+        );
+        // Embeds the interpreter, imports the pybind11 EXTENSION module by name,
+        // and getattrs the Python-visible binding name (not a mangled symbol).
+        assert!(out.contains("::pyo3::Python::with_gil(|py|"), "{out}");
+        assert!(
+            out.contains("::pyo3::types::PyModule::import(py, \"target\")"),
+            "imports the pybind11 module by name: {out}"
+        );
+        assert!(out.contains(".getattr(\"kernel\")"), "{out}");
+        assert!(out.contains(".call1(())"), "0-arg call passes (): {out}");
+        assert!(
+            out.contains(".extract().expect("),
+            "non-Unit return is extracted: {out}"
+        );
+        // Honesty: the wrapper doc names the mangling reality + the pybind11 binding.
+        assert!(
+            out.contains("name-mangled") && out.contains("m.def"),
+            "shim must document the name-mangling reality + pybind11 binding: {out}"
+        );
+        // Capability-ahead-of-contract — no citation yet (C-FFI-PYBIND11-EMBED queued).
+        assert!(
+            !out.contains("xpile-contract:"),
+            "pybind11 embedding is capability-ahead-of-contract (no citation): {out}"
+        );
+    }
+
+    #[test]
+    fn emit_pybind11_shim_marshals_scalars_and_multi_arg_call() {
+        // A Rust→C++ boundary with scalar params (i64/f64/bool/str): the wrapper
+        // speaks native scalars and builds a multi-arg call tuple in declaration
+        // order. A non-Unit return is extracted.
+        let mut modules = vec![
+            module(
+                "driver",
+                SourceLang::Rust,
+                vec![boundary(SourceLang::Rust, SourceLang::Cpp, "blend")],
+            ),
+            Module {
+                name: "fastmath".into(),
+                source_lang: SourceLang::Cpp,
+                items: vec![Item::Function(Function {
+                    name: "blend".into(),
+                    params: vec![
+                        xpile_meta_hir::Param {
+                            name: "n".into(),
+                            ty: Type::I64,
+                            mutable: false,
+                        },
+                        xpile_meta_hir::Param {
+                            name: "ratio".into(),
+                            ty: Type::F64,
+                            mutable: false,
+                        },
+                        xpile_meta_hir::Param {
+                            name: "label".into(),
+                            ty: Type::Str,
+                            mutable: false,
+                        },
+                    ],
+                    return_type: Type::F64,
+                    body: Block {
+                        stmts: Vec::new(),
+                        trailing_return: Expr::LitInt(0),
+                    },
+                })],
+                ffi_boundaries: Vec::new(),
+            },
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
+        let out = manifest.emit_rust_shims(&modules).expect("emits");
+        assert!(
+            out.contains("pub fn blend_shim(n: i64, ratio: f64, label: String) -> f64 {"),
+            "scalar params, f64 return: {out}"
+        );
+        assert!(
+            out.contains("::pyo3::types::PyModule::import(py, \"fastmath\")"),
+            "{out}"
+        );
+        assert!(
+            out.contains(".call1((n, ratio, label))"),
+            "multi-arg call tuple in order: {out}"
+        );
+    }
+
+    #[test]
+    fn emit_pybind11_shim_one_arg_call_tuple_has_trailing_comma() {
+        // pyo3's `call1` (the pybind11 invocation path) takes a tuple; a 1-arg
+        // call needs the trailing comma `(x,)` to stay a tuple.
+        let mut modules = vec![
+            module(
+                "driver",
+                SourceLang::Rust,
+                vec![boundary(SourceLang::Rust, SourceLang::Cpp, "sq")],
+            ),
+            Module {
+                name: "m".into(),
+                source_lang: SourceLang::Cpp,
+                items: vec![Item::Function(Function {
+                    name: "sq".into(),
+                    params: vec![xpile_meta_hir::Param {
+                        name: "x".into(),
+                        ty: Type::I64,
+                        mutable: false,
+                    }],
+                    return_type: Type::I64,
+                    body: Block {
+                        stmts: Vec::new(),
+                        trailing_return: Expr::LitInt(0),
+                    },
+                })],
+                ffi_boundaries: Vec::new(),
+            },
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
+        let out = manifest.emit_rust_shims(&modules).expect("emits");
+        assert!(
+            out.contains(".call1((x,))"),
+            "1-arg call tuple needs the trailing comma: {out}"
+        );
+    }
+
+    #[test]
+    fn emit_pybind11_shim_refuses_unmarshallable_type() {
+        // A C++ boundary returning a List: pybind11's first cut speaks scalars
+        // only (containers need <pybind11/stl.h> + a recursive pass), so the
+        // container is refused with a named reason rather than a wrong shim.
+        let mut modules = vec![
+            module(
+                "driver",
+                SourceLang::Rust,
+                vec![boundary(SourceLang::Rust, SourceLang::Cpp, "rows")],
+            ),
+            Module {
+                name: "m".into(),
+                source_lang: SourceLang::Cpp,
+                items: vec![Item::Function(Function {
+                    name: "rows".into(),
+                    params: Vec::new(),
+                    return_type: Type::List(Box::new(Type::I64)),
+                    body: Block {
+                        stmts: Vec::new(),
+                        trailing_return: Expr::LitInt(0),
+                    },
+                })],
+                ffi_boundaries: Vec::new(),
+            },
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
+        let err = manifest.emit_rust_shims(&modules).expect_err("refused");
+        assert!(err.to_string().contains("rows"), "{err}");
+        assert!(err.to_string().contains("pybind11/stl.h"), "{err}");
+    }
+
+    #[test]
+    fn emit_pybind11_shim_compiles_against_pyo3() {
+        // The load-bearing gate (mirrors the pyo3 arm): the emitted pybind11 shim
+        // must COMPILE against pyo3 — it IS the pyo3-embedding API surface, so the
+        // same type-check gate applies. Skips gracefully when pyo3 can't be built.
+        let out = emit_cross(SourceLang::Rust, SourceLang::Cpp, "kernel").expect("emits");
+        pyo3_shim_checks(&out);
     }
 
     #[test]
@@ -2016,9 +2406,9 @@ mod tests {
                 // env, offline) is a SKIP, not a test failure — the structural
                 // assertions already validated the shim shape. Only a genuine
                 // type error in OUR emitted code should fail. Heuristic: if the
-                // failure mentions our shim symbol (`embed_shim`) it's our bug;
+                // failure mentions one of our shim symbols (`_shim`) it's our bug;
                 // otherwise it's an environment/dep issue → skip.
-                if stderr.contains("error[") && stderr.contains("embed_shim") {
+                if stderr.contains("error[") && stderr.contains("_shim") {
                     panic!("emitted pyo3 shim failed to type-check:\n{stderr}");
                 }
                 eprintln!(
@@ -2338,27 +2728,29 @@ mod tests {
 
     #[test]
     fn emit_shims_is_all_or_nothing_across_paradigms() {
-        // A manifest with a shimmable C boundary AND an unshimmable C++ boundary
-        // emits NOTHING — a half-shimmed hybrid build is not a build.
+        // A manifest with a shimmable C boundary AND an unshimmable CUDA boundary
+        // emits NOTHING — a half-shimmed hybrid build is not a build. (CUDA stays
+        // a named gap; C++ is now real via the PMAT-927 pybind11 arm, so the
+        // unshimmable side here must be a still-gap paradigm.)
         let mut modules = vec![
             module(
                 "app",
                 SourceLang::Python,
                 vec![
                     boundary(SourceLang::Python, SourceLang::C, "ok_c"),
-                    boundary(SourceLang::Python, SourceLang::Cpp, "bad_cpp"),
+                    boundary(SourceLang::Python, SourceLang::Cuda, "bad_cuda"),
                 ],
             ),
             c_fn("ok_c", vec![("x", Type::I64)], Type::I64),
-            module_defining("cpp", SourceLang::Cpp, "bad_cpp"),
+            module_defining("cuda", SourceLang::Cuda, "bad_cuda"),
         ];
         resolve_boundary_to_langs(&mut modules);
         let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
         let err = manifest
             .emit_rust_shims(&modules)
             .expect_err("one bad boundary fails all");
-        assert!(err.to_string().contains("bad_cpp"));
-        assert!(err.to_string().contains("pybind11"));
+        assert!(err.to_string().contains("bad_cuda"));
+        assert!(err.to_string().contains("cudaLaunchKernel"));
     }
 
     #[test]
@@ -2525,15 +2917,16 @@ mod tests {
 
     #[test]
     fn emit_hybrid_workspace_propagates_unshimmable_boundary() {
-        // An unshimmable (C++) boundary fails the workspace emit too — fail-loud,
-        // no half-built workspace.
+        // An unshimmable (CUDA) boundary fails the workspace emit too — fail-loud,
+        // no half-built workspace. (C++ is now real via the PMAT-927 pybind11 arm,
+        // so the still-unshimmable paradigm used here is CUDA.)
         let mut modules = vec![
             module(
                 "app",
                 SourceLang::Python,
-                vec![boundary(SourceLang::Python, SourceLang::Cpp, "g")],
+                vec![boundary(SourceLang::Python, SourceLang::Cuda, "g")],
             ),
-            module_defining("cpp", SourceLang::Cpp, "g"),
+            module_defining("cuda", SourceLang::Cuda, "g"),
         ];
         resolve_boundary_to_langs(&mut modules);
         let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
@@ -2541,8 +2934,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let err = manifest
             .emit_hybrid_workspace(&modules, &[], "pub fn main() {}\n", &dir)
-            .expect_err("c++ boundary is unshimmable");
+            .expect_err("cuda boundary is unshimmable");
         assert!(matches!(err, WorkspaceEmitError::Shims(_)));
-        assert!(err.to_string().contains("pybind11"));
+        assert!(err.to_string().contains("cudaLaunchKernel"));
     }
 }
