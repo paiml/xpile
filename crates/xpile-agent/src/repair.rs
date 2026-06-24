@@ -355,8 +355,9 @@ fn rewrite_plain_float_print(src: &str, expr: &str) -> Option<String> {
 /// Rewrite the call `symbol(a, b, …)` so EACH top-level argument carries its C
 /// ABI cast — `symbol(a as abi, b as abi)` — skipping the `extern` declaration
 /// (`fn symbol(...)`). This mirrors `emit_c_shim`'s per-parameter
-/// `Marshal::ScalarCast`, so a multi-argument boundary (the `scale2(double,
-/// double)` shape) is repaired in one pass, not just the single-argument case.
+/// `Marshal::ScalarCast`, so a multi-argument boundary (the two-arg int
+/// `sum_of_squares(a, b)` shape from PMAT-930, where each `i64` arg needs its
+/// own `c_int` cast) is repaired in one pass, not just the single-argument case.
 /// Returns `None` when every argument is already cast (idempotent) or the call
 /// shape is unexpected, so the rule fires at most once per call site.
 fn insert_arg_cast(src: &str, symbol: &str, abi: &str) -> Option<String> {
