@@ -155,6 +155,30 @@ fn item_exported_name(item: &Item) -> Option<&str> {
     }
 }
 
+/// PMAT-932: does `module` export `symbol` as an FFI-callable target?
+///
+/// For a code module (C/Python/C++/Ruchy/Rust) the callable surface is its
+/// exported items — a function or addressable const named `symbol`. A **Shell**
+/// module is different: a shell script is invoked *as a subprocess by its program
+/// name*, which `bashrs-frontend` records as the `Module::name` (the file stem),
+/// not as a meta-HIR `Item` (its only synthetic item is the structural `main`
+/// placeholder). The thing the Python side actually calls — and the thing
+/// [`emit_shell_shim`] spawns via `Command::new(symbol)` — is that program name.
+/// So a Shell module "exports" the symbol equal to its module name. This is what
+/// makes the Python→Shell boundary resolvable end-to-end (the `emit_shell_shim`
+/// arm had no producer before this — `C-FFI-SHELL-SUBPROCESS`).
+fn module_exports_symbol(m: &Module, symbol: &str) -> bool {
+    match m.source_lang {
+        // Shell tools are addressed by their program (script) name.
+        SourceLang::Shell => m.name == symbol,
+        // Everything else exposes named items (functions / addressable consts).
+        _ => m
+            .items
+            .iter()
+            .any(|it| item_exported_name(it) == Some(symbol)),
+    }
+}
+
 fn shim_id(b: &FfiBoundary) -> String {
     let key = format!(
         "{:?}->{:?}:{}:{}",
@@ -204,10 +228,7 @@ impl FfiManifest {
                 }
                 let lang_present = modules.iter().any(|m| m.source_lang == b.to_lang);
                 let symbol_defined = modules.iter().any(|m| {
-                    m.source_lang == b.to_lang
-                        && m.items
-                            .iter()
-                            .any(|it| item_exported_name(it) == Some(b.symbol.as_str()))
+                    m.source_lang == b.to_lang && module_exports_symbol(m, b.symbol.as_str())
                 });
                 if symbol_defined {
                     manifest.register(FfiEntry {
@@ -1442,6 +1463,13 @@ pub fn resolve_boundary_to_langs(modules: &mut [Module]) {
     // symbol -> source_lang of the first module that exports it.
     let mut exporters: HashMap<String, SourceLang> = HashMap::new();
     for m in modules.iter() {
+        // PMAT-932: a Shell module exports its PROGRAM name (the file stem =
+        // `Module::name`), the thing a subprocess shim spawns — not a meta-HIR
+        // item (its only item is the synthetic `main` placeholder). Register it
+        // so a Python `from ._tool import _tool` boundary resolves Python→Shell.
+        if m.source_lang == SourceLang::Shell {
+            exporters.entry(m.name.clone()).or_insert(SourceLang::Shell);
+        }
         for it in &m.items {
             if let Some(name) = item_exported_name(it) {
                 exporters.entry(name.to_string()).or_insert(m.source_lang);
@@ -1472,14 +1500,26 @@ mod tests {
         }
     }
 
-    /// A module of `lang` that DEFINES (exports) `symbol` as a nullary function —
-    /// the FFI export side that symbol-level reconciliation requires.
+    /// A module of `lang` that DEFINES (exports) `symbol` as the FFI-callable
+    /// target reconciliation requires.
+    ///
+    /// PMAT-932: the export SURFACE differs by paradigm. A code module exports a
+    /// named item (function) — so the item is named `symbol`. A **Shell** module
+    /// is invoked as a subprocess by its PROGRAM name (the file stem =
+    /// `Module::name`), and its only meta-HIR item is the synthetic `main`
+    /// placeholder (exactly what `bashrs-frontend` produces) — so for Shell the
+    /// MODULE is named `symbol` and the item stays `main`. `name` is the module
+    /// name for non-shell langs; it is overridden to `symbol` for Shell so the
+    /// helper mirrors real bashrs output.
     fn module_defining(name: &str, lang: SourceLang, symbol: &str) -> Module {
+        let is_shell = lang == SourceLang::Shell;
+        let item_name = if is_shell { "main" } else { symbol };
+        let module_name = if is_shell { symbol } else { name };
         Module {
-            name: name.to_string(),
+            name: module_name.to_string(),
             source_lang: lang,
             items: vec![Item::Function(Function {
-                name: symbol.to_string(),
+                name: item_name.to_string(),
                 params: Vec::new(),
                 return_type: Type::I64,
                 body: Block {

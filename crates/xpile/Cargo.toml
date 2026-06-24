@@ -52,6 +52,10 @@ xpile-contracts         = { workspace = true }
 xpile-frontend          = { workspace = true }
 depyler-frontend        = { workspace = true }
 decy-frontend           = { workspace = true }
+# PMAT-932: hybrid_shell_producer.rs drives the Python + Shell frontends through
+# FfiManifest::reconcile to prove the Python→Shell boundary (the `emit_shell_shim`
+# producer) reconciles by the shell program name end-to-end.
+bashrs-frontend         = { workspace = true }
 # PMAT-274: notation_runtime.rs parses notation_demo.tex through the
 # real LatexContractFrontend (the test asserts the C-NOTATION three-
 # form equivalence claim against on-disk evidence).

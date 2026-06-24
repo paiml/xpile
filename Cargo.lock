@@ -1004,6 +1004,7 @@ name = "xpile"
 version = "0.1.601"
 dependencies = [
  "anyhow",
+ "bashrs-frontend",
  "clap",
  "decy-frontend",
  "depyler-frontend",
