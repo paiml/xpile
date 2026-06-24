@@ -1,0 +1,147 @@
+metadata:
+  id: C-FFI-SHELL-SUBPROCESS
+  version: "1.0.0"
+  created: "2026-06-24"
+  author: PAIML Engineering
+  # `kind: pattern` rather than `kernel` while the contract governs an
+  # emit-time strategy (the argv + exit-code shim model) rather than a
+  # discharged refinement tower. Same rationale as
+  # `bashrs-posix-idempotence-v1.yaml` and `compile-rust-to-ptx-mma-v1.yaml`
+  # at scaffold stage — registered with the contract substrate for
+  # citation + quorum tracking; full provability gates (kind: kernel)
+  # kick in once a live Python `subprocess.run` → Shell `FfiBoundary`
+  # frontend producer lands (deferred in sub/sprint-10day-2026-06-23.md).
+  kind: pattern
+  status: draft
+  description: |
+    Hybrid-FFI calling-site contract for the **Shell subprocess shim**
+    (`emit_shell_shim` in `crates/xpile-ffi-manifest`). When the hybrid
+    reconciler resolves a boundary whose callee language is `Shell`, the
+    Rust side does NOT cross a C ABI — a shell symbol speaks **argv
+    strings in, an exit code + captured output out**, which is exactly
+    `std::process::Command`'s model. The emitted shim is therefore a
+    safe, `unsafe`-free wrapper:
+
+        pub fn <sym>_shim(args: &[&str])
+            -> ::std::io::Result<::std::process::Output> {
+            ::std::process::Command::new("<sym>").args(args).output()
+        }
+
+    This contract governs that strategy. It is the calling-site companion
+    of `C-BASHRS-POSIX-IDEMPOTENCE` (which governs the *emitted shell
+    script* on the bashrs lane): bashrs emits the POSIX script, and this
+    contract governs the Rust caller that crosses into it as a subprocess.
+
+    Layer 4 of the xpile contract taxonomy (hybrid pipeline), Shell axis.
+    The shim makes NO C-ABI claim and introduces NO `unsafe`, so the
+    boundary's safety obligation is narrower than `C-FFI-CPYTHON-EXT`:
+    there is no refcount / GIL / buffer-protocol invariant, only the
+    argv + exit-code passthrough.
+
+    Citation anchor: `emit_shell_shim` now sets `ShimPart.contract` to
+    this id, so every emitted Shell shim carries
+    `// xpile-contract: C-FFI-SHELL-SUBPROCESS`. The
+    `contract_citation_integrity` gate (PMAT-907) scans the EMITTED
+    `ffi_shims.rs` of a hybrid `--emit-shims` run, so a Shell shim can no
+    longer ship citing a contract that does not exist (the original R6
+    drift the gate was built to close, now extended to emitted shim files).
+
+    Falsifier (planned, kernel promotion): if a future `emit_shell_shim`
+    produces a wrapper whose argv ordering, program name, or exit-code
+    propagation diverges from the `Command`-model `Output` (e.g. dropping
+    `.args(args)` ordering, or swallowing a non-zero exit), the
+    differential subprocess oracle (`shell_diff_exec`) reports a
+    divergence and the emit is unsound. Tracked under the Shell-frontend
+    producer epic.
+  references:
+    - docs/specifications/sub/hybrid-transpile-flow.md
+    - docs/specifications/sub/sprint-10day-2026-06-23.md
+    - "POSIX 1003.1-2017 Shell & Utilities (§2.5 Parameters, §2.8.2 Exit Status)"
+    - "Rust std::process::Command — argv + ExitStatus + Output model"
+    - contracts/bashrs-posix-idempotence-v1.yaml
+    - contracts/ffi-cpython-ext-v1.yaml
+    - contracts/xpile-frontend-trait-v1.yaml
+  depends_on:
+    - C-BASHRS-POSIX-IDEMPOTENCE
+
+equations:
+  argv_passthrough:
+    # The shim forwards the caller's argv vector verbatim, in order, to
+    # the named program — no reordering, no quoting reinterpretation
+    # (Command::args already bypasses the shell's word-splitting), no
+    # injection of extra flags. The program name is the resolved boundary
+    # symbol. This is the load-bearing claim that the Rust caller invokes
+    # the SAME command the Python `subprocess.run([sym, *args])` would.
+    formula: |
+      shell_shim(sym, args).command == sym
+        AND shell_shim(sym, args).argv == args   (order- and content-preserving)
+    domain: |
+      A reconciled FFI boundary with to_lang == Shell and a resolved
+      symbol `sym`; `args` is the caller-supplied `&[&str]` argv slice.
+    invariants:
+      - "the spawned program name is exactly the resolved boundary symbol (no prefixing, no path rewriting)"
+      - "argv is forwarded in order, byte-for-byte (Command::args, not shell word-splitting)"
+      - "no `unsafe` and no `extern \"C\"` block — shell is not a C-ABI callee"
+      - "the emitted shim cites C-FFI-SHELL-SUBPROCESS so it cannot escape the citation-integrity gate"
+    preconditions:
+      - "the boundary's to_lang resolved to Shell via resolve_boundary_to_langs"
+      - "args are caller-owned string slices (no shell metacharacter reinterpretation is performed by the shim)"
+    postconditions:
+      - "the wrapper is a safe fn returning std::io::Result<std::process::Output>"
+      - "an emitter that reordered or dropped argv elements would falsify argv == args"
+
+  exit_code_propagation:
+    # The captured Output carries the subprocess's POSIX exit status
+    # unchanged — the Rust caller observes the SAME success/failure signal
+    # the shell command produced. Mirrors C-BASHRS-POSIX-IDEMPOTENCE's
+    # exit_code_consistency on the emitted-script side: that contract says
+    # the bashrs-emitted script exits as CPython's subprocess.run would;
+    # this one says the Rust caller surfaces that exit code faithfully.
+    formula: |
+      shell_shim(sym, args).status.code == subprocess_run(sym, args).returncode
+    domain: |
+      The success and failure paths of a spawned shell subprocess. The
+      exit code is the POSIX 0..255 status; capture is via
+      Command::output (waits for completion).
+    invariants:
+      - "POSIX convention: 0 = success, 1..255 = error variants — surfaced verbatim in Output.status"
+      - "the shim does not apply `set -e`-style early-exit reinterpretation; it reports what the program returned"
+      - "stdout/stderr are captured, not inherited — the caller observes the bytes the subprocess wrote"
+    preconditions:
+      - "the program runs to completion (Command::output waits; it is not a fire-and-forget spawn)"
+    postconditions:
+      - "Output.status.code() equals the subprocess exit code (None only on signal termination, per std semantics)"
+      - "an emitter that swallowed a non-zero exit (e.g. mapping all runs to status 0) would falsify this equation"
+
+  shell_invocation_structure_extensionality_diamond:
+    # PMAT-907: depth-1 Diamond — the genuinely-provable STRUCTURE
+    # EXTENSIONALITY claim that registers C-FFI-SHELL-SUBPROCESS under the
+    # R6 Diamond gate (PMAT-475a), mirroring PyFloatArith / XlatePyStrToRust
+    # String (whose Diamonds are structural, not runtime-IO). The observable
+    # outcome of a shell-shim invocation is determined by its three fields
+    # (program, argv, exit_code); two invocations agreeing on all three are
+    # equal. Machine-checked by `lake build` (advisory CI) — the Lean file is
+    # core-only, import-free, and in the lakefile pilot roots. The runtime
+    # argv-passthrough / exit-code-propagation tiers ratchet in once a live
+    # Python `subprocess.run` → Shell `FfiBoundary` frontend producer lands.
+    lean_theorem: "XpileContracts.CFfiShellSubprocess.shell_invocation_structure_extensionality_diamond"
+    lean_file: "contracts/lean/FfiShellSubprocess.lean"
+    formula: |
+      ShellInvocation admits STRUCTURE EXTENSIONALITY:
+        (a) field eq (program, argv, exit_code) -> record eq
+        (b) record eq -> field eq (congruence)
+        (c) decidable equality (derived DecidableEq)
+        (d) self-equality (reflexivity)
+    domain: |
+      Two ShellInvocation records (program : List UInt8;
+      argv : List (List UInt8); exit_code : UInt8) modelling the
+      observable result of `emit_shell_shim`'s Command-based wrapper.
+    invariants:
+      - "depth-1 Diamond — registers C-FFI-SHELL-SUBPROCESS under the R6 grandfathered Diamond gate"
+      - "STRUCTURE EXTENSIONALITY — the argv field is a first-class component, so a dropped/reordered argv is distinguished, not collapsed"
+      - "the model is core-only and import-free; machine-checked by the advisory `lake build` job"
+    preconditions:
+      - "two ShellInvocation records (DecidableEq derived)"
+    postconditions:
+      - "an emitter that reordered or dropped argv elements would produce a distinct ShellInvocation, caught by (a)"
+      - "C-FFI-SHELL-SUBPROCESS reaches depth-1 — every contract carries ≥1 wired Diamond (depth-1 UNIVERSAL invariant preserved)"

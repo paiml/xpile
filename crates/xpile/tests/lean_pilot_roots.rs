@@ -73,6 +73,9 @@ const EXPECTED_PILOT: &[&str] = &[
     // PMAT-904 discharged (Sprint Day 5):
     "XpileBackendTrait",
     "XpileContractFrontendTrait",
+    // PMAT-907 (Sprint Day 8): new Shell-subprocess FFI contract joins at
+    // depth-1 (core-only STRUCTURE EXTENSIONALITY, same shape as PyFloatArith).
+    "FfiShellSubprocess",
 ];
 
 #[test]

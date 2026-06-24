@@ -11019,11 +11019,12 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-907: [R6] author C-FFI-SHELL-SUBPROCESS + extend citation-integrity gate to scan emitted shim files'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-23T00:00:00Z
   acceptance_criteria:
   - "Author contracts/ffi-shell-subprocess-v1.yaml (kind:pattern) for emit_shell_shim's argv+exit-code model; set ShimPart.contract None -> Some; pv lint 0 ERRORS. Extend contract_citation_integrity.rs to transpile a hybrid fixture with --emit-shims and assert every emitted citation resolves. Sprint Day 8."
+  - "DONE: authored contracts/ffi-shell-subprocess-v1.yaml (id C-FFI-SHELL-SUBPROCESS, kind:pattern) — the calling-site companion of C-BASHRS-POSIX-IDEMPOTENCE governing emit_shell_shim's argv-passthrough + exit-code-propagation Command model (2 runtime equations) plus a depth-1 STRUCTURE-EXTENSIONALITY Diamond. emit_shell_shim's ShimPart.contract flipped None -> Some(C-FFI-SHELL-SUBPROCESS) so every emitted Shell shim now cites it. NEW citation-integrity gate every_emitted_hybrid_shim_citation_resolves: runs `xpile hybrid <dir> --emit-shims <file>` over every hybrid fixture, scans the EMITTED ffi_shims.rs, and FAILS on any citation not resolving to contracts/*.yaml — closing the R6 drift one layer out (emitted shim files were never under the gate); asserts C-FFI-CPYTHON-EXT stays live. To preserve the depth-1 UNIVERSAL Diamond invariant (every contract >=1 wired Diamond), authored contracts/lean/FfiShellSubprocess.lean (core-only, import-free, warningAsError-clean — verified by `lake build`), added it to the lakefile pilot roots (11 -> 12), and synced lean_pilot_roots.rs EXPECTED_PILOT + PROVABILITY-INVENTORY.md. pv lint 21 contracts 0 errors; xpile-ffi-manifest shell unit test asserts the new citation. Sprint Day 8."
 - id: PMAT-908
   github_issue: null
   item_type: task

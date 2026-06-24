@@ -199,3 +199,110 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
         missing_expected.join("\n")
     );
 }
+
+/// PMAT-907 (R6 contract-integrity, Day 8): extend the citation gate to the
+/// EMITTED hybrid shim file. The corpus gate above only scans `transpile`
+/// stdout (the Rust backend's codegen); the `xpile hybrid --emit-shims` path
+/// emits a SEPARATE `ffi_shims.rs` whose `// xpile-contract:` lines were never
+/// under the gate — exactly the kind of file a Shell/C shim could ship citing a
+/// non-existent contract (the original R6 drift, one layer out). This test runs
+/// `xpile hybrid <dir> --emit-shims <file>` on every hybrid fixture, scans the
+/// emitted shim file, and FAILS on any citation that does not resolve to a
+/// `contracts/*.yaml` id — and asserts the C boundary's `C-FFI-CPYTHON-EXT`
+/// citation stays live so the wiring can't silently regress.
+#[test]
+fn every_emitted_hybrid_shim_citation_resolves() {
+    let ids = on_disk_contract_ids();
+    // Both governing FFI-shim contracts must be on disk: the C-extension one
+    // (cited by the live hybrid_sum fixture) and the Shell one authored this
+    // slice (cited by emit_shell_shim once a Shell-frontend producer lands).
+    assert!(
+        ids.contains("C-FFI-CPYTHON-EXT"),
+        "sanity: C-FFI-CPYTHON-EXT must be on disk, got {} ids",
+        ids.len()
+    );
+    assert!(
+        ids.contains("C-FFI-SHELL-SUBPROCESS"),
+        "PMAT-907: C-FFI-SHELL-SUBPROCESS must be authored in contracts/ — \
+         emit_shell_shim now cites it, so a missing YAML is the phantom-citation \
+         sin the gate exists to prevent"
+    );
+
+    let bin = env!("CARGO_BIN_EXE_xpile");
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let tmp = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+
+    let mut emitted = 0usize;
+    let mut total_citations = 0usize;
+    let mut cited: HashSet<String> = HashSet::new();
+    let mut phantom: Vec<String> = Vec::new();
+
+    for entry in fs::read_dir(&fixtures).expect("tests/fixtures dir readable") {
+        let dir = entry.unwrap().path();
+        // A hybrid fixture is a directory whose name starts `hybrid_`.
+        if !dir.is_dir()
+            || !dir
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(|n| n.starts_with("hybrid_"))
+                .unwrap_or(false)
+        {
+            continue;
+        }
+        let name = dir.file_name().unwrap().to_string_lossy().to_string();
+        let out_file = tmp.join(format!("{name}_ffi_shims.rs"));
+        let _ = fs::remove_file(&out_file);
+
+        let out = Command::new(bin)
+            .args(["hybrid", dir.to_str().unwrap(), "--emit-shims"])
+            .arg(&out_file)
+            .output()
+            .expect("xpile hybrid runs");
+        // Fixtures with no resolvable FFI boundary (same-language siblings) or a
+        // deliberately-unresolved boundary either emit nothing or exit non-zero;
+        // this gate is about citations on EMITTED shims, not coverage.
+        if !out.status.success() || !out_file.exists() {
+            continue;
+        }
+        emitted += 1;
+        let shims = fs::read_to_string(&out_file).unwrap();
+        for line in shims.lines() {
+            if let Some(rest) = line.trim_start().strip_prefix("// xpile-contract:") {
+                let id = rest.trim().to_string();
+                total_citations += 1;
+                if !ids.contains(&id) {
+                    phantom.push(format!(
+                        "{name}/ffi_shims.rs cites non-existent contract `{id}`"
+                    ));
+                }
+                cited.insert(id);
+            }
+        }
+    }
+
+    assert!(
+        emitted > 0,
+        "PMAT-907: expected at least one hybrid fixture to emit shims (hybrid_sum \
+         is a live Python→C boundary); none did"
+    );
+    assert!(
+        total_citations > 0,
+        "PMAT-907: emitted shim files carried no contract citations — the C \
+         boundary's citation regressed?"
+    );
+
+    // (a) No phantom citations in emitted shim files — the R6 sin, one layer out.
+    assert!(
+        phantom.is_empty(),
+        "PMAT-907: every `// xpile-contract:` in an EMITTED ffi_shims.rs must \
+         resolve to a contracts/*.yaml id. Offenders:\n{}",
+        phantom.join("\n")
+    );
+
+    // (b) The live C boundary keeps citing its contract (regression guard).
+    assert!(
+        cited.contains("C-FFI-CPYTHON-EXT"),
+        "PMAT-907: expected the emitted hybrid shims to cite `C-FFI-CPYTHON-EXT` \
+         (hybrid_sum's Python→C boundary). Cited: {cited:?}"
+    );
+}

@@ -61,5 +61,10 @@ lean_lib «XpileContractsPilot» where
     -- EquationsBlock` for `[0]!`, and re-proved `frame_safety_transitive_platinum`
     -- as a defeq `calc` (`rw` can't see through the `before`/`after` defs).
     `XpileBackendTrait,          -- C-XPILE-BACKEND-TRAIT        (PMAT-904: tauto→decide)
-    `XpileContractFrontendTrait  -- C-XPILE-CONTRACT-FRONTEND    (PMAT-904: Inhabited + calc)
+    `XpileContractFrontendTrait, -- C-XPILE-CONTRACT-FRONTEND    (PMAT-904: Inhabited + calc)
+    -- PMAT-907 (Sprint Day 8): the new Shell-subprocess FFI contract joins the
+    -- pilot at depth-1 — a core-only, import-free STRUCTURE EXTENSIONALITY proof
+    -- (same shape as PyFloatArith), machine-checked here so the contract's
+    -- depth-1 Diamond is not a string claim.
+    `FfiShellSubprocess          -- C-FFI-SHELL-SUBPROCESS       (PMAT-907)
   ]
