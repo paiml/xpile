@@ -10989,12 +10989,12 @@ roadmap:
 - id: PMAT-904
   github_issue: null
   item_type: task
-  title: 'PMAT-904: [provability] discharge / narrow the sorry holes the lake-build made visible'
-  status: planned
+  title: 'PMAT-904: [provability] discharge the cheapest real Lean elaboration errors (REFRAMED: no sorries exist)'
+  status: done
   priority: high
   created: 2026-06-23T00:00:00Z
   acceptance_criteria:
-  - "Discharge the 2 Notation.lean sorries + narrow one data-structure sorry to a proved lemma or named axiom; back refinement_proofs.rs no-sorry assertion with a passing lake build, not a string scan. Sorry holes 6 -> <=4, verified by lake build. Sprint Day 5."
+  - "REFRAMED by PMAT-903's machine-checked ground truth: contracts/lean/ has ZERO sorry tactics and ZERO axioms (the '6 sorries' figure was a grep myth — docstrings + a ProofStubReason.sorry constructor). The real debt is non-elaborating files, not sorry holes. Day 5 discharged the two cheapest: XpileBackendTrait (Mathlib-only tauto -> core decide over the decidable Target enum) and XpileContractFrontendTrait (derived Inhabited EquationsBlock for [0]!, re-proved frame_safety_transitive_platinum as a defeq calc since rw can't see through the before/after defs). Both added to lakefile.lean roots; the advisory lake build pilot is GREEN at 11 modules (9 -> 9 known-incomplete remain). Verified by `lake build`, not a string scan; a lean-free Rust regression guard (lean_pilot_roots.rs) pins the roots/inventory in sync so the blocking gate catches drift. Sprint Day 5."
 - id: PMAT-905
   github_issue: null
   item_type: task

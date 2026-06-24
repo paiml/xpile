@@ -24,13 +24,13 @@ open Lake DSL
   — so this job is exactly the check that makes "provable" un-falsifiable by
   `grep sorry`.
 
-  PILOT = the 9 modules that elaborate clean under bare core with
-  warnings-as-errors. The known-incomplete remainder is 11 modules with REAL
-  elaboration errors (termination / type-mismatch / synthesis failures — NOT
-  sorries), enumerated honestly in `PROVABILITY-INVENTORY.md` and deliberately
-  EXCLUDED here so this advisory job is GREEN without overstating what is
-  proven. Discharging those errors and re-adding files is Day 5+ work — "no
-  discharge today".
+  PILOT = the 11 modules that elaborate clean under bare core with
+  warnings-as-errors (9 from PMAT-903 + the 2 PMAT-904 discharged on Day 5).
+  The known-incomplete remainder is 9 modules with REAL elaboration errors
+  (termination / type-mismatch / synthesis failures — NOT sorries), enumerated
+  honestly in `PROVABILITY-INVENTORY.md` and deliberately EXCLUDED here so this
+  advisory job is GREEN without overstating what is proven. Discharging the
+  remaining errors and re-adding files is ongoing Day 5+ work.
 -/
 
 package «xpileContracts» where
@@ -54,5 +54,12 @@ lean_lib «XpileContractsPilot» where
     `XlatePyClassToStruct,       -- C-XLATE-PY-CLASS-TO-STRUCT   (was mis-flagged "sorry")
     `XlatePyOptionalToOption,    -- C-XLATE-PY-OPTIONAL-TO-OPTION(was mis-flagged "sorry")
     `XlatePySetToHashset,        -- C-XLATE-PY-SET-TO-HASHSET    (was mis-flagged "sorry")
-    `XlatePyTupleToRustTuple     -- C-XLATE-PY-TUPLE-TO-RUST-TUPLE (was mis-flagged "sorry")
+    `XlatePyTupleToRustTuple,    -- C-XLATE-PY-TUPLE-TO-RUST-TUPLE (was mis-flagged "sorry")
+    -- PMAT-904 (Sprint Day 5): discharged the two cheapest elaboration-error
+    -- files. XpileBackendTrait: Mathlib-only `tauto` → core `decide` over the
+    -- decidable enum cases. XpileContractFrontendTrait: derived `Inhabited
+    -- EquationsBlock` for `[0]!`, and re-proved `frame_safety_transitive_platinum`
+    -- as a defeq `calc` (`rw` can't see through the `before`/`after` defs).
+    `XpileBackendTrait,          -- C-XPILE-BACKEND-TRAIT        (PMAT-904: tauto→decide)
+    `XpileContractFrontendTrait  -- C-XPILE-CONTRACT-FRONTEND    (PMAT-904: Inhabited + calc)
   ]

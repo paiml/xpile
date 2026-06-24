@@ -52,7 +52,7 @@ namespace XpileContracts.CXpileContractFrontendTrait
 -/
 structure EquationsBlock where
   bytes : Array UInt8
-deriving DecidableEq
+deriving DecidableEq, Inhabited
 
 /--
   Abstract model of the `parse_to_equations` trait method. At
@@ -265,7 +265,12 @@ theorem frame_safety_transitive_platinum
     (t1 t2 : FrameSafeTransition)
     (h : t1.after = t2.before) :
     t1.before.modules = t2.after.modules := by
-  rw [t1.property, h, t2.property]
+  -- `before`/`after` are `def`s, so `rw` can't see `.val.fst/.snd` through them
+  -- syntactically; go through defeq in term-mode steps instead (cf.
+  -- `frame_safety_witness_gold`, which discharges `f.property` the same way).
+  calc t1.before.modules = t1.after.modules := t1.property
+    _ = t2.before.modules := by rw [h]
+    _ = t2.after.modules := t2.property
 
 /--
   **Platinum-tier refinement theorem** — frame-safety is
