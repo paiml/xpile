@@ -18,8 +18,8 @@
   extensionality — not arithmetic), we model a Python float by its IEEE-754 bit
   pattern and prove STRUCTURE EXTENSIONALITY, which is genuinely provable and
   registers the contract at depth-1 under the R6-grandfathered Diamond gate
-  (PMAT-475a). Arithmetic-shaped tiers (ordered-field laws, the NaN/-0.0 edge
-  semantics) ratchet in later sub-slices.
+  (PMAT-475a). Arithmetic-shaped tiers (ordered-field laws, the NaN and signed-zero
+  edge semantics) ratchet in later sub-slices.
 
   Cross-references:
     * Code lane:   crates/xpile-meta-hir/src/lib.rs (Type::F64, applicable_contracts),
