@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use xpile_backend::{BackendConfig, Profile, Target};
 use xpile_core::TranspileSession;
 use xpile_ffi_manifest::{resolve_boundary_to_langs, FfiManifest};
+use xpile_meta_hir::SourceLang;
 
 #[derive(Parser)]
 #[command(name = "xpile", version, about = "Polyglot transpile workbench")]
@@ -135,6 +136,12 @@ enum Cmd {
         /// wrappers) to this path. Omit to only report the manifest.
         #[arg(long)]
         emit_shims: Option<PathBuf>,
+        /// Phase 5a: emit a buildable Cargo workspace (a `build.rs` that
+        /// cc-compiles the C side + links the emitted shims, plus the non-C
+        /// modules lowered to Rust) to this directory. `cargo build` it to
+        /// compile + link the hybrid artifact.
+        #[arg(long)]
+        emit_workspace: Option<PathBuf>,
     },
 }
 
@@ -162,7 +169,16 @@ fn main() -> Result<()> {
             contracts_dir,
             json,
         } => diamond(&contracts_dir, json),
-        Cmd::Hybrid { path, emit_shims } => hybrid(&session, &path, emit_shims.as_deref()),
+        Cmd::Hybrid {
+            path,
+            emit_shims,
+            emit_workspace,
+        } => hybrid(
+            &session,
+            &path,
+            emit_shims.as_deref(),
+            emit_workspace.as_deref(),
+        ),
     }
 }
 
@@ -175,12 +191,21 @@ fn main() -> Result<()> {
 /// each resolved boundary, or the unresolved ones with a non-zero exit (the
 /// `manifest_completeness` invariant of `C-FFI-CPYTHON-EXT`). Oracle execution
 /// (Phase 3/5) is a later increment.
-fn hybrid(session: &TranspileSession, path: &Path, emit_shims: Option<&Path>) -> Result<()> {
+fn hybrid(
+    session: &TranspileSession,
+    path: &Path,
+    emit_shims: Option<&Path>,
+    emit_workspace: Option<&Path>,
+) -> Result<()> {
     let sources = collect_source_files(session, path);
     if sources.is_empty() {
         bail!("no source files xpile recognises under {}", path.display());
     }
     let mut modules = Vec::new();
+    // PMAT-901: retain each C file's (filename, source) so `--emit-workspace` can
+    // write it into the workspace for `build.rs` to cc-compile — the Module IR
+    // does not carry the original source text.
+    let mut c_sources: Vec<(String, String)> = Vec::new();
     for src in sources {
         let contents =
             std::fs::read_to_string(&src).with_context(|| format!("reading {}", src.display()))?;
@@ -192,6 +217,14 @@ fn hybrid(session: &TranspileSession, path: &Path, emit_shims: Option<&Path>) ->
         let module = frontend
             .parse_and_lower(&src, &contents)
             .with_context(|| format!("parse_and_lower failed for {}", src.display()))?;
+        if module.source_lang == SourceLang::C {
+            let fname = src
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(String::from)
+                .unwrap_or_else(|| "source.c".to_string());
+            c_sources.push((fname, contents));
+        }
         modules.push(module);
     }
 
@@ -245,6 +278,46 @@ fn hybrid(session: &TranspileSession, path: &Path, emit_shims: Option<&Path>) ->
                             eprintln!("    {u}");
                         }
                         bail!("{} unshimmable FFI boundary(ies)", err.unsupported.len());
+                    }
+                }
+            }
+            // PMAT-901 Phase 5a: with `--emit-workspace <dir>`, emit a buildable
+            // Cargo workspace — the C side as cc-compiled + linked objects, the
+            // non-C modules lowered to Rust, and the reconciled `extern "C"` shims
+            // wiring them together. `cargo build` it for the first executing
+            // hybrid artifact.
+            if let Some(ws_dir) = emit_workspace {
+                let rust_backend = session
+                    .backends
+                    .iter()
+                    .find(|b| b.targets().contains(&Target::Rust))
+                    .context("no Rust backend registered")?;
+                let config = BackendConfig {
+                    target: Target::Rust,
+                    profile: Profile::RustOut,
+                    hardware: None,
+                };
+                let mut rust_src = String::new();
+                for m in &modules {
+                    // The C side becomes the linked object; Shell can't lower to
+                    // Rust. Everything else (Python/Ruchy/Rust/Lean) is the Rust src.
+                    if matches!(m.source_lang, SourceLang::C | SourceLang::Shell) {
+                        continue;
+                    }
+                    let artifact = rust_backend
+                        .lower(m, &config)
+                        .with_context(|| format!("lowering module `{}` to Rust", m.name))?;
+                    rust_src.push_str(&artifact.primary);
+                    rust_src.push('\n');
+                }
+                match manifest.emit_hybrid_workspace(&modules, &c_sources, &rust_src, ws_dir) {
+                    Ok(()) => println!(
+                        "  emitted hybrid workspace → {} (run `cargo build` to compile + link)",
+                        ws_dir.display()
+                    ),
+                    Err(err) => {
+                        eprintln!("xpile hybrid: workspace emission FAILED: {err}");
+                        bail!("hybrid workspace emit failed");
                     }
                 }
             }
