@@ -24,10 +24,11 @@ open Lake DSL
   — so this job is exactly the check that makes "provable" un-falsifiable by
   `grep sorry`.
 
-  PILOT = the 15 modules that elaborate clean under bare core with
+  PILOT = the 16 modules that elaborate clean under bare core with
   warnings-as-errors (9 from PMAT-903 + 2 PMAT-904 + FfiShellSubprocess/907 +
-  CFloatArith/912 + XpileFrontendTrait/913 + XlateRustFnToLeanThm/914).
-  The known-incomplete remainder is 7 modules with REAL elaboration errors
+  CFloatArith/912 + XpileFrontendTrait/913 + XlateRustFnToLeanThm/914 +
+  XlateLeanToRust/915).
+  The known-incomplete remainder is 6 modules with REAL elaboration errors
   (termination / type-mismatch / synthesis failures — NOT sorries), enumerated
   honestly in `PROVABILITY-INVENTORY.md` and deliberately EXCLUDED here so this
   advisory job is GREEN without overstating what is proven. Discharging the
@@ -89,5 +90,17 @@ lean_lib «XpileContractsPilot» where
     -- `n.val`, cascading into the `n.property` and `Subtype.ext` type
     -- mismatches. Fix = use the positional `.1` Subtype projection in the body
     -- (`n.1`), breaking the self-reference; all three errors clear at once.
-    `XlateRustFnToLeanThm          -- C-XLATE-RUST-FN-TO-LEAN-THM (PMAT-914)
+    `XlateRustFnToLeanThm,         -- C-XLATE-RUST-FN-TO-LEAN-THM (PMAT-914)
+    -- PMAT-915 (backlog slice): discharged the next cheapest termination-led
+    -- head — again NOT a genuine termination argument but the PMAT-914 NAME
+    -- SHADOWING class: `def WarningLineCount.val (w) := w.val` resolved `w.val`
+    -- by dot-notation to *itself* (a non-terminating self-call, `w` unchanged),
+    -- poisoning the derived `DecidableEq`, the `.property` refinement theorems,
+    -- and the `Subtype.ext` extensionality proof. Two-part fix: (a) positional
+    -- `.1` Subtype projection in the body breaks the self-reference (clears the
+    -- termination + `.property` + `Subtype.ext` errors at once); (b) an explicit
+    -- `DecidableEq WarningLineCount` instance (`unfold` + `infer_instance`) so
+    -- the two structures `deriving DecidableEq` over that opaque-`def` subtype
+    -- field synthesize. Layer-2 Lean→Rust translation now machine-checked.
+    `XlateLeanToRust               -- C-XLATE-LEAN-TO-RUST       (PMAT-915)
   ]
