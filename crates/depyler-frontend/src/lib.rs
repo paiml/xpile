@@ -12464,6 +12464,15 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         // desugar as f-string interpolation (PMAT-623/624).
                         Type::List(elem) => return build_list_repr(value, elem.as_ref()),
                         Type::Tuple(elems) => return build_tuple_repr(value, &elems),
+                        // PMAT-920 (HUNT-V17 #16 / CF-2): `str(d)` over a dict-typed
+                        // value → Python's `{k: v, ...}` repr (string keys/values
+                        // quoted). Without this it fell through the `_` arm to a
+                        // generic call that mis-inferred I64 → a `-> str` return
+                        // rejected ("body produces I64"). The backing IndexMap
+                        // iterates in insertion order, matching CPython 3.7+.
+                        Type::Dict(k_ty, v_ty) => {
+                            return build_dict_repr(value, k_ty.as_ref(), v_ty.as_ref())
+                        }
                         // PMAT-779 (HUNT-V17 #19): `str(s)` over a str-typed value
                         // is the identity (Python `str(s) is s`). Without this it
                         // fell through to a generic call that inferred I64 / emitted
@@ -14994,6 +15003,66 @@ fn build_list_repr(list_expr: Expr, elem_ty: &Type) -> Result<Expr, FrontendErro
         rhs: Box::new(Expr::Concat {
             lhs: Box::new(joined),
             rhs: Box::new(Expr::LitStr("]".to_string())),
+        }),
+    })
+}
+
+/// PMAT-920 (HUNT-V17 #16 / CF-2): build Python's dict `str`/`repr` —
+/// `"{" + ", ".join(repr(k) + ": " + repr(v) for k, v in d.items()) + "}"` for a
+/// `dict[k_ty, v_ty]` value. Reuses the `DictView::Items` materializer (a
+/// `Vec<(K, V)>`, which the codegen iterates in IndexMap *insertion* order — the
+/// same order CPython 3.7+ preserves, so the rendered string differential-matches
+/// `str(d)` byte-for-byte) + `Map` + `str.join` + `Concat` + the per-element
+/// `pyrepr_of` (string keys/values gain Python quotes). The empty dict falls out
+/// as `{}` (an empty `Map` → `", ".join([])` → `""`). NO new IR. Mirrors
+/// [`build_list_repr`].
+fn build_dict_repr(dict_expr: Expr, k_ty: &Type, v_ty: &Type) -> Result<Expr, FrontendError> {
+    let items = Expr::DictView {
+        dict: Box::new(dict_expr),
+        kind: DictViewKind::Items,
+    };
+    let param = "__de";
+    // Each item is a `(K, V)` tuple bound to `__de` inside the `Map` lambda;
+    // `repr(k): repr(v)` reuses the per-type `pyrepr_of` (so a `str` key/value
+    // is quoted, matching Python's `{'a': 1}` over `str({'a': 1})`).
+    let key_repr = pyrepr_of(
+        Expr::TupleIndex {
+            tuple: Box::new(Expr::Ident(param.to_string())),
+            index: 0,
+        },
+        k_ty,
+    )?;
+    let val_repr = pyrepr_of(
+        Expr::TupleIndex {
+            tuple: Box::new(Expr::Ident(param.to_string())),
+            index: 1,
+        },
+        v_ty,
+    )?;
+    let item_repr = Expr::Concat {
+        lhs: Box::new(key_repr),
+        rhs: Box::new(Expr::Concat {
+            lhs: Box::new(Expr::LitStr(": ".to_string())),
+            rhs: Box::new(val_repr),
+        }),
+    };
+    let mapped = Expr::Map {
+        list: Box::new(items),
+        lambda: SortKey {
+            param: param.to_string(),
+            body: Box::new(item_repr),
+        },
+    };
+    let joined = Expr::StrMethod {
+        recv: Box::new(Expr::LitStr(", ".to_string())),
+        op: StrMethodOp::Join,
+        args: vec![mapped],
+    };
+    Ok(Expr::Concat {
+        lhs: Box::new(Expr::LitStr("{".to_string())),
+        rhs: Box::new(Expr::Concat {
+            lhs: Box::new(joined),
+            rhs: Box::new(Expr::LitStr("}".to_string())),
         }),
     })
 }
