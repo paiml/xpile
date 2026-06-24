@@ -8,7 +8,7 @@ Reproduce everything below with:
 
 ```sh
 cd contracts/lean
-lake build                          # builds the PILOT (green ⇔ all 12 elaborate)
+lake build                          # builds the PILOT (green ⇔ all 17 elaborate)
 for f in *.lean; do lean "$f"; echo "$f rc=$?"; done   # full per-file status
 ```
 
@@ -39,10 +39,10 @@ elaborates to `sorryAx`) **cannot survive a green `lake build`**. That is the
 check that makes "provable" un-falsifiable by `grep sorry` for the pilot
 contracts — the actual machine-checked guarantee, not a string scan.
 
-## PILOT — machine-checked (16 modules, in `lakefile.lean` roots)
+## PILOT — machine-checked (17 modules, in `lakefile.lean` roots)
 
 These elaborate clean under bare Lean 4 core **with warnings-as-errors** — no
-`sorry`, no `axiom`, no Mathlib. `lake build` is green iff all sixteen still do.
+`sorry`, no `axiom`, no Mathlib. `lake build` is green iff all seventeen still do.
 
 | Module | Contract |
 |--------|----------|
@@ -62,6 +62,7 @@ These elaborate clean under bare Lean 4 core **with warnings-as-errors** — no
 | `XpileFrontendTrait` | `C-XPILE-FRONTEND-TRAIT` (PMAT-913: precedence-paren on `parse_and_lower_function_diamond` clause (c) + `tauto`→`decide` on `source_lang_enum_completeness_diamond`) |
 | `XlateRustFnToLeanThm` | `C-XLATE-RUST-FN-TO-LEAN-THM` (PMAT-914: name-shadowing fix — `NonEmptyPreconditionList.val` body used `n.val` (self-recursion) → positional `.1` Subtype projection) |
 | `XlateLeanToRust` | `C-XLATE-LEAN-TO-RUST` (PMAT-915: same name-shadowing class — `WarningLineCount.val` body used `w.val` (self-recursion) → positional `.1` projection + explicit `DecidableEq WarningLineCount` instance for the two `deriving DecidableEq` structs) |
+| `Notation` | `C-NOTATION-LATEX-MATH-TO-EQUATION` (PMAT-916: two already-established classes — `NonEmptyDefinition.val` body used `n.val` (name-shadowing self-recursion, PMAT-914/915) → positional `.1`; and `cases k <;> tauto` over the decidable `LatexDisplayKind` enum (Mathlib-only, PMAT-904/913) → core `cases k <;> decide`) |
 
 **PMAT-904 (Sprint Day 5) discharged the two cheapest non-elaborating files** —
 both with *real* errors, not sorries, confirming the reframed debt model:
@@ -84,7 +85,7 @@ both with *real* errors, not sorries, confirming the reframed debt model:
 Rewording to "NaN and signed-zero" restores elaboration; the theorem is now
 genuinely machine-checked.
 
-## KNOWN-INCOMPLETE — 6 modules with REAL elaboration errors (excluded)
+## KNOWN-INCOMPLETE — 5 modules with REAL elaboration errors (excluded)
 
 These do **not** elaborate today. The cause is genuine proof debt — NOT
 sorries. The dominant failure is unproved **termination** of recursive
@@ -102,32 +103,40 @@ discharged and are now in the pilot above):
 | `CompileRustToPtxMma` | 38 | fail to show termination (`:240`) + failed to synthesize |
 | `FfiCpythonExt` | 20 | fail to show termination (`:979`) |
 | `XlatePyListToVec` | 8 | fail to show termination (`:593`) + type mismatch |
-| `Bashrs` | 7 | fail to show termination (`:213`) |
-| `Notation` | 7 | fail to show termination (`:816`) — *not* the `\| sorry` ctor |
+| `Bashrs` | 7 | fail to show termination (`:213`) — name-shadow PLUS genuine Mathlib `\|·\|`/`abs_nonneg` (`:683`) |
 
 **This is the real provability debt** the machine-checked lane exposes — and it
 is honest debt, not hidden `sorry`s. PMAT-904 cleared the two cheapest
 (unknown-tactic / synthesis / `rw`-through-`def`), PMAT-913 cleared
 `XpileFrontendTrait` (precedence-paren + `tauto`→`decide`), PMAT-914 cleared
-`XlateRustFnToLeanThm`, and PMAT-915 cleared `XlateLeanToRust` — the last two
-whose `fail to show termination` first-errors turned out NOT to be genuine
-missing termination arguments but the **name-shadowing class**: a
+`XlateRustFnToLeanThm`, PMAT-915 cleared `XlateLeanToRust`, and PMAT-916 cleared
+`Notation` — their `fail to show termination` first-errors turned out NOT to be
+genuine missing termination arguments but the **name-shadowing class**: a
 `def Subtype.val (x) := x.val` body resolves `x.val` by dot-notation to *itself*
 (a non-terminating recursive call, `x` unchanged), and that broken `.val`
 poisons every downstream `.val`, cascading into the `.property` /
 `Subtype.ext` / derived-`DecidableEq` failures. The fix is the positional `.1`
 Subtype projection in the body (PMAT-915 also needed an explicit
 `DecidableEq WarningLineCount` instance for two structs `deriving DecidableEq`
-over the now-fixed subtype field). The remaining 6 are genuinely
-termination-led and are ongoing work — `Bashrs`/`Notation` (7 each) are now the
-cheapest heads. **Lesson (repeated): a `fail to show termination` first error is
-not proof the fault is termination — check for a self-naming `.val`/projection
-helper first.**
+over the now-fixed subtype field; PMAT-916's `Notation` ALSO carried a
+PMAT-904/913-class Mathlib-only `cases k <;> tauto` over the decidable
+`LatexDisplayKind` enum → core `cases k <;> decide`). The remaining 5 are
+genuinely termination-led and are ongoing work — `XlatePyListToVec` (8) is now
+the cheapest by `error:` count, then `FfiCpythonExt` (20), `CompileRustToPtxMma`
+(38), `PyIntArith` (45). **`Bashrs` (7) is a mixed head:** its `:213`
+`fail to show termination` is the same name-shadowing class (`SuccessfulOutcome.val
+(s) := s.val` → `.1`), but it ALSO carries a *genuine* Mathlib gap —
+`|o.exit_code|` absolute-value notation + `abs_nonneg` at `:683`/`:693` (no
+`import Mathlib`), which needs either a core `|·|`/`abs` definition or a
+restatement; that part is real new territory, not a name-shadow. **Lesson
+(repeated): a `fail to show termination` first error is not proof the fault is
+termination — check for a self-naming `.val`/projection helper first.**
 
 ## Relationship to `audit-design.md`
 
 Day 10 (PMAT-909) truths-up `audit-design.md` to state: the Lean lane is now
-`lake`-machine-checked over a (now 16-module) pilot, the `grep sorry`/`grep
+`lake`-machine-checked over a (now 17-module) pilot, the `grep sorry`/`grep
 axiom` debt figures were a measurement artifact, and the real remaining debt is
-6 non-elaborating modules (termination-led). No over-claim: "provable" applies
+5 non-elaborating modules (termination-led, plus Bashrs's genuine Mathlib-`abs`
+gap). No over-claim: "provable" applies
 to the pilot contracts, verified by `lake build`, not by string scan.

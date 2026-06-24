@@ -814,7 +814,12 @@ def NonEmptyDefinition :=
 
 /-- Extract the underlying Silver definition. -/
 def NonEmptyDefinition.val (n : NonEmptyDefinition) : DefinitionEnvSilver :=
-  n.val
+  -- Positional `.1` Subtype projection, NOT `n.val`: dot-notation `n.val`
+  -- resolves to THIS definition (a non-terminating self-call, `n` unchanged) —
+  -- the PMAT-914/915 name-shadowing class. `.1` breaks the self-reference so
+  -- the def terminates and the downstream `.val`/`.property`/`Subtype.ext`
+  -- proofs (lines ~858, ~1477) elaborate against the real underlying value.
+  n.1
 
 /-- Gold-tier lowering: extracts the structural definition data
     from the non-empty wrapper. The non-emptiness witness is
@@ -1384,7 +1389,10 @@ theorem latex_display_kind_enum_completeness_diamond (k : LatexDisplayKind) :
     ∧ (k = LatexDisplayKind.displayMath ∨ k ≠ LatexDisplayKind.displayMath)
     ∧ (LatexDisplayKind.displayMath ≠ LatexDisplayKind.align) := by
   refine ⟨?_, ?_, ?_, ?_⟩
-  · cases k <;> tauto
+  -- core `decide` over the decidable LatexDisplayKind disjunction (Mathlib
+  -- `tauto` is unavailable under bare core — same fix as PMAT-904/913, cf.
+  -- the already-green `decide` on clause (d) below) — PMAT-916
+  · cases k <;> decide
   · rfl
   · by_cases h : k = LatexDisplayKind.displayMath
     · exact Or.inl h
