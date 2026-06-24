@@ -1388,6 +1388,10 @@ fn escape_rust_str(s: &str) -> String {
 fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
     match t {
         Type::I64 => out.push_str("i64"),
+        // PMAT-909: a C `long`/`int64_t` — a distinct 64-bit-ABI width,
+        // rendered as Rust `i64` (value-compatible with I64; the C ABI
+        // distinction lives in xpile-ffi-manifest's `c_abi_type`).
+        Type::CLong => out.push_str("i64"),
         // PMAT-477 (R8): Python `float` → Rust `f64`.
         Type::F64 => out.push_str("f64"),
         Type::Bool => out.push_str("bool"),
@@ -4321,29 +4325,76 @@ impl Backend for RustBackend {
 // This mirrors the standalone-decy → C-C-INT-ARITH plan in
 // `sub/v0.2.0-decy-merger.md`; the contract substrate is queued.
 
+/// PMAT-909: the Rust integer width a C function is emitted at. C `int`
+/// (`Type::I64`) → `i32` (fixed-width, wrapping); C `long`/`int64_t`
+/// (`Type::CLong`) → `i64`. A single function is emitted at ONE width —
+/// "widest wins": if its return, any param, or any local is `CLong`, the
+/// whole function rides `i64` (value-preserving — `int` values fit in
+/// `i64`; the only difference is the overflow-wrap width, and widening
+/// never truncates). A pure-`int` function stays `i32`.
+#[derive(Clone, Copy)]
+struct CWidth {
+    rust_ty: &'static str,
+    lit_suffix: &'static str,
+}
+
+const C_WIDTH_I32: CWidth = CWidth {
+    rust_ty: "i32",
+    lit_suffix: "i32",
+};
+const C_WIDTH_I64: CWidth = CWidth {
+    rust_ty: "i64",
+    lit_suffix: "i64",
+};
+
+fn c_function_width(f: &Function) -> CWidth {
+    let any_clong = matches!(f.return_type, Type::CLong)
+        || f.params.iter().any(|p| matches!(p.ty, Type::CLong))
+        || c_stmts_have_clong(&f.body.stmts);
+    if any_clong {
+        C_WIDTH_I64
+    } else {
+        C_WIDTH_I32
+    }
+}
+
+fn c_stmts_have_clong(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(|s| match s {
+        Stmt::Let { ty, .. } => matches!(ty, Type::CLong),
+        Stmt::While { body, .. } => c_stmts_have_clong(body),
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => c_stmts_have_clong(then_body) || c_stmts_have_clong(else_body),
+        _ => false,
+    })
+}
+
 fn emit_c_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
     // Forward-reference citation (substrate queued, same posture as the
     // dict lane citing C-XLATE-PY-DICT-TO-HASHMAP before it existed).
     writeln!(out, "// xpile-contract: C-C-INT-ARITH")?;
+    let w = c_function_width(f);
     write!(out, "pub fn {}(", f.name)?;
     for (i, p) in f.params.iter().enumerate() {
         if i > 0 {
             write!(out, ", ")?;
         }
-        write!(out, "{}: i32", p.name)?;
+        write!(out, "{}: {}", p.name, w.rust_ty)?;
     }
-    writeln!(out, ") -> i32 {{")?;
+    writeln!(out, ") -> {} {{", w.rust_ty)?;
     for stmt in &f.body.stmts {
-        emit_c_stmt(out, stmt, "    ")?;
+        emit_c_stmt(out, stmt, "    ", w)?;
     }
     write!(out, "    ")?;
-    emit_c_expr(out, &f.body.trailing_return)?;
+    emit_c_expr(out, &f.body.trailing_return, w)?;
     writeln!(out)?;
     writeln!(out, "}}")?;
     Ok(())
 }
 
-fn emit_c_stmt(out: &mut String, stmt: &Stmt, indent: &str) -> Result<(), CodegenError> {
+fn emit_c_stmt(out: &mut String, stmt: &Stmt, indent: &str, w: CWidth) -> Result<(), CodegenError> {
     match stmt {
         Stmt::Let {
             name,
@@ -4352,31 +4403,31 @@ fn emit_c_stmt(out: &mut String, stmt: &Stmt, indent: &str) -> Result<(), Codege
             ..
         } => {
             let kw = if *mutable { "let mut" } else { "let" };
-            write!(out, "{indent}{kw} {name}: i32 = ")?;
-            emit_c_expr(out, value)?;
+            write!(out, "{indent}{kw} {name}: {} = ", w.rust_ty)?;
+            emit_c_expr(out, value, w)?;
             writeln!(out, ";")?;
             Ok(())
         }
         Stmt::Assign { name, value } => {
             write!(out, "{indent}{name} = ")?;
-            emit_c_expr(out, value)?;
+            emit_c_expr(out, value, w)?;
             writeln!(out, ";")?;
             Ok(())
         }
         // PMAT-479 (R10): C early `return <expr>;` (guard clause).
         Stmt::Return(e) => {
             write!(out, "{indent}return ")?;
-            emit_c_expr(out, e)?;
+            emit_c_expr(out, e, w)?;
             writeln!(out, ";")?;
             Ok(())
         }
         Stmt::While { cond, body } => {
             write!(out, "{indent}while ")?;
-            emit_c_expr(out, cond)?;
+            emit_c_expr(out, cond, w)?;
             writeln!(out, " {{")?;
             let inner = format!("{indent}    ");
             for s in body {
-                emit_c_stmt(out, s, &inner)?;
+                emit_c_stmt(out, s, &inner, w)?;
             }
             writeln!(out, "{indent}}}")?;
             Ok(())
@@ -4389,18 +4440,18 @@ fn emit_c_stmt(out: &mut String, stmt: &Stmt, indent: &str) -> Result<(), Codege
             else_body,
         } => {
             write!(out, "{indent}if ")?;
-            emit_c_expr(out, cond)?;
+            emit_c_expr(out, cond, w)?;
             writeln!(out, " {{")?;
             let inner = format!("{indent}    ");
             for s in then_body {
-                emit_c_stmt(out, s, &inner)?;
+                emit_c_stmt(out, s, &inner, w)?;
             }
             if else_body.is_empty() {
                 writeln!(out, "{indent}}}")?;
             } else {
                 writeln!(out, "{indent}}} else {{")?;
                 for s in else_body {
-                    emit_c_stmt(out, s, &inner)?;
+                    emit_c_stmt(out, s, &inner, w)?;
                 }
                 writeln!(out, "{indent}}}")?;
             }
@@ -4412,28 +4463,31 @@ fn emit_c_stmt(out: &mut String, stmt: &Stmt, indent: &str) -> Result<(), Codege
     }
 }
 
-fn emit_c_expr(out: &mut String, e: &Expr) -> Result<(), CodegenError> {
+fn emit_c_expr(out: &mut String, e: &Expr, w: CWidth) -> Result<(), CodegenError> {
     match e {
-        Expr::LitInt(v) => write!(out, "{v}i32")?,
+        // PMAT-909: the literal suffix tracks the function width (`i32`
+        // for C `int`, `i64` for `long`/`int64_t`) so a wider-int body
+        // is internally type-consistent.
+        Expr::LitInt(v) => write!(out, "{v}{}", w.lit_suffix)?,
         Expr::Ident(name) => write!(out, "{name}")?,
-        Expr::BinOp { op, lhs, rhs } => emit_c_binop(out, *op, lhs, rhs)?,
+        Expr::BinOp { op, lhs, rhs } => emit_c_binop(out, *op, lhs, rhs, w)?,
         Expr::UnOp { op, operand } => match op {
             // C unary minus on `int` is wrapping (INT_MIN negation is UB
             // in C; `wrapping_neg` is the sound deterministic discharge).
             UnOp::Neg => {
                 write!(out, "(")?;
-                emit_c_expr(out, operand)?;
+                emit_c_expr(out, operand, w)?;
                 write!(out, ").wrapping_neg()")?;
             }
             UnOp::Not => {
                 write!(out, "!(")?;
-                emit_c_expr(out, operand)?;
+                emit_c_expr(out, operand, w)?;
                 write!(out, ")")?;
             }
             // PMAT-502fb: bitwise invert — Rust `!` on a signed integer.
             UnOp::BitNot => {
                 write!(out, "!(")?;
-                emit_c_expr(out, operand)?;
+                emit_c_expr(out, operand, w)?;
                 write!(out, ")")?;
             }
         },
@@ -4443,11 +4497,11 @@ fn emit_c_expr(out: &mut String, e: &Expr) -> Result<(), CodegenError> {
             else_expr,
         } => {
             write!(out, "if ")?;
-            emit_c_expr(out, cond)?;
+            emit_c_expr(out, cond, w)?;
             write!(out, " {{ ")?;
-            emit_c_expr(out, then_expr)?;
+            emit_c_expr(out, then_expr, w)?;
             write!(out, " }} else {{ ")?;
-            emit_c_expr(out, else_expr)?;
+            emit_c_expr(out, else_expr, w)?;
             write!(out, " }}")?;
         }
         Expr::Call { callee, args } => {
@@ -4456,7 +4510,7 @@ fn emit_c_expr(out: &mut String, e: &Expr) -> Result<(), CodegenError> {
                 if i > 0 {
                     write!(out, ", ")?;
                 }
-                emit_c_expr(out, a)?;
+                emit_c_expr(out, a, w)?;
             }
             write!(out, ")")?;
         }
@@ -4470,23 +4524,31 @@ fn emit_c_expr(out: &mut String, e: &Expr) -> Result<(), CodegenError> {
     Ok(())
 }
 
-fn emit_c_binop(out: &mut String, op: BinOp, lhs: &Expr, rhs: &Expr) -> Result<(), CodegenError> {
+fn emit_c_binop(
+    out: &mut String,
+    op: BinOp,
+    lhs: &Expr,
+    rhs: &Expr,
+    w: CWidth,
+) -> Result<(), CodegenError> {
     // Arithmetic: wrapping (C signed overflow is UB → deterministic
     // two's-complement). Comparisons / logicals: plain infix, producing
     // a Rust `bool` (correct for `if`/`&&`/`||` operand positions, which
-    // is where the C frontend places them).
+    // is where the C frontend places them). The `wrapping_*` methods are
+    // width-agnostic in syntax — they wrap at the operand's width (i32 or
+    // the PMAT-909 i64) without a suffix change.
     let wrapping = |out: &mut String, method: &str| -> Result<(), CodegenError> {
         write!(out, "(")?;
-        emit_c_expr(out, lhs)?;
+        emit_c_expr(out, lhs, w)?;
         write!(out, ").{method}(")?;
-        emit_c_expr(out, rhs)?;
+        emit_c_expr(out, rhs, w)?;
         write!(out, ")")?;
         Ok(())
     };
     let infix = |out: &mut String, sym: &str| -> Result<(), CodegenError> {
-        emit_c_expr(out, lhs)?;
+        emit_c_expr(out, lhs, w)?;
         write!(out, " {sym} ")?;
-        emit_c_expr(out, rhs)?;
+        emit_c_expr(out, rhs, w)?;
         Ok(())
     };
     match op {
@@ -4696,5 +4758,66 @@ mod tests {
         // sanity: balanced braces and trailing newline
         assert_eq!(rust.matches('{').count(), rust.matches('}').count());
         assert!(rust.ends_with('\n'));
+    }
+
+    fn c_module(name: &str, f: Function) -> Module {
+        Module {
+            name: name.into(),
+            source_lang: SourceLang::C,
+            items: vec![Item::Function(f)],
+            ffi_boundaries: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn c_emit_long_function_rides_i64_width() {
+        // PMAT-909: a `long`-typed C function emits at i64 width — i64
+        // signature, i64-suffixed literals, i64 wrapping. A pure-`int`
+        // function stays at i32.
+        let widen = Function {
+            name: "widen".into(),
+            params: vec![Param {
+                name: "x".into(),
+                ty: Type::CLong,
+                mutable: false,
+            }],
+            return_type: Type::CLong,
+            body: Block {
+                stmts: vec![Stmt::Let {
+                    name: "acc".into(),
+                    ty: Type::CLong,
+                    value: Expr::BinOp {
+                        op: BinOp::Add,
+                        lhs: Box::new(Expr::Ident("x".into())),
+                        rhs: Box::new(Expr::LitInt(1)),
+                    },
+                    mutable: false,
+                }],
+                trailing_return: Expr::Ident("acc".into()),
+            },
+        };
+        let rust = emit_module(&c_module("w", widen)).expect("emit ok");
+        assert!(
+            rust.contains("pub fn widen(x: i64) -> i64"),
+            "long C fn must ride i64 width: {rust}"
+        );
+        assert!(rust.contains("let acc: i64 ="), "long local is i64: {rust}");
+        assert!(rust.contains("1i64"), "literal suffix tracks width: {rust}");
+        assert!(rust.contains("wrapping_add"), "C arithmetic stays wrapping");
+        assert!(!rust.contains("i32"), "no i32 leaks into a long fn: {rust}");
+    }
+
+    #[test]
+    fn c_emit_int_function_stays_i32() {
+        // Regression guard: PMAT-909 must NOT widen a pure-`int` C function.
+        let rust = emit_module(&c_module("a", add_fn())).expect("emit ok");
+        assert!(
+            rust.contains("pub fn add(a: i32, b: i32) -> i32"),
+            "int C fn stays i32: {rust}"
+        );
+        assert!(
+            !rust.contains("i64"),
+            "no i64 widening for a pure-int fn: {rust}"
+        );
     }
 }

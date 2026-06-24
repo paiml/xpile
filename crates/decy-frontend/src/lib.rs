@@ -5,8 +5,10 @@
 //! replaces the v0.1.0 35-line stub that returned an empty module.
 //!
 //! Supported subset (slice 1):
-//!   - `int` function definitions with `int` parameters
-//!   - local `int` declarations (`int x = <expr>;`)
+//!   - `int` / `long` / `int64_t` function definitions with `int` / `long`
+//!     parameters (PMAT-909: `long`/`int64_t` lower to the distinct 64-bit
+//!     `Type::CLong` width, kept apart from the 32-bit-`int`-backed `I64`)
+//!   - local `int` / `long` declarations (`int x = <expr>;`)
 //!   - a trailing `return <expr>;`
 //!   - expressions: integer literals, identifiers, calls (recursion),
 //!     `+ - *`, comparisons (`< <= > >= == !=`), `&& ||`, unary `- !`,
@@ -18,9 +20,10 @@
 //! C arithmetic semantics (fixed-width `i32`, wrapping overflow) are
 //! realised in the Rust backend's C emit path keyed on
 //! `SourceLang::C`; this frontend keeps the meta-HIR clean (`int` →
-//! `Type::I64`, the backend narrows to `i32`). The governing contract
-//! `C-C-INT-ARITH` is queued (capability-ahead-of-contract, mirroring
-//! the v0.1.2 dict lane).
+//! `Type::I64`, the backend narrows to `i32`; PMAT-909 `long`/`int64_t`
+//! → `Type::CLong`, which the C emit path keeps at `i64`). The governing
+//! contract `C-C-INT-ARITH` is queued (capability-ahead-of-contract,
+//! mirroring the v0.1.2 dict lane).
 
 use std::path::Path;
 use xpile_frontend::{Frontend, FrontendError};
@@ -62,9 +65,10 @@ impl Frontend for CFrontend {
 
 #[derive(Debug, Clone, PartialEq)]
 enum Tok {
-    Int,    // `int` keyword
+    Int,    // `int` keyword (C 32-bit int → meta-HIR I64, ABI c_int)
+    Long, // `long` / `long long` / `int64_t` (PMAT-909): 64-bit C int → meta-HIR CLong, ABI c_longlong
     Return, // `return` keyword
-    Void,   // `void` keyword
+    Void, // `void` keyword
     Ident(String),
     Num(i64),
     LParen,
@@ -234,6 +238,11 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
                 let word = &src[start..i];
                 toks.push(match word {
                     "int" => Tok::Int,
+                    // PMAT-909: a wider C integer. `long`, `int64_t`, and the
+                    // fixed-width `<stdint.h>` 64-bit aliases all lex to one
+                    // `Long` token; the parser folds a following `long`
+                    // (`long long`) into the same width.
+                    "long" | "int64_t" | "int_least64_t" | "int_fast64_t" => Tok::Long,
                     "return" => Tok::Return,
                     "void" => Tok::Void,
                     "while" => Tok::While,
@@ -294,8 +303,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function(&mut self) -> Result<Function, String> {
-        // `int NAME ( params ) { body }`
-        self.eat(&Tok::Int)?;
+        // `<int|long> NAME ( params ) { body }` — PMAT-909: the return
+        // type carries its own width (`long sq(...)` returns `CLong`).
+        let return_type = self.parse_c_int_type()?;
         let name = self.parse_ident()?;
         self.eat(&Tok::LParen)?;
         let params = self.parse_params()?;
@@ -306,7 +316,7 @@ impl<'a> Parser<'a> {
         Ok(Function {
             name,
             params,
-            return_type: Type::I64,
+            return_type,
             body,
         })
     }
@@ -322,11 +332,11 @@ impl<'a> Parser<'a> {
             return Ok(params);
         }
         loop {
-            self.eat(&Tok::Int)?;
+            let ty = self.parse_c_int_type()?;
             let name = self.parse_ident()?;
             params.push(Param {
                 name,
-                ty: Type::I64,
+                ty,
                 mutable: false,
             });
             match self.peek() {
@@ -373,15 +383,17 @@ impl<'a> Parser<'a> {
     /// body is rejected since the meta-HIR has a single trailing return).
     fn parse_stmt(&mut self, fn_name: &str) -> Result<Stmt, String> {
         match self.peek() {
-            Some(Tok::Int) => {
-                self.bump();
+            // PMAT-909: a local decl begins with a C integer type token
+            // (`int x = …;` or `long x = …;`), carrying its own width.
+            Some(Tok::Int) | Some(Tok::Long) => {
+                let ty = self.parse_c_int_type()?;
                 let name = self.parse_ident()?;
                 self.eat(&Tok::Assign)?;
                 let value = self.parse_expr()?;
                 self.eat(&Tok::Semi)?;
                 Ok(Stmt::Let {
                     name,
-                    ty: Type::I64,
+                    ty,
                     value,
                     mutable: false,
                 })
@@ -396,7 +408,7 @@ impl<'a> Parser<'a> {
                 Ok(Stmt::Assign { name, value })
             }
             other => Err(format!(
-                "function `{fn_name}`: unexpected token {other:?} — supported statements: `int x = e;`, `x = e;`, `if (c) {{ … }} else {{ … }}`, `while (c) {{ … }}`, then a final `return e;`"
+                "function `{fn_name}`: unexpected token {other:?} — supported statements: `int x = e;`, `long x = e;`, `x = e;`, `if (c) {{ … }} else {{ … }}`, `while (c) {{ … }}`, then a final `return e;`"
             )),
         }
     }
@@ -476,6 +488,32 @@ impl<'a> Parser<'a> {
         match self.bump() {
             Some(Tok::Ident(s)) => Ok(s.clone()),
             other => Err(format!("expected identifier, found {other:?}")),
+        }
+    }
+
+    /// PMAT-909: consume a C integer type token and return its distinct
+    /// meta-HIR width. `int` → [`Type::I64`] (the 32-bit C `int`, which
+    /// the C emit path narrows to `i32` and the FFI ABI maps to `c_int`).
+    /// `long` / `int64_t` → [`Type::CLong`] (a 64-bit C integer the FFI
+    /// ABI maps to `c_longlong` instead of narrowing to `c_int`). A
+    /// trailing second `long` (`long long`) folds into the same width.
+    fn parse_c_int_type(&mut self) -> Result<Type, String> {
+        match self.peek() {
+            Some(Tok::Int) => {
+                self.bump();
+                Ok(Type::I64)
+            }
+            Some(Tok::Long) => {
+                self.bump();
+                // `long long` — fold the optional second `long`.
+                if matches!(self.peek(), Some(Tok::Long)) {
+                    self.bump();
+                }
+                Ok(Type::CLong)
+            }
+            other => Err(format!(
+                "expected a C integer type (`int`, `long`, or `int64_t`), found {other:?}"
+            )),
         }
     }
 
@@ -804,6 +842,35 @@ mod tests {
             f.body.trailing_return,
             Expr::BinOp { op: BinOp::Mod, .. }
         ));
+    }
+
+    #[test]
+    fn parses_long_as_distinct_clong_width() {
+        // PMAT-909: `long`/`int64_t` lower to the distinct 64-bit CLong
+        // width (params + return), kept apart from `int` → I64.
+        let m = lower("long widen(long x, int n) { long acc = x; return acc; }");
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
+        assert_eq!(f.return_type, Type::CLong, "long return → CLong");
+        assert_eq!(f.params[0].ty, Type::CLong, "long param → CLong");
+        assert_eq!(f.params[1].ty, Type::I64, "int param stays I64");
+        let Stmt::Let { ty, .. } = &f.body.stmts[0] else {
+            unreachable!("first stmt is the `long acc` decl")
+        };
+        assert_eq!(*ty, Type::CLong, "long local → CLong");
+    }
+
+    #[test]
+    fn int64_t_and_long_long_alias_to_clong() {
+        // `int64_t` and `long long` both fold to the single CLong width.
+        let m = lower("int64_t f(long long x) { return x; }");
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
+        assert_eq!(f.return_type, Type::CLong, "int64_t return → CLong");
+        assert_eq!(f.params.len(), 1);
+        assert_eq!(f.params[0].ty, Type::CLong, "`long long` param → CLong");
     }
 
     #[test]

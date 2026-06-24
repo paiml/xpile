@@ -304,10 +304,14 @@ impl FfiManifest {
             out.push_str(&format!("// xpile-contract: {c}\n"));
         }
         if !extern_lines.is_empty() {
-            out.push_str("// ABI note: decy models EVERY C integer as meta-HIR Type::I64\n");
-            out.push_str("//   (decy-frontend/src/lib.rs); C `int` is 32-bit, so we map\n");
-            out.push_str("//   I64 -> c_int (i32), the only width decy can mean. Revisit when\n");
-            out.push_str("//   decy gains wider-int / pointer / float lexer tokens.\n");
+            out.push_str("// ABI note: C `int` lowers to meta-HIR Type::I64 -> c_int (32-bit),\n");
+            out.push_str("//   while `long`/`int64_t` lower to the distinct Type::CLong width\n");
+            out.push_str(
+                "//   -> c_longlong (64-bit), not narrowed to c_int (PMAT-909). Float /\n",
+            );
+            out.push_str(
+                "//   pointer / string ABI tokens are the remaining decy lexer ceiling.\n",
+            );
         }
         out.push_str("#![allow(dead_code)]\n");
         if !extern_lines.is_empty() {
@@ -624,6 +628,9 @@ fn emit_direct_shim(entry: &FfiEntry, f: &Function) -> Result<ShimPart, Vec<Stri
 fn direct_native_type(ty: &Type) -> Result<String, String> {
     Ok(match ty {
         Type::I64 => "i64".to_string(),
+        // PMAT-909: a C `long`/`int64_t` is value-compatible with I64 in a
+        // native (no-C-ABI) direct call — both speak `i64`.
+        Type::CLong => "i64".to_string(),
         Type::F64 => "f64".to_string(),
         Type::Bool => "bool".to_string(),
         Type::Str => "String".to_string(),
@@ -702,16 +709,21 @@ pub fn defining_function<'a>(modules: &'a [Module], entry: &FfiEntry) -> Option<
 /// Returns `None` for types the first cut refuses (pointer/string/container/
 /// struct) rather than mis-marshal.
 ///
-/// DECY-FIDELITY CEILING: decy models every C integer as `Type::I64`, but C
-/// `int` is 32-bit, so `I64 → c_int` (the only width decy can mean). A genuine C
-/// `long`/`int64_t` boundary would ALSO arrive as `I64` and be narrowed to
-/// `c_int` — but decy cannot parse such a declaration, so no such boundary can
-/// exist in a reconciled manifest today. Revisit when decy's lexer grows
-/// wider-int / float / pointer tokens. `Bool → c_int` is a lossy forward guard
-/// (decy never produces `Bool`); `Type::Unit` is handled at the return position.
+/// DECY-FIDELITY CEILING (PMAT-909 partial lift): decy models C `int` (a
+/// 32-bit type) as `Type::I64`, so `I64 → c_int` keeps that boundary
+/// 32-bit-honest. A genuine C `long`/`int64_t` now parses to the DISTINCT
+/// `Type::CLong` width (decy-frontend, PMAT-909) and maps to `c_longlong` —
+/// no longer narrowed to `c_int`. The remaining ceiling is float/pointer/
+/// string ABI tokens (decy's lexer still lacks them). `Bool → c_int` is a
+/// lossy forward guard (decy never produces `Bool`); `Type::Unit` is handled
+/// at the return position.
 fn c_abi_type(ty: &Type) -> Option<&'static str> {
     match ty {
         Type::I64 | Type::Bool => Some("::std::os::raw::c_int"),
+        // PMAT-909: a 64-bit C integer rides the `long long` ABI slot
+        // (always ≥64-bit, unlike platform-variable `long`) — never
+        // narrowed to `c_int`.
+        Type::CLong => Some("::std::os::raw::c_longlong"),
         Type::F64 => Some("::std::os::raw::c_double"),
         _ => None,
     }
@@ -722,7 +734,9 @@ fn c_abi_type(ty: &Type) -> Option<&'static str> {
 fn wrapper_native(ty: &Type) -> &'static str {
     match ty {
         Type::F64 => "f64",
-        // I64 and the Bool forward-guard both ride the c_int ABI slot.
+        // I64, the Bool forward-guard, and the PMAT-909 CLong all ride an
+        // `i64` native wrapper (CLong casts to/from `c_longlong`; I64 to/from
+        // `c_int`).
         _ => "i64",
     }
 }
@@ -882,6 +896,13 @@ mod tests {
         assert_eq!(c_abi_type(&Type::I64), Some("::std::os::raw::c_int"));
         assert_eq!(c_abi_type(&Type::Bool), Some("::std::os::raw::c_int"));
         assert_eq!(c_abi_type(&Type::F64), Some("::std::os::raw::c_double"));
+        // PMAT-909: a wider C integer is NOT narrowed to c_int.
+        assert_eq!(
+            c_abi_type(&Type::CLong),
+            Some("::std::os::raw::c_longlong"),
+            "long/int64_t must ride the 64-bit c_longlong ABI slot, not c_int"
+        );
+        assert_eq!(wrapper_native(&Type::CLong), "i64");
         for ty in [
             Type::Str,
             Type::List(Box::new(Type::I64)),
@@ -1196,6 +1217,37 @@ mod tests {
         assert!(
             rustc_lib_compiles("f64", &out),
             "emitted f64 shim must compile under -D warnings"
+        );
+    }
+
+    #[test]
+    fn emit_shims_clong_boundary_maps_c_longlong() {
+        // PMAT-909: a `long`/`int64_t` C boundary rides the 64-bit
+        // c_longlong ABI slot (NOT narrowed to c_int) with an i64 wrapper
+        // — the decy wider-int lift. Compiles end-to-end under -D warnings.
+        let out = emit_for("widen", vec![("x", Type::CLong)], Type::CLong).expect("emits");
+        assert!(
+            out.contains("fn widen(x: ::std::os::raw::c_longlong) -> ::std::os::raw::c_longlong;"),
+            "long boundary must use c_longlong, not c_int:\n{out}"
+        );
+        assert!(out.contains("pub fn widen_shim(x: i64) -> i64 {"));
+        assert!(out.contains("x as ::std::os::raw::c_longlong"));
+        assert!(out.contains("__r as i64"));
+        // A wider-int boundary must NEVER silently narrow to c_int.
+        let extern_block = out
+            .split("extern \"C\" {")
+            .nth(1)
+            .unwrap()
+            .split('}')
+            .next()
+            .unwrap();
+        assert!(
+            !extern_block.contains("c_int"),
+            "a CLong boundary must not narrow to c_int:\n{extern_block}"
+        );
+        assert!(
+            rustc_lib_compiles("clong", &out),
+            "emitted c_longlong shim must compile under -D warnings"
         );
     }
 
