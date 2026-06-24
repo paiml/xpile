@@ -864,6 +864,11 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), LeanCodegenError> {
         // PMAT-909: a C `long`/`int64_t` (distinct 64-bit-ABI width). Lean's
         // `Int` is unbounded — same total-function shape as I64.
         Type::CLong => out.push_str("Int"),
+        // PMAT-918: a C `unsigned`/`uint32_t` (distinct 32-bit UNSIGNED width)
+        // is non-negative, so its faithful Lean shape is `Nat` — the
+        // value-restricted analogue of `Int` for the unsigned width (the C ABI
+        // distinction `c_uint` lives in xpile-ffi-manifest's `c_abi_type`).
+        Type::CUInt => out.push_str("Nat"),
         // PMAT-477 (R8): Python `float` → Lean `Float`.
         Type::F64 => out.push_str("Float"),
         // PMAT-911: a C `float` (32-bit). Lean's `Float` is its only float

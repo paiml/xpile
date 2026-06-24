@@ -313,10 +313,14 @@ impl FfiManifest {
                 "//   -> Type::F64 -> c_double (64-bit, PMAT-910), and `float` -> the distinct\n",
             );
             out.push_str(
-                "//   Type::F32 -> c_float (32-bit, PMAT-911), not widened through c_double.\n",
+                "//   Type::F32 -> c_float (32-bit, PMAT-911), not widened through c_double,\n",
             );
             out.push_str(
-                "//   Pointer and string ABI tokens are the remaining decy lexer ceiling.\n",
+                "//   and `unsigned`/`uint32_t` -> the distinct Type::CUInt -> c_uint (32-bit\n",
+            );
+            out.push_str("//   UNSIGNED, PMAT-918), not the signed c_int.\n");
+            out.push_str(
+                "//   Pointer/string + unsigned-long ABI tokens are the remaining decy ceiling.\n",
             );
         }
         out.push_str("#![allow(dead_code)]\n");
@@ -637,6 +641,9 @@ fn direct_native_type(ty: &Type) -> Result<String, String> {
         // PMAT-909: a C `long`/`int64_t` is value-compatible with I64 in a
         // native (no-C-ABI) direct call — both speak `i64`.
         Type::CLong => "i64".to_string(),
+        // PMAT-918: a C `unsigned`/`uint32_t` direct-call shim speaks native
+        // `u32` — the signedness is preserved even off the C ABI.
+        Type::CUInt => "u32".to_string(),
         Type::F64 => "f64".to_string(),
         // PMAT-911: a C `float` direct-call shim speaks native `f32`.
         Type::F32 => "f32".to_string(),
@@ -725,8 +732,11 @@ pub fn defining_function<'a>(modules: &'a [Module], entry: &FfiEntry) -> Option<
 /// to `c_double` (PMAT-910), the FFI boundary having been F64-ready ahead of
 /// the decy lexer. C `float` now parses to the DISTINCT `Type::F32` width
 /// (decy-frontend, PMAT-911) and maps to `c_float` (a 32-bit ABI slot) — never
-/// widened through `c_double`. The remaining ceiling is pointer/string ABI
-/// tokens (decy's lexer still lacks them).
+/// widened through `c_double`. C `unsigned`/`unsigned int`/`uint32_t` now parses
+/// to the DISTINCT `Type::CUInt` width (decy-frontend, PMAT-918) and maps to the
+/// UNSIGNED `c_uint` slot — never the signed `c_int`. The remaining ceiling is
+/// pointer/string + `unsigned long` (64-bit unsigned) ABI tokens (decy's lexer
+/// still lacks them).
 /// `Bool → c_int` is a lossy forward guard (decy never produces `Bool`);
 /// `Type::Unit` is handled at the return position.
 fn c_abi_type(ty: &Type) -> Option<&'static str> {
@@ -736,6 +746,10 @@ fn c_abi_type(ty: &Type) -> Option<&'static str> {
         // (always ≥64-bit, unlike platform-variable `long`) — never
         // narrowed to `c_int`.
         Type::CLong => Some("::std::os::raw::c_longlong"),
+        // PMAT-918: a 32-bit UNSIGNED C int rides the DISTINCT `c_uint` ABI
+        // slot — never the signed `c_int` (a value ≥ 2³¹ would otherwise be
+        // reinterpreted as negative at the boundary).
+        Type::CUInt => Some("::std::os::raw::c_uint"),
         Type::F64 => Some("::std::os::raw::c_double"),
         // PMAT-911: a 32-bit C float rides the DISTINCT `c_float` ABI slot —
         // never widened through `c_double` (the 32↔64 ABI honesty held for
@@ -752,6 +766,10 @@ fn wrapper_native(ty: &Type) -> &'static str {
         Type::F64 => "f64",
         // PMAT-911: a C `float` wrapper speaks `f32` (casts to/from `c_float`).
         Type::F32 => "f32",
+        // PMAT-918: a C `unsigned`/`uint32_t` wrapper speaks `u32` (casts
+        // to/from `c_uint`) — the signedness MUST survive the wrapper, so this
+        // cannot fall through to the `i64` default below.
+        Type::CUInt => "u32",
         // I64, the Bool forward-guard, and the PMAT-909 CLong all ride an
         // `i64` native wrapper (CLong casts to/from `c_longlong`; I64 to/from
         // `c_int`).
@@ -934,6 +952,23 @@ mod tests {
             "long/int64_t must ride the 64-bit c_longlong ABI slot, not c_int"
         );
         assert_eq!(wrapper_native(&Type::CLong), "i64");
+        // PMAT-918: a 32-bit UNSIGNED C int rides the DISTINCT c_uint slot —
+        // never the signed c_int (a value ≥ 2³¹ would otherwise flip sign).
+        assert_eq!(
+            c_abi_type(&Type::CUInt),
+            Some("::std::os::raw::c_uint"),
+            "unsigned/uint32_t must ride the unsigned c_uint ABI slot, not c_int"
+        );
+        assert_ne!(
+            c_abi_type(&Type::CUInt),
+            c_abi_type(&Type::I64),
+            "CUInt and I64 must map to distinct (signedness) C ABI slots"
+        );
+        assert_eq!(
+            wrapper_native(&Type::CUInt),
+            "u32",
+            "unsigned wrapper must speak u32, never fall through to the i64 default"
+        );
         for ty in [
             Type::Str,
             Type::List(Box::new(Type::I64)),
@@ -1309,6 +1344,37 @@ mod tests {
         assert!(
             rustc_lib_compiles("clong", &out),
             "emitted c_longlong shim must compile under -D warnings"
+        );
+    }
+
+    #[test]
+    fn emit_shims_cuint_boundary_maps_c_uint() {
+        // PMAT-918: an `unsigned`/`uint32_t` C boundary rides the UNSIGNED
+        // c_uint ABI slot (NOT the signed c_int) with a u32 wrapper — the decy
+        // unsigned-int lift. Compiles end-to-end under -D warnings.
+        let out = emit_for("uwrap", vec![("x", Type::CUInt)], Type::CUInt).expect("emits");
+        assert!(
+            out.contains("fn uwrap(x: ::std::os::raw::c_uint) -> ::std::os::raw::c_uint;"),
+            "unsigned boundary must use c_uint, not c_int:\n{out}"
+        );
+        assert!(out.contains("pub fn uwrap_shim(x: u32) -> u32 {"));
+        assert!(out.contains("x as ::std::os::raw::c_uint"));
+        assert!(out.contains("__r as u32"));
+        // An unsigned boundary must NEVER ride the signed c_int (signedness flip).
+        let extern_block = out
+            .split("extern \"C\" {")
+            .nth(1)
+            .unwrap()
+            .split('}')
+            .next()
+            .unwrap();
+        assert!(
+            !extern_block.contains("c_int"),
+            "a CUInt boundary must not ride the signed c_int:\n{extern_block}"
+        );
+        assert!(
+            rustc_lib_compiles("cuint", &out),
+            "emitted c_uint shim must compile under -D warnings"
         );
     }
 
