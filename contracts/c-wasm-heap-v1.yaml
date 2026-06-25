@@ -1,0 +1,207 @@
+metadata:
+  id: C-WASM-HEAP
+  version: "1.0.0"
+  created: "2026-06-25"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Compile-time contract: how xpile-wasm-codegen lowers a string-RETURNING
+    meta-HIR op (string concatenation `a + b` / `chr(n)` / a `str` return) to
+    WebAssembly that ALLOCATES + materialises the result in linear memory —
+    the bump-allocator capability (PMAT-993, PMAT-986 slice 2).
+
+    Layer 5 of the xpile contract taxonomy (compile-time / IR), a strict
+    EXTENSION of `C-COMPILE-RUST-TO-WASM`. That contract governs scalar /
+    control / read-only-aggregate emission (incl. read-only string access —
+    a `str` param + `len(s)` + `ord(s[i])`, PMAT-986 slice 1); this one adds
+    the NEW capability of constructing strings in a bump heap. `xs[i]` /
+    `len(s)` / `ord(s[i])` stay under `C-COMPILE-RUST-TO-WASM` (no
+    allocation); a string MATERIALISATION (`Concat`, `Chr`, a `str` return)
+    is the C-WASM-HEAP capability.
+
+    The allocator is a linear-memory **bump heap**: a mutable
+    `(global $__heap_ptr (mut i32))` initialised past the static `(data)`
+    region (at `__HEAP_BASE` = 1024) and an `$__alloc(n) -> i32` that returns
+    the current bump pointer and advances it `align8(n)` (8-byte aligned).
+    Bump-only — NO free (slice-2 scope; the enabling primitive, not a
+    general allocator) — and NO `memory.grow` (the module pre-sizes one
+    64-KiB page; an over-large heap traps rather than corrupting). A
+    constructed string is the SAME length-prefixed ABI the read path uses
+    (an `i32` byte-count header at `base+0`, the UTF-8 bytes at `base+8`),
+    so a heap string composes uniformly with a str param under `len` and
+    byte-copy.
+
+    String construction is ASCII-bounded for `chr(n)` (the byte `n & 0xFF`,
+    exact for `0 ≤ n < 128`; multi-byte UTF-8 is a follow-up) — the same
+    honest restriction the slice-1 `ord(s[i])` carries. Every still-unwired
+    string-returning op (`s[i]` as a 1-char string, a string LITERAL operand
+    needing a static `(data)` segment, slicing, `str(x)`, f-strings, string
+    equality / comparison / methods) is REFUSED with a hard error rather than
+    miscompiled — a Lean-style honest refusal.
+  xpile:
+    layer: compile
+  references:
+    - "WebAssembly Core Specification 2.0 — W3C (linear memory, globals)"
+    - "WebAssembly bulk-memory operations — `memory.copy`"
+    - "WebAssembly Text Format (WAT) — the `(global …)` / `(memory …)` forms"
+    - "WABT — wat2wasm / wasm-interp (executed string-building witness toolchain)"
+    - contracts/compile-rust-to-wasm-v1.yaml
+    - contracts/xpile-backend-trait-v1.yaml
+    - docs/specifications/sub/backend-trait.md
+  depends_on:
+    - C-COMPILE-RUST-TO-WASM
+    - C-XPILE-BACKEND-TRAIT
+
+compile_targets:
+  - target: wasm
+    hardware: null
+    via:
+      - xpile-wasm-codegen
+    backend_crate: xpile-wasm-codegen
+    # PMAT-993 (2026-06-25, PMAT-986 slice 2): the string-RETURNING half of
+    # the native WASM emit lane. The bump allocator (`$__heap_ptr` global +
+    # `$__alloc`) and the first two string-constructing ops — concat `a + b`
+    # (Expr::Concat) and `chr(n)` (Expr::Chr) — materialise a length-prefixed
+    # string in linear memory and a `str` return now lowers to an `i32`
+    # heap-pointer result. The emitted WAT is genuine: the PMAT-993 slice ran
+    # it through WABT (wat2wasm assembles it; `wasm-interp --run-all-exports`
+    # executes a self-contained driver that preloads two input strings, calls
+    # the lowered `join(a, b) = a + b`, and reads the CONSTRUCTED string's
+    # bytes back) and confirmed the result value-matches the CPython `a + b`
+    # for the ASCII fixture "Hi " + "WASM 42!". Gated on
+    # `wasm_runtime_available()` (graceful-skip on free CI, which lacks WABT).
+    # RUNTIME CHOICE: WABT subprocess — NO new Cargo dependency (no
+    # wasmi/wasmtime), so `cargo deny check advisories` is unaffected.
+
+equations:
+  wasm_heap_alloc_structure_extensionality_diamond:
+    # Tier-defining Diamond equation (depth-1). Machine-checked by the
+    # lake-build pilot — see contracts/lean/WasmHeap.lean. A bump-heap
+    # allocation is determined by its structural fields (base address,
+    # requested byte size), mirroring the str/list/float/set/wgsl/wasm
+    # structural Diamonds.
+    lean_theorem: "XpileContracts.CWasmHeap.wasm_heap_alloc_structure_extensionality_diamond"
+    lean_file: "contracts/lean/WasmHeap.lean"
+    formula: |
+      ∀ a b : WasmAlloc.
+        a.base = b.base → a.size = b.size → a = b
+      (a bump-heap allocation is determined by its (base, size) signature)
+    domain: |
+      Any bump-heap allocation as `$__alloc` produces it, modelled by its
+      returned `base` address and the requested `size` (in bytes).
+    invariants:
+      - "FIRST Diamond-tier theorem of C-WASM-HEAP (registers it at depth-1)"
+      - "structure extensionality over the allocation's (base, size) signature (sorry-free, core-only)"
+      - "the bump pointer advances monotonically (8-aligned) — execution-stratum, EXECUTED via the WABT string-building witness (PMAT-993)"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+      - "the function performs a string-RETURNING op (Concat / Chr / str return)"
+    postconditions:
+      - "heap-allocating WASM-emitting code carries citation C-WASM-HEAP"
+
+  heap_string_is_length_prefixed:
+    formula: |
+      construct(string_returning_op, BackendConfig{target: Wasm})
+        produces wat that calls $__alloc and writes an i32 byte-count header
+        at base+0 followed by the UTF-8 bytes at base+8 (the same
+        length-prefixed ABI read access uses), returning base as an i32
+    domain: |
+      A string concatenation `a + b` (Expr::Concat) over str params / chr
+      results, or `chr(n)` (Expr::Chr), in a function lowered to WAT.
+    invariants:
+      - "a string is materialised via $__alloc (the bump heap), never on the call stack"
+      - "the result is a length-prefixed region (i32 count @ base+0, bytes @ base+8)"
+      - "concat copies operand bytes via memory.copy; left-nested concat allocs ONCE"
+      - "chr(n) writes the byte n & 0xFF (ASCII-bounded, the ord mirror)"
+      - "a str return lowers to an i32 result (the heap base-pointer)"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+      - "operands are str params / chr results (string-valued)"
+    postconditions:
+      - "the emitted WAT assembles (wat2wasm) and executes (wasm-interp) to a string value-matching CPython on an ASCII fixture"
+      - "heap-allocating WASM-emitting code carries citation C-WASM-HEAP"
+
+  unwired_string_op_is_refused:
+    formula: |
+      construct(s_index_as_string | str_literal_operand | slice | str() |
+                fstring | str_equality, BackendConfig{target: Wasm})
+        == Err(BackendError::Lower("…"))
+    domain: |
+      A string-returning or string-content op the bump allocator alone does
+      not yet wire (a 1-char-string slice, a static string LITERAL operand, a
+      general slice, str()/repr(), an f-string, string equality/comparison).
+    invariants:
+      - "an unwired string op yields a hard BackendError, never wrong WAT"
+      - "the refusal names the op + the follow-up (honest diagnostic)"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+    postconditions:
+      - "no WAT is emitted for an unwired string op (no silent miscompile)"
+
+proof_obligations:
+  - type: postcondition
+    property: a constructed string is a well-formed length-prefixed WASM region
+    formal: "wasm-interp(construct(a + b)) reads back == CPython(a + b)"
+    applies_to: heap_string_is_length_prefixed
+
+  - type: postcondition
+    property: unwired string ops are refused, never miscompiled
+    formal: "construct(unwired_string_op) == Err(_)"
+    applies_to: unwired_string_op_is_refused
+
+  - type: invariant
+    property: the bump pointer advances monotonically and 8-aligned
+    formal: "after __alloc(n): __heap_ptr' = base + align8(n) ∧ base = __heap_ptr"
+    applies_to: wasm_heap_alloc_structure_extensionality_diamond
+
+  - type: frame
+    property: lower() does not mutate the input meta-HIR module
+    formal: "modifies() == ∅"
+    applies_to: all
+
+  - type: precondition
+    property: backend citation is recorded
+    formal: "Artifact.citations contains C-COMPILE-RUST-TO-WASM (the lane carries the WASM citation)"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-WASM-HEAP-001
+    rule: |
+      A constructed string (concat / chr) MUST be a well-formed length-prefixed
+      region in linear memory — the i32 byte-count header at base+0 then the
+      bytes at base+8 — that assembles via wat2wasm and, when executed, reads
+      back byte-for-byte equal to the CPython result on an ASCII fixture.
+    prediction: |
+      The executed WABT witness reconstructs the concatenated string and it
+      equals CPython `a + b`.
+    test: |
+      cargo test -p xpile-wasm-codegen --test heap_string_witness
+    if_fails: |
+      The allocator or concat lowering regressed — a wrong header length, a
+      bad memory.copy offset, an aliasing scratch local, or a misaligned bump
+      pointer. The constructed bytes diverge from CPython.
+    ship_blocking: true
+    counter_example_classes:
+      - wrong_header_length
+      - memory_copy_offset_drift
+      - scratch_local_aliasing
+      - bump_pointer_misalignment
+
+  - id: FALSIFY-WASM-HEAP-002
+    rule: |
+      A string-returning op the bump allocator does NOT yet wire (a 1-char
+      string slice, a static string LITERAL operand, slicing, str(),
+      f-strings, string equality) MUST be refused with a hard error, NEVER
+      emitted as wrong WAT.
+    prediction: |
+      `lower` returns `Err(BackendError::Lower(...))` naming the op + follow-up.
+    test: |
+      cargo test -p xpile-wasm-codegen --lib
+    if_fails: |
+      The emitter silently emitted (wrong) code for an unwired string op — a
+      correctness violation worse than a refusal.
+    ship_blocking: true
+    counter_example_classes:
+      - silent_miscompile_of_unwired_string_op
+      - pointer_arithmetic_passed_off_as_concat
