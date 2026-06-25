@@ -2056,7 +2056,17 @@ pub enum Expr {
     /// `rust_spec` is the already-translated Rust format spec (the frontend
     /// maps the supported Python subset to it). Rust/Ruchy emit
     /// `format!("{:<rust_spec>}", <value>)` → `Str`. Lean refuses.
-    FormatSpec { value: Box<Expr>, rust_spec: String },
+    ///
+    /// PMAT-947: `of_float` records whether `value` is a NaN-capable float, so
+    /// codegen can NaN-guard a bare-precision spec (`.N`, PMAT-659) — Rust prints
+    /// NaN as "NaN" but Python prints "nan". A str-precision `.N` (truncate, also
+    /// a `.<digit>` spec) sets `false`, so the guard is correctly skipped: a
+    /// `String` value has no `.is_nan()` and never needs the guard.
+    FormatSpec {
+        value: Box<Expr>,
+        rust_spec: String,
+        of_float: bool,
+    },
     /// No-argument Python string transform method — `s.upper()` /
     /// `s.lower()` / `s.strip()`. PMAT-492 (sprint). Result types as
     /// `Type::Str`. Distinct from [`Expr::Call`] (a free function

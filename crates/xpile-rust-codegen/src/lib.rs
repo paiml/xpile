@@ -1749,18 +1749,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push(')');
         }
         // PMAT-502am: a formatted f-string field → `format!("{:<spec>}", v)`.
-        Expr::FormatSpec { value, rust_spec } => {
+        Expr::FormatSpec {
+            value,
+            rust_spec,
+            of_float,
+        } => {
             // PMAT-659: Rust formats NaN as "NaN", but Python prints "nan". A
             // BARE float-precision spec (`.<digit>`, optionally after a `+`) is
-            // float-only (translate_format_spec gates `.Nf` on F64) AND has no
-            // width, so the unpadded `"nan"` matches Python. Guard it with
-            // `.is_nan()`. The `.`-FILL case (`.<align>`, PMAT-658) is excluded
-            // since char-after-`.` is an align char, not a digit. (Width+precision
-            // NaN — `8.2` — would need the width applied to "nan"; deferred.) inf
-            // already matches ("inf"/"-inf" in both).
+            // float-only AND has no width, so the unpadded `"nan"` matches Python.
+            // Guard it with `.is_nan()`. The `.`-FILL case (`.<align>`, PMAT-658)
+            // is excluded since char-after-`.` is an align char, not a digit.
+            // (Width+precision NaN — `8.2` — would need the width applied to
+            // "nan"; deferred.) inf already matches ("inf"/"-inf" in both).
+            // PMAT-947: gate on `of_float` — a str-precision `.N` (truncate) is
+            // ALSO a `.<digit>` spec but its value is a `String` (no `.is_nan()`),
+            // so it must take the plain `format!` branch.
             let bare = rust_spec.strip_prefix('+').unwrap_or(rust_spec).as_bytes();
-            let is_float_prec =
-                bare.first() == Some(&b'.') && bare.get(1).is_some_and(|b| b.is_ascii_digit());
+            let is_float_prec = *of_float
+                && bare.first() == Some(&b'.')
+                && bare.get(1).is_some_and(|b| b.is_ascii_digit());
             if is_float_prec {
                 out.push_str("{ let __nf = ");
                 emit_expr(out, value, mode)?;

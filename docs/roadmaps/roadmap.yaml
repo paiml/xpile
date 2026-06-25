@@ -11572,6 +11572,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-947
+  github_issue: null
+  item_type: task
+  title: 'PMAT-947: [correctness-hunt] a bare precision `.N` on a STR f-string field TRUNCATES to N chars in Python — `f"{''hello'':.3}"` == "hel", `f"{s:.0}"` == "", `f"{s:.10}"` == "hello" (precision is a MAX, not a pad) — was a clean REJECT ("unsupported format spec `:.3`"). Rust''s `{:.N}` over a `String` is the IDENTICAL char-count truncation (multibyte/astral counted by CHAR, never by byte: `"héllo".:.3` -> "hél", `"😀😀😀😀":.2` -> "😀😀"), so the spec passes through verbatim. The shared `str.format()` path gets it too (via the existing inline-embed route). An int/float `.N` (Python *significant figures*, not Rust decimal places — Python itself raises ValueError for an int) stays a reject, as do width/align-COMBINED str precisions (`:10.3`, `:>10.3`, a scoped follow-up mirroring PMAT-945 -> PMAT-946). Surfaced by a python3-vs-rustc differential format-spec sweep.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (PMAT-900..946 all merged, sprint window 2026-06-23..07-02 still open). Continues prompt path c — the python3-vs-rustc differential correctness-hunt. Reproduced BEFORE the fix: `xpile transpile` of `f\"{s:.3}\"` (s: str) errored `unsupported format spec :.3 (for a Str value)`; CPython renders \"hel\" and Rust''s `format!(\"{:.3}\", s)` is byte-identical (verified across truncation, `.0` -> empty, precision >= len no-op, and multibyte/astral char-count truncation)."
+  - "ROOT CAUSE: `translate_format_spec`''s `.`-prefixed branch handled ONLY `.Nf` (float fixed-point) and otherwise returned None, so a bare str precision `.N` fell through to the final reject. SECOND BUG uncovered: the rust/ruchy codegen `FormatSpec` NaN-guard heuristic (`is_float_prec`, PMAT-659) fired for ANY `.<digit>` rust_spec, assuming `.<digit>` => float — true until a str `.N` ALSO produced a `.<digit>` spec, which would have emitted `String::is_nan()` (rustc E0599, won''t compile)."
+  - "FIX: (1) in `translate_format_spec`, add a `*ty == Type::Str && digits_only(rest)` arm to the `.`-prefixed branch returning `.{rest}` — Rust''s string precision is char-count truncation identical to Python''s. (2) carry an `of_float: bool` field on `Expr::FormatSpec` (matching the codebase''s pervasive `of_float` convention on ToStr/NumBuiltin) set true ONLY where the value is a NaN-capable float (the percent path, `%f`, the str.format F64-precision arm, and the generic translate site when `ty == Type::F64`); the rust + ruchy codegen NaN-guard now gates on `of_float` so a str `.N` (of_float=false) takes the plain `format!` branch. NO new IR node. INT/float `.N` stays a reject (only `.Nf` is sound — Python `.N` over an int is itself a ValueError); width/align-COMBINED str precision (`:10.3`, `:>10.3`) stays a deferred reject (honest refusal, never a silent miscompile), same scoping discipline as PMAT-945/941/613."
+  - "REGRESSION GUARDS: oracle differential fixture `fstr_str_precision.py` (auto-discovered by `oracle_differential_python_vs_rust` — compiles+runs the transpiled binary and asserts byte-identical CPython-vs-rustc stdout; covers a plain truncation, `.0` empty, precision >= len no-op, a literal operand, multi-byte é / CJK / astral 😀 truncation by char count, the `str.format()` path, and multi-field composition). e2e test `fstr_str_precision` (asserts the field is a plain `format!(\"{:.3}\", s)` and NEVER an `is_nan` block, then rustc-runs 9 hand-checked CPython values incl. multibyte/CJK/astral char-count truncation and the str.format path); e2e reject test `fstr_str_precision_width_rejected` (a width-combined `:10.3` is REFUSED with the `unsupported format spec :10.3` diagnostic). Fixtures `fstr_str_precision.py` (e2e + oracle), `fstr_str_precision_rejected.py`. Float `.2f`/percent `.1%`/`%f`/str.format NaN-guards verified still firing (28 fstr e2e + percent + codegen lib tests pass)."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, `cargo test -p xpile --test transpile_e2e fstr_str_precision` (2 pass) + `--test oracle_differential` (auto-covers fstr_str_precision) + `fstr`/`str_width`/`percent` regressions + `-p depyler-frontend/-p xpile-rust-codegen/-p xpile-ruchy-codegen/-p xpile-meta-hir --lib`. Backlog correctness slice, sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-946
   github_issue: null
   item_type: task
