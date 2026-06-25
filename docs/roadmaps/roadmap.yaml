@@ -24,12 +24,19 @@ strategic_goals:
         §14.4 QUORUM = Sem/Lean + Sym/Kani + Run/diff-exec + Ext. Lean pilot now
         26 machine-checked modules (sorry/axiom/Mathlib-free, warningAsError).
       open_gap: >-
-        CITATION-INTEGRITY: Function::applicable_contracts()
-        (crates/xpile-meta-hir/src/lib.rs) still returns only [C-PY-INT-ARITH];
-        str/list/dict/float emit ZERO `// xpile-contract:` citations. The #1 goal
-        is PARTIALLY FALSIFIED until a citation-integrity gate + a complete
-        applicable_contracts() land. New backends DO cite; old idiom slices do not.
-        Tracked as PMAT-955 (capstone over the PMAT-935 scalar-set close).
+        CITATION-INTEGRITY (NARROWED 2026-06-25): the per-FUNCTION surface is now
+        CLOSED + machine-guarded. Function::applicable_contracts()
+        (crates/xpile-meta-hir/src/lib.rs) cites the full per-type set —
+        int/str/list/dict/FLOAT(C-PY-FLOAT-ARITH)/set/class-method/tuple/Optional/bool
+        — and a DERIVED gate (contract_citation_integrity.rs::
+        every_applicable_contract_is_actually_cited) now FAILS if any function with
+        an applicable contract ships uncited (verified RED under a codegen mutation,
+        drift-proof — no hand-list). The earlier "returns only [C-PY-INT-ARITH] /
+        float uncited" framing was stale: float's YAML + Lean Diamond + lakefile root
+        have been on disk since PMAT-860/477/931. REMAINING gap: construct
+        DEFINITIONS that carry no function are still uncited — a method-less
+        @dataclass struct-def and module-level Const/Enum emit no `// xpile-contract:`
+        line (the citation surface is per-function only). Tracked as PMAT-955.
     - id: B
       name: Multi-target backend matrix
       status: broadened-2026-06-25
@@ -188,7 +195,39 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: >-
+    PROGRESS 2026-06-25 (derived-gate slice): the TITLE's premise was already
+    STALE on inspection — Function::applicable_contracts() (crates/xpile-meta-hir/src/lib.rs)
+    does NOT return only [C-PY-INT-ARITH]; the per-type wiring is COMPLETE. Every
+    core scalar + container family already cites its on-disk contract: int
+    (C-PY-INT-ARITH), str (C-XLATE-PY-STR-TO-RUST-STRING), list
+    (C-XLATE-PY-LIST-TO-VEC), dict (C-XLATE-PY-DICT-TO-HASHMAP), FLOAT
+    (C-PY-FLOAT-ARITH — contract YAML + contracts/lean/PyFloatArith.lean + lakefile
+    root all on disk since PMAT-860/477/931, pilot already includes it), set
+    (C-XLATE-PY-SET-TO-HASHSET), class (C-XLATE-PY-CLASS-TO-STRUCT), tuple
+    (C-XLATE-PY-TUPLE-TO-RUST-TUPLE), Optional (C-XLATE-PY-OPTIONAL-TO-OPTION), and
+    bool (C-XLATE-PY-BOOL-TO-RUST-BOOL, PMAT-935). So NO new contract was authored
+    (re-authoring C-PY-FLOAT-ARITH would have minted a phantom duplicate id and
+    BROKEN the existing phantom-citation gate). DELIVERED this slice: the DERIVED
+    citation-completeness gate — crates/xpile/tests/contract_citation_integrity.rs::
+    every_applicable_contract_is_actually_cited. Unlike the pre-existing
+    hand-curated EXPECTED list (which only catches a witness fixture dropping a
+    KNOWN citation), this gate COMPUTES each fixture's expected set by parsing the
+    source through the real PythonFrontend and calling applicable_contracts() on
+    every reachable Function (top-level + struct methods — exactly codegen's citation
+    surface), then FAILS if any derived id is absent from the emitted
+    `// xpile-contract:` lines. Verified RED under a codegen-emission mutation
+    (dropping the float-arith emit fails 11 fixtures with precise diagnostics) and
+    GREEN on HEAD. This is the drift detector the acceptance criteria asked for, now
+    drift-PROOF: a future type family wired into applicable_contracts() but not
+    emitted goes RED automatically (no hand-list maintenance). REMAINING (next
+    slices, kept out of this gate so it stays green): the per-FUNCTION citation
+    surface does not cover construct DEFINITIONS that carry no function — a
+    method-LESS @dataclass (Item::Struct with empty methods) emits its
+    `pub struct {..}` with NO C-XLATE-PY-CLASS-TO-STRUCT line, and module-level
+    Const / Enum items are uncited. Wiring a definition-level citation for those is
+    the honest follow-up; the str/list/dict/float/set/class-method/tuple/Optional/bool
+    FUNCTION surface is fully closed and now machine-guarded.
 - id: PMAT-956
   github_issue: null
   item_type: task
