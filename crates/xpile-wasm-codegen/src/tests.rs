@@ -441,35 +441,40 @@ fn ord_str_index_uses_load8_and_bounds_guard() {
 }
 
 #[test]
-fn refuses_strcharat_as_string() {
-    // `s[i]` used as a 1-char STRING (a StrCharAt NOT wrapped in ord) is
-    // string-returning. PMAT-993 ships the allocator (concat + chr), but a
-    // 1-char-slice materialisation is a follow-up (slice 3) — refuse it
-    // honestly (the message still names "heap allocator … slice 2").
+fn strcharat_as_string_materialises_one_char() {
+    // PMAT-994 (slice 3a): `s[i]` used as a 1-char STRING (a StrCharAt NOT
+    // wrapped in ord) now materialises a NEW 1-char heap string — the `chr`
+    // mirror, copying byte `i` of `s` (bounds-checked) into a fresh alloc(9).
+    // `def first(s: str) -> str: return s[0]`.
     let f = Function {
         name: "first".into(),
         params: vec![param("s", Type::Str)],
-        return_type: Type::I64, // not str, so it's not the return-type refusal
+        return_type: Type::Str,
         body: Block {
-            // total = ord-less StrCharAt in a value position; route it through
-            // a let so it's not the trailing return-type path.
-            stmts: vec![Stmt::Let {
-                name: "c".into(),
-                ty: Type::I64,
-                value: Expr::StrCharAt {
-                    string: Box::new(Expr::Ident("s".into())),
-                    index: Box::new(Expr::LitInt(0)),
-                },
-                mutable: false,
-            }],
-            trailing_return: Expr::Ident("c".into()),
+            stmts: Vec::new(),
+            trailing_return: Expr::StrCharAt {
+                string: Box::new(Expr::Ident("s".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
         },
     };
-    let err = emit_module(&module_with(vec![Item::Function(f)])).unwrap_err();
-    let msg = err.to_string();
+    let wat =
+        emit_module(&module_with(vec![Item::Function(f)])).expect("s[i] -> 1-char str lowers");
     assert!(
-        msg.contains("heap allocator") && msg.contains("slice 2"),
-        "StrCharAt-as-string refused with slice-2 note: {msg}"
+        wat.contains("call $__alloc"),
+        "s[i] allocates a new 1-char heap string:\n{wat}"
+    );
+    assert!(
+        wat.contains("i32.load8_u") && wat.contains("i32.store8"),
+        "s[i] copies the source byte (load8_u) into the new string (store8):\n{wat}"
+    );
+    assert!(
+        wat.contains("unreachable"),
+        "s[i] is bounds-checked (traps on OOB, the IndexError analogue):\n{wat}"
+    );
+    assert!(
+        wat.contains("(func $first (param $s i32) (result i32)"),
+        "s[i]-returning fn → i32 result (the new string pointer):\n{wat}"
     );
 }
 
@@ -609,10 +614,11 @@ fn concat_of_three_str_params_is_single_pass() {
 }
 
 #[test]
-fn refuses_string_literal_in_concat() {
-    // PMAT-993: a string LITERAL operand (`"Hi " + s`) needs a static (data)
-    // segment — a follow-up. Refuse it honestly rather than dropping the
-    // literal.
+fn string_literal_in_concat_lowers_to_static_data() {
+    // PMAT-994 (slice 3a): a string LITERAL operand (`"Hi " + s`) is
+    // materialised into a static `(data …)` segment in [LITERAL_BASE, HEAP_BASE)
+    // and lowered to a constant `i32.const <base>` pointer — so the literal
+    // composes with the concat heap path. `def g(s: str) -> str: return "Hi " + s`.
     let f = Function {
         name: "g".into(),
         params: vec![param("s", Type::Str)],
@@ -625,10 +631,25 @@ fn refuses_string_literal_in_concat() {
             },
         },
     };
-    let err = emit_module(&module_with(vec![Item::Function(f)])).unwrap_err();
+    let wat = emit_module(&module_with(vec![Item::Function(f)])).expect("literal concat lowers");
+    // The literal "Hi " (3 bytes) is laid down at LITERAL_BASE (512): a
+    // length-prefixed (data) — the i32 count header (\03\00\00\00) then the
+    // UTF-8 bytes (\48\69\20 = "Hi ").
     assert!(
-        err.to_string().contains("string LITERAL"),
-        "string literal in concat refused with the follow-up note: {err}"
+        wat.contains("(data (i32.const 512) \"\\03\\00\\00\\00\")"),
+        "literal byte-count header data segment @ 512:\n{wat}"
+    );
+    assert!(
+        wat.contains("(data (i32.const 520) \"\\48\\69\\20\")"),
+        "literal UTF-8 bytes data segment @ 520:\n{wat}"
+    );
+    // The literal lowers to a constant pointer (i32.const 512); the concat then
+    // bump-allocates + memory.copies it with the param.
+    assert!(
+        wat.contains("i32.const 512")
+            && wat.contains("call $__alloc")
+            && wat.contains("memory.copy"),
+        "literal pointer (i32.const 512) flows into the concat heap path:\n{wat}"
     );
 }
 
@@ -676,9 +697,10 @@ fn refuses_binop_add_over_str_pointers_as_pointer_arithmetic() {
 }
 
 #[test]
-fn refuses_string_equality_no_pointer_compare() {
-    // `a == b` over str params must NOT silently compare base-pointers — it
-    // must be an honest refusal.
+fn string_equality_uses_content_compare_not_pointer_compare() {
+    // PMAT-994 (slice 3a): `a == b` over str params lowers to a CONTENT compare
+    // (`$__wasm_str_eq`: length check + byte-compare loop → i32 bool), NEVER a
+    // base-pointer `i32.eq`. `def eq(a: str, b: str) -> bool: return a == b`.
     let f = Function {
         name: "eq".into(),
         params: vec![param("a", Type::Str), param("b", Type::Str)],
@@ -692,15 +714,80 @@ fn refuses_string_equality_no_pointer_compare() {
             },
         },
     };
+    let wat = emit_module(&module_with(vec![Item::Function(f)])).expect("str == str lowers");
+    assert!(
+        wat.contains("(func $__wasm_str_eq"),
+        "str equality emits the content-compare helper:\n{wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_str_eq"),
+        "str == str routes to the content-compare helper:\n{wat}"
+    );
+    // Crucially: the function body must NOT compare the two pointers directly
+    // with `i32.eq` (that would be a base-pointer compare, the wrong answer).
+    // The `$eq` body should be `local.get a; local.get b; call $__wasm_str_eq`.
+    let eq_body = wat
+        .split("(func $eq ")
+        .nth(1)
+        .expect("the $eq function is emitted");
+    assert!(
+        !eq_body.contains("i32.eq\n") && !eq_body.contains("i32.eq "),
+        "no raw pointer-compare leaked in $eq body:\n{eq_body}"
+    );
+}
+
+#[test]
+fn string_inequality_negates_content_compare() {
+    // PMAT-994: `a != b` is `!(a == b)` — the content compare, negated via
+    // i32.eqz. `def neq(a: str, b: str) -> bool: return a != b`.
+    let f = Function {
+        name: "neq".into(),
+        params: vec![param("a", Type::Str), param("b", Type::Str)],
+        return_type: Type::Bool,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::BinOp {
+                op: BinOp::NotEq,
+                lhs: Box::new(Expr::Ident("a".into())),
+                rhs: Box::new(Expr::Ident("b".into())),
+            },
+        },
+    };
+    let wat = emit_module(&module_with(vec![Item::Function(f)])).expect("str != str lowers");
+    let neq_body = wat
+        .split("(func $neq ")
+        .nth(1)
+        .expect("the $neq function is emitted");
+    assert!(
+        neq_body.contains("call $__wasm_str_eq") && neq_body.contains("i32.eqz"),
+        "str != str is the content compare negated (i32.eqz):\n{neq_body}"
+    );
+}
+
+#[test]
+fn refuses_string_ordering_no_pointer_compare() {
+    // PMAT-994: string ORDERING (`a < b`) is NOT wired (needs lexicographic
+    // logic) — it must be an honest refusal, never a base-pointer compare.
+    let f = Function {
+        name: "lt".into(),
+        params: vec![param("a", Type::Str), param("b", Type::Str)],
+        return_type: Type::Bool,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::BinOp {
+                op: BinOp::Lt,
+                lhs: Box::new(Expr::Ident("a".into())),
+                rhs: Box::new(Expr::Ident("b".into())),
+            },
+        },
+    };
     let err = emit_module(&module_with(vec![Item::Function(f)])).unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("unsupported") && msg.to_lowercase().contains("str"),
-        "str == str honestly refused (no pointer compare): {msg}"
+        msg.contains("unsupported") && msg.to_lowercase().contains("ordering"),
+        "str < str honestly refused (ordering not wired): {msg}"
     );
-    // Crucially, the WAT must NOT have been produced with an i32.eq over the
-    // pointers — the refusal short-circuits before any emit.
-    assert!(!msg.contains("i32.eq"), "no pointer-compare leaked: {msg}");
+    assert!(!msg.contains("i32.lt"), "no pointer-compare leaked: {msg}");
 }
 
 #[test]
