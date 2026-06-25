@@ -892,3 +892,149 @@ fn wat_data_escape(bytes: &[u8]) -> String {
     }
     s
 }
+
+// ─── PMAT-990: regression guard — the §29 WASM witness's GENERAL emitter
+// drives the REAL `emit_module`, NOT the hardcoded `saxpy_module()` template ──
+//
+// PMAT-976 CLAIMED to rewire `WasmSaxpyGeneralEmitter` (the GENERAL side of
+// the executed §29 DiffExec quorum, `WasmBackend::new_wasm_diffexec_witness`)
+// to drive xpile's real meta-HIR → WAT lowering. The pre-existing tests in
+// `wasm_diffexec.rs` only exercised `general_module_wat()` *directly*; nothing
+// pinned the emitter the quorum ACTUALLY invokes — `WasmSaxpyGeneralEmitter::
+// try_emit`. A future revert of `try_emit` back to `saxpy_module(...)` (the
+// hand-written template the SPECIALIST side still legitimately uses) would
+// silently turn the "real emit" witness hollow again with no failing test.
+// These tests close that gap: they assert the WAT the GENERAL EMITTER ITSELF
+// produces carries `emit_module`'s fingerprint and is NOT the bare template,
+// then (graceful-skip on no-WABT) assemble+run that exact emitter output to
+// prove the EXECUTED bytes came from `emit_module`.
+
+/// The fingerprints ONLY `emit_module` emits (and `saxpy_module` never does):
+/// the module banner comment, the `;; contract:` per-module citation (the
+/// template writes `;; xpile-contract:` instead), and a named, zero-arg
+/// `(export "eN" (func $eN))` per fixture element (the template emits an
+/// ANONYMOUS `(func (export "eN") …)` with no `$eN`). Asserting all of these
+/// means a revert to `saxpy_module(...)` cannot pass.
+fn assert_carries_emit_module_fingerprint(wat: &str) {
+    assert!(
+        wat.contains("xpile-wasm-codegen — native WAT (scalar/control subset)"),
+        "executed §29 WASM witness WAT must carry the REAL emit_module module \
+         banner (the hardcoded saxpy_module template never emits it): {wat}"
+    );
+    assert!(
+        wat.contains(";; contract: C-COMPILE-RUST-TO-WASM"),
+        "executed §29 WASM witness WAT must carry emit_module's per-module \
+         `;; contract:` citation (saxpy_module writes `;; xpile-contract:`): {wat}"
+    );
+    for i in 0..FIXTURE_INPUT.len() {
+        assert!(
+            wat.contains(&format!("(func $e{i} ")),
+            "emit_module emits a NAMED zero-arg $e{i} func (saxpy_module's are \
+             anonymous): {wat}"
+        );
+        assert!(
+            wat.contains(&format!("(export \"e{i}\" (func $e{i}))")),
+            "emit_module emits a named-func export for e{i} (saxpy_module \
+             exports an anonymous func): {wat}"
+        );
+    }
+    // And it must NOT be the hardcoded template: that template tags its module
+    // with a `;; wasm-saxpy-…` comment, which emit_module never produces.
+    assert!(
+        !wat.contains(";; wasm-saxpy-"),
+        "executed §29 WASM witness WAT is the HARDCODED saxpy_module template, \
+         NOT emit_module output — PMAT-976 rewire reverted: {wat}"
+    );
+}
+
+#[test]
+fn general_witness_emitter_drives_real_emit_module_not_template() {
+    // The actual §29 quorum emitter — call its `try_emit` directly (the path
+    // `WasmBackend::new_wasm_diffexec_witness` wires into the DiffExec quorum)
+    // and pin that its WAT is `emit_module` output, not the hand-written
+    // `saxpy_module(...)` template. This is the guard that would FAIL if a
+    // future change reverted `WasmSaxpyGeneralEmitter::try_emit` to the
+    // hardcoded path PMAT-976 removed.
+    let emitter = WasmSaxpyGeneralEmitter;
+    let emitted = emitter
+        .try_emit(&module_with(vec![]), &wasm_config())
+        .expect("general witness emitter is wired for Target::Wasm")
+        .expect("general witness emit succeeds");
+    assert_carries_emit_module_fingerprint(&emitted.primary);
+
+    // Cross-check the discriminator is real: the SPECIALIST side (which still
+    // legitimately uses the hardcoded `saxpy_module` template) must NOT carry
+    // the emit_module fingerprint — otherwise the guard above would be vacuous.
+    let specialist = WasmSaxpySpecialistEmitter
+        .try_emit(&module_with(vec![]), &wasm_config())
+        .expect("specialist emitter wired for Target::Wasm")
+        .expect("specialist emit succeeds");
+    assert!(
+        !specialist
+            .primary
+            .contains("xpile-wasm-codegen — native WAT (scalar/control subset)"),
+        "the hardcoded saxpy_module template must NOT carry emit_module's banner \
+         (else the fingerprint discriminator is vacuous): {}",
+        specialist.primary
+    );
+    assert!(
+        specialist.primary.contains(";; wasm-saxpy-"),
+        "specialist is the hardcoded template (tagged `;; wasm-saxpy-`): {}",
+        specialist.primary
+    );
+}
+
+#[test]
+fn general_witness_executed_wat_came_from_emit_module() {
+    // The load-bearing executed half: assemble + run the EXACT WAT the §29
+    // GENERAL witness emitter produces (via its `try_emit`), and prove the
+    // executed bytes (a) came from `emit_module` (fingerprint) and (b) compute
+    // the correct `2*x + 1` over FIXTURE_INPUT. A revert to the hardcoded
+    // template would change the asserted fingerprint and fail (a), so this
+    // pins that the RUNTIME-EXECUTED WAT is xpile's real emission.
+    if !wasm_runtime_available() {
+        eprintln!(
+            "SKIP general_witness_executed_wat_came_from_emit_module: \
+             WABT (wat2wasm/wasm-interp) not installed"
+        );
+        return;
+    }
+
+    let emitter = WasmSaxpyGeneralEmitter;
+    let general_wat = emitter
+        .try_emit(&module_with(vec![]), &wasm_config())
+        .expect("general witness emitter wired for Target::Wasm")
+        .expect("general witness emit succeeds")
+        .primary;
+
+    // (a) The WAT we are about to ASSEMBLE+RUN carries the emit_module
+    //     fingerprint — so the executed bytes provably came from emit_module.
+    assert_carries_emit_module_fingerprint(&general_wat);
+
+    // (b) Assemble + run THAT exact WAT in WABT and diff against the trusted
+    //     CPython-equivalent `2*x + 1` reference vector.
+    let engine = WasmDiffExecEngine::new();
+    let executed = engine
+        .assemble_run_parse(&general_wat, "pmat990_general")
+        .expect("assemble+run the §29 general witness emitter's REAL WAT");
+    let expected: Vec<f64> = FIXTURE_INPUT.iter().map(|&x| 2.0 * x + 1.0).collect();
+    assert_eq!(
+        executed.len(),
+        expected.len(),
+        "executed witness WAT exports one e_i per fixture element: {executed:?}"
+    );
+    for (i, (g, e)) in executed.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (g - e).abs() <= 1.0e-9,
+            "e{i}: §29 general witness REAL-emit WAT executed {g}, expected (CPython) {e}"
+        );
+    }
+
+    eprintln!(
+        "=== PMAT-990 regression guard: §29 WASM general witness emitter → emit_module → run ==="
+    );
+    eprintln!("--- WAT produced by WasmSaxpyGeneralEmitter::try_emit (carries emit_module banner + named $eN exports) ---");
+    eprintln!("{general_wat}");
+    eprintln!("--- executed output (wasm-interp) ---\n{executed:?}");
+    eprintln!("--- CPython-equivalent 2*x+1 expected ---\n{expected:?}");
+}

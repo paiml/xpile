@@ -8,7 +8,7 @@ github_repo: paiml/xpile
 # design sessions. The slice entries under `roadmap:` are the means; THIS is
 # the end. Do not let the ledger's idiom-coverage proxy eclipse these.
 strategic_goals:
-  updated: '2026-06-25 (PMAT-987: adversarial re-verification of the PMAT-949..984 witness batch — sound, no defect)'
+  updated: '2026-06-25 (PMAT-991: adversarial re-verify — PTX lane sound on silicon; WGSL/SPIR-V/bashrs/WASM hollowness found by the PMAT-987..990 fix wave; witness-integrity claim corrected)'
   north_star: >-
     Provable polyglot transpilation: every construct, in every source AND target
     language, carried by a machine-checked contract. This — not idiom coverage —
@@ -188,24 +188,87 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
-- id: PMAT-987
+- id: PMAT-991
   github_issue: null
   item_type: task
-  title: 'PMAT-987: [verify/§29] Independent adversarial RE-VERIFICATION of the PMAT-949..984 GPU/WASM/SPIR-V/WGSL witness batch (the EV-rank-1 discipline per forward_ev_ranking + memory feedback-ultracode-adversarial-verify). Spawn read-only skeptic passes that try to REFUTE the batch''s three load-bearing claims — (a) "real emit, not a hardcoded shader/PTX", (b) "executes on hardware, never silently skips", (c) "no silent codegen drops" — AND independently re-run the witnesses rather than trusting the prior runs OR the skeptics. Re-executed every PTX witness on the local RTX 4090 (sm_89): gpu_witness (PMAT-949 general-vs-specialist CUDA-C), anti_correlation_witness (PMAT-961 xpile-hand-emitted-PTX-vs-nvcc-CUDA-C + PMAT-962 if-branch), array_anti_correlation_witness (PMAT-980 xs[i] ld.global), array_compose_witness (PMAT-984 clamp) — each a real DiffExecResult::Match, max_abs_diff=0 on silicon. cargo test --workspace exit 0; advisory lake build exit 0 (zero sorry/axiom). Records the result + the refutation of the skeptics'' OWN over-claims in audit-design.md §7.4 (Popperian falsifier status). NO code defect found — the batch is SOUND; ship the record, do NOT fake a gap. Docs-only (audit-design.md + roadmap.yaml).'
+  title: 'PMAT-991: [verify/§29] Independent adversarial RE-VERIFICATION of the PMAT-949..984 witness batch — PTX lane SOUND on real silicon; WGSL/SPIR-V/bashrs/WASM lanes had REAL hollowness a witness-scoped skeptic MISSED. The EV-rank-1 discipline (forward_ev_ranking rank 1 + memory feedback-ultracode-adversarial-verify). Ran 3 read-only skeptic agents to REFUTE the batch''s claims AND re-ran the witnesses on hardware rather than trusting prior runs OR the skeptics. RESULT, honest: (1) PTX lane genuinely sound — re-executed all 4 PTX witnesses on the local RTX 4090 (sm_89), each a real DiffExecResult::Match max_abs_diff=0 (gpu_witness/anti_correlation/array_anti_correlation/array_compose); cargo test --workspace exit 0; lake build exit 0 (zero sorry/axiom); and 3 PTX skeptic over-claims (gpu_witness "two toolchains"; f64/f32 "type mismatch"; "bit-for-bit vs 1e-3 contradiction") were themselves refuted. (2) BUT the CONCURRENT adversarial-fix wave (PMAT-987..990) found REAL hollowness in adjacent code paths THIS run''s witness-scoped skeptic MISSED: PMAT-987 production WgslBackend emitted a `// TODO: lower to WGSL.` scaffold (not WGSL); PMAT-988 SpirvDiffExecEngine runs hardcoded constants not the attested text; PMAT-989 bashrs silently shreds control-flow into barewords; PMAT-990 WASM witness re-checked. METHODOLOGICAL CORRECTION (the load-bearing lesson): a skeptic scoped to the witness EMIT-side ("does the test call emit_wgsl_module?") gives false-negatives — it misses the production Backend::lower/`xpile transpile` path AND the engine execute-vs-attest gap. "A real emit fn exists" != "the production backend uses it" != "the engine executes the attested text". Recorded in audit-design.md §7.4 (corrects the over-broad Pillar-C "witness-integrity hole closed" framing). Docs-only (audit-design.md + roadmap.yaml).'
   status: done
   priority: high
   created: 2026-06-25T00:00:00Z
   acceptance_criteria:
-  - "EV-RANK-1 DISCIPLINE (forward_ev_ranking rank 1 = adversarial-verify): the ~5-8-slice skeptic pass over the banked PMAT-949..984 witness batch, executed AND its findings independently checked — the verifier is itself verified (do not trust agent self-reports, per memory feedback-ultracode-adversarial-verify)."
-  - "GROUND TRUTH re-established by RE-EXECUTION, not assertion: all four PTX witness binaries re-run on the local RTX 4090 sm_89 → real DiffExecResult::Match, max_abs_diff=0 on each (saxpy, if-branch, xs[i] array, clamp composition); cargo test --workspace exit 0; lake build exit 0 (zero sorry/axiom across the elaborating tree)."
-  - "SKEPTIC OVER-CLAIMS REFUTED: (1) gpu_witness 'two independent toolchains' is honestly scoped in-file (PMAT-949 = two CUDA-C emitters; PMAT-961 explicitly upgrades to the categorically-independent xpile-PTX-vs-nvcc pair); (2) the f64(xpile)/f32(nvcc) 'type mismatch' is the DELIBERATE dual-precision design — each side self-consistent, the fixture + the witnessed ops (2x+1/relu/clamp) exactly representable in both binary32 and binary64, so the cross-precision compare is genuinely max_abs_diff=0; (3) the 'bit-for-bit comment vs <=1e-3 assertion contradiction' is a CORRECT comment (states WHY agreement is exact: representability) paired with deliberately conservative slack. WASM/WGSL/SPIR-V witnesses confirmed to drive xpile's real emit_module/emit_wgsl_module (not hardcoded) and diff against COMPUTED CPython references."
-  - "RECORDED in the adversarial record: a new audit-design.md §7.4 falsifier-status bullet documents the independent re-verification + the refuted over-claims; conclusion = no falsifier from the batch entered the falsified range. NO code change — ship nothing rather than fake a gap (the verify found the batch sound)."
-  - "DONE: docs-only (audit-design.md + roadmap.yaml); cargo fmt --all -- --check clean (no .rs touched); pv lint contracts/ 0 errors; YAML re-parses (python3 yaml.safe_load); quorum/attestation roadmap-scan tests stay green. Sprint 2026-06-25."
+  - "EV-RANK-1 DISCIPLINE (forward_ev_ranking rank 1 = adversarial-verify): the ~5-8-slice skeptic pass over the banked PMAT-949..984 witness batch, executed AND its findings independently checked (verify the verifier — do not trust agent self-reports, per memory feedback-ultracode-adversarial-verify). The honest output of a mixed clean+dirty verify is the CORRECTED record, not an 'all sound' rubber-stamp."
+  - "PTX LANE SOUND (re-execution, not assertion): all four PTX witness binaries re-run on the local RTX 4090 sm_89 → real DiffExecResult::Match, max_abs_diff=0 (saxpy, if-branch relu, xs[i] array, clamp composition); cargo test --workspace exit 0; lake build exit 0. Three PTX skeptic over-claims refuted: gpu_witness 'two toolchains' is honestly scoped in-file (PMAT-949 two-CUDA-C; PMAT-961 upgrades to xpile-vs-nvcc); the f64/f32 split is deliberate dual-precision (exactly-representable fixture → genuine max_abs_diff=0); the 'bit-for-bit vs <=1e-3' pairing is a correct comment + conservative slack."
+  - "WGSL/SPIR-V/bashrs/WASM HOLLOWNESS (found by the concurrent PMAT-987..990 wave, MISSED by this run's witness-scoped skeptic): PMAT-987 production WgslBackend scaffold-comment (not WGSL); PMAT-988 SpirvDiffExecEngine runs hardcoded constants not attested text; PMAT-989 bashrs silent control-flow shred; PMAT-990 WASM re-check. The methodological lesson: scope skeptics to the PRODUCTION Backend::lower/CLI path and the engine's EXECUTED bytes, not the emit/attest functions."
+  - "RECORDED: audit-design.md §7.4 falsifier-status bullet documents the PTX-sound / four-lanes-hollow split + the methodological correction, and CORRECTS the over-broad Pillar-C 'all §29 witnesses Run≥1, witness-integrity hole closed' framing to: PTX re-confirmed on silicon; WGSL/SPIR-V/WASM/bashrs in active repair."
+  - "DONE: docs-only (audit-design.md + roadmap.yaml); merged origin/main into the branch (no force-push), renumbered PMAT-987→PMAT-991 after the concurrent wave grabbed 987-990; cargo fmt --all -- --check clean; pv lint contracts/ 0 errors; YAML re-parses; quorum/attestation roadmap-scan tests green. Sprint 2026-06-25."
   phases: []
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'Discharges the forward_ev_ranking rank-1 adversarial-verify discipline for the banked PMAT-949..984 batch. Method: 3 read-only skeptic agents (PTX / WASM-WGSL-SPIRV / correctness) each tasked to REFUTE, + first-party RE-EXECUTION of the PTX witnesses on real sm_89 silicon + full cargo test --workspace + lake build. Outcome: batch SOUND, the skeptics'' own counter-claims themselves refuted; no defect to fix. The honest output of a clean verify is the recorded confirmation, not a manufactured fix.'
+  notes: 'Method: 3 read-only skeptic agents (PTX / WASM-WGSL-SPIRV / correctness) tasked to REFUTE + first-party RE-EXECUTION of the PTX witnesses on real sm_89 silicon + cargo test --workspace + lake build. Key humility find: my WASM/WGSL/SPIRV skeptic reported "all sound" but the concurrent PMAT-987..990 fix wave found 4 real hollow spots in adjacent production/engine paths the skeptic did not inspect — a witness-emit-scoped skeptic gives false-negatives. PTX lane (which I re-ran on silicon) is the only lane this run can attest sound. Complements the wave (which did NOT cover PTX); the contrast IS the deliverable.'
+- id: PMAT-987
+  github_issue: null
+  item_type: task
+  title: 'PMAT-987: [wgsl/§29] wgsl-wire-real-backend — wire the production WgslBackend to xpile''s REAL meta-HIR → WGSL lowering. CONFIRMED adversarial finding (memory project-adversarial-findings-2026-06-25 #1): WgslBackend dispatched a ScaffoldWgslEmitter whose body was `// TODO: lower to WGSL.` (crates/xpile-wgsl-codegen/src/lib.rs), so `xpile transpile --target wgsl` emitted a SCAFFOLD COMMENT, not WGSL — even though the real emit_wgsl_module (PMAT-970, src/wgsl_emit.rs) existed and only tests called it. FIX: the general slot is now the production RealWgslEmitter, which drives emit_wgsl_module(module) and surfaces a hard BackendError::Lower refusal for any construct outside the scalar/control + storage-buffer subset (str/dict/f64/struct/enum/non-fn item) — never a scaffold comment, never a silent wrong emit. The §29 wgpu witness (wgpu_diffexec.rs) already drove the real emit on its general side (PMAT-975), confirmed by the on-Vulkan gpu_witness/gpu_real_kernel tests (max_abs_diff=0). Touches ONLY crates/xpile-wgsl-codegen/.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "WIRING: WgslBackend::new() general slot is RealWgslEmitter (drives emit_wgsl_module), replacing ScaffoldWgslEmitter. Unsupported constructs are an honest BackendError::Lower refusal propagated from the real lowering — NOT a `// TODO: lower to WGSL.` comment, NOT a silent wrong emit."
+  - "REGRESSION GUARD: wgsl_backend_lowers_real_wgsl_not_scaffold asserts WgslBackend::lower over a scalar module produces REAL WGSL containing the lowered fn signature + arithmetic (`fn add(a: i32, b: i32) -> i32`, `return (a + b);`), naga-validates, and contains NO `TODO: lower to WGSL` / `scaffold` strings. PROVEN to FAIL on the old scaffold (panics on the missing fn signature, shows the TODO placeholder) and pass on the fix."
+  - "WITNESS: the §29 wgpu witness general side already drives emit_wgsl_module (PMAT-975); gpu_witness.rs + gpu_real_kernel.rs executed on the local Vulkan adapter and value-matched CPython (max_abs_diff=0). No witness rewiring needed — the specialist fma shader is the independent reference vote by design."
+  - "DONE: worktree gate green — cargo fmt --all; cargo check -p xpile-wgsl-codegen + --workspace; clippy -p xpile-wgsl-codegen --all-targets -D warnings; cargo test -p xpile-wgsl-codegen (42 tests incl. the regression guard + on-GPU witnesses); cargo deny check advisories. Adversarial-fix wave 2026-06-25; disjoint-crate parallel fan-out (sibling slices PMAT-988/989/990)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Adversarial-fix wave #1. Lesson: "a real emit function exists" (emit_wgsl_module) is NOT "the production backend uses it" — the bug was the WIRING, not the lowering. The regression guard locks the wiring so a revert to a comment-only emit fails CI.'
+- id: PMAT-988
+  github_issue: null
+  item_type: task
+  title: 'PMAT-988: [spirv/§29] spirv-engine-runs-passed-text — make the SPIR-V DiffExec engine run its PASSED emitter text, not hardcoded constants. CONFIRMED adversarial finding (#2): SpirvDiffExecEngine::execute_and_compare(general_text, specialist_text) only debug_assert!s its args, then runs its OWN module-level hardcoded GENERAL_WGSL/SPECIALIST_WGSL constants (spirv_diffexec.rs) — what is ATTESTED is NOT what EXECUTES. FIX: run the passed text. Touches ONLY crates/xpile-spirv-codegen/. Sibling slice of the adversarial-fix wave (owner: parallel agent).'
+  status: in-progress
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "The SPIR-V §29 engine executes the general_text/specialist_text PASSED to execute_and_compare, not module-level hardcoded constants. A regression guard proves the attested emitter text is what runs."
+  - "DONE: gate green for the spirv lane — fmt, check, clippy -p xpile-spirv-codegen --all-targets -D warnings, cargo test -p xpile-spirv-codegen, cargo deny check advisories. Adversarial-fix wave 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Adversarial-fix wave #2 (owned by a parallel sibling agent this wave).'
+- id: PMAT-989
+  github_issue: null
+  item_type: task
+  title: 'PMAT-989: [bashrs] bashrs-refuse-control-flow — REFUSE shell control-flow keywords instead of silently shredding them. CONFIRMED adversarial finding (#3): `for i in 1 2 3; do echo $i; done` parses into four bareword Stmt::Cmd nodes (for/do/echo/done) — accepted, NOT refused (crates/bashrs-frontend/src/lib.rs) — silently destroying loops/conditionals. FIX: hard FrontendError refusal for control-flow keywords (for/while/until/do/done/if/then/elif/else/fi/case/esac) — honest-refuse, never silent-mangle — and CORRECT the overstated CLAUDE.md / memory claim that bashrs "handles realistic POSIX shell idioms" (the QUORUM holds for the FLAT-command subset only). Touches ONLY crates/bashrs-frontend/. Sibling slice (owner: parallel agent).'
+  status: in-progress
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "bashrs-frontend REFUSES shell control-flow keywords with a hard FrontendError (honest-refuse) rather than parsing them into bareword commands. A regression guard over `for/while/if/case` fixtures proves the refusal."
+  - "The overstated 'realistic POSIX shell idioms' / 'full §14.4 QUORUM' claim is narrowed to the flat-command subset in the relevant docs/memory."
+  - "DONE: gate green for the bashrs lane — fmt, check, clippy -p bashrs-frontend --all-targets -D warnings, cargo test -p bashrs-frontend, cargo deny check advisories. Adversarial-fix wave 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Adversarial-fix wave #3 (owned by a parallel sibling agent this wave).'
+- id: PMAT-990
+  github_issue: null
+  item_type: task
+  title: 'PMAT-990: [wasm/§29] wasm-witness-real-emit — verify/rewire the WASM §29 witness to drive the real emit_module lowering. SUSPECTED-hollow adversarial finding (#4): the WASM witness emitters use a hardcoded saxpy_module() template (lib.rs:246) though emit_module (the real lowering) IS called at lib.rs:207. VERIFY whether the §29 WASM quorum drives the real emit; if hollow, rewire it to lower a real meta-HIR Module via emit_module (what PMAT-976 CLAIMED). Touches ONLY crates/xpile-wasm-codegen/. Sibling slice (owner: parallel agent).'
+  status: in-progress
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "The WASM §29 witness general side drives the real emit_module lowering of a meta-HIR Module (not a hardcoded template); if the verification shows it is hollow, it is rewired. A regression guard proves the executed witness embeds xpile's real emit."
+  - "DONE: gate green for the wasm lane — fmt, check, clippy -p xpile-wasm-codegen --all-targets -D warnings, cargo test -p xpile-wasm-codegen, cargo deny check advisories. Adversarial-fix wave 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Adversarial-fix wave #4 (owned by a parallel sibling agent this wave).'
 - id: PMAT-986
   github_issue: null
   item_type: epic
