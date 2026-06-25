@@ -69,6 +69,19 @@ private theorem bmod_fits_i64 (n : Int) (h : fits_i64 n) :
   split <;> omega
 
 /--
+  Core-only exponent additivity for `Int` powers (PMAT-948): the
+  Mathlib `pow_add` is a `Monoid` lemma not in bare core, so we
+  derive the same identity by `Nat`-induction over `Int.pow_succ` /
+  `Int.pow_zero`. Reused by `shift_monoid_diamond` and
+  `power_monoid_diamond`.
+-/
+private theorem int_pow_add (a : Int) (b1 b2 : Nat) :
+    a ^ (b1 + b2) = a ^ b1 * a ^ b2 := by
+  induction b2 with
+  | zero => rw [Nat.add_zero, Int.pow_zero, Int.mul_one]
+  | succ k ih => rw [Nat.add_succ, Int.pow_succ, Int.pow_succ, ih, Int.mul_assoc]
+
+/--
   i64 wrapping addition — matches Rust's `i64::wrapping_add` semantics:
   treats inputs as elements of `ℤ/2^64ℤ` and reduces the result back
   into the signed range `[-2^63, 2^63)`.
@@ -888,8 +901,17 @@ theorem bigint_addition_value_eq_math_silver (a b : Int) :
     an out-of-range Int. -/
 def PyIntFast := { n : Int // fits_i64 n }
 
-/-- Coercion to extract the underlying Int. -/
-def PyIntFast.val (p : PyIntFast) : Int := p.val
+/-- Coercion to extract the underlying Int.
+
+    NOTE (PMAT-948): the body MUST use the positional `.1` Subtype
+    projection, NOT `p.val`. With `PyIntFast := { n : Int // fits_i64 n }`,
+    `p.val` resolves by dot-notation to *this very function*
+    (`PyIntFast.val p`) — a non-terminating self-call (`p` unchanged),
+    which is why the historical `:892` error was `fail to show
+    termination`. `p.1` is the genuine `Subtype.val` projection and
+    breaks the self-reference (the same name-shadow class discharged in
+    PMAT-914/915/916/928/936/937/938). -/
+def PyIntFast.val (p : PyIntFast) : Int := p.1
 
 /-- Coercion-aware addition lemma: when adding two values both
     proven to fit, the result fits iff their sum fits — this
@@ -1044,10 +1066,14 @@ theorem and_dispatch_commutative_platinum
   cases path with
   | FastPath =>
       unfold and_dispatch_silver i64_and
-      rw [Nat.land_comm]
+      rw [show (twos_complement_u64 a).land (twos_complement_u64 b)
+            = (twos_complement_u64 b).land (twos_complement_u64 a)
+          from Nat.and_comm (twos_complement_u64 a) (twos_complement_u64 b)]
   | SlowPath =>
       unfold and_dispatch_silver bigint_and i64_and
-      rw [Nat.land_comm]
+      rw [show (twos_complement_u64 a).land (twos_complement_u64 b)
+            = (twos_complement_u64 b).land (twos_complement_u64 a)
+          from Nat.and_comm (twos_complement_u64 a) (twos_complement_u64 b)]
 
 /-! ## PMAT-200 — SECOND Platinum-tier refinement: slow-path
     associativity (XPILE-REFINE-PY-INT-ARITH-007).
@@ -1405,12 +1431,13 @@ theorem shift_monoid_diamond
   refine ⟨?_, ?_, ?_, ?_⟩
   · rfl
   · unfold shl_dispatch_silver bigint_shl
-    rw [pow_add]
-    ring
+    -- (a * 2^b1) * 2^b2 = a * 2^(b1+b2); core `int_pow_add` replaces
+    -- the Mathlib `pow_add` + `ring`.
+    rw [int_pow_add, Int.mul_assoc]
   · unfold shl_dispatch_silver bigint_shl
-    simp
+    rw [Int.pow_zero, Int.mul_one]
   · unfold shl_dispatch_silver bigint_shl
-    simp
+    rw [Int.zero_mul]
 
 /-! ## PMAT-247 — FOURTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-4
     Diamond in substrate): power monoid via Nat-action exponentiation
@@ -1472,11 +1499,14 @@ theorem power_monoid_diamond
   refine ⟨?_, ?_, ?_, ?_⟩
   · rfl
   · unfold pow_dispatch_silver bigint_pow
-    exact pow_zero a
+    -- a^0 = 1 (core `Int.pow_zero`, was Mathlib `pow_zero`)
+    exact Int.pow_zero a
   · unfold pow_dispatch_silver bigint_pow
-    exact pow_one a
+    -- a^1 = a via core `Int.pow_succ`/`Int.pow_zero` (was Mathlib `pow_one`)
+    rw [Int.pow_succ, Int.pow_zero, Int.one_mul]
   · unfold pow_dispatch_silver bigint_pow
-    exact pow_add a b1 b2
+    -- a^(b1+b2) = a^b1 * a^b2 via core `int_pow_add` (was Mathlib `pow_add`)
+    exact int_pow_add a b1 b2
 
 /-! ## PMAT-286 — FIFTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-5
     Diamond in substrate): bitwise-AND commutative monoid via
@@ -1544,7 +1574,9 @@ theorem bitwise_and_commutative_monoid_diamond
   · exact and_dispatch_commutative_platinum path a b
   · rfl
   · unfold bigint_and i64_and
-    rw [Nat.land_comm]
+    rw [show (twos_complement_u64 a).land (twos_complement_u64 b)
+          = (twos_complement_u64 b).land (twos_complement_u64 a)
+        from Nat.and_comm (twos_complement_u64 a) (twos_complement_u64 b)]
   · rfl
 
 /-! ## PMAT-290 — SIXTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-6
@@ -1628,7 +1660,8 @@ theorem negation_involution_abelian_group_diamond (a b : Int) :
   · exact Int.neg_neg a
   · exact Int.add_right_neg a
   · exact Int.add_left_neg a
-  · exact Int.neg_add a b
+  · -- core `Int.neg_add` takes no explicit args (was `Int.neg_add a b`)
+    exact Int.neg_add
 
 /-! ## PMAT-292 — SEVENTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-7
     Diamond in substrate): order-lattice via Int min/max
@@ -1702,8 +1735,10 @@ theorem order_distributive_lattice_diamond (a b c : Int) :
   refine ⟨?_, ?_, ?_, ?_⟩
   · exact Int.max_comm a b
   · exact Int.min_comm a b
-  · exact Int.max_min_distrib_left
-  · exact Int.min_max_distrib_left
+  -- core has no `Int.max_min_distrib_left`/`min_max_distrib_left` (Mathlib-only);
+  -- `omega` decides Int min/max lattice distributivity directly.
+  · omega
+  · omega
 
 /-! ## PMAT-294 — EIGHTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-8
     Diamond in substrate): divisibility-preorder via Int.dvd
@@ -1773,7 +1808,8 @@ theorem divisibility_preorder_diamond (a b c : Int) :
     ∧ a ∣ 0 := by
   refine ⟨?_, ?_, ?_, ?_⟩
   · exact Int.dvd_refl a
-  · intro h1 h2; exact dvd_trans h1 h2
+  · -- core `Int.dvd_trans` (the bare `dvd_trans` alias is Mathlib-only)
+    intro h1 h2; exact Int.dvd_trans h1 h2
   · exact Int.one_dvd a
   · exact Int.dvd_zero a
 
@@ -1838,7 +1874,8 @@ theorem linear_order_trichotomy_diamond (a b c : Int) :
   refine ⟨?_, ?_, ?_, ?_⟩
   · exact Int.lt_trichotomy a b
   · exact Int.lt_irrefl a
-  · intro hab hba; exact Int.lt_asymm hab hba
+  -- core has no `Int.lt_asymm`; `omega` discharges Int strict-order asymmetry.
+  · intro hab hba; omega
   · intro hab hbc; exact Int.lt_trans hab hbc
 
 /-! ## PMAT-300 — TENTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-10
@@ -2029,7 +2066,8 @@ theorem integral_domain_diamond (a b c : Int) :
   refine ⟨?_, ?_, ?_, ?_⟩
   · exact fun h => Int.mul_eq_zero.mp h
   · intro ha h; exact Int.eq_of_mul_eq_mul_left ha h
-  · exact Int.one_ne_zero
+  · -- core has no `Int.one_ne_zero`; `(1:Int) ≠ 0` is decidable.
+    decide
   · exact fun ha hb => Int.mul_ne_zero ha hb
 
 /-! ## PMAT-305 — TWELFTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-12
@@ -2127,7 +2165,21 @@ theorem ordered_ring_diamond (a b : Int) :
     ∧ (0 ≤ a → b ≤ 0 → a * b ≤ 0)
     -- (d) Strictpos × strictpos > 0
     ∧ (0 < a → 0 < b → 0 < a * b) := by
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> intros <;> nlinarith
+  -- core sign rules (the Mathlib `nlinarith` is unavailable). Each case
+  -- reduces to `Int.mul_nonneg`/`Int.mul_pos` after `omega` flips a
+  -- nonpositivity hypothesis into the nonnegativity of its negation.
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro ha hb; exact Int.mul_nonneg ha hb
+  · intro ha hb
+    have h1 : 0 ≤ -a := by omega
+    have h2 : 0 ≤ -b := by omega
+    have := Int.mul_nonneg h1 h2
+    rwa [Int.neg_mul_neg] at this
+  · intro ha hb
+    have h2 : 0 ≤ -b := by omega
+    have := Int.mul_nonneg ha h2
+    rw [Int.mul_neg] at this; omega
+  · intro ha hb; exact Int.mul_pos ha hb
 
 /-! ## PMAT-307 — THIRTEENTH Diamond on C-PY-INT-ARITH (FIRST
     DEPTH-13 in the substrate): ABSOLUTE VALUE / NORM AXIOMS
@@ -2189,19 +2241,24 @@ theorem ordered_ring_diamond (a b : Int) :
   **Diamond-tier refinement theorem** — `(Int, |·|)` is a
   NORMED RING.
 
-  Combines four NORM-defining properties:
-  (a) Non-negativity:        `0 ≤ |a|`
-  (b) Definiteness:          `|a| = 0 ↔ a = 0`
-  (c) Triangle inequality:   `|a + b| ≤ |a| + |b|`
-  (d) Multiplicativity:      `|a * b| = |a| * |b|`
+  Combines four NORM-defining properties (PMAT-948: the magnitude is
+  written as the CORE `(a.natAbs : Int)` rather than Mathlib's `|a|`
+  notation — `|·|` over `Int` is undefined with no `import Mathlib`.
+  `Int.natAbs : Int → Nat` is the exact same magnitude; this is the
+  PMAT-928/937 lesson reapplied):
+  (a) Non-negativity:        `0 ≤ (a.natAbs : Int)`
+  (b) Definiteness:          `(a.natAbs : Int) = 0 ↔ a = 0`
+  (c) Triangle inequality:   `((a+b).natAbs : Int) ≤ (a.natAbs : Int) + (b.natAbs : Int)`
+  (d) Multiplicativity:      `((a*b).natAbs : Int) = (a.natAbs : Int) * (b.natAbs : Int)`
 
-  Together these axiomatize |·| as an ABSOLUTE VALUE / NORM on
-  the ring Int. Distinct from all prior 12 categories — none
+  Together these axiomatize `Int.natAbs` as an ABSOLUTE VALUE / NORM
+  on the ring Int. Distinct from all prior 12 categories — none
   mention a unary operation capturing "size".
 
-  Uses standard Mathlib lemmas: `abs_nonneg`, `abs_eq_zero`,
-  `abs_add`, `abs_mul`. Mathlib's `AbsoluteValue` typeclass
-  encodes this structure.
+  Core lemmas: non-negativity is type-level (`Int.ofNat_nonneg`, the
+  codomain is `Nat`); definiteness and the triangle inequality are
+  decided by `omega` / core `Int.natAbs_add_le`; multiplicativity is
+  core `Int.natAbs_mul` + `Int.ofNat_mul`.
 
   An emitter that lowered abs through a path that violated the
   triangle inequality (e.g., a saturating abs that wrapped
@@ -2213,18 +2270,19 @@ theorem ordered_ring_diamond (a b : Int) :
 -/
 theorem abs_value_norm_diamond (a b : Int) :
     -- (a) Non-negativity of absolute value
-    (0 ≤ |a|)
+    (0 ≤ (a.natAbs : Int))
     -- (b) Definiteness: |a| = 0 ↔ a = 0
-    ∧ (|a| = 0 ↔ a = 0)
+    ∧ ((a.natAbs : Int) = 0 ↔ a = 0)
     -- (c) Triangle inequality
-    ∧ (|a + b| ≤ |a| + |b|)
+    ∧ (((a + b).natAbs : Int) ≤ (a.natAbs : Int) + (b.natAbs : Int))
     -- (d) Multiplicativity
-    ∧ (|a * b| = |a| * |b|) := by
+    ∧ (((a * b).natAbs : Int) = (a.natAbs : Int) * (b.natAbs : Int)) := by
   refine ⟨?_, ?_, ?_, ?_⟩
-  · exact abs_nonneg a
-  · exact abs_eq_zero
-  · exact abs_add a b
-  · exact abs_mul a b
+  · exact Int.ofNat_nonneg a.natAbs
+  · omega
+  · have := Int.natAbs_add_le a b
+    omega
+  · rw [Int.natAbs_mul, Int.ofNat_mul]
 
 /-! ## PMAT-310 — FOURTEENTH Diamond on C-PY-INT-ARITH (FIRST
     DEPTH-14 in the substrate): NAT-TO-INT RING HOMOMORPHISM —
@@ -2325,10 +2383,12 @@ theorem nat_cast_ring_hom_diamond (m n : Nat) :
     -- (d) Preserves multiplication
     ∧ (((m * n : Nat) : Int) = (m : Int) * (n : Int)) := by
   refine ⟨?_, ?_, ?_, ?_⟩
-  · exact Nat.cast_zero
-  · exact Nat.cast_one
-  · exact Nat.cast_add m n
-  · exact Nat.cast_mul m n
+  -- core: Nat→Int 0/1 are `rfl`; +/* are `Int.ofNat_{add,mul}`
+  -- (the `Nat.cast_*` lemmas are Mathlib aliases).
+  · rfl
+  · rfl
+  · exact Int.ofNat_add m n
+  · exact Int.ofNat_mul m n
 
 /-! ## PMAT-312 — FIFTEENTH Diamond on C-PY-INT-ARITH (FIRST
     DEPTH-15 in the substrate): INT-EMOD QUOTIENT HOMOMORPHISM —
@@ -2425,7 +2485,11 @@ theorem int_emod_quotient_hom_diamond (a b : Int) :
     -- (a) emod is + homomorphism: (a + b) % 2 = (a%2 + b%2) % 2
     ((a + b) % 2 = (a % 2 + b % 2) % 2)
     -- (b) emod is * homomorphism: (a * b) % 2 = (a%2 * b%2) % 2
-    ∧ ((a * b) % 2 = (a % 2 * b % 2) % 2)
+    --     PMAT-948: parenthesize BOTH factors. `a % 2 * b % 2` parses
+    --     left-assoc as `((a%2)*b)%2`, NOT the both-factors-reduced
+    --     ring-hom `((a%2)*(b%2))%2` the comment intends and `Int.mul_emod`
+    --     proves (the same latent-parenthesization bug fixed in PMAT-938).
+    ∧ ((a * b) % 2 = ((a % 2) * (b % 2)) % 2)
     -- (c) emod result is non-negative (lands in Z/nZ canonical domain)
     ∧ (0 ≤ a % 2)
     -- (d) emod result is strictly less than 2 (lands in {0, 1} = Z/2Z)
@@ -2477,9 +2541,12 @@ theorem int_emod_quotient_hom_diamond (a b : Int) :
 
     None of the prior 15 categories characterizes the gcd as a
     universal/categorical object with a constructive linear
-    combination. Mathlib's `Int.gcd`, `Int.gcd_dvd_left`,
-    `Int.gcd_dvd_right`, `Int.dvd_gcd`, `Int.gcd_eq_gcd_ab` are
-    the standard GCD-monoid + Bézout lemmas.
+    combination. Core `Int.gcd`, `Int.gcd_dvd_left`,
+    `Int.gcd_dvd_right` give (a)/(b); universality (c) is core via
+    `Int.natAbs`/`Nat.dvd_gcd`; and the EXISTENTIAL Bézout (d) is
+    core-proved here (`int_gcd_bezout_exists`, via `Nat.gcd.induction`)
+    — Mathlib's `Int.dvd_gcd`/`gcd_eq_gcd_ab`/`gcdA`/`gcdB` are absent
+    from bare core (PMAT-948).
 
     Why this is genuinely orthogonal:
       The Bézout identity `gcd a b = x*a + y*b` is what makes Int
@@ -2496,7 +2563,69 @@ theorem int_emod_quotient_hom_diamond (a b : Int) :
     falsify (d). The Bézout pair is needed for modular inverses.
 
     Status: discharged at v0.1.0 (PMAT-315). Tier: DIAMOND.
-    FIRST DEPTH-16 in the substrate. -/
+    FIRST DEPTH-16 in the substrate.
+
+    PMAT-948 (capstone): core Lean 4.15.0 has `Int.gcd_dvd_left`/
+    `gcd_dvd_right` but NO `Int.dvd_gcd` (universality), and NO
+    Bézout identity at all — `Int.gcdA`/`gcdB`/`gcd_eq_gcd_ab` are
+    Mathlib-only (verified absent from the whole toolchain `src`).
+    So this slice (i) proves universality from core via the
+    `Int.natAbs` route + `Nat.dvd_gcd`, and (ii) replaces the
+    SPECIFIC Mathlib `gcdA`/`gcdB` WITNESSES in conjunct (d) with the
+    EXISTENTIAL Bézout statement `∃ x y, gcd a b = a*x + b*y` — which
+    is the actual mathematical content of the Bézout identity, NOT a
+    weakening (the existence of SOME linear combination is precisely
+    what "Bézout / PID" asserts; the Mathlib `gcdA`/`gcdB` are just one
+    constructive choice of witness). That existential is then PROVED
+    core-only by induction over `Nat.gcd.induction` — the genuine
+    structural-recursion content (the extended Euclidean algorithm's
+    correctness), no Mathlib and no proof holes. See
+    `int_gcd_bezout_exists` below. -/
+
+/--
+  Core-only Bézout existence over `Nat` (PMAT-948 helper). Proved by
+  the well-founded `Nat.gcd.induction` recursor (`gcd m n = gcd (n%m) m`
+  for `m>0`): the IH gives a combination for `gcd (n%m) m`, and
+  `n % m = n - m*(n/m)` rearranges it into one for `gcd m n`. This is
+  the genuine structural-recursion obligation `PyIntArith` carries — the
+  decreasing measure is `Nat.gcd`'s own well-founded recursion. -/
+private theorem nat_gcd_bezout_aux (m n : Nat) :
+    ∃ x y : Int, (Nat.gcd m n : Int) = m * x + n * y := by
+  induction m, n using Nat.gcd.induction with
+  | H0 n => exact ⟨0, 1, by rw [Nat.gcd_zero_left]; push_cast; omega⟩
+  | H1 m n hm ih =>
+      obtain ⟨x, y, hxy⟩ := ih
+      rw [Nat.gcd_rec]
+      have hmod : ((n % m : Nat) : Int) = (n : Int) - (m : Int) * ((n / m : Nat) : Int) := by
+        have h := Nat.div_add_mod n m
+        have hc : ((m * (n / m) + n % m : Nat) : Int) = (n : Int) := by rw [h]
+        rw [Int.ofNat_add, Int.ofNat_mul] at hc
+        omega
+      rw [hxy, hmod]
+      refine ⟨y - ((n / m : Nat) : Int) * x, x, ?_⟩
+      rw [Int.sub_mul, Int.mul_sub, Int.mul_assoc (m : Int) ((n / m : Nat) : Int) x]
+      omega
+
+/--
+  Core-only Bézout existence over `Int` (PMAT-948 helper). Lifts
+  `nat_gcd_bezout_aux` through `Int.gcd a b = a.natAbs.gcd b.natAbs`
+  by case-splitting `Int.natAbs_eq` (each operand is `±` its natAbs)
+  and folding the sign into the linear-combination witness. This is
+  the constructive content of the Bézout identity, with no Mathlib
+  `gcdA`/`gcdB` and no proof holes. -/
+theorem int_gcd_bezout_exists (a b : Int) :
+    ∃ x y : Int, (Int.gcd a b : Int) = a * x + b * y := by
+  obtain ⟨x, y, hxy⟩ := nat_gcd_bezout_aux a.natAbs b.natAbs
+  have hg : ((Int.gcd a b : Int)) = ((a.natAbs : Int)) * x + ((b.natAbs : Int)) * y := hxy
+  rcases Int.natAbs_eq a with hA | hA <;> rcases Int.natAbs_eq b with hB | hB
+  · exact ⟨x, y, by rw [hg, ← hA, ← hB]⟩
+  · refine ⟨x, -y, ?_⟩
+    rw [hg, ← hA, show ((b.natAbs : Int)) = -b by omega, Int.neg_mul, Int.mul_neg]
+  · refine ⟨-x, y, ?_⟩
+    rw [hg, ← hB, show ((a.natAbs : Int)) = -a by omega, Int.neg_mul, Int.mul_neg]
+  · refine ⟨-x, -y, ?_⟩
+    rw [hg, show ((a.natAbs : Int)) = -a by omega, show ((b.natAbs : Int)) = -b by omega,
+        Int.neg_mul, Int.mul_neg, Int.neg_mul, Int.mul_neg]
 
 /--
   **Diamond-tier refinement theorem** — `Int.gcd` satisfies the
@@ -2508,7 +2637,13 @@ theorem int_emod_quotient_hom_diamond (a b : Int) :
   (b) GCD divides right:       `(Int.gcd a b : Int) ∣ b`
   (c) GCD is universal:        any common divisor divides gcd
                                `c ∣ a → c ∣ b → c ∣ (Int.gcd a b : Int)`
-  (d) Bézout identity:         `(Int.gcd a b : Int) = a * gcdA + b * gcdB`
+  (d) Bézout identity:         `∃ x y, (Int.gcd a b : Int) = a * x + b * y`
+                               (PMAT-948: the EXISTENTIAL linear
+                               combination — the genuine Bézout content,
+                               core-proved via `int_gcd_bezout_exists`.
+                               Mathlib's `gcdA`/`gcdB` are one choice of
+                               witness for this existential, absent from
+                               bare core.)
 
   Together these characterize `Int.gcd` as a UNIVERSAL OBJECT
   (categorical gcd in `IsGCDMonoid`) with a CONSTRUCTIVE linear
@@ -2516,10 +2651,11 @@ theorem int_emod_quotient_hom_diamond (a b : Int) :
   (fdiv/fmod algorithm) and PMAT-302 INTEGRAL DOMAIN
   (no-zero-divisors).
 
-  Uses Mathlib's `Int.gcd_dvd_left`, `Int.gcd_dvd_right`,
-  `Int.dvd_gcd`, `Int.gcd_eq_gcd_ab` — the standard PID/Bézout
-  lemmas. `Int.instIsPrincipalIdealRing` provides typeclass
-  evidence that Int is a Principal Ideal Domain.
+  Uses CORE `Int.gcd_dvd_left`, `Int.gcd_dvd_right` for (a)/(b); core
+  `Int.natAbs`/`Nat.dvd_gcd` for universality (c); and the core
+  `int_gcd_bezout_exists` helper (proved via `Nat.gcd.induction`) for
+  the existential Bézout (d). NO Mathlib `Int.dvd_gcd`/`gcd_eq_gcd_ab`/
+  `gcdA`/`gcdB` (all absent from bare core), NO proof holes.
 
   An emitter that lowered gcd through Stein's binary GCD (which
   doesn't naturally produce a Bézout pair) without backward
@@ -2536,13 +2672,21 @@ theorem gcd_monoid_bezout_diamond (a b c : Int) :
     ∧ ((Int.gcd a b : Int) ∣ b)
     -- (c) gcd is universal: any common divisor divides gcd
     ∧ (c ∣ a → c ∣ b → c ∣ (Int.gcd a b : Int))
-    -- (d) Bézout identity (constructive linear combination)
-    ∧ ((Int.gcd a b : Int) = a * Int.gcdA a b + b * Int.gcdB a b) := by
+    -- (d) Bézout identity — EXISTENTIAL linear combination (the genuine
+    --     Bézout content; Mathlib's gcdA/gcdB are one witness, absent
+    --     from bare core — see `int_gcd_bezout_exists`)
+    ∧ (∃ x y : Int, (Int.gcd a b : Int) = a * x + b * y) := by
   refine ⟨?_, ?_, ?_, ?_⟩
   · exact Int.gcd_dvd_left
   · exact Int.gcd_dvd_right
-  · intro h1 h2; exact Int.dvd_gcd h1 h2
-  · exact Int.gcd_eq_gcd_ab a b
+  · -- universality via core: c ∣ a,b ⟹ |c| ∣ gcd|a||b| ⟹ c ∣ gcd a b
+    intro h1 h2
+    have hca : c.natAbs ∣ a.natAbs := Int.natAbs_dvd_natAbs.mpr h1
+    have hcb : c.natAbs ∣ b.natAbs := Int.natAbs_dvd_natAbs.mpr h2
+    have hnat : c.natAbs ∣ Int.gcd a b := Nat.dvd_gcd hca hcb
+    have hc2 : (c.natAbs : Int) ∣ (Int.gcd a b : Int) := Int.ofNat_dvd.mpr hnat
+    exact Int.natAbs_dvd.mp hc2
+  · exact int_gcd_bezout_exists a b
 
 /-! ## PMAT-317 — SEVENTEENTH Diamond on C-PY-INT-ARITH (FIRST
     DEPTH-17 in the substrate): UNIT GROUP STRUCTURE — the units
@@ -2629,10 +2773,15 @@ theorem unit_group_diamond (a : Int) :
     -- (d) Squares are non-negative (sign rule for a²)
     ∧ (0 ≤ a * a) := by
   refine ⟨?_, ?_, ?_, ?_⟩
-  · exact mul_one a
+  · exact Int.mul_one a            -- core (bare `mul_one` is Mathlib)
   · decide
-  · exact (Int.neg_one_mul a).symm
-  · exact mul_self_nonneg a
+  · omega                          -- -a = (-1)*a; `Int.neg_one_mul` n/a, omega decides
+  · -- 0 ≤ a*a: core, no `mul_self_nonneg`/`positivity`/`nlinarith`
+    rcases Int.le_total 0 a with h | h
+    · exact Int.mul_nonneg h h
+    · have h1 : 0 ≤ -a := by omega
+      have := Int.mul_nonneg h1 h1
+      rwa [Int.neg_mul_neg] at this
 
 /-! ## PMAT-320 — EIGHTEENTH Diamond on C-PY-INT-ARITH (FIRST
     DEPTH-18 in the substrate): SIGN FUNCTION MONOID HOMOMORPHISM
@@ -2885,8 +3034,8 @@ theorem int_neg_order_compat_diamond (a : Int) :
   from PMAT-310 (which was the embedding direction) and PMAT-312
   (which was a different quotient retraction Int → Z/nZ).
 
-  Uses Mathlib's `Int.toNat_natCast`, `Int.toNat_of_nonneg`,
-  `Int.toNat_eq_zero`, and `Nat.zero_le`. Standard cast / partial-
+  Uses core `Int.toNat_ofNat`, `Int.toNat_of_nonneg`, `omega` (for
+  `toNat a = 0 ↔ a ≤ 0`), and `Nat.zero_le`. Standard cast / partial-
   inverse lemmas.
 
   An emitter that lowered Python's non-negative-only fast path
@@ -2908,9 +3057,9 @@ theorem int_to_nat_partial_inverse_diamond (a : Int) (n : Nat) :
     -- (d) Non-negative result (Nat is always ≥ 0)
     ∧ ((0 : Nat) ≤ Int.toNat a) := by
   refine ⟨?_, ?_, ?_, ?_⟩
-  · exact Int.toNat_natCast n
+  · exact Int.toNat_ofNat n        -- core (bare `Int.toNat_natCast` is Mathlib)
   · exact Int.toNat_of_nonneg
-  · exact Int.toNat_eq_zero
+  · omega                          -- toNat a = 0 ↔ a ≤ 0 (no core `Int.toNat_eq_zero`)
   · exact Nat.zero_le _
 
 /-! ## PMAT-327 — TWENTY-FIRST Diamond on C-PY-INT-ARITH (FIRST
@@ -2974,8 +3123,8 @@ theorem int_to_nat_partial_inverse_diamond (a : Int) (n : Nat) :
   ORDER-PRESERVING RING HOMOMORPHISM (Mathlib's `OrderRingHom`
   shape) when combined with PMAT-310 (the ring-hom direction).
 
-  Uses Mathlib's `Nat.cast_le`, `Nat.cast_lt`, `Nat.cast_inj`,
-  `Nat.cast_nonneg`. Standard cast lemmas.
+  Uses core `omega` (for the ≤ / < / = iffs) and `Int.ofNat_nonneg`
+  (non-negativity) — the Mathlib `Nat.cast_*` simp-lemmas are unavailable.
 
   An emitter that lowered Python's non-negative-int fast path
   through a path that preserved arithmetic operations (PMAT-310
@@ -2996,10 +3145,13 @@ theorem int_nat_cast_order_embedding_diamond (n m : Nat) :
     ∧ (((n : Int)) = ((m : Int)) ↔ n = m)
     -- (d) Cast is non-negative
     ∧ (0 ≤ ((n : Int))) := by
+  -- core: the Mathlib `Nat.cast_{le,lt,inj}` simp-lemmas are unavailable;
+  -- `omega` decides each Nat↔Int order/eq iff, and `Int.ofNat_nonneg`
+  -- gives non-negativity of the cast.
   refine ⟨?_, ?_, ?_, ?_⟩
-  · exact Nat.cast_le
-  · exact Nat.cast_lt
-  · exact Nat.cast_inj
-  · exact Nat.cast_nonneg n
+  · omega
+  · omega
+  · omega
+  · exact Int.ofNat_nonneg n
 
 end XpileContracts.CPyIntArith

@@ -15,7 +15,9 @@
 //! XlateRustFnToLeanThm/PMAT-914 + XlateLeanToRust/PMAT-915 +
 //! Notation/PMAT-916 + Bashrs/PMAT-928 +
 //! XlatePyBoolToRustBool/PMAT-935 + XlatePyListToVec/PMAT-936 +
-//! FfiCpythonExt/PMAT-937 = 21), and asserts
+//! FfiCpythonExt/PMAT-937 + CompileRustToPtxMma/PMAT-938 +
+//! PyIntArith/PMAT-948 = 23 — the CAPSTONE that makes the ENTIRE
+//! `contracts/lean/` substrate machine-checked), and asserts
 //! the `PROVABILITY-INVENTORY.md` PILOT count stays in lockstep. It does
 //! NOT re-prove anything — only that the bookkeeping the Lean job relies on
 //! can't drift behind the Rust gate's back.
@@ -196,6 +198,30 @@ const EXPECTED_PILOT: &[&str] = &[
     //     GPU-compile contract now machine-checked. Pilot 21 → 22;
     //     KNOWN-INCOMPLETE 2 → 1 (only PyIntArith 45 remains).
     "CompileRustToPtxMma",
+    // PMAT-948 (CAPSTONE — the LAST non-elaborating module): discharged
+    // `PyIntArith` (45 errors). The `:892 fail to show termination` first-error
+    // was — for the NINTH+ time — the NAME-SHADOW class, NOT a genuine missing
+    // measure: `def PyIntFast.val (p) := p.val` self-resolved to itself,
+    // cascading into the `:923`/`:945` `rfl`s + the `:931` `.property`
+    // mismatch → positional `.1` clears all four. The remaining ~41 were ALL
+    // cheap classes already exhausted across PMAT-904..938: Mathlib lemma-name
+    // gaps → core (`pow_*` → `Int.pow_*` + a hand-rolled `int_pow_add`;
+    // `Nat.land_comm` → core `Nat.and_comm`; `Int.lt_asymm`/`one_ne_zero`/
+    // min-max-distrib/`dvd_trans`/`Nat.cast_*`/`Int.toNat_*` → `omega`/`decide`/
+    // `Int.*`); Mathlib TACTICS `ring`/`nlinarith` → explicit core
+    // distributivity + `Int.mul_nonneg`/`Int.mul_pos`; the `|·|` abs NOTATION
+    // (undefined in core) restated over `Int.natAbs` (PMAT-928/937); and a
+    // latent PARENTHESIZATION bug `a%2*b%2%2` → `(a%2)*(b%2)%2` (PMAT-938
+    // class). The ONE genuinely new piece — the Bézout identity
+    // (`Int.gcdA`/`gcdB`/`gcd_eq_gcd_ab` are Mathlib-only, verified absent from
+    // the whole toolchain `src`) — was NOT weakened: conjunct (d) is restated
+    // as the EXISTENTIAL Bézout `∃ x y, gcd a b = a*x + b*y` (the genuine
+    // content; Mathlib's gcdA/gcdB are one witness) and PROVED core-only via
+    // `Nat.gcd.induction` (the real extended-Euclid structural recursion), with
+    // universality (c) via `Int.natAbs`/`Nat.dvd_gcd`. No `sorry`/`axiom`/
+    // `import Mathlib`. Pilot 22 → 23; KNOWN-INCOMPLETE 1 → 0 — the ENTIRE
+    // `contracts/lean/` substrate is now machine-checked.
+    "PyIntArith",
 ];
 
 #[test]

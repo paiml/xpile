@@ -24,13 +24,15 @@ open Lake DSL
   — so this job is exactly the check that makes "provable" un-falsifiable by
   `grep sorry`.
 
-  PILOT = the 22 modules that elaborate clean under bare core with
+  PILOT = the 23 modules that elaborate clean under bare core with
   warnings-as-errors (9 from PMAT-903 + 2 PMAT-904 + FfiShellSubprocess/907 +
   CFloatArith/912 + XpileFrontendTrait/913 + XlateRustFnToLeanThm/914 +
   XlateLeanToRust/915 + Notation/916 + Bashrs/928 + XlatePyBoolToRustBool/935 +
-  XlatePyListToVec/936 + FfiCpythonExt/937 + CompileRustToPtxMma/938).
-  The known-incomplete remainder is 1 module with REAL elaboration errors
-  (termination / type-mismatch / synthesis failures — NOT sorries), enumerated
+  XlatePyListToVec/936 + FfiCpythonExt/937 + CompileRustToPtxMma/938 +
+  PyIntArith/948 — the CAPSTONE: the LAST non-elaborating module).
+  The known-incomplete remainder is now ZERO — the ENTIRE
+  `contracts/lean/` substrate is machine-checked by this advisory job.
+  (Historical remainder enumeration retained in PROVABILITY-INVENTORY.md.)
   honestly in `PROVABILITY-INVENTORY.md` and deliberately EXCLUDED here so this
   advisory job is GREEN without overstating what is proven. Discharging the
   remaining errors and re-adding files is ongoing Day 5+ work.
@@ -228,5 +230,32 @@ lean_lib «XpileContractsPilot» where
     --     the parens so the proved claim is the genuine homomorphism law.
     -- Layer-5 Rust→PTX-MMA GPU-compile contract now machine-checked, not
     -- excluded. KNOWN-INCOMPLETE 2 → 1 (only PyIntArith 45 remains).
-    `CompileRustToPtxMma            -- C-COMPILE-RUST-TO-PTX-MMA   (PMAT-938)
+    `CompileRustToPtxMma,           -- C-COMPILE-RUST-TO-PTX-MMA   (PMAT-938)
+    -- PMAT-948 (CAPSTONE — the LAST non-elaborating module): discharged
+    -- `PyIntArith` (45 errors). The `:892` `fail to show termination`
+    -- first-error was — for the NINTH+ time — the NAME-SHADOW class, NOT a
+    -- genuine missing measure: `def PyIntFast.val (p) := p.val` self-resolved
+    -- by dot-notation to itself, cascading into the `:923`/`:945` `rfl`s and
+    -- the `:931` `.property` mismatch → positional `.1` clears all four. The
+    -- remaining ~41 errors were ALL cheap classes already exhausted across
+    -- PMAT-904..938: Mathlib-only lemma-name gaps restated over core
+    -- (`pow_zero`/`pow_one`/`pow_add` → `Int.pow_*` + a hand-rolled
+    -- `int_pow_add`; `Nat.land_comm` → core `Nat.and_comm` under `Int.ofNat`;
+    -- `Int.lt_asymm`/`Int.one_ne_zero`/min-max-distrib/`dvd_trans`/`Nat.cast_*`/
+    -- `Int.toNat_*` → `omega`/`decide`/`Int.*`); Mathlib-only TACTICS
+    -- (`ring`/`nlinarith` → explicit core distributivity + `Int.mul_nonneg`/
+    -- `Int.mul_pos`); the `|·|` abs NOTATION (undefined in core) restated over
+    -- `Int.natAbs` (PMAT-928/937 lesson); and a latent PARENTHESIZATION bug
+    -- (`a%2 * b%2 % 2` parses `((a%2)*b)%2`, fixed to the ring-hom
+    -- `((a%2)*(b%2))%2`, the PMAT-938 class). The ONE genuinely new piece —
+    -- the Bézout identity (`Int.gcdA`/`gcdB`/`gcd_eq_gcd_ab` are Mathlib-only,
+    -- verified absent from the entire toolchain `src`) — was NOT weakened or
+    -- faked: conjunct (d) is restated as the EXISTENTIAL Bézout
+    -- `∃ x y, gcd a b = a*x + b*y` (the genuine mathematical content; the
+    -- Mathlib `gcdA`/`gcdB` are just one witness choice) and PROVED core-only
+    -- via `Nat.gcd.induction` (the real extended-Euclid structural recursion),
+    -- plus universality (c) via `Int.natAbs`/`Nat.dvd_gcd`. No `sorry`, no
+    -- `axiom`, no `import Mathlib`. KNOWN-INCOMPLETE 1 → 0 — the ENTIRE
+    -- substrate is now machine-checked.
+    `PyIntArith                     -- C-PY-INT-ARITH              (PMAT-948 CAPSTONE)
   ]
