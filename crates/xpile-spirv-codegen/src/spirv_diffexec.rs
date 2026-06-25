@@ -1,4 +1,4 @@
-//! PMAT-960 / PMAT-977 — the executed Vulkan SPIR-V DiffExec witness (§29).
+//! PMAT-960 / PMAT-977 / PMAT-988 — the executed Vulkan SPIR-V DiffExec witness (§29).
 //!
 //! The native-Vulkan-IR sibling of
 //! [`xpile_wgsl_codegen::WgpuWgslDiffExecEngine`] (PMAT-950). Where the
@@ -58,6 +58,26 @@
 //! *present but broken* run (device-lost, SPIR-V validation error,
 //! map-async failure) returns `Err(_)` — a broken GPU run must NOT
 //! masquerade as "not run".
+//!
+//! ## PMAT-988 — the witness now RUNS the text it is HANDED (attested == executed)
+//!
+//! Before PMAT-988 [`SpirvDiffExecEngine::execute_and_compare`] only
+//! `debug_assert!`ed its `general_text` / `specialist_text` arguments, then
+//! ran a *re-derived* `general_real_wgsl()` for the general side and the
+//! module-level hardcoded [`SPECIALIST_WGSL`] constant for the specialist —
+//! so the witness EXECUTED artifacts it derived itself and IGNORED the
+//! attested text it was given. What was attested was not guaranteed to be
+//! what ran: a regression that changed the emitter's primary text could not
+//! be caught by the GPU run.
+//!
+//! PMAT-988 closes that gap. The emitter primaries are
+//! [`crate::spirv_text_summary`] outputs that inline the **exact WGSL** each
+//! emitter compiled into its attested SPIR-V. `execute_and_compare` now
+//! recovers that WGSL from the passed-in `general_text` / `specialist_text`
+//! via [`extract_wgsl_from_summary`] and runs THAT — so the artifact that
+//! EXECUTES is byte-derived from the artifact that is ATTESTED. The general
+//! side still traces back to xpile's REAL emission, because the real WGSL is
+//! precisely what the general emitter embedded in `general_text`.
 
 use wgpu::util::DeviceExt;
 
@@ -104,6 +124,64 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 /// The `@compute` entry-point name both SPIR-V modules expose.
 const ENTRY_POINT: &str = "main";
+
+/// The marker line [`crate::spirv_text_summary`] writes immediately before
+/// it inlines the source WGSL as `;   `-prefixed comment lines. The witness
+/// recovers the **attested** WGSL by parsing the summary it was handed back
+/// out from this marker, so the artifact it RUNS is byte-derived from the
+/// artifact it ATTESTS — never a separately re-derived shader.
+const SUMMARY_WGSL_MARKER: &str = "; Source WGSL";
+
+/// The per-line prefix [`crate::spirv_text_summary`] uses when it inlines
+/// the source WGSL (`;` + three spaces). Stripping it recovers the exact
+/// WGSL bytes the emitter compiled into the attested SPIR-V.
+const SUMMARY_WGSL_LINE_PREFIX: &str = ";   ";
+
+/// Recover the source WGSL embedded in a SPIR-V **summary** primary (the
+/// `general_text` / `specialist_text` the backend threads into
+/// [`SpirvDiffExecEngine::execute_and_compare`]).
+///
+/// [`crate::spirv_text_summary`] inlines the exact WGSL it compiled to
+/// SPIR-V after a [`SUMMARY_WGSL_MARKER`] line, one WGSL line per
+/// `;   `-prefixed comment. This walks that block back out so the witness
+/// can compile + run the **attested** WGSL — i.e. the artifact that
+/// EXECUTES is byte-derived from the artifact that is ATTESTED, closing the
+/// PMAT-988 "runs hardcoded constants, ignores its arguments" gap.
+///
+/// `Err` when the text carries no recoverable WGSL block — a summary that
+/// doesn't embed its source can't be the thing we attest+run, and a broken
+/// witness must fault rather than silently fall back to a hardcoded shader.
+pub fn extract_wgsl_from_summary(summary: &str) -> Result<String, String> {
+    let mut lines = summary.lines();
+    // Advance to the marker.
+    let found_marker = lines.by_ref().any(|l| l.starts_with(SUMMARY_WGSL_MARKER));
+    if !found_marker {
+        return Err(format!(
+            "attested SPIR-V summary has no `{SUMMARY_WGSL_MARKER}` block — \
+             cannot recover the WGSL that was compiled (refusing to run a \
+             re-derived shader). Got:\n{summary}"
+        ));
+    }
+    // Every subsequent `;   `-prefixed line is one line of the embedded WGSL.
+    let mut wgsl = String::new();
+    for line in lines {
+        match line.strip_prefix(SUMMARY_WGSL_LINE_PREFIX) {
+            Some(code) => {
+                wgsl.push_str(code);
+                wgsl.push('\n');
+            }
+            // The WGSL block is contiguous; the first non-prefixed line ends it.
+            None => break,
+        }
+    }
+    if wgsl.trim().is_empty() {
+        return Err(format!(
+            "attested SPIR-V summary's `{SUMMARY_WGSL_MARKER}` block was empty — \
+             nothing to compile + run. Got:\n{summary}"
+        ));
+    }
+    Ok(wgsl)
+}
 
 /// The name of the scalar function in the general meta-HIR module — the
 /// one xpile's REAL lowering ([`emit_wgsl_module`]) emits and the dispatch
@@ -380,23 +458,36 @@ impl DiffExecEngine for SpirvDiffExecEngine {
             }
         }
 
-        // The MultiEmitterBackend hands us the two emitters' PRIMARY text
-        // (the SPIR-V summaries). The summaries are advisory; the witness
-        // re-derives what it RUNS so a regression that swaps the summaries
-        // can't silently change what executes. The summaries must still
-        // each name their source path.
-        debug_assert!(general_text.contains("multiply") || general_text.contains("SPIR-V"));
-        debug_assert!(specialist_text.contains("fma") || specialist_text.contains("SPIR-V"));
+        // PMAT-988: the MultiEmitterBackend hands us the two emitters' PRIMARY
+        // text (the SPIR-V summaries). The witness MUST run what it is GIVEN —
+        // earlier it ran a re-derived `general_real_wgsl()` + the hardcoded
+        // `SPECIALIST_WGSL` constant and merely `debug_assert!`ed its
+        // arguments, so the ATTESTED text and the EXECUTED text could diverge
+        // silently (the adversarial finding). Each summary inlines the exact
+        // WGSL the emitter compiled into its attested SPIR-V; we recover that
+        // WGSL and run IT, so what EXECUTES is byte-derived from what is
+        // ATTESTED. The general side therefore still traces back to xpile's
+        // REAL emission — because that real WGSL is what the general emitter
+        // embedded in `general_text`.
+        let general_wgsl = extract_wgsl_from_summary(general_text)
+            .map_err(|e| format!("recovering attested general WGSL: {e}"))?;
+        let specialist_wgsl = extract_wgsl_from_summary(specialist_text)
+            .map_err(|e| format!("recovering attested specialist WGSL: {e}"))?;
 
-        // PMAT-977: the GENERAL side is xpile's REAL emission —
-        // meta-HIR → emit_wgsl_module → @compute harness → naga SPIR-V.
-        let general_wgsl = general_real_wgsl()?;
-        // The SPECIALIST side stays the hardcoded trusted reference.
         let (device, queue, adapter_label) = Self::acquire_device()?;
 
-        let general = Self::run_spirv(&device, &queue, &general_wgsl, "general (real xpile emit)")?;
-        let specialist =
-            Self::run_spirv(&device, &queue, SPECIALIST_WGSL, "specialist (reference)")?;
+        let general = Self::run_spirv(
+            &device,
+            &queue,
+            &general_wgsl,
+            "general (attested xpile emit)",
+        )?;
+        let specialist = Self::run_spirv(
+            &device,
+            &queue,
+            &specialist_wgsl,
+            "specialist (attested reference)",
+        )?;
         let _ = adapter_label; // available for tracing; not part of the vote.
 
         // First oracle: the executed REAL-path output must equal the
@@ -539,5 +630,177 @@ mod tests {
     #[test]
     fn engine_constructs() {
         let _engine = SpirvDiffExecEngine::new();
+    }
+
+    // ─── PMAT-988: attested == executed ──────────────────────────────────
+
+    /// Build the exact SPIR-V summary the GENERAL emitter hands the witness:
+    /// compile the real xpile WGSL to SPIR-V, then render the inline-WGSL
+    /// summary via `crate::spirv_text_summary` (the emitter's primary text).
+    fn general_attested_summary() -> String {
+        let wgsl = general_real_wgsl().expect("real xpile WGSL emit");
+        let words = crate::wgsl_to_spirv_words(&wgsl).expect("compile to SPIR-V");
+        crate::spirv_text_summary(&words, &wgsl)
+    }
+
+    /// Same for the SPECIALIST `fma` reference summary.
+    fn specialist_attested_summary() -> String {
+        let words = crate::wgsl_to_spirv_words(SPECIALIST_WGSL).expect("compile to SPIR-V");
+        crate::spirv_text_summary(&words, SPECIALIST_WGSL)
+    }
+
+    #[test]
+    fn extract_round_trips_the_attested_general_wgsl() {
+        // The WGSL recovered from the general emitter's PRIMARY summary must
+        // be the exact WGSL the emitter compiled — so running the recovered
+        // WGSL runs the attested artifact, not a re-derived one.
+        let summary = general_attested_summary();
+        let recovered = extract_wgsl_from_summary(&summary).expect("recover attested WGSL");
+        let original = general_real_wgsl().expect("real xpile WGSL emit");
+        // spirv_text_summary inlines line-by-line; the recovered block is the
+        // original with a trailing newline normalisation.
+        assert_eq!(recovered.trim_end(), original.trim_end());
+        // And it must still recompile to real SPIR-V (it IS the attested src).
+        let words = crate::wgsl_to_spirv_words(&recovered).expect("recovered WGSL compiles");
+        assert!(crate::spirv_looks_real(&words));
+    }
+
+    #[test]
+    fn extract_round_trips_the_attested_specialist_wgsl() {
+        let summary = specialist_attested_summary();
+        let recovered = extract_wgsl_from_summary(&summary).expect("recover attested WGSL");
+        assert_eq!(recovered.trim_end(), SPECIALIST_WGSL.trim_end());
+        assert!(recovered.contains("fma(2.0, inp[i], 1.0)"));
+    }
+
+    #[test]
+    fn extract_errors_when_no_wgsl_block() {
+        // A summary that doesn't embed its source is not something we can
+        // attest+run — the witness must fault, never silently fall back.
+        let err = extract_wgsl_from_summary("; SPIR-V\n; Magic: 0x07230203\n")
+            .expect_err("no Source WGSL block must Err");
+        assert!(err.contains("no `; Source WGSL` block"), "got: {err}");
+    }
+
+    #[test]
+    fn extract_errors_when_wgsl_block_empty() {
+        let err = extract_wgsl_from_summary("; Source WGSL (reused):\nnot a comment\n")
+            .expect_err("empty Source WGSL block must Err");
+        assert!(err.contains("was empty"), "got: {err}");
+    }
+
+    fn diffexec_config() -> BackendConfig {
+        BackendConfig {
+            target: xpile_backend::Target::Spirv,
+            profile: xpile_backend::Profile::RustOut,
+            hardware: Some(HwProfile::Spirv { version: (1, 3) }),
+        }
+    }
+
+    #[test]
+    fn engine_runs_the_input_it_is_given_not_hardcoded_constants() {
+        // PMAT-988 REGRESSION GUARD. Feed the engine a specialist summary
+        // whose embedded WGSL is DELIBERATELY WRONG (computes `x` instead of
+        // `2*x + 1`). An engine that ignores its arguments and runs the
+        // hardcoded `SPECIALIST_WGSL` would still report Match; an engine
+        // that RUNS what it is HANDED must report Divergent (the wrong
+        // shader's output disagrees with both EXPECTED_OUTPUT and the real
+        // general path). So this test FAILS for an input-ignoring engine.
+        if !vulkan_adapter_available() {
+            eprintln!("[skip] no Vulkan adapter — PMAT-988 regression guard needs a GPU");
+            return;
+        }
+        let engine = SpirvDiffExecEngine::new();
+        let module = general_metahir_module();
+        let cfg = diffexec_config();
+
+        // Sanity: with the CORRECT attested summaries the engine matches.
+        let good = engine
+            .execute_and_compare(
+                &general_attested_summary(),
+                &specialist_attested_summary(),
+                &module,
+                &cfg,
+                1.0e-3,
+            )
+            .expect("correct attested summaries run on the GPU");
+        assert!(
+            matches!(good, DiffExecResult::Match { .. }),
+            "correct attested inputs should Match, got {good:?}"
+        );
+
+        // Now a WRONG specialist: identity `outp[i] = inp[i]`. This is a real,
+        // naga-valid shader, just the wrong arithmetic.
+        let wrong_specialist_wgsl = "\
+@group(0) @binding(0) var<storage, read> inp: array<f32>;
+@group(0) @binding(1) var<storage, read_write> outp: array<f32>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i < arrayLength(&inp)) {
+        outp[i] = inp[i];
+    }
+}
+";
+        let wrong_words =
+            crate::wgsl_to_spirv_words(wrong_specialist_wgsl).expect("wrong shader compiles");
+        let wrong_summary = crate::spirv_text_summary(&wrong_words, wrong_specialist_wgsl);
+
+        let bad = engine
+            .execute_and_compare(
+                &general_attested_summary(),
+                &wrong_summary,
+                &module,
+                &cfg,
+                1.0e-3,
+            )
+            .expect("the wrong-but-valid shader still runs on the GPU");
+        // The result MUST change: an input-respecting engine diverges here.
+        assert!(
+            matches!(bad, DiffExecResult::Divergent { .. }),
+            "PMAT-988: feeding a wrong specialist must change the result to \
+             Divergent (proves the engine runs its INPUT, not hardcoded \
+             constants), got {bad:?}"
+        );
+    }
+
+    #[test]
+    fn witness_executes_the_attested_text_and_matches() {
+        // Positive end-to-end: the attested general (xpile real emission) and
+        // specialist summaries — recovered + run by the engine — must Match,
+        // proving the EXECUTED artifact (derived from the attested text) is
+        // the truth. Prints the executed/attested correspondence for the
+        // captured Vulkan output.
+        if !vulkan_adapter_available() {
+            eprintln!("[skip] no Vulkan adapter — executed-witness test needs a GPU");
+            return;
+        }
+        let general_summary = general_attested_summary();
+        let specialist_summary = specialist_attested_summary();
+
+        // Prove the thing we run is byte-derived from the thing we attest.
+        let executed_general =
+            extract_wgsl_from_summary(&general_summary).expect("recover attested general WGSL");
+        eprintln!("[PMAT-988] EXECUTED general WGSL (recovered from attested summary):");
+        eprintln!("{executed_general}");
+
+        let engine = SpirvDiffExecEngine::new();
+        let result = engine
+            .execute_and_compare(
+                &general_summary,
+                &specialist_summary,
+                &general_metahir_module(),
+                &diffexec_config(),
+                1.0e-3,
+            )
+            .expect("attested summaries run on the GPU");
+        eprintln!("[PMAT-988] DiffExec result over the ATTESTED text: {result:?}");
+        match result {
+            DiffExecResult::Match { max_abs_diff } => {
+                assert!(max_abs_diff <= 1.0e-3);
+            }
+            other => panic!("expected Match over the attested text, got {other:?}"),
+        }
     }
 }
