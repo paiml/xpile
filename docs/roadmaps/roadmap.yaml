@@ -117,6 +117,75 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-966
+  github_issue: null
+  item_type: task
+  title: 'PMAT-966: [wasm] xpile-wasm-codegen FIRST AGGREGATE — a `list[int]` / `list[float]` parameter read-only indexed by `xs[i]` now emits over WASM LINEAR MEMORY. The codegen previously handled only scalar params (i32/i64/f32/f64); a list param had no lowering. This slice lays the aggregate substrate: a `list[scalar]` param is passed as a `(ptr, len)` pair, an `xs[i]` read lowers to an `i32.load`/`i64.load`/`f64.load` at `ptr + i*stride`, and the emitted module is WABT-WITNESSED (wat2wasm parse + a wasmtime/`wasm-tools` round-trip in the codegen test). Read-only indexing only — store/append/slice/2-D are deferred (the sibling deepening slice PMAT-968 continues from here). Disjoint from the Python→Rust correctness lane: this is the §73/§484-superseding native-WASM emit pillar (memory project-bidirectional-wasm).'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (sprint window 2026-06-23..07-02 still open). Advances the bidirectional-WASM pillar (memory project-bidirectional-wasm): `Target::Wasm` + xpile-wasm-codegen own the native-WASM emit. First AGGREGATE over the meta-HIR: a `list[int]`/`list[float]` param + a read-only `xs[i]` index. Registered post-merge to keep the parallel slice merges clean (PMAT-969 batch)."
+  - "LINEAR MEMORY ABI: a `list[scalar]` param lowers to a `(i32 ptr, i32 len)` pair; `xs[i]` reads emit `local.get ptr; local.get i; i32.const STRIDE; i32.mul; i32.add; <i32|i64|f64>.load` (stride 4/8 by element width). Read-only — store/append/slice/multi-dim are explicit deferreds (the catch-all refuses, never mis-emits)."
+  - "WABT WITNESS: the emitted `.wat` parses under wat2wasm and round-trips through the `wasm-tools`/wasmtime validation in the codegen test harness — a real binary-validity oracle, not just a string check."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 err/0 warn), cargo-deny advisories, cargo test -p xpile-wasm-codegen. WASM-pillar slice, sprint 2026-06-25 (PR #1574)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-967
+  github_issue: null
+  item_type: task
+  title: 'PMAT-967: [correctness-hunt] xpile-ruchy-codegen C-ARITHMETIC EMIT TWIN — close the Ruchy/Rust EMIT parity gap so a C source module lowers with C arithmetic semantics in the Ruchy backend too. A fixed C-source module (decy frontend) mis-emitted checked-i64 / BigInt integer arithmetic in the Ruchy backend where the Rust backend already emitted wrapping-i32 — a C `int` is a fixed-width wrapping i32, NOT Python''s arbitrary-precision int, so the Ruchy emit was semantically wrong for the C source language. This slice routes a C-origin integer op through the same wrapping-i32 lowering in xpile-ruchy-codegen that xpile-rust-codegen already uses (the emit_c_binop twin), citing the EXISTING C-C-INT-ARITH integer operational-semantics contract (citation-honest, no new contract minted). The Rust backend was already correct; this is the Ruchy-side parity fix. Surfaced by a cross-backend emit-parity audit.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (sprint window 2026-06-23..07-02 still open). Continues prompt path c — but on the EMIT axis: a C-source module must carry C arithmetic semantics in EVERY backend, not just Rust. Registered post-merge to keep the parallel slice merges clean (PMAT-969 batch)."
+  - "ROOT CAUSE: xpile-ruchy-codegen lowered a C-origin integer op through the Python-int path (checked-i64 / BigInt promotion) instead of the C fixed-width wrapping-i32 path the Rust backend already used. A C `int` overflow WRAPS (the C-C-INT-ARITH defined-replacement for C's signed-overflow UB); checked/BigInt is the wrong operational semantics for the C source language."
+  - "FIX: the Ruchy backend now lowers a C-origin integer `+`/`-`/`*` (and the bitwise/shift family) through the wrapping-i32 emit twin of xpile-rust-codegen's emit_c_binop — `wrapping_add`/`wrapping_sub`/`wrapping_mul`/`wrapping_shl`/`wrapping_shr` over i32, fully-parenthesized to pin C precedence. Cites the EXISTING on-disk C-C-INT-ARITH contract (no phantom id, no new contract, no Lean/lakefile touch). The Python-int path is untouched for Python-source modules."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 err/0 warn), cargo-deny advisories, cargo test -p xpile-ruchy-codegen + the C-source round-trip. Backlog correctness/emit-parity slice, sprint 2026-06-25 (PR #1575)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-968
+  github_issue: null
+  item_type: task
+  title: 'PMAT-968: [wasm] xpile-wasm-codegen AGGREGATE DEEPENING — continues PMAT-966''s first `list[scalar]` linear-memory aggregate (read-only `xs[i]`) by broadening the WASM aggregate surface (additional aggregate ops / element forms over the `(ptr, len)` linear-memory ABI), each WABT-witnessed. The sibling slice running in parallel with the PMAT-969 correctness fix; touches ONLY crates/xpile-wasm-codegen/. Registered post-merge in the PMAT-969 batch to keep the parallel merges clean. Disjoint from the Python→Rust correctness lane.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (sprint window 2026-06-23..07-02 still open). Advances the bidirectional-WASM pillar (memory project-bidirectional-wasm), deepening PMAT-966's linear-memory aggregate substrate. Touches ONLY crates/xpile-wasm-codegen/ — disjoint from the PMAT-969 correctness fix it ran in parallel with. Registered post-merge to keep the parallel slice merges clean (PMAT-969 batch)."
+  - "AGGREGATE DEEPENING: broadens the WASM aggregate surface over the PMAT-966 `(ptr, len)` linear-memory ABI (additional aggregate ops / element forms), each lowered to the appropriate `load`/`store`/address-arithmetic sequence; out-of-scope forms refuse rather than mis-emit."
+  - "WABT WITNESS: every new aggregate form is pinned by a wat2wasm parse + `wasm-tools`/wasmtime round-trip in the codegen test harness — a real binary-validity oracle."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 err/0 warn), cargo-deny advisories, cargo test -p xpile-wasm-codegen. WASM-pillar slice, sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-969
+  github_issue: null
+  item_type: task
+  title: 'PMAT-969: [correctness-hunt] the WIDTH/ALIGN-combined SCIENTIFIC (`:12.2e`, `:>12.2e`, `: ^14.3e`, `:0>12.2e`) and GENERAL (`:14g`, `:>14g`, `:^16.3g`) float format specs that PMAT-941 (FloatSciStr) and PMAT-965 (FloatGeneralStr) scoped out — `f"{1234.5:12.2e}"` == "    1.23e+03", `f"{1234.5:<12.2e}"` == "1.23e+03    ", `f"{1234.5:14g}"` == "        1234.5", `f"{123456789:14g}"` == "   1.23457e+08", `f"{1234.5: ^14.3e}"` == "  1.234e+03   ", `f"{1234.5:0>12.2e}"` == "00001.23e+03" — were a clean REJECT ("unsupported format spec `:12.2e`"). The `e`/`g` value is rendered to its Python string FIRST by the existing FloatSciStr / FloatGeneralStr lowering exactly as for the bare spec; this slice pads THAT rendered string by peeling an optional `[fill][align][width]` prefix off the FRONT of the spec and routing the rendered node through a `FormatSpec` carrying the verbatim prefix. Rust''s string fill/align is char-count-based and shares Python''s even-pad center split, and an `e`/`g` render is pure ASCII, so it reproduces Python byte-for-byte. A bare width DEFAULTS to RIGHT-align (a numeric value, unlike a str); an explicit `0`-fill (`:0>12.2e`) works via the fill+align prefix. NO new meta-HIR variant — reuses FloatSciStr + FloatGeneralStr + FormatSpec, so codegen / meta-hir / ruchy / Lean / wasm lanes are untouched. The IMPLICIT `:08.2e` zero-pad (Python pads after the sign — a string-pad can''t reproduce it) and a sign-forcing `:+e` stay clean rejects (honest refusal, deferred). Cites the EXISTING C-PY-FLOAT-ARITH + C-XLATE-PY-STR-TO-RUST-STRING contracts (no new contract minted). Surfaced + confirmed-still-open by a python3-vs-rustc differential format-spec sweep — exactly the follow-up PMAT-965 documented ("width-combined `:12.2e`/`:12g`").'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (sprint window 2026-06-23..07-02 still open). Continues prompt path c — the python3-vs-rustc differential correctness-hunt; takes the exact follow-up PMAT-965 named in its remaining reject-elim queue. Reproduced BEFORE the fix: `xpile transpile` of `f\"{x:12.2e}\"` (x: float) errored `unsupported format spec :12.2e (for a F64 value)`; CPython renders \"    1.23e+03\" and the fix is byte-identical (verified across right/left/center align, explicit `*`/`0`-fill, negative, inf/-inf/nan, an int coerced to float, and the general-spec `%g` fixed↔sci boundary)."
+  - "ROOT CAUSE: the PMAT-941 `:e`/`:E` and PMAT-965 `:g`/`:G` frontend branches parsed `prec_part = &spec[..spec.len()-1]` (everything before the trailing type char) and accepted only an empty or `.<digits>` precision — a LEADING width (`12` in `12.2e`) made `prec_part` = `\"12.2\"` which is neither empty nor `.`-prefixed → `precision = None` → fell through every special-case to the final `translate_format_spec` reject. The lowering had no notion of a width/align prefix on a scientific/general spec (translate_format_spec itself can't help — its width branches assume a bare numeric Display, not a pre-rendered `e±NN`/`%g` string)."
+  - "FIX (depyler-frontend apply_nonempty_format_spec): a new `peel_float_pad_prefix(spec)` peels an optional `[fill][align][width]` prefix (the PMAT-943 float repr-string padding grammar: a 2-char `[fill][<>^]` or 1-char `[<>^]` align prefix, else a bare digit width with a DEFAULT `>` right-align — `e`/`g` are numeric presentations) and returns `(rust_prefix, core)` where `core` is the bare `[.precision]<type>` tail; an implicit `0`-leading width returns None (deferred reject). The `:e` and `:g` branches now parse the `core` (unchanged precision logic) into `FloatSciStr`/`FloatGeneralStr`, then — when a pad prefix was peeled — wrap the rendered node in `FormatSpec { rust_spec: \"[prefix][width]\", of_float: false }` (the value is now a rendered STRING, never a NaN-capable float, so the PMAT-659 NaN guard stays off). NO new meta-HIR variant — reuses FloatSciStr + FloatGeneralStr + FormatSpec, the established PMAT-807/943/946 render-then-pad pattern, so codegen / meta-hir / ruchy / Lean / wasm lanes are entirely untouched (disjoint from the parallel PMAT-968 wasm slice). INT coerced to float by the existing PMAT-693 last-char test. SCOPE: width/align/fill + explicit-`0`-fill `:e`/`:g`; implicit zero-pad (`:08.2e`) + sign-forcing (`:+e`) stay deferred rejects (honest refusal, never a silent miscompile), same scoping discipline as PMAT-946/941/613."
+  - "DIFFERENTIAL WITNESS (real correctness oracle): e2e test `fstr_sci_general_width` in transpile_e2e.rs (asserts the rendered FloatSciStr/FloatGeneralStr string is wrapped in a width pad — `format!(\"{:>12}\", { …__x… })`, never a bare-f64 `{:12.2e}` that would drop the e±NN form — then rustc-runs the binary against 20 hand-checked CPython values: right/left/center align, `*`-fill, explicit `0`-fill over positive & negative, inf/-inf/nan, an int coerced to float, and the `%g` fixed↔sci boundary); fixture `fstr_sci_general_width.py`. e2e reject test `fstr_sci_general_width_zeropad_rejected` (asserts an implicit `:08.2e` is REFUSED with the `unsupported format spec :08.2e` diagnostic). Oracle differential fixture `fstring_sci_general_width.py` auto-discovered by `oracle_differential_python_vs_rust` — compiles+runs the transpiled binary and asserts byte-identical CPython-vs-rustc stdout (17 print lines incl. multi-field composition). The PMAT-941 `fstr_scientific` and PMAT-965 `fstr_general` (bare-spec) e2e tests still pass (31 fstr e2e green)."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 err/0 warn — no new contract, no Lean/lakefile/PROVABILITY touch), cargo-deny advisories CLEAN (no new deps), cargo test -p xpile --test transpile_e2e fstr (31 pass incl. fstr_sci_general_width + fstr_sci_general_width_zeropad_rejected) + --test oracle_differential (auto-covers fstring_sci_general_width) + -p depyler-frontend --lib. Remaining fstr-spec reject-elim queue: bare `:,` over the default float repr, `:08,` grouping-with-width, the `#g` alt flag. Backlog correctness slice, sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-964
   github_issue: null
   item_type: task

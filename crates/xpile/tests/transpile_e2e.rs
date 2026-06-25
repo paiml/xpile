@@ -15142,6 +15142,81 @@ fn main() {
     assert_rustc_runs("fstr_general", &rust, driver);
 }
 
+/// PMAT-969 (correctness-hunt): the WIDTH/ALIGN-combined scientific (`:12.2e`,
+/// `:>12.2e`, `: ^14.3e`, `:0>12.2e`) and general (`:14g`, `:>14g`, `:^16.3g`)
+/// float specs that PMAT-941 (FloatSciStr) and PMAT-965 (FloatGeneralStr) scoped
+/// out — `f"{1234.5:12.2e}"` == "    1.23e+03", `f"{123456789:14g}"` ==
+/// "   1.23457e+08" — were a clean reject. The `e`/`g` value is rendered to its
+/// Python string by the EXISTING FloatSciStr / FloatGeneralStr lowering; this
+/// slice pads THAT string by peeling an optional `[fill][align][width]` prefix
+/// and routing the rendered node through a `FormatSpec` (verbatim prefix). Rust's
+/// string fill/align is char-count-based and the render is pure ASCII, so it
+/// reproduces Python byte-for-byte. NO new IR node (reuses FloatSciStr +
+/// FloatGeneralStr + FormatSpec). Cross-checked vs python3.
+#[test]
+fn fstr_sci_general_width() {
+    let rust = xpile_transpile_to_rust("fstr_sci_general_width.py");
+    assert!(
+        // the rendered FloatSciStr/FloatGeneralStr string is wrapped in a width
+        // pad — never a bare-f64 `{:12.2e}` (which would drop Python's e±NN form).
+        rust.contains("format!(\"{:>12}\", {")
+            && rust.contains("format!(\"{:^14}\", {")
+            && rust.contains("format!(\"{:*>14}\", {")
+            && rust.contains("format!(\"{:0>12}\", {")
+            && rust.contains("format!(\"{:.2e}\", __x)")
+            && rust.contains("(-4..6).contains(&__xe)"),
+        "width-combined sci/general must render then pad (never a bare-f64 spec):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // scientific, width-combined — default right-align (numeric).
+    assert_eq!(sci(1234.5), "    1.23e+03");
+    assert_eq!(sci(-1234.5), "   -1.23e+03");
+    assert_eq!(sci_r(1234.5), "    1.23e+03");
+    assert_eq!(sci_l(1234.5), "1.23e+03    ");
+    assert_eq!(sci_c(1234.5), "  1.234e+03   ");
+    assert_eq!(sci_star(1234.5), "******1.23e+03");
+    assert_eq!(sci_zero(1234.5), "00001.23e+03");
+    assert_eq!(sci_zero(-1234.5), "000-1.23e+03");
+    assert_eq!(sci(f64::INFINITY), "         inf");
+    assert_eq!(sci(f64::NEG_INFINITY), "        -inf");
+    assert_eq!(sci(f64::NAN), "         nan");
+    assert_eq!(sci_int(5), "    5.00e+00");
+    // general, width-combined.
+    assert_eq!(gen_w(1234.5), "        1234.5");
+    assert_eq!(gen_w(123456789.0), "   1.23457e+08");
+    assert_eq!(gen_r(1234.5), "        1234.5");
+    assert_eq!(gen_l(1234.5), "1234.5        ");
+    assert_eq!(gen_c(1234.5), "    1.23e+03    ");
+    assert_eq!(gen_int_w(5), "             5");
+    assert_eq!(gen_int_w(1234567), "   1.23457e+06");
+    // labeled multi-field composition.
+    assert_eq!(labeled(0.000123), "[   1.2e-04]");
+}
+"#;
+    assert_rustc_runs("fstr_sci_general_width", &rust, driver);
+}
+
+/// PMAT-969 (correctness-hunt): the IMPLICIT zero-pad `:08.2e` (Python zero-pads
+/// a numeric AFTER the sign — a string-pad can't reproduce it) and a sign-forcing
+/// `:+e` stay clean REJECTS (honest refusal, deferred), the same scoping the
+/// width/align lift takes for its explicit-`0`-fill / sign cases. Asserts the
+/// frontend refuses rather than mis-emitting. Cross-checked vs python3.
+#[test]
+fn fstr_sci_general_width_zeropad_rejected() {
+    let py = fixture("fstr_sci_general_width_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "an implicit zero-pad `:08.2e` is out of scope and must be refused"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unsupported format spec `:08.2e`"),
+        "the rejection should name the unsupported `:08.2e` spec:\n{stderr}"
+    );
+}
+
 /// PMAT-942 (correctness-hunt): the SPACE sign flag ` ` on a numeric f-string
 /// field — `f"{5: d}"` == `" 5"`, `f"{-5: d}"` == `"-5"`, `f"{3.14: .2f}"` ==
 /// `" 3.14"`, and width/zero-pad combos `f"{5: 05d}"` == `" 0005"` — was a clean
