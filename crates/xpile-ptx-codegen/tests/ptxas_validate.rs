@@ -277,6 +277,119 @@ fn and_cond_fn() -> Function {
     }
 }
 
+// ─── PMAT-972: abs / min / max / sqrt scalar builtins assemble clean ──
+
+use xpile_meta_hir::NumBuiltinOp;
+
+/// `def xpile_kernel(x) -> f64: return abs(x)` — the single-op `abs.f64`.
+fn abs_builtin_fn() -> Function {
+    Function {
+        name: "xpile_kernel".into(),
+        params: vec![fp("x")],
+        return_type: Type::F64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::NumBuiltin {
+                op: NumBuiltinOp::Abs,
+                args: vec![Expr::Ident("x".into())],
+                of_float: true,
+            },
+        },
+    }
+}
+
+/// `def xpile_kernel(x) -> f64: return math.sqrt(x)` — `sqrt.rn.f64`.
+fn sqrt_builtin_fn() -> Function {
+    Function {
+        name: "xpile_kernel".into(),
+        params: vec![fp("x")],
+        return_type: Type::F64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::NumBuiltin {
+                op: NumBuiltinOp::Sqrt,
+                args: vec![Expr::Ident("x".into())],
+                of_float: true,
+            },
+        },
+    }
+}
+
+/// `def xpile_kernel(x) -> f64: return max(x, 0.0)` — relu via `max.f64`.
+fn relu_max_fn() -> Function {
+    Function {
+        name: "xpile_kernel".into(),
+        params: vec![fp("x")],
+        return_type: Type::F64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::NumBuiltin {
+                op: NumBuiltinOp::Max,
+                args: vec![Expr::Ident("x".into()), Expr::LitFloat(0.0)],
+                of_float: true,
+            },
+        },
+    }
+}
+
+/// `def xpile_kernel(a, b, c) -> f64: return min(a, b, c)` — variadic min
+/// folding into two `min.f64`s.
+fn min3_fn() -> Function {
+    Function {
+        name: "xpile_kernel".into(),
+        params: vec![fp("a"), fp("b"), fp("c")],
+        return_type: Type::F64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::NumBuiltin {
+                op: NumBuiltinOp::Min,
+                args: vec![
+                    Expr::Ident("a".into()),
+                    Expr::Ident("b".into()),
+                    Expr::Ident("c".into()),
+                ],
+                of_float: true,
+            },
+        },
+    }
+}
+
+#[test]
+fn ptxas_assembles_scalar_builtin_kernels() {
+    let sm = local_compute_capability();
+    let cases: &[(&str, Function)] = &[
+        ("abs(x)", abs_builtin_fn()),
+        ("sqrt(x)", sqrt_builtin_fn()),
+        ("relu max(x,0)", relu_max_fn()),
+        ("min(a,b,c)", min3_fn()),
+    ];
+    for (label, f) in cases {
+        let ptx =
+            emit_kernel(f, &sm).unwrap_or_else(|e| panic!("PMAT-972 emit failed for {label}: {e}"));
+        assert_eq!(
+            validate_ptx(&ptx, &sm),
+            Ok(()),
+            "PMAT-972 {label}: emitted PTX must pass the structural gate:\n{ptx}"
+        );
+        if !ptxas_available() {
+            eprintln!(
+                "PMAT-972: skipping ptxas assemble for `{label}` — ptxas not present. \
+                 The structural gate passed; a CUDA box assembles this clean."
+            );
+            continue;
+        }
+        match ptxas_assemble(&ptx, &sm) {
+            Ok(()) => eprintln!(
+                "PMAT-972: ptxas ASSEMBLED `{label}` clean for {sm} — the abs/min/max/sqrt \
+                 single-op builtin lowering is well-formed for the NVIDIA assembler."
+            ),
+            Err(stderr) => {
+                panic!("PMAT-972: ptxas REJECTED `{label}` for {sm}:\n{stderr}\n--- PTX ---\n{ptx}")
+            }
+        }
+    }
+}
+
 #[test]
 fn ptxas_assembles_control_flow_and_multi_param_kernels() {
     let sm = local_compute_capability();

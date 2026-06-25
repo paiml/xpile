@@ -55,7 +55,7 @@
 use std::fmt::Write as _;
 
 use xpile_backend::BackendError;
-use xpile_meta_hir::{BinOp, Expr, FloatOp, Function, Stmt, Type, UnOp};
+use xpile_meta_hir::{BinOp, Expr, FloatOp, Function, NumBuiltinOp, Stmt, Type, UnOp};
 
 /// PTX ISA version FLOOR. 8.0 is supported by CUDA 11.8+ and assembles for
 /// every `.target` in the contract's sm_80..sm_90 range (sm_89/sm_90 require
@@ -382,9 +382,104 @@ impl Emitter {
                 self.line(&format!("{instr} \t{dst}, {a}, {b};"));
                 Ok(dst)
             }
+            // PMAT-972: scalar numeric builtins that map to a SINGLE native PTX
+            // op — `abs`, `min`, `max` (all three element classes) and
+            // `math.sqrt` (float only). These are the staple element-wise GPU
+            // primitives (relu = `max(x, 0)`, clamping via `min`/`max`, norms
+            // via `sqrt`); ptxas has `abs.{f64,f32,s64}`, `min`/`max.{f64,f32,
+            // s64}`, and `sqrt.rn.{f64,f32}` for them. The remaining
+            // `NumBuiltinOp`s (sin/cos/exp/ln/floor/ceil/trunc/…) stay refused:
+            // they need transcendental approximations or a float→int width
+            // change (mixed width), neither of which is a single PTX op.
+            Expr::NumBuiltin { op, args, .. } => self.emit_num_builtin(*op, args),
             other => Err(refuse(&format!(
                 "expression {other:?} (outside the PTX scalar element-wise subset — \
-                 only param/let refs, literals, unary neg, and + - * / arithmetic are emitted)"
+                 only param/let refs, literals, unary neg, + - * / arithmetic, and the \
+                 abs/min/max/sqrt scalar builtins are emitted)"
+            ))),
+        }
+    }
+
+    /// PMAT-972: lower a [`NumBuiltinOp`] that has a single-instruction PTX
+    /// form. `abs`/`sqrt` are unary; `min`/`max` are variadic (`>= 2` args) and
+    /// fold pairwise over the tail (the PTX analog of the chained `.min`/`.max`
+    /// Rust emit). Everything else is an honest refusal.
+    fn emit_num_builtin(
+        &mut self,
+        op: NumBuiltinOp,
+        args: &[Expr],
+    ) -> Result<String, BackendError> {
+        match op {
+            NumBuiltinOp::Abs => {
+                let [a] = args else {
+                    return Err(refuse(&format!(
+                        "abs() takes exactly one argument in the PTX subset (got {})",
+                        args.len()
+                    )));
+                };
+                let src = self.emit_expr(a)?;
+                let dst = self.fresh();
+                self.line(&format!("abs.{} \t{dst}, {src};", self.scalar.op_ty()));
+                Ok(dst)
+            }
+            NumBuiltinOp::Sqrt => {
+                // math.sqrt is always float in Python; PTX integer sqrt is not a
+                // single op, so refuse on an int-typed kernel (no implicit
+                // int↔float in the subset).
+                if self.scalar == PtxScalar::S64 {
+                    return Err(refuse(
+                        "math.sqrt in an integer-typed kernel (sqrt is float-only — \
+                         no single integer-sqrt PTX op, and no implicit int↔float)",
+                    ));
+                }
+                let [a] = args else {
+                    return Err(refuse(&format!(
+                        "sqrt() takes exactly one argument in the PTX subset (got {})",
+                        args.len()
+                    )));
+                };
+                let src = self.emit_expr(a)?;
+                let dst = self.fresh();
+                // `.rn` round-to-nearest-even is REQUIRED for `sqrt.f64`
+                // (ptxas rejects a roundless f64 sqrt) and is the IEEE default
+                // nvcc emits for f32 too.
+                self.line(&format!("sqrt.rn.{} \t{dst}, {src};", self.scalar.op_ty()));
+                Ok(dst)
+            }
+            NumBuiltinOp::Min | NumBuiltinOp::Max => {
+                if args.len() < 2 {
+                    return Err(refuse(&format!(
+                        "{}() needs at least two scalar arguments in the PTX subset \
+                         (1-arg min/max over a list is out of subset; got {})",
+                        if matches!(op, NumBuiltinOp::Min) {
+                            "min"
+                        } else {
+                            "max"
+                        },
+                        args.len()
+                    )));
+                }
+                let mnem = if matches!(op, NumBuiltinOp::Min) {
+                    "min"
+                } else {
+                    "max"
+                };
+                let ty = self.scalar.op_ty();
+                // Fold pairwise over the tail: acc = op(acc, arg_k).
+                let mut acc = self.emit_expr(&args[0])?;
+                for arg in &args[1..] {
+                    let b = self.emit_expr(arg)?;
+                    let dst = self.fresh();
+                    self.line(&format!("{mnem}.{ty} \t{dst}, {acc}, {b};"));
+                    acc = dst;
+                }
+                Ok(acc)
+            }
+            other => Err(refuse(&format!(
+                "numeric builtin {other:?} (the PTX subset emits abs/min/max/sqrt — \
+                 single native PTX ops; floor/ceil/trunc change float→int width and \
+                 sin/cos/tan/exp/ln/log10/log2 need transcendental approximations, \
+                 neither a single PTX op)"
             ))),
         }
     }
@@ -999,6 +1094,200 @@ mod tests {
         };
         let err = emit_kernel(&f, "sm_89").unwrap_err();
         assert!(format!("{err}").contains("break/continue"));
+    }
+
+    /// Build a single-statement-free kernel whose return is `body_expr`.
+    fn kernel_returning(name: &str, params: Vec<Param>, ret: Type, body_expr: Expr) -> Function {
+        Function {
+            name: name.into(),
+            params,
+            return_type: ret,
+            body: Block {
+                stmts: Vec::new(),
+                trailing_return: body_expr,
+            },
+        }
+    }
+
+    /// PMAT-972 — `abs(x)` over an f64 kernel lowers to the single `abs.f64`
+    /// PTX op (was previously a hard refusal).
+    #[test]
+    fn emits_abs_f64() {
+        let f = kernel_returning(
+            "ab",
+            vec![p("x", Type::F64)],
+            Type::F64,
+            Expr::NumBuiltin {
+                op: NumBuiltinOp::Abs,
+                args: vec![Expr::Ident("x".into())],
+                of_float: true,
+            },
+        );
+        let ptx = emit_kernel(&f, "sm_89").unwrap();
+        assert!(ptx.contains("abs.f64"), "expected abs.f64 in:\n{ptx}");
+    }
+
+    /// PMAT-972 — `abs(x)` over an i64 kernel lowers to `abs.s64`.
+    #[test]
+    fn emits_abs_s64() {
+        let f = kernel_returning(
+            "ab",
+            vec![p("x", Type::I64)],
+            Type::I64,
+            Expr::NumBuiltin {
+                op: NumBuiltinOp::Abs,
+                args: vec![Expr::Ident("x".into())],
+                of_float: false,
+            },
+        );
+        let ptx = emit_kernel(&f, "sm_89").unwrap();
+        assert!(ptx.contains("abs.s64"), "expected abs.s64 in:\n{ptx}");
+    }
+
+    /// PMAT-972 — `math.sqrt(x)` lowers to `sqrt.rn.f64` (the `.rn` rounding
+    /// modifier is required for an f64 sqrt).
+    #[test]
+    fn emits_sqrt_rn_f64() {
+        let f = kernel_returning(
+            "sq",
+            vec![p("x", Type::F64)],
+            Type::F64,
+            Expr::NumBuiltin {
+                op: NumBuiltinOp::Sqrt,
+                args: vec![Expr::Ident("x".into())],
+                of_float: true,
+            },
+        );
+        let ptx = emit_kernel(&f, "sm_89").unwrap();
+        assert!(
+            ptx.contains("sqrt.rn.f64"),
+            "expected sqrt.rn.f64 in:\n{ptx}"
+        );
+    }
+
+    /// PMAT-972 — `min(a, b)` lowers to `min.f64`; `max(a, b)` to `max.f64`
+    /// (the relu/clamp staples).
+    #[test]
+    fn emits_min_max_f64() {
+        let min_f = kernel_returning(
+            "mn",
+            vec![p("a", Type::F64), p("b", Type::F64)],
+            Type::F64,
+            Expr::NumBuiltin {
+                op: NumBuiltinOp::Min,
+                args: vec![Expr::Ident("a".into()), Expr::Ident("b".into())],
+                of_float: true,
+            },
+        );
+        let max_f = kernel_returning(
+            "mx",
+            vec![p("a", Type::F64), p("b", Type::F64)],
+            Type::F64,
+            Expr::NumBuiltin {
+                op: NumBuiltinOp::Max,
+                args: vec![Expr::Ident("a".into()), Expr::Ident("b".into())],
+                of_float: true,
+            },
+        );
+        assert!(emit_kernel(&min_f, "sm_89").unwrap().contains("min.f64"));
+        assert!(emit_kernel(&max_f, "sm_89").unwrap().contains("max.f64"));
+    }
+
+    /// PMAT-972 — variadic `max(a, b, c)` folds pairwise into two `max.f64`s
+    /// (the chained-`.max` analog).
+    #[test]
+    fn emits_variadic_max_folds_pairwise() {
+        let f = kernel_returning(
+            "mx3",
+            vec![p("a", Type::F64), p("b", Type::F64), p("c", Type::F64)],
+            Type::F64,
+            Expr::NumBuiltin {
+                op: NumBuiltinOp::Max,
+                args: vec![
+                    Expr::Ident("a".into()),
+                    Expr::Ident("b".into()),
+                    Expr::Ident("c".into()),
+                ],
+                of_float: true,
+            },
+        );
+        let ptx = emit_kernel(&f, "sm_89").unwrap();
+        // Two inputs after the seed → two fold steps.
+        assert_eq!(
+            ptx.matches("max.f64").count(),
+            2,
+            "expected two max.f64 fold steps in:\n{ptx}"
+        );
+    }
+
+    /// PMAT-972 — `min(s64, s64)` lowers to the integer `min.s64`.
+    #[test]
+    fn emits_min_s64() {
+        let f = kernel_returning(
+            "mns",
+            vec![p("a", Type::I64), p("b", Type::I64)],
+            Type::I64,
+            Expr::NumBuiltin {
+                op: NumBuiltinOp::Min,
+                args: vec![Expr::Ident("a".into()), Expr::Ident("b".into())],
+                of_float: false,
+            },
+        );
+        assert!(emit_kernel(&f, "sm_89").unwrap().contains("min.s64"));
+    }
+
+    /// PMAT-972 — `math.sqrt` over an integer kernel stays an honest refusal
+    /// (no single integer-sqrt PTX op; no implicit int↔float).
+    #[test]
+    fn refuses_sqrt_on_int_kernel() {
+        let f = kernel_returning(
+            "bad",
+            vec![p("x", Type::I64)],
+            Type::I64,
+            Expr::NumBuiltin {
+                op: NumBuiltinOp::Sqrt,
+                args: vec![Expr::Ident("x".into())],
+                of_float: false,
+            },
+        );
+        let err = emit_kernel(&f, "sm_89").unwrap_err();
+        assert!(format!("{err}").contains("sqrt"));
+    }
+
+    /// PMAT-972 — a transcendental builtin (`math.sin`) stays refused (needs an
+    /// approximation, not a single PTX op).
+    #[test]
+    fn refuses_transcendental_builtin() {
+        let f = kernel_returning(
+            "bad",
+            vec![p("x", Type::F64)],
+            Type::F64,
+            Expr::NumBuiltin {
+                op: NumBuiltinOp::Sin,
+                args: vec![Expr::Ident("x".into())],
+                of_float: true,
+            },
+        );
+        let err = emit_kernel(&f, "sm_89").unwrap_err();
+        assert!(format!("{err}").contains("transcendental"));
+    }
+
+    /// PMAT-972 — `min` with a single argument is refused (1-arg min/max over a
+    /// list is out of subset).
+    #[test]
+    fn refuses_single_arg_min() {
+        let f = kernel_returning(
+            "bad",
+            vec![p("x", Type::F64)],
+            Type::F64,
+            Expr::NumBuiltin {
+                op: NumBuiltinOp::Min,
+                args: vec![Expr::Ident("x".into())],
+                of_float: true,
+            },
+        );
+        let err = emit_kernel(&f, "sm_89").unwrap_err();
+        assert!(format!("{err}").contains("at least two"));
     }
 
     #[test]
