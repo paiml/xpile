@@ -100,6 +100,85 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-975
+  github_issue: null
+  item_type: task
+  title: 'PMAT-975: [wgsl/§29] WITNESS INTEGRITY — the WGSL DiffExec execution witness now drives xpile''s REAL emit_wgsl_module, not a hardcoded shader. Before this slice crates/xpile-wgsl-codegen/src/wgpu_diffexec.rs ran two HARDCODED WGSL compute shaders (general `2.0*x+1.0` vs specialist `fma`), so the executed witness validated the wgpu engine, NOT xpile''s emission — the meta-HIR → WGSL lowering (PMAT-970) was never exercised on hardware. This slice rewires the GENERAL side: a small meta-HIR `Module` for `saxpy(x) = 2.0*x + 1.0` is lowered through the REAL `emit_wgsl_module`, the emitted `fn saxpy` is wrapped in the harness `@compute @workgroup_size(64)` entry point that calls it per element, and THAT real-emitted WGSL is run on the Vulkan adapter and diffed against BOTH the CPython-equivalent expected vector (`2.0*x+1.0`) AND the trusted independent `fma` reference. The witness now proves `meta-HIR → xpile emit_wgsl_module → run → correct`, not `hardcoded shader → run`. Graceful-skip (wgpu_adapter_available / new vulkan_adapter_available alias) preserved — free CI records NotRun, stays green.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "BEFORE (the integrity gap): WgslSaxpyGeneralEmitter + WgslSaxpySpecialistEmitter in lib.rs both emitted HARDCODED `@compute` shaders; WgpuWgslDiffExecEngine::execute_and_compare ran both verbatim and diffed them. emit_wgsl_module (the PMAT-970 real lowering) was unit-tested under naga (CPU) but NEVER executed on a GPU — the on-hardware witness proved only that wgpu runs a string."
+  - "AFTER (the rewiring): new wgpu_diffexec.rs::kernel_module() builds the meta-HIR `fn saxpy(x: f32) -> f32 { return (x*2.0)+1.0 }`; real_emitted_compute_wgsl() lowers it via the REAL emit_wgsl_module and wraps the emitted fn in the harness `@compute` entry calling `saxpy(inp[i])`. The new WgslRealEmitGeneralEmitter (replacing WgslSaxpyGeneralEmitter, name `wgsl-real-emit-general`) produces that as the general/primary emission — a lowering failure is a hard BackendError, never a silent fallback. execute_and_compare now FIRST asserts the real-emit executed output matches the CPython-equivalent expected vector (absolute correctness gate), THEN that it agrees with the `fma` reference (anti-correlation vote)."
+  - "CAPTURED VULKAN WITNESS (RTX 4090, this box): `cargo test -p xpile-wgsl-codegen --test gpu_witness -- --nocapture` printed the REAL emitted WGSL the GPU executed — carrying the `// xpile-wgsl-codegen — meta-HIR → WGSL (scalar/control subset)` header, `// source module: saxpy_kernel`, and the lowered `fn saxpy(x: f32) -> f32 { return ((x * f32(2.0)) + f32(1.0)); }` — wrapped in the `@compute @workgroup_size(64) fn main` entry calling `outp[i] = saxpy(inp[i]);`, then `EXECUTED cross-vendor GPU witness PASSED — general vs specialist agree (max_abs_diff=0)`. The real emission ran on hardware and matched both the CPython-equivalent vector and the fma reference bit-for-bit."
+  - "DONE: worktree gate green — cargo fmt --all, cargo check -p xpile-wgsl-codegen + --workspace, clippy -p xpile-wgsl-codegen --all-targets -D warnings, cargo test -p xpile-wgsl-codegen (32 lib + 1 gpu_witness, real Vulkan run), cargo deny check advisories. New CPU tests guard the chain without a GPU (kernel_module_lowers_through_real_emitter_and_naga_validates, real_emitted_compute_wgsl_embeds_real_fn_and_naga_validates, expected_output_is_cpython_equivalent_saxpy, vulkan_alias_matches_wgpu_availability). Disjoint-crate parallel fan-out slice, sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-974
+  github_issue: null
+  item_type: task
+  title: 'PMAT-974: [bashrs] fixed render_shell_loop silently dropping loop bodies in bashrs-backend — a `for`/`while` shell loop emitted its header (`for x in ...; do` / `while ...; do`) and `done` but DROPPED the body statements, so a transpiled loop ran zero iterations of real work (a silent miscompile, not an error). This slice threads the loop body statements through render_shell_loop so the emitted POSIX shell contains the lowered body between `do` and `done`, round-tripping through the bashrs-frontend → bashrs-backend invariant tests.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "ROOT CAUSE: render_shell_loop in bashrs-backend rendered the loop header + `done` but never iterated/emitted the body statement vector — the body was accepted and discarded. A loop''s observable effect (its body) vanished from the emitted shell: a silent correctness defect under the C-BASHRS-POSIX-IDEMPOTENCE regime."
+  - "FIX: render_shell_loop now lowers and emits each body statement (indented) between the `do` and `done` lines. Covered by a bashrs round-trip test asserting the emitted POSIX shell contains the body commands, not just the loop scaffold."
+  - "DONE: gate green for the bashrs lane — fmt, check, clippy, cargo test -p bashrs-backend, pv lint contracts/ unaffected. Disjoint-crate parallel fan-out slice (registered post-merge in the PMAT-975 roadmap batch), sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-973
+  github_issue: null
+  item_type: task
+  title: 'PMAT-973: [lean] xpile-lean-codegen lowers Python/Rust list concatenation `xs + ys` to core-Lean `++` (List.append). A list `+` over two lists previously had no Lean lowering; this slice maps the meta-HIR list-concat to Lean''s built-in `++` so a concatenation transpiles to provable core-Lean (no Mathlib), keeping the Lean backend''s sorry/axiom/Mathlib-free discipline.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Maps the meta-HIR list `+` (concat) to core-Lean `++` (List.append) in xpile-lean-codegen. `++` is core Lean — no Mathlib import — so the lowering stays inside the machine-checked substrate''s sorry/axiom/Mathlib-free posture."
+  - "DONE: gate green for the Lean lane — fmt, check, clippy, cargo test -p xpile-lean-codegen. Disjoint-crate parallel fan-out slice (registered post-merge in the PMAT-975 roadmap batch), sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-972
+  github_issue: null
+  item_type: task
+  title: 'PMAT-972: [ptx] xpile-ptx-codegen emits abs/min/max/sqrt as native PTX builtins (ptxas-validated). These math intrinsics previously had no native PTX lowering; this slice maps them to the PTX instructions (`abs`, `min`, `max`, `sqrt.rn`) and validates the emitted PTX assembles under ptxas, the real NVIDIA-toolchain oracle the PTX lane already uses for its §29 witness.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "abs/min/max/sqrt lower to native PTX builtins (`abs`, `min`, `max`, `sqrt.rn`) in xpile-ptx-codegen rather than being refused or open-coded. The emitted PTX assembles under ptxas (the CPU-side NVIDIA toolchain gate, graceful-skip when ptxas absent), the same assembler oracle the PTX §29 witness uses."
+  - "DONE: gate green for the PTX lane — fmt, check, clippy, cargo test -p xpile-ptx-codegen (ptxas-gated where a toolchain is present). Disjoint-crate parallel fan-out slice (registered post-merge in the PMAT-975 roadmap batch), sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-970
+  github_issue: null
+  item_type: task
+  title: 'PMAT-970: [wgsl] xpile-wgsl-codegen REAL emit_wgsl_module lowering — WGSL was a scaffold-comment placeholder; now a real meta-HIR → WGSL emitter for the scalar/control + storage-buffer subset, naga-validated. Lowers funcs/params/let/if-else/while(→ loop+break/continue)/return/comparisons/arithmetic/bitwise + `array<T>` storage-buffer indexing of a `list[scalar]` param, the GPU sibling of the native-WASM WAT lowering. 32-bit-native (i64/CLong → i32, F32/CUInt/Bool direct); f64/str/list-of-bool/struct/etc. are honest BackendError::Lower refusals — never wrong code. Emitted WGSL is checked by naga_validate_wgsl (CPU-only parse + type-check, stronger than the text-structural validate_wgsl gate).'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Replaces the WGSL backend''s scaffold-comment placeholder with a real meta-HIR lowering (crates/xpile-wgsl-codegen/src/wgsl_emit.rs::emit_wgsl_module): scalar/control subset + a `list[scalar]` param → `@group(0) @binding(N) var<storage, read> <fn>_<param>: array<T>` storage buffer with read-only `xs[i]` → `buf[u32(i)]` indexing. WGSL core is 32-bit (no i64/f64): i64/CLong → i32, CUInt → u32, F32/Bool direct; f64 is REFUSED (no silent f32 narrowing), as are str/dict/set/struct/tuple/bigint/pointer and list[bool]/list[f64]/nested lists — every out-of-subset construct is an honest BackendError::Lower, never a miscompile."
+  - "VALIDATION: naga_validate_wgsl (naga::front::wgsl::parse_str + naga::valid::Validator, CPU-only, no GPU) parses + type-checks every emitted module — a stronger gate than the text-structural validate_wgsl. The same naga pin xpile-spirv-codegen uses. Unit tests cover arithmetic/comparison/f32/if-else+var/while-loop+break-continue/select if-expr/buffer-index/bitwise/short-circuit AND the honest refusals (f64/str/signed-floordiv/struct/list-of-bool/empty-module)."
+  - "DONE: gate green for the WGSL lane — fmt, check, clippy -p xpile-wgsl-codegen --all-targets -D warnings, cargo test -p xpile-wgsl-codegen. The §29 execution witness over this real emission lands in PMAT-975. Disjoint-crate parallel fan-out slice (registered post-merge in the PMAT-975 roadmap batch), sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-965
   github_issue: null
   item_type: task

@@ -20,7 +20,10 @@ use xpile_contracts::ContractId;
 use xpile_meta_hir::Module;
 
 mod wgpu_diffexec;
-pub use wgpu_diffexec::{wgpu_adapter_available, WgpuWgslDiffExecEngine, FIXTURE_INPUT};
+pub use wgpu_diffexec::{
+    kernel_module, real_emitted_compute_wgsl, vulkan_adapter_available, wgpu_adapter_available,
+    WgpuWgslDiffExecEngine, FIXTURE_INPUT,
+};
 
 mod wgsl_emit;
 pub use wgsl_emit::{emit_wgsl_module, naga_validate_wgsl, NagaValidationError};
@@ -49,16 +52,16 @@ impl WgslBackend {
     ///
     /// Sibling of [`xpile_ptx_codegen::PtxBackend::new_cuda_diffexec_witness`].
     /// Builds a `WgslBackend` whose `MultiEmitterBackend` carries two REAL
-    /// WGSL compute-shader emitters — [`WgslSaxpyGeneralEmitter`]
+    /// WGSL compute-shader emitters — [`WgslRealEmitGeneralEmitter`]
     /// (general) and [`WgslSaxpySpecialistEmitter`] (specialist) — under
     /// `QuorumPolicy::DiffExec`, with a [`WgpuWgslDiffExecEngine`]
     /// installed. Both emitters compute the same semantics
-    /// (`out[i] = 2*in[i] + 1`) via *categorically different* WGSL (one
-    /// explicit `2.0*x + 1.0`, one the `fma` builtin), so the `DiffExec`
-    /// quorum runs BOTH on the GPU and asserts they agree — the
-    /// falsifying multi-emitter check the §29 design specs, now on a
-    /// real Vulkan/Metal/DX12 adapter rather than a single vendor's
-    /// toolchain.
+    /// (`out[i] = 2*in[i] + 1`); the GENERAL side is produced by lowering a
+    /// meta-HIR module through xpile's REAL [`emit_wgsl_module`]
+    /// (PMAT-970/975) and the SPECIALIST is the trusted `fma` builtin
+    /// reference. So the `DiffExec` quorum proves the chain
+    /// `meta-HIR → emit_wgsl_module → run → correct` on a real
+    /// Vulkan/Metal/DX12 adapter — not `hardcoded shader → run`.
     ///
     /// On a host with a wgpu adapter this produces a real
     /// [`xpile_backend::DiffExecResult::Match`] instead of the
@@ -72,7 +75,7 @@ impl WgslBackend {
     pub fn new_wgpu_diffexec_witness() -> Self {
         let mut inner = MultiEmitterBackend::new_with_specialist(
             Target::Wgsl,
-            Box::new(WgslSaxpyGeneralEmitter),
+            Box::new(WgslRealEmitGeneralEmitter),
             Box::new(WgslSaxpySpecialistEmitter),
             QuorumPolicy::DiffExec { tolerance: 1.0e-3 },
         );
@@ -133,15 +136,24 @@ impl TargetEmitter for ScaffoldWgslEmitter {
     }
 }
 
-// ─── PMAT-950: real WGSL compute-shader emitters for the executed witness ──
+// ─── PMAT-950/975: real WGSL compute-shader emitters for the executed witness ──
 //
 // Two emitters that produce COMPLETE, naga-validatable WGSL compute
-// shaders computing identical semantics — `out[i] = 2*in[i] + 1` — via
-// categorically different implementations. The general emitter uses an
-// explicit `2.0 * x + 1.0`; the specialist uses the `fma` builtin. Both
-// are run on a real wgpu adapter under the `DiffExec` quorum (see
-// [`WgslBackend::new_wgpu_diffexec_witness`]); the engine asserts their
-// executed outputs agree within tolerance.
+// shaders computing identical semantics — `out[i] = 2*in[i] + 1`.
+//
+// PMAT-975 rewires the GENERAL emitter to drive xpile's REAL
+// `emit_wgsl_module` lowering (PMAT-970): it builds a small meta-HIR
+// module for `saxpy(x) = 2.0*x + 1.0`, lowers it through the production
+// emitter, and wraps the emitted `fn saxpy` in the harness `@compute`
+// entry point. So the load-bearing arithmetic the GPU runs is the bytes
+// xpile EMITTED — the witness now proves `meta-HIR → emit_wgsl_module →
+// run → correct`, not `hardcoded shader → run`. The specialist stays the
+// trusted independent `fma` builtin reference.
+//
+// Both are run on a real wgpu adapter under the `DiffExec` quorum (see
+// [`WgslBackend::new_wgpu_diffexec_witness`]); the engine asserts the real
+// emitted shader's executed output matches the CPython-equivalent vector
+// AND agrees with the `fma` reference within tolerance.
 //
 // The shared harness contract (driven by [`WgpuWgslDiffExecEngine`]):
 //   - `@compute @workgroup_size(64)` entry point named `main`,
@@ -150,13 +162,16 @@ impl TargetEmitter for ScaffoldWgslEmitter {
 // Both shaders satisfy [`validate_wgsl`] and are classified real by
 // [`wgsl_looks_real`].
 
-/// General WGSL emitter — `out[i] = 2.0 * in[i] + 1.0` via an explicit
-/// multiply-then-add. Emits a complete naga-validatable compute shader.
-struct WgslSaxpyGeneralEmitter;
+/// General WGSL emitter — produces the REAL emitted shader: it lowers a
+/// meta-HIR `saxpy(x) = 2.0*x + 1.0` module through xpile's production
+/// [`emit_wgsl_module`] and wraps the emitted `fn` in the harness
+/// `@compute` entry point (see [`real_emitted_compute_wgsl`]). The GPU
+/// therefore executes xpile's actual emission.
+struct WgslRealEmitGeneralEmitter;
 
-impl TargetEmitter for WgslSaxpyGeneralEmitter {
+impl TargetEmitter for WgslRealEmitGeneralEmitter {
     fn name(&self) -> &str {
-        "wgsl-saxpy-general"
+        "wgsl-real-emit-general"
     }
 
     fn try_emit(
@@ -168,21 +183,19 @@ impl TargetEmitter for WgslSaxpyGeneralEmitter {
             None | Some(HwProfile::Wgsl { .. }) => {}
             _ => return Some(Err(BackendError::MissingHardware(Target::Wgsl))),
         }
+        // Drive xpile's REAL meta-HIR → WGSL lowering (PMAT-970/975). A
+        // lowering failure is a hard backend error — the emitter must not
+        // silently fall back to a hardcoded shader.
+        let primary = match real_emitted_compute_wgsl() {
+            Ok(wgsl) => wgsl,
+            Err(e) => {
+                return Some(Err(BackendError::Lower(format!(
+                    "xpile real WGSL emission for the witness failed: {e}"
+                ))))
+            }
+        };
         Some(Ok(EmittedText {
-            primary: "\
-@group(0) @binding(0) var<storage, read> inp: array<f32>;
-@group(0) @binding(1) var<storage, read_write> outp: array<f32>;
-
-@compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
-    if (i < arrayLength(&inp)) {
-        // general path: explicit multiply then add
-        outp[i] = 2.0 * inp[i] + 1.0;
-    }
-}
-"
-            .to_string(),
+            primary,
             citations: vec![ContractId::new("C-COMPILE-RUST-TO-WGSL")],
         }))
     }
