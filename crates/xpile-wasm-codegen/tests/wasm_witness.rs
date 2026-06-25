@@ -17,11 +17,13 @@
 //! WAT in the wasm runtime and asserts the executed outputs agree → a real
 //! `DiffExecResult::Match`.
 
+use std::process::Command;
+
 use xpile_backend::{
     Artifact, Backend, BackendConfig, DiffExecResult, Profile, QuorumStatus, Target,
 };
-use xpile_meta_hir::{Module, SourceLang};
-use xpile_wasm_codegen::{wasm_runtime_available, WasmBackend};
+use xpile_meta_hir::{Block, Expr, Function, Item, Module, Param, SourceLang, Type};
+use xpile_wasm_codegen::{emit_module, wasm_runtime_available, WasmBackend};
 
 fn kernel_module() -> Module {
     Module {
@@ -126,4 +128,180 @@ fn wasm_diffexec_executes_in_runtime_and_matches() {
         } => panic!("WASM emitters DIVERGED (contract falsified): max_abs_diff={max_abs_diff}"),
         other => panic!("expected an executed Multi Match with WABT present, got {other:?}"),
     }
+}
+
+// ─── PMAT-966: executed witness for the FIRST aggregate ─────────────────
+//
+// The scalar/control witness above proves a saxpy kernel runs in WABT. This
+// one proves the new `list[float]` indexing path: the emitter lowers
+// `xs[i]` over a `list[float]` PARAM to `base + i*8` + `f64.load` into
+// linear memory; the witness pre-populates that memory with a known fixture
+// vector and asserts each `xs[i]` read back from the executed WASM equals
+// the CPython-equivalent `fixture[i]`.
+
+/// The fixture list `[10.5, -3.25, 0.0, 42.0, 7.125, -100.0]` — the
+/// elements pre-loaded into linear memory and read back by index. Values
+/// chosen exactly representable in f64 so the executed read is bit-exact.
+const LIST_FIXTURE: &[f64] = &[10.5, -3.25, 0.0, 42.0, 7.125, -100.0];
+
+/// `def get_f(xs: list[float], i: int) -> float: return xs[i]`
+fn list_index_kernel_module() -> Module {
+    let f = Function {
+        name: "get_f".into(),
+        params: vec![
+            Param {
+                name: "xs".into(),
+                ty: Type::List(Box::new(Type::F64)),
+                mutable: false,
+            },
+            Param {
+                name: "i".into(),
+                ty: Type::I64,
+                mutable: false,
+            },
+        ],
+        return_type: Type::F64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("xs".into())),
+                index: Box::new(Expr::Ident("i".into())),
+            },
+        },
+    };
+    Module {
+        name: "list_index_kernel".into(),
+        source_lang: SourceLang::Rust,
+        items: vec![Item::Function(f)],
+        ffi_boundaries: Vec::new(),
+    }
+}
+
+/// Encode `vals` as a WAT `(data …)` string-literal of little-endian f64
+/// bytes (the WASM memory layout `f64.load` reads). Each byte is escaped
+/// as `\HH`.
+fn f64_data_escape(vals: &[f64]) -> String {
+    let mut s = String::new();
+    for v in vals {
+        for b in v.to_le_bytes() {
+            s.push_str(&format!("\\{b:02x}"));
+        }
+    }
+    s
+}
+
+/// Splice a `(data …)` section pre-loading `LIST_FIXTURE` into memory plus
+/// one zero-arg `eK` wrapper export per fixture index — each calling the
+/// emitted `$get_f` kernel with base-pointer 0 and index K — into the
+/// emitter's real module text, right before its closing `)`. This lets
+/// `wasm-interp --run-all-exports` (which calls only zero-arg exports)
+/// drive the parametric kernel over the whole fixture.
+fn build_list_witness_wat(kernel_wat: &str) -> String {
+    let close = kernel_wat
+        .rfind(')')
+        .expect("emitted module has a closing paren");
+    let mut wat = String::new();
+    wat.push_str(&kernel_wat[..close]);
+    wat.push_str("  ;; PMAT-966 witness: preload the fixture list into memory\n");
+    wat.push_str(&format!(
+        "  (data (i32.const 0) \"{}\")\n",
+        f64_data_escape(LIST_FIXTURE)
+    ));
+    for k in 0..LIST_FIXTURE.len() {
+        wat.push_str(&format!(
+            "  (func (export \"e{k}\") (result f64)\n    \
+             i32.const 0\n    i64.const {k}\n    call $get_f)\n"
+        ));
+    }
+    wat.push_str(")\n");
+    wat
+}
+
+#[test]
+fn wasm_list_index_executes_and_matches_cpython() {
+    if !wasm_runtime_available() {
+        eprintln!(
+            "PMAT-966: skipping executed list-index witness — WABT \
+             (wat2wasm / wasm-interp) absent. A box with WABT runs this and \
+             asserts each xs[i] read back from executed WASM == fixture[i]; \
+             free CI skips and stays green."
+        );
+        // Even with no runtime, the EMIT path must still produce a real
+        // module with the memory + load shape (keeps the emitter under test
+        // in CI without WABT).
+        let wat = emit_module(&list_index_kernel_module()).expect("emit list kernel");
+        assert!(wat.contains("(memory (export \"mem\") 1)"));
+        assert!(wat.contains("f64.load"));
+        return;
+    }
+
+    eprintln!("PMAT-966: running executed list-index witness via WABT");
+
+    let kernel_wat = emit_module(&list_index_kernel_module()).expect("emit list kernel");
+    // Sanity on the emitted shape before we assemble.
+    assert!(
+        kernel_wat.contains("(param $xs i32)") && kernel_wat.contains("f64.load"),
+        "list param → i32 base + f64.load:\n{kernel_wat}"
+    );
+    let wat = build_list_witness_wat(&kernel_wat);
+
+    // Assemble + run via WABT, parse the f64 vector (one per eK export).
+    let dir = std::env::temp_dir().join(format!("xpile-wasm-list-witness-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create work dir");
+    let wat_path = dir.join("list_index.wat");
+    let wasm_path = dir.join("list_index.wasm");
+    std::fs::write(&wat_path, &wat).expect("write wat");
+
+    let assemble = Command::new("wat2wasm")
+        .arg(&wat_path)
+        .arg("-o")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        assemble.status.success(),
+        "wat2wasm failed:\n{}\n---WAT---\n{wat}",
+        String::from_utf8_lossy(&assemble.stderr)
+    );
+
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wasm-interp");
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        run.status.success(),
+        "wasm-interp run failed: stdout={stdout:?} stderr={:?}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    // Each `eK() => f64:<value>` line is xs[K]; collect in index order.
+    let mut got: Vec<f64> = Vec::new();
+    for line in stdout.lines() {
+        if let Some(idx) = line.find("=> f64:") {
+            let tok = line[idx + "=> f64:".len()..].trim();
+            got.push(tok.parse::<f64>().expect("parse f64 from interp output"));
+        }
+    }
+    assert_eq!(
+        got.len(),
+        LIST_FIXTURE.len(),
+        "one executed read per fixture index; interp output:\n{stdout}"
+    );
+    // Executed `xs[i]` must equal CPython `fixture[i]` bit-for-bit (the
+    // fixture values are exactly representable in f64).
+    for (k, (g, &want)) in got.iter().zip(LIST_FIXTURE.iter()).enumerate() {
+        assert_eq!(
+            *g, want,
+            "executed xs[{k}]={g} but CPython fixture[{k}]={want}\nWAT:\n{wat}"
+        );
+    }
+
+    eprintln!(
+        "PMAT-966: EXECUTED list-index witness PASSED — xs[i] over a \
+         list[float] param read back {got:?} from WASM linear memory, \
+         bit-matching the CPython fixture {LIST_FIXTURE:?}. First aggregate \
+         (read-only list[scalar] indexing) executes correctly."
+    );
 }

@@ -327,6 +327,177 @@ fn refuses_list_literal_expr() {
     assert!(err.to_string().contains("unsupported"));
 }
 
+// ─── PMAT-966: first aggregate — list[scalar] param indexed by index ─
+
+/// `def get(xs: list[float], i: int) -> float: return xs[i]`
+fn list_get_float_fn() -> Function {
+    Function {
+        name: "get_f".into(),
+        params: vec![
+            param("xs", Type::List(Box::new(Type::F64))),
+            param("i", Type::I64),
+        ],
+        return_type: Type::F64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("xs".into())),
+                index: Box::new(Expr::Ident("i".into())),
+            },
+        },
+    }
+}
+
+#[test]
+fn list_float_param_lowers_to_i32_base_pointer_and_memory() {
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_get_float_fn())]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    // The list param rides an i32 base-pointer.
+    assert!(
+        wat.contains("(param $xs i32)"),
+        "list → i32 base ptr: {wat}"
+    );
+    assert!(wat.contains("(param $i i64)"), "index param i64: {wat}");
+    assert!(wat.contains("(result f64)"), "f64 element result: {wat}");
+    // A memory is declared + exported once.
+    assert!(
+        wat.contains("(memory (export \"mem\") 1)"),
+        "exported linear memory: {wat}"
+    );
+    // xs[i] → base + i*8 then f64.load.
+    assert!(wat.contains("local.get $xs"), "base ptr loaded: {wat}");
+    assert!(wat.contains("i32.wrap_i64"), "index narrowed to i32: {wat}");
+    assert!(wat.contains("i32.const 8"), "f64 stride 8: {wat}");
+    assert!(
+        wat.contains("i32.mul") && wat.contains("i32.add"),
+        "addr calc: {wat}"
+    );
+    assert!(wat.contains("f64.load"), "f64 element load: {wat}");
+}
+
+#[test]
+fn list_int_param_uses_i64_load_and_stride() {
+    // def sum2(xs: list[int]) -> int: return xs[0] + xs[1]
+    let f = Function {
+        name: "sum2".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+        return_type: Type::I64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::BinOp {
+                op: BinOp::Add,
+                lhs: Box::new(Expr::Index {
+                    collection: Box::new(Expr::Ident("xs".into())),
+                    index: Box::new(Expr::LitInt(0)),
+                }),
+                rhs: Box::new(Expr::Index {
+                    collection: Box::new(Expr::Ident("xs".into())),
+                    index: Box::new(Expr::LitInt(1)),
+                }),
+            },
+        },
+    };
+    let wat = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains("(param $xs i32)"),
+        "list[int] → i32 base: {wat}"
+    );
+    assert!(wat.contains("i64.load"), "i64 element load: {wat}");
+    assert!(wat.contains("i32.const 8"), "i64 stride 8: {wat}");
+    assert!(wat.contains("i64.add"), "elements summed: {wat}");
+}
+
+#[test]
+fn no_memory_emitted_without_list_param() {
+    // The scalar-only `add` fn must NOT pull in a (memory …) decl.
+    let wat = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(add_fn())]), &wasm_config())
+        .unwrap()
+        .primary;
+    assert!(
+        !wat.contains("(memory"),
+        "no memory without a list param: {wat}"
+    );
+}
+
+#[test]
+fn refuses_list_of_bool_param() {
+    // list[bool] has no honest WASM load width — refused.
+    let f = Function {
+        name: "lb".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::Bool)))],
+        return_type: Type::Bool,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("xs".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("unsupported"), "honest refusal: {msg}");
+    assert!(msg.contains("list element type"), "names the cause: {msg}");
+}
+
+#[test]
+fn refuses_list_return_type() {
+    // Returning a list is outside the read-only-index deliverable.
+    let f = Function {
+        name: "ident".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+        return_type: Type::List(Box::new(Type::I64)),
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Ident("xs".into()),
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("unsupported"),
+        "list return refused: {err}"
+    );
+}
+
+#[test]
+fn refuses_index_over_non_list() {
+    // Indexing a scalar local (not a list param) is refused.
+    let f = Function {
+        name: "bad".into(),
+        params: vec![param("x", Type::I64)],
+        return_type: Type::I64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("x".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("unsupported"), "honest refusal: {msg}");
+    assert!(
+        msg.contains("not a `list[scalar]` parameter"),
+        "names the cause: {msg}"
+    );
+}
+
 #[test]
 fn refuses_struct_item() {
     let err = WasmBackend::new()

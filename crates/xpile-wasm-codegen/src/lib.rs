@@ -18,15 +18,25 @@
 //!
 //! - Types: `I64`/`CLong` → `i64`, `F64` → `f64`, `F32` → `f32`,
 //!   `Bool` → `i32` (WASM has no bool; 0/1 in an i32), and a 32-bit-ish
-//!   `CUInt` → `i32`. Everything else (`Str`/`List`/`Dict`/`Set`/
-//!   `Struct`/`Tuple`/`BigInt`/`Optional`/pointers/…) is **refused** with
+//!   `CUInt` → `i32`. Everything else (`Str`/`Dict`/`Set`/`Struct`/`Tuple`/
+//!   `BigInt`/`Optional`/pointers/…) is **refused** with
 //!   [`BackendError::Lower`] — a Lean-style honest refusal, never wrong
 //!   code.
+//! - The FIRST aggregate (PMAT-966): a `list[int]`/`list[float]`
+//!   **parameter** lowers to an `i32` base-pointer into WASM **linear
+//!   memory**, and a read-only `xs[i]` index (`Expr::Index`) lowers to an
+//!   address computation (`base + i*elem_size`) plus `i64.load`/`f64.load`/
+//!   `f32.load`. The list element type must itself be a supported scalar
+//!   (`i64`/`f64`/`f32`); a `list[bool]`, nested list, or list of strings
+//!   is refused. A list **literal**, list **return**, list **append** /
+//!   growth, and index **assignment** are all still refused — read-only
+//!   access to a fixed list of scalars by index is the deliverable.
 //! - Statements: `Let`/`Assign` (→ `local` + `local.set`), `If`/`While`/
 //!   `Break`/`Continue`/`Return`.
 //! - Expressions: `Ident` (→ `local.get`), `LitInt`/`LitFloat`/`LitBool`,
 //!   `BinOp` (arith/bitwise/shift + comparisons), `FloatBinOp`, `UnOp`,
-//!   `IfExpr`, and a direct intra-module `Call`.
+//!   `IfExpr`, `Index` over a `list[scalar]` param (→ `*.load`), and a
+//!   direct intra-module `Call`.
 //!
 //! ## Semantic posture (replicated from the Rust/PTX lanes)
 //!
@@ -343,6 +353,19 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     .expect("write");
     writeln!(out, "  ;; source module: {}", module.name).expect("write");
     writeln!(out, "  ;; contract: {CONTRACT_ID}").expect("write");
+    // PMAT-966: when any function takes a `list[scalar]` parameter, the
+    // list rides an `i32` base-pointer into WASM linear memory and `xs[i]`
+    // lowers to a `*.load`. Declare one page (64 KiB) of memory once, up
+    // front, and export it as `mem` so a host/witness can populate it with
+    // the list's element bytes before the call.
+    if module_uses_list_param(module) {
+        writeln!(
+            out,
+            "  ;; PMAT-966: list params ride an i32 base-pointer into this linear memory"
+        )
+        .expect("write");
+        writeln!(out, "  (memory (export \"mem\") 1)").expect("write");
+    }
     // Emit the Python floor-division / floor-modulo helpers once. WASM
     // `i64.div_s` truncates toward zero and `i64.rem_s` is the truncating
     // remainder; Python's `//`/`%` floor toward −∞ with the remainder
@@ -378,6 +401,16 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     Ok(out)
 }
 
+/// `true` when any function in `module` takes a `list[...]` parameter —
+/// the trigger for emitting the `(memory …)` declaration (PMAT-966). A
+/// list param rides an `i32` base-pointer into that linear memory.
+fn module_uses_list_param(module: &Module) -> bool {
+    module.items.iter().any(|item| match item {
+        Item::Function(f) => f.params.iter().any(|p| matches!(p.ty, Type::List(_))),
+        _ => false,
+    })
+}
+
 /// WAT scalar value type — the lowered shape of a supported meta-HIR
 /// [`Type`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -395,6 +428,27 @@ impl WatTy {
             WatTy::I32 => "i32",
             WatTy::F64 => "f64",
             WatTy::F32 => "f32",
+        }
+    }
+
+    /// Width in bytes of this scalar in WASM linear memory — the stride
+    /// used to compute `base + index*size` for a list-element load
+    /// (PMAT-966).
+    fn byte_size(self) -> i32 {
+        match self {
+            WatTy::I64 | WatTy::F64 => 8,
+            WatTy::I32 | WatTy::F32 => 4,
+        }
+    }
+
+    /// The natural-width `*.load` opcode for this scalar — used to read a
+    /// list element out of linear memory (PMAT-966).
+    fn load_instr(self) -> &'static str {
+        match self {
+            WatTy::I64 => "i64.load",
+            WatTy::I32 => "i32.load",
+            WatTy::F64 => "f64.load",
+            WatTy::F32 => "f32.load",
         }
     }
 }
@@ -419,6 +473,40 @@ fn map_type(ty: &Type) -> Result<WatTy, BackendError> {
     }
 }
 
+/// Map a `list[T]` parameter to the WAT element type its elements load as
+/// (PMAT-966). The list itself rides an `i32` base-pointer; the element
+/// type must be a supported scalar that has a natural `*.load` —
+/// `i64`/`f64`/`f32`. A `list[bool]` is refused (no WASM bool load width
+/// is honest), as are nested lists, `list[str]`, etc.
+fn map_list_elem_type(inner: &Type) -> Result<WatTy, BackendError> {
+    match inner {
+        Type::I64 | Type::CLong => Ok(WatTy::I64),
+        Type::F64 => Ok(WatTy::F64),
+        Type::F32 => Ok(WatTy::F32),
+        other => Err(unsupported(&format!(
+            "list element type {other:?} — the WASM list subset supports \
+             list[int]/list[float] only (i64/f64/f32 elements with a natural \
+             *.load); list[bool], list[str], and nested lists are refused"
+        ))),
+    }
+}
+
+/// Map a **parameter** type to its WAT value type. Identical to
+/// [`map_type`] for scalars, but additionally accepts a `list[scalar]`
+/// (PMAT-966): the list rides an `i32` base-pointer into linear memory, so
+/// the param's WAT type is `i32`. The element type is validated here (the
+/// caller separately records it for `Index` lowering). A list of a
+/// non-scalar element is refused by [`map_list_elem_type`].
+fn param_wat_type(ty: &Type) -> Result<WatTy, BackendError> {
+    if let Type::List(inner) = ty {
+        // Validate the element type now (honest early refusal); the list
+        // itself is an i32 base-pointer.
+        map_list_elem_type(inner)?;
+        return Ok(WatTy::I32);
+    }
+    map_type(ty)
+}
+
 fn unsupported(what: &str) -> BackendError {
     BackendError::Lower(format!(
         "xpile-wasm-codegen: unsupported construct — {what}"
@@ -430,8 +518,14 @@ fn unsupported(what: &str) -> BackendError {
 /// emitter can pick `i64.add` vs `f64.add` and emit the right
 /// `local`/`local.get`/`local.set`.
 struct Scope {
-    /// `(name, watty)` for every local, in stable order.
+    /// `(name, watty)` for every local, in stable order. A `list[...]`
+    /// param appears here as an `i32` (its base-pointer); its element type
+    /// is recorded separately in [`Scope::list_elem`].
     locals: Vec<(String, WatTy)>,
+    /// PMAT-966: for each local that is a `list[scalar]` base-pointer, the
+    /// WAT type its elements load as (`i64`/`f64`/`f32`). `Index` over such
+    /// a local emits `base + i*size` + that element's `*.load`.
+    list_elem: Vec<(String, WatTy)>,
     /// The function's return WAT type (drives `return` checking).
     ret: WatTy,
     /// Whether the return type is the unit/void shape (no value).
@@ -446,6 +540,16 @@ impl Scope {
             .find(|(n, _)| n == name)
             .map(|(_, t)| *t)
             .ok_or_else(|| unsupported(&format!("reference to unbound name `{name}`")))
+    }
+
+    /// The element WAT type if `name` is a `list[scalar]` base-pointer,
+    /// else `None`. Drives [`Expr::Index`] load-shape selection.
+    fn list_elem_of(&self, name: &str) -> Option<WatTy> {
+        self.list_elem
+            .iter()
+            .rev()
+            .find(|(n, _)| n == name)
+            .map(|(_, t)| *t)
     }
 
     /// Declare a new local; idempotent on an existing name (re-`Let` of a
@@ -470,13 +574,21 @@ fn emit_function(f: &Function) -> Result<String, BackendError> {
 
     let mut scope = Scope {
         locals: Vec::new(),
+        list_elem: Vec::new(),
         ret,
         ret_is_unit,
     };
-    // Params are locals 0..n.
+    // Params are locals 0..n. A `list[scalar]` param (PMAT-966) rides an
+    // `i32` base-pointer into linear memory; its element type is recorded
+    // so `Index` knows the load shape. Every other param maps to its
+    // scalar WAT type.
     for Param { name, ty, .. } in &f.params {
-        let wt = map_type(ty)?;
+        let wt = param_wat_type(ty)?;
         scope.declare(name, wt);
+        if let Type::List(inner) = ty {
+            let elem = map_list_elem_type(inner)?;
+            scope.list_elem.push((name.clone(), elem));
+        }
     }
 
     // Pre-declare every `let`-bound local by walking the body, so the
@@ -507,7 +619,7 @@ fn emit_function(f: &Function) -> Result<String, BackendError> {
     let mut out = String::new();
     write!(out, "  (func ${} ", f.name).expect("write");
     for Param { name, ty, .. } in &f.params {
-        let wt = map_type(ty)?;
+        let wt = param_wat_type(ty)?;
         write!(out, "(param ${} {}) ", name, wt.keyword()).expect("write");
     }
     if !ret_is_unit {
@@ -794,6 +906,7 @@ fn emit_expr(
             // if that fails the user gets the honest type-mismatch refusal.
             Ok(WatTy::I64)
         }
+        Expr::Index { collection, index } => emit_index(collection, index, scope, out, depth),
         Expr::Unit => Err(unsupported(
             "unit value `()` in a value position (WASM has no unit operand)",
         )),
@@ -803,6 +916,62 @@ fn emit_expr(
             expr_kind(other)
         ))),
     }
+}
+
+/// Emit a read-only `xs[i]` over a `list[scalar]` parameter (PMAT-966).
+///
+/// `collection` must be an [`Expr::Ident`] naming a list-param base-pointer
+/// (the only list shape in the WASM subset — there are no list literals,
+/// list-typed locals, or list returns). The index is a non-negative `i64`
+/// (the meta-HIR `Index.index` posture); the address is
+/// `base + (index as i32) * elem_size`, read with the element's natural
+/// `*.load`. The result type is the list's element WAT type.
+///
+/// Posture matches the `C-XLATE-PY-LIST-TO-VEC` `Index` doc: a negative or
+/// out-of-range index is NOT bounds-checked here — an out-of-bounds linear
+/// address traps in the wasm runtime, the WASM analogue of Python's
+/// `IndexError` / the Rust lane's `vec[i]` panic. (Variable-index *bounds
+/// checking* is deliberately out of scope for this first increment.)
+fn emit_index(
+    collection: &Expr,
+    index: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    let Expr::Ident(name) = collection else {
+        return Err(unsupported(
+            "indexing a non-name collection — the WASM list subset only \
+             indexes a `list[scalar]` PARAMETER (an i32 base-pointer); \
+             list literals / temporaries / nested indexing are refused",
+        ));
+    };
+    let Some(elem) = scope.list_elem_of(name) else {
+        return Err(unsupported(&format!(
+            "index over `{name}` which is not a `list[scalar]` parameter — \
+             only a list param (i32 base-pointer into linear memory) can be \
+             indexed in the WASM subset (no str/dict/tuple indexing)"
+        )));
+    };
+    // addr = base + (index as i32) * elem_size
+    // base pointer (i32):
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    // index expression — must be an i64 (the meta-HIR index posture);
+    // narrow to the i32 address space with i32.wrap_i64.
+    emit_expr_typed(index, scope, out, depth, WatTy::I64)?;
+    indent(out, depth);
+    writeln!(out, "i32.wrap_i64").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {}", elem.byte_size()).expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.mul").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.add").expect("write");
+    // load the element at the computed address.
+    indent(out, depth);
+    writeln!(out, "{}", elem.load_instr()).expect("write");
+    Ok(elem)
 }
 
 /// Render an `f64` as a WAT float literal token.
