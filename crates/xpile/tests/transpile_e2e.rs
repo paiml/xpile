@@ -14899,6 +14899,47 @@ fn main() {
     assert_rustc_runs("fstr_grouping", &rust, driver);
 }
 
+/// PMAT-940 (correctness-hunt): the thousands-GROUPING spec on a FLOAT with a
+/// fixed precision — `f"{1234567.89:,.2f}"` == `"1,234,567.89"`,
+/// `f"{1234567.5:_.1f}"` == `"1_234_567.5"`, `f"{1234.5:,f}"` ==
+/// `"1,234.500000"` (Python's `,f` defaults to 6 decimals) — was a clean reject
+/// ("unsupported format spec `:,`"). Python renders the float to N decimals,
+/// then groups the integer part by 3 from the right, sign first, leaving the
+/// `.dd` tail intact; an int with such a spec is coerced to float
+/// (`f"{1234567:,.2f}"` == `"1,234,567.00"`). Rust's `format!` has no grouping
+/// flag, so the spec routes to the new `FloatGroupedStr` digit-grouping loop
+/// (integer part only). The float follow-up to `fstr_grouping`. Cross-checked
+/// vs python3.
+#[test]
+fn fstr_float_grouping() {
+    let rust = xpile_transpile_to_rust("fstr_float_grouping.py");
+    assert!(
+        // the runtime loop: render to N decimals, split the `.dd` tail, group the
+        // integer part by 3, sign first.
+        rust.contains("format!(\"{:.2}\", __x)")
+            && rust.contains("__body.find('.')")
+            && rust.contains("(__len - __i) % 3 == 0")
+            && rust.contains("__g.push(',')")
+            && rust.contains("__g.push('_')"),
+        "float grouping must emit the precision-render + integer-part grouping loop:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(grp_comma2(1234567.89), "1,234,567.89");
+    assert_eq!(grp_comma2(-1234567.89), "-1,234,567.89");
+    assert_eq!(grp_comma2(0.5), "0.50");
+    assert_eq!(grp_comma2(999.99), "999.99");
+    assert_eq!(grp_comma2(12.0), "12.00");
+    assert_eq!(grp_under1(1234567.5), "1_234_567.5");
+    assert_eq!(grp_under1(-1234567.5), "-1_234_567.5");
+    assert_eq!(grp_default(1234.5), "1,234.500000");
+    assert_eq!(grp_int(1234567), "1,234,567.00");
+    assert_eq!(labeled(12345678.0), "bal=12,345,678.00!");
+}
+"#;
+    assert_rustc_runs("fstr_float_grouping", &rust, driver);
+}
+
 /// PMAT-801 (HUNT-V19 STR-IDX-OOB): a string index out of range panicked with
 /// Rust's raw "index out of bounds" message, not the tagged `xpile: IndexError:`,
 /// so under the allowlist except a typed `except IndexError` couldn't catch it

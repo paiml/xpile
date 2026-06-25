@@ -1767,6 +1767,7 @@ fn walk_expr_children(
         Expr::Ord { value } | Expr::Chr { value } => f(value),
         Expr::IntRadixStr { value, .. }
         | Expr::IntGroupedStr { value, .. }
+        | Expr::FloatGroupedStr { value, .. }
         | Expr::IntFromStrRadix { value, .. } => f(value),
         Expr::FormatSpec { value, .. } => f(value),
         Expr::StrMethod { recv, args, .. } => {
@@ -9967,8 +9968,10 @@ fn infer_type(e: &Expr) -> Type {
         // PMAT-502cm: ord → int code point; chr → 1-char str.
         Expr::Ord { .. } => Type::I64,
         Expr::Chr { .. } => Type::Str,
-        // PMAT-502cv: hex/oct/bin → str.
-        Expr::IntRadixStr { .. } | Expr::IntGroupedStr { .. } => Type::Str,
+        // PMAT-502cv: hex/oct/bin → str. PMAT-940: grouped float → str.
+        Expr::IntRadixStr { .. } | Expr::IntGroupedStr { .. } | Expr::FloatGroupedStr { .. } => {
+            Type::Str
+        }
         // PMAT-502da: int(s, base) → int.
         Expr::IntFromStrRadix { .. } => Type::I64,
         // PMAT-502am: a formatted f-string field produces a Str.
@@ -10395,8 +10398,10 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-502cm: ord → int code point; chr → 1-char str.
         Expr::Ord { .. } => Type::I64,
         Expr::Chr { .. } => Type::Str,
-        // PMAT-502cv: hex/oct/bin → str.
-        Expr::IntRadixStr { .. } | Expr::IntGroupedStr { .. } => Type::Str,
+        // PMAT-502cv: hex/oct/bin → str. PMAT-940: grouped float → str.
+        Expr::IntRadixStr { .. } | Expr::IntGroupedStr { .. } | Expr::FloatGroupedStr { .. } => {
+            Type::Str
+        }
         // PMAT-502da: int(s, base) → int.
         Expr::IntFromStrRadix { .. } => Type::I64,
         // PMAT-502am: a formatted f-string field produces a Str.
@@ -15410,6 +15415,43 @@ fn apply_nonempty_format_spec(
                     return Ok(Expr::FormatSpec {
                         value: Box::new(body),
                         rust_spec: format!(">{width}"),
+                    });
+                }
+            }
+        }
+    }
+    // PMAT-940 (correctness-hunt): the thousands-GROUPING spec on a FLOAT with a
+    // fixed precision — `f"{1234567.89:,.2f}"` → "1,234,567.89",
+    // `f"{1234567.5:_.1f}"` → "1_234_567.5", and the default-precision `f"{1234.5:,f}"`
+    // → "1,234.500000" (Python's `,f` defaults to 6 decimals). An int with such a
+    // float-presentation spec was already cast to f64 above (PMAT-693), so
+    // `f"{1234567:,.2f}"` → "1,234,567.00" lands here too. Rust's `format!` has NO
+    // grouping flag, so route to `FloatGroupedStr`: codegen renders the float to
+    // `precision` decimals, groups the integer part by 3 from the right, sign
+    // first, and leaves the `.dd` tail intact — the float follow-up to PMAT-939's
+    // `IntGroupedStr` (which scoped bare-int only). Grouping over the DEFAULT float
+    // repr (`:,` with no `f` presentation) stays a documented reject for now.
+    if ty == Type::F64 {
+        if let Some(rest) = spec.strip_prefix([',', '_']) {
+            // `rest` is e.g. ".2f", "f", ".0F". Only the `f`/`F` (fixed) presentation
+            // is grouped here; `,g`/`,e`/bare-`,` over a float are left to reject.
+            if let Some(prec_part) = rest.strip_suffix(['f', 'F']) {
+                let precision = if prec_part.is_empty() {
+                    // Bare `,f` → Python's default fixed precision of 6.
+                    Some(6u32)
+                } else if let Some(n) = prec_part.strip_prefix('.') {
+                    (!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                        .then(|| n.parse::<u32>().ok())
+                        .flatten()
+                } else {
+                    None
+                };
+                if let Some(precision) = precision {
+                    let sep = spec.chars().next().expect("spec is non-empty");
+                    return Ok(Expr::FloatGroupedStr {
+                        value: Box::new(value),
+                        sep,
+                        precision,
                     });
                 }
             }
