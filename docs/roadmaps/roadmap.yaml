@@ -11554,6 +11554,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-945
+  github_issue: null
+  item_type: task
+  title: 'PMAT-945: [correctness-hunt] the `:c` char-format spec on an INTEGER f-string field (`f"{65:c}"` == "A", `f"{0x1F600:c}"` == "😀", `f"{8364:c}"` == "€", `format(66, "c")` == "B") was a clean REJECT ("unsupported format spec `:c`"). Python''s `int.__format__` for presentation code `c` is exactly `chr(n)` — the single character at Unicode code point n. xpile already lowers `chr(n)` to `char::from_u32(n as u32).expect(..).to_string()`, so the spec now routes to the existing `Expr::Chr` node — NO new IR, every codegen/meta-hir/ruchy/Lean lane already handles it. A bool delegates to int (`f"{True:c}"` == chr(1)) via the PMAT-831 coercion; the shared `format(x, "c")` builtin gets it too. A float/str `:c` stays a reject (Python ValueError), as does a width/align-combined `:c` (scoped follow-up). Surfaced by a python3-vs-rustc differential format-spec sweep.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (PMAT-900..944 all merged, sprint window 2026-06-23..07-02 still open). Continues prompt path c — the python3-vs-rustc differential correctness-hunt. A ~90-probe differential sweep (string/int/float/list/dict/tuple/format-spec/repr/arithmetic territory) found the corpus byte-identical to CPython EXCEPT for a cluster of currently-REJECTED valid format specs; `:c` (int char) is the cleanest, fully-deterministic one. Reproduced BEFORE the fix: `xpile transpile` of `f\"{65:c}\"` errored with `unsupported format spec :c (for a I64 value)`; CPython renders \"A\"."
+  - "ROOT CAUSE: `apply_nonempty_format_spec` (the shared f-string-field / `format()`-builtin spec lowering) had no branch for the `c` presentation code, so a bare `:c` fell through every special-case to the final `translate_format_spec` reject. `:c` is Python's int→Unicode-char conversion, identical to the already-supported `chr(n)` builtin — the lowering simply never connected the two."
+  - "FIX: in `apply_nonempty_format_spec`, after the PMAT-831 bool→i64 coercion and PMAT-693 float-cast, add `if spec == \"c\" && ty == Type::I64 { return Ok(Expr::Chr { value }) }`. This reuses the existing `Expr::Chr` lowering (`char::from_u32((n) as u32).expect(\"xpile: chr() arg not in range(0x110000) (ValueError)\").to_string()`) — NO new IR node, so codegen / meta-hir / ruchy / Lean lanes are untouched (same minimal-blast-radius discipline as PMAT-943's FormatSpec+ToStr reuse). A bool already arrives as i64, so `f\"{True:c}\"` == chr(1) for free; the shared `format(n, \"c\")` path goes through the same function. INT-ONLY guard: only fire for `Type::I64`, so a float/str `:c` keeps falling through to the reject — mirroring Python's own ValueError (honest refusal, never a silent miscompile). SCOPE: a BARE `:c` only; a width/align-combined `:c` (`f\"{65:>5c}\"`) stays a documented reject (follow-up), same scoping as the width-combined `:e` reject in PMAT-941. The reject diagnostic now lists `c` (int char) among the supported specs."
+  - "REGRESSION GUARDS: oracle differential fixture `fstr_char_format.py` (auto-discovered by `oracle_differential_python_vs_rust` — compiles+runs the transpiled binary and asserts byte-identical CPython-vs-rustc stdout; covers literals 65/97/90, a variable, hex code points 0x1F600/0x2764/0x4E2D, multi-byte € and astral 😀 scalars, the `format(66, \"c\")` builtin, a bool delegating to int, and multi-field composition `go {72:c}{73:c}!` — 10 lines, byte-identical). e2e test `fstr_char_format` in transpile_e2e.rs (asserts the codegen reuses `char::from_u32` and never emits a bare `{:c}` format!, then rustc-runs 12 hand-checked CPython values incl. NUL chr(0), bool chr(1), astral 😀, € and 中); e2e reject test `fstr_char_format_float_rejected` (asserts a FLOAT `:c` is REFUSED with the `unsupported format spec :c`/`F64` diagnostic). Fixtures `fstr_char_format.py` (e2e), `fstr_char_format_rejected.py`. The PMAT-940/941/942/943 f-string e2e tests (`fstr_grouping`, `fstr_scientific`, `fstr_space_sign`, `fstr_fill_align_float`) and the `chr()` builtin path all still pass."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, `cargo test -p xpile --test transpile_e2e fstr_char` (2 pass) + `--test oracle_differential` (auto-covers fstr_char_format), depyler-frontend crate tests. Backlog correctness slice, sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-131
   github_issue: null
   item_type: task
