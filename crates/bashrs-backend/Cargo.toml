@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "POSIX shell backend (sh/bash/zsh) for xpile. Scaffold at v0.1.0 (PMAT-037 / XPILE-BASHRS-MERGER-001); real emission inherits bashrs's ShellIR + quoting machinery at v0.2.0."
+description = "POSIX shell backend (sh/bash/zsh) for xpile (XPILE-BASHRS-MERGER-001). Renders real POSIX shell for the supported meta-HIR Stmt set (Cmd / Pipeline / ShellAssign / ShellLoop with quoting, variables, and command substitution); a ShellCheck-compatible verifier remains v0.2.0 work."
 
 [dependencies]
 xpile-backend = { workspace = true }
