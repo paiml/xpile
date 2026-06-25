@@ -54,6 +54,15 @@ sha2 = "0.10"
 hex = "0.4"
 anyhow = "1"
 
+# GPU execution lane (PMAT-950): wgpu compute backend that RUNS emitted
+# WGSL on a real Vulkan/Metal/DX12 adapter — the executed half of the §29
+# WGSL DiffExec quorum (`xpile-wgsl-codegen`). default-features off + an
+# explicit cross-vendor backend set so the crate compiles on free CI
+# (no adapter → graceful-skip) and runs the witness on any GPU box.
+wgpu = { version = "29", default-features = false, features = ["wgsl", "vulkan", "metal", "dx12"] }
+pollster = "0.4"
+bytemuck = "1"
+
 # External: aprender's provable-contracts framework (`aprender-contracts`
 # on crates.io). Pinned to a fixed minor — bump when adopting new pv
 # features. Resolves on CI and crates.io without any sibling checkout.

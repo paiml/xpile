@@ -1,0 +1,202 @@
+metadata:
+  id: C-COMPILE-RUST-TO-WGSL
+  version: "1.0.0"
+  created: "2026-06-25"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Compile-time contract: how a Rust compute kernel lowers through
+    xpile-wgsl-codegen to WebGPU Shading Language (WGSL) text, and how the
+    §29 Multi-Emitter Oracle Quorum runs the emitted WGSL on a real wgpu
+    adapter to attest cross-vendor numeric agreement.
+
+    Layer 5 of the xpile contract taxonomy (compile-time / IR), the WGSL
+    sibling of `C-COMPILE-RUST-TO-PTX-MMA`. Where the PTX contract's
+    executed witness runs through a single vendor toolchain (`nvcc`,
+    PMAT-949), this contract's witness runs through **wgpu** — so the same
+    `out[i] = 2*in[i] + 1` semantics are diffed on whatever adapter the
+    host exposes: Vulkan (NVIDIA / AMD), Metal (Apple), or DX12 (Windows).
+    That makes the WGSL DiffExec lane a genuinely *cross-vendor* executed
+    witness, not a single-toolchain one.
+
+    Asserts properties of the *emitted WGSL text* and of its *executed
+    output*, not just the Rust source or the meta-HIR. Falsification runs
+    the emitted shaders on the GPU and compares the read-back float
+    vectors — if two categorically-independent emitters disagree, the
+    contract fails regardless of whether each shader was well-typed.
+  xpile:
+    layer: compile
+  references:
+    - "WebGPU Shading Language (WGSL) — W3C Candidate Recommendation"
+    - "WGSL §16.3 — fma(e1, e2, e3) fused multiply-add builtin"
+    - "wgpu 29 — cross-platform (Vulkan/Metal/DX12/WebGPU) GPU abstraction"
+    - contracts/compile-rust-to-ptx-mma-v1.yaml
+    - contracts/xpile-backend-trait-v1.yaml
+    - docs/specifications/sub/backend-trait.md
+  depends_on:
+    - C-XPILE-BACKEND-TRAIT
+
+compile_targets:
+  - target: wgsl
+    hardware:
+      # WGSL targets a portable compute abstraction rather than one ISA;
+      # the executed witness binds to any of the cross-vendor wgpu native
+      # backends. The DiffExec engine (gated on adapter presence) runs the
+      # emitted shaders on whichever is available.
+      backends:
+        - vulkan
+        - metal
+        - dx12
+      features: []
+    via:
+      - naga
+      - wgpu
+    backend_crate: xpile-wgsl-codegen
+    # PMAT-950 (2026-06-25): the EXECUTED cross-vendor GPU DiffExec
+    # witness now EXISTS. `WgpuWgslDiffExecEngine` (crates/
+    # xpile-wgsl-codegen/src/wgpu_diffexec.rs) runs two categorically
+    # independent WGSL emitters (general `2.0*x + 1.0`, specialist `fma`)
+    # on a real wgpu adapter for the local hardware, and numerically
+    # compares the executed outputs under this `quorum_policy.kind:
+    # DiffExec`. On an RTX 4090 (Vulkan) the §29 quorum records a real
+    # `DiffExecResult::Match` (max_abs_diff = 0 over the fixture vector)
+    # instead of `NotRun{no-engine}` — the load-bearing Run>=1 execution
+    # that closes the WGSL lane's "on-hardware Vulkan DiffExec" caveat
+    # (PMAT-490). The witness is gated on wgpu-adapter presence
+    # (graceful-skip on free CI); naga/wgpu remain the production general
+    # emitter + execution backend.
+    quorum_policy:
+      kind: DiffExec
+      tolerance: 1.0e-3
+    via_roles:
+      - emitter: wgsl-saxpy-general
+        role: general
+        crate: xpile-wgsl-codegen
+      - emitter: wgsl-saxpy-specialist-fma
+        role: specialist
+        crate: xpile-wgsl-codegen
+
+equations:
+  wgsl_emission_structure_extensionality_diamond:
+    # Tier-defining Diamond equation (depth-1). Machine-checked by the
+    # lake-build pilot — see contracts/lean/CompileRustToWgsl.lean. An
+    # emitted WGSL compute kernel is determined by its structural
+    # signature (entry point, workgroup size, ordered binding indices),
+    # mirroring the str/list/float/set structural Diamonds.
+    lean_theorem: "XpileContracts.CCompileRustToWgsl.wgsl_emission_structure_extensionality_diamond"
+    lean_file: "contracts/lean/CompileRustToWgsl.lean"
+    formula: |
+      ∀ a b : WgslKernel.
+        a.entry = b.entry → a.workgroupSize = b.workgroupSize →
+        a.bindings = b.bindings → a = b
+      (an emitted WGSL kernel is determined by its structural signature)
+    domain: |
+      Any emitted WGSL compute kernel as xpile-wgsl-codegen produces it,
+      modelled by its `@compute` entry name, `@workgroup_size`, and the
+      ordered storage-buffer binding indices.
+    invariants:
+      - "FIRST Diamond-tier theorem of C-COMPILE-RUST-TO-WGSL (registers it at depth-1)"
+      - "structure extensionality over the emitted kernel's signature (sorry-free, core-only)"
+      - "execution-semantics agreement (the 2*x+1 DiffExec witness) is the runtime-stratum tier, deferred"
+    preconditions:
+      - "BackendConfig.target == Target::Wgsl"
+    postconditions:
+      - "WGSL-emitting code carries citation C-COMPILE-RUST-TO-WGSL"
+
+  saxpy_emission_is_well_formed_wgsl:
+    formula: |
+      lower(rust_compute_fn, BackendConfig{target: Wgsl})
+        produces wgsl_text containing a `@compute @workgroup_size(N)`
+        entry point and an `fn` declaration
+    domain: |
+      A Rust compute function lowered to a WGSL compute shader over a
+      storage-buffer input/output binding pair.
+    invariants:
+      - "emitted WGSL carries a `@compute` entry attribute"
+      - "emitted WGSL carries a `@workgroup_size(...)` on the compute entry"
+      - "emitted WGSL carries an `fn` entry-point declaration"
+    preconditions:
+      - "BackendConfig.target == Target::Wgsl"
+      - "BackendConfig.hardware is None or Some(HwProfile::Wgsl { .. })"
+    postconditions:
+      - "emitted WGSL passes the offline `validate_wgsl` well-formedness gate"
+      - "WGSL-emitting code carries citation C-COMPILE-RUST-TO-WGSL"
+
+  diffexec_cross_vendor_agreement:
+    formula: |
+      run(general_wgsl, X) ≈ run(specialist_wgsl, X)  ∀ X ∈ fixtures
+        within tolerance 1e-3, on a real wgpu adapter
+    domain: |
+      Two categorically-independent WGSL emitters computing identical
+      semantics (general `2.0*x + 1.0`; specialist `fma(2.0, x, 1.0)`),
+      both dispatched on the host's wgpu adapter over the fixed fixture
+      input vector.
+    invariants:
+      - "executed outputs of general and specialist agree within tolerance"
+      - "a divergence beyond tolerance FALSIFIES the contract (CI fails)"
+      - "absence of an adapter records NotRun (benign), never a fake Match"
+    preconditions:
+      - "saxpy_emission_is_well_formed_wgsl holds for both emitters"
+      - "a wgpu adapter is present (else the engine is not installed)"
+    postconditions:
+      - "QuorumStatus::Multi with DiffExecResult::Match on a GPU host"
+
+proof_obligations:
+  - type: postcondition
+    property: emitted WGSL is a well-formed compute shader
+    formal: "validate_wgsl(emitted_wgsl) == Ok(())"
+    applies_to: saxpy_emission_is_well_formed_wgsl
+
+  - type: postcondition
+    property: executed emitters agree within tolerance
+    formal: "max_abs_diff(run(general, X), run(specialist, X)) < 1e-3 ∀ X ∈ fixtures"
+    applies_to: diffexec_cross_vendor_agreement
+
+  - type: frame
+    property: lower() does not mutate the input meta-HIR module
+    formal: "modifies() == ∅"
+    applies_to: all
+
+  - type: precondition
+    property: backend citation is recorded
+    formal: "Artifact.citations contains C-COMPILE-RUST-TO-WGSL"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-COMPILE-WGSL-001
+    rule: |
+      Emitted WGSL MUST be a well-formed compute shader (a `@compute`
+      entry with `@workgroup_size(...)` and an `fn` declaration).
+    prediction: |
+      `validate_wgsl(emitted)` returns `Ok(())` for both emitters.
+    test: |
+      cargo test -p xpile-wgsl-codegen --lib
+    if_fails: |
+      The emitter regressed to the scaffold comment placeholder or an
+      ill-formed shader. Likely cause: an emitter no longer produces a
+      `@compute` entry point.
+    ship_blocking: true
+    counter_example_classes:
+      - scaffold_placeholder
+      - missing_compute_entry
+
+  - id: FALSIFY-COMPILE-WGSL-002
+    rule: |
+      The two categorically-independent WGSL emitters MUST agree within
+      tolerance when executed on a real wgpu adapter.
+    prediction: |
+      On a GPU host the §29 quorum records DiffExecResult::Match with
+      max_abs_diff <= 1e-3; on a host with no adapter it records the
+      benign NotRun (never a fake Match).
+    test: |
+      cargo test -p xpile-wgsl-codegen --test gpu_witness
+    if_fails: |
+      The general (`2.0*x + 1.0`) and specialist (`fma`) WGSL paths
+      diverged on the GPU — a real cross-emitter contradiction the §29
+      quorum is designed to catch, or the engine masqueraded an unrun
+      lane as a Match.
+    ship_blocking: true
+    counter_example_classes:
+      - executed_divergence
+      - notrun_masquerading_as_match

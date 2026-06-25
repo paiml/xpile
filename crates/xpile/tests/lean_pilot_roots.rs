@@ -222,6 +222,13 @@ const EXPECTED_PILOT: &[&str] = &[
     // `import Mathlib`. Pilot 22 → 23; KNOWN-INCOMPLETE 1 → 0 — the ENTIRE
     // `contracts/lean/` substrate is now machine-checked.
     "PyIntArith",
+    // PMAT-950 (backlog slice): the NEW WGSL compile contract joins the pilot at
+    // depth-1 — a core-only, import-free STRUCTURE EXTENSIONALITY proof (an
+    // emitted WGSL compute kernel is determined by its structural signature:
+    // entry / workgroup_size / ordered bindings), the proof-lane half of the §29
+    // cross-vendor wgpu DiffExec witness. NEW contract, so the pilot grows
+    // 23 → 24; the entire `contracts/lean/` substrate stays machine-checked.
+    "CompileRustToWgsl",
 ];
 
 #[test]
