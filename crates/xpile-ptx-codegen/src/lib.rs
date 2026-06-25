@@ -1,30 +1,45 @@
 //! PTX backend.
 //!
-//! Lowers Rust meta-HIR (functions annotated `#[gpu_kernel(...)]`) to
-//! NVIDIA PTX text targeting `sm_80`+. Layer 5 compile contract:
+//! Lowers Rust meta-HIR (the element-wise scalar kernel shape) to NVIDIA PTX
+//! text targeting `sm_80`+. Layer 5 compile contract:
 //! `contracts/compile-rust-to-ptx-mma-v1.yaml`.
+//!
+//! **Real emitter (PMAT-961):** [`XpilePtxEmitter`] is a genuine
+//! meta-HIR → PTX text lowering ([`emit::emit_kernel`]) — the NVIDIA sibling of
+//! `xpile-wasm-codegen`'s hand-emitted WAT. It emits a complete
+//! `ptxas`-assemblable `.visible .entry xpile_kernel` module (`.version` /
+//! `.target sm_<cc>` derived from [`HwProfile::Ptx`] / `.address_size 64`,
+//! `ld.global` → scalar arithmetic → `st.global`) for the scalar element-wise
+//! subset, and REFUSES aggregates / control flow Lean-style. It replaces the
+//! v0.1.0 `ScaffoldPtxEmitter` comment placeholder (retired).
 //!
 //! **Architecture (PMAT-264 / Section 29):** [`PtxBackend`] wraps a
 //! [`MultiEmitterBackend`] so emission routes through the same
-//! general/specialist quorum framework that will eventually carry
-//! `rustc_codegen_nvvm` (general) + `aprender-gpu` (specialist). At
-//! v0.1.0 the wrapper holds a single [`ScaffoldPtxEmitter`] in the
-//! general slot — the same code path real emitters will plug into.
+//! general/specialist quorum framework. The real [`XpilePtxEmitter`] is the
+//! `general` slot; `aprender-gpu` would slot into the `specialist` position;
+//! no changes to [`PtxBackend`]'s public API.
 //!
-//! When `rustc_codegen_nvvm` lights up (next phase per
-//! `sub/layer5-multi-emitter-quorum.md`), it slots into the `general`
-//! position; when `aprender-gpu` ships its bridge, it slots into the
-//! `specialist` position; no changes to [`PtxBackend`]'s public API.
+//! **§29 anti-correlation witness (PMAT-961):** [`PtxBackend::new_ptx_diffexec_witness`]
+//! installs the [`PtxDiffExecEngine`], which diffs xpile's OWN hand-emitted PTX
+//! (run via the CUDA Driver API) against the nvcc-compiled CUDA-C `xpile_kernel`
+//! — two **categorically-independent codegen toolchains** for the same kernel,
+//! upgrading PMAT-949's two-CUDA-C-kernels-same-nvcc check to a genuinely
+//! independent pair. cuda-oxide (PMAT-480) becomes the 3rd independent emitter
+//! on top of this pair (its own nightly slice).
 
 use xpile_backend::{
     Artifact, Backend, BackendConfig, BackendError, EmittedText, HwProfile, MultiEmitterBackend,
     QuorumPolicy, Target, TargetEmitter,
 };
 use xpile_contracts::ContractId;
-use xpile_meta_hir::Module;
+use xpile_meta_hir::{Block, Expr, FloatOp, Function, Item, Module, Param, Type};
 
 mod cuda_diffexec;
+mod emit;
+mod ptx_diffexec;
 pub use cuda_diffexec::{cuda_toolchain_available, NvccCudaDiffExecEngine, FIXTURE_INPUT};
+pub use emit::{emit_kernel, KERNEL_NAME, PTX_VERSION};
+pub use ptx_diffexec::PtxDiffExecEngine;
 
 /// PTX backend — `Backend` impl wrapping a [`MultiEmitterBackend`] so
 /// the v0.1.0 scaffold drives through the same routing the future
@@ -42,15 +57,15 @@ impl Default for PtxBackend {
 impl PtxBackend {
     pub fn new() -> Self {
         Self {
-            inner: MultiEmitterBackend::new_single(Target::Ptx, Box::new(ScaffoldPtxEmitter)),
+            inner: MultiEmitterBackend::new_single(Target::Ptx, Box::new(XpilePtxEmitter)),
         }
     }
 
     /// PMAT-280 — End-to-end validation constructor for Section 29's
     /// multi-emitter routing.
     ///
-    /// Builds a `PtxBackend` whose `MultiEmitterBackend` carries the
-    /// `ScaffoldPtxEmitter` in the `general` slot AND a
+    /// Builds a `PtxBackend` whose `MultiEmitterBackend` carries the real
+    /// [`XpilePtxEmitter`] in the `general` slot AND a
     /// [`MatmulSpecialistEmitter`] in the `specialist` slot under
     /// `QuorumPolicy::PreferSpecialist`. The specialist matches only
     /// modules whose name starts with `matmul_` — the shape filter
@@ -69,11 +84,41 @@ impl PtxBackend {
         Self {
             inner: MultiEmitterBackend::new_with_specialist(
                 Target::Ptx,
-                Box::new(ScaffoldPtxEmitter),
+                Box::new(XpilePtxEmitter),
                 Box::new(MatmulSpecialistEmitter),
                 QuorumPolicy::PreferSpecialist,
             ),
         }
+    }
+
+    /// PMAT-961 — the TRUE anti-correlation §29 PTX witness constructor.
+    ///
+    /// Builds a `PtxBackend` whose `MultiEmitterBackend` carries TWO
+    /// categorically-independent emitters for the same `out[i] = 2*in[i] + 1`
+    /// kernel — [`XpileSaxpyPtxEmitter`] (general: xpile's OWN hand-emitted
+    /// PTX) and [`CudaSaxpyGeneralEmitter`] (specialist: nvcc-compilable
+    /// CUDA-C) — under `QuorumPolicy::DiffExec`, with a [`PtxDiffExecEngine`]
+    /// installed. The engine runs the xpile PTX via the CUDA Driver API and the
+    /// nvcc CUDA-C via the Runtime API, both on the GPU, and asserts the
+    /// executed outputs agree.
+    ///
+    /// This is the categorical-independence upgrade of
+    /// [`PtxBackend::new_cuda_diffexec_witness`] (PMAT-949): that diffed two
+    /// CUDA-C kernels compiled by the SAME nvcc; this diffs two DIFFERENT
+    /// codegen toolchains (xpile hand-emit vs nvcc). On a non-GPU host the
+    /// engine is NOT installed → the benign `NotRun { no-engine }`, free CI
+    /// stays green.
+    pub fn new_ptx_diffexec_witness() -> Self {
+        let mut inner = MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(XpileSaxpyPtxEmitter),
+            Box::new(CudaSaxpyGeneralEmitter),
+            QuorumPolicy::DiffExec { tolerance: 1.0e-3 },
+        );
+        if cuda_toolchain_available() {
+            inner = inner.with_diff_exec_engine(std::sync::Arc::new(PtxDiffExecEngine::new()));
+        }
+        Self { inner }
     }
 
     /// PMAT-949 — the executed GPU-witness constructor (§29).
@@ -133,14 +178,18 @@ impl Backend for PtxBackend {
     }
 }
 
-/// Scaffold emitter — produces the placeholder PTX text current users
-/// see at v0.1.0. Will be replaced by `rustc_codegen_nvvm` integration
-/// in the next Section 29 phase.
-struct ScaffoldPtxEmitter;
+/// PMAT-961 — the REAL meta-HIR → PTX emitter (general slot).
+///
+/// Lowers the module's single kernel [`Function`] of the element-wise scalar
+/// shape to a complete `ptxas`-assemblable PTX module via
+/// [`emit::emit_kernel`]. Retires the v0.1.0 `ScaffoldPtxEmitter` comment
+/// placeholder. Refuses (hard `BackendError`) any module that isn't a single
+/// scalar element-wise function — never wrong PTX.
+struct XpilePtxEmitter;
 
-impl TargetEmitter for ScaffoldPtxEmitter {
+impl TargetEmitter for XpilePtxEmitter {
     fn name(&self) -> &str {
-        "xpile-ptx-codegen-scaffold"
+        "xpile-ptx-codegen"
     }
 
     fn try_emit(
@@ -152,13 +201,99 @@ impl TargetEmitter for ScaffoldPtxEmitter {
             Some(HwProfile::Ptx { compute_capability }) => compute_capability,
             _ => return Some(Err(BackendError::MissingHardware(Target::Ptx))),
         };
-        Some(Ok(EmittedText {
-            primary: format!(
-                "// xpile-ptx-codegen scaffold\n// module: {}\n// compute_capability: {}\n// TODO: lower to real PTX via rustc_codegen_nvvm.\n",
-                module.name, compute_capability,
-            ),
-            citations: vec![ContractId::new("C-COMPILE-RUST-TO-PTX-MMA")],
-        }))
+        // The element-wise PTX subset emits exactly one kernel function. An
+        // empty / multi-function / non-function module is refused honestly.
+        let funcs: Vec<&Function> = module
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Function(f) => Some(f),
+                _ => None,
+            })
+            .collect();
+        let f = match funcs.as_slice() {
+            [single] => *single,
+            [] => {
+                return Some(Err(BackendError::Lower(
+                    "xpile-ptx-codegen: module has no kernel function (the PTX element-wise \
+                     subset emits exactly one scalar element-wise function)"
+                        .to_string(),
+                )))
+            }
+            _ => {
+                return Some(Err(BackendError::Lower(
+                    "xpile-ptx-codegen: module has multiple functions (the PTX element-wise \
+                     subset emits exactly one kernel)"
+                        .to_string(),
+                )))
+            }
+        };
+        match emit::emit_kernel(f, compute_capability) {
+            Ok(primary) => Some(Ok(EmittedText {
+                primary,
+                citations: vec![ContractId::new("C-COMPILE-RUST-TO-PTX-MMA")],
+            })),
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
+
+/// PMAT-961 — the anti-correlation witness's *general* emitter: xpile's OWN
+/// hand-emitted PTX for the fixed `out[i] = 2*in[i] + 1` saxpy kernel,
+/// independent of the module's contents (the witness drives a fixed kernel so
+/// the diff is reproducible). Computes `(x + x) + 1.0` over f64 — the exact
+/// numeric semantics of the nvcc CUDA-C peer, via a categorically different
+/// codegen path (xpile text vs nvcc C++).
+struct XpileSaxpyPtxEmitter;
+
+/// Build the canonical `out[i] = 2*in[i] + 1` f64 kernel function the witness
+/// emitters share (so xpile PTX and nvcc CUDA-C attest the same semantics).
+fn saxpy_kernel_fn() -> Function {
+    let x_plus_x = Expr::FloatBinOp {
+        op: FloatOp::Add,
+        lhs: Box::new(Expr::Ident("x".into())),
+        rhs: Box::new(Expr::Ident("x".into())),
+    };
+    Function {
+        name: "xpile_kernel".into(),
+        params: vec![Param {
+            name: "x".into(),
+            ty: Type::F64,
+            mutable: false,
+        }],
+        return_type: Type::F64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::FloatBinOp {
+                op: FloatOp::Add,
+                lhs: Box::new(x_plus_x),
+                rhs: Box::new(Expr::LitFloat(1.0)),
+            },
+        },
+    }
+}
+
+impl TargetEmitter for XpileSaxpyPtxEmitter {
+    fn name(&self) -> &str {
+        "xpile-ptx-hand-emitted"
+    }
+
+    fn try_emit(
+        &self,
+        _module: &Module,
+        config: &BackendConfig,
+    ) -> Option<Result<EmittedText, BackendError>> {
+        let compute_capability = match &config.hardware {
+            Some(HwProfile::Ptx { compute_capability }) => compute_capability,
+            _ => return Some(Err(BackendError::MissingHardware(Target::Ptx))),
+        };
+        match emit::emit_kernel(&saxpy_kernel_fn(), compute_capability) {
+            Ok(primary) => Some(Ok(EmittedText {
+                primary,
+                citations: vec![ContractId::new("C-COMPILE-RUST-TO-PTX-MMA")],
+            })),
+            Err(e) => Some(Err(e)),
+        }
     }
 }
 
@@ -338,11 +473,58 @@ pub fn ptx_looks_real(text: &str) -> bool {
 }
 
 /// The `ptxas -arch=<…>` value for a PTX `.target` compute capability —
-/// **derived, never hard-coded** (PMAT-481). The `ptxas` assemble step
-/// (free CI, wired with the real emitter in PMAT-485) uses this so the
-/// assembled arch always matches the emitted `.target`.
+/// **derived, never hard-coded** (PMAT-481). The `ptxas` assemble step uses
+/// this so the assembled arch always matches the emitted `.target`.
 pub fn ptxas_arch(compute_capability: &str) -> String {
     format!("-arch={compute_capability}")
+}
+
+/// `true` when `ptxas` (the offline PTX assembler) is invocable — the gate for
+/// the PMAT-961 offline assemble-validation test. Mirrors the
+/// cc/wat2wasm/nvcc graceful-skip helpers: absence is a clean skip (free CI
+/// has no CUDA toolkit), presence assembles the emitted PTX for real. This is
+/// the PTX analog of `wat2wasm`-assembles-WAT / naga-validates-WGSL.
+pub fn ptxas_available() -> bool {
+    std::process::Command::new("ptxas")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// PMAT-961 — assemble `ptx_text` with the real `ptxas` for `compute_capability`,
+/// returning `Ok(())` on a clean assemble or `Err(stderr)` on rejection. The
+/// caller gates on [`ptxas_available`] (graceful-skip). This is the offline
+/// validation step the WAT lane gets from `wat2wasm` and the WGSL lane from
+/// naga — proof the hand-emitted PTX is well-formed for the NVIDIA assembler,
+/// not just our own structural [`validate_ptx`] check.
+pub fn ptxas_assemble(ptx_text: &str, compute_capability: &str) -> Result<(), String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    // Unique per call so parallel test threads in one process never collide on
+    // the scratch `.ptx`/`.cubin` paths.
+    let uniq = format!(
+        "{}-{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    );
+    let dir = std::env::temp_dir().join(format!("xpile-ptxas-{uniq}"));
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create temp dir: {e}"))?;
+    let ptx_path = dir.join("xpile_kernel.ptx");
+    let out_path = dir.join("xpile_kernel.cubin");
+    std::fs::write(&ptx_path, ptx_text).map_err(|e| format!("write ptx: {e}"))?;
+    let out = std::process::Command::new("ptxas")
+        .arg(ptxas_arch(compute_capability))
+        .arg(&ptx_path)
+        .arg("-o")
+        .arg(&out_path)
+        .output()
+        .map_err(|e| format!("spawn ptxas: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).into_owned())
+    }
 }
 
 /// PMAT-481 — structural well-formedness check on emitted PTX text:
@@ -397,14 +579,41 @@ fn ptx_target_arch(text: &str) -> Option<String> {
 mod tests {
     use super::*;
     use xpile_backend::{Profile, QuorumStatus};
-    use xpile_meta_hir::SourceLang;
+    use xpile_meta_hir::{Block, Expr, FloatOp, Function, Item, Param, SourceLang, Type};
 
+    /// A real element-wise kernel module: `def k(x: f64) -> f64: return
+    /// (x + x) + 1.0` — the scalar saxpy shape the real PTX emitter lowers.
     fn dummy_module() -> Module {
         Module {
             name: "test_kernel".into(),
             source_lang: SourceLang::Rust,
-            items: Vec::new(),
+            items: vec![Item::Function(kernel_fn("k"))],
             ffi_boundaries: Vec::new(),
+        }
+    }
+
+    fn kernel_fn(name: &str) -> Function {
+        let x_plus_x = Expr::FloatBinOp {
+            op: FloatOp::Add,
+            lhs: Box::new(Expr::Ident("x".into())),
+            rhs: Box::new(Expr::Ident("x".into())),
+        };
+        Function {
+            name: name.into(),
+            params: vec![Param {
+                name: "x".into(),
+                ty: Type::F64,
+                mutable: false,
+            }],
+            return_type: Type::F64,
+            body: Block {
+                stmts: Vec::new(),
+                trailing_return: Expr::FloatBinOp {
+                    op: FloatOp::Add,
+                    lhs: Box::new(x_plus_x),
+                    rhs: Box::new(Expr::LitFloat(1.0)),
+                },
+            },
         }
     }
 
@@ -419,20 +628,26 @@ mod tests {
     }
 
     #[test]
-    fn ptx_backend_emits_through_multi_emitter() {
+    fn ptx_backend_emits_real_ptx_through_multi_emitter() {
         let backend = PtxBackend::new();
         let artifact = backend
             .lower(&dummy_module(), &ptx_config("sm_80"))
             .unwrap();
-        // Quorum status comes from the wrapped MultiEmitterBackend,
-        // which means the scaffold emitter name is propagated.
+        // Quorum status comes from the wrapped MultiEmitterBackend; the real
+        // emitter name is propagated.
         assert_eq!(
             artifact.quorum_status,
             QuorumStatus::Single {
-                emitter: "xpile-ptx-codegen-scaffold".to_string()
+                emitter: "xpile-ptx-codegen".to_string()
             }
         );
-        assert!(artifact.primary.contains("sm_80"));
+        // Real PTX, not a placeholder: directives + load/compute/store.
+        assert!(artifact.primary.contains(".target sm_80"));
+        assert!(artifact.primary.contains(".visible .entry xpile_kernel"));
+        assert!(artifact.primary.contains("ld.global.f64"));
+        assert!(artifact.primary.contains("st.global.f64"));
+        assert!(ptx_looks_real(&artifact.primary));
+        assert_eq!(validate_ptx(&artifact.primary, "sm_80"), Ok(()));
         assert!(artifact
             .citations
             .iter()
@@ -464,7 +679,7 @@ mod tests {
         Module {
             name: "matmul_gemm_fp16".into(),
             source_lang: SourceLang::Rust,
-            items: Vec::new(),
+            items: vec![Item::Function(kernel_fn("k"))],
             ffi_boundaries: Vec::new(),
         }
     }
@@ -493,7 +708,7 @@ mod tests {
         );
     }
 
-    /// PMAT-280 — Non-matmul modules fall back to the general (scaffold)
+    /// PMAT-280 — Non-matmul modules fall back to the general (real PTX)
     /// emitter even when the multi-emitter constructor is used. The
     /// specialist returns `None` for unmatched shapes; the
     /// `MultiEmitterBackend` falls through cleanly.
@@ -506,13 +721,13 @@ mod tests {
         assert_eq!(
             artifact.quorum_status,
             QuorumStatus::Single {
-                emitter: "xpile-ptx-codegen-scaffold".to_string()
+                emitter: "xpile-ptx-codegen".to_string()
             },
             "non-matching specialist should let general emit; QuorumStatus should reflect general"
         );
         assert!(
-            artifact.primary.contains("xpile-ptx-codegen scaffold"),
-            "primary should carry the general scaffold's emission body, got:\n{}",
+            artifact.primary.contains(".visible .entry xpile_kernel"),
+            "primary should carry the general real-PTX emission body, got:\n{}",
             artifact.primary,
         );
     }
@@ -569,25 +784,28 @@ mod tests {
     }
 
     #[test]
-    fn ptx_looks_real_classifies_golden_vs_scaffold() {
+    fn ptx_looks_real_classifies_golden_vs_comment_only() {
         assert!(ptx_looks_real(GOLDEN_PTX_SM80));
-        // The v0.1.0 scaffold output is comment-only — must NOT be
-        // treated as real PTX (so PMAT-481 never false-fails on it).
-        let scaffold = PtxBackend::new()
-            .lower(&dummy_module(), &ptx_config("sm_80"))
-            .unwrap()
-            .primary;
-        assert!(!ptx_looks_real(&scaffold));
+        // A comment-only blob (the kind the retired v0.1.0 scaffold emitted)
+        // must NOT be treated as real PTX (so PMAT-481 never false-passes).
+        let comment_only = "// just a comment\n// no .version directive\n";
+        assert!(!ptx_looks_real(comment_only));
     }
 
     #[test]
-    fn validate_ptx_rejects_scaffold_placeholder() {
-        let scaffold = PtxBackend::new()
-            .lower(&dummy_module(), &ptx_config("sm_80"))
+    fn real_emitter_output_passes_validate_ptx() {
+        // The PMAT-961 real emitter produces PTX that passes the offline
+        // well-formedness gate (the retired scaffold's comment placeholder
+        // would have failed MissingVersion).
+        let ptx = PtxBackend::new()
+            .lower(&dummy_module(), &ptx_config("sm_89"))
             .unwrap()
             .primary;
+        assert!(ptx_looks_real(&ptx));
+        assert_eq!(validate_ptx(&ptx, "sm_89"), Ok(()));
+        // A comment-only blob still fails MissingVersion (negative coverage).
         assert_eq!(
-            validate_ptx(&scaffold, "sm_80"),
+            validate_ptx("// comment only\n", "sm_89"),
             Err(PtxValidationError::MissingVersion)
         );
     }

@@ -132,6 +132,40 @@ mod tests {
         }
     }
 
+    /// PMAT-961 — a real element-wise PTX kernel module: `def k(x: f64) -> f64:
+    /// return (x + x) + 1.0`. The real PTX emitter (which replaced the v0.1.0
+    /// scaffold) needs an actual scalar kernel function, not an empty module.
+    fn ptx_kernel_module() -> Module {
+        use xpile_meta_hir::{Block, Expr, FloatOp, Function, Item, Param, Type};
+        let x_plus_x = Expr::FloatBinOp {
+            op: FloatOp::Add,
+            lhs: Box::new(Expr::Ident("x".into())),
+            rhs: Box::new(Expr::Ident("x".into())),
+        };
+        Module {
+            name: "ptx_kernel".into(),
+            source_lang: SourceLang::Rust,
+            items: vec![Item::Function(Function {
+                name: "k".into(),
+                params: vec![Param {
+                    name: "x".into(),
+                    ty: Type::F64,
+                    mutable: false,
+                }],
+                return_type: Type::F64,
+                body: Block {
+                    stmts: Vec::new(),
+                    trailing_return: Expr::FloatBinOp {
+                        op: FloatOp::Add,
+                        lhs: Box::new(x_plus_x),
+                        rhs: Box::new(Expr::LitFloat(1.0)),
+                    },
+                },
+            })],
+            ffi_boundaries: vec![],
+        }
+    }
+
     #[test]
     fn default_session_registers_v0_1_0_frontends() {
         let s = default_session();
@@ -445,7 +479,7 @@ mod tests {
     }
 
     #[test]
-    fn ptx_backend_stub_returns_artifact_with_layer5_citation() {
+    fn ptx_backend_emits_real_ptx_with_layer5_citation() {
         let s = default_session();
         let ptx = s
             .backends
@@ -459,10 +493,14 @@ mod tests {
                 compute_capability: "sm_80".into(),
             }),
         };
+        // PMAT-961: the real emitter (scaffold retired) lowers the kernel to
+        // genuine PTX — `.target sm_80` + a `.visible .entry`, not a comment.
         let artifact = ptx
-            .lower(&empty_module(), &cfg)
-            .expect("ptx lower stub returns Ok");
-        assert!(artifact.primary.contains("xpile-ptx-codegen scaffold"));
+            .lower(&ptx_kernel_module(), &cfg)
+            .expect("ptx lower returns Ok");
+        assert!(artifact.primary.contains(".target sm_80"));
+        assert!(artifact.primary.contains(".visible .entry xpile_kernel"));
+        assert!(artifact.primary.contains("st.global.f64"));
         // compile_contract_citation invariant: structural citation chain
         // (Vec<ContractId>), not regex over primary. See
         // contracts/xpile-backend-trait-v1.yaml.
