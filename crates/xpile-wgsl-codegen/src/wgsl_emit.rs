@@ -35,12 +35,24 @@
 //! ## Buffer indexing (`xs[i]`)
 //!
 //! A `list[scalar]` **parameter** lowers to a `@group(0) @binding(N)
-//! var<storage, read> xs: array<T>` storage buffer (the GPU analogue of
+//! var<storage, ...> xs: array<T>` storage buffer (the GPU analogue of
 //! the WASM lane's linear-memory base-pointer). A read-only `xs[i]`
 //! (`Expr::Index`) lowers to a direct `xs[u32(i)]` subscript — WGSL
 //! array indexing, the natural GPU form. The element type must be a
 //! supported scalar (`i32`/`u32`/`f32`); `list[bool]`, nested lists, and
 //! `list[str]` are refused.
+//!
+//! ## Buffer WRITE (`xs[i] = v`) — PMAT-979
+//!
+//! A single-index `xs[i] = v` (`Stmt::IndexAssign`) over a list param is
+//! a real storage-buffer **store** — the companion of the read path that
+//! turns the WGSL lane into a genuine compute kernel (read inputs, write
+//! results) rather than read-only sampling. A list param the body ever
+//! writes through binds `var<storage, read_write>` (a read-only param
+//! stays `read`); the index narrows to `u32` and the value's WGSL type
+//! must equal the buffer element type. Only a 1-D store is in the subset:
+//! a nested `grid[i][j] = v` (multi-index `IndexAssign`) is refused, as
+//! is a write to anything that is not a `list[scalar]` parameter.
 //!
 //! ## Validation
 //!
@@ -207,15 +219,28 @@ pub fn emit_wgsl_module(module: &Module) -> Result<String, BackendError> {
     // a stable, globally-unique binding index. The buffer var name is
     // `<fnname>_<paramname>` so two functions can each take a list param
     // without a name clash at module scope.
+    //
+    // PMAT-979: a list param that the body ever WRITES through (a single-
+    // index `xs[i] = v`, `Stmt::IndexAssign`) needs WGSL access mode
+    // `read_write`; a read-only param stays `read`. We pre-scan each
+    // function for its written-list-param set so the binding's access
+    // mode matches its use — this is what unlocks a real compute kernel
+    // (read inputs, store results) rather than read-only sampling.
     let mut binding: u32 = 0;
     for item in &module.items {
         if let Item::Function(f) = item {
+            let written = written_list_params(&f.body);
             for Param { name, ty, .. } in &f.params {
                 if let Type::List(inner) = ty {
                     let elem = map_list_elem_type(inner)?;
+                    let access = if written.contains(name) {
+                        "read_write"
+                    } else {
+                        "read"
+                    };
                     writeln!(
                         out,
-                        "@group(0) @binding({binding}) var<storage, read> {buf}: array<{ty}>;",
+                        "@group(0) @binding({binding}) var<storage, {access}> {buf}: array<{ty}>;",
                         buf = buffer_var(&f.name, name),
                         ty = elem.keyword()
                     )
@@ -396,6 +421,9 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
                 collect_let_locals_stmts(else_body, scope)?;
             }
             Stmt::Assign { .. } | Stmt::Return(_) | Stmt::Break | Stmt::Continue => {}
+            // PMAT-979: a single-index `xs[i] = v` storage write binds no
+            // new local; the actual subset checks happen at emit time.
+            Stmt::IndexAssign { indices, .. } if indices.len() == 1 => {}
             other => {
                 return Err(unsupported(&format!(
                     "statement {} (outside the WGSL scalar/control subset)",
@@ -436,6 +464,41 @@ fn collect_mutated(stmts: &[Stmt], set: &mut std::collections::BTreeSet<String>)
     }
 }
 
+/// PMAT-979: collect the set of list-param names that are the target of a
+/// single-index `xs[i] = v` (`Stmt::IndexAssign`) anywhere in the body.
+/// These buffers bind `var<storage, read_write>` (a read-only param stays
+/// `read`). A multi-index `IndexAssign` (nested list) is NOT a WGSL-subset
+/// store — those names are not collected here and the statement is refused
+/// at emit time, so a 1-D storage write is the only thing that flips the
+/// access mode.
+fn written_list_params(block: &Block) -> std::collections::BTreeSet<String> {
+    let mut set = std::collections::BTreeSet::new();
+    collect_written_list_params(&block.stmts, &mut set);
+    set
+}
+
+fn collect_written_list_params(stmts: &[Stmt], set: &mut std::collections::BTreeSet<String>) {
+    for s in stmts {
+        match s {
+            Stmt::IndexAssign {
+                list_name, indices, ..
+            } if indices.len() == 1 => {
+                set.insert(list_name.clone());
+            }
+            Stmt::While { body, .. } => collect_written_list_params(body, set),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_written_list_params(then_body, set);
+                collect_written_list_params(else_body, set);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn indent(out: &mut String, n: usize) {
     for _ in 0..n {
         out.push_str("  ");
@@ -453,6 +516,7 @@ fn stmt_kind(s: &Stmt) -> &'static str {
         Stmt::Break => "Break",
         Stmt::Continue => "Continue",
         Stmt::Print { .. } => "Print",
+        Stmt::IndexAssign { .. } => "IndexAssign",
         _ => "<container/aggregate statement>",
     }
 }
@@ -500,6 +564,67 @@ fn emit_stmt(
             }
             indent(out, depth);
             writeln!(out, "{name} = {buf};").expect("write");
+            Ok(())
+        }
+        // PMAT-979: `xs[i] = v` over a `list[scalar]` PARAMETER — a real
+        // storage-buffer store. The companion of the read path
+        // (`emit_index`): the param's buffer was bound `var<storage,
+        // read_write>` (see `written_list_params`), the index narrows to
+        // `u32`, and the value's WGSL type must equal the buffer's element
+        // type. This is what turns the WGSL lane into a real compute kernel
+        // (read inputs, write results) rather than read-only sampling.
+        Stmt::IndexAssign {
+            list_name,
+            indices,
+            value,
+        } => {
+            // Only a SINGLE index (a 1-D storage buffer) is in the subset;
+            // a nested `grid[i][j] = v` has no flat-buffer lowering here.
+            let [index] = indices.as_slice() else {
+                return Err(unsupported(&format!(
+                    "multi-index `{list_name}[…][…] = v` ({} indices) — the WGSL \
+                     list subset stores into a 1-D `array<T>` storage buffer only \
+                     (nested list writes are refused)",
+                    indices.len()
+                )));
+            };
+            // The target must be a `list[scalar]` parameter (a storage
+            // buffer); a local list / temporary has no buffer binding.
+            let Some(elem) = scope.list_elem_of(list_name) else {
+                return Err(unsupported(&format!(
+                    "indexed write to `{list_name}` which is not a `list[scalar]` \
+                     parameter — only a list param (a storage buffer) is writable \
+                     in the WGSL subset"
+                )));
+            };
+            // Index → u32 subscript (same narrowing as the read path).
+            let mut ibuf = String::new();
+            let it = emit_expr(index, scope, &mut ibuf)?;
+            let idx = match it {
+                WgslTy::I32 => format!("u32({ibuf})"),
+                WgslTy::U32 => ibuf,
+                other => {
+                    return Err(unsupported(&format!(
+                        "list index lowers to WGSL {} (an integer index is required)",
+                        other.keyword()
+                    )));
+                }
+            };
+            // The stored value must match the buffer's element type.
+            let mut vbuf = String::new();
+            let vt = emit_expr(value, scope, &mut vbuf)?;
+            if vt != elem {
+                return Err(unsupported(&format!(
+                    "store into `{list_name}: array<{}>` from a {} value",
+                    elem.keyword(),
+                    vt.keyword()
+                )));
+            }
+            let buf_name = scope
+                .buffer_var_of(list_name)
+                .unwrap_or_else(|| list_name.to_string());
+            indent(out, depth);
+            writeln!(out, "{buf_name}[{idx}] = {vbuf};").expect("write");
             Ok(())
         }
         Stmt::Return(e) => {
@@ -1245,6 +1370,172 @@ mod tests {
             "{wgsl}"
         );
         assert!(wgsl.contains("pair_sum_xs[u32(i32(0))]"), "{wgsl}");
+    }
+
+    // ── buffer (array<T>) WRITE over a list[scalar] param (PMAT-979) ────
+
+    #[test]
+    fn list_param_index_write_lowers_to_storage_store_naga_validates() {
+        // fn set_first(xs: list[int]) -> () { xs[0] = 7; }
+        // The written list param flips its buffer to var<storage, read_write>.
+        let f = Function {
+            name: "set_first".into(),
+            params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+            return_type: Type::Unit,
+            body: Block {
+                stmts: vec![Stmt::IndexAssign {
+                    list_name: "xs".into(),
+                    indices: vec![Expr::LitInt(0)],
+                    value: Expr::LitInt(7),
+                }],
+                trailing_return: Expr::Unit,
+            },
+        };
+        let wgsl = lower_and_naga(f);
+        // Written param → read_write access mode, NOT read.
+        assert!(
+            wgsl.contains(
+                "@group(0) @binding(0) var<storage, read_write> set_first_xs: array<i32>;"
+            ),
+            "{wgsl}"
+        );
+        // The store: i32 index narrows to u32, value matches element type.
+        assert!(
+            wgsl.contains("set_first_xs[u32(i32(0))] = i32(7);"),
+            "{wgsl}"
+        );
+        assert!(wgsl.contains("fn set_first()"), "{wgsl}");
+    }
+
+    #[test]
+    fn read_modify_write_kernel_in_while_loop_naga_validates() {
+        // A real compute-kernel shape: read every element, double it, write
+        // it back, over a counter-driven while loop.
+        //
+        // fn double_all(xs: list[f32], n: i32) -> () {
+        //   var i: i32; i = 0;
+        //   while (i < n) {
+        //     xs[i] = xs[i] * 2.0;
+        //     i = i + 1;
+        //   }
+        // }
+        let f = Function {
+            name: "double_all".into(),
+            params: vec![
+                param("xs", Type::List(Box::new(Type::F32))),
+                param("n", Type::I64),
+            ],
+            return_type: Type::Unit,
+            body: Block {
+                stmts: vec![
+                    Stmt::Let {
+                        name: "i".into(),
+                        ty: Type::I64,
+                        value: Expr::LitInt(0),
+                        mutable: true,
+                    },
+                    Stmt::While {
+                        cond: binop(BinOp::Lt, ident("i"), ident("n")),
+                        body: vec![
+                            Stmt::IndexAssign {
+                                list_name: "xs".into(),
+                                indices: vec![ident("i")],
+                                value: Expr::FloatBinOp {
+                                    op: FloatOp::Mul,
+                                    lhs: Box::new(Expr::Index {
+                                        collection: Box::new(ident("xs")),
+                                        index: Box::new(ident("i")),
+                                    }),
+                                    rhs: Box::new(Expr::LitFloat(2.0)),
+                                },
+                            },
+                            Stmt::Assign {
+                                name: "i".into(),
+                                value: binop(BinOp::Add, ident("i"), Expr::LitInt(1)),
+                            },
+                        ],
+                    },
+                ],
+                trailing_return: Expr::Unit,
+            },
+        };
+        let wgsl = lower_and_naga(f);
+        // read_write buffer (it is both read AND written in the body).
+        assert!(
+            wgsl.contains("var<storage, read_write> double_all_xs: array<f32>;"),
+            "{wgsl}"
+        );
+        // The store reads the same buffer on its RHS and writes the LHS.
+        assert!(
+            wgsl.contains("double_all_xs[u32(i)] = (double_all_xs[u32(i)] * f32(2.0));"),
+            "{wgsl}"
+        );
+        // `n` is still a scalar fn param; `xs` is not.
+        assert!(wgsl.contains("fn double_all(n: i32)"), "{wgsl}");
+    }
+
+    #[test]
+    fn read_only_list_param_stays_read_access() {
+        // A param only READ keeps `var<storage, read>` — the write pre-scan
+        // must not flip a read-only buffer to read_write.
+        let f = Function {
+            name: "first".into(),
+            params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::Index {
+                    collection: Box::new(ident("xs")),
+                    index: Box::new(Expr::LitInt(0)),
+                },
+            },
+        };
+        let wgsl = lower_and_naga(f);
+        assert!(
+            wgsl.contains("var<storage, read> first_xs: array<i32>;"),
+            "{wgsl}"
+        );
+        assert!(!wgsl.contains("read_write"), "{wgsl}");
+    }
+
+    #[test]
+    fn refuses_nested_multi_index_write() {
+        // grid[i][j] = v has no flat-buffer lowering — honest refusal.
+        let f = Function {
+            name: "set2d".into(),
+            params: vec![param("grid", Type::List(Box::new(Type::I64)))],
+            return_type: Type::Unit,
+            body: Block {
+                stmts: vec![Stmt::IndexAssign {
+                    list_name: "grid".into(),
+                    indices: vec![Expr::LitInt(0), Expr::LitInt(1)],
+                    value: Expr::LitInt(9),
+                }],
+                trailing_return: Expr::Unit,
+            },
+        };
+        let err = emit_wgsl_module(&module(vec![Item::Function(f)])).unwrap_err();
+        assert!(matches!(err, BackendError::Lower(_)));
+    }
+
+    #[test]
+    fn refuses_index_write_type_mismatch() {
+        // Storing an i32 into a list[f32] buffer is a type error → refusal.
+        let f = Function {
+            name: "bad".into(),
+            params: vec![param("xs", Type::List(Box::new(Type::F32)))],
+            return_type: Type::Unit,
+            body: Block {
+                stmts: vec![Stmt::IndexAssign {
+                    list_name: "xs".into(),
+                    indices: vec![Expr::LitInt(0)],
+                    value: Expr::LitInt(1), // i32, not f32
+                }],
+                trailing_return: Expr::Unit,
+            },
+        };
+        let err = emit_wgsl_module(&module(vec![Item::Function(f)])).unwrap_err();
+        assert!(matches!(err, BackendError::Lower(_)));
     }
 
     // ── bitwise / unsigned / logical ────────────────────────────────────
