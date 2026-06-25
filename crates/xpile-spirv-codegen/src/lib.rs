@@ -31,7 +31,10 @@ use xpile_contracts::ContractId;
 use xpile_meta_hir::Module;
 
 mod spirv_diffexec;
-pub use spirv_diffexec::{vulkan_adapter_available, SpirvDiffExecEngine, FIXTURE_INPUT};
+pub use spirv_diffexec::{
+    general_metahir_module, general_real_wgsl, vulkan_adapter_available, SpirvDiffExecEngine,
+    EXPECTED_OUTPUT, FIXTURE_INPUT,
+};
 
 /// The Layer-5 compile contract every emitted SPIR-V artifact cites.
 const CONTRACT_ID: &str = "C-COMPILE-RUST-TO-SPIRV";
@@ -252,8 +255,10 @@ fn emit_from_wgsl(wgsl: &str) -> Result<EmittedText, BackendError> {
     })
 }
 
-/// General SPIR-V emitter — reuses the WGSL `2.0 * inp[i] + 1.0` compute
-/// shader and compiles it to SPIR-V via naga.
+/// General SPIR-V emitter — PMAT-977: drives xpile's REAL emission
+/// (`meta-HIR → xpile_wgsl_codegen::emit_wgsl_module → @compute harness`),
+/// then compiles the real WGSL to SPIR-V via naga. The `2.0*x + 1.0`
+/// arithmetic is xpile's output, not a hardcoded shader.
 struct SpirvSaxpyGeneralEmitter;
 
 impl TargetEmitter for SpirvSaxpyGeneralEmitter {
@@ -269,7 +274,17 @@ impl TargetEmitter for SpirvSaxpyGeneralEmitter {
         if let Some(Err(e)) = check_hardware(config) {
             return Some(Err(e));
         }
-        Some(emit_from_wgsl(spirv_diffexec::GENERAL_WGSL))
+        // REAL path: xpile lowers the general meta-HIR module to WGSL, then
+        // we compile that to SPIR-V. A real-emit failure is a hard refusal.
+        let wgsl = match spirv_diffexec::general_real_wgsl() {
+            Ok(w) => w,
+            Err(e) => {
+                return Some(Err(BackendError::Lower(format!(
+                    "xpile real WGSL emission (general saxpy) failed: {e}"
+                ))))
+            }
+        };
+        Some(emit_from_wgsl(&wgsl))
     }
 }
 
@@ -318,17 +333,22 @@ mod tests {
     }
 
     #[test]
-    fn general_wgsl_compiles_to_real_spirv() {
-        let words = wgsl_to_spirv_words(spirv_diffexec::GENERAL_WGSL)
-            .expect("reused general WGSL must compile to SPIR-V");
+    fn general_real_wgsl_compiles_to_real_spirv() {
+        // PMAT-977: the general WGSL is now xpile's REAL emission
+        // (meta-HIR → emit_wgsl_module → @compute harness), and it must
+        // compile to real SPIR-V via naga.
+        let wgsl = spirv_diffexec::general_real_wgsl().expect("real xpile WGSL emit");
+        let words =
+            wgsl_to_spirv_words(&wgsl).expect("real xpile general WGSL must compile to SPIR-V");
         assert!(spirv_looks_real(&words), "first word must be SPIR-V magic");
         assert_eq!(validate_spirv(&words), Ok(()));
     }
 
     #[test]
     fn specialist_wgsl_compiles_to_real_spirv() {
+        // The specialist stays the hardcoded `fma` trusted reference.
         let words = wgsl_to_spirv_words(spirv_diffexec::SPECIALIST_WGSL)
-            .expect("reused specialist WGSL must compile to SPIR-V");
+            .expect("reference specialist WGSL must compile to SPIR-V");
         assert!(spirv_looks_real(&words));
         assert_eq!(validate_spirv(&words), Ok(()));
     }
@@ -341,8 +361,9 @@ mod tests {
 
     #[test]
     fn text_summary_carries_magic_and_source() {
-        let words = wgsl_to_spirv_words(spirv_diffexec::GENERAL_WGSL).unwrap();
-        let text = spirv_text_summary(&words, spirv_diffexec::GENERAL_WGSL);
+        let wgsl = spirv_diffexec::general_real_wgsl().expect("real xpile WGSL emit");
+        let words = wgsl_to_spirv_words(&wgsl).unwrap();
+        let text = spirv_text_summary(&words, &wgsl);
         assert!(text.contains("SPIR-V"));
         assert!(text.contains(&format!("0x{SPIRV_MAGIC:08x}")));
         assert!(text.contains("@compute"));
