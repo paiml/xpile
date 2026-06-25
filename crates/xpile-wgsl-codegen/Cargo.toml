@@ -19,3 +19,8 @@ xpile-meta-hir = { workspace = true }
 wgpu = { workspace = true }
 pollster = { workspace = true }
 bytemuck = { workspace = true }
+# PMAT-970: CPU-only WGSL front-end parse + validate for the meta-HIR →
+# WGSL lowering gate. `naga::front::wgsl::parse_str` + `naga::valid::Validator`
+# prove the emitted WGSL well-formed WITHOUT a GPU — the same naga pin the
+# sibling xpile-spirv-codegen crate already uses (`wgsl-in`).
+naga = { workspace = true }

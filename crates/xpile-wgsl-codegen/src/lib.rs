@@ -22,6 +22,9 @@ use xpile_meta_hir::Module;
 mod wgpu_diffexec;
 pub use wgpu_diffexec::{wgpu_adapter_available, WgpuWgslDiffExecEngine, FIXTURE_INPUT};
 
+mod wgsl_emit;
+pub use wgsl_emit::{emit_wgsl_module, naga_validate_wgsl, NagaValidationError};
+
 /// WGSL backend — `Backend` impl wrapping a [`MultiEmitterBackend`] so
 /// the v0.1.0 scaffold drives through the same routing the future
 /// real-emitter + specialist quorum will use.
