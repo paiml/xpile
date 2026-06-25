@@ -20,11 +20,15 @@
 //!   - local `int` / `long` / `unsigned` / `unsigned long` / `double` / `float` declarations (`int x = <expr>;`)
 //!   - a trailing `return <expr>;`
 //!   - expressions: integer and float literals, identifiers, calls (recursion),
-//!     `+ - *`, comparisons (`< <= > >= == !=`), `&& ||`, unary `- !`,
-//!     the ternary `c ? a : b`, and parentheses
+//!     `+ - * / %`, comparisons (`< <= > >= == !=`), `&& ||`, unary `- !`,
+//!     bitwise `& | ^ ~` and shifts `<< >>` (PMAT-964 — integer-only, ABI-honest
+//!     on the existing widths, governed by `C-C-INT-ARITH`; shifts lower to the
+//!     UB-free `wrapping_shl`/`wrapping_shr`), the ternary `c ? a : b`, and
+//!     parentheses
 //!
-//! Deferred (slice 2+): `/` and `%` (C truncating division), `if` /
-//! `while` statements, pointers, structs, strings, multiple types.
+//! Deferred: pointer DEREFERENCE / address-of (`*p` / `&x` — the pointer
+//! *types* `int*`/`char*` lift, but decy has no pointer-op grammar yet),
+//! structs, strings, hex/octal literals, and `**` (power).
 //!
 //! C arithmetic semantics (fixed-width `i32`, wrapping overflow) are
 //! realised in the Rust backend's C emit path keyed on
@@ -113,6 +117,17 @@ enum Tok {
     AndAnd,
     OrOr,
     Bang,
+    // PMAT-964: C bitwise / shift operators. These ride the existing integer
+    // widths (no new ABI token) and are governed by the same C-C-INT-ARITH
+    // integer operational-semantics contract — citation-honest. `Amp`/`Pipe`
+    // are the SINGLE-char bitwise forms (the double `&&`/`||` lex to
+    // `AndAnd`/`OrOr` above, before these arms are reached).
+    Amp,   // `&`  bitwise AND
+    Pipe,  // `|`  bitwise OR
+    Caret, // `^`  bitwise XOR
+    Tilde, // `~`  bitwise NOT (unary)
+    Shl,   // `<<` left shift
+    Shr,   // `>>` right shift
     Question,
     Colon,
     Assign,
@@ -196,6 +211,10 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
                 if i + 1 < bytes.len() && bytes[i + 1] == b'=' {
                     toks.push(Tok::Le);
                     i += 2;
+                } else if i + 1 < bytes.len() && bytes[i + 1] == b'<' {
+                    // PMAT-964: `<<` left shift (checked before single `<`).
+                    toks.push(Tok::Shl);
+                    i += 2;
                 } else {
                     toks.push(Tok::Lt);
                     i += 1;
@@ -204,6 +223,10 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
             '>' => {
                 if i + 1 < bytes.len() && bytes[i + 1] == b'=' {
                     toks.push(Tok::Ge);
+                    i += 2;
+                } else if i + 1 < bytes.len() && bytes[i + 1] == b'>' {
+                    // PMAT-964: `>>` right shift (checked before single `>`).
+                    toks.push(Tok::Shr);
                     i += 2;
                 } else {
                     toks.push(Tok::Gt);
@@ -235,6 +258,24 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
             '|' if i + 1 < bytes.len() && bytes[i + 1] == b'|' => {
                 toks.push(Tok::OrOr);
                 i += 2;
+            }
+            // PMAT-964: SINGLE-char bitwise operators (reached only when the
+            // preceding `&&`/`||` guards did not match — i.e. a lone `&`/`|`).
+            '&' => {
+                toks.push(Tok::Amp);
+                i += 1;
+            }
+            '|' => {
+                toks.push(Tok::Pipe);
+                i += 1;
+            }
+            '^' => {
+                toks.push(Tok::Caret);
+                i += 1;
+            }
+            '~' => {
+                toks.push(Tok::Tilde);
+                i += 1;
             }
             c if c.is_ascii_digit() => {
                 let start = i;
@@ -713,11 +754,47 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_and(&mut self) -> Result<Expr, String> {
-        let mut lhs = self.parse_equality()?;
+        let mut lhs = self.parse_bitor()?;
         while matches!(self.peek(), Some(Tok::AndAnd)) {
             self.bump();
-            let rhs = self.parse_equality()?;
+            let rhs = self.parse_bitor()?;
             lhs = bin(BinOp::And, lhs, rhs);
+        }
+        Ok(lhs)
+    }
+
+    // PMAT-964: the three C bitwise levels sit BELOW `&&` and ABOVE equality,
+    // in the C precedence order `|` < `^` < `&` (bitwise-OR binds loosest of
+    // the three). Each is left-associative. They lower to the meta-HIR
+    // `BinOp::BitOr`/`BitXor`/`BitAnd` (capability-ahead — already defined);
+    // the C emit path renders them as fully-parenthesized Rust infix so the
+    // C-intended grouping survives Rust's different native precedence.
+    fn parse_bitor(&mut self) -> Result<Expr, String> {
+        let mut lhs = self.parse_bitxor()?;
+        while matches!(self.peek(), Some(Tok::Pipe)) {
+            self.bump();
+            let rhs = self.parse_bitxor()?;
+            lhs = bin(BinOp::BitOr, lhs, rhs);
+        }
+        Ok(lhs)
+    }
+
+    fn parse_bitxor(&mut self) -> Result<Expr, String> {
+        let mut lhs = self.parse_bitand()?;
+        while matches!(self.peek(), Some(Tok::Caret)) {
+            self.bump();
+            let rhs = self.parse_bitand()?;
+            lhs = bin(BinOp::BitXor, lhs, rhs);
+        }
+        Ok(lhs)
+    }
+
+    fn parse_bitand(&mut self) -> Result<Expr, String> {
+        let mut lhs = self.parse_equality()?;
+        while matches!(self.peek(), Some(Tok::Amp)) {
+            self.bump();
+            let rhs = self.parse_equality()?;
+            lhs = bin(BinOp::BitAnd, lhs, rhs);
         }
         Ok(lhs)
     }
@@ -738,13 +815,32 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_relational(&mut self) -> Result<Expr, String> {
-        let mut lhs = self.parse_additive()?;
+        let mut lhs = self.parse_shift()?;
         loop {
             let op = match self.peek() {
                 Some(Tok::Lt) => BinOp::Lt,
                 Some(Tok::Le) => BinOp::LtEq,
                 Some(Tok::Gt) => BinOp::Gt,
                 Some(Tok::Ge) => BinOp::GtEq,
+                _ => break,
+            };
+            self.bump();
+            let rhs = self.parse_shift()?;
+            lhs = bin(op, lhs, rhs);
+        }
+        Ok(lhs)
+    }
+
+    // PMAT-964: the C shift level sits BELOW relational and ABOVE additive
+    // (`a + b << c` parses as `(a + b) << c`). Left-associative. Lowers to
+    // the meta-HIR `BinOp::Shl`/`Shr`; the C emit path renders fully
+    // parenthesized so Rust's different shift precedence cannot regroup it.
+    fn parse_shift(&mut self) -> Result<Expr, String> {
+        let mut lhs = self.parse_additive()?;
+        loop {
+            let op = match self.peek() {
+                Some(Tok::Shl) => BinOp::Shl,
+                Some(Tok::Shr) => BinOp::Shr,
                 _ => break,
             };
             self.bump();
@@ -805,6 +901,17 @@ impl<'a> Parser<'a> {
                 let operand = self.parse_unary()?;
                 Ok(Expr::UnOp {
                     op: UnOp::Not,
+                    operand: Box::new(operand),
+                })
+            }
+            // PMAT-964: C unary `~` (bitwise NOT / one's complement) →
+            // meta-HIR `UnOp::BitNot`. The C emit path already renders this as
+            // Rust `!(operand)` (Rust `!` on an integer is bitwise NOT).
+            Some(Tok::Tilde) => {
+                self.bump();
+                let operand = self.parse_unary()?;
+                Ok(Expr::UnOp {
+                    op: UnOp::BitNot,
                     operand: Box::new(operand),
                 })
             }
@@ -1204,6 +1311,149 @@ mod tests {
         assert_eq!(f.params[0].ty, Type::F32);
         assert_eq!(g.params[0].ty, Type::F64);
         assert_ne!(f.params[0].ty, g.params[0].ty, "F32 and F64 are distinct");
+    }
+
+    #[test]
+    fn parses_bitwise_ops_to_meta_hir_binops() {
+        // PMAT-964: `& | ^` lower to the distinct meta-HIR bitwise BinOps,
+        // NOT the logical `And`/`Or`.
+        let band = lower("int f(int a, int b) { return a & b; }");
+        let Item::Function(f) = &band.items[0] else {
+            unreachable!()
+        };
+        assert!(matches!(
+            f.body.trailing_return,
+            Expr::BinOp {
+                op: BinOp::BitAnd,
+                ..
+            }
+        ));
+        let bor = lower("int f(int a, int b) { return a | b; }");
+        let Item::Function(g) = &bor.items[0] else {
+            unreachable!()
+        };
+        assert!(matches!(
+            g.body.trailing_return,
+            Expr::BinOp {
+                op: BinOp::BitOr,
+                ..
+            }
+        ));
+        let bxor = lower("int f(int a, int b) { return a ^ b; }");
+        let Item::Function(h) = &bxor.items[0] else {
+            unreachable!()
+        };
+        assert!(matches!(
+            h.body.trailing_return,
+            Expr::BinOp {
+                op: BinOp::BitXor,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_shift_ops_to_meta_hir_binops() {
+        // PMAT-964: `<< >>` lower to Shl/Shr.
+        let shl = lower("int f(int x, int n) { return x << n; }");
+        let Item::Function(f) = &shl.items[0] else {
+            unreachable!()
+        };
+        assert!(matches!(
+            f.body.trailing_return,
+            Expr::BinOp { op: BinOp::Shl, .. }
+        ));
+        let shr = lower("int f(int x, int n) { return x >> n; }");
+        let Item::Function(g) = &shr.items[0] else {
+            unreachable!()
+        };
+        assert!(matches!(
+            g.body.trailing_return,
+            Expr::BinOp { op: BinOp::Shr, .. }
+        ));
+    }
+
+    #[test]
+    fn parses_tilde_as_bitnot_distinct_from_logical_not() {
+        // PMAT-964: unary `~` → UnOp::BitNot (one's complement), distinct
+        // from the logical `!` → UnOp::Not.
+        let m = lower("int f(int x) { return ~x; }");
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!()
+        };
+        assert!(matches!(
+            f.body.trailing_return,
+            Expr::UnOp {
+                op: UnOp::BitNot,
+                ..
+            }
+        ));
+        let n = lower("int g(int x) { return !x; }");
+        let Item::Function(g) = &n.items[0] else {
+            unreachable!()
+        };
+        assert!(matches!(
+            g.body.trailing_return,
+            Expr::UnOp { op: UnOp::Not, .. }
+        ));
+    }
+
+    #[test]
+    fn bitwise_and_shift_obey_c_precedence() {
+        // PMAT-964: C binds `<<` BELOW `+` and `&` BELOW `==`/`<<`. So
+        // `(a + b) << 1 & 255` parses as `((a + b) << 1) & 255` — the
+        // outermost op is the bitwise `&`, with a shift of an addition inside.
+        let m = lower("int f(int a, int b) { return (a + b) << 1 & 255; }");
+        let Item::Function(f) = &m.items[0] else {
+            unreachable!()
+        };
+        let Expr::BinOp {
+            op: BinOp::BitAnd,
+            lhs,
+            ..
+        } = &f.body.trailing_return
+        else {
+            unreachable!("outermost op is `&` (binds loosest of the three here)")
+        };
+        // lhs of the `&` is the shift `(a + b) << 1`.
+        let Expr::BinOp {
+            op: BinOp::Shl,
+            lhs: shl_lhs,
+            ..
+        } = &**lhs
+        else {
+            unreachable!("`&` left operand is the `<<` shift")
+        };
+        // and the shift's lhs is the addition `a + b`.
+        assert!(
+            matches!(**shl_lhs, Expr::BinOp { op: BinOp::Add, .. }),
+            "the shift's left operand is the `a + b` addition"
+        );
+    }
+
+    #[test]
+    fn single_amp_is_bitand_not_logical_and() {
+        // PMAT-964 regression: a SINGLE `&` must not be swallowed by the
+        // `&&` lexer arm. `a & b` is BitAnd; `a && b` is And.
+        let single = lower("int f(int a, int b) { return a & b; }");
+        let Item::Function(f) = &single.items[0] else {
+            unreachable!()
+        };
+        assert!(matches!(
+            f.body.trailing_return,
+            Expr::BinOp {
+                op: BinOp::BitAnd,
+                ..
+            }
+        ));
+        let double = lower("int g(int a, int b) { return a && b; }");
+        let Item::Function(g) = &double.items[0] else {
+            unreachable!()
+        };
+        assert!(matches!(
+            g.body.trailing_return,
+            Expr::BinOp { op: BinOp::And, .. }
+        ));
     }
 
     #[test]
