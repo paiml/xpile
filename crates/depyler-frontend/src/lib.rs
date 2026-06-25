@@ -15543,18 +15543,45 @@ fn apply_nonempty_format_spec(
     // STRING first (`ToStr{of_float}`, the `str(float)`/`{x}` path) and pad THAT.
     // A bare width has no align char → Python right-aligns a number, so force `>`
     // (Rust left-aligns a string by default); an explicit `<`/`>`/`^` is kept.
+    //
+    // PMAT-943 (correctness-hunt): the same silent-wrong drop also bit the
+    // FILL+ALIGN form `[fill]<align><width>` (`f"{3.0: >7}"` -> "    3.0",
+    // `f"{3.0:*<8}"` -> "3.0*****"). PMAT-807 only peeled a LEADING align char, so
+    // a fill char in front of it (a space, `*`, `0`, …) wasn't recognized and the
+    // spec fell through to `translate_format_spec`'s PMAT-658 fill+align branch —
+    // which emitted `format!("{: >7}", 3.0f64)` over the BARE f64 (`3`, no `.0`) →
+    // "      3" vs Python "    3.0". Detect the fill char (the char BEFORE an
+    // alignment marker — Python's grammar: any char is a fill when followed by
+    // `<`/`>`/`^`) and pad the Python repr STRING with the verbatim `[fill]<align>`
+    // prefix (Rust's fill+align syntax is identical). Width must be pure digits;
+    // a precision tail (`*>8.2f`) is NOT matched here and stays on the PMAT-677
+    // float-precision path (sound — `.Nf` forces the decimals). vs python3.
     if ty == Type::F64 {
-        let (align, width_str) = match spec.strip_prefix(['<', '>', '^']) {
-            Some(rest) => (&spec[..1], rest),
-            None => (">", spec),
-        };
-        if !width_str.is_empty() && width_str.bytes().all(|b| b.is_ascii_digit()) {
+        let chars: Vec<char> = spec.chars().collect();
+        // Forms padded as the Python repr STRING:
+        //   [fill]<align><width> (fill+align, PMAT-943), <align><width> (PMAT-807),
+        //   <width> (bare → default right-align, PMAT-807).
+        let (prefix_chars, width_chars): (&[char], &[char]) =
+            if chars.len() >= 2 && matches!(chars[1], '<' | '>' | '^') {
+                (&chars[..2], &chars[2..]) // [fill][align]
+            } else if matches!(chars.first(), Some('<' | '>' | '^')) {
+                (&chars[..1], &chars[1..]) // [align]
+            } else {
+                (&[][..], &chars[..]) // bare width → default '>'
+            };
+        let width: String = width_chars.iter().collect();
+        if !width.is_empty() && width.bytes().all(|b| b.is_ascii_digit()) {
+            let prefix: String = if prefix_chars.is_empty() {
+                ">".to_string()
+            } else {
+                prefix_chars.iter().collect()
+            };
             return Ok(Expr::FormatSpec {
                 value: Box::new(Expr::ToStr {
                     value: Box::new(value),
                     of_float: true,
                 }),
-                rust_spec: format!("{align}{width_str}"),
+                rust_spec: format!("{prefix}{width}"),
             });
         }
     }

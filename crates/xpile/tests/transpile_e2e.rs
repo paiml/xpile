@@ -15217,6 +15217,44 @@ fn main() {
     assert_rustc_runs("float_width_noprec", &rust, driver);
 }
 
+/// PMAT-943 (HUNT-V30 FS): a float with a FILL+ALIGN spec `[fill]<align><width>`
+/// (`f"{3.0: >7}"`, `f"{3.0:*<8}"`, `f"{3.0:0>7}"`) silently dropped the repr's
+/// trailing `.0` — PMAT-807 only peeled a LEADING align char, so a fill char in
+/// front of the alignment marker fell through to the bare-f64 `format!` path
+/// ("      3" vs Python "    3.0"). The fill char is now detected and the Python
+/// repr STRING is padded with the verbatim `[fill]<align>` prefix. Precision forms
+/// stay on the PMAT-677 path. Cross-checked vs python3.
+#[test]
+fn fstr_fill_align_float() {
+    let rust = xpile_transpile_to_rust("fstr_fill_align_float.py");
+    assert!(
+        // the fill+align prefix pads the rendered Python repr string (`.0` kept),
+        // never the bare f64 — so no `format!("{: >7}", x)` over a raw float.
+        rust.contains("format!(\"{: >7}\", {")
+            && rust.contains("format!(\"{:*<8}\", {")
+            && rust.contains("format!(\"{:0>7}\", {")
+            && rust.contains(".0\", __sf)"),
+        "fill+align over a float must pad the Python repr string, not the bare f64:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(fa_space_right(), "    3.0");
+    assert_eq!(fa_star_left(), "3.0*****");
+    assert_eq!(fa_dash_center(), "---2.5---");
+    assert_eq!(fa_zero_right(), "00003.0");
+    assert_eq!(fa_space_neg(), "   -3.0");
+    assert_eq!(fa_star_nonwhole(), "****12.5");
+    assert_eq!(fa_space_left(), "3.0     ");
+    assert_eq!(fa_no_pad_needed(), "123.456");
+    assert_eq!(fa_align_only(), "   3.0");
+    assert_eq!(fa_bare_width(), "     3.0");
+    assert_eq!(labeled(2.5), "[   2.5   ]");
+    assert_eq!(labeled(-3.0), "[  -3.0   ]");
+}
+"#;
+    assert_rustc_runs("fstr_fill_align_float", &rust, driver);
+}
+
 /// PMAT-808 (HUNT-V22 HASH-01): a dataclass with a custom __hash__ used as a set
 /// element / dict key derived neither Hash nor Eq (dead __hash__) → E0277/E0599.
 /// It now derives Eq + emits an `impl Hash` delegating to __hash__ (a custom

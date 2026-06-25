@@ -11518,6 +11518,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-943
+  github_issue: null
+  item_type: task
+  title: 'PMAT-943: [correctness-hunt] f-string FILL+ALIGN spec `[fill]<align><width>` over a FLOAT silently dropped the repr `.0` — `f"{3.0: >7}"` -> rustc "      3" vs CPython "    3.0", `f"{3.0:*<8}"` -> "3*******" vs "3.0*****", `f"{3.0:0>7}"` -> "0000003" vs "00003.0". The PMAT-807 float-repr-string padding only peeled a LEADING alignment char (`>`/`<`/`^`), so a FILL char in front of the marker was not recognized and the spec fell through to `translate_format_spec`''s PMAT-658 fill+align branch, which `format!`-padded the BARE f64 (Rust''s f64 Display drops `.0`). The fill char (any char before `<`/`>`/`^`, per Python''s grammar) is now detected and the Python repr STRING (`ToStr{of_float}`) is padded with the verbatim `[fill]<align>` prefix (Rust''s fill+align syntax is identical). Surfaced by the PMAT-942 differential sweep.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (PMAT-900..942 all merged, sprint window 2026-06-23..07-02 still open). Continues prompt path c — the python3-vs-rustc differential correctness-hunt. This exact divergence was SURFACED-AND-FILED by the PMAT-942 sweep (its DONE note: 'a SEPARATE pre-existing silent divergence — fill+align on a WHOLE float drops the .0 (f\"{3.0: >7}\" -> rustc \"      3\" vs CPython \"    3.0\") — filed as the next correctness slice (PMAT-943)'). Reproduced via `xpile transpile` BEFORE the fix: `f\"{x: >7}\"` emitted `format!(\"{: >7}\", x)` over the bare f64 → \"      3\"; CPython renders the repr first → \"    3.0\"."
+  - "ROOT CAUSE: PMAT-807 (HUNT-V21) fixed the align-ONLY / bare-width float forms (`f\"{3.0:>6}\"`, `f\"{3.0:8}\"`) by padding the Python repr STRING (`ToStr{of_float}` keeps the `.0`) instead of the bare f64, but its parse only `strip_prefix(['<','>','^'])`-peeled a LEADING alignment char. A FILL char in front of the marker (`[fill]<align><width>` — ` >7`, `*<8`, `0>7`, `-^9`) was therefore unrecognized, so the spec fell through to the final `translate_format_spec` call, whose PMAT-658 fill+align branch (`chars[1] ∈ <>^` → pass-through) emitted `format!(\"{: >7}\", 3.0f64)` over the raw f64 — Rust's Display drops `.0` → silent-wrong. Floats are the ONLY affected type (ints/strs have no repr divergence)."
+  - "FIX: extend the PMAT-807 float block to recognize the fill char. Parse the spec char-vector into `(prefix, width)`: if `chars[1] ∈ {<,>,^}` the first char is the FILL and the second the align (`[fill][align]` prefix); else if `chars[0] ∈ {<,>,^}` it is an align-only prefix (PMAT-807); else there is no prefix and the whole spec is a bare width (default `>` right-align, Python's numeric default). When the remaining width is pure digits, emit `FormatSpec { value: ToStr{of_float}, rust_spec: \"[fill]<align><width>\" }` — Rust's fill+align syntax is byte-identical to Python's, so the verbatim prefix pads the repr string correctly (`format!(\"{: >7}\", \"3.0\")` -> \"    3.0\"). NO new IR node — reuses the existing `FormatSpec` + `ToStr{of_float}` pair, so codegen / meta-hir / ruchy / Lean lanes are untouched. SCOPE: pure `[fill]<align><width>` with a digit width only — a precision tail (`*>8.2f`) is NOT matched here (width must be pure digits) and stays on the unchanged PMAT-677 float-precision path (sound: `.Nf` forces the decimals); a width-less align (`>`) stays a documented reject (no-op width, low value). Same scoping discipline as PMAT-807/677."
+  - "REGRESSION GUARDS: e2e test `fstr_fill_align_float` in transpile_e2e.rs (asserts the fill+align prefix pads the rendered repr string — `format!(\"{: >7}\", { …__sf… })` with the `.0` branch present, never a bare-f64 pad — then rustc-runs the binary against 12 hand-checked CPython values: space/star/dash/zero fills × right/left/center align, negative, non-whole float, no-pad-needed, labeled, PLUS the PMAT-807 align-only/bare-width forms as a regression guard); fixture `fstr_fill_align_float.py`. Manually cross-checked the transpiled binary vs python3 on all 12 — byte-identical; PMAT-807 `float_width_noprec` and PMAT-942 `fstr_space_sign` (whose space-FILL `f\"{5: >8}\"` path shares this grammar branch) still pass."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, `cargo test -p xpile --test transpile_e2e fstr` (22 pass incl. fstr_fill_align_float + float_width_noprec + fstr_space_sign), depyler-frontend crate tests. Backlog correctness slice, sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-131
   github_issue: null
   item_type: task
