@@ -1613,6 +1613,59 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             )?;
             write!(out, "None => __s.{fold}() }} }}")?;
         }
+        // PMAT-965 (correctness-hunt): the GENERAL-float spec `f"{x:g}"` / `f"{x:.NG}"`
+        // — mirror of the Rust backend (Ruchy compiles to Rust). Port the C `%g`
+        // rule: pick fixed or scientific by the decimal exponent, strip trailing
+        // zeros, fix the exponent to Python's `e±NN`. inf/nan pass through (upper
+        // → INF/NAN).
+        Expr::FloatGeneralStr {
+            value,
+            precision,
+            upper,
+        } => {
+            let prec = (*precision).max(1);
+            let prec_m1 = prec - 1;
+            out.push_str("{ let __x: f64 = (");
+            emit_expr(out, value, mode)?;
+            out.push_str("); ");
+            if *upper {
+                out.push_str(
+                    "if __x.is_nan() { \"NAN\".to_string() } \
+                     else if __x.is_infinite() { if __x < 0.0 { \"-INF\".to_string() } else { \"INF\".to_string() } } ",
+                );
+            } else {
+                out.push_str(
+                    "if __x.is_nan() { \"nan\".to_string() } \
+                     else if __x.is_infinite() { if __x < 0.0 { \"-inf\".to_string() } else { \"inf\".to_string() } } ",
+                );
+            }
+            out.push_str("else { ");
+            write!(
+                out,
+                "let __sci = format!(\"{{:.{prec_m1}e}}\", __x); \
+                 let __xe: i64 = __sci.split_once('e').map(|(_, __e)| __e.parse().expect(\"xpile: general-float exponent\")).expect(\"xpile: general-float exponent\"); "
+            )?;
+            write!(
+                out,
+                "let __out = if (-4..{prec_i}).contains(&__xe) {{ \
+                 let __p = ({prec_i} - 1 - __xe).max(0) as usize; format!(\"{{:.*}}\", __p, __x) }} \
+                 else {{ format!(\"{{:.{prec_m1}e}}\", __x) }}; ",
+                prec_i = prec as i64
+            )?;
+            out.push_str(
+                "let __res = if let Some((__m, __e)) = __out.split_once('e') { \
+                 let __mt = if __m.contains('.') { __m.trim_end_matches('0').trim_end_matches('.') } else { __m }; \
+                 let __ev: i64 = __e.parse().expect(\"xpile: general-float exponent\"); \
+                 format!(\"{}e{}{:02}\", __mt, if __ev < 0 { '-' } else { '+' }, __ev.abs()) } \
+                 else if __out.contains('.') { __out.trim_end_matches('0').trim_end_matches('.').to_string() } \
+                 else { __out }; ",
+            );
+            if *upper {
+                out.push_str("__res.to_uppercase() } }");
+            } else {
+                out.push_str("__res } }");
+            }
+        }
         // PMAT-942 (correctness-hunt): the SPACE sign flag `f"{5: d}"` / `f"{x: .2f}"`
         // (see the rust backend). Render with the `+` spec (which composes width/
         // precision like Python) and swap the leading `+` for a space — a no-op for

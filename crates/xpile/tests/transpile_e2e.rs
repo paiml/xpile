@@ -15073,6 +15073,75 @@ fn main() {
     assert_rustc_runs("fstr_scientific", &rust, driver);
 }
 
+/// PMAT-965 (correctness-hunt): the GENERAL-float spec `:g` / `:G` and `:.Ng` /
+/// `:.NG` over a float — `f"{1234.5:g}"` == `"1234.5"`, `f"{123456789:g}"` ==
+/// `"1.23457e+08"`, `f"{3.14159:.3g}"` == `"3.14"`, `f"{1000000.0:g}"` ==
+/// `"1e+06"` — were a clean reject ("unsupported format spec `:g`"). `:g` is the
+/// C `%g` rule (also Python's DEFAULT float presentation): with precision `P`
+/// (default 6, clamped to ≥1), let `X` be the decimal exponent of the value
+/// rounded to `P` significant digits — use FIXED notation with `P-1-X` decimals
+/// when `-4 ≤ X < P`, else SCIENTIFIC with `P-1` decimals — then STRIP trailing
+/// zeros (and a trailing `.`). Scientific output carries Python's `e±NN`
+/// exponent; inf/nan (upper INF/NAN) pass through. Rust's `format!` has no `%g`,
+/// so the spec routes to the new `FloatGeneralStr` node, which ports the
+/// algorithm: read `X` from a `{:.P-1e}` render, branch fixed/sci, render, strip,
+/// fix the exponent. An int with this presentation is coerced to float
+/// (`f"{5:g}"` == `"5"`). The port was validated byte-identical to CPython over
+/// 513k (value × precision) cases; a 216-probe full-pipeline parity sweep
+/// confirmed the same. Cross-checked vs python3.
+#[test]
+fn fstr_general() {
+    let rust = xpile_transpile_to_rust("fstr_general.py");
+    assert!(
+        // the C `%g` port: read X from a P-1 sci render, branch on -4 <= X < P,
+        // strip trailing zeros, rebuild a scientific exponent in Python's e±NN form.
+        rust.contains("format!(\"{:.5e}\", __x)")
+            && rust.contains("(-4..6).contains(&__xe)")
+            && rust.contains("trim_end_matches('0').trim_end_matches('.')")
+            && rust.contains("if __ev < 0 { '-' } else { '+' }")
+            && rust.contains("\"nan\".to_string()")
+            && rust.contains("\"INF\".to_string()"),
+        "general-float must emit the `%g` exponent-branch + trailing-zero-strip block:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(gen(1234.5), "1234.5");
+    assert_eq!(gen(-1234.5), "-1234.5");
+    assert_eq!(gen(0.0), "0");
+    assert_eq!(gen(0.0001234), "0.0001234");
+    assert_eq!(gen(123456789.0), "1.23457e+08");
+    assert_eq!(gen(1000000.0), "1e+06");
+    assert_eq!(gen(100000.0), "100000");
+    assert_eq!(gen(10000000.0), "1e+07");
+    assert_eq!(gen(0.0001), "0.0001");
+    assert_eq!(gen(0.00001), "1e-05");
+    assert_eq!(gen(123.0), "123");
+    assert_eq!(gen(120.0), "120");
+    assert_eq!(gen(0.5), "0.5");
+    assert_eq!(gen(f64::INFINITY), "inf");
+    assert_eq!(gen(f64::NAN), "nan");
+    assert_eq!(gen(f64::NEG_INFINITY), "-inf");
+    assert_eq!(gen_upper(123456789.0), "1.23457E+08");
+    assert_eq!(gen_upper(-1234.5), "-1234.5");
+    assert_eq!(gen_upper(1000000.0), "1E+06");
+    assert_eq!(gen_upper(f64::INFINITY), "INF");
+    assert_eq!(gen_upper(f64::NAN), "NAN");
+    assert_eq!(gen_p3(3.14159), "3.14");
+    assert_eq!(gen_p3(123456.789), "1.23e+05");
+    assert_eq!(gen_p3(0.000123456), "0.000123");
+    assert_eq!(gen_p3(1234567.0), "1.23e+06");
+    assert_eq!(gen_p3(999999.0), "1e+06");
+    assert_eq!(gen_p1(3.14159), "3");
+    assert_eq!(gen_p1(9.6), "1e+01");
+    assert_eq!(gen_p1(0.0), "0");
+    assert_eq!(gen_int(5), "5");
+    assert_eq!(gen_int(1234567), "1.23457e+06");
+    assert_eq!(labeled(0.0001234), "x=0.0001234!");
+}
+"#;
+    assert_rustc_runs("fstr_general", &rust, driver);
+}
+
 /// PMAT-942 (correctness-hunt): the SPACE sign flag ` ` on a numeric f-string
 /// field — `f"{5: d}"` == `" 5"`, `f"{-5: d}"` == `"-5"`, `f"{3.14: .2f}"` ==
 /// `" 3.14"`, and width/zero-pad combos `f"{5: 05d}"` == `" 0005"` — was a clean

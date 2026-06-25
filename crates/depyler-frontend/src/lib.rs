@@ -1769,6 +1769,7 @@ fn walk_expr_children(
         | Expr::IntGroupedStr { value, .. }
         | Expr::FloatGroupedStr { value, .. }
         | Expr::FloatSciStr { value, .. }
+        | Expr::FloatGeneralStr { value, .. }
         | Expr::SpaceSignStr { value, .. }
         | Expr::IntFromStrRadix { value, .. } => f(value),
         Expr::FormatSpec { value, .. } => f(value),
@@ -9976,6 +9977,8 @@ fn infer_type(e: &Expr) -> Type {
         | Expr::IntGroupedStr { .. }
         | Expr::FloatGroupedStr { .. }
         | Expr::FloatSciStr { .. }
+        // PMAT-965: general float → str.
+        | Expr::FloatGeneralStr { .. }
         // PMAT-942: space-sign numeric field → str.
         | Expr::SpaceSignStr { .. } => Type::Str,
         // PMAT-502da: int(s, base) → int.
@@ -10410,6 +10413,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         | Expr::IntGroupedStr { .. }
         | Expr::FloatGroupedStr { .. }
         | Expr::FloatSciStr { .. }
+        // PMAT-965: general float → str.
+        | Expr::FloatGeneralStr { .. }
         // PMAT-942: space-sign numeric field → str.
         | Expr::SpaceSignStr { .. } => Type::Str,
         // PMAT-502da: int(s, base) → int.
@@ -15618,6 +15623,40 @@ fn apply_nonempty_format_spec(
             };
             if let Some(precision) = precision {
                 return Ok(Expr::FloatSciStr {
+                    value: Box::new(value),
+                    precision,
+                    upper,
+                });
+            }
+        }
+    }
+    // PMAT-965 (correctness-hunt): the GENERAL-float spec `:g` / `:G` and `:.Ng`
+    // / `:.NG` over a float — `f"{1234.5:g}"` -> "1234.5", `f"{123456789:g}"` ->
+    // "1.23457e+08", `f"{3.14159:.3g}"` -> "3.14", `f"{1000000.0:g}"` -> "1e+06".
+    // `:g` is Python's DEFAULT float presentation (the C `%g` rule): pick fixed or
+    // scientific by the decimal exponent, then STRIP trailing zeros. An int with a
+    // `g`/`G` presentation was already cast to f64 above (PMAT-693, the
+    // last-char-in-`eEfFgG%` test), so `f"{5:g}"` -> "5" lands here too. Rust's
+    // `format!` has no `%g`, so route to `FloatGeneralStr` (codegen ports the
+    // algorithm). Bare `g`/`G` defaults to precision 6; `:.Ng` clamps to ≥1 in
+    // codegen. Width-combined (`:12g`) and the `#g` alt flag stay documented
+    // rejects (follow-ups, same scoping as PMAT-939/940/941). vs python3.
+    if ty == Type::F64 {
+        let upper = spec.ends_with('G');
+        if upper || spec.ends_with('g') {
+            let prec_part = &spec[..spec.len() - 1];
+            let precision = if prec_part.is_empty() {
+                // Bare `g`/`G` -> Python's default precision of 6.
+                Some(6u32)
+            } else if let Some(n) = prec_part.strip_prefix('.') {
+                (!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                    .then(|| n.parse::<u32>().ok())
+                    .flatten()
+            } else {
+                None
+            };
+            if let Some(precision) = precision {
+                return Ok(Expr::FloatGeneralStr {
                     value: Box::new(value),
                     precision,
                     upper,

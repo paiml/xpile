@@ -557,6 +557,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         | Expr::IntGroupedStr { value, .. }
         | Expr::FloatGroupedStr { value, .. }
         | Expr::FloatSciStr { value, .. }
+        // PMAT-965: general-float `f"{x:g}"` — recurse into the value expr.
+        | Expr::FloatGeneralStr { value, .. }
         | Expr::SpaceSignStr { value, .. } => collect_idents(value, out),
         // PMAT-502da: int(s, base) — recurse into the value expr.
         Expr::IntFromStrRadix { value, .. } => collect_idents(value, out),
@@ -1470,6 +1472,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::FloatSciStr { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python scientific-float `f\"{x:e}\"` / `f\"{x:.2E}\"` is not yet supported in \
+                 the Lean lane — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-965: general-float f-string field deferred in the Lean lane.
+        Expr::FloatGeneralStr { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python general-float `f\"{x:g}\"` / `f\"{x:.3G}\"` is not yet supported in \
                  the Lean lane — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));
