@@ -97,7 +97,12 @@ impl PtxDiffExecEngine {
     /// harness that `cuModuleLoadData`s the PTX, launches `xpile_kernel` over
     /// [`FIXTURE_INPUT`], and prints the result vector. This runs xpile's OWN
     /// PTX (the driver's embedded ptxas JITs it) — NOT nvcc-compiled CUDA-C.
-    fn driver_harness(ptx_src: &str) -> String {
+    ///
+    /// `pub` so the PMAT-963 CROSS-HARDWARE witness reuses the EXACT same
+    /// Driver-API harness text it transfers to the gx10 (GB10 / sm_121) fleet
+    /// host — the local sm_89 arm and the remote sm_121 arm run bit-identical
+    /// harness logic, only the embedded PTX `.target`/`.version` differ.
+    pub fn driver_harness(ptx_src: &str) -> String {
         let n = FIXTURE_INPUT.len();
         let inits: String = FIXTURE_INPUT
             .iter()
@@ -122,7 +127,12 @@ int main() {{
     double h_out[n];
     CK(cuInit(0));
     CUdevice dev; CK(cuDeviceGet(&dev, 0));
-    CUcontext ctx; CK(cuCtxCreate(&ctx, 0, dev));
+    // Primary-context retain + set-current is version-stable across the CUDA
+    // Driver API: CUDA 13.0 remaps `cuCtxCreate` to the 4-arg `cuCtxCreate_v4`
+    // (the 3-arg form won't compile there), so the GB10 / sm_121 cross-hardware
+    // arm (PMAT-963) requires this form. It is identical on CUDA 12.x.
+    CUcontext ctx; CK(cuDevicePrimaryCtxRetain(&ctx, dev));
+    CK(cuCtxSetCurrent(ctx));
     CUmodule mod; CK(cuModuleLoadData(&mod, XPILE_PTX));
     CUfunction fn; CK(cuModuleGetFunction(&fn, mod, "xpile_kernel"));
     CUdeviceptr d_in, d_out;

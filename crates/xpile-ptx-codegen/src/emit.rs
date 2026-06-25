@@ -57,11 +57,39 @@ use std::fmt::Write as _;
 use xpile_backend::BackendError;
 use xpile_meta_hir::{BinOp, Expr, FloatOp, Function, Stmt, Type, UnOp};
 
-/// PTX ISA version emitted. 8.0 is supported by CUDA 11.8+ and assembles for
-/// every `.target` in the contract's sm_80..sm_120 range (sm_89/sm_90 require
+/// PTX ISA version FLOOR. 8.0 is supported by CUDA 11.8+ and assembles for
+/// every `.target` in the contract's sm_80..sm_90 range (sm_89/sm_90 require
 /// ISA ≥ 7.8; 8.0 is the safe common floor with headroom). Pure text — the
 /// real `ptxas` on the box validates it (see [`crate::PtxDiffExecEngine`]).
+///
+/// NEWER architectures need a NEWER ISA: ptxas 13.0 rejects `.version 8.0`
+/// for `.target sm_121` (Blackwell GB10) — the minimum ISA there is 8.8.
+/// [`ptx_version_for`] derives the right `.version` from the compute
+/// capability so the emitted module always assembles for its target.
 pub const PTX_VERSION: &str = "8.0";
+
+/// PTX ISA version that assembles for `compute_capability`'s `.target` —
+/// **derived, never hard-coded** (the same honesty discipline as the
+/// `.target` directive itself, PMAT-963).
+///
+/// The Blackwell family (`sm_100`+, e.g. the GB10's `sm_121`) requires PTX
+/// ISA ≥ 8.8 — ptxas 13.0 hard-rejects the [`PTX_VERSION`] 8.0 floor for
+/// those targets (verified on the gx10 fleet host). Every prior `.target`
+/// in the contract's sm_80..sm_90 range assembles for the 8.0 floor, so the
+/// floor is kept for them (no churn to the existing RTX 4090 / sm_89 witness).
+///
+/// A non-`sm_<num>` capability falls back to the floor — `validate_ptx` and
+/// the real `ptxas` are the downstream oracles either way.
+pub fn ptx_version_for(compute_capability: &str) -> &'static str {
+    let major_minor = compute_capability
+        .strip_prefix("sm_")
+        .and_then(|n| n.parse::<u32>().ok());
+    match major_minor {
+        // Blackwell (sm_100 / sm_120 / sm_121, …) needs ISA ≥ 8.8.
+        Some(cc) if cc >= 100 => "8.8",
+        _ => PTX_VERSION,
+    }
+}
 
 /// The kernel entry-point name. Bit-identical to the nvcc CUDA-C
 /// `xpile_kernel` (the PMAT-949 path) so the anti-correlation quorum loads the
@@ -550,7 +578,7 @@ pub fn emit_kernel(f: &Function, compute_capability: &str) -> Result<String, Bac
     .expect("write");
     writeln!(out, "// source kernel: {}", f.name).expect("write");
     writeln!(out, "//").expect("write");
-    writeln!(out, ".version {PTX_VERSION}").expect("write");
+    writeln!(out, ".version {}", ptx_version_for(compute_capability)).expect("write");
     writeln!(out, ".target {compute_capability}").expect("write");
     writeln!(out, ".address_size 64").expect("write");
     writeln!(out).expect("write");
@@ -687,6 +715,31 @@ mod tests {
         let b = emit_kernel(&saxpy_f64(), "sm_90").unwrap();
         assert!(a.contains(".target sm_80"));
         assert!(b.contains(".target sm_90"));
+    }
+
+    /// PMAT-963 — the PTX `.version` is DERIVED from the compute capability,
+    /// not pinned to the 8.0 floor: the contract's sm_80..sm_90 range keeps the
+    /// 8.0 floor (no churn to the RTX 4090 / sm_89 witness), but Blackwell
+    /// (`sm_100`+, e.g. the GB10's `sm_121`) bumps to 8.8 — ptxas 13.0
+    /// hard-rejects 8.0 there (verified on the gx10 fleet host).
+    #[test]
+    fn ptx_version_is_derived_for_blackwell() {
+        assert_eq!(ptx_version_for("sm_80"), "8.0");
+        assert_eq!(ptx_version_for("sm_89"), "8.0");
+        assert_eq!(ptx_version_for("sm_90"), "8.0");
+        assert_eq!(ptx_version_for("sm_100"), "8.8");
+        assert_eq!(ptx_version_for("sm_120"), "8.8");
+        assert_eq!(ptx_version_for("sm_121"), "8.8");
+        // a non-sm capability falls back to the floor (validate_ptx / ptxas
+        // are the downstream oracles).
+        assert_eq!(ptx_version_for("compute_90"), "8.0");
+        // the emitted module reflects the derived version per target.
+        assert!(emit_kernel(&saxpy_f64(), "sm_89")
+            .unwrap()
+            .contains(".version 8.0"));
+        assert!(emit_kernel(&saxpy_f64(), "sm_121")
+            .unwrap()
+            .contains(".version 8.8"));
     }
 
     #[test]

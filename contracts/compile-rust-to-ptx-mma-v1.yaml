@@ -80,6 +80,33 @@ compile_targets:
     # still its own (nightly-toolchain) slice. rustc_codegen_nvvm /
     # aprender-gpu remain the production targets the same DiffExec machinery
     # diffs once wired.
+    #
+    # PMAT-963 (2026-06-25): CROSS-HARDWARE VOTE. The §29 PTX quorum now spans
+    # 2 emitters x 2 ARCHITECTURES. The PMAT-961/962 anti-correlation witness
+    # ran on ONE arch (the local RTX 4090, sm_89 / Ada); this slice adds a
+    # SECOND architecture — the gx10 fleet host (NVIDIA GB10, compute_cap 12.1
+    # = sm_121 / Blackwell) — and votes:
+    #   (a) ON gx10 sm_121, xpile-PTX (CUDA Driver API) vs nvcc-CUDA-C agree
+    #       (anti-correlation holds on the NEW arch); AND
+    #   (b) the SAME xpile emitter's executed results AGREE ACROSS sm_89
+    #       (local) and sm_121 (gx10) — the cross-architecture independence
+    #       vote, catching arch-specific emit bugs (e.g. a wrong ISA-version
+    #       or `.target` derivation for Blackwell) a single-arch witness can't
+    #       see. CAPTURED: xpile-PTX out = [1, 3, 5, -5, 10, 21, 0, 201] on
+    #       BOTH sm_89 and sm_121, max_abs_diff = 0 each arm AND cross-arch.
+    # The PTX `.version` is now DERIVED from the compute capability too (not
+    # just `.target`): Blackwell (sm_100+) needs ISA >= 8.8 — ptxas 13.0
+    # hard-rejects the 8.0 floor for sm_121 — so emit::ptx_version_for bumps
+    # it (the sm_80..sm_90 range keeps the 8.0 floor; no churn to the sm_89
+    # witness). The gx10 arm is orchestrated by shelling ssh/scp into a
+    # `mktemp -d` on the remote host, compiling + executing there, and
+    # cleaning the temp dir up afterward (no persistent/destructive remote
+    # state; zero new Cargo deps, same posture as the local nvcc/ptxas/WABT
+    # witnesses). Gated on `gx10_available()` (ssh BatchMode reachability +
+    # remote nvcc/ptxas) AND the local `cuda_toolchain_available()`: free CI
+    # (no gx10, no GPU) records a clean skip and stays GREEN; a box with gx10
+    # in ~/.ssh/config runs the real cross-arch witness
+    # (crates/xpile-ptx-codegen/tests/cross_hardware_witness.rs).
     quorum_policy:
       kind: DiffExec
       tolerance: 1.0e-3
