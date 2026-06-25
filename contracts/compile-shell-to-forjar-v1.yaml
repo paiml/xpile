@@ -1,0 +1,203 @@
+metadata:
+  id: C-COMPILE-SHELL-TO-FORJAR
+  version: "1.0.0"
+  created: "2026-06-25"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Compile-time contract: how a SHELL-origin meta-HIR command sequence
+    lowers through xpile-forjar-codegen to forjar.yaml IaC manifest text.
+
+    Layer 5 of the xpile contract taxonomy (compile-time / IR), the
+    ops/deployment-lane sibling of the bashrs shell lane and of
+    `C-COMPILE-RUST-TO-WASM` / `C-COMPILE-RUST-TO-WGSL`. This is the
+    BACKEND-ONLY forjar integration (PMAT-953): forjar
+    (`/home/noah/src/forjar`) is a pure-Rust IaC execution engine — a
+    *consumer/runtime*, NOT a transpiler — so xpile emits forjar.yaml TEXT
+    (a new `Target::ForjarYaml`) rather than merging/federating. No runtime
+    forjar dependency; the shipping crate is a String-emitter peer to
+    bashrs-backend's Makefile/Dockerfile output lane.
+
+    The input must be a `SourceLang::Shell` module (the bashrs-frontend
+    synthetic `main` command-sequence wrapper). From that sequence the
+    emitter produces forjar resources under a canonical envelope
+    (`version: "1.0"`, `name`, `machines: { localhost: { addr: localhost } }`,
+    `resources:`):
+      - a single bare command → a `type: task` resource (`command: …`);
+      - a multi-command script body → a `type: file` resource
+        (`path`, `mode: '0755'`, `content: |` the reconstructed POSIX
+        script) plus a sibling `type: task` that runs it.
+
+    The emitter REFUSES (a Lean-style honest refusal, never wrong YAML)
+    every construct it cannot lower without loss:
+      - a non-shell module (Rust/Python value-level functions are not an
+        ops command sequence);
+      - any shell conditional / loop — the meta-HIR shell lane has NO
+        `Stmt::ShellIf` / `Expr::ShellTest`, so forjar's idempotence GUARDS
+        cannot be expressed declaratively. Only unconditional resources
+        emit; forjar re-adds convergence at apply time.
+
+    Provability interlock: xpile owns `C-BASHRS-POSIX-IDEMPOTENCE` (shell
+    round-trip) and this contract (the lowering); forjar owns
+    `idempotent-apply` / `plan-apply-equivalence` (apply-convergence). They
+    hand off at the YAML boundary — xpile emits correctly, forjar proves
+    convergence.
+  xpile:
+    layer: compile
+  references:
+    - "forjar — pure-Rust IaC execution engine (forjar.yaml → DAG → plan → apply)"
+    - "forjar::core::parser::parse_config / validate_config (the ForjarConfig schema, serde_yaml_ng 0.10)"
+    - "forjar examples/cookbook/40-scheduled-tasks.yaml (file/task/cron resource shapes)"
+    - contracts/compile-rust-to-wasm-v1.yaml
+    - contracts/xpile-backend-trait-v1.yaml
+    - docs/specifications/sub/backend-trait.md
+  depends_on:
+    - C-XPILE-BACKEND-TRAIT
+    - C-BASHRS-POSIX-IDEMPOTENCE
+
+compile_targets:
+  - target: forjar
+    hardware: null
+    via:
+      - xpile-forjar-codegen
+    backend_crate: xpile-forjar-codegen
+    # PMAT-953 (2026-06-25): the forjar.yaml emit lane ships. The shipping
+    # crate takes NO runtime forjar dependency (BACKEND-ONLY — avoid the
+    # federation coupling). Golden validation of the emitted forjar.yaml is
+    # structural (round-trip through a YAML parser + assert the resource
+    # shape); the forjar-crate `validate_config` golden (semantic validation
+    # against forjar's own ForjarConfig) is a deferred follow-up — forjar's
+    # 506-crate dependency tree (openssl / tokio / rusqlite-bundled /
+    # crates.io bashrs) is exactly the build/MSRV coupling the BACKEND-ONLY
+    # decision avoids, so it is NOT taken even as a dev-dependency.
+    quorum_policy:
+      kind: Single
+    via_roles:
+      - emitter: xpile-forjar-codegen
+        role: general
+        crate: xpile-forjar-codegen
+
+equations:
+  forjar_emission_structure_extensionality_diamond:
+    # Tier-defining Diamond equation (depth-1). Machine-checked by the
+    # lake-build pilot — see contracts/lean/XlateShellToForjar.lean. An
+    # emitted forjar resource is determined by its structural signature
+    # (id, resource type, machine), mirroring the str/list/float/set/wgsl/
+    # wasm structural Diamonds.
+    lean_theorem: "XpileContracts.CCompileShellToForjar.forjar_emission_structure_extensionality_diamond"
+    lean_file: "contracts/lean/XlateShellToForjar.lean"
+    formula: |
+      ∀ a b : ForjarResource.
+        a.id = b.id → a.kind = b.kind → a.machine = b.machine →
+        a = b
+      (an emitted forjar resource is determined by its structural signature)
+    domain: |
+      Any emitted forjar resource as xpile-forjar-codegen produces it,
+      modelled by its resource `id`, its forjar `kind` (file / task / cron),
+      and the `machine` it is pinned to.
+    invariants:
+      - "FIRST Diamond-tier theorem of C-COMPILE-SHELL-TO-FORJAR (registers it at depth-1)"
+      - "structure extensionality over the emitted resource's signature (sorry-free, core-only)"
+      - "apply-convergence agreement (forjar's idempotent-apply) is forjar's tier, NOT xpile's — they hand off at the YAML boundary"
+    preconditions:
+      - "BackendConfig.target == Target::ForjarYaml"
+    postconditions:
+      - "forjar-emitting code carries citation C-COMPILE-SHELL-TO-FORJAR"
+
+  shell_sequence_emission_is_well_formed_forjar:
+    formula: |
+      lower(shell_command_sequence, BackendConfig{target: ForjarYaml})
+        produces yaml_text containing `version: "1.0"`, a `name`, a
+        `machines:` block with a `localhost` machine, and a `resources:`
+        block whose every resource carries a `type:` (file | task | cron)
+    domain: |
+      A SHELL-origin meta-HIR module (the bashrs-frontend `main`
+      command-sequence wrapper: Stmt::Cmd / Stmt::Pipeline / Stmt::ShellAssign)
+      lowered to a forjar.yaml manifest.
+    invariants:
+      - "emitted YAML carries the canonical envelope (version/name/machines/resources)"
+      - "a single bare command → one `type: task` resource"
+      - "a multi-command script body → a `type: file` (mode 0755) + a `type: task` that runs it"
+      - "every emitted resource pins the localhost machine"
+    preconditions:
+      - "BackendConfig.target == Target::ForjarYaml"
+      - "module.source_lang == SourceLang::Shell"
+    postconditions:
+      - "emitted forjar.yaml parses as YAML and carries the resource shape"
+      - "forjar-emitting code carries citation C-COMPILE-SHELL-TO-FORJAR"
+
+  out_of_lane_is_refused:
+    formula: |
+      lower(non_shell_module | shell_conditional | shell_loop,
+            BackendConfig{target: ForjarYaml})
+        == Err(BackendError::Lower("refused — …"))
+    domain: |
+      Any non-shell module, or any shell conditional / loop (an idempotence
+      guard the meta-HIR shell lane cannot represent declaratively).
+    invariants:
+      - "a refused construct yields a hard BackendError, never wrong YAML"
+      - "the refusal names why (non-shell lane, or idempotence guard inexpressible)"
+    preconditions:
+      - "BackendConfig.target == Target::ForjarYaml"
+    postconditions:
+      - "no forjar.yaml text is emitted for an out-of-lane input"
+
+proof_obligations:
+  - type: postcondition
+    property: emitted forjar.yaml is well-formed (parses + carries the resource shape)
+    formal: "parse_yaml(emitted).resources[*].type ∈ {file,task,cron}"
+    applies_to: shell_sequence_emission_is_well_formed_forjar
+
+  - type: postcondition
+    property: out-of-lane inputs are refused, never miscompiled
+    formal: "lower(out_of_lane) == Err(_)"
+    applies_to: out_of_lane_is_refused
+
+  - type: frame
+    property: lower() does not mutate the input meta-HIR module
+    formal: "modifies() == ∅"
+    applies_to: all
+
+  - type: precondition
+    property: backend citation is recorded
+    formal: "Artifact.citations contains C-COMPILE-SHELL-TO-FORJAR"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-COMPILE-FORJAR-001
+    rule: |
+      Emitted forjar.yaml MUST be well-formed — it parses as YAML, carries
+      the canonical envelope, and every resource has a `type` in
+      {file, task, cron} pinned to a declared machine.
+    prediction: |
+      `serde_yaml::from_str(emitted)` succeeds and the resource shape holds
+      for every supported shell command sequence.
+    test: |
+      cargo test -p xpile-forjar-codegen --lib
+    if_fails: |
+      The emitter regressed to ill-formed forjar.yaml (broken block scalar
+      indentation, missing envelope key, a resource without a `type`).
+      Likely cause: a new command shape emitting malformed YAML.
+    ship_blocking: true
+    counter_example_classes:
+      - malformed_block_scalar
+      - missing_envelope_key
+      - resource_without_type
+
+  - id: FALSIFY-COMPILE-FORJAR-002
+    rule: |
+      A non-shell module or a shell conditional / loop MUST be refused with
+      a hard error, NEVER emitted as wrong (lossy) forjar.yaml.
+    prediction: |
+      `lower` returns `Err(BackendError::Lower(...))` naming why.
+    test: |
+      cargo test -p xpile-forjar-codegen --lib
+    if_fails: |
+      The emitter silently dropped an idempotence guard / control structure,
+      or emitted a forjar resource for a value-level function — a
+      correctness violation worse than a refusal.
+    ship_blocking: true
+    counter_example_classes:
+      - silent_drop_of_conditional
+      - non_shell_module_emitted

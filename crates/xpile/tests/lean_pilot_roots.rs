@@ -237,6 +237,16 @@ const EXPECTED_PILOT: &[&str] = &[
     // WASM). NEW contract, so the pilot grows 24 → 25; the entire
     // `contracts/lean/` substrate stays machine-checked.
     "XlateRustToWasm",
+    // PMAT-953 (forjar.yaml backend-only): the NEW forjar compile contract joins
+    // the pilot at depth-1 — a core-only, import-free STRUCTURE EXTENSIONALITY
+    // proof (an emitted forjar resource is determined by its structural
+    // signature: id / kind ∈ {file,task,cron} / machine), the proof-lane half of
+    // the BACKEND-ONLY forjar integration (a SHELL-origin command sequence →
+    // forjar `type: file`/`type: task` resources, NOT merge/federate);
+    // apply-convergence is forjar's own tier, handed off at the YAML boundary.
+    // NEW contract, so the pilot grows 25 → 26; the entire `contracts/lean/`
+    // substrate stays machine-checked.
+    "XlateShellToForjar",
 ];
 
 #[test]

@@ -276,5 +276,16 @@ lean_lib «XpileContractsPilot» where
     -- runtime-stratum two-emitter wasm-runtime DiffExec witness is deferred to
     -- PMAT-952. NEW contract, so the pilot grows 24 → 25; the substrate stays
     -- machine-checked.
-    `XlateRustToWasm                -- C-COMPILE-RUST-TO-WASM      (PMAT-951)
+    `XlateRustToWasm,               -- C-COMPILE-RUST-TO-WASM      (PMAT-951)
+    -- PMAT-953 (forjar.yaml backend-only): the NEW forjar compile contract joins
+    -- the pilot at depth-1 — a core-only, import-free STRUCTURE EXTENSIONALITY
+    -- proof (same shape as CompileRustToWasm / the str/list/set structural
+    -- Diamonds): an emitted forjar resource is determined by its structural
+    -- signature (id, kind ∈ {file,task,cron}, machine). This is the proof-lane
+    -- half of the BACKEND-ONLY forjar integration (xpile-forjar-codegen lowers a
+    -- SHELL-origin command sequence to forjar `type: file`/`type: task`
+    -- resources, NOT merge/federate); apply-convergence is forjar's own tier
+    -- (idempotent-apply), handed off at the YAML boundary. NEW contract, so the
+    -- pilot grows 25 → 26; the substrate stays machine-checked.
+    `XlateShellToForjar             -- C-COMPILE-SHELL-TO-FORJAR   (PMAT-953)
   ]
