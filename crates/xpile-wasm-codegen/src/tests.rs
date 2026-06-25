@@ -287,7 +287,11 @@ fn bool_logic_short_circuits() {
 // ─── refusal tests (Lean-style honest refusal) ──────────────────────
 
 #[test]
-fn refuses_string_type() {
+fn refuses_string_return_type() {
+    // PMAT-986: a `str` PARAMETER is now accepted (an i32 base-pointer), but
+    // RETURNING a `str` is string-returning — it must materialise a result
+    // string in linear memory, which needs the slice-2 bump allocator. Refuse
+    // it honestly with the slice-2 note (NOT a silent miscompile).
     let f = Function {
         name: "s".into(),
         params: vec![param("x", Type::Str)],
@@ -301,8 +305,226 @@ fn refuses_string_type() {
         .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
         .unwrap_err();
     let msg = err.to_string();
-    assert!(msg.contains("unsupported"), "honest refusal: {msg}");
-    assert!(msg.to_lowercase().contains("str") || msg.contains("Str"));
+    assert!(
+        msg.contains("heap allocator") && msg.contains("PMAT-986 slice 2"),
+        "str return refused with slice-2 allocator note: {msg}"
+    );
+}
+
+// ─── PMAT-986: str param + len(s) + ord(s[i]) ───────────────────────
+
+/// `def code_sum(s: str) -> int:
+///      total = 0; i = 0
+///      while i < len(s): total = total + ord(s[i]); i = i + 1
+///      return total`
+fn code_sum_module() -> Module {
+    let acc_step = Stmt::Assign {
+        name: "total".into(),
+        value: Expr::BinOp {
+            op: BinOp::Add,
+            lhs: Box::new(Expr::Ident("total".into())),
+            rhs: Box::new(Expr::Ord {
+                value: Box::new(Expr::StrCharAt {
+                    string: Box::new(Expr::Ident("s".into())),
+                    index: Box::new(Expr::Ident("i".into())),
+                }),
+            }),
+        },
+    };
+    let i_step = Stmt::Assign {
+        name: "i".into(),
+        value: Expr::BinOp {
+            op: BinOp::Add,
+            lhs: Box::new(Expr::Ident("i".into())),
+            rhs: Box::new(Expr::LitInt(1)),
+        },
+    };
+    let f = Function {
+        name: "code_sum".into(),
+        params: vec![param("s", Type::Str)],
+        return_type: Type::I64,
+        body: Block {
+            stmts: vec![
+                Stmt::Let {
+                    name: "total".into(),
+                    ty: Type::I64,
+                    value: Expr::LitInt(0),
+                    mutable: true,
+                },
+                Stmt::Let {
+                    name: "i".into(),
+                    ty: Type::I64,
+                    value: Expr::LitInt(0),
+                    mutable: true,
+                },
+                Stmt::While {
+                    cond: Expr::BinOp {
+                        op: BinOp::Lt,
+                        lhs: Box::new(Expr::Ident("i".into())),
+                        rhs: Box::new(Expr::Len(Box::new(Expr::Ident("s".into())))),
+                    },
+                    body: vec![acc_step, i_step],
+                },
+            ],
+            trailing_return: Expr::Ident("total".into()),
+        },
+    };
+    module_with(vec![Item::Function(f)])
+}
+
+#[test]
+fn str_param_lowers_to_i32_base_pointer_and_memory() {
+    let wat = emit_module(&code_sum_module()).expect("str-param program lowers");
+    assert!(
+        wat.contains("(param $s i32)"),
+        "str param → i32 base-pointer: {wat}"
+    );
+    assert!(
+        wat.contains("(memory (export \"mem\") 1)"),
+        "str param triggers the linear-memory declaration: {wat}"
+    );
+}
+
+#[test]
+fn len_over_str_param_reads_header() {
+    let wat = emit_module(&code_sum_module()).expect("str-param program lowers");
+    // len(s) is the SAME header read as len(xs): i32.load of base+0 then
+    // zero-extend to i64.
+    assert!(
+        wat.contains("i32.load") && wat.contains("i64.extend_i32_u"),
+        "len(s) → header i32.load + i64 extend: {wat}"
+    );
+}
+
+#[test]
+fn ord_str_index_uses_load8_and_bounds_guard() {
+    let wat = emit_module(&code_sum_module()).expect("str-param program lowers");
+    assert!(
+        wat.contains("i32.load8_u"),
+        "ord(s[i]) → per-byte i32.load8_u: {wat}"
+    );
+    assert!(
+        wat.contains("unreachable"),
+        "ord(s[i]) carries the PMAT-986 bounds guard (i<0 || i>=len → trap): {wat}"
+    );
+    // The byte stride is 1 (no *size multiply) — the address is base+8+i.
+    assert!(
+        wat.contains(&format!("i32.const {LIST_ELEMS_OFFSET}")),
+        "byte address uses the base+8 offset: {wat}"
+    );
+}
+
+#[test]
+fn refuses_strcharat_as_string() {
+    // `s[i]` used as a 1-char STRING (a StrCharAt NOT wrapped in ord) is
+    // string-returning — refuse with the slice-2 allocator note.
+    let f = Function {
+        name: "first".into(),
+        params: vec![param("s", Type::Str)],
+        return_type: Type::I64, // not str, so it's not the return-type refusal
+        body: Block {
+            // total = ord-less StrCharAt in a value position; route it through
+            // a let so it's not the trailing return-type path.
+            stmts: vec![Stmt::Let {
+                name: "c".into(),
+                ty: Type::I64,
+                value: Expr::StrCharAt {
+                    string: Box::new(Expr::Ident("s".into())),
+                    index: Box::new(Expr::LitInt(0)),
+                },
+                mutable: false,
+            }],
+            trailing_return: Expr::Ident("c".into()),
+        },
+    };
+    let err = emit_module(&module_with(vec![Item::Function(f)])).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("heap allocator") && msg.contains("slice 2"),
+        "StrCharAt-as-string refused with slice-2 note: {msg}"
+    );
+}
+
+#[test]
+fn refuses_chr_string_returning() {
+    let f = Function {
+        name: "c".into(),
+        params: vec![param("n", Type::I64)],
+        return_type: Type::I64,
+        body: Block {
+            stmts: vec![Stmt::Let {
+                name: "x".into(),
+                ty: Type::I64,
+                value: Expr::Chr {
+                    value: Box::new(Expr::Ident("n".into())),
+                },
+                mutable: false,
+            }],
+            trailing_return: Expr::Ident("x".into()),
+        },
+    };
+    let err = emit_module(&module_with(vec![Item::Function(f)])).unwrap_err();
+    assert!(
+        err.to_string().contains("heap allocator"),
+        "chr(n) refused with allocator note: {err}"
+    );
+}
+
+#[test]
+fn refuses_string_concat_binop() {
+    // `a + b` over two str params would do pointer arithmetic — refuse it as
+    // string concat (needs the slice-2 allocator).
+    let f = Function {
+        name: "cat".into(),
+        params: vec![param("a", Type::Str), param("b", Type::Str)],
+        return_type: Type::I64,
+        body: Block {
+            stmts: vec![Stmt::Let {
+                name: "z".into(),
+                ty: Type::I64,
+                value: Expr::BinOp {
+                    op: BinOp::Add,
+                    lhs: Box::new(Expr::Ident("a".into())),
+                    rhs: Box::new(Expr::Ident("b".into())),
+                },
+                mutable: false,
+            }],
+            trailing_return: Expr::Ident("z".into()),
+        },
+    };
+    let err = emit_module(&module_with(vec![Item::Function(f)])).unwrap_err();
+    assert!(
+        err.to_string().contains("heap allocator"),
+        "str + str refused as concat: {err}"
+    );
+}
+
+#[test]
+fn refuses_string_equality_no_pointer_compare() {
+    // `a == b` over str params must NOT silently compare base-pointers — it
+    // must be an honest refusal.
+    let f = Function {
+        name: "eq".into(),
+        params: vec![param("a", Type::Str), param("b", Type::Str)],
+        return_type: Type::Bool,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::BinOp {
+                op: BinOp::Eq,
+                lhs: Box::new(Expr::Ident("a".into())),
+                rhs: Box::new(Expr::Ident("b".into())),
+            },
+        },
+    };
+    let err = emit_module(&module_with(vec![Item::Function(f)])).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("unsupported") && msg.to_lowercase().contains("str"),
+        "str == str honestly refused (no pointer compare): {msg}"
+    );
+    // Crucially, the WAT must NOT have been produced with an i32.eq over the
+    // pointers — the refusal short-circuits before any emit.
+    assert!(!msg.contains("i32.eq"), "no pointer-compare leaked: {msg}");
 }
 
 #[test]
@@ -594,7 +816,7 @@ fn refuses_len_of_scalar() {
     let msg = err.to_string();
     assert!(msg.contains("unsupported"), "honest refusal: {msg}");
     assert!(
-        msg.contains("not a `list[scalar]` parameter"),
+        msg.contains("not a `list[scalar]` or `str` parameter"),
         "names the cause: {msg}"
     );
 }
