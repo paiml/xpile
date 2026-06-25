@@ -158,6 +158,13 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
             "class_to_struct_contract.py",
             &["C-XLATE-PY-CLASS-TO-STRUCT"],
         ),
+        // PMAT-958 (definition-level closure): a DEFINITION-ONLY fixture — two
+        // method-less `@dataclass`es and NO functions at all. Before this slice
+        // it emitted ZERO citations (no `Function` ran over it); now the struct
+        // definition cites its class contract directly. The canonical witness
+        // that the definition-level citation path is live, not just struct
+        // methods cementing the citation as a side effect.
+        ("dataclass_def.py", &["C-XLATE-PY-CLASS-TO-STRUCT"]),
         ("tuple_contract.py", &["C-XLATE-PY-TUPLE-TO-RUST-TUPLE"]),
         ("optional_return.py", &["C-XLATE-PY-OPTIONAL-TO-OPTION"]),
         ("bool_contract.py", &["C-XLATE-PY-BOOL-TO-RUST-BOOL"]),
@@ -332,6 +339,24 @@ fn reachable_functions(module: &Module) -> Vec<&Function> {
     fns
 }
 
+/// PMAT-958 (Pillar-A definition-level citation closure): the contract ids
+/// derived from the *definition-level* `Item`s of a module — the analog of
+/// the per-function `applicable_contracts()` union, for the citation a
+/// definition emits on ITSELF (not via any function). This is EXACTLY what
+/// `emit_item_contract_citations` runs over in the rust/ruchy codegen, so the
+/// derived gate below cannot over-expect a citation the codegen never emits.
+/// Today only `Item::Struct` returns a definition-level contract
+/// (`C-XLATE-PY-CLASS-TO-STRUCT`); `Item::Const`/`Item::Enum` have no
+/// governing translation contract on disk yet (a documented follow-up) and
+/// return nothing, so the gate does NOT go red on them.
+fn definition_level_contracts(module: &Module) -> Vec<&'static str> {
+    let mut ids = Vec::new();
+    for item in &module.items {
+        ids.extend(item.applicable_contracts());
+    }
+    ids
+}
+
 /// PMAT-955 (Pillar-A contract-citation-integrity capstone): the DERIVED
 /// citation-completeness gate.
 ///
@@ -352,6 +377,17 @@ fn reachable_functions(module: &Module) -> Vec<&Function> {
 /// expected set is COMPUTED from the meta-HIR, so it can never drift behind a new
 /// `applicable_contracts()` arm: wire a family in and forget to emit its citation,
 /// and this gate goes RED for every fixture exercising it.
+///
+/// PMAT-958 (definition-level closure): the expected set now ALSO unions
+/// `Item::applicable_contracts()` over the module's definition-level items
+/// (`Item::Struct` → `C-XLATE-PY-CLASS-TO-STRUCT`). This closes the gap PMAT-955
+/// named: a definition-only fixture (`dataclass_def.py` — a method-less
+/// `@dataclass` with NO functions at all) previously drove an EMPTY expected set
+/// (no `Function` ran over it), so it could ship `pub struct {..}` uncited without
+/// the gate noticing. Now the struct definition's own contract is derived from the
+/// meta-HIR and required in the emitted citations — drop the
+/// `emit_item_contract_citations` call in codegen and this gate goes RED for
+/// `dataclass_def.py` and every other struct-bearing fixture.
 #[test]
 fn every_applicable_contract_is_actually_cited() {
     let bin = env!("CARGO_BIN_EXE_xpile");
@@ -381,6 +417,11 @@ fn every_applicable_contract_is_actually_cited() {
             for id in f.applicable_contracts() {
                 expected.insert(id);
             }
+        }
+        // PMAT-958: union the DEFINITION-level contracts (a method-less struct
+        // cites C-XLATE-PY-CLASS-TO-STRUCT on the definition, not via a function).
+        for id in definition_level_contracts(&module) {
+            expected.insert(id);
         }
         if expected.is_empty() {
             continue;

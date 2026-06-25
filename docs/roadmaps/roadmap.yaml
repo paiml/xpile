@@ -24,19 +24,29 @@ strategic_goals:
         §14.4 QUORUM = Sem/Lean + Sym/Kani + Run/diff-exec + Ext. Lean pilot now
         26 machine-checked modules (sorry/axiom/Mathlib-free, warningAsError).
       open_gap: >-
-        CITATION-INTEGRITY (NARROWED 2026-06-25): the per-FUNCTION surface is now
-        CLOSED + machine-guarded. Function::applicable_contracts()
-        (crates/xpile-meta-hir/src/lib.rs) cites the full per-type set —
+        CITATION-INTEGRITY (NARROWED 2026-06-25, PMAT-958): the per-FUNCTION surface
+        AND the STRUCT-DEFINITION surface are now CLOSED + machine-guarded.
+        Function::applicable_contracts() (crates/xpile-meta-hir/src/lib.rs) cites the
+        full per-type set —
         int/str/list/dict/FLOAT(C-PY-FLOAT-ARITH)/set/class-method/tuple/Optional/bool
-        — and a DERIVED gate (contract_citation_integrity.rs::
-        every_applicable_contract_is_actually_cited) now FAILS if any function with
-        an applicable contract ships uncited (verified RED under a codegen mutation,
-        drift-proof — no hand-list). The earlier "returns only [C-PY-INT-ARITH] /
-        float uncited" framing was stale: float's YAML + Lean Diamond + lakefile root
-        have been on disk since PMAT-860/477/931. REMAINING gap: construct
-        DEFINITIONS that carry no function are still uncited — a method-less
-        @dataclass struct-def and module-level Const/Enum emit no `// xpile-contract:`
-        line (the citation surface is per-function only). Tracked as PMAT-955.
+        — and Item::applicable_contracts() (PMAT-958) cites the DEFINITION-level
+        class contract (C-XLATE-PY-CLASS-TO-STRUCT) directly on every struct def,
+        method-less or not, so a definition-only fixture (dataclass_def.py — a
+        @dataclass with NO functions) no longer ships `pub struct {..}` uncited. The
+        DERIVED gate (contract_citation_integrity.rs::
+        every_applicable_contract_is_actually_cited) now unions BOTH the per-function
+        AND the definition-level applicable contracts and FAILS if any ships uncited
+        (verified RED under a codegen mutation that drops the struct citation across 8
+        fixtures incl. the definition-only dataclass_def.py — drift-proof, no
+        hand-list). The earlier "returns only [C-PY-INT-ARITH] / float uncited"
+        framing was stale since PMAT-860/477/931. REMAINING (narrowed) gap:
+        module-level Item::Const / Item::Enum still emit no `// xpile-contract:` line
+        — there is NO on-disk const-translation or enum-translation contract to cite
+        yet (the class/scalar/container families all have governing YAMLs; const/enum
+        do not). Authoring those two contracts (full 5-touchpoint recipe) is the
+        documented follow-up; the gate deliberately does not over-expect a citation
+        the codegen cannot honestly emit. Pillar A's "every construct under a cited
+        contract" claim is now true for every construct that HAS a governing contract.
     - id: B
       name: Multi-target backend matrix
       status: broadened-2026-06-25
@@ -88,6 +98,24 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-958
+  github_issue: null
+  item_type: task
+  title: 'PMAT-958: [Pillar-A/contract-integrity] definition-level citation closure — finish the Pillar-A surface PMAT-955 narrowed. PMAT-955 closed the per-FUNCTION citation surface + added a DERIVED gate (contract_citation_integrity.rs::every_applicable_contract_is_actually_cited) that unions Function::applicable_contracts() over reachable Functions only. The remaining honest gap it named: definition-level Items with no function emit no citation — a method-less @dataclass (Item::Struct with empty methods) emitted `pub struct {..}` with ZERO `// xpile-contract: C-XLATE-PY-CLASS-TO-STRUCT` line, and a method-bearing struct cited it only as a side effect of its methods` self:Type::Struct params (drop the last method, lose the citation). Adds Item::applicable_contracts() (the definition-level analog) returning C-XLATE-PY-CLASS-TO-STRUCT for every Item::Struct unconditionally; emits it on the struct DEFINITION in both rust + ruchy codegen via a new emit_item_contract_citations; and extends the derived gate to ALSO union the definition-level contracts so a struct that ships uncited goes RED. Item::Const/Item::Enum deliberately DEFERRED — no on-disk const/enum-translation contract exists to cite (authoring those two is the documented follow-up); the gate does not over-expect a citation the codegen cannot honestly emit.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Pillar-A finish (per strategic_goals.A open_gap + audit-design.md §6 capability-vs-contract drift): PMAT-955 narrowed the gap to construct DEFINITIONS carrying no function; this closes the struct-definition half. After this slice Pillar A's `every construct under a cited contract` claim is true for every construct that HAS a governing contract — the only remaining uncited definition kinds (Const/Enum) are uncited because no contract exists yet, not because the citation is missing."
+  - "META-HIR: added Item::applicable_contracts() (crates/xpile-meta-hir/src/lib.rs) — the definition-level analog of Function::applicable_contracts(). Returns [C-XLATE-PY-CLASS-TO-STRUCT] for every Item::Struct (method-less or method-bearing — the contract governs the field-order + field-type preservation of the class→struct translation independent of methods); [] for Item::Function (covered by the per-function path), Item::Const, and Item::Enum (no on-disk const/enum-translation contract — deferred)."
+  - "CODEGEN: both xpile-rust-codegen + xpile-ruchy-codegen now emit_item_contract_citations(out, item) immediately before the struct `#[derive(..)]`/`pub struct` lines, derived from Item::applicable_contracts() (the SAME source the gate reads). A method-less @dataclass now emits `// xpile-contract: C-XLATE-PY-CLASS-TO-STRUCT` on its definition; verified on the definition-only fixture dataclass_def.py (two method-less @dataclasses, NO functions — previously emitted ZERO citations)."
+  - "DERIVED GATE EXTENDED + TEETH VERIFIED: every_applicable_contract_is_actually_cited now unions definition_level_contracts(&module) (Item::applicable_contracts() over the module items) into each fixture's expected set, alongside the per-function union. Added dataclass_def.py to the per-fixture EXPECTED witness map. Teeth verified: commenting out the rust-codegen emit_item_contract_citations call turned the gate RED across 8 fixtures incl. the definition-only dataclass_def.py (emitted={}); restored, green. NO new contract authored (reuses the existing C-XLATE-PY-CLASS-TO-STRUCT); Const/Enum deferred so the gate stays honest."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors/0 warnings), cargo-deny advisories, cargo test for xpile (contract_citation_integrity 3/3) + xpile-meta-hir + xpile-rust-codegen + xpile-ruchy-codegen, lake build unchanged (no Lean touched — existing contract reused). Pillar-A definition-level citation-closure slice, sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-957
   github_issue: null
   item_type: task

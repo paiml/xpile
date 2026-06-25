@@ -151,6 +151,11 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
                 if derive_ord && !has_order_dunder {
                     derives.push("Ord");
                 }
+                // PMAT-958 (Pillar-A definition-level citation closure): cite the
+                // class→struct contract on the struct DEFINITION itself (mirror of
+                // the Rust backend), so a method-less `@dataclass` no longer ships
+                // `pub struct {..}` uncited. Derived from `Item::applicable_contracts`.
+                emit_item_contract_citations(&mut out, item)?;
                 writeln!(out, "#[derive({})]", derives.join(", "))?;
                 writeln!(out, "pub struct {name} {{")?;
                 for (field, ty) in fields {
@@ -409,6 +414,17 @@ fn py_str_repr_block(accessor: &str) -> String {
 /// Ruchy compiles to Rust, so it shares the comment-citation convention.
 fn emit_contract_citations(out: &mut String, f: &Function) -> Result<(), RuchyCodegenError> {
     for id in f.applicable_contracts() {
+        writeln!(out, "// xpile-contract: {id}")?;
+    }
+    Ok(())
+}
+
+/// PMAT-958: definition-level analog of [`emit_contract_citations`] — emits
+/// the `// xpile-contract: <ID>` line(s) governing an `Item` *definition*
+/// (struct/const/enum). Derived from [`Item::applicable_contracts`], the
+/// same source the citation-integrity gate reads.
+fn emit_item_contract_citations(out: &mut String, item: &Item) -> Result<(), RuchyCodegenError> {
+    for id in item.applicable_contracts() {
         writeln!(out, "// xpile-contract: {id}")?;
     }
     Ok(())
