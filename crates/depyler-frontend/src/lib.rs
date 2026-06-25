@@ -15622,12 +15622,30 @@ fn apply_nonempty_format_spec(
     // grouping flag, so route to `FloatGroupedStr`: codegen renders the float to
     // `precision` decimals, groups the integer part by 3 from the right, sign
     // first, and leaves the `.dd` tail intact — the float follow-up to PMAT-939's
-    // `IntGroupedStr` (which scoped bare-int only). Grouping over the DEFAULT float
-    // repr (`:,` with no `f` presentation) stays a documented reject for now.
+    // `IntGroupedStr` (which scoped bare-int only).
+    //
+    // PMAT-982 (correctness-hunt): the BARE grouping spec `:,` / `:_` over the
+    // DEFAULT float repr — `f"{1234567.5:,}"` → "1,234,567.5",
+    // `f"{1234.5:,}"` → "1,234.5", `f"{1e16:,}"` → "1e+16" (a scientific repr has
+    // no integer-part digit run to group). Python groups the integer part of the
+    // `str(float)` repr (NOT a fixed `.Nf` render). Route to the same
+    // `FloatGroupedStr` with `precision: None` — codegen renders the CPython
+    // float repr (the `py_float_repr_block` shared with `str(float)`) and groups
+    // the leading digit run. No new meta-HIR variant.
     if ty == Type::F64 {
         if let Some(rest) = spec.strip_prefix([',', '_']) {
+            let sep = spec.chars().next().expect("spec is non-empty");
+            // BARE `:,` / `:_` (nothing after the separator) → group the default
+            // float repr (PMAT-982).
+            if rest.is_empty() {
+                return Ok(Expr::FloatGroupedStr {
+                    value: Box::new(value),
+                    sep,
+                    precision: None,
+                });
+            }
             // `rest` is e.g. ".2f", "f", ".0F". Only the `f`/`F` (fixed) presentation
-            // is grouped here; `,g`/`,e`/bare-`,` over a float are left to reject.
+            // is grouped here; `,g`/`,e` over a float are left to reject.
             if let Some(prec_part) = rest.strip_suffix(['f', 'F']) {
                 let precision = if prec_part.is_empty() {
                     // Bare `,f` → Python's default fixed precision of 6.
@@ -15640,11 +15658,10 @@ fn apply_nonempty_format_spec(
                     None
                 };
                 if let Some(precision) = precision {
-                    let sep = spec.chars().next().expect("spec is non-empty");
                     return Ok(Expr::FloatGroupedStr {
                         value: Box::new(value),
                         sep,
-                        precision,
+                        precision: Some(precision),
                     });
                 }
             }

@@ -14991,10 +14991,11 @@ fn main() {
 fn fstr_float_grouping() {
     let rust = xpile_transpile_to_rust("fstr_float_grouping.py");
     assert!(
-        // the runtime loop: render to N decimals, split the `.dd` tail, group the
-        // integer part by 3, sign first.
+        // the runtime loop: render to N decimals, split the integer-part digit run
+        // off the `.dd` tail (PMAT-982 generalized the split to the first non-digit),
+        // group the integer part by 3, sign first.
         rust.contains("format!(\"{:.2}\", __x)")
-            && rust.contains("__body.find('.')")
+            && rust.contains("__body.find(|__c: char| !__c.is_ascii_digit())")
             && rust.contains("(__len - __i) % 3 == 0")
             && rust.contains("__g.push(',')")
             && rust.contains("__g.push('_')"),
@@ -15015,6 +15016,57 @@ fn main() {
 }
 "#;
     assert_rustc_runs("fstr_float_grouping", &rust, driver);
+}
+
+/// PMAT-982 (correctness-hunt): the BARE thousands-GROUPING spec `:,` / `:_`
+/// over a float's DEFAULT repr — `f"{1234567.5:,}"` == `"1,234,567.5"`,
+/// `f"{1234.5:_}"` == `"1_234.5"`, `f"{1e16:,}"` == `"1e+16"` (a scientific repr
+/// has no integer-part digit run to group) — was a clean reject ("unsupported
+/// format spec `:,` for a F64 value"). Unlike PMAT-940's `:,.Nf` (a fixed-N
+/// render), Python groups the integer part of the `str(float)` repr and leaves
+/// the fractional / scientific / non-finite tail intact. Routes to the SAME
+/// `FloatGroupedStr` node with `precision: None` — codegen renders the CPython
+/// float repr (the shared `str(float)` block) then groups the leading digit run.
+/// No new meta-HIR variant. The default-repr follow-up to `fstr_float_grouping`.
+/// Cross-checked vs python3.
+#[test]
+fn fstr_float_grouping_default_repr() {
+    let rust = xpile_transpile_to_rust("fstr_float_grouping_default_repr.py");
+    assert!(
+        // the `precision: None` arm renders the shared str(float) repr block (NOT a
+        // fixed `{:.N}`), then groups the leading integer-part digit run by 3.
+        rust.contains("__sf.is_nan()")
+            && rust.contains("__sf.fract() == 0.0")
+            && rust.contains("__body.find(|__c: char| !__c.is_ascii_digit())")
+            && rust.contains("(__len - __i) % 3 == 0")
+            && rust.contains("__g.push(',')")
+            && rust.contains("__g.push('_')")
+            && !rust.contains("format!(\"{:.6}\", __x)"),
+        "default-repr float grouping must render the str(float) repr block + group \
+         the leading digit run (no fixed-N precision render):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // grouping placement, sign-first, fractional tail intact
+    assert_eq!(grp_comma(1234567.5), "1,234,567.5");
+    assert_eq!(grp_comma(-1234567.5), "-1,234,567.5");
+    assert_eq!(grp_comma(1234.5), "1,234.5");
+    assert_eq!(grp_comma(1000000.0), "1,000,000.0");
+    assert_eq!(grp_comma(0.1), "0.1");
+    assert_eq!(grp_comma(100.0), "100.0");
+    // a scientific repr (decimal exponent >= 16) is left UNGROUPED, like Python
+    assert_eq!(grp_comma(1e16), "1e+16");
+    assert_eq!(grp_comma(12345.0), "12,345.0");
+    assert_eq!(grp_comma(1234567890123.0), "1,234,567,890,123.0");
+    // the `_` separator
+    assert_eq!(grp_under(1234.5), "1_234.5");
+    assert_eq!(grp_under(-1234567.5), "-1_234_567.5");
+    assert_eq!(grp_under(1234567890123.0), "1_234_567_890_123.0");
+    // embedded in a larger f-string
+    assert_eq!(labeled(12345678.0), "bal=12,345,678.0!");
+}
+"#;
+    assert_rustc_runs("fstr_float_grouping_default_repr", &rust, driver);
 }
 
 /// PMAT-941 (correctness-hunt): the SCIENTIFIC-NOTATION spec `:e` / `:E` and
