@@ -8,7 +8,7 @@ github_repo: paiml/xpile
 # design sessions. The slice entries under `roadmap:` are the means; THIS is
 # the end. Do not let the ledger's idiom-coverage proxy eclipse these.
 strategic_goals:
-  updated: '2026-06-25 (PMAT-985 refresh: pillar statuses advanced through PMAT-949..984)'
+  updated: '2026-06-25 (PMAT-991: adversarial re-verify — PTX lane sound on silicon; WGSL/SPIR-V/bashrs/WASM hollowness found by the PMAT-987..990 fix wave; witness-integrity claim corrected)'
   north_star: >-
     Provable polyglot transpilation: every construct, in every source AND target
     language, carried by a machine-checked contract. This — not idiom coverage —
@@ -188,6 +188,24 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-991
+  github_issue: null
+  item_type: task
+  title: 'PMAT-991: [verify/§29] Independent adversarial RE-VERIFICATION of the PMAT-949..984 witness batch — PTX lane SOUND on real silicon; WGSL/SPIR-V/bashrs/WASM lanes had REAL hollowness a witness-scoped skeptic MISSED. The EV-rank-1 discipline (forward_ev_ranking rank 1 + memory feedback-ultracode-adversarial-verify). Ran 3 read-only skeptic agents to REFUTE the batch''s claims AND re-ran the witnesses on hardware rather than trusting prior runs OR the skeptics. RESULT, honest: (1) PTX lane genuinely sound — re-executed all 4 PTX witnesses on the local RTX 4090 (sm_89), each a real DiffExecResult::Match max_abs_diff=0 (gpu_witness/anti_correlation/array_anti_correlation/array_compose); cargo test --workspace exit 0; lake build exit 0 (zero sorry/axiom); and 3 PTX skeptic over-claims (gpu_witness "two toolchains"; f64/f32 "type mismatch"; "bit-for-bit vs 1e-3 contradiction") were themselves refuted. (2) BUT the CONCURRENT adversarial-fix wave (PMAT-987..990) found REAL hollowness in adjacent code paths THIS run''s witness-scoped skeptic MISSED: PMAT-987 production WgslBackend emitted a `// TODO: lower to WGSL.` scaffold (not WGSL); PMAT-988 SpirvDiffExecEngine runs hardcoded constants not the attested text; PMAT-989 bashrs silently shreds control-flow into barewords; PMAT-990 WASM witness re-checked. METHODOLOGICAL CORRECTION (the load-bearing lesson): a skeptic scoped to the witness EMIT-side ("does the test call emit_wgsl_module?") gives false-negatives — it misses the production Backend::lower/`xpile transpile` path AND the engine execute-vs-attest gap. "A real emit fn exists" != "the production backend uses it" != "the engine executes the attested text". Recorded in audit-design.md §7.4 (corrects the over-broad Pillar-C "witness-integrity hole closed" framing). Docs-only (audit-design.md + roadmap.yaml).'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "EV-RANK-1 DISCIPLINE (forward_ev_ranking rank 1 = adversarial-verify): the ~5-8-slice skeptic pass over the banked PMAT-949..984 witness batch, executed AND its findings independently checked (verify the verifier — do not trust agent self-reports, per memory feedback-ultracode-adversarial-verify). The honest output of a mixed clean+dirty verify is the CORRECTED record, not an 'all sound' rubber-stamp."
+  - "PTX LANE SOUND (re-execution, not assertion): all four PTX witness binaries re-run on the local RTX 4090 sm_89 → real DiffExecResult::Match, max_abs_diff=0 (saxpy, if-branch relu, xs[i] array, clamp composition); cargo test --workspace exit 0; lake build exit 0. Three PTX skeptic over-claims refuted: gpu_witness 'two toolchains' is honestly scoped in-file (PMAT-949 two-CUDA-C; PMAT-961 upgrades to xpile-vs-nvcc); the f64/f32 split is deliberate dual-precision (exactly-representable fixture → genuine max_abs_diff=0); the 'bit-for-bit vs <=1e-3' pairing is a correct comment + conservative slack."
+  - "WGSL/SPIR-V/bashrs/WASM HOLLOWNESS (found by the concurrent PMAT-987..990 wave, MISSED by this run's witness-scoped skeptic): PMAT-987 production WgslBackend scaffold-comment (not WGSL); PMAT-988 SpirvDiffExecEngine runs hardcoded constants not attested text; PMAT-989 bashrs silent control-flow shred; PMAT-990 WASM re-check. The methodological lesson: scope skeptics to the PRODUCTION Backend::lower/CLI path and the engine's EXECUTED bytes, not the emit/attest functions."
+  - "RECORDED: audit-design.md §7.4 falsifier-status bullet documents the PTX-sound / four-lanes-hollow split + the methodological correction, and CORRECTS the over-broad Pillar-C 'all §29 witnesses Run≥1, witness-integrity hole closed' framing to: PTX re-confirmed on silicon; WGSL/SPIR-V/WASM/bashrs in active repair."
+  - "DONE: docs-only (audit-design.md + roadmap.yaml); merged origin/main into the branch (no force-push), renumbered PMAT-987→PMAT-991 after the concurrent wave grabbed 987-990; cargo fmt --all -- --check clean; pv lint contracts/ 0 errors; YAML re-parses; quorum/attestation roadmap-scan tests green. Sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Method: 3 read-only skeptic agents (PTX / WASM-WGSL-SPIRV / correctness) tasked to REFUTE + first-party RE-EXECUTION of the PTX witnesses on real sm_89 silicon + cargo test --workspace + lake build. Key humility find: my WASM/WGSL/SPIRV skeptic reported "all sound" but the concurrent PMAT-987..990 fix wave found 4 real hollow spots in adjacent production/engine paths the skeptic did not inspect — a witness-emit-scoped skeptic gives false-negatives. PTX lane (which I re-ran on silicon) is the only lane this run can attest sound. Complements the wave (which did NOT cover PTX); the contrast IS the deliverable.'
 - id: PMAT-987
   github_issue: null
   item_type: task
