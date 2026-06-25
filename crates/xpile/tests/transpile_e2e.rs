@@ -328,6 +328,59 @@ fn main() {
     assert_rustc_runs("c_if", &rust, driver);
 }
 
+/// PMAT-964: C bitwise + shift operators (`& | ^ ~ << >>`) over the decy
+/// C→Rust path. Integer-only and ABI-honest — they ride the existing `i32`
+/// width (no new ABI token) and are governed by the existing
+/// `C-C-INT-ARITH` integer-semantics contract (citation-honest). Bitwise
+/// `& | ^` lower to fully-parenthesized Rust infix (the parens pin C
+/// precedence); shift `<< >>` lower to `wrapping_shl`/`wrapping_shr` (UB-free,
+/// the defined replacement for C's out-of-range-shift UB); unary `~` lowers
+/// to Rust `!` (one's complement). Every value below is the `/usr/bin/cc`
+/// reference for the same expression.
+#[test]
+fn c_bitwise_and_shift_roundtrip() {
+    let rust = xpile_transpile_to_rust("c_bitwise.c");
+    assert!(
+        rust.contains("(a & b)") && rust.contains("(a | b)") && rust.contains("(a ^ b)"),
+        "C bitwise `& | ^` should emit parenthesized Rust infix:\n{rust}"
+    );
+    assert!(
+        rust.contains("wrapping_shl") && rust.contains("wrapping_shr"),
+        "C shift `<< >>` should emit UB-free wrapping_shl/wrapping_shr:\n{rust}"
+    );
+    assert!(
+        rust.contains("(n) as u32") && rust.contains("(k) as u32"),
+        "the shift amount should be cast to u32 (std signature):\n{rust}"
+    );
+    assert!(
+        rust.contains("!(x)"),
+        "C unary `~` should emit Rust `!` (one's complement):\n{rust}"
+    );
+    assert!(
+        rust.contains("C-C-INT-ARITH") && !rust.contains("checked_") && !rust.contains("i64"),
+        "C bitwise/shift must cite C-C-INT-ARITH and stay on the i32 wrapping path:\n{rust}"
+    );
+    // Each expected value is the /usr/bin/cc reference for the same call.
+    let driver = r#"
+fn main() {
+    assert_eq!(band(12, 10), 8);
+    assert_eq!(bor(12, 10), 14);
+    assert_eq!(bxor(12, 10), 6);
+    assert_eq!(bnot(0), -1);
+    assert_eq!(bnot(5), -6);
+    assert_eq!(shl(1, 4), 16);
+    assert_eq!(shl(3, 3), 24);
+    assert_eq!(shr(256, 4), 16);
+    // arithmetic (sign-extending) right shift — matches C `>>` on signed int
+    assert_eq!(shr(-256, 4), -16);
+    assert_eq!(mix(100, 60), 64);
+    assert_eq!(setbit(0, 3), 8);
+    assert_eq!(setbit(1, 3), 8);
+}
+"#;
+    assert_rustc_runs("c_bitwise", &rust, driver);
+}
+
 /// PMAT-477 (R8): Python `float` (f64). Float arithmetic is plain infix
 /// (IEEE-754, no `checked_*`); `/` is true division (not floor).
 #[test]

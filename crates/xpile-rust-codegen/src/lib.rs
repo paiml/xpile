@@ -4873,6 +4873,41 @@ fn emit_c_binop(
         emit_c_expr(out, rhs, w)?;
         Ok(())
     };
+    // PMAT-964: a FULLY-parenthesized infix `(lhs OP rhs)` for the C bitwise
+    // operators — the parens pin the C-intended grouping so Rust's different
+    // native bitwise/comparison precedence cannot regroup the (correct)
+    // precedence-climbed tree the decy parser built.
+    let paren_infix = |out: &mut String,
+                       lhs: &Expr,
+                       sym: &str,
+                       rhs: &Expr,
+                       w: CWidth|
+     -> Result<(), CodegenError> {
+        write!(out, "(")?;
+        emit_c_expr(out, lhs, w)?;
+        write!(out, " {sym} ")?;
+        emit_c_expr(out, rhs, w)?;
+        write!(out, ")")?;
+        Ok(())
+    };
+    // PMAT-964: a C shift `(lhs).wrapping_shl((rhs) as u32)` — `wrapping_shl`/
+    // `wrapping_shr` mask the shift distance to the operand bit width, so the
+    // result is TOTAL and UB-free (C's out-of-range/negative shift is UB; this
+    // is the defined replacement the C-C-INT-ARITH contract commits to). The
+    // std signature takes the shift amount as `u32`, hence the `as u32` cast.
+    let wrapping_shift = |out: &mut String,
+                          lhs: &Expr,
+                          method: &str,
+                          rhs: &Expr,
+                          w: CWidth|
+     -> Result<(), CodegenError> {
+        write!(out, "(")?;
+        emit_c_expr(out, lhs, w)?;
+        write!(out, ").{method}((")?;
+        emit_c_expr(out, rhs, w)?;
+        write!(out, ") as u32)")?;
+        Ok(())
+    };
     match op {
         // PMAT-910: on the `double` width, C arithmetic is plain IEEE
         // infix (`+ - * /`) — f64 has no `wrapping_*` and never wraps. C
@@ -4901,10 +4936,41 @@ fn emit_c_binop(
         BinOp::GtEq => infix(out, ">=")?,
         BinOp::And => infix(out, "&&")?,
         BinOp::Or => infix(out, "||")?,
+        // PMAT-964: C bitwise `& | ^` are integer-only — invalid on a float
+        // operand (a C type error). Refuse on the float widths rather than
+        // mis-emit. On the integer widths they are TOTAL (no overflow), so a
+        // fully-PARENTHESIZED Rust infix `(lhs OP rhs)` is exact and survives
+        // Rust's different native bitwise precedence intact. Governed by the
+        // existing C-C-INT-ARITH integer-semantics contract (no new token).
+        BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor if w.is_float => {
+            return Err(CodegenError::Unsupported(format!(
+                "C bitwise operator BinOp::{op:?} is not valid on the float width \
+                 `{}` (bitwise ops require an integer operand in C)",
+                w.rust_ty
+            )));
+        }
+        BinOp::BitAnd => paren_infix(out, lhs, "&", rhs, w)?,
+        BinOp::BitOr => paren_infix(out, lhs, "|", rhs, w)?,
+        BinOp::BitXor => paren_infix(out, lhs, "^", rhs, w)?,
+        // PMAT-964: C shift `<< >>`. C leaves out-of-range / negative shift
+        // amounts UNDEFINED; per the C-C-INT-ARITH commitment to REPLACE UB
+        // with defined behavior, xpile lowers to Rust `wrapping_shl` /
+        // `wrapping_shr` — total (the shift distance is masked to the operand
+        // width), UB-free, never panicking, mirroring how `+`/`-`/`*` lower to
+        // `wrapping_*`. The shift amount is cast `as u32` (the std signature).
+        BinOp::Shl | BinOp::Shr if w.is_float => {
+            return Err(CodegenError::Unsupported(format!(
+                "C shift operator BinOp::{op:?} is not valid on the float width \
+                 `{}` (shift requires an integer operand in C)",
+                w.rust_ty
+            )));
+        }
+        BinOp::Shl => wrapping_shift(out, lhs, "wrapping_shl", rhs, w)?,
+        BinOp::Shr => wrapping_shift(out, lhs, "wrapping_shr", rhs, w)?,
         other => {
             return Err(CodegenError::Unsupported(format!(
-                "C backend slice 1 does not lower BinOp::{other:?} — `/`, `%`, bitwise, \
-                 shift, and power are deferred to a later decy slice"
+                "C backend slice 1 does not lower BinOp::{other:?} — power is \
+                 deferred to a later decy slice"
             )));
         }
     }
