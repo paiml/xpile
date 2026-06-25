@@ -15238,6 +15238,61 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
 /// producing the `Expr::FormatSpec` (or the percent-special). Shared by
 /// f-string fields (`f"{x:spec}"`) and the standalone `format(x, "spec")`
 /// builtin — the spec mini-language is identical.
+/// PMAT-969 (correctness-hunt): peel an optional Python `[fill][align][width]`
+/// prefix off the FRONT of a float-presentation spec, returning the verbatim
+/// Rust fill+align+width prefix (`{prefix}{width}`, identical syntax to Python's)
+/// and the remaining CORE spec (the `[.precision]<type>` tail). Used to lift a
+/// width-combined scientific (`:12.2e`, `:>12e`, ` ^14.3e`) or general (`:12g`)
+/// spec onto the existing `FloatSciStr`/`FloatGeneralStr` render-then-pad path:
+/// the value is rendered to its Python string first, then padded by the prefix
+/// (char-count, default `>` right-align for a numeric value — Python's rule).
+///
+/// Grammar peeled (mirrors PMAT-943's float repr-string padding):
+///   `[fill][<>^][width]<core>` | `[<>^][width]<core>` | `[width]<core>`
+/// `fill` is any char FOLLOWED by an alignment marker (Python's fill rule). The
+/// `width` is a pure ASCII-digit run. Returns `Some((prefix, core))` only when a
+/// width OR an explicit alignment is present (i.e. there is something to pad);
+/// `None` means the whole spec is the bare core (no padding) — the caller's
+/// existing un-padded branch handles it. A `0`-leading width (`:08.2e`, implicit
+/// zero-pad of a SIGNED numeric — Python pads AFTER the sign) is NOT peeled here
+/// (returns `None`), keeping the same honest-refusal scoping as PMAT-946's
+/// implicit-zeropad reject.
+fn peel_float_pad_prefix(spec: &str) -> Option<(String, String)> {
+    let chars: Vec<char> = spec.chars().collect();
+    // Peel an optional [fill][align] or [align] prefix (Python: a char is a fill
+    // when followed by an alignment marker).
+    let (align_prefix, rest): (&[char], &[char]) =
+        if chars.len() >= 2 && matches!(chars[1], '<' | '>' | '^') {
+            (&chars[..2], &chars[2..]) // [fill][align]
+        } else if matches!(chars.first(), Some('<' | '>' | '^')) {
+            (&chars[..1], &chars[1..]) // [align]
+        } else {
+            (&[][..], &chars[..])
+        };
+    // Peel a leading pure-digit width run off `rest`.
+    let width_len = rest.iter().take_while(|c| c.is_ascii_digit()).count();
+    let width: String = rest[..width_len].iter().collect();
+    let core: String = rest[width_len..].iter().collect();
+    // An implicit zero-pad width (`08…`) is NOT supported here — Python zero-pads
+    // a numeric AFTER the sign, which a string-pad can't reproduce; reject (return
+    // None so the spec stays unrecognized) rather than mis-emit. Same honest
+    // scoping as PMAT-946.
+    if width.starts_with('0') {
+        return None;
+    }
+    // Only pad when there is an explicit alignment OR a width to fill; otherwise
+    // the spec is the bare core (handled by the caller's un-padded branch).
+    if align_prefix.is_empty() && width.is_empty() {
+        return None;
+    }
+    let prefix: String = if align_prefix.is_empty() {
+        ">".to_string() // numeric default: right-align (Rust strings default left)
+    } else {
+        align_prefix.iter().collect()
+    };
+    Some((format!("{prefix}{width}"), core))
+}
+
 fn apply_nonempty_format_spec(
     ctx: &LoweringCtx,
     value: Expr,
@@ -15605,12 +15660,32 @@ fn apply_nonempty_format_spec(
     // exponent (`e3` — no sign, no 2-digit-min zero-pad) and lowercases inf/nan
     // even under `{:E}`, so route to `FloatSciStr`: codegen renders then fixes up
     // the exponent to Python's `e±NN` form and case-folds the non-finite tail.
-    // `:g`/`:G` general-float, width-combined `:12.2e`, and a sign-forcing `:+e`
-    // stay documented rejects (follow-ups, same scoping as PMAT-939/940/613).
+    // A sign-forcing `:+e` stays a documented reject (follow-up).
+    //
+    // PMAT-969 (correctness-hunt): the WIDTH/ALIGN-combined scientific spec that
+    // PMAT-941 scoped out — `f"{1234.5:12.2e}"` == "    1.23e+03",
+    // `f"{1234.5:>12e}"`, `f"{x:<14.3E}"`, `f"{x: ^14.3e}"`, `f"{x:0>12.2e}"`. The
+    // `e`/`E` value is rendered to its Python string by FloatSciStr exactly as
+    // before; this slice pads THAT rendered string by peeling an optional
+    // `[fill][align][width]` prefix and routing the FloatSciStr through a
+    // `FormatSpec` carrying the verbatim prefix (Rust's string fill/align is
+    // char-count-based and shares Python's even-pad center split, so it reproduces
+    // Python byte-for-byte; an `e` mantissa/exponent is pure ASCII). NO new IR
+    // node — reuses FloatSciStr + FormatSpec, so every codegen lane is untouched.
+    // Default `>` right-align (a numeric value); implicit `:08.2e` zero-pad +
+    // sign-forcing `:+e` stay clean rejects (honest refusal, deferred), same
+    // scoping as PMAT-946. vs python3.
     if ty == Type::F64 {
-        let upper = spec.ends_with('E');
-        if upper || spec.ends_with('e') {
-            let prec_part = &spec[..spec.len() - 1];
+        // Peel an optional [fill][align][width] pad prefix; `core` is the bare
+        // `[.precision]<e|E>` tail (PMAT-941's original spec).
+        let (pad, core): (Option<String>, String) = match peel_float_pad_prefix(spec) {
+            Some((prefix, core)) => (Some(prefix), core),
+            None => (None, spec.to_string()),
+        };
+        let core = core.as_str();
+        let upper = core.ends_with('E');
+        if (upper || core.ends_with('e')) && !core.is_empty() {
+            let prec_part = &core[..core.len() - 1];
             let precision = if prec_part.is_empty() {
                 // Bare `e`/`E` -> Python's default scientific precision of 6.
                 Some(6u32)
@@ -15622,10 +15697,20 @@ fn apply_nonempty_format_spec(
                 None
             };
             if let Some(precision) = precision {
-                return Ok(Expr::FloatSciStr {
+                let rendered = Expr::FloatSciStr {
                     value: Box::new(value),
                     precision,
                     upper,
+                };
+                return Ok(match pad {
+                    // value is the rendered repr STRING (no `.is_nan()`); the spec
+                    // is a fill/align/width, never `.<digit>` — NaN guard off.
+                    Some(rust_spec) => Expr::FormatSpec {
+                        value: Box::new(rendered),
+                        rust_spec,
+                        of_float: false,
+                    },
+                    None => rendered,
                 });
             }
         }
@@ -15639,12 +15724,27 @@ fn apply_nonempty_format_spec(
     // last-char-in-`eEfFgG%` test), so `f"{5:g}"` -> "5" lands here too. Rust's
     // `format!` has no `%g`, so route to `FloatGeneralStr` (codegen ports the
     // algorithm). Bare `g`/`G` defaults to precision 6; `:.Ng` clamps to ≥1 in
-    // codegen. Width-combined (`:12g`) and the `#g` alt flag stay documented
-    // rejects (follow-ups, same scoping as PMAT-939/940/941). vs python3.
+    // codegen. The `#g` alt flag stays a documented reject (follow-up).
+    //
+    // PMAT-969 (correctness-hunt): the WIDTH/ALIGN-combined general spec that
+    // PMAT-965 scoped out — `f"{1234.5:12g}"` == "      1234.5",
+    // `f"{big:14g}"` == "   1.23457e+08", `f"{x:>12g}"`, `f"{x:<12g}"`, `f"{x:^14.3g}"`,
+    // `f"{x:0>12g}"`. The `g`/`G` value is rendered to its Python `%g` string by
+    // FloatGeneralStr exactly as before; this slice pads THAT rendered string by
+    // peeling an optional `[fill][align][width]` prefix and routing FloatGeneralStr
+    // through a `FormatSpec` (verbatim prefix). NO new IR node — reuses
+    // FloatGeneralStr + FormatSpec; default `>` right-align; implicit `:08g`
+    // zero-pad stays a clean reject (honest refusal), same scoping as PMAT-946. vs
+    // python3.
     if ty == Type::F64 {
-        let upper = spec.ends_with('G');
-        if upper || spec.ends_with('g') {
-            let prec_part = &spec[..spec.len() - 1];
+        let (pad, core): (Option<String>, String) = match peel_float_pad_prefix(spec) {
+            Some((prefix, core)) => (Some(prefix), core),
+            None => (None, spec.to_string()),
+        };
+        let core = core.as_str();
+        let upper = core.ends_with('G');
+        if (upper || core.ends_with('g')) && !core.is_empty() {
+            let prec_part = &core[..core.len() - 1];
             let precision = if prec_part.is_empty() {
                 // Bare `g`/`G` -> Python's default precision of 6.
                 Some(6u32)
@@ -15656,10 +15756,18 @@ fn apply_nonempty_format_spec(
                 None
             };
             if let Some(precision) = precision {
-                return Ok(Expr::FloatGeneralStr {
+                let rendered = Expr::FloatGeneralStr {
                     value: Box::new(value),
                     precision,
                     upper,
+                };
+                return Ok(match pad {
+                    Some(rust_spec) => Expr::FormatSpec {
+                        value: Box::new(rendered),
+                        rust_spec,
+                        of_float: false,
+                    },
+                    None => rendered,
                 });
             }
         }
