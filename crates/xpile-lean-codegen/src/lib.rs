@@ -556,7 +556,8 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         Expr::IntRadixStr { value, .. }
         | Expr::IntGroupedStr { value, .. }
         | Expr::FloatGroupedStr { value, .. }
-        | Expr::FloatSciStr { value, .. } => collect_idents(value, out),
+        | Expr::FloatSciStr { value, .. }
+        | Expr::SpaceSignStr { value, .. } => collect_idents(value, out),
         // PMAT-502da: int(s, base) — recurse into the value expr.
         Expr::IntFromStrRadix { value, .. } => collect_idents(value, out),
         // PMAT-492: string method — recurse into the receiver + args.
@@ -1469,6 +1470,14 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::FloatSciStr { .. } => {
             return Err(LeanCodegenError::Unsupported(
                 "Python scientific-float `f\"{x:e}\"` / `f\"{x:.2E}\"` is not yet supported in \
+                 the Lean lane — use `--target rust` or `--target ruchy`"
+                    .to_string(),
+            ));
+        }
+        // PMAT-942: space-sign numeric f-string field deferred in the Lean lane.
+        Expr::SpaceSignStr { .. } => {
+            return Err(LeanCodegenError::Unsupported(
+                "Python space-sign `f\"{x: d}\"` / `f\"{x: .2f}\"` is not yet supported in \
                  the Lean lane — use `--target rust` or `--target ruchy`"
                     .to_string(),
             ));

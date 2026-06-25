@@ -11500,6 +11500,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-942
+  github_issue: null
+  item_type: task
+  title: 'PMAT-942: [correctness-hunt] f-string SPACE sign flag ` ` on a numeric field — `f"{5: d}"` -> " 5", `f"{-5: d}"` -> "-5", `f"{3.14: .2f}"` -> " 3.14", and width/zero-pad combos `f"{5: 05d}"` -> " 0005", `f"{42: 6.1f}"` -> "  42.0"; was a clean reject. Python''s ` ` sign puts a leading SPACE before a non-negative magnitude and `-` before a negative one; Rust''s `format!` has NO space-sign flag, but its `+` flag composes with width/zero-pad/precision IDENTICALLY and only a non-negative carries a leading `+`. NEW `Expr::SpaceSignStr { value, rust_spec }` renders with the `+` spec then swaps the rendered leading `+` for a space (a no-op for negatives, which carry `-`).'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (PMAT-900..941 all merged, sprint window 2026-06-23..07-02 still open). Continues prompt path c — the python3-vs-rustc differential correctness-hunt. Two fresh ~70-probe differential sweeps (post-v0.1.601) over integer/string/list/dict/comprehension/aug-assign/builtin territory found xpile already matches CPython byte-for-byte on every supported shape (135/135) — a genuinely mature corpus, ZERO silent divergences in the swept space. The only surviving gaps were clean REJECTs of unsupported f-string specs; picked the SPACE sign flag ` ` — a common numeric-column-alignment feature explicitly named deferred in PMAT-557 (\"a space flag (` `) has no Rust equivalent → fall through to a reject\")."
+  - "ROOT CAUSE: PMAT-557 mapped Python's `+` sign 1:1 to Rust's `+` flag and dropped `-` (the shared default), but a SPACE sign (` d`, ` `, ` .2f`, ` 05d`) had no Rust `format!` equivalent and fell through to the catch-all `unsupported format spec` reject. Python's ` ` puts a leading SPACE before a non-negative magnitude and `-` before a negative one (a `+` that prints a space when positive)."
+  - "FIX: KEY INSIGHT — Rust's `+` flag composes with width / zero-pad / precision IDENTICALLY to Python's ` `, and a non-negative `+`-formatted value carries exactly ONE leading `+` while a negative carries `-` (never `+`). So (1) new `Expr::SpaceSignStr { value: Box<Expr>, rust_spec: String }` in xpile-meta-hir (Str-typed; all traversal/escape/ident arms recurse into `value`); (2) the frontend `apply_nonempty_format_spec` strips a leading ` ` that is NOT a fill char (next char is not an align marker `<>^=` — `f\"{5: >8}\"` stays the PMAT-658 space-FILL path), substitutes `+` for the ` `, and reuses `translate_format_spec` to build the composed Rust spec (`+`, `+.2`, `+05`, `+8.2`); a bare ` ` on a float yields None (whole-float-repr, like bare `+`) and falls to a reject, and any translation that kept a radix char is rejected (radix-space sign-magnitude deferred); a bool reaches here coerced to i64, an int with a float-presentation spec coerced to f64 (PMAT-693); (3) rust-codegen + ruchy-codegen emit `format!(\"{:<rust_spec>}\", value).replacen('+', \" \", 1)` — the swap is a no-op for negatives; (4) Lean lane refuses with a pointer (like `FloatSciStr`). SCOPE: decimal int / fixed-point float only — radix-with-space, fill+align-with-space-sign, and bare-space-on-float stay documented rejects (follow-ups, same scoping discipline as PMAT-557/613/941)."
+  - "REGRESSION GUARDS: e2e test `fstr_space_sign` in transpile_e2e.rs (asserts the `+`-spec render + `.replacen('+', \" \", 1)` swap for bare/`.2f`/`05d`/`8.2f` forms, then rustc-runs the binary against 26 hand-checked CPython values incl. negatives, zero, width, zero-pad, float precision, int→float coercion, bool, labeled); oracle fixture `fstring_space_sign.py` (the differential oracle compiles+runs it and asserts byte-identical CPython-vs-rustc stdout — `oracle_differential_python_vs_rust` PASS); fixture `fstr_space_sign.py`. Manually cross-checked the transpiled binary vs python3 on 12 multi-case fixtures (24+ probes) — all byte-identical; the space-FILL path `f\"{5: >8}\"` still works, and radix-space / bare-space-float still reject as intended. NOTE: the sweep also surfaced a SEPARATE pre-existing silent divergence — fill+align on a WHOLE float drops the `.0` (`f\"{3.0: >7}\"` -> rustc \"      3\" vs CPython \"    3.0\") — filed as the next correctness slice (PMAT-943), NOT touched here."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, `cargo test -p xpile --test transpile_e2e fstr_space_sign`, `cargo test -p xpile --test oracle_differential`, codegen+frontend+meta-hir crate tests. Backlog correctness slice, sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-131
   github_issue: null
   item_type: task

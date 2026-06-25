@@ -1590,6 +1590,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             )?;
             write!(out, "None => __s.{fold}() }} }}")?;
         }
+        // PMAT-942 (correctness-hunt): the SPACE sign flag `f"{5: d}"` / `f"{x: .2f}"`
+        // (see the rust backend). Render with the `+` spec (which composes width/
+        // precision like Python) and swap the leading `+` for a space — a no-op for
+        // negatives, which carry `-` not `+`.
+        Expr::SpaceSignStr { value, rust_spec } => {
+            write!(out, "format!(\"{{:{rust_spec}}}\", ")?;
+            emit_expr(out, value, mode)?;
+            out.push_str(").replacen('+', \" \", 1)");
+        }
         // PMAT-502da: `int(s, base)`. PMAT-655: accept a base-matching radix
         // prefix (0x/0o/0b) + PEP-515 underscores (see the rust backend).
         Expr::IntFromStrRadix { value, radix } => {

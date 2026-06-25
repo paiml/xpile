@@ -14996,6 +14996,64 @@ fn main() {
     assert_rustc_runs("fstr_scientific", &rust, driver);
 }
 
+/// PMAT-942 (correctness-hunt): the SPACE sign flag ` ` on a numeric f-string
+/// field — `f"{5: d}"` == `" 5"`, `f"{-5: d}"` == `"-5"`, `f"{3.14: .2f}"` ==
+/// `" 3.14"`, and width/zero-pad combos `f"{5: 05d}"` == `" 0005"` — was a clean
+/// reject ("unsupported format spec `: d`"). Python's ` ` sign puts a leading
+/// SPACE before a non-negative magnitude and a `-` before a negative one; Rust's
+/// `format!` has NO space-sign flag. But Rust's `+` flag composes with width /
+/// zero-pad / precision IDENTICALLY, and a non-negative `+`-formatted value
+/// carries exactly one leading `+` (a negative carries `-`, never `+`), so the
+/// spec routes to the new `SpaceSignStr` node: render with the `+` spec, then
+/// swap the rendered leading `+` for a space (a no-op for negatives). A leading
+/// space that is a FILL (`f"{5: >8}"`, next char is an align marker) is NOT a
+/// sign and stays on the existing fill+align path. A 12-fixture parity battery
+/// confirmed byte-identity to CPython. Cross-checked vs python3.
+#[test]
+fn fstr_space_sign() {
+    let rust = xpile_transpile_to_rust("fstr_space_sign.py");
+    assert!(
+        // render with the `+` spec then swap the leading `+` for a space.
+        rust.contains(".replacen('+', \" \", 1)")
+            && rust.contains("format!(\"{:+}\", ")
+            && rust.contains("format!(\"{:+.2}\", ")
+            && rust.contains("format!(\"{:+05}\", ")
+            && rust.contains("format!(\"{:+8.2}\", "),
+        "space-sign must emit the `+`-spec render + leading-`+`-to-space swap:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(ss_d(5), " 5");
+    assert_eq!(ss_d(-5), "-5");
+    assert_eq!(ss_d(0), " 0");
+    assert_eq!(ss_d(123), " 123");
+    assert_eq!(ss_bare(7), " 7");
+    assert_eq!(ss_bare(-7), "-7");
+    assert_eq!(ss_f2(3.14), " 3.14");
+    assert_eq!(ss_f2(-3.14), "-3.14");
+    assert_eq!(ss_f2(0.0), " 0.00");
+    assert_eq!(ss_int_f(5), " 5.0");
+    assert_eq!(ss_int_f(-5), "-5.0");
+    assert_eq!(ss_width(5), "    5");
+    assert_eq!(ss_width(-5), "   -5");
+    assert_eq!(ss_width(42), "   42");
+    assert_eq!(ss_zeropad(5), " 0005");
+    assert_eq!(ss_zeropad(-5), "-0005");
+    assert_eq!(ss_zeropad(7), " 0007");
+    assert_eq!(ss_fwidth(3.14159), "    3.14");
+    assert_eq!(ss_fwidth(-3.14159), "   -3.14");
+    assert_eq!(ss_fwidth(42.0), "   42.00");
+    assert_eq!(ss_fzeropad(3.14), " 0003.14");
+    assert_eq!(ss_fzeropad(-3.14), "-0003.14");
+    assert_eq!(ss_bool(true), " 1");
+    assert_eq!(ss_bool(false), " 0");
+    assert_eq!(labeled(7), "v= 7!");
+    assert_eq!(labeled(-3), "v=-3!");
+}
+"#;
+    assert_rustc_runs("fstr_space_sign", &rust, driver);
+}
+
 /// PMAT-801 (HUNT-V19 STR-IDX-OOB): a string index out of range panicked with
 /// Rust's raw "index out of bounds" message, not the tagged `xpile: IndexError:`,
 /// so under the allowlist except a typed `except IndexError` couldn't catch it
