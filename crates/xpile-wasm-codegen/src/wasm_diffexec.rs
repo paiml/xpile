@@ -210,7 +210,12 @@ impl WasmDiffExecEngine {
     /// Assemble `wat_src` into `name.wasm`, execute every export with
     /// `wasm-interp --run-all-exports`, and parse the printed `f64`
     /// vector (one value per exported `e0`..`eN`, in export order).
-    fn assemble_run_parse(&self, wat_src: &str, name: &str) -> Result<Vec<f64>, String> {
+    ///
+    /// `pub(crate)` so an in-crate executed witness (e.g. the PMAT-978
+    /// list-write witness in `tests`) can reuse the exact same WABT
+    /// assemble+run+parse path the DiffExec engine uses — keeping the WABT
+    /// invocation single-sourced.
+    pub(crate) fn assemble_run_parse(&self, wat_src: &str, name: &str) -> Result<Vec<f64>, String> {
         std::fs::create_dir_all(&self.work_dir).map_err(|e| format!("create work dir: {e}"))?;
         let wat_path = self.work_dir.join(format!("{name}.wat"));
         let wasm_path = self.work_dir.join(format!("{name}.wasm"));
