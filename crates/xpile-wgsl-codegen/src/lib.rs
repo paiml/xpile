@@ -7,10 +7,19 @@
 //! **Architecture (PMAT-265 / Section 29):** [`WgslBackend`] wraps a
 //! [`MultiEmitterBackend`] (same pattern as [`xpile_ptx_codegen::PtxBackend`])
 //! so emission routes through the general/specialist quorum framework.
-//! At v0.1.0 the wrapper holds a single [`ScaffoldWgslEmitter`] in the
-//! general slot. When a real WGSL emitter (e.g. `naga` round-trip or
-//! `rust-gpu` SPIR-V→WGSL) ships, it slots into `general`; an aprender
-//! `aprender-webgpu` could slot into `specialist`.
+//! The general slot holds [`RealWgslEmitter`] — the production emitter that
+//! drives xpile's REAL meta-HIR → WGSL lowering ([`emit_wgsl_module`],
+//! PMAT-970) so `xpile transpile --target wgsl` produces actual WGSL, with
+//! an honest [`BackendError::Lower`] refusal for any construct outside the
+//! scalar/control + storage-buffer subset (never a scaffold comment, never
+//! a silent wrong emit). An aprender `aprender-webgpu` could slot into
+//! `specialist`.
+//!
+//! **PMAT-987:** before this slice the general slot held a
+//! `ScaffoldWgslEmitter` whose body was `// TODO: lower to WGSL.`, so the
+//! production path emitted a placeholder comment even though the real
+//! [`emit_wgsl_module`] lowering already existed — only tests called it.
+//! This slice wires the real lowering into production.
 
 use xpile_backend::{
     Artifact, Backend, BackendConfig, BackendError, EmittedText, HwProfile, MultiEmitterBackend,
@@ -28,9 +37,10 @@ pub use wgpu_diffexec::{
 mod wgsl_emit;
 pub use wgsl_emit::{emit_wgsl_module, naga_validate_wgsl, NagaValidationError};
 
-/// WGSL backend — `Backend` impl wrapping a [`MultiEmitterBackend`] so
-/// the v0.1.0 scaffold drives through the same routing the future
-/// real-emitter + specialist quorum will use.
+/// WGSL backend — `Backend` impl wrapping a [`MultiEmitterBackend`] whose
+/// general slot is the production [`RealWgslEmitter`] (drives the real
+/// [`emit_wgsl_module`] lowering); routes through the same quorum framework
+/// a future specialist would slot into.
 pub struct WgslBackend {
     inner: MultiEmitterBackend,
 }
@@ -44,7 +54,7 @@ impl Default for WgslBackend {
 impl WgslBackend {
     pub fn new() -> Self {
         Self {
-            inner: MultiEmitterBackend::new_single(Target::Wgsl, Box::new(ScaffoldWgslEmitter)),
+            inner: MultiEmitterBackend::new_single(Target::Wgsl, Box::new(RealWgslEmitter)),
         }
     }
 
@@ -106,14 +116,21 @@ impl Backend for WgslBackend {
     }
 }
 
-/// Scaffold emitter — produces the placeholder WGSL text current users
-/// see at v0.1.0. Will be replaced by a real emitter in a future
-/// Section 29 phase.
-struct ScaffoldWgslEmitter;
+/// Production WGSL emitter — drives xpile's REAL meta-HIR → WGSL lowering
+/// (PMAT-970, [`emit_wgsl_module`]) for the scalar/control + storage-buffer
+/// subset. This is the general slot of the production [`WgslBackend`], so
+/// `xpile transpile --target wgsl` produces actual WGSL.
+///
+/// **PMAT-987:** replaces the old `ScaffoldWgslEmitter`, whose body was a
+/// `// TODO: lower to WGSL.` placeholder comment. A construct outside the
+/// supported subset (str/dict/f64/struct/enum/non-function item/…) is an
+/// honest [`BackendError::Lower`] refusal surfaced from `emit_wgsl_module`
+/// — never a scaffold comment and never a silently-wrong emit.
+struct RealWgslEmitter;
 
-impl TargetEmitter for ScaffoldWgslEmitter {
+impl TargetEmitter for RealWgslEmitter {
     fn name(&self) -> &str {
-        "xpile-wgsl-codegen-scaffold"
+        "xpile-wgsl-codegen"
     }
 
     fn try_emit(
@@ -121,18 +138,23 @@ impl TargetEmitter for ScaffoldWgslEmitter {
         module: &Module,
         config: &BackendConfig,
     ) -> Option<Result<EmittedText, BackendError>> {
-        let features = match &config.hardware {
-            Some(HwProfile::Wgsl { features }) => features.clone(),
-            None => Vec::new(),
+        // Hardware shape: WGSL accepts `None` or a `Wgsl` profile; anything
+        // else is a configuration fault (the wrapper's `Backend::lower`
+        // already screens this, but the emitter stays self-consistent).
+        match &config.hardware {
+            None | Some(HwProfile::Wgsl { .. }) => {}
             _ => return Some(Err(BackendError::MissingHardware(Target::Wgsl))),
-        };
-        Some(Ok(EmittedText {
-            primary: format!(
-                "// xpile-wgsl-codegen scaffold\n// module: {}\n// features: {:?}\n// TODO: lower to WGSL.\n",
-                module.name, features,
-            ),
-            citations: Vec::new(),
-        }))
+        }
+        // Drive the REAL meta-HIR → WGSL lowering. A construct outside the
+        // subset comes back as a hard `BackendError::Lower` — propagate it
+        // verbatim rather than degrading to a placeholder.
+        match emit_wgsl_module(module) {
+            Ok(primary) => Some(Ok(EmittedText {
+                primary,
+                citations: vec![ContractId::new("C-COMPILE-RUST-TO-WGSL")],
+            })),
+            Err(e) => Some(Err(e)),
+        }
     }
 }
 
@@ -313,13 +335,49 @@ fn noncomment_lines(text: &str) -> impl Iterator<Item = &str> {
 mod tests {
     use super::*;
     use xpile_backend::{Profile, QuorumStatus};
-    use xpile_meta_hir::SourceLang;
+    use xpile_meta_hir::{Block, Expr, Function, Item, Param, SourceLang, Type};
 
-    fn dummy_module() -> Module {
+    /// An empty module — `emit_wgsl_module` honestly refuses it (no fn to
+    /// lower / no entry point). Used to exercise the refusal path.
+    fn empty_module() -> Module {
         Module {
             name: "test_kernel".into(),
             source_lang: SourceLang::Rust,
             items: Vec::new(),
+            ffi_boundaries: Vec::new(),
+        }
+    }
+
+    /// A real in-subset scalar module: `fn add(a, b) -> i32 { return a + b; }`.
+    /// Lowers through the REAL production emitter.
+    fn scalar_module() -> Module {
+        Module {
+            name: "test_kernel".into(),
+            source_lang: SourceLang::Rust,
+            items: vec![Item::Function(Function {
+                name: "add".into(),
+                params: vec![
+                    Param {
+                        name: "a".into(),
+                        ty: Type::I64,
+                        mutable: false,
+                    },
+                    Param {
+                        name: "b".into(),
+                        ty: Type::I64,
+                        mutable: false,
+                    },
+                ],
+                return_type: Type::I64,
+                body: Block {
+                    stmts: Vec::new(),
+                    trailing_return: Expr::BinOp {
+                        op: xpile_meta_hir::BinOp::Add,
+                        lhs: Box::new(Expr::Ident("a".into())),
+                        rhs: Box::new(Expr::Ident("b".into())),
+                    },
+                },
+            })],
             ffi_boundaries: Vec::new(),
         }
     }
@@ -332,35 +390,93 @@ mod tests {
         }
     }
 
+    /// PMAT-987 REGRESSION GUARD — the production `WgslBackend::lower` must
+    /// drive the REAL `emit_wgsl_module` lowering, NOT the old scaffold.
+    ///
+    /// This test FAILS on the pre-PMAT-987 `ScaffoldWgslEmitter` (whose
+    /// output was `// TODO: lower to WGSL.` with no `fn`/`@`/arithmetic) and
+    /// passes on the wired real emitter. It locks in that
+    /// `xpile transpile --target wgsl` over a scalar module emits actual
+    /// WGSL containing the lowered function body — the load-bearing
+    /// behaviour the adversarial finding caught.
+    #[test]
+    fn wgsl_backend_lowers_real_wgsl_not_scaffold() {
+        let backend = WgslBackend::new();
+        let wgsl = backend
+            .lower(&scalar_module(), &wgsl_config(vec![]))
+            .expect("a scalar module lowers")
+            .primary;
+        // Positive: the REAL lowered function body is present.
+        assert!(
+            wgsl.contains("fn add(a: i32, b: i32) -> i32"),
+            "production WGSL must contain the lowered fn signature:\n{wgsl}"
+        );
+        assert!(
+            wgsl.contains("return (a + b);"),
+            "production WGSL must contain the lowered arithmetic:\n{wgsl}"
+        );
+        // Negative: the scaffold placeholder strings must be GONE.
+        assert!(
+            !wgsl.contains("TODO: lower to WGSL"),
+            "production WGSL must not be the scaffold placeholder:\n{wgsl}"
+        );
+        assert!(
+            !wgsl.contains("scaffold"),
+            "production WGSL must not be the scaffold placeholder:\n{wgsl}"
+        );
+        // It passes the structural well-formedness gate's `fn` check and
+        // classifies as real (not the comment placeholder).
+        assert!(wgsl_looks_real(&wgsl), "{wgsl}");
+        // And it parses + type-checks under the CPU-only naga front-end.
+        naga_validate_wgsl(&wgsl)
+            .unwrap_or_else(|e| panic!("production-emitted WGSL must naga-validate: {e}\n{wgsl}"));
+    }
+
     #[test]
     fn wgsl_backend_emits_through_multi_emitter() {
         let backend = WgslBackend::new();
         let artifact = backend
-            .lower(&dummy_module(), &wgsl_config(vec!["f16".into()]))
+            .lower(&scalar_module(), &wgsl_config(vec!["f16".into()]))
             .unwrap();
-        // Quorum status comes from the wrapped MultiEmitterBackend,
-        // which means the scaffold emitter name is propagated.
+        // Quorum status comes from the wrapped MultiEmitterBackend — the
+        // production emitter name (no longer the scaffold) is propagated.
         assert_eq!(
             artifact.quorum_status,
             QuorumStatus::Single {
-                emitter: "xpile-wgsl-codegen-scaffold".to_string()
+                emitter: "xpile-wgsl-codegen".to_string()
             }
         );
-        assert!(artifact.primary.contains("f16"));
+        // The source module name rides in the emitted header comment.
         assert!(artifact.primary.contains("test_kernel"));
     }
 
     #[test]
     fn wgsl_backend_accepts_no_hardware() {
-        // WGSL allows None hardware — defaults to empty feature list.
+        // WGSL allows None hardware — defaults to empty feature list and
+        // still drives the real lowering.
         let backend = WgslBackend::new();
         let cfg = BackendConfig {
             target: Target::Wgsl,
             profile: Profile::RustOut,
             hardware: None,
         };
-        let artifact = backend.lower(&dummy_module(), &cfg).unwrap();
-        assert!(artifact.primary.contains("features: []"));
+        let artifact = backend.lower(&scalar_module(), &cfg).unwrap();
+        assert!(artifact.primary.contains("fn add(a: i32, b: i32) -> i32"));
+    }
+
+    #[test]
+    fn wgsl_backend_refuses_unsupported_construct() {
+        // An empty module has no function to lower — the real emitter
+        // refuses it with a hard `BackendError::Lower` (NOT a scaffold
+        // comment, NOT a silent wrong emit).
+        let backend = WgslBackend::new();
+        let err = backend
+            .lower(&empty_module(), &wgsl_config(vec![]))
+            .unwrap_err();
+        assert!(
+            matches!(err, BackendError::Lower(_)),
+            "unsupported input must be an honest Lower refusal, got {err:?}"
+        );
     }
 
     #[test]
@@ -373,7 +489,7 @@ mod tests {
                 compute_capability: "sm_80".to_string(),
             }),
         };
-        let err = backend.lower(&dummy_module(), &cfg).unwrap_err();
+        let err = backend.lower(&scalar_module(), &cfg).unwrap_err();
         assert!(matches!(err, BackendError::MissingHardware(Target::Wgsl)));
     }
 
@@ -404,21 +520,20 @@ fn add_one(@builtin(global_invocation_id) gid: vec3<u32>) {
     #[test]
     fn wgsl_looks_real_classifies_golden_vs_scaffold() {
         assert!(wgsl_looks_real(GOLDEN_WGSL));
-        let scaffold = WgslBackend::new()
-            .lower(&dummy_module(), &wgsl_config(vec![]))
-            .unwrap()
-            .primary;
-        assert!(!wgsl_looks_real(&scaffold));
+        // The OLD scaffold-comment placeholder (now never emitted by the
+        // production path) must still classify as NOT real — this is the
+        // gate that catches a regression back to a comment-only emit.
+        let scaffold_placeholder = "// xpile-wgsl-codegen scaffold\n// TODO: lower to WGSL.\n";
+        assert!(!wgsl_looks_real(scaffold_placeholder));
     }
 
     #[test]
     fn validate_wgsl_rejects_scaffold_placeholder() {
-        let scaffold = WgslBackend::new()
-            .lower(&dummy_module(), &wgsl_config(vec![]))
-            .unwrap()
-            .primary;
+        // The structural gate rejects a comment-only placeholder (no
+        // `@compute` entry) — the property that flagged the original bug.
+        let scaffold_placeholder = "// xpile-wgsl-codegen scaffold\n// TODO: lower to WGSL.\n";
         assert_eq!(
-            validate_wgsl(&scaffold),
+            validate_wgsl(scaffold_placeholder),
             Err(WgslValidationError::MissingComputeEntry)
         );
     }
