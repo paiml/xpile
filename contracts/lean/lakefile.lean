@@ -24,12 +24,12 @@ open Lake DSL
   — so this job is exactly the check that makes "provable" un-falsifiable by
   `grep sorry`.
 
-  PILOT = the 21 modules that elaborate clean under bare core with
+  PILOT = the 22 modules that elaborate clean under bare core with
   warnings-as-errors (9 from PMAT-903 + 2 PMAT-904 + FfiShellSubprocess/907 +
   CFloatArith/912 + XpileFrontendTrait/913 + XlateRustFnToLeanThm/914 +
   XlateLeanToRust/915 + Notation/916 + Bashrs/928 + XlatePyBoolToRustBool/935 +
-  XlatePyListToVec/936 + FfiCpythonExt/937).
-  The known-incomplete remainder is 2 modules with REAL elaboration errors
+  XlatePyListToVec/936 + FfiCpythonExt/937 + CompileRustToPtxMma/938).
+  The known-incomplete remainder is 1 module with REAL elaboration errors
   (termination / type-mismatch / synthesis failures — NOT sorries), enumerated
   honestly in `PROVABILITY-INVENTORY.md` and deliberately EXCLUDED here so this
   advisory job is GREEN without overstating what is proven. Discharging the
@@ -196,5 +196,37 @@ lean_lib «XpileContractsPilot» where
     --     `FfiCallStructuredSilver` (the docstring already described it).
     -- Layer-4 hybrid CPython-extension contract now machine-checked, not
     -- excluded. KNOWN-INCOMPLETE 3 → 2 (CompileRustToPtxMma 38, PyIntArith 45).
-    `FfiCpythonExt                  -- C-FFI-CPYTHON-EXT           (PMAT-937)
+    `FfiCpythonExt,                 -- C-FFI-CPYTHON-EXT           (PMAT-937)
+    -- PMAT-938 (backlog slice): discharged `CompileRustToPtxMma` — the deepest
+    -- module in the tree (20 stacked Diamond categories, depth-3..20). The
+    -- inventory's "38 errors" was almost entirely ONE cascading root fault plus
+    -- a handful of bare-core lemma-name gaps; FIVE classes, all sound, NO new
+    -- termination territory:
+    -- (a) the PMAT-914/915/916/928/936/937 NAME SHADOWING — `def BoundedSmem.val
+    --     (b) := b.val` resolved `b.val` by dot-notation to *itself* (a
+    --     non-terminating self-call, `b` unchanged → `fail to show termination`),
+    --     poisoning EVERY downstream `.val`/`.property`/`Subtype.ext`/derived
+    --     `DecidableEq` across all 20 Diamonds — the bulk of the 38; fix =
+    --     positional `.1` Subtype projection in the body PLUS an explicit
+    --     `DecidableEq BoundedSmem` instance (`unfold` + `infer_instance`), the
+    --     same opaque-`def`-subtype fix PMAT-915/937 needed.
+    -- (b) two `omega` heads failed on NAMESPACED `Nat.min`/`Nat.max` (which omega
+    --     v4.15.0 treats as opaque atoms, unlike the `Min.min`/`Max.max`
+    --     instances): the +/max·min distributivity and the max/min monotonicity
+    --     Diamonds → rebuilt from core `Nat.add_{max,min}_add_{left,right}` and
+    --     `Nat.{max_le,le_min,le_max_*,min_le_*,le_trans}`.
+    -- (c) `Nat.max_min_self`/`Nat.min_max_self` (absorption) are Mathlib-only →
+    --     proved by `Nat.le_antisymm` over the core lattice primitives.
+    -- (d) Mathlib-name gaps — `Nat.eq_or_ne` → `omega` (pure linear-arith
+    --     disjunction); bare `pow_zero`/`pow_succ`/`pow_add`/`one_pow` (Monoid
+    --     lemmas) → `Nat.`-namespaced; `Nat.one_le_pow` → derived from
+    --     `Nat.pow_le_pow_left` + `Nat.one_pow`.
+    -- (e) a LATENT STATEMENT bug surfaced once it elaborated: the `mod is *
+    --     homomorphism` clause wrote `a%2 * b%2 % 2`, which parses left-assoc as
+    --     `((a%2)*b)%2`, NOT the both-factors-reduced ring-hom form
+    --     `((a%2)*(b%2))%2` the comment intends and `Nat.mul_mod` proves; added
+    --     the parens so the proved claim is the genuine homomorphism law.
+    -- Layer-5 Rust→PTX-MMA GPU-compile contract now machine-checked, not
+    -- excluded. KNOWN-INCOMPLETE 2 → 1 (only PyIntArith 45 remains).
+    `CompileRustToPtxMma            -- C-COMPILE-RUST-TO-PTX-MMA   (PMAT-938)
   ]

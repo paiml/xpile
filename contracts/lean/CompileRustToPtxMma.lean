@@ -236,8 +236,24 @@ theorem shared_memory_budget_silver (k : KernelInputSilver) :
     reject the emission, but the type system catches it earlier. -/
 def BoundedSmem := { s : Nat // s ≤ smem_budget_sm80 }
 
-/-- Extract the underlying byte count. -/
-def BoundedSmem.val (b : BoundedSmem) : Nat := b.val
+/-- Extract the underlying byte count.
+
+    NOTE (PMAT-938 name-shadow fix): the body must use the positional
+    `.1` Subtype projection, NOT `b.val`. `BoundedSmem` unfolds to the
+    `Subtype` `{ s : Nat // s ≤ smem_budget_sm80 }`, so writing `b.val`
+    here resolves by dot-notation to *this very definition* — a
+    non-terminating self-call (`fail to show termination`) that then
+    poisons every downstream `.val`/`.property`/`Subtype.ext`/derived
+    `DecidableEq`. `b.1` is the genuine Subtype field projection. -/
+def BoundedSmem.val (b : BoundedSmem) : Nat := b.1
+
+/-- Explicit `DecidableEq BoundedSmem` (PMAT-938). The structures
+    below `deriving DecidableEq` over a `BoundedSmem` field can't peer
+    through the opaque `def BoundedSmem` to the underlying `Subtype` to
+    synthesize equality; provide it by unfolding to the Subtype (whose
+    `Nat` carrier has `DecidableEq`). -/
+instance : DecidableEq BoundedSmem := by
+  unfold BoundedSmem; infer_instance
 
 /-- Gold-tier model of a Rust kernel input with bounded smem
     request. The kernel can't even REQUEST more than 48 KiB —
@@ -662,8 +678,15 @@ theorem bounded_smem_lattice_absorption_diamond
     -- (d) Min-idempotent (PMAT-242 lifted)
     ∧ Nat.min a.val a.val = a.val := by
   refine ⟨?_, ?_, ?_, ?_⟩
-  · exact Nat.max_min_self a.val b.val
-  · exact Nat.min_max_self a.val b.val
+  -- `Nat.max_min_self`/`Nat.min_max_self` are Mathlib-only; bare core has no
+  -- absorption lemma. Build each from antisymmetry over the core lattice
+  -- primitives `Nat.{max_le,le_max_left,min_le_left,le_min,le_refl}` (PMAT-938).
+  · exact Nat.le_antisymm
+      (Nat.max_le.mpr ⟨Nat.le_refl a.val, Nat.min_le_left a.val b.val⟩)
+      (Nat.le_max_left a.val (Nat.min a.val b.val))
+  · exact Nat.le_antisymm
+      (Nat.min_le_left a.val (Nat.max a.val b.val))
+      (Nat.le_min.mpr ⟨Nat.le_refl a.val, Nat.le_max_left a.val b.val⟩)
   · exact Nat.max_self a.val
   · exact Nat.min_self a.val
 
@@ -1015,7 +1038,14 @@ theorem bounded_smem_additive_lattice_diamond (a b c : BoundedSmem) :
     ∧ c.val + Nat.min a.val b.val = Nat.min (c.val + a.val) (c.val + b.val)
     -- (d) Right addition distributes over min
     ∧ Nat.min a.val b.val + c.val = Nat.min (a.val + c.val) (b.val + c.val) := by
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> omega
+  -- `omega` (v4.15.0) treats `(c+a).max (c+b)` as an opaque atom and cannot
+  -- discharge the +/max·min distributivity identities; use the core lemmas
+  -- `Nat.add_{max,min}_add_{left,right}` directly (PMAT-938).
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact (Nat.add_max_add_left c.val a.val b.val).symm
+  · exact (Nat.add_max_add_right a.val b.val c.val).symm
+  · exact (Nat.add_min_add_left c.val a.val b.val).symm
+  · exact (Nat.add_min_add_right a.val b.val c.val).symm
 
 /-! ## PMAT-303 — ELEVENTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
     (DEPTH-11 ACROSS LAYERS): DISCRETE-ORDER axioms on BoundedSmem
@@ -1213,7 +1243,23 @@ theorem bounded_smem_max_min_monotone_diamond (a b c : BoundedSmem) :
     ∧ (a.val ≤ b.val → Nat.min a.val c.val ≤ Nat.min b.val c.val)
     -- (d) Min is right-monotone
     ∧ (a.val ≤ b.val → Nat.min c.val a.val ≤ Nat.min c.val b.val) := by
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> intros <;> omega
+  -- `omega` (v4.15.0) only reasons about the `Max.max`/`Min.min` instance
+  -- atoms, not the namespaced `Nat.max`/`Nat.min` here; build each from the
+  -- core lattice primitives `Nat.{le_max_left,le_max_right,min_le_left,
+  -- min_le_right,max_le,le_min,le_trans}` (PMAT-938).
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro h
+    exact Nat.max_le.mpr ⟨Nat.le_trans h (Nat.le_max_left b.val c.val),
+      Nat.le_max_right b.val c.val⟩
+  · intro h
+    exact Nat.max_le.mpr ⟨Nat.le_max_left c.val b.val,
+      Nat.le_trans h (Nat.le_max_right c.val b.val)⟩
+  · intro h
+    exact Nat.le_min.mpr ⟨Nat.le_trans (Nat.min_le_left a.val c.val) h,
+      Nat.min_le_right a.val c.val⟩
+  · intro h
+    exact Nat.le_min.mpr ⟨Nat.min_le_left c.val a.val,
+      Nat.le_trans (Nat.min_le_right c.val a.val) h⟩
 
 /-! ## PMAT-308 — THIRTEENTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
     (DEPTH-13 ACROSS LAYERS): GLB/LUB UNIVERSAL PROPERTY of
@@ -1316,7 +1362,14 @@ theorem bounded_smem_glb_lub_diamond (a b c : BoundedSmem) :
     ∧ (a.val ≤ Nat.max a.val b.val)
     -- (d) max is the LEAST upper bound
     ∧ (a.val ≤ c.val → b.val ≤ c.val → Nat.max a.val b.val ≤ c.val) := by
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> intros <;> omega
+  -- `omega` (v4.15.0) treats `Nat.min`/`Nat.max` (namespaced) as opaque
+  -- atoms; discharge each via the core GLB/LUB universal-property lemmas
+  -- `Nat.{min_le_left,le_min,le_max_left,max_le}` (PMAT-938).
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact Nat.min_le_left a.val b.val
+  · intro h1 h2; exact Nat.le_min.mpr ⟨h1, h2⟩
+  · exact Nat.le_max_left a.val b.val
+  · intro h1 h2; exact Nat.max_le.mpr ⟨h1, h2⟩
 
 /-! ## PMAT-311 — FOURTEENTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
     (DEPTH-14 ACROSS LAYERS): SUBTYPE EXTENSIONALITY + DECIDABLE
@@ -1420,7 +1473,9 @@ theorem bounded_smem_subtype_extensionality_diamond (a b : BoundedSmem) :
   · exact fun h => Subtype.ext h
   · intro h; rw [h]
   · intro h1 h2; exact Subtype.ext (Nat.le_antisymm h1 h2)
-  · exact Nat.eq_or_ne a.val b.val
+  -- `Nat.eq_or_ne` is Mathlib-only; the goal is a pure linear-arith
+  -- equality/disequality disjunction (no min/max), so `omega` decides it (PMAT-938).
+  · omega
 
 /-! ## PMAT-313 — FIFTEENTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
     (DEPTH-15 ACROSS LAYERS): NAT-MOD QUOTIENT HOMOMORPHISM —
@@ -1502,8 +1557,11 @@ theorem bounded_smem_subtype_extensionality_diamond (a b : BoundedSmem) :
 theorem bounded_smem_nat_mod_quotient_diamond (a b : BoundedSmem) :
     -- (a) mod is + homomorphism: (a.val + b.val) % 2 = (a.val%2 + b.val%2) % 2
     ((a.val + b.val) % 2 = (a.val % 2 + b.val % 2) % 2)
-    -- (b) mod is * homomorphism: (a.val * b.val) % 2 = (a.val%2 * b.val%2) % 2
-    ∧ ((a.val * b.val) % 2 = (a.val % 2 * b.val % 2) % 2)
+    -- (b) mod is * homomorphism: (a.val * b.val) % 2 = (a.val%2 * b.val%2) % 2.
+    -- Parenthesize the second factor's reduction (PMAT-938): `a%2 * b%2 % 2`
+    -- parses left-assoc as `((a%2)*b)%2`, NOT the both-factors-reduced ring-hom
+    -- form `((a%2)*(b%2))%2` that `Nat.mul_mod` proves and the comment intends.
+    ∧ ((a.val * b.val) % 2 = (a.val % 2 * (b.val % 2)) % 2)
     -- (c) Non-negative result (trivially for Nat)
     ∧ (0 ≤ a.val % 2)
     -- (d) Lands in {0, 1} (Z/2Z)
@@ -1688,10 +1746,12 @@ theorem bounded_smem_nat_pow_monoid_diamond
     -- (d) One is pow identity: 1^n = 1
     ∧ ((1 : Nat) ^ n = 1) := by
   refine ⟨?_, ?_, ?_, ?_⟩
-  · exact pow_zero a.val
-  · exact pow_succ a.val n
-  · exact pow_add a.val n m
-  · exact one_pow n
+  -- The bare `pow_zero`/`pow_succ`/`pow_add`/`one_pow` are Mathlib's `Monoid`
+  -- lemmas; bare core exposes the `Nat`-namespaced versions (PMAT-938).
+  · exact Nat.pow_zero a.val
+  · exact Nat.pow_succ a.val n
+  · exact Nat.pow_add a.val n m
+  · exact Nat.one_pow n
 
 /-! ## PMAT-321 — EIGHTEENTH Diamond on C-COMPILE-RUST-TO-PTX-MMA
     (DEPTH-18 ACROSS LAYERS): NAT INTEGRAL DOMAIN STRUCTURE —
@@ -1944,7 +2004,11 @@ theorem bounded_smem_nat_pow_monotone_diamond
   refine ⟨?_, ?_, ?_, ?_⟩
   · intro h; exact Nat.pow_le_pow_left h n
   · intro h1 h2; exact Nat.pow_le_pow_right h1 h2
-  · intro h; exact Nat.one_le_pow n a.val (Nat.lt_of_lt_of_le Nat.zero_lt_one h)
+  -- `Nat.one_le_pow` is Mathlib-only; derive `1 ≤ a^n` from `1 = 1^n ≤ a^n`
+  -- via core `Nat.pow_le_pow_left` + `Nat.one_pow` (PMAT-938).
+  · intro h
+    have hp : (1 : Nat) ^ n ≤ a.val ^ n := Nat.pow_le_pow_left h n
+    rwa [Nat.one_pow] at hp
   · exact Nat.zero_pow (Nat.succ_pos n)
 
 end XpileContracts.CCompileRustToPtxMma
