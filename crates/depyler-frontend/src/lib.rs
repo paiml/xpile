@@ -12510,6 +12510,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             return Ok(Expr::FormatSpec {
                                 value: Box::new(value),
                                 rust_spec: String::new(),
+                                of_float: false,
                             });
                         }
                         // PMAT-857 (HUNT-V28 #1): `str(<optional>)` — e.g.
@@ -12536,6 +12537,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 Type::Struct(_) => Some(Expr::FormatSpec {
                                     value: Box::new(unwrapped),
                                     rust_spec: String::new(),
+                                    of_float: false,
                                 }),
                                 _ => None,
                             };
@@ -14531,6 +14533,7 @@ fn stringify_lone_fstring_field(acc: Expr, ty: Type) -> Expr {
         Expr::FormatSpec {
             value: Box::new(acc),
             rust_spec: String::new(),
+            of_float: false,
         }
     } else {
         acc
@@ -15178,6 +15181,7 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
                     return Ok(Expr::FormatSpec {
                         value: Box::new(value),
                         rust_spec: String::new(),
+                        of_float: false,
                     });
                 }
                 return Err(FrontendError::Lower(format!(
@@ -15338,6 +15342,9 @@ fn apply_nonempty_format_spec(
                         value: Box::new(value),
                     }),
                     rust_spec: format!("{prefix}{width}"),
+                    // value is a 1-char String (`chr`); the spec is a width, never
+                    // a `.<digit>` precision — no NaN guard.
+                    of_float: false,
                 });
             }
             // Sign-prefixed / implicit-zero-pad / malformed → fall through to reject.
@@ -15399,6 +15406,8 @@ fn apply_nonempty_format_spec(
                     lhs: Box::new(Expr::FormatSpec {
                         value: Box::new(scaled),
                         rust_spec,
+                        // value is the scaled FLOAT — NaN-guard the `.N` precision.
+                        of_float: true,
                     }),
                     rhs: Box::new(Expr::LitStr("%".to_string())),
                 });
@@ -15537,6 +15546,8 @@ fn apply_nonempty_format_spec(
                     return Ok(Expr::FormatSpec {
                         value: Box::new(body),
                         rust_spec: format!(">{width}"),
+                        // value is the radix String; a width spec, never `.<digit>`.
+                        of_float: false,
                     });
                 }
             }
@@ -15661,6 +15672,9 @@ fn apply_nonempty_format_spec(
                     of_float: true,
                 }),
                 rust_spec: format!("{prefix}{width}"),
+                // value is the float's repr STRING (no `.is_nan()`); the spec is a
+                // width, never `.<digit>` — the NaN guard must not fire.
+                of_float: false,
             });
         }
     }
@@ -15668,10 +15682,14 @@ fn apply_nonempty_format_spec(
         Some(rust_spec) => Ok(Expr::FormatSpec {
             value: Box::new(value),
             rust_spec,
+            // PMAT-947: only a float value needs the bare-precision NaN guard. A
+            // str `.N` (truncate) is also a `.<digit>` rust_spec but its value is a
+            // `String` (no `.is_nan()`), so flag it false to skip the guard.
+            of_float: ty == Type::F64,
         }),
         None => Err(FrontendError::Lower(format!(
             "unsupported format spec `:{spec}` (for a {ty:?} value) — supported: \
-             `.Nf` (float), `.N%` (float percent), `0Nd`/`Nd` (int), `c` (int char), \
+             `.Nf` (float), `.N%` (float percent), `.N` (str truncate), `0Nd`/`Nd` (int), `c` (int char), \
              `>N`/`<N`/`^N` (align), `+`/`-` (sign) at v0.2.0"
         ))),
     }
@@ -16273,6 +16291,17 @@ fn translate_format_spec(spec: &str, ty: &Type) -> Option<String> {
             if *ty == Type::F64 && digits_only(n) {
                 return Some(format!(".{n}"));
             }
+        }
+        // PMAT-947: a bare precision `.N` on a str TRUNCATES to N chars in Python
+        // (`f"{'hello':.3}"` == "hel"; a precision >= len is a no-op max, `.10` ->
+        // "hello", `.0` -> ""). Rust's `{:.N}` over a `String` is the IDENTICAL
+        // char-count truncation (multibyte/astral counted by char, not byte), so
+        // the spec passes through verbatim. An int/float `.N` (Python *significant
+        // figures*, not Rust decimal places) stays a reject — only `.Nf` is sound
+        // there. Width/align-COMBINED str precision (`{:10.3}`, `{:>10.3}`) is a
+        // scoped follow-up (honest reject, mirroring PMAT-945 -> PMAT-946).
+        if *ty == Type::Str && digits_only(rest) {
+            return Some(format!(".{rest}"));
         }
         return None;
     }
@@ -17522,6 +17551,9 @@ fn lower_percent_format(
                     args[arg_idx] = Expr::FormatSpec {
                         value: Box::new(args[arg_idx].clone()),
                         rust_spec: core,
+                        // `%f` value is a FLOAT and `core` is a `.N` precision —
+                        // NaN-guard it.
+                        of_float: true,
                     };
                     fmt.push_str("{}");
                 } else if bare {
@@ -17770,6 +17802,8 @@ fn lower_str_format(
                             of_float: true,
                         }),
                         rust_spec: format!("{align}{width}"),
+                        // value is the float's repr String; a width spec, no guard.
+                        of_float: false,
                     };
                     // emit a plain `{field_str}` field (the arg is now the string)
                 } else if arg_tys[arg_idx] == Type::F64 && ref_count[arg_idx] == 1 {
@@ -17792,6 +17826,9 @@ fn lower_str_format(
                     args[arg_idx] = Expr::FormatSpec {
                         value: Box::new(args[arg_idx].clone()),
                         rust_spec,
+                        // this arm is gated on `arg_tys[arg_idx] == Type::F64`, so
+                        // the value is a float — NaN-guard a `.N` precision.
+                        of_float: true,
                     };
                     // emit a plain `{field_str}` field (the arg is now the string)
                 } else {

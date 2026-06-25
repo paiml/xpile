@@ -15187,6 +15187,57 @@ fn fstr_char_format_width_zeropad_rejected() {
     );
 }
 
+/// PMAT-947 (correctness-hunt): a bare precision `.N` on a STR f-string field
+/// TRUNCATES to N chars in Python (`f"{'hello':.3}"` == "hel"; `.0` -> "", a
+/// precision >= len is a no-op max). Was a clean reject. Rust's `{:.N}` over a
+/// `String` is the IDENTICAL char-count truncation (multibyte/astral counted by
+/// char, never by byte), so the spec routes through the existing FormatSpec node
+/// (of_float=false → the float NaN-guard is correctly skipped, NOT a spurious
+/// `String::is_nan()`). vs python3.
+#[test]
+fn fstr_str_precision() {
+    let rust = xpile_transpile_to_rust("fstr_str_precision.py");
+    assert!(
+        // the str-precision field is a plain `format!("{:.N}", s)`, never the
+        // float NaN-guarded `is_nan()` block (which would not compile on a String).
+        rust.contains(r#"format!("{:.3}", s)"#) && !rust.contains("is_nan"),
+        "a str precision `.N` must be a plain padding format!, never a NaN-guard:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(trunc("hello".to_string()), "hel");          // truncate to 3
+    assert_eq!(empty("hello".to_string()), "");             // .0 -> empty
+    assert_eq!(wide("hello".to_string()), "hello");         // precision >= len → no-op
+    assert_eq!(lit(), "hel");                               // literal operand
+    assert_eq!(multibyte("héllo".to_string()), "hél");      // truncated by CHAR count
+    assert_eq!(multibyte("中文字符".to_string()), "中文字");   // CJK by char count
+    assert_eq!(multibyte("😀😀😀😀".to_string()), "😀😀😀"); // astral by char count
+    assert_eq!(via_format("formatting".to_string()), "form"); // str.format() path
+    assert_eq!(multi("abc".to_string(), "wxyz".to_string()), "[ab|wx]");
+}
+"#;
+    assert_rustc_runs("fstr_str_precision", &rust, driver);
+}
+
+/// PMAT-947 (correctness-hunt): a WIDTH-combined str precision (`:10.3`) stays a
+/// documented reject — Python pads the truncated string to the width, which is
+/// sound in Rust too, but it is a scoped follow-up (mirroring PMAT-945 ->
+/// PMAT-946) and must refuse honestly rather than miscompile. vs python3.
+#[test]
+fn fstr_str_precision_width_rejected() {
+    let py = fixture("fstr_str_precision_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a width-combined str precision `:10.3` is out of scope and must be refused"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unsupported format spec `:10.3`"),
+        "the rejection should name the unsupported `:10.3` spec:\n{stderr}"
+    );
+}
+
 /// PMAT-801 (HUNT-V19 STR-IDX-OOB): a string index out of range panicked with
 /// Rust's raw "index out of bounds" message, not the tagged `xpile: IndexError:`,
 /// so under the allowlist except a typed `except IndexError` couldn't catch it
