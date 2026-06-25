@@ -1,0 +1,1381 @@
+//! PMAT-970 — real meta-HIR → WGSL lowering for the scalar/control
+//! subset, bringing the WGSL compute lane toward the construct-set
+//! parity the native-WASM emitter (`xpile-wasm-codegen`) already has.
+//!
+//! Before this slice the WGSL backend emitted ONLY a scaffold comment
+//! (`ScaffoldWgslEmitter`) or one of two hardcoded SAXPY shaders — it
+//! refused every meta-HIR node. This module adds a genuine lowering of
+//! the **scalar/control subset** directly to WGSL text, the GPU sibling
+//! of the WASM lane's WAT lowering: funcs / params / `let` / `if`/`else`
+//! statement-and-expression / `while` (→ WGSL `loop` + `break`/`continue`)
+//! / `return` / comparisons / arithmetic / bitwise / `array<T>` storage-
+//! buffer indexing. Everything outside the subset is an honest
+//! [`BackendError::Lower`] refusal — never wrong code.
+//!
+//! ## Type mapping — WGSL is a 32-bit-native GPU language
+//!
+//! WGSL core (the floor every wgpu adapter accepts, no extensions) has
+//! `i32` / `u32` / `f32` / `bool` — and **no 64-bit scalar**. So:
+//!
+//! - `I64` / `CLong` → `i32`. The GPU lane is 32-bit; a Python `int`
+//!   rides an `i32`. This is the documented WGSL-subset posture (the
+//!   analogue of the WASM lane documenting its overflow-trap posture):
+//!   the lane is for GPU compute kernels, where 32-bit integers are the
+//!   native width. (A value exceeding `i32` range is the caller's
+//!   contract to avoid — out of scope for this first increment, exactly
+//!   as variable-index bounds-checking is out of scope in the WASM lane.)
+//! - `F32` → `f32`, `CUInt` → `u32`, `Bool` → `bool`.
+//! - `F64` is **refused**: WGSL core has no `f64`, and silently
+//!   substituting `f32` would change numeric results — a precision lie
+//!   the lane refuses to tell. (An `enable f64;`-gated path is a future
+//!   increment, not this one.)
+//! - `Str` / `Dict` / `Set` / `Struct` / `Tuple` / `BigInt` / `Optional`
+//!   / pointers are refused.
+//!
+//! ## Buffer indexing (`xs[i]`)
+//!
+//! A `list[scalar]` **parameter** lowers to a `@group(0) @binding(N)
+//! var<storage, read> xs: array<T>` storage buffer (the GPU analogue of
+//! the WASM lane's linear-memory base-pointer). A read-only `xs[i]`
+//! (`Expr::Index`) lowers to a direct `xs[u32(i)]` subscript — WGSL
+//! array indexing, the natural GPU form. The element type must be a
+//! supported scalar (`i32`/`u32`/`f32`); `list[bool]`, nested lists, and
+//! `list[str]` are refused.
+//!
+//! ## Validation
+//!
+//! Emitted WGSL is checked by [`naga_validate_wgsl`] — a CPU-only
+//! `naga::front::wgsl::parse_str` + `naga::valid::Validator` round-trip
+//! (no GPU), the same naga pin `xpile-spirv-codegen` uses. This is a
+//! STRONGER gate than the text-structural [`crate::validate_wgsl`]: naga
+//! actually parses and type-checks the WGSL.
+
+use std::fmt::Write as _;
+
+use xpile_backend::BackendError;
+use xpile_meta_hir::{
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, Stmt, Type, UnOp,
+};
+
+/// The Layer-5 compile contract every emitted WGSL function cites.
+pub(crate) const CONTRACT_ID: &str = "C-COMPILE-RUST-TO-WGSL";
+
+/// WGSL scalar value type — the lowered shape of a supported meta-HIR
+/// [`Type`]. WGSL core is 32-bit-native (no i64/f64).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WgslTy {
+    I32,
+    U32,
+    F32,
+    Bool,
+}
+
+impl WgslTy {
+    fn keyword(self) -> &'static str {
+        match self {
+            WgslTy::I32 => "i32",
+            WgslTy::U32 => "u32",
+            WgslTy::F32 => "f32",
+            WgslTy::Bool => "bool",
+        }
+    }
+
+    /// `true` for the integer types that admit bitwise / shift ops.
+    fn is_int(self) -> bool {
+        matches!(self, WgslTy::I32 | WgslTy::U32)
+    }
+}
+
+fn unsupported(what: &str) -> BackendError {
+    BackendError::Lower(format!(
+        "xpile-wgsl-codegen: unsupported construct — {what}"
+    ))
+}
+
+/// Map a meta-HIR [`Type`] to its WGSL scalar type, refusing everything
+/// outside the 32-bit GPU subset.
+fn map_type(ty: &Type) -> Result<WgslTy, BackendError> {
+    match ty {
+        // Python `int` (and the C 64-bit ABI sibling) ride an i32 — the
+        // GPU-native integer width. Documented 32-bit-subset posture.
+        Type::I64 | Type::CLong => Ok(WgslTy::I32),
+        Type::CUInt => Ok(WgslTy::U32),
+        Type::F32 => Ok(WgslTy::F32),
+        Type::Bool => Ok(WgslTy::Bool),
+        Type::F64 => Err(unsupported(
+            "f64 — WGSL core has no 64-bit float; substituting f32 would \
+             change numeric results, so the WGSL subset refuses f64 rather \
+             than narrow it silently (use f32 for the GPU lane)",
+        )),
+        other => Err(unsupported(&format!(
+            "type {other:?} (the WGSL emit subset is i32/u32/f32/bool only — \
+             f64/str/list/dict/set/struct/tuple/bigint/pointer are refused)"
+        ))),
+    }
+}
+
+/// Map a `list[T]` element type to its WGSL `array<T>` element scalar.
+/// The list itself becomes a `var<storage>` buffer; the element must be a
+/// supported scalar (`i32`/`u32`/`f32`). `list[bool]`, `list[f64]`,
+/// nested lists, and `list[str]` are refused.
+fn map_list_elem_type(inner: &Type) -> Result<WgslTy, BackendError> {
+    match inner {
+        Type::I64 | Type::CLong => Ok(WgslTy::I32),
+        Type::CUInt => Ok(WgslTy::U32),
+        Type::F32 => Ok(WgslTy::F32),
+        other => Err(unsupported(&format!(
+            "list element type {other:?} — the WGSL list subset supports \
+             list[int]/list[uint]/list[float32] only (i32/u32/f32 array \
+             elements); list[bool], list[f64], list[str], and nested lists \
+             are refused"
+        ))),
+    }
+}
+
+/// Per-function lowering scope: the WGSL type of every in-scope local
+/// (params + `let` bindings) and, for list-param buffers, the element
+/// type so `Index` knows the result type.
+struct Scope {
+    /// `(name, ty)` for every scalar local, in declaration order.
+    locals: Vec<(String, WgslTy)>,
+    /// For each `list[scalar]` param, the WGSL element type of its
+    /// `array<T>` storage buffer (`i32`/`u32`/`f32`).
+    list_elem: Vec<(String, WgslTy)>,
+    /// For each `list[scalar]` param, the module-scope storage-buffer var
+    /// name (`<fn>_<param>`) the param ident resolves to when indexed.
+    buffer_var: Vec<(String, String)>,
+    /// The function's return WGSL type, or `None` for a unit/void fn.
+    ret: Option<WgslTy>,
+}
+
+impl Scope {
+    fn ty_of(&self, name: &str) -> Result<WgslTy, BackendError> {
+        self.locals
+            .iter()
+            .rev()
+            .find(|(n, _)| n == name)
+            .map(|(_, t)| *t)
+            .ok_or_else(|| unsupported(&format!("reference to unbound name `{name}`")))
+    }
+
+    fn list_elem_of(&self, name: &str) -> Option<WgslTy> {
+        self.list_elem
+            .iter()
+            .rev()
+            .find(|(n, _)| n == name)
+            .map(|(_, t)| *t)
+    }
+
+    fn buffer_var_of(&self, name: &str) -> Option<String> {
+        self.buffer_var
+            .iter()
+            .rev()
+            .find(|(n, _)| n == name)
+            .map(|(_, b)| b.clone())
+    }
+
+    fn declare(&mut self, name: &str, ty: WgslTy) {
+        if !self.locals.iter().any(|(n, _)| n == name) {
+            self.locals.push((name.to_string(), ty));
+        }
+    }
+}
+
+/// Emit a full WGSL module for `module`. Each [`Item::Function`] in the
+/// scalar/control subset becomes a WGSL `fn`; a `list[scalar]` param
+/// becomes a module-level `var<storage>` buffer binding. Any non-function
+/// item, or any function using an unsupported construct, is an honest
+/// [`BackendError::Lower`] refusal.
+///
+/// This is the real meta-HIR lowering that replaces the WGSL backend's
+/// scaffold-comment placeholder (PMAT-970). The output parses and
+/// type-checks under [`naga_validate_wgsl`].
+pub fn emit_wgsl_module(module: &Module) -> Result<String, BackendError> {
+    // Collect every list-param buffer FIRST so all bindings are declared
+    // at module scope (WGSL requires resource vars at module scope), then
+    // the function bodies reference them.
+    let mut out = String::new();
+    writeln!(
+        out,
+        "// xpile-wgsl-codegen — meta-HIR → WGSL (scalar/control subset)"
+    )
+    .expect("write");
+    writeln!(out, "// source module: {}", module.name).expect("write");
+    writeln!(out, "// contract: {CONTRACT_ID}").expect("write");
+
+    // First pass: emit storage-buffer bindings for every list param, with
+    // a stable, globally-unique binding index. The buffer var name is
+    // `<fnname>_<paramname>` so two functions can each take a list param
+    // without a name clash at module scope.
+    let mut binding: u32 = 0;
+    for item in &module.items {
+        if let Item::Function(f) = item {
+            for Param { name, ty, .. } in &f.params {
+                if let Type::List(inner) = ty {
+                    let elem = map_list_elem_type(inner)?;
+                    writeln!(
+                        out,
+                        "@group(0) @binding({binding}) var<storage, read> {buf}: array<{ty}>;",
+                        buf = buffer_var(&f.name, name),
+                        ty = elem.keyword()
+                    )
+                    .expect("write");
+                    binding += 1;
+                }
+            }
+        }
+    }
+    if binding > 0 {
+        out.push('\n');
+    }
+
+    let mut emitted_any = false;
+    for item in &module.items {
+        match item {
+            Item::Function(f) => {
+                let f_wgsl = emit_function(f)?;
+                out.push_str(&f_wgsl);
+                emitted_any = true;
+            }
+            Item::Const { name, .. } => {
+                return Err(unsupported(&format!(
+                    "module-level const `{name}` (only scalar/control functions are in the WGSL subset)"
+                )));
+            }
+            Item::Struct { name, .. } => {
+                return Err(unsupported(&format!(
+                    "struct `{name}` (aggregates are outside the WGSL scalar/control subset)"
+                )));
+            }
+            Item::Enum { name, .. } => {
+                return Err(unsupported(&format!(
+                    "enum `{name}` (outside the WGSL scalar/control subset)"
+                )));
+            }
+        }
+    }
+    if !emitted_any {
+        return Err(unsupported(
+            "module has no functions to lower (WGSL subset emits scalar/control \
+             functions; an empty module would produce no entry point)",
+        ));
+    }
+    Ok(out)
+}
+
+/// The module-scope storage-buffer var name for a `list` parameter:
+/// `<fnname>_<paramname>`, unique across functions.
+fn buffer_var(fn_name: &str, param: &str) -> String {
+    format!("{fn_name}_{param}")
+}
+
+/// Emit one WGSL `fn` for `f`.
+fn emit_function(f: &Function) -> Result<String, BackendError> {
+    let ret = match &f.return_type {
+        Type::Unit => None,
+        ty => Some(map_type(ty)?),
+    };
+
+    let mut scope = Scope {
+        locals: Vec::new(),
+        list_elem: Vec::new(),
+        buffer_var: Vec::new(),
+        ret,
+    };
+
+    // Params. A scalar param is a WGSL fn parameter; a `list[scalar]`
+    // param is NOT a fn parameter — it is the module-scope storage buffer
+    // emitted by `emit_wgsl_module`, so the fn signature omits it and the
+    // body references the buffer var directly.
+    let mut sig_params: Vec<(String, WgslTy)> = Vec::new();
+    for Param { name, ty, .. } in &f.params {
+        if let Type::List(inner) = ty {
+            let elem = map_list_elem_type(inner)?;
+            // Bind the param name to the buffer var so `Index` over it
+            // resolves; record the element type and the module-scope
+            // buffer var name (`<fn>_<param>`).
+            scope.list_elem.push((name.clone(), elem));
+            scope
+                .buffer_var
+                .push((name.clone(), buffer_var(&f.name, name)));
+            // The list param is NOT a scalar local — indexing it yields a
+            // scalar but the buffer itself is not a value.
+        } else {
+            let wt = map_type(ty)?;
+            scope.declare(name, wt);
+            sig_params.push((name.clone(), wt));
+        }
+    }
+
+    // Pre-walk the body so every `let`-bound local's type is known (WGSL
+    // `let`/`var` are declared at use site, but we still validate types).
+    collect_let_locals(&f.body, &mut scope)?;
+
+    // Emit the body.
+    let mut body = String::new();
+    let needs_var = mutated_locals(&f.body);
+    // Declare every local that is reassigned as a `var` up front (WGSL
+    // `let` is immutable; a reassigned binding must be a `var`). We hoist
+    // these so a later `Assign` (including inside a loop) is legal.
+    for (name, wt) in &scope.locals {
+        if needs_var.contains(name) {
+            writeln!(body, "  var {name}: {ty};", ty = wt.keyword()).expect("write");
+        }
+    }
+    for stmt in &f.body.stmts {
+        emit_stmt(stmt, &mut scope, &needs_var, &mut body, 1)?;
+    }
+    // Trailing return expression.
+    match (&ret, &f.body.trailing_return) {
+        (None, Expr::Unit) => {}
+        (None, other) => {
+            // A void fn with a non-unit trailing expr: evaluate and discard.
+            // WGSL has no statement-expression discard for a bare value, so
+            // refuse rather than emit something naga rejects.
+            return Err(unsupported(&format!(
+                "void function with a non-unit trailing expression {} \
+                 (the WGSL subset wants `return;` or a unit tail for a void fn)",
+                expr_kind(other)
+            )));
+        }
+        (Some(rt), e) => {
+            let mut expr_buf = String::new();
+            let got = emit_expr(e, &scope, &mut expr_buf)?;
+            if got != *rt {
+                return Err(unsupported(&format!(
+                    "trailing return lowers to WGSL {} but the function returns {}",
+                    got.keyword(),
+                    rt.keyword()
+                )));
+            }
+            writeln!(body, "  return {expr_buf};").expect("write");
+        }
+    }
+
+    // Assemble the signature.
+    let mut out = String::new();
+    writeln!(out, "// xpile-contract: {CONTRACT_ID}").expect("write");
+    write!(out, "fn {}(", f.name).expect("write");
+    let mut first = true;
+    for (name, wt) in &sig_params {
+        if !first {
+            out.push_str(", ");
+        }
+        write!(out, "{name}: {ty}", ty = wt.keyword()).expect("write");
+        first = false;
+    }
+    out.push(')');
+    if let Some(rt) = ret {
+        write!(out, " -> {}", rt.keyword()).expect("write");
+    }
+    writeln!(out, " {{").expect("write");
+    out.push_str(&body);
+    writeln!(out, "}}").expect("write");
+    Ok(out)
+}
+
+/// Walk the body collecting every `Let`-bound local's WGSL type.
+fn collect_let_locals(block: &Block, scope: &mut Scope) -> Result<(), BackendError> {
+    collect_let_locals_stmts(&block.stmts, scope)
+}
+
+fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), BackendError> {
+    for s in stmts {
+        match s {
+            Stmt::Let { name, ty, .. } => {
+                let wt = map_type(ty)?;
+                scope.declare(name, wt);
+            }
+            Stmt::While { body, .. } => collect_let_locals_stmts(body, scope)?,
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_let_locals_stmts(then_body, scope)?;
+                collect_let_locals_stmts(else_body, scope)?;
+            }
+            Stmt::Assign { .. } | Stmt::Return(_) | Stmt::Break | Stmt::Continue => {}
+            other => {
+                return Err(unsupported(&format!(
+                    "statement {} (outside the WGSL scalar/control subset)",
+                    stmt_kind(other)
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Collect the set of local names that are ever `Assign`-ed (reassigned)
+/// anywhere in the body — these must be WGSL `var` (mutable) bindings
+/// rather than `let` (immutable). A name only ever `Let`-bound is a `let`.
+fn mutated_locals(block: &Block) -> std::collections::BTreeSet<String> {
+    let mut set = std::collections::BTreeSet::new();
+    collect_mutated(&block.stmts, &mut set);
+    set
+}
+
+fn collect_mutated(stmts: &[Stmt], set: &mut std::collections::BTreeSet<String>) {
+    for s in stmts {
+        match s {
+            Stmt::Assign { name, .. } => {
+                set.insert(name.clone());
+            }
+            Stmt::While { body, .. } => collect_mutated(body, set),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_mutated(then_body, set);
+                collect_mutated(else_body, set);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn indent(out: &mut String, n: usize) {
+    for _ in 0..n {
+        out.push_str("  ");
+    }
+}
+
+/// Short kind label for an unsupported statement, for the refusal message.
+fn stmt_kind(s: &Stmt) -> &'static str {
+    match s {
+        Stmt::Return(_) => "Return",
+        Stmt::If { .. } => "If",
+        Stmt::While { .. } => "While",
+        Stmt::Let { .. } => "Let",
+        Stmt::Assign { .. } => "Assign",
+        Stmt::Break => "Break",
+        Stmt::Continue => "Continue",
+        Stmt::Print { .. } => "Print",
+        _ => "<container/aggregate statement>",
+    }
+}
+
+/// Emit a statement at `depth` indentation into `out`.
+fn emit_stmt(
+    s: &Stmt,
+    scope: &mut Scope,
+    needs_var: &std::collections::BTreeSet<String>,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    match s {
+        Stmt::Let { name, value, .. } => {
+            let wt = scope.ty_of(name)?;
+            let mut buf = String::new();
+            let got = emit_expr(value, scope, &mut buf)?;
+            if got != wt {
+                return Err(unsupported(&format!(
+                    "let `{name}` annotated {} but its initializer lowers to {}",
+                    wt.keyword(),
+                    got.keyword()
+                )));
+            }
+            indent(out, depth);
+            if needs_var.contains(name) {
+                // Reassigned later → hoisted as a `var` up front; here just
+                // assign the initial value (the `var` decl already happened).
+                writeln!(out, "{name} = {buf};").expect("write");
+            } else {
+                writeln!(out, "let {name}: {ty} = {buf};", ty = wt.keyword()).expect("write");
+            }
+            Ok(())
+        }
+        Stmt::Assign { name, value } => {
+            let wt = scope.ty_of(name)?;
+            let mut buf = String::new();
+            let got = emit_expr(value, scope, &mut buf)?;
+            if got != wt {
+                return Err(unsupported(&format!(
+                    "assignment to `{name}` ({}) from a {} value",
+                    wt.keyword(),
+                    got.keyword()
+                )));
+            }
+            indent(out, depth);
+            writeln!(out, "{name} = {buf};").expect("write");
+            Ok(())
+        }
+        Stmt::Return(e) => {
+            match &scope.ret {
+                None => {
+                    if !matches!(e, Expr::Unit) {
+                        return Err(unsupported(
+                            "early `return <value>` from a unit/void function",
+                        ));
+                    }
+                    indent(out, depth);
+                    writeln!(out, "return;").expect("write");
+                }
+                Some(rt) => {
+                    let mut buf = String::new();
+                    let got = emit_expr(e, scope, &mut buf)?;
+                    if got != *rt {
+                        return Err(unsupported(&format!(
+                            "early return lowers to WGSL {} but the function returns {}",
+                            got.keyword(),
+                            rt.keyword()
+                        )));
+                    }
+                    indent(out, depth);
+                    writeln!(out, "return {buf};").expect("write");
+                }
+            }
+            Ok(())
+        }
+        Stmt::Break => {
+            indent(out, depth);
+            writeln!(out, "break;").expect("write");
+            Ok(())
+        }
+        Stmt::Continue => {
+            indent(out, depth);
+            writeln!(out, "continue;").expect("write");
+            Ok(())
+        }
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            let mut cbuf = String::new();
+            let ct = emit_expr(cond, scope, &mut cbuf)?;
+            if ct != WgslTy::Bool {
+                return Err(unsupported(&format!(
+                    "`if` condition lowers to WGSL {} (a bool is required)",
+                    ct.keyword()
+                )));
+            }
+            indent(out, depth);
+            writeln!(out, "if ({cbuf}) {{").expect("write");
+            for st in then_body {
+                emit_stmt(st, scope, needs_var, out, depth + 1)?;
+            }
+            if else_body.is_empty() {
+                indent(out, depth);
+                writeln!(out, "}}").expect("write");
+            } else {
+                indent(out, depth);
+                writeln!(out, "}} else {{").expect("write");
+                for st in else_body {
+                    emit_stmt(st, scope, needs_var, out, depth + 1)?;
+                }
+                indent(out, depth);
+                writeln!(out, "}}").expect("write");
+            }
+            Ok(())
+        }
+        Stmt::While { cond, body } => {
+            // Python/Rust `while cond { body }` → WGSL:
+            //   loop { if (!(cond)) { break; } <body> }
+            // WGSL has no `while`; `loop` + a guard `break` is the form.
+            // `continue` inside `body` re-enters the loop (WGSL `continue`).
+            let mut cbuf = String::new();
+            let ct = emit_expr(cond, scope, &mut cbuf)?;
+            if ct != WgslTy::Bool {
+                return Err(unsupported(&format!(
+                    "`while` condition lowers to WGSL {} (a bool is required)",
+                    ct.keyword()
+                )));
+            }
+            indent(out, depth);
+            writeln!(out, "loop {{").expect("write");
+            indent(out, depth + 1);
+            writeln!(out, "if (!({cbuf})) {{ break; }}").expect("write");
+            for st in body {
+                emit_stmt(st, scope, needs_var, out, depth + 1)?;
+            }
+            indent(out, depth);
+            writeln!(out, "}}").expect("write");
+            Ok(())
+        }
+        other => Err(unsupported(&format!(
+            "statement {} (outside the WGSL scalar/control subset)",
+            stmt_kind(other)
+        ))),
+    }
+}
+
+/// Emit an expression into `out` as a WGSL value-string, returning the
+/// WGSL type it produces. (Expressions are emitted as parenthesized
+/// infix WGSL text — the natural high-level form, unlike the WASM lane's
+/// stack instructions.)
+fn emit_expr(e: &Expr, scope: &Scope, out: &mut String) -> Result<WgslTy, BackendError> {
+    match e {
+        Expr::Ident(name) => {
+            let wt = scope.ty_of(name)?;
+            out.push_str(name);
+            Ok(wt)
+        }
+        Expr::LitInt(v) => {
+            // Python int → i32 (the 32-bit GPU-native posture). Annotate
+            // the literal so naga types it as i32, not abstract-int.
+            write!(out, "i32({v})").expect("write");
+            Ok(WgslTy::I32)
+        }
+        Expr::LitBool(b) => {
+            out.push_str(if *b { "true" } else { "false" });
+            Ok(WgslTy::Bool)
+        }
+        Expr::LitFloat(v) => {
+            write!(out, "f32({})", wgsl_float_literal(*v)).expect("write");
+            Ok(WgslTy::F32)
+        }
+        Expr::UnOp { op, operand } => emit_unop(*op, operand, scope, out),
+        Expr::BinOp { op, lhs, rhs } => emit_binop(*op, lhs, rhs, scope, out),
+        Expr::FloatBinOp { op, lhs, rhs } => emit_float_binop(*op, lhs, rhs, scope, out),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            // WGSL has no `?:`; the `select(false_val, true_val, cond)`
+            // builtin is the value-level conditional. Both arms must share
+            // a type.
+            let mut cbuf = String::new();
+            let ct = emit_expr(cond, scope, &mut cbuf)?;
+            if ct != WgslTy::Bool {
+                return Err(unsupported(&format!(
+                    "if-expression condition lowers to WGSL {} (a bool is required)",
+                    ct.keyword()
+                )));
+            }
+            let mut tbuf = String::new();
+            let tt = emit_expr(then_expr, scope, &mut tbuf)?;
+            let mut ebuf = String::new();
+            let et = emit_expr(else_expr, scope, &mut ebuf)?;
+            if tt != et {
+                return Err(unsupported(&format!(
+                    "if-expression arms lower to different WGSL types ({} vs {})",
+                    tt.keyword(),
+                    et.keyword()
+                )));
+            }
+            // select(false, true, cond): the false value first.
+            write!(out, "select({ebuf}, {tbuf}, {cbuf})").expect("write");
+            Ok(tt)
+        }
+        Expr::Index { collection, index } => emit_index(collection, index, scope, out),
+        Expr::Call { callee, args } => {
+            // Direct intra-module call. WGSL calls are infix `f(a, b)`.
+            // The result type is not carried in the meta-HIR Call node;
+            // since WGSL is strongly typed and naga will reject a real
+            // mismatch, we report the dominant scalar (i32) and let naga's
+            // validation be the backstop. (A float/bool-returning call used
+            // in a typed position that disagrees is caught by naga.)
+            write!(out, "{callee}(").expect("write");
+            for (i, a) in args.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                emit_expr(a, scope, out)?;
+            }
+            out.push(')');
+            Ok(WgslTy::I32)
+        }
+        Expr::Unit => Err(unsupported(
+            "unit value `()` in a value position (WGSL has no unit operand)",
+        )),
+        other => Err(unsupported(&format!(
+            "expression {} (outside the WGSL scalar/control subset — \
+             str/list/dict/set/struct/tuple/closure/print are refused)",
+            expr_kind(other)
+        ))),
+    }
+}
+
+/// Emit a read-only `xs[i]` over a `list[scalar]` parameter buffer.
+///
+/// `collection` must be an [`Expr::Ident`] naming a list-param buffer
+/// (the only list shape in the WGSL subset). The index lowers to a `u32`
+/// subscript (`xs[u32(i)]`). The result is the buffer's element type.
+/// Posture matches the WASM lane: a negative / out-of-range index is NOT
+/// bounds-checked here (WGSL out-of-bounds access is implementation-
+/// clamped/undefined; variable-index bounds checking is out of scope for
+/// this first increment).
+fn emit_index(
+    collection: &Expr,
+    index: &Expr,
+    scope: &Scope,
+    out: &mut String,
+) -> Result<WgslTy, BackendError> {
+    let Expr::Ident(name) = collection else {
+        return Err(unsupported(
+            "indexing a non-name collection — the WGSL list subset only \
+             indexes a `list[scalar]` PARAMETER (a storage buffer); list \
+             literals / temporaries / nested indexing are refused",
+        ));
+    };
+    let Some(elem) = scope.list_elem_of(name) else {
+        return Err(unsupported(&format!(
+            "index over `{name}` which is not a `list[scalar]` parameter — \
+             only a list param (a storage buffer) can be indexed in the WGSL \
+             subset (no str/dict/tuple indexing)"
+        )));
+    };
+    let mut ibuf = String::new();
+    let it = emit_expr(index, scope, &mut ibuf)?;
+    // Index must be an integer; narrow/cast to u32 for the subscript.
+    let idx = match it {
+        WgslTy::I32 => format!("u32({ibuf})"),
+        WgslTy::U32 => ibuf,
+        other => {
+            return Err(unsupported(&format!(
+                "list index lowers to WGSL {} (an integer index is required)",
+                other.keyword()
+            )));
+        }
+    };
+    // `name` is the param ident; resolve it to the module-scope buffer var
+    // name (`<fn>_<param>`) recorded by `emit_function`.
+    let buf_name = scope
+        .buffer_var_of(name)
+        .unwrap_or_else(|| name.to_string());
+    write!(out, "{buf_name}[{idx}]").expect("write");
+    Ok(elem)
+}
+
+/// Render an `f32` value as a WGSL float literal token. WGSL float
+/// literals require a decimal point or exponent; `{:?}` on an f64 always
+/// renders one. Non-finite f32 values have no WGSL literal, so they are
+/// refused upstream (a `LitFloat` is f64 in the meta-HIR; the value is
+/// finite for any real source literal).
+fn wgsl_float_literal(v: f64) -> String {
+    // `{:?}` renders e.g. `2.0`, `-0.5`, `100.0` — all valid WGSL float
+    // literal bodies once wrapped in `f32(...)`.
+    format!("{v:?}")
+}
+
+fn emit_unop(
+    op: UnOp,
+    operand: &Expr,
+    scope: &Scope,
+    out: &mut String,
+) -> Result<WgslTy, BackendError> {
+    match op {
+        UnOp::Neg => {
+            let mut buf = String::new();
+            let t = emit_expr(operand, scope, &mut buf)?;
+            match t {
+                WgslTy::I32 | WgslTy::F32 => {
+                    write!(out, "(-({buf}))").expect("write");
+                    Ok(t)
+                }
+                WgslTy::U32 => Err(unsupported("unary negation of an unsigned (u32) value")),
+                WgslTy::Bool => Err(unsupported("unary negation of a bool value")),
+            }
+        }
+        UnOp::Not => {
+            let mut buf = String::new();
+            let t = emit_expr(operand, scope, &mut buf)?;
+            if t != WgslTy::Bool {
+                return Err(unsupported("logical `not` of a non-bool value"));
+            }
+            write!(out, "(!({buf}))").expect("write");
+            Ok(WgslTy::Bool)
+        }
+        UnOp::BitNot => {
+            let mut buf = String::new();
+            let t = emit_expr(operand, scope, &mut buf)?;
+            if !t.is_int() {
+                return Err(unsupported("bitwise `~` of a non-integer value"));
+            }
+            // WGSL bitwise complement is `~`.
+            write!(out, "(~({buf}))").expect("write");
+            Ok(t)
+        }
+    }
+}
+
+fn emit_binop(
+    op: BinOp,
+    lhs: &Expr,
+    rhs: &Expr,
+    scope: &Scope,
+    out: &mut String,
+) -> Result<WgslTy, BackendError> {
+    // Short-circuit logical and/or — WGSL `&&` / `||` are short-circuiting
+    // over bool, matching Python/Rust.
+    if matches!(op, BinOp::And | BinOp::Or) {
+        let mut lbuf = String::new();
+        let lt = emit_expr(lhs, scope, &mut lbuf)?;
+        let mut rbuf = String::new();
+        let rt = emit_expr(rhs, scope, &mut rbuf)?;
+        if lt != WgslTy::Bool || rt != WgslTy::Bool {
+            return Err(unsupported(&format!(
+                "logical {op:?} requires bool operands (got {} and {})",
+                lt.keyword(),
+                rt.keyword()
+            )));
+        }
+        let sym = if matches!(op, BinOp::And) { "&&" } else { "||" };
+        write!(out, "({lbuf} {sym} {rbuf})").expect("write");
+        return Ok(WgslTy::Bool);
+    }
+
+    let mut lbuf = String::new();
+    let lt = emit_expr(lhs, scope, &mut lbuf)?;
+    let mut rbuf = String::new();
+    let rt = emit_expr(rhs, scope, &mut rbuf)?;
+    if lt != rt {
+        return Err(unsupported(&format!(
+            "binary op {op:?} over mixed WGSL types ({} and {})",
+            lt.keyword(),
+            rt.keyword()
+        )));
+    }
+    let ty = lt;
+
+    // Comparisons yield bool; arithmetic/bitwise yield the operand type.
+    let (sym, result) = match (op, ty) {
+        // ── arithmetic ──
+        (BinOp::Add, WgslTy::I32 | WgslTy::U32 | WgslTy::F32) => ("+", ty),
+        (BinOp::Sub, WgslTy::I32 | WgslTy::U32 | WgslTy::F32) => ("-", ty),
+        (BinOp::Mul, WgslTy::I32 | WgslTy::U32 | WgslTy::F32) => ("*", ty),
+        // FloorDiv / Mod need Python's floor-toward-−∞ correction. WGSL
+        // `/` truncates toward zero and `%` takes the dividend's sign, so
+        // a faithful Python `//` / `%` over a SIGNED i32 needs the floor
+        // correction — refuse it here rather than emit truncating-div that
+        // silently disagrees with Python on negative operands. (`u32` div /
+        // mod ARE Python-faithful — non-negative — so those are allowed.)
+        (BinOp::FloorDiv, WgslTy::U32) => ("/", ty),
+        (BinOp::Mod, WgslTy::U32) => ("%", ty),
+        // ── bitwise / shift over integers ──
+        (BinOp::BitAnd, WgslTy::I32 | WgslTy::U32) => ("&", ty),
+        (BinOp::BitOr, WgslTy::I32 | WgslTy::U32) => ("|", ty),
+        (BinOp::BitXor, WgslTy::I32 | WgslTy::U32) => ("^", ty),
+        // ── comparisons → bool ──
+        (BinOp::Eq, _) => ("==", WgslTy::Bool),
+        (BinOp::NotEq, _) => ("!=", WgslTy::Bool),
+        (BinOp::Lt, WgslTy::I32 | WgslTy::U32 | WgslTy::F32) => ("<", WgslTy::Bool),
+        (BinOp::LtEq, WgslTy::I32 | WgslTy::U32 | WgslTy::F32) => ("<=", WgslTy::Bool),
+        (BinOp::Gt, WgslTy::I32 | WgslTy::U32 | WgslTy::F32) => (">", WgslTy::Bool),
+        (BinOp::GtEq, WgslTy::I32 | WgslTy::U32 | WgslTy::F32) => (">=", WgslTy::Bool),
+        (op, ty) => {
+            return Err(unsupported(&format!(
+                "binary op {op:?} over WGSL {} (not in the scalar/control subset — \
+                 signed ///% need a floor correction not yet lowered; shifts, \
+                 pow are refused)",
+                ty.keyword()
+            )));
+        }
+    };
+    write!(out, "({lbuf} {sym} {rbuf})").expect("write");
+    Ok(result)
+}
+
+fn emit_float_binop(
+    op: FloatOp,
+    lhs: &Expr,
+    rhs: &Expr,
+    scope: &Scope,
+    out: &mut String,
+) -> Result<WgslTy, BackendError> {
+    let mut lbuf = String::new();
+    let lt = emit_expr(lhs, scope, &mut lbuf)?;
+    let mut rbuf = String::new();
+    let rt = emit_expr(rhs, scope, &mut rbuf)?;
+    if lt != WgslTy::F32 || rt != WgslTy::F32 {
+        return Err(unsupported(&format!(
+            "float op {op:?} requires f32 operands (got {} and {})",
+            lt.keyword(),
+            rt.keyword()
+        )));
+    }
+    let sym = match op {
+        FloatOp::Add => "+",
+        FloatOp::Sub => "-",
+        FloatOp::Mul => "*",
+        FloatOp::Div => "/",
+        other => {
+            return Err(unsupported(&format!(
+                "float op {other:?} (only + - * / are in the WGSL scalar subset; \
+                 floordiv/mod/pow/hypot/atan2/log are refused)"
+            )));
+        }
+    };
+    write!(out, "({lbuf} {sym} {rbuf})").expect("write");
+    Ok(WgslTy::F32)
+}
+
+/// Short kind label for an unsupported expression, for the refusal message.
+fn expr_kind(e: &Expr) -> &'static str {
+    match e {
+        Expr::Concat { .. } => "Concat (string)",
+        Expr::LitStr(_) => "LitStr",
+        Expr::ListLit(_) => "ListLit",
+        Expr::DictLit(_) => "DictLit",
+        Expr::SetLit(_) => "SetLit",
+        Expr::TupleLit(_) => "TupleLit",
+        Expr::Len(_) => "Len",
+        Expr::Index { .. } => "Index",
+        Expr::StructLit { .. } => "StructLit",
+        Expr::Block(_) => "Block",
+        Expr::Unit => "Unit",
+        _ => "<container/aggregate/builtin expression>",
+    }
+}
+
+// ─── naga CPU-only validation ───────────────────────────────────────────
+
+/// Reasons emitted WGSL fails the [`naga_validate_wgsl`] front-end gate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NagaValidationError {
+    /// `naga::front::wgsl::parse_str` rejected the WGSL text.
+    Parse(String),
+    /// `naga::valid::Validator` rejected the parsed module.
+    Validate(String),
+}
+
+impl std::fmt::Display for NagaValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Parse(m) => write!(f, "naga WGSL parse error: {m}"),
+            Self::Validate(m) => write!(f, "naga WGSL validation error: {m}"),
+        }
+    }
+}
+
+impl std::error::Error for NagaValidationError {}
+
+/// CPU-only naga front-end validation of WGSL text: parse + type-check
+/// via `naga::front::wgsl::parse_str` + `naga::valid::Validator`. No GPU.
+///
+/// This is the real "naga-validate the emitted WGSL" gate for the
+/// meta-HIR lowering — a STRONGER check than the text-structural
+/// [`crate::validate_wgsl`] (which only greps for `@compute`/`fn`). The
+/// same naga pin the sibling `xpile-spirv-codegen` crate uses.
+pub fn naga_validate_wgsl(wgsl: &str) -> Result<(), NagaValidationError> {
+    let module = naga::front::wgsl::parse_str(wgsl)
+        .map_err(|e| NagaValidationError::Parse(e.to_string()))?;
+    let mut validator = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    );
+    validator
+        .validate(&module)
+        .map_err(|e| NagaValidationError::Validate(format!("{e:?}")))?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xpile_meta_hir::{Function, Item, Module, Param, SourceLang};
+
+    fn module(items: Vec<Item>) -> Module {
+        Module {
+            name: "kernel".into(),
+            source_lang: SourceLang::Rust,
+            items,
+            ffi_boundaries: Vec::new(),
+        }
+    }
+
+    fn param(name: &str, ty: Type) -> Param {
+        Param {
+            name: name.into(),
+            ty,
+            mutable: false,
+        }
+    }
+
+    fn ident(n: &str) -> Expr {
+        Expr::Ident(n.into())
+    }
+
+    fn binop(op: BinOp, l: Expr, r: Expr) -> Expr {
+        Expr::BinOp {
+            op,
+            lhs: Box::new(l),
+            rhs: Box::new(r),
+        }
+    }
+
+    /// Lower a single-function module and assert the WGSL passes the
+    /// CPU-only naga front-end (parse + validate). Returns the WGSL.
+    fn lower_and_naga(f: Function) -> String {
+        let wgsl = emit_wgsl_module(&module(vec![Item::Function(f)]))
+            .expect("lowering should succeed for an in-subset function");
+        naga_validate_wgsl(&wgsl).unwrap_or_else(|e| {
+            panic!("emitted WGSL must pass naga validation: {e}\n--- WGSL ---\n{wgsl}")
+        });
+        wgsl
+    }
+
+    // ── arithmetic + comparisons + the real meta-HIR signature ──────────
+
+    #[test]
+    fn scalar_arithmetic_fn_naga_validates() {
+        // fn add3(a: i32, b: i32) -> i32 { return (a + b) + i32(3); }
+        let f = Function {
+            name: "add3".into(),
+            params: vec![param("a", Type::I64), param("b", Type::I64)],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: binop(
+                    BinOp::Add,
+                    binop(BinOp::Add, ident("a"), ident("b")),
+                    Expr::LitInt(3),
+                ),
+            },
+        };
+        let wgsl = lower_and_naga(f);
+        assert!(wgsl.contains("fn add3(a: i32, b: i32) -> i32"), "{wgsl}");
+        assert!(wgsl.contains("return ((a + b) + i32(3));"), "{wgsl}");
+        // contract citation rides along
+        assert!(wgsl.contains(CONTRACT_ID));
+    }
+
+    #[test]
+    fn comparison_returns_bool_and_naga_validates() {
+        // fn lt(a: i32, b: i32) -> bool { return (a < b); }
+        let f = Function {
+            name: "lt".into(),
+            params: vec![param("a", Type::I64), param("b", Type::I64)],
+            return_type: Type::Bool,
+            body: Block {
+                stmts: vec![],
+                trailing_return: binop(BinOp::Lt, ident("a"), ident("b")),
+            },
+        };
+        let wgsl = lower_and_naga(f);
+        assert!(wgsl.contains("fn lt(a: i32, b: i32) -> bool"), "{wgsl}");
+        assert!(wgsl.contains("return (a < b);"), "{wgsl}");
+    }
+
+    #[test]
+    fn float32_arithmetic_naga_validates() {
+        // fn saxpy(x: f32) -> f32 { return ((x * f32(2.0)) + f32(1.0)); }
+        let f = Function {
+            name: "saxpy".into(),
+            params: vec![param("x", Type::F32)],
+            return_type: Type::F32,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::FloatBinOp {
+                    op: FloatOp::Add,
+                    lhs: Box::new(Expr::FloatBinOp {
+                        op: FloatOp::Mul,
+                        lhs: Box::new(ident("x")),
+                        rhs: Box::new(Expr::LitFloat(2.0)),
+                    }),
+                    rhs: Box::new(Expr::LitFloat(1.0)),
+                },
+            },
+        };
+        let wgsl = lower_and_naga(f);
+        assert!(wgsl.contains("fn saxpy(x: f32) -> f32"), "{wgsl}");
+        assert!(wgsl.contains("((x * f32(2.0)) + f32(1.0))"), "{wgsl}");
+    }
+
+    // ── control flow: if/else statement, while → loop, break/continue ───
+
+    #[test]
+    fn if_else_statement_and_let_var_naga_validates() {
+        // fn clamp_low(n: i32) -> i32 {
+        //   var r: i32;
+        //   r = n;
+        //   if (n < i32(0)) { r = i32(0); }
+        //   return r;
+        // }
+        let f = Function {
+            name: "clamp_low".into(),
+            params: vec![param("n", Type::I64)],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![
+                    Stmt::Let {
+                        name: "r".into(),
+                        ty: Type::I64,
+                        value: ident("n"),
+                        mutable: true,
+                    },
+                    Stmt::If {
+                        cond: binop(BinOp::Lt, ident("n"), Expr::LitInt(0)),
+                        then_body: vec![Stmt::Assign {
+                            name: "r".into(),
+                            value: Expr::LitInt(0),
+                        }],
+                        else_body: vec![],
+                    },
+                ],
+                trailing_return: ident("r"),
+            },
+        };
+        let wgsl = lower_and_naga(f);
+        // `r` is reassigned → hoisted as a `var`, not a `let`.
+        assert!(wgsl.contains("var r: i32;"), "{wgsl}");
+        assert!(wgsl.contains("if ((n < i32(0))) {"), "{wgsl}");
+        assert!(wgsl.contains("return r;"), "{wgsl}");
+    }
+
+    #[test]
+    fn while_loop_with_break_continue_naga_validates() {
+        // fn count_to(n: i32) -> i32 {
+        //   var i: i32;
+        //   i = i32(0);
+        //   while (i < n) {
+        //     if (i == i32(5)) { break; }
+        //     i = (i + i32(1));
+        //   }
+        //   return i;
+        // }
+        let f = Function {
+            name: "count_to".into(),
+            params: vec![param("n", Type::I64)],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![
+                    Stmt::Let {
+                        name: "i".into(),
+                        ty: Type::I64,
+                        value: Expr::LitInt(0),
+                        mutable: true,
+                    },
+                    Stmt::While {
+                        cond: binop(BinOp::Lt, ident("i"), ident("n")),
+                        body: vec![
+                            Stmt::If {
+                                cond: binop(BinOp::Eq, ident("i"), Expr::LitInt(5)),
+                                then_body: vec![Stmt::Break],
+                                else_body: vec![],
+                            },
+                            Stmt::Assign {
+                                name: "i".into(),
+                                value: binop(BinOp::Add, ident("i"), Expr::LitInt(1)),
+                            },
+                        ],
+                    },
+                ],
+                trailing_return: ident("i"),
+            },
+        };
+        let wgsl = lower_and_naga(f);
+        // while → loop { if (!(cond)) { break; } ... }
+        assert!(wgsl.contains("loop {"), "{wgsl}");
+        assert!(wgsl.contains("if (!((i < n))) { break; }"), "{wgsl}");
+        assert!(wgsl.contains("break;"), "{wgsl}");
+    }
+
+    #[test]
+    fn if_expression_lowers_to_select_and_naga_validates() {
+        // fn pick(c: bool, a: i32, b: i32) -> i32 { return select(b, a, c); }
+        let f = Function {
+            name: "pick".into(),
+            params: vec![
+                param("c", Type::Bool),
+                param("a", Type::I64),
+                param("b", Type::I64),
+            ],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::IfExpr {
+                    cond: Box::new(ident("c")),
+                    then_expr: Box::new(ident("a")),
+                    else_expr: Box::new(ident("b")),
+                },
+            },
+        };
+        let wgsl = lower_and_naga(f);
+        assert!(wgsl.contains("select(b, a, c)"), "{wgsl}");
+    }
+
+    // ── buffer (array<T>) indexing over a list[scalar] param ────────────
+
+    #[test]
+    fn list_param_lowers_to_storage_buffer_index_naga_validates() {
+        // fn first(xs: list[int]) -> i32 { return xs[i32(0)]; }
+        let f = Function {
+            name: "first".into(),
+            params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::Index {
+                    collection: Box::new(ident("xs")),
+                    index: Box::new(Expr::LitInt(0)),
+                },
+            },
+        };
+        let wgsl = lower_and_naga(f);
+        // The list param becomes a module-scope storage buffer, NOT a fn arg.
+        assert!(
+            wgsl.contains("@group(0) @binding(0) var<storage, read> first_xs: array<i32>;"),
+            "{wgsl}"
+        );
+        assert!(wgsl.contains("fn first() -> i32"), "{wgsl}");
+        // i32 index narrows to u32 for the WGSL subscript.
+        assert!(wgsl.contains("first_xs[u32(i32(0))]"), "{wgsl}");
+    }
+
+    #[test]
+    fn float_buffer_sum_index_naga_validates() {
+        // fn pair_sum(xs: list[f32]) -> f32 { return (xs[i32(0)] + xs[i32(1)]); }
+        let f = Function {
+            name: "pair_sum".into(),
+            params: vec![param("xs", Type::List(Box::new(Type::F32)))],
+            return_type: Type::F32,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::FloatBinOp {
+                    op: FloatOp::Add,
+                    lhs: Box::new(Expr::Index {
+                        collection: Box::new(ident("xs")),
+                        index: Box::new(Expr::LitInt(0)),
+                    }),
+                    rhs: Box::new(Expr::Index {
+                        collection: Box::new(ident("xs")),
+                        index: Box::new(Expr::LitInt(1)),
+                    }),
+                },
+            },
+        };
+        let wgsl = lower_and_naga(f);
+        assert!(
+            wgsl.contains("var<storage, read> pair_sum_xs: array<f32>;"),
+            "{wgsl}"
+        );
+        assert!(wgsl.contains("pair_sum_xs[u32(i32(0))]"), "{wgsl}");
+    }
+
+    // ── bitwise / unsigned / logical ────────────────────────────────────
+
+    #[test]
+    fn bitwise_and_logical_naga_validates() {
+        // fn mask(a: u32, b: u32) -> u32 { return ((a & b) | a); }
+        let f = Function {
+            name: "mask".into(),
+            params: vec![param("a", Type::CUInt), param("b", Type::CUInt)],
+            return_type: Type::CUInt,
+            body: Block {
+                stmts: vec![],
+                trailing_return: binop(
+                    BinOp::BitOr,
+                    binop(BinOp::BitAnd, ident("a"), ident("b")),
+                    ident("a"),
+                ),
+            },
+        };
+        let wgsl = lower_and_naga(f);
+        assert!(wgsl.contains("fn mask(a: u32, b: u32) -> u32"), "{wgsl}");
+        assert!(wgsl.contains("((a & b) | a)"), "{wgsl}");
+    }
+
+    #[test]
+    fn short_circuit_and_or_naga_validates() {
+        // fn both(p: bool, q: bool) -> bool { return (p && q); }
+        let f = Function {
+            name: "both".into(),
+            params: vec![param("p", Type::Bool), param("q", Type::Bool)],
+            return_type: Type::Bool,
+            body: Block {
+                stmts: vec![],
+                trailing_return: binop(BinOp::And, ident("p"), ident("q")),
+            },
+        };
+        let wgsl = lower_and_naga(f);
+        assert!(wgsl.contains("(p && q)"), "{wgsl}");
+    }
+
+    // ── HONEST REFUSALS — what stays unhandled is a clean Lower error ────
+
+    #[test]
+    fn refuses_f64_no_silent_narrowing() {
+        // f64 has no WGSL core type; the lane refuses rather than narrow.
+        let f = Function {
+            name: "d".into(),
+            params: vec![param("x", Type::F64)],
+            return_type: Type::F64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: ident("x"),
+            },
+        };
+        let err = emit_wgsl_module(&module(vec![Item::Function(f)])).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("f64"), "{msg}");
+        assert!(msg.contains("WGSL core has no 64-bit float"), "{msg}");
+    }
+
+    #[test]
+    fn refuses_string_param() {
+        let f = Function {
+            name: "s".into(),
+            params: vec![param("x", Type::Str)],
+            return_type: Type::Bool,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::LitBool(true),
+            },
+        };
+        let err = emit_wgsl_module(&module(vec![Item::Function(f)])).unwrap_err();
+        assert!(matches!(err, BackendError::Lower(_)));
+    }
+
+    #[test]
+    fn refuses_signed_floordiv_pending_floor_correction() {
+        // Signed `//` needs the Python floor correction (not yet lowered);
+        // an honest refusal, NOT a silently-wrong truncating div.
+        let f = Function {
+            name: "fd".into(),
+            params: vec![param("a", Type::I64), param("b", Type::I64)],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: binop(BinOp::FloorDiv, ident("a"), ident("b")),
+            },
+        };
+        let err = emit_wgsl_module(&module(vec![Item::Function(f)])).unwrap_err();
+        assert!(matches!(err, BackendError::Lower(_)));
+    }
+
+    #[test]
+    fn refuses_struct_item() {
+        let m = module(vec![Item::Struct {
+            name: "P".into(),
+            fields: vec![("x".into(), Type::I64)],
+            methods: vec![],
+            frozen: false,
+            order: false,
+        }]);
+        let err = emit_wgsl_module(&m).unwrap_err();
+        assert!(matches!(err, BackendError::Lower(_)));
+    }
+
+    #[test]
+    fn refuses_list_of_bool_element() {
+        let f = Function {
+            name: "lb".into(),
+            params: vec![param("xs", Type::List(Box::new(Type::Bool)))],
+            return_type: Type::Bool,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::LitBool(false),
+            },
+        };
+        let err = emit_wgsl_module(&module(vec![Item::Function(f)])).unwrap_err();
+        assert!(matches!(err, BackendError::Lower(_)));
+    }
+
+    #[test]
+    fn naga_rejects_garbage_text() {
+        // Sanity: the naga gate actually rejects malformed WGSL (so a
+        // passing validation in the other tests is meaningful).
+        assert!(naga_validate_wgsl("this is not wgsl {{{").is_err());
+    }
+
+    #[test]
+    fn empty_module_refused() {
+        let err = emit_wgsl_module(&module(vec![])).unwrap_err();
+        assert!(matches!(err, BackendError::Lower(_)));
+    }
+}

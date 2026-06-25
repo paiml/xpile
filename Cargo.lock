@@ -1986,6 +1986,7 @@ name = "xpile-wgsl-codegen"
 version = "0.1.601"
 dependencies = [
  "bytemuck",
+ "naga",
  "pollster",
  "wgpu",
  "xpile-backend",
