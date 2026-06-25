@@ -507,6 +507,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::FloatGroupedStr { value, .. } | Expr::FloatSciStr { value, .. } => {
             expr_has_int_arith(value)
         }
+        // PMAT-942: space-sign numeric field — recurse into the value expr.
+        Expr::SpaceSignStr { value, .. } => expr_has_int_arith(value),
         Expr::IntFromStrRadix { value, .. } => expr_has_int_arith(value),
         // PMAT-502am: formatted f-string field — recurse into the value.
         Expr::FormatSpec { value, .. } => expr_has_int_arith(value),
@@ -2023,6 +2025,24 @@ pub enum Expr {
         precision: u32,
         upper: bool,
     },
+    /// PMAT-942 (correctness-hunt): the SPACE sign flag ` ` on a numeric field —
+    /// Python `f"{5: d}"` → `" 5"`, `f"{-5: d}"` → `"-5"`, `f"{3.14: .2f}"` →
+    /// `" 3.14"`, and width/zero-pad combos `f"{5: 05d}"` → `" 0005"`. Python's
+    /// ` ` sign option puts a leading SPACE before a non-negative magnitude and a
+    /// `-` before a negative one (a `+` that prints a space instead). Rust's
+    /// `format!` has no space-sign flag. But Rust's `+` flag composes with
+    /// width / zero-pad / precision IDENTICALLY to Python's, and a non-negative
+    /// `+`-formatted value carries exactly one leading `+` (a negative carries a
+    /// `-`, never a `+`), so codegen renders with the `+` spec and replaces the
+    /// FIRST `+` with a space — yielding Python's space-sign output for every
+    /// composition. `rust_spec` is the already-`+`-prefixed Rust spec (e.g. `+`,
+    /// `+.2`, `+05`, `+8.2`) produced by the frontend's `translate_format_spec`.
+    /// SCOPE: decimal int / fixed-point float only — radix-with-space (whose
+    /// negatives need sign-magnitude, like [`Expr::IntRadixStr`]) and a bare
+    /// space on a float (the whole-float-repr divergence, like bare `+`) stay
+    /// deferred rejects, same discipline as PMAT-557/613/941. Lean refuses (like
+    /// [`Expr::FloatSciStr`]).
+    SpaceSignStr { value: Box<Expr>, rust_spec: String },
     /// `int(s, base)` — parse a string in the given radix (→ `int`).
     /// PMAT-502da (Tranche 2); the str→int reverse of [`Expr::IntRadixStr`].
     /// `radix` is a literal `2..=36`. Rust/Ruchy emit
@@ -3211,6 +3231,7 @@ fn escape_expr(e: &mut Expr) {
         | Expr::IntGroupedStr { value, .. }
         | Expr::FloatGroupedStr { value, .. }
         | Expr::FloatSciStr { value, .. }
+        | Expr::SpaceSignStr { value, .. }
         | Expr::IntFromStrRadix { value, .. }
         | Expr::FormatSpec { value, .. }
         | Expr::NumCast { value, .. }
@@ -3746,6 +3767,7 @@ fn collect_idents_expr(e: &Expr, acc: &mut std::collections::HashSet<String>) {
         | Expr::IntGroupedStr { value, .. }
         | Expr::FloatGroupedStr { value, .. }
         | Expr::FloatSciStr { value, .. }
+        | Expr::SpaceSignStr { value, .. }
         | Expr::IntFromStrRadix { value, .. }
         | Expr::FormatSpec { value, .. }
         | Expr::NumCast { value, .. }

@@ -1948,6 +1948,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             )?;
             write!(out, "None => __s.{fold}() }} }}")?;
         }
+        // PMAT-942 (correctness-hunt): the SPACE sign flag `f"{5: d}"` / `f"{x: .2f}"`.
+        // Rust's `format!` has no space-sign flag, but its `+` flag composes with
+        // width / zero-pad / precision exactly like Python's ` `, and only a
+        // NON-negative value carries a leading `+` (a negative carries `-`). So
+        // render with the `+` spec (`rust_spec` already includes the `+`) and swap
+        // the FIRST `+` for a space — `replacen` is a no-op for negatives (no `+`),
+        // reproducing Python's space-sign for every width/precision composition.
+        Expr::SpaceSignStr { value, rust_spec } => {
+            write!(out, "format!(\"{{:{rust_spec}}}\", ")?;
+            emit_expr(out, value, mode)?;
+            out.push_str(").replacen('+', \" \", 1)");
+        }
         // PMAT-502da: `int(s, base)` → parse via `i64::from_str_radix`
         // (a parse failure / out-of-range digit panics ≈ Python ValueError).
         // PMAT-655: Python `int(s, base)` accepts a base-matching radix PREFIX

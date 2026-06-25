@@ -1769,6 +1769,7 @@ fn walk_expr_children(
         | Expr::IntGroupedStr { value, .. }
         | Expr::FloatGroupedStr { value, .. }
         | Expr::FloatSciStr { value, .. }
+        | Expr::SpaceSignStr { value, .. }
         | Expr::IntFromStrRadix { value, .. } => f(value),
         Expr::FormatSpec { value, .. } => f(value),
         Expr::StrMethod { recv, args, .. } => {
@@ -9974,7 +9975,9 @@ fn infer_type(e: &Expr) -> Type {
         Expr::IntRadixStr { .. }
         | Expr::IntGroupedStr { .. }
         | Expr::FloatGroupedStr { .. }
-        | Expr::FloatSciStr { .. } => Type::Str,
+        | Expr::FloatSciStr { .. }
+        // PMAT-942: space-sign numeric field → str.
+        | Expr::SpaceSignStr { .. } => Type::Str,
         // PMAT-502da: int(s, base) → int.
         Expr::IntFromStrRadix { .. } => Type::I64,
         // PMAT-502am: a formatted f-string field produces a Str.
@@ -10406,7 +10409,9 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::IntRadixStr { .. }
         | Expr::IntGroupedStr { .. }
         | Expr::FloatGroupedStr { .. }
-        | Expr::FloatSciStr { .. } => Type::Str,
+        | Expr::FloatSciStr { .. }
+        // PMAT-942: space-sign numeric field → str.
+        | Expr::SpaceSignStr { .. } => Type::Str,
         // PMAT-502da: int(s, base) → int.
         Expr::IntFromStrRadix { .. } => Type::I64,
         // PMAT-502am: a formatted f-string field produces a Str.
@@ -15259,6 +15264,39 @@ fn apply_nonempty_format_spec(
     } else {
         (value, ty)
     };
+    // PMAT-942 (correctness-hunt): the SPACE sign flag ` ` — Python `f"{5: d}"` ->
+    // " 5", `f"{-5: d}"` -> "-5", `f"{3.14: .2f}"` -> " 3.14", and width/zero-pad
+    // combos `f"{5: 05d}"` -> " 0005", `f"{42: 6.1f}"` -> "  42.0". Python's ` `
+    // sign option puts a leading SPACE before a non-negative magnitude and a `-`
+    // before a negative one. Rust's `format!` has NO space-sign flag — but Rust's
+    // `+` flag composes with width/zero-pad/precision IDENTICALLY to Python's, and
+    // a non-negative `+`-formatted value carries exactly one leading `+` (a
+    // negative carries a `-`, never a `+`). So translate the SAME spec with `+`
+    // substituted for the ` `, and let `SpaceSignStr` swap the rendered leading
+    // `+` to a space at runtime — reproducing Python's space-sign for every
+    // composition `translate_format_spec` accepts (decimal int / fixed-point
+    // float). A leading space is the sign flag ONLY when it is NOT a fill char:
+    // `f"{5: >8}"` is fill=' ' align='>' (handled by the PMAT-658 space-fill path,
+    // NOT a sign), so skip when the next char is an alignment marker. A bare ` `
+    // on a float is unsound (whole-float-repr, like bare `+`), so `translate`
+    // returns None there and it falls through to a reject; radix-with-space (whose
+    // negatives need sign-magnitude, like `IntRadixStr`) is deferred too — reject
+    // any spec whose Rust translation kept a radix char. Same scoping discipline
+    // as PMAT-557/613/941.
+    if let Some(rest) = spec.strip_prefix(' ') {
+        let is_fill = rest.starts_with(['<', '>', '^', '=']);
+        if !is_fill {
+            let plus_spec = format!("+{rest}");
+            if let Some(rust_spec) = translate_format_spec(&plus_spec, &ty) {
+                if !rust_spec.contains(['x', 'X', 'b', 'o']) {
+                    return Ok(Expr::SpaceSignStr {
+                        value: Box::new(value),
+                        rust_spec,
+                    });
+                }
+            }
+        }
+    }
     // PMAT-558: percent format `:.N%` / `:%` (float). Python scales the value by
     // 100, formats it with N decimals (bare `%` → Python's default 6), and
     // appends a literal `%`. Lowered to `Concat(FormatSpec((x)*100.0, ".N"),
