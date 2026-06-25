@@ -2,6 +2,25 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-949
+  github_issue: null
+  item_type: task
+  title: 'PMAT-949: [§29 GPU] FIRST real EXECUTED GPU DiffExec witness — close the audit-design.md §4/§62 "Run=1 / DiffExecResult::NotRun" caveat for C-COMPILE-RUST-TO-PTX-MMA. Ships NvccCudaDiffExecEngine (a real DiffExecEngine): two categorically-independent CUDA-C emitters (general mul+add, specialist fmaf) computing out[i]=2*in[i]+1 are nvcc-compiled for the LOCAL compute capability (derived, never hard-coded), RUN ON THE GPU, and their executed outputs numerically compared under QuorumPolicy::DiffExec. On a CUDA box the §29 quorum now records a real DiffExecResult::Match instead of NotRun{no-engine}.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (sprint window 2026-06-23..07-02 open). NEW DIRECTION: CUDA + the §29 GPU DiffExec witness. Until this slice the §29 Multi-Emitter Oracle Quorum recorded DiffExecResult::NotRun{no-engine} under QuorumPolicy::DiffExec — no emitter output was ever EXECUTED on real hardware. audit-design.md §4/§62 flagged the residual 'Run=1 / single demo-fixture / NotRun' caveat for C-COMPILE-RUST-TO-PTX-MMA."
+  - "ENGINE: crates/xpile-ptx-codegen/src/cuda_diffexec.rs ships NvccCudaDiffExecEngine implementing xpile_backend::DiffExecEngine. execute_and_compare wraps each emitter's CUDA-C kernel in a deterministic host harness over a fixed fixture vector [0,1,2,-3,4.5,10,-0.5,100], nvcc-compiles each for `-arch=<compute_capability>` (DERIVED from HwProfile::Ptx, never hard-coded — same honesty as PMAT-481 ptxas_arch), runs BOTH binaries on the GPU, parses the float outputs, and returns DiffExecResult::Match{max_abs_diff}/Divergent within tolerance 1e-3. A toolchain-present-but-broken run (nvcc fail / launch error / unparseable) returns Err → hard BackendError (never masquerades as NotRun)."
+  - "EMITTERS: two REAL nvcc-compilable CUDA-C emitters in xpile-ptx-codegen (cuda-saxpy-general: explicit `2.0f*in+1.0f`; cuda-saxpy-specialist-fma: `fmaf(2.0f,in,1.0f)`) — categorically independent implementations of identical semantics, so the DiffExec quorum falsifies the contract iff they diverge. PtxBackend::new_cuda_diffexec_witness() wires both + the engine under QuorumPolicy::DiffExec, installing the engine ONLY when cuda_toolchain_available() (nvcc + nvidia-smi both invocable)."
+  - "GRACEFUL SKIP: crates/xpile-ptx-codegen/tests/gpu_witness.rs gates the executed test on cuda_toolchain_available() — mirrors the cc/python3 differential-gate posture. No GPU (free CI): engine not installed, backend records benign NotRun{no-engine}, test asserts the Multi-NotRun shape and exits OK → CI stays green. GPU box: derives sm via nvidia-smi (sm_89 on RTX 4090), runs both kernels on the GPU, asserts a real DiffExecResult::Match with both emitter names reported."
+  - "EXECUTED WITNESS CAPTURED: on this host (RTX 4090, sm_89, nvcc 12.8) the witness PASSED — both kernels produced `1 3 5 -5 10 21 0 201` (= 2*in+1 over the fixture), agreeing bit-for-bit (max_abs_diff=0). This is the load-bearing Run≥1 (in fact Run=2) executed DiffExecResult::Match that the §4/§62 caveat waited for; audit-design.md §62 + contract compile-rust-to-ptx-mma-v1.yaml updated to record the witness exists."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors / 0 warnings), cargo-deny advisories, `cargo test -p xpile-ptx-codegen` (15 unit + gpu_witness). CI SKIPS the GPU test (no GPU) and stays green; the real executed witness is produced locally."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-470
   github_issue: null
   item_type: task
