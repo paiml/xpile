@@ -1402,14 +1402,19 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             emit_expr(out, rhs)?;
             out.push(')');
         }
-        // PMAT-502bg: list concatenation deferred in the Lean lane (list
-        // ops are a v0.3.0 sub-track) — refuse with a pointer.
-        Expr::ListConcat { .. } => {
-            return Err(LeanCodegenError::Unsupported(
-                "Python list `+` concatenation is not yet supported in the Lean lane — \
-                 use `--target rust` or `--target ruchy`"
-                    .to_string(),
-            ));
+        // PMAT-973: Python list `xs + ys` → Lean `(xs ++ ys)`. `++` on
+        // `List T` is `List.append`, a TOTAL core-Lean function (no
+        // Mathlib, no panic) — the direct list-side companion of
+        // `Expr::Concat` (string `++`, already emitted above). Python's
+        // `+` builds a fresh list and mutates neither operand; Lean
+        // values are immutable, so `++` matches that semantics exactly.
+        // Nested `list[list[T]]` (`List (List Int)`) is equally total.
+        Expr::ListConcat { lhs, rhs } => {
+            out.push('(');
+            emit_expr(out, lhs)?;
+            out.push_str(" ++ ");
+            emit_expr(out, rhs)?;
+            out.push(')');
         }
         // PMAT-502bh: str.format deferred in the Lean lane.
         Expr::StrFormat { .. } => {
@@ -2091,6 +2096,70 @@ mod tests {
             "Python `//` must use Int.fdiv (floor semantics): got\n{lean}"
         );
         assert!(!lean.contains(" / "));
+    }
+
+    #[test]
+    fn list_concat_emits_lean_append_operator() {
+        // PMAT-973: Python `xs + ys` over two `list[int]` lowers to Lean
+        // `(xs ++ ys)` — `List.append`, total core-Lean. This is the
+        // list-side companion of the string `++` (Expr::Concat) emission.
+        let f = Function {
+            name: "cat".into(),
+            params: vec![
+                Param {
+                    name: "xs".into(),
+                    ty: Type::List(Box::new(Type::I64)),
+                    mutable: false,
+                },
+                Param {
+                    name: "ys".into(),
+                    ty: Type::List(Box::new(Type::I64)),
+                    mutable: false,
+                },
+            ],
+            return_type: Type::List(Box::new(Type::I64)),
+            body: Expr::ListConcat {
+                lhs: Box::new(Expr::Ident("xs".into())),
+                rhs: Box::new(Expr::Ident("ys".into())),
+            }
+            .into(),
+        };
+        let m = module_with("fixture", vec![Item::Function(f)]);
+        let lean = emit_module(&m).expect("emit ok");
+        assert!(
+            lean.contains("def cat (xs : List (Int)) (ys : List (Int)) : List (Int) :="),
+            "expected List Int signature, got:\n{lean}"
+        );
+        assert!(
+            lean.contains("(xs ++ ys)"),
+            "Python list `+` must emit Lean `++` (List.append): got\n{lean}"
+        );
+        // Must NOT still be a refusal.
+        assert!(
+            !lean.contains("not yet supported"),
+            "ListConcat should no longer be refused: got\n{lean}"
+        );
+    }
+
+    #[test]
+    fn list_concat_over_literals_emits_append() {
+        // `[1, 2] + [3]` → `([(1: Int), (2: Int)] ++ [(3: Int)])`.
+        let f = Function {
+            name: "lit_cat".into(),
+            params: vec![],
+            return_type: Type::List(Box::new(Type::I64)),
+            body: Expr::ListConcat {
+                lhs: Box::new(Expr::ListLit(vec![Expr::LitInt(1), Expr::LitInt(2)])),
+                rhs: Box::new(Expr::ListLit(vec![Expr::LitInt(3)])),
+            }
+            .into(),
+        };
+        let m = module_with("fixture", vec![Item::Function(f)]);
+        let lean = emit_module(&m).expect("emit ok");
+        assert!(
+            lean.contains("([(1: Int), (2: Int)] ++ [(3: Int)])"),
+            "expected literal list append, got:\n{lean}"
+        );
     }
 
     #[test]
