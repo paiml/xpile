@@ -95,7 +95,11 @@ impl NvccCudaDiffExecEngine {
     ///
     /// The kernel source MUST define exactly:
     /// `__global__ void xpile_kernel(const float* in, float* out, int n)`.
-    fn harness(kernel_src: &str) -> String {
+    ///
+    /// `pub(crate)` so the PMAT-961 [`crate::PtxDiffExecEngine`] reuses this
+    /// exact CUDA-C fixture harness for the nvcc (specialist) half of the
+    /// anti-correlation diff.
+    pub(crate) fn harness(kernel_src: &str) -> String {
         let n = FIXTURE_INPUT.len();
         let inits: String = FIXTURE_INPUT
             .iter()

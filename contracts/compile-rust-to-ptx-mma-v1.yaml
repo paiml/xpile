@@ -48,26 +48,53 @@ compile_targets:
     # (rustc_codegen_nvvm) and specialist (aprender-gpu) emitters at
     # runtime falsifies the contract.
     #
-    # PMAT-949 (2026-06-25): the EXECUTED GPU DiffExec witness now
-    # EXISTS. `NvccCudaDiffExecEngine` (crates/xpile-ptx-codegen/src/
-    # cuda_diffexec.rs) nvcc-compiles two categorically-independent
-    # CUDA-C emitters (general mul+add, specialist `fmaf`) for the local
-    # compute capability, RUNS both on the GPU, and numerically compares
-    # the executed outputs under this `quorum_policy.kind: DiffExec`. On
-    # an RTX 4090 (sm_89) the §29 quorum records a real
-    # `DiffExecResult::Match` (max_abs_diff = 0 over the fixture vector)
-    # instead of `NotRun{no-engine}` — the load-bearing Run>=1 execution
-    # that closes the audit-design.md §4/§62 "Run=1 / DiffExecResult::
-    # NotRun" caveat for C-COMPILE-RUST-TO-PTX-MMA. The witness is gated
-    # on `nvcc`+`nvidia-smi` (graceful-skip on free CI); rustc_codegen_nvvm
-    # / aprender-gpu remain the production general/specialist targets the
-    # same engine will diff once wired.
+    # PMAT-949 (2026-06-25): the EXECUTED GPU DiffExec witness EXISTS.
+    # `NvccCudaDiffExecEngine` (crates/xpile-ptx-codegen/src/
+    # cuda_diffexec.rs) nvcc-compiles two CUDA-C emitters (general mul+add,
+    # specialist `fmaf`), RUNS both on the GPU, and numerically compares
+    # the outputs. This was a strong check but a SINGLE-toolchain one: both
+    # kernels are compiled by the SAME nvcc, so a shared nvcc/ptxas codegen
+    # bug could pass undetected.
+    #
+    # PMAT-961 (2026-06-25): TRUE ANTI-CORRELATION. The PTX lane now has a
+    # REAL meta-HIR -> PTX text emitter (crates/xpile-ptx-codegen/src/
+    # emit.rs, the NVIDIA sibling of xpile-wasm-codegen's hand-emitted WAT)
+    # that emits a complete ptxas-assemblable `.visible .entry xpile_kernel`
+    # for the scalar element-wise subset, with `.target sm_<cc>` DERIVED
+    # from HwProfile::Ptx (never hard-coded) and aggregates/control-flow
+    # REFUSED Lean-style. The retired ScaffoldPtxEmitter comment placeholder
+    # is gone. `PtxDiffExecEngine` (src/ptx_diffexec.rs) runs xpile's OWN
+    # hand-emitted PTX via the CUDA DRIVER API (cuModuleLoadData JIT-
+    # assembles it) AND the nvcc-compiled CUDA-C `xpile_kernel` via the
+    # Runtime API for the SAME kernel on the GPU, then diffs the executed
+    # outputs. These are TWO CATEGORICALLY-INDEPENDENT codegen toolchains
+    # (xpile hand-emit vs nvcc C++ front-end) — they share NO codegen
+    # frontend, so they agree only if BOTH lowerings are correct. On an
+    # RTX 4090 (sm_89) the §29 quorum records a real `DiffExecResult::Match`
+    # (max_abs_diff = 0 over the fixture) under this
+    # `quorum_policy.kind: DiffExec`. Offline, `ptxas` assembles the hand-
+    # emitted PTX clean (the PTX analog of wat2wasm-assembles-WAT /
+    # naga-validates-WGSL). Both gated on `nvcc`+`nvidia-smi` / `ptxas`
+    # (graceful-skip on free CI). cuda-oxide (PMAT-480, pure-Rust->PTX) is
+    # the 3RD independent emitter ON TOP of this genuinely-independent pair,
+    # still its own (nightly-toolchain) slice. rustc_codegen_nvvm /
+    # aprender-gpu remain the production targets the same DiffExec machinery
+    # diffs once wired.
     quorum_policy:
       kind: DiffExec
       tolerance: 1.0e-3
+    # PMAT-961: the EXECUTED anti-correlation pair is two INDEPENDENT
+    # codegen toolchains for the SAME kernel — `xpile-ptx-hand-emitted`
+    # (general: xpile's own meta-HIR -> PTX text) and `nvcc-cuda-c`
+    # (specialist: the nvcc-compiled CUDA-C peer). aprender-gpu stays the
+    # production GEMM specialist the same machinery diffs once wired.
+    # Invariant (contract_via_roles.rs): exactly ONE role: general.
     via_roles:
-      - emitter: rustc_codegen_nvvm
+      - emitter: xpile-ptx-hand-emitted
         role: general
+        crate: xpile-ptx-codegen
+      - emitter: nvcc-cuda-c
+        role: specialist
         crate: xpile-ptx-codegen
       - emitter: aprender-gpu
         role: specialist
