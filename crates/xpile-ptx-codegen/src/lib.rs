@@ -38,7 +38,7 @@ mod cuda_diffexec;
 mod emit;
 mod ptx_diffexec;
 pub use cuda_diffexec::{cuda_toolchain_available, NvccCudaDiffExecEngine, FIXTURE_INPUT};
-pub use emit::{emit_kernel, KERNEL_NAME, PTX_VERSION};
+pub use emit::{emit_kernel, ptx_version_for, KERNEL_NAME, PTX_VERSION};
 pub use ptx_diffexec::PtxDiffExecEngine;
 
 /// PTX backend — `Backend` impl wrapping a [`MultiEmitterBackend`] so
@@ -277,9 +277,27 @@ impl TargetEmitter for XpilePtxEmitter {
 /// codegen path (xpile text vs nvcc C++).
 struct XpileSaxpyPtxEmitter;
 
+/// The nvcc-compilable CUDA-C `xpile_kernel` for the canonical
+/// `out[i] = 2*in[i] + 1` saxpy kernel (the specialist half of the §29 PTX
+/// anti-correlation pair). `pub` so the PMAT-963 cross-hardware witness pairs
+/// it with xpile's hand-emitted PTX and runs both on the gx10 (GB10 / sm_121)
+/// fleet host — the same categorically-independent pair as the local sm_89
+/// arm, on a different architecture.
+pub const SAXPY_CUDA_C_KERNEL: &str = "\
+__global__ void xpile_kernel(const float* in, float* out, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        // general path: explicit multiply then add
+        out[i] = 2.0f * in[i] + 1.0f;
+    }
+}
+";
+
 /// Build the canonical `out[i] = 2*in[i] + 1` f64 kernel function the witness
 /// emitters share (so xpile PTX and nvcc CUDA-C attest the same semantics).
-fn saxpy_kernel_fn() -> Function {
+/// `pub` so the PMAT-963 cross-hardware witness emits xpile's hand-emitted PTX
+/// for the gx10 (sm_121) target from the SAME meta-HIR the local sm_89 arm uses.
+pub fn saxpy_kernel_fn() -> Function {
     let x_plus_x = Expr::FloatBinOp {
         op: FloatOp::Add,
         lhs: Box::new(Expr::Ident("x".into())),
@@ -511,16 +529,7 @@ impl TargetEmitter for CudaSaxpyGeneralEmitter {
             _ => return Some(Err(BackendError::MissingHardware(Target::Ptx))),
         }
         Some(Ok(EmittedText {
-            primary: "\
-__global__ void xpile_kernel(const float* in, float* out, int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) {
-        // general path: explicit multiply then add
-        out[i] = 2.0f * in[i] + 1.0f;
-    }
-}
-"
-            .to_string(),
+            primary: SAXPY_CUDA_C_KERNEL.to_string(),
             citations: vec![ContractId::new("C-COMPILE-RUST-TO-PTX-MMA")],
         }))
     }
