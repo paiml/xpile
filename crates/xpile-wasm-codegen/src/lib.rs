@@ -18,10 +18,34 @@
 //!
 //! - Types: `I64`/`CLong` → `i64`, `F64` → `f64`, `F32` → `f32`,
 //!   `Bool` → `i32` (WASM has no bool; 0/1 in an i32), and a 32-bit-ish
-//!   `CUInt` → `i32`. Everything else (`Str`/`Dict`/`Set`/`Struct`/`Tuple`/
+//!   `CUInt` → `i32`. Everything else (`Dict`/`Set`/`Struct`/`Tuple`/
 //!   `BigInt`/`Optional`/pointers/…) is **refused** with
 //!   [`BackendError::Lower`] — a Lean-style honest refusal, never wrong
 //!   code.
+//! - The FIRST string support (PMAT-986 slice 1): a `str` **parameter**
+//!   lowers to an `i32` base-pointer into WASM **linear memory**, mirroring
+//!   the `list[scalar]` ABI exactly — an `i32` UTF-8 **byte count** at
+//!   `base+0`, then the raw UTF-8 bytes from `base+8` (the same 8-byte
+//!   header offset the list layout uses). This length header unlocks two
+//!   read-only string operations: (1) **`len(s)`** over a str param lowers
+//!   to the SAME header `i32.load` + `i64`-extend the list `len(xs)` uses —
+//!   ASCII-restricted (for ASCII the byte count equals the Python `len`
+//!   char count; the emitter cannot cheaply distinguish a multi-byte UTF-8
+//!   string, so a non-ASCII string would report a byte count that is NOT
+//!   the Python char count — the honest posture is that callers pass ASCII,
+//!   documented on the lowering); and (2) **`ord(s[i])`** (`Expr::Ord` over
+//!   an `Expr::StrCharAt` of a str param) lowers to a bounds-checked
+//!   `i32.load8_u` of the `i`-th byte — the per-byte code point, the same
+//!   bounds-guard shape (`i < 0 || i >= byte_count → unreachable`) the list
+//!   index path uses, then zero-extended to the `i64` Python-int domain.
+//!   Every STRING-RETURNING string op is **refused** (a hard
+//!   `BackendError::Lower` naming "needs heap allocator (PMAT-986 slice
+//!   2)") — `s[i]` used AS a 1-char string (`Expr::StrCharAt` outside an
+//!   `ord`), `chr(n)` (`Expr::Chr`), string concat `a + b`
+//!   (`Expr::Concat`), slicing, `str(x)`/`repr(x)`, and the f-string /
+//!   number-format families — because materialising a result string needs
+//!   the bump allocator the next slice ships. String equality, string
+//!   methods, `dict`, `set`, and `struct` are likewise honestly refused.
 //! - The FIRST aggregate (PMAT-966 + PMAT-968): a `list[int]`/`list[float]`
 //!   **parameter** lowers to an `i32` base-pointer into WASM **linear
 //!   memory**. As of PMAT-968 the pointed-at region is a length-prefixed
@@ -90,10 +114,14 @@ pub use wasm_diffexec::{
 /// The Layer-5 compile contract every emitted WAT function cites.
 const CONTRACT_ID: &str = "C-COMPILE-RUST-TO-WASM";
 
-/// PMAT-968 list ABI: a `list[scalar]` base-pointer points at an `i32`
-/// element-count header at `base+0`; the packed elements start at this
-/// byte offset. The offset is 8 (not 4) so every `i64`/`f64` element stays
-/// naturally aligned for `i64.load`/`f64.load`.
+/// PMAT-968 list ABI / PMAT-986 str ABI: a `list[scalar]` base-pointer
+/// points at an `i32` element-count header at `base+0`; the packed elements
+/// start at this byte offset. The offset is 8 (not 4) so every `i64`/`f64`
+/// element stays naturally aligned for `i64.load`/`f64.load`. The PMAT-986
+/// `str` ABI is byte-identical — an `i32` UTF-8 **byte count** at `base+0`,
+/// the raw bytes from `base+8` — so a str shares this same constant (its
+/// per-byte `i32.load8_u` access needs no alignment, but reusing the layout
+/// keeps the single list/str linear-memory ABI uniform).
 const LIST_ELEMS_OFFSET: i32 = 8;
 
 /// PMAT-968: name of the per-function scratch `i64` local that holds an
@@ -404,9 +432,9 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     if module_uses_list_param(module) {
         writeln!(
             out,
-            "  ;; PMAT-968: list params are an i32 base-pointer to a \
-             length-prefixed region (i32 count @ base+0, elements @ base+8) \
-             in this linear memory"
+            "  ;; PMAT-968/986: list AND str params are an i32 base-pointer to \
+             a length-prefixed region (i32 count @ base+0, elements/bytes @ \
+             base+8) in this linear memory"
         )
         .expect("write");
         writeln!(out, "  (memory (export \"mem\") 1)").expect("write");
@@ -446,12 +474,16 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     Ok(out)
 }
 
-/// `true` when any function in `module` takes a `list[...]` parameter —
-/// the trigger for emitting the `(memory …)` declaration (PMAT-966). A
-/// list param rides an `i32` base-pointer into that linear memory.
+/// `true` when any function in `module` takes a `list[...]` OR a `str`
+/// parameter — the trigger for emitting the `(memory …)` declaration
+/// (PMAT-966 for lists, PMAT-986 for strings). Both ride an `i32`
+/// base-pointer into that linear memory under the same length-prefixed ABI.
 fn module_uses_list_param(module: &Module) -> bool {
     module.items.iter().any(|item| match item {
-        Item::Function(f) => f.params.iter().any(|p| matches!(p.ty, Type::List(_))),
+        Item::Function(f) => f
+            .params
+            .iter()
+            .any(|p| matches!(p.ty, Type::List(_) | Type::Str)),
         _ => false,
     })
 }
@@ -551,15 +583,24 @@ fn map_list_elem_type(inner: &Type) -> Result<WatTy, BackendError> {
 
 /// Map a **parameter** type to its WAT value type. Identical to
 /// [`map_type`] for scalars, but additionally accepts a `list[scalar]`
-/// (PMAT-966): the list rides an `i32` base-pointer into linear memory, so
-/// the param's WAT type is `i32`. The element type is validated here (the
-/// caller separately records it for `Index` lowering). A list of a
-/// non-scalar element is refused by [`map_list_elem_type`].
+/// (PMAT-966) and a `str` (PMAT-986): both ride an `i32` base-pointer into
+/// linear memory, so the param's WAT type is `i32`. For a list the element
+/// type is validated here (the caller separately records it for `Index`
+/// lowering); a list of a non-scalar element is refused by
+/// [`map_list_elem_type`]. A `str` param needs no element validation — it is
+/// a length-prefixed UTF-8 byte region (PMAT-986) accessed per-byte
+/// (`ord(s[i])` → `i32.load8_u`, `len(s)` → header read).
 fn param_wat_type(ty: &Type) -> Result<WatTy, BackendError> {
     if let Type::List(inner) = ty {
         // Validate the element type now (honest early refusal); the list
         // itself is an i32 base-pointer.
         map_list_elem_type(inner)?;
+        return Ok(WatTy::I32);
+    }
+    if matches!(ty, Type::Str) {
+        // PMAT-986: a `str` param is an i32 base-pointer to a length-prefixed
+        // UTF-8 byte region in linear memory (i32 byte count @ base+0, bytes
+        // @ base+8). Same ABI shape as a list param.
         return Ok(WatTy::I32);
     }
     map_type(ty)
@@ -568,6 +609,21 @@ fn param_wat_type(ty: &Type) -> Result<WatTy, BackendError> {
 fn unsupported(what: &str) -> BackendError {
     BackendError::Lower(format!(
         "xpile-wasm-codegen: unsupported construct — {what}"
+    ))
+}
+
+/// PMAT-986: the honest refusal for a STRING-RETURNING op. Slice 1 ships
+/// read-only string access (str param + `len(s)` + `ord(s[i])` byte read);
+/// any op that must MATERIALISE a result string in linear memory (concat,
+/// slicing, `s[i]` as a 1-char string, `chr(n)`, `str(x)`, f-strings, …)
+/// needs the bump allocator that PMAT-986 slice 2 ships. Refuse with a hard
+/// `BackendError::Lower` naming that follow-up so the boundary is explicit.
+fn needs_heap_allocator(what: &str) -> BackendError {
+    BackendError::Lower(format!(
+        "xpile-wasm-codegen: {what} produces a NEW string — this needs the \
+         linear-memory bump heap allocator (PMAT-986 slice 2). Slice 1 ships \
+         read-only string access only (str param + len(s) + ord(s[i]) byte \
+         read); string-returning ops are refused until the allocator lands."
     ))
 }
 
@@ -584,6 +640,12 @@ struct Scope {
     /// WAT type its elements load as (`i64`/`f64`/`f32`). `Index` over such
     /// a local emits `base + i*size` + that element's `*.load`.
     list_elem: Vec<(String, WatTy)>,
+    /// PMAT-986: names of params that are `str` base-pointers into linear
+    /// memory (i32 byte count @ base+0, UTF-8 bytes @ base+8). `len(s)` reads
+    /// the header; `ord(s[i])` does a bounds-checked `i32.load8_u` of byte
+    /// `i`. Only str PARAMS land here — there are no str locals/literals in
+    /// the subset (string-returning ops are refused until the heap allocator).
+    str_params: Vec<String>,
     /// The function's return WAT type (drives `return` checking).
     ret: WatTy,
     /// Whether the return type is the unit/void shape (no value).
@@ -610,6 +672,13 @@ impl Scope {
             .map(|(_, t)| *t)
     }
 
+    /// PMAT-986: `true` if `name` is a `str` parameter base-pointer (a
+    /// length-prefixed UTF-8 byte region in linear memory). Drives
+    /// `len(s)` and `ord(s[i])` lowering.
+    fn is_str_param(&self, name: &str) -> bool {
+        self.str_params.iter().any(|n| n == name)
+    }
+
     /// Declare a new local; idempotent on an existing name (re-`Let` of a
     /// name reuses the slot — WASM locals are function-scoped).
     fn declare(&mut self, name: &str, ty: WatTy) {
@@ -621,6 +690,13 @@ impl Scope {
 
 /// Emit one `(func …)` for `f`.
 fn emit_function(f: &Function) -> Result<String, BackendError> {
+    // PMAT-986: a `str` RETURN is a string-returning op — it must
+    // materialise a result string in linear memory, which needs the bump
+    // allocator the NEXT slice ships. Refuse it honestly here (before the
+    // generic `map_type` refusal) so the message names the slice-2 work.
+    if matches!(f.return_type, Type::Str) {
+        return Err(needs_heap_allocator("returning a `str`"));
+    }
     let ret_is_unit = matches!(f.return_type, Type::Unit);
     let ret = if ret_is_unit {
         // A void function: no result type. Use i32 as a placeholder that
@@ -633,19 +709,25 @@ fn emit_function(f: &Function) -> Result<String, BackendError> {
     let mut scope = Scope {
         locals: Vec::new(),
         list_elem: Vec::new(),
+        str_params: Vec::new(),
         ret,
         ret_is_unit,
     };
     // Params are locals 0..n. A `list[scalar]` param (PMAT-966) rides an
     // `i32` base-pointer into linear memory; its element type is recorded
-    // so `Index` knows the load shape. Every other param maps to its
-    // scalar WAT type.
+    // so `Index` knows the load shape. A `str` param (PMAT-986) likewise
+    // rides an `i32` base-pointer (length-prefixed UTF-8 byte region) and is
+    // recorded so `len(s)` / `ord(s[i])` lower correctly. Every other param
+    // maps to its scalar WAT type.
     for Param { name, ty, .. } in &f.params {
         let wt = param_wat_type(ty)?;
         scope.declare(name, wt);
         if let Type::List(inner) = ty {
             let elem = map_list_elem_type(inner)?;
             scope.list_elem.push((name.clone(), elem));
+        }
+        if matches!(ty, Type::Str) {
+            scope.str_params.push(name.clone());
         }
     }
 
@@ -989,6 +1071,23 @@ fn emit_expr(
         }
         Expr::Index { collection, index } => emit_index(collection, index, scope, out, depth),
         Expr::Len(collection) => emit_len(collection, scope, out, depth),
+        // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
+        // returns an int (a code point), so it needs no result string. Any
+        // other `ord` operand (e.g. `ord(chr(n))`) is refused.
+        Expr::Ord { value } => emit_ord(value, scope, out, depth),
+        // PMAT-986: `s[i]` used AS a 1-char string (a `StrCharAt` that is NOT
+        // the operand of an `ord`) is string-returning — refuse with the
+        // slice-2 allocator note. Lowering `ord(s[i])` consumes the inner
+        // `StrCharAt` directly in `emit_ord`, so a `StrCharAt` reaching here
+        // is genuinely a string-valued use.
+        Expr::StrCharAt { .. } => Err(needs_heap_allocator(
+            "indexing a string `s[i]` as a 1-char string (use `ord(s[i])` for \
+             the byte code, which slice 1 supports)",
+        )),
+        // PMAT-986: `chr(n)` materialises a new 1-char string.
+        Expr::Chr { .. } => Err(needs_heap_allocator("`chr(n)`")),
+        // PMAT-986: string concat `a + b` materialises a new string.
+        Expr::Concat { .. } => Err(needs_heap_allocator("string concatenation `a + b`")),
         Expr::Unit => Err(unsupported(
             "unit value `()` in a value position (WASM has no unit operand)",
         )),
@@ -1181,13 +1280,24 @@ fn emit_index_assign(
     Ok(())
 }
 
-/// Emit `len(xs)` over a `list[scalar]` parameter (PMAT-968). Reads the
-/// `i32` element-count header at `base+0` and zero-extends it to the `i64`
-/// Python-int domain (`len` returns a non-negative Python `int`).
+/// Emit `len(xs)` over a `list[scalar]` parameter (PMAT-968) or `len(s)`
+/// over a `str` parameter (PMAT-986). Both lower IDENTICALLY: read the `i32`
+/// count header at `base+0` and zero-extend it to the `i64` Python-int
+/// domain (`len` returns a non-negative Python `int`). For a list the header
+/// is the element count; for a str it is the UTF-8 **byte** count.
 ///
-/// `collection` must be an [`Expr::Ident`] naming a list-param base-pointer;
-/// `len` over anything else in the WASM subset (a scalar, a str, a dict) is
-/// refused — only a length-prefixed `list[scalar]` carries a length header.
+/// PMAT-986 (str): the byte count equals the Python char count ONLY for
+/// ASCII — a multi-byte UTF-8 string has byte_count > char_count, so this
+/// `len(s)` reports the byte count, which is the honest ASCII-restricted
+/// posture (callers pass ASCII; the emitter cannot cheaply count chars
+/// without scanning UTF-8 continuation bytes, deferred with the rest of the
+/// string runtime). For an ASCII fixture the executed witness asserts the
+/// value matches CPython `len`.
+///
+/// `collection` must be an [`Expr::Ident`] naming a list-param OR str-param
+/// base-pointer; `len` over anything else in the WASM subset (a scalar, a
+/// dict, a literal/temporary) is refused — only a length-prefixed list/str
+/// param carries a length header.
 fn emit_len(
     collection: &Expr,
     scope: &Scope,
@@ -1197,18 +1307,19 @@ fn emit_len(
     let Expr::Ident(name) = collection else {
         return Err(unsupported(
             "len() of a non-name collection — the WASM subset only takes \
-             len() of a `list[scalar]` PARAMETER (its i32 length header); \
-             len of a list literal / str / dict / temporary is refused",
+             len() of a `list[scalar]` or `str` PARAMETER (its i32 length \
+             header); len of a list literal / dict / temporary is refused",
         ));
     };
-    if scope.list_elem_of(name).is_none() {
+    if scope.list_elem_of(name).is_none() && !scope.is_str_param(name) {
         return Err(unsupported(&format!(
-            "len() over `{name}` which is not a `list[scalar]` parameter — \
-             only a list param carries the i32 element-count header in the \
-             WASM subset (no str/dict len)"
+            "len() over `{name}` which is not a `list[scalar]` or `str` \
+             parameter — only a list/str param carries the i32 count header \
+             in the WASM subset (no dict len)"
         )));
     }
-    // len = (i32 header at base+0) zero-extended to i64.
+    // len = (i32 header at base+0) zero-extended to i64. Identical for a
+    // list (element count) and a str (byte count) — the shared ABI header.
     indent(out, depth);
     writeln!(out, "local.get ${name}").expect("write");
     indent(out, depth);
@@ -1216,6 +1327,129 @@ fn emit_len(
     indent(out, depth);
     writeln!(out, "i64.extend_i32_u").expect("write");
     Ok(WatTy::I64)
+}
+
+/// Emit `ord(s[i])` over a `str` parameter (PMAT-986) — the one
+/// string-reading op slice 1 supports that returns an `int` (a code point)
+/// rather than a new string. The meta-HIR shape is `Expr::Ord { value:
+/// Expr::StrCharAt { string: Ident(s), index } }`: the frontend lowers
+/// Python `ord(s[i])` to exactly that, and lowering the `StrCharAt` here
+/// (instead of materialising a 1-char string) avoids any allocation.
+///
+/// Lowers to a bounds-checked `i32.load8_u` of the `i`-th UTF-8 byte:
+///   1. evaluate `i` once into the scratch `i64` `$__wasm_idx`;
+///   2. bounds guard — `i < 0 || i >= byte_count → unreachable` — the
+///      Python `IndexError` analogue, reusing the SAME header read the list
+///      index path uses (`byte_count` is the i32 header at `base+0`);
+///   3. `addr = base + LIST_ELEMS_OFFSET + (i as i32)` (byte stride 1);
+///   4. `i32.load8_u` the byte, then `i64.extend_i32_u` to the Python-int
+///      domain (a byte is 0..=255; for ASCII this is the code point, exactly
+///      CPython's `ord`).
+///
+/// Any other `ord` operand is refused: `ord` of a non-`StrCharAt` (e.g.
+/// `ord(chr(n))`, `ord` of a whole-string `Ident`) needs a materialised
+/// char and is outside slice 1; an `s[i]` whose base is not a str param is
+/// likewise refused.
+fn emit_ord(
+    value: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    let Expr::StrCharAt { string, index } = value else {
+        return Err(unsupported(
+            "ord() of a non-`s[i]` operand — the WASM subset lowers `ord(s[i])` \
+             over a `str` PARAMETER to a bounds-checked i32.load8_u of byte i; \
+             ord() of a whole string, of `chr(n)`, or of a literal is refused",
+        ));
+    };
+    let Expr::Ident(name) = string.as_ref() else {
+        return Err(unsupported(
+            "ord(s[i]) where the indexed value is not a name — only `ord(s[i])` \
+             over a `str` parameter (i32 base-pointer) is supported",
+        ));
+    };
+    if !scope.is_str_param(name) {
+        return Err(unsupported(&format!(
+            "ord({name}[i]) where `{name}` is not a `str` parameter — only a \
+             str param (i32 base-pointer into linear memory) supports \
+             per-byte ord() in the WASM subset"
+        )));
+    }
+    // Bounds-checked byte address: base + 8 + (i as i32)*1, with the
+    // `i < 0 || i >= byte_count → unreachable` guard. Reuse the shared
+    // list-element address helper with a synthetic 1-byte stride: the i32
+    // path multiplies by `elem.byte_size()`, so a single-byte stride needs a
+    // dedicated emit (we cannot pass a 1-byte `WatTy`). Emit it inline here,
+    // mirroring `emit_list_elem_addr` but with stride 1 and a load8.
+    emit_str_byte_addr(name, index, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "i32.load8_u").expect("write");
+    indent(out, depth);
+    writeln!(out, "i64.extend_i32_u").expect("write");
+    Ok(WatTy::I64)
+}
+
+/// Emit the bounds-checked linear-memory ADDRESS of the `index`-th UTF-8
+/// byte of the `str` parameter `name` onto the WASM stack (PMAT-986).
+///
+/// The str-byte sibling of [`emit_list_elem_addr`]: identical bounds-guard
+/// shape (`i < 0 || i >= byte_count → unreachable`, the Python `IndexError`
+/// analogue), but a **byte** stride of 1 (no `*size` multiply) and reading
+/// the count header as a UTF-8 byte count. Leaves `addr = base +
+/// LIST_ELEMS_OFFSET + (i as i32)` on the stack for an `i32.load8_u`.
+fn emit_str_byte_addr(
+    name: &str,
+    index: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    // Evaluate the index once into the per-function scratch i64.
+    emit_expr_typed(index, scope, out, depth, WatTy::I64)?;
+    indent(out, depth);
+    writeln!(out, "local.set ${IDX_SCRATCH}").expect("write");
+
+    // Bounds guard: if (i < 0) | (i >= byte_count) { unreachable }.
+    indent(out, depth);
+    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i64.const 0").expect("write");
+    indent(out, depth);
+    writeln!(out, "i64.lt_s").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.load").expect("write"); // header byte count
+    indent(out, depth);
+    writeln!(out, "i64.extend_i32_u").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i64.le_s").expect("write"); // byte_count <= i  ⇔  i >= byte_count
+    indent(out, depth);
+    writeln!(out, "i32.or").expect("write");
+    indent(out, depth);
+    writeln!(out, "if").expect("write");
+    indent(out, depth + 1);
+    writeln!(out, "unreachable").expect("write");
+    indent(out, depth);
+    writeln!(out, "end").expect("write");
+
+    // addr = base + LIST_ELEMS_OFFSET + (index as i32)  (byte stride 1).
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.add").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.wrap_i64").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.add").expect("write");
+    Ok(())
 }
 
 /// Render an `f64` as a WAT float literal token.
@@ -1291,6 +1525,14 @@ fn emit_unop(
     }
 }
 
+/// PMAT-986: `true` if `e` is a bare `Ident` naming a `str` parameter — a
+/// binop operand we must NOT treat as a comparable/arithmetic `i32` (it is a
+/// string base-pointer, not a value). Used to refuse `==`/`<`/`+`/… over
+/// strings before the opcode table would silently emit pointer ops.
+fn binop_operand_is_str_param(e: &Expr, scope: &Scope) -> bool {
+    matches!(e, Expr::Ident(name) if scope.is_str_param(name))
+}
+
 fn emit_binop(
     op: BinOp,
     lhs: &Expr,
@@ -1299,6 +1541,26 @@ fn emit_binop(
     out: &mut String,
     depth: usize,
 ) -> Result<WatTy, BackendError> {
+    // PMAT-986: a `str` param lowers to an `i32` base-pointer, which would be
+    // INDISTINGUISHABLE from a bool `i32` in the opcode table below — so a
+    // naive `a == b`/`a < b` over two str params would silently compare
+    // BASE-POINTERS (wrong code), and `a + b` would do pointer arithmetic.
+    // Refuse any binop whose operand is a str param: string equality,
+    // comparison, and concat all need real content logic (equality/compare
+    // is a future slice; concat needs the heap allocator). An honest refusal,
+    // never a silent miscompile.
+    if binop_operand_is_str_param(lhs, scope) || binop_operand_is_str_param(rhs, scope) {
+        if matches!(op, BinOp::Add) {
+            return Err(needs_heap_allocator("string concatenation `a + b`"));
+        }
+        return Err(unsupported(&format!(
+            "binary op {op:?} over `str` operand(s) — string equality / \
+             comparison / methods are not in the WASM slice-1 subset (only \
+             read-only `len(s)` + `ord(s[i])`); they need real string-content \
+             logic, refused honestly rather than comparing base-pointers"
+        )));
+    }
+
     // Logical and/or short-circuit — emit as nested if-expressions over
     // i32 booleans (matches Python/Rust short-circuit semantics).
     if matches!(op, BinOp::And | BinOp::Or) {
