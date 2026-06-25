@@ -68,17 +68,36 @@ fn wgpu_diffexec_executes_on_gpu_and_matches() {
         return;
     }
 
-    eprintln!("PMAT-950: running executed cross-vendor GPU witness via wgpu");
+    eprintln!("PMAT-950/975: running executed cross-vendor GPU witness via wgpu");
 
     let backend = WgslBackend::new_wgpu_diffexec_witness();
     let artifact: Artifact = backend
         .lower(&kernel_module(), &wgsl_config())
         .expect("witness backend lowers + runs on GPU");
 
+    // PMAT-975 proof: print the REAL emitted WGSL the GPU executed (the
+    // general/primary side = xpile's emit_wgsl_module output, not a
+    // hardcoded shader).
+    eprintln!(
+        "PMAT-975: xpile's REAL emitted WGSL executed on the GPU (meta-HIR → emit_wgsl_module → run):\n{}",
+        artifact.primary
+    );
+
     // The primary emission carries a real WGSL compute shader + the contract.
     assert!(
         artifact.primary.contains("@compute") && artifact.primary.contains("fn main"),
         "primary should be a real WGSL compute shader, got:\n{}",
+        artifact.primary
+    );
+    // PMAT-975: the general/primary side is xpile's REAL emit_wgsl_module
+    // output, not a hardcoded shader — its load-bearing math is the real
+    // lowered float arithmetic and it calls the real `saxpy` fn.
+    assert!(
+        artifact
+            .primary
+            .contains("return ((x * f32(2.0)) + f32(1.0));")
+            && artifact.primary.contains("outp[i] = saxpy(inp[i]);"),
+        "primary must embed xpile's REAL emitted saxpy (meta-HIR → emit_wgsl_module), got:\n{}",
         artifact.primary
     );
     assert!(
@@ -96,8 +115,8 @@ fn wgpu_diffexec_executes_on_gpu_and_matches() {
         } => {
             assert_eq!(emitters.len(), 2, "general + specialist both ran");
             assert!(
-                emitters.iter().any(|e| e == "wgsl-saxpy-general"),
-                "general emitter must be reported, got {emitters:?}"
+                emitters.iter().any(|e| e == "wgsl-real-emit-general"),
+                "general (real-emit) emitter must be reported, got {emitters:?}"
             );
             assert!(
                 emitters.iter().any(|e| e == "wgsl-saxpy-specialist-fma"),

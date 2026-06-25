@@ -48,7 +48,9 @@
 use wgpu::util::DeviceExt;
 
 use xpile_backend::{BackendConfig, DiffExecEngine, DiffExecResult, HwProfile};
-use xpile_meta_hir::Module;
+use xpile_meta_hir::{Block, Expr, FloatOp, Function, Item, Module, Param, SourceLang, Type};
+
+use crate::wgsl_emit::emit_wgsl_module;
 
 /// The deterministic fixture input vector both shaders run over. Kept
 /// **bit-identical** to [`xpile_ptx_codegen::FIXTURE_INPUT`] so the WGSL
@@ -92,11 +94,114 @@ pub fn wgpu_adapter_available() -> bool {
     .is_ok()
 }
 
+/// Alias of [`wgpu_adapter_available`] under the `vulkan_adapter_available`
+/// name the sibling SPIR-V lane (`xpile_spirv_codegen::vulkan_adapter_available`)
+/// and the §29 witnesses use. Same graceful-skip semantics: `true` only
+/// when a real adapter can be acquired (locally), `false` on free CI.
+pub fn vulkan_adapter_available() -> bool {
+    wgpu_adapter_available()
+}
+
 /// The `@compute` entry-point name both emitters' WGSL must define, and
 /// the storage-buffer binding contract the harness drives:
 ///   `@group(0) @binding(0) var<storage, read>       …: array<f32>` (in)
 ///   `@group(0) @binding(1) var<storage, read_write>  …: array<f32>` (out)
 const ENTRY_POINT: &str = "main";
+
+/// The scalar kernel name xpile's REAL emitter lowers and the `@compute`
+/// wrapper calls per element. `saxpy(x) = 2.0 * x + 1.0`.
+const KERNEL_FN: &str = "saxpy";
+
+/// Build the small meta-HIR [`Module`] whose single scalar function is the
+/// `out[i] = 2.0 * in[i] + 1.0` kernel — the SAME numeric truth the
+/// hardcoded SAXPY witness shaders compute, but expressed in meta-HIR so
+/// it drives xpile's REAL [`emit_wgsl_module`] lowering (PMAT-970).
+///
+/// `fn saxpy(x: f32) -> f32 { return (x * f32(2.0)) + f32(1.0); }`
+///
+/// This is the load-bearing change for PMAT-975: the witness's "general"
+/// side is now produced by lowering THIS module through xpile's emitter,
+/// not by a hardcoded shader string.
+pub fn kernel_module() -> Module {
+    let body = Block {
+        stmts: Vec::new(),
+        trailing_return: Expr::FloatBinOp {
+            op: FloatOp::Add,
+            lhs: Box::new(Expr::FloatBinOp {
+                op: FloatOp::Mul,
+                lhs: Box::new(Expr::Ident("x".into())),
+                rhs: Box::new(Expr::LitFloat(2.0)),
+            }),
+            rhs: Box::new(Expr::LitFloat(1.0)),
+        },
+    };
+    Module {
+        name: "saxpy_kernel".into(),
+        source_lang: SourceLang::Rust,
+        items: vec![Item::Function(Function {
+            name: KERNEL_FN.into(),
+            params: vec![Param {
+                name: "x".into(),
+                ty: Type::F32,
+                mutable: false,
+            }],
+            return_type: Type::F32,
+            body,
+        })],
+        ffi_boundaries: Vec::new(),
+    }
+}
+
+/// Produce the REAL executable WGSL compute shader whose load-bearing math
+/// is xpile's emitted `saxpy` fn.
+///
+/// Steps (the PMAT-975 witness chain — `meta-HIR → emit_wgsl_module → run`):
+///   1. lower [`kernel_module`] through xpile's REAL [`emit_wgsl_module`],
+///      yielding `fn saxpy(x: f32) -> f32 { return ((x * f32(2.0)) + f32(1.0)); }`,
+///   2. prepend the harness's storage-buffer binding contract and a
+///      `@compute @workgroup_size(64)` entry point that CALLS that real
+///      `saxpy` once per element.
+///
+/// The arithmetic the GPU executes is therefore the bytes xpile emitted —
+/// the `@compute` wrapper only marshals buffers and dispatches. A bug in
+/// `emit_wgsl_module`'s float lowering would change the executed result and
+/// be caught by the diff against the trusted reference.
+pub fn real_emitted_compute_wgsl() -> Result<String, String> {
+    let emitted = emit_wgsl_module(&kernel_module())
+        .map_err(|e| format!("xpile emit_wgsl_module failed: {e}"))?;
+    Ok(wrap_scalar_fn_as_compute(&emitted, KERNEL_FN))
+}
+
+/// Wrap a real emitted scalar `fn <kernel>(x: f32) -> f32` in the harness's
+/// `@compute` entry point + storage-buffer bindings so it executes on the
+/// GPU one invocation per element. The emitted fn body is spliced verbatim
+/// (it is the load-bearing computation); only the buffer marshalling around
+/// it is harness boilerplate.
+fn wrap_scalar_fn_as_compute(emitted_fn: &str, kernel: &str) -> String {
+    format!(
+        "@group(0) @binding(0) var<storage, read> inp: array<f32>;\n\
+         @group(0) @binding(1) var<storage, read_write> outp: array<f32>;\n\
+         \n\
+         {emitted_fn}\n\
+         @compute @workgroup_size(64)\n\
+         fn {entry}(@builtin(global_invocation_id) gid: vec3<u32>) {{\n\
+         \x20   let i = gid.x;\n\
+         \x20   if (i < arrayLength(&inp)) {{\n\
+         \x20       // load-bearing math is xpile's REAL emitted `{kernel}`\n\
+         \x20       outp[i] = {kernel}(inp[i]);\n\
+         \x20   }}\n\
+         }}\n",
+        entry = ENTRY_POINT,
+    )
+}
+
+/// The CPython-equivalent expected output of the kernel over
+/// [`FIXTURE_INPUT`]: `out[i] = 2.0 * in[i] + 1.0`. The trusted reference
+/// the REAL emitted shader's executed output is diffed against, independent
+/// of any second shader.
+fn expected_output() -> Vec<f32> {
+    FIXTURE_INPUT.iter().map(|x| 2.0 * x + 1.0).collect()
+}
 
 /// A real wgpu `DiffExecEngine`: runs each emitter's WGSL compute shader
 /// on a GPU adapter and numerically compares the executed outputs. This
@@ -259,10 +364,40 @@ impl DiffExecEngine for WgpuWgslDiffExecEngine {
 
         let (device, queue, adapter_label) = Self::acquire_device()?;
 
-        let general = Self::run_wgsl(&device, &queue, general_text, "general")?;
+        // The `general_text` here is xpile's REAL emitted WGSL (the general
+        // emitter lowers a meta-HIR module through `emit_wgsl_module`; see
+        // `WgslBackend::new_wgpu_diffexec_witness`). Running it proves the
+        // PMAT-975 chain `meta-HIR → emit_wgsl_module → run`.
+        let general = Self::run_wgsl(&device, &queue, general_text, "general(xpile-real-emit)")?;
         let specialist = Self::run_wgsl(&device, &queue, specialist_text, "specialist")?;
-        let _ = adapter_label; // available for tracing; not part of the vote.
 
+        // FIRST integrity check: the executed output of xpile's REAL emitted
+        // shader must match the CPython-equivalent expected vector
+        // (`out[i] = 2.0*in[i] + 1.0`). This is the absolute correctness gate
+        // — it falsifies a wrong `emit_wgsl_module` even if the specialist
+        // happened to be wrong the same way.
+        let expected = expected_output();
+        if general.len() != expected.len() {
+            return Err(format!(
+                "xpile real-emit shader on {adapter_label} returned {} elements, expected {}",
+                general.len(),
+                expected.len()
+            ));
+        }
+        let real_vs_expected = general
+            .iter()
+            .zip(expected.iter())
+            .map(|(g, e)| ((*g as f64) - (*e as f64)).abs())
+            .fold(0.0_f64, f64::max);
+        if real_vs_expected > tolerance {
+            return Ok(DiffExecResult::Divergent {
+                max_abs_diff: real_vs_expected,
+                tolerance,
+            });
+        }
+
+        // SECOND check: the REAL emitted shader and the trusted independent
+        // `fma` reference agree (the anti-correlation vote).
         if general.len() != specialist.len() {
             return Ok(DiffExecResult::Divergent {
                 max_abs_diff: f64::INFINITY,
@@ -273,7 +408,7 @@ impl DiffExecEngine for WgpuWgslDiffExecEngine {
             .iter()
             .zip(specialist.iter())
             .map(|(g, s)| ((*g as f64) - (*s as f64)).abs())
-            .fold(0.0_f64, f64::max);
+            .fold(real_vs_expected, f64::max);
 
         if max_abs_diff <= tolerance {
             Ok(DiffExecResult::Match { max_abs_diff })
@@ -312,5 +447,66 @@ mod tests {
     fn engine_constructs() {
         // Pure-CPU smoke: building the engine never touches a GPU.
         let _engine = WgpuWgslDiffExecEngine::new();
+    }
+
+    // ── PMAT-975: the witness drives xpile's REAL emit_wgsl_module ──────
+
+    #[test]
+    fn kernel_module_lowers_through_real_emitter_and_naga_validates() {
+        // The witness's general side is xpile's REAL emission, not a
+        // hardcoded shader. Lower the kernel module through emit_wgsl_module
+        // and prove the emitted scalar fn naga-validates.
+        let emitted = emit_wgsl_module(&kernel_module())
+            .expect("real emitter lowers the saxpy kernel module");
+        // The fn name + the REAL lowered float arithmetic from wgsl_emit.
+        assert!(emitted.contains("fn saxpy(x: f32) -> f32"), "{emitted}");
+        assert!(
+            emitted.contains("return ((x * f32(2.0)) + f32(1.0));"),
+            "the load-bearing math must be xpile's REAL float lowering:\n{emitted}"
+        );
+        // The scalar fn alone passes the CPU-only naga front-end.
+        crate::wgsl_emit::naga_validate_wgsl(&emitted)
+            .expect("real emitted scalar fn must naga-validate");
+    }
+
+    #[test]
+    fn real_emitted_compute_wgsl_embeds_real_fn_and_naga_validates() {
+        // The full @compute wrapper around the REAL emitted fn must:
+        //   (a) contain xpile's real emitted saxpy fn (load-bearing math),
+        //   (b) call it per element (the wrapper only marshals buffers),
+        //   (c) parse + type-check under the CPU-only naga front-end.
+        let wgsl = real_emitted_compute_wgsl().expect("real-emit compute wgsl builds");
+        // (a) the real emitted body is spliced verbatim.
+        assert!(
+            wgsl.contains("return ((x * f32(2.0)) + f32(1.0));"),
+            "the @compute shader must embed xpile's REAL emitted math:\n{wgsl}"
+        );
+        // (b) the entry point calls the real kernel.
+        assert!(wgsl.contains("outp[i] = saxpy(inp[i]);"), "{wgsl}");
+        assert!(
+            wgsl.contains("@compute @workgroup_size(64)") && wgsl.contains("fn main("),
+            "{wgsl}"
+        );
+        // (c) the WHOLE shader (real fn + wrapper) naga-validates.
+        crate::wgsl_emit::naga_validate_wgsl(&wgsl)
+            .unwrap_or_else(|e| panic!("real-emit compute shader must naga-validate: {e}\n{wgsl}"));
+    }
+
+    #[test]
+    fn expected_output_is_cpython_equivalent_saxpy() {
+        // The trusted reference vector is `2.0*x + 1.0` over the fixture —
+        // independent of any GPU run, so a wrong emitter is caught.
+        let exp = expected_output();
+        assert_eq!(exp.len(), FIXTURE_INPUT.len());
+        assert_eq!(exp[0], 1.0); // 2*0 + 1
+        assert_eq!(exp[1], 3.0); // 2*1 + 1
+        assert_eq!(exp[3], -5.0); // 2*-3 + 1
+        assert_eq!(exp[7], 201.0); // 2*100 + 1
+    }
+
+    #[test]
+    fn vulkan_alias_matches_wgpu_availability() {
+        // The two graceful-skip gates agree (one aliases the other).
+        assert_eq!(vulkan_adapter_available(), wgpu_adapter_available());
     }
 }
