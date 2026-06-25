@@ -37,12 +37,16 @@
 //!   `i32.load` of the header count zero-extended to the `i64` Python-int
 //!   domain. The element type must itself be a supported scalar
 //!   (`i64`/`f64`/`f32`); a `list[bool]`, nested list, or list of strings is
-//!   refused. A list **literal**, list **return**, list **append** / growth,
-//!   and index **assignment** are all still refused — read-only access to a
-//!   fixed list of scalars by (bounds-checked) index plus `len` is the
-//!   deliverable.
+//!   refused. As of PMAT-978 a single-index **write** `xs[i] = v`
+//!   (`Stmt::IndexAssign`) is also supported — the mutation companion of the
+//!   read path, reusing the SAME bounds guard + address math but terminating
+//!   in a natural-width `*.store`. A list **literal**, list **return**, list
+//!   **append** / growth, and a MULTI-index / nested-list write
+//!   (`xs[i][j] = v`) remain refused — fixed-list scalar access (read +
+//!   single-index write) plus `len` is the deliverable.
 //! - Statements: `Let`/`Assign` (→ `local` + `local.set`), `If`/`While`/
-//!   `Break`/`Continue`/`Return`.
+//!   `Break`/`Continue`/`Return`, and `xs[i] = v` (`IndexAssign`) over a
+//!   `list[scalar]` param (bounds-checked `*.store`).
 //! - Expressions: `Ident` (→ `local.get`), `LitInt`/`LitFloat`/`LitBool`,
 //!   `BinOp` (arith/bitwise/shift + comparisons), `FloatBinOp`, `UnOp`,
 //!   `IfExpr`, `Index` over a `list[scalar]` param (bounds-checked `*.load`),
@@ -492,6 +496,19 @@ impl WatTy {
             WatTy::F32 => "f32.load",
         }
     }
+
+    /// The natural-width `*.store` opcode for this scalar — the mirror of
+    /// [`WatTy::load_instr`], used to WRITE a list element into linear
+    /// memory for `xs[i] = v` (PMAT-978). A store consumes `(address,
+    /// value)` from the stack and leaves nothing.
+    fn store_instr(self) -> &'static str {
+        match self {
+            WatTy::I64 => "i64.store",
+            WatTy::I32 => "i32.store",
+            WatTy::F64 => "f64.store",
+            WatTy::F32 => "f32.store",
+        }
+    }
 }
 
 /// Map a meta-HIR [`Type`] to its WAT value type, refusing everything
@@ -708,7 +725,14 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
                 collect_let_locals_stmts(then_body, scope)?;
                 collect_let_locals_stmts(else_body, scope)?;
             }
-            Stmt::Assign { .. } | Stmt::Return(_) | Stmt::Break | Stmt::Continue => {}
+            // PMAT-978: `xs[i] = v` writes an EXISTING list element — it
+            // introduces no new `let` local. (The `$__wasm_idx` scratch it
+            // uses is declared from the emitted body, like the read path.)
+            Stmt::Assign { .. }
+            | Stmt::IndexAssign { .. }
+            | Stmt::Return(_)
+            | Stmt::Break
+            | Stmt::Continue => {}
             other => {
                 return Err(unsupported(&format!(
                     "statement {} (outside the WASM scalar/control subset)",
@@ -737,6 +761,7 @@ fn stmt_kind(s: &Stmt) -> &'static str {
         Stmt::Break => "Break",
         Stmt::Continue => "Continue",
         Stmt::Print { .. } => "Print",
+        Stmt::IndexAssign { .. } => "IndexAssign",
         _ => "<container/aggregate statement>",
     }
 }
@@ -837,6 +862,14 @@ fn emit_stmt(
             writeln!(out, ")").expect("write");
             Ok(())
         }
+        // PMAT-978: `xs[i] = v` — in-place list-element write over a
+        // `list[scalar]` parameter, via the shared bounds-checked
+        // linear-memory address + a natural-width `*.store`.
+        Stmt::IndexAssign {
+            list_name,
+            indices,
+            value,
+        } => emit_index_assign(list_name, indices, value, scope, out, depth),
         other => Err(unsupported(&format!(
             "statement {} (outside the WASM scalar/control subset)",
             stmt_kind(other)
@@ -1008,6 +1041,37 @@ fn emit_index(
              indexed in the WASM subset (no str/dict/tuple indexing)"
         )));
     };
+    // Emit the bounds-checked element address onto the stack, then read the
+    // element at it with the element's natural `*.load`.
+    emit_list_elem_addr(name, elem, index, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "{}", elem.load_instr()).expect("write");
+    Ok(elem)
+}
+
+/// Emit the bounds-checked linear-memory ADDRESS of `name[index]` onto the
+/// WASM stack, for a `list[scalar]` parameter `name` whose elements load as
+/// `elem`. Shared by the READ path ([`emit_index`] — append a `*.load`) and
+/// the WRITE path ([`emit_index_assign`] — push the value, append a
+/// `*.store`), so the PMAT-968 bounds guard lives in exactly ONE place and
+/// can never drift between read and write.
+///
+/// Sequence (PMAT-968 + PMAT-978):
+///   1. evaluate `index` once into the per-function scratch `i64`
+///      `$__wasm_idx` (so a possibly-effectful index is not re-run);
+///   2. bounds guard — `if (i < 0) | (i >= len) { unreachable }` — the
+///      Python `IndexError` / Rust `vec[i]`-panic analogue (`len` is the
+///      i32 header at `base+0`, zero-extended to i64);
+///   3. leave `addr = base + LIST_ELEMS_OFFSET + (i as i32) * elem_size`
+///      on the stack.
+fn emit_list_elem_addr(
+    name: &str,
+    elem: WatTy,
+    index: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
     // Evaluate the index expression once into the per-function scratch i64
     // local `$__wasm_idx` so it can be reused by both the bounds guard and
     // the address computation without re-evaluating a (possibly effectful)
@@ -1062,10 +1126,59 @@ fn emit_index(
     writeln!(out, "i32.mul").expect("write");
     indent(out, depth);
     writeln!(out, "i32.add").expect("write");
-    // load the element at the computed address.
+    Ok(())
+}
+
+/// Emit `xs[i] = v` (`Stmt::IndexAssign`) over a `list[scalar]` parameter
+/// (PMAT-978) — the in-place-mutation companion of [`emit_index`].
+///
+/// Reuses the entire PMAT-968 length-prefixed linear-memory ABI: the SAME
+/// bounds-checked address computation ([`emit_list_elem_addr`]) as the read
+/// path, but terminates in the element's natural `*.store` instead of a
+/// `*.load`. A WASM store consumes `(address, value)` from the stack, so the
+/// element address is emitted first, then the value (typed to the element
+/// WAT type), then `*.store`.
+///
+/// ONLY a single-index `xs[i] = v` over a `list[scalar]` PARAMETER is
+/// supported. Honestly refused (a hard `BackendError`, never a silent
+/// miscompile): a multi-index / nested write (`xs[i][j] = v`, `indices.len()
+/// != 1`), an index-assign whose `list_name` is not a bound `list[scalar]`
+/// parameter base-pointer, a `list[bool]` element (no honest store width —
+/// already excluded by [`Scope::list_elem_of`]), and a value whose lowered
+/// WAT type is not the element type (caught by [`emit_expr_typed`]).
+fn emit_index_assign(
+    list_name: &str,
+    indices: &[Expr],
+    value: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    let [index] = indices else {
+        return Err(unsupported(&format!(
+            "multi-index assignment `{list_name}[…][…] = v` ({} indices) — the \
+             WASM list subset writes a single-index `list[scalar]` element \
+             only; nested-list index-assignment is refused",
+            indices.len()
+        )));
+    };
+    let Some(elem) = scope.list_elem_of(list_name) else {
+        return Err(unsupported(&format!(
+            "index-assignment `{list_name}[i] = v` over `{list_name}` which is \
+             not a `list[scalar]` parameter — only a list param (i32 \
+             base-pointer into linear memory) can be element-assigned in the \
+             WASM subset (no str/dict/tuple element-assignment)"
+        )));
+    };
+    // addr = base + 8 + (i as i32)*stride, bounds-checked (shared with the
+    // read path). Leaves the i32 address on the stack.
+    emit_list_elem_addr(list_name, elem, index, scope, out, depth)?;
+    // value — must lower to the element's WAT type (else an honest mismatch).
+    emit_expr_typed(value, scope, out, depth, elem)?;
+    // store the value at the computed address (consumes addr + value).
     indent(out, depth);
-    writeln!(out, "{}", elem.load_instr()).expect("write");
-    Ok(elem)
+    writeln!(out, "{}", elem.store_instr()).expect("write");
+    Ok(())
 }
 
 /// Emit `len(xs)` over a `list[scalar]` parameter (PMAT-968). Reads the
