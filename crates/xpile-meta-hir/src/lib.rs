@@ -2060,13 +2060,25 @@ pub enum Expr {
     /// `precision` decimals via `format!("{:.N}", x)`, then groups the integer
     /// part's digits by 3 from the right with `sep`, sign first, leaving any
     /// fractional `.dd` tail untouched. The direct float follow-up to
-    /// [`Expr::IntGroupedStr`] (which PMAT-939 scoped to bare-int only); grouping
-    /// over the DEFAULT float repr (`:,` with no `f`) stays a deferred reject.
-    /// Lean refuses (like [`Expr::IntGroupedStr`]).
+    /// [`Expr::IntGroupedStr`] (which PMAT-939 scoped to bare-int only).
+    ///
+    /// PMAT-982 (correctness-hunt): `precision` is now `Option<u32>`. `Some(N)`
+    /// is the original fixed-precision render (PMAT-940). `None` is the BARE
+    /// `:,` / `:_` over the DEFAULT float repr — Python `f"{1234567.5:,}"` →
+    /// `"1,234,567.5"`, `f"{1234.5:,}"` → `"1,234.5"`, `f"{1e16:,}"` → `"1e+16"`
+    /// (unchanged — a scientific repr has no integer-part digit run to group).
+    /// The `None` arm renders the float to its CPython repr (the same
+    /// `py_float_repr_block` as `str(float)`: `.0`-if-whole, scientific for a
+    /// decimal exponent `< -4` or `>= 16`), then groups the integer-part digit
+    /// run (the leading `[0-9]+` before any `.`/`e`) by 3 with `sep`, sign
+    /// first, and leaves the rest (`.5`, `e+16`, `inf`/`nan`) untouched. Lean
+    /// refuses (like [`Expr::IntGroupedStr`]).
     FloatGroupedStr {
         value: Box<Expr>,
         sep: char,
-        precision: u32,
+        /// `Some(N)` = fixed-precision render (`:,.Nf`); `None` = group the
+        /// DEFAULT float repr (bare `:,` / `:_`), PMAT-982.
+        precision: Option<u32>,
     },
     /// PMAT-941 (correctness-hunt): a SCIENTIFIC-NOTATION float field — Python
     /// `f"{1234.5:e}"` → `"1.234500e+03"`, `f"{1234.5:.2E}"` → `"1.23E+03"`,

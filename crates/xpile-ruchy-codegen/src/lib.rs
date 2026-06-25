@@ -1580,12 +1580,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str("{ let __x = (");
             emit_expr(out, value, mode)?;
             out.push_str("); let __s = ");
-            write!(out, "format!(\"{{:.{precision}}}\", __x)")?;
+            match precision {
+                // PMAT-940: fixed-precision render (`:,.Nf`).
+                Some(p) => {
+                    write!(out, "format!(\"{{:.{p}}}\", __x)")?;
+                }
+                // PMAT-982: bare `:,` / `:_` over the DEFAULT float repr — render
+                // via the shared `str(float)` repr block (mirror of the Rust twin).
+                None => {
+                    out.push_str(&py_float_repr_block("__x"));
+                }
+            }
+            // Group the LEADING integer-part digit run by 3 from the right; leave
+            // the rest (`.dd`, `e+16`, or empty for `inf`/`nan`) intact. Mirror of
+            // the Rust backend (Ruchy compiles to Rust).
             out.push_str(
                 "; let __neg = __s.starts_with('-'); \
                  let __body = if __neg { &__s[1..] } else { &__s[..] }; \
-                 let (__int, __frac) = match __body.find('.') { \
-                 Some(__p) => (&__body[..__p], &__body[__p..]), None => (__body, \"\") }; \
+                 let __ip = __body.find(|__c: char| !__c.is_ascii_digit()).unwrap_or(__body.len()); \
+                 let (__int, __rest) = __body.split_at(__ip); \
                  let __bytes = __int.as_bytes(); let __len = __bytes.len(); \
                  let mut __g = String::new(); for (__i, __ch) in __bytes.iter().enumerate() { ",
             );
@@ -1595,7 +1608,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             )?;
             out.push_str(
                 "__g.push(*__ch as char); } \
-                 format!(\"{}{}{}\", if __neg { \"-\" } else { \"\" }, __g, __frac) }",
+                 format!(\"{}{}{}\", if __neg { \"-\" } else { \"\" }, __g, __rest) }",
             );
         }
         // PMAT-941 (correctness-hunt): scientific-notation float `f"{x:e}"` /
