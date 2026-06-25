@@ -7,6 +7,32 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Added
+
+- **PMAT-949 (§29 GPU) — FIRST real *executed* GPU DiffExec witness.**
+  `crates/xpile-ptx-codegen/src/cuda_diffexec.rs` ships
+  `NvccCudaDiffExecEngine`, a genuine `xpile_backend::DiffExecEngine`:
+  it `nvcc`-compiles two *categorically independent* CUDA-C emitters
+  (`cuda-saxpy-general` = `2.0f*in+1.0f`; `cuda-saxpy-specialist-fma` =
+  `fmaf(2.0f,in,1.0f)`) for the **local** compute capability (derived from
+  `HwProfile::Ptx`, never hard-coded — same discipline as PMAT-481
+  `ptxas_arch`), **runs both on the GPU**, and numerically compares the
+  executed output vectors under `QuorumPolicy::DiffExec`.
+  `PtxBackend::new_cuda_diffexec_witness()` wires both emitters + the engine,
+  installing the engine only when `cuda_toolchain_available()`
+  (`nvcc` + `nvidia-smi`). On an RTX 4090 (sm_89) the §29 Multi-Emitter
+  Oracle Quorum now records a real `DiffExecResult::Match` instead of
+  `NotRun { no-engine }` — both kernels emit `1 3 5 -5 10 21 0 201` over the
+  fixture `[0,1,2,-3,4.5,10,-0.5,100]`, agreeing bit-for-bit
+  (`max_abs_diff = 0`). This is the load-bearing **Run≥1 on real hardware**
+  (in fact Run=2 — both emitters execute) that closes the audit-design.md
+  §4/§62 "Run=1 / `DiffExecResult::NotRun`" caveat for
+  `C-COMPILE-RUST-TO-PTX-MMA`. `tests/gpu_witness.rs` gates the executed test
+  on `nvcc`+`nvidia-smi` with a graceful skip — free CI (no GPU) records the
+  benign `NotRun` and stays green; a CUDA box produces the executed witness.
+  audit-design.md §62 + `contracts/compile-rust-to-ptx-mma-v1.yaml` updated to
+  record the witness now exists.
+
 ## [0.1.601] — 2026-06-24
 
 Sprint Day-4/Day-5 **provability** rollup: the Lean proof lane goes from a

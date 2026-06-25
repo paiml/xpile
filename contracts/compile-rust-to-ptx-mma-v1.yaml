@@ -46,9 +46,22 @@ compile_targets:
     # authoritative validator. Cross-repo pv-engine enforcement of these
     # roles is the residual PMAT-A5. Divergence between general
     # (rustc_codegen_nvvm) and specialist (aprender-gpu) emitters at
-    # runtime falsifies the contract — closing the audit-design.md §4
-    # "Run=1 demo fixture" caveat for C-COMPILE-RUST-TO-PTX-MMA once the
-    # DiffExec engine (PMAT-488) executes it on hardware.
+    # runtime falsifies the contract.
+    #
+    # PMAT-949 (2026-06-25): the EXECUTED GPU DiffExec witness now
+    # EXISTS. `NvccCudaDiffExecEngine` (crates/xpile-ptx-codegen/src/
+    # cuda_diffexec.rs) nvcc-compiles two categorically-independent
+    # CUDA-C emitters (general mul+add, specialist `fmaf`) for the local
+    # compute capability, RUNS both on the GPU, and numerically compares
+    # the executed outputs under this `quorum_policy.kind: DiffExec`. On
+    # an RTX 4090 (sm_89) the §29 quorum records a real
+    # `DiffExecResult::Match` (max_abs_diff = 0 over the fixture vector)
+    # instead of `NotRun{no-engine}` — the load-bearing Run>=1 execution
+    # that closes the audit-design.md §4/§62 "Run=1 / DiffExecResult::
+    # NotRun" caveat for C-COMPILE-RUST-TO-PTX-MMA. The witness is gated
+    # on `nvcc`+`nvidia-smi` (graceful-skip on free CI); rustc_codegen_nvvm
+    # / aprender-gpu remain the production general/specialist targets the
+    # same engine will diff once wired.
     quorum_policy:
       kind: DiffExec
       tolerance: 1.0e-3

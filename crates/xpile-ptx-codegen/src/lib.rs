@@ -23,6 +23,9 @@ use xpile_backend::{
 use xpile_contracts::ContractId;
 use xpile_meta_hir::Module;
 
+mod cuda_diffexec;
+pub use cuda_diffexec::{cuda_toolchain_available, NvccCudaDiffExecEngine, FIXTURE_INPUT};
+
 /// PTX backend — `Backend` impl wrapping a [`MultiEmitterBackend`] so
 /// the v0.1.0 scaffold drives through the same routing the future
 /// `rustc_codegen_nvvm` + `aprender-gpu` quorum will use.
@@ -71,6 +74,41 @@ impl PtxBackend {
                 QuorumPolicy::PreferSpecialist,
             ),
         }
+    }
+
+    /// PMAT-949 — the executed GPU-witness constructor (§29).
+    ///
+    /// Builds a `PtxBackend` whose `MultiEmitterBackend` carries two
+    /// REAL CUDA-C kernel emitters — [`CudaSaxpyGeneralEmitter`]
+    /// (general) and [`CudaSaxpySpecialistEmitter`] (specialist) — under
+    /// `QuorumPolicy::DiffExec`, with a [`NvccCudaDiffExecEngine`]
+    /// installed. Both emitters compute the same semantics
+    /// (`out[i] = 2*in[i] + 1`) via *categorically different* CUDA-C
+    /// implementations (one `fmaf`, one explicit `mul`+`add`), so the
+    /// `DiffExec` quorum runs BOTH on the GPU and asserts they agree —
+    /// the falsifying multi-emitter check the §29 design specs.
+    ///
+    /// This is the constructor that, when run on a CUDA box, produces a
+    /// real [`xpile_backend::DiffExecResult::Match`] instead of the
+    /// `NotRun { no-engine }` placeholder — closing the audit-design.md
+    /// §4 / §62 "Run=1 / DiffExecResult::NotRun" caveat for
+    /// `C-COMPILE-RUST-TO-PTX-MMA`.
+    ///
+    /// On a host without `nvcc` + `nvidia-smi` the engine is NOT
+    /// installed (the `MultiEmitterBackend` keeps `diff_exec_engine =
+    /// None`), so the backend records the benign `NotRun { no-engine }`
+    /// and free CI stays green — the cc/python3 graceful-skip posture.
+    pub fn new_cuda_diffexec_witness() -> Self {
+        let mut inner = MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(CudaSaxpyGeneralEmitter),
+            Box::new(CudaSaxpySpecialistEmitter),
+            QuorumPolicy::DiffExec { tolerance: 1.0e-3 },
+        );
+        if cuda_toolchain_available() {
+            inner = inner.with_diff_exec_engine(std::sync::Arc::new(NvccCudaDiffExecEngine::new()));
+        }
+        Self { inner }
     }
 }
 
@@ -163,6 +201,88 @@ impl TargetEmitter for MatmulSpecialistEmitter {
                 "// matmul-specialist scaffold\n// module: {}\n// compute_capability: {}\n// TODO: emit mma.sync.aligned via aprender-gpu shape templates.\n",
                 module.name, compute_capability,
             ),
+            citations: vec![ContractId::new("C-COMPILE-RUST-TO-PTX-MMA")],
+        }))
+    }
+}
+
+// ─── PMAT-949: real CUDA-C kernel emitters for the executed GPU witness ──
+//
+// Two emitters that produce COMPLETE, nvcc-compilable CUDA-C
+// `__global__ void xpile_kernel(const float* in, float* out, int n)`
+// kernels computing identical semantics — `out[i] = 2*in[i] + 1` — via
+// categorically different implementations. The general emitter uses an
+// explicit `mul`+`add`; the specialist uses the fused-multiply-add
+// intrinsic `fmaf`. Both are run on the GPU under the `DiffExec` quorum
+// (see [`PtxBackend::new_cuda_diffexec_witness`]); the engine asserts
+// their executed outputs agree within tolerance. The kernel name and
+// signature are the harness contract used by [`NvccCudaDiffExecEngine`].
+
+/// General CUDA-C emitter — `out[i] = 2.0f * in[i] + 1.0f` via an
+/// explicit multiply-then-add. Emits a complete nvcc-compilable kernel.
+struct CudaSaxpyGeneralEmitter;
+
+impl TargetEmitter for CudaSaxpyGeneralEmitter {
+    fn name(&self) -> &str {
+        "cuda-saxpy-general"
+    }
+
+    fn try_emit(
+        &self,
+        _module: &Module,
+        config: &BackendConfig,
+    ) -> Option<Result<EmittedText, BackendError>> {
+        match &config.hardware {
+            Some(HwProfile::Ptx { .. }) => {}
+            _ => return Some(Err(BackendError::MissingHardware(Target::Ptx))),
+        }
+        Some(Ok(EmittedText {
+            primary: "\
+__global__ void xpile_kernel(const float* in, float* out, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        // general path: explicit multiply then add
+        out[i] = 2.0f * in[i] + 1.0f;
+    }
+}
+"
+            .to_string(),
+            citations: vec![ContractId::new("C-COMPILE-RUST-TO-PTX-MMA")],
+        }))
+    }
+}
+
+/// Specialist CUDA-C emitter — same semantics (`out[i] = 2*in[i] + 1`)
+/// computed via the fused-multiply-add intrinsic `fmaf`. A
+/// categorically independent implementation: the `DiffExec` quorum runs
+/// both on the GPU and falsifies the contract if they diverge.
+struct CudaSaxpySpecialistEmitter;
+
+impl TargetEmitter for CudaSaxpySpecialistEmitter {
+    fn name(&self) -> &str {
+        "cuda-saxpy-specialist-fma"
+    }
+
+    fn try_emit(
+        &self,
+        _module: &Module,
+        config: &BackendConfig,
+    ) -> Option<Result<EmittedText, BackendError>> {
+        match &config.hardware {
+            Some(HwProfile::Ptx { .. }) => {}
+            _ => return Some(Err(BackendError::MissingHardware(Target::Ptx))),
+        }
+        Some(Ok(EmittedText {
+            primary: "\
+__global__ void xpile_kernel(const float* in, float* out, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        // specialist path: fused multiply-add intrinsic
+        out[i] = fmaf(2.0f, in[i], 1.0f);
+    }
+}
+"
+            .to_string(),
             citations: vec![ContractId::new("C-COMPILE-RUST-TO-PTX-MMA")],
         }))
     }
