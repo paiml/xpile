@@ -1,6 +1,85 @@
 roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
+# ─────────────────────────────────────────────────────────────────────────
+# strategic_goals — the spine the 980-item ledger below serves. Added
+# 2026-06-25 to re-center the roadmap on the REAL goal hierarchy (per memory
+# project-roadmap-goals + audit-design.md) after the GPU/WASM/forjar/apr
+# design sessions. The slice entries under `roadmap:` are the means; THIS is
+# the end. Do not let the ledger's idiom-coverage proxy eclipse these.
+strategic_goals:
+  updated: '2026-06-25'
+  north_star: >-
+    Provable polyglot transpilation: every construct, in every source AND target
+    language, carried by a machine-checked contract. This — not idiom coverage —
+    is the differentiator. xpile is a hub-and-spoke over ONE meta-HIR: frontends
+    (Python/C/Cpp/Cuda/Ruchy/Rust/Lean/Shell, +Wasm) -> meta-HIR -> backends
+    (Rust/Ruchy/Lean/Shell/PTX/WGSL, +Wasm, +ForjarYaml), with a
+    contract+Lean+execution proof on each edge.
+  pillars:
+    - id: A
+      name: Proof substrate (contract + Lean + DiffExec four-stratum QUORUM)
+      status: advancing
+      detail: >-
+        §14.4 QUORUM = Sem/Lean + Sym/Kani + Run/diff-exec + Ext. Lean pilot now
+        26 machine-checked modules (sorry/axiom/Mathlib-free, warningAsError).
+      open_gap: >-
+        CITATION-INTEGRITY: Function::applicable_contracts()
+        (crates/xpile-meta-hir/src/lib.rs) still returns only [C-PY-INT-ARITH];
+        str/list/dict/float emit ZERO `// xpile-contract:` citations. The #1 goal
+        is PARTIALLY FALSIFIED until a citation-integrity gate + a complete
+        applicable_contracts() land. New backends DO cite; old idiom slices do not.
+        Tracked as PMAT-955 (capstone over the PMAT-935 scalar-set close).
+    - id: B
+      name: Multi-target backend matrix
+      status: broadened-2026-06-25
+      detail: >-
+        Rust/Ruchy/Lean/Shell/PTX/WGSL + NEW native Wasm (Target::Wasm, PMAT-951)
+        + forjar.yaml (Target::ForjarYaml, PMAT-953). Every backend ships WITH a
+        contract + Lean Diamond, never bare codegen.
+    - id: C
+      name: Execution witnesses (close the §4 in-vacuum / Run=1 gap)
+      status: delivered-2026-06-25
+      detail: >-
+        §29 DiffExec — categorically-independent emitters run on real hardware,
+        cross-checked. DELIVERED: CUDA/RTX-4090 (PMAT-949), wgpu/WGSL cross-vendor
+        Vulkan (PMAT-950), Wasm via WABT (PMAT-951). cuda-oxide = 3rd independent
+        pure-Rust PTX emitter (PMAT-480, reframed watched->first-class; needs a
+        nightly + rust-src + rustc-dev lane).
+    - id: D
+      name: Bidirectional — asymmetric and honest (emit clean, lift lossy)
+      status: ongoing
+      detail: >-
+        Rust<->Ruchy (profiles), Rust<->Lean (both machine-checked), Wasm emit
+        done / lift deferred v0.2.0+ (PMAT-952), forjar emit-only (source blocked,
+        no Item::Resource node), shell round-trip idempotence. "Bidirectional" =
+        both paths WHERE SOUND, refuse where not.
+    - id: E
+      name: Integration discipline — depend on the FORMAT, not the FRAMEWORK
+      status: law-confirmed-3x-2026-06-25
+      detail: >-
+        forjar (506-crate tree) -> backend-only Target::ForjarYaml; aprender
+        (138-dep) -> apr-format leaf crate (filed paiml/aprender#2231); Ruchy
+        (27-crate) -> own native Wasm, drop the WasmEmitter proxy. Descends from
+        the 2026-05-17 bashrs federation reversal. Emit a sibling's format,
+        consume its output, NEVER federate its framework.
+  frontier:
+    - name: Provable-model-as-code (the classical-ML tier)
+      status: surfaced-2026-06-25
+      detail: >-
+        For small-parameter models (linear/logistic regression), a model should be
+        a PROVEN Rust function with const weights + a Lean certificate (uniqueness
+        of the OLS minimizer), NOT a serialized .apr blob. aprender already binds
+        OLS fit to Lean via #[contract("linear-models-v1", equation = "ols_fit")];
+        the missing piece is emitting the model AS proven code. .apr survives only
+        where parameters dominate (LLMs); the boundary IS the v1/v2 .apr magic byte.
+        Tracked as PMAT-956.
+  foundation:
+    - name: Sovereign consolidation
+      detail: >-
+        depyler/decy/bashrs/ruchy as in-tree frontends/backends over one meta-HIR;
+        aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
+        governs the in-tree-vs-consumed boundary.
 roadmap:
 - id: PMAT-951
   github_issue: null
@@ -52,6 +131,56 @@ roadmap:
   - "GOLDEN VALIDATION: STRUCTURAL — round-trips the emitted forjar.yaml through serde_yaml and asserts the resource shape (envelope keys + every resource's type ∈ {file,task,cron} pinned to localhost). The forjar-crate golden (forjar::core::parser::parse_config + validate_config) was DEFERRED as a follow-up: forjar's 506-crate dependency tree (openssl / tokio / rusqlite-bundled / a crates.io bashrs 6.64 that would duplicate the in-tree bashrs) is exactly the build/MSRV/federation coupling the BACKEND-ONLY decision avoids, so it is NOT taken even as a dev-dependency. End-to-end CLI path verified: `xpile transpile foo.sh --target forjar` emits valid forjar.yaml; a Python module is hard-refused."
   - "CONTRACT + LEAN (5-touchpoint recipe): contracts/compile-shell-to-forjar-v1.yaml (C-COMPILE-SHELL-TO-FORJAR) authored — Layer-5 sibling of C-COMPILE-RUST-TO-WASM, depends_on C-BASHRS-POSIX-IDEMPOTENCE. pv lint contracts/ passes (26 contracts, 0 errors/0 warnings). Proof lane: contracts/lean/XlateShellToForjar.lean — a core-only, import-free ForjarResource STRUCTURE EXTENSIONALITY depth-1 Diamond (a forjar resource is determined by id/kind/machine); added to lakefile.lean roots + EXPECTED_PILOT (25→26) + PROVABILITY-INVENTORY.md. lake build green at 26 modules; sorry/axiom/Mathlib-free."
   - "Corrections held: did NOT emit forge.yaml (a pforge MCP manifest, not forjar); did NOT mirror forjar's private `dist` codegen. bidirectional (forjar.yaml→source) remains BLOCKED (no Item::Resource node) — emit-only this slice."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-954
+  github_issue: null
+  item_type: task
+  title: 'PMAT-954: [strategic-spine] Give the 980-item ledger a strategic spine. INSERT a top-level strategic_goals: block into docs/roadmaps/roadmap.yaml (north_star + 5 pillars A–E + frontier + foundation), re-centering the roadmap on the REAL goal hierarchy (provable-contract regime > multi-target matrix > execution witnesses > honest bidirectionality > integration discipline) per memory project-roadmap-goals + audit-design.md §4/§6, after the 2026-06-25 GPU/WASM/forjar/apr design sessions. The slice entries are the means; the spine is the end. Register the directions surfaced in those sessions as first-class ledger items tied to the pillar each serves.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "STRATEGIC SPINE: a new top-level `strategic_goals:` key (sibling of roadmap_version/github_enabled/github_repo/roadmap), placed after github_repo and before the roadmap list. It is PURELY ADDITIVE text — the roadmap's only consumer (xpile attestations/quorum via scan_roadmap_for_id in crates/xpile/src/main.rs) is a flat line-by-line ID text scan, NOT a typed serde schema, so an unknown top-level key cannot break parse or any gate. crates/xpile/tests/{attestations,quorum}.rs stay green."
+  - "PILLARS A–E + frontier + foundation, each cross-referencing the slices that serve it: A Proof substrate (open_gap CITATION-INTEGRITY → PMAT-955); B Multi-target backend matrix (PMAT-951 Wasm + PMAT-953 forjar); C Execution witnesses (PMAT-949/950/951 delivered, PMAT-480 cuda-oxide 3rd PTX emitter); D Bidirectional honest-asymmetric (PMAT-952 Wasm lift); E Integration discipline (depend on the FORMAT not the FRAMEWORK — forjar/aprender/ruchy). Frontier: provable-model-as-code → PMAT-956."
+  - "REGISTERED the design-session directions: PMAT-955 (contract-citation-integrity capstone — complete applicable_contracts() so str/list/dict/float cite + a citation-integrity gate, Pillar A open_gap) and PMAT-956 (provable-model-as-code frontier — proven Rust fn + const weights + Lean OLS-minimizer-uniqueness cert for the classical-ML tier, superseding .apr for small models). FOUND-EXISTING (cross-ref'd, not duplicated): PMAT-952 (Wasm LIFT + WasmDiffExecEngine, planned, Pillar D+C), PMAT-480 (cuda-oxide nightly+rust-src+rustc-dev lane, planned, already first-class/scheduled, Pillar C)."
+  - "Confirmed ledger statuses are accurate: PMAT-949/950/951 done (execution witnesses), PMAT-953 done (forjar), PMAT-952 planned (Wasm lift). Did NOT reorder or rewrite any of the 980 existing slice entries."
+  - "GATE: fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (26 contracts, 0 errors/0 warnings — roadmap.yaml is not a contract, unaffected), cargo-deny advisories, and the roadmap-consuming tests (attestations + quorum) all green. No Lean change (no contracts/lean touch). Doc-only ledger slice, sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-955
+  github_issue: null
+  item_type: task
+  title: 'PMAT-955: [Pillar-A/contract-integrity] contract-citation-integrity capstone — complete Function::applicable_contracts() so str/list/dict/float cite contracts + a citation-integrity GATE. PMAT-935 wired Type::Bool (the LAST core SCALAR), but applicable_contracts() (crates/xpile-meta-hir/src/lib.rs) still returns only [C-PY-INT-ARITH] for the composite/float types — str/list/dict/float emit ZERO `// xpile-contract:` citations, so the #1 north-star goal (every construct carried by a machine-checked contract) is PARTIALLY FALSIFIED for the non-scalar idiom slices. Author the missing per-type contracts, wire each into applicable_contracts(), and add a citation-integrity gate that FAILS when an emitted construct with an applicable contract ships without its citation line (extending the PMAT-907 shim-file scan to the whole emit surface).'
+  status: planned
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Pillar A open_gap (per strategic_goals + audit-design.md §6 capability-vs-contract drift): new backends DO cite, old idiom slices do not. This closes the drift for str/list/dict/float — the composite/float tier left open after PMAT-935 closed the scalar set (bool/int)."
+  - "applicable_contracts() returns the FULL applicable set for str/list/dict/float (not just [C-PY-INT-ARITH]); each cited contract exists in contracts/ (pv lint clean) with a Lean Diamond per the 5-touchpoint recipe (project-new-contract-recipe). A citation-integrity gate (test or `xpile` subcommand) asserts every emitted construct with an applicable contract carries its `// xpile-contract:` line — RED on an uncited construct."
+  - "Honest scope: this is the capstone over a multi-slice arc (one type-family per slice is acceptable — str, then list/dict, then float); the GATE lands first so regressions are caught as each family is wired. Cross-refs PMAT-935 (scalar close), PMAT-907 (shim-file citation scan)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-956
+  github_issue: null
+  item_type: task
+  title: 'PMAT-956: [frontier/provable-model-as-code] emit a small classical-ML model AS proven code — a proven Rust function + const weights + a Lean OLS-minimizer-uniqueness certificate — superseding the serialized .apr blob for small-parameter models. For linear/logistic regression a fitted model is a tiny pure function over const weights; it should ship as a PROVEN Rust fn (with the predict path) carrying a Lean certificate that the OLS minimizer is unique (the normal-equation solution), NOT an opaque .apr deserialization. aprender already binds OLS fit to Lean via #[contract("linear-models-v1", equation = "ols_fit")]; the missing piece is the EMIT — lower the fitted model into meta-HIR const + fn and attach the uniqueness proof. .apr survives only where parameters dominate (LLMs); the boundary is the v1/v2 .apr magic byte.'
+  status: planned
+  priority: medium
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Frontier item (per strategic_goals.frontier + memory project-roadmap-goals): the provable-model-as-code tier. A small fitted model (e.g. univariate/multivariate OLS) emits as a self-contained proven Rust function — const weight array + a `predict` fn — with NO runtime .apr/serde dependency, the model-as-code analogue of the forjar/wasm emit-only backends."
+  - "PROOF: a Lean certificate of OLS-minimizer UNIQUENESS (the normal equations XᵀX β = Xᵀy have a unique solution when XᵀX is invertible) accompanies the emitted model, in the contract+Lean Diamond style. Honest boundary: covers the linear/convex tier only; non-convex / large-parameter models stay .apr (the magic-byte split). Cross-refs aprender's linear-models-v1 / ols_fit contract binding."
+  - "Integration discipline (Pillar E): consume aprender's apr-FORMAT (the leaf crate filed paiml/aprender#2231), NOT the 138-dep aprender framework — read fitted weights from the format, emit proven code, never federate the trainer."
   phases: []
   subtasks: []
   estimated_effort: null
