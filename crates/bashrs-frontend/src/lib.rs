@@ -529,6 +529,64 @@ fn is_posix_identifier(s: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+/// PMAT-989: POSIX shell control-flow keywords. A line that opens,
+/// closes, or chains a compound command — loops (`for`/`while`/
+/// `until`/`do`/`done`), conditionals (`if`/`then`/`elif`/`else`/
+/// `fi`), and `case` (`case`/`esac`) — is NOT part of the
+/// flat-command subset this frontend supports.
+///
+/// Historically the hand-rolled parser silently SHREDDED these:
+/// `for i in 1 2 3; do echo $i; done` became four independent
+/// bareword `Stmt::Cmd`s (`for`, `do`, `echo`, `done`) with the
+/// loop structure destroyed and no diagnostic. That is a
+/// correctness hazard — the lowered IR claims to be the script but
+/// has none of its control flow. We now REFUSE such input with a
+/// hard `FrontendError` rather than mislower it.
+///
+/// `in` is intentionally NOT in this set as a standalone reserved
+/// word: it is only a keyword inside a `for`/`case` header, both of
+/// which are already caught by the leading-keyword check. Treating
+/// a bare `in` line as control-flow would over-reject (e.g. a
+/// program literally named `in`), and a real `for … in …` header
+/// is caught by its `for` prefix.
+const CONTROL_FLOW_KEYWORDS: &[&str] = &[
+    "for", "while", "until", "do", "done", "if", "then", "elif", "else", "fi", "case", "esac",
+];
+
+/// PMAT-989: does this logical line participate in shell
+/// control-flow? Returns the offending keyword if so.
+///
+/// Detects both shapes that the old parser shredded:
+///   * Multi-line bodies, where each keyword sits alone on its own
+///     line (`for …` / `do` / `echo $i` / `done`): the standalone
+///     `do` / `done` / `then` / `fi` / `else` / `esac` lines and
+///     the leading `for` / `while` / `until` / `if` / `elif` /
+///     `case` are caught.
+///   * Single-line compound commands
+///     (`for i in 1 2 3; do echo $i; done`): the `; do`, `; done`,
+///     `; then`, `; fi`, etc. segments are caught by scanning the
+///     `;`/`&&`/`||`-and-whitespace-delimited words for a keyword.
+///
+/// The check is deliberately conservative about false positives:
+/// it only treats a keyword as control-flow when it appears as a
+/// whole word at a command position (start of the line, or right
+/// after a `;` / `&` / `|` separator). A keyword used as a mere
+/// argument (`grep -w done file`, `echo if`) is left alone.
+fn control_flow_keyword(line: &str) -> Option<&'static str> {
+    // Split the line into command-position segments. A command
+    // position is the start of the line and anything immediately
+    // following a `;`, `&`, or `|` separator. The first whole word
+    // of any such segment being a control-flow keyword means the
+    // line participates in a compound command.
+    for segment in line.split([';', '&', '|']) {
+        let first_word = segment.split_whitespace().next().unwrap_or("");
+        if let Some(kw) = CONTROL_FLOW_KEYWORDS.iter().find(|kw| **kw == first_word) {
+            return Some(kw);
+        }
+    }
+    None
+}
+
 pub struct BashrsFrontend;
 
 impl Frontend for BashrsFrontend {
@@ -609,6 +667,28 @@ impl Frontend for BashrsFrontend {
             if line.starts_with('#') {
                 // Comment line.
                 continue;
+            }
+            // PMAT-989: REFUSE shell control-flow rather than
+            // silently shredding it. The hand-rolled flat-command
+            // parser below has no notion of loops, conditionals, or
+            // `case` — so historically `for i in 1 2 3; do echo $i;
+            // done` was accepted and mislowered into four bareword
+            // `Stmt::Cmd`s (`for`, `do`, `echo`, `done`), destroying
+            // the loop with no diagnostic. That is worse than an
+            // error: the IR claims to be the script but isn't.
+            //
+            // We only support the FLAT-command subset (quoting,
+            // `$VAR`, `$(...)`, pipelines, single-value assignment).
+            // Control-flow is the v0.2.0 "real bashrs parser" job
+            // (it would produce `Stmt::ShellLoop` etc. from real
+            // shell input). Until then, refusing is the honest
+            // minimum — never shred.
+            if let Some(kw) = control_flow_keyword(line) {
+                return Err(FrontendError::Parse(format!(
+                    "bashrs-frontend: shell control-flow (for/while/if/case) not supported — \
+                     flat-command subset only; refusing rather than silently shredding into \
+                     barewords. Offending keyword `{kw}` at line `{line}`."
+                )));
             }
             // PMAT-051: detect `NAME=value` variable assignment at
             // the start of a line. Recognises the canonical POSIX
@@ -2265,5 +2345,131 @@ N=$((counter + 1))\n\
              splice; got {} — composite parsing regressed",
             f.body.stmts.len()
         );
+    }
+
+    // ----- PMAT-989: control-flow REFUSAL (no silent shredding) -----
+
+    #[test]
+    fn parse_and_lower_refuses_single_line_for_loop_no_shred() {
+        // PMAT-989 load-bearing regression guard. The historical bug:
+        // `for i in 1 2 3; do echo $i; done` was ACCEPTED and shredded
+        // into four bareword `Stmt::Cmd`s (`for`, `do`, `echo`,
+        // `done`), silently destroying the loop. This MUST now error,
+        // and MUST NOT produce any Cmd program.
+        let err = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/loop.sh"),
+                "for i in 1 2 3; do echo $i; done\n",
+            )
+            .expect_err("single-line for-loop must be REFUSED, never shredded");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("control-flow"),
+            "error should name shell control-flow; got {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_multi_line_for_loop_no_shred() {
+        // The other shred shape: the loop spread across physical
+        // lines, where `for`, `do`, `done` each sit alone. The old
+        // parser turned each into its own bareword Cmd. Refuse.
+        let source = "\
+for i in 1 2 3
+do
+  echo $i
+done
+";
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/loop2.sh"), source)
+            .expect_err("multi-line for-loop must be REFUSED, never shredded");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("control-flow"),
+            "error should name shell control-flow; got {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_if_then_fi_no_shred() {
+        // Conditionals are equally unsupported and equally shredded
+        // historically (`if`, `then`, `echo`, `fi`). Refuse.
+        let source = "\
+if [ -f /tmp/x ]; then
+  echo found
+fi
+";
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/cond.sh"), source)
+            .expect_err("if/then/fi must be REFUSED, never shredded");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("control-flow"),
+            "error should name shell control-flow; got {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_while_loop() {
+        let err = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/w.sh"),
+                "while true; do echo hi; done\n",
+            )
+            .expect_err("while-loop must be REFUSED");
+        assert!(format!("{err:?}").contains("control-flow"));
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_case_esac() {
+        let source = "\
+case $x in
+  a) echo aye ;;
+esac
+";
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/c.sh"), source)
+            .expect_err("case/esac must be REFUSED");
+        assert!(format!("{err:?}").contains("control-flow"));
+    }
+
+    #[test]
+    fn control_flow_keywords_only_fire_in_command_position() {
+        // Guard against over-rejection: control-flow keywords used as
+        // ARGUMENTS (not at a command position) must still parse as a
+        // flat command. `grep -w done file` and `echo if then` are
+        // ordinary commands whose args merely happen to spell
+        // keywords; they must NOT be refused.
+        use xpile_meta_hir::Item;
+        for ok in &["grep -w done file\n", "echo if then else\n", "ls for\n"] {
+            let module = BashrsFrontend
+                .parse_and_lower(&PathBuf::from("/tmp/ok.sh"), ok)
+                .unwrap_or_else(|e| {
+                    panic!("flat command with keyword-as-arg must parse: {ok:?} -> {e:?}")
+                });
+            let Item::Function(f) = &module.items[0] else {
+                unreachable!("test fixture has no module constants")
+            };
+            assert_eq!(
+                f.body.stmts.len(),
+                1,
+                "keyword-as-argument line `{ok}` should be one flat Cmd"
+            );
+        }
+    }
+
+    #[test]
+    fn flat_command_subset_still_parses_after_pmat_989() {
+        // Regression: the control-flow refusal MUST NOT disturb the
+        // existing flat-command subset. A plain script still lowers
+        // to one Cmd per line.
+        use xpile_meta_hir::Item;
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/flat.sh"), "echo hello\nls /tmp\npwd\n")
+            .expect("flat commands must still parse");
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("test fixture has no module constants")
+        };
+        assert_eq!(f.body.stmts.len(), 3);
     }
 }
