@@ -498,6 +498,128 @@ fn refuses_index_over_non_list() {
     );
 }
 
+// ─── PMAT-968: bounds-checked index + len(xs) over a list param ──────
+
+#[test]
+fn list_index_emits_bounds_guard_and_offset() {
+    // xs[i] now traps on OOB (i < 0 || i >= len → unreachable) and reads
+    // from base+8 (the length-prefixed element region).
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_get_float_fn())]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    // Scratch local declared for the bounds-checked index.
+    assert!(
+        wat.contains("(local $__wasm_idx i64)"),
+        "index scratch local declared: {wat}"
+    );
+    // Bounds guard: header load + extend + compare + trap.
+    assert!(wat.contains("i32.load"), "header length loaded: {wat}");
+    assert!(
+        wat.contains("i64.extend_i32_u"),
+        "header extended to i64 for the compare: {wat}"
+    );
+    assert!(wat.contains("i64.lt_s"), "i < 0 lower guard: {wat}");
+    assert!(wat.contains("i64.le_s"), "len <= i upper guard: {wat}");
+    assert!(wat.contains("i32.or"), "guards OR'd: {wat}");
+    assert!(wat.contains("unreachable"), "OOB trap: {wat}");
+    // Elements at base+8.
+    assert!(
+        wat.contains("i32.const 8"),
+        "element region offset by 8: {wat}"
+    );
+    assert!(wat.contains("f64.load"), "f64 element load: {wat}");
+}
+
+#[test]
+fn index_scratch_not_declared_without_index() {
+    // A function with no Index must NOT pull in the scratch local.
+    let wat = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(add_fn())]), &wasm_config())
+        .unwrap()
+        .primary;
+    assert!(
+        !wat.contains("$__wasm_idx"),
+        "no index scratch without an Index: {wat}"
+    );
+}
+
+#[test]
+fn len_of_list_param_reads_header() {
+    // def length(xs: list[float]) -> int: return len(xs)
+    let f = Function {
+        name: "length".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::F64)))],
+        return_type: Type::I64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Len(Box::new(Expr::Ident("xs".into()))),
+        },
+    };
+    let wat = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap()
+        .primary;
+    assert!(wat.contains("(param $xs i32)"), "list → i32 base: {wat}");
+    assert!(wat.contains("(result i64)"), "len → i64 result: {wat}");
+    // len = i32.load header, zero-extended to i64.
+    assert!(wat.contains("local.get $xs"), "base ptr loaded: {wat}");
+    assert!(wat.contains("i32.load"), "header load: {wat}");
+    assert!(
+        wat.contains("i64.extend_i32_u"),
+        "extended to the i64 int domain: {wat}"
+    );
+    // No bounds-guard machinery for a bare len().
+    assert!(!wat.contains("unreachable"), "len needs no trap: {wat}");
+}
+
+#[test]
+fn refuses_len_of_scalar() {
+    // len() of a scalar local has no length header — refused.
+    let f = Function {
+        name: "bad".into(),
+        params: vec![param("x", Type::I64)],
+        return_type: Type::I64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Len(Box::new(Expr::Ident("x".into()))),
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("unsupported"), "honest refusal: {msg}");
+    assert!(
+        msg.contains("not a `list[scalar]` parameter"),
+        "names the cause: {msg}"
+    );
+}
+
+#[test]
+fn refuses_len_of_list_literal() {
+    // len([1]) — a list literal carries no base-pointer header; refused.
+    let f = Function {
+        name: "bad".into(),
+        params: Vec::new(),
+        return_type: Type::I64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Len(Box::new(Expr::ListLit(vec![Expr::LitInt(1)]))),
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("unsupported"),
+        "len of a non-name collection refused: {err}"
+    );
+}
+
 #[test]
 fn refuses_struct_item() {
     let err = WasmBackend::new()
