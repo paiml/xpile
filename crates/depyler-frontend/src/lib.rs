@@ -1765,7 +1765,9 @@ fn walk_expr_children(
         }
         Expr::StrChars { string } => f(string),
         Expr::Ord { value } | Expr::Chr { value } => f(value),
-        Expr::IntRadixStr { value, .. } | Expr::IntFromStrRadix { value, .. } => f(value),
+        Expr::IntRadixStr { value, .. }
+        | Expr::IntGroupedStr { value, .. }
+        | Expr::IntFromStrRadix { value, .. } => f(value),
         Expr::FormatSpec { value, .. } => f(value),
         Expr::StrMethod { recv, args, .. } => {
             f(recv)?;
@@ -9966,7 +9968,7 @@ fn infer_type(e: &Expr) -> Type {
         Expr::Ord { .. } => Type::I64,
         Expr::Chr { .. } => Type::Str,
         // PMAT-502cv: hex/oct/bin → str.
-        Expr::IntRadixStr { .. } => Type::Str,
+        Expr::IntRadixStr { .. } | Expr::IntGroupedStr { .. } => Type::Str,
         // PMAT-502da: int(s, base) → int.
         Expr::IntFromStrRadix { .. } => Type::I64,
         // PMAT-502am: a formatted f-string field produces a Str.
@@ -10394,7 +10396,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::Ord { .. } => Type::I64,
         Expr::Chr { .. } => Type::Str,
         // PMAT-502cv: hex/oct/bin → str.
-        Expr::IntRadixStr { .. } => Type::Str,
+        Expr::IntRadixStr { .. } | Expr::IntGroupedStr { .. } => Type::Str,
         // PMAT-502da: int(s, base) → int.
         Expr::IntFromStrRadix { .. } => Type::I64,
         // PMAT-502am: a formatted f-string field produces a Str.
@@ -15286,6 +15288,23 @@ fn apply_nonempty_format_spec(
     // `FormatSpec` path (correct for non-negatives; sign-aware zero-padding of a
     // negative is a deferred follow-up).
     if ty == Type::I64 {
+        // PMAT-939 (correctness-hunt): the thousands-GROUPING spec `:,` / `:_`
+        // (`f"{1000000:,}"` → "1,000,000", `f"{1000000:_}"` → "1_000_000"). Python
+        // groups the magnitude's decimal digits by 3 from the right with the
+        // chosen separator, sign FIRST for negatives (`f"{-1234567:,}"` ==
+        // "-1,234,567"). Rust's `format!` has NO grouping flag, so route to
+        // `IntGroupedStr` (a runtime digit-grouping loop in codegen) rather than a
+        // FormatSpec. A bool reaches here already coerced to i64 (`f"{True:,}"` →
+        // "1"). Scope is a BARE separator only — grouping COMBINED with width
+        // (`:08,`) or a float presentation (`:,.2f`) stays a documented reject, a
+        // follow-up exactly as PMAT-613 scoped bare radix before the width forms.
+        if spec == "," || spec == "_" {
+            let sep = spec.chars().next().expect("spec is non-empty");
+            return Ok(Expr::IntGroupedStr {
+                value: Box::new(value),
+                sep,
+            });
+        }
         let radix_upper = match spec {
             "x" => Some((Radix::Hex, false)),
             "X" => Some((Radix::Hex, true)),

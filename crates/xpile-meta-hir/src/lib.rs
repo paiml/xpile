@@ -499,7 +499,9 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-502cm: ord/chr — recurse into the value expr.
         Expr::Ord { value } | Expr::Chr { value } => expr_has_int_arith(value),
         // PMAT-502cv: hex/oct/bin — recurse into the value expr.
-        Expr::IntRadixStr { value, .. } => expr_has_int_arith(value),
+        Expr::IntRadixStr { value, .. } | Expr::IntGroupedStr { value, .. } => {
+            expr_has_int_arith(value)
+        }
         Expr::IntFromStrRadix { value, .. } => expr_has_int_arith(value),
         // PMAT-502am: formatted f-string field — recurse into the value.
         Expr::FormatSpec { value, .. } => expr_has_int_arith(value),
@@ -1975,6 +1977,14 @@ pub enum Expr {
         #[serde(default)]
         min_width: u32,
     },
+    /// PMAT-939 (correctness-hunt): a thousands-GROUPED integer field — Python
+    /// `f"{1000000:,}"` → `"1,000,000"`, `f"{1000000:_}"` → `"1_000_000"`. Rust's
+    /// `format!` has NO grouping flag, so this carries the separator (`,` or `_`)
+    /// and codegen emits a runtime digit-grouping loop: group the magnitude's
+    /// decimal digits by 3 from the right, sign first (`f"{-1234567:,}"` ==
+    /// `"-1,234,567"`). `__m = n.unsigned_abs()` keeps `i64::MIN` safe. Lean
+    /// refuses (like [`Expr::IntRadixStr`]).
+    IntGroupedStr { value: Box<Expr>, sep: char },
     /// `int(s, base)` — parse a string in the given radix (→ `int`).
     /// PMAT-502da (Tranche 2); the str→int reverse of [`Expr::IntRadixStr`].
     /// `radix` is a literal `2..=36`. Rust/Ruchy emit
@@ -3160,6 +3170,7 @@ fn escape_expr(e: &mut Expr) {
         Expr::StrChars { string } => escape_expr(string),
         Expr::Ord { value } | Expr::Chr { value } => escape_expr(value),
         Expr::IntRadixStr { value, .. }
+        | Expr::IntGroupedStr { value, .. }
         | Expr::IntFromStrRadix { value, .. }
         | Expr::FormatSpec { value, .. }
         | Expr::NumCast { value, .. }
@@ -3692,6 +3703,7 @@ fn collect_idents_expr(e: &Expr, acc: &mut std::collections::HashSet<String>) {
         Expr::StrChars { string } => collect_idents_expr(string, acc),
         Expr::Ord { value } | Expr::Chr { value } => collect_idents_expr(value, acc),
         Expr::IntRadixStr { value, .. }
+        | Expr::IntGroupedStr { value, .. }
         | Expr::IntFromStrRadix { value, .. }
         | Expr::FormatSpec { value, .. }
         | Expr::NumCast { value, .. }

@@ -14863,6 +14863,42 @@ fn main() {
     assert_rustc_runs("fstr_alt_form_radix", &rust, driver);
 }
 
+/// PMAT-939 (correctness-hunt): the thousands-GROUPING format spec — `,` and `_`
+/// (`f"{1000000:,}"` == `"1,000,000"`, `f"{1000000:_}"` == `"1_000_000"`) was a
+/// clean reject ("unsupported format spec `:,`"). Python groups the magnitude's
+/// decimal digits by 3 from the right with the separator, sign FIRST for
+/// negatives (`f"{-1234567:,}"` == `"-1,234,567"`). Rust's `format!` has no
+/// grouping flag, so the spec routes to the new `IntGroupedStr` digit-grouping
+/// loop. Cross-checked vs python3.
+#[test]
+fn fstr_grouping() {
+    let rust = xpile_transpile_to_rust("fstr_grouping.py");
+    assert!(
+        // the runtime digit-grouping loop, magnitude-based (i64::MIN-safe).
+        rust.contains("__n.unsigned_abs()")
+            && rust.contains("(__len - __i) % 3 == 0")
+            && rust.contains("__g.push(','")
+            && rust.contains("__g.push('_'"),
+        "grouping must emit the magnitude digit-grouping loop for `,` and `_`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(grp_comma(1000000), "1,000,000");
+    assert_eq!(grp_comma(1234567), "1,234,567");
+    assert_eq!(grp_comma(-1234567), "-1,234,567");
+    assert_eq!(grp_comma(0), "0");
+    assert_eq!(grp_comma(100), "100");
+    assert_eq!(grp_comma(999), "999");
+    assert_eq!(grp_comma(1000), "1,000");
+    assert_eq!(grp_under(1000000), "1_000_000");
+    assert_eq!(grp_under(-1234567), "-1_234_567");
+    assert_eq!(grp_under(1000), "1_000");
+    assert_eq!(labeled(12345678), "total=12,345,678!");
+}
+"#;
+    assert_rustc_runs("fstr_grouping", &rust, driver);
+}
+
 /// PMAT-801 (HUNT-V19 STR-IDX-OOB): a string index out of range panicked with
 /// Rust's raw "index out of bounds" message, not the tagged `xpile: IndexError:`,
 /// so under the allowlist except a typed `except IndexError` couldn't catch it
