@@ -42,11 +42,24 @@ and `crates/bashrs-backend/` exist as workspace members alongside
 `crates/depyler-frontend/` etc. as of v0.1.0 (PMAT-037..058 +
 PMAT-085..092 + PMAT-119 polish; see
 [`docs/specifications/sub/bashrs-merger.md`](docs/specifications/sub/bashrs-merger.md)).
-`C-BASHRS-POSIX-IDEMPOTENCE` is at full §14.4 four-stratum
-QUORUM; the bashrs frontend handles realistic POSIX shell idioms
-(see CHANGELOG PMAT-085..092 + PMAT-119 for the round-trip
-invariant lock-in series). The "v0.2.0 merger" framing was
-superseded — the merger is done at v0.1.0.
+**Scope (be honest about it — PMAT-989):** the bashrs frontend
+handles the FLAT-command subset only — quoting (`'...'` / `"..."`),
+`$VAR`, `$(...)` / backtick command substitution, pipelines, and
+single-value assignment (`VAR=value`). Shell CONTROL-FLOW (loops
+`for`/`while`/`until`, conditionals `if`/`case`) is NOT handled: the
+frontend now REFUSES it with a hard `FrontendError` rather than
+silently shredding it into barewords (real `Stmt::ShellLoop`
+production is the v0.2.0 "real bashrs parser" job). The
+`C-BASHRS-POSIX-IDEMPOTENCE` contract holds for that flat-command
+subset under its §14.4 stratum coverage — it does NOT certify
+control-flow round-tripping (out of scope until the v0.2.0 fold).
+Do not claim the frontend "handles realistic POSIX shell idioms"
+in general; it handles the flat-command subset and refuses the
+rest. See CHANGELOG PMAT-085..092 + PMAT-119 for the flat-subset
+round-trip invariant lock-in series, and PMAT-989 for the
+control-flow refusal. The "v0.2.0 merger" framing was superseded
+for the flat subset — but control-flow parsing genuinely remains
+v0.2.0 work.
 
 Concrete workflow when shell artifacts become necessary:
 
