@@ -1559,6 +1559,37 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                  format!(\"{}{}{}\", if __neg { \"-\" } else { \"\" }, __g, __frac) }",
             );
         }
+        // PMAT-941 (correctness-hunt): scientific-notation float `f"{x:e}"` /
+        // `f"{x:.NE}"` — mirror of the Rust backend. Render to `precision` decimals,
+        // then fix up the exponent to Python's `e±NN` form (sign + 2-digit-min
+        // zero-pad) and case-fold the non-finite inf/nan tail.
+        Expr::FloatSciStr {
+            value,
+            precision,
+            upper,
+        } => {
+            let echar = if *upper { 'E' } else { 'e' };
+            let fold = if *upper {
+                "to_uppercase"
+            } else {
+                "to_lowercase"
+            };
+            out.push_str("{ let __x = (");
+            emit_expr(out, value, mode)?;
+            out.push_str("); let __s = ");
+            write!(out, "format!(\"{{:.{precision}{echar}}}\", __x)")?;
+            out.push_str(
+                "; match __s.split_once(['e', 'E']) { \
+                 Some((__mant, __exp)) => { \
+                 let __ev: i64 = __exp.parse().expect(\"xpile: scientific exponent\"); ",
+            );
+            write!(
+                out,
+                "format!(\"{{}}{echar}{{}}{{:02}}\", __mant, \
+                 if __ev < 0 {{ '-' }} else {{ '+' }}, __ev.abs()) }}, "
+            )?;
+            write!(out, "None => __s.{fold}() }} }}")?;
+        }
         // PMAT-502da: `int(s, base)`. PMAT-655: accept a base-matching radix
         // prefix (0x/0o/0b) + PEP-515 underscores (see the rust backend).
         Expr::IntFromStrRadix { value, radix } => {

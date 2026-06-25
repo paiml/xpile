@@ -14940,6 +14940,62 @@ fn main() {
     assert_rustc_runs("fstr_float_grouping", &rust, driver);
 }
 
+/// PMAT-941 (correctness-hunt): the SCIENTIFIC-NOTATION spec `:e` / `:E` and
+/// `:.Ne` / `:.NE` over a float — `f"{1234.5:e}"` == `"1.234500e+03"`,
+/// `f"{1234.5:.2E}"` == `"1.23E+03"`, `f"{1e100:e}"` == `"1.000000e+100"` (bare
+/// `e`/`E` defaults to 6 decimals) — was a clean reject ("unsupported format
+/// spec `:e`"). Rust's `format!("{:.Ne}", x)` renders the right mantissa but a
+/// BARE exponent (`1.234500e3` — no sign, no 2-digit-min zero-pad) and
+/// lowercases inf/nan even under `{:E}`, so the spec routes to the new
+/// `FloatSciStr` node: render to N decimals, then split on `e`/`E` and rebuild
+/// the exponent in Python's `e±NN` form (sign always present, magnitude
+/// `{:02}`-padded), case-folding the non-finite tail. An int with this
+/// presentation is coerced to float (`f"{5:e}"` == `"5.000000e+00"`). A 100-probe
+/// parity battery confirmed byte-identity to CPython. Cross-checked vs python3.
+#[test]
+fn fstr_scientific() {
+    let rust = xpile_transpile_to_rust("fstr_scientific.py");
+    assert!(
+        // the render + exponent-fixup: format to N decimals, split on e/E, rebuild
+        // the exponent with a forced sign and a 2-digit-min zero-pad.
+        rust.contains("format!(\"{:.6e}\", __x)")
+            && rust.contains("format!(\"{:.6E}\", __x)")
+            && rust.contains("split_once(['e', 'E'])")
+            && rust.contains("if __ev < 0 { '-' } else { '+' }")
+            && rust.contains("__s.to_lowercase()")
+            && rust.contains("__s.to_uppercase()"),
+        "scientific must emit the precision-render + exponent-fixup block for `e` and `E`:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let inf = f64::INFINITY;
+    let nan = f64::NAN;
+    assert_eq!(sci(1234.5), "1.234500e+03");
+    assert_eq!(sci(-1234.5), "-1.234500e+03");
+    assert_eq!(sci(0.0), "0.000000e+00");
+    assert_eq!(sci(0.000123), "1.230000e-04");
+    assert_eq!(sci(1e100), "1.000000e+100");
+    assert_eq!(sci(1e-100), "1.000000e-100");
+    assert_eq!(sci(inf), "inf");
+    assert_eq!(sci(nan), "nan");
+    assert_eq!(sci_upper(1234.5), "1.234500E+03");
+    assert_eq!(sci_upper(-1234.5), "-1.234500E+03");
+    assert_eq!(sci_upper(inf), "INF");
+    assert_eq!(sci_upper(nan), "NAN");
+    assert_eq!(sci_p2(1234.5), "1.23e+03");
+    assert_eq!(sci_p2(9999999000.0), "1.00e+10");
+    assert_eq!(sci_p2(2.675), "2.67e+00");
+    assert_eq!(sci_p0_upper(1234.5), "1E+03");
+    assert_eq!(sci_p0_upper(1.5), "2E+00");
+    assert_eq!(sci_p0_upper(2.5), "2E+00");
+    assert_eq!(sci_int(5), "5.000000e+00");
+    assert_eq!(sci_int(1000000), "1.000000e+06");
+    assert_eq!(labeled(6.022e23), "v=6.022e+23!");
+}
+"#;
+    assert_rustc_runs("fstr_scientific", &rust, driver);
+}
+
 /// PMAT-801 (HUNT-V19 STR-IDX-OOB): a string index out of range panicked with
 /// Rust's raw "index out of bounds" message, not the tagged `xpile: IndexError:`,
 /// so under the allowlist except a typed `except IndexError` couldn't catch it

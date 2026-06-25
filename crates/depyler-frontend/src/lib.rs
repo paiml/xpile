@@ -1768,6 +1768,7 @@ fn walk_expr_children(
         Expr::IntRadixStr { value, .. }
         | Expr::IntGroupedStr { value, .. }
         | Expr::FloatGroupedStr { value, .. }
+        | Expr::FloatSciStr { value, .. }
         | Expr::IntFromStrRadix { value, .. } => f(value),
         Expr::FormatSpec { value, .. } => f(value),
         Expr::StrMethod { recv, args, .. } => {
@@ -9969,9 +9970,11 @@ fn infer_type(e: &Expr) -> Type {
         Expr::Ord { .. } => Type::I64,
         Expr::Chr { .. } => Type::Str,
         // PMAT-502cv: hex/oct/bin → str. PMAT-940: grouped float → str.
-        Expr::IntRadixStr { .. } | Expr::IntGroupedStr { .. } | Expr::FloatGroupedStr { .. } => {
-            Type::Str
-        }
+        // PMAT-941: scientific float → str.
+        Expr::IntRadixStr { .. }
+        | Expr::IntGroupedStr { .. }
+        | Expr::FloatGroupedStr { .. }
+        | Expr::FloatSciStr { .. } => Type::Str,
         // PMAT-502da: int(s, base) → int.
         Expr::IntFromStrRadix { .. } => Type::I64,
         // PMAT-502am: a formatted f-string field produces a Str.
@@ -10399,9 +10402,11 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::Ord { .. } => Type::I64,
         Expr::Chr { .. } => Type::Str,
         // PMAT-502cv: hex/oct/bin → str. PMAT-940: grouped float → str.
-        Expr::IntRadixStr { .. } | Expr::IntGroupedStr { .. } | Expr::FloatGroupedStr { .. } => {
-            Type::Str
-        }
+        // PMAT-941: scientific float → str.
+        Expr::IntRadixStr { .. }
+        | Expr::IntGroupedStr { .. }
+        | Expr::FloatGroupedStr { .. }
+        | Expr::FloatSciStr { .. } => Type::Str,
         // PMAT-502da: int(s, base) → int.
         Expr::IntFromStrRadix { .. } => Type::I64,
         // PMAT-502am: a formatted f-string field produces a Str.
@@ -15454,6 +15459,41 @@ fn apply_nonempty_format_spec(
                         precision,
                     });
                 }
+            }
+        }
+    }
+    // PMAT-941 (correctness-hunt): the SCIENTIFIC-NOTATION spec `:e` / `:E` and
+    // `:.Ne` / `:.NE` over a float — `f"{1234.5:e}"` -> "1.234500e+03",
+    // `f"{1234.5:.2E}"` -> "1.23E+03", `f"{1e100:e}"` -> "1.000000e+100" (bare
+    // `e`/`E` defaults to 6 decimals). An int with this presentation was already
+    // cast to f64 above (PMAT-693, the last-char-in-`eEfFgG%` test), so
+    // `f"{5:e}"` -> "5.000000e+00" and `f"{True:.2E}"` -> "1.00E+00" land here too.
+    // Rust's `format!("{:.Ne}", x)` matches Python's mantissa but emits a BARE
+    // exponent (`e3` — no sign, no 2-digit-min zero-pad) and lowercases inf/nan
+    // even under `{:E}`, so route to `FloatSciStr`: codegen renders then fixes up
+    // the exponent to Python's `e±NN` form and case-folds the non-finite tail.
+    // `:g`/`:G` general-float, width-combined `:12.2e`, and a sign-forcing `:+e`
+    // stay documented rejects (follow-ups, same scoping as PMAT-939/940/613).
+    if ty == Type::F64 {
+        let upper = spec.ends_with('E');
+        if upper || spec.ends_with('e') {
+            let prec_part = &spec[..spec.len() - 1];
+            let precision = if prec_part.is_empty() {
+                // Bare `e`/`E` -> Python's default scientific precision of 6.
+                Some(6u32)
+            } else if let Some(n) = prec_part.strip_prefix('.') {
+                (!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                    .then(|| n.parse::<u32>().ok())
+                    .flatten()
+            } else {
+                None
+            };
+            if let Some(precision) = precision {
+                return Ok(Expr::FloatSciStr {
+                    value: Box::new(value),
+                    precision,
+                    upper,
+                });
             }
         }
     }

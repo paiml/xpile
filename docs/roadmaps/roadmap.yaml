@@ -11482,6 +11482,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-941
+  github_issue: null
+  item_type: task
+  title: 'PMAT-941: [correctness-hunt] f-string SCIENTIFIC-NOTATION float spec `:e` / `:E` (and `:.Ne` / `:.NE`) — `f"{1234.5:e}"` -> "1.234500e+03", `f"{1234.5:.2E}"` -> "1.23E+03", `f"{1e100:e}"` -> "1.000000e+100"; was a clean reject. Rust `format!("{:.Ne}", x)` gets the mantissa right but emits a bare unpadded exponent (`e3`, no sign, no 2-digit min) and lowercases inf/nan even under `{:E}`. NEW `Expr::FloatSciStr { value, precision, upper }` renders then fixes up the exponent to Python form (`e±NN`, min 2 digits) and case-folds inf/nan'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (PMAT-900..940 all merged, sprint window 2026-06-23..07-02 still open). Continues prompt path c — the python3-vs-rustc differential correctness-hunt. The HUNT-V30 sweep (post-v0.1.601) found xpile already matches CPython byte-for-byte on every probed numeric/string shape; the only surviving gaps were clean lower-time REJECTs of unsupported f-string specs. Picked `:e`/`:E` scientific notation — the next capability named in the correctness-hunt backlog (option a) and the most commonly-used remaining float-presentation spec. A 100-probe parity battery (20 values × 5 precisions, incl. rounding-boundary 2.675/.2e, half-even 1.5/2.5/.0e, neg-zero, e±100, e-07, inf/nan, upper+lower) confirmed the render+fixup is BYTE-FOR-BYTE identical to CPython before a line of IR was written."
+  - "ROOT CAUSE: `apply_nonempty_format_spec` cast an int with an `e`/`E`-suffixed spec to f64 (the PMAT-693 path), but the float branch had no scientific arm — `:e`/`:.2e` fell through to the catch-all `unsupported format spec` reject. The naive `FormatSpec` -> `format!(\"{:.6e}\", x)` would NOT have matched Python: Rust emits a bare exponent (`1.234500e3`, no `+`, no zero-pad to 2 digits) and lowercases inf/nan even under `{:E}` (Python wants `INF`/`NAN`). Neither `FormatSpec` nor any existing node expressed the Python exponent shape."
+  - "FIX: (1) new `Expr::FloatSciStr { value: Box<Expr>, precision: u32, upper: bool }` in xpile-meta-hir (Str-typed; all traversal/escape/ident arms recurse into `value`); (2) frontend adds a `ty == Type::F64` arm matching `spec`/`spec.strip_prefix('.')` of the form `e`/`E`/`.Ne`/`.NE` — precision is the `.N` digits or Python's default 6 for bare `e`; an int with such a spec was already cast to f64 by the PMAT-693 path so `f\"{5:e}\"` and `f\"{True:.2E}\"` land here too; (3) rust-codegen + ruchy-codegen emit `{ let __x=(..); let __s=format!(\"{:.Ne}\", __x); match __s.split_once(['e','E']) { Some((__m,__e)) => { let __ev:i64=__e.parse().expect(..); format!(\"{}{}{}{:02}\", __m, 'e', if __ev<0 {'-'} else {'+'}, __ev.abs()) }, None => __s.to_lowercase() } }` (upper: `{:.NE}`, `'E'`, `.to_uppercase()` — the None branch case-folds the non-finite inf/nan); (4) Lean lane refuses with a pointer (like `FloatGroupedStr`). SCOPE: `:e`/`:E`/`:.Ne`/`:.NE` only — `:g`/`:G` general-float, width-combined `:12.2e`, and `:e` over the default repr stay documented rejects (follow-ups, same scoping discipline as PMAT-939/940/613)."
+  - "REGRESSION GUARDS: e2e test `fstr_scientific` in transpile_e2e.rs (asserts the `format!(\"{:.6e}\"...)` render + `split_once(['e','E'])` exponent-fixup + `{:02}` zero-pad for both `e` and `E`, then rustc-runs the binary against hand-checked CPython values incl. negatives, sub-1, e±100, default-precision, int-coercion, inf/nan); fixture `fstr_scientific.py`. Manually cross-checked the transpiled binary vs python3 on 100 probes — all byte-identical; `:g`, bare-repr `:e`, and width-combined forms still reject as intended."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, `cargo test -p xpile --test transpile_e2e fstr_scientific`, codegen+frontend+meta-hir crate tests. Backlog correctness slice, sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-131
   github_issue: null
   item_type: task
