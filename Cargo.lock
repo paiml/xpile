@@ -1789,6 +1789,7 @@ dependencies = [
  "xpile-ptx-codegen",
  "xpile-ruchy-codegen",
  "xpile-rust-codegen",
+ "xpile-wasm-codegen",
  "xpile-wgsl-codegen",
 ]
 
@@ -1891,6 +1892,15 @@ version = "0.1.601"
 dependencies = [
  "thiserror 1.0.69",
  "xpile-backend",
+ "xpile-meta-hir",
+]
+
+[[package]]
+name = "xpile-wasm-codegen"
+version = "0.1.601"
+dependencies = [
+ "xpile-backend",
+ "xpile-contracts",
  "xpile-meta-hir",
 ]
 

@@ -1,0 +1,14 @@
+[package]
+name = "xpile-wasm-codegen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Native WebAssembly backend — lowers meta-HIR (scalar/control subset) directly to WAT text, NOT via the Ruchy WasmEmitter hop. The EMIT half of first-class bidirectional native WASM (PMAT-951). String-emitter shape, no runtime dependency."
+
+[dependencies]
+xpile-backend = { workspace = true }
+xpile-contracts = { workspace = true }
+xpile-meta-hir = { workspace = true }

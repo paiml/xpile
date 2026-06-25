@@ -24,6 +24,11 @@ pub enum Target {
     Wgsl,
     /// SPIR-V text or binary. Implemented by `xpile-spirv-codegen` (future).
     Spirv,
+    /// WebAssembly Text format (WAT). Implemented by `xpile-wasm-codegen`.
+    /// The EMIT half of first-class bidirectional native WASM (PMAT-951) —
+    /// lowers the meta-HIR scalar/control subset directly to WAT text, NOT
+    /// via the Ruchy `WasmEmitter` hop. See `project-bidirectional-wasm`.
+    Wasm,
     /// Lean 4 executable code (def, partial def, inductive, ...).
     /// Implemented by `xpile-lean-codegen`. The proof-lane Lean (theorems)
     /// goes through `xpile-lean-contract-backend` instead.
