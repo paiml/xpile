@@ -116,6 +116,25 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-959
+  github_issue: null
+  item_type: task
+  title: 'PMAT-959: [bidirectional-WASM] the LIFT half — STRUCTURED CONTROL-FLOW recovery (the control half of PMAT-952; cross-ref PMAT-957 straight-line first cut). Extends crates/xpile-wasm-frontend to RECOGNIZE and INVERT the canonical control shapes xpile-wasm-codegen emits, recursively, back to meta-HIR — completing the scalar+control subset of the lift so it reaches round-trip parity with the EMIT half. The body lifter is rewritten from a flat stack simulation into a recursive descent (lift_block_inner) over the WAT body token stream that handles both paren-nesting and the if/end keyword-delimited regions: (block $brk (loop $cont <cond> i32.eqz br_if $brk <body> br $cont)) → Stmt::While (the i32.eqz+br_if $brk guard is stripped to recover the un-negated loop condition; the trailing br $cont back-edge closes the body); bare `if <then-stmts> [else <else-stmts>] end` (no (result …)) → Stmt::If with statement arms; `if (result T) <then-expr> else <else-expr> end` → Expr::IfExpr; return → Stmt::Return (popping the residual value); br $brk → Stmt::Break, br $cont → Stmt::Continue; nested control recurses (While ⊃ If ⊃ Break verified). The (func …) header scan now BREAKS into the body lifter on the first non-param/result/local form (so a while-first body whose first token is `(block …)` is no longer mis-refused). HONESTLY LOSSY still: type identity collapses to the canonical scalar (i64→I64, i32→Bool, f64→F64, f32→F32) and names are synthesized — this is decompilation, NOT lift(emit(M))==M.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Completes the ⭐ bidirectional-WASM user GOAL (project-bidirectional-wasm) for the scalar+control subset: PMAT-957 shipped the straight-line LIFT; this slice ships the structured control-flow recovery PMAT-957 honestly REFUSED, so the lift now round-trips every shape the EMIT half (PMAT-951) produces over the scalar/control subset. RIGHT-INVERSE-ON-IMAGE design: valid WASM is reducible and the lift only inverts xpile-wasm-codegen's OWN canonical output — no general relooper needed."
+  - "CONTROL SHAPES NOW ROUND-TRIP: While (the (block $brk (loop $cont …)) idiom), statement-If (if/else/end with Return arms, the decy-style shape), if-expr (if (result T) …), Return, Break (br $brk), Continue (br $cont), and arbitrary nesting (While ⊃ If ⊃ Break). The lift distinguishes a statement-if from an if-expr by the presence of the `(result T)` prefix after the `if` token, and recovers the loop condition by stripping the emit's `i32.eqz br_if $brk` negation guard."
+  - "BOUNDARY MOVED, NOT REMOVED (honest refusal preserved): any control shape OUTSIDE the xpile-wasm-codegen image — a (block …) whose label is not $brk, a (loop …) not labeled $cont, a br to a non-brk/cont label, a br_table, or an unknown instruction (e.g. memory.grow) — is STILL refused with a hard FrontendError::Lower (refuse_control / refuse_noncanonical), never a wrong lift. The synthetic $__wasm_floordiv_i64/$__wasm_floormod_i64 helpers (which contain an inner (if …)) remain skipped wholesale."
+  - "PINNED BY EXECUTED ROUND-TRIP FIXED-POINT WITNESSES (emit(lift(emit(M)))==emit(M) byte-for-byte, the honest right-inverse-on-image property — NOT lift(emit(M))==M): 4 new control fixtures — roundtrip_while_sum (count/sum while-loop), roundtrip_if_else_statement_max (statement-if), roundtrip_if_expr_max (if-expr), roundtrip_nested_while_with_if_break (While ⊃ If ⊃ Break) — plus 2 honest-refusal tests (refuses_noncanonical_block, refuses_unknown_instruction). The obsolete refuses_control_flow test (which asserted while-loops are refused) was converted; the 7 straight-line fixtures from PMAT-957 still pass. xpile-wasm-frontend: 15 tests green."
+  - "NO NEW CONTRACT (citation-honesty, per the decy ABI-token recipe + the PMAT-957 lossy-lift posture): a lossy decompilation carries no strong correctness contract — the EXECUTED fixed-point witness IS the verification artifact. The C-WASM-LIFT-ROUNDTRIP right-inverse-on-image contract remains QUEUED, not claimed (it would assert emit∘lift∘emit = emit over the codegen image; deferred until the lift subset stabilizes)."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors/0 warnings), cargo-deny advisories, cargo test for xpile-wasm-frontend (15) + xpile-wasm-codegen + xpile-core; no Lean touched (lake build unaffected). Bidirectional-WASM control-flow-LIFT slice, sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-957
   github_issue: null
   item_type: task

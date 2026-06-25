@@ -4,7 +4,8 @@
 //!
 //! Lifts the **WAT scalar/control subset** — specifically the image of
 //! [`xpile-wasm-codegen`] — back to canonical meta-HIR via a
-//! stack→expression-tree reconstruction. This is a **lossy
+//! stack→expression-tree reconstruction with **structured control-flow
+//! recovery** (PMAT-959, the control half of PMAT-952). This is a **lossy
 //! decompilation**, the honest other side of the asymmetry recorded in
 //! `project-bidirectional-wasm`: emit is clean, lift is lossy.
 //!
@@ -30,6 +31,23 @@
 //!
 //!   The single value left on the stack is the [`Block::trailing_return`].
 //!
+//! ## Structured control-flow recovery (PMAT-959)
+//!
+//! The lift now inverts the **canonical control shapes** the emit produces,
+//! recursively (the right-inverse-on-image property still holds — it only
+//! needs to invert what `xpile-wasm-codegen` emits, not arbitrary WASM):
+//!
+//!   * `(block $brk (loop $cont <cond> i32.eqz br_if $brk <body> br $cont))`
+//!     → [`Stmt::While`] — the `i32.eqz`+`br_if $brk` guard is stripped to
+//!     recover the un-negated loop condition; the trailing `br $cont`
+//!     back-edge closes the body.
+//!   * `if <then-stmts> [else <else-stmts>] end` (no `(result …)`) →
+//!     [`Stmt::If`] (the decy-style statement-if shape).
+//!   * `if (result T) <then-expr> else <else-expr> end` → [`Expr::IfExpr`].
+//!   * `return` → [`Stmt::Return`] (popping the residual value, if any).
+//!   * `br $brk` → [`Stmt::Break`]; `br $cont` → [`Stmt::Continue`].
+//!   * Nested control recurses.
+//!
 //! ## What the lift loses / refuses (the honest lossy posture)
 //!
 //! - **Type identity collapses to the canonical scalar:** `i64`→`I64`
@@ -38,30 +56,30 @@
 //!   high-level Python/Rust type is irreversibly gone.
 //! - **Names** survive only because the emit kept them (`$x`); a stripped
 //!   WAT would lose them.
-//! - **Structured control-flow recovery** (`if`/`else`/`end`,
-//!   `(block …)`, `(loop …)`, `br`/`br_if`, `return`, `drop`, `i32.eqz`,
-//!   `i64.div_s`/`rem_s`) is **refused** at this first cut with a hard
-//!   [`FrontendError::Lower`] — never a wrong lift. Reconstructing
-//!   `if`/`while` from the stack-machine block/branch form is deferred to
-//!   PMAT-952 (alongside the `WasmDiffExecEngine` runtime witness). The
-//!   emit's synthetic `$__wasm_floordiv_i64`/`$__wasm_floormod_i64`
-//!   helpers (which DO contain control flow) are skipped, not parsed.
+//! - **Non-canonical control flow** — any block/loop/branch nesting OUTSIDE
+//!   the `xpile-wasm-codegen` image (e.g. a `(block …)` whose label is not
+//!   `$brk`, a `br_table`, a raw stack-machine branch xpile never emits) —
+//!   is still **refused** with a hard [`FrontendError::Lower`], never a
+//!   wrong lift. The emit's synthetic `$__wasm_floordiv_i64`/
+//!   `$__wasm_floormod_i64` helpers (which DO contain an inner `(if …)`)
+//!   are skipped wholesale, not parsed.
 //!
 //! ## Correctness witness
 //!
 //! The lift is a **right-inverse of emit on its WAT image** — pinned by
-//! an executed round-trip fixed-point test in `tests.rs`:
-//! `emit(lift(emit(M))) == emit(M)` for every straight-line scalar
-//! fixture. (A full `lift(emit(M)) == M` is *not* claimed — the type
-//! collapse above makes the lift lossy; the fixed point is the honest,
-//! checkable invariant.)
+//! executed round-trip fixed-point tests in `tests.rs`:
+//! `emit(lift(emit(M))) == emit(M)` for every straight-line scalar AND
+//! structured-control fixture (a `while` sum, an `if`/`else` max, an
+//! if-expr, and a nested loop+if). (A full `lift(emit(M)) == M` is *not*
+//! claimed — the type collapse above makes the lift lossy; the fixed point
+//! is the honest, checkable invariant.)
 
 use std::collections::HashMap;
 use std::path::Path;
 
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, SourceLang, Type,
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, SourceLang, Stmt, Type,
 };
 
 /// WAT frontend. Lifts the WAT scalar/control subset (the
@@ -365,141 +383,38 @@ fn lift_function(
                 local_names.insert(lname.clone());
                 locals.push((lname, ty));
             }
-            "block" | "loop" | "if" => {
-                return Err(refuse_control(kw));
-            }
-            other => {
-                return Err(FrontendError::Lower(format!(
-                    "unexpected `({other} …)` in func `{name}` header"
-                )));
-            }
+            // Anything else is the first BODY construct (e.g. a `while`
+            // loop emitted as `(block $brk (loop $cont …))` as the very
+            // first statement) — the header is over, stop and let the
+            // structured body lifter take it (PMAT-959).
+            _ => break,
         }
         k = close + 1;
     }
 
-    // Body: a flat instruction stream [k, end). Reconstruct via the stack.
+    // Body: an instruction stream [k, end), now WITH structured control
+    // flow (PMAT-959). Reconstruct via a recursive lifter that simulates
+    // the operand stack AND recovers the canonical control shapes the emit
+    // produces (`(block $brk (loop $cont …))` → `While`, bare
+    // `if … else … end` → `Stmt::If`, `if (result T) …` → `Expr::IfExpr`,
+    // `return` → `Stmt::Return`, `br $brk`/`br $cont` → `Break`/`Continue`).
     let body_toks = &slice[k..end];
     let set_counts = count_local_sets(body_toks);
-    let local_ty: HashMap<&str, &Type> = locals.iter().map(|(n, t)| (n.as_str(), t)).collect();
+    let local_ty: HashMap<String, Type> =
+        locals.iter().map(|(n, t)| (n.clone(), t.clone())).collect();
 
-    let mut stack: Vec<Expr> = Vec::new();
-    let mut stmts: Vec<xpile_meta_hir::Stmt> = Vec::new();
-    let mut assigned: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut j = 0usize;
-    while j < body_toks.len() {
-        let instr = body_toks[j].as_str();
-        match instr {
-            "local.get" => {
-                let n = ident(peek_slice(body_toks, j + 1)?);
-                stack.push(Expr::Ident(n.to_string()));
-                j += 2;
-            }
-            "local.set" => {
-                let n = ident(peek_slice(body_toks, j + 1)?).to_string();
-                let value = pop(&mut stack, instr)?;
-                if local_names.contains(&n) && !assigned.contains(&n) {
-                    // First write of a declared local → a `let`. Mutable
-                    // iff it is written again later in the body.
-                    let ty = (*local_ty
-                        .get(n.as_str())
-                        .ok_or_else(|| FrontendError::Parse(format!("unknown local `{n}`")))?)
-                    .clone();
-                    let mutable = set_counts.get(&n).copied().unwrap_or(0) > 1;
-                    stmts.push(xpile_meta_hir::Stmt::Let {
-                        name: n.clone(),
-                        ty,
-                        value,
-                        mutable,
-                    });
-                    assigned.insert(n);
-                } else {
-                    stmts.push(xpile_meta_hir::Stmt::Assign { name: n, value });
-                }
-                j += 2;
-            }
-            "i64.const" => {
-                let v: i64 = peek_slice(body_toks, j + 1)?
-                    .parse()
-                    .map_err(|_| FrontendError::Parse("bad i64.const literal".to_string()))?;
-                stack.push(Expr::LitInt(v));
-                j += 2;
-            }
-            "i32.const" => {
-                let v: i64 = peek_slice(body_toks, j + 1)?
-                    .parse()
-                    .map_err(|_| FrontendError::Parse("bad i32.const literal".to_string()))?;
-                // In the emit image an i32.const is the 0/1 bool encoding.
-                stack.push(Expr::LitBool(v != 0));
-                j += 2;
-            }
-            "f64.const" => {
-                let tok = peek_slice(body_toks, j + 1)?;
-                let v: f64 = tok
-                    .parse()
-                    .map_err(|_| FrontendError::Parse(format!("bad f64.const literal `{tok}`")))?;
-                stack.push(Expr::LitFloat(v));
-                j += 2;
-            }
-            "call" => {
-                let callee = ident(peek_slice(body_toks, j + 1)?).to_string();
-                match callee.as_str() {
-                    // The emit's Python floor helpers, lifted back to the op.
-                    "__wasm_floordiv_i64" => {
-                        let (lhs, rhs) = pop2(&mut stack, instr)?;
-                        stack.push(Expr::BinOp {
-                            op: BinOp::FloorDiv,
-                            lhs: Box::new(lhs),
-                            rhs: Box::new(rhs),
-                        });
-                    }
-                    "__wasm_floormod_i64" => {
-                        let (lhs, rhs) = pop2(&mut stack, instr)?;
-                        stack.push(Expr::BinOp {
-                            op: BinOp::Mod,
-                            lhs: Box::new(lhs),
-                            rhs: Box::new(rhs),
-                        });
-                    }
-                    _ => {
-                        let n = *arity.get(&callee).ok_or_else(|| {
-                            FrontendError::Lower(format!(
-                                "call to unknown function `{callee}` (no parsed signature)"
-                            ))
-                        })?;
-                        let mut args = Vec::with_capacity(n);
-                        for _ in 0..n {
-                            args.push(pop(&mut stack, instr)?);
-                        }
-                        args.reverse();
-                        stack.push(Expr::Call { callee, args });
-                    }
-                }
-                j += 2;
-            }
-            // Binary ops — pop rhs then lhs (lhs was pushed first).
-            other => {
-                if let Some(op) = int_binop(other) {
-                    let (lhs, rhs) = pop2(&mut stack, instr)?;
-                    stack.push(Expr::BinOp {
-                        op,
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
-                    });
-                    j += 1;
-                } else if let Some(fop) = float_binop(other) {
-                    let (lhs, rhs) = pop2(&mut stack, instr)?;
-                    stack.push(Expr::FloatBinOp {
-                        op: fop,
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
-                    });
-                    j += 1;
-                } else {
-                    return Err(refuse_control(other));
-                }
-            }
-        }
-    }
+    let mut ctx = BodyCtx {
+        arity,
+        local_names: &local_names,
+        local_ty: &local_ty,
+        set_counts: &set_counts,
+        assigned: std::collections::HashSet::new(),
+    };
+
+    // Lift the whole function body as a top-level block (terminated by the
+    // end of the slice). Any residual operand-stack values are the trailing
+    // return; any structural mismatch is a hard refusal (never a wrong lift).
+    let (stmts, mut stack) = lift_block(body_toks, &mut ctx, BlockEnd::Eof)?;
 
     // The single residual value is the trailing return (or unit/void).
     let trailing_return = if matches!(return_type, Type::Unit) {
@@ -532,14 +447,654 @@ fn lift_function(
     })
 }
 
-/// A refusal for any control-flow / non-scalar-subset instruction — the
-/// honest lossy boundary (structured recovery deferred to PMAT-952).
+// ─── Structured body lifter (PMAT-959) ──────────────────────────────
+//
+// A recursive descent over the WAT body token stream that simulates the
+// operand stack AND recovers the canonical control shapes the emit
+// produces. It is a *right-inverse on the emit image*: it inverts exactly
+// what `xpile-wasm-codegen` emits, refusing anything else.
+
+/// Shared lowering context threaded through the recursive body lifter.
+struct BodyCtx<'a> {
+    /// name → param count, for `call $f` arity.
+    arity: &'a HashMap<String, usize>,
+    /// Declared `(local …)` names (drives Let-vs-Assign).
+    local_names: &'a std::collections::HashSet<String>,
+    /// local name → its lifted [`Type`] (for the `Let`'s annotation).
+    local_ty: &'a HashMap<String, Type>,
+    /// `local.set` count per name over the WHOLE body (drives `let mut`).
+    set_counts: &'a HashMap<String, usize>,
+    /// Names already bound by a `Let` (a later set is an `Assign`).
+    assigned: std::collections::HashSet<String>,
+}
+
+/// What terminates the block currently being lifted.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BlockEnd {
+    /// End of the function body slice (the top-level block).
+    Eof,
+    /// An `else` or `end` keyword (an `if`/`else` arm).
+    ElseOrEnd,
+    /// The matching `)` of a `(loop …)` form (a `while` body).
+    Loop,
+}
+
+/// Outcome of consuming one block: its statements and the residual operand
+/// stack, plus the terminator keyword actually seen (so an `if` lifter can
+/// tell `else` from `end`).
+struct BlockOut {
+    stmts: Vec<Stmt>,
+    stack: Vec<Expr>,
+    /// The terminator token (`"else"`, `"end"`, or `""` for EOF/loop-close).
+    term: String,
+}
+
+/// Lift a block of body tokens, returning its statements and residual stack.
+/// (Convenience wrapper used at the function-body top level.)
+fn lift_block(
+    toks: &[String],
+    ctx: &mut BodyCtx<'_>,
+    end: BlockEnd,
+) -> Result<(Vec<Stmt>, Vec<Expr>), FrontendError> {
+    let out = lift_block_inner(toks, &mut 0usize, ctx, end)?;
+    Ok((out.stmts, out.stack))
+}
+
+/// The core recursive lifter. Consumes tokens from `*pos` until the block
+/// terminator for `end` is reached, simulating the operand stack and
+/// emitting statements for the control shapes / `local.set` / `return`.
+fn lift_block_inner(
+    toks: &[String],
+    pos: &mut usize,
+    ctx: &mut BodyCtx<'_>,
+    end: BlockEnd,
+) -> Result<BlockOut, FrontendError> {
+    let mut stack: Vec<Expr> = Vec::new();
+    let mut stmts: Vec<Stmt> = Vec::new();
+
+    while *pos < toks.len() {
+        let instr = toks[*pos].as_str();
+        match instr {
+            // ── block terminators ──
+            "else" | "end" if end == BlockEnd::ElseOrEnd => {
+                let term = instr.to_string();
+                *pos += 1;
+                return Ok(BlockOut { stmts, stack, term });
+            }
+            // A `(loop …)` body terminates at the loop form's closing `)`.
+            ")" if end == BlockEnd::Loop => {
+                *pos += 1;
+                return Ok(BlockOut {
+                    stmts,
+                    stack,
+                    term: String::new(),
+                });
+            }
+            // ── operand-producing leaves ──
+            "local.get" => {
+                let n = ident(peek_slice(toks, *pos + 1)?);
+                stack.push(Expr::Ident(n.to_string()));
+                *pos += 2;
+            }
+            "local.set" => {
+                let n = ident(peek_slice(toks, *pos + 1)?).to_string();
+                let value = pop(&mut stack, instr)?;
+                stmts.push(lift_local_set(n, value, ctx)?);
+                *pos += 2;
+            }
+            "i64.const" => {
+                let v: i64 = peek_slice(toks, *pos + 1)?
+                    .parse()
+                    .map_err(|_| FrontendError::Parse("bad i64.const literal".to_string()))?;
+                stack.push(Expr::LitInt(v));
+                *pos += 2;
+            }
+            "i32.const" => {
+                let v: i64 = peek_slice(toks, *pos + 1)?
+                    .parse()
+                    .map_err(|_| FrontendError::Parse("bad i32.const literal".to_string()))?;
+                // In the emit image an i32.const is the 0/1 bool encoding.
+                stack.push(Expr::LitBool(v != 0));
+                *pos += 2;
+            }
+            "f64.const" => {
+                let tok = peek_slice(toks, *pos + 1)?;
+                let v: f64 = tok
+                    .parse()
+                    .map_err(|_| FrontendError::Parse(format!("bad f64.const literal `{tok}`")))?;
+                stack.push(Expr::LitFloat(v));
+                *pos += 2;
+            }
+            "call" => {
+                let callee = ident(peek_slice(toks, *pos + 1)?).to_string();
+                lift_call(callee, &mut stack, ctx)?;
+                *pos += 2;
+            }
+            // ── structured control (the PMAT-959 recovery) ──
+            "return" => {
+                // The single residual value (if the fn is non-void) is the
+                // returned expression; a void return takes nothing.
+                let value = if stack.is_empty() {
+                    Expr::Unit
+                } else {
+                    pop(&mut stack, instr)?
+                };
+                stmts.push(Stmt::Return(value));
+                *pos += 1;
+            }
+            "br" => {
+                // `br $brk` → break; `br $cont` → continue (a while body's
+                // back-edge — the trailing `br $cont` is the loop's own and
+                // is consumed by `lift_while`, so any `br` reaching here is a
+                // user break/continue).
+                let label = ident(peek_slice(toks, *pos + 1)?);
+                match label {
+                    "brk" => stmts.push(Stmt::Break),
+                    "cont" => stmts.push(Stmt::Continue),
+                    other => return Err(refuse_noncanonical(&format!("br ${other}"))),
+                }
+                *pos += 2;
+            }
+            "if" => {
+                lift_if(toks, pos, ctx, &mut stack, &mut stmts)?;
+            }
+            // ── a nested `(…)` form: the `while` idiom, or refuse ──
+            "(" => {
+                let kw = peek_slice(toks, *pos + 1)?;
+                if kw == "block" {
+                    let while_stmt = lift_while(toks, pos, ctx)?;
+                    stmts.push(while_stmt);
+                } else {
+                    return Err(refuse_noncanonical(kw));
+                }
+            }
+            // ── arithmetic / comparison binary ops ──
+            other => {
+                if let Some(op) = int_binop(other) {
+                    let (lhs, rhs) = pop2(&mut stack, instr)?;
+                    stack.push(Expr::BinOp {
+                        op,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    });
+                    *pos += 1;
+                } else if let Some(fop) = float_binop(other) {
+                    let (lhs, rhs) = pop2(&mut stack, instr)?;
+                    stack.push(Expr::FloatBinOp {
+                        op: fop,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    });
+                    *pos += 1;
+                } else {
+                    return Err(refuse_control(other));
+                }
+            }
+        }
+    }
+
+    // Reached the end of the slice.
+    if end != BlockEnd::Eof {
+        return Err(FrontendError::Parse(
+            "WAT block ended before its `else`/`end`/`)` terminator".to_string(),
+        ));
+    }
+    Ok(BlockOut {
+        stmts,
+        stack,
+        term: String::new(),
+    })
+}
+
+/// Lift a `local.set $n` into a `Let` (first write of a declared local) or
+/// an `Assign` (a re-write / a non-declared name).
+fn lift_local_set(n: String, value: Expr, ctx: &mut BodyCtx<'_>) -> Result<Stmt, FrontendError> {
+    if ctx.local_names.contains(&n) && !ctx.assigned.contains(&n) {
+        let ty = ctx
+            .local_ty
+            .get(&n)
+            .ok_or_else(|| FrontendError::Parse(format!("unknown local `{n}`")))?
+            .clone();
+        let mutable = ctx.set_counts.get(&n).copied().unwrap_or(0) > 1;
+        ctx.assigned.insert(n.clone());
+        Ok(Stmt::Let {
+            name: n,
+            ty,
+            value,
+            mutable,
+        })
+    } else {
+        Ok(Stmt::Assign { name: n, value })
+    }
+}
+
+/// Lift a `call $f` (a helper call → the high-level op, or an intra-module
+/// call → [`Expr::Call`]), pushing the result onto `stack`.
+fn lift_call(
+    callee: String,
+    stack: &mut Vec<Expr>,
+    ctx: &BodyCtx<'_>,
+) -> Result<(), FrontendError> {
+    match callee.as_str() {
+        "__wasm_floordiv_i64" => {
+            let (lhs, rhs) = pop2(stack, "call")?;
+            stack.push(Expr::BinOp {
+                op: BinOp::FloorDiv,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            });
+        }
+        "__wasm_floormod_i64" => {
+            let (lhs, rhs) = pop2(stack, "call")?;
+            stack.push(Expr::BinOp {
+                op: BinOp::Mod,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            });
+        }
+        _ => {
+            let n = *ctx.arity.get(&callee).ok_or_else(|| {
+                FrontendError::Lower(format!(
+                    "call to unknown function `{callee}` (no parsed signature)"
+                ))
+            })?;
+            let mut args = Vec::with_capacity(n);
+            for _ in 0..n {
+                args.push(pop(stack, "call")?);
+            }
+            args.reverse();
+            stack.push(Expr::Call { callee, args });
+        }
+    }
+    Ok(())
+}
+
+/// Lift an `if` form — distinguishing the **if-expression** shape
+/// `if (result T) <then> else <else> end` (pushes an [`Expr::IfExpr`]) from
+/// the **statement-if** shape `if <then-stmts> [else <else-stmts>] end`
+/// (emits a [`Stmt::If`]). The condition is the value already on top of
+/// `stack` (the emit pushes it just before the `if`).
+fn lift_if(
+    toks: &[String],
+    pos: &mut usize,
+    ctx: &mut BodyCtx<'_>,
+    stack: &mut Vec<Expr>,
+    stmts: &mut Vec<Stmt>,
+) -> Result<(), FrontendError> {
+    // The condition is the residual operand.
+    let cond = pop(stack, "if")?;
+    *pos += 1; // consume `if`
+
+    // An if-EXPRESSION is `if (result T) …` — the next tokens are
+    // `( result <ty> )`. Detect and skip that prefix.
+    let is_expr = peek_slice(toks, *pos)? == "(" && peek_slice(toks, *pos + 1)? == "result";
+    if is_expr {
+        // skip `( result <ty> )`
+        let close = matching_paren(toks, *pos)?;
+        *pos = close + 1;
+
+        // then-arm: must reduce to exactly one operand.
+        let then_out = lift_block_inner(toks, pos, ctx, BlockEnd::ElseOrEnd)?;
+        if then_out.term != "else" {
+            return Err(refuse_noncanonical(
+                "if (result …) without an `else` arm (xpile always emits both)",
+            ));
+        }
+        let then_expr = single_value(then_out, "if-expr then-arm")?;
+
+        // else-arm: also exactly one operand, terminated by `end`.
+        let else_out = lift_block_inner(toks, pos, ctx, BlockEnd::ElseOrEnd)?;
+        if else_out.term != "end" {
+            return Err(refuse_noncanonical(
+                "if (result …) else-arm not closed by `end`",
+            ));
+        }
+        let else_expr = single_value(else_out, "if-expr else-arm")?;
+
+        stack.push(Expr::IfExpr {
+            cond: Box::new(cond),
+            then_expr: Box::new(then_expr),
+            else_expr: Box::new(else_expr),
+        });
+        return Ok(());
+    }
+
+    // A statement-`if`: arms are statement blocks (no residual value).
+    let then_out = lift_block_inner(toks, pos, ctx, BlockEnd::ElseOrEnd)?;
+    let then_body = stmts_only(then_out.stmts, then_out.stack, "if then-body")?;
+
+    let else_body = match then_out.term.as_str() {
+        "else" => {
+            let else_out = lift_block_inner(toks, pos, ctx, BlockEnd::ElseOrEnd)?;
+            if else_out.term != "end" {
+                return Err(FrontendError::Parse(
+                    "statement-if else-arm not closed by `end`".to_string(),
+                ));
+            }
+            stmts_only(else_out.stmts, else_out.stack, "if else-body")?
+        }
+        "end" => Vec::new(),
+        other => {
+            return Err(FrontendError::Parse(format!(
+                "statement-if then-arm closed by unexpected `{other}`"
+            )))
+        }
+    };
+
+    stmts.push(Stmt::If {
+        cond,
+        then_body,
+        else_body,
+    });
+    Ok(())
+}
+
+/// Lift the canonical `while` idiom:
+/// `(block $brk (loop $cont <cond> i32.eqz br_if $brk <body> br $cont))`.
+/// `*pos` is at the opening `(` of the `(block …)`.
+fn lift_while(
+    toks: &[String],
+    pos: &mut usize,
+    ctx: &mut BodyCtx<'_>,
+) -> Result<Stmt, FrontendError> {
+    // `( block $brk`
+    expect(toks, pos, "(")?;
+    expect(toks, pos, "block")?;
+    if ident(peek_slice(toks, *pos)?) != "brk" {
+        return Err(refuse_noncanonical("(block …) whose label is not $brk"));
+    }
+    *pos += 1; // $brk
+
+    // `( loop $cont`
+    expect(toks, pos, "(")?;
+    expect(toks, pos, "loop")?;
+    if ident(peek_slice(toks, *pos)?) != "cont" {
+        return Err(refuse_noncanonical("(loop …) whose label is not $cont"));
+    }
+    *pos += 1; // $cont
+
+    // <cond instrs> i32.eqz br_if $brk — lift the condition by simulating
+    // the operand stack until the `i32.eqz` guard, which negates the loop
+    // test (the emit's `while c` → `c i32.eqz br_if $brk`).
+    let cond = lift_loop_cond(toks, pos, ctx)?;
+
+    // <body stmts> br $cont — the loop body is a statement block whose
+    // trailing `br $cont` back-edge closes it; then the loop's `)` and the
+    // block's `)`.
+    let body_out = lift_loop_body(toks, pos, ctx)?;
+
+    Ok(Stmt::While {
+        cond,
+        body: body_out,
+    })
+}
+
+/// Lift the loop condition: the operand-stack instructions up to and
+/// including `i32.eqz br_if $brk` (the negated loop test). Returns the
+/// recovered (un-negated) condition expression.
+fn lift_loop_cond(
+    toks: &[String],
+    pos: &mut usize,
+    ctx: &mut BodyCtx<'_>,
+) -> Result<Expr, FrontendError> {
+    let mut stack: Vec<Expr> = Vec::new();
+    loop {
+        let instr = peek_slice(toks, *pos)?;
+        match instr {
+            "i32.eqz" => {
+                // The negation guard. The next two tokens MUST be
+                // `br_if $brk`; the value on the stack is the un-negated
+                // condition.
+                *pos += 1;
+                expect(toks, pos, "br_if")?;
+                if ident(peek_slice(toks, *pos)?) != "brk" {
+                    return Err(refuse_noncanonical("loop guard `br_if` not targeting $brk"));
+                }
+                *pos += 1; // $brk
+                if stack.len() != 1 {
+                    return Err(refuse_noncanonical(
+                        "loop condition did not reduce to a single value",
+                    ));
+                }
+                return Ok(stack.pop().unwrap());
+            }
+            "local.get" => {
+                let n = ident(peek_slice(toks, *pos + 1)?);
+                stack.push(Expr::Ident(n.to_string()));
+                *pos += 2;
+            }
+            "i64.const" => {
+                let v: i64 = peek_slice(toks, *pos + 1)?
+                    .parse()
+                    .map_err(|_| FrontendError::Parse("bad i64.const in loop cond".to_string()))?;
+                stack.push(Expr::LitInt(v));
+                *pos += 2;
+            }
+            "i32.const" => {
+                let v: i64 = peek_slice(toks, *pos + 1)?
+                    .parse()
+                    .map_err(|_| FrontendError::Parse("bad i32.const in loop cond".to_string()))?;
+                stack.push(Expr::LitBool(v != 0));
+                *pos += 2;
+            }
+            "f64.const" => {
+                let tok = peek_slice(toks, *pos + 1)?;
+                let v: f64 = tok.parse().map_err(|_| {
+                    FrontendError::Parse(format!("bad f64.const `{tok}` in loop cond"))
+                })?;
+                stack.push(Expr::LitFloat(v));
+                *pos += 2;
+            }
+            "call" => {
+                let callee = ident(peek_slice(toks, *pos + 1)?).to_string();
+                lift_call(callee, &mut stack, ctx)?;
+                *pos += 2;
+            }
+            other => {
+                if let Some(op) = int_binop(other) {
+                    let (lhs, rhs) = pop2(&mut stack, instr)?;
+                    stack.push(Expr::BinOp {
+                        op,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    });
+                    *pos += 1;
+                } else if let Some(fop) = float_binop(other) {
+                    let (lhs, rhs) = pop2(&mut stack, instr)?;
+                    stack.push(Expr::FloatBinOp {
+                        op: fop,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    });
+                    *pos += 1;
+                } else {
+                    return Err(refuse_noncanonical(&format!(
+                        "loop condition contains `{other}` before the `i32.eqz` guard"
+                    )));
+                }
+            }
+        }
+    }
+}
+
+/// Lift the loop body: statements up to the trailing `br $cont` back-edge,
+/// then the loop's `)` and the surrounding block's `)`.
+fn lift_loop_body(
+    toks: &[String],
+    pos: &mut usize,
+    ctx: &mut BodyCtx<'_>,
+) -> Result<Vec<Stmt>, FrontendError> {
+    // The body is a statement block; the emit always ends it with the
+    // `br $cont` back-edge immediately before the loop's `)`. We lift
+    // statements until we hit that trailing `br $cont )`.
+    let mut stmts: Vec<Stmt> = Vec::new();
+    let mut stack: Vec<Expr> = Vec::new();
+    loop {
+        let instr = peek_slice(toks, *pos)?;
+        // The trailing back-edge: `br $cont` followed by the loop close `)`.
+        if instr == "br"
+            && ident(peek_slice(toks, *pos + 1)?) == "cont"
+            && peek_slice(toks, *pos + 2)? == ")"
+        {
+            *pos += 2; // consume `br $cont`
+            expect(toks, pos, ")")?; // loop close
+            expect(toks, pos, ")")?; // block close
+            if !stack.is_empty() {
+                return Err(refuse_noncanonical(
+                    "while body left a residual value on the operand stack",
+                ));
+            }
+            return Ok(stmts);
+        }
+        // Otherwise lift one body construct via a one-shot sub-block that
+        // stops at the back-edge. Simplest: reuse the leaf/control handling
+        // inline by delegating to lift_block_inner with a sentinel is hard
+        // (no keyword terminator), so we hand-walk here mirroring the leaf
+        // cases, recursing for nested control.
+        match instr {
+            "local.get" => {
+                let n = ident(peek_slice(toks, *pos + 1)?);
+                stack.push(Expr::Ident(n.to_string()));
+                *pos += 2;
+            }
+            "local.set" => {
+                let n = ident(peek_slice(toks, *pos + 1)?).to_string();
+                let value = pop(&mut stack, instr)?;
+                stmts.push(lift_local_set(n, value, ctx)?);
+                *pos += 2;
+            }
+            "i64.const" => {
+                let v: i64 = peek_slice(toks, *pos + 1)?
+                    .parse()
+                    .map_err(|_| FrontendError::Parse("bad i64.const in loop body".to_string()))?;
+                stack.push(Expr::LitInt(v));
+                *pos += 2;
+            }
+            "i32.const" => {
+                let v: i64 = peek_slice(toks, *pos + 1)?
+                    .parse()
+                    .map_err(|_| FrontendError::Parse("bad i32.const in loop body".to_string()))?;
+                stack.push(Expr::LitBool(v != 0));
+                *pos += 2;
+            }
+            "f64.const" => {
+                let tok = peek_slice(toks, *pos + 1)?;
+                let v: f64 = tok.parse().map_err(|_| {
+                    FrontendError::Parse(format!("bad f64.const `{tok}` in loop body"))
+                })?;
+                stack.push(Expr::LitFloat(v));
+                *pos += 2;
+            }
+            "call" => {
+                let callee = ident(peek_slice(toks, *pos + 1)?).to_string();
+                lift_call(callee, &mut stack, ctx)?;
+                *pos += 2;
+            }
+            "return" => {
+                let value = if stack.is_empty() {
+                    Expr::Unit
+                } else {
+                    pop(&mut stack, instr)?
+                };
+                stmts.push(Stmt::Return(value));
+                *pos += 1;
+            }
+            "br" => {
+                let label = ident(peek_slice(toks, *pos + 1)?);
+                match label {
+                    "brk" => stmts.push(Stmt::Break),
+                    "cont" => stmts.push(Stmt::Continue),
+                    other => return Err(refuse_noncanonical(&format!("br ${other}"))),
+                }
+                *pos += 2;
+            }
+            "if" => {
+                lift_if(toks, pos, ctx, &mut stack, &mut stmts)?;
+            }
+            "(" => {
+                let kw = peek_slice(toks, *pos + 1)?;
+                if kw == "block" {
+                    let while_stmt = lift_while(toks, pos, ctx)?;
+                    stmts.push(while_stmt);
+                } else {
+                    return Err(refuse_noncanonical(kw));
+                }
+            }
+            other => {
+                if let Some(op) = int_binop(other) {
+                    let (lhs, rhs) = pop2(&mut stack, instr)?;
+                    stack.push(Expr::BinOp {
+                        op,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    });
+                    *pos += 1;
+                } else if let Some(fop) = float_binop(other) {
+                    let (lhs, rhs) = pop2(&mut stack, instr)?;
+                    stack.push(Expr::FloatBinOp {
+                        op: fop,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    });
+                    *pos += 1;
+                } else {
+                    return Err(refuse_control(other));
+                }
+            }
+        }
+    }
+}
+
+/// Require a block to have reduced to exactly one operand (an if-expr arm).
+fn single_value(out: BlockOut, what: &str) -> Result<Expr, FrontendError> {
+    if !out.stmts.is_empty() || out.stack.len() != 1 {
+        return Err(refuse_noncanonical(&format!(
+            "{what} did not reduce to a single value (got {} stmt(s), stack depth {})",
+            out.stmts.len(),
+            out.stack.len()
+        )));
+    }
+    Ok(out.stack.into_iter().next().unwrap())
+}
+
+/// Require a statement block to have left NO residual operand (a
+/// statement-if arm).
+fn stmts_only(stmts: Vec<Stmt>, stack: Vec<Expr>, what: &str) -> Result<Vec<Stmt>, FrontendError> {
+    if !stack.is_empty() {
+        return Err(refuse_noncanonical(&format!(
+            "{what} left {} residual operand(s) on the stack",
+            stack.len()
+        )));
+    }
+    Ok(stmts)
+}
+
+/// A refusal for any instruction outside the lift subset — the honest
+/// lossy boundary, never a wrong lift. PMAT-959 moved the structured
+/// control-flow shapes (`while`/`if`/`if-expr`/`return`/`break`/`continue`)
+/// INSIDE the subset; the boundary now refuses only the WAT shapes the lift
+/// still cannot invert (e.g. an arbitrary `br_table`, a `(block …)` that is
+/// not the canonical while idiom, or a raw stack-machine branch xpile's emit
+/// never produces — anything outside the `xpile-wasm-codegen` image).
 fn refuse_control(instr: &str) -> FrontendError {
     FrontendError::Lower(format!(
-        "WAT instruction `{instr}` is outside the lift subset — the lift handles \
-         the straight-line scalar subset only; structured control-flow recovery \
-         (`if`/`block`/`loop`/`br`/`return`/`drop`/`i32.eqz`/`i64.div_s`) is \
-         deferred to PMAT-952"
+        "WAT instruction `{instr}` is outside the lift subset — the lift inverts the \
+         `xpile-wasm-codegen` image (the straight-line scalar subset plus the canonical \
+         structured-control shapes `while`/`if`/`if-expr`/`return`/`break`/`continue`, \
+         PMAT-959); an arbitrary stack-machine branch / non-canonical `(block …)` / \
+         `br_table` outside that image is refused rather than mis-reconstructed"
+    ))
+}
+
+/// Refuse a `(block …)`/`(loop …)` form that is NOT the canonical
+/// `while` idiom xpile emits — the honest boundary for control shapes
+/// outside the `xpile-wasm-codegen` image.
+fn refuse_noncanonical(what: &str) -> FrontendError {
+    FrontendError::Lower(format!(
+        "non-canonical control shape `{what}` is outside the lift subset — the lift \
+         only inverts the exact `(block $brk (loop $cont <cond> i32.eqz br_if $brk \
+         <body> br $cont))` while idiom and `if … else … end` forms xpile's emit \
+         produces (PMAT-959); any other block/loop/branch nesting is refused"
     ))
 }
 

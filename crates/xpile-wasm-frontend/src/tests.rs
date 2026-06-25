@@ -294,46 +294,253 @@ fn roundtrip_intra_module_call() {
     assert_eq!(names, vec!["sq", "g"]);
 }
 
-// ─── Honest-refusal (lossy boundary) ────────────────────────────────
+// ─── Structured control-flow round-trip (PMAT-959) ──────────────────
+//
+// The lift now RECOVERS the canonical control shapes xpile emits — the
+// control half of bidirectional WASM. Each fixture asserts the executed
+// round-trip fixed point `emit(lift(emit(M))) == emit(M)` (the honest
+// right-inverse-on-image property; NOT `lift(emit(M)) == M`) AND that the
+// lifted meta-HIR has the expected structured node.
+
+fn whileloop(cond: Expr, body: Vec<Stmt>) -> Stmt {
+    Stmt::While { cond, body }
+}
+
+fn let_mut(name: &str, value: Expr) -> Stmt {
+    Stmt::Let {
+        name: name.to_string(),
+        ty: Type::I64,
+        value,
+        mutable: true,
+    }
+}
+
+fn assign(name: &str, value: Expr) -> Stmt {
+    Stmt::Assign {
+        name: name.to_string(),
+        value,
+    }
+}
 
 #[test]
-fn refuses_control_flow() {
-    // A function with a `while` loop emits `(block …)`/`(loop …)`/`br_if` —
-    // structured recovery is deferred (PMAT-952), so the lift REFUSES it
-    // rather than mis-reconstructing.
+fn roundtrip_while_sum() {
+    // def count(n): i = 0; total = 0; while i < n: total = total + i; i = i + 1; return total
     let m = module(
-        "loop_mod",
+        "while_mod",
         vec![func(
             "count",
             vec![p("n", Type::I64)],
             Type::I64,
             Block {
                 stmts: vec![
-                    Stmt::Let {
-                        name: "i".to_string(),
-                        ty: Type::I64,
-                        value: Expr::LitInt(0),
-                        mutable: true,
-                    },
-                    Stmt::While {
-                        cond: binop(BinOp::Lt, ident("i"), ident("n")),
-                        body: vec![Stmt::Assign {
-                            name: "i".to_string(),
-                            value: binop(BinOp::Add, ident("i"), Expr::LitInt(1)),
+                    let_mut("i", Expr::LitInt(0)),
+                    let_mut("total", Expr::LitInt(0)),
+                    whileloop(
+                        binop(BinOp::Lt, ident("i"), ident("n")),
+                        vec![
+                            assign("total", binop(BinOp::Add, ident("total"), ident("i"))),
+                            assign("i", binop(BinOp::Add, ident("i"), Expr::LitInt(1))),
+                        ],
+                    ),
+                ],
+                trailing_return: ident("total"),
+            },
+        )],
+    );
+    let lifted = roundtrip(&m);
+    let Item::Function(f) = &lifted.items[0] else {
+        panic!();
+    };
+    // The `(block $brk (loop $cont …))` idiom recovered as a `While`.
+    let has_while = f.body.stmts.iter().any(|s| matches!(s, Stmt::While { .. }));
+    assert!(has_while, "while loop recovered: {:?}", f.body.stmts);
+    // The loop body's two `Assign`s round-trip.
+    let Some(Stmt::While { cond, body }) = f
+        .body
+        .stmts
+        .iter()
+        .find(|s| matches!(s, Stmt::While { .. }))
+    else {
+        panic!();
+    };
+    assert!(matches!(cond, Expr::BinOp { op: BinOp::Lt, .. }));
+    assert_eq!(body.len(), 2, "two assigns in the loop body");
+}
+
+#[test]
+fn roundtrip_if_else_statement_max() {
+    // def maxst(a, b): if a > b: return a else: return b; return b
+    // The if/else statement shape (decy-style) → `Stmt::If` with `Return`
+    // arms; the trailing `local.get $b` is the fallthrough.
+    let m = module(
+        "ifst_mod",
+        vec![func(
+            "maxst",
+            vec![p("a", Type::I64), p("b", Type::I64)],
+            Type::I64,
+            Block {
+                stmts: vec![Stmt::If {
+                    cond: binop(BinOp::Gt, ident("a"), ident("b")),
+                    then_body: vec![Stmt::Return(ident("a"))],
+                    else_body: vec![Stmt::Return(ident("b"))],
+                }],
+                trailing_return: ident("b"),
+            },
+        )],
+    );
+    let lifted = roundtrip(&m);
+    let Item::Function(f) = &lifted.items[0] else {
+        panic!();
+    };
+    assert_eq!(f.body.stmts.len(), 1);
+    let Stmt::If {
+        cond,
+        then_body,
+        else_body,
+    } = &f.body.stmts[0]
+    else {
+        panic!("expected a statement-if, got {:?}", f.body.stmts[0]);
+    };
+    assert!(matches!(cond, Expr::BinOp { op: BinOp::Gt, .. }));
+    assert!(matches!(then_body.as_slice(), [Stmt::Return(_)]));
+    assert!(matches!(else_body.as_slice(), [Stmt::Return(_)]));
+}
+
+#[test]
+fn roundtrip_if_expr_max() {
+    // def maxx(a, b): return a if a > b else b — the `if (result i64) …`
+    // shape lifts to an `Expr::IfExpr`.
+    let m = module(
+        "ifexpr_mod",
+        vec![func(
+            "maxx",
+            vec![p("a", Type::I64), p("b", Type::I64)],
+            Type::I64,
+            Block {
+                stmts: vec![],
+                trailing_return: Expr::IfExpr {
+                    cond: Box::new(binop(BinOp::Gt, ident("a"), ident("b"))),
+                    then_expr: Box::new(ident("a")),
+                    else_expr: Box::new(ident("b")),
+                },
+            },
+        )],
+    );
+    let lifted = roundtrip(&m);
+    let Item::Function(f) = &lifted.items[0] else {
+        panic!();
+    };
+    assert!(
+        matches!(f.body.trailing_return, Expr::IfExpr { .. }),
+        "if-expr recovered: {:?}",
+        f.body.trailing_return
+    );
+}
+
+#[test]
+fn roundtrip_nested_while_with_if_break() {
+    // A nested case: a while loop whose body contains an if/else statement
+    // that `break`s — exercises recursion (While ⊃ If ⊃ Break) and the
+    // `br $brk` → Break / `br $cont` → Continue recovery.
+    //
+    // def f(n): i = 0; while i < n: if i == 3: break else: i = i + 1; return i
+    let m = module(
+        "nested_mod",
+        vec![func(
+            "f",
+            vec![p("n", Type::I64)],
+            Type::I64,
+            Block {
+                stmts: vec![
+                    let_mut("i", Expr::LitInt(0)),
+                    whileloop(
+                        binop(BinOp::Lt, ident("i"), ident("n")),
+                        vec![Stmt::If {
+                            cond: binop(BinOp::Eq, ident("i"), Expr::LitInt(3)),
+                            then_body: vec![Stmt::Break],
+                            else_body: vec![assign(
+                                "i",
+                                binop(BinOp::Add, ident("i"), Expr::LitInt(1)),
+                            )],
                         }],
-                    },
+                    ),
                 ],
                 trailing_return: ident("i"),
             },
         )],
     );
-    let wat = emit(&m);
-    let err = lift_wat(&m.name, &wat).expect_err("control flow must be refused");
+    let lifted = roundtrip(&m);
+    let Item::Function(f) = &lifted.items[0] else {
+        panic!();
+    };
+    // While ⊃ If ⊃ Break recovered through the recursion.
+    let Some(Stmt::While { body, .. }) = f
+        .body
+        .stmts
+        .iter()
+        .find(|s| matches!(s, Stmt::While { .. }))
+    else {
+        panic!("outer while recovered");
+    };
+    let Some(Stmt::If {
+        then_body,
+        else_body,
+        ..
+    }) = body.iter().find(|s| matches!(s, Stmt::If { .. }))
+    else {
+        panic!("inner if recovered inside the loop body");
+    };
+    assert!(
+        matches!(then_body.as_slice(), [Stmt::Break]),
+        "break recovered in the then-arm"
+    );
+    assert!(
+        matches!(else_body.as_slice(), [Stmt::Assign { .. }]),
+        "assign recovered in the else-arm"
+    );
+}
+
+// ─── Honest-refusal (the moved lossy boundary) ──────────────────────
+
+#[test]
+fn refuses_noncanonical_block() {
+    // The lift is a right-inverse ON THE EMIT IMAGE — a hand-written
+    // `(block …)` whose label is NOT the canonical `$brk` is OUTSIDE the
+    // image, so the lift REFUSES it rather than mis-reconstructing. (The
+    // honest boundary moved by PMAT-959, it did not disappear.)
+    let wat = "\
+(module
+  ;; source module: weird_mod
+  (func $weird (param $n i64) (result i64)
+    (block $other
+      local.get $n
+      br_if $other
+    )
+    local.get $n
+  )
+)";
+    let err = lift_wat("weird_mod", wat).expect_err("non-canonical block must be refused");
     let msg = format!("{err}");
     assert!(
-        msg.contains("outside the lift subset") || msg.contains("PMAT-952"),
-        "refusal must name the lossy boundary, got: {msg}"
+        msg.contains("non-canonical") || msg.contains("outside the lift subset"),
+        "refusal must name the moved boundary, got: {msg}"
     );
+}
+
+#[test]
+fn refuses_unknown_instruction() {
+    // A WAT instruction xpile's emit never produces (here a `memory.grow`)
+    // is refused — the lift only inverts the codegen image.
+    let wat = "\
+(module
+  ;; source module: mem_mod
+  (func $g (param $n i64) (result i64)
+    local.get $n
+    memory.grow
+  )
+)";
+    let err = lift_wat("mem_mod", wat).expect_err("unknown instruction must be refused");
+    assert!(format!("{err}").contains("outside the lift subset"));
 }
 
 // ─── Frontend trait wiring ──────────────────────────────────────────
