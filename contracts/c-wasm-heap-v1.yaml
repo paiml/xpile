@@ -34,11 +34,28 @@ metadata:
 
     String construction is ASCII-bounded for `chr(n)` (the byte `n & 0xFF`,
     exact for `0 ≤ n < 128`; multi-byte UTF-8 is a follow-up) — the same
-    honest restriction the slice-1 `ord(s[i])` carries. Every still-unwired
-    string-returning op (`s[i]` as a 1-char string, a string LITERAL operand
-    needing a static `(data)` segment, slicing, `str(x)`, f-strings, string
-    equality / comparison / methods) is REFUSED with a hard error rather than
-    miscompiled — a Lean-style honest refusal.
+    honest restriction the slice-1 `ord(s[i])` carries.
+
+    PMAT-994 (slice 3a) extends string support to substantial completeness:
+      * string LITERALS (`Expr::LitStr`, e.g. `"Hello, "`) are materialised at
+        EMIT time into static `(data …)` segments laid down in `[LITERAL_BASE,
+        HEAP_BASE)` (= [512, 1024), 8-aligned, deduplicated, length-prefixed),
+        and a `LitStr` lowers to a constant `i32.const <base>` — so `"Hi " +
+        name`, `return "done"`, and literal args all work, the literal pointer
+        composing uniformly with the concat heap path. The literal region is
+        EMITTER-OWNED and sits BELOW the bump heap so the two never overlap; a
+        module whose literals overflow `HEAP_BASE` is REFUSED (an honest
+        out-of-room error, never an aliasing miscompile);
+      * `s[i]` as a 1-char string (`Expr::StrCharAt` outside `ord`) materialises
+        a NEW 1-char heap string (the `chr` mirror — `$__alloc(9)`, a count-1
+        header, a bounds-checked `i32.load8_u`/`i32.store8` of byte `i`);
+      * string content EQUALITY `a == b` / `a != b` lowers to `$__wasm_str_eq`
+        (a length check + a byte-compare loop → i32 bool) — REAL string-content
+        logic, NEVER a base-pointer compare — correct for params, literals, and
+        heap strings (all share the length-prefixed ABI).
+    Still REFUSED with a hard error rather than miscompiled (a Lean-style honest
+    refusal): string ORDERING (`<` / `>`), slicing, `str(x)`/`repr(x)`,
+    f-strings, string methods.
   xpile:
     layer: compile
   references:
@@ -73,6 +90,20 @@ compile_targets:
     # `wasm_runtime_available()` (graceful-skip on free CI, which lacks WABT).
     # RUNTIME CHOICE: WABT subprocess — NO new Cargo dependency (no
     # wasmi/wasmtime), so `cargo deny check advisories` is unaffected.
+    #
+    # PMAT-994 (2026-06-25, PMAT-986 slice 3a): string support is substantially
+    # complete. String LITERALS (Expr::LitStr) become static (data) segments in
+    # [LITERAL_BASE=512, HEAP_BASE=1024) (a LitStr lowers to a constant
+    # i32.const <base>); `s[i]` as a 1-char string (Expr::StrCharAt outside ord)
+    # materialises a new 1-char heap string; and string content equality
+    # (a == b / a != b) lowers to a $__wasm_str_eq content-compare helper. The
+    # emitted WAT is genuine: the PMAT-994 slice ran it through WABT — the
+    # `greet(name) = "Hello, " + name + "!"` literal program executes to
+    # "Hello, WASM!" (value-matching CPython), `is_done(s) = (s == "done")`
+    # executes to True/False/False over "done"/"busy"/"don", and `at(s, i) =
+    # s[i]` executes to the 1-char string "S" for "WASM"[2]. See the
+    # `literal_string_witness` integration test. Slice 3b (dict/set heap)
+    # remains.
 
 equations:
   wasm_heap_alloc_structure_extensionality_diamond:
@@ -107,30 +138,59 @@ equations:
         at base+0 followed by the UTF-8 bytes at base+8 (the same
         length-prefixed ABI read access uses), returning base as an i32
     domain: |
-      A string concatenation `a + b` (Expr::Concat) over str params / chr
-      results, or `chr(n)` (Expr::Chr), in a function lowered to WAT.
+      A string concatenation `a + b` (Expr::Concat) over str params / literals
+      / chr / s[i] results, `chr(n)` (Expr::Chr), or `s[i]` as a 1-char string
+      (Expr::StrCharAt outside ord), in a function lowered to WAT.
     invariants:
       - "a string is materialised via $__alloc (the bump heap), never on the call stack"
       - "the result is a length-prefixed region (i32 count @ base+0, bytes @ base+8)"
       - "concat copies operand bytes via memory.copy; left-nested concat allocs ONCE"
       - "chr(n) writes the byte n & 0xFF (ASCII-bounded, the ord mirror)"
+      - "s[i] as a string allocs(9), a count-1 header, a bounds-checked load8_u/store8 of byte i (PMAT-994)"
       - "a str return lowers to an i32 result (the heap base-pointer)"
     preconditions:
       - "BackendConfig.target == Target::Wasm"
-      - "operands are str params / chr results (string-valued)"
+      - "operands are str params / literals / chr / s[i] results (string-valued)"
     postconditions:
       - "the emitted WAT assembles (wat2wasm) and executes (wasm-interp) to a string value-matching CPython on an ASCII fixture"
       - "heap-allocating WASM-emitting code carries citation C-WASM-HEAP"
 
+  string_literal_is_static_data:
+    # PMAT-994 (slice 3a): a string LITERAL is materialised at EMIT time, not on
+    # the heap — a static (data) segment in [LITERAL_BASE, HEAP_BASE), and a
+    # LitStr lowers to a constant i32.const <base> pointer.
+    formula: |
+      construct(LitStr(s), BackendConfig{target: Wasm})
+        emits a static (data (i32.const base) <i32 len header>) +
+        (data (i32.const base+8) <UTF-8 bytes>) in [LITERAL_BASE, HEAP_BASE),
+        and lowers the LitStr to `i32.const base` — the same length-prefixed ABI
+        a str param / heap string uses. String content equality (a == b / a != b)
+        lowers to a $__wasm_str_eq content-compare (length check + byte loop),
+        NEVER a base-pointer i32.eq.
+    domain: |
+      A string literal operand (Expr::LitStr) anywhere in a function body, and a
+      string `==`/`!=` (Expr::BinOp Eq/NotEq) over string-valued operands.
+    invariants:
+      - "each distinct literal is a deduplicated, 8-aligned, length-prefixed (data) segment below HEAP_BASE"
+      - "a LitStr lowers to a constant i32.const <base> (a static base-pointer)"
+      - "literals never alias the bump heap; an overflow of [LITERAL_BASE, HEAP_BASE) is REFUSED"
+      - "string equality is a CONTENT compare ($__wasm_str_eq), never a base-pointer compare"
+      - "a != b is the content compare negated (i32.eqz)"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+    postconditions:
+      - "the emitted WAT assembles + executes to a string / bool value-matching CPython on an ASCII fixture"
+      - "the literal/equality WASM-emitting code carries the WASM citation"
+
   unwired_string_op_is_refused:
     formula: |
-      construct(s_index_as_string | str_literal_operand | slice | str() |
-                fstring | str_equality, BackendConfig{target: Wasm})
+      construct(str_ordering | slice | str() | fstring | str_method,
+                BackendConfig{target: Wasm})
         == Err(BackendError::Lower("…"))
     domain: |
-      A string-returning or string-content op the bump allocator alone does
-      not yet wire (a 1-char-string slice, a static string LITERAL operand, a
-      general slice, str()/repr(), an f-string, string equality/comparison).
+      A string op still outside the WASM string subset: string ORDERING
+      (`<` / `>` / `<=` / `>=`, needs lexicographic logic), a general slice,
+      str()/repr(), an f-string, a string method.
     invariants:
       - "an unwired string op yields a hard BackendError, never wrong WAT"
       - "the refusal names the op + the follow-up (honest diagnostic)"
@@ -144,6 +204,11 @@ proof_obligations:
     property: a constructed string is a well-formed length-prefixed WASM region
     formal: "wasm-interp(construct(a + b)) reads back == CPython(a + b)"
     applies_to: heap_string_is_length_prefixed
+
+  - type: postcondition
+    property: a string literal is a well-formed static (data) region, equality is a content compare
+    formal: "wasm-interp(construct('Hi ' + s)) == CPython AND wasm-interp(construct(s == 'done')) == CPython"
+    applies_to: string_literal_is_static_data
 
   - type: postcondition
     property: unwired string ops are refused, never miscompiled
@@ -190,10 +255,10 @@ falsification_tests:
 
   - id: FALSIFY-WASM-HEAP-002
     rule: |
-      A string-returning op the bump allocator does NOT yet wire (a 1-char
-      string slice, a static string LITERAL operand, slicing, str(),
-      f-strings, string equality) MUST be refused with a hard error, NEVER
-      emitted as wrong WAT.
+      A string op still outside the WASM string subset (string ORDERING `<`/`>`,
+      slicing, str(), f-strings, string methods) MUST be refused with a hard
+      error, NEVER emitted as wrong WAT. (PMAT-994 wired literals, `s[i]` as a
+      string, and content equality `==`/`!=`; those are no longer refused.)
     prediction: |
       `lower` returns `Err(BackendError::Lower(...))` naming the op + follow-up.
     test: |
@@ -205,3 +270,28 @@ falsification_tests:
     counter_example_classes:
       - silent_miscompile_of_unwired_string_op
       - pointer_arithmetic_passed_off_as_concat
+      - base_pointer_compare_passed_off_as_string_equality
+
+  - id: FALSIFY-WASM-HEAP-003
+    rule: |
+      PMAT-994: a string LITERAL MUST become a well-formed static (data) segment
+      in [LITERAL_BASE, HEAP_BASE) (a length-prefixed region the same shape a str
+      param uses) that assembles via wat2wasm and, when executed in a literal
+      program (`"Hello, " + name + "!"`), reads back byte-for-byte equal to the
+      CPython result on an ASCII fixture. String content equality MUST be a real
+      $__wasm_str_eq compare value-matching CPython, never a base-pointer compare.
+    prediction: |
+      The executed WABT witness reconstructs "Hello, WASM!" (== CPython) and
+      `is_done(s) = (s == "done")` yields True/False matching CPython.
+    test: |
+      cargo test -p xpile-wasm-codegen --test literal_string_witness
+    if_fails: |
+      The literal (data) layout, the LitStr pointer lowering, the literal/heap
+      overlap guard, or the content-compare helper regressed — a wrong literal
+      offset, an aliased heap, or a base-pointer compare. The constructed string
+      / equality result diverges from CPython.
+    ship_blocking: true
+    counter_example_classes:
+      - wrong_literal_data_offset
+      - literal_heap_aliasing
+      - base_pointer_compare_passed_off_as_string_equality
