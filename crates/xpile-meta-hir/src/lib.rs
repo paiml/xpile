@@ -259,6 +259,51 @@ impl Function {
     }
 }
 
+impl Item {
+    /// PMAT-958 (Pillar-A contract-citation-integrity, definition-level
+    /// closure): the contract IDs that govern a *definition-level* item —
+    /// the analog of [`Function::applicable_contracts`] for the `Item`
+    /// kinds that emit a top-level *definition* with no per-function
+    /// citation line of their own.
+    ///
+    /// The function-level surface (top-level `Item::Function` + an
+    /// `Item::Struct`'s methods) already cites via
+    /// [`Function::applicable_contracts`]. The remaining honest gap PMAT-955
+    /// named was the *definition* itself: a method-less `@dataclass`
+    /// (`Item::Struct` with empty `methods`) emitted `pub struct {..}` with
+    /// ZERO `// xpile-contract:` line, because no `Function` ran over it. A
+    /// method-bearing struct cited `C-XLATE-PY-CLASS-TO-STRUCT` only as a
+    /// side effect of its methods' `self: Type::Struct` params — drop the
+    /// last method and the citation vanished.
+    ///
+    /// This returns the definition-level contract for an `Item::Struct`
+    /// unconditionally — every class→struct translation is governed by
+    /// `C-XLATE-PY-CLASS-TO-STRUCT` (field-order + field-type preservation),
+    /// independent of whether the class has methods. `Item::Function` is
+    /// covered by the per-function path and returns nothing here (callers
+    /// cite its `Function::applicable_contracts` directly).
+    ///
+    /// `Item::Const` / `Item::Enum` return nothing: there is no on-disk
+    /// const-translation or enum-translation contract yet (only the
+    /// class/scalar/container families have governing YAMLs). Authoring one
+    /// is the documented follow-up — until then this method returns an empty
+    /// set for them so the derived gate does not over-expect a citation the
+    /// codegen cannot honestly emit.
+    pub fn applicable_contracts(&self) -> Vec<&'static str> {
+        match self {
+            // The per-function path owns Function citations (its body/sig
+            // drives `Function::applicable_contracts`); nothing definition-level.
+            Item::Function(_) => Vec::new(),
+            // Every class→struct translation is governed by the class contract,
+            // method-less or not — this is the definition-level closure.
+            Item::Struct { .. } => vec!["C-XLATE-PY-CLASS-TO-STRUCT"],
+            // No governing const/enum translation contract on disk yet
+            // (follow-up). Empty so the derived gate stays honest.
+            Item::Const { .. } | Item::Enum { .. } => Vec::new(),
+        }
+    }
+}
+
 /// PMAT-475 (R6): true if any node in the type tree satisfies `f`, recursing
 /// into element / key / value / member types of compound types. Lets a
 /// `dict[str, list[int]]` trigger the str, list, AND dict contracts.

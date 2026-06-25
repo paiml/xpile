@@ -208,6 +208,12 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
                 if derive_ord && !has_order_dunder {
                     derives.push("Ord");
                 }
+                // PMAT-958 (Pillar-A definition-level citation closure): cite
+                // the class→struct contract on the struct DEFINITION itself, so a
+                // method-less `@dataclass` no longer ships `pub struct {..}` with
+                // no `// xpile-contract:` line. Derived from `Item::applicable_contracts`
+                // (the same source the derived gate checks), not a literal here.
+                emit_item_contract_citations(&mut out, item)?;
                 writeln!(out, "#[derive({})]", derives.join(", "))?;
                 writeln!(out, "pub struct {name} {{")?;
                 for (field, ty) in fields {
@@ -544,6 +550,19 @@ fn py_str_repr_block(accessor: &str) -> String {
 /// the comment form.
 fn emit_contract_citations(out: &mut String, f: &Function) -> Result<(), CodegenError> {
     for id in f.applicable_contracts() {
+        writeln!(out, "// xpile-contract: {id}")?;
+    }
+    Ok(())
+}
+
+/// PMAT-958: the definition-level analog of [`emit_contract_citations`] —
+/// emits one `// xpile-contract: <ID>` line per contract that governs an
+/// `Item` *definition* (a struct/const/enum that emits a top-level
+/// definition with no per-function citation of its own). Derived from
+/// [`Item::applicable_contracts`], so the emitted citation and the
+/// derived citation-integrity gate read from the SAME source.
+fn emit_item_contract_citations(out: &mut String, item: &Item) -> Result<(), CodegenError> {
+    for id in item.applicable_contracts() {
         writeln!(out, "// xpile-contract: {id}")?;
     }
     Ok(())
