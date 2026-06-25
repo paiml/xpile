@@ -502,6 +502,8 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         Expr::IntRadixStr { value, .. } | Expr::IntGroupedStr { value, .. } => {
             expr_has_int_arith(value)
         }
+        // PMAT-940: grouped float field — recurse into the value expr.
+        Expr::FloatGroupedStr { value, .. } => expr_has_int_arith(value),
         Expr::IntFromStrRadix { value, .. } => expr_has_int_arith(value),
         // PMAT-502am: formatted f-string field — recurse into the value.
         Expr::FormatSpec { value, .. } => expr_has_int_arith(value),
@@ -1985,6 +1987,22 @@ pub enum Expr {
     /// `"-1,234,567"`). `__m = n.unsigned_abs()` keeps `i64::MIN` safe. Lean
     /// refuses (like [`Expr::IntRadixStr`]).
     IntGroupedStr { value: Box<Expr>, sep: char },
+    /// PMAT-940 (correctness-hunt): a thousands-GROUPED float field with a fixed
+    /// precision — Python `f"{1234567.89:,.2f}"` → `"1,234,567.89"`,
+    /// `f"{1234567.5:_.1f}"` → `"1_234_567.5"`, `f"{1234.5:,f}"` →
+    /// `"1,234.500000"` (bare `,f`/`_f` defaults to 6 decimals, like Python).
+    /// Rust's `format!` has NO grouping flag, so codegen renders the float to
+    /// `precision` decimals via `format!("{:.N}", x)`, then groups the integer
+    /// part's digits by 3 from the right with `sep`, sign first, leaving any
+    /// fractional `.dd` tail untouched. The direct float follow-up to
+    /// [`Expr::IntGroupedStr`] (which PMAT-939 scoped to bare-int only); grouping
+    /// over the DEFAULT float repr (`:,` with no `f`) stays a deferred reject.
+    /// Lean refuses (like [`Expr::IntGroupedStr`]).
+    FloatGroupedStr {
+        value: Box<Expr>,
+        sep: char,
+        precision: u32,
+    },
     /// `int(s, base)` — parse a string in the given radix (→ `int`).
     /// PMAT-502da (Tranche 2); the str→int reverse of [`Expr::IntRadixStr`].
     /// `radix` is a literal `2..=36`. Rust/Ruchy emit
@@ -3171,6 +3189,7 @@ fn escape_expr(e: &mut Expr) {
         Expr::Ord { value } | Expr::Chr { value } => escape_expr(value),
         Expr::IntRadixStr { value, .. }
         | Expr::IntGroupedStr { value, .. }
+        | Expr::FloatGroupedStr { value, .. }
         | Expr::IntFromStrRadix { value, .. }
         | Expr::FormatSpec { value, .. }
         | Expr::NumCast { value, .. }
@@ -3704,6 +3723,7 @@ fn collect_idents_expr(e: &Expr, acc: &mut std::collections::HashSet<String>) {
         Expr::Ord { value } | Expr::Chr { value } => collect_idents_expr(value, acc),
         Expr::IntRadixStr { value, .. }
         | Expr::IntGroupedStr { value, .. }
+        | Expr::FloatGroupedStr { value, .. }
         | Expr::IntFromStrRadix { value, .. }
         | Expr::FormatSpec { value, .. }
         | Expr::NumCast { value, .. }

@@ -1528,6 +1528,37 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             )?;
             out.push_str("__g.push(*__ch as char); } format!(\"{}{}\", __sign, __g) }");
         }
+        // PMAT-940 (correctness-hunt): thousands-grouped FLOAT with a fixed
+        // precision `f"{x:,.Nf}"` / `f"{x:_.Nf}"` (`,f` defaults to 6 decimals) —
+        // mirror of the Rust backend. Render to `precision` decimals, split off the
+        // sign and the `.dd` tail, group only the integer-part digits by 3, then
+        // reassemble sign + group + fraction.
+        Expr::FloatGroupedStr {
+            value,
+            sep,
+            precision,
+        } => {
+            out.push_str("{ let __x = (");
+            emit_expr(out, value, mode)?;
+            out.push_str("); let __s = ");
+            write!(out, "format!(\"{{:.{precision}}}\", __x)")?;
+            out.push_str(
+                "; let __neg = __s.starts_with('-'); \
+                 let __body = if __neg { &__s[1..] } else { &__s[..] }; \
+                 let (__int, __frac) = match __body.find('.') { \
+                 Some(__p) => (&__body[..__p], &__body[__p..]), None => (__body, \"\") }; \
+                 let __bytes = __int.as_bytes(); let __len = __bytes.len(); \
+                 let mut __g = String::new(); for (__i, __ch) in __bytes.iter().enumerate() { ",
+            );
+            write!(
+                out,
+                "if __i > 0 && (__len - __i) % 3 == 0 {{ __g.push('{sep}'); }} "
+            )?;
+            out.push_str(
+                "__g.push(*__ch as char); } \
+                 format!(\"{}{}{}\", if __neg { \"-\" } else { \"\" }, __g, __frac) }",
+            );
+        }
         // PMAT-502da: `int(s, base)`. PMAT-655: accept a base-matching radix
         // prefix (0x/0o/0b) + PEP-515 underscores (see the rust backend).
         Expr::IntFromStrRadix { value, radix } => {
