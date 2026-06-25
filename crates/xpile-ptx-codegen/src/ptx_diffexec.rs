@@ -70,8 +70,20 @@ impl Default for PtxDiffExecEngine {
 
 impl PtxDiffExecEngine {
     pub fn new() -> Self {
-        let work_dir =
-            std::env::temp_dir().join(format!("xpile-ptx-diffexec-{}", std::process::id()));
+        // PMAT-962: a per-instance unique suffix (process id + a global atomic
+        // seq) so two `PtxDiffExecEngine`s in the same process (e.g. the saxpy
+        // and the if-bearing anti-correlation witnesses, run in parallel by the
+        // default `cargo test` harness) never collide on the scratch `.cu` /
+        // binary paths — a collision would let one witness read the other's
+        // GPU output and report a spurious divergence.
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let uniq = format!(
+            "{}-{}",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed)
+        );
+        let work_dir = std::env::temp_dir().join(format!("xpile-ptx-diffexec-{uniq}"));
         Self { work_dir }
     }
 
