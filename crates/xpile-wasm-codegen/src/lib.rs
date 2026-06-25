@@ -48,11 +48,17 @@
 
 use std::fmt::Write as _;
 
-use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
+use xpile_backend::{
+    Artifact, Backend, BackendConfig, BackendError, EmittedText, MultiEmitterBackend, QuorumPolicy,
+    QuorumStatus, Target, TargetEmitter,
+};
 use xpile_contracts::ContractId;
 use xpile_meta_hir::{
     BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, Stmt, Type, UnOp,
 };
+
+mod wasm_diffexec;
+pub use wasm_diffexec::{wasm_runtime_available, WasmDiffExecEngine, FIXTURE_INPUT};
 
 /// The Layer-5 compile contract every emitted WAT function cites.
 const CONTRACT_ID: &str = "C-COMPILE-RUST-TO-WASM";
@@ -114,12 +120,72 @@ const FLOOR_HELPERS: &str = "\
 /// text. `Backend` impl (single-emitter — no §29 quorum at this slice;
 /// the executed two-emitter `WasmDiffExecEngine` witness is deferred to
 /// PMAT-952).
-#[derive(Default)]
-pub struct WasmBackend;
+pub struct WasmBackend {
+    inner: WasmBackendInner,
+}
+
+/// Internal dispatch: the v0.1.0 single real meta-HIR lowering, or the
+/// PMAT-952 two-emitter executed-witness quorum.
+enum WasmBackendInner {
+    /// The real meta-HIR → WAT lowering (PMAT-951 EMIT half).
+    Single,
+    /// PMAT-952 executed-witness quorum (two categorically-independent WAT
+    /// saxpy emitters under `QuorumPolicy::DiffExec`).
+    DiffExecWitness(MultiEmitterBackend),
+}
+
+impl Default for WasmBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl WasmBackend {
     pub fn new() -> Self {
-        Self
+        Self {
+            inner: WasmBackendInner::Single,
+        }
+    }
+
+    /// PMAT-952 (runtime-witness half) — the executed WASM-runtime
+    /// DiffExec-witness constructor (§29).
+    ///
+    /// Sibling of [`xpile_ptx_codegen::PtxBackend::new_cuda_diffexec_witness`]
+    /// and [`xpile_wgsl_codegen::WgslBackend::new_wgpu_diffexec_witness`].
+    /// Builds a `WasmBackend` whose `MultiEmitterBackend` carries two REAL
+    /// WAT emitters — [`WasmSaxpyGeneralEmitter`] (general) and
+    /// [`WasmSaxpySpecialistEmitter`] (specialist) — under
+    /// `QuorumPolicy::DiffExec`, with a [`WasmDiffExecEngine`] installed.
+    /// Both emitters compute the same semantics (`out[i] = 2*in[i] + 1`
+    /// over [`FIXTURE_INPUT`]) via *categorically different* WAT (one an
+    /// explicit `f64.mul` + `f64.add`, one a reassociated `(x + x) + 1` with
+    /// no `f64.mul` opcode at all), so the `DiffExec` quorum runs BOTH in a
+    /// wasm runtime and asserts they agree — the falsifying multi-emitter
+    /// check the §29 design specs, here in a WebAssembly interpreter rather
+    /// than on a GPU.
+    ///
+    /// On a host with WABT (`wat2wasm` + `wasm-interp`) this produces a real
+    /// [`xpile_backend::DiffExecResult::Match`] instead of the
+    /// `NotRun { no-engine }` placeholder — the runtime-stratum upgrade of
+    /// `C-COMPILE-RUST-TO-WASM` (deferred from PMAT-951's EMIT half).
+    ///
+    /// On a host with no WABT the engine is NOT installed (the
+    /// `MultiEmitterBackend` keeps `diff_exec_engine = None`), so the
+    /// backend records the benign `NotRun { no-engine }` and free CI stays
+    /// green — the `nvcc`/wgpu/cc graceful-skip posture.
+    pub fn new_wasm_diffexec_witness() -> Self {
+        let mut inner = MultiEmitterBackend::new_with_specialist(
+            Target::Wasm,
+            Box::new(WasmSaxpyGeneralEmitter),
+            Box::new(WasmSaxpySpecialistEmitter),
+            QuorumPolicy::DiffExec { tolerance: 1.0e-9 },
+        );
+        if wasm_runtime_available() {
+            inner = inner.with_diff_exec_engine(std::sync::Arc::new(WasmDiffExecEngine::new()));
+        }
+        Self {
+            inner: WasmBackendInner::DiffExecWitness(inner),
+        }
     }
 }
 
@@ -136,15 +202,129 @@ impl Backend for WasmBackend {
         if config.target != Target::Wasm {
             return Err(BackendError::UnsupportedTarget(config.target));
         }
-        let wat = emit_module(module)?;
-        Ok(Artifact {
-            primary: wat,
-            sidecars: Vec::new(),
-            citations: vec![ContractId::new(CONTRACT_ID)],
-            quorum_status: QuorumStatus::Single {
-                emitter: "xpile-wasm-codegen".to_string(),
+        match &self.inner {
+            WasmBackendInner::Single => {
+                let wat = emit_module(module)?;
+                Ok(Artifact {
+                    primary: wat,
+                    sidecars: Vec::new(),
+                    citations: vec![ContractId::new(CONTRACT_ID)],
+                    quorum_status: QuorumStatus::Single {
+                        emitter: "xpile-wasm-codegen".to_string(),
+                    },
+                })
+            }
+            WasmBackendInner::DiffExecWitness(inner) => inner.lower(module, config),
+        }
+    }
+}
+
+// ─── PMAT-952: real WAT emitters for the executed WASM-runtime witness ──
+//
+// Two emitters that produce COMPLETE, wat2wasm-assemblable WAT modules
+// computing identical semantics — `out[i] = 2*in[i] + 1` over
+// [`FIXTURE_INPUT`] — via categorically different lowerings. Each module
+// exports one zero-arg `f64`-returning function per fixture element
+// (`e0`..`eN`), so `wasm-interp --run-all-exports` runs the whole vector
+// and prints each result. The general emitter uses an explicit
+// `f64.mul` + `f64.add`; the specialist uses a reassociated `(x + x) + 1`
+// with no multiply opcode. Both are run in the wasm runtime under the
+// `DiffExec` quorum (see [`WasmBackend::new_wasm_diffexec_witness`]); the
+// engine asserts their executed outputs agree within tolerance.
+
+/// Format an `f64` as a WAT `f64.const` literal. Rust's `{:?}` always
+/// emits a decimal point (e.g. `2.0`, `-0.5`, `100.0`), which `wat2wasm`
+/// accepts as an `f64` literal.
+fn wat_f64(v: f64) -> String {
+    format!("{v:?}")
+}
+
+/// Build a WAT module exporting `e0`..`eN`, one per [`FIXTURE_INPUT`]
+/// element, each computing `2*x + 1` via the instruction sequence
+/// `body(x)` produces (given the fixed input value already on no stack —
+/// `body` is responsible for pushing the constant(s) and computing).
+fn saxpy_module(comment: &str, body: impl Fn(f64) -> String) -> String {
+    let mut out = String::new();
+    out.push_str("(module\n");
+    out.push_str(&format!("  ;; {comment}\n"));
+    out.push_str(&format!("  ;; xpile-contract: {CONTRACT_ID}\n"));
+    for (i, &x) in FIXTURE_INPUT.iter().enumerate() {
+        out.push_str(&format!(
+            "  (func (export \"e{i}\") (result f64)\n    {})\n",
+            body(x)
+        ));
+    }
+    out.push_str(")\n");
+    out
+}
+
+/// General WAT emitter — `2*x + 1` via an explicit `f64.mul` then
+/// `f64.add`. Emits a complete wat2wasm-assemblable module.
+struct WasmSaxpyGeneralEmitter;
+
+impl TargetEmitter for WasmSaxpyGeneralEmitter {
+    fn name(&self) -> &str {
+        "wasm-saxpy-general"
+    }
+
+    fn try_emit(
+        &self,
+        _module: &Module,
+        config: &BackendConfig,
+    ) -> Option<Result<EmittedText, BackendError>> {
+        if config.target != Target::Wasm {
+            return Some(Err(BackendError::UnsupportedTarget(config.target)));
+        }
+        let primary = saxpy_module(
+            "wasm-saxpy-general: out = x * 2.0 + 1.0 (explicit f64.mul + f64.add)",
+            |x| {
+                // x * 2.0 + 1.0
+                format!(
+                    "f64.const {x}\n    f64.const 2.0\n    f64.mul\n    f64.const 1.0\n    f64.add",
+                    x = wat_f64(x)
+                )
             },
-        })
+        );
+        Some(Ok(EmittedText {
+            primary,
+            citations: vec![ContractId::new(CONTRACT_ID)],
+        }))
+    }
+}
+
+/// Specialist WAT emitter — same semantics (`2*x + 1`) computed via a
+/// reassociated `(x + x) + 1`, with NO `f64.mul` opcode. A categorically
+/// independent lowering: the `DiffExec` quorum runs both in the wasm
+/// runtime and falsifies the contract if they diverge.
+struct WasmSaxpySpecialistEmitter;
+
+impl TargetEmitter for WasmSaxpySpecialistEmitter {
+    fn name(&self) -> &str {
+        "wasm-saxpy-specialist-doubling"
+    }
+
+    fn try_emit(
+        &self,
+        _module: &Module,
+        config: &BackendConfig,
+    ) -> Option<Result<EmittedText, BackendError>> {
+        if config.target != Target::Wasm {
+            return Some(Err(BackendError::UnsupportedTarget(config.target)));
+        }
+        let primary = saxpy_module(
+            "wasm-saxpy-specialist: out = (x + x) + 1.0 (reassociated doubling, no f64.mul)",
+            |x| {
+                // (x + x) + 1.0
+                format!(
+                    "f64.const {x}\n    f64.const {x}\n    f64.add\n    f64.const 1.0\n    f64.add",
+                    x = wat_f64(x)
+                )
+            },
+        );
+        Some(Ok(EmittedText {
+            primary,
+            citations: vec![ContractId::new(CONTRACT_ID)],
+        }))
     }
 }
 

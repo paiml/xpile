@@ -48,23 +48,42 @@ compile_targets:
     via:
       - xpile-wasm-codegen
     backend_crate: xpile-wasm-codegen
-    # PMAT-951 (2026-06-25): the EMIT half ships. xpile-wasm-codegen lowers
-    # the meta-HIR scalar/control subset directly to WAT text (no runtime
-    # dependency). The emitted WAT is a genuine, validatable WebAssembly
-    # module — the PMAT-951 slice ran it through WABT (wat2wasm assembles
-    # it; spectest-interp executes every exported fn) and confirmed 10/10
-    # executed semantic results match the CPython reference (incl. the
-    # floor-division corrections -7//2 == -4, 7//-2 == -4, the while-loop
-    # sum, the if-expr max, short-circuit bool logic, and f64 arithmetic).
-    # The two-emitter `WasmDiffExecEngine` §29 DiffExec quorum (running two
-    # categorically-independent WAT emitters in a wasm runtime and diffing
-    # them) is deferred to PMAT-952 — this slice records the single-emitter
-    # citation.
+    # PMAT-951 (2026-06-25): the EMIT half shipped. xpile-wasm-codegen
+    # lowers the meta-HIR scalar/control subset directly to WAT text (no
+    # runtime dependency). The emitted WAT is a genuine, validatable
+    # WebAssembly module — the PMAT-951 slice ran it through WABT (wat2wasm
+    # assembles it; spectest-interp executes every exported fn) and
+    # confirmed 10/10 executed semantic results match the CPython reference
+    # (incl. floor-division -7//2 == -4, 7//-2 == -4, the while-loop sum,
+    # the if-expr max, short-circuit bool logic, and f64 arithmetic).
+    #
+    # PMAT-952 (runtime-witness half, 2026-06-25): the EXECUTED WASM-runtime
+    # DiffExec witness now EXISTS — this upgrades the lane from `Single` to
+    # the `DiffExec` Run-stratum, mirroring the CUDA (PMAT-949) and
+    # wgpu/WGSL (PMAT-950) GPU witnesses. `WasmDiffExecEngine` (crates/
+    # xpile-wasm-codegen/src/wasm_diffexec.rs) runs two categorically
+    # independent WAT emitters (general `x*2.0 + 1.0` via f64.mul+f64.add,
+    # specialist `(x + x) + 1.0` reassociated doubling with NO f64.mul) in
+    # a wasm runtime via the PMAT-951-proven WABT subprocess path (wat2wasm
+    # assembles each module; `wasm-interp --run-all-exports` executes every
+    # exported fn), and numerically compares the executed outputs under
+    # this `quorum_policy.kind: DiffExec`. On a box with WABT the §29 quorum
+    # records a real `DiffExecResult::Match` (max_abs_diff = 0 over the
+    # fixture vector, bit-identical to the CUDA/WGSL fixtures) instead of
+    # `NotRun{no-engine}`. The witness is gated on `wasm_runtime_available()`
+    # (graceful-skip on free CI, which lacks WABT). RUNTIME CHOICE: WABT
+    # subprocess — NO new Cargo dependency, so `cargo deny check advisories`
+    # is unaffected (no wasmi/wasmtime). The lossy WASM→meta-HIR LIFT half
+    # of PMAT-952 (SourceLang::Wasm + xpile-wasm-frontend) remains deferred.
     quorum_policy:
-      kind: Single
+      kind: DiffExec
+      tolerance: 1.0e-9
     via_roles:
-      - emitter: xpile-wasm-codegen
+      - emitter: wasm-saxpy-general
         role: general
+        crate: xpile-wasm-codegen
+      - emitter: wasm-saxpy-specialist-doubling
+        role: specialist
         crate: xpile-wasm-codegen
 
 equations:
@@ -88,7 +107,7 @@ equations:
     invariants:
       - "FIRST Diamond-tier theorem of C-COMPILE-RUST-TO-WASM (registers it at depth-1)"
       - "structure extensionality over the emitted function's signature (sorry-free, core-only)"
-      - "execution-semantics agreement (the wasm-runtime DiffExec witness) is the runtime-stratum tier, deferred to PMAT-952"
+      - "execution-semantics agreement (the wasm-runtime DiffExec witness) is the runtime-stratum tier, EXECUTED via WasmDiffExecEngine over WABT (PMAT-952 runtime-witness half)"
     preconditions:
       - "BackendConfig.target == Target::Wasm"
     postconditions:
