@@ -1913,6 +1913,41 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                  format!(\"{}{}{}\", if __neg { \"-\" } else { \"\" }, __g, __frac) }",
             );
         }
+        // PMAT-941 (correctness-hunt): scientific-notation float `f"{x:e}"` /
+        // `f"{x:.NE}"`. Rust's `format!("{:.Ne}", x)` renders the right mantissa
+        // but a BARE exponent (`1.234500e3` — no sign, no 2-digit-min zero-pad)
+        // and lowercases inf/nan even under `{:E}`. Render to `precision` decimals,
+        // then split on `e`/`E` and rebuild the exponent in Python's `e±NN` form
+        // (sign always present, magnitude `{:02}`-padded). A non-finite value has
+        // no exponent char → `split_once` is `None`; case-fold it (`inf`/`nan`
+        // lower, `INF`/`NAN` upper) to match Python.
+        Expr::FloatSciStr {
+            value,
+            precision,
+            upper,
+        } => {
+            let echar = if *upper { 'E' } else { 'e' };
+            let fold = if *upper {
+                "to_uppercase"
+            } else {
+                "to_lowercase"
+            };
+            out.push_str("{ let __x = (");
+            emit_expr(out, value, mode)?;
+            out.push_str("); let __s = ");
+            write!(out, "format!(\"{{:.{precision}{echar}}}\", __x)")?;
+            out.push_str(
+                "; match __s.split_once(['e', 'E']) { \
+                 Some((__mant, __exp)) => { \
+                 let __ev: i64 = __exp.parse().expect(\"xpile: scientific exponent\"); ",
+            );
+            write!(
+                out,
+                "format!(\"{{}}{echar}{{}}{{:02}}\", __mant, \
+                 if __ev < 0 {{ '-' }} else {{ '+' }}, __ev.abs()) }}, "
+            )?;
+            write!(out, "None => __s.{fold}() }} }}")?;
+        }
         // PMAT-502da: `int(s, base)` → parse via `i64::from_str_radix`
         // (a parse failure / out-of-range digit panics ≈ Python ValueError).
         // PMAT-655: Python `int(s, base)` accepts a base-matching radix PREFIX

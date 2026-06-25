@@ -503,7 +503,10 @@ fn expr_has_int_arith(e: &Expr) -> bool {
             expr_has_int_arith(value)
         }
         // PMAT-940: grouped float field — recurse into the value expr.
-        Expr::FloatGroupedStr { value, .. } => expr_has_int_arith(value),
+        // PMAT-941: scientific float field — recurse into the value expr.
+        Expr::FloatGroupedStr { value, .. } | Expr::FloatSciStr { value, .. } => {
+            expr_has_int_arith(value)
+        }
         Expr::IntFromStrRadix { value, .. } => expr_has_int_arith(value),
         // PMAT-502am: formatted f-string field — recurse into the value.
         Expr::FormatSpec { value, .. } => expr_has_int_arith(value),
@@ -2003,6 +2006,23 @@ pub enum Expr {
         sep: char,
         precision: u32,
     },
+    /// PMAT-941 (correctness-hunt): a SCIENTIFIC-NOTATION float field — Python
+    /// `f"{1234.5:e}"` → `"1.234500e+03"`, `f"{1234.5:.2E}"` → `"1.23E+03"`,
+    /// `f"{1e100:e}"` → `"1.000000e+100"` (bare `e`/`E` defaults to 6 decimals).
+    /// Rust's `format!("{:.Ne}", x)` renders the right mantissa but a BARE
+    /// exponent (`1.234500e3` — no sign, no 2-digit-min zero-pad) and lowercases
+    /// `inf`/`nan` even under `{:E}`. So codegen renders to `precision` decimals,
+    /// then fixes up the exponent to Python's `e±NN` form (sign always present,
+    /// magnitude zero-padded to ≥2 digits) and case-folds the non-finite tail
+    /// (`inf`/`nan` for lower, `INF`/`NAN` for upper). `upper` selects the `E`
+    /// presentation. The float follow-up companion to [`Expr::FloatGroupedStr`];
+    /// `:g`/`:G` general-float and width-combined forms stay deferred rejects.
+    /// Lean refuses (like [`Expr::FloatGroupedStr`]).
+    FloatSciStr {
+        value: Box<Expr>,
+        precision: u32,
+        upper: bool,
+    },
     /// `int(s, base)` — parse a string in the given radix (→ `int`).
     /// PMAT-502da (Tranche 2); the str→int reverse of [`Expr::IntRadixStr`].
     /// `radix` is a literal `2..=36`. Rust/Ruchy emit
@@ -3190,6 +3210,7 @@ fn escape_expr(e: &mut Expr) {
         Expr::IntRadixStr { value, .. }
         | Expr::IntGroupedStr { value, .. }
         | Expr::FloatGroupedStr { value, .. }
+        | Expr::FloatSciStr { value, .. }
         | Expr::IntFromStrRadix { value, .. }
         | Expr::FormatSpec { value, .. }
         | Expr::NumCast { value, .. }
@@ -3724,6 +3745,7 @@ fn collect_idents_expr(e: &Expr, acc: &mut std::collections::HashSet<String>) {
         Expr::IntRadixStr { value, .. }
         | Expr::IntGroupedStr { value, .. }
         | Expr::FloatGroupedStr { value, .. }
+        | Expr::FloatSciStr { value, .. }
         | Expr::IntFromStrRadix { value, .. }
         | Expr::FormatSpec { value, .. }
         | Expr::NumCast { value, .. }
