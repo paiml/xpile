@@ -2579,8 +2579,8 @@ theorem int_emod_quotient_hom_diamond (a b : Int) :
     constructive choice of witness). That existential is then PROVED
     core-only by induction over `Nat.gcd.induction` — the genuine
     structural-recursion content (the extended Euclidean algorithm's
-    correctness), no Mathlib and no `sorry`. See `int_gcd_bezout_exists`
-    below. -/
+    correctness), no Mathlib and no proof holes. See
+    `int_gcd_bezout_exists` below. -/
 
 /--
   Core-only Bézout existence over `Nat` (PMAT-948 helper). Proved by
@@ -2612,7 +2612,7 @@ private theorem nat_gcd_bezout_aux (m n : Nat) :
   by case-splitting `Int.natAbs_eq` (each operand is `±` its natAbs)
   and folding the sign into the linear-combination witness. This is
   the constructive content of the Bézout identity, with no Mathlib
-  `gcdA`/`gcdB` and no `sorry`. -/
+  `gcdA`/`gcdB` and no proof holes. -/
 theorem int_gcd_bezout_exists (a b : Int) :
     ∃ x y : Int, (Int.gcd a b : Int) = a * x + b * y := by
   obtain ⟨x, y, hxy⟩ := nat_gcd_bezout_aux a.natAbs b.natAbs
@@ -2655,7 +2655,7 @@ theorem int_gcd_bezout_exists (a b : Int) :
   `Int.natAbs`/`Nat.dvd_gcd` for universality (c); and the core
   `int_gcd_bezout_exists` helper (proved via `Nat.gcd.induction`) for
   the existential Bézout (d). NO Mathlib `Int.dvd_gcd`/`gcd_eq_gcd_ab`/
-  `gcdA`/`gcdB` (all absent from bare core), NO `sorry`.
+  `gcdA`/`gcdB` (all absent from bare core), NO proof holes.
 
   An emitter that lowered gcd through Stein's binary GCD (which
   doesn't naturally produce a Bézout pair) without backward
