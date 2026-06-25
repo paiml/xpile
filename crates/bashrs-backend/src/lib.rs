@@ -64,15 +64,28 @@ fn render_arg(e: &Expr) -> Result<String, BackendError> {
     }
 }
 
-/// PMAT-048: render a `Stmt::ShellLoop` to a single-line POSIX
-/// shell representation. Multi-line shell loops (with body
-/// statements) need a recursive Stmt renderer; at v0.1.0 the
-/// helper only handles the loop *header* + a `;` separator before
-/// a placeholder `# body …` comment, locking in the shape so a
-/// future PR can plug in body rendering.
+/// PMAT-048: render a `Stmt::ShellLoop` to its POSIX shell
+/// representation.
 ///
-/// Returns a complete shell line (no trailing newline).
-fn render_shell_loop(kind: &LoopKind, _body: &[Stmt]) -> Result<String, BackendError> {
+/// PMAT-974: the loop *body* is now rendered. Previously the helper
+/// emitted a placeholder `; do : # body: <pending v0.2.0 expansion>;
+/// done` and silently dropped every body statement — a real
+/// mis-emit: a loop carrying real body commands lost them entirely.
+/// Now each body `Stmt` renders through the shared
+/// [`render_stmt_lines`] walker (the same renderer that drives the
+/// top-level emit), so `Cmd` / `Pipeline` / `ShellAssign` / nested
+/// `ShellLoop` all emit correctly inside a `do … done` block. Body
+/// lines are indented one tab past the `for/while/until` header for
+/// legibility.
+///
+/// Returns the multi-line `header; do\n\t<body…>\ndone` form (no
+/// trailing newline) — the caller appends a single newline when
+/// writing the loop line.
+///
+/// An empty body emits `do :` (the POSIX no-op) so the resulting
+/// shell stays syntactically valid (`do … done` must contain at
+/// least one command).
+fn render_shell_loop(kind: &LoopKind, body: &[Stmt]) -> Result<String, BackendError> {
     let header = match kind {
         LoopKind::For { var, items } => {
             let rendered: Result<Vec<String>, BackendError> =
@@ -82,14 +95,78 @@ fn render_shell_loop(kind: &LoopKind, _body: &[Stmt]) -> Result<String, BackendE
         LoopKind::While { cond } => format!("while {}", render_arg(cond)?),
         LoopKind::Until { cond } => format!("until {}", render_arg(cond)?),
     };
-    // Body rendering is intentionally minimal at v0.1.0 — the body
-    // multi-line shape (cmd1\n  cmd2\n  …\n done) requires a
-    // recursive Stmt renderer the v0.1.0 backend doesn't carry
-    // beyond Cmd / Pipeline at the top level. A future PR
-    // (XPILE-BASHRS-MERGER-***+) will plug body rendering in here.
-    Ok(format!(
-        "{header}; do : # body: <pending v0.2.0 expansion>; done"
-    ))
+
+    // Render every body statement through the shared walker. An
+    // empty body collapses to the POSIX no-op `:` so `do … done`
+    // stays well-formed.
+    let mut body_lines: Vec<String> = Vec::new();
+    for stmt in body {
+        for line in render_stmt_lines(stmt)? {
+            // Indent each (possibly multi-line, e.g. a nested loop)
+            // body line one tab for readability.
+            for sub in line.split('\n') {
+                body_lines.push(format!("\t{sub}"));
+            }
+        }
+    }
+    if body_lines.is_empty() {
+        body_lines.push("\t:".to_string());
+    }
+
+    Ok(format!("{header}; do\n{}\ndone", body_lines.join("\n")))
+}
+
+/// PMAT-974: render a single top-level shell statement to its POSIX
+/// surface line(s).
+///
+/// Extracted from `lower`'s inline match so loop bodies and the
+/// top-level walk share one renderer (DRY + recursion: a
+/// `ShellLoop` body containing another `ShellLoop` renders through
+/// the same code path). Returns one `String` per emitted shell
+/// construct; a single statement may render to a multi-line string
+/// (e.g. a nested loop's `do … done`).
+///
+/// Mirrors the v0.1.0 boundary: non-`Cmd` pipeline stages and
+/// non-string `Cmd` args are refused with the same diagnostics the
+/// top-level emit used, so the cross-domain contract stays explicit.
+fn render_stmt_lines(stmt: &Stmt) -> Result<Vec<String>, BackendError> {
+    match stmt {
+        Stmt::Cmd { program, args } => {
+            if args.is_empty() {
+                Ok(vec![program.clone()])
+            } else {
+                let rendered: Result<Vec<String>, BackendError> =
+                    args.iter().map(render_arg).collect();
+                Ok(vec![format!("{program} {}", rendered?.join(" "))])
+            }
+        }
+        Stmt::Pipeline { stages } => {
+            let mut rendered: Vec<String> = Vec::with_capacity(stages.len());
+            for stage in stages {
+                let Stmt::Cmd { program, args } = stage else {
+                    return Err(BackendError::Lower(format!(
+                        "Stmt::Pipeline stage is not a Stmt::Cmd; \
+                         bashrs-backend v0.1.0 only renders Cmd stages \
+                         (got {stage:?})"
+                    )));
+                };
+                if args.is_empty() {
+                    rendered.push(program.clone());
+                } else {
+                    let arg_strs: Result<Vec<String>, BackendError> =
+                        args.iter().map(render_arg).collect();
+                    rendered.push(format!("{program} {}", arg_strs?.join(" ")));
+                }
+            }
+            Ok(vec![rendered.join(" | ")])
+        }
+        Stmt::ShellAssign { name, value } => Ok(vec![format!("{name}={}", render_arg(value)?)]),
+        Stmt::ShellLoop { kind, body } => Ok(vec![render_shell_loop(kind, body)?]),
+        other => Err(BackendError::Lower(format!(
+            "bashrs-backend cannot render {other:?} as a shell statement; \
+             only Stmt::Cmd / Stmt::Pipeline / Stmt::ShellAssign / Stmt::ShellLoop supported"
+        ))),
+    }
 }
 
 /// PMAT-047: render the inner Stmt of a `$(cmd)` substitution into
@@ -201,72 +278,18 @@ impl Backend for BashrsBackend {
                 writeln!(primary, "# function: {}", f.name)
                     .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
             }
+            // PMAT-974: the per-Stmt surface rendering now lives in
+            // the shared `render_stmt_lines` walker so loop bodies and
+            // the top-level walk emit through one code path. Each
+            // emittable Stmt renders to one or more shell lines
+            // (`Cmd` / `Pipeline` / `ShellAssign` → one line; a
+            // `ShellLoop` → a multi-line `do … done` block).
             for stmt in emittable {
-                match stmt {
-                    Stmt::Cmd { program, args } => {
-                        if args.is_empty() {
-                            writeln!(primary, "{program}")
-                                .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
-                        } else {
-                            // PMAT-042: render each arg through the
-                            // quoting-aware helper.
-                            let rendered: Result<Vec<String>, BackendError> =
-                                args.iter().map(render_arg).collect();
-                            writeln!(primary, "{program} {}", rendered?.join(" "))
-                                .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
-                        }
-                        emitted_commands += 1;
-                    }
-                    Stmt::Pipeline { stages } => {
-                        // Render each stage as `program args...` and
-                        // join with ` | `. v0.1.0 invariant: every
-                        // stage is a Cmd (bashrs-frontend enforces).
-                        // Non-Cmd stages would arise only from a
-                        // future frontend producing nested pipelines
-                        // / control-flow inside a pipeline; rejected
-                        // here with a clear error so the boundary
-                        // stays explicit.
-                        let mut rendered: Vec<String> = Vec::with_capacity(stages.len());
-                        for stage in stages {
-                            let Stmt::Cmd { program, args } = stage else {
-                                return Err(BackendError::Lower(format!(
-                                    "Stmt::Pipeline stage is not a Stmt::Cmd; \
-                                     bashrs-backend v0.1.0 only renders Cmd stages \
-                                     (got {stage:?})"
-                                )));
-                            };
-                            // PMAT-042: same quoting-aware rendering.
-                            if args.is_empty() {
-                                rendered.push(program.clone());
-                            } else {
-                                let arg_strs: Result<Vec<String>, BackendError> =
-                                    args.iter().map(render_arg).collect();
-                                rendered.push(format!("{program} {}", arg_strs?.join(" ")));
-                            }
-                        }
-                        writeln!(primary, "{}", rendered.join(" | "))
-                            .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
-                        emitted_commands += 1;
-                    }
-                    // PMAT-048: ShellLoop renders via the helper.
-                    Stmt::ShellLoop { kind, body } => {
-                        writeln!(primary, "{}", render_shell_loop(kind, body)?)
-                            .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
-                        emitted_commands += 1;
-                    }
-                    // PMAT-051: ShellAssign renders as `NAME=value`
-                    // on its own line. The value is rendered through
-                    // the existing render_arg helper, so quoted
-                    // strings / shell vars / command substitution
-                    // all work in the value position.
-                    Stmt::ShellAssign { name, value } => {
-                        writeln!(primary, "{name}={}", render_arg(value)?)
-                            .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
-                        emitted_commands += 1;
-                    }
-                    // matches! above guards against everything else.
-                    _ => unreachable!(),
+                for line in render_stmt_lines(stmt)? {
+                    writeln!(primary, "{line}")
+                        .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
                 }
+                emitted_commands += 1;
             }
         }
         if emitted_commands == 0 {
@@ -594,7 +617,9 @@ mod tests {
     #[test]
     fn render_shell_loop_for_kind() {
         // PMAT-048: For-loop header renders correctly with the
-        // var, items, and the v0.1.0 body placeholder.
+        // var and items. PMAT-974: an empty body now renders the
+        // POSIX no-op `:` inside `do … done` (was a placeholder
+        // comment before).
         use xpile_meta_hir::{Expr, LoopKind};
         let kind = LoopKind::For {
             var: "x".into(),
@@ -606,12 +631,16 @@ mod tests {
         };
         let rendered = render_shell_loop(&kind, &[]).unwrap();
         assert!(
-            rendered.starts_with("for x in a b c;"),
+            rendered.starts_with("for x in a b c; do\n"),
             "header missing or wrong: {rendered}"
         );
-        // Body placeholder shape is stable across v0.1.0 — locks it in.
+        // Empty body → POSIX no-op so `do … done` stays valid.
         assert!(
-            rendered.ends_with("done"),
+            rendered.contains("\n\t:\n"),
+            "empty body should render the `:` no-op: {rendered}"
+        );
+        assert!(
+            rendered.ends_with("\ndone"),
             "loop should end with `done`: {rendered}"
         );
     }
@@ -625,7 +654,7 @@ mod tests {
         };
         let rendered = render_shell_loop(&w, &[]).unwrap();
         assert!(
-            rendered.starts_with("while [ -d /tmp ];"),
+            rendered.starts_with("while [ -d /tmp ]; do\n"),
             "while header wrong: {rendered}"
         );
         let u = LoopKind::Until {
@@ -633,8 +662,185 @@ mod tests {
         };
         let rendered = render_shell_loop(&u, &[]).unwrap();
         assert!(
-            rendered.starts_with("until [ ! -f /tmp/done ];"),
+            rendered.starts_with("until [ ! -f /tmp/done ]; do\n"),
             "until header wrong: {rendered}"
+        );
+    }
+
+    #[test]
+    fn render_shell_loop_renders_body_statements() {
+        // PMAT-974: the load-bearing fix. A loop carrying real body
+        // statements must emit them inside `do … done` — previously
+        // the entire body was silently dropped and replaced with a
+        // `: # body: <pending v0.2.0 expansion>` placeholder.
+        use xpile_meta_hir::{Expr, LoopKind, Stmt};
+        let kind = LoopKind::For {
+            var: "f".into(),
+            items: vec![Expr::ShellVar("FILES".into())],
+        };
+        let body = vec![
+            Stmt::Cmd {
+                program: "echo".into(),
+                args: vec![Expr::ShellVar("f".into())],
+            },
+            Stmt::Cmd {
+                program: "rm".into(),
+                args: vec![Expr::LitStr("-f".into()), Expr::ShellVar("f".into())],
+            },
+        ];
+        let rendered = render_shell_loop(&kind, &body).unwrap();
+        // Header.
+        assert!(
+            rendered.starts_with("for f in $FILES; do\n"),
+            "header wrong: {rendered}"
+        );
+        // Both body commands present, indented one tab, in order.
+        assert!(
+            rendered.contains("\n\techo $f\n"),
+            "first body cmd missing or unindented: {rendered}"
+        );
+        assert!(
+            rendered.contains("\n\trm -f $f\n"),
+            "second body cmd missing or unindented: {rendered}"
+        );
+        // The old placeholder must be gone.
+        assert!(
+            !rendered.contains("pending v0.2.0 expansion"),
+            "stale body placeholder leaked: {rendered}"
+        );
+        assert!(rendered.ends_with("\ndone"), "no closing done: {rendered}");
+    }
+
+    #[test]
+    fn render_shell_loop_renders_pipeline_and_assign_in_body() {
+        // PMAT-974: a loop body can hold any top-level shell stmt —
+        // here a ShellAssign and a Pipeline — and both render through
+        // the shared walker.
+        use xpile_meta_hir::{Expr, LoopKind, Stmt};
+        let kind = LoopKind::While {
+            cond: Expr::LitStr("[ -d /tmp ]".into()),
+        };
+        let body = vec![
+            Stmt::ShellAssign {
+                name: "N".into(),
+                value: Expr::CommandSubstitution(Box::new(Stmt::Cmd {
+                    program: "wc".into(),
+                    args: vec![Expr::LitStr("-l".into())],
+                })),
+            },
+            Stmt::Pipeline {
+                stages: vec![
+                    Stmt::Cmd {
+                        program: "cat".into(),
+                        args: vec![Expr::LitStr("log".into())],
+                    },
+                    Stmt::Cmd {
+                        program: "grep".into(),
+                        args: vec![Expr::LitStr("err".into())],
+                    },
+                ],
+            },
+        ];
+        let rendered = render_shell_loop(&kind, &body).unwrap();
+        assert!(
+            rendered.contains("\n\tN=$(wc -l)\n"),
+            "ShellAssign body line missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("\n\tcat log | grep err\n"),
+            "Pipeline body line missing: {rendered}"
+        );
+    }
+
+    #[test]
+    fn render_shell_loop_renders_nested_loop_in_body() {
+        // PMAT-974: a loop body holding another loop renders
+        // recursively through `render_stmt_lines` → `render_shell_loop`.
+        use xpile_meta_hir::{Expr, LoopKind, Stmt};
+        let inner = Stmt::ShellLoop {
+            kind: LoopKind::For {
+                var: "j".into(),
+                items: vec![Expr::LitStr("x".into()), Expr::LitStr("y".into())],
+            },
+            body: vec![Stmt::Cmd {
+                program: "echo".into(),
+                args: vec![Expr::ShellVar("j".into())],
+            }],
+        };
+        let kind = LoopKind::For {
+            var: "i".into(),
+            items: vec![Expr::LitStr("1".into()), Expr::LitStr("2".into())],
+        };
+        let rendered = render_shell_loop(&kind, &[inner]).unwrap();
+        // Outer header.
+        assert!(
+            rendered.starts_with("for i in 1 2; do\n"),
+            "outer header wrong: {rendered}"
+        );
+        // Inner loop header indented one tab past the outer body.
+        assert!(
+            rendered.contains("\n\tfor j in x y; do\n"),
+            "nested loop header not indented: {rendered}"
+        );
+        // Inner body command indented two tabs (one for outer body,
+        // one for inner body).
+        assert!(
+            rendered.contains("\n\t\techo $j\n"),
+            "nested loop body not double-indented: {rendered}"
+        );
+        // Both loops close.
+        assert_eq!(
+            rendered.matches("done").count(),
+            2,
+            "both loops should close with `done`: {rendered}"
+        );
+    }
+
+    #[test]
+    fn lower_module_with_loop_emits_full_body() {
+        // PMAT-974 end-to-end through `lower`: a Module whose `main`
+        // body contains a Stmt::ShellLoop with real body commands
+        // must emit the full `do … done` block (not the old
+        // placeholder).
+        use xpile_meta_hir::{Block, Expr, Function, Item, LoopKind, Stmt, Type};
+        let module = Module {
+            name: "loopdemo".into(),
+            source_lang: xpile_meta_hir::SourceLang::Shell,
+            items: vec![Item::Function(Function {
+                name: "main".into(),
+                params: vec![],
+                return_type: Type::I64,
+                body: Block {
+                    stmts: vec![Stmt::ShellLoop {
+                        kind: LoopKind::For {
+                            var: "x".into(),
+                            items: vec![Expr::LitStr("a".into()), Expr::LitStr("b".into())],
+                        },
+                        body: vec![Stmt::Cmd {
+                            program: "echo".into(),
+                            args: vec![Expr::ShellVar("x".into())],
+                        }],
+                    }],
+                    trailing_return: Expr::LitInt(0),
+                },
+            })],
+            ffi_boundaries: vec![],
+        };
+        let cfg = BackendConfig {
+            target: Target::Shell,
+            profile: Profile::RustOut,
+            hardware: None,
+        };
+        let art = BashrsBackend.lower(&module, &cfg).expect("lower");
+        assert!(
+            art.primary.contains("for x in a b; do\n\techo $x\ndone\n"),
+            "expected full loop block in emit; got:\n{}",
+            art.primary
+        );
+        assert!(
+            !art.primary.contains("pending v0.2.0 expansion"),
+            "stale placeholder leaked into module emit:\n{}",
+            art.primary
         );
     }
 
