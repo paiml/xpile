@@ -5202,6 +5202,30 @@ fn main() {
     assert_rustc_runs("bool_op_truthy_operand", &rust, driver);
 }
 
+/// PMAT-944 (correctness-hunt): a MIXED / non-bool `and`/`or` in VALUE position
+/// returns Python's union operand value (`n or "default"` is an int|str union),
+/// which has no single Rust type. xpile previously folded it to a Rust `bool`,
+/// silently diverging (`return 0 or "d"` produced `false`, never the operand
+/// `"d"`). It is now REJECTED — never silently miscompiled — upholding the
+/// "transpile-success ⟹ correct Rust" guarantee. The boolean-context and
+/// same-typed forms are unaffected (oracle fixture `boolop_value_union`).
+/// Surfaced by a python3-vs-rustc differential sweep (this exact case printed
+/// `True` instead of `"d"`).
+#[test]
+fn boolop_value_union_rejected() {
+    let py = fixture("boolop_value_union_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a mixed/non-bool `and`/`or` in value position must be refused, not folded to a bool"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("value position") && stderr.contains("union operand value"),
+        "the rejection should name the value-position union reason:\n{stderr}"
+    );
+}
+
 /// PMAT-697: a float operand of `and`/`or` is truthy iff `!= 0.0` (IEEE-754
 /// exact: `-0.0` falsy, `nan`/`inf` truthy). The value-return forms (`x or 9.0`,
 /// `x and y` over float idents) and the bool-context form (`if x and y > 1.0`)
