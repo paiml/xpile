@@ -287,11 +287,11 @@ fn bool_logic_short_circuits() {
 // ─── refusal tests (Lean-style honest refusal) ──────────────────────
 
 #[test]
-fn refuses_string_return_type() {
-    // PMAT-986: a `str` PARAMETER is now accepted (an i32 base-pointer), but
-    // RETURNING a `str` is string-returning — it must materialise a result
-    // string in linear memory, which needs the slice-2 bump allocator. Refuse
-    // it honestly with the slice-2 note (NOT a silent miscompile).
+fn str_return_of_param_is_identity() {
+    // PMAT-993 (slice 2): RETURNING a `str` is now supported — the function's
+    // result is an i32 base-pointer. Returning a str PARAM directly is the
+    // identity case (return the same string), lowering to `(result i32)` +
+    // `local.get $x`. Slice 1 refused this; slice 2's heap path accepts it.
     let f = Function {
         name: "s".into(),
         params: vec![param("x", Type::Str)],
@@ -301,13 +301,39 @@ fn refuses_string_return_type() {
             trailing_return: Expr::Ident("x".into()),
         },
     };
-    let err = WasmBackend::new()
+    let art = WasmBackend::new()
         .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
-        .unwrap_err();
-    let msg = err.to_string();
+        .expect("str return (identity over a str param) lowers in slice 2");
     assert!(
-        msg.contains("heap allocator") && msg.contains("PMAT-986 slice 2"),
-        "str return refused with slice-2 allocator note: {msg}"
+        art.primary.contains("(func $s (param $x i32) (result i32)"),
+        "str return → i32 result:\n{}",
+        art.primary
+    );
+    assert!(
+        art.primary.contains("local.get $x"),
+        "identity str return → local.get the param pointer:\n{}",
+        art.primary
+    );
+}
+
+#[test]
+fn str_return_of_non_str_local_is_refused() {
+    // A `str` return whose trailing expr is NOT string-valued (an int local)
+    // must be refused honestly — the heap path returns a string pointer, not a
+    // scalar reinterpreted as one.
+    let f = Function {
+        name: "s".into(),
+        params: vec![param("n", Type::I64)],
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Ident("n".into()),
+        },
+    };
+    let err = emit_module(&module_with(vec![Item::Function(f)])).unwrap_err();
+    assert!(
+        err.to_string().contains("not a `str` parameter"),
+        "str return of an int local is refused: {err}"
     );
 }
 
@@ -417,7 +443,9 @@ fn ord_str_index_uses_load8_and_bounds_guard() {
 #[test]
 fn refuses_strcharat_as_string() {
     // `s[i]` used as a 1-char STRING (a StrCharAt NOT wrapped in ord) is
-    // string-returning — refuse with the slice-2 allocator note.
+    // string-returning. PMAT-993 ships the allocator (concat + chr), but a
+    // 1-char-slice materialisation is a follow-up (slice 3) — refuse it
+    // honestly (the message still names "heap allocator … slice 2").
     let f = Function {
         name: "first".into(),
         params: vec![param("s", Type::Str)],
@@ -446,7 +474,46 @@ fn refuses_strcharat_as_string() {
 }
 
 #[test]
-fn refuses_chr_string_returning() {
+fn chr_returns_a_new_one_char_string() {
+    // PMAT-993 (slice 2): `chr(n)` materialises a NEW 1-char string in the
+    // bump heap and returns its i32 base-pointer. A `def to_char(n) -> str:
+    // return chr(n)` lowers to alloc(9) + a count-1 header + an i32.store8 of
+    // the masked byte.
+    let f = Function {
+        name: "to_char".into(),
+        params: vec![param("n", Type::I64)],
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Chr {
+                value: Box::new(Expr::Ident("n".into())),
+            },
+        },
+    };
+    let wat = emit_module(&module_with(vec![Item::Function(f)])).expect("chr(n) -> str lowers");
+    assert!(
+        wat.contains("call $__alloc"),
+        "chr allocates via the bump heap:\n{wat}"
+    );
+    assert!(
+        wat.contains("i32.store8"),
+        "chr writes the single byte via i32.store8:\n{wat}"
+    );
+    assert!(
+        wat.contains("i32.const 255") && wat.contains("i32.and"),
+        "chr masks the low byte (n & 0xFF):\n{wat}"
+    );
+    assert!(
+        wat.contains("(func $to_char (param $n i64) (result i32)"),
+        "chr-returning fn → i32 result (the string pointer):\n{wat}"
+    );
+}
+
+#[test]
+fn chr_bound_to_int_local_is_type_mismatch() {
+    // `chr(n)` returns an i32 string pointer; binding it to an `int` (i64)
+    // local is an HONEST type mismatch (NOT a silent reinterpret). This guards
+    // against a code path that would treat a string pointer as an integer.
     let f = Function {
         name: "c".into(),
         params: vec![param("n", Type::I64)],
@@ -465,15 +532,123 @@ fn refuses_chr_string_returning() {
     };
     let err = emit_module(&module_with(vec![Item::Function(f)])).unwrap_err();
     assert!(
-        err.to_string().contains("heap allocator"),
-        "chr(n) refused with allocator note: {err}"
+        err.to_string().contains("type mismatch"),
+        "chr(n) bound to an int local is a type mismatch: {err}"
     );
 }
 
 #[test]
-fn refuses_string_concat_binop() {
-    // `a + b` over two str params would do pointer arithmetic — refuse it as
-    // string concat (needs the slice-2 allocator).
+fn concat_lowers_to_alloc_and_memory_copy() {
+    // PMAT-993: `def join(a, b) -> str: return a + b` lowers to the heap
+    // allocator + a memory.copy of each operand's bytes, returning the new
+    // string's i32 pointer.
+    let f = Function {
+        name: "join".into(),
+        params: vec![param("a", Type::Str), param("b", Type::Str)],
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Concat {
+                lhs: Box::new(Expr::Ident("a".into())),
+                rhs: Box::new(Expr::Ident("b".into())),
+            },
+        },
+    };
+    let wat = emit_module(&module_with(vec![Item::Function(f)])).expect("concat -> str lowers");
+    assert!(
+        wat.contains("(global $__heap_ptr (mut i32)") && wat.contains("(func $__alloc"),
+        "the bump allocator is emitted:\n{wat}"
+    );
+    assert!(
+        wat.contains("call $__alloc") && wat.contains("memory.copy"),
+        "concat allocates + byte-copies:\n{wat}"
+    );
+    assert!(
+        wat.contains("(func $join (param $a i32) (param $b i32) (result i32)"),
+        "str-returning concat fn → i32 result:\n{wat}"
+    );
+    assert!(
+        wat.contains("(local $__wasm_str_dst i32)"),
+        "concat declares its destination scratch local:\n{wat}"
+    );
+}
+
+#[test]
+fn concat_of_three_str_params_is_single_pass() {
+    // Left-nested `(a + b) + c` flattens to one alloc + three memory.copy's.
+    let f = Function {
+        name: "join3".into(),
+        params: vec![
+            param("a", Type::Str),
+            param("b", Type::Str),
+            param("c", Type::Str),
+        ],
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Concat {
+                lhs: Box::new(Expr::Concat {
+                    lhs: Box::new(Expr::Ident("a".into())),
+                    rhs: Box::new(Expr::Ident("b".into())),
+                }),
+                rhs: Box::new(Expr::Ident("c".into())),
+            },
+        },
+    };
+    let wat = emit_module(&module_with(vec![Item::Function(f)])).expect("3-way concat lowers");
+    assert_eq!(
+        wat.matches("call $__alloc").count(),
+        1,
+        "3-way concat allocates ONCE (single pass), not per nesting:\n{wat}"
+    );
+    assert_eq!(
+        wat.matches("memory.copy").count(),
+        3,
+        "3-way concat copies each of the 3 operands' bytes:\n{wat}"
+    );
+}
+
+#[test]
+fn refuses_string_literal_in_concat() {
+    // PMAT-993: a string LITERAL operand (`"Hi " + s`) needs a static (data)
+    // segment — a follow-up. Refuse it honestly rather than dropping the
+    // literal.
+    let f = Function {
+        name: "g".into(),
+        params: vec![param("s", Type::Str)],
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Concat {
+                lhs: Box::new(Expr::LitStr("Hi ".into())),
+                rhs: Box::new(Expr::Ident("s".into())),
+            },
+        },
+    };
+    let err = emit_module(&module_with(vec![Item::Function(f)])).unwrap_err();
+    assert!(
+        err.to_string().contains("string LITERAL"),
+        "string literal in concat refused with the follow-up note: {err}"
+    );
+}
+
+#[test]
+fn no_heap_emitted_without_string_returning_op() {
+    // A read-only str program (slice 1's code_sum) must NOT pull in the bump
+    // allocator — the heap is gated on string MATERIALISATION only.
+    let wat = emit_module(&code_sum_module()).expect("code_sum lowers");
+    assert!(
+        !wat.contains("$__heap_ptr") && !wat.contains("$__alloc"),
+        "no allocator for a read-only str program:\n{wat}"
+    );
+}
+
+#[test]
+fn refuses_binop_add_over_str_pointers_as_pointer_arithmetic() {
+    // PMAT-993: a raw `BinOp::Add` over two str BASE-POINTERS is meaningless
+    // pointer arithmetic, NOT string concat (string `+` lowers as
+    // `Expr::Concat`, which IS supported via the heap path). Refuse it honestly
+    // and point the caller at `Concat` — never silently add the pointers.
     let f = Function {
         name: "cat".into(),
         params: vec![param("a", Type::Str), param("b", Type::Str)],
@@ -493,9 +668,10 @@ fn refuses_string_concat_binop() {
         },
     };
     let err = emit_module(&module_with(vec![Item::Function(f)])).unwrap_err();
+    let msg = err.to_string();
     assert!(
-        err.to_string().contains("heap allocator"),
-        "str + str refused as concat: {err}"
+        msg.contains("pointer arithmetic") && msg.contains("Concat"),
+        "BinOp::Add over str pointers refused, pointing at Concat: {msg}"
     );
 }
 
