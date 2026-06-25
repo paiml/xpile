@@ -22,21 +22,32 @@
 //!   `BigInt`/`Optional`/pointers/…) is **refused** with
 //!   [`BackendError::Lower`] — a Lean-style honest refusal, never wrong
 //!   code.
-//! - The FIRST aggregate (PMAT-966): a `list[int]`/`list[float]`
+//! - The FIRST aggregate (PMAT-966 + PMAT-968): a `list[int]`/`list[float]`
 //!   **parameter** lowers to an `i32` base-pointer into WASM **linear
-//!   memory**, and a read-only `xs[i]` index (`Expr::Index`) lowers to an
-//!   address computation (`base + i*elem_size`) plus `i64.load`/`f64.load`/
-//!   `f32.load`. The list element type must itself be a supported scalar
-//!   (`i64`/`f64`/`f32`); a `list[bool]`, nested list, or list of strings
-//!   is refused. A list **literal**, list **return**, list **append** /
-//!   growth, and index **assignment** are all still refused — read-only
-//!   access to a fixed list of scalars by index is the deliverable.
+//!   memory**. As of PMAT-968 the pointed-at region is a length-prefixed
+//!   layout: an `i32` element **count** at `base+0`, then the packed
+//!   elements starting at `base+8` (the 8-byte offset keeps every `i64`/
+//!   `f64` element naturally aligned). This length header unlocks two
+//!   PMAT-968 deliverables that PMAT-966 deliberately refused — (1)
+//!   **bounds-checked `xs[i]`**, where the `Index` lowering loads the header
+//!   length and emits a guard `i < 0 || i >= len → unreachable` (a WASM trap)
+//!   BEFORE the `*.load`, the faithful Python `IndexError` analogue (PMAT-966
+//!   let an out-of-range address silently mis-read or trap only on an
+//!   unmapped page); and (2) **`len(xs)`** (`Expr::Len`), lowered to an
+//!   `i32.load` of the header count zero-extended to the `i64` Python-int
+//!   domain. The element type must itself be a supported scalar
+//!   (`i64`/`f64`/`f32`); a `list[bool]`, nested list, or list of strings is
+//!   refused. A list **literal**, list **return**, list **append** / growth,
+//!   and index **assignment** are all still refused — read-only access to a
+//!   fixed list of scalars by (bounds-checked) index plus `len` is the
+//!   deliverable.
 //! - Statements: `Let`/`Assign` (→ `local` + `local.set`), `If`/`While`/
 //!   `Break`/`Continue`/`Return`.
 //! - Expressions: `Ident` (→ `local.get`), `LitInt`/`LitFloat`/`LitBool`,
 //!   `BinOp` (arith/bitwise/shift + comparisons), `FloatBinOp`, `UnOp`,
-//!   `IfExpr`, `Index` over a `list[scalar]` param (→ `*.load`), and a
-//!   direct intra-module `Call`.
+//!   `IfExpr`, `Index` over a `list[scalar]` param (bounds-checked `*.load`),
+//!   `Len` over a `list[scalar]` param (→ header `i32.load` + `i64` extend),
+//!   and a direct intra-module `Call`.
 //!
 //! ## Semantic posture (replicated from the Rust/PTX lanes)
 //!
@@ -72,6 +83,19 @@ pub use wasm_diffexec::{wasm_runtime_available, WasmDiffExecEngine, FIXTURE_INPU
 
 /// The Layer-5 compile contract every emitted WAT function cites.
 const CONTRACT_ID: &str = "C-COMPILE-RUST-TO-WASM";
+
+/// PMAT-968 list ABI: a `list[scalar]` base-pointer points at an `i32`
+/// element-count header at `base+0`; the packed elements start at this
+/// byte offset. The offset is 8 (not 4) so every `i64`/`f64` element stays
+/// naturally aligned for `i64.load`/`f64.load`.
+const LIST_ELEMS_OFFSET: i32 = 8;
+
+/// PMAT-968: name of the per-function scratch `i64` local that holds an
+/// evaluated `Index` index, reused by the bounds guard and the address
+/// computation (so the index expression is evaluated exactly once). Prefixed
+/// with `__wasm` to avoid colliding with a user local — meta-HIR identifiers
+/// from the supported frontends never start `__wasm`.
+const IDX_SCRATCH: &str = "__wasm_idx";
 
 /// Python floor-division and floor-modulo helper functions, in WAT.
 ///
@@ -353,15 +377,20 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     .expect("write");
     writeln!(out, "  ;; source module: {}", module.name).expect("write");
     writeln!(out, "  ;; contract: {CONTRACT_ID}").expect("write");
-    // PMAT-966: when any function takes a `list[scalar]` parameter, the
-    // list rides an `i32` base-pointer into WASM linear memory and `xs[i]`
-    // lowers to a `*.load`. Declare one page (64 KiB) of memory once, up
-    // front, and export it as `mem` so a host/witness can populate it with
-    // the list's element bytes before the call.
+    // PMAT-966/968: when any function takes a `list[scalar]` parameter, the
+    // list rides an `i32` base-pointer into WASM linear memory. The pointed
+    // region is a length-prefixed layout — an `i32` element count at
+    // `base+0`, then the packed elements from `base+8` (PMAT-968). `xs[i]`
+    // lowers to a bounds-checked `*.load`, and `len(xs)` reads the header.
+    // Declare one page (64 KiB) of memory once, up front, and export it as
+    // `mem` so a host/witness can populate it (count + elements) before the
+    // call.
     if module_uses_list_param(module) {
         writeln!(
             out,
-            "  ;; PMAT-966: list params ride an i32 base-pointer into this linear memory"
+            "  ;; PMAT-968: list params are an i32 base-pointer to a \
+             length-prefixed region (i32 count @ base+0, elements @ base+8) \
+             in this linear memory"
         )
         .expect("write");
         writeln!(out, "  (memory (export \"mem\") 1)").expect("write");
@@ -631,6 +660,13 @@ fn emit_function(f: &Function) -> Result<String, BackendError> {
     let n_params = f.params.len();
     for (name, wt) in scope.locals.iter().skip(n_params) {
         writeln!(out, "    (local ${} {})", name, wt.keyword()).expect("write");
+    }
+    // PMAT-968: declare the bounds-check scratch `i64` local iff a
+    // bounds-checked `Index` actually used it (the body references
+    // `$__wasm_idx`). Detected from the emitted body so it is declared
+    // exactly when needed — no spurious local for index-free functions.
+    if body.contains(&format!("${IDX_SCRATCH}")) {
+        writeln!(out, "    (local ${IDX_SCRATCH} i64)").expect("write");
     }
 
     out.push_str(&body);
@@ -907,6 +943,7 @@ fn emit_expr(
             Ok(WatTy::I64)
         }
         Expr::Index { collection, index } => emit_index(collection, index, scope, out, depth),
+        Expr::Len(collection) => emit_len(collection, scope, out, depth),
         Expr::Unit => Err(unsupported(
             "unit value `()` in a value position (WASM has no unit operand)",
         )),
@@ -918,20 +955,26 @@ fn emit_expr(
     }
 }
 
-/// Emit a read-only `xs[i]` over a `list[scalar]` parameter (PMAT-966).
+/// Emit a **bounds-checked** read-only `xs[i]` over a `list[scalar]`
+/// parameter (PMAT-966 layout, PMAT-968 bounds-check + offset).
 ///
 /// `collection` must be an [`Expr::Ident`] naming a list-param base-pointer
 /// (the only list shape in the WASM subset — there are no list literals,
 /// list-typed locals, or list returns). The index is a non-negative `i64`
-/// (the meta-HIR `Index.index` posture); the address is
-/// `base + (index as i32) * elem_size`, read with the element's natural
-/// `*.load`. The result type is the list's element WAT type.
+/// (the meta-HIR `Index.index` posture).
 ///
-/// Posture matches the `C-XLATE-PY-LIST-TO-VEC` `Index` doc: a negative or
-/// out-of-range index is NOT bounds-checked here — an out-of-bounds linear
-/// address traps in the wasm runtime, the WASM analogue of Python's
-/// `IndexError` / the Rust lane's `vec[i]` panic. (Variable-index *bounds
-/// checking* is deliberately out of scope for this first increment.)
+/// As of PMAT-968 the pointed-at region is length-prefixed: an `i32`
+/// element count at `base+0`, then the packed elements from
+/// `base + LIST_ELEMS_OFFSET`. The lowering first evaluates the index into
+/// a scratch `i64` local, then emits a bounds guard —
+/// `i < 0 || i >= len → unreachable` — which traps the way Python raises
+/// `IndexError` (and the Rust `vec[i]` lane panics). PMAT-966 deliberately
+/// refused this guard, letting an out-of-range linear address silently
+/// mis-read (or only trap on an unmapped page); PMAT-968 makes the
+/// out-of-bounds read a deterministic trap. After the guard the element
+/// address is `base + LIST_ELEMS_OFFSET + (index as i32) * elem_size`, read
+/// with the element's natural `*.load`. The result type is the list's
+/// element WAT type.
 fn emit_index(
     collection: &Expr,
     index: &Expr,
@@ -953,13 +996,52 @@ fn emit_index(
              indexed in the WASM subset (no str/dict/tuple indexing)"
         )));
     };
-    // addr = base + (index as i32) * elem_size
-    // base pointer (i32):
+    // Evaluate the index expression once into the per-function scratch i64
+    // local `$__wasm_idx` so it can be reused by both the bounds guard and
+    // the address computation without re-evaluating a (possibly effectful)
+    // call.
+    emit_expr_typed(index, scope, out, depth, WatTy::I64)?;
+    indent(out, depth);
+    writeln!(out, "local.set ${IDX_SCRATCH}").expect("write");
+
+    // Bounds guard (PMAT-968 — the Python IndexError analogue):
+    //   if (i < 0) | (i >= len) { unreachable }
+    // `len` is the i32 header at base+0, zero-extended to i64 for the
+    // signed compare against the i64 index.
+    indent(out, depth);
+    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i64.const 0").expect("write");
+    indent(out, depth);
+    writeln!(out, "i64.lt_s").expect("write");
     indent(out, depth);
     writeln!(out, "local.get ${name}").expect("write");
-    // index expression — must be an i64 (the meta-HIR index posture);
-    // narrow to the i32 address space with i32.wrap_i64.
-    emit_expr_typed(index, scope, out, depth, WatTy::I64)?;
+    indent(out, depth);
+    writeln!(out, "i32.load").expect("write"); // header element count
+    indent(out, depth);
+    writeln!(out, "i64.extend_i32_u").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i64.le_s").expect("write"); // len <= i  ⇔  i >= len
+    indent(out, depth);
+    writeln!(out, "i32.or").expect("write");
+    indent(out, depth);
+    writeln!(out, "if").expect("write");
+    indent(out, depth + 1);
+    writeln!(out, "unreachable").expect("write");
+    indent(out, depth);
+    writeln!(out, "end").expect("write");
+
+    // addr = base + LIST_ELEMS_OFFSET + (index as i32) * elem_size
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.add").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
     indent(out, depth);
     writeln!(out, "i32.wrap_i64").expect("write");
     indent(out, depth);
@@ -972,6 +1054,43 @@ fn emit_index(
     indent(out, depth);
     writeln!(out, "{}", elem.load_instr()).expect("write");
     Ok(elem)
+}
+
+/// Emit `len(xs)` over a `list[scalar]` parameter (PMAT-968). Reads the
+/// `i32` element-count header at `base+0` and zero-extends it to the `i64`
+/// Python-int domain (`len` returns a non-negative Python `int`).
+///
+/// `collection` must be an [`Expr::Ident`] naming a list-param base-pointer;
+/// `len` over anything else in the WASM subset (a scalar, a str, a dict) is
+/// refused — only a length-prefixed `list[scalar]` carries a length header.
+fn emit_len(
+    collection: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    let Expr::Ident(name) = collection else {
+        return Err(unsupported(
+            "len() of a non-name collection — the WASM subset only takes \
+             len() of a `list[scalar]` PARAMETER (its i32 length header); \
+             len of a list literal / str / dict / temporary is refused",
+        ));
+    };
+    if scope.list_elem_of(name).is_none() {
+        return Err(unsupported(&format!(
+            "len() over `{name}` which is not a `list[scalar]` parameter — \
+             only a list param carries the i32 element-count header in the \
+             WASM subset (no str/dict len)"
+        )));
+    }
+    // len = (i32 header at base+0) zero-extended to i64.
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.load").expect("write");
+    indent(out, depth);
+    writeln!(out, "i64.extend_i32_u").expect("write");
+    Ok(WatTy::I64)
 }
 
 /// Render an `f64` as a WAT float literal token.
