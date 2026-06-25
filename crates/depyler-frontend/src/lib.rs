@@ -5734,7 +5734,7 @@ fn optional_inner_truthy_body(inner: &Type) -> Option<(Expr, bool)> {
 
 fn lower_while_stmt(ctx: &mut LoweringCtx, w: ast::StmtWhile) -> Result<Vec<Stmt>, FrontendError> {
     let orelse = w.orelse;
-    let cond = truthy_condition(ctx, lower_expr_in_ctx(ctx, *w.test)?);
+    let cond = truthy_condition(ctx, lower_test_in_ctx(ctx, *w.test)?);
     if infer_type(&cond) != Type::Bool {
         return Err(FrontendError::Lower(format!(
             "function `{}` has a while-condition that is not Bool (no int-truthiness at v0.1.0)",
@@ -5767,7 +5767,7 @@ fn lower_while_stmt(ctx: &mut LoweringCtx, w: ast::StmtWhile) -> Result<Vec<Stmt
 /// Lower `assert cond` / `assert cond, msg` to [`Stmt::Assert`]. PMAT-009;
 /// the optional `msg` (must type as `Str`) is PMAT-502ao.
 fn lower_assert_stmt(ctx: &mut LoweringCtx, a: ast::StmtAssert) -> Result<Stmt, FrontendError> {
-    let cond = lower_expr_in_ctx(ctx, *a.test)?;
+    let cond = lower_test_in_ctx(ctx, *a.test)?;
     // PMAT-713: `assert n` / `assert s` / `assert xs` use Python truthiness, just
     // like `if`/`while`/`not` (which already accept these). Coerce the operand to
     // its truthiness (`int != 0`, `len != 0`, `float != 0.0`); a Bool passes
@@ -6163,7 +6163,7 @@ fn terminal_if_as_expr(
             _ => Ok(None),
         }
     }
-    let cond = truthy_condition(ctx, lower_expr_in_ctx(ctx, (*if_stmt.test).clone())?);
+    let cond = truthy_condition(ctx, lower_test_in_ctx(ctx, (*if_stmt.test).clone())?);
     if !matches!(infer_type_in_ctx(ctx, &cond), Type::Bool) {
         return Ok(None);
     }
@@ -6480,7 +6480,7 @@ fn lower_if_stmt(
     if is_if_as_let_shape(&if_stmt) {
         return lower_if_stmt_as_lets(ctx, if_stmt);
     }
-    let cond = truthy_condition(ctx, lower_expr_in_ctx(ctx, (*if_stmt.test).clone())?);
+    let cond = truthy_condition(ctx, lower_test_in_ctx(ctx, (*if_stmt.test).clone())?);
     if !matches!(infer_type_in_ctx(ctx, &cond), Type::Bool) {
         return Err(FrontendError::Lower(format!(
             "function `{}` has an `if` condition that does not type as bool — v0.2.0 requires a boolean condition",
@@ -6619,7 +6619,7 @@ fn lower_if_chain_to_expr(
         )));
     }
 
-    let cond = truthy_condition(ctx, lower_expr_in_ctx(ctx, (*if_stmt.test).clone())?);
+    let cond = truthy_condition(ctx, lower_test_in_ctx(ctx, (*if_stmt.test).clone())?);
     if infer_type_in_ctx(ctx, &cond) != Type::Bool {
         return Err(FrontendError::Lower(format!(
             "function `{fn_name}` has an if-condition that is not Bool (no int-truthiness at v0.1.0)"
@@ -8665,7 +8665,7 @@ fn combine_comp_filters(
 ) -> Result<Option<Expr>, FrontendError> {
     let mut acc: Option<Expr> = None;
     for cond_ast in ifs {
-        let cond = lower_expr_in_ctx(ctx, cond_ast.clone())?;
+        let cond = lower_test_in_ctx(ctx, cond_ast.clone())?;
         // PMAT-713: a comprehension filter `[x for x in xs if x]` uses Python
         // truthiness, like an `if x:` statement. Coerce the operand to its
         // truthiness (`int != 0`, `len != 0`, `float != 0.0`); a Bool passes
@@ -12396,7 +12396,10 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // `!= 0` comparison (no new Expr). int → `x != 0`; str / list /
                 // dict / set → `len(x) != 0`; bool → identity; float → `x != 0.0`.
                 if fname.id.as_str() == "bool" && call.keywords.is_empty() && call.args.len() == 1 {
-                    let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    // PMAT-944: `bool(a or b)` consumes the argument as truthiness
+                    // (a TEST position), so a mixed / non-bool `and`/`or` folds to
+                    // a bool rather than tripping the value-position union reject.
+                    let value = lower_test_in_ctx(ctx, call.args[0].clone())?;
                     let ne_zero = |lhs: Expr| Expr::BinOp {
                         op: BinOp::NotEq,
                         lhs: Box::new(lhs),
@@ -14236,7 +14239,10 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // sees the real type. Non-Bool operands still error (no
         // int-truthiness), via the context-free fallback.
         ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::Not) => {
-            let operand = lower_expr_in_ctx(ctx, (*u.operand).clone())?;
+            // PMAT-944: `not (a or b)` consumes the inner BoolOp as truthiness —
+            // a TEST position — so a mixed / non-bool `and`/`or` folds to a bool
+            // here rather than tripping the value-position union reject.
+            let operand = lower_test_in_ctx(ctx, (*u.operand).clone())?;
             match infer_type_in_ctx(ctx, &operand) {
                 Type::Bool => Ok(Expr::UnOp {
                     op: UnOp::Not,
@@ -16367,7 +16373,45 @@ fn bool_op_operand_truthy(ctx: &LoweringCtx, operand: &Expr) -> Option<Expr> {
     }
 }
 
+/// Value-context BoolOp — the result is observed as a *value* (assigned,
+/// returned, printed, passed as an argument), not merely as truthiness. A
+/// mixed / non-bool `and`/`or` here returns Python's union operand value,
+/// which has no single Rust type, so it is REJECTED (PMAT-944) rather than
+/// silently folded to a `bool`.
 fn lower_bool_op_in_ctx(ctx: &LoweringCtx, b: ast::ExprBoolOp) -> Result<Expr, FrontendError> {
+    lower_bool_op_core(ctx, b, false)
+}
+
+/// PMAT-944: lower an expression that sits in a boolean-TEST position — its
+/// result is consumed only as truthiness (the condition of `if`/`while`/
+/// `assert`/a ternary, the operand of `not`, the argument of `bool()`, a
+/// comprehension filter). A `BoolOp` here may legitimately fold to a Rust
+/// `bool` even over mixed / non-bool operand types: Python's union operand
+/// value is never observed, only its truthiness. Routing through the
+/// truthy-aware `BoolOp` core suppresses the value-position union REJECT that
+/// would otherwise fire on `if x or "d":` / `while xs and n:` / `not (a or b)`.
+/// A non-`BoolOp` test is unaffected (the flag only gates `and`/`or`).
+fn lower_test_in_ctx(ctx: &LoweringCtx, test: ast::Expr) -> Result<Expr, FrontendError> {
+    if let ast::Expr::BoolOp(b) = test {
+        lower_bool_op_core(ctx, b, true)
+    } else {
+        lower_expr_in_ctx(ctx, test)
+    }
+}
+
+/// `truthy` = the BoolOp's RESULT is consumed only as truthiness (a boolean
+/// TEST position). When false (value position), a mixed / non-bool `and`/`or`
+/// — whose Python result is a union operand value with no single Rust type —
+/// is rejected instead of being silently coerced to a `bool` (the PMAT-944
+/// divergence: `print(0 or "d")` lowered to a `bool` printing `True`, not the
+/// Python operand `"d"`). Same-typed operands still return a value in either
+/// position (`x or 0`, `s or "d"`); all-`bool` operands fold to `bool` in
+/// either position (Python's bool `and`/`or` is bool-equal).
+fn lower_bool_op_core(
+    ctx: &LoweringCtx,
+    b: ast::ExprBoolOp,
+    truthy: bool,
+) -> Result<Expr, FrontendError> {
     if b.values.len() < 2 {
         return Err(FrontendError::Lower(
             "boolean operator with fewer than 2 operands — unreachable Python AST".into(),
@@ -16378,6 +16422,13 @@ fn lower_bool_op_in_ctx(ctx: &LoweringCtx, b: ast::ExprBoolOp) -> Result<Expr, F
         ast::BoolOp::And => BinOp::And,
         ast::BoolOp::Or => BinOp::Or,
     };
+    // PMAT-944: every operand EXCEPT the last is always truthiness-tested (a
+    // boolean-TEST position); the last operand inherits this BoolOp's own
+    // position (`truthy`). Lowering tested operands via `lower_test_in_ctx`
+    // lets a NESTED `and`/`or` in a condition (`if (a or b) and c:`) fold to a
+    // bool without tripping the value-position union reject.
+    let n_ops = b.values.len();
+    let operand_truthy = |i: usize| i + 1 < n_ops || truthy;
     // PMAT-759 (HUNT-V15 ONF-4): in an `and` chain, an `x is not None` conjunct
     // NARROWS `x` for the operands that follow it — Python short-circuits, so the
     // rest runs only when `x` is not None, and Rust `&&` short-circuits the same
@@ -16389,8 +16440,12 @@ fn lower_bool_op_in_ctx(ctx: &LoweringCtx, b: ast::ExprBoolOp) -> Result<Expr, F
     let lowered: Vec<Expr> = if matches!(py_op, ast::BoolOp::And) {
         let mut sub = ctx.clone();
         let mut acc = Vec::with_capacity(b.values.len());
-        for v in b.values {
-            let lo = lower_expr_in_ctx(&sub, v.clone())?;
+        for (i, v) in b.values.into_iter().enumerate() {
+            let lo = if operand_truthy(i) {
+                lower_test_in_ctx(&sub, v.clone())?
+            } else {
+                lower_expr_in_ctx(&sub, v.clone())?
+            };
             if let Some(name) = is_not_none_narrow_target(&sub, &v) {
                 sub.narrowed_some.insert(name);
             }
@@ -16400,7 +16455,14 @@ fn lower_bool_op_in_ctx(ctx: &LoweringCtx, b: ast::ExprBoolOp) -> Result<Expr, F
     } else {
         b.values
             .into_iter()
-            .map(|v| lower_expr_in_ctx(ctx, v))
+            .enumerate()
+            .map(|(i, v)| {
+                if operand_truthy(i) {
+                    lower_test_in_ctx(ctx, v)
+                } else {
+                    lower_expr_in_ctx(ctx, v)
+                }
+            })
             .collect::<Result<Vec<_>, _>>()?
     };
     // PMAT-637 / PMAT-638: Python `x or default` / `x and y` — and chains
@@ -16507,6 +16569,26 @@ fn lower_bool_op_in_ctx(ctx: &LoweringCtx, b: ast::ExprBoolOp) -> Result<Expr, F
         let ta = infer_type_in_ctx(ctx, &lowered[0]);
         let all_same = lowered.iter().all(|e| infer_type_in_ctx(ctx, e) == ta);
         if !(all_same && ta != Type::Bool) {
+            // PMAT-944: this bool-RESULT fold is sound for a boolean-TEST
+            // position (the result is consumed as truthiness) and for an
+            // all-`bool` operand set (Python's bool `and`/`or` is bool-equal in
+            // any position). But in a VALUE position with a non-bool / mixed
+            // operand, Python returns the OPERAND (a union value), not a bool —
+            // `print(0 or "d")` is `"d"`, not `True`. Folding to a bool there
+            // silently diverged; with no single Rust type for the union, REJECT.
+            let all_bool = lowered
+                .iter()
+                .all(|e| infer_type_in_ctx(ctx, e) == Type::Bool);
+            if !all_bool && !truthy {
+                return Err(FrontendError::Lower(
+                    "`and`/`or` in value position over non-bool / mixed-type operands returns \
+                     Python's union operand value, which has no single Rust type at v0.2.0 — \
+                     same-typed operands DO return a value (`x or 0`, `s or \"d\"`), and \
+                     mixed / non-bool `and`/`or` is supported in a boolean context \
+                     (if / while / assert / `not` / `bool()` / a ternary condition)"
+                        .into(),
+                ));
+            }
             let parts: Option<Vec<Expr>> = lowered
                 .iter()
                 .map(|e| {
@@ -16759,7 +16841,7 @@ fn lower_if_exp_in_ctx(ctx: &LoweringCtx, ie: ast::ExprIfExp) -> Result<Expr, Fr
     // expr-lowering is `&ctx`), so reads of `x` unwrap to `T`. The condition and
     // else-branch keep `x` as `Optional` (the cond checks `is_some`).
     let narrow = is_not_none_narrow_target(ctx, &ie.test);
-    let cond = truthy_condition(ctx, lower_expr_in_ctx(ctx, *ie.test)?);
+    let cond = truthy_condition(ctx, lower_test_in_ctx(ctx, *ie.test)?);
     let then_expr = match &narrow {
         Some(name) => {
             let mut nctx = ctx.clone();
