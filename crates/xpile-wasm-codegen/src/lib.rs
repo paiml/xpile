@@ -79,7 +79,9 @@ use xpile_meta_hir::{
 };
 
 mod wasm_diffexec;
-pub use wasm_diffexec::{wasm_runtime_available, WasmDiffExecEngine, FIXTURE_INPUT};
+pub use wasm_diffexec::{
+    general_module_wat, wasm_runtime_available, WasmDiffExecEngine, FIXTURE_INPUT,
+};
 
 /// The Layer-5 compile contract every emitted WAT function cites.
 const CONTRACT_ID: &str = "C-COMPILE-RUST-TO-WASM";
@@ -253,18 +255,26 @@ impl Backend for WasmBackend {
     }
 }
 
-// ─── PMAT-952: real WAT emitters for the executed WASM-runtime witness ──
+// ─── PMAT-952/976: WAT emitters for the executed WASM-runtime witness ──
 //
 // Two emitters that produce COMPLETE, wat2wasm-assemblable WAT modules
 // computing identical semantics — `out[i] = 2*in[i] + 1` over
 // [`FIXTURE_INPUT`] — via categorically different lowerings. Each module
 // exports one zero-arg `f64`-returning function per fixture element
 // (`e0`..`eN`), so `wasm-interp --run-all-exports` runs the whole vector
-// and prints each result. The general emitter uses an explicit
-// `f64.mul` + `f64.add`; the specialist uses a reassociated `(x + x) + 1`
-// with no multiply opcode. Both are run in the wasm runtime under the
-// `DiffExec` quorum (see [`WasmBackend::new_wasm_diffexec_witness`]); the
-// engine asserts their executed outputs agree within tolerance.
+// and prints each result.
+//
+// PMAT-976 (witness integrity): the GENERAL side no longer hand-writes WAT
+// — it drives xpile's REAL meta-HIR → WAT emitter via
+// [`wasm_diffexec::general_module_wat`] (`(x * 2.0) + 1.0`, an explicit
+// `FloatOp::Mul` then `FloatOp::Add`, lowered through `emit_module`). The
+// SPECIALIST side stays the hand-written reassociated `(x + x) + 1` with no
+// multiply opcode (the categorically-independent trusted oracle). Both are
+// run in the wasm runtime under the `DiffExec` quorum (see
+// [`WasmBackend::new_wasm_diffexec_witness`]); the engine asserts their
+// executed outputs agree within tolerance — so the witness now proves
+// `meta-HIR → xpile WAT emit → assemble → run → correct` for the general
+// side, not `hardcoded WAT → run`.
 
 /// Format an `f64` as a WAT `f64.const` literal. Rust's `{:?}` always
 /// emits a decimal point (e.g. `2.0`, `-0.5`, `100.0`), which `wat2wasm`
@@ -294,6 +304,16 @@ fn saxpy_module(comment: &str, body: impl Fn(f64) -> String) -> String {
 
 /// General WAT emitter — `2*x + 1` via an explicit `f64.mul` then
 /// `f64.add`. Emits a complete wat2wasm-assemblable module.
+///
+/// PMAT-976 (witness integrity): this side no longer hand-writes WAT. It
+/// drives xpile's REAL meta-HIR → WAT emitter via
+/// [`wasm_diffexec::general_module_wat`] (a structured meta-HIR module of
+/// zero-arg `eN` functions, each `(x * 2.0) + 1.0`, lowered through the SAME
+/// [`emit_module`] the single-emitter `lower` path uses). So the executed
+/// `DiffExec` quorum the backend actually runs now proves
+/// `meta-HIR → xpile WAT emit → assemble → run → correct` for the general
+/// side, not `hardcoded WAT → run`. The specialist side stays hand-written
+/// (the categorically-independent trusted oracle).
 struct WasmSaxpyGeneralEmitter;
 
 impl TargetEmitter for WasmSaxpyGeneralEmitter {
@@ -309,16 +329,8 @@ impl TargetEmitter for WasmSaxpyGeneralEmitter {
         if config.target != Target::Wasm {
             return Some(Err(BackendError::UnsupportedTarget(config.target)));
         }
-        let primary = saxpy_module(
-            "wasm-saxpy-general: out = x * 2.0 + 1.0 (explicit f64.mul + f64.add)",
-            |x| {
-                // x * 2.0 + 1.0
-                format!(
-                    "f64.const {x}\n    f64.const 2.0\n    f64.mul\n    f64.const 1.0\n    f64.add",
-                    x = wat_f64(x)
-                )
-            },
-        );
+        // REAL emit path: meta-HIR → `emit_module` → WAT (PMAT-976).
+        let primary = wasm_diffexec::general_module_wat();
         Some(Ok(EmittedText {
             primary,
             citations: vec![ContractId::new(CONTRACT_ID)],
