@@ -15284,10 +15284,64 @@ fn apply_nonempty_format_spec(
     // a width/align-combined `:c` (`f"{65:>5c}"`) stays a documented reject
     // (follow-up), the same scoping discipline as the width-combined `:e` reject
     // in PMAT-941. Surfaced by a python3-vs-rustc differential format-spec sweep.
-    if spec == "c" && ty == Type::I64 {
-        return Ok(Expr::Chr {
-            value: Box::new(value),
-        });
+    //
+    // PMAT-946 (correctness-hunt): the WIDTH/ALIGN-combined `:c` that PMAT-945
+    // scoped out — `f"{65:>5c}"` -> "    A", `f"{65:<5c}"` -> "A    ",
+    // `f"{67:.^7c}"` -> "...C...", `f"{0x1F600:>3c}"` -> "  😀", and a bare width
+    // `f"{65:5c}"` -> "    A" (`c` is an INTEGER presentation type, so a bare width
+    // defaults to RIGHT-align, unlike a str). `Expr::Chr` already lowers to a
+    // single-char `String` at runtime, so route it through `FormatSpec` with the
+    // verbatim `[fill][align][width]` prefix — Rust's string fill/align is
+    // char-count-based and shares Python's center even-pad split (`{:.^6}` ->
+    // "..C..."), so it reproduces Python byte-for-byte (cross-checked: emoji/€/中
+    // all pad by code-point count, matching Python's `len`). This is the same
+    // render-then-pad shape as the PMAT-807/943 float-repr-string padding (which
+    // pads a `ToStr`). A bare width must NOT start with `0` — the implicit
+    // zero-pad form (`:05c` -> "0000A") stays a documented reject (follow-up); an
+    // EXPLICIT `0`-fill (`:0>5c`) flows through the fill+align prefix branch and
+    // works. Python rejects a SIGN with `:c` ("Sign not allowed with integer
+    // format specifier 'c'"), so a `+5c`/`-5c` core (non-digit width) falls
+    // through to xpile's reject too — an honest refusal mirroring Python's error.
+    if ty == Type::I64 {
+        if let Some(core) = spec.strip_suffix('c') {
+            if core.is_empty() {
+                // Bare `:c` — the single Unicode char at code point n (PMAT-945).
+                return Ok(Expr::Chr {
+                    value: Box::new(value),
+                });
+            }
+            // A `[fill][align][width]c` / `[align][width]c` / bare `[width]c` form:
+            // peel the fill+align (or bare-width default `>`) prefix and pad the
+            // rendered char string.
+            let chars: Vec<char> = core.chars().collect();
+            let (prefix_chars, width_chars): (&[char], &[char]) =
+                if chars.len() >= 2 && matches!(chars[1], '<' | '>' | '^') {
+                    (&chars[..2], &chars[2..]) // [fill][align]
+                } else if matches!(chars.first(), Some('<' | '>' | '^')) {
+                    (&chars[..1], &chars[1..]) // [align]
+                } else {
+                    (&[][..], &chars[..]) // bare width → default '>' (c is an int type)
+                };
+            let width: String = width_chars.iter().collect();
+            let bare = prefix_chars.is_empty();
+            if !width.is_empty()
+                && width.bytes().all(|b| b.is_ascii_digit())
+                && !(bare && width.starts_with('0'))
+            {
+                let prefix: String = if bare {
+                    ">".to_string()
+                } else {
+                    prefix_chars.iter().collect()
+                };
+                return Ok(Expr::FormatSpec {
+                    value: Box::new(Expr::Chr {
+                        value: Box::new(value),
+                    }),
+                    rust_spec: format!("{prefix}{width}"),
+                });
+            }
+            // Sign-prefixed / implicit-zero-pad / malformed → fall through to reject.
+        }
     }
     // PMAT-942 (correctness-hunt): the SPACE sign flag ` ` — Python `f"{5: d}"` ->
     // " 5", `f"{-5: d}"` -> "-5", `f"{3.14: .2f}"` -> " 3.14", and width/zero-pad

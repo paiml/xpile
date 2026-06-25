@@ -15129,6 +15129,64 @@ fn fstr_char_format_float_rejected() {
     );
 }
 
+/// PMAT-946 (correctness-hunt): the WIDTH/ALIGN-combined `:c` char-format spec that
+/// PMAT-945 scoped out — `f"{65:>5c}"` == "    A", `f"{65:<5c}"` == "A    ",
+/// `f"{67:.^7c}"` == "...C...", `f"{65:5c}"` == "    A" (bare width defaults to
+/// RIGHT-align — `c` is an INTEGER presentation type). `Expr::Chr` lowers to a
+/// single-char `String`, so the spec routes Chr through a `FormatSpec` carrying the
+/// verbatim `[fill][align][width]` prefix; Rust's string fill/align is
+/// char-count-based and shares Python's center even-pad split, so it reproduces
+/// Python byte-for-byte. An explicit `0`-fill (`:0>5c`) works; an implicit zero-pad
+/// (`:05c`) stays a reject. Cross-checked vs python3.
+#[test]
+fn fstr_char_format_width() {
+    let rust = xpile_transpile_to_rust("fstr_char_format_width.py");
+    assert!(
+        // every width `:c` reuses the chr lowering wrapped in a padding format!,
+        // never a bespoke `{:Nc}` format string.
+        rust.contains("char::from_u32") && !rust.contains("format!(\"{:c}\""),
+        "a width `:c` must reuse the chr() lowering padded by a format!, not a `{{:c}}` format!:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(cc_right(65), "    A");
+    assert_eq!(cc_left(65), "A    ");
+    assert_eq!(cc_center(67), "   C   ");
+    assert_eq!(cc_bare(65), "    A");       // bare width → right-align (c is an int type)
+    assert_eq!(cc_fill_r(65), "****A");
+    assert_eq!(cc_fill_l(66), "B****");
+    assert_eq!(cc_fill_c(67), "...C...");
+    assert_eq!(cc_zerofill(65), "0000A");   // explicit 0-fill via prefix
+    assert_eq!(cc_emoji(), "  \u{1F600}");  // padded by char count, not byte count
+    assert_eq!(cc_euro(), "   \u{20AC}");
+    assert_eq!(cc_han(), "    \u{4E2D}");
+    assert_eq!(cc_bool(true), "  \u{1}");   // bool delegates to int → chr(1)
+    assert_eq!(cc_fmt(72), "   H");         // the shared format() builtin path
+    assert_eq!(cc_multi(72, 73), "[  H|I  ]");
+}
+"#;
+    assert_rustc_runs("fstr_char_format_width", &rust, driver);
+}
+
+/// PMAT-946 (correctness-hunt): an IMPLICIT zero-pad `:05c` (no explicit align)
+/// stays a documented reject — Python's `:05c` zero-pads (`"0000A"`), but that
+/// form is scoped out (an EXPLICIT `:0>5c` 0-fill works via the prefix), so it
+/// must refuse honestly rather than miscompile. vs python3.
+#[test]
+fn fstr_char_format_width_zeropad_rejected() {
+    let py = fixture("fstr_char_format_width_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "an implicit zero-pad `:05c` is out of scope and must be refused, not miscompiled"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unsupported format spec `:05c`"),
+        "the rejection should name the unsupported `:05c` spec:\n{stderr}"
+    );
+}
+
 /// PMAT-801 (HUNT-V19 STR-IDX-OOB): a string index out of range panicked with
 /// Rust's raw "index out of bounds" message, not the tagged `xpile: IndexError:`,
 /// so under the allowlist except a typed `except IndexError` couldn't catch it
