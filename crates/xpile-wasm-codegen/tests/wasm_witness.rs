@@ -79,9 +79,22 @@ fn wasm_diffexec_executes_in_runtime_and_matches() {
         .expect("witness backend lowers + runs in wasm runtime");
 
     // The primary emission carries a real WAT module + the contract.
+    // PMAT-976: the general side now drives xpile's REAL `emit_module`, which
+    // emits a named `(func $eN …)` followed by a separate
+    // `(export "eN" (func $eN))` (NOT the inline `(func (export …))` form the
+    // old hand-written emitter used). Assert that REAL-emitter shape so a
+    // regression back to hand-written WAT would fail here.
     assert!(
-        artifact.primary.contains("(module") && artifact.primary.contains("(func (export"),
-        "primary should be a real WAT module, got:\n{}",
+        artifact.primary.contains("(module")
+            && artifact.primary.contains("(export \"e0\" (func $e0))"),
+        "primary should be the REAL emit_module WAT (named func + separate export), got:\n{}",
+        artifact.primary
+    );
+    assert!(
+        artifact
+            .primary
+            .contains(";; xpile-wasm-codegen — native WAT (scalar/control subset)"),
+        "primary must carry the real emitter's module banner, got:\n{}",
         artifact.primary
     );
     assert!(

@@ -41,10 +41,11 @@
 //!
 //! ## The two categorically-independent lowerings
 //!
-//! Both emitters compute `2*x + 1` for each fixture element, but via
+//! Both sides compute `2*x + 1` for each fixture element, but via
 //! genuinely different WAT instruction sequences:
 //!
-//!   - **general**: `x * 2.0 + 1.0` — an explicit `f64.mul` then `f64.add`.
+//!   - **general**: `(x * 2.0) + 1.0` — an explicit `f64.mul` then
+//!     `f64.add`.
 //!   - **specialist**: `(x + x) + 1.0` — reassociated doubling via two
 //!     `f64.add`s, with **no `f64.mul` opcode at all**.
 //!
@@ -53,6 +54,21 @@
 //! quorum runs both in the wasm runtime and falsifies the contract if they
 //! diverge. The fixture is kept bit-identical to the CUDA / WGSL witnesses
 //! so all three lanes attest the same numeric truth on different stacks.
+//!
+//! ## PMAT-976 — witness integrity: the general side drives the REAL emitter
+//!
+//! Before PMAT-976 BOTH sides of the executed witness fed [`WasmDiffExecEngine`]
+//! hand-written WAT (`saxpy_module` in `lib.rs`), so the witness only ever
+//! exercised the WABT assemble+run path — it never drove xpile's REAL WAT
+//! emitter. PMAT-976 rewires the **general** side: [`general_module`] builds
+//! a structured meta-HIR [`Module`] (`FloatBinOp`/`LitFloat`) and
+//! [`general_module_wat`] lowers it via the SAME [`crate::emit_module`] the
+//! `WasmBackend::lower` single-emitter path and the PMAT-951/966/968 emit
+//! tests use. The `executed_witness_real_emit_assemble_run_matches` test then
+//! assembles + runs THAT real WAT and diffs its executed output against the
+//! trusted CPython-equivalent reference vector AND the (still hand-written,
+//! categorically-independent) specialist reference. The witness now proves
+//! `meta-HIR → xpile WAT emit → assemble → run → correct`.
 //!
 //! ## Graceful skip
 //!
@@ -73,7 +89,9 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use xpile_backend::{BackendConfig, DiffExecEngine, DiffExecResult};
-use xpile_meta_hir::Module;
+use xpile_meta_hir::{Block, Expr, FloatOp, Function, Item, Module, SourceLang, Type};
+
+use crate::emit_module;
 
 /// The deterministic fixture input vector both WAT modules run over. Kept
 /// **bit-identical** to [`xpile_ptx_codegen::FIXTURE_INPUT`] /
@@ -81,6 +99,75 @@ use xpile_meta_hir::Module;
 /// executed witnesses attest the same values on different stacks;
 /// exercises negatives, zero, a fraction, and a larger magnitude.
 pub const FIXTURE_INPUT: &[f64] = &[0.0, 1.0, 2.0, -3.0, 4.5, 10.0, -0.5, 100.0];
+
+/// PMAT-976 (witness-integrity rewire): build a REAL meta-HIR [`Module`]
+/// for the "general" side of the executed witness — one zero-arg
+/// `f64`-returning function `eN` per [`FIXTURE_INPUT`] element, each whose
+/// body is `(x * 2.0) + 1.0` over the *constant-folded* fixture value `x`.
+///
+/// This is the load-bearing change: prior to PMAT-976 BOTH sides of the
+/// witness fed [`WasmDiffExecEngine`] hand-written WAT, so the witness only
+/// exercised the WABT assemble+run path — it never drove xpile's REAL WAT
+/// emitter (`emit_module`, the PMAT-951/966/968 lowering). Here the general
+/// side is constructed as structured meta-HIR (`FloatBinOp`/`LitFloat`) and
+/// lowered to WAT by the SAME [`emit_module`] the `WasmBackend::lower`
+/// single-emitter path uses. The witness therefore now proves
+/// `meta-HIR → xpile WAT emit → assemble → run → correct`, not
+/// `hardcoded WAT → run`.
+///
+/// Each function is named `eN` and the return-type is [`Type::F64`], so
+/// [`emit_module`] emits `(export "eN" (func $eN))` exactly matching the
+/// `e0`..`eN` export convention [`parse_interp_output`] /
+/// `wasm-interp --run-all-exports` expect.
+fn general_module() -> Module {
+    let items = FIXTURE_INPUT
+        .iter()
+        .enumerate()
+        .map(|(i, &x)| {
+            // (x * 2.0) + 1.0 — the "general" lowering: an explicit
+            // FloatOp::Mul then FloatOp::Add, the meta-HIR analogue of the
+            // old hardcoded `f64.mul` + `f64.add` general emitter. The
+            // fixture value `x` is a `LitFloat` constant so the emitted
+            // function is zero-arg (interp can run it with no host args).
+            let body = Expr::FloatBinOp {
+                op: FloatOp::Add,
+                lhs: Box::new(Expr::FloatBinOp {
+                    op: FloatOp::Mul,
+                    lhs: Box::new(Expr::LitFloat(x)),
+                    rhs: Box::new(Expr::LitFloat(2.0)),
+                }),
+                rhs: Box::new(Expr::LitFloat(1.0)),
+            };
+            Item::Function(Function {
+                name: format!("e{i}"),
+                params: Vec::new(),
+                return_type: Type::F64,
+                body: Block {
+                    stmts: Vec::new(),
+                    trailing_return: body,
+                },
+            })
+        })
+        .collect();
+    Module {
+        name: "wasm_diffexec_general".into(),
+        source_lang: SourceLang::Rust,
+        items,
+        ffi_boundaries: Vec::new(),
+    }
+}
+
+/// PMAT-976: emit REAL xpile WAT for the general side via [`emit_module`].
+///
+/// Drives xpile's actual meta-HIR → WAT lowering (the SAME emitter the
+/// `WasmBackend` single-emitter `lower` path and the PMAT-951/966/968 emit
+/// tests use) over [`general_module`]. The returned WAT is what the witness
+/// assembles + runs for the general side — so a regression in the real
+/// emitter now fails the executed witness, which the old hand-written WAT
+/// could never catch.
+pub fn general_module_wat() -> String {
+    emit_module(&general_module()).expect("general_module is in the WASM scalar/control subset")
+}
 
 /// `true` when both `wat2wasm` and `wasm-interp` (WABT) are invocable —
 /// the gate that decides whether [`WasmDiffExecEngine`] should be
@@ -260,5 +347,125 @@ mod tests {
         let err =
             WasmDiffExecEngine::parse_interp_output("no exports here\n", "general").unwrap_err();
         assert!(err.contains("no f64 exports"), "got: {err}");
+    }
+
+    /// PMAT-976: the CPython-equivalent expected vector for the witness
+    /// kernel `out = 2*x + 1` over [`FIXTURE_INPUT`] — the trusted reference
+    /// the REAL emitted WAT's executed output must match. (CPython:
+    /// `[2*x + 1.0 for x in FIXTURE_INPUT]`.)
+    fn expected_vector() -> Vec<f64> {
+        FIXTURE_INPUT.iter().map(|&x| 2.0 * x + 1.0).collect()
+    }
+
+    #[test]
+    fn general_module_wat_is_real_emitter_output() {
+        // PMAT-976 (pure-CPU half): `general_module_wat()` must be the REAL
+        // `emit_module` output, NOT hand-written WAT. We assert the
+        // fingerprints only `emit_module` produces: the emitter's module
+        // banner comment, the per-function contract citation, and a zero-arg
+        // `(export "eN" (func $eN))` for every fixture element. If a future
+        // refactor swapped this back to hand-written WAT these would break.
+        let wat = general_module_wat();
+        assert!(
+            wat.contains("xpile-wasm-codegen — native WAT (scalar/control subset)"),
+            "must carry the real emitter's module banner: {wat}"
+        );
+        assert!(
+            wat.contains(";; xpile-contract: C-COMPILE-RUST-TO-WASM"),
+            "must carry the per-function contract citation the emitter writes: {wat}"
+        );
+        for i in 0..FIXTURE_INPUT.len() {
+            assert!(
+                wat.contains(&format!("(export \"e{i}\" (func $e{i}))")),
+                "emit_module must export zero-arg e{i}: {wat}"
+            );
+        }
+        // The general lowering is an explicit f64.mul + f64.add (the
+        // meta-HIR `FloatOp::Mul` then `FloatOp::Add`), routed through the
+        // real float-binop emitter.
+        assert!(wat.contains("f64.mul"), "general side uses f64.mul: {wat}");
+        assert!(wat.contains("f64.add"), "general side uses f64.add: {wat}");
+    }
+
+    #[test]
+    fn executed_witness_real_emit_assemble_run_matches() {
+        // PMAT-976 (executed half): the load-bearing witness. Drive xpile's
+        // REAL WAT emitter (`emit_module` over a meta-HIR module), assemble
+        // it with `wat2wasm`, execute it with `wasm-interp`, and diff the
+        // executed output against the trusted CPython-equivalent reference
+        // vector AND the (hand-written, categorically-independent) specialist
+        // WAT. Proves `meta-HIR → xpile WAT emit → assemble → run → correct`.
+        if !wasm_runtime_available() {
+            // Graceful skip on free CI (no WABT) — mirrors the engine's
+            // NotRun { no-engine } posture.
+            eprintln!("SKIP executed_witness: WABT (wat2wasm/wasm-interp) not installed");
+            return;
+        }
+
+        let engine = WasmDiffExecEngine::new();
+
+        // REAL emitted WAT for the general side.
+        let general_wat = general_module_wat();
+        let general = engine
+            .assemble_run_parse(&general_wat, "general")
+            .expect("assemble+run REAL emitted general WAT");
+
+        // Trusted reference 1: the CPython-equivalent expected vector.
+        let expected = expected_vector();
+        assert_eq!(
+            general.len(),
+            expected.len(),
+            "REAL emitted WAT must export one e_i per fixture element"
+        );
+        for (i, (g, e)) in general.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (g - e).abs() <= 1.0e-9,
+                "e{i}: REAL emitted WAT executed {g}, expected (CPython) {e}"
+            );
+        }
+
+        // Trusted reference 2: the hand-written, categorically-independent
+        // specialist WAT `(x + x) + 1.0` (no f64.mul). Diff the REAL emitted
+        // general output against it via the engine's own comparison.
+        let specialist_wat = specialist_reference_wat();
+        let specialist = engine
+            .assemble_run_parse(&specialist_wat, "specialist")
+            .expect("assemble+run reference specialist WAT");
+        let max_abs_diff = general
+            .iter()
+            .zip(specialist.iter())
+            .map(|(g, s)| (g - s).abs())
+            .fold(0.0_f64, f64::max);
+        assert!(
+            max_abs_diff <= 1.0e-9,
+            "REAL emitted general WAT diverged from specialist reference: max_abs_diff={max_abs_diff}"
+        );
+
+        // Print the captured evidence so the run shows xpile's REAL emitted
+        // WAT was assembled + executed and matched.
+        eprintln!("=== PMAT-976 executed witness: REAL xpile WAT emit → run ===");
+        eprintln!("--- REAL emitted general WAT (emit_module over meta-HIR) ---");
+        eprintln!("{general_wat}");
+        eprintln!("--- executed general output (wasm-interp) ---\n{general:?}");
+        eprintln!("--- CPython-equivalent expected ---\n{expected:?}");
+        eprintln!("--- specialist reference output ---\n{specialist:?}");
+        eprintln!("max_abs_diff(general, specialist) = {max_abs_diff}");
+    }
+
+    /// The hand-written, categorically-independent specialist reference WAT:
+    /// `(x + x) + 1.0` per fixture element (a reassociated doubling with NO
+    /// `f64.mul`). Used ONLY as a trusted oracle to diff the REAL emitted
+    /// general WAT against — it is deliberately NOT the emit-under-test.
+    fn specialist_reference_wat() -> String {
+        let mut out = String::from("(module\n");
+        for (i, &x) in FIXTURE_INPUT.iter().enumerate() {
+            out.push_str(&format!(
+                "  (func (export \"e{i}\") (result f64)\n    \
+                 f64.const {x:?}\n    f64.const {x:?}\n    f64.add\n    \
+                 f64.const 1.0\n    f64.add)\n"
+            ));
+        }
+        out.push_str(")\n");
+        out
     }
 }
